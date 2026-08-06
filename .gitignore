@@ -1,0 +1,23 @@
+# Windows/WSL metadata created when copying files from Explorer
+*:Zone.Identifier
+
+# Machine-local agent tooling (auto-generated, contains absolute paths)
+.atl/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environment
+.env
+.env.local
+
+# Editor / OS
+.DS_Store
+*.swp
