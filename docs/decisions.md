@@ -238,3 +238,27 @@ redeploy, no un `INSERT`. Aceptable porque la lista de provincias es fija (§9.0
 jerga regional es acotada. Si esto se vuelve un problema real —abreviaturas que
 cambian seguido, necesidad de que el operador las edite sin deploy— se revisita
 moviendo el diccionario a una tabla.
+
+---
+
+## 2026-08-07 — Medición de H0: unidad comparada contra el catálogo, no contra una fila propia
+
+Contexto: §12.5 exige medir «precisión de cantidad/unidad» como una de las cuatro
+métricas decisivas de H0, pero `prices_history` no persiste `unit` por fila (decisión
+de la cola de curaduría: se asume la unidad canónica del producto).
+
+Decisión: el script de medición (`src/saimc/extraction/measure.py`) compara la unidad
+que propuso el motor de reglas contra `Product.unit` del producto que el operador
+confirmó, no contra un valor por fila. El propio whitepaper valida este enfoque
+(§12.5: «la respuesta correcta es acotar los productos bandera a aquellos con unidad
+de venta estable, no bajar el estándar»).
+
+Descartado: agregar `prices_history.unit` para tener verdad de terreno por fila.
+Habría exigido flujo completo de especificación por tocar esquema, para un dato que
+el propio whitepaper dice que debería ser estable por producto en Fase 0.
+
+Consecuencia: si un anuncio real usa una unidad distinta a la canónica del producto
+(ej. «docena» para huevos cuando el catálogo dice «unidad»), la métrica lo cuenta
+como extracción incorrecta aunque el motor haya leído bien el texto. Si esto se
+vuelve el cuello de botella real, la respuesta correcta —según el propio
+whitepaper— es ajustar el catálogo de productos bandera, no agregar la columna.

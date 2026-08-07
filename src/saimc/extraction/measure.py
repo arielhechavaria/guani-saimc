@@ -1,0 +1,244 @@
+"""Medición de H0 (whitepaper §3 y §12.5) contra la cola de curaduría real.
+
+Re-corre `propose()` sobre `original_text` de cada ingesta de texto ya curada
+y la compara contra lo que el operador confirmó en `prices_history`. La
+propuesta nunca influyó lo que quedó guardado en `prices_history` (la cola de
+curaduría solo la usa para prellenar el formulario, whitepaper §6.1): por eso
+la comparación mide extracción real y no un eco de sí misma.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from saimc.db import session_scope
+from saimc.extraction.engine import propose
+from saimc.models import (
+    ContentType,
+    PriceHistory,
+    ProcessingStatus,
+    Product,
+    Province,
+    RawIngestion,
+)
+
+
+@dataclass
+class H0Report:
+    """Resultado de una corrida de medición de H0 (whitepaper §12.5)."""
+
+    total_curated: int
+    total_discarded: int
+    total_processed: int
+    discard_rate: float | None
+    text_curated_count: int
+    image_curated_count: int
+    product_accuracy: float | None
+    price_accuracy: float | None
+    province_accuracy: float | None
+    quantity_unit_accuracy: float | None
+    complete_accuracy: float | None
+
+
+def _all_products(session: Session) -> list[Product]:
+    return list(session.execute(select(Product)).scalars().all())
+
+
+def _all_provinces(session: Session) -> list[Province]:
+    return list(session.execute(select(Province)).scalars().all())
+
+
+def _curated_text_ingestions(session: Session) -> list[RawIngestion]:
+    """Ingestas curadas de texto con `original_text` no vacío: universo de las
+    cinco métricas de extracción. Las imágenes quedan fuera porque en este
+    slice no hay OCR y por ende no hubo propuesta que evaluar.
+    """
+    stmt = select(RawIngestion).where(
+        RawIngestion.processing_status == ProcessingStatus.CURATED,
+        RawIngestion.content_type == ContentType.TEXT,
+        RawIngestion.original_text.is_not(None),
+        RawIngestion.original_text != "",
+    )
+    return list(session.execute(stmt).scalars().all())
+
+
+def _price_history_by_source(session: Session) -> dict[uuid.UUID, PriceHistory]:
+    """Mapa `source_id -> PriceHistory`. Hay una sola fila por `source_id`
+    por diseño de la cola de curaduría (un `raw_ingestion` produce a lo sumo
+    una confirmación).
+    """
+    rows = session.execute(select(PriceHistory)).scalars().all()
+    return {row.source_id: row for row in rows}
+
+
+def _quantity_unit_correct(
+    proposal_quantity: Decimal | None,
+    proposal_unit: str | None,
+    confirmed_quantity: Decimal | None,
+    confirmed_product: Product | None,
+) -> bool:
+    """Cantidad Y unidad, en el sentido del whitepaper §12.5.
+
+    La unidad no se persiste por fila en `prices_history` (decisión ya
+    tomada, ver `curation.py`): se compara la unidad propuesta contra la
+    unidad canónica del producto CONFIRMADO, no del propuesto, porque es
+    contra esa unidad que el precio confirmado realmente se interpreta.
+
+    `propose()` extrae cantidad y unidad como un solo par (`_extract_quantity`
+    en `engine.py`): nunca hay unidad sin cantidad ni cantidad sin unidad. Por
+    eso, cuando no se propuso unidad, no hay nada que comparar contra el
+    producto confirmado — la única forma de que ese caso cuente como correcto
+    es que el operador tampoco haya confirmado cantidad (None == None, el
+    mismo criterio que usa la comparación de cantidad).
+    """
+    quantity_matches = proposal_quantity == confirmed_quantity
+    if proposal_unit is None:
+        unit_matches = confirmed_quantity is None
+    else:
+        confirmed_unit = confirmed_product.unit if confirmed_product is not None else None
+        unit_matches = proposal_unit == confirmed_unit
+    return quantity_matches and unit_matches
+
+
+def compute_h0_report(session: Session) -> H0Report:
+    """Calcula el reporte de H0 re-corriendo `propose()` sobre lo ya curado."""
+    total_curated = session.execute(
+        select(RawIngestion).where(RawIngestion.processing_status == ProcessingStatus.CURATED)
+    ).scalars().all()
+    total_discarded = session.execute(
+        select(RawIngestion).where(RawIngestion.processing_status == ProcessingStatus.DISCARDED)
+    ).scalars().all()
+
+    total_curated_count = len(total_curated)
+    total_discarded_count = len(total_discarded)
+    total_processed = total_curated_count + total_discarded_count
+    discard_rate = (
+        total_discarded_count / total_processed if total_processed > 0 else None
+    )
+
+    image_curated_count = sum(
+        1 for ingestion in total_curated if ingestion.content_type == ContentType.IMAGE
+    )
+
+    text_ingestions = _curated_text_ingestions(session)
+    text_curated_count = len(text_ingestions)
+
+    if text_curated_count == 0:
+        return H0Report(
+            total_curated=total_curated_count,
+            total_discarded=total_discarded_count,
+            total_processed=total_processed,
+            discard_rate=discard_rate,
+            text_curated_count=0,
+            image_curated_count=image_curated_count,
+            product_accuracy=None,
+            price_accuracy=None,
+            province_accuracy=None,
+            quantity_unit_accuracy=None,
+            complete_accuracy=None,
+        )
+
+    products = _all_products(session)
+    provinces = _all_provinces(session)
+    history_by_source = _price_history_by_source(session)
+
+    products_by_id = {product.id: product for product in products}
+
+    product_correct = 0
+    price_correct = 0
+    province_correct = 0
+    quantity_unit_correct = 0
+    complete_correct = 0
+
+    for ingestion in text_ingestions:
+        confirmed = history_by_source[ingestion.id]
+        proposal = propose(ingestion.original_text, products, provinces)
+
+        confirmed_product = products_by_id.get(confirmed.product_id)
+
+        is_product_ok = (
+            proposal.product is not None and proposal.product.id == confirmed.product_id
+        )
+        is_price_ok = (
+            proposal.price == confirmed.price and proposal.currency == confirmed.currency
+        )
+        proposed_province_id = proposal.province.id if proposal.province is not None else None
+        is_province_ok = proposed_province_id == confirmed.province_id
+        is_quantity_unit_ok = _quantity_unit_correct(
+            proposal.quantity, proposal.unit, confirmed.quantity, confirmed_product
+        )
+
+        if is_product_ok:
+            product_correct += 1
+        if is_price_ok:
+            price_correct += 1
+        if is_province_ok:
+            province_correct += 1
+        if is_quantity_unit_ok:
+            quantity_unit_correct += 1
+        if is_product_ok and is_price_ok and is_province_ok and is_quantity_unit_ok:
+            complete_correct += 1
+
+    return H0Report(
+        total_curated=total_curated_count,
+        total_discarded=total_discarded_count,
+        total_processed=total_processed,
+        discard_rate=discard_rate,
+        text_curated_count=text_curated_count,
+        image_curated_count=image_curated_count,
+        product_accuracy=product_correct / text_curated_count,
+        price_accuracy=price_correct / text_curated_count,
+        province_accuracy=province_correct / text_curated_count,
+        quantity_unit_accuracy=quantity_unit_correct / text_curated_count,
+        complete_accuracy=complete_correct / text_curated_count,
+    )
+
+
+# Umbral real de H0 (whitepaper §3): la medición no es oficial por debajo de
+# 300 anuncios etiquetados a mano.
+_H0_MINIMUM_SAMPLE = 300
+
+
+def _format_pct(value: float | None) -> str:
+    return "sin datos" if value is None else f"{value:.1%}"
+
+
+def _print_report(report: H0Report) -> None:
+    print("=== Medición de H0 (whitepaper §12.5) ===")
+    print(f"Procesados totales:      {report.total_processed}")
+    print(f"  Curados:               {report.total_curated}")
+    print(f"  Descartados:           {report.total_discarded}")
+    print(f"  Tasa de descarte:      {_format_pct(report.discard_rate)}")
+    print()
+    print(f"Curados de texto:        {report.text_curated_count}")
+    print(f"Curados de imagen:       {report.image_curated_count} (informativo, sin OCR)")
+    print()
+    print(f"Precisión de producto:        {_format_pct(report.product_accuracy)}")
+    print(f"Precisión de precio:          {_format_pct(report.price_accuracy)}")
+    print(f"Precisión de provincia:       {_format_pct(report.province_accuracy)}")
+    print(f"Precisión de cantidad/unidad: {_format_pct(report.quantity_unit_accuracy)}")
+    print(f"Extracción completa correcta: {_format_pct(report.complete_accuracy)}")
+
+    if report.text_curated_count < _H0_MINIMUM_SAMPLE:
+        print()
+        print(
+            f"AVISO: solo hay {report.text_curated_count} anuncios de texto curados "
+            f"(umbral H0: {_H0_MINIMUM_SAMPLE}). Este número todavía NO es la medición "
+            "oficial de H0."
+        )
+
+
+def main() -> None:
+    """Punto de entrada: `python -m saimc.extraction.measure`."""
+    with session_scope() as session:
+        report = compute_h0_report(session)
+    _print_report(report)
+
+
+if __name__ == "__main__":
+    main()
