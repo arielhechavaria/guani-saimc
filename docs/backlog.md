@@ -18,16 +18,6 @@ se saca de acá y su motivo queda en `decisions.md` si ameritó una decisión.
 
 ---
 
-## Conectar OCR a la cola de curaduría
-
-Por qué importa: 16 de los 17 elementos pendientes hoy son imágenes. Sin OCR,
-`original_text` queda vacío y el motor de reglas no tiene nada de qué
-proponer — cada imagen se completa 100% a mano, sin la asistencia que el
-whitepaper describe como el instrumento de medición (§6.1). Tesseract ya está
-instalado y probado contra las primeras 11 capturas reales.
-
-Bloqueado por: nada. Es el siguiente slice.
-
 ## Revisar el diccionario de abreviaturas de provincia contra uso real
 
 Por qué importa: el diccionario en `extraction/engine.py` es una estimación

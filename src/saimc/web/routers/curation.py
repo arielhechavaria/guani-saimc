@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
+from saimc.extraction import ocr
 from saimc.extraction.engine import ExtractionProposal, propose
 from saimc.models import (
     ContentType,
@@ -47,6 +48,7 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "unit": "",
             "province_id": "",
             "source_reference": "",
+            "original_text": "",
         }
     return {
         "product_id": str(proposal.product.id) if proposal.product else "",
@@ -56,6 +58,7 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         "unit": proposal.unit or "",
         "province_id": str(proposal.province.id) if proposal.province else "",
         "source_reference": "",
+        "original_text": "",
     }
 
 
@@ -105,25 +108,38 @@ def _render_queue(
 
 @router.get("/curation", response_class=HTMLResponse)
 def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    """Muestra el elemento `pending` más antiguo, con propuesta pre-llenada si hay texto."""
+    """Muestra el elemento `pending` más antiguo, con propuesta pre-llenada si hay texto.
+
+    Para imágenes sin `original_text` (el caso normal: el OCR no corre en la
+    ingesta), se transcribe acá mismo para tener un texto candidato con el que
+    correr `propose()` — el mismo camino que ya usan los ítems de texto. El
+    operador ve ese texto en un campo editable y lo confirma o corrige al curar.
+    """
     ingestion = _oldest_pending(db)
     products = _all_products(db)
     provinces = _all_provinces(db)
 
     proposal = None
-    if (
-        ingestion is not None
-        and ingestion.content_type == ContentType.TEXT
-        and ingestion.original_text
-    ):
-        proposal = propose(ingestion.original_text, products, provinces)
+    recognized_text = ""
+    if ingestion is not None and ingestion.content_type == ContentType.TEXT:
+        if ingestion.original_text:
+            proposal = propose(ingestion.original_text, products, provinces)
+    elif ingestion is not None and ingestion.original_text is None:
+        # content_type == IMAGE acá (el único otro valor posible).
+        settings = get_settings()
+        recognized_text = ocr.transcribe(settings.raw_store_dir / ingestion.file_path)
+        if recognized_text:
+            proposal = propose(recognized_text, products, provinces)
+
+    values = _values_from_proposal(proposal)
+    values["original_text"] = recognized_text
 
     return _render_queue(
         request,
         ingestion=ingestion,
         products=products,
         provinces=provinces,
-        values=_values_from_proposal(proposal),
+        values=values,
         error=None,
     )
 
@@ -183,6 +199,7 @@ def submit_curation(
     unit: str = Form(""),
     province_id: str = Form(""),
     source_reference: str = Form(""),
+    original_text: str = Form(""),
 ) -> HTMLResponse | RedirectResponse:
     """Confirma la curaduría: crea la fila de `prices_history` y marca `curated`.
 
@@ -218,6 +235,7 @@ def submit_curation(
                 "unit": unit,
                 "province_id": province_id,
                 "source_reference": source_reference,
+                "original_text": original_text,
             },
             error=" ".join(errors),
             status_code=422,
@@ -244,6 +262,15 @@ def submit_curation(
     # inmutabilidad de `raw_ingestions` (ver docstring del modelo).
     if source_reference:
         ingestion.source_reference = source_reference
+
+    # Mismo criterio para `original_text` en imágenes: nulo en la ingesta a
+    # propósito (el OCR no corre ahí), lo completa el operador al confirmar
+    # la transcripción en la curaduría (ver docstring del modelo). Para texto,
+    # `original_text` YA es la evidencia pegada; este campo del form no la
+    # reemplaza.
+    if ingestion.content_type == ContentType.IMAGE and original_text:
+        ingestion.original_text = original_text
+
     ingestion.processing_status = ProcessingStatus.CURATED
 
     db.commit()

@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
+from saimc.extraction import ocr
 from saimc.models import (
     ContentType,
     PriceHistory,
@@ -143,19 +144,56 @@ class TestCurationQueueGet:
         assert 'value="500"' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
-    def test_formulario_vacio_para_imagen(
-        self, client: TestClient, session: Session
+    def test_formulario_vacio_si_el_ocr_no_reconoce_nada(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Sin OCR en este slice: una imagen no propone nada (límite conocido)."""
         _crear_producto(session)
         _crear_raw_ingestion(
             session, hash_="hash-imagen-1", content_type=ContentType.IMAGE
         )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
 
         response = client.get("/curation")
 
         assert response.status_code == 200
         assert 'value=""' in response.text
+
+    def test_imagen_muestra_texto_reconocido_prellenado_y_propuesta(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """El texto que el OCR reconoce se usa para `propose()` (mismo camino que texto)."""
+        producto = _crear_producto(session, name="Pollo", aliases=["pollo congelado"])
+        provincia = _crear_provincia(session, code="hab", name="La Habana")
+        _crear_raw_ingestion(
+            session, hash_="hash-imagen-ocr-1", content_type=ContentType.IMAGE
+        )
+        monkeypatch.setattr(
+            ocr, "transcribe", lambda path, lang="spa": "pollo a 500 habana"
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "pollo a 500 habana" in response.text
+        assert f'value="{producto.id}" selected' in response.text
+        assert f'value="{provincia.id}" selected' in response.text
+
+    def test_texto_no_llama_al_ocr(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_producto(session)
+        _crear_raw_ingestion(
+            session, hash_="hash-texto-sin-ocr", original_text="pollo a 500"
+        )
+
+        def _fallar_si_se_llama(path, lang="spa"):
+            raise AssertionError("no debería llamarse al OCR para content_type text")
+
+        monkeypatch.setattr(ocr, "transcribe", _fallar_si_se_llama)
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
 
 
 # --- POST /curation/{id} -----------------------------------------------------
@@ -236,6 +274,57 @@ class TestCurationSubmit:
         assert refrescado is not None
         assert refrescado.processing_status == ProcessingStatus.PENDING
         assert list(session.execute(select(PriceHistory)).scalars()) == []
+
+    def test_original_text_no_vacio_en_imagen_actualiza_tras_curar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-post-imagen-ocr", content_type=ContentType.IMAGE
+        )
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "product_id": str(producto.id),
+                "price": "450",
+                "original_text": "pollo a 450",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        refrescado = session.get(RawIngestion, ingestion.id)
+        assert refrescado is not None
+        assert refrescado.original_text == "pollo a 450"
+
+    def test_original_text_en_item_de_texto_no_pisa_el_original(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El texto original de un ítem de texto es la evidencia pegada: no se reemplaza."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-post-texto-no-pisa", original_text="texto pegado original"
+        )
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "product_id": str(producto.id),
+                "price": "450",
+                "original_text": "texto que el operador no debería poder pisar",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        refrescado = session.get(RawIngestion, ingestion.id)
+        assert refrescado is not None
+        assert refrescado.original_text == "texto pegado original"
 
     def test_ingestion_inexistente_devuelve_404(self, client: TestClient) -> None:
         response = client.post(

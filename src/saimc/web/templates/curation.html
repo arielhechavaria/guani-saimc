@@ -29,6 +29,13 @@
   <section>
     <h2>Datos del anuncio</h2>
     <form method="post" action="/curation/{{ ingestion.id }}">
+      {% if ingestion.content_type == "image" %}
+      <div>
+        <label for="original_text">Texto reconocido (OCR)</label>
+        <textarea name="original_text" id="original_text" rows="6" cols="60">{{ values.original_text }}</textarea>
+      </div>
+      {% endif %}
+
       <div>
         <label for="product_id">Producto</label>
         <select name="product_id" id="product_id">

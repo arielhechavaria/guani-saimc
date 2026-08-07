@@ -262,3 +262,34 @@ Consecuencia: si un anuncio real usa una unidad distinta a la canónica del prod
 como extracción incorrecta aunque el motor haya leído bien el texto. Si esto se
 vuelve el cuello de botella real, la respuesta correcta —según el propio
 whitepaper— es ajustar el catálogo de productos bandera, no agregar la columna.
+
+---
+
+## 2026-08-07 — OCR conectado a la cola de curaduría, en la curaduría y no en la ingesta
+
+Contexto: 16 de los 17 elementos pendientes eran imágenes, sin `original_text` y por
+ende sin propuesta del motor de reglas — el formulario salía en blanco (ver
+`docs/backlog.md`, ítem removido con este slice). El whitepaper (§6.1, «Rol del OCR»)
+ya ubica el OCR como asistente de la cola de curaduría, explícitamente fuera de la
+ingesta.
+
+Decisión: `saimc.extraction.ocr.transcribe()` (Tesseract vía `pytesseract`, idioma
+`spa`) corre recién en `GET /curation`, sobre la imagen del elemento `pending` que se
+está mostrando — no en `python -m saimc.ingestion`. El texto reconocido alimenta
+`propose()` igual que ya hacía el texto pegado, y se muestra en un campo editable. Al
+confirmar la curaduría, ese texto (tal cual o corregido por el operador) se escribe en
+`raw_ingestion.original_text`, que hasta ese momento es `None` a propósito. Mismo
+criterio ya usado con `source_reference`: completar un campo nullable durante la
+curaduría no viola la inmutabilidad de `raw_ingestions` — lo que nunca se toca es la
+evidencia capturada (`file_path`, `content_hash`, `captured_at`, `content_type`).
+Fallos esperables del OCR (binario ausente, archivo inexistente, imagen corrupta)
+degradan a texto vacío en vez de romper la cola; cualquier otro error se propaga.
+
+Descartado: correr OCR en la ingesta y guardar el resultado ahí mismo. Contradice el
+whitepaper explícitamente, y mezclaría en una fila inmutable un dato que todavía nadie
+confirmó.
+
+Consecuencia: cada `GET /curation` sobre una imagen pendiente ejecuta Tesseract en el
+momento — sin caché, sin cola de trabajos (decisión 3 de CLAUDE.md, todavía sin
+justificación de volumen real para romperla). Aceptable para un solo operador con
+curaduría de a un elemento por vez; si el volumen lo justifica, se revisita.
