@@ -1,9 +1,9 @@
 """Raw Layer — el registro crudo inmutable.
 
-Corresponde a la tabla definida en `docs/whitepaper.md` §7.1 (líneas 1058-1077).
+Corresponde a la tabla definida en `docs/whitepaper.md` §7.1 (Raw Layer).
 Se escribe una vez. No se modifica ni se elimina: es la base de la Transparency
 Layer, porque el anuncio que respalda cada precio publicado es literalmente el
-archivo capturado (whitepaper línea 437).
+archivo capturado (whitepaper §6.1, Etapa 1).
 """
 
 import uuid

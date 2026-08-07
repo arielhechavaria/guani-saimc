@@ -2,11 +2,41 @@
 
 ## Investor & Technical Whitepaper
 
-### Versión 3.4 – Curaduría Primero: Validar la Hipótesis Antes de Automatizar
+### Versión 3.5 – Densidad Antes que Cobertura: Publicar Solo lo que Resiste
 
 **Autor:** Ariel Hechavarria
 **Fecha:** Agosto 2026  
 **Estado:** Propuesta para Inversión / Implementación — Entrando en desarrollo
+
+---
+
+## Cambios respecto a la versión 3.4
+
+Esta versión incorpora el resultado de una revisión del estado del arte. No modifica
+la visión, el modelo de negocio ni la arquitectura. Corrige una premisa falsa, agrega
+un riesgo que faltaba, y convierte dos supuestos implícitos en restricciones duras.
+
+1. **Posicionamiento frente a elTOQUE reescrito** (sección 5). La diferenciación
+   anterior se apoyaba en la opacidad metodológica del competidor. La metodología de
+   la TRMI es pública. La diferenciación se reconstruye sobre ejes verificables:
+   objeto medido, granularidad, y la naturaleza del problema técnico.
+2. **Dependencia de tipo de cambio declarada** (secciones 5 y 6.3). SAIMC consume una
+   referencia de tipo de cambio informal para normalizar precios entre monedas y no
+   pretende producirla. Antes esto era un supuesto tácito; ahora es una dependencia
+   externa con política de degradación y fuente de respaldo.
+3. **Nuevo riesgo 10.7: manipulación adversarial de las series.** Existe un modelo de
+   ataque públicamente articulado contra el sistema metodológicamente más cercano.
+   SAIMC es estructuralmente más vulnerable. Cuatro contramedidas, con alcance
+   declarado: elevar el costo del ataque y detectarlo, no alcanzar inmunidad.
+4. **Umbral de densidad como condición de publicación** (sección 9). La
+   sobreextensión geográfica es una causa documentada de fracaso en sistemas de
+   información de mercado. Una provincia se publica cuando su densidad de datos lo
+   sostiene, no cuando el calendario lo indica.
+5. **Política de publicación metodológica** (sección 6.4.1). Se publica todo, con una
+   única reserva declarada: los parámetros de la capa de detección de coordinación.
+   Esto **acota** el principio de Transparencia Radical; no lo aclara.
+6. **Parámetros pendientes de calibración** (sección 12.6). Los umbrales nuevos no se
+   inventan: se miden sobre el primer despliegue.
 
 ---
 
@@ -36,6 +66,7 @@ Esta versión no modifica la visión ni el modelo de negocio. Corrige una **inco
    - 6.2 Validation Engine  
    - 6.3 Intelligence Engine  
    - 6.4 Transparency Layer  
+     - 6.4.1 Política de publicación metodológica  
    - 6.5 Data Lineage Framework  
    - 6.6 Marketplace Intelligence Graph  
    - 6.7 Diseño de Interfaces y Visualización de Datos (NUEVO)  
@@ -128,6 +159,10 @@ Cada dato mantiene una relación directa con su fuente original:
 - nivel de confianza.
 
 El usuario puede conocer no solamente el resultado, sino también cómo fue generado.
+
+Este principio tiene una excepción acotada y declarada: los parámetros de la capa de
+detección de coordinación no se publican. El alcance exacto de la reserva y su motivo
+están en la sección 6.4.1.
 
 ---
 
@@ -304,9 +339,10 @@ A diferencia de lo que plantea el modelo conceptual genérico, el mercado cubano
 
 ## Mapa de competidores actuales
 
-| Competidor | Enfoque | Modelo de Negocio | Fortaleza | Debilidad para SAIMC |
+| Competidor | Enfoque | Modelo de Negocio | Fortaleza | Dónde queda el espacio para SAIMC |
 | :--- | :--- | :--- | :--- | :--- |
-| **El Toque Markets** | Precios reales de productos, combustible, pasarelas de pago y márgenes comerciales. | Suscripción internacional (Tropipay) + vía local. | **Ya cobra.** Tiene equipo mixto (técnico + periodístico) y supervisión académica (Pavel Vidal). | Caja negra: no muestra fuentes originales. Interfaz funcional pero no visualmente intuitiva. |
+| **elTOQUE — TRMI** | Tipo de cambio informal: una serie por moneda. | Medio de prensa; API para terceros. | Referencia de facto del mercado. Metodología pública y validada académicamente. | **No mide bienes.** Es infraestructura aguas arriba, no competencia. |
+| **elTOQUE Markets** | Precios de productos, combustible, pasarelas de pago y márgenes. | Suscripción internacional (Tropipay) + vía local. | **Ya cobra.** Equipo mixto (técnico + periodístico) y supervisión académica (Pavel Vidal). | No expone el anuncio original detrás de cada precio ni el linaje del dato. Sin capa predictiva. |
 | **CiberCuba Índice** | Precios barriendo miles de anuncios de Telegram/Facebook. | Publicidad / Gratuito. | **Validación automática anti-spam** en producción (similar a nuestro Validation Engine). | No transparenta el proceso de descarte. Sin enfoque B2B predictivo. |
 | **A Ver Que Sale** | Comparador de precios en comercio formal (>100 tiendas). | Afiliación / Tráfico. | Catálogo masivo de productos formales. | No cubre mercado informal ni predicciones. |
 
@@ -314,15 +350,110 @@ A diferencia de lo que plantea el modelo conceptual genérico, el mercado cubano
 
 ## Posicionamiento diferencial de SAIMC
 
-| Atributo | El Toque Markets | CiberCuba | A Ver Que Sale | **SAIMC** |
+| Atributo | elTOQUE Markets | CiberCuba | A Ver Que Sale | **SAIMC** |
 | :--- | :--- | :--- | :--- | :--- |
 | **Mercado objetivo** | Consumidor final + comerciante | Consumidor general | Comprador online | **Hogares + B2B + Investigadores** |
 | **Fuente de datos** | Interna / Mixta | Scraping público | Scraping formal | **Comunitaria + Scraping + Operador** |
-| **Transparencia** | Opaca (no muestra origen) | Opaca | Transparente (tienda) | **Radical (anuncio original visible)** |
-| **Validación** | Interna | Automática (caja negra) | Directa de tienda | **Reglas públicas + Reputación + Lógica de negocio abierta** |
+| **Trazabilidad del dato** | No expone el anuncio de origen | No expone el anuncio de origen | Directa de tienda | **Radical (anuncio original visible)** |
+| **Validación** | Interna | Automática, proceso de descarte no publicado | Directa de tienda | **Reglas públicas + Reputación + Lógica de negocio abierta** |
 | **Valor principal** | Precio actual y margen | Precio actual | Precio formal | **Predicción + Riesgo + Dataset histórico** |
 | **Visualización** | Funcional / Tablas | Listados | Catálogo | **Mapas, semáforos, tarjetas intuitivas** |
 | **Modelo de ingresos** | Suscripción | Publicidad | Afiliación | **Freemium + API + Datasets** |
+
+El eje de diferenciación es la **trazabilidad por dato**, no la apertura metodológica.
+La distinción importa y la sección siguiente la desarrolla.
+
+---
+
+## Posicionamiento frente a elTOQUE
+
+elTOQUE opera desde 2021 la Tasa Representativa del Mercado Informal (TRMI), la
+referencia de facto para el valor del peso cubano frente a divisas. Su metodología es
+pública: recolección automatizada de anuncios de compra y venta en redes sociales
+mediante bots, procesamiento con herramientas de NLP, cálculo por mediana sobre ventana
+de 24 horas con filtrado de valores extremos, y promedio móvil exponencial para monedas
+de baja densidad de datos.
+
+**SAIMC no se diferencia por transparencia metodológica.** Esa afirmación sería falsa y
+comprobable en minutos. La diferenciación es de objeto, de granularidad y de naturaleza
+técnica del problema.
+
+Queda en pie una diferencia distinta y más precisa: **la trazabilidad por dato**. Que la
+metodología sea pública no implica que cada precio publicado sea rastreable hasta el
+anuncio que lo originó. Eso —el Data Lineage Framework de la sección 6.5 y la
+Transparency Layer de la 6.4— sigue siendo propio de SAIMC. La afirmación defendible no
+es «ellos son opacos», es «nosotros mostramos la evidencia de cada celda».
+
+### Ejes de diferenciación
+
+| Eje | elTOQUE (TRMI) | SAIMC |
+| :--- | :--- | :--- |
+| Objeto medido | Divisas: un valor por moneda | Bienes de consumo: matriz producto × provincia |
+| Cardinalidad de salida | ~5 series | Cientos de series simultáneas |
+| Granularidad geográfica | Nacional | Provincial |
+| Homogeneidad del bien | Alta: un dólar es un dólar | Baja: «aceite» abarca decenas de presentaciones |
+| Densidad de datos por serie | Alta: cientos de anuncios diarios | Baja y desigual entre provincias |
+| Problema técnico dominante | Extracción de intención y valor | Extracción **más resolución de entidades** |
+| Trazabilidad de la salida | Metodología pública, dato individual no expuesto | Anuncio original visible detrás de cada precio |
+| Modelo de apertura | Metodología pública, implementación cerrada | Código, esquema y datos agregados abiertos |
+
+### El problema técnico es de otra clase
+
+La diferencia de fondo no es de escala sino de tipo. La TRMI resuelve un problema de
+**extracción**: identificar en un mensaje si hay intención de compra o venta, qué moneda
+y qué valor. El bien subyacente es perfectamente homogéneo y no requiere normalización.
+
+SAIMC enfrenta ese mismo problema **más uno adicional que la TRMI no tiene**: la
+resolución de entidades. Un anuncio de «aceite girasol 1L marca X» y otro de «aceite
+900ml» deben resolverse a una misma unidad comparable, o a unidades distintas declaradas
+como tales, antes de que cualquier estadística sea válida. Esto implica normalización de
+unidades, agrupamiento de presentaciones equivalentes, y decisiones explícitas de
+comparabilidad que la medición de tipo de cambio nunca necesita tomar.
+
+Esa capa de normalización es el núcleo técnico de SAIMC y el activo transferible del
+proyecto. Es también la razón por la que H0 (sección 3) es la hipótesis crítica: mide
+exactamente esa capacidad.
+
+### Relación de complementariedad, no de sustitución
+
+Los anuncios del mercado informal cubano se expresan en múltiples monedas —CUP, USD,
+EUR, MLC— con frecuencia dentro del mismo canal y a veces dentro del mismo mensaje.
+Cualquier serie de precios comparable en el tiempo requiere una base monetaria común, y
+por tanto un tipo de cambio informal de referencia.
+
+SAIMC **consume** esa referencia; no la produce ni pretende producirla. elTOQUE publica
+una API para acceso a la TRMI por terceros, lo que la convierte en infraestructura
+aguas arriba del pipeline de SAIMC.
+
+Esto tiene tres consecuencias que el diseño debe reconocer explícitamente:
+
+1. **Dependencia declarada.** La normalización monetaria de SAIMC hereda las propiedades
+   estadísticas y los riesgos de disponibilidad de su fuente de tipo de cambio. Debe
+   estar documentada como dependencia externa, con política de degradación definida
+   (última tasa conocida, ventana de validez máxima, marcado explícito de series
+   calculadas con tasa vencida).
+2. **Redundancia obligatoria.** Una dependencia crítica de una sola fuente externa es un
+   punto único de fallo. El diseño debe contemplar al menos una fuente alternativa de
+   tipo de cambio, aunque en operación normal se privilegie la TRMI.
+3. **Atribución.** Toda serie derivada que use la TRMI como base de conversión debe
+   atribuirla visiblemente.
+
+La implementación de esta dependencia está en la sección 6.3, componente E.
+
+### Riesgo de coordinación
+
+La adopción de una referencia de precios es un problema de punto focal: el valor de la
+referencia crece con el número de actores que la usan, lo que tiende a producir
+concentración en un único proveedor por categoría. elTOQUE alcanzó esa posición para
+divisas.
+
+SAIMC opera en una categoría distinta y hoy desatendida, pero el mismo mecanismo aplica:
+el primero en alcanzar credibilidad y adopción suficientes en inteligencia de precios de
+bienes tenderá a consolidarse. **La ventana no es indefinida**, y la variable crítica no
+es la calidad técnica sino la adopción temprana en un nicho suficientemente acotado como
+para alcanzarla.
+
+De ahí la estrategia de lanzamiento por provincias descrita en la sección 9.
 
 ---
 
@@ -330,7 +461,7 @@ A diferencia de lo que plantea el modelo conceptual genérico, el mercado cubano
 
 > **SAIMC no es "otro agregador de precios". Es la primera infraestructura abierta de inteligencia predictiva para el mercado informal cubano, con trazabilidad total y foco en decisiones estratégicas B2B, pero que nace resolviendo la necesidad diaria del hogar cubano con una interfaz visual que cualquier persona puede entender en segundos.**
 
-Mientras El Toque Markets cobra por decir "cuánto cuesta hoy", SAIMC cobrará por decir "qué va a pasar mañana y por qué", mientras empodera al usuario común para decidir su compra del día a día con mapas y colores que saltan a la vista.
+Mientras elTOQUE Markets cobra por decir "cuánto cuesta hoy", SAIMC cobrará por decir "qué va a pasar mañana y por qué", mientras empodera al usuario común para decidir su compra del día a día con mapas y colores que saltan a la vista.
 
 ---
 
@@ -738,6 +869,37 @@ Motivo: Alta correlación USD informal
 
 ---
 
+#### E) Normalización Monetaria
+
+Los anuncios llegan en CUP, USD, EUR y MLC, a veces mezclados dentro del mismo canal.
+Una serie temporal comparable exige una base monetaria única. SAIMC adopta **CUP como
+moneda base de las series publicadas** y convierte el resto usando una referencia
+externa de tipo de cambio informal.
+
+**Esta es una dependencia externa declarada, no un detalle de implementación.** Las
+propiedades estadísticas y la disponibilidad de la fuente de tipo de cambio se heredan
+íntegras. El diseño la trata como tal:
+
+| Aspecto | Regla |
+| :--- | :--- |
+| Fuente primaria | TRMI de elTOQUE, vía su API pública |
+| Fuente de respaldo | Al menos una alternativa configurada; una sola fuente crítica es punto único de fallo |
+| Persistencia | Toda conversión guarda la tasa aplicada y su fecha junto al registro, no solo el resultado |
+| Degradación | Ante fuente no disponible: última tasa conocida, con ventana de validez máxima |
+| Tasa vencida | La serie se marca explícitamente como calculada con tasa fuera de ventana |
+| Atribución | Toda serie derivada de la TRMI la atribuye visiblemente |
+
+La regla de persistencia no es negociable: sin la tasa histórica almacenada, un cambio
+retroactivo en la fuente reescribe silenciosamente toda la serie y rompe la
+reproducibilidad que sostiene la sección 6.5.
+
+**Alcance en Fase 0.** Mientras los productos bandera se anuncien mayoritariamente en
+CUP, la conversión es un caso de borde y no bloquea nada. Lo que sí corresponde desde el
+primer modelo de datos es guardar moneda y tasa aplicada: agregarlas después obliga a
+reprocesar registros crudos.
+
+---
+
 ## 6.4 Transparency Layer
 
 La confianza es un producto.  
@@ -776,6 +938,72 @@ Resultado inteligente
               |
      Fuente original
 ```
+
+---
+
+### 6.4.1 Política de publicación metodológica
+
+#### Principio
+
+SAIMC adopta el principio de Kerckhoffs aplicado a la integridad metodológica: **el
+sistema debe resistir manipulación aunque toda su metodología sea pública.**
+
+Si la publicación de los umbrales de validación comprometiera la integridad de las
+series, el problema no estaría en la publicación sino en el diseño. La resistencia a
+manipulación proviene de la arquitectura descrita en la sección 10.7 —redundancia de
+fuentes, estimadores robustos, índice de control paralelo, umbrales mínimos de muestra—
+y no del desconocimiento de un parámetro.
+
+Esta decisión es además consistente con el nombre y el propósito del proyecto: un
+sistema abierto cuya metodología no es auditable no es abierto.
+
+#### Qué se publica
+
+Sin excepciones:
+
+- Fórmulas de agregación y cálculo de índice, con su justificación.
+- Umbrales de validación y de densidad mínima, con los valores vigentes.
+- Reglas del motor de validación (sección 6.2).
+- Criterios de normalización y agrupamiento de productos.
+- Ventanas temporales de cálculo y tasa de cambio aplicada.
+- Canales y tipos de fuente monitoreados, a nivel de categoría.
+- Métricas de calidad: precisión de extracción medida, volumen de observaciones
+  válidas, cobertura por provincia, tasa de rechazo del validador.
+- Código fuente del pipeline.
+- Datos agregados publicados, con su historial de versiones.
+
+#### Qué se reserva
+
+Únicamente los **parámetros específicos de la capa de detección de coordinación** (C4 de
+la sección 10.7): umbrales de sincronía, métricas de similitud textual, criterios de
+puntuación de fuentes sospechosas.
+
+La justificación es acotada y explícita: estas heurísticas son de naturaleza antifraude
+y su eficacia se degrada al publicarse, del mismo modo que ocurre con las reglas de
+detección de fraude en sistemas de pago o con los filtros antispam. No son parte de la
+metodología de medición: no intervienen en cómo se calcula un precio, solo en qué
+observaciones se marcan para revisión.
+
+**Esta reserva se declara públicamente, junto con su motivo.** SAIMC no oculta que
+existe una capa reservada; publica que existe, qué hace, y por qué sus parámetros no se
+exponen. La distinción entre «hay una capa antifraude cuyos parámetros no publico, y lo
+digo» y «no publico mi metodología» es sustantiva y debe quedar explícita.
+
+> **Nota sobre el principio 1.** Esta política **acota** la Transparencia Radical
+> declarada en el Posicionamiento Estratégico; no la aclara. Antes de la v3.5 el
+> compromiso era sin reservas. La reserva es defendible, pero es una reducción del
+> alcance y se registra como tal.
+
+#### Auditabilidad
+
+Los valores reservados se documentan internamente con el mismo rigor que los públicos y
+quedan disponibles para auditoría por terceros bajo acuerdo, sin publicación abierta.
+
+#### Revisión
+
+Esta política se revisa si aparece evidencia de que la reserva es insuficiente o
+excesiva. Cualquier ampliación del alcance de lo reservado requiere justificación
+documentada en `docs/decisions.md` y se anuncia públicamente.
 
 ---
 
@@ -1110,11 +1338,19 @@ product_id
 province_id
 price
 currency
+price_cup            -- valor normalizado a la moneda base
+exchange_rate        -- tasa aplicada; nula si currency = CUP
+exchange_rate_date   -- fecha de la tasa, no de la conversión
+exchange_rate_source -- proveedor de la tasa
 quantity
 source_id
 confidence_score
 created_at
 ```
+
+Los cuatro campos de conversión implementan la regla de persistencia de la sección 6.3,
+componente E: se guarda la tasa aplicada, no solo el resultado. Sin ellos, un cambio
+retroactivo en la fuente de tipo de cambio reescribe la serie histórica en silencio.
 
 Ejemplo:
 
@@ -1283,6 +1519,108 @@ El roadmap está diseñado para validar negocio antes de realizar grandes invers
 
 ---
 
+## 9.0 Política de cobertura geográfica
+
+### Evidencia que fundamenta la restricción
+
+La literatura sobre sistemas de información de mercado en países en desarrollo documenta
+un patrón repetido de fracaso en la primera generación de estos sistemas. Entre las
+causas recurrentes, cuatro son relevantes para SAIMC:
+
+1. Información imprecisa.
+2. Información entregada tarde respecto al momento de decisión del usuario.
+3. **Sobreextensión geográfica**: intentar cubrir demasiadas localidades y no cubrir
+   ninguna con calidad suficiente.
+4. Colapso al agotarse el financiamiento inicial.
+
+La tercera causa es la que SAIMC está en mayor riesgo de reproducir, porque la
+arquitectura permite técnicamente ingerir datos de todas las provincias desde el primer
+día. **Que sea técnicamente posible no lo hace correcto.** Una cobertura nacional con
+densidad insuficiente produce series ruidosas, vulnerables a manipulación (sección
+10.7), y destruye la credibilidad del sistema completo por el desempeño de sus celdas
+más débiles.
+
+### Restricción
+
+**Una provincia se publica únicamente cuando supera y sostiene el umbral de densidad
+mínima. No antes.**
+
+Condición de publicación por provincia:
+
+- Volumen diario de observaciones válidas por encima del umbral N (contramedida C1 de
+  la sección 10.7).
+- Sostenido durante un período mínimo continuo de observación.
+- Verificado sobre un conjunto mínimo de categorías de producto, no sobre el agregado
+  provincial. Una provincia con densidad suficiente en una sola categoría no cumple.
+
+Por debajo del umbral, la provincia permanece en **ingesta sin publicación**: los datos
+se recolectan y almacenan, la serie no se expone públicamente.
+
+> *Parámetros a fijar:* umbral N, período mínimo de sostenimiento, y número mínimo de
+> categorías. Se determinan con datos reales del primer despliegue. Ver sección 12.6.
+
+### Cómo se concilia con las Fases 0 y 1
+
+Aplicada literalmente desde el mes 1, esta restricción deja el dashboard vacío: con 500
+registros sobre 3–5 productos y 2 provincias, ninguna celda alcanza densidad estadística
+seria. Eso contradiría el criterio de la sección 3 según el cual **H0 no bloquea el
+lanzamiento del dashboard público.**
+
+La conciliación separa dos cosas que la restricción confunde:
+
+**La condición estadística rige desde el día 1.** Ninguna celda muestra un precio como
+titular sin respaldo de muestra. Por debajo del umbral, el dashboard muestra el estado
+«muestra en formación» con el número de observaciones a la vista, nunca un valor puntual
+presentado como medición consolidada. El estado gris «sin datos» del mapa (sección 6.7)
+ya contempla esta situación.
+
+**La condición adversarial rige desde la Fase 2.** Las contramedidas C1 y C4 existen
+contra manipulación deliberada, y en Fase 0–1 la barrera es distinta: hay un único
+operador humano curando cada registro contra su evidencia original. Inyectar datos
+falsos exige engañar a esa persona, no inundar una cola automática. La superficie de
+ataque aparece cuando se abre la ingesta comunitaria —exactamente el hito de la Fase
+2— y ahí el umbral pasa a ser bloqueante en sentido duro.
+
+Consecuencia práctica: **las Fases 0 y 1 son el período de calibración de N**, no el
+período en que N se aplica. Ese es además el único modo de fijarlo con evidencia en
+lugar de inventarlo.
+
+### Consecuencias de diseño
+
+**Fase de lanzamiento acotada.** El despliegue inicial cubre dos o tres provincias
+seleccionadas por densidad esperada de datos, no por importancia económica ni por
+cobertura representativa. La selección se justifica con datos de ingesta previos, no
+con supuestos.
+
+**El estado de cada provincia es público.** La interfaz muestra explícitamente qué
+provincias están publicadas y cuáles en ingesta sin publicación, con su progreso hacia
+el umbral. La ausencia de datos se comunica como decisión metodológica, no como falla.
+
+**El costo marginal por provincia adicional debe tender a cero.** La cuarta causa de
+fracaso documentada —colapso por agotamiento de financiamiento— se mitiga
+arquitectónicamente: si incorporar una provincia requiere trabajo manual significativo,
+el sistema no escala más allá del esfuerzo del equipo actual. **La incorporación de una
+provincia debe ser configuración, no desarrollo.** Esta es una restricción vinculante
+sobre el diseño de la tabla `provinces` y de todo lo que dependa de ella.
+
+**La expansión es dirigida por evidencia.** Una provincia se agrega cuando sus datos
+cumplen el umbral, no cuando el calendario lo indica. Los números de provincias que
+aparecen en las fases siguientes son **techos de ingesta, no metas de publicación.**
+
+### Nota sobre priorización de categorías
+
+La evidencia empírica sobre sistemas de información de mercado indica que el impacto se
+concentra donde existe fricción real: la reducción de dispersión de precios documentada
+en estos sistemas es mayor entre mercados separados por costos de transporte elevados.
+Donde un mercado ya está integrado, la información adicional produce poco efecto.
+
+Esto sugiere un criterio de priorización de categorías dentro de cada provincia:
+**medir la dispersión observada por categoría antes de decidir qué se destaca en el
+dashboard.** Las categorías de baja dispersión aportan poco valor al usuario y consumen
+la misma superficie de exposición y riesgo que las de alta dispersión.
+
+---
+
 ## Fase 0 — Fundación del Sistema (Mes 1)
 
 **Objetivo:** Construir la primera versión funcional con un alcance **extremadamente acotado** para evitar sobreingeniería.
@@ -1318,10 +1656,14 @@ El roadmap está diseñado para validar negocio antes de realizar grandes invers
 **Implementación:**
 - Dashboard público con mapa de calor de Cuba.
 - Tarjetas de producto con semáforos y recomendaciones.
-- Expansión a 10 productos y 5 provincias.
+- Expansión de la **ingesta** a 10 productos y 5 provincias.
 - Lanzamiento del **SAIMC Market Report** (primer producto pagador a $20).
 
 **Métrica de éxito principal:** **100 usuarios activos diarios** consultando el dashboard.
+
+**Cobertura publicada:** las 5 provincias son techo de ingesta. Cada celda muestra su
+tamaño de muestra, y las que no lo sostienen aparecen como «muestra en formación»
+(sección 9.0). Al cierre de la fase se fija N con los datos acumulados.
 
 ---
 
@@ -1331,9 +1673,14 @@ El roadmap está diseñado para validar negocio antes de realizar grandes invers
 
 **Activación:** Botón "Subir dato" para usuarios.  
 **Validation Engine:** Modo activo.  
-**Expansión:** 50 productos, 10 provincias.
+**Expansión de ingesta:** 50 productos, 10 provincias.
 
 **Objetivos:** 5.000 datos/mes, 500 usuarios registrados, 90% validación automática.
+
+**Hito de seguridad.** Abrir la ingesta comunitaria abre la superficie de ataque. Las
+contramedidas C1 a C4 de la sección 10.7 pasan a ser bloqueantes en esta fase, no en la
+anterior: ninguna celda por debajo de N produce valor publicado, y el índice de control
+paralelo debe estar operativo **antes** de habilitar el botón. No después.
 
 ---
 
@@ -1357,6 +1704,11 @@ El roadmap está diseñado para validar negocio antes de realizar grandes invers
 **Riesgo:** Usuarios introducen información falsa.  
 **Impacto:** Alto.  
 **Mitigación:** Capas múltiples de validación + reputación + detección de anomalías.
+
+**Alcance:** este riesgo cubre el error, el ruido y el spam comercial —fuentes
+independientes entre sí. La manipulación **deliberada y coordinada** es un problema
+distinto, más grave, y se trata aparte en la sección 10.7. Un adversario competente
+optimiza precisamente contra las mitigaciones enumeradas acá.
 
 ---
 
@@ -1402,6 +1754,119 @@ El roadmap está diseñado para validar negocio antes de realizar grandes invers
 4. **Consulta legal antes de la Etapa 3.** La transición a fuentes automáticas es el punto donde corresponde una revisión legal formal, no antes: en Etapa 1 y 2 el riesgo es marginal.
 
 **Nota estratégica:** este riesgo es la segunda razón —además de la validación de H0— por la que el modelo de curaduría primero es la decisión correcta. Permite construir producto, tracción y evidencia **antes** de asumir exposición legal.
+
+---
+
+## 10.7 Manipulación adversarial de las series
+
+Todo sistema que publique una referencia de precios con influencia sobre decisiones
+económicas se convierte en blanco de manipulación deliberada. Este riesgo es distinto y
+más grave que el ruido, el error de extracción o el spam comercial (sección 10.1),
+porque un adversario capaz optimiza precisamente contra los mecanismos de defensa
+conocidos.
+
+### El ataque a la medida de tendencia central
+
+El vector principal es directo y está descrito públicamente. Una medida de tendencia
+central calculada sobre anuncios de acceso abierto queda determinada por quien controle
+la mayoría de las observaciones de la muestra. En el caso de una mediana, controlar el
+50% más uno de las observaciones de una celda determina el valor publicado para esa
+celda.
+
+En diciembre de 2025, medios estatales cubanos difundieron un análisis de académicos de
+la Universidad de La Habana que aplicaba exactamente este razonamiento a la TRMI de
+elTOQUE, señalando que cuatro grupos de Telegram aportaban un promedio de 348 mensajes
+diarios con precios, más de la mitad de la muestra total del período examinado.
+Independientemente de la intención del análisis y de si el ataque llegó a ejecutarse,
+**el modelo de ataque descrito es técnicamente correcto y debe tratarse como amenaza
+activa.**
+
+### SAIMC es estructuralmente más vulnerable
+
+Dos propiedades del diseño lo hacen más expuesto que un sistema de tipo de cambio:
+
+**Superficie de ataque mayor.** Una tasa de cambio es un valor por moneda. SAIMC publica
+una matriz de producto × provincia. Cada celda es un blanco independiente, y un
+adversario puede concentrar recursos en las celdas de mayor valor —un producto sensible
+en una provincia específica— en lugar de tener que mover un agregado nacional.
+
+**Densidad de muestra menor.** La TRMI opera sobre cientos de observaciones diarias por
+moneda. Una celda de SAIMC en una provincia de baja actividad puede tener unidades de
+observaciones diarias. **El costo de manipular una celda de baja densidad es
+trivialmente bajo**: unos pocos anuncios coordinados bastan.
+
+De ahí que las contramedidas no puedan ser un añadido posterior. Son condición de
+publicación.
+
+### Contramedidas
+
+**C1 — Umbral mínimo de observaciones por celda.**
+Ninguna celda con menos de N observaciones válidas en la ventana de cálculo produce un
+valor publicado. En su lugar se publica explícitamente «datos insuficientes», o una
+estimación derivada de modelo con intervalo de confianza visible y marcada como
+estimada, nunca como observada. Publicar un valor puntual sobre una muestra mínima es
+simultáneamente un error estadístico y la vulnerabilidad más barata de explotar.
+
+> *Parámetro a fijar:* N debe determinarse empíricamente sobre datos reales de las
+> primeras provincias, no asumirse. Ver sección 12.6.
+
+**C2 — Estimadores robustos.**
+Mediana sobre media como medida de tendencia central; recorte de extremos previo al
+cálculo; MAD como criterio de detección de atípicos. Esto no detiene un ataque
+coordinado —ver C4— pero elimina el vector trivial de valores extremos aislados.
+
+**C3 — Índice de control paralelo.**
+Cálculo redundante de cada serie sobre un subconjunto restringido de fuentes de alta
+confianza: emisores con historial extenso, consistencia demostrada frente al consenso, y
+antigüedad mínima. La divergencia sostenida entre el índice principal y el de control es
+señal de manipulación del índice principal, y dispara revisión antes de publicación.
+
+El mecanismo tiene precedente operativo: elTOQUE mantiene una tasa alternativa calculada
+sobre aproximadamente 120 usuarios recurrentes identificados, precisamente como control
+de consistencia.
+
+**C4 — Detección de coordinación.**
+Las contramedidas C1 a C3 asumen fuentes ruidosas e independientes. Un ataque competente
+no genera atípicos: genera un desplazamiento coherente del centro de la distribución,
+indistinguible de un movimiento real de mercado si solo se examina la distribución de
+valores.
+
+La detección requiere señales ajenas al valor:
+
+- Sincronía temporal anómala entre publicaciones.
+- Similitud textual elevada entre anuncios de emisores distintos.
+- Concentración inusual del aporte por fuente o canal en una celda.
+- Sobrerrepresentación de cuentas de creación reciente.
+- Divergencia entre el precio anunciado y su histórico propio sin correlato en el resto
+  del mercado.
+
+Esta capa es de naturaleza antifraude y sus parámetros específicos se reservan de
+publicación, conforme a la política de la sección 6.4.1.
+
+### Cuándo se activan
+
+Las cuatro contramedidas se diseñan desde ahora, pero no todas bloquean desde el mes 1.
+
+| Contramedida | Fase 0–1 (curaduría de un operador) | Fase 2 en adelante (ingesta comunitaria) |
+| :--- | :--- | :--- |
+| C1 — umbral de muestra | Informativa: tamaño de muestra visible, sin titular de precio | **Bloqueante**: sin N, no hay valor publicado |
+| C2 — estimadores robustos | Activa desde el primer cálculo | Activa |
+| C3 — índice de control | No aplicable: no hay diversidad de emisores todavía | **Operativo antes** de habilitar el botón «subir dato» |
+| C4 — detección de coordinación | No aplicable | Activa |
+
+La razón es que en Fase 0–1 la barrera contra inyección de datos falsos es un operador
+humano que verifica cada registro contra su evidencia original. Ese es un control fuerte
+y además caro de atacar. Deja de existir cuando se abre la ingesta comunitaria, y ahí
+las contramedidas pasan a ser condición de publicación. Ver sección 9.0.
+
+### Alcance declarado
+
+Ninguna de estas medidas hace a SAIMC inmune. Un adversario con recursos suficientes y
+paciencia puede manipular cualquier sistema construido sobre datos de acceso abierto. El
+objetivo declarado es más modesto y verificable: **elevar el costo del ataque por encima
+del valor de manipular una celda, y detectar el ataque cuando ocurra.**
+
+Esa limitación se documenta explícitamente y no se presenta como resuelta.
 
 ---
 
@@ -1476,6 +1941,26 @@ La métrica que decide es **extracción completa correcta**: un registro con pre
 | Productos con forecasting |       300+ |
 | Alertas generadas         | 10.000/mes |
 | Precisión predictiva      |       >85% |
+
+---
+
+## 12.6 Parámetros pendientes de calibración
+
+La v3.5 introduce umbrales que gobiernan qué se publica y qué no. **Ninguno tiene valor
+asignado, y ninguno debe inventarse.** Se miden sobre el primer despliegue y se
+documentan en `docs/decisions.md` con la evidencia que los sustenta.
+
+| Parámetro | Dónde se usa | Cómo se determina |
+| :--- | :--- | :--- |
+| **N** — observaciones mínimas por celda | 10.7 (C1), 9.0 | Análisis de estabilidad de la mediana frente al tamaño de muestra, sobre datos reales |
+| Período mínimo de sostenimiento | 9.0 | Variabilidad observada del volumen diario por provincia |
+| Categorías mínimas por provincia | 9.0 | Cobertura observada tras el primer mes de ingesta |
+| Criterios de fuente de alta confianza | 10.7 (C3) | Antigüedad y consistencia histórica medidas, no supuestas |
+| Ventana de validez de la tasa de cambio | 6.3 (E) | Frecuencia real de actualización de la fuente primaria |
+
+Un umbral asignado por intuición y presentado como metodología es peor que no tener
+umbral: convierte una decisión arbitraria en una cifra con apariencia de evidencia.
+Hasta que exista la medición, el valor correcto de estos parámetros es «sin fijar».
 
 ---
 

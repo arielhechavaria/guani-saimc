@@ -94,7 +94,7 @@ class TestIngestInbox:
     def test_el_ocr_no_corre_en_la_ingesta(
         self, session: Session, inbox_dir: Path, store_dir: Path
     ) -> None:
-        """Whitepaper líneas 452-456: el OCR asiste a la curaduría, no al pipeline.
+        """Whitepaper §6.1 «Rol del OCR»: asiste a la curaduría, no al pipeline.
 
         Una imagen recién ingerida no tiene texto. Lo pone el operador cuando
         confirma o corrige la propuesta del OCR en la cola.

@@ -68,6 +68,7 @@ Qué hace la ingesta:
 - deja donde está lo que no reconoce, y lo reporta.
 
 El OCR **no** corre en la ingesta. Asiste a la cola de curaduría, donde el
-sistema propone y el operador confirma (whitepaper §6.1, líneas 452-456).
+sistema propone y el operador confirma (whitepaper §6.1, «Rol del OCR y la
+extracción asistida»).
 
 `inbox/` y `data/` no van a git: contienen datos personales de terceros.
