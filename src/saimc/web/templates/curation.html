@@ -37,15 +37,23 @@
       {% endif %}
 
       <div>
-        <label for="product_id">Producto</label>
-        <select name="product_id" id="product_id">
-          <option value="">— seleccionar —</option>
+        <label for="product_name">Producto</label>
+        <input type="text" name="product_name" id="product_name" list="products-list" value="{{ values.product_name }}" />
+        <datalist id="products-list">
           {% for product in products %}
-          <option value="{{ product.id }}" {% if values.product_id == product.id|string %}selected{% endif %}>
-            {{ product.name }}
-          </option>
+          <option value="{{ product.name }}"></option>
           {% endfor %}
-        </select>
+        </datalist>
+      </div>
+
+      <div>
+        <label for="product_category">Categoría (solo si es un producto nuevo)</label>
+        <input type="text" name="product_category" id="product_category" value="{{ values.product_category }}" />
+      </div>
+
+      <div>
+        <label for="product_unit">Unidad de producto (solo si es un producto nuevo)</label>
+        <input type="text" name="product_unit" id="product_unit" value="{{ values.product_unit }}" />
       </div>
 
       <div>

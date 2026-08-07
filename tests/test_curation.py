@@ -140,7 +140,7 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert f'value="{producto.id}" selected' in response.text
+        assert f'value="{producto.name}"' in response.text
         assert 'value="500"' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
@@ -175,7 +175,7 @@ class TestCurationQueueGet:
 
         assert response.status_code == 200
         assert "pollo a 500 habana" in response.text
-        assert f'value="{producto.id}" selected' in response.text
+        assert f'value="{producto.name}"' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
     def test_texto_no_llama_al_ocr(
@@ -209,7 +209,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "product_id": str(producto.id),
+                "product_name": producto.name,
                 "price": "450",
                 "currency": "CUP",
                 "quantity": "2",
@@ -238,14 +238,14 @@ class TestCurationSubmit:
         assert precio.confidence_score is None
         assert precio.price_cup is None
 
-    def test_sin_product_id_no_crea_fila_ni_cambia_estado(
+    def test_sin_product_name_no_crea_fila_ni_cambia_estado(
         self, client: TestClient, session: Session
     ) -> None:
         ingestion = _crear_raw_ingestion(session, hash_="hash-post-sin-producto")
 
         response = client.post(
             f"/curation/{ingestion.id}",
-            data={"product_id": "", "price": "100"},
+            data={"product_name": "", "price": "100"},
         )
 
         assert response.status_code == 422
@@ -264,7 +264,7 @@ class TestCurationSubmit:
 
         response = client.post(
             f"/curation/{ingestion.id}",
-            data={"product_id": str(producto.id), "price": ""},
+            data={"product_name": producto.name, "price": ""},
         )
 
         assert response.status_code == 422
@@ -274,6 +274,82 @@ class TestCurationSubmit:
         assert refrescado is not None
         assert refrescado.processing_status == ProcessingStatus.PENDING
         assert list(session.execute(select(PriceHistory)).scalars()) == []
+
+    def test_product_name_existente_case_insensitive_usa_ese_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Tipear el nombre con mayúsculas distintas matchea el producto ya sembrado, no crea uno nuevo."""
+        producto = _crear_producto(session, name="pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-case")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={"product_name": "POLLO", "price": "450"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        productos = list(session.execute(select(Product)).scalars())
+        assert len(productos) == 1
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 1
+        assert filas[0].product_id == producto.id
+
+    def test_product_name_nuevo_con_categoria_y_unidad_crea_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-nuevo")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "product_name": "Detergente",
+                "product_category": "limpieza",
+                "product_unit": "unidad",
+                "price": "100",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        productos = list(session.execute(select(Product)).scalars())
+        assert len(productos) == 1
+        nuevo = productos[0]
+        assert nuevo.name == "Detergente"
+        assert nuevo.category == "limpieza"
+        assert nuevo.unit == "unidad"
+
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 1
+        assert filas[0].product_id == nuevo.id
+
+    def test_product_name_nuevo_sin_categoria_o_unidad_no_crea_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-incompleto")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "product_name": "Detergente",
+                "product_category": "",
+                "product_unit": "unidad",
+                "price": "100",
+            },
+        )
+
+        assert response.status_code == 422
+
+        session.expire_all()
+        assert list(session.execute(select(Product)).scalars()) == []
+        assert list(session.execute(select(PriceHistory)).scalars()) == []
+        refrescado = session.get(RawIngestion, ingestion.id)
+        assert refrescado is not None
+        assert refrescado.processing_status == ProcessingStatus.PENDING
 
     def test_original_text_no_vacio_en_imagen_actualiza_tras_curar(
         self, client: TestClient, session: Session
@@ -286,7 +362,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "product_id": str(producto.id),
+                "product_name": producto.name,
                 "price": "450",
                 "original_text": "pollo a 450",
             },
@@ -312,7 +388,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "product_id": str(producto.id),
+                "product_name": producto.name,
                 "price": "450",
                 "original_text": "texto que el operador no debería poder pisar",
             },
@@ -328,7 +404,7 @@ class TestCurationSubmit:
 
     def test_ingestion_inexistente_devuelve_404(self, client: TestClient) -> None:
         response = client.post(
-            f"/curation/{uuid.uuid4()}", data={"product_id": "", "price": ""}
+            f"/curation/{uuid.uuid4()}", data={"product_name": "", "price": ""}
         )
 
         assert response.status_code == 404

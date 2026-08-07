@@ -17,7 +17,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
@@ -41,7 +41,9 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
     """Traduce una `ExtractionProposal` a strings listos para prellenar el form."""
     if proposal is None:
         return {
-            "product_id": "",
+            "product_name": "",
+            "product_category": "",
+            "product_unit": "",
             "price": "",
             "currency": Currency.CUP.value,
             "quantity": "",
@@ -51,7 +53,9 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "original_text": "",
         }
     return {
-        "product_id": str(proposal.product.id) if proposal.product else "",
+        "product_name": proposal.product.name if proposal.product else "",
+        "product_category": "",
+        "product_unit": "",
         "price": str(proposal.price) if proposal.price is not None else "",
         "currency": proposal.currency,
         "quantity": str(proposal.quantity) if proposal.quantity is not None else "",
@@ -192,7 +196,9 @@ def submit_curation(
     ingestion_id: uuid.UUID,
     request: Request,
     db: Session = Depends(get_db),
-    product_id: str = Form(""),
+    product_name: str = Form(""),
+    product_category: str = Form(""),
+    product_unit: str = Form(""),
     price: str = Form(""),
     currency: str = Form(Currency.CUP.value),
     quantity: str = Form(""),
@@ -208,16 +214,27 @@ def submit_curation(
     """
     ingestion = _require_pending(db, ingestion_id)
 
-    product = None
-    product_uuid = _parse_uuid(product_id)
-    if product_uuid is not None:
-        product = db.get(Product, product_uuid)
-
+    product_name_clean = product_name.strip()
     price_value = _parse_decimal(price)
 
     errors: list[str] = []
-    if product is None:
-        errors.append("Seleccioná un producto válido.")
+
+    product: Product | None = None
+    if not product_name_clean:
+        errors.append("Ingresá un producto.")
+    else:
+        # Búsqueda case-insensitive: el operador puede tipear "pollo" o "Pollo"
+        # y debe matchear el mismo producto sin crear un duplicado.
+        stmt = select(Product).where(func.lower(Product.name) == product_name_clean.lower())
+        product = db.execute(stmt).scalars().first()
+        if product is None:
+            # No existe: es alta de producto nuevo, requiere categoría y unidad
+            # porque el motor de extracción no las propone para nombres libres.
+            product_category_clean = product_category.strip()
+            product_unit_clean = product_unit.strip()
+            if not product_category_clean or not product_unit_clean:
+                errors.append("Para un producto nuevo, indicá categoría y unidad.")
+
     if price_value is None:
         errors.append("Ingresá un precio válido.")
 
@@ -228,7 +245,9 @@ def submit_curation(
             products=_all_products(db),
             provinces=_all_provinces(db),
             values={
-                "product_id": product_id,
+                "product_name": product_name,
+                "product_category": product_category,
+                "product_unit": product_unit,
                 "price": price,
                 "currency": currency or Currency.CUP.value,
                 "quantity": quantity,
@@ -240,6 +259,17 @@ def submit_curation(
             error=" ".join(errors),
             status_code=422,
         )
+
+    if product is None:
+        # Producto nuevo confirmado más arriba (categoría y unidad presentes).
+        product = Product(
+            name=product_name_clean,
+            category=product_category.strip(),
+            unit=product_unit.strip(),
+            aliases=[],
+        )
+        db.add(product)
+        db.flush()  # necesitamos product.id para PriceHistory antes del commit final
 
     assert product is not None and price_value is not None  # para el type checker
 

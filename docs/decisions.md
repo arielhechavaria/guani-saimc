@@ -293,3 +293,31 @@ Consecuencia: cada `GET /curation` sobre una imagen pendiente ejecuta Tesseract 
 momento — sin caché, sin cola de trabajos (decisión 3 de CLAUDE.md, todavía sin
 justificación de volumen real para romperla). Aceptable para un solo operador con
 curaduría de a un elemento por vez; si el volumen lo justifica, se revisita.
+
+---
+
+## 2026-08-07 — Alta de producto desde la cola de curaduría, no solo catálogo cerrado
+
+Contexto: al armar la Processing Layer se dejó `products` sembrado solo con los 5
+productos bandera de Fase 0 (`0004_seed_products.py`), con la cola de curaduría
+consumiendo ese catálogo como un `<select>` cerrado. Al curar el primer anuncio real,
+el usuario encontró productos que no están en esa lista — el `<select>` bloqueaba
+avanzar.
+
+Decisión: el campo "Producto" del formulario pasa a ser texto libre con
+autocompletado (`<datalist>`, sugiere los existentes, sin JS). Si el nombre tipeado
+coincide con un producto existente (comparación case-insensitive), se usa ese
+producto. Si no coincide con ninguno, se exige categoría y unidad y se crea el
+producto en el momento de confirmar la curaduría.
+
+Descartado: mantener el catálogo cerrado y forzar descartar cualquier anuncio con un
+producto fuera de los 5 bandera. Habría descartado la mayoría de los anuncios reales
+del usuario, contradiciendo el propósito mismo de la curaduría en Fase 0 (juntar el
+conjunto de referencia).
+
+Consecuencia: el catálogo de `products` deja de ser un dato fijo sembrado una sola
+vez — crece con el uso. La deduplicación depende de que el operador escriba el mismo
+nombre (la comparación es case-insensitive, pero no tolera variantes de escritura,
+p. ej. "Aceite" vs "Aceite de cocina" como productos distintos). Si eso genera
+catálogo sucio en la práctica, se revisita con una vista de administración de
+productos — no antes, sin evidencia de que haga falta.
