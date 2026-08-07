@@ -8,6 +8,7 @@ más de una vez.
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from saimc.web.routers import curation
@@ -20,6 +21,12 @@ app = FastAPI(title="SAIMC — Cola de curaduría")
 # monta la app sin crear un import circular con `routers/curation.py`.
 app.state.templates = Jinja2Templates(
     directory=str(Path(__file__).parent / "templates")
+)
+
+# Bootstrap CSS vendorizado (no CDN): conexión lenta e intermitente
+# (CLAUDE.md), y esta es una herramienta de uso diario, no una carga puntual.
+app.mount(
+    "/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static"
 )
 
 app.include_router(curation.router)
