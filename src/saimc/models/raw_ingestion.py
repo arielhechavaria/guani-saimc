@@ -7,13 +7,13 @@ archivo capturado (whitepaper §6.1, Etapa 1).
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import DateTime, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from saimc.models.base import Base
+from saimc.models.base import Base, utc_now
 
 
 class ContentType(StrEnum):
@@ -40,10 +40,6 @@ class ProcessingStatus(StrEnum):
     PENDING = "pending"
     CURATED = "curated"
     DISCARDED = "discarded"
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)
 
 
 class RawIngestion(Base):
@@ -89,7 +85,7 @@ class RawIngestion(Base):
 
     # Cuándo entró al sistema.
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_now
+        DateTime(timezone=True), nullable=False, default=utc_now
     )
 
     def __repr__(self) -> str:

@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -25,6 +25,18 @@ def session() -> Iterator[Session]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # SQLite ignora las FKs salvo que el pragma esté activo por conexión.
+    # Sin esto, los tests de ON DELETE RESTRICT pasarían sin probar nada.
+    # Va antes de create_all a propósito: con StaticPool la conexión se
+    # abre una sola vez, y un listener registrado después de create_all
+    # nunca llega a correr.
+    @event.listens_for(engine, "connect")
+    def _sqlite_enable_foreign_keys(dbapi_connection, connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as db_session:
