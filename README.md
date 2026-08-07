@@ -3,7 +3,8 @@
 Sistema Abierto de Inteligencia de Mercado para Cuba.
 
 Documento rector: `docs/whitepaper.md`. Para consultarlo sin leerlo entero,
-`docs/whitepaper-map.md`. Instrucciones de trabajo: `CLAUDE.md`.
+`docs/whitepaper-map.md`. Instrucciones de trabajo: `CLAUDE.md`. Qué falta y
+por qué, en orden de prioridad: `docs/backlog.md`.
 
 ---
 
