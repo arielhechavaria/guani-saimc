@@ -5,8 +5,12 @@ restricciones (CHECK/FK/único). Ningún caso evalúa exactitud de extracción
 ni H0 — eso corresponde a la capa de extracción, no a esta.
 """
 
+import importlib.util
+import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
+from types import ModuleType
 
 import pytest
 from sqlalchemy import text
@@ -22,6 +26,23 @@ from saimc.models import (
     RawIngestion,
     SourceType,
 )
+
+_MIGRACIONES_DIR = Path(__file__).resolve().parent.parent / "alembic" / "versions"
+
+
+def _cargar_modulo_migracion(nombre_archivo: str) -> ModuleType:
+    """Carga un archivo de migración de Alembic como módulo, sin `alembic upgrade`.
+
+    Los nombres de archivo de las migraciones empiezan con dígitos, por lo que
+    no son importables como paquete normal: `importlib.util` con la ruta
+    exacta es el mecanismo documentado para este caso (ver design.md, D4).
+    """
+    ruta = _MIGRACIONES_DIR / nombre_archivo
+    spec = importlib.util.spec_from_file_location(nombre_archivo, ruta)
+    assert spec is not None and spec.loader is not None
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
 
 
 class TestGuardianInfraestructura:
@@ -315,3 +336,21 @@ class TestPricesHistoryExclusiones:
         palabras_dato_personal = ("phone", "telefono", "contact", "address", "direccion")
         for nombre in nombres_columnas:
             assert not any(palabra in nombre for palabra in palabras_dato_personal)
+
+
+class TestSeedProvinces:
+    """`0003_seed_provinces.py` cargada por `importlib`, sin base real (D4)."""
+
+    def test_province_rows_devuelve_16_filas_deterministas(self) -> None:
+        modulo = _cargar_modulo_migracion("0003_seed_provinces.py")
+
+        filas = modulo.province_rows()
+
+        assert len(filas) == 16
+
+        codigos = [fila["code"] for fila in filas]
+        assert len(codigos) == len(set(codigos))
+
+        for fila in filas:
+            assert fila["id"] == uuid.uuid5(modulo._PROVINCE_NS, fila["code"])
+            assert fila["is_published"] is False

@@ -157,3 +157,31 @@ aclaración habría escondido una reducción de alcance.
 
 Consecuencia: cualquier ampliación futura de lo reservado necesita entrada nueva acá y
 anuncio público. El principio 1 lleva ahora un puntero explícito a §6.4.1.
+
+---
+
+## 2026-08-07 — Processing Layer: reglas de negocio del whitepaper aplicadas como CHECK de base
+
+Contexto: el whitepaper especifica en prosa (§6.3, líneas 896-899) que un precio en
+divisa sin tasa de cambio se guarda sin convertir en vez de bloquearse, y usa «94»
+como ejemplo de `confidence_score` (§6.2, línea 797) sin fijar un rango explícito. No
+trae DDL para `provinces` ni `products`: la única restricción vinculante ahí es
+«configuración, no desarrollo» (§9.0, línea 1603).
+
+Decisión: `0002_processing_layer` traduce la regla monetaria en tres `CHECK` con
+nombre explícito sobre `prices_history` (CUP sin tasa; tasa siempre con fecha y
+fuente) y agrega un cuarto `CHECK 0..100` sobre `confidence_score` como lectura
+razonable del ejemplo del whitepaper, no como cita literal. Mismo criterio que
+`raw_ingestions` (entrada del 2026-08-06): una regla dicha en prosa se aplica también
+a nivel de base, no solo en código de aplicación.
+
+Descartado: dejar las reglas monetarias solo como validación de aplicación. Un
+`INSERT` fuera de ese camino (migración futura, corrección manual) rompería la regla
+sin que la base lo impida.
+
+Consecuencia: cualquier fila de `prices_history` que viole esas cuatro reglas falla en
+el `INSERT`, no en una revisión posterior. Aclaración explícita para no confundir esto
+con un apartamiento del whitepaper: `provinces.code`, `provinces.is_published` y
+`prices_history.province_id` nulable no son deviaciones — llenan un área que el
+documento dejó sin DDL o que permite explícitamente (línea 733, «Provincia: No
+determinada»).

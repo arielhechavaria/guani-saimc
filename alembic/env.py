@@ -14,6 +14,9 @@ from saimc.config import get_settings
 # Importar los modelos registra las tablas en Base.metadata, que es lo que
 # `alembic revision --autogenerate` compara contra la base real.
 from saimc.models import Base  # noqa: F401
+import saimc.models.price_history  # noqa: F401
+import saimc.models.product  # noqa: F401
+import saimc.models.province  # noqa: F401
 import saimc.models.raw_ingestion  # noqa: F401
 
 config = context.config
