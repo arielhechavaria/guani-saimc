@@ -213,3 +213,28 @@ confirma» que el propio whitepaper define como el instrumento de medición.
 Consecuencia: el motor de reglas (regex + catálogo) se construye ya, con TDD
 sintético. Se conecta a la cola de curaduría desde el primer anuncio real; cada
 confirmación o corrección alimenta el corpus real que más adelante mide H0.
+
+---
+
+## 2026-08-07 — Motor de reglas de extracción: alias de provincia en código, no en esquema
+
+Contexto: el motor de extracción (whitepaper §6.1 Etapa 2) necesita resolver
+abreviaturas informales de provincia en el texto («stgo», «habana») para proponer
+valores en la cola de curaduría. `products.aliases` ya vive en la tabla como columna
+JSON; `provinces` no tiene columna equivalente.
+
+Decisión: el diccionario de abreviaturas de provincia vive como dato estático dentro
+de `src/saimc/extraction/engine.py`, no como columna en `provinces`. Cubre las 16
+provincias fijas de Cuba.
+
+Descartado: agregar `provinces.aliases` (columna JSON, simétrica a `products`) para
+mantener el mismo patrón. Habría exigido tocar el esquema de nuevo — migración y
+flujo de especificación completo, por la regla de CLAUDE.md — para un dato que es
+puramente de la capa de extracción: nunca se consulta ni se muestra fuera de ahí, a
+diferencia de `products.aliases`, que sí es dato de catálogo usado en varios lugares.
+
+Consecuencia: agregar o corregir una abreviatura de provincia exige tocar código y
+redeploy, no un `INSERT`. Aceptable porque la lista de provincias es fija (§9.0) y la
+jerga regional es acotada. Si esto se vuelve un problema real —abreviaturas que
+cambian seguido, necesidad de que el operador las edite sin deploy— se revisita
+moviendo el diccionario a una tabla.
