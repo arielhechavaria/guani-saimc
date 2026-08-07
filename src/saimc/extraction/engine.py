@@ -93,6 +93,11 @@ _PRICE_AFTER_A_RE = re.compile(r"\ba\s+(\d[\d.,]*)", re.IGNORECASE)
 _PRICE_BEFORE_CURRENCY_RE = re.compile(
     r"(\d[\d.,]*)\s*(" + "|".join(_CURRENCY_MARKERS) + r")\b", re.IGNORECASE
 )
+# Tercera pista: el símbolo "$" también marca precio, muy común en capturas de
+# tiendas informales. No implica moneda USD —en el mercado cubano "$" suele
+# usarse para CUP también— por eso esto solo ubica el número, la moneda la
+# sigue decidiendo `_extract_currency` por separado.
+_PRICE_DOLLAR_RE = re.compile(r"\$\s*(\d[\d.,]*)")
 
 # Unidades conocidas para cantidad. "cajas"/"caja" antes que las demás no
 # hace falta por backtracking de regex, pero se deja explícito por claridad.
@@ -125,8 +130,12 @@ def _normalize_number(raw: str) -> Decimal | None:
     "12.000" en este mercado es doce mil (punto de miles), no 12 con
     decimales: por eso un punto seguido de grupos completos de tres dígitos
     se trata como separador de miles y se descarta, nunca como decimal.
+
+    `rstrip(".,")` porque el OCR pega puntuación del layout justo después del
+    número ("$23,500.Sale" — el "." es de la oración, no del precio); sin
+    esto, ese "." final rompe el fullmatch de separador de miles.
     """
-    cleaned = raw.strip()
+    cleaned = raw.strip().rstrip(".,")
     if re.fullmatch(r"\d{1,3}(\.\d{3})+", cleaned):
         cleaned = cleaned.replace(".", "")
     elif re.fullmatch(r"\d{1,3}(,\d{3})+", cleaned):
@@ -140,7 +149,11 @@ def _normalize_number(raw: str) -> Decimal | None:
 
 
 def _extract_price(text: str) -> Decimal | None:
-    match = _PRICE_AFTER_A_RE.search(text) or _PRICE_BEFORE_CURRENCY_RE.search(text)
+    match = (
+        _PRICE_AFTER_A_RE.search(text)
+        or _PRICE_BEFORE_CURRENCY_RE.search(text)
+        or _PRICE_DOLLAR_RE.search(text)
+    )
     if match is None:
         return None
     return _normalize_number(match.group(1))

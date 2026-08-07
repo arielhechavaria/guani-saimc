@@ -65,6 +65,11 @@ class TestPrecio:
             ("20 usd la libra", Decimal("20")),
             ("12.000 cup", Decimal("12000")),
             ("sin precio visible aqui", None),
+            ("azucar $23,500 el saco", Decimal("23500")),
+            ("aceite $500", Decimal("500")),
+            # Caso real de OCR: separador de miles con coma y ruido de puntuación
+            # pegado al número (el "." antes de "Sale" no debe colarse en el precio).
+            ("$23,500.Sale 427.27Lb", Decimal("23500")),
         ],
     )
     def test_casos(
