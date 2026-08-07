@@ -18,6 +18,12 @@ venv/
 .env
 .env.local
 
+# Evidencia capturada. Nunca va a git: son binarios y contienen datos
+# personales de terceros (nombres de remitente, a veces teléfonos).
+# Ver riesgo 10.6 del whitepaper.
+inbox/
+data/
+
 # Editor / OS
 .DS_Store
 *.swp

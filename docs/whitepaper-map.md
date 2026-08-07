@@ -86,6 +86,17 @@ o columna nullable) y no toca la fila inmutable.
 
 ---
 
+## Apartamientos deliberados
+
+Lo implementado que no coincide con el documento, con su entrada en `decisions.md`.
+
+| Tema | Whitepaper | Implementado | Entrada |
+| --- | --- | --- | --- |
+| Restricciones de `raw_ingestions` | DDL sin `NOT NULL` | `NOT NULL` en 8 columnas | 2026-08-06 |
+| Marcas de tiempo | `TIMESTAMP` | `TIMESTAMPTZ` | 2026-08-06 |
+
+---
+
 ## Lo que el whitepaper no define
 
 - Tipos y restricciones de `products`, `prices_history`, `provinces`.
