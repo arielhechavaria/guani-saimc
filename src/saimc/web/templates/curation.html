@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>SAIMC — Cola de curaduría</title>
+</head>
+<body>
+  <h1>Cola de curaduría</h1>
+
+  {% if error %}
+  <p style="color: darkred;"><strong>{{ error }}</strong></p>
+  {% endif %}
+
+  {% if ingestion is none %}
+  <p>No hay elementos en la cola.</p>
+  {% else %}
+
+  <section>
+    <h2>Evidencia</h2>
+    {% if ingestion.content_type == "image" %}
+    <img src="/evidence/{{ ingestion.id }}" alt="Evidencia capturada" style="max-width: 480px;" />
+    {% elif ingestion.original_text %}
+    <pre>{{ ingestion.original_text }}</pre>
+    {% else %}
+    <p><em>Sin texto original.</em></p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Datos del anuncio</h2>
+    <form method="post" action="/curation/{{ ingestion.id }}">
+      <div>
+        <label for="product_id">Producto</label>
+        <select name="product_id" id="product_id">
+          <option value="">— seleccionar —</option>
+          {% for product in products %}
+          <option value="{{ product.id }}" {% if values.product_id == product.id|string %}selected{% endif %}>
+            {{ product.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="price">Precio</label>
+        <input type="text" name="price" id="price" value="{{ values.price }}" />
+      </div>
+
+      <div>
+        <label for="currency">Moneda</label>
+        <select name="currency" id="currency">
+          {% for currency in currencies %}
+          <option value="{{ currency }}" {% if values.currency == currency %}selected{% endif %}>
+            {{ currency }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="quantity">Cantidad</label>
+        <input type="text" name="quantity" id="quantity" value="{{ values.quantity }}" />
+      </div>
+
+      <div>
+        <label for="unit">Unidad</label>
+        <input type="text" name="unit" id="unit" value="{{ values.unit }}" />
+      </div>
+
+      <div>
+        <label for="province_id">Provincia</label>
+        <select name="province_id" id="province_id">
+          <option value="" {% if not values.province_id %}selected{% endif %}>No determinada</option>
+          {% for province in provinces %}
+          <option value="{{ province.id }}" {% if values.province_id == province.id|string %}selected{% endif %}>
+            {{ province.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="source_reference">Canal origen</label>
+        <input type="text" name="source_reference" id="source_reference" value="{{ values.source_reference }}" />
+      </div>
+
+      <button type="submit">Curar</button>
+    </form>
+
+    <form method="post" action="/curation/{{ ingestion.id }}/discard">
+      <button type="submit">Descartar</button>
+    </form>
+  </section>
+
+  {% endif %}
+</body>
+</html>
