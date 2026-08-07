@@ -72,3 +72,45 @@ sistema propone y el operador confirma (whitepaper §6.1, «Rol del OCR y la
 extracción asistida»).
 
 `inbox/` y `data/` no van a git: contienen datos personales de terceros.
+
+---
+
+## Rutina de curaduría
+
+Con la bandeja ya ingerida (paso anterior), levantá el servidor:
+
+```bash
+.venv/bin/uvicorn saimc.web.app:app --reload
+```
+
+1. Abrí `http://127.0.0.1:8000/curation`. Muestra el elemento `pending` más
+   antiguo, uno por vez.
+2. Si es texto, el motor de reglas ya propuso producto, precio, moneda,
+   cantidad y provincia: confirmá o corregí cada campo. Si es imagen, no hay
+   propuesta — no hay OCR en este slice — y se completa todo a mano mirando
+   la evidencia.
+3. **Curar** guarda el registro en `prices_history` y pasa al siguiente.
+   **Descartar** lo marca `discarded` cuando el anuncio no trae información
+   económica útil.
+4. La API completa (Swagger) queda en `http://127.0.0.1:8000/docs`.
+
+Cada confirmación o corrección es, al mismo tiempo, el dato que después mide
+H0 (whitepaper §6.1: «la cola de curaduría es simultáneamente la herramienta
+de trabajo y el instrumento de medición»).
+
+## Medición de H0
+
+```bash
+.venv/bin/python -m saimc.extraction.measure
+```
+
+Vuelve a correr el motor de reglas sobre cada anuncio de texto ya curado y lo
+compara contra lo que confirmaste, métrica por métrica (whitepaper §12.5).
+Por debajo de 300 anuncios de texto curados el número no es la medición
+oficial de H0 (§3) — el script lo avisa — pero sirve para ver la tendencia
+mientras se junta volumen.
+
+---
+
+*Esta sección cubre Fase 0, la única con código hoy. Cuando arranque una fase
+nueva, su flujo operativo se suma acá — no antes.*
