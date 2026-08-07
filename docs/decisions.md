@@ -168,9 +168,9 @@ como ejemplo de `confidence_score` (§6.2, línea 797) sin fijar un rango explí
 trae DDL para `provinces` ni `products`: la única restricción vinculante ahí es
 «configuración, no desarrollo» (§9.0, línea 1603).
 
-Decisión: `0002_processing_layer` traduce la regla monetaria en tres `CHECK` con
+Decisión: `0002_processing_layer` traduce la regla monetaria en dos `CHECK` con
 nombre explícito sobre `prices_history` (CUP sin tasa; tasa siempre con fecha y
-fuente) y agrega un cuarto `CHECK 0..100` sobre `confidence_score` como lectura
+fuente) y agrega un tercer `CHECK 0..100` sobre `confidence_score` como lectura
 razonable del ejemplo del whitepaper, no como cita literal. Mismo criterio que
 `raw_ingestions` (entrada del 2026-08-06): una regla dicha en prosa se aplica también
 a nivel de base, no solo en código de aplicación.
@@ -179,7 +179,7 @@ Descartado: dejar las reglas monetarias solo como validación de aplicación. Un
 `INSERT` fuera de ese camino (migración futura, corrección manual) rompería la regla
 sin que la base lo impida.
 
-Consecuencia: cualquier fila de `prices_history` que viole esas cuatro reglas falla en
+Consecuencia: cualquier fila de `prices_history` que viole esas tres reglas falla en
 el `INSERT`, no en una revisión posterior. Aclaración explícita para no confundir esto
 con un apartamiento del whitepaper: `provinces.code`, `provinces.is_published` y
 `prices_history.province_id` nulable no son deviaciones — llenan un área que el
