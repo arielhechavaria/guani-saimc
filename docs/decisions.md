@@ -185,3 +185,31 @@ con un apartamiento del whitepaper: `provinces.code`, `provinces.is_published` y
 `prices_history.province_id` nulable no son deviaciones — llenan un área que el
 documento dejó sin DDL o que permite explícitamente (línea 733, «Provincia: No
 determinada»).
+
+---
+
+## 2026-08-07 — TDD de extracción: casos sintéticos por regla, corpus real solo para medir H0
+
+Contexto: la regla original de CLAUDE.md («el caso esperado se escribe antes que el
+código, contra el conjunto de anuncios etiquetados a mano») se leía como si bloqueara
+escribir cualquier extractor hasta acumular los 300+ anuncios reales curados — lo que
+a su vez exigía curaduría 100% manual, sin ninguna propuesta automática. Eso
+contradice el flujo que describe el whitepaper (§6.1, líneas 583-611): «el sistema
+propone, el operador confirma o corrige», con ejemplo concreto de producto/precio/
+moneda/cantidad/provincia pre-llenados.
+
+Decisión: separar dos niveles. Las reglas de extracción determinísticas (precio,
+moneda, cantidad/unidad por regex; producto y provincia por matching contra catálogo
+cerrado — 3-5 productos con alias, 16 provincias ya sembradas) se testean con TDD
+usando casos sintéticos escritos a mano, siempre que la respuesta correcta se defina
+antes e independientemente de correr el extractor. La medición de H0 (el número de
+precisión final, §3/§12.5) sigue corriendo exclusivamente contra los 300+ anuncios
+reales curados.
+
+Descartado: curaduría 100% manual sin ninguna asistencia hasta acumular 300+ anuncios
+reales. Bloqueaba construir el motor de reglas y contradecía la UX de «propone y
+confirma» que el propio whitepaper define como el instrumento de medición.
+
+Consecuencia: el motor de reglas (regex + catálogo) se construye ya, con TDD
+sintético. Se conecta a la cola de curaduría desde el primer anuncio real; cada
+confirmación o corrección alimenta el corpus real que más adelante mide H0.
