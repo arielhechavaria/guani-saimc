@@ -517,3 +517,27 @@ publicó.
 Consecuencia: un anuncio cuyo texto no siga ese encabezado (texto pegado a
 mano sin metadata de red, por ejemplo) deja el campo vacío como antes — no
 hay regresión, solo menos tipeo cuando el patrón está presente.
+
+---
+
+## 2026-08-08 — Diccionario de provincias revisado contra uso real, sin cambios
+
+Contexto: `docs/backlog.md` pedía validar `_PROVINCE_ALIASES` (`engine.py`)
+contra anuncios reales — hasta ahora era una estimación de jerga sin
+contraste con datos capturados de verdad.
+
+Decisión: se corrió `_match_province` contra los 8 `raw_ingestions` con texto
+real que hay hoy en la base (de 17 ingestas totales, 24 filas ya curadas en
+`prices_history`). Las dos provincias que aparecen en ese texto —"Habana" y
+"Santiago de Cuba", en formas como "Santiago de cuba" minúscula y "CIMEX,
+Sucursal Santiago de Cuba"— matchean correctamente en los 8 casos. No se
+tocó el diccionario: no había nada que corregir con esta muestra.
+
+Descartado: agregar alias especulativos para las 14 provincias que todavía
+no aparecen en ningún anuncio real. Sin un caso real que lo motive, sería
+adivinar jerga en vez de validarla contra uso — exactamente lo que esta
+tarea buscaba evitar.
+
+Consecuencia: la tarea del backlog queda revisada pero abierta (ver
+`docs/backlog.md`) — el volumen actual solo ejercita 2 de las 16 provincias.
+Vuelve a valer la pena revisarla cuando haya anuncios reales de otras zonas.

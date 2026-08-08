@@ -35,7 +35,11 @@ Por qué importa: el diccionario en `extraction/engine.py` es una estimación
 razonable de jerga cubana, no validada contra anuncios reales (ver
 `decisions.md`, 2026-08-07).
 
-Bloqueado por: volumen real de anuncios curados que lo ejerciten.
+Revisado 2026-08-08 contra los 8 `raw_ingestions` con texto real que existen
+hoy (`decisions.md`, 2026-08-08): sin gaps, pero solo ejercita 2 de las 16
+provincias (La Habana, Santiago de Cuba). Sigue abierta.
+
+Bloqueado por: volumen real que cubra el resto de las provincias.
 
 ## Persistir `unit` por fila en `prices_history`
 
