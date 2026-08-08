@@ -645,3 +645,29 @@ almacenamiento.
 Consecuencia: de acá en más, un anuncio real con o sin tilde matchea el
 mismo producto — no se van a seguir generando duplicados por esta causa. Los
 duplicados que ya existen en la base se limpian aparte (ver próxima entrada).
+
+---
+
+## 2026-08-08 — product_name_guess recorta viñetas de lista del OCR
+
+Contexto: mismo hallazgo que la entrada anterior — revisando duplicados
+reales apareció "4) Azúcar blanca" y "4 Azúcar parda" como nombres de
+producto. El "4)" o "4 " es una viñeta de lista que el OCR deja pegada al
+principio del renglón ("4) Azúcar blanca a 22500", patrón repetido en varios
+anuncios reales); `_guess_product_phrase` solo recortaba espacios, guiones,
+viñetas "•" y tabs al principio (`.strip(" -•\t")"`), no dígitos de lista.
+El operador confirmó el alta sin editar el nombre y el "4)" quedó pegado.
+
+Decisión: `_guess_product_phrase` aplica un segundo recorte con
+`_LIST_MARKER_RE` (`^\d{1,2}[).:]?\s+`) después del `.strip()` existente,
+antes de devolver la frase candidata.
+
+Descartado: intentar detectar y quitar viñetas en cualquier posición del
+texto (no solo al principio). El patrón real observado siempre es "número +
+puntuación opcional + espacio" al inicio del renglón — cubrir más que eso es
+generalizar sin evidencia.
+
+Consecuencia: los nombres adivinados de acá en más llegan limpios de
+viñetas; no previene otro tipo de ruido de OCR en el nombre (ver la
+decisión de "canal origen busca en varias líneas" sobre el mismo tipo de
+ruido tolerado — el operador sigue revisando antes de confirmar).

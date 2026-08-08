@@ -199,6 +199,22 @@ class TestModificadoresQueDesambiguanProducto:
         assert resultados[0].price == Decimal("3000")
         assert resultados[0].quantity == Decimal("40")
 
+    def test_recorta_vineta_de_lista_con_parentesis(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Caso real: "4) Azúcar blanca a 22500" — el "4)" es una viñeta de
+        lista que deja el OCR pegada al nombre; no debe terminar siendo
+        parte del nombre del producto nuevo (motivo de duplicados reales en
+        la base, ver docs/decisions.md)."""
+        propuesta = propose("4) Azucar blanca a 22500", products, provinces)
+        assert propuesta.product_name_guess == "Azucar blanca"
+
+    def test_recorta_numero_de_lista_sin_puntuacion(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("4 Azucar parda a 25500", products, provinces)
+        assert propuesta.product_name_guess == "Azucar parda"
+
 
 class TestProvincia:
     def test_matchea_por_abreviatura(

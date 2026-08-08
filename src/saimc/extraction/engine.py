@@ -294,6 +294,13 @@ def _match_product(text: str, products: Sequence[Product]) -> Product | None:
     return None
 
 
+# Viñeta de lista ("4)", "4.", o un número suelto) que el OCR deja pegada
+# al principio de una oferta ("4) Azúcar blanca a 22500"). Sin recortarla,
+# terminaba siendo parte del nombre del producto nuevo dado de alta —causa
+# real de duplicados en la base, ver docs/decisions.md.
+_LIST_MARKER_RE = re.compile(r"^\d{1,2}[).:]?\s+")
+
+
 def _guess_product_phrase(line: str) -> str | None:
     """Frase candidata a nombre de producto: el texto antes de la primera
     pista de cantidad o precio en la línea.
@@ -315,6 +322,7 @@ def _guess_product_phrase(line: str) -> str | None:
     if not markers:
         return None
     guess = line[: min(markers)].strip(" -•\t")
+    guess = _LIST_MARKER_RE.sub("", guess).strip(" -•\t")
     return guess or None
 
 
