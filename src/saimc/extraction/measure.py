@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.db import session_scope
-from saimc.extraction.engine import propose
+from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.models import (
     ContentType,
     PriceHistory,
@@ -37,6 +37,11 @@ class H0Report:
     total_processed: int
     discard_rate: float | None
     text_curated_count: int
+    # Un anuncio puede tener varias filas de `prices_history` (multi-producto,
+    # ver `propose_all`): las cinco métricas de abajo se calculan por FILA, no
+    # por ingesta. `text_curated_count` e `evaluated_rows_count` coinciden
+    # solo cuando cada anuncio tuvo un único producto.
+    evaluated_rows_count: int
     image_curated_count: int
     product_accuracy: float | None
     price_accuracy: float | None
@@ -67,13 +72,53 @@ def _curated_text_ingestions(session: Session) -> list[RawIngestion]:
     return list(session.execute(stmt).scalars().all())
 
 
-def _price_history_by_source(session: Session) -> dict[uuid.UUID, PriceHistory]:
-    """Mapa `source_id -> PriceHistory`. Hay una sola fila por `source_id`
-    por diseño de la cola de curaduría (un `raw_ingestion` produce a lo sumo
-    una confirmación).
+def _price_history_by_source(session: Session) -> dict[uuid.UUID, list[PriceHistory]]:
+    """Mapa `source_id -> [PriceHistory, ...]`. Puede haber más de una fila
+    por `source_id`: un anuncio multi-producto genera una fila por línea
+    confirmada (`action=save_and_continue` en la cola de curaduría). Agrupar
+    en lugar de indexar 1:1 evita pisar filas en silencio.
     """
     rows = session.execute(select(PriceHistory)).scalars().all()
-    return {row.source_id: row for row in rows}
+    grouped: dict[uuid.UUID, list[PriceHistory]] = {}
+    for row in rows:
+        grouped.setdefault(row.source_id, []).append(row)
+    return grouped
+
+
+def _match_rows_to_candidates(
+    confirmed_rows: list[PriceHistory], candidates: list[ExtractionProposal]
+) -> list[tuple[PriceHistory, ExtractionProposal]]:
+    """Empareja cada fila confirmada con el candidato de `propose_all` que le
+    corresponde.
+
+    Primero por `product_id` — es la señal más confiable cuando hay varios
+    productos en el mismo anuncio. Lo que no matchea así (el motor no
+    reconoció el producto en ninguna línea, o no hay más de un producto)
+    cae a emparejamiento posicional con lo que sobre de candidatos: así una
+    fila sin match de producto sigue comparándose contra la línea real que
+    la originó — precio, cantidad y provincia igual pudieron extraerse bien
+    aunque el producto no —, en vez de contra una propuesta vacía.
+    """
+    remaining = list(candidates)
+    pairs: list[tuple[PriceHistory, ExtractionProposal]] = []
+    unmatched_rows: list[PriceHistory] = []
+
+    for row in confirmed_rows:
+        match = next(
+            (c for c in remaining if c.product is not None and c.product.id == row.product_id),
+            None,
+        )
+        if match is not None:
+            remaining.remove(match)
+            pairs.append((row, match))
+        else:
+            unmatched_rows.append(row)
+
+    for row in unmatched_rows:
+        candidate = remaining.pop(0) if remaining else ExtractionProposal()
+        pairs.append((row, candidate))
+
+    return pairs
 
 
 def _quantity_unit_correct(
@@ -106,7 +151,12 @@ def _quantity_unit_correct(
 
 
 def compute_h0_report(session: Session) -> H0Report:
-    """Calcula el reporte de H0 re-corriendo `propose()` sobre lo ya curado."""
+    """Calcula el reporte de H0 re-corriendo `propose_all()` sobre lo ya curado.
+
+    Evalúa por FILA de `prices_history`, no por ingesta: un anuncio
+    multi-producto (`docs/decisions.md`) tiene varias filas con el mismo
+    `source_id`, cada una es un dato de H0 aparte.
+    """
     total_curated = session.execute(
         select(RawIngestion).where(RawIngestion.processing_status == ProcessingStatus.CURATED)
     ).scalars().all()
@@ -128,13 +178,62 @@ def compute_h0_report(session: Session) -> H0Report:
     text_ingestions = _curated_text_ingestions(session)
     text_curated_count = len(text_ingestions)
 
-    if text_curated_count == 0:
+    products = _all_products(session)
+    provinces = _all_provinces(session)
+    history_by_source = _price_history_by_source(session)
+    products_by_id = {product.id: product for product in products}
+
+    product_correct = 0
+    price_correct = 0
+    province_correct = 0
+    quantity_unit_correct = 0
+    complete_correct = 0
+    evaluated_rows_count = 0
+
+    for ingestion in text_ingestions:
+        confirmed_rows = history_by_source.get(ingestion.id, [])
+        if not confirmed_rows:
+            continue
+        candidates = propose_all(ingestion.original_text, products, provinces)
+
+        for confirmed, proposal in _match_rows_to_candidates(confirmed_rows, candidates):
+            evaluated_rows_count += 1
+            confirmed_product = products_by_id.get(confirmed.product_id)
+
+            is_product_ok = (
+                proposal.product is not None
+                and proposal.product.id == confirmed.product_id
+            )
+            is_price_ok = (
+                proposal.price == confirmed.price and proposal.currency == confirmed.currency
+            )
+            proposed_province_id = (
+                proposal.province.id if proposal.province is not None else None
+            )
+            is_province_ok = proposed_province_id == confirmed.province_id
+            is_quantity_unit_ok = _quantity_unit_correct(
+                proposal.quantity, proposal.unit, confirmed.quantity, confirmed_product
+            )
+
+            if is_product_ok:
+                product_correct += 1
+            if is_price_ok:
+                price_correct += 1
+            if is_province_ok:
+                province_correct += 1
+            if is_quantity_unit_ok:
+                quantity_unit_correct += 1
+            if is_product_ok and is_price_ok and is_province_ok and is_quantity_unit_ok:
+                complete_correct += 1
+
+    if evaluated_rows_count == 0:
         return H0Report(
             total_curated=total_curated_count,
             total_discarded=total_discarded_count,
             total_processed=total_processed,
             discard_rate=discard_rate,
-            text_curated_count=0,
+            text_curated_count=text_curated_count,
+            evaluated_rows_count=0,
             image_curated_count=image_curated_count,
             product_accuracy=None,
             price_accuracy=None,
@@ -143,59 +242,19 @@ def compute_h0_report(session: Session) -> H0Report:
             complete_accuracy=None,
         )
 
-    products = _all_products(session)
-    provinces = _all_provinces(session)
-    history_by_source = _price_history_by_source(session)
-
-    products_by_id = {product.id: product for product in products}
-
-    product_correct = 0
-    price_correct = 0
-    province_correct = 0
-    quantity_unit_correct = 0
-    complete_correct = 0
-
-    for ingestion in text_ingestions:
-        confirmed = history_by_source[ingestion.id]
-        proposal = propose(ingestion.original_text, products, provinces)
-
-        confirmed_product = products_by_id.get(confirmed.product_id)
-
-        is_product_ok = (
-            proposal.product is not None and proposal.product.id == confirmed.product_id
-        )
-        is_price_ok = (
-            proposal.price == confirmed.price and proposal.currency == confirmed.currency
-        )
-        proposed_province_id = proposal.province.id if proposal.province is not None else None
-        is_province_ok = proposed_province_id == confirmed.province_id
-        is_quantity_unit_ok = _quantity_unit_correct(
-            proposal.quantity, proposal.unit, confirmed.quantity, confirmed_product
-        )
-
-        if is_product_ok:
-            product_correct += 1
-        if is_price_ok:
-            price_correct += 1
-        if is_province_ok:
-            province_correct += 1
-        if is_quantity_unit_ok:
-            quantity_unit_correct += 1
-        if is_product_ok and is_price_ok and is_province_ok and is_quantity_unit_ok:
-            complete_correct += 1
-
     return H0Report(
         total_curated=total_curated_count,
         total_discarded=total_discarded_count,
         total_processed=total_processed,
         discard_rate=discard_rate,
         text_curated_count=text_curated_count,
+        evaluated_rows_count=evaluated_rows_count,
         image_curated_count=image_curated_count,
-        product_accuracy=product_correct / text_curated_count,
-        price_accuracy=price_correct / text_curated_count,
-        province_accuracy=province_correct / text_curated_count,
-        quantity_unit_accuracy=quantity_unit_correct / text_curated_count,
-        complete_accuracy=complete_correct / text_curated_count,
+        product_accuracy=product_correct / evaluated_rows_count,
+        price_accuracy=price_correct / evaluated_rows_count,
+        province_accuracy=province_correct / evaluated_rows_count,
+        quantity_unit_accuracy=quantity_unit_correct / evaluated_rows_count,
+        complete_accuracy=complete_correct / evaluated_rows_count,
     )
 
 
@@ -215,7 +274,8 @@ def _print_report(report: H0Report) -> None:
     print(f"  Descartados:           {report.total_discarded}")
     print(f"  Tasa de descarte:      {_format_pct(report.discard_rate)}")
     print()
-    print(f"Curados de texto:        {report.text_curated_count}")
+    print(f"Curados de texto:        {report.text_curated_count} anuncios")
+    print(f"  Filas evaluadas:       {report.evaluated_rows_count} (un anuncio puede tener varias)")
     print(f"Curados de imagen:       {report.image_curated_count} (informativo, sin OCR)")
     print()
     print(f"Precisión de producto:        {_format_pct(report.product_accuracy)}")
@@ -224,10 +284,10 @@ def _print_report(report: H0Report) -> None:
     print(f"Precisión de cantidad/unidad: {_format_pct(report.quantity_unit_accuracy)}")
     print(f"Extracción completa correcta: {_format_pct(report.complete_accuracy)}")
 
-    if report.text_curated_count < _H0_MINIMUM_SAMPLE:
+    if report.evaluated_rows_count < _H0_MINIMUM_SAMPLE:
         print()
         print(
-            f"AVISO: solo hay {report.text_curated_count} anuncios de texto curados "
+            f"AVISO: solo hay {report.evaluated_rows_count} filas curadas "
             f"(umbral H0: {_H0_MINIMUM_SAMPLE}). Este número todavía NO es la medición "
             "oficial de H0."
         )

@@ -242,6 +242,120 @@ class TestH0Report:
         report = compute_h0_report(session)
         assert report.total_processed == 0
         assert report.text_curated_count == 0
+        assert report.evaluated_rows_count == 0
         assert report.discard_rate is None
         assert report.product_accuracy is None
         assert report.complete_accuracy is None
+
+    def test_evaluated_rows_count_coincide_con_text_curated_count_sin_multiproducto(
+        self, session: Session, dataset: None
+    ) -> None:
+        """En este dataset cada ingesta de texto tiene una sola fila: los dos
+        conteos deben coincidir (1:1), aunque midan cosas distintas.
+        """
+        report = compute_h0_report(session)
+        assert report.evaluated_rows_count == report.text_curated_count == 5
+
+
+class TestH0ReportMultiProducto:
+    """Un anuncio puede tener varias filas de `prices_history` con el mismo
+    `source_id` (whitepaper: varios productos en el mismo anuncio, ver
+    `propose_all` y `POST /curation/{id}` con `action=save_and_continue`).
+    Las métricas se evalúan por FILA, no por ingesta — antes de este fix,
+    `measure.py` pisaba en silencio todas las filas menos la última.
+    """
+
+    @pytest.fixture
+    def dataset_multiproducto(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> tuple[RawIngestion, Product]:
+        picadillo = Product(
+            name="Picadillo", category="carnes", unit="lb", aliases=[]
+        )
+        session.add(picadillo)
+        session.commit()
+
+        texto = "higado de pollo 40lb a 30 habana\npicadillo 20lb a 50 habana\n"
+        ingestion = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/multi.txt",
+            content_hash="hash-multi",
+            content_type=ContentType.TEXT,
+            original_text=texto,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.flush()
+
+        # Fila 1: coincide exactamente con lo que propone la línea 1. Correcta
+        # en las cuatro métricas.
+        session.add(
+            PriceHistory(
+                product_id=pollo.id,
+                province_id=habana.id,
+                price=Decimal("30"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("40"),
+                source_id=ingestion.id,
+            )
+        )
+        # Fila 2: el producto confirmado (Picadillo) SÍ matchea la línea 2,
+        # pero el precio confirmado (999) no coincide con el propuesto (50).
+        # Producto correcto, precio incorrecto.
+        session.add(
+            PriceHistory(
+                product_id=picadillo.id,
+                province_id=habana.id,
+                price=Decimal("999"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("20"),
+                source_id=ingestion.id,
+            )
+        )
+        # Fila 3: producto confirmado que ninguna línea del texto propuso
+        # (Arroz no aparece en el texto). Ningún candidato matchea por
+        # producto: las cuatro métricas cuentan como incorrectas para esta fila.
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(arroz)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=arroz.id,
+                province_id=habana.id,
+                price=Decimal("10"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("1"),
+                source_id=ingestion.id,
+            )
+        )
+        session.commit()
+        return ingestion, picadillo
+
+    def test_cuenta_ingestas_y_filas_por_separado(
+        self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
+    ) -> None:
+        report = compute_h0_report(session)
+        assert report.text_curated_count == 1
+        assert report.evaluated_rows_count == 3
+
+    def test_precision_de_producto_por_fila(
+        self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
+    ) -> None:
+        report = compute_h0_report(session)
+        # Filas 1 y 2 matchean por producto (2/3); fila 3 no matchea ninguna línea.
+        assert report.product_accuracy == pytest.approx(2 / 3)
+
+    def test_precision_de_precio_por_fila(
+        self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
+    ) -> None:
+        report = compute_h0_report(session)
+        # Solo la fila 1 tiene precio correcto (1/3); fila 2 tiene producto
+        # correcto pero precio distinto, fila 3 no matchea nada.
+        assert report.price_accuracy == pytest.approx(1 / 3)
+
+    def test_extraccion_completa_correcta_por_fila(
+        self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
+    ) -> None:
+        report = compute_h0_report(session)
+        assert report.complete_accuracy == pytest.approx(1 / 3)
