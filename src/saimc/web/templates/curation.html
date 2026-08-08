@@ -81,12 +81,13 @@
                     {% endfor %}
                   </select>
                   <!--
-                    `<details>` nativo: sin JS, colapsado por default. El
-                    operador lo abre solo cuando el producto no está en el
-                    catálogo — evitar el datalist de texto libre es el pedido
-                    explícito que motiva este slice (ver docs/decisions.md).
+                    `<details>` nativo: sin JS, colapsado por default salvo
+                    que el motor ya tenga un nombre adivinado para revisar
+                    (`row.new_product_name`, ver `product_name_guess` en
+                    engine.py) — ahí se abre solo para que no quede escondido
+                    detrás de un clic.
                   -->
-                  <details class="mt-1">
+                  <details class="mt-1" {% if row.new_product_name %}open{% endif %}>
                     <summary class="small text-primary">+ Agregar producto nuevo</summary>
                     <div class="row g-2 mt-1">
                       <div class="col-12">

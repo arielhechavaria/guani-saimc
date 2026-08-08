@@ -57,11 +57,12 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "province_id": "",
         }
     return {
-        # El motor de extracción solo matchea contra el catálogo existente: si
-        # no hay match no hay nombre libre que prellenar (`new_product_name`
-        # queda vacío, lo completa el operador a mano si abre el alta).
+        # `product_name_guess` solo viene con algo cuando NO hay match de
+        # catálogo (ver `_match_product`/modificadores de corte en
+        # `engine.py`) — ahí se prellena el alta nueva con el nombre
+        # adivinado en vez de dejarla en blanco.
         "product_id": str(proposal.product.id) if proposal.product else "",
-        "new_product_name": "",
+        "new_product_name": proposal.product_name_guess or "",
         "product_category": "",
         "product_unit": "",
         "price": str(proposal.price) if proposal.price is not None else "",

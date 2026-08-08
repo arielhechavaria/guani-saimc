@@ -178,6 +178,26 @@ class TestCurationQueueGet:
         assert f'value="{producto.id}" selected' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
+    def test_corte_sin_match_prellena_alta_nueva_abierta_con_nombre_adivinado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """"Hígado de pollo" no matchea el genérico "Pollo": el "+" se abre
+        solo con el nombre adivinado, no un `<select>` prellenado mal."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-corte-sin-match",
+            original_text="higado de pollo 40lb a 3000 habana",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'value="higado de pollo"' in response.text
+        assert '<details class="mt-1" open>' in response.text
+        # El select de producto queda en "— seleccionar —", no en "Pollo".
+        assert 'value="" selected>— seleccionar —' in response.text
+
     def test_texto_multiproducto_prellena_una_fila_por_candidato(
         self, client: TestClient, session: Session
     ) -> None:
