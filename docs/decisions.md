@@ -493,3 +493,27 @@ Consecuencia: un corte que no esté en la lista todavía puede matchear mal cont
 genérico — la lista es curada a mano, no exhaustiva. Misma red de seguridad de
 siempre: el operador revisa la propuesta antes de confirmar. Si aparecen más casos
 así, se agregan a la lista; no hace falta releer esta decisión para eso.
+
+---
+
+## 2026-08-08 — Canal origen se propone desde el patrón de fecha de redes
+
+Contexto: `source_reference` era 100% tipeo manual (`docs/backlog.md`). En
+anuncios reales de redes (Facebook/Marketplace-style) el nombre de quien
+publica suele encabezar el texto con un patrón detectable: "Nombre - Ayer a
+las H:MM" / "Nombre - D de mes a las H:MM".
+
+Decisión: `guess_source_reference()` en `engine.py` busca ese patrón solo en
+la primera línea del texto (imagen transcripta por OCR o texto pegado) y, si
+matchea, prellena el campo "Canal origen" del formulario de curaduría —igual
+que `product_name_guess`, una sugerencia editable, nunca lo que termina
+guardado sin pasar por el operador.
+
+Descartado: buscar el patrón en cualquier parte del texto. El nombre real
+siempre encabeza el anuncio; buscar en todo el cuerpo arriesgaba matchear un
+" - " suelto de la mitad del texto que no tiene nada que ver con quien
+publicó.
+
+Consecuencia: un anuncio cuyo texto no siga ese encabezado (texto pegado a
+mano sin metadata de red, por ejemplo) deja el campo vacío como antes — no
+hay regresión, solo menos tipeo cuando el patrón está presente.

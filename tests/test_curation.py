@@ -144,6 +144,21 @@ class TestCurationQueueGet:
         assert 'value="500"' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
+    def test_prellena_canal_origen_desde_el_texto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-canal-origen-1",
+            original_text="Juan Pérez - Ayer a las 14:35\npollo a 500 habana",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="source_reference" value="Juan Pérez"' in response.text
+
     def test_formulario_vacio_si_el_ocr_no_reconoce_nada(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:

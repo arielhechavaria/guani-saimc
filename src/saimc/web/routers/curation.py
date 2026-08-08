@@ -23,7 +23,7 @@ from starlette.datastructures import FormData
 
 from saimc.config import get_settings
 from saimc.extraction import ocr
-from saimc.extraction.engine import ExtractionProposal, propose_all
+from saimc.extraction.engine import ExtractionProposal, guess_source_reference, propose_all
 from saimc.models import (
     ContentType,
     Currency,
@@ -150,20 +150,23 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
 
     proposals: list[ExtractionProposal] = []
     recognized_text = ""
+    source_reference_guess = ""
     if ingestion is not None and ingestion.content_type == ContentType.TEXT:
         if ingestion.original_text:
             proposals = propose_all(ingestion.original_text, products, provinces)
+            source_reference_guess = guess_source_reference(ingestion.original_text) or ""
     elif ingestion is not None and ingestion.original_text is None:
         # content_type == IMAGE acá (el único otro valor posible).
         settings = get_settings()
         recognized_text = ocr.transcribe(settings.raw_store_dir / ingestion.file_path)
         if recognized_text:
             proposals = propose_all(recognized_text, products, provinces)
+            source_reference_guess = guess_source_reference(recognized_text) or ""
 
     rows = [_values_from_proposal(proposal) for proposal in proposals]
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
 
-    global_values = {"original_text": recognized_text, "source_reference": ""}
+    global_values = {"original_text": recognized_text, "source_reference": source_reference_guess}
 
     return _render_queue(
         request,

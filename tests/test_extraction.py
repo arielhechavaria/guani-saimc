@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from saimc.extraction.engine import propose, propose_all
+from saimc.extraction.engine import guess_source_reference, propose, propose_all
 from saimc.models import Product, Province
 
 
@@ -208,6 +208,31 @@ class TestProvincia:
     ) -> None:
         propuesta = propose("pollo a 100 en algun lugar", products, provinces)
         assert propuesta.province is None
+
+
+class TestCanalOrigen:
+    """`guess_source_reference` adivina quién publicó a partir del patrón
+    típico de redes al principio del texto (docs/backlog.md): "Nombre - Ayer
+    a las H:MM" / "Nombre - D de mes a las H:MM".
+    """
+
+    def test_nombre_con_ayer_a_las(self) -> None:
+        texto = "Juan Pérez - Ayer a las 14:35\npollo a 100 habana"
+        assert guess_source_reference(texto) == "Juan Pérez"
+
+    def test_nombre_con_fecha_de_mes(self) -> None:
+        texto = "María López - 3 de agosto a las 9:12\narroz a 200"
+        assert guess_source_reference(texto) == "María López"
+
+    def test_nombre_con_hoy_a_las(self) -> None:
+        texto = "Grupo Ofertas Habana - Hoy a las 08:00\npollo a 300"
+        assert guess_source_reference(texto) == "Grupo Ofertas Habana"
+
+    def test_sin_patron_da_none(self) -> None:
+        assert guess_source_reference("pollo congelado a 100 habana") is None
+
+    def test_texto_vacio_da_none(self) -> None:
+        assert guess_source_reference("") is None
 
 
 class TestProposeAllMultiProducto:

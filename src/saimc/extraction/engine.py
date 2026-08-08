@@ -136,6 +136,36 @@ _DISQUALIFYING_MODIFIER_RE = re.compile(
 )
 
 
+# --- canal origen -------------------------------------------------------------
+
+# Patrón habitual de redes tipo Facebook/Marketplace al principio del texto:
+# "Nombre - Ayer a las H:MM" / "Nombre - D de mes a las H:MM" (docs/backlog.md).
+# Solo se busca en la primera línea: el patrón real observado siempre encabeza
+# el texto, buscar en todo el cuerpo arriesgaría matchear un " - " que no
+# tiene nada que ver con quien publicó.
+_SOURCE_REFERENCE_RE = re.compile(
+    r"^(?P<name>.+?)\s*-\s*"
+    r"(?:ayer|hoy|\d{1,2}\s+de\s+[a-záéíóúñ]+)"
+    r"\s+a\s+las\s+\d{1,2}:\d{2}",
+    re.IGNORECASE,
+)
+
+
+def guess_source_reference(text: str) -> str | None:
+    """Adivina quién publicó el anuncio a partir del patrón de fecha de redes.
+
+    Heurística de recorte, no NLP — sirve para prellenar `source_reference`
+    en la cola de curaduría; el operador la revisa y corrige (`source_reference`
+    sigue siendo 100% manual en cuanto a lo que termina guardado).
+    """
+    first_line = text.splitlines()[0].strip() if text else ""
+    match = _SOURCE_REFERENCE_RE.match(first_line)
+    if match is None:
+        return None
+    name = match.group("name").strip(" -•\t")
+    return name or None
+
+
 @dataclass
 class ExtractionProposal:
     """Candidatos propuestos para un anuncio.
