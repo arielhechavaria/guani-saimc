@@ -46,7 +46,8 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
     """
     if proposal is None:
         return {
-            "product_name": "",
+            "product_id": "",
+            "new_product_name": "",
             "product_category": "",
             "product_unit": "",
             "price": "",
@@ -56,7 +57,11 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "province_id": "",
         }
     return {
-        "product_name": proposal.product.name if proposal.product else "",
+        # El motor de extracción solo matchea contra el catálogo existente: si
+        # no hay match no hay nombre libre que prellenar (`new_product_name`
+        # queda vacío, lo completa el operador a mano si abre el alta).
+        "product_id": str(proposal.product.id) if proposal.product else "",
+        "new_product_name": "",
         "product_category": "",
         "product_unit": "",
         "price": str(proposal.price) if proposal.price is not None else "",
@@ -223,10 +228,51 @@ _DEFAULT_PRODUCT_CATEGORY = "sin categoría"
 _DEFAULT_PRODUCT_UNIT = "unidad"
 
 
+def _resolve_row_product(
+    db: Session, products_by_name: dict[str, Product], row: dict[str, str]
+) -> Product | None:
+    """Resuelve el producto de una fila: alta nueva o selección del catálogo.
+
+    El alta nueva (`new_product_name`) tiene prioridad sobre el `<select>`
+    ya elegido (`product_id`) aunque vengan los dos juntos — el operador
+    decidió agregar un producto en vez de usar el que tenía seleccionado.
+    Un `product_id` que no parsea como UUID o que no existe en la base se
+    trata como "sin producto" para esta fila, sin romper con una excepción:
+    el operador puede haber elegido "— seleccionar —" o el id puede haber
+    quedado obsoleto entre el GET y el submit.
+    """
+    if row["new_product_name"]:
+        product = products_by_name.get(row["new_product_name"].lower())
+        if product is None:
+            # No existe: alta de producto nuevo. Categoría y unidad son
+            # opcionales en el form: el motor de extracción no las propone
+            # para nombres libres y exigirlas siempre trababa el submit por
+            # un dato secundario. Sin tocar el esquema (Product.category y
+            # Product.unit son NOT NULL sin default): se completa acá.
+            product = Product(
+                name=row["new_product_name"],
+                category=row["product_category"] or _DEFAULT_PRODUCT_CATEGORY,
+                unit=row["product_unit"] or _DEFAULT_PRODUCT_UNIT,
+                aliases=[],
+            )
+            db.add(product)
+            db.flush()  # necesitamos product.id para PriceHistory antes del commit final
+            products_by_name[row["new_product_name"].lower()] = product
+        return product
+
+    if row["product_id"]:
+        product_uuid = _parse_uuid(row["product_id"])
+        if product_uuid is not None:
+            return db.get(Product, product_uuid)
+
+    return None
+
+
 def _row_from_form(form: FormData, index: int) -> dict[str, str]:
     """Lee los campos indexados `{campo}_{index}` de un form crudo, como strings."""
     return {
-        "product_name": str(form.get(f"product_name_{index}", "")).strip(),
+        "product_id": str(form.get(f"product_id_{index}", "")).strip(),
+        "new_product_name": str(form.get(f"new_product_name_{index}", "")).strip(),
         "product_category": str(form.get(f"product_category_{index}", "")).strip(),
         "product_unit": str(form.get(f"product_unit_{index}", "")).strip(),
         "price": str(form.get(f"price_{index}", "")).strip(),
@@ -246,17 +292,19 @@ async def submit_curation(
     Sin motor de validación todavía (docs/decisions.md, 2026-08-07): cada fila
     se crea con `confidence_score`, `price_cup` y `exchange_rate*` en None.
 
-    La tabla manda `row_count` filas indexadas (`product_name_0`, `price_0`, ...).
-    Cada fila trae además un checkbox `include_i`: si el navegador no lo manda
-    (desmarcado), la fila se descarta completa sin leer ni validar nada más —
-    así el operador excluye una fila prellenada con datos que no quiere cargar
-    sin tener que vaciar cada campo a mano. Entre las filas incluidas, una sin
-    producto o sin precio se ignora en silencio (no es una fila que el
-    operador quiso cargar). Categoría y unidad de producto nuevo son
-    opcionales: si faltan, se completan con `_DEFAULT_PRODUCT_CATEGORY` /
-    `_DEFAULT_PRODUCT_UNIT`. Todo o nada: si alguna fila incluida y con datos
-    tiene un error (precio inválido), no se guarda ninguna — un estado a
-    medias es más confuso que repetir el submit.
+    La tabla manda `row_count` filas indexadas (`product_id_0`, `price_0`, ...),
+    más `new_product_name_i` para el alta rápida de producto nuevo (ver
+    `_resolve_row_product`). Cada fila trae además un checkbox `include_i`: si
+    el navegador no lo manda (desmarcado), la fila se descarta completa sin
+    leer ni validar nada más — así el operador excluye una fila prellenada con
+    datos que no quiere cargar sin tener que vaciar cada campo a mano. Entre
+    las filas incluidas, una sin producto y sin precio se ignora en silencio
+    (no es una fila que el operador quiso cargar); con solo uno de los dos es
+    un error explícito, porque ahí sí hay intención de cargar algo pero falta
+    un dato. Categoría y unidad de producto nuevo son opcionales: si faltan,
+    se completan con `_DEFAULT_PRODUCT_CATEGORY` / `_DEFAULT_PRODUCT_UNIT`.
+    Todo o nada: si alguna fila incluida y con datos tiene un error, no se
+    guarda ninguna — un estado a medias es más confuso que repetir el submit.
     """
     ingestion = _require_pending(db, ingestion_id)
     form = await request.form()
@@ -290,30 +338,23 @@ async def submit_curation(
         row = _row_from_form(form, i)
         typed_rows.append(row)
 
-        if not row["product_name"] or not row["price"]:
-            continue  # fila incompleta: el operador no la llenó, se ignora sin error
+        product = _resolve_row_product(db, products_by_name, row)
+
+        if product is None and not row["price"]:
+            continue  # fila vacía: el operador no la llenó, se ignora sin error
+
+        if product is None:
+            errors.append(f"Fila {i + 1}: seleccioná o agregá un producto")
+            continue
+
+        if not row["price"]:
+            errors.append(f"Fila {i + 1}: falta el precio")
+            continue
 
         price_value = _parse_decimal(row["price"])
         if price_value is None:
             errors.append(f"Fila {i + 1}: precio inválido")
             continue
-
-        product = products_by_name.get(row["product_name"].lower())
-        if product is None:
-            # No existe: alta de producto nuevo. Categoría y unidad son
-            # opcionales en el form: el motor de extracción no las propone
-            # para nombres libres y exigirlas siempre trababa el submit por
-            # un dato secundario. Sin tocar el esquema (Product.category y
-            # Product.unit son NOT NULL sin default): se completa acá.
-            product = Product(
-                name=row["product_name"],
-                category=row["product_category"] or _DEFAULT_PRODUCT_CATEGORY,
-                unit=row["product_unit"] or _DEFAULT_PRODUCT_UNIT,
-                aliases=[],
-            )
-            db.add(product)
-            db.flush()  # necesitamos product.id para PriceHistory antes del commit final
-            products_by_name[row["product_name"].lower()] = product
 
         province_uuid = _parse_uuid(row["province_id"])
         province = db.get(Province, province_uuid) if province_uuid is not None else None

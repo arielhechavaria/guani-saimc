@@ -31,12 +31,6 @@
       </div>
     </div>
 
-    <datalist id="products-list">
-      {% for product in products %}
-      <option value="{{ product.name }}"></option>
-      {% endfor %}
-    </datalist>
-
     <div class="card">
       <div class="card-header">Datos del anuncio</div>
       <div class="card-body">
@@ -66,7 +60,7 @@
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="text-muted small">Producto {{ loop.index }}</span>
                 <div class="d-flex align-items-center gap-3">
-                  {% if row.product_name %}
+                  {% if row.product_id %}
                   <span class="badge text-bg-success-subtle text-success-emphasis">Detectado</span>
                   {% else %}
                   <span class="badge text-bg-secondary-subtle text-secondary-emphasis">Agregar a mano</span>
@@ -80,16 +74,38 @@
 
               <div class="row g-2">
                 <div class="col-md-6">
-                  <label for="product_name_{{ loop.index0 }}" class="form-label small mb-1">Producto</label>
-                  <input type="text" name="product_name_{{ loop.index0 }}" id="product_name_{{ loop.index0 }}" list="products-list" value="{{ row.product_name }}" class="form-control form-control-sm" placeholder="Existente o nuevo" />
-                </div>
-                <div class="col-md-3">
-                  <label for="product_category_{{ loop.index0 }}" class="form-label small mb-1">Categoría <span class="text-muted">(si es nuevo, opcional)</span></label>
-                  <input type="text" name="product_category_{{ loop.index0 }}" id="product_category_{{ loop.index0 }}" value="{{ row.product_category }}" class="form-control form-control-sm" />
-                </div>
-                <div class="col-md-3">
-                  <label for="product_unit_{{ loop.index0 }}" class="form-label small mb-1">Unidad producto <span class="text-muted">(si es nuevo, opcional)</span></label>
-                  <input type="text" name="product_unit_{{ loop.index0 }}" id="product_unit_{{ loop.index0 }}" value="{{ row.product_unit }}" class="form-control form-control-sm" />
+                  <label for="product_id_{{ loop.index0 }}" class="form-label small mb-1">Producto</label>
+                  <select name="product_id_{{ loop.index0 }}" id="product_id_{{ loop.index0 }}" class="form-select form-select-sm">
+                    <option value="" {% if not row.product_id %}selected{% endif %}>— seleccionar —</option>
+                    {% for product in products %}
+                    <option value="{{ product.id }}" {% if row.product_id == product.id|string %}selected{% endif %}>
+                      {{ product.name }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                  <!--
+                    `<details>` nativo: sin JS, colapsado por default. El
+                    operador lo abre solo cuando el producto no está en el
+                    catálogo — evitar el datalist de texto libre es el pedido
+                    explícito que motiva este slice (ver docs/decisions.md).
+                  -->
+                  <details class="mt-1">
+                    <summary class="small text-primary">+ Agregar producto nuevo</summary>
+                    <div class="row g-2 mt-1">
+                      <div class="col-12">
+                        <label for="new_product_name_{{ loop.index0 }}" class="form-label small mb-1">Nombre</label>
+                        <input type="text" name="new_product_name_{{ loop.index0 }}" id="new_product_name_{{ loop.index0 }}" value="{{ row.new_product_name }}" class="form-control form-control-sm" />
+                      </div>
+                      <div class="col-6">
+                        <label for="product_category_{{ loop.index0 }}" class="form-label small mb-1">Categoría <span class="text-muted">(opcional)</span></label>
+                        <input type="text" name="product_category_{{ loop.index0 }}" id="product_category_{{ loop.index0 }}" value="{{ row.product_category }}" class="form-control form-control-sm" />
+                      </div>
+                      <div class="col-6">
+                        <label for="product_unit_{{ loop.index0 }}" class="form-label small mb-1">Unidad producto <span class="text-muted">(opcional)</span></label>
+                        <input type="text" name="product_unit_{{ loop.index0 }}" id="product_unit_{{ loop.index0 }}" value="{{ row.product_unit }}" class="form-control form-control-sm" />
+                      </div>
+                    </div>
+                  </details>
                 </div>
               </div>
 

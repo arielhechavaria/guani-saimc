@@ -140,7 +140,7 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert f'value="{producto.name}"' in response.text
+        assert f'value="{producto.id}" selected' in response.text
         assert 'value="500"' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
@@ -175,7 +175,7 @@ class TestCurationQueueGet:
 
         assert response.status_code == 200
         assert "pollo a 500 habana" in response.text
-        assert f'value="{producto.name}"' in response.text
+        assert f'value="{producto.id}" selected' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
     def test_texto_multiproducto_prellena_una_fila_por_candidato(
@@ -196,15 +196,15 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert f'value="{pollo.name}"' in response.text
-        assert f'value="{picadillo.name}"' in response.text
+        assert f'value="{pollo.id}" selected' in response.text
+        assert f'value="{picadillo.id}" selected' in response.text
         assert 'value="30"' in response.text
         assert 'value="32.95"' in response.text
 
     def test_muestra_filas_de_candidatos_mas_las_filas_en_blanco_extra(
         self, client: TestClient, session: Session
     ) -> None:
-        """2 candidatos + 3 filas en blanco fijas = 5 inputs `product_name_*`."""
+        """2 candidatos + 3 filas en blanco fijas = 5 selects `product_id_*`."""
         _crear_producto(session, name="Pollo")
         _crear_producto(session, name="Picadillo")
         _crear_raw_ingestion(
@@ -219,7 +219,7 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert response.text.count('name="product_name_') == 5
+        assert response.text.count('name="product_id_') == 5
         assert 'name="row_count" value="5"' in response.text
 
     def test_texto_no_llama_al_ocr(
@@ -255,7 +255,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": producto.name,
+                "product_id_0": str(producto.id),
                 "price_0": "450",
                 "currency_0": "CUP",
                 "quantity_0": "2",
@@ -296,10 +296,10 @@ class TestCurationSubmit:
             data={
                 "row_count": "2",
                 "include_0": "on",
-                "product_name_0": pollo.name,
+                "product_id_0": str(pollo.id),
                 "price_0": "450",
                 "include_1": "on",
-                "product_name_1": picadillo.name,
+                "product_id_1": str(picadillo.id),
                 "price_1": "300",
             },
             follow_redirects=False,
@@ -332,12 +332,12 @@ class TestCurationSubmit:
             data={
                 "row_count": "3",
                 "include_0": "on",
-                "product_name_0": pollo.name,
+                "product_id_0": str(pollo.id),
                 "price_0": "450",
                 # Fila 1 en blanco: el operador no la usó.
                 "include_1": "on",
                 "include_2": "on",
-                "product_name_2": picadillo.name,
+                "product_id_2": str(picadillo.id),
                 "price_2": "300",
             },
             follow_redirects=False,
@@ -362,7 +362,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 # Sin "include_0": así se comporta un checkbox desmarcado.
-                "product_name_0": producto.name,
+                "product_id_0": str(producto.id),
                 "price_0": "450",
             },
         )
@@ -386,7 +386,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": producto.name,
+                "product_id_0": str(producto.id),
                 "price_0": "450",
             },
             follow_redirects=False,
@@ -412,10 +412,10 @@ class TestCurationSubmit:
             data={
                 "row_count": "2",
                 # Fila 0 viene completa pero excluida (sin "include_0").
-                "product_name_0": pollo.name,
+                "product_id_0": str(pollo.id),
                 "price_0": "999",
                 "include_1": "on",
-                "product_name_1": picadillo.name,
+                "product_id_1": str(picadillo.id),
                 "price_1": "300",
             },
             follow_redirects=False,
@@ -458,7 +458,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": producto.name,
+                "product_id_0": str(producto.id),
                 "price_0": "",
             },
         )
@@ -483,7 +483,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": "POLLO",
+                "new_product_name_0": "POLLO",
                 "price_0": "450",
             },
             follow_redirects=False,
@@ -508,7 +508,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": "Detergente",
+                "new_product_name_0": "Detergente",
                 "product_category_0": "limpieza",
                 "product_unit_0": "unidad",
                 "price_0": "100",
@@ -541,7 +541,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": "Detergente",
+                "new_product_name_0": "Detergente",
                 "price_0": "100",
             },
             follow_redirects=False,
@@ -572,7 +572,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": "Detergente",
+                "new_product_name_0": "Detergente",
                 "product_category_0": "limpieza",
                 "price_0": "100",
             },
@@ -598,12 +598,12 @@ class TestCurationSubmit:
             data={
                 "row_count": "2",
                 "include_0": "on",
-                "product_name_0": "Detergente",
+                "new_product_name_0": "Detergente",
                 "product_category_0": "limpieza",
                 "product_unit_0": "unidad",
                 "price_0": "100",
                 "include_1": "on",
-                "product_name_1": "detergente",
+                "new_product_name_1": "detergente",
                 "product_category_1": "limpieza",
                 "product_unit_1": "unidad",
                 "price_1": "120",
@@ -621,6 +621,71 @@ class TestCurationSubmit:
         assert len(filas) == 2
         assert {f.product_id for f in filas} == {productos[0].id}
 
+    def test_new_product_name_tiene_prioridad_sobre_product_id_seleccionado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Si la fila manda los dos, el alta nueva gana aunque haya un producto ya elegido en el select."""
+        viejo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-new-tiene-prioridad")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "include_0": "on",
+                "product_id_0": str(viejo.id),
+                "new_product_name_0": "Picadillo",
+                "price_0": "100",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        productos = list(session.execute(select(Product)).scalars())
+        assert len(productos) == 2
+        nuevo = next(p for p in productos if p.name == "Picadillo")
+
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 1
+        assert filas[0].product_id == nuevo.id
+
+    def test_precio_sin_producto_devuelve_el_mensaje_de_error_puntual(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-precio-sin-producto")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "include_0": "on",
+                "price_0": "100",
+            },
+        )
+
+        assert response.status_code == 422
+        assert "seleccioná o agregá un producto" in response.text.lower()
+
+    def test_producto_sin_precio_devuelve_el_mensaje_de_error_puntual(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-producto-sin-precio")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "include_0": "on",
+                "product_id_0": str(producto.id),
+            },
+        )
+
+        assert response.status_code == 422
+        assert "falta el precio" in response.text.lower()
+
     def test_precio_invalido_en_una_fila_no_crea_nada_de_ninguna_fila(
         self, client: TestClient, session: Session
     ) -> None:
@@ -632,10 +697,10 @@ class TestCurationSubmit:
             data={
                 "row_count": "2",
                 "include_0": "on",
-                "product_name_0": pollo.name,
+                "product_id_0": str(pollo.id),
                 "price_0": "450",
                 "include_1": "on",
-                "product_name_1": pollo.name,
+                "product_id_1": str(pollo.id),
                 "price_1": "no-es-un-numero",
             },
         )
@@ -658,7 +723,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": producto.name,
+                "product_id_0": str(producto.id),
                 "price_0": "450",
                 "original_text": "pollo a 450",
             },
@@ -686,7 +751,7 @@ class TestCurationSubmit:
             data={
                 "row_count": "1",
                 "include_0": "on",
-                "product_name_0": producto.name,
+                "product_id_0": str(producto.id),
                 "price_0": "450",
                 "original_text": "texto que el operador no debería poder pisar",
             },

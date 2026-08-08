@@ -407,3 +407,30 @@ Consecuencia: productos nuevos dados de alta sin categoría/unidad explícitas q
 con esos strings genéricos hasta que alguien los corrija. Si eso ensucia el catálogo
 en la práctica, se revisita (ver ítem ya anotado en `docs/backlog.md` sobre
 deduplicación de nombres) — no antes, sin evidencia de que haga falta.
+
+---
+
+## 2026-08-08 — Producto vuelve a ser `<select>`, alta nueva detrás de un "+"
+
+Contexto: el input de texto con `<datalist>` (autocompletado nativo) no se percibía
+como una lista de selección real — pedido explícito del usuario: un `<select>` clásico
+de productos existentes, con un "+" al lado para dar de alta uno nuevo sin recargar
+la página ni perder el resto de la tarjeta.
+
+Decisión: cada tarjeta tiene un `<select name="product_id_i">` con los productos
+existentes, más un `<details>`/`<summary>` nativo de HTML ("+ Agregar producto
+nuevo") colapsado por default, sin JavaScript, con los campos de alta
+(`new_product_name_i`, `product_category_i`, `product_unit_i`). Si el operador
+completa el alta nueva, tiene prioridad sobre lo que haya elegido en el `<select>`
+— decidió agregar en vez de usar el existente.
+
+Descartado: mantener el input de texto libre. Resolvía lo mismo técnicamente (dejaba
+elegir o escribir) pero no se percibía como tal — la forma en que se lee la interfaz
+importa tanto como lo que técnicamente permite hacer.
+
+Consecuencia: `product_id` reemplaza a `product_name` en el contrato de campos del
+form (`_row_from_form`, `_values_from_proposal`). Una fila con precio pero sin
+producto (ni seleccionado ni alta nueva) ahora es un error explícito ("seleccioná o
+agregá un producto") en vez de ignorarse en silencio — antes una fila sin nombre de
+producto se trataba igual que una fila vacía; ahora, con precio cargado, se asume que
+había intención de completarla.
