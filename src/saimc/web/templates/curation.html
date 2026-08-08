@@ -49,12 +49,13 @@
           <div class="row g-3 mb-3">
             <div class="col-md-6">
               <label for="product_name" class="form-label">Producto</label>
-              <input type="text" name="product_name" id="product_name" list="products-list" value="{{ values.product_name }}" class="form-control" />
+              <input type="text" name="product_name" id="product_name" list="products-list" value="{{ values.product_name }}" class="form-control" placeholder="Elegí uno existente o escribí uno nuevo" />
               <datalist id="products-list">
                 {% for product in products %}
                 <option value="{{ product.name }}"></option>
                 {% endfor %}
               </datalist>
+              <div class="form-text">Empezá a tipear para ver sugerencias, o escribí un producto que no esté en la lista — se da de alta solo.</div>
             </div>
             <div class="col-md-3">
               <label for="product_category" class="form-label">Categoría <span class="text-muted small">(si es nuevo)</span></label>
