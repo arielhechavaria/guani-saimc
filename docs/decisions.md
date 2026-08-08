@@ -620,3 +620,28 @@ origen prellenado (los otros 4 no tienen el patrón en absoluto, o lo tienen
 partido en dos líneas sin guion). El resultado a veces incluye ruido de OCR
 al principio del nombre (ej. "iS Yongert Clavel Danger") — igual de tolerado
 que el ruido en `product_name_guess`: el operador lo corrige al confirmar.
+
+---
+
+## 2026-08-08 — Match de producto ignora tildes
+
+Contexto: revisando duplicados reales en producción apareció "Azucar blanca"
+(sin tilde) y "Azúcar blanca" (con tilde) como dos productos separados.
+`_match_product` comparaba `name.lower()` contra `text.lower()` sin
+normalizar acentos —a diferencia de `_match_province`, que ya usa
+`_strip_accents`—, así que un texto sin tilde nunca matcheaba un producto
+cargado con tilde (o viceversa): cada variante terminaba dando de alta un
+producto nuevo.
+
+Decisión: `_match_product` ahora compara con `_strip_accents` de los dos
+lados, igual que `_match_province`. La lógica de modificadores
+descalificantes se mantiene igual, solo corre sobre el texto ya normalizado.
+
+Descartado: normalizar tildes al guardar el nombre del producto (forzar
+"Azucar blanca" sin tilde en la base). El nombre visible para el operador
+debe llevar tilde correcta; normalizar es un problema de comparación, no de
+almacenamiento.
+
+Consecuencia: de acá en más, un anuncio real con o sin tilde matchea el
+mismo producto — no se van a seguir generando duplicados por esta causa. Los
+duplicados que ya existen en la base se limpian aparte (ver próxima entrada).

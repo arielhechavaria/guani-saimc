@@ -275,16 +275,17 @@ def _match_province(text: str, provinces: Sequence[Province]) -> Province | None
 
 
 def _match_product(text: str, products: Sequence[Product]) -> Product | None:
-    text_lower = text.lower()
-    has_modifier = bool(_DISQUALIFYING_MODIFIER_RE.search(_strip_accents(text_lower)))
+    # Sin tilde: el texto de OCR/tipeo no siempre las trae, y cada variante
+    # sin normalizar terminaba dando de alta un producto duplicado (ver
+    # docs/decisions.md, limpieza de duplicados 2026-08-08).
+    text_normalized = _strip_accents(text.lower())
+    has_modifier = bool(_DISQUALIFYING_MODIFIER_RE.search(text_normalized))
     for product in products:
         for name in (product.name, *product.aliases):
-            name_lower = name.lower()
-            if name_lower not in text_lower:
+            name_normalized = _strip_accents(name.lower())
+            if name_normalized not in text_normalized:
                 continue
-            if has_modifier and not _DISQUALIFYING_MODIFIER_RE.search(
-                _strip_accents(name_lower)
-            ):
+            if has_modifier and not _DISQUALIFYING_MODIFIER_RE.search(name_normalized):
                 # Hay un corte/parte en el texto ("hígado de pollo") pero el
                 # nombre que matcheó ("pollo") no lo incluye: es un match
                 # genérico de un producto más específico, no confiamos en él.

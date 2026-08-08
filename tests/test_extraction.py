@@ -147,6 +147,16 @@ class TestProducto:
         )
         assert propuesta.product is None
 
+    def test_matchea_ignorando_tildes(self, provinces: list[Province]) -> None:
+        """Caso real: "azucar blanca" (texto de OCR/tipeo sin tilde) no
+        matcheaba contra el producto "Azúcar blanca" ya cargado — cada
+        variante terminaba dando de alta un producto duplicado."""
+        azucar = Product(
+            name="Azúcar blanca", category="sin categoría", unit="unidad", aliases=[]
+        )
+        propuesta = propose("azucar blanca a 100", [azucar], provinces)
+        assert propuesta.product is azucar
+
 
 class TestModificadoresQueDesambiguanProducto:
     """Un corte o parte específica no es el mismo producto que el genérico,
