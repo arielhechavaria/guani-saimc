@@ -106,6 +106,35 @@ _QUANTITY_RE = re.compile(
     r"(\d[\d.,]*)\s*(" + "|".join(_UNIT_WORDS) + r")\b", re.IGNORECASE
 )
 
+# --- producto --------------------------------------------------------------
+
+# Cortes o partes que hacen de un producto genérico algo distinto ("hígado de
+# pollo" no es "Pollo"). Distinguir esto en general es un problema de NLP que
+# no resolvemos acá: esta lista curada es la aproximación barata — si
+# aparece cualquiera de estas palabras, no confiamos en el match genérico y
+# en cambio se propone dar de alta un producto nuevo (ver `propose_all` /
+# `product_name_guess`). Sin tilde: se compara contra texto normalizado.
+_PRODUCT_DISQUALIFYING_MODIFIERS = (
+    "higado",
+    "picadillo",
+    "muslo",
+    "pechuga",
+    "molleja",
+    "ala",
+    "corazon",
+    "molida",
+    "falda",
+    "lomo",
+    "costilla",
+    "contramuslo",
+    "rabadilla",
+    "menudencia",
+    "menudencias",
+)
+_DISQUALIFYING_MODIFIER_RE = re.compile(
+    r"\b(" + "|".join(_PRODUCT_DISQUALIFYING_MODIFIERS) + r")\b", re.IGNORECASE
+)
+
 
 @dataclass
 class ExtractionProposal:
@@ -117,6 +146,11 @@ class ExtractionProposal:
     """
 
     product: Product | None = None
+    # Nombre candidato para dar de alta un producto nuevo, solo cuando
+    # `product` es None por un modificador que descalifica el match genérico
+    # (ver `_PRODUCT_DISQUALIFYING_MODIFIERS`). Heurística, no un nombre
+    # confirmado: el operador lo revisa antes de crear nada.
+    product_name_guess: str | None = None
     price: Decimal | None = None
     currency: str = Currency.CUP.value
     quantity: Decimal | None = None
@@ -205,11 +239,45 @@ def _match_province(text: str, provinces: Sequence[Province]) -> Province | None
 
 def _match_product(text: str, products: Sequence[Product]) -> Product | None:
     text_lower = text.lower()
+    has_modifier = bool(_DISQUALIFYING_MODIFIER_RE.search(_strip_accents(text_lower)))
     for product in products:
-        names = (product.name, *product.aliases)
-        if any(name.lower() in text_lower for name in names):
+        for name in (product.name, *product.aliases):
+            name_lower = name.lower()
+            if name_lower not in text_lower:
+                continue
+            if has_modifier and not _DISQUALIFYING_MODIFIER_RE.search(
+                _strip_accents(name_lower)
+            ):
+                # Hay un corte/parte en el texto ("hígado de pollo") pero el
+                # nombre que matcheó ("pollo") no lo incluye: es un match
+                # genérico de un producto más específico, no confiamos en él.
+                continue
             return product
     return None
+
+
+def _guess_product_phrase(line: str) -> str | None:
+    """Frase candidata a nombre de producto: el texto antes de la primera
+    pista de cantidad o precio en la línea.
+
+    Heurística de recorte, no NLP — sirve para prellenar el alta de producto
+    nuevo cuando no hay match de catálogo, no para decidir nada por su
+    cuenta. El operador la revisa y corrige en la cola de curaduría.
+    """
+    markers = [
+        match.start()
+        for match in (
+            _PRICE_AFTER_A_RE.search(line),
+            _PRICE_BEFORE_CURRENCY_RE.search(line),
+            _PRICE_DOLLAR_RE.search(line),
+            _QUANTITY_RE.search(line),
+        )
+        if match is not None
+    ]
+    if not markers:
+        return None
+    guess = line[: min(markers)].strip(" -•\t")
+    return guess or None
 
 
 def propose(
@@ -222,8 +290,10 @@ def propose(
     corrija en la cola de curaduría, no un resultado final.
     """
     quantity, unit = _extract_quantity(text)
+    product = _match_product(text, products)
     return ExtractionProposal(
-        product=_match_product(text, products),
+        product=product,
+        product_name_guess=_guess_product_phrase(text) if product is None else None,
         price=_extract_price(text),
         currency=_extract_currency(text),
         quantity=quantity,
@@ -271,6 +341,7 @@ def propose_all(
         proposals.append(
             ExtractionProposal(
                 product=product,
+                product_name_guess=_guess_product_phrase(line) if product is None else None,
                 price=price,
                 currency=currency,
                 quantity=quantity,

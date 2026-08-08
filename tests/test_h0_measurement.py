@@ -275,7 +275,7 @@ class TestH0ReportMultiProducto:
         session.add(picadillo)
         session.commit()
 
-        texto = "higado de pollo 40lb a 30 habana\npicadillo 20lb a 50 habana\n"
+        texto = "pollo congelado 40lb a 30 habana\npicadillo 20lb a 50 habana\n"
         ingestion = RawIngestion(
             source_type=SourceType.INBOX_TEXT,
             file_path="raw/multi.txt",

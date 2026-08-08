@@ -148,6 +148,48 @@ class TestProducto:
         assert propuesta.product is None
 
 
+class TestModificadoresQueDesambiguanProducto:
+    """Un corte o parte específica no es el mismo producto que el genérico,
+    aunque comparta la palabra: "hígado de pollo" no es "Pollo". Detectar
+    esto en general es un problema de NLP que no resolvemos acá — la
+    solución es una lista curada de modificadores conocidos que, si
+    aparecen, invalidan el match genérico y en cambio se propone dar de
+    alta un producto nuevo con el nombre adivinado.
+    """
+
+    def test_higado_de_pollo_no_matchea_el_generico(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("higado de pollo 40lb a 3000", products, provinces)
+        assert propuesta.product is None
+        assert propuesta.product_name_guess == "higado de pollo"
+
+    def test_picadillo_de_pollo_no_matchea_el_generico(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("picadillo de pollo 21.5kg a 3295", products, provinces)
+        assert propuesta.product is None
+        assert propuesta.product_name_guess == "picadillo de pollo"
+
+    def test_pollo_congelado_sigue_matcheando_normal(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """"congelado" es un estado, no un corte distinto: no debe desambiguar."""
+        propuesta = propose("pollo congelado 40lb a 500 habana", products, provinces)
+        assert propuesta.product is products[0]
+        assert propuesta.product_name_guess is None
+
+    def test_propose_all_prellena_el_nombre_adivinado_sin_match(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        resultados = propose_all("higado de pollo 40lb a 3000\n", products, provinces)
+        assert len(resultados) == 1
+        assert resultados[0].product is None
+        assert resultados[0].product_name_guess == "higado de pollo"
+        assert resultados[0].price == Decimal("3000")
+        assert resultados[0].quantity == Decimal("40")
+
+
 class TestProvincia:
     def test_matchea_por_abreviatura(
         self, products: list[Product], provinces: list[Province]
@@ -178,7 +220,7 @@ class TestProposeAllMultiProducto:
         self, products: list[Product], provinces: list[Province]
     ) -> None:
         texto = (
-            "higado de pollo 40lb a 3000 stgo\n"
+            "pollo entero 40lb a 3000 stgo\n"
             "arroz blanco 1 caja a 500\n"
             "sin nada util en esta linea de puro relleno\n"
         )

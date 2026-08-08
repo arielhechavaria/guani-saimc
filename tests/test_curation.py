@@ -188,7 +188,7 @@ class TestCurationQueueGet:
             session,
             hash_="hash-multiproducto-1",
             original_text=(
-                "- higado de pollo 40lb a 30 usd\n"
+                "- pollo congelado 40lb a 30 usd\n"
                 "- picadillo 21.5kg a 32.95 usd"
             ),
         )
@@ -211,7 +211,7 @@ class TestCurationQueueGet:
             session,
             hash_="hash-filas-extra",
             original_text=(
-                "- higado de pollo 40lb a 30 usd\n"
+                "- pollo congelado 40lb a 30 usd\n"
                 "- picadillo 21.5kg a 32.95 usd"
             ),
         )

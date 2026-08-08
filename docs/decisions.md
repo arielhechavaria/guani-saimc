@@ -460,3 +460,36 @@ Consecuencia: sin JavaScript habilitado en el navegador, no hay forma de sacar u
 tarjeta de la vista — hay que vaciar sus campos a mano, igual que antes de este
 cambio. Aceptado como límite conocido; es una herramienta interna de un operador, no
 un caso de uso que priorice accesibilidad sin JS.
+
+---
+
+## 2026-08-08 — Modificadores que descalifican el match genérico de producto
+
+Contexto: `_match_product` hacía substring puro — "hígado de pollo" matcheaba contra
+"Pollo" solo porque la palabra está contenida ahí adentro. Un hígado de pollo y un
+pollo entero son productos distintos con precios por libra completamente distintos;
+guardarlos bajo el mismo producto genérico corrompe la inteligencia de precios.
+Detectar en general que un corte es "otro producto" es un problema de NLP fuera de
+alcance para reglas y diccionarios (whitepaper §6.1, línea 611: LLM solo para lo que
+las reglas no resuelven, y esto lo es — pero no se justifica todavía sin evidencia de
+volumen real).
+
+Decisión: lista curada de modificadores (`_PRODUCT_DISQUALIFYING_MODIFIERS`: hígado,
+picadillo, muslo, pechuga, molleja, ala, corazón, molida, falda, lomo, costilla,
+contramuslo, rabadilla, menudencia/s). Si alguno aparece en el texto Y el nombre del
+producto que matchearía NO lo incluye (es un match genérico ajeno al corte), no se
+confía en ese match — la fila queda sin producto. `ExtractionProposal` suma
+`product_name_guess`: el texto antes de la primera pista de cantidad o precio en la
+línea, para prellenar el alta de producto nuevo en vez de dejar la tarjeta en blanco.
+Si el modificador SÍ forma parte del nombre que matchea (ej. un producto ya cargado
+como "Picadillo"), el match es válido — el modificador no descalifica su propio
+producto.
+
+Descartado: resolver esto con LLM ahora. Es exactamente el caso que el whitepaper
+reserva para eso, pero sin volumen real todavía no se justifica el costo (llamadas a
+API, latencia) — la lista curada resuelve el caso concreto encontrado hoy.
+
+Consecuencia: un corte que no esté en la lista todavía puede matchear mal contra el
+genérico — la lista es curada a mano, no exhaustiva. Misma red de seguridad de
+siempre: el operador revisa la propuesta antes de confirmar. Si aparecen más casos
+así, se agregan a la lista; no hace falta releer esta decisión para eso.
