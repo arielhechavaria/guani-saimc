@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from saimc.extraction.engine import propose
+from saimc.extraction.engine import propose, propose_all
 from saimc.models import Product, Province
 
 
@@ -166,3 +166,62 @@ class TestProvincia:
     ) -> None:
         propuesta = propose("pollo a 100 en algun lugar", products, provinces)
         assert propuesta.province is None
+
+
+class TestProposeAllMultiProducto:
+    """Un anuncio real puede ofrecer varios productos a la vez, uno por línea
+    (patrón observado en anuncios reales de venta mayorista/TCP, cada oferta
+    en su propio renglón con su propio precio).
+    """
+
+    def test_una_propuesta_por_linea_con_producto_o_precio(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = (
+            "higado de pollo 40lb a 3000 stgo\n"
+            "arroz blanco 1 caja a 500\n"
+            "sin nada util en esta linea de puro relleno\n"
+        )
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 2
+
+        assert resultados[0].product is products[0]
+        assert resultados[0].price == Decimal("3000")
+        assert resultados[0].quantity == Decimal("40")
+        assert resultados[0].unit == "lb"
+        assert resultados[0].province is provinces[1]
+
+        assert resultados[1].product is products[1]
+        assert resultados[1].price == Decimal("500")
+        assert resultados[1].quantity == Decimal("1")
+        assert resultados[1].unit == "caja"
+        # La línea de arroz no menciona provincia: cae al texto completo,
+        # que sí la menciona en la línea del pollo.
+        assert resultados[1].province is provinces[1]
+
+    def test_texto_de_un_solo_producto_da_lista_de_un_elemento(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        resultados = propose_all("pollo congelado 40lb a 500 habana", products, provinces)
+
+        assert len(resultados) == 1
+        assert resultados[0].product is products[0]
+        assert resultados[0].price == Decimal("500")
+
+    def test_texto_sin_nada_util_da_lista_vacia(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        assert propose_all("hola como estas todo bien por alla", products, provinces) == []
+
+    def test_moneda_por_linea_cae_al_texto_completo_si_la_linea_no_la_menciona(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = "todo en usd:\npollo a 500\narroz a 200 usd\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 2
+        # "pollo a 500" no trae marca propia, pero el texto completo sí menciona "usd".
+        assert resultados[0].currency == "USD"
+        assert resultados[1].currency == "USD"

@@ -159,12 +159,23 @@ def _extract_price(text: str) -> Decimal | None:
     return _normalize_number(match.group(1))
 
 
-def _extract_currency(text: str) -> str:
+def _extract_currency_explicit(text: str) -> str | None:
+    """Moneda con marca explícita en el texto, o `None` si no hay ninguna.
+
+    Separado de `_extract_currency` para que `propose_all` pueda distinguir
+    "esta línea no dice moneda" de "esta línea dice CUP": una línea sin marca
+    propia debe caer a lo que diga el resto del anuncio antes de caer al
+    default, no ir directo al default como si el anuncio no dijera nada.
+    """
     match = _CURRENCY_RE.search(text)
     if match is None:
-        # Sin marca explícita: el whitepaper (§6.1, línea 606) manda CUP.
-        return Currency.CUP.value
+        return None
     return _CURRENCY_MARKERS[match.group(1).lower()].value
+
+
+def _extract_currency(text: str) -> str:
+    # Sin marca explícita: el whitepaper (§6.1, línea 606) manda CUP.
+    return _extract_currency_explicit(text) or Currency.CUP.value
 
 
 def _extract_quantity(text: str) -> tuple[Decimal | None, str | None]:
@@ -219,3 +230,52 @@ def propose(
         unit=unit,
         province=_match_province(text, provinces),
     )
+
+
+def propose_all(
+    text: str, products: Sequence[Product], provinces: Sequence[Province]
+) -> list[ExtractionProposal]:
+    """Una propuesta por línea, para anuncios que ofrecen varios productos a la vez.
+
+    Patrón real observado (venta mayorista/TCP): cada oferta en su propio
+    renglón, con su propio precio. `propose()` solo ve una propuesta por
+    anuncio porque opera sobre el texto entero; esto lo hace línea por línea
+    y descarta las que no aportan ni producto ni precio.
+
+    Provincia y moneda caen al texto completo cuando la línea puntual no trae
+    marca propia — son datos que suelen valer para todo el anuncio, no para
+    un renglón en particular (ver `_extract_currency_explicit`).
+    """
+    whole_text_province = _match_province(text, provinces)
+    whole_text_currency = _extract_currency_explicit(text)
+
+    proposals: list[ExtractionProposal] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        price = _extract_price(line)
+        product = _match_product(line, products)
+        if price is None and product is None:
+            # Ni producto ni precio: la línea no aporta un candidato propio
+            # (texto de relleno, encabezado, etc.).
+            continue
+
+        quantity, unit = _extract_quantity(line)
+        currency = (
+            _extract_currency_explicit(line) or whole_text_currency or Currency.CUP.value
+        )
+        province = _match_province(line, provinces) or whole_text_province
+
+        proposals.append(
+            ExtractionProposal(
+                product=product,
+                price=price,
+                currency=currency,
+                quantity=quantity,
+                unit=unit,
+                province=province,
+            )
+        )
+    return proposals
