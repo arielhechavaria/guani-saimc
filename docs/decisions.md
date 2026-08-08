@@ -575,3 +575,18 @@ Consecuencia: un anuncio con ese patrón (nombre y precio en líneas separadas)
 sigue sin proponer un candidato completo — antes generaba ruido a eliminar,
 ahora genera silencio; el operador lo carga a mano igual que antes de que
 existiera `propose_all`.
+
+---
+
+## 2026-08-08 — TabPFN evaluado para priorización de cola y forecasting
+
+Contexto: hace falta elegir, a futuro, qué modelo usar para priorizar la cola
+de curaduría y para la capa de forecasting de precios (whitepaper, capa
+predictiva/B2B, posterior a H0).
+Decisión: se evaluó TabPFN — encaja bien con datasets pequeños y corre
+offline, sin depender de la conexión intermitente del entorno. Se pospone su
+adopción hasta tener datos reales de dos provincias.
+Descartado: adoptarlo ahora, sin datos reales que lo justifiquen — Fase 0
+todavía valida H0 con curaduría manual, no hay capa predictiva que alimentar.
+Consecuencia: TabPFN queda como candidato para cuando exista volumen real en
+al menos 2 provincias; no bloquea nada de lo que se está trabajando hoy.
