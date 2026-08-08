@@ -671,3 +671,33 @@ Consecuencia: los nombres adivinados de acá en más llegan limpios de
 viñetas; no previene otro tipo de ruido de OCR en el nombre (ver la
 decisión de "canal origen busca en varias líneas" sobre el mismo tipo de
 ruido tolerado — el operador sigue revisando antes de confirmar).
+
+---
+
+## 2026-08-08 — Limpieza de duplicados reales en la base de producción
+
+Contexto: el operador reportó productos repetidos en `products` mientras
+probaba los slices del día. La causa raíz eran las dos fallas de arriba
+(tildes sin normalizar en `_match_product`, viñetas de lista sin recortar en
+`product_name_guess`), ya corregidas — esta entrada es la limpieza de los
+datos que esas fallas ya habían dejado escritos.
+
+Decisión: script puntual (no migración Alembic, es DML no DDL) que:
+reasignó las filas de `prices_history` de "Azucar blanca" (`b787d5b4`) y "4)
+Azúcar blanca" (`17412d6a`) hacia el producto canónico "Azúcar blanca"
+(`859a13f0`), borró esos 2 duplicados, y renombró "4 Azúcar parda"
+(`8ae6a2f0`) a "Azúcar parda" (no era duplicado, solo tenía la viñeta "4 "
+pegada al nombre real). Se confirmó el plan exacto (qué producto es
+canónico, cuántas filas se reasignan, qué se borra) con el operador antes de
+tocar la base real, dado que el dashboard corre en producción.
+
+Descartado: soft-delete o columna de estado para los duplicados en vez de
+borrar. Son 2 filas sin ningún dato propio más allá del nombre —no hay nada
+que preservar—, y el esquema de `Product` no tiene esa columna; agregarla
+para este caso puntual sería tocar el esquema para un problema que no lo
+necesita.
+
+Consecuencia: `products` pasó de 15 a 13 filas. "Azúcar blanca" concentra
+ahora las 3 referencias de `prices_history` que antes estaban repartidas
+entre 3 productos. Sin script de reconciliación automática: si aparecen
+duplicados nuevos por otra causa, se revisan y limpian igual que esta vez.
