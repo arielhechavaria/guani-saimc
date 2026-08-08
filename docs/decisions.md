@@ -380,3 +380,30 @@ mitad de una tabla larga, no se guarda nada de esa vuelta (antes, cada "guardar 
 agregar otro" persistía al toque). Aceptado como trade-off consciente por ahora; se
 revisita si en la práctica se pierden cargas largas seguido. Dos filas con el mismo
 nombre de producto nuevo en el mismo submit crean un solo `Product`, no dos.
+
+---
+
+## 2026-08-08 — Tabla multi-producto: excluir fila sin vaciarla, categoría/unidad opcionales
+
+Contexto: usando la tabla editable contra anuncios reales, dos fricciones. (1) Una
+fila prellenada con un falso positivo del motor obligaba a borrar varios campos a
+mano para que se ignorara. (2) Exigir categoría y unidad para dar de alta un producto
+nuevo bloqueaba el submit entero por un dato secundario que casi nunca importa en
+Fase 0 (3-5 productos bandera).
+
+Decisión: cada fila suma un checkbox "Incluir" (marcado por default); si el operador
+lo desmarca, la fila se descarta completa sin leer sus otros campos, sea cual sea su
+contenido. Categoría y unidad de producto nuevo dejan de ser obligatorias: si faltan,
+se completan con defaults (`"sin categoría"`, `"unidad"`) resueltos en
+`curation.py`, sin tocar `Product.category`/`Product.unit` (`NOT NULL` sin default en
+el modelo — hacerlas nullable sería cambio de esquema, flujo completo de
+especificación, fuera de alcance de este ajuste).
+
+Descartado: hacer los defaults configurables o inferirlos de algo (ej. copiar
+categoría de un producto similar). Sobreingeniería para Fase 0 — `"sin categoría"` es
+un valor legible y buscable si hace falta limpiarlo después a mano.
+
+Consecuencia: productos nuevos dados de alta sin categoría/unidad explícitas quedan
+con esos strings genéricos hasta que alguien los corrija. Si eso ensucia el catálogo
+en la práctica, se revisita (ver ítem ya anotado en `docs/backlog.md` sobre
+deduplicación de nombres) — no antes, sin evidencia de que haga falta.

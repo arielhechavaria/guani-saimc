@@ -214,6 +214,15 @@ def _parse_decimal(raw: str) -> Decimal | None:
         return None
 
 
+# Defaults para alta de producto nuevo cuando el operador no completa
+# categoría o unidad en el form: sin esto la fila entera invalidaba todo el
+# submit por un dato secundario. `Product.category`/`Product.unit` son
+# NOT NULL sin default en el modelo (fuera de alcance tocar el esquema acá),
+# así que el default se resuelve en esta capa.
+_DEFAULT_PRODUCT_CATEGORY = "sin categoría"
+_DEFAULT_PRODUCT_UNIT = "unidad"
+
+
 def _row_from_form(form: FormData, index: int) -> dict[str, str]:
     """Lee los campos indexados `{campo}_{index}` de un form crudo, como strings."""
     return {
@@ -238,10 +247,16 @@ async def submit_curation(
     se crea con `confidence_score`, `price_cup` y `exchange_rate*` en None.
 
     La tabla manda `row_count` filas indexadas (`product_name_0`, `price_0`, ...).
-    Una fila sin producto o sin precio se ignora en silencio (no es una fila
-    que el operador quiso cargar). Todo o nada: si alguna fila CON datos tiene
-    un error (precio inválido, producto nuevo sin categoría/unidad), no se
-    guarda ninguna — un estado a medias es más confuso que repetir el submit.
+    Cada fila trae además un checkbox `include_i`: si el navegador no lo manda
+    (desmarcado), la fila se descarta completa sin leer ni validar nada más —
+    así el operador excluye una fila prellenada con datos que no quiere cargar
+    sin tener que vaciar cada campo a mano. Entre las filas incluidas, una sin
+    producto o sin precio se ignora en silencio (no es una fila que el
+    operador quiso cargar). Categoría y unidad de producto nuevo son
+    opcionales: si faltan, se completan con `_DEFAULT_PRODUCT_CATEGORY` /
+    `_DEFAULT_PRODUCT_UNIT`. Todo o nada: si alguna fila incluida y con datos
+    tiene un error (precio inválido), no se guarda ninguna — un estado a
+    medias es más confuso que repetir el submit.
     """
     ingestion = _require_pending(db, ingestion_id)
     form = await request.form()
@@ -262,6 +277,16 @@ async def submit_curation(
     entries_to_create: list[PriceHistory] = []
 
     for i in range(row_count):
+        if form.get(f"include_{i}") is None:
+            # Checkbox "Incluir" desmarcado: el navegador no manda ese campo
+            # (comportamiento estándar de un checkbox sin marcar). La fila se
+            # descarta completa sin siquiera leer o validar el resto de sus
+            # campos, tenga o no producto y precio. Se guarda una fila vacía
+            # en su lugar (no se lee el form) para no correr los índices del
+            # resto de la tabla si hay que re-mostrarla tras un error.
+            typed_rows.append(_values_from_proposal(None))
+            continue
+
         row = _row_from_form(form, i)
         typed_rows.append(row)
 
@@ -275,15 +300,15 @@ async def submit_curation(
 
         product = products_by_name.get(row["product_name"].lower())
         if product is None:
-            # No existe: alta de producto nuevo, requiere categoría y unidad
-            # porque el motor de extracción no las propone para nombres libres.
-            if not row["product_category"] or not row["product_unit"]:
-                errors.append(f"Fila {i + 1}: producto nuevo sin categoría o unidad")
-                continue
+            # No existe: alta de producto nuevo. Categoría y unidad son
+            # opcionales en el form: el motor de extracción no las propone
+            # para nombres libres y exigirlas siempre trababa el submit por
+            # un dato secundario. Sin tocar el esquema (Product.category y
+            # Product.unit son NOT NULL sin default): se completa acá.
             product = Product(
                 name=row["product_name"],
-                category=row["product_category"],
-                unit=row["product_unit"],
+                category=row["product_category"] or _DEFAULT_PRODUCT_CATEGORY,
+                unit=row["product_unit"] or _DEFAULT_PRODUCT_UNIT,
                 aliases=[],
             )
             db.add(product)

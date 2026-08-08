@@ -254,6 +254,7 @@ class TestCurationSubmit:
             f"/curation/{ingestion.id}",
             data={
                 "row_count": "1",
+                "include_0": "on",
                 "product_name_0": producto.name,
                 "price_0": "450",
                 "currency_0": "CUP",
@@ -294,8 +295,10 @@ class TestCurationSubmit:
             f"/curation/{ingestion.id}",
             data={
                 "row_count": "2",
+                "include_0": "on",
                 "product_name_0": pollo.name,
                 "price_0": "450",
+                "include_1": "on",
                 "product_name_1": picadillo.name,
                 "price_1": "300",
             },
@@ -328,9 +331,12 @@ class TestCurationSubmit:
             f"/curation/{ingestion.id}",
             data={
                 "row_count": "3",
+                "include_0": "on",
                 "product_name_0": pollo.name,
                 "price_0": "450",
                 # Fila 1 en blanco: el operador no la usó.
+                "include_1": "on",
+                "include_2": "on",
                 "product_name_2": picadillo.name,
                 "price_2": "300",
             },
@@ -343,6 +349,85 @@ class TestCurationSubmit:
         filas = list(session.execute(select(PriceHistory)).scalars())
         assert len(filas) == 2
         assert {f.product_id for f in filas} == {pollo.id, picadillo.id}
+
+    def test_fila_con_include_ausente_no_crea_nada_aunque_este_completa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Checkbox desmarcado (el navegador no manda `include_i`): la fila se descarta entera."""
+        producto = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-include-ausente")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                # Sin "include_0": así se comporta un checkbox desmarcado.
+                "product_name_0": producto.name,
+                "price_0": "450",
+            },
+        )
+
+        assert response.status_code == 422
+
+        session.expire_all()
+        assert list(session.execute(select(PriceHistory)).scalars()) == []
+        refrescado = session.get(RawIngestion, ingestion.id)
+        assert refrescado is not None
+        assert refrescado.processing_status == ProcessingStatus.PENDING
+
+    def test_fila_con_include_presente_se_procesa_normalmente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-include-presente")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "include_0": "on",
+                "product_name_0": producto.name,
+                "price_0": "450",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 1
+        assert filas[0].product_id == producto.id
+
+    def test_fila_excluida_con_datos_no_pisa_las_demas_filas_incluidas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Una fila marcada como falso positivo (con producto+precio) no debe afectar al resto."""
+        pollo = _crear_producto(session, name="Pollo")
+        picadillo = _crear_producto(session, name="Picadillo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-include-mixto")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "2",
+                # Fila 0 viene completa pero excluida (sin "include_0").
+                "product_name_0": pollo.name,
+                "price_0": "999",
+                "include_1": "on",
+                "product_name_1": picadillo.name,
+                "price_1": "300",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 1
+        assert filas[0].product_id == picadillo.id
+        assert filas[0].price == Decimal("300")
 
     def test_cero_filas_completas_devuelve_422_y_no_crea_nada(
         self, client: TestClient, session: Session
@@ -370,7 +455,12 @@ class TestCurationSubmit:
 
         response = client.post(
             f"/curation/{ingestion.id}",
-            data={"row_count": "1", "product_name_0": producto.name, "price_0": ""},
+            data={
+                "row_count": "1",
+                "include_0": "on",
+                "product_name_0": producto.name,
+                "price_0": "",
+            },
         )
 
         assert response.status_code == 422
@@ -390,7 +480,12 @@ class TestCurationSubmit:
 
         response = client.post(
             f"/curation/{ingestion.id}",
-            data={"row_count": "1", "product_name_0": "POLLO", "price_0": "450"},
+            data={
+                "row_count": "1",
+                "include_0": "on",
+                "product_name_0": "POLLO",
+                "price_0": "450",
+            },
             follow_redirects=False,
         )
 
@@ -412,6 +507,7 @@ class TestCurationSubmit:
             f"/curation/{ingestion.id}",
             data={
                 "row_count": "1",
+                "include_0": "on",
                 "product_name_0": "Detergente",
                 "product_category_0": "limpieza",
                 "product_unit_0": "unidad",
@@ -434,35 +530,63 @@ class TestCurationSubmit:
         assert len(filas) == 1
         assert filas[0].product_id == nuevo.id
 
-    def test_product_name_nuevo_sin_categoria_o_unidad_no_crea_nada_de_ninguna_fila(
+    def test_product_name_nuevo_sin_categoria_ni_unidad_usa_defaults(
         self, client: TestClient, session: Session
     ) -> None:
-        """Todo o nada: una fila con producto nuevo incompleto invalida TODO el submit."""
-        pollo = _crear_producto(session, name="Pollo")
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-incompleto")
+        """Categoría y unidad ya no son obligatorias: faltando ambas, se crea con los defaults."""
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-sin-cat-ni-unidad")
 
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "row_count": "2",
-                "product_name_0": pollo.name,
-                "price_0": "450",
-                "product_name_1": "Detergente",
-                "product_category_1": "",
-                "product_unit_1": "unidad",
-                "price_1": "100",
+                "row_count": "1",
+                "include_0": "on",
+                "product_name_0": "Detergente",
+                "price_0": "100",
             },
+            follow_redirects=False,
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 303
 
         session.expire_all()
         productos = list(session.execute(select(Product)).scalars())
-        assert len(productos) == 1  # solo el sembrado, "Detergente" no se creó
-        assert list(session.execute(select(PriceHistory)).scalars()) == []
-        refrescado = session.get(RawIngestion, ingestion.id)
-        assert refrescado is not None
-        assert refrescado.processing_status == ProcessingStatus.PENDING
+        assert len(productos) == 1
+        nuevo = productos[0]
+        assert nuevo.name == "Detergente"
+        assert nuevo.category == "sin categoría"
+        assert nuevo.unit == "unidad"
+
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 1
+        assert filas[0].product_id == nuevo.id
+
+    def test_product_name_nuevo_con_categoria_parcial_usa_default_solo_en_la_que_falta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Falta solo `unit`: el default se aplica ahí y `category` respeta lo tipeado."""
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-cat-parcial")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "include_0": "on",
+                "product_name_0": "Detergente",
+                "product_category_0": "limpieza",
+                "price_0": "100",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        productos = list(session.execute(select(Product)).scalars())
+        assert len(productos) == 1
+        nuevo = productos[0]
+        assert nuevo.category == "limpieza"
+        assert nuevo.unit == "unidad"
 
     def test_dos_filas_con_mismo_producto_nuevo_crean_un_solo_product(
         self, client: TestClient, session: Session
@@ -473,10 +597,12 @@ class TestCurationSubmit:
             f"/curation/{ingestion.id}",
             data={
                 "row_count": "2",
+                "include_0": "on",
                 "product_name_0": "Detergente",
                 "product_category_0": "limpieza",
                 "product_unit_0": "unidad",
                 "price_0": "100",
+                "include_1": "on",
                 "product_name_1": "detergente",
                 "product_category_1": "limpieza",
                 "product_unit_1": "unidad",
@@ -505,8 +631,10 @@ class TestCurationSubmit:
             f"/curation/{ingestion.id}",
             data={
                 "row_count": "2",
+                "include_0": "on",
                 "product_name_0": pollo.name,
                 "price_0": "450",
+                "include_1": "on",
                 "product_name_1": pollo.name,
                 "price_1": "no-es-un-numero",
             },
@@ -529,6 +657,7 @@ class TestCurationSubmit:
             f"/curation/{ingestion.id}",
             data={
                 "row_count": "1",
+                "include_0": "on",
                 "product_name_0": producto.name,
                 "price_0": "450",
                 "original_text": "pollo a 450",
@@ -556,6 +685,7 @@ class TestCurationSubmit:
             f"/curation/{ingestion.id}",
             data={
                 "row_count": "1",
+                "include_0": "on",
                 "product_name_0": producto.name,
                 "price_0": "450",
                 "original_text": "texto que el operador no debería poder pisar",

@@ -57,9 +57,10 @@
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
+                  <th>Incluir</th>
                   <th>Producto</th>
-                  <th>Categoría <span class="text-muted small">(si es nuevo)</span></th>
-                  <th>Unidad producto <span class="text-muted small">(si es nuevo)</span></th>
+                  <th>Categoría <span class="text-muted small">(si es nuevo, opcional)</span></th>
+                  <th>Unidad producto <span class="text-muted small">(si es nuevo, opcional)</span></th>
                   <th>Precio</th>
                   <th>Moneda</th>
                   <th>Cantidad</th>
@@ -70,6 +71,9 @@
               <tbody>
                 {% for row in rows %}
                 <tr>
+                  <td>
+                    <input type="checkbox" name="include_{{ loop.index0 }}" checked />
+                  </td>
                   <td>
                     <input type="text" name="product_name_{{ loop.index0 }}" list="products-list" value="{{ row.product_name }}" class="form-control form-control-sm" placeholder="Existente o nuevo" />
                   </td>
