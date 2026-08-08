@@ -292,3 +292,30 @@ class TestProposeAllMultiProducto:
         # "pollo a 500" no trae marca propia, pero el texto completo sí menciona "usd".
         assert resultados[0].currency == "USD"
         assert resultados[1].currency == "USD"
+
+    def test_precio_suelto_al_inicio_de_linea_sin_producto_ni_nombre_se_descarta(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Caso real observado: una fecha tipo "a 8/4/2026 at 11:48" matchea
+        como precio por el patrón "a <número>", pero al estar al principio de
+        la línea no queda texto para adivinar un nombre — ni producto ni
+        `product_name_guess`, nada que el operador pueda revisar. Antes esa
+        línea generaba una tarjeta con precio prellenado y producto en blanco
+        que solo servía para eliminar; ahora no se propone.
+        """
+        texto = "a 8/4/2026 at 11:48\npollo a 100 habana\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 1
+        assert resultados[0].product is products[0]
+
+    def test_precio_con_simbolo_al_inicio_sin_producto_ni_nombre_se_descarta(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = "$23,500.Sale 427.27Lb\npollo a 100 habana\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 1
+        assert resultados[0].product is products[0]

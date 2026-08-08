@@ -357,9 +357,17 @@ def propose_all(
 
         price = _extract_price(line)
         product = _match_product(line, products)
-        if price is None and product is None:
-            # Ni producto ni precio: la línea no aporta un candidato propio
-            # (texto de relleno, encabezado, etc.).
+        guess = _guess_product_phrase(line) if product is None else None
+
+        if product is None and (price is None or guess is None):
+            # Sin producto identificado: si además no hay precio, la línea no
+            # aporta nada (texto de relleno, encabezado, etc.). Si hay precio
+            # pero no hay ni siquiera un nombre candidato para revisar (el
+            # precio matcheó pegado al principio de la línea — una fecha mal
+            # leída como "a 8/4/2026", o el nombre del producto vive en otra
+            # línea del mismo anuncio), la tarjeta quedaría con precio pero
+            # cero pista de qué es: peor que una fila en blanco, porque
+            # aparenta que el motor entendió algo. Se descarta.
             continue
 
         quantity, unit = _extract_quantity(line)
@@ -371,7 +379,7 @@ def propose_all(
         proposals.append(
             ExtractionProposal(
                 product=product,
-                product_name_guess=_guess_product_phrase(line) if product is None else None,
+                product_name_guess=guess,
                 price=price,
                 currency=currency,
                 quantity=quantity,

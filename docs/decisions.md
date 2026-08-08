@@ -541,3 +541,37 @@ tarea buscaba evitar.
 Consecuencia: la tarea del backlog queda revisada pero abierta (ver
 `docs/backlog.md`) — el volumen actual solo ejercita 2 de las 16 provincias.
 Vuelve a valer la pena revisarla cuando haya anuncios reales de otras zonas.
+
+---
+
+## 2026-08-08 — propose_all descarta líneas con precio suelto sin producto ni nombre
+
+Contexto: el usuario reportó que curar un anuncio de varios productos suele
+dejar un par de tarjetas en blanco que hay que eliminar a mano (motivo por el
+que se pidió el botón "Eliminar" de `62e992a`). Corriendo `propose_all`
+contra los 8 `raw_ingestions` reales que hay hoy, aparecieron 4 tarjetas así
+en 2 de los 8 anuncios: líneas donde el precio matchea pegado al principio
+("a 8/4/2026 at 11:48" — una fecha que `_PRICE_AFTER_A_RE` lee como precio;
+"$23,500.Sale 427.27Lb" — el nombre del producto vive en una línea anterior
+del mismo anuncio). En ambos casos `_guess_product_phrase` no tiene texto
+antes del precio para adivinar un nombre: la tarjeta queda con precio
+prellenado y producto completamente vacío, sin pista de qué es — peor que
+una fila en blanco común, porque aparenta que el motor entendió algo.
+
+Decisión: `propose_all` ahora descarta una línea cuando no hay producto
+matcheado NI `product_name_guess` (antes solo descartaba cuando no había ni
+producto ni precio). El texto crudo sigue visible en la tarjeta "Evidencia"
+de la cola de curaduría, así que no se pierde información: el operador puede
+seguir agregando esa oferta a mano en una de las filas en blanco de reserva
+si la quiere cargar.
+
+Descartado: intentar reconocer el nombre de producto de una línea anterior
+del mismo anuncio (el caso de "Sacos de azúcar blanca" en una línea y el
+precio en la siguiente). Es exactamente el tipo de estructura multi-línea
+que el whitepaper reserva para LLM (§6.1, línea 611) — no se justifica con
+el volumen de hoy.
+
+Consecuencia: un anuncio con ese patrón (nombre y precio en líneas separadas)
+sigue sin proponer un candidato completo — antes generaba ruido a eliminar,
+ahora genera silencio; el operador lo carga a mano igual que antes de que
+existiera `propose_all`.
