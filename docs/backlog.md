@@ -18,6 +18,17 @@ se saca de acá y su motivo queda en `decisions.md` si ameritó una decisión.
 
 ---
 
+## Proponer "canal origen" desde el texto reconocido
+
+Por qué importa: `source_reference` es hoy 100% manual — el motor nunca intenta
+reconocer al emisor. En anuncios reales de redes (Facebook/Marketplace-style), el
+nombre de quien publica suele aparecer al principio del texto con un patrón
+detectable ("Nombre - Ayer a las H:MM" / "Nombre - D de mes a las H:MM"). Proponerlo
+ahorraría tipeo manual en la mayoría de los anuncios.
+
+Bloqueado por: nada técnico. No priorizado — el usuario marcó que lo visual/completo
+del formulario no es urgente por ahora.
+
 ## Revisar el diccionario de abreviaturas de provincia contra uso real
 
 Por qué importa: el diccionario en `extraction/engine.py` es una estimación
