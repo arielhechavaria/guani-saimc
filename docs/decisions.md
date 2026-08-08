@@ -434,3 +434,29 @@ producto (ni seleccionado ni alta nueva) ahora es un error explícito ("seleccio
 agregá un producto") en vez de ignorarse en silencio — antes una fila sin nombre de
 producto se trataba igual que una fila vacía; ahora, con precio cargado, se asume que
 había intención de completarla.
+
+---
+
+## 2026-08-08 — Eliminar tarjeta del lado del cliente, primer JavaScript del proyecto
+
+Contexto: el checkbox "Incluir" (entrada anterior, mismo día) exigía vaciar cada
+campo a mano para ignorar una tarjeta prellenada con datos no deseados, y no achicaba
+la lista — el operador pidió poder sacarla de la vista directamente, con las tarjetas
+siguientes renumerándose.
+
+Decisión: cada tarjeta suma un botón "Eliminar" que la saca del DOM con un puñado de
+líneas de JavaScript vanilla (sin librería, sin CDN, un único `<script>` en la
+página) y renumera las etiquetas "Producto N" restantes. Es el primer JavaScript del
+proyecto — hasta acá todo fue HTML nativo (`datalist`, `details`). No contradice la
+decisión de stack cerrada (`CLAUDE.md`, decisión 1: FastAPI + Jinja2 + HTMX): HTMX ya
+implica cargar JS, esto es más liviano todavía y no es un framework.
+
+Descartado: mantener el checkbox "Incluir" además del botón nuevo. Sacar la tarjeta
+del DOM ya logra el mismo efecto en el backend (sus campos nunca viajan en el POST,
+caen en la rama de fila vacía que ya existía) — tener las dos formas de lograr lo
+mismo era redundante, así que el checkbox se eliminó en vez de sumarse.
+
+Consecuencia: sin JavaScript habilitado en el navegador, no hay forma de sacar una
+tarjeta de la vista — hay que vaciar sus campos a mano, igual que antes de este
+cambio. Aceptado como límite conocido; es una herramienta interna de un operador, no
+un caso de uso que priorice accesibilidad sin JS.

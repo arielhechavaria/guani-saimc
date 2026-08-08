@@ -294,17 +294,17 @@ async def submit_curation(
 
     La tabla manda `row_count` filas indexadas (`product_id_0`, `price_0`, ...),
     más `new_product_name_i` para el alta rápida de producto nuevo (ver
-    `_resolve_row_product`). Cada fila trae además un checkbox `include_i`: si
-    el navegador no lo manda (desmarcado), la fila se descarta completa sin
-    leer ni validar nada más — así el operador excluye una fila prellenada con
-    datos que no quiere cargar sin tener que vaciar cada campo a mano. Entre
-    las filas incluidas, una sin producto y sin precio se ignora en silencio
-    (no es una fila que el operador quiso cargar); con solo uno de los dos es
-    un error explícito, porque ahí sí hay intención de cargar algo pero falta
-    un dato. Categoría y unidad de producto nuevo son opcionales: si faltan,
-    se completan con `_DEFAULT_PRODUCT_CATEGORY` / `_DEFAULT_PRODUCT_UNIT`.
-    Todo o nada: si alguna fila incluida y con datos tiene un error, no se
-    guarda ninguna — un estado a medias es más confuso que repetir el submit.
+    `_resolve_row_product`). El operador descarta una tarjeta que no quiere
+    cargar eliminándola del lado del cliente (botón "Eliminar" en la plantilla,
+    sin submit): sus campos indexados no viajan en el POST, así que cae sola
+    en la rama de fila vacía de abajo. Una fila sin producto y sin
+    precio se ignora en silencio (no es una fila que el operador quiso
+    cargar); con solo uno de los dos es un error explícito, porque ahí sí hay
+    intención de cargar algo pero falta un dato. Categoría y unidad de
+    producto nuevo son opcionales: si faltan, se completan con
+    `_DEFAULT_PRODUCT_CATEGORY` / `_DEFAULT_PRODUCT_UNIT`. Todo o nada: si
+    alguna fila con datos tiene un error, no se guarda ninguna — un estado a
+    medias es más confuso que repetir el submit.
     """
     ingestion = _require_pending(db, ingestion_id)
     form = await request.form()
@@ -325,16 +325,6 @@ async def submit_curation(
     entries_to_create: list[PriceHistory] = []
 
     for i in range(row_count):
-        if form.get(f"include_{i}") is None:
-            # Checkbox "Incluir" desmarcado: el navegador no manda ese campo
-            # (comportamiento estándar de un checkbox sin marcar). La fila se
-            # descarta completa sin siquiera leer o validar el resto de sus
-            # campos, tenga o no producto y precio. Se guarda una fila vacía
-            # en su lugar (no se lee el form) para no correr los índices del
-            # resto de la tabla si hay que re-mostrarla tras un error.
-            typed_rows.append(_values_from_proposal(None))
-            continue
-
         row = _row_from_form(form, i)
         typed_rows.append(row)
 
