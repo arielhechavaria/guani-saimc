@@ -178,12 +178,12 @@ class TestCurationQueueGet:
         assert f'value="{producto.name}"' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
-    def test_texto_multiproducto_prellena_el_primer_candidato(
+    def test_texto_multiproducto_prellena_una_fila_por_candidato(
         self, client: TestClient, session: Session
     ) -> None:
-        """Con `propose_all`, un anuncio de varias líneas prellena la PRIMERA."""
+        """Con `propose_all`, un anuncio de varias líneas prellena una fila POR línea."""
         pollo = _crear_producto(session, name="Pollo")
-        _crear_producto(session, name="Picadillo")
+        picadillo = _crear_producto(session, name="Picadillo")
         _crear_raw_ingestion(
             session,
             hash_="hash-multiproducto-1",
@@ -197,7 +197,30 @@ class TestCurationQueueGet:
 
         assert response.status_code == 200
         assert f'value="{pollo.name}"' in response.text
+        assert f'value="{picadillo.name}"' in response.text
         assert 'value="30"' in response.text
+        assert 'value="32.95"' in response.text
+
+    def test_muestra_filas_de_candidatos_mas_las_filas_en_blanco_extra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """2 candidatos + 3 filas en blanco fijas = 5 inputs `product_name_*`."""
+        _crear_producto(session, name="Pollo")
+        _crear_producto(session, name="Picadillo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-filas-extra",
+            original_text=(
+                "- higado de pollo 40lb a 30 usd\n"
+                "- picadillo 21.5kg a 32.95 usd"
+            ),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert response.text.count('name="product_name_') == 5
+        assert 'name="row_count" value="5"' in response.text
 
     def test_texto_no_llama_al_ocr(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
@@ -230,12 +253,13 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "product_name": producto.name,
-                "price": "450",
-                "currency": "CUP",
-                "quantity": "2",
-                "unit": "lb",
-                "province_id": "",
+                "row_count": "1",
+                "product_name_0": producto.name,
+                "price_0": "450",
+                "currency_0": "CUP",
+                "quantity_0": "2",
+                "unit_0": "lb",
+                "province_id_0": "",
                 "source_reference": "grupo telegram X",
             },
             follow_redirects=False,
@@ -259,14 +283,75 @@ class TestCurationSubmit:
         assert precio.confidence_score is None
         assert precio.price_cup is None
 
-    def test_sin_product_name_no_crea_fila_ni_cambia_estado(
+    def test_dos_filas_completas_crean_dos_price_history(
         self, client: TestClient, session: Session
     ) -> None:
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-sin-producto")
+        pollo = _crear_producto(session, name="Pollo")
+        picadillo = _crear_producto(session, name="Picadillo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-dos-filas")
 
         response = client.post(
             f"/curation/{ingestion.id}",
-            data={"product_name": "", "price": "100"},
+            data={
+                "row_count": "2",
+                "product_name_0": pollo.name,
+                "price_0": "450",
+                "product_name_1": picadillo.name,
+                "price_1": "300",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        refrescado = session.get(RawIngestion, ingestion.id)
+        assert refrescado is not None
+        assert refrescado.processing_status == ProcessingStatus.CURATED
+
+        filas = list(
+            session.execute(
+                select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
+            ).scalars()
+        )
+        assert len(filas) == 2
+        assert {f.product_id for f in filas} == {pollo.id, picadillo.id}
+
+    def test_filas_vacias_entre_completas_se_ignoran_sin_error(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        picadillo = _crear_producto(session, name="Picadillo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-filas-vacias")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "3",
+                "product_name_0": pollo.name,
+                "price_0": "450",
+                # Fila 1 en blanco: el operador no la usó.
+                "product_name_2": picadillo.name,
+                "price_2": "300",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 2
+        assert {f.product_id for f in filas} == {pollo.id, picadillo.id}
+
+    def test_cero_filas_completas_devuelve_422_y_no_crea_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-cero-filas")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={"row_count": "3"},
         )
 
         assert response.status_code == 422
@@ -277,7 +362,7 @@ class TestCurationSubmit:
         assert refrescado.processing_status == ProcessingStatus.PENDING
         assert list(session.execute(select(PriceHistory)).scalars()) == []
 
-    def test_sin_price_no_crea_fila_ni_cambia_estado(
+    def test_sin_price_en_fila_unica_no_crea_fila_ni_cambia_estado(
         self, client: TestClient, session: Session
     ) -> None:
         producto = _crear_producto(session)
@@ -285,7 +370,7 @@ class TestCurationSubmit:
 
         response = client.post(
             f"/curation/{ingestion.id}",
-            data={"product_name": producto.name, "price": ""},
+            data={"row_count": "1", "product_name_0": producto.name, "price_0": ""},
         )
 
         assert response.status_code == 422
@@ -305,7 +390,7 @@ class TestCurationSubmit:
 
         response = client.post(
             f"/curation/{ingestion.id}",
-            data={"product_name": "POLLO", "price": "450"},
+            data={"row_count": "1", "product_name_0": "POLLO", "price_0": "450"},
             follow_redirects=False,
         )
 
@@ -326,10 +411,11 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "product_name": "Detergente",
-                "product_category": "limpieza",
-                "product_unit": "unidad",
-                "price": "100",
+                "row_count": "1",
+                "product_name_0": "Detergente",
+                "product_category_0": "limpieza",
+                "product_unit_0": "unidad",
+                "price_0": "100",
             },
             follow_redirects=False,
         )
@@ -348,29 +434,88 @@ class TestCurationSubmit:
         assert len(filas) == 1
         assert filas[0].product_id == nuevo.id
 
-    def test_product_name_nuevo_sin_categoria_o_unidad_no_crea_nada(
+    def test_product_name_nuevo_sin_categoria_o_unidad_no_crea_nada_de_ninguna_fila(
         self, client: TestClient, session: Session
     ) -> None:
+        """Todo o nada: una fila con producto nuevo incompleto invalida TODO el submit."""
+        pollo = _crear_producto(session, name="Pollo")
         ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-incompleto")
 
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "product_name": "Detergente",
-                "product_category": "",
-                "product_unit": "unidad",
-                "price": "100",
+                "row_count": "2",
+                "product_name_0": pollo.name,
+                "price_0": "450",
+                "product_name_1": "Detergente",
+                "product_category_1": "",
+                "product_unit_1": "unidad",
+                "price_1": "100",
             },
         )
 
         assert response.status_code == 422
 
         session.expire_all()
-        assert list(session.execute(select(Product)).scalars()) == []
+        productos = list(session.execute(select(Product)).scalars())
+        assert len(productos) == 1  # solo el sembrado, "Detergente" no se creó
         assert list(session.execute(select(PriceHistory)).scalars()) == []
         refrescado = session.get(RawIngestion, ingestion.id)
         assert refrescado is not None
         assert refrescado.processing_status == ProcessingStatus.PENDING
+
+    def test_dos_filas_con_mismo_producto_nuevo_crean_un_solo_product(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-producto-nuevo-duplicado")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "2",
+                "product_name_0": "Detergente",
+                "product_category_0": "limpieza",
+                "product_unit_0": "unidad",
+                "price_0": "100",
+                "product_name_1": "detergente",
+                "product_category_1": "limpieza",
+                "product_unit_1": "unidad",
+                "price_1": "120",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        productos = list(session.execute(select(Product)).scalars())
+        assert len(productos) == 1
+
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 2
+        assert {f.product_id for f in filas} == {productos[0].id}
+
+    def test_precio_invalido_en_una_fila_no_crea_nada_de_ninguna_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-precio-invalido")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "2",
+                "product_name_0": pollo.name,
+                "price_0": "450",
+                "product_name_1": pollo.name,
+                "price_1": "no-es-un-numero",
+            },
+        )
+
+        assert response.status_code == 422
+
+        session.expire_all()
+        assert list(session.execute(select(PriceHistory)).scalars()) == []
 
     def test_original_text_no_vacio_en_imagen_actualiza_tras_curar(
         self, client: TestClient, session: Session
@@ -383,8 +528,9 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "product_name": producto.name,
-                "price": "450",
+                "row_count": "1",
+                "product_name_0": producto.name,
+                "price_0": "450",
                 "original_text": "pollo a 450",
             },
             follow_redirects=False,
@@ -409,8 +555,9 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
-                "product_name": producto.name,
-                "price": "450",
+                "row_count": "1",
+                "product_name_0": producto.name,
+                "price_0": "450",
                 "original_text": "texto que el operador no debería poder pisar",
             },
             follow_redirects=False,
@@ -425,157 +572,10 @@ class TestCurationSubmit:
 
     def test_ingestion_inexistente_devuelve_404(self, client: TestClient) -> None:
         response = client.post(
-            f"/curation/{uuid.uuid4()}", data={"product_name": "", "price": ""}
+            f"/curation/{uuid.uuid4()}", data={"row_count": "0"}
         )
 
         assert response.status_code == 404
-
-
-# --- POST /curation/{id} con action=save_and_continue / POST .../finish -----
-
-
-class TestCurationMultiProducto:
-    def test_save_and_continue_no_marca_curated_y_muestra_siguiente_candidato(
-        self, client: TestClient, session: Session
-    ) -> None:
-        pollo = _crear_producto(session, name="Pollo")
-        picadillo = _crear_producto(session, name="Picadillo")
-        ingestion = _crear_raw_ingestion(
-            session,
-            hash_="hash-multiproducto-continue",
-            original_text=(
-                "- higado de pollo 40lb a 30 usd\n"
-                "- picadillo 21.5kg a 32.95 usd"
-            ),
-        )
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "product_name": pollo.name,
-                "price": "30",
-                "currency": "USD",
-                "action": "save_and_continue",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-        assert response.headers["location"] == "/curation"
-
-        session.expire_all()
-        refrescado = session.get(RawIngestion, ingestion.id)
-        assert refrescado is not None
-        assert refrescado.processing_status == ProcessingStatus.PENDING
-
-        filas = list(session.execute(select(PriceHistory)).scalars())
-        assert len(filas) == 1
-        assert filas[0].product_id == pollo.id
-
-        siguiente = client.get("/curation")
-        assert siguiente.status_code == 200
-        # Mismo raw_ingestion (sigue siendo el pending más antiguo).
-        assert str(ingestion.id) in siguiente.text
-        assert "ya cargaste 1 producto" in siguiente.text.lower()
-        # Prellena el SEGUNDO candidato, no el primero de nuevo.
-        assert f'value="{picadillo.name}"' in siguiente.text
-        assert 'value="32.95"' in siguiente.text
-
-    def test_ciclo_completo_multiproducto_y_finish_marca_curated(
-        self, client: TestClient, session: Session
-    ) -> None:
-        pollo = _crear_producto(session, name="Pollo")
-        picadillo = _crear_producto(session, name="Picadillo")
-        ingestion = _crear_raw_ingestion(
-            session,
-            hash_="hash-multiproducto-ciclo",
-            original_text=(
-                "- higado de pollo 40lb a 30 usd\n"
-                "- picadillo 21.5kg a 32.95 usd"
-            ),
-        )
-
-        client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "product_name": pollo.name,
-                "price": "30",
-                "currency": "USD",
-                "action": "save_and_continue",
-            },
-        )
-        client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "product_name": picadillo.name,
-                "price": "32.95",
-                "currency": "USD",
-                "action": "save_and_continue",
-            },
-        )
-
-        session.expire_all()
-        refrescado = session.get(RawIngestion, ingestion.id)
-        assert refrescado is not None
-        assert refrescado.processing_status == ProcessingStatus.PENDING
-
-        response = client.post(
-            f"/curation/{ingestion.id}/finish", follow_redirects=False
-        )
-
-        assert response.status_code == 303
-        assert response.headers["location"] == "/curation"
-
-        session.expire_all()
-        refrescado = session.get(RawIngestion, ingestion.id)
-        assert refrescado is not None
-        assert refrescado.processing_status == ProcessingStatus.CURATED
-
-        filas = list(
-            session.execute(
-                select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
-            ).scalars()
-        )
-        assert len(filas) == 2
-        assert {f.product_id for f in filas} == {pollo.id, picadillo.id}
-
-    def test_finish_sin_filas_previas_devuelve_422_y_sigue_pending(
-        self, client: TestClient, session: Session
-    ) -> None:
-        ingestion = _crear_raw_ingestion(session, hash_="hash-finish-sin-filas")
-
-        response = client.post(f"/curation/{ingestion.id}/finish")
-
-        assert response.status_code == 422
-
-        session.expire_all()
-        refrescado = session.get(RawIngestion, ingestion.id)
-        assert refrescado is not None
-        assert refrescado.processing_status == ProcessingStatus.PENDING
-        assert list(session.execute(select(PriceHistory)).scalars()) == []
-
-    def test_sin_action_se_comporta_como_save_and_finish(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """Comportamiento de siempre: un solo POST sin `action` crea la fila Y curated."""
-        producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-sin-action")
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={"product_name": producto.name, "price": "450"},
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        refrescado = session.get(RawIngestion, ingestion.id)
-        assert refrescado is not None
-        assert refrescado.processing_status == ProcessingStatus.CURATED
-
-        filas = list(session.execute(select(PriceHistory)).scalars())
-        assert len(filas) == 1
 
 
 # --- POST /curation/{id}/discard ---------------------------------------------

@@ -15,10 +15,11 @@ agrega columnas nuevas.
 import uuid
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.datastructures import FormData
 
 from saimc.config import get_settings
 from saimc.extraction import ocr
@@ -38,7 +39,11 @@ router = APIRouter()
 
 
 def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]:
-    """Traduce una `ExtractionProposal` a strings listos para prellenar el form."""
+    """Traduce una `ExtractionProposal` a strings listos para prellenar una fila del form.
+
+    Campos a nivel de FILA únicamente — `original_text` y `source_reference`
+    son a nivel de anuncio y viven aparte (ver `curation_queue`).
+    """
     if proposal is None:
         return {
             "product_name": "",
@@ -49,8 +54,6 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "quantity": "",
             "unit": "",
             "province_id": "",
-            "source_reference": "",
-            "original_text": "",
         }
     return {
         "product_name": proposal.product.name if proposal.product else "",
@@ -61,8 +64,6 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         "quantity": str(proposal.quantity) if proposal.quantity is not None else "",
         "unit": proposal.unit or "",
         "province_id": str(proposal.province.id) if proposal.province else "",
-        "source_reference": "",
-        "original_text": "",
     }
 
 
@@ -90,10 +91,11 @@ def _render_queue(
     ingestion: RawIngestion | None,
     products: list[Product],
     provinces: list[Province],
-    values: dict[str, str],
+    rows: list[dict[str, str]],
+    row_count: int,
+    global_values: dict[str, str],
     error: str | None,
     status_code: int = 200,
-    already_saved_count: int = 0,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -103,35 +105,21 @@ def _render_queue(
             "ingestion": ingestion,
             "products": products,
             "provinces": provinces,
-            "values": values,
+            "rows": rows,
+            "row_count": row_count,
+            "values": global_values,
             "error": error,
             "currencies": [c.value for c in Currency],
-            "already_saved_count": already_saved_count,
         },
         status_code=status_code,
     )
 
 
-def _saved_price_history(db: Session, ingestion_id: uuid.UUID) -> list[PriceHistory]:
-    """Filas de `prices_history` ya guardadas para este anuncio (multi-producto)."""
-    stmt = select(PriceHistory).where(PriceHistory.source_id == ingestion_id)
-    return list(db.execute(stmt).scalars().all())
-
-
-def _pending_proposals(
-    proposals: list[ExtractionProposal], saved: list[PriceHistory]
-) -> list[ExtractionProposal]:
-    """Descarta candidatos que ya se guardaron como fila (mismo producto y precio).
-
-    Sin `product` no hay forma confiable de identificar el candidato con una
-    fila ya guardada, así que esos no se filtran: el operador los revisa a mano.
-    """
-    saved_keys = {(row.product_id, row.price) for row in saved}
-    return [
-        proposal
-        for proposal in proposals
-        if proposal.product is None or (proposal.product.id, proposal.price) not in saved_keys
-    ]
+# Filas en blanco de más que se ofrecen siempre, además de las prellenadas con
+# candidatos del motor: el operador carga productos que `propose_all` no detectó
+# sin tener que recargar la página (ver diseño del slice que reemplaza
+# "guardar y agregar otro").
+_EXTRA_BLANK_ROWS = 3
 
 
 @router.get("/curation", response_class=HTMLResponse)
@@ -144,9 +132,11 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
     operador ve ese texto en un campo editable y lo confirma o corrige al curar.
 
     Un anuncio puede ofrecer varios productos (`propose_all` devuelve un
-    candidato por línea). Se prellena con el primer candidato que todavía no
-    tenga una fila guardada de una vuelta anterior de "guardar y agregar otro"
-    (ver `POST /curation/{id}` con `action=save_and_continue`).
+    candidato por línea). Se muestra una fila por candidato, más un puñado de
+    filas en blanco para que el operador agregue productos que el motor no
+    detectó — todo en una sola tabla que se manda con un único submit
+    (reemplaza el flujo anterior de "guardar y agregar otro", tedioso contra
+    anuncios reales de varios productos: ver docs/decisions.md).
     """
     ingestion = _oldest_pending(db)
     products = _all_products(db)
@@ -164,25 +154,20 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
         if recognized_text:
             proposals = propose_all(recognized_text, products, provinces)
 
-    already_saved_count = 0
-    if ingestion is not None:
-        saved = _saved_price_history(db, ingestion.id)
-        already_saved_count = len(saved)
-        if saved:
-            proposals = _pending_proposals(proposals, saved)
+    rows = [_values_from_proposal(proposal) for proposal in proposals]
+    rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
 
-    proposal = proposals[0] if proposals else None
-    values = _values_from_proposal(proposal)
-    values["original_text"] = recognized_text
+    global_values = {"original_text": recognized_text, "source_reference": ""}
 
     return _render_queue(
         request,
         ingestion=ingestion,
         products=products,
         provinces=provinces,
-        values=values,
+        rows=rows,
+        row_count=len(rows),
+        global_values=global_values,
         error=None,
-        already_saved_count=already_saved_count,
     )
 
 
@@ -229,110 +214,117 @@ def _parse_decimal(raw: str) -> Decimal | None:
         return None
 
 
-@router.post("/curation/{ingestion_id}", response_model=None)
-def submit_curation(
-    ingestion_id: uuid.UUID,
-    request: Request,
-    db: Session = Depends(get_db),
-    product_name: str = Form(""),
-    product_category: str = Form(""),
-    product_unit: str = Form(""),
-    price: str = Form(""),
-    currency: str = Form(Currency.CUP.value),
-    quantity: str = Form(""),
-    unit: str = Form(""),
-    province_id: str = Form(""),
-    source_reference: str = Form(""),
-    original_text: str = Form(""),
-    action: str = Form("save_and_finish"),
-) -> HTMLResponse | RedirectResponse:
-    """Confirma la curaduría: crea la fila de `prices_history`.
+def _row_from_form(form: FormData, index: int) -> dict[str, str]:
+    """Lee los campos indexados `{campo}_{index}` de un form crudo, como strings."""
+    return {
+        "product_name": str(form.get(f"product_name_{index}", "")).strip(),
+        "product_category": str(form.get(f"product_category_{index}", "")).strip(),
+        "product_unit": str(form.get(f"product_unit_{index}", "")).strip(),
+        "price": str(form.get(f"price_{index}", "")).strip(),
+        "currency": str(form.get(f"currency_{index}", "")).strip() or Currency.CUP.value,
+        "quantity": str(form.get(f"quantity_{index}", "")).strip(),
+        "unit": str(form.get(f"unit_{index}", "")).strip(),
+        "province_id": str(form.get(f"province_id_{index}", "")).strip(),
+    }
 
-    Sin motor de validación todavía (docs/decisions.md, 2026-08-07): la fila
+
+@router.post("/curation/{ingestion_id}", response_model=None)
+async def submit_curation(
+    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse | RedirectResponse:
+    """Confirma la curaduría: crea una fila de `prices_history` por cada renglón completo.
+
+    Sin motor de validación todavía (docs/decisions.md, 2026-08-07): cada fila
     se crea con `confidence_score`, `price_cup` y `exchange_rate*` en None.
 
-    `action=save_and_continue` guarda la fila pero deja el `raw_ingestion` en
-    `pending`, para anuncios con varios productos (whitepaper multi-línea): el
-    operador vuelve a `/curation`, que le muestra el mismo anuncio con el
-    siguiente candidato. Cualquier otro valor (o ausencia, default
-    `save_and_finish`) es el comportamiento de siempre: una fila y `curated`.
+    La tabla manda `row_count` filas indexadas (`product_name_0`, `price_0`, ...).
+    Una fila sin producto o sin precio se ignora en silencio (no es una fila
+    que el operador quiso cargar). Todo o nada: si alguna fila CON datos tiene
+    un error (precio inválido, producto nuevo sin categoría/unidad), no se
+    guarda ninguna — un estado a medias es más confuso que repetir el submit.
     """
     ingestion = _require_pending(db, ingestion_id)
+    form = await request.form()
 
-    product_name_clean = product_name.strip()
-    price_value = _parse_decimal(price)
+    original_text = str(form.get("original_text", "")).strip()
+    source_reference = str(form.get("source_reference", "")).strip()
+    try:
+        row_count = int(str(form.get("row_count", "0")))
+    except ValueError:
+        row_count = 0
+
+    # Catálogo existente + altas de esta misma request: dos filas con el mismo
+    # producto nuevo (mismo submit) deben reusar el Product, no duplicarlo.
+    products_by_name = {p.name.lower(): p for p in _all_products(db)}
 
     errors: list[str] = []
+    typed_rows: list[dict[str, str]] = []
+    entries_to_create: list[PriceHistory] = []
 
-    product: Product | None = None
-    if not product_name_clean:
-        errors.append("Ingresá un producto.")
-    else:
-        # Búsqueda case-insensitive: el operador puede tipear "pollo" o "Pollo"
-        # y debe matchear el mismo producto sin crear un duplicado.
-        stmt = select(Product).where(func.lower(Product.name) == product_name_clean.lower())
-        product = db.execute(stmt).scalars().first()
+    for i in range(row_count):
+        row = _row_from_form(form, i)
+        typed_rows.append(row)
+
+        if not row["product_name"] or not row["price"]:
+            continue  # fila incompleta: el operador no la llenó, se ignora sin error
+
+        price_value = _parse_decimal(row["price"])
+        if price_value is None:
+            errors.append(f"Fila {i + 1}: precio inválido")
+            continue
+
+        product = products_by_name.get(row["product_name"].lower())
         if product is None:
-            # No existe: es alta de producto nuevo, requiere categoría y unidad
+            # No existe: alta de producto nuevo, requiere categoría y unidad
             # porque el motor de extracción no las propone para nombres libres.
-            product_category_clean = product_category.strip()
-            product_unit_clean = product_unit.strip()
-            if not product_category_clean or not product_unit_clean:
-                errors.append("Para un producto nuevo, indicá categoría y unidad.")
+            if not row["product_category"] or not row["product_unit"]:
+                errors.append(f"Fila {i + 1}: producto nuevo sin categoría o unidad")
+                continue
+            product = Product(
+                name=row["product_name"],
+                category=row["product_category"],
+                unit=row["product_unit"],
+                aliases=[],
+            )
+            db.add(product)
+            db.flush()  # necesitamos product.id para PriceHistory antes del commit final
+            products_by_name[row["product_name"].lower()] = product
 
-    if price_value is None:
-        errors.append("Ingresá un precio válido.")
+        province_uuid = _parse_uuid(row["province_id"])
+        province = db.get(Province, province_uuid) if province_uuid is not None else None
+
+        entries_to_create.append(
+            PriceHistory(
+                product_id=product.id,
+                province_id=province.id if province is not None else None,
+                price=price_value,
+                currency=row["currency"],
+                quantity=_parse_decimal(row["quantity"]),
+                source_id=ingestion.id,
+            )
+        )
+
+    if not errors and not entries_to_create:
+        errors.append("Cargá al menos un producto con precio.")
 
     if errors:
+        # Todo o nada: cualquier alta de producto que haya llegado a hacer
+        # `flush()` en este loop se descarta junto con el resto de la request.
+        db.rollback()
         return _render_queue(
             request,
             ingestion=ingestion,
             products=_all_products(db),
             provinces=_all_provinces(db),
-            values={
-                "product_name": product_name,
-                "product_category": product_category,
-                "product_unit": product_unit,
-                "price": price,
-                "currency": currency or Currency.CUP.value,
-                "quantity": quantity,
-                "unit": unit,
-                "province_id": province_id,
-                "source_reference": source_reference,
-                "original_text": original_text,
-            },
+            rows=typed_rows,
+            row_count=row_count,
+            global_values={"original_text": original_text, "source_reference": source_reference},
             error=" ".join(errors),
             status_code=422,
-            already_saved_count=len(_saved_price_history(db, ingestion.id)),
         )
 
-    if product is None:
-        # Producto nuevo confirmado más arriba (categoría y unidad presentes).
-        product = Product(
-            name=product_name_clean,
-            category=product_category.strip(),
-            unit=product_unit.strip(),
-            aliases=[],
-        )
-        db.add(product)
-        db.flush()  # necesitamos product.id para PriceHistory antes del commit final
-
-    assert product is not None and price_value is not None  # para el type checker
-
-    province_uuid = _parse_uuid(province_id)
-    province = db.get(Province, province_uuid) if province_uuid is not None else None
-
-    quantity_value = _parse_decimal(quantity)
-
-    entry = PriceHistory(
-        product_id=product.id,
-        province_id=province.id if province is not None else None,
-        price=price_value,
-        currency=currency or Currency.CUP.value,
-        quantity=quantity_value,
-        source_id=ingestion.id,
-    )
-    db.add(entry)
+    for entry in entries_to_create:
+        db.add(entry)
 
     # `source_reference` está diseñado para completarse acá, no viola la
     # inmutabilidad de `raw_ingestions` (ver docstring del modelo).
@@ -346,47 +338,6 @@ def submit_curation(
     # reemplaza.
     if ingestion.content_type == ContentType.IMAGE and original_text:
         ingestion.original_text = original_text
-
-    # `save_and_continue`: anuncio multi-producto, quedan más líneas por
-    # cargar. El `raw_ingestion` sigue `pending` a propósito — lo vuelve a
-    # traer `GET /curation` con el siguiente candidato (ver `_pending_proposals`).
-    if action != "save_and_continue":
-        ingestion.processing_status = ProcessingStatus.CURATED
-
-    db.commit()
-
-    return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/curation/{ingestion_id}/finish", response_model=None)
-def finish_curation(
-    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
-) -> HTMLResponse | RedirectResponse:
-    """Cierra un anuncio multi-producto sin cargar una fila más.
-
-    Para cuando el operador ya guardó todas las líneas que le interesaban vía
-    `save_and_continue` y quiere marcar `curated` sin volver a pasar por el
-    formulario. Exige al menos una fila guardada: `measure.py` asume que todo
-    `raw_ingestion` de texto curado tiene su `PriceHistory` (ver instrucciones
-    de esta tarea) y un anuncio "curado" sin datos no aporta nada a H0.
-    """
-    ingestion = _require_pending(db, ingestion_id)
-
-    saved = _saved_price_history(db, ingestion.id)
-    if not saved:
-        return _render_queue(
-            request,
-            ingestion=ingestion,
-            products=_all_products(db),
-            provinces=_all_provinces(db),
-            values=_values_from_proposal(None),
-            error=(
-                "Todavía no cargaste ningún producto de este anuncio. "
-                "Usá Descartar si no tiene información útil."
-            ),
-            status_code=422,
-            already_saved_count=0,
-        )
 
     ingestion.processing_status = ProcessingStatus.CURATED
     db.commit()

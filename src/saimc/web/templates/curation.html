@@ -18,10 +18,6 @@
     <div class="alert alert-secondary">No hay elementos en la cola.</div>
     {% else %}
 
-    {% if already_saved_count and already_saved_count > 0 %}
-    <div class="alert alert-info">Ya cargaste {{ already_saved_count }} producto(s) de este anuncio.</div>
-    {% endif %}
-
     <div class="card mb-4">
       <div class="card-header">Evidencia</div>
       <div class="card-body">
@@ -35,6 +31,12 @@
       </div>
     </div>
 
+    <datalist id="products-list">
+      {% for product in products %}
+      <option value="{{ product.name }}"></option>
+      {% endfor %}
+    </datalist>
+
     <div class="card">
       <div class="card-header">Datos del anuncio</div>
       <div class="card-body">
@@ -46,79 +48,78 @@
           </div>
           {% endif %}
 
-          <div class="row g-3 mb-3">
-            <div class="col-md-6">
-              <label for="product_name" class="form-label">Producto</label>
-              <input type="text" name="product_name" id="product_name" list="products-list" value="{{ values.product_name }}" class="form-control" placeholder="Elegí uno existente o escribí uno nuevo" />
-              <datalist id="products-list">
-                {% for product in products %}
-                <option value="{{ product.name }}"></option>
-                {% endfor %}
-              </datalist>
-              <div class="form-text">Empezá a tipear para ver sugerencias, o escribí un producto que no esté en la lista — se da de alta solo.</div>
-            </div>
-            <div class="col-md-3">
-              <label for="product_category" class="form-label">Categoría <span class="text-muted small">(si es nuevo)</span></label>
-              <input type="text" name="product_category" id="product_category" value="{{ values.product_category }}" class="form-control" />
-            </div>
-            <div class="col-md-3">
-              <label for="product_unit" class="form-label">Unidad producto <span class="text-muted small">(si es nuevo)</span></label>
-              <input type="text" name="product_unit" id="product_unit" value="{{ values.product_unit }}" class="form-control" />
-            </div>
+          <div class="mb-3">
+            <label for="source_reference" class="form-label">Canal origen</label>
+            <input type="text" name="source_reference" id="source_reference" value="{{ values.source_reference }}" class="form-control" style="max-width: 420px;" />
           </div>
 
-          <div class="row g-3 mb-3">
-            <div class="col-md-4">
-              <label for="price" class="form-label">Precio</label>
-              <input type="text" name="price" id="price" value="{{ values.price }}" class="form-control" />
-            </div>
-            <div class="col-md-2">
-              <label for="currency" class="form-label">Moneda</label>
-              <select name="currency" id="currency" class="form-select">
-                {% for currency in currencies %}
-                <option value="{{ currency }}" {% if values.currency == currency %}selected{% endif %}>
-                  {{ currency }}
-                </option>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Categoría <span class="text-muted small">(si es nuevo)</span></th>
+                  <th>Unidad producto <span class="text-muted small">(si es nuevo)</span></th>
+                  <th>Precio</th>
+                  <th>Moneda</th>
+                  <th>Cantidad</th>
+                  <th>Unidad</th>
+                  <th>Provincia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rows %}
+                <tr>
+                  <td>
+                    <input type="text" name="product_name_{{ loop.index0 }}" list="products-list" value="{{ row.product_name }}" class="form-control form-control-sm" placeholder="Existente o nuevo" />
+                  </td>
+                  <td>
+                    <input type="text" name="product_category_{{ loop.index0 }}" value="{{ row.product_category }}" class="form-control form-control-sm" />
+                  </td>
+                  <td>
+                    <input type="text" name="product_unit_{{ loop.index0 }}" value="{{ row.product_unit }}" class="form-control form-control-sm" />
+                  </td>
+                  <td>
+                    <input type="text" name="price_{{ loop.index0 }}" value="{{ row.price }}" class="form-control form-control-sm" />
+                  </td>
+                  <td>
+                    <select name="currency_{{ loop.index0 }}" class="form-select form-select-sm">
+                      {% for currency in currencies %}
+                      <option value="{{ currency }}" {% if row.currency == currency %}selected{% endif %}>
+                        {{ currency }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <input type="text" name="quantity_{{ loop.index0 }}" value="{{ row.quantity }}" class="form-control form-control-sm" />
+                  </td>
+                  <td>
+                    <input type="text" name="unit_{{ loop.index0 }}" value="{{ row.unit }}" class="form-control form-control-sm" />
+                  </td>
+                  <td>
+                    <select name="province_id_{{ loop.index0 }}" class="form-select form-select-sm">
+                      <option value="" {% if not row.province_id %}selected{% endif %}>No determinada</option>
+                      {% for province in provinces %}
+                      <option value="{{ province.id }}" {% if row.province_id == province.id|string %}selected{% endif %}>
+                        {{ province.name }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                </tr>
                 {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label for="quantity" class="form-label">Cantidad</label>
-              <input type="text" name="quantity" id="quantity" value="{{ values.quantity }}" class="form-control" />
-            </div>
-            <div class="col-md-3">
-              <label for="unit" class="form-label">Unidad</label>
-              <input type="text" name="unit" id="unit" value="{{ values.unit }}" class="form-control" />
-            </div>
+              </tbody>
+            </table>
           </div>
 
-          <div class="row g-3 mb-3">
-            <div class="col-md-6">
-              <label for="province_id" class="form-label">Provincia</label>
-              <select name="province_id" id="province_id" class="form-select">
-                <option value="" {% if not values.province_id %}selected{% endif %}>No determinada</option>
-                {% for province in provinces %}
-                <option value="{{ province.id }}" {% if values.province_id == province.id|string %}selected{% endif %}>
-                  {{ province.name }}
-                </option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-6">
-              <label for="source_reference" class="form-label">Canal origen</label>
-              <input type="text" name="source_reference" id="source_reference" value="{{ values.source_reference }}" class="form-control" />
-            </div>
-          </div>
+          <input type="hidden" name="row_count" value="{{ rows|length }}" />
 
-          <button type="submit" name="action" value="save_and_finish" class="btn btn-primary">Curar</button>
-          <button type="submit" name="action" value="save_and_continue" class="btn btn-outline-primary">Guardar y agregar otro producto</button>
+          <button type="submit" class="btn btn-primary">Curar anuncio</button>
         </form>
 
         <form method="post" action="/curation/{{ ingestion.id }}/discard" class="mt-2 d-inline">
           <button type="submit" class="btn btn-outline-danger btn-sm">Descartar</button>
-        </form>
-        <form method="post" action="/curation/{{ ingestion.id }}/finish" class="mt-2 d-inline">
-          <button type="submit" class="btn btn-outline-secondary btn-sm">Terminar este anuncio</button>
         </form>
       </div>
     </div>

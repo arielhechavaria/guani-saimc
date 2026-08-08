@@ -352,3 +352,31 @@ emparejamiento fila-candidato es por `product_id` primero, con fallback posicion
 para lo que no matchea (`_match_rows_to_candidates`), así una fila sin producto
 reconocido igual se compara contra la línea real que la originó en las otras tres
 métricas.
+
+---
+
+## 2026-08-08 — Multi-producto: tabla editable de una vez, reemplaza "guardar y agregar otro"
+
+Contexto: la entrada anterior (2026-08-08, "Multi-producto por anuncio") resolvió la
+extracción (`propose_all`) pero dejó la carga como una serie de POSTs de a una fila
+(`action=save_and_continue` + `POST .../finish`). Probado contra un anuncio real de 6
+productos (hígado/picadillo/muslo/molleja/spam de pollo, un mayorista de Santiago de
+Cuba), ese flujo resultó tedioso: 6 recargas de página para un solo anuncio.
+
+Decisión: `GET /curation` ahora arma una tabla con una fila por candidato de
+`propose_all` más 3 filas en blanco para altas manuales, todo en un único formulario.
+`POST /curation/{id}` pasa a `async def` y lee el form crudo (`await request.form()`)
+con campos indexados (`product_name_0`, `price_0`, ...) en vez de parámetros `Form()`
+tipados, porque la cantidad de filas es dinámica. Todo o nada: si cualquier fila con
+datos tiene un error, no se guarda ninguna — evita estados a medias confusos. Filas
+vacías se ignoran en silencio, sin exigir que el operador las borre.
+
+Descartado: el flujo de "guardar y agregar otro" — se elimina por completo (`action`,
+`POST .../finish`, y los helpers que quedaron huérfanos). Reemplazarlo en vez de
+mantener los dos caminos evita que compitan dos formas distintas de resolver lo mismo.
+
+Consecuencia: ya no hay guardado incremental — si el operador cierra la pestaña a
+mitad de una tabla larga, no se guarda nada de esa vuelta (antes, cada "guardar y
+agregar otro" persistía al toque). Aceptado como trade-off consciente por ahora; se
+revisita si en la práctica se pierden cargas largas seguido. Dos filas con el mismo
+nombre de producto nuevo en el mismo submit crean un solo `Product`, no dos.
