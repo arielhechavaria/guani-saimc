@@ -53,69 +53,84 @@
             <input type="text" name="source_reference" id="source_reference" value="{{ values.source_reference }}" class="form-control" style="max-width: 420px;" />
           </div>
 
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead>
-                <tr>
-                  <th>Incluir</th>
-                  <th>Producto</th>
-                  <th>Categoría <span class="text-muted small">(si es nuevo, opcional)</span></th>
-                  <th>Unidad producto <span class="text-muted small">(si es nuevo, opcional)</span></th>
-                  <th>Precio</th>
-                  <th>Moneda</th>
-                  <th>Cantidad</th>
-                  <th>Unidad</th>
-                  <th>Provincia</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in rows %}
-                <tr>
-                  <td>
-                    <input type="checkbox" name="include_{{ loop.index0 }}" checked />
-                  </td>
-                  <td>
-                    <input type="text" name="product_name_{{ loop.index0 }}" list="products-list" value="{{ row.product_name }}" class="form-control form-control-sm" placeholder="Existente o nuevo" />
-                  </td>
-                  <td>
-                    <input type="text" name="product_category_{{ loop.index0 }}" value="{{ row.product_category }}" class="form-control form-control-sm" />
-                  </td>
-                  <td>
-                    <input type="text" name="product_unit_{{ loop.index0 }}" value="{{ row.product_unit }}" class="form-control form-control-sm" />
-                  </td>
-                  <td>
-                    <input type="text" name="price_{{ loop.index0 }}" value="{{ row.price }}" class="form-control form-control-sm" />
-                  </td>
-                  <td>
-                    <select name="currency_{{ loop.index0 }}" class="form-select form-select-sm">
-                      {% for currency in currencies %}
-                      <option value="{{ currency }}" {% if row.currency == currency %}selected{% endif %}>
-                        {{ currency }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <input type="text" name="quantity_{{ loop.index0 }}" value="{{ row.quantity }}" class="form-control form-control-sm" />
-                  </td>
-                  <td>
-                    <input type="text" name="unit_{{ loop.index0 }}" value="{{ row.unit }}" class="form-control form-control-sm" />
-                  </td>
-                  <td>
-                    <select name="province_id_{{ loop.index0 }}" class="form-select form-select-sm">
-                      <option value="" {% if not row.province_id %}selected{% endif %}>No determinada</option>
-                      {% for province in provinces %}
-                      <option value="{{ province.id }}" {% if row.province_id == province.id|string %}selected{% endif %}>
-                        {{ province.name }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <!--
+            Una tarjeta por candidato, no una fila de tabla: el whitepaper
+            (§6.1) describe la confirmación como "producto: X ✓/✗, precio: Y
+            ✓/✗, ..." campo por campo, no como planilla. Misma tabla de campos
+            e índices de siempre (product_name_i, price_i, ...) — este cambio
+            es solo de presentación, `submit_curation` no se tocó.
+          -->
+          {% for row in rows %}
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-muted small">Producto {{ loop.index }}</span>
+                <div class="d-flex align-items-center gap-3">
+                  {% if row.product_name %}
+                  <span class="badge text-bg-success-subtle text-success-emphasis">Detectado</span>
+                  {% else %}
+                  <span class="badge text-bg-secondary-subtle text-secondary-emphasis">Agregar a mano</span>
+                  {% endif %}
+                  <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" name="include_{{ loop.index0 }}" id="include_{{ loop.index0 }}" checked />
+                    <label class="form-check-label small" for="include_{{ loop.index0 }}">Incluir</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label for="product_name_{{ loop.index0 }}" class="form-label small mb-1">Producto</label>
+                  <input type="text" name="product_name_{{ loop.index0 }}" id="product_name_{{ loop.index0 }}" list="products-list" value="{{ row.product_name }}" class="form-control form-control-sm" placeholder="Existente o nuevo" />
+                </div>
+                <div class="col-md-3">
+                  <label for="product_category_{{ loop.index0 }}" class="form-label small mb-1">Categoría <span class="text-muted">(si es nuevo, opcional)</span></label>
+                  <input type="text" name="product_category_{{ loop.index0 }}" id="product_category_{{ loop.index0 }}" value="{{ row.product_category }}" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-3">
+                  <label for="product_unit_{{ loop.index0 }}" class="form-label small mb-1">Unidad producto <span class="text-muted">(si es nuevo, opcional)</span></label>
+                  <input type="text" name="product_unit_{{ loop.index0 }}" id="product_unit_{{ loop.index0 }}" value="{{ row.product_unit }}" class="form-control form-control-sm" />
+                </div>
+              </div>
+
+              <div class="row g-2 mt-1">
+                <div class="col-md-3">
+                  <label for="price_{{ loop.index0 }}" class="form-label small mb-1">Precio</label>
+                  <input type="text" name="price_{{ loop.index0 }}" id="price_{{ loop.index0 }}" value="{{ row.price }}" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-2">
+                  <label for="currency_{{ loop.index0 }}" class="form-label small mb-1">Moneda</label>
+                  <select name="currency_{{ loop.index0 }}" id="currency_{{ loop.index0 }}" class="form-select form-select-sm">
+                    {% for currency in currencies %}
+                    <option value="{{ currency }}" {% if row.currency == currency %}selected{% endif %}>
+                      {{ currency }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <label for="quantity_{{ loop.index0 }}" class="form-label small mb-1">Cantidad</label>
+                  <input type="text" name="quantity_{{ loop.index0 }}" id="quantity_{{ loop.index0 }}" value="{{ row.quantity }}" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-2">
+                  <label for="unit_{{ loop.index0 }}" class="form-label small mb-1">Unidad <span class="text-muted">(detectada)</span></label>
+                  <input type="text" name="unit_{{ loop.index0 }}" id="unit_{{ loop.index0 }}" value="{{ row.unit }}" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-3">
+                  <label for="province_id_{{ loop.index0 }}" class="form-label small mb-1">Provincia</label>
+                  <select name="province_id_{{ loop.index0 }}" id="province_id_{{ loop.index0 }}" class="form-select form-select-sm">
+                    <option value="" {% if not row.province_id %}selected{% endif %}>No determinada</option>
+                    {% for province in provinces %}
+                    <option value="{{ province.id }}" {% if row.province_id == province.id|string %}selected{% endif %}>
+                      {{ province.name }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
+          {% endfor %}
 
           <input type="hidden" name="row_count" value="{{ rows|length }}" />
 
