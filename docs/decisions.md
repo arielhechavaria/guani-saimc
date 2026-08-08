@@ -321,3 +321,34 @@ nombre (la comparación es case-insensitive, pero no tolera variantes de escritu
 p. ej. "Aceite" vs "Aceite de cocina" como productos distintos). Si eso genera
 catálogo sucio en la práctica, se revisita con una vista de administración de
 productos — no antes, sin evidencia de que haga falta.
+
+---
+
+## 2026-08-08 — Multi-producto por anuncio: una fila por línea, sin cambio de esquema
+
+Contexto: anuncios reales del mercado informal cubano suelen ofrecer varios productos
+con precios distintos en el mismo texto, uno por línea (ej. venta mayorista con 5-6
+cortes de pollo, cada uno con su propio precio). `propose()` y la cola de curaduría
+solo manejaban un producto por anuncio — la mayoría del precio real en esos anuncios
+se perdía.
+
+Decisión: `propose_all()` (motor) devuelve una propuesta por línea con producto o
+precio reconocible; provincia y moneda caen al texto completo cuando la línea puntual
+no trae marca propia. La cola de curaduría suma `action=save_and_continue` (guarda una
+fila, el `raw_ingestion` sigue `pending`, vuelve a mostrarse con el siguiente
+candidato) y `POST /curation/{id}/finish` (cierra el anuncio, exige al menos una fila
+guardada). `prices_history.source_id` ya no tiene restricción de unicidad implícita —
+varias filas por anuncio no exigieron ningún cambio de esquema.
+
+Descartado: repetir campos indexados en un solo formulario (`product_name_0`,
+`product_name_1`, ...) para cargar todo de una. Exige decidir de antemano cuántas
+filas renderizar y complica la validación; guardar-y-continuar reutiliza el mismo
+formulario de siempre, sin JS.
+
+Consecuencia: `saimc/extraction/measure.py` pasó de evaluar por ingesta a evaluar por
+fila (`evaluated_rows_count`, distinto de `text_curated_count`) — antes pisaba en
+silencio todas las filas de un anuncio menos la última al indexar por `source_id`. El
+emparejamiento fila-candidato es por `product_id` primero, con fallback posicional
+para lo que no matchea (`_match_rows_to_candidates`), así una fila sin producto
+reconocido igual se compara contra la línea real que la originó en las otras tres
+métricas.

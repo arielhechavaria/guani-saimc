@@ -26,14 +26,6 @@ razonable de jerga cubana, no validada contra anuncios reales (ver
 
 Bloqueado por: volumen real de anuncios curados que lo ejerciten.
 
-## Soporte multi-precio/cantidad por anuncio
-
-Por qué importa: hoy `propose()` toma solo la primera coincidencia de precio
-y cantidad. Un anuncio con varias ofertas pierde las demás.
-
-Bloqueado por: evidencia de que esto pasa seguido en la práctica (aceptado
-como límite conocido el 2026-08-07, cuando se construyó el motor).
-
 ## Persistir `unit` por fila en `prices_history`
 
 Por qué importa: hoy la métrica de cantidad/unidad de H0 se aproxima contra
