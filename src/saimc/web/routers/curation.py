@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.extraction import ocr
-from saimc.extraction.engine import ExtractionProposal, propose
+from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.models import (
     ContentType,
     Currency,
@@ -93,6 +93,7 @@ def _render_queue(
     values: dict[str, str],
     error: str | None,
     status_code: int = 200,
+    already_saved_count: int = 0,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -105,9 +106,32 @@ def _render_queue(
             "values": values,
             "error": error,
             "currencies": [c.value for c in Currency],
+            "already_saved_count": already_saved_count,
         },
         status_code=status_code,
     )
+
+
+def _saved_price_history(db: Session, ingestion_id: uuid.UUID) -> list[PriceHistory]:
+    """Filas de `prices_history` ya guardadas para este anuncio (multi-producto)."""
+    stmt = select(PriceHistory).where(PriceHistory.source_id == ingestion_id)
+    return list(db.execute(stmt).scalars().all())
+
+
+def _pending_proposals(
+    proposals: list[ExtractionProposal], saved: list[PriceHistory]
+) -> list[ExtractionProposal]:
+    """Descarta candidatos que ya se guardaron como fila (mismo producto y precio).
+
+    Sin `product` no hay forma confiable de identificar el candidato con una
+    fila ya guardada, así que esos no se filtran: el operador los revisa a mano.
+    """
+    saved_keys = {(row.product_id, row.price) for row in saved}
+    return [
+        proposal
+        for proposal in proposals
+        if proposal.product is None or (proposal.product.id, proposal.price) not in saved_keys
+    ]
 
 
 @router.get("/curation", response_class=HTMLResponse)
@@ -116,25 +140,38 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
 
     Para imágenes sin `original_text` (el caso normal: el OCR no corre en la
     ingesta), se transcribe acá mismo para tener un texto candidato con el que
-    correr `propose()` — el mismo camino que ya usan los ítems de texto. El
+    correr `propose_all()` — el mismo camino que ya usan los ítems de texto. El
     operador ve ese texto en un campo editable y lo confirma o corrige al curar.
+
+    Un anuncio puede ofrecer varios productos (`propose_all` devuelve un
+    candidato por línea). Se prellena con el primer candidato que todavía no
+    tenga una fila guardada de una vuelta anterior de "guardar y agregar otro"
+    (ver `POST /curation/{id}` con `action=save_and_continue`).
     """
     ingestion = _oldest_pending(db)
     products = _all_products(db)
     provinces = _all_provinces(db)
 
-    proposal = None
+    proposals: list[ExtractionProposal] = []
     recognized_text = ""
     if ingestion is not None and ingestion.content_type == ContentType.TEXT:
         if ingestion.original_text:
-            proposal = propose(ingestion.original_text, products, provinces)
+            proposals = propose_all(ingestion.original_text, products, provinces)
     elif ingestion is not None and ingestion.original_text is None:
         # content_type == IMAGE acá (el único otro valor posible).
         settings = get_settings()
         recognized_text = ocr.transcribe(settings.raw_store_dir / ingestion.file_path)
         if recognized_text:
-            proposal = propose(recognized_text, products, provinces)
+            proposals = propose_all(recognized_text, products, provinces)
 
+    already_saved_count = 0
+    if ingestion is not None:
+        saved = _saved_price_history(db, ingestion.id)
+        already_saved_count = len(saved)
+        if saved:
+            proposals = _pending_proposals(proposals, saved)
+
+    proposal = proposals[0] if proposals else None
     values = _values_from_proposal(proposal)
     values["original_text"] = recognized_text
 
@@ -145,6 +182,7 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
         provinces=provinces,
         values=values,
         error=None,
+        already_saved_count=already_saved_count,
     )
 
 
@@ -206,11 +244,18 @@ def submit_curation(
     province_id: str = Form(""),
     source_reference: str = Form(""),
     original_text: str = Form(""),
+    action: str = Form("save_and_finish"),
 ) -> HTMLResponse | RedirectResponse:
-    """Confirma la curaduría: crea la fila de `prices_history` y marca `curated`.
+    """Confirma la curaduría: crea la fila de `prices_history`.
 
     Sin motor de validación todavía (docs/decisions.md, 2026-08-07): la fila
     se crea con `confidence_score`, `price_cup` y `exchange_rate*` en None.
+
+    `action=save_and_continue` guarda la fila pero deja el `raw_ingestion` en
+    `pending`, para anuncios con varios productos (whitepaper multi-línea): el
+    operador vuelve a `/curation`, que le muestra el mismo anuncio con el
+    siguiente candidato. Cualquier otro valor (o ausencia, default
+    `save_and_finish`) es el comportamiento de siempre: una fila y `curated`.
     """
     ingestion = _require_pending(db, ingestion_id)
 
@@ -258,6 +303,7 @@ def submit_curation(
             },
             error=" ".join(errors),
             status_code=422,
+            already_saved_count=len(_saved_price_history(db, ingestion.id)),
         )
 
     if product is None:
@@ -301,8 +347,48 @@ def submit_curation(
     if ingestion.content_type == ContentType.IMAGE and original_text:
         ingestion.original_text = original_text
 
-    ingestion.processing_status = ProcessingStatus.CURATED
+    # `save_and_continue`: anuncio multi-producto, quedan más líneas por
+    # cargar. El `raw_ingestion` sigue `pending` a propósito — lo vuelve a
+    # traer `GET /curation` con el siguiente candidato (ver `_pending_proposals`).
+    if action != "save_and_continue":
+        ingestion.processing_status = ProcessingStatus.CURATED
 
+    db.commit()
+
+    return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/curation/{ingestion_id}/finish", response_model=None)
+def finish_curation(
+    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse | RedirectResponse:
+    """Cierra un anuncio multi-producto sin cargar una fila más.
+
+    Para cuando el operador ya guardó todas las líneas que le interesaban vía
+    `save_and_continue` y quiere marcar `curated` sin volver a pasar por el
+    formulario. Exige al menos una fila guardada: `measure.py` asume que todo
+    `raw_ingestion` de texto curado tiene su `PriceHistory` (ver instrucciones
+    de esta tarea) y un anuncio "curado" sin datos no aporta nada a H0.
+    """
+    ingestion = _require_pending(db, ingestion_id)
+
+    saved = _saved_price_history(db, ingestion.id)
+    if not saved:
+        return _render_queue(
+            request,
+            ingestion=ingestion,
+            products=_all_products(db),
+            provinces=_all_provinces(db),
+            values=_values_from_proposal(None),
+            error=(
+                "Todavía no cargaste ningún producto de este anuncio. "
+                "Usá Descartar si no tiene información útil."
+            ),
+            status_code=422,
+            already_saved_count=0,
+        )
+
+    ingestion.processing_status = ProcessingStatus.CURATED
     db.commit()
 
     return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
