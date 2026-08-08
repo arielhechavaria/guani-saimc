@@ -108,6 +108,24 @@ class TestCurationQueueGet:
         assert response.status_code == 200
         assert "no hay elementos en la cola" in response.text.lower()
 
+    def test_muestra_contador_de_curados_y_por_curar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El operador cura en sesiones y quiere saber cuánto le queda sin
+        consultar la base a mano (docs/decisions.md)."""
+        _crear_raw_ingestion(session, hash_="hash-contador-pending-1")
+        _crear_raw_ingestion(session, hash_="hash-contador-pending-2")
+        curado = _crear_raw_ingestion(session, hash_="hash-contador-curado-1")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Curados: <strong>1</strong>" in response.text
+        assert "Por curar: <strong>2</strong>" in response.text
+        assert "Descartados: <strong>0</strong>" in response.text
+
     def test_muestra_el_pendiente_mas_antiguo(
         self, client: TestClient, session: Session
     ) -> None:

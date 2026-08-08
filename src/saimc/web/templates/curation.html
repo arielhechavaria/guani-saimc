@@ -8,7 +8,12 @@
 </head>
 <body class="bg-light">
   <div class="container py-4" style="max-width: 900px;">
-    <h1 class="h3 mb-4">Cola de curaduría</h1>
+    <h1 class="h3 mb-2">Cola de curaduría</h1>
+    <p class="text-muted small mb-4">
+      Curados: <strong>{{ status_counts.curated }}</strong> ·
+      Por curar: <strong>{{ status_counts.pending }}</strong> ·
+      Descartados: <strong>{{ status_counts.discarded }}</strong>
+    </p>
 
     {% if error %}
     <div class="alert alert-danger" role="alert">{{ error }}</div>

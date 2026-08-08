@@ -17,7 +17,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
@@ -91,6 +91,17 @@ def _all_provinces(db: Session) -> list[Province]:
     return list(db.execute(select(Province).order_by(Province.name)).scalars().all())
 
 
+def _status_counts(db: Session) -> dict[str, int]:
+    """Cuántos elementos hay por estado — para que el operador sepa cuánto
+    le queda de la cola mientras cura, sin tener que consultar la base a mano.
+    """
+    stmt = select(RawIngestion.processing_status, func.count(RawIngestion.id)).group_by(
+        RawIngestion.processing_status
+    )
+    counts = dict(db.execute(stmt).all())
+    return {status.value: counts.get(status, 0) for status in ProcessingStatus}
+
+
 def _render_queue(
     request: Request,
     *,
@@ -101,6 +112,7 @@ def _render_queue(
     row_count: int,
     global_values: dict[str, str],
     error: str | None,
+    status_counts: dict[str, int],
     status_code: int = 200,
 ) -> HTMLResponse:
     templates = request.app.state.templates
@@ -116,6 +128,7 @@ def _render_queue(
             "values": global_values,
             "error": error,
             "currencies": [c.value for c in Currency],
+            "status_counts": status_counts,
         },
         status_code=status_code,
     )
@@ -177,6 +190,7 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
         row_count=len(rows),
         global_values=global_values,
         error=None,
+        status_counts=_status_counts(db),
     )
 
 
@@ -380,6 +394,7 @@ async def submit_curation(
             row_count=row_count,
             global_values={"original_text": original_text, "source_reference": source_reference},
             error=" ".join(errors),
+            status_counts=_status_counts(db),
             status_code=422,
         )
 
