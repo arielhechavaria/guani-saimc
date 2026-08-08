@@ -212,8 +212,8 @@ class TestProvincia:
 
 class TestCanalOrigen:
     """`guess_source_reference` adivina quién publicó a partir del patrón
-    típico de redes al principio del texto (docs/backlog.md): "Nombre - Ayer
-    a las H:MM" / "Nombre - D de mes a las H:MM".
+    típico de redes (docs/backlog.md): "Nombre - Ayer a las H:MM" / "Nombre -
+    D de mes a las H:MM".
     """
 
     def test_nombre_con_ayer_a_las(self) -> None:
@@ -233,6 +233,18 @@ class TestCanalOrigen:
 
     def test_texto_vacio_da_none(self) -> None:
         assert guess_source_reference("") is None
+
+    def test_nombre_en_segunda_linea_cuando_la_primera_es_ruido_de_ocr(self) -> None:
+        """Caso real (ingestion con OCR): la línea 0 suele ser el nombre de la
+        página/grupo o basura de OCR, no de quien publica — el patrón
+        "Nombre - fecha a las H:MM" aparece recién en la línea siguiente.
+        """
+        texto = (
+            "29] 360 Santiago de Cuba Compra y Venta, Cuba\n"
+            "Proyecto Aguilera - 30 de julio a las 9:49p. m. - Y\n"
+            "pollo a 100 stgo"
+        )
+        assert guess_source_reference(texto) == "Proyecto Aguilera"
 
 
 class TestProposeAllMultiProducto:

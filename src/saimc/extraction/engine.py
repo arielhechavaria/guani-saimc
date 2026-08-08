@@ -138,17 +138,22 @@ _DISQUALIFYING_MODIFIER_RE = re.compile(
 
 # --- canal origen -------------------------------------------------------------
 
-# Patrón habitual de redes tipo Facebook/Marketplace al principio del texto:
-# "Nombre - Ayer a las H:MM" / "Nombre - D de mes a las H:MM" (docs/backlog.md).
-# Solo se busca en la primera línea: el patrón real observado siempre encabeza
-# el texto, buscar en todo el cuerpo arriesgaría matchear un " - " que no
-# tiene nada que ver con quien publicó.
+# Patrón habitual de redes tipo Facebook/Marketplace: "Nombre - Ayer a las
+# H:MM" / "Nombre - D de mes a las H:MM" (docs/backlog.md). "a las?" tolera
+# el "a la" (singular) que a veces deja el OCR.
 _SOURCE_REFERENCE_RE = re.compile(
     r"^(?P<name>.+?)\s*-\s*"
     r"(?:ayer|hoy|\d{1,2}\s+de\s+[a-záéíóúñ]+)"
-    r"\s+a\s+las\s+\d{1,2}:\d{2}",
+    r"\s+a\s+las?\s+\d{1,2}:\d{2}",
     re.IGNORECASE,
 )
+
+# Cuántas líneas iniciales se revisan buscando el patrón. Contra los
+# anuncios reales capturados hasta ahora (docs/decisions.md, 2026-08-08) el
+# patrón aparece siempre en la línea 1 (índice 1): la línea 0 suele ser el
+# nombre de la página/grupo o ruido de OCR, no de quien publica. 5 da margen
+# sin arriesgar matchear un " - " suelto en medio del cuerpo del anuncio.
+_SOURCE_REFERENCE_SEARCH_LINES = 5
 
 
 def guess_source_reference(text: str) -> str | None:
@@ -158,12 +163,14 @@ def guess_source_reference(text: str) -> str | None:
     en la cola de curaduría; el operador la revisa y corrige (`source_reference`
     sigue siendo 100% manual en cuanto a lo que termina guardado).
     """
-    first_line = text.splitlines()[0].strip() if text else ""
-    match = _SOURCE_REFERENCE_RE.match(first_line)
-    if match is None:
-        return None
-    name = match.group("name").strip(" -•\t")
-    return name or None
+    lines = text.splitlines()[:_SOURCE_REFERENCE_SEARCH_LINES] if text else []
+    for line in lines:
+        match = _SOURCE_REFERENCE_RE.match(line.strip())
+        if match is not None:
+            name = match.group("name").strip(" -•\t")
+            if name:
+                return name
+    return None
 
 
 @dataclass

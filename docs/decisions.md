@@ -590,3 +590,33 @@ Descartado: adoptarlo ahora, sin datos reales que lo justifiquen — Fase 0
 todavía valida H0 con curaduría manual, no hay capa predictiva que alimentar.
 Consecuencia: TabPFN queda como candidato para cuando exista volumen real en
 al menos 2 provincias; no bloquea nada de lo que se está trabajando hoy.
+
+---
+
+## 2026-08-08 — Canal origen: buscar en varias líneas, no solo la primera
+
+Contexto: prueba manual del operador sobre el anuncio pendiente real mostró
+"Canal origen" siempre vacío. La decisión previa (misma fecha, "Canal origen
+se propone desde el patrón de fecha de redes") asumía que el patrón
+"Nombre - fecha a las H:MM" encabeza la línea 0 del texto. Contra los 8
+`raw_ingestions` reales, esto era falso en el 100% de los casos: la línea 0
+es el nombre de la página/grupo o ruido de OCR, y el patrón real aparece en
+la línea 1.
+
+Decisión: `guess_source_reference()` ahora revisa las primeras 5 líneas
+(antes solo la línea 0) y devuelve el primer match. También tolera "a la"
+además de "a las" (variante que deja el OCR). Reemplaza el alcance de la
+decisión anterior sin cambiar su diseño de fondo (sigue siendo una sugerencia
+editable, nunca lo que se guarda sin pasar por el operador).
+
+Descartado: unir líneas cuando nombre y fecha quedan en renglones separados
+sin " - " entre medio (ej. "CIMEX... - Seguir\nAyer a las 12:53 p.m.", un
+botón "Seguir" de Facebook interrumpe el patrón) — la heurística de línea
+única no lo cubre y unir líneas arbitrariamente arriesga falsos positivos
+más de lo que vale la pena para este caso.
+
+Consecuencia: contra el corpus real, pasó de 0/8 a 4/8 anuncios con canal
+origen prellenado (los otros 4 no tienen el patrón en absoluto, o lo tienen
+partido en dos líneas sin guion). El resultado a veces incluye ruido de OCR
+al principio del nombre (ej. "iS Yongert Clavel Danger") — igual de tolerado
+que el ruido en `product_name_guess`: el operador lo corrige al confirmar.
