@@ -357,3 +357,31 @@ class TestProposeAllMultiProducto:
 
         assert len(resultados) == 1
         assert resultados[0].product is products[0]
+
+    def test_linea_de_puro_url_se_descarta(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Caso real: un anuncio que invita a un grupo de WhatsApp deja una
+        línea que es solo el link. No aporta nada y arriesga matchear texto
+        de la URL como si fuera precio/cantidad."""
+        texto = (
+            "pollo a 100 habana\n"
+            "https://chatwhatsapp.com/GDjcSQyw7qwCyxmL4wHWsx?s=sh8p=a...\n"
+        )
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 1
+        assert resultados[0].product is products[0]
+
+    def test_linea_de_puro_simbolo_o_emoji_se_descarta(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Sin ninguna letra ni dígito, una línea no puede aportar producto
+        ni precio — es ruido de OCR (separadores, emojis sueltos)."""
+        texto = "pollo a 100 habana\n•••\n🐔🐔🐔\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 1
+        assert resultados[0].product is products[0]

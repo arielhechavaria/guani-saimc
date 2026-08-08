@@ -701,3 +701,33 @@ Consecuencia: `products` pasó de 15 a 13 filas. "Azúcar blanca" concentra
 ahora las 3 referencias de `prices_history` que antes estaban repartidas
 entre 3 productos. Sin script de reconciliación automática: si aparecen
 duplicados nuevos por otra causa, se revisan y limpian igual que esta vez.
+
+---
+
+## 2026-08-08 — Líneas de puro URL/símbolo: ya cubiertas, sin código nuevo
+
+Contexto: un anuncio real (venta de arroz, Santiago de Cuba) trae mucho ruido
+de OCR — línea de invitación a grupo de WhatsApp con URL, líneas con un solo
+carácter suelto, saltos de línea irregulares. Antes de agregar un filtro
+explícito para descartar URLs y líneas de puro símbolo/emoji, se verificó
+contra el motor real si hacía falta.
+
+Decisión: no hace falta código nuevo. `_extract_price` y `_extract_quantity`
+ya devuelven `None` para esas líneas (ninguna regex de precio/cantidad
+matchea una URL o una línea sin letras ni dígitos), así que la regla que ya
+existe en `propose_all` ("sin producto y sin precio, se descarta") las filtra
+sola. Se agregaron tests con el caso real (URL de WhatsApp, línea de
+separadores, línea de solo emoji) como cobertura de regresión de este
+comportamiento, sin tocar `engine.py`.
+
+Descartado: agregar un filtro explícito de "línea basura" antes del loop
+principal. Hubiera sido código muerto — ninguna de las líneas que cubriría
+llega a producir una propuesta hoy.
+
+Consecuencia: el ruido de OCR "puro" (URLs, símbolos, líneas de un
+carácter) no es la causa de las tarjetas parciales que se ven en anuncios
+como este — la causa real es la de la entrada anterior sobre "nombre
+arriba, precio abajo sin repetirlo" (`Arroz Santiago de cuba` matchea sin
+precio, `Pacas de 30... a $730` matchea precio sin producto). Esa queda
+pendiente, deliberadamente, hasta tener más volumen real que muestre qué
+tan común es el patrón (ver `docs/backlog.md`).

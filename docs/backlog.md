@@ -78,3 +78,17 @@ curado ya es referencia, porque no hay otra fuente (`decisions.md`,
 2026-08-07). Vuelve a ser relevante cuando existan fuentes automáticas.
 
 Bloqueado por: Fase 2 — fuentes automáticas (whitepaper §6.1, Etapa 3).
+
+## `propose_all`: producto mencionado una vez, precio repetido en varias líneas
+
+Por qué importa: patrón real (`decisions.md`, 2026-08-08) — un anuncio dice
+el producto en el título o en una frase de venta ("Arroz Santiago de cuba",
+"¡VENTA MAYORISTA DE PACAS DE ARROZ!") y después lista precios sin repetir
+el nombre en cada línea. El modelo línea-por-línea de `propose_all` genera
+tarjetas con producto sin precio (la línea del título) y tarjetas con precio
+sin producto (las líneas de oferta) en vez de una sola tarjeta completa por
+oferta.
+
+Bloqueado por: volumen real que muestre qué tan común es el patrón contra
+otras formas de anuncio, antes de rediseñar el modelo de matching de
+`propose_all` (evaluado y pospuesto explícitamente el 2026-08-08).
