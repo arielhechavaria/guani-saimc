@@ -24,6 +24,10 @@ venv/
 inbox/
 data/
 
+# Backups de la base (scripts/backup_db.sh). Mismo motivo que inbox/data:
+# volcado completo de la base, con lo que eso implica.
+backups/
+
 # Editor / OS
 .DS_Store
 *.swp

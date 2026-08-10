@@ -870,3 +870,31 @@ Consecuencia: deploy manual de un cambio con migración es **dos pasos, no
 uno** — `systemctl restart saimc` Y `alembic upgrade head`, en ese orden no
 importa cuál primero mientras se hagan los dos. Sin CI/CD que lo automatice,
 queda como recordatorio explícito acá hasta que el volumen real lo justifique.
+
+---
+
+## 2026-08-10 — Backup diario de PostgreSQL: `pg_dump` + systemd timer, local
+
+Contexto: con Syncthing y la ingesta enganchada en `/curation` (entradas
+anteriores), la carga real empezó a entrar rápido — la medición de H0 depende
+enteramente de estos datos y no existía ningún backup de la base.
+
+Decisión: `scripts/backup_db.sh` corre `pg_dump` contra `SAIMC_DATABASE_URL`
+(leída de `.env`, sin duplicar la credencial en el script), comprime, y
+retiene los últimos 7 días. `systemd/saimc-backup.{service,timer}` (instalados
+a mano en `/etc/systemd/system/`, mismo patrón que `saimc.service` y
+`syncthing@ariel`) lo corren todos los días a las 3am UTC, con
+`Persistent=true` para que se ponga al día si el VPS estuvo apagado a esa
+hora. Los dumps quedan en `backups/` (gitignored, mismo motivo que
+`inbox/`/`data/`: contienen los datos completos de la base).
+
+Descartado: backup fuera del VPS (S3, otro servidor). Es el límite conocido
+más importante de esta decisión — si el disco del VPS se pierde entero, se
+pierde el backup también. No se agrega ahora por simplicidad y porque no hay
+evidencia todavía de que el riesgo lo justifique frente al costo de sumar una
+dependencia externa (conexión intermitente, decisión de contexto de
+`CLAUDE.md`); se revisita si el volumen real lo amerita.
+
+Consecuencia: primer artefacto de infraestructura versionado en el repo
+(`systemd/`) — antes `saimc.service` se armó a mano y nunca quedó en git. No
+se agregó retroactivamente por estar fuera del alcance de este slice.
