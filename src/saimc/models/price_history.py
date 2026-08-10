@@ -85,6 +85,10 @@ class PriceHistory(Base):
     exchange_rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     exchange_rate_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True)
+    # Día de publicación del anuncio, no instante — eje temporal de la serie
+    # (whitepaper §6.1c/§7.2). Nullable, sin default y sin CHECK: un dato
+    # secundario nunca debe bloquear un insert (design.md, D2).
+    published_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Linaje al registro crudo. RESTRICT y nunca CASCADE: raw_ingestions es
     # inmutable y ningún precio publicado puede quedar sin su evidencia.
     source_id: Mapped[uuid.UUID] = mapped_column(

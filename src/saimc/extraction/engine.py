@@ -13,6 +13,7 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from saimc.models import Currency, Product, Province
@@ -143,7 +144,7 @@ _DISQUALIFYING_MODIFIER_RE = re.compile(
 # el "a la" (singular) que a veces deja el OCR.
 _SOURCE_REFERENCE_RE = re.compile(
     r"^(?P<name>.+?)\s*-\s*"
-    r"(?:ayer|hoy|\d{1,2}\s+de\s+[a-záéíóúñ]+)"
+    r"(?P<when>ayer|hoy|\d{1,2}\s+de\s+[a-záéíóúñ]+)"
     r"\s+a\s+las?\s+\d{1,2}:\d{2}",
     re.IGNORECASE,
 )
@@ -156,6 +157,21 @@ _SOURCE_REFERENCE_RE = re.compile(
 _SOURCE_REFERENCE_SEARCH_LINES = 5
 
 
+def _match_source_line(text: str) -> re.Match[str] | None:
+    """Escanea las primeras líneas del anuncio buscando `_SOURCE_REFERENCE_RE`.
+
+    Compartido por `guess_source_reference` y `guess_published_date`: los dos
+    leen el mismo patrón de fecha de redes, uno para el nombre (`name`) y el
+    otro para el token de fecha (`when`) — un solo escaneo, no dos regex.
+    """
+    lines = text.splitlines()[:_SOURCE_REFERENCE_SEARCH_LINES] if text else []
+    for line in lines:
+        match = _SOURCE_REFERENCE_RE.match(line.strip())
+        if match is not None:
+            return match
+    return None
+
+
 def guess_source_reference(text: str) -> str | None:
     """Adivina quién publicó el anuncio a partir del patrón de fecha de redes.
 
@@ -163,14 +179,75 @@ def guess_source_reference(text: str) -> str | None:
     en la cola de curaduría; el operador la revisa y corrige (`source_reference`
     sigue siendo 100% manual en cuanto a lo que termina guardado).
     """
-    lines = text.splitlines()[:_SOURCE_REFERENCE_SEARCH_LINES] if text else []
-    for line in lines:
-        match = _SOURCE_REFERENCE_RE.match(line.strip())
-        if match is not None:
-            name = match.group("name").strip(" -•\t")
-            if name:
-                return name
-    return None
+    match = _match_source_line(text)
+    if match is None:
+        return None
+    name = match.group("name").strip(" -•\t")
+    return name or None
+
+
+# Nombres de mes sin tilde (el texto de OCR/tipeo tampoco suele traerla, ver
+# `_strip_accents`) → número de mes. Solo los que puede producir el patrón
+# `\d{1,2}\s+de\s+[a-záéíóúñ]+`; cualquier otra palabra en esa posición
+# ("trueno") no es un mes real y `guess_published_date` debe degradar a
+# `None`, no inventar una fecha.
+_MONTHS: dict[str, int] = {
+    "enero": 1,
+    "febrero": 2,
+    "marzo": 3,
+    "abril": 4,
+    "mayo": 5,
+    "junio": 6,
+    "julio": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "setiembre": 9,
+    "octubre": 10,
+    "noviembre": 11,
+    "diciembre": 12,
+}
+
+
+def guess_published_date(text: str, captured_at: datetime) -> date | None:
+    """Adivina el día de publicación del anuncio a partir del mismo patrón de
+    fecha de redes que usa `guess_source_reference` (design.md, D3/D4).
+
+    Heurística de sugerencia, no un valor confirmado — la cola de curaduría
+    la prellena y el operador la revisa o corrige, igual que
+    `guess_source_reference`/`product_name_guess`. Nunca devuelve una fecha
+    posterior a `captured_at.date()`: un token relativo ("ayer", "D de mes")
+    solo tiene sentido mirando hacia el pasado desde el momento de la
+    captura.
+    """
+    match = _match_source_line(text)
+    if match is None:
+        return None
+
+    when = match.group("when").lower()
+    captured_date = captured_at.date()
+
+    if when == "hoy":
+        return captured_date
+    if when == "ayer":
+        return captured_date - timedelta(days=1)
+
+    day_month = re.match(r"(\d{1,2})\s+de\s+([a-záéíóúñ]+)", when, re.IGNORECASE)
+    if day_month is None:
+        return None
+    month = _MONTHS.get(_strip_accents(day_month.group(2).lower()))
+    if month is None:
+        return None
+    try:
+        resolved = date(captured_date.year, month, int(day_month.group(1)))
+    except ValueError:
+        # Día inválido para ese mes ("31 de febrero"): no hay fecha que adivinar.
+        return None
+
+    if resolved > captured_date:
+        # Post de diciembre capturado en enero: con el año de `captured_at`
+        # la fecha cae en el futuro — es del año anterior.
+        resolved = resolved.replace(year=resolved.year - 1)
+    return resolved
 
 
 @dataclass

@@ -10,11 +10,17 @@ Estos tests NO miden H0. H0 se mide después, contra el conjunto real de 300+
 anuncios curados (docs/decisions.md, 2026-08-07).
 """
 
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
 
-from saimc.extraction.engine import guess_source_reference, propose, propose_all
+from saimc.extraction.engine import (
+    guess_published_date,
+    guess_source_reference,
+    propose,
+    propose_all,
+)
 from saimc.models import Product, Province
 
 
@@ -271,6 +277,56 @@ class TestCanalOrigen:
             "pollo a 100 stgo"
         )
         assert guess_source_reference(texto) == "Proyecto Aguilera"
+
+
+class TestFechaPublicacion:
+    """`guess_published_date` adivina el día de publicación reutilizando el
+    grupo de fecha (`when`) que `_SOURCE_REFERENCE_RE` ya matchea para
+    `guess_source_reference` (design.md, D3/D4). Resuelve tokens relativos
+    contra `captured_at` de la ingesta y nunca devuelve una fecha posterior
+    a `captured_at.date()`.
+    """
+
+    def test_hoy_resuelve_contra_captured_at(self) -> None:
+        captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
+        texto = "Juan Pérez - Hoy a las 14:35\npollo a 100 habana"
+        assert guess_published_date(texto, captured_at) == date(2026, 8, 10)
+
+    def test_ayer_resta_un_dia(self) -> None:
+        captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
+        texto = "Juan Pérez - Ayer a las 14:35\npollo a 100 habana"
+        assert guess_published_date(texto, captured_at) == date(2026, 8, 9)
+
+    def test_dia_de_mes_mismo_anio(self) -> None:
+        captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
+        texto = "María López - 3 de agosto a las 9:12\narroz a 200"
+        assert guess_published_date(texto, captured_at) == date(2026, 8, 3)
+
+    def test_rollover_diciembre_a_enero(self) -> None:
+        """Un post de diciembre capturado en enero: resolver "30 de diciembre"
+        con el año de `captured_at` (2026) daría una fecha futura respecto a
+        la captura — se resta un año."""
+        captured_at = datetime(2026, 1, 5, 10, 0, tzinfo=UTC)
+        texto = "Grupo Ofertas - 30 de diciembre a las 20:00\npollo a 100"
+        assert guess_published_date(texto, captured_at) == date(2025, 12, 30)
+
+    def test_mes_inexistente_da_none(self) -> None:
+        captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
+        texto = "Juan - 5 de trueno a las 10:00\npollo a 100"
+        assert guess_published_date(texto, captured_at) is None
+
+    def test_31_de_febrero_da_none(self) -> None:
+        captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
+        texto = "Juan - 31 de febrero a las 10:00\npollo a 100"
+        assert guess_published_date(texto, captured_at) is None
+
+    def test_sin_patron_da_none(self) -> None:
+        captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
+        assert guess_published_date("pollo congelado a 100 habana", captured_at) is None
+
+    def test_texto_vacio_da_none(self) -> None:
+        captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
+        assert guess_published_date("", captured_at) is None
 
 
 class TestProposeAllMultiProducto:

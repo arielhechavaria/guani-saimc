@@ -13,7 +13,10 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from sqlalchemy import text
+import sqlalchemy as sa
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -167,6 +170,30 @@ def _crear_precio(producto: Product, fuente: RawIngestion, **overrides: object) 
 
 
 class TestPricesHistoryNullability:
+    def test_published_date_none_aceptado(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, published_date=None)
+        session.add(precio)
+        session.commit()
+
+        assert precio.id is not None
+        assert precio.published_date is None
+
+    def test_published_date_con_valor_persiste(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, published_date=date(2026, 8, 5))
+        session.add(precio)
+        session.commit()
+        session.expunge(precio)
+
+        recuperado = session.get(PriceHistory, precio.id)
+        assert recuperado is not None
+        assert recuperado.published_date == date(2026, 8, 5)
+
     def test_province_id_none_aceptado(self, session: Session) -> None:
         producto = _crear_producto(session)
         fuente = _crear_raw_ingestion(session)
@@ -336,6 +363,45 @@ class TestPricesHistoryExclusiones:
         palabras_dato_personal = ("phone", "telefono", "contact", "address", "direccion")
         for nombre in nombres_columnas:
             assert not any(palabra in nombre for palabra in palabras_dato_personal)
+
+
+class TestPublishedDateMigration:
+    """`0005_prices_history_published_date.py` — `upgrade()`/`downgrade()`
+    corridos contra un engine SQLite real vía `Operations.context()`, no solo
+    cargados con `importlib` (a diferencia de 0003/0004, acá el módulo no
+    expone una función de datos pura: son dos `op.add_column`/`op.drop_column`
+    de una línea, así que probar el módulo entero es correr esos dos)."""
+
+    def test_upgrade_agrega_la_columna_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0005_prices_history_published_date.py")
+
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "prices_history",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "published_date" in columnas
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "published_date" not in columnas
+            assert "id" in columnas  # el downgrade no se llevó ninguna otra columna
+
+        engine.dispose()
 
 
 class TestSeedProvinces:
