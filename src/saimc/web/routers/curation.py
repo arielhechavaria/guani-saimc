@@ -13,6 +13,7 @@ agrega columnas nuevas.
 """
 
 import uuid
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -23,7 +24,12 @@ from starlette.datastructures import FormData
 
 from saimc.config import get_settings
 from saimc.extraction import ocr
-from saimc.extraction.engine import ExtractionProposal, guess_source_reference, propose_all
+from saimc.extraction.engine import (
+    ExtractionProposal,
+    guess_published_date,
+    guess_source_reference,
+    propose_all,
+)
 from saimc.models import (
     ContentType,
     Currency,
@@ -164,10 +170,13 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
     proposals: list[ExtractionProposal] = []
     recognized_text = ""
     source_reference_guess = ""
+    published_date_guess = ""
     if ingestion is not None and ingestion.content_type == ContentType.TEXT:
         if ingestion.original_text:
             proposals = propose_all(ingestion.original_text, products, provinces)
             source_reference_guess = guess_source_reference(ingestion.original_text) or ""
+            guessed = guess_published_date(ingestion.original_text, ingestion.captured_at)
+            published_date_guess = guessed.isoformat() if guessed else ""
     elif ingestion is not None and ingestion.original_text is None:
         # content_type == IMAGE acá (el único otro valor posible).
         settings = get_settings()
@@ -175,11 +184,17 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
         if recognized_text:
             proposals = propose_all(recognized_text, products, provinces)
             source_reference_guess = guess_source_reference(recognized_text) or ""
+            guessed = guess_published_date(recognized_text, ingestion.captured_at)
+            published_date_guess = guessed.isoformat() if guessed else ""
 
     rows = [_values_from_proposal(proposal) for proposal in proposals]
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
 
-    global_values = {"original_text": recognized_text, "source_reference": source_reference_guess}
+    global_values = {
+        "original_text": recognized_text,
+        "source_reference": source_reference_guess,
+        "published_date": published_date_guess,
+    }
 
     return _render_queue(
         request,
@@ -235,6 +250,26 @@ def _parse_decimal(raw: str) -> Decimal | None:
         return Decimal(raw)
     except InvalidOperation:
         return None
+
+
+def _parse_date(raw: str) -> date | None:
+    """Parsea el `<input type="date">` (ISO `YYYY-MM-DD` del navegador).
+
+    Vacío, no parseable o posterior a hoy degrada a `None`, nunca rompe el
+    submit — mismo contrato que `_parse_decimal` (spec: Campo nunca
+    bloqueante / Valor inválido o futuro). La validación vive acá, en la capa
+    web, no en un CHECK de base (design.md, D2): un dato secundario no debe
+    convertirse en un fallo de transacción.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = date.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed > date.today():
+        return None
+    return parsed
 
 
 # Defaults para alta de producto nuevo cuando el operador no completa
@@ -329,6 +364,8 @@ async def submit_curation(
 
     original_text = str(form.get("original_text", "")).strip()
     source_reference = str(form.get("source_reference", "")).strip()
+    published_date_raw = str(form.get("published_date", "")).strip()
+    published_date = _parse_date(published_date_raw)
     try:
         row_count = int(str(form.get("row_count", "0")))
     except ValueError:
@@ -374,6 +411,7 @@ async def submit_curation(
                 price=price_value,
                 currency=row["currency"],
                 quantity=_parse_decimal(row["quantity"]),
+                published_date=published_date,
                 source_id=ingestion.id,
             )
         )
@@ -392,7 +430,11 @@ async def submit_curation(
             provinces=_all_provinces(db),
             rows=typed_rows,
             row_count=row_count,
-            global_values={"original_text": original_text, "source_reference": source_reference},
+            global_values={
+                "original_text": original_text,
+                "source_reference": source_reference,
+                "published_date": published_date_raw,
+            },
             error=" ".join(errors),
             status_counts=_status_counts(db),
             status_code=422,

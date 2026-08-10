@@ -7,7 +7,7 @@ sin abrir una conexión real ni tocar `conftest.py`.
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -176,6 +176,22 @@ class TestCurationQueueGet:
 
         assert response.status_code == 200
         assert 'id="source_reference" value="Juan Pérez"' in response.text
+
+    def test_prellena_fecha_de_publicacion_desde_el_texto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-fecha-publicacion-1",
+            original_text="Juan Pérez - Ayer a las 14:35\npollo a 500 habana",
+            captured_at=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="published_date" value="2026-08-09"' in response.text
 
     def test_formulario_vacio_si_el_ocr_no_reconoce_nada(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
@@ -369,6 +385,111 @@ class TestCurationSubmit:
         )
         assert len(filas) == 2
         assert {f.product_id for f in filas} == {pollo.id, picadillo.id}
+
+    def test_published_date_se_propaga_a_todas_las_filas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un solo input de fecha a nivel de anuncio: al confirmar, las N
+        filas de `prices_history` quedan con el mismo `published_date`
+        (spec: Fan-out multi-producto)."""
+        pollo = _crear_producto(session, name="Pollo")
+        arroz = _crear_producto(session, name="Arroz")
+        aceite = _crear_producto(session, name="Aceite")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-fecha-fanout")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "3",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "product_id_1": str(arroz.id),
+                "price_1": "120",
+                "product_id_2": str(aceite.id),
+                "price_2": "300",
+                "published_date": "2026-08-05",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        filas = list(
+            session.execute(
+                select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
+            ).scalars()
+        )
+        assert len(filas) == 3
+        assert {f.published_date for f in filas} == {date(2026, 8, 5)}
+
+    def test_published_date_vacio_o_invalido_no_bloquea_el_submit(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Campo vacío o valor no parseable: el submit se acepta igual (303,
+        no 422) y la fila queda con `published_date = NULL` (spec: Campo
+        nunca bloqueante)."""
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion_vacio = _crear_raw_ingestion(session, hash_="hash-post-fecha-vacia")
+
+        response = client.post(
+            f"/curation/{ingestion_vacio.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "published_date": "",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        fila = session.execute(
+            select(PriceHistory).where(PriceHistory.source_id == ingestion_vacio.id)
+        ).scalar_one()
+        assert fila.published_date is None
+
+        ingestion_invalido = _crear_raw_ingestion(session, hash_="hash-post-fecha-basura")
+
+        response = client.post(
+            f"/curation/{ingestion_invalido.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "published_date": "no-es-una-fecha",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        fila = session.execute(
+            select(PriceHistory).where(PriceHistory.source_id == ingestion_invalido.id)
+        ).scalar_one()
+        assert fila.published_date is None
+
+        ingestion_futura = _crear_raw_ingestion(session, hash_="hash-post-fecha-futura")
+        fecha_futura = (date.today().replace(year=date.today().year + 1)).isoformat()
+
+        response = client.post(
+            f"/curation/{ingestion_futura.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "published_date": fecha_futura,
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        fila = session.execute(
+            select(PriceHistory).where(PriceHistory.source_id == ingestion_futura.id)
+        ).scalar_one()
+        assert fila.published_date is None
 
     def test_filas_vacias_entre_completas_se_ignoran_sin_error(
         self, client: TestClient, session: Session

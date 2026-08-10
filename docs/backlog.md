@@ -37,16 +37,6 @@ Bloqueado por: nada urgente — la jerga de provincia es acotada y las 16
 provincias son fijas. Solo vale la pena si el diccionario en código se vuelve
 difícil de mantener.
 
-## Campo "fecha de publicación" en `prices_history`
-
-Por qué importa: el whitepaper (§6.1c) lo pide como campo de la cola de
-curaduría; hoy no existe la columna. `raw_ingestions.captured_at` (inmutable,
-derivado de la fecha de modificación del archivo) es la única fecha
-disponible, y no siempre coincide con cuándo se publicó el anuncio.
-
-Bloqueado por: nada técnico. Cambio de esquema → flujo completo de
-especificación si se decide agregar.
-
 ## Flag "conjunto de referencia" en `prices_history`
 
 Por qué importa: el whitepaper (§6.1c) pide poder marcar un registro como

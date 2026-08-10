@@ -758,3 +758,29 @@ Consecuencia: el backlog deja de sugerir una meta de cobertura que Fase 0 no
 pide. Cuando Fase 1/2 sumen una provincia nueva (configuración, según §9.0),
 su alias se agrega en ese momento — no antes. También se sacó del backlog el
 ítem de "canal origen", ya implementado desde el 2026-08-08 y nunca removido.
+
+---
+
+## 2026-08-10 — Columna `published_date` en `prices_history`
+
+Contexto: el backlog traía abierto el campo "fecha de publicación" (§6.1c del
+whitepaper), bloqueado por "cambio de esquema → flujo completo de
+especificación". Se corrió ese flujo (spec/design/tasks) para la migración
+0005, la columna en el modelo y la heurística de sugerencia en `engine.py`.
+
+Decisión: `published_date DATE NULL`, sin default y sin CHECK de fecha futura
+(la validación de fecha futura vive en la capa web y degrada a `NULL`, no en
+un CHECK de base). Un solo input a nivel de anuncio en la cola de curaduría,
+propagado igual a todas las filas de `prices_history` que genera ese anuncio.
+`guess_published_date` reutiliza el mismo grupo de regex que ya matchea
+`_SOURCE_REFERENCE_RE` para `guess_source_reference`, con un helper
+compartido (`_match_source_line`).
+
+Descartado: un `CHECK (published_date <= created_at)` en base — convertiría
+un dato secundario en un fallo de transacción. También se descartó un input
+de fecha por fila: el anuncio tiene una sola fecha de publicación real.
+
+Consecuencia: sin backfill — todo lo curado antes de esta migración queda con
+`published_date = NULL`. Ningún consumidor (dashboard, métricas de H0) lee
+esta columna todavía; queda disponible para cuando se decida usarla como eje
+temporal.
