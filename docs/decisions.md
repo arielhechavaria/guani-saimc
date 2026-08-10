@@ -898,3 +898,28 @@ dependencia externa (conexión intermitente, decisión de contexto de
 Consecuencia: primer artefacto de infraestructura versionado en el repo
 (`systemd/`) — antes `saimc.service` se armó a mano y nunca quedó en git. No
 se agregó retroactivamente por estar fuera del alcance de este slice.
+
+---
+
+## 2026-08-10 — Rediseño visual de la cola de curaduría: Bootstrap, no Tailwind
+
+Contexto: pedido explícito del usuario (ex-frontend) de mejorar el look de
+`/curation`, sin especificar herramienta ("Bootstrap o Tailwind, no sé").
+
+Decisión: se queda con Bootstrap 5 (ya vendorizado local en
+`static/bootstrap.min.css`) y se suma `static/curation.css` encima con
+paleta, tipografía y tarjetas propias. Cambio solo visual: ningún `name`,
+`id`, ni la relación de atributos de la que dependen los tests
+(`tests/test_curation.py` — ej. `value="X" selected`, `class="mt-1" open`) se
+tocó.
+
+Descartado: Tailwind. En este proyecto exigiría un CDN externo (dependencia
+de red que CLAUDE.md pide evitar) o un pipeline de build con Node — ninguno
+de los dos existe hoy y sumarlo es más que un ajuste de interfaz.
+
+Consecuencia: botones "Curar anuncio"/"Descartar" pasan a vivir fuera de sus
+`<form>` y se conectan por atributo `form="id"` (HTML5) para poder agruparlos
+visualmente sin anidar un `<form>` dentro de otro. Sin acceso a navegador
+desde esta sesión (VPS headless): el cambio corre contra la suite completa
+(153/153 verdes) y se sirvió en caliente, pero falta la revisión visual real
+del usuario.

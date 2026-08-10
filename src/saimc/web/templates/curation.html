@@ -5,25 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SAIMC — Cola de curaduría</title>
   <link href="/static/bootstrap.min.css" rel="stylesheet" />
+  <link href="/static/curation.css" rel="stylesheet" />
 </head>
-<body class="bg-light">
-  <div class="container py-4" style="max-width: 900px;">
-    <h1 class="h3 mb-2">Cola de curaduría</h1>
-    <p class="text-muted small mb-4">
-      Curados: <strong>{{ status_counts.curated }}</strong> ·
-      Por curar: <strong>{{ status_counts.pending }}</strong> ·
-      Descartados: <strong>{{ status_counts.discarded }}</strong>
-    </p>
+<body>
+  <div class="container py-4" style="max-width: 960px;">
+    <div class="saimc-header">
+      <h1 class="h3">Cola de curaduría</h1>
+      <p class="saimc-subtitle mb-0">SAIMC — Sistema Abierto de Inteligencia de Mercado para Cuba</p>
+      <div class="saimc-counters">
+        <span class="saimc-counter">Curados: <strong>{{ status_counts.curated }}</strong></span>
+        <span class="saimc-counter">Por curar: <strong>{{ status_counts.pending }}</strong></span>
+        <span class="saimc-counter">Descartados: <strong>{{ status_counts.discarded }}</strong></span>
+      </div>
+    </div>
 
     {% if error %}
     <div class="alert alert-danger" role="alert">{{ error }}</div>
     {% endif %}
 
     {% if ingestion is none %}
-    <div class="alert alert-secondary">No hay elementos en la cola.</div>
+    <div class="card">
+      <div class="saimc-empty">
+        <div class="saimc-empty-icon">✅</div>
+        <p class="mb-0">No hay elementos en la cola.</p>
+      </div>
+    </div>
     {% else %}
 
-    <div class="card mb-4">
+    <div class="card mb-4 saimc-evidence">
       <div class="card-header">Evidencia</div>
       <div class="card-body">
         {% if ingestion.content_type == "image" %}
@@ -39,7 +48,7 @@
     <div class="card">
       <div class="card-header">Datos del anuncio</div>
       <div class="card-body">
-        <form method="post" action="/curation/{{ ingestion.id }}">
+        <form method="post" action="/curation/{{ ingestion.id }}" id="curation-form">
           {% if ingestion.content_type == "image" %}
           <div class="mb-3">
             <label for="original_text" class="form-label">Texto reconocido (OCR)</label>
@@ -65,7 +74,7 @@
             es solo de presentación, `submit_curation` no se tocó.
           -->
           {% for row in rows %}
-          <div class="card mb-3">
+          <div class="card mb-3 saimc-product-card{% if row.product_id %} is-detected{% endif %}">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="text-muted small" data-product-label>Producto {{ loop.index }}</span>
@@ -157,13 +166,14 @@
           {% endfor %}
 
           <input type="hidden" name="row_count" value="{{ rows|length }}" />
-
-          <button type="submit" class="btn btn-primary">Curar anuncio</button>
         </form>
 
-        <form method="post" action="/curation/{{ ingestion.id }}/discard" class="mt-2 d-inline">
-          <button type="submit" class="btn btn-outline-danger btn-sm">Descartar</button>
-        </form>
+        <form method="post" action="/curation/{{ ingestion.id }}/discard" id="discard-form"></form>
+
+        <div class="saimc-actions d-flex align-items-center gap-2">
+          <button type="submit" form="curation-form" class="btn btn-primary">Curar anuncio</button>
+          <button type="submit" form="discard-form" class="btn btn-outline-danger">Descartar</button>
+        </div>
       </div>
     </div>
 
