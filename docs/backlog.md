@@ -59,3 +59,19 @@ oferta.
 Bloqueado por: volumen real que muestre qué tan común es el patrón contra
 otras formas de anuncio, antes de rediseñar el modelo de matching de
 `propose_all` (evaluado y pospuesto explícitamente el 2026-08-08).
+
+## Poblar `confidence_score` — Validation Engine
+
+Por qué importa: `prices_history.confidence_score` existe como columna (`CHECK
+0..100`, `decisions.md` 2026-08-07) pero ningún código la llena. Es la salida
+del Validation Engine completo (whitepaper §6.2): estructura, coherencia de
+precio contra promedio provincial + tendencia nacional, validación
+geográfica, reputación de usuario, deduplicación semántica, coherencia
+cantidad/precio — no solo "¿están todos los campos?".
+
+Bloqueado por: Fase 2 (whitepaper §9, línea 1675: "Validation Engine: Modo
+activo"), no antes. En Fase 0 el operador humano verifica cada registro
+contra su evidencia antes de guardarlo — es la misma barrera que hace que las
+contramedidas C1-C4 tampoco sean bloqueantes todavía (`decisions.md`,
+2026-08-06). Además necesita histórico de precios real (Regla 2) y un sistema
+de reputación (Regla 4) que no existen hoy.
