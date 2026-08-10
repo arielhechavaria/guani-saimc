@@ -844,3 +844,29 @@ escaneado y movido archivos reales del `inbox/` del repo (los que llegan por
 Syncthing) — el fixture `client` de `tests/test_curation.py` ahora los apunta
 siempre a un `tmp_path` aislado. El script `python -m saimc.ingestion` queda
 vivo para correrlo a mano fuera del navegador (debugging).
+
+---
+
+## 2026-08-10 — Deploy incompleto: faltó `alembic upgrade head` tras el restart
+
+Contexto: después de pushear `published-at-field` y reiniciar `saimc.service`,
+curar un anuncio real dio 500 (`UndefinedColumn: published_date`). El
+`systemctl restart` trajo el código nuevo, pero nadie corrió la migración
+`0005` contra el PostgreSQL real — quedó en `0004`. Los tests corren contra
+SQLite en memoria con `Base.metadata.create_all()` (ver `tests/conftest.py`),
+así que nunca hubieran detectado esto: no ejercitan Alembic contra el motor
+real.
+
+Decisión: se corrió `alembic upgrade head` a mano contra producción (`0004 →
+0005`). Ningún dato se perdió — la fila que falló nunca llegó a insertarse
+(transacción completa o nada), el `raw_ingestion` que la originó sigue
+`pending` para volver a curarla.
+
+Descartado: nada — no hay CI/CD todavía (decisión 4 de `CLAUDE.md`), así que
+no hay un paso automático que hubiera evitado esto sin agregar la
+infraestructura que esa decisión pospone a propósito.
+
+Consecuencia: deploy manual de un cambio con migración es **dos pasos, no
+uno** — `systemctl restart saimc` Y `alembic upgrade head`, en ese orden no
+importa cuál primero mientras se hagan los dos. Sin CI/CD que lo automatice,
+queda como recordatorio explícito acá hasta que el volumen real lo justifique.
