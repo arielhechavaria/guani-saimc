@@ -784,3 +784,35 @@ Consecuencia: sin backfill — todo lo curado antes de esta migración queda con
 `published_date = NULL`. Ningún consumidor (dashboard, métricas de H0) lee
 esta columna todavía; queda disponible para cuando se decida usarla como eje
 temporal.
+
+---
+
+## 2026-08-10 — Transporte celular → bandeja de entrada: Syncthing, no cloud+script
+
+Contexto: el operador quiere que las capturas de pantalla y fotos que toma en
+el celular lleguen solas a `inbox/` en el VPS. El whitepaper (§6.1 Etapa 1,
+línea 558) no fija el mecanismo — "el único requisito es que el material
+llegue al directorio de entrada". La opción evaluada inicialmente era carpeta
+de un servicio en la nube (Google Drive/Dropbox) más un script con `rclone`
+corrido por cron.
+
+Decisión: Syncthing. Paquete del repositorio de Ubuntu, servicio systemd
+`syncthing@ariel` corriendo como el usuario `ariel` (sin Docker, sin root),
+sincroniza `inbox/` directo entre el celular y el VPS, sin intermediario en
+la nube. Del lado del VPS la carpeta queda en modo `receiveonly`: el celular
+empuja archivos, el VPS nunca escribe ni borra hacia el celular — protege el
+original en el celular incluso si algo corre mal en el VPS (ej. el script de
+ingesta moviendo duplicados dentro de `inbox/`). GUI de administración atada
+a `127.0.0.1:8384` (no expuesta a internet); puerto de sincronización
+`22000/tcp` y `22000/udp` abiertos en `ufw`.
+
+Descartado: cloud provider + `rclone` + cron. Funciona, pero suma una
+dependencia externa (cuenta de Drive/Dropbox) y un script propio a mantener.
+Syncthing sincroniza directo, sin intermediario, y reacciona a archivos
+nuevos por sí solo (fs watcher) en vez de sondear en un intervalo fijo.
+
+Consecuencia: los archivos van a aparecer solos en `inbox/`, pero **nadie los
+registra todavía** — `python -m saimc.ingestion` sigue siendo un paso manual,
+no hay temporizador que lo corra. Si eso se vuelve fricción real, se evalúa
+un `systemd timer` aparte (es solo scheduling de un script ya idempotente,
+no una cola de trabajos — no rompe la decisión 3 de `CLAUDE.md`).
