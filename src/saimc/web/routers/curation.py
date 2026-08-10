@@ -30,6 +30,7 @@ from saimc.extraction.engine import (
     guess_source_reference,
     propose_all,
 )
+from saimc.ingestion.inbox import ingest_inbox
 from saimc.models import (
     ContentType,
     Currency,
@@ -162,7 +163,15 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
     detectó — todo en una sola tabla que se manda con un único submit
     (reemplaza el flujo anterior de "guardar y agregar otro", tedioso contra
     anuncios reales de varios productos: ver docs/decisions.md).
+
+    Antes de leer la cola, ingesta lo que haya en `inbox/` — reemplaza el paso
+    manual de correr `python -m saimc.ingestion` (docs/decisions.md). El
+    operador ya abre esta página una vez al día para curar en bloque; no hace
+    falta un timer aparte para un volumen de Fase 0.
     """
+    settings = get_settings()
+    ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir)
+
     ingestion = _oldest_pending(db)
     products = _all_products(db)
     provinces = _all_provinces(db)

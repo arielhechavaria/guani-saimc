@@ -78,9 +78,21 @@ def _crear_provincia(
 
 
 @pytest.fixture
-def client(session: Session) -> Iterator[TestClient]:
+def client(
+    session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> Iterator[TestClient]:
     def _get_db_override() -> Iterator[Session]:
         yield session
+
+    # `GET /curation` ahora ingesta la bandeja antes de mostrar la cola (ver
+    # TestIngestaAutomatica). Sin aislar estos directorios, cada test que pega
+    # a `/curation` escanearía y MOVERÍA archivos reales de `inbox/` del repo
+    # hacia `data/raw/` — la bandeja real vive en ese path por `.env`.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("SAIMC_INBOX_DIR", str(inbox))
+    monkeypatch.setenv("SAIMC_RAW_STORE_DIR", str(tmp_path / "data" / "raw"))
+    get_settings.cache_clear()
 
     app.dependency_overrides[get_db] = _get_db_override
     with TestClient(app) as test_client:
@@ -304,6 +316,44 @@ class TestCurationQueueGet:
 
         monkeypatch.setattr(ocr, "transcribe", _fallar_si_se_llama)
 
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+
+
+class TestIngestaAutomatica:
+    """`GET /curation` ingesta la bandeja antes de mostrar la cola — reemplaza
+    el paso manual de correr `python -m saimc.ingestion` (docs/decisions.md).
+    """
+
+    def test_archivo_nuevo_en_la_bandeja_pasa_a_pending_y_se_muestra(
+        self, client: TestClient, session: Session, tmp_path: Path
+    ) -> None:
+        inbox = Path(get_settings().inbox_dir)
+        (inbox / "captura.txt").write_text("pollo a 500 habana", encoding="utf-8")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        ingestion = session.execute(select(RawIngestion)).scalars().one()
+        assert ingestion.processing_status == ProcessingStatus.PENDING
+        assert ingestion.original_text == "pollo a 500 habana"
+        assert str(ingestion.id) in response.text
+
+    def test_archivo_ingerido_se_mueve_de_inbox_al_almacen(
+        self, client: TestClient, session: Session
+    ) -> None:
+        inbox = Path(get_settings().inbox_dir)
+        (inbox / "captura.txt").write_text("pollo a 500 habana", encoding="utf-8")
+
+        client.get("/curation")
+
+        ingestion = session.execute(select(RawIngestion)).scalars().one()
+        assert not (inbox / "captura.txt").exists()
+        stored = Path(get_settings().raw_store_dir) / ingestion.file_path
+        assert stored.exists()
+
+    def test_bandeja_vacia_no_rompe_la_cola(self, client: TestClient) -> None:
         response = client.get("/curation")
 
         assert response.status_code == 200

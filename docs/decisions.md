@@ -816,3 +816,31 @@ registra todavía** — `python -m saimc.ingestion` sigue siendo un paso manual,
 no hay temporizador que lo corra. Si eso se vuelve fricción real, se evalúa
 un `systemd timer` aparte (es solo scheduling de un script ya idempotente,
 no una cola de trabajos — no rompe la decisión 3 de `CLAUDE.md`).
+
+---
+
+## 2026-08-10 — La ingesta de la bandeja se engancha en `GET /curation`, no en un timer
+
+Contexto: con Syncthing (entrada anterior) los archivos llegan a `inbox/` de
+forma continua, pero el registro en `raw_ingestions` seguía dependiendo de
+correr `python -m saimc.ingestion` a mano por SSH. La alternativa evaluada
+era un `systemd timer` que corriera ese script cada N minutos.
+
+Decisión: `curation_queue()` (`GET /curation`) llama a `ingest_inbox()` como
+primer paso, antes de leer el `pending` más antiguo — la rutina real del
+operador ya es abrir esa página una vez al día para curar en bloque
+(whitepaper §6.1 Etapa 1), así que la ingesta viaja gratis con esa visita, sin
+sumar ningún servicio nuevo.
+
+Descartado: el `systemd timer`. Es una pieza de infraestructura más para
+mantener, resolviendo un problema que la propia rutina del operador ya
+resuelve gratis. Se revisita si alguna vez hace falta que las filas existan
+*antes* de que alguien abra la cola (hoy no hay ese caso).
+
+Consecuencia: `GET /curation` deja de ser una lectura pura — también mueve
+archivos de `inbox/` a `data/raw/` y escribe filas nuevas. Sin aislar
+`SAIMC_INBOX_DIR`/`SAIMC_RAW_STORE_DIR` en los tests, correr la suite hubiera
+escaneado y movido archivos reales del `inbox/` del repo (los que llegan por
+Syncthing) — el fixture `client` de `tests/test_curation.py` ahora los apunta
+siempre a un `tmp_path` aislado. El script `python -m saimc.ingestion` queda
+vivo para correrlo a mano fuera del navegador (debugging).

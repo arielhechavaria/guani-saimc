@@ -2,8 +2,9 @@
 
     python -m saimc.ingestion
 
-Pensado para correrse a mano al empezar la sesión de curaduría, antes de abrir
-la cola. En Fase 0 no hay ni scheduler ni watcher: no hay carga que lo justifique.
+`GET /curation` ya corre esto mismo antes de mostrar la cola (docs/decisions.md,
+2026-08-10) — este script queda para correrlo a mano fuera de esa página, por
+ejemplo para depurar sin abrir el navegador.
 """
 
 import argparse
