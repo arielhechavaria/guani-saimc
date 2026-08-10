@@ -18,29 +18,6 @@ se saca de acá y su motivo queda en `decisions.md` si ameritó una decisión.
 
 ---
 
-## Proponer "canal origen" desde el texto reconocido
-
-Por qué importa: `source_reference` es hoy 100% manual — el motor nunca intenta
-reconocer al emisor. En anuncios reales de redes (Facebook/Marketplace-style), el
-nombre de quien publica suele aparecer al principio del texto con un patrón
-detectable ("Nombre - Ayer a las H:MM" / "Nombre - D de mes a las H:MM"). Proponerlo
-ahorraría tipeo manual en la mayoría de los anuncios.
-
-Bloqueado por: nada técnico. No priorizado — el usuario marcó que lo visual/completo
-del formulario no es urgente por ahora.
-
-## Revisar el diccionario de abreviaturas de provincia contra uso real
-
-Por qué importa: el diccionario en `extraction/engine.py` es una estimación
-razonable de jerga cubana, no validada contra anuncios reales (ver
-`decisions.md`, 2026-08-07).
-
-Revisado 2026-08-08 contra los 8 `raw_ingestions` con texto real que existen
-hoy (`decisions.md`, 2026-08-08): sin gaps, pero solo ejercita 2 de las 16
-provincias (La Habana, Santiago de Cuba). Sigue abierta.
-
-Bloqueado por: volumen real que cubra el resto de las provincias.
-
 ## Persistir `unit` por fila en `prices_history`
 
 Por qué importa: hoy la métrica de cantidad/unidad de H0 se aproxima contra

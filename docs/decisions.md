@@ -731,3 +731,30 @@ arriba, precio abajo sin repetirlo" (`Arroz Santiago de cuba` matchea sin
 precio, `Pacas de 30... a $730` matchea precio sin producto). Esa queda
 pendiente, deliberadamente, hasta tener más volumen real que muestre qué
 tan común es el patrón (ver `docs/backlog.md`).
+
+---
+
+## 2026-08-10 — Cobertura de provincias en Fase 0: son 2, no 16
+
+Contexto: el backlog traía el ítem "revisar diccionario de abreviaturas de
+provincia" como abierto, "bloqueado por: volumen real que cubra el resto de
+las provincias" — como si Fase 0 necesitara eventualmente las 16. El
+whitepaper (§9 Fase 0, línea 1633) fija el alcance en exactamente 2
+provincias (La Habana y Santiago de Cuba); las 16 son el techo de ingesta de
+fases posteriores (§9.0, ya registrado 2026-08-06), no una meta de Fase 0.
+
+Decisión: se cierra el ítem del backlog. Las 2 provincias vigentes ya están
+validadas contra los 8 anuncios reales existentes (`decisions.md`,
+2026-08-08); no hace falta acumular más anuncios para dar por completo el
+diccionario dentro del alcance actual, porque esos anuncios seguirían siendo
+de las mismas 2 provincias.
+
+Descartado: dejar el ítem abierto esperando "más volumen". Cargar cientos de
+anuncios adicionales de Habana/Santiago no agrega cobertura de provincia
+nueva — el volumen que hace falta es de otro tipo (para H0), no de
+provincias.
+
+Consecuencia: el backlog deja de sugerir una meta de cobertura que Fase 0 no
+pide. Cuando Fase 1/2 sumen una provincia nueva (configuración, según §9.0),
+su alias se agrega en ese momento — no antes. También se sacó del backlog el
+ítem de "canal origen", ya implementado desde el 2026-08-08 y nunca removido.
