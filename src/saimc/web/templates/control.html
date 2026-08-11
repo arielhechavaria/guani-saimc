@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — Control de curaduría</title>
+  <link href="/static/bootstrap.min.css" rel="stylesheet" />
+  <link href="/static/curation.css" rel="stylesheet" />
+</head>
+<body>
+  <div class="container py-4" style="max-width: 960px;">
+    <div class="saimc-header">
+      <h1 class="h3">Control de curaduría</h1>
+      <p class="saimc-subtitle mb-0">Matriz producto × provincia — lo que hay cargado hoy</p>
+      <div class="saimc-counters">
+        <span class="saimc-counter">Anuncios curados: <strong>{{ curated }}</strong></span>
+        <span class="saimc-counter">Filas de precio: <strong>{{ rows }}</strong></span>
+        <span class="saimc-counter">Productos: <strong>{{ products }}</strong></span>
+        <span class="saimc-counter">Provincias: <strong>{{ provinces }}</strong></span>
+      </div>
+    </div>
+
+    <p class="text-muted small">
+      Ordenado por tamaño de muestra. <strong>Amplitud</strong> es cuántas veces el
+      máximo contiene al mínimo: una celda que mezcla precio minorista con precio
+      mayorista se delata ahí. La vista no marca ninguna celda como buena o mala —
+      no hay umbral fijado todavía (whitepaper §12.6), y fijarlo por intuición
+      sería peor que no tenerlo.
+    </p>
+
+    {% if single_observation %}
+    <p class="text-muted small">
+      {{ single_observation }} de {{ cells|length }} celdas tienen una sola
+      observación. Con una observación hay un dato, no una mediana.
+    </p>
+    {% endif %}
+
+    {% if not cells %}
+      <div class="alert alert-secondary" role="alert">
+        Todavía no hay filas de precio cargadas.
+      </div>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th scope="col">Producto</th>
+            <th scope="col">Provincia</th>
+            <th scope="col" class="text-end">n</th>
+            <th scope="col" class="text-end">Mediana</th>
+            <th scope="col" class="text-end">Mínimo</th>
+            <th scope="col" class="text-end">Máximo</th>
+            <th scope="col" class="text-end">Amplitud</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cell in cells %}
+          <tr>
+            <td>{{ cell.product_name }}</td>
+            <td>{{ cell.province_name or "— sin provincia —" }}</td>
+            <td class="text-end"><strong>{{ cell.count }}</strong></td>
+            <td class="text-end">{{ "%.2f"|format(cell.median) }} {{ cell.currency }}</td>
+            <td class="text-end text-muted">{{ "%.2f"|format(cell.minimum) }}</td>
+            <td class="text-end text-muted">{{ "%.2f"|format(cell.maximum) }}</td>
+            <td class="text-end">
+              {% if cell.spread is none %}—{% else %}{{ "%.1f"|format(cell.spread) }}×{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <p class="mt-4"><a href="/curation">← Volver a la cola de curaduría</a></p>
+  </div>
+</body>
+</html>

@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from saimc.web.routers import curation
+from saimc.web.routers import control, curation
 
 app = FastAPI(title="SAIMC — Cola de curaduría")
 
@@ -30,3 +30,4 @@ app.mount(
 )
 
 app.include_router(curation.router)
+app.include_router(control.router)

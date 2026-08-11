@@ -1079,3 +1079,76 @@ noches). Queda declarado y acotado el residuo: 1 `.txt` y 62 imágenes en
 `whitepaper-map.md` en un bloqueante concreto de la Transparency Layer: no se
 puede publicar la evidencia literal sin resolver antes el recorte o la
 redacción de la captura.
+
+---
+
+## 2026-08-11 — Productos piloto, provincias piloto y regla minorista
+
+Contexto: la medición de la matriz mostró 60 filas repartidas en 48 productos —
+85% con una sola observación— y una sola provincia. Una celda con una
+observación no produce mediana, así que el sistema no podía publicar un solo
+precio pese a tener datos. El whitepaper ya fijaba el alcance en «3-5 productos
+bandera» (§9 Fase 0, línea 1632) y 2 provincias (línea 1633); la dispersión era
+un apartamiento no declarado, no una decisión.
+
+Decisión: los pilotos son **arroz, pollo entero, azúcar y aceite**, en **La
+Habana y Santiago de Cuba**. Se eligieron contra la oferta real del flujo de
+captura (64 anuncios transcritos), no por intuición: azúcar 9% de cobertura,
+arroz 6%, pollo 5%, aceite 2%. Se suma la **regla minorista**: esos cuatro se
+cargan solo cuando el anuncio da precio por la unidad canónica (libra para
+arroz/pollo/azúcar, litro para aceite); los anuncios mayoristas se saltean para
+esas celdas.
+
+Descartado: (a) agregar `unit` por fila a `prices_history`, que resolvería
+estructuralmente la mezcla minorista/mayorista. Es cambio de esquema y exige
+flujo completo de especificación. Se difiere con un argumento que no es de
+simplicidad: con la regla minorista **todas** las filas quedan en unidad
+canónica, así que el backfill futuro es `unit = product.unit`. Cargar mezclado
+sin registrar unidad es lo que volvería caro ese cambio, no postergarlo. (b)
+Elegir los pilotos por la lista de ejemplo del whitepaper sin contrastarla:
+huevos, que ahí figura, no aparece en ningún anuncio real capturado.
+
+Consecuencia: se pierde el dato mayorista de las celdas piloto — de las 6 filas
+de azúcar cargadas, sobreviven 2. Se acepta a conciencia: §8.1 Nivel 0 define
+el objetivo como «resolver la necesidad diaria del hogar cubano», y un hogar no
+compra sacos de 25 kg. Aceite queda como el piloto más débil (2% de cobertura,
+~6 observaciones proyectadas cada 300 anuncios) y no debe esperarse densidad
+temprana de esa celda. El límite real medido: solo 11 de 64 anuncios (17%)
+mencionan algún piloto, y ninguno es de La Habana — eso no lo arregla el
+código, lo arregla la rutina de captura.
+
+---
+
+## 2026-08-11 — Vista de control del operador: mediciones, nunca veredictos
+
+Contexto: el circuito estaba abierto. Se capturaba, se curaba, y no había
+ninguna vista de salida — la app tenía exactamente dos rutas (`/curation` y
+`/evidence`). Los dos errores de clasificación encontrados hoy (derivados de
+pollo cayendo en el producto genérico, y la mezcla minorista/mayorista en
+azúcar) salieron de consultas SQL hechas a mano, no del sistema: el operador no
+tenía forma de verlos. Curar en volumen sin cerrar ese circuito es fabricar
+deuda a velocidad de curaduría.
+
+Decisión: `GET /control` (`saimc/cells.py` + `web/routers/control.py`) resume
+`prices_history` en celdas producto × provincia × moneda y muestra `n`,
+mediana, mínimo, máximo y amplitud (máximo/mínimo), ordenadas por tamaño de
+muestra. La moneda entra en la clave porque `price_cup` sigue vacío en las 60
+filas: promediar CUP con USD sería inventar una conversión que el sistema no
+tiene. La mediana se calcula en Python y no con `percentile_cont` porque los
+tests corren sobre SQLite.
+
+Descartado: marcar celdas como «muestra insuficiente» o «dispersión alta».
+§12.6 (línea 1961) es explícito: «un umbral asignado por intuición y presentado
+como metodología es peor que no tener umbral». N no está fijado y se calibra
+por «análisis de estabilidad de la mediana frente al tamaño de muestra» — esta
+vista es justamente el instrumento que lo va a permitir. La vista informa;
+juzga el operador. También se descartó construir el dashboard público de Fase 1
+(mapa, semáforos): con 91% de celdas de una observación sería una vitrina sin
+mercadería.
+
+Consecuencia: la amplitud delató de inmediato lo que estaba oculto — azúcar en
+Santiago da mediana 11.490 CUP con amplitud 56×, porque mezcla 420 CUP la libra
+con 23.500 CUP el saco. Ese número no significaba nada y nadie podía verlo.
+Cada sesión de curaduría pasa a ser verificable de un vistazo, y la vista es
+además el primer paso hacia la matriz que el whitepaper define como núcleo
+(§5, «objeto medido»).
