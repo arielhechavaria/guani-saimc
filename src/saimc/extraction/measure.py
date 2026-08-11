@@ -1,22 +1,36 @@
 """Medición de H0 (whitepaper §3 y §12.5) contra la cola de curaduría real.
 
-Re-corre `propose()` sobre `original_text` de cada ingesta de texto ya curada
-y la compara contra lo que el operador confirmó en `prices_history`. La
-propuesta nunca influyó lo que quedó guardado en `prices_history` (la cola de
-curaduría solo la usa para prellenar el formulario, whitepaper §6.1): por eso
-la comparación mide extracción real y no un eco de sí misma.
+Re-corre `propose_all()` sobre cada anuncio ya curado y compara la propuesta
+contra lo que el operador confirmó en `prices_history`. La propuesta nunca
+influyó lo que quedó guardado (la cola de curaduría solo la usa para prellenar
+el formulario, whitepaper §6.1): por eso la comparación mide extracción real y
+no un eco de sí misma.
+
+De dónde sale el texto evaluado, según el tipo de evidencia:
+
+- **Texto:** `original_text`, escrito en la ingesta y nunca tocado después.
+- **Imagen:** se re-corre el OCR sobre la evidencia original preservada. NO se
+  usa `original_text`, porque en una imagen ese campo guarda la transcripción
+  ya corregida por el operador (`saimc/web/routers/curation.py`): medir sobre
+  ella evaluaría las reglas contra un texto que un humano limpió, y H0 (§3)
+  pregunta justamente si el pipeline sostiene el volumen SIN esa intervención.
+  El archivo original es inmutable, así que la transcripción es reproducible.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from saimc.config import get_settings
 from saimc.db import session_scope
+from saimc.extraction import ocr
 from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.models import (
     ContentType,
@@ -28,6 +42,11 @@ from saimc.models import (
 )
 
 
+# El OCR se inyecta para que la suite no dependa del binario de Tesseract y
+# para poder fijar transcripciones conocidas en los tests.
+Transcriber = Callable[[Path], str]
+
+
 @dataclass
 class H0Report:
     """Resultado de una corrida de medición de H0 (whitepaper §12.5)."""
@@ -36,13 +55,18 @@ class H0Report:
     total_discarded: int
     total_processed: int
     discard_rate: float | None
+    # Texto e imagen entran los dos en la medición. Se cuentan por separado
+    # solo para poder leer la composición del corpus.
     text_curated_count: int
+    image_curated_count: int
+    # Imágenes cuyo OCR no devolvió texto. Se reporta aparte porque en el
+    # porcentaje es indistinguible de una extracción fallida: un Tesseract
+    # ausente hundiría las métricas sin que nada lo delate.
+    image_ocr_empty_count: int
     # Un anuncio puede tener varias filas de `prices_history` (multi-producto,
     # ver `propose_all`): las cinco métricas de abajo se calculan por FILA, no
-    # por ingesta. `text_curated_count` e `evaluated_rows_count` coinciden
-    # solo cuando cada anuncio tuvo un único producto.
+    # por ingesta.
     evaluated_rows_count: int
-    image_curated_count: int
     product_accuracy: float | None
     price_accuracy: float | None
     province_accuracy: float | None
@@ -58,18 +82,26 @@ def _all_provinces(session: Session) -> list[Province]:
     return list(session.execute(select(Province)).scalars().all())
 
 
-def _curated_text_ingestions(session: Session) -> list[RawIngestion]:
-    """Ingestas curadas de texto con `original_text` no vacío: universo de las
-    cinco métricas de extracción. Las imágenes quedan fuera porque en este
-    slice no hay OCR y por ende no hubo propuesta que evaluar.
+def _curated_ingestions(session: Session) -> list[RawIngestion]:
+    """Universo de las cinco métricas de extracción: todo anuncio curado, sea
+    texto o imagen. Un curado sin fila confirmada en `prices_history` se
+    filtra más adelante, cuando se busca su contraparte.
     """
     stmt = select(RawIngestion).where(
-        RawIngestion.processing_status == ProcessingStatus.CURATED,
-        RawIngestion.content_type == ContentType.TEXT,
-        RawIngestion.original_text.is_not(None),
-        RawIngestion.original_text != "",
+        RawIngestion.processing_status == ProcessingStatus.CURATED
     )
     return list(session.execute(stmt).scalars().all())
+
+
+def _evaluation_text(ingestion: RawIngestion, transcribe: Transcriber) -> str:
+    """Texto sobre el que se re-corre la extracción.
+
+    Para imágenes sale de re-transcribir la evidencia original, no de
+    `original_text` — ver el docstring del módulo para el motivo.
+    """
+    if ingestion.content_type == ContentType.IMAGE:
+        return transcribe(get_settings().raw_store_dir / ingestion.file_path)
+    return ingestion.original_text or ""
 
 
 def _price_history_by_source(session: Session) -> dict[uuid.UUID, list[PriceHistory]]:
@@ -150,7 +182,9 @@ def _quantity_unit_correct(
     return quantity_matches and unit_matches
 
 
-def compute_h0_report(session: Session) -> H0Report:
+def compute_h0_report(
+    session: Session, transcribe: Transcriber = ocr.transcribe
+) -> H0Report:
     """Calcula el reporte de H0 re-corriendo `propose_all()` sobre lo ya curado.
 
     Evalúa por FILA de `prices_history`, no por ingesta: un anuncio
@@ -174,9 +208,10 @@ def compute_h0_report(session: Session) -> H0Report:
     image_curated_count = sum(
         1 for ingestion in total_curated if ingestion.content_type == ContentType.IMAGE
     )
+    text_curated_count = total_curated_count - image_curated_count
 
-    text_ingestions = _curated_text_ingestions(session)
-    text_curated_count = len(text_ingestions)
+    ingestions = _curated_ingestions(session)
+    image_ocr_empty_count = 0
 
     products = _all_products(session)
     provinces = _all_provinces(session)
@@ -190,11 +225,14 @@ def compute_h0_report(session: Session) -> H0Report:
     complete_correct = 0
     evaluated_rows_count = 0
 
-    for ingestion in text_ingestions:
+    for ingestion in ingestions:
         confirmed_rows = history_by_source.get(ingestion.id, [])
         if not confirmed_rows:
             continue
-        candidates = propose_all(ingestion.original_text, products, provinces)
+        text = _evaluation_text(ingestion, transcribe)
+        if ingestion.content_type == ContentType.IMAGE and not text.strip():
+            image_ocr_empty_count += 1
+        candidates = propose_all(text, products, provinces)
 
         for confirmed, proposal in _match_rows_to_candidates(confirmed_rows, candidates):
             evaluated_rows_count += 1
@@ -233,8 +271,9 @@ def compute_h0_report(session: Session) -> H0Report:
             total_processed=total_processed,
             discard_rate=discard_rate,
             text_curated_count=text_curated_count,
-            evaluated_rows_count=0,
             image_curated_count=image_curated_count,
+            image_ocr_empty_count=image_ocr_empty_count,
+            evaluated_rows_count=0,
             product_accuracy=None,
             price_accuracy=None,
             province_accuracy=None,
@@ -248,8 +287,9 @@ def compute_h0_report(session: Session) -> H0Report:
         total_processed=total_processed,
         discard_rate=discard_rate,
         text_curated_count=text_curated_count,
-        evaluated_rows_count=evaluated_rows_count,
         image_curated_count=image_curated_count,
+        image_ocr_empty_count=image_ocr_empty_count,
+        evaluated_rows_count=evaluated_rows_count,
         product_accuracy=product_correct / evaluated_rows_count,
         price_accuracy=price_correct / evaluated_rows_count,
         province_accuracy=province_correct / evaluated_rows_count,
@@ -275,8 +315,9 @@ def _print_report(report: H0Report) -> None:
     print(f"  Tasa de descarte:      {_format_pct(report.discard_rate)}")
     print()
     print(f"Curados de texto:        {report.text_curated_count} anuncios")
-    print(f"  Filas evaluadas:       {report.evaluated_rows_count} (un anuncio puede tener varias)")
-    print(f"Curados de imagen:       {report.image_curated_count} (informativo, sin OCR)")
+    print(f"Curados de imagen:       {report.image_curated_count} anuncios (OCR re-corrido)")
+    print(f"  Sin texto del OCR:     {report.image_ocr_empty_count}")
+    print(f"Filas evaluadas:         {report.evaluated_rows_count} (un anuncio puede tener varias)")
     print()
     print(f"Precisión de producto:        {_format_pct(report.product_accuracy)}")
     print(f"Precisión de precio:          {_format_pct(report.price_accuracy)}")

@@ -4,9 +4,12 @@ Igual que `test_extraction.py`: los casos están armados a mano, con la
 respuesta correcta (los porcentajes esperados) calculada de antemano e
 independiente del código de medición.
 
-Las cinco métricas de §12.5, todas contra el conjunto de anuncios curados con
-texto (las imágenes quedan excluidas: sin OCR en este slice no hubo propuesta
-que evaluar contra la corrección del operador):
+Las cinco métricas de §12.5, contra TODO anuncio curado —texto e imagen—. Para
+las imágenes se re-corre el OCR sobre la evidencia original preservada, no se
+lee `original_text`: ese campo guarda la transcripción ya corregida por el
+operador (`src/saimc/web/routers/curation.py`), y medir sobre él evaluaría las
+reglas contra un texto que un humano ya limpió. El OCR se inyecta como
+parámetro para que la suite no dependa del binario de Tesseract:
 
 - Precisión de producto
 - Precisión de precio (valor Y moneda correctos)
@@ -23,6 +26,7 @@ descartados), sin distinguir texto de imagen.
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy.orm import Session
@@ -38,6 +42,18 @@ from saimc.models import (
     RawIngestion,
     SourceType,
 )
+
+
+# Transcripciones simuladas, por nombre de archivo de la evidencia. Un archivo
+# ausente devuelve "" — el mismo contrato que `ocr.transcribe` real, que degrada
+# a texto vacío ante fallos esperables.
+_OCR_FALSO: dict[str, str] = {
+    "caso-6.png": "pollo congelado 40lb a 500 habana",
+}
+
+
+def _transcribe_falso(path: Path) -> str:
+    return _OCR_FALSO.get(path.name, "")
 
 
 @pytest.fixture
@@ -94,14 +110,26 @@ def _curar_texto(
     session.commit()
 
 
-def _curar_imagen(session: Session, *, hash_: str, product_id) -> None:
-    """Un curado de imagen: sin texto, por ende sin propuesta que evaluar."""
+def _curar_imagen(
+    session: Session,
+    *,
+    hash_: str,
+    product_id,
+    price: str,
+    province_id,
+    quantity: str | None,
+    original_text: str | None = None,
+) -> None:
+    """Un curado de imagen. La propuesta a evaluar sale de re-correr el OCR
+    sobre `file_path`, no de `original_text` — por eso este helper permite
+    guardar un `original_text` distinto de la transcripción simulada.
+    """
     ingestion = RawIngestion(
         source_type=SourceType.INBOX_IMAGE,
         file_path=f"raw/{hash_}.png",
         content_hash=hash_,
         content_type=ContentType.IMAGE,
-        original_text=None,
+        original_text=original_text,
         processing_status=ProcessingStatus.CURATED,
         captured_at=datetime(2026, 8, 1, tzinfo=UTC),
     )
@@ -110,10 +138,10 @@ def _curar_imagen(session: Session, *, hash_: str, product_id) -> None:
     session.add(
         PriceHistory(
             product_id=product_id,
-            province_id=None,
-            price=Decimal("100"),
+            province_id=province_id,
+            price=Decimal(price),
             currency=Currency.CUP.value,
-            quantity=None,
+            quantity=Decimal(quantity) if quantity is not None else None,
             source_id=ingestion.id,
         )
     )
@@ -192,69 +220,136 @@ def dataset(session: Session, pollo: Product, habana: Province) -> None:
         province_id=None,
         quantity="5",
     )
-    # Caso 6 — imagen curada: excluida de las métricas de extracción.
-    _curar_imagen(session, hash_="caso-6", product_id=pollo.id)
+    # Caso 6 — imagen curada: el OCR simulado devuelve el mismo texto que el
+    # caso 1, así que las cuatro métricas son correctas. Entra en el
+    # denominador igual que un anuncio de texto.
+    _curar_imagen(
+        session,
+        hash_="caso-6",
+        product_id=pollo.id,
+        price="500",
+        province_id=habana.id,
+        quantity="40",
+    )
     # Caso 7 — descartado.
     _descartar(session, hash_="caso-7")
 
 
 class TestH0Report:
-    def test_denominador_de_texto_excluye_imagenes(
+    def test_texto_e_imagen_entran_ambos_en_el_denominador(
         self, session: Session, dataset: None
     ) -> None:
-        report = compute_h0_report(session)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
         assert report.text_curated_count == 5
         assert report.image_curated_count == 1
+        # Las 5 de texto + la imagen: ninguna queda fuera de la medición.
+        assert report.evaluated_rows_count == 6
+        assert report.image_ocr_empty_count == 0
 
     def test_totales_de_procesamiento(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
         assert report.total_curated == 6
         assert report.total_discarded == 1
         assert report.total_processed == 7
         assert report.discard_rate == pytest.approx(1 / 7)
 
     def test_precision_de_producto(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session)
-        # Correcto en 1,3,4,5 (4/5); incorrecto en 2 (el texto no nombra el producto).
-        assert report.product_accuracy == pytest.approx(4 / 5)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        # Correcto en 1,3,4,5,6 (5/6); incorrecto en 2 (el texto no nombra el producto).
+        assert report.product_accuracy == pytest.approx(5 / 6)
 
     def test_precision_de_precio(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session)
-        # Correcto en 1,2,4,5 (4/5); incorrecto en 3 (moneda propuesta USD vs CUP confirmado).
-        assert report.price_accuracy == pytest.approx(4 / 5)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        # Correcto en 1,2,4,5,6 (5/6); incorrecto en 3 (moneda propuesta USD vs CUP confirmado).
+        assert report.price_accuracy == pytest.approx(5 / 6)
 
     def test_precision_de_provincia(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session)
-        # Los cinco casos coinciden (incluye None == None en 4 y 5).
-        assert report.province_accuracy == pytest.approx(5 / 5)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        # Los seis casos coinciden (incluye None == None en 4 y 5).
+        assert report.province_accuracy == pytest.approx(6 / 6)
 
     def test_precision_de_cantidad_unidad(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session)
-        # Correcto en 1,2,3,4 (4/5); incorrecto en 5 (cantidad propuesta None vs 5 confirmado).
-        assert report.quantity_unit_accuracy == pytest.approx(4 / 5)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        # Correcto en 1,2,3,4,6 (5/6); incorrecto en 5 (cantidad propuesta None vs 5 confirmado).
+        assert report.quantity_unit_accuracy == pytest.approx(5 / 6)
 
     def test_extraccion_completa_correcta(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session)
-        # Los cuatro campos a la vez: solo 1 y 4 los tienen todos correctos (2/5).
-        assert report.complete_accuracy == pytest.approx(2 / 5)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        # Los cuatro campos a la vez: solo 1, 4 y 6 los tienen todos correctos (3/6).
+        assert report.complete_accuracy == pytest.approx(3 / 6)
 
     def test_sin_datos_no_rompe(self, session: Session) -> None:
-        report = compute_h0_report(session)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
         assert report.total_processed == 0
         assert report.text_curated_count == 0
         assert report.evaluated_rows_count == 0
+        assert report.image_ocr_empty_count == 0
         assert report.discard_rate is None
         assert report.product_accuracy is None
         assert report.complete_accuracy is None
 
-    def test_evaluated_rows_count_coincide_con_text_curated_count_sin_multiproducto(
+    def test_evaluated_rows_count_suma_texto_mas_imagen_sin_multiproducto(
         self, session: Session, dataset: None
     ) -> None:
-        """En este dataset cada ingesta de texto tiene una sola fila: los dos
-        conteos deben coincidir (1:1), aunque midan cosas distintas.
+        """En este dataset cada ingesta tiene una sola fila: las filas evaluadas
+        son la suma de anuncios de texto e imagen, no solo los de texto.
         """
-        report = compute_h0_report(session)
-        assert report.evaluated_rows_count == report.text_curated_count == 5
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        assert report.evaluated_rows_count == (
+            report.text_curated_count + report.image_curated_count
+        )
+
+
+class TestH0ReportImagenes:
+    """Las imágenes son la mayoría del corpus real (27 de 29 anuncios curados al
+    2026-08-11) y hasta este fix quedaban enteras fuera de la medición.
+    """
+
+    def test_no_mide_sobre_el_texto_corregido_por_el_operador(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """`original_text` de una imagen es la transcripción YA corregida a mano.
+        Medir sobre ella evaluaría las reglas contra un texto que un humano
+        limpió — H0 pregunta si el pipeline funciona SIN esa intervención.
+        """
+        _curar_imagen(
+            session,
+            hash_="ocr-sucio",
+            product_id=pollo.id,
+            price="500",
+            province_id=habana.id,
+            quantity="40",
+            # Lo que el operador dejó guardado: limpio, daría las 4 correctas.
+            original_text="pollo congelado 40lb a 500 habana",
+        )
+        # Pero el OCR real sobre la imagen no devuelve nada aprovechable
+        # (no está en `_OCR_FALSO`): la medición honesta es 0.
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 1
+        assert report.product_accuracy == pytest.approx(0.0)
+        assert report.complete_accuracy == pytest.approx(0.0)
+
+    def test_ocr_vacio_se_reporta_aparte(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """Un OCR que devuelve "" es indistinguible de una extracción fallida en
+        el porcentaje. Se cuenta aparte para que un Tesseract ausente no se lea
+        como "las reglas no funcionan".
+        """
+        _curar_imagen(
+            session,
+            hash_="sin-ocr",
+            product_id=pollo.id,
+            price="500",
+            province_id=habana.id,
+            quantity="40",
+        )
+        report = compute_h0_report(session, transcribe=lambda path: "")
+
+        assert report.image_curated_count == 1
+        assert report.image_ocr_empty_count == 1
+        assert report.evaluated_rows_count == 1
 
 
 class TestH0ReportMultiProducto:
@@ -335,21 +430,21 @@ class TestH0ReportMultiProducto:
     def test_cuenta_ingestas_y_filas_por_separado(
         self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
     ) -> None:
-        report = compute_h0_report(session)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
         assert report.text_curated_count == 1
         assert report.evaluated_rows_count == 3
 
     def test_precision_de_producto_por_fila(
         self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
     ) -> None:
-        report = compute_h0_report(session)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
         # Filas 1 y 2 matchean por producto (2/3); fila 3 no matchea ninguna línea.
         assert report.product_accuracy == pytest.approx(2 / 3)
 
     def test_precision_de_precio_por_fila(
         self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
     ) -> None:
-        report = compute_h0_report(session)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
         # Solo la fila 1 tiene precio correcto (1/3); fila 2 tiene producto
         # correcto pero precio distinto, fila 3 no matchea nada.
         assert report.price_accuracy == pytest.approx(1 / 3)
@@ -357,5 +452,5 @@ class TestH0ReportMultiProducto:
     def test_extraccion_completa_correcta_por_fila(
         self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
     ) -> None:
-        report = compute_h0_report(session)
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
         assert report.complete_accuracy == pytest.approx(1 / 3)

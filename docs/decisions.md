@@ -923,3 +923,45 @@ visualmente sin anidar un `<form>` dentro de otro. Sin acceso a navegador
 desde esta sesión (VPS headless): el cambio corre contra la suite completa
 (153/153 verdes) y se sirvió en caliente, pero falta la revisión visual real
 del usuario.
+
+---
+
+## 2026-08-11 — H0 mide también las imágenes, re-corriendo el OCR sobre el original
+
+Contexto: el operador cuestionó el valor de H0 ("aunque haya errores de
+extracción yo en el formulario lo arreglo"). Corriendo la medición contra la
+base real apareció la causa: de 29 anuncios curados, 27 son imágenes, y
+`_curated_text_ingestions` filtraba `content_type == TEXT`. El 93% del corpus
+real no entraba en la medición — su docstring todavía decía "sin OCR en este
+slice", frase que quedó vieja el 2026-08-07, cuando el OCR se conectó a la cola
+de curaduría. La métrica se calculaba sobre 2 anuncios.
+
+Decisión: el universo de las cinco métricas pasa a ser todo `raw_ingestion`
+curado, sea texto o imagen. Para una imagen, el texto evaluado sale de
+**re-correr el OCR sobre la evidencia original preservada**, no de
+`original_text`. `compute_h0_report` recibe el transcriptor como parámetro
+(`transcribe: Transcriber = ocr.transcribe`) para que la suite no dependa del
+binario de Tesseract. Se agrega `image_ocr_empty_count` al reporte: un OCR que
+devuelve "" es indistinguible de una extracción fallida dentro del porcentaje,
+y sin ese contador un Tesseract ausente hundiría las métricas sin que nada lo
+delate.
+
+Descartado: usar `original_text` de la imagen, que es lo que ya está guardado y
+no habría costado ninguna llamada a Tesseract. En una imagen ese campo guarda la
+transcripción **ya corregida por el operador** (`curation.py:465`): medir sobre
+ella evaluaría las reglas contra un texto que un humano limpió, inflando el
+número justo en la dimensión que H0 pregunta. El propio módulo advertía contra
+medir "un eco de sí misma" (§3 línea 286 incluye explícitamente "información en
+imágenes"; §6.1 línea 587 pone al OCR dentro de lo supervisado). El archivo
+original es inmutable, así que la transcripción es reproducible.
+
+Consecuencia: el número cae fuerte al dejar de estar sesgado — extracción
+completa correcta pasa de 54.5% (33 filas, 2 anuncios) a 31.7% (60 filas, 29
+anuncios). No es una regresión: es la primera medición que mira el corpus real.
+Queda por debajo del umbral de "detener y replantear" (<70%, §3), pero con 60
+de las 300+ filas que H0 exige **no es todavía la medición oficial** y el script
+lo avisa. La medición ahora ejecuta Tesseract una vez por imagen curada: a 300+
+anuncios va a tardar, y si eso molesta se cachea — no antes. La sub-métrica que
+más arrastra es cantidad/unidad (40.0%); §12.5 ya anticipó ese cuello de botella
+y fija la respuesta correcta: acotar los productos bandera a los de unidad de
+venta estable, no bajar el estándar.
