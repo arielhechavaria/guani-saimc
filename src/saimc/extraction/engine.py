@@ -131,6 +131,24 @@ _PRODUCT_DISQUALIFYING_MODIFIERS = (
     "rabadilla",
     "menudencia",
     "menudencias",
+    # Derivados industriales. Los de arriba son cortes del mismo animal; estos
+    # son otro producto que solo nombra al bien fresco como sabor. La distancia
+    # de precio es de otro orden: un caldito de pollo vale ~50 CUP la unidad y
+    # un pollo ~950 CUP la libra, así que un solo caldito mal atribuido corre
+    # la mediana de la celda entera.
+    "caldito",
+    "calditos",
+    "cubito",
+    "cubitos",
+    "consome",
+    "sopa",
+    "sopas",
+    "sazon",
+    "pastilla",
+    "pastillas",
+    "pastillita",
+    "pastillitas",
+    "saborizante",
 )
 _DISQUALIFYING_MODIFIER_RE = re.compile(
     r"\b(" + "|".join(_PRODUCT_DISQUALIFYING_MODIFIERS) + r")\b", re.IGNORECASE

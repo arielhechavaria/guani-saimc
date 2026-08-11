@@ -195,6 +195,42 @@ class TestModificadoresQueDesambiguanProducto:
         assert propuesta.product is products[0]
         assert propuesta.product_name_guess is None
 
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            ("caldito de pollo 50.00cup", "caldito de pollo"),
+            ("sazon fresko de pollo a 120 cup", "sazon fresko de pollo"),
+            ("sopa de pollo a 90 cup", "sopa de pollo"),
+            ("cubito de pollo 40 cup", "cubito de pollo"),
+            ("consome de pollo a 75 cup", "consome de pollo"),
+            ("pastillita de pollo ahumado a 30 cup", "pastillita de pollo ahumado"),
+        ],
+    )
+    def test_los_derivados_no_matchean_el_generico(
+        self,
+        products: list[Product],
+        provinces: list[Province],
+        texto: str,
+        esperado: str,
+    ) -> None:
+        """Un derivado industrial no es el bien fresco, aunque lo nombre.
+
+        Caso real: un caldito de pollo vale ~50 CUP la unidad y un pollo
+        ~950 CUP la libra. Mezclarlos en la misma serie destruye la mediana
+        del producto piloto sin que se note en el dashboard.
+        """
+        propuesta = propose(texto, products, provinces)
+        assert propuesta.product is None
+        assert propuesta.product_name_guess == esperado
+
+    def test_pollo_entero_sigue_matcheando_el_generico(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Guarda de regresión: "entero" describe el mismo bien, no otro."""
+        propuesta = propose("pollo entero a 950 cup la libra", products, provinces)
+        assert propuesta.product is products[0]
+        assert propuesta.product_name_guess is None
+
     def test_propose_all_prellena_el_nombre_adivinado_sin_match(
         self, products: list[Product], provinces: list[Province]
     ) -> None:
