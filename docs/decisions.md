@@ -1194,3 +1194,46 @@ en amplitud 1.0× —una sola observación cada una— que es el punto de partid
 honesto para medir si la regla minorista funciona: si mañana la amplitud sube,
 algo entró mezclado. Queda anotado un hueco menor: «100 ML» no se reconoce como
 cantidad, así que los envases en mililitros llegan sin cantidad extraída.
+
+---
+
+## 2026-08-11 — Precisión de la regla minorista: el precio derivado de un saco no cuenta
+
+Precisa la entrada «Productos piloto, provincias piloto y regla minorista» de
+hoy, que decía «precio por la unidad canónica» sin resolver un caso ambiguo.
+Corrige además una instrucción equivocada que se le había dado al operador:
+que si un anuncio mayorista traía el precio por libra calculado, ese sí se
+podía cargar.
+
+Contexto: el operador detectó el hueco. Los anuncios mayoristas suelen cerrar
+con «$17.500 el saco. Sale a $318.20 Lb». Ese número parece cumplir la regla
+—es un precio por libra— pero no lo es: verificado contra los anuncios reales,
+17.500 / (25 kg × 2,2046) = 317,52 y 23.500 / (25 kg × 2,2046) = 426,38, contra
+los 318,20 y 427,27 que declaran. **Es exactamente la división del precio del
+saco por las libras que trae.** Nadie vende a ese precio: la compra mínima
+sigue siendo un saco.
+
+Decisión: el criterio no es «el anuncio expresa un precio por unidad canónica»
+sino **«¿existe una transacción a ese precio por esa unidad?»**. La formulación
+del operador es la operativa: si no puedo ir con una jabita y comprar una libra
+a ese precio, no se carga. Un anuncio que solo vende sacos se descarta entero,
+traiga o no el precio por libra calculado. Un anuncio que ofrece las dos
+modalidades carga solo la línea minorista.
+
+Descartado: aceptar el precio derivado para no perder observaciones. Habría
+sido tentador porque duplicaría la muestra de las celdas piloto y porque los
+números están cerca —en los dos casos observados el minorista real quedó a
++0,6% y −1,7% del derivado—. Pero esa cercanía es una observación con n=2, no
+una equivalencia: son transacciones distintas y el derivado es sistemáticamente
+el de quien compra 25 kg. Como en el corpus hay más anuncios mayoristas que
+minoristas, admitirlo habría arrastrado la mediana hacia un precio que ningún
+hogar paga, y la serie habría medido la aritmética del mayorista en vez del
+mercado.
+
+Consecuencia: la regla es más restrictiva de lo que parecía y las celdas piloto
+van a llenarse más despacio. Se acepta: §8.1 Nivel 0 define el objetivo como
+«resolver la necesidad diaria del hogar cubano», y el precio que le sirve a un
+hogar es aquel al que puede comprar. Queda como hipótesis a vigilar —no como
+supuesto— que el minorista de Santiago cotiza cerca del derivado mayorista; si
+se sostiene con muestra real, es un hallazgo de mercado que merece su propia
+entrada.
