@@ -965,3 +965,117 @@ anuncios va a tardar, y si eso molesta se cachea — no antes. La sub-métrica q
 más arrastra es cantidad/unidad (40.0%); §12.5 ya anticipó ese cuello de botella
 y fija la respuesta correcta: acotar los productos bandera a los de unidad de
 venta estable, no bajar el estándar.
+
+---
+
+## 2026-08-11 — Composición del corpus revisada: sin contaminación formal, sin cambios
+
+Contexto: el operador planteó que el mercado informal lo mueven vendedores
+individuales de WhatsApp y Facebook sin TCP ni MIPYME, y sospechó que el corpus
+se estuviera llenando de grandes negocios. La sospecha tenía base: en los
+anuncios reales ya había aparecido "CIMEX, Sucursal Santiago de Cuba"
+(`decisions.md`, 2026-08-08), que es una cadena estatal, y el whitepaper §5
+—vinculante— deja el comercio formal explícitamente del lado de un competidor
+("A Ver Que Sale"), no de SAIMC.
+
+Decisión: no se cambia nada. Clasificados los 29 anuncios curados por marcadores
+de texto, 18 son capturas de WhatsApp de vendedor individual, 2 traen marcadores
+de mayorista o página comercial, y 9 no dan señal clara. El corpus ya está
+dominado por exactamente la fuente que el whitepaper declara como objeto. Lo de
+CIMEX era un anuncio suelto, no un patrón.
+
+Descartado: agregar una columna de tipo de vendedor a `raw_ingestions` para
+clasificar formal/informal. Es un cambio de esquema —flujo completo de
+especificación— para separar un problema que la medición muestra que hoy no
+existe. Si la proporción se invierte al subir el volumen, se revisita con datos.
+
+Consecuencia: queda medido y fechado que al 2026-08-11 el corpus no está
+contaminado, así que una sospecha futura se contrasta contra este número en vez
+de volver a discutirse de memoria. Hallazgo lateral registrado en el camino:
+`guess_source_reference` prellena **0/29** contra este corpus — la heurística se
+calibró el 2026-08-08 contra anuncios de Facebook con el patrón "Nombre - Ayer a
+las H:MM", que las capturas de WhatsApp no tienen. Por eso 26/29 anuncios
+tienen "Canal origen" vacío. Va al backlog, no se toca acá.
+
+---
+
+## 2026-08-11 — Teléfonos: se redactan al curar, con backfill de lo ya guardado
+
+Contexto: revisando la composición del corpus (entrada anterior) apareció que
+**20 de 29 anuncios curados tenían teléfonos almacenados** en
+`raw_ingestions.original_text` — encabezados de chat de WhatsApp que el OCR
+transcribe ("+53 5 5550101 Hoy, 9:22 a. m.") y hashtags de contacto
+("#llame_escriba_55550303"). `CLAUDE.md` lo prohíbe sin matices: «no capturamos
+ni almacenamos teléfonos, direcciones exactas ni datos de contacto de
+anunciantes» (riesgo §10.6). Estaban en la base de producción y, desde el
+2026-08-10, en los backups diarios.
+
+Decisión: `saimc/privacy.py` con `redact_personal_data()`, aplicado en el único
+punto donde la curaduría persiste texto capturado (`curation.py`, sobre
+`original_text` y `source_reference`). Más `scripts/redact_existing.py` (DML, no
+migración — mismo criterio que la limpieza de duplicados del 2026-08-08) para lo
+ya guardado, con dry-run por default. Aplicado contra producción tras verificar
+el backup de las 03:00 UTC: 19 ingestas de imagen redactadas, 1 de texto
+deliberadamente intacta. El redactor cubre **solo teléfonos**: las direcciones
+exactas son reconocimiento de entidades, no regex, y hoy no hay volumen que lo
+justifique.
+
+Descartado: (a) redactar solo en la capa de publicación, que es la lectura de la
+contradicción 1 de `whitepaper-map.md` («es un problema de publicación, no de
+almacenamiento»). No cumple la regla: `CLAUDE.md` dice *almacenar*, no
+*publicar*, y los números seguirían en los backups. Cuando los dos documentos
+chocan, gana `CLAUDE.md`. (b) Redactar también las ingestas de TEXTO. Ahí
+`original_text` es la evidencia escrita en la ingesta, no un campo nulable
+completado después: reescribirla sí rompe la inmutabilidad de `raw_ingestions`.
+Para imágenes no hay conflicto, porque el precedente del 2026-08-07 ya
+estableció que completar `original_text` en la curaduría no viola nada —lo
+intocable es `file_path`, `content_hash`, `captured_at`, `content_type`.
+
+Consecuencia: **la redacción es de texto, no de píxeles**. La captura en
+`data/raw/` sigue mostrando el número en la imagen, y ese archivo es la
+evidencia inmutable que la Transparency Layer publicaría — la contradicción 1
+del mapa sigue abierta y ahora con un caso concreto. Queda además 1 ingesta de
+texto con teléfono (`53de1590-…`) esperando una decisión sobre inmutabilidad
+vs. privacidad. La medición de H0 no se movió (31.7% antes y después): para
+imágenes se re-corre el OCR sobre los píxeles, así que redactar la columna no
+toca el número — propiedad heredada de la decisión anterior de este mismo día.
+
+---
+
+## 2026-08-11 — Redacción de teléfonos en toda la base; el archivo preservado no se toca
+
+Reemplaza el alcance de la entrada anterior de hoy («Teléfonos: se redactan al
+curar, con backfill de lo ya guardado»), que dejaba fuera las ingestas de texto
+y no cubría la ingesta. El diseño del redactor no cambia.
+
+Contexto: la entrada anterior tapaba solo la curaduría, y la curaduría solo
+escribe `original_text` para imágenes. Quedaban dos huecos. (1)
+`ingestion/inbox.py` lee el `.txt` y guarda su contenido crudo: cualquier
+archivo de texto nuevo entraba con el teléfono intacto, y había 5 esperando en
+`inbox/`. (2) Una ingesta de texto ya cargada seguía con el número en base.
+Pedido explícito del operador: sanar todo e impedir que entren.
+
+Decisión: `redact_personal_data` se aplica también en `ingest_file`, sobre el
+texto que va a la base. El backfill pasa a cubrir imagen y texto por igual. La
+colisión con «`raw_ingestions` es inmutable» se resuelve a favor de la
+privacidad, con un límite preciso: **se redacta la columna, no el archivo**.
+`data/raw/` queda intacto y `content_hash` lo sigue describiendo — el hash se
+calcula sobre el archivo, nunca sobre el texto redactado, así que la
+deduplicación de recapturas sigue funcionando (hay test que lo fija).
+Verificado después de aplicar: 0 de 64 ingestas con teléfono en base.
+
+Descartado: redactar también los archivos de `data/raw/`. Rompería la línea 568
+del whitepaper («el archivo original nunca se modifica»), dejaría `content_hash`
+describiendo algo que ya no está en disco, y —lo decisivo— **no se puede hacer
+de forma consistente**: 62 de los 64 archivos son imágenes con el teléfono en
+los píxeles, que solo se borra destruyendo la evidencia. Sanear 1 `.txt` de 63
+archivos comprometidos compra poco y cuesta la garantía de integridad. El lugar
+correcto para ese problema es la capa de publicación, que todavía no existe.
+
+Consecuencia: la base y los backups quedan limpios, que es la superficie de
+exposición real hoy (la aplicación lee de ahí; `pg_dump` corre todas las
+noches). Queda declarado y acotado el residuo: 1 `.txt` y 62 imágenes en
+`data/raw/` conservan el número. Eso convierte la contradicción 1 de
+`whitepaper-map.md` en un bloqueante concreto de la Transparency Layer: no se
+puede publicar la evidencia literal sin resolver antes el recorte o la
+redacción de la captura.

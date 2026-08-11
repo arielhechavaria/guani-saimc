@@ -402,6 +402,42 @@ class TestCurationSubmit:
         assert precio.confidence_score is None
         assert precio.price_cup is None
 
+    def test_no_persiste_telefonos_del_texto_transcrito(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`CLAUDE.md`: no se almacenan teléfonos. La curaduría es el único
+        punto donde texto capturado se persiste, así que es donde la regla
+        tiene que valer (docs/decisions.md 2026-08-11).
+        """
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-post-telefono", content_type=ContentType.IMAGE
+        )
+
+        client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "420",
+                "currency_0": "CUP",
+                "quantity_0": "",
+                "unit_0": "lb",
+                "province_id_0": "",
+                "source_reference": "watsap 55550202",
+                "original_text": "+53 5 5550101 Hoy, 9:22 a. m. Azúcar a 420 cup",
+            },
+            follow_redirects=False,
+        )
+
+        session.expire_all()
+        refrescado = session.get(RawIngestion, ingestion.id)
+        assert refrescado is not None
+        assert "5550101" not in (refrescado.original_text or "")
+        assert "55550202" not in (refrescado.source_reference or "")
+        # El precio, que es el dato que el sistema existe para medir, sobrevive.
+        assert "420 cup" in (refrescado.original_text or "")
+
     def test_dos_filas_completas_crean_dos_price_history(
         self, client: TestClient, session: Session
     ) -> None:

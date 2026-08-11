@@ -31,6 +31,7 @@ from saimc.extraction.engine import (
     propose_all,
 )
 from saimc.ingestion.inbox import ingest_inbox
+from saimc.privacy import redact_personal_data
 from saimc.models import (
     ContentType,
     Currency,
@@ -452,10 +453,15 @@ async def submit_curation(
     for entry in entries_to_create:
         db.add(entry)
 
+    # Todo lo que se escribe acá pasa por `redact_personal_data` antes de
+    # tocar la base: es el único punto donde texto capturado se persiste
+    # durante la curaduría, así que es donde la regla de `CLAUDE.md` sobre
+    # datos personales se puede aplicar una sola vez y valer para todo.
+
     # `source_reference` está diseñado para completarse acá, no viola la
     # inmutabilidad de `raw_ingestions` (ver docstring del modelo).
     if source_reference:
-        ingestion.source_reference = source_reference
+        ingestion.source_reference = redact_personal_data(source_reference)
 
     # Mismo criterio para `original_text` en imágenes: nulo en la ingesta a
     # propósito (el OCR no corre ahí), lo completa el operador al confirmar
@@ -463,7 +469,7 @@ async def submit_curation(
     # `original_text` YA es la evidencia pegada; este campo del form no la
     # reemplaza.
     if ingestion.content_type == ContentType.IMAGE and original_text:
-        ingestion.original_text = original_text
+        ingestion.original_text = redact_personal_data(original_text)
 
     ingestion.processing_status = ProcessingStatus.CURATED
     db.commit()

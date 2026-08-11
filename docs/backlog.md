@@ -75,3 +75,18 @@ contra su evidencia antes de guardarlo — es la misma barrera que hace que las
 contramedidas C1-C4 tampoco sean bloqueantes todavía (`decisions.md`,
 2026-08-06). Además necesita histórico de precios real (Regla 2) y un sistema
 de reputación (Regla 4) que no existen hoy.
+
+## Recalibrar `guess_source_reference` contra capturas de WhatsApp
+
+Por qué importa: la heurística prellena el campo "Canal origen" buscando el
+patrón "Nombre - Ayer a las H:MM" de Facebook. Contra el corpus real del
+2026-08-11 prellena **0/29**: las capturas de WhatsApp, que son 18 de 29
+anuncios, no traen ese patrón sino un encabezado de chat. Resultado: 26/29
+anuncios curados tienen `source_reference` vacío, así que hoy no hay forma de
+analizar la composición de fuentes desde la base — hubo que inferirla del texto
+(`decisions.md`, 2026-08-11).
+
+Bloqueado por: nada técnico. No se hizo en el slice del 2026-08-11 para no
+mezclarlo con la redacción de teléfonos. Ojo al rediseñarla: el encabezado de
+WhatsApp es justamente el teléfono, que ahora se redacta antes de persistir —
+lo que quede como "canal origen" no puede ser el número.

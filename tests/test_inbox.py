@@ -1,5 +1,6 @@
 """Comportamiento esperado de la bandeja de entrada."""
 
+import hashlib
 from pathlib import Path
 
 from sqlalchemy import select
@@ -90,6 +91,45 @@ class TestIngestInbox:
         assert row.content_type == ContentType.TEXT
         assert row.source_type == SourceType.INBOX_TEXT
         assert row.processing_status == ProcessingStatus.PENDING
+
+    def test_el_telefono_no_llega_a_la_base(
+        self, session: Session, inbox_dir: Path, store_dir: Path
+    ) -> None:
+        """`CLAUDE.md`: no se almacenan teléfonos. La ingesta es la primera vez
+        que texto capturado toca la base, así que la redacción tiene que correr
+        acá y no solo en la curaduría (docs/decisions.md 2026-08-11).
+        """
+        (inbox_dir / "mayorista.txt").write_text(
+            "#llame_escriba_55550303\nArroz 25Kg a $17,500 Cup\nwatsap 55550202",
+            encoding="utf-8",
+        )
+
+        ingest_inbox(session, inbox_dir, store_dir)
+
+        (row,) = _rows(session)
+        assert "55550303" not in (row.original_text or "")
+        assert "55550202" not in (row.original_text or "")
+        # El precio sobrevive intacto: es el dato que el sistema mide.
+        assert "$17,500 Cup" in (row.original_text or "")
+
+    def test_el_hash_sigue_siendo_el_del_archivo_original(
+        self, session: Session, inbox_dir: Path, store_dir: Path
+    ) -> None:
+        """La redacción toca `original_text`, nunca el archivo ni su hash.
+
+        `content_hash` es el índice único de deduplicación: si se calculara
+        sobre el texto redactado, una recaptura del mismo anuncio dejaría de
+        reconocerse como duplicada.
+        """
+        contenido = "watsap 55550202\nArroz a 730 cup"
+        (inbox_dir / "anuncio-tel.txt").write_text(contenido, encoding="utf-8")
+
+        ingest_inbox(session, inbox_dir, store_dir)
+
+        (row,) = _rows(session)
+        assert row.content_hash == hashlib.sha256(contenido.encode()).hexdigest()
+        # El archivo preservado tampoco se toca.
+        assert (store_dir / row.file_path).read_text(encoding="utf-8") == contenido
 
     def test_el_ocr_no_corre_en_la_ingesta(
         self, session: Session, inbox_dir: Path, store_dir: Path

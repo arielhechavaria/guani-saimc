@@ -26,6 +26,7 @@ from saimc.models.raw_ingestion import (
     RawIngestion,
     SourceType,
 )
+from saimc.privacy import redact_personal_data
 
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"})
 TEXT_SUFFIXES = frozenset({".txt", ".md"})
@@ -135,7 +136,15 @@ def ingest_file(
         raise ValueError(f"Extensión no reconocida: {path.name}")
 
     content_hash = compute_hash(path)
-    original_text = _read_text(path) if content_type is ContentType.TEXT else None
+    # El hash se calcula sobre el archivo, la redacción se aplica al texto que
+    # va a la base. El orden importa: si el hash saliera del texto redactado,
+    # una recaptura del mismo anuncio dejaría de reconocerse como duplicada.
+    # El archivo preservado tampoco cambia — sigue siendo la evidencia literal.
+    original_text = (
+        redact_personal_data(_read_text(path))
+        if content_type is ContentType.TEXT
+        else None
+    )
     captured_at = _captured_at(path)
 
     store_dir.mkdir(parents=True, exist_ok=True)
