@@ -149,6 +149,11 @@ _PRODUCT_DISQUALIFYING_MODIFIERS = (
     "pastillita",
     "pastillitas",
     "saborizante",
+    # Artículos de higiene y puericultura. No son ni un corte ni un derivado
+    # del bien: son otro producto que comparte la palabra. Caso real que llegó
+    # a la base: "Aceite para bebé 100 ML" se cargó como el producto "Aceite",
+    # que es aceite de cocina y producto piloto.
+    "bebe",
 )
 _DISQUALIFYING_MODIFIER_RE = re.compile(
     r"\b(" + "|".join(_PRODUCT_DISQUALIFYING_MODIFIERS) + r")\b", re.IGNORECASE

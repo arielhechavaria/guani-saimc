@@ -1152,3 +1152,45 @@ con 23.500 CUP el saco. Ese número no significaba nada y nadie podía verlo.
 Cada sesión de curaduría pasa a ser verificable de un vistazo, y la vista es
 además el primer paso hacia la matriz que el whitepaper define como núcleo
 (§5, «objeto medido»).
+
+---
+
+## 2026-08-11 — Limpieza de filas fuera de la regla minorista, y "para bebé" como modificador
+
+Contexto: la regla minorista (entrada anterior de hoy) rige de acá en adelante,
+pero `prices_history` ya traía filas cargadas bajo el criterio viejo. La vista
+de control las exponía: azúcar en Santiago daba mediana 11.490 CUP con amplitud
+56×. Sin limpiarlas, la amplitud iba a seguir alta aunque el operador curara
+perfecto, y eso se leería como que la regla no funciona.
+
+Decisión: se borran 7 filas de `prices_history` (DML puntual, no migración —
+mismo criterio que la limpieza de duplicados del 2026-08-08), clasificadas una
+por una contra el texto del anuncio que las originó, no por su magnitud:
+
+- Azúcar: 3 sacos mayoristas (21.500/55, 21.600/25 kg, 23.500/25 kg) y 1 fila
+  minorista **por kilo** («Azúcar blanca 1 kg 1380.00»). Esta última no es
+  mayorista, pero mezclar kg con lb es el mismo error en menor escala.
+- Arroz: 2 sacos de 25 kg del mismo anuncio mayorista (17.500 y 31.000).
+- Aceite: 1 fila que no era aceite. El texto decía «**Aceite para bebé** 100
+  ML 1120.00 cup» y el matcher genérico la cargó como el producto «Aceite»,
+  que es aceite de cocina y producto piloto.
+
+Ese último caso se corrigió además en el motor: `"bebe"` entra en
+`_PRODUCT_DISQUALIFYING_MODIFIERS`. No es un corte ni un derivado del mismo
+bien —las dos categorías que la lista ya cubría— sino otro artículo que
+comparte la palabra, así que la lista gana una tercera categoría.
+
+Descartado: borrar por umbral de precio o de cantidad, que habría sido más
+rápido. Habría acertado con los sacos y fallado con el aceite de bebé (1.120
+CUP es un precio perfectamente plausible para un litro de aceite de cocina).
+La clasificación tenía que salir del texto original, que para eso se preserva.
+También se descartó pinear el `product_name_guess` exacto en el test del
+artículo de bebé: hoy arrastra el «100 ML» porque ML no se reconoce como unidad
+de cantidad, y fijar ese recorte convertiría un detalle de presentación en un
+contrato.
+
+Consecuencia: `prices_history` pasa de 60 a 53 filas. Las celdas piloto quedan
+en amplitud 1.0× —una sola observación cada una— que es el punto de partida
+honesto para medir si la regla minorista funciona: si mañana la amplitud sube,
+algo entró mezclado. Queda anotado un hueco menor: «100 ML» no se reconoce como
+cantidad, así que los envases en mililitros llegan sin cantidad extraída.

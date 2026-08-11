@@ -223,6 +223,30 @@ class TestModificadoresQueDesambiguanProducto:
         assert propuesta.product is None
         assert propuesta.product_name_guess == esperado
 
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            "aceite para bebe 100 ML 1120.00 cup",
+            "crema para bebe 100 ML 710.00 cup",
+        ],
+    )
+    def test_los_articulos_para_bebe_no_matchean_el_generico(
+        self, products: list[Product], provinces: list[Province], texto: str
+    ) -> None:
+        """Caso real: "Aceite para bebé 100 ML" se cargó como el producto
+        "Aceite" (aceite de cocina, producto piloto). No es un corte ni un
+        derivado del mismo bien: es otro artículo que comparte la palabra.
+
+        Lo que se fija acá es que NO contamine el genérico, y que el nombre
+        sugerido deje ver de qué se trata. El recorte exacto de esa frase es
+        incidental —hoy arrastra el "100 ML" porque ML no se reconoce como
+        unidad de cantidad— y pinearlo convertiría un detalle de presentación
+        en un contrato.
+        """
+        propuesta = propose(texto, products, provinces)
+        assert propuesta.product is None
+        assert "bebe" in (propuesta.product_name_guess or "")
+
     def test_pollo_entero_sigue_matcheando_el_generico(
         self, products: list[Product], provinces: list[Province]
     ) -> None:
