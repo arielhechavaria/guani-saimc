@@ -174,9 +174,12 @@
                     ¿Se puede comprar 1 {{ row.unit or 'unidad' }} a este precio?
                   </label>
                   <select name="sale_format_{{ loop.index0 }}" id="sale_format_{{ loop.index0 }}" class="form-select form-select-sm">
-                    <option value="" selected>— sin responder —</option>
-                    <option value="retail">Sí, minorista</option>
-                    <option value="wholesale">No, hay que llevar más (mayorista)</option>
+                    {# El default es «sin responder» para no fabricar `retail`, pero si el
+                       operador ya respondió y el formulario rebotó, se devuelve su respuesta:
+                       echarla atrás le haría reenviar NULL sin darse cuenta. #}
+                    <option value=""{% if row.sale_format not in ("retail", "wholesale") %} selected{% endif %}>— sin responder —</option>
+                    <option value="retail"{% if row.sale_format == "retail" %} selected{% endif %}>Sí, minorista</option>
+                    <option value="wholesale"{% if row.sale_format == "wholesale" %} selected{% endif %}>No, hay que llevar más (mayorista)</option>
                   </select>
                   <small class="text-muted">
                     Prueba de la jabita. Si el precio por unidad sale de dividir un saco, es mayorista.

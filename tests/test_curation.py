@@ -920,6 +920,37 @@ class TestCurationSubmit:
         session.expire_all()
         assert list(session.execute(select(PriceHistory)).scalars()) == []
 
+    def test_el_formato_de_venta_respondido_sobrevive_al_re_render_por_error(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Si el formulario rebota, la respuesta a la prueba de la jabita se
+        devuelve tal cual la dio el operador.
+
+        El default sin responder existe para no fabricar `retail`; devolver lo
+        que el operador ya eligió no fabrica nada. Perderlo en el rebote es peor
+        que molesto: si no lo nota, reenvía `NULL` justo en el campo por el que
+        existe este formulario."""
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-formato-re-render")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "2",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "sale_format_0": "wholesale",
+                "product_id_1": str(pollo.id),
+                "price_1": "no-es-un-numero",
+            },
+        )
+
+        assert response.status_code == 422
+        # La fila 0 recupera su respuesta; la fila 1, que no respondió, no
+        # recibe ninguna fabricada.
+        assert response.text.count('<option value="wholesale" selected>') == 1
+        assert '<option value="retail" selected>' not in response.text
+
     def test_original_text_no_vacio_en_imagen_actualiza_tras_curar(
         self, client: TestClient, session: Session
     ) -> None:
