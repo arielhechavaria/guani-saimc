@@ -1557,3 +1557,30 @@ Aceptado a conciencia (decisión del usuario, 2026-08-12): construir la vista
 igual aunque cubra casi nada, para que crezca sola a medida que la curaduría
 carga `unit`+`quantity`+`sale_format` de forma consistente — mismo criterio
 que ya rige el resto de `/control`.
+
+---
+
+## 2026-08-12 — Los dos sacos de Arroz se marcan wholesale (corrección pendiente aplicada)
+
+Contexto: al diagnosticar la celda `Arroz/Santiago/lb/sin responder` (n=3,
+amplitud 45.2×) se dijo que los dos sacos de 110 lb («Saco de arroz De 110
+lb», 31.000 y 33.000 CUP) se iban a marcar `wholesale` de inmediato —
+inequívoco por prueba de la jabita, mismo criterio que el azúcar del
+2026-08-11. La corrección quedó anotada pero no se ejecutó: la conversación
+saltó a diseñar `compute_retail_ranges` antes de aplicarla, y el operador la
+notó porque `/control` seguía mostrando la celda sin corregir después del
+deploy.
+
+Decisión: `UPDATE prices_history SET sale_format = 'wholesale' WHERE
+packaging = 'Saco de arroz De 110 lb' AND sale_format IS NULL` — 2 filas.
+Mismo patrón de DML puntual que las correcciones del 2026-08-08 y
+2026-08-11, sin migración porque no cambia esquema.
+
+Consecuencia: la celda `Arroz/lb/sin responder` baja a n=1 (la fila de 730);
+aparece una celda nueva `Arroz/lb/wholesale` con n=2, mediana 32.000. La vista
+de rango minorista sigue vacía: 730 sigue sin `sale_format` respondido, y 750
+sigue en `unit=kg` contra el canónico `lb` del catálogo — ninguna de las dos
+entra todavía. Pendiente, sin resolver a propósito: si 730 es el mismo
+paquete de 1kg con la unidad mal tildeada (debería ser `kg`, no `lb`) o una
+observación distinta — queda para revisión del operador vía
+`/curation/history`, no se adivina.
