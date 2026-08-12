@@ -11,7 +11,7 @@
   <div class="container py-4" style="max-width: 960px;">
     <div class="saimc-header">
       <h1 class="h3">Control de curaduría</h1>
-      <p class="saimc-subtitle mb-0">Matriz producto × provincia — lo que hay cargado hoy</p>
+      <p class="saimc-subtitle mb-0">Matriz producto × provincia × unidad × formato — lo que hay cargado hoy</p>
       <div class="saimc-counters">
         <span class="saimc-counter">Anuncios curados: <strong>{{ curated }}</strong></span>
         <span class="saimc-counter">Filas de precio: <strong>{{ rows }}</strong></span>
@@ -26,6 +26,15 @@
       mayorista se delata ahí. La vista no marca ninguna celda como buena o mala —
       no hay umbral fijado todavía (spec.md §12.6), y fijarlo por intuición
       sería peor que no tenerlo.
+    </p>
+
+    <p class="text-muted small">
+      La unidad y el formato de venta parten la celda: un precio por libra y uno
+      por kilo no son la misma serie, y un saco mayorista no se promedia con la
+      libra suelta. <strong>«— sin responder —»</strong> es su propia celda, no se
+      funde con las demás: mientras esa fila crezca, lo que falta es responder en
+      la cola de curaduría, no cambiar el agregador. El envase queda fuera de la
+      clave por ser texto libre.
     </p>
 
     {% if single_observation %}
@@ -46,6 +55,8 @@
           <tr>
             <th scope="col">Producto</th>
             <th scope="col">Provincia</th>
+            <th scope="col">Unidad</th>
+            <th scope="col">Formato</th>
             <th scope="col" class="text-end">n</th>
             <th scope="col" class="text-end">Mediana</th>
             <th scope="col" class="text-end">Mínimo</th>
@@ -58,6 +69,12 @@
           <tr>
             <td>{{ cell.product_name }}</td>
             <td>{{ cell.province_name or "— sin provincia —" }}</td>
+            <td>{% if cell.unit %}{{ cell.unit }}{% else %}<span class="text-muted">— sin responder —</span>{% endif %}</td>
+            <td>
+              {% if cell.sale_format == "retail" %}minorista
+              {%- elif cell.sale_format == "wholesale" %}mayorista
+              {%- else %}<span class="text-muted">— sin responder —</span>{% endif %}
+            </td>
             <td class="text-end"><strong>{{ cell.count }}</strong></td>
             <td class="text-end">{{ "%.2f"|format(cell.median) }} {{ cell.currency }}</td>
             <td class="text-end text-muted">{{ "%.2f"|format(cell.minimum) }}</td>

@@ -16,7 +16,14 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from saimc.cells import compute_cells
-from saimc.models import Currency, PriceHistory, Product, Province, RawIngestion
+from saimc.models import (
+    Currency,
+    PriceHistory,
+    Product,
+    Province,
+    RawIngestion,
+    SaleFormat,
+)
 from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
 
 from datetime import UTC, datetime
@@ -43,6 +50,8 @@ def _precio(
     province: Province | None,
     price: str,
     source: RawIngestion,
+    unit: str | None = None,
+    sale_format: str | None = None,
 ) -> None:
     session.add(
         PriceHistory(
@@ -51,6 +60,8 @@ def _precio(
             price=Decimal(price),
             currency=Currency.CUP.value,
             source_id=source.id,
+            unit=unit,
+            sale_format=sale_format,
         )
     )
 
@@ -138,3 +149,84 @@ class TestComputeCells:
 
     def test_sin_datos_devuelve_lista_vacia(self, session: Session) -> None:
         assert compute_cells(session) == []
+
+
+class TestCeldaSeparaUnidadYFormato:
+    """Caso real del 2026-08-12: `Arroz` en Santiago traía 730 con `unit=lb` y
+    750 con `unit=kg` describiendo el mismo paquete de 1 kg, más dos sacos de
+    110 lb a 31.000 y 33.000. Agrupados solo por producto × provincia × moneda
+    daban una sola mediana que no significaba nada.
+    """
+
+    def _arroz_y_santiago(self, session: Session) -> tuple[Product, Province]:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        return arroz, scu
+
+    def test_separa_por_unidad(self, session: Session) -> None:
+        arroz, scu = self._arroz_y_santiago(session)
+        origen = _ingestion(session, "hash-unidad")
+        # Dos por libra (700, 800 -> mediana 750) y una por kilo (750).
+        _precio(session, product=arroz, province=scu, price="700", source=origen, unit="lb")
+        _precio(session, product=arroz, province=scu, price="800", source=origen, unit="lb")
+        _precio(session, product=arroz, province=scu, price="750", source=origen, unit="kg")
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 2
+        por_unidad = {c.unit: c for c in celdas}
+        assert por_unidad["lb"].count == 2
+        assert por_unidad["lb"].median == Decimal("750")
+        assert por_unidad["kg"].count == 1
+        assert por_unidad["kg"].median == Decimal("750")
+
+    def test_separa_minorista_de_mayorista(self, session: Session) -> None:
+        arroz, scu = self._arroz_y_santiago(session)
+        origen = _ingestion(session, "hash-formato")
+        # Minorista por libra (700, 800) contra dos sacos de 110 lb.
+        for p in ("700", "800"):
+            _precio(
+                session, product=arroz, province=scu, price=p, source=origen,
+                unit="lb", sale_format=SaleFormat.RETAIL.value,
+            )
+        for p in ("31000", "33000"):
+            _precio(
+                session, product=arroz, province=scu, price=p, source=origen,
+                unit="lb", sale_format=SaleFormat.WHOLESALE.value,
+            )
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 2
+        por_formato = {c.sale_format: c for c in celdas}
+        assert por_formato["retail"].median == Decimal("750")
+        assert por_formato["retail"].spread == Decimal("800") / Decimal("700")
+        assert por_formato["wholesale"].median == Decimal("32000")
+
+    def test_sin_responder_no_se_funde_con_lo_respondido(self, session: Session) -> None:
+        """`unit` y `sale_format` nulos son «sin responder», no un valor más.
+
+        Fundirlos con las filas que sí traen dato inventaría una equivalencia
+        que nadie afirmó — el mismo criterio con el que `canonical_unit()`
+        devuelve `None` en vez de adivinar.
+        """
+        arroz, scu = self._arroz_y_santiago(session)
+        origen = _ingestion(session, "hash-nulos")
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value,
+        )
+        _precio(session, product=arroz, province=scu, price="320", source=origen)
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 2
+        sin_responder = [c for c in celdas if c.unit is None][0]
+        assert sin_responder.sale_format is None
+        assert sin_responder.count == 1
+        assert sin_responder.median == Decimal("320")

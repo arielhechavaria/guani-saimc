@@ -1436,3 +1436,43 @@ reescribir entradas viejas— ya está cubierta por el resto de la sección
 «Decisiones».
 
 Consecuencia: ninguna. Es una corrección de una instrucción que ya no aplica.
+
+---
+
+## 2026-08-12 — La celda de control se parte por unidad y formato de venta
+
+Contexto: revisando `/control` durante la curaduría apareció que la matriz
+analiza por producto y no por producto comparable. `cells.py` agrupaba por
+producto × provincia × moneda e ignoraba `unit` y `sale_format`, que existen
+desde la entrada de hoy «`sale_format` por fila». Esa misma entrada dejó
+anotado que las tres columnas quedaban inertes y que conectarlas era «trabajo
+de un slice posterior»: este. El caso real: `Arroz` en Santiago mezclaba 730
+por libra, 750 por kilo —las dos filas describiendo el mismo paquete de 1 kg— y
+dos sacos de 110 lb a 31.000 y 33.000, todo en una sola mediana.
+
+Decisión: la clave de celda pasa a producto × provincia × moneda × `unit` ×
+`sale_format`. El nulo **no se funde con nada**: «sin responder» es su propia
+celda, mismo criterio por el que `canonical_unit()` devuelve `None` en vez de
+adivinar. Los desempates del orden se hacen explícitos porque partir la celda
+multiplica los empates de `count` y sin ellos el orden lo decidiría el hash del
+dict. La vista suma columnas Unidad y Formato.
+
+Descartado: (a) agregar `saco` y `paquete` al vocabulario de `UNITS`, que fue
+la propuesta inicial. Un saco no tiene magnitud —los datos reales traen sacos
+de 25 kg, 50 kg y 110 lb— así que `unit=saco` no vuelve dos precios
+comparables: mueve la mezcla un nivel arriba y la hace invisible. Es
+exactamente el problema de resolución de entidades que `spec.md` §5 define como
+el núcleo técnico del proyecto. Queda anotado que `caja`, ya presente en
+`UNITS`, arrastra el mismo defecto. (b) Meter `packaging` en la clave: es texto
+libre sin vocabulario cerrado («Saco de arroz De 110 lb»), así que produciría
+una celda por variante de redacción. Si `unit` + `sale_format` no alcanzan,
+darle vocabulario cerrado se decide con los datos de esta vista, no antes
+(§12.6).
+
+Consecuencia: 55 celdas donde antes había menos, y la separación deja ver algo
+que estaba tapado: `sale_format` está respondido en **1 de 59 filas**, así que
+los dos sacos de arroz siguen agrupados con la fila minorista de 730 —celda de
+n=3, amplitud 45.2×, con formato «sin responder»—. El agregador ya no es el
+límite; el límite es responder la prueba de la jabita al curar. Anotado además
+un dato claramente erróneo a corregir: `Azúcar blanca` con `price=2.00` CUP y
+`packaging="Paquete de azúcar blanca 2lb"`.
