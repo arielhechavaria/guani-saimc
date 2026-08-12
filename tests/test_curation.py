@@ -1213,6 +1213,34 @@ class TestCurationSubmit:
         assert "55550101" not in fila.packaging
         assert "saco" in fila.packaging
 
+    def test_packaging_vacio_guarda_null_y_no_cadena_vacia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un envase sin llenar es NULL, no `""`.
+
+        La diferencia importa: `""` sería un tercer estado no declarado en un
+        campo cuya semántica de nulos ya es una concesión asumida. Un helper que
+        devolviera `(redactado or "")[:64]` pasaría todo lo demás igual."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-packaging-vacio")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "packaging_0": "",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.packaging is None
+
     def test_packaging_redactado_nunca_excede_el_ancho_de_la_columna(
         self, client: TestClient, session: Session
     ) -> None:
