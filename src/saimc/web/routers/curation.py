@@ -584,9 +584,26 @@ def discard_curation(
 
 
 @router.get("/curation/history", response_class=HTMLResponse)
-def curation_history(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def curation_history(
+    request: Request,
+    db: Session = Depends(get_db),
+    product: str | None = None,
+    province: str | None = None,
+    currency: str | None = None,
+    unit: str | None = None,
+    sale_format: str | None = None,
+) -> HTMLResponse:
     """Lista los anuncios ya curados, más recientes primero, para ubicar cuál
-    corregir — es la puerta de entrada a `GET /curation/{id}/edit`.
+    corregir o eliminar — es la puerta de entrada a `GET /curation/{id}/edit`
+    y a `POST /curation/{id}/delete`.
+
+    Los cinco filtros opcionales son la identidad exacta de una celda de
+    `compute_cells` (2026-08-12): la columna `n` de `/control` enlaza acá para
+    mostrar «los anuncios detrás de este número». Un parámetro **ausente** no
+    filtra por esa columna; un parámetro **presente pero vacío** (`unit=`)
+    filtra por «sin responder» (NULL) — mismo contrato que ya usa
+    `_SALE_FORMAT_VALUES` en el submit: la cadena vacía nunca se confunde con
+    "no filtrar".
 
     Sin paginación: al volumen de Fase 0 (decenas de anuncios) toda la lista
     entra en una sola página, y paginar antes de tener ese problema es
@@ -595,28 +612,84 @@ def curation_history(request: Request, db: Session = Depends(get_db)) -> HTMLRes
     agregarla en una sola consulta con `string_agg` ataría la vista al
     dialecto de PostgreSQL, que los tests no corren (ver tests/conftest.py).
     """
+    filtering = any(v is not None for v in (product, province, currency, unit, sale_format))
+
     stmt = (
         select(RawIngestion)
         .where(RawIngestion.processing_status == ProcessingStatus.CURATED)
         .order_by(RawIngestion.captured_at.desc())
     )
-    ingestions = list(db.execute(stmt).scalars().all())
+    all_ingestions = list(db.execute(stmt).scalars().all())
 
+    ingestions: list[RawIngestion] = []
     rows_by_ingestion: dict[uuid.UUID, list[tuple[str, PriceHistory]]] = {}
-    for ingestion in ingestions:
+
+    for ingestion in all_ingestions:
         row_stmt = (
-            select(Product.name, PriceHistory)
+            select(Product.name, Province.name, PriceHistory)
             .join(Product, Product.id == PriceHistory.product_id)
+            .outerjoin(Province, Province.id == PriceHistory.province_id)
             .where(PriceHistory.source_id == ingestion.id)
             .order_by(PriceHistory.created_at)
         )
-        rows_by_ingestion[ingestion.id] = list(db.execute(row_stmt).all())
+        matched: list[tuple[str, PriceHistory]] = []
+        for product_name, province_name, price in db.execute(row_stmt).all():
+            if filtering:
+                if product is not None and product_name != product:
+                    continue
+                if province is not None and (province_name or "") != province:
+                    continue
+                if currency is not None and price.currency != currency:
+                    continue
+                if unit is not None and (price.unit or "") != unit:
+                    continue
+                if sale_format is not None and (price.sale_format or "") != sale_format:
+                    continue
+            matched.append((product_name, price))
+
+        if filtering and not matched:
+            continue  # este anuncio no tiene nada que ver con la celda filtrada
+
+        ingestions.append(ingestion)
+        rows_by_ingestion[ingestion.id] = matched
 
     return request.app.state.templates.TemplateResponse(
         request,
         "curation_history.html",
-        {"ingestions": ingestions, "rows_by_ingestion": rows_by_ingestion},
+        {
+            "ingestions": ingestions,
+            "rows_by_ingestion": rows_by_ingestion,
+            "filtering": filtering,
+            "filter_product": product,
+            "filter_province": province,
+            "filter_currency": currency,
+            "filter_unit": unit,
+            "filter_sale_format": sale_format,
+        },
     )
+
+
+@router.post("/curation/{ingestion_id}/delete")
+def delete_curated(
+    ingestion_id: uuid.UUID, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Elimina un anuncio curado: borra sus filas de `prices_history` y lo
+    pasa a `discarded` — no vuelve a la cola ni al historial (2026-08-12).
+
+    El registro crudo **nunca se toca**. No es una promesa de este endpoint,
+    es una garantía del esquema: `PriceHistory.source_id` tiene
+    `ondelete="RESTRICT"` contra `raw_ingestions` (spec.md §6.1, línea 321),
+    así que ni intentando se podría arrastrar el archivo capturado en el
+    mismo borrado. Por eso el orden acá no importa para la integridad —
+    aunque de todos modos se borran las filas de precio antes de tocar el
+    estado del anuncio, por claridad de lectura.
+    """
+    ingestion = _require_curated(db, ingestion_id)
+    for price in _curated_rows(db, ingestion_id):
+        db.delete(price)
+    ingestion.processing_status = ProcessingStatus.DISCARDED
+    db.commit()
+    return RedirectResponse(url="/curation/history", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/curation/{ingestion_id}/edit", response_class=HTMLResponse)

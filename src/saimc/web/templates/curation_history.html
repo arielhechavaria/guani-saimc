@@ -18,9 +18,27 @@
       </div>
     </div>
 
+    {% if filtering %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center" role="alert">
+      <span>
+        Filtrado por:
+        {% if filter_product is not none %}<strong>{{ filter_product }}</strong>{% endif %}
+        {% if filter_province is not none %}· {{ filter_province or "sin provincia" }}{% endif %}
+        {% if filter_currency is not none %}· {{ filter_currency }}{% endif %}
+        {% if filter_unit is not none %}· {{ filter_unit or "sin unidad" }}{% endif %}
+        {% if filter_sale_format is not none %}· {{ filter_sale_format or "sin formato" }}{% endif %}
+      </span>
+      <a href="/curation/history">Ver todo →</a>
+    </div>
+    {% endif %}
+
     {% if not ingestions %}
     <div class="alert alert-secondary" role="alert">
+      {% if filtering %}
+      Ningún anuncio curado coincide con este filtro.
+      {% else %}
       Todavía no hay anuncios curados.
+      {% endif %}
     </div>
     {% else %}
     <div class="table-responsive">
@@ -45,7 +63,13 @@
               <span class="text-muted">sin filas</span>
               {% endfor %}
             </td>
-            <td class="text-end"><a href="/curation/{{ ingestion.id }}/edit">Editar →</a></td>
+            <td class="text-end text-nowrap">
+              <a href="/curation/{{ ingestion.id }}/edit">Editar →</a>
+              <form method="post" action="/curation/{{ ingestion.id }}/delete" class="d-inline"
+                    onsubmit="return confirm('¿Eliminar este anuncio curado? Se borran sus filas de precio; la evidencia capturada no se toca.');">
+                <button type="submit" class="btn btn-sm btn-outline-danger ms-2">Eliminar</button>
+              </form>
+            </td>
           </tr>
           {% endfor %}
         </tbody>

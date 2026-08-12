@@ -84,7 +84,12 @@
             <td>{{ rango.product_name }}</td>
             <td>{{ rango.province_name or "— sin provincia —" }}</td>
             <td>{{ rango.unit }}</td>
-            <td class="text-end"><strong>{{ rango.count }}</strong></td>
+            <td class="text-end">
+              <a href="/curation/history?product={{ rango.product_name | urlencode }}&province={{ (rango.province_name or '') | urlencode }}&currency={{ rango.currency | urlencode }}&unit={{ rango.unit | urlencode }}&sale_format=retail"
+                 title="Ver los anuncios detrás de este número">
+                <strong>{{ rango.count }}</strong>
+              </a>
+            </td>
             <td class="text-end">{{ "%.2f"|format(rango.median) }} {{ rango.currency }}/{{ rango.unit }}</td>
             <td class="text-end text-muted">{{ "%.2f"|format(rango.minimum) }}</td>
             <td class="text-end text-muted">{{ "%.2f"|format(rango.maximum) }}</td>
@@ -135,7 +140,12 @@
               {%- elif cell.sale_format == "wholesale" %}mayorista
               {%- else %}<span class="text-muted">— sin responder —</span>{% endif %}
             </td>
-            <td class="text-end"><strong>{{ cell.count }}</strong></td>
+            <td class="text-end">
+              <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}&currency={{ cell.currency | urlencode }}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
+                 title="Ver los anuncios detrás de este número">
+                <strong>{{ cell.count }}</strong>
+              </a>
+            </td>
             <td class="text-end">{{ "%.2f"|format(cell.median) }} {{ cell.currency }}</td>
             <td class="text-end text-muted">{{ "%.2f"|format(cell.minimum) }}</td>
             <td class="text-end text-muted">{{ "%.2f"|format(cell.maximum) }}</td>

@@ -1429,6 +1429,150 @@ class TestCurationHistory:
         assert response.text.index(str(nuevo.id)) < response.text.index(str(viejo.id))
 
 
+class TestCurationHistoryFiltrada:
+    """La columna `n` de `/control` enlaza acá con la identidad exacta de la
+    celda (2026-08-12): mismos campos que agrupan `compute_cells` — producto,
+    provincia, moneda, unidad, formato. `""` en un filtro significa «sin
+    responder» (NULL), no «no filtrar»: mismo contrato que el resto del
+    sistema (`_SALE_FORMAT_VALUES`, `canonical_unit`).
+    """
+
+    def test_filtra_por_producto_provincia_unidad_y_formato(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        habana = _crear_provincia(session)
+
+        celda_objetivo = _crear_raw_ingestion(session, hash_="hash-celda-objetivo")
+        celda_objetivo.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=celda_objetivo, product=arroz, province=habana,
+            price="750", unit="lb", sale_format=SaleFormat.RETAIL.value,
+        )
+
+        otra_celda = _crear_raw_ingestion(session, hash_="hash-otra-celda")
+        otra_celda.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=otra_celda, product=arroz, province=habana,
+            price="31000", unit="lb", sale_format=SaleFormat.WHOLESALE.value,
+        )
+
+        response = client.get(
+            "/curation/history",
+            params={
+                "product": "Arroz", "province": "La Habana", "currency": "CUP",
+                "unit": "lb", "sale_format": "retail",
+            },
+        )
+
+        assert str(celda_objetivo.id) in response.text
+        assert str(otra_celda.id) not in response.text
+
+    def test_filtro_vacio_significa_sin_responder(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+
+        sin_formato = _crear_raw_ingestion(session, hash_="hash-sin-formato")
+        sin_formato.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=sin_formato, product=arroz, price="700", unit="lb",
+        )
+
+        con_formato = _crear_raw_ingestion(session, hash_="hash-con-formato")
+        con_formato.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=con_formato, product=arroz, price="750", unit="lb",
+            sale_format=SaleFormat.RETAIL.value,
+        )
+
+        response = client.get(
+            "/curation/history",
+            params={"product": "Arroz", "unit": "lb", "sale_format": ""},
+        )
+
+        assert str(sin_formato.id) in response.text
+        assert str(con_formato.id) not in response.text
+
+    def test_sin_query_params_muestra_todo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-sin-filtro")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(session, ingestion=curado, product=pollo)
+
+        response = client.get("/curation/history")
+
+        assert str(curado.id) in response.text
+
+
+# --- POST /curation/{id}/delete -----------------------------------------------
+
+
+class TestEliminarCurado:
+    """Elimina las filas de `prices_history` del anuncio y lo pasa a
+    `discarded` (2026-08-12) — el registro crudo nunca se toca: `source_id`
+    tiene RESTRICT contra `raw_ingestions`, así que ni este endpoint podría
+    borrar el archivo capturado aunque quisiera.
+    """
+
+    def test_borra_las_filas_y_pasa_a_discarded(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-a-eliminar")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(session, ingestion=curado, product=pollo)
+
+        response = client.post(
+            f"/curation/{curado.id}/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert session.get(PriceHistory, precio.id) is None
+
+        session.refresh(curado)
+        assert curado.processing_status == ProcessingStatus.DISCARDED
+
+    def test_el_registro_crudo_sobrevive(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(
+            session, hash_="hash-evidencia-sobrevive", original_text="pollo 500"
+        )
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(session, ingestion=curado, product=pollo)
+
+        client.post(f"/curation/{curado.id}/delete", follow_redirects=False)
+
+        sobreviviente = session.get(RawIngestion, curado.id)
+        assert sobreviviente is not None
+        assert sobreviviente.original_text == "pollo 500"
+
+    def test_pendiente_no_se_puede_eliminar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pendiente = _crear_raw_ingestion(session, hash_="hash-pend-delete")
+
+        response = client.post(f"/curation/{pendiente.id}/delete")
+
+        assert response.status_code == 409
+
+    def test_id_inexistente_devuelve_404(self, client: TestClient) -> None:
+        response = client.post(f"/curation/{uuid.uuid4()}/delete")
+
+        assert response.status_code == 404
+
+
 # --- GET /curation/{id}/edit --------------------------------------------------
 
 

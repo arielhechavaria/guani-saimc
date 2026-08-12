@@ -247,3 +247,47 @@ class TestFiltroDePilotos:
         response = client.get("/control")
 
         assert "Productos: <strong>1</strong>" in response.text
+
+
+class TestColumnaNEnlazaAlHistorial:
+    """La columna `n` enlaza a `/curation/history` filtrado por la identidad
+    exacta de la celda (2026-08-12) — «ver los anuncios detrás de este
+    número» sin consultar la base a mano.
+    """
+
+    def test_el_link_lleva_los_cinco_campos_de_la_celda(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/link.txt",
+            content_hash="hash-link",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=arroz.id,
+                province_id=scu.id,
+                price=Decimal("31000"),
+                currency=Currency.CUP.value,
+                unit="lb",
+                sale_format=SaleFormat.WHOLESALE.value,
+                source_id=origen.id,
+            )
+        )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert (
+            "/curation/history?product=Arroz&province=Santiago%20de%20Cuba"
+            "&currency=CUP&unit=lb&sale_format=wholesale" in response.text
+        )

@@ -1615,3 +1615,40 @@ criterio que ya rige `unit`/`sale_format`).
 Consecuencia: en producción, 56 celdas bajan a 7 (verificado contra la base
 real). Cuando cambien los pilotos, `_PILOT_PRODUCTS` se edita a mano — es una
 lista de cuatro strings, no vale la pena una tabla para esto todavía.
+
+---
+
+## 2026-08-12 — Eliminar anuncio curado, y la columna n de /control enlaza al historial
+
+Contexto: dos preguntas del operador. (1) ¿Se puede eliminar un anuncio
+curado sin contradecir la inmutabilidad de `raw_ingestions`? (2) ¿Puede la
+columna `n` de `/control` abrir los anuncios detrás de esa celda, para editar
+o eliminar?
+
+Decisión — eliminar: `POST /curation/{id}/delete` borra las filas de
+`prices_history` del anuncio y lo pasa a `discarded` (elegido sobre volver a
+`pending`: el caso de uso es «no debí cargar esto», no «lo curé mal, quiero
+rehacerlo» — para eso ya existe `/edit`). El registro crudo nunca se toca:
+no es solo una promesa del endpoint, `PriceHistory.source_id` tiene
+`ondelete="RESTRICT"` contra `raw_ingestions` (spec.md §6.1, línea 321), así
+que el esquema mismo impide borrar el archivo capturado mientras tenga
+precios asociados. Verificado con un caso real: el registro sobrevive con su
+`original_text` intacto después del delete.
+
+Decisión — columna `n`: `GET /curation/history` suma cinco filtros opcionales
+(`product`, `province`, `currency`, `unit`, `sale_format`) que son
+exactamente la clave de una celda de `compute_cells`. Un parámetro ausente no
+filtra; un parámetro presente pero vacío (`unit=`) filtra por «sin
+responder» — mismo contrato que ya usa `_SALE_FORMAT_VALUES` en el submit,
+para que la cadena vacía nunca se confunda con "no filtrar". La columna `n`
+de ambas tablas de `/control` (matriz y rango minorista) enlaza con esos
+cinco parámetros codificados vía `urlencode`.
+
+Descartado: un modal en `/control` con los anuncios embebidos. Habría
+duplicado la lista que `/curation/history` ya construye, con edición y ahora
+eliminación — más JS y una segunda fuente de la misma información, sin
+necesidad real (el operador no pidió quedarse en `/control` sin navegar).
+
+Consecuencia: 71 tests nuevos en `test_curation.py` (filtro + delete) y 2 en
+`test_control.py` (formato exacto del link, con `urlencode` — espacios como
+`%20`, no `+`). 263 tests pasan.
