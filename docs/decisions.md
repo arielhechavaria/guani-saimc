@@ -1421,3 +1421,18 @@ Descartado: mover o borrar `SETUP.md`. Es un registro histórico legítimo de
 cómo arrancó el proyecto, no un error a corregir.
 
 Consecuencia: `CLAUDE.md` ya no contradice el estado real del filesystem.
+
+---
+
+## 2026-08-12 — CLAUDE.md ya no dice que decisions.md no existe
+
+Contexto: `CLAUDE.md` traía «Ese archivo todavía no existe: creálo en la
+primera entrada» sobre `docs/decisions.md`, que a esta fecha tiene más de
+1300 líneas y decenas de entradas desde 2026-08-06. Instrucción obsoleta del
+día 0 del proyecto que nunca se actualizó.
+
+Decisión: se elimina la frase. La regla que importa —anexar al final, no
+reescribir entradas viejas— ya está cubierta por el resto de la sección
+«Decisiones».
+
+Consecuencia: ninguna. Es una corrección de una instrucción que ya no aplica.
