@@ -11,6 +11,17 @@ import pytest
 from saimc.units import UNITS, canonical_unit
 
 
+class TestVocabulario:
+    def test_el_vocabulario_es_exactamente_el_acordado(self) -> None:
+        """El conjunto se fija acá, escrito a mano, no derivado de `UNITS`.
+
+        El test parametrizado de abajo recorre `UNITS` y por lo tanto no puede
+        fallar para ningún contenido de `UNITS`: sacar una unidad pasaría
+        inadvertido. `ml` en particular entró por decisión explícita de este
+        cambio, aunque el extractor todavía no lo reconozca."""
+        assert UNITS == ("lb", "kg", "l", "ml", "unidad", "docena", "caja")
+
+
 class TestCanonicalUnitFormasCanonicas:
     @pytest.mark.parametrize("valor", list(UNITS))
     def test_cada_forma_canonica_pasa_intacta(self, valor: str) -> None:

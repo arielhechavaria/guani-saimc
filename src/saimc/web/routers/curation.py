@@ -35,6 +35,7 @@ from saimc.extraction.engine import (
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.privacy import redact_personal_data
 from saimc.models import (
+    PACKAGING_MAX_LENGTH,
     ContentType,
     Currency,
     PriceHistory,
@@ -54,6 +55,20 @@ router = APIRouter()
 # los dos del enum —incluido un envío en blanco— degrada a `None` en vez de
 # romper el submit (design.md, D4).
 _SALE_FORMAT_VALUES = {member.value for member in SaleFormat}
+
+
+def _truncated_packaging(raw: str) -> str | None:
+    """Redacta el envase y lo recorta al ancho de la columna, en ese orden.
+
+    `PHONE_PLACEHOLDER` mide más que el teléfono que reemplaza, así que un
+    envase que pasaba el `maxlength` del formulario puede salir de la redacción
+    excedido. Sin este recorte, PostgreSQL aborta el insert y el operador pierde
+    el submit entero — y justo en el caso en que escribió un teléfono.
+    """
+    redacted = redact_personal_data(raw)
+    if not redacted:
+        return None
+    return redacted[:PACKAGING_MAX_LENGTH]
 
 
 def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]:
@@ -446,8 +461,11 @@ async def submit_curation(
                 ),
                 # Redactado acá mismo, no en el bloque de más abajo (D5): ese
                 # bloque corre después de la rama de rollback todo-o-nada, y
-                # las filas ya se construyeron para entonces.
-                packaging=redact_personal_data(row["packaging"]) or None,
+                # las filas ya se construyeron para entonces. El recorte va
+                # después de redactar y no antes: el placeholder es más largo
+                # que el teléfono que reemplaza, así que un texto que entraba en
+                # la columna deja de entrar apenas se redacta.
+                packaging=_truncated_packaging(row["packaging"]),
                 published_date=published_date,
                 source_id=ingestion.id,
             )

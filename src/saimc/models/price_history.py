@@ -39,6 +39,12 @@ class SaleFormat(StrEnum):
     WHOLESALE = "wholesale"
 
 
+# Ancho de `prices_history.packaging`. Se exporta porque la redacción corre
+# antes del insert y puede alargar el texto por encima de este límite; quien
+# escriba la columna necesita el número para recortar.
+PACKAGING_MAX_LENGTH = 64
+
+
 class PriceHistory(Base):
     __tablename__ = "prices_history"  # nombre literal del whitepaper §7.2
     __table_args__ = (
@@ -107,8 +113,13 @@ class PriceHistory(Base):
     # `unit = "lb"` que uno genuinamente minorista (design.md, D4).
     sale_format: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Envase o presentación en texto libre ("saco de 25 kg"), capturado por el
-    # operador y redactado contra datos personales antes de persistir.
-    packaging: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # operador y redactado contra datos personales antes de persistir. Quien
+    # escriba acá debe recortar a `PACKAGING_MAX_LENGTH` DESPUÉS de redactar: el
+    # placeholder es más largo que el teléfono que reemplaza, así que un texto
+    # que entraba deja de entrar.
+    packaging: Mapped[str | None] = mapped_column(
+        String(PACKAGING_MAX_LENGTH), nullable=True
+    )
     # Linaje al registro crudo. RESTRICT y nunca CASCADE: raw_ingestions es
     # inmutable y ningún precio publicado puede quedar sin su evidencia.
     source_id: Mapped[uuid.UUID] = mapped_column(

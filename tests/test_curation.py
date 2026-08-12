@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.extraction import ocr
 from saimc.models import (
+    PACKAGING_MAX_LENGTH,
     ContentType,
     PriceHistory,
     ProcessingStatus,
@@ -1063,6 +1064,35 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert fila.sale_format is None
 
+    def test_formato_de_venta_fuera_de_dominio_degrada_a_null_sin_romper(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un valor no vacío pero fuera de dominio degrada a NULL.
+
+        El caso en blanco no prueba esto: un gate débil como
+        `row["sale_format"] or None` también lo pasaría. Lo que se verifica acá
+        es la pertenencia al conjunto, que es lo que evita que un POST armado a
+        mano llegue al CHECK y tire un IntegrityError desde la capa web."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-formato-invalido")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "sale_format_0": "mayorista",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.sale_format is None
+
     def test_unidad_fuera_del_vocabulario_guarda_null_y_crea_la_fila(
         self, client: TestClient, session: Session
     ) -> None:
@@ -1114,6 +1144,40 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert "55550101" not in (fila.packaging or "")
         assert "saco" in (fila.packaging or "")
+
+    def test_packaging_redactado_nunca_excede_el_ancho_de_la_columna(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La redacción alarga el texto: el placeholder mide 19 caracteres y
+        reemplaza 8 dígitos, +11 netos.
+
+        Un envase de 64 caracteres con un teléfono adentro sale redactado en 75
+        y no entra en `varchar(64)`: PostgreSQL corta el submit entero con
+        StringDataRightTruncation. SQLite no valida el ancho, así que este test
+        afirma sobre el largo y no sobre el motor."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-packaging-largo")
+
+        envase = "saco de 25 kg de arroz, coordinar entrega antes, llamar 55550101"
+        assert len(envase) == PACKAGING_MAX_LENGTH
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "packaging_0": envase,
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert len(fila.packaging or "") <= PACKAGING_MAX_LENGTH
+        assert "55550101" not in (fila.packaging or "")
 
 
 # --- POST /curation/{id}/discard ---------------------------------------------
