@@ -44,6 +44,61 @@
     </p>
     {% endif %}
 
+    <hr class="my-4" />
+
+    <h2 class="h5">Rango minorista por producto — últimos {{ retail_range_days }} días</h2>
+    <p class="text-muted small">
+      El envase deja de importar acá: el producto sigue siendo uno solo aunque se
+      venda a granel, por saco o por paquete. Se normaliza por cantidad
+      (precio ÷ <code>quantity</code>) y se queda solo con lo minorista — un saco
+      no es comparable con lo que compra un hogar aunque los dos digan la misma
+      unidad, y mezclarlos volvería a esconder la diferencia real de precio entre
+      comprar mayorista y minorista. Solo entran filas con <code>unit</code> igual
+      a la unidad del producto y con <code>quantity</code> cargada; sin tabla de
+      conversión entre unidades (spec.md §12.6, no inventar), lo demás se ve en la
+      matriz de abajo.
+    </p>
+
+    {% if not retail_ranges %}
+    <div class="alert alert-secondary" role="alert">
+      Ninguna fila entra todavía en este rango: falta <code>sale_format=retail</code>,
+      <code>unit</code> igual a la unidad del producto, o <code>quantity</code>.
+    </div>
+    {% else %}
+    <div class="table-responsive mb-4">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th scope="col">Producto</th>
+            <th scope="col">Provincia</th>
+            <th scope="col">Unidad</th>
+            <th scope="col" class="text-end">n</th>
+            <th scope="col" class="text-end">Mediana</th>
+            <th scope="col" class="text-end">Mínimo</th>
+            <th scope="col" class="text-end">Máximo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rango in retail_ranges %}
+          <tr>
+            <td>{{ rango.product_name }}</td>
+            <td>{{ rango.province_name or "— sin provincia —" }}</td>
+            <td>{{ rango.unit }}</td>
+            <td class="text-end"><strong>{{ rango.count }}</strong></td>
+            <td class="text-end">{{ "%.2f"|format(rango.median) }} {{ rango.currency }}/{{ rango.unit }}</td>
+            <td class="text-end text-muted">{{ "%.2f"|format(rango.minimum) }}</td>
+            <td class="text-end text-muted">{{ "%.2f"|format(rango.maximum) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <hr class="my-4" />
+
+    <h2 class="h5">Matriz completa por unidad y formato</h2>
+
     {% if not cells %}
       <div class="alert alert-secondary" role="alert">
         Todavía no hay filas de precio cargadas.

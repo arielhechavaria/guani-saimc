@@ -35,18 +35,25 @@ cerrado («saco de 25 kg», «Saco de arroz De 110 lb»), así que agrupar por �
 produciría una celda por variante de redacción. Si `unit` + `sale_format` no
 alcanzan para separar, la decisión de darle vocabulario cerrado se toma con los
 datos de esta misma vista, no antes (§12.6).
+
+`compute_retail_ranges` es la otra mitad del módulo: responde «¿en qué rango
+se movió este producto en los últimos N días?», donde el envase deja de
+importar porque el producto sigue siendo uno solo. Ver su docstring para los
+tres filtros que hacen que esa pregunta tenga una respuesta comparable.
 """
 
 from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.models import PriceHistory, Product, Province
+from saimc.models import PriceHistory, Product, Province, SaleFormat
+from saimc.units import canonical_unit
 
 
 @dataclass(frozen=True)
@@ -143,3 +150,125 @@ def compute_cells(session: Session) -> list[Cell]:
         )
     )
     return cells
+
+
+@dataclass(frozen=True)
+class RetailRange:
+    """Rango de precio **minorista** de un producto, normalizado por unidad.
+
+    A diferencia de `Cell`, esta fila ya no distingue envase ni formato: es
+    justamente lo que colapsa `compute_retail_ranges` una vez que descarta lo
+    mayorista y lo no comparable. `unit` queda igual en la salida porque es la
+    unidad canónica del producto, no un eje de agrupación — todas las filas de
+    una misma `RetailRange` ya están en esa unidad.
+    """
+
+    product_name: str
+    province_name: str | None
+    currency: str
+    unit: str
+    count: int
+    median: Decimal
+    minimum: Decimal
+    maximum: Decimal
+
+
+def compute_retail_ranges(
+    session: Session, *, days: int = 7, hoy: date | None = None
+) -> list[RetailRange]:
+    """Rango de precio minorista por producto, últimos `days` días.
+
+    Es la otra mitad de `compute_cells`: esa vista separa por formato para que
+    el operador vea si está mezclando cosas distintas al cargar; esta vista
+    asume que ya lo revisó y responde una pregunta distinta — «¿en qué rango
+    se movió Arroz esta semana?» — donde el producto es uno solo aunque el
+    envase varíe (2026-08-12).
+
+    Tres filtros, todos deliberados y ninguno inventado:
+
+    - **Solo `sale_format == "retail"`.** Normalizar por cantidad no vuelve
+      comparable un saco con un paquete: el caso real medido el 2026-08-12 da
+      ~2.5x de diferencia por libra entre mayorista y minorista, que es
+      economía real, no ruido de carga. Mezclarlos reproduciría el mismo
+      problema que separar por `sale_format` en `compute_cells` resolvió. El
+      precio que le importa al hogar —el usuario que define spec.md §8.1
+      Nivel 0— es el minorista.
+    - **`unit` de la fila debe coincidir con la unidad canónica del producto**
+      (`Product.unit`, pasada por `canonical_unit()` porque el seed la guarda
+      sin canonicalizar: "litro", no "l"). Sin tabla de conversión lb↔kg: no
+      hay una definida, y adivinar un factor es exactamente lo que §12.6
+      prohíbe. Una fila en otra unidad queda fuera de este promedio pero
+      sigue visible en `compute_cells`.
+    - **Requiere `quantity`.** Sin cantidad no hay precio por unidad que
+      calcular.
+
+    La fecha de referencia es `published_date` cuando existe; si no, el día en
+    que se cargó la fila (`created_at`) — mismo criterio de repliegue que ya
+    usa `guess_published_date` en otras partes del sistema. Ambas quedan en
+    huso UTC sin ajustar a hora de Cuba: al ritmo de curaduría de la Fase 0
+    (~1h diaria) un corrimiento de horas no cambia a qué día cae la fila.
+    """
+    cutoff = (hoy or date.today()) - timedelta(days=days)
+
+    stmt = (
+        select(
+            Product.name,
+            Product.unit,
+            Province.name,
+            PriceHistory.currency,
+            PriceHistory.unit,
+            PriceHistory.quantity,
+            PriceHistory.price,
+            PriceHistory.published_date,
+            PriceHistory.created_at,
+        )
+        .join(Product, Product.id == PriceHistory.product_id)
+        .outerjoin(Province, Province.id == PriceHistory.province_id)
+        .where(PriceHistory.sale_format == SaleFormat.RETAIL.value)
+        .where(PriceHistory.unit.is_not(None))
+        .where(PriceHistory.quantity.is_not(None))
+    )
+
+    RangeKey = tuple[str, str | None, str, str]
+    grouped: dict[RangeKey, list[Decimal]] = {}
+    for (
+        product_name,
+        product_unit,
+        province_name,
+        currency,
+        row_unit,
+        quantity,
+        price,
+        published_date,
+        created_at,
+    ) in session.execute(stmt):
+        if quantity == 0:
+            continue
+        if row_unit != canonical_unit(product_unit):
+            continue
+
+        effective_date = published_date or created_at.date()
+        if effective_date < cutoff:
+            continue
+
+        key: RangeKey = (product_name, province_name, currency, row_unit)
+        grouped.setdefault(key, []).append(price / quantity)
+
+    ranges = [
+        RetailRange(
+            product_name=product_name,
+            province_name=province_name,
+            currency=currency,
+            unit=unit,
+            count=len(unit_prices),
+            median=statistics.median(unit_prices),
+            minimum=min(unit_prices),
+            maximum=max(unit_prices),
+        )
+        for (product_name, province_name, currency, unit), unit_prices in grouped.items()
+    ]
+
+    ranges.sort(
+        key=lambda r: (-r.count, r.product_name, r.province_name or "")
+    )
+    return ranges

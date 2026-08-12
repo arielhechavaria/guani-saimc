@@ -17,16 +17,25 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from saimc.cells import compute_cells
+from saimc.cells import compute_cells, compute_retail_ranges
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.web.deps import get_db
 
 router = APIRouter()
 
+# Ventana de la vista de rango minorista. 7 días —una semana— como default
+# razonable para "cómo se movió el precio": ni tan corta que un día flojo de
+# curaduría la vacíe, ni tan larga que mezcle tendencias distintas. Ajustable
+# por query string (`?days=N`) sin exigir un valor fijo en código.
+_DEFAULT_RETAIL_RANGE_DAYS = 7
+
 
 @router.get("/control", response_class=HTMLResponse)
-def control_panel(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def control_panel(
+    request: Request, db: Session = Depends(get_db), days: int = _DEFAULT_RETAIL_RANGE_DAYS
+) -> HTMLResponse:
     cells = compute_cells(db)
+    retail_ranges = compute_retail_ranges(db, days=days)
 
     curated = db.execute(
         select(func.count())
@@ -40,6 +49,8 @@ def control_panel(request: Request, db: Session = Depends(get_db)) -> HTMLRespon
         "control.html",
         {
             "cells": cells,
+            "retail_ranges": retail_ranges,
+            "retail_range_days": days,
             "curated": curated,
             "rows": rows,
             # Se cuentan sobre las celdas y no con un DISTINCT aparte para que

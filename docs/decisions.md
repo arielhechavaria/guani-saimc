@@ -1518,3 +1518,42 @@ Consecuencia: la corrección de datos ya no depende de acceso a la base. Un
 detalle menor documentado en el código: `published_date` es una sola fecha
 por anuncio (todas sus filas se cargan con la misma), así que el formulario
 de edición la prellena desde la primera fila, no fila por fila.
+
+---
+
+## 2026-08-12 — Rango minorista por producto, normalizado por unidad
+
+Contexto: separar `/control` por `unit` + `sale_format` (entrada anterior de
+hoy) resolvió la mezcla de mayorista con minorista, pero abrió una pregunta
+distinta: el operador quiere saber «¿en qué rango se movió Arroz esta
+semana?», y ahí el envase no importa — sigue siendo un solo producto aunque
+se venda a granel, por saco o por paquete. Fundir los precios crudos para
+responder eso reintroduce el problema original. Medido con los datos reales:
+normalizando por cantidad (precio ÷ `quantity`), un saco de 110 lb sale
+~281-300 CUP/lb contra ~730-750 CUP/lb minorista — 2.5x de diferencia real
+entre comprar mayorista y minorista, no ruido de carga. Promediarlos después
+de normalizar por unidad sería tan engañoso como promediarlos antes.
+
+Decisión: `compute_retail_ranges()` (`cells.py`) agrega por producto ×
+provincia × moneda × unidad canónica, con tres filtros: `sale_format ==
+"retail"` (el precio que le importa al hogar, spec.md §8.1 Nivel 0); `unit`
+de la fila debe coincidir con `Product.unit` pasado por `canonical_unit()`
+(el seed lo guarda sin canonicalizar — "litro", no "l" — comparar contra el
+crudo excluiría todo el aceite por accidente); y `quantity` no nulo, porque
+sin cantidad no hay precio por unidad que calcular. La fecha de referencia es
+`published_date`, con repliegue a `created_at` cuando falta. `/control` suma
+esta tabla arriba de la matriz completa, con ventana configurable
+(`?days=N`, default 7).
+
+Descartado: convertir entre unidades (kg↔lb) para ampliar la cobertura. No
+hay una tabla de conversión definida en ningún lado del proyecto, y
+adivinar un factor es exactamente lo que §12.6 prohíbe. Una fila en otra
+unidad queda fuera de esta vista pero sigue visible en `compute_cells`.
+
+Consecuencia: hoy la vista está **vacía en producción** — la única fila con
+`sale_format=retail` (Arroz, 750 CUP) quedó cargada en `unit=kg`, mientras el
+catálogo define `Arroz` en `lb`, así que no coincide con la unidad canónica.
+Aceptado a conciencia (decisión del usuario, 2026-08-12): construir la vista
+igual aunque cubra casi nada, para que crezca sola a medida que la curaduría
+carga `unit`+`quantity`+`sale_format` de forma consistente — mismo criterio
+que ya rige el resto de `/control`.
