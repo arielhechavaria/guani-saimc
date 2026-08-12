@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.models import Currency, PriceHistory, Product, Province, RawIngestion, SaleFormat
@@ -174,3 +175,75 @@ class TestRangoMinorista:
 
         assert "últimos 1 días" in response.text
         assert "750.00 CUP/lb" in response.text
+
+
+class TestFiltroDePilotos:
+    """`/control` muestra solo los 4 productos piloto (2026-08-12): el resto
+    del catálogo (dispersión de 2026-08-11) queda fuera de esta vista por
+    ahora, no de la base — es un filtro de pantalla, no un borrado de datos.
+    """
+
+    def _cargar(
+        self, session: Session, *, producto: str, provincia: str = "Santiago de Cuba"
+    ) -> None:
+        item = Product(name=producto, category="x", unit="lb", aliases=[])
+        scu = session.execute(
+            select(Province).where(Province.name == provincia)
+        ).scalar_one_or_none()
+        if scu is None:
+            scu = Province(code="scu", name=provincia)
+            session.add(scu)
+        session.add(item)
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path=f"raw/{producto}.txt",
+            content_hash=f"hash-{producto}",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=item.id,
+                province_id=scu.id,
+                price=Decimal("100"),
+                currency=Currency.CUP.value,
+                source_id=origen.id,
+            )
+        )
+        session.commit()
+
+    def test_oculta_productos_fuera_de_los_cuatro_pilotos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._cargar(session, producto="Arroz")
+        self._cargar(session, producto="Sazon Dubai")
+
+        response = client.get("/control")
+
+        assert "Arroz" in response.text
+        assert "Sazon Dubai" not in response.text
+
+    def test_los_cuatro_pilotos_pasan_el_filtro(
+        self, client: TestClient, session: Session
+    ) -> None:
+        for producto in ("Arroz", "Pollo", "Azúcar blanca", "Aceite"):
+            self._cargar(session, producto=producto)
+
+        texto = client.get("/control").text
+
+        for producto in ("Arroz", "Pollo", "Azúcar blanca", "Aceite"):
+            assert producto in texto
+
+    def test_contador_de_productos_refleja_solo_lo_mostrado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._cargar(session, producto="Arroz")
+        self._cargar(session, producto="Sazon Dubai")
+
+        response = client.get("/control")
+
+        assert "Productos: <strong>1</strong>" in response.text

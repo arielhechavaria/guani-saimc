@@ -11,7 +11,7 @@
   <div class="container py-4" style="max-width: 960px;">
     <div class="saimc-header">
       <h1 class="h3">Control de curaduría</h1>
-      <p class="saimc-subtitle mb-0">Matriz producto × provincia × unidad × formato — lo que hay cargado hoy</p>
+      <p class="saimc-subtitle mb-0">Los 4 productos piloto — matriz producto × provincia × unidad × formato</p>
       <div class="saimc-counters">
         <span class="saimc-counter">Anuncios curados: <strong>{{ curated }}</strong></span>
         <span class="saimc-counter">Filas de precio: <strong>{{ rows }}</strong></span>
@@ -97,7 +97,12 @@
 
     <hr class="my-4" />
 
-    <h2 class="h5">Matriz completa por unidad y formato</h2>
+    <h2 class="h5">Matriz de los pilotos, por unidad y formato</h2>
+    <p class="text-muted small">
+      Solo Arroz, Pollo, Azúcar blanca y Aceite — filtro de pantalla, no de
+      datos. El resto del catálogo sigue cargado en la base, simplemente no
+      es el foco de la curaduría hoy.
+    </p>
 
     {% if not cells %}
       <div class="alert alert-secondary" role="alert">

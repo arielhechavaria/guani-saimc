@@ -29,13 +29,25 @@ router = APIRouter()
 # por query string (`?days=N`) sin exigir un valor fijo en código.
 _DEFAULT_RETAIL_RANGE_DAYS = 7
 
+# Filtro de pantalla, no de datos (2026-08-12): la curaduría se enfoca en
+# estos 4 desde el 2026-08-11 (docs/decisions.md), pero el catálogo real tiene
+# 51 productos por altas hechas al vuelo durante la curaduría. Mostrarlos
+# todos con el mismo peso visual hacía ilegible la vista. El resto sigue
+# entero en la base — nada se borra acá, ver `compute_cells`/`prices_history`
+# directo si hace falta. Cuando cambien los pilotos, esta lista se actualiza
+# a mano; no hay tabla de "producto piloto" en el esquema todavía porque no
+# la pidió ninguna decisión.
+_PILOT_PRODUCTS = frozenset({"Arroz", "Pollo", "Azúcar blanca", "Aceite"})
+
 
 @router.get("/control", response_class=HTMLResponse)
 def control_panel(
     request: Request, db: Session = Depends(get_db), days: int = _DEFAULT_RETAIL_RANGE_DAYS
 ) -> HTMLResponse:
-    cells = compute_cells(db)
-    retail_ranges = compute_retail_ranges(db, days=days)
+    cells = [c for c in compute_cells(db) if c.product_name in _PILOT_PRODUCTS]
+    retail_ranges = [
+        r for r in compute_retail_ranges(db, days=days) if r.product_name in _PILOT_PRODUCTS
+    ]
 
     curated = db.execute(
         select(func.count())

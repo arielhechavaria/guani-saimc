@@ -1584,3 +1584,34 @@ entra todavía. Pendiente, sin resolver a propósito: si 730 es el mismo
 paquete de 1kg con la unidad mal tildeada (debería ser `kg`, no `lb`) o una
 observación distinta — queda para revisión del operador vía
 `/curation/history`, no se adivina.
+
+---
+
+## 2026-08-12 — /control filtra a los 4 pilotos: pantalla, no datos
+
+Contexto: el operador reportó confusión real frente a `/control` — «no sé lo
+que estás haciendo, está la página llena de productos». La causa: la
+curaduría se enfoca en 4 pilotos desde el 2026-08-11 (arroz, pollo entero,
+azúcar, aceite), pero `/control` seguía mostrando los 51 productos del
+catálogo con el mismo peso visual, la mayoría altas al vuelo de una sola
+observación (dispersión ya diagnosticada ese mismo día). 56 celdas por 4
+productos que importan es ruido, no información.
+
+Decisión: `_PILOT_PRODUCTS` en `web/routers/control.py` — constante con los
+4 nombres exactos del catálogo (`Arroz`, `Pollo`, `Azúcar blanca`, `Aceite`)
+— filtra tanto la matriz completa como el rango minorista antes de llegar a
+la plantilla. Es un filtro de **pantalla**, no de datos: no se borra ni se
+oculta ninguna fila de `prices_history`, solo lo que `/control` renderiza.
+Los contadores del encabezado (Productos, Provincias, sin-muestra) se
+recalculan sobre el conjunto ya filtrado para que no contradigan la tabla de
+abajo.
+
+Descartado: una tabla de "producto piloto" en el esquema, o un flag en
+`Product`. Ninguna decisión pidió modelar la noción de piloto como dato —
+hoy es una decisión operativa de dónde enfocar la curaduría, no un atributo
+del producto. Si eso cambia, se revisita con datos, no antes (mismo
+criterio que ya rige `unit`/`sale_format`).
+
+Consecuencia: en producción, 56 celdas bajan a 7 (verificado contra la base
+real). Cuando cambien los pilotos, `_PILOT_PRODUCTS` se edita a mano — es una
+lista de cuatro strings, no vale la pena una tabla para esto todavía.
