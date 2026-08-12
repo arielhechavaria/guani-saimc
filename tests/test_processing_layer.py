@@ -472,6 +472,16 @@ class TestUnitSaleFormatPackagingMigration:
         )
         metadata.create_all(engine)
 
+        # Una fila anterior a la migración: es el guardarraíl de «sin backfill».
+        # Sin ella el test no distingue una migración aditiva de una que
+        # rellena, y rellenar `unit = product.unit` sobre las filas viejas
+        # fabricaría dato para los productos donde la mezcla nunca se controló.
+        with engine.connect() as connection:
+            connection.execute(
+                sa.insert(metadata.tables["prices_history"]).values(id=uuid.uuid4())
+            )
+            connection.commit()
+
         with engine.connect() as connection:
             context = MigrationContext.configure(connection)
             with Operations.context(context):
@@ -479,6 +489,11 @@ class TestUnitSaleFormatPackagingMigration:
             connection.commit()
             columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
             assert {"unit", "sale_format", "packaging"} <= columnas
+
+            valores = connection.execute(
+                sa.text("select unit, sale_format, packaging from prices_history")
+            ).one()
+            assert valores == (None, None, None)
 
         with engine.connect() as connection:
             context = MigrationContext.configure(connection)

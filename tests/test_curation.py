@@ -1041,6 +1041,73 @@ class TestCurationSubmit:
         assert fila.sale_format == "wholesale"
         assert fila.packaging == "saco"
 
+    def test_packaging_no_se_confunde_con_la_cantidad_ni_con_la_unidad(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: `quantity` y `unit` dimensionan el lote, `packaging` lo nombra.
+
+        Es la distinción que justifica el campo: sin ella, "saco de 25 kg" se
+        aplasta dentro de `quantity` y se pierde el envase."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-packaging-vs-cantidad")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "17500",
+                "quantity_0": "25",
+                "unit_0": "kg",
+                "packaging_0": "saco",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.quantity == Decimal("25")
+        assert fila.unit == "kg"
+        assert fila.packaging == "saco"
+
+    def test_dos_filas_comparten_la_unidad_y_difieren_en_el_formato_de_venta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: el criterio de aceptación del cambio.
+
+        Un anuncio de saco y uno minorista por libra del mismo producto tienen
+        que quedar distinguibles. Es exactamente lo que el esquema no podía
+        expresar antes: las dos filas llevan `unit = "lb"` y solo `sale_format`
+        las separa."""
+        arroz = _crear_producto(session, name="Arroz")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-dos-formatos")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "2",
+                "product_id_0": str(arroz.id),
+                "price_0": "318.20",
+                "unit_0": "lb",
+                "sale_format_0": "wholesale",
+                "product_id_1": str(arroz.id),
+                "price_1": "350",
+                "unit_1": "lb",
+                "sale_format_1": "retail",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 2
+        assert {f.unit for f in filas} == {"lb"}
+        assert {f.sale_format for f in filas} == {"retail", "wholesale"}
+
     def test_sale_format_en_blanco_guarda_null_nunca_retail(
         self, client: TestClient, session: Session
     ) -> None:
@@ -1142,8 +1209,9 @@ class TestCurationSubmit:
 
         session.expire_all()
         fila = session.execute(select(PriceHistory)).scalars().one()
-        assert "55550101" not in (fila.packaging or "")
-        assert "saco" in (fila.packaging or "")
+        assert fila.packaging is not None  # si fuera None la negativa pasaría sola
+        assert "55550101" not in fila.packaging
+        assert "saco" in fila.packaging
 
     def test_packaging_redactado_nunca_excede_el_ancho_de_la_columna(
         self, client: TestClient, session: Session
