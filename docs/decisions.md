@@ -1402,3 +1402,22 @@ Consecuencia: 31 archivos actualizados —`src/`, `tests/`, `alembic/`, `CLAUDE.
 claves `whitepaper`/`whitepaper_map` por `spec`/`spec_map`/`pitch_frozen`. Queda
 abierto un detalle sin resolver: `CLAUDE.md` afirma que la carpeta `docs/decisions/`
 no existe, y existe (`SETUP.md`). No se tocó en este slice.
+
+---
+
+## 2026-08-12 — CLAUDE.md dejaba de existir la carpeta docs/decisions/
+
+Contexto: `CLAUDE.md` afirmaba «No existe una carpeta `docs/decisions/`. No la
+busques ni la referencies». La carpeta existe desde el setup inicial del
+proyecto (`cdb1c93`, «whitepaper v3.4 + contexto de proyecto») y contiene
+`SETUP.md`, el handoff histórico de puesta en marcha con Claude Code.
+
+Decisión: se corrige la afirmación. `docs/decisions/` existe pero no es el log
+de decisiones — solo contiene el handoff histórico, sin relación con
+decisiones de diseño. El log de decisiones sigue siendo exclusivamente el
+archivo `docs/decisions.md`.
+
+Descartado: mover o borrar `SETUP.md`. Es un registro histórico legítimo de
+cómo arrancó el proyecto, no un error a corregir.
+
+Consecuencia: `CLAUDE.md` ya no contradice el estado real del filesystem.
