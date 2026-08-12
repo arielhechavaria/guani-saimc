@@ -1,7 +1,7 @@
 """Catálogo de provincias — configuración, no código.
 
 Agregar una provincia MUST ser una fila de datos, nunca un cambio de código
-(whitepaper §9.0, línea 1603): por eso no se modela como `StrEnum` ni como
+(spec.md §9.0, «Consecuencias de diseño»): por eso no se modela como `StrEnum` ni como
 lista fija.
 """
 
@@ -28,7 +28,7 @@ class Province(Base):
     # nombres llevan tildes y el slug es parte de la URL pública.
     code: Mapped[str] = mapped_column(String(30), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    # Dos estados, no tres (whitepaper §9.0).
+    # Dos estados, no tres (spec.md §9.0).
     is_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )

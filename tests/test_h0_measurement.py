@@ -1,4 +1,4 @@
-"""Script de medición de H0 (whitepaper §12.5) — casos sintéticos.
+"""Script de medición de H0 (spec.md §12.5) — casos sintéticos.
 
 Igual que `test_extraction.py`: los casos están armados a mano, con la
 respuesta correcta (los porcentajes esperados) calculada de antemano e
@@ -354,7 +354,7 @@ class TestH0ReportImagenes:
 
 class TestH0ReportMultiProducto:
     """Un anuncio puede tener varias filas de `prices_history` con el mismo
-    `source_id` (whitepaper: varios productos en el mismo anuncio, ver
+    `source_id` (spec.md: varios productos en el mismo anuncio, ver
     `propose_all` y `POST /curation/{id}` con `action=save_and_continue`).
     Las métricas se evalúan por FILA, no por ingesta — antes de este fix,
     `measure.py` pisaba en silencio todas las filas menos la última.

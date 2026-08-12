@@ -1,9 +1,9 @@
 # Backlog
 
 Documento vivo de tareas pendientes, en orden de prioridad. No reemplaza a
-`docs/decisions.md` (evidencia de decisiones ya tomadas, mirando atrás) ni al
-whitepaper (documento rector, congelado en v3.5). Acá vive lo que falta, por
-qué importa, y qué lo bloquea si algo.
+`docs/decisions.md` (evidencia de decisiones ya tomadas, mirando atrás) ni a
+`docs/spec.md` (documento rector). Acá vive lo que falta, por qué importa, y
+qué lo bloquea si algo.
 
 Formato de entrada, sin ceremonia:
 
@@ -39,12 +39,12 @@ difícil de mantener.
 
 ## Flag "conjunto de referencia" en `prices_history`
 
-Por qué importa: el whitepaper (§6.1c) pide poder marcar un registro como
+Por qué importa: `spec.md` (§6.1c) pide poder marcar un registro como
 parte del conjunto de referencia. En Fase 0 es innecesario — el 100% de lo
 curado ya es referencia, porque no hay otra fuente (`decisions.md`,
 2026-08-07). Vuelve a ser relevante cuando existan fuentes automáticas.
 
-Bloqueado por: Fase 2 — fuentes automáticas (whitepaper §6.1, Etapa 3).
+Bloqueado por: Fase 2 — fuentes automáticas (`spec.md` §6.1, Etapa 3).
 
 ## `propose_all`: producto mencionado una vez, precio repetido en varias líneas
 
@@ -64,12 +64,12 @@ otras formas de anuncio, antes de rediseñar el modelo de matching de
 
 Por qué importa: `prices_history.confidence_score` existe como columna (`CHECK
 0..100`, `decisions.md` 2026-08-07) pero ningún código la llena. Es la salida
-del Validation Engine completo (whitepaper §6.2): estructura, coherencia de
+del Validation Engine completo (`spec.md` §6.2): estructura, coherencia de
 precio contra promedio provincial + tendencia nacional, validación
 geográfica, reputación de usuario, deduplicación semántica, coherencia
 cantidad/precio — no solo "¿están todos los campos?".
 
-Bloqueado por: Fase 2 (whitepaper §9, línea 1675: "Validation Engine: Modo
+Bloqueado por: Fase 2 (`spec.md` §9, Fase 2: "Validation Engine: Modo
 activo"), no antes. En Fase 0 el operador humano verifica cada registro
 contra su evidencia antes de guardarlo — es la misma barrera que hace que las
 contramedidas C1-C4 tampoco sean bloqueantes todavía (`decisions.md`,

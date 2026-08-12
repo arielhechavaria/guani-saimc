@@ -5,7 +5,7 @@ de correr el agregador.
 
 Esta vista es el instrumento con el que el operador verifica lo que carga. Por
 eso reporta **mediciones, no veredictos**: `n`, mediana, mínimo, máximo y
-amplitud. Ningún umbral — el whitepaper §12.6 (línea 1961) es explícito en que
+amplitud. Ningún umbral — `spec.md` §12.6 es explícito en que
 «un umbral asignado por intuición y presentado como metodología es peor que no
 tener umbral». N se calibra más adelante con datos reales, y esta misma vista
 es la que va a permitir hacerlo.

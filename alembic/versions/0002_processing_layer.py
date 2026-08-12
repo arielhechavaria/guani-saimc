@@ -1,6 +1,6 @@
 """Processing Layer: tablas provinces, products, prices_history
 
-Corresponde a docs/whitepaper.md §7.2 (líneas 1309-1363).
+Corresponde a docs/spec.md §7.2 (Processing Layer).
 
 Orden de creación: provinces y products primero (targets de FK), luego
 prices_history. El downgrade invierte ese orden.

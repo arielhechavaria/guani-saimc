@@ -2,7 +2,7 @@
 
 Implementa la regla de `CLAUDE.md`: «Nada de datos personales: no capturamos ni
 almacenamos teléfonos, direcciones exactas ni datos de contacto de
-anunciantes» (riesgo §10.6 del whitepaper).
+anunciantes» (riesgo §10.6 de la especificación).
 
 Alcance deliberado: **solo teléfonos**. Las direcciones exactas son un problema
 de reconocimiento de entidades, no de expresiones regulares, y hoy no hay
@@ -11,9 +11,9 @@ volumen que justifique resolverlo (mismo criterio que `docs/decisions.md`
 
 Límite conocido y declarado: esto redacta **texto**, no píxeles. La captura de
 WhatsApp preservada en `data/raw/` sigue mostrando el número en la imagen. Ese
-archivo es la evidencia inmutable de la Transparency Layer (whitepaper §6.1,
-línea 568) y su tratamiento es la contradicción 1 de `docs/whitepaper-map.md`,
-todavía abierta.
+archivo es la evidencia inmutable de la Transparency Layer (spec.md §6.1,
+Etapa 1b) y su tratamiento es la contradicción 1 de `docs/spec-map.md`, todavía
+abierta.
 """
 
 from __future__ import annotations

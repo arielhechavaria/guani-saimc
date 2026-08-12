@@ -1,6 +1,6 @@
 """Raw Layer: tabla raw_ingestions
 
-Corresponde a docs/whitepaper.md §7.1 (líneas 1058-1077).
+Corresponde a docs/spec.md §7.1 (Raw Layer).
 
 Revision ID: 0001
 Revises:

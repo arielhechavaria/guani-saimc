@@ -1,9 +1,9 @@
 """Raw Layer — el registro crudo inmutable.
 
-Corresponde a la tabla definida en `docs/whitepaper.md` §7.1 (Raw Layer).
+Corresponde a la tabla definida en `docs/spec.md` §7.1 (Raw Layer).
 Se escribe una vez. No se modifica ni se elimina: es la base de la Transparency
 Layer, porque el anuncio que respalda cada precio publicado es literalmente el
-archivo capturado (whitepaper §6.1, Etapa 1).
+archivo capturado (spec.md §6.1, Etapa 1).
 """
 
 import uuid
@@ -27,7 +27,7 @@ class SourceType(StrEnum):
     En Fase 0 solo se usan los dos primeros: la bandeja de entrada es la única
     fuente. Los otros dos quedan declarados porque la bandeja es una interfaz
     genérica y las fuentes automáticas de la Etapa 3 escriben en la misma tabla
-    (whitepaper línea 448).
+    (spec.md §6.1, «Ventaja adicional del patrón»).
     """
 
     INBOX_IMAGE = "inbox_image"
@@ -45,7 +45,7 @@ class ProcessingStatus(StrEnum):
 class RawIngestion(Base):
     __tablename__ = "raw_ingestions"
 
-    # Nombre tomado del whitepaper (línea 1074) para que el esquema real y el
+    # Nombre tomado de la especificación (§7.1) para que el esquema real y el
     # documento se puedan comparar sin traducción.
     __table_args__ = (
         Index("idx_raw_ingestions_hash", "content_hash", unique=True),
@@ -59,7 +59,7 @@ class RawIngestion(Base):
 
     # Canal o grupo de origen. Queda nulo en la ingesta y lo completa el operador
     # durante la curaduría: exigirlo al capturar rompería el principio de que la
-    # captura no estructura nada (whitepaper líneas 421 y 427).
+    # captura no estructura nada (spec.md §6.1, Etapa 1a).
     source_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Ruta a la evidencia preservada, relativa al directorio del almacén.

@@ -1,8 +1,9 @@
 """Tests del motor de reglas de extracción — casos sintéticos.
 
 Los casos están inventados a mano, con la forma que un anuncio real del mercado
-informal cubano suele tener (el primero es literalmente el ejemplo del whitepaper,
-§6.1, líneas 601-609). Cada caso fija la respuesta correcta antes de que exista el
+informal cubano suele tener (el primero es literalmente el ejemplo de la
+especificación, `spec.md` §6.1, Etapa 2). Cada caso fija la respuesta correcta
+antes de que exista el
 código que la produce — la regla de CLAUDE.md para esta capa: un caso sintético vale
 como RED siempre que la verdad se defina antes e independientemente del extractor.
 
@@ -46,9 +47,9 @@ def provinces() -> list[Province]:
 
 
 class TestPropuestaCompleta:
-    """El ejemplo textual del whitepaper, campo por campo, en un solo caso."""
+    """El ejemplo textual de la especificación, campo por campo, en un solo caso."""
 
-    def test_ejemplo_del_whitepaper(
+    def test_ejemplo_de_la_especificacion(
         self, products: list[Product], provinces: list[Province]
     ) -> None:
         texto = "🐔 pollo congelado cajas de 40lb a 12000 stgo entrega dom"

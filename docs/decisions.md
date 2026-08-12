@@ -1366,3 +1366,39 @@ slice: reescribir las citas del código de número de línea a ancla de sección
 —varias ya estaban podridas, `alembic/versions/0001` cita «§7.1 líneas 1058-1077»
 cuando §7.1 vivía en 1282-1307— y actualizar `CLAUDE.md`, `README.md` y
 `openspec/config.yaml`, que todavía apuntan a `docs/whitepaper.md`.
+
+---
+
+## 2026-08-12 — Las citas al documento rector pasan a ancla de sección
+
+Contexto: segunda mitad del corte del whitepaper (entrada anterior de esta misma
+fecha). 31 archivos citaban `docs/whitepaper.md`, que ya no existe. Peor que el
+renombre: catorce citas apuntaban a un número de línea, y varias ya estaban
+podridas antes del corte. `alembic/versions/0001` citaba «§7.1 (líneas 1058-1077)»
+cuando §7.1 vivía en 1282-1307; `models/raw_ingestion.py` citaba «línea 1074» para
+un nombre de columna, «línea 448» y «líneas 421 y 427» para §6.1. El documento
+creció de v3.3 a v3.5 agregando secciones intermedias: los números de sección
+sobrevivieron, los de línea se corrieron ~224 posiciones sin que nada avisara.
+
+Decisión: toda cita al documento rector va por **ancla de sección**, y cuando hace
+falta precisión, por la frase del encabezado —`spec.md §6.1, «Ventaja adicional del
+patrón»`— nunca por número de línea. La regla queda escrita en `CLAUDE.md`. Se
+verificó que las ocho anclas nuevas existen textualmente en `spec.md`, una vez cada
+una. La única excepción legítima es `docs/spec-map.md`, que existe justamente para
+traducir sección → líneas y que declara arriba cómo verificar su propia vigencia
+(`wc -l docs/spec.md`).
+
+Descartado: mantener los números de línea actualizándolos al corte nuevo. Habría
+reproducido el mismo mecanismo de podredumbre en la próxima edición de `spec.md`,
+que es un documento vivo. También se descartó reescribir las citas de
+`docs/decisions.md`, `docs/decisions/SETUP.md` y `openspec/changes/archive/**`: son
+archivos de anexado o registros históricos, y reescribir el pasado para que
+coincida con el presente es exactamente lo que `CLAUDE.md` prohíbe. Ahí «whitepaper»
+sigue nombrando lo que se llamaba así cuando se escribió.
+
+Consecuencia: 31 archivos actualizados —`src/`, `tests/`, `alembic/`, `CLAUDE.md`,
+`README.md`, `docs/backlog.md`, `openspec/config.yaml` y la spec viva de
+`processing-layer-schema`—. 224 tests pasan. `openspec/config.yaml` reemplaza las
+claves `whitepaper`/`whitepaper_map` por `spec`/`spec_map`/`pitch_frozen`. Queda
+abierto un detalle sin resolver: `CLAUDE.md` afirma que la carpeta `docs/decisions/`
+no existe, y existe (`SETUP.md`). No se tocó en este slice.

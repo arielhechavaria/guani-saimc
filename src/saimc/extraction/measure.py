@@ -1,9 +1,9 @@
-"""Medición de H0 (whitepaper §3 y §12.5) contra la cola de curaduría real.
+"""Medición de H0 (spec.md §3 y §12.5) contra la cola de curaduría real.
 
 Re-corre `propose_all()` sobre cada anuncio ya curado y compara la propuesta
 contra lo que el operador confirmó en `prices_history`. La propuesta nunca
 influyó lo que quedó guardado (la cola de curaduría solo la usa para prellenar
-el formulario, whitepaper §6.1): por eso la comparación mide extracción real y
+el formulario, spec.md §6.1): por eso la comparación mide extracción real y
 no un eco de sí misma.
 
 De dónde sale el texto evaluado, según el tipo de evidencia:
@@ -49,7 +49,7 @@ Transcriber = Callable[[Path], str]
 
 @dataclass
 class H0Report:
-    """Resultado de una corrida de medición de H0 (whitepaper §12.5)."""
+    """Resultado de una corrida de medición de H0 (spec.md §12.5)."""
 
     total_curated: int
     total_discarded: int
@@ -159,7 +159,7 @@ def _quantity_unit_correct(
     confirmed_quantity: Decimal | None,
     confirmed_product: Product | None,
 ) -> bool:
-    """Cantidad Y unidad, en el sentido del whitepaper §12.5.
+    """Cantidad Y unidad, en el sentido del spec.md §12.5.
 
     La unidad no se persiste por fila en `prices_history` (decisión ya
     tomada, ver `curation.py`): se compara la unidad propuesta contra la
@@ -298,7 +298,7 @@ def compute_h0_report(
     )
 
 
-# Umbral real de H0 (whitepaper §3): la medición no es oficial por debajo de
+# Umbral real de H0 (spec.md §3): la medición no es oficial por debajo de
 # 300 anuncios etiquetados a mano.
 _H0_MINIMUM_SAMPLE = 300
 
@@ -308,7 +308,7 @@ def _format_pct(value: float | None) -> str:
 
 
 def _print_report(report: H0Report) -> None:
-    print("=== Medición de H0 (whitepaper §12.5) ===")
+    print("=== Medición de H0 (spec.md §12.5) ===")
     print(f"Procesados totales:      {report.total_processed}")
     print(f"  Curados:               {report.total_curated}")
     print(f"  Descartados:           {report.total_discarded}")

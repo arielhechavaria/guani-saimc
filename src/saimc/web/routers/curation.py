@@ -1,4 +1,4 @@
-"""Cola de curaduría — whitepaper §6.1, Etapa 1c y Etapa 2 (líneas 571-611).
+"""Cola de curaduría — spec.md §6.1, Etapa 1c y Etapa 2.
 
 Primera y única interfaz humana del sistema en Fase 0: presenta un elemento
 `pending` por vez, propone una extracción cuando hay texto, y el operador

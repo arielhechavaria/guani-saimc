@@ -1,8 +1,8 @@
 """Motor de reglas de extracción sobre texto crudo de anuncios.
 
-El whitepaper (§6.1, «Rol del OCR») describe esta etapa como «extracción
+La especificación (§6.1, «Rol del OCR») describe esta etapa como «extracción
 asistida»: el sistema propone valores candidatos por regex y diccionarios
-estáticos —nada de ML/LLM en este slice (línea 611)— y el operador humano
+estáticos —nada de ML/LLM en este slice (§6.1, «Tecnología»)— y el operador humano
 confirma o corrige cada campo en la cola de curaduría. Este módulo solo
 produce la propuesta; la confirmación es UI y no vive acá.
 """
@@ -21,7 +21,7 @@ from saimc.models import Currency, Product, Province
 # --- provincias --------------------------------------------------------------
 
 # Las 16 provincias de Cuba son fijas y viven como fila de datos, no como
-# código (whitepaper §9.0). Pero el texto libre de un anuncio usa jerga y
+# código (spec.md §9.0). Pero el texto libre de un anuncio usa jerga y
 # abreviaturas informales ("stgo", "habana") que no son parte del esquema:
 # por eso el diccionario vive acá, en la capa de extracción, y no en
 # `Province`. Claves sin tilde: el texto de entrada tampoco suele traerlas.
@@ -278,8 +278,8 @@ class ExtractionProposal:
     """Candidatos propuestos para un anuncio.
 
     Ningún campo se da por confirmado: la cola de curaduría es quien decide
-    (whitepaper §6.1). `currency` es la excepción: nunca queda sin proponer,
-    porque el whitepaper manda inferir CUP cuando no hay marca explícita.
+    (spec.md §6.1). `currency` es la excepción: nunca queda sin proponer,
+    porque la especificación manda inferir CUP cuando no hay marca explícita.
     """
 
     product: Product | None = None
@@ -345,7 +345,7 @@ def _extract_currency_explicit(text: str) -> str | None:
 
 
 def _extract_currency(text: str) -> str:
-    # Sin marca explícita: el whitepaper (§6.1, línea 606) manda CUP.
+    # Sin marca explícita: la especificación (§6.1, Etapa 2: «moneda: CUP (inferida)») manda CUP.
     return _extract_currency_explicit(text) or Currency.CUP.value
 
 
@@ -431,7 +431,7 @@ def propose(
 ) -> ExtractionProposal:
     """Propone valores candidatos a partir del texto crudo de un anuncio.
 
-    Reglas y diccionarios estáticos, no ML/LLM (whitepaper §6.1, línea 611):
+    Reglas y diccionarios estáticos, no ML/LLM (spec.md §6.1, «Tecnología»):
     la propuesta es un punto de partida para que el operador confirme o
     corrija en la cola de curaduría, no un resultado final.
     """

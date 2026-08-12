@@ -9,7 +9,7 @@ cierra: cada sesión de curaduría se puede verificar de un vistazo.
 No es el dashboard público de la Fase 1 (mapa de calor, semáforos, tarjetas de
 recomendación). Es el espejo del operador, y por eso muestra la matriz cruda
 sin emitir juicios: ni umbral de muestra mínima ni marca de dispersión alta
-(whitepaper §12.6).
+(spec.md §12.6).
 """
 
 from fastapi import APIRouter, Depends, Request

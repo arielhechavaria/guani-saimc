@@ -1,4 +1,4 @@
-"""Cola de curaduría — endpoints FastAPI (whitepaper §6.1, Etapa 1c y Etapa 2).
+"""Cola de curaduría — endpoints FastAPI (spec.md §6.1, Etapa 1c y Etapa 2).
 
 Usa el `TestClient` de FastAPI con `app.dependency_overrides[get_db]` para
 inyectar la misma fixture `session` (SQLite en memoria) de `tests/conftest.py`,

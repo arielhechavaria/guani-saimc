@@ -1,6 +1,6 @@
 """Seed: productos bandera de Fase 0
 
-Corresponde a docs/whitepaper.md §9.0 (Fase 0): "3-5 productos bandera, ej.
+Corresponde a docs/spec.md §9.0 (Fase 0): "3-5 productos bandera, ej.
 Pollo, Arroz, Aceite, Leche, Huevos". Esta migración carga esas 5 filas con
 sus alias de jerga cubana, que el motor de extracción usa para reconocer el
 producto en texto libre (`saimc/extraction/engine.py`, `_match_product`).

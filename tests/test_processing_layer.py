@@ -1,6 +1,6 @@
 """Processing Layer — `provinces`, `products`, `prices_history`.
 
-Slice de esquema puro (§7.2 del whitepaper): estructura, nullability y
+Slice de esquema puro (§7.2 de la especificación): estructura, nullability y
 restricciones (CHECK/FK/único). Ningún caso evalúa exactitud de extracción
 ni H0 — eso corresponde a la capa de extracción, no a esta.
 """

@@ -1,4 +1,4 @@
-"""Historial de precios — `prices_history` en la Processing Layer (whitepaper §7.2).
+"""Historial de precios — `prices_history` en la Processing Layer (spec.md §7.2).
 
 Cada fila conserva linaje obligatorio hacia el registro crudo del que salió
 (`source_id`, RESTRICT) y, opcionalmente, la conversión a CUP cuando existe
@@ -46,7 +46,7 @@ PACKAGING_MAX_LENGTH = 64
 
 
 class PriceHistory(Base):
-    __tablename__ = "prices_history"  # nombre literal del whitepaper §7.2
+    __tablename__ = "prices_history"  # nombre literal del spec.md §7.2
     __table_args__ = (
         CheckConstraint(
             "currency <> 'CUP' OR exchange_rate IS NULL",
@@ -80,7 +80,7 @@ class PriceHistory(Base):
         ),
         nullable=False,
     )
-    # Nullable a propósito: el whitepaper (línea 733) acepta «Provincia: No
+    # Nullable a propósito: la especificación (§6.2, Regla 3) acepta «Provincia: No
     # determinada» cuando el anuncio solo indica una zona («Oriente»).
     province_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
@@ -94,14 +94,14 @@ class PriceHistory(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     # Nulo mientras nada obtenga la tasa: un anuncio en USD se guarda sin
-    # convertir en vez de bloquearse (§6.3, líneas 896-899).
+    # convertir en vez de bloquearse (§6.3 E, «Alcance en Fase 0»).
     price_cup: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     exchange_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     exchange_rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     exchange_rate_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True)
     # Día de publicación del anuncio, no instante — eje temporal de la serie
-    # (whitepaper §6.1c/§7.2). Nullable, sin default y sin CHECK: un dato
+    # (spec.md §6.1c/§7.2). Nullable, sin default y sin CHECK: un dato
     # secundario nunca debe bloquear un insert (design.md, D2).
     published_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Unidad de venta canónica (`saimc.units.UNITS`). Nullable, sin CHECK: el

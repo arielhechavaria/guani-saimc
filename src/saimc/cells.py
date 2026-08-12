@@ -2,12 +2,12 @@
 
 Es el instrumento de control del operador: responde «¿lo que estoy cargando
 sirve?» sin tener que consultar la base a mano. La matriz producto × provincia
-es la salida que el whitepaper define como núcleo de la propuesta (§5, «objeto
+es la salida que la especificación define como núcleo de la propuesta (§5, «objeto
 medido»), así que esta agregación es también el primer paso hacia el dashboard
 público de la Fase 1.
 
 **Reporta mediciones, no veredictos.** No hay umbral de muestra mínima ni
-marca de «dispersión alta»: §12.6 (línea 1961) es explícito en que un umbral
+marca de «dispersión alta»: §12.6 es explícito en que un umbral
 asignado por intuición y presentado como metodología es peor que no tener
 umbral. N se calibra con datos reales —«análisis de estabilidad de la mediana
 frente al tamaño de muestra»— y esta vista es justamente lo que permite

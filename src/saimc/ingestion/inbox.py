@@ -1,6 +1,6 @@
 """Bandeja de entrada: convierte archivos sueltos en registros crudos.
 
-El OCR **no** corre acá. El whitepaper (§6.1, «Rol del OCR») define el OCR y la
+El OCR **no** corre acá. La especificación (§6.1, «Rol del OCR») define el OCR y la
 extracción por reglas como asistentes de la cola de curaduría, no como etapas
 autónomas del pipeline: el sistema propone y el operador confirma. Correr el OCR
 en la ingesta acumularía su error sobre el de la extracción sin supervisión, y

@@ -2,9 +2,12 @@
 
 Sistema Abierto de Inteligencia de Mercado para Cuba.
 
-Documento rector: `docs/whitepaper.md`. Para consultarlo sin leerlo entero,
-`docs/whitepaper-map.md`. Instrucciones de trabajo: `CLAUDE.md`. Qué falta y
+Documento rector: `docs/spec.md`. Para consultarlo sin leerlo entero,
+`docs/spec-map.md`. Instrucciones de trabajo: `CLAUDE.md`. Qué falta y
 por qué, en orden de prioridad: `docs/backlog.md`.
+
+`docs/pitch-v3.5.md` es el documento de inversión, congelado. No rige: si
+contradice a `docs/spec.md`, gana `docs/spec.md`.
 
 ---
 
@@ -69,7 +72,7 @@ Qué hace la ingesta:
 - deja donde está lo que no reconoce, y lo reporta.
 
 El OCR **no** corre en la ingesta. Asiste a la cola de curaduría, donde el
-sistema propone y el operador confirma (whitepaper §6.1, «Rol del OCR y la
+sistema propone y el operador confirma (spec.md §6.1, «Rol del OCR y la
 extracción asistida»).
 
 `inbox/` y `data/` no van a git: contienen datos personales de terceros.
@@ -96,7 +99,7 @@ Con la bandeja ya ingerida (paso anterior), levantá el servidor:
 4. La API completa (Swagger) queda en `http://127.0.0.1:8000/docs`.
 
 Cada confirmación o corrección es, al mismo tiempo, el dato que después mide
-H0 (whitepaper §6.1: «la cola de curaduría es simultáneamente la herramienta
+H0 (spec.md §6.1: «la cola de curaduría es simultáneamente la herramienta
 de trabajo y el instrumento de medición»).
 
 ## Medición de H0
@@ -106,7 +109,7 @@ de trabajo y el instrumento de medición»).
 ```
 
 Vuelve a correr el motor de reglas sobre cada anuncio de texto ya curado y lo
-compara contra lo que confirmaste, métrica por métrica (whitepaper §12.5).
+compara contra lo que confirmaste, métrica por métrica (spec.md §12.5).
 Por debajo de 300 anuncios de texto curados el número no es la medición
 oficial de H0 (§3) — el script lo avisa — pero sirve para ver la tendencia
 mientras se junta volumen.

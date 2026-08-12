@@ -1,6 +1,6 @@
 """Transcripción OCR de la evidencia capturada como imagen.
 
-El whitepaper (§6.1, «Rol del OCR») ubica esta etapa en la cola de curaduría,
+La especificación (§6.1, «Rol del OCR») ubica esta etapa en la cola de curaduría,
 no en la ingesta: la imagen entra cruda a `raw_ingestions` y el texto se
 transcribe recién cuando el operador la está revisando. Este módulo solo
 transcribe; confirmar o corregir el resultado es responsabilidad del router

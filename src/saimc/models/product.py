@@ -1,6 +1,6 @@
 """Catálogo de productos.
 
-Corresponde a `products` en la Processing Layer (whitepaper §7.2).
+Corresponde a `products` en la Processing Layer (spec.md §7.2).
 """
 
 import uuid

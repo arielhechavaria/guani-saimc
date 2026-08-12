@@ -1,6 +1,6 @@
 """Seed: provincias oficiales de Cuba
 
-Corresponde a docs/whitepaper.md §9.0 (líneas 1601-1607): incorporar una
+Corresponde a docs/spec.md §9.0 («Consecuencias de diseño»): incorporar una
 provincia debe ser configuración, no desarrollo. Esta migración carga las
 16 filas (15 provincias más el municipio especial Isla de la Juventud),
 todas sin publicar (`is_published=False`): la publicación se habilita por

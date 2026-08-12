@@ -5,7 +5,7 @@ correcta se define acá, antes e independientemente de correr el redactor.
 
 La regla que se está implementando es de `CLAUDE.md`: «Nada de datos
 personales: no capturamos ni almacenamos teléfonos, direcciones exactas ni
-datos de contacto de anunciantes» (riesgo §10.6 del whitepaper).
+datos de contacto de anunciantes» (riesgo §10.6 de la especificación).
 
 Los casos negativos importan tanto como los positivos: un redactor que se coma
 los precios destruye la única señal que el sistema existe para medir.
