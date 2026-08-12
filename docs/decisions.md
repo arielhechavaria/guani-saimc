@@ -1652,3 +1652,68 @@ necesidad real (el operador no pidió quedarse en `/control` sin navegar).
 Consecuencia: 71 tests nuevos en `test_curation.py` (filtro + delete) y 2 en
 `test_control.py` (formato exacto del link, con `urlencode` — espacios como
 `%20`, no `+`). 263 tests pasan.
+
+---
+
+## 2026-08-12 — Mayorista es escala de contenedor, no vender por saco
+
+Contexto: la regla del 2026-08-11 («prueba de la jabita») decía «un anuncio
+que solo vende sacos se descarta entero [hoy: se marca mayorista]». Aplicada
+tal cual, los dos sacos de 110 lb de Arroz se marcaron `wholesale` hoy mismo.
+El operador corrigió: en el mercado informal cubano actual, un minorista
+vende arroz por saco, por paquete o por libra desde su casa — las tres son
+transacciones minoristas reales, accesibles a un hogar. Mayorista es una
+categoría distinta: venta a escala de contenedor completo, que un hogar no
+compra.
+
+Decisión: se corrige la definición operativa. `sale_format=wholesale` exige
+escala de contenedor; vender un saco o paquete completo —aunque sea la
+compra mínima del anuncio— sigue siendo `retail`. Los dos sacos de Arroz
+(31.000 y 33.000 CUP, 110 lb) vuelven a `retail` (estaban en `wholesale`
+desde hoy temprano). El texto de ayuda del formulario se reescribe:
+«Mayorista es escala de contenedor, no vender un saco o paquete individual
+— eso lo ofrece cualquier minorista desde su casa».
+
+Descartado: mantener la regla original y tratar la corrección como un caso
+de borde. No lo es — el corpus real de Fase 0 no tiene ningún anuncio de
+escala de contenedor todavía, así que bajo la regla vieja **ningún** anuncio
+mayorista genuino existía en la base: todo lo marcado `wholesale` hasta hoy
+era en realidad venta minorista por saco. La corrección no es un ajuste
+fino, es la corrección del error.
+
+Consecuencia: el criterio nuevo probablemente vacía `sale_format=wholesale`
+en el corpus actual hasta que aparezca un anuncio real de escala de
+contenedor. Eso es correcto: no había ninguno. Pendiente de revisar si
+alguna otra fila fuera de Arroz quedó marcada `wholesale` bajo el criterio
+viejo.
+
+---
+
+## 2026-08-12 — Envase pasa a vocabulario cerrado: Paquete / Saco / A granel / Otro
+
+Contexto: propuesta inicial del operador fue agregar «saco» y «paquete» al
+selector de **unidad**. Verificado contra datos reales: un saco trae 25 kg,
+50 kg o 110 lb según el anuncio; un paquete va de 1 kg (arroz) a 2 lb
+(azúcar). Ninguno tiene magnitud fija, así que no sirven como `unit` — eso
+reabriría exactamente el problema que separar por `unit`+`sale_format`
+resolvió el mismo día: la mezcla de precios incomparables en una sola celda.
+
+Decisión: `packaging` (el envase, hasta hoy texto libre) pasa a un `<select>`
+con vocabulario cerrado — Paquete / Saco / A granel — más «Otro» con un
+campo de detalle libre como válvula de escape. `unit`+`quantity` siguen
+siendo la única fuente para normalizar precio por unidad; `packaging` nombra
+la presentación sin participar en ningún cálculo. `_packaging_from_form()`
+combina los dos campos del form en el string que guarda la columna;
+`_split_packaging()` hace el camino inverso al editar una fila vieja —
+texto libre anterior al día de hoy que no calza con ninguna etiqueta cerrada
+cae en «Otro» con el texto original completo, sin perderlo.
+
+Descartado: agregar saco/paquete a `saimc.units.UNITS`. Habría movido la
+mezcla un nivel arriba en vez de resolverla — mismo argumento que ya se usó
+para no meter el envase en la clave de celda de `compute_cells` el mismo día.
+
+Consecuencia: el formulario de curaduría cambia de un `<input>` libre a un
+`<select>` + detalle condicional. Filas cargadas antes de hoy no se tocan;
+al abrirlas en `/curation/{id}/edit`, su texto libre se prellena en «Otro».
+269 tests pasan (6 nuevos de vocabulario, más ajustes a los que ya cubrían
+`packaging` con el campo viejo).

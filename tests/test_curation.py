@@ -1063,7 +1063,7 @@ class TestCurationSubmit:
                 "price_0": "450",
                 "unit_0": "lb",
                 "sale_format_0": "wholesale",
-                "packaging_0": "saco",
+                "packaging_format_0": "saco",
             },
             follow_redirects=False,
         )
@@ -1074,7 +1074,7 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert fila.unit == "lb"
         assert fila.sale_format == "wholesale"
-        assert fila.packaging == "saco"
+        assert fila.packaging == "Saco"
 
     def test_packaging_no_se_confunde_con_la_cantidad_ni_con_la_unidad(
         self, client: TestClient, session: Session
@@ -1094,7 +1094,7 @@ class TestCurationSubmit:
                 "price_0": "17500",
                 "quantity_0": "25",
                 "unit_0": "kg",
-                "packaging_0": "saco",
+                "packaging_format_0": "saco",
             },
             follow_redirects=False,
         )
@@ -1105,7 +1105,7 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert fila.quantity == Decimal("25")
         assert fila.unit == "kg"
-        assert fila.packaging == "saco"
+        assert fila.packaging == "Saco"
 
     def test_dos_filas_comparten_la_unidad_y_difieren_en_el_formato_de_venta(
         self, client: TestClient, session: Session
@@ -1235,7 +1235,8 @@ class TestCurationSubmit:
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
-                "packaging_0": "saco, llamar al 55550101",
+                "packaging_format_0": "otro",
+                "packaging_detail_0": "saco, llamar al 55550101",
             },
             follow_redirects=False,
         )
@@ -1265,7 +1266,7 @@ class TestCurationSubmit:
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
-                "packaging_0": "",
+                "packaging_format_0": "",
             },
             follow_redirects=False,
         )
@@ -1298,7 +1299,8 @@ class TestCurationSubmit:
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
-                "packaging_0": envase,
+                "packaging_format_0": "otro",
+                "packaging_detail_0": envase,
             },
             follow_redirects=False,
         )
@@ -1309,6 +1311,136 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert len(fila.packaging or "") <= PACKAGING_MAX_LENGTH
         assert "55550101" not in (fila.packaging or "")
+
+
+class TestVocabularioDeEnvase:
+    """`packaging` deja de ser texto libre y pasa a vocabulario cerrado +
+    "Otro" (2026-08-12): un saco no tiene magnitud fija (25 kg, 50 kg, 110 lb
+    según el anuncio) y un paquete tampoco (1 kg de arroz, 2 lb de azúcar),
+    así que el envase no puede ser `unit` — pero sí puede ser una etiqueta
+    cerrada que no interfiere con `unit`+`quantity`, que siguen siendo la
+    fuente del cálculo de precio por unidad.
+    """
+
+    def test_saco_guarda_la_etiqueta_capitalizada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-envase-saco")
+
+        client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "packaging_format_0": "saco",
+            },
+            follow_redirects=False,
+        )
+
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.packaging == "Saco"
+
+    def test_a_granel_guarda_la_etiqueta_capitalizada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-envase-granel")
+
+        client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "packaging_format_0": "a granel",
+            },
+            follow_redirects=False,
+        )
+
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.packaging == "A granel"
+
+    def test_otro_sin_detalle_no_guarda_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """"Otro" vacío no fabrica un valor: sin detalle no hay nada que decir."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-envase-otro-vacio")
+
+        client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "packaging_format_0": "otro",
+                "packaging_detail_0": "",
+            },
+            follow_redirects=False,
+        )
+
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.packaging is None
+
+    def test_detalle_sin_otro_seleccionado_se_ignora(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El detalle solo cuenta si el operador eligió explícitamente "Otro" —
+        con "Saco" seleccionado, un detalle sobrante no debe colarse."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-envase-detalle-ignorado")
+
+        client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "packaging_format_0": "saco",
+                "packaging_detail_0": "esto no debería aparecer",
+            },
+            follow_redirects=False,
+        )
+
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.packaging == "Saco"
+
+    def test_edit_prellena_otro_con_texto_libre_viejo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Filas cargadas antes del 2026-08-12 traen texto libre que no calza
+        con ninguna etiqueta cerrada — no se pierde, cae en "Otro" con el
+        texto original completo como detalle."""
+        producto = _crear_producto(session)
+        curado = _crear_raw_ingestion(session, hash_="hash-envase-edit-viejo")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=curado, product=producto, price="31000",
+            packaging="Saco de arroz De 110 lb",
+        )
+
+        response = client.get(f"/curation/{curado.id}/edit")
+
+        assert '<option value="otro" selected>' in response.text
+        assert 'value="Saco de arroz De 110 lb"' in response.text
+
+    def test_edit_prellena_etiqueta_cerrada_sin_detalle(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        curado = _crear_raw_ingestion(session, hash_="hash-envase-edit-cerrado")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=curado, product=producto, price="750", packaging="Paquete",
+        )
+
+        response = client.get(f"/curation/{curado.id}/edit")
+
+        assert '<option value="paquete" selected>' in response.text
 
 
 # --- POST /curation/{id}/discard ---------------------------------------------
@@ -1653,7 +1785,8 @@ def _form_edicion(row: dict[str, str], *, row_count: int = 1) -> dict[str, str]:
         "quantity_0": row.get("quantity", ""),
         "unit_0": row.get("unit", ""),
         "sale_format_0": row.get("sale_format", ""),
-        "packaging_0": row.get("packaging", ""),
+        "packaging_format_0": row.get("packaging_format", ""),
+        "packaging_detail_0": row.get("packaging_detail", ""),
         "province_id_0": row.get("province_id", ""),
         "price_id_0": row.get("price_id", ""),
     }
@@ -1706,7 +1839,8 @@ class TestEditarCuradoPost:
                     "price": "500",
                     "unit": "lb",
                     "sale_format": "wholesale",
-                    "packaging": "saco de 25 kg",
+                    "packaging_format": "otro",
+                    "packaging_detail": "saco de 25 kg",
                     "price_id": str(precio.id),
                 }
             ),
@@ -1792,7 +1926,7 @@ class TestEditarCuradoPost:
                 "quantity_0": "",
                 "unit_0": "",
                 "sale_format_0": "",
-                "packaging_0": "",
+                "packaging_format_0": "",
                 "province_id_0": "",
                 "price_id_0": str(precio_1.id),
                 "product_id_1": str(pollo.id),
@@ -1804,7 +1938,7 @@ class TestEditarCuradoPost:
                 "quantity_1": "",
                 "unit_1": "",
                 "sale_format_1": "",
-                "packaging_1": "",
+                "packaging_format_1": "",
                 "province_id_1": "",
                 "price_id_1": str(precio_2.id),
             },

@@ -106,23 +106,34 @@
     <div class="row g-2 mt-1">
       <div class="col-md-5">
         <label for="sale_format_{{ index0 }}" class="form-label small mb-1">
-          ¿Se puede comprar 1 {{ row.unit or 'unidad' }} a este precio?
+          ¿Un minorista de barrio vende esto así, o hace falta comprar a escala de contenedor?
         </label>
         <select name="sale_format_{{ index0 }}" id="sale_format_{{ index0 }}" class="form-select form-select-sm">
           {# El default es «sin responder» para no fabricar `retail`, pero si el
              operador ya respondió y el formulario rebotó, se devuelve su respuesta:
              echarla atrás le haría reenviar NULL sin darse cuenta. #}
           <option value=""{% if row.sale_format not in ("retail", "wholesale") %} selected{% endif %}>— sin responder —</option>
-          <option value="retail"{% if row.sale_format == "retail" %} selected{% endif %}>Sí, minorista</option>
-          <option value="wholesale"{% if row.sale_format == "wholesale" %} selected{% endif %}>No, hay que llevar más (mayorista)</option>
+          <option value="retail"{% if row.sale_format == "retail" %} selected{% endif %}>Sí, minorista (aunque sea por saco o paquete entero)</option>
+          <option value="wholesale"{% if row.sale_format == "wholesale" %} selected{% endif %}>No, es mayorista (contenedor completo)</option>
         </select>
         <small class="text-muted">
-          Prueba de la jabita. Si el precio por unidad sale de dividir un saco, es mayorista.
+          Mayorista es escala de contenedor, no vender un saco o paquete individual —
+          eso lo ofrece cualquier minorista desde su casa (corregido 2026-08-12).
         </small>
       </div>
-      <div class="col-md-7">
-        <label for="packaging_{{ index0 }}" class="form-label small mb-1">Envase / presentación <span class="text-muted">(opcional)</span></label>
-        <input type="text" name="packaging_{{ index0 }}" id="packaging_{{ index0 }}" value="{{ row.packaging }}" maxlength="64" placeholder="saco de 25 kg, paca de 30" class="form-control form-control-sm" />
+      <div class="col-md-4">
+        <label for="packaging_format_{{ index0 }}" class="form-label small mb-1">Envase <span class="text-muted">(opcional)</span></label>
+        <select name="packaging_format_{{ index0 }}" id="packaging_format_{{ index0 }}" class="form-select form-select-sm">
+          <option value=""{% if not row.packaging_format %} selected{% endif %}>— sin especificar —</option>
+          <option value="paquete"{% if row.packaging_format == "paquete" %} selected{% endif %}>Paquete</option>
+          <option value="saco"{% if row.packaging_format == "saco" %} selected{% endif %}>Saco</option>
+          <option value="a granel"{% if row.packaging_format == "a granel" %} selected{% endif %}>A granel</option>
+          <option value="otro"{% if row.packaging_format == "otro" %} selected{% endif %}>Otro…</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label for="packaging_detail_{{ index0 }}" class="form-label small mb-1">Si es "Otro" <span class="text-muted">(opcional)</span></label>
+        <input type="text" name="packaging_detail_{{ index0 }}" id="packaging_detail_{{ index0 }}" value="{{ row.packaging_detail }}" maxlength="64" placeholder="funda, lata, pomo…" class="form-control form-control-sm" />
       </div>
     </div>
   </div>

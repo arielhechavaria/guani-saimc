@@ -10,8 +10,15 @@ sobre lo que el operador confirma en el `<select>` del formulario — el
 vocabulario cerrado vive en `saimc.units`, no acá. `sale_format` pasa por el
 gate de `SaleFormat` (design.md, D4): solo se guarda cuando coincide con uno
 de los dos valores del enum, cualquier otra cosa (incluido un envío en
-blanco) degrada a `NULL`. `packaging` es texto libre redactado con
-`redact_personal_data()` antes de construir la fila.
+blanco) degrada a `NULL`.
+
+`packaging` no es una unidad (2026-08-12): un saco trae 25 kg, 50 kg o 110 lb
+según el anuncio, y un paquete va de 1 kg a 2 lb — sin magnitud fija no sirve
+para normalizar precio por unidad, para eso están `unit`+`quantity`. El
+formulario pide el envase en dos campos, `packaging_format` (cerrado: Paquete
+/ Saco / A granel / Otro) y `packaging_detail` (libre, solo aplica con
+«Otro»), que `_packaging_from_form()` combina en el único string que guarda
+la columna, redactado con `redact_personal_data()` antes de construir la fila.
 """
 
 import uuid
@@ -56,6 +63,13 @@ router = APIRouter()
 # romper el submit (design.md, D4).
 _SALE_FORMAT_VALUES = {member.value for member in SaleFormat}
 
+# Vocabulario cerrado de presentación (2026-08-12): reemplaza el texto libre
+# original. `Otro` es la válvula de escape declarada — sin ella, un formato
+# real que no sea paquete/saco/a granel (funda, lata, pomo) no tendría dónde
+# ir, y forzarlo dentro de las tres opciones fijas sería inventar una
+# categoría que nadie eligió.
+_PACKAGING_LABELS = {"paquete": "Paquete", "saco": "Saco", "a granel": "A granel"}
+
 
 def _truncated_packaging(raw: str) -> str | None:
     """Redacta el envase y lo recorta al ancho de la columna, en ese orden.
@@ -69,6 +83,40 @@ def _truncated_packaging(raw: str) -> str | None:
     if not redacted:
         return None
     return redacted[:PACKAGING_MAX_LENGTH]
+
+
+def _packaging_from_form(fmt: str, detail: str) -> str | None:
+    """Combina el select cerrado y el detalle libre en el string que se guarda.
+
+    El detalle solo cuenta cuando `fmt == "otro"` — con Paquete/Saco/A granel
+    ya elegidos, `quantity`+`unit` dimensionan el lote y el detalle no agrega
+    nada que valga la pena guardar. Un `fmt` vacío o desconocido no fabrica un
+    valor a partir del detalle: es la misma regla que ya rige `sale_format`,
+    el envase es un juicio explícito, no algo que se infiera de texto suelto.
+    """
+    fmt = fmt.strip().lower()
+    if fmt == "otro":
+        combined = detail.strip()
+    else:
+        combined = _PACKAGING_LABELS.get(fmt, "")
+    if not combined:
+        return None
+    return _truncated_packaging(combined)
+
+
+def _split_packaging(existing: str | None) -> tuple[str, str]:
+    """Inverso de `_packaging_from_form`, para prellenar la corrección.
+
+    Filas cargadas antes del 2026-08-12 traen texto libre («Saco de arroz De
+    110 lb») que no calza con ninguna etiqueta cerrada: caen en «Otro» con el
+    texto original completo como detalle, en vez de perderlo.
+    """
+    if not existing:
+        return "", ""
+    for fmt, label in _PACKAGING_LABELS.items():
+        if existing == label:
+            return fmt, ""
+    return "otro", existing
 
 
 def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]:
@@ -89,7 +137,8 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "quantity": "",
             "unit": "",
             "sale_format": "",
-            "packaging": "",
+            "packaging_format": "",
+            "packaging_detail": "",
             "province_id": "",
         }
     return {
@@ -110,7 +159,8 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         # Nunca se prellena: es un juicio del operador, no algo que el motor
         # de extracción pueda inferir (design.md, D4 y "Data Flow").
         "sale_format": "",
-        "packaging": "",
+        "packaging_format": "",
+        "packaging_detail": "",
         "province_id": str(proposal.province.id) if proposal.province else "",
     }
 
@@ -121,6 +171,7 @@ def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
     Mismo formato de salida que `_values_from_proposal` — es lo que permite
     que la corrección reuse la tarjeta de la cola sin distinguir origen.
     """
+    packaging_format, packaging_detail = _split_packaging(price.packaging)
     return {
         "price_id": str(price.id),
         "product_id": str(price.product_id),
@@ -132,7 +183,8 @@ def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
         "quantity": str(price.quantity) if price.quantity is not None else "",
         "unit": price.unit or "",
         "sale_format": price.sale_format or "",
-        "packaging": price.packaging or "",
+        "packaging_format": packaging_format,
+        "packaging_detail": packaging_detail,
         "province_id": str(price.province_id) if price.province_id else "",
     }
 
@@ -424,7 +476,8 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
         "quantity": str(form.get(f"quantity_{index}", "")).strip(),
         "unit": str(form.get(f"unit_{index}", "")).strip(),
         "sale_format": str(form.get(f"sale_format_{index}", "")).strip(),
-        "packaging": str(form.get(f"packaging_{index}", "")).strip(),
+        "packaging_format": str(form.get(f"packaging_format_{index}", "")).strip(),
+        "packaging_detail": str(form.get(f"packaging_detail_{index}", "")).strip(),
         "province_id": str(form.get(f"province_id_{index}", "")).strip(),
     }
 
@@ -514,7 +567,7 @@ async def submit_curation(
                 # después de redactar y no antes: el placeholder es más largo
                 # que el teléfono que reemplaza, así que un texto que entraba en
                 # la columna deja de entrar apenas se redacta.
-                packaging=_truncated_packaging(row["packaging"]),
+                packaging=_packaging_from_form(row["packaging_format"], row["packaging_detail"]),
                 published_date=published_date,
                 source_id=ingestion.id,
             )
@@ -826,7 +879,9 @@ async def submit_edit(
         existing.sale_format = (
             row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None
         )
-        existing.packaging = _truncated_packaging(row["packaging"])
+        existing.packaging = _packaging_from_form(
+            row["packaging_format"], row["packaging_detail"]
+        )
         existing.published_date = published_date
 
     # Mismo criterio que `submit_curation`: solo se pisa si llegó algo. Vaciar
