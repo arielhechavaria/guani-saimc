@@ -303,6 +303,24 @@ class TestCurationQueueGet:
         assert response.text.count('name="product_id_') == 5
         assert 'name="row_count" value="5"' in response.text
 
+    def test_canonicaliza_la_unidad_al_prellenar_el_select(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: canonicalización en el prellenado — "litro" propuesto por el
+        motor se muestra ya traducido a la unidad canónica "l" en el select."""
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session, code="hab", name="La Habana")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-canonicaliza-unidad",
+            original_text="pollo a 500 habana 1 litro",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert '<option value="l" selected>' in response.text
+
     def test_texto_no_llama_al_ocr(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -961,6 +979,110 @@ class TestCurationSubmit:
         )
 
         assert response.status_code == 404
+
+    def test_persiste_unit_sale_format_y_packaging_tal_como_se_envian(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: filas distinguibles — los tres campos son independientes
+        entre sí y del resto de la fila (curation-observation-capture)."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-unit-sale-format")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "unit_0": "lb",
+                "sale_format_0": "wholesale",
+                "packaging_0": "saco",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.unit == "lb"
+        assert fila.sale_format == "wholesale"
+        assert fila.packaging == "saco"
+
+    def test_sale_format_en_blanco_guarda_null_nunca_retail(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: envío en blanco guarda NULL, nunca un `retail` fabricado."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-sale-format-blanco")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.sale_format is None
+
+    def test_unidad_fuera_del_vocabulario_guarda_null_y_crea_la_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: una unidad fuera del vocabulario se guarda como NULL, sin
+        bloquear la creación de la fila."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-post-unidad-fuera-vocabulario"
+        )
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "unit_0": "quintal",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.unit is None
+
+    def test_telefono_en_packaging_se_redacta_y_saco_queda_intacto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: un teléfono escrito en `packaging` se redacta."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-packaging-telefono")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "packaging_0": "saco, llamar al 55550101",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert "55550101" not in (fila.packaging or "")
+        assert "saco" in (fila.packaging or "")
 
 
 # --- POST /curation/{id}/discard ---------------------------------------------

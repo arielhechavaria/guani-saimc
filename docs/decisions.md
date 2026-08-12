@@ -1237,3 +1237,44 @@ hogar es aquel al que puede comprar. Queda como hipótesis a vigilar —no como
 supuesto— que el minorista de Santiago cotiza cerca del derivado mayorista; si
 se sostiene con muestra real, es un hallazgo de mercado que merece su propia
 entrada.
+
+---
+
+## 2026-08-12 — `sale_format` por fila: la prueba de la jabita se guarda, no descarta
+
+Reemplaza dos entradas anteriores. (1) 2026-08-07 «Medición de H0: unidad
+comparada contra el catálogo, no contra una fila propia», que descartaba
+agregar `prices_history.unit` por no justificar el flujo completo de
+especificación. (2) 2026-08-11 «Precisión de la regla minorista: el precio
+derivado de un saco no cuenta», que aplicaba la prueba de la jabita para
+descartar el anuncio mayorista entero en vez de cargarlo.
+
+Contexto: medir cuánto costaba en la práctica la regla del 2026-08-11 mostró
+que descartaba alrededor del 60% de los datos aprovechables: sobre 64 anuncios
+reales, solo 2 observaciones minoristas genuinas de precio por libra
+sobrevivían, con pollo y aceite en cero. La regla protegía la mediana de la
+aritmética del mayorista, pero al precio de vaciar las celdas piloto que
+debían alimentar H0.
+
+Decisión: `prices_history` suma tres columnas nulables — `unit`, `sale_format`
+(`retail`/`wholesale`, con CHECK) y `packaging` — y la cola de curaduría pide
+`sale_format` como pregunta explícita del operador, independiente de `unit` y
+`quantity`, nunca inferida de aritmética. La prueba de la jabita sobrevive
+intacta como criterio para responderla, pero cambia de rol: ya no decide si el
+anuncio se carga, decide cómo se etiqueta la fila que sí se carga. Esto
+también corre la medición de H0 fuera de §12.5: la unidad ya no se compara
+solo contra `Product.unit` del catálogo, sino que queda disponible por fila.
+
+Descartado: mantener el descarte del 2026-08-11 y compensar con más volumen.
+El déficit no era de cantidad de anuncios sino de qué fracción de cada anuncio
+la regla dejaba pasar; más anuncios mayoristas no agregan observaciones
+minoristas. También se descartó inferir `sale_format` de `unit` o de dividir
+`price`/`quantity`: es exactamente el cálculo que la prueba de la jabita existe
+para detectar, así que automatizarlo reintroduce el problema original.
+
+Consecuencia: las filas mayoristas que antes se perdían ahora se guardan y
+distinguen de las minoristas por `sale_format`, engordando las celdas piloto
+en vez de vaciarlas. `unit`/`sale_format`/`packaging` quedan inertes en este
+slice — ningún agregado (`cells.py`) ni métrica de H0 los lee todavía; conectar
+`sale_format` al filtrado de celdas y a §12.5 es trabajo de un slice
+posterior.

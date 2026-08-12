@@ -5,11 +5,13 @@ Primera y única interfaz humana del sistema en Fase 0: presenta un elemento
 confirma o corrige. Cada confirmación produce la fila de `prices_history`
 que alimenta H0.
 
-Nota de esquema: `prices_history` no tiene columna `unit` (whitepaper §7.2) —
-la cantidad se asume en la unidad canónica del producto (`Product.unit`). El
-campo "unidad" del formulario solo se usa para mostrarle al operador lo que
-el motor de extracción propuso; no se persiste. Ver CLAUDE.md: este slice no
-agrega columnas nuevas.
+Nota de esquema: `prices_history.unit` se completa con `canonical_unit()`
+sobre lo que el operador confirma en el `<select>` del formulario — el
+vocabulario cerrado vive en `saimc.units`, no acá. `sale_format` pasa por el
+gate de `SaleFormat` (design.md, D4): solo se guarda cuando coincide con uno
+de los dos valores del enum, cualquier otra cosa (incluido un envío en
+blanco) degrada a `NULL`. `packaging` es texto libre redactado con
+`redact_personal_data()` antes de construir la fila.
 """
 
 import uuid
@@ -40,10 +42,18 @@ from saimc.models import (
     ProcessingStatus,
     Province,
     RawIngestion,
+    SaleFormat,
 )
+from saimc.units import UNITS, canonical_unit
 from saimc.web.deps import get_db
 
 router = APIRouter()
+
+# `sale_format` es un juicio explícito del operador (prueba de la jabita, ver
+# curation.html), nunca inferido: cualquier valor posteado que no sea uno de
+# los dos del enum —incluido un envío en blanco— degrada a `None` en vez de
+# romper el submit (design.md, D4).
+_SALE_FORMAT_VALUES = {member.value for member in SaleFormat}
 
 
 def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]:
@@ -62,6 +72,8 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "currency": Currency.CUP.value,
             "quantity": "",
             "unit": "",
+            "sale_format": "",
+            "packaging": "",
             "province_id": "",
         }
     return {
@@ -76,7 +88,11 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         "price": str(proposal.price) if proposal.price is not None else "",
         "currency": proposal.currency,
         "quantity": str(proposal.quantity) if proposal.quantity is not None else "",
-        "unit": proposal.unit or "",
+        "unit": canonical_unit(proposal.unit) or "",
+        # Nunca se prellena: es un juicio del operador, no algo que el motor
+        # de extracción pueda inferir (design.md, D4 y "Data Flow").
+        "sale_format": "",
+        "packaging": "",
         "province_id": str(proposal.province.id) if proposal.province else "",
     }
 
@@ -136,6 +152,7 @@ def _render_queue(
             "values": global_values,
             "error": error,
             "currencies": [c.value for c in Currency],
+            "units": UNITS,
             "status_counts": status_counts,
         },
         status_code=status_code,
@@ -342,6 +359,8 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
         "currency": str(form.get(f"currency_{index}", "")).strip() or Currency.CUP.value,
         "quantity": str(form.get(f"quantity_{index}", "")).strip(),
         "unit": str(form.get(f"unit_{index}", "")).strip(),
+        "sale_format": str(form.get(f"sale_format_{index}", "")).strip(),
+        "packaging": str(form.get(f"packaging_{index}", "")).strip(),
         "province_id": str(form.get(f"province_id_{index}", "")).strip(),
     }
 
@@ -421,6 +440,14 @@ async def submit_curation(
                 price=price_value,
                 currency=row["currency"],
                 quantity=_parse_decimal(row["quantity"]),
+                unit=canonical_unit(row["unit"]),
+                sale_format=(
+                    row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None
+                ),
+                # Redactado acá mismo, no en el bloque de más abajo (D5): ese
+                # bloque corre después de la rama de rollback todo-o-nada, y
+                # las filas ya se construyeron para entonces.
+                packaging=redact_personal_data(row["packaging"]) or None,
                 published_date=published_date,
                 source_id=ingestion.id,
             )
@@ -453,10 +480,12 @@ async def submit_curation(
     for entry in entries_to_create:
         db.add(entry)
 
-    # Todo lo que se escribe acá pasa por `redact_personal_data` antes de
-    # tocar la base: es el único punto donde texto capturado se persiste
-    # durante la curaduría, así que es donde la regla de `CLAUDE.md` sobre
-    # datos personales se puede aplicar una sola vez y valer para todo.
+    # Todo texto capturado que se persiste durante la curaduría pasa por
+    # `redact_personal_data` antes de tocar la base — regla de `CLAUDE.md`
+    # sobre datos personales. Dos puntos, no uno: `packaging` ya se redactó
+    # arriba, inline en la construcción de cada `PriceHistory` (D5); acá
+    # abajo se redactan `source_reference` y `original_text`, que solo se
+    # conocen después de pasar la rama de error todo-o-nada.
 
     # `source_reference` está diseñado para completarse acá, no viola la
     # inmutabilidad de `raw_ingestions` (ver docstring del modelo).

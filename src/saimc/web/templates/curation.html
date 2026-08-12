@@ -147,8 +147,13 @@
                   <input type="text" name="quantity_{{ loop.index0 }}" id="quantity_{{ loop.index0 }}" value="{{ row.quantity }}" class="form-control form-control-sm" />
                 </div>
                 <div class="col-md-2">
-                  <label for="unit_{{ loop.index0 }}" class="form-label small mb-1">Unidad <span class="text-muted">(detectada)</span></label>
-                  <input type="text" name="unit_{{ loop.index0 }}" id="unit_{{ loop.index0 }}" value="{{ row.unit }}" class="form-control form-control-sm" />
+                  <label for="unit_{{ loop.index0 }}" class="form-label small mb-1">Unidad</label>
+                  <select name="unit_{{ loop.index0 }}" id="unit_{{ loop.index0 }}" class="form-select form-select-sm">
+                    <option value="" {% if not row.unit %}selected{% endif %}>— sin unidad —</option>
+                    {% for unit in units %}
+                    <option value="{{ unit }}" {% if row.unit == unit %}selected{% endif %}>{{ unit }}</option>
+                    {% endfor %}
+                  </select>
                 </div>
                 <div class="col-md-3">
                   <label for="province_id_{{ loop.index0 }}" class="form-label small mb-1">Provincia</label>
@@ -160,6 +165,26 @@
                     </option>
                     {% endfor %}
                   </select>
+                </div>
+              </div>
+
+              <div class="row g-2 mt-1">
+                <div class="col-md-5">
+                  <label for="sale_format_{{ loop.index0 }}" class="form-label small mb-1">
+                    ¿Se puede comprar 1 {{ row.unit or 'unidad' }} a este precio?
+                  </label>
+                  <select name="sale_format_{{ loop.index0 }}" id="sale_format_{{ loop.index0 }}" class="form-select form-select-sm">
+                    <option value="" selected>— sin responder —</option>
+                    <option value="retail">Sí, minorista</option>
+                    <option value="wholesale">No, hay que llevar más (mayorista)</option>
+                  </select>
+                  <small class="text-muted">
+                    Prueba de la jabita. Si el precio por unidad sale de dividir un saco, es mayorista.
+                  </small>
+                </div>
+                <div class="col-md-7">
+                  <label for="packaging_{{ loop.index0 }}" class="form-label small mb-1">Envase / presentación <span class="text-muted">(opcional)</span></label>
+                  <input type="text" name="packaging_{{ loop.index0 }}" id="packaging_{{ loop.index0 }}" value="{{ row.packaging }}" maxlength="64" placeholder="saco de 25 kg, paca de 30" class="form-control form-control-sm" />
                 </div>
               </div>
             </div>
