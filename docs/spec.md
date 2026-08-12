@@ -1,274 +1,40 @@
-# 📄 Sistema Abierto de Inteligencia de Mercado para Cuba (SAIMC)
+# SAIMC — Especificación técnica
 
-## Investor & Technical Whitepaper
-
-### Versión 3.5 – Densidad Antes que Cobertura: Publicar Solo lo que Resiste
-
-**Autor:** Ariel Hechavarria
-**Fecha:** Agosto 2026  
-**Estado:** Propuesta para Inversión / Implementación — Entrando en desarrollo
+**Estado:** documento rector vivo. Esto es lo que gobierna el código.
+**Origen:** extraído de `docs/pitch-v3.5.md` (whitepaper v3.5) el 2026-08-12, sin
+modificar una sola línea del texto extraído.
+**Índice de consulta:** `docs/spec-map.md`. No leas este archivo entero.
 
 ---
 
-## Cambios respecto a la versión 3.4
+## Qué es este archivo
 
-Esta versión incorpora el resultado de una revisión del estado del arte. No modifica
-la visión, el modelo de negocio ni la arquitectura. Corrige una premisa falsa, agrega
-un riesgo que faltaba, y convierte dos supuestos implícitos en restricciones duras.
+La especificación técnica del sistema: hipótesis medibles, objeto medido,
+arquitectura, modelo de datos, roadmap, riesgos, métricas y stack. Es la **fuente de
+verdad**. Cuando el código, `CLAUDE.md` o una propuesta necesitan saber qué decidió el
+proyecto, se consulta acá.
 
-1. **Posicionamiento frente a elTOQUE reescrito** (sección 5). La diferenciación
-   anterior se apoyaba en la opacidad metodológica del competidor. La metodología de
-   la TRMI es pública. La diferenciación se reconstruye sobre ejes verificables:
-   objeto medido, granularidad, y la naturaleza del problema técnico.
-2. **Dependencia de tipo de cambio declarada** (secciones 5 y 6.3). SAIMC consume una
-   referencia de tipo de cambio informal para normalizar precios entre monedas y no
-   pretende producirla. Antes esto era un supuesto tácito; ahora es una dependencia
-   externa con política de degradación y fuente de respaldo.
-3. **Nuevo riesgo 10.7: manipulación adversarial de las series.** Existe un modelo de
-   ataque públicamente articulado contra el sistema metodológicamente más cercano.
-   SAIMC es estructuralmente más vulnerable. Cuatro contramedidas, con alcance
-   declarado: elevar el costo del ataque y detectarlo, no alcanzar inmunidad.
-4. **Umbral de densidad como condición de publicación** (sección 9). La
-   sobreextensión geográfica es una causa documentada de fracaso en sistemas de
-   información de mercado. Una provincia se publica cuando su densidad de datos lo
-   sostiene, no cuando el calendario lo indica.
-5. **Política de publicación metodológica** (sección 6.4.1). Se publica todo, con una
-   única reserva declarada: los parámetros de la capa de detección de coordinación.
-   Esto **acota** el principio de Transparencia Radical; no lo aclara.
-6. **Parámetros pendientes de calibración** (sección 12.6). Los umbrales nuevos no se
-   inventan: se miden sobre el primer despliegue.
+Su contraparte es `docs/pitch-v3.5.md`: el documento de inversión, **congelado**. Ese
+archivo no rige nada. Si contradice a este, gana este.
 
----
+## Por qué la numeración tiene huecos
 
-## Cambios respecto a la versión 3.3
+Los números de sección se conservan intactos —§3, §5, §6, §7, §9, §10, §11, §12,
+§13— porque unas treinta citas en el código, en las migraciones y en `openspec/`
+apuntan a ellos. Faltan §1, §2, §4, §8, §14 y §15: son las secciones de inversión y
+quedaron en el pitch. Renumerar habría invalidado todas las citas de una sola vez.
 
-Esta versión no modifica la visión ni el modelo de negocio. Corrige una **inconsistencia estructural** que hacía el plan más riesgoso de lo necesario:
+## Apartamientos vigentes
 
-1. **Ingesta manual como modelo operativo real de la Fase 0**, no como paso preliminar simbólico. La v3.3 describía ingesta manual en la sección 6.1 pero luego el roadmap asumía captura automática de Telegram desde el mes 1. Se unifica el criterio: **primero curaduría humana, después APIs oficiales, después automatización asistida.**
-2. **Hipótesis de extracción elevada a hipótesis crítica (H0)** con métrica de precisión medible contra un conjunto etiquetado a mano. Todo el resto del sistema depende de ella.
-3. **Decisión de stack cerrada** (sección 13): Python de extremo a extremo en Fase 0–1, con Angular reservado para la Fase 2.
-4. **Nuevo riesgo 10.6**: términos de servicio de plataformas externas y tratamiento de datos personales.
-5. **Nuevas métricas de calidad de extracción** en la sección 12.
-6. **Patrón de bandeja de entrada + cola de curaduría** (sección 6.1): la captura y la curaduría se separan en el tiempo. El OCR y la extracción por reglas pasan a ser asistentes de la cola, no etapas autónomas del pipeline. La cola de curaduría es simultáneamente herramienta de trabajo e instrumento de medición de H0.
-7. **Aclaración del alcance de H0** (sección 3): H0 no bloquea el lanzamiento del dashboard público, bloquea la capacidad de escalar hacia forecasting y capa B2B.
+Lo implementado que no coincide con este documento vive en `docs/decisions.md` y está
+resumido en `docs/spec-map.md`. El que más conviene tener presente al leer §3:
+
+**H0 dejó de ser el veredicto de avanzar/detener de la Fase 0** (decisión del
+2026-08-12) y pasó a ser métrica de eficiencia. La tabla de «Criterio de decisión» de
+§3 **ya no rige**; sus umbrales 85/70 se conservan solo como referencia de capacidad
+de escala. El párrafo «Qué bloquea y qué no bloquea H0» sí rige.
 
 ---
-
-# Índice
-
-1. Resumen Ejecutivo  
-2. Contexto y Problema del Mercado Cubano  
-3. Hipótesis de Negocio (incluye H0 – Hipótesis Crítica)  
-4. Usuarios Objetivo y Casos de Uso  
-5. Diferenciación Estratégica Frente a Competidores Reales  
-6. Arquitectura General del Sistema  
-   - 6.1 Data Ingestion Engine (Modelo por etapas)  
-   - 6.2 Validation Engine  
-   - 6.3 Intelligence Engine  
-   - 6.4 Transparency Layer  
-     - 6.4.1 Política de publicación metodológica  
-   - 6.5 Data Lineage Framework  
-   - 6.6 Marketplace Intelligence Graph  
-   - 6.7 Diseño de Interfaces y Visualización de Datos (NUEVO)  
-7. Modelo de Datos  
-8. Producto Comercial y Modelo de Monetización  
-9. Roadmap de Implementación Realista  
-10. Riesgos y Mitigaciones  
-11. Anexo: Madurez del Forecast  
-12. Métricas de Éxito (KPIs)  
-13. Stack Tecnológico y Estrategia de Escalabilidad  
-14. Solicitud de Inversión  
-15. Conclusión Estratégica
-
----
-
-# 1. Resumen Ejecutivo
-
-El mercado cubano opera actualmente bajo un entorno caracterizado por alta volatilidad, fragmentación de información y ausencia de mecanismos confiables de inteligencia económica.
-
-Millones de decisiones comerciales se toman diariamente basándose en información incompleta proveniente de canales informales como:
-
-- grupos de Telegram,
-- WhatsApp,
-- Facebook Marketplace,
-- redes sociales,
-- comunidades comerciales privadas.
-
-Estos canales contienen un enorme volumen de información económica, pero actualmente permanecen en un estado no estructurado: datos sin historial, sin validación, sin trazabilidad y sin capacidad predictiva.
-
-El problema fundamental no es la falta de información.  
-El problema es la falta de **inteligencia estructurada sobre esa información**.
-
----
-
-## La oportunidad
-
-SAIMC propone construir una infraestructura abierta de inteligencia de mercado capaz de transformar datos comunitarios desorganizados en:
-
-- indicadores económicos confiables,
-- tendencias regionales,
-- predicciones de precios,
-- modelos de riesgo,
-- alertas comerciales,
-- datasets históricos,
-- APIs para integración empresarial.
-
-**Todo presentado con un diseño visual, intuitivo y accesible para cualquier usuario, sin necesidad de conocimientos técnicos.** Mapas, semáforos de colores y gráficos claros que permiten tomar decisiones en segundos.
-
----
-
-## El modelo operativo: curaduría primero
-
-Un punto que distingue a SAIMC de un proyecto de scraping: **el sistema no nace automatizado, y esto es deliberado.**
-
-La captura de datos evoluciona en tres etapas, y cada una solo se habilita cuando la anterior demostró funcionar:
-
-| Etapa | Modo de captura | Qué valida | Cuándo se habilita |
-| :--- | :--- | :--- | :--- |
-| **E1 — Curaduría** | Un operador lee anuncios reales y los carga por interfaz administrativa | Que el mercado sea legible: que producto, precio y provincia se puedan extraer de forma consistente | Desde el día 1 |
-| **E2 — Asistida** | El operador pega texto en bruto; el sistema propone la extracción y el humano confirma o corrige | Que las reglas de extracción alcancen precisión suficiente | Cuando E1 acumuló un conjunto etiquetado de referencia |
-| **E3 — Automática** | APIs oficiales (Telegram Bot API sobre canales propios o autorizados) y fuentes con permiso explícito | Volumen y frescura | Cuando E2 supera el umbral de precisión definido en la sección 12.5 |
-
-La curaduría manual no es una limitación temporal que hay que superar rápido. Es el mecanismo que **genera el conjunto de verdad (*ground truth*) contra el cual se mide todo lo demás.** Sin ese conjunto, la precisión del sistema es una afirmación sin evidencia.
-
-Adicionalmente, este orden reduce riesgo legal y operativo: se construye valor sin depender desde el inicio de la extracción automatizada de plataformas de terceros (ver riesgo 10.6).
-
----
-
-La plataforma no busca competir directamente con modelos orientados exclusivamente a publicar precios.  
-La propuesta de valor es diferente:
-
-> **SAIMC no vende solamente datos. Convierte datos dispersos en inteligencia económica verificable, predictiva y auditable, presentada de forma visual e inmediata.**
-
----
-
-# Posicionamiento Estratégico
-
-La plataforma se construye sobre cinco principios fundamentales:
-
-## 1. Transparencia Radical
-
-Cada dato mantiene una relación directa con su fuente original:
-
-- texto capturado,
-- imagen original,
-- fecha,
-- ubicación,
-- usuario origen,
-- reglas aplicadas,
-- nivel de confianza.
-
-El usuario puede conocer no solamente el resultado, sino también cómo fue generado.
-
-Este principio tiene una excepción acotada y declarada: los parámetros de la capa de
-detección de coordinación no se publican. El alcance exacto de la reserva y su motivo
-están en la sección 6.4.1.
-
----
-
-## 2. Validación Autónoma
-
-El sistema utiliza un motor de reglas configurable capaz de filtrar automáticamente:
-
-- errores humanos,
-- spam,
-- duplicados,
-- datos inconsistentes,
-- anomalías estadísticas.
-
-El operador del sistema no valida manualmente cada dato.  
-Administra las reglas que permiten al sistema validar la información.
-
----
-
-## 3. Inteligencia Predictiva
-
-SAIMC evoluciona desde un simple repositorio histórico hacia un sistema de predicción:
-
-Ejemplo:
-
-```
-Producto: Pollo congelado
-Provincia: Santiago de Cuba
-Situación actual: Disponibilidad baja
-Tendencia: Incremento esperado +12%
-Horizonte: Próximos 7 días
-Nivel de confianza: 87%
-```
-
----
-
-## 4. Infraestructura Abierta y Visual
-
-La información procesada se consume mediante un dashboard **diseñado para ser leído en segundos**, no para requerir una clase magistral.
-
-- **Mapas interactivos por provincia** donde el color indica el precio (verde = barato, rojo = caro, gris = sin datos).
-- **Semáforos de tendencia**: flecha roja hacia arriba (sube), flecha verde hacia abajo (baja), círculo amarillo (estable).
-- **Tarjetas de producto**: cada producto tiene su propia ficha con precio actual, variación semanal y recomendación simple ("Comprar ahora", "Esperar", "Escasez alta").
-- **Nada de gráficos de velas ni indicadores complejos.** La información salta a los ojos.
-
-Esto garantiza que cualquier cubano, sin importar su nivel técnico, pueda entender de un vistazo qué está pasando con los precios en su provincia.
-
----
-
-## 5. Modelo B2B Sostenible
-
-El sistema mantiene una capa pública gratuita para generar confianza y una capa premium orientada a:
-
-- importadores,
-- comerciantes,
-- investigadores,
-- agencias,
-- startups.
-
----
-
-# 2. Contexto y Problema del Mercado Cubano
-
-## 2.1 Situación actual
-
-El mercado cubano presenta características particulares:
-
-- elevada variabilidad de precios,
-- diferencias regionales significativas,
-- cadenas de suministro poco transparentes,
-- dependencia de mercados informales,
-- dificultad para anticipar cambios.
-
-Un comerciante puede conocer el precio actual de un producto, pero normalmente no puede responder preguntas estratégicas:
-
-- ¿Subirá o bajará?
-- ¿Dónde existe mayor disponibilidad?
-- ¿Cuándo conviene comprar?
-- ¿Qué productos tienen riesgo de escasez?
-- ¿Qué provincia presenta mejores oportunidades?
-
----
-
-## 2.2 El problema de los datos actuales
-
-La información existente presenta cinco grandes limitaciones:
-
-| Problema                | Consecuencia                        |
-| ----------------------- | ----------------------------------- |
-| Datos dispersos         | Imposibilidad de análisis histórico |
-| Sin validación          | Baja confianza                      |
-| Sin trazabilidad        | Difícil verificar origen            |
-| Sin estructura          | Imposible automatizar               |
-| Sin modelos predictivos | Solo describe el pasado             |
-
----
-
-## 2.3 El problema desde la mirada del hogar (El verdadero motor)
-
-Más allá del comercio B2B, existe una necesidad cotidiana y masiva que la plataforma resuelve:
-
-> **Ejemplo real:** Una familia en Santiago de Cuba depende del aceite de cocina. En los grupos de Telegram se publican precios dispersos: "Aceite 500 CUP en tal tienda", "Aceite 620 CUP en el otro lado". Sin un sistema que centralice y muestre la tendencia, la familia no sabe si comprar hoy (pagando 600 CUP) o esperar a mañana (cuando quizá baje a 550 CUP). **Toman decisiones a ciegas.**
-
-El usuario doméstico no necesita un modelo predictivo avanzado; necesita **visibilidad clara y confiable de lo que está pasando en su provincia, presentada de forma visual y rápida.** Este usuario es el que, al usar el dashboard diariamente, genera el tráfico, la confianza y la masa crítica que valida el sistema antes de que lleguen los grandes clientes B2B.
-
----
-
 # 3. Hipótesis de Negocio
 
 SAIMC parte de una hipótesis central:
@@ -317,19 +83,6 @@ La predicción tiene mayor valor económico que la observación.
 
 ### H5
 **El usuario doméstico es el motor de arranque.** Su necesidad diaria de consultar precios para su despensa genera el tráfico inicial, la retroalimentación y los datos comunitarios que dan viabilidad al sistema antes de que la capa B2B madure. Este usuario contribuye por reciprocidad: al ver inteligencia útil, se convierte en reportador activo.
-
----
-
-# 4. Usuarios Objetivo y Casos de Uso
-
-| Usuario        | Necesidad                  | Solución SAIMC          |
-| -------------- | -------------------------- | ----------------------- |
-| **Hogares / Consumidores finales** | Saber cuándo comprar para la casa sin especular. | Dashboard público gratuito con precios actuales y tendencia por provincia. **Mapas y semáforos visuales.** |
-| Importadores   | Decidir cuándo comprar     | Predicciones y alertas  |
-| Mayoristas     | Optimizar inventario       | Índices regionales      |
-| Investigadores | Analizar economía informal | Dataset histórico       |
-| Startups       | Crear aplicaciones         | API comercial           |
-| Agencias       | Estudios de mercado        | Reportes especializados |
 
 ---
 
@@ -1405,112 +1158,6 @@ Pollo, Santiago, Score: 32/100, Estado: Escasez
 
 ---
 
-# 8. Producto Comercial y Modelo de Monetización
-
-SAIMC adopta un modelo **Freemium B2B Intelligence**, donde la capa pública funciona como mecanismo de adopción, confianza y generación de datos, mientras que los productos premium convierten el conocimiento generado en valor económico.
-
-**Principio económico rector:**
-
-> Un precio actual responde "qué ocurre". Una predicción confiable responde "qué debo hacer". El segundo tiene mayor valor comercial.
-
-**Nota estratégica:** La capa gratuita no es un "gasto" para atraer B2B. Es el **producto principal** para el usuario doméstico, y su uso masivo es lo que valida los datos y genera la comunidad que alimenta el sistema. El B2B es la consecuencia, no el origen.
-
----
-
-## 8.1 Familia de productos
-
-### Nivel 0 — Free Community (Público)
-
-**Objetivo:** Construir audiencia, confianza y cobertura del mercado. **Resolver la necesidad diaria del hogar cubano con visuales intuitivos.**
-
-**Usuarios:** Hogares, ciudadanos, estudiantes, investigadores independientes.
-
-**Incluye:**
-- Dashboard público con **mapa de calor de Cuba** por provincia.
-- **Tarjetas de producto** con precio actual, tendencia y recomendación.
-- **Semáforos visuales** (verde/amarillo/rojo) para tendencia.
-- **Gráfico de líneas simple** (no velas).
-- **Anuncios originales visibles** (diferenciador clave).
-- Certificado de confianza (score visible).
-
-**Limitaciones:** Historial limitado a 30 días. Sin modelos predictivos avanzados. Sin exportación masiva.
-
----
-
-### Nivel 1 — Market Intelligence Reports
-
-**Producto:** Informe Semanal de Inteligencia de Mercado Cubano.  
-**Formato:** PDF descargable o correo electrónico.
-
-Ejemplo:
-```
-SAIMC Market Report
-Semana: 28 Julio 2026
-Productos analizados: 250
-Fuentes procesadas: 12.500
-
-Principales alertas:
-🥩 Pollo congelado
-Tendencia: Incremento esperado +12%
-Riesgo: Alto
-Recomendación: Comprar antes del aumento esperado
-```
-
-**Clientes objetivo:** Importadores pequeños, comerciantes, consultores, agencias.  
-**Precio:** **20-50 USD por reporte.**  
-**Ventaja estratégica:** Permite validar disposición de pago rápidamente sin construir una plataforma compleja.
-
----
-
-### Nivel 2 — Market Intelligence API
-
-**Producto:** API REST para integración empresarial.  
-**Clientes:** Startups, comerciantes digitales, desarrolladores.
-
-**Características:**
-- Datos históricos (hasta 2 años).
-- Predicciones a 7, 14 y 30 días.
-- Alertas configurables (webhooks).
-- Índice de disponibilidad por provincia.
-
-**Planes:**
-
-| Plan         | Cliente      | Precio/mes | Incluye |
-| ------------ | ------------ | ---------: | :--- |
-| Developer    | Startups     |  $15       | 500 req/día, 1 año histórico |
-| Professional | Comerciantes |  $50       | 5.000 req/día, predicciones |
-| Business     | Empresas     | $250       | Ilimitado, alertas, soporte |
-
----
-
-### Nivel 3 — Enterprise Intelligence
-
-**Clientes:** Grandes importadores, distribuidores, organizaciones económicas.  
-**Incluye:** Fuentes privadas, dashboards personalizados, análisis sectoriales, alertas específicas, modelos propios.  
-**Precio:** **500 USD+/mes** (cotización según alcance).
-
----
-
-## 8.2 Canales de cobro y estructura legal
-
-Dada la **Orden Ejecutiva 14404** (mayo 2026), que amplía sanciones contra GAESA y CUPET y permite sancionar a entidades extranjeras que operen con Cuba, **SAIMC no operará como una entidad jurídica cubana para efectos de facturación internacional.**
-
-**Modelo operativo recomendado:**
-
-1. **Entidad offshore:** Una LLC en Estados Unidos, Europa o Latinoamérica (ej. México) es la que emite facturas y cobra a los clientes internacionales.
-2. **Proveedores de pago:** Utilizar **Tropipay** (ya validado por El Toque Markets) para tarjetas internacionales, y **QvaPay** / **RevoluPay** para pagos locales o desde la isla.
-3. **Transferencia de valor:** El trabajo de desarrollo y operación se realiza desde Cuba bajo un contrato de servicios B2B entre la entidad offshore y el equipo local (cumpliendo con la normativa cubana para trabajadores por cuenta propia).
-
----
-
-## 8.3 Fuentes adicionales de ingresos
-
-- **Venta de datasets históricos** (CSV/Parquet) a universidades e investigadores (ej. $100-$500 por dataset anual).
-- **API White Label:** Empresas que integran SAIMC bajo su propia marca (precio a negociar).
-- **Servicios de análisis:** Consultoría personalizada para cadenas de suministro.
-
----
-
 # 9. Roadmap de Implementación Realista
 
 El roadmap está diseñado para validar negocio antes de realizar grandes inversiones técnicas, **comenzando con un alcance mínimamente viable pero funcional.**
@@ -2000,101 +1647,3 @@ Kubernetes, procesamiento distribuido, data lake.
 
 ---
 
-# 14. Solicitud de Inversión
-
-## 14.1 Objetivo
-
-Desarrollar el **SAIMC MVP — Market Intelligence Foundation**.
-
-**Infraestructura:**
-- Backend FastAPI.
-- PostgreSQL + TimescaleDB.
-- Dashboard Angular SSR con visualizaciones (mapas, semáforos, tarjetas).
-- Motor de reglas y extracción de entidades.
-
----
-
-## 14.2 Equipo inicial
-
-- **Arquitecto/Desarrollador principal.**
-- **Data Analyst / Market Research.**
-- **Community & Data Operations.**
-- **Especialista IA (fase posterior).**
-
----
-
-## 14.3 Presupuesto estimado
-
-### Escenario Lean (validación)
-
-| Concepto              |              Estimado |
-| --------------------- | --------------------: |
-| Desarrollo software   |      $8.000 - $15.000 |
-| Infraestructura cloud |       $100 - $300/mes |
-| Herramientas IA/API   |       $100 - $500/mes |
-| Diseño y UX (visual)  |       $1.000 - $3.000 |
-| Operación inicial     |                $2.000 |
-| **Total aproximado**  | **$12.000 - $25.000** |
-
-### Escenario Growth: **$50.000 - $100.000**
-
----
-
-## 14.4 Uso del capital
-
-```mermaid
-pie title Distribución inicial
-"Desarrollo tecnológico" : 45
-"Datos e inteligencia" : 25
-"Infraestructura" : 15
-"Marketing y comunidad" : 15
-```
-
----
-
-## 14.5 Hitos de liberación
-
-**Hito 1:** 1.000 registros, 100 productos, 16 provincias.  
-**Hito 2:** Dashboard operativo, primeros 100 usuarios activos.  
-**Hito 3:** Primeros clientes pagando.  
-**Hito 4:** Forecasting activo, API comercial.
-
----
-
-# 15. Conclusión Estratégica
-
-## SAIMC como infraestructura económica digital
-
-Los mercados con alta incertidumbre no carecen necesariamente de información.  
-Carecen de sistemas capaces de transformar información dispersa en conocimiento útil.
-
-Cuba posee un ecosistema digital informal con millones de señales económicas diarias. SAIMC propone capturar ese conocimiento colectivo y convertirlo en una infraestructura permanente.
-
----
-
-## La propuesta diferencial
-
-SAIMC combina:
-
-1. **Datos comunitarios** – Información generada desde el propio mercado.
-2. **Validación automática** – Reglas configurables, reputación dinámica.
-3. **Transparencia total** – Cada dato mantiene una historia verificable.
-4. **Inteligencia predictiva** – Anticipar el futuro.
-5. **Visualización intuitiva** – Mapas, semáforos y colores que cualquiera entiende en segundos.
-6. **Modelo económico sostenible** – Capa pública genera confianza; capa profesional genera ingresos.
-
----
-
-## El rol del usuario simple
-
-El usuario doméstico no es un "espectador"; es el primer validador y la principal fuente de tracción. Al resolver su necesidad cotidiana ("¿cuándo compro aceite en Santiago?"), la plataforma demuestra su utilidad real, gana confianza y atrae la masa crítica que luego da valor a los servicios B2B.
-
----
-
-## Declaración final
-
-> **SAIMC no es una plataforma de precios. Es una infraestructura abierta de inteligencia económica que empieza en el hogar y escala hasta el mercado, transformando información informal en decisiones comerciales verificables para todos. Y lo hace con mapas, colores y visuales que saltan a los ojos.**
-
----
-
-**Fin del Whitepaper – Versión 3.4**

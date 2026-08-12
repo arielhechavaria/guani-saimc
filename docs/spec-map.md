@@ -1,0 +1,152 @@
+# Mapa de la especificación
+
+Índice de consulta de `spec.md`. Existe para no releer 1649 líneas cada vez que hay
+que contrastar una propuesta contra el documento rector.
+
+**Cómo se usa:** buscá la fila que corresponde a lo que estás por proponer, leé
+**solo** ese rango de líneas, y recién entonces proponé. Si el documento ya decidió
+la cuestión, no hay nada que proponer: hay que implementar lo decidido.
+
+No es una camisa de fuerza. Apartarse de la especificación es legítimo, pero hay que
+decirlo explícitamente y dejar el motivo en `decisions.md`. Lo que no es legítimo es
+apartarse sin saber que se estaba apartando.
+
+---
+
+## Qué documento es cuál
+
+- **`docs/spec.md`** — la especificación técnica. **Rige.** Es lo que mapea este archivo.
+- **`docs/pitch-v3.5.md`** — el documento de inversión, congelado el 2026-08-12.
+  **No rige.** Antes se llamaba `whitepaper.md`. Contiene copias de las secciones
+  técnicas por haberse congelado entero; esas copias no son fuente de nada.
+
+Si los dos difieren, gana `spec.md`. Las contradicciones conocidas del pitch están
+listadas en su propio encabezado.
+
+---
+
+## Vigencia del mapa
+
+- Mapea: **`spec.md`**, 1649 líneas, extraído del whitepaper v3.5 el 2026-08-12.
+- Antes de confiar en los números de línea: `wc -l docs/spec.md`. Si no da 1649, los
+  números están corridos y hay que regenerar el mapa.
+- Anclas de respaldo, siempre vigentes: `rg -n '^#{1,4} ' docs/spec.md`. Los números
+  de sección (§6.1, §10.6) sobreviven a las ediciones; los de línea no.
+- **Los números de sección se conservaron del whitepaper.** Faltan §1, §2, §4, §8,
+  §14 y §15 porque son las secciones de inversión y quedaron en el pitch. El hueco
+  es deliberado: renumerar habría invalidado las citas del código de un plumazo.
+
+---
+
+## Antes de proponer → dónde verificar
+
+| Si vas a proponer algo sobre… | Sección | Líneas | Qué tan atado está |
+| --- | --- | --- | --- |
+| Captura, bandeja de entrada, cola de curaduría | §6.1 Etapa 1 | 303–334 | **Vinculante** |
+| Inmutabilidad del archivo original | §6.1 | **321** | **Vinculante** |
+| OCR, extracción asistida, quién decide | §6.1 | **336–350** | **Vinculante** |
+| Esquema de `raw_ingestions` | §7.1 | 1035–1060 | **DDL completo** |
+| `products`, `prices_history` | §7.2 | 1062–1115 | Campos + conversión monetaria |
+| Conversión de moneda, tasa de cambio | §6.3 E | **625–654** | **Vinculante** |
+| Intelligence Layer, agregados | §7.3 | 1117–1159 | Prosa — diseño abierto |
+| Reglas de validación | §6.2 | 448–542 | Prosa detallada |
+| Score, estados de validación | §6.2 | 491–561 | Prosa |
+| H0, umbrales de decisión | §3 | 48–68 | **Apartado 2026-08-12** — la tabla de veredictos (56–62) ya no rige; el párrafo 66 sí |
+| Métricas de extracción | §12.5 | 1554–1571 | **Vinculante, salvo 1556** — H0 dejó de ser la única métrica de Fase 0 (2026-08-12) |
+| Umbrales nuevos sin valor asignado | §12.6 | **1594–1612** | **Vinculante: no inventar** |
+| Alcance de Fase 0, entregables | §9 Fase 0 | 1271–1297 | **Vinculante** |
+| Criterio de salida de Fase 0 | §9 | **1295** | **Vinculante en su 1ª oración**; el corte por debajo de 70% se apartó el 2026-08-12 |
+| Qué provincia se publica y cuándo | §9.0 | **1169–1269** | **Vinculante** |
+| Manipulación, ataque coordinado, C1–C4 | §10.7 | **1407–1518** | **Vinculante** |
+| Qué se publica de la metodología | §6.4.1 | **697–761** | **Vinculante** |
+| Stack tecnológico | §13.1 | 1616–1638 | **Cerrada** |
+| Datos personales, privacidad | §10.6 | 1390–1405 | **Vinculante** |
+| Transparency Layer, qué se publica | §6.4 | 656–695 | Prosa |
+| Linaje y trazabilidad del dato | §6.5 | 763–853 | Prosa |
+| Dashboard, visualización | §6.7 | 928–1009 | Prosa |
+| Posicionamiento frente a elTOQUE, objeto medido | §5 | 89–219 | **Vinculante: no revertir** |
+| Roadmap, fases posteriores | §9 | 1161–1343 | Prosa |
+| Niveles de producto, monetización | §8.1 | — | **En el pitch congelado, no rige.** Nada que consultar acá |
+
+---
+
+## Especificidad del modelo de datos
+
+Distinguir esto evita los dos errores simétricos: proponer lo ya decidido, y
+tratar como decidido lo que nunca se especificó.
+
+| Tabla | Qué hay en la especificación | Estado |
+| --- | --- | --- |
+| `raw_ingestions` | `CREATE TABLE` con tipos, comentarios e índice único | Implementar tal cual |
+| `products` | Lista de campos sin tipos ni restricciones | Diseño abierto |
+| `prices_history` | Campos, incluidos los cuatro de conversión monetaria (§6.3 E) | Campos atados, tipos abiertos |
+| `provinces` | Nombrada en el alcance de Fase 0 (1286) y restringida por §9.0 | Sin definir, pero con una restricción vinculante |
+
+`raw_ingestions` es la **única** tabla con DDL real en todo el documento.
+
+**Restricción vinculante sobre `provinces` (§9.0, línea 1250):** «la incorporación de
+una provincia debe ser configuración, no desarrollo». Cualquier diseño que exija tocar
+código para sumar una provincia contradice el documento.
+
+**Estado de publicación por provincia.** §9.0 exige que la interfaz distinga entre
+provincia publicada e provincia en ingesta sin publicación. Eso es estado que vive en
+algún lado: tenerlo en cuenta al diseñar `provinces`.
+
+---
+
+## Contradicciones conocidas
+
+Registradas para no volver a descubrirlas y para no proponer algo que camine
+directo hacia ellas.
+
+**1. Qué muestra la Transparency Layer (abierta).**
+La línea 321 dice que se publica «literalmente el archivo capturado». La §10.6
+mitigación 2 dice que se muestra el anuncio «no la identidad del anunciante», y la
+mitigación 3 dice que no se almacenan teléfonos ni datos de contacto. Con texto
+pegado las tres se sostienen. Con una captura de WhatsApp o Telegram no: los
+píxeles traen nombre del remitente y a menudo teléfono.
+
+Alcance: es un problema de **publicación**, no de almacenamiento. Guardar local en
+Fase 0 —un operador, sin auth, sin exponer— es defendible. Publicar la captura tal
+cual rompe la mitigación 2.
+
+No bloquea `raw_ingestions`: la salida derivada y redactada es aditiva (tabla nueva
+o columna nullable) y no toca la fila inmutable.
+
+**2. Umbral de densidad vs. lanzamiento del dashboard (resuelta en v3.5).**
+§9.0 exigía no publicar una provincia sin densidad mínima; §3 dice que H0 no bloquea
+el lanzamiento del dashboard. Aplicadas juntas y en sentido literal, el dashboard de
+Fase 1 quedaba vacío. Resuelto en §9.0 «Cómo se concilia con las Fases 0 y 1»: la
+condición estadística rige desde el día 1 (tamaño de muestra visible, sin titular de
+precio); la condición adversarial rige desde Fase 2, cuando se abre la ingesta
+comunitaria. Registrado en `decisions.md`.
+
+**3. Las de la §14 ya no son contradicciones de la especificación.**
+El pitch pide financiar Angular SSR + TimescaleDB (§14.1) y fija «16 provincias»
+como Hito 1 (§14.5), contra §13.1 y §9. Al congelarse el pitch, dejaron de ser
+contradicciones internas del documento rector y pasaron a ser deuda del pitch,
+listada en su encabezado. Se resuelven cuando el pitch se reescriba.
+
+---
+
+## Apartamientos deliberados
+
+Lo implementado que no coincide con el documento, con su entrada en `decisions.md`.
+
+| Tema | Especificación | Implementado | Entrada |
+| --- | --- | --- | --- |
+| Restricciones de `raw_ingestions` | DDL sin `NOT NULL` | `NOT NULL` en 8 columnas | 2026-08-06 |
+| Marcas de tiempo | `TIMESTAMP` | `TIMESTAMPTZ` | 2026-08-06 |
+| H0 como veredicto de fase | Tabla de decisión avanzar/detener (§3, 56–62) | Métrica de eficiencia; los umbrales 85/70 son referencia de escala | 2026-08-12 |
+
+---
+
+## Lo que la especificación no define
+
+- Tipos y restricciones de `products`, `prices_history`, `provinces`.
+- Qué motor de OCR usar (define el rol del OCR, no la herramienta).
+- Cómo se recorta o redacta una captura para publicación.
+- Estructura de directorios del proyecto, layout de paquetes Python.
+- Estrategia de migraciones más allá de «Alembic desde el primer modelo».
+- El valor de ningún umbral introducido en la v3.5. Ver §12.6: **no inventarlos.**
+- Qué fuente alternativa de tipo de cambio se usa como respaldo de la TRMI.

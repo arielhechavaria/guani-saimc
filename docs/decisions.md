@@ -1320,3 +1320,49 @@ densidad y no hizo falta inventarlo. Lo que un H0 bajo bloquea es la capa
 predictiva y B2B, no el lanzamiento público. `docs/whitepaper-map.md` marca
 como apartados §3 líneas 290-296, §12.5 línea 1909 y la segunda oración de §9
 línea 1648.
+
+---
+
+## 2026-08-12 — El whitepaper se parte: `spec.md` vive, el pitch se congela
+
+Contexto: el documento rector era `docs/whitepaper.md`, subtitulado literalmente
+«Investor & Technical Whitepaper», con estado «Propuesta para Inversión». Tenía
+dos audiencias y un solo registro: nada distinguía una decisión vinculante de un
+argumento de venta. La consecuencia era medible. La §14.1 pedía financiar
+«Dashboard Angular SSR + TimescaleDB» contra la §13.1, que cerró el stack en
+Python para Fase 0-1. La §14.5 fijaba «Hito 1: 16 provincias» cuando el 2026-08-10
+se registró que la Fase 0 son 2. Ninguna de las dos se detectó en la v3.4 ni en la
+v3.5: nadie relee la mitad que no usa. Además, `docs/whitepaper-map.md`, con sus
+secciones «Contradicciones conocidas», «Apartamientos deliberados» y «Lo que el
+whitepaper no define», ya era un parche construido para compensar exactamente esto.
+
+Decisión: se parte en dos archivos con fuente de verdad asimétrica.
+`docs/spec.md` nace con §3, §5, §6, §7, §9, §10, §11, §12 y §13 —extracción
+mecánica, byte-idéntica, verificada con `diff`— y es el documento rector vivo.
+`docs/whitepaper.md` se renombra a `docs/pitch-v3.5.md` y se congela entero, con
+un encabezado que declara que no rige y lista sus dos contradicciones sin
+corregirlas. `docs/whitepaper-map.md` pasa a `docs/spec-map.md`, regenerado contra
+los números de línea nuevos. Los números de sección se conservan intactos: faltan
+§1, §2, §4, §8, §14 y §15 y ese hueco es deliberado, porque renumerar habría
+invalidado de golpe las ~30 citas por sección del código y las migraciones.
+
+Descartado: reescribir ya el pitch corto y citante. No hay conversación de
+inversión activa, así que no tiene fecha de entrega, y es prosa de negocio que
+escribe el autor, no una extracción mecánica. Se hace cuando haga falta, contra un
+spec ya limpio. También se descartó un solo archivo con marcas de audiencia por
+sección: no separa las capas, solo las etiqueta, y la deriva vuelve igual.
+
+Apartamiento del plan aprobado: se acordó mover de §5 solo el bloque «Ejes de
+diferenciación» (387-416 del original). Se movió §5 entera. Partirla habría dejado
+una definición vinculante —el objeto medido que cita `src/saimc/cells.py`— dentro
+de un documento declarado como no vigente, y habría puesto una misma sección en
+dos archivos, que es justo el patrón de duplicación que este corte elimina. El
+costo es que ~130 líneas de prosa de posicionamiento viajan dentro del spec.
+
+Consecuencia: `spec.md` (1649 líneas) es lo que se consulta vía `spec-map.md`.
+`pitch-v3.5.md` (2130) no rige y conserva copias de las secciones técnicas por
+haberse congelado entero; si difieren, gana `spec.md`. Queda pendiente un segundo
+slice: reescribir las citas del código de número de línea a ancla de sección
+—varias ya estaban podridas, `alembic/versions/0001` cita «§7.1 líneas 1058-1077»
+cuando §7.1 vivía en 1282-1307— y actualizar `CLAUDE.md`, `README.md` y
+`openspec/config.yaml`, que todavía apuntan a `docs/whitepaper.md`.
