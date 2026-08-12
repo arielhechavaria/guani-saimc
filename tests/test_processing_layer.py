@@ -354,6 +354,53 @@ class TestPricesHistoryChecks:
         assert precio.confidence_score is None
 
 
+class TestPricesHistorySaleFormatCheck:
+    def test_sale_format_none_aceptado(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, sale_format=None)
+        session.add(precio)
+        session.commit()
+
+        assert precio.sale_format is None
+
+    @pytest.mark.parametrize("valor", ["retail", "wholesale"])
+    def test_sale_format_valor_del_dominio_aceptado(
+        self, session: Session, valor: str
+    ) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, sale_format=valor)
+        session.add(precio)
+        session.commit()
+
+        assert precio.sale_format == valor
+
+    def test_sale_format_fuera_del_dominio_rechazado(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        session.add(_crear_precio(producto, fuente, sale_format="mayorista"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+    def test_unit_sin_restriccion_acepta_cualquier_cadena_corta(
+        self, session: Session
+    ) -> None:
+        """`unit` no tiene CHECK: el vocabulario cerrado vive en `units.py`,
+        no en la base — así crece sin exigir una migración (design.md, D1)."""
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, unit="quintal")
+        session.add(precio)
+        session.commit()
+
+        assert precio.unit == "quintal"
+
+
 class TestPricesHistoryExclusiones:
     def test_sin_columnas_fuera_de_alcance(self) -> None:
         nombres_columnas = {c.name for c in PriceHistory.__table__.columns}
@@ -399,6 +446,47 @@ class TestPublishedDateMigration:
             connection.commit()
             columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
             assert "published_date" not in columnas
+            assert "id" in columnas  # el downgrade no se llevó ninguna otra columna
+
+        engine.dispose()
+
+
+class TestUnitSaleFormatPackagingMigration:
+    """`0006_prices_history_unit_sale_format_packaging.py` — `upgrade()`/
+    `downgrade()` corridos contra un engine SQLite real vía
+    `Operations.context()`, igual que `TestPublishedDateMigration` (design.md,
+    D2): usa `batch_alter_table` porque SQLite no soporta
+    `ALTER TABLE ... ADD CONSTRAINT`."""
+
+    def test_upgrade_agrega_las_tres_columnas_y_downgrade_las_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion(
+            "0006_prices_history_unit_sale_format_packaging.py"
+        )
+
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "prices_history",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert {"unit", "sale_format", "packaging"} <= columnas
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert not ({"unit", "sale_format", "packaging"} & columnas)
             assert "id" in columnas  # el downgrade no se llevó ninguna otra columna
 
         engine.dispose()

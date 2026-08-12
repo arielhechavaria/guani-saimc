@@ -34,6 +34,11 @@ class Currency(StrEnum):
     MLC = "MLC"
 
 
+class SaleFormat(StrEnum):
+    RETAIL = "retail"
+    WHOLESALE = "wholesale"
+
+
 class PriceHistory(Base):
     __tablename__ = "prices_history"  # nombre literal del whitepaper §7.2
     __table_args__ = (
@@ -49,6 +54,10 @@ class PriceHistory(Base):
         CheckConstraint(
             "confidence_score IS NULL OR confidence_score BETWEEN 0 AND 100",
             name="ck_prices_history_confidence_score_range",
+        ),
+        CheckConstraint(
+            "sale_format IS NULL OR sale_format IN ('retail', 'wholesale')",
+            name="ck_prices_history_sale_format",
         ),
         Index("idx_prices_history_series", "product_id", "province_id", "created_at"),
     )
@@ -89,6 +98,17 @@ class PriceHistory(Base):
     # (whitepaper §6.1c/§7.2). Nullable, sin default y sin CHECK: un dato
     # secundario nunca debe bloquear un insert (design.md, D2).
     published_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Unidad de venta canónica (`saimc.units.UNITS`). Nullable, sin CHECK: el
+    # vocabulario cerrado se aplica en código de aplicación, no en la base,
+    # para que crecer el vocabulario nunca exija una migración (design.md, D1).
+    unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Minorista o mayorista, juicio manual del operador — nada lo deriva a
+    # partir de `unit`: un precio derivado de dividir un saco lleva el mismo
+    # `unit = "lb"` que uno genuinamente minorista (design.md, D4).
+    sale_format: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Envase o presentación en texto libre ("saco de 25 kg"), capturado por el
+    # operador y redactado contra datos personales antes de persistir.
+    packaging: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Linaje al registro crudo. RESTRICT y nunca CASCADE: raw_ingestions es
     # inmutable y ningún precio publicado puede quedar sin su evidencia.
     source_id: Mapped[uuid.UUID] = mapped_column(
