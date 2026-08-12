@@ -1278,3 +1278,45 @@ en vez de vaciarlas. `unit`/`sale_format`/`packaging` quedan inertes en este
 slice — ningún agregado (`cells.py`) ni métrica de H0 los lee todavía; conectar
 `sale_format` al filtrado de celdas y a §12.5 es trabajo de un slice
 posterior.
+
+## 2026-08-12 — H0 pasa a métrica de eficiencia, no a criterio de salida de Fase 0
+
+Contexto: el operador corrige cada error de extracción en el formulario de
+curaduría antes de que la fila se persista, así que la precisión del extractor
+no gobierna la calidad del dato guardado: ese dato es correcto por
+construcción. Lo que la precisión gobierna es cuánto trabajo manual cuesta cada
+anuncio. Con eso, un H0 bajo no significa que el mercado sea ilegible; significa
+que el sistema queda limitado al volumen que una persona puede procesar a mano.
+El whitepaper ya lo dice en §3 línea 300 —«lo que H0 condiciona es la capacidad
+de escalar [...] el producto puede existir sin H0; la tesis del whitepaper
+no»— pero la tabla de decisión de §3 línea 296 sigue diciendo «< 70% detener y
+replantear», y §12.5 línea 1909 declara las métricas de extracción «las únicas
+métricas relevantes durante la Fase 0». Las dos lecturas no conviven.
+
+Decisión: H0 se mide igual, con la misma definición y contra el mismo conjunto
+de 300+ anuncios reales etiquetados a mano, pero deja de ser el criterio de
+avance o detención de la Fase 0. Pasa a ser el indicador de eficiencia que
+gobierna cuándo el sistema puede escalar más allá de la curaduría manual, que
+es exactamente el rol que §3 línea 300 ya le asignaba. Los umbrales 85/70 se
+conservan como referencia de esa capacidad de escala, no como veredicto sobre
+la viabilidad del proyecto.
+
+Descartado: mantener «< 70% detener y replantear» como veredicto operativo.
+Bajo curaduría manual ese umbral no describe ningún estado de fallo real: el
+dashboard se alimenta de dato corregido a mano y entrega valor con H0 en
+cualquier valor. También se descartó reemplazar H0 por una métrica de densidad
+en el mismo movimiento: inventar un umbral de densidad hoy, sin datos que lo
+respalden, es precisamente lo que §12.6 prohíbe.
+
+Consecuencia: la Fase 0 conserva su criterio de salida, que §9 línea 1648
+define como «H0 quedó respondida con un número» — eso no cambia. Lo que se cae
+es la mitad condicional de esa misma línea, «si la precisión cae por debajo del
+70%, la Fase 1 no arranca», junto con la tabla de veredictos de §3 (líneas
+290-296) y la exclusividad que §12.5 línea 1909 le da a las métricas de
+extracción. La Fase 1 arranca cuando H0 tiene un número, sea cual sea ese
+número, más los entregables ya cuantificados en §9 línea 1645: 500 registros
+validados de 3-5 productos en 2 provincias. Ese sigue siendo el objetivo de
+densidad y no hizo falta inventarlo. Lo que un H0 bajo bloquea es la capa
+predictiva y B2B, no el lanzamiento público. `docs/whitepaper-map.md` marca
+como apartados §3 líneas 290-296, §12.5 línea 1909 y la segunda oración de §9
+línea 1648.

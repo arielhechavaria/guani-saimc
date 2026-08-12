@@ -36,11 +36,11 @@ apartarse sin saber que se estaba apartando.
 | Intelligence Layer, agregados | §7.3 | 1364–1406 | Prosa — diseño abierto |
 | Reglas de validación | §6.2 | 695–789 | Prosa detallada |
 | Score, estados de validación | §6.2 | 738–808 | Prosa |
-| H0, umbrales de decisión | §3 | 282–302 | **Vinculante** |
-| Métricas de extracción | §12.5 | 1907–1924 | **Vinculante** |
+| H0, umbrales de decisión | §3 | 282–302 | **Apartado 2026-08-12** — la tabla de veredictos (290–296) ya no rige; el párrafo 300 sí |
+| Métricas de extracción | §12.5 | 1907–1924 | **Vinculante, salvo 1909** — H0 dejó de ser la única métrica de Fase 0 (2026-08-12) |
 | Umbrales nuevos sin valor asignado | §12.6 | **1947–1965** | **Vinculante: no inventar** |
 | Alcance de Fase 0, entregables | §9 Fase 0 | 1624–1650 | **Vinculante** |
-| Criterio de salida de Fase 0 | §9 | **1648** | **Vinculante** |
+| Criterio de salida de Fase 0 | §9 | **1648** | **Vinculante en su 1ª oración**; el corte por debajo de 70% se apartó el 2026-08-12 |
 | Qué provincia se publica y cuándo | §9.0 | **1522–1622** | **Vinculante** |
 | Manipulación, ataque coordinado, C1–C4 | §10.7 | **1760–1871** | **Vinculante** |
 | Qué se publica de la metodología | §6.4.1 | **944–1008** | **Vinculante** |
