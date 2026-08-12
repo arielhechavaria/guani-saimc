@@ -79,6 +79,7 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
     """
     if proposal is None:
         return {
+            "price_id": "",
             "product_id": "",
             "new_product_name": "",
             "product_category": "",
@@ -92,6 +93,8 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "province_id": "",
         }
     return {
+        # Sin fila propia todavía: existe recién cuando se confirma el submit.
+        "price_id": "",
         # `product_name_guess` solo viene con algo cuando NO hay match de
         # catálogo (ver `_match_product`/modificadores de corte en
         # `engine.py`) — ahí se prellena el alta nueva con el nombre
@@ -109,6 +112,28 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         "sale_format": "",
         "packaging": "",
         "province_id": str(proposal.province.id) if proposal.province else "",
+    }
+
+
+def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
+    """Traduce una fila ya curada a los mismos strings que arma una propuesta.
+
+    Mismo formato de salida que `_values_from_proposal` — es lo que permite
+    que la corrección reuse la tarjeta de la cola sin distinguir origen.
+    """
+    return {
+        "price_id": str(price.id),
+        "product_id": str(price.product_id),
+        "new_product_name": "",
+        "product_category": "",
+        "product_unit": "",
+        "price": str(price.price),
+        "currency": price.currency,
+        "quantity": str(price.quantity) if price.quantity is not None else "",
+        "unit": price.unit or "",
+        "sale_format": price.sale_format or "",
+        "packaging": price.packaging or "",
+        "province_id": str(price.province_id) if price.province_id else "",
     }
 
 
@@ -276,6 +301,24 @@ def _require_pending(db: Session, ingestion_id: uuid.UUID) -> RawIngestion:
     return ingestion
 
 
+def _require_curated(db: Session, ingestion_id: uuid.UUID) -> RawIngestion:
+    ingestion = db.get(RawIngestion, ingestion_id)
+    if ingestion is None:
+        raise HTTPException(status_code=404, detail="No existe ese elemento de la cola")
+    if ingestion.processing_status != ProcessingStatus.CURATED:
+        raise HTTPException(status_code=409, detail="Este elemento todavía no está curado")
+    return ingestion
+
+
+def _curated_rows(db: Session, ingestion_id: uuid.UUID) -> list[PriceHistory]:
+    stmt = (
+        select(PriceHistory)
+        .where(PriceHistory.source_id == ingestion_id)
+        .order_by(PriceHistory.created_at)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def _parse_uuid(raw: str) -> uuid.UUID | None:
     if not raw:
         return None
@@ -364,8 +407,14 @@ def _resolve_row_product(
 
 
 def _row_from_form(form: FormData, index: int) -> dict[str, str]:
-    """Lee los campos indexados `{campo}_{index}` de un form crudo, como strings."""
+    """Lee los campos indexados `{campo}_{index}` de un form crudo, como strings.
+
+    `price_id` viaja vacío en la curaduría normal (`submit_curation` no lo lee)
+    y con el id real en la corrección (`submit_edit` lo usa para ubicar la fila
+    exacta a actualizar, ver ahí el porqué de no matchear solo por posición).
+    """
     return {
+        "price_id": str(form.get(f"price_id_{index}", "")).strip(),
         "product_id": str(form.get(f"product_id_{index}", "")).strip(),
         "new_product_name": str(form.get(f"new_product_name_{index}", "")).strip(),
         "product_category": str(form.get(f"product_category_{index}", "")).strip(),
@@ -532,3 +581,186 @@ def discard_curation(
     ingestion.processing_status = ProcessingStatus.DISCARDED
     db.commit()
     return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/curation/history", response_class=HTMLResponse)
+def curation_history(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    """Lista los anuncios ya curados, más recientes primero, para ubicar cuál
+    corregir — es la puerta de entrada a `GET /curation/{id}/edit`.
+
+    Sin paginación: al volumen de Fase 0 (decenas de anuncios) toda la lista
+    entra en una sola página, y paginar antes de tener ese problema es
+    complejidad sin uso (spec.md §12.6, mismo criterio que ya rige `/control`).
+    Una query de filas por anuncio (N+1) es aceptable al mismo volumen —
+    agregarla en una sola consulta con `string_agg` ataría la vista al
+    dialecto de PostgreSQL, que los tests no corren (ver tests/conftest.py).
+    """
+    stmt = (
+        select(RawIngestion)
+        .where(RawIngestion.processing_status == ProcessingStatus.CURATED)
+        .order_by(RawIngestion.captured_at.desc())
+    )
+    ingestions = list(db.execute(stmt).scalars().all())
+
+    rows_by_ingestion: dict[uuid.UUID, list[tuple[str, PriceHistory]]] = {}
+    for ingestion in ingestions:
+        row_stmt = (
+            select(Product.name, PriceHistory)
+            .join(Product, Product.id == PriceHistory.product_id)
+            .where(PriceHistory.source_id == ingestion.id)
+            .order_by(PriceHistory.created_at)
+        )
+        rows_by_ingestion[ingestion.id] = list(db.execute(row_stmt).all())
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "curation_history.html",
+        {"ingestions": ingestions, "rows_by_ingestion": rows_by_ingestion},
+    )
+
+
+@router.get("/curation/{ingestion_id}/edit", response_class=HTMLResponse)
+def edit_curated(
+    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Corrección acotada de un anuncio ya curado.
+
+    Reabre exactamente las filas de `prices_history` que ese anuncio ya
+    produjo, contra la misma evidencia — no agrega ni quita filas, y no
+    vuelve a correr el motor de extracción. Es la vía para arreglar un error
+    de tipeo sin SQL directo contra producción.
+    """
+    ingestion = _require_curated(db, ingestion_id)
+    prices = _curated_rows(db, ingestion_id)
+    rows = [_values_from_price_history(price) for price in prices]
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "curation_edit.html",
+        {
+            "ingestion": ingestion,
+            "products": _all_products(db),
+            "provinces": _all_provinces(db),
+            "rows": rows,
+            "edit_mode": True,
+            "values": {
+                "source_reference": ingestion.source_reference or "",
+                # Una sola fecha de publicación por anuncio: todas sus filas
+                # se cargaron con la misma (ver `submit_curation`), así que
+                # alcanza con la de la primera.
+                "published_date": (
+                    prices[0].published_date.isoformat()
+                    if prices and prices[0].published_date
+                    else ""
+                ),
+            },
+            "error": None,
+            "currencies": [c.value for c in Currency],
+            "units": UNITS,
+        },
+    )
+
+
+@router.post("/curation/{ingestion_id}/edit", response_model=None)
+async def submit_edit(
+    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse | RedirectResponse:
+    """Aplica la corrección: actualiza en el lugar las filas que el operador
+    reabrió, sin crear ni borrar ninguna.
+
+    Cada fila viaja con su propio `price_id_i`, a diferencia de la curaduría
+    original: matchear solo por posición confundiría un reordenamiento
+    accidental del formulario con una corrección real. Si el id no
+    corresponde a una fila de este mismo anuncio, es un error explícito —
+    nunca crea una fila nueva por accidente. Mismo contrato todo-o-nada que
+    `submit_curation`: una fila con error bloquea el guardado entero.
+    """
+    ingestion = _require_curated(db, ingestion_id)
+    form = await request.form()
+
+    source_reference = str(form.get("source_reference", "")).strip()
+    published_date = _parse_date(str(form.get("published_date", "")).strip())
+    try:
+        row_count = int(str(form.get("row_count", "0")))
+    except ValueError:
+        row_count = 0
+
+    existing_by_id = {price.id: price for price in _curated_rows(db, ingestion_id)}
+    products_by_name = {p.name.lower(): p for p in _all_products(db)}
+
+    errors: list[str] = []
+    typed_rows: list[dict[str, str]] = []
+    updates: list[tuple[PriceHistory, Product, Decimal, Province | None, dict[str, str]]] = []
+
+    for i in range(row_count):
+        row = _row_from_form(form, i)
+        typed_rows.append(row)
+
+        price_uuid = _parse_uuid(row["price_id"])
+        existing = existing_by_id.get(price_uuid) if price_uuid is not None else None
+        if existing is None:
+            errors.append(f"Fila {i + 1}: no corresponde a una fila curada de este anuncio")
+            continue
+
+        product = _resolve_row_product(db, products_by_name, row)
+        if product is None:
+            errors.append(f"Fila {i + 1}: seleccioná o agregá un producto")
+            continue
+
+        if not row["price"]:
+            errors.append(f"Fila {i + 1}: falta el precio")
+            continue
+
+        price_value = _parse_decimal(row["price"])
+        if price_value is None:
+            errors.append(f"Fila {i + 1}: precio inválido")
+            continue
+
+        province_uuid = _parse_uuid(row["province_id"])
+        province = db.get(Province, province_uuid) if province_uuid is not None else None
+
+        updates.append((existing, product, price_value, province, row))
+
+    if errors:
+        db.rollback()
+        return request.app.state.templates.TemplateResponse(
+            request,
+            "curation_edit.html",
+            {
+                "ingestion": ingestion,
+                "products": _all_products(db),
+                "provinces": _all_provinces(db),
+                "rows": typed_rows,
+                "edit_mode": True,
+                "values": {
+                    "source_reference": source_reference,
+                    "published_date": str(form.get("published_date", "")).strip(),
+                },
+                "error": " ".join(errors),
+                "currencies": [c.value for c in Currency],
+                "units": UNITS,
+            },
+            status_code=422,
+        )
+
+    for existing, product, price_value, province, row in updates:
+        existing.product_id = product.id
+        existing.province_id = province.id if province is not None else None
+        existing.price = price_value
+        existing.currency = row["currency"]
+        existing.quantity = _parse_decimal(row["quantity"])
+        existing.unit = canonical_unit(row["unit"])
+        existing.sale_format = (
+            row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None
+        )
+        existing.packaging = _truncated_packaging(row["packaging"])
+        existing.published_date = published_date
+
+    # Mismo criterio que `submit_curation`: solo se pisa si llegó algo. Vaciar
+    # `source_reference` desde acá no está soportado en este slice.
+    if source_reference:
+        ingestion.source_reference = redact_personal_data(source_reference)
+
+    db.commit()
+
+    return RedirectResponse(url="/curation/history", status_code=status.HTTP_303_SEE_OTHER)

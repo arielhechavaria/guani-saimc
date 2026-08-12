@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — Corregir anuncio curado</title>
+  <link href="/static/bootstrap.min.css" rel="stylesheet" />
+  <link href="/static/curation.css" rel="stylesheet" />
+</head>
+<body>
+  <div class="container py-4" style="max-width: 960px;">
+    <div class="saimc-header">
+      <h1 class="h3">Corregir anuncio curado</h1>
+      <p class="saimc-subtitle mb-0">
+        Corrección acotada: mismos campos, misma evidencia. No agrega ni quita filas.
+      </p>
+      <div class="saimc-counters">
+        <span class="saimc-counter"><a href="/curation/history">← Volver al historial</a></span>
+        <span class="saimc-counter"><a href="/curation">Cola de curaduría →</a></span>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <div class="card mb-4 saimc-evidence">
+      <div class="card-header">Evidencia</div>
+      <div class="card-body">
+        {% if ingestion.content_type == "image" %}
+        <img src="/evidence/{{ ingestion.id }}" alt="Evidencia capturada" class="img-fluid rounded border" style="max-height: 480px;" />
+        {% elif ingestion.original_text %}
+        <pre class="mb-0">{{ ingestion.original_text }}</pre>
+        {% else %}
+        <p class="text-muted mb-0 fst-italic">Sin texto original.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Filas ya curadas de este anuncio</div>
+      <div class="card-body">
+        <form method="post" action="/curation/{{ ingestion.id }}/edit" id="edit-form">
+          {% from "_price_row_card.html" import price_row_card %}
+          <div class="mb-3">
+            <label for="source_reference" class="form-label">Canal origen</label>
+            <input type="text" name="source_reference" id="source_reference" value="{{ values.source_reference }}" class="form-control" style="max-width: 420px;" />
+          </div>
+
+          <div class="mb-3">
+            <label for="published_date" class="form-label">Fecha de publicación</label>
+            <input type="date" name="published_date" id="published_date" value="{{ values.published_date }}" class="form-control" style="max-width: 220px;" />
+          </div>
+
+          {% for row in rows %}
+          {{ price_row_card(row, loop.index0, products, provinces, currencies, units, edit_mode=True) }}
+          {% endfor %}
+
+          <input type="hidden" name="row_count" value="{{ rows|length }}" />
+        </form>
+
+        <div class="saimc-actions d-flex align-items-center gap-2">
+          <button type="submit" form="edit-form" class="btn btn-primary">Guardar corrección</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

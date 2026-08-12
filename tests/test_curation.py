@@ -21,11 +21,13 @@ from saimc.extraction import ocr
 from saimc.models import (
     PACKAGING_MAX_LENGTH,
     ContentType,
+    Currency,
     PriceHistory,
     ProcessingStatus,
     Product,
     Province,
     RawIngestion,
+    SaleFormat,
     SourceType,
 )
 from saimc.web.app import app
@@ -76,6 +78,39 @@ def _crear_provincia(
     session.add(provincia)
     session.commit()
     return provincia
+
+
+def _crear_precio_curado(
+    session: Session,
+    *,
+    ingestion: RawIngestion,
+    product: Product,
+    province: Province | None = None,
+    price: str = "100",
+    currency: str = Currency.CUP.value,
+    unit: str | None = None,
+    sale_format: str | None = None,
+    packaging: str | None = None,
+) -> PriceHistory:
+    """Arma una fila de `prices_history` ya curada, sin pasar por el submit.
+
+    Los tests de edición parten de un anuncio que ya tiene filas — construirlas
+    directo es más claro que simular el POST original solo para llegar al
+    estado de partida.
+    """
+    precio = PriceHistory(
+        product_id=product.id,
+        province_id=province.id if province else None,
+        price=Decimal(price),
+        currency=currency,
+        unit=unit,
+        sale_format=sale_format,
+        packaging=packaging,
+        source_id=ingestion.id,
+    )
+    session.add(precio)
+    session.commit()
+    return precio
 
 
 @pytest.fixture
@@ -1338,3 +1373,316 @@ class TestEvidence:
         response = client.get(f"/evidence/{uuid.uuid4()}")
 
         assert response.status_code == 404
+
+
+# --- GET /curation/history ---------------------------------------------------
+
+
+class TestCurationHistory:
+    def test_sin_curados_no_rompe(self, client: TestClient) -> None:
+        response = client.get("/curation/history")
+
+        assert response.status_code == 200
+        assert "no hay anuncios curados" in response.text.lower()
+
+    def test_lista_solo_curados_con_su_resumen(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        habana = _crear_provincia(session)
+
+        curado = _crear_raw_ingestion(session, hash_="hash-curado", original_text="pollo 500")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=curado, product=pollo, province=habana, price="500"
+        )
+
+        pendiente = _crear_raw_ingestion(session, hash_="hash-pendiente")
+
+        response = client.get("/curation/history")
+
+        assert response.status_code == 200
+        assert "Pollo" in response.text
+        assert "500" in response.text
+        assert f"/curation/{curado.id}/edit" in response.text
+        assert str(pendiente.id) not in response.text
+
+    def test_mas_reciente_primero(self, client: TestClient, session: Session) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        viejo = _crear_raw_ingestion(
+            session, hash_="hash-viejo", captured_at=datetime(2026, 8, 1, tzinfo=UTC)
+        )
+        viejo.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(session, ingestion=viejo, product=pollo)
+
+        nuevo = _crear_raw_ingestion(
+            session, hash_="hash-nuevo", captured_at=datetime(2026, 8, 10, tzinfo=UTC)
+        )
+        nuevo.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(session, ingestion=nuevo, product=pollo)
+
+        response = client.get("/curation/history")
+
+        assert response.text.index(str(nuevo.id)) < response.text.index(str(viejo.id))
+
+
+# --- GET /curation/{id}/edit --------------------------------------------------
+
+
+class TestEditarCuradoGet:
+    def test_precarga_los_valores_ya_curados(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        habana = _crear_provincia(session)
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-get")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session,
+            ingestion=curado,
+            product=pollo,
+            province=habana,
+            price="500",
+            unit="lb",
+            sale_format=SaleFormat.RETAIL.value,
+            packaging="jaba",
+        )
+
+        response = client.get(f"/curation/{curado.id}/edit")
+
+        assert response.status_code == 200
+        assert f'value="{precio.id}"' in response.text
+        assert f'value="{pollo.id}" selected' in response.text
+        assert 'value="500"' in response.text
+        assert f'value="{habana.id}" selected' in response.text
+        assert '<option value="lb" selected>' in response.text
+        assert '<option value="retail" selected>' in response.text
+        assert 'value="jaba"' in response.text
+
+    def test_pendiente_no_se_puede_editar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pendiente = _crear_raw_ingestion(session, hash_="hash-pend-edit")
+
+        response = client.get(f"/curation/{pendiente.id}/edit")
+
+        assert response.status_code == 409
+
+    def test_id_inexistente_devuelve_404(self, client: TestClient) -> None:
+        response = client.get(f"/curation/{uuid.uuid4()}/edit")
+
+        assert response.status_code == 404
+
+    def test_no_ofrece_eliminar_ni_badge_de_detectado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-nofrills")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(session, ingestion=curado, product=pollo)
+
+        response = client.get(f"/curation/{curado.id}/edit")
+
+        assert "removeProductCard" not in response.text
+        assert "Detectado" not in response.text
+
+
+# --- POST /curation/{id}/edit -------------------------------------------------
+
+
+def _form_edicion(row: dict[str, str], *, row_count: int = 1) -> dict[str, str]:
+    return {
+        "source_reference": "",
+        "published_date": "",
+        "row_count": str(row_count),
+        "product_id_0": row.get("product_id", ""),
+        "new_product_name_0": row.get("new_product_name", ""),
+        "product_category_0": "",
+        "product_unit_0": "",
+        "price_0": row.get("price", ""),
+        "currency_0": row.get("currency", Currency.CUP.value),
+        "quantity_0": row.get("quantity", ""),
+        "unit_0": row.get("unit", ""),
+        "sale_format_0": row.get("sale_format", ""),
+        "packaging_0": row.get("packaging", ""),
+        "province_id_0": row.get("province_id", ""),
+        "price_id_0": row.get("price_id", ""),
+    }
+
+
+class TestEditarCuradoPost:
+    def test_corrige_precio_en_el_lugar_sin_crear_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-corrige-precio")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(session, ingestion=curado, product=pollo, price="2.00")
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                {
+                    "product_id": str(pollo.id),
+                    "price": "420.00",
+                    "price_id": str(precio.id),
+                }
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        total = session.execute(select(PriceHistory)).scalars().all()
+        assert len(total) == 1
+        actualizado = total[0]
+        assert actualizado.id == precio.id
+        assert actualizado.price == Decimal("420.00")
+
+    def test_actualiza_unit_sale_format_y_packaging(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-corrige-campos")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(session, ingestion=curado, product=pollo, price="500")
+
+        client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                {
+                    "product_id": str(pollo.id),
+                    "price": "500",
+                    "unit": "lb",
+                    "sale_format": "wholesale",
+                    "packaging": "saco de 25 kg",
+                    "price_id": str(precio.id),
+                }
+            ),
+        )
+
+        session.refresh(precio)
+        assert precio.unit == "lb"
+        assert precio.sale_format == SaleFormat.WHOLESALE.value
+        assert precio.packaging == "saco de 25 kg"
+
+    def test_price_id_de_otro_anuncio_es_error_explicito(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado_a = _crear_raw_ingestion(session, hash_="hash-a")
+        curado_a.processing_status = ProcessingStatus.CURATED
+        curado_b = _crear_raw_ingestion(session, hash_="hash-b")
+        curado_b.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio_de_b = _crear_precio_curado(session, ingestion=curado_b, product=pollo)
+
+        response = client.post(
+            f"/curation/{curado_a.id}/edit",
+            data=_form_edicion(
+                {
+                    "product_id": str(pollo.id),
+                    "price": "999",
+                    "price_id": str(precio_de_b.id),
+                }
+            ),
+        )
+
+        assert response.status_code == 422
+        assert "no corresponde" in response.text.lower()
+
+        session.refresh(precio_de_b)
+        assert precio_de_b.price != Decimal("999")
+
+    def test_precio_invalido_no_guarda_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-invalido")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(session, ingestion=curado, product=pollo, price="500")
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                {
+                    "product_id": str(pollo.id),
+                    "price": "no-es-un-numero",
+                    "price_id": str(precio.id),
+                }
+            ),
+        )
+
+        assert response.status_code == 422
+        session.refresh(precio)
+        assert precio.price == Decimal("500")
+
+    def test_no_agrega_ni_borra_filas(self, client: TestClient, session: Session) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-cardinalidad")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio_1 = _crear_precio_curado(session, ingestion=curado, product=pollo, price="100")
+        precio_2 = _crear_precio_curado(session, ingestion=curado, product=pollo, price="200")
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data={
+                "source_reference": "",
+                "published_date": "",
+                "row_count": "2",
+                "product_id_0": str(pollo.id),
+                "new_product_name_0": "",
+                "product_category_0": "",
+                "product_unit_0": "",
+                "price_0": "150",
+                "currency_0": Currency.CUP.value,
+                "quantity_0": "",
+                "unit_0": "",
+                "sale_format_0": "",
+                "packaging_0": "",
+                "province_id_0": "",
+                "price_id_0": str(precio_1.id),
+                "product_id_1": str(pollo.id),
+                "new_product_name_1": "",
+                "product_category_1": "",
+                "product_unit_1": "",
+                "price_1": "250",
+                "currency_1": Currency.CUP.value,
+                "quantity_1": "",
+                "unit_1": "",
+                "sale_format_1": "",
+                "packaging_1": "",
+                "province_id_1": "",
+                "price_id_1": str(precio_2.id),
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        total = session.execute(select(PriceHistory)).scalars().all()
+        assert len(total) == 2
+        session.refresh(precio_1)
+        session.refresh(precio_2)
+        assert precio_1.price == Decimal("150")
+        assert precio_2.price == Decimal("250")
+
+    def test_pendiente_no_se_puede_corregir(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pendiente = _crear_raw_ingestion(session, hash_="hash-pend-post")
+
+        response = client.post(
+            f"/curation/{pendiente.id}/edit",
+            data=_form_edicion({"price": "1", "price_id": str(uuid.uuid4())}),
+        )
+
+        assert response.status_code == 409

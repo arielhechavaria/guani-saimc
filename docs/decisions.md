@@ -1476,3 +1476,45 @@ n=3, amplitud 45.2×, con formato «sin responder»—. El agregador ya no es el
 límite; el límite es responder la prueba de la jabita al curar. Anotado además
 un dato claramente erróneo a corregir: `Azúcar blanca` con `price=2.00` CUP y
 `packaging="Paquete de azúcar blanca 2lb"`.
+
+---
+
+## 2026-08-12 — Corrección acotada de anuncios curados: historial + edición
+
+Contexto: mientras curaba, el operador encontró `Azúcar blanca` cargada con
+`price=2.00` CUP para 2 lb — un error de tipeo. No había forma de arreglarlo
+sin SQL directo contra producción: `_require_pending` (curation.py) solo
+acepta anuncios `pending`, y `raw_ingestions` es inmutable por regla del
+proyecto, pero eso nunca alcanzó a `prices_history`. Un operador solo no puede
+depender de que alguien le corra una query cada vez que se equivoca.
+
+Decisión: `GET /curation/history` lista los anuncios curados (más recientes
+primero, sin paginar — al volumen de Fase 0 entra entero en una página) y
+enlaza a `GET /curation/{id}/edit`, que reabre exactamente las filas de
+`prices_history` que ese anuncio ya produjo, contra la misma evidencia.
+`POST /curation/{id}/edit` actualiza esas filas **en el lugar**: no crea ni
+borra ninguna. Cada fila viaja con su propio `price_id_i` — a diferencia de la
+curaduría original, que no lo necesita — para que el matching no dependa de
+la posición ni pueda tocar una fila de otro anuncio por accidente. Mismo
+contrato todo-o-nada que `submit_curation`: una fila con error bloquea el
+guardado entero.
+
+La tarjeta de producto/precio (~120 líneas de campos indexados) se extrajo de
+`curation.html` a una macro Jinja (`_price_row_card.html`), compartida por la
+curaduría normal y la corrección. Se intentó primero con `{% include %}`, que
+rompió los 26 tests existentes: `loop` no viaja a una plantilla incluida en
+Jinja2, solo el contexto de variables — el índice se pasa explícito como
+parámetro de la macro.
+
+Descartado: (a) un editor libre que permita agregar o quitar filas, que
+reabriría el mismo problema de cardinalidad que la curaduría original ya
+resuelve con cuidado. (b) match de fila por posición en vez de `price_id`,
+que confundiría un reordenamiento del formulario con una corrección real y no
+protegería contra editar la fila de otro anuncio. (c) permitir vaciar
+`source_reference` desde la edición: mismo criterio que `submit_curation`,
+que solo pisa el campo si llegó algo no vacío.
+
+Consecuencia: la corrección de datos ya no depende de acceso a la base. Un
+detalle menor documentado en el código: `published_date` es una sola fecha
+por anuncio (todas sus filas se cargan con la misma), así que el formulario
+de edición la prellena desde la primera fila, no fila por fila.

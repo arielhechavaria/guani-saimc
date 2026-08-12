@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — Historial de curados</title>
+  <link href="/static/bootstrap.min.css" rel="stylesheet" />
+  <link href="/static/curation.css" rel="stylesheet" />
+</head>
+<body>
+  <div class="container py-4" style="max-width: 960px;">
+    <div class="saimc-header">
+      <h1 class="h3">Historial de curados</h1>
+      <p class="saimc-subtitle mb-0">Ubicá el anuncio que hay que corregir.</p>
+      <div class="saimc-counters">
+        <span class="saimc-counter"><a href="/curation">← Volver a la cola</a></span>
+        <span class="saimc-counter"><a href="/control">Ver control →</a></span>
+      </div>
+    </div>
+
+    {% if not ingestions %}
+    <div class="alert alert-secondary" role="alert">
+      Todavía no hay anuncios curados.
+    </div>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th scope="col">Capturado</th>
+            <th scope="col">Canal origen</th>
+            <th scope="col">Producto(s) y precio</th>
+            <th scope="col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ingestion in ingestions %}
+          <tr>
+            <td class="text-nowrap">{{ ingestion.captured_at.strftime("%Y-%m-%d") }}</td>
+            <td>{{ ingestion.source_reference or "—" }}</td>
+            <td>
+              {% for product_name, price in rows_by_ingestion[ingestion.id] %}
+              <div>{{ product_name }} — {{ "%.2f"|format(price.price) }} {{ price.currency }}</div>
+              {% else %}
+              <span class="text-muted">sin filas</span>
+              {% endfor %}
+            </td>
+            <td class="text-end"><a href="/curation/{{ ingestion.id }}/edit">Editar →</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>

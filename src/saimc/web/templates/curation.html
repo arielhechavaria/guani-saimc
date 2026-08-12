@@ -17,6 +17,7 @@
         <span class="saimc-counter">Por curar: <strong>{{ status_counts.pending }}</strong></span>
         <span class="saimc-counter">Descartados: <strong>{{ status_counts.discarded }}</strong></span>
         <span class="saimc-counter"><a href="/control">Ver control →</a></span>
+        <span class="saimc-counter"><a href="/curation/history">Historial de curados →</a></span>
       </div>
     </div>
 
@@ -50,6 +51,7 @@
       <div class="card-header">Datos del anuncio</div>
       <div class="card-body">
         <form method="post" action="/curation/{{ ingestion.id }}" id="curation-form">
+          {% from "_price_row_card.html" import price_row_card %}
           {% if ingestion.content_type == "image" %}
           <div class="mb-3">
             <label for="original_text" class="form-label">Texto reconocido (OCR)</label>
@@ -72,126 +74,12 @@
             (§6.1) describe la confirmación como "producto: X ✓/✗, precio: Y
             ✓/✗, ..." campo por campo, no como planilla. Misma tabla de campos
             e índices de siempre (product_name_i, price_i, ...) — este cambio
-            es solo de presentación, `submit_curation` no se tocó.
+            es solo de presentación, `submit_curation` no se tocó. La tarjeta
+            en sí vive en _price_row_card.html, compartida con la corrección
+            de anuncios curados (curation_edit.html).
           -->
           {% for row in rows %}
-          <div class="card mb-3 saimc-product-card{% if row.product_id %} is-detected{% endif %}">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-muted small" data-product-label>Producto {{ loop.index }}</span>
-                <div class="d-flex align-items-center gap-3">
-                  {% if row.product_id %}
-                  <span class="badge text-bg-success-subtle text-success-emphasis">Detectado</span>
-                  {% else %}
-                  <span class="badge text-bg-secondary-subtle text-secondary-emphasis">Agregar a mano</span>
-                  {% endif %}
-                  <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeProductCard(this)">🗑 Eliminar</button>
-                </div>
-              </div>
-
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <label for="product_id_{{ loop.index0 }}" class="form-label small mb-1">Producto</label>
-                  <select name="product_id_{{ loop.index0 }}" id="product_id_{{ loop.index0 }}" class="form-select form-select-sm">
-                    <option value="" {% if not row.product_id %}selected{% endif %}>— seleccionar —</option>
-                    {% for product in products %}
-                    <option value="{{ product.id }}" {% if row.product_id == product.id|string %}selected{% endif %}>
-                      {{ product.name }}
-                    </option>
-                    {% endfor %}
-                  </select>
-                  <!--
-                    `<details>` nativo: sin JS, colapsado por default salvo
-                    que el motor ya tenga un nombre adivinado para revisar
-                    (`row.new_product_name`, ver `product_name_guess` en
-                    engine.py) — ahí se abre solo para que no quede escondido
-                    detrás de un clic.
-                  -->
-                  <details class="mt-1" {% if row.new_product_name %}open{% endif %}>
-                    <summary class="small text-primary">+ Agregar producto nuevo</summary>
-                    <div class="row g-2 mt-1">
-                      <div class="col-12">
-                        <label for="new_product_name_{{ loop.index0 }}" class="form-label small mb-1">Nombre</label>
-                        <input type="text" name="new_product_name_{{ loop.index0 }}" id="new_product_name_{{ loop.index0 }}" value="{{ row.new_product_name }}" class="form-control form-control-sm" />
-                      </div>
-                      <div class="col-6">
-                        <label for="product_category_{{ loop.index0 }}" class="form-label small mb-1">Categoría <span class="text-muted">(opcional)</span></label>
-                        <input type="text" name="product_category_{{ loop.index0 }}" id="product_category_{{ loop.index0 }}" value="{{ row.product_category }}" class="form-control form-control-sm" />
-                      </div>
-                      <div class="col-6">
-                        <label for="product_unit_{{ loop.index0 }}" class="form-label small mb-1">Unidad producto <span class="text-muted">(opcional)</span></label>
-                        <input type="text" name="product_unit_{{ loop.index0 }}" id="product_unit_{{ loop.index0 }}" value="{{ row.product_unit }}" class="form-control form-control-sm" />
-                      </div>
-                    </div>
-                  </details>
-                </div>
-              </div>
-
-              <div class="row g-2 mt-1">
-                <div class="col-md-3">
-                  <label for="price_{{ loop.index0 }}" class="form-label small mb-1">Precio</label>
-                  <input type="text" name="price_{{ loop.index0 }}" id="price_{{ loop.index0 }}" value="{{ row.price }}" class="form-control form-control-sm" />
-                </div>
-                <div class="col-md-2">
-                  <label for="currency_{{ loop.index0 }}" class="form-label small mb-1">Moneda</label>
-                  <select name="currency_{{ loop.index0 }}" id="currency_{{ loop.index0 }}" class="form-select form-select-sm">
-                    {% for currency in currencies %}
-                    <option value="{{ currency }}" {% if row.currency == currency %}selected{% endif %}>
-                      {{ currency }}
-                    </option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-2">
-                  <label for="quantity_{{ loop.index0 }}" class="form-label small mb-1">Cantidad</label>
-                  <input type="text" name="quantity_{{ loop.index0 }}" id="quantity_{{ loop.index0 }}" value="{{ row.quantity }}" class="form-control form-control-sm" />
-                </div>
-                <div class="col-md-2">
-                  <label for="unit_{{ loop.index0 }}" class="form-label small mb-1">Unidad</label>
-                  <select name="unit_{{ loop.index0 }}" id="unit_{{ loop.index0 }}" class="form-select form-select-sm">
-                    <option value="" {% if not row.unit %}selected{% endif %}>— sin unidad —</option>
-                    {% for unit in units %}
-                    <option value="{{ unit }}" {% if row.unit == unit %}selected{% endif %}>{{ unit }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-3">
-                  <label for="province_id_{{ loop.index0 }}" class="form-label small mb-1">Provincia</label>
-                  <select name="province_id_{{ loop.index0 }}" id="province_id_{{ loop.index0 }}" class="form-select form-select-sm">
-                    <option value="" {% if not row.province_id %}selected{% endif %}>No determinada</option>
-                    {% for province in provinces %}
-                    <option value="{{ province.id }}" {% if row.province_id == province.id|string %}selected{% endif %}>
-                      {{ province.name }}
-                    </option>
-                    {% endfor %}
-                  </select>
-                </div>
-              </div>
-
-              <div class="row g-2 mt-1">
-                <div class="col-md-5">
-                  <label for="sale_format_{{ loop.index0 }}" class="form-label small mb-1">
-                    ¿Se puede comprar 1 {{ row.unit or 'unidad' }} a este precio?
-                  </label>
-                  <select name="sale_format_{{ loop.index0 }}" id="sale_format_{{ loop.index0 }}" class="form-select form-select-sm">
-                    {# El default es «sin responder» para no fabricar `retail`, pero si el
-                       operador ya respondió y el formulario rebotó, se devuelve su respuesta:
-                       echarla atrás le haría reenviar NULL sin darse cuenta. #}
-                    <option value=""{% if row.sale_format not in ("retail", "wholesale") %} selected{% endif %}>— sin responder —</option>
-                    <option value="retail"{% if row.sale_format == "retail" %} selected{% endif %}>Sí, minorista</option>
-                    <option value="wholesale"{% if row.sale_format == "wholesale" %} selected{% endif %}>No, hay que llevar más (mayorista)</option>
-                  </select>
-                  <small class="text-muted">
-                    Prueba de la jabita. Si el precio por unidad sale de dividir un saco, es mayorista.
-                  </small>
-                </div>
-                <div class="col-md-7">
-                  <label for="packaging_{{ loop.index0 }}" class="form-label small mb-1">Envase / presentación <span class="text-muted">(opcional)</span></label>
-                  <input type="text" name="packaging_{{ loop.index0 }}" id="packaging_{{ loop.index0 }}" value="{{ row.packaging }}" maxlength="64" placeholder="saco de 25 kg, paca de 30" class="form-control form-control-sm" />
-                </div>
-              </div>
-            </div>
-          </div>
+          {{ price_row_card(row, loop.index0, products, provinces, currencies, units) }}
           {% endfor %}
 
           <input type="hidden" name="row_count" value="{{ rows|length }}" />
