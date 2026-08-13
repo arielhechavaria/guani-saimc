@@ -61,9 +61,10 @@ from saimc.models import (
     SaleFormat,
 )
 from saimc.units import UNITS, canonical_unit
+from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_operator)])
 
 # `sale_format` es un juicio explícito del operador (prueba de la jabita, ver
 # curation.html), nunca inferido: cualquier valor posteado que no sea uno de

@@ -1771,3 +1771,31 @@ real en vez de una por combinación de moneda.
 Consecuencia: si en el futuro se agrega una moneda nueva o elTOQUE deja de
 resolver por un tiempo largo, esas filas se acumulan en celdas
 `unconverted` — visibles y separadas, no perdidas ni fundidas por error.
+
+---
+
+## 2026-08-13 — HTTP Basic en `/curation`, apartamiento de "sin auth en Fase 0"
+
+Contexto: la decisión de no tener autenticación en Fase 0 (`CLAUDE.md`,
+decisión #5) asume «una herramienta de un solo operador en local». El
+despliegue real corre `uvicorn` pegado directo al puerto público, sin proxy
+ni firewall delante. Se verificó en vivo: `GET /curation` respondía 200
+desde fuera de la red del operador, y `curation.html` embebe
+`<img src="/evidence/{id}">` sin ningún control — cualquiera con la IP veía
+las capturas crudas de WhatsApp/Telegram, que pueden traer nombre o teléfono
+del anunciante (rompe la mitigación de `spec.md` §10.6).
+
+Decisión: HTTP Basic (`saimc.web.auth.require_operator`) sobre todo el
+router de `/curation`, incluida `/evidence/{id}`. Sin
+`SAIMC_CURATION_PASSWORD` configurado, cierra en falso (503, niega todo) en
+vez de abrir. `/control`, el dashboard público, no lleva esta dependencia y
+sigue exactamente como antes — la decisión #5 sigue vigente para la
+audiencia que sí la necesitaba sin login.
+
+Descartado: nginx u otro proxy con ACL por ruta — es infraestructura nueva,
+contra la decisión #4 de no sumarla hasta validar H0, y HTTP Basic resuelve
+el mismo problema con un cambio de código mínimo.
+
+Consecuencia: hace falta `SAIMC_CURATION_PASSWORD` en `.env` y reiniciar
+`saimc.service` para que el fix tome efecto. Hasta entonces, `/curation`
+sigue expuesta.

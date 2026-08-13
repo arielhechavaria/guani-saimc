@@ -31,6 +31,7 @@ from saimc.models import (
     SourceType,
 )
 from saimc.web.app import app
+from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
 
 # --- helpers de armado ------------------------------------------------------
@@ -151,6 +152,9 @@ def client(
     # (override propio dentro del test) sigue siendo "queda sin convertir" —
     # el mismo resultado que antes de que existiera esta dependencia.
     app.dependency_overrides[get_rate_fetcher] = lambda: _FakeRateFetcher()
+    # Esta suite prueba la lógica de curaduría, no HTTP Basic — ese
+    # comportamiento tiene su propia cobertura en test_curation_auth.py.
+    app.dependency_overrides[require_operator] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

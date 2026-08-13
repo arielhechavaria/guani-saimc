@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     # guardado de un anuncio, degrada a "sin tasa" en cuanto expira.
     el_toque_timeout: float = 3.0
 
+    # HTTP Basic para `/curation` (decisions.md, 2026-08-13): la decisión de
+    # "sin auth en Fase 0" asumía despliegue local; el despliegue real expone
+    # uvicorn directo a internet, sin proxy, así que `/evidence/{id}` servía
+    # capturas con datos personales a cualquiera con la IP. Sin password
+    # configurado, `require_operator` niega todo (cierra en falso, no abre).
+    curation_username: str = "operador"
+    curation_password: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
