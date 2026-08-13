@@ -1833,3 +1833,38 @@ se eliminaron por redundantes — las tarjetas nuevas dicen lo mismo y además
 nombran cuáles faltan. Lo primero que expuso el panel contra datos reales: 50
 de 83 filas sin `unit` y 51 sin `sale_format`, es decir más de la mitad de lo
 cargado no puede entrar al rango minorista todavía.
+
+---
+
+## 2026-08-13 — /control muestra el estado de la tasa sin consultar a elTOQUE
+
+Contexto: con la conversión monetaria andando, el operador no tenía forma de
+saber qué tasa estaba aplicando el sistema ni de cuándo era. La única manera
+era consultar `exchange_rate_cache` a mano.
+
+Decisión: se agrega `saimc.exchange_rate.status` y una sección a `/control`
+con dos lecturas distintas. **Disponible**: última tasa cacheada por moneda,
+su fecha, antigüedad en días, y si hay tasa del día de hoy (con tasa del día
+curar no sale a la red; sin ella, el próximo anuncio dispara el fetch).
+**Aplicada**: las tasas ya escritas en `prices_history`, agrupadas con su
+volumen de filas — lo cargado no cambia porque el cache se actualice, y
+distinguir las dos cosas evita leer una tasa vieja en cache como si
+invalidara lo ya convertido.
+
+Ambas salen de la base. **Cargar `/control` no consulta la API de elTOQUE**:
+un fetch en un GET agregaría latencia de red a una vista de consulta y además
+tendría efecto de escritura, porque el paso 2 de `RateResolver` hace
+write-through al cache. Quien sale a la red es la curaduría, que es cuando la
+tasa se necesita.
+
+Descartado: marcar una tasa como vencida según su antigüedad. La ventana de
+validez de la tasa de cambio es uno de los parámetros que `spec.md` §12.6
+lista sin valor asignado y manda calibrar contra la frecuencia real de
+actualización de la fuente. La vista informa antigüedad en días; el veredicto
+queda para cuando exista la medición. Hay un test que lo protege
+(`test_no_inventa_una_ventana_de_validez`).
+
+Consecuencia: las monedas sin ninguna tasa cacheada (hoy EUR y MLC) se
+muestran igual, en blanco. Ese hueco significa que un anuncio en esa moneda
+se guardaría sin convertir si elTOQUE no responde, y no se veía en ningún
+otro lado.

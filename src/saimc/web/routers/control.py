@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.cells import compute_cells, compute_retail_ranges
+from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
@@ -108,6 +109,10 @@ def control_panel(
             "gaps": compute_open_gaps(db),
             "coverage": compute_coverage(db),
             "health": compute_intake_health(db),
+            # Estado de la tasa de cambio. Ambas salen de la base: cargar
+            # `/control` no golpea la API de elTOQUE (ver status.py).
+            "rate_status": compute_rate_status(db),
+            "applied_rates": compute_applied_rates(db),
             "phase0_products_min": PHASE0_PRODUCTS_MIN,
             "phase0_products_max": PHASE0_PRODUCTS_MAX,
             "phase0_provinces": PHASE0_PROVINCES,

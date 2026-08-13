@@ -277,9 +277,98 @@
     </div>
     {% endif %}
 
+    <!-- ---------- 6. Tasa de cambio ---------- -->
+
+    <h2 class="h5 mt-4">Tasa de cambio</h2>
+    <p class="text-muted small">
+      Todo esto sale de la base: <strong>cargar esta página no consulta a
+      elTOQUE</strong>. Quien sale a la red es la curaduría, que es cuando la tasa se
+      necesita. Al curar, <code>RateResolver</code> intenta en este orden: tasa del día
+      en cache → consulta fresca a elTOQUE → última tasa conocida (marcada
+      <em>cache</em>) → sin convertir. <strong>No hay ventana de validez fijada</strong>
+      — es uno de los parámetros que <code>spec.md</code> §12.6 manda calibrar con la
+      frecuencia real de actualización de la fuente, así que acá se muestra la
+      antigüedad en días y nada más: ninguna tasa se marca como fuera de plazo.
+    </p>
+
+    <div class="row g-3">
+      {% for tasa in rate_status %}
+      <div class="col-md-4">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">{{ tasa.currency }} → CUP</div>
+          {% if tasa.rate is none %}
+            <div class="saimc-metric-value"><span class="saimc-zero">—</span></div>
+            <div class="small text-muted mt-1">
+              Nunca se cacheó una tasa. Un anuncio en {{ tasa.currency }} sale a
+              consultar elTOQUE; si no responde, se guarda sin convertir.
+            </div>
+          {% else %}
+            <div class="saimc-metric-value">{{ "%.2f"|format(tasa.rate) }}</div>
+            <div class="small text-muted mt-1">
+              Del {{ tasa.rate_date.strftime("%d/%m/%Y") }}
+              {%- if tasa.age_days == 0 %} · de hoy
+              {%- elif tasa.age_days == 1 %} · hace 1 día
+              {%- else %} · hace {{ tasa.age_days }} días{% endif %}
+            </div>
+            <div class="small text-muted">
+              Fuente: {{ tasa.source }}
+              {%- if tasa.fetched_at %} · leída {{ tasa.fetched_at.strftime("%d/%m %H:%M") }} UTC{% endif %}
+            </div>
+            <div class="mt-2">
+              {% if tasa.has_today %}
+                <span class="saimc-chip saimc-chip-done">Hay tasa de hoy · curar no consulta la red</span>
+              {% else %}
+                <span class="saimc-chip saimc-chip-missing">Sin tasa de hoy · el próximo anuncio consulta elTOQUE</span>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <h3 class="h6 mt-4">Qué tasa quedó aplicada en lo cargado</h3>
+    <p class="text-muted small">
+      Lo de arriba dice qué va a pasar de acá en adelante; esto dice qué pasó. Son las
+      columnas de conversión ya escritas en <code>prices_history</code>, que no cambian
+      porque el cache se actualice. Una fuente <em>elTOQUE (cache)</em> significa que
+      esa fila se convirtió con la última tasa conocida porque elTOQUE no respondió ese
+      día.
+    </p>
+
+    {% if not applied_rates %}
+    <div class="alert alert-secondary small" role="alert">
+      Ninguna fila tiene tasa aplicada todavía: o está todo en CUP, o lo que hay en otra
+      moneda no se pudo convertir. El hueco «Sin convertir a CUP» de arriba lo cuenta.
+    </div>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th scope="col">Tasa</th>
+            <th scope="col">Fecha de la tasa</th>
+            <th scope="col">Fuente</th>
+            <th scope="col" class="text-end">Filas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for aplicada in applied_rates %}
+          <tr>
+            <td>{{ "%.4f"|format(aplicada.rate) }}</td>
+            <td>{% if aplicada.rate_date %}{{ aplicada.rate_date.strftime("%d/%m/%Y") }}{% else %}<span class="saimc-zero">—</span>{% endif %}</td>
+            <td>{{ aplicada.source or "—" }}</td>
+            <td class="text-end">{{ aplicada.rows }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
     <hr class="my-4" />
 
-    <!-- ---------- 6. Rango minorista ---------- -->
+    <!-- ---------- 7. Rango minorista ---------- -->
 
     <h2 class="h5">Rango minorista por producto — últimos {{ retail_range_days }} días</h2>
     <p class="text-muted small">
@@ -340,7 +429,7 @@
 
     <hr class="my-4" />
 
-    <!-- ---------- 7. Matriz de los pilotos ---------- -->
+    <!-- ---------- 8. Matriz de los pilotos ---------- -->
 
     <h2 class="h5">Matriz de los pilotos, por unidad y formato</h2>
     <p class="text-muted small">

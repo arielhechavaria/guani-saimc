@@ -437,3 +437,64 @@ class TestPanelDeProgreso:
         response = client.get("/control")
 
         assert "Nada decidido todavía" in response.text
+
+
+class TestPanelDeTasaDeCambio:
+    """Visibilidad de la tasa: qué hay disponible y qué quedó aplicado."""
+
+    def test_muestra_la_tasa_cacheada_con_su_antiguedad(
+        self, client: TestClient, session: Session
+    ) -> None:
+        from datetime import date
+
+        from saimc.models import ExchangeRateCache
+
+        session.add(
+            ExchangeRateCache(
+                currency="USD",
+                rate_date=date.today(),
+                rate=Decimal("670"),
+                source="elTOQUE",
+                fetched_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "670.00" in response.text
+        assert "Hay tasa de hoy" in response.text
+
+    def test_una_moneda_sin_cache_se_muestra_igual(self, client: TestClient) -> None:
+        """El hueco es el dato: sin tasa cacheada, un anuncio en esa moneda se
+        guarda sin convertir si elTOQUE no responde."""
+        response = client.get("/control")
+
+        assert "EUR → CUP" in response.text
+        assert "Nunca se cacheó una tasa" in response.text
+
+    def test_no_inventa_una_ventana_de_validez(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec.md §12.6 lista la ventana de validez como parámetro pendiente
+        de calibración. La vista informa antigüedad, nunca vigencia."""
+        from datetime import date, timedelta
+
+        from saimc.models import ExchangeRateCache
+
+        session.add(
+            ExchangeRateCache(
+                currency="USD",
+                rate_date=date.today() - timedelta(days=40),
+                rate="670",
+                source="elTOQUE",
+                fetched_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+        texto = client.get("/control").text.lower()
+
+        assert "hace 40 días" in texto
+        for veredicto in ("vencida", "expirada", "caducada", "obsoleta"):
+            assert veredicto not in texto
