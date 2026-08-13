@@ -256,6 +256,30 @@ class _StubFetcher:
 
 
 class TestRateResolver:
+    def test_una_fila_en_eur_le_pide_ecu_a_eltoque(self, session) -> None:
+        """El euro se llama `ECU` en el JSON de elTOQUE, no `EUR` (sondeo del
+        2026-08-13, Engram `discovery/eltoque-trmi-api`).
+
+        `TestParseRate` no cubre esto: le pasa la clave `"ECU"` ya resuelta al
+        parser, o sea prueba que el parser lee la clave que le dan, nunca que
+        una fila en EUR pida la clave correcta. Sin este caso, cambiar el mapeo
+        a `"EUR"` deja la suite verde y persiste euros convertidos a la tasa
+        equivocada, con una procedencia §6.3 E que se ve impecable.
+
+        La aserción es sobre la clave que viaja al fetcher, no sobre el
+        resultado: es el único punto donde el mapeo es observable.
+        """
+        fetcher = _StubFetcher({("ECU", _ANCLA): Decimal("781.47")})
+        resolver = RateResolver(session, fetcher)
+
+        resultado = resolver.resolve("EUR", _ANCLA)
+
+        assert fetcher.calls == [("ECU", _ANCLA)]
+        assert resultado == RateResolution(Decimal("781.47"), _ANCLA, "elTOQUE")
+        # La cache se indexa por la moneda del dominio, nunca por la clave
+        # interna de elTOQUE: `price_history.currency` guarda "EUR".
+        assert get_for_date(session, "EUR", _ANCLA) == Decimal("781.47")
+
     def test_cache_hit_no_llama_al_fetcher(self, session) -> None:
         store(session, "USD", _ANCLA, Decimal("671.56"), "elTOQUE")
         fetcher = _StubFetcher()
@@ -454,6 +478,49 @@ class TestBackfill:
         assert reporte.examined == 1
         assert reporte.resolved == 1
         assert reporte.unresolved == 0
+
+    def test_dry_run_no_persiste_ni_aunque_la_sesion_commitee(self, session) -> None:
+        """Regresión de la guarda de dry-run, con el commit que hace `session_scope`.
+
+        `test_dry_run_no_escribe_nada` no alcanza: siembra una sola fila, nadie
+        consulta la sesión después de la mutación —así que no hay autoflush— y
+        el `expire_all()` descarta el estado sucio antes de mirar. Una versión
+        de `run_backfill` que mutara la fila fuera del `if apply:` pasaría ese
+        test y aun así escribiría en producción, porque `session_scope`
+        (`src/saimc/db.py`) commitea al salir sin excepción y `main()` corre el
+        backfill adentro.
+
+        Este caso reproduce esa salida: dos filas (para que el autoflush sea
+        posible) y un `commit()` explícito después del dry-run. Si la mutación
+        llegó al ORM, el commit la persiste y las aserciones caen.
+        """
+        producto = _crear_producto_backfill(session)
+        ingestion_a = _crear_ingestion_backfill(session, hash_="bf-dry-a")
+        ingestion_b = _crear_ingestion_backfill(session, hash_="bf-dry-b")
+        fila_a = _crear_precio_pendiente(
+            session, producto, ingestion_a, currency=Currency.USD
+        )
+        fila_b = _crear_precio_pendiente(
+            session, producto, ingestion_b, currency=Currency.USD
+        )
+        ancla = ingestion_a.captured_at.date()
+        fetcher = _BackfillFetcher({("USD", ancla): Decimal("671.56")})
+
+        run_backfill(session, fetcher, apply=False, sleep=lambda _: None)
+
+        # Lo que hace `session_scope` al salir normalmente. Sin esto el test no
+        # ejerce el camino que realmente corre en producción.
+        session.commit()
+
+        session.expire_all()
+        for fila in (fila_a, fila_b):
+            recuperada = session.get(PriceHistory, fila.id)
+            assert recuperada is not None
+            assert recuperada.exchange_rate is None
+            assert recuperada.exchange_rate_date is None
+            assert recuperada.exchange_rate_source is None
+            assert recuperada.price_cup is None
+        assert get_for_date(session, "USD", ancla) is None
 
     def test_apply_resuelve_y_persiste(self, session) -> None:
         producto = _crear_producto_backfill(session)
