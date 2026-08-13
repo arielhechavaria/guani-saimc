@@ -1717,3 +1717,30 @@ Consecuencia: el formulario de curaduría cambia de un `<input>` libre a un
 al abrirlas en `/curation/{id}/edit`, su texto libre se prellena en «Otro».
 269 tests pasan (6 nuevos de vocabulario, más ajustes a los que ya cubrían
 `packaging` con el campo viejo).
+
+---
+
+## 2026-08-13 — Conversión de moneda con elTOQUE como única fuente en vivo
+
+Contexto: `spec.md` §6.3 E pide «al menos una alternativa configurada; una
+sola fuente crítica es punto único de fallo» para la tasa de cambio. No
+existe hoy una segunda fuente informal confiable: el sitio de CiberCuba
+requiere scraping frágil de HTML sin API, y los agregadores comunitarios que
+se evaluaron están sin mantenimiento desde 2024.
+
+Decisión: se envía elTOQUE TRMI como única fuente en vivo, con
+`exchange_rate_cache` (Postgres) como único respaldo — la última tasa
+conocida, nunca una segunda fuente en vivo. Queda registrado como
+apartamiento deliberado de §6.3 E, no como omisión. El token de la API
+vence 2027-04-13.
+
+Descartado: la tasa oficial del BCC como alternativa configurada. Es una
+serie estructuralmente distinta a la TRMI informal, con una brecha
+persistente de aproximadamente 45 CUP contra el mercado informal; usarla
+como respaldo inyectaría un salto discontinuo en la serie justo cuando
+elTOQUE falla, rompiendo la comparabilidad que la normalización existe para
+garantizar.
+
+Consecuencia: si elTOQUE cae, la resolución degrada a la última tasa
+cacheada o a «sin convertir» — nunca a la tasa oficial. Se revisa esta
+decisión si aparece una segunda fuente informal confiable.

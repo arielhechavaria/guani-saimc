@@ -13,6 +13,7 @@ from decimal import Decimal
 
 import httpx
 
+from saimc.exchange_rate.backfill import run_backfill
 from saimc.exchange_rate.cache import get_for_date, latest, store
 from saimc.exchange_rate.eltoque import fetch_rate, parse_rate
 from saimc.exchange_rate.service import (
@@ -22,7 +23,15 @@ from saimc.exchange_rate.service import (
     anchor_date,
     apply_resolution,
 )
-from saimc.models import ExchangeRateCache, PriceHistory
+from saimc.models import (
+    ContentType,
+    Currency,
+    ExchangeRateCache,
+    PriceHistory,
+    Product,
+    RawIngestion,
+    SourceType,
+)
 
 # Body real capturado en el sondeo del 2026-08-13, tasas del propio día.
 _BODY_CON_TASAS = (
@@ -358,3 +367,201 @@ class TestApplyResolution:
         assert entry.exchange_rate is None
         assert entry.exchange_rate_date is None
         assert entry.exchange_rate_source is None
+
+
+class _BackfillFetcher:
+    """Fetcher de prueba para el backfill: tasas fijas por `(clave, día)`,
+    nunca toca la red, cuenta cada llamada — separado de `_StubFetcher` para
+    no acoplar la prueba del CLI a la del resolver, que evolucionan aparte."""
+
+    def __init__(self, rates: dict[tuple[str, date], Decimal] | None = None) -> None:
+        self.rates = rates or {}
+        self.calls: list[tuple[str, date]] = []
+
+    def __call__(self, key: str, day: date) -> Decimal | None:
+        self.calls.append((key, day))
+        return self.rates.get((key, day))
+
+
+def _crear_producto_backfill(session, *, name: str = "Arroz") -> Product:
+    producto = Product(name=name, category="granos", unit="lb")
+    session.add(producto)
+    session.flush()
+    return producto
+
+
+def _crear_ingestion_backfill(session, *, hash_: str) -> RawIngestion:
+    ingestion = RawIngestion(
+        source_type=SourceType.INBOX_TEXT,
+        file_path=f"raw/{hash_}.txt",
+        content_hash=hash_,
+        content_type=ContentType.TEXT,
+        captured_at=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+    )
+    session.add(ingestion)
+    session.flush()
+    return ingestion
+
+
+def _crear_precio_pendiente(
+    session,
+    producto: Product,
+    ingestion: RawIngestion,
+    *,
+    currency: str,
+    exchange_rate: Decimal | None = None,
+    exchange_rate_date: date | None = None,
+    exchange_rate_source: str | None = None,
+) -> PriceHistory:
+    # `ck_prices_history_exchange_rate_provenance` exige fecha y fuente no
+    # nulas cuando `exchange_rate` no es nulo — una fila "ya convertida" en
+    # los tests debe traer las tres o el insert la rechaza.
+    precio = PriceHistory(
+        product_id=producto.id,
+        price=Decimal("10.00"),
+        currency=currency,
+        source_id=ingestion.id,
+        exchange_rate=exchange_rate,
+        exchange_rate_date=exchange_rate_date,
+        exchange_rate_source=exchange_rate_source,
+    )
+    session.add(precio)
+    session.flush()
+    return precio
+
+
+class TestBackfill:
+    """`run_backfill` es la función que el CLI (`backfill.py`, task 3.2) llama
+    con una sesión ya abierta — separada de `main()` a propósito, para poder
+    probarla sin `session_scope()` ni `.env` (design D8)."""
+
+    def test_dry_run_no_escribe_nada(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="bf-1")
+        fila = _crear_precio_pendiente(session, producto, ingestion, currency=Currency.USD)
+        ancla = ingestion.captured_at.date()
+        fetcher = _BackfillFetcher({("USD", ancla): Decimal("671.56")})
+
+        reporte = run_backfill(session, fetcher, apply=False, sleep=lambda _: None)
+
+        session.expire_all()
+        recuperada = session.get(PriceHistory, fila.id)
+        assert recuperada is not None
+        assert recuperada.exchange_rate is None
+        assert recuperada.price_cup is None
+        # tampoco escribe la cache: un dry-run no debe dejar rastro alguno.
+        assert get_for_date(session, "USD", ancla) is None
+        assert reporte.examined == 1
+        assert reporte.resolved == 1
+        assert reporte.unresolved == 0
+
+    def test_apply_resuelve_y_persiste(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="bf-2")
+        fila = _crear_precio_pendiente(session, producto, ingestion, currency=Currency.USD)
+        ancla = ingestion.captured_at.date()
+        fetcher = _BackfillFetcher({("USD", ancla): Decimal("671.56")})
+
+        reporte = run_backfill(session, fetcher, apply=True, sleep=lambda _: None)
+
+        session.expire_all()
+        recuperada = session.get(PriceHistory, fila.id)
+        assert recuperada is not None
+        assert recuperada.exchange_rate == Decimal("671.56")
+        assert recuperada.exchange_rate_date == ancla
+        assert recuperada.exchange_rate_source == "elTOQUE"
+        assert recuperada.price_cup == Decimal("6715.60")
+        assert reporte.resolved == 1
+        assert reporte.unresolved == 0
+
+    def test_fila_ya_resuelta_no_se_reintenta_ni_se_sobreescribe(self, session) -> None:
+        """Idempotencia, caso 1: una fila que ya resolvió con éxito nunca
+        vuelve a pedirse — ni siquiera si una corrida posterior traería una
+        tasa distinta (design D8, spec: idempotent backfill)."""
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="bf-3")
+        fila = _crear_precio_pendiente(session, producto, ingestion, currency=Currency.USD)
+        ancla = ingestion.captured_at.date()
+
+        primer_fetcher = _BackfillFetcher({("USD", ancla): Decimal("671.56")})
+        run_backfill(session, primer_fetcher, apply=True, sleep=lambda _: None)
+        session.expire_all()
+        assert session.get(PriceHistory, fila.id).exchange_rate == Decimal("671.56")
+
+        segundo_fetcher = _BackfillFetcher({("USD", ancla): Decimal("999.99")})
+        reporte = run_backfill(session, segundo_fetcher, apply=True, sleep=lambda _: None)
+
+        session.expire_all()
+        recuperada = session.get(PriceHistory, fila.id)
+        assert recuperada.exchange_rate == Decimal("671.56")  # sobrevive, no 999.99
+        assert segundo_fetcher.calls == []
+        assert reporte.examined == 0
+
+    def test_fila_sin_tasa_se_reintenta_en_la_proxima_corrida(self, session) -> None:
+        """Idempotencia, caso 2: una fila que resolvió a "sin tasa" SÍ se
+        reintenta en la próxima corrida — la tasa pudo aparecer después."""
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="bf-4")
+        fila = _crear_precio_pendiente(session, producto, ingestion, currency=Currency.USD)
+        ancla = ingestion.captured_at.date()
+
+        fetcher_sin_tasa = _BackfillFetcher()  # sin ninguna tasa configurada
+        primer_reporte = run_backfill(session, fetcher_sin_tasa, apply=True, sleep=lambda _: None)
+        assert primer_reporte.unresolved == 1
+        assert fetcher_sin_tasa.calls == [("USD", ancla)]
+
+        session.expire_all()
+        assert session.get(PriceHistory, fila.id).exchange_rate is None
+
+        fetcher_con_tasa = _BackfillFetcher({("USD", ancla): Decimal("671.56")})
+        segundo_reporte = run_backfill(session, fetcher_con_tasa, apply=True, sleep=lambda _: None)
+
+        assert segundo_reporte.resolved == 1
+        assert fetcher_con_tasa.calls == [("USD", ancla)]  # sí se reintentó
+
+    def test_limit_acota_filas_procesadas(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="bf-5")
+        _crear_precio_pendiente(session, producto, ingestion, currency=Currency.USD)
+        _crear_precio_pendiente(session, producto, ingestion, currency=Currency.EUR)
+        fetcher = _BackfillFetcher()
+
+        reporte = run_backfill(session, fetcher, apply=False, limit=1, sleep=lambda _: None)
+
+        assert reporte.examined == 1
+
+    def test_cup_y_fila_ya_convertida_quedan_fuera_del_filtro(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="bf-6")
+        _crear_precio_pendiente(session, producto, ingestion, currency=Currency.CUP)
+        _crear_precio_pendiente(
+            session,
+            producto,
+            ingestion,
+            currency=Currency.USD,
+            exchange_rate=Decimal("650.00"),
+            exchange_rate_date=ingestion.captured_at.date(),
+            exchange_rate_source="elTOQUE",
+        )
+        fetcher = _BackfillFetcher()
+
+        reporte = run_backfill(session, fetcher, apply=True, sleep=lambda _: None)
+
+        assert reporte.examined == 0
+        assert fetcher.calls == []
+
+    def test_pausa_solo_tras_un_fetch_real_nunca_tras_un_acierto_de_cache(
+        self, session
+    ) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="bf-7")
+        ancla = ingestion.captured_at.date()
+        store(session, "USD", ancla, Decimal("671.56"), "elTOQUE")  # ya cacheada
+        _crear_precio_pendiente(session, producto, ingestion, currency=Currency.USD)
+        fetcher = _BackfillFetcher()  # no debería llamarse: acierto de cache
+        pausas: list[float] = []
+
+        run_backfill(session, fetcher, apply=True, sleep=pausas.append)
+
+        assert fetcher.calls == []
+        assert pausas == []
