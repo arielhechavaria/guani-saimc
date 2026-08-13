@@ -37,11 +37,29 @@ nadie declaró, que es el mismo criterio por el que `canonical_unit()` devuelve
 `sale_format` la cola de nulos crece — y eso es justamente lo que la vista debe
 dejar ver, no esconder.
 
-El envase (`packaging`) **no** entra en la clave: es texto libre sin vocabulario
-cerrado («saco de 25 kg», «Saco de arroz De 110 lb»), así que agrupar por él
-produciría una celda por variante de redacción. Si `unit` + `sale_format` no
-alcanzan para separar, la decisión de darle vocabulario cerrado se toma con los
-datos de esta misma vista, no antes (§12.6).
+**El precio que se agrega es por unidad, no total** (2026-08-13): cada fila se
+divide por su `quantity` antes de entrar a la celda. Sin eso, un saco de 50 kg
+a 32500 y un paquete de 1 kg a 750 caían en la misma celda `kg` minorista y la
+amplitud daba 43× — un número que no describía el mercado, solo que se estaban
+comparando dos totales. Por kg son 650 contra 750: la diferencia real entre
+mayorista y minorista. La moneda se resuelve **antes** de dividir; al revés
+daría un precio unitario en la moneda de origen.
+
+Una fila sin `quantity` (o con cantidad cero) no se puede normalizar, y
+tampoco se funde asumiendo cantidad 1 —eso sería inventar el dato—: queda en
+su propia celda con `Cell.unquantified = True`, agregando totales. Mismo
+criterio que el nulo de `sale_format` y que la celda sin convertir.
+
+El envase (`packaging`) **no** entra en la clave. Cuando se escribió esta regla
+el motivo era que fuese texto libre; desde el 2026-08-12 tiene vocabulario
+cerrado (Paquete / Saco / A granel / Otro), así que el motivo hoy es otro y más
+fuerte: **normalizado por cantidad, el envase dejó de ser un eje que separe
+series**. Un saco y un paquete del mismo producto por la misma unidad son
+comparables una vez que el precio es por kg; lo que los distingue —comprar al
+por mayor sale más barato— es economía real y ya lo captura `sale_format`.
+Agrupar por envase multiplicaría las celdas sin separar nada, y encima
+produciría una celda por variante de redacción mientras convivan las filas
+viejas de texto libre con las nuevas.
 
 `compute_retail_ranges` es la otra mitad del módulo: responde «¿en qué rango
 se movió este producto en los últimos N días?», donde el envase deja de
@@ -80,6 +98,10 @@ class Cell:
     # (moneda != CUP sin tasa) — ver docstring del módulo. Con default para no
     # romper construcciones posicionales existentes.
     unconverted: bool = False
+    # `True` cuando la celda agrega precios TOTALES en vez de precios por
+    # unidad, porque sus filas no tienen `quantity` (2026-08-13). Quien lea
+    # `median` necesita saber cuál de las dos cosas está mirando.
+    unquantified: bool = False
 
     @property
     def spread(self) -> Decimal | None:
@@ -109,6 +131,7 @@ def compute_cells(session: Session) -> list[Cell]:
             PriceHistory.currency,
             PriceHistory.unit,
             PriceHistory.sale_format,
+            PriceHistory.quantity,
             PriceHistory.price,
             PriceHistory.price_cup,
         )
@@ -116,14 +139,22 @@ def compute_cells(session: Session) -> list[Cell]:
         .outerjoin(Province, Province.id == PriceHistory.province_id)
     )
 
-    # `unconverted` entra en la clave para separar, sin ambigüedad, el grupo
-    # fundido (moneda "CUP" literal, ya sea original o convertida) del grupo
-    # que quedó sin resolver (moneda original, nunca "CUP" — ver más abajo).
-    CellKey = tuple[str, str | None, str, str | None, str | None, bool]
+    # `unconverted` y `unquantified` entran en la clave para separar, sin
+    # ambigüedad, el grupo resuelto del que quedó pendiente: el primero por
+    # moneda, el segundo por cantidad. Mezclar cualquiera de los dos afirmaría
+    # una equivalencia que nadie declaró.
+    CellKey = tuple[str, str | None, str, str | None, str | None, bool, bool]
     grouped: dict[CellKey, list[Decimal]] = {}
-    for product_name, province_name, currency, unit, sale_format, price, price_cup in (
-        session.execute(stmt)
-    ):
+    for (
+        product_name,
+        province_name,
+        currency,
+        unit,
+        sale_format,
+        quantity,
+        price,
+        price_cup,
+    ) in session.execute(stmt):
         if currency == Currency.CUP.value:
             # Ya está en CUP: nada que convertir.
             effective_price = price
@@ -137,7 +168,22 @@ def compute_cells(session: Session) -> list[Cell]:
             effective_price = price
             key_currency, unconverted = currency, True
 
-        key: CellKey = (product_name, province_name, key_currency, unit, sale_format, unconverted)
+        # La moneda se resuelve primero y la cantidad después: dividir antes de
+        # convertir daría un precio unitario en la moneda de origen, que no es
+        # comparable con el resto de la celda.
+        unquantified = quantity is None or quantity == 0
+        if not unquantified:
+            effective_price = effective_price / quantity
+
+        key: CellKey = (
+            product_name,
+            province_name,
+            key_currency,
+            unit,
+            sale_format,
+            unconverted,
+            unquantified,
+        )
         grouped.setdefault(key, []).append(effective_price)
 
     cells = [
@@ -156,6 +202,7 @@ def compute_cells(session: Session) -> list[Cell]:
             minimum=min(prices),
             maximum=max(prices),
             unconverted=unconverted,
+            unquantified=unquantified,
         )
         for (
             product_name,
@@ -164,6 +211,7 @@ def compute_cells(session: Session) -> list[Cell]:
             unit,
             sale_format,
             unconverted,
+            unquantified,
         ), prices in grouped.items()
     ]
 
@@ -181,6 +229,7 @@ def compute_cells(session: Session) -> list[Cell]:
             cell.unit or "",
             cell.sale_format or "",
             cell.unconverted,
+            cell.unquantified,
         )
     )
     return cells

@@ -535,3 +535,114 @@ class TestComputeRetailRanges:
         fundido = [r for r in rangos if not r.unconverted][0]
         assert fundido.currency == "CUP"
         assert fundido.count == 1
+
+
+class TestNormalizacionPorCantidad:
+    """La celda compara precio POR UNIDAD, no precio total (2026-08-13).
+
+    El caso real que lo motivó: un saco de 50 kg a 32500 y un paquete de 1 kg
+    a 750 caían en la misma celda `kg` minorista, y la amplitud daba 43× — que
+    no describía nada del mercado, solo que se estaban comparando un total
+    contra otro total. Por kg son 650 contra 750: la diferencia real entre
+    comprar mayorista y minorista, que es economía, no ruido de carga.
+
+    Es el mismo criterio que `compute_retail_ranges` ya usaba; la matriz se
+    había quedado atrás.
+    """
+
+    def test_divide_el_precio_por_la_cantidad(self, session: Session) -> None:
+        """Saco de 50 kg a 32500 = 650/kg; paquete de 1 kg a 750 = 750/kg.
+        Misma celda, amplitud 750/650 = 1.15."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = _ingestion(session, "hash-normaliza")
+        _precio(
+            session, product=arroz, province=scu, price="32500",
+            source=origen, unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="50",
+        )
+        _precio(
+            session, product=arroz, province=scu, price="750",
+            source=origen, unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+        session.commit()
+
+        cells = compute_cells(session)
+
+        assert len(cells) == 1
+        assert cells[0].minimum == Decimal("650")
+        assert cells[0].maximum == Decimal("750")
+        assert cells[0].unquantified is False
+
+    def test_la_fila_sin_cantidad_no_se_funde_con_las_normalizadas(
+        self, session: Session
+    ) -> None:
+        """Sin cantidad no hay precio por unidad que calcular. Fundirla a
+        ciegas asumiría cantidad 1, que es inventar el dato — mismo criterio
+        que ya rige para `unit` y `sale_format` nulos."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = _ingestion(session, "hash-sin-cantidad")
+        _precio(
+            session, product=arroz, province=scu, price="750",
+            source=origen, unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+        _precio(
+            session, product=arroz, province=scu, price="32500",
+            source=origen, unit="kg", sale_format=SaleFormat.RETAIL.value, quantity=None,
+        )
+        session.commit()
+
+        cells = compute_cells(session)
+
+        assert len(cells) == 2
+        normalizada = next(c for c in cells if not c.unquantified)
+        sin_cantidad = next(c for c in cells if c.unquantified)
+        assert normalizada.median == Decimal("750")
+        # La celda sin cantidad conserva el precio tal cual: es un total, y la
+        # vista tiene que decirlo en vez de disfrazarlo de precio unitario.
+        assert sin_cantidad.median == Decimal("32500")
+
+    def test_cantidad_cero_se_trata_como_sin_cantidad(self, session: Session) -> None:
+        """Nunca debe dividir por cero, y tampoco desaparecer de la vista:
+        una fila escondida es una fila que nadie va a corregir."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = _ingestion(session, "hash-cantidad-cero")
+        _precio(
+            session, product=arroz, province=scu, price="900",
+            source=origen, unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="0",
+        )
+        session.commit()
+
+        cells = compute_cells(session)
+
+        assert len(cells) == 1
+        assert cells[0].unquantified is True
+        assert cells[0].median == Decimal("900")
+
+    def test_normaliza_tambien_lo_convertido_a_cup(self, session: Session) -> None:
+        """El orden importa: primero se resuelve la moneda, después se divide
+        por la cantidad. 44 USD por un saco de 50 kg, a 670, son 29480 CUP =
+        589.60 por kg."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = _ingestion(session, "hash-normaliza-usd")
+        _precio(
+            session, product=arroz, province=scu, price="44",
+            source=origen, unit="kg", sale_format=SaleFormat.RETAIL.value,
+            quantity="50", currency=Currency.USD.value, price_cup="29480",
+        )
+        session.commit()
+
+        cells = compute_cells(session)
+
+        assert cells[0].median == Decimal("589.6")
+        assert cells[0].currency == "CUP"

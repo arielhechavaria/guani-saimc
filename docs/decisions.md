@@ -1905,3 +1905,47 @@ minorista dibuja una barra al 100% con la mediana al 2.5% del borde
 izquierdo, contra Azúcar lb minorista al 15% con la mediana al 14%. Eso son
 sacos cargados como minorista dentro de las celdas de Arroz, pendientes de
 corregir en la cola.
+
+---
+
+## 2026-08-13 — La celda de /control agrega precio por unidad, no precio total
+
+Contexto: el operador reportó que la matriz mezclaba «un paquete de 1 kg con
+un saco de 50 kg» y propuso agrupar por envase para separarlos. Los datos
+mostraron que el diagnóstico del síntoma era correcto pero la causa era otra:
+`compute_cells` agregaba el precio **total** y nunca dividía por `quantity`.
+El saco de 50 kg a 32500 y el paquete de 1 kg a 750 no tienen precios
+incomparables —son 650 y 750 por kg, la diferencia normal entre mayorista y
+minorista—; lo que rompía la celda era comparar 32500 contra 750. Su función
+hermana `compute_retail_ranges` ya dividía por cantidad desde el 2026-08-12;
+la matriz se había quedado atrás.
+
+Decisión: `compute_cells` divide cada fila por su `quantity` antes de agregar.
+La moneda se resuelve primero y la cantidad después: al revés daría un precio
+unitario en la moneda de origen, no comparable con el resto de la celda. Una
+fila sin cantidad (o con cantidad cero) no se puede normalizar y **no** se
+funde asumiendo cantidad 1 —eso sería inventar el dato—: queda en su propia
+celda con `Cell.unquantified = True`, agregando totales y marcada como tal en
+la vista. Mismo criterio que ya rige para `unit`, `sale_format` y la celda sin
+convertir.
+
+Descartado: agrupar por envase, que era la propuesta original. Dos motivos.
+Primero, no resolvía el problema: dentro de cada grupo se seguirían comparando
+totales, y un «Saco» de 50 kg contra un «Saco» de 110 lb seguirían sin ser
+comparables. Segundo, normalizado por cantidad el envase **dejó de ser un eje
+que separe series**: un saco y un paquete del mismo producto por la misma
+unidad son comparables una vez que el precio es por kg, y lo que los distingue
+—comprar al por mayor sale más barato— ya lo captura `sale_format`. Se
+actualizó el docstring de `cells.py`, que justificaba dejar el envase fuera de
+la clave por ser texto libre; desde el 2026-08-12 tiene vocabulario cerrado,
+así que ese motivo había caducado aunque la conclusión siga siendo la misma
+por una razón más fuerte.
+
+Consecuencia: cinco de las seis celdas piloto pasaron de amplitudes de 44.5×,
+2.0× y 1.9× a 1.3×, 1.1× y 1.1×. La sexta, Arroz lb minorista, **subió** de
+103.1× a 360× y eso es lo correcto: ya no es ruido de agregación sino una
+única fila mal cargada (`quantity=340`, `price=340`, es decir 1 CUP por libra,
+del anuncio `57d230c7` capturado el 2026-08-12) quedando sola contra un rango
+sano de 281–360. La amplitud pasó a señalar errores reales en vez de
+artefactos. Nota de lectura: la mediana pegada al borde derecho de la barra
+indica un valor extremo bajo, igual que pegada al izquierdo indica uno alto.

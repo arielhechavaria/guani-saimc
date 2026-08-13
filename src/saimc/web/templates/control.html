@@ -470,14 +470,27 @@
     </p>
 
     <p class="text-muted small">
-      La unidad y el formato de venta parten la celda: un precio por libra y uno
-      por kilo no son la misma serie, y un saco mayorista no se promedia con la
-      libra suelta. <strong>«— sin responder —»</strong> es su propia celda, no se
-      funde con las demás. La moneda ya no parte la celda (2026-08-13): lo que se
-      carga en USD/EUR/MLC se funde con lo que se carga en CUP una vez convertido, y
-      lo que todavía no tiene tasa resuelta queda aparte, marcado
+      <strong>El precio es por unidad, no total</strong> (2026-08-13): cada fila se
+      divide por su cantidad antes de entrar a la celda, así un saco de 50 kg y un
+      paquete de 1 kg del mismo producto se comparan de verdad. Una fila sin cantidad
+      no se puede normalizar y no se funde asumiendo cantidad 1 —eso sería inventar el
+      dato—: queda aparte, marcada
+      <strong class="text-muted">precio total, sin cantidad</strong>.
+      Por eso el envase queda fuera de la clave: normalizado por cantidad dejó de
+      separar series, y lo que distingue comprar al por mayor ya lo captura el formato
+      de venta.
+    </p>
+
+    <p class="text-muted small">
+      La unidad y el formato de venta sí parten la celda: un precio por libra y uno
+      por kilo no son la misma serie, y sin tabla de conversión entre unidades
+      (spec.md §12.6, no inventar) no se pueden fundir.
+      <strong>«sin unidad»</strong> y <strong>«sin formato»</strong> son su propia
+      celda, no se funden con las demás. La moneda ya no parte la celda (2026-08-13):
+      lo que se carga en USD/EUR/MLC se funde con lo que se carga en CUP una vez
+      convertido, y lo que todavía no tiene tasa resuelta queda aparte, marcado
       <strong class="text-muted">sin convertir</strong>, para no mezclar un precio
-      inventado con uno real. El envase queda fuera de la clave por ser texto libre.
+      inventado con uno real.
     </p>
 
     {% if single_observation %}
@@ -517,7 +530,8 @@
           <span class="text-muted small">
             <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
                title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
-            · mediana <strong>{{ "%.2f"|format(cell.median) }} {{ cell.currency }}</strong>
+            · mediana <strong>{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
+            {%- if cell.unquantified %} <span class="text-muted">precio total, sin cantidad</span>{% endif %}
             {%- if cell.unconverted %} <span class="text-muted">sin convertir</span>{% endif %}
             {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
           </span>
