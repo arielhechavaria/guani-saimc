@@ -5,6 +5,13 @@ Primera y única interfaz humana del sistema en Fase 0: presenta un elemento
 confirma o corrige. Cada confirmación produce la fila de `prices_history`
 que alimenta H0.
 
+Conversión de moneda (`spec.md` §6.3 E, design.md D4): cada fila con
+`currency != CUP` pasa sincrónicamente por `RateResolver` antes del commit,
+en ambos caminos de escritura (`submit_curation` y `submit_edit`). La
+resolución nunca bloquea el guardado — si nada es resolvible, la fila se
+guarda igual con `price_cup`/`exchange_rate*` en `NULL` y el operador ve un
+aviso no bloqueante (`?unconverted=N`, ver `_unconverted_notice`).
+
 Nota de esquema: `prices_history.unit` se completa con `canonical_unit()`
 sobre lo que el operador confirma en el `<select>` del formulario — el
 vocabulario cerrado vive en `saimc.units`, no acá. `sale_format` pasa por el
@@ -32,6 +39,7 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
 from saimc.config import get_settings
+from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, apply_resolution
 from saimc.extraction import ocr
 from saimc.extraction.engine import (
     ExtractionProposal,
@@ -53,7 +61,7 @@ from saimc.models import (
     SaleFormat,
 )
 from saimc.units import UNITS, canonical_unit
-from saimc.web.deps import get_db
+from saimc.web.deps import get_db, get_rate_fetcher
 
 router = APIRouter()
 
@@ -218,6 +226,18 @@ def _status_counts(db: Session) -> dict[str, int]:
     return {status.value: counts.get(status, 0) for status in ProcessingStatus}
 
 
+def _unconverted_notice(unconverted: int) -> str | None:
+    """Copia del aviso no bloqueante (design.md D7). `None` cuando no hay
+    nada que avisar — el template lo omite con un simple `{% if notice %}`.
+    """
+    if unconverted <= 0:
+        return None
+    return (
+        f"Guardado sin convertir: {unconverted} fila(s) en moneda extranjera "
+        "quedaron sin tasa de cambio. Se pueden completar más tarde con el backfill."
+    )
+
+
 def _render_queue(
     request: Request,
     *,
@@ -230,6 +250,7 @@ def _render_queue(
     error: str | None,
     status_counts: dict[str, int],
     status_code: int = 200,
+    unconverted: int = 0,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -243,6 +264,7 @@ def _render_queue(
             "row_count": row_count,
             "values": global_values,
             "error": error,
+            "notice": _unconverted_notice(unconverted),
             "currencies": [c.value for c in Currency],
             "units": UNITS,
             "status_counts": status_counts,
@@ -259,7 +281,9 @@ _EXTRA_BLANK_ROWS = 3
 
 
 @router.get("/curation", response_class=HTMLResponse)
-def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def curation_queue(
+    request: Request, db: Session = Depends(get_db), unconverted: int = 0
+) -> HTMLResponse:
     """Muestra el elemento `pending` más antiguo, con propuesta pre-llenada si hay texto.
 
     Para imágenes sin `original_text` (el caso normal: el OCR no corre en la
@@ -325,6 +349,7 @@ def curation_queue(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
         global_values=global_values,
         error=None,
         status_counts=_status_counts(db),
+        unconverted=unconverted,
     )
 
 
@@ -484,12 +509,21 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
 
 @router.post("/curation/{ingestion_id}", response_model=None)
 async def submit_curation(
-    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+    ingestion_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    rate_fetcher: Fetcher = Depends(get_rate_fetcher),
 ) -> HTMLResponse | RedirectResponse:
     """Confirma la curaduría: crea una fila de `prices_history` por cada renglón completo.
 
     Sin motor de validación todavía (docs/decisions.md, 2026-08-07): cada fila
-    se crea con `confidence_score`, `price_cup` y `exchange_rate*` en None.
+    se crea con `confidence_score` en None. `price_cup`/`exchange_rate*` YA NO
+    quedan fijos en None (2026-08-13): se resuelven sincrónicamente vía
+    `RateResolver` para toda fila con `currency != CUP`, con el ancla que
+    calcula `anchor_date` (`published_date` si el operador lo cargó, si no
+    `raw_ingestions.captured_at` en calendario de La Habana). Nunca bloquea el
+    guardado — si nada es resolvible, la fila igual se guarda con esas cuatro
+    columnas en `NULL` y el redirect avisa `?unconverted=N` (design.md D4/D7).
 
     La tabla manda `row_count` filas indexadas (`product_id_0`, `price_0`, ...),
     más `new_product_name_i` para el alta rápida de producto nuevo (ver
@@ -597,6 +631,19 @@ async def submit_curation(
             status_code=422,
         )
 
+    # Resolución de tasa DESPUÉS de la rama todo-o-nada (design.md D4): un
+    # submit que va a fallar no debe gastar llamadas HTTP ni escribir filas
+    # de cache dentro de una transacción que se está por descartar.
+    resolver = RateResolver(db, rate_fetcher)
+    unconverted = 0
+    for entry in entries_to_create:
+        if entry.currency == Currency.CUP.value:
+            continue  # moneda nacional: nunca lleva tasa (CHECK de esquema)
+        anchor = anchor_date(entry.published_date, ingestion.captured_at)
+        apply_resolution(entry, resolver.resolve(entry.currency, anchor))
+        if entry.exchange_rate is None:
+            unconverted += 1
+
     for entry in entries_to_create:
         db.add(entry)
 
@@ -623,7 +670,8 @@ async def submit_curation(
     ingestion.processing_status = ProcessingStatus.CURATED
     db.commit()
 
-    return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
+    redirect_url = f"/curation?unconverted={unconverted}" if unconverted else "/curation"
+    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/curation/{ingestion_id}/discard")
@@ -645,6 +693,7 @@ def curation_history(
     currency: str | None = None,
     unit: str | None = None,
     sale_format: str | None = None,
+    unconverted: int = 0,
 ) -> HTMLResponse:
     """Lista los anuncios ya curados, más recientes primero, para ubicar cuál
     corregir o eliminar — es la puerta de entrada a `GET /curation/{id}/edit`
@@ -718,6 +767,7 @@ def curation_history(
             "filter_currency": currency,
             "filter_unit": unit,
             "filter_sale_format": sale_format,
+            "notice": _unconverted_notice(unconverted),
         },
     )
 
@@ -789,7 +839,10 @@ def edit_curated(
 
 @router.post("/curation/{ingestion_id}/edit", response_model=None)
 async def submit_edit(
-    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+    ingestion_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    rate_fetcher: Fetcher = Depends(get_rate_fetcher),
 ) -> HTMLResponse | RedirectResponse:
     """Aplica la corrección: actualiza en el lugar las filas que el operador
     reabrió, sin crear ni borrar ninguna.
@@ -800,6 +853,13 @@ async def submit_edit(
     corresponde a una fila de este mismo anuncio, es un error explícito —
     nunca crea una fila nueva por accidente. Mismo contrato todo-o-nada que
     `submit_curation`: una fila con error bloquea el guardado entero.
+
+    La tasa de cambio SOLO se re-resuelve cuando cambia `currency` o `price`
+    respecto de lo que la fila ya tenía guardado (design.md D6): editar un
+    campo no relacionado (provincia, unidad, formato) no debe pisar la tasa
+    de la fecha en la que el anuncio se publicó con la de hoy. Una fila que
+    nunca tuvo tasa (`exchange_rate is None`) igual se intenta resolver en
+    cada edición, cambie o no algo más — no hay nada que preservar ahí.
     """
     ingestion = _require_curated(db, ingestion_id)
     form = await request.form()
@@ -869,7 +929,15 @@ async def submit_edit(
             status_code=422,
         )
 
+    resolver = RateResolver(db, rate_fetcher)
+    unconverted = 0
     for existing, product, price_value, province, row in updates:
+        # `changed` se calcula ANTES de mutar `existing` (design.md D6): una
+        # comparación posterior siempre daría `False`, porque ya se habría
+        # pisado el valor viejo. `Decimal("10.00") != Decimal("10")` es
+        # `False` — el round-trip de ceros de más no genera un falso positivo.
+        changed = row["currency"] != existing.currency or price_value != existing.price
+
         existing.product_id = product.id
         existing.province_id = province.id if province is not None else None
         existing.price = price_value
@@ -884,6 +952,15 @@ async def submit_edit(
         )
         existing.published_date = published_date
 
+        if row["currency"] == Currency.CUP.value:
+            apply_resolution(existing, NO_RATE)  # moneda nacional: nunca lleva tasa
+        elif changed or existing.exchange_rate is None:
+            anchor = anchor_date(existing.published_date, ingestion.captured_at)
+            apply_resolution(existing, resolver.resolve(existing.currency, anchor))
+            if existing.exchange_rate is None:
+                unconverted += 1
+        # si no cambió ni moneda ni precio y ya tenía tasa: no se toca (D6).
+
     # Mismo criterio que `submit_curation`: solo se pisa si llegó algo. Vaciar
     # `source_reference` desde acá no está soportado en este slice.
     if source_reference:
@@ -891,4 +968,7 @@ async def submit_edit(
 
     db.commit()
 
-    return RedirectResponse(url="/curation/history", status_code=status.HTTP_303_SEE_OTHER)
+    redirect_url = (
+        f"/curation/history?unconverted={unconverted}" if unconverted else "/curation/history"
+    )
+    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)

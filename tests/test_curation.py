@@ -31,7 +31,7 @@ from saimc.models import (
     SourceType,
 )
 from saimc.web.app import app
-from saimc.web.deps import get_db
+from saimc.web.deps import get_db, get_rate_fetcher
 
 # --- helpers de armado ------------------------------------------------------
 
@@ -113,6 +113,21 @@ def _crear_precio_curado(
     return precio
 
 
+class _FakeRateFetcher:
+    """Reemplazo de red para `get_rate_fetcher` (Commit 2): nunca pega a
+    elTOQUE, devuelve tasas fijas por `(clave elTOQUE, día)` y cuenta
+    llamadas — el seam que prueba tanto el camino feliz como el degradado
+    sin depender de `httpx`."""
+
+    def __init__(self, rates: dict[tuple[str, date], Decimal] | None = None) -> None:
+        self.rates = rates or {}
+        self.calls: list[tuple[str, date]] = []
+
+    def __call__(self, key: str, day: date) -> Decimal | None:
+        self.calls.append((key, day))
+        return self.rates.get((key, day))
+
+
 @pytest.fixture
 def client(
     session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -131,6 +146,11 @@ def client(
     get_settings.cache_clear()
 
     app.dependency_overrides[get_db] = _get_db_override
+    # Sin tasas configuradas por default: ningún test paga red, y el
+    # comportamiento de un test que no opta explícitamente por una tasa
+    # (override propio dentro del test) sigue siendo "queda sin convertir" —
+    # el mismo resultado que antes de que existiera esta dependencia.
+    app.dependency_overrides[get_rate_fetcher] = lambda: _FakeRateFetcher()
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -1311,6 +1331,236 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert len(fila.packaging or "") <= PACKAGING_MAX_LENGTH
         assert "55550101" not in (fila.packaging or "")
+
+
+class TestConversionAlCurar:
+    """Resolución de tasa en `submit_curation` (`spec.md` §6.3 E, design D4).
+
+    `get_rate_fetcher` está sobreescrito por el fixture `client` con un
+    `_FakeRateFetcher` sin tasas por default; cada test que necesita una
+    tasa real instala su propio override sobre el mismo `app`.
+    """
+
+    def test_fetch_exitoso_persiste_tasa_y_price_cup(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-conversion-usd")
+        fetcher = _FakeRateFetcher({("USD", date(2026, 4, 20)): Decimal("671.56")})
+        app.dependency_overrides[get_rate_fetcher] = lambda: fetcher
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "100.00",
+                "currency_0": "USD",
+                "quantity_0": "",
+                "unit_0": "",
+                "province_id_0": "",
+                "published_date": "2026-04-20",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/curation"
+
+        session.expire_all()
+        precio = session.execute(select(PriceHistory)).scalars().one()
+        # La fecha persistida es la SOLICITADA (el ancla): el fake fetcher
+        # sólo puede devolver un `Decimal` (mismo contrato que `parse_rate`,
+        # D3), así que no hay canal por el que una fecha ajena pueda colarse.
+        assert precio.exchange_rate == Decimal("671.56")
+        assert precio.exchange_rate_date == date(2026, 4, 20)
+        assert precio.exchange_rate_source == "elTOQUE"
+        assert precio.price_cup == Decimal("67156.00")
+        assert fetcher.calls == [("USD", date(2026, 4, 20))]
+
+    def test_sin_tasa_resolvible_guarda_sin_convertir_y_avisa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """elTOQUE caída y sin cache: la fila se guarda igual, las cuatro
+        columnas quedan NULL y el redirect avisa `unconverted=1` (design D7)."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-conversion-sin-tasa")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "100.00",
+                "currency_0": "USD",
+                "quantity_0": "",
+                "unit_0": "",
+                "province_id_0": "",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/curation?unconverted=1"
+
+        session.expire_all()
+        precio = session.execute(select(PriceHistory)).scalars().one()
+        assert precio.price_cup is None
+        assert precio.exchange_rate is None
+        assert precio.exchange_rate_date is None
+        assert precio.exchange_rate_source is None
+
+    def test_cup_nunca_se_manda_a_resolver(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """No basta con que `price_cup` termine en `None` (ya lo cubre el
+        test de siempre en `TestCurationSubmit`): acá se prueba que una fila
+        CUP ni siquiera llega a invocar el fetcher."""
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-conversion-cup")
+        fetcher = _FakeRateFetcher()
+        app.dependency_overrides[get_rate_fetcher] = lambda: fetcher
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "currency_0": "CUP",
+                "quantity_0": "",
+                "unit_0": "",
+                "province_id_0": "",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/curation"
+        assert fetcher.calls == []
+
+
+class TestNotificacionSinConvertir:
+    def test_notice_se_renderiza_con_query_param_en_la_cola(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/curation?unconverted=2")
+
+        assert "Guardado sin convertir" in response.text
+
+    def test_sin_query_param_no_hay_notice_en_la_cola(self, client: TestClient) -> None:
+        response = client.get("/curation")
+
+        assert "Guardado sin convertir" not in response.text
+
+    def test_notice_se_renderiza_con_query_param_en_el_historial(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/curation/history?unconverted=1")
+
+        assert "Guardado sin convertir" in response.text
+
+    def test_sin_query_param_no_hay_notice_en_el_historial(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/curation/history")
+
+        assert "Guardado sin convertir" not in response.text
+
+
+class TestConversionAlEditar:
+    """D6: editar una fila no debe re-resolver la tasa salvo que cambie
+    moneda o precio — la tasa guardada es la última palabra de la fecha en
+    la que se publicó ese anuncio, no de cuándo se corrigió."""
+
+    def test_edit_no_relacionado_preserva_la_tasa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        provincia = _crear_provincia(session)
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-preserva-tasa")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session, ingestion=curado, product=pollo, price="10.00", currency="USD"
+        )
+        precio.exchange_rate = Decimal("650.00")
+        precio.exchange_rate_date = date(2026, 4, 1)
+        precio.exchange_rate_source = "elTOQUE"
+        precio.price_cup = Decimal("6500.00")
+        session.commit()
+
+        fetcher = _FakeRateFetcher({("USD", date(2026, 8, 13)): Decimal("999.99")})
+        app.dependency_overrides[get_rate_fetcher] = lambda: fetcher
+
+        client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                {
+                    "product_id": str(pollo.id),
+                    # Mismo precio, mismo string round-trip que ya trae la
+                    # fila (`"10.00"` -> `Decimal("10.00")` == `Decimal("10.00")`):
+                    # `changed` debe dar `False`, no un falso positivo por
+                    # ceros de más.
+                    "price": "10.00",
+                    "currency": "USD",
+                    "province_id": str(provincia.id),
+                    "price_id": str(precio.id),
+                }
+            ),
+        )
+
+        session.refresh(precio)
+        assert fetcher.calls == []
+        assert precio.exchange_rate == Decimal("650.00")
+        assert precio.exchange_rate_date == date(2026, 4, 1)
+        assert precio.exchange_rate_source == "elTOQUE"
+        assert precio.price_cup == Decimal("6500.00")
+        # La edición sí se aplicó — no es que el submit entero se ignoró.
+        assert precio.province_id == provincia.id
+
+    def test_edit_cambia_precio_dispara_resolucion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(
+            session,
+            hash_="hash-edit-price-dispara",
+            captured_at=datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+        )
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session, ingestion=curado, product=pollo, price="10.00", currency="USD"
+        )
+        precio.exchange_rate = Decimal("650.00")
+        precio.exchange_rate_date = date(2026, 4, 1)
+        precio.exchange_rate_source = "elTOQUE"
+        precio.price_cup = Decimal("6500.00")
+        session.commit()
+
+        ancla = date(2026, 8, 13)
+        fetcher = _FakeRateFetcher({("USD", ancla): Decimal("999.99")})
+        app.dependency_overrides[get_rate_fetcher] = lambda: fetcher
+
+        client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                {
+                    "product_id": str(pollo.id),
+                    "price": "12.00",
+                    "currency": "USD",
+                    "price_id": str(precio.id),
+                }
+            ),
+        )
+
+        session.refresh(precio)
+        assert fetcher.calls == [("USD", ancla)]
+        assert precio.exchange_rate == Decimal("999.99")
+        assert precio.exchange_rate_date == ancla
+        assert precio.exchange_rate_source == "elTOQUE"
+        assert precio.price_cup == Decimal("11999.88")
 
 
 class TestVocabularioDeEnvase:
