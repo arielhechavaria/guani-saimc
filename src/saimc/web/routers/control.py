@@ -37,6 +37,7 @@ from saimc.progress import (
     compute_phase0_progress,
 )
 from saimc.web.deps import get_db
+from saimc.web.matrix import group_cells
 
 router = APIRouter()
 
@@ -87,6 +88,10 @@ def control_panel(
         "control.html",
         {
             "cells": cells,
+            # Las series del mismo producto van juntas bajo un encabezado, con
+            # la barra de rango ya calculada (ver `saimc.web.matrix`): «Arroz»
+            # se repetía una vez por serie y se leía como tres productos.
+            "cell_groups": group_cells(cells),
             "retail_ranges": retail_ranges,
             "retail_range_days": days,
             "curated": curated,

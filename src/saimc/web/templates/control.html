@@ -29,6 +29,21 @@
     .saimc-gap.is-open { border-left-color: #fd7e14; }
     .saimc-gap.is-clear { border-left-color: #198754; }
     .saimc-zero { color: #adb5bd; }
+    /* Matriz agrupada: un encabezado por producto, una fila por serie. */
+    .saimc-serie-group { border: 1px solid #dee2e6; border-radius: .5rem; padding: .75rem 1rem; margin-bottom: .75rem; }
+    .saimc-serie-head { padding-bottom: .5rem; border-bottom: 1px solid #f1f3f5; margin-bottom: .5rem; }
+    .saimc-serie + .saimc-serie { margin-top: .75rem; padding-top: .75rem; border-top: 1px dashed #f1f3f5; }
+    .saimc-serie-meta { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; align-items: baseline; }
+    .saimc-serie-name { font-size: .9rem; font-weight: 500; }
+    /* Barra de rango. El largo codifica la amplitud (escala logarítmica,
+       normalizada contra la mayor de la tabla) y el marcador ubica la mediana
+       dentro del propio rango de la serie. Ningún color de veredicto: §12.6
+       prohíbe fijar un umbral de dispersión, así que juzga el operador. */
+    .saimc-range { display: flex; align-items: center; gap: .5rem; margin-top: .35rem; font-size: .75rem; color: #6c757d; }
+    .saimc-range-min, .saimc-range-max { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .saimc-range-track { flex: 1; background: #f1f3f5; border-radius: .25rem; height: .55rem; }
+    .saimc-range-fill { display: block; position: relative; height: 100%; background: #cfe2ff; border-radius: .25rem; }
+    .saimc-range-median { position: absolute; top: -.15rem; width: .2rem; height: .85rem; background: #0d6efd; border-radius: .1rem; transform: translateX(-50%); }
   </style>
 </head>
 <body>
@@ -435,11 +450,23 @@
     <p class="text-muted small">
       Solo los {{ pilot_products|length }} productos bandera — filtro de pantalla, no de
       datos. El resto del catálogo sigue cargado en la base, simplemente no es el foco
-      de la curaduría hoy. Ordenado por tamaño de muestra. <strong>Amplitud</strong> es
-      cuántas veces el máximo contiene al mínimo: una celda que mezcla precio minorista
-      con precio mayorista se delata ahí. La vista no marca ninguna celda como buena o
-      mala — no hay umbral fijado todavía (spec.md §12.6), y fijarlo por intuición sería
-      peor que no tenerlo.
+      de la curaduría hoy. Cada producto agrupa sus series; los grupos van ordenados por
+      tamaño de muestra.
+    </p>
+
+    <p class="text-muted small">
+      <strong>Cómo se lee la barra.</strong> Va del mínimo al máximo de la serie, y la
+      marca azul es la mediana. El <strong>largo</strong> codifica la amplitud —cuántas
+      veces el máximo contiene al mínimo— en escala logarítmica y normalizado contra la
+      serie más amplia de la tabla: en escala lineal una amplitud de 44× y una de 103×
+      se verían casi iguales, y una de 2× sería invisible. Una barra larga con la mediana
+      pegada al borde izquierdo significa que casi todas las observaciones están abajo y
+      el máximo es un extremo suelto, que es la forma que tiene una celda mezclando
+      precio minorista con un saco mayorista.
+      <strong>Ninguna barra se pinta de un color de alarma</strong>: no hay umbral de
+      dispersión fijado (spec.md §12.6), y fijarlo por intuición sería peor que no
+      tenerlo. La barra dibuja el rango que la celda ya tiene; quien juzga es el
+      operador.
     </p>
 
     <p class="text-muted small">
@@ -465,52 +492,60 @@
         Todavía no hay filas de precio cargadas.
       </div>
     {% else %}
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
-        <thead>
-          <tr>
-            <th scope="col">Producto</th>
-            <th scope="col">Provincia</th>
-            <th scope="col">Unidad</th>
-            <th scope="col">Formato</th>
-            <th scope="col" class="text-end">n</th>
-            <th scope="col" class="text-end">Mediana</th>
-            <th scope="col" class="text-end">Mínimo</th>
-            <th scope="col" class="text-end">Máximo</th>
-            <th scope="col" class="text-end">Amplitud</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for cell in cells %}
-          <tr>
-            <td>{{ cell.product_name }}</td>
-            <td>{{ cell.province_name or "— sin provincia —" }}</td>
-            <td>{% if cell.unit %}{{ cell.unit }}{% else %}<span class="text-muted">— sin responder —</span>{% endif %}</td>
-            <td>
-              {% if cell.sale_format == "retail" %}minorista
-              {%- elif cell.sale_format == "wholesale" %}mayorista
-              {%- else %}<span class="text-muted">— sin responder —</span>{% endif %}
-            </td>
-            <td class="text-end">
-              <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
-                 title="Ver los anuncios detrás de este número">
-                <strong>{{ cell.count }}</strong>
-              </a>
-            </td>
-            <td class="text-end">
-              {{ "%.2f"|format(cell.median) }} {{ cell.currency }}
-              {%- if cell.unconverted %} <span class="text-muted">sin convertir</span>{% endif %}
-            </td>
-            <td class="text-end text-muted">{{ "%.2f"|format(cell.minimum) }}</td>
-            <td class="text-end text-muted">{{ "%.2f"|format(cell.maximum) }}</td>
-            <td class="text-end">
-              {% if cell.spread is none %}—{% else %}{{ "%.1f"|format(cell.spread) }}×{% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    {% for grupo in cell_groups %}
+    <div class="saimc-serie-group">
+      <div class="saimc-serie-head">
+        <strong>{{ grupo.product_name }}</strong>
+        <span class="text-muted">· {{ grupo.province_name or "— sin provincia —" }}</span>
+        <span class="text-muted small">
+          · {{ grupo.cells|length }} serie{% if grupo.cells|length != 1 %}s{% endif %}
+          · {{ grupo.total }} observaci{% if grupo.total != 1 %}ones{% else %}ón{% endif %}
+        </span>
+      </div>
+
+      {% for item in grupo.cells %}
+      {% set cell = item.cell %}
+      <div class="saimc-serie">
+        <div class="saimc-serie-meta">
+          <span class="saimc-serie-name">
+            {% if cell.unit %}{{ cell.unit }}{% else %}<span class="text-muted">sin unidad</span>{% endif %}
+            ·
+            {% if cell.sale_format == "retail" %}minorista
+            {%- elif cell.sale_format == "wholesale" %}mayorista
+            {%- else %}<span class="text-muted">sin formato</span>{% endif %}
+          </span>
+          <span class="text-muted small">
+            <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
+               title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
+            · mediana <strong>{{ "%.2f"|format(cell.median) }} {{ cell.currency }}</strong>
+            {%- if cell.unconverted %} <span class="text-muted">sin convertir</span>{% endif %}
+            {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
+          </span>
+        </div>
+
+        {% if item.bar.has_range %}
+        <div class="saimc-range">
+          <span class="saimc-range-min">{{ "%.2f"|format(cell.minimum) }}</span>
+          <span class="saimc-range-track">
+            <span class="saimc-range-fill" style="width: {{ "%.1f"|format(item.bar.width_pct) }}%;">
+              <span class="saimc-range-median" style="left: {{ "%.1f"|format(item.bar.median_pct) }}%;"
+                    title="Mediana {{ "%.2f"|format(cell.median) }}"></span>
+            </span>
+          </span>
+          <span class="saimc-range-max">{{ "%.2f"|format(cell.maximum) }}</span>
+        </div>
+        {% else %}
+        <div class="saimc-range">
+          <span class="text-muted small">
+            {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(cell.median) }}
+            {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(cell.median) }}{% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
+    {% endfor %}
     {% endif %}
 
     <p class="mt-4">

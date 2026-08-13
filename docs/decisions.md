@@ -1868,3 +1868,40 @@ Consecuencia: las monedas sin ninguna tasa cacheada (hoy EUR y MLC) se
 muestran igual, en blanco. Ese hueco significa que un anuncio en esa moneda
 se guardaría sin convertir si elTOQUE no responde, y no se veía en ningún
 otro lado.
+
+---
+
+## 2026-08-13 — La matriz de pilotos se agrupa por producto y dibuja el rango
+
+Contexto: la matriz repetía el nombre del producto una vez por serie. Con
+Arroz partido en tres (kg minorista, lb minorista, kg mayorista) se leía como
+tres productos distintos en vez de un producto con tres series. Y la columna
+de amplitud —que existe justamente para delatar una celda que mezcla
+minorista con mayorista— quedaba como un número al final de la fila: en los
+datos reales había un 44.5× y un 103.1× que nadie estaba mirando.
+
+Decisión: se agrega `saimc.web.matrix` y la tabla pasa a bloques agrupados por
+producto × provincia, cada serie con una barra de rango mínimo–mediana–máximo.
+El largo de la barra codifica la amplitud en **escala logarítmica**,
+normalizada contra la serie más amplia de toda la tabla; el marcador ubica la
+mediana dentro del propio rango de la serie, también en logarítmica.
+
+Dos elecciones que no son obvias. **Logarítmica y no lineal**: la amplitud es
+una razón, no una diferencia; en lineal un 44× y un 103× se ven casi iguales
+contra un máximo de 103, y un 2× queda invisible. **Normalizada contra toda la
+tabla y no contra el grupo**: si cada producto se escalara solo, la amplitud
+de Azúcar se vería igual de ancha que la de Arroz y la comparación entre
+productos mentiría.
+
+Descartado: pintar de rojo las celdas de amplitud alta. Es fijar un umbral de
+dispersión, que `spec.md` §12.6 prohíbe explícitamente y que ya protege el
+test `test_no_emite_veredictos_sobre_la_muestra`. La barra es codificación
+proporcional del dato que la celda ya tiene: el ojo del operador juzga, el
+sistema no declara nada. La geometría se calcula en Python y no en Jinja para
+que sea testeable (`tests/test_matrix.py`).
+
+Consecuencia: con los datos del día la lectura queda evidente — Arroz lb
+minorista dibuja una barra al 100% con la mediana al 2.5% del borde
+izquierdo, contra Azúcar lb minorista al 15% con la mediana al 14%. Eso son
+sacos cargados como minorista dentro de las celdas de Arroz, pendientes de
+corregir en la cola.
