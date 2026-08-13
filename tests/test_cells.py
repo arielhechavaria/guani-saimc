@@ -56,18 +56,21 @@ def _precio(
     sale_format: str | None = None,
     quantity: str | None = None,
     published_date: date | None = None,
+    currency: str = Currency.CUP.value,
+    price_cup: str | None = None,
 ) -> None:
     session.add(
         PriceHistory(
             product_id=product.id,
             province_id=province.id if province else None,
             price=Decimal(price),
-            currency=Currency.CUP.value,
+            currency=currency,
             source_id=source.id,
             unit=unit,
             sale_format=sale_format,
             quantity=Decimal(quantity) if quantity is not None else None,
             published_date=published_date,
+            price_cup=Decimal(price_cup) if price_cup is not None else None,
         )
     )
 
@@ -238,6 +241,88 @@ class TestCeldaSeparaUnidadYFormato:
         assert sin_responder.median == Decimal("320")
 
 
+class TestCeldaFundePorPriceCup:
+    """§6.3 E: `price_cup` ya se llena desde el 2026-08-13, así que la celda
+    deja de partirse por moneda — se funde por `price_cup` y solo lo que
+    todavía no tiene tasa resuelta queda aparte (2026-08-13, ver docstring
+    del módulo). Reemplaza el criterio viejo, documentado hasta ayer, de que
+    "la moneda entra en la clave a propósito" porque no había conversión.
+    """
+
+    def _arroz_y_santiago(self, session: Session) -> tuple[Product, Province]:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        return arroz, scu
+
+    def test_funde_cup_y_usd_convertido_en_una_celda(self, session: Session) -> None:
+        arroz, scu = self._arroz_y_santiago(session)
+        origen = _ingestion(session, "hash-fusion-cup")
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value,
+            currency=Currency.CUP.value,
+        )
+        _precio(
+            session, product=arroz, province=scu, price="10", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value,
+            currency=Currency.USD.value, price_cup="800",
+        )
+        session.commit()
+
+        (celda,) = compute_cells(session)
+
+        assert celda.currency == "CUP"
+        assert celda.count == 2
+        assert celda.median == Decimal("750")
+        assert celda.minimum == Decimal("700")
+        assert celda.maximum == Decimal("800")
+        assert celda.unconverted is False
+
+    def test_usd_sin_convertir_no_se_funde_y_queda_marcada(
+        self, session: Session
+    ) -> None:
+        arroz, scu = self._arroz_y_santiago(session)
+        origen = _ingestion(session, "hash-sin-convertir")
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value,
+            currency=Currency.CUP.value,
+        )
+        _precio(
+            session, product=arroz, province=scu, price="10", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value,
+            currency=Currency.USD.value, price_cup=None,
+        )
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 2
+        sin_convertir = [c for c in celdas if c.unconverted][0]
+        assert sin_convertir.currency == "USD"
+        assert sin_convertir.count == 1
+        assert sin_convertir.median == Decimal("10")
+
+        fundida = [c for c in celdas if not c.unconverted][0]
+        assert fundida.currency == "CUP"
+        assert fundida.count == 1
+
+    def test_celda_toda_en_cup_no_queda_marcada(self, session: Session) -> None:
+        arroz, scu = self._arroz_y_santiago(session)
+        origen = _ingestion(session, "hash-toda-cup")
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value,
+        )
+        session.commit()
+
+        (celda,) = compute_cells(session)
+
+        assert celda.unconverted is False
+
+
 class TestComputeRetailRanges:
     """El producto sigue siendo uno solo aunque el formato varíe (2026-08-12):
     Arroz a granel, por saco y por paquete no son series distintas. Pero fundir
@@ -399,3 +484,54 @@ class TestComputeRetailRanges:
 
     def test_sin_datos_devuelve_lista_vacia(self, session: Session) -> None:
         assert compute_retail_ranges(session) == []
+
+    def test_funde_cup_y_usd_convertido_por_price_cup(self, session: Session) -> None:
+        """Mismo criterio de fusión que `compute_cells` (2026-08-13): acá se
+        normaliza por `quantity` antes de fundir, así que el valor esperado
+        es la mediana de los dos precios por unidad ya en CUP.
+        """
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-rango-fusion")
+        _precio(
+            session, product=arroz, province=None, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            currency=Currency.CUP.value,
+        )
+        _precio(
+            session, product=arroz, province=None, price="10", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            currency=Currency.USD.value, price_cup="800",
+        )
+
+        (rango,) = compute_retail_ranges(session)
+
+        assert rango.currency == "CUP"
+        assert rango.count == 2
+        assert rango.median == Decimal("750")
+        assert rango.unconverted is False
+
+    def test_usd_sin_convertir_queda_aparte_en_el_rango(self, session: Session) -> None:
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-rango-sin-convertir")
+        _precio(
+            session, product=arroz, province=None, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            currency=Currency.CUP.value,
+        )
+        _precio(
+            session, product=arroz, province=None, price="10", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            currency=Currency.USD.value, price_cup=None,
+        )
+
+        rangos = compute_retail_ranges(session)
+
+        assert len(rangos) == 2
+        sin_convertir = [r for r in rangos if r.unconverted][0]
+        assert sin_convertir.currency == "USD"
+        assert sin_convertir.count == 1
+        assert sin_convertir.median == Decimal("10")
+
+        fundido = [r for r in rangos if not r.unconverted][0]
+        assert fundido.currency == "CUP"
+        assert fundido.count == 1

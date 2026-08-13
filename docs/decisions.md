@@ -1744,3 +1744,30 @@ garantizar.
 Consecuencia: si elTOQUE cae, la resolución degrada a la última tasa
 cacheada o a «sin convertir» — nunca a la tasa oficial. Se revisa esta
 decisión si aparece una segunda fuente informal confiable.
+
+---
+
+## 2026-08-13 — /control funde celdas por price_cup, no solo las anota
+
+Contexto: con `price_cup` ya resuelto (§6.3 E), `/control` seguía separando
+Arroz-en-USD de Arroz-en-CUP porque `cells.py` agrupaba por moneda original,
+un criterio que era correcto antes de que existiera conversión pero ya no.
+
+Decisión: `compute_cells` y `compute_retail_ranges` funden por `price_cup`
+cuando la fila no es CUP y tiene tasa resuelta — la celda resultante queda
+con `currency = "CUP"` sin importar la moneda de origen de cada fila. Lo que
+no tiene tasa resuelta (`currency != CUP` y `price_cup IS NULL`) no se funde
+a ciegas: queda en su propia celda, marcada `unconverted=True`, con la
+moneda original en la clave — mismo criterio que ya usa `sale_format` nulo.
+El link a `/curation/history` omite `&currency=` para la celda fundida (para
+no esconder filas que originalmente eran de otra moneda del filtro) y lo
+manda solo para la celda sin convertir.
+
+Descartado: solo anotar el equivalente en CUP al lado del valor original sin
+fundir la celda — el operador la vio y prefirió fundir, porque la matriz por
+producto/provincia/unidad/formato es más legible con una celda por serie
+real en vez de una por combinación de moneda.
+
+Consecuencia: si en el futuro se agrega una moneda nueva o elTOQUE deja de
+resolver por un tiempo largo, esas filas se acumulan en celdas
+`unconverted` — visibles y separadas, no perdidas ni fundidas por error.

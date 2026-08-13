@@ -13,9 +13,16 @@ umbral. N se calibra con datos reales —«análisis de estabilidad de la median
 frente al tamaño de muestra»— y esta vista es justamente lo que permite
 hacerlo. Quien juzga es el operador.
 
-La moneda entra en la clave de la celda a propósito. `price_cup` existe pero
-todavía no lo llena nadie (falta la integración con la tasa de cambio, §6.3 E):
-promediar CUP con USD acá sería inventar una conversión que el sistema no tiene.
+La moneda **ya no** entra en la clave de la celda fundida (2026-08-13):
+`price_cup` se llena desde §6.3 E, así que una fila en USD con conversión
+resuelta se funde con las filas en CUP del mismo producto/provincia/unidad/
+formato, usando `price_cup` en vez de `price`. Lo que sigue separado es la
+fila cuya conversión **no** se resolvió (`currency != CUP` y `price_cup IS
+NULL`): fundirla a ciegas asumiendo que ya está en CUP inventaría un valor,
+así que queda en su propia celda, con la moneda original en la clave y
+`Cell.unconverted = True` — mismo criterio que el nulo de `sale_format`
+descrito más abajo: lo que falta resolver no se mezcla con lo resuelto, se
+deja visible aparte.
 
 `unit` y `sale_format` entran por el mismo motivo. Un precio por libra y uno por
 kilo no son la misma serie, y un saco mayorista no es comparable con la libra
@@ -52,7 +59,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.models import PriceHistory, Product, Province, SaleFormat
+from saimc.models import Currency, PriceHistory, Product, Province, SaleFormat
 from saimc.units import canonical_unit
 
 
@@ -69,6 +76,10 @@ class Cell:
     median: Decimal
     minimum: Decimal
     maximum: Decimal
+    # `True` cuando la celda quedó separada por no tener `price_cup` resuelto
+    # (moneda != CUP sin tasa) — ver docstring del módulo. Con default para no
+    # romper construcciones posicionales existentes.
+    unconverted: bool = False
 
     @property
     def spread(self) -> Decimal | None:
@@ -99,18 +110,35 @@ def compute_cells(session: Session) -> list[Cell]:
             PriceHistory.unit,
             PriceHistory.sale_format,
             PriceHistory.price,
+            PriceHistory.price_cup,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
     )
 
-    CellKey = tuple[str, str | None, str, str | None, str | None]
+    # `unconverted` entra en la clave para separar, sin ambigüedad, el grupo
+    # fundido (moneda "CUP" literal, ya sea original o convertida) del grupo
+    # que quedó sin resolver (moneda original, nunca "CUP" — ver más abajo).
+    CellKey = tuple[str, str | None, str, str | None, str | None, bool]
     grouped: dict[CellKey, list[Decimal]] = {}
-    for product_name, province_name, currency, unit, sale_format, price in session.execute(
-        stmt
+    for product_name, province_name, currency, unit, sale_format, price, price_cup in (
+        session.execute(stmt)
     ):
-        key: CellKey = (product_name, province_name, currency, unit, sale_format)
-        grouped.setdefault(key, []).append(price)
+        if currency == Currency.CUP.value:
+            # Ya está en CUP: nada que convertir.
+            effective_price = price
+            key_currency, unconverted = Currency.CUP.value, False
+        elif price_cup is not None:
+            # Conversión resuelta (§6.3 E): se funde con el grupo CUP.
+            effective_price = price_cup
+            key_currency, unconverted = Currency.CUP.value, False
+        else:
+            # Sin tasa resuelta todavía: no se funde a ciegas, celda aparte.
+            effective_price = price
+            key_currency, unconverted = currency, True
+
+        key: CellKey = (product_name, province_name, key_currency, unit, sale_format, unconverted)
+        grouped.setdefault(key, []).append(effective_price)
 
     cells = [
         Cell(
@@ -127,6 +155,7 @@ def compute_cells(session: Session) -> list[Cell]:
             median=statistics.median(prices),
             minimum=min(prices),
             maximum=max(prices),
+            unconverted=unconverted,
         )
         for (
             product_name,
@@ -134,12 +163,16 @@ def compute_cells(session: Session) -> list[Cell]:
             currency,
             unit,
             sale_format,
+            unconverted,
         ), prices in grouped.items()
     ]
 
     # Los desempates son explícitos porque partir la celda multiplica los
     # empates de `count`: sin ellos el orden lo decidiría el hash del dict y la
     # vista cambiaría de forma entre recargas sin que nada haya cambiado.
+    # `unconverted` va al final de la tupla: en un empate de todo lo demás,
+    # la celda sin convertir queda después de la fundida, no es un requisito
+    # duro pero ordena la lectura de mayor a menor confianza en el dato.
     cells.sort(
         key=lambda cell: (
             -cell.count,
@@ -147,6 +180,7 @@ def compute_cells(session: Session) -> list[Cell]:
             cell.province_name or "",
             cell.unit or "",
             cell.sale_format or "",
+            cell.unconverted,
         )
     )
     return cells
@@ -171,6 +205,9 @@ class RetailRange:
     median: Decimal
     minimum: Decimal
     maximum: Decimal
+    # Mismo criterio que `Cell.unconverted`: `True` cuando la fila quedó
+    # separada por no tener `price_cup` resuelto.
+    unconverted: bool = False
 
 
 def compute_retail_ranges(
@@ -219,6 +256,7 @@ def compute_retail_ranges(
             PriceHistory.unit,
             PriceHistory.quantity,
             PriceHistory.price,
+            PriceHistory.price_cup,
             PriceHistory.published_date,
             PriceHistory.created_at,
         )
@@ -229,7 +267,10 @@ def compute_retail_ranges(
         .where(PriceHistory.quantity.is_not(None))
     )
 
-    RangeKey = tuple[str, str | None, str, str]
+    # Mismo criterio de fusión que `compute_cells` (ver su docstring):
+    # `unconverted` en la clave separa sin ambigüedad el grupo fundido del
+    # que quedó sin tasa resuelta.
+    RangeKey = tuple[str, str | None, str, str, bool]
     grouped: dict[RangeKey, list[Decimal]] = {}
     for (
         product_name,
@@ -239,6 +280,7 @@ def compute_retail_ranges(
         row_unit,
         quantity,
         price,
+        price_cup,
         published_date,
         created_at,
     ) in session.execute(stmt):
@@ -251,8 +293,18 @@ def compute_retail_ranges(
         if effective_date < cutoff:
             continue
 
-        key: RangeKey = (product_name, province_name, currency, row_unit)
-        grouped.setdefault(key, []).append(price / quantity)
+        if currency == Currency.CUP.value:
+            effective_price = price
+            key_currency, unconverted = Currency.CUP.value, False
+        elif price_cup is not None:
+            effective_price = price_cup
+            key_currency, unconverted = Currency.CUP.value, False
+        else:
+            effective_price = price
+            key_currency, unconverted = currency, True
+
+        key: RangeKey = (product_name, province_name, key_currency, row_unit, unconverted)
+        grouped.setdefault(key, []).append(effective_price / quantity)
 
     ranges = [
         RetailRange(
@@ -264,11 +316,18 @@ def compute_retail_ranges(
             median=statistics.median(unit_prices),
             minimum=min(unit_prices),
             maximum=max(unit_prices),
+            unconverted=unconverted,
         )
-        for (product_name, province_name, currency, unit), unit_prices in grouped.items()
+        for (
+            product_name,
+            province_name,
+            currency,
+            unit,
+            unconverted,
+        ), unit_prices in grouped.items()
     ]
 
     ranges.sort(
-        key=lambda r: (-r.count, r.product_name, r.province_name or "")
+        key=lambda r: (-r.count, r.product_name, r.province_name or "", r.unconverted)
     )
     return ranges

@@ -255,9 +255,14 @@ class TestColumnaNEnlazaAlHistorial:
     número» sin consultar la base a mano.
     """
 
-    def test_el_link_lleva_los_cinco_campos_de_la_celda(
+    def test_el_link_de_una_celda_fundida_no_manda_moneda(
         self, client: TestClient, session: Session
     ) -> None:
+        """Desde que `compute_cells` funde por `price_cup` (2026-08-13), una
+        celda con `currency == "CUP"` puede mezclar filas que originalmente
+        eran de otra moneda — mandar `&currency=CUP` al historial escondería
+        esas filas del filtro. El link omite el parámetro para esa celda.
+        """
         arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
         scu = Province(code="scu", name="Santiago de Cuba")
         session.add_all([arroz, scu])
@@ -289,5 +294,48 @@ class TestColumnaNEnlazaAlHistorial:
 
         assert (
             "/curation/history?product=Arroz&province=Santiago%20de%20Cuba"
-            "&currency=CUP&unit=lb&sale_format=wholesale" in response.text
+            "&unit=lb&sale_format=wholesale" in response.text
         )
+        assert "currency=CUP" not in response.text
+
+    def test_el_link_de_una_celda_sin_convertir_manda_su_moneda_original(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Una celda `unconverted` no tiene ambigüedad: todas sus filas son
+        de la misma moneda original, así que el filtro sí la manda.
+        """
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/link-sin-convertir.txt",
+            content_hash="hash-link-sin-convertir",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=arroz.id,
+                province_id=scu.id,
+                price=Decimal("10"),
+                currency=Currency.USD.value,
+                price_cup=None,
+                unit="lb",
+                sale_format=SaleFormat.WHOLESALE.value,
+                source_id=origen.id,
+            )
+        )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert (
+            "/curation/history?product=Arroz&province=Santiago%20de%20Cuba"
+            "&currency=USD&unit=lb&sale_format=wholesale" in response.text
+        )
+        assert "sin convertir" in response.text
