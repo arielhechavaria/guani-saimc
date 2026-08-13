@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     # Evidencia preservada, nombrada por hash de contenido.
     raw_store_dir: Path = Path("data/raw")
 
+    # Token bearer de la API TRMI de elTOQUE (spec.md §6.3 E). Ya provisto en
+    # `.env` como `SAIMC_EL_TOQUE_API`; sin él, la resolución de tasa
+    # degrada a "sin tasa" en vez de fallar (no hay feature flag separado).
+    el_toque_api: str | None = None
+    # Timeout corto (design.md, D4): un fetch lento nunca debe demorar el
+    # guardado de un anuncio, degrada a "sin tasa" en cuanto expira.
+    el_toque_timeout: float = 3.0
+
 
 @lru_cache
 def get_settings() -> Settings:

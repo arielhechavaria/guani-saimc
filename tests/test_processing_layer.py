@@ -322,6 +322,29 @@ class TestPricesHistoryChecks:
         with pytest.raises(IntegrityError):
             session.commit()
 
+    def test_fila_convertida_satisface_ambos_checks(self, session: Session) -> None:
+        """Primera fila de la suite con dato no NULO real en las cuatro
+        columnas de conversión — hasta este cambio ningún camino de escritura
+        producía un `exchange_rate` no NULL (spec: processing-layer-schema —
+        CHECKs de conversión monetaria, escenario nuevo)."""
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(
+            producto,
+            fuente,
+            currency=Currency.USD,
+            price=Decimal("100.00"),
+            price_cup=Decimal("67156.00"),
+            exchange_rate=Decimal("671.56"),
+            exchange_rate_date=date(2026, 8, 13),
+            exchange_rate_source="elTOQUE",
+        )
+        session.add(precio)
+        session.commit()
+
+        assert precio.exchange_rate == Decimal("671.56")
+
     def test_confidence_score_valido_aceptado(self, session: Session) -> None:
         producto = _crear_producto(session)
         fuente = _crear_raw_ingestion(session)
@@ -505,6 +528,88 @@ class TestUnitSaleFormatPackagingMigration:
             assert "id" in columnas  # el downgrade no se llevó ninguna otra columna
 
         engine.dispose()
+
+
+class TestExchangeRateCacheMigration:
+    """`0007_exchange_rate_cache.py` — `upgrade()`/`downgrade()` corridos
+    contra un engine SQLite real vía `Operations.context()`, igual que
+    `TestPublishedDateMigration` (design.md, D2). Tabla nueva, sin `ALTER`:
+    no hace falta `batch_alter_table`."""
+
+    def test_upgrade_crea_la_tabla_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0007_exchange_rate_cache.py")
+
+        engine = create_engine("sqlite://")
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            tablas = inspect(connection).get_table_names()
+            assert "exchange_rate_cache" in tablas
+            columnas = {
+                c["name"] for c in inspect(connection).get_columns("exchange_rate_cache")
+            }
+            assert {"currency", "rate_date", "rate", "source", "fetched_at"} <= columnas
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            tablas = inspect(connection).get_table_names()
+            assert "exchange_rate_cache" not in tablas
+
+        engine.dispose()
+
+
+class TestExchangeRateCacheModel:
+    def test_par_moneda_fecha_duplicado_rechazado(self, session: Session) -> None:
+        from saimc.models import ExchangeRateCache
+
+        session.add(
+            ExchangeRateCache(
+                currency="USD",
+                rate_date=date(2026, 8, 13),
+                rate=Decimal("671.5600"),
+                source="elTOQUE",
+            )
+        )
+        session.commit()
+
+        session.add(
+            ExchangeRateCache(
+                currency="USD",
+                rate_date=date(2026, 8, 13),
+                rate=Decimal("999.9900"),
+                source="elTOQUE",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+    def test_misma_moneda_distinta_fecha_aceptado(self, session: Session) -> None:
+        """No hay FK a ninguna otra tabla — tabla de primera clase (D2)."""
+        from saimc.models import ExchangeRateCache
+
+        session.add(
+            ExchangeRateCache(
+                currency="USD",
+                rate_date=date(2026, 8, 13),
+                rate=Decimal("671.5600"),
+                source="elTOQUE",
+            )
+        )
+        session.add(
+            ExchangeRateCache(
+                currency="USD",
+                rate_date=date(2026, 8, 12),
+                rate=Decimal("670.0000"),
+                source="elTOQUE",
+            )
+        )
+        session.commit()
 
 
 class TestSeedProvinces:

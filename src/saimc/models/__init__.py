@@ -1,6 +1,7 @@
 """Modelos de datos de SAIMC."""
 
 from saimc.models.base import Base
+from saimc.models.exchange_rate_cache import ExchangeRateCache
 from saimc.models.price_history import (
     PACKAGING_MAX_LENGTH,
     Currency,
@@ -21,6 +22,7 @@ __all__ = [
     "Base",
     "ContentType",
     "Currency",
+    "ExchangeRateCache",
     "PriceHistory",
     "Product",
     "ProcessingStatus",
