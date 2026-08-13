@@ -1799,3 +1799,37 @@ el mismo problema con un cambio de código mínimo.
 Consecuencia: hace falta `SAIMC_CURATION_PASSWORD` en `.env` y reiniciar
 `saimc.service` para que el fix tome efecto. Hasta entonces, `/curation`
 sigue expuesta.
+
+---
+
+## 2026-08-13 — /control gana panel de progreso contra la meta de §9
+
+Contexto: `/control` respondía bien «¿lo que estoy cargando sirve?» (matriz,
+amplitud, rango minorista) pero no respondía «¿cuánto falta y qué falta?».
+Con 83 registros de los 500 que pide `spec.md` §9, una sola de las dos
+provincias objetivo y el catálogo disperso en 50+ productos por altas al
+vuelo, el operador no tenía forma de ver dónde poner la hora diaria de
+curaduría sin consultar la base a mano.
+
+Decisión: se agrega `saimc.progress` y cinco secciones nuevas a `/control` —
+progreso contra los tres ejes de la meta (registros, productos bandera,
+provincias), ritmo de carga con extrapolación aritmética, huecos por
+responder enlazados al historial filtrado, grilla de cobertura producto ×
+provincia con los ceros visibles, y salud de la ingesta con la tasa de
+descarte. **Los dos únicos objetivos que se comparan salen del documento**:
+500 registros de 3–5 productos en 2 provincias (§9) y tasa de descarte <30%
+(§12.5). Ningún otro umbral se fija: el mínimo de observaciones por celda
+sigue sin marcar, que es lo que §12.6 manda calibrar con datos reales.
+
+La extrapolación de ritmo se presenta como «a este ritmo» y no como fecha de
+llegada: es una división, no un pronóstico, y la capa predictiva es Fase 2.
+
+Descartado: marcar celdas como «suficientes» o «insuficientes» según su
+tamaño de muestra. Es justamente el parámetro N que §12.6 prohíbe inventar, y
+esta vista es el instrumento con el que se va a calibrar más adelante.
+
+Consecuencia: los contadores «Productos: N» y «Provincias: N» de la cabecera
+se eliminaron por redundantes — las tarjetas nuevas dicen lo mismo y además
+nombran cuáles faltan. Lo primero que expuso el panel contra datos reales: 50
+de 83 filas sin `unit` y 51 sin `sale_format`, es decir más de la mitad de lo
+cargado no puede entrar al rango minorista todavía.

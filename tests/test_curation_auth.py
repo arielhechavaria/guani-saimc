@@ -50,10 +50,20 @@ def client(session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 
 
 class TestRequireOperator:
-    def test_sin_password_configurado_niega_todo(self, client: TestClient) -> None:
-        """Cierra en falso: sin `SAIMC_CURATION_PASSWORD`, nadie entra —
+    def test_sin_password_configurado_niega_todo(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Cierra en falso: sin password configurado, nadie entra —
         con credenciales enviadas para llegar más allá del 401 de
-        `HTTPBasic` y probar puntualmente esta rama."""
+        `HTTPBasic` y probar puntualmente esta rama.
+
+        El vacío se fuerza con `setenv("")` en vez de confiar en que la
+        variable no exista: `Settings` lee el `.env` real, que en la máquina
+        del operador ya define la password de producción.
+        """
+        monkeypatch.setenv("SAIMC_CURATION_PASSWORD", "")
+        get_settings.cache_clear()
+
         response = client.get("/curation", auth=("operador", "cualquiera"))
 
         assert response.status_code == 503

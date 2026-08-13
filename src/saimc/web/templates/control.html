@@ -6,53 +6,280 @@
   <title>SAIMC — Control de curaduría</title>
   <link href="/static/bootstrap.min.css" rel="stylesheet" />
   <link href="/static/curation.css" rel="stylesheet" />
+  <style>
+    /* Estilos propios de esta vista. Van embebidos y no en curation.css
+       porque no los usa ninguna otra página, y un archivo más es una
+       descarga más en una conexión lenta (CLAUDE.md, entorno). */
+    .saimc-metric { border: 1px solid #dee2e6; border-radius: .5rem; padding: 1rem; height: 100%; }
+    .saimc-metric-value { font-size: 1.75rem; font-weight: 600; line-height: 1.1; }
+    .saimc-metric-label { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: #6c757d; }
+    .saimc-bar { background: #e9ecef; border-radius: .25rem; height: .5rem; overflow: hidden; }
+    .saimc-bar > span { display: block; height: 100%; background: #0d6efd; }
+    .saimc-chip { display: inline-block; font-size: .75rem; padding: .1rem .45rem; border-radius: .25rem; background: #f1f3f5; color: #495057; margin: .1rem .15rem 0 0; }
+    .saimc-chip-missing { background: #fff3cd; color: #664d03; }
+    .saimc-chip-done { background: #d1e7dd; color: #0f5132; }
+    /* Gráfico de actividad: barras con CSS, sin librería ni CDN. */
+    .saimc-activity { display: flex; align-items: flex-end; gap: 3px; height: 80px; }
+    .saimc-activity > div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+    .saimc-activity .saimc-activity-bar { background: #0d6efd; border-radius: 2px 2px 0 0; min-height: 2px; }
+    .saimc-activity .saimc-activity-bar.is-empty { background: #e9ecef; }
+    .saimc-activity-axis { display: flex; gap: 3px; font-size: .65rem; color: #adb5bd; }
+    .saimc-activity-axis > div { flex: 1; text-align: center; }
+    .saimc-gap { border: 1px solid #dee2e6; border-left-width: 3px; border-radius: .375rem; padding: .75rem; height: 100%; }
+    .saimc-gap.is-open { border-left-color: #fd7e14; }
+    .saimc-gap.is-clear { border-left-color: #198754; }
+    .saimc-zero { color: #adb5bd; }
+  </style>
 </head>
 <body>
-  <div class="container py-4" style="max-width: 960px;">
+  <div class="container py-4" style="max-width: 1040px;">
     <div class="saimc-header">
       <h1 class="h3">Control de curaduría</h1>
-      <p class="saimc-subtitle mb-0">Los 4 productos piloto — matriz producto × provincia × unidad × formato</p>
+      <p class="saimc-subtitle mb-0">Cuánto falta para la meta de Fase 0, y si lo que se carga sirve</p>
       <div class="saimc-counters">
         <span class="saimc-counter">Anuncios curados: <strong>{{ curated }}</strong></span>
         <span class="saimc-counter">Filas de precio: <strong>{{ rows }}</strong></span>
-        <span class="saimc-counter">Productos: <strong>{{ products }}</strong></span>
-        <span class="saimc-counter">Provincias: <strong>{{ provinces }}</strong></span>
+        <span class="saimc-counter"><a href="/curation">Ir a la cola →</a></span>
       </div>
     </div>
 
+    <!-- ---------- 1. Progreso hacia la meta de Fase 0 (spec.md §9) ---------- -->
+
+    <h2 class="h5 mt-4">Meta de Fase 0</h2>
     <p class="text-muted small">
-      Ordenado por tamaño de muestra. <strong>Amplitud</strong> es cuántas veces el
-      máximo contiene al mínimo: una celda que mezcla precio minorista con precio
-      mayorista se delata ahí. La vista no marca ninguna celda como buena o mala —
-      no hay umbral fijado todavía (spec.md §12.6), y fijarlo por intuición
-      sería peor que no tenerlo.
+      Los tres números de <code>spec.md</code> §9, «Resultado esperado»:
+      <strong>500 registros validados de {{ phase0_products_min }}–{{ phase0_products_max }}
+      productos en {{ phase0_provinces|length }} provincias</strong>. Son del documento
+      rector, no fijados acá.
     </p>
 
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">Registros validados</div>
+          <div class="saimc-metric-value">{{ progress.rows }} <span class="text-muted fs-6">/ {{ progress.target_rows }}</span></div>
+          <div class="saimc-bar my-2"><span style="width: {{ "%.1f"|format(progress.rows_pct) }}%;"></span></div>
+          <div class="small text-muted">
+            {% if progress.rows_remaining %}Faltan {{ progress.rows_remaining }}{% else %}Meta alcanzada{% endif %}
+            · {{ "%.0f"|format(progress.rows_pct) }}%
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">Productos bandera</div>
+          <div class="saimc-metric-value">
+            {{ progress.products_with_data|length }} <span class="text-muted fs-6">/ {{ pilot_products|length }} con dato</span>
+          </div>
+          <div class="mt-2">
+            {% for nombre in progress.products_with_data %}
+              <span class="saimc-chip saimc-chip-done">{{ nombre }}</span>
+            {% endfor %}
+            {% for nombre in progress.products_missing %}
+              <span class="saimc-chip saimc-chip-missing">{{ nombre }} · sin dato</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">Provincias objetivo</div>
+          <div class="saimc-metric-value">
+            {{ progress.provinces_with_data|length }} <span class="text-muted fs-6">/ {{ phase0_provinces|length }}</span>
+          </div>
+          <div class="mt-2">
+            {% for nombre in progress.provinces_with_data %}
+              <span class="saimc-chip saimc-chip-done">{{ nombre }}</span>
+            {% endfor %}
+            {% for nombre in progress.provinces_missing %}
+              <span class="saimc-chip saimc-chip-missing">{{ nombre }} · sin dato</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- 2. Ritmo y actividad ---------- -->
+
+    <h2 class="h5 mt-4">Ritmo de carga — últimos {{ activity_days }} días</h2>
     <p class="text-muted small">
-      La unidad y el formato de venta parten la celda: un precio por libra y uno
-      por kilo no son la misma serie, y un saco mayorista no se promedia con la
-      libra suelta. <strong>«— sin responder —»</strong> es su propia celda, no se
-      funde con las demás: mientras esa fila crezca, lo que falta es responder en
-      la cola de curaduría, no cambiar el agregador. El envase queda fuera de la
-      clave por ser texto libre.
+      Se cuenta por <code>created_at</code>: cuándo se cargó la fila, no la fecha del
+      anuncio. Lo que se mide es el trabajo, no el mercado.
+      {% if pace.days_to_target is none %}
+        Sin filas cargadas en la ventana no se puede estimar cuánto falta.
+      {% elif pace.days_to_target == 0 %}
+        La meta de registros ya está alcanzada.
+      {% else %}
+        A este ritmo faltan <strong>{{ pace.days_to_target }} días</strong> para los
+        {{ progress.target_rows }} registros. Es una división, no un pronóstico: no hay
+        modelo detrás, y la capa predictiva es Fase 2.
+      {% endif %}
     </p>
 
+    <div class="row g-3 align-items-center">
+      <div class="col-md-3">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">Promedio diario</div>
+          <div class="saimc-metric-value">{{ "%.1f"|format(pace.per_day) }}</div>
+          <div class="small text-muted">{{ pace.rows_in_window }} filas en {{ pace.window_days }} días</div>
+        </div>
+      </div>
+      <div class="col-md-9">
+        <div class="saimc-activity">
+          {% for dia in activity %}
+          <div title="{{ dia.day }} — {{ dia.rows }} fila(s)">
+            <div class="saimc-activity-bar{% if not dia.rows %} is-empty{% endif %}"
+                 style="height: {{ (dia.rows * 100 / activity_peak)|round(1) }}%;"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="saimc-activity-axis mt-1">
+          {% for dia in activity %}
+          <div>{{ dia.day.day }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- 3. Huecos por responder ---------- -->
+
+    <h2 class="h5 mt-4">Lo que falta responder</h2>
     <p class="text-muted small">
-      La moneda ya no parte la celda (2026-08-13): lo que se carga en USD/EUR/MLC
-      se funde con lo que se carga en CUP una vez convertido. Lo que todavía no
-      tiene tasa resuelta queda en su propia celda, marcada
-      <strong class="text-muted">sin convertir</strong>, para no mezclar un precio
-      inventado con uno real.
+      Ninguno de estos campos bloquea el guardado por diseño (design.md D2/D4): la fila
+      se guarda igual y el operador sigue curando. Por eso hace falta verlos acumulados
+      acá. Cada número enlaza al historial ya filtrado por ese hueco.
     </p>
 
-    {% if single_observation %}
+    <div class="row g-3">
+      {% for gap in gaps %}
+      <div class="col-md-3 col-sm-6">
+        <div class="saimc-gap {% if gap.count %}is-open{% else %}is-clear{% endif %}">
+          <div class="saimc-metric-label">{{ gap.label }}</div>
+          <div class="saimc-metric-value">
+            {% if gap.count %}
+              <a href="/curation/history?{{ gap.query }}" class="text-decoration-none">{{ gap.count }}</a>
+            {% else %}
+              <span class="saimc-zero">0</span>
+            {% endif %}
+          </div>
+          <div class="small text-muted mt-1">{{ gap.hint }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- ---------- 4. Cobertura producto × provincia ---------- -->
+
+    <h2 class="h5 mt-4">Cobertura de la meta</h2>
     <p class="text-muted small">
-      {{ single_observation }} de {{ cells|length }} celdas tienen una sola
-      observación. Con una observación hay un dato, no una mediana.
+      Los {{ pilot_products|length }} productos bandera contra las
+      {{ phase0_provinces|length }} provincias que nombra §9. <strong>El cero es el
+      dato</strong>: dice exactamente qué falta salir a capturar. No hay marca de
+      «suficiente» porque el mínimo de observaciones por celda es justo el parámetro
+      que §12.6 manda calibrar con datos reales, no fijar de antemano.
     </p>
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th scope="col">Producto</th>
+            {% for nombre in phase0_provinces %}
+            <th scope="col" class="text-end">{{ nombre }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for product_name, celdas in coverage|groupby("product_name") %}
+          <tr>
+            <td>{{ product_name }}</td>
+            {% for celda in celdas %}
+            <td class="text-end">
+              {% if celda.rows %}
+              <a href="/curation/history?product={{ celda.product_name | urlencode }}&province={{ celda.province_name | urlencode }}"
+                 title="Ver los anuncios detrás de este número">{{ celda.rows }}</a>
+              {% else %}
+              <span class="saimc-zero">—</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ---------- 5. Salud de la ingesta ---------- -->
+
+    <h2 class="h5 mt-4">Salud de la ingesta</h2>
+    <p class="text-muted small">
+      La tasa de descarte se mide sobre lo <em>decidido</em> (curado + descartado); lo
+      pendiente no entra porque todavía no se decidió nada sobre eso. El objetivo de
+      <strong>&lt;30%</strong> es de <code>spec.md</code> §12.5, tabla de métricas de
+      extracción — es el único umbral con veredicto de toda esta vista, y está escrito
+      en el documento.
+    </p>
+
+    <div class="row g-3">
+      <div class="col-md-3 col-6">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">En cola</div>
+          <div class="saimc-metric-value">
+            {% if health.pending %}<a href="/curation" class="text-decoration-none">{{ health.pending }}</a>
+            {%- else %}<span class="saimc-zero">0</span>{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">Curados</div>
+          <div class="saimc-metric-value">{{ health.curated }}</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">Descartados</div>
+          <div class="saimc-metric-value">{{ health.discarded }}</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="saimc-metric">
+          <div class="saimc-metric-label">Tasa de descarte</div>
+          <div class="saimc-metric-value">
+            {% if health.discard_rate is none %}
+              <span class="saimc-zero">—</span>
+            {% else %}
+              {{ "%.0f"|format(health.discard_rate * 100) }}%
+            {% endif %}
+          </div>
+          <div class="small {% if health.above_objective %}text-warning-emphasis{% else %}text-muted{% endif %}">
+            {% if health.discard_rate is none %}
+              Nada decidido todavía
+            {% elif health.above_objective %}
+              Por encima del objetivo &lt;30% (§12.5)
+            {% else %}
+              Dentro del objetivo &lt;30% (§12.5)
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if health.above_objective %}
+    <div class="alert alert-warning small mt-3" role="alert">
+      Se descarta más de lo que §12.5 pone como objetivo. La especificación lo define
+      como «anuncios sin información económica extraíble», así que una tasa alta
+      describe <strong>qué se está capturando</strong>, no un error de curaduría: si el
+      material que entra a la bandeja no trae precio, el descarte es la respuesta
+      correcta. Vale mirar de qué canales viene lo que se descarta antes de tocar nada.
+    </div>
     {% endif %}
 
     <hr class="my-4" />
+
+    <!-- ---------- 6. Rango minorista ---------- -->
 
     <h2 class="h5">Rango minorista por producto — últimos {{ retail_range_days }} días</h2>
     <p class="text-muted small">
@@ -113,12 +340,36 @@
 
     <hr class="my-4" />
 
+    <!-- ---------- 7. Matriz de los pilotos ---------- -->
+
     <h2 class="h5">Matriz de los pilotos, por unidad y formato</h2>
     <p class="text-muted small">
-      Solo Arroz, Pollo, Azúcar blanca y Aceite — filtro de pantalla, no de
-      datos. El resto del catálogo sigue cargado en la base, simplemente no
-      es el foco de la curaduría hoy.
+      Solo los {{ pilot_products|length }} productos bandera — filtro de pantalla, no de
+      datos. El resto del catálogo sigue cargado en la base, simplemente no es el foco
+      de la curaduría hoy. Ordenado por tamaño de muestra. <strong>Amplitud</strong> es
+      cuántas veces el máximo contiene al mínimo: una celda que mezcla precio minorista
+      con precio mayorista se delata ahí. La vista no marca ninguna celda como buena o
+      mala — no hay umbral fijado todavía (spec.md §12.6), y fijarlo por intuición sería
+      peor que no tenerlo.
     </p>
+
+    <p class="text-muted small">
+      La unidad y el formato de venta parten la celda: un precio por libra y uno
+      por kilo no son la misma serie, y un saco mayorista no se promedia con la
+      libra suelta. <strong>«— sin responder —»</strong> es su propia celda, no se
+      funde con las demás. La moneda ya no parte la celda (2026-08-13): lo que se
+      carga en USD/EUR/MLC se funde con lo que se carga en CUP una vez convertido, y
+      lo que todavía no tiene tasa resuelta queda aparte, marcado
+      <strong class="text-muted">sin convertir</strong>, para no mezclar un precio
+      inventado con uno real. El envase queda fuera de la clave por ser texto libre.
+    </p>
+
+    {% if single_observation %}
+    <p class="text-muted small">
+      {{ single_observation }} de {{ cells|length }} celdas tienen una sola
+      observación. Con una observación hay un dato, no una mediana.
+    </p>
+    {% endif %}
 
     {% if not cells %}
       <div class="alert alert-secondary" role="alert">

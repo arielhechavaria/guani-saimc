@@ -238,15 +238,23 @@ class TestFiltroDePilotos:
         for producto in ("Arroz", "Pollo", "Azúcar blanca", "Aceite"):
             assert producto in texto
 
-    def test_contador_de_productos_refleja_solo_lo_mostrado(
+    def test_el_conteo_de_pilotos_ignora_los_productos_fuera_del_filtro(
         self, client: TestClient, session: Session
     ) -> None:
+        """Esto se leía antes en el contador «Productos: N» de la cabecera. Lo
+        reemplazó la tarjeta «Productos bandera», que además nombra cuáles
+        faltan; el invariante que se prueba es el mismo, y algo más fuerte: una
+        alta al vuelo fuera de los pilotos no infla el progreso de §9.
+        """
         self._cargar(session, producto="Arroz")
         self._cargar(session, producto="Sazon Dubai")
 
         response = client.get("/control")
 
-        assert "Productos: <strong>1</strong>" in response.text
+        assert '<span class="saimc-chip saimc-chip-done">Arroz</span>' in response.text
+        assert "Sazon Dubai" not in response.text
+        for faltante in ("Aceite", "Azúcar blanca", "Pollo"):
+            assert f"{faltante} · sin dato" in response.text
 
 
 class TestColumnaNEnlazaAlHistorial:
@@ -339,3 +347,93 @@ class TestColumnaNEnlazaAlHistorial:
             "&currency=USD&unit=lb&sale_format=wholesale" in response.text
         )
         assert "sin convertir" in response.text
+
+
+class TestPanelDeProgreso:
+    """Las secciones que responden «¿cuánto falta y qué falta?» (spec.md §9).
+
+    Todo lo que se compara contra un objetivo acá sale del documento rector:
+    500 registros de 3–5 productos en 2 provincias (§9) y tasa de descarte
+    <30% (§12.5). Ver `saimc.progress`.
+    """
+
+    def test_muestra_la_meta_de_500_registros(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _cargar(session, precios=["420", "440"])
+
+        response = client.get("/control")
+
+        assert "/ 500" in response.text
+        assert "Faltan 498" in response.text
+
+    def test_nombra_la_provincia_de_la_meta_que_falta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """§9 nombra dos provincias. Con datos solo en Santiago, La Habana
+        tiene que aparecer marcada como pendiente, no simplemente ausente."""
+        _cargar(session, precios=["420"])
+
+        response = client.get("/control")
+
+        assert "La Habana · sin dato" in response.text
+        assert '<span class="saimc-chip saimc-chip-done">Santiago de Cuba</span>' in response.text
+
+    def test_los_huecos_enlazan_al_historial_filtrado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un hueco sirve si se puede ir a arreglarlo. `_cargar` no completa
+        `unit` ni `sale_format`, así que ambos huecos tienen que estar."""
+        _cargar(session, precios=["420", "440"])
+
+        response = client.get("/control")
+
+        assert "/curation/history?unit=" in response.text
+        assert "/curation/history?sale_format=" in response.text
+
+    def test_la_cobertura_muestra_el_cero_de_lo_que_falta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La grilla producto × provincia se dibuja completa: el cero es
+        justamente lo que dice qué salir a capturar."""
+        _cargar(session, precios=["420"])
+
+        response = client.get("/control")
+
+        assert "Cobertura de la meta" in response.text
+        # Los cuatro pilotos aparecen como fila aunque no tengan una sola fila
+        # cargada; Pollo y Aceite no fueron cargados por `_cargar`.
+        for piloto in ("Aceite", "Arroz", "Azúcar blanca", "Pollo"):
+            assert piloto in response.text
+
+    def test_avisa_cuando_el_descarte_supera_el_objetivo_del_documento(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """§12.5 fija la tasa de descarte objetivo en <30%. Con 1 curado y 2
+        descartados la tasa es 67%."""
+        _cargar(session, precios=["420"])
+        for i in range(2):
+            session.add(
+                RawIngestion(
+                    source_type=SourceType.INBOX_TEXT,
+                    file_path=f"raw/descartado-{i}.txt",
+                    content_hash=f"hash-descartado-{i}",
+                    content_type=ContentType.TEXT,
+                    processing_status=ProcessingStatus.DISCARDED,
+                    captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+                )
+            )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "67%" in response.text
+        assert "Por encima del objetivo" in response.text
+
+    def test_sin_nada_decidido_no_inventa_una_tasa_de_descarte(
+        self, client: TestClient
+    ) -> None:
+        """Cero decididos no es «0% de descarte»: es que no hay qué medir."""
+        response = client.get("/control")
+
+        assert "Nada decidido todavía" in response.text
