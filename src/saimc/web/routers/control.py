@@ -37,7 +37,7 @@ from saimc.progress import (
     compute_phase0_progress,
 )
 from saimc.web.deps import get_db
-from saimc.web.matrix import group_cells
+from saimc.web.matrix import build_matrix
 
 router = APIRouter()
 
@@ -88,10 +88,12 @@ def control_panel(
         "control.html",
         {
             "cells": cells,
-            # Las series del mismo producto van juntas bajo un encabezado, con
-            # la barra de rango ya calculada (ver `saimc.web.matrix`): «Arroz»
-            # se repetía una vez por serie y se leía como tres productos.
-            "cell_groups": group_cells(cells),
+            # Grilla producto × provincia, con las barras ya calculadas (ver
+            # `saimc.web.matrix`). Apilado por grupo, «Arroz · Santiago» y
+            # «Arroz · La Habana» caían separados por otros productos —el orden
+            # es por muestra— y comparar provincias, que es el objeto medido de
+            # spec.md §5, había que hacerlo de memoria.
+            "matrix": build_matrix(cells),
             "retail_ranges": retail_ranges,
             "retail_range_days": days,
             "curated": curated,

@@ -29,9 +29,31 @@
     .saimc-gap.is-open { border-left-color: #fd7e14; }
     .saimc-gap.is-clear { border-left-color: #198754; }
     .saimc-zero { color: #adb5bd; }
-    /* Matriz agrupada: un encabezado por producto, una fila por serie. */
-    .saimc-serie-group { border: 1px solid #dee2e6; border-radius: .5rem; padding: .75rem 1rem; margin-bottom: .75rem; }
-    .saimc-serie-head { padding-bottom: .5rem; border-bottom: 1px solid #f1f3f5; margin-bottom: .5rem; }
+    /* Matriz en grilla: una fila por producto, una columna por provincia.
+       El color codifica **qué provincia**, nunca qué tan bien va: §12.6
+       prohíbe fijar umbrales, así que la paleta es categórica —índigo,
+       violeta, cian, magenta— y no incluye rojo ni verde, que se leerían
+       como semáforo. La ranura la asigna `saimc.web.matrix` por catálogo,
+       no por los datos, para que una provincia no cambie de color al
+       cambiar su muestra. */
+    .saimc-slot-0 { --prov: #4263eb; --prov-soft: #dbe4ff; }
+    .saimc-slot-1 { --prov: #7048e8; --prov-soft: #e5dbff; }
+    .saimc-slot-2 { --prov: #0b7285; --prov-soft: #c5f6fa; }
+    .saimc-slot-3 { --prov: #a61e4d; --prov-soft: #ffdeeb; }
+    /* «Sin provincia» no es una provincia más: gris, sin identidad propia. */
+    .saimc-slot-9 { --prov: #868e96; --prov-soft: #e9ecef; }
+    .saimc-legend { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .75rem; }
+    .saimc-legend-chip { font-size: .75rem; padding: .15rem .5rem .15rem .4rem; border-radius: .25rem; border-left: .2rem solid var(--prov); background: var(--prov-soft); color: #212529; }
+    .saimc-prod { border: 1px solid #dee2e6; border-radius: .5rem; margin-bottom: .75rem; overflow: hidden; }
+    .saimc-prod-head { padding: .5rem 1rem; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
+    .saimc-prod-grid { display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(280px, 1fr)); overflow-x: auto; }
+    .saimc-col { padding: .75rem 1rem; border-left: .2rem solid var(--prov); }
+    .saimc-col + .saimc-col { box-shadow: inset 1px 0 0 #f1f3f5; }
+    .saimc-col-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; margin-bottom: .5rem; }
+    .saimc-col-name { font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--prov); }
+    .saimc-col-empty { font-size: .8rem; color: #adb5bd; }
+    /* Una sola columna cuando la pantalla no da para poner dos al lado. */
+    @media (max-width: 720px) { .saimc-prod-grid { grid-template-columns: 1fr; } }
     .saimc-serie + .saimc-serie { margin-top: .75rem; padding-top: .75rem; border-top: 1px dashed #f1f3f5; }
     .saimc-serie-meta { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; align-items: baseline; }
     .saimc-serie-name { font-size: .9rem; font-weight: 500; }
@@ -42,8 +64,8 @@
     .saimc-range { display: flex; align-items: center; gap: .5rem; margin-top: .35rem; font-size: .75rem; color: #6c757d; }
     .saimc-range-min, .saimc-range-max { white-space: nowrap; font-variant-numeric: tabular-nums; }
     .saimc-range-track { flex: 1; background: #f1f3f5; border-radius: .25rem; height: .55rem; }
-    .saimc-range-fill { display: block; position: relative; height: 100%; background: #cfe2ff; border-radius: .25rem; }
-    .saimc-range-median { position: absolute; top: -.15rem; width: .2rem; height: .85rem; background: #0d6efd; border-radius: .1rem; transform: translateX(-50%); }
+    .saimc-range-fill { display: block; position: relative; height: 100%; background: var(--prov-soft, #cfe2ff); border-radius: .25rem; }
+    .saimc-range-median { position: absolute; top: -.15rem; width: .2rem; height: .85rem; background: var(--prov, #0d6efd); border-radius: .1rem; transform: translateX(-50%); }
   </style>
 </head>
 <body>
@@ -450,13 +472,25 @@
     <p class="text-muted small">
       Solo los {{ pilot_products|length }} productos bandera — filtro de pantalla, no de
       datos. El resto del catálogo sigue cargado en la base, simplemente no es el foco
-      de la curaduría hoy. Cada producto agrupa sus series; los grupos van ordenados por
-      tamaño de muestra.
+      de la curaduría hoy. <strong>Una fila por producto, una columna por provincia</strong>:
+      las filas van por tamaño de muestra, las columnas en el orden de
+      <code>spec.md</code> §9 y no por los datos, para que no se reacomoden solas de un
+      día para el otro.
+    </p>
+
+    <p class="text-muted small">
+      <strong>El color dice de qué provincia, no qué tan bien va.</strong> Es la misma
+      regla que gobierna la barra: no hay umbral de dispersión fijado (spec.md §12.6), así
+      que la paleta es de identidad y no incluye rojo ni verde — un semáforo afirmaría un
+      umbral que nadie definió. Cada provincia conserva su color aunque un día no se
+      cargue nada en ella. <strong>Una columna vacía es un hueco de cobertura</strong>:
+      ese producto no tiene ni una serie en esa provincia, y apilado ese hueco no se veía
+      porque la combinación simplemente no aparecía.
     </p>
 
     <p class="text-muted small">
       <strong>Cómo se lee la barra.</strong> Va del mínimo al máximo de la serie, y la
-      marca azul es la mediana. El <strong>largo</strong> codifica la amplitud —cuántas
+      marca fuerte es la mediana. El <strong>largo</strong> codifica la amplitud —cuántas
       veces el máximo contiene al mínimo— en escala logarítmica y normalizado contra la
       serie más amplia de la tabla: en escala lineal una amplitud de 44× y una de 103×
       se verían casi iguales, y una de 2× sería invisible. Una barra larga con la mediana
@@ -505,59 +539,84 @@
         Todavía no hay filas de precio cargadas.
       </div>
     {% else %}
-    {% for grupo in cell_groups %}
-    <div class="saimc-serie-group">
-      <div class="saimc-serie-head">
-        <strong>{{ grupo.product_name }}</strong>
-        <span class="text-muted">· {{ grupo.province_name or "— sin provincia —" }}</span>
+    <div class="saimc-legend">
+      {% for col in matrix.columns %}
+      <span class="saimc-legend-chip saimc-slot-{{ col.slot }}">{{ col.label }}</span>
+      {% endfor %}
+    </div>
+
+    {% for fila in matrix.rows %}
+    <div class="saimc-prod">
+      <div class="saimc-prod-head">
+        <strong>{{ fila.product_name }}</strong>
         <span class="text-muted small">
-          · {{ grupo.cells|length }} serie{% if grupo.cells|length != 1 %}s{% endif %}
-          · {{ grupo.total }} observaci{% if grupo.total != 1 %}ones{% else %}ón{% endif %}
+          · {{ fila.total }} observaci{% if fila.total != 1 %}ones{% else %}ón{% endif %}
+          en {{ matrix.columns|length }} provincia{% if matrix.columns|length != 1 %}s{% endif %}
         </span>
       </div>
 
-      {% for item in grupo.cells %}
-      {% set cell = item.cell %}
-      <div class="saimc-serie">
-        <div class="saimc-serie-meta">
-          <span class="saimc-serie-name">
-            {% if cell.unit %}{{ cell.unit }}{% else %}<span class="text-muted">sin unidad</span>{% endif %}
-            ·
-            {% if cell.sale_format == "retail" %}minorista
-            {%- elif cell.sale_format == "wholesale" %}mayorista
-            {%- else %}<span class="text-muted">sin formato</span>{% endif %}
-          </span>
+      <div class="saimc-prod-grid" style="--cols: {{ matrix.columns|length }};">
+      {% for columna in fila.columns %}
+      <div class="saimc-col saimc-slot-{{ columna.column.slot }}">
+        <div class="saimc-col-head">
+          <span class="saimc-col-name">{{ columna.column.label }}</span>
+          {% if columna.cells %}
           <span class="text-muted small">
-            <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
-               title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
-            · mediana <strong>{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
-            {%- if cell.unquantified %} <span class="text-muted">precio total, sin cantidad</span>{% endif %}
-            {%- if cell.unconverted %} <span class="text-muted">sin convertir</span>{% endif %}
-            {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
+            {{ columna.cells|length }} serie{% if columna.cells|length != 1 %}s{% endif %}
+            · {{ columna.total }} observaci{% if columna.total != 1 %}ones{% else %}ón{% endif %}
           </span>
+          {% endif %}
         </div>
 
-        {% if item.bar.has_range %}
-        <div class="saimc-range">
-          <span class="saimc-range-min">{{ "%.2f"|format(cell.minimum) }}</span>
-          <span class="saimc-range-track">
-            <span class="saimc-range-fill" style="width: {{ "%.1f"|format(item.bar.width_pct) }}%;">
-              <span class="saimc-range-median" style="left: {{ "%.1f"|format(item.bar.median_pct) }}%;"
-                    title="Mediana {{ "%.2f"|format(cell.median) }}"></span>
-            </span>
-          </span>
-          <span class="saimc-range-max">{{ "%.2f"|format(cell.maximum) }}</span>
-        </div>
-        {% else %}
-        <div class="saimc-range">
-          <span class="text-muted small">
-            {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(cell.median) }}
-            {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(cell.median) }}{% endif %}
-          </span>
-        </div>
+        {% if not columna.cells %}
+        <p class="saimc-col-empty mb-0">— sin series cargadas —</p>
         {% endif %}
+
+        {% for item in columna.cells %}
+        {% set cell = item.cell %}
+        <div class="saimc-serie">
+          <div class="saimc-serie-meta">
+            <span class="saimc-serie-name">
+              {% if cell.unit %}{{ cell.unit }}{% else %}<span class="text-muted">sin unidad</span>{% endif %}
+              ·
+              {% if cell.sale_format == "retail" %}minorista
+              {%- elif cell.sale_format == "wholesale" %}mayorista
+              {%- else %}<span class="text-muted">sin formato</span>{% endif %}
+            </span>
+            <span class="text-muted small">
+              <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
+                 title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
+              · mediana <strong>{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
+              {%- if cell.unquantified %} <span class="text-muted">precio total, sin cantidad</span>{% endif %}
+              {%- if cell.unconverted %} <span class="text-muted">sin convertir</span>{% endif %}
+              {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
+            </span>
+          </div>
+
+          {% if item.bar.has_range %}
+          <div class="saimc-range">
+            <span class="saimc-range-min">{{ "%.2f"|format(cell.minimum) }}</span>
+            <span class="saimc-range-track">
+              <span class="saimc-range-fill" style="width: {{ "%.1f"|format(item.bar.width_pct) }}%;">
+                <span class="saimc-range-median" style="left: {{ "%.1f"|format(item.bar.median_pct) }}%;"
+                      title="Mediana {{ "%.2f"|format(cell.median) }}"></span>
+              </span>
+            </span>
+            <span class="saimc-range-max">{{ "%.2f"|format(cell.maximum) }}</span>
+          </div>
+          {% else %}
+          <div class="saimc-range">
+            <span class="text-muted small">
+              {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(cell.median) }}
+              {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(cell.median) }}{% endif %}
+            </span>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
       {% endfor %}
+      </div>
     </div>
     {% endfor %}
     {% endif %}
