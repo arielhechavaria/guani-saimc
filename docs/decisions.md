@@ -1995,3 +1995,60 @@ nunca se hizo, cobrado de a una fila y solo cuando se toca. El test
 cinco que fijan el contrato nuevo, incluido el caso que motivó todo: un
 anuncio de tres semanas atrás se acepta y entra a la serie con su propia
 fecha.
+
+---
+
+## 2026-08-14 — Compra mínima: columna nueva y cuarto filtro del rango público
+
+Contexto: el operador reportó que algunos anuncios exigen comprar un lote y que
+eso no tenía dónde ir en el formulario. Medido contra el corpus real, **13 de
+61 anuncios con texto** traen señal de lote o mínimo, concentrada en los
+pilotos. Los precios cargados no estaban mal —el operador venía anotando el
+precio unitario de la paca, que es el correcto—, pero faltaba el dato que
+convierte ese precio en accesible o no. Peor: el mínimo **ya era el criterio
+con el que se decide `sale_format`**, y era lo único que la fila no guardaba.
+La fila de `2195e2ea` dice `0.90 USD, quantity=1 kg, wholesale` y nada en ella
+explica por qué es mayorista; el motivo —«mínimo de venta 30,000 bolsas»— vivía
+solo en el texto crudo.
+
+De paso, otra premisa vencida: la entrada del 2026-08-12 afirmaba que el corpus
+no tenía ningún anuncio de escala de contenedor. Ya tiene al menos dos
+(`2195e2ea`, `44980bae`).
+
+Decisión: tres partes.
+1. `prices_history.min_purchase_quantity` (`Numeric(12,3)` NULL, migración
+   0008, CHECK `ck_prices_history_min_purchase_quantity` de positividad),
+   expresada **en la unidad de la propia fila** para que se compare con
+   `quantity` sin tabla de conversión. Un mínimo dicho en pacas no sirve: una
+   paca trae 10 o 30 paquetes según el anuncio.
+2. Campo por fila en la curaduría, **opcional**. Vacío, no parseable o no
+   positivo degrada a `NULL`.
+3. Cuarto filtro en `compute_retail_ranges`: la fila cuyo mínimo supera su
+   cantidad no alimenta el rango público, y el conteo de excluidas se muestra
+   en `/control`. `compute_cells` no se filtra: es el detector de mezcla del
+   operador y tiene que seguir mostrando todo.
+
+Descartado, tres cosas. **Hacerlo obligatorio como `published_date`**: la
+prueba no es «¿el campo importa?» sino «¿un vacío puede fabricar un valor
+equivocado?». Con la fecha podía —el repliegue estampaba el día de carga sobre
+un anuncio de tres semanas—; acá no, porque «sin mínimo declarado» y «el mínimo
+es la cantidad de esta fila» dan el mismo resultado en el filtro. Obligarlo
+compraría una confirmación, no un valor correcto, a cambio de un número más en
+cada fila de cada anuncio. **Filtrar por plata** («excluir lo que un hogar no
+puede pagar») exige un corte en pesos, que es exactamente lo que §12.6 prohíbe
+inventar; por eso el filtro contesta la pregunta más chica que el dato resuelve
+solo: ¿se puede comprar la cantidad que esta fila cotiza? **Derivar
+`sale_format` del mínimo**: la decisión del 2026-08-12 prohíbe inferirlo por
+aritmética y el motivo sigue en pie.
+
+Consecuencia: el filtro es una comparación estructural entre dos columnas de la
+misma fila, nunca un umbral, y por eso el saco de 50 kg con mínimo de un saco
+sigue adentro **aunque cueste más plata** (30.990) que la paca excluida
+(21.900): mide comprabilidad de lo cotizado, no poder adquisitivo. El remedio
+para la paca es cargarla como el lote que es (`quantity=30`, `price=21900`), y
+vuelve a entrar al mismo 730 por kg. Las 97 filas anteriores quedan en `NULL` y
+siguen alimentando el rango. `compute_retail_ranges` pasa a devolver
+`RetailRangeReport` (rangos + excluidas) en vez de una lista. Fuera de alcance
+y anotado en la propuesta: extraer el mínimo del texto, el precio escalonado
+por volumen («más de 5 pacas a 725»), y agregar «Paca» al vocabulario de
+envase. Artefactos en `openspec/changes/min-purchase-quantity/`.

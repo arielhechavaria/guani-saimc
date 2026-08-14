@@ -58,6 +58,7 @@ def _precio(
     published_date: date | None = None,
     currency: str = Currency.CUP.value,
     price_cup: str | None = None,
+    min_purchase_quantity: str | None = None,
 ) -> None:
     session.add(
         PriceHistory(
@@ -71,6 +72,9 @@ def _precio(
             quantity=Decimal(quantity) if quantity is not None else None,
             published_date=published_date,
             price_cup=Decimal(price_cup) if price_cup is not None else None,
+            min_purchase_quantity=(
+                Decimal(min_purchase_quantity) if min_purchase_quantity is not None else None
+            ),
         )
     )
 
@@ -357,7 +361,7 @@ class TestComputeRetailRanges:
             unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
         )
 
-        (rango,) = compute_retail_ranges(session)
+        (rango,) = compute_retail_ranges(session).ranges
 
         assert rango.product_name == "Arroz"
         assert rango.unit == "lb"
@@ -385,7 +389,7 @@ class TestComputeRetailRanges:
             unit="lb", sale_format=SaleFormat.WHOLESALE.value, quantity="110",
         )
 
-        (rango,) = compute_retail_ranges(session)
+        (rango,) = compute_retail_ranges(session).ranges
 
         assert rango.count == 1
         assert rango.median == Decimal("750")
@@ -398,7 +402,7 @@ class TestComputeRetailRanges:
             unit="lb", quantity="1",
         )
 
-        assert compute_retail_ranges(session) == []
+        assert compute_retail_ranges(session).ranges == []
 
     def test_sin_quantity_se_excluye(self, session: Session) -> None:
         arroz = self._arroz(session)
@@ -408,7 +412,7 @@ class TestComputeRetailRanges:
             unit="lb", sale_format=SaleFormat.RETAIL.value,
         )
 
-        assert compute_retail_ranges(session) == []
+        assert compute_retail_ranges(session).ranges == []
 
     def test_unidad_distinta_de_la_canonica_se_excluye_sin_convertir(
         self, session: Session
@@ -425,7 +429,7 @@ class TestComputeRetailRanges:
             unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
         )
 
-        assert compute_retail_ranges(session) == []
+        assert compute_retail_ranges(session).ranges == []
 
     def test_producto_seedeado_con_litro_canonicaliza_a_l(
         self, session: Session
@@ -443,7 +447,7 @@ class TestComputeRetailRanges:
             unit="l", sale_format=SaleFormat.RETAIL.value, quantity="1",
         )
 
-        (rango,) = compute_retail_ranges(session)
+        (rango,) = compute_retail_ranges(session).ranges
         assert rango.product_name == "Aceite"
         assert rango.unit == "l"
 
@@ -462,7 +466,7 @@ class TestComputeRetailRanges:
             published_date=hoy - timedelta(days=20),
         )
 
-        rangos = compute_retail_ranges(session, days=7, hoy=hoy)
+        rangos = compute_retail_ranges(session, days=7, hoy=hoy).ranges
 
         (rango,) = rangos
         assert rango.count == 1
@@ -480,10 +484,10 @@ class TestComputeRetailRanges:
             unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
         )
 
-        assert len(compute_retail_ranges(session, days=7)) == 1
+        assert len(compute_retail_ranges(session, days=7).ranges) == 1
 
     def test_sin_datos_devuelve_lista_vacia(self, session: Session) -> None:
-        assert compute_retail_ranges(session) == []
+        assert compute_retail_ranges(session).ranges == []
 
     def test_funde_cup_y_usd_convertido_por_price_cup(self, session: Session) -> None:
         """Mismo criterio de fusión que `compute_cells` (2026-08-13): acá se
@@ -503,7 +507,7 @@ class TestComputeRetailRanges:
             currency=Currency.USD.value, price_cup="800",
         )
 
-        (rango,) = compute_retail_ranges(session)
+        (rango,) = compute_retail_ranges(session).ranges
 
         assert rango.currency == "CUP"
         assert rango.count == 2
@@ -524,7 +528,7 @@ class TestComputeRetailRanges:
             currency=Currency.USD.value, price_cup=None,
         )
 
-        rangos = compute_retail_ranges(session)
+        rangos = compute_retail_ranges(session).ranges
 
         assert len(rangos) == 2
         sin_convertir = [r for r in rangos if r.unconverted][0]
@@ -535,6 +539,125 @@ class TestComputeRetailRanges:
         fundido = [r for r in rangos if not r.unconverted][0]
         assert fundido.currency == "CUP"
         assert fundido.count == 1
+
+
+class TestFiltroDeCompraMinima:
+    """Cuarto filtro del rango público (2026-08-14): una fila cuya compra
+    mínima supera su cantidad cotiza un precio por un volumen que no se puede
+    comprar. Casos tomados del corpus real: la paca de `07202f09` («Pacas de
+    30 paquetes, $730 por unidad») contra el saco de `dd2dd6a4` («por saco de
+    50KG $30990»).
+    """
+
+    def _arroz(self, session: Session) -> Product:
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        return arroz
+
+    def test_paca_cotizada_por_unidad_no_entra_al_rango(self, session: Session) -> None:
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-min-paca")
+        _precio(
+            session, product=arroz, province=None, price="730", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            min_purchase_quantity="30",
+        )
+
+        reporte = compute_retail_ranges(session)
+
+        assert reporte.ranges == []
+        assert reporte.excluded_by_minimum == 1
+
+    def test_la_misma_paca_cargada_como_lote_si_entra(self, session: Session) -> None:
+        """El filtro corrige cómo se anota la observación, no la borra: el
+        precio por kg que aporta es el mismo 730."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-min-lote")
+        _precio(
+            session, product=arroz, province=None, price="21900", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="30",
+            min_purchase_quantity="30",
+        )
+
+        reporte = compute_retail_ranges(session)
+
+        (rango,) = reporte.ranges
+        assert rango.median == Decimal("730")
+        assert reporte.excluded_by_minimum == 0
+
+    def test_saco_entero_con_minimo_de_un_saco_sigue_adentro(self, session: Session) -> None:
+        """No es un umbral de plata: el saco cuesta MÁS que la paca excluida
+        (30990 contra 21900) y entra igual, porque se puede comprar en la
+        cantidad que cotiza — comprar un saco es minorista (2026-08-12)."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-min-saco")
+        _precio(
+            session, product=arroz, province=None, price="30990", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="50",
+            min_purchase_quantity="50",
+        )
+
+        reporte = compute_retail_ranges(session)
+
+        (rango,) = reporte.ranges
+        assert rango.count == 1
+        assert reporte.excluded_by_minimum == 0
+
+    def test_sin_minimo_declarado_la_fila_participa(self, session: Session) -> None:
+        """`NULL` es «el anuncio no exige lote», no «se desconoce»: es lo que
+        tienen todas las filas anteriores a este cambio."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-min-null")
+        _precio(
+            session, product=arroz, province=None, price="750", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+
+        reporte = compute_retail_ranges(session)
+
+        (rango,) = reporte.ranges
+        assert rango.median == Decimal("750")
+        assert reporte.excluded_by_minimum == 0
+
+    def test_la_fila_excluida_del_rango_sigue_visible_en_la_matriz(
+        self, session: Session
+    ) -> None:
+        """`compute_cells` es el detector de mezcla del operador: su trabajo es
+        mostrar lo que hay, incluido lo que el rango público descarta."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-min-matriz")
+        _precio(
+            session, product=arroz, province=None, price="730", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            min_purchase_quantity="30",
+        )
+
+        assert compute_retail_ranges(session).ranges == []
+
+        (celda,) = compute_cells(session)
+        assert celda.product_name == "Arroz"
+        assert celda.count == 1
+        assert celda.median == Decimal("730")
+
+    def test_solo_cuenta_las_filas_que_habrian_entrado(self, session: Session) -> None:
+        """El conteo corre después de los otros filtros: una fila mayorista con
+        mínimo grande ya estaba afuera por `sale_format` y no se cuenta dos
+        veces."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-min-orden")
+        _precio(
+            session, product=arroz, province=None, price="730", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            min_purchase_quantity="30",
+        )
+        _precio(
+            session, product=arroz, province=None, price="0.90", source=origen,
+            unit="kg", sale_format=SaleFormat.WHOLESALE.value, quantity="1",
+            min_purchase_quantity="30000",
+        )
+
+        assert compute_retail_ranges(session).excluded_by_minimum == 1
 
 
 class TestNormalizacionPorCantidad:

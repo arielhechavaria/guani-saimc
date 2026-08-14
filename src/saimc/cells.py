@@ -64,7 +64,9 @@ viejas de texto libre con las nuevas.
 `compute_retail_ranges` es la otra mitad del módulo: responde «¿en qué rango
 se movió este producto en los últimos N días?», donde el envase deja de
 importar porque el producto sigue siendo uno solo. Ver su docstring para los
-tres filtros que hacen que esa pregunta tenga una respuesta comparable.
+cuatro filtros que hacen que esa pregunta tenga una respuesta comparable —
+incluido el de compra mínima, el único que existe para proteger al lector del
+dashboard y no a la comparabilidad de la serie.
 """
 
 from __future__ import annotations
@@ -259,9 +261,23 @@ class RetailRange:
     unconverted: bool = False
 
 
+@dataclass(frozen=True)
+class RetailRangeReport:
+    """Los rangos y lo que quedó afuera por no ser comprable.
+
+    El conteo no vive en `RetailRange` porque no es propiedad de ningún
+    producto en particular: es propiedad del cómputo. Y no se omite, porque un
+    filtro que el operador no ve es un filtro que no puede calibrar — mismo
+    criterio que hace visibles `unconverted` y `unquantified`.
+    """
+
+    ranges: list[RetailRange]
+    excluded_by_minimum: int
+
+
 def compute_retail_ranges(
     session: Session, *, days: int = 7, hoy: date | None = None
-) -> list[RetailRange]:
+) -> RetailRangeReport:
     """Rango de precio minorista por producto, últimos `days` días.
 
     Es la otra mitad de `compute_cells`: esa vista separa por formato para que
@@ -287,6 +303,19 @@ def compute_retail_ranges(
       sigue visible en `compute_cells`.
     - **Requiere `quantity`.** Sin cantidad no hay precio por unidad que
       calcular.
+    - **La fila tiene que ser comprable en la cantidad que cotiza**
+      (2026-08-14): si `min_purchase_quantity` supera a `quantity`, el precio
+      es real pero no al volumen que la fila declara — el caso de la paca
+      («Pacas de 30 paquetes, $730 por unidad»), donde 730 por kg no se
+      consigue comprando un kilo. Es una comparación estructural entre dos
+      columnas de la misma fila, **nunca un umbral**: §12.6 prohíbe fijar un
+      corte por intuición, así que «cuánto dinero es demasiado para un hogar»
+      es justamente la pregunta que este filtro no contesta. El saco de 50 kg
+      con mínimo de un saco sigue adentro, porque comprar un saco entero es
+      una transacción minorista real (2026-08-12). El remedio para la paca es
+      cargarla como el lote que es (`quantity=30`, `price=21900`), que vuelve
+      a entrar con el mismo 730 por kg: el filtro corrige cómo se anota la
+      observación, no la borra.
 
     La fecha de referencia es `published_date` cuando existe; si no, el día en
     que se cargó la fila (`created_at`) — mismo criterio de repliegue que ya
@@ -304,6 +333,7 @@ def compute_retail_ranges(
             PriceHistory.currency,
             PriceHistory.unit,
             PriceHistory.quantity,
+            PriceHistory.min_purchase_quantity,
             PriceHistory.price,
             PriceHistory.price_cup,
             PriceHistory.published_date,
@@ -321,6 +351,7 @@ def compute_retail_ranges(
     # que quedó sin tasa resuelta.
     RangeKey = tuple[str, str | None, str, str, bool]
     grouped: dict[RangeKey, list[Decimal]] = {}
+    excluded_by_minimum = 0
     for (
         product_name,
         product_unit,
@@ -328,6 +359,7 @@ def compute_retail_ranges(
         currency,
         row_unit,
         quantity,
+        min_purchase_quantity,
         price,
         price_cup,
         published_date,
@@ -340,6 +372,12 @@ def compute_retail_ranges(
 
         effective_date = published_date or created_at.date()
         if effective_date < cutoff:
+            continue
+
+        # Después de los otros filtros a propósito: el conteo cuenta filas que
+        # habrían entrado, no todo lo que la consulta trajo.
+        if min_purchase_quantity is not None and min_purchase_quantity > quantity:
+            excluded_by_minimum += 1
             continue
 
         if currency == Currency.CUP.value:
@@ -379,4 +417,4 @@ def compute_retail_ranges(
     ranges.sort(
         key=lambda r: (-r.count, r.product_name, r.province_name or "", r.unconverted)
     )
-    return ranges
+    return RetailRangeReport(ranges=ranges, excluded_by_minimum=excluded_by_minimum)

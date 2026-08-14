@@ -397,6 +397,24 @@
       conversión entre unidades (spec.md §12.6, no inventar), lo demás se ve en la
       matriz de abajo.
     </p>
+    <p class="text-muted small">
+      Cuarto filtro, desde el 2026-08-14: una fila cuya <strong>compra mínima</strong>
+      supera su propia cantidad no entra. Cotiza un precio por una cantidad que no se
+      puede comprar — la paca de 30 paquetes a «730 el kilo», donde 730 no se consigue
+      llevando un kilo. No es un umbral de plata: el saco entero con mínimo de un saco
+      sigue adentro. El arreglo es cargar el lote como lote
+      (<code>quantity=30</code>, <code>price=21900</code>) y vuelve a entrar al mismo
+      precio por kilo.
+    </p>
+    {% if excluded_by_minimum %}
+    <div class="alert alert-warning py-2 small" role="alert">
+      <strong>{{ excluded_by_minimum }}</strong>
+      fila{{ "s" if excluded_by_minimum != 1 }} quedó
+      fuera de este rango por compra mínima mayor que la cantidad cotizada.
+      Sigue{{ "n" if excluded_by_minimum != 1 }} visible{{ "s" if excluded_by_minimum != 1 }}
+      en la matriz de abajo. El conteo abarca todos los productos, no solo los pilotos.
+    </div>
+    {% endif %}
 
     {% if not retail_ranges %}
     <div class="alert alert-secondary" role="alert">

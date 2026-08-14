@@ -68,9 +68,8 @@ def control_panel(
     request: Request, db: Session = Depends(get_db), days: int = _DEFAULT_RETAIL_RANGE_DAYS
 ) -> HTMLResponse:
     cells = [c for c in compute_cells(db) if c.product_name in _PILOT_FILTER]
-    retail_ranges = [
-        r for r in compute_retail_ranges(db, days=days) if r.product_name in _PILOT_FILTER
-    ]
+    retail_report = compute_retail_ranges(db, days=days)
+    retail_ranges = [r for r in retail_report.ranges if r.product_name in _PILOT_FILTER]
 
     progress = compute_phase0_progress(db)
     activity = compute_daily_activity(db, days=_ACTIVITY_DAYS)
@@ -94,6 +93,12 @@ def control_panel(
             "cell_groups": group_cells(cells),
             "retail_ranges": retail_ranges,
             "retail_range_days": days,
+            # Sin filtrar por piloto, a diferencia de `retail_ranges`: el
+            # filtro de compra mínima corre dentro de `compute_retail_ranges`,
+            # antes de que acá se sepa de qué producto era cada fila. Preferí
+            # un número que abarca de más y es honesto sobre eso, a rehacer la
+            # consulta para recortarlo.
+            "excluded_by_minimum": retail_report.excluded_by_minimum,
             "curated": curated,
             "rows": rows,
             # Se cuenta sobre las celdas ya filtradas, no con un agregado
