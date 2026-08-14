@@ -105,6 +105,7 @@ def _crear_precio_curado(
     unit: str | None = None,
     sale_format: str | None = None,
     packaging: str | None = None,
+    min_purchase_quantity: Decimal | None = None,
 ) -> PriceHistory:
     """Arma una fila de `prices_history` ya curada, sin pasar por el submit.
 
@@ -120,6 +121,7 @@ def _crear_precio_curado(
         unit=unit,
         sale_format=sale_format,
         packaging=packaging,
+        min_purchase_quantity=min_purchase_quantity,
         source_id=ingestion.id,
     )
     session.add(precio)
@@ -760,6 +762,73 @@ class TestCurationSubmit:
         assert response.status_code == 422
         session.refresh(precio)
         assert precio.price == Decimal("100")
+
+    def test_compra_minima_se_persiste_por_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El mínimo es por fila, no por anuncio: un mismo anuncio puede
+        ofrecer un producto al detalle y otro solo por lote — el caso real de
+        `094f07b0` («Arroz 1kg 21900 por paca de 30 und, al detalle 750»)."""
+        arroz = _crear_producto(session, name="Arroz")
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-minimo")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "2",
+                "product_id_0": str(arroz.id),
+                "price_0": "730",
+                "quantity_0": "1",
+                "unit_0": "kg",
+                "min_purchase_0": "30",
+                "product_id_1": str(pollo.id),
+                "price_1": "450",
+                "min_purchase_1": "",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        filas = {
+            f.product_id: f
+            for f in session.execute(
+                select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
+            ).scalars()
+        }
+        assert filas[arroz.id].min_purchase_quantity == Decimal("30")
+        assert filas[pollo.id].min_purchase_quantity is None
+
+    @pytest.mark.parametrize("valor", ["", "muchos", "0", "-5"])
+    def test_compra_minima_invalida_o_no_positiva_degrada_a_null(
+        self, client: TestClient, session: Session, valor: str
+    ) -> None:
+        """Degrada, no bloquea — contrario a `published_date`. Acá el vacío no
+        puede fabricar un valor equivocado: «sin mínimo declarado» y «el mínimo
+        es la cantidad de la fila» dan el mismo resultado en el filtro."""
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_=f"hash-post-minimo-{valor or 'vacio'}")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "min_purchase_0": valor,
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        fila = session.execute(
+            select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
+        ).scalar_one()
+        assert fila.min_purchase_quantity is None
 
     def test_filas_vacias_entre_completas_se_ignoran_sin_error(
         self, client: TestClient, session: Session
@@ -2188,6 +2257,7 @@ def _form_edicion(
         "sale_format_0": row.get("sale_format", ""),
         "packaging_format_0": row.get("packaging_format", ""),
         "packaging_detail_0": row.get("packaging_detail", ""),
+        "min_purchase_0": row.get("min_purchase", ""),
         "province_id_0": row.get("province_id", ""),
         "price_id_0": row.get("price_id", ""),
     }
@@ -2253,6 +2323,47 @@ class TestEditarCuradoPost:
         assert precio.unit == "lb"
         assert precio.sale_format == SaleFormat.WHOLESALE.value
         assert precio.packaging == "saco de 25 kg"
+
+    def test_compra_minima_round_trip_al_corregir(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La fila ya curada muestra su mínimo al reabrirse, y la corrección
+        lo actualiza. Sin el prellenado, corregir cualquier otro campo
+        borraría el mínimo en silencio."""
+        arroz = _crear_producto(session, name="Arroz")
+        curado = _crear_raw_ingestion(session, hash_="hash-corrige-minimo")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session,
+            ingestion=curado,
+            product=arroz,
+            price="730",
+            # Con la escala explícita: la fixture usa `expire_on_commit=False`,
+            # así que el valor que renderiza la plantilla es el objeto en
+            # memoria y no el round-trip de la columna `Numeric(12, 3)`.
+            # Sembrarlo ya escalado hace que las dos formas coincidan.
+            min_purchase_quantity=Decimal("30.000"),
+        )
+
+        formulario = client.get(f"/curation/{curado.id}/edit")
+        assert 'id="min_purchase_0" value="30.000"' in formulario.text
+
+        client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(arroz.id),
+                    "price": "730",
+                    "min_purchase": "10",
+                    "price_id": str(precio.id),
+                },
+            ),
+        )
+
+        session.refresh(precio)
+        assert precio.min_purchase_quantity == Decimal("10")
 
     def test_price_id_de_otro_anuncio_es_error_explicito(
         self, client: TestClient, session: Session

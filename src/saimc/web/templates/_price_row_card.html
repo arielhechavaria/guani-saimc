@@ -121,7 +121,7 @@
           eso lo ofrece cualquier minorista desde su casa (corregido 2026-08-12).
         </small>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <label for="packaging_format_{{ index0 }}" class="form-label small mb-1">Envase <span class="text-muted">(opcional)</span></label>
         <select name="packaging_format_{{ index0 }}" id="packaging_format_{{ index0 }}" class="form-select form-select-sm">
           <option value=""{% if not row.packaging_format %} selected{% endif %}>— sin especificar —</option>
@@ -131,9 +131,17 @@
           <option value="otro"{% if row.packaging_format == "otro" %} selected{% endif %}>Otro…</option>
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
         <label for="packaging_detail_{{ index0 }}" class="form-label small mb-1">Si es "Otro" <span class="text-muted">(opcional)</span></label>
         <input type="text" name="packaging_detail_{{ index0 }}" id="packaging_detail_{{ index0 }}" value="{{ row.packaging_detail }}" maxlength="64" placeholder="funda, lata, pomo…" class="form-control form-control-sm" />
+      </div>
+      <div class="col-md-2">
+        <label for="min_purchase_{{ index0 }}" class="form-label small mb-1">Compra mínima <span class="text-muted">(opcional)</span></label>
+        <input type="text" name="min_purchase_{{ index0 }}" id="min_purchase_{{ index0 }}" value="{{ row.min_purchase }}" class="form-control form-control-sm" placeholder="sin mínimo" />
+        <small class="text-muted">
+          Cuánto exige comprar el anuncio, en la <strong>misma unidad de esta fila</strong>.
+          «Paca de 30 paquetes de 1 kg» con el precio del kilo → 30. Vacío = no exige lote.
+        </small>
       </div>
     </div>
   </div>

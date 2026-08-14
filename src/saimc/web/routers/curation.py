@@ -148,6 +148,7 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "sale_format": "",
             "packaging_format": "",
             "packaging_detail": "",
+            "min_purchase": "",
             "province_id": "",
         }
     return {
@@ -170,6 +171,10 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         "sale_format": "",
         "packaging_format": "",
         "packaging_detail": "",
+        # Tampoco se prellena: extraerlo del texto («compra mínima 20», «paca
+        # de 30 pqt») es trabajo de la capa de extracción y va en otro slice
+        # (design.md, D7).
+        "min_purchase": "",
         "province_id": str(proposal.province.id) if proposal.province else "",
     }
 
@@ -194,6 +199,11 @@ def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
         "sale_format": price.sale_format or "",
         "packaging_format": packaging_format,
         "packaging_detail": packaging_detail,
+        "min_purchase": (
+            str(price.min_purchase_quantity)
+            if price.min_purchase_quantity is not None
+            else ""
+        ),
         "province_id": str(price.province_id) if price.province_id else "",
     }
 
@@ -415,6 +425,27 @@ def _parse_decimal(raw: str) -> Decimal | None:
         return None
 
 
+def _parse_min_purchase(raw: str) -> Decimal | None:
+    """Compra mínima que exige el anuncio, en la unidad de la propia fila.
+
+    Vacío, no parseable o no positivo degrada a `None`, nunca rompe el submit
+    — mismo contrato que `quantity`. Es lo contrario de lo que se decidió para
+    `published_date` el 2026-08-14, y a propósito: allá el vacío **fabricaba**
+    un valor equivocado (la fecha de carga sobre un anuncio viejo), acá no
+    puede. «Sin mínimo declarado» y «el mínimo es la cantidad de esta fila»
+    producen el mismo resultado en el filtro del rango público, así que un
+    vacío no afirma nada falso (design.md, D2).
+
+    El no-positivo se ataja acá y no en la base: `ck_prices_history_min_
+    purchase_quantity` existe como piso estructural, no como camino de error
+    que el operador pueda pisar desde el formulario.
+    """
+    value = _parse_decimal(raw)
+    if value is None or value <= 0:
+        return None
+    return value
+
+
 def _parse_date(raw: str) -> date | None:
     """Parsea el `<input type="date">` (ISO `YYYY-MM-DD` del navegador).
 
@@ -539,6 +570,7 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
         "sale_format": str(form.get(f"sale_format_{index}", "")).strip(),
         "packaging_format": str(form.get(f"packaging_format_{index}", "")).strip(),
         "packaging_detail": str(form.get(f"packaging_detail_{index}", "")).strip(),
+        "min_purchase": str(form.get(f"min_purchase_{index}", "")).strip(),
         "province_id": str(form.get(f"province_id_{index}", "")).strip(),
     }
 
@@ -644,6 +676,7 @@ async def submit_curation(
                 # que el teléfono que reemplaza, así que un texto que entraba en
                 # la columna deja de entrar apenas se redacta.
                 packaging=_packaging_from_form(row["packaging_format"], row["packaging_detail"]),
+                min_purchase_quantity=_parse_min_purchase(row["min_purchase"]),
                 published_date=published_date,
                 source_id=ingestion.id,
             )
@@ -997,6 +1030,7 @@ async def submit_edit(
         existing.packaging = _packaging_from_form(
             row["packaging_format"], row["packaging_detail"]
         )
+        existing.min_purchase_quantity = _parse_min_purchase(row["min_purchase"])
         existing.published_date = published_date
 
         if row["currency"] == Currency.CUP.value:
