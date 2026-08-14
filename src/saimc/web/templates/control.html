@@ -36,25 +36,44 @@
        como semáforo. La ranura la asigna `saimc.web.matrix` por catálogo,
        no por los datos, para que una provincia no cambie de color al
        cambiar su muestra. */
-    .saimc-slot-0 { --prov: #4263eb; --prov-soft: #dbe4ff; }
-    .saimc-slot-1 { --prov: #7048e8; --prov-soft: #e5dbff; }
-    .saimc-slot-2 { --prov: #0b7285; --prov-soft: #c5f6fa; }
-    .saimc-slot-3 { --prov: #a61e4d; --prov-soft: #ffdeeb; }
+       Tres tonos por provincia y cada uno con su trabajo: `--prov` para lo
+       que tiene que resaltar (nombre, borde, marcador de la mediana),
+       `--prov-soft` para el relleno de la barra, y `--prov-wash` para el
+       fondo de la columna. Son tres y no dos porque si el fondo de la
+       columna usara el mismo tono que el relleno de la barra, la barra
+       desaparecería contra su propio fondo. */
+    .saimc-slot-0 { --prov: #4263eb; --prov-soft: #dbe4ff; --prov-wash: #f4f6ff; }
+    .saimc-slot-1 { --prov: #7048e8; --prov-soft: #e5dbff; --prov-wash: #f8f4ff; }
+    .saimc-slot-2 { --prov: #0b7285; --prov-soft: #c5f6fa; --prov-wash: #f0fbfc; }
+    .saimc-slot-3 { --prov: #a61e4d; --prov-soft: #ffdeeb; --prov-wash: #fff5f8; }
     /* «Sin provincia» no es una provincia más: gris, sin identidad propia. */
-    .saimc-slot-9 { --prov: #868e96; --prov-soft: #e9ecef; }
+    .saimc-slot-9 { --prov: #868e96; --prov-soft: #e9ecef; --prov-wash: #f8f9fa; }
     .saimc-legend { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .75rem; }
     .saimc-legend-chip { font-size: .75rem; padding: .15rem .5rem .15rem .4rem; border-radius: .25rem; border-left: .2rem solid var(--prov); background: var(--prov-soft); color: #212529; }
     .saimc-prod { border: 1px solid #dee2e6; border-radius: .5rem; margin-bottom: .75rem; overflow: hidden; }
-    .saimc-prod-head { padding: .5rem 1rem; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
+    /* El colapso es `<details>`/`<summary>` nativo: cero JavaScript, cero
+       descarga y funciona igual con la conexión caída (CLAUDE.md, entorno).
+       El encabezado del producto se queda gris a propósito: la tarjeta cruza
+       las dos provincias, así que pintarla de un color de provincia diría
+       algo falso. El color de identidad vive dentro, en cada columna. */
+    .saimc-prod-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; padding: .5rem 1rem; background: #f8f9fa; border-bottom: 1px solid #dee2e6; cursor: pointer; list-style: none; }
+    .saimc-prod-head::-webkit-details-marker { display: none; }
+    .saimc-prod-head::after { content: "▸"; margin-left: auto; color: #adb5bd; }
+    .saimc-prod[open] > .saimc-prod-head::after { content: "▾"; }
+    .saimc-prod-head:hover { background: #f1f3f5; }
+    /* Resumen por provincia en la cabecera: una tarjeta cerrada tiene que
+       seguir diciendo dónde está la muestra, o el colapso esconde justamente
+       lo que la vista existe para mostrar. */
+    .saimc-prod-tally { font-size: .75rem; color: #6c757d; }
+    .saimc-prod-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--prov); margin-right: .2rem; }
     .saimc-prod-grid { display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(280px, 1fr)); overflow-x: auto; }
-    .saimc-col { padding: .75rem 1rem; border-left: .2rem solid var(--prov); }
-    .saimc-col + .saimc-col { box-shadow: inset 1px 0 0 #f1f3f5; }
-    .saimc-col-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; margin-bottom: .5rem; }
+    .saimc-col { padding: .75rem 1rem; border-left: .2rem solid var(--prov); background: var(--prov-wash); }
+    .saimc-col-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; margin-bottom: .5rem; padding-bottom: .35rem; border-bottom: 1px solid var(--prov-soft); }
     .saimc-col-name { font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--prov); }
     .saimc-col-empty { font-size: .8rem; color: #adb5bd; }
     /* Una sola columna cuando la pantalla no da para poner dos al lado. */
     @media (max-width: 720px) { .saimc-prod-grid { grid-template-columns: 1fr; } }
-    .saimc-serie + .saimc-serie { margin-top: .75rem; padding-top: .75rem; border-top: 1px dashed #f1f3f5; }
+    .saimc-serie + .saimc-serie { margin-top: .75rem; padding-top: .75rem; border-top: 1px dashed var(--prov-soft, #f1f3f5); }
     .saimc-serie-meta { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; align-items: baseline; }
     .saimc-serie-name { font-size: .9rem; font-weight: 500; }
     /* Barra de rango. El largo codifica la amplitud (escala logarítmica,
@@ -63,7 +82,9 @@
        prohíbe fijar un umbral de dispersión, así que juzga el operador. */
     .saimc-range { display: flex; align-items: center; gap: .5rem; margin-top: .35rem; font-size: .75rem; color: #6c757d; }
     .saimc-range-min, .saimc-range-max { white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .saimc-range-track { flex: 1; background: #f1f3f5; border-radius: .25rem; height: .55rem; }
+    /* Pista blanca y no gris: sobre el fondo tenue de la columna, un gris
+       claro se confundiría con el relleno de la barra. */
+    .saimc-range-track { flex: 1; background: #fff; border-radius: .25rem; height: .55rem; }
     .saimc-range-fill { display: block; position: relative; height: 100%; background: var(--prov-soft, #cfe2ff); border-radius: .25rem; }
     .saimc-range-median { position: absolute; top: -.15rem; width: .2rem; height: .85rem; background: var(--prov, #0d6efd); border-radius: .1rem; transform: translateX(-50%); }
   </style>
@@ -507,6 +528,14 @@
     </p>
 
     <p class="text-muted small">
+      <strong>Las tarjetas se pliegan.</strong> Arranca abierta la de mayor muestra y el
+      resto cerradas; se abren con un clic y no hay JavaScript de por medio. La cabecera
+      de una tarjeta cerrada igual trae el reparto de observaciones por provincia, así
+      que plegarla no esconde dónde está la muestra — que es lo que la vista existe para
+      mostrar.
+    </p>
+
+    <p class="text-muted small">
       <strong>Cómo se lee la barra.</strong> Va del mínimo al máximo de la serie, y la
       marca fuerte es la mediana. El <strong>largo</strong> codifica la amplitud —cuántas
       veces el máximo contiene al mínimo— en escala logarítmica y normalizado contra la
@@ -564,14 +593,23 @@
     </div>
 
     {% for fila in matrix.rows %}
-    <div class="saimc-prod">
-      <div class="saimc-prod-head">
+    {# Abierta solo la de mayor muestra. Con todas cerradas la vista cargaría
+       en blanco, que es peor que la lista larga que el colapso vino a
+       resolver; con todas abiertas el colapso no haría nada. #}
+    <details class="saimc-prod"{% if loop.first %} open{% endif %}>
+      <summary class="saimc-prod-head">
         <strong>{{ fila.product_name }}</strong>
         <span class="text-muted small">
           · {{ fila.total }} observaci{% if fila.total != 1 %}ones{% else %}ón{% endif %}
-          en {{ matrix.columns|length }} provincia{% if matrix.columns|length != 1 %}s{% endif %}
         </span>
-      </div>
+        {# El reparto por provincia va en la cabecera para que una tarjeta
+           cerrada siga diciendo dónde está la muestra. #}
+        {% for columna in fila.columns %}
+        <span class="saimc-prod-tally saimc-slot-{{ columna.column.slot }}">
+          <span class="saimc-prod-dot"></span>{{ columna.column.label }} {{ columna.total }}
+        </span>
+        {% endfor %}
+      </summary>
 
       <div class="saimc-prod-grid" style="--cols: {{ matrix.columns|length }};">
       {% for columna in fila.columns %}
@@ -635,7 +673,7 @@
       </div>
       {% endfor %}
       </div>
-    </div>
+    </details>
     {% endfor %}
     {% endif %}
 

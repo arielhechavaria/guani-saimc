@@ -2085,3 +2085,40 @@ escala. El CSS define cuatro ranuras de color más el gris de «sin provincia»:
 con más de cuatro provincias reales los colores se repiten, que es preferible
 a inventar matices en tiempo de render. Si algún día se agregan provincias al
 piloto, el orden se cambia en `PHASE0_PROVINCES` y la vista lo sigue.
+
+---
+
+## 2026-08-14 — La matriz se pliega por producto, con sombreado por provincia
+
+Contexto: sobre la grilla producto × provincia, la pregunta era entre dos
+formas de hacerla más legible: tabs por provincia, o sombrear las columnas y
+plegar las tarjetas. Medida contra la base real, la matriz tiene hoy 3 filas,
+2 columnas y 9 series — o sea que ninguna de las dos resuelve un problema de
+escala que exista todavía.
+
+Decisión: sombreado más colapso, elegido por el operador con el tamaño real a
+la vista. Cada columna gana un fondo tenue de su provincia (`--prov-wash`, un
+tercer tono además del fuerte y el del relleno de la barra) para que las
+columnas se lean como bloques y no como una lista con una rayita al costado.
+Cada producto pasa a ser un `<details>`/`<summary>` nativo: **la tarjeta de
+mayor muestra arranca abierta y el resto cerradas**, y la cabecera de una
+tarjeta cerrada lleva el reparto de observaciones por provincia con el punto
+de color, así que plegarla no esconde dónde está la muestra.
+
+Descartado: **tabs por provincia**, porque muestran una provincia y esconden
+la otra. Comparar Arroz en Santiago contra Arroz en La Habana pasaría a ser
+mirar, memorizar, cambiar de tab y comparar de memoria — exactamente el
+problema que la grilla vino a resolver el mismo día, y la comparación entre
+provincias es el objeto medido de `spec.md` §5. Cuando en Fase 1 las columnas
+no entren, la salida tampoco son tabs sino un filtro de provincia: el filtro
+elige qué comparás, el tab prohíbe comparar.
+
+Consecuencia: el colapso es HTML nativo, sin JavaScript ni descarga (hay un
+test que fija que la página no sirve ningún `<script>`). El encabezado del
+producto queda gris a propósito: la tarjeta cruza las dos provincias, así que
+pintarla de un color de provincia diría algo falso — el color de identidad
+vive dentro, en cada columna. La pista de la barra pasa de gris a blanca
+porque sobre el fondo tenue de la columna un gris claro se confundía con el
+relleno. Si la lista de productos crece, el criterio de «solo la primera
+abierta» sigue sirviendo; si algún día hay que recordar qué tarjetas dejó
+abiertas el operador, eso ya pide estado y no entra por `<details>` solo.

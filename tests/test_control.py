@@ -154,6 +154,82 @@ class TestControlPanel:
         assert "La Habana" in texto
         assert "Santiago de Cuba" in texto
 
+    def test_solo_la_tarjeta_de_mayor_muestra_arranca_abierta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Con todas cerradas la vista cargaría en blanco, que es peor que la
+        lista larga que el colapso vino a resolver; con todas abiertas el
+        colapso no haría nada."""
+        self._cargar_dos_productos(session)
+
+        texto = client.get("/control").text
+
+        assert texto.count('<details class="saimc-prod"') == 2
+        assert texto.count('<details class="saimc-prod" open>') == 1
+        # La abierta es la de más muestra: Azúcar (9) antes que Pollo (2).
+        abierta = texto.split('<details class="saimc-prod" open>')[1]
+        assert "Azúcar blanca" in abierta.split("</summary>")[0]
+
+    def test_la_tarjeta_cerrada_sigue_diciendo_donde_esta_la_muestra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El reparto por provincia va en la cabecera. Sin eso, plegar una
+        tarjeta escondería justamente lo que la vista existe para mostrar."""
+        self._cargar_dos_productos(session)
+
+        texto = client.get("/control").text
+        # Acotado a las tarjetas de la matriz: «Pollo» también aparece antes,
+        # en la sección de cobertura.
+        tarjetas = texto.split('<details class="saimc-prod"')[1:]
+        cabecera_pollo = next(
+            t.split("</summary>")[0] for t in tarjetas if "Pollo" in t.split("</summary>")[0]
+        )
+
+        assert "La Habana 2" in cabecera_pollo
+        assert "Santiago de Cuba 0" in cabecera_pollo
+
+    def test_el_colapso_no_trae_javascript(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`<details>` nativo: nada que descargar con la conexión caída."""
+        self._cargar_dos_productos(session)
+
+        texto = client.get("/control").text
+
+        assert "<script" not in texto
+
+    def _cargar_dos_productos(self, session: Session) -> None:
+        azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[])
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([azucar, pollo, habana, santiago])
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/colapso.txt",
+            content_hash="hash-colapso",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        filas = [(azucar, habana, "400")] * 5
+        filas += [(azucar, santiago, "420")] * 4
+        filas += [(pollo, habana, "700")] * 2
+        for producto, provincia, precio in filas:
+            session.add(
+                PriceHistory(
+                    product_id=producto.id,
+                    province_id=provincia.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    source_id=origen.id,
+                )
+            )
+        session.commit()
+
     def test_la_columna_de_provincia_no_usa_color_de_semaforo(
         self, client: TestClient, session: Session
     ) -> None:
