@@ -65,6 +65,15 @@ class PriceHistory(Base):
             "sale_format IS NULL OR sale_format IN ('retail', 'wholesale')",
             name="ck_prices_history_sale_format",
         ),
+        # Estructural, no de vocabulario: un mínimo de cero o negativo no
+        # describe ninguna transacción y no hay lectura de aplicación que lo
+        # vuelva válido (design.md, D6). La capa web degrada la entrada mala a
+        # `NULL` antes de llegar acá, así que este CHECK es un piso, no un
+        # camino de error que el operador pueda pisar.
+        CheckConstraint(
+            "min_purchase_quantity IS NULL OR min_purchase_quantity > 0",
+            name="ck_prices_history_min_purchase_quantity",
+        ),
         Index("idx_prices_history_series", "product_id", "province_id", "created_at"),
     )
 
@@ -100,6 +109,15 @@ class PriceHistory(Base):
     exchange_rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     exchange_rate_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True)
+    # Cuánto exige comprar el anuncio, **en la misma unidad que `unit`** y con
+    # el mismo tipo que `quantity`, para que las dos sean comparables sin
+    # tabla de conversión (design.md, D1). Un mínimo dicho en pacas no sirve:
+    # una paca trae 10 o 30 paquetes según el anuncio.
+    # `NULL` significa «el anuncio no declara mínimo», no «se desconoce»: un
+    # anuncio que ofrece un kilo suelto sin condiciones es exactamente eso.
+    min_purchase_quantity: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 3), nullable=True
+    )
     # Día de publicación del anuncio, no instante — eje temporal de la serie
     # (spec.md §6.1c/§7.2). Nullable, sin default y sin CHECK: un dato
     # secundario nunca debe bloquear un insert (design.md, D2).

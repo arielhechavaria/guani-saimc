@@ -424,6 +424,44 @@ class TestPricesHistorySaleFormatCheck:
         assert precio.unit == "quintal"
 
 
+class TestPricesHistoryMinPurchaseQuantityCheck:
+    """`min_purchase_quantity` — la cantidad mínima que el anuncio exige
+    comprar, en la unidad de la propia fila. `NULL` significa «no declara
+    mínimo», y el CHECK solo impide lo que no describe transacción alguna."""
+
+    def test_min_purchase_quantity_none_aceptado(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, min_purchase_quantity=None)
+        session.add(precio)
+        session.commit()
+
+        assert precio.min_purchase_quantity is None
+
+    def test_min_purchase_quantity_con_decimales_persiste(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, min_purchase_quantity=Decimal("2.500"))
+        session.add(precio)
+        session.commit()
+        session.refresh(precio)
+
+        assert precio.min_purchase_quantity == Decimal("2.500")
+
+    @pytest.mark.parametrize("valor", [Decimal("0"), Decimal("-1")])
+    def test_min_purchase_quantity_no_positivo_rechazado(
+        self, session: Session, valor: Decimal
+    ) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        session.add(_crear_precio(producto, fuente, min_purchase_quantity=valor))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
 class TestPricesHistoryExclusiones:
     def test_sin_columnas_fuera_de_alcance(self) -> None:
         nombres_columnas = {c.name for c in PriceHistory.__table__.columns}
@@ -526,6 +564,56 @@ class TestUnitSaleFormatPackagingMigration:
             columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
             assert not ({"unit", "sale_format", "packaging"} & columnas)
             assert "id" in columnas  # el downgrade no se llevó ninguna otra columna
+
+
+class TestMinPurchaseQuantityMigration:
+    """`0008_prices_history_min_purchase_quantity.py` — mismo patrón que
+    `TestUnitSaleFormatPackagingMigration`: `batch_alter_table` porque la
+    migración crea un CHECK y SQLite no soporta `ADD CONSTRAINT`."""
+
+    def test_upgrade_agrega_la_columna_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0008_prices_history_min_purchase_quantity.py")
+
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "prices_history",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        metadata.create_all(engine)
+
+        # Guardarraíl de «sin backfill», igual que en 0006: una fila anterior
+        # a la migración tiene que quedar en NULL, no en un mínimo fabricado.
+        with engine.connect() as connection:
+            connection.execute(
+                sa.insert(metadata.tables["prices_history"]).values(id=uuid.uuid4())
+            )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "min_purchase_quantity" in columnas
+
+            valor = connection.execute(
+                sa.text("select min_purchase_quantity from prices_history")
+            ).scalar_one()
+            assert valor is None
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "min_purchase_quantity" not in columnas
+            assert "id" in columnas  # el downgrade no se llevó ninguna otra columna
+
+        engine.dispose()
 
         engine.dispose()
 

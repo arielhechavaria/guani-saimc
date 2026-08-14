@@ -32,3 +32,6 @@ backups/
 .DS_Store
 *.swp
 .idea/
+
+# Worktrees temporales de agentes (repos embebidos, nunca parte del proyecto)
+.claude/worktrees/
