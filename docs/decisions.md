@@ -2052,3 +2052,36 @@ siguen alimentando el rango. `compute_retail_ranges` pasa a devolver
 y anotado en la propuesta: extraer el mínimo del texto, el precio escalonado
 por volumen («más de 5 pacas a 725»), y agregar «Paca» al vocabulario de
 envase. Artefactos en `openspec/changes/min-purchase-quantity/`.
+
+---
+
+## 2026-08-14 — La matriz de pilotos pasa a grilla producto × provincia
+
+Contexto: la matriz de `/control` agrupaba por producto × provincia y apilaba
+los grupos ordenados por muestra, así que «Arroz · Santiago» y «Arroz · La
+Habana» podían quedar separados por otros productos. Comparar provincias —el
+objeto medido de `spec.md` §5— había que hacerlo de memoria, y una combinación
+sin datos simplemente no aparecía: el hueco de cobertura era invisible.
+
+Decisión: pivote a grilla en `saimc.web.matrix.build_matrix`. Una fila por
+producto, una columna por provincia, con la columna vacía dibujada
+explícitamente cuando el cruce no tiene series. Cada provincia lleva un color
+propio en el borde de su columna, en el encabezado y en la barra de rango. Dos
+reglas sostienen el color: **(a)** la paleta es categórica —índigo, violeta,
+cian, magenta— y no incluye rojo ni verde, porque un semáforo afirmaría un
+umbral de dispersión que `spec.md` §12.6 prohíbe fijar; **(b)** la ranura de
+color y el orden de las columnas salen del catálogo `PHASE0_PROVINCES`, no de
+los datos, así que una provincia conserva su color y su posición aunque un día
+no se cargue nada en ella.
+
+Descartado: asignar color y orden por tamaño de muestra. Se veía más «vivo»
+pero hace que una provincia cambie de color y de lugar de un día para el otro,
+y entonces el color deja de ser identidad y hay que releer los encabezados en
+cada carga.
+
+Consecuencia: `group_cells` sigue siendo la capa que calcula las barras y su
+normalización contra toda la tabla; `build_matrix` solo pivota, no toca la
+escala. El CSS define cuatro ranuras de color más el gris de «sin provincia»:
+con más de cuatro provincias reales los colores se repiten, que es preferible
+a inventar matices en tiempo de render. Si algún día se agregan provincias al
+piloto, el orden se cambia en `PHASE0_PROVINCES` y la vista lo sigue.

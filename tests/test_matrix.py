@@ -13,7 +13,12 @@ operador juzga. La escala es logarítmica porque la amplitud es una razón
 from decimal import Decimal
 
 from saimc.cells import Cell
-from saimc.web.matrix import build_range_bar, group_cells
+from saimc.web.matrix import (
+    UNKNOWN_PROVINCE_SLOT,
+    build_matrix,
+    build_range_bar,
+    group_cells,
+)
 
 
 def _celda(
@@ -192,3 +197,137 @@ class TestGroupCells:
 
     def test_lista_vacia_no_rompe(self) -> None:
         assert group_cells([]) == []
+
+
+class TestBuildMatrix:
+    """El pivote a grilla: una fila por producto, una columna por provincia.
+
+    Lo que resuelve: apilado, «Arroz · Santiago» y «Arroz · La Habana» quedaban
+    separados por otros productos y la comparación entre provincias —que es el
+    objeto medido de `spec.md` §5— había que hacerla de memoria.
+    """
+
+    def test_el_mismo_producto_en_dos_provincias_es_una_fila_con_dos_columnas(self) -> None:
+        celdas = [
+            _celda(province="Santiago de Cuba", count=5),
+            _celda(province="La Habana", count=2),
+        ]
+
+        matriz = build_matrix(celdas)
+
+        assert len(matriz.rows) == 1
+        assert matriz.rows[0].product_name == "Arroz"
+        assert matriz.rows[0].total == 7
+        assert [c.column.name for c in matriz.rows[0].columns] == [
+            "La Habana",
+            "Santiago de Cuba",
+        ]
+        assert [c.total for c in matriz.rows[0].columns] == [2, 5]
+
+    def test_el_orden_de_columnas_es_el_de_la_especificacion(self) -> None:
+        """`PHASE0_PROVINCES` manda: La Habana antes que Santiago, sin importar
+        cuál tenga más muestra ni en qué orden lleguen las celdas."""
+        celdas = [
+            _celda(province="Santiago de Cuba", count=99),
+            _celda(province="La Habana", count=1),
+        ]
+
+        matriz = build_matrix(celdas)
+
+        assert [c.name for c in matriz.columns] == ["La Habana", "Santiago de Cuba"]
+
+    def test_la_ranura_de_color_no_depende_de_los_datos(self) -> None:
+        """El color es identidad de provincia, no veredicto ni ranking: Santiago
+        conserva su ranura aunque La Habana no tenga una sola fila cargada. Si
+        el color se asignara por orden de aparición, el operador vería a
+        Santiago cambiar de color de un día para el otro."""
+        solo_santiago = build_matrix([_celda(province="Santiago de Cuba", count=5)])
+        con_las_dos = build_matrix(
+            [
+                _celda(province="Santiago de Cuba", count=5),
+                _celda(province="La Habana", count=2),
+            ]
+        )
+
+        santiago_solo = next(c for c in solo_santiago.columns if c.name == "Santiago de Cuba")
+        santiago_con = next(c for c in con_las_dos.columns if c.name == "Santiago de Cuba")
+        assert santiago_solo.slot == santiago_con.slot == 1
+
+    def test_una_provincia_fuera_del_piloto_va_despues_y_no_roba_ranura(self) -> None:
+        celdas = [
+            _celda(province="Villa Clara", count=3),
+            _celda(province="La Habana", count=3),
+        ]
+
+        matriz = build_matrix(celdas)
+
+        assert [c.name for c in matriz.columns] == ["La Habana", "Villa Clara"]
+        assert [c.slot for c in matriz.columns] == [0, 2]
+
+    def test_la_provincia_sin_nombre_va_ultima_y_con_ranura_neutra(self) -> None:
+        """«Sin provincia» no es una provincia más: va al final y con el gris
+        reservado, para que ningún color de identidad la haga pasar por una."""
+        celdas = [
+            _celda(province=None, count=4),
+            _celda(province="Santiago de Cuba", count=4),
+        ]
+
+        matriz = build_matrix(celdas)
+
+        assert [c.name for c in matriz.columns] == ["Santiago de Cuba", None]
+        assert matriz.columns[-1].slot == UNKNOWN_PROVINCE_SLOT
+        assert matriz.columns[-1].label == "sin provincia"
+
+    def test_un_hueco_de_cobertura_se_dibuja_vacio_en_vez_de_desaparecer(self) -> None:
+        """La ganancia central de la grilla: si Pollo no tiene nada en Santiago,
+        la columna aparece vacía. Apilado, esa combinación simplemente no
+        existía y el hueco había que deducirlo."""
+        celdas = [
+            _celda(product="Arroz", province="La Habana", count=5),
+            _celda(product="Arroz", province="Santiago de Cuba", count=5),
+            _celda(product="Pollo", province="La Habana", count=3),
+        ]
+
+        matriz = build_matrix(celdas)
+
+        pollo = next(r for r in matriz.rows if r.product_name == "Pollo")
+        assert [c.column.name for c in pollo.columns] == ["La Habana", "Santiago de Cuba"]
+        assert pollo.columns[1].cells == []
+        assert pollo.columns[1].total == 0
+
+    def test_las_filas_van_por_muestra_total_del_producto(self) -> None:
+        """Mismo criterio que `compute_cells` y `group_cells`: lo que tiene
+        muestra primero. Acá la muestra del producto suma sus dos provincias."""
+        celdas = [
+            _celda(product="Pollo", province="La Habana", count=10),
+            _celda(product="Arroz", province="La Habana", count=6),
+            _celda(product="Arroz", province="Santiago de Cuba", count=6),
+        ]
+
+        matriz = build_matrix(celdas)
+
+        assert [r.product_name for r in matriz.rows] == ["Arroz", "Pollo"]
+        assert [r.total for r in matriz.rows] == [12, 10]
+
+    def test_las_barras_siguen_normalizadas_contra_toda_la_tabla(self) -> None:
+        """El pivote es presentación: no toca la escala. Si cada columna se
+        normalizara sola, una amplitud de 10× en La Habana se vería igual de
+        ancha que una de 100× en Santiago."""
+        celdas = [
+            _celda(province="La Habana", count=4, minimum="1", median="2", maximum="10"),
+            _celda(
+                province="Santiago de Cuba", count=4, minimum="1", median="10", maximum="100"
+            ),
+        ]
+
+        matriz = build_matrix(celdas)
+
+        habana, santiago = matriz.rows[0].columns
+        assert round(habana.cells[0].bar.width_pct, 1) == 50.0
+        assert round(santiago.cells[0].bar.width_pct, 1) == 100.0
+
+    def test_lista_vacia_no_rompe(self) -> None:
+        matriz = build_matrix([])
+
+        assert matriz.columns == []
+        assert matriz.rows == []

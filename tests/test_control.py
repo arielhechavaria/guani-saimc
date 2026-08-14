@@ -107,6 +107,65 @@ class TestControlPanel:
 
         assert "1 de 1 celdas tienen una sola" in response.text
 
+    def test_la_matriz_pone_una_columna_por_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El mismo producto en dos provincias queda lado a lado, y el producto
+        cargado en una sola deja la otra columna visiblemente vacía: apilado,
+        esa combinación no aparecía y el hueco había que deducirlo."""
+        azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[])
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([azucar, pollo, habana, santiago])
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/matriz.txt",
+            content_hash="hash-matriz",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        for producto, provincia, precio in (
+            (azucar, habana, "400"),
+            (azucar, santiago, "420"),
+            (pollo, habana, "700"),
+        ):
+            session.add(
+                PriceHistory(
+                    product_id=producto.id,
+                    province_id=provincia.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    source_id=origen.id,
+                )
+            )
+        session.commit()
+
+        texto = client.get("/control").text
+
+        # Dos productos × dos provincias = cuatro cruces dibujados, con el de
+        # Pollo en Santiago vacío. La leyenda agrega una mención por provincia.
+        assert texto.count('class="saimc-col saimc-slot-') == 4
+        assert texto.count("sin series cargadas") == 1
+        assert "La Habana" in texto
+        assert "Santiago de Cuba" in texto
+
+    def test_la_columna_de_provincia_no_usa_color_de_semaforo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec.md §12.6: el color codifica identidad de provincia, no
+        veredicto. Rojo o verde afirmarían un umbral que nadie fijó."""
+        _cargar(session, precios=["420", "440"])
+
+        texto = client.get("/control").text
+
+        for semaforo in ("#dc3545", "#198754", "text-danger", "text-success"):
+            assert semaforo not in texto.split("<!-- ---------- 8.")[1]
+
 
 class TestRangoMinorista:
     """`GET /control` también resume el precio minorista por producto,
