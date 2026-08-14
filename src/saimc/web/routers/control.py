@@ -37,7 +37,7 @@ from saimc.progress import (
     compute_phase0_progress,
 )
 from saimc.web.deps import get_db
-from saimc.web.matrix import build_matrix
+from saimc.web.matrix import build_matrix, resolve_column, select_province
 
 router = APIRouter()
 
@@ -65,7 +65,10 @@ _PILOT_FILTER = frozenset(PILOT_PRODUCTS)
 
 @router.get("/control", response_class=HTMLResponse)
 def control_panel(
-    request: Request, db: Session = Depends(get_db), days: int = _DEFAULT_RETAIL_RANGE_DAYS
+    request: Request,
+    db: Session = Depends(get_db),
+    days: int = _DEFAULT_RETAIL_RANGE_DAYS,
+    province: str | None = None,
 ) -> HTMLResponse:
     cells = [c for c in compute_cells(db) if c.product_name in _PILOT_FILTER]
     retail_report = compute_retail_ranges(db, days=days)
@@ -74,6 +77,11 @@ def control_panel(
     progress = compute_phase0_progress(db)
     activity = compute_daily_activity(db, days=_ACTIVITY_DAYS)
     pace = compute_pace(activity, rows_remaining=progress.rows_remaining)
+
+    # La provincia de la pestaña activa. `resolve_column` no rompe con un
+    # parámetro desconocido: cae en la primera provincia del catálogo.
+    matrix = build_matrix(cells)
+    selected = resolve_column(matrix, province)
 
     curated = db.execute(
         select(func.count())
@@ -87,12 +95,16 @@ def control_panel(
         "control.html",
         {
             "cells": cells,
-            # Grilla producto × provincia, con las barras ya calculadas (ver
-            # `saimc.web.matrix`). Apilado por grupo, «Arroz · Santiago» y
-            # «Arroz · La Habana» caían separados por otros productos —el orden
-            # es por muestra— y comparar provincias, que es el objeto medido de
-            # spec.md §5, había que hacerlo de memoria.
-            "matrix": build_matrix(cells),
+            # La matriz entera alimenta la barra de pestañas: los totales por
+            # provincia que van en cada pestaña salen de acá, así que la
+            # pestaña que no estás mirando igual te dice cuánto tiene.
+            "matrix": matrix,
+            # Y el panel muestra una sola provincia (`?province=`, mismo
+            # lenguaje que los enlaces al historial). Recortar es presentación:
+            # las barras no se reescalan, así que la misma serie mide igual en
+            # todas las pestañas.
+            "matrix_tab": select_province(matrix, selected) if selected else None,
+            "selected_province": selected,
             "retail_ranges": retail_ranges,
             "retail_range_days": days,
             # Sin filtrar por piloto, a diferencia de `retail_ranges`: el

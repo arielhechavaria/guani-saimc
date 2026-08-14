@@ -2122,3 +2122,51 @@ porque sobre el fondo tenue de la columna un gris claro se confundía con el
 relleno. Si la lista de productos crece, el criterio de «solo la primera
 abierta» sigue sirviendo; si algún día hay que recordar qué tarjetas dejó
 abiertas el operador, eso ya pide estado y no entra por `<details>` solo.
+
+---
+
+## 2026-08-14 — Pestaña por provincia, conservando el colapso
+
+**Reemplaza la entrada de hoy «La matriz se pliega por producto, con sombreado
+por provincia» en su parte de descarte**: ahí los tabs quedaron afuera con el
+argumento de que rompen la comparación lado a lado. El argumento sigue siendo
+cierto; el operador lo escuchó, lo pesó y eligió igual las pestañas. La grilla
+de dos columnas ya no existe. El colapso y el sombreado se conservan enteros.
+
+Contexto: con la grilla, cada provincia se llevaba media pantalla y las series
+quedaban apretadas. El operador pidió pestaña por provincia manteniendo el
+plegado.
+
+Decisión: una pestaña por provincia, con el estado en la URL
+(`?province=<nombre>`, el mismo lenguaje que ya usan los enlaces al historial y
+consistente con el `?days=` de esta misma vista). Son enlaces, no un control
+con JavaScript: la pestaña se comparte, se marca y sobrevive a recargar. Dos
+funciones nuevas en `saimc.web.matrix`: `resolve_column`, que traduce el
+parámetro a columna y **cae en la primera provincia ante cualquier valor
+desconocido en vez de romper la página**, y `select_province`, que recorta la
+matriz a esa provincia.
+
+Tres cosas amortiguan lo que la pestaña cuesta, y ninguna es decorativa:
+1. **La cabecera de cada tarjeta conserva el reparto de TODAS las provincias**,
+   con la que no estás mirando apagada. Por eso `ProductRow` gana el campo
+   `tally`, separado de `columns`: `columns` es lo que se dibuja, `tally` es lo
+   que se cuenta. Sin esa separación, la pestaña escondería dónde está la
+   muestra y habría que ir pestaña por pestaña para saberlo.
+2. **Cada pestaña rotula su muestra** (`ProvinceColumn.total`), así que se sabe
+   qué hay del otro lado antes de abrirla.
+3. **Las filas se reordenan por la muestra de la provincia visible.** Conservar
+   el orden por el total de las dos pondría arriba de la pestaña de La Habana
+   un producto que en La Habana casi no tiene nada.
+
+Descartado: pestañas con CSS puro (radio + `:checked`). Habrían evitado la
+recarga, pero exigen reglas de CSS indexadas por pestaña y markup retorcido, y
+el estado no queda en la URL. Con la vista corriendo en local, la recarga no se
+siente.
+
+Consecuencia: un producto sin series en la provincia activa **no se esconde**;
+cae al final de la pestaña con su cero, porque esconderlo sería volver a no
+poder ver qué falta cargar. Las barras no se reescalan al recortar, así que la
+misma serie mide igual en todas las pestañas. Si en Fase 1 aparecen muchas
+provincias, la barra de pestañas crece en horizontal y va a haber que revisarla;
+ahí el sucesor natural es un filtro que admita más de una provincia a la vez,
+que es lo único que devolvería la comparación.

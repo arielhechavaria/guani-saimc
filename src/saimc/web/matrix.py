@@ -183,11 +183,17 @@ def group_cells(cells: list[Cell]) -> list[CellGroup]:
 
 @dataclass(frozen=True)
 class ProvinceColumn:
-    """Una columna de la grilla: la provincia y su ranura de color."""
+    """Una columna de la grilla: la provincia, su ranura de color y su muestra.
+
+    `total` es la muestra de la provincia entera, sumando todos los productos.
+    Va acá y no en la plantilla porque es lo que rotula la pestaña, y una
+    pestaña tiene que decir cuánto hay del otro lado antes de que la abras.
+    """
 
     name: str | None
     label: str
     slot: int
+    total: int
 
 
 @dataclass(frozen=True)
@@ -201,11 +207,20 @@ class MatrixCell:
 
 @dataclass(frozen=True)
 class ProductRow:
-    """Un producto con una entrada por cada columna de la matriz, hueco incluido."""
+    """Un producto con una entrada por cada columna de la matriz, hueco incluido.
+
+    `columns` es lo que se dibuja; `tally` es el reparto por provincia que va
+    en la cabecera de la tarjeta. Son campos distintos porque con pestañas
+    dejan de coincidir: se dibuja una provincia sola, pero la cabecera de una
+    tarjeta cerrada tiene que seguir diciendo cuánto hay en **todas** — si no,
+    la pestaña esconde el reparto y no queda forma de saber dónde está la
+    muestra sin ir pestaña por pestaña.
+    """
 
     product_name: str
     total: int
     columns: list[MatrixCell]
+    tally: list[MatrixCell]
 
 
 @dataclass(frozen=True)
@@ -223,13 +238,14 @@ def _province_slot(name: str | None, otras: list[str]) -> int:
     return (len(PHASE0_PROVINCES) + otras.index(name)) % _PROVINCE_SLOTS
 
 
-def _build_columns(nombres: set[str | None]) -> list[ProvinceColumn]:
+def _build_columns(totales: dict[str | None, int]) -> list[ProvinceColumn]:
     """Las del piloto en el orden de la especificación, el resto detrás.
 
     El orden no lo deciden los datos: si lo decidiera la muestra, las columnas
     se reacomodarían solas de un día para el otro y el operador tendría que
     releer los encabezados en cada carga.
     """
+    nombres = set(totales)
     otras = sorted(n for n in nombres if n is not None and n not in PHASE0_PROVINCES)
     ordenadas: list[str | None] = [p for p in PHASE0_PROVINCES if p in nombres]
     ordenadas += otras
@@ -241,6 +257,7 @@ def _build_columns(nombres: set[str | None]) -> list[ProvinceColumn]:
             name=nombre,
             label=nombre or "sin provincia",
             slot=_province_slot(nombre, otras),
+            total=totales[nombre],
         )
         for nombre in ordenadas
     ]
@@ -256,7 +273,13 @@ def build_matrix(cells: list[Cell]) -> Matrix:
     if not grupos:
         return Matrix(columns=[], rows=[])
 
-    columnas = _build_columns({g.province_name for g in grupos})
+    # La muestra de cada provincia, sumando todos los productos: es lo que
+    # rotula su pestaña.
+    totales: dict[str | None, int] = {}
+    for grupo in grupos:
+        totales[grupo.province_name] = totales.get(grupo.province_name, 0) + grupo.total
+
+    columnas = _build_columns(totales)
 
     por_producto: dict[str, dict[str | None, CellGroup]] = {}
     for grupo in grupos:
@@ -273,16 +296,76 @@ def build_matrix(cells: list[Cell]) -> Matrix:
             return MatrixCell(column=columna, cells=[], total=0)
         return MatrixCell(column=columna, cells=grupo.cells, total=grupo.total)
 
-    filas = [
-        ProductRow(
-            product_name=product_name,
-            total=sum(g.total for g in por_provincia.values()),
-            columns=[_cruce(columna, por_provincia) for columna in columnas],
+    filas = []
+    for product_name, por_provincia in por_producto.items():
+        cruces = [_cruce(columna, por_provincia) for columna in columnas]
+        filas.append(
+            ProductRow(
+                product_name=product_name,
+                total=sum(g.total for g in por_provincia.values()),
+                columns=cruces,
+                # Sin recortar, lo que se dibuja y el reparto son lo mismo.
+                tally=cruces,
+            )
         )
-        for product_name, por_provincia in por_producto.items()
-    ]
 
     # Mismo criterio de siempre: lo que tiene muestra primero. Acá la muestra
     # del producto suma sus provincias, porque la fila es el producto.
     filas.sort(key=lambda f: (-f.total, f.product_name))
     return Matrix(columns=columnas, rows=filas)
+
+
+# --- Recorte a una provincia (pestañas) ----------------------------------------
+
+
+def resolve_column(matrix: Matrix, raw: str | None) -> ProvinceColumn | None:
+    """Qué provincia mira la vista, a partir del parámetro de la URL.
+
+    Nada de acá puede reventar la página: un parámetro raro —una URL vieja, un
+    nombre tipeado a mano— cae en la primera provincia y no en un 500.
+
+    `raw is None` (parámetro ausente) y `raw == ""` no son lo mismo. La cadena
+    vacía es cómo se nombra «sin provincia» en los enlaces al historial que ya
+    existen, así que la pestaña usa el mismo lenguaje en vez de inventar otro.
+    """
+    if not matrix.columns:
+        return None
+    if raw is None:
+        return matrix.columns[0]
+    for columna in matrix.columns:
+        if (columna.name or "") == raw:
+            return columna
+    return matrix.columns[0]
+
+
+def select_province(matrix: Matrix, column: ProvinceColumn) -> Matrix:
+    """La matriz recortada a una sola provincia, para la pestaña activa.
+
+    Las filas se reordenan por la muestra **de esa provincia**: conservar el
+    orden por el total de las dos pondría arriba de la pestaña de La Habana un
+    producto que en La Habana casi no tiene nada.
+
+    Un producto sin series en esta provincia **no se esconde**: queda con su
+    cruce vacío y cae al final por el propio orden. Esconderlo sería volver a
+    la matriz apilada, donde un hueco de cobertura no se veía porque la
+    combinación simplemente no aparecía.
+
+    No se recalcula ninguna barra. Recortar es presentación: si cada pestaña
+    renormalizara sola, la misma serie se vería de un ancho en una pestaña y de
+    otro en la de al lado.
+    """
+    filas = [
+        ProductRow(
+            product_name=fila.product_name,
+            total=cruce.total,
+            columns=[cruce],
+            # El reparto se conserva entero, no recortado: es lo que deja que
+            # una tarjeta cerrada siga diciendo cuánto hay en la otra pestaña.
+            tally=fila.tally,
+        )
+        for fila in matrix.rows
+        for cruce in fila.columns
+        if cruce.column.name == column.name
+    ]
+    filas.sort(key=lambda f: (-f.total, f.product_name))
+    return Matrix(columns=[column], rows=filas)

@@ -107,12 +107,67 @@ class TestControlPanel:
 
         assert "1 de 1 celdas tienen una sola" in response.text
 
-    def test_la_matriz_pone_una_columna_por_provincia(
+    def test_la_matriz_muestra_una_provincia_por_pestana(
         self, client: TestClient, session: Session
     ) -> None:
-        """El mismo producto en dos provincias queda lado a lado, y el producto
-        cargado en una sola deja la otra columna visiblemente vacía: apilado,
-        esa combinación no aparecía y el hueco había que deducirlo."""
+        """Cada pestaña dibuja una sola provincia. La otra sigue nombrada en la
+        barra de pestañas con su muestra, para saber qué hay del otro lado sin
+        abrirla."""
+        self._cargar_dos_provincias(session)
+
+        texto = client.get("/control").text
+
+        # Un solo cruce por tarjeta: la provincia de la pestaña activa.
+        assert texto.count('class="saimc-col saimc-slot-') == 2
+        # Las dos pestañas existen. Activa la primera del catálogo (slot 0 es
+        # La Habana), no la de más muestra: si la eligieran los datos, la
+        # pestaña inicial cambiaría sola de un día para el otro.
+        assert 'class="saimc-tab saimc-slot-0 is-active"' in texto
+        assert 'class="saimc-tab saimc-slot-1"' in texto
+        assert 'href="?days=7&amp;province=Santiago%20de%20Cuba"' in texto
+
+    def test_la_pestana_se_elige_por_query_string(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El estado vive en la URL: la pestaña se puede compartir y sobrevive
+        a recargar, sin JavaScript de por medio."""
+        self._cargar_dos_provincias(session)
+
+        texto = client.get("/control?province=Santiago de Cuba").text
+        tarjetas = texto.split('<details class="saimc-prod"')[1:]
+        paneles = [t.split("</summary>")[1] for t in tarjetas]
+
+        # El panel dibuja Santiago; La Habana ya no aparece como columna.
+        assert all("Santiago de Cuba" in p for p in paneles)
+        assert not any('saimc-col-name">La Habana' in p for p in paneles)
+
+    def test_una_provincia_desconocida_no_rompe_la_pagina(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Una URL vieja o tipeada a mano cae en la primera provincia, no en un
+        500."""
+        self._cargar_dos_provincias(session)
+
+        response = client.get("/control?province=Camagüey")
+
+        assert response.status_code == 200
+        assert "La Habana" in response.text
+
+    def test_el_hueco_de_cobertura_sigue_visible_dentro_de_la_pestana(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Pollo no tiene nada en Santiago. Su tarjeta no desaparece de esa
+        pestaña: cae al final con su cero, porque esconderla sería volver a no
+        poder ver qué falta cargar."""
+        self._cargar_dos_provincias(session)
+
+        texto = client.get("/control?province=Santiago de Cuba").text
+        tarjetas = texto.split('<details class="saimc-prod"')[1:]
+
+        assert "sin series cargadas" in tarjetas[-1]
+        assert "Pollo" in tarjetas[-1].split("</summary>")[0]
+
+    def _cargar_dos_provincias(self, session: Session) -> None:
         azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[])
         pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
         habana = Province(code="hab", name="La Habana")
@@ -144,15 +199,6 @@ class TestControlPanel:
                 )
             )
         session.commit()
-
-        texto = client.get("/control").text
-
-        # Dos productos × dos provincias = cuatro cruces dibujados, con el de
-        # Pollo en Santiago vacío. La leyenda agrega una mención por provincia.
-        assert texto.count('class="saimc-col saimc-slot-') == 4
-        assert texto.count("sin series cargadas") == 1
-        assert "La Habana" in texto
-        assert "Santiago de Cuba" in texto
 
     def test_solo_la_tarjeta_de_mayor_muestra_arranca_abierta(
         self, client: TestClient, session: Session

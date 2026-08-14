@@ -18,6 +18,8 @@ from saimc.web.matrix import (
     build_matrix,
     build_range_bar,
     group_cells,
+    resolve_column,
+    select_province,
 )
 
 
@@ -331,3 +333,160 @@ class TestBuildMatrix:
 
         assert matriz.columns == []
         assert matriz.rows == []
+
+
+class TestResolveColumn:
+    """Qué provincia mira la vista, a partir del parámetro de la URL.
+
+    Nada de acá puede reventar la página: un parámetro raro en una URL vieja o
+    tipeada a mano tiene que caer parado en la primera provincia, no en un 500.
+    """
+
+    def _matriz(self) -> object:
+        return build_matrix(
+            [
+                _celda(province="La Habana", count=3),
+                _celda(province="Santiago de Cuba", count=9),
+            ]
+        )
+
+    def test_sin_parametro_toma_la_primera_provincia(self) -> None:
+        """La primera es la primera del catálogo (`PHASE0_PROVINCES`), no la de
+        más muestra: si dependiera de los datos, la pestaña inicial cambiaría
+        de provincia sola de un día para el otro."""
+        columna = resolve_column(self._matriz(), None)
+
+        assert columna is not None
+        assert columna.name == "La Habana"
+
+    def test_un_nombre_conocido_selecciona_esa_provincia(self) -> None:
+        columna = resolve_column(self._matriz(), "Santiago de Cuba")
+
+        assert columna is not None
+        assert columna.name == "Santiago de Cuba"
+
+    def test_un_nombre_desconocido_no_rompe_y_cae_en_la_primera(self) -> None:
+        columna = resolve_column(self._matriz(), "Camagüey")
+
+        assert columna is not None
+        assert columna.name == "La Habana"
+
+    def test_la_cadena_vacia_pide_la_columna_sin_provincia(self) -> None:
+        """`?province=` es cómo se nombra «sin provincia» en los enlaces al
+        historial que ya existen; la pestaña usa el mismo lenguaje."""
+        matriz = build_matrix(
+            [
+                _celda(province="La Habana", count=3),
+                _celda(province=None, count=2),
+            ]
+        )
+
+        columna = resolve_column(matriz, "")
+
+        assert columna is not None
+        assert columna.name is None
+
+    def test_la_cadena_vacia_sin_columna_sin_provincia_cae_en_la_primera(self) -> None:
+        columna = resolve_column(self._matriz(), "")
+
+        assert columna is not None
+        assert columna.name == "La Habana"
+
+    def test_una_matriz_vacia_no_tiene_columna(self) -> None:
+        assert resolve_column(build_matrix([]), None) is None
+
+
+class TestSelectProvince:
+    """La matriz recortada a la provincia de la pestaña activa."""
+
+    def test_deja_una_sola_columna(self) -> None:
+        matriz = build_matrix(
+            [
+                _celda(province="La Habana", count=3),
+                _celda(province="Santiago de Cuba", count=9),
+            ]
+        )
+        habana = resolve_column(matriz, "La Habana")
+        assert habana is not None
+
+        vista = select_province(matriz, habana)
+
+        assert [c.name for c in vista.columns] == ["La Habana"]
+        assert [c.column.name for c in vista.rows[0].columns] == ["La Habana"]
+
+    def test_las_filas_se_reordenan_por_la_muestra_de_esa_provincia(self) -> None:
+        """Ordenar por el total de las dos provincias pondría arriba de la
+        pestaña de La Habana un producto que en La Habana casi no tiene nada."""
+        matriz = build_matrix(
+            [
+                _celda(product="Arroz", province="La Habana", count=1),
+                _celda(product="Arroz", province="Santiago de Cuba", count=40),
+                _celda(product="Pollo", province="La Habana", count=6),
+            ]
+        )
+        habana = resolve_column(matriz, "La Habana")
+        assert habana is not None
+
+        vista = select_province(matriz, habana)
+
+        assert [f.product_name for f in vista.rows] == ["Pollo", "Arroz"]
+        assert [f.total for f in vista.rows] == [6, 1]
+
+    def test_el_hueco_de_cobertura_se_conserva_y_va_al_final(self) -> None:
+        """Un producto sin nada en esta provincia no se esconde: la pestaña
+        tiene que seguir diciendo que ahí falta cargar."""
+        matriz = build_matrix(
+            [
+                _celda(product="Arroz", province="La Habana", count=5),
+                _celda(product="Pollo", province="Santiago de Cuba", count=5),
+            ]
+        )
+        habana = resolve_column(matriz, "La Habana")
+        assert habana is not None
+
+        vista = select_province(matriz, habana)
+
+        assert [f.product_name for f in vista.rows] == ["Arroz", "Pollo"]
+        assert vista.rows[1].total == 0
+        assert vista.rows[1].columns[0].cells == []
+
+    def test_el_reparto_por_provincia_se_conserva_entero(self) -> None:
+        """Se dibuja una provincia, pero la cabecera de la tarjeta tiene que
+        seguir diciendo cuánto hay en todas. Si el reparto se recortara con el
+        panel, la pestaña escondería dónde está la muestra y habría que ir
+        pestaña por pestaña para saberlo."""
+        matriz = build_matrix(
+            [
+                _celda(product="Arroz", province="La Habana", count=1),
+                _celda(product="Arroz", province="Santiago de Cuba", count=40),
+            ]
+        )
+        habana = resolve_column(matriz, "La Habana")
+        assert habana is not None
+
+        vista = select_province(matriz, habana)
+
+        assert [c.column.name for c in vista.rows[0].columns] == ["La Habana"]
+        assert [(c.column.name, c.total) for c in vista.rows[0].tally] == [
+            ("La Habana", 1),
+            ("Santiago de Cuba", 40),
+        ]
+
+    def test_las_barras_siguen_normalizadas_contra_toda_la_tabla(self) -> None:
+        """Recortar a una provincia es presentación y no reescala nada: si la
+        pestaña renormalizara sola, la misma serie se vería de un ancho en una
+        pestaña y de otro en la de al lado."""
+        matriz = build_matrix(
+            [
+                _celda(province="La Habana", count=4, minimum="1", median="2", maximum="10"),
+                _celda(
+                    province="Santiago de Cuba", count=4, minimum="1", median="10", maximum="100"
+                ),
+            ]
+        )
+        habana = resolve_column(matriz, "La Habana")
+        assert habana is not None
+
+        vista = select_province(matriz, habana)
+
+        assert round(vista.rows[0].columns[0].cells[0].bar.width_pct, 1) == 50.0

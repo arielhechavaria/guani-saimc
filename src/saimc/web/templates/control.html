@@ -48,8 +48,16 @@
     .saimc-slot-3 { --prov: #a61e4d; --prov-soft: #ffdeeb; --prov-wash: #fff5f8; }
     /* «Sin provincia» no es una provincia más: gris, sin identidad propia. */
     .saimc-slot-9 { --prov: #868e96; --prov-soft: #e9ecef; --prov-wash: #f8f9fa; }
-    .saimc-legend { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .75rem; }
-    .saimc-legend-chip { font-size: .75rem; padding: .15rem .5rem .15rem .4rem; border-radius: .25rem; border-left: .2rem solid var(--prov); background: var(--prov-soft); color: #212529; }
+    /* Pestañas de provincia. Son enlaces: el estado vive en la URL, así que no
+       hay JavaScript, la pestaña se puede compartir y sobrevive a recargar.
+       La activa se distingue por tres cosas a la vez —color, peso y la barra
+       de abajo— y no solo por el color, porque el color acá ya está ocupado
+       diciendo qué provincia es. */
+    .saimc-tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid #dee2e6; margin-bottom: .75rem; }
+    .saimc-tab { display: inline-flex; align-items: baseline; gap: .4rem; padding: .4rem .8rem; font-size: .85rem; text-decoration: none; color: #6c757d; border-bottom: .2rem solid transparent; margin-bottom: -1px; }
+    .saimc-tab:hover { color: var(--prov); background: var(--prov-wash); }
+    .saimc-tab.is-active { color: var(--prov); font-weight: 600; border-bottom-color: var(--prov); background: var(--prov-wash); }
+    .saimc-tab-count { font-size: .75rem; padding: 0 .35rem; border-radius: .6rem; background: var(--prov-soft); color: #212529; }
     .saimc-prod { border: 1px solid #dee2e6; border-radius: .5rem; margin-bottom: .75rem; overflow: hidden; }
     /* El colapso es `<details>`/`<summary>` nativo: cero JavaScript, cero
        descarga y funciona igual con la conexión caída (CLAUDE.md, entorno).
@@ -66,6 +74,8 @@
        lo que la vista existe para mostrar. */
     .saimc-prod-tally { font-size: .75rem; color: #6c757d; }
     .saimc-prod-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--prov); margin-right: .2rem; }
+    /* La provincia que no estás mirando: apagada, no escondida. */
+    .saimc-prod-tally.is-off { opacity: .55; }
     .saimc-prod-grid { display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(280px, 1fr)); overflow-x: auto; }
     .saimc-col { padding: .75rem 1rem; border-left: .2rem solid var(--prov); background: var(--prov-wash); }
     .saimc-col-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; margin-bottom: .5rem; padding-bottom: .35rem; border-bottom: 1px solid var(--prov-soft); }
@@ -511,10 +521,19 @@
     <p class="text-muted small">
       Solo los {{ pilot_products|length }} productos bandera — filtro de pantalla, no de
       datos. El resto del catálogo sigue cargado en la base, simplemente no es el foco
-      de la curaduría hoy. <strong>Una fila por producto, una columna por provincia</strong>:
-      las filas van por tamaño de muestra, las columnas en el orden de
+      de la curaduría hoy. <strong>Una pestaña por provincia</strong>, en el orden de
       <code>spec.md</code> §9 y no por los datos, para que no se reacomoden solas de un
-      día para el otro.
+      día para el otro. Dentro de la pestaña, una tarjeta por producto ordenada por la
+      muestra <em>de esa provincia</em>.
+    </p>
+
+    <p class="text-muted small">
+      <strong>Lo que la pestaña cuesta.</strong> Ves una provincia a la vez, así que
+      comparar el mismo producto entre provincias ya no se hace de un vistazo. Para que
+      el precio no sea total, la cabecera de cada tarjeta trae el reparto de las
+      <em>dos</em> provincias —la que no estás mirando, apagada—, y cada pestaña dice
+      cuántas observaciones tiene antes de que la abras. La pestaña vive en la URL, así
+      que se puede compartir y sobrevive a recargar.
     </p>
 
     <p class="text-muted small">
@@ -522,9 +541,10 @@
       regla que gobierna la barra: no hay umbral de dispersión fijado (spec.md §12.6), así
       que la paleta es de identidad y no incluye rojo ni verde — un semáforo afirmaría un
       umbral que nadie definió. Cada provincia conserva su color aunque un día no se
-      cargue nada en ella. <strong>Una columna vacía es un hueco de cobertura</strong>:
-      ese producto no tiene ni una serie en esa provincia, y apilado ese hueco no se veía
-      porque la combinación simplemente no aparecía.
+      cargue nada en ella. <strong>Una tarjeta vacía es un hueco de cobertura</strong>:
+      ese producto no tiene ni una serie en esta provincia. No se esconde —cae al final
+      de la pestaña, con su cero—, porque esconderla sería volver a no poder ver qué
+      falta cargar.
     </p>
 
     <p class="text-muted small">
@@ -586,13 +606,23 @@
         Todavía no hay filas de precio cargadas.
       </div>
     {% else %}
-    <div class="saimc-legend">
+    {# Pestañas por provincia. Son enlaces y no un control con JavaScript: el
+       estado vive en la URL (`?province=`, el mismo lenguaje que los enlaces
+       al historial), así que una pestaña se puede compartir y sobrevive a
+       recargar la página. #}
+    <nav class="saimc-tabs" aria-label="Provincia">
       {% for col in matrix.columns %}
-      <span class="saimc-legend-chip saimc-slot-{{ col.slot }}">{{ col.label }}</span>
+      {% set activa = col.name == selected_province.name %}
+      <a class="saimc-tab saimc-slot-{{ col.slot }}{% if activa %} is-active{% endif %}"
+         href="?days={{ retail_range_days }}&amp;province={{ (col.name or '') | urlencode }}"
+         {% if activa %}aria-current="page"{% endif %}>
+        {{ col.label }}
+        <span class="saimc-tab-count">{{ col.total }}</span>
+      </a>
       {% endfor %}
-    </div>
+    </nav>
 
-    {% for fila in matrix.rows %}
+    {% for fila in matrix_tab.rows %}
     {# Abierta solo la de mayor muestra. Con todas cerradas la vista cargaría
        en blanco, que es peor que la lista larga que el colapso vino a
        resolver; con todas abiertas el colapso no haría nada. #}
@@ -602,16 +632,17 @@
         <span class="text-muted small">
           · {{ fila.total }} observaci{% if fila.total != 1 %}ones{% else %}ón{% endif %}
         </span>
-        {# El reparto por provincia va en la cabecera para que una tarjeta
-           cerrada siga diciendo dónde está la muestra. #}
-        {% for columna in fila.columns %}
-        <span class="saimc-prod-tally saimc-slot-{{ columna.column.slot }}">
+        {# El reparto de TODAS las provincias, no solo la de la pestaña: es lo
+           que deja saber dónde está la muestra sin ir pestaña por pestaña. La
+           provincia que no estás mirando va apagada. #}
+        {% for columna in fila.tally %}
+        <span class="saimc-prod-tally saimc-slot-{{ columna.column.slot }}{% if columna.column.name != selected_province.name %} is-off{% endif %}">
           <span class="saimc-prod-dot"></span>{{ columna.column.label }} {{ columna.total }}
         </span>
         {% endfor %}
       </summary>
 
-      <div class="saimc-prod-grid" style="--cols: {{ matrix.columns|length }};">
+      <div class="saimc-prod-grid" style="--cols: {{ matrix_tab.columns|length }};">
       {% for columna in fila.columns %}
       <div class="saimc-col saimc-slot-{{ columna.column.slot }}">
         <div class="saimc-col-head">
