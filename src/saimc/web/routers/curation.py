@@ -29,7 +29,7 @@ la columna, redactado con `redact_personal_data()` antes de construir la fila.
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -418,21 +418,56 @@ def _parse_decimal(raw: str) -> Decimal | None:
 def _parse_date(raw: str) -> date | None:
     """Parsea el `<input type="date">` (ISO `YYYY-MM-DD` del navegador).
 
-    Vacío, no parseable o posterior a hoy degrada a `None`, nunca rompe el
-    submit — mismo contrato que `_parse_decimal` (spec: Campo nunca
-    bloqueante / Valor inválido o futuro). La validación vive acá, en la capa
-    web, no en un CHECK de base (design.md, D2): un dato secundario no debe
-    convertirse en un fallo de transacción.
+    Solo parsea: vacío o no parseable devuelve `None`. Qué se hace con ese
+    `None` lo decide `_validated_published_date`, que es quien conoce la
+    regla de negocio.
     """
     if not raw:
         return None
     try:
-        parsed = date.fromisoformat(raw)
+        return date.fromisoformat(raw)
     except ValueError:
         return None
-    if parsed > date.today():
-        return None
-    return parsed
+
+
+def _validated_published_date(raw: str, captured_at: datetime) -> tuple[date | None, str | None]:
+    """Valida la fecha de publicación del anuncio: `(fecha, error)`.
+
+    **Campo obligatorio y bloqueante desde el 2026-08-14**, reemplazando el
+    contrato original de «campo nunca bloqueante / degrada a NULL»
+    (docs/decisions.md, 2026-08-10). Aquella decisión se apoyaba en que
+    ningún consumidor leía la columna; hoy la leen dos, y los dos se
+    equivocan en silencio cuando falta:
+
+    - `cells.compute_cells` usa `published_date` como eje temporal de la
+      ventana de N días, con repliegue a `created_at`: un anuncio de hace
+      tres semanas cargado sin fecha entra al rango vigente como si fuera
+      de hoy.
+    - `anchor_date` ancla la tasa de cambio en `published_date`, con
+      repliegue a `captured_at`: ese mismo anuncio viejo se convierte a CUP
+      con la tasa de hoy, que no es la que regía cuando se publicó.
+
+    El repliegue no se saca (las filas anteriores a esta regla tienen la
+    columna en `NULL` y hay que seguir leyéndolas): lo que se saca es la
+    posibilidad de crear filas nuevas sin fecha.
+
+    La cota superior es el día de la captura en calendario de La Habana
+    —vía `anchor_date`, el mismo criterio que usa la conversión monetaria—
+    y no `date.today()`: un anuncio no puede haberse publicado después de
+    que el operador lo capturó.
+    """
+    if not raw:
+        return None, "Falta la fecha de publicación del anuncio."
+
+    parsed = _parse_date(raw)
+    if parsed is None:
+        return None, "Fecha de publicación inválida."
+
+    tope = anchor_date(None, captured_at)
+    if parsed > tope:
+        return None, f"La fecha de publicación no puede ser posterior a la captura ({tope})."
+
+    return parsed, None
 
 
 # Defaults para alta de producto nuevo cuando el operador no completa
@@ -538,7 +573,9 @@ async def submit_curation(
     producto nuevo son opcionales: si faltan, se completan con
     `_DEFAULT_PRODUCT_CATEGORY` / `_DEFAULT_PRODUCT_UNIT`. Todo o nada: si
     alguna fila con datos tiene un error, no se guarda ninguna — un estado a
-    medias es más confuso que repetir el submit.
+    medias es más confuso que repetir el submit. La fecha de publicación
+    entra en ese mismo todo-o-nada desde el 2026-08-14: es obligatoria y
+    bloquea el submit entero (ver `_validated_published_date`).
     """
     ingestion = _require_pending(db, ingestion_id)
     form = await request.form()
@@ -546,7 +583,9 @@ async def submit_curation(
     original_text = str(form.get("original_text", "")).strip()
     source_reference = str(form.get("source_reference", "")).strip()
     published_date_raw = str(form.get("published_date", "")).strip()
-    published_date = _parse_date(published_date_raw)
+    published_date, published_date_error = _validated_published_date(
+        published_date_raw, ingestion.captured_at
+    )
     try:
         row_count = int(str(form.get("row_count", "0")))
     except ValueError:
@@ -557,6 +596,8 @@ async def submit_curation(
     products_by_name = {p.name.lower(): p for p in _all_products(db)}
 
     errors: list[str] = []
+    if published_date_error is not None:
+        errors.append(published_date_error)
     typed_rows: list[dict[str, str]] = []
     entries_to_create: list[PriceHistory] = []
 
@@ -866,7 +907,10 @@ async def submit_edit(
     form = await request.form()
 
     source_reference = str(form.get("source_reference", "")).strip()
-    published_date = _parse_date(str(form.get("published_date", "")).strip())
+    published_date_raw = str(form.get("published_date", "")).strip()
+    published_date, published_date_error = _validated_published_date(
+        published_date_raw, ingestion.captured_at
+    )
     try:
         row_count = int(str(form.get("row_count", "0")))
     except ValueError:
@@ -876,6 +920,8 @@ async def submit_edit(
     products_by_name = {p.name.lower(): p for p in _all_products(db)}
 
     errors: list[str] = []
+    if published_date_error is not None:
+        errors.append(published_date_error)
     typed_rows: list[dict[str, str]] = []
     updates: list[tuple[PriceHistory, Product, Decimal, Province | None, dict[str, str]]] = []
 
@@ -921,7 +967,7 @@ async def submit_edit(
                 "edit_mode": True,
                 "values": {
                     "source_reference": source_reference,
-                    "published_date": str(form.get("published_date", "")).strip(),
+                    "published_date": published_date_raw,
                 },
                 "error": " ".join(errors),
                 "currencies": [c.value for c in Currency],

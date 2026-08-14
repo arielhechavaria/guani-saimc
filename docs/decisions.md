@@ -1949,3 +1949,49 @@ del anuncio `57d230c7` capturado el 2026-08-12) quedando sola contra un rango
 sano de 281–360. La amplitud pasó a señalar errores reales en vez de
 artefactos. Nota de lectura: la mediana pegada al borde derecho de la barra
 indica un valor extremo bajo, igual que pegada al izquierdo indica uno alto.
+
+---
+
+## 2026-08-14 — La fecha de publicación pasa a obligatoria y bloqueante
+
+Contexto: el operador preguntó si tiene sentido curar anuncios de una a tres
+semanas atrás para llegar a la meta de 500 registros de la Fase 0 (`spec.md`
+§9). Tiene sentido: `compute_phase0_progress` cuenta filas sin ventana
+temporal, y el ritmo diario del panel se mide por `created_at`, no por la
+fecha del anuncio. Lo que apareció al verificarlo es otra cosa. Desde el
+2026-08-10 `published_date` era opcional y degradaba a `NULL`, con el
+argumento de que «ningún consumidor lee esta columna todavía». Esa premisa
+caducó: hoy la leen dos, y los dos se repliegan a la fecha de carga cuando
+falta. `cells.compute_cells` la usa como eje de la ventana de N días, así que
+un anuncio de hace tres semanas cargado sin fecha entra al rango de precio
+vigente como si fuera de hoy; y `anchor_date` ancla en ella la tasa de cambio,
+así que a ese mismo anuncio se le aplica la tasa de hoy y no la que regía
+cuando se publicó. Con la tasa moviéndose, eso no es un redondeo: es un precio
+en CUP mal traducido, publicado.
+
+Decisión: `published_date` es obligatoria y bloqueante en los dos formularios
+—cola de curaduría y corrección de curado—, validada en
+`_validated_published_date` (capa web). Vacía, no parseable o posterior al día
+de la captura devuelve 422 y no guarda nada, dentro del mismo todo-o-nada que
+ya rige para las filas. La cota superior es el día de la captura en calendario
+de La Habana, vía el mismo `anchor_date` que usa la conversión monetaria, y ya
+no `date.today()`. En HTML el input lleva `required` y `max`.
+
+Descartado: dos alternativas. Una, dejarla opcional y rellenar el `NULL` con
+la fecha de captura al guardar — es exactamente el error que se quiere evitar,
+solo que explícito en la base. Dos, un CHECK en base, ya descartado el
+2026-08-10 por el mismo motivo de entonces: la validación de un dato de
+formulario no debe ser un fallo de transacción.
+
+Consecuencia: reemplaza el contrato de «campo nunca bloqueante» de la entrada
+del 2026-08-10, que queda sin vigencia en esa parte (la columna sigue siendo
+`DATE NULL`, sin CHECK, y sigue habiendo una sola fecha por anuncio). Las
+filas anteriores a esta regla conservan `published_date = NULL` y los
+repliegues de lectura se mantienen para poder seguir leyéndolas; lo que ya no
+se puede es crear filas nuevas sin fecha. Corregir una fila vieja desde
+`/curation/{id}/edit` ahora exige completarle la fecha: es el backfill que
+nunca se hizo, cobrado de a una fila y solo cuando se toca. El test
+`test_published_date_vacio_o_invalido_no_bloquea_el_submit` se reemplazó por
+cinco que fijan el contrato nuevo, incluido el caso que motivó todo: un
+anuncio de tres semanas atrás se acepta y entra a la serie con su propia
+fecha.

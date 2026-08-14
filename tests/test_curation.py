@@ -7,7 +7,7 @@ sin abrir una conexión real ni tocar `conftest.py`.
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -61,6 +61,19 @@ def _crear_raw_ingestion(
     session.add(ingestion)
     session.commit()
     return ingestion
+
+
+def _fecha_pub(ingestion: RawIngestion) -> str:
+    """Fecha de publicación válida para el submit de esta ingesta.
+
+    La fecha es obligatoria y no puede ser posterior al día de la captura
+    (docs/decisions.md, 2026-08-14), así que se deriva del `captured_at` de
+    la propia ingesta y no de `date.today()`: los tests de conversión usan
+    capturas con fecha fija en el pasado. El día anterior en calendario UTC
+    siempre cae dentro de la cota, que el endpoint evalúa en calendario de
+    La Habana (UTC-4/-5).
+    """
+    return (ingestion.captured_at.date() - timedelta(days=1)).isoformat()
 
 
 def _crear_producto(
@@ -450,6 +463,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -495,6 +509,7 @@ class TestCurationSubmit:
         client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "420",
@@ -526,6 +541,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "2",
                 "product_id_0": str(pollo.id),
                 "price_0": "450",
@@ -587,17 +603,22 @@ class TestCurationSubmit:
         assert len(filas) == 3
         assert {f.published_date for f in filas} == {date(2026, 8, 5)}
 
-    def test_published_date_vacio_o_invalido_no_bloquea_el_submit(
+    def test_sin_fecha_de_publicacion_no_guarda_nada(
         self, client: TestClient, session: Session
     ) -> None:
-        """Campo vacío o valor no parseable: el submit se acepta igual (303,
-        no 422) y la fila queda con `published_date = NULL` (spec: Campo
-        nunca bloqueante)."""
+        """Campo vacío: 422 y ninguna fila creada.
+
+        Reemplaza el contrato original de «campo nunca bloqueante»
+        (docs/decisions.md, 2026-08-10 → 2026-08-14). Sin fecha, el repliegue
+        a `created_at`/`captured_at` mete el anuncio en la ventana de precio
+        vigente y le ancla la tasa de hoy: dos errores silenciosos que solo
+        el operador puede evitar, y solo si el formulario se lo exige.
+        """
         pollo = _crear_producto(session, name="Pollo")
-        ingestion_vacio = _crear_raw_ingestion(session, hash_="hash-post-fecha-vacia")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-fecha-vacia")
 
         response = client.post(
-            f"/curation/{ingestion_vacio.id}",
+            f"/curation/{ingestion.id}",
             data={
                 "row_count": "1",
                 "product_id_0": str(pollo.id),
@@ -607,17 +628,29 @@ class TestCurationSubmit:
             follow_redirects=False,
         )
 
-        assert response.status_code == 303
-        session.expire_all()
-        fila = session.execute(
-            select(PriceHistory).where(PriceHistory.source_id == ingestion_vacio.id)
-        ).scalar_one()
-        assert fila.published_date is None
+        assert response.status_code == 422
+        assert "fecha de publicación" in response.text.lower()
 
-        ingestion_invalido = _crear_raw_ingestion(session, hash_="hash-post-fecha-basura")
+        session.expire_all()
+        assert (
+            session.execute(
+                select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
+            ).first()
+            is None
+        )
+        refrescado = session.get(RawIngestion, ingestion.id)
+        assert refrescado is not None
+        assert refrescado.processing_status == ProcessingStatus.PENDING
+
+    def test_fecha_de_publicacion_invalida_no_guarda_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Valor no parseable: 422, no un `NULL` silencioso."""
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-fecha-basura")
 
         response = client.post(
-            f"/curation/{ingestion_invalido.id}",
+            f"/curation/{ingestion.id}",
             data={
                 "row_count": "1",
                 "product_id_0": str(pollo.id),
@@ -627,23 +660,67 @@ class TestCurationSubmit:
             follow_redirects=False,
         )
 
-        assert response.status_code == 303
+        assert response.status_code == 422
         session.expire_all()
-        fila = session.execute(
-            select(PriceHistory).where(PriceHistory.source_id == ingestion_invalido.id)
-        ).scalar_one()
-        assert fila.published_date is None
+        assert (
+            session.execute(
+                select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
+            ).first()
+            is None
+        )
 
-        ingestion_futura = _crear_raw_ingestion(session, hash_="hash-post-fecha-futura")
-        fecha_futura = (date.today().replace(year=date.today().year + 1)).isoformat()
+    def test_fecha_posterior_a_la_captura_no_guarda_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La cota es el día de la captura, no `date.today()`: un anuncio no
+        pudo publicarse después de que el operador lo capturó."""
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(
+            session,
+            hash_="hash-post-fecha-futura",
+            captured_at=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+        )
 
         response = client.post(
-            f"/curation/{ingestion_futura.id}",
+            f"/curation/{ingestion.id}",
             data={
                 "row_count": "1",
                 "product_id_0": str(pollo.id),
                 "price_0": "450",
-                "published_date": fecha_futura,
+                "published_date": "2026-08-11",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        session.expire_all()
+        assert (
+            session.execute(
+                select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
+            ).first()
+            is None
+        )
+
+    def test_fecha_de_semanas_atras_se_acepta_tal_cual(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un anuncio viejo es dato legítimo: suma a la meta de 500 (§9) y
+        entra a la serie con SU fecha, no con la de carga. Es exactamente el
+        caso que la obligatoriedad viene a proteger."""
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(
+            session,
+            hash_="hash-post-fecha-vieja",
+            captured_at=datetime(2026, 8, 14, 12, 0, tzinfo=UTC),
+        )
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "row_count": "1",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "published_date": "2026-07-24",
             },
             follow_redirects=False,
         )
@@ -651,9 +728,38 @@ class TestCurationSubmit:
         assert response.status_code == 303
         session.expire_all()
         fila = session.execute(
-            select(PriceHistory).where(PriceHistory.source_id == ingestion_futura.id)
+            select(PriceHistory).where(PriceHistory.source_id == ingestion.id)
         ).scalar_one()
-        assert fila.published_date is None
+        assert fila.published_date == date(2026, 7, 24)
+
+    def test_editar_curado_sin_fecha_no_pisa_la_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Misma regla en la corrección: sin fecha, la edición entera se
+        rechaza y la fila queda como estaba."""
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-sin-fecha")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(session, ingestion=curado, product=pollo, price="100")
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(pollo.id),
+                    "price": "999",
+                    "price_id": str(precio.id),
+                    "published_date": "",
+                },
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        session.refresh(precio)
+        assert precio.price == Decimal("100")
 
     def test_filas_vacias_entre_completas_se_ignoran_sin_error(
         self, client: TestClient, session: Session
@@ -665,6 +771,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "3",
                 "product_id_0": str(pollo.id),
                 "price_0": "450",
@@ -694,6 +801,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "2",
                 # Fila 0 "eliminada" en el cliente: ningún campo con sufijo
                 # _0 viaja, como si esa tarjeta nunca hubiera existido.
@@ -738,6 +846,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "",
@@ -762,6 +871,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "new_product_name_0": "POLLO",
                 "price_0": "450",
@@ -786,6 +896,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "new_product_name_0": "Detergente",
                 "product_category_0": "limpieza",
@@ -818,6 +929,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "new_product_name_0": "Detergente",
                 "price_0": "100",
@@ -848,6 +960,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "new_product_name_0": "Detergente",
                 "product_category_0": "limpieza",
@@ -873,6 +986,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "2",
                 "new_product_name_0": "Detergente",
                 "product_category_0": "limpieza",
@@ -906,6 +1020,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(viejo.id),
                 "new_product_name_0": "Picadillo",
@@ -933,6 +1048,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "price_0": "100",
             },
@@ -950,6 +1066,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
             },
@@ -967,6 +1084,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "2",
                 "product_id_0": str(pollo.id),
                 "price_0": "450",
@@ -996,6 +1114,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "2",
                 "product_id_0": str(pollo.id),
                 "price_0": "450",
@@ -1022,6 +1141,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1049,6 +1169,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1082,6 +1203,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1113,6 +1235,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "17500",
@@ -1146,6 +1269,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "2",
                 "product_id_0": str(arroz.id),
                 "price_0": "318.20",
@@ -1177,6 +1301,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1205,6 +1330,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1232,6 +1358,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1256,6 +1383,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1287,6 +1415,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1320,6 +1449,7 @@ class TestCurationSubmit:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1393,6 +1523,7 @@ class TestConversionAlCurar:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "100.00",
@@ -1428,6 +1559,7 @@ class TestConversionAlCurar:
         response = client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1500,6 +1632,7 @@ class TestConversionAlEditar:
         client.post(
             f"/curation/{curado.id}/edit",
             data=_form_edicion(
+                curado,
                 {
                     "product_id": str(pollo.id),
                     # Mismo precio, mismo string round-trip que ya trae la
@@ -1550,11 +1683,16 @@ class TestConversionAlEditar:
         client.post(
             f"/curation/{curado.id}/edit",
             data=_form_edicion(
+                curado,
                 {
                     "product_id": str(pollo.id),
                     "price": "12.00",
                     "currency": "USD",
                     "price_id": str(precio.id),
+                    # Explícita, no la del helper: el ancla que se verifica
+                    # abajo es exactamente esta fecha (`published_date` manda
+                    # sobre `captured_at`).
+                    "published_date": ancla.isoformat(),
                 }
             ),
         )
@@ -1585,6 +1723,7 @@ class TestVocabularioDeEnvase:
         client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1605,6 +1744,7 @@ class TestVocabularioDeEnvase:
         client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1626,6 +1766,7 @@ class TestVocabularioDeEnvase:
         client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -1649,6 +1790,7 @@ class TestVocabularioDeEnvase:
         client.post(
             f"/curation/{ingestion.id}",
             data={
+                "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
@@ -2025,10 +2167,15 @@ class TestEditarCuradoGet:
 # --- POST /curation/{id}/edit -------------------------------------------------
 
 
-def _form_edicion(row: dict[str, str], *, row_count: int = 1) -> dict[str, str]:
+def _form_edicion(
+    ingestion: RawIngestion, row: dict[str, str], *, row_count: int = 1
+) -> dict[str, str]:
+    """Formulario de corrección completo. Toma la ingesta porque la fecha de
+    publicación es obligatoria también al editar y se acota contra su
+    `captured_at` (ver `_fecha_pub`)."""
     return {
         "source_reference": "",
-        "published_date": "",
+        "published_date": row.get("published_date", _fecha_pub(ingestion)),
         "row_count": str(row_count),
         "product_id_0": row.get("product_id", ""),
         "new_product_name_0": row.get("new_product_name", ""),
@@ -2059,6 +2206,7 @@ class TestEditarCuradoPost:
         response = client.post(
             f"/curation/{curado.id}/edit",
             data=_form_edicion(
+                curado,
                 {
                     "product_id": str(pollo.id),
                     "price": "420.00",
@@ -2088,6 +2236,7 @@ class TestEditarCuradoPost:
         client.post(
             f"/curation/{curado.id}/edit",
             data=_form_edicion(
+                curado,
                 {
                     "product_id": str(pollo.id),
                     "price": "500",
@@ -2119,6 +2268,7 @@ class TestEditarCuradoPost:
         response = client.post(
             f"/curation/{curado_a.id}/edit",
             data=_form_edicion(
+                curado_a,
                 {
                     "product_id": str(pollo.id),
                     "price": "999",
@@ -2145,6 +2295,7 @@ class TestEditarCuradoPost:
         response = client.post(
             f"/curation/{curado.id}/edit",
             data=_form_edicion(
+                curado,
                 {
                     "product_id": str(pollo.id),
                     "price": "no-es-un-numero",
@@ -2169,7 +2320,7 @@ class TestEditarCuradoPost:
             f"/curation/{curado.id}/edit",
             data={
                 "source_reference": "",
-                "published_date": "",
+                "published_date": _fecha_pub(curado),
                 "row_count": "2",
                 "product_id_0": str(pollo.id),
                 "new_product_name_0": "",
@@ -2214,7 +2365,7 @@ class TestEditarCuradoPost:
 
         response = client.post(
             f"/curation/{pendiente.id}/edit",
-            data=_form_edicion({"price": "1", "price_id": str(uuid.uuid4())}),
+            data=_form_edicion(pendiente, {"price": "1", "price_id": str(uuid.uuid4())}),
         )
 
         assert response.status_code == 409

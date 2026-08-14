@@ -48,8 +48,11 @@
           </div>
 
           <div class="mb-3">
-            <label for="published_date" class="form-label">Fecha de publicación</label>
-            <input type="date" name="published_date" id="published_date" value="{{ values.published_date }}" class="form-control" style="max-width: 220px;" />
+            <label for="published_date" class="form-label">Fecha de publicación <span class="text-danger">*</span></label>
+            <!-- Obligatoria: mismo criterio que la cola de curaduría. Una fila
+                 vieja con la columna en NULL solo se puede corregir completando
+                 la fecha (docs/decisions.md, 2026-08-14). -->
+            <input type="date" name="published_date" id="published_date" value="{{ values.published_date }}" class="form-control" style="max-width: 220px;" required max="{{ ingestion.captured_at.date().isoformat() }}" />
           </div>
 
           {% for row in rows %}

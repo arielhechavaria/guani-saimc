@@ -69,8 +69,17 @@
           </div>
 
           <div class="mb-3">
-            <label for="published_date" class="form-label">Fecha de publicación</label>
-            <input type="date" name="published_date" id="published_date" value="{{ values.published_date }}" class="form-control" style="max-width: 220px;" />
+            <label for="published_date" class="form-label">Fecha de publicación <span class="text-danger">*</span></label>
+            <!--
+              Obligatoria desde el 2026-08-14: dejarla vacía hacía que un
+              anuncio viejo entrara a la ventana de precio vigente como si
+              fuera de hoy, y que se le anclara la tasa de cambio de hoy.
+              `max` es la fecha de captura en UTC — cota del lado del cliente,
+              deliberadamente permisiva; la exacta (calendario de La Habana)
+              la aplica `_validated_published_date` en el servidor.
+            -->
+            <input type="date" name="published_date" id="published_date" value="{{ values.published_date }}" class="form-control" style="max-width: 220px;" required max="{{ ingestion.captured_at.date().isoformat() }}" />
+            <div class="form-text">La fecha del anuncio, no la de hoy. Si el anuncio es de hace días o semanas, va la fecha en que se publicó.</div>
           </div>
 
           <!--
