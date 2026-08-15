@@ -2210,3 +2210,50 @@ abierta una cuestión previa a implementar nada: la decisión cerrada 5 del
 `CLAUDE.md` establece «sin autenticación en Fase 0», y valía mientras nada
 escribiera desde afuera. Un canal de contribución es una ruta de escritura
 pública, y hay que definir con qué barrera se abre antes de escribir código.
+
+## 2026-08-15 — La restricción que manda es densidad por celda, no volumen
+
+Contexto: la curaduría manual cansa y aparecieron tres candidatos para acelerar
+la entrada de datos: automatizar Telegram, leer canales de WhatsApp, o cambiar
+el formato capturado. Medido contra la base: 120 precios repartidos en 63 celdas
+producto × provincia, de las cuales 53 tienen una sola observación. La única
+serie con densidad real es Arroz, con 40 observaciones sobre las dos provincias.
+El 98% del material capturado son imágenes.
+
+Una primera medición sugirió que el texto era la palanca, porque un registro de
+texto rinde 10,67 precios contra 1,17 de una imagen. Sometida a prueba, esa
+conclusión se cayó: el registro más productivo de la base, una lista de precios
+de 25 filas, tocó 25 productos distintos de los cuales 24 quedaron con una sola
+observación y ninguno alcanzó cinco. La tasa de productos huérfanos es del 90%
+en registros de texto contra 63% en imágenes. Las listas rendían volumen
+impublicable.
+
+Decisión: la métrica que gobierna la Fase 0 deja de ser el volumen de precios y
+pasa a ser la densidad por celda. Toda acción de captura o curaduría se juzga
+por una sola pregunta: ¿agrega observaciones a celdas que van a alcanzar
+densidad publicable? De ahí se sigue el orden de trabajo: primero restringir la
+extracción a los productos foco en el formulario de curaduría, después capturar
+listas de precios de los mismos canales comerciales de forma repetida extrayendo
+solo las filas foco, después el dashboard público cuando cuatro a seis celdas
+superen la densidad, y recién al final la automatización de la ingesta, que para
+entonces ya tiene su filtro definido.
+
+Descartado: automatizar la captura primero, por Telegram o por canales de
+WhatsApp. Se descartó por evidencia, no por prudencia: la automatización agrega
+volumen y es indiferente a la densidad, así que aplicada sobre el catálogo
+actual habría multiplicado las celdas de una sola observación en vez de
+resolverlas. También se descartó seguir curando listas de precios completas, que
+es la práctica que produjo la cola larga de productos huérfanos. La lista se
+sigue ingiriendo entera, porque el registro crudo es inmutable, pero solo se
+extrae precio de las filas que caen en el conjunto foco.
+
+Consecuencia: el catálogo de productos deja de crecer por arrastre de lo que
+aparezca en un anuncio y pasa a ser una decisión explícita. El formulario de
+curaduría necesita conocer el conjunto foco y negarse a extraer fuera de él, lo
+que convierte la disciplina de foco en una propiedad de la herramienta en vez de
+una intención del operador. La prueba retrospectiva que sostiene todo esto: las
+mismas 120 observaciones ya cargadas, concentradas en cinco productos sobre dos
+provincias, habrían dado unas doce observaciones por celda en diez celdas, y el
+dashboard público sería publicable hoy. Mismo esfuerzo, resultado distinto.
+Ninguno de estos pasos rompe la decisión cerrada 2, ni toca el esquema, ni
+necesita credenciales externas.
