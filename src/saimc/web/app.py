@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from saimc.web.routers import catalog, control, curation
+from saimc.web.routers import catalog, control, curation, whatsapp_webhook
 
 app = FastAPI(title="SAIMC — Cola de curaduría")
 
@@ -32,3 +32,4 @@ app.mount(
 app.include_router(curation.router)
 app.include_router(control.router)
 app.include_router(catalog.router)
+app.include_router(whatsapp_webhook.router)

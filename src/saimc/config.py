@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     curation_username: str = "operador"
     curation_password: str | None = None
 
+    # Clave HMAC para verificar que un webhook entrante viene realmente de la
+    # instancia de WAHA del operador (docs/decisions.md, 2026-08-15 — canales
+    # de WhatsApp automatizados). Se configura como `config.hmac.key` del lado
+    # de WAHA. Sin clave configurada, `/webhooks/whatsapp` rechaza todo: mismo
+    # criterio de "cierra en falso" que `curation_password`.
+    whatsapp_webhook_hmac_key: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
