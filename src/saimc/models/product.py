@@ -6,7 +6,7 @@ Corresponde a `products` en la Processing Layer (spec.md §7.2).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Index, String, Uuid, text
+from sqlalchemy import JSON, Boolean, DateTime, Index, String, Uuid, false, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from saimc.models.base import Base, utc_now
@@ -26,6 +26,15 @@ class Product(Base):
     # comporta igual en PostgreSQL y en el SQLite de los tests.
     aliases: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    # Producto piloto: el conjunto acotado que la Fase 0 mide de verdad
+    # (spec.md §9, «3-5 productos bandera»). Solo los pilotos se extraen en la
+    # curaduría (docs/decisions.md, 2026-08-15): el catálogo puede tener
+    # cualquier cosa, pero un producto fuera del foco no produce precios
+    # nuevos. Arranca en `false` a propósito — sumar un piloto es una decisión
+    # explícita del operador, no el efecto colateral de haber visto un anuncio.
+    is_pilot: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now

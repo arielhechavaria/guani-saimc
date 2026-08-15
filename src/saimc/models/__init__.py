@@ -1,6 +1,7 @@
 """Modelos de datos de SAIMC."""
 
 from saimc.models.base import Base
+from saimc.models.channel import Channel, Platform
 from saimc.models.exchange_rate_cache import ExchangeRateCache
 from saimc.models.price_history import (
     PACKAGING_MAX_LENGTH,
@@ -20,9 +21,11 @@ from saimc.models.raw_ingestion import (
 __all__ = [
     "PACKAGING_MAX_LENGTH",
     "Base",
+    "Channel",
     "ContentType",
     "Currency",
     "ExchangeRateCache",
+    "Platform",
     "PriceHistory",
     "Product",
     "ProcessingStatus",
