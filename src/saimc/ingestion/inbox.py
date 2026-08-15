@@ -125,11 +125,24 @@ def ingest_file(
     session: Session,
     path: Path,
     store_dir: Path,
+    *,
+    source_type: str | None = None,
+    source_reference: str | None = None,
+    captured_at: datetime | None = None,
 ) -> RawIngestion:
     """Ingiere un archivo ya clasificado y lo mueve al almacén.
 
     El archivo se mueve antes de insertar la fila para que `file_path` nunca
     apunte a algo inexistente. Si la inserción falla, se devuelve a su lugar.
+
+    Los tres argumentos con nombre son overrides opcionales: sin ellos, el
+    comportamiento es el de siempre (`source_type` por extensión,
+    `source_reference` en blanco, `captured_at` del mtime del archivo). Los usa
+    el webhook de WhatsApp (`docs/decisions.md`, 2026-08-15) para que un
+    mensaje automático no quede indistinguible de un archivo que el operador
+    dejó caer a mano, y para preservar el momento real del mensaje en vez de
+    "ahora" — que es lo único que el mtime de un archivo recién escrito puede
+    decir.
     """
     content_type = classify(path)
     if content_type is None:
@@ -145,7 +158,7 @@ def ingest_file(
         if content_type is ContentType.TEXT
         else None
     )
-    captured_at = _captured_at(path)
+    resolved_captured_at = captured_at if captured_at is not None else _captured_at(path)
 
     store_dir.mkdir(parents=True, exist_ok=True)
     stored_name = f"{content_hash}{path.suffix.lower()}"
@@ -156,14 +169,14 @@ def ingest_file(
 
     try:
         ingestion = RawIngestion(
-            source_type=_SOURCE_TYPE_BY_CONTENT[content_type],
-            source_reference=None,
+            source_type=source_type or _SOURCE_TYPE_BY_CONTENT[content_type],
+            source_reference=source_reference,
             file_path=stored_name,
             content_hash=content_hash,
             content_type=content_type,
             original_text=original_text,
             processing_status=ProcessingStatus.PENDING,
-            captured_at=captured_at,
+            captured_at=resolved_captured_at,
         )
         session.add(ingestion)
         session.flush()
@@ -180,10 +193,18 @@ def ingest_inbox(
     inbox_dir: Path,
     store_dir: Path,
     paths: Iterable[Path] | None = None,
+    *,
+    source_type: str | None = None,
+    source_reference: str | None = None,
+    captured_at: datetime | None = None,
 ) -> IngestReport:
     """Procesa la bandeja completa y devuelve el detalle de lo que pasó.
 
     Cada archivo se confirma por separado: uno que falle no arrastra a los demás.
+
+    Los overrides se aplican a TODOS los `paths` de esta llamada — correcto
+    para el webhook, que siempre pasa un único archivo temporal por llamada;
+    el escaneo normal de la bandeja y el pegado no los usan.
     """
     report = IngestReport()
 
@@ -197,7 +218,14 @@ def ingest_inbox(
             report.duplicates.append(path.name)
             continue
 
-        ingest_file(session, path, store_dir)
+        ingest_file(
+            session,
+            path,
+            store_dir,
+            source_type=source_type,
+            source_reference=source_reference,
+            captured_at=captured_at,
+        )
         session.commit()
         report.ingested.append(path.name)
 

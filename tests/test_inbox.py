@@ -216,3 +216,58 @@ class TestIngestInbox:
 
         assert report.total_seen == 0
         assert _rows(session) == []
+
+
+class TestOverridesDeProcedencia:
+    """`source_type`/`source_reference`/`captured_at` explícitos: lo que usa
+    el webhook de WhatsApp (2026-08-15) para no quedar indistinguible de un
+    archivo que cayó a mano en la bandeja, y para preservar el momento real
+    del mensaje en vez de "ahora"."""
+
+    def test_source_type_explicito_reemplaza_al_de_la_extension(
+        self, session: Session, inbox_dir: Path, store_dir: Path
+    ) -> None:
+        _write_text(inbox_dir, "webhook.txt")
+
+        ingest_inbox(session, inbox_dir, store_dir, source_type=SourceType.WHATSAPP_CHANNEL)
+
+        (row,) = _rows(session)
+        assert row.source_type == SourceType.WHATSAPP_CHANNEL
+
+    def test_source_reference_explicito_se_guarda(
+        self, session: Session, inbox_dir: Path, store_dir: Path
+    ) -> None:
+        _write_text(inbox_dir, "webhook.txt")
+
+        ingest_inbox(session, inbox_dir, store_dir, source_reference="Tienda: The Boss")
+
+        (row,) = _rows(session)
+        assert row.source_reference == "Tienda: The Boss"
+
+    def test_captured_at_explicito_reemplaza_al_mtime_del_archivo(
+        self, session: Session, inbox_dir: Path, store_dir: Path
+    ) -> None:
+        from datetime import UTC, datetime
+
+        _write_text(inbox_dir, "webhook.txt")
+        momento_real = datetime(2026, 8, 10, 9, 30, tzinfo=UTC)
+
+        ingest_inbox(session, inbox_dir, store_dir, captured_at=momento_real)
+
+        (row,) = _rows(session)
+        # SQLite (backend de este test) no conserva tzinfo al hacer round-trip;
+        # se compara en UTC explícito para no depender de esa mecánica.
+        assert row.captured_at.replace(tzinfo=UTC) == momento_real
+
+    def test_sin_override_se_comporta_como_antes(
+        self, session: Session, inbox_dir: Path, store_dir: Path
+    ) -> None:
+        """Guardarraíl de no-regresión: el camino de la bandeja y el pegado no
+        pasan estos argumentos, y no deben cambiar de comportamiento."""
+        _write_text(inbox_dir, "manual.txt")
+
+        ingest_inbox(session, inbox_dir, store_dir)
+
+        (row,) = _rows(session)
+        assert row.source_type == SourceType.INBOX_TEXT
+        assert row.source_reference is None
