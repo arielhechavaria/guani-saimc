@@ -24,16 +24,20 @@ class ContentType(StrEnum):
 class SourceType(StrEnum):
     """Quién depositó el elemento.
 
-    En Fase 0 solo se usan los dos primeros: la bandeja de entrada es la única
-    fuente. Los otros dos quedan declarados porque la bandeja es una interfaz
-    genérica y las fuentes automáticas de la Etapa 3 escriben en la misma tabla
-    (spec.md §6.1, «Ventaja adicional del patrón»).
+    Hasta el 2026-08-15 solo se usaban los dos primeros: la bandeja de entrada
+    era la única fuente. `WHATSAPP_CHANNEL` es la primera automática en entrar
+    en uso, vía webhook de WAHA (apartamiento de la decisión cerrada 2,
+    `docs/decisions.md`, 2026-08-15). `TELEGRAM_API` y `COMMUNITY` siguen
+    declarados sin uso: la bandeja es una interfaz genérica y las fuentes
+    automáticas de la Etapa 3 escriben en la misma tabla (spec.md §6.1,
+    «Ventaja adicional del patrón»).
     """
 
     INBOX_IMAGE = "inbox_image"
     INBOX_TEXT = "inbox_text"
     TELEGRAM_API = "telegram_api"
     COMMUNITY = "community"
+    WHATSAPP_CHANNEL = "whatsapp_channel"
 
 
 class ProcessingStatus(StrEnum):

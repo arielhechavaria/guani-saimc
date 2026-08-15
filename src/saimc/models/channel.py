@@ -1,10 +1,11 @@
 """Canales y grupos que el operador sigue para capturar anuncios.
 
-No es una fuente de ingesta automática: en Fase 0 la captura sigue siendo
-manual (decisión cerrada 2 del `CLAUDE.md`). Esta tabla es la lista de rondas
-del operador — qué canales revisar y cada cuánto — y el registro explícito de
-de dónde sale el dato, que hoy vive como texto libre en
-`raw_ingestions.source_reference`.
+Empezó como lista de rondas manual (decisión cerrada 2 del `CLAUDE.md`) y el
+2026-08-15 pasó a admitir automatización para WhatsApp vía WAHA self-hosted:
+apartamiento explícito de esa misma decisión, registrado en `docs/decisions.md`.
+Un canal `whatsapp_channel` con `external_id` cargado recibe mensajes por
+webhook (`saimc.web.routers.whatsapp_webhook`); el resto sigue siendo
+solo la lista de dónde mirar a mano.
 
 Existe por la misma razón que `is_pilot` en `products`: la densidad por celda
 se construye observando **los mismos** canales de forma repetida
@@ -64,6 +65,15 @@ class Channel(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
+
+    # El identificador que manda WAHA en cada webhook (`from`, algo como
+    # "1234567890@newsletter"), no el enlace público. Nullable: un canal
+    # puramente manual (la lista de rondas original) nunca lo necesita.
+    # Único mientras no sea NULL — Postgres y SQLite permiten varios NULL en
+    # una columna UNIQUE, así que dos canales sin automatizar no chocan entre
+    # sí. Sin este campo, un webhook no tiene forma de saber a qué fila de
+    # `channels` pertenece el mensaje que llegó.
+    external_id: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
