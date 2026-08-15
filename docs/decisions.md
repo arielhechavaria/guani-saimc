@@ -2303,3 +2303,35 @@ mismo `is_pilot`, de modo que promover un producto se refleja en las dos sin
 tocar código. Queda pendiente aplicar las migraciones 0009 y 0010 contra la
 base de producción antes de usar la aplicación, porque el filtro consulta una
 columna que hasta ahora no existía.
+
+## 2026-08-15 — Entrada rápida por pegado
+
+Contexto: la medición del mismo día mostró que el 98% del material capturado
+eran imágenes y que un registro de texto rinde varias veces más precios que uno
+de imagen. Faltaba explicar por qué el operador capturaba imágenes si el texto
+rinde más, y la explicación no era preferencia sino fricción: desde el teléfono
+una captura de pantalla se sincroniza sola a la bandeja, mientras que meter
+texto exigía abrir un editor, crear un archivo `.txt` y guardarlo en la carpeta
+sincronizada. No había dónde pegar.
+
+Decisión: se agrega `POST /curation/paste` y una caja de pegado al principio de
+la cola de curaduría. Se pega el texto tal cual y, para meter varios anuncios de
+una sola vez, se separan con una línea de guiones. Cada bloque produce un
+registro crudo propio, porque el registro crudo es la unidad de curaduría y
+pegar tres anuncios como uno solo perdería la trazabilidad de cada precio hasta
+su anuncio.
+
+Descartado: implementar un camino de ingesta paralelo. El endpoint escribe cada
+bloque como archivo en la bandeja y llama al mismo `ingest_inbox` de siempre, de
+modo que hereda sin escribir lógica nueva el hash de contenido, la
+deduplicación, la redacción de datos personales y el archivo de evidencia en el
+almacén. Una vía rápida con menos garantías que la bandeja habría sido
+exactamente el agujero que prohíbe la sección 10.6 de la especificación.
+
+Consecuencia: el separador es deliberadamente tolerante —cualquier línea que
+sea solo guiones, con espacios alrededor— porque se pega desde el teléfono y
+exigir una forma exacta convertiría la vía rápida en una fuente de errores
+silenciosos. Los archivos temporales se borran siempre, incluso cuando el bloque
+resulta duplicado y no llega al almacén, para que no vuelvan a entrar en el
+siguiente `GET /curation`. Esto no automatiza la captura ni toca la decisión
+cerrada 2: el operador sigue eligiendo y pegando cada anuncio a mano.

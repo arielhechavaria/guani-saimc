@@ -28,9 +28,11 @@ formulario pide el envase en dos campos, `packaging_format` (cerrado: Paquete
 la columna, redactado con `redact_personal_data()` antes de construir la fila.
 """
 
+import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -264,6 +266,7 @@ def _render_queue(
     status_counts: dict[str, int],
     status_code: int = 200,
     unconverted: int = 0,
+    pasted: int = 0,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -278,6 +281,7 @@ def _render_queue(
             "values": global_values,
             "error": error,
             "notice": _unconverted_notice(unconverted),
+            "pasted": pasted,
             "currencies": [c.value for c in Currency],
             "units": UNITS,
             "status_counts": status_counts,
@@ -293,9 +297,76 @@ def _render_queue(
 _EXTRA_BLANK_ROWS = 3
 
 
+# Separador entre anuncios en el pegado rápido: una línea que sea solo guiones.
+# Tolerante a propósito (espacios alrededor, tres guiones o siete): se pega
+# desde el teléfono, y exigir una forma exacta convertiría la vía rápida en una
+# fuente de errores silenciosos.
+_PASTE_SEPARATOR = re.compile(r"^\s*-{3,}\s*$", re.MULTILINE)
+
+
+def _split_pasted(pasted: str) -> list[str]:
+    """Parte el pegado en anuncios y descarta los bloques vacíos.
+
+    Un anuncio por bloque, porque el registro crudo es la unidad de curaduría:
+    pegar tres anuncios como uno solo los volvería un único elemento de la cola
+    y perdería la trazabilidad de cada precio a su anuncio (spec.md §6.5).
+    """
+    return [bloque.strip() for bloque in _PASTE_SEPARATOR.split(pasted) if bloque.strip()]
+
+
+@router.post("/curation/paste")
+async def paste_ads(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+    """Entrada rápida: pegar texto de anuncios sin pasar por un archivo.
+
+    Existe por la medición del 2026-08-15: el 98% del material capturado eran
+    imágenes, no por preferencia sino porque desde el teléfono una captura se
+    sincroniza sola mientras que meter texto exigía abrir un editor, crear un
+    `.txt` y guardarlo en la carpeta sincronizada. No había dónde pegar, y un
+    registro de texto rinde varias veces más precios que uno de imagen.
+
+    No es un camino de ingesta paralelo: escribe cada bloque como archivo en la
+    bandeja y llama al mismo `ingest_inbox`, así que hereda tal cual el hash de
+    contenido, la deduplicación, la redacción de datos personales y el archivo
+    de evidencia en el almacén. Una vía rápida con menos garantías que la
+    bandeja sería exactamente el agujero que §10.6 prohíbe.
+    """
+    form = await request.form()
+    bloques = _split_pasted(str(form.get("pasted", "")))
+    if not bloques:
+        return RedirectResponse("/curation", status_code=status.HTTP_303_SEE_OTHER)
+
+    settings = get_settings()
+    settings.inbox_dir.mkdir(parents=True, exist_ok=True)
+
+    temporales: list[Path] = []
+    for bloque in bloques:
+        # Nombre irrelevante: `ingest_file` renombra al hash del contenido al
+        # moverlo al almacén. El `.txt` es lo que hace que `classify()` lo
+        # reconozca como texto.
+        destino = settings.inbox_dir / f"pegado-{uuid.uuid4().hex}.txt"
+        destino.write_text(bloque, encoding="utf-8")
+        temporales.append(destino)
+
+    try:
+        report = ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir, paths=temporales)
+    finally:
+        # Los duplicados y los salteados no se mueven al almacén: sin esta
+        # limpieza el temporal quedaría en la bandeja y volvería a entrar en el
+        # próximo GET /curation.
+        for temporal in temporales:
+            temporal.unlink(missing_ok=True)
+
+    return RedirectResponse(
+        f"/curation?pasted={len(report.ingested)}", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
 @router.get("/curation", response_class=HTMLResponse)
 def curation_queue(
-    request: Request, db: Session = Depends(get_db), unconverted: int = 0
+    request: Request,
+    db: Session = Depends(get_db),
+    unconverted: int = 0,
+    pasted: int = 0,
 ) -> HTMLResponse:
     """Muestra el elemento `pending` más antiguo, con propuesta pre-llenada si hay texto.
 
@@ -371,6 +442,7 @@ def curation_queue(
         error=None,
         status_counts=_status_counts(db),
         unconverted=unconverted,
+        pasted=pasted,
     )
 
 
