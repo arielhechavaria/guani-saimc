@@ -2427,3 +2427,34 @@ Falta, y es trabajo del operador, no de este slice: levantar WAHA en el VPS,
 vincular el número dedicado por QR, configurar `config.hmac.key` con el mismo
 valor que `SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY`, apuntar el webhook de la sesión a
 `/webhooks/whatsapp`, y cargar el `external_id` de cada canal en /catalog.
+
+## 2026-08-15 — docker-compose de WAHA versionado en deploy/waha
+
+Contexto: la guía de arranque de WAHA se armó como comandos sueltos para el
+operador. Pidió compose en vez de comandos manuales, y que se terminara todo
+lo que se pudiera desde este lado.
+
+Decisión: se agrega `deploy/waha/docker-compose.yml` y
+`deploy/waha/.env.example` al repositorio. Es la contraparte declarativa y
+versionada del `docker run` manual: un solo `docker compose up -d` deja WAHA
+corriendo con el webhook ya apuntado a SAIMC, sin tocar el dashboard a mano.
+`WHATSAPP_HOOK_URL`, `WHATSAPP_HOOK_EVENTS` y `WHATSAPP_HOOK_HMAC_KEY` salen
+confirmados de la documentación oficial de WAHA, no inventados.
+
+Se versiona pese a ser infraestructura de un servicio externo a SAIMC, por el
+mismo motivo que ya vale para `systemd/`: sin versionarlo se pierde en cuanto
+se reinstala el VPS. No es infraestructura de SAIMC —el propio despliegue de
+SAIMC sigue sin Docker— es la contraparte documentada del webhook que ya vive
+en `src/saimc/web/routers/whatsapp_webhook.py`.
+
+Descartado: commitear un `.env` real con las claves generadas. Se generaron
+valores aleatorios (API key, clave HMAC, contraseña del dashboard) para
+ahorrarle al operador el paso de inventarlas, pero se entregaron solo en la
+conversación, nunca escritas a un archivo del repo. `deploy/waha/.env.example`
+sigue el mismo patrón que `env.example` en la raíz: placeholders, gitignored
+el real.
+
+Consecuencia: `WHATSAPP_HOOK_HMAC_KEY` en `deploy/waha/.env` tiene que ser
+idéntica a `SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY` en el `.env` de SAIMC — son dos
+archivos en dos servicios distintos, nada los sincroniza solo. Queda a cargo
+del operador copiar el mismo valor a los dos lados.
