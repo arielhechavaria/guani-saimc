@@ -2170,3 +2170,43 @@ misma serie mide igual en todas las pestañas. Si en Fase 1 aparecen muchas
 provincias, la barra de pestañas crece en horizontal y va a haber que revisarla;
 ahí el sucesor natural es un filtro que admita más de una provincia a la vez,
 que es lo único que devolvería la comparación.
+## 2026-08-15 — Canal de contribución con evidencia, no marketplace
+
+Contexto: el techo de la curaduría manual —aproximadamente una hora diaria de un
+solo operador— es el cuello de botella real del proyecto, y sin volumen no hay
+capa predictiva. Apareció la propuesta de invertir el orden de fases: construir
+primero un marketplace donde el usuario busca un producto en su provincia y ve
+la oferta más cercana y más barata, de modo que el flujo de usuarios genere los
+datos, y dejar la predicción para después.
+
+Decisión: se conserva el orden de fases y se ataca el cuello de botella por otra
+vía. Se abre un canal de contribución en el que un tercero reporta un precio que
+observó, acompañado de su evidencia, y ese elemento entra a la misma cola de
+curaduría con estado `pending`. El operador sigue siendo el filtro que valida
+cada registro contra su evidencia original. El modelo de datos ya lo contempla:
+`SourceType.COMMUNITY` está declarado desde el inicio y `spec.md` §6.1 define la
+bandeja de entrada como interfaz genérica sobre la que escriben fuentes
+distintas. No es un pipeline nuevo, es un remitente nuevo sobre el que ya existe.
+
+Descartado: el marketplace como primera etapa. Colisiona con tres decisiones
+vinculantes. Exige almacenar y exponer contacto del vendedor, contra §10.6 y la
+regla de datos personales del proyecto. Elimina la barrera anti-inyección que
+§10.7 declara vigente en Fase 0-1 —el operador humano que verifica cada registro
+contra su evidencia— y encima invierte el incentivo: rankear por precio más bajo
+le paga al vendedor por publicar un precio falso y negociar al alza en el
+contacto. Y crea una dependencia circular, porque abrir ingesta de vendedores
+exige las contramedidas C1/C3/C4 operativas, mientras §9.0 define las Fases 0-1
+como el período en que se calibra ese umbral y §12.6 prohíbe inventarlo. Aparte,
+un marketplace mide el inventario propio y no el mercado, lo que cambia el
+objeto medido que §5 marca como no reversible. Si el marketplace se retoma, es
+un proyecto distinto y requiere su propia entrada.
+
+Consecuencia: la curaduría no se reduce, aumenta. El canal multiplica la entrada
+sin multiplicar la salida, así que el cuello de botella se desplaza de la captura
+a la curaduría. De ahí se sigue que la cola va a necesitar priorización por
+producto y provincia faltante en lugar de atención por orden de llegada, y que
+esa priorización deja de ser opcional en cuanto el canal tenga tracción. Queda
+abierta una cuestión previa a implementar nada: la decisión cerrada 5 del
+`CLAUDE.md` establece «sin autenticación en Fase 0», y valía mientras nada
+escribiera desde afuera. Un canal de contribución es una ruta de escritura
+pública, y hay que definir con qué barrera se abre antes de escribir código.
