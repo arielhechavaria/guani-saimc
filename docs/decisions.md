@@ -2335,3 +2335,26 @@ silenciosos. Los archivos temporales se borran siempre, incluso cuando el bloque
 resulta duplicado y no llega al almacén, para que no vuelvan a entrar en el
 siguiente `GET /curation`. Esto no automatiza la captura ni toca la decisión
 cerrada 2: el operador sigue eligiendo y pegando cada anuncio a mano.
+
+## 2026-08-15 — La provincia se matchea con guiones bajos normalizados
+
+Contexto: un anuncio real de un canal comercial de Santiago de Cuba abría con
+el hashtag «#Santiago_de_Cuba». El matcher de provincia no lo reconocía y
+dejaba el campo en blanco pese a que el texto la nombra sin ambigüedad.
+
+Decisión: `_match_province` normaliza los guiones bajos a espacio antes de
+buscar. La causa es que `\b`, el límite de palabra de regex, trata el guion
+bajo como carácter de palabra (`\w` lo incluye), así que
+«santiago_de_cuba» es una sola palabra larga para el motor y nunca calza
+contra el alias «santiago de cuba», que lleva espacio. Es el mismo tipo de
+normalización que ya hacía `_strip_accents` para tildes, aplicado a un
+separador distinto que también usa la jerga real de los canales.
+
+Descartado: agregar variantes con guion bajo al diccionario de alias. Habría
+multiplicado cada entrada de `_PROVINCE_ALIASES` sin cubrir el caso general —un
+hashtag con guion bajo en cualquier alias existente o futuro—, cuando
+normalizar el separador antes de buscar resuelve todos los casos de una vez.
+
+Consecuencia: ninguna, aditivo. `_match_product` no necesitó el mismo cambio
+porque ya normaliza sobre `_strip_accents` y los nombres de producto no suelen
+aparecer en hashtags compuestos.

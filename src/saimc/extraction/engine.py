@@ -362,7 +362,12 @@ def _strip_accents(value: str) -> str:
 
 
 def _match_province(text: str, provinces: Sequence[Province]) -> Province | None:
-    normalized = _strip_accents(text.lower())
+    # El guion bajo es un carácter de palabra para `\w`, así que un hashtag
+    # como "#Santiago_de_Cuba" es una sola palabra larga para regex y nunca
+    # calza contra el alias "santiago de cuba", que lleva espacios. Se
+    # normaliza a espacio antes de matchear (caso real: canal comercial de
+    # Santiago que abre cada anuncio con ese hashtag).
+    normalized = _strip_accents(text.lower()).replace("_", " ")
     canonical: str | None = None
     for alias, name in _PROVINCE_ALIASES_BY_LENGTH:
         pattern = r"\b" + re.escape(_strip_accents(alias)) + r"\b"

@@ -302,6 +302,23 @@ class TestProvincia:
         propuesta = propose("pollo a 100 en algun lugar", products, provinces)
         assert propuesta.province is None
 
+    def test_matchea_hashtag_con_guiones_bajos(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Caso real: un canal comercial abre el anuncio con
+        «#Santiago_de_Cuba». El guion bajo es un carácter de palabra para
+        regex (`\\w` lo incluye), así que sin normalizarlo antes de buscar,
+        «santiago_de_cuba» es una sola palabra larga que nunca calza con el
+        alias «santiago de cuba», que lleva espacios."""
+        propuesta = propose("#Santiago_de_Cuba\npollo a 100", products, provinces)
+        assert propuesta.province is provinces[1]
+
+    def test_matchea_hashtag_de_una_sola_palabra(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("#Habana\npollo a 100", products, provinces)
+        assert propuesta.province is provinces[0]
+
 
 class TestCanalOrigen:
     """`guess_source_reference` adivina quién publicó a partir del patrón
