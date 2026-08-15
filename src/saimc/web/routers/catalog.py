@@ -156,6 +156,9 @@ async def create_channel(request: Request, db: Session = Depends(get_db)) -> Red
             platform=platform,
             url=str(form.get("url", "")).strip() or None,
             notes=str(form.get("notes", "")).strip() or None,
+            # Vacío -> None, no "": la columna es UNIQUE (migración 0011) y dos
+            # canales manuales con cadena vacía chocarían entre sí.
+            external_id=str(form.get("external_id", "")).strip() or None,
             is_active=True,
         )
     )

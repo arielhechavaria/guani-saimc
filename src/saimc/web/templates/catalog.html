@@ -103,8 +103,9 @@
       <div class="card-body border-bottom">
         <p class="small text-muted">
           La densidad se construye mirando <em>los mismos</em> canales todos los
-          días. Esta lista es la ronda, no una fuente automática: en Fase 0 la
-          captura sigue siendo manual.
+          días. Esta lista es la ronda, no una fuente automática por defecto:
+          en Fase 0 la captura sigue siendo manual, salvo un canal de WhatsApp
+          con «Id. WAHA» cargado — ese recibe mensajes por webhook.
         </p>
         <form method="post" action="/catalog/channels" class="row g-2 align-items-end">
           <div class="col-md-3">
@@ -119,7 +120,7 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-3">
+          <div class="col-md-2">
             <label for="url" class="form-label small mb-1">Enlace <span class="text-muted">(opcional)</span></label>
             <input type="text" name="url" id="url" class="form-control form-control-sm" />
           </div>
@@ -128,7 +129,14 @@
             <input type="text" name="notes" id="notes" class="form-control form-control-sm" />
           </div>
           <div class="col-md-2">
-            <button type="submit" class="btn btn-sm btn-primary w-100">Agregar canal</button>
+            <label for="external_id" class="form-label small mb-1">
+              Id. WAHA <span class="text-muted">(automatiza)</span>
+            </label>
+            <input type="text" name="external_id" id="external_id" placeholder="1234...@newsletter"
+                   class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-1">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Agregar</button>
           </div>
         </form>
       </div>
@@ -140,12 +148,13 @@
               <th scope="col">Canal</th>
               <th scope="col">Plataforma</th>
               <th scope="col">Notas</th>
+              <th scope="col">Automatización</th>
               <th scope="col" class="text-end">Estado</th>
             </tr>
           </thead>
           <tbody>
             {% if not channels %}
-            <tr><td colspan="4" class="text-muted small py-3">Todavía no hay canales anotados.</td></tr>
+            <tr><td colspan="5" class="text-muted small py-3">Todavía no hay canales anotados.</td></tr>
             {% endif %}
             {% for channel in channels %}
             <tr {% if not channel.is_active %}class="saimc-off"{% endif %}>
@@ -158,6 +167,13 @@
               </td>
               <td class="text-muted small">{{ channel.platform }}</td>
               <td class="text-muted small">{{ channel.notes or "" }}</td>
+              <td class="small">
+                {% if channel.external_id %}
+                <span class="badge text-bg-success">webhook activo</span>
+                {% else %}
+                <span class="text-muted">manual</span>
+                {% endif %}
+              </td>
               <td class="text-end">
                 <form method="post" action="/catalog/channels/{{ channel.id }}/active">
                   {% if channel.is_active %}

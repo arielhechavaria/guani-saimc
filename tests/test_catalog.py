@@ -265,6 +265,41 @@ class TestCatalogoCanales:
         assert canal.name == "Tienda: The Boss"
         assert canal.platform == Platform.WHATSAPP_CHANNEL
         assert canal.is_active is True
+        assert canal.external_id is None
+
+    def test_alta_de_canal_con_external_id_para_automatizar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El `external_id` es lo que el webhook de WAHA usa para mapear un
+        mensaje entrante a este canal (docs/decisions.md, 2026-08-15)."""
+        response = client.post(
+            "/catalog/channels",
+            data={
+                "name": "Groupej Morales",
+                "platform": Platform.WHATSAPP_CHANNEL.value,
+                "external_id": "1234567890@newsletter",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        canal = session.execute(select(Channel)).scalar_one()
+        assert canal.external_id == "1234567890@newsletter"
+
+    def test_external_id_en_blanco_se_guarda_como_nulo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un canal manual, sin automatizar, no debe terminar con una cadena
+        vacía en una columna que la migración 0011 declaró UNIQUE — dos
+        canales manuales con `""` chocarían entre sí."""
+        client.post(
+            "/catalog/channels",
+            data={"name": "Canal manual", "platform": Platform.OTHER.value, "external_id": ""},
+            follow_redirects=False,
+        )
+
+        canal = session.execute(select(Channel)).scalar_one()
+        assert canal.external_id is None
 
     def test_lista_muestra_los_canales(self, client: TestClient, session: Session) -> None:
         session.add(
@@ -383,6 +418,98 @@ class TestIsPilotMigration:
         # «Leche» está en spec.md §9 y no tiene una sola observación: la
         # migración sigue la decisión del operador, no la lista del documento.
         assert encendidos == {"Arroz", "Aceite", "Azúcar blanca", "Pollo"}
+        engine.dispose()
+
+
+class TestChannelsExternalIdMigration:
+    """`0011_channels_external_id.py` contra un engine SQLite real."""
+
+    def _tabla_channels(self) -> tuple[sa.MetaData, sa.Table]:
+        metadata = sa.MetaData()
+        tabla = sa.Table(
+            "channels",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("name", sa.String(120), nullable=False),
+        )
+        return metadata, tabla
+
+    def test_upgrade_agrega_la_columna_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0011_channels_external_id.py")
+
+        engine = create_engine("sqlite://")
+        metadata, tabla = self._tabla_channels()
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            assert "external_id" in {
+                c["name"] for c in inspect(connection).get_columns("channels")
+            }
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("channels")}
+            assert "external_id" not in columnas
+            assert "name" in columnas
+
+        engine.dispose()
+
+    def test_dos_external_id_nulos_conviven_pero_valores_repetidos_no(self) -> None:
+        """El guardarraíl real de esta migración: dos canales sin automatizar
+        no chocan, pero dos apuntando al mismo remitente de WAHA sí."""
+        modulo = _cargar_modulo_migracion("0011_channels_external_id.py")
+
+        engine = create_engine("sqlite://")
+        metadata, tabla = self._tabla_channels()
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            tabla_con_columna = sa.Table(
+                "channels",
+                sa.MetaData(),
+                sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+                sa.Column("name", sa.String(120), nullable=False),
+                sa.Column("external_id", sa.String(120), nullable=True),
+            )
+            connection.execute(
+                sa.insert(tabla_con_columna).values(
+                    id=uuid.uuid4(), name="A", external_id=None
+                )
+            )
+            connection.execute(
+                sa.insert(tabla_con_columna).values(
+                    id=uuid.uuid4(), name="B", external_id=None
+                )
+            )
+            connection.commit()
+
+            connection.execute(
+                sa.insert(tabla_con_columna).values(
+                    id=uuid.uuid4(), name="C", external_id="1@newsletter"
+                )
+            )
+            connection.commit()
+
+            with pytest.raises(Exception):  # noqa: B017 — IntegrityError de cualquier dialecto
+                connection.execute(
+                    sa.insert(tabla_con_columna).values(
+                        id=uuid.uuid4(), name="D", external_id="1@newsletter"
+                    )
+                )
+                connection.commit()
+
         engine.dispose()
 
 
