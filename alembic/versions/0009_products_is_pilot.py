@@ -1,4 +1,4 @@
-"""Agrega `is_pilot` a `products` y marca como pilotos los 5 productos bandera.
+"""Agrega `is_pilot` a `products` y enciende el conjunto piloto vigente.
 
 La columna implementa la decisión del 2026-08-15 (`docs/decisions.md`): la
 Fase 0 se gobierna por densidad por celda, no por volumen, así que la
