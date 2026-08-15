@@ -83,8 +83,11 @@ def _precio(
     )
 
 
-def _producto(session: Session, name: str, unit: str = "lb") -> Product:
-    row = Product(name=name, category="varios", unit=unit, aliases=[])
+def _producto(session: Session, name: str, unit: str = "lb", *, is_pilot: bool = True) -> Product:
+    # `is_pilot` por default en True: casi todos estos tests hablan del
+    # conjunto foco. Desde el 2026-08-15 el foco vive en la base y no en una
+    # tupla fija, así que cada test declara los pilotos que necesita.
+    row = Product(name=name, category="varios", unit=unit, aliases=[], is_pilot=is_pilot)
     session.add(row)
     session.flush()
     return row
@@ -119,6 +122,8 @@ class TestPhase0Progress:
     def test_separa_pilotos_con_dato_de_los_que_faltan(self, session: Session) -> None:
         arroz = _producto(session, "Arroz")
         _producto(session, "Pollo")
+        _producto(session, "Aceite")
+        _producto(session, "Azúcar blanca")
         santiago = _provincia(session, "Santiago de Cuba")
         origen = _ingestion(session, "hash-progreso-pilotos")
         _precio(session, product=arroz, province=santiago, source=origen)
@@ -158,7 +163,7 @@ class TestPhase0Progress:
     ) -> None:
         """El catálogo tiene 50+ productos por altas al vuelo; la meta de §9
         habla de productos bandera, no de cualquier alta."""
-        gomitas = _producto(session, "Gomitas FRULLY")
+        gomitas = _producto(session, "Gomitas FRULLY", is_pilot=False)
         santiago = _provincia(session, "Santiago de Cuba")
         origen = _ingestion(session, "hash-progreso-no-piloto")
         _precio(session, product=gomitas, province=santiago, source=origen)
@@ -409,6 +414,8 @@ class TestCoverage:
         """El hueco es el dato: una celda en cero dice exactamente qué falta
         capturar para cumplir §9 (3–5 productos en 2 provincias)."""
         arroz = _producto(session, "Arroz")
+        for otro in ("Aceite", "Azúcar blanca", "Pollo"):
+            _producto(session, otro)
         santiago = _provincia(session, "Santiago de Cuba")
         _provincia(session, "La Habana")
         origen = _ingestion(session, "hash-cobertura")

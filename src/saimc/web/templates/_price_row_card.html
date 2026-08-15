@@ -37,28 +37,14 @@
           {% endfor %}
         </select>
         <!--
-          `<details>` nativo: sin JS, colapsado por default salvo que el
-          motor ya tenga un nombre adivinado para revisar (`row.new_product_name`,
-          ver `product_name_guess` en engine.py) — ahí se abre solo para que
-          no quede escondido detrás de un clic.
+          El alta de producto salió de acá el 2026-08-15: era el camino por el
+          que el catálogo creció a 60 productos con duplicados que parten la
+          densidad de una serie. Los productos se administran en /catalog, y
+          este `<select>` solo lista pilotos.
         -->
-        <details class="mt-1" {% if row.new_product_name %}open{% endif %}>
-          <summary class="small text-primary">+ Agregar producto nuevo</summary>
-          <div class="row g-2 mt-1">
-            <div class="col-12">
-              <label for="new_product_name_{{ index0 }}" class="form-label small mb-1">Nombre</label>
-              <input type="text" name="new_product_name_{{ index0 }}" id="new_product_name_{{ index0 }}" value="{{ row.new_product_name }}" class="form-control form-control-sm" />
-            </div>
-            <div class="col-6">
-              <label for="product_category_{{ index0 }}" class="form-label small mb-1">Categoría <span class="text-muted">(opcional)</span></label>
-              <input type="text" name="product_category_{{ index0 }}" id="product_category_{{ index0 }}" value="{{ row.product_category }}" class="form-control form-control-sm" />
-            </div>
-            <div class="col-6">
-              <label for="product_unit_{{ index0 }}" class="form-label small mb-1">Unidad producto <span class="text-muted">(opcional)</span></label>
-              <input type="text" name="product_unit_{{ index0 }}" id="product_unit_{{ index0 }}" value="{{ row.product_unit }}" class="form-control form-control-sm" />
-            </div>
-          </div>
-        </details>
+        <div class="form-text">
+          Solo productos piloto. <a href="/catalog">Administrar el foco</a>.
+        </div>
       </div>
     </div>
 

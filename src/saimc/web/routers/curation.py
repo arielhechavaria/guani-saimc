@@ -138,9 +138,6 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         return {
             "price_id": "",
             "product_id": "",
-            "new_product_name": "",
-            "product_category": "",
-            "product_unit": "",
             "price": "",
             "currency": Currency.CUP.value,
             "quantity": "",
@@ -154,14 +151,9 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
     return {
         # Sin fila propia todavía: existe recién cuando se confirma el submit.
         "price_id": "",
-        # `product_name_guess` solo viene con algo cuando NO hay match de
-        # catálogo (ver `_match_product`/modificadores de corte en
-        # `engine.py`) — ahí se prellena el alta nueva con el nombre
-        # adivinado en vez de dejarla en blanco.
+        # Solo llegan acá propuestas con producto piloto ya resuelto (ver el
+        # filtro en `curation_queue`), así que el `else` es defensivo.
         "product_id": str(proposal.product.id) if proposal.product else "",
-        "new_product_name": proposal.product_name_guess or "",
-        "product_category": "",
-        "product_unit": "",
         "price": str(proposal.price) if proposal.price is not None else "",
         "currency": proposal.currency,
         "quantity": str(proposal.quantity) if proposal.quantity is not None else "",
@@ -189,9 +181,6 @@ def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
     return {
         "price_id": str(price.id),
         "product_id": str(price.product_id),
-        "new_product_name": "",
-        "product_category": "",
-        "product_unit": "",
         "price": str(price.price),
         "currency": price.currency,
         "quantity": str(price.quantity) if price.quantity is not None else "",
@@ -218,8 +207,21 @@ def _oldest_pending(db: Session) -> RawIngestion | None:
     return db.execute(stmt).scalars().first()
 
 
-def _all_products(db: Session) -> list[Product]:
-    return list(db.execute(select(Product).order_by(Product.name)).scalars().all())
+def _pilot_products(db: Session) -> list[Product]:
+    """Los productos del conjunto foco, y solo esos.
+
+    Único punto por donde el catálogo entra a la curaduría: alimenta las
+    propuestas del motor, el `<select>` de cada fila y la resolución por
+    nombre. Filtrar acá restringe las tres cosas a la vez, que es lo que hace
+    del foco una propiedad de la herramienta y no una intención del operador
+    (`docs/decisions.md`, 2026-08-15).
+
+    Un producto fuera del foco sigue en el catálogo y conserva sus precios
+    históricos; lo que no puede es recibir precios nuevos. Volver a incluirlo
+    es un clic en /catalog, no una migración.
+    """
+    stmt = select(Product).where(Product.is_pilot.is_(True)).order_by(Product.name)
+    return list(db.execute(stmt).scalars().all())
 
 
 def _all_provinces(db: Session) -> list[Province]:
@@ -318,7 +320,7 @@ def curation_queue(
     ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir)
 
     ingestion = _oldest_pending(db)
-    products = _all_products(db)
+    products = _pilot_products(db)
     provinces = _all_provinces(db)
 
     proposals: list[ExtractionProposal] = []
@@ -341,7 +343,15 @@ def curation_queue(
             guessed = guess_published_date(recognized_text, ingestion.captured_at)
             published_date_guess = guessed.isoformat() if guessed else ""
 
-    rows = [_values_from_proposal(proposal) for proposal in proposals]
+    # Solo llegan al formulario las propuestas que cayeron en un producto del
+    # foco. Una lista de precios de 25 renglones produce 25 candidatos, de los
+    # cuales importan los pocos que son piloto: mostrar el resto obligaría al
+    # operador a descartarlos de a uno, que es justamente el trabajo que esta
+    # decisión elimina (`docs/decisions.md`, 2026-08-15). Lo descartado no se
+    # pierde: el registro crudo es inmutable y conserva el anuncio entero.
+    rows = [
+        _values_from_proposal(proposal) for proposal in proposals if proposal.product is not None
+    ]
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
 
     global_values = {
@@ -501,47 +511,26 @@ def _validated_published_date(raw: str, captured_at: datetime) -> tuple[date | N
     return parsed, None
 
 
-# Defaults para alta de producto nuevo cuando el operador no completa
-# categoría o unidad en el form: sin esto la fila entera invalidaba todo el
-# submit por un dato secundario. `Product.category`/`Product.unit` son
-# NOT NULL sin default en el modelo (fuera de alcance tocar el esquema acá),
-# así que el default se resuelve en esta capa.
-_DEFAULT_PRODUCT_CATEGORY = "sin categoría"
-_DEFAULT_PRODUCT_UNIT = "unidad"
-
-
 def _resolve_row_product(
     db: Session, products_by_name: dict[str, Product], row: dict[str, str]
 ) -> Product | None:
-    """Resuelve el producto de una fila: alta nueva o selección del catálogo.
+    """Resuelve el producto de una fila contra el conjunto piloto.
 
-    El alta nueva (`new_product_name`) tiene prioridad sobre el `<select>`
-    ya elegido (`product_id`) aunque vengan los dos juntos — el operador
-    decidió agregar un producto en vez de usar el que tenía seleccionado.
-    Un `product_id` que no parsea como UUID o que no existe en la base se
-    trata como "sin producto" para esta fila, sin romper con una excepción:
-    el operador puede haber elegido "— seleccionar —" o el id puede haber
-    quedado obsoleto entre el GET y el submit.
+    Ya no da de alta productos. El alta al vuelo desde este formulario es lo
+    que produjo 55 productos de una sola observación y duplicados que parten
+    la densidad de una serie en dos («Arroz criollo» contra «Arroz», «Azúcar
+    blanco» contra «Azúcar blanca»). El catálogo se administra en `/catalog`,
+    donde agregar un producto es una decisión explícita y no el efecto
+    colateral de haber tipeado un nombre (`docs/decisions.md`, 2026-08-15).
+
+    `products_by_name` sigue en la firma porque los dos caminos de escritura
+    lo arman una sola vez por submit; acá se usa como caché de lectura.
+
+    Un `product_id` que no parsea como UUID o que no existe se trata como
+    "sin producto" para esta fila, sin romper con una excepción: el operador
+    puede haber elegido "— seleccionar —" o el id puede haber quedado obsoleto
+    entre el GET y el submit.
     """
-    if row["new_product_name"]:
-        product = products_by_name.get(row["new_product_name"].lower())
-        if product is None:
-            # No existe: alta de producto nuevo. Categoría y unidad son
-            # opcionales en el form: el motor de extracción no las propone
-            # para nombres libres y exigirlas siempre trababa el submit por
-            # un dato secundario. Sin tocar el esquema (Product.category y
-            # Product.unit son NOT NULL sin default): se completa acá.
-            product = Product(
-                name=row["new_product_name"],
-                category=row["product_category"] or _DEFAULT_PRODUCT_CATEGORY,
-                unit=row["product_unit"] or _DEFAULT_PRODUCT_UNIT,
-                aliases=[],
-            )
-            db.add(product)
-            db.flush()  # necesitamos product.id para PriceHistory antes del commit final
-            products_by_name[row["new_product_name"].lower()] = product
-        return product
-
     if row["product_id"]:
         product_uuid = _parse_uuid(row["product_id"])
         if product_uuid is not None:
@@ -560,9 +549,6 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
     return {
         "price_id": str(form.get(f"price_id_{index}", "")).strip(),
         "product_id": str(form.get(f"product_id_{index}", "")).strip(),
-        "new_product_name": str(form.get(f"new_product_name_{index}", "")).strip(),
-        "product_category": str(form.get(f"product_category_{index}", "")).strip(),
-        "product_unit": str(form.get(f"product_unit_{index}", "")).strip(),
         "price": str(form.get(f"price_{index}", "")).strip(),
         "currency": str(form.get(f"currency_{index}", "")).strip() or Currency.CUP.value,
         "quantity": str(form.get(f"quantity_{index}", "")).strip(),
@@ -593,19 +579,18 @@ async def submit_curation(
     guardado — si nada es resolvible, la fila igual se guarda con esas cuatro
     columnas en `NULL` y el redirect avisa `?unconverted=N` (design.md D4/D7).
 
-    La tabla manda `row_count` filas indexadas (`product_id_0`, `price_0`, ...),
-    más `new_product_name_i` para el alta rápida de producto nuevo (ver
-    `_resolve_row_product`). El operador descarta una tarjeta que no quiere
-    cargar eliminándola del lado del cliente (botón "Eliminar" en la plantilla,
-    sin submit): sus campos indexados no viajan en el POST, así que cae sola
-    en la rama de fila vacía de abajo. Una fila sin producto y sin
-    precio se ignora en silencio (no es una fila que el operador quiso
-    cargar); con solo uno de los dos es un error explícito, porque ahí sí hay
-    intención de cargar algo pero falta un dato. Categoría y unidad de
-    producto nuevo son opcionales: si faltan, se completan con
-    `_DEFAULT_PRODUCT_CATEGORY` / `_DEFAULT_PRODUCT_UNIT`. Todo o nada: si
-    alguna fila con datos tiene un error, no se guarda ninguna — un estado a
-    medias es más confuso que repetir el submit. La fecha de publicación
+    La tabla manda `row_count` filas indexadas (`product_id_0`, `price_0`, ...).
+    El producto de cada fila sale del `<select>`, que desde el 2026-08-15 solo
+    lista pilotos: acá no se dan de alta productos (ver `_resolve_row_product`).
+    El operador descarta una tarjeta que no quiere cargar eliminándola del lado
+    del cliente (botón "Eliminar" en la plantilla, sin submit): sus campos
+    indexados no viajan en el POST, así que cae sola en la rama de fila vacía
+    de abajo. Una fila sin producto y sin precio se ignora en silencio (no es
+    una fila que el operador quiso cargar); con solo uno de los dos es un error
+    explícito, porque ahí sí hay intención de cargar algo pero falta un dato.
+    Todo o nada: si alguna fila con datos tiene un error, no se guarda
+    ninguna — un estado a medias es más confuso que repetir el submit. La
+    fecha de publicación
     entra en ese mismo todo-o-nada desde el 2026-08-14: es obligatoria y
     bloquea el submit entero (ver `_validated_published_date`).
     """
@@ -625,7 +610,7 @@ async def submit_curation(
 
     # Catálogo existente + altas de esta misma request: dos filas con el mismo
     # producto nuevo (mismo submit) deben reusar el Product, no duplicarlo.
-    products_by_name = {p.name.lower(): p for p in _all_products(db)}
+    products_by_name = {p.name.lower(): p for p in _pilot_products(db)}
 
     errors: list[str] = []
     if published_date_error is not None:
@@ -692,7 +677,7 @@ async def submit_curation(
         return _render_queue(
             request,
             ingestion=ingestion,
-            products=_all_products(db),
+            products=_pilot_products(db),
             provinces=_all_provinces(db),
             rows=typed_rows,
             row_count=row_count,
@@ -890,7 +875,7 @@ def edit_curated(
         "curation_edit.html",
         {
             "ingestion": ingestion,
-            "products": _all_products(db),
+            "products": _pilot_products(db),
             "provinces": _all_provinces(db),
             "rows": rows,
             "edit_mode": True,
@@ -950,7 +935,7 @@ async def submit_edit(
         row_count = 0
 
     existing_by_id = {price.id: price for price in _curated_rows(db, ingestion_id)}
-    products_by_name = {p.name.lower(): p for p in _all_products(db)}
+    products_by_name = {p.name.lower(): p for p in _pilot_products(db)}
 
     errors: list[str] = []
     if published_date_error is not None:
@@ -994,7 +979,7 @@ async def submit_edit(
             "curation_edit.html",
             {
                 "ingestion": ingestion,
-                "products": _all_products(db),
+                "products": _pilot_products(db),
                 "provinces": _all_provinces(db),
                 "rows": typed_rows,
                 "edit_mode": True,

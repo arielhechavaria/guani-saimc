@@ -27,7 +27,7 @@ def client(session: Session) -> Iterator[TestClient]:
 
 
 def _cargar(session: Session, *, precios: list[str]) -> None:
-    azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[])
+    azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[], is_pilot=True)
     scu = Province(code="scu", name="Santiago de Cuba")
     session.add_all([azucar, scu])
     session.commit()
@@ -168,8 +168,8 @@ class TestControlPanel:
         assert "Pollo" in tarjetas[-1].split("</summary>")[0]
 
     def _cargar_dos_provincias(self, session: Session) -> None:
-        azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[])
-        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
+        azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[], is_pilot=True)
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[], is_pilot=True)
         habana = Province(code="hab", name="La Habana")
         santiago = Province(code="scu", name="Santiago de Cuba")
         session.add_all([azucar, pollo, habana, santiago])
@@ -245,8 +245,8 @@ class TestControlPanel:
         assert "<script" not in texto
 
     def _cargar_dos_productos(self, session: Session) -> None:
-        azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[])
-        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
+        azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[], is_pilot=True)
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[], is_pilot=True)
         habana = Province(code="hab", name="La Habana")
         santiago = Province(code="scu", name="Santiago de Cuba")
         session.add_all([azucar, pollo, habana, santiago])
@@ -296,7 +296,7 @@ class TestRangoMinorista:
     """
 
     def _cargar_retail(self, session: Session) -> None:
-        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         scu = Province(code="scu", name="Santiago de Cuba")
         session.add_all([arroz, scu])
         session.commit()
@@ -359,15 +359,30 @@ class TestRangoMinorista:
 
 
 class TestFiltroDePilotos:
-    """`/control` muestra solo los 4 productos piloto (2026-08-12): el resto
+    """`/control` muestra solo los productos piloto (2026-08-12): el resto
     del catálogo (dispersión de 2026-08-11) queda fuera de esta vista por
     ahora, no de la base — es un filtro de pantalla, no un borrado de datos.
+
+    Desde el 2026-08-15 el conjunto piloto sale de `products.is_pilot` y no de
+    una tupla fija en código, así que estos tests lo declaran en la base.
     """
 
+    def _declarar_piloto(self, session: Session, nombre: str) -> Product:
+        """Piloto sin observaciones: es el estado «falta cargar esto»."""
+        item = Product(name=nombre, category="x", unit="lb", aliases=[], is_pilot=True)
+        session.add(item)
+        session.commit()
+        return item
+
     def _cargar(
-        self, session: Session, *, producto: str, provincia: str = "Santiago de Cuba"
+        self,
+        session: Session,
+        *,
+        producto: str,
+        provincia: str = "Santiago de Cuba",
+        is_pilot: bool = True,
     ) -> None:
-        item = Product(name=producto, category="x", unit="lb", aliases=[])
+        item = Product(name=producto, category="x", unit="lb", aliases=[], is_pilot=is_pilot)
         scu = session.execute(
             select(Province).where(Province.name == provincia)
         ).scalar_one_or_none()
@@ -401,7 +416,7 @@ class TestFiltroDePilotos:
         self, client: TestClient, session: Session
     ) -> None:
         self._cargar(session, producto="Arroz")
-        self._cargar(session, producto="Sazon Dubai")
+        self._cargar(session, producto="Sazon Dubai", is_pilot=False)
 
         response = client.get("/control")
 
@@ -428,7 +443,9 @@ class TestFiltroDePilotos:
         alta al vuelo fuera de los pilotos no infla el progreso de §9.
         """
         self._cargar(session, producto="Arroz")
-        self._cargar(session, producto="Sazon Dubai")
+        self._cargar(session, producto="Sazon Dubai", is_pilot=False)
+        for faltante in ("Aceite", "Azúcar blanca", "Pollo"):
+            self._declarar_piloto(session, faltante)
 
         response = client.get("/control")
 
@@ -452,7 +469,7 @@ class TestColumnaNEnlazaAlHistorial:
         eran de otra moneda — mandar `&currency=CUP` al historial escondería
         esas filas del filtro. El link omite el parámetro para esa celda.
         """
-        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         scu = Province(code="scu", name="Santiago de Cuba")
         session.add_all([arroz, scu])
         session.commit()
@@ -493,7 +510,7 @@ class TestColumnaNEnlazaAlHistorial:
         """Una celda `unconverted` no tiene ambigüedad: todas sus filas son
         de la misma moneda original, así que el filtro sí la manda.
         """
-        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         scu = Province(code="scu", name="Santiago de Cuba")
         session.add_all([arroz, scu])
         session.commit()
@@ -578,6 +595,16 @@ class TestPanelDeProgreso:
         """La grilla producto × provincia se dibuja completa: el cero es
         justamente lo que dice qué salir a capturar."""
         _cargar(session, precios=["420"])
+        # El conjunto piloto vive en la base desde el 2026-08-15: los que
+        # `_cargar` no crea hay que declararlos para que la grilla los dibuje.
+        for faltante in ("Aceite", "Arroz", "Pollo"):
+            if session.execute(
+                select(Product).where(Product.name == faltante)
+            ).scalar_one_or_none() is None:
+                session.add(
+                    Product(name=faltante, category="x", unit="lb", aliases=[], is_pilot=True)
+                )
+        session.commit()
 
         response = client.get("/control")
 

@@ -28,13 +28,13 @@ from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
     PHASE0_PRODUCTS_MIN,
     PHASE0_PROVINCES,
-    PILOT_PRODUCTS,
     compute_coverage,
     compute_daily_activity,
     compute_intake_health,
     compute_open_gaps,
     compute_pace,
     compute_phase0_progress,
+    pilot_product_names,
 )
 from saimc.web.deps import get_db
 from saimc.web.matrix import build_matrix, resolve_column, select_province
@@ -53,14 +53,15 @@ _DEFAULT_RETAIL_RANGE_DAYS = 7
 # número—, es el ancho de una ventana de lectura.
 _ACTIVITY_DAYS = 14
 
-# Filtro de pantalla, no de datos (2026-08-12): la curaduría se enfoca en
-# estos 4 desde el 2026-08-11 (docs/decisions.md), pero el catálogo real tiene
-# 50+ productos por altas hechas al vuelo durante la curaduría. Mostrarlos
-# todos con el mismo peso visual hacía ilegible la vista. El resto sigue
-# entero en la base — nada se borra acá, ver `compute_cells`/`prices_history`
-# directo si hace falta. La lista canónica vive en `saimc.progress` porque el
-# progreso de Fase 0 se mide contra ella; acá solo se usa para filtrar.
-_PILOT_FILTER = frozenset(PILOT_PRODUCTS)
+# Filtro de pantalla, no de datos (2026-08-12): el catálogo real acumuló 50+
+# productos por altas hechas al vuelo durante la curaduría, y mostrarlos todos
+# con el mismo peso visual hacía ilegible la vista. El resto sigue entero en la
+# base — nada se borra acá, ver `compute_cells`/`prices_history` directo si
+# hace falta.
+#
+# Desde el 2026-08-15 el conjunto sale de `products.is_pilot` en vez de una
+# tupla fija: promover un producto en /catalog tiene que cambiar esta vista
+# también, y con dos listas separadas no lo hacía.
 
 
 @router.get("/control", response_class=HTMLResponse)
@@ -70,9 +71,12 @@ def control_panel(
     days: int = _DEFAULT_RETAIL_RANGE_DAYS,
     province: str | None = None,
 ) -> HTMLResponse:
-    cells = [c for c in compute_cells(db) if c.product_name in _PILOT_FILTER]
+    pilot_products = pilot_product_names(db)
+    pilot_filter = frozenset(pilot_products)
+
+    cells = [c for c in compute_cells(db) if c.product_name in pilot_filter]
     retail_report = compute_retail_ranges(db, days=days)
-    retail_ranges = [r for r in retail_report.ranges if r.product_name in _PILOT_FILTER]
+    retail_ranges = [r for r in retail_report.ranges if r.product_name in pilot_filter]
 
     progress = compute_phase0_progress(db)
     activity = compute_daily_activity(db, days=_ACTIVITY_DAYS)
@@ -140,6 +144,6 @@ def control_panel(
             "phase0_products_min": PHASE0_PRODUCTS_MIN,
             "phase0_products_max": PHASE0_PRODUCTS_MAX,
             "phase0_provinces": PHASE0_PROVINCES,
-            "pilot_products": PILOT_PRODUCTS,
+            "pilot_products": pilot_products,
         },
     )

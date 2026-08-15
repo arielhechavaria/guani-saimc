@@ -36,11 +36,23 @@ from saimc.models import Currency, PriceHistory, ProcessingStatus, Product, Prov
 PHASE0_TARGET_ROWS = 500
 
 # spec.md §9, «Productos: 3-5 productos bandera». El rango es del documento;
-# cuáles son los cuatro elegidos es decisión del operador (docs/decisions.md,
-# 2026-08-11) y por eso vive acá y no en el documento.
+# cuáles son los elegidos es decisión del operador (docs/decisions.md,
+# 2026-08-11) y por eso no vive en el documento.
 PHASE0_PRODUCTS_MIN = 3
 PHASE0_PRODUCTS_MAX = 5
-PILOT_PRODUCTS: tuple[str, ...] = ("Aceite", "Arroz", "Azúcar blanca", "Pollo")
+
+
+def pilot_product_names(session: Session) -> tuple[str, ...]:
+    """Los nombres del conjunto piloto, leídos de la base.
+
+    Era una tupla fija en este módulo hasta el 2026-08-15. Pasó a
+    `products.is_pilot` para que el foco tenga UNA sola fuente de verdad: la
+    curaduría lo usa para restringir qué se extrae y esta vista para medir el
+    progreso, y con dos listas separadas bastaba promover un producto en
+    /catalog para que dejaran de coincidir en silencio.
+    """
+    stmt = select(Product.name).where(Product.is_pilot.is_(True)).order_by(Product.name)
+    return tuple(session.execute(stmt).scalars().all())
 
 # spec.md §9, «Provincias: 2 provincias (La Habana y Santiago de Cuba)». Las
 # nombra el documento: no es una elección de implementación.
@@ -99,11 +111,12 @@ def compute_phase0_progress(session: Session) -> Phase0Progress:
         .all()
     )
 
+    pilots = pilot_product_names(session)
     return Phase0Progress(
         rows=rows,
         target_rows=PHASE0_TARGET_ROWS,
-        products_with_data=tuple(sorted(p for p in PILOT_PRODUCTS if p in products_loaded)),
-        products_missing=tuple(sorted(p for p in PILOT_PRODUCTS if p not in products_loaded)),
+        products_with_data=tuple(sorted(p for p in pilots if p in products_loaded)),
+        products_missing=tuple(sorted(p for p in pilots if p not in products_loaded)),
         provinces_with_data=tuple(sorted(p for p in PHASE0_PROVINCES if p in provinces_loaded)),
         provinces_missing=tuple(sorted(p for p in PHASE0_PROVINCES if p not in provinces_loaded)),
     )
@@ -350,6 +363,6 @@ def compute_coverage(session: Session) -> list[CoverageCell]:
             province_name=province_name,
             rows=counts.get((product_name, province_name), 0),
         )
-        for product_name in PILOT_PRODUCTS
+        for product_name in pilot_product_names(session)
         for province_name in PHASE0_PROVINCES
     ]

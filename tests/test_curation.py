@@ -33,6 +33,7 @@ from saimc.models import (
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
+from saimc.web.routers.curation import _EXTRA_BLANK_ROWS
 
 # --- helpers de armado ------------------------------------------------------
 
@@ -79,7 +80,9 @@ def _fecha_pub(ingestion: RawIngestion) -> str:
 def _crear_producto(
     session: Session, *, name: str = "Pollo", aliases: list[str] | None = None
 ) -> Product:
-    producto = Product(name=name, category="carnes", unit="lb", aliases=aliases or [])
+    producto = Product(
+        name=name, category="carnes", unit="lb", aliases=aliases or [], is_pilot=True
+    )
     session.add(producto)
     session.commit()
     return producto
@@ -314,11 +317,17 @@ class TestCurationQueueGet:
         assert f'value="{producto.id}" selected' in response.text
         assert f'value="{provincia.id}" selected' in response.text
 
-    def test_corte_sin_match_prellena_alta_nueva_abierta_con_nombre_adivinado(
+    def test_corte_sin_match_no_prellena_ninguna_fila(
         self, client: TestClient, session: Session
     ) -> None:
-        """"Hígado de pollo" no matchea el genérico "Pollo": el "+" se abre
-        solo con el nombre adivinado, no un `<select>` prellenado mal."""
+        """«Hígado de pollo» no matchea el genérico «Pollo», y desde el
+        2026-08-15 eso ya no abre un alta de producto: la línea simplemente no
+        produce fila prellenada.
+
+        Es el caso que hace barata una lista de precios de 25 renglones —solo
+        llegan al formulario los que caen en un producto piloto—. El anuncio
+        completo sigue intacto en el registro crudo, que es inmutable.
+        """
         _crear_producto(session, name="Pollo")
         _crear_raw_ingestion(
             session,
@@ -329,10 +338,11 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert 'value="higado de pollo"' in response.text
-        assert '<details class="mt-1" open>' in response.text
-        # El select de producto queda en "— seleccionar —", no en "Pollo".
-        assert 'value="" selected>— seleccionar —' in response.text
+        # El texto del anuncio sigue visible en su textarea — eso es correcto,
+        # el operador tiene que poder leerlo. Lo que no debe existir es una
+        # fila prellenada para esa línea: quedan solo las filas en blanco de
+        # cortesía, todas con el `<select>` sin elegir.
+        assert response.text.count('value="" selected>— seleccionar —') == _EXTRA_BLANK_ROWS
 
     def test_texto_multiproducto_prellena_una_fila_por_candidato(
         self, client: TestClient, session: Session
@@ -930,37 +940,19 @@ class TestCurationSubmit:
         assert refrescado.processing_status == ProcessingStatus.PENDING
         assert list(session.execute(select(PriceHistory)).scalars()) == []
 
-    def test_product_name_existente_case_insensitive_usa_ese_producto(
+    def test_new_product_name_posteado_ya_no_crea_producto_ni_precio(
         self, client: TestClient, session: Session
     ) -> None:
-        """Tipear el nombre con mayúsculas distintas matchea el producto ya sembrado, no crea uno nuevo."""
-        producto = _crear_producto(session, name="pollo")
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-case")
+        """El alta al vuelo se quitó el 2026-08-15 (docs/decisions.md): era el
+        camino por el que el catálogo creció a 60 productos con duplicados que
+        parten la densidad de una serie. Un cliente viejo que todavía mande el
+        campo no debe volver a abrirlo por la puerta de atrás.
 
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "new_product_name_0": "POLLO",
-                "price_0": "450",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        productos = list(session.execute(select(Product)).scalars())
-        assert len(productos) == 1
-        filas = list(session.execute(select(PriceHistory)).scalars())
-        assert len(filas) == 1
-        assert filas[0].product_id == producto.id
-
-    def test_product_name_nuevo_con_categoria_y_unidad_crea_producto(
-        self, client: TestClient, session: Session
-    ) -> None:
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-nuevo")
+        La fila queda con precio y sin producto, que es el error explícito ya
+        definido: no se guarda nada y el submit vuelve al formulario. El alta
+        de productos vive ahora en /catalog (ver tests/test_catalog.py).
+        """
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-alta-cerrada")
 
         response = client.post(
             f"/curation/{ingestion.id}",
@@ -968,146 +960,15 @@ class TestCurationSubmit:
                 "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "new_product_name_0": "Detergente",
-                "product_category_0": "limpieza",
-                "product_unit_0": "unidad",
-                "price_0": "100",
+                "price_0": "900",
             },
             follow_redirects=False,
         )
 
-        assert response.status_code == 303
-
+        assert response.status_code == 422
         session.expire_all()
-        productos = list(session.execute(select(Product)).scalars())
-        assert len(productos) == 1
-        nuevo = productos[0]
-        assert nuevo.name == "Detergente"
-        assert nuevo.category == "limpieza"
-        assert nuevo.unit == "unidad"
-
-        filas = list(session.execute(select(PriceHistory)).scalars())
-        assert len(filas) == 1
-        assert filas[0].product_id == nuevo.id
-
-    def test_product_name_nuevo_sin_categoria_ni_unidad_usa_defaults(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """Categoría y unidad ya no son obligatorias: faltando ambas, se crea con los defaults."""
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-sin-cat-ni-unidad")
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "new_product_name_0": "Detergente",
-                "price_0": "100",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        productos = list(session.execute(select(Product)).scalars())
-        assert len(productos) == 1
-        nuevo = productos[0]
-        assert nuevo.name == "Detergente"
-        assert nuevo.category == "sin categoría"
-        assert nuevo.unit == "unidad"
-
-        filas = list(session.execute(select(PriceHistory)).scalars())
-        assert len(filas) == 1
-        assert filas[0].product_id == nuevo.id
-
-    def test_product_name_nuevo_con_categoria_parcial_usa_default_solo_en_la_que_falta(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """Falta solo `unit`: el default se aplica ahí y `category` respeta lo tipeado."""
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-nombre-cat-parcial")
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "new_product_name_0": "Detergente",
-                "product_category_0": "limpieza",
-                "price_0": "100",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        productos = list(session.execute(select(Product)).scalars())
-        assert len(productos) == 1
-        nuevo = productos[0]
-        assert nuevo.category == "limpieza"
-        assert nuevo.unit == "unidad"
-
-    def test_dos_filas_con_mismo_producto_nuevo_crean_un_solo_product(
-        self, client: TestClient, session: Session
-    ) -> None:
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-producto-nuevo-duplicado")
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "2",
-                "new_product_name_0": "Detergente",
-                "product_category_0": "limpieza",
-                "product_unit_0": "unidad",
-                "price_0": "100",
-                "new_product_name_1": "detergente",
-                "product_category_1": "limpieza",
-                "product_unit_1": "unidad",
-                "price_1": "120",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        productos = list(session.execute(select(Product)).scalars())
-        assert len(productos) == 1
-
-        filas = list(session.execute(select(PriceHistory)).scalars())
-        assert len(filas) == 2
-        assert {f.product_id for f in filas} == {productos[0].id}
-
-    def test_new_product_name_tiene_prioridad_sobre_product_id_seleccionado(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """Si la fila manda los dos, el alta nueva gana aunque haya un producto ya elegido en el select."""
-        viejo = _crear_producto(session, name="Pollo")
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-new-tiene-prioridad")
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "product_id_0": str(viejo.id),
-                "new_product_name_0": "Picadillo",
-                "price_0": "100",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        productos = list(session.execute(select(Product)).scalars())
-        assert len(productos) == 2
-        nuevo = next(p for p in productos if p.name == "Picadillo")
-
-        filas = list(session.execute(select(PriceHistory)).scalars())
-        assert len(filas) == 1
-        assert filas[0].product_id == nuevo.id
+        assert list(session.execute(select(Product)).scalars()) == []
+        assert list(session.execute(select(PriceHistory)).scalars()) == []
 
     def test_precio_sin_producto_devuelve_el_mensaje_de_error_puntual(
         self, client: TestClient, session: Session
