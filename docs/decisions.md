@@ -2358,3 +2358,72 @@ normalizar el separador antes de buscar resuelve todos los casos de una vez.
 Consecuencia: ninguna, aditivo. `_match_product` no necesitó el mismo cambio
 porque ya normaliza sobre `_strip_accents` y los nombres de producto no suelen
 aparecer en hashtags compuestos.
+
+## 2026-08-15 — Canales de WhatsApp automatizados vía WAHA
+
+Contexto: el operador pidió automatizar la extracción de los canales
+registrados hasta la curaduría, y acotó el alcance a WhatsApp — es donde están
+los importadores grandes que le interesan, no Telegram. Ningún canal de la
+tabla `channels` tenía todavía un mecanismo de automatización.
+
+Decisión: se agrega `POST /webhooks/whatsapp`, receptor de eventos de una
+instancia de WAHA que el operador corre en Docker sobre su propio VPS, con un
+número de teléfono descartable vinculado por QR. Un canal se automatiza
+cargándole `external_id` —el identificador que WAHA manda en el campo `from`
+de cada mensaje, algo como "1234567890@newsletter"— en /catalog; sin ese
+campo, sigue siendo solo la lista de rondas manual que ya existía. Cada mensaje
+que llega autenticado y con texto entra a `raw_ingestions` como `pending`, por
+el mismo camino que ya usan la bandeja y el pegado (`ingest_inbox`), así que
+hereda el hash de contenido, la deduplicación y la redacción de datos
+personales sin código nuevo para eso. El operador sigue confirmando cada fila
+en /curation: no cambia la barrera de la sección 10.7 ni la medición de H0.
+
+La autenticación es la firma HMAC-SHA512 que WAHA calcula sobre el body crudo
+del webhook (`config.hmac.key` de WAHA, `SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY`
+acá), verificada con comparación de tiempo constante. Sin esa clave
+configurada, el endpoint rechaza todo — mismo criterio que ya rige
+`require_operator` para /curation: cerrar en falso, no abrir.
+
+Descartado: automatizar Telegram, ya evaluado como el camino técnicamente más
+limpio, porque el operador no lo quiere. Descartado también resolver
+imágenes sin texto desde el webhook — un mensaje de solo foto, sin caption, se
+ignora en este slice. Meterle OCR a un webhook exige descargar el archivo de
+media desde la API de WAHA y correr el reconocimiento fuera del flujo
+supervisado que hoy corre en la curaduría, y la medición del propio operador
+mostró que el texto rinde varias veces más que la imagen: no vale la pena
+resolver el caso de peor rendimiento primero. Se prefirió Apify en un momento
+de la conversación por costo y por no depender de un número dedicado, pero el
+operador señaló que ya tiene un VPS y puede correr WAHA ahí sin pagar por
+consulta; con esa base propia, la objeción de fiabilidad ("conexión
+intermitente") deja de aplicar, porque el servicio corre en el VPS, no en la
+máquina de desarrollo.
+
+Apartamiento de dos decisiones cerradas del CLAUDE.md, ambas con OK explícito
+del operador en la conversación, no asumido:
+
+- **Decisión cerrada 2** ("nada de scraping, bots de Telegram ni Playwright en
+  Fase 0"): automatizar la CAPTURA no automatiza la EXTRACCIÓN. El operador
+  sigue siendo quien valida cada precio contra su evidencia; el motivo
+  original de la decisión —no construir sobre una hipótesis de extracción sin
+  verificar— queda intacto.
+- **Decisión cerrada 4** ("sin Docker hasta después de validar H0"): WAHA solo
+  se distribuye de forma soportada como imagen Docker. Corre en el VPS del
+  operador, no en el despliegue de SAIMC, así que no es infraestructura nueva
+  para *este* proyecto en el sentido que motivaba la decisión —un solo
+  desarrollador operando un solo despliegue—, pero sigue siendo Docker
+  entrando al ecosistema del operador antes de validar H0, y se registra como
+  tal.
+
+Consecuencia: la forma exacta del payload de WAHA se calibró contra la
+documentación pública (waha.devlike.pro/docs/how-to/events/, verificada
+2026-08-15), no contra una instancia real, que no existe todavía. El parser
+(`saimc.ingestion.whatsapp_webhook.parse_message`) acepta tanto el objeto de
+mensaje directo que muestra la documentación como la forma envuelta en
+`{"event", "session", "payload"}` que WAHA usa en otros webhooks, precisamente
+por esa incertidumbre. Es esperable que el primer webhook real contra la
+instancia del operador exija un ajuste acá — eso no es un error de diseño, es
+el costo de diseñar contra documentación en vez de contra un sistema en vivo.
+Falta, y es trabajo del operador, no de este slice: levantar WAHA en el VPS,
+vincular el número dedicado por QR, configurar `config.hmac.key` con el mismo
+valor que `SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY`, apuntar el webhook de la sesión a
+`/webhooks/whatsapp`, y cargar el `external_id` de cada canal en /catalog.
