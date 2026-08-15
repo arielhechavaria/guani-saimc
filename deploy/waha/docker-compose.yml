@@ -1,0 +1,23 @@
+# WAHA — canal de automatización de WhatsApp (docs/decisions.md, 2026-08-15).
+#
+# NO es infraestructura de SAIMC: es un servicio externo que el operador corre
+# en su propio VPS, aparte del despliegue de SAIMC (systemd/). Vive en el
+# repo igual porque sin versionarlo se pierde en cuanto se reinstala el VPS,
+# y es la contraparte exacta del webhook que recibe SAIMC en
+# `src/saimc/web/routers/whatsapp_webhook.py`.
+#
+# Uso: copiar este directorio al VPS, crear un `.env` al lado (ver
+# `.env.example`, NUNCA commitear el real — mismo criterio que el `.env` de
+# SAIMC, ver `.gitignore`), y correr `docker compose up -d` desde acá.
+
+services:
+  waha:
+    image: devlikeapro/waha
+    container_name: waha
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./sessions:/app/.sessions
+    env_file:
+      - .env
