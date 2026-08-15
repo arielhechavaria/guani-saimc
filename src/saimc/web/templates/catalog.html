@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — Catálogo del foco</title>
+  <link href="/static/bootstrap.min.css" rel="stylesheet" />
+  <link href="/static/curation.css" rel="stylesheet" />
+  <style>
+    /* Embebido y no en un archivo aparte por el mismo motivo que control.html:
+       no lo usa ninguna otra página y una descarga más pesa en conexión lenta. */
+    .saimc-count { font-variant-numeric: tabular-nums; }
+    .saimc-off td { opacity: .55; }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h1 class="h4 mb-0">Catálogo del foco</h1>
+      <div class="small">
+        <a href="/curation">Cola de curaduría</a> · <a href="/control">Control</a>
+      </div>
+    </div>
+
+    <div class="alert alert-secondary small">
+      La curaduría solo extrae precio de los productos marcados como piloto.
+      Un producto fuera del foco conserva sus precios históricos y sigue en el
+      catálogo; lo único que no puede es recibir precios nuevos.
+      <strong>{{ pilot_count }}</strong> en el foco ahora.
+    </div>
+
+    <!-- Productos ------------------------------------------------------- -->
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Productos</span>
+        <span class="text-muted small">{{ products|length }} en catálogo</span>
+      </div>
+
+      <div class="card-body border-bottom">
+        <form method="post" action="/catalog/products" class="row g-2 align-items-end">
+          <div class="col-md-5">
+            <label for="name" class="form-label small mb-1">Nombre del producto nuevo</label>
+            <input type="text" name="name" id="name" required class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-3">
+            <label for="category" class="form-label small mb-1">Categoría <span class="text-muted">(opcional)</span></label>
+            <input type="text" name="category" id="category" class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-2">
+            <label for="unit" class="form-label small mb-1">Unidad <span class="text-muted">(opcional)</span></label>
+            <input type="text" name="unit" id="unit" class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-2">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Agregar al foco</button>
+          </div>
+          <div class="col-12">
+            <div class="form-text">Se agrega directamente como piloto: si lo cargás acá, lo querés medir.</div>
+          </div>
+        </form>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead>
+            <tr>
+              <th scope="col">Producto</th>
+              <th scope="col">Categoría</th>
+              <th scope="col" class="text-end">Observaciones</th>
+              <th scope="col" class="text-end">Foco</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product, observations in products %}
+            <tr {% if not product.is_pilot %}class="saimc-off"{% endif %}>
+              <td>
+                {{ product.name }}
+                {% if product.is_pilot %}<span class="badge text-bg-primary ms-1">piloto</span>{% endif %}
+              </td>
+              <td class="text-muted small">{{ product.category }}</td>
+              <td class="text-end saimc-count">{{ observations }}</td>
+              <td class="text-end">
+                <form method="post" action="/catalog/products/{{ product.id }}/pilot">
+                  {% if product.is_pilot %}
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">Sacar del foco</button>
+                  {% else %}
+                  <input type="hidden" name="is_pilot" value="on" />
+                  <button type="submit" class="btn btn-sm btn-outline-primary">Poner en el foco</button>
+                  {% endif %}
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Canales --------------------------------------------------------- -->
+    <div class="card">
+      <div class="card-header">Canales y grupos seguidos</div>
+
+      <div class="card-body border-bottom">
+        <p class="small text-muted">
+          La densidad se construye mirando <em>los mismos</em> canales todos los
+          días. Esta lista es la ronda, no una fuente automática: en Fase 0 la
+          captura sigue siendo manual.
+        </p>
+        <form method="post" action="/catalog/channels" class="row g-2 align-items-end">
+          <div class="col-md-3">
+            <label for="channel_name" class="form-label small mb-1">Nombre</label>
+            <input type="text" name="name" id="channel_name" required class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-2">
+            <label for="platform" class="form-label small mb-1">Plataforma</label>
+            <select name="platform" id="platform" class="form-select form-select-sm">
+              {% for platform in platforms %}
+              <option value="{{ platform.value }}">{{ platform.value }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label for="url" class="form-label small mb-1">Enlace <span class="text-muted">(opcional)</span></label>
+            <input type="text" name="url" id="url" class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-2">
+            <label for="notes" class="form-label small mb-1">Notas <span class="text-muted">(opcional)</span></label>
+            <input type="text" name="notes" id="notes" class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-2">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Agregar canal</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead>
+            <tr>
+              <th scope="col">Canal</th>
+              <th scope="col">Plataforma</th>
+              <th scope="col">Notas</th>
+              <th scope="col" class="text-end">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if not channels %}
+            <tr><td colspan="4" class="text-muted small py-3">Todavía no hay canales anotados.</td></tr>
+            {% endif %}
+            {% for channel in channels %}
+            <tr {% if not channel.is_active %}class="saimc-off"{% endif %}>
+              <td>
+                {% if channel.url %}
+                <a href="{{ channel.url }}" rel="noopener noreferrer" target="_blank">{{ channel.name }}</a>
+                {% else %}
+                {{ channel.name }}
+                {% endif %}
+              </td>
+              <td class="text-muted small">{{ channel.platform }}</td>
+              <td class="text-muted small">{{ channel.notes or "" }}</td>
+              <td class="text-end">
+                <form method="post" action="/catalog/channels/{{ channel.id }}/active">
+                  {% if channel.is_active %}
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">Apagar</button>
+                  {% else %}
+                  <input type="hidden" name="is_active" value="on" />
+                  <button type="submit" class="btn btn-sm btn-outline-primary">Encender</button>
+                  {% endif %}
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -2257,3 +2257,49 @@ provincias, habrían dado unas doce observaciones por celda en diez celdas, y el
 dashboard público sería publicable hoy. Mismo esfuerzo, resultado distinto.
 Ninguno de estos pasos rompe la decisión cerrada 2, ni toca el esquema, ni
 necesita credenciales externas.
+
+## 2026-08-15 — El foco es una columna, no una intención
+
+Contexto: la decisión de esta misma fecha estableció que la Fase 0 se gobierna
+por densidad por celda. Faltaba el mecanismo. La medición mostró de dónde salía
+la dispersión: el catálogo tenía 60 productos, de los cuales 5 venían sembrados
+y 55 los había creado el propio formulario de curaduría con su alta al vuelo,
+todos con categoría «sin categoría». Entre ellos había duplicados que parten en
+dos la densidad de una serie real, como «Arroz criollo» contra «Arroz» y
+«Azúcar blanco» contra «Azúcar blanca». Además el conjunto piloto vivía
+duplicado: una tupla fija en `saimc.progress` que usaba la vista de control, y
+el catálogo entero que usaba la curaduría.
+
+Decisión: el conjunto foco pasa a ser la columna `products.is_pilot`, única
+fuente de verdad, administrada en una vista nueva, `/catalog`. La curaduría
+extrae precio solo de productos piloto: el filtro se aplica en un único punto,
+`_pilot_products()`, que alimenta a la vez las propuestas del motor, el
+`<select>` de cada fila y la resolución por nombre. Las propuestas que no caen
+en un piloto ya no producen fila en el formulario, así que una lista de precios
+de veinticinco renglones muestra solo los pocos que importan. El alta de
+productos sale de la curaduría y queda solo en `/catalog`, donde nace como
+piloto porque agregarlo ahí ya es la decisión de medirlo. La misma vista
+administra los canales y grupos seguidos, en la tabla nueva `channels`, que es
+la ronda diaria del operador y no una fuente automática.
+
+Descartado: dejar el alta al vuelo creando productos fuera del foco. Habría
+sido menos invasivo y conserva la nota mental de «vi algo que no está en el
+catálogo», pero mantiene dos lugares para dar de alta un producto y con eso el
+camino que genera los duplicados. También se descartó encender como pilotos los
+cinco productos bandera que nombra `spec.md` §9: «Leche» y «Huevos» están
+sembrados y no tienen una sola observación, mientras que «Azúcar blanca», que
+el documento no nombra, ya acumulaba once. La migración enciende los cuatro que
+el operador había elegido con datos a la vista, dentro del rango de 3 a 5 que
+sí fija el documento.
+
+Consecuencia: sacar un producto del foco no borra nada — conserva sus precios
+históricos y sigue en el catálogo, lo único que pierde es la capacidad de
+recibir precios nuevos, y volver a incluirlo es un clic. Un canal se apaga y
+tampoco se borra, porque los registros crudos ya ingeridos siguen
+refiriéndose a él. `/catalog` muestra el conteo de observaciones por producto
+para que promover uno sea una decisión con evidencia y no una corazonada: así
+apareció «Azúcar blanca». La vista `/control` y el progreso de Fase 0 leen el
+mismo `is_pilot`, de modo que promover un producto se refleja en las dos sin
+tocar código. Queda pendiente aplicar las migraciones 0009 y 0010 contra la
+base de producción antes de usar la aplicación, porque el filtro consulta una
+columna que hasta ahora no existía.
