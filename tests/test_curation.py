@@ -312,6 +312,28 @@ class TestCurationQueueGet:
         assert response.status_code == 200
         assert 'id="published_date" value="2026-08-09"' in response.text
 
+    def test_fecha_de_canal_automatizado_usa_captured_at_no_el_texto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """docs/decisions.md, 2026-08-17: para un canal de WhatsApp
+        automatizado, `captured_at` YA es el timestamp real que WAHA reportó
+        del envío — no hace falta (ni conviene) adivinarlo del texto, que
+        casi nunca trae el patrón "Nombre - fecha" de capturas Facebook."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-fecha-canal-automatizado",
+            original_text="pollo a 500 habana",  # sin ningún patrón de fecha
+            captured_at=datetime(2026, 8, 16, 11, 49, tzinfo=UTC),
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="published_date" value="2026-08-16"' in response.text
+
     def test_formulario_vacio_si_el_ocr_no_reconoce_nada(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:

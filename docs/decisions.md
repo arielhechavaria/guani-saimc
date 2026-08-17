@@ -2814,3 +2814,42 @@ Consecuencia: ambos fixes tenían test antes de tocar el template/router
 `test_el_formulario_completo_sigue_disponible_pero_colapsado` +
 regresión `test_con_candidatos_el_formulario_sigue_abierto_por_default`).
 Suite completa: 527/527.
+
+---
+
+## 2026-08-17 — Fecha de publicación de canal automatizado usa `captured_at`, no adivinanza de texto
+
+Contexto: mismo hallazgo que "Canal origen" (entrada de arriba, mismo día),
+señalado por el operador después de ver el caso real: "Fecha de
+publicación" también quedaba vacía para los anuncios de WAHA — obligatoria
+y bloqueante desde el 2026-08-14, así que el operador tenía que tipearla a
+mano en cada uno de los 34 anuncios importados. Causa idéntica:
+`guess_published_date` busca el mismo patrón "Nombre - fecha" de capturas
+Facebook que `guess_source_reference`, y un mensaje de WhatsApp no lo trae.
+
+A diferencia del canal origen, acá no había ningún campo ya escrito
+esperando ser usado — pero sí había un dato mejor que la adivinanza:
+`ingestion.captured_at`. Para un canal automatizado, ese valor no es el
+mtime aproximado de un archivo capturado después (que es la ambigüedad por
+la que `published_date` existe como campo separado desde el 2026-08-10):
+es el `timestamp` que WAHA reporta del envío real del mensaje — la fecha
+de publicación exacta, no una aproximación.
+
+Decisión: `curation_queue()` usa `ingestion.captured_at.date()` como
+`published_date_guess` cuando `ingestion.source_type ==
+SourceType.WHATSAPP_CHANNEL`, con la adivinanza de texto
+(`guess_published_date`) como respaldo para el resto de las fuentes, donde
+`captured_at` sigue sin ser confiable para esto. Coherente con la cota
+superior que ya impone `_validated_published_date` (el día de captura en
+calendario de La Habana): usar exactamente ese valor nunca puede violar la
+cota, es el propio límite.
+
+Descartado: nada nuevo — mismo criterio que la entrada de "Canal origen" de
+arriba, aplicado al mismo tipo de dato conocido-versus-adivinado.
+
+Consecuencia: el prellenado se calcula al abrir `/curation`, no al
+ingerir — así que los 34 anuncios de Groupej Morales Surl que ya estaban
+pendientes en la cola también se benefician con este mismo deploy, sin
+necesidad de reimportarlos. Test:
+`test_fecha_de_canal_automatizado_usa_captured_at_no_el_texto`. Suite
+completa: 528/528.
