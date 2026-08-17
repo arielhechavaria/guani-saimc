@@ -51,6 +51,19 @@ class Settings(BaseSettings):
     # criterio de "cierra en falso" que `curation_password`.
     whatsapp_webhook_hmac_key: str | None = None
 
+    # Datos para que SAIMC llame DE VUELTA a la API de WAHA (backfill de
+    # histórico desde /catalog, docs/decisions.md, 2026-08-17) — dirección
+    # opuesta al webhook, que es WAHA llamando a SAIMC. Sin `waha_base_url` o
+    # `waha_api_key`, el botón de /catalog degrada a un mensaje de error, no
+    # a una excepción. `waha_session` es el nombre de sesión de WAHA, "default"
+    # salvo que el operador haya creado otra.
+    waha_base_url: str | None = None
+    waha_api_key: str | None = None
+    waha_session: str = "default"
+    # Mismo criterio que `el_toque_timeout`: un fetch lento no debe colgar la
+    # request del operador — degrada a error en vez de esperar indefinido.
+    waha_timeout: float = 30.0
+
 
 @lru_cache
 def get_settings() -> Settings:

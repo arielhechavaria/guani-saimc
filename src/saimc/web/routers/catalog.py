@@ -20,13 +20,18 @@ el sistema.
 """
 
 import uuid
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from saimc.config import get_settings
+from saimc.ingestion.inbox import ingest_inbox
+from saimc.ingestion.whatsapp_backfill import fetch_channel_history
 from saimc.models import Channel, Platform, PriceHistory, Product
+from saimc.models.raw_ingestion import SourceType
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
 
@@ -41,8 +46,17 @@ _DEFAULT_UNIT = "unidad"
 _REDIRECT = status.HTTP_303_SEE_OTHER
 
 
-def _back() -> RedirectResponse:
-    return RedirectResponse("/catalog", status_code=_REDIRECT)
+def _back(*, message: str | None = None, error: str | None = None) -> RedirectResponse:
+    # Flash sin sesión ni cookie: el mensaje viaja en la URL del redirect y se
+    # lee una sola vez del lado del GET. No hay otro flash en el proyecto —
+    # se mantiene deliberadamente así de chico, sin categorías ni auto-cierre.
+    params = {}
+    if message:
+        params["message"] = message
+    if error:
+        params["error"] = error
+    query = f"?{urlencode(params)}" if params else ""
+    return RedirectResponse(f"/catalog{query}", status_code=_REDIRECT)
 
 
 @router.get("/catalog", response_class=HTMLResponse)
@@ -79,6 +93,8 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
             "channels": channels,
             "platforms": list(Platform),
             "pilot_count": sum(1 for product in products if product.is_pilot),
+            "flash_message": request.query_params.get("message"),
+            "flash_error": request.query_params.get("error"),
         },
     )
 
@@ -180,3 +196,69 @@ async def toggle_channel(
     channel.is_active = bool(form.get("is_active"))
     db.flush()
     return _back()
+
+
+@router.post("/catalog/channels/{channel_id}/backfill")
+def backfill_channel(channel_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
+    """Importa de una sola vez el histórico que WAHA ya tenga sincronizado
+    de un canal (docs/decisions.md, 2026-08-17) — disparador manual, no
+    automático: a diferencia del webhook, esto no reacciona solo, el
+    operador decide cuándo correrlo por canal.
+
+    Reusa `ingest_inbox` exactamente igual que el webhook (mismo hash,
+    misma deduplicación, misma redacción de datos personales): correrlo dos
+    veces sobre el mismo canal no duplica nada, un mensaje ya ingerido cae
+    en `report.duplicates` en vez de crear una fila nueva.
+    """
+    channel = db.get(Channel, channel_id)
+    if channel is None:
+        return _back()
+    if not channel.external_id:
+        return _back(error=f"«{channel.name}»: sin Id. WAHA, no hay de dónde importar.")
+
+    settings = get_settings()
+    if not settings.waha_base_url or not settings.waha_api_key:
+        return _back(error="Falta configurar SAIMC_WAHA_BASE_URL / SAIMC_WAHA_API_KEY.")
+
+    messages = fetch_channel_history(
+        settings.waha_base_url,
+        settings.waha_api_key,
+        settings.waha_session,
+        channel.external_id,
+        timeout=settings.waha_timeout,
+    )
+    if messages is None:
+        return _back(error=f"No se pudo consultar WAHA para «{channel.name}».")
+    if not messages:
+        return _back(message=f"«{channel.name}»: WAHA no tiene histórico con texto para traer.")
+
+    settings.inbox_dir.mkdir(parents=True, exist_ok=True)
+    ingested = duplicates = 0
+    for parsed in messages:
+        temp_path = settings.inbox_dir / f"whatsapp-backfill-{uuid.uuid4().hex}.txt"
+        temp_path.write_text(parsed.text, encoding="utf-8")
+        try:
+            # Un `ingest_inbox` por mensaje, no un solo llamado con todos los
+            # `paths`: los overrides (acá, `captured_at`) se aplican a TODOS
+            # los paths de una llamada, y cada mensaje trae su propia fecha
+            # real — agruparlos les pondría a todos el mismo `captured_at`.
+            report = ingest_inbox(
+                db,
+                settings.inbox_dir,
+                settings.raw_store_dir,
+                paths=[temp_path],
+                source_type=SourceType.WHATSAPP_CHANNEL,
+                source_reference=channel.name,
+                captured_at=parsed.timestamp,
+            )
+        finally:
+            temp_path.unlink(missing_ok=True)
+        ingested += len(report.ingested)
+        duplicates += len(report.duplicates)
+
+    resumen = f"«{channel.name}»: {ingested} anuncios nuevos en la cola de curaduría"
+    if duplicates:
+        resumen += f", {duplicates} ya estaban."
+    else:
+        resumen += "."
+    return _back(message=resumen)

@@ -23,6 +23,13 @@
       </div>
     </div>
 
+    {% if flash_message %}
+    <div class="alert alert-success small">{{ flash_message }}</div>
+    {% endif %}
+    {% if flash_error %}
+    <div class="alert alert-danger small">{{ flash_error }}</div>
+    {% endif %}
+
     <div class="alert alert-secondary small">
       La curaduría solo extrae precio de los productos marcados como piloto.
       Un producto fuera del foco conserva sus precios históricos y sigue en el
@@ -105,7 +112,10 @@
           La densidad se construye mirando <em>los mismos</em> canales todos los
           días. Esta lista es la ronda, no una fuente automática por defecto:
           en Fase 0 la captura sigue siendo manual, salvo un canal de WhatsApp
-          con «Id. WAHA» cargado — ese recibe mensajes por webhook.
+          con «Id. WAHA» cargado — ese recibe mensajes por webhook, y además
+          se le puede pedir «Importar histórico» para traer de una vez lo que
+          WAHA ya tenga sincronizado (unos días a unas semanas según cuánto
+          publique el canal — no hay forma de pedirle más atrás que eso).
         </p>
         <form method="post" action="/catalog/channels" class="row g-2 align-items-end">
           <div class="col-md-3">
@@ -170,6 +180,9 @@
               <td class="small">
                 {% if channel.external_id %}
                 <span class="badge text-bg-success">webhook activo</span>
+                <form method="post" action="/catalog/channels/{{ channel.id }}/backfill" class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">Importar histórico</button>
+                </form>
                 {% else %}
                 <span class="text-muted">manual</span>
                 {% endif %}

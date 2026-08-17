@@ -2555,3 +2555,71 @@ blanca) no aparecieron en esta muestra — no hay evidencia todavía de si el
 canal los vende. Casos de prueba en `tests/test_extraction.py::TestPrecio`
 y `TestMoneda`, con las líneas reales (orden normal e invertido) más el
 límite de moneda-explícita como regresión.
+
+---
+
+## 2026-08-17 — Backfill manual de histórico de WhatsApp desde /catalog
+
+Contexto: el webhook de WAHA (entrada del 2026-08-15) solo captura mensajes
+que lleguen desde que un canal queda registrado — todo lo publicado antes de
+esa fecha se pierde. Medido contra la instancia real del operador
+(2026-08-17, `GET .../messages/preview`): WAHA sí tiene ese histórico
+disponible, con un techo real de ~96 mensajes por canal y **sin paginación
+hacia atrás** — `startCursor`, `endCursor` y `offset` (documentados por WAHA)
+se probaron los cuatro contra la instancia real y los cuatro devuelven
+exactamente los mismos 96 mensajes, ignorados en silencio. La profundidad
+que da ese techo depende del volumen del canal, no es un número fijo de
+días: Groupej Morales Surl rinde 7.7 días, The Boss Agency 28.9.
+
+Decisión: botón "Importar histórico" en `/catalog`, por canal, solo visible
+cuando el canal tiene `external_id` cargado. `POST
+/catalog/channels/{id}/backfill` llama a
+`saimc.ingestion.whatsapp_backfill.fetch_channel_history` (nuevo módulo,
+mismo patrón de `saimc.exchange_rate.eltoque`: transporte separado de
+parseo puro, `httpx.MockTransport` en los tests) y reusa `ingest_inbox`
+exactamente como el webhook — mismo hash, misma deduplicación, misma
+redacción de datos personales. Es un disparador **manual, no automático**:
+el operador decide cuándo correrlo por canal, no corre solo.
+
+El límite de mensajes por consulta queda **fijo en 100, no configurable**
+desde la UI ni por settings: es un valor medido contra la API real, no una
+preferencia. `limit=500` se probó en el mismo sondeo del 2026-08-17 y tardó
+172 segundos y tumbó la sesión de WAHA en producción (pasó a `STARTING`,
+afectando también a los otros canales mientras se recuperaba sola). Exponer
+ese número como perilla de configuración sería invitar a que alguien lo
+suba pensando que trae más historia —no la trae, WAHA la ignora igual— con
+el único efecto real de arriesgar la sesión en vivo.
+
+Nueva configuración (`SAIMC_WAHA_BASE_URL`, `SAIMC_WAHA_API_KEY`,
+`SAIMC_WAHA_SESSION`, `SAIMC_WAHA_TIMEOUT`) — dirección opuesta al webhook:
+ahí WAHA llama a SAIMC, acá SAIMC llama a la API de WAHA. Sin
+`waha_base_url`/`waha_api_key` configurados, el botón degrada a un mensaje
+de error server-side, mismo criterio de "cierra en falso" que ya rige
+`whatsapp_webhook_hmac_key` y `curation_password` — nunca una excepción sin
+manejar.
+
+Primer flash message del proyecto: `_back()` ahora acepta `message`/`error`
+opcionales y los pasa por query string del redirect (sin sesión, sin
+cookie, se lee una vez del lado del `GET /catalog`). Deliberadamente chico
+—sin categorías, sin auto-cierre— porque es exactamente lo que hace falta
+para que un botón que puede fallar (WAHA caída, sesión no lista, canal sin
+configurar) no falle en silencio.
+
+Descartado: exponer el `limit` como parámetro del formulario (motivo
+arriba). También se descartó agrupar todos los mensajes de un canal en un
+solo llamado a `ingest_inbox`: los overrides de esa función (`captured_at`
+entre ellos) se aplican a **todos** los `paths` de una llamada, y cada
+mensaje del histórico trae su propia fecha real — agruparlos les habría
+puesto a todos la fecha de la corrida del backfill en vez de la fecha real
+de cada uno. Se llama una vez por mensaje, igual de simple, sin ese efecto
+secundario.
+
+Consecuencia: verificado con tests (`tests/test_whatsapp_backfill.py`,
+`tests/test_catalog.py::TestCatalogoBackfillHistorico`) contra la forma real
+capturada de la API — incluida la del error de sesión no lista (`{"error":
+...}` con 200) y la de imagen sin caption (66/96 mensajes reales del corpus
+medido) — pero **no probado todavía contra la instancia real en producción**:
+falta agregar `SAIMC_WAHA_BASE_URL`/`SAIMC_WAHA_API_KEY` al `.env` real y
+reiniciar `saimc.service`. Ninguna de las dos cosas se hizo en este slice a
+propósito — es un reinicio de un servicio con usuarios reales mirando el
+dashboard, y corresponde que lo dispare el operador, no que se decida solo.

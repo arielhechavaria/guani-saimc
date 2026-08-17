@@ -26,6 +26,7 @@ from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
+from saimc.ingestion.whatsapp_webhook import ParsedMessage
 from saimc.models import (
     Channel,
     ContentType,
@@ -330,7 +331,185 @@ class TestCatalogoCanales:
         assert vigente.is_active is False
 
 
-# --- migraciones ------------------------------------------------------------
+# --- backfill de histórico ---------------------------------------------------
+
+
+class TestCatalogoBackfillHistorico:
+    """Disparador manual `/catalog/channels/{id}/backfill` (docs/decisions.md,
+    2026-08-17). `fetch_channel_history` se mockea en el punto de import del
+    router — el transporte HTTP en sí ya está cubierto por
+    `tests/test_whatsapp_backfill.py`; acá se prueba lo que el router hace
+    con el resultado."""
+
+    def _canal_automatizado(self, session: Session, *, name: str = "Groupej") -> Channel:
+        canal = Channel(
+            name=name,
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1234567890@newsletter",
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+        return canal
+
+    def test_canal_sin_external_id_no_llama_a_waha(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        canal = Channel(name="Manual", platform=Platform.OTHER, is_active=True)
+        session.add(canal)
+        session.commit()
+
+        def _no_deberia_llamarse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("no debía consultar WAHA sin external_id")
+
+        monkeypatch.setattr(
+            "saimc.web.routers.catalog.fetch_channel_history", _no_deberia_llamarse
+        )
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/backfill", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+
+    def test_sin_settings_de_waha_no_llama_al_transporte(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        canal = self._canal_automatizado(session)
+        monkeypatch.delenv("SAIMC_WAHA_BASE_URL", raising=False)
+        monkeypatch.delenv("SAIMC_WAHA_API_KEY", raising=False)
+        get_settings.cache_clear()
+
+        def _no_deberia_llamarse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("no debía consultar WAHA sin configurar base_url/api_key")
+
+        monkeypatch.setattr(
+            "saimc.web.routers.catalog.fetch_channel_history", _no_deberia_llamarse
+        )
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/backfill", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+
+    def test_waha_no_responde_muestra_error_sin_crear_nada(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        canal = self._canal_automatizado(session)
+        monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "http://127.0.0.1:3000")
+        monkeypatch.setenv("SAIMC_WAHA_API_KEY", "clave")
+        get_settings.cache_clear()
+        monkeypatch.setattr(
+            "saimc.web.routers.catalog.fetch_channel_history", lambda *a, **k: None
+        )
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/backfill", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        assert session.execute(select(RawIngestion)).first() is None
+
+    def test_historico_vacio_no_es_error(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Consultó bien y WAHA no tenía nada con texto — distinto de fallar
+        la consulta (ver test anterior): mensaje informativo, no de error."""
+        canal = self._canal_automatizado(session)
+        monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "http://127.0.0.1:3000")
+        monkeypatch.setenv("SAIMC_WAHA_API_KEY", "clave")
+        get_settings.cache_clear()
+        monkeypatch.setattr(
+            "saimc.web.routers.catalog.fetch_channel_history", lambda *a, **k: []
+        )
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/backfill", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        assert "message=" in response.headers["location"]
+
+    def test_importa_los_mensajes_a_la_cola_de_curaduria(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        canal = self._canal_automatizado(session)
+        monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "http://127.0.0.1:3000")
+        monkeypatch.setenv("SAIMC_WAHA_API_KEY", "clave")
+        get_settings.cache_clear()
+
+        mensajes = [
+            ParsedMessage(
+                chat_id="1234567890@newsletter",
+                text="Arroz grano dorado 100 lb 43.5 o 30885",
+                timestamp=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+                has_media=False,
+            ),
+            ParsedMessage(
+                chat_id="1234567890@newsletter",
+                text="Carapacho de pollo 10kg 11 o 7810",
+                timestamp=datetime(2026, 8, 12, 9, 30, tzinfo=UTC),
+                has_media=False,
+            ),
+        ]
+        monkeypatch.setattr(
+            "saimc.web.routers.catalog.fetch_channel_history", lambda *a, **k: mensajes
+        )
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/backfill", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        ingestiones = list(session.execute(select(RawIngestion)).scalars())
+        assert len(ingestiones) == 2
+        assert {i.source_type for i in ingestiones} == {SourceType.WHATSAPP_CHANNEL}
+        assert {i.source_reference for i in ingestiones} == {canal.name}
+        assert {i.processing_status for i in ingestiones} == {ProcessingStatus.PENDING}
+        # Cada mensaje conserva SU propia fecha real, no la del momento de la
+        # importación — a diferencia de agrupar todos los paths en un único
+        # ingest_inbox, que les pondría a todos el mismo captured_at.
+        # (SQLite no guarda zona horaria: se compara en naive, PostgreSQL
+        # real sí la conserva vía TIMESTAMPTZ — decisions.md, 2026-08-06.)
+        fechas = {i.captured_at.replace(tzinfo=None) for i in ingestiones}
+        assert fechas == {m.timestamp.replace(tzinfo=None) for m in mensajes}
+
+    def test_correrlo_dos_veces_no_duplica(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """El mismo canal reposteando el mismo aviso varios días (caso real
+        medido contra Groupej Morales Surl, 2026-08-17) no debe inflar la
+        cola cada vez que se corre el backfill."""
+        canal = self._canal_automatizado(session)
+        monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "http://127.0.0.1:3000")
+        monkeypatch.setenv("SAIMC_WAHA_API_KEY", "clave")
+        get_settings.cache_clear()
+
+        mensajes = [
+            ParsedMessage(
+                chat_id="1234567890@newsletter",
+                text="Arroz grano dorado 100 lb 43.5 o 30885",
+                timestamp=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+                has_media=False,
+            )
+        ]
+        monkeypatch.setattr(
+            "saimc.web.routers.catalog.fetch_channel_history", lambda *a, **k: mensajes
+        )
+
+        client.post(f"/catalog/channels/{canal.id}/backfill", follow_redirects=False)
+        segunda = client.post(
+            f"/catalog/channels/{canal.id}/backfill", follow_redirects=False
+        )
+
+        assert segunda.status_code == 303
+        assert len(list(session.execute(select(RawIngestion)).scalars())) == 1
 
 
 def _cargar_modulo_migracion(nombre: str) -> ModuleType:
