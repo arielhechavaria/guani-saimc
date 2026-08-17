@@ -2686,3 +2686,81 @@ ya resuelta, no hace falta anotarlas de nuevo. `.env` real: confirmar con el
 operador si ya cargó las variables de WAHA con intención de que el backfill
 corra en producción, o si fue sin darse cuenta de que hacía falta reiniciar
 `saimc.service` además.
+
+---
+
+## 2026-08-17 — Atajo de un clic sin candidatos, y provincia fija por canal
+
+Contexto: dos pedidos del operador, ambos resueltos con `AskUserQuestion`
+antes de tocar código porque los dos son decisiones de diseño reales, no
+ajustes de interfaz — el primero porque contradice o no la premisa de la
+curaduría manual (decisión cerrada 2 del `CLAUDE.md`), el segundo porque
+toca el esquema (`channels`).
+
+**(1) Atajo de un clic cuando `propose_all` no encuentra nada.** Un mensaje
+como el saludo de bienvenida de un canal ("¡Buenos tardes, familia!... 📱
+[teléfono removido]") llega a `/curation` igual que cualquier otro, y hoy
+había que abrir el formulario completo —evidencia, tabla con 3 filas en
+blanco— para llegar al botón "Descartar" al final. Opciones planteadas:
+descarte automático y silencioso (nunca llega a la cola) vs. mantenerlo en
+la cola con un atajo de un clic. El operador eligió la segunda: la premisa
+de "el operador corrige cada error" se sostiene —nada se descarta sin que
+alguien lo vea— y el costo baja de "abrir, escanear, scrollear, click" a
+"un click".
+
+Decisión: `curation_queue()` calcula `no_candidates` sobre la salida cruda
+de `propose_all` (antes del filtro por foco) — vacía significa que no hubo
+NI producto NI precio en ningún renglón del anuncio completo. Cuando es
+`True`, `curation.html` muestra una tarjeta entre la Evidencia y el
+formulario con un solo botón, "Descartar (sin candidatos)", que postea al
+mismo `/curation/{id}/discard` que ya existía — no fue necesario un
+endpoint nuevo. El formulario completo sigue disponible debajo: es un
+atajo, no un reemplazo, para cuando el operador mira la evidencia y de
+todos modos quiere cargar algo a mano.
+
+Distinción importante: `no_candidates` NO es "sin producto piloto". Un
+anuncio de un producto real fuera del foco con precio real (ej. "cemento a
+500 el saco") sí produce candidatos —`propose_all` los encuentra, aunque
+después se filtren por no ser piloto— y sigue mostrando el formulario
+completo sin el atajo: ese anuncio vale la pena mirarlo, no es ruido.
+
+**(2) `channels.province_id` — "el canal siempre manda".** El operador
+conoce de antemano la provincia de sus canales fijos (Groupej Morales Surl
+vende en Cotorro, La Habana) y no quiere depender de que cada mensaje la
+mencione, ni de que `_match_province` la adivine bien. Pregunta real antes
+de tocar el esquema: ¿la provincia del canal reemplaza el matching por
+texto, o es un prefill que el texto puede seguir pisando? El operador
+eligió que el canal reemplace siempre, sin excepción.
+
+Decisión: migración `0012_channels_province.py` (nullable,
+`ondelete="RESTRICT"`, mismo criterio que `PriceHistory.province_id`).
+`/catalog` gana un `<select>` de provincia en el alta de canal y un
+`<select>` inline por fila en la tabla (auto-envía con `onchange`, sin
+botón aparte) para fijarla en canales que **ya existen** — necesario
+porque el caso real que motivó esto, Groupej Morales Surl, ya estaba en la
+tabla antes de que la columna existiera. En `curation.py`,
+`_channel_province_id(db, ingestion)` resuelve el canal por
+`source_reference == channel.name` y, si tiene provincia fija, la escribe
+sobre TODAS las filas de la propuesta — incluidas las filas en blanco de
+más, no solo las que `propose_all` generó del texto.
+
+El reemplazo se restringe a `SourceType.WHATSAPP_CHANNEL`: ahí
+`source_reference` es el nombre exacto del canal, escrito por código (el
+webhook y el backfill), nunca tipeado por el operador. Para el resto de
+las fuentes (bandeja, pegado) el campo es texto libre — un anuncio pegado
+a mano cuyo `source_reference` coincida por casualidad con el nombre de un
+canal automatizado NO debe resolverse contra ese canal, y así lo prueba el
+test (`test_fuente_no_automatizada_no_resuelve_contra_ningun_canal`).
+
+Descartado: la alternativa de diseño para (1) —descarte automático y
+silencioso al ingerir— por la razón ya dicha. Para (2), un prefill/fallback
+(el canal propone, el texto puede pisar) — el operador prefirió la certeza
+del dato que él mismo cargó sobre una heurística de texto que ya demostró
+fallar (`_match_province` no tiene forma de distinguir "el vendedor
+mencionó otra provincia por error de tipeo" de "el vendedor realmente
+vende ahí esta vez").
+
+Consecuencia: un canal automatizado sin provincia fija sigue funcionando
+exactamente como antes (cae a `_match_province` sobre el texto, sin
+cambios) — el override solo entra en juego cuando el operador decide
+cargarlo. Suite completa: 525/525.

@@ -53,6 +53,7 @@ from saimc.ingestion.inbox import ingest_inbox
 from saimc.privacy import redact_personal_data
 from saimc.models import (
     PACKAGING_MAX_LENGTH,
+    Channel,
     ContentType,
     Currency,
     PriceHistory,
@@ -61,6 +62,7 @@ from saimc.models import (
     Province,
     RawIngestion,
     SaleFormat,
+    SourceType,
 )
 from saimc.units import UNITS, canonical_unit
 from saimc.web.auth import require_operator
@@ -209,6 +211,31 @@ def _oldest_pending(db: Session) -> RawIngestion | None:
     return db.execute(stmt).scalars().first()
 
 
+def _channel_province_id(db: Session, ingestion: RawIngestion) -> str | None:
+    """Provincia fija del canal automatizado que originó este anuncio.
+
+    "El canal siempre manda" (docs/decisions.md, 2026-08-17): si el operador
+    cargó la provincia de un canal en /catalog, esa gana sobre lo que
+    `_match_province` adivine del texto del mensaje — el operador la conoce
+    de antemano, y un mensaje puede no mencionarla o mencionar otra por
+    error.
+
+    Solo aplica a `SourceType.WHATSAPP_CHANNEL`: ahí `source_reference` es
+    el nombre exacto del canal, escrito por código (el webhook y el
+    backfill, nunca el operador a mano) — para el resto de las fuentes
+    (bandeja, pegado) el campo es texto libre y no hay canal que resolver
+    con certeza.
+    """
+    if ingestion.source_type != SourceType.WHATSAPP_CHANNEL or not ingestion.source_reference:
+        return None
+    channel = db.execute(
+        select(Channel).where(Channel.name == ingestion.source_reference)
+    ).scalar_one_or_none()
+    if channel is None or channel.province_id is None:
+        return None
+    return str(channel.province_id)
+
+
 def _pilot_products(db: Session) -> list[Product]:
     """Los productos del conjunto foco, y solo esos.
 
@@ -267,6 +294,7 @@ def _render_queue(
     status_code: int = 200,
     unconverted: int = 0,
     pasted: int = 0,
+    no_candidates: bool = False,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -285,6 +313,13 @@ def _render_queue(
             "currencies": [c.value for c in Currency],
             "units": UNITS,
             "status_counts": status_counts,
+            # Solo la vuelve True el GET normal (docs/decisions.md,
+            # 2026-08-17): tras un error de validación en el POST (segundo
+            # llamador de esta función) el operador está corrigiendo algo que
+            # SÍ escribió, mostrarle acá "sin candidatos, descartar" sería
+            # confuso — ese llamador nunca pasa este parámetro, usa el
+            # default.
+            "no_candidates": no_candidates,
         },
         status_code=status_code,
     )
@@ -425,6 +460,16 @@ def curation_queue(
     ]
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
 
+    # "El canal siempre manda" (docs/decisions.md, 2026-08-17): pisa lo que
+    # haya propuesto `_match_province` en TODAS las filas, incluidas las
+    # filas en blanco de más — el operador conoce la provincia del canal de
+    # antemano, así que hasta una fila cargada a mano se beneficia de no
+    # tener que elegirla.
+    channel_province_id = _channel_province_id(db, ingestion) if ingestion is not None else None
+    if channel_province_id is not None:
+        for row in rows:
+            row["province_id"] = channel_province_id
+
     global_values = {
         "original_text": recognized_text,
         "source_reference": source_reference_guess,
@@ -443,6 +488,13 @@ def curation_queue(
         status_counts=_status_counts(db),
         unconverted=unconverted,
         pasted=pasted,
+        # `proposals` es la salida cruda de `propose_all`, antes del filtro
+        # por foco de más arriba: vacía significa que no encontró NI producto
+        # NI precio en ningún renglón del anuncio entero (docs/decisions.md,
+        # 2026-08-17) — un saludo del canal con solo contacto, por ejemplo.
+        # Distinto de "no matcheó ningún piloto": eso sí puede traer un
+        # precio real de un producto fuera del foco, que vale la pena mirar.
+        no_candidates=ingestion is not None and not proposals,
     )
 
 

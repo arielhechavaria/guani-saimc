@@ -330,6 +330,83 @@ class TestCatalogoCanales:
         assert vigente is not None
         assert vigente.is_active is False
 
+    def test_alta_de_canal_con_provincia(self, client: TestClient, session: Session) -> None:
+        provincia = Province(code="hab", name="La Habana")
+        session.add(provincia)
+        session.commit()
+
+        response = client.post(
+            "/catalog/channels",
+            data={
+                "name": "Groupej Morales",
+                "platform": Platform.WHATSAPP_CHANNEL.value,
+                "province_id": str(provincia.id),
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        canal = session.execute(select(Channel)).scalar_one()
+        assert canal.province_id == provincia.id
+
+    def test_alta_de_canal_sin_provincia_queda_nula(
+        self, client: TestClient, session: Session
+    ) -> None:
+        client.post(
+            "/catalog/channels",
+            data={"name": "Canal sin provincia", "platform": Platform.OTHER.value},
+            follow_redirects=False,
+        )
+
+        canal = session.execute(select(Channel)).scalar_one()
+        assert canal.province_id is None
+
+    def test_fija_provincia_de_un_canal_ya_existente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El caso real que motivó esto: Groupej Morales Surl ya estaba en la
+        tabla antes de que esta columna existiera (docs/decisions.md,
+        2026-08-17) — sin este endpoint, nunca podría cargársela."""
+        provincia = Province(code="hab", name="La Habana")
+        canal = Channel(name="Groupej Morales", platform=Platform.WHATSAPP_CHANNEL, is_active=True)
+        session.add_all([provincia, canal])
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/province",
+            data={"province_id": str(provincia.id)},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(Channel, canal.id).province_id == provincia.id
+
+    def test_puede_volver_a_dejar_la_provincia_sin_fijar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        provincia = Province(code="hab", name="La Habana")
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            province_id=None,
+            is_active=True,
+        )
+        session.add_all([provincia, canal])
+        session.commit()
+        canal.province_id = provincia.id
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/province",
+            data={"province_id": ""},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(Channel, canal.id).province_id is None
+
 
 # --- backfill de histórico ---------------------------------------------------
 
@@ -720,5 +797,84 @@ class TestChannelsMigration:
                 modulo.downgrade()
             connection.commit()
             assert "channels" not in inspect(connection).get_table_names()
+
+        engine.dispose()
+
+
+class TestChannelsProvinceMigration:
+    """`0012_channels_province.py` — "el canal siempre manda" (docs/decisions.md,
+    2026-08-17)."""
+
+    def _tablas(self) -> tuple[sa.MetaData, sa.Table, sa.Table]:
+        metadata = sa.MetaData()
+        provincias = sa.Table(
+            "provinces",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("name", sa.String(80), nullable=False),
+        )
+        canales = sa.Table(
+            "channels",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("name", sa.String(120), nullable=False),
+        )
+        return metadata, provincias, canales
+
+    def test_upgrade_agrega_la_columna_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0012_channels_province.py")
+
+        engine = create_engine("sqlite://")
+        metadata, _, _ = self._tablas()
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            assert "province_id" in {
+                c["name"] for c in inspect(connection).get_columns("channels")
+            }
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("channels")}
+            assert "province_id" not in columnas
+            assert "name" in columnas
+
+        engine.dispose()
+
+    def test_province_id_es_nullable(self) -> None:
+        """Un canal ya registrado antes de esta migración no tenía este dato
+        — no puede volverse NOT NULL sin backfill, que no existe."""
+        modulo = _cargar_modulo_migracion("0012_channels_province.py")
+
+        engine = create_engine("sqlite://")
+        metadata, provincias, canales = self._tablas()
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            tabla_con_columna = sa.Table(
+                "channels",
+                sa.MetaData(),
+                sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+                sa.Column("name", sa.String(120), nullable=False),
+                sa.Column("province_id", sa.Uuid(as_uuid=True), nullable=True),
+            )
+            connection.execute(
+                sa.insert(tabla_con_columna).values(
+                    id=uuid.uuid4(), name="Canal sin provincia", province_id=None
+                )
+            )
+            connection.commit()
 
         engine.dispose()

@@ -44,7 +44,9 @@
           con «Id. WAHA» cargado — ese recibe mensajes por webhook, y además
           se le puede pedir «Importar histórico» para traer de una vez lo que
           WAHA ya tenga sincronizado (unos días a unas semanas según cuánto
-          publique el canal — no hay forma de pedirle más atrás que eso).
+          publique el canal — no hay forma de pedirle más atrás que eso). Si
+          fijás la provincia de un canal, esa gana siempre en /curation para
+          sus anuncios — no depende de que el texto del mensaje la mencione.
         </p>
         <form method="post" action="/catalog/channels" class="row g-2 align-items-end">
           <div class="col-md-3">
@@ -74,6 +76,17 @@
             <input type="text" name="external_id" id="external_id" placeholder="1234...@newsletter"
                    class="form-control form-control-sm" />
           </div>
+          <div class="col-md-2">
+            <label for="channel_province" class="form-label small mb-1">
+              Provincia <span class="text-muted">(opcional)</span>
+            </label>
+            <select name="province_id" id="channel_province" class="form-select form-select-sm">
+              <option value="">Sin fijar</option>
+              {% for provincia in provinces %}
+              <option value="{{ provincia.id }}">{{ provincia.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
           <div class="col-md-1">
             <button type="submit" class="btn btn-sm btn-primary w-100">Agregar</button>
           </div>
@@ -87,13 +100,14 @@
               <th scope="col">Canal</th>
               <th scope="col">Plataforma</th>
               <th scope="col">Notas</th>
+              <th scope="col">Provincia</th>
               <th scope="col">Automatización</th>
               <th scope="col" class="text-end">Estado</th>
             </tr>
           </thead>
           <tbody>
             {% if not channels %}
-            <tr><td colspan="5" class="text-muted small py-3">Todavía no hay canales anotados.</td></tr>
+            <tr><td colspan="6" class="text-muted small py-3">Todavía no hay canales anotados.</td></tr>
             {% endif %}
             {% for channel in channels %}
             <tr {% if not channel.is_active %}class="saimc-off"{% endif %}>
@@ -106,6 +120,26 @@
               </td>
               <td class="text-muted small">{{ channel.platform }}</td>
               <td class="text-muted small">{{ channel.notes or "" }}</td>
+              <td>
+                <!--
+                  Auto-envía al cambiar (onchange), sin botón aparte ni
+                  script: un solo atributo HTML, más simple todavía que el
+                  <script> del backfill (docs/decisions.md, 2026-08-17).
+                  "El canal siempre manda" en /curation cuando esto está
+                  fijado — ver _channel_province_id en curation.py.
+                -->
+                <form method="post" action="/catalog/channels/{{ channel.id }}/province">
+                  <select name="province_id" class="form-select form-select-sm" style="min-width: 150px;"
+                          onchange="this.form.submit()">
+                    <option value="">Sin fijar</option>
+                    {% for provincia in provinces %}
+                    <option value="{{ provincia.id }}" {% if channel.province_id == provincia.id %}selected{% endif %}>
+                      {{ provincia.name }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </form>
+              </td>
               <td class="small">
                 {% if channel.external_id %}
                 <span class="badge text-bg-success">webhook activo</span>

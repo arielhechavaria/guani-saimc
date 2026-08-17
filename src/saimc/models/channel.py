@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Index, String, Text, Uuid, true
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from saimc.models.base import Base, utc_now
@@ -74,6 +74,20 @@ class Channel(Base):
     # sí. Sin este campo, un webhook no tiene forma de saber a qué fila de
     # `channels` pertenece el mensaje que llegó.
     external_id: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
+
+    # Provincia fija del canal, cargada a mano por el operador (docs/decisions.md,
+    # 2026-08-17): "el canal siempre manda" — cuando está cargada, la cola de
+    # curaduría la usa en vez de lo que `_match_province` adivine del texto
+    # del mensaje. Nullable: no todo canal tiene una provincia fija conocida
+    # (uno que cubre varias zonas, o uno recién dado de alta sin ese dato
+    # todavía). `ondelete="RESTRICT"`, mismo criterio que
+    # `PriceHistory.province_id` — las provincias son semilla fija (spec.md
+    # §9.0), nunca se borran en operación normal.
+    province_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("provinces.id", ondelete="RESTRICT", name="fk_channels_province_id"),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now

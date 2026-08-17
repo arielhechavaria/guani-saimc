@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.ingestion.whatsapp_backfill import fetch_channel_history
-from saimc.models import Channel, Platform, PriceHistory, Product
+from saimc.models import Channel, Platform, PriceHistory, Product, Province
 from saimc.models.raw_ingestion import SourceType
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
@@ -44,6 +44,18 @@ _DEFAULT_CATEGORY = "sin categoría"
 _DEFAULT_UNIT = "unidad"
 
 _REDIRECT = status.HTTP_303_SEE_OTHER
+
+
+def _parse_uuid(raw: str) -> uuid.UUID | None:
+    # Mismo helper que `curation._parse_uuid` (privado ahí, no se importa
+    # entre routers para un helper de cinco líneas) — un `<select>` vacío o
+    # una fila que el operador nunca completó no debe reventar el submit.
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(raw)
+    except ValueError:
+        return None
 
 
 def _back(*, message: str | None = None, error: str | None = None) -> RedirectResponse:
@@ -84,6 +96,7 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
             select(Channel).order_by(Channel.is_active.desc(), Channel.name)
         ).scalars()
     )
+    provinces = list(db.execute(select(Province).order_by(Province.name)).scalars())
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -91,6 +104,7 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         {
             "products": [(product, counts.get(product.id, 0)) for product in products],
             "channels": channels,
+            "provinces": provinces,
             "platforms": list(Platform),
             "pilot_count": sum(1 for product in products if product.is_pilot),
             "flash_message": request.query_params.get("message"),
@@ -175,9 +189,31 @@ async def create_channel(request: Request, db: Session = Depends(get_db)) -> Red
             # Vacío -> None, no "": la columna es UNIQUE (migración 0011) y dos
             # canales manuales con cadena vacía chocarían entre sí.
             external_id=str(form.get("external_id", "")).strip() or None,
+            province_id=_parse_uuid(str(form.get("province_id", ""))),
             is_active=True,
         )
     )
+    db.flush()
+    return _back()
+
+
+@router.post("/catalog/channels/{channel_id}/province")
+async def set_channel_province(
+    channel_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Fija o cambia la provincia de un canal ya existente.
+
+    Separado del alta (docs/decisions.md, 2026-08-17) porque el caso real
+    que lo motivó —Groupej Morales Surl— ya estaba en la tabla antes de que
+    esta columna existiera: sin esto, el operador nunca podría cargarle la
+    provincia a un canal que ya sigue.
+    """
+    channel = db.get(Channel, channel_id)
+    if channel is None:
+        return _back()
+
+    form = await request.form()
+    channel.province_id = _parse_uuid(str(form.get("province_id", "")))
     db.flush()
     return _back()
 

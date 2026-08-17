@@ -82,6 +82,27 @@
       </div>
     </div>
 
+    {% if no_candidates %}
+    <!--
+      Atajo de un clic (docs/decisions.md, 2026-08-17): no reemplaza el
+      formulario completo de abajo, que sigue disponible por si el operador
+      mira la evidencia y de todos modos quiere cargar algo a mano — solo
+      evita que tenga que escanear una tabla de filas en blanco para llegar
+      al botón "Descartar" cuando el motor no encontró nada en absoluto.
+    -->
+    <div class="card mb-4 border-warning-subtle">
+      <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="text-muted small mb-0">
+          No se reconoció producto ni precio en este anuncio — mirá la
+          evidencia de arriba antes de descartar.
+        </span>
+        <form method="post" action="/curation/{{ ingestion.id }}/discard">
+          <button type="submit" class="btn btn-outline-danger btn-sm">Descartar (sin candidatos)</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card">
       <div class="card-header">Datos del anuncio</div>
       <div class="card-body">

@@ -20,8 +20,10 @@ from saimc.config import get_settings
 from saimc.extraction import ocr
 from saimc.models import (
     PACKAGING_MAX_LENGTH,
+    Channel,
     ContentType,
     Currency,
+    Platform,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -46,12 +48,15 @@ def _crear_raw_ingestion(
     original_text: str | None = None,
     file_path: str | None = None,
     captured_at: datetime | None = None,
+    source_type: str | None = None,
+    source_reference: str | None = None,
 ) -> RawIngestion:
-    source_type = (
+    resolved_source_type = source_type or (
         SourceType.INBOX_TEXT if content_type == ContentType.TEXT else SourceType.INBOX_IMAGE
     )
     ingestion = RawIngestion(
-        source_type=source_type,
+        source_type=resolved_source_type,
+        source_reference=source_reference,
         file_path=file_path or f"raw/{hash_}.dat",
         content_hash=hash_,
         content_type=content_type,
@@ -422,6 +427,185 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
+
+
+class TestSinCandidatosAtajoDeUnClic:
+    """docs/decisions.md, 2026-08-17 — el operador pidió no tener que abrir
+    un anuncio sin producto ni precio (ej. un saludo del canal con contacto)
+    solo para llegar al botón "Descartar" al final del formulario."""
+
+    def test_sin_producto_ni_precio_muestra_el_atajo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(
+            session,
+            hash_="hash-saludo-sin-datos",
+            original_text=(
+                "¡Buenos tardes, familia! ☀️\nEscribinos a estos números:\n"
+                "[teléfono removido]\n[teléfono removido]"
+            ),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Descartar (sin candidatos)" in response.text
+        assert f'/curation/{ingestion.id}/discard' in response.text
+
+    def test_con_candidato_piloto_no_muestra_el_atajo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        _crear_raw_ingestion(
+            session, hash_="hash-con-candidato", original_text="pollo a 500 habana"
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Descartar (sin candidatos)" not in response.text
+
+    def test_precio_de_producto_no_piloto_no_muestra_el_atajo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`propose_all` sí encontró algo (un precio real), aunque no sea de
+        un producto del foco — vale la pena que el operador lo vea, no es el
+        mismo caso que un mensaje sin ningún dato aprovechable."""
+        _crear_producto(session, name="Pollo")  # ningún producto matchea "cemento"
+        _crear_raw_ingestion(
+            session, hash_="hash-no-piloto-con-precio", original_text="cemento a 500 el saco"
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Descartar (sin candidatos)" not in response.text
+
+    def test_el_atajo_descarta_de_verdad(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-atajo-descarta", original_text="buenos días a todos"
+        )
+
+        response = client.post(
+            f"/curation/{ingestion.id}/discard", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(RawIngestion, ingestion.id).processing_status == (
+            ProcessingStatus.DISCARDED
+        )
+
+    def test_el_formulario_completo_sigue_disponible(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El atajo es un agregado, no un reemplazo: si el operador mira la
+        evidencia y quiere cargar algo a mano de todos modos, puede."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session, hash_="hash-atajo-no-esconde-form", original_text="buenos días a todos"
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="curation-form"' in response.text
+
+
+class TestProvinciaDelCanalSiempreManda:
+    """docs/decisions.md, 2026-08-17 — "el canal siempre manda": si el
+    operador cargó la provincia de un canal automatizado en /catalog, esa
+    gana sobre lo que el texto del mensaje diga. No es un fallback."""
+
+    def test_provincia_del_canal_pisa_lo_que_dice_el_texto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        habana = _crear_provincia(session, code="hab", name="La Habana")
+        _crear_provincia(session, code="scu", name="Santiago de Cuba")
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            province_id=habana.id,
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-canal-manda",
+            original_text="pollo a 500 santiago",  # el texto dice OTRA provincia
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'value="{habana.id}" selected' in response.text
+
+    def test_sin_provincia_fija_en_el_canal_usa_lo_que_dice_el_texto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        santiago = _crear_provincia(session, code="scu", name="Santiago de Cuba")
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            province_id=None,
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-canal-sin-provincia",
+            original_text="pollo a 500 santiago",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'value="{santiago.id}" selected' in response.text
+
+    def test_fuente_no_automatizada_no_resuelve_contra_ningun_canal(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un canal con ese nombre y provincia fija existe, pero este
+        anuncio vino de texto pegado a mano — `source_reference` coincide
+        por casualidad. Esa certeza de "es justo este canal" solo existe
+        para `SourceType.WHATSAPP_CHANNEL`, donde lo escribe código, nunca
+        el operador tipeando."""
+        _crear_producto(session, name="Pollo")
+        habana = _crear_provincia(session, code="hab", name="La Habana")
+        santiago = _crear_provincia(session, code="scu", name="Santiago de Cuba")
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            province_id=habana.id,
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-fuente-manual-coincide",
+            original_text="pollo a 500 santiago",
+            source_type=SourceType.INBOX_TEXT,
+            source_reference="Groupej Morales",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'value="{santiago.id}" selected' in response.text
 
 
 class TestIngestaAutomatica:
