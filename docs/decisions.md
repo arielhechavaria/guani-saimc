@@ -2853,3 +2853,53 @@ pendientes en la cola también se benefician con este mismo deploy, sin
 necesidad de reimportarlos. Test:
 `test_fecha_de_canal_automatizado_usa_captured_at_no_el_texto`. Suite
 completa: 528/528.
+
+---
+
+## 2026-08-17 — Escala, envase y compra mínima se prellenan desde la última confirmación del mismo canal
+
+Contexto: idea del operador, no un bug reportado. Escala de venta
+(minorista/mayorista), envase y compra mínima son los tres únicos campos
+del formulario que **nunca** se infieren del texto del anuncio (design.md,
+D4/D7: son juicio explícito del operador) — así que en cada uno de los 34
+anuncios de Groupej Morales Surl, el operador los tipeaba de cero. La
+observación: una mipyme repite el mismo formato de venta anuncio tras
+anuncio (mismo saco, mismo mínimo), así que la última vez que el operador
+confirmó esos tres campos para ese canal y ese producto es un prefill
+razonable — no una regla del sistema, una sugerencia basada en lo que el
+propio operador ya confirmó antes.
+
+Decisión: `_historical_defaults(db, source_reference, product_id)` en
+`curation.py` busca la fila más reciente de `prices_history` para el mismo
+`(source_reference del canal, product_id)`, vía `JOIN raw_ingestions ON
+source_id`, y devuelve `sale_format`/`packaging_format`/
+`packaging_detail`/`min_purchase`. `curation_queue()` la aplica fila por
+fila (cada fila de un anuncio multi-producto puede tener su propio
+historial) después de armar `rows`, junto al override de provincia de la
+entrada anterior. Reusa `_split_packaging`, el mismo helper que ya
+prellena la corrección de un anuncio ya curado.
+
+A diferencia de "el canal siempre manda" (provincia) y "canal
+origen"/"fecha de publicación", acá **no hay restricción por
+`SourceType.WHATSAPP_CHANNEL`**: esta búsqueda no confía en ningún campo
+de la ingesta actual como certeza, es una consulta histórica por
+`source_reference` tal cual esté escrito. Si para una fuente manual el
+operador tipeó el mismo texto de canal de forma consistente, también se
+beneficia; si no fue consistente, la búsqueda no encuentra nada — el mismo
+resultado que hoy, sin caso peor.
+
+Descartado: restringir la búsqueda a un patrón de texto similar (mismo
+"casi el mismo mensaje"), que hubiera exigido una métrica de similitud
+completamente nueva. La clave (canal, producto) exacta es más simple, más
+barata, y es literalmente lo que el operador describió: no "este mensaje
+se parece a otro", sino "este canal vende este producto siempre igual".
+
+Consecuencia: un canal que cambia de formato de venta (saco de 25kg en vez
+de 50kg, por ejemplo) va a mostrar el valor viejo prellenado hasta que el
+operador confirme uno nuevo — es una sugerencia editable, no una regla, así
+que el operador la corrige y a partir de ahí el prefill sigue al día. Bug
+real encontrado en el camino: `_historical_defaults` recibía `product_id`
+como string y lo pasaba directo a un filtro contra una columna `Uuid` —
+`_parse_uuid()` (ya existente) lo resuelve. Suite completa: 533/533, con
+tests de no-mezcla entre canales y entre productos, y de "usa la
+confirmación más reciente" cuando hay más de un antecedente.

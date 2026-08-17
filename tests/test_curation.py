@@ -685,6 +685,184 @@ class TestProvinciaDelCanalSiempreManda:
         assert f'value="{santiago.id}" selected' in response.text
 
 
+class TestPrellenoDesdeHistorialDelCanal:
+    """docs/decisions.md, 2026-08-17 — idea del operador: una mipyme repite
+    el mismo formato de venta anuncio tras anuncio, así que la última
+    confirmación real para (canal, producto) es mejor prefill que texto
+    vacío para escala/envase/mínimo, que nunca se infieren del texto."""
+
+    def test_prellena_escala_envase_y_minimo_desde_la_ultima_confirmacion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Arroz")
+        vieja = _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-vieja",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session,
+            ingestion=vieja,
+            product=producto,
+            sale_format="retail",
+            packaging="Saco",
+            min_purchase_quantity=Decimal("1"),
+        )
+        # `_oldest_pending` elige por `captured_at` entre los `PENDING` —
+        # sin esto, `/curation` mostraría el antecedente, no el anuncio
+        # nuevo que este test quiere ver prellenado.
+        vieja.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-nueva",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'value="{producto.id}" selected' in response.text
+        assert '<option value="retail" selected>' in response.text
+        assert '<option value="saco" selected>' in response.text
+        # `Numeric` de 3 decimales (mismo formato que ya usa
+        # `_values_from_price_history`, ver test de edición línea 2650).
+        assert 'id="min_purchase_0" value="1.000"' in response.text
+
+    def test_sin_antecedente_queda_vacio_como_siempre(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-sin-antecedente",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Canal nuevo, nunca vendió Arroz antes",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert '<option value="retail" selected>' not in response.text
+        assert 'id="min_purchase_0" value=""' in response.text
+
+    def test_no_mezcla_el_historial_de_otro_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El antecedente es por (canal, producto) — que el canal haya
+        vendido Pollo mayorista no debe prellenar Arroz como mayorista."""
+        arroz = _crear_producto(session, name="Arroz")
+        pollo = _crear_producto(session, name="Pollo")
+        vieja = _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-otro-producto",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session, ingestion=vieja, product=pollo, sale_format="wholesale"
+        )
+        vieja.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-arroz-nuevo",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'value="{arroz.id}" selected' in response.text
+        assert '<option value="wholesale" selected>' not in response.text
+
+    def test_no_mezcla_el_historial_de_otro_canal(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Mismo producto, canal distinto: cada mipyme tiene su propio
+        formato de venta, no hay razón para heredarlo de otra."""
+        producto = _crear_producto(session, name="Arroz")
+        vieja = _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-otro-canal",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Otro Canal Cualquiera",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session, ingestion=vieja, product=producto, sale_format="wholesale"
+        )
+        vieja.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-canal-nuevo",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert '<option value="wholesale" selected>' not in response.text
+
+    def test_usa_la_confirmacion_mas_reciente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Si el canal cambió de formato de venta, vale lo último que
+        confirmó el operador, no lo primero que vendió."""
+        producto = _crear_producto(session, name="Arroz")
+        antigua = _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-antigua",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session, ingestion=antigua, product=producto, sale_format="wholesale"
+        )
+        antigua.processing_status = ProcessingStatus.CURATED
+        reciente = _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-reciente",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session, ingestion=reciente, product=producto, sale_format="retail"
+        )
+        reciente.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-nueva-2",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert '<option value="retail" selected>' in response.text
+        assert '<option value="wholesale" selected>' not in response.text
+
+
 class TestIngestaAutomatica:
     """`GET /curation` ingesta la bandeja antes de mostrar la cola — reemplaza
     el paso manual de correr `python -m saimc.ingestion` (docs/decisions.md).

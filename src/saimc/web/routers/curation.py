@@ -236,6 +236,60 @@ def _channel_province_id(db: Session, ingestion: RawIngestion) -> str | None:
     return str(channel.province_id)
 
 
+def _historical_defaults(
+    db: Session, source_reference: str, product_id: str
+) -> dict[str, str] | None:
+    """Escala de venta, envase y compra mínima de la última confirmación real
+    para este mismo (canal, producto), o `None` si no hay antecedente.
+
+    Idea del operador (docs/decisions.md, 2026-08-17): una mipyme repite el
+    mismo formato de venta anuncio tras anuncio (mismo saco, mismo mínimo de
+    compra) — estos tres campos nunca se infieren del texto del anuncio
+    (design.md, D4/D7: son juicio explícito del operador, no algo que la
+    capa de extracción pueda leer), pero la última vez que el operador los
+    confirmó para este canal y este producto es un prefill mucho mejor que
+    texto vacío. Reusa `_split_packaging`, el mismo helper que ya prellena
+    la corrección de un anuncio ya curado (`_values_from_price_history`).
+
+    Sin restricción por `SourceType` a propósito, a diferencia de
+    `_channel_province_id`: acá no se confía en ningún campo de ESTA
+    ingesta como certeza, es una búsqueda histórica por `source_reference`
+    tal cual esté — si para una fuente manual el operador tipeó el mismo
+    texto de canal de forma consistente, también se beneficia; si no fue
+    consistente, la búsqueda simplemente no encuentra nada, igual que hoy.
+    """
+    if not source_reference:
+        return None
+    parsed_product_id = _parse_uuid(product_id)
+    if parsed_product_id is None:
+        return None
+    stmt = (
+        select(PriceHistory)
+        .join(RawIngestion, PriceHistory.source_id == RawIngestion.id)
+        .where(
+            PriceHistory.product_id == parsed_product_id,
+            RawIngestion.source_reference == source_reference,
+        )
+        .order_by(PriceHistory.created_at.desc())
+        .limit(1)
+    )
+    ultimo = db.execute(stmt).scalars().first()
+    if ultimo is None:
+        return None
+
+    packaging_format, packaging_detail = _split_packaging(ultimo.packaging)
+    return {
+        "sale_format": ultimo.sale_format or "",
+        "packaging_format": packaging_format,
+        "packaging_detail": packaging_detail,
+        "min_purchase": (
+            str(ultimo.min_purchase_quantity)
+            if ultimo.min_purchase_quantity is not None
+            else ""
+        ),
+    }
+
+
 def _pilot_products(db: Session) -> list[Product]:
     """Los productos del conjunto foco, y solo esos.
 
@@ -498,6 +552,20 @@ def curation_queue(
     if channel_province_id is not None:
         for row in rows:
             row["province_id"] = channel_province_id
+
+    # Escala, envase y compra mínima desde la última confirmación real para
+    # este mismo (canal, producto) — docs/decisions.md, 2026-08-17. Por
+    # fila, no una vez por anuncio: cada fila puede ser un producto
+    # distinto, con su propio historial. Las filas en blanco de más no
+    # tienen `product_id` todavía, así que quedan afuera solas.
+    source_reference = ingestion.source_reference if ingestion is not None else None
+    if source_reference:
+        for row in rows:
+            if not row["product_id"]:
+                continue
+            defaults = _historical_defaults(db, source_reference, row["product_id"])
+            if defaults is not None:
+                row.update(defaults)
 
     global_values = {
         "original_text": recognized_text,
