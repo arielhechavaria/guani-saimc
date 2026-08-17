@@ -2623,3 +2623,66 @@ falta agregar `SAIMC_WAHA_BASE_URL`/`SAIMC_WAHA_API_KEY` al `.env` real y
 reiniciar `saimc.service`. Ninguna de las dos cosas se hizo en este slice a
 propósito — es un reinicio de un servicio con usuarios reales mirando el
 dashboard, y corresponde que lo dispare el operador, no que se decida solo.
+
+---
+
+## 2026-08-17 — /catalog: feedback visual del backfill, canales primero, y un bug real detrás de una falla "conocida"
+
+Contexto: dos pedidos de UI sobre el slice anterior. (1) El botón "Importar
+histórico" no daba ninguna señal de que el clic había registrado — un POST
+normal recarga la página sin feedback intermedio, y con WAHA de por medio
+(latencia variable) el operador no tenía forma de distinguir "está
+corriendo" de "no pasó nada". (2) Canales antes que Productos en la página,
+con un menú de anclas arriba para saltar entre las dos secciones — el
+operador entra a `/catalog` a administrar canales con más frecuencia que a
+dar de alta productos nuevos.
+
+Decisión: `catalog.html` suma su primer bloque de JavaScript propio para
+esto (vanilla, un solo `<script>`, sin librería — mismo criterio que el
+botón "Eliminar" de curaduría, 2026-08-08): al enviar el formulario de
+backfill, el botón se deshabilita y pasa a decir "Importando…". "Terminó"
+ya lo cubre el mensaje flash que aparece tras el redirect (slice anterior);
+no hacía falta agregar nada para eso. Las dos tarjetas (Canales, Productos)
+se reordenan y ganan `id` ancla; el encabezado suma enlaces `#canales` /
+`#productos` junto a los que ya llevaban a `/curation` y `/control`.
+
+Se investigó primero, no se asumió: el operador recordaba una decisión
+previa sobre no dejar entrar a `/curation` mensajes sin producto ni precio
+(ej. un saludo del canal con números de contacto). Buscado en
+`docs/decisions.md` y Engram: no existe tal decisión. Comportamiento real
+verificado en `curation.py`: `_oldest_pending` no filtra por si el mensaje
+tiene candidatos, así que ese tipo de mensaje sí llega y el operador tiene
+que abrirlo y descartarlo a mano — confirma el problema que el operador
+describía, aunque la causa no fuera la que recordaba. Queda pendiente de
+diseño (no de este slice): auto-descartar sin que nadie lo vea contradice
+"el operador corrige cada error" (la premisa misma de la curaduría manual,
+decisión cerrada 2 del `CLAUDE.md`); la alternativa —mantenerlo en la cola
+pero con un descarte de un clic cuando no hay candidatos— no rompe esa
+premisa. Se le preguntó al operador cuál prefiere.
+
+Se encontró y corrigió, de paso, la causa real de una falla que este mismo
+archivo venía reportando como "ajena, del entorno" en las dos entradas
+anteriores (`tests/test_whatsapp_webhook.py::test_sin_clave_configurada_rechaza_todo`,
+401 en vez de 503): no es ruido del entorno, es un bug de test.
+`monkeypatch.delenv` borra la variable de `os.environ`, pero
+`pydantic_settings.BaseSettings` con `env_file=".env"` lee el archivo del
+disco como fuente propia — si ese archivo real ya tiene la clave cargada
+(como pasó a mitad de este slice: apareció `SAIMC_WAHA_BASE_URL`/
+`SAIMC_WAHA_API_KEY` ya configuradas en el `.env` de producción, sin que
+nadie de este lado las escribiera — asumido como que el operador las cargó
+él mismo tras el reporte del slice anterior), `delenv` no alcanza para
+simular "sin configurar": hay que pisar la variable con `setenv("", ...)`.
+Corregido ahí y en el test nuevo de `SAIMC_WAHA_*` que iba a heredar el
+mismo bug.
+
+Descartado: escribir un sistema de tabs con mostrar/ocultar por JS (como
+tiene `/control` con las provincias). El menú de anclas resuelve "moverse
+rápido entre las dos secciones" con HTML puro; tabs reales son la respuesta
+correcta si algún día `/catalog` crece a más de dos secciones, no antes.
+
+Consecuencia: suite completa en verde por primera vez en varias sesiones
+(511/511) — las dos entradas previas de este archivo quedan con una falla
+ya resuelta, no hace falta anotarlas de nuevo. `.env` real: confirmar con el
+operador si ya cargó las variables de WAHA con intención de que el backfill
+corra en producción, o si fue sin darse cuenta de que hacía falta reiniciar
+`saimc.service` además.

@@ -220,8 +220,14 @@ class TestWebhookEndpoint:
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Mismo criterio que `require_operator`: sin secreto configurado, el
-        webhook cierra en falso en vez de aceptar sin verificar nada."""
-        monkeypatch.delenv("SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY", raising=False)
+        webhook cierra en falso en vez de aceptar sin verificar nada.
+
+        `setenv("", ...)`, no `delenv`: pydantic-settings lee `.env` del
+        disco como fuente propia — si ese archivo real ya tiene la clave
+        (como en este repo, para producción), borrar la variable de entorno
+        no alcanza para simular "sin configurar", hay que pisarla con vacío.
+        """
+        monkeypatch.setenv("SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY", "")
         get_settings.cache_clear()
         _canal(session)
         cuerpo = json.dumps({"from": "1@newsletter", "body": "x", "timestamp": 1}).encode()

@@ -19,6 +19,8 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h1 class="h4 mb-0">Catálogo del foco</h1>
       <div class="small">
+        <a href="#canales">Canales</a> · <a href="#productos">Productos piloto</a>
+        ·
         <a href="/curation">Cola de curaduría</a> · <a href="/control">Control</a>
       </div>
     </div>
@@ -30,81 +32,8 @@
     <div class="alert alert-danger small">{{ flash_error }}</div>
     {% endif %}
 
-    <div class="alert alert-secondary small">
-      La curaduría solo extrae precio de los productos marcados como piloto.
-      Un producto fuera del foco conserva sus precios históricos y sigue en el
-      catálogo; lo único que no puede es recibir precios nuevos.
-      <strong>{{ pilot_count }}</strong> en el foco ahora.
-    </div>
-
-    <!-- Productos ------------------------------------------------------- -->
-    <div class="card mb-4">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span>Productos</span>
-        <span class="text-muted small">{{ products|length }} en catálogo</span>
-      </div>
-
-      <div class="card-body border-bottom">
-        <form method="post" action="/catalog/products" class="row g-2 align-items-end">
-          <div class="col-md-5">
-            <label for="name" class="form-label small mb-1">Nombre del producto nuevo</label>
-            <input type="text" name="name" id="name" required class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-3">
-            <label for="category" class="form-label small mb-1">Categoría <span class="text-muted">(opcional)</span></label>
-            <input type="text" name="category" id="category" class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-2">
-            <label for="unit" class="form-label small mb-1">Unidad <span class="text-muted">(opcional)</span></label>
-            <input type="text" name="unit" id="unit" class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-2">
-            <button type="submit" class="btn btn-sm btn-primary w-100">Agregar al foco</button>
-          </div>
-          <div class="col-12">
-            <div class="form-text">Se agrega directamente como piloto: si lo cargás acá, lo querés medir.</div>
-          </div>
-        </form>
-      </div>
-
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle">
-          <thead>
-            <tr>
-              <th scope="col">Producto</th>
-              <th scope="col">Categoría</th>
-              <th scope="col" class="text-end">Observaciones</th>
-              <th scope="col" class="text-end">Foco</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for product, observations in products %}
-            <tr {% if not product.is_pilot %}class="saimc-off"{% endif %}>
-              <td>
-                {{ product.name }}
-                {% if product.is_pilot %}<span class="badge text-bg-primary ms-1">piloto</span>{% endif %}
-              </td>
-              <td class="text-muted small">{{ product.category }}</td>
-              <td class="text-end saimc-count">{{ observations }}</td>
-              <td class="text-end">
-                <form method="post" action="/catalog/products/{{ product.id }}/pilot">
-                  {% if product.is_pilot %}
-                  <button type="submit" class="btn btn-sm btn-outline-secondary">Sacar del foco</button>
-                  {% else %}
-                  <input type="hidden" name="is_pilot" value="on" />
-                  <button type="submit" class="btn btn-sm btn-outline-primary">Poner en el foco</button>
-                  {% endif %}
-                </form>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
     <!-- Canales --------------------------------------------------------- -->
-    <div class="card">
+    <div id="canales" class="card mb-4">
       <div class="card-header">Canales y grupos seguidos</div>
 
       <div class="card-body border-bottom">
@@ -204,6 +133,95 @@
       </div>
     </div>
 
+    <!-- Productos ------------------------------------------------------- -->
+    <div class="alert alert-secondary small">
+      La curaduría solo extrae precio de los productos marcados como piloto.
+      Un producto fuera del foco conserva sus precios históricos y sigue en el
+      catálogo; lo único que no puede es recibir precios nuevos.
+      <strong>{{ pilot_count }}</strong> en el foco ahora.
+    </div>
+
+    <div id="productos" class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Productos</span>
+        <span class="text-muted small">{{ products|length }} en catálogo</span>
+      </div>
+
+      <div class="card-body border-bottom">
+        <form method="post" action="/catalog/products" class="row g-2 align-items-end">
+          <div class="col-md-5">
+            <label for="name" class="form-label small mb-1">Nombre del producto nuevo</label>
+            <input type="text" name="name" id="name" required class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-3">
+            <label for="category" class="form-label small mb-1">Categoría <span class="text-muted">(opcional)</span></label>
+            <input type="text" name="category" id="category" class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-2">
+            <label for="unit" class="form-label small mb-1">Unidad <span class="text-muted">(opcional)</span></label>
+            <input type="text" name="unit" id="unit" class="form-control form-control-sm" />
+          </div>
+          <div class="col-md-2">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Agregar al foco</button>
+          </div>
+          <div class="col-12">
+            <div class="form-text">Se agrega directamente como piloto: si lo cargás acá, lo querés medir.</div>
+          </div>
+        </form>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead>
+            <tr>
+              <th scope="col">Producto</th>
+              <th scope="col">Categoría</th>
+              <th scope="col" class="text-end">Observaciones</th>
+              <th scope="col" class="text-end">Foco</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product, observations in products %}
+            <tr {% if not product.is_pilot %}class="saimc-off"{% endif %}>
+              <td>
+                {{ product.name }}
+                {% if product.is_pilot %}<span class="badge text-bg-primary ms-1">piloto</span>{% endif %}
+              </td>
+              <td class="text-muted small">{{ product.category }}</td>
+              <td class="text-end saimc-count">{{ observations }}</td>
+              <td class="text-end">
+                <form method="post" action="/catalog/products/{{ product.id }}/pilot">
+                  {% if product.is_pilot %}
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">Sacar del foco</button>
+                  {% else %}
+                  <input type="hidden" name="is_pilot" value="on" />
+                  <button type="submit" class="btn btn-sm btn-outline-primary">Poner en el foco</button>
+                  {% endif %}
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
+
+  <script>
+    // Feedback de que el backfill arrancó — la única señal que tenía el
+    // operador antes era esperar a que la página recargara sin saber si el
+    // clic había registrado (docs/decisions.md, 2026-08-17). "Terminó" ya lo
+    // cubre el mensaje flash que aparece tras el redirect.
+    document.querySelectorAll('form[action*="/backfill"]').forEach(function (form) {
+      form.addEventListener('submit', function () {
+        var boton = form.querySelector('button[type="submit"]');
+        if (boton) {
+          boton.disabled = true;
+          boton.textContent = 'Importando…';
+        }
+      });
+    });
+  </script>
 </body>
 </html>

@@ -377,8 +377,13 @@ class TestCatalogoBackfillHistorico:
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         canal = self._canal_automatizado(session)
-        monkeypatch.delenv("SAIMC_WAHA_BASE_URL", raising=False)
-        monkeypatch.delenv("SAIMC_WAHA_API_KEY", raising=False)
+        # setenv("", ...), no delenv: pydantic-settings lee `.env` del disco
+        # como fuente propia — este repo ya tiene las claves reales cargadas
+        # ahí para producción, así que borrar la variable de entorno no
+        # alcanza para simular "sin configurar" (mismo bug ya corregido en
+        # tests/test_whatsapp_webhook.py, 2026-08-17).
+        monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "")
+        monkeypatch.setenv("SAIMC_WAHA_API_KEY", "")
         get_settings.cache_clear()
 
         def _no_deberia_llamarse(*args: object, **kwargs: object) -> None:
