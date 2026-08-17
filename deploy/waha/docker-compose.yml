@@ -21,3 +21,8 @@ services:
       - ./sessions:/app/.sessions
     env_file:
       - .env
+    extra_hosts:
+      # SAIMC corre en el host (uvicorn directo, sin Docker), no en este
+      # contenedor. `127.0.0.1` en WHATSAPP_HOOK_URL apunta al loopback del
+      # propio contenedor y nunca llega — hay que usar este nombre especial.
+      - "host.docker.internal:host-gateway"

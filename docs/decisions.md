@@ -2458,3 +2458,38 @@ Consecuencia: `WHATSAPP_HOOK_HMAC_KEY` en `deploy/waha/.env` tiene que ser
 idéntica a `SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY` en el `.env` de SAIMC — son dos
 archivos en dos servicios distintos, nada los sincroniza solo. Queda a cargo
 del operador copiar el mismo valor a los dos lados.
+
+---
+
+## 2026-08-16 — `127.0.0.1` en `WHATSAPP_HOOK_URL` no llega: falta `host.docker.internal`
+
+Contexto: con WAHA levantado en el VPS y el webhook apuntado según la entrada
+anterior, no entraba ningún mensaje real — `/curation` seguía vacío. Revisando
+`journalctl -u saimc` sí se veían pedidos `POST /webhooks/whatsapp` recibidos,
+pero `raw_ingestions` no sumaba filas nuevas. SAIMC corre en el VPS como
+proceso `uvicorn` directo sobre el host (decisión 4 de `CLAUDE.md`, sin
+Docker); WAHA corre en un contenedor Docker en ese mismo VPS.
+
+Decisión: `deploy/waha/.env.example` cambia `WHATSAPP_HOOK_URL` de
+`https://tu-dominio-de-saimc/webhooks/whatsapp` a
+`http://host.docker.internal:8000/webhooks/whatsapp`, con comentario
+explicando por qué. `deploy/waha/docker-compose.yml` suma
+`extra_hosts: host.docker.internal:host-gateway` al servicio de WAHA.
+
+Causa raíz: `127.0.0.1` dentro de un contenedor es el loopback del propio
+contenedor, no el del host que lo aloja — apuntar el webhook ahí nunca podía
+llegar al `uvicorn` de SAIMC, sin importar que compartieran VPS. `docker-compose.yml`
+anterior no tenía forma de resolver el host desde adentro del contenedor;
+`host.docker.internal` es el nombre estándar de Docker para eso, pero exige
+declarar `extra_hosts` explícitamente en Linux (en Docker Desktop viene
+resuelto por default, en el motor de Linux no).
+
+Descartado: correr WAHA con `network_mode: host` para que comparta la pila de
+red del VPS directamente. Resuelve el mismo problema pero cede el
+aislamiento de red completo del contenedor por un solo webhook — más
+superficie de la que hace falta para el problema puntual.
+
+Consecuencia: sin verificar todavía contra un mensaje real después del fix —
+falta confirmar con un canal de prueba que el webhook llega. Si el operador
+alguna vez mueve SAIMC a un contenedor Docker propio, `host.docker.internal`
+deja de ser necesario y esta entrada queda obsoleta.
