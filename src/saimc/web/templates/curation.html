@@ -103,8 +103,16 @@
     </div>
     {% endif %}
 
-    <div class="card">
-      <div class="card-header">Datos del anuncio</div>
+    <!--
+      `<details>`, no `<div>`, cuando no hay candidatos (docs/decisions.md,
+      2026-08-17): mismo patrón que "Pegar anuncios" más arriba. Colapsado
+      por default en vez de sacado del todo — sigue alcanzable con un click
+      si el operador mira la evidencia y quiere cargar algo a mano, pero ya
+      no compite visualmente con el atajo de descarte de la tarjeta de
+      arriba.
+    -->
+    <details class="card" {% if not no_candidates %}open{% endif %}>
+      <summary class="card-header" style="cursor: pointer;">Datos del anuncio</summary>
       <div class="card-body">
         <form method="post" action="/curation/{{ ingestion.id }}" id="curation-form">
           {% from "_price_row_card.html" import price_row_card %}
@@ -157,7 +165,7 @@
           <button type="submit" form="discard-form" class="btn btn-outline-danger">Descartar</button>
         </div>
       </div>
-    </div>
+    </details>
 
     {% endif %}
   </div>

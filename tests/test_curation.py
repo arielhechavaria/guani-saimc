@@ -5,6 +5,7 @@ inyectar la misma fixture `session` (SQLite en memoria) de `tests/conftest.py`,
 sin abrir una conexión real ni tocar `conftest.py`.
 """
 
+import re
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
@@ -272,6 +273,29 @@ class TestCurationQueueGet:
         assert response.status_code == 200
         assert 'id="source_reference" value="Juan Pérez"' in response.text
 
+    def test_canal_origen_ya_conocido_gana_sobre_la_adivinanza_de_texto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """docs/decisions.md, 2026-08-17: el webhook y el backfill de WAHA
+        escriben `source_reference` con el nombre exacto del canal al
+        ingerir — un dato cierto que debe prellenar el campo sin depender de
+        que el texto del mensaje tenga el patrón "Nombre - fecha" que
+        `guess_source_reference` busca (y que un mensaje de WhatsApp normal
+        nunca trae, a diferencia de una captura de Facebook)."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-canal-origen-conocido",
+            original_text="pollo a 500 habana",  # sin el patrón "Nombre - fecha"
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="source_reference" value="Groupej Morales Surl"' in response.text
+
     def test_prellena_fecha_de_publicacion_desde_el_texto(
         self, client: TestClient, session: Session
     ) -> None:
@@ -501,11 +525,15 @@ class TestSinCandidatosAtajoDeUnClic:
             ProcessingStatus.DISCARDED
         )
 
-    def test_el_formulario_completo_sigue_disponible(
+    def test_el_formulario_completo_sigue_disponible_pero_colapsado(
         self, client: TestClient, session: Session
     ) -> None:
-        """El atajo es un agregado, no un reemplazo: si el operador mira la
-        evidencia y quiere cargar algo a mano de todos modos, puede."""
+        """El atajo no borra el formulario, lo colapsa (docs/decisions.md,
+        2026-08-17, corrigiendo el diseño anterior de este mismo día — el
+        operador pidió explícitamente que "Datos del anuncio" no compita
+        visualmente con el botón de descarte): sigue alcanzable con un
+        click si el operador mira la evidencia y quiere cargar algo a
+        mano, pero no aparece expandido por default."""
         _crear_producto(session, name="Pollo")
         _crear_raw_ingestion(
             session, hash_="hash-atajo-no-esconde-form", original_text="buenos días a todos"
@@ -515,6 +543,33 @@ class TestSinCandidatosAtajoDeUnClic:
 
         assert response.status_code == 200
         assert 'id="curation-form"' in response.text
+        etiqueta = re.search(
+            r'<details[^>]*>\s*<summary class="card-header"[^>]*>Datos del anuncio',
+            response.text,
+        )
+        assert etiqueta is not None
+        assert "open" not in etiqueta.group(0)
+
+    def test_con_candidatos_el_formulario_sigue_abierto_por_default(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Regresión: el colapso es solo para el caso sin candidatos — un
+        anuncio normal no debe empezar escondido."""
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        _crear_raw_ingestion(
+            session, hash_="hash-con-candidato-form-abierto", original_text="pollo a 500 habana"
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        etiqueta = re.search(
+            r'<details[^>]*>\s*<summary class="card-header"[^>]*>Datos del anuncio',
+            response.text,
+        )
+        assert etiqueta is not None
+        assert "open" in etiqueta.group(0)
 
 
 class TestProvinciaDelCanalSiempreManda:

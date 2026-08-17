@@ -436,7 +436,17 @@ def curation_queue(
     if ingestion is not None and ingestion.content_type == ContentType.TEXT:
         if ingestion.original_text:
             proposals = propose_all(ingestion.original_text, products, provinces)
-            source_reference_guess = guess_source_reference(ingestion.original_text) or ""
+            # `ingestion.source_reference` gana sobre la adivinanza de texto
+            # cuando ya viene cargado (docs/decisions.md, 2026-08-17): el
+            # webhook y el backfill de WAHA lo escriben con el nombre exacto
+            # del canal al ingerir — un dato cierto, no una heurística.
+            # `guess_source_reference` busca el patrón "Nombre - fecha" de
+            # capturas estilo Facebook (2026-08-08), que un mensaje de
+            # WhatsApp nunca trae, así que sin este orden el campo quedaba
+            # vacío pese a que el dato ya estaba en la fila.
+            source_reference_guess = (
+                ingestion.source_reference or guess_source_reference(ingestion.original_text) or ""
+            )
             guessed = guess_published_date(ingestion.original_text, ingestion.captured_at)
             published_date_guess = guessed.isoformat() if guessed else ""
     elif ingestion is not None and ingestion.original_text is None:
@@ -445,7 +455,9 @@ def curation_queue(
         recognized_text = ocr.transcribe(settings.raw_store_dir / ingestion.file_path)
         if recognized_text:
             proposals = propose_all(recognized_text, products, provinces)
-            source_reference_guess = guess_source_reference(recognized_text) or ""
+            source_reference_guess = (
+                ingestion.source_reference or guess_source_reference(recognized_text) or ""
+            )
             guessed = guess_published_date(recognized_text, ingestion.captured_at)
             published_date_guess = guessed.isoformat() if guessed else ""
 

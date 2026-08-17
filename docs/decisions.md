@@ -2764,3 +2764,53 @@ Consecuencia: un canal automatizado sin provincia fija sigue funcionando
 exactamente como antes (cae a `_match_province` sobre el texto, sin
 cambios) — el override solo entra en juego cuando el operador decide
 cargarlo. Suite completa: 525/525.
+
+---
+
+## 2026-08-17 — Canal origen usa el dato ya conocido, y el atajo sin candidatos colapsa el formulario
+
+Contexto: primer uso real en producción del slice anterior (34 anuncios de
+Groupej Morales Surl importados por backfill). Dos fallas que solo se ven
+con dato real, no con los sintéticos de TDD.
+
+**(1) "Canal origen" vacío pese a que el dato ya estaba.** `curation_queue()`
+prellenaba ese campo solo con `guess_source_reference(texto)` — la
+heurística del 2026-08-08 que busca el patrón "Nombre - Ayer a las H:MM" de
+capturas estilo Facebook. Un mensaje de WhatsApp normal nunca trae ese
+patrón, así que el campo quedaba vacío pese a que `ingestion.source_reference`
+YA tenía el nombre exacto del canal — el webhook y el backfill lo escriben
+ahí mismo al ingerir (`docs/decisions.md`, 2026-08-15 y 2026-08-17). El
+código nunca miraba ese campo para prellenar el formulario, solo lo
+guardaba en la fila.
+
+Decisión: `source_reference_guess = ingestion.source_reference or
+guess_source_reference(texto) or ""` — el dato cierto gana sobre la
+adivinanza, igual criterio que "el canal siempre manda" con la provincia
+(misma entrada de arriba, mismo día). La heurística de texto sigue viva
+para lo que no tiene ese campo ya escrito: bandeja, pegado.
+
+**(2) El atajo sin candidatos no ocultaba "Datos del anuncio".** El diseño
+original de esta misma sesión (entrada de arriba) dejaba el formulario
+completo visible al lado del botón de descarte, a propósito ("es un
+agregado, no un reemplazo"). Contra un caso real, el operador pidió lo
+contrario: que compita menos por la atención, no que conviva al lado.
+
+Decisión: se reemplaza `<div class="card">` por `<details class="card"
+{% if not no_candidates %}open{% endif %}>` — mismo patrón ya usado en
+"Pegar anuncios" de esta misma plantilla. Colapsado por default cuando no
+hay candidatos, abierto por default en el caso normal. No es un
+"ocultamiento" total: sigue a un click de distancia si el operador mira la
+evidencia y quiere cargar algo a mano — la diferencia con el diseño
+anterior es que ya no aparece expandido compitiendo con el botón de
+descarte.
+
+Descartado: sacar el formulario del todo cuando no hay candidatos. Se
+prefirió colapsarlo (recuperable) antes que eliminarlo (exigiría volver a
+cargar la página o un camino aparte para el caso raro de que el operador
+quiera agregar algo a mano sobre un anuncio que el motor leyó como vacío).
+
+Consecuencia: ambos fixes tenían test antes de tocar el template/router
+(`test_canal_origen_ya_conocido_gana_sobre_la_adivinanza_de_texto`,
+`test_el_formulario_completo_sigue_disponible_pero_colapsado` +
+regresión `test_con_candidatos_el_formulario_sigue_abierto_por_default`).
+Suite completa: 527/527.
