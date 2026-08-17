@@ -16,7 +16,14 @@ services:
     container_name: waha
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Atado a loopback a propósito (docs/decisions.md, 2026-08-17): sin el
+      # prefijo "127.0.0.1:", Docker publica en 0.0.0.0 — la API de WAHA
+      # (X-Api-Key) queda alcanzable desde internet. SAIMC ya le habla por
+      # 127.0.0.1 (SAIMC_WAHA_BASE_URL), no hace falta más que esto. Una
+      # regla de ufw sola no alcanza acá: Docker inserta sus propias reglas
+      # de iptables para puertos publicados y en la mayoría de las
+      # configuraciones evita el chain INPUT donde vive ufw.
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./sessions:/app/.sessions
     env_file:

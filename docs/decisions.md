@@ -2903,3 +2903,42 @@ como string y lo pasaba directo a un filtro contra una columna `Uuid` —
 `_parse_uuid()` (ya existente) lo resuelve. Suite completa: 533/533, con
 tests de no-mezcla entre canales y entre productos, y de "usa la
 confirmación más reciente" cuando hay más de un antecedente.
+
+---
+
+## 2026-08-17 — Puerto de WAHA atado a loopback, no a 0.0.0.0
+
+Contexto: revisión de cierre de jornada. Verificado con `ss -ltn` contra el
+VPS real: el puerto 3000 de WAHA seguía escuchando en `0.0.0.0`, alcanzable
+desde internet, pese a que `SAIMC_WAHA_BASE_URL` ya apunta a `127.0.0.1` del
+lado de SAIMC (entrada del backfill, arriba) — la mitigación quedó a medias:
+se corrigió cómo SAIMC *llama* a WAHA, pero no cómo WAHA *se expone*. La API
+key de WAHA (`X-Api-Key`) quedó además pegada en texto plano en esta misma
+sesión de trabajo, en un comando `curl` que el operador compartió para
+investigar el histórico de canales.
+
+Decisión: `deploy/waha/docker-compose.yml` pasa de `"3000:3000"` a
+`"127.0.0.1:3000:3000"` en `ports`. Sin el prefijo de IP, la sintaxis corta
+de Docker Compose publica en todas las interfaces por default — ese fue el
+error, no una regla de firewall faltante. Se corrigió también la copia real
+desplegada (`/home/ariel/waha/docker-compose.yml`, fuera del repo por
+diseño — no es infraestructura de SAIMC, ver entrada del 2026-08-15).
+
+Descartado: resolver esto solo con una regla de `ufw deny 3000`. Docker
+inserta sus propias reglas en la cadena `DOCKER` de `iptables` para cada
+puerto publicado, y en la configuración por default de Ubuntu esas reglas
+se evalúan antes que la cadena `INPUT` donde vive `ufw` — un `ufw deny`
+sobre un puerto que Docker publica en `0.0.0.0` típicamente no lo bloquea.
+Es un problema documentado de la interacción Docker+ufw, no una elección de
+diseño de este proyecto. La forma correcta es que Docker mismo no publique
+el puerto fuera de loopback, que es lo que hace este cambio.
+
+Consecuencia: el cambio en el archivo no tiene efecto hasta que alguien
+corra `docker compose up -d` para recrear el contenedor — commiteado sin
+aplicar a propósito, mismo criterio que las migraciones de esquema: el
+comando que reinicia un servicio en producción lo dispara el operador, no
+se decide solo. Queda pendiente, y es tarea del operador: recrear el
+contenedor, rotar `WAHA_API_KEY` (la que está en uso quedó expuesta en esta
+sesión) actualizando los dos `.env` reales (WAHA y SAIMC, tienen que
+coincidir), y reiniciar `saimc.service` después. Ninguno de esos tres pasos
+se automatizó — tocan servicios en producción y secretos reales.
