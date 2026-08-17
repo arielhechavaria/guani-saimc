@@ -77,6 +77,38 @@ class TestPrecio:
             # Caso real de OCR: separador de miles con coma y ruido de puntuación
             # pegado al número (el "." antes de "Sale" no debe colarse en el precio).
             ("$23,500.Sale 427.27Lb", Decimal("23500")),
+            # Precio en dos monedas ("USD o CUP"), sin ningún otro marcador —
+            # las tres líneas reales que motivaron el fix (Groupej Morales
+            # Surl, canal de WhatsApp del operador, 2026-08-17). Se toma el
+            # mayor de los dos números (CUP, por escala, no por posición —
+            # ver por qué en el caso "orden invertido" más abajo). Verificado
+            # a mano contra la tasa informal implícita del propio vendedor
+            # (~710 CUP/USD, consistente en las tres): 30885/43.5, 7810/11 y
+            # 688.7/0.97 dan ese mismo número.
+            ("🍚Arroz grano dorado 100 lb  43.5 o 30885", Decimal("30885")),
+            ("🦴 Carapacho de pollo: 10kg : 11  o 7810", Decimal("7810")),
+            # El punto suelto pegado al número de la izquierda y la "O"
+            # mayúscula son variantes reales del mismo canal, mismo mensaje.
+            ("🌟Arroz grano dorado 1 kg. 0,97 o 688,7", Decimal("688.7")),
+            ("Bicarbonato de sodio. 100 g 0,40. O 280", Decimal("280")),
+            # Orden invertido ("CUP o USD"): mismo canal, mismo producto,
+            # mensajes de otros días — el vendedor no es consistente. Si se
+            # asumiera "el de la derecha es CUP" (como el primer intento de
+            # este fix, corregido antes de commitear tras medir contra más
+            # mensajes reales), estas tres darían 43.5, 23.5 y 0.97 — el lado
+            # USD tomado como si fuera CUP.
+            ("🍚Arroz Grano Dorado 100 lb : 🤑30885 o 43.5", Decimal("30885")),
+            ("🍚Arroz Argentino  25 kg : 🤑16685 o 23.5", Decimal("16685")),
+            ("🍚Arroz Grano Dorado  1Kg: 🤑688.7 o 0.97", Decimal("688.7")),
+            # Negativo: "o" es letra normal de "Jugo", sin dígitos pegados a
+            # los dos lados — no debe confundirse con el patrón de arriba, y
+            # el precio real sigue viniendo del "a" de siempre.
+            ("Jugo de tomate a 180", Decimal("180")),
+            # Límite deliberadamente fuera de alcance (docs/decisions.md,
+            # 2026-08-17): con moneda ya marcada explícita, gana el camino
+            # viejo — precio y moneda quedan consistentes entre sí (25 USD),
+            # en vez de forzar el lado CUP sin forzar también la moneda.
+            ("Cemento - 25 Usd o 17175", Decimal("25")),
         ],
     )
     def test_casos(
@@ -99,6 +131,13 @@ class TestMoneda:
             ("50 mlc", "MLC"),
             ("30 eur", "EUR"),
             ("100 mn", "CUP"),  # "moneda nacional", jerga habitual para CUP
+            # Precio en dos monedas: ya venía en CUP por default (sin marca
+            # explícita) antes de este fix — lo nuevo es que ahora el precio
+            # que la acompaña es el correcto, no None. Ver TestPrecio.
+            ("🍚Arroz grano dorado 100 lb  43.5 o 30885", "CUP"),
+            # Límite fuera de alcance (ver TestPrecio): con "Usd" explícito,
+            # la moneda sigue siendo la del número que de verdad se devuelve.
+            ("Cemento - 25 Usd o 17175", "USD"),
         ],
     )
     def test_casos(

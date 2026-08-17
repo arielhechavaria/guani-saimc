@@ -2493,3 +2493,65 @@ Consecuencia: sin verificar todavía contra un mensaje real después del fix —
 falta confirmar con un canal de prueba que el webhook llega. Si el operador
 alguna vez mueve SAIMC a un contenedor Docker propio, `host.docker.internal`
 deja de ser necesario y esta entrada queda obsoleta.
+
+---
+
+## 2026-08-17 — `_extract_price` reconoce el precio en dos monedas de los canales de La Habana
+
+Contexto: el webhook de WAHA (entrada anterior) ya está entregando mensajes reales
+— 3 `raw_ingestions` de "Groupej Morales Surl" en la cola. Ese canal publica su
+catálogo diario completo en un formato que `_extract_price` no reconocía:
+`"43.5 o 30885"` (43.5 USD, o —al tipo de cambio propio del vendedor— 30885
+CUP). Verificado directo contra `_extract_price`: matchea el producto pero
+`price=None`. Medido contra los 96 mensajes reales del canal (vía
+`GET /channels/{id}/messages/preview` de la API de WAHA, ver hallazgo de
+Engram del mismo día): sin este fix, el backfill de histórico que motivó la
+medición rendía **0 filas de precio piloto** sobre 37 textos únicos con
+Arroz y Pollo mencionados explícitamente.
+
+Decisión: nuevo regex `_DUAL_PRICE_TWO_CURRENCIES_RE` que captura los dos
+números separados por "o"/"O" (tolera el punto suelto que a veces queda
+pegado al número de la izquierda: `"0,40. O 280"`). `_extract_price` toma
+**el mayor de los dos**, no una posición fija. Se intentó primero "el de la
+derecha" (falso: los tres casos reales que motivaron el fix son
+consistentemente USD-izquierda/CUP-derecha) pero medir contra más mensajes
+del mismo canal encontró el mismo producto, incluso el mismo día, publicado
+también como `"30885 o 43.5"` — CUP primero. El vendedor no es consistente en
+el orden; la brecha de escala entre USD y CUP en este mercado (~700:1,
+medida contra el propio canal: 30885/43.5, 7810/11, 688.7/0.97 dan el mismo
+~710) es estructural y no depende de cómo lo tipeó cada vez. Se toma el lado
+CUP —no el USD, aunque el motor podría "convertir" con la tasa de elToque—
+porque exige cero tasa externa: es el número que el comprador paga tal cual,
+y no depende de que la tasa informal del vendedor coincida con la fuente de
+conversión de SAIMC ese día (mismo principio que ya fijó CUP como moneda base
+en la entrada del 2026-08-06 sobre tipo de cambio).
+
+La regla nueva solo se aplica cuando la línea no trae ya una marca de moneda
+explícita (`_extract_currency_explicit(text) is None`): con marca explícita
+("25 Usd o 17175"), gana el camino viejo (`_PRICE_BEFORE_CURRENCY_RE`), que
+da precio y moneda como pareja consistente (25, USD). Forzar el lado CUP ahí
+sin también forzar la moneda habría dejado precio=17175 con moneda=USD,
+contradictorio entre sí.
+
+Descartado: resolver también el caso de precio "pelado" sin ningún marcador
+—ni `$`, ni `a`, ni moneda, ni el patrón de dos monedas de esta entrada—,
+que aparece con mucha frecuencia en el mismo canal fuera de la sección de
+abarrotes (`"Vinagre claro 1L➔ 260"`, `"Mayonesa 960g. 2200"`). Se descarta
+por ahora: sin ningún marcador que lo distinga, la única señal disponible es
+"último número de la línea", que produce falsos positivos contra cualquier
+cantidad sin unidad reconocida (`_UNIT_WORDS` no incluye "g", "ml" ni "l" —
+gap aparte, tampoco resuelto acá). Generalizar sin esa distinción es
+exactamente el tipo de sobreingeniería que este proyecto evita por regla.
+También se descartó ampliar `_UNIT_WORDS` en el mismo slice: no lo pedía el
+hallazgo original (Arroz/Pollo con marcador "o") y mezclarlo hubiera hecho
+más difícil aislar cuál cambio explica cuál resultado.
+
+Consecuencia: remedido después del fix contra los mismos 96 mensajes reales
+de "Groupej Morales Surl": 25 filas de precio piloto (antes 0), todas
+verificadas en rango CUP coherente (Arroz: 688.7–30885; Pollo: 7810 — sin
+ningún valor por debajo de 100 colado del lado USD). Los otros dos
+productos piloto de la sección de abarrotes de ese canal (Aceite, Azúcar
+blanca) no aparecieron en esta muestra — no hay evidencia todavía de si el
+canal los vende. Casos de prueba en `tests/test_extraction.py::TestPrecio`
+y `TestMoneda`, con las líneas reales (orden normal e invertido) más el
+límite de moneda-explícita como regresión.

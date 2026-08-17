@@ -99,6 +99,20 @@ _PRICE_BEFORE_CURRENCY_RE = re.compile(
 # usarse para CUP también— por eso esto solo ubica el número, la moneda la
 # sigue decidiendo `_extract_currency` por separado.
 _PRICE_DOLLAR_RE = re.compile(r"\$\s*(\d[\d.,]*)")
+# Cuarta pista, la más específica: precio en dos monedas para el mismo ítem
+# ("43.5 o 30885" = 43.5 USD, o —al tipo de cambio propio del vendedor—
+# 30885 CUP). Patrón real de los canales de La Habana que publican catálogo
+# diario completo así, sin ningún otro marcador (Groupej Morales Surl,
+# verificado 2026-08-17 contra 96 mensajes reales del canal). Los DOS
+# números se capturan porque el orden NO es confiable: el mismo canal, mismo
+# producto, escribe unos días "USD o CUP" y otros "CUP o USD" ("30885 o
+# 43.5" — CUP primero, visto en un mensaje real distinto del mismo canal).
+# `_extract_price` se queda con el mayor de los dos, no con una posición fija
+# — ver esa función para el motivo (la escala, no el orden, es lo que
+# distingue USD de CUP en este mercado). El separador "o"/"O" tolera el
+# punto suelto que a veces queda pegado al número de la izquierda ("0,40. O
+# 280") porque `_normalize_number` ya sabe recortarlo (`rstrip(".,")`).
+_DUAL_PRICE_TWO_CURRENCIES_RE = re.compile(r"(\d[\d.,]*)\s*[oO]\s*(\d[\d.,]*)")
 
 # Unidades conocidas para cantidad. "cajas"/"caja" antes que las demás no
 # hace falta por backtracking de regex, pero se deja explícito por claridad.
@@ -320,6 +334,28 @@ def _normalize_number(raw: str) -> Decimal | None:
 
 
 def _extract_price(text: str) -> Decimal | None:
+    # El precio en dos monedas gana con prioridad, pero solo cuando la línea
+    # no trae ya una marca de moneda explícita ("25 Usd o 17175"): ahí el
+    # número de la izquierda y su moneda ya son una pareja consistente por
+    # `_PRICE_BEFORE_CURRENCY_RE` más abajo, y forzar el lado CUP sin también
+    # forzar la moneda dejaría precio y moneda contradiciéndose entre sí.
+    # Ese caso queda deliberadamente fuera de este slice (docs/decisions.md,
+    # 2026-08-17).
+    dual_match = _DUAL_PRICE_TWO_CURRENCIES_RE.search(text)
+    if dual_match is not None and _extract_currency_explicit(text) is None:
+        lado_a = _normalize_number(dual_match.group(1))
+        lado_b = _normalize_number(dual_match.group(2))
+        # El mayor de los dos es el CUP, sin importar de qué lado del "o"
+        # cayó: la brecha de escala entre USD y CUP en este mercado (~700:1,
+        # medida contra el propio canal) es varios órdenes de magnitud más
+        # ancha que cualquier variación real de precio entre dos vendedores.
+        # Asumir una posición fija ("el de la derecha") se probó falso contra
+        # datos reales del mismo canal: unos días escribe "USD o CUP" y otros
+        # "CUP o USD" para el mismo producto (ver comentario del regex).
+        candidatos = [v for v in (lado_a, lado_b) if v is not None]
+        if candidatos:
+            return max(candidatos)
+
     match = (
         _PRICE_AFTER_A_RE.search(text)
         or _PRICE_BEFORE_CURRENCY_RE.search(text)
