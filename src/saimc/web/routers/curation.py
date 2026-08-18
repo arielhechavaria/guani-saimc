@@ -300,8 +300,22 @@ def _historical_defaults(
     tal cual esté — si para una fuente manual el operador tipeó el mismo
     texto de canal de forma consistente, también se beneficia; si no fue
     consistente, la búsqueda simplemente no encuentra nada, igual que hoy.
+
+    NO aplica a grupos de WhatsApp (2026-08-18). El razonamiento entero
+    descansa en que el `source_reference` identifica a UN vendedor, que es
+    cierto en un canal —el nombre del canal es la mipyme— y falso en un
+    grupo, donde es el nombre del mercado y adentro conviven muchos
+    vendedores. Prellenar ahí heredaría el saco de uno al anuncio de otro:
+    dato plausible, y por eso confirmable sin notarlo. Vacío es mejor. Lo
+    que lo reabre es guardar la identidad del emisor (`participant`, que
+    WAHA ya manda) en `raw_ingestions` — cambio de esquema, slice aparte.
     """
     if not source_reference:
+        return None
+    origen = db.execute(
+        select(Channel).where(Channel.name == source_reference)
+    ).scalar_one_or_none()
+    if origen is not None and origen.is_whatsapp_group:
         return None
     parsed_product_id = _parse_uuid(product_id)
     if parsed_product_id is None:

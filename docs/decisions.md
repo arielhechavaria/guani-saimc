@@ -2994,3 +2994,65 @@ con el elemento que se muestra. Si algún día molesta, el arreglo es acotar
 la ventana, no volver al filtro en ingesta. Queda fuera de alcance y sin
 hacer: mostrarle al operador cuántos pendientes del foco le quedan, que hoy
 no se distingue del total en `_status_counts`. Suite completa: 544/544.
+
+## 2026-08-18 — Los grupos de WhatsApp entran por su propio endpoint
+
+Contexto: la ingesta automatizada solo contemplaba canales de WhatsApp
+(`…@newsletter`). El operador quiso expandirla a grupos (`…@g.us`), donde vive
+buena parte del mercado informal. El registro no era el problema: el webhook
+(`parse_message`) matchea `Channel.external_id` contra el `from` del mensaje
+sin mirar el sufijo del JID, y WAHA manda el evento `message` para grupos
+igual que para canales, así que un grupo dado de alta con su JID ya ingresaba
+en vivo sin tocar código. El backfill sí estaba atado: pegaba siempre a
+`/api/{s}/channels/{id}/messages/preview`, que no sirve para un JID de grupo.
+
+Medición contra la instancia real (2026-08-18), porque la forma de un endpoint
+de WAHA no se supone, se mide — mismo criterio que con canales el 2026-08-17:
+
+- Grupos responden en `/api/{s}/chats/{id}/messages`, y cada entrada es el
+  objeto de mensaje **plano**, sin el envoltorio `{"message", "reactions"}` del
+  endpoint de canales. `parse_message` los lee sin desenvolver nada.
+- No tienen el techo de 100 de los canales: `limit=1000` trajo 344 mensajes en
+  17s sin tumbar la sesión, contra los 172s y la sesión caída que costó
+  `limit=500` en un canal.
+- Traen un campo que un canal no tiene: `participant`, el emisor individual,
+  como LID seudónimo (`…@lid`), no como teléfono.
+- La señal varía muchísimo entre grupos: de 173 mensajes con texto sobre 200 en
+  uno, a 3 sobre 200 en otro que publica solo fotos.
+
+Decisión: el sufijo del JID rutea endpoint y parser en `fetch_channel_history`.
+Se agrega `parse_group_history` (forma plana) al lado de `parse_history` (forma
+envuelta), y `Platform.WHATSAPP_GROUP` para que el operador pueda etiquetar la
+fila — descripción, no ruteo: el sufijo lo escribe WhatsApp, la plataforma la
+tipea una persona, y cuando pueden contradecirse gana el que no se equivoca.
+Sin migración: `platform` es `String(30)` y el enum vive en Python.
+
+Se apaga el prellenado de escala/envase/compra-mínima cuando el origen es un
+grupo. Ese prellenado (2026-08-17) descansa entero en que `source_reference`
+identifique a UN vendedor, cierto en un canal —el nombre del canal es la
+mipyme— y falso en un grupo, donde es el nombre del mercado y adentro conviven
+muchos vendedores: se midieron 27 emisores distintos en uno solo. Heredar el
+saco de uno al anuncio de otro no rompe nada visible, escribe dato plausible en
+el formulario, y por eso mismo es confirmable sin notarlo.
+
+Descartado: rutear por `Platform` en vez de por el sufijo del JID (deja que un
+error de tipeo del operador mande la consulta al endpoint equivocado).
+Descartado también un `SourceType.WHATSAPP_GROUP` nuevo: `WHATSAPP_CHANNEL`
+significa «llegó por WAHA», y partirlo obligaba a ensanchar
+`_channel_province_id`, que hoy funciona para grupos gratis — y es más útil ahí
+que en un canal, porque un grupo de mercado suele ser provincial. Y se descartó
+subir el límite de 100 para grupos aprovechando que la API lo permite: el cuello
+de botella no es WAHA, es la hora diaria de curaduría, y un solo grupo activo
+midió 200 mensajes en un día.
+
+Consecuencia: un grupo se da de alta igual que un canal, con su JID `@g.us`, y
+queda con webhook en vivo y botón «Importar histórico» sin nada más. Queda
+pendiente y explícitamente fuera de este slice guardar `participant` en
+`raw_ingestions` — es la identidad del vendedor que `spec.md` §6.1 ya previó
+para reputación, y es lo único que permite reabrir el prellenado dentro de un
+grupo; toca esquema, así que va por el flujo completo. Sigue sin resolverse el
+volumen: la cola ordena por aporte al foco pero no filtra, y varios grupos
+activos generan más anuncios por día de los que una hora de curaduría absorbe.
+Verificado end-to-end contra la instancia real: 86 mensajes con texto de un
+grupo activo, 93 del canal ya en producción por su endpoint viejo. Suite
+completa: 555/555.

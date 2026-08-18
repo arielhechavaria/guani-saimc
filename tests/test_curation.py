@@ -818,6 +818,107 @@ class TestPrellenoDesdeHistorialDelCanal:
         assert response.status_code == 200
         assert '<option value="wholesale" selected>' not in response.text
 
+    def test_grupo_no_prellena_porque_el_antecedente_puede_ser_de_otro_vendedor(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """En un GRUPO el `source_reference` es el nombre del mercado, no el
+        del vendedor: se midieron hasta 27 emisores distintos en un mismo
+        grupo (2026-08-18). Heredar el saco del vendedor A al anuncio del
+        vendedor B escribiría dato plausible pero falso en el formulario, que
+        el operador puede confirmar sin notarlo. Vacío es mejor que eso."""
+        producto = _crear_producto(session, name="Arroz")
+        grupo = Channel(
+            name="Mercado Santiago 2.3",
+            platform=Platform.WHATSAPP_GROUP,
+            external_id="120363412268792398@g.us",
+            is_active=True,
+        )
+        session.add(grupo)
+        session.commit()
+        vieja = _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-grupo-vieja",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Mercado Santiago 2.3",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session,
+            ingestion=vieja,
+            product=producto,
+            sale_format="wholesale",
+            packaging="Saco",
+            min_purchase_quantity=Decimal("5"),
+        )
+        vieja.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-grupo-nueva",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Mercado Santiago 2.3",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        # El producto sí se propone: eso sale del texto, no del historial.
+        assert f'value="{producto.id}" selected' in response.text
+        # Escala, envase y mínimo quedan vacíos: son del vendedor, y en un
+        # grupo no sabemos cuál vendedor es.
+        assert '<option value="wholesale" selected>' not in response.text
+        assert '<option value="saco" selected>' not in response.text
+        assert 'id="min_purchase_0" value=""' in response.text
+
+    def test_canal_automatizado_si_prellena_aunque_exista_la_guarda_de_grupo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La guarda es específica del grupo: un canal `@newsletter` tiene un
+        solo emisor, así que el antecedente sigue siendo suyo."""
+        producto = _crear_producto(session, name="Arroz")
+        canal = Channel(
+            name="Groupej Morales Surl",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="120363419630368180@newsletter",
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+        vieja = _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-canal-registrado-vieja",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session,
+            ingestion=vieja,
+            product=producto,
+            sale_format="retail",
+            packaging="Saco",
+            min_purchase_quantity=Decimal("1"),
+        )
+        vieja.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-historial-canal-registrado-nueva",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert '<option value="retail" selected>' in response.text
+        assert '<option value="saco" selected>' in response.text
+        assert 'id="min_purchase_0" value="1.000"' in response.text
+
     def test_usa_la_confirmacion_mas_reciente(
         self, client: TestClient, session: Session
     ) -> None:

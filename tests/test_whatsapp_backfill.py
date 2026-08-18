@@ -3,16 +3,23 @@
 `parse_history` se prueba con la forma exacta que devolvió la instancia real
 del operador contra `.../messages/preview` (Groupej Morales Surl, verificado
 2026-08-17 — no es la forma que documenta WAHA, que muestra el objeto de
-mensaje sin envoltorio). El transporte (`fetch_channel_history`) se prueba
-con `httpx.MockTransport`, nunca con un socket real — mismo criterio que
-`tests/test_exchange_rate.py`.
+mensaje sin envoltorio). `parse_group_history` se prueba con la forma que
+devolvió la misma instancia contra `/chats/{id}/messages` (verificado
+2026-08-18): objeto de mensaje plano, SIN envoltorio — son dos endpoints
+distintos con dos formas distintas. El transporte (`fetch_channel_history`)
+se prueba con `httpx.MockTransport`, nunca con un socket real — mismo
+criterio que `tests/test_exchange_rate.py`.
 """
 
 from datetime import UTC, datetime
 
 import httpx
 
-from saimc.ingestion.whatsapp_backfill import fetch_channel_history, parse_history
+from saimc.ingestion.whatsapp_backfill import (
+    fetch_channel_history,
+    parse_group_history,
+    parse_history,
+)
 
 # --- parse_history ------------------------------------------------------------
 
@@ -98,6 +105,103 @@ class TestParseHistory:
 
     def test_lista_vacia(self) -> None:
         assert parse_history([]) == []
+
+
+# --- parse_group_history ------------------------------------------------------
+
+
+class TestParseGroupHistory:
+    """Forma real de `/chats/{id}/messages`, medida contra la instancia del
+    operador el 2026-08-18: el objeto de mensaje viene PLANO en la lista, sin
+    el envoltorio `{"message", "reactions"}` del endpoint de canales."""
+
+    def test_entrada_plana_con_texto_se_parsea(self) -> None:
+        entradas = [
+            {
+                "from": "120363406372093216@g.us",
+                "fromMe": False,
+                "body": "Aceite girasol 1L a 1200",
+                "timestamp": 1787064971,
+                "hasMedia": False,
+                "participant": "225318866522137@lid",
+            }
+        ]
+
+        resultado = parse_group_history(entradas)
+
+        assert len(resultado) == 1
+        assert resultado[0].text == "Aceite girasol 1L a 1200"
+        # El `from` de un grupo es el JID del GRUPO, no el del emisor: es lo
+        # que el webhook matchea contra `Channel.external_id`.
+        assert resultado[0].chat_id == "120363406372093216@g.us"
+        assert resultado[0].timestamp == datetime.fromtimestamp(1787064971, tz=UTC)
+
+    def test_entrada_de_solo_imagen_sin_caption_se_descarta(self) -> None:
+        """Mayoritario en varios grupos medidos — «MIPYME LA GRANDEZA» tenía
+        183 de 200 mensajes en imagen sin texto."""
+        entradas = [
+            {
+                "from": "1@g.us",
+                "fromMe": False,
+                "body": "",
+                "timestamp": 1787064971,
+                "hasMedia": True,
+            }
+        ]
+
+        assert parse_group_history(entradas) == []
+
+    def test_mensaje_propio_se_descarta(self) -> None:
+        """En grupos pesa mucho más que en canales: «Mercado Santiago 2.3»
+        tenía 100 de 200 mensajes del propio operador (medido 2026-08-18)."""
+        entradas = [
+            {
+                "from": "1@g.us",
+                "fromMe": True,
+                "body": "gracias, lo llevo",
+                "timestamp": 1787064971,
+            }
+        ]
+
+        assert parse_group_history(entradas) == []
+
+    def test_entrada_envuelta_de_canal_no_se_parsea_como_grupo(self) -> None:
+        """Guarda del ruteo: si por error se le pasa la forma del endpoint de
+        canales, no hay `from` en el nivel de arriba y la entrada se descarta
+        en vez de colarse a medio parsear."""
+        entradas = [
+            {
+                "message": {
+                    "from": "1@newsletter",
+                    "fromMe": False,
+                    "body": "Arroz a 30885",
+                    "timestamp": 1786719527,
+                },
+                "reactions": {},
+            }
+        ]
+
+        assert parse_group_history(entradas) == []
+
+    def test_entrada_sin_forma_reconocible_se_descarta_sin_romper_el_lote(self) -> None:
+        entradas = [
+            "esto no es un dict",
+            {"body": "sin from"},
+            {
+                "from": "1@g.us",
+                "fromMe": False,
+                "body": "único mensaje válido",
+                "timestamp": 1787064971,
+            },
+        ]
+
+        resultado = parse_group_history(entradas)
+
+        assert len(resultado) == 1
+        assert resultado[0].text == "único mensaje válido"
+
+    def test_lista_vacia(self) -> None:
+        assert parse_group_history([]) == []
 
 
 # --- fetch_channel_history ----------------------------------------------------
@@ -208,6 +312,104 @@ class TestFetchChannelHistory:
             "clave",
             "default",
             "1@newsletter",
+            timeout=5.0,
+            transport=httpx.MockTransport(handler),
+        )
+
+        assert resultado is None
+
+
+# --- ruteo canal vs grupo -----------------------------------------------------
+
+
+class TestRuteoPorTipoDeJid:
+    """El sufijo del JID decide endpoint y parser (medido 2026-08-18): WhatsApp
+    ya declara el tipo, así que no hay nada que el operador pueda tipear mal."""
+
+    def test_jid_de_grupo_usa_el_endpoint_de_chats_y_la_forma_plana(self) -> None:
+        capturado: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            capturado["url"] = str(request.url)
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "from": "120363406372093216@g.us",
+                        "fromMe": False,
+                        "body": "Pollo a 500",
+                        "timestamp": 1787064971,
+                        "participant": "225318866522137@lid",
+                    }
+                ],
+            )
+
+        resultado = fetch_channel_history(
+            "http://127.0.0.1:3000",
+            "clave",
+            "default",
+            "120363406372093216@g.us",
+            timeout=5.0,
+            transport=httpx.MockTransport(handler),
+        )
+
+        assert resultado is not None
+        assert len(resultado) == 1
+        assert resultado[0].text == "Pollo a 500"
+        assert "/api/default/chats/120363406372093216@g.us/messages" in str(capturado["url"])
+        assert "/channels/" not in str(capturado["url"])
+
+    def test_jid_de_canal_sigue_usando_el_endpoint_de_canales(self) -> None:
+        """Regresión: el ruteo nuevo no debe mover de lugar a los canales, que
+        ya funcionan en producción."""
+        capturado: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            capturado["url"] = str(request.url)
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "message": {
+                            "from": "1@newsletter",
+                            "fromMe": False,
+                            "body": "Arroz a 30885",
+                            "timestamp": 1786719527,
+                        },
+                        "reactions": {},
+                    }
+                ],
+            )
+
+        resultado = fetch_channel_history(
+            "http://127.0.0.1:3000",
+            "clave",
+            "default",
+            "1@newsletter",
+            timeout=5.0,
+            transport=httpx.MockTransport(handler),
+        )
+
+        assert resultado is not None
+        assert len(resultado) == 1
+        assert resultado[0].text == "Arroz a 30885"
+        assert "/api/default/channels/1@newsletter/messages/preview" in str(capturado["url"])
+
+    def test_grupo_con_sesion_caida_devuelve_none(self) -> None:
+        """Misma política de error que el endpoint de canales: 200 con un dict
+        de error en vez de una lista no es histórico vacío, es fallo."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"error": "Session status is not as expected.", "session": "default"},
+            )
+
+        resultado = fetch_channel_history(
+            "http://127.0.0.1:3000",
+            "clave",
+            "default",
+            "1@g.us",
             timeout=5.0,
             transport=httpx.MockTransport(handler),
         )

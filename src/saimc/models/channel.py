@@ -29,9 +29,17 @@ class Platform(StrEnum):
     Determina qué se puede hacer con él más adelante: los canales de WhatsApp
     y los grupos de Telegram tienen caminos de automatización distintos, y
     Facebook hoy no tiene ninguno. En Fase 0 es puramente descriptivo.
+
+    `WHATSAPP_GROUP` entró el 2026-08-18 para que el operador pueda distinguir
+    en `/catalog` un grupo de un canal. Es descripción, no ruteo: el backfill
+    decide contra qué endpoint de WAHA pregunta mirando el sufijo del
+    `external_id` (`@g.us` vs `@newsletter`), que lo escribe WhatsApp y no se
+    puede tipear mal. La columna es `String(30)`, así que agregar un valor no
+    necesita migración.
     """
 
     WHATSAPP_CHANNEL = "whatsapp_channel"
+    WHATSAPP_GROUP = "whatsapp_group"
     TELEGRAM_GROUP = "telegram_group"
     FACEBOOK_GROUP = "facebook_group"
     OTHER = "other"
@@ -92,6 +100,23 @@ class Channel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
+
+    @property
+    def is_whatsapp_group(self) -> bool:
+        """Si esta fila es un grupo de WhatsApp, según el JID que manda WAHA.
+
+        Se pregunta al `external_id` y no a `platform` a propósito: el sufijo
+        lo escribe WhatsApp (`@g.us` grupo, `@newsletter` canal) y `platform`
+        lo tipea el operador. Cuando los dos podrían contradecirse, gana el
+        que no se puede equivocar. Mismo criterio que el ruteo de endpoint en
+        `saimc.ingestion.whatsapp_backfill`.
+
+        Importa porque un grupo tiene MUCHOS vendedores adentro (se midieron
+        27 emisores distintos en uno solo, 2026-08-18) mientras que un canal
+        tiene uno: todo lo que se infiera "del canal" y en realidad sea "del
+        vendedor" deja de valer en un grupo.
+        """
+        return bool(self.external_id) and self.external_id.endswith("@g.us")
 
     def __repr__(self) -> str:
         return f"Channel(name={self.name!r}, platform={self.platform}, active={self.is_active})"

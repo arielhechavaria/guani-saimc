@@ -1,15 +1,27 @@
-"""Backfill puntual del histórico de un canal de WhatsApp vía WAHA.
+"""Backfill puntual del histórico de un canal o grupo de WhatsApp vía WAHA.
 
 Disparador manual desde `/catalog` (docs/decisions.md, 2026-08-17): a
 diferencia del webhook (`saimc.web.routers.whatsapp_webhook`), que reacciona
 a mensajes nuevos uno por uno a medida que llegan, esto trae de una sola vez
-lo que WAHA ya tiene sincronizado de un canal — típicamente unos días a unas
-semanas, según cuánto publique ese canal en particular.
+lo que WAHA ya tiene sincronizado — típicamente unos días a unas semanas,
+según cuánto se publique en esa fuente en particular.
 
-Separa transporte (`fetch_channel_history`) de parseo puro (`parse_history`)
-por el mismo motivo que `saimc.exchange_rate.eltoque`: probar la política de
-error sin abrir un socket, y probar el parseo sin un cliente HTTP de por
-medio.
+WAHA expone canales y grupos por endpoints distintos, con formas de respuesta
+distintas (medido contra la instancia del operador, 2026-08-18):
+
+    canal (`…@newsletter`)  →  /api/{s}/channels/{id}/messages/preview
+                               cada entrada envuelta en {"message", "reactions"}
+    grupo (`…@g.us`)        →  /api/{s}/chats/{id}/messages
+                               cada entrada es el objeto de mensaje, plano
+
+El ruteo sale del sufijo del JID, no de `Channel.platform`: el sufijo lo
+escribe WhatsApp, la plataforma la tipea el operador. Cuando los dos podrían
+contradecirse, gana el que no se puede equivocar.
+
+Separa transporte (`fetch_channel_history`) de parseo puro (`parse_history`,
+`parse_group_history`) por el mismo motivo que `saimc.exchange_rate.eltoque`:
+probar la política de error sin abrir un socket, y probar el parseo sin un
+cliente HTTP de por medio.
 """
 
 from __future__ import annotations
@@ -20,12 +32,22 @@ import httpx
 
 from saimc.ingestion.whatsapp_webhook import ParsedMessage, parse_message
 
-# Techo real medido contra la instancia del operador (2026-08-17, 96 mensajes
-# — WAHA ignora en silencio `startCursor`/`endCursor`/`offset`: no hay forma
-# de paginar hacia atrás más allá de esto). No se expone como parámetro
-# configurable a propósito: no es una preferencia del operador, es lo que la
-# API da. Pedir más tampoco es gratis — `limit=500` tardó 172s y tumbó la
-# sesión de WAHA en producción; 100 se midió estable (~1s).
+# Sufijo del JID de un grupo de WhatsApp. Un canal termina en "@newsletter" y
+# un chat directo en "@c.us", pero acá solo interesa distinguir grupo del
+# resto: todo lo que no es grupo ya funciona contra el endpoint de canales.
+_GROUP_JID_SUFFIX = "@g.us"
+
+# Para CANALES es un techo de la API, no una preferencia: WAHA ignora en
+# silencio `startCursor`/`endCursor`/`offset`, así que no hay forma de paginar
+# hacia atrás más allá de esto (medido 2026-08-17, 96 mensajes). Pedir más
+# tampoco es gratis — `limit=500` tardó 172s y tumbó la sesión en producción.
+#
+# Para GRUPOS no hay techo de API: el endpoint devuelve todo lo que tenga
+# sincronizado (medido 2026-08-18: `limit=1000` trajo 344 mensajes en 17s sin
+# tumbar la sesión). Se reusa igual el mismo 100 porque el cuello de botella
+# real no es WAHA, es la hora diaria de curaduría del operador — un solo
+# grupo activo midió 200 mensajes en un día. Traer más de lo que se puede
+# curar no agrega dato, agrega cola.
 _HISTORY_LIMIT = 100
 
 
@@ -54,6 +76,31 @@ def parse_history(entries: list[Any]) -> list[ParsedMessage]:
     return [message for message in parsed if message is not None]
 
 
+def parse_group_history(entries: list[Any]) -> list[ParsedMessage]:
+    """Filtra y parsea entradas ya decodificadas de `/chats/{id}/messages`.
+
+    A diferencia del endpoint de canales, acá cada entrada YA es el objeto de
+    mensaje —sin envoltorio— y trae los mismos campos que `parse_message` lee
+    (`from`, `body`, `timestamp`, `fromMe`, `hasMedia`), verificado contra la
+    instancia real el 2026-08-18. Por eso no hay un `_parse_group_entry`: no
+    hay nada que desenvolver.
+
+    En un grupo, `from` es el JID del GRUPO —no el del emisor—, que es
+    justamente lo que el webhook matchea contra `Channel.external_id`. El
+    emisor individual viaja aparte en `participant` y hoy se descarta: usarlo
+    exige una columna nueva en `raw_ingestions` (identidad del vendedor para
+    reputación, `spec.md` §6.1), que es un cambio de esquema y va en su
+    propio slice.
+
+    Dos descartes pesan mucho más acá que en un canal, medidos el 2026-08-18:
+    los mensajes propios del operador (la mitad del lote en un grupo donde él
+    también escribe) y las imágenes sin caption (183 de 200 en un grupo que
+    publica solo fotos). Los dos ya los filtra `parse_message`.
+    """
+    parsed = (parse_message(entry) for entry in entries)
+    return [message for message in parsed if message is not None]
+
+
 def fetch_channel_history(
     base_url: str,
     api_key: str,
@@ -63,17 +110,28 @@ def fetch_channel_history(
     timeout: float,
     transport: httpx.BaseTransport | None = None,
 ) -> list[ParsedMessage] | None:
-    """Trae y parsea el histórico disponible de un canal.
+    """Trae y parsea el histórico disponible de un canal o grupo.
+
+    "Channel" acá es la fila de `channels` —que el modelo define como
+    «canales y grupos que el operador sigue»—, no el canal de difusión de
+    WhatsApp: el mismo `Channel` puede ser una cosa o la otra, y el sufijo de
+    su `external_id` decide contra qué endpoint se pregunta.
 
     `None` si la consulta falló de cualquier forma —red, status distinto de
-    200, o un cuerpo que no es la lista que este endpoint siempre
-    documenta— para que el llamador distinga "no se pudo consultar" de "se
+    200, o un cuerpo que no es la lista que estos endpoints siempre
+    documentan— para que el llamador distinga "no se pudo consultar" de "se
     consultó bien y no había nada nuevo" (lista vacía). Nunca levanta.
 
     `transport` es el seam de test (mismo patrón que `eltoque.fetch_rate`):
     en producción se deja en `None` y `httpx.Client` arma el transporte real.
     """
-    url = f"{base_url.rstrip('/')}/api/{session}/channels/{external_id}/messages/preview"
+    base = base_url.rstrip("/")
+    if external_id.endswith(_GROUP_JID_SUFFIX):
+        url = f"{base}/api/{session}/chats/{external_id}/messages"
+        parse = parse_group_history
+    else:
+        url = f"{base}/api/{session}/channels/{external_id}/messages/preview"
+        parse = parse_history
 
     try:
         with httpx.Client(transport=transport, timeout=timeout) as client:
@@ -96,4 +154,4 @@ def fetch_channel_history(
     if not isinstance(payload, list):
         return None
 
-    return parse_history(payload)
+    return parse(payload)
