@@ -2942,3 +2942,55 @@ contenedor, rotar `WAHA_API_KEY` (la que está en uso quedó expuesta en esta
 sesión) actualizando los dos `.env` reales (WAHA y SAIMC, tienen que
 coincidir), y reiniciar `saimc.service` después. Ninguno de esos tres pasos
 se automatizó — tocan servicios en producción y secretos reales.
+
+## 2026-08-18 — La cola de curaduría ordena por aporte al foco, no por antigüedad
+
+Contexto: el operador planteó que, al abrir la ingesta a grupos de WhatsApp
+(además de canales), el sistema debería intervenir con la lista piloto para
+no gastar su hora diaria en anuncios que no alimentan ninguna celda. La
+primera formulación fue filtrar en la ingesta —que un mensaje sin producto
+piloto no entre a `raw_ingestions`—, y eso contradice dos cosas ya cerradas:
+la entrada del 2026-08-17 («Atajo de un clic sin candidatos»), donde el
+propio operador eligió mantener todo en la cola porque «nada se descarta sin
+que alguien lo vea», y la inmutabilidad de la capa cruda (`spec.md` §6.1).
+Hay además un motivo que ninguna de las dos cubre: `is_pilot` cambia con un
+clic en /catalog, así que un filtro en ingesta perdería para siempre el
+histórico de un producto que entra al foco después. El problema real no
+estaba en qué entra, sino en el orden: `_oldest_pending` era FIFO puro por
+`captured_at`, y un anuncio de cemento del lunes se miraba antes que uno de
+arroz del martes.
+
+Decisión: `_oldest_pending` pasa a ser `_next_pending(db, products)`, que
+ordena los `PENDING` en tres niveles — `_FOCUS_MATCH` (el texto menciona un
+producto del foco), `_FOCUS_UNKNOWN` (imagen sin OCR, relevancia no
+averiguable sin transcribir) y `_FOCUS_NONE` (texto sin ningún producto del
+foco)— y dentro de cada nivel sigue mandando `captured_at`. El desempate por
+antigüedad sale de que `min()` devuelve el primer elemento de valor mínimo
+sobre una lista que el SQL ya trajo ordenada, sin ordenar por tupla. La
+señal es `mentions_any_product(text, products)`, nueva en
+`extraction/engine.py`: recorre línea por línea igual que `propose_all`
+—porque el `has_modifier` de `_match_product` calculado sobre el texto entero
+haría que un «hígado de pollo» en un renglón descarte el arroz limpio del
+siguiente— y no construye la propuesta completa, que para ordenar no hace
+falta. Ordena, no filtra: nada deja de entrar ni se descarta.
+
+Descartado: filtrar en la ingesta por lista piloto (motivos arriba). También
+se descartó congelar la relevancia en una columna de `raw_ingestions` al
+ingerir: ataría el orden a la lista piloto vigente el día de la captura, y
+justamente lo que se quiere es que un producto que entra al foco hoy suba
+solo los anuncios viejos que ya lo mencionaban, sin reprocesar nada. Y se
+descartó empujar el filtro a SQL con `ILIKE`: `_match_product` normaliza
+tildes de los dos lados y el piloto real «Azúcar blanca» las tiene, así que
+un `ILIKE` no matchearía «azucar blanca» sin depender de `unaccent`, una
+extensión de Postgres que los tests en SQLite no tienen.
+
+Consecuencia: `_next_pending` carga todos los `PENDING` en memoria en vez de
+un `LIMIT 1`, y corre la señal sobre cada uno en cada carga de `/curation`.
+Con la cola real de hoy (0 pendientes; 98 curados y 80 descartados
+históricos) y el volumen de Fase 0 es irrelevante —son comparaciones de
+substring sobre unos pocos miles de textos en el peor caso—, pero es el
+primer lugar del proyecto donde el costo crece con el tamaño de la cola y no
+con el elemento que se muestra. Si algún día molesta, el arreglo es acotar
+la ventana, no volver al filtro en ingesta. Queda fuera de alcance y sin
+hacer: mostrarle al operador cuántos pendientes del foco le quedan, que hoy
+no se distingue del total en `_status_counts`. Suite completa: 544/544.

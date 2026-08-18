@@ -435,6 +435,24 @@ def _match_product(text: str, products: Sequence[Product]) -> Product | None:
     return None
 
 
+def mentions_any_product(text: str, products: Sequence[Product]) -> bool:
+    """¿Algún renglón de este anuncio habla de un producto de `products`?
+
+    Señal barata de relevancia para ordenar la cola de curaduría por foco
+    (`docs/decisions.md`, 2026-08-18): responde la pregunta sin construir la
+    propuesta completa —sin precio, cantidad, moneda ni provincia—, que es lo
+    único que hace falta para decidir qué anuncio mirar primero.
+
+    Línea por línea, igual que `propose_all`, y no sobre el texto entero: el
+    `has_modifier` de `_match_product` se calcula sobre lo que recibe, así que
+    un "hígado de pollo" en un renglón descartaría también el arroz limpio del
+    renglón siguiente. Mirar cada línea por separado es exactamente lo que la
+    cola termina mostrando, así que la señal no puede prometer más ni menos
+    que eso.
+    """
+    return any(_match_product(line, products) is not None for line in text.splitlines())
+
+
 # Viñeta de lista ("4)", "4.", o un número suelto) que el OCR deja pegada
 # al principio de una oferta ("4) Azúcar blanca a 22500"). Sin recortarla,
 # terminaba siendo parte del nombre del producto nuevo dado de alta —causa

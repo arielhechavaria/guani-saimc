@@ -710,7 +710,7 @@ class TestPrellenoDesdeHistorialDelCanal:
             packaging="Saco",
             min_purchase_quantity=Decimal("1"),
         )
-        # `_oldest_pending` elige por `captured_at` entre los `PENDING` —
+        # `_next_pending` elige entre los `PENDING` —
         # sin esto, `/curation` mostraría el antecedente, no el anuncio
         # nuevo que este test quiere ver prellenado.
         vieja.processing_status = ProcessingStatus.CURATED
@@ -2780,3 +2780,133 @@ class TestEditarCuradoPost:
         )
 
         assert response.status_code == 409
+
+
+class TestOrdenDeLaColaPorFoco:
+    """docs/decisions.md, 2026-08-18 — la cola deja de ser FIFO puro: primero
+    lo que menciona un producto del foco, después lo que todavía no se puede
+    saber (imagen sin OCR), y al final lo que no aporta a ninguna celda. Nada
+    se descarta ni se filtra: solo cambia el orden en que el operador lo ve.
+    """
+
+    def test_anuncio_del_foco_gana_a_uno_mas_viejo_sin_foco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-sin-foco",
+            original_text="cemento a 500 el saco",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        del_foco = _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-con-foco",
+            original_text="arroz a 30000",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{del_foco.id}"' in response.text
+
+    def test_entre_dos_del_foco_sigue_ganando_el_mas_viejo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El foco reordena entre grupos, no dentro: la cola sigue siendo
+        FIFO para todo lo que aporta lo mismo."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        viejo = _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-foco-viejo",
+            original_text="arroz a 30000",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-foco-nuevo",
+            original_text="arroz a 31000",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{viejo.id}"' in response.text
+
+    def test_sin_nada_del_foco_muestra_el_mas_viejo_como_siempre(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin regresión: una cola donde nada aporta al foco se comporta
+        exactamente como antes de esta decisión."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        viejo = _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-nada-viejo",
+            original_text="cemento a 500 el saco",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-nada-nuevo",
+            original_text="cabilla de media a 1200",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{viejo.id}"' in response.text
+
+    def test_imagen_sin_ocr_no_queda_detras_de_texto_ajeno_al_foco(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Una imagen no tiene `original_text`, así que su relevancia no se
+        puede saber sin transcribirla. "Todavía no sé" va antes que "sé que
+        no aporta": si no, las imágenes se mueren de hambre al fondo de la
+        cola apenas entra volumen de WhatsApp."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-texto-ajeno",
+            original_text="cemento a 500 el saco",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        imagen = _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-imagen",
+            content_type=ContentType.IMAGE,
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{imagen.id}"' in response.text
+
+    def test_texto_del_foco_gana_a_una_imagen_mas_vieja(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """La otra mitad de la regla anterior: una relevancia confirmada vale
+        más que una desconocida, aunque la desconocida sea más vieja."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-imagen-vieja",
+            content_type=ContentType.IMAGE,
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        del_foco = _crear_raw_ingestion(
+            session,
+            hash_="hash-orden-foco-nuevo-vs-imagen",
+            original_text="arroz a 30000",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{del_foco.id}"' in response.text

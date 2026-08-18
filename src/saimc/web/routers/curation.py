@@ -30,6 +30,7 @@ la columna, redactado con `redact_personal_data()` antes de construir la fila.
 
 import re
 import uuid
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -47,6 +48,7 @@ from saimc.extraction.engine import (
     ExtractionProposal,
     guess_published_date,
     guess_source_reference,
+    mentions_any_product,
     propose_all,
 )
 from saimc.ingestion.inbox import ingest_inbox
@@ -201,14 +203,55 @@ def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
     }
 
 
-def _oldest_pending(db: Session) -> RawIngestion | None:
+# Qué se cura primero (docs/decisions.md, 2026-08-18). Número más bajo, antes
+# en la cola; dentro de un mismo nivel sigue mandando `captured_at`.
+_FOCUS_MATCH = 0  # el texto menciona un producto del foco: aporta a una celda
+_FOCUS_UNKNOWN = 1  # imagen sin OCR: no se sabe sin transcribirla
+_FOCUS_NONE = 2  # texto sin ningún producto del foco
+
+
+def _focus_rank(ingestion: RawIngestion, products: Sequence[Product]) -> int:
+    """Cuánto aporta esta ingesta a las celdas que se están midiendo.
+
+    "Todavía no sé" (una imagen, cuyo texto solo existe después del OCR) va
+    entre "sí aporta" y "no aporta" a propósito: dejarla al final la mata de
+    hambre en cuanto entra volumen de WhatsApp, y transcribir la cola entera
+    en cada carga de página para saberlo sería pagar el OCR de todo para
+    ordenar.
+    """
+    if ingestion.original_text is None:
+        return _FOCUS_UNKNOWN
+    if mentions_any_product(ingestion.original_text, products):
+        return _FOCUS_MATCH
+    return _FOCUS_NONE
+
+
+def _next_pending(db: Session, products: Sequence[Product]) -> RawIngestion | None:
+    """El pendiente que más aporta al foco, no simplemente el más viejo.
+
+    La hora diaria del operador es el recurso escaso, y hasta acá la cola era
+    FIFO puro: un anuncio de cemento capturado el lunes se miraba antes que
+    uno de arroz del martes, aunque solo el segundo alimente una celda del
+    foco (`docs/decisions.md`, 2026-08-18).
+
+    Ordena, no filtra: nada se descarta ni deja de entrar. Lo que no aporta al
+    foco de hoy sigue en la cola, y si mañana ese producto entra al foco
+    (`is_pilot` es un clic en /catalog) sube solo, sin reprocesar nada — por
+    eso la relevancia se calcula acá y no se congela en una columna al
+    ingerir.
+    """
     stmt = (
         select(RawIngestion)
         .where(RawIngestion.processing_status == ProcessingStatus.PENDING)
         .order_by(RawIngestion.captured_at.asc())
-        .limit(1)
     )
-    return db.execute(stmt).scalars().first()
+    pending = list(db.execute(stmt).scalars().all())
+    if not pending:
+        return None
+    # `min` devuelve el PRIMER elemento de valor mínimo y la consulta ya vino
+    # ordenada por `captured_at`: eso sale gratis el desempate por antigüedad
+    # dentro de cada nivel, sin ordenar por tupla ni tocar el orden del SQL.
+    return min(pending, key=lambda ingestion: _focus_rank(ingestion, products))
 
 
 def _channel_province_id(db: Session, ingestion: RawIngestion) -> str | None:
@@ -479,8 +522,10 @@ def curation_queue(
     settings = get_settings()
     ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir)
 
-    ingestion = _oldest_pending(db)
+    # El catálogo del foco se lee antes que la cola: `_next_pending` lo
+    # necesita para decidir cuál de los pendientes aporta a una celda.
     products = _pilot_products(db)
+    ingestion = _next_pending(db, products)
     provinces = _all_provinces(db)
 
     proposals: list[ExtractionProposal] = []

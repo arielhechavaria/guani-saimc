@@ -19,6 +19,7 @@ import pytest
 from saimc.extraction.engine import (
     guess_published_date,
     guess_source_reference,
+    mentions_any_product,
     propose,
     propose_all,
 )
@@ -558,3 +559,52 @@ class TestProposeAllMultiProducto:
 
         assert len(resultados) == 1
         assert resultados[0].product is products[0]
+
+
+class TestMencionaAlgunProducto:
+    """`mentions_any_product` es la señal barata que ordena la cola de
+    curaduría por relevancia (docs/decisions.md, 2026-08-18): responde "¿este
+    anuncio habla de algún producto del foco?" sin construir la propuesta
+    completa. Va línea por línea, igual que `propose_all`, porque el texto
+    entero no es equivalente: un modificador descalificante en un renglón
+    descartaría también los productos limpios de los otros.
+    """
+
+    def test_anuncio_que_menciona_un_producto_del_catalogo(
+        self, products: list[Product]
+    ) -> None:
+        assert mentions_any_product("arroz blanco a 30000 la libra", products) is True
+
+    def test_anuncio_de_producto_ajeno_al_catalogo(self, products: list[Product]) -> None:
+        texto = "cemento a 500 el saco\ncabilla de media a 1200\n"
+
+        assert mentions_any_product(texto, products) is False
+
+    def test_producto_limpio_en_otra_linea_que_el_modificador_descalificante(
+        self, products: list[Product]
+    ) -> None:
+        """El caso que obliga a mirar línea por línea: "hígado de pollo" no es
+        Pollo, pero el mismo anuncio ofrece arroz en el renglón siguiente. Si
+        la señal se calculara sobre el texto entero, el modificador de la
+        primera línea descartaría también el arroz de la segunda.
+        """
+        texto = "higado de pollo a 900\narroz a 30000\n"
+
+        assert mentions_any_product(texto, products) is True
+
+    def test_solo_un_corte_descalificado_no_cuenta_como_mencion(
+        self, products: list[Product]
+    ) -> None:
+        """Coherente con lo que la cola mostraría: `propose_all` tampoco le
+        asigna Pollo a esta línea, así que el anuncio no aporta al foco."""
+        assert mentions_any_product("higado de pollo a 900", products) is False
+
+    def test_sin_tildes_igual_reconoce(self) -> None:
+        """El texto real llega sin tildes (OCR, tipeo apurado) y el producto
+        piloto en la base sí las tiene: "Azúcar blanca"."""
+        catalogo = [Product(name="Azúcar blanca", category="abarrotes", unit="lb", aliases=[])]
+
+        assert mentions_any_product("azucar blanca a 22500", catalogo) is True
+
+    def test_texto_vacio(self, products: list[Product]) -> None:
+        assert mentions_any_product("", products) is False
