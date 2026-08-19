@@ -58,7 +58,7 @@
         <tbody>
           {% for ingestion in ingestions %}
           <tr>
-            <td class="text-nowrap">{{ ingestion.captured_at.strftime("%Y-%m-%d") }}</td>
+            <td class="text-nowrap">{{ ingestion.captured_at | havana }}</td>
             <td>{{ ingestion.source_reference or "—" }}</td>
             <td>
               {% for product_name, price in rows_by_ingestion[ingestion.id] %}
