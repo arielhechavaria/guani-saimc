@@ -190,6 +190,7 @@ async def create_channel(request: Request, db: Session = Depends(get_db)) -> Red
             # canales manuales con cadena vacía chocarían entre sí.
             external_id=str(form.get("external_id", "")).strip() or None,
             province_id=_parse_uuid(str(form.get("province_id", ""))),
+            address=str(form.get("address", "")).strip() or None,
             is_active=True,
         )
     )
@@ -214,6 +215,26 @@ async def set_channel_province(
 
     form = await request.form()
     channel.province_id = _parse_uuid(str(form.get("province_id", "")))
+    db.flush()
+    return _back()
+
+
+@router.post("/catalog/channels/{channel_id}/address")
+async def set_channel_address(
+    channel_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Fija o cambia la dirección del local de un canal ya existente.
+
+    Mismo motivo que `set_channel_province`: los canales que ya seguía el
+    operador antes de esta columna (docs/decisions.md, 2026-08-19) necesitan
+    una forma de cargarla después del alta, no solo al crear el canal.
+    """
+    channel = db.get(Channel, channel_id)
+    if channel is None:
+        return _back()
+
+    form = await request.form()
+    channel.address = str(form.get("address", "")).strip() or None
     db.flush()
     return _back()
 

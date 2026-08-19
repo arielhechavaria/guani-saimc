@@ -407,6 +407,76 @@ class TestCatalogoCanales:
         session.expire_all()
         assert session.get(Channel, canal.id).province_id is None
 
+    def test_alta_de_canal_con_direccion(self, client: TestClient, session: Session) -> None:
+        response = client.post(
+            "/catalog/channels",
+            data={
+                "name": "Groupej Morales",
+                "platform": Platform.WHATSAPP_CHANNEL.value,
+                "address": "Calle C % Avenida y 4ta #155, Cotorro",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        canal = session.execute(select(Channel)).scalar_one()
+        assert canal.address == "Calle C % Avenida y 4ta #155, Cotorro"
+
+    def test_alta_de_canal_sin_direccion_queda_nula(
+        self, client: TestClient, session: Session
+    ) -> None:
+        client.post(
+            "/catalog/channels",
+            data={"name": "Canal sin dirección", "platform": Platform.OTHER.value},
+            follow_redirects=False,
+        )
+
+        canal = session.execute(select(Channel)).scalar_one()
+        assert canal.address is None
+
+    def test_fija_direccion_de_un_canal_ya_existente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El caso real que lo motiva es el mismo que provincia: el canal ya
+        estaba en la tabla antes de que esta columna existiera
+        (docs/decisions.md, 2026-08-19) — la dirección sale de la
+        descripción del grupo, que el operador lee después del alta."""
+        canal = Channel(name="Groupej Morales", platform=Platform.WHATSAPP_CHANNEL, is_active=True)
+        session.add(canal)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/address",
+            data={"address": "Calle C % Avenida y 4ta #155, Cotorro"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(Channel, canal.id).address == "Calle C % Avenida y 4ta #155, Cotorro"
+
+    def test_puede_volver_a_dejar_la_direccion_sin_fijar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            address="Calle C % Avenida y 4ta #155, Cotorro",
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/address",
+            data={"address": ""},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(Channel, canal.id).address is None
+
 
 # --- backfill de histórico ---------------------------------------------------
 
@@ -873,6 +943,75 @@ class TestChannelsProvinceMigration:
             connection.execute(
                 sa.insert(tabla_con_columna).values(
                     id=uuid.uuid4(), name="Canal sin provincia", province_id=None
+                )
+            )
+            connection.commit()
+
+        engine.dispose()
+
+
+class TestChannelsAddressMigration:
+    """`0013_channels_address.py` — dirección del local, no de un anunciante
+    individual (docs/decisions.md, 2026-08-19)."""
+
+    def _tabla_channels(self) -> sa.MetaData:
+        metadata = sa.MetaData()
+        sa.Table(
+            "channels",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("name", sa.String(120), nullable=False),
+        )
+        return metadata
+
+    def test_upgrade_agrega_la_columna_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0013_channels_address.py")
+
+        engine = create_engine("sqlite://")
+        self._tabla_channels().create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            assert "address" in {c["name"] for c in inspect(connection).get_columns("channels")}
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("channels")}
+            assert "address" not in columnas
+            assert "name" in columnas
+
+        engine.dispose()
+
+    def test_address_es_nullable(self) -> None:
+        """Un canal ya registrado antes de esta migración no tenía este dato
+        — no puede volverse NOT NULL sin backfill, que no existe."""
+        modulo = _cargar_modulo_migracion("0013_channels_address.py")
+
+        engine = create_engine("sqlite://")
+        self._tabla_channels().create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            tabla_con_columna = sa.Table(
+                "channels",
+                sa.MetaData(),
+                sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+                sa.Column("name", sa.String(120), nullable=False),
+                sa.Column("address", sa.Text(), nullable=True),
+            )
+            connection.execute(
+                sa.insert(tabla_con_columna).values(
+                    id=uuid.uuid4(), name="Canal sin dirección", address=None
                 )
             )
             connection.commit()

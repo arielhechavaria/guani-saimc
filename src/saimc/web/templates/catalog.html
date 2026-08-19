@@ -69,6 +69,12 @@
             <label for="notes" class="form-label small mb-1">Notas <span class="text-muted">(opcional)</span></label>
             <input type="text" name="notes" id="notes" class="form-control form-control-sm" />
           </div>
+          <div class="col-md-3">
+            <label for="address" class="form-label small mb-1">
+              Dirección del local <span class="text-muted">(opcional, de la descripción del grupo)</span>
+            </label>
+            <input type="text" name="address" id="address" class="form-control form-control-sm" />
+          </div>
           <div class="col-md-2">
             <label for="external_id" class="form-label small mb-1">
               Id. WAHA <span class="text-muted">(automatiza)</span>
@@ -101,13 +107,14 @@
               <th scope="col">Plataforma</th>
               <th scope="col">Notas</th>
               <th scope="col">Provincia</th>
+              <th scope="col">Dirección del local</th>
               <th scope="col">Automatización</th>
               <th scope="col" class="text-end">Estado</th>
             </tr>
           </thead>
           <tbody>
             {% if not channels %}
-            <tr><td colspan="6" class="text-muted small py-3">Todavía no hay canales anotados.</td></tr>
+            <tr><td colspan="7" class="text-muted small py-3">Todavía no hay canales anotados.</td></tr>
             {% endif %}
             {% for channel in channels %}
             <tr {% if not channel.is_active %}class="saimc-off"{% endif %}>
@@ -138,6 +145,17 @@
                     </option>
                     {% endfor %}
                   </select>
+                </form>
+              </td>
+              <td>
+                <!-- Mismo criterio que provincia: onchange envía solo, sin
+                     botón aparte. En un input de texto, onchange dispara al
+                     perder el foco después de un cambio real, no en cada
+                     tecla ni por un click sin editar nada. -->
+                <form method="post" action="/catalog/channels/{{ channel.id }}/address">
+                  <input type="text" name="address" value="{{ channel.address or '' }}"
+                         placeholder="Sin cargar" class="form-control form-control-sm"
+                         style="min-width: 200px;" onchange="this.form.submit()" />
                 </form>
               </td>
               <td class="small">

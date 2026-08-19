@@ -3056,3 +3056,41 @@ activos generan más anuncios por día de los que una hora de curaduría absorbe
 Verificado end-to-end contra la instancia real: 86 mensajes con texto de un
 grupo activo, 93 del canal ya en producción por su endpoint viejo. Suite
 completa: 555/555.
+
+---
+
+## 2026-08-19 — Dirección del local por canal, uso interno
+
+Contexto: el operador quiere geolocalizar más adelante, y en muchos
+grupos/canales de WhatsApp la dirección del local ya está publicada en la
+propia descripción del grupo — el negocio se auto-publicita para que lo
+encuentren. A primera lectura choca con `CLAUDE.md` ("no capturamos ni
+almacenamos... direcciones exactas... de anunciantes") y con `spec.md` §10.6.
+Verificado antes de decidir: §10.6 habla de datos personales de un
+*anunciante individual*, no del local de un negocio que ya se publicita solo;
+y `redact_personal_data()` ya declara su alcance como "solo teléfonos" —
+las direcciones que aparecen en texto capturado hoy YA pasan sin filtrar por
+`original_text`, sin estructurar. No es una exposición nueva, es estructurar
+algo que ya circula.
+
+Decisión: `Channel.address` (texto libre, nullable), mismo patrón que
+`province_id` — es dato del canal, no de cada anuncio, porque la dirección
+sale de la descripción del grupo, no del texto de cada mensaje individual.
+Editable en `/catalog` al crear el canal y también después (`POST
+/catalog/channels/{id}/address`, mismo motivo que el endpoint de provincia:
+canales ya existentes como Groupej Morales Surl no tienen este dato y no hay
+forma de inferirlo con retroactividad). Sin geocodificar todavía — solo texto
+tal cual lo carga el operador. **No se expone en ninguna vista pública**
+(`/control`, futura API): mismo criterio de seudonimización que ya rige
+`source_reference` (§10.6, mitigación 2) hasta que haya una decisión
+explícita de publicarlo.
+
+Descartado: reusar el campo `notes` existente (cero cambios de esquema, pero
+mezclado con notas de cualquier otro tipo — más trabajo parsear direcciones
+de ahí cuando llegue la geocodificación real). El operador eligió el campo
+dedicado.
+
+Consecuencia: migración `0013_channels_address.py`. Si en algún momento se
+decide exponer esto públicamente o automatizar la extracción desde la
+descripción del grupo (en vez de carga manual), esa es una decisión nueva,
+no una extensión implícita de esta.

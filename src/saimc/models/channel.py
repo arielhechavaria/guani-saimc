@@ -97,6 +97,18 @@ class Channel(Base):
         nullable=True,
     )
 
+    # Dirección del LOCAL del negocio (no de un anunciante individual),
+    # cargada a mano por el operador desde lo que el propio canal/grupo
+    # publica en su descripción (docs/decisions.md, 2026-08-19) — un negocio
+    # que se auto-publicita, no un dato personal de un tercero (spec.md
+    # §10.6: ese riesgo es sobre anunciantes individuales, no sobre el
+    # local que ya se anuncia solo para que lo encuentren). Nullable: la
+    # mayoría de los canales no trae esta información en su descripción.
+    # Sin geocodificar todavía — texto libre, igual que `notes`, para que
+    # una geocodificación futura tenga de dónde partir sin tener que volver
+    # a mirar cada descripción a mano.
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
