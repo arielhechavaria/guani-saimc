@@ -138,7 +138,16 @@
               deliberadamente permisiva; la exacta (calendario de La Habana)
               la aplica `_validated_published_date` en el servidor.
             -->
-            <input type="date" name="published_date" id="published_date" value="{{ values.published_date }}" class="form-control" style="max-width: 220px;" required max="{{ ingestion.captured_at.date().isoformat() }}" />
+            <div class="d-flex align-items-center gap-2">
+              <input type="date" name="published_date" id="published_date" value="{{ values.published_date }}" class="form-control" style="max-width: 220px;" required max="{{ ingestion.captured_at.date().isoformat() }}" />
+              <!--
+                Solo informativo (docs/decisions.md, 2026-08-19): la hora en
+                que WAHA capturó el mensaje, hora de La Habana. No se manda en
+                el submit — `published_date` sigue siendo únicamente fecha,
+                sin cambio de esquema.
+              -->
+              <span class="text-muted small">capturado {{ ingestion.captured_at | havana('%H:%M') }}</span>
+            </div>
             <div class="form-text">La fecha del anuncio, no la de hoy. Si el anuncio es de hace días o semanas, va la fecha en que se publicó.</div>
           </div>
 

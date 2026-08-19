@@ -26,19 +26,25 @@ app.state.templates = Jinja2Templates(
 )
 
 
-def _havana(value: datetime) -> str:
+def _havana(value: datetime, fmt: str = "%Y-%m-%d %H:%M") -> str:
     """Filtro Jinja: formatea un datetime en hora de La Habana, no UTC.
 
     Mismo criterio que `exchange_rate.service.anchor_date` — `captured_at` se
     guarda en UTC, y mostrarlo tal cual corre el reloj hasta 5 horas contra lo
     que el operador vio en su teléfono. Degrada a UTC si falta la base de
     datos de zonas horarias, en vez de romper el render.
+
+    `fmt` con default de fecha+hora completas (uso en `curation_history.html`);
+    la cola de curaduría pide solo `%H:%M` junto al date-picker de
+    `published_date`, que ya muestra la fecha por su cuenta (docs/decisions.md,
+    2026-08-19) — solo visible, `published_date` sigue siendo únicamente
+    fecha, sin cambio de esquema.
     """
     try:
         habana = ZoneInfo("America/Havana")
     except ZoneInfoNotFoundError:
-        return value.strftime("%Y-%m-%d %H:%M")
-    return value.astimezone(habana).strftime("%Y-%m-%d %H:%M")
+        return value.strftime(fmt)
+    return value.astimezone(habana).strftime(fmt)
 
 
 app.state.templates.env.filters["havana"] = _havana
