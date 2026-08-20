@@ -3242,3 +3242,33 @@ con los alias `muslo de pollo`, `muslo con contramuslo`, `contramuslo` en
 Pollo y `saco de azucar`, `azucar magdalena`, `azucar refino` en Azúcar
 blanca, la pérdida baja a 0 y el ruido eliminado queda en 75/82 (91%). Los
 alias son datos de producción: el filtro no debe activarse sin ellos.
+
+## 2026-08-20 — El backfill mira más atrás: 100 → 250 mensajes
+Contexto: el importar histórico traía 100 mensajes por canal/grupo, número
+puesto el 2026-08-17 con dos medidas viejas y flojas — «96 mensajes es el
+techo de la API» y «`limit=500` tardó 172s y tumbó la sesión». Con volumen
+real y el filtro de foco ya activo, ese 100 dejaba fuera anuncios en foco que
+WAHA sí tenía sincronizados.
+
+Decisión: `_HISTORY_LIMIT` pasa a 250, mismo número para canales y grupos.
+Medido contra la instancia real (WAHA 2026.8.1, WEBJS) subiendo escalonado y
+mirando el estado de la sesión después de cada consulta: 250 y 300 responden
+en menos de 3s y la dejan WORKING; 350 y 500 cuelgan más de 300s; 400 devuelve
+HTTP 500 a los 266s y la manda a FAILED. No hay techo de 96: un canal devolvió
+288 mensajes en 2.3s. El rendimiento en la cola, contra los tres canales
+registrados, sube de 39 a 93 anuncios visibles después del filtro de foco.
+
+Descartado: 300, que también dio bien. El corte está entre 300 y 350 y del
+lado malo no hay degradación suave — la consulta no vuelve, `waha_timeout`
+(30s) corta del lado de SAIMC dando «no se pudo consultar», pero WAHA sigue
+moliendo y reinicia la sesión. Ese reinicio dura 10s-20s y durante esa ventana
+se pierden los webhooks entrantes. 300 es el último valor bueno conocido, sin
+margen. Descartado también un límite distinto por tipo de fuente: en grupos el
+endpoint sirve desde el store local de WEBJS, responde en menos de 0.2s y
+devuelve lo mismo con 100, 1000 o 5000 — dos constantes no comprarían nada.
+
+Consecuencia: el número queda atado a este motor y a esta versión de WAHA, y
+se verifica de la misma forma —escalonado, mirando la sesión— si alguno de los
+dos cambia. Un grupo trae hoy unidades de mensajes porque el re-pareo vacía el
+store local de WEBJS: ahí el límite no es la restricción y el histórico solo
+crece hacia adelante.

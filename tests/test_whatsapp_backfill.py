@@ -246,8 +246,10 @@ class TestFetchChannelHistory:
         assert resultado[0].text == "Pollo a 500"
         assert "/api/default/channels/1@newsletter/messages/preview" in str(capturado["url"])
         assert capturado["api_key"] == "clave-de-prueba"
-        # El límite es fijo (medido, no configurable) — ver docstring del módulo.
-        assert capturado["limit"] == "100"
+        # El límite es fijo (medido, no configurable) y se afirma como literal
+        # a propósito: subirlo tiene que ser una decisión, no un descuido. El
+        # valor y por qué ese, en el comentario de `_HISTORY_LIMIT`.
+        assert capturado["limit"] == "250"
 
     def test_respuesta_no_200_devuelve_none(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

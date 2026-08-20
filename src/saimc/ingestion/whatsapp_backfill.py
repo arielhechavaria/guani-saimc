@@ -37,18 +37,31 @@ from saimc.ingestion.whatsapp_webhook import ParsedMessage, parse_message
 # resto: todo lo que no es grupo ya funciona contra el endpoint de canales.
 _GROUP_JID_SUFFIX = "@g.us"
 
-# Para CANALES es un techo de la API, no una preferencia: WAHA ignora en
-# silencio `startCursor`/`endCursor`/`offset`, así que no hay forma de paginar
-# hacia atrás más allá de esto (medido 2026-08-17, 96 mensajes). Pedir más
-# tampoco es gratis — `limit=500` tardó 172s y tumbó la sesión en producción.
+# WAHA ignora en silencio `startCursor`/`endCursor`/`offset`, así que este
+# número es la única palanca que hay para mirar más atrás: no se pagina, se
+# pide más de una vez.
 #
-# Para GRUPOS no hay techo de API: el endpoint devuelve todo lo que tenga
-# sincronizado (medido 2026-08-18: `limit=1000` trajo 344 mensajes en 17s sin
-# tumbar la sesión). Se reusa igual el mismo 100 porque el cuello de botella
-# real no es WAHA, es la hora diaria de curaduría del operador — un solo
-# grupo activo midió 200 mensajes en un día. Traer más de lo que se puede
-# curar no agrega dato, agrega cola.
-_HISTORY_LIMIT = 100
+# El techo lo pone el endpoint de CANALES, medido contra la instancia real el
+# 2026-08-20 (WAHA 2026.8.1, motor WEBJS), subiendo de a poco y mirando el
+# estado de la sesión después de cada consulta:
+#
+#     100 → 1-2s          250 → 1.4-2.2s (repetido x3)   300 → 1.5-2.9s
+#     350 → colgado >300s, sesión a STARTING
+#     400 → 266s y HTTP 500, sesión a FAILED
+#     500 → colgado >300s
+#
+# El corte es entre 300 y 350, y del lado malo no hay degradación suave: la
+# consulta no vuelve, `waha_timeout` (30s) corta del lado de SAIMC mucho antes
+# —dando "no se pudo consultar"— pero WAHA sigue moliendo y termina
+# reiniciando la sesión. Ese reinicio dura entre 10s y 20s y durante esa
+# ventana se pierden los webhooks entrantes, que es el costo real. Por eso 250
+# y no 300: el valor más alto que se probó bueno queda pegado al filo.
+#
+# Para GRUPOS el mismo número no cuesta nada: el endpoint sirve desde el store
+# local de WEBJS, responde en menos de 0.2s y devuelve lo mismo con `limit` de
+# 100, 1000 o 5000. El re-pareo de la sesión vacía ese store, así que hoy son
+# unidades de mensajes y crece solo hacia adelante.
+_HISTORY_LIMIT = 250
 
 
 def _parse_preview_entry(entry: Any) -> ParsedMessage | None:
