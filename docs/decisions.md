@@ -3272,3 +3272,43 @@ se verifica de la misma forma —escalonado, mirando la sesión— si alguno de 
 dos cambia. Un grupo trae hoy unidades de mensajes porque el re-pareo vacía el
 store local de WEBJS: ahí el límite no es la restricción y el histórico solo
 crece hacia adelante.
+
+## 2026-08-20 — El anuncio con precio por volumen se lee como bloque, no por línea
+Contexto: un anuncio real del operador («ALITAS DE POLLO / CAJA DE 40 lb / La
+caja 28,5 usd o 25650 cup. / Más de 10 cajas 28 / Más de 100 cajas 27,5»)
+salía inservible de la cola. Medido contra el motor: proponía dos filas, una
+con producto y sin precio, y otra que ofrecía dar de alta un producto llamado
+«La caja». Los dos escalones mayoristas se perdían enteros, porque su precio
+va pelado al final de la línea y `_extract_price` —con razón— no toma números
+sueltos. El problema no era un regex faltante: `propose_all` asume «una línea
+= una oferta autónoma», y este anuncio es un bloque donde el encabezado
+declara el producto, otra línea declara el lote, y las de precio heredan las
+dos. Ninguna línea sola está completa.
+
+Decisión: `_tiered_proposals` lee el anuncio como bloque cuando hay al menos
+un escalón («más de N», «a partir de N», «desde N») y UN solo producto en
+todo el texto. Propone dos filas —el precio base y el mejor escalón
+mayorista—, ambas con el producto y el lote del encabezado. El mínimo se
+guarda en la unidad del lote, no en bultos: «100 cajas» de 40 lb son 4000 lb,
+porque `min_purchase_quantity` se compara entre anuncios sin tabla de
+conversión que lo arregle después. Cierra la mitad de `design.md` D7 que
+quedaba pendiente, sin tocar el esquema: `min_purchase_quantity`,
+`sale_format` y `packaging` ya existían.
+
+Descartado: una fila por escalón (tres acá). El escalón intermedio describe la
+misma oferta sin agregar un extremo, y tres filas del mismo producto y día
+cargan la serie con precios que no son comparables entre sí. Descartado
+también inferir el mínimo cuando el anuncio no declara el tamaño del lote
+(«Más de 10 cajas» sin decir qué trae una caja): ahí no se propone la fila
+mayorista, porque una segunda fila con otro precio y ningún mínimo que lo
+explique es peor que no proponerla. Y se mantiene deliberadamente sin
+prellenar `sale_format` y `packaging`: siguen siendo juicio explícito del
+operador (D4), y este slice no los toca.
+
+Consecuencia: la lectura de bloque gana sobre la de línea cuando dispara, así
+que su condición de disparo es la garantía de que un anuncio multiproducto no
+cambie — dos productos distintos la desactivan. Queda anotado aparte que
+«alitas» no está en `_PRODUCT_DISQUALIFYING_MODIFIERS`, así que hoy matchea
+Pollo genérico igual que lo haría «pollo entero»; si el operador quiere que
+las alitas sean un producto propio, como ya lo son muslo y pechuga, es una
+línea en esa lista y una decisión suya, no del motor.

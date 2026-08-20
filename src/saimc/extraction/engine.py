@@ -121,6 +121,29 @@ _QUANTITY_RE = re.compile(
     r"(\d[\d.,]*)\s*(" + "|".join(_UNIT_WORDS) + r")\b", re.IGNORECASE
 )
 
+# --- precio escalonado ---------------------------------------------------
+
+# Palabras que cuentan BULTOS, no magnitudes: "10 cajas" no dice cuánto pesa
+# nada hasta saber qué trae una caja. Se separan del resto de `_UNIT_WORDS`
+# porque el mínimo de compra tiene que quedar expresado en la unidad canónica
+# del lote — es el mismo motivo por el que `prices_history` lo documenta así
+# («un mínimo dicho en pacas no sirve»).
+_LOT_WORDS = frozenset({"caja", "cajas", "saco", "sacos", "paquete", "paquetes"})
+
+# Un escalón de precio por volumen: "Más de 10 cajas 28", "A partir de 100
+# cajas a 27,5", "Desde 500 lb 480".
+#
+# El precio final puede venir PELADO, sin "a" ni marca de moneda, y por eso
+# `_extract_price` no lo ve cuando mira la línea aislada: un número suelto es
+# ambiguo en general y descartarlo es lo correcto. Deja de serlo dentro de un
+# escalón, donde la frase "más de N" ya declaró qué es cada número. Ese
+# contexto es justamente lo que la lectura línea-por-línea no tiene.
+_TIER_RE = re.compile(
+    r"\b(?:m[áa]s\s+de|a\s+partir\s+de|desde)\s+(\d[\d.,]*)\s*([a-záéíóúñ]+)?"
+    r"[^\d]*?(\d[\d.,]*)[.\s]*$",
+    re.IGNORECASE,
+)
+
 # --- producto --------------------------------------------------------------
 
 # Cortes o partes que hacen de un producto genérico algo distinto ("hígado de
@@ -307,6 +330,11 @@ class ExtractionProposal:
     quantity: Decimal | None = None
     unit: str | None = None
     province: Province | None = None
+    # Solo lo llena la lectura de bloque de `propose_all` (ver
+    # `_tiered_proposals`), y siempre en la misma unidad que `unit`, igual que
+    # la columna homónima de `prices_history`. Nunca se adivina: un escalón
+    # cuyo mínimo no se puede expresar en esa unidad no se propone.
+    min_purchase_quantity: Decimal | None = None
 
 
 def _normalize_number(raw: str) -> Decimal | None:
@@ -507,6 +535,136 @@ def propose(
     )
 
 
+def _lot_size(lines: Sequence[str]) -> tuple[Decimal | None, str | None]:
+    """Cuánto trae un bulto, según la primera línea que lo diga en unidad real.
+
+    "CAJA DE 40 lb" dimensiona el lote; "Más de 10 cajas" no dice nada del
+    tamaño. Por eso se ignoran las unidades de bulto (`_LOT_WORDS`): sirven
+    para contar, no para medir.
+    """
+    for line in lines:
+        quantity, unit = _extract_quantity(line)
+        if quantity is not None and unit is not None and unit not in _LOT_WORDS:
+            return quantity, unit
+    return None, None
+
+
+def _tier_minimum(
+    count: Decimal, word: str | None, lot_quantity: Decimal | None, lot_unit: str | None
+) -> Decimal | None:
+    """El mínimo del escalón expresado en la unidad del lote, o `None`.
+
+    `None` cuando la conversión no se puede hacer con lo que dice el anuncio:
+    un mínimo inventado es peor que ausente, porque `min_purchase_quantity`
+    se compara entre anuncios sin tabla de conversión que lo salve después.
+    """
+    if word is None:
+        return None
+    word = word.lower()
+    if word in _LOT_WORDS:
+        # "100 cajas" solo se vuelve una magnitud si el anuncio dijo antes
+        # cuánto trae una caja.
+        if lot_quantity is None:
+            return None
+        return count * lot_quantity
+    if word in _UNIT_WORDS:
+        # Ya viene medido. Si el lote se declaró en otra unidad, no se
+        # convierte acá: mezclar kg con lb sin tabla es exactamente el error
+        # que este retorno evita.
+        if lot_unit is not None and word != lot_unit:
+            return None
+        return count
+    return None
+
+
+def _tiered_proposals(
+    text: str, products: Sequence[Product], provinces: Sequence[Province]
+) -> list[ExtractionProposal] | None:
+    """Lee el anuncio como un BLOQUE cuando publica precio por volumen.
+
+    Forma real medida el 2026-08-20 ("ALITAS DE POLLO / CAJA DE 40 lb / La
+    caja 28,5 usd o 25650 cup. / Más de 10 cajas 28 / Más de 100 cajas
+    27,5."): el producto lo declara el encabezado, el tamaño del lote otra
+    línea, y las de precio heredan las dos. Ninguna línea sola está completa,
+    así que `propose_all` línea-por-línea sacaba una fila con producto sin
+    precio y otra que proponía dar de alta un producto llamado «La caja».
+
+    `None` —y no una lista vacía— cuando el anuncio no tiene esta forma: es
+    la señal de "acá no aplico, seguí con la lectura normal".
+
+    Se proponen dos filas, no tres: el techo del anuncio y su mejor precio
+    mayorista (decisión del operador, 2026-08-20). El escalón intermedio
+    describe la misma oferta sin agregar un extremo.
+
+    Lo que NO se prellena es tan deliberado como lo que sí: `sale_format` y
+    `packaging` son juicio explícito del operador (design.md D4), y nada acá
+    los deriva de texto suelto.
+    """
+    lines = [stripped for raw in text.splitlines() if (stripped := raw.strip())]
+
+    tiers = []
+    plain = []
+    for line in lines:
+        match = _TIER_RE.search(line)
+        if match is not None:
+            tiers.append(match)
+        else:
+            plain.append(line)
+    if not tiers:
+        return None
+
+    # La herencia del encabezado solo es cierta si todo el anuncio habla de un
+    # único producto. Con dos, atribuir el escalón a uno sería inventar.
+    matched = [p for p in (_match_product(line, products) for line in lines) if p is not None]
+    if not matched or any(p is not matched[0] for p in matched):
+        return None
+    product = matched[0]
+
+    base_line = next((line for line in plain if _extract_price(line) is not None), None)
+    if base_line is None:
+        return None
+    base_price = _extract_price(base_line)
+
+    currency = (
+        _extract_currency_explicit(base_line)
+        or _extract_currency_explicit(text)
+        or Currency.CUP.value
+    )
+    lot_quantity, lot_unit = _lot_size(plain)
+    province = _match_province(text, provinces)
+
+    def fila(price: Decimal | None, minimum: Decimal | None) -> ExtractionProposal:
+        return ExtractionProposal(
+            product=product,
+            price=price,
+            currency=currency,
+            quantity=lot_quantity,
+            unit=lot_unit,
+            province=province,
+            min_purchase_quantity=minimum,
+        )
+
+    candidatos: list[tuple[Decimal, Decimal]] = []
+    for match in tiers:
+        count = _normalize_number(match.group(1))
+        price = _normalize_number(match.group(3))
+        if count is None or price is None:
+            continue
+        minimum = _tier_minimum(count, match.group(2), lot_quantity, lot_unit)
+        if minimum is None:
+            # Un escalón sin mínimo expresable es una segunda fila con otro
+            # precio y ninguna explicación de por qué difiere: peor que no
+            # proponerla.
+            continue
+        candidatos.append((price, minimum))
+
+    if not candidatos:
+        return [fila(base_price, None)]
+
+    mejor_precio, mejor_minimo = min(candidatos, key=lambda par: par[0])
+    return [fila(base_price, None), fila(mejor_precio, mejor_minimo)]
+
+
 def propose_all(
     text: str, products: Sequence[Product], provinces: Sequence[Province]
 ) -> list[ExtractionProposal]:
@@ -520,7 +678,15 @@ def propose_all(
     Provincia y moneda caen al texto completo cuando la línea puntual no trae
     marca propia — son datos que suelen valer para todo el anuncio, no para
     un renglón en particular (ver `_extract_currency_explicit`).
+
+    El anuncio de un solo producto con precio por volumen se lee antes y
+    aparte (`_tiered_proposals`): ahí las líneas no son ofertas autónomas
+    sino escalones que heredan producto y lote del encabezado.
     """
+    tiered = _tiered_proposals(text, products, provinces)
+    if tiered is not None:
+        return tiered
+
     whole_text_province = _match_province(text, provinces)
     whole_text_currency = _extract_currency_explicit(text)
 

@@ -169,10 +169,17 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         "sale_format": "",
         "packaging_format": "",
         "packaging_detail": "",
-        # Tampoco se prellena: extraerlo del texto («compra mínima 20», «paca
-        # de 30 pqt») es trabajo de la capa de extracción y va en otro slice
-        # (design.md, D7).
-        "min_purchase": "",
+        # El slice que design.md D7 dejaba pendiente, resuelto solo para la
+        # forma que el motor sabe leer sin adivinar: el precio escalonado de
+        # un anuncio mayorista («Más de 100 cajas 27,5»), donde el mínimo se
+        # deriva del tamaño de lote que el propio anuncio declara. Cualquier
+        # otra forma sigue llegando vacía, que es lo correcto: el operador
+        # corrige un campo en blanco más rápido que uno mal prellenado.
+        "min_purchase": (
+            str(proposal.min_purchase_quantity)
+            if proposal.min_purchase_quantity is not None
+            else ""
+        ),
         "province_id": str(proposal.province.id) if proposal.province else "",
     }
 

@@ -755,6 +755,42 @@ class TestPrellenoDesdeHistorialDelCanal:
         # `_values_from_price_history`, ver test de edición línea 2650).
         assert 'id="min_purchase_0" value="1.000"' in response.text
 
+    def test_anuncio_escalonado_prellena_el_minimo_de_la_fila_mayorista(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Cierra la mitad que `design.md` D7 dejaba pendiente: el mínimo se
+        prellena SOLO cuando el anuncio declara el tamaño del lote, así que
+        el motor lo deriva en vez de adivinarlo. Anuncio real del operador
+        (2026-08-20).
+        """
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-alitas-escalonado",
+            original_text=(
+                "ALITAS DE POLLO\n"
+                "CAJA DE 40 lb\n"
+                "La caja 28,5 usd o 25650 cup.\n"
+                "Más de 10 cajas 28\n"
+                "Más de 100 cajas 27,5.\n"
+            ),
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Canal mayorista",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        # Fila base: el precio de una caja, sin mínimo declarado.
+        assert 'id="price_0" value="28.5"' in response.text
+        assert 'id="min_purchase_0" value=""' in response.text
+        # Fila mayorista: mejor precio del anuncio y su mínimo en lb, no en
+        # cajas — 100 cajas de 40 lb.
+        assert 'id="price_1" value="27.5"' in response.text
+        assert 'id="min_purchase_1" value="4000"' in response.text
+        # El envase y minorista/mayorista siguen siendo juicio del operador.
+        assert 'id="packaging_detail_1" value=""' in response.text
+
     def test_sin_antecedente_queda_vacio_como_siempre(
         self, client: TestClient, session: Session
     ) -> None:

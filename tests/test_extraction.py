@@ -561,6 +561,118 @@ class TestProposeAllMultiProducto:
         assert resultados[0].product is products[0]
 
 
+class TestProposeAllPreciosEscalonados:
+    """Un anuncio mayorista de un solo producto con precio por volumen.
+
+    Forma real, medida contra un anuncio del operador (2026-08-20): el
+    producto lo declara el encabezado, el formato de venta lo declara otra
+    línea, y las líneas de precio de abajo heredan los dos. NINGUNA línea
+    sola tiene la información completa, así que el modelo "una línea = una
+    oferta" no puede representarlo.
+
+    El escalón intermedio se descarta a propósito (decisión del operador,
+    2026-08-20): se guarda el techo del anuncio y su mejor precio mayorista,
+    que son los dos extremos que describen la oferta.
+    """
+
+    ALITAS = (
+        "ALITAS DE POLLO\n"
+        "CAJA DE 40 lb\n"
+        "La caja 28,5 usd o 25650 cup.\n"
+        "Más de 10 cajas 28\n"
+        "Más de 100 cajas 27,5.\n"
+    )
+
+    def test_anuncio_escalonado_da_base_y_mejor_mayorista(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        resultados = propose_all(self.ALITAS, products, provinces)
+
+        assert len(resultados) == 2
+
+        base, mayorista = resultados
+
+        assert base.product is products[0]
+        assert base.price == Decimal("28.5")
+        assert base.currency == "USD"
+        assert base.quantity == Decimal("40")
+        assert base.unit == "lb"
+        assert base.min_purchase_quantity is None
+
+        assert mayorista.product is products[0]
+        assert mayorista.price == Decimal("27.5")
+        assert mayorista.currency == "USD"
+        assert mayorista.quantity == Decimal("40")
+        assert mayorista.unit == "lb"
+        # 100 cajas de 40 lb. El mínimo se guarda en la misma unidad que
+        # `unit` (ver el comentario de `min_purchase_quantity` en el modelo):
+        # "100 cajas" no es comparable entre anuncios, 4000 lb sí.
+        assert mayorista.min_purchase_quantity == Decimal("4000")
+
+    def test_no_propone_dar_de_alta_un_producto_llamado_la_caja(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """La línea del precio base empieza con "La caja", que el motor
+        línea-por-línea tomaba como nombre de producto candidato. Bajo la
+        lectura de bloque el producto lo pone el encabezado y no hay nada
+        que adivinar."""
+        resultados = propose_all(self.ALITAS, products, provinces)
+
+        assert all(r.product_name_guess is None for r in resultados)
+
+    def test_minimo_dicho_en_la_unidad_del_lote_no_se_multiplica(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Cuando el escalón ya viene en la unidad canónica no hay conversión
+        que hacer: 500 lb son 500 lb, no 500 por el tamaño del lote."""
+        texto = "pollo entero\nsaco de 40 lb\nel saco a 500\nMás de 500 lb a 480\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 2
+        assert resultados[1].price == Decimal("480")
+        assert resultados[1].min_purchase_quantity == Decimal("500")
+
+    def test_escalon_sin_lote_conocido_no_inventa_el_minimo(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Sin una línea que diga cuánto trae una caja, "más de 10 cajas" no
+        se puede expresar en `unit` — y un escalón sin mínimo es una segunda
+        fila con otro precio y ninguna explicación, peor que no proponerla.
+        Se cae a la fila base sola en vez de escribir un número inventado.
+        """
+        texto = "pollo entero a 500\nMás de 10 cajas 480\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 1
+        assert resultados[0].price == Decimal("500")
+        assert resultados[0].min_purchase_quantity is None
+
+    def test_anuncio_multiproducto_con_escalon_sigue_siendo_linea_por_linea(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """La lectura de bloque asume UN producto para todo el anuncio. Con
+        dos productos distintos esa herencia sería falsa, así que no aplica.
+        """
+        texto = "pollo entero 40lb a 3000\narroz blanco 1 caja a 500\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert len(resultados) == 2
+        assert resultados[0].product is products[0]
+        assert resultados[1].product is products[1]
+
+    def test_anuncio_sin_escalones_no_cambia(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        resultados = propose_all("pollo congelado 40lb a 500 habana", products, provinces)
+
+        assert len(resultados) == 1
+        assert resultados[0].price == Decimal("500")
+        assert resultados[0].min_purchase_quantity is None
+
+
 class TestMencionaAlgunProducto:
     """`mentions_any_product` es la señal barata que ordena la cola de
     curaduría por relevancia (docs/decisions.md, 2026-08-18): responde "¿este
