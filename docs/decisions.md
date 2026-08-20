@@ -3380,6 +3380,7 @@ condensados en dos grillas de cuatro notas; las referencias a §12.5 y §12.6
 salen de los chips pero siguen en los banners largos. Se agrega
 `tests/test_static_assets.py`, que falla si una fuente desaparece, si los
 iconos dejan de venir subseteados o si alguna vista vuelve a pedirle un asset
-a `fonts.googleapis.com` en runtime. El bundle `redesing/` queda en el repo
-como referencia del diseño; su `PLANTILLAS.md` documenta una URL de fuentes
-que devuelve 404 y no debe seguirse al pie de la letra.
+a `fonts.googleapis.com` en runtime. El bundle `redesing/` se borra una vez
+integrado: ya cumplió su función de handoff y este archivo deja constancia de
+que su `PLANTILLAS.md` documentaba una URL de fuentes que devolvía 404, para
+quien busque el motivo en el historial.
