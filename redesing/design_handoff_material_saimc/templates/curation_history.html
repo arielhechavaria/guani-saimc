@@ -1,0 +1,89 @@
+{% extends "_shell.html" %}
+
+{% block title %}Historial de curados{% endblock %}
+{% block heading %}Historial de curados{% endblock %}
+{% block subtitle %}Ubicá el anuncio que hay que corregir.{% endblock %}
+
+{% block stats %}
+  <div class="m3-stat">
+    <div class="m3-stat-label">Anuncios listados</div>
+    <div class="m3-stat-value is-accent">{{ ingestions|length }}</div>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% if notice %}
+<div class="m3-banner m3-banner-warn" role="alert" style="margin-bottom:20px">
+  <span class="m3-icon">warning</span><span>{{ notice }}</span>
+</div>
+{% endif %}
+
+{% if filtering %}
+<div class="m3-banner" role="alert" style="margin-bottom:20px">
+  <span class="m3-icon">filter_alt</span>
+  <span class="m3-spacer">
+    Filtrado por:
+    {% if filter_product is not none %}<strong>{{ filter_product }}</strong>{% endif %}
+    {% if filter_province is not none %}· {{ filter_province or "sin provincia" }}{% endif %}
+    {% if filter_currency is not none %}· {{ filter_currency }}{% endif %}
+    {% if filter_unit is not none %}· {{ filter_unit or "sin unidad" }}{% endif %}
+    {% if filter_sale_format is not none %}· {{ filter_sale_format or "sin formato" }}{% endif %}
+  </span>
+  <a href="/curation/history">Ver todo →</a>
+</div>
+{% endif %}
+
+{% if not ingestions %}
+<div class="m3-card">
+  <div class="m3-empty">
+    <span class="m3-icon">inbox</span>
+    <p style="margin:12px 0 0">
+      {% if filtering %}Ningún anuncio curado coincide con este filtro.
+      {% else %}Todavía no hay anuncios curados.{% endif %}
+    </p>
+  </div>
+</div>
+{% else %}
+<div class="m3-card m3-table-scroll">
+  <table class="m3-table">
+    <thead>
+      <tr>
+        <th scope="col">Capturado</th>
+        <th scope="col">Canal origen</th>
+        <th scope="col">Producto(s) y precio</th>
+        <th scope="col"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ingestion in ingestions %}
+      <tr>
+        <td class="m3-nowrap m3-num m3-sm">{{ ingestion.captured_at | havana }}</td>
+        <td class="m3-sm">{{ ingestion.source_reference or "—" }}</td>
+        <td>
+          {% for product_name, price in rows_by_ingestion[ingestion.id] %}
+          <div class="m3-sm">
+            <span class="m3-strong">{{ product_name }}</span> —
+            <span class="m3-num">{{ "%.2f"|format(price.price) }} {{ price.currency }}</span>
+          </div>
+          {% else %}
+          <span class="m3-dim m3-sm">sin filas</span>
+          {% endfor %}
+        </td>
+        <td style="text-align:right" class="m3-nowrap">
+          <a class="m3-btn m3-btn-text" href="/curation/{{ ingestion.id }}/edit">
+            <span class="m3-icon m3-icon-sm">edit</span>Editar
+          </a>
+          <form method="post" action="/curation/{{ ingestion.id }}/delete" class="m3-inline-form"
+                onsubmit="return confirm('¿Eliminar este anuncio curado? Se borran sus filas de precio; la evidencia capturada no se toca.');">
+            <button type="submit" class="m3-icon-btn is-danger" title="Eliminar anuncio curado">
+              <span class="m3-icon">delete</span>
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

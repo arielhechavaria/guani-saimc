@@ -1,0 +1,162 @@
+{#
+  Tarjeta de una fila de producto/precio, como macro — no como `{% include %}`
+  directo: `loop` no viaja a una plantilla incluida, así que el índice se pasa
+  explícito. Compartida por curation.html (fila pendiente, editable en su
+  totalidad, con badge de detección y botón de eliminar) y curation_edit.html
+  (fila ya curada, corrección acotada: mismos campos, sin agregar ni quitar
+  filas — por eso `edit_mode` esconde el badge y el botón).
+
+  Los nombres indexados (`product_id_N`, `price_N`, `row_count`, …) y los `id`
+  no cambian: `submit_curation` y los tests siguen viendo lo mismo.
+#}
+{% macro price_row_card(row, index0, products, provinces, currencies, units, edit_mode=False) %}
+<div class="m3-card m3-card-pad m3-row-card{% if not row.product_id %} is-review{% endif %}" style="margin-bottom:16px">
+
+  {% if not edit_mode %}
+  <div class="m3-row" style="gap:10px; margin-bottom:18px">
+    <span class="m3-row-num">{{ index0 + 1 }}</span>
+    <span class="m3-h3 m3-spacer" data-product-label>Producto {{ index0 + 1 }}</span>
+    {% if row.product_id %}
+    <span class="m3-chip m3-chip-ok m3-chip-sm">
+      <span class="m3-icon m3-icon-sm">auto_awesome</span>Detectado
+    </span>
+    {% else %}
+    <span class="m3-chip m3-chip-warn m3-chip-sm">
+      <span class="m3-icon m3-icon-sm">edit_note</span>Agregar a mano
+    </span>
+    {% endif %}
+    <button type="button" class="m3-icon-btn is-danger" title="Eliminar esta fila"
+            onclick="removeProductCard(this)">
+      <span class="m3-icon">close</span>
+    </button>
+  </div>
+  {% else %}
+  <div class="m3-row" style="gap:10px; margin-bottom:18px">
+    <span class="m3-row-num">{{ index0 + 1 }}</span>
+    <span class="m3-h3">Fila {{ index0 + 1 }}</span>
+  </div>
+  {% endif %}
+
+  <input type="hidden" name="price_id_{{ index0 }}" value="{{ row.price_id }}" />
+
+  <div class="m3-grid-fields" style="grid-template-columns:repeat(auto-fit, minmax(150px, 1fr))">
+    <label class="m3-field m3-span-2{% if row.product_id %} is-filled{% endif %}">
+      <span class="m3-field-label" for="product_id_{{ index0 }}">Producto</span>
+      <select name="product_id_{{ index0 }}" id="product_id_{{ index0 }}" class="m3-select">
+        <option value="" {% if not row.product_id %}selected{% endif %}>— seleccionar —</option>
+        {% for product in products %}
+        <option value="{{ product.id }}" {% if row.product_id == product.id|string %}selected{% endif %}>
+          {{ product.name }}
+        </option>
+        {% endfor %}
+      </select>
+      <!--
+        El alta de producto salió de acá el 2026-08-15: era el camino por el que
+        el catálogo creció a 60 productos con duplicados que parten la densidad
+        de una serie. Los productos se administran en /catalog, y este `<select>`
+        solo lista pilotos.
+      -->
+      <span class="m3-help">Solo productos piloto. <a href="/catalog">Administrar el foco</a>.</span>
+    </label>
+
+    <label class="m3-field">
+      <span class="m3-field-label" for="price_{{ index0 }}">Precio</span>
+      <input type="text" name="price_{{ index0 }}" id="price_{{ index0 }}"
+             value="{{ row.price }}" class="m3-input m3-input-num" />
+    </label>
+
+    <label class="m3-field">
+      <span class="m3-field-label" for="currency_{{ index0 }}">Moneda</span>
+      <select name="currency_{{ index0 }}" id="currency_{{ index0 }}" class="m3-select">
+        {% for currency in currencies %}
+        <option value="{{ currency }}" {% if row.currency == currency %}selected{% endif %}>{{ currency }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="m3-field">
+      <span class="m3-field-label" for="quantity_{{ index0 }}">Cantidad</span>
+      <input type="text" name="quantity_{{ index0 }}" id="quantity_{{ index0 }}"
+             value="{{ row.quantity }}" class="m3-input m3-input-num" />
+    </label>
+
+    <label class="m3-field">
+      <span class="m3-field-label" for="unit_{{ index0 }}">Unidad</span>
+      <select name="unit_{{ index0 }}" id="unit_{{ index0 }}" class="m3-select">
+        <option value="" {% if not row.unit %}selected{% endif %}>— sin unidad —</option>
+        {% for unit in units %}
+        <option value="{{ unit }}" {% if row.unit == unit %}selected{% endif %}>{{ unit }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="m3-field">
+      <span class="m3-field-label" for="province_id_{{ index0 }}">Provincia</span>
+      <select name="province_id_{{ index0 }}" id="province_id_{{ index0 }}" class="m3-select">
+        <option value="" {% if not row.province_id %}selected{% endif %}>No determinada</option>
+        {% for province in provinces %}
+        <option value="{{ province.id }}" {% if row.province_id == province.id|string %}selected{% endif %}>
+          {{ province.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  {# Formato de venta: la pregunta importante de la fila, así que va aparte y a
+     ancho completo, no comprimida en una columna. #}
+  <div style="margin-top:22px">
+    <label class="m3-field" style="display:block">
+      <span class="m3-field-label" for="sale_format_{{ index0 }}">
+        ¿Un minorista de barrio vende esto así, o hace falta comprar a escala de contenedor?
+      </span>
+      <select name="sale_format_{{ index0 }}" id="sale_format_{{ index0 }}" class="m3-select">
+        {# El default es «sin responder» para no fabricar `retail`, pero si el
+           operador ya respondió y el formulario rebotó, se devuelve su respuesta:
+           echarla atrás le haría reenviar NULL sin darse cuenta. #}
+        <option value=""{% if row.sale_format not in ("retail", "wholesale") %} selected{% endif %}>— sin responder —</option>
+        <option value="retail"{% if row.sale_format == "retail" %} selected{% endif %}>Sí, minorista (aunque sea por saco o paquete entero)</option>
+        <option value="wholesale"{% if row.sale_format == "wholesale" %} selected{% endif %}>No, es mayorista (contenedor completo)</option>
+      </select>
+      <span class="m3-help">
+        Mayorista es escala de contenedor, no vender un saco o paquete individual —
+        eso lo ofrece cualquier minorista desde su casa (corregido 2026-08-12).
+      </span>
+    </label>
+  </div>
+
+  {# Envase y compra mínima: opcionales, colapsados. `<details>` nativo, sin JS. #}
+  <details class="mt-1" style="margin-top:16px">
+    <summary class="m3-summary m3-btn m3-btn-text" style="padding:6px 10px">
+      <span class="m3-icon m3-icon-sm">add</span>Envase y compra mínima (opcional)
+    </summary>
+    <div class="m3-grid-fields" style="margin-top:18px; padding-left:12px; border-left:2px solid var(--m3-outline-variant)">
+      <label class="m3-field">
+        <span class="m3-field-label" for="packaging_format_{{ index0 }}">Envase (opcional)</span>
+        <select name="packaging_format_{{ index0 }}" id="packaging_format_{{ index0 }}" class="m3-select">
+          <option value=""{% if not row.packaging_format %} selected{% endif %}>— sin especificar —</option>
+          <option value="paquete"{% if row.packaging_format == "paquete" %} selected{% endif %}>Paquete</option>
+          <option value="saco"{% if row.packaging_format == "saco" %} selected{% endif %}>Saco</option>
+          <option value="a granel"{% if row.packaging_format == "a granel" %} selected{% endif %}>A granel</option>
+          <option value="otro"{% if row.packaging_format == "otro" %} selected{% endif %}>Otro…</option>
+        </select>
+      </label>
+      <label class="m3-field">
+        <span class="m3-field-label" for="packaging_detail_{{ index0 }}">Si es «Otro» (opcional)</span>
+        <input type="text" name="packaging_detail_{{ index0 }}" id="packaging_detail_{{ index0 }}"
+               value="{{ row.packaging_detail }}" maxlength="64" placeholder="funda, lata, pomo…"
+               class="m3-input" />
+      </label>
+      <label class="m3-field">
+        <span class="m3-field-label" for="min_purchase_{{ index0 }}">Compra mínima (opcional)</span>
+        <input type="text" name="min_purchase_{{ index0 }}" id="min_purchase_{{ index0 }}"
+               value="{{ row.min_purchase }}" class="m3-input m3-input-num" placeholder="sin mínimo" />
+        <span class="m3-help">
+          Cuánto exige comprar el anuncio, en la <strong>misma unidad de esta fila</strong>.
+          «Paca de 30 paquetes de 1 kg» con el precio del kilo → 30. Vacío = no exige lote.
+        </span>
+      </label>
+    </div>
+  </details>
+</div>
+{% endmacro %}
