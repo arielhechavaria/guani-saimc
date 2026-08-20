@@ -763,7 +763,11 @@ class TestPrellenoDesdeHistorialDelCanal:
         el motor lo deriva en vez de adivinarlo. Anuncio real del operador
         (2026-08-20).
         """
-        _crear_producto(session, name="Pollo")
+        # Las alitas son su propio producto, no Pollo (decisión del operador,
+        # 2026-08-20). Mientras no estén en el catálogo el anuncio queda
+        # fuera de foco y la cola lo esconde, que es el comportamiento
+        # correcto: no se está midiendo alitas.
+        _crear_producto(session, name="Alitas de pollo")
         _crear_raw_ingestion(
             session,
             hash_="hash-alitas-escalonado",

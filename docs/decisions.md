@@ -3312,3 +3312,33 @@ cambie — dos productos distintos la desactivan. Queda anotado aparte que
 Pollo genérico igual que lo haría «pollo entero»; si el operador quiere que
 las alitas sean un producto propio, como ya lo son muslo y pechuga, es una
 línea en esa lista y una decisión suya, no del motor.
+
+## 2026-08-20 — Las alitas no son Pollo; el muslo sí, y ya lo era
+Contexto: al revisar la lectura de bloque quedó a la vista que «ALITAS DE
+POLLO» matcheaba Pollo genérico. El operador definió el criterio: muslo y
+contramuslo cuentan como Pollo, las alitas no.
+
+Decisión: `alas`, `alita` y `alitas` entran a
+`_PRODUCT_DISQUALIFYING_MODIFIERS`. «ala» ya estaba pero el regex es `\b...\b`
+y no tocaba ni el plural ni el diminutivo, que es como se anuncia el corte de
+verdad. Muslo y contramuslo NO se tocan: verificado contra la base de
+producción, ya matchean Pollo por los alias que el operador cargó en /catalog
+el 2026-08-20, que es el mecanismo previsto — `_match_product` levanta la
+descalificación cuando el alias que matchea contiene el propio modificador.
+Cambiarlo en código habría sido redundante y habría desprotegido el match
+genérico de cualquier otro producto.
+
+Descartado: sacar «muslo» y «contramuslo» de la lista. La lista protege a
+TODOS los productos; el alias es la excepción por producto, editable desde la
+interfaz y sin despliegue.
+
+Consecuencia: un anuncio de alitas deja de atribuirse a Pollo y, mientras
+alitas no exista como producto, cae fuera de foco y la cola lo esconde —
+correcto, porque no se está midiendo alitas; darlo de alta en /catalog lo hace
+reaparecer sin reprocesar nada. Para que el bloque siga sirviendo en ese
+estado, `_tiered_proposals` ya no exige producto del catálogo: sin match
+propone el encabezado como `product_name_guess` (`_block_header`), porque
+`_guess_product_phrase` adivina a partir del texto que precede a un precio y
+un encabezado no tiene ninguno. Queda anotado que «pechuga» e «hígado» siguen
+descalificando, sin alias que los levante: si el operador los quiere como
+Pollo, es un alias en /catalog, no un cambio de código.

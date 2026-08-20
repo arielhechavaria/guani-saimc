@@ -592,14 +592,16 @@ class TestProposeAllPreciosEscalonados:
 
         base, mayorista = resultados
 
-        assert base.product is products[0]
+        # Las dos filas describen la misma oferta, así que hablan del mismo
+        # producto — sea uno del catálogo o, como acá, uno todavía sin dar de
+        # alta (las alitas no son Pollo: ver `TestCortesQueNoSonElProductoGenerico`).
+        assert base.product is mayorista.product
         assert base.price == Decimal("28.5")
         assert base.currency == "USD"
         assert base.quantity == Decimal("40")
         assert base.unit == "lb"
         assert base.min_purchase_quantity is None
 
-        assert mayorista.product is products[0]
         assert mayorista.price == Decimal("27.5")
         assert mayorista.currency == "USD"
         assert mayorista.quantity == Decimal("40")
@@ -614,11 +616,11 @@ class TestProposeAllPreciosEscalonados:
     ) -> None:
         """La línea del precio base empieza con "La caja", que el motor
         línea-por-línea tomaba como nombre de producto candidato. Bajo la
-        lectura de bloque el producto lo pone el encabezado y no hay nada
-        que adivinar."""
+        lectura de bloque el nombre sale del encabezado, así que el envase
+        nunca puede terminar propuesto como producto."""
         resultados = propose_all(self.ALITAS, products, provinces)
 
-        assert all(r.product_name_guess is None for r in resultados)
+        assert all(r.product_name_guess != "La caja" for r in resultados)
 
     def test_minimo_dicho_en_la_unidad_del_lote_no_se_multiplica(
         self, products: list[Product], provinces: list[Province]
@@ -671,6 +673,91 @@ class TestProposeAllPreciosEscalonados:
         assert len(resultados) == 1
         assert resultados[0].price == Decimal("500")
         assert resultados[0].min_purchase_quantity is None
+
+    def test_producto_fuera_del_catalogo_propone_el_encabezado_como_nombre(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Las alitas no son Pollo (decisión del operador, 2026-08-20) y
+        todavía no existen como producto propio. El bloque no puede
+        deshacerse por eso: sigue siendo un anuncio de un solo producto con
+        precio por volumen, y lo único que falta es el alta.
+
+        El encabezado es el nombre candidato porque en esta forma de anuncio
+        ES el producto — `_guess_product_phrase` no lo ve, porque adivina a
+        partir del texto que precede a un precio y el encabezado no tiene
+        ninguno.
+        """
+        resultados = propose_all(self.ALITAS, products, provinces)
+
+        assert len(resultados) == 2
+        assert all(r.product is None for r in resultados)
+        assert all(r.product_name_guess == "ALITAS DE POLLO" for r in resultados)
+        assert resultados[0].price == Decimal("28.5")
+        assert resultados[1].price == Decimal("27.5")
+        assert resultados[1].min_purchase_quantity == Decimal("4000")
+
+    def test_una_vez_dado_de_alta_el_producto_gana_al_nombre_adivinado(
+        self, provinces: list[Province]
+    ) -> None:
+        """Cuando el operador da de alta las alitas, el bloque deja de
+        adivinar: el nombre propio ya no descalifica nada porque contiene el
+        mismo corte que la lista marca."""
+        catalogo = [
+            Product(name="Alitas de pollo", category="carnes", unit="lb", aliases=[])
+        ]
+
+        resultados = propose_all(self.ALITAS, catalogo, provinces)
+
+        assert len(resultados) == 2
+        assert all(r.product is catalogo[0] for r in resultados)
+        assert all(r.product_name_guess is None for r in resultados)
+
+
+class TestCortesQueNoSonElProductoGenerico:
+    """Qué corte cuenta como el producto genérico y cuál no es criterio del
+    operador, no del motor (2026-08-20): muslo y contramuslo SÍ son Pollo,
+    las alitas no.
+
+    Muslo y contramuslo se resuelven con alias en /catalog, no acá — por eso
+    siguen en la lista de modificadores: la lista protege el match genérico
+    de CUALQUIER producto, y un alias explícito es lo que la levanta para uno
+    en concreto (ver el `has_modifier` de `_match_product`).
+    """
+
+    def test_alitas_no_es_pollo_generico(self, provinces: list[Province]) -> None:
+        pollo = [Product(name="Pollo", category="carnes", unit="lb", aliases=["pollo entero"])]
+
+        assert propose_all("alitas de pollo a 300", pollo, provinces)[0].product is None
+
+    def test_alas_tampoco_es_pollo_generico(self, provinces: list[Province]) -> None:
+        """Mismo corte, otra palabra. Que el mismo anuncio caiga en productos
+        distintos según cómo lo escriba el vendedor es exactamente el error
+        que la lista existe para evitar."""
+        pollo = [Product(name="Pollo", category="carnes", unit="lb", aliases=["pollo entero"])]
+
+        assert propose_all("alas de pollo a 300", pollo, provinces)[0].product is None
+
+    def test_muslo_con_alias_explicito_si_es_pollo(self, provinces: list[Province]) -> None:
+        """Es el mecanismo que el operador ya usa en producción: el alias
+        levanta la descalificación para este producto y solo para este."""
+        pollo = [
+            Product(
+                name="Pollo",
+                category="carnes",
+                unit="lb",
+                aliases=["muslo de pollo", "contramuslo"],
+            )
+        ]
+
+        assert propose_all("muslo de pollo a 500", pollo, provinces)[0].product is pollo[0]
+        assert propose_all("contramuslo a 400", pollo, provinces)[0].product is pollo[0]
+
+    def test_muslo_sin_alias_sigue_sin_ser_pollo_generico(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """La fixture no trae los alias de producción: sin ellos, la lista
+        sigue protegiendo el match genérico como siempre."""
+        assert propose_all("muslo de pollo a 500", products, provinces)[0].product is None
 
 
 class TestMencionaAlgunProducto:

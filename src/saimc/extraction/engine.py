@@ -158,7 +158,15 @@ _PRODUCT_DISQUALIFYING_MODIFIERS = (
     "muslo",
     "pechuga",
     "molleja",
+    # "ala" sola no alcanza: el regex es `\b...\b`, así que no toca "alas" ni
+    # "alitas", que es como se anuncia el corte de verdad. Las tres formas
+    # entran explícitas (2026-08-20): el operador decidió que las alitas NO
+    # son Pollo genérico, y que el mismo corte caiga en un producto distinto
+    # según cómo lo escriba el vendedor es justo lo que esta lista evita.
     "ala",
+    "alas",
+    "alita",
+    "alitas",
     "corazon",
     "molida",
     "falda",
@@ -549,6 +557,23 @@ def _lot_size(lines: Sequence[str]) -> tuple[Decimal | None, str | None]:
     return None, None
 
 
+def _block_header(lines: Sequence[str]) -> str | None:
+    """El renglón que nombra el producto en un anuncio de bloque.
+
+    Es la primera línea sin precio y con letras: en esta forma de anuncio el
+    encabezado ES el producto. Hace falta porque `_guess_product_phrase`
+    adivina a partir del texto que precede a un precio, y el encabezado
+    justamente no tiene ninguno — sin esto, un producto que todavía no está
+    en el catálogo dejaría al bloque sin nada que mostrar.
+    """
+    for line in lines:
+        if _extract_price(line) is not None:
+            continue
+        if any(char.isalpha() for char in line):
+            return line
+    return None
+
+
 def _tier_minimum(
     count: Decimal, word: str | None, lot_quantity: Decimal | None, lot_unit: str | None
 ) -> Decimal | None:
@@ -616,9 +641,17 @@ def _tiered_proposals(
     # La herencia del encabezado solo es cierta si todo el anuncio habla de un
     # único producto. Con dos, atribuir el escalón a uno sería inventar.
     matched = [p for p in (_match_product(line, products) for line in lines) if p is not None]
-    if not matched or any(p is not matched[0] for p in matched):
+    if any(p is not matched[0] for p in matched):
         return None
-    product = matched[0]
+
+    # Sin match no se abandona la lectura de bloque: el anuncio sigue teniendo
+    # esta forma y lo único que falta es el alta del producto. Se propone el
+    # encabezado como nombre candidato, igual que hace la lectura por línea
+    # con `product_name_guess`, y el operador decide.
+    product = matched[0] if matched else None
+    guess = _block_header(plain) if product is None else None
+    if product is None and guess is None:
+        return None
 
     base_line = next((line for line in plain if _extract_price(line) is not None), None)
     if base_line is None:
@@ -636,6 +669,7 @@ def _tiered_proposals(
     def fila(price: Decimal | None, minimum: Decimal | None) -> ExtractionProposal:
         return ExtractionProposal(
             product=product,
+            product_name_guess=guess,
             price=price,
             currency=currency,
             quantity=lot_quantity,
