@@ -1,0 +1,66 @@
+{#
+  Shell común de las tres vistas: rail de navegación + cabecera de página.
+  Reemplaza los tres encabezados distintos que había (el gradiente teal de
+  curación/control y la fila de enlaces de catálogo).
+
+  No necesita nada nuevo del backend: el destino activo se deriva de
+  `request.url.path`, que Jinja2Templates ya inyecta en todo TemplateResponse.
+#}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — {% block title %}{% endblock %}</title>
+  {# Una sola hoja, vendorizada (mismo criterio que CLAUDE.md: una descarga
+     menos en conexión lenta). Reemplaza bootstrap.min.css + curation.css. #}
+  <link href="/static/saimc-material.css" rel="stylesheet" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% set path = request.url.path %}
+{% set nav = 'catalog' if path.startswith('/catalog') else ('control' if path.startswith('/control') else 'curation') %}
+<div class="m3-shell">
+
+  <nav class="m3-rail" aria-label="Secciones">
+    <div class="m3-rail-brand">SA</div>
+    <a class="m3-rail-item{% if nav == 'catalog' %} is-active{% endif %}" href="/catalog"
+       {% if nav == 'catalog' %}aria-current="page"{% endif %}>
+      <span class="m3-rail-pill"><span class="m3-icon m3-icon-lg">inventory_2</span></span>
+      <span class="m3-rail-label">Catálogo</span>
+    </a>
+    <a class="m3-rail-item{% if nav == 'curation' %} is-active{% endif %}" href="/curation"
+       {% if nav == 'curation' %}aria-current="page"{% endif %}>
+      <span class="m3-rail-pill"><span class="m3-icon m3-icon-lg">fact_check</span></span>
+      <span class="m3-rail-label">Curaduría</span>
+    </a>
+    <a class="m3-rail-item{% if nav == 'control' %} is-active{% endif %}" href="/control"
+       {% if nav == 'control' %}aria-current="page"{% endif %}>
+      <span class="m3-rail-pill"><span class="m3-icon m3-icon-lg">monitoring</span></span>
+      <span class="m3-rail-label">Control</span>
+    </a>
+  </nav>
+
+  <main class="m3-main">
+    <header class="m3-topbar">
+      <div class="m3-topbar-row">
+        <div class="m3-topbar-main">
+          <div class="m3-kicker">SAIMC · Fase 0</div>
+          <h1 class="m3-title">{% block heading %}{% endblock %}</h1>
+          <p class="m3-subtitle">{% block subtitle %}{% endblock %}</p>
+        </div>
+        <div class="m3-stats">{% block stats %}{% endblock %}</div>
+      </div>
+      {% block tabs %}{% endblock %}
+    </header>
+
+    <div class="m3-content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  {% block snackbar %}{% endblock %}
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

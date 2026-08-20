@@ -1,149 +1,154 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SAIMC — Catálogo del foco</title>
-  <link href="/static/bootstrap.min.css" rel="stylesheet" />
-  <link href="/static/curation.css" rel="stylesheet" />
-  <style>
-    /* Embebido y no en un archivo aparte por el mismo motivo que control.html:
-       no lo usa ninguna otra página y una descarga más pesa en conexión lenta. */
-    .saimc-count { font-variant-numeric: tabular-nums; }
-    .saimc-off td { opacity: .55; }
-    /* <details> nativo en vez de JS para el formulario de edición: se abre
-       y cierra solo, sin script propio (mismo criterio que el onchange de
-       provincia/dirección). Se le saca el triángulo por defecto porque ya
-       tiene pinta de botón. */
-    .saimc-edit summary { list-style: none; cursor: pointer; }
-    .saimc-edit summary::-webkit-details-marker { display: none; }
-    .saimc-edit[open] summary { margin-bottom: .5rem; }
-  </style>
-</head>
-<body class="bg-light">
-  <div class="container py-4">
+{% extends "_shell.html" %}
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h1 class="h4 mb-0">Catálogo del foco</h1>
-      <div class="small">
-        <a href="#canales">Canales</a> · <a href="#productos">Productos piloto</a>
-        ·
-        <a href="/curation">Cola de curaduría</a> · <a href="/control">Control</a>
+{% block title %}Catálogo del foco{% endblock %}
+{% block heading %}Catálogo del foco{% endblock %}
+{% block subtitle %}La ronda de canales y los productos piloto. Lo que se define acá decide qué extrae la curaduría.{% endblock %}
+
+{% block stats %}
+  <div class="m3-stat">
+    <div class="m3-stat-label">En el foco</div>
+    <div class="m3-stat-value is-accent">{{ pilot_count }}</div>
+  </div>
+  <div class="m3-stat">
+    <div class="m3-stat-label">En catálogo</div>
+    <div class="m3-stat-value">{{ products|length }}</div>
+  </div>
+  <div class="m3-stat">
+    <div class="m3-stat-label">Canales</div>
+    <div class="m3-stat-value">{{ channels|length }}</div>
+  </div>
+{% endblock %}
+
+{% block content %}
+{# Filtro de pantalla, no de datos: enlace con querystring en vez de JavaScript,
+   mismo criterio que las pestañas de provincia de /control. #}
+{% set focus_only = request.query_params.get('focus') == '1' %}
+{% set obs_values = products | map(attribute=1) | list %}
+{% set obs_max = (obs_values | max) if obs_values else 0 %}
+
+{% if flash_error %}
+<div class="m3-banner m3-banner-error" role="alert">
+  <span class="m3-icon">error</span>
+  <span>{{ flash_error }}</span>
+</div>
+{% endif %}
+
+<div class="m3-stack">
+
+  {# Sube al tope porque explica las dos tablas de abajo. Los tres párrafos
+     largos de la versión anterior se condensan en esta línea y en la nota de
+     la tarjeta de canales. #}
+  <div class="m3-banner">
+    <span class="m3-icon">center_focus_strong</span>
+    <div>
+      <strong>{{ pilot_count }} producto{{ "s" if pilot_count != 1 }} en el foco.</strong>
+      La curaduría solo extrae precio de los productos piloto; los demás conservan su
+      historial pero no reciben precios nuevos.
+    </div>
+  </div>
+
+  <!-- Canales --------------------------------------------------------- -->
+  <section id="canales" class="m3-card">
+    <div class="m3-card-head">
+      <div class="m3-topbar-main">
+        <h2 class="m3-h2">Canales y grupos seguidos</h2>
+        <p class="m3-note" style="margin-bottom:0">
+          La ronda diaria. Un canal con «Id. WAHA» recibe por webhook; el resto es captura
+          manual. Si le fijás provincia, esa gana siempre en /curation para sus anuncios —
+          no depende de que el texto la mencione.
+        </p>
       </div>
     </div>
 
-    {% if flash_message %}
-    <div class="alert alert-success small">{{ flash_message }}</div>
-    {% endif %}
-    {% if flash_error %}
-    <div class="alert alert-danger small">{{ flash_error }}</div>
-    {% endif %}
+    {# Alta de canal colapsada: `<details>` nativo, sin script — el botón ES el
+       summary, así que hay un solo control y no dos. #}
+    <details id="alta-canal">
+      <summary class="m3-summary m3-btn m3-btn-filled" style="margin:0 24px 16px">
+        <span class="m3-icon">add</span>Agregar canal
+      </summary>
+      <form method="post" action="/catalog/channels" class="m3-form-block m3-grid-fields">
+        <label class="m3-field m3-field-on-container is-filled">
+          <span class="m3-field-label" for="channel_name">Nombre</span>
+          <input type="text" name="name" id="channel_name" required class="m3-input" />
+        </label>
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label" for="platform">Plataforma</span>
+          <select name="platform" id="platform" class="m3-select">
+            {% for platform in platforms %}
+            <option value="{{ platform.value }}">{{ platform.value }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label" for="channel_province">Provincia (opcional)</span>
+          <select name="province_id" id="channel_province" class="m3-select">
+            <option value="">Sin fijar</option>
+            {% for provincia in provinces %}
+            <option value="{{ provincia.id }}">{{ provincia.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label" for="external_id">Id. WAHA</span>
+          <input type="text" name="external_id" id="external_id" placeholder="1234...@newsletter"
+                 class="m3-input m3-input-num" />
+          <span class="m3-help">Cargarlo automatiza la captura de ese canal</span>
+        </label>
+        <label class="m3-field m3-field-on-container m3-span-2">
+          <span class="m3-field-label" for="address">Dirección del local (opcional, de la descripción del grupo)</span>
+          <input type="text" name="address" id="address" class="m3-input" />
+        </label>
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label" for="url">Enlace (opcional)</span>
+          <input type="text" name="url" id="url" class="m3-input" />
+        </label>
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label" for="notes">Notas (opcional)</span>
+          <input type="text" name="notes" id="notes" class="m3-input" />
+        </label>
+        <div class="m3-row" style="align-self:end">
+          <button type="submit" class="m3-btn m3-btn-filled">Guardar</button>
+        </div>
+      </form>
+    </details>
 
-    <!-- Canales --------------------------------------------------------- -->
-    <div id="canales" class="card mb-4">
-      <div class="card-header">Canales y grupos seguidos</div>
-
-      <div class="card-body border-bottom">
-        <p class="small text-muted">
-          La densidad se construye mirando <em>los mismos</em> canales todos los
-          días. Esta lista es la ronda, no una fuente automática por defecto:
-          en Fase 0 la captura sigue siendo manual, salvo un canal de WhatsApp
-          con «Id. WAHA» cargado — ese recibe mensajes por webhook, y además
-          se le puede pedir «Importar histórico» para traer de una vez lo que
-          WAHA ya tenga sincronizado (unos días a unas semanas según cuánto
-          publique el canal — no hay forma de pedirle más atrás que eso). Si
-          fijás la provincia de un canal, esa gana siempre en /curation para
-          sus anuncios — no depende de que el texto del mensaje la mencione.
-        </p>
-        <form method="post" action="/catalog/channels" class="row g-2 align-items-end">
-          <div class="col-md-3">
-            <label for="channel_name" class="form-label small mb-1">Nombre</label>
-            <input type="text" name="name" id="channel_name" required class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-2">
-            <label for="platform" class="form-label small mb-1">Plataforma</label>
-            <select name="platform" id="platform" class="form-select form-select-sm">
-              {% for platform in platforms %}
-              <option value="{{ platform.value }}">{{ platform.value }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-2">
-            <label for="url" class="form-label small mb-1">Enlace <span class="text-muted">(opcional)</span></label>
-            <input type="text" name="url" id="url" class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-2">
-            <label for="notes" class="form-label small mb-1">Notas <span class="text-muted">(opcional)</span></label>
-            <input type="text" name="notes" id="notes" class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-3">
-            <label for="address" class="form-label small mb-1">
-              Dirección del local <span class="text-muted">(opcional, de la descripción del grupo)</span>
-            </label>
-            <input type="text" name="address" id="address" class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-2">
-            <label for="external_id" class="form-label small mb-1">
-              Id. WAHA <span class="text-muted">(automatiza)</span>
-            </label>
-            <input type="text" name="external_id" id="external_id" placeholder="1234...@newsletter"
-                   class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-2">
-            <label for="channel_province" class="form-label small mb-1">
-              Provincia <span class="text-muted">(opcional)</span>
-            </label>
-            <select name="province_id" id="channel_province" class="form-select form-select-sm">
-              <option value="">Sin fijar</option>
-              {% for provincia in provinces %}
-              <option value="{{ provincia.id }}">{{ provincia.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-1">
-            <button type="submit" class="btn btn-sm btn-primary w-100">Agregar</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle">
-          <thead>
-            <tr>
-              <th scope="col">Canal</th>
-              <th scope="col">Plataforma</th>
-              <th scope="col">Notas</th>
-              <th scope="col">Provincia</th>
-              <th scope="col">Dirección del local</th>
-              <th scope="col">Automatización</th>
-              <th scope="col" class="text-end">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% if not channels %}
-            <tr><td colspan="7" class="text-muted small py-3">Todavía no hay canales anotados.</td></tr>
-            {% endif %}
-            {% for channel in channels %}
-            <tr {% if not channel.is_active %}class="saimc-off"{% endif %}>
-              <td>
+    <div class="m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Canal</th>
+            <th scope="col">Provincia fijada</th>
+            <th scope="col">Dirección del local</th>
+            <th scope="col">Captura</th>
+            <th scope="col" style="text-align:right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not channels %}
+          <tr><td colspan="5" class="m3-muted m3-sm">Todavía no hay canales anotados.</td></tr>
+          {% endif %}
+          {% for channel in channels %}
+          <tr {% if not channel.is_active %}class="m3-row-off"{% endif %}>
+            <td>
+              <div class="m3-row" style="gap:8px">
                 {% if channel.url %}
-                <a href="{{ channel.url }}" rel="noopener noreferrer" target="_blank">{{ channel.name }}</a>
+                <a href="{{ channel.url }}" rel="noopener noreferrer" target="_blank" class="m3-strong">{{ channel.name }}</a>
+                <span class="m3-icon m3-icon-sm m3-dim">open_in_new</span>
                 {% else %}
-                {{ channel.name }}
+                <span class="m3-strong">{{ channel.name }}</span>
                 {% endif %}
-              </td>
-              <td class="text-muted small">{{ channel.platform }}</td>
-              <td class="text-muted small">{{ channel.notes or "" }}</td>
-              <td>
-                <!--
-                  Auto-envía al cambiar (onchange), sin botón aparte ni
-                  script: un solo atributo HTML, más simple todavía que el
-                  <script> del backfill (docs/decisions.md, 2026-08-17).
-                  "El canal siempre manda" en /curation cuando esto está
-                  fijado — ver _channel_province_id en curation.py.
-                -->
-                <form method="post" action="/catalog/channels/{{ channel.id }}/province">
-                  <select name="province_id" class="form-select form-select-sm" style="min-width: 150px;"
+              </div>
+              <div class="m3-cell-sub">{{ channel.platform }}{% if channel.notes %} · {{ channel.notes }}{% endif %}</div>
+            </td>
+            <td>
+              <!--
+                Auto-envía al cambiar (onchange), sin botón aparte ni script.
+                "El canal siempre manda" en /curation cuando esto está fijado —
+                ver _channel_province_id en curation.py.
+              -->
+              <form method="post" action="/catalog/channels/{{ channel.id }}/province">
+                <span class="m3-field m3-field-compact">
+                  <select name="province_id" class="m3-select" style="min-width: 150px;"
                           onchange="this.form.submit()">
                     <option value="">Sin fijar</option>
                     {% for provincia in provinces %}
@@ -152,177 +157,215 @@
                     </option>
                     {% endfor %}
                   </select>
-                </form>
-              </td>
-              <td>
-                <!-- Mismo criterio que provincia: onchange envía solo, sin
-                     botón aparte. En un input de texto, onchange dispara al
-                     perder el foco después de un cambio real, no en cada
-                     tecla ni por un click sin editar nada. -->
-                <form method="post" action="/catalog/channels/{{ channel.id }}/address">
+                </span>
+              </form>
+            </td>
+            <td>
+              <!-- Mismo criterio que provincia: onchange envía solo. En un input
+                   de texto dispara al perder el foco tras un cambio real. -->
+              <form method="post" action="/catalog/channels/{{ channel.id }}/address">
+                <span class="m3-field m3-field-compact">
                   <input type="text" name="address" value="{{ channel.address or '' }}"
-                         placeholder="Sin cargar" class="form-control form-control-sm"
+                         placeholder="Sin cargar" class="m3-input"
                          style="min-width: 200px;" onchange="this.form.submit()" />
+                </span>
+              </form>
+            </td>
+            <td>
+              {% if channel.external_id %}
+              <span class="m3-chip m3-chip-ok m3-chip-sm">
+                <span class="m3-icon m3-icon-sm">bolt</span>webhook activo
+              </span>
+              <form method="post" action="/catalog/channels/{{ channel.id }}/backfill" class="m3-mt-sm">
+                <button type="submit" class="m3-btn m3-btn-outlined" style="padding:6px 14px; font-size:13px">
+                  Importar histórico
+                </button>
+              </form>
+              {% else %}
+              <span class="m3-chip m3-chip-neutral m3-chip-sm">
+                <span class="m3-icon m3-icon-sm">edit_note</span>manual
+              </span>
+              {% endif %}
+            </td>
+            <td style="text-align:right" class="m3-nowrap">
+              {# El formulario de edición sigue siendo un <details> nativo. #}
+              <details class="m3-inline-form" style="text-align:left">
+                <summary class="m3-icon-btn m3-summary" title="Editar canal">
+                  <span class="m3-icon">edit</span>
+                </summary>
+                <form method="post" action="/catalog/channels/{{ channel.id }}/edit"
+                      class="m3-card m3-card-pad m3-grid-fields" style="min-width:280px; margin-top:8px">
+                  <label class="m3-field">
+                    <span class="m3-field-label">Nombre</span>
+                    <input type="text" name="name" value="{{ channel.name }}" required class="m3-input" />
+                  </label>
+                  <label class="m3-field">
+                    <span class="m3-field-label">Plataforma</span>
+                    <select name="platform" class="m3-select">
+                      {% for platform in platforms %}
+                      <option value="{{ platform.value }}"
+                              {% if channel.platform == platform.value %}selected{% endif %}>
+                        {{ platform.value }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label class="m3-field">
+                    <span class="m3-field-label">Enlace</span>
+                    <input type="text" name="url" value="{{ channel.url or '' }}" class="m3-input" />
+                  </label>
+                  <label class="m3-field">
+                    <span class="m3-field-label">Notas</span>
+                    <input type="text" name="notes" value="{{ channel.notes or '' }}" class="m3-input" />
+                  </label>
+                  <label class="m3-field">
+                    <span class="m3-field-label">Id. WAHA</span>
+                    <input type="text" name="external_id" value="{{ channel.external_id or '' }}" class="m3-input m3-input-num" />
+                  </label>
+                  <div><button type="submit" class="m3-btn m3-btn-filled">Guardar</button></div>
                 </form>
-              </td>
-              <td class="small">
-                {% if channel.external_id %}
-                <span class="badge text-bg-success">webhook activo</span>
-                <form method="post" action="/catalog/channels/{{ channel.id }}/backfill" class="d-inline">
-                  <button type="submit" class="btn btn-sm btn-outline-secondary">Importar histórico</button>
-                </form>
+              </details>
+              {# Reemplaza los botones «Apagar»/«Encender» por un toggle. Mismo POST. #}
+              <form method="post" action="/catalog/channels/{{ channel.id }}/active" class="m3-inline-form">
+                {% if channel.is_active %}
+                <button type="submit" class="m3-icon-btn is-on" title="Apagar canal">
+                  <span class="m3-icon">toggle_on</span>
+                </button>
                 {% else %}
-                <span class="text-muted">manual</span>
+                <input type="hidden" name="is_active" value="on" />
+                <button type="submit" class="m3-icon-btn" title="Encender canal">
+                  <span class="m3-icon">toggle_off</span>
+                </button>
                 {% endif %}
-              </td>
-              <td class="text-end">
-                <details class="saimc-edit d-inline-block text-start align-middle">
-                  <summary class="btn btn-sm btn-outline-secondary">Editar</summary>
-                  <form method="post" action="/catalog/channels/{{ channel.id }}/edit"
-                        class="p-2 border rounded bg-white text-start" style="min-width: 260px;">
-                    <div class="mb-2">
-                      <label class="form-label small mb-1">Nombre</label>
-                      <input type="text" name="name" value="{{ channel.name }}" required
-                             class="form-control form-control-sm" />
-                    </div>
-                    <div class="mb-2">
-                      <label class="form-label small mb-1">Plataforma</label>
-                      <select name="platform" class="form-select form-select-sm">
-                        {% for platform in platforms %}
-                        <option value="{{ platform.value }}"
-                                {% if channel.platform == platform.value %}selected{% endif %}>
-                          {{ platform.value }}
-                        </option>
-                        {% endfor %}
-                      </select>
-                    </div>
-                    <div class="mb-2">
-                      <label class="form-label small mb-1">Enlace</label>
-                      <input type="text" name="url" value="{{ channel.url or '' }}"
-                             class="form-control form-control-sm" />
-                    </div>
-                    <div class="mb-2">
-                      <label class="form-label small mb-1">Notas</label>
-                      <input type="text" name="notes" value="{{ channel.notes or '' }}"
-                             class="form-control form-control-sm" />
-                    </div>
-                    <div class="mb-2">
-                      <label class="form-label small mb-1">Id. WAHA</label>
-                      <input type="text" name="external_id" value="{{ channel.external_id or '' }}"
-                             class="form-control form-control-sm" />
-                    </div>
-                    <button type="submit" class="btn btn-sm btn-primary w-100">Guardar</button>
-                  </form>
-                </details>
-                <form method="post" action="/catalog/channels/{{ channel.id }}/active" class="d-inline">
-                  {% if channel.is_active %}
-                  <button type="submit" class="btn btn-sm btn-outline-secondary">Apagar</button>
-                  {% else %}
-                  <input type="hidden" name="is_active" value="on" />
-                  <button type="submit" class="btn btn-sm btn-outline-primary">Encender</button>
-                  {% endif %}
-                </form>
-                <form method="post" action="/catalog/channels/{{ channel.id }}/delete" class="d-inline"
-                      onsubmit="return confirm('¿Eliminar «{{ channel.name }}»? Solo funciona si nunca capturó anuncios; si ya tiene historial, apagalo en su lugar.');">
-                  <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
-                </form>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+              </form>
+              <form method="post" action="/catalog/channels/{{ channel.id }}/delete" class="m3-inline-form"
+                    onsubmit="return confirm('¿Eliminar «{{ channel.name }}»? Solo funciona si nunca capturó anuncios; si ya tiene historial, apagalo en su lugar.');">
+                <button type="submit" class="m3-icon-btn is-danger" title="Eliminar canal">
+                  <span class="m3-icon">delete</span>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+  </section>
 
-    <!-- Productos ------------------------------------------------------- -->
-    <div class="alert alert-secondary small">
-      La curaduría solo extrae precio de los productos marcados como piloto.
-      Un producto fuera del foco conserva sus precios históricos y sigue en el
-      catálogo; lo único que no puede es recibir precios nuevos.
-      <strong>{{ pilot_count }}</strong> en el foco ahora.
-    </div>
-
-    <div id="productos" class="card">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span>Productos</span>
-        <span class="text-muted small">{{ products|length }} en catálogo</span>
+  <!-- Productos ------------------------------------------------------- -->
+  <section id="productos" class="m3-card">
+    <div class="m3-card-head">
+      <div class="m3-topbar-main">
+        <h2 class="m3-h2">Productos</h2>
+        <p class="m3-note" style="margin-bottom:0">{{ products|length }} en catálogo · {{ pilot_count }} en el foco</p>
       </div>
-
-      <div class="card-body border-bottom">
-        <form method="post" action="/catalog/products" class="row g-2 align-items-end">
-          <div class="col-md-5">
-            <label for="name" class="form-label small mb-1">Nombre del producto nuevo</label>
-            <input type="text" name="name" id="name" required class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-3">
-            <label for="category" class="form-label small mb-1">Categoría <span class="text-muted">(opcional)</span></label>
-            <input type="text" name="category" id="category" class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-2">
-            <label for="unit" class="form-label small mb-1">Unidad <span class="text-muted">(opcional)</span></label>
-            <input type="text" name="unit" id="unit" class="form-control form-control-sm" />
-          </div>
-          <div class="col-md-2">
-            <button type="submit" class="btn btn-sm btn-primary w-100">Agregar al foco</button>
-          </div>
-          <div class="col-12">
-            <div class="form-text">Se agrega directamente como piloto: si lo cargás acá, lo querés medir.</div>
+      <div class="m3-row" style="gap:8px">
+        <a class="m3-chip m3-chip-btn{% if not focus_only %} is-selected{% endif %}" href="/catalog#productos">Todos</a>
+        <a class="m3-chip m3-chip-btn{% if focus_only %} is-selected{% endif %}" href="/catalog?focus=1#productos">
+          <span class="m3-icon m3-icon-sm">{{ 'check' if focus_only else 'center_focus_strong' }}</span>Solo el foco
+        </a>
+      </div>
+      <details class="m3-inline-form">
+        <summary class="m3-btn m3-btn-tonal m3-summary">
+          <span class="m3-icon">add</span>Agregar al foco
+        </summary>
+        <form method="post" action="/catalog/products"
+              class="m3-card m3-card-pad m3-grid-fields" style="min-width:320px; margin-top:8px; text-align:left">
+          <label class="m3-field is-filled m3-span-2">
+            <span class="m3-field-label" for="name">Nombre del producto nuevo</span>
+            <input type="text" name="name" id="name" required class="m3-input" />
+          </label>
+          <label class="m3-field">
+            <span class="m3-field-label" for="category">Categoría (opcional)</span>
+            <input type="text" name="category" id="category" class="m3-input" />
+          </label>
+          <label class="m3-field">
+            <span class="m3-field-label" for="unit">Unidad (opcional)</span>
+            <input type="text" name="unit" id="unit" class="m3-input" />
+          </label>
+          <div class="m3-span-2">
+            <p class="m3-xs m3-muted" style="margin:0 0 10px">
+              Se agrega directamente como piloto: si lo cargás acá, lo querés medir.
+            </p>
+            <button type="submit" class="m3-btn m3-btn-filled">Agregar al foco</button>
           </div>
         </form>
-      </div>
-
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle">
-          <thead>
-            <tr>
-              <th scope="col">Producto</th>
-              <th scope="col">Categoría</th>
-              <th scope="col" class="text-end">Observaciones</th>
-              <th scope="col" class="text-end">Foco</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for product, observations in products %}
-            <tr {% if not product.is_pilot %}class="saimc-off"{% endif %}>
-              <td>
-                {{ product.name }}
-                {% if product.is_pilot %}<span class="badge text-bg-primary ms-1">piloto</span>{% endif %}
-              </td>
-              <td class="text-muted small">{{ product.category }}</td>
-              <td class="text-end saimc-count">{{ observations }}</td>
-              <td class="text-end">
-                <form method="post" action="/catalog/products/{{ product.id }}/pilot">
-                  {% if product.is_pilot %}
-                  <button type="submit" class="btn btn-sm btn-outline-secondary">Sacar del foco</button>
-                  {% else %}
-                  <input type="hidden" name="is_pilot" value="on" />
-                  <button type="submit" class="btn btn-sm btn-outline-primary">Poner en el foco</button>
-                  {% endif %}
-                </form>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      </details>
     </div>
 
-  </div>
+    <div class="m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Producto</th>
+            <th scope="col">Categoría</th>
+            <th scope="col">Observaciones</th>
+            <th scope="col" style="text-align:right">Foco</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for product, observations in products %}
+          {% if not focus_only or product.is_pilot %}
+          <tr {% if not product.is_pilot %}class="m3-row-off"{% endif %}>
+            <td>
+              <div class="m3-row" style="gap:10px">
+                <span class="m3-strong">{{ product.name }}</span>
+                {% if product.is_pilot %}<span class="m3-badge">piloto</span>{% endif %}
+              </div>
+              {% if product.unit %}<div class="m3-cell-sub">se mide por {{ product.unit }}</div>{% endif %}
+            </td>
+            <td class="m3-sm m3-muted">{{ product.category or "—" }}</td>
+            <td>
+              <div class="m3-row" style="gap:10px">
+                <span class="m3-num m3-strong" style="min-width:38px">{{ observations }}</span>
+                <span class="m3-progress m3-progress-thin" style="flex:1; margin:0">
+                  <span style="width: {{ (observations * 100 / obs_max) | round(1) if obs_max else 0 }}%;
+                               {% if not product.is_pilot %}background: #bec8c9;{% endif %}"></span>
+                </span>
+              </div>
+            </td>
+            <td style="text-align:right">
+              <form method="post" action="/catalog/products/{{ product.id }}/pilot">
+                {% if product.is_pilot %}
+                <button type="submit" class="m3-btn m3-btn-outlined" style="padding:8px 18px; font-size:13px">Sacar del foco</button>
+                {% else %}
+                <input type="hidden" name="is_pilot" value="on" />
+                <button type="submit" class="m3-btn m3-btn-tonal" style="padding:8px 18px; font-size:13px">Poner en el foco</button>
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
 
-  <script>
-    // Feedback de que el backfill arrancó — la única señal que tenía el
-    // operador antes era esperar a que la página recargara sin saber si el
-    // clic había registrado (docs/decisions.md, 2026-08-17). "Terminó" ya lo
-    // cubre el mensaje flash que aparece tras el redirect.
-    document.querySelectorAll('form[action*="/backfill"]').forEach(function (form) {
-      form.addEventListener('submit', function () {
-        var boton = form.querySelector('button[type="submit"]');
-        if (boton) {
-          boton.disabled = true;
-          boton.textContent = 'Importando…';
-        }
-      });
+{% block snackbar %}
+{% if flash_message %}
+<div class="m3-snackbar" role="status">
+  <span>{{ flash_message }}</span>
+  <a href="{{ request.url.path }}">Cerrar</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Feedback de que el backfill arrancó — la única señal que tenía el operador
+  // era esperar a que la página recargara sin saber si el clic había registrado
+  // (docs/decisions.md, 2026-08-17). "Terminó" ya lo cubre el flash del redirect.
+  document.querySelectorAll('form[action*="/backfill"]').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var boton = form.querySelector('button[type="submit"]');
+      if (boton) {
+        boton.disabled = true;
+        boton.textContent = 'Importando…';
+      }
     });
-  </script>
-</body>
-</html>
+  });
+</script>
+{% endblock %}

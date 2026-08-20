@@ -3342,3 +3342,44 @@ propone el encabezado como `product_name_guess` (`_block_header`), porque
 un encabezado no tiene ninguno. Queda anotado que «pechuga» e «hígado» siguen
 descalificando, sin alias que los levante: si el operador los quiere como
 Pollo, es un alias en /catalog, no un cambio de código.
+
+## 2026-08-20 — Rediseño Material 3 de las vistas web
+
+Contexto: el bundle `redesing/design_handoff_material_saimc/` traía una hoja
+`saimc-material.css` y siete plantillas Jinja listas para el repo. Un sondeo
+previo midió 26 tests en rojo de 602, todos de presentación: renombre de
+clases `saimc-*` a `m3-*`, contadores que pasan de `<span>Curados: <strong>N`
+a etiqueta y cifra en nodos hermanos, dos textos reformulados, y aserciones
+que comparaban `id="x" value="y"` como cadena literal en una línea.
+
+Decisión: se integra el rediseño completo. Bootstrap (232 KB) y `curation.css`
+salen del repo; entran Roboto, Roboto Mono y Material Symbols vendorizadas en
+`static/fonts/` (82 KB las tres). Los iconos van subseteados a las 35
+ligaduras que usan las plantillas: 5,7 KB contra los 370 KB de la fuente
+completa. El subsetting lo hace el servidor de Google vía `icon_names`, así
+que no hace falta `fontTools` en el venv. Roboto y Roboto Mono son fuentes
+variables y se declaran con rango de pesos (`font-weight: 100 900`), no con
+un peso fijo: con peso fijo el navegador sintetiza la negrita en vez de usar
+el trazo real.
+
+De los 26 tests, 14 no se tocaron: fallaban porque la plantilla partía
+`id=` y `value=` en dos líneas, así que se juntaron los atributos en los
+seis `<input>` afectados. El resto se actualizó al marcado nuevo sin aflojar
+lo que verifica — los contadores pasan por un helper `_contador()` que exige
+que la cifra sea la del contador pedido y no un número suelto de la página,
+y el aviso de descarte alto ahora comprueba el chip y el banner, no una
+frase sola.
+
+Descartado: relajar las 14 aserciones a expresiones regulares tolerantes al
+espaciado. Habría acoplado los tests al formato del código fuente de la
+plantilla en vez de al HTML que ve el navegador, y tocaba 14 casos para
+resolver un problema que se arregla en 6 líneas de markup.
+
+Consecuencia: `/control` pierde ~10 párrafos de justificación de spec,
+condensados en dos grillas de cuatro notas; las referencias a §12.5 y §12.6
+salen de los chips pero siguen en los banners largos. Se agrega
+`tests/test_static_assets.py`, que falla si una fuente desaparece, si los
+iconos dejan de venir subseteados o si alguna vista vuelve a pedirle un asset
+a `fonts.googleapis.com` en runtime. El bundle `redesing/` queda en el repo
+como referencia del diseño; su `PLANTILLAS.md` documenta una URL de fuentes
+que devuelve 404 y no debe seguirse al pie de la letra.

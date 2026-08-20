@@ -1,717 +1,595 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SAIMC — Control de curaduría</title>
-  <link href="/static/bootstrap.min.css" rel="stylesheet" />
-  <link href="/static/curation.css" rel="stylesheet" />
-  <style>
-    /* Estilos propios de esta vista. Van embebidos y no en curation.css
-       porque no los usa ninguna otra página, y un archivo más es una
-       descarga más en una conexión lenta (CLAUDE.md, entorno). */
-    .saimc-metric { border: 1px solid #dee2e6; border-radius: .5rem; padding: 1rem; height: 100%; }
-    .saimc-metric-value { font-size: 1.75rem; font-weight: 600; line-height: 1.1; }
-    .saimc-metric-label { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: #6c757d; }
-    .saimc-bar { background: #e9ecef; border-radius: .25rem; height: .5rem; overflow: hidden; }
-    .saimc-bar > span { display: block; height: 100%; background: #0d6efd; }
-    .saimc-chip { display: inline-block; font-size: .75rem; padding: .1rem .45rem; border-radius: .25rem; background: #f1f3f5; color: #495057; margin: .1rem .15rem 0 0; }
-    .saimc-chip-missing { background: #fff3cd; color: #664d03; }
-    .saimc-chip-done { background: #d1e7dd; color: #0f5132; }
-    /* Gráfico de actividad: barras con CSS, sin librería ni CDN. */
-    .saimc-activity { display: flex; align-items: flex-end; gap: 3px; height: 80px; }
-    .saimc-activity > div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
-    .saimc-activity .saimc-activity-bar { background: #0d6efd; border-radius: 2px 2px 0 0; min-height: 2px; }
-    .saimc-activity .saimc-activity-bar.is-empty { background: #e9ecef; }
-    .saimc-activity-axis { display: flex; gap: 3px; font-size: .65rem; color: #adb5bd; }
-    .saimc-activity-axis > div { flex: 1; text-align: center; }
-    .saimc-gap { border: 1px solid #dee2e6; border-left-width: 3px; border-radius: .375rem; padding: .75rem; height: 100%; }
-    .saimc-gap.is-open { border-left-color: #fd7e14; }
-    .saimc-gap.is-clear { border-left-color: #198754; }
-    .saimc-zero { color: #adb5bd; }
-    /* Matriz en grilla: una fila por producto, una columna por provincia.
-       El color codifica **qué provincia**, nunca qué tan bien va: §12.6
-       prohíbe fijar umbrales, así que la paleta es categórica —índigo,
-       violeta, cian, magenta— y no incluye rojo ni verde, que se leerían
-       como semáforo. La ranura la asigna `saimc.web.matrix` por catálogo,
-       no por los datos, para que una provincia no cambie de color al
-       cambiar su muestra. */
-       Tres tonos por provincia y cada uno con su trabajo: `--prov` para lo
-       que tiene que resaltar (nombre, borde, marcador de la mediana),
-       `--prov-soft` para el relleno de la barra, y `--prov-wash` para el
-       fondo de la columna. Son tres y no dos porque si el fondo de la
-       columna usara el mismo tono que el relleno de la barra, la barra
-       desaparecería contra su propio fondo. */
-    .saimc-slot-0 { --prov: #4263eb; --prov-soft: #dbe4ff; --prov-wash: #f4f6ff; }
-    .saimc-slot-1 { --prov: #7048e8; --prov-soft: #e5dbff; --prov-wash: #f8f4ff; }
-    .saimc-slot-2 { --prov: #0b7285; --prov-soft: #c5f6fa; --prov-wash: #f0fbfc; }
-    .saimc-slot-3 { --prov: #a61e4d; --prov-soft: #ffdeeb; --prov-wash: #fff5f8; }
-    /* «Sin provincia» no es una provincia más: gris, sin identidad propia. */
-    .saimc-slot-9 { --prov: #868e96; --prov-soft: #e9ecef; --prov-wash: #f8f9fa; }
-    /* Pestañas de provincia. Son enlaces: el estado vive en la URL, así que no
-       hay JavaScript, la pestaña se puede compartir y sobrevive a recargar.
-       La activa se distingue por tres cosas a la vez —color, peso y la barra
-       de abajo— y no solo por el color, porque el color acá ya está ocupado
-       diciendo qué provincia es. */
-    .saimc-tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid #dee2e6; margin-bottom: .75rem; }
-    .saimc-tab { display: inline-flex; align-items: baseline; gap: .4rem; padding: .4rem .8rem; font-size: .85rem; text-decoration: none; color: #6c757d; border-bottom: .2rem solid transparent; margin-bottom: -1px; }
-    .saimc-tab:hover { color: var(--prov); background: var(--prov-wash); }
-    .saimc-tab.is-active { color: var(--prov); font-weight: 600; border-bottom-color: var(--prov); background: var(--prov-wash); }
-    .saimc-tab-count { font-size: .75rem; padding: 0 .35rem; border-radius: .6rem; background: var(--prov-soft); color: #212529; }
-    .saimc-prod { border: 1px solid #dee2e6; border-radius: .5rem; margin-bottom: .75rem; overflow: hidden; }
-    /* El colapso es `<details>`/`<summary>` nativo: cero JavaScript, cero
-       descarga y funciona igual con la conexión caída (CLAUDE.md, entorno).
-       El encabezado del producto se queda gris a propósito: la tarjeta cruza
-       las dos provincias, así que pintarla de un color de provincia diría
-       algo falso. El color de identidad vive dentro, en cada columna. */
-    .saimc-prod-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; padding: .5rem 1rem; background: #f8f9fa; border-bottom: 1px solid #dee2e6; cursor: pointer; list-style: none; }
-    .saimc-prod-head::-webkit-details-marker { display: none; }
-    .saimc-prod-head::after { content: "▸"; margin-left: auto; color: #adb5bd; }
-    .saimc-prod[open] > .saimc-prod-head::after { content: "▾"; }
-    .saimc-prod-head:hover { background: #f1f3f5; }
-    /* Resumen por provincia en la cabecera: una tarjeta cerrada tiene que
-       seguir diciendo dónde está la muestra, o el colapso esconde justamente
-       lo que la vista existe para mostrar. */
-    .saimc-prod-tally { font-size: .75rem; color: #6c757d; }
-    .saimc-prod-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--prov); margin-right: .2rem; }
-    /* La provincia que no estás mirando: apagada, no escondida. */
-    .saimc-prod-tally.is-off { opacity: .55; }
-    .saimc-prod-grid { display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(280px, 1fr)); overflow-x: auto; }
-    .saimc-col { padding: .75rem 1rem; border-left: .2rem solid var(--prov); background: var(--prov-wash); }
-    .saimc-col-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; margin-bottom: .5rem; padding-bottom: .35rem; border-bottom: 1px solid var(--prov-soft); }
-    .saimc-col-name { font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--prov); }
-    .saimc-col-empty { font-size: .8rem; color: #adb5bd; }
-    /* Una sola columna cuando la pantalla no da para poner dos al lado. */
-    @media (max-width: 720px) { .saimc-prod-grid { grid-template-columns: 1fr; } }
-    .saimc-serie + .saimc-serie { margin-top: .75rem; padding-top: .75rem; border-top: 1px dashed var(--prov-soft, #f1f3f5); }
-    .saimc-serie-meta { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; align-items: baseline; }
-    .saimc-serie-name { font-size: .9rem; font-weight: 500; }
-    /* Barra de rango. El largo codifica la amplitud (escala logarítmica,
-       normalizada contra la mayor de la tabla) y el marcador ubica la mediana
-       dentro del propio rango de la serie. Ningún color de veredicto: §12.6
-       prohíbe fijar un umbral de dispersión, así que juzga el operador. */
-    .saimc-range { display: flex; align-items: center; gap: .5rem; margin-top: .35rem; font-size: .75rem; color: #6c757d; }
-    .saimc-range-min, .saimc-range-max { white-space: nowrap; font-variant-numeric: tabular-nums; }
-    /* Pista blanca y no gris: sobre el fondo tenue de la columna, un gris
-       claro se confundiría con el relleno de la barra. */
-    .saimc-range-track { flex: 1; background: #fff; border-radius: .25rem; height: .55rem; }
-    .saimc-range-fill { display: block; position: relative; height: 100%; background: var(--prov-soft, #cfe2ff); border-radius: .25rem; }
-    .saimc-range-median { position: absolute; top: -.15rem; width: .2rem; height: .85rem; background: var(--prov, #0d6efd); border-radius: .1rem; transform: translateX(-50%); }
-  </style>
-</head>
-<body>
-  <div class="container py-4" style="max-width: 1040px;">
-    <div class="saimc-header">
-      <h1 class="h3">Control de curaduría</h1>
-      <p class="saimc-subtitle mb-0">Cuánto falta para la meta de Fase 0, y si lo que se carga sirve</p>
-      <div class="saimc-counters">
-        <span class="saimc-counter">Anuncios curados: <strong>{{ curated }}</strong></span>
-        <span class="saimc-counter">Filas de precio: <strong>{{ rows }}</strong></span>
-        <span class="saimc-counter"><a href="/curation">Ir a la cola →</a></span>
-      </div>
+{% extends "_shell.html" %}
+
+{% block title %}Control de curaduría{% endblock %}
+{% block heading %}Control de curaduría{% endblock %}
+{% block subtitle %}Cuánto falta para la meta de Fase 0, y si lo que se carga sirve.{% endblock %}
+
+{% block stats %}
+  <div class="m3-stat">
+    <div class="m3-stat-label">En cola</div>
+    <div class="m3-stat-value is-accent">{{ health.pending }}</div>
+  </div>
+  <div class="m3-stat">
+    <div class="m3-stat-label">Anuncios curados</div>
+    <div class="m3-stat-value">{{ curated }}</div>
+  </div>
+  <div class="m3-stat">
+    <div class="m3-stat-label">Filas de precio</div>
+    <div class="m3-stat-value">{{ rows }}</div>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="m3-stack-lg">
+
+  <!-- ---------- 1. Progreso hacia la meta de Fase 0 (spec.md §9) ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Meta de Fase 0</h2>
+      <span class="m3-sm m3-muted">
+        {{ progress.target_rows }} registros · {{ phase0_products_min }}–{{ phase0_products_max }} productos ·
+        {{ phase0_provinces|length }} provincias — números de <code>spec.md</code> §9, no fijados acá
+      </span>
     </div>
 
-    <!-- ---------- 1. Progreso hacia la meta de Fase 0 (spec.md §9) ---------- -->
-
-    <h2 class="h5 mt-4">Meta de Fase 0</h2>
-    <p class="text-muted small">
-      Los tres números de <code>spec.md</code> §9, «Resultado esperado»:
-      <strong>500 registros validados de {{ phase0_products_min }}–{{ phase0_products_max }}
-      productos en {{ phase0_provinces|length }} provincias</strong>. Son del documento
-      rector, no fijados acá.
-    </p>
-
-    <div class="row g-3">
-      <div class="col-md-4">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">Registros validados</div>
-          <div class="saimc-metric-value">{{ progress.rows }} <span class="text-muted fs-6">/ {{ progress.target_rows }}</span></div>
-          <div class="saimc-bar my-2"><span style="width: {{ "%.1f"|format(progress.rows_pct) }}%;"></span></div>
-          <div class="small text-muted">
-            {% if progress.rows_remaining %}Faltan {{ progress.rows_remaining }}{% else %}Meta alcanzada{% endif %}
-            · {{ "%.0f"|format(progress.rows_pct) }}%
-          </div>
+    <div class="m3-grid">
+      {# La única superficie de color de la vista: es el número que importa. #}
+      <div class="m3-metric is-hero">
+        <div class="m3-metric-label">Registros validados</div>
+        <div class="m3-metric-value">{{ progress.rows }} <small style="color:inherit; opacity:.75">/ {{ progress.target_rows }}</small></div>
+        <div class="m3-progress"><span style="width: {{ "%.1f"|format(progress.rows_pct) }}%;"></span></div>
+        <div class="m3-metric-hint">
+          {% if progress.rows_remaining %}Faltan {{ progress.rows_remaining }}{% else %}Meta alcanzada{% endif %}
+          · {{ "%.0f"|format(progress.rows_pct) }}%
+          {% if pace.days_to_target is none %}
+            · sin filas en la ventana, no se puede estimar
+          {% elif pace.days_to_target == 0 %}
+            · meta alcanzada
+          {% else %}
+            · a {{ "%.1f"|format(pace.per_day) }} filas/día son <strong>{{ pace.days_to_target }} días</strong>
+          {% endif %}
         </div>
       </div>
 
-      <div class="col-md-4">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">Productos bandera</div>
-          <div class="saimc-metric-value">
-            {{ progress.products_with_data|length }} <span class="text-muted fs-6">/ {{ pilot_products|length }} con dato</span>
-          </div>
-          <div class="mt-2">
-            {% for nombre in progress.products_with_data %}
-              <span class="saimc-chip saimc-chip-done">{{ nombre }}</span>
-            {% endfor %}
-            {% for nombre in progress.products_missing %}
-              <span class="saimc-chip saimc-chip-missing">{{ nombre }} · sin dato</span>
-            {% endfor %}
-          </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Productos bandera con dato</div>
+        <div class="m3-metric-value">
+          {{ progress.products_with_data|length }} <small>/ {{ pilot_products|length }}</small>
+        </div>
+        <div class="m3-row" style="gap:6px; margin-top:14px">
+          {% for nombre in progress.products_with_data %}
+          <span class="m3-chip m3-chip-ok m3-chip-sm">{{ nombre }}</span>
+          {% endfor %}
+          {% for nombre in progress.products_missing %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">{{ nombre }} · sin dato</span>
+          {% endfor %}
         </div>
       </div>
 
-      <div class="col-md-4">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">Provincias objetivo</div>
-          <div class="saimc-metric-value">
-            {{ progress.provinces_with_data|length }} <span class="text-muted fs-6">/ {{ phase0_provinces|length }}</span>
-          </div>
-          <div class="mt-2">
-            {% for nombre in progress.provinces_with_data %}
-              <span class="saimc-chip saimc-chip-done">{{ nombre }}</span>
-            {% endfor %}
-            {% for nombre in progress.provinces_missing %}
-              <span class="saimc-chip saimc-chip-missing">{{ nombre }} · sin dato</span>
-            {% endfor %}
-          </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Provincias objetivo</div>
+        <div class="m3-metric-value">
+          {{ progress.provinces_with_data|length }} <small>/ {{ phase0_provinces|length }}</small>
+        </div>
+        <div class="m3-row" style="gap:6px; margin-top:14px">
+          {% for nombre in progress.provinces_with_data %}
+          <span class="m3-chip m3-chip-ok m3-chip-sm">{{ nombre }}</span>
+          {% endfor %}
+          {% for nombre in progress.provinces_missing %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">{{ nombre }} · sin dato</span>
+          {% endfor %}
         </div>
       </div>
     </div>
+  </section>
 
-    <!-- ---------- 2. Ritmo y actividad ---------- -->
+  <!-- ---------- 2. Ritmo y actividad ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Ritmo de carga</h2>
+      <span class="m3-sm m3-muted">
+        últimos {{ activity_days }} días · se cuenta por <code>created_at</code>: cuándo se
+        cargó la fila, no la fecha del anuncio. Lo que se mide es el trabajo, no el mercado.
+      </span>
+    </div>
 
-    <h2 class="h5 mt-4">Ritmo de carga — últimos {{ activity_days }} días</h2>
-    <p class="text-muted small">
-      Se cuenta por <code>created_at</code>: cuándo se cargó la fila, no la fecha del
-      anuncio. Lo que se mide es el trabajo, no el mercado.
-      {% if pace.days_to_target is none %}
-        Sin filas cargadas en la ventana no se puede estimar cuánto falta.
-      {% elif pace.days_to_target == 0 %}
-        La meta de registros ya está alcanzada.
-      {% else %}
-        A este ritmo faltan <strong>{{ pace.days_to_target }} días</strong> para los
-        {{ progress.target_rows }} registros. Es una división, no un pronóstico: no hay
-        modelo detrás, y la capa predictiva es Fase 2.
-      {% endif %}
-    </p>
-
-    <div class="row g-3 align-items-center">
-      <div class="col-md-3">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">Promedio diario</div>
-          <div class="saimc-metric-value">{{ "%.1f"|format(pace.per_day) }}</div>
-          <div class="small text-muted">{{ pace.rows_in_window }} filas en {{ pace.window_days }} días</div>
-        </div>
+    <div class="m3-card m3-card-pad" style="display:grid; grid-template-columns:minmax(150px, 1fr) 3fr; gap:28px; align-items:end">
+      <div>
+        <div class="m3-metric-label">Promedio diario</div>
+        <div class="m3-metric-value">{{ "%.1f"|format(pace.per_day) }}</div>
+        <div class="m3-sm m3-muted">{{ pace.rows_in_window }} filas en {{ pace.window_days }} días</div>
       </div>
-      <div class="col-md-9">
-        <div class="saimc-activity">
+      <div>
+        {# Barras con CSS, sin librería ni CDN. #}
+        <div class="m3-activity">
           {% for dia in activity %}
           <div title="{{ dia.day }} — {{ dia.rows }} fila(s)">
-            <div class="saimc-activity-bar{% if not dia.rows %} is-empty{% endif %}"
-                 style="height: {{ (dia.rows * 100 / activity_peak)|round(1) }}%;"></div>
+            <span class="m3-activity-bar{% if not dia.rows %} is-empty{% endif %}"
+                  style="height: {{ (dia.rows * 100 / activity_peak)|round(1) if activity_peak else 0 }}%;"></span>
           </div>
           {% endfor %}
         </div>
-        <div class="saimc-activity-axis mt-1">
+        <div class="m3-activity-axis">
           {% for dia in activity %}
           <div>{{ dia.day.day }}</div>
           {% endfor %}
         </div>
       </div>
     </div>
+  </section>
 
-    <!-- ---------- 3. Huecos por responder ---------- -->
-
-    <h2 class="h5 mt-4">Lo que falta responder</h2>
-    <p class="text-muted small">
-      Ninguno de estos campos bloquea el guardado por diseño (design.md D2/D4): la fila
-      se guarda igual y el operador sigue curando. Por eso hace falta verlos acumulados
-      acá. Cada número enlaza al historial ya filtrado por ese hueco.
+  <!-- ---------- 3. Huecos por responder ---------- -->
+  <section>
+    {% set gap_icons = {
+      'Sin provincia': 'place',
+      'Sin cantidad': 'straighten',
+      'Sin formato de venta': 'sell',
+      'Sin convertir a CUP': 'currency_exchange'
+    } %}
+    <div class="m3-section-head"><h2 class="m3-h2">Lo que falta responder</h2></div>
+    <p class="m3-note">
+      Ningún campo bloquea el guardado por diseño (design.md D2/D4): la fila entra igual y el
+      operador sigue curando. Por eso hace falta verlos acumulados acá. Cada número abre el
+      historial ya filtrado por ese hueco.
     </p>
-
-    <div class="row g-3">
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr))">
       {% for gap in gaps %}
-      <div class="col-md-3 col-sm-6">
-        <div class="saimc-gap {% if gap.count %}is-open{% else %}is-clear{% endif %}">
-          <div class="saimc-metric-label">{{ gap.label }}</div>
-          <div class="saimc-metric-value">
-            {% if gap.count %}
-              <a href="/curation/history?{{ gap.query }}" class="text-decoration-none">{{ gap.count }}</a>
-            {% else %}
-              <span class="saimc-zero">0</span>
-            {% endif %}
-          </div>
-          <div class="small text-muted mt-1">{{ gap.hint }}</div>
+      <div class="m3-gap{% if not gap.count %} is-clear{% endif %}">
+        <div class="m3-row" style="gap:8px">
+          <span class="m3-icon m3-icon-sm">{{ gap_icons.get(gap.label, 'help') }}</span>
+          <span class="m3-metric-label">{{ gap.label }}</span>
         </div>
+        <div class="m3-metric-value-sm">
+          {% if gap.count %}
+          <a href="/curation/history?{{ gap.query }}">{{ gap.count }}</a>
+          {% else %}0{% endif %}
+        </div>
+        <div class="m3-metric-hint">{{ gap.hint }}</div>
       </div>
       {% endfor %}
     </div>
+  </section>
 
-    <!-- ---------- 4. Cobertura producto × provincia ---------- -->
-
-    <h2 class="h5 mt-4">Cobertura de la meta</h2>
-    <p class="text-muted small">
-      Los {{ pilot_products|length }} productos bandera contra las
-      {{ phase0_provinces|length }} provincias que nombra §9. <strong>El cero es el
-      dato</strong>: dice exactamente qué falta salir a capturar. No hay marca de
-      «suficiente» porque el mínimo de observaciones por celda es justo el parámetro
-      que §12.6 manda calibrar con datos reales, no fijar de antemano.
+  <!-- ---------- 4. Cobertura producto × provincia ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Cobertura de la meta</h2>
+      <span class="m3-sm m3-muted">producto × provincia</span>
+    </div>
+    <p class="m3-note">
+      Los {{ pilot_products|length }} productos bandera contra las {{ phase0_provinces|length }}
+      provincias que nombra §9. <strong>El cero es el dato</strong>: dice exactamente qué falta
+      salir a capturar. No hay marca de «suficiente» porque el mínimo de observaciones por celda
+      es justo el parámetro que §12.6 manda calibrar con datos reales, no fijar de antemano.
     </p>
 
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
         <thead>
           <tr>
             <th scope="col">Producto</th>
             {% for nombre in phase0_provinces %}
-            <th scope="col" class="text-end">{{ nombre }}</th>
+            <th scope="col" style="text-align:right">{{ nombre }}</th>
             {% endfor %}
+            <th scope="col" style="text-align:right">Total</th>
           </tr>
         </thead>
         <tbody>
           {% for product_name, celdas in coverage|groupby("product_name") %}
+          {% set celdas = celdas | list %}
           <tr>
-            <td>{{ product_name }}</td>
+            <td class="m3-cell-strong">{{ product_name }}</td>
             {% for celda in celdas %}
-            <td class="text-end">
+            <td class="is-num">
               {% if celda.rows %}
               <a href="/curation/history?product={{ celda.product_name | urlencode }}&province={{ celda.province_name | urlencode }}"
                  title="Ver los anuncios detrás de este número">{{ celda.rows }}</a>
               {% else %}
-              <span class="saimc-zero">—</span>
+              <span class="is-zero">—</span>
               {% endif %}
             </td>
             {% endfor %}
+            <td class="is-num m3-strong">{{ celdas | sum(attribute='rows') }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+  </section>
 
-    <!-- ---------- 5. Salud de la ingesta ---------- -->
+  <!-- ---------- 5. Salud de la ingesta ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Salud de la ingesta</h2>
+      <span class="m3-sm m3-muted">
+        la tasa de descarte se mide sobre lo <em>decidido</em> (curado + descartado); lo
+        pendiente no entra porque todavía no se decidió nada
+      </span>
+    </div>
 
-    <h2 class="h5 mt-4">Salud de la ingesta</h2>
-    <p class="text-muted small">
-      La tasa de descarte se mide sobre lo <em>decidido</em> (curado + descartado); lo
-      pendiente no entra porque todavía no se decidió nada sobre eso. El objetivo de
-      <strong>&lt;30%</strong> es de <code>spec.md</code> §12.5, tabla de métricas de
-      extracción — es el único umbral con veredicto de toda esta vista, y está escrito
-      en el documento.
-    </p>
-
-    <div class="row g-3">
-      <div class="col-md-3 col-6">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">En cola</div>
-          <div class="saimc-metric-value">
-            {% if health.pending %}<a href="/curation" class="text-decoration-none">{{ health.pending }}</a>
-            {%- else %}<span class="saimc-zero">0</span>{% endif %}
-          </div>
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(170px, 1fr))">
+      <div class="m3-metric">
+        <div class="m3-metric-label">En cola</div>
+        <div class="m3-metric-value-sm">
+          {% if health.pending %}<a href="/curation">{{ health.pending }}</a>
+          {%- else %}<span class="m3-dim">0</span>{% endif %}
         </div>
       </div>
-      <div class="col-md-3 col-6">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">Curados</div>
-          <div class="saimc-metric-value">{{ health.curated }}</div>
-        </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Curados</div>
+        <div class="m3-metric-value-sm">{{ health.curated }}</div>
       </div>
-      <div class="col-md-3 col-6">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">Descartados</div>
-          <div class="saimc-metric-value">{{ health.discarded }}</div>
-        </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Descartados</div>
+        <div class="m3-metric-value-sm">{{ health.discarded }}</div>
       </div>
-      <div class="col-md-3 col-6">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">Tasa de descarte</div>
-          <div class="saimc-metric-value">
-            {% if health.discard_rate is none %}
-              <span class="saimc-zero">—</span>
-            {% else %}
-              {{ "%.0f"|format(health.discard_rate * 100) }}%
-            {% endif %}
-          </div>
-          <div class="small {% if health.above_objective %}text-warning-emphasis{% else %}text-muted{% endif %}">
-            {% if health.discard_rate is none %}
-              Nada decidido todavía
-            {% elif health.above_objective %}
-              Por encima del objetivo &lt;30% (§12.5)
-            {% else %}
-              Dentro del objetivo &lt;30% (§12.5)
-            {% endif %}
-          </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Tasa de descarte</div>
+        <div class="m3-row" style="gap:8px">
+          <span class="m3-metric-value-sm">
+            {% if health.discard_rate is none %}<span class="m3-dim">—</span>
+            {%- else %}{{ "%.0f"|format(health.discard_rate * 100) }}%{% endif %}
+          </span>
+          {% if health.discard_rate is not none %}
+          <span class="m3-chip m3-chip-sm {{ 'm3-chip-warn' if health.above_objective else 'm3-chip-ok' }}">
+            <span class="m3-icon m3-icon-sm">{{ 'warning' if health.above_objective else 'check_circle' }}</span>
+            {{ 'sobre el 30%' if health.above_objective else 'bajo el 30%' }}
+          </span>
+          {% endif %}
+        </div>
+        <div class="m3-metric-hint">
+          {% if health.discard_rate is none %}
+            Nada decidido todavía
+          {% else %}
+            Objetivo de §12.5 — el único umbral con veredicto de toda esta vista
+          {% endif %}
         </div>
       </div>
     </div>
 
     {% if health.above_objective %}
-    <div class="alert alert-warning small mt-3" role="alert">
-      Se descarta más de lo que §12.5 pone como objetivo. La especificación lo define
-      como «anuncios sin información económica extraíble», así que una tasa alta
-      describe <strong>qué se está capturando</strong>, no un error de curaduría: si el
-      material que entra a la bandeja no trae precio, el descarte es la respuesta
-      correcta. Vale mirar de qué canales viene lo que se descarta antes de tocar nada.
+    <div class="m3-banner m3-banner-warn m3-mt" role="alert">
+      <span class="m3-icon">warning</span>
+      <span>
+        Se descarta más de lo que §12.5 pone como objetivo. La especificación lo define como
+        «anuncios sin información económica extraíble», así que una tasa alta describe
+        <strong>qué se está capturando</strong>, no un error de curaduría: si el material que
+        entra a la bandeja no trae precio, el descarte es la respuesta correcta. Vale mirar de
+        qué canales viene lo que se descarta antes de tocar nada.
+      </span>
     </div>
     {% endif %}
+  </section>
 
-    <!-- ---------- 6. Tasa de cambio ---------- -->
-
-    <h2 class="h5 mt-4">Tasa de cambio</h2>
-    <p class="text-muted small">
-      Todo esto sale de la base: <strong>cargar esta página no consulta a
-      elTOQUE</strong>. Quien sale a la red es la curaduría, que es cuando la tasa se
-      necesita. Al curar, <code>RateResolver</code> intenta en este orden: tasa del día
-      en cache → consulta fresca a elTOQUE → última tasa conocida (marcada
-      <em>cache</em>) → sin convertir. <strong>No hay ventana de validez fijada</strong>
-      — es uno de los parámetros que <code>spec.md</code> §12.6 manda calibrar con la
-      frecuencia real de actualización de la fuente, así que acá se muestra la
-      antigüedad en días y nada más: ninguna tasa se marca como fuera de plazo.
+  <!-- ---------- 6. Tasa de cambio ---------- -->
+  <section>
+    <div class="m3-section-head"><h2 class="m3-h2">Tasa de cambio</h2></div>
+    <p class="m3-note">
+      Todo esto sale de la base: <strong>cargar esta página no consulta a elTOQUE</strong>.
+      Quien sale a la red es la curaduría, que es cuando la tasa se necesita. Al curar,
+      <code>RateResolver</code> intenta en este orden: tasa del día en cache → consulta fresca
+      → última tasa conocida (marcada <em>cache</em>) → sin convertir.
+      <strong>No hay ventana de validez fijada</strong> (§12.6): acá se muestra la antigüedad
+      en días y nada más — ninguna tasa se marca como fuera de plazo.
     </p>
 
-    <div class="row g-3">
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(240px, 1fr))">
       {% for tasa in rate_status %}
-      <div class="col-md-4">
-        <div class="saimc-metric">
-          <div class="saimc-metric-label">{{ tasa.currency }} → CUP</div>
+      <div class="m3-metric">
+        <div class="m3-row" style="justify-content:space-between">
+          <span class="m3-metric-label">{{ tasa.currency }} → CUP</span>
           {% if tasa.rate is none %}
-            <div class="saimc-metric-value"><span class="saimc-zero">—</span></div>
-            <div class="small text-muted mt-1">
-              Nunca se cacheó una tasa. Un anuncio en {{ tasa.currency }} sale a
-              consultar elTOQUE; si no responde, se guarda sin convertir.
-            </div>
+          <span class="m3-chip m3-chip-neutral m3-chip-sm">nunca cacheada</span>
+          {% elif tasa.has_today %}
+          <span class="m3-chip m3-chip-ok m3-chip-sm">tasa de hoy</span>
+          {% elif tasa.age_days == 1 %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">de hace 1 día</span>
           {% else %}
-            <div class="saimc-metric-value">{{ "%.2f"|format(tasa.rate) }}</div>
-            <div class="small text-muted mt-1">
-              Del {{ tasa.rate_date.strftime("%d/%m/%Y") }}
-              {%- if tasa.age_days == 0 %} · de hoy
-              {%- elif tasa.age_days == 1 %} · hace 1 día
-              {%- else %} · hace {{ tasa.age_days }} días{% endif %}
-            </div>
-            <div class="small text-muted">
-              Fuente: {{ tasa.source }}
-              {%- if tasa.fetched_at %} · leída {{ tasa.fetched_at.strftime("%d/%m %H:%M") }} UTC{% endif %}
-            </div>
-            <div class="mt-2">
-              {% if tasa.has_today %}
-                <span class="saimc-chip saimc-chip-done">Hay tasa de hoy · curar no consulta la red</span>
-              {% else %}
-                <span class="saimc-chip saimc-chip-missing">Sin tasa de hoy · el próximo anuncio consulta elTOQUE</span>
-              {% endif %}
-            </div>
+          <span class="m3-chip m3-chip-warn m3-chip-sm">de hace {{ tasa.age_days }} días</span>
           {% endif %}
         </div>
+        {% if tasa.rate is none %}
+        <div class="m3-metric-value-sm m3-dim">—</div>
+        <div class="m3-metric-hint">
+          Nunca se cacheó una tasa. Un anuncio en {{ tasa.currency }} sale a consultar elTOQUE;
+          si no responde, se guarda sin convertir.
+        </div>
+        {% else %}
+        <div class="m3-metric-value-sm">{{ "%.2f"|format(tasa.rate) }}</div>
+        <div class="m3-metric-hint">
+          Del {{ tasa.rate_date.strftime("%d/%m/%Y") }} · fuente {{ tasa.source }}
+          {%- if tasa.fetched_at %} · leída {{ tasa.fetched_at.strftime("%d/%m %H:%M") }} UTC{% endif %}.
+          {% if tasa.has_today %}Curar no consulta la red.
+          {% else %}El próximo anuncio en {{ tasa.currency }} consulta elTOQUE.{% endif %}
+        </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
 
-    <h3 class="h6 mt-4">Qué tasa quedó aplicada en lo cargado</h3>
-    <p class="text-muted small">
-      Lo de arriba dice qué va a pasar de acá en adelante; esto dice qué pasó. Son las
-      columnas de conversión ya escritas en <code>prices_history</code>, que no cambian
-      porque el cache se actualice. Una fuente <em>elTOQUE (cache)</em> significa que
-      esa fila se convirtió con la última tasa conocida porque elTOQUE no respondió ese
-      día.
+    <h3 class="m3-h3" style="margin-top:24px">Qué tasa quedó aplicada en lo cargado</h3>
+    <p class="m3-note">
+      Lo de arriba dice qué va a pasar de acá en adelante; esto dice qué pasó. Son las columnas
+      de conversión ya escritas en <code>prices_history</code>, que no cambian porque el cache
+      se actualice. Una fuente <em>elTOQUE (cache)</em> significa que esa fila se convirtió con
+      la última tasa conocida porque elTOQUE no respondió ese día.
     </p>
 
     {% if not applied_rates %}
-    <div class="alert alert-secondary small" role="alert">
-      Ninguna fila tiene tasa aplicada todavía: o está todo en CUP, o lo que hay en otra
-      moneda no se pudo convertir. El hueco «Sin convertir a CUP» de arriba lo cuenta.
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span>
+      <span>
+        Ninguna fila tiene tasa aplicada todavía: o está todo en CUP, o lo que hay en otra
+        moneda no se pudo convertir. El hueco «Sin convertir a CUP» de arriba lo cuenta.
+      </span>
     </div>
     {% else %}
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
         <thead>
           <tr>
             <th scope="col">Tasa</th>
             <th scope="col">Fecha de la tasa</th>
             <th scope="col">Fuente</th>
-            <th scope="col" class="text-end">Filas</th>
+            <th scope="col" style="text-align:right">Filas</th>
           </tr>
         </thead>
         <tbody>
           {% for aplicada in applied_rates %}
           <tr>
-            <td>{{ "%.4f"|format(aplicada.rate) }}</td>
-            <td>{% if aplicada.rate_date %}{{ aplicada.rate_date.strftime("%d/%m/%Y") }}{% else %}<span class="saimc-zero">—</span>{% endif %}</td>
-            <td>{{ aplicada.source or "—" }}</td>
-            <td class="text-end">{{ aplicada.rows }}</td>
+            <td class="m3-num">{{ "%.4f"|format(aplicada.rate) }}</td>
+            <td>{% if aplicada.rate_date %}{{ aplicada.rate_date.strftime("%d/%m/%Y") }}{% else %}<span class="m3-dim">—</span>{% endif %}</td>
+            <td class="m3-sm m3-muted">{{ aplicada.source or "—" }}</td>
+            <td class="is-num">{{ aplicada.rows }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     {% endif %}
+  </section>
 
-    <hr class="my-4" />
+  <!-- ---------- 7. Rango minorista ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Rango minorista por producto</h2>
+      <span class="m3-sm m3-muted">últimos {{ retail_range_days }} días</span>
+    </div>
+    <div class="m3-notes-grid">
+      <div>
+        <strong>El envase deja de importar acá</strong>: se normaliza por cantidad
+        (precio ÷ <code>quantity</code>) y se queda solo con lo minorista — un saco no es
+        comparable con lo que compra un hogar.
+      </div>
+      <div>
+        <strong>Solo entran filas</strong> con <code>unit</code> igual a la unidad del producto
+        y con <code>quantity</code> cargada. Sin tabla de conversión entre unidades (§12.6, no
+        inventar), lo demás se ve en la matriz de abajo.
+      </div>
+      <div>
+        <strong>Cuarto filtro</strong> (2026-08-14): una fila cuya compra mínima supera su
+        propia cantidad no entra — cotiza un precio por una cantidad que no se puede comprar.
+      </div>
+      <div>
+        <strong>No es un umbral de plata</strong>: el saco entero con mínimo de un saco sigue
+        adentro. El arreglo es cargar el lote como lote (<code>quantity=30</code>,
+        <code>price=21900</code>) y vuelve a entrar al mismo precio por kilo.
+      </div>
+    </div>
 
-    <!-- ---------- 7. Rango minorista ---------- -->
-
-    <h2 class="h5">Rango minorista por producto — últimos {{ retail_range_days }} días</h2>
-    <p class="text-muted small">
-      El envase deja de importar acá: el producto sigue siendo uno solo aunque se
-      venda a granel, por saco o por paquete. Se normaliza por cantidad
-      (precio ÷ <code>quantity</code>) y se queda solo con lo minorista — un saco
-      no es comparable con lo que compra un hogar aunque los dos digan la misma
-      unidad, y mezclarlos volvería a esconder la diferencia real de precio entre
-      comprar mayorista y minorista. Solo entran filas con <code>unit</code> igual
-      a la unidad del producto y con <code>quantity</code> cargada; sin tabla de
-      conversión entre unidades (spec.md §12.6, no inventar), lo demás se ve en la
-      matriz de abajo.
-    </p>
-    <p class="text-muted small">
-      Cuarto filtro, desde el 2026-08-14: una fila cuya <strong>compra mínima</strong>
-      supera su propia cantidad no entra. Cotiza un precio por una cantidad que no se
-      puede comprar — la paca de 30 paquetes a «730 el kilo», donde 730 no se consigue
-      llevando un kilo. No es un umbral de plata: el saco entero con mínimo de un saco
-      sigue adentro. El arreglo es cargar el lote como lote
-      (<code>quantity=30</code>, <code>price=21900</code>) y vuelve a entrar al mismo
-      precio por kilo.
-    </p>
     {% if excluded_by_minimum %}
-    <div class="alert alert-warning py-2 small" role="alert">
-      <strong>{{ excluded_by_minimum }}</strong>
-      fila{{ "s" if excluded_by_minimum != 1 }} quedó
-      fuera de este rango por compra mínima mayor que la cantidad cotizada.
-      Sigue{{ "n" if excluded_by_minimum != 1 }} visible{{ "s" if excluded_by_minimum != 1 }}
-      en la matriz de abajo. El conteo abarca todos los productos, no solo los pilotos.
+    <div class="m3-banner m3-banner-warn" style="margin-bottom:16px" role="alert">
+      <span class="m3-icon">warning</span>
+      <span>
+        <strong>{{ excluded_by_minimum }}</strong>
+        fila{{ "s" if excluded_by_minimum != 1 }} quedó fuera de este rango por compra mínima
+        mayor que la cantidad cotizada.
+        Sigue{{ "n" if excluded_by_minimum != 1 }} visible{{ "s" if excluded_by_minimum != 1 }}
+        en la matriz de abajo. El conteo abarca todos los productos, no solo los pilotos.
+      </span>
     </div>
     {% endif %}
 
     {% if not retail_ranges %}
-    <div class="alert alert-secondary" role="alert">
-      Ninguna fila entra todavía en este rango: falta <code>sale_format=retail</code>,
-      <code>unit</code> igual a la unidad del producto, o <code>quantity</code>.
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span>
+      <span>
+        Ninguna fila entra todavía en este rango: falta <code>sale_format=retail</code>,
+        <code>unit</code> igual a la unidad del producto, o <code>quantity</code>.
+      </span>
     </div>
     {% else %}
-    <div class="table-responsive mb-4">
-      <table class="table table-sm align-middle">
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
         <thead>
           <tr>
             <th scope="col">Producto</th>
             <th scope="col">Provincia</th>
             <th scope="col">Unidad</th>
-            <th scope="col" class="text-end">n</th>
-            <th scope="col" class="text-end">Mediana</th>
-            <th scope="col" class="text-end">Mínimo</th>
-            <th scope="col" class="text-end">Máximo</th>
+            <th scope="col" style="text-align:right">n</th>
+            <th scope="col" style="text-align:right">Mediana</th>
+            <th scope="col" style="text-align:right">Mínimo</th>
+            <th scope="col" style="text-align:right">Máximo</th>
           </tr>
         </thead>
         <tbody>
           {% for rango in retail_ranges %}
           <tr>
-            <td>{{ rango.product_name }}</td>
-            <td>{{ rango.province_name or "— sin provincia —" }}</td>
-            <td>{{ rango.unit }}</td>
-            <td class="text-end">
+            <td class="m3-cell-strong">{{ rango.product_name }}</td>
+            <td class="m3-sm">{{ rango.province_name or "— sin provincia —" }}</td>
+            <td class="m3-sm m3-muted">{{ rango.unit }}</td>
+            <td class="is-num">
               <a href="/curation/history?product={{ rango.product_name | urlencode }}&province={{ (rango.province_name or '') | urlencode }}{% if rango.unconverted %}&currency={{ rango.currency | urlencode }}{% endif %}&unit={{ rango.unit | urlencode }}&sale_format=retail"
-                 title="Ver los anuncios detrás de este número">
-                <strong>{{ rango.count }}</strong>
-              </a>
+                 title="Ver los anuncios detrás de este número"><strong>{{ rango.count }}</strong></a>
             </td>
-            <td class="text-end">
+            <td class="is-num">
               {{ "%.2f"|format(rango.median) }} {{ rango.currency }}/{{ rango.unit }}
-              {%- if rango.unconverted %} <span class="text-muted">sin convertir</span>{% endif %}
+              {%- if rango.unconverted %} <span class="m3-dim m3-xs">sin convertir</span>{% endif %}
             </td>
-            <td class="text-end text-muted">{{ "%.2f"|format(rango.minimum) }}</td>
-            <td class="text-end text-muted">{{ "%.2f"|format(rango.maximum) }}</td>
+            <td class="is-num m3-dim">{{ "%.2f"|format(rango.minimum) }}</td>
+            <td class="is-num m3-dim">{{ "%.2f"|format(rango.maximum) }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     {% endif %}
+  </section>
 
-    <hr class="my-4" />
+  <!-- ---------- 8. Matriz de los pilotos ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Matriz de los pilotos</h2>
+      <span class="m3-sm m3-muted">por unidad y formato · solo los {{ pilot_products|length }} productos bandera (filtro de pantalla, no de datos)</span>
+    </div>
 
-    <!-- ---------- 8. Matriz de los pilotos ---------- -->
-
-    <h2 class="h5">Matriz de los pilotos, por unidad y formato</h2>
-    <p class="text-muted small">
-      Solo los {{ pilot_products|length }} productos bandera — filtro de pantalla, no de
-      datos. El resto del catálogo sigue cargado en la base, simplemente no es el foco
-      de la curaduría hoy. <strong>Una pestaña por provincia</strong>, en el orden de
-      <code>spec.md</code> §9 y no por los datos, para que no se reacomoden solas de un
-      día para el otro. Dentro de la pestaña, una tarjeta por producto ordenada por la
-      muestra <em>de esa provincia</em>.
-    </p>
-
-    <p class="text-muted small">
-      <strong>Lo que la pestaña cuesta.</strong> Ves una provincia a la vez, así que
-      comparar el mismo producto entre provincias ya no se hace de un vistazo. Para que
-      el precio no sea total, la cabecera de cada tarjeta trae el reparto de las
-      <em>dos</em> provincias —la que no estás mirando, apagada—, y cada pestaña dice
-      cuántas observaciones tiene antes de que la abras. La pestaña vive en la URL, así
-      que se puede compartir y sobrevive a recargar.
-    </p>
-
-    <p class="text-muted small">
-      <strong>El color dice de qué provincia, no qué tan bien va.</strong> Es la misma
-      regla que gobierna la barra: no hay umbral de dispersión fijado (spec.md §12.6), así
-      que la paleta es de identidad y no incluye rojo ni verde — un semáforo afirmaría un
-      umbral que nadie definió. Cada provincia conserva su color aunque un día no se
-      cargue nada en ella. <strong>Una tarjeta vacía es un hueco de cobertura</strong>:
-      ese producto no tiene ni una serie en esta provincia. No se esconde —cae al final
-      de la pestaña, con su cero—, porque esconderla sería volver a no poder ver qué
-      falta cargar.
-    </p>
-
-    <p class="text-muted small">
-      <strong>Las tarjetas se pliegan.</strong> Arranca abierta la de mayor muestra y el
-      resto cerradas; se abren con un clic y no hay JavaScript de por medio. La cabecera
-      de una tarjeta cerrada igual trae el reparto de observaciones por provincia, así
-      que plegarla no esconde dónde está la muestra — que es lo que la vista existe para
-      mostrar.
-    </p>
-
-    <p class="text-muted small">
-      <strong>Cómo se lee la barra.</strong> Va del mínimo al máximo de la serie, y la
-      marca fuerte es la mediana. El <strong>largo</strong> codifica la amplitud —cuántas
-      veces el máximo contiene al mínimo— en escala logarítmica y normalizado contra la
-      serie más amplia de la tabla: en escala lineal una amplitud de 44× y una de 103×
-      se verían casi iguales, y una de 2× sería invisible. Una barra larga con la mediana
-      pegada al borde izquierdo significa que casi todas las observaciones están abajo y
-      el máximo es un extremo suelto, que es la forma que tiene una celda mezclando
-      precio minorista con un saco mayorista.
-      <strong>Ninguna barra se pinta de un color de alarma</strong>: no hay umbral de
-      dispersión fijado (spec.md §12.6), y fijarlo por intuición sería peor que no
-      tenerlo. La barra dibuja el rango que la celda ya tiene; quien juzga es el
-      operador.
-    </p>
-
-    <p class="text-muted small">
-      <strong>El precio es por unidad, no total</strong> (2026-08-13): cada fila se
-      divide por su cantidad antes de entrar a la celda, así un saco de 50 kg y un
-      paquete de 1 kg del mismo producto se comparan de verdad. Una fila sin cantidad
-      no se puede normalizar y no se funde asumiendo cantidad 1 —eso sería inventar el
-      dato—: queda aparte, marcada
-      <strong class="text-muted">precio total, sin cantidad</strong>.
-      Por eso el envase queda fuera de la clave: normalizado por cantidad dejó de
-      separar series, y lo que distingue comprar al por mayor ya lo captura el formato
-      de venta.
-    </p>
-
-    <p class="text-muted small">
-      La unidad y el formato de venta sí parten la celda: un precio por libra y uno
-      por kilo no son la misma serie, y sin tabla de conversión entre unidades
-      (spec.md §12.6, no inventar) no se pueden fundir.
-      <strong>«sin unidad»</strong> y <strong>«sin formato»</strong> son su propia
-      celda, no se funden con las demás. La moneda ya no parte la celda (2026-08-13):
-      lo que se carga en USD/EUR/MLC se funde con lo que se carga en CUP una vez
-      convertido, y lo que todavía no tiene tasa resuelta queda aparte, marcado
-      <strong class="text-muted">sin convertir</strong>, para no mezclar un precio
-      inventado con uno real.
-    </p>
+    {# Las explicaciones largas se condensan acá: cuatro notas cortas, la primera
+       frase en negrita. Lo que se recortó vive en docs/, no en la pantalla del
+       operador. #}
+    <div class="m3-notes-grid">
+      <div>
+        <strong>El color dice qué provincia</strong>, no qué tan bien va: sin umbral de
+        dispersión fijado (§12.6), la paleta es de identidad y no incluye rojo ni verde — un
+        semáforo afirmaría un umbral que nadie definió.
+      </div>
+      <div>
+        <strong>La barra</strong> va del mínimo al máximo y la marca fuerte es la mediana. El
+        largo codifica la amplitud en escala logarítmica, normalizado contra la serie más
+        amplia de la tabla.
+      </div>
+      <div>
+        <strong>El precio es por unidad</strong>: cada fila se divide por su cantidad. Una fila
+        sin cantidad no se puede normalizar y queda aparte, marcada «precio total». La unidad y
+        el formato sí parten la celda; la moneda ya no.
+      </div>
+      <div>
+        <strong>Una tarjeta vacía es un hueco de cobertura</strong> y no se esconde: cae al
+        final de la pestaña con su cero. Arranca abierta la de mayor muestra, y el colapso es
+        <code>&lt;details&gt;</code> nativo, sin JavaScript.
+      </div>
+    </div>
 
     {% if single_observation %}
-    <p class="text-muted small">
-      {{ single_observation }} de {{ cells|length }} celdas tienen una sola
-      observación. Con una observación hay un dato, no una mediana.
+    <p class="m3-note">
+      {{ single_observation }} de {{ cells|length }} celdas tienen una sola observación. Con una
+      observación hay un dato, no una mediana.
     </p>
     {% endif %}
 
     {% if not cells %}
-      <div class="alert alert-secondary" role="alert">
-        Todavía no hay filas de precio cargadas.
-      </div>
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span><span>Todavía no hay filas de precio cargadas.</span>
+    </div>
     {% else %}
+
     {# Pestañas por provincia. Son enlaces y no un control con JavaScript: el
-       estado vive en la URL (`?province=`, el mismo lenguaje que los enlaces
-       al historial), así que una pestaña se puede compartir y sobrevive a
-       recargar la página. #}
-    <nav class="saimc-tabs" aria-label="Provincia">
+       estado vive en la URL (`?province=`), así que se pueden compartir y
+       sobreviven a recargar. La activa se distingue por color, peso y la barra
+       de abajo — no solo por el color, que acá ya está ocupado. #}
+    <nav class="m3-tabs" aria-label="Provincia">
       {% for col in matrix.columns %}
       {% set activa = col.name == selected_province.name %}
-      <a class="saimc-tab saimc-slot-{{ col.slot }}{% if activa %} is-active{% endif %}"
+      <a class="m3-tab m3-slot-{{ col.slot }}{% if activa %} is-active{% endif %}"
          href="?days={{ retail_range_days }}&amp;province={{ (col.name or '') | urlencode }}"
+         style="{% if activa %}color: var(--prov); border-bottom-color: var(--prov);{% endif %}"
          {% if activa %}aria-current="page"{% endif %}>
         {{ col.label }}
-        <span class="saimc-tab-count">{{ col.total }}</span>
+        <span class="m3-tab-count" style="{% if activa %}background: var(--prov-soft);{% endif %}">{{ col.total }}</span>
       </a>
       {% endfor %}
     </nav>
 
-    {% for fila in matrix_tab.rows %}
-    {# Abierta solo la de mayor muestra. Con todas cerradas la vista cargaría
-       en blanco, que es peor que la lista larga que el colapso vino a
-       resolver; con todas abiertas el colapso no haría nada. #}
-    <details class="saimc-prod"{% if loop.first %} open{% endif %}>
-      <summary class="saimc-prod-head">
-        <strong>{{ fila.product_name }}</strong>
-        <span class="text-muted small">
-          · {{ fila.total }} observaci{% if fila.total != 1 %}ones{% else %}ón{% endif %}
-        </span>
-        {# El reparto de TODAS las provincias, no solo la de la pestaña: es lo
-           que deja saber dónde está la muestra sin ir pestaña por pestaña. La
-           provincia que no estás mirando va apagada. #}
-        {% for columna in fila.tally %}
-        <span class="saimc-prod-tally saimc-slot-{{ columna.column.slot }}{% if columna.column.name != selected_province.name %} is-off{% endif %}">
-          <span class="saimc-prod-dot"></span>{{ columna.column.label }} {{ columna.total }}
-        </span>
-        {% endfor %}
-      </summary>
-
-      <div class="saimc-prod-grid" style="--cols: {{ matrix_tab.columns|length }};">
-      {% for columna in fila.columns %}
-      <div class="saimc-col saimc-slot-{{ columna.column.slot }}">
-        <div class="saimc-col-head">
-          <span class="saimc-col-name">{{ columna.column.label }}</span>
-          {% if columna.cells %}
-          <span class="text-muted small">
-            {{ columna.cells|length }} serie{% if columna.cells|length != 1 %}s{% endif %}
-            · {{ columna.total }} observaci{% if columna.total != 1 %}ones{% else %}ón{% endif %}
+    <div class="m3-stack" style="gap:12px">
+      {% for fila in matrix_tab.rows %}
+      {# Abierta solo la de mayor muestra: con todas cerradas la vista cargaría
+         en blanco, y con todas abiertas el colapso no haría nada. #}
+      <details class="m3-card m3-matrix-card"{% if loop.first %} open{% endif %}>
+        <summary>
+          <span class="m3-icon m3-muted">expand_more</span>
+          <strong>{{ fila.product_name }}</strong>
+          <span class="m3-sm m3-muted">
+            {{ fila.total }} observaci{% if fila.total != 1 %}ones{% else %}ón{% endif %}
           </span>
-          {% endif %}
-        </div>
+          <span class="m3-right"></span>
+          {# El reparto de TODAS las provincias, no solo la de la pestaña: es lo
+             que deja saber dónde está la muestra sin ir pestaña por pestaña. #}
+          {% for columna in fila.tally %}
+          <span class="m3-matrix-tally m3-slot-{{ columna.column.slot }}{% if columna.column.name != selected_province.name %} is-off{% endif %}"
+                style="margin-left:12px">
+            <span class="m3-matrix-dot"></span>{{ columna.column.label }} {{ columna.total }}
+          </span>
+          {% endfor %}
+        </summary>
 
-        {% if not columna.cells %}
-        <p class="saimc-col-empty mb-0">— sin series cargadas —</p>
-        {% endif %}
-
-        {% for item in columna.cells %}
-        {% set cell = item.cell %}
-        <div class="saimc-serie">
-          <div class="saimc-serie-meta">
-            <span class="saimc-serie-name">
-              {% if cell.unit %}{{ cell.unit }}{% else %}<span class="text-muted">sin unidad</span>{% endif %}
-              ·
-              {% if cell.sale_format == "retail" %}minorista
-              {%- elif cell.sale_format == "wholesale" %}mayorista
-              {%- else %}<span class="text-muted">sin formato</span>{% endif %}
+        {% for columna in fila.columns %}
+        <div class="m3-matrix-body m3-slot-{{ columna.column.slot }}">
+          <div class="m3-row-baseline" style="padding:12px 0 4px">
+            <span class="m3-metric-label m3-col-name" style="color: var(--prov)">{{ columna.column.label }}</span>
+            {% if columna.cells %}
+            <span class="m3-xs m3-muted">
+              {{ columna.cells|length }} serie{% if columna.cells|length != 1 %}s{% endif %}
+              · {{ columna.total }} observaci{% if columna.total != 1 %}ones{% else %}ón{% endif %}
             </span>
-            <span class="text-muted small">
-              <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
-                 title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
-              · mediana <strong>{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
-              {%- if cell.unquantified %} <span class="text-muted">precio total, sin cantidad</span>{% endif %}
-              {%- if cell.unconverted %} <span class="text-muted">sin convertir</span>{% endif %}
-              {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
-            </span>
+            {% endif %}
           </div>
 
-          {% if item.bar.has_range %}
-          <div class="saimc-range">
-            <span class="saimc-range-min">{{ "%.2f"|format(cell.minimum) }}</span>
-            <span class="saimc-range-track">
-              <span class="saimc-range-fill" style="width: {{ "%.1f"|format(item.bar.width_pct) }}%;">
-                <span class="saimc-range-median" style="left: {{ "%.1f"|format(item.bar.median_pct) }}%;"
-                      title="Mediana {{ "%.2f"|format(cell.median) }}"></span>
+          {% if not columna.cells %}
+          <p class="m3-sm m3-dim" style="margin:0 0 12px">— sin series cargadas —</p>
+          {% endif %}
+
+          {% for item in columna.cells %}
+          {% set cell = item.cell %}
+          <div class="m3-serie">
+            <div class="m3-row-baseline">
+              <span class="m3-strong" style="font-size:14px">
+                {% if cell.unit %}{{ cell.unit }}{% else %}<span class="m3-muted">sin unidad</span>{% endif %}
+                ·
+                {% if cell.sale_format == "retail" %}minorista
+                {%- elif cell.sale_format == "wholesale" %}mayorista
+                {%- else %}<span class="m3-muted">sin formato</span>{% endif %}
               </span>
-            </span>
-            <span class="saimc-range-max">{{ "%.2f"|format(cell.maximum) }}</span>
+              <span class="m3-sm m3-muted">
+                <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
+                   title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
+                · mediana <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
+                {%- if cell.unquantified %} <span class="m3-dim">precio total, sin cantidad</span>{% endif %}
+                {%- if cell.unconverted %} <span class="m3-dim">sin convertir</span>{% endif %}
+                {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
+              </span>
+            </div>
+
+            {% if item.bar.has_range %}
+            <div class="m3-range">
+              <span>{{ "%.2f"|format(cell.minimum) }}</span>
+              <span class="m3-range-track">
+                <span class="m3-range-fill" style="width: {{ "%.1f"|format(item.bar.width_pct) }}%;">
+                  <span class="m3-range-median" style="left: {{ "%.1f"|format(item.bar.median_pct) }}%;"
+                        title="Mediana {{ "%.2f"|format(cell.median) }}"></span>
+                </span>
+              </span>
+              <span>{{ "%.2f"|format(cell.maximum) }}</span>
+            </div>
+            {% else %}
+            <div class="m3-range">
+              <span class="m3-sm m3-muted">
+                {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(cell.median) }}
+                {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(cell.median) }}{% endif %}
+              </span>
+            </div>
+            {% endif %}
           </div>
-          {% else %}
-          <div class="saimc-range">
-            <span class="text-muted small">
-              {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(cell.median) }}
-              {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(cell.median) }}{% endif %}
-            </span>
-          </div>
-          {% endif %}
+          {% endfor %}
         </div>
         {% endfor %}
-      </div>
+      </details>
       {% endfor %}
-      </div>
-    </details>
-    {% endfor %}
+    </div>
     {% endif %}
+  </section>
 
-    <p class="mt-4">
-      <a href="/curation">← Volver a la cola de curaduría</a> ·
-      <a href="/curation/history">Corregir un anuncio curado →</a>
-    </p>
-  </div>
-</body>
-</html>
+  <p class="m3-sm">
+    <a href="/curation">← Volver a la cola de curaduría</a> ·
+    <a href="/curation/history">Corregir un anuncio curado →</a>
+  </p>
+</div>
+{% endblock %}

@@ -118,12 +118,12 @@ class TestControlPanel:
         texto = client.get("/control").text
 
         # Un solo cruce por tarjeta: la provincia de la pestaña activa.
-        assert texto.count('class="saimc-col saimc-slot-') == 2
+        assert texto.count('class="m3-matrix-body m3-slot-') == 2
         # Las dos pestañas existen. Activa la primera del catálogo (slot 0 es
         # La Habana), no la de más muestra: si la eligieran los datos, la
         # pestaña inicial cambiaría sola de un día para el otro.
-        assert 'class="saimc-tab saimc-slot-0 is-active"' in texto
-        assert 'class="saimc-tab saimc-slot-1"' in texto
+        assert 'class="m3-tab m3-slot-0 is-active"' in texto
+        assert 'class="m3-tab m3-slot-1"' in texto
         assert 'href="?days=7&amp;province=Santiago%20de%20Cuba"' in texto
 
     def test_la_pestana_se_elige_por_query_string(
@@ -134,12 +134,12 @@ class TestControlPanel:
         self._cargar_dos_provincias(session)
 
         texto = client.get("/control?province=Santiago de Cuba").text
-        tarjetas = texto.split('<details class="saimc-prod"')[1:]
+        tarjetas = texto.split('<details class="m3-card m3-matrix-card"')[1:]
         paneles = [t.split("</summary>")[1] for t in tarjetas]
 
         # El panel dibuja Santiago; La Habana ya no aparece como columna.
         assert all("Santiago de Cuba" in p for p in paneles)
-        assert not any('saimc-col-name">La Habana' in p for p in paneles)
+        assert not any('m3-col-name">La Habana' in p for p in paneles)
 
     def test_una_provincia_desconocida_no_rompe_la_pagina(
         self, client: TestClient, session: Session
@@ -162,7 +162,7 @@ class TestControlPanel:
         self._cargar_dos_provincias(session)
 
         texto = client.get("/control?province=Santiago de Cuba").text
-        tarjetas = texto.split('<details class="saimc-prod"')[1:]
+        tarjetas = texto.split('<details class="m3-card m3-matrix-card"')[1:]
 
         assert "sin series cargadas" in tarjetas[-1]
         assert "Pollo" in tarjetas[-1].split("</summary>")[0]
@@ -210,10 +210,10 @@ class TestControlPanel:
 
         texto = client.get("/control").text
 
-        assert texto.count('<details class="saimc-prod"') == 2
-        assert texto.count('<details class="saimc-prod" open>') == 1
+        assert texto.count('<details class="m3-card m3-matrix-card"') == 2
+        assert texto.count('<details class="m3-card m3-matrix-card" open>') == 1
         # La abierta es la de más muestra: Azúcar (9) antes que Pollo (2).
-        abierta = texto.split('<details class="saimc-prod" open>')[1]
+        abierta = texto.split('<details class="m3-card m3-matrix-card" open>')[1]
         assert "Azúcar blanca" in abierta.split("</summary>")[0]
 
     def test_la_tarjeta_cerrada_sigue_diciendo_donde_esta_la_muestra(
@@ -226,7 +226,7 @@ class TestControlPanel:
         texto = client.get("/control").text
         # Acotado a las tarjetas de la matriz: «Pollo» también aparece antes,
         # en la sección de cobertura.
-        tarjetas = texto.split('<details class="saimc-prod"')[1:]
+        tarjetas = texto.split('<details class="m3-card m3-matrix-card"')[1:]
         cabecera_pollo = next(
             t.split("</summary>")[0] for t in tarjetas if "Pollo" in t.split("</summary>")[0]
         )
@@ -449,7 +449,7 @@ class TestFiltroDePilotos:
 
         response = client.get("/control")
 
-        assert '<span class="saimc-chip saimc-chip-done">Arroz</span>' in response.text
+        assert '<span class="m3-chip m3-chip-ok m3-chip-sm">Arroz</span>' in response.text
         assert "Sazon Dubai" not in response.text
         for faltante in ("Aceite", "Azúcar blanca", "Pollo"):
             assert f"{faltante} · sin dato" in response.text
@@ -575,7 +575,7 @@ class TestPanelDeProgreso:
         response = client.get("/control")
 
         assert "La Habana · sin dato" in response.text
-        assert '<span class="saimc-chip saimc-chip-done">Santiago de Cuba</span>' in response.text
+        assert '<span class="m3-chip m3-chip-ok m3-chip-sm">Santiago de Cuba</span>' in response.text
 
     def test_los_huecos_enlazan_al_historial_filtrado(
         self, client: TestClient, session: Session
@@ -636,7 +636,9 @@ class TestPanelDeProgreso:
         response = client.get("/control")
 
         assert "67%" in response.text
-        assert "Por encima del objetivo" in response.text
+        # El chip resume; el banner explica. El aviso son las dos cosas.
+        assert "sobre el 30%" in response.text
+        assert "Se descarta más de lo que §12.5 pone como objetivo" in response.text
 
     def test_sin_nada_decidido_no_inventa_una_tasa_de_descarte(
         self, client: TestClient
@@ -671,7 +673,7 @@ class TestPanelDeTasaDeCambio:
         response = client.get("/control")
 
         assert "670.00" in response.text
-        assert "Hay tasa de hoy" in response.text
+        assert "tasa de hoy" in response.text
 
     def test_una_moneda_sin_cache_se_muestra_igual(self, client: TestClient) -> None:
         """El hueco es el dato: sin tasa cacheada, un anuncio en esa moneda se

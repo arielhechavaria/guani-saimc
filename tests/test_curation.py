@@ -85,6 +85,22 @@ def _fecha_pub(ingestion: RawIngestion) -> str:
     return (ingestion.captured_at.date() - timedelta(days=1)).isoformat()
 
 
+def _contador(texto: str, etiqueta: str) -> str | None:
+    """Valor del contador `etiqueta` en la cabecera de la vista.
+
+    Los contadores viven en el shell como etiqueta y cifra en dos nodos
+    hermanos, así que buscar la cifra suelta no probaría nada: un "1" está
+    en cualquier parte de la página. Esto exige que la cifra sea la del
+    contador pedido.
+    """
+    encontrado = re.search(
+        rf'<div class="m3-stat-label">{re.escape(etiqueta)}</div>\s*'
+        rf'<div class="m3-stat-value[^"]*">\s*(\d+)\s*</div>',
+        texto,
+    )
+    return encontrado.group(1) if encontrado else None
+
+
 def _crear_producto(
     session: Session, *, name: str = "Pollo", aliases: list[str] | None = None
 ) -> Product:
@@ -220,9 +236,9 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert "Curados: <strong>1</strong>" in response.text
-        assert "Por curar: <strong>2</strong>" in response.text
-        assert "Descartados: <strong>0</strong>" in response.text
+        assert _contador(response.text, "Curados") == "1"
+        assert _contador(response.text, "Por curar") == "2"
+        assert _contador(response.text, "Descartados") == "0"
 
     def test_muestra_el_pendiente_mas_antiguo(
         self, client: TestClient, session: Session
@@ -587,11 +603,14 @@ class TestSinCandidatosAtajoDeUnClic:
         assert response.status_code == 200
         assert 'id="curation-form"' in response.text
         etiqueta = re.search(
-            r'<details[^>]*>\s*<summary class="card-header"[^>]*>Datos del anuncio',
+            r'<details([^>]*)>\s*<summary class="m3-summary[^"]*"[^>]*>'
+            r'[\s\S]{0,300}?<h2[^>]*>Datos del anuncio',
             response.text,
         )
         assert etiqueta is not None
-        assert "open" not in etiqueta.group(0)
+        # group(1) son los atributos del <details>, no el bloque entero: así
+        # un "open" en el texto de adentro no puede dar un falso positivo.
+        assert "open" not in etiqueta.group(1)
 
     def test_con_candidatos_el_formulario_sigue_abierto_por_default(
         self, client: TestClient, session: Session
@@ -608,11 +627,12 @@ class TestSinCandidatosAtajoDeUnClic:
 
         assert response.status_code == 200
         etiqueta = re.search(
-            r'<details[^>]*>\s*<summary class="card-header"[^>]*>Datos del anuncio',
+            r'<details([^>]*)>\s*<summary class="m3-summary[^"]*"[^>]*>'
+            r'[\s\S]{0,300}?<h2[^>]*>Datos del anuncio',
             response.text,
         )
         assert etiqueta is not None
-        assert "open" in etiqueta.group(0)
+        assert "open" in etiqueta.group(1)
 
 
 class TestProvinciaDelCanalSiempreManda:
@@ -3357,8 +3377,7 @@ class TestFueraDeFocoNoLlegaALaCola:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert "Fuera de foco" in response.text
-        assert ">2<" in response.text
+        assert "2 fuera de foco" in response.text
 
     def test_por_curar_cuenta_solo_lo_que_el_operador_va_a_ver(
         self, client: TestClient, session: Session
@@ -3383,7 +3402,7 @@ class TestFueraDeFocoNoLlegaALaCola:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert "Por curar: <strong>1</strong>" in response.text
+        assert _contador(response.text, "Por curar") == "1"
 
     def test_imagen_sin_ocr_sigue_llegando_a_la_cola(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
