@@ -37,7 +37,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
@@ -338,6 +338,18 @@ def _historical_defaults(
     grupo (párrafo siguiente) ya previene — silencioso, porque el dato
     resultante es plausible.
 
+    Con el origen YA resuelto sin ambigüedad, la consulta histórica igual
+    tiene que dejar de filtrar solo por texto (docs/decisions.md,
+    2026-08-20): canal y grupo homónimos escriben el mismo
+    `source_reference`, así que `RawIngestion.source_reference ==
+    source_reference` a secas trae también las filas del otro — el mismo
+    error cruzado, ahora colándose por acá en vez de por la ambigüedad. Con
+    `origen` resuelto, la consulta se acota a `channel_id == origen.id` (la
+    identidad real) más las filas SIN `channel_id` (anteriores a la
+    migración 0015, donde el texto sigue siendo el único rastro que existe).
+    Sin `origen` (0 coincidencias, fuente sin canal registrado) no hay nada
+    a qué acotar y se mantiene el texto solo, igual que hoy.
+
     NO aplica a grupos de WhatsApp (2026-08-18). El razonamiento entero
     descansa en que el `source_reference` identifica a UN vendedor, que es
     cierto en un canal —el nombre del canal es la mipyme— y falso en un
@@ -362,13 +374,20 @@ def _historical_defaults(
     parsed_product_id = _parse_uuid(product_id)
     if parsed_product_id is None:
         return None
+    if origen is not None:
+        origen_match = or_(
+            RawIngestion.channel_id == origen.id,
+            and_(
+                RawIngestion.channel_id.is_(None),
+                RawIngestion.source_reference == source_reference,
+            ),
+        )
+    else:
+        origen_match = RawIngestion.source_reference == source_reference
     stmt = (
         select(PriceHistory)
         .join(RawIngestion, PriceHistory.source_id == RawIngestion.id)
-        .where(
-            PriceHistory.product_id == parsed_product_id,
-            RawIngestion.source_reference == source_reference,
-        )
+        .where(PriceHistory.product_id == parsed_product_id, origen_match)
         .order_by(PriceHistory.created_at.desc())
         .limit(1)
     )

@@ -3128,3 +3128,32 @@ el prellenado de escala/envase al registrarse el grupo homónimo, porque el
 nombre pasa a ser ambiguo. `channel_id` nunca se retropuebla en esas filas:
 el fallback por nombre queda permanente para todo lo creado antes de esta
 migración.
+
+---
+
+## 2026-08-20 — `_historical_defaults` acota por `channel_id`, no solo por texto
+
+Contexto: verificación de la entrada anterior encontró una fuga residual.
+`_resolve_origin` resuelve bien el canal de origen, pero la consulta
+histórica seguía filtrando `PriceHistory` solo por `RawIngestion.source_reference
+== source_reference` — texto plano. Canal y grupo homónimos escriben el
+mismo `source_reference` (es `channel.name` en los dos), así que una
+ingesta con `channel_id` apuntando al CANAL igual traía el historial
+confirmado del GRUPO si el texto coincidía. Mismo error cruzado que la
+guarda `is_whatsapp_group` ya cerraba, colándose por la puerta de al lado.
+Reproducido con un test antes de tocar el código (`hash-canal-vs-grupo-*`,
+`tests/test_curation.py`).
+
+Decisión: la consulta histórica ahora filtra por `RawIngestion.channel_id ==
+origen.id` cuando `origen` se resolvió sin ambigüedad, con `OR channel_id IS
+NULL AND source_reference == source_reference` para no perder las filas
+anteriores a la migración 0015, que no tienen `channel_id` y siguen
+dependiendo del texto como único rastro.
+
+Descartado: dejarlo documentado como riesgo conocido sin arreglar — la fuga
+es exactamente la que esta migración completa existe para cerrar; dejarla
+abierta en un camino y cerrada en el otro no es una limitación aceptable,
+es la mitad del trabajo.
+
+Consecuencia: ninguna migración nueva — cambio acotado a
+`src/saimc/web/routers/curation.py`. Suite completa 577/577.

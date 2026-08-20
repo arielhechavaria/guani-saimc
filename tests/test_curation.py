@@ -1191,6 +1191,65 @@ class TestOrigenDeIngestaAmbiguo:
         assert '<option value="retail" selected>' not in response.text
         assert 'id="min_purchase_0" value=""' in response.text
 
+    def test_channel_id_apunta_a_canal_no_hereda_historial_del_grupo_homonimo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La consulta histórica filtra por texto de `source_reference`, que
+        el canal y el grupo comparten cuando tienen el mismo nombre. Una
+        ingesta con `channel_id` apuntando al CANAL no debe traer historial
+        confirmado que en realidad viene de una ingesta del GRUPO, aunque el
+        texto coincida — es la misma fuga cruzada que la guarda de grupo
+        (`is_whatsapp_group`) ya previene, pero en la dirección contraria."""
+        producto = _crear_producto(session, name="Arroz")
+        canal = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+            is_active=True,
+        )
+        grupo = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_GROUP,
+            external_id="1@g.us",
+            is_active=True,
+        )
+        session.add_all([canal, grupo])
+        session.commit()
+        vieja_del_grupo = _crear_raw_ingestion(
+            session,
+            hash_="hash-canal-vs-grupo-vieja",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+            channel_id=grupo.id,
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session,
+            ingestion=vieja_del_grupo,
+            product=producto,
+            sale_format="wholesale",
+            packaging="Saco",
+            min_purchase_quantity=Decimal("5"),
+        )
+        vieja_del_grupo.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-canal-vs-grupo-nueva",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+            channel_id=canal.id,
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert '<option value="wholesale" selected>' not in response.text
+        assert '<option value="saco" selected>' not in response.text
+        assert 'id="min_purchase_0" value=""' in response.text
+
 
 class TestIngestaAutomatica:
     """`GET /curation` ingesta la bandeja antes de mostrar la cola — reemplaza
