@@ -15,6 +15,15 @@
       <div class="saimc-counters">
         <span class="saimc-counter">Curados: <strong>{{ status_counts.curated }}</strong></span>
         <span class="saimc-counter">Por curar: <strong>{{ status_counts.pending }}</strong></span>
+        {% if status_counts.out_of_focus %}
+        <!--
+          Los que la cola esconde por no mencionar ningún producto del foco
+          (docs/decisions.md, 2026-08-20). Se declaran para que "Por curar: 0"
+          no se confunda con "no entró nada": siguen pending, y vuelven solos
+          si su producto entra al foco desde /catalog.
+        -->
+        <span class="saimc-counter" title="Sin producto del foco: no se muestran. Vuelven si su producto entra al foco.">Fuera de foco: <strong>{{ status_counts.out_of_focus }}</strong></span>
+        {% endif %}
         <span class="saimc-counter">Descartados: <strong>{{ status_counts.discarded }}</strong></span>
         <span class="saimc-counter"><a href="/control">Ver control →</a></span>
         <span class="saimc-counter"><a href="/curation/history">Historial de curados →</a></span>

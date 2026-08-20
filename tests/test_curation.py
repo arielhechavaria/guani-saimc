@@ -380,12 +380,19 @@ class TestCurationQueueGet:
         Es el caso que hace barata una lista de precios de 25 renglones —solo
         llegan al formulario los que caen en un producto piloto—. El anuncio
         completo sigue intacto en el registro crudo, que es inmutable.
+
+        El anuncio mezcla el corte con una línea de arroz: desde el 2026-08-20
+        un texto que SOLO trae el corte ya no llega a la cola, así que hace
+        falta un producto del foco para que el anuncio se muestre y la garantía
+        de esta prueba —la línea del corte no prellena fila— siga siendo
+        observable.
         """
         _crear_producto(session, name="Pollo")
+        _crear_producto(session, name="Arroz")
         _crear_raw_ingestion(
             session,
             hash_="hash-corte-sin-match",
-            original_text="higado de pollo 40lb a 3000 habana",
+            original_text="higado de pollo 40lb a 3000 habana\narroz a 30000 habana",
         )
 
         response = client.get("/curation")
@@ -393,8 +400,8 @@ class TestCurationQueueGet:
         assert response.status_code == 200
         # El texto del anuncio sigue visible en su textarea — eso es correcto,
         # el operador tiene que poder leerlo. Lo que no debe existir es una
-        # fila prellenada para esa línea: quedan solo las filas en blanco de
-        # cortesía, todas con el `<select>` sin elegir.
+        # fila prellenada para la línea del corte: queda la del arroz, más las
+        # filas en blanco de cortesía con el `<select>` sin elegir.
         assert response.text.count('value="" selected>— seleccionar —') == _EXTRA_BLANK_ROWS
 
     def test_texto_multiproducto_prellena_una_fila_por_candidato(
@@ -483,13 +490,19 @@ class TestSinCandidatosAtajoDeUnClic:
     solo para llegar al botón "Descartar" al final del formulario."""
 
     def test_sin_producto_ni_precio_muestra_el_atajo(
-        self, client: TestClient, session: Session
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Desde 2026-08-20 el saludo en TEXTO ya no llega a la cola: el filtro
+        por foco lo esconde antes. El atajo sigue haciendo falta para la imagen,
+        que entra sin que se sepa qué dice hasta transcribirla."""
         _crear_producto(session, name="Pollo")
         ingestion = _crear_raw_ingestion(
-            session,
-            hash_="hash-saludo-sin-datos",
-            original_text=(
+            session, hash_="hash-saludo-sin-datos", content_type=ContentType.IMAGE
+        )
+        monkeypatch.setattr(
+            ocr,
+            "transcribe",
+            lambda path, lang="spa": (
                 "¡Buenos tardes, familia! ☀️\nEscribinos a estos números:\n"
                 "[teléfono removido]\n[teléfono removido]"
             ),
@@ -518,9 +531,13 @@ class TestSinCandidatosAtajoDeUnClic:
     def test_precio_de_producto_no_piloto_no_muestra_el_atajo(
         self, client: TestClient, session: Session
     ) -> None:
-        """`propose_all` sí encontró algo (un precio real), aunque no sea de
-        un producto del foco — vale la pena que el operador lo vea, no es el
-        mismo caso que un mensaje sin ningún dato aprovechable."""
+        """Reemplaza la premisa de 2026-08-17. Entonces se decidió que un
+        precio real de producto ajeno al foco «vale la pena que el operador lo
+        vea»; con volumen de WhatsApp esa fue la fuente principal de ruido —los
+        negocios publican cemento, diésel y mayonesa todo el día— y el
+        2026-08-20 el operador la invirtió: sin producto del foco, no se
+        muestra. El atajo no aparece porque ya no hay nada que descartar.
+        """
         _crear_producto(session, name="Pollo")  # ningún producto matchea "cemento"
         _crear_raw_ingestion(
             session, hash_="hash-no-piloto-con-precio", original_text="cemento a 500 el saco"
@@ -529,6 +546,7 @@ class TestSinCandidatosAtajoDeUnClic:
         response = client.get("/curation")
 
         assert response.status_code == 200
+        assert "No hay elementos en la cola." in response.text
         assert "Descartar (sin candidatos)" not in response.text
 
     def test_el_atajo_descarta_de_verdad(
@@ -550,7 +568,7 @@ class TestSinCandidatosAtajoDeUnClic:
         )
 
     def test_el_formulario_completo_sigue_disponible_pero_colapsado(
-        self, client: TestClient, session: Session
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """El atajo no borra el formulario, lo colapsa (docs/decisions.md,
         2026-08-17, corrigiendo el diseño anterior de este mismo día — el
@@ -560,8 +578,9 @@ class TestSinCandidatosAtajoDeUnClic:
         mano, pero no aparece expandido por default."""
         _crear_producto(session, name="Pollo")
         _crear_raw_ingestion(
-            session, hash_="hash-atajo-no-esconde-form", original_text="buenos días a todos"
+            session, hash_="hash-atajo-no-esconde-form", content_type=ContentType.IMAGE
         )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "buenos días a todos")
 
         response = client.get("/curation")
 
@@ -712,7 +731,7 @@ class TestPrellenoDesdeHistorialDelCanal:
             packaging="Saco",
             min_purchase_quantity=Decimal("1"),
         )
-        # `_next_pending` elige entre los `PENDING` —
+        # `_pending_in_focus` elige entre los `PENDING` —
         # sin esto, `/curation` mostraría el antecedente, no el anuncio
         # nuevo que este test quiere ver prellenado.
         vieja.processing_status = ProcessingStatus.CURATED
@@ -3223,13 +3242,14 @@ class TestOrdenDeLaColaPorFoco:
         assert response.status_code == 200
         assert f'action="/curation/{viejo.id}"' in response.text
 
-    def test_sin_nada_del_foco_muestra_el_mas_viejo_como_siempre(
+    def test_sin_nada_del_foco_la_cola_se_muestra_vacia(
         self, client: TestClient, session: Session
     ) -> None:
-        """Sin regresión: una cola donde nada aporta al foco se comporta
-        exactamente como antes de esta decisión."""
+        """Reemplaza al orden puro de 2026-08-18: un texto que no menciona
+        ningún producto del foco ya no se muestra, ni siquiera al final de la
+        cola (docs/decisions.md, 2026-08-20)."""
         _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
-        viejo = _crear_raw_ingestion(
+        _crear_raw_ingestion(
             session,
             hash_="hash-orden-nada-viejo",
             original_text="cemento a 500 el saco",
@@ -3245,7 +3265,146 @@ class TestOrdenDeLaColaPorFoco:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert f'action="/curation/{viejo.id}"' in response.text
+        assert "No hay elementos en la cola." in response.text
+
+
+class TestFueraDeFocoNoLlegaALaCola:
+    """docs/decisions.md, 2026-08-20 — un anuncio de texto que no menciona
+    ningún producto del foco no se muestra. Extiende al anuncio entero el
+    mismo criterio que 2026-08-15 ya aplicaba a las filas del formulario:
+    lo que no aporta a una celda no le cuesta un clic al operador.
+
+    Esconder no es descartar: la fila sigue `pending` y su relevancia se
+    recalcula en cada carga, así que un producto que entra al foco hace
+    reaparecer sus anuncios sin reprocesar nada.
+    """
+
+    def test_texto_ajeno_al_foco_no_se_muestra_aunque_sea_lo_unico(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-fuera-unico",
+            original_text="¡Buenos días, familia! Nos encontramos en Calle 20",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "No hay elementos en la cola." in response.text
+
+    def test_el_contador_declara_cuantos_quedaron_fuera_de_foco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Esconder en silencio sería mentir sobre el tamaño de la cola: el
+        operador tiene que poder distinguir "no entró nada" de "entró ruido"."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-fuera-contador-1",
+            original_text="cemento a 500 el saco",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-fuera-contador-2",
+            original_text="cabilla de media a 1200",
+            captured_at=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Fuera de foco" in response.text
+        assert ">2<" in response.text
+
+    def test_por_curar_cuenta_solo_lo_que_el_operador_va_a_ver(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El contador de la cola cuenta lo que se va a mostrar. Si siguiera
+        contando el ruido escondido, diría "Por curar: 40" sobre una cola que
+        se vacía al tercer anuncio."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-fuera-por-curar-ruido",
+            original_text="cemento a 500 el saco",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-fuera-por-curar-foco",
+            original_text="arroz a 30000",
+            captured_at=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Por curar: <strong>1</strong>" in response.text
+
+    def test_imagen_sin_ocr_sigue_llegando_a_la_cola(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Una imagen no tiene texto: su relevancia es desconocida, no
+        negativa. Filtrarla exigiría correr el OCR de la cola entera en cada
+        carga de página, que es justo lo que el orden por foco evita."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        imagen = _crear_raw_ingestion(
+            session,
+            hash_="hash-fuera-imagen",
+            content_type=ContentType.IMAGE,
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{imagen.id}"' in response.text
+
+    def test_sin_foco_definido_no_se_esconde_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin ningún producto piloto no hay relevancia que medir. Filtrar
+        contra un catálogo vacío dejaría la cola muerta — peor que el ruido
+        que el filtro existe para sacar."""
+        ingestion = _crear_raw_ingestion(
+            session,
+            hash_="hash-fuera-sin-foco",
+            original_text="cemento a 500 el saco",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{ingestion.id}"' in response.text
+
+    def test_un_producto_que_entra_al_foco_hace_reaparecer_sus_anuncios(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Lo que sostiene que esconder sea reversible: la relevancia se
+        calcula en cada carga contra el catálogo del foco, no se congela en
+        una columna al ingerir."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        escondido = _crear_raw_ingestion(
+            session,
+            hash_="hash-fuera-reaparece",
+            original_text="cemento a 500 el saco",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+
+        assert "No hay elementos en la cola." in client.get("/curation").text
+
+        _crear_producto(session, name="Cemento", aliases=[])
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{escondido.id}"' in response.text
 
     def test_imagen_sin_ocr_no_queda_detras_de_texto_ajeno_al_foco(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch

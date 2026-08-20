@@ -3192,3 +3192,53 @@ antes de poder redirigir con el error).
 Consecuencia: ninguna migración — cambio acotado a
 `src/saimc/web/routers/catalog.py` y `catalog.html`. Suite completa
 583/583.
+
+## 2026-08-20 — La cola esconde el texto sin producto del foco
+
+Contexto: con volumen real de WhatsApp la cola se llenó de mensajes propios
+de los negocios (saludos, alertas de clima, links, ofertas de cemento,
+diésel y mayonesa) y el operador terminó descartando a mano más de lo que
+curaba. Medido sobre producción: de 104 ingestas de WhatsApp con texto, 82
+fueron descartadas — y 77 de esas 82 (94%) no mencionaban ningún producto
+del foco. La repetición, en cambio, resultó marginal: solo el 13% son
+casi-duplicados, y el dedupe por `content_hash` ya atrapa los idénticos.
+
+La decisión del 2026-08-18 ordenaba por foco pero no filtraba, y la del
+2026-08-17 sostenía que un precio real de producto ajeno al foco «vale la
+pena que el operador lo vea». Con volumen de negocio esa premisa se dio
+vuelta: es la fuente principal del trabajo manual que el foco existe para
+eliminar.
+
+Decisión: `_pending_in_focus` deja de mostrar la ingesta de TEXTO cuyo
+contenido no menciona ningún producto del foco. Es el mismo criterio que el
+2026-08-15 ya aplicaba a las filas del formulario, subido al nivel del
+anuncio entero. Tres límites lo hacen seguro:
+
+- **Esconder no es descartar.** La fila sigue `PENDING` y su relevancia se
+  recalcula en cada carga: un producto que entra al foco desde /catalog hace
+  reaparecer sus anuncios sin reprocesar nada. Nada se marca `DISCARDED` ni
+  deja de ingerirse, así que el denominador de H0 no se toca.
+- **Sin foco definido no se filtra.** Con `is_pilot` vacío no hay relevancia
+  que medir y la cola se mostraría muerta; ahí pasa todo, como antes.
+- **La imagen sin OCR sigue entrando.** Su relevancia es desconocida, no
+  negativa, y descubrirla exigiría transcribir la cola entera en cada carga.
+
+El contador «Fuera de foco» declara cuántos quedaron escondidos: sin él,
+«Por curar: 0» no se distingue de «no entró nada».
+
+Descartado: aprender los textos de ruido repetidos, que es lo que sugería la
+intuición inicial. Ataca el 13% del problema y exigiría almacenar patrones y
+decidir un umbral de similitud, cuando el catálogo del foco ya separa el 94%
+sin estado nuevo. Descartado también filtrar en el webhook: congelaría la
+decisión contra el foco del día de captura y rompería la reversibilidad, con
+`raw_ingestions` inmutable.
+
+Consecuencia: el filtro es tan bueno como los alias del catálogo, y ahí vive
+el aprendizaje que el operador pidió — cada alias que agrega en /catalog hace
+entrar todos los anuncios futuros que usan ese término, sin ML ni migración.
+Medido antes de activarlo, el matcher escondía 5 de 22 anuncios ya curados
+(«MUSLO DE POLLO PILGRIM'S», «Muslo con contramuslo», «Saco de azúcar 25kg»);
+con los alias `muslo de pollo`, `muslo con contramuslo`, `contramuslo` en
+Pollo y `saco de azucar`, `azucar magdalena`, `azucar refino` en Azúcar
+blanca, la pérdida baja a 0 y el ruido eliminado queda en 75/82 (91%). Los
+alias son datos de producción: el filtro no debe activarse sin ellos.

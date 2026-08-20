@@ -226,19 +226,25 @@ def _focus_rank(ingestion: RawIngestion, products: Sequence[Product]) -> int:
     return _FOCUS_NONE
 
 
-def _next_pending(db: Session, products: Sequence[Product]) -> RawIngestion | None:
-    """El pendiente que más aporta al foco, no simplemente el más viejo.
+def _pending_in_focus(db: Session, products: Sequence[Product]) -> list[RawIngestion]:
+    """Los pendientes que el operador va a ver, en orden de curaduría.
 
-    La hora diaria del operador es el recurso escaso, y hasta acá la cola era
-    FIFO puro: un anuncio de cemento capturado el lunes se miraba antes que
-    uno de arroz del martes, aunque solo el segundo alimente una celda del
-    foco (`docs/decisions.md`, 2026-08-18).
+    Hasta el 2026-08-18 el foco solo ordenaba: un anuncio de cemento seguía
+    en la cola, al final. Con volumen real de WhatsApp eso no alcanzó — los
+    negocios publican saludos, alertas de clima, links y ofertas de productos
+    ajenos, y todo eso llegaba igual a la cola (`docs/decisions.md`,
+    2026-08-20). Ahora el texto que no menciona ningún producto del foco no se
+    muestra: es el mismo criterio que 2026-08-15 ya aplicaba a las filas del
+    formulario, subido al nivel del anuncio entero.
 
-    Ordena, no filtra: nada se descarta ni deja de entrar. Lo que no aporta al
-    foco de hoy sigue en la cola, y si mañana ese producto entra al foco
-    (`is_pilot` es un clic en /catalog) sube solo, sin reprocesar nada — por
-    eso la relevancia se calcula acá y no se congela en una columna al
-    ingerir.
+    Esconder no es descartar. La fila sigue `PENDING` y su relevancia se
+    recalcula en cada carga, así que un producto que entra al foco (`is_pilot`
+    es un clic en /catalog) hace reaparecer sus anuncios sin reprocesar nada —
+    por eso la relevancia no se congela en una columna al ingerir.
+
+    `_FOCUS_UNKNOWN` (imagen sin OCR) sigue entrando: su relevancia es
+    desconocida, no negativa, y descubrirla exigiría transcribir la cola
+    entera en cada carga de página.
     """
     stmt = (
         select(RawIngestion)
@@ -246,12 +252,20 @@ def _next_pending(db: Session, products: Sequence[Product]) -> RawIngestion | No
         .order_by(RawIngestion.captured_at.asc())
     )
     pending = list(db.execute(stmt).scalars().all())
-    if not pending:
-        return None
-    # `min` devuelve el PRIMER elemento de valor mínimo y la consulta ya vino
-    # ordenada por `captured_at`: eso sale gratis el desempate por antigüedad
-    # dentro de cada nivel, sin ordenar por tupla ni tocar el orden del SQL.
-    return min(pending, key=lambda ingestion: _focus_rank(ingestion, products))
+    # Sin foco definido no hay relevancia que medir: filtrar contra un catálogo
+    # vacío escondería la cola entera, que es peor que el ruido que el filtro
+    # existe para sacar. Pasa de verdad — al arrancar, o si el operador
+    # desmarca el último piloto en /catalog.
+    if not products:
+        return pending
+    ranked = [(ingestion, _focus_rank(ingestion, products)) for ingestion in pending]
+    # `sorted` es estable y la consulta ya vino ordenada por `captured_at`:
+    # eso sale gratis el desempate por antigüedad dentro de cada nivel.
+    return [
+        ingestion
+        for ingestion, rank in sorted(ranked, key=lambda par: par[1])
+        if rank != _FOCUS_NONE
+    ]
 
 
 def _resolve_origin(db: Session, ingestion: RawIngestion) -> tuple[Channel | None, bool]:
@@ -429,15 +443,25 @@ def _all_provinces(db: Session) -> list[Province]:
     return list(db.execute(select(Province).order_by(Province.name)).scalars().all())
 
 
-def _status_counts(db: Session) -> dict[str, int]:
+def _status_counts(db: Session, products: Sequence[Product]) -> dict[str, int]:
     """Cuántos elementos hay por estado — para que el operador sepa cuánto
     le queda de la cola mientras cura, sin tener que consultar la base a mano.
+
+    `pending` cuenta lo que se va a mostrar, no lo que hay en la tabla, y el
+    resto va aparte en `out_of_focus`: desde que la cola esconde el texto
+    ajeno al foco (`docs/decisions.md`, 2026-08-20), un `pending` crudo
+    anunciaría cuarenta anuncios sobre una cola que se vacía en el tercero.
+    Declarar los escondidos es lo que separa "no entró nada" de "entró ruido".
     """
     stmt = select(RawIngestion.processing_status, func.count(RawIngestion.id)).group_by(
         RawIngestion.processing_status
     )
     counts = dict(db.execute(stmt).all())
-    return {status.value: counts.get(status, 0) for status in ProcessingStatus}
+    resultado = {status.value: counts.get(status, 0) for status in ProcessingStatus}
+    en_foco = len(_pending_in_focus(db, products))
+    resultado["out_of_focus"] = resultado[ProcessingStatus.PENDING.value] - en_foco
+    resultado[ProcessingStatus.PENDING.value] = en_foco
+    return resultado
 
 
 def _unconverted_notice(unconverted: int) -> str | None:
@@ -597,10 +621,11 @@ def curation_queue(
     settings = get_settings()
     ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir)
 
-    # El catálogo del foco se lee antes que la cola: `_next_pending` lo
+    # El catálogo del foco se lee antes que la cola: `_pending_in_focus` lo
     # necesita para decidir cuál de los pendientes aporta a una celda.
     products = _pilot_products(db)
-    ingestion = _next_pending(db, products)
+    en_foco = _pending_in_focus(db, products)
+    ingestion = en_foco[0] if en_foco else None
     provinces = _all_provinces(db)
 
     proposals: list[ExtractionProposal] = []
@@ -702,7 +727,7 @@ def curation_queue(
         row_count=len(rows),
         global_values=global_values,
         error=None,
-        status_counts=_status_counts(db),
+        status_counts=_status_counts(db, products),
         unconverted=unconverted,
         pasted=pasted,
         # `proposals` es la salida cruda de `propose_all`, antes del filtro
@@ -1028,7 +1053,7 @@ async def submit_curation(
                 "published_date": published_date_raw,
             },
             error=" ".join(errors),
-            status_counts=_status_counts(db),
+            status_counts=_status_counts(db, _pilot_products(db)),
             status_code=422,
         )
 
