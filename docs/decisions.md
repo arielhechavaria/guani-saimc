@@ -3157,3 +3157,38 @@ es la mitad del trabajo.
 
 Consecuencia: ninguna migración nueva — cambio acotado a
 `src/saimc/web/routers/curation.py`. Suite completa 577/577.
+
+## 2026-08-20 — /catalog: editar y eliminar canal/grupo
+
+Contexto: pedido del operador ("en catalog debería existir la opción de
+editar/eliminar un grupo"). Hoy solo se pueden corregir provincia y
+dirección de un canal ya dado de alta; nombre, plataforma, enlace, notas e
+Id. WAHA quedan fijos desde el alta. Tampoco hay forma de sacar del
+catálogo un canal cargado por error (nombre mal tipeado, alta duplicada).
+
+El modelo documenta una regla explícita: "un canal se desactiva, nunca se
+borra" (`raw_ingestion.py`, FK `channel_id` con `ondelete="RESTRICT"`) —
+existe para que la referencia de un canal con historial capturado nunca
+quede colgando. Esa regla no se toca: el borrado nuevo solo se ejecuta si
+`raw_ingestions.channel_id` no tiene ninguna fila apuntando al canal
+(pre-chequeo con SELECT, mismo criterio que el de `external_id` repetido en
+`create_channel`). Con historial, `POST /catalog/channels/{id}/delete`
+devuelve error y el operador tiene que apagarlo (`toggle_channel`), como
+hasta ahora.
+
+Decisión: `POST /catalog/channels/{id}/edit` corrige nombre, plataforma,
+enlace, notas e Id. WAHA (mismas reglas de `create_channel`, incluida la
+protección de `external_id` duplicado, excluyendo al propio canal).
+`POST /catalog/channels/{id}/delete` borra el canal solo si nunca capturó
+nada. En la plantilla, "Editar" es un `<details>` nativo (sin JS) que abre
+un formulario inline; "Eliminar" pide confirmación con `onsubmit="return
+confirm(...)"`, mismo patrón que `curation_history.html`.
+
+Descartado: exponer un DELETE incondicional que dependiera de capturar el
+`IntegrityError` de Postgres — repetiría el problema que el pre-chequeo de
+`external_id` ya evita (sesión envenenada, necesita rollback explícito
+antes de poder redirigir con el error).
+
+Consecuencia: ninguna migración — cambio acotado a
+`src/saimc/web/routers/catalog.py` y `catalog.html`. Suite completa
+583/583.

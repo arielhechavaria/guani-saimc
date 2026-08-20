@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.ingestion.whatsapp_backfill import fetch_channel_history
-from saimc.models import Channel, Platform, PriceHistory, Product, Province
+from saimc.models import Channel, Platform, PriceHistory, Product, Province, RawIngestion
 from saimc.models.raw_ingestion import SourceType
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
@@ -269,6 +269,82 @@ async def toggle_channel(
     channel.is_active = bool(form.get("is_active"))
     db.flush()
     return _back()
+
+
+@router.post("/catalog/channels/{channel_id}/edit")
+async def edit_channel(
+    channel_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Corrige los datos de alta de un canal ya existente.
+
+    Mismos campos que `create_channel` — nombre, plataforma, enlace, notas e
+    Id. WAHA. Provincia y dirección quedan afuera: ya tienen su propio
+    endpoint de un solo campo con auto-envío (`set_channel_province`,
+    `set_channel_address`) y no hace falta duplicarlos acá.
+    """
+    channel = db.get(Channel, channel_id)
+    if channel is None:
+        return _back()
+
+    form = await request.form()
+    name = str(form.get("name", "")).strip()
+    if not name:
+        return _back(error="El nombre no puede quedar vacío.")
+
+    platform = str(form.get("platform", "")).strip()
+    if platform not in {member.value for member in Platform}:
+        platform = Platform.OTHER.value
+
+    # Mismo pre-chequeo que `create_channel` (:195), excluyendo este propio
+    # canal: si no se tocó el campo, no debe chocar contra sí mismo.
+    external_id = str(form.get("external_id", "")).strip() or None
+    if external_id is not None:
+        existing = db.execute(
+            select(Channel).where(
+                Channel.external_id == external_id, Channel.id != channel_id
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return _back(error=f"Ese Id. WAHA ya está cargado en «{existing.name}».")
+
+    channel.name = name
+    channel.platform = platform
+    channel.url = str(form.get("url", "")).strip() or None
+    channel.notes = str(form.get("notes", "")).strip() or None
+    channel.external_id = external_id
+    db.flush()
+    return _back()
+
+
+@router.post("/catalog/channels/{channel_id}/delete")
+def delete_channel(channel_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
+    """Borra un canal, solo si nunca capturó nada.
+
+    `raw_ingestions.channel_id` tiene `ondelete="RESTRICT"` a propósito
+    (migración 0015): un canal con historial se apaga, no se borra —
+    `toggle_channel` es la vía para ese caso. Acá se verifica antes de
+    borrar, mismo criterio que el chequeo de `external_id` repetido en
+    `create_channel`: un pre-chequeo con SELECT en vez de capturar el
+    IntegrityError, que dejaría la sesión envenenada. Esto cubre el alta
+    por error — nombre mal tipeado, canal duplicado — que hoy no tiene
+    forma de sacarse del catálogo salvo apagándolo para siempre.
+    """
+    channel = db.get(Channel, channel_id)
+    if channel is None:
+        return _back()
+
+    tiene_ingestas = db.execute(
+        select(RawIngestion.id).where(RawIngestion.channel_id == channel_id).limit(1)
+    ).first()
+    if tiene_ingestas is not None:
+        return _back(
+            error=f"«{channel.name}» ya capturó anuncios: no se puede eliminar, apagalo en su lugar."
+        )
+
+    nombre = channel.name
+    db.delete(channel)
+    db.flush()
+    return _back(message=f"«{nombre}» eliminado.")
 
 
 @router.post("/catalog/channels/{channel_id}/backfill")

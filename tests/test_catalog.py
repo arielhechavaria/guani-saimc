@@ -539,6 +539,150 @@ class TestCatalogoCanales:
         session.expire_all()
         assert session.get(Channel, canal.id).address is None
 
+    def test_edita_los_datos_de_un_canal_existente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        canal = Channel(name="Nombre con error", platform=Platform.OTHER, is_active=True)
+        session.add(canal)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/edit",
+            data={
+                "name": "Ventas Mayoristas",
+                "platform": Platform.WHATSAPP_GROUP.value,
+                "url": "https://chat.whatsapp.com/abc123",
+                "notes": "corregido",
+                "external_id": "1@g.us",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        session.expire_all()
+        editado = session.get(Channel, canal.id)
+        assert editado.name == "Ventas Mayoristas"
+        assert editado.platform == Platform.WHATSAPP_GROUP
+        assert editado.url == "https://chat.whatsapp.com/abc123"
+        assert editado.notes == "corregido"
+        assert editado.external_id == "1@g.us"
+
+    def test_editar_con_nombre_vacio_no_se_aplica(
+        self, client: TestClient, session: Session
+    ) -> None:
+        canal = Channel(name="Groupej Morales", platform=Platform.WHATSAPP_CHANNEL, is_active=True)
+        session.add(canal)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/edit",
+            data={"name": "", "platform": Platform.OTHER.value},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        session.expire_all()
+        assert session.get(Channel, canal.id).name == "Groupej Morales"
+
+    def test_editar_no_choca_con_su_propio_external_id(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El pre-chequeo de duplicado excluye este mismo canal — de lo
+        contrario, guardar sin tocar el Id. WAHA fallaría siempre."""
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/edit",
+            data={
+                "name": "Groupej Morales",
+                "platform": Platform.WHATSAPP_CHANNEL.value,
+                "external_id": "1@newsletter",
+                "notes": "sin cambios en el id",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        session.expire_all()
+        assert session.get(Channel, canal.id).notes == "sin cambios en el id"
+
+    def test_editar_con_external_id_de_otro_canal_falla_sin_romper(
+        self, client: TestClient, session: Session
+    ) -> None:
+        otro = Channel(
+            name="Tienda: The Boss",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+            is_active=True,
+        )
+        canal = Channel(name="Groupej Morales", platform=Platform.WHATSAPP_CHANNEL, is_active=True)
+        session.add_all([otro, canal])
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/edit",
+            data={
+                "name": "Groupej Morales",
+                "platform": Platform.WHATSAPP_CHANNEL.value,
+                "external_id": "1@newsletter",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        session.expire_all()
+        assert session.get(Channel, canal.id).external_id is None
+
+    def test_elimina_un_canal_que_nunca_capturo_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        canal = Channel(name="Alta por error", platform=Platform.OTHER, is_active=True)
+        session.add(canal)
+        session.commit()
+        canal_id = canal.id
+
+        response = client.post(
+            f"/catalog/channels/{canal_id}/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        session.expire_all()
+        assert session.get(Channel, canal_id) is None
+
+    def test_no_elimina_un_canal_con_historial_capturado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El mismo guardarraíl que `ondelete="RESTRICT"` en
+        `raw_ingestions.channel_id` (migración 0015): con historial, la
+        única vía es apagar (`toggle_channel`), nunca borrar."""
+        canal = Channel(name="Groupej Morales", platform=Platform.WHATSAPP_CHANNEL, is_active=True)
+        session.add(canal)
+        session.commit()
+        ingestion = _crear_raw_ingestion(session, hash_="con-historial", original_text="algo")
+        ingestion.channel_id = canal.id
+        session.commit()
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        session.expire_all()
+        assert session.get(Channel, canal.id) is not None
+
 
 # --- backfill de histórico ---------------------------------------------------
 
