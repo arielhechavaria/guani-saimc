@@ -86,6 +86,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
             source_type=SourceType.WHATSAPP_CHANNEL,
             source_reference=channel.name,
             captured_at=mensaje.timestamp,
+            channel_id=channel.id,
         )
     finally:
         temporal.unlink(missing_ok=True)

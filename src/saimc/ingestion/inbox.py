@@ -12,6 +12,7 @@ complete.
 
 import hashlib
 import shutil
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -129,20 +130,23 @@ def ingest_file(
     source_type: str | None = None,
     source_reference: str | None = None,
     captured_at: datetime | None = None,
+    channel_id: uuid.UUID | None = None,
 ) -> RawIngestion:
     """Ingiere un archivo ya clasificado y lo mueve al almacén.
 
     El archivo se mueve antes de insertar la fila para que `file_path` nunca
     apunte a algo inexistente. Si la inserción falla, se devuelve a su lugar.
 
-    Los tres argumentos con nombre son overrides opcionales: sin ellos, el
+    Los argumentos con nombre son overrides opcionales: sin ellos, el
     comportamiento es el de siempre (`source_type` por extensión,
-    `source_reference` en blanco, `captured_at` del mtime del archivo). Los usa
-    el webhook de WhatsApp (`docs/decisions.md`, 2026-08-15) para que un
-    mensaje automático no quede indistinguible de un archivo que el operador
-    dejó caer a mano, y para preservar el momento real del mensaje en vez de
-    "ahora" — que es lo único que el mtime de un archivo recién escrito puede
-    decir.
+    `source_reference` en blanco, `captured_at` del mtime del archivo,
+    `channel_id` nulo). Los usa el webhook de WhatsApp (`docs/decisions.md`,
+    2026-08-15) para que un mensaje automático no quede indistinguible de un
+    archivo que el operador dejó caer a mano, y para preservar el momento real
+    del mensaje en vez de "ahora" — que es lo único que el mtime de un archivo
+    recién escrito puede decir. `channel_id` (2026-08-19) es la identidad real
+    del canal de origen, resuelta por `external_id` en el momento de la
+    captura; sin ella, el origen solo se puede reconstruir por nombre.
     """
     content_type = classify(path)
     if content_type is None:
@@ -177,6 +181,7 @@ def ingest_file(
             original_text=original_text,
             processing_status=ProcessingStatus.PENDING,
             captured_at=resolved_captured_at,
+            channel_id=channel_id,
         )
         session.add(ingestion)
         session.flush()
@@ -197,6 +202,7 @@ def ingest_inbox(
     source_type: str | None = None,
     source_reference: str | None = None,
     captured_at: datetime | None = None,
+    channel_id: uuid.UUID | None = None,
 ) -> IngestReport:
     """Procesa la bandeja completa y devuelve el detalle de lo que pasó.
 
@@ -225,6 +231,7 @@ def ingest_inbox(
             source_type=source_type,
             source_reference=source_reference,
             captured_at=captured_at,
+            channel_id=channel_id,
         )
         session.commit()
         report.ingested.append(path.name)

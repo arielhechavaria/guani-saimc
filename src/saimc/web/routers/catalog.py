@@ -180,15 +180,31 @@ async def create_channel(request: Request, db: Session = Depends(get_db)) -> Red
     if platform not in {member.value for member in Platform}:
         platform = Platform.OTHER.value
 
+    # Vacío -> None, no "": la columna es UNIQUE (migración 0011) y dos
+    # canales manuales con cadena vacía chocarían entre sí.
+    external_id = str(form.get("external_id", "")).strip() or None
+    if external_id is not None:
+        # Pre-chequeo con SELECT, igual que `create_product` (`:133`), y no
+        # `except IntegrityError`: el error en `db.flush()` deja la sesión
+        # envenenada y obligaría a un `db.rollback()` explícito antes de que
+        # `_back(error=...)` pudiera siquiera renderizar. Con un solo
+        # operador no hay concurrencia que pueda perder la carrera. El
+        # nombre ya NO se valida acá (migración 0014): `idx_channels_name`
+        # dejó de ser único, así que dos filas con el mismo nombre son un
+        # alta legítima, no un choque.
+        existing = db.execute(
+            select(Channel).where(Channel.external_id == external_id)
+        ).scalar_one_or_none()
+        if existing is not None:
+            return _back(error=f"Ese Id. WAHA ya está cargado en «{existing.name}».")
+
     db.add(
         Channel(
             name=name,
             platform=platform,
             url=str(form.get("url", "")).strip() or None,
             notes=str(form.get("notes", "")).strip() or None,
-            # Vacío -> None, no "": la columna es UNIQUE (migración 0011) y dos
-            # canales manuales con cadena vacía chocarían entre sí.
-            external_id=str(form.get("external_id", "")).strip() or None,
+            external_id=external_id,
             province_id=_parse_uuid(str(form.get("province_id", ""))),
             address=str(form.get("address", "")).strip() or None,
             is_active=True,
@@ -307,6 +323,9 @@ def backfill_channel(channel_id: uuid.UUID, db: Session = Depends(get_db)) -> Re
                 source_type=SourceType.WHATSAPP_CHANNEL,
                 source_reference=channel.name,
                 captured_at=parsed.timestamp,
+                # `channel.id`, no la variable local `channel_id`: acá ese
+                # nombre ya está atado al parámetro de la ruta.
+                channel_id=channel.id,
             )
         finally:
             temp_path.unlink(missing_ok=True)

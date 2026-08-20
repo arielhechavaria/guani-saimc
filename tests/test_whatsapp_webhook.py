@@ -192,6 +192,29 @@ class TestWebhookEndpoint:
         assert ingestas[0].processing_status == ProcessingStatus.PENDING
         assert "aceite 1L a 950" in (ingestas[0].original_text or "")
 
+    def test_mensaje_de_canal_registrado_guarda_channel_id(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Identidad real de origen (docs/decisions.md, 2026-08-19): el
+        webhook ya resolvió el canal por `external_id`, no hace falta
+        reconstruirlo por nombre en curaduría."""
+        canal = _canal(session)
+        cuerpo = json.dumps(
+            {"from": "1@newsletter", "body": "aceite 1L a 950", "timestamp": 1755000000}
+        ).encode()
+
+        client.post(
+            "/webhooks/whatsapp",
+            content=cuerpo,
+            headers={
+                "content-type": "application/json",
+                "X-Webhook-Hmac": _firmar("clave-de-prueba", cuerpo),
+            },
+        )
+
+        (ingesta,) = _ingestas(session)
+        assert ingesta.channel_id == canal.id
+
     def test_sin_firma_hmac_rechaza(self, client: TestClient, session: Session) -> None:
         _canal(session)
         cuerpo = json.dumps({"from": "1@newsletter", "body": "x", "timestamp": 1}).encode()

@@ -3094,3 +3094,37 @@ Consecuencia: migración `0013_channels_address.py`. Si en algún momento se
 decide exponer esto públicamente o automatizar la extracción desde la
 descripción del grupo (en vez de carga manual), esa es una decisión nueva,
 no una extensión implícita de esta.
+
+---
+
+## 2026-08-19 — `channels.name` deja de ser único
+
+Contexto: `channels.name` compartido legítimamente por un canal y un grupo —
+"Ventas Mayoristas", el mismo negocio publicando en su canal `@newsletter` y
+en su grupo `@g.us` con el mismo nombre. `idx_channels_name` era UNIQUE desde
+el origen de la tabla, así que el alta del segundo rechazaba con un choque de
+base, y la cola de curaduría resolvía el canal de origen buscando por
+`source_reference == name` con `scalar_one_or_none()` — con dos filas de
+mismo nombre eso pasa a lanzar `MultipleResultsFound` y revienta `/curation`.
+
+Decisión: índice `idx_channels_name` NO único (migración `0014`) +
+`raw_ingestions.channel_id`, FK nullable a `channels.id` (migración `0015`),
+como identidad real de origen para toda ingesta que el código escribe
+(webhook, backfill). La curaduría resuelve el canal de una ingesta con
+`_resolve_origin`: prefiere `channel_id`; a falta de él, cae al nombre solo si
+matchea exactamente una fila — dos o más nunca se adivina, resuelve a
+"origen desconocido" en vez de lanzar o elegir al azar.
+
+Descartado: retropoblar `channel_id` en filas viejas de `raw_ingestions` —
+la tabla es inmutable (`CLAUDE.md`), no se escribe ni se corrige una vez
+creada. También se descartó seguir exigiendo unicidad de nombre y forzar al
+operador a renombrar uno de los dos ("Ventas Mayoristas 🛒" vs "Ventas
+Mayoristas 🛒 (grupo)"): el nombre lo pone WhatsApp, no el operador, y no hay
+forma de imponer una convención sobre eso.
+
+Consecuencia: 42 filas preexistentes con `source_reference='Ventas
+Mayoristas 🛒'` (20 pendientes) pierden el override de provincia heredado y
+el prellenado de escala/envase al registrarse el grupo homónimo, porque el
+nombre pasa a ser ambiguo. `channel_id` nunca se retropuebla en esas filas:
+el fallback por nombre queda permanente para todo lo creado antes de esta
+migración.

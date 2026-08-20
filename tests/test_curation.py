@@ -51,6 +51,7 @@ def _crear_raw_ingestion(
     captured_at: datetime | None = None,
     source_type: str | None = None,
     source_reference: str | None = None,
+    channel_id: uuid.UUID | None = None,
 ) -> RawIngestion:
     resolved_source_type = source_type or (
         SourceType.INBOX_TEXT if content_type == ContentType.TEXT else SourceType.INBOX_IMAGE
@@ -64,6 +65,7 @@ def _crear_raw_ingestion(
         original_text=original_text,
         processing_status=ProcessingStatus.PENDING,
         captured_at=captured_at or datetime.now(UTC),
+        channel_id=channel_id,
     )
     session.add(ingestion)
     session.commit()
@@ -962,6 +964,232 @@ class TestPrellenoDesdeHistorialDelCanal:
         assert response.status_code == 200
         assert '<option value="retail" selected>' in response.text
         assert '<option value="wholesale" selected>' not in response.text
+
+
+class TestOrigenDeIngestaAmbiguo:
+    """Dos filas de `channels` pueden compartir nombre desde que
+    `idx_channels_name` dejó de ser único (migración 0014, docs/decisions.md
+    2026-08-19: "Ventas Mayoristas" es a la vez canal y grupo). La cola de
+    curaduría no puede volver a resolver el origen por nombre sin admitir
+    que el nombre puede ya no alcanzar."""
+
+    def test_dos_canales_con_el_mismo_nombre_no_rompen_la_cola(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz")
+        canal = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+            is_active=True,
+        )
+        grupo = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_GROUP,
+            external_id="1@g.us",
+            is_active=True,
+        )
+        session.add_all([canal, grupo])
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-nombre-ambiguo",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+
+    def test_channel_id_nulo_dos_coincidencias_de_nombre_sin_override_de_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`_channel_province_id` no puede adivinar cuál de las dos filas
+        manda: el override queda afuera y sigue vigente el texto."""
+        _crear_producto(session, name="Arroz")
+        santiago = _crear_provincia(session, code="scu", name="Santiago de Cuba")
+        habana = _crear_provincia(session, code="hab", name="La Habana")
+        canal = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+            province_id=habana.id,
+            is_active=True,
+        )
+        grupo = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_GROUP,
+            external_id="1@g.us",
+            province_id=habana.id,
+            is_active=True,
+        )
+        session.add_all([canal, grupo])
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-ambiguo-sin-override",
+            original_text="arroz a 30000 santiago",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'value="{santiago.id}" selected' in response.text
+        assert f'value="{habana.id}" selected' not in response.text
+
+    def test_channel_id_presente_aplica_override_de_provincia_del_canal_apuntado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Con `channel_id` la resolución es por id, no por nombre — ni
+        siquiera necesita que el nombre sea único."""
+        _crear_producto(session, name="Arroz")
+        habana = _crear_provincia(session, code="hab", name="La Habana")
+        _crear_provincia(session, code="scu", name="Santiago de Cuba")
+        canal = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+            province_id=habana.id,
+            is_active=True,
+        )
+        grupo = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_GROUP,
+            external_id="1@g.us",
+            is_active=True,
+        )
+        session.add_all([canal, grupo])
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-channel-id-override",
+            original_text="arroz a 30000 santiago",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+            channel_id=canal.id,
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'value="{habana.id}" selected' in response.text
+
+    def test_channel_id_apunta_a_grupo_no_prellena_aunque_el_canal_homonimo_tenga_historial(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El caso central de esta migración (decisión 2026-08-18): un
+        `channel_id` que apunta al GRUPO nunca debe heredar el historial del
+        CANAL homónimo, aunque el nombre coincida y el canal tenga
+        antecedente confirmado."""
+        producto = _crear_producto(session, name="Arroz")
+        canal = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+            is_active=True,
+        )
+        grupo = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_GROUP,
+            external_id="1@g.us",
+            is_active=True,
+        )
+        session.add_all([canal, grupo])
+        session.commit()
+        vieja = _crear_raw_ingestion(
+            session,
+            hash_="hash-grupo-vs-canal-vieja",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+            channel_id=canal.id,
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session,
+            ingestion=vieja,
+            product=producto,
+            sale_format="retail",
+            packaging="Saco",
+            min_purchase_quantity=Decimal("1"),
+        )
+        vieja.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-grupo-vs-canal-nueva",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+            channel_id=grupo.id,
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert '<option value="retail" selected>' not in response.text
+        assert '<option value="saco" selected>' not in response.text
+        assert 'id="min_purchase_0" value=""' in response.text
+
+    def test_channel_id_nulo_dos_coincidencias_de_nombre_sin_preseleccion_historica(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin `channel_id` y con el nombre ambiguo, ninguna de las dos
+        filas puede prestar su historial — no importa cuál de las dos lo
+        tenga."""
+        producto = _crear_producto(session, name="Arroz")
+        canal = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+            is_active=True,
+        )
+        grupo = Channel(
+            name="Ventas Mayoristas",
+            platform=Platform.WHATSAPP_GROUP,
+            external_id="1@g.us",
+            is_active=True,
+        )
+        session.add_all([canal, grupo])
+        session.commit()
+        vieja = _crear_raw_ingestion(
+            session,
+            hash_="hash-ambiguo-historial-vieja",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+            channel_id=canal.id,
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        _crear_precio_curado(
+            session,
+            ingestion=vieja,
+            product=producto,
+            sale_format="retail",
+            packaging="Saco",
+            min_purchase_quantity=Decimal("1"),
+        )
+        vieja.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        # La fila nueva es PRE-`channel_id`: llega sin él, como cualquier
+        # fila creada antes de esta migración.
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-ambiguo-historial-nueva",
+            original_text="arroz a 30000",
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Ventas Mayoristas",
+            captured_at=datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert '<option value="retail" selected>' not in response.text
+        assert 'id="min_purchase_0" value=""' in response.text
 
 
 class TestIngestaAutomatica:

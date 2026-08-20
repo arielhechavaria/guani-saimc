@@ -48,9 +48,15 @@ class Platform(StrEnum):
 class Channel(Base):
     __tablename__ = "channels"
 
-    # El nombre identifica el canal en la ronda del operador, así que se exige
-    # único: dos filas con el mismo nombre son la misma ronda hecha dos veces.
-    __table_args__ = (Index("idx_channels_name", "name", unique=True),)
+    # El nombre es etiqueta de visualización, no identidad: WhatsApp permite
+    # que un canal y un grupo distintos se llamen igual y el operador no
+    # controla ese nombre. La identidad real es `external_id` —el JID que
+    # manda WAHA, migración 0011—, único mientras no sea NULL. El índice
+    # queda NO único (migración 0014): exigir unicidad acá rechazaba altas
+    # legítimas, y el caso real fue «Ventas Mayoristas», canal y grupo a la
+    # vez (docs/decisions.md, 2026-08-19). Quién originó una ingesta lo dice
+    # `raw_ingestions.channel_id`, no este campo.
+    __table_args__ = (Index("idx_channels_name", "name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4

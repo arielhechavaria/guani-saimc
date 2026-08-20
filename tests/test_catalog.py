@@ -302,6 +302,68 @@ class TestCatalogoCanales:
         canal = session.execute(select(Channel)).scalar_one()
         assert canal.external_id is None
 
+    def test_alta_de_canal_con_nombre_repetido_no_falla(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Desde la migración 0014 el nombre ya no es identidad (docs/decisions.md,
+        2026-08-19) — el caso real fue "Ventas Mayoristas", canal y grupo a
+        la vez, con `external_id` distinto cada uno."""
+        client.post(
+            "/catalog/channels",
+            data={
+                "name": "Ventas Mayoristas",
+                "platform": Platform.WHATSAPP_CHANNEL.value,
+                "external_id": "1@newsletter",
+            },
+            follow_redirects=False,
+        )
+
+        response = client.post(
+            "/catalog/channels",
+            data={
+                "name": "Ventas Mayoristas",
+                "platform": Platform.WHATSAPP_GROUP.value,
+                "external_id": "1@g.us",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        canales = list(session.execute(select(Channel)).scalars())
+        assert len(canales) == 2
+        assert {c.name for c in canales} == {"Ventas Mayoristas"}
+
+    def test_alta_de_canal_con_external_id_repetido_falla_sin_romper(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`external_id` (migración 0011) sigue siendo la identidad real —
+        acá sí hay que rechazar, pero con un error legible, no un 500."""
+        client.post(
+            "/catalog/channels",
+            data={
+                "name": "Tienda: The Boss",
+                "platform": Platform.WHATSAPP_CHANNEL.value,
+                "external_id": "1@newsletter",
+            },
+            follow_redirects=False,
+        )
+
+        response = client.post(
+            "/catalog/channels",
+            data={
+                "name": "Otro nombre cualquiera",
+                "platform": Platform.WHATSAPP_CHANNEL.value,
+                "external_id": "1@newsletter",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        canales = list(session.execute(select(Channel)).scalars())
+        assert len(canales) == 1
+
     def test_lista_muestra_los_canales(self, client: TestClient, session: Session) -> None:
         session.add(
             Channel(name="Groupej Morales", platform=Platform.WHATSAPP_CHANNEL, is_active=True)
@@ -631,6 +693,34 @@ class TestCatalogoBackfillHistorico:
         # real sí la conserva vía TIMESTAMPTZ — decisions.md, 2026-08-06.)
         fechas = {i.captured_at.replace(tzinfo=None) for i in ingestiones}
         assert fechas == {m.timestamp.replace(tzinfo=None) for m in mensajes}
+
+    def test_backfill_guarda_channel_id_en_las_filas_importadas(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Identidad real de origen (docs/decisions.md, 2026-08-19): el
+        backfill ya conoce el canal que dispara la importación."""
+        canal = self._canal_automatizado(session)
+        monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "http://127.0.0.1:3000")
+        monkeypatch.setenv("SAIMC_WAHA_API_KEY", "clave")
+        get_settings.cache_clear()
+
+        mensajes = [
+            ParsedMessage(
+                chat_id="1234567890@newsletter",
+                text="Arroz grano dorado 100 lb 43.5 o 30885",
+                timestamp=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+                has_media=False,
+            ),
+        ]
+        monkeypatch.setattr(
+            "saimc.web.routers.catalog.fetch_channel_history", lambda *a, **k: mensajes
+        )
+
+        client.post(f"/catalog/channels/{canal.id}/backfill", follow_redirects=False)
+
+        ingestiones = list(session.execute(select(RawIngestion)).scalars())
+        assert len(ingestiones) == 1
+        assert ingestiones[0].channel_id == canal.id
 
     def test_correrlo_dos_veces_no_duplica(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
@@ -1012,6 +1102,169 @@ class TestChannelsAddressMigration:
             connection.execute(
                 sa.insert(tabla_con_columna).values(
                     id=uuid.uuid4(), name="Canal sin dirección", address=None
+                )
+            )
+            connection.commit()
+
+        engine.dispose()
+
+
+class TestChannelsNameIndexMigration:
+    """`0014_channels_name_not_unique.py` — `external_id` (0011) es la
+    identidad real; `name` es una etiqueta de WhatsApp que un canal y un
+    grupo distintos pueden compartir (docs/decisions.md, 2026-08-19,
+    "Ventas Mayoristas")."""
+
+    def _tabla_channels_con_indice_unico(self, engine: sa.Engine) -> None:
+        metadata = sa.MetaData()
+        sa.Table(
+            "channels",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("name", sa.String(120), nullable=False),
+        )
+        metadata.create_all(engine)
+        with engine.begin() as connection:
+            connection.execute(
+                sa.text("CREATE UNIQUE INDEX idx_channels_name ON channels (name)")
+            )
+
+    def test_upgrade_permite_dos_canales_con_el_mismo_nombre(self) -> None:
+        modulo = _cargar_modulo_migracion("0014_channels_name_not_unique.py")
+
+        engine = create_engine("sqlite://")
+        self._tabla_channels_con_indice_unico(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+        tabla = sa.Table(
+            "channels",
+            sa.MetaData(),
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("name", sa.String(120), nullable=False),
+        )
+        with engine.connect() as connection:
+            connection.execute(
+                sa.insert(tabla).values(id=uuid.uuid4(), name="Ventas Mayoristas")
+            )
+            connection.execute(
+                sa.insert(tabla).values(id=uuid.uuid4(), name="Ventas Mayoristas")
+            )
+            connection.commit()
+            filas = list(
+                connection.execute(
+                    sa.select(sa.func.count())
+                    .select_from(tabla)
+                    .where(tabla.c.name == "Ventas Mayoristas")
+                )
+            )
+            assert filas[0][0] == 2
+
+        engine.dispose()
+
+    def test_indice_queda_no_unico_y_downgrade_lo_restaura(self) -> None:
+        modulo = _cargar_modulo_migracion("0014_channels_name_not_unique.py")
+
+        engine = create_engine("sqlite://")
+        self._tabla_channels_con_indice_unico(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            indices = inspect(connection).get_indexes("channels")
+            indice = next(i for i in indices if i["name"] == "idx_channels_name")
+            assert not indice["unique"]
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            indices = inspect(connection).get_indexes("channels")
+            indice = next(i for i in indices if i["name"] == "idx_channels_name")
+            assert indice["unique"]
+
+        engine.dispose()
+
+
+class TestRawIngestionsChannelIdMigration:
+    """`0015_raw_ingestions_channel_id.py` — `raw_ingestions.channel_id` es
+    el FK real de origen (design D2), no `source_reference` suelto."""
+
+    def _tablas(self) -> sa.MetaData:
+        metadata = sa.MetaData()
+        sa.Table(
+            "channels",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("name", sa.String(120), nullable=False),
+        )
+        sa.Table(
+            "raw_ingestions",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("source_type", sa.String(50), nullable=False),
+        )
+        return metadata
+
+    def test_upgrade_agrega_la_columna_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0015_raw_ingestions_channel_id.py")
+
+        engine = create_engine("sqlite://")
+        metadata = self._tablas()
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            assert "channel_id" in {
+                c["name"] for c in inspect(connection).get_columns("raw_ingestions")
+            }
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("raw_ingestions")}
+            assert "channel_id" not in columnas
+            assert "source_type" in columnas
+
+        engine.dispose()
+
+    def test_channel_id_es_nullable(self) -> None:
+        """`raw_ingestions` es inmutable (`CLAUDE.md`): las filas ya
+        existentes nunca reciben este dato de forma retroactiva."""
+        modulo = _cargar_modulo_migracion("0015_raw_ingestions_channel_id.py")
+
+        engine = create_engine("sqlite://")
+        metadata = self._tablas()
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            tabla_con_columna = sa.Table(
+                "raw_ingestions",
+                sa.MetaData(),
+                sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+                sa.Column("source_type", sa.String(50), nullable=False),
+                sa.Column("channel_id", sa.Uuid(as_uuid=True), nullable=True),
+            )
+            connection.execute(
+                sa.insert(tabla_con_columna).values(
+                    id=uuid.uuid4(), source_type="whatsapp_channel", channel_id=None
                 )
             )
             connection.commit()

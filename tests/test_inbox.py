@@ -14,6 +14,7 @@ from saimc.ingestion.inbox import (
     ingest_inbox,
 )
 from saimc.models import ContentType, ProcessingStatus, RawIngestion, SourceType
+from saimc.models.channel import Channel, Platform
 
 ANUNCIO = "Pollo congelado 950 cup la bandeja, Santiago. Entrega a domicilio."
 
@@ -271,3 +272,35 @@ class TestOverridesDeProcedencia:
         (row,) = _rows(session)
         assert row.source_type == SourceType.INBOX_TEXT
         assert row.source_reference is None
+
+    def test_channel_id_explicito_se_guarda(
+        self, session: Session, inbox_dir: Path, store_dir: Path
+    ) -> None:
+        """La identidad real de origen (docs/decisions.md, 2026-08-19), la
+        que escribe el webhook cuando resuelve el canal por `external_id`."""
+        canal = Channel(
+            name="Tienda: The Boss",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="1@newsletter",
+        )
+        session.add(canal)
+        session.commit()
+
+        _write_text(inbox_dir, "webhook.txt")
+
+        ingest_inbox(session, inbox_dir, store_dir, channel_id=canal.id)
+
+        (row,) = _rows(session)
+        assert row.channel_id == canal.id
+
+    def test_sin_channel_id_queda_nulo(
+        self, session: Session, inbox_dir: Path, store_dir: Path
+    ) -> None:
+        """La bandeja manual y el pegado no conocen el canal — no deben
+        adivinarlo ni forzar uno."""
+        _write_text(inbox_dir, "manual.txt")
+
+        ingest_inbox(session, inbox_dir, store_dir)
+
+        (row,) = _rows(session)
+        assert row.channel_id is None

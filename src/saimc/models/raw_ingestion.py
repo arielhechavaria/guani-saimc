@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Index, String, Text, Uuid
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from saimc.models.base import Base, utc_now
@@ -65,6 +65,19 @@ class RawIngestion(Base):
     # durante la curaduría: exigirlo al capturar rompería el principio de que la
     # captura no estructura nada (spec.md §6.1, Etapa 1a).
     source_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Identidad real del canal/grupo de origen (docs/decisions.md, 2026-08-19).
+    # La escribe el código de ingesta (webhook de WAHA, backfill histórico)
+    # cuando el canal se conoce en el momento de la captura. Nullable y NUNCA
+    # se retropobla: `raw_ingestions` es inmutable (`CLAUDE.md`), así que las
+    # filas creadas antes de esta columna resuelven su origen por
+    # `source_reference` (nombre) para siempre. `ondelete="RESTRICT"` porque
+    # un canal se desactiva, nunca se borra.
+    channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("channels.id", ondelete="RESTRICT", name="fk_raw_ingestions_channel_id"),
+        nullable=True,
+    )
 
     # Ruta a la evidencia preservada, relativa al directorio del almacén.
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
