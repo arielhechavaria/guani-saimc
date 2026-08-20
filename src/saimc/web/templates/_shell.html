@@ -22,22 +22,19 @@
 {% set nav = 'catalog' if path.startswith('/catalog') else ('control' if path.startswith('/control') else 'curation') %}
 <div class="m3-shell">
 
-  <nav class="m3-rail" aria-label="Secciones">
-    <div class="m3-rail-brand">SA</div>
-    <a class="m3-rail-item{% if nav == 'catalog' %} is-active{% endif %}" href="/catalog"
+  <nav class="m3-topnav" aria-label="Secciones">
+    <span class="m3-topnav-brand">SA</span>
+    <a class="m3-topnav-item{% if nav == 'catalog' %} is-active{% endif %}" href="/catalog"
        {% if nav == 'catalog' %}aria-current="page"{% endif %}>
-      <span class="m3-rail-pill"><span class="m3-icon m3-icon-lg">inventory_2</span></span>
-      <span class="m3-rail-label">Catálogo</span>
+      <span class="m3-icon">inventory_2</span><span>Catálogo</span>
     </a>
-    <a class="m3-rail-item{% if nav == 'curation' %} is-active{% endif %}" href="/curation"
+    <a class="m3-topnav-item{% if nav == 'curation' %} is-active{% endif %}" href="/curation"
        {% if nav == 'curation' %}aria-current="page"{% endif %}>
-      <span class="m3-rail-pill"><span class="m3-icon m3-icon-lg">fact_check</span></span>
-      <span class="m3-rail-label">Curaduría</span>
+      <span class="m3-icon">fact_check</span><span>Curaduría</span>
     </a>
-    <a class="m3-rail-item{% if nav == 'control' %} is-active{% endif %}" href="/control"
+    <a class="m3-topnav-item{% if nav == 'control' %} is-active{% endif %}" href="/control"
        {% if nav == 'control' %}aria-current="page"{% endif %}>
-      <span class="m3-rail-pill"><span class="m3-icon m3-icon-lg">monitoring</span></span>
-      <span class="m3-rail-label">Control</span>
+      <span class="m3-icon">monitoring</span><span>Control</span>
     </a>
   </nav>
 

@@ -128,55 +128,48 @@ code, .m3-num { font-family: var(--m3-mono); }
 .m3-icon-sm { font-size: 16px; }
 .m3-icon-lg { font-size: 24px; }
 
-/* ── Shell: rail + main ─────────────────────────────────────────── */
-.m3-shell { display: flex; min-height: 100vh; }
+/* ── Shell: barra de navegación superior + main ───────────────────── */
+.m3-shell { min-height: 100vh; }
 
-.m3-rail {
-  width: 88px;
-  flex: none;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  padding: 12px 0 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
+/* Barra de secciones (Catálogo/Curaduría/Control). Reemplaza el rail
+   lateral de 88px — mismo destino activo derivado en el servidor, mismos
+   tres enlaces, ahora en fila en vez de columna. Altura propia: 56px
+   (10px de padding + 36px de contenido), valor del que dependen el offset
+   sticky de .m3-topbar y el de .m3-evidence más abajo: si esta altura
+   cambia, esos dos números hay que recalcularlos junto con ella. */
+.m3-topnav {
+  position: sticky; top: 0; z-index: 25;
+  display: flex; align-items: center; gap: 4px;
+  padding: 10px 32px;
+  background: var(--m3-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
 }
-.m3-rail-brand {
-  width: 56px; height: 56px;
-  border-radius: var(--m3-radius-lg);
+.m3-topnav-brand {
+  width: 36px; height: 36px;
+  border-radius: var(--m3-radius-md);
   background: var(--m3-primary);
   color: var(--m3-on-primary);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 500; letter-spacing: .5px;
-  margin-bottom: 12px;
+  font: 500 13px var(--m3-font); letter-spacing: .5px;
+  margin-right: 12px;
 }
-.m3-rail-item {
-  width: 100%;
-  padding: 0 8px;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+.m3-topnav-item {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 16px;
+  border-radius: 100px;
   color: var(--m3-on-surface-variant);
+  font: 500 14px var(--m3-font); letter-spacing: .1px;
   text-decoration: none;
-}
-.m3-rail-item:hover { text-decoration: none; }
-.m3-rail-item .m3-rail-pill {
-  width: 56px; height: 32px;
-  border-radius: 16px;
-  display: flex; align-items: center; justify-content: center;
   transition: background .15s ease;
 }
-.m3-rail-item:hover .m3-rail-pill { background: var(--m3-surface-container-high); }
-.m3-rail-label { font-size: 12px; font-weight: 500; letter-spacing: .5px; }
-.m3-rail-item.is-active { color: #00373a; }
-.m3-rail-item.is-active .m3-rail-pill { background: var(--m3-primary-container); }
+.m3-topnav-item:hover { text-decoration: none; background: var(--m3-surface-container-high); }
+.m3-topnav-item.is-active { background: var(--m3-primary-container); color: #00373a; }
 
-.m3-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .m3-content { padding: 0 32px 96px; max-width: 1200px; }
 
 /* ── Cabecera de página ─────────────────────────────────────────── */
 .m3-topbar {
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: 56px; z-index: 20;
   background: var(--m3-bg);
   padding: 16px 32px 16px;
 }
@@ -403,7 +396,9 @@ code, .m3-num { font-family: var(--m3-mono); }
 
 /* ── Curaduría: dos columnas ────────────────────────────────────── */
 .m3-curation { display: grid; grid-template-columns: minmax(300px, 5fr) minmax(360px, 7fr); gap: 20px; align-items: start; }
-.m3-evidence { position: sticky; top: 180px; }
+/* 180px de .m3-topbar + 56px de .m3-topnav apilada arriba (ver comentario
+   junto a .m3-topnav): la evidencia empieza justo debajo de las dos. */
+.m3-evidence { position: sticky; top: 236px; }
 .m3-evidence pre {
   margin: 0; padding: 16px;
   background: var(--m3-surface-hover); border: 1px solid #e0e6e6; border-radius: var(--m3-radius-sm);
@@ -538,6 +533,6 @@ code, .m3-num { font-family: var(--m3-mono); }
   .m3-evidence { position: static; }
 }
 @media (max-width: 720px) {
-  .m3-rail { display: none; }
-  .m3-content, .m3-topbar { padding-left: 16px; padding-right: 16px; }
+  .m3-content, .m3-topbar, .m3-topnav { padding-left: 16px; padding-right: 16px; }
+  .m3-topnav-item span:last-child { display: none; }
 }
