@@ -3620,3 +3620,28 @@ Consecuencia: si un canal falla al importar histórico, la causa más probable
 sigue siendo un `external_id` mal capturado — se corrige el dato, no el
 código, salvo evidencia nueva de que WAHA realmente usa `@lid` para algún
 grupo real.
+
+---
+
+## 2026-08-21 — Mensaje del backfill separa capturado de visible en la cola
+
+Contexto: medido contra producción, 174 pendientes reales y solo 17 visibles
+en `/curation` — el filtro de foco (2026-08-20) esconde lo que no menciona
+ningún producto piloto. El mensaje del backfill decía «N anuncios nuevos EN
+LA COLA DE CURADURÍA», dando a entender que iban a verse ahí; con canales
+mayoristas genéricos, la mayoría queda escondida y el operador lo lee como
+que la importación no hizo nada.
+
+Decisión: el mensaje pasa a «N anuncios nuevos capturados, M van a verse en
+la cola de curaduría». `M` se calcula sobre `parsed.text` de cada mensaje
+recién ingerido (no duplicado), con `mentions_any_product` — mismo criterio
+que `_pending_in_focus`, incluida su excepción: sin productos piloto
+definidos, todo cuenta como visible.
+
+Descartado: nada — cambio acotado al texto del flash y al cálculo que ya
+tenía todo lo necesario a mano (`parsed.text`, catálogo de pilotos).
+
+Consecuencia: el número de "visibles" puede quedar desactualizado si el
+operador cambia el foco (agrega/saca un piloto) después de correr el
+backfill — es una foto del momento de la importación, no una cuenta viva.
+Aceptable: el mensaje es informativo y desaparece al recargar.

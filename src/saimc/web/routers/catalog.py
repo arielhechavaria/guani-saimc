@@ -28,6 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
+from saimc.extraction.engine import mentions_any_product
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.ingestion.whatsapp_backfill import fetch_channel_history
 from saimc.models import Channel, Platform, PriceHistory, Product, Province, RawIngestion
@@ -399,8 +400,12 @@ def backfill_channel(channel_id: uuid.UUID, db: Session = Depends(get_db)) -> Re
     if not messages:
         return _back(message=f"«{channel.name}»: WAHA no tiene histórico con texto para traer.")
 
+    pilot_products = list(
+        db.execute(select(Product).where(Product.is_pilot.is_(True))).scalars()
+    )
+
     settings.inbox_dir.mkdir(parents=True, exist_ok=True)
-    ingested = duplicates = 0
+    ingested = duplicates = visible = 0
     for parsed in messages:
         temp_path = settings.inbox_dir / f"whatsapp-backfill-{uuid.uuid4().hex}.txt"
         temp_path.write_text(parsed.text, encoding="utf-8")
@@ -423,10 +428,21 @@ def backfill_channel(channel_id: uuid.UUID, db: Session = Depends(get_db)) -> Re
             )
         finally:
             temp_path.unlink(missing_ok=True)
-        ingested += len(report.ingested)
+        if report.ingested:
+            ingested += len(report.ingested)
+            # Sin foco definido, `_pending_in_focus` no filtra nada (mismo
+            # criterio ahí: filtrar contra un catálogo vacío escondería la
+            # cola entera) — acá se replica esa excepción.
+            if not pilot_products or mentions_any_product(parsed.text, pilot_products):
+                visible += 1
         duplicates += len(report.duplicates)
 
-    resumen = f"«{channel.name}»: {ingested} anuncios nuevos en la cola de curaduría"
+    resumen = f"«{channel.name}»: {ingested} anuncios nuevos capturados"
+    if ingested:
+        # El filtro de foco (curation.py) esconde de la cola lo que no
+        # menciona ningún producto piloto — sin eso, "traje 40" y "la cola
+        # no se movió" parece un bug (docs/decisions.md, 2026-08-21).
+        resumen += f", {visible} van a verse en la cola de curaduría"
     if duplicates:
         resumen += f", {duplicates} ya estaban."
     else:

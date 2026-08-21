@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import sqlalchemy as sa
@@ -939,6 +940,48 @@ class TestCatalogoBackfillHistorico:
         # real sí la conserva vía TIMESTAMPTZ — decisions.md, 2026-08-06.)
         fechas = {i.captured_at.replace(tzinfo=None) for i in ingestiones}
         assert fechas == {m.timestamp.replace(tzinfo=None) for m in mensajes}
+
+    def test_mensaje_distingue_capturados_de_visibles_en_la_cola(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """«N nuevos en la cola» daba a entender que se iban a ver ahí, pero
+        el filtro de foco (curation.py) esconde lo que no menciona ningún
+        producto piloto — de 174 pendientes reales solo 17 eran visibles
+        (docs/decisions.md, 2026-08-21). El mensaje ahora separa las dos
+        cuentas en vez de prometer visibilidad que el foco después no da."""
+        _crear_producto(session, name="Arroz", is_pilot=True)
+        canal = self._canal_automatizado(session)
+        monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "http://127.0.0.1:3000")
+        monkeypatch.setenv("SAIMC_WAHA_API_KEY", "clave")
+        get_settings.cache_clear()
+
+        mensajes = [
+            ParsedMessage(
+                chat_id="1234567890@newsletter",
+                text="Arroz grano dorado 100 lb 43.5 o 30885",
+                timestamp=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+                has_media=False,
+            ),
+            ParsedMessage(
+                chat_id="1234567890@newsletter",
+                text="Gasolina 3000 el galón",
+                timestamp=datetime(2026, 8, 12, 9, 30, tzinfo=UTC),
+                has_media=False,
+            ),
+        ]
+        monkeypatch.setattr(
+            "saimc.web.routers.catalog.fetch_channel_history", lambda *a, **k: mensajes
+        )
+
+        response = client.post(
+            f"/catalog/channels/{canal.id}/backfill", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        location = urlsplit(response.headers["location"])
+        mensaje = parse_qs(location.query)["message"][0]
+        assert "2 anuncios nuevos capturados" in mensaje
+        assert "1 van a verse en la cola" in mensaje
 
     def test_backfill_guarda_channel_id_en_las_filas_importadas(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
