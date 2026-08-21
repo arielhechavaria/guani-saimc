@@ -64,6 +64,16 @@ class Settings(BaseSettings):
     # request del operador — degrada a error en vez de esperar indefinido.
     waha_timeout: float = 30.0
 
+    # Cuánto tiempo alrededor de un mensaje sigue siendo el MISMO anuncio
+    # (docs/decisions.md, 2026-08-21). En los grupos y canales reales el
+    # vendedor parte el anuncio en varios mensajes seguidos: la foto o el
+    # nombre del producto en uno, el precio en el siguiente. Los dos pares
+    # medidos en producción están a 22 segundos y a 4m33s; diez minutos los
+    # cubre con margen sin fundir publicaciones de la mañana con las de la
+    # tarde. Configurable porque el ritmo de publicación varía por fuente y
+    # el número correcto solo se conoce con más curaduría encima.
+    burst_window_minutes: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:

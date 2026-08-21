@@ -3423,3 +3423,214 @@ class TestFueraDeFocoNoLlegaALaCola:
 
         assert response.status_code == 200
         assert f'action="/curation/{del_foco.id}"' in response.text
+
+
+class TestRafagaDeMensajes:
+    """El anuncio real no es un mensaje: es una ráfaga de mensajes seguidos.
+
+    Medido contra la base de producción el 2026-08-21. El vendedor publica
+    "Para mañana entrará aceite de 900ml" y cuatro minutos y medio después
+    "A 4700", en el mismo canal. El primero nombra un producto del foco y
+    entra a la cola sin precio; el segundo trae el precio y no nombra nada,
+    así que el filtro del 2026-08-20 lo esconde. Curar el primero sin ver el
+    segundo es guardar un anuncio incompleto.
+
+    La solución es mostrar la ráfaga como CONTEXTO del que ya entra, no
+    ascender al huérfano a la cola. Ascenderlo se probó y se midió: rescataba
+    18 pendientes de los cuales 1 servía, porque en un canal activo cualquier
+    anuncio de gasolina o keratina cae dentro de la ventana. Ver
+    `_focus_rank`.
+    """
+
+    def _canal(self, session: Session, name: str = "Groupej Morales") -> Channel:
+        canal = Channel(
+            name=name,
+            platform=Platform.WHATSAPP_CHANNEL,
+            province_id=None,
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+        return canal
+
+    def _par_real(
+        self,
+        session: Session,
+        *,
+        canal: Channel,
+        salto: timedelta,
+        canal_del_precio: Channel | None = None,
+    ) -> tuple[RawIngestion, RawIngestion]:
+        """El par medido en producción, con el salto de tiempo parametrizado."""
+        ancla = datetime(2026, 8, 20, 1, 40, 46, tzinfo=UTC)
+        con_producto = _crear_raw_ingestion(
+            session,
+            hash_="hash-rafaga-producto",
+            original_text="Para mañana entrará aceite de 900ml",
+            captured_at=ancla,
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            channel_id=canal.id,
+        )
+        huerfano = _crear_raw_ingestion(
+            session,
+            hash_="hash-rafaga-precio",
+            original_text="A 4700",
+            captured_at=ancla + salto,
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            channel_id=(canal_del_precio or canal).id,
+        )
+        return con_producto, huerfano
+
+    def test_la_evidencia_muestra_el_mensaje_que_trae_el_precio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El caso que motivó todo: sin esto, el operador cura el aceite sin
+        saber que el precio llegó cuatro minutos después."""
+        _crear_producto(session, name="Aceite")
+        canal = self._canal(session)
+        con_producto, _ = self._par_real(
+            session, canal=canal, salto=timedelta(minutes=4, seconds=33)
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'action="/curation/{con_producto.id}"' in response.text
+        assert "A 4700" in response.text
+
+    def test_el_huerfano_no_entra_a_la_cola_por_tener_contexto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Decisión deliberada: la ráfaga informa, no reordena. El precio
+        suelto se lee como contexto y sigue fuera de foco, así el filtro del
+        2026-08-20 conserva su valor."""
+        _crear_producto(session, name="Aceite")
+        canal = self._canal(session)
+        self._par_real(session, canal=canal, salto=timedelta(minutes=4, seconds=33))
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "1 fuera de foco" in response.text
+
+    def test_el_contexto_incluye_lo_ya_curado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Que el vecino ya esté curado no lo borra del anuncio: el operador
+        sigue necesitando leerlo para entender el que tiene delante."""
+        _crear_producto(session, name="Aceite")
+        canal = self._canal(session)
+        ancla = datetime(2026, 8, 20, 1, 40, 46, tzinfo=UTC)
+        ya_curado = _crear_raw_ingestion(
+            session,
+            hash_="hash-rafaga-curado",
+            original_text="Aceite de 900ml disponible",
+            captured_at=ancla,
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            channel_id=canal.id,
+        )
+        ya_curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-rafaga-pendiente",
+            original_text="Aceite girasol a 4700",
+            captured_at=ancla + timedelta(minutes=3),
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            channel_id=canal.id,
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Aceite de 900ml disponible" in response.text
+
+    def test_el_contexto_no_cruza_canales(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Dos vendedores publicando a la misma hora no forman un anuncio: el
+        precio de uno no describe el producto del otro."""
+        _crear_producto(session, name="Aceite")
+        uno = self._canal(session, name="Canal Uno")
+        otro = self._canal(session, name="Canal Otro")
+        self._par_real(
+            session,
+            canal=uno,
+            salto=timedelta(minutes=1),
+            canal_del_precio=otro,
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "A 4700" not in response.text
+
+    def test_fuera_de_la_ventana_no_hay_contexto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Once minutos ya no son el mismo anuncio."""
+        _crear_producto(session, name="Aceite")
+        canal = self._canal(session)
+        self._par_real(session, canal=canal, salto=timedelta(minutes=11))
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "A 4700" not in response.text
+
+    def test_sin_canal_conocido_no_hay_contexto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Una captura suelta de la bandeja no tiene `channel_id`. Agrupar por
+        "ninguno" mezclaría capturas de fuentes sin relación entre sí."""
+        _crear_producto(session, name="Aceite")
+        ancla = datetime(2026, 8, 20, 1, 40, 46, tzinfo=UTC)
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-rafaga-sin-canal-producto",
+            original_text="Para mañana entrará aceite de 900ml",
+            captured_at=ancla,
+        )
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-rafaga-sin-canal-precio",
+            original_text="A 4700",
+            captured_at=ancla + timedelta(minutes=1),
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "A 4700" not in response.text
+
+    def test_el_contexto_muestra_la_foto_vecina(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El patrón que el operador reportó: la foto del saco de arroz y, en
+        el mensaje siguiente, "arroz a 340 por libra"."""
+        _crear_producto(session, name="Arroz")
+        canal = self._canal(session)
+        ancla = datetime(2026, 8, 20, 1, 40, 46, tzinfo=UTC)
+        foto = _crear_raw_ingestion(
+            session,
+            hash_="hash-rafaga-foto",
+            content_type=ContentType.IMAGE,
+            captured_at=ancla,
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            channel_id=canal.id,
+        )
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-rafaga-texto-arroz",
+            original_text="arroz a 340 por libra",
+            captured_at=ancla + timedelta(minutes=2),
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            channel_id=canal.id,
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        # La foto es `_FOCUS_UNKNOWN` y el texto `_FOCUS_MATCH`: manda el texto,
+        # y la foto que lo ilustra viaja con él como evidencia vecina.
+        assert f'/evidence/{foto.id}' in response.text

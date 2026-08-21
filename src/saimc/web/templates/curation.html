@@ -142,6 +142,46 @@
             Capturado {{ ingestion.captured_at | havana('%H:%M') }} (La Habana)
           </div>
         </div>
+
+        {#
+          Contexto de ráfaga (docs/decisions.md, 2026-08-21): el vendedor parte
+          el anuncio en varios mensajes seguidos — el producto en uno, el
+          precio en el siguiente. "A 4700" es incurable sola; al lado de "Para
+          mañana entrará aceite de 900ml" se completa en un solo acto.
+
+          Solo lectura a propósito: la evidencia que se guarda sigue siendo la
+          fila que se está curando. Esto es para leer, no para editar.
+        #}
+        {% if burst %}
+        <details class="m3-burst" style="margin-top:16px">
+          <summary class="m3-summary m3-row" style="gap:8px">
+            <span class="m3-icon m3-icon-sm m3-dim">forum</span>
+            <span class="m3-xs m3-muted">
+              {{ burst|length }} mensaje{{ "s" if burst|length != 1 }} del mismo canal alrededor
+            </span>
+          </summary>
+          <ul class="m3-stack" style="gap:8px; margin:12px 0 0; padding:0; list-style:none">
+            {% for vecino in burst %}
+            <li class="m3-card m3-card-pad" style="padding:8px 12px">
+              <div class="m3-row m3-xs m3-muted" style="gap:8px">
+                <span class="m3-num">{{ vecino.captured_at | havana('%H:%M') }}</span>
+                {% if vecino.processing_status != "pending" %}
+                <span class="m3-chip m3-chip-sm">{{ vecino.processing_status }}</span>
+                {% endif %}
+              </div>
+              {% if vecino.content_type == "image" %}
+              <img src="/evidence/{{ vecino.id }}" alt="Mensaje vecino"
+                   style="max-height:160px; margin-top:4px" />
+              {% elif vecino.original_text %}
+              <pre style="margin:4px 0 0; white-space:pre-wrap">{{ vecino.original_text }}</pre>
+              {% else %}
+              <p class="m3-muted m3-xs" style="font-style:italic; margin:4px 0 0">Sin texto.</p>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
       </div>
     </section>
 

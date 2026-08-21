@@ -3464,3 +3464,40 @@ salen del rango público minorista hasta que el operador las recure desde
 mínima para que decida cuál cola atacar primero. `engine.py` no se toca:
 inferir el basis del texto del anuncio queda fuera de alcance, con su propio
 contrato de TDD, igual que `guess_min_purchase` en el cambio anterior.
+
+## 2026-08-21 — El anuncio es una ráfaga: contexto de mensajes vecinos en la cola
+Contexto: al investigar por qué las fotos de grupos y canales no se capturan
+(`whatsapp_webhook.parse_message` descarta el media sin caption, 183 de 200 en
+un grupo medido el 2026-08-18) apareció una pérdida mayor y ya activa. El
+vendedor parte el anuncio en varios mensajes seguidos: producto o foto en uno,
+precio en el siguiente. Medido contra producción — «Para mañana entrará aceite
+de 900ml» (01:40:46) y «A 4700» (01:45:19), mismo canal, 4m33s; y «...picadillo
+de pollo americano de 40lb a 535» seguido de «La caja sale a 21400» a 22
+segundos. El segundo mensaje no nombra ningún producto, así que
+`mentions_any_product` no lo reconoce y el filtro de foco del 2026-08-20 lo
+esconde para siempre: la fila queda `pending` y no aparece en ninguna cuenta de
+descarte. Sobre 104 textos con canal: 37 con precio y sin producto piloto, 35
+anuncios completos, y 17 huérfanos con un vecino del foco a menos de 10 minutos.
+Decisión: la cola de curaduría muestra los mensajes del mismo canal dentro de
+±`burst_window_minutes` (10 por defecto, configurable) como contexto de solo
+lectura en la tarjeta de evidencia, en cualquier estado de procesamiento. Una
+consulta, solo para la cabeza de la cola. Sin cambio de esquema: `channel_id` y
+`captured_at` ya existen.
+Descartado: ascender el huérfano a la cola con un rango `_FOCUS_BURST` propio.
+Se implementó y se midió contra producción antes de descartarlo: rescataba 18
+pendientes de los cuales 1 era el caso buscado — en un canal activo cualquier
+anuncio de gasolina, keratina o alitas de pollo cae dentro de la ventana, y el
+filtro del 2026-08-20 quedaba anulado a cambio de casi nada. También se descartó
+usar el catálogo completo como discriminador de «anuncio que se explica solo»:
+`products` tiene 60 filas y varias son basura de curaduría («Precio :»,
+«Precio: *»), así que matchearía contra cualquier cosa. Y la ventana es fija
+alrededor del ancla, no cadena transitiva: encadenar saltos de nueve minutos
+fundiría un canal activo en una sola ráfaga de todo el día.
+Consecuencia: el huérfano sigue fuera de foco y no le cuesta un clic al
+operador; se lee desde el anuncio que sí entra. La pérdida se evita hacia
+adelante, no hacia atrás: el par medido ya tiene el ancla en `discarded` —el
+operador la descartó por no tener precio, que es exactamente el error que este
+contexto previene— y esos huérfanos del backlog siguen escondidos. La captura
+de fotos sin caption queda pendiente en su propio slice, y rinde más con este
+agrupamiento ya en su lugar: la foto del saco de arroz aterriza al lado de
+«arroz a 340 por libra» en vez de sola.

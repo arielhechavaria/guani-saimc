@@ -31,7 +31,7 @@ la columna, redactado con `redact_personal_data()` antes de construir la fila.
 import re
 import uuid
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -223,6 +223,10 @@ _FOCUS_UNKNOWN = 1  # imagen sin OCR: no se sabe sin transcribirla
 _FOCUS_NONE = 2  # texto sin ningún producto del foco
 
 
+def _burst_window() -> timedelta:
+    return timedelta(minutes=get_settings().burst_window_minutes)
+
+
 def _focus_rank(ingestion: RawIngestion, products: Sequence[Product]) -> int:
     """Cuánto aporta esta ingesta a las celdas que se están midiendo.
 
@@ -231,6 +235,15 @@ def _focus_rank(ingestion: RawIngestion, products: Sequence[Product]) -> int:
     hambre en cuanto entra volumen de WhatsApp, y transcribir la cola entera
     en cada carga de página para saberlo sería pagar el OCR de todo para
     ordenar.
+
+    La ráfaga (2026-08-21) NO toca este ranking, a propósito. Ascender al
+    mensaje huérfano porque un vecino nombra un producto del foco se midió
+    contra producción y rescataba 18 pendientes de los cuales 1 era el caso
+    buscado: en un canal activo, cualquier anuncio de gasolina o de keratina
+    cae a menos de diez minutos de uno del foco. Eso anulaba el filtro del
+    2026-08-20 sin comprar casi nada. El huérfano se resuelve por el otro
+    lado: se muestra como contexto del anuncio que sí entra (`_burst_context`),
+    donde no le cuesta un clic al operador.
     """
     if ingestion.original_text is None:
         return _FOCUS_UNKNOWN
@@ -279,6 +292,38 @@ def _pending_in_focus(db: Session, products: Sequence[Product]) -> list[RawInges
         for ingestion, rank in sorted(ranked, key=lambda par: par[1])
         if rank != _FOCUS_NONE
     ]
+
+
+def _burst_context(db: Session, ingestion: RawIngestion) -> list[RawIngestion]:
+    """Los mensajes que rodean al que se está curando, en orden cronológico.
+
+    El vendedor parte el anuncio en varios mensajes seguidos: "Para mañana
+    entrará aceite de 900ml" y, cuatro minutos y medio después, "A 4700".
+    Curar el primero sin ver el segundo es guardar un anuncio sin precio —
+    o descartarlo por creerlo inútil, que es lo que pasó con ese par real
+    (docs/decisions.md, 2026-08-21).
+
+    A diferencia del ranking, acá NO se filtra por estado: que el vecino ya
+    esté curado o descartado no lo borra del anuncio, y leerlo sigue siendo lo
+    que explica el mensaje que el operador tiene delante.
+
+    Una consulta, y solo para la cabeza de la cola — no para los cientos de
+    pendientes que `_pending_in_focus` acaba de ordenar.
+    """
+    if ingestion.channel_id is None:
+        return []
+    window = _burst_window()
+    stmt = (
+        select(RawIngestion)
+        .where(
+            RawIngestion.channel_id == ingestion.channel_id,
+            RawIngestion.id != ingestion.id,
+            RawIngestion.captured_at >= ingestion.captured_at - window,
+            RawIngestion.captured_at <= ingestion.captured_at + window,
+        )
+        .order_by(RawIngestion.captured_at.asc())
+    )
+    return list(db.execute(stmt).scalars().all())
 
 
 def _resolve_origin(db: Session, ingestion: RawIngestion) -> Channel | None:
@@ -413,6 +458,7 @@ def _render_queue(
     unconverted: int = 0,
     pasted: int = 0,
     no_candidates: bool = False,
+    burst: Sequence[RawIngestion] = (),
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -438,6 +484,12 @@ def _render_queue(
             # confuso — ese llamador nunca pasa este parámetro, usa el
             # default.
             "no_candidates": no_candidates,
+            # Los mensajes vecinos del mismo canal (docs/decisions.md,
+            # 2026-08-21). Vacío para una captura suelta de la bandeja, que no
+            # tiene canal, y para el POST con error de validación: ahí el
+            # operador está corrigiendo lo que ya escribió, no leyendo el
+            # anuncio por primera vez.
+            "burst": burst,
         },
         status_code=status_code,
     )
@@ -645,6 +697,7 @@ def curation_queue(
         # Distinto de "no matcheó ningún piloto": eso sí puede traer un
         # precio real de un producto fuera del foco, que vale la pena mirar.
         no_candidates=ingestion is not None and not proposals,
+        burst=_burst_context(db, ingestion) if ingestion is not None else (),
     )
 
 
