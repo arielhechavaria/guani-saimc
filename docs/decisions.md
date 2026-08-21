@@ -3384,3 +3384,45 @@ a `fonts.googleapis.com` en runtime. El bundle `redesing/` se borra una vez
 integrado: ya cumplió su función de handoff y este archivo deja constancia de
 que su `PLANTILLAS.md` documentaba una URL de fuentes que devolvía 404, para
 quien busque el motivo en el historial.
+
+---
+
+## 2026-08-21 — El prellenado por historial del canal se retira
+
+Contexto: pedido explícito del operador tras usar la cola con volumen real de
+WhatsApp. Escala de venta, envase y compra mínima se venían prellenando desde
+la última confirmación del propio operador para ese mismo (canal, producto)
+—decisión del 2026-08-17, refinada el 2026-08-18 con la guarda de grupo y el
+2026-08-20 con el acote por `channel_id`—. El diagnóstico del operador:
+«esto está metiendo ruido». La sugerencia acertaba lo suficiente como para
+confirmarse sin mirarla y erraba lo suficiente como para ensuciar el dato, que
+es el peor de los dos mundos: un campo vacío se nota, uno mal prellenado no.
+El costo que la decisión original quería evitar —tipear tres campos por
+anuncio— resultó más barato que revisar tres campos ya escritos.
+
+Decisión: se borra `_historical_defaults` de `curation.py` y su aplicación
+fila por fila en `curation_queue`. Lo que el motor de extracción no puede leer
+del texto del anuncio llega en blanco y lo escribe el operador. Sigue en pie
+todo lo que se deriva del texto, incluido el mínimo de compra de un anuncio
+con precio escalonado (2026-08-20), porque eso lo declara el propio anuncio.
+También sigue en pie el override de provincia por canal (2026-08-17, «el canal
+siempre manda»): ese dato no es juicio del operador sobre un anuncio, es una
+propiedad del canal que él mismo cargó en /catalog.
+
+Descartado: dejar el prellenado detrás de una preferencia o mostrarlo como
+sugerencia visual sin escribir el campo. Las dos alternativas conservan la
+complejidad —la resolución de origen, la guarda de grupo, el acote por
+`channel_id`— para un beneficio que el operador ya midió como negativo.
+Reemplaza en este punto a las entradas del 2026-08-17 («Escala, envase y
+compra mínima se prellenan desde la última confirmación del mismo canal»),
+2026-08-18 (guarda de grupo) y 2026-08-20 («`_historical_defaults` acota por
+`channel_id`, no solo por texto»), que quedan como historia del camino
+recorrido.
+
+Consecuencia: `_resolve_origin` deja de devolver la tupla `(canal, ambiguo)` y
+devuelve `Channel | None` — el flag existía solo para que el prellenado
+cortara en seco ante un nombre ambiguo, y su único consumidor restante
+(`_channel_province_id`) siempre lo ignoró. `Channel.is_whatsapp_group` se
+queda en el modelo sin consumidor en código: distinguir canal de grupo va a
+volver a hacer falta el día que se guarde la identidad del emisor
+(`participant`), y borrarla es otro slice. Suite completa: 603/603.

@@ -37,7 +37,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
@@ -275,8 +275,8 @@ def _pending_in_focus(db: Session, products: Sequence[Product]) -> list[RawInges
     ]
 
 
-def _resolve_origin(db: Session, ingestion: RawIngestion) -> tuple[Channel | None, bool]:
-    """Canal de origen de esta ingesta y si el nombre quedó ambiguo.
+def _resolve_origin(db: Session, ingestion: RawIngestion) -> Channel | None:
+    """Canal de origen de esta ingesta, o `None` si no se puede saber con certeza.
 
     Desde que `idx_channels_name` dejó de ser único (migración 0014,
     docs/decisions.md 2026-08-19), dos filas de `channels` pueden compartir
@@ -293,19 +293,24 @@ def _resolve_origin(db: Session, ingestion: RawIngestion) -> tuple[Channel | Non
     las dos filas es la correcta — el operador rechazó cualquier
     desempate automático (design.md, D4). `limit(2)` alcanza para distinguir
     "una" de "dos o más" sin traer el resto.
+
+    Un nombre ambiguo resuelve en `None`, igual que un nombre sin ninguna
+    coincidencia: el único consumidor que existe (`_channel_province_id`)
+    trata los dos casos igual, y adivinar cuál de las dos filas es la
+    correcta está descartado.
     """
     if ingestion.channel_id is not None:
-        return db.get(Channel, ingestion.channel_id), False
+        return db.get(Channel, ingestion.channel_id)
     if not ingestion.source_reference:
-        return None, False
+        return None
     coincidencias = list(
         db.execute(
             select(Channel).where(Channel.name == ingestion.source_reference).limit(2)
         ).scalars().all()
     )
     if len(coincidencias) == 1:
-        return coincidencias[0], False
-    return None, len(coincidencias) > 1
+        return coincidencias[0]
+    return None
 
 
 def _channel_province_id(db: Session, ingestion: RawIngestion) -> str | None:
@@ -322,111 +327,15 @@ def _channel_province_id(db: Session, ingestion: RawIngestion) -> str | None:
     backfill, nunca el operador a mano) — para el resto de las fuentes
     (bandeja, pegado) el campo es texto libre y no hay canal que resolver
     con certeza. La resolución en sí pasa por `_resolve_origin` (design.md,
-    D4): la ambigüedad de nombre se ignora acá a propósito — un origen
-    ambiguo resuelve en `None`, igual que una fuente sin canal registrado,
-    nunca en un error.
+    D4): un origen ambiguo resuelve en `None`, igual que una fuente sin
+    canal registrado, nunca en un error.
     """
     if ingestion.source_type != SourceType.WHATSAPP_CHANNEL or not ingestion.source_reference:
         return None
-    channel, _ambiguo = _resolve_origin(db, ingestion)
+    channel = _resolve_origin(db, ingestion)
     if channel is None or channel.province_id is None:
         return None
     return str(channel.province_id)
-
-
-def _historical_defaults(
-    db: Session, ingestion: RawIngestion, product_id: str
-) -> dict[str, str] | None:
-    """Escala de venta, envase y compra mínima de la última confirmación real
-    para este mismo (canal, producto), o `None` si no hay antecedente.
-
-    Idea del operador (docs/decisions.md, 2026-08-17): una mipyme repite el
-    mismo formato de venta anuncio tras anuncio (mismo saco, mismo mínimo de
-    compra) — estos tres campos nunca se infieren del texto del anuncio
-    (design.md, D4/D7: son juicio explícito del operador, no algo que la
-    capa de extracción pueda leer), pero la última vez que el operador los
-    confirmó para este canal y este producto es un prefill mucho mejor que
-    texto vacío. Reusa `_split_packaging`, el mismo helper que ya prellena
-    la corrección de un anuncio ya curado (`_values_from_price_history`).
-
-    El origen se resuelve con `_resolve_origin` (design.md, D4/D5) y, a
-    diferencia de `_channel_province_id`, acá la ambigüedad SÍ corta el
-    prefill en seco en vez de ignorarse: con dos filas de `channels` del
-    mismo nombre, la búsqueda histórica de abajo (por `source_reference`,
-    una cadena de texto) matchearía filas de las DOS, y "la última
-    confirmación para este canal" podría en realidad ser del otro. Caer al
-    ambiguo sin frenar sería filtrar el mismo error cruzado que la guarda de
-    grupo (párrafo siguiente) ya previene — silencioso, porque el dato
-    resultante es plausible.
-
-    Con el origen YA resuelto sin ambigüedad, la consulta histórica igual
-    tiene que dejar de filtrar solo por texto (docs/decisions.md,
-    2026-08-20): canal y grupo homónimos escriben el mismo
-    `source_reference`, así que `RawIngestion.source_reference ==
-    source_reference` a secas trae también las filas del otro — el mismo
-    error cruzado, ahora colándose por acá en vez de por la ambigüedad. Con
-    `origen` resuelto, la consulta se acota a `channel_id == origen.id` (la
-    identidad real) más las filas SIN `channel_id` (anteriores a la
-    migración 0015, donde el texto sigue siendo el único rastro que existe).
-    Sin `origen` (0 coincidencias, fuente sin canal registrado) no hay nada
-    a qué acotar y se mantiene el texto solo, igual que hoy.
-
-    NO aplica a grupos de WhatsApp (2026-08-18). El razonamiento entero
-    descansa en que el `source_reference` identifica a UN vendedor, que es
-    cierto en un canal —el nombre del canal es la mipyme— y falso en un
-    grupo, donde es el nombre del mercado y adentro conviven muchos
-    vendedores. Prellenar ahí heredaría el saco de uno al anuncio de otro:
-    dato plausible, y por eso confirmable sin notarlo. Vacío es mejor. Lo
-    que lo reabre es guardar la identidad del emisor (`participant`, que
-    WAHA ya manda) en `raw_ingestions` — cambio de esquema, slice aparte.
-
-    El caso de 0 coincidencias SÍ sigue de largo a propósito: una fuente
-    manual/bandeja cuyo `source_reference` el operador tipeó consistente
-    también se beneficia, exactamente como hoy.
-    """
-    source_reference = ingestion.source_reference
-    if not source_reference:
-        return None
-    origen, ambiguo = _resolve_origin(db, ingestion)
-    if ambiguo:
-        return None
-    if origen is not None and origen.is_whatsapp_group:
-        return None
-    parsed_product_id = _parse_uuid(product_id)
-    if parsed_product_id is None:
-        return None
-    if origen is not None:
-        origen_match = or_(
-            RawIngestion.channel_id == origen.id,
-            and_(
-                RawIngestion.channel_id.is_(None),
-                RawIngestion.source_reference == source_reference,
-            ),
-        )
-    else:
-        origen_match = RawIngestion.source_reference == source_reference
-    stmt = (
-        select(PriceHistory)
-        .join(RawIngestion, PriceHistory.source_id == RawIngestion.id)
-        .where(PriceHistory.product_id == parsed_product_id, origen_match)
-        .order_by(PriceHistory.created_at.desc())
-        .limit(1)
-    )
-    ultimo = db.execute(stmt).scalars().first()
-    if ultimo is None:
-        return None
-
-    packaging_format, packaging_detail = _split_packaging(ultimo.packaging)
-    return {
-        "sale_format": ultimo.sale_format or "",
-        "packaging_format": packaging_format,
-        "packaging_detail": packaging_detail,
-        "min_purchase": (
-            str(ultimo.min_purchase_quantity)
-            if ultimo.min_purchase_quantity is not None
-            else ""
-        ),
-    }
 
 
 def _pilot_products(db: Session) -> list[Product]:
@@ -704,20 +613,6 @@ def curation_queue(
     if channel_province_id is not None:
         for row in rows:
             row["province_id"] = channel_province_id
-
-    # Escala, envase y compra mínima desde la última confirmación real para
-    # este mismo (canal, producto) — docs/decisions.md, 2026-08-17. Por
-    # fila, no una vez por anuncio: cada fila puede ser un producto
-    # distinto, con su propio historial. Las filas en blanco de más no
-    # tienen `product_id` todavía, así que quedan afuera solas.
-    source_reference = ingestion.source_reference if ingestion is not None else None
-    if ingestion is not None and source_reference:
-        for row in rows:
-            if not row["product_id"]:
-                continue
-            defaults = _historical_defaults(db, ingestion, row["product_id"])
-            if defaults is not None:
-                row.update(defaults)
 
     global_values = {
         "original_text": recognized_text,
