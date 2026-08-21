@@ -939,3 +939,83 @@ class TestMencionaAlgunProducto:
 
     def test_texto_vacio(self, products: list[Product]) -> None:
         assert mentions_any_product("", products) is False
+
+
+class TestProvinciaDelCanal:
+    """docs/decisions.md, 2026-08-17 — "el canal siempre manda".
+
+    La regla ya vivía en la cola de curaduría (`curation.py`), donde pisaba la
+    provincia DESPUÉS de que el motor propusiera. Acá entra al motor mismo,
+    que es lo que la medición de H0 re-corre: sin esto, `measure.py` evaluaba
+    un extractor ciego a un dato que en producción sí se aplica, y la
+    precisión de provincia salía sistemáticamente por debajo de la real.
+
+    Es override, no fallback: el operador conoce la provincia del canal de
+    antemano, y un mensaje puede no mencionarla o mencionar otra por error.
+    """
+
+    def test_propone_la_provincia_del_canal_cuando_el_texto_no_la_dice(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose(
+            "pollo congelado 40lb a 500", products, provinces, channel_province=provinces[0]
+        )
+
+        assert propuesta.province is provinces[0]
+
+    def test_la_provincia_del_canal_pisa_la_del_texto(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El texto dice Habana, el canal es de Santiago: gana el canal."""
+        propuesta = propose(
+            "pollo congelado 40lb a 500 habana",
+            products,
+            provinces,
+            channel_province=provinces[1],
+        )
+
+        assert propuesta.province is provinces[1]
+
+    def test_sin_canal_la_provincia_sigue_saliendo_del_texto(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El camino de siempre no cambia: una fuente sin canal (bandeja,
+        pegado) sigue dependiendo de lo que el texto diga."""
+        propuesta = propose("pollo congelado 40lb a 500 habana", products, provinces)
+
+        assert propuesta.province is provinces[0]
+
+    def test_canal_sin_provincia_cargada_no_pisa_nada(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """`channel_province=None` es el caso de un canal recién dado de alta
+        sin provincia fija: no debe borrar lo que el texto sí dijo."""
+        propuesta = propose(
+            "pollo congelado 40lb a 500 habana", products, provinces, channel_province=None
+        )
+
+        assert propuesta.province is provinces[0]
+
+    def test_propose_all_aplica_el_canal_a_todas_las_lineas(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = "pollo congelado 40lb a 500\narroz blanco 5lb a 300 santiago de cuba\n"
+
+        propuestas = propose_all(
+            texto, products, provinces, channel_province=provinces[0]
+        )
+
+        assert len(propuestas) == 2
+        assert [p.province for p in propuestas] == [provinces[0], provinces[0]]
+
+    def test_propose_all_sin_canal_no_cambia(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Sin canal sigue rigiendo la caída al texto completo que `propose_all`
+        ya documenta: la línea del pollo no nombra provincia, así que hereda la
+        única que el anuncio menciona."""
+        texto = "pollo congelado 40lb a 500\narroz blanco 5lb a 300 santiago de cuba\n"
+
+        propuestas = propose_all(texto, products, provinces)
+
+        assert [p.province for p in propuestas] == [provinces[1], provinces[1]]

@@ -3645,3 +3645,37 @@ Consecuencia: el número de "visibles" puede quedar desactualizado si el
 operador cambia el foco (agrega/saca un piloto) después de correr el
 backfill — es una foto del momento de la importación, no una cuenta viva.
 Aceptable: el mensaje es informativo y desaparece al recargar.
+
+## 2026-08-21 — La medición de H0 recibe la provincia del canal
+
+Contexto: al analizar los datos contra H0 (211 filas curadas de las 300 del
+umbral) la precisión de provincia daba 46.9%, y el 93% de esos fallos eran
+propuesta VACÍA, no propuesta errónea. La causa no era el extractor: la cola
+de curaduría YA aplica la provincia fija del canal desde el 2026-08-17 ("el
+canal siempre manda"), pero `compute_h0_report` re-corría `propose_all` sin
+ese dato. Se estaba midiendo un extractor más ciego que el que corre en
+producción — contra la base real, la provincia del canal coincidió con la
+confirmada por el operador en 49 de 49 filas.
+
+Decisión: `propose`, `propose_all` y `_tiered_proposals` aceptan
+`channel_province` (keyword, default `None`) con semántica de override, no de
+fallback: le gana a la línea y al texto completo. `measure.py` se lo pasa
+resolviéndolo con la misma regla que la cola. La resolución del canal de
+origen y su provincia se mudaron de `web/routers/curation.py` a
+`saimc/ingestion/origin.py`, sin cambiar comportamiento: la capa de
+extracción no puede importar de un router web sin invertir la dependencia.
+
+Descartado: (a) semántica de fallback con el texto ganando — contradice la
+decisión del 2026-08-17, y el dato no la sostiene: el canal acertó 49/49
+mientras el texto, cuando propone algo, acierta 99/107; (b) duplicar la regla
+en `measure.py` en vez de mudarla — dejaba dos definiciones de "el canal
+siempre manda" divergiendo en silencio; (c) reemplazar el override post-hoc
+de `curation.py` por el del motor — ese además rellena las filas en blanco de
+más, que no salen de ninguna propuesta.
+
+Consecuencia: la medición sube de 10.9% a 18.5% de extracción completa
+(provincia 46.9% → 76.8%) sin curar una fila más, porque `measure.py`
+re-corre el extractor sobre evidencia inmutable y la mejora es retroactiva.
+El número anterior no era "más exigente", era de otro extractor. El cuello de
+botella pasa a ser cantidad/unidad (23.7%): si se arreglara, la extracción
+completa daría 52.1% sobre este mismo corpus.

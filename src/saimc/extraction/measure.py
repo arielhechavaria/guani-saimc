@@ -15,6 +15,11 @@ De dónde sale el texto evaluado, según el tipo de evidencia:
   ella evaluaría las reglas contra un texto que un humano limpió, y H0 (§3)
   pregunta justamente si el pipeline sostiene el volumen SIN esa intervención.
   El archivo original es inmutable, así que la transcripción es reproducible.
+
+La propuesta se re-corre con el MISMO contexto que tiene la cola de curaduría
+real, no con menos: la provincia fija del canal entra por `channel_province`
+(docs/decisions.md, 2026-08-17 y 2026-08-21). Medir sin ella no era más
+exigente, era medir otro extractor — uno que en producción no existe.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from saimc.config import get_settings
 from saimc.db import session_scope
 from saimc.extraction import ocr
 from saimc.extraction.engine import ExtractionProposal, propose_all
+from saimc.ingestion import origin
 from saimc.models import (
     ContentType,
     PriceHistory,
@@ -232,7 +238,19 @@ def compute_h0_report(
         text = _evaluation_text(ingestion, transcribe)
         if ingestion.content_type == ContentType.IMAGE and not text.strip():
             image_ocr_empty_count += 1
-        candidates = propose_all(text, products, provinces)
+        # La provincia fija del canal entra a la propuesta igual que en la cola
+        # de curaduría real (`web/routers/curation.py`, "el canal siempre
+        # manda", docs/decisions.md 2026-08-17). Sin esto la medición evaluaba
+        # un extractor más ciego que el que corre en producción: contaba como
+        # fallo de provincia cada anuncio de canal cuyo mensaje no la nombra,
+        # que es la forma NORMAL de un canal — el vendedor no repite dónde está
+        # en cada publicación.
+        candidates = propose_all(
+            text,
+            products,
+            provinces,
+            channel_province=origin.channel_province(session, ingestion),
+        )
 
         for confirmed, proposal in _match_rows_to_candidates(confirmed_rows, candidates):
             evaluated_rows_count += 1

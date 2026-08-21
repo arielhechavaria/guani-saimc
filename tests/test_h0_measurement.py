@@ -33,8 +33,10 @@ from sqlalchemy.orm import Session
 
 from saimc.extraction.measure import compute_h0_report
 from saimc.models import (
+    Channel,
     ContentType,
     Currency,
+    Platform,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -454,3 +456,82 @@ class TestH0ReportMultiProducto:
     ) -> None:
         report = compute_h0_report(session, transcribe=_transcribe_falso)
         assert report.complete_accuracy == pytest.approx(1 / 3)
+
+
+class TestH0ProvinciaDelCanal:
+    """La medición tiene que evaluar el mismo extractor que corre en producción.
+
+    La cola de curaduría aplica la provincia fija del canal desde el
+    2026-08-17 ("el canal siempre manda", docs/decisions.md), pero
+    `compute_h0_report` re-corría `propose_all` sin ese dato. El resultado era
+    una precisión de provincia sistemáticamente por debajo de la real: el
+    operador veía la provincia ya puesta en el formulario y la confirmaba, y
+    la medición contaba esa misma fila como fallo porque el texto del mensaje
+    no la nombraba.
+    """
+
+    def test_la_provincia_del_canal_cuenta_como_extraida(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            province_id=habana.id,
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+
+        ingestion = RawIngestion(
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales",
+            file_path="raw/canal-1.txt",
+            content_hash="canal-1",
+            content_type=ContentType.TEXT,
+            # El mensaje NO nombra la provincia: es lo normal en un canal, el
+            # vendedor no repite dónde está en cada anuncio.
+            original_text="pollo congelado 40lb a 500",
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+            channel_id=canal.id,
+        )
+        session.add(ingestion)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=pollo.id,
+                province_id=habana.id,
+                price=Decimal("500"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("40"),
+                source_id=ingestion.id,
+            )
+        )
+        session.commit()
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 1
+        assert report.province_accuracy == 1.0
+        assert report.complete_accuracy == 1.0
+
+    def test_sin_canal_la_provincia_ausente_sigue_contando_como_fallo(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """El contrapeso: sin canal que la aporte, una provincia que el texto
+        no dice y el operador sí cargó sigue siendo una extracción fallida."""
+        _curar_texto(
+            session,
+            hash_="sin-canal-1",
+            texto="pollo congelado 40lb a 500",
+            product_id=pollo.id,
+            price="500",
+            currency=Currency.CUP.value,
+            province_id=habana.id,
+            quantity="40",
+        )
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 1
+        assert report.province_accuracy == 0.0

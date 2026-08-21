@@ -554,13 +554,25 @@ def _guess_product_phrase(line: str) -> str | None:
 
 
 def propose(
-    text: str, products: Sequence[Product], provinces: Sequence[Province]
+    text: str,
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+    *,
+    channel_province: Province | None = None,
 ) -> ExtractionProposal:
     """Propone valores candidatos a partir del texto crudo de un anuncio.
 
     Reglas y diccionarios estáticos, no ML/LLM (spec.md §6.1, «Tecnología»):
     la propuesta es un punto de partida para que el operador confirme o
     corrija en la cola de curaduría, no un resultado final.
+
+    `channel_province` es la provincia fija del canal que originó el anuncio,
+    cuando lo originó un canal automatizado con esa provincia cargada. Pisa lo
+    que el texto diga — "el canal siempre manda" (docs/decisions.md,
+    2026-08-17) — porque el operador la conoce de antemano y un mensaje puede
+    no mencionarla o mencionar otra por error. `None` es el caso normal de una
+    fuente sin canal (bandeja, pegado) o de un canal sin provincia cargada, y
+    ahí la provincia sigue saliendo del texto.
     """
     quantity, unit = _extract_quantity(text)
     product = _match_product(text, products)
@@ -571,7 +583,7 @@ def propose(
         currency=_extract_currency(text),
         quantity=quantity,
         unit=unit,
-        province=_match_province(text, provinces),
+        province=channel_province or _match_province(text, provinces),
     )
 
 
@@ -635,7 +647,11 @@ def _tier_minimum(
 
 
 def _tiered_proposals(
-    text: str, products: Sequence[Product], provinces: Sequence[Province]
+    text: str,
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+    *,
+    channel_province: Province | None = None,
 ) -> list[ExtractionProposal] | None:
     """Lee el anuncio como un BLOQUE cuando publica precio por volumen.
 
@@ -696,7 +712,7 @@ def _tiered_proposals(
         or Currency.CUP.value
     )
     lot_quantity, lot_unit = _lot_size(plain)
-    province = _match_province(text, provinces)
+    province = channel_province or _match_province(text, provinces)
 
     def fila(price: Decimal | None, minimum: Decimal | None) -> ExtractionProposal:
         return ExtractionProposal(
@@ -732,7 +748,11 @@ def _tiered_proposals(
 
 
 def propose_all(
-    text: str, products: Sequence[Product], provinces: Sequence[Province]
+    text: str,
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+    *,
+    channel_province: Province | None = None,
 ) -> list[ExtractionProposal]:
     """Una propuesta por línea, para anuncios que ofrecen varios productos a la vez.
 
@@ -745,15 +765,21 @@ def propose_all(
     marca propia — son datos que suelen valer para todo el anuncio, no para
     un renglón en particular (ver `_extract_currency_explicit`).
 
+    `channel_province` corta esa cadena por arriba: cuando el anuncio vino de
+    un canal con provincia fija cargada, esa gana sobre la línea Y sobre el
+    texto completo (ver `propose`).
+
     El anuncio de un solo producto con precio por volumen se lee antes y
     aparte (`_tiered_proposals`): ahí las líneas no son ofertas autónomas
     sino escalones que heredan producto y lote del encabezado.
     """
-    tiered = _tiered_proposals(text, products, provinces)
+    tiered = _tiered_proposals(
+        text, products, provinces, channel_province=channel_province
+    )
     if tiered is not None:
         return tiered
 
-    whole_text_province = _match_province(text, provinces)
+    whole_text_province = channel_province or _match_province(text, provinces)
     whole_text_currency = _extract_currency_explicit(text)
 
     proposals: list[ExtractionProposal] = []
@@ -781,7 +807,12 @@ def propose_all(
         currency = (
             _extract_currency_explicit(line) or whole_text_currency or Currency.CUP.value
         )
-        province = _match_province(line, provinces) or whole_text_province
+        # `channel_province` va primero a propósito: es override, no fallback
+        # ("el canal siempre manda"), así que también le gana a la provincia
+        # que la línea puntual mencione.
+        province = (
+            channel_province or _match_province(line, provinces) or whole_text_province
+        )
 
         proposals.append(
             ExtractionProposal(
