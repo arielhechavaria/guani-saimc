@@ -3883,3 +3883,47 @@ Consecuencia: la próxima pérdida se puede atribuir. No arregla ninguna de las
 tres causas conocidas por las que se pierden fotos —el backfill filtra a solo
 texto y pide `downloadMedia=false`, el caption le gana a la foto en el
 webhook, y `image/webp` está excluido—, que siguen abiertas.
+
+## 2026-08-21 — El conjunto de referencia de H0 se cuenta en anuncios
+
+Contexto: revisando qué significan los contadores de `/control` apareció que
+`measure.py` comparaba el umbral de 300 contra las FILAS evaluadas, mientras
+su propio comentario decía «300 anuncios etiquetados a mano». Código y
+comentario se contradecían, y `docs/decisions.md` también consigo mismo: la
+entrada del avance de OCR habla de «las 300+ filas que H0 exige», mientras las
+otras cuatro menciones dicen anuncios.
+
+La especificación no es ambigua y lo dice en las dos secciones. §3: «el
+operador etiqueta manualmente un conjunto de referencia de al menos 300
+anuncios reales. Las reglas de extracción se miden contra ese conjunto». §9:
+«Conjunto de referencia etiquetado de 300+ anuncios». Y usa la otra unidad, a
+propósito, para la meta del producto de datos: «500 registros validados», que
+es la que `progress.PHASE0_TARGET_ROWS` ya respeta. Son dos números en dos
+unidades para dos cosas distintas.
+
+Decisión: `H0Report` gana `evaluated_ads_count` —cuántos anuncios distintos
+aportaron al menos una fila evaluada— y el aviso de "todavía no es oficial" se
+compara contra ese número. Las cinco precisiones se siguen calculando por
+FILA: «¿cuántas extracciones salieron bien?» se responde por extracción,
+«¿alcanza la muestra?» se responde por evidencia. La constante pasa de
+`_H0_MINIMUM_SAMPLE` a `_H0_MINIMUM_ADS` para que el nombre diga la unidad.
+
+El motivo de fondo es de independencia estadística, no de literalidad: las
+filas de un mismo anuncio comparten evidencia, OCR, canal y provincia, así que
+fallan juntas. Medido contra producción, un solo anuncio aportaba 25 de las
+211 filas — el 11.8% de la muestra colgando de una sola pieza de evidencia.
+Contar filas infla el tamaño de muestra sin agregar información.
+
+Un curado sin fila confirmada no engrosa el conjunto: no aportó ninguna
+comparación. Por eso el número es 130 y no los 132 curados.
+
+Descartado: (a) dejarlo en filas y corregir el comentario — es la lectura
+cómoda, contradice la spec en sus dos secciones y sostiene una muestra
+inflada; (b) apartarse de la spec con motivo registrado — no hay motivo, la
+lectura por anuncios es además la estadísticamente correcta.
+
+Consecuencia: el conjunto de referencia pasa de "211 de 300" a **130 de 300**,
+y lo que falta de 89 filas a **170 anuncios**. A ~21 filas/día eso es unas
+tres semanas, no cuatro días. El número de H0 no cambia (40.8%); cambia
+cuándo se lo puede llamar oficial. La medición anterior se habría declarado
+oficial con menos de la mitad de la evidencia que la spec pide.

@@ -318,6 +318,107 @@ class TestH0Report:
         )
 
 
+class TestH0UmbralEnAnuncios:
+    """El conjunto de referencia de H0 se cuenta en ANUNCIOS, no en filas.
+
+    `spec.md` §3 lo dice literal: «el operador etiqueta manualmente un conjunto
+    de referencia de al menos 300 anuncios reales. Las reglas de extracción se
+    miden contra ese conjunto». §9 lo repite («Conjunto de referencia
+    etiquetado de 300+ anuncios») y usa la otra unidad para la meta del
+    producto de datos, que sí son filas: «500 registros validados». Son dos
+    unidades a propósito, y `progress.py` ya respeta la segunda
+    (`PHASE0_TARGET_ROWS = 500`).
+
+    `measure.py` comparaba el umbral contra las FILAS mientras su propio
+    comentario decía «300 anuncios etiquetados a mano»: código y comentario se
+    contradecían. Medido contra producción el 2026-08-21, la diferencia no era
+    cosmética — 211 filas contra 132 anuncios, y un solo anuncio aportaba 25 de
+    esas filas, el 11.8% de la muestra.
+
+    El motivo de fondo es de independencia estadística: las filas de un mismo
+    anuncio comparten evidencia, OCR, canal y provincia, así que fallan juntas.
+    Contarlas por separado infla el tamaño de muestra sin agregar información.
+    """
+
+    def test_el_aviso_cuenta_anuncios_y_no_filas(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """Un anuncio con tres filas es UN anuncio del conjunto de referencia."""
+        texto = (
+            "pollo congelado 40lb a 500 habana\n"
+            "pollo congelado 20lb a 300 habana\n"
+            "pollo congelado 10lb a 150 habana\n"
+        )
+        ingestion = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/multi3.txt",
+            content_hash="hash-multi3",
+            content_type=ContentType.TEXT,
+            original_text=texto,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.flush()
+        for precio, cantidad in (("500", "40"), ("300", "20"), ("150", "10")):
+            session.add(
+                PriceHistory(
+                    product_id=pollo.id,
+                    province_id=habana.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    quantity=Decimal(cantidad),
+                    unit="lb",
+                    source_id=ingestion.id,
+                )
+            )
+        session.commit()
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 3
+        assert report.evaluated_ads_count == 1
+
+    def test_un_curado_sin_filas_no_entra_en_el_conjunto(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """El conjunto de referencia son los anuncios contra los que las reglas
+        se midieron de verdad. Un curado sin fila confirmada no aporta ninguna
+        comparación, así que no lo engrosa."""
+        _curar_texto(
+            session,
+            hash_="con-fila",
+            texto="pollo congelado 40lb a 500 habana",
+            product_id=pollo.id,
+            price="500",
+            currency=Currency.CUP.value,
+            province_id=habana.id,
+            quantity="40",
+            unit="lb",
+        )
+        session.add(
+            RawIngestion(
+                source_type=SourceType.INBOX_TEXT,
+                file_path="raw/sin-fila.txt",
+                content_hash="hash-sin-fila",
+                content_type=ContentType.TEXT,
+                original_text="pollo a 100 habana",
+                processing_status=ProcessingStatus.CURATED,
+                captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+            )
+        )
+        session.commit()
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.total_curated == 2
+        assert report.evaluated_ads_count == 1
+
+    def test_sin_datos_el_conjunto_es_cero(self, session: Session) -> None:
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        assert report.evaluated_ads_count == 0
+
+
 class TestH0ReportImagenes:
     """Las imágenes son la mayoría del corpus real (27 de 29 anuncios curados al
     2026-08-11) y hasta este fix quedaban enteras fuera de la medición.

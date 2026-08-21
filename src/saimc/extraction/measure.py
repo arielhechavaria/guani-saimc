@@ -74,6 +74,13 @@ class H0Report:
     # ver `propose_all`): las cinco métricas de abajo se calculan por FILA, no
     # por ingesta.
     evaluated_rows_count: int
+    # Cuántos ANUNCIOS distintos aportaron al menos una fila evaluada. Es el
+    # tamaño del conjunto de referencia en la unidad que usa spec.md §3 («al
+    # menos 300 anuncios reales»), y por eso es contra este número que se mide
+    # si la corrida ya es oficial. Las precisiones siguen calculándose por
+    # fila: la pregunta «¿cuántas extracciones salieron bien?» se responde por
+    # extracción, la pregunta «¿alcanza la muestra?» se responde por evidencia.
+    evaluated_ads_count: int
     product_accuracy: float | None
     price_accuracy: float | None
     province_accuracy: float | None
@@ -269,11 +276,13 @@ def compute_h0_report(
     quantity_unit_correct = 0
     complete_correct = 0
     evaluated_rows_count = 0
+    evaluated_ads_count = 0
 
     for ingestion in ingestions:
         confirmed_rows = history_by_source.get(ingestion.id, [])
         if not confirmed_rows:
             continue
+        evaluated_ads_count += 1
         text = _evaluation_text(ingestion, transcribe)
         if ingestion.content_type == ContentType.IMAGE and not text.strip():
             image_ocr_empty_count += 1
@@ -330,6 +339,7 @@ def compute_h0_report(
             image_curated_count=image_curated_count,
             image_ocr_empty_count=image_ocr_empty_count,
             evaluated_rows_count=0,
+            evaluated_ads_count=0,
             product_accuracy=None,
             price_accuracy=None,
             province_accuracy=None,
@@ -346,6 +356,7 @@ def compute_h0_report(
         image_curated_count=image_curated_count,
         image_ocr_empty_count=image_ocr_empty_count,
         evaluated_rows_count=evaluated_rows_count,
+        evaluated_ads_count=evaluated_ads_count,
         product_accuracy=product_correct / evaluated_rows_count,
         price_accuracy=price_correct / evaluated_rows_count,
         province_accuracy=province_correct / evaluated_rows_count,
@@ -354,9 +365,23 @@ def compute_h0_report(
     )
 
 
-# Umbral real de H0 (spec.md §3): la medición no es oficial por debajo de
-# 300 anuncios etiquetados a mano.
-_H0_MINIMUM_SAMPLE = 300
+# Umbral real de H0: la medición no es oficial por debajo de 300 ANUNCIOS
+# etiquetados a mano. La unidad es la que fija spec.md §3 —«el operador
+# etiqueta manualmente un conjunto de referencia de al menos 300 anuncios
+# reales; las reglas de extracción se miden contra ese conjunto»— y §9 la
+# repite. La spec usa dos unidades a propósito: el conjunto de referencia se
+# cuenta en anuncios y la meta del producto de datos en filas («500 registros
+# validados»), que es la que ya respeta `progress.PHASE0_TARGET_ROWS`.
+#
+# Hasta el 2026-08-21 esto se comparaba contra las FILAS mientras el
+# comentario decía «300 anuncios»: código y comentario se contradecían, y la
+# diferencia no era cosmética — 211 filas contra 132 anuncios en producción,
+# con UN anuncio aportando 25 de esas filas (11.8% de la muestra).
+#
+# El motivo de fondo es de independencia estadística: las filas de un mismo
+# anuncio comparten evidencia, OCR, canal y provincia, así que fallan juntas.
+# Contarlas por separado infla el tamaño de muestra sin agregar información.
+_H0_MINIMUM_ADS = 300
 
 
 def _format_pct(value: float | None) -> str:
@@ -373,6 +398,7 @@ def _print_report(report: H0Report) -> None:
     print(f"Curados de texto:        {report.text_curated_count} anuncios")
     print(f"Curados de imagen:       {report.image_curated_count} anuncios (OCR re-corrido)")
     print(f"  Sin texto del OCR:     {report.image_ocr_empty_count}")
+    print(f"Anuncios evaluados:      {report.evaluated_ads_count} (el conjunto de referencia)")
     print(f"Filas evaluadas:         {report.evaluated_rows_count} (un anuncio puede tener varias)")
     print()
     print(f"Precisión de producto:        {_format_pct(report.product_accuracy)}")
@@ -381,12 +407,13 @@ def _print_report(report: H0Report) -> None:
     print(f"Precisión de cantidad/unidad: {_format_pct(report.quantity_unit_accuracy)}")
     print(f"Extracción completa correcta: {_format_pct(report.complete_accuracy)}")
 
-    if report.evaluated_rows_count < _H0_MINIMUM_SAMPLE:
+    if report.evaluated_ads_count < _H0_MINIMUM_ADS:
+        faltan = _H0_MINIMUM_ADS - report.evaluated_ads_count
         print()
         print(
-            f"AVISO: solo hay {report.evaluated_rows_count} filas curadas "
-            f"(umbral H0: {_H0_MINIMUM_SAMPLE}). Este número todavía NO es la medición "
-            "oficial de H0."
+            f"AVISO: el conjunto de referencia tiene {report.evaluated_ads_count} anuncios "
+            f"(umbral H0: {_H0_MINIMUM_ADS}, spec.md §3). Faltan {faltan}. "
+            "Este número todavía NO es la medición oficial de H0."
         )
 
 
