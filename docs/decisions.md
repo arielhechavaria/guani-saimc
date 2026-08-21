@@ -3558,3 +3558,31 @@ resuelva — sería complejidad sin necesidad real.
 
 Consecuencia: si canales o productos crecen mucho más, paginación vuelve a
 ser una opción legítima; se revisita con volumen real en la mano, no antes.
+
+---
+
+## 2026-08-21 — El backfill de histórico también reconoce grupos con JID `@lid`
+
+Contexto: importar histórico del grupo real «🛒Habana ventas» fallaba con
+«No se pudo consultar WAHA». Su `external_id` es `157724134363163@lid`, no
+`...@g.us`. `@lid` es el identificador de privacidad que WhatsApp usa cada
+vez más en vez del JID tradicional, sin exponer el número real. El código
+solo reconocía `@g.us` como sufijo de grupo, así que este canal caía al
+branch de "canal" por descarte. Confirmado contra la instancia real de WAHA:
+`/channels/{id}/messages/preview` responde 500 para este `@lid`;
+`/chats/{id}/messages` responde 200 con mensajes reales del grupo.
+
+Decisión: `_GROUP_JID_SUFFIXES` (`whatsapp_backfill.py`) pasa de un string
+único a `("@g.us", "@lid")`. `Channel.is_whatsapp_group` se actualiza igual,
+por consistencia (mismo criterio documentado ahí: "gana el sufijo que no se
+puede equivocar").
+
+Descartado: guardar el `platform` del canal para decidir el ruteo en vez del
+sufijo. El propio diseño ya declara que el sufijo gana porque lo escribe
+WhatsApp, no el operador — cambiar ese criterio para este caso puntual
+reabriría la puerta a que un operador tipee mal la plataforma y rompa el
+ruteo de un canal que sí venía funcionando.
+
+Consecuencia: cualquier grupo cuyo `external_id` llegue en el futuro con otro
+sufijo nuevo de WhatsApp (no hay evidencia de que exista otro hoy) volvería
+a fallar igual, en silencio — se revisita si aparece otro caso real.

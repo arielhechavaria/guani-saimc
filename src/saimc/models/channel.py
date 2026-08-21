@@ -124,17 +124,21 @@ class Channel(Base):
         """Si esta fila es un grupo de WhatsApp, según el JID que manda WAHA.
 
         Se pregunta al `external_id` y no a `platform` a propósito: el sufijo
-        lo escribe WhatsApp (`@g.us` grupo, `@newsletter` canal) y `platform`
-        lo tipea el operador. Cuando los dos podrían contradecirse, gana el
-        que no se puede equivocar. Mismo criterio que el ruteo de endpoint en
-        `saimc.ingestion.whatsapp_backfill`.
+        lo escribe WhatsApp (`@g.us` o `@lid` grupo, `@newsletter` canal) y
+        `platform` lo tipea el operador. Cuando los dos podrían contradecirse,
+        gana el que no se puede equivocar. Mismo criterio que el ruteo de
+        endpoint en `saimc.ingestion.whatsapp_backfill`.
+
+        `@lid` ("linked ID") es el identificador de privacidad que WhatsApp
+        usa cada vez más en vez del JID tradicional — un grupo capturado así
+        sigue siendo un grupo (docs/decisions.md, 2026-08-21).
 
         Importa porque un grupo tiene MUCHOS vendedores adentro (se midieron
         27 emisores distintos en uno solo, 2026-08-18) mientras que un canal
         tiene uno: todo lo que se infiera "del canal" y en realidad sea "del
         vendedor" deja de valer en un grupo.
         """
-        return bool(self.external_id) and self.external_id.endswith("@g.us")
+        return bool(self.external_id) and self.external_id.endswith(("@g.us", "@lid"))
 
     def __repr__(self) -> str:
         return f"Channel(name={self.name!r}, platform={self.platform}, active={self.is_active})"
