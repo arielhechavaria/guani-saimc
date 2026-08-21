@@ -3836,3 +3836,50 @@ que H0 mide como costo (CLAUDE.md, «H0 — métrica de eficiencia»). Cuesta ~4
 más de tiempo por imagen (~0.9s), imperceptible abriendo un anuncio por vez.
 Queda registrado que el precio sobre imagen (26.1%) sigue siendo el techo
 real y que no se levanta con configuración de Tesseract.
+
+## 2026-08-21 — El webhook registra por qué descarta cada mensaje
+
+Contexto: el canal «Tienda: ⚜️ The Boss» publicó 5 imágenes y solo una entró a
+la cola. Al investigar, ese canal tenía 28 filas de texto y 1 sola imagen en
+`raw_ingestions` mientras WAHA seguía teniendo las fotos. No hubo forma de
+saber por cuál de los caminos de descarte se fueron: el webhook devolvía 200
+con `{"ingested": 0, "reason": ...}` en todos ellos y no registraba nada, así
+que el journal solo mostraba `POST /webhooks/whatsapp 200 OK`. El propio
+`whatsapp_media` ya había anticipado este modo de falla: «no rompe nada y no
+captura nada». Hasta acá el proyecto no tenía logging en ningún módulo.
+
+Decisión: el webhook registra cada evento que NO termina en fila, con motivo
+explícito y con el JID y la marca de tiempo necesarios para cruzar contra
+WAHA. `_write_media_to_inbox` pasa a devolver `(ruta, motivo)` en vez de
+`None` pelado, porque sus cuatro caminos de falla son indistinguibles desde
+afuera y llevan a arreglos distintos: `media_sin_url_descargable`,
+`media_url_no_confiable`, `sin_api_key_de_waha`, `descarga_fallida`. Los
+motivos del endpoint son `json_invalido`, `sin_mensaje_utilizable`,
+`canal_no_registrado`, `duplicado` e `ingesta_salteada`.
+
+Nivel según lo que significa cada caso: WARNING cuando se pierde algo que
+debía entrar, INFO cuando el no-ingreso es lo esperado. `duplicado` es INFO
+porque WAHA manda DOS eventos por cada mensaje —los POST llegan siempre de a
+pares en el journal— y a nivel WARNING sería la mitad del log.
+
+**Nunca se registra el cuerpo del mensaje**, solo metadatos. El log no es la
+capa pública, pero el texto de un anuncio trae teléfonos y el proyecto no
+almacena datos de contacto (spec.md §10.6). Hay un test que lo fija y se
+verificó también contra el proceso real, no solo con `caplog`.
+
+`web/app.py` llama a `logging.basicConfig`: el despliegue lanza uvicorn sin
+`--log-config` y uvicorn configura solo sus propios loggers, dejando el raíz
+sin handler. Sin eso, un INFO no llega a journald y un WARNING sale por
+`logging.lastResort` pelado, sin nivel ni nombre de logger. Verificado
+levantando el servidor de verdad y mandándole eventos firmados.
+
+Descartado: (a) devolver un código de error a WAHA en los descartes — haría
+que reintente en loop, y el motivo del descarte casi nunca se arregla
+reintentando; (b) registrar el payload completo para depurar — filtra
+teléfonos al journal; (c) logging estructurado en JSON — no hay nada que lo
+consuma, y `journalctl -u saimc -g webhook.descartado` alcanza.
+
+Consecuencia: la próxima pérdida se puede atribuir. No arregla ninguna de las
+tres causas conocidas por las que se pierden fotos —el backfill filtra a solo
+texto y pide `downloadMedia=false`, el caption le gana a la foto en el
+webhook, y `image/webp` está excluido—, que siguen abiertas.

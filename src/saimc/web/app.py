@@ -5,6 +5,7 @@ despliegue (CLAUDE.md, decisión 1) — no hay necesidad de instanciar la app
 más de una vez.
 """
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -14,6 +15,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from saimc.web.routers import catalog, control, curation, whatsapp_webhook
+
+# El despliegue lanza `uvicorn saimc.web.app:app` sin `--log-config`, y uvicorn
+# configura solo sus propios loggers: el raíz queda sin handler. Sin esto, un
+# INFO de un módulo de SAIMC no llega a journald y un WARNING sale por
+# `logging.lastResort` — a stderr, sí, pero pelado, sin nivel ni nombre de
+# logger, o sea imposible de filtrar. Verificado contra el arranque real el
+# 2026-08-21.
+#
+# `basicConfig` no pisa nada: es un no-op si el raíz ya tiene handler, y los
+# loggers de uvicorn traen los suyos. Va acá y no en un módulo de configuración
+# porque este es el único punto de entrada del proceso servidor.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s %(name)s %(message)s",
+)
 
 app = FastAPI(title="SAIMC — Cola de curaduría")
 

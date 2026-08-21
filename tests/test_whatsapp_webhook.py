@@ -14,6 +14,7 @@ El caso esperado se define acá, independientemente de correr WAHA.
 import hashlib
 import hmac
 import json
+import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -736,3 +737,152 @@ class TestLoopbackEsElMismoHost:
             )
             is False
         )
+
+
+class TestWebhookLogging:
+    """Cada mensaje que NO termina en fila tiene que dejar rastro y motivo.
+
+    Hasta el 2026-08-21 el webhook devolvía 200 con `{"ingested": 0, "reason":
+    ...}` en todos los caminos de descarte y no registraba nada. El canal
+    «Tienda: ⚜️ The Boss» terminó con 28 filas de texto y 1 sola imagen
+    mientras WAHA tenía las fotos, y no hubo forma de saber por cuál camino se
+    fueron: el journal solo mostraba `POST /webhooks/whatsapp 200 OK`.
+    `whatsapp_media` ya avisaba de este modo de falla — «no rompe nada y no
+    captura nada».
+
+    Nivel según lo que significa cada caso: WARNING cuando se pierde algo que
+    debía entrar, INFO cuando el no-ingreso es lo esperado (el duplicado del
+    par de eventos que WAHA manda por cada mensaje).
+    """
+
+    _LOGGER = "saimc.web.routers.whatsapp_webhook"
+
+    def _post(self, client: TestClient, cuerpo: bytes) -> httpx.Response:
+        return client.post(
+            "/webhooks/whatsapp",
+            content=cuerpo,
+            headers={
+                "content-type": "application/json",
+                "X-Webhook-Hmac": _firmar("clave-de-prueba", cuerpo),
+            },
+        )
+
+    def _payload_texto(self, body: str = "aceite 1L a 950") -> bytes:
+        return json.dumps(
+            {"from": "1@newsletter", "body": body, "timestamp": 1755000000}
+        ).encode()
+
+    def _payload_foto(self, url: str) -> bytes:
+        return json.dumps(
+            {
+                "from": "1@newsletter",
+                "hasMedia": True,
+                "body": "",
+                "timestamp": 1755000000,
+                "media": {"url": url, "mimetype": "image/jpeg"},
+            }
+        ).encode()
+
+    def test_el_ingreso_deja_rastro(
+        self, client: TestClient, session: Session, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _canal(session)
+        with caplog.at_level(logging.INFO, logger=self._LOGGER):
+            self._post(client, self._payload_texto())
+
+        assert any("webhook.ingerido" in r.message for r in caplog.records)
+
+    def test_canal_no_registrado_deja_rastro_con_el_jid(
+        self, client: TestClient, session: Session, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Sin el JID en el log no hay forma de dar de alta el canal que falta."""
+        with caplog.at_level(logging.INFO, logger=self._LOGGER):
+            self._post(client, self._payload_texto())
+
+        registro = next(r for r in caplog.records if "webhook.descartado" in r.message)
+        assert "canal_no_registrado" in registro.message
+        assert "1@newsletter" in registro.message
+
+    def test_mensaje_sin_nada_utilizable_deja_rastro(
+        self, client: TestClient, session: Session, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _canal(session)
+        cuerpo = json.dumps(
+            {
+                "from": "1@newsletter",
+                "body": "",
+                "hasMedia": True,
+                "timestamp": 1755000000,
+            }
+        ).encode()
+
+        with caplog.at_level(logging.INFO, logger=self._LOGGER):
+            self._post(client, cuerpo)
+
+        registro = next(r for r in caplog.records if "webhook.descartado" in r.message)
+        assert "sin_mensaje_utilizable" in registro.message
+        assert registro.levelno == logging.WARNING
+
+    def test_la_foto_que_no_se_pudo_bajar_dice_por_que(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """El motivo concreto importa: no es lo mismo que WAHA no respondiera
+        que que la URL no apunte al WAHA configurado."""
+        _canal(session)
+        monkeypatch.setattr(
+            "saimc.web.routers.whatsapp_webhook.fetch_media", lambda *a, **k: None
+        )
+
+        with caplog.at_level(logging.INFO, logger=self._LOGGER):
+            self._post(
+                client, self._payload_foto("http://localhost:3000/api/files/f.jpg")
+            )
+
+        mensajes = " | ".join(r.message for r in caplog.records)
+        assert "descarga_fallida" in mensajes
+
+    def test_la_url_que_no_es_del_waha_configurado_dice_por_que(
+        self, client: TestClient, session: Session, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _canal(session)
+
+        with caplog.at_level(logging.INFO, logger=self._LOGGER):
+            self._post(client, self._payload_foto("http://evil.example.com/f.jpg"))
+
+        mensajes = " | ".join(r.message for r in caplog.records)
+        assert "media_url_no_confiable" in mensajes
+
+    def test_el_duplicado_es_info_y_no_warning(
+        self, client: TestClient, session: Session, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """WAHA manda DOS eventos por mensaje (verificado en el journal del VPS:
+        los POST llegan siempre de a pares). El segundo deduplica por hash: es
+        lo esperado, no una pérdida, y a nivel WARNING sería la mitad del log.
+        """
+        _canal(session)
+        self._post(client, self._payload_texto())
+
+        with caplog.at_level(logging.INFO, logger=self._LOGGER):
+            self._post(client, self._payload_texto())
+
+        registro = next(r for r in caplog.records if "duplicado" in r.message)
+        assert registro.levelno == logging.INFO
+
+    def test_no_se_registra_el_texto_del_mensaje(
+        self, client: TestClient, session: Session, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """El log no es la capa pública, pero el cuerpo puede traer teléfonos y
+        el proyecto no almacena datos de contacto (spec.md §10.6). Se registran
+        metadatos: JID, marca de tiempo, si traía adjunto y el motivo.
+        """
+        _canal(session)
+        secreto = "llamame al 53123456 por el pollo"
+
+        with caplog.at_level(logging.INFO, logger=self._LOGGER):
+            self._post(client, self._payload_texto(secreto))
+
+        assert not any("53123456" in r.message for r in caplog.records)
