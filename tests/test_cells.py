@@ -906,6 +906,36 @@ class TestPriceBasis:
         assert reporte.excluded_by_minimum == 1
         assert reporte.excluded_by_basis == 1
 
+    def test_una_sola_fila_excluida_por_los_dos_motivos_a_la_vez_no_se_cuenta_doble(
+        self, session: Session
+    ) -> None:
+        """Guarda de regresión de un hallazgo de `sdd-verify` (2026-08-21): el
+        caso anterior prueba independencia con DOS filas, una por motivo. Acá
+        una sola fila dispara los dos filtros a la vez (`quantity != 1` y
+        `price_basis` sin resolver, más `min_purchase_quantity` por encima de
+        `quantity`) — el filtro de mínimo corre primero y hace `continue`
+        (design.md, D7: «cada contador reporta filas que todo OTRO filtro
+        habría admitido»), así que la fila cuenta una sola vez, en el de
+        mínimo, y `excluded_by_basis` se queda en 0 para ella. Invertir el
+        orden de las dos guardas en `compute_retail_ranges` cambiaría cuál de
+        los dos cuenta sin romper ningún otro test — por eso hace falta fijar
+        el comportamiento acá."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-basis-y-minimo-misma-fila")
+        _precio(
+            session, product=arroz, province=None, price="340", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="340",
+            min_purchase_quantity="1000", price_basis=None,
+        )
+
+        reporte = compute_retail_ranges(session)
+
+        assert reporte.ranges == []
+        assert reporte.excluded_by_minimum == 1
+        assert reporte.excluded_by_basis == 0
+
     def test_moneda_se_resuelve_antes_que_basis(self, session: Session) -> None:
         """El orden importa, igual que con `quantity`: la decisión de basis
         se evalúa sobre la cifra YA convertida a CUP, no sobre la original.

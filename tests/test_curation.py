@@ -2441,6 +2441,109 @@ class TestPriceBasisSubmit:
         assert fila.price_basis is None
 
 
+class TestPriceBasisEdit:
+    """La spec de captura dice que la regla «rige tanto al curar como al
+    corregir»: `submit_edit` usa los mismos dos helpers puros que
+    `submit_curation` (`_price_basis_value`, `_price_basis_required`), pero
+    hasta este test ningún caso de edición posteaba `quantity_0`, así que la
+    rama de rechazo nunca se había ejecutado (hallazgo de `sdd-verify`,
+    2026-08-21) — solo se sabía correcta por lectura de código, no por
+    ejecución.
+    """
+
+    def test_quantity_distinta_de_uno_sin_basis_rechaza_la_edicion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-basis-requerido")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session, ingestion=curado, product=arroz, price="1", quantity=Decimal("1")
+        )
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(arroz.id),
+                    "price": "340",
+                    "quantity": "340",
+                    "price_id": str(precio.id),
+                },
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        session.refresh(precio)
+        # Nada se pisó: el precio viejo sigue en la base, sin el basis exigido.
+        assert precio.price == Decimal("1")
+        assert precio.price_basis is None
+
+    def test_quantity_distinta_de_uno_con_basis_valido_actualiza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-basis-valido")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session, ingestion=curado, product=arroz, price="1", quantity=Decimal("1")
+        )
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(arroz.id),
+                    "price": "340",
+                    "quantity": "340",
+                    "price_basis": "unit",
+                    "price_id": str(precio.id),
+                },
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.refresh(precio)
+        assert precio.price == Decimal("340")
+        assert precio.price_basis == "unit"
+
+    def test_quantity_uno_sin_basis_actualiza_con_basis_null(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Guarda de regresión: con `quantity=1` la pregunta sigue inerte
+        también al editar, igual que al curar."""
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-basis-qty-uno")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(session, ingestion=curado, product=pollo, price="450")
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(pollo.id),
+                    "price": "500",
+                    "quantity": "1",
+                    "price_id": str(precio.id),
+                },
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.refresh(precio)
+        assert precio.price == Decimal("500")
+        assert precio.price_basis is None
+
+
 class TestPriceBasisTemplate:
     """El control de `price_basis` nombra la unidad de la fila y nunca viene
     preseleccionado (curation-observation-capture spec, "la prueba de la
