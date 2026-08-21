@@ -3883,3 +3883,75 @@ Consecuencia: la próxima pérdida se puede atribuir. No arregla ninguna de las
 tres causas conocidas por las que se pierden fotos —el backfill filtra a solo
 texto y pide `downloadMedia=false`, el caption le gana a la foto en el
 webhook, y `image/webp` está excluido—, que siguen abiertas.
+
+## 2026-08-21 — Las fotos históricas de un canal no se pueden recuperar de WAHA
+
+Contexto: tras el logging de descartes se abrió el slice de traer las fotos
+del histórico, que `whatsapp_backfill` venía difiriendo («va en su propio
+slice»). La hipótesis era rutear los canales `@newsletter` al endpoint de
+grupos, porque `/chats/{id}/messages` con `downloadMedia=true` devolvía 5 de 5
+URLs de media en 0.1s contra 2 de 7 en 13.0s del preview.
+
+La medición de profundidad la refutó. Contra el canal «Tienda: ⚜️ The Boss»:
+
+    /chats/{id}/messages          22 mensajes, 08-19 a 08-20  (1 día)
+    /channels/{id}/messages/preview   239 mensajes, 08-15 a 08-21  (6 días)
+
+El store local de WEBJS es diez veces más chato y ni siquiera llega al día de
+hoy. Cambiar el ruteo canjearía seis días de historia por uno con fotos, y
+además perdería los mensajes más recientes, que es lo contrario de lo que un
+backfill tiene que hacer. El `limit` no cambia nada: 22 es todo lo que tiene,
+con 50, 250, 1000 o 5000.
+
+Los otros dos caminos también están cerrados, medidos:
+
+- **`downloadMedia=true` en el endpoint de canales no se amortiza.** Tres
+  corridas seguidas con `limit=10`: 13.0s, 12.9s, 13.0s. Es ~1.3s por mensaje,
+  siempre, y a `limit=250` serían ~325s — muy por encima de `waha_timeout`
+  (30s) y en el rango que el comentario de `_HISTORY_LIMIT` documenta como
+  "la sesión se cuelga y se reinicia perdiendo webhooks". Y aun pagándolo,
+  solo 2 de 10 mensajes obtienen URL.
+- **No hay endpoint por mensaje.** `/chats/{chat}/messages/{id}` existe (404
+  estructurado, no "Cannot GET") pero no encuentra el mensaje: no está en el
+  store local, el mismo límite de los 22.
+
+Decisión: no se toca el backfill. Sigue trayendo solo texto con
+`downloadMedia=false`, que es barato y profundo.
+
+Consecuencia: la recuperación de las fotos ya perdidas queda descartada
+mientras la instancia use el motor WEBJS. La captura de fotos solo puede
+mejorar hacia adelante, por el webhook en vivo.
+
+## 2026-08-21 — El caption no es el cuello de la captura de fotos
+
+Contexto: se creía que la regla «el caption le gana a la foto»
+(`whatsapp_webhook.py`) era la causa principal de que no entren fotos.
+Clasificados los últimos 239 mensajes del canal «Tienda: ⚜️ The Boss»:
+
+    foto SIN caption   162  67.8%   <- el código actual YA debería capturarlas
+    solo texto          47  19.7%
+    ni texto ni media   22   9.2%
+    foto CON caption     8   3.3%   <- el bug del caption
+
+El caption explica el 3.3%. El grueso son 162 fotos sin caption que el camino
+actual ya contempla, y sin embargo SAIMC tiene UNA sola imagen de ese canal.
+O sea: lo que falla es lo que ya debería funcionar, y todavía no se sabe por
+qué — el logging de descartes se sumó recién y desde el reinicio no entró
+tráfico que atribuir.
+
+Decisión: no se toca la regla del caption todavía. Arreglar un 3.3% antes de
+entender el 67.8% es optimizar la rama equivocada, y además el cambio no es
+barato: exige que la cola sepa proponer desde el `original_text` de una fila
+`image`, y hoy `curation.py` no lo hace — una fila IMAGE con `original_text`
+no cae en ninguna de las dos ramas y deja el formulario vacío. Ese hueco está
+latente, no vivo: las 77 filas de imagen con `original_text` ya están curadas
+y no hay imágenes pendientes.
+
+Descartado: cambiar la regla del caption «de paso» — redefiniría qué significa
+`original_text` en una fila de imagen, que hoy es la transcripción corregida
+por el operador y de la que `measure.py` se aparta a propósito. Production
+propondría desde el caption mientras H0 mide OCR de la foto: exactamente la
+divergencia medición/producción que se corrigió dos veces este mismo día.
+
+Consecuencia: el próximo paso es leer `journalctl -u saimc -g
+webhook.descartado` cuando el canal publique fotos, y recién ahí decidir.
