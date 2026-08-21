@@ -417,3 +417,58 @@ class TestRuteoPorTipoDeJid:
         )
 
         assert resultado is None
+
+
+class TestBackfillIgnoraFotos:
+    """El backfill sigue siendo de TEXTO, aunque `parse_message` ya acepte fotos.
+
+    Desde el 2026-08-21 `parse_message` devuelve un mensaje con `text` vacío
+    cuando hay una foto descargable, para que el webhook la ingiera. El
+    backfill NO comparte ese camino: escribe `parsed.text` a un `.txt` y lo
+    ingiere, así que un mensaje sin texto le crearía un archivo vacío.
+
+    Traer también las fotos del histórico es su propio slice: `fetch_channel_history`
+    pide `downloadMedia=false`, y el techo de `_HISTORY_LIMIT = 250` se midió
+    con esa bandera apagada — encenderla cambia el costo por completo y puede
+    colgar la sesión de WAHA.
+    """
+
+    def test_una_foto_del_historico_no_entra_como_mensaje_vacio(self) -> None:
+        entradas = [
+            {
+                "from": "1@g.us",
+                "body": "",
+                "timestamp": 1,
+                "hasMedia": True,
+                "media": {
+                    "url": "http://localhost:3000/api/files/foto.jpg",
+                    "mimetype": "image/jpeg",
+                },
+            }
+        ]
+
+        assert parse_group_history(entradas) == []
+
+    def test_el_texto_del_historico_sigue_entrando(self) -> None:
+        entradas = [{"from": "1@g.us", "body": "aceite a 950", "timestamp": 1}]
+
+        (mensaje,) = parse_group_history(entradas)
+        assert mensaje.text == "aceite a 950"
+
+    def test_lo_mismo_para_el_endpoint_de_canales(self) -> None:
+        entradas = [
+            {
+                "message": {
+                    "from": "1@newsletter",
+                    "body": "",
+                    "timestamp": 1,
+                    "hasMedia": True,
+                    "media": {
+                        "url": "http://localhost:3000/api/files/foto.jpg",
+                        "mimetype": "image/jpeg",
+                    },
+                }
+            }
+        ]
+
+        assert parse_history(entradas) == []

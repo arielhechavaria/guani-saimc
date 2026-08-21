@@ -3501,3 +3501,41 @@ contexto previene— y esos huérfanos del backlog siguen escondidos. La captura
 de fotos sin caption queda pendiente en su propio slice, y rinde más con este
 agrupamiento ya en su lugar: la foto del saco de arroz aterriza al lado de
 «arroz a 340 por libra» en vez de sola.
+
+## 2026-08-21 — El webhook captura las fotos sin caption
+Contexto: `parse_message` descartaba todo mensaje sin `body`, así que una foto
+sin caption no llegaba nunca a `raw_ingestions`. Medido el 2026-08-18 en
+`parse_group_history`: 183 de 200 mensajes de un grupo que publica solo fotos.
+El operador confirmó el 2026-08-21 que el precio a veces va dentro de la
+imagen, a veces en el caption, y a veces en el mensaje siguiente. Sin la foto
+no hay evidencia preservada para esos anuncios, que es lo que `spec.md` §6.1
+(Etapa 1b) exige como base de la Transparency Layer.
+Decisión: cuando el mensaje no trae texto pero WAHA publicó `media.url` con un
+mimetype de imagen fija, el webhook baja el archivo con la `X-Api-Key` y lo
+mete por el mismo `ingest_inbox` que todo lo demás — hereda hash, deduplicación
+y almacén sin duplicar lógica. Módulo nuevo `ingestion/whatsapp_media.py`
+porque `whatsapp_webhook.py` declara sus funciones puras y acá se abre un
+socket. La descarga es sincrónica: WAHA corre en el mismo VPS, es una lectura
+de disco disfrazada de HTTP, y meter una cola rompería la decisión cerrada 3
+para resolver una latencia que no existe. Toda falla degrada a 200 con
+`ingested: 0`; un 500 haría que WAHA reintente en loop.
+Descartado: bajar también la foto cuando SÍ hay caption. Preservar las dos
+cosas en una fila exige que `curation_queue` sepa proponer desde el
+`original_text` de una fila `image` —hoy no lo hace, cae fuera de sus dos
+ramas y no propone nada—, así que va en su propio slice. Descartado `image/webp`:
+WhatsApp reencoda las fotos a JPEG y el webp es casi siempre un sticker;
+dejarlo entrar inundaría la cola de caritas. Descartado tocar el backfill de
+histórico: pide `downloadMedia=false` y el techo de `_HISTORY_LIMIT = 250` se
+midió con esa bandera apagada, así que encenderla cambia el costo por completo
+y del lado malo reinicia la sesión de WAHA perdiendo webhooks. `_with_text`
+mantiene ese camino como estaba.
+Consecuencia: la foto entra como fila `image` con `original_text` nulo y el OCR
+sigue corriendo recién en la cola (spec.md §6.1), así que H0 se mide por capas
+separadas igual que antes. La comparación de la URL contra `waha_base_url`
+trata `localhost` y `127.0.0.1` como el mismo host: WAHA arma `media.url` con
+`localhost` y el `.env` del operador declara `127.0.0.1`, y compararlas como
+cadenas habría descartado todas las fotos en silencio. `deploy/waha/.env.example`
+declara `WHATSAPP_DOWNLOAD_MEDIA=true` y `WHATSAPP_FILES_MIMETYPES` para que el
+modo de falla «hasMedia sin media.url» no sea invisible. Falta medir cuánto
+volumen real entra: la cola las ordena como `_FOCUS_UNKNOWN`, que nunca se
+esconde, así que si inundan hay que revisar ese ranking con el número en la mano.

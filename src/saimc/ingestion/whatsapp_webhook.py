@@ -35,23 +35,80 @@ def verify_hmac(secret: bytes, raw_body: bytes, provided_hex: str) -> bool:
     return hmac.compare_digest(expected, provided_hex)
 
 
+# Qué adjunto vale la pena bajar, y con qué extensión se guarda
+# (`docs/decisions.md`, 2026-08-21). La extensión importa porque
+# `inbox.classify` decide el `content_type` por ella.
+#
+# Solo imágenes fijas: un video o un audio no tiene OCR que aplicarle y
+# ocuparía la cola sin aportar un precio.
+#
+# `image/webp` queda AFUERA a propósito. WhatsApp reencoda las fotos a JPEG,
+# así que lo que llega como webp es casi siempre un sticker, y dejarlos entrar
+# inundaría la cola de caritas. Se pierde la foto webp rara: costo de recall
+# aceptado a cambio de la precisión.
+_MEDIA_SUFFIX_BY_MIMETYPE = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+}
+
+
 @dataclass(frozen=True)
 class ParsedMessage:
     chat_id: str
     text: str
     timestamp: datetime
     has_media: bool
+    media_url: str | None = None
+    media_suffix: str | None = None
+
+
+def _parse_media(payload: dict[str, Any]) -> tuple[str | None, str | None]:
+    """URL y extensión del adjunto, o `(None, None)` si no hay nada que bajar.
+
+    `hasMedia: true` sin `media.url` significa que WAHA detectó el archivo y
+    NO lo descargó — su `WHATSAPP_DOWNLOAD_MEDIA` o su
+    `WHATSAPP_FILES_MIMETYPES` lo filtraron (documentado por WAHA, verificado
+    2026-08-21). No es un error: es configuración del lado del operador, y acá
+    simplemente no hay nada que pedir.
+    """
+    media = payload.get("media")
+    if not isinstance(media, dict):
+        return None, None
+
+    url = media.get("url")
+    if not url or not isinstance(url, str):
+        return None, None
+
+    mimetype = media.get("mimetype")
+    if not isinstance(mimetype, str):
+        return None, None
+
+    suffix = _MEDIA_SUFFIX_BY_MIMETYPE.get(mimetype.split(";")[0].strip().lower())
+    if suffix is None:
+        return None, None
+    return url, suffix
 
 
 def parse_message(body: Any) -> ParsedMessage | None:
     """Extrae un mensaje utilizable del payload de WAHA, o `None` si no aplica.
 
     Devuelve `None` —en vez de levantar una excepción— para los casos que el
-    endpoint debe simplemente ignorar: mensaje propio (`fromMe`), sin texto
-    (media sin caption, fuera de alcance de este slice: no hay OCR desde el
-    webhook todavía), sin identificador de chat, o un payload que no tiene
-    forma reconocible. El endpoint decide qué código HTTP corresponde a cada
-    caso; acá solo se decide si hay o no un mensaje que ingerir.
+    endpoint debe simplemente ignorar: mensaje propio (`fromMe`), sin
+    identificador de chat, un payload sin forma reconocible, o un mensaje que
+    no trae NI texto NI una imagen descargable. El endpoint decide qué código
+    HTTP corresponde a cada caso; acá solo se decide si hay o no un mensaje
+    que ingerir.
+
+    Desde el 2026-08-21 una foto sin caption SÍ es un mensaje utilizable
+    (`text` vacío, `media_url` presente): es el 91% de lo que publica un grupo
+    de solo fotos, medido el 2026-08-18 en `parse_group_history`. Antes se
+    descartaba acá mismo porque no había forma de traer el archivo.
+
+    Cuando hay caption Y foto, gana el texto y el archivo no se baja. Preservar
+    también la imagen como evidencia exige que la cola sepa proponer desde el
+    `original_text` de una fila `image` —hoy no lo hace, ver `curation_queue`—
+    y va en su propio slice.
 
     Acepta dos formas de payload, porque no hay certeza de cuál manda la
     instancia real hasta probarla: el objeto de mensaje directo (como lo
@@ -70,8 +127,11 @@ def parse_message(body: Any) -> ParsedMessage | None:
     if not chat_id or not isinstance(chat_id, str):
         return None
 
-    text = payload.get("body")
-    if not text or not isinstance(text, str) or not text.strip():
+    raw_text = payload.get("body")
+    text = raw_text.strip() if isinstance(raw_text, str) else ""
+
+    media_url, media_suffix = (None, None) if text else _parse_media(payload)
+    if not text and media_url is None:
         return None
 
     raw_timestamp = payload.get("timestamp")
@@ -83,7 +143,9 @@ def parse_message(body: Any) -> ParsedMessage | None:
 
     return ParsedMessage(
         chat_id=chat_id,
-        text=text,
+        text=raw_text if isinstance(raw_text, str) and text else "",
         timestamp=timestamp,
         has_media=bool(payload.get("hasMedia", False)),
+        media_url=media_url,
+        media_suffix=media_suffix,
     )

@@ -79,14 +79,30 @@ def _parse_preview_entry(entry: Any) -> ParsedMessage | None:
     return parse_message(entry.get("message"))
 
 
+def _with_text(parsed: Any) -> list[ParsedMessage]:
+    """Se queda solo con los mensajes que traen texto.
+
+    El backfill es de TEXTO, y lo sigue siendo desde que `parse_message`
+    aceptó las fotos (`docs/decisions.md`, 2026-08-21). El llamador escribe
+    `parsed.text` a un `.txt` y lo ingiere: un mensaje con `text` vacío le
+    crearía un archivo vacío y una fila sin contenido.
+
+    Traer también las fotos del histórico va en su propio slice, y no es
+    gratis: `fetch_channel_history` pide `downloadMedia=false`, y el techo de
+    `_HISTORY_LIMIT` se midió con esa bandera apagada. Encenderla cambia el
+    costo de la consulta por completo y del lado malo la sesión de WAHA se
+    reinicia, perdiendo webhooks entrantes.
+    """
+    return [message for message in parsed if message is not None and message.text]
+
+
 def parse_history(entries: list[Any]) -> list[ParsedMessage]:
     """Filtra y parsea entradas ya decodificadas de `.../messages/preview`.
 
     Puro, sin red — mismo criterio que `eltoque.parse_rate`: una entrada sin
     la forma esperada se descarta, nunca rompe el resto del lote.
     """
-    parsed = (_parse_preview_entry(entry) for entry in entries)
-    return [message for message in parsed if message is not None]
+    return _with_text(_parse_preview_entry(entry) for entry in entries)
 
 
 def parse_group_history(entries: list[Any]) -> list[ParsedMessage]:
@@ -108,10 +124,12 @@ def parse_group_history(entries: list[Any]) -> list[ParsedMessage]:
     Dos descartes pesan mucho más acá que en un canal, medidos el 2026-08-18:
     los mensajes propios del operador (la mitad del lote en un grupo donde él
     también escribe) y las imágenes sin caption (183 de 200 en un grupo que
-    publica solo fotos). Los dos ya los filtra `parse_message`.
+    publica solo fotos). El primero lo filtra `parse_message`; el segundo lo
+    filtra `_with_text` desde el 2026-08-21, porque `parse_message` pasó a
+    aceptar la foto para que el WEBHOOK pueda ingerirla — ese camino sí baja
+    el archivo, este no.
     """
-    parsed = (parse_message(entry) for entry in entries)
-    return [message for message in parsed if message is not None]
+    return _with_text(parse_message(entry) for entry in entries)
 
 
 def fetch_channel_history(

@@ -20,6 +20,7 @@ se rechaza todo.
 """
 
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -28,12 +29,45 @@ from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.ingestion.inbox import ingest_inbox
-from saimc.ingestion.whatsapp_webhook import parse_message, verify_hmac
+from saimc.ingestion.whatsapp_media import fetch_media, is_trusted_media_url
+from saimc.ingestion.whatsapp_webhook import ParsedMessage, parse_message, verify_hmac
 from saimc.models import Channel
 from saimc.models.raw_ingestion import SourceType
 from saimc.web.deps import get_db
 
 router = APIRouter()
+
+
+def _write_media_to_inbox(mensaje: ParsedMessage, inbox_dir: Path) -> Path | None:
+    """Baja la foto de WAHA y la deja en la bandeja, o `None` si no se pudo.
+
+    La descarga es sincrónica dentro del webhook a propósito: WAHA corre en el
+    mismo VPS, así que es una lectura de disco local disfrazada de HTTP. Meter
+    una cola acá rompería la decisión cerrada 3 (nada de Redis ni Celery en
+    Fase 0) para resolver una latencia que no existe.
+
+    Todos los caminos de falla devuelven `None` y el webhook contesta 200: una
+    foto perdida es barata, un 500 por evento hace que WAHA reintente en loop.
+    """
+    settings = get_settings()
+    if mensaje.media_url is None or mensaje.media_suffix is None:
+        return None
+    if not is_trusted_media_url(mensaje.media_url, settings.waha_base_url):
+        return None
+    if not settings.waha_api_key:
+        return None
+
+    contenido = fetch_media(
+        mensaje.media_url,
+        settings.waha_api_key,
+        timeout=settings.waha_timeout,
+    )
+    if contenido is None:
+        return None
+
+    destino = inbox_dir / f"whatsapp-{uuid.uuid4().hex}{mensaje.media_suffix}"
+    destino.write_bytes(contenido)
+    return destino
 
 
 @router.post("/webhooks/whatsapp")
@@ -75,8 +109,15 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
         return JSONResponse({"ingested": 0, "reason": "canal no registrado o inactivo"})
 
     settings.inbox_dir.mkdir(parents=True, exist_ok=True)
-    temporal = settings.inbox_dir / f"whatsapp-{uuid.uuid4().hex}.txt"
-    temporal.write_text(mensaje.text, encoding="utf-8")
+    if mensaje.text:
+        temporal = settings.inbox_dir / f"whatsapp-{uuid.uuid4().hex}.txt"
+        temporal.write_text(mensaje.text, encoding="utf-8")
+    else:
+        # Foto sin caption (docs/decisions.md, 2026-08-21): 183 de 200
+        # mensajes de un grupo que publica solo fotos, medido el 2026-08-18.
+        temporal = _write_media_to_inbox(mensaje, settings.inbox_dir)
+        if temporal is None:
+            return JSONResponse({"ingested": 0, "reason": "no se pudo traer el archivo"})
     try:
         report = ingest_inbox(
             db,
