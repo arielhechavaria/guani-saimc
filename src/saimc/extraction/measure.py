@@ -46,6 +46,7 @@ from saimc.models import (
     Province,
     RawIngestion,
 )
+from saimc.units import canonical_unit
 
 
 # El OCR se inyecta para que la suite no dependa del binario de Tesseract y
@@ -163,28 +164,34 @@ def _quantity_unit_correct(
     proposal_quantity: Decimal | None,
     proposal_unit: str | None,
     confirmed_quantity: Decimal | None,
-    confirmed_product: Product | None,
+    confirmed_unit: str | None,
 ) -> bool:
     """Cantidad Y unidad, en el sentido del spec.md §12.5.
 
-    La unidad no se persiste por fila en `prices_history` (decisión ya
-    tomada, ver `curation.py`): se compara la unidad propuesta contra la
-    unidad canónica del producto CONFIRMADO, no del propuesto, porque es
-    contra esa unidad que el precio confirmado realmente se interpreta.
+    La unidad se compara contra `prices_history.unit` — la que el operador
+    confirmó para ESA fila — y no contra `Product.unit`, la unidad canónica
+    del catálogo.
 
-    `propose()` extrae cantidad y unidad como un solo par (`_extract_quantity`
-    en `engine.py`): nunca hay unidad sin cantidad ni cantidad sin unidad. Por
-    eso, cuando no se propuso unidad, no hay nada que comparar contra el
-    producto confirmado — la única forma de que ese caso cuente como correcto
-    es que el operador tampoco haya confirmado cantidad (None == None, el
-    mismo criterio que usa la comparación de cantidad).
+    Antes se comparaba contra el catálogo porque la unidad no se persistía por
+    fila. Dejó de ser cierto: la columna existe (`price_history.py`) y
+    `curation.py` la completa con `canonical_unit()`. Medir contra el catálogo
+    hacía otra pregunta —«¿el extractor emitió la unidad de góndola del
+    producto?»— en vez de la del spec —«¿emitió la unidad que este anuncio
+    usa?»—, y penalizaba al extractor por acertar: un saco de arroz de 25 kg
+    se anuncia y se confirma en kg aunque el catálogo lo liste en lb (95 de
+    211 filas al 2026-08-21, docs/decisions.md).
+
+    Los dos lados pasan por `canonical_unit` porque hablan vocabularios
+    distintos a propósito (`saimc.units`): `engine.py` reconoce formas
+    flexionadas del anuncio (`litro`, `cajas`) y la base guarda las canónicas
+    (`l`, `caja`). Sin normalizar, esa diferencia de vocabulario contaría como
+    fallo de extracción.
+
+    Una unidad propuesta sobre una fila que no la tiene cuenta como fallo:
+    `None` de un lado y algo del otro no coinciden, igual que en la cantidad.
     """
     quantity_matches = proposal_quantity == confirmed_quantity
-    if proposal_unit is None:
-        unit_matches = confirmed_quantity is None
-    else:
-        confirmed_unit = confirmed_product.unit if confirmed_product is not None else None
-        unit_matches = proposal_unit == confirmed_unit
+    unit_matches = canonical_unit(proposal_unit) == canonical_unit(confirmed_unit)
     return quantity_matches and unit_matches
 
 
@@ -222,7 +229,6 @@ def compute_h0_report(
     products = _all_products(session)
     provinces = _all_provinces(session)
     history_by_source = _price_history_by_source(session)
-    products_by_id = {product.id: product for product in products}
 
     product_correct = 0
     price_correct = 0
@@ -254,7 +260,6 @@ def compute_h0_report(
 
         for confirmed, proposal in _match_rows_to_candidates(confirmed_rows, candidates):
             evaluated_rows_count += 1
-            confirmed_product = products_by_id.get(confirmed.product_id)
 
             is_product_ok = (
                 proposal.product is not None
@@ -268,7 +273,7 @@ def compute_h0_report(
             )
             is_province_ok = proposed_province_id == confirmed.province_id
             is_quantity_unit_ok = _quantity_unit_correct(
-                proposal.quantity, proposal.unit, confirmed.quantity, confirmed_product
+                proposal.quantity, proposal.unit, confirmed.quantity, confirmed.unit
             )
 
             if is_product_ok:

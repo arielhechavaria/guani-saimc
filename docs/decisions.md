@@ -3679,3 +3679,47 @@ re-corre el extractor sobre evidencia inmutable y la mejora es retroactiva.
 El número anterior no era "más exigente", era de otro extractor. El cuello de
 botella pasa a ser cantidad/unidad (23.7%): si se arreglara, la extracción
 completa daría 52.1% sobre este mismo corpus.
+
+## 2026-08-21 — La unidad de H0 se mide contra la fila, no contra el catálogo
+
+Contexto: cantidad/unidad quedó como el peor componente de H0 (23.7%) y se
+asumió que era un cuello de extracción — reglas pobres en `_extract_quantity`.
+Al medirlo resultó ser lo mismo que la provincia: verdad de referencia
+obsoleta. `measure.py:_quantity_unit_correct` comparaba la unidad propuesta
+contra `Product.unit`, la unidad canónica del CATÁLOGO, y su docstring
+justificaba eso diciendo que la unidad «no se persiste por fila». Dejó de ser
+cierto: `prices_history.unit` existe y `curation.py` la completa con
+`canonical_unit()`. Está poblada en 161 de 211 filas, y 95 de ellas dicen
+`kg` mientras su producto en el catálogo dice `lb` — un saco de arroz se
+anuncia y se confirma en kg aunque el arroz se venda por libra al menudeo.
+La métrica contaba cada una de esas filas como fallo: penalizaba al extractor
+por acertar. El anuncio real «Sacos Arroz Argentino 25Kg. $17,500 Cup. Sale
+$318.20 Lb» lo confirma con su propia aritmética (17500 / 55.1 lb = 317.6).
+
+Decisión: comparar contra `prices_history.unit`, la unidad que el operador
+confirmó para esa fila, pasando los dos lados por `canonical_unit()`. La
+normalización es necesaria porque los vocabularios difieren a propósito
+(`saimc.units`): `engine.py` reconoce formas flexionadas del anuncio (`litro`,
+`cajas`) y la base guarda las canónicas (`l`, `caja`). Una unidad propuesta
+sobre una fila sin unidad pasa a contar como fallo, no como acierto por
+ausencia.
+
+Descartado: (a) ampliar el vocabulario de `_UNIT_WORDS` con plurales y formas
+escritas (`lbs`, `libras`, `litros`, `unidades`) — medido contra el corpus,
+BAJA la extracción completa de 40.8% a 33.6%, porque rompe las filas donde el
+operador confirmó sin cantidad: cambia silencio por respuesta errónea; (b) un
+default «1 unidad» cuando el texto no dice cantidad — sube cantidad/unidad a
+56.4% pero deja la extracción completa clavada en 40.8%; (c) dejar la
+comparación contra el catálogo por ser independiente de la propuesta — es
+independiente pero hace la pregunta equivocada, y la alternativa no es más
+honesta sino sistemáticamente errónea.
+
+Consecuencia: cantidad/unidad 23.7% → 53.6% y extracción completa 18.5% →
+40.8%, sobre las mismas 211 filas y sin curar ninguna. Se asume un costo
+metodológico medido: `curation.py` prellena el formulario con la propuesta del
+extractor, así que la columna puede ser eco. La tasa real de intervención del
+operador sobre la unidad es 31.8% (56 filas donde escribió una unidad que el
+motor no propuso, 7 cambios, 4 borrados). El eco ya afecta igual a producto y
+precio, y CLAUDE.md §H0 ya asume que el operador corrige antes de guardar.
+El techo de cantidad/unidad queda en 46.9% de extracción completa, así que
+perfeccionarla entera vale +6.1 puntos: el cuello pasa a ser PRECIO (57.3%).

@@ -15,9 +15,9 @@ parámetro para que la suite no dependa del binario de Tesseract:
 - Precisión de precio (valor Y moneda correctos)
 - Precisión de provincia (None == None cuenta como correcto: "no determinada"
   confirmada por el operador coincide con "no determinada" propuesta)
-- Precisión de cantidad/unidad (unidad comparada contra `Product.unit` del
-  producto confirmado — no se persiste unidad por fila, ver
-  `src/saimc/web/routers/curation.py`)
+- Precisión de cantidad/unidad (unidad comparada contra `prices_history.unit`,
+  la que el operador confirmó para ESA fila, canonicalizada por
+  `saimc.units.canonical_unit` en los dos lados)
 - Extracción completa correcta (las cuatro anteriores a la vez)
 
 Más la tasa de descarte, sobre el total de anuncios procesados (curados +
@@ -86,8 +86,15 @@ def _curar_texto(
     currency: str,
     province_id,
     quantity: str | None,
+    unit: str | None,
 ) -> None:
-    """Crea el par `raw_ingestion` (curated) + `prices_history` de un caso de texto."""
+    """Crea el par `raw_ingestion` (curated) + `prices_history` de un caso de texto.
+
+    `unit` es obligatorio y explícito a propósito: es la verdad de referencia
+    contra la que se mide la unidad extraída (`prices_history.unit`), así que
+    dejarlo caer a un default escondería justo el dato que el caso está
+    fijando.
+    """
     ingestion = RawIngestion(
         source_type=SourceType.INBOX_TEXT,
         file_path=f"raw/{hash_}.txt",
@@ -106,6 +113,7 @@ def _curar_texto(
             price=Decimal(price),
             currency=currency,
             quantity=Decimal(quantity) if quantity is not None else None,
+            unit=unit,
             source_id=ingestion.id,
         )
     )
@@ -120,6 +128,7 @@ def _curar_imagen(
     price: str,
     province_id,
     quantity: str | None,
+    unit: str | None,
     original_text: str | None = None,
 ) -> None:
     """Un curado de imagen. La propuesta a evaluar sale de re-correr el OCR
@@ -144,6 +153,7 @@ def _curar_imagen(
             price=Decimal(price),
             currency=Currency.CUP.value,
             quantity=Decimal(quantity) if quantity is not None else None,
+            unit=unit,
             source_id=ingestion.id,
         )
     )
@@ -177,6 +187,7 @@ def dataset(session: Session, pollo: Product, habana: Province) -> None:
         currency=Currency.CUP.value,
         province_id=habana.id,
         quantity="40",
+        unit="lb",
     )
     # Caso 2 — producto incorrecto (el texto no lo nombra), resto correcto.
     _curar_texto(
@@ -188,6 +199,7 @@ def dataset(session: Session, pollo: Product, habana: Province) -> None:
         currency=Currency.CUP.value,
         province_id=habana.id,
         quantity="20",
+        unit="lb",
     )
     # Caso 3 — precio incorrecto: moneda propuesta (USD) no coincide con la confirmada (CUP).
     _curar_texto(
@@ -199,6 +211,7 @@ def dataset(session: Session, pollo: Product, habana: Province) -> None:
         currency=Currency.CUP.value,
         province_id=habana.id,
         quantity=None,
+        unit=None,
     )
     # Caso 4 — sin provincia en el texto ni en lo confirmado: None == None, correcto.
     _curar_texto(
@@ -210,6 +223,7 @@ def dataset(session: Session, pollo: Product, habana: Province) -> None:
         currency=Currency.CUP.value,
         province_id=None,
         quantity=None,
+        unit=None,
     )
     # Caso 5 — cantidad incorrecta: el texto no trae cantidad, el operador cargó 5.
     _curar_texto(
@@ -221,6 +235,7 @@ def dataset(session: Session, pollo: Product, habana: Province) -> None:
         currency=Currency.CUP.value,
         province_id=None,
         quantity="5",
+        unit="lb",
     )
     # Caso 6 — imagen curada: el OCR simulado devuelve el mismo texto que el
     # caso 1, así que las cuatro métricas son correctas. Entra en el
@@ -232,6 +247,7 @@ def dataset(session: Session, pollo: Product, habana: Province) -> None:
         price="500",
         province_id=habana.id,
         quantity="40",
+        unit="lb",
     )
     # Caso 7 — descartado.
     _descartar(session, hash_="caso-7")
@@ -321,6 +337,7 @@ class TestH0ReportImagenes:
             price="500",
             province_id=habana.id,
             quantity="40",
+            unit="lb",
             # Lo que el operador dejó guardado: limpio, daría las 4 correctas.
             original_text="pollo congelado 40lb a 500 habana",
         )
@@ -346,6 +363,7 @@ class TestH0ReportImagenes:
             price="500",
             province_id=habana.id,
             quantity="40",
+            unit="lb",
         )
         report = compute_h0_report(session, transcribe=lambda path: "")
 
@@ -394,6 +412,7 @@ class TestH0ReportMultiProducto:
                 price=Decimal("30"),
                 currency=Currency.CUP.value,
                 quantity=Decimal("40"),
+                unit="lb",
                 source_id=ingestion.id,
             )
         )
@@ -407,6 +426,7 @@ class TestH0ReportMultiProducto:
                 price=Decimal("999"),
                 currency=Currency.CUP.value,
                 quantity=Decimal("20"),
+                unit="lb",
                 source_id=ingestion.id,
             )
         )
@@ -423,6 +443,7 @@ class TestH0ReportMultiProducto:
                 price=Decimal("10"),
                 currency=Currency.CUP.value,
                 quantity=Decimal("1"),
+                unit="lb",
                 source_id=ingestion.id,
             )
         )
@@ -504,6 +525,7 @@ class TestH0ProvinciaDelCanal:
                 price=Decimal("500"),
                 currency=Currency.CUP.value,
                 quantity=Decimal("40"),
+                unit="lb",
                 source_id=ingestion.id,
             )
         )
@@ -529,9 +551,125 @@ class TestH0ProvinciaDelCanal:
             currency=Currency.CUP.value,
             province_id=habana.id,
             quantity="40",
+            unit="lb",
         )
 
         report = compute_h0_report(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 1
         assert report.province_accuracy == 0.0
+
+
+class TestH0UnidadConfirmadaEnLaFila:
+    """La unidad se mide contra `prices_history.unit` —la que el operador
+    confirmó para ESA fila— y no contra `Product.unit`, la del catálogo.
+
+    Motivo, medido contra producción el 2026-08-21: 95 de 211 filas tienen
+    `unit='kg'` mientras el producto del catálogo dice `'lb'`. Un saco de arroz
+    se anuncia y se confirma en kg aunque el arroz se venda por libra al
+    menudeo. La comparación vieja contaba cada una de esas filas como fallo de
+    extracción, o sea penalizaba al extractor por acertar.
+
+    Estos casos son sintéticos y su respuesta correcta está fijada de antemano,
+    igual que el resto del archivo. El número de H0 sigue saliendo del corpus
+    real vía la cola de curaduría (CLAUDE.md, «Código»).
+    """
+
+    @pytest.fixture
+    def arroz(self, session: Session) -> Product:
+        # Unidad de catálogo `lb`: el arroz se vende por libra al menudeo.
+        producto = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(producto)
+        session.commit()
+        return producto
+
+    def test_unidad_del_anuncio_distinta_a_la_del_catalogo_es_correcta(
+        self, session: Session, arroz: Product, habana: Province
+    ) -> None:
+        """El caso de las 95 filas: el anuncio vende un saco por kg, el
+        operador confirma kg, y el catálogo dice lb. El extractor propone kg
+        y ACIERTA."""
+        _curar_texto(
+            session,
+            hash_="saco-kg",
+            texto="arroz 25kg a 17500 cup habana",
+            product_id=arroz.id,
+            price="17500",
+            currency=Currency.CUP.value,
+            province_id=habana.id,
+            quantity="25",
+            unit="kg",
+        )
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 1
+        assert report.quantity_unit_accuracy == 1.0
+
+    def test_unidad_distinta_a_la_confirmada_sigue_siendo_fallo(
+        self, session: Session, arroz: Product, habana: Province
+    ) -> None:
+        """El contrapeso: el cambio no es «aceptar cualquier unidad». El texto
+        dice kg, el operador confirmó lb, y eso sigue contando como fallo."""
+        _curar_texto(
+            session,
+            hash_="kg-vs-lb",
+            texto="arroz 25kg a 17500 cup habana",
+            product_id=arroz.id,
+            price="17500",
+            currency=Currency.CUP.value,
+            province_id=habana.id,
+            quantity="25",
+            unit="lb",
+        )
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.quantity_unit_accuracy == 0.0
+
+    def test_la_forma_flexionada_del_extractor_equivale_a_la_canonica(
+        self, session: Session, habana: Province
+    ) -> None:
+        """`engine.py` reconoce `litro` y `curation.py` guarda el canónico `l`
+        (`saimc.units`). Los dos lados se canonicalizan antes de comparar, así
+        que esa diferencia de vocabulario no cuenta como fallo."""
+        aceite = Product(name="Aceite", category="abarrotes", unit="l", aliases=[])
+        session.add(aceite)
+        session.commit()
+        _curar_texto(
+            session,
+            hash_="aceite-litro",
+            texto="aceite 1 litro a 900 cup habana",
+            product_id=aceite.id,
+            price="900",
+            currency=Currency.CUP.value,
+            province_id=habana.id,
+            quantity="1",
+            unit="l",
+        )
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.quantity_unit_accuracy == 1.0
+
+    def test_unidad_propuesta_sobre_fila_sin_unidad_es_fallo(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """El operador borró la unidad que el formulario traía prellenada: la
+        propuesta sobra y la fila cuenta como fallo, no como acierto por
+        ausencia."""
+        _curar_texto(
+            session,
+            hash_="unidad-borrada",
+            texto="pollo congelado 40lb a 500 habana",
+            product_id=pollo.id,
+            price="500",
+            currency=Currency.CUP.value,
+            province_id=habana.id,
+            quantity="40",
+            unit=None,
+        )
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.quantity_unit_accuracy == 0.0
