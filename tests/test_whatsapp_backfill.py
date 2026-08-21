@@ -397,43 +397,6 @@ class TestRuteoPorTipoDeJid:
         assert resultado[0].text == "Arroz a 30885"
         assert "/api/default/channels/1@newsletter/messages/preview" in str(capturado["url"])
 
-    def test_jid_de_grupo_con_sufijo_lid_tambien_usa_el_endpoint_de_chats(self) -> None:
-        """Regresión (docs/decisions.md, 2026-08-21): un grupo real capturado
-        con `external_id` terminado en `@lid` —el identificador de privacidad
-        que WhatsApp usa cada vez más en vez de `@g.us`— caía al branch de
-        canal por descarte y WAHA respondía 500. Medido contra la instancia
-        real: el mismo endpoint de chats que ya sirve `@g.us` sirve `@lid`."""
-        capturado: dict[str, object] = {}
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            capturado["url"] = str(request.url)
-            return httpx.Response(
-                200,
-                json=[
-                    {
-                        "from": "157724134363163@lid",
-                        "fromMe": False,
-                        "body": "Arroz a 340",
-                        "timestamp": 1787335937,
-                    }
-                ],
-            )
-
-        resultado = fetch_channel_history(
-            "http://127.0.0.1:3000",
-            "clave",
-            "default",
-            "157724134363163@lid",
-            timeout=5.0,
-            transport=httpx.MockTransport(handler),
-        )
-
-        assert resultado is not None
-        assert len(resultado) == 1
-        assert resultado[0].text == "Arroz a 340"
-        assert "/api/default/chats/157724134363163@lid/messages" in str(capturado["url"])
-        assert "/channels/" not in str(capturado["url"])
-
     def test_grupo_con_sesion_caida_devuelve_none(self) -> None:
         """Misma política de error que el endpoint de canales: 200 con un dict
         de error en vez de una lista no es histórico vacío, es fallo."""

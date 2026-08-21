@@ -3586,3 +3586,37 @@ ruteo de un canal que sí venía funcionando.
 Consecuencia: cualquier grupo cuyo `external_id` llegue en el futuro con otro
 sufijo nuevo de WhatsApp (no hay evidencia de que exista otro hoy) volvería
 a fallar igual, en silencio — se revisita si aparece otro caso real.
+
+---
+
+## 2026-08-21 — Revertido: el soporte de `@lid` como grupo estaba mal diagnosticado
+
+Contexto: reemplaza la entrada del mismo día «El backfill de histórico
+también reconoce grupos con JID `@lid`». El operador corrigió a mano el
+`external_id` de «🛒Habana ventas» de `157724134363163@lid` a
+`5355107677-1612646457@g.us` —un número completamente distinto— y eso
+resolvió el problema. La verificación que sostenía la decisión anterior
+(WAHA respondía 200 al pedir `/chats/157724134363163@lid/messages`) era un
+falso positivo: el único mensaje que traía esa respuesta era una notificación
+de sistema (`e2e_notification`/`encrypt`), no historial real del grupo.
+`@lid` es el formato de privacidad que WhatsApp usa para números de teléfono
+individuales — no existe un grupo legítimo con JID `@lid`; el valor guardado
+originalmente nunca fue el JID real del grupo.
+
+Decisión: se revierte el cambio de código (`_GROUP_JID_SUFFIXES` vuelve a
+`_GROUP_JID_SUFFIX = "@g.us"` en `whatsapp_backfill.py`, `Channel.is_whatsapp_group`
+vuelve a comparar solo contra `@g.us`) y se saca el test de regresión que
+dependía de esa premisa. La causa real del fallo original era un
+`external_id` mal capturado en el alta del canal, no una limitación del
+ruteo por sufijo.
+
+Descartado: dejar el soporte de `@lid` "por las dudas". Trataría cualquier
+`external_id` mal cargado que termine en `@lid` como si fuera un grupo válido
+y lo consultaría contra el endpoint de chats, arriesgando traer el historial
+de un chat ajeno (individual, no el grupo que el operador cree estar
+importando) en vez de fallar visiblemente con el error que ya existe.
+
+Consecuencia: si un canal falla al importar histórico, la causa más probable
+sigue siendo un `external_id` mal capturado — se corrige el dato, no el
+código, salvo evidencia nueva de que WAHA realmente usa `@lid` para algún
+grupo real.

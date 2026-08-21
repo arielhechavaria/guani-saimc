@@ -9,16 +9,10 @@ según cuánto se publique en esa fuente en particular.
 WAHA expone canales y grupos por endpoints distintos, con formas de respuesta
 distintas (medido contra la instancia del operador, 2026-08-18):
 
-    canal (`…@newsletter`)      →  /api/{s}/channels/{id}/messages/preview
-                                   cada entrada envuelta en {"message", "reactions"}
-    grupo (`…@g.us`/`…@lid`)   →  /api/{s}/chats/{id}/messages
-                                   cada entrada es el objeto de mensaje, plano
-
-`@lid` ("linked ID") es el identificador de privacidad que WhatsApp usa cada
-vez más en vez del JID tradicional — no expone el número real. Un grupo
-capturado con ese formato (docs/decisions.md, 2026-08-21: WAHA responde 500
-al endpoint de canal para un `@lid`, y 200 con mensajes reales al de grupo)
-sigue siendo un grupo a todos los efectos de este módulo.
+    canal (`…@newsletter`)  →  /api/{s}/channels/{id}/messages/preview
+                               cada entrada envuelta en {"message", "reactions"}
+    grupo (`…@g.us`)        →  /api/{s}/chats/{id}/messages
+                               cada entrada es el objeto de mensaje, plano
 
 El ruteo sale del sufijo del JID, no de `Channel.platform`: el sufijo lo
 escribe WhatsApp, la plataforma la tipea el operador. Cuando los dos podrían
@@ -38,12 +32,10 @@ import httpx
 
 from saimc.ingestion.whatsapp_webhook import ParsedMessage, parse_message
 
-# Sufijos de JID que WAHA trata como "chat" (grupo), no como canal de difusión.
-# Un canal termina en "@newsletter" y un chat directo en "@c.us", pero acá
-# solo interesa distinguir grupo del resto: todo lo que no es grupo ya
-# funciona contra el endpoint de canales. "@lid" sumado el 2026-08-21 tras
-# medir un grupo real con ese sufijo fallando 500 contra el endpoint de canal.
-_GROUP_JID_SUFFIXES = ("@g.us", "@lid")
+# Sufijo del JID de un grupo de WhatsApp. Un canal termina en "@newsletter" y
+# un chat directo en "@c.us", pero acá solo interesa distinguir grupo del
+# resto: todo lo que no es grupo ya funciona contra el endpoint de canales.
+_GROUP_JID_SUFFIX = "@g.us"
 
 # WAHA ignora en silencio `startCursor`/`endCursor`/`offset`, así que este
 # número es la única palanca que hay para mirar más atrás: no se pagina, se
@@ -165,7 +157,7 @@ def fetch_channel_history(
     en producción se deja en `None` y `httpx.Client` arma el transporte real.
     """
     base = base_url.rstrip("/")
-    if external_id.endswith(_GROUP_JID_SUFFIXES):
+    if external_id.endswith(_GROUP_JID_SUFFIX):
         url = f"{base}/api/{session}/chats/{external_id}/messages"
         parse = parse_group_history
     else:
