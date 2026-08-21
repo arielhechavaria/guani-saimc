@@ -25,6 +25,22 @@ app.state.templates = Jinja2Templates(
     directory=str(Path(__file__).parent / "templates")
 )
 
+# StaticFiles no manda cache-busting: un navegador (sobre todo uno móvil,
+# con conexión intermitente que prefiere no volver a pedir un archivo) puede
+# quedarse con una versión vieja de `saimc-material.css` después de un
+# deploy. `css_version()` se llama por request, no una vez al arrancar —
+# igual que Jinja2Templates relee cada plantilla del disco — así que un
+# cambio de CSS sigue sin pedir reinicio del servicio y además invalida el
+# caché del navegador solo, sin que el operador tenga que limpiarlo a mano.
+_CSS_PATH = Path(__file__).parent / "static" / "saimc-material.css"
+
+
+def _css_version() -> int:
+    return int(_CSS_PATH.stat().st_mtime)
+
+
+app.state.templates.env.globals["css_version"] = _css_version
+
 
 def _havana(value: datetime, fmt: str = "%Y-%m-%d %H:%M") -> str:
     """Filtro Jinja: formatea un datetime en hora de La Habana, no UTC.

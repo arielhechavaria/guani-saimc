@@ -14,7 +14,7 @@
   <title>SAIMC — {% block title %}{% endblock %}</title>
   {# Una sola hoja, vendorizada (mismo criterio que CLAUDE.md: una descarga
      menos en conexión lenta). Reemplaza bootstrap.min.css + curation.css. #}
-  <link href="/static/saimc-material.css" rel="stylesheet" />
+  <link href="/static/saimc-material.css?v={{ css_version() }}" rel="stylesheet" />
   {% block head %}{% endblock %}
 </head>
 <body>
