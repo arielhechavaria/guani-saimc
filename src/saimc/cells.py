@@ -37,18 +37,30 @@ nadie declaró, que es el mismo criterio por el que `canonical_unit()` devuelve
 `sale_format` la cola de nulos crece — y eso es justamente lo que la vista debe
 dejar ver, no esconder.
 
-**El precio que se agrega es por unidad, no total** (2026-08-13): cada fila se
-divide por su `quantity` antes de entrar a la celda. Sin eso, un saco de 50 kg
-a 32500 y un paquete de 1 kg a 750 caían en la misma celda `kg` minorista y la
-amplitud daba 43× — un número que no describía el mercado, solo que se estaban
-comparando dos totales. Por kg son 650 contra 750: la diferencia real entre
-mayorista y minorista. La moneda se resuelve **antes** de dividir; al revés
-daría un precio unitario en la moneda de origen.
+**El precio que se agrega es por unidad, no total, y la división ya no es
+incondicional** (2026-08-13, corregido 2026-08-21). Hasta el 2026-08-13 la
+regla era dividir siempre por `quantity`; eso mismo era el bug: una fila
+`price=340, quantity=340` («Arroz guyanés a 340 libras», `price_basis`
+todavía no existía) se dividía igual, y agregaba 1 CUP/lb en vez de ~340. La
+división depende de `price_basis`: `'unit'` deja `price` como está —ya es
+por unidad—, `'total'` lo divide por `quantity`, y sin resolver (`NULL` con
+`quantity != 1`) no se decide en absoluto, queda en su propia celda (ver
+`unresolved_basis` abajo). Con `quantity == 1` la pregunta es aritméticamente
+inerte —unitario y total son el mismo número— y no depende de `price_basis`.
+La moneda se resuelve **antes** de esta decisión; al revés daría un precio
+unitario en la moneda de origen.
 
 Una fila sin `quantity` (o con cantidad cero) no se puede normalizar, y
 tampoco se funde asumiendo cantidad 1 —eso sería inventar el dato—: queda en
 su propia celda con `Cell.unquantified = True`, agregando totales. Mismo
 criterio que el nulo de `sale_format` y que la celda sin convertir.
+
+Una fila con `quantity != 1` cuya `price_basis` es `NULL` tampoco se puede
+normalizar, pero por un motivo distinto: no falta la cantidad, falta saber
+qué representa el precio. Asumir `'total'` para resolverla es exactamente el
+bug de 2026-08-13; en cambio queda en su propia celda con
+`Cell.unresolved_basis = True`, agregando el total sin dividir — igual que
+`unquantified`, visible y nunca fundida con lo resuelto.
 
 El envase (`packaging`) **no** entra en la clave. Cuando se escribió esta regla
 el motivo era que fuese texto libre; desde el 2026-08-12 tiene vocabulario
@@ -104,6 +116,12 @@ class Cell:
     # unidad, porque sus filas no tienen `quantity` (2026-08-13). Quien lea
     # `median` necesita saber cuál de las dos cosas está mirando.
     unquantified: bool = False
+    # `True` cuando la fila tiene `quantity != 1` pero `price_basis` en NULL:
+    # no se sabe si `price` es por unidad o por el lote (2026-08-21). Motivo
+    # distinto de `unquantified` (ahí falta la cantidad; acá falta saber qué
+    # representa el precio) — asumir 'total' para resolverla sería el mismo
+    # bug que este campo corrige (ver docstring del módulo).
+    unresolved_basis: bool = False
 
     @property
     def spread(self) -> Decimal | None:
@@ -136,16 +154,17 @@ def compute_cells(session: Session) -> list[Cell]:
             PriceHistory.quantity,
             PriceHistory.price,
             PriceHistory.price_cup,
+            PriceHistory.price_basis,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
     )
 
-    # `unconverted` y `unquantified` entran en la clave para separar, sin
-    # ambigüedad, el grupo resuelto del que quedó pendiente: el primero por
-    # moneda, el segundo por cantidad. Mezclar cualquiera de los dos afirmaría
-    # una equivalencia que nadie declaró.
-    CellKey = tuple[str, str | None, str, str | None, str | None, bool, bool]
+    # `unconverted`, `unquantified` y `unresolved_basis` entran en la clave
+    # para separar, sin ambigüedad, el grupo resuelto del que quedó
+    # pendiente: moneda, cantidad y basis respectivamente. Mezclar cualquiera
+    # de los tres afirmaría una equivalencia que nadie declaró.
+    CellKey = tuple[str, str | None, str, str | None, str | None, bool, bool, bool]
     grouped: dict[CellKey, list[Decimal]] = {}
     for (
         product_name,
@@ -156,6 +175,7 @@ def compute_cells(session: Session) -> list[Cell]:
         quantity,
         price,
         price_cup,
+        price_basis,
     ) in session.execute(stmt):
         if currency == Currency.CUP.value:
             # Ya está en CUP: nada que convertir.
@@ -170,12 +190,23 @@ def compute_cells(session: Session) -> list[Cell]:
             effective_price = price
             key_currency, unconverted = currency, True
 
-        # La moneda se resuelve primero y la cantidad después: dividir antes de
-        # convertir daría un precio unitario en la moneda de origen, que no es
-        # comparable con el resto de la celda.
+        # La moneda se resuelve primero y la cantidad/basis después: dividir
+        # antes de convertir daría un precio unitario en la moneda de origen,
+        # que no es comparable con el resto de la celda.
         unquantified = quantity is None or quantity == 0
+        unresolved_basis = False
         if not unquantified:
-            effective_price = effective_price / quantity
+            if quantity == 1:
+                pass  # unitario y total son el mismo número: nada que dividir
+            elif price_basis == "unit":
+                pass  # el precio YA es por unidad
+            elif price_basis == "total":
+                effective_price = effective_price / quantity
+            else:
+                # No es «falta cantidad» (eso es `unquantified`): es «no se
+                # sabe si dividir». Asumir `total` es exactamente el bug de
+                # 2026-08-13 que este campo corrige.
+                unresolved_basis = True
 
         key: CellKey = (
             product_name,
@@ -185,6 +216,7 @@ def compute_cells(session: Session) -> list[Cell]:
             sale_format,
             unconverted,
             unquantified,
+            unresolved_basis,
         )
         grouped.setdefault(key, []).append(effective_price)
 
@@ -205,6 +237,7 @@ def compute_cells(session: Session) -> list[Cell]:
             maximum=max(prices),
             unconverted=unconverted,
             unquantified=unquantified,
+            unresolved_basis=unresolved_basis,
         )
         for (
             product_name,
@@ -214,6 +247,7 @@ def compute_cells(session: Session) -> list[Cell]:
             sale_format,
             unconverted,
             unquantified,
+            unresolved_basis,
         ), prices in grouped.items()
     ]
 
@@ -232,6 +266,7 @@ def compute_cells(session: Session) -> list[Cell]:
             cell.sale_format or "",
             cell.unconverted,
             cell.unquantified,
+            cell.unresolved_basis,
         )
     )
     return cells
@@ -273,6 +308,11 @@ class RetailRangeReport:
 
     ranges: list[RetailRange]
     excluded_by_minimum: int
+    # Filas con `quantity != 1` y `price_basis` sin resolver, que los otros
+    # tres filtros habrían admitido — conteo separado del de compra mínima
+    # para que el operador priorice cuál cola de curaduría atacar primero
+    # (2026-08-21).
+    excluded_by_basis: int
 
 
 def compute_retail_ranges(
@@ -336,6 +376,7 @@ def compute_retail_ranges(
             PriceHistory.min_purchase_quantity,
             PriceHistory.price,
             PriceHistory.price_cup,
+            PriceHistory.price_basis,
             PriceHistory.published_date,
             PriceHistory.created_at,
         )
@@ -352,6 +393,7 @@ def compute_retail_ranges(
     RangeKey = tuple[str, str | None, str, str, bool]
     grouped: dict[RangeKey, list[Decimal]] = {}
     excluded_by_minimum = 0
+    excluded_by_basis = 0
     for (
         product_name,
         product_unit,
@@ -362,6 +404,7 @@ def compute_retail_ranges(
         min_purchase_quantity,
         price,
         price_cup,
+        price_basis,
         published_date,
         created_at,
     ) in session.execute(stmt):
@@ -380,6 +423,13 @@ def compute_retail_ranges(
             excluded_by_minimum += 1
             continue
 
+        # Mismo criterio, después del filtro de compra mínima: una fila con
+        # `quantity != 1` y `price_basis` sin resolver no se puede normalizar
+        # sin fabricar la respuesta que el operador nunca dio (2026-08-21).
+        if quantity != 1 and price_basis not in ("unit", "total"):
+            excluded_by_basis += 1
+            continue
+
         if currency == Currency.CUP.value:
             effective_price = price
             key_currency, unconverted = Currency.CUP.value, False
@@ -390,8 +440,16 @@ def compute_retail_ranges(
             effective_price = price
             key_currency, unconverted = currency, True
 
+        # Con las filas sin resolver ya afuera, las que quedan tienen
+        # `quantity == 1` (unitario y total son el mismo número) o
+        # `price_basis` resuelto: dividir es la identidad en el primer caso,
+        # y en el segundo depende del basis, igual que en `compute_cells`.
+        unit_price = (
+            effective_price if price_basis == "unit" else effective_price / quantity
+        )
+
         key: RangeKey = (product_name, province_name, key_currency, row_unit, unconverted)
-        grouped.setdefault(key, []).append(effective_price / quantity)
+        grouped.setdefault(key, []).append(unit_price)
 
     ranges = [
         RetailRange(
@@ -417,4 +475,8 @@ def compute_retail_ranges(
     ranges.sort(
         key=lambda r: (-r.count, r.product_name, r.province_name or "", r.unconverted)
     )
-    return RetailRangeReport(ranges=ranges, excluded_by_minimum=excluded_by_minimum)
+    return RetailRangeReport(
+        ranges=ranges,
+        excluded_by_minimum=excluded_by_minimum,
+        excluded_by_basis=excluded_by_basis,
+    )

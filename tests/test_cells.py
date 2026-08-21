@@ -59,6 +59,7 @@ def _precio(
     currency: str = Currency.CUP.value,
     price_cup: str | None = None,
     min_purchase_quantity: str | None = None,
+    price_basis: str | None = None,
 ) -> None:
     session.add(
         PriceHistory(
@@ -75,6 +76,7 @@ def _precio(
             min_purchase_quantity=(
                 Decimal(min_purchase_quantity) if min_purchase_quantity is not None else None
             ),
+            price_basis=price_basis,
         )
     )
 
@@ -577,7 +579,7 @@ class TestFiltroDeCompraMinima:
         _precio(
             session, product=arroz, province=None, price="21900", source=origen,
             unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="30",
-            min_purchase_quantity="30",
+            min_purchase_quantity="30", price_basis="total",
         )
 
         reporte = compute_retail_ranges(session)
@@ -585,6 +587,7 @@ class TestFiltroDeCompraMinima:
         (rango,) = reporte.ranges
         assert rango.median == Decimal("730")
         assert reporte.excluded_by_minimum == 0
+        assert reporte.excluded_by_basis == 0
 
     def test_saco_entero_con_minimo_de_un_saco_sigue_adentro(self, session: Session) -> None:
         """No es un umbral de plata: el saco cuesta MÁS que la paca excluida
@@ -595,7 +598,7 @@ class TestFiltroDeCompraMinima:
         _precio(
             session, product=arroz, province=None, price="30990", source=origen,
             unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="50",
-            min_purchase_quantity="50",
+            min_purchase_quantity="50", price_basis="total",
         )
 
         reporte = compute_retail_ranges(session)
@@ -684,6 +687,7 @@ class TestNormalizacionPorCantidad:
         _precio(
             session, product=arroz, province=scu, price="32500",
             source=origen, unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="50",
+            price_basis="total",
         )
         _precio(
             session, product=arroz, province=scu, price="750",
@@ -697,6 +701,7 @@ class TestNormalizacionPorCantidad:
         assert cells[0].minimum == Decimal("650")
         assert cells[0].maximum == Decimal("750")
         assert cells[0].unquantified is False
+        assert cells[0].unresolved_basis is False
 
     def test_la_fila_sin_cantidad_no_se_funde_con_las_normalizadas(
         self, session: Session
@@ -762,6 +767,7 @@ class TestNormalizacionPorCantidad:
             session, product=arroz, province=scu, price="44",
             source=origen, unit="kg", sale_format=SaleFormat.RETAIL.value,
             quantity="50", currency=Currency.USD.value, price_cup="29480",
+            price_basis="total",
         )
         session.commit()
 
@@ -769,3 +775,203 @@ class TestNormalizacionPorCantidad:
 
         assert cells[0].median == Decimal("589.6")
         assert cells[0].currency == "CUP"
+
+
+class TestPriceBasis:
+    """`price_basis` declara qué representa `price`, y la división deja de
+    ser incondicional (era el criterio desde 2026-08-13). Caso real
+    (`proposal.md`): «Arroz guyanés a 340lb» (`price=340, quantity=340`) sin
+    basis se leía implícitamente como `'total'` y agregaba 1 CUP/lb en vez de
+    ~340 — exactamente el bug que este cambio corrige.
+    """
+
+    def test_basis_unit_no_divide(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-basis-unit")
+        _precio(
+            session, product=arroz, province=None, price="340", source=origen,
+            unit="lb", quantity="340", price_basis="unit",
+        )
+        session.commit()
+
+        (celda,) = compute_cells(session)
+
+        assert celda.median == Decimal("340")
+        assert celda.unresolved_basis is False
+
+    def test_basis_total_divide(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-basis-total")
+        _precio(
+            session, product=arroz, province=None, price="21900", source=origen,
+            unit="kg", quantity="30", price_basis="total",
+        )
+        session.commit()
+
+        (celda,) = compute_cells(session)
+
+        assert celda.median == Decimal("730")
+        assert celda.unresolved_basis is False
+
+    def test_quantity_uno_no_depende_de_basis(self, session: Session) -> None:
+        """Con `quantity = 1`, unitario y total son el mismo número: la fila
+        se agrega igual que antes de este cambio, sin marcarse sin resolver."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-basis-qty-uno")
+        _precio(
+            session, product=arroz, province=None, price="750", source=origen,
+            unit="kg", quantity="1", price_basis=None,
+        )
+        session.commit()
+
+        (celda,) = compute_cells(session)
+
+        assert celda.median == Decimal("750")
+        assert celda.unresolved_basis is False
+
+    def test_basis_sin_resolver_va_a_celda_propia_y_no_se_funde(
+        self, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = _ingestion(session, "hash-basis-sin-resolver")
+        _precio(
+            session, product=arroz, province=scu, price="340", source=origen,
+            unit="lb", quantity="340", price_basis=None,
+        )
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="lb", quantity="1", price_basis="unit",
+        )
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 2
+        sin_resolver = [c for c in celdas if c.unresolved_basis][0]
+        assert sin_resolver.count == 1
+        # Sin resolver: agrega el total tal cual, no lo divide (asumir
+        # 'total' sería fabricar la respuesta que el operador nunca dio).
+        assert sin_resolver.median == Decimal("340")
+        resuelta = [c for c in celdas if not c.unresolved_basis][0]
+        assert resuelta.count == 1
+        assert resuelta.median == Decimal("700")
+
+    def test_fila_sin_resolver_se_excluye_del_rango_minorista(
+        self, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-excluded-basis")
+        _precio(
+            session, product=arroz, province=None, price="340", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="340",
+            price_basis=None,
+        )
+
+        reporte = compute_retail_ranges(session)
+
+        assert reporte.ranges == []
+        assert reporte.excluded_by_basis == 1
+
+    def test_exclusion_por_minimo_y_por_basis_no_se_absorben(
+        self, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-basis-y-minimo")
+        _precio(
+            session, product=arroz, province=None, price="730", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            min_purchase_quantity="30",
+        )
+        _precio(
+            session, product=arroz, province=None, price="340", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="340",
+            price_basis=None,
+        )
+
+        reporte = compute_retail_ranges(session)
+
+        assert reporte.excluded_by_minimum == 1
+        assert reporte.excluded_by_basis == 1
+
+    def test_una_sola_fila_excluida_por_los_dos_motivos_a_la_vez_no_se_cuenta_doble(
+        self, session: Session
+    ) -> None:
+        """Guarda de regresión de un hallazgo de `sdd-verify` (2026-08-21): el
+        caso anterior prueba independencia con DOS filas, una por motivo. Acá
+        una sola fila dispara los dos filtros a la vez (`quantity != 1` y
+        `price_basis` sin resolver, más `min_purchase_quantity` por encima de
+        `quantity`) — el filtro de mínimo corre primero y hace `continue`
+        (design.md, D7: «cada contador reporta filas que todo OTRO filtro
+        habría admitido»), así que la fila cuenta una sola vez, en el de
+        mínimo, y `excluded_by_basis` se queda en 0 para ella. Invertir el
+        orden de las dos guardas en `compute_retail_ranges` cambiaría cuál de
+        los dos cuenta sin romper ningún otro test — por eso hace falta fijar
+        el comportamiento acá."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-basis-y-minimo-misma-fila")
+        _precio(
+            session, product=arroz, province=None, price="340", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="340",
+            min_purchase_quantity="1000", price_basis=None,
+        )
+
+        reporte = compute_retail_ranges(session)
+
+        assert reporte.ranges == []
+        assert reporte.excluded_by_minimum == 1
+        assert reporte.excluded_by_basis == 0
+
+    def test_moneda_se_resuelve_antes_que_basis(self, session: Session) -> None:
+        """El orden importa, igual que con `quantity`: la decisión de basis
+        se evalúa sobre la cifra YA convertida a CUP, no sobre la original.
+
+        `basis='unit'` con la conversión ya resuelta: el precio en CUP NO se
+        divide. Contra el criterio previo a este cambio (dividir siempre por
+        `quantity`) esto da 730, no 21900 — la prueba de que la división dejó
+        de ser incondicional.
+        """
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-basis-moneda")
+        _precio(
+            session, product=arroz, province=None, price="60", source=origen,
+            unit="kg", quantity="30", currency=Currency.USD.value,
+            price_cup="21900", price_basis="unit",
+        )
+        session.commit()
+
+        (celda,) = compute_cells(session)
+
+        assert celda.currency == "CUP"
+        assert celda.median == Decimal("21900")
+
+    def test_basis_unit_en_rango_minorista_no_divide(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-rango-basis-unit")
+        _precio(
+            session, product=arroz, province=None, price="340", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="340",
+            price_basis="unit",
+        )
+
+        (rango,) = compute_retail_ranges(session).ranges
+
+        assert rango.median == Decimal("340")

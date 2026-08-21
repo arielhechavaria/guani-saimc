@@ -3426,3 +3426,41 @@ cortara en seco ante un nombre ambiguo, y su único consumidor restante
 queda en el modelo sin consumidor en código: distinguir canal de grupo va a
 volver a hacer falta el día que se guarde la identidad del emisor
 (`participant`), y borrarla es otro slice. Suite completa: 603/603.
+
+---
+
+## 2026-08-21 — `price_basis`: qué representa el precio guardado
+Contexto: `cells.py` divide `price / quantity` sin condición desde 2026-08-13,
+así que una fila sin declarar si `price` es por unidad o por el lote se lee
+implícitamente como total. De 105 filas con `quantity > 1`, 3 están mal
+divididas contra la mediana sin ambigüedad de su propia celda: «Arroz
+guyanés a 340lb» se guarda como `price=340, quantity=340` y agrega 1 CUP/lb
+en vez de ~340. Solo 14 celdas tienen suficiente referencia `quantity=1`
+para detectar el error, así que las ~90 filas restantes son *no verificadas*,
+no verificadas-correctas.
+Decisión: columna `price_basis` (`'unit'` | `'total'` | `NULL`), migración
+`0016` (aditiva, sin backfill — el head real de alembic es `0015`, no el
+`0009` que nombraba la propuesta). Obligatoria en el formulario solo cuando
+`quantity != 1`: con cantidad uno, unitario y total son el mismo número y
+exigir la respuesta ahí solo sería trabajo manual sin evitar ningún error.
+Nunca se infiere ni se prellena desde el historial (D5): un basis heredado
+mal multiplica el precio final por `quantity`, a diferencia de `sale_format`
+o `packaging`, donde heredar mal es cosmético. `compute_cells` deja de
+dividir incondicionalmente; una fila con `quantity != 1` y `price_basis` sin
+resolver va a su propia celda (`unresolved_basis`) y se excluye de
+`compute_retail_ranges` con un conteo separado (`excluded_by_basis`) del de
+compra mínima.
+Descartado: asumir `'total'` para las filas legadas sin resolver (es
+exactamente el bug que este cambio corrige); un CHECK cruzado
+`quantity = 1 OR price_basis IS NOT NULL` (rompería toda fila legada al
+crearse, la obligatoriedad es regla de captura, no invariante de esquema);
+partir el cambio en dos PRs por capa (schema+agregación vs. captura): el
+primero solo retiraría filas del rango público sin darle al operador ninguna
+forma de resolverlas, así que si se divide para revisión tienen que
+desplegarse juntos.
+Consecuencia: las ~90 filas legadas con `quantity > 1` y sin `price_basis`
+salen del rango público minorista hasta que el operador las recure desde
+`/curation/history`; `/control` muestra el conteo por separado del de compra
+mínima para que decida cuál cola atacar primero. `engine.py` no se toca:
+inferir el basis del texto del anuncio queda fuera de alcance, con su propio
+contrato de TDD, igual que `guess_min_purchase` en el cambio anterior.

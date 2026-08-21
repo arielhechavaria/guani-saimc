@@ -133,6 +133,8 @@ def _crear_precio_curado(
     sale_format: str | None = None,
     packaging: str | None = None,
     min_purchase_quantity: Decimal | None = None,
+    quantity: Decimal | None = None,
+    price_basis: str | None = None,
 ) -> PriceHistory:
     """Arma una fila de `prices_history` ya curada, sin pasar por el submit.
 
@@ -149,6 +151,8 @@ def _crear_precio_curado(
         sale_format=sale_format,
         packaging=packaging,
         min_purchase_quantity=min_purchase_quantity,
+        quantity=quantity,
+        price_basis=price_basis,
         source_id=ingestion.id,
     )
     session.add(precio)
@@ -480,7 +484,7 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert '<option value="l" selected>' in response.text
+        assert '<option value="l" data-basis-label="litro" selected>' in response.text
 
     def test_texto_no_llama_al_ocr(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
@@ -1003,6 +1007,7 @@ class TestCurationSubmit:
                 "unit_0": "lb",
                 "province_id_0": "",
                 "source_reference": "grupo telegram X",
+                "price_basis_0": "total",
             },
             follow_redirects=False,
         )
@@ -1691,6 +1696,7 @@ class TestCurationSubmit:
                 "quantity_0": "25",
                 "unit_0": "kg",
                 "packaging_format_0": "saco",
+                "price_basis_0": "total",
             },
             follow_redirects=False,
         )
@@ -1914,6 +1920,293 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert len(fila.packaging or "") <= PACKAGING_MAX_LENGTH
         assert "55550101" not in (fila.packaging or "")
+
+
+class TestPriceBasisSubmit:
+    """`price_basis` declara si `price` es por unidad o por el lote entero
+    (proposal.md — «Arroz guyanés a 340lb»). Obligatorio solo cuando
+    `quantity != 1`: con cantidad uno, unitario y total son el mismo número
+    (design.md, D3), igual que el mínimo de compra opcional de
+    `min_purchase_quantity` (D2 de ese cambio).
+    """
+
+    def test_quantity_distinta_de_uno_sin_basis_rechaza_el_submit(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-basis-requerido")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "2",
+                "product_id_0": str(arroz.id),
+                "price_0": "340",
+                "quantity_0": "340",
+                "product_id_1": str(pollo.id),
+                "price_1": "450",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        session.expire_all()
+        assert session.execute(select(PriceHistory)).first() is None
+        # La fila completa (Pollo) reaparece con sus valores tipeados: nada
+        # de lo que el operador cargó se pierde por el error de la otra fila.
+        assert f'value="{pollo.id}" selected' in response.text
+        assert 'value="450"' in response.text
+
+    def test_quantity_uno_sin_basis_persiste_con_basis_null(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-basis-qty-uno")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "quantity_0": "1",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.price_basis is None
+
+    def test_quantity_ausente_sin_basis_persiste_con_basis_null(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-basis-qty-ausente")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.price_basis is None
+
+    def test_basis_valido_persiste(self, client: TestClient, session: Session) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-basis-valido")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(arroz.id),
+                "price_0": "340",
+                "quantity_0": "340",
+                "price_basis_0": "unit",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.price_basis == "unit"
+
+    def test_basis_basura_con_quantity_uno_degrada_a_null(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Mismo contrato que `sale_format`: un valor posteado fuera del
+        dominio (incluido un envío en blanco) degrada a `NULL` en vez de
+        romper el submit, y nunca llega al CHECK de la base."""
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-basis-basura")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(pollo.id),
+                "price_0": "450",
+                "quantity_0": "1",
+                "price_basis_0": "lote",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.price_basis is None
+
+
+class TestPriceBasisEdit:
+    """La spec de captura dice que la regla «rige tanto al curar como al
+    corregir»: `submit_edit` usa los mismos dos helpers puros que
+    `submit_curation` (`_price_basis_value`, `_price_basis_required`), pero
+    hasta este test ningún caso de edición posteaba `quantity_0`, así que la
+    rama de rechazo nunca se había ejecutado (hallazgo de `sdd-verify`,
+    2026-08-21) — solo se sabía correcta por lectura de código, no por
+    ejecución.
+    """
+
+    def test_quantity_distinta_de_uno_sin_basis_rechaza_la_edicion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-basis-requerido")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session, ingestion=curado, product=arroz, price="1", quantity=Decimal("1")
+        )
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(arroz.id),
+                    "price": "340",
+                    "quantity": "340",
+                    "price_id": str(precio.id),
+                },
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        session.refresh(precio)
+        # Nada se pisó: el precio viejo sigue en la base, sin el basis exigido.
+        assert precio.price == Decimal("1")
+        assert precio.price_basis is None
+
+    def test_quantity_distinta_de_uno_con_basis_valido_actualiza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-basis-valido")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session, ingestion=curado, product=arroz, price="1", quantity=Decimal("1")
+        )
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(arroz.id),
+                    "price": "340",
+                    "quantity": "340",
+                    "price_basis": "unit",
+                    "price_id": str(precio.id),
+                },
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.refresh(precio)
+        assert precio.price == Decimal("340")
+        assert precio.price_basis == "unit"
+
+    def test_quantity_uno_sin_basis_actualiza_con_basis_null(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Guarda de regresión: con `quantity=1` la pregunta sigue inerte
+        también al editar, igual que al curar."""
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-edit-basis-qty-uno")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(session, ingestion=curado, product=pollo, price="450")
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(pollo.id),
+                    "price": "500",
+                    "quantity": "1",
+                    "price_id": str(precio.id),
+                },
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.refresh(precio)
+        assert precio.price == Decimal("500")
+        assert precio.price_basis is None
+
+
+class TestPriceBasisTemplate:
+    """El control de `price_basis` nombra la unidad de la fila y nunca viene
+    preseleccionado (curation-observation-capture spec, "la prueba de la
+    jabita" — mismo criterio que `sale_format`)."""
+
+    def test_fila_nueva_no_preselecciona_ninguna_opcion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        # Sin catálogo piloto, `_pending_in_focus` no filtra nada (no hay
+        # relevancia que medir), así que este pendiente sí llega a la cola y
+        # las filas en blanco de más (`_EXTRA_BLANK_ROWS`) se renderizan.
+        _crear_raw_ingestion(session, hash_="hash-basis-fila-nueva")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="price_basis_0"' in response.text
+        assert 'value="unit" selected' not in response.text
+        assert 'value="total" selected' not in response.text
+
+    def test_edicion_de_fila_con_basis_unit_prellena_la_seleccion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        curado = _crear_raw_ingestion(session, hash_="hash-basis-edit-get")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=curado, product=arroz, price="340",
+            quantity=Decimal("340"), unit="lb", price_basis="unit",
+        )
+
+        response = client.get(f"/curation/{curado.id}/edit")
+
+        assert '<option value="unit" selected>' in response.text
+
+    def test_unidad_lb_nombra_la_libra_en_la_opcion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = _crear_producto(session, name="Arroz")
+        curado = _crear_raw_ingestion(session, hash_="hash-basis-unidad-lb")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=curado, product=arroz, price="700", unit="lb",
+        )
+
+        response = client.get(f"/curation/{curado.id}/edit")
+
+        assert "Precio por libra" in response.text
 
 
 class TestConversionAlCurar:
@@ -2580,7 +2873,7 @@ class TestEditarCuradoGet:
         assert f'value="{pollo.id}" selected' in response.text
         assert 'value="500"' in response.text
         assert f'value="{habana.id}" selected' in response.text
-        assert '<option value="lb" selected>' in response.text
+        assert '<option value="lb" data-basis-label="libra" selected>' in response.text
         assert '<option value="retail" selected>' in response.text
         assert 'value="jaba"' in response.text
 
@@ -2640,6 +2933,7 @@ def _form_edicion(
         "min_purchase_0": row.get("min_purchase", ""),
         "province_id_0": row.get("province_id", ""),
         "price_id_0": row.get("price_id", ""),
+        "price_basis_0": row.get("price_basis", ""),
     }
 
 

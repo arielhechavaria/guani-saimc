@@ -74,6 +74,14 @@ class PriceHistory(Base):
             "min_purchase_quantity IS NULL OR min_purchase_quantity > 0",
             name="ck_prices_history_min_purchase_quantity",
         ),
+        # Vocabulario cerrado, mismo patrón que `ck_prices_history_sale_format`
+        # (design.md, D2): `price_basis` tiene exactamente dos valores posibles
+        # y un tercero sería una pregunta distinta, no un vocabulario que crece
+        # — a diferencia de `unit`, que sí se deja fuera de la base a propósito.
+        CheckConstraint(
+            "price_basis IS NULL OR price_basis IN ('unit', 'total')",
+            name="ck_prices_history_price_basis",
+        ),
         Index("idx_prices_history_series", "product_id", "province_id", "created_at"),
     )
 
@@ -118,6 +126,15 @@ class PriceHistory(Base):
     min_purchase_quantity: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 3), nullable=True
     )
+    # Qué representa `price` en esta fila: `unit` = ya es el precio de una
+    # unidad de `unit`; `total` = es el total del lote de `quantity` unidades.
+    # `NULL` es «no resuelto» (legado o pendiente de curar), NUNCA se lee como
+    # equivalente a `total` — esa lectura implícita es exactamente el bug que
+    # dividía «Arroz guyanés a 340lb» (`price=340, quantity=340`) en 1 CUP/lb
+    # en vez de ~340 (proposal.md). Obligatorio solo cuando `quantity != 1`, y
+    # esa obligatoriedad se resuelve en la capa de captura (`curation.py`), no
+    # acá: con cantidad uno, unitario y total son el mismo número.
+    price_basis: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Día de publicación del anuncio, no instante — eje temporal de la serie
     # (spec.md §6.1c/§7.2). Nullable, sin default y sin CHECK: un dato
     # secundario nunca debe bloquear un insert (design.md, D2).

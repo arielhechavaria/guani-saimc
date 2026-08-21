@@ -117,6 +117,11 @@ def control_panel(
             # un número que abarca de más y es honesto sobre eso, a rehacer la
             # consulta para recortarlo.
             "excluded_by_minimum": retail_report.excluded_by_minimum,
+            # Mismo criterio de honestidad que el de arriba: cuenta sobre
+            # todos los productos, no solo los pilotos, porque el filtro de
+            # `compute_retail_ranges` corre antes de saber de qué producto
+            # era cada fila (2026-08-21).
+            "excluded_by_basis": retail_report.excluded_by_basis,
             "curated": curated,
             "rows": rows,
             # Se cuenta sobre las celdas ya filtradas, no con un agregado

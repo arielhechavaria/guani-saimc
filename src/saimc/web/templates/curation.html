@@ -245,6 +245,7 @@
 {% endblock %}
 
 {% block scripts %}
+{% include "_price_row_scripts.html" %}
 <script>
   // Elimina la tarjeta del DOM sin tocar el form ni pisar `submit_curation`:
   // sus campos indexados nunca viajan en el POST, así que la fila cae en la
