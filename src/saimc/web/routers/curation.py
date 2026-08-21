@@ -153,6 +153,7 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "packaging_detail": "",
             "min_purchase": "",
             "province_id": "",
+            "price_basis": "",
         }
     return {
         # Sin fila propia todavía: existe recién cuando se confirma el submit.
@@ -181,6 +182,10 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             else ""
         ),
         "province_id": str(proposal.province.id) if proposal.province else "",
+        # Nunca se prellena, ni siquiera vacío-vs-lleno (D5): a diferencia de
+        # `sale_format`/`packaging`/`min_purchase`, un basis heredado mal
+        # multiplica el precio final por `quantity` en vez de ser cosmético.
+        "price_basis": "",
     }
 
 
@@ -207,6 +212,7 @@ def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
             else ""
         ),
         "province_id": str(price.province_id) if price.province_id else "",
+        "price_basis": price.price_basis or "",
     }
 
 
@@ -426,6 +432,10 @@ def _historical_defaults(
             if ultimo.min_purchase_quantity is not None
             else ""
         ),
+        # `price_basis` deliberadamente AUSENTE de este prefill (design.md,
+        # D5): a diferencia de estos tres campos, un basis heredado mal no es
+        # cosmético — multiplica el precio final por `quantity`. El control
+        # MUST venir sin preselección (curation-observation-capture spec).
     }
 
 
@@ -829,6 +839,23 @@ def _parse_min_purchase(raw: str) -> Decimal | None:
     return value
 
 
+_PRICE_BASIS_VALUES = {"unit", "total"}
+
+
+def _price_basis_value(raw: str) -> str | None:
+    """Gate de vocabulario: cualquier otra cosa —incluido el envío en blanco—
+    es «sin resolver», nunca un valor fabricado (mismo contrato que
+    `_SALE_FORMAT_VALUES`, design.md D3)."""
+    return raw if raw in _PRICE_BASIS_VALUES else None
+
+
+def _price_basis_required(quantity: Decimal | None) -> bool:
+    """Con cantidad uno (o sin cantidad) unitario y total son el mismo
+    número: la pregunta es aritméticamente inerte y exigirla ahí solo
+    costaría trabajo manual sin evitar ningún error (design.md, D3)."""
+    return quantity is not None and quantity != 1
+
+
 def _parse_date(raw: str) -> date | None:
     """Parsea el `<input type="date">` (ISO `YYYY-MM-DD` del navegador).
 
@@ -931,6 +958,7 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
         "packaging_detail": str(form.get(f"packaging_detail_{index}", "")).strip(),
         "min_purchase": str(form.get(f"min_purchase_{index}", "")).strip(),
         "province_id": str(form.get(f"province_id_{index}", "")).strip(),
+        "price_basis": str(form.get(f"price_basis_{index}", "")).strip(),
     }
 
 
@@ -1016,13 +1044,21 @@ async def submit_curation(
         province_uuid = _parse_uuid(row["province_id"])
         province = db.get(Province, province_uuid) if province_uuid is not None else None
 
+        quantity_value = _parse_decimal(row["quantity"])
+        price_basis = _price_basis_value(row["price_basis"])
+        if price_basis is None and _price_basis_required(quantity_value):
+            errors.append(
+                f"Fila {i + 1}: declará si el precio es por unidad o por el lote entero"
+            )
+            continue
+
         entries_to_create.append(
             PriceHistory(
                 product_id=product.id,
                 province_id=province.id if province is not None else None,
                 price=price_value,
                 currency=row["currency"],
-                quantity=_parse_decimal(row["quantity"]),
+                quantity=quantity_value,
                 unit=canonical_unit(row["unit"]),
                 sale_format=(
                     row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None
@@ -1035,6 +1071,7 @@ async def submit_curation(
                 # la columna deja de entrar apenas se redacta.
                 packaging=_packaging_from_form(row["packaging_format"], row["packaging_detail"]),
                 min_purchase_quantity=_parse_min_purchase(row["min_purchase"]),
+                price_basis=price_basis,
                 published_date=published_date,
                 source_id=ingestion.id,
             )
@@ -1343,6 +1380,14 @@ async def submit_edit(
         province_uuid = _parse_uuid(row["province_id"])
         province = db.get(Province, province_uuid) if province_uuid is not None else None
 
+        quantity_value = _parse_decimal(row["quantity"])
+        price_basis = _price_basis_value(row["price_basis"])
+        if price_basis is None and _price_basis_required(quantity_value):
+            errors.append(
+                f"Fila {i + 1}: declará si el precio es por unidad o por el lote entero"
+            )
+            continue
+
         updates.append((existing, product, price_value, province, row))
 
     if errors:
@@ -1389,6 +1434,12 @@ async def submit_edit(
             row["packaging_format"], row["packaging_detail"]
         )
         existing.min_purchase_quantity = _parse_min_purchase(row["min_purchase"])
+        # Re-derivados de `row` con los mismos dos helpers puros que ya
+        # validaron esta fila en el primer loop (D4): son funciones puras de
+        # los strings crudos, así que no pueden derivar del valor validado
+        # arriba — ensanchar la tupla `updates` de 5 a 7 elementos para
+        # cargarlos ya validados haría lo mismo con más superficie.
+        existing.price_basis = _price_basis_value(row["price_basis"])
         existing.published_date = published_date
 
         if row["currency"] == Currency.CUP.value:

@@ -10,6 +10,12 @@
   no cambian: `submit_curation` y los tests siguen viendo lo mismo.
 #}
 {% macro price_row_card(row, index0, products, provinces, currencies, units, edit_mode=False) %}
+{# Nombres de unidad en español, para el control de `price_basis` de más
+   abajo y para el `data-basis-label` que lee `_price_row_scripts.html`. Vive
+   acá y no en `saimc.units` (D8): ese módulo es dueño del vocabulario de
+   ALMACENAMIENTO, no de la copia de UI en español. #}
+{% set unit_words = {"lb": "libra", "kg": "kilo", "l": "litro", "ml": "mililitro",
+                     "unidad": "unidad", "docena": "docena", "caja": "caja"} %}
 <div class="m3-card m3-card-pad m3-row-card{% if not row.product_id %} is-review{% endif %}" style="margin-bottom:16px">
 
   {% if not edit_mode %}
@@ -76,6 +82,9 @@
     <label class="m3-field">
       <span class="m3-field-label" for="quantity_{{ index0 }}">Cantidad</span>
       <input type="text" name="quantity_{{ index0 }}" id="quantity_{{ index0 }}" value="{{ row.quantity }}" class="m3-input m3-input-num" />
+      <span class="m3-help">
+        En la unidad de esta fila{% if row.unit %} ({{ unit_words.get(row.unit, row.unit) }}){% endif %}.
+      </span>
     </label>
 
     <label class="m3-field">
@@ -83,7 +92,7 @@
       <select name="unit_{{ index0 }}" id="unit_{{ index0 }}" class="m3-select">
         <option value="" {% if not row.unit %}selected{% endif %}>— sin unidad —</option>
         {% for unit in units %}
-        <option value="{{ unit }}" {% if row.unit == unit %}selected{% endif %}>{{ unit }}</option>
+        <option value="{{ unit }}" data-basis-label="{{ unit_words.get(unit, unit) }}" {% if row.unit == unit %}selected{% endif %}>{{ unit }}</option>
         {% endfor %}
       </select>
     </label>
@@ -119,6 +128,32 @@
       <span class="m3-help">
         Mayorista es escala de contenedor, no vender un saco o paquete individual —
         eso lo ofrece cualquier minorista desde su casa (corregido 2026-08-12).
+      </span>
+    </label>
+  </div>
+
+  {# `price_basis`: declara qué representa `price` en esta fila — nunca se
+     infiere de `unit`, `quantity` ni aritmética sobre el precio (misma
+     prueba de la jabita que `sale_format`, curation-observation-capture
+     spec). Sin preselección; obligatoria solo cuando `quantity != 1`
+     (design.md, D3) — con cantidad uno, unitario y total son el mismo
+     número y el servidor no la exige. #}
+  <div style="margin-top:22px">
+    <label class="m3-field" style="display:block">
+      <span class="m3-field-label" for="price_basis_{{ index0 }}">
+        ¿El precio de esta fila es por unidad, o es el total del lote/anuncio?
+      </span>
+      <select name="price_basis_{{ index0 }}" id="price_basis_{{ index0 }}" class="m3-select">
+        <option value=""{% if row.price_basis not in ("unit", "total") %} selected{% endif %}>— sin responder —</option>
+        <option value="unit"{% if row.price_basis == "unit" %} selected{% endif %}>
+          {% if row.unit %}Precio por {{ unit_words.get(row.unit, row.unit) }}{% else %}Precio de una sola unidad de esta fila{% endif %}
+        </option>
+        <option value="total"{% if row.price_basis == "total" %} selected{% endif %}>Precio total del anuncio</option>
+      </select>
+      <span class="m3-help">
+        Obligatorio solo si la cantidad no es 1. Ejemplo real: «Arroz guyanés a 340lb» cargado
+        con <code>cantidad=340</code> — sin responder acá el precio se guarda sin dividir y queda
+        fuera del rango público hasta que se resuelva.
       </span>
     </label>
   </div>

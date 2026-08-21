@@ -1,0 +1,30 @@
+<script>
+  // Relabel en vivo de la opción "por unidad" del control de `price_basis`
+  // cuando el operador cambia la unidad de la fila DESPUÉS de cargar la
+  // página. Es una mejora cosmética, nunca el mecanismo probado: el texto
+  // server-rendered (macro `price_row_card`, `_price_row_card.html`) es lo
+  // que el escenario de la especificación afirma. Si este script nunca
+  // corre, la etiqueta puede quedar desactualizada pero el valor enviado y
+  // toda regla del servidor siguen intactos (design.md, D8).
+  //
+  // Delegado en `document`, mismo estilo que el botón "Eliminar" de la fila
+  // en curation.html: las filas se agregan/quitan del DOM sin recargar, así
+  // que un listener atado a un elemento puntual no cubriría filas nuevas.
+  document.addEventListener('change', function (event) {
+    var unitSelect = event.target.closest('select[id^="unit_"]');
+    if (!unitSelect) return;
+
+    var index = unitSelect.id.slice('unit_'.length);
+    var basisSelect = document.getElementById('price_basis_' + index);
+    if (!basisSelect) return;
+
+    var unitOption = basisSelect.querySelector('option[value="unit"]');
+    if (!unitOption) return;
+
+    var selectedUnit = unitSelect.options[unitSelect.selectedIndex];
+    var label = selectedUnit ? selectedUnit.getAttribute('data-basis-label') : null;
+    unitOption.textContent = label
+      ? ('Precio por ' + label)
+      : 'Precio de una sola unidad de esta fila';
+  });
+</script>

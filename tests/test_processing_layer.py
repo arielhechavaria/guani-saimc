@@ -462,6 +462,46 @@ class TestPricesHistoryMinPurchaseQuantityCheck:
             session.commit()
 
 
+class TestPricesHistoryPriceBasisCheck:
+    """`price_basis` declara qué representa `price`: `unit` (ya es precio de
+    una unidad) o `total` (precio del lote de `quantity` unidades). `NULL` es
+    «no resuelto» — legado o pendiente de curar —, nunca se lee como `total`
+    (esa lectura implícita es exactamente el bug de la fila «Arroz guyanés a
+    340lb», que quedó a 1 CUP/lb en vez de ~340). El CHECK es de vocabulario
+    cerrado, mismo patrón que `ck_prices_history_sale_format`."""
+
+    def test_price_basis_none_aceptado(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, price_basis=None)
+        session.add(precio)
+        session.commit()
+
+        assert precio.price_basis is None
+
+    @pytest.mark.parametrize("valor", ["unit", "total"])
+    def test_price_basis_valor_del_dominio_aceptado(
+        self, session: Session, valor: str
+    ) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        precio = _crear_precio(producto, fuente, price_basis=valor)
+        session.add(precio)
+        session.commit()
+
+        assert precio.price_basis == valor
+
+    def test_price_basis_fuera_del_dominio_rechazado(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+
+        session.add(_crear_precio(producto, fuente, price_basis="lote"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
 class TestPricesHistoryExclusiones:
     def test_sin_columnas_fuera_de_alcance(self) -> None:
         nombres_columnas = {c.name for c in PriceHistory.__table__.columns}
@@ -614,6 +654,61 @@ class TestMinPurchaseQuantityMigration:
             assert "id" in columnas  # el downgrade no se llevó ninguna otra columna
 
         engine.dispose()
+
+        engine.dispose()
+
+
+class TestPriceBasisMigration:
+    """`0016_prices_history_price_basis.py` — mismo patrón que
+    `TestMinPurchaseQuantityMigration`: `batch_alter_table` porque la
+    migración crea un CHECK y SQLite no soporta `ADD CONSTRAINT`.
+
+    El número real es `0016`, no `0009` (design.md, D1): `0009` ya está
+    tomado por `products_is_pilot` y el head real de alembic es `0015`.
+    """
+
+    def test_upgrade_agrega_la_columna_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0016_prices_history_price_basis.py")
+
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "prices_history",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        metadata.create_all(engine)
+
+        # Guardarraíl de «sin backfill», igual que en 0008: una fila anterior
+        # a la migración tiene que quedar en NULL, no en un basis fabricado
+        # (leer NULL como 'total' es exactamente el bug que este cambio corrige).
+        with engine.connect() as connection:
+            connection.execute(
+                sa.insert(metadata.tables["prices_history"]).values(id=uuid.uuid4())
+            )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "price_basis" in columnas
+
+            valor = connection.execute(
+                sa.text("select price_basis from prices_history")
+            ).scalar_one()
+            assert valor is None
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "price_basis" not in columnas
+            assert "id" in columnas  # el downgrade no se llevó ninguna otra columna
 
         engine.dispose()
 

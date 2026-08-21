@@ -358,6 +358,65 @@ class TestRangoMinorista:
         assert "750.00 CUP/lb" in response.text
 
 
+class TestExclusionPorBasisSinResolver:
+    """`price_basis` sin resolver excluye una fila del rango minorista, con un
+    conteo separado del de compra mínima — el operador necesita distinguir
+    el motivo para priorizar qué cola de curaduría atacar primero (2026-08-21,
+    public-price-range spec).
+    """
+
+    def test_muestra_el_conteo_separado_del_de_minimo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[], is_pilot=True)
+        session.add(arroz)
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/basis-control.txt",
+            content_hash="hash-basis-control",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        session.add_all(
+            [
+                # Fuera por basis sin resolver (quantity != 1, price_basis NULL).
+                PriceHistory(
+                    product_id=arroz.id,
+                    price=Decimal("340"),
+                    currency=Currency.CUP.value,
+                    unit="kg",
+                    sale_format=SaleFormat.RETAIL.value,
+                    quantity=Decimal("340"),
+                    source_id=origen.id,
+                ),
+                # Fuera por compra mínima, motivo distinto.
+                PriceHistory(
+                    product_id=arroz.id,
+                    price=Decimal("730"),
+                    currency=Currency.CUP.value,
+                    unit="kg",
+                    sale_format=SaleFormat.RETAIL.value,
+                    quantity=Decimal("1"),
+                    min_purchase_quantity=Decimal("30"),
+                    source_id=origen.id,
+                ),
+            ]
+        )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        # Conteo de basis sin resolver, en su propio banner — no fusionado
+        # con el texto de compra mínima ya existente.
+        assert "quedó fuera de este rango por no declarar" in response.text
+        assert "quedó fuera de este rango por compra mínima" in response.text
+
+
 class TestFiltroDePilotos:
     """`/control` muestra solo los productos piloto (2026-08-12): el resto
     del catálogo (dispersión de 2026-08-11) queda fuera de esta vista por
