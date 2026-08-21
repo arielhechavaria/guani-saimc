@@ -3810,3 +3810,29 @@ extracción. Provincia se sostiene en 76.8% gracias a conservarla, y
 cantidad/unidad y extracción completa (40.8%) no se mueven, porque esas filas
 ya fallaban por otro lado. Tercera vez que un número de H0 cambia por la
 medición y no por el extractor.
+
+## 2026-08-21 — El OCR lee la captura como un bloque, no como una página
+
+Contexto: las imágenes son 88 de las 211 filas curadas y arrastran todas las
+métricas. `ocr.transcribe` llamaba a Tesseract con los defaults, y el modo de
+segmentación por defecto (psm 3) busca estructura de página —columnas,
+bloques, orientación—. La evidencia real no es una página escaneada: es una
+captura de pantalla de un chat de WhatsApp o Facebook.
+
+Decisión: pasar `--psm 6`, que trata la imagen como un bloque uniforme de
+texto. Medido sobre las mismas 77 imágenes: producto 84.4% → 85.3%, provincia
+76.8% → 79.1%, precio 53.1% → 53.6%, cantidad/unidad 53.6% → 53.1%.
+
+Descartado: (a) upscaling 2x + escala de grises, con o sin autocontraste —
+sube producto pero BAJA el precio (27.3% → 25.0%) sobre las filas de imagen;
+(b) un motor OCR distinto o un modelo de visión — fuera de Fase 0 por la
+restricción de entorno (conexión lenta, sin descargas grandes) y por
+sobreingeniería.
+
+Consecuencia: la extracción completa NO se mueve (40.8%) — lo que mejora cae
+en filas que ya fallaban por otro lado. Se adopta igual porque cada campo
+bien prellenado es trabajo que el operador no hace, y eso es exactamente lo
+que H0 mide como costo (CLAUDE.md, «H0 — métrica de eficiencia»). Cuesta ~45%
+más de tiempo por imagen (~0.9s), imperceptible abriendo un anuncio por vez.
+Queda registrado que el precio sobre imagen (26.1%) sigue siendo el techo
+real y que no se levanta con configuración de Tesseract.

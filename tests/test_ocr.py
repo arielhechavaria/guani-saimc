@@ -26,10 +26,38 @@ class TestTranscribeMockeado:
         Image.new("RGB", (10, 10), "white").save(imagen)
 
         monkeypatch.setattr(
-            pytesseract, "image_to_string", lambda img, lang: "pollo a 500 habana"
+            pytesseract,
+            "image_to_string",
+            lambda img, lang, config: "pollo a 500 habana",
         )
 
         assert ocr.transcribe(imagen) == "pollo a 500 habana"
+
+    def test_pide_el_modo_de_bloque_uniforme(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """La evidencia es una captura de chat, no una página con columnas.
+
+        El modo por defecto de Tesseract (psm 3) segmenta buscando estructura
+        de página; `--psm 6` la trata como un bloque uniforme de texto, que es
+        lo que una captura de WhatsApp o Facebook realmente es. Medido contra
+        las 77 imágenes curadas del corpus el 2026-08-21: producto 84.4% →
+        85.3%, provincia 76.8% → 79.1%, precio 53.1% → 53.6%.
+        """
+        imagen = tmp_path / "foto.png"
+        Image.new("RGB", (10, 10), "white").save(imagen)
+        recibido: dict[str, object] = {}
+
+        def _capturar(img, lang, config):
+            recibido["lang"] = lang
+            recibido["config"] = config
+            return ""
+
+        monkeypatch.setattr(pytesseract, "image_to_string", _capturar)
+        ocr.transcribe(imagen)
+
+        assert recibido["config"] == "--psm 6"
+        assert recibido["lang"] == "spa"
 
     def test_binario_de_tesseract_ausente_devuelve_string_vacio(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -37,7 +65,7 @@ class TestTranscribeMockeado:
         imagen = tmp_path / "foto.png"
         Image.new("RGB", (10, 10), "white").save(imagen)
 
-        def _raise(img, lang):
+        def _raise(img, lang, config):
             raise pytesseract.TesseractNotFoundError()
 
         monkeypatch.setattr(pytesseract, "image_to_string", _raise)
@@ -60,7 +88,7 @@ class TestTranscribeMockeado:
         imagen = tmp_path / "foto.png"
         Image.new("RGB", (10, 10), "white").save(imagen)
 
-        def _raise(img, lang):
+        def _raise(img, lang, config):
             raise ValueError("boom")
 
         monkeypatch.setattr(pytesseract, "image_to_string", _raise)
