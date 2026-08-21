@@ -78,7 +78,16 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     El conteo no es decoración: es lo que permite decidir a qué producto
     promover con evidencia en vez de por intuición. «Azúcar blanca» llegó a
     once observaciones antes de que nadie la declarara piloto.
+
+    Búsqueda y filtro de plataforma van por querystring, no por JavaScript —
+    mismo criterio que «Solo el foco» (`focus=1`), ya documentado en el
+    template. Con 10 canales y 60 productos medidos en producción (2026-08-21)
+    no hay volumen que justifique paginación; se deja fuera de alcance.
     """
+    q_canal = (request.query_params.get("q_canal") or "").strip()
+    platform_filter = (request.query_params.get("platform") or "").strip()
+    q_producto = (request.query_params.get("q_producto") or "").strip()
+
     counts = dict(
         db.execute(
             select(PriceHistory.product_id, func.count())
@@ -86,16 +95,22 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         ).all()
     )
 
-    products = list(
-        db.execute(
-            select(Product).order_by(Product.is_pilot.desc(), Product.name)
-        ).scalars()
-    )
-    channels = list(
-        db.execute(
-            select(Channel).order_by(Channel.is_active.desc(), Channel.name)
-        ).scalars()
-    )
+    pilot_count = db.execute(
+        select(func.count()).select_from(Product).where(Product.is_pilot.is_(True))
+    ).scalar_one()
+
+    products_stmt = select(Product).order_by(Product.is_pilot.desc(), Product.name)
+    if q_producto:
+        products_stmt = products_stmt.where(Product.name.ilike(f"%{q_producto}%"))
+    products = list(db.execute(products_stmt).scalars())
+
+    channels_stmt = select(Channel).order_by(Channel.is_active.desc(), Channel.name)
+    if q_canal:
+        channels_stmt = channels_stmt.where(Channel.name.ilike(f"%{q_canal}%"))
+    if platform_filter:
+        channels_stmt = channels_stmt.where(Channel.platform == platform_filter)
+    channels = list(db.execute(channels_stmt).scalars())
+
     provinces = list(db.execute(select(Province).order_by(Province.name)).scalars())
 
     return request.app.state.templates.TemplateResponse(
@@ -106,7 +121,10 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
             "channels": channels,
             "provinces": provinces,
             "platforms": list(Platform),
-            "pilot_count": sum(1 for product in products if product.is_pilot),
+            "pilot_count": pilot_count,
+            "q_canal": q_canal,
+            "platform_filter": platform_filter,
+            "q_producto": q_producto,
             "flash_message": request.query_params.get("message"),
             "flash_error": request.query_params.get("error"),
         },

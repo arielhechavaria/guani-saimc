@@ -3539,3 +3539,22 @@ declara `WHATSAPP_DOWNLOAD_MEDIA=true` y `WHATSAPP_FILES_MIMETYPES` para que el
 modo de falla «hasMedia sin media.url» no sea invisible. Falta medir cuánto
 volumen real entra: la cola las ordena como `_FOCUS_UNKNOWN`, que nunca se
 esconde, así que si inundan hay que revisar ese ranking con el número en la mano.
+
+---
+
+## 2026-08-21 — Buscador y filtro en /catalog, sin paginación
+
+Contexto: el operador pidió mejorar la experiencia de /catalog con buscador,
+filtro canal/grupo y paginación. Medido contra producción antes de tocar
+código: 10 canales, 60 productos.
+
+Decisión: se agregó búsqueda de texto (`q_canal`, `q_producto`) y filtro de
+plataforma (`platform`) para canales, todo por querystring server-side —
+mismo criterio ya usado por «Solo el foco» (`focus=1`), documentado en el
+propio template. Sin JavaScript nuevo.
+
+Descartado: paginación. Con los volúmenes medidos no hay problema que
+resuelva — sería complejidad sin necesidad real.
+
+Consecuencia: si canales o productos crecen mucho más, paginación vuelve a
+ser una opción legítima; se revisita con volumen real en la mano, no antes.

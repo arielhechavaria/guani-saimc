@@ -23,6 +23,8 @@
 {# Filtro de pantalla, no de datos: enlace con querystring en vez de JavaScript,
    mismo criterio que las pestañas de provincia de /control. #}
 {% set focus_only = request.query_params.get('focus') == '1' %}
+{% set qs_producto = ('&q_producto=' ~ (q_producto | urlencode)) if q_producto else '' %}
+{% set link_todos = '/catalog?' ~ qs_producto[1:] if qs_producto else '/catalog' %}
 {% set obs_values = products | map(attribute=1) | list %}
 {% set obs_max = (obs_values | max) if obs_values else 0 %}
 
@@ -112,6 +114,30 @@
       </form>
     </details>
 
+    {# Búsqueda y filtro de plataforma por querystring, no JavaScript — mismo
+       criterio que «Solo el foco» más abajo. Los 10 canales medidos en
+       producción (2026-08-21) no justifican paginación. #}
+    <form method="get" action="/catalog#canales" class="m3-row" style="gap:8px; margin:0 24px 16px; flex-wrap:wrap">
+      <span class="m3-field m3-field-compact">
+        <input type="search" name="q_canal" value="{{ q_canal }}" placeholder="Buscar canal…"
+               class="m3-input" style="min-width:200px" />
+      </span>
+      <span class="m3-field m3-field-compact">
+        <select name="platform" class="m3-select" onchange="this.form.submit()">
+          <option value="">Todas las plataformas</option>
+          {% for platform in platforms %}
+          <option value="{{ platform.value }}" {% if platform_filter == platform.value %}selected{% endif %}>
+            {{ platform.value }}
+          </option>
+          {% endfor %}
+        </select>
+      </span>
+      <button type="submit" class="m3-btn m3-btn-outlined">Buscar</button>
+      {% if q_canal or platform_filter %}
+      <a href="/catalog#canales" class="m3-btn m3-btn-outlined">Limpiar</a>
+      {% endif %}
+    </form>
+
     <div class="m3-table-scroll">
       <table class="m3-table">
         <thead>
@@ -125,7 +151,10 @@
         </thead>
         <tbody>
           {% if not channels %}
-          <tr><td colspan="5" class="m3-muted m3-sm">Todavía no hay canales anotados.</td></tr>
+          <tr><td colspan="5" class="m3-muted m3-sm">
+            {% if q_canal or platform_filter %}Ningún canal coincide con el filtro.
+            {% else %}Todavía no hay canales anotados.{% endif %}
+          </td></tr>
           {% endif %}
           {% for channel in channels %}
           <tr {% if not channel.is_active %}class="m3-row-off"{% endif %}>
@@ -259,11 +288,24 @@
         <h2 class="m3-h2">Productos</h2>
         <p class="m3-note" style="margin-bottom:0">{{ products|length }} en catálogo · {{ pilot_count }} en el foco</p>
       </div>
-      <div class="m3-row" style="gap:8px">
-        <a class="m3-chip m3-chip-btn{% if not focus_only %} is-selected{% endif %}" href="/catalog#productos">Todos</a>
-        <a class="m3-chip m3-chip-btn{% if focus_only %} is-selected{% endif %}" href="/catalog?focus=1#productos">
+      <div class="m3-row" style="gap:8px; flex-wrap:wrap">
+        <a class="m3-chip m3-chip-btn{% if not focus_only %} is-selected{% endif %}"
+           href="{{ link_todos }}#productos">Todos</a>
+        <a class="m3-chip m3-chip-btn{% if focus_only %} is-selected{% endif %}"
+           href="/catalog?focus=1{{ qs_producto }}#productos">
           <span class="m3-icon m3-icon-sm">{{ 'check' if focus_only else 'center_focus_strong' }}</span>Solo el foco
         </a>
+        <form method="get" action="/catalog#productos" class="m3-row" style="gap:8px">
+          {% if focus_only %}<input type="hidden" name="focus" value="1" />{% endif %}
+          <span class="m3-field m3-field-compact">
+            <input type="search" name="q_producto" value="{{ q_producto }}" placeholder="Buscar producto…"
+                   class="m3-input" style="min-width:180px" />
+          </span>
+          <button type="submit" class="m3-btn m3-btn-outlined">Buscar</button>
+          {% if q_producto %}
+          <a href="/catalog{{ '?focus=1' if focus_only else '' }}#productos" class="m3-btn m3-btn-outlined">Limpiar</a>
+          {% endif %}
+        </form>
       </div>
       <details class="m3-inline-form">
         <summary class="m3-btn m3-btn-tonal m3-summary">
@@ -304,6 +346,12 @@
           </tr>
         </thead>
         <tbody>
+          {% if not products %}
+          <tr><td colspan="4" class="m3-muted m3-sm">
+            {% if q_producto %}Ningún producto coincide con la búsqueda.
+            {% else %}Todavía no hay productos en el catálogo.{% endif %}
+          </td></tr>
+          {% endif %}
           {% for product, observations in products %}
           {% if not focus_only or product.is_pilot %}
           <tr {% if not product.is_pilot %}class="m3-row-off"{% endif %}>

@@ -11,6 +11,7 @@ correr el extractor.
 """
 
 import importlib.util
+import re
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -682,6 +683,107 @@ class TestCatalogoCanales:
         assert "error=" in response.headers["location"]
         session.expire_all()
         assert session.get(Channel, canal.id) is not None
+
+
+# --- búsqueda y filtro (sin paginación: 10 canales / 60 productos medidos en
+# producción el 2026-08-21 no la justifican) ---------------------------------
+
+
+class TestCatalogoBuscadorDeCanales:
+    def test_busca_por_nombre_parcial_sin_importar_mayusculas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        session.add(Channel(name="Tienda El Boss", platform=Platform.WHATSAPP_CHANNEL))
+        session.add(Channel(name="Mercado Central", platform=Platform.WHATSAPP_GROUP))
+        session.commit()
+
+        response = client.get("/catalog", params={"q_canal": "boss"})
+
+        assert "Tienda El Boss" in response.text
+        assert "Mercado Central" not in response.text
+
+    def test_filtra_por_plataforma(self, client: TestClient, session: Session) -> None:
+        session.add(Channel(name="Canal Uno", platform=Platform.WHATSAPP_CHANNEL))
+        session.add(Channel(name="Grupo Uno", platform=Platform.WHATSAPP_GROUP))
+        session.commit()
+
+        response = client.get("/catalog", params={"platform": Platform.WHATSAPP_GROUP.value})
+
+        assert "Grupo Uno" in response.text
+        assert "Canal Uno" not in response.text
+
+    def test_busqueda_y_plataforma_combinadas(self, client: TestClient, session: Session) -> None:
+        session.add(Channel(name="Ventas Mayoristas", platform=Platform.WHATSAPP_CHANNEL))
+        session.add(Channel(name="Ventas Mayoristas", platform=Platform.WHATSAPP_GROUP))
+        session.commit()
+
+        response = client.get(
+            "/catalog",
+            params={"q_canal": "Ventas", "platform": Platform.WHATSAPP_GROUP.value},
+        )
+
+        # El nombre aparece más de una vez por fila (texto visible + el
+        # `confirm()` del botón borrar), así que se cuenta el texto entre
+        # etiquetas, no la ocurrencia cruda del string en todo el HTML.
+        assert response.text.count(">Ventas Mayoristas<") == 1
+
+    def test_sin_coincidencias_muestra_mensaje_de_filtro_vacio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        session.add(Channel(name="Tienda El Boss", platform=Platform.WHATSAPP_CHANNEL))
+        session.commit()
+
+        response = client.get("/catalog", params={"q_canal": "no existe ninguno"})
+
+        assert "Ningún canal coincide con el filtro" in response.text
+        assert "Todavía no hay canales anotados" not in response.text
+
+    def test_pilot_count_no_cambia_al_filtrar_canales(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El stat «En el foco» es sobre productos, no sobre canales — no
+        debe verse afectado por un filtro que solo toca la tabla de canales."""
+        _crear_producto(session, name="Arroz", is_pilot=True)
+        session.add(Channel(name="Tienda El Boss", platform=Platform.WHATSAPP_CHANNEL))
+        session.commit()
+
+        sin_filtro = client.get("/catalog")
+        con_filtro = client.get("/catalog", params={"q_canal": "no existe"})
+
+        patron = r'm3-stat-value is-accent">\s*(\d+)'
+        assert re.search(patron, sin_filtro.text).group(1) == "1"
+        assert re.search(patron, con_filtro.text).group(1) == "1"
+
+
+class TestCatalogoBuscadorDeProductos:
+    def test_busca_por_nombre_parcial(self, client: TestClient, session: Session) -> None:
+        _crear_producto(session, name="Arroz", is_pilot=True)
+        _crear_producto(session, name="Detergente", is_pilot=False)
+
+        response = client.get("/catalog", params={"q_producto": "arr"})
+
+        assert "Arroz" in response.text
+        assert "Detergente" not in response.text
+
+    def test_busqueda_se_combina_con_solo_el_foco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz criollo", is_pilot=True)
+        _crear_producto(session, name="Arroz importado", is_pilot=False)
+
+        response = client.get("/catalog", params={"q_producto": "arroz", "focus": "1"})
+
+        assert "Arroz criollo" in response.text
+        assert "Arroz importado" not in response.text
+
+    def test_sin_coincidencias_muestra_mensaje_de_busqueda_vacia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz", is_pilot=True)
+
+        response = client.get("/catalog", params={"q_producto": "no existe ninguno"})
+
+        assert "Ningún producto coincide con la búsqueda" in response.text
 
 
 # --- backfill de histórico ---------------------------------------------------
