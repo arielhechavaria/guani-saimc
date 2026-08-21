@@ -673,3 +673,140 @@ class TestH0UnidadConfirmadaEnLaFila:
         report = compute_h0_report(session, transcribe=_transcribe_falso)
 
         assert report.quantity_unit_accuracy == 0.0
+
+
+class TestH0EmparejadoAmbiguo:
+    """Una fila cuyo producto no aparece en ninguna línea no puede llevarse el
+    precio de una línea elegida por posición.
+
+    `_match_rows_to_candidates` empareja primero por `product_id` y lo que
+    sobra lo reparte por orden. Eso es correcto mientras haya una sola línea
+    candidata: no hubo elección, y precio o provincia pudieron extraerse bien
+    aunque el producto no se reconociera. Deja de serlo cuando sobran varias,
+    porque el orden de las filas confirmadas no tiene por qué seguir el de las
+    líneas del anuncio.
+
+    Medido contra producción el 2026-08-21: de 33 filas que caen al reparto,
+    15 tenían varias líneas candidatas y 9 de ellas se llevaban el precio por
+    coincidencia — unos 4.3 puntos de precisión de precio que eran ruido.
+
+    La provincia es el caso aparte: todos los candidatos de un mismo anuncio
+    la comparten (la fija el canal, docs/decisions.md 2026-08-17), así que
+    acreditarla no depende de qué línea se elija y se conserva.
+    """
+
+    @pytest.fixture
+    def anuncio_multilinea(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> Product:
+        """Tres líneas reconocibles y una fila confirmada de un producto que no
+        aparece en ninguna: quedan DOS candidatos sobrantes, así que el reparto
+        posicional es una adivinanza."""
+        picadillo = Product(name="Picadillo", category="carnes", unit="lb", aliases=[])
+        aceite = Product(name="Aceite", category="abarrotes", unit="l", aliases=[])
+        # Confirmado pero ausente del texto: no lo nombra ninguna línea.
+        frijol = Product(name="Frijol", category="granos", unit="lb", aliases=[])
+        session.add_all([picadillo, aceite, frijol])
+        session.commit()
+
+        texto = (
+            "pollo congelado 40lb a 500 habana\n"
+            "picadillo 20lb a 777 habana\n"
+            "aceite 1 litro a 900 habana\n"
+        )
+        ingestion = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/ambiguo.txt",
+            content_hash="hash-ambiguo",
+            content_type=ContentType.TEXT,
+            original_text=texto,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.flush()
+        # Fila 1: matchea por producto con la línea 1. Correcta en todo.
+        session.add(
+            PriceHistory(
+                product_id=pollo.id,
+                province_id=habana.id,
+                price=Decimal("500"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("40"),
+                unit="lb",
+                source_id=ingestion.id,
+            )
+        )
+        # Fila 2: Frijol no está en el texto. Su precio confirmado coincide con
+        # el de la línea de picadillo (777) a propósito: si el reparto
+        # posicional le regala ese candidato, el precio contaría como acertado
+        # sin que el extractor haya extraído nada para esta fila.
+        session.add(
+            PriceHistory(
+                product_id=frijol.id,
+                province_id=habana.id,
+                price=Decimal("777"),
+                currency=Currency.CUP.value,
+                quantity=None,
+                unit=None,
+                source_id=ingestion.id,
+            )
+        )
+        session.commit()
+        return frijol
+
+    def test_el_precio_de_una_linea_ajena_no_cuenta_como_acertado(
+        self, session: Session, anuncio_multilinea: Product
+    ) -> None:
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        assert report.evaluated_rows_count == 2
+        # Solo la fila de pollo tiene el precio realmente extraído.
+        assert report.price_accuracy == pytest.approx(1 / 2)
+
+    def test_la_provincia_se_conserva_aunque_el_emparejado_sea_ambiguo(
+        self, session: Session, anuncio_multilinea: Product
+    ) -> None:
+        """No depende de qué línea se elija: la comparten todos los candidatos
+        del anuncio."""
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        assert report.province_accuracy == pytest.approx(2 / 2)
+
+    def test_con_una_sola_linea_sobrante_el_emparejado_se_conserva(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """El contrapeso: sin elección que hacer, la fila se sigue comparando
+        contra la única línea del anuncio. El precio pudo extraerse bien aunque
+        el producto no se reconociera."""
+        texto = "cositas ricas 40lb a 500 habana\n"
+        ingestion = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/una-linea.txt",
+            content_hash="hash-una-linea",
+            content_type=ContentType.TEXT,
+            original_text=texto,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=pollo.id,
+                province_id=habana.id,
+                price=Decimal("500"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("40"),
+                unit="lb",
+                source_id=ingestion.id,
+            )
+        )
+        session.commit()
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 1
+        # El texto no nombra "pollo", así que el producto falla...
+        assert report.product_accuracy == 0.0
+        # ...pero precio y cantidad salieron de la única línea que hay.
+        assert report.price_accuracy == 1.0
+        assert report.quantity_unit_accuracy == 1.0

@@ -3775,3 +3775,38 @@ pegado, donde el default CUP ya acertaba por casualidad; las 7 restantes
 tienen marcador no-CUP pero fallan igual por el número. El arreglo cierra una
 clase de error latente —a medida que entren anuncios en USD con la marca
 pegada— sin mejorar el número de hoy.
+
+## 2026-08-21 — El emparejado ambiguo no acredita precio
+
+Contexto: `_match_rows_to_candidates` (solo en `measure.py`, no toca
+producción) empareja cada fila confirmada con un candidato de `propose_all`.
+Primero por `product_id`; lo que no matchea así se llevaba el primer candidato
+que sobrara, viniera de la línea que viniera. Su docstring lo justificaba
+diciendo que la fila se compara «contra la línea real que la originó», pero
+eso solo vale si el orden de las filas confirmadas sigue el de las líneas del
+anuncio, cosa que nada garantiza. Medido contra producción: 33 de 211 filas
+caían al reparto; 13 ya quedaban vacías, 5 tenían una sola línea libre
+(emparejado forzoso) y 15 tenían varias. De esas 15, 9 se llevaban el precio
+por coincidencia con una línea de otro producto.
+
+Decisión: el reparto distingue no tener elección de tener que adivinar. Con
+una sola línea libre se empareja con ella, igual que antes. Con varias se
+devuelve una propuesta que conserva solo la provincia —y solo si todas las
+líneas libres coinciden en ella—, porque la provincia no depende de qué línea
+se elija: la fija el canal para todo el anuncio (2026-08-17) y la cola se la
+aplica a todas las filas por igual. Ninguna línea se consume en el caso
+ambiguo: no se usó.
+
+Descartado: (a) emparejar siempre contra una propuesta vacía cuando no hay
+match de producto — mide de menos, tira la provincia que sí estaba bien
+extraída y hunde esa métrica de 76.8% a 69.2%; (b) dejarlo como estaba — son
+9 filas de precio acreditadas por azar; (c) emparejar por precio en vez de por
+posición — cerraría el círculo, usando como pista lo mismo que se quiere
+medir.
+
+Consecuencia: precisión de precio 57.3% → 53.1%. El número BAJA y ese es el
+resultado correcto: los 4.2 puntos que se pierden eran coincidencias, no
+extracción. Provincia se sostiene en 76.8% gracias a conservarla, y
+cantidad/unidad y extracción completa (40.8%) no se mueven, porque esas filas
+ya fallaban por otro lado. Tercera vez que un número de H0 cambia por la
+medición y no por el extractor.

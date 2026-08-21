@@ -131,12 +131,28 @@ def _match_rows_to_candidates(
     corresponde.
 
     Primero por `product_id` — es la señal más confiable cuando hay varios
-    productos en el mismo anuncio. Lo que no matchea así (el motor no
-    reconoció el producto en ninguna línea, o no hay más de un producto)
-    cae a emparejamiento posicional con lo que sobre de candidatos: así una
-    fila sin match de producto sigue comparándose contra la línea real que
-    la originó — precio, cantidad y provincia igual pudieron extraerse bien
-    aunque el producto no —, en vez de contra una propuesta vacía.
+    productos en el mismo anuncio.
+
+    Lo que no matchea así se reparte según cuántas líneas hayan quedado
+    libres, porque no es lo mismo no tener elección que tener que adivinar:
+
+    - **Una sola línea libre**: se empareja con ella. No hubo elección, y
+      precio, cantidad y provincia igual pudieron extraerse bien aunque el
+      producto no se reconociera.
+    - **Varias líneas libres**: el reparto por orden sería una adivinanza. El
+      orden de las filas confirmadas no tiene por qué seguir el de las líneas
+      del anuncio, así que regalarle a la fila el precio de una línea ajena
+      infla la métrica con coincidencias. Medido contra producción el
+      2026-08-21: 15 filas caían acá y 9 se llevaban el precio por casualidad,
+      unos 4.3 puntos de precisión de precio que eran ruido.
+      Se conserva solo la provincia, y solo si todas las líneas libres
+      coinciden en ella: no depende de qué línea se elija, porque la fija el
+      canal para todo el anuncio (docs/decisions.md, 2026-08-17) y la cola de
+      curaduría se la aplica a todas las filas por igual.
+    - **Ninguna línea libre**: propuesta vacía, como antes.
+
+    Ninguna línea se consume en el caso ambiguo: no se usó, así que sigue
+    disponible para la fila siguiente.
     """
     remaining = list(candidates)
     pairs: list[tuple[PriceHistory, ExtractionProposal]] = []
@@ -154,10 +170,27 @@ def _match_rows_to_candidates(
             unmatched_rows.append(row)
 
     for row in unmatched_rows:
-        candidate = remaining.pop(0) if remaining else ExtractionProposal()
-        pairs.append((row, candidate))
+        if not remaining:
+            pairs.append((row, ExtractionProposal()))
+        elif len(remaining) == 1:
+            pairs.append((row, remaining.pop(0)))
+        else:
+            pairs.append((row, ExtractionProposal(province=_shared_province(remaining))))
 
     return pairs
+
+
+def _shared_province(candidates: list[ExtractionProposal]) -> Province | None:
+    """La provincia en la que coinciden TODOS los candidatos, o `None`.
+
+    Es lo único que sobrevive a un emparejamiento ambiguo: si todas las líneas
+    libres proponen la misma provincia, esa es la del anuncio y acreditarla no
+    depende de cuál se elija. Si difieren, no hay nada que afirmar.
+    """
+    provinces = {c.province.id if c.province is not None else None for c in candidates}
+    if len(provinces) != 1:
+        return None
+    return candidates[0].province
 
 
 def _quantity_unit_correct(
