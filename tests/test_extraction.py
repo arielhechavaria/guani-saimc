@@ -759,6 +759,138 @@ class TestCortesQueNoSonElProductoGenerico:
         sigue protegiendo el match genérico como siempre."""
         assert propose_all("muslo de pollo a 500", products, provinces)[0].product is None
 
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            ("muslos de pollo a 700", "Pollo"),
+            ("contramuslos a 400", "Pollo"),
+            ("cajas de muslos de pollo 40lb", "Pollo"),
+        ],
+    )
+    def test_muslo_y_contramuslo_en_plural_siguen_siendo_pollo(
+        self, provinces: list[Province], texto: str, esperado: str
+    ) -> None:
+        """Mismo mecanismo que `test_muslo_con_alias_explicito_si_es_pollo`,
+        contra la forma en que el vendedor realmente escribe una caja
+        mayorista: en plural. Antes de esta regla, "muslo" (singular, en la
+        lista de modificadores) no reconocía "muslos" como el mismo
+        modificador, así que `has_modifier` daba `False` y el match
+        genérico de "Pollo" pasaba de pura casualidad, no por el mecanismo
+        de alias que este test class documenta."""
+        pollo = [
+            Product(
+                name="Pollo",
+                category="carnes",
+                unit="lb",
+                aliases=["muslo de pollo", "contramuslo"],
+            )
+        ]
+
+        assert propose_all(texto, pollo, provinces)[0].product is pollo[0]
+
+    def test_alitas_en_singular_tampoco_es_pollo_generico(
+        self, provinces: list[Province]
+    ) -> None:
+        """`test_alitas_no_es_pollo_generico` ya cubre el plural (que es como
+        se anuncia en la práctica); esto fija que la forma singular —que la
+        lista de modificadores declara como canónica— tampoco cuela."""
+        pollo = [Product(name="Pollo", category="carnes", unit="lb", aliases=["pollo entero"])]
+
+        assert propose_all("alita de pollo a 300", pollo, provinces)[0].product is None
+
+
+class TestPluralDeModificadoresDescalificantes:
+    """La lista de modificadores (`_PRODUCT_DISQUALIFYING_MODIFIERS`) declara
+    cada palabra en su forma canónica singular; el reconocimiento debe cubrir
+    el plural sin necesidad de listar cada variante a mano —el mismo defecto
+    que obligó a listar "ala"/"alas" y "alita"/"alitas" por separado, medido
+    contra la cola real el 2026-08-21: "Higados de pollo" e "Pechugas de
+    pollo" pasaban como Pollo genérico porque "higados"/"pechugas" no
+    coincidían con el "higado"/"pechuga" singular de la lista.
+    """
+
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            ("higados de pollo a 400", "higados de pollo"),
+            ("picadillos de pollo a 500", "picadillos de pollo"),
+            ("pechugas de pollo a 900", "pechugas de pollo"),
+            ("costillas de pollo a 300", "costillas de pollo"),
+            ("mollejas de pollo a 250", "mollejas de pollo"),
+            ("corazones de pollo a 200", "corazones de pollo"),
+        ],
+    )
+    def test_cortes_en_plural_no_matchean_el_generico(
+        self, products: list[Product], provinces: list[Province], texto: str, esperado: str
+    ) -> None:
+        propuesta = propose(texto, products, provinces)
+        assert propuesta.product is None
+        assert propuesta.product_name_guess == esperado
+
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            ("calditos de pollo a 50", "calditos de pollo"),
+            ("sazones de pollo a 120", "sazones de pollo"),
+            ("sopas de pollo a 90", "sopas de pollo"),
+            ("cubitos de pollo a 40", "cubitos de pollo"),
+            ("consomes de pollo a 75", "consomes de pollo"),
+        ],
+    )
+    def test_derivados_en_plural_no_matchean_el_generico(
+        self, products: list[Product], provinces: list[Province], texto: str, esperado: str
+    ) -> None:
+        propuesta = propose(texto, products, provinces)
+        assert propuesta.product is None
+        assert propuesta.product_name_guess == esperado
+
+    def test_bebes_en_plural_tampoco_matchea_el_generico(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("aceite para bebes 100 ML 1120.00 cup", products, provinces)
+        assert propuesta.product is None
+        assert "bebes" in (propuesta.product_name_guess or "")
+
+
+class TestPluralDeAliasMultipalabra:
+    """El mismo defecto de número, del lado del alias en vez de la lista de
+    modificadores: un alias de dos palabras escrito en singular
+    ("saco de azucar") no reconocía la forma en que el vendedor realmente
+    anuncia un mayorista, en plural ("Sacos de azúcar"). Caso real
+    encontrado en la cola de producción el 2026-08-21, en un anuncio de
+    Groupej Morales Surl que quedaba oculto por el filtro de foco."""
+
+    def test_alias_singular_reconoce_el_texto_en_plural(
+        self, provinces: list[Province]
+    ) -> None:
+        azucar = Product(
+            name="Azúcar blanca",
+            category="abarrotes",
+            unit="lb",
+            aliases=["saco de azucar"],
+        )
+
+        propuesta = propose(
+            "Sacos de azúcar 25 kg    37  o 25160 más de 10 a 36 usd", [azucar], provinces
+        )
+
+        assert propuesta.product is azucar
+
+    def test_alias_singular_sigue_reconociendo_el_texto_en_singular(
+        self, provinces: list[Province]
+    ) -> None:
+        """Guarda de regresión: tolerar el plural no debe exigirlo."""
+        azucar = Product(
+            name="Azúcar blanca",
+            category="abarrotes",
+            unit="lb",
+            aliases=["saco de azucar"],
+        )
+
+        propuesta = propose("Saco de azucar 25 kg a 37 usd", [azucar], provinces)
+
+        assert propuesta.product is azucar
+
 
 class TestMencionaAlgunProducto:
     """`mentions_any_product` es la señal barata que ordena la cola de

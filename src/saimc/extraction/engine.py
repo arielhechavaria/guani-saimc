@@ -158,15 +158,11 @@ _PRODUCT_DISQUALIFYING_MODIFIERS = (
     "muslo",
     "pechuga",
     "molleja",
-    # "ala" sola no alcanza: el regex es `\b...\b`, así que no toca "alas" ni
-    # "alitas", que es como se anuncia el corte de verdad. Las tres formas
-    # entran explícitas (2026-08-20): el operador decidió que las alitas NO
-    # son Pollo genérico, y que el mismo corte caiga en un producto distinto
-    # según cómo lo escriba el vendedor es justo lo que esta lista evita.
+    # Forma singular canónica: el plural ("alas", "alitas" — como se anuncia
+    # el corte de verdad, 2026-08-20) lo cubre `_plural_pattern()`
+    # automáticamente, sin listarlo a mano — ver esa función más abajo.
     "ala",
-    "alas",
     "alita",
-    "alitas",
     "corazon",
     "molida",
     "falda",
@@ -175,24 +171,18 @@ _PRODUCT_DISQUALIFYING_MODIFIERS = (
     "contramuslo",
     "rabadilla",
     "menudencia",
-    "menudencias",
     # Derivados industriales. Los de arriba son cortes del mismo animal; estos
     # son otro producto que solo nombra al bien fresco como sabor. La distancia
     # de precio es de otro orden: un caldito de pollo vale ~50 CUP la unidad y
     # un pollo ~950 CUP la libra, así que un solo caldito mal atribuido corre
     # la mediana de la celda entera.
     "caldito",
-    "calditos",
     "cubito",
-    "cubitos",
     "consome",
     "sopa",
-    "sopas",
     "sazon",
     "pastilla",
-    "pastillas",
     "pastillita",
-    "pastillitas",
     "saborizante",
     # Artículos de higiene y puericultura. No son ni un corte ni un derivado
     # del bien: son otro producto que comparte la palabra. Caso real que llegó
@@ -200,8 +190,32 @@ _PRODUCT_DISQUALIFYING_MODIFIERS = (
     # que es aceite de cocina y producto piloto.
     "bebe",
 )
+
+
+def _plural_pattern(word: str) -> str:
+    """Patrón que acepta `word` en singular o en plural español.
+
+    Regla simple —vocal final suma "s" ("pechuga" -> "pechugas"), consonante
+    final suma "es" ("corazon" -> "corazones")— suficiente para el
+    vocabulario cerrado de este módulo: se verificó a mano que reproduce el
+    plural real de cada palabra de `_PRODUCT_DISQUALIFYING_MODIFIERS` y de
+    cada alias de producto en uso (docs/decisions.md, 2026-08-21). No cubre
+    excepciones fonéticas (z -> c, tildes que se pierden al pluralizar)
+    porque ninguna palabra de ese vocabulario las tiene — una que sí las
+    tenga exige revisar esta función, no forzarla con más casos especiales.
+
+    Antes de esto, cada modificador que alguien anunciaba en plural
+    ("higados", "pechugas") no coincidía con su forma singular en la lista y
+    colaba como el producto genérico — el mismo motivo por el que
+    "ala"/"alas" y "alita"/"alitas" se venían listando dos veces a mano.
+    """
+    escaped = re.escape(word)
+    return escaped + ("s?" if word[-1] in "aeiou" else "(?:es)?")
+
+
 _DISQUALIFYING_MODIFIER_RE = re.compile(
-    r"\b(" + "|".join(_PRODUCT_DISQUALIFYING_MODIFIERS) + r")\b", re.IGNORECASE
+    r"\b(" + "|".join(_plural_pattern(m) for m in _PRODUCT_DISQUALIFYING_MODIFIERS) + r")\b",
+    re.IGNORECASE,
 )
 
 
@@ -451,6 +465,24 @@ def _match_province(text: str, provinces: Sequence[Province]) -> Province | None
     return next((p for p in provinces if p.name == canonical), None)
 
 
+def _name_pattern(name_normalized: str) -> re.Pattern[str]:
+    """Patrón que reconoce `name_normalized` en el texto tolerando plural en
+    cada palabra que lo compone ("saco de azucar" reconoce también "sacos de
+    azúcar").
+
+    Antes de esto la comparación era substring literal (`in`): un alias
+    escrito en singular no reconocía la forma en que el vendedor realmente
+    anuncia un mayorista, en plural — caso real encontrado en la cola de
+    producción el 2026-08-21 ("Sacos de azúcar 25 kg..." quedaba oculto
+    porque el alias es "saco de azucar"). `\\b` en los extremos, ausente
+    antes, es necesario para que el sufijo plural opcional de cada palabra no
+    se coma texto de la palabra siguiente.
+    """
+    palabras = name_normalized.split()
+    cuerpo = r"\s+".join(_plural_pattern(palabra) for palabra in palabras)
+    return re.compile(r"\b" + cuerpo + r"\b")
+
+
 def _match_product(text: str, products: Sequence[Product]) -> Product | None:
     # Sin tilde: el texto de OCR/tipeo no siempre las trae, y cada variante
     # sin normalizar terminaba dando de alta un producto duplicado (ver
@@ -460,7 +492,7 @@ def _match_product(text: str, products: Sequence[Product]) -> Product | None:
     for product in products:
         for name in (product.name, *product.aliases):
             name_normalized = _strip_accents(name.lower())
-            if name_normalized not in text_normalized:
+            if not _name_pattern(name_normalized).search(text_normalized):
                 continue
             if has_modifier and not _DISQUALIFYING_MODIFIER_RE.search(name_normalized):
                 # Hay un corte/parte en el texto ("hígado de pollo") pero el
