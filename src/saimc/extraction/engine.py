@@ -83,7 +83,18 @@ _CURRENCY_MARKERS: dict[str, Currency] = {
     "eur": Currency.EUR,
     "mlc": Currency.MLC,
 }
-_CURRENCY_RE = re.compile(r"\b(" + "|".join(_CURRENCY_MARKERS) + r")\b", re.IGNORECASE)
+# El marcador puede venir PEGADO al número ("90.00cup", "4.45USD", "30100mn"):
+# 29 de los 132 anuncios curados al 2026-08-21 lo escriben así. Por eso el
+# borde izquierdo no es `\b` sino "no venir precedido de una letra": entre el
+# "5" de "4.45" y la "U" de "USD" no hay frontera de palabra, y con `\b` este
+# regex no veía una moneda que `_PRICE_BEFORE_CURRENCY_RE` —cuyo `\s*` admite
+# cero espacios— sí usaba para ubicar el precio. Los dos regex discrepaban
+# sobre el mismo texto y la moneda caía al default CUP: un error de ~700x.
+# El lookbehind sigue excluyendo el marcador incrustado en una palabra
+# ("column" termina en "mn"), que es lo que `\b` protegía.
+_CURRENCY_RE = re.compile(
+    r"(?<![a-záéíóúñ])(" + "|".join(_CURRENCY_MARKERS) + r")\b", re.IGNORECASE
+)
 
 # --- precio y cantidad --------------------------------------------------------
 

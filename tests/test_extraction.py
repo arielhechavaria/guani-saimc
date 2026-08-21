@@ -151,6 +151,54 @@ class TestMoneda:
         assert propose(texto, products, provinces).currency == esperado
 
 
+class TestMonedaPegadaAlNumero:
+    """La marca de moneda escrita sin espacio: "90.00cup", "4.45USD", "725cup".
+
+    `_PRICE_BEFORE_CURRENCY_RE` siempre reconoció esa forma para ubicar el
+    número (su `\\s*` admite cero espacios), pero `_CURRENCY_RE` exigía una
+    frontera de palabra ANTES del marcador, y entre "5" y "u" no hay ninguna.
+    Los dos regex discrepaban sobre el mismo texto: el precio salía del "usd"
+    y la moneda caía al default CUP, un error de ~700× en este mercado.
+
+    Frecuencia medida sobre el corpus curado (2026-08-21): 29 de 132 anuncios
+    traen un marcador pegado a un dígito, 22 de ellos en evidencia de texto.
+    Los casos de abajo son formas reales encontradas ahí.
+    """
+
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            ("Pasta para frijoles 90.00cup", "CUP"),
+            ("Frijol Colorado paquete de 1kg a1210cup", "CUP"),
+            ("Mas de 5 pacas a 725cup la unidad", "CUP"),
+            ("Contenedor de aceite. Precio: 4.45USD c/u", "USD"),
+            ("Arroz Guyanes de 50kg, en 43 usd o 30100mn el saco", "USD"),
+            # El marcador pegado no debe inventar moneda dentro de una palabra:
+            # "column" termina en "mn" y no dice nada sobre moneda nacional.
+            ("column de precios sin moneda 500", "CUP"),
+        ],
+    )
+    def test_moneda(
+        self,
+        texto: str,
+        esperado: str,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        assert propose(texto, products, provinces).currency == esperado
+
+    def test_el_precio_y_la_moneda_no_se_contradicen(
+        self, products: list[Province], provinces: list[Province]
+    ) -> None:
+        """Anuncio real del corpus: el número sale del "usd" pegado, así que la
+        moneda tiene que ser esa misma y no el default."""
+        propuesta = propose(
+            "Contenedor de aceite. Precio: 4.45USD c/u", products, provinces
+        )
+        assert propuesta.price == Decimal("4.45")
+        assert propuesta.currency == "USD"
+
+
 class TestCantidad:
     @pytest.mark.parametrize(
         ("texto", "cantidad", "unidad"),

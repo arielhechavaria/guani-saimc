@@ -3723,3 +3723,55 @@ motor no propuso, 7 cambios, 4 borrados). El eco ya afecta igual a producto y
 precio, y CLAUDE.md §H0 ya asume que el operador corrige antes de guardar.
 El techo de cantidad/unidad queda en 46.9% de extracción completa, así que
 perfeccionarla entera vale +6.1 puntos: el cuello pasa a ser PRECIO (57.3%).
+
+## 2026-08-21 — El precio está limitado por el OCR, no por sus reglas
+
+Contexto: con la unidad ya arreglada, precio quedó como el peor componente de
+H0 (57.3%) y se abrió como próximo cuello. El diagnóstico contra el corpus lo
+desmintió como problema de reglas. Cortado por tipo de evidencia: sobre TEXTO
+el precio se extrae al 78.9% (n=123, propuesta vacía 8.9%); sobre IMAGEN al
+27.3% (n=88, propuesta vacía 64.8%). De los 90 fallos de precio, 64 están en
+imágenes y 26 en texto. Y de esos 26, solo 19 tienen el número confirmado
+presente en el texto: los otros 7 el operador los dedujo y ninguna regla los
+recupera. A diferencia de provincia y unidad, acá la verdad de referencia NO
+estaba obsoleta: `price_basis` no explica ninguno de los 19 números que
+difieren (0 de 19 cumplen la razón precio/cantidad).
+
+Decisión: no se toca la selección de precio. Se cierra un bug puntual de
+moneda encontrado en el camino (ver abajo) y se deja el resto como está.
+
+Descartado: mejorar el OCR por configuración. Medido sobre las mismas 77
+imágenes con cuatro variantes de Tesseract — precio 27.3% con los defaults de
+hoy, 27.3% con `--psm 6`, y 25.0% con upscaling 2x + escala de grises, con o
+sin autocontraste. El preprocesado no mueve el precio y el upscaling lo
+empeora; solo producto gana algo (73.9% → 78.4%). Un motor distinto o un
+modelo de visión quedan fuera de Fase 0 por la restricción de entorno
+(conexión lenta, sin descargas grandes) y por sobreingeniería.
+
+Consecuencia: el precio sobre imagen es el techo real de H0 y no se levanta
+con reglas. Las imágenes son 88 de 211 filas. La palanca disponible sigue
+siendo la curaduría manual, que es justamente lo que H0 mide como costo: un
+anuncio en imagen cuesta más trabajo por anuncio, no es dato inaccesible.
+
+## 2026-08-21 — La marca de moneda pegada al número
+
+Contexto: `_CURRENCY_RE` exigía `\b` antes del marcador, pero
+`_PRICE_BEFORE_CURRENCY_RE` admite cero espacios entre número y marca. En
+"4.45USD" no hay frontera de palabra entre "5" y "U": el precio salía de ese
+"USD" y la moneda no lo veía, cayendo al default CUP. Los dos regex
+discrepaban sobre el mismo texto, con un error resultante de ~700x. 29 de los
+132 anuncios curados escriben la marca pegada.
+
+Decisión: el borde izquierdo de `_CURRENCY_RE` pasa de `\b` a un lookbehind
+negativo de letra. Sigue excluyendo el marcador incrustado en una palabra
+("column" termina en "mn"), que es lo que `\b` protegía.
+
+Descartado: quitar el borde izquierdo del todo — haría que cualquier palabra
+terminada en "mn" o "cup" declare moneda.
+
+Consecuencia: cero movimiento en la métrica sobre este corpus, y se registra
+así a propósito. De las 29 ingestas afectadas, 22 traen solo "cup"/"mn"
+pegado, donde el default CUP ya acertaba por casualidad; las 7 restantes
+tienen marcador no-CUP pero fallan igual por el número. El arreglo cierra una
+clase de error latente —a medida que entren anuncios en USD con la marca
+pegada— sin mejorar el número de hoy.
