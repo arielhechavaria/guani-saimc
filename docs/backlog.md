@@ -159,21 +159,27 @@ Bloqueado por: **precio comparable por unidad canónica** (entrada anterior).
 Las siete vistas lo consumen; construirlas antes es levantar seis pantallas
 sobre un número que miente.
 
-## `GZipMiddleware` en `app.py` — falta comprimir las respuestas
+## `test_ninguna_vista_pide_assets_a_la_red` pasa en vacío para 3 de 4 rutas
 
-Por qué importa: destapado el 2026-08-22 al medir el costo de HTMX.
-`src/saimc/web/app.py` no registra ninguna compresión, así que hoy
-`saimc-material.css` viaja por el cable como **28.672 B** cuando gzipeado son
-**6.079 B**. Es ~22 KB en cada primera carga, contra la restricción que gobierna
-todo el diseño de la capa web: conexión lenta e intermitente. Las fuentes son
-woff2 y ya están comprimidas, así que no aporta ahí.
+Por qué importa: destapado el 2026-08-22 al agregar `GZipMiddleware`. El caso
+recorre `VISTAS = ["/catalog", "/curation", "/control", "/curation/history"]` y
+afirma que el HTML no contiene `fonts.googleapis.com` ni los otros CDN. Pero
+`/catalog`, `/curation` y `/curation/history` van detrás de `require_operator` y
+el fixture de `tests/test_static_assets.py` no manda credenciales: devuelven
+**401**, y una página de error tampoco contiene esas cadenas. O sea que el caso
+está verde sin haber mirado nunca esas tres vistas. Solo `/control` se prueba de
+verdad.
 
-Es la optimización más barata que queda en el repo —una línea de middleware— y
-paga por sí sola el peso de HTMX (16.539 B gzipeados) que el ADR 001 aprobó para
-el dashboard. Conviene hacerla **antes** de introducir HTMX, para que el saldo
-sea favorable desde el primer commit.
+No es urgente —`_shell.html` es la única plantilla que carga assets y sí está
+cubierta vía `/control`— pero es un test que miente sobre su alcance, que es
+justo la clase de cosa que este repo ya se comió dos veces (`measure.py` con
+`data/raw`, `pytest` desde un worktree).
 
-Bloqueado por: nada.
+Bloqueado por: nada. El arreglo es `app.dependency_overrides[require_operator]`
+en el fixture, como ya hace `tests/test_curation.py`. **Ojo**: `GET /curation`
+ingesta la bandeja, así que hay que aislar `SAIMC_INBOX_DIR` y
+`SAIMC_RAW_STORE_DIR` con `monkeypatch` en el mismo movimiento, o el test empieza
+a mover archivos reales de `inbox/` a `data/raw/`.
 
 ## «Ver el anuncio que sustenta este precio» — Transparency Layer
 

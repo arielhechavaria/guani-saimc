@@ -58,7 +58,7 @@ FastAPI + PostgreSQL + Jinja2 (server-rendered) + HTMX vendorizado + SVG inline
 | Base de datos | PostgreSQL | Implementado |
 | Interfaz de curaduría | Jinja2 server-rendered + JS propio. **No se retrofitea a HTMX** | Implementado |
 | Dashboard público | Jinja2 server-rendered + **HTMX vendorizado** para swaps parciales | **Sin construir** |
-| Compresión de respuestas | `GZipMiddleware` | **Sin implementar — hueco abierto** |
+| Compresión de respuestas | `GZipMiddleware`, `compresslevel=6` | Implementado |
 | Mapa de calor | SVG inline de las 16 provincias | **Sin construir** |
 | Gráfico de evolución | Sin decidir. Ver «Lo que este ADR no decide» | **Sin construir** |
 | Cola de trabajos | Ninguna | Correcto para la fase |
@@ -253,8 +253,10 @@ devuelven estructuras cerradas. Incumplidos, es una reescritura.
 - La línea de visualización de Fase 0 arranca sin decisiones de stack pendientes.
 - Entra HTMX como dependencia vendorizada, y con él la regla de que **toda
   interacción del dashboard tiene que funcionar sin JS**.
-- Queda pendiente agregar `GZipMiddleware` a `src/saimc/web/app.py`. No depende
-  de HTMX y conviene hacerlo primero: es ~22 KB de ahorro en cada primera carga.
+- `GZipMiddleware` **ya está en `src/saimc/web/app.py`** (2026-08-22), hecho
+  antes que HTMX justamente para que el saldo de bytes sea favorable desde el
+  primer commit. `compresslevel=6`, no el 9 del default: medido, el 9 gana 34
+  bytes sobre el CSS real a cambio de bastante más CPU por respuesta.
 - `src/saimc/web/__init__.py:1` describe el destino, no el estado. Ajustar la
   redacción cuando HTMX entre de verdad.
 - `docs/spec-map.md` gana **un** apartamiento deliberado sobre §13.1 —el mapa— y

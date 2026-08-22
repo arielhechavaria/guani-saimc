@@ -11,6 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -32,6 +33,27 @@ logging.basicConfig(
 )
 
 app = FastAPI(title="SAIMC — Cola de curaduría")
+
+# Compresión de respuestas. Faltaba: hasta el 2026-08-22 todo viajaba sin
+# comprimir, y `saimc-material.css` son 28.672 B en disco contra 6.079 B
+# gzipeados. Son ~22 KB en cada primera carga contra la restricción que gobierna
+# toda esta capa (CLAUDE.md: conexión lenta e intermitente).
+#
+# `compresslevel=6` y no el 9 que trae Starlette por defecto: medido sobre el
+# CSS real, el 9 da 6.079 B y el 6 da 6.113 B. Son 34 bytes —medio por mil— a
+# cambio de bastante más CPU en CADA respuesta. El 6 es el punto donde la curva
+# se aplana; el 1 ya se nota (7.548 B).
+#
+# `minimum_size` queda en el default de 500 B: por debajo de eso el encabezado
+# `Content-Encoding` y el overhead del gzip se comen la ganancia, y los
+# fragmentos que devuelva el dashboard van a caer muchas veces ahí.
+#
+# Las fuentes NO se comprimen dos veces: `font/woff2` está en el
+# `DEFAULT_EXCLUDED_CONTENT_TYPES` de Starlette, y `mimetypes` resuelve `.woff2`
+# a ese tipo exacto, así que StaticFiles las etiqueta bien y el middleware las
+# saltea solo. El SVG sí entra (`image/svg+xml` no está excluido), que es lo que
+# queremos para el mapa de calor: es texto y comprime muy bien.
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
 # Resuelto con `Path(__file__)` y no relativo al cwd: así funciona sin
 # importar desde dónde se lance uvicorn. Vive en `app.state` (y no como

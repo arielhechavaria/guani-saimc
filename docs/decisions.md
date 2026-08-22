@@ -4238,3 +4238,37 @@ pierde el apartamiento de HTMX y gana la nota de que es deuda: nombrado en
 §13.1 y en el docstring de `web/__init__.py:1`, pero sin implementar. El ADR 001
 queda revisado el mismo día que se escribió, con el razonamiento corregido
 adentro en vez de borrado.
+
+## 2026-08-22 — `GZipMiddleware` con `compresslevel=6`
+
+Contexto: la entrada anterior destapó que `src/saimc/web/app.py` no registraba
+ninguna compresión. `saimc-material.css` viajaba como 28.672 B cuando gzipeado
+son 6.079 B — ~22 KB en cada primera carga contra la restricción que gobierna
+toda la capa web (conexión lenta e intermitente).
+
+Decisión: `app.add_middleware(GZipMiddleware, minimum_size=500,
+compresslevel=6)`. El nivel **6 y no el 9** que trae Starlette por defecto:
+medido sobre el CSS real, el 9 da 6.079 B y el 6 da 6.113 B. Son 34 bytes —medio
+por mil— a cambio de bastante más CPU en cada respuesta. El 1 sí se nota
+(7.548 B), así que 6 es donde la curva se aplana. `minimum_size` queda en el
+default: por debajo de 500 B el encabezado y el overhead del gzip se comen la
+ganancia, y los fragmentos del dashboard van a caer ahí seguido.
+
+Las fuentes no se comprimen dos veces sin que haya que configurar nada:
+`font/woff2` está en `DEFAULT_EXCLUDED_CONTENT_TYPES` de Starlette 1.6, y
+`mimetypes` resuelve `.woff2` a ese tipo exacto. `image/svg+xml` **no** está
+excluido, que es lo que queremos para el mapa de calor del ADR 001: es texto y
+comprime muy bien.
+
+Descartado: (a) dejar el `compresslevel=9` del default — 34 bytes no pagan el
+CPU; (b) excluir tipos a mano — el default de Starlette ya cubre exactamente lo
+que había que cubrir, y duplicarlo en código propio es una lista que se
+desactualiza sola.
+
+Consecuencia: 774 tests verdes (+6). La cobertura vive en
+`tests/test_static_assets.py::TestCompresion` y se verificó que los dos casos
+positivos van a **rojo** sin el middleware, no que simplemente estén verdes.
+Esa verificación destapó de paso que `test_ninguna_vista_pide_assets_a_la_red`
+pasa en vacío para 3 de sus 4 rutas: van detrás de `require_operator`, devuelven
+401, y una página de error tampoco contiene `fonts.googleapis.com`. Queda en
+backlog.

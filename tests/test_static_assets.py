@@ -4,6 +4,9 @@
 e intermitente, así que una fuente que se cargue desde `fonts.googleapis.com`
 en runtime deja la interfaz sin iconos justo cuando la red falla. Estos casos
 fallan si alguien borra un archivo o vuelve a meter un CDN.
+
+La misma restricción manda sobre cuántos bytes viajan, así que acá vive también
+la cobertura de `GZipMiddleware` (`docs/decisions.md`, 2026-08-22).
 """
 
 from collections.abc import Iterator
@@ -78,3 +81,65 @@ class TestAssetsVendorizados:
         assert "fonts.googleapis.com" not in texto
         assert "fonts.gstatic.com" not in texto
         assert "cdn.jsdelivr.net" not in texto
+
+
+class TestCompresion:
+    """`GZipMiddleware`: qué se comprime, qué no, y qué pasa sin soporte.
+
+    El `accept-encoding` va explícito en cada caso en vez de confiar en el
+    default de httpx: lo que se afirma es el comportamiento del servidor ante un
+    encabezado dado, y un cambio de default de la biblioteca no debería mover
+    estos casos de verde a rojo ni al revés.
+    """
+
+    def test_el_css_viaja_comprimido(self, client: TestClient) -> None:
+        response = client.get(
+            "/static/saimc-material.css", headers={"accept-encoding": "gzip"}
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-encoding"] == "gzip"
+        # El cliente lo descomprime y sigue siendo el CSS: comprimir no puede
+        # cambiar lo que llega.
+        assert "--m3-primary" in response.text
+
+    @pytest.mark.parametrize("ruta", FUENTES)
+    def test_las_fuentes_no_se_comprimen_dos_veces(
+        self, client: TestClient, ruta: str
+    ) -> None:
+        """Un woff2 ya viene comprimido: gzipearlo quema CPU para no ganar nada.
+
+        Lo cubre `DEFAULT_EXCLUDED_CONTENT_TYPES` de Starlette, que trae
+        `font/woff2`, pero solo funciona si StaticFiles etiqueta bien el
+        archivo. Este caso falla si el tipo MIME deja de resolverse.
+        """
+        response = client.get(ruta, headers={"accept-encoding": "gzip"})
+
+        assert response.status_code == 200
+        assert response.headers.get("content-encoding") != "gzip"
+        assert response.content[:4] == WOFF2_MAGIC
+
+    def test_el_html_de_una_vista_viaja_comprimido(self, client: TestClient) -> None:
+        """`/control` y no toda `VISTAS`: `/catalog` y `/curation` van detrás de
+        `require_operator` y devuelven 401 sin credenciales, así que probar la
+        compresión ahí mediría el tamaño de una página de error. Lo que se
+        afirma es que una respuesta HTML real se comprime, y `/control` —el
+        único público— alcanza para eso."""
+        response = client.get("/control", headers={"accept-encoding": "gzip"})
+
+        assert response.status_code == 200
+        assert response.headers["content-encoding"] == "gzip"
+        assert "<html" in response.text
+
+    def test_un_cliente_sin_gzip_recibe_la_respuesta_entera(
+        self, client: TestClient
+    ) -> None:
+        """La compresión es negociada, nunca impuesta: sin `accept-encoding`
+        que la anuncie, la respuesta sale sin comprimir y sigue sirviendo."""
+        response = client.get(
+            "/static/saimc-material.css", headers={"accept-encoding": "identity"}
+        )
+
+        assert response.status_code == 200
+        assert response.headers.get("content-encoding") != "gzip"
+        assert "--m3-primary" in response.text
