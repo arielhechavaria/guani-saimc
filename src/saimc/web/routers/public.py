@@ -16,11 +16,22 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from saimc.cells import compute_retail_ranges
 from saimc.models import PriceHistory, Province
+from saimc.progress import pilot_product_names
+from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
 
 router = APIRouter()
+
+# Ventana de las tarjetas. 30 días y no los 7 que usa `/control` por defecto:
+# esa vista responde «¿cómo se movió esta semana?» para el operador, y esta
+# responde «¿cuánto cuesta?» para alguien que compra. Medido el 2026-08-22, a 7
+# días entran 5 celdas y a 30 entran 6, con muestras bastante más grandes
+# (Arroz/La Habana pasa de n=2 a n=17). No es un umbral de publicación: es el
+# período que la tarjeta declara estar describiendo, y lo dice en pantalla.
+_CARD_WINDOW_DAYS = 30
 
 
 def _rows_by_province(session: Session) -> dict[str, int]:
@@ -42,9 +53,20 @@ def _rows_by_province(session: Session) -> dict[str, int]:
 
 
 @router.get("/", response_class=HTMLResponse)
-def public_map(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def public_home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
+    # Fase 0 se comprometió a medir (§9), y la cola larga son 59 filas en 53
+    # productos que no sostienen ninguna afirmación.
+    pilot = frozenset(pilot_product_names(db))
+    report = compute_retail_ranges(db, days=_CARD_WINDOW_DAYS)
+    cards = build_cards([r for r in report.ranges if r.product_name in pilot])
+
     return request.app.state.templates.TemplateResponse(
         request,
-        "public_map.html",
-        {"map": build_map(_rows_by_province(db))},
+        "public_home.html",
+        {
+            "map": build_map(_rows_by_province(db)),
+            "cards": cards,
+            "window_days": _CARD_WINDOW_DAYS,
+        },
     )

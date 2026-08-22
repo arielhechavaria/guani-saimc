@@ -4426,3 +4426,55 @@ lado. Los agregados **no cambian**: el rango minorista sigue mostrando el máxim
 envenenado hasta que el operador corrija las filas, y esa corrección ahora es
 dirigida en vez de a ciegas sobre 202 filas. La tarjeta de producto sigue
 bloqueada hasta entonces.
+
+## 2026-08-22 — Tarjeta de producto: se publica el rango, nunca un valor puntual
+
+Contexto: §9.0 parecía prohibir mostrar precio en Fase 0, y sobre esa lectura el
+mapa se había construido sin ninguna cifra. Al leer la sección completa
+(líneas 1218-1222) resultó ser más precisa: «Ninguna celda muestra un precio
+**como titular sin respaldo de muestra**. Por debajo del umbral, el dashboard
+muestra el estado "muestra en formación" con el número de observaciones a la
+vista, **nunca un valor puntual presentado como medición consolidada**».
+
+No prohíbe el precio: prohíbe el valor puntual sin respaldo. Y como la misma
+§9.0 dice que «las Fases 0 y 1 son el período de calibración de N», hoy todas
+las celdas están por debajo del umbral porque el umbral todavía no existe.
+
+Decisión: `web/card_view.py` con tres reglas que salen directo de ese párrafo.
+(1) El titular de cada tarjeta es el **rango mín–máx**, no la mediana sola; la
+mediana aparece adentro, en prosa («mitad de los anuncios, cerca de X»), nunca
+como cifra única. (2) Toda tarjeta va rotulada **«muestra en formación»**, sin
+estado alternativo: uno condicional exigiría el umbral que §12.6 prohíbe
+inventar. (3) El **tamaño de muestra va en la tarjeta**, junto al precio, no en
+una nota al pie.
+
+Con `n=1` no se muestra rango sino el número solo y «una sola observación, sin
+rango todavía»: mínimo, mediana y máximo son el mismo valor, y presentarlos como
+rango sugeriría una variación que no se observó. No es un umbral de publicación,
+es aritmética.
+
+Se descartan de la vista pública, y no por ser malas: las filas **sin provincia**
+(la tarjeta responde «cuánto cuesta acá») y las **`unconverted`** (moneda sin
+tasa resuelta; mostrarlas junto a las de CUP afirmaría una equivalencia que nadie
+calculó). Ambas siguen contando en la matriz del operador. Ventana de 30 días y
+no los 7 de `/control`: esa vista responde «cómo se movió esta semana» para el
+operador y esta «cuánto cuesta» para quien compra — medido, a 7 días entran 5
+celdas y a 30 entran 6, con Arroz/La Habana pasando de n=2 a n=17.
+
+`format_price()` redondea a entero por encima de 100 y a dos decimales por
+debajo. **No es un umbral de los de §12.6**: no decide qué se publica ni qué es
+válido, solo evita mostrar «806,0606060606060606» sin colapsar a cero un precio
+chico.
+
+Descartado: (a) seguir sin publicar precio — era una lectura de más de §9.0, que
+sí autoriza el rango con respaldo visible; (b) publicar la mediana como titular,
+que es literalmente «un valor puntual presentado como medición consolidada»;
+(c) excluir de las tarjetas las filas que marca `detect_basis_suspects` — el
+detector señala y no corrige, y meterlo en el agregado escondería dato en vez de
+arreglarlo.
+
+Consecuencia: 810 tests verdes (+10). **Advertencia operativa**: con las 7 filas
+señaladas todavía sin corregir, 4 de las 6 tarjetas publican máximos falsos —
+Aceite/La Habana muestra «2.100 – 1.264.260 CUP/l» y Pollo/La Habana tiene
+además la mediana corrida a 3.400. La página es correcta; el dato todavía no.
+**No conviene exponer `/` hasta que esas filas estén curadas.**

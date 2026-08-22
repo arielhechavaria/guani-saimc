@@ -167,23 +167,20 @@ producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Hab
 - **Geometría de las 16 provincias** y **ruta pública con shell propio**. `GET /`
   existe, sin auth, con el mapa SVG inline coloreado por cobertura y el tamaño
   de muestra al lado. Motivo y fuente en `decisions.md`.
+- **Detección de `price_basis` incoherente** (`cells.py:detect_basis_suspects`,
+  tabla en `/control`): 7 filas señaladas, sin falsos positivos y sin umbrales.
+- **Tarjeta de producto** (`web/card_view.py`): rango mín–máx como titular,
+  mediana en prosa, `n` visible y rótulo «muestra en formación». Resuelto de
+  paso que §9.0 **no** prohíbe publicar precio — prohíbe el valor puntual sin
+  respaldo de muestra, y da ese rótulo como estado por debajo del umbral.
 
 ### Tareas, en orden de dependencia
 
-3. **Tarjeta de producto** (§6.7). **Bloqueada por dato, no por código**: hasta
-   que se corrijan las 7 filas que señala `/control`, el rango publicaría
-   «Aceite entre 2.100 y 1.264.260 CUP/l». Una corrección previa de esta lista:
-   se dijo acá que la tarjeta no dependía de ningún hueco de dato, y la medición
-   del 2026-08-22 lo refutó.
-
-   Lo normativo, en cambio, ya está resuelto y no bloquea. §9.0 **no** prohíbe
-   mostrar precio: prohíbe mostrarlo «como titular sin respaldo de muestra», y
-   fija el vocabulario — por debajo del umbral se muestra el estado **«muestra
-   en formación»** con el número de observaciones a la vista, «nunca un valor
-   puntual presentado como medición consolidada». Como §9.0 dice además que las
-   Fases 0 y 1 **son** el período de calibración de N, hoy todas las celdas
-   están en ese estado. La tarjeta va con ese rótulo, el n al lado y rango en
-   vez de número puntual.
+3. **Curar las 7 filas que señala `/control`.** Es trabajo de dato y bloquea la
+   publicación, no el código. Hasta hacerlo, 4 de las 6 tarjetas de `/` muestran
+   máximos falsos: Aceite/La Habana publica «2.100 – 1.264.260 CUP/l» y
+   Pollo/La Habana tiene además la mediana corrida a 3.400. **No conviene
+   exponer `/` públicamente hasta entonces.**
 4. **Rango mín–máx además del promedio** (§6.7, «banda gris»): con n bajo el
    rango es honesto y el promedio solo, engañoso. Depende del hueco 1.
 5. **Colorear el mapa por precio** (§6.7): verde/amarillo/rojo contra el

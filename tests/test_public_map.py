@@ -149,10 +149,17 @@ class TestRutaPublica:
 
         assert "Observaciones por provincia" in texto
 
-    def test_no_publica_ningun_precio_todavia(self, client: TestClient) -> None:
-        """El coloreado por precio necesita un umbral de muestra que §12.6
-        prohíbe inventar. Mientras no exista, la página muestra cobertura y
-        nada más — publicar una cifra acá sería la regresión."""
-        texto = client.get("/").text
+    def test_el_mapa_no_colorea_por_precio(self, client: TestClient) -> None:
+        """El coloreado verde/amarillo/rojo de §6.7 necesita un umbral de
+        muestra que §12.6 prohíbe inventar. El mapa distingue cobertura y nada
+        más; las tarjetas sí publican precio, con su rótulo y su n.
 
-        assert "CUP" not in texto
+        (Reemplaza a un caso anterior que exigía que no apareciera «CUP» en
+        toda la página. Era correcto mientras la página fuera solo el mapa, y
+        dejó de serlo al leer §9.0 completa: no prohíbe el precio, prohíbe el
+        valor puntual sin respaldo de muestra.)"""
+        svg = client.get("/").text.split("<svg")[1].split("</svg>")[0]
+
+        assert "is-con-dato" not in svg or "is-sin-dato" in svg
+        for clase in ("is-caro", "is-barato", "is-promedio"):
+            assert clase not in svg
