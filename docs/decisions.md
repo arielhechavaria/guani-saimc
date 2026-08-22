@@ -4374,3 +4374,55 @@ responde 200 y dice «2 de 16 provincias con observaciones, 218 en total», con 
 Habana en 113 y Santiago en 105. Son 24.935 B de HTML que el `GZipMiddleware`
 entrega en 9.255 B. Queda anotado en backlog que la vista pública arrastra los
 ~6 KB de estilos de curaduría que no usa.
+
+## 2026-08-22 — Detectar `price_basis='unit'` que la propia celda desmiente
+
+Contexto: al medir qué publicaría la tarjeta de producto apareció que el rango
+minorista no es publicable. Aceite/La Habana daba **2.100 – 4.000 – 1.264.260
+CUP/l** y Arroz/La Habana **277 – 312 – 30.885 CUP/lb**. Mi recomendación previa
+de que la tarjeta «no depende de ningún hueco de dato» quedó refutada por la
+medición y se corrige acá.
+
+La causa del aceite resultó peor que mala curaduría: la fila es
+`1,90 USD · 900 ml · price_basis='unit'`. Son 1,90 por la botella —un total— mal
+marcado como unitario. Leído como precio por mililitro y convertido a litro, el
+error se multiplica por **mil**. O sea: un `price_basis` mal curado no produce un
+error proporcional, produce uno del orden del factor de conversión de unidad.
+
+Decisión: `cells.py:detect_basis_suspects()`, un detector **sin ningún umbral**.
+Para cada fila `'unit'` con `quantity != 1` calcula las dos lecturas posibles del
+mismo número —`as_unit` y `as_total = price/quantity`, ambas convertidas a la
+unidad canónica— y señala la fila cuando la lectura de **total** queda más cerca,
+en proporción, de la mediana de las filas **no ambiguas** de su propia celda. No
+hay corte de precio, ni factor mínimo de sospecha, ni «ningún arroz vale más de
+X»: solo se compara cuál de las dos interpretaciones concuerda mejor con el
+vecindario de la fila. Es lo que `docs/backlog.md` pedía y lo que §12.6 exige.
+
+Fila **no ambigua** es la que no puede estar mal marcada de esta forma:
+`quantity == 1` o `price_basis == 'total'`. Si la celda no tiene ninguna, **no
+hay veredicto** y la fila no se reporta — es el caso de Picadillo, cuyas filas
+`'unit'` con `quantity != 1` están bien y no tienen contra qué contrastarse.
+
+La distancia se mide en proporción y no en diferencia absoluta porque el error es
+multiplicativo. Se implementó como `max(a/b, b/a)` en vez de `abs(log(a/b))`:
+misma monotonía, sin pasar por `float` y perder la exactitud de `Decimal` justo
+en la comparación que decide.
+
+Medido contra producción, 7 filas señaladas y **ninguna** es un falso positivo:
+Aceite ×369,4; Arroz/Habana ×98,9; tres de Arroz/Santiago ×23,3 (17.500 por 25
+kg); y las dos de Pollo/Habana, que leídas como total dan **las dos 850,00/lb**
+contra una celda de 806,06 — dos filas independientes coincidiendo, que era
+justamente la evidencia que el backlog había anticipado. Picadillo no aparece.
+
+Descartado: (a) excluir las sospechosas del agregado automáticamente — el
+detector señala, no corrige, y quien juzga sigue siendo el operador; (b) un
+corte absoluto de precio, que §12.6 prohíbe y que además marcaría mal a
+Picadillo; (c) exigir un factor mínimo de sospecha, que sería el umbral
+inventado que todo este diseño evita.
+
+Consecuencia: 800 tests verdes (+8). La tabla vive en `/control` —es trabajo de
+curaduría, no una estadística pública— con las dos lecturas y la referencia al
+lado. Los agregados **no cambian**: el rango minorista sigue mostrando el máximo
+envenenado hasta que el operador corrija las filas, y esa corrección ahora es
+dirigida en vez de a ciegas sobre 202 filas. La tarjeta de producto sigue
+bloqueada hasta entonces.

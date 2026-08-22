@@ -410,6 +410,57 @@
     </div>
     {% endif %}
 
+    {# Distinto del banner de arriba, y a propósito: ese cuenta filas que NO
+       entran al rango; esta tabla lista filas que SÍ entran y lo envenenan. Una
+       sola marcada mal como «por unidad» arrastra el máximo de su celda, y el
+       máximo es lo que §6.7 manda publicar. Va con los dos números al lado
+       porque el detector no corrige: señala, y decide el operador. #}
+    {% if basis_suspects %}
+    <div class="m3-banner m3-banner-warn" style="margin-bottom:16px" role="alert">
+      <span class="m3-icon">rule</span>
+      <span>
+        <strong>{{ basis_suspects | length }}</strong>
+        fila{{ "s" if basis_suspects | length != 1 }} dice{{ "n" if basis_suspects | length != 1 }}
+        «precio por unidad» pero leída{{ "s" if basis_suspects | length != 1 }} como total
+        encaja{{ "n" if basis_suspects | length != 1 }} mucho mejor con el resto de su celda.
+        No están descartadas: entran al rango de arriba y le corren el máximo.
+      </span>
+    </div>
+    <table class="m3-table" style="margin-bottom:24px">
+      <caption class="m3-caption">
+        Ordenadas por cuánto se aparta la lectura declarada. Se compara contra la
+        mediana de las filas no ambiguas de la misma celda —cantidad uno, o
+        <code>price_basis</code> ya resuelto como total—, nunca contra un corte
+        de precio fijo. Una celda sin filas no ambiguas no aparece acá: no hay
+        contra qué contrastarla.
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Producto</th>
+          <th scope="col">Provincia</th>
+          <th scope="col" class="num">Fila</th>
+          <th scope="col" class="num">Dice</th>
+          <th scope="col" class="num">Sería, como total</th>
+          <th scope="col" class="num">Celda</th>
+          <th scope="col" class="num">Se aparta</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in basis_suspects %}
+        <tr>
+          <td>{{ s.product_name }}</td>
+          <td>{{ s.province_name or "—" }}</td>
+          <td class="num">{{ s.price }} × {{ s.quantity | round(3) }} {{ s.row_unit }}</td>
+          <td class="num">{{ s.as_unit | round(2) }}/{{ s.unit }}</td>
+          <td class="num"><strong>{{ s.as_total | round(2) }}</strong>/{{ s.unit }}</td>
+          <td class="num">{{ s.reference | round(2) }}/{{ s.unit }}</td>
+          <td class="num">×{{ s.ratio_to_reference | round(1) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
     {% if not retail_ranges %}
     <div class="m3-banner m3-banner-warn" role="alert">
       <span class="m3-icon">info</span>

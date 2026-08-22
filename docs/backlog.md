@@ -96,11 +96,18 @@ lb y 3.400/4 lb dan **las dos 850 CUP/lb** leídas como total: dos filas
 independientes coincidiendo delatan que son totales mal marcados. El dato
 mismo distingue un caso del otro; una regla estructural los confundiría.
 
-Bloqueado por: nada. Es la señal más barata que queda y no toca esquema. El
-diseño tiene que ser **comparación relativa dentro de la propia celda**
-(apartarse del resto de su muestra), nunca un corte absoluto de precio: un
-«ningún arroz vale más de X» sí sería inventar un umbral de los que §12.6
-prohíbe, y además fallaría con Picadillo.
+**Detección hecha el 2026-08-22** (`cells.py:detect_basis_suspects`, tabla en
+`/control`). Señala 7 filas contra producción, sin falsos positivos y sin
+inventar ningún umbral. Picadillo no aparece, como debía.
+
+Lo que **queda** es el trabajo de dato, y es tuyo, no de código: corregir esas 7
+filas desde el historial de curaduría. Hasta entonces los agregados siguen
+mostrando el máximo envenenado a propósito — el detector señala, no corrige.
+Las peores: Aceite/La Habana `1,90 USD × 900 ml` (se aparta ×369, y por la
+conversión ml→l mete un error de mil veces), Arroz/La Habana `30.885 × 100 lb`
+(×98,9), y tres de Arroz/Santiago `17.500 × 25 kg` (×23,3).
+
+Bloqueado por: nada. Es curaduría dirigida, ya no búsqueda a ciegas.
 
 ## Unidad de catálogo mal declarada en Picadillo
 
@@ -163,9 +170,20 @@ producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Hab
 
 ### Tareas, en orden de dependencia
 
-3. **Tarjeta de producto** (§6.7): precio de hoy, provincias con oferta, y
-   **tamaño de muestra visible** (§9.0) — exigido desde el día 1 en lugar de un
-   titular de precio, no es opcional.
+3. **Tarjeta de producto** (§6.7). **Bloqueada por dato, no por código**: hasta
+   que se corrijan las 7 filas que señala `/control`, el rango publicaría
+   «Aceite entre 2.100 y 1.264.260 CUP/l». Una corrección previa de esta lista:
+   se dijo acá que la tarjeta no dependía de ningún hueco de dato, y la medición
+   del 2026-08-22 lo refutó.
+
+   Lo normativo, en cambio, ya está resuelto y no bloquea. §9.0 **no** prohíbe
+   mostrar precio: prohíbe mostrarlo «como titular sin respaldo de muestra», y
+   fija el vocabulario — por debajo del umbral se muestra el estado **«muestra
+   en formación»** con el número de observaciones a la vista, «nunca un valor
+   puntual presentado como medición consolidada». Como §9.0 dice además que las
+   Fases 0 y 1 **son** el período de calibración de N, hoy todas las celdas
+   están en ese estado. La tarjeta va con ese rótulo, el n al lado y rango en
+   vez de número puntual.
 4. **Rango mín–máx además del promedio** (§6.7, «banda gris»): con n bajo el
    rango es honesto y el promedio solo, engañoso. Depende del hueco 1.
 5. **Colorear el mapa por precio** (§6.7): verde/amarillo/rojo contra el

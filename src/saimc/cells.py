@@ -511,3 +511,201 @@ def compute_retail_ranges(
         excluded_by_basis=excluded_by_basis,
         excluded_by_unit=excluded_by_unit,
     )
+
+
+@dataclass(frozen=True)
+class BasisSuspect:
+    """Una fila `price_basis='unit'` que su propia celda desmiente.
+
+    No afirma que la fila esté mal: afirma que **leída como total encaja mejor
+    con el resto de su celda que leída como unitaria**, y muestra los dos
+    números para que el operador decida. Quien juzga sigue siendo él.
+    """
+
+    product_name: str
+    province_name: str | None
+    price: Decimal
+    quantity: Decimal
+    row_unit: str
+    unit: str
+    #: El precio por unidad si la fila dice la verdad (`basis='unit'`).
+    as_unit: Decimal
+    #: El precio por unidad si en realidad el precio era el total del lote.
+    as_total: Decimal
+    #: Mediana de las filas NO ambiguas de la misma celda, contra la que se compara.
+    reference: Decimal
+
+    @property
+    def ratio_to_reference(self) -> Decimal:
+        """Cuántas veces se aparta la lectura declarada. Es la magnitud del error."""
+        return self.as_unit / self.reference
+
+
+def detect_basis_suspects(
+    session: Session, *, days: int = 30, hoy: date | None = None
+) -> list[BasisSuspect]:
+    """Filas cuyo `price_basis='unit'` contradice al resto de su propia celda.
+
+    **Por qué hace falta.** Una fila marcada `'unit'` que en realidad trae el
+    total del lote no produce un error proporcional: produce uno del orden del
+    factor de conversión de unidad. El caso medido el 2026-08-22 es
+    `1,90 USD · 900 ml · basis='unit'` de Aceite — son 1,90 por la botella, pero
+    leído como precio por mililitro y convertido a litro da **1.264.260 CUP/l**.
+    Una sola fila así envenena el máximo de su celda, y el rango mín–máx es
+    justamente lo que §6.7 manda publicar.
+
+    **Cómo decide, y por qué no hay ningún umbral.** Para cada fila candidata se
+    calculan las dos lecturas posibles del mismo número —`as_unit` y
+    `as_total = price / quantity`—, ambas convertidas a la unidad canónica, y se
+    elige la que queda **más cerca en proporción** de la mediana de las filas no
+    ambiguas de su misma celda. No hay corte de precio, ni «ningún arroz vale
+    más de X», ni un factor mínimo de sospecha: solo se compara cuál de las dos
+    interpretaciones concuerda mejor con el propio vecindario de la fila. Eso es
+    lo que `docs/backlog.md` pedía —comparación relativa dentro de la celda— y
+    lo que §12.6 exige: no se inventa ningún parámetro.
+
+    La distancia se mide en proporción y no en diferencia absoluta porque el
+    error es multiplicativo: 30.885 contra 312 y 1.264.260 contra 3.400 son el
+    mismo tipo de equivocación a escalas distintas, y una resta los trataría
+    como problemas incomparables.
+
+    **Fila no ambigua** es la que no puede estar mal marcada de esta forma:
+    `quantity == 1` (unitario y total son el mismo número) o
+    `price_basis == 'total'` (el operador ya lo resolvió, y en el otro sentido).
+    Si una celda no tiene ninguna, **no hay veredicto**: la fila no se reporta.
+    Es el caso de Picadillo, cuyas cuatro filas `'unit'` con `quantity != 1`
+    están bien y no tienen contra qué contrastarse — inventarles un juicio sería
+    exactamente el error que este diseño evita (`docs/backlog.md`, 2026-08-22).
+
+    Recorre el mismo universo de filas que `compute_retail_ranges` y con los
+    mismos criterios de moneda y unidad; lo que cambia es que no agrega, señala.
+    """
+    cutoff = (hoy or date.today()) - timedelta(days=days)
+
+    stmt = (
+        select(
+            Product.name,
+            Product.unit,
+            Province.name,
+            PriceHistory.currency,
+            PriceHistory.unit,
+            PriceHistory.quantity,
+            PriceHistory.price,
+            PriceHistory.price_cup,
+            PriceHistory.price_basis,
+            PriceHistory.published_date,
+            PriceHistory.created_at,
+        )
+        .join(Product, Product.id == PriceHistory.product_id)
+        .outerjoin(Province, Province.id == PriceHistory.province_id)
+        .where(PriceHistory.sale_format == SaleFormat.RETAIL.value)
+        .where(PriceHistory.unit.is_not(None))
+        .where(PriceHistory.quantity.is_not(None))
+    )
+
+    SuspectKey = tuple[str, str | None, str]
+    unambiguous: dict[SuspectKey, list[Decimal]] = {}
+    candidates: list[tuple[SuspectKey, dict[str, object]]] = []
+
+    for (
+        product_name,
+        product_unit,
+        province_name,
+        currency,
+        row_unit,
+        quantity,
+        price,
+        price_cup,
+        price_basis,
+        published_date,
+        created_at,
+    ) in session.execute(stmt):
+        if quantity is None or quantity == 0:
+            continue
+        if (published_date or created_at.date()) < cutoff:
+            continue
+
+        # Solo entra lo que ya está en CUP o tiene la conversión resuelta: una
+        # fila sin tasa no es comparable con las de su celda, y mezclarla
+        # inventaría la equivalencia que `unconverted` existe para evitar.
+        if currency == Currency.CUP.value:
+            effective_price = price
+        elif price_cup is not None:
+            effective_price = price_cup
+        else:
+            continue
+
+        target_unit = canonical_unit(product_unit)
+        key: SuspectKey = (product_name, province_name, target_unit or "")
+
+        if quantity == 1 or price_basis == "total":
+            resolved = convert_price_per_unit(
+                effective_price if quantity == 1 else effective_price / quantity,
+                frm=row_unit,
+                to=target_unit,
+            )
+            if resolved is not None:
+                unambiguous.setdefault(key, []).append(resolved)
+            continue
+
+        if price_basis != "unit":
+            # `None` con `quantity != 1` no es sospechoso, es indeterminado:
+            # `compute_retail_ranges` ya lo excluye y cuenta aparte.
+            continue
+
+        as_unit = convert_price_per_unit(effective_price, frm=row_unit, to=target_unit)
+        as_total = convert_price_per_unit(
+            effective_price / quantity, frm=row_unit, to=target_unit
+        )
+        if as_unit is None or as_total is None:
+            continue
+
+        candidates.append(
+            (
+                key,
+                {
+                    "product_name": product_name,
+                    "province_name": province_name,
+                    "price": price,
+                    "quantity": quantity,
+                    "row_unit": row_unit,
+                    "unit": target_unit or row_unit,
+                    "as_unit": as_unit,
+                    "as_total": as_total,
+                },
+            )
+        )
+
+    suspects = []
+    for key, row in candidates:
+        sample = unambiguous.get(key)
+        if not sample:
+            continue  # sin referencia no hay veredicto
+        reference = statistics.median(sample)
+        if reference <= 0:
+            continue
+
+        as_unit: Decimal = row["as_unit"]  # type: ignore[assignment]
+        as_total: Decimal = row["as_total"]  # type: ignore[assignment]
+        # Distancia proporcional, simétrica: para un valor y su referencia da lo
+        # mismo estar 10 veces por encima que 10 veces por debajo.
+        if _proportional_distance(as_total, reference) < _proportional_distance(
+            as_unit, reference
+        ):
+            suspects.append(BasisSuspect(reference=reference, **row))  # type: ignore[arg-type]
+
+    suspects.sort(key=lambda s: -s.ratio_to_reference)
+    return suspects
+
+
+def _proportional_distance(value: Decimal, reference: Decimal) -> Decimal:
+    """Cuántas veces se apartan uno de otro, mirado desde el lado que más da.
+
+    `max(a/b, b/a)`: evita `log()` —que forzaría pasar por `float` y perder la
+    exactitud de `Decimal` justo en la comparación que decide— y es monótona
+    respecto del valor absoluto del logaritmo, que es lo único que se necesita
+    para ordenar dos candidatas.
+    """
+    if value <= 0:
+        return Decimal("Infinity")
+    return max(value / reference, reference / value)

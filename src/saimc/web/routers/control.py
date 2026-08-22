@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from saimc.cells import compute_cells, compute_retail_ranges
+from saimc.cells import compute_cells, compute_retail_ranges, detect_basis_suspects
 from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
@@ -122,6 +122,13 @@ def control_panel(
             # `compute_retail_ranges` corre antes de saber de qué producto
             # era cada fila (2026-08-21).
             "excluded_by_basis": retail_report.excluded_by_basis,
+            # Las filas que la propia celda desmiente. Van en la vista del
+            # operador y no en la pública porque son trabajo de curaduría: cada
+            # una es una corrección concreta con su evidencia al lado, no una
+            # estadística. Ventana propia y más larga que la del rango
+            # minorista: una fila mal marcada envenena su celda mientras exista,
+            # no solo mientras esté fresca.
+            "basis_suspects": detect_basis_suspects(db, days=30),
             "curated": curated,
             "rows": rows,
             # Se cuenta sobre las celdas ya filtradas, no con un agregado
