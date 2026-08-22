@@ -92,7 +92,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.models import Currency, PriceHistory, Product, Province, SaleFormat
-from saimc.units import canonical_unit
+from saimc.units import canonical_unit, convert_price_per_unit
 
 
 @dataclass(frozen=True)
@@ -313,6 +313,13 @@ class RetailRangeReport:
     # para que el operador priorice cuál cola de curaduría atacar primero
     # (2026-08-21).
     excluded_by_basis: int
+    # Filas cuya unidad no es convertible a la canónica del producto: `caja`,
+    # que no declara cuánto contiene, y las magnitudes distintas (masa a
+    # conteo, masa a volumen). Antes del 2026-08-22 esta cola incluía todo el
+    # kg de un producto declarado en lb y se descartaba en silencio; ahora la
+    # conversión la vació de casi todo y lo que queda señala catálogo mal
+    # declarado, no dato malo.
+    excluded_by_unit: int
 
 
 def compute_retail_ranges(
@@ -335,12 +342,20 @@ def compute_retail_ranges(
       problema que separar por `sale_format` en `compute_cells` resolvió. El
       precio que le importa al hogar —el usuario que define spec.md §8.1
       Nivel 0— es el minorista.
-    - **`unit` de la fila debe coincidir con la unidad canónica del producto**
-      (`Product.unit`, pasada por `canonical_unit()` porque el seed la guarda
-      sin canonicalizar: "litro", no "l"). Sin tabla de conversión lb↔kg: no
-      hay una definida, y adivinar un factor es exactamente lo que §12.6
-      prohíbe. Una fila en otra unidad queda fuera de este promedio pero
-      sigue visible en `compute_cells`.
+    - **El precio se lleva a la unidad canónica del producto** (`Product.unit`,
+      pasada por `canonical_unit()` porque el seed la guarda sin canonicalizar:
+      "litro", no "l"). Hasta el 2026-08-22 esta vista **exigía** que la unidad
+      de la fila ya coincidiera y descartaba el resto, citando §12.6. Era una
+      lectura equivocada: §12.6 gobierna umbrales de juicio que deciden qué se
+      publica y que la especificación manda calibrar contra datos reales, y una
+      equivalencia entre unidades no es ninguna de esas cosas — la libra son
+      0,45359237 kg exactos por definición. El filtro costaba el 65% de las
+      filas de productos bandera (`decisions.md`, 2026-08-22). Hoy
+      `convert_price_per_unit()` la convierte cuando comparten magnitud, y solo
+      queda afuera lo que no es convertible ni en principio: `caja`, que no
+      dice cuánto contiene, y las magnitudes distintas (masa a conteo, masa a
+      volumen). Ese descarte ahora se cuenta en `excluded_by_unit` en vez de
+      ser silencioso, y la fila sigue visible en `compute_cells`.
     - **Requiere `quantity`.** Sin cantidad no hay precio por unidad que
       calcular.
     - **La fila tiene que ser comprable en la cantidad que cotiza**
@@ -394,6 +409,7 @@ def compute_retail_ranges(
     grouped: dict[RangeKey, list[Decimal]] = {}
     excluded_by_minimum = 0
     excluded_by_basis = 0
+    excluded_by_unit = 0
     for (
         product_name,
         product_unit,
@@ -409,8 +425,6 @@ def compute_retail_ranges(
         created_at,
     ) in session.execute(stmt):
         if quantity == 0:
-            continue
-        if row_unit != canonical_unit(product_unit):
             continue
 
         effective_date = published_date or created_at.date()
@@ -448,8 +462,24 @@ def compute_retail_ranges(
             effective_price if price_basis == "unit" else effective_price / quantity
         )
 
-        key: RangeKey = (product_name, province_name, key_currency, row_unit, unconverted)
-        grouped.setdefault(key, []).append(unit_price)
+        # Último de los filtros, mismo criterio que los dos de arriba: cuenta
+        # filas que por todo lo demás habrían entrado. Se convierte el precio
+        # **por unidad**, no el crudo, así que tiene que ir después de dividir
+        # por la cantidad: al revés convertiría el total del lote.
+        target_unit = canonical_unit(product_unit)
+        converted = convert_price_per_unit(unit_price, frm=row_unit, to=target_unit)
+        if converted is None:
+            excluded_by_unit += 1
+            continue
+
+        key: RangeKey = (
+            product_name,
+            province_name,
+            key_currency,
+            target_unit,
+            unconverted,
+        )
+        grouped.setdefault(key, []).append(converted)
 
     ranges = [
         RetailRange(
@@ -479,4 +509,5 @@ def compute_retail_ranges(
         ranges=ranges,
         excluded_by_minimum=excluded_by_minimum,
         excluded_by_basis=excluded_by_basis,
+        excluded_by_unit=excluded_by_unit,
     )

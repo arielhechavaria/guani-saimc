@@ -6,9 +6,11 @@ antes que el código). No es el vocabulario de reconocimiento de
 `engine.py:_UNIT_WORDS` — ver docstring del módulo bajo prueba.
 """
 
+from decimal import Decimal
+
 import pytest
 
-from saimc.units import UNITS, canonical_unit
+from saimc.units import UNITS, canonical_unit, convert_price_per_unit
 
 
 class TestVocabulario:
@@ -53,3 +55,73 @@ class TestCanonicalUnitVacio:
 
     def test_none_devuelve_none(self) -> None:
         assert canonical_unit(None) is None
+
+
+class TestConvertPricePerUnitMasa:
+    """Valores calculados a mano desde la definición: la libra internacional
+    son 0,45359237 kg **exactos** por acuerdo de 1959. No es un factor
+    estimado ni un umbral de los que §12.6 manda calibrar.
+
+    Se eligen precios que hacen la cuenta verificable de cabeza: si el kilo
+    cuesta 1000, la libra cuesta lo que la libra pesa en gramos.
+    """
+
+    def test_de_kilo_a_libra(self) -> None:
+        assert convert_price_per_unit(Decimal("1000"), frm="kg", to="lb") == Decimal(
+            "453.59237"
+        )
+
+    def test_de_libra_a_kilo(self) -> None:
+        assert convert_price_per_unit(
+            Decimal("453.59237"), frm="lb", to="kg"
+        ) == Decimal("1000")
+
+    def test_ida_y_vuelta_devuelve_el_valor_original(self) -> None:
+        ida = convert_price_per_unit(Decimal("750"), frm="kg", to="lb")
+        assert ida is not None
+        assert convert_price_per_unit(ida, frm="lb", to="kg") == Decimal("750")
+
+
+class TestConvertPricePerUnitVolumen:
+    def test_de_litro_a_mililitro(self) -> None:
+        assert convert_price_per_unit(Decimal("1000"), frm="l", to="ml") == Decimal("1")
+
+    def test_de_mililitro_a_litro(self) -> None:
+        assert convert_price_per_unit(Decimal("1"), frm="ml", to="l") == Decimal("1000")
+
+
+class TestConvertPricePerUnitIdentidad:
+    @pytest.mark.parametrize("valor", list(UNITS))
+    def test_la_misma_unidad_devuelve_el_precio_intacto(self, valor: str) -> None:
+        """Vale incluso para las unidades sin magnitud (`caja`, `unidad`,
+        `docena`): convertir algo a sí mismo no necesita saber cuánto pesa."""
+        assert convert_price_per_unit(Decimal("123.45"), frm=valor, to=valor) == Decimal(
+            "123.45"
+        )
+
+
+class TestConvertPricePerUnitNoConvertible:
+    """Nunca inventa, misma convención que `canonical_unit()`."""
+
+    def test_masa_a_volumen_devuelve_none(self) -> None:
+        """Un kilo a litros exigiría la densidad del producto, que no tenemos."""
+        assert convert_price_per_unit(Decimal("750"), frm="kg", to="l") is None
+
+    def test_conteo_a_masa_devuelve_none(self) -> None:
+        """`caja` no dice cuánto pesa la caja."""
+        assert convert_price_per_unit(Decimal("750"), frm="caja", to="lb") is None
+
+    def test_docena_a_unidad_no_convierte_todavia(self) -> None:
+        """Doce unidades por docena es una definición cierta, pero ninguna fila
+        del corpus usa esas unidades: agregarla sería vocabulario sin dato que
+        lo respalde. Queda deliberadamente afuera."""
+        assert convert_price_per_unit(Decimal("120"), frm="docena", to="unidad") is None
+
+    def test_unidad_fuera_del_vocabulario_devuelve_none(self) -> None:
+        assert convert_price_per_unit(Decimal("750"), frm="quintal", to="lb") is None
+
+    def test_unidad_origen_none_devuelve_none(self) -> None:
+        assert convert_price_per_unit(Decimal("750"), frm=None, to="lb") is None
+
+    def test_unidad_destino_none_devuelve_none(self) -> None:
+        assert convert_price_per_unit(Decimal("750"), frm="kg", to=None) is None

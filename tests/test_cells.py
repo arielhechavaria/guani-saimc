@@ -416,22 +416,137 @@ class TestComputeRetailRanges:
 
         assert compute_retail_ranges(session).ranges == []
 
-    def test_unidad_distinta_de_la_canonica_se_excluye_sin_convertir(
+    def test_unidad_de_la_misma_magnitud_se_convierte_a_la_canonica(
         self, session: Session
     ) -> None:
-        """Sin tabla de conversión lb<->kg: convertir sin que nadie la haya
-        definido es exactamente lo que §12.6 prohíbe. La fila con unidad
-        distinta a la canónica del producto queda fuera de esta vista — sigue
-        visible en `compute_cells`, que no exige coincidencia de unidad.
+        """Reemplaza a `test_unidad_distinta_de_la_canonica_se_excluye_sin_convertir`
+        (2026-08-22). La equivalencia libra/kilo es una definición, no un
+        umbral de los que §12.6 manda calibrar, así que la fila entra
+        convertida en vez de descartarse.
+
+        Un kilo a 1000 es una libra a 453,59237: la libra es menos producto,
+        así que cuesta menos.
         """
         arroz = self._arroz(session, unit="lb")
-        origen = _ingestion(session, "hash-unidad-no-canonica")
+        origen = _ingestion(session, "hash-unidad-convertible")
         _precio(
-            session, product=arroz, province=None, price="750", source=origen,
+            session, product=arroz, province=None, price="1000", source=origen,
             unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
         )
 
-        assert compute_retail_ranges(session).ranges == []
+        (rango,) = compute_retail_ranges(session).ranges
+        assert rango.unit == "lb"
+        assert rango.count == 1
+        assert rango.median == Decimal("453.59237")
+
+    def test_kilo_y_libra_del_mismo_producto_se_funden_en_una_celda(
+        self, session: Session
+    ) -> None:
+        """Antes eran dos series que no se hablaban y una de las dos se tiraba.
+        Convertidas son la misma serie, que es el punto de la unidad canónica.
+        """
+        arroz = self._arroz(session, unit="lb")
+        origen = _ingestion(session, "hash-funde-kg-lb")
+        # 1000/kg -> 453,59237/lb, y una fila ya en libras a 500.
+        _precio(
+            session, product=arroz, province=None, price="1000", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+        _precio(
+            session, product=arroz, province=None, price="500", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+
+        (rango,) = compute_retail_ranges(session).ranges
+        assert rango.unit == "lb"
+        assert rango.count == 2
+        assert rango.minimum == Decimal("453.59237")
+        assert rango.maximum == Decimal("500")
+
+    def test_el_caso_real_del_arroz_en_kilos_por_saco(self, session: Session) -> None:
+        """Caso medido en producción el 2026-08-22: cuatro filas de Arroz en La
+        Habana que parecían no tener relación —688,70 · 16.330 · 16.685 ·
+        30.885— son cuatro lecturas del mismo precio una vez normalizadas.
+
+        Los esperados salen de la definición, no de correr el agregador:
+        16.330 CUP por 25 kg son 653,20 CUP/kg, y 653,20 x 0,45359237 =
+        296,2865... CUP/lb. El rango completo queda entre ~296 y ~312, no entre
+        688 y 30.885.
+        """
+        arroz = self._arroz(session, unit="lb")
+        hab = Province(code="hab", name="La Habana")
+        session.add(hab)
+        session.commit()
+        origen = _ingestion(session, "hash-arroz-real")
+        for price, qty, unit in (
+            ("688.70", "1", "kg"),
+            ("16330", "25", "kg"),
+            ("16685", "25", "kg"),
+            ("30885", "100", "lb"),
+        ):
+            _precio(
+                session, product=arroz, province=hab, price=price, source=origen,
+                unit=unit, sale_format=SaleFormat.RETAIL.value, quantity=qty,
+                price_basis="total",
+            )
+
+        (rango,) = compute_retail_ranges(session).ranges
+        assert rango.unit == "lb"
+        assert rango.count == 4
+        # Todas caen dentro de un rango estrecho y coherente de mercado.
+        assert Decimal("296") < rango.minimum < Decimal("297")
+        assert Decimal("312") < rango.maximum < Decimal("313")
+
+    def test_unidad_sin_magnitud_sigue_excluida_y_se_cuenta(
+        self, session: Session
+    ) -> None:
+        """`caja` no dice cuánto contiene: no es convertible ni en principio.
+        Se sigue excluyendo, pero ahora el descarte es visible en vez de
+        silencioso — que era la mitad del problema.
+        """
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
+        session.add(pollo)
+        session.commit()
+        origen = _ingestion(session, "hash-caja")
+        _precio(
+            session, product=pollo, province=None, price="9000", source=origen,
+            unit="caja", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+
+        report = compute_retail_ranges(session)
+        assert report.ranges == []
+        assert report.excluded_by_unit == 1
+
+    def test_magnitud_distinta_se_excluye_y_se_cuenta(self, session: Session) -> None:
+        """Producto con unidad de catálogo `unidad` y filas en `lb`: el caso
+        real de Picadillo. Convertir masa a conteo exigiría saber cuánto pesa
+        una unidad, así que la fila no entra — pero el contador deja ver que la
+        unidad del catálogo es la que está mal elegida.
+        """
+        picadillo = Product(name="Picadillo", category="carnes", unit="unidad", aliases=[])
+        session.add(picadillo)
+        session.commit()
+        origen = _ingestion(session, "hash-picadillo")
+        _precio(
+            session, product=picadillo, province=None, price="1200", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+
+        report = compute_retail_ranges(session)
+        assert report.ranges == []
+        assert report.excluded_by_unit == 1
+
+    def test_la_fila_convertida_no_incrementa_el_contador_de_excluidas(
+        self, session: Session
+    ) -> None:
+        arroz = self._arroz(session, unit="lb")
+        origen = _ingestion(session, "hash-convertida-no-cuenta")
+        _precio(
+            session, product=arroz, province=None, price="1000", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+
+        assert compute_retail_ranges(session).excluded_by_unit == 0
 
     def test_producto_seedeado_con_litro_canonicaliza_a_l(
         self, session: Session

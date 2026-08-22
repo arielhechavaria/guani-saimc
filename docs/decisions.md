@@ -4089,3 +4089,70 @@ la Transparency Layer: mostrar el anuncio que sustenta cada precio (§6.5) es
 casi gratis porque `/evidence/{ingestion_id}` ya existe, pero publicar la
 captura cruda rompe la mitigación §10.6 — se publica el texto redactado, no
 el píxel (contradicción #1 de `spec-map.md`, todavía abierta).
+
+## 2026-08-22 — La equivalencia entre unidades no es un umbral de §12.6
+
+Contexto: `compute_retail_ranges` exigía que `prices_history.unit` coincidiera
+con `Product.unit` y descartaba en silencio todo lo demás. Su docstring lo
+justificaba así: «Sin tabla de conversión lb↔kg: no hay una definida, y
+adivinar un factor es exactamente lo que §12.6 prohíbe».
+
+La cita no aplica. §12.6 enumera cinco parámetros —N mínimo por celda, período
+mínimo de sostenimiento, categorías mínimas por provincia, criterios de fuente
+de alta confianza, ventana de validez de la tasa— y los cinco son umbrales de
+**juicio que deciden qué se publica**, que la especificación manda calibrar
+contra datos reales precisamente porque admiten más de un valor defendible. Una
+libra son 0,45359237 kg exactos por el acuerdo internacional de 1959: no se
+calibra, no gobierna qué se publica y no admite otro valor. Tratarla como
+umbral no fue prudencia, fue una categoría equivocada.
+
+Lo que costaba, medido contra producción antes del cambio: Arroz declara `lb`
+en el catálogo pero 71 de sus 99 filas vienen en kg; Azúcar blanca 17 de 25;
+Pollo 10 de 29 en kg más 2 en `caja`. De 166 filas de productos bandera,
+**unas 108 quedaban afuera solo por la unidad**. La vista minorista devolvía
+para Arroz/La Habana una mediana de **30.885 CUP por libra con muestra 1** —
+absurda, y sostenida por una única fila mal curada.
+
+Decisión: `units.py` gana `convert_price_per_unit()`, que expresa cada unidad
+en la base de su magnitud (gramo para masa, mililitro para volumen) en vez de
+una tabla de pares, y devuelve `None` cuando la conversión no está definida —
+misma convención de «nunca inventa» que `canonical_unit()`. `cells.py` la
+aplica al **precio por unidad**, después de dividir por la cantidad: al revés
+convertiría el total del lote. La clave de celda pasa a usar la unidad canónica
+del producto, así que las filas en kg y en lb del mismo producto dejan de ser
+dos series que no se hablan. Lo que sigue afuera se cuenta en
+`excluded_by_unit` en lugar de descartarse callado.
+
+`compute_cells` **no** se toca: separar kg de lb ahí es deliberado, porque esa
+vista existe para que el operador vea qué está mezclando al cargar, y ocultarle
+la unidad cruda le sacaría justamente la señal que necesita.
+
+Descartado: (a) una tabla de pares origen→destino — N² entradas para el mismo
+resultado, y sumar una unidad obligaría a tocar N líneas; (b) convertir
+`docena`↔`unidad`, que es una equivalencia igual de cierta pero que ninguna
+fila del corpus usa: sería vocabulario sin dato que lo respalde; (c) convertir
+masa a volumen para el aceite, que exigiría la densidad del producto y sí
+sería inventar un número; (d) normalizar también `compute_cells`, por el motivo
+de arriba.
+
+Consecuencia: contra producción, Arroz/La Habana a 30 días pasa de **n=1,
+mediana 30.885** a **n=17, mediana 312,39 CUP/lb**, que es precio de mercado
+real. Arroz/Santiago aparece con n=12 y Azúcar blanca/Santiago con n=5, celdas
+que antes no existían. Las excluidas por unidad caen a 7 en 30 días, y son
+exactamente las que no son convertibles ni en principio: 2 de Pollo en `caja` y
+las 5 de Picadillo, cuyo catálogo declara `unidad` mientras sus filas vienen en
+`lb` — el contador dejó a la vista que ahí el dato malo es la unidad del
+catálogo, no el anuncio.
+
+El cambio también **destapa** lo que el filtro tapaba: los máximos siguen
+envenenados por filas con `price_basis` mal curado (Arroz/La Habana llega a
+30.885 por una fila marcada `'unit'` que es el total del saco). La mediana ya
+es robusta a eso, el máximo no. Queda en backlog como validación aparte.
+
+768 tests verdes (+23 sobre los 745 previos).
+
+**Nota de entorno, aparte de la decisión:** correr `pytest` desde un worktree
+usa el `saimc` instalado en modo editable del checkout **principal**, no el
+código del worktree — los tests dan verde contra código que no es el que se
+está editando. Hay que forzar `PYTHONPATH=<worktree>/src`. Es el mismo tipo de
+trampa silenciosa que ya tenía `measure.py` con `data/raw`.
