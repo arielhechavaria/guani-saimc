@@ -16,6 +16,9 @@ apartarse sin saber que se estaba apartando.
 ## Qué documento es cuál
 
 - **`docs/spec.md`** — la especificación técnica. **Rige.** Es lo que mapea este archivo.
+- **`docs/decisions/001-stack-python-unico.md`** — el ADR del stack y de la capa de
+  visualización, incluido el camino Fase 0 → 1 → 2. Es el que §13.1 pide por nombre.
+  No reemplaza a `docs/decisions.md`: registra el camino, no los pasos.
 - **`docs/pitch-v3.5.md`** — el documento de inversión, congelado el 2026-08-12.
   **No rige.** Antes se llamaba `whitepaper.md`. Contiene copias de las secciones
   técnicas por haberse congelado entero; esas copias no son fuente de nada.
@@ -59,7 +62,7 @@ listadas en su propio encabezado.
 | Qué provincia se publica y cuándo | §9.0 | **1169–1269** | **Vinculante** |
 | Manipulación, ataque coordinado, C1–C4 | §10.7 | **1407–1518** | **Vinculante** |
 | Qué se publica de la metodología | §6.4.1 | **697–761** | **Vinculante** |
-| Stack tecnológico | §13.1 | 1616–1638 | **Cerrada** |
+| Stack tecnológico | §13.1 | 1616–1638 | **Cerrada.** Leé antes `docs/decisions/001-stack-python-unico.md`: es el ADR y trae dos apartamientos |
 | Datos personales, privacidad | §10.6 | 1390–1405 | **Vinculante** |
 | Transparency Layer, qué se publica | §6.4 | 656–695 | Prosa |
 | Linaje y trazabilidad del dato | §6.5 | 763–853 | Prosa |
@@ -138,6 +141,11 @@ Lo implementado que no coincide con el documento, con su entrada en `decisions.m
 | Restricciones de `raw_ingestions` | DDL sin `NOT NULL` | `NOT NULL` en 8 columnas | 2026-08-06 |
 | Marcas de tiempo | `TIMESTAMP` | `TIMESTAMPTZ` | 2026-08-06 |
 | H0 como veredicto de fase | Tabla de decisión avanzar/detener (§3, 56–62) | Métrica de eficiencia; los umbrales 85/70 son referencia de escala | 2026-08-12 |
+| HTMX en la capa web | §13.1: `Jinja2/HTMX` | Jinja2 renderizado en servidor + JS propio como mejora progresiva. HTMX **no existe en el repo**: ni dependencia, ni atributo `hx-*`, ni `<script>` | 2026-08-22 |
+| Motor del mapa de calor | §13.1: MapLibre GL | SVG inline de las 16 provincias, con la geometría vendorizada. **Decidido, sin construir** | 2026-08-22 |
+
+Los dos últimos están razonados en `docs/decisions/001-stack-python-unico.md`,
+que es además el ADR que §13.1 (línea 1636) pide por nombre.
 
 ---
 

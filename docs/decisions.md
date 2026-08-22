@@ -4156,3 +4156,43 @@ usa el `saimc` instalado en modo editable del checkout **principal**, no el
 código del worktree — los tests dan verde contra código que no es el que se
 está editando. Hay que forzar `PYTHONPATH=<worktree>/src`. Es el mismo tipo de
 trampa silenciosa que ya tenía `measure.py` con `data/raw`.
+
+## 2026-08-22 — El ADR del stack se escribe; el mapa de calor es SVG inline
+
+Contexto: al abrir la línea de visualización se reabrió como pregunta un stack
+que §13.1 cerró hace meses, y se propuso como acordado «Angular y
+OpenStreetMap». Verificado: Angular está en §13.1 pero **diferido a Fase 2**, y
+OpenStreetMap **no aparece en `spec.md`** (cero coincidencias para
+`openstreetmap|osm|leaflet|mapbox|geojson|tiles`; la única pieza cartográfica
+nombrada es MapLibre GL). La causa es documental: §13.1 línea 1636 pide un ADR
+en `docs/decisions/001-stack-python-unico.md` y nunca se escribió, así que el
+camino había que reconstruirlo cada vez desde §13.1 más `CLAUDE.md` más nueve
+entradas de este log.
+
+Decisión: se escribe el ADR y se registran dos apartamientos de §13.1. (a) El
+mapa de calor es **SVG inline de las 16 provincias**, no MapLibre GL: son
+polígonos fijos coloreados por una categoría que el servidor ya calcula, y un
+motor de mapas introduce una dependencia de red en runtime donde hoy no hay
+ninguna — el frontend entero pesa 120K (28K CSS + 92K fuentes) y no llama a
+ningún tercero. OpenStreetMap entra como **fuente de la geometría**, derivada
+una vez y vendorizada, mismo criterio que ya se aplicó a Roboto. (b) **HTMX no
+se usa** y el apartamiento ya era un hecho: no existe la dependencia, ni un
+atributo `hx-*`, ni el `<script>`; la única mención es un docstring en
+`src/saimc/web/__init__.py:1` que describe algo que no está. Se adopta el
+estado real —server-rendered con JS propio como mejora progresiva— en vez de
+sumar una dependencia para coincidir con una lista.
+
+Descartado: (a) adelantar Angular a Fase 0 — es lo que pedía el pitch §14.1 y
+§13.1 ya rechazó (entrada del 2026-08-12), y son dos stacks en paralelo con un
+solo desarrollador; (b) MapLibre con tiles autohospedados — un servicio más que
+operar, contra la decisión 4 de `CLAUDE.md`; (c) Leaflet + tiles raster de OSM —
+una petición de red por tile, por pan y por zoom, para un basemap que la
+pregunta del usuario no necesita.
+
+Consecuencia: la visualización de Fase 0 arranca sin decisiones de stack
+pendientes. El ADR fija cuatro invariantes que hacen barata la Fase 2 (la
+agregación fuera de las plantillas, cálculo en funciones puras testeables, cero
+assets de terceros, el servidor decide y el JS mejora) — los cuatro ya se
+cumplen hoy sin estar declarados. Queda por corregir el docstring de
+`web/__init__.py` y por decidir, al construir esa vista, si el gráfico de
+evolución usa Chart.js o SVG generado en servidor.
