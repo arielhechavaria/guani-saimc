@@ -21,11 +21,19 @@ se saca de acá y su motivo queda en `decisions.md` si ameritó una decisión.
 ## Precio comparable por unidad canónica
 
 Por qué importa: es la precondición de todo el dashboard (`spec.md` §6.7:
-precio actual, gráfica de evolución, mapa de calor). Hoy **no existe una
-columna con la que se puedan comparar dos filas**, y promediar `price` da un
-número sin sentido. Medido contra producción el 2026-08-22, la serie diaria de
-Arroz/La Habana da promedios de 29, 3.463, 15.787 y 30.885 en días
-consecutivos, porque `avg(price)` mezcla tres ejes a la vez:
+precio actual, gráfica de evolución, mapa de calor).
+
+**Corrección del 2026-08-22:** una versión anterior de esta entrada decía que
+«no existe una columna con la que comparar dos filas». Es falso y se corrige
+acá. `src/saimc/cells.py` **ya resuelve los tres ejes**: funde por `price_cup`
+y aísla lo no convertido, divide por `quantity` solo cuando `price_basis` es
+`'total'`, deja la fila sin resolver en su propia celda, y separa `retail` de
+`wholesale`. El diseño está hecho y es correcto. Lo que falta es más chico y
+más concreto — ver «el nudo real» abajo.
+
+Lo que sí es cierto es que promediar `price` crudo da un número sin sentido:
+medido contra producción, la serie diaria de Arroz/La Habana da 29, 3.463,
+15.787 y 30.885 en días consecutivos, porque `avg(price)` mezcla tres ejes:
 
 - **Moneda**: 180 filas en CUP y 45 en USD en el mismo promedio. `price_cup`
   solo está poblada en las 45 filas USD (es la conversión); en las filas CUP es
@@ -50,16 +58,54 @@ convierte a libras sin densidad, y `caja` no convierte sin el peso de la caja.
 La unidad canónica tiene que ser por categoría de producto —peso→lb,
 volumen→l, conteo→unidad—, y el aceite es producto bandera.
 
-Solo **23 de 225 filas (10%)** tienen `quantity` + `unit` + `price_basis`
-completos, que es el mínimo para derivar precio por unidad. Ese porcentaje sube
-solo con cada día de carga nueva.
+### El nudo real: falta la conversión lb↔kg, y se omitió por leer mal §12.6
 
-Bloqueado por: nada técnico. Hay que decidir tres cosas antes de tocar código:
-(a) si el precio comparable es columna derivada persistida o cálculo en
-consulta, (b) qué se hace con las 202 filas viejas sin `price_basis` —
-retro-completarlas en curaduría o excluirlas de los agregados, y (c) la unidad
-canónica por categoría. Es cambio de esquema/motor de agregación → flujo
-completo de especificación (CLAUDE.md).
+`compute_retail_ranges` exige que `prices_history.unit` coincida con
+`Product.unit` y descarta el resto. Su docstring justifica no convertir así:
+
+> «Sin tabla de conversión lb↔kg: no hay una definida, y adivinar un factor es
+> exactamente lo que §12.6 prohíbe.»
+
+**§12.6 no aplica acá.** Sus cinco parámetros son N mínimo por celda, período
+mínimo de sostenimiento, categorías mínimas por provincia, criterios de fuente
+de alta confianza y ventana de validez de la tasa de cambio: todos umbrales de
+juicio que gobiernan **qué se publica** y que la spec manda calibrar con datos
+reales. Un kilo son 2,2046226 libras — no es un umbral, no gobierna nada, no se
+calibra y no se adivina: es la definición de las unidades, fija desde 1959. La
+prudencia era buen instinto, mal aplicada.
+
+Lo que cuesta, medido contra producción el 2026-08-22:
+
+- Arroz declara `lb` en el catálogo pero **71 de 99 filas vienen en kg**;
+  Azúcar blanca 17 de 25; Pollo 10 de 29 en kg más 2 en `caja`; Picadillo
+  declara `unidad` y sus 5 filas vienen en `lb` (desajuste total). De 166 filas
+  de productos bandera, **unas 108 quedan fuera solo por la unidad**.
+- Resultado hoy de `compute_retail_ranges(days=7)`: Arroz/La Habana devuelve
+  **mediana 30.885 CUP por libra con muestra 1**. Dos causas: (a) las filas
+  buenas en kg se descartan en silencio, y (b) la única que pasa es
+  `30.885 · 100 lb · price_basis='unit'`, un **error de curaduría** — es el
+  total del saco, no el precio por libra.
+- Normalizadas a CUP/lb, esas mismas filas descartadas son coherentes:
+  688,70/1 kg → 312,39 · 16.330/25 kg → 296,29 · 16.685/25 kg → 302,73 ·
+  30.885/100 lb → 308,85. Cuatro números que parecen no tener relación son
+  cuatro lecturas del mismo precio.
+
+Solo **23 de 225 filas (10%)** tienen `quantity` + `unit` + `price_basis`
+completos. Ese porcentaje sube solo con cada día de carga nueva.
+
+Bloqueado por: nada técnico. Hay que decidir cuatro cosas antes de tocar
+código: (a) la tabla de conversión entre unidades de la misma magnitud
+(lb↔kg, l↔ml), que es lo que desbloquea el 65% del dato; (b) qué hacer con las
+filas cuya unidad no es convertible a la del catálogo (`caja`, y el desajuste
+de Picadillo, que parece unidad de catálogo mal elegida); (c) si el precio
+comparable es columna derivada persistida o cálculo en consulta; (d) qué se
+hace con las 202 filas viejas sin `price_basis`. Es cambio del motor de
+agregación → flujo completo de especificación (CLAUDE.md).
+
+Aparte y más barato: **detectar filas con `price_basis` incoherente**. Una fila
+`'unit'` cuyo precio por unidad se aparta en un orden de magnitud del resto de
+su celda es casi siempre un error de curaduría, y hoy una sola envenena la
+mediana entera.
 
 Nota de alcance: la **foto del presente** ("precio de hoy del aceite, cuántos
 anuncios hay y en qué provincia") no depende de volumen histórico y se sostiene
