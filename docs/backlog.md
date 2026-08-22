@@ -133,31 +133,60 @@ Fase 1 es el lanzamiento público, la expansión a 10 productos y 5 provincias y
 el Market Report. Hoy no hay ninguna ruta pública: los routers son `catalog`,
 `control`, `curation` y `whatsapp_webhook` (`decisions.md`, 2026-08-22).
 
-Contenido, todo definido ya por la especificación y sostenible con el dato
-actual (225 filas, 5 productos bandera, 2 provincias):
+**Ya no está bloqueado por el precio comparable**: `cells.py` más la conversión
+de unidades de `c7ae46e` lo resolvieron. Lo que queda son huecos de dato que
+condicionan *qué* se puede publicar, no *si* se puede construir.
 
-- **Tarjeta de producto** (§6.7): precio de hoy, muestra que lo respalda,
-  provincias con oferta.
-- **Mapa de calor** (§6.7): Habana y Santiago coloreadas, el resto en gris
-  «sin datos suficientes». El gris es el estado real, no un defecto.
-- **Tamaño de muestra visible** (§9.0): exigido desde el día 1 en lugar de un
-  titular de precio. No es opcional.
-- **Rango mín–máx además del promedio** (§6.7, «banda gris»): con n bajo el
-  rango es honesto y el promedio solo, engañoso.
-- **Índice de disponibilidad** (§7.3, tabla `availability_index`): la cantidad
-  de anuncios en los últimos N días es proxy directo de escasez y se calcula
-  con el dato de hoy, sin campos nuevos.
-- **Semáforo de tendencia** y **alerta de variación >10%** (§6.7): solo para
-  las series con densidad — hoy Arroz/Habana (16 días), Pollo/Habana (15),
-  Arroz/Santiago (11).
-- **Separar minorista de mayorista**: 141 filas `retail` contra 18
-  `wholesale`. Son dos mercados con precios de órdenes de magnitud distintos
-  (la paca de arroz a 30.885 es mayorista) y mezclarlos es parte de por qué el
-  promedio crudo da basura. Separarlos es más correcto y más útil.
+Medición contra producción del 2026-08-22: 225 filas, 58 productos, 166 filas en
+los 5 bandera, La Habana 113 / Santiago 105, fechas del 2026-06-29 al 2026-08-22.
+Cola: 142 curados / 230 descartados / 183 pendientes. **Siete celdas
+producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Habana
+23, Azúcar/Habana 16, Azúcar/Santiago 9, Aceite/Habana 7, Pollo/Santiago 6.
 
-Bloqueado por: **precio comparable por unidad canónica** (entrada anterior).
-Las siete vistas lo consumen; construirlas antes es levantar seis pantallas
-sobre un número que miente.
+### Huecos de dato que condicionan qué se publica
+
+1. **`price_basis` poblado en 23 de 225 filas (10%).** Sin ese campo no se
+   distingue un total de un precio unitario, y el **máximo** —justo lo que la
+   banda mín–máx de §6.7 publica— queda envenenado. Decidir entre
+   retro-completar en curaduría o excluir esas filas de los agregados. Ver la
+   entrada «Filas con `price_basis` incoherente envenenan el máximo».
+2. **`sale_format` vacío en 66 de 225 (29%)** — 141 `retail`, 18 `wholesale`.
+   Separar minorista de mayorista es correcto y necesario (la paca de arroz a
+   30.885 es mayorista y mezclarla es parte de por qué el promedio crudo da
+   basura), pero hoy deja casi un tercio del dato sin clasificar.
+
+### Tareas, en orden de dependencia
+
+3. **Geometría de las 16 provincias** → SVG simplificado y vendorizado. Bloquea
+   el mapa y nada más. Ojo con la licencia de la fuente: Natural Earth es
+   dominio público; los datos derivados de OSM son ODbL y exigen atribución.
+4. **Router público + shell propio.** `_shell.html` trae el rail de navegación
+   del operador (Catálogo / Curaduría / Control) y una página pública no puede
+   heredarlo. Hoy no hay ninguna ruta pública, y `/control` **no** lo es: su
+   propio docstring aclara que es el espejo del operador.
+5. **Tarjeta de producto** (§6.7): precio de hoy, provincias con oferta, y
+   **tamaño de muestra visible** (§9.0) — exigido desde el día 1 en lugar de un
+   titular de precio, no es opcional.
+6. **Rango mín–máx además del promedio** (§6.7, «banda gris»): con n bajo el
+   rango es honesto y el promedio solo, engañoso. Depende del hueco 1.
+7. **Mapa de calor** (§6.7): Habana y Santiago coloreadas, las otras 14 en gris
+   «sin datos suficientes». El gris es el estado real, no un defecto.
+8. **Índice de disponibilidad** (§7.3, tabla `availability_index`): la cantidad
+   de anuncios en los últimos N días es proxy directo de escasez y se calcula
+   con el dato de hoy, sin campos nuevos.
+9. **Semáforo de tendencia** y **alerta de variación >10%** (§6.7): solo para
+   las celdas con densidad, que hoy son las siete de arriba.
+10. **Gráfico de evolución** (§6.7): queda pendiente la decisión Chart.js vs.
+    SVG generado en servidor, que el ADR 001 dejó abierta a propósito para
+    medirla cuando el mapa ya exista.
+
+Primer slice recomendado: **3 y 4 juntos**. No dependen de ningún hueco de dato y
+desbloquean todo lo demás. La tarjeta (5) es lo primero que se puede mostrar con
+dato honesto, porque la «foto del presente» no necesita volumen histórico.
+
+Bloqueado por: nada. Las decisiones de stack están cerradas en el ADR 001
+(`docs/decisions/001-stack-python-unico.md`) y la infraestructura de entrega
+—`GZipMiddleware`, htmx vendorizado— ya está puesta.
 
 ## `test_ninguna_vista_pide_assets_a_la_red` pasa en vacío para 3 de 4 rutas
 
