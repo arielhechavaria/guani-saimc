@@ -4478,3 +4478,46 @@ señaladas todavía sin corregir, 4 de las 6 tarjetas publican máximos falsos �
 Aceite/La Habana muestra «2.100 – 1.264.260 CUP/l» y Pollo/La Habana tiene
 además la mediana corrida a 3.400. La página es correcta; el dato todavía no.
 **No conviene exponer `/` hasta que esas filas estén curadas.**
+
+## 2026-08-22 — El mapa muestra estado de publicación, no cobertura
+
+Contexto: §9.0 es vinculante y exige que «la interfaz muestra explícitamente qué
+provincias están publicadas y cuáles en ingesta sin publicación, con su progreso
+hacia el umbral. La ausencia de datos se comunica como decisión metodológica, no
+como falla». No se cumplía. `Province.is_published` existía en el modelo desde el
+seed y **no se usaba en ninguna parte** —ni en `web/` ni en los routers—, y el
+mapa de `/` mostraba «con observaciones / sin observaciones», que es cobertura.
+
+Cobertura y publicación no son lo mismo, y confundirlas era el bug: una es una
+medición, la otra una decisión.
+
+Decisión: `MapProvince` gana `is_published` y su `state` pasa de dos valores a
+tres, cruzando los dos ejes — `publicada`, `en-ingesta` (recolectando, sin
+exponer la serie) y `sin-datos`. La publicación **manda sobre la presencia de
+dato**: una provincia publicada se muestra como tal aunque su conteo esté en
+cero, porque publicar es una decisión ya tomada y esconderla sería el opuesto de
+lo que la sección pide. Las etiquetas visibles viven en `STATE_LABELS`, en el
+módulo y no en la plantilla, para que los tests las afirmen sin parsear HTML.
+
+El conjunto de publicadas sale de la base (`select Province.name where
+is_published`), no de una constante en código: §9.0 fija como restricción
+vinculante que «la incorporación de una provincia debe ser configuración, no
+desarrollo», y un `frozenset` en el módulo obligaría a un deploy para publicar
+una provincia.
+
+**El «progreso hacia el umbral» se muestra como el conteo crudo, no como
+porcentaje.** Un porcentaje necesita el denominador N, que §9.0 manda calibrar
+con datos reales y §12.6 prohíbe inventar: «114 observaciones» es honesto,
+«57% del umbral» fabricaría el umbral. Hay un test que falla si aparece
+«% del umbral» en la página.
+
+Descartado: (a) dejar el mapa coloreando cobertura y agregar el estado solo como
+texto — el color es lo que se lee primero y estaba diciendo la cosa equivocada;
+(b) tratar «sin datos» como un tercer valor de `is_published`, contra el
+comentario del modelo que ya había decidido dos estados citando §9.0.
+
+Consecuencia: 816 tests verdes (+6). Medido contra producción: 0 publicadas, 2
+en ingesta (La Habana 114, Santiago de Cuba 109) y 14 sin datos. El párrafo bajo
+el mapa declara que ninguna cumple todavía el requisito de publicación, que es
+exactamente la «decisión metodológica» que §9.0 manda comunicar en vez de dejar
+implícita.

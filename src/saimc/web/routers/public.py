@@ -52,6 +52,21 @@ def _rows_by_province(session: Session) -> dict[str, int]:
     }
 
 
+def _published_provinces(session: Session) -> frozenset[str]:
+    """Las provincias que alguien decidió publicar (`spec.md` §9.0).
+
+    Sale de la base y no de una constante: §9.0 fija como restricción vinculante
+    que «la incorporación de una provincia debe ser configuración, no
+    desarrollo». Un `frozenset` de nombres en código obligaría a un deploy para
+    publicar una provincia, que es exactamente lo que la sección prohíbe.
+    """
+    return frozenset(
+        session.execute(
+            select(Province.name).where(Province.is_published.is_(True))
+        ).scalars()
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def public_home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
@@ -65,7 +80,7 @@ def public_home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
         request,
         "public_home.html",
         {
-            "map": build_map(_rows_by_province(db)),
+            "map": build_map(_rows_by_province(db), _published_provinces(db)),
             "cards": cards,
             "window_days": _CARD_WINDOW_DAYS,
         },

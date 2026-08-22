@@ -85,7 +85,7 @@ class TestBuildMap:
         assert vista.covered == 0
         assert vista.total_rows == 0
         assert all(not p.has_data for p in vista.provinces)
-        assert all(p.state == "sin-dato" for p in vista.provinces)
+        assert all(p.state == "sin-datos" for p in vista.provinces)
 
     def test_cruza_los_conteos_con_la_geometria(self) -> None:
         vista = build_map({"La Habana": 113, "Santiago de Cuba": 105})
@@ -94,9 +94,51 @@ class TestBuildMap:
         assert vista.covered == 2
         assert vista.total_rows == 218
         assert por_nombre["La Habana"].rows == 113
-        assert por_nombre["La Habana"].state == "con-dato"
         assert por_nombre["Camagüey"].rows == 0
-        assert por_nombre["Camagüey"].state == "sin-dato"
+        assert por_nombre["Camagüey"].state == "sin-datos"
+
+
+class TestEstadoDePublicacion:
+    """§9.0: la interfaz distingue publicada de «en ingesta sin publicación».
+
+    Son dos ejes distintos —una decisión y una medición— y el estado sale de
+    cruzarlos. Confundirlos fue el bug que este slice corrige: el mapa mostraba
+    cobertura y la llamaba publicación.
+    """
+
+    def test_con_dato_y_sin_publicar_es_ingesta_no_publicada(self) -> None:
+        """El estado real de hoy: se recolecta y no se expone la serie."""
+        vista = build_map({"La Habana": 113})
+        habana = next(p for p in vista.provinces if p.name == "La Habana")
+
+        assert habana.has_data
+        assert not habana.is_published
+        assert habana.state == "en-ingesta"
+        assert habana.label == "Recogiendo datos, todavía sin publicar"
+
+    def test_publicada_se_muestra_como_tal(self) -> None:
+        vista = build_map({"La Habana": 113}, {"La Habana"})
+        habana = next(p for p in vista.provinces if p.name == "La Habana")
+
+        assert habana.state == "publicada"
+        assert vista.published == 1
+
+    def test_la_publicacion_manda_sobre_la_presencia_de_dato(self) -> None:
+        """Publicar es una decisión ya tomada; esconderla porque el conteo está
+        en cero sería el opuesto de lo que §9.0 pide mostrar."""
+        vista = build_map({}, {"La Habana"})
+        habana = next(p for p in vista.provinces if p.name == "La Habana")
+
+        assert habana.rows == 0
+        assert habana.state == "publicada"
+
+    def test_omitir_el_conjunto_equivale_a_ninguna_publicada(self) -> None:
+        """El default no afirma nada: una provincia sale publicada solo si
+        alguien lo decidió explícitamente en la base."""
+        vista = build_map({"La Habana": 113})
+
+        assert vista.published == 0
+        assert all(not p.is_published for p in vista.provinces)
 
     def test_una_provincia_desconocida_no_rompe_el_mapa(self) -> None:
         """Un nombre que no existe en la geometría se ignora en vez de tumbar
@@ -130,9 +172,31 @@ class TestRutaPublica:
 
     def test_con_la_base_vacia_no_promete_cobertura(self, client: TestClient) -> None:
         texto = client.get("/").text
+        svg = texto.split("<svg")[1].split("</svg>")[0]
 
         assert "0 de 16 provincias" in texto
-        assert "is-con-dato" not in texto.split("<svg")[1].split("</svg>")[0]
+        assert "is-en-ingesta" not in svg
+        assert svg.count("is-sin-datos") == 16
+
+    def test_declara_que_ninguna_provincia_esta_publicada(
+        self, client: TestClient
+    ) -> None:
+        """§9.0: «La ausencia de datos se comunica como decisión metodológica,
+        no como falla». La página lo dice, no lo deja implícito."""
+        texto = client.get("/").text
+
+        assert "Recogiendo datos, todavía sin publicar" in texto
+        assert "Todavía <strong>ninguna</strong> cumple" in texto
+
+    def test_el_progreso_va_como_conteo_no_como_porcentaje(
+        self, client: TestClient
+    ) -> None:
+        """§9.0 pide «su progreso hacia el umbral», pero el denominador N está
+        sin calibrar y §12.6 prohíbe inventarlo. El conteo crudo es honesto; un
+        porcentaje fabricaría el umbral."""
+        texto = client.get("/").text
+
+        assert "% del umbral" not in texto
 
     def test_no_expone_la_herramienta_del_operador(self, client: TestClient) -> None:
         """`_public_shell.html` no extiende el shell del operador justamente

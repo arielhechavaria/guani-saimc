@@ -18,22 +18,24 @@
   .m3-map { width: 100%; height: auto; display: block; }
   .m3-map-province { stroke: var(--m3-surface, #fff); stroke-width: 1.2;
                      stroke-linejoin: round; }
-  .m3-map-province.is-con-dato { fill: var(--m3-primary, #00696d); }
-  .m3-map-province.is-sin-dato { fill: #d3dadb; }
+  .m3-map-province.is-publicada { fill: var(--m3-primary, #00696d); }
+  .m3-map-province.is-en-ingesta { fill: #8fb6b8; }
+  .m3-map-province.is-sin-datos { fill: #d3dadb; }
 
   .m3-map-legend { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 0;
                    padding: 0; list-style: none; font-size: .875rem; }
   .m3-map-legend li { display: flex; align-items: center; gap: .45rem; }
-  .m3-swatch { width: .9rem; height: .9rem; border-radius: .2rem; }
-  .m3-swatch.is-con-dato { background: var(--m3-primary, #00696d); }
-  .m3-swatch.is-sin-dato { background: #d3dadb; }
+  .m3-swatch { width: .9rem; height: .9rem; border-radius: .2rem; flex: none; }
+  .m3-swatch.is-publicada { background: var(--m3-primary, #00696d); }
+  .m3-swatch.is-en-ingesta { background: #8fb6b8; }
+  .m3-swatch.is-sin-datos { background: #d3dadb; }
 
   .m3-coverage { width: 100%; border-collapse: collapse; margin-top: 2rem;
                  font-size: .9375rem; }
   .m3-coverage th, .m3-coverage td { text-align: left; padding: .5rem .6rem;
                  border-bottom: 1px solid rgba(0,0,0,.08); }
   .m3-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .m3-coverage tr.is-sin-dato { opacity: .55; }
+  .m3-coverage tr.is-sin-datos { opacity: .55; }
 
   .m3-cards { display: grid; gap: 1rem; padding: 0; margin: 0 0 2.5rem;
               list-style: none;
@@ -106,15 +108,31 @@
      aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
   {% for province in map.provinces %}
   <path class="m3-map-province is-{{ province.state }}" d="{{ province.path }}">
-    <title>{{ province.name }} — {{ province.rows }} observaciones</title>
+    <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
   </path>
   {% endfor %}
 </svg>
 
 <ul class="m3-map-legend">
-  <li><span class="m3-swatch is-con-dato"></span> Con observaciones</li>
-  <li><span class="m3-swatch is-sin-dato"></span> Sin observaciones todavía</li>
+  <li><span class="m3-swatch is-publicada"></span> Publicada</li>
+  <li><span class="m3-swatch is-en-ingesta"></span> Recogiendo datos, todavía sin publicar</li>
+  <li><span class="m3-swatch is-sin-datos"></span> Sin datos todavía</li>
 </ul>
+
+{# §9.0: «La ausencia de datos se comunica como decisión metodológica, no como
+   falla». Por eso el párrafo explica el criterio en vez de disculparse. #}
+<p class="m3-subtitle" style="margin-top:1rem">
+  Una provincia se publica cuando acumula observaciones suficientes y sostenidas,
+  no cuando el calendario lo indica.
+  {% if map.published == 0 %}
+  Todavía <strong>ninguna</strong> cumple ese requisito, así que lo que ves acá es
+  lo que hay: qué se está midiendo y cuánto.
+  {% else %}
+  Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }};
+  las demás siguen en recolección.
+  {% endif %}
+  Preferimos mostrar poco y cierto antes que mucho y flojo.
+</p>
 
 {# El tamaño de muestra va al lado del mapa y no escondido: §9.0 lo exige desde
    el día 1, en lugar de un titular de precio. Y el gris no es un defecto del
@@ -126,12 +144,20 @@
     sostienen una comparación, y ese umbral se mide, no se inventa.
   </caption>
   <thead>
-    <tr><th scope="col">Provincia</th><th scope="col" class="num">Observaciones</th></tr>
+    <tr>
+      <th scope="col">Provincia</th>
+      <th scope="col">Estado</th>
+      <th scope="col" class="num">Observaciones</th>
+    </tr>
   </thead>
   <tbody>
     {% for province in map.provinces %}
     <tr class="is-{{ province.state }}">
       <td>{{ province.name }}</td>
+      <td>{{ province.label }}</td>
+      {# El conteo crudo es el «progreso hacia el umbral» de §9.0. No va como
+         porcentaje porque el denominador —N— está sin calibrar, y §12.6 prohíbe
+         inventarlo: «113 observaciones» es honesto, «57% del umbral» no. #}
       <td class="num">{{ province.rows }}</td>
     </tr>
     {% endfor %}

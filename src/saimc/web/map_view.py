@@ -8,11 +8,30 @@ testear.
 **Por qué no hay un umbral de «datos suficientes».** `spec.md` §6.7 describe el
 gris del mapa como «sin datos suficientes», pero nunca dice cuántas
 observaciones son suficientes, y §12.6 es explícita: los umbrales que la
-especificación introdujo sin valor asignado **no se inventan**. Así que este
-módulo distingue lo único que puede verificar sin inventar nada —una provincia
-tiene observaciones o no las tiene— y expone el tamaño de muestra para que se
-muestre al lado, que es lo que §9.0 exige desde el día 1 en lugar de un titular.
-Cuando exista una medición que fije el umbral, se agrega un estado más.
+especificación introdujo sin valor asignado **no se inventan**. Así que el mapa
+no colorea por precio ni por «suficiencia»: colorea por el estado de publicación,
+que sí está definido, y expone el tamaño de muestra al lado.
+
+**Los tres estados salen de §9.0, no de una elección de diseño.** La sección es
+vinculante: «La interfaz muestra explícitamente qué provincias están publicadas
+y cuáles en ingesta sin publicación, con su progreso hacia el umbral. La ausencia
+de datos se comunica como decisión metodológica, no como falla». Eso son dos ejes
+distintos y conviene no confundirlos:
+
+- **Publicación** — `Province.is_published`, que el modelo define como dos
+  estados y no tres, también citando §9.0. Es una decisión, no una medición.
+- **Presencia de dato** — si la provincia tiene observaciones. Es una medición,
+  no una decisión.
+
+Cruzados dan los tres estados que la interfaz nombra: `publicada`,
+`en-ingesta` (recolectando, sin exponer la serie) y `sin-datos`. Hoy las 16 están
+en `is_published=False`, así que el mapa entero está en los dos últimos — y eso
+es exactamente lo que §9.0 quiere que se vea, en lugar de esconderlo.
+
+**El «progreso hacia el umbral» se muestra como el conteo crudo**, no como un
+porcentaje: un porcentaje necesita el denominador N, que §9.0 manda calibrar con
+datos reales y §12.6 prohíbe inventar. Decir «113 observaciones» es honesto;
+decir «57% del umbral» sería fabricar el umbral.
 """
 
 from __future__ import annotations
@@ -22,13 +41,24 @@ from dataclasses import dataclass
 from saimc.web.map_cuba import PROVINCE_PATHS, VIEWBOX
 
 
+#: Etiquetas visibles de cada estado. Viven acá y no en la plantilla para que
+#: los tests puedan afirmarlas sin parsear HTML, y para que exista un solo lugar
+#: donde se lee qué dice la interfaz.
+STATE_LABELS = {
+    "publicada": "Publicada",
+    "en-ingesta": "Recogiendo datos, todavía sin publicar",
+    "sin-datos": "Sin datos todavía",
+}
+
+
 @dataclass(frozen=True)
 class MapProvince:
-    """Una provincia dibujable: su forma y cuánto dato la respalda."""
+    """Una provincia dibujable: su forma, su estado de publicación y su muestra."""
 
     name: str
     path: str
     rows: int
+    is_published: bool
 
     @property
     def has_data(self) -> bool:
@@ -36,8 +66,19 @@ class MapProvince:
 
     @property
     def state(self) -> str:
-        """Sufijo de clase CSS. No es un juicio de precio, es cobertura."""
-        return "con-dato" if self.has_data else "sin-dato"
+        """Sufijo de clase CSS y clave de `STATE_LABELS`.
+
+        La publicación manda sobre la presencia de dato: una provincia publicada
+        se muestra como tal aunque su conteo esté en cero, porque publicar es una
+        decisión tomada y esconderla sería el opuesto de lo que pide §9.0.
+        """
+        if self.is_published:
+            return "publicada"
+        return "en-ingesta" if self.has_data else "sin-datos"
+
+    @property
+    def label(self) -> str:
+        return STATE_LABELS[self.state]
 
 
 @dataclass(frozen=True)
@@ -52,24 +93,41 @@ class MapView:
         return sum(1 for province in self.provinces if province.has_data)
 
     @property
+    def published(self) -> int:
+        return sum(1 for province in self.provinces if province.is_published)
+
+    @property
     def total_rows(self) -> int:
         return sum(province.rows for province in self.provinces)
 
 
-def build_map(rows_by_province: dict[str, int]) -> MapView:
-    """Cruza la geometría con el conteo de observaciones por provincia.
+def build_map(
+    rows_by_province: dict[str, int],
+    published: frozenset[str] | set[str] | None = None,
+) -> MapView:
+    """Cruza la geometría con el conteo de observaciones y el estado de publicación.
 
-    Recorre `PROVINCE_PATHS` y no el diccionario de conteos: las 16 provincias
+    Recorre `PROVINCE_PATHS` y no los diccionarios de entrada: las 16 provincias
     aparecen siempre, y una sin dato entra con `rows=0`. El cero **es** el dato
     —dice dónde no se está mirando—, igual que en `progress.compute_coverage`.
     Un nombre que venga en los conteos y no exista en la geometría se ignora en
-    silencio acá; `tests/test_map_view.py` cubre que los 16 nombres coincidan
+    silencio acá; `tests/test_public_map.py` cubre que los 16 nombres coincidan
     con los de la tabla `provinces`.
+
+    `published` omitido equivale a ninguna publicada, que es el estado real hoy y
+    además el que menos afirma: una provincia se muestra como publicada solo si
+    alguien lo decidió explícitamente en la base.
     """
+    publicadas = published or frozenset()
     return MapView(
         viewbox=VIEWBOX,
         provinces=tuple(
-            MapProvince(name=name, path=path, rows=rows_by_province.get(name, 0))
+            MapProvince(
+                name=name,
+                path=path,
+                rows=rows_by_province.get(name, 0),
+                is_published=name in publicadas,
+            )
             for name, path in sorted(PROVINCE_PATHS.items())
         ),
     )

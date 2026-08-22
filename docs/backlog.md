@@ -175,6 +175,10 @@ producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Hab
   respaldo de muestra, y da ese rótulo como estado por debajo del umbral.
 - **Rango mín–máx además del promedio** (§6.7, «banda gris»): entró con la
   tarjeta, que publica el rango como titular en vez de un promedio.
+- **Estado de publicación por provincia** (§9.0, vinculante): el mapa colorea
+  `publicada` / `en-ingesta` / `sin-datos` cruzando `Province.is_published`
+  con la presencia de dato, y el conteo crudo hace de «progreso hacia el
+  umbral» porque N sigue sin calibrar.
 
 ### Tareas, en orden de dependencia
 
@@ -183,20 +187,6 @@ producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Hab
    máximos falsos: Aceite/La Habana publica «2.100 – 1.264.260 CUP/l» y
    Pollo/La Habana tiene además la mediana corrida a 3.400. **No conviene
    exponer `/` públicamente hasta entonces.**
-4. **Estado de publicación por provincia** (§9.0, **vinculante**): «La interfaz
-   muestra explícitamente qué provincias están publicadas y cuáles en ingesta
-   sin publicación, con su progreso hacia el umbral. La ausencia de datos se
-   comunica como decisión metodológica, no como falla».
-
-   Hoy no se cumple. `Province.is_published` **existe en el modelo y no se usa
-   en ninguna parte** —ni en `web/`, ni en los routers—, y el mapa de `/` dice
-   «con observaciones / sin observaciones», que es cobertura, no estado de
-   publicación. Son tres estados distintos y la especificación los nombra:
-   publicada, en ingesta sin publicación, y sin datos. Las 16 están hoy en
-   `is_published=False`, así que el mapa debería decirlo.
-
-   No depende de que se curen las 7 filas ni de ningún umbral: el umbral gobierna
-   *cuándo pasa a publicada*, no cómo se muestra el estado actual.
 5. **Colorear el mapa por precio** (§6.7): verde/amarillo/rojo contra el
    promedio nacional. Hoy el mapa distingue solo cobertura, porque el gris de
    §6.7 dice «sin datos **suficientes**» y la especificación nunca fija cuántas
@@ -211,12 +201,11 @@ producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Hab
    SVG generado en servidor, que el ADR 001 dejó abierta a propósito para
    medirla ahora que el mapa ya existe.
 
-Siguiente slice recomendado: **el estado de publicación por provincia (4)**. Es
-el único ítem **vinculante** que queda sin cumplir, la columna ya existe, y es lo
-único de la lista que no depende de que se curen las 7 filas ni de un umbral sin
-calibrar. Después, el gráfico de evolución (8), que es lo de mayor valor visible
-pero conviene hacerlo con el dato ya limpio: una serie diaria con las filas
-envenenadas dibuja picos falsos.
+Siguiente slice recomendado: **el gráfico de evolución**. Es lo de mayor valor
+visible que queda, pero conviene hacerlo con el dato ya limpio — una serie diaria
+con las filas envenenadas dibuja picos falsos justo donde el usuario mira la
+tendencia. Trae además la decisión que el ADR 001 dejó abierta a propósito:
+Chart.js contra SVG generado en servidor, ahora medible porque el mapa ya existe.
 
 Bloqueado por: nada. Las decisiones de stack están cerradas en el ADR 001
 (`docs/decisions/001-stack-python-unico.md`) y la infraestructura de entrega
