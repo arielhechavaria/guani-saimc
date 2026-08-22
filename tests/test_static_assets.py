@@ -9,17 +9,26 @@ La misma restricción manda sobre cuántos bytes viajan, así que acá vive tamb
 la cobertura de `GZipMiddleware` (`docs/decisions.md`, 2026-08-22).
 """
 
+import hashlib
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from saimc.web.app import app
+from saimc.web.app import HTMX_VERSION, app
 from saimc.web.deps import get_db
 
 # Firma de un archivo WOFF2 (los cuatro primeros bytes).
 WOFF2_MAGIC = b"wOF2"
+
+# htmx 2.0.10, extraído de `package/dist/htmx.min.js` del tarball oficial de npm
+# después de verificar su `integrity` sha512 publicado, y byte a byte idéntico al
+# que sirve unpkg (comprobado el 2026-08-22). Fijar el hash acá convierte
+# cualquier cambio del archivo vendorizado en un test rojo: un blob de 51 KB que
+# nadie puede volver a verificar es una deuda, no un asset.
+HTMX_SHA256 = "71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de"
+HTMX_BYTES = 51_238
 
 FUENTES = [
     "/static/fonts/roboto.woff2",
@@ -68,6 +77,34 @@ class TestAssetsVendorizados:
 
         assert len(response.content) < 60_000
 
+    def test_htmx_se_sirve_desde_el_repo(self, client: TestClient) -> None:
+        response = client.get("/static/htmx.min.js")
+
+        assert response.status_code == 200
+        # Que sea htmx y no cualquier otro JS: la cadena de versión es del
+        # propio bundle, no un nombre de archivo que cualquiera puede poner.
+        assert f'version:"{HTMX_VERSION}"' in response.text
+
+    def test_htmx_es_el_archivo_que_se_verificó(self, client: TestClient) -> None:
+        """Guarda de cadena de suministro: si alguien reemplaza el bundle —por
+        una versión nueva sin verificar, o por cualquier otra cosa— esto se
+        pone rojo y obliga a repetir la verificación de procedencia."""
+        response = client.get("/static/htmx.min.js")
+
+        assert len(response.content) == HTMX_BYTES
+        assert hashlib.sha256(response.content).hexdigest() == HTMX_SHA256
+
+    def test_la_version_del_cache_busting_es_la_del_archivo_servido(
+        self, client: TestClient
+    ) -> None:
+        """`htmx_version()` alimenta el `?v=` de la plantilla que opte por htmx.
+        Si se bumpea el constante sin reemplazar el bundle —o al revés— el
+        navegador cachearía una versión creyendo que tiene otra."""
+        expuesta = app.state.templates.env.globals["htmx_version"]()
+
+        assert expuesta == HTMX_VERSION
+        assert f'version:"{expuesta}"' in client.get("/static/htmx.min.js").text
+
     def test_bootstrap_ya_no_existe(self, client: TestClient) -> None:
         assert client.get("/static/bootstrap.min.css").status_code == 404
         assert client.get("/static/curation.css").status_code == 404
@@ -81,6 +118,10 @@ class TestAssetsVendorizados:
         assert "fonts.googleapis.com" not in texto
         assert "fonts.gstatic.com" not in texto
         assert "cdn.jsdelivr.net" not in texto
+        # Los dos CDN por los que htmx se sirve habitualmente. Va acá desde que
+        # existe `/static/htmx.min.js`: la forma más fácil de romper el ADR 001
+        # es cargarlo con una línea copiada de la documentación de htmx.
+        assert "unpkg.com" not in texto
 
 
 class TestCompresion:
@@ -130,6 +171,17 @@ class TestCompresion:
         assert response.status_code == 200
         assert response.headers["content-encoding"] == "gzip"
         assert "<html" in response.text
+
+    def test_htmx_viaja_comprimido(self, client: TestClient) -> None:
+        """51.238 B en disco. Comprimido son ~16,5 KB, que es el número con el
+        que el ADR 001 justificó adoptarlo."""
+        response = client.get(
+            "/static/htmx.min.js", headers={"accept-encoding": "gzip"}
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-encoding"] == "gzip"
+        assert len(response.content) == HTMX_BYTES
 
     def test_un_cliente_sin_gzip_recibe_la_respuesta_entera(
         self, client: TestClient

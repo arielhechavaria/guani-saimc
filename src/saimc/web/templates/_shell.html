@@ -58,6 +58,18 @@
 
   {% block snackbar %}{% endblock %}
 </div>
+{# htmx está vendorizado en `/static/htmx.min.js` pero NO se carga acá a
+   propósito: el ADR 001 lo aprueba para el dashboard y deja la curaduría
+   deliberadamente sin él, así que meterlo en el shell haría que las tres vistas
+   del operador se bajen 51 KB que no usan. La vista que lo necesite opta desde
+   su propio bloque:
+
+     {% block scripts %}
+       <script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
+     {% endblock %}
+
+   `htmx_version()` sale de `HTMX_VERSION` en `app.py`, que es la única fuente
+   del número. #}
 {% block scripts %}{% endblock %}
 </body>
 </html>

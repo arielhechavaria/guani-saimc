@@ -79,6 +79,24 @@ def _css_version() -> int:
 
 app.state.templates.env.globals["css_version"] = _css_version
 
+# htmx vendorizado (ADR 001, `docs/decisions/001-stack-python-unico.md`). No se
+# carga en ninguna plantilla todavía: el dashboard es quien lo va a usar, y la
+# curaduría se queda deliberadamente sin él. Ver el comentario de
+# `{% block scripts %}` en `_shell.html` para cómo se opta.
+#
+# Procedencia, verificada el 2026-08-22: el archivo es `package/dist/htmx.min.js`
+# del tarball oficial de npm
+# (https://registry.npmjs.org/htmx.org/-/htmx.org-2.0.10.tgz), cuyo `integrity`
+# sha512 publicado se comprobó ANTES de extraerlo, y salió byte a byte idéntico
+# al que sirve unpkg. `tests/test_static_assets.py` fija el sha256, así que
+# cambiar el archivo sin cambiar la versión pone la suite en rojo.
+#
+# El cache-busting va por versión y no por mtime como el CSS: este archivo es
+# inmutable entre bumps, y un `git clone` le cambia el mtime sin cambiar un byte.
+HTMX_VERSION = "2.0.10"
+
+app.state.templates.env.globals["htmx_version"] = lambda: HTMX_VERSION
+
 
 def _havana(value: datetime, fmt: str = "%Y-%m-%d %H:%M") -> str:
     """Filtro Jinja: formatea un datetime en hora de La Habana, no UTC.

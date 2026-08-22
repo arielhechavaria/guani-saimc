@@ -4272,3 +4272,46 @@ Esa verificación destapó de paso que `test_ninguna_vista_pide_assets_a_la_red`
 pasa en vacío para 3 de sus 4 rutas: van detrás de `require_operator`, devuelven
 401, y una página de error tampoco contiene `fonts.googleapis.com`. Queda en
 backlog.
+
+## 2026-08-22 — htmx 2.0.10 vendorizado, y corrección de los bytes que informé mal
+
+Contexto: el ADR 001 aprobó htmx para el dashboard; faltaba traerlo al repo. Al
+copiarlo apareció además que los tamaños que informé en las tres entradas
+anteriores de hoy estaban mal.
+
+Decisión: `src/saimc/web/static/htmx.min.js`, htmx **2.0.10**, junto al CSS y las
+fuentes. **Procedencia verificada, no descargada y ya**: se bajó el tarball
+oficial de npm, se comprobó su `integrity` sha512 publicado contra el archivo
+recibido, se extrajo `package/dist/htmx.min.js` de ahí, y resultó byte a byte
+idéntico al que sirve unpkg. Dos fuentes independientes, mismo stream. El sha256
+(`71ea6718…`, 51.238 B) queda fijado en `tests/test_static_assets.py`: cambiar el
+bundle sin repetir la verificación pone la suite en rojo.
+
+**Ninguna plantilla lo carga todavía, a propósito.** El ADR deja a la curaduría
+sin htmx, así que meterlo en `_shell.html` haría que las tres vistas del operador
+se bajen 51 KB que no usan. La vista que lo necesite opta desde su
+`{% block scripts %}`, y `_shell.html` documenta cómo. El cache-busting va por
+`HTMX_VERSION` en `app.py` —expuesto a Jinja como `htmx_version()`— y no por
+mtime como el CSS: el bundle es inmutable entre bumps y un `git clone` le cambia
+el mtime sin cambiar un byte.
+
+**Corrección de medición**, que reemplaza los números de las entradas de hoy
+sobre HTMX y `GZipMiddleware`: informé 28.672 B de CSS y «92 KB» de fuentes.
+Salían de `du`, que cuenta bloques de disco redondeados, no bytes. Con `stat`:
+CSS **26.390 B**, fuentes **81.688 B** (5.756 + 32.796 + 43.136), frontend
+completo **108.078 B**, no 120K. El ahorro de gzip sobre el CSS es 20.311 B, no
+~22 KB. Ninguna decisión cambia —la primera carga con htmx y compresión son
+104.306 B contra 108.078 B sin ninguna de las dos, así que sigue siendo
+favorable— pero el margen es más chico de lo que dije y los números publicados
+tienen que ser los reales.
+
+Descartado: (a) cargar htmx desde CDN — contradice el invariante 3 del ADR y es
+la forma más fácil de romperlo, así que `unpkg.com` entró a la lista negra del
+test de assets; (b) meterlo en `_shell.html` «total ya está» — le cobra 51 KB a
+la curaduría, que el ADR dejó deliberadamente afuera; (c) vendorizar sin fijar el
+hash — un blob de 51 KB que nadie puede volver a verificar es deuda, no un asset.
+
+Consecuencia: 778 tests verdes (+4). El dashboard puede usar htmx sin decisiones
+pendientes ni descargas. Queda para cuando exista la primera vista que lo cargue:
+ajustar el docstring de `src/saimc/web/__init__.py:1`, que sigue anunciando HTMX
+como si ya estuviera en uso.

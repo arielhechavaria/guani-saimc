@@ -146,12 +146,13 @@ Lo implementado que no coincide con el documento, con su entrada en `decisions.m
 El último está razonado en `docs/decisions/001-stack-python-unico.md`, que es
 además el ADR que §13.1 (línea 1636) pide por nombre.
 
-**HTMX no es un apartamiento, es deuda.** §13.1 lo nombra y el ADR lo confirma
-para el dashboard, pero hoy **no existe en el repo**: ni la dependencia, ni un
-atributo `hx-*`, ni el `<script>`. El docstring de `src/saimc/web/__init__.py:1`
-lo anuncia igual. La curaduría, ya construida, se queda deliberadamente sin él.
-En la misma línea falta `GZipMiddleware` en `src/saimc/web/app.py`: hoy el CSS
-viaja sin comprimir, 28.672 B contra 6.079 B gzipeados.
+**HTMX no es un apartamiento.** §13.1 lo nombra, el ADR lo confirma para el
+dashboard, y desde el 2026-08-22 está **vendorizado** en
+`src/saimc/web/static/htmx.min.js` (2.0.10, con su sha256 fijado en los tests).
+Todavía no lo carga ninguna plantilla: la vista que lo necesite opta desde su
+`{% block scripts %}`, y la curaduría se queda deliberadamente sin él.
+`GZipMiddleware` también entró ese día — el CSS son 26.390 B contra 6.079 B
+gzipeados.
 
 ---
 

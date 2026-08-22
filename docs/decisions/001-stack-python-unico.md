@@ -118,17 +118,25 @@ De ese hecho la primera versión sacó la conclusión equivocada, por tres motiv
 
 Y sobre el peso, medido el 2026-08-22 en vez de citado de memoria:
 
-| | Sobre el cable hoy | gzip -9 |
+| | En disco | gzip -9 |
 | :--- | ---: | ---: |
-| `saimc-material.css` | 28.672 B | **6.079 B** |
-| Fuentes (3 × woff2) | 92 KB | ya comprimidas |
-| htmx 2.x minificado | 51.238 B | **16.539 B** |
+| `saimc-material.css` | 26.390 B | **6.079 B** |
+| Fuentes (3 × woff2) | 81.688 B | ya comprimidas |
+| htmx 2.0.10 minificado | 51.238 B | **16.539 B** |
+
+> **Corrección del 2026-08-22.** La primera versión de esta tabla decía 28.672 B
+> de CSS y «92 KB» de fuentes. Esos números salían de `du`, que informa bloques
+> de disco redondeados, no bytes. Los de arriba son de `stat`. La conclusión no
+> cambia; los números sí estaban mal.
 
 El hallazgo que cierra la discusión: **`src/saimc/web/app.py` no tiene
-`GZipMiddleware`**. Hoy el CSS viaja sin comprimir. Activarlo ahorra ~22 KB;
-HTMX gzipeado cuesta ~16,5 KB. **Con HTMX y compresión, la primera carga pesa
-menos que hoy sin ninguna de las dos.** El argumento de la conexión lenta —que es
-el correcto— apuntaba en sentido contrario al que le hice decir.
+`GZipMiddleware`**. Hoy el CSS viaja sin comprimir. Activarlo ahorra 20.311 B;
+HTMX gzipeado cuesta 16.539 B. Contando la primera carga entera —CSS + fuentes,
+que no comprimen— son **108.078 B hoy contra 104.306 B con las dos cosas**. O
+sea: **con HTMX y compresión la primera carga pesa menos que hoy sin ninguna de
+las dos**, y de ahí en adelante cada interacción parcial pesa una fracción de la
+página. El argumento de la conexión lenta —que es el correcto— apuntaba en
+sentido contrario al que le hice decir.
 
 Decisión, entonces:
 
@@ -157,10 +165,10 @@ son 16 polígonos que no cambian nunca, coloreados por una categoría que el
 servidor ya calculó. Un basemap de calles no aporta nada a «¿está caro el aceite
 en Santiago?», y cuesta justo el recurso más escaso.
 
-La comparación honesta contra lo medido: **el frontend entero de hoy pesa 120K**
-(28K de CSS vendorizado + 92K de fuentes propias) y **no hace una sola petición a
-un tercero**. Cualquier motor de mapas más su fuente de tiles es un salto de
-categoría respecto de eso, no un incremento. No se midió el peso exacto de
+La comparación honesta contra lo medido: **el frontend entero pesa 108.078 B**
+(26.390 de CSS vendorizado + 81.688 de fuentes propias) y **no hace una sola
+petición a un tercero**. Cualquier motor de mapas más su fuente de tiles es un
+salto de categoría respecto de eso, no un incremento. No se midió el peso exacto de
 MapLibre porque la decisión no depende de la cifra: depende de que introduce una
 dependencia de red en tiempo de ejecución donde hoy no hay ninguna.
 
@@ -257,6 +265,11 @@ devuelven estructuras cerradas. Incumplidos, es una reescritura.
   antes que HTMX justamente para que el saldo de bytes sea favorable desde el
   primer commit. `compresslevel=6`, no el 9 del default: medido, el 9 gana 34
   bytes sobre el CSS real a cambio de bastante más CPU por respuesta.
+- **htmx 2.0.10 ya está vendorizado** en `src/saimc/web/static/htmx.min.js`
+  (2026-08-22), con su procedencia verificada contra el `integrity` de npm y su
+  sha256 fijado en `tests/test_static_assets.py`. Ninguna plantilla lo carga
+  todavía: la vista que lo necesite opta desde su `{% block scripts %}` usando
+  `htmx_version()`. El primer consumidor será el dashboard.
 - `src/saimc/web/__init__.py:1` describe el destino, no el estado. Ajustar la
   redacción cuando HTMX entre de verdad.
 - `docs/spec-map.md` gana **un** apartamiento deliberado sobre §13.1 —el mapa— y
