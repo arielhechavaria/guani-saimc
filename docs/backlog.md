@@ -31,21 +31,40 @@ consecutivos, porque `avg(price)` mezcla tres ejes a la vez:
   solo está poblada en las 45 filas USD (es la conversión); en las filas CUP es
   `NULL` por diseño, así que el valor comparable es
   `coalesce(price_cup, price)`, no `price`.
-- **`price_basis` vacío en 202 de 225 filas (90%)**. Sin él no se sabe si el
-  número es el total o el precio unitario. Caso real: `price=30885 CUP,
-  quantity=100, unit=lb, price_basis=NULL` — 30.885 es el total de la paca
-  (≈309 CUP/lb), pero la base no lo dice y nada distingue eso de 30.885 por libra.
+- **`price_basis` vacío en 202 de 225 filas (90%), pero es deuda histórica, no
+  un hueco abierto.** Poblado por día de carga: 1 de 199 entre el 10 y el 20 de
+  agosto, 8 de 11 el día 21, **14 de 14 el día 22**. Es un campo nuevo que ya se
+  captura al 100%. `unit` siguió el mismo patrón (casi nulo el 10–11, 100% desde
+  el 12). Lo que queda son 12 días de filas viejas, no un rediseño de captura.
+  Sin el campo no se sabe si el número es total o unitario: caso real
+  `price=30885 CUP, quantity=100, unit=lb, price_basis=NULL` — es el total de la
+  paca (≈309 CUP/lb), indistinguible de 30.885 por libra.
 - **Unidad heterogénea**: 103 filas en kg, 63 en lb, 5 en l, 2 en ml, 2 en caja,
-  50 sin unidad. Comparar exige convertir a una unidad canónica por producto.
+  50 sin unidad.
+
+**La unidad canónica no puede ser global, a diferencia de la moneda.** CUP como
+base monetaria funciona para todo (`spec.md` §6.3 E, ya implementado en
+`exchange_rate/eltoque.py`). Una unidad base única no: kg↔lb convierte con
+factor fijo, pero **Aceite se anuncia en `l`/`ml`** (volumen, no peso) y no
+convierte a libras sin densidad, y `caja` no convierte sin el peso de la caja.
+La unidad canónica tiene que ser por categoría de producto —peso→lb,
+volumen→l, conteo→unidad—, y el aceite es producto bandera.
 
 Solo **23 de 225 filas (10%)** tienen `quantity` + `unit` + `price_basis`
-completos, que es el mínimo para derivar precio por unidad.
+completos, que es el mínimo para derivar precio por unidad. Ese porcentaje sube
+solo con cada día de carga nueva.
 
-Bloqueado por: nada técnico, pero hay que decidir dos cosas antes de tocar
-código: (a) si el precio comparable es columna derivada persistida o cálculo en
-consulta, y (b) qué se hace con las filas viejas sin `price_basis` —
-retro-completarlas en curaduría o excluirlas de los agregados. Es cambio de
-esquema/motor de agregación → flujo completo de especificación (CLAUDE.md).
+Bloqueado por: nada técnico. Hay que decidir tres cosas antes de tocar código:
+(a) si el precio comparable es columna derivada persistida o cálculo en
+consulta, (b) qué se hace con las 202 filas viejas sin `price_basis` —
+retro-completarlas en curaduría o excluirlas de los agregados, y (c) la unidad
+canónica por categoría. Es cambio de esquema/motor de agregación → flujo
+completo de especificación (CLAUDE.md).
+
+Nota de alcance: la **foto del presente** ("precio de hoy del aceite, cuántos
+anuncios hay y en qué provincia") no depende de volumen histórico y se sostiene
+con las filas actuales. La gráfica de evolución y la predicción sí escalan con
+volumen. Conviene no atar lo primero a lo segundo.
 
 ## `provider` como entidad en el modelo de datos
 
