@@ -42,6 +42,20 @@ cp env.example .env      # ajustar si hace falta
 .venv/bin/alembic upgrade head
 ```
 
+### Variables de entorno
+
+`env.example` trae todas con su motivo documentado inline. Las que hacen falta
+según qué vayas a usar:
+
+- `SAIMC_DATABASE_URL`, `SAIMC_INBOX_DIR`, `SAIMC_RAW_STORE_DIR` — siempre.
+- `SAIMC_CURATION_PASSWORD` — sin esto, `/curation/*` responde 503. El usuario
+  por defecto es `operador` (`SAIMC_CURATION_USERNAME` para cambiarlo).
+  `/control`, el panel de solo lectura, no lo requiere.
+- `SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY`, `SAIMC_WAHA_BASE_URL`, `SAIMC_WAHA_API_KEY`,
+  `SAIMC_WAHA_SESSION` — solo si vas a recibir mensajes de WhatsApp vía WAHA
+  (ver «Captura automática por WhatsApp» abajo). Sin la clave HMAC,
+  `/webhooks/whatsapp` rechaza todo.
+
 ### Tests
 
 ```bash
@@ -55,7 +69,12 @@ Corren sobre SQLite en memoria: no hace falta PostgreSQL para ejecutarlos.
 ## Rutina de captura
 
 La captura y la curaduría son actos separados en el tiempo. Al capturar no se
-estructura nada: alcanza con que el archivo llegue a la bandeja.
+estructura nada: alcanza con que el archivo llegue a la bandeja. Hay tres
+formas de que algo llegue ahí — las tres terminan en el mismo `ingest_inbox`,
+así que heredan igual el hash de contenido, la deduplicación y la redacción
+de datos personales.
+
+### Manual: bandeja de archivos
 
 1. Guardá el anuncio como imagen o texto en `inbox/`.
 2. Cuando arranques la sesión de curaduría, ingerí la bandeja:
@@ -71,9 +90,33 @@ Qué hace la ingesta:
 - manda las capturas repetidas a `inbox/duplicates/` sin borrar nada,
 - deja donde está lo que no reconoce, y lo reporta.
 
-El OCR **no** corre en la ingesta. Asiste a la cola de curaduría, donde el
-sistema propone y el operador confirma (spec.md §6.1, «Rol del OCR y la
-extracción asistida»).
+### Manual: pegado de texto
+
+Desde `/curation` hay un campo para pegar texto de anuncios directo, sin pasar
+por un archivo. Nació de medir que las capturas de imagen se sincronizaban
+solas desde el teléfono pero el texto no tenía dónde ir (`docs/decisions.md`,
+2026-08-15) — y un anuncio de texto rinde varios precios más que uno de
+imagen.
+
+### Automática: webhook de WhatsApp (WAHA)
+
+Si el operador tiene una instancia de [WAHA](https://waha.devlike.pro/) propia
+corriendo (típicamente en Docker en el mismo VPS), SAIMC puede recibir sus
+eventos de mensaje directo en `POST /webhooks/whatsapp`, firmados con HMAC
+(`SAIMC_WHATSAPP_WEBHOOK_HMAC_KEY`). Cada mensaje de un canal seguido (ver
+«Catálogo» abajo) entra a la misma bandeja que la captura manual — no es un
+camino de ingesta paralelo. Es un apartamiento consciente y registrado de la
+decisión cerrada 2 (nada de scraping/bots en Fase 0) y 4 (nada de Docker en
+Fase 0): WAHA corre aparte, en Docker, y este router es el único punto de
+contacto (`docs/decisions.md`, 2026-08-15).
+
+Los mensajes que el webhook descarta (fuera de horario, canal no seguido, sin
+producto piloto mencionado, etc.) se loguean con el motivo, no se pierden en
+silencio.
+
+El OCR **no** corre en la ingesta, sea cual sea la vía. Asiste a la cola de
+curaduría, donde el sistema propone y el operador confirma (spec.md §6.1,
+«Rol del OCR y la extracción asistida»).
 
 `inbox/` y `data/` no van a git: contienen datos personales de terceros.
 
@@ -87,8 +130,14 @@ Con la bandeja ya ingerida (paso anterior), levantá el servidor:
 .venv/bin/uvicorn saimc.web.app:app --reload
 ```
 
+`/curation/*` y `/evidence/{id}` piden HTTP Basic (usuario `operador` por
+defecto, contraseña en `SAIMC_CURATION_PASSWORD`) — ver «Variables de
+entorno». `/control`, el panel público de solo lectura, no.
+
 1. Abrí `http://127.0.0.1:8000/curation`. Muestra el elemento `pending` más
-   antiguo, uno por vez.
+   antiguo, uno por vez, con el contexto de ráfaga (otros mensajes del mismo
+   canal en una ventana de ±10 min, `SAIMC_BURST_WINDOW_MINUTES`) como
+   referencia de solo lectura.
 2. Si es texto, el motor de reglas ya propuso producto, precio, moneda,
    cantidad y provincia: confirmá o corregí cada campo. Si es imagen, no hay
    propuesta — no hay OCR en este slice — y se completa todo a mano mirando
@@ -96,11 +145,31 @@ Con la bandeja ya ingerida (paso anterior), levantá el servidor:
 3. **Curar** guarda el registro en `prices_history` y pasa al siguiente.
    **Descartar** lo marca `discarded` cuando el anuncio no trae información
    económica útil.
-4. La API completa (Swagger) queda en `http://127.0.0.1:8000/docs`.
+4. `/curation/history` lista lo ya procesado; desde ahí se puede editar o
+   borrar un registro curado.
+5. La API completa (Swagger) queda en `http://127.0.0.1:8000/docs`.
 
 Cada confirmación o corrección es, al mismo tiempo, el dato que después mide
 H0 (spec.md §6.1: «la cola de curaduría es simultáneamente la herramienta
 de trabajo y el instrumento de medición»).
+
+## Catálogo (`/catalog`)
+
+Las dos listas que gobiernan el foco de la Fase 0 (`docs/decisions.md`,
+2026-08-15): qué **productos piloto** puede proponer la curaduría, y qué
+**canales** de WhatsApp se siguen. Ambas piden la misma autenticación que
+`/curation`.
+
+Desde acá también se dispara el backfill de histórico de un canal contra la
+API de WAHA (`SAIMC_WAHA_*`), para traer mensajes anteriores al alta del
+canal.
+
+## Panel de control (`/control`)
+
+Espejo del operador, sin autenticación. Responde dos preguntas: cuánto falta
+contra la meta de `spec.md` §9 (500 registros, 3–5 productos, 2 provincias) y
+si lo que se está cargando sirve (matriz cruda producto × provincia, rango
+minorista). No es el dashboard público de la Fase 1.
 
 ## Medición de H0
 
