@@ -87,11 +87,20 @@ mediana es robusta (312,39) pero el **máximo sigue en 30.885**, y el rango
 mín–máx es justamente lo que el dashboard va a publicar (`spec.md` §6.7,
 «banda gris»). Pollo/La Habana muestra el mismo síntoma: 806 a 8.500 CUP/lb.
 
-Bloqueado por: nada. Es la señal más barata que queda y no toca esquema. Ojo
-con el diseño: **no es un umbral de los de §12.6** solo si se define como
-comparación relativa dentro de la propia celda (apartarse del resto de su
-muestra), no como un corte absoluto de precio. Un «ningún arroz vale más de X»
-sí sería inventar un umbral.
+**Ojo: `price_basis='unit'` con `quantity != 1` NO es de por sí un error.**
+Medido el 2026-08-22 sobre las 13 filas que cumplen esa forma: las de Arroz y
+Pollo están mal, pero las 4 de Picadillo están bien. En esas, `quantity` es el
+tamaño del lote disponible y el precio sí es por libra —525/40 lb, 515/50 lb,
+460/40 lb, tres filas coincidiendo en ~500 CUP/lb—. En cambio Pollo a 8.500/10
+lb y 3.400/4 lb dan **las dos 850 CUP/lb** leídas como total: dos filas
+independientes coincidiendo delatan que son totales mal marcados. El dato
+mismo distingue un caso del otro; una regla estructural los confundiría.
+
+Bloqueado por: nada. Es la señal más barata que queda y no toca esquema. El
+diseño tiene que ser **comparación relativa dentro de la propia celda**
+(apartarse del resto de su muestra), nunca un corte absoluto de precio: un
+«ningún arroz vale más de X» sí sería inventar un umbral de los que §12.6
+prohíbe, y además fallaría con Picadillo.
 
 ## Unidad de catálogo mal declarada en Picadillo
 
