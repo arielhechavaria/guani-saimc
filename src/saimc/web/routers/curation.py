@@ -49,6 +49,7 @@ from saimc.extraction.engine import (
     guess_published_date,
     guess_source_reference,
     mentions_any_product,
+    probable_discard_reasons,
     propose_all,
 )
 from saimc.ingestion import origin
@@ -340,6 +341,28 @@ def _channel_province_id(db: Session, ingestion: RawIngestion) -> str | None:
     return str(province.id) if province is not None else None
 
 
+def _channel_discard_stats(db: Session, ingestion: RawIngestion) -> tuple[int, int] | None:
+    """Cuántos de los anuncios ya resueltos de este canal se descartaron.
+
+    Puramente informativo (docs/decisions.md, 2026-08-22): el operador ya
+    conoce sus canales ruidosos, esto solo se lo confirma con un número en
+    vez de exigirle que lo recuerde. No dispara ningún automatismo — no hay
+    umbral de corte, `spec-map.md` marca los umbrales nuevos sin valor
+    asignado como "no inventar" y acá no hace falta ninguno.
+    """
+    if ingestion.channel_id is None:
+        return None
+    stmt = select(RawIngestion.processing_status, func.count(RawIngestion.id)).where(
+        RawIngestion.channel_id == ingestion.channel_id,
+        RawIngestion.processing_status != ProcessingStatus.PENDING,
+    ).group_by(RawIngestion.processing_status)
+    counts = dict(db.execute(stmt).all())
+    total = sum(counts.values())
+    if total == 0:
+        return None
+    return (counts.get(ProcessingStatus.DISCARDED, 0), total)
+
+
 def _pilot_products(db: Session) -> list[Product]:
     """Los productos del conjunto foco, y solo esos.
 
@@ -410,6 +433,8 @@ def _render_queue(
     pasted: int = 0,
     no_candidates: bool = False,
     burst: Sequence[RawIngestion] = (),
+    discard_hints: Sequence[str] = (),
+    channel_discard_stats: tuple[int, int] | None = None,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -441,6 +466,13 @@ def _render_queue(
             # operador está corrigiendo lo que ya escribió, no leyendo el
             # anuncio por primera vez.
             "burst": burst,
+            # Sugerencia asistida de descarte (docs/decisions.md, 2026-08-22):
+            # razones calculadas sobre el texto disponible (original o el que
+            # salió del OCR), nunca vacío por defecto en el POST con error —
+            # el operador está corrigiendo algo que escribió, no leyendo el
+            # anuncio por primera vez, mismo criterio que `burst` arriba.
+            "discard_hints": discard_hints,
+            "channel_discard_stats": channel_discard_stats,
         },
         status_code=status_code,
     )
@@ -629,6 +661,16 @@ def curation_queue(
         "published_date": published_date_guess,
     }
 
+    # Mismo texto que ya se usó para `propose_all` arriba: el original si es
+    # un ítem de texto, lo que salió del OCR si es una imagen. Vacío para
+    # imágenes sin texto reconocido — ahí no hay señal que calcular.
+    text_for_hints = (
+        ingestion.original_text if ingestion.content_type == ContentType.TEXT else recognized_text
+    ) if ingestion is not None else None
+    discard_hints = (
+        probable_discard_reasons(text_for_hints, products) if text_for_hints else []
+    )
+
     return _render_queue(
         request,
         ingestion=ingestion,
@@ -649,6 +691,10 @@ def curation_queue(
         # precio real de un producto fuera del foco, que vale la pena mirar.
         no_candidates=ingestion is not None and not proposals,
         burst=_burst_context(db, ingestion) if ingestion is not None else (),
+        discard_hints=discard_hints,
+        channel_discard_stats=(
+            _channel_discard_stats(db, ingestion) if ingestion is not None else None
+        ),
     )
 
 

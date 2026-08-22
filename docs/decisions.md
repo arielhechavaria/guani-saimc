@@ -3998,3 +3998,46 @@ y lo que falta de 89 filas a **170 anuncios**. A ~21 filas/día eso es unas
 tres semanas, no cuatro días. El número de H0 no cambia (40.8%); cambia
 cuándo se lo puede llamar oficial. La medición anterior se habría declarado
 oficial con menos de la mitad de la evidencia que la spec pide.
+
+## 2026-08-22 — Sugerencia asistida de descarte, por regla explícita y no por similitud de texto
+
+Contexto: el operador reportó que llega mucho mensaje sin información
+económica útil y que curarlo le come tiempo. Propuso auto-descartar un
+mensaje nuevo cuando matchea por similitud (~80%) contra la lista de
+descartados previos. Medido contra los 159 descartes reales de producción
+(31.7% de 502 filas) antes de diseñar nada: 0 grupos de texto casi-idéntico
+entre esos descartes — el ruido no se repite palabra por palabra, es
+estructural. El 66.7% de los descartes con texto no menciona ningún producto
+del catálogo piloto; el resto se explica por "AGOTADO"/⛔ o venta mayorista
+("contenedor", "cajones"). Además, 4 canales concentran casi todo el
+descarte con canal conocido.
+
+Decisión: `probable_discard_reasons()` (`extraction/engine.py`) combina esas
+tres reglas con OR y las muestra en `/curation` como una marca — "Probable
+descarte: <razones>" — con un botón de un clic que el operador confirma o
+ignora. Nunca auto-descarta: spec.md §6.1 exige que el operador siempre
+confirme o corrija, y la cola es a la vez la herramienta y el instrumento de
+medición de H0 — auto-descartar antes de que la vea rompería esa garantía en
+silencio. La tasa histórica de descarte del canal (`_channel_discard_stats`)
+se muestra aparte, como dato informativo sin umbral de corte (`spec-map.md`
+exige no inventar umbrales nuevos de spec.md §12.6): no dispara nada por sí
+sola.
+
+La regla "no menciona producto del foco" reutiliza `mentions_any_product()`
+y es redundante para anuncios de TEXTO — el filtro de foco (2026-08-20) ya
+los esconde de la cola antes de este punto — pero no para IMÁGENES: esas
+entran igual y se transcriben recién al mostrarse, así que ahí la señal sí
+aporta. El banner de esta sugerencia no convive con el de "sin candidatos"
+(2026-08-17): cuando ese ya se muestra, es la señal más fuerte y un segundo
+banner encima sería ruido.
+
+Descartado: fuzzy-match de texto contra el historial de descartados (la
+propuesta original) — la medición lo refuta directamente, no hay grupos que
+agrupar con un umbral de similitud; auto-descarte sin supervisión — rompe la
+garantía de spec.md §6.1 y arriesga perder anuncios reales en silencio si la
+regla se equivoca.
+
+Consecuencia: la cola gana una señal barata (sin llamada a modelo ni
+comparación de texto contra texto) que cubre la mayoría del ruido medido,
+sin tocar el esquema ni el flujo de guardado. 745 tests verdes (+7 sobre los
+738 previos).

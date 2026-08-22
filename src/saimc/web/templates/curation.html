@@ -111,6 +111,23 @@
       <button type="submit" class="m3-btn m3-btn-danger">Descartar (sin candidatos)</button>
     </form>
   </div>
+  {% elif discard_hints %}
+  <!--
+    Sugerencia asistida de descarte (docs/decisions.md, 2026-08-22): a
+    diferencia del banner de arriba, esto NO significa que el motor no haya
+    encontrado nada — puede convivir con filas prellenadas. Es una marca para
+    que el operador confirme con un clic; el formulario completo sigue igual
+    de disponible debajo, sin colapsar.
+  -->
+  <div class="m3-banner">
+    <span class="m3-icon">flag</span>
+    <span class="m3-spacer">
+      Probable descarte: {{ discard_hints | join(", ") }}.
+    </span>
+    <form method="post" action="/curation/{{ ingestion.id }}/discard">
+      <button type="submit" class="m3-btn m3-btn-danger">Descartar</button>
+    </form>
+  </div>
   {% endif %}
 
   <!-- Dos columnas: la evidencia queda a la vista mientras se escribe ---- -->
@@ -141,6 +158,16 @@
             <span class="m3-icon m3-icon-sm m3-dim">schedule</span>
             Capturado {{ ingestion.captured_at | havana('%H:%M') }} (La Habana)
           </div>
+          {% if channel_discard_stats %}
+          <!--
+            Dato informativo, no automatismo (docs/decisions.md, 2026-08-22):
+            sin umbral de corte — spec-map.md exige no inventar uno nuevo.
+          -->
+          <div class="m3-row m3-xs m3-muted" style="gap:8px">
+            <span class="m3-icon m3-icon-sm m3-dim">history</span>
+            <span>Este canal descartó {{ channel_discard_stats[0] }} de {{ channel_discard_stats[1] }} anuncios anteriores</span>
+          </div>
+          {% endif %}
         </div>
 
         {#

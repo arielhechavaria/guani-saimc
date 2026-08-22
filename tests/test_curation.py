@@ -639,6 +639,130 @@ class TestSinCandidatosAtajoDeUnClic:
         assert "open" in etiqueta.group(1)
 
 
+class TestSugerenciaAsistidaDeDescarte:
+    """docs/decisions.md, 2026-08-22 — el operador reportó que mucho ruido
+    sin valor económico llega a la cola y le afecta el tiempo de curaduría.
+    La señal correcta no es fuzzy-match de texto (0 grupos de texto
+    casi-idéntico medidos contra 159 descartes reales de producción): son
+    las tres reglas estructurales de `probable_discard_reasons`. Es
+    sugerencia, nunca auto-descarte — el operador sigue confirmando o
+    corrigiendo cada elemento (spec.md §6.1)."""
+
+    def test_agotado_muestra_la_sugerencia(self, client: TestClient, session: Session) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-agotado", original_text="pollo a 500 habana AGOTADO"
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Probable descarte" in response.text
+        assert "parece indicar agotado" in response.text
+        assert f'/curation/{ingestion.id}/discard' in response.text
+
+    def test_venta_mayorista_muestra_la_sugerencia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-mayorista",
+            original_text="pollo a 500 habana, venta por contenedor",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "parece venta mayorista/por volumen" in response.text
+
+    def test_anuncio_normal_no_muestra_la_sugerencia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        _crear_raw_ingestion(session, hash_="hash-normal", original_text="pollo a 500 habana")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Probable descarte" not in response.text
+
+    def test_imagen_sin_producto_reconocido_muestra_la_sugerencia(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """El filtro de foco (`docs/decisions.md`, 2026-08-20) ya esconde el
+        TEXTO sin producto del foco antes de llegar a la cola — ver
+        `TestFueraDeFocoNoLlegaALaCola`. La imagen no: entra igual y se
+        transcribe recién al mostrarse, así que acá la señal sí aporta."""
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        _crear_raw_ingestion(session, hash_="hash-imagen-ajena", content_type=ContentType.IMAGE)
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "cemento a 500 el saco")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "no menciona ningún producto del foco" in response.text
+
+    def test_no_candidatos_no_convive_con_la_sugerencia(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Cuando ya se ofrece el atajo "sin candidatos" (señal más fuerte:
+        ni producto ni precio en ningún renglón), un segundo banner encima
+        diciendo lo mismo con otras palabras es ruido, no ayuda."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="hash-doble-banner", content_type=ContentType.IMAGE)
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "buenos días a todos")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Descartar (sin candidatos)" in response.text
+        assert "Probable descarte" not in response.text
+
+    def test_tasa_historica_del_canal_se_muestra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        canal = Channel(
+            name="Ventas Mayoristas", platform=Platform.WHATSAPP_CHANNEL, is_active=True
+        )
+        session.add(canal)
+        session.commit()
+        descartado = _crear_raw_ingestion(
+            session, hash_="hash-canal-descartado-1", channel_id=canal.id
+        )
+        descartado.processing_status = ProcessingStatus.DISCARDED
+        session.commit()
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-canal-actual",
+            original_text="pollo a 500 habana",
+            channel_id=canal.id,
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Este canal descartó 1 de 1 anuncios anteriores" in response.text
+
+    def test_sin_canal_no_muestra_tasa_historica(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        _crear_raw_ingestion(session, hash_="hash-sin-canal", original_text="pollo a 500 habana")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "anuncios anteriores" not in response.text
+
+
 class TestProvinciaDelCanalSiempreManda:
     """docs/decisions.md, 2026-08-17 — "el canal siempre manda": si el
     operador cargó la provincia de un canal automatizado en /catalog, esa

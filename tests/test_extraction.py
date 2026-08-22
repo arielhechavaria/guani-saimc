@@ -20,6 +20,7 @@ from saimc.extraction.engine import (
     guess_published_date,
     guess_source_reference,
     mentions_any_product,
+    probable_discard_reasons,
     propose,
     propose_all,
 )
@@ -987,6 +988,65 @@ class TestMencionaAlgunProducto:
 
     def test_texto_vacio(self, products: list[Product]) -> None:
         assert mentions_any_product("", products) is False
+
+
+class TestProbableDiscardReasons:
+    """Sugerencia asistida de descarte en la cola de curaduría (docs/decisions.md,
+    2026-08-22). NO auto-descarta nada: es una señal para que el operador
+    confirme con un clic. Medida contra 159 descartes reales de producción —
+    el ruido no es texto repetido entre sí (0 grupos casi-idénticos), es
+    estructural: sin mención de producto del foco, "agotado", o venta
+    mayorista. Un fuzzy-match por similitud de texto se descartó por esa
+    medición, no por intuición.
+    """
+
+    def test_sin_mencion_de_producto_del_foco(self, products: list[Product]) -> None:
+        assert probable_discard_reasons("cemento a 500 el saco", products) == [
+            "no menciona ningún producto del foco"
+        ]
+
+    def test_agotado_con_producto_del_foco(self, products: list[Product]) -> None:
+        assert probable_discard_reasons("Arroz blanco AGOTADO", products) == [
+            "parece indicar agotado"
+        ]
+
+    def test_agotado_por_emoji_sin_la_palabra(self, products: list[Product]) -> None:
+        assert probable_discard_reasons("⛔ Pollo", products) == ["parece indicar agotado"]
+
+    def test_venta_mayorista_por_contenedor(self, products: list[Product]) -> None:
+        assert probable_discard_reasons("Arroz por contenedor, consultar", products) == [
+            "parece venta mayorista/por volumen"
+        ]
+
+    def test_venta_mayorista_por_cajones(self, products: list[Product]) -> None:
+        assert probable_discard_reasons("Pollo por cajones, precio a convenir", products) == [
+            "parece venta mayorista/por volumen"
+        ]
+
+    def test_caja_como_unidad_normal_no_dispara_mayorista(
+        self, products: list[Product]
+    ) -> None:
+        """"Caja" es unidad canónica válida (`saimc.units.UNITS`) — solo
+        "contenedor"/"cajones"/"mayorista" son señal de venta al por mayor."""
+        assert probable_discard_reasons("Arroz a 30000 la caja", products) == []
+
+    def test_anuncio_normal_sin_senales(self, products: list[Product]) -> None:
+        assert probable_discard_reasons("Arroz blanco a 30000 la libra", products) == []
+
+    def test_combina_varias_senales_en_orden_fijo(self, products: list[Product]) -> None:
+        razones = probable_discard_reasons("cemento AGOTADO por contenedor", products)
+
+        assert razones == [
+            "no menciona ningún producto del foco",
+            "parece indicar agotado",
+            "parece venta mayorista/por volumen",
+        ]
+
+    def test_texto_vacio_no_menciona_producto(self, products: list[Product]) -> None:
+        """Coherente con `mentions_any_product("", ...)`: un texto vacío no
+        menciona nada, así que la única señal que dispara es esa — en la
+        práctica `curation.py` nunca llama a esta función sin texto."""
+        assert probable_discard_reasons("", products) == ["no menciona ningún producto del foco"]
 
 
 class TestProvinciaDelCanal:

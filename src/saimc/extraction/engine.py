@@ -532,6 +532,38 @@ def mentions_any_product(text: str, products: Sequence[Product]) -> bool:
     return any(_match_product(line, products) is not None for line in text.splitlines())
 
 
+# Sin producto del foco, "agotado" y venta mayorista — las tres formas de
+# ruido que la medición contra 159 descartes reales de producción encontró
+# (docs/decisions.md, 2026-08-22). Un fuzzy-match por similitud de texto se
+# probó y se descartó: 0 grupos de texto casi-idéntico entre esos descartes,
+# el ruido es estructural, no repetido palabra por palabra.
+_OUT_OF_STOCK_RE = re.compile(r"agotad[oa]|⛔", re.IGNORECASE)
+
+# "Caja" es unidad canónica válida (`saimc.units.UNITS`) y no dispara esta
+# señal: solo las formas que en los anuncios reales medidos marcaban venta al
+# por mayor, nunca consumo minorista.
+_WHOLESALE_RE = re.compile(r"contenedor|mayorista|por mayor|cajones", re.IGNORECASE)
+
+
+def probable_discard_reasons(text: str, products: Sequence[Product]) -> list[str]:
+    """Señales de que este anuncio probablemente no aporta un precio útil.
+
+    Sugerencia, no veredicto: la cola de curaduría la muestra como una marca
+    que el operador confirma con un clic o ignora — nunca auto-descarta
+    (spec.md §6.1: el operador siempre confirma o corrige). Devuelve una
+    razón por señal disparada, en orden fijo, para que el badge sea legible;
+    lista vacía cuando ninguna aplica.
+    """
+    reasons: list[str] = []
+    if not mentions_any_product(text, products):
+        reasons.append("no menciona ningún producto del foco")
+    if _OUT_OF_STOCK_RE.search(text):
+        reasons.append("parece indicar agotado")
+    if _WHOLESALE_RE.search(text):
+        reasons.append("parece venta mayorista/por volumen")
+    return reasons
+
+
 # Viñeta de lista ("4)", "4.", o un número suelto) que el OCR deja pegada
 # al principio de una oferta ("4) Azúcar blanca a 22500"). Sin recortarla,
 # terminaba siendo parte del nombre del producto nuevo dado de alta —causa
