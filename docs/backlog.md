@@ -66,6 +66,56 @@ anuncios hay y en qué provincia") no depende de volumen histórico y se sostien
 con las filas actuales. La gráfica de evolución y la predicción sí escalan con
 volumen. Conviene no atar lo primero a lo segundo.
 
+## Prototipo de visualización de Fase 0 — mapa de calor y tarjetas de producto
+
+Por qué importa: es el **único ítem del alcance de Fase 0 que no está
+construido** (`spec.md` §9, «Alcance del MVP inicial»: «Visualización:
+Prototipo de mapa de calor simple y tarjetas de producto»). No es Fase 1 —
+Fase 1 es el lanzamiento público, la expansión a 10 productos y 5 provincias y
+el Market Report. Hoy no hay ninguna ruta pública: los routers son `catalog`,
+`control`, `curation` y `whatsapp_webhook` (`decisions.md`, 2026-08-22).
+
+Contenido, todo definido ya por la especificación y sostenible con el dato
+actual (225 filas, 5 productos bandera, 2 provincias):
+
+- **Tarjeta de producto** (§6.7): precio de hoy, muestra que lo respalda,
+  provincias con oferta.
+- **Mapa de calor** (§6.7): Habana y Santiago coloreadas, el resto en gris
+  «sin datos suficientes». El gris es el estado real, no un defecto.
+- **Tamaño de muestra visible** (§9.0): exigido desde el día 1 en lugar de un
+  titular de precio. No es opcional.
+- **Rango mín–máx además del promedio** (§6.7, «banda gris»): con n bajo el
+  rango es honesto y el promedio solo, engañoso.
+- **Índice de disponibilidad** (§7.3, tabla `availability_index`): la cantidad
+  de anuncios en los últimos N días es proxy directo de escasez y se calcula
+  con el dato de hoy, sin campos nuevos.
+- **Semáforo de tendencia** y **alerta de variación >10%** (§6.7): solo para
+  las series con densidad — hoy Arroz/Habana (16 días), Pollo/Habana (15),
+  Arroz/Santiago (11).
+- **Separar minorista de mayorista**: 141 filas `retail` contra 18
+  `wholesale`. Son dos mercados con precios de órdenes de magnitud distintos
+  (la paca de arroz a 30.885 es mayorista) y mezclarlos es parte de por qué el
+  promedio crudo da basura. Separarlos es más correcto y más útil.
+
+Bloqueado por: **precio comparable por unidad canónica** (entrada anterior).
+Las siete vistas lo consumen; construirlas antes es levantar seis pantallas
+sobre un número que miente.
+
+## «Ver el anuncio que sustenta este precio» — Transparency Layer
+
+Por qué importa: es el linaje del dato que pide `spec.md` §6.5 y la diferencia
+más fuerte frente a elTOQUE — ellos publican un número, SAIMC puede publicar el
+número **y su prueba**. Técnicamente es casi gratis: el endpoint
+`/evidence/{ingestion_id}` ya existe y `prices_history.source_id` ya apunta a la
+fila cruda.
+
+Bloqueado por: una decisión de privacidad, no por código. Es la contradicción
+#1 de `spec-map.md`, todavía abierta: la línea 321 dice que se publica
+«literalmente el archivo capturado», pero §10.6 mitigación 2 exige mostrar el
+anuncio y no la identidad del anunciante, y en una captura de WhatsApp los
+píxeles traen el nombre y a menudo el teléfono. Lo que se publique tiene que ser
+el texto redactado, no la imagen cruda. Hay que decidirlo antes de exponerlo.
+
 ## `provider` como entidad en el modelo de datos
 
 Por qué importa: `spec.md` §6.2 (línea 581) lista **Proveedor** entre los

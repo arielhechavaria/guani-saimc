@@ -4041,3 +4041,51 @@ Consecuencia: la cola gana una señal barata (sin llamada a modelo ni
 comparación de texto contra texto) que cubre la mayoría del ruido medido,
 sin tocar el esquema ni el flujo de guardado. 745 tests verdes (+7 sobre los
 738 previos).
+
+## 2026-08-22 — La curaduría cierra como línea de desarrollo; sigue como rutina de dato
+
+Contexto: el operador preguntó si ya se puede dejar de implementar sobre la
+curaduría y empezar a construir la fase siguiente, sin dejar de curar. La
+pregunta traía una premisa equivocada compartida por los dos: que el mapa de
+calor y las tarjetas de producto son Fase 1. No lo son. `spec.md` §9, en
+«Alcance del MVP inicial» de la **Fase 0**, lista textualmente
+«Visualización: Prototipo de mapa de calor simple y tarjetas de producto».
+Construirlo no es adelantarse de fase: es el único ítem del alcance de Fase 0
+que no existe. Verificado contra el código: los routers son `catalog`,
+`control`, `curation` y `whatsapp_webhook` — no hay una sola ruta pública.
+
+El resto del checklist de actividades de Fase 0 está cumplido: backend
+FastAPI + PostgreSQL, modelo de datos mínimo, interfaz de curaduría (cola,
+pegado, edición, historial, descarte, evidencia) y motor de reglas en modo
+entrenamiento. Lo que falta además de la visualización es **dato, no código**:
+142 de 300+ anuncios del conjunto de referencia, y 166 de 500 filas en los 5
+productos bandera (`is_pilot`: Aceite, Arroz, Azúcar blanca, Picadillo,
+Pollo), que concentran 166 de 225 filas (74%) — la cola larga son 59 filas en
+53 productos, así que la curaduría no está dispersando esfuerzo.
+
+Decisión: la curaduría deja de ser línea de desarrollo y pasa a ser rutina
+diaria de acumulación de dato. El desarrollo sigue por la visualización de
+Fase 0, y su primer slice **no es el mapa sino el precio comparable por
+unidad canónica**, porque todas las vistas lo consumen: sin él se construyen
+seis pantallas sobre un promedio que miente (medido: la serie diaria de
+Arroz/La Habana da 29, 3.463, 15.787 y 30.885 CUP en días consecutivos). Ese
+slice toca el motor de agregación, así que va por flujo completo de
+especificación (`CLAUDE.md`).
+
+Descartado: (a) esperar a cerrar H0 antes de construir la visualización — la
+decisión del 2026-08-12 ya estableció que H0 no bloquea el lanzamiento del
+dashboard, y el conjunto de referencia se completa curando, no programando;
+(b) empezar por el mapa con precios crudos para «tener algo que mirar» —
+un mapa de calor coloreado con promedios que mezclan moneda, base y unidad
+enseña una conclusión falsa, y es más caro desmentirla después que no
+publicarla; (c) seguir agregando herramientas a la cola de curaduría, que era
+la inercia de las últimas nueve sesiones.
+
+Consecuencia: la curaduría queda congelada como superficie de desarrollo —
+tocarla otra vez exige justificar por qué, no basta con que sea lo conocido.
+El backlog gana la entrada del prototipo de visualización con las features
+que la spec ya define. Y queda pendiente una decisión de privacidad antes de
+la Transparency Layer: mostrar el anuncio que sustenta cada precio (§6.5) es
+casi gratis porque `/evidence/{ingestion_id}` ya existe, pero publicar la
+captura cruda rompe la mitigación §10.6 — se publica el texto redactado, no
+el píxel (contradicción #1 de `spec-map.md`, todavía abierta).
