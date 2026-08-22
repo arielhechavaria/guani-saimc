@@ -18,6 +18,74 @@ se saca de acá y su motivo queda en `decisions.md` si ameritó una decisión.
 
 ---
 
+## Precio comparable por unidad canónica
+
+Por qué importa: es la precondición de todo el dashboard (`spec.md` §6.7:
+precio actual, gráfica de evolución, mapa de calor). Hoy **no existe una
+columna con la que se puedan comparar dos filas**, y promediar `price` da un
+número sin sentido. Medido contra producción el 2026-08-22, la serie diaria de
+Arroz/La Habana da promedios de 29, 3.463, 15.787 y 30.885 en días
+consecutivos, porque `avg(price)` mezcla tres ejes a la vez:
+
+- **Moneda**: 180 filas en CUP y 45 en USD en el mismo promedio. `price_cup`
+  solo está poblada en las 45 filas USD (es la conversión); en las filas CUP es
+  `NULL` por diseño, así que el valor comparable es
+  `coalesce(price_cup, price)`, no `price`.
+- **`price_basis` vacío en 202 de 225 filas (90%)**. Sin él no se sabe si el
+  número es el total o el precio unitario. Caso real: `price=30885 CUP,
+  quantity=100, unit=lb, price_basis=NULL` — 30.885 es el total de la paca
+  (≈309 CUP/lb), pero la base no lo dice y nada distingue eso de 30.885 por libra.
+- **Unidad heterogénea**: 103 filas en kg, 63 en lb, 5 en l, 2 en ml, 2 en caja,
+  50 sin unidad. Comparar exige convertir a una unidad canónica por producto.
+
+Solo **23 de 225 filas (10%)** tienen `quantity` + `unit` + `price_basis`
+completos, que es el mínimo para derivar precio por unidad.
+
+Bloqueado por: nada técnico, pero hay que decidir dos cosas antes de tocar
+código: (a) si el precio comparable es columna derivada persistida o cálculo en
+consulta, y (b) qué se hace con las filas viejas sin `price_basis` —
+retro-completarlas en curaduría o excluirlas de los agregados. Es cambio de
+esquema/motor de agregación → flujo completo de especificación (CLAUDE.md).
+
+## `provider` como entidad en el modelo de datos
+
+Por qué importa: `spec.md` §6.2 (línea 581) lista **Proveedor** entre los
+campos que la extracción debe sacar de cada anuncio, pero no existe en ninguna
+tabla: ni en `products` ni en `prices_history` ni como tabla propia. Hoy lo más
+cercano es `raw_ingestions.source_reference` (canal de origen), que es de dónde
+salió el mensaje, no quién vende. Sin esto no hay seguimiento de vendedor:
+ni reputación, ni "quién tiene el mejor precio", ni detección de un mismo
+vendedor publicando en varios canales.
+
+Ojo con la privacidad: §10.6 prohíbe almacenar datos de contacto, y en las
+capturas de WhatsApp el identificador del vendedor **es el teléfono**, que hoy
+se redacta antes de persistir (`decisions.md`, 2026-08-11). Un `provider` que
+sea el número de teléfono contradice una mitigación ya cerrada. Hay que definir
+un identificador estable que no sea dato personal, y `CLAUDE.md` ya fija que el
+identificador de usuario origen nunca se expone en la capa pública.
+
+Bloqueado por: nada técnico. Requiere decidir qué identifica a un proveedor sin
+guardar datos personales. Cambio de esquema → flujo completo de especificación.
+
+## Granularidad geográfica por debajo de provincia ("zona más cercana")
+
+Por qué importa: la visión de producto pide que el dashboard ajuste los
+anuncios a la zona más cercana al usuario. Hoy la unidad mínima es la
+provincia: `prices_history.province_id` y nada más fino. `spec.md` §6.2 (línea
+484) menciona que la validación reconoce municipios y regiones comerciales como
+texto, pero no hay entidad `municipality` ni coordenadas en el modelo.
+
+Son dos cosas distintas y conviene no confundirlas: geolocalizar el **anuncio**
+por debajo de provincia, y geolocalizar al **usuario** para ordenar por
+cercanía. Lo segundo no está contemplado en ninguna parte de `spec.md`.
+
+Bloqueado por: decisión de privacidad, no falta de código. §10.6 lista las
+ubicaciones aproximadas como dato personal, y cuanto más fina es la
+granularidad, más fácil es re-identificar al anunciante. Subir de provincia a
+municipio toca una mitigación de riesgo ya cerrada, así que hay que decidirlo
+explícitamente antes de diseñarlo. Cambio de esquema → flujo completo de
+especificación.
+
 ## Persistir `unit` por fila en `prices_history`
 
 Por qué importa: hoy la métrica de cantidad/unidad de H0 se aproxima contra
