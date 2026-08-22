@@ -159,6 +159,22 @@ Bloqueado por: **precio comparable por unidad canónica** (entrada anterior).
 Las siete vistas lo consumen; construirlas antes es levantar seis pantallas
 sobre un número que miente.
 
+## `GZipMiddleware` en `app.py` — falta comprimir las respuestas
+
+Por qué importa: destapado el 2026-08-22 al medir el costo de HTMX.
+`src/saimc/web/app.py` no registra ninguna compresión, así que hoy
+`saimc-material.css` viaja por el cable como **28.672 B** cuando gzipeado son
+**6.079 B**. Es ~22 KB en cada primera carga, contra la restricción que gobierna
+todo el diseño de la capa web: conexión lenta e intermitente. Las fuentes son
+woff2 y ya están comprimidas, así que no aporta ahí.
+
+Es la optimización más barata que queda en el repo —una línea de middleware— y
+paga por sí sola el peso de HTMX (16.539 B gzipeados) que el ADR 001 aprobó para
+el dashboard. Conviene hacerla **antes** de introducir HTMX, para que el saldo
+sea favorable desde el primer commit.
+
+Bloqueado por: nada.
+
 ## «Ver el anuncio que sustenta este precio» — Transparency Layer
 
 Por qué importa: es el linaje del dato que pide `spec.md` §6.5 y la diferencia

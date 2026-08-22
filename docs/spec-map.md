@@ -141,11 +141,17 @@ Lo implementado que no coincide con el documento, con su entrada en `decisions.m
 | Restricciones de `raw_ingestions` | DDL sin `NOT NULL` | `NOT NULL` en 8 columnas | 2026-08-06 |
 | Marcas de tiempo | `TIMESTAMP` | `TIMESTAMPTZ` | 2026-08-06 |
 | H0 como veredicto de fase | Tabla de decisión avanzar/detener (§3, 56–62) | Métrica de eficiencia; los umbrales 85/70 son referencia de escala | 2026-08-12 |
-| HTMX en la capa web | §13.1: `Jinja2/HTMX` | Jinja2 renderizado en servidor + JS propio como mejora progresiva. HTMX **no existe en el repo**: ni dependencia, ni atributo `hx-*`, ni `<script>` | 2026-08-22 |
 | Motor del mapa de calor | §13.1: MapLibre GL | SVG inline de las 16 provincias, con la geometría vendorizada. **Decidido, sin construir** | 2026-08-22 |
 
-Los dos últimos están razonados en `docs/decisions/001-stack-python-unico.md`,
-que es además el ADR que §13.1 (línea 1636) pide por nombre.
+El último está razonado en `docs/decisions/001-stack-python-unico.md`, que es
+además el ADR que §13.1 (línea 1636) pide por nombre.
+
+**HTMX no es un apartamiento, es deuda.** §13.1 lo nombra y el ADR lo confirma
+para el dashboard, pero hoy **no existe en el repo**: ni la dependencia, ni un
+atributo `hx-*`, ni el `<script>`. El docstring de `src/saimc/web/__init__.py:1`
+lo anuncia igual. La curaduría, ya construida, se queda deliberadamente sin él.
+En la misma línea falta `GZipMiddleware` en `src/saimc/web/app.py`: hoy el CSS
+viaja sin comprimir, 28.672 B contra 6.079 B gzipeados.
 
 ---
 

@@ -4,6 +4,8 @@
 - **Estado:** aceptada
 - **Rige:** Fase 0 y Fase 1. La Fase 2 queda descrita, no decidida.
 - **Reemplaza a:** nada. Es el primer ADR del repositorio.
+- **Revisado el 2026-08-22**, el mismo día, sobre HTMX. La primera versión lo
+  descartaba; medido, el argumento no se sostenía. Ver «Apartamientos», punto 1.
 
 ## Por qué existe este archivo
 
@@ -47,15 +49,16 @@ red que se agrega es una forma nueva de que no abra.
 dependencias de frontend servidas por terceros.**
 
 ```
-FastAPI + PostgreSQL + Jinja2 (server-rendered) + JS propio + SVG inline
+FastAPI + PostgreSQL + Jinja2 (server-rendered) + HTMX vendorizado + SVG inline
 ```
 
 | Capa | Elección | Estado |
 | :--- | :--- | :--- |
 | API y lógica de negocio | FastAPI | Implementado |
 | Base de datos | PostgreSQL | Implementado |
-| Interfaz de curaduría | Jinja2 server-rendered + JS propio | Implementado |
-| Dashboard público | Jinja2 server-rendered + JS propio | **Sin construir** |
+| Interfaz de curaduría | Jinja2 server-rendered + JS propio. **No se retrofitea a HTMX** | Implementado |
+| Dashboard público | Jinja2 server-rendered + **HTMX vendorizado** para swaps parciales | **Sin construir** |
+| Compresión de respuestas | `GZipMiddleware` | **Sin implementar — hueco abierto** |
 | Mapa de calor | SVG inline de las 16 provincias | **Sin construir** |
 | Gráfico de evolución | Sin decidir. Ver «Lo que este ADR no decide» | **Sin construir** |
 | Cola de trabajos | Ninguna | Correcto para la fase |
@@ -65,7 +68,7 @@ FastAPI + PostgreSQL + Jinja2 (server-rendered) + JS propio + SVG inline
 | | Fase 0 (hoy) | Fase 1 | Fase 2 |
 | :--- | :--- | :--- | :--- |
 | **Objetivo** | Prototipo de mapa de calor y tarjetas de producto | Lanzamiento público, 10 productos, 5 provincias, Market Report | Comportamiento de aplicación real |
-| **Frontend** | Jinja2 server-rendered | Jinja2 server-rendered | **Angular**, contra la API ya estabilizada |
+| **Frontend** | Jinja2 server-rendered + HTMX | Jinja2 server-rendered + HTMX | **Angular**, contra la API ya estabilizada |
 | **Mapa** | SVG inline | SVG inline | Se reevalúa si aparece interacción que lo exija |
 | **Cola** | Ninguna | Redis + Celery cuando haya carga que lo justifique | — |
 | **Base** | PostgreSQL | PostgreSQL (+TimescaleDB cuando la serie lo justifique) | — |
@@ -84,28 +87,67 @@ eso quedó registrado como deuda del pitch, no como decisión vigente
 
 ## Apartamientos de §13.1
 
-§13.1 nombra `Jinja2/HTMX + MapLibre + Chart.js`. Dos de esas piezas no van.
-Registrarlo acá es el requisito de `CLAUDE.md`: apartarse es legítimo, apartarse
-sin saberlo no.
+§13.1 nombra `Jinja2/HTMX + MapLibre + Chart.js`. Solo MapLibre no va.
 
-### 1. HTMX no se usa — y el apartamiento ya era un hecho, no una propuesta
+### 1. HTMX: no es un apartamiento. Se adopta en el dashboard (revisión)
 
-Verificado el 2026-08-22 contra el código: no existe la dependencia, no existe un
-solo atributo `hx-*`, no existe la etiqueta `<script>` que lo cargue. La única
-mención en todo `src/` es un docstring en `src/saimc/web/__init__.py:1` que dice
-«FastAPI + Jinja2 + HTMX» y describe algo que no está.
+**La primera versión de este ADR lo descartaba, y el argumento era malo.** Queda
+acá el razonamiento corregido, porque el error es instructivo.
 
-Lo que hay en su lugar es mejor y ya está probado: HTML renderizado en servidor
-con JS propio delegado en `document`, escrito explícitamente como mejora
-progresiva. El comentario de `_price_row_scripts.html` lo dice sin ambigüedad:
-«Si este script nunca corre, la etiqueta puede quedar desactualizada pero el
-valor enviado y toda regla del servidor siguen intactos».
+Lo que sí es un hecho verificado: **HTMX no existe hoy en el repo**. No está la
+dependencia en `pyproject.toml`, no hay un solo atributo `hx-*`, no hay
+`<script>` que lo cargue. La única mención en todo `src/` es un docstring en
+`src/saimc/web/__init__.py:1` que dice «FastAPI + Jinja2 + HTMX» y describe algo
+que no está.
 
-Se adopta el estado real: **server-rendered con JS propio como mejora
-progresiva**. HTMX resolvería un problema que la curaduría no tuvo, y sumar una
-dependencia para alinearse con una lista es la clase de ceremonia que este
-proyecto no puede pagar. El docstring de `web/__init__.py` queda desactualizado y
-hay que corregirlo.
+De ese hecho la primera versión sacó la conclusión equivocada, por tres motivos:
+
+1. **Argumento trasladado indebidamente.** El problema de MapLibre es una
+   **dependencia de red en tiempo de ejecución**: un servicio de tiles que
+   responde por cada pan y cada zoom. HTMX no tiene nada de eso: es **un archivo
+   estático**, vendorizado igual que `saimc-material.css` y las tres fuentes.
+   Satisface el invariante 3 —«cero peticiones a terceros»— sin excepción ni
+   matiz. El argumento del mapa no le aplica y usarlo fue un error.
+2. **Generalización desde el componente equivocado.** «La curaduría no lo
+   necesitó» es un hecho sobre la curaduría, que ya está construida. El
+   dashboard no está construido y su patrón de interacción es otro.
+3. **La alternativa real no es «HTMX o nada», es «HTMX o JS propio».** El
+   dashboard con swaps parciales necesita `fetch` + manipulación de DOM escrita a
+   mano. Con un solo desarrollador, una biblioteca probada de 16 KB le gana a
+   código DOM a medida por mantenibilidad, no por moda.
+
+Y sobre el peso, medido el 2026-08-22 en vez de citado de memoria:
+
+| | Sobre el cable hoy | gzip -9 |
+| :--- | ---: | ---: |
+| `saimc-material.css` | 28.672 B | **6.079 B** |
+| Fuentes (3 × woff2) | 92 KB | ya comprimidas |
+| htmx 2.x minificado | 51.238 B | **16.539 B** |
+
+El hallazgo que cierra la discusión: **`src/saimc/web/app.py` no tiene
+`GZipMiddleware`**. Hoy el CSS viaja sin comprimir. Activarlo ahorra ~22 KB;
+HTMX gzipeado cuesta ~16,5 KB. **Con HTMX y compresión, la primera carga pesa
+menos que hoy sin ninguna de las dos.** El argumento de la conexión lenta —que es
+el correcto— apuntaba en sentido contrario al que le hice decir.
+
+Decisión, entonces:
+
+- **El dashboard usa HTMX**, vendorizado en `/static` como todo lo demás. Nunca
+  desde CDN. Alineado con §13.1, así que no requiere justificación: la requería
+  apartarse.
+- **Cada interacción degrada.** `hx-get` va sobre un `<a href>` que funciona como
+  enlace común con JS deshabilitado. Es el invariante 4, y HTMX está diseñado
+  justo para eso.
+- **La curaduría no se retrofitea.** Funciona, está testeada, y su JS propio ya
+  está escrito como mejora progresiva — el comentario de
+  `_price_row_scripts.html` lo dice: «Si este script nunca corre, la etiqueta
+  puede quedar desactualizada pero el valor enviado y toda regla del servidor
+  siguen intactos». Reescribirla es churn sin beneficio.
+- **Se agrega `GZipMiddleware`**, independientemente de HTMX. Es la optimización
+  más barata que quedaba y estaba a la vista sin que nadie la mirara.
+
+El docstring de `web/__init__.py` resulta ser **profético, no falso**: describe
+el destino, no el estado. Igual hay que ajustarlo para que se lea como tal.
 
 ### 2. El mapa de calor es SVG inline, no MapLibre GL
 
@@ -151,9 +193,12 @@ movimiento». Eso se gana hoy o no se gana.
 2. **Toda vista nueva calcula en una función pura testeable, no en Jinja.** Es
    la condición práctica de la anterior: si el número se arma en la plantilla, en
    Fase 2 hay que reescribirlo, y mientras tanto no se puede testear.
-3. **Cero assets de terceros en tiempo de ejecución.** Todo se vendoriza. Ya es
-   el caso y `_shell.html` lo documenta citando el motivo: «una descarga menos en
-   conexión lenta».
+3. **Cero peticiones a terceros en tiempo de ejecución.** No prohíbe usar
+   bibliotecas: prohíbe que el navegador del usuario le pida algo a un servidor
+   que no es el nuestro. Una biblioteca vendorizada en `/static` lo cumple; un
+   CDN o un servicio de tiles no. Ya es el caso con el CSS y las fuentes, y
+   `_shell.html` documenta el motivo: «una descarga menos en conexión lenta».
+   HTMX entra por esta puerta; MapLibre con tiles remotos no.
 4. **El servidor decide, el JS mejora.** Ninguna afirmación que el usuario lea
    puede depender de que un script haya corrido.
 
@@ -182,18 +227,22 @@ devuelven estructuras cerradas. Incumplidos, es una reescritura.
   Descartada el 2026-08-22: un mapa coloreado con promedios que mezclan moneda,
   base y unidad enseña una conclusión falsa, y desmentirla después es más caro
   que no publicarla.
-- **Adoptar HTMX para alinearse con la lista de §13.1.** Descartada: agregar una
-  dependencia para que el código coincida con un documento, cuando el documento
-  puede anotarse, es ceremonia.
+- **Escribir los swaps parciales del dashboard con `fetch` y DOM a mano, en vez
+  de HTMX.** Descartada: es la alternativa real a HTMX, y con un solo
+  desarrollador pierde. 16,5 KB de biblioteca probada contra código a medida sin
+  tests, para el mismo comportamiento.
+- **Descartar HTMX por peso.** Descartada por la medición: cuesta 16,5 KB
+  gzipeados, y activar `GZipMiddleware` —que faltaba— ahorra ~22 KB. El saldo es
+  favorable. Fue la posición de la primera versión de este ADR y se corrigió el
+  mismo día.
 
 ## Lo que este ADR no decide
 
 - **Cómo se dibuja el gráfico de evolución de §6.7.** Chart.js sigue siendo la
-  opción de §13.1 y no se aparta acá: es autocontenido y no llama a ningún
-  servicio externo, así que el argumento del mapa no le aplica. Pero un gráfico
-  de líneas con banda mín–máx también es SVG generado en servidor, y eso
-  mantendría el frontend en cero dependencias. Se decide al construir esa vista,
-  con la implementación del mapa ya hecha como evidencia.
+  opción de §13.1 y no se aparta acá: es autocontenido y vendorizable, así que
+  cumple el invariante 3 igual que HTMX. Pero un gráfico de líneas con banda
+  mín–máx también es SVG generado en servidor. Se decide al construir esa vista,
+  midiendo el peso como se midió el de HTMX — no argumentando de memoria.
 - **De dónde sale la geometría de las provincias**, ni con qué herramienta se
   simplifica. Es trabajo de la implementación.
 - **Nada de la Fase 2.** La tabla la describe para dar dirección. Cuando llegue,
@@ -202,7 +251,13 @@ devuelven estructuras cerradas. Incumplidos, es una reescritura.
 ## Consecuencias
 
 - La línea de visualización de Fase 0 arranca sin decisiones de stack pendientes.
-- `src/saimc/web/__init__.py:1` tiene un docstring que hay que corregir.
-- `docs/spec-map.md` gana dos apartamientos deliberados sobre §13.1.
+- Entra HTMX como dependencia vendorizada, y con él la regla de que **toda
+  interacción del dashboard tiene que funcionar sin JS**.
+- Queda pendiente agregar `GZipMiddleware` a `src/saimc/web/app.py`. No depende
+  de HTMX y conviene hacerlo primero: es ~22 KB de ahorro en cada primera carga.
+- `src/saimc/web/__init__.py:1` describe el destino, no el estado. Ajustar la
+  redacción cuando HTMX entre de verdad.
+- `docs/spec-map.md` gana **un** apartamiento deliberado sobre §13.1 —el mapa— y
+  una nota de que HTMX está nombrado pero todavía sin implementar.
 - El próximo desarrollador —o la próxima sesión— lee este archivo en vez de
   reconstruir el camino desde cinco fuentes.

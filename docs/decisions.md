@@ -4196,3 +4196,45 @@ assets de terceros, el servidor decide y el JS mejora) — los cuatro ya se
 cumplen hoy sin estar declarados. Queda por corregir el docstring de
 `web/__init__.py` y por decidir, al construir esa vista, si el gráfico de
 evolución usa Chart.js o SVG generado en servidor.
+
+## 2026-08-22 — HTMX sí entra en el dashboard (corrige la entrada anterior de hoy)
+
+Contexto: la entrada anterior de hoy descartó HTMX y lo registró como
+apartamiento de §13.1. El operador preguntó por qué no usarlo. Al medir en vez
+de argumentar de memoria, el descarte no se sostuvo.
+
+Decisión: **se revierte el descarte de HTMX**. El dashboard lo usa, vendorizado
+en `/static` como el CSS y las fuentes, nunca desde CDN. Queda alineado con
+§13.1, así que deja de ser apartamiento — el apartamiento que sobrevive es solo
+el del mapa (SVG inline en vez de MapLibre GL). La curaduría **no** se
+retrofitea: funciona, está testeada y su JS propio ya está escrito como mejora
+progresiva. Toda interacción del dashboard tiene que degradar a enlace o
+formulario común con JS deshabilitado.
+
+Tres errores en el razonamiento descartado, anotados porque son instructivos:
+(a) se le aplicó a HTMX el argumento de MapLibre, cuando el problema de MapLibre
+es una dependencia de **red en runtime** (tiles por pan y por zoom) y HTMX es un
+archivo estático que cumple el invariante «cero peticiones a terceros» tal como
+está escrito; (b) se generalizó desde la curaduría, que ya está construida, al
+dashboard, que no lo está y tiene otro patrón de interacción; (c) se comparó
+contra «nada», cuando la alternativa real son swaps parciales con `fetch` y DOM
+a mano — y con un solo desarrollador, 16,5 KB de biblioteca probada le gana a
+código a medida sin tests.
+
+Medición del 2026-08-22, que es lo que cierra la discusión: htmx 2.x pesa 51.238
+B minificado y **16.539 B gzipeado**. `saimc-material.css` pesa 28.672 B y
+**6.079 B gzipeado**. Y `src/saimc/web/app.py` **no tiene `GZipMiddleware`**:
+hoy ese CSS viaja sin comprimir. Activarlo ahorra ~22 KB, HTMX cuesta ~16,5 KB,
+así que con las dos cosas la primera carga pesa **menos que hoy sin ninguna**.
+El argumento de la conexión lenta apuntaba al revés de como se lo usó.
+
+Descartado: (a) sostener el descarte de HTMX por peso — refutado por la medición;
+(b) retrofitear la curaduría a HTMX — churn sin beneficio sobre código que ya
+funciona y está testeado; (c) escribir los swaps con `fetch` y DOM propio.
+
+Consecuencia: se agrega `GZipMiddleware` a `app.py`, independiente de HTMX y
+antes que él, porque es la optimización más barata que quedaba. `spec-map.md`
+pierde el apartamiento de HTMX y gana la nota de que es deuda: nombrado en
+§13.1 y en el docstring de `web/__init__.py:1`, pero sin implementar. El ADR 001
+queda revisado el mismo día que se escribió, con el razonamiento corregido
+adentro en vez de borrado.
