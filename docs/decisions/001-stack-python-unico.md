@@ -59,7 +59,7 @@ FastAPI + PostgreSQL + Jinja2 (server-rendered) + HTMX vendorizado + SVG inline
 | Interfaz de curaduría | Jinja2 server-rendered + JS propio. **No se retrofitea a HTMX** | Implementado |
 | Dashboard público | Jinja2 server-rendered + **HTMX vendorizado** para swaps parciales | **Sin construir** |
 | Compresión de respuestas | `GZipMiddleware`, `compresslevel=6` | Implementado |
-| Mapa de calor | SVG inline de las 16 provincias | **Sin construir** |
+| Mapa de calor | SVG inline de las 16 provincias | Geometría y ruta pública implementadas; falta el coloreado por precio |
 | Gráfico de evolución | Sin decidir. Ver «Lo que este ADR no decide» | **Sin construir** |
 | Cola de trabajos | Ninguna | Correcto para la fase |
 
@@ -251,8 +251,11 @@ devuelven estructuras cerradas. Incumplidos, es una reescritura.
   cumple el invariante 3 igual que HTMX. Pero un gráfico de líneas con banda
   mín–máx también es SVG generado en servidor. Se decide al construir esa vista,
   midiendo el peso como se midió el de HTMX — no argumentando de memoria.
-- **De dónde sale la geometría de las provincias**, ni con qué herramienta se
-  simplifica. Es trabajo de la implementación.
+- ~~**De dónde sale la geometría de las provincias**, ni con qué herramienta se
+  simplifica.~~ Resuelto el 2026-08-22: Natural Earth 10m 5.1.1, dominio
+  público, simplificado con Douglas-Peucker a 0,008° por
+  `tools/build_cuba_map.py`. El motivo de descartar geoBoundaries —mismas 16
+  unidades pero ODbL, con atribución y share-alike— está en `decisions.md`.
 - **Nada de la Fase 2.** La tabla la describe para dar dirección. Cuando llegue,
   se decide contra el producto que exista entonces, no contra este documento.
 

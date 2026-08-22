@@ -4315,3 +4315,62 @@ Consecuencia: 778 tests verdes (+4). El dashboard puede usar htmx sin decisiones
 pendientes ni descargas. Queda para cuando exista la primera vista que lo cargue:
 ajustar el docstring de `src/saimc/web/__init__.py:1`, que sigue anunciando HTMX
 como si ya estuviera en uso.
+
+## 2026-08-22 — Primera ruta pública: el mapa de cobertura de las 16 provincias
+
+Contexto: la visualización de Fase 0 era el único ítem del alcance de §9 sin
+construir, y no había una sola ruta pública en el proyecto. El primer slice
+acordado eran las dos tareas que no dependen de ningún hueco de dato: la
+geometría y la ruta.
+
+Decisión, en tres partes.
+
+**1. La geometría sale de Natural Earth 10m 5.1.1, que es dominio público.** Se
+evaluó geoBoundaries, que trae exactamente las 16 unidades administrativas de
+Cuba, pero deriva de OpenStreetMap y es **ODbL**: atribución obligatoria y
+share-alike sobre la base de datos. Para algo que se va a publicar, dominio
+público es una atadura menos. `tools/build_cuba_map.py` lee el shapefile con un
+parser mínimo de stdlib —sin GDAL, pyshp ni geopandas: una dependencia de decenas
+de MB para leer 16 polígonos una sola vez no se paga con esta conexión—,
+descarta los cayos por debajo de 0,001 grados² conservando siempre el anillo
+mayor de cada provincia, simplifica con Douglas-Peucker a 0,008° y proyecta en
+equirectangular con paralelo estándar en el centro del país. El épsilon se eligió
+midiendo: a 1000 px de ancho un píxel son ~0,0105°, así que 0,008 queda por
+debajo del píxel y baja de 5.377 puntos a **1.629**. La herramienta queda en el
+repo por la misma razón por la que htmx lleva su sha256: un asset derivado que
+nadie puede rehacer ni auditar es deuda.
+
+Natural Earth todavía usa «Ciudad de la Habana», el nombre anterior a la
+reorganización de 2011; el mapeo al nombre vigente está en la herramienta y hay
+un test que compara las 16 claves de la geometría contra los nombres sembrados
+por `alembic/versions/0003_seed_provinces.py`. Si esa corrección se pierde al
+regenerar, La Habana queda muda y nada más avisaría.
+
+**2. `GET /` es la primera ruta sin `require_operator`.** Shell propio
+(`_public_shell.html`), que **no** extiende el del operador a propósito: ese trae
+el rail de navegación a Catálogo / Curaduría / Control, y una página pública no
+puede ofrecer enlaces a la herramienta interna. Hay un test que lo verifica. El
+SVG va inline —cero peticiones extra— y el reparto de trabajo respeta el
+invariante 1 del ADR 001: `web/map_view.py` arma la estructura con una función
+pura y la plantilla solo la recorre.
+
+**3. El mapa colorea cobertura, no precio, y eso es deliberado.** §6.7 describe
+el gris como «sin datos **suficientes**» pero nunca dice cuántas observaciones
+son suficientes, y §12.6 es explícita: los umbrales que la v3.5 introdujo sin
+valor asignado no se inventan. Así que la página distingue lo único verificable
+—una provincia tiene observaciones o no las tiene—, muestra el n al lado (que es
+lo que §9.0 exige desde el día 1 en lugar de un titular de precio) y dice
+textualmente que todavía no publica precio. Hay un test que falla si alguna cifra
+en CUP aparece en esa página antes de que el umbral se mida.
+
+Descartado: (a) geoBoundaries por la licencia; (b) inventar un umbral de
+«datos suficientes» para tener los tres colores de §6.7 — es exactamente lo que
+§12.6 prohíbe, y un mapa que dice «rojo» sobre 6 observaciones miente con más
+autoridad que uno que no dice nada; (c) extender `_shell.html` en la vista
+pública.
+
+Consecuencia: 792 tests verdes (+14). Medido contra producción, la página
+responde 200 y dice «2 de 16 provincias con observaciones, 218 en total», con La
+Habana en 113 y Santiago en 105. Son 24.935 B de HTML que el `GZipMiddleware`
+entrega en 9.255 B. Queda anotado en backlog que la vista pública arrastra los
+~6 KB de estilos de curaduría que no usa.

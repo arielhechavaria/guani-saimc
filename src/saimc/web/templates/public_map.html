@@ -1,0 +1,80 @@
+{% extends "_public_shell.html" %}
+
+{% block title %}Mapa de cobertura{% endblock %}
+{% block heading %}Dónde hay precios{% endblock %}
+{% block subtitle %}
+  {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones,
+  {{ map.total_rows }} en total.
+{% endblock %}
+
+{% block head %}
+<style>
+  /* Van acá y no en `saimc-material.css` mientras sea la única vista pública:
+     son pocas reglas, viajan gzipeadas con el HTML y no suman una petición. */
+  .m3-public { max-width: 72rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  .m3-public-foot { margin-top: 2.5rem; font-size: .8125rem; opacity: .75; }
+  .m3-public-foot p { margin: .35rem 0; }
+
+  .m3-map { width: 100%; height: auto; display: block; }
+  .m3-map-province { stroke: var(--m3-surface, #fff); stroke-width: 1.2;
+                     stroke-linejoin: round; }
+  .m3-map-province.is-con-dato { fill: var(--m3-primary, #00696d); }
+  .m3-map-province.is-sin-dato { fill: #d3dadb; }
+
+  .m3-map-legend { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 0;
+                   padding: 0; list-style: none; font-size: .875rem; }
+  .m3-map-legend li { display: flex; align-items: center; gap: .45rem; }
+  .m3-swatch { width: .9rem; height: .9rem; border-radius: .2rem; }
+  .m3-swatch.is-con-dato { background: var(--m3-primary, #00696d); }
+  .m3-swatch.is-sin-dato { background: #d3dadb; }
+
+  .m3-coverage { width: 100%; border-collapse: collapse; margin-top: 2rem;
+                 font-size: .9375rem; }
+  .m3-coverage th, .m3-coverage td { text-align: left; padding: .5rem .6rem;
+                 border-bottom: 1px solid rgba(0,0,0,.08); }
+  .m3-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .m3-coverage tr.is-sin-dato { opacity: .55; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice nada,
+   y la tabla de abajo es la que lleva el dato en forma accesible. #}
+<svg class="m3-map" viewBox="{{ map.viewbox }}" role="img"
+     aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
+  {% for province in map.provinces %}
+  <path class="m3-map-province is-{{ province.state }}" d="{{ province.path }}">
+    <title>{{ province.name }} — {{ province.rows }} observaciones</title>
+  </path>
+  {% endfor %}
+</svg>
+
+<ul class="m3-map-legend">
+  <li><span class="m3-swatch is-con-dato"></span> Con observaciones</li>
+  <li><span class="m3-swatch is-sin-dato"></span> Sin observaciones todavía</li>
+</ul>
+
+{# El tamaño de muestra va al lado del mapa y no escondido: §9.0 lo exige desde
+   el día 1, en lugar de un titular de precio. Y el gris no es un defecto del
+   sistema, es dónde todavía no se está mirando. #}
+<table class="m3-coverage">
+  <caption class="m3-subtitle">
+    Observaciones por provincia. Todavía no se publica precio: hace falta
+    decidir cuántas observaciones sostienen una cifra, y ese umbral se mide, no
+    se inventa.
+  </caption>
+  <thead>
+    <tr><th scope="col">Provincia</th><th scope="col" class="num">Observaciones</th></tr>
+  </thead>
+  <tbody>
+    {% for province in map.provinces %}
+    <tr class="is-{{ province.state }}">
+      <td>{{ province.name }}</td>
+      <td class="num">{{ province.rows }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

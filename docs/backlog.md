@@ -155,38 +155,45 @@ producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Hab
    30.885 es mayorista y mezclarla es parte de por qué el promedio crudo da
    basura), pero hoy deja casi un tercio del dato sin clasificar.
 
+### Hecho el 2026-08-22
+
+- **Geometría de las 16 provincias** y **ruta pública con shell propio**. `GET /`
+  existe, sin auth, con el mapa SVG inline coloreado por cobertura y el tamaño
+  de muestra al lado. Motivo y fuente en `decisions.md`.
+
 ### Tareas, en orden de dependencia
 
-3. **Geometría de las 16 provincias** → SVG simplificado y vendorizado. Bloquea
-   el mapa y nada más. Ojo con la licencia de la fuente: Natural Earth es
-   dominio público; los datos derivados de OSM son ODbL y exigen atribución.
-4. **Router público + shell propio.** `_shell.html` trae el rail de navegación
-   del operador (Catálogo / Curaduría / Control) y una página pública no puede
-   heredarlo. Hoy no hay ninguna ruta pública, y `/control` **no** lo es: su
-   propio docstring aclara que es el espejo del operador.
-5. **Tarjeta de producto** (§6.7): precio de hoy, provincias con oferta, y
+3. **Tarjeta de producto** (§6.7): precio de hoy, provincias con oferta, y
    **tamaño de muestra visible** (§9.0) — exigido desde el día 1 en lugar de un
    titular de precio, no es opcional.
-6. **Rango mín–máx además del promedio** (§6.7, «banda gris»): con n bajo el
+4. **Rango mín–máx además del promedio** (§6.7, «banda gris»): con n bajo el
    rango es honesto y el promedio solo, engañoso. Depende del hueco 1.
-7. **Mapa de calor** (§6.7): Habana y Santiago coloreadas, las otras 14 en gris
-   «sin datos suficientes». El gris es el estado real, no un defecto.
-8. **Índice de disponibilidad** (§7.3, tabla `availability_index`): la cantidad
+5. **Colorear el mapa por precio** (§6.7): verde/amarillo/rojo contra el
+   promedio nacional. Hoy el mapa distingue solo cobertura, porque el gris de
+   §6.7 dice «sin datos **suficientes**» y la especificación nunca fija cuántas
+   observaciones son suficientes — §12.6 prohíbe inventar ese umbral. Hace falta
+   una medición que lo determine antes de agregar el tercer estado.
+6. **Índice de disponibilidad** (§7.3, tabla `availability_index`): la cantidad
    de anuncios en los últimos N días es proxy directo de escasez y se calcula
    con el dato de hoy, sin campos nuevos.
-9. **Semáforo de tendencia** y **alerta de variación >10%** (§6.7): solo para
+7. **Semáforo de tendencia** y **alerta de variación >10%** (§6.7): solo para
    las celdas con densidad, que hoy son las siete de arriba.
-10. **Gráfico de evolución** (§6.7): queda pendiente la decisión Chart.js vs.
-    SVG generado en servidor, que el ADR 001 dejó abierta a propósito para
-    medirla cuando el mapa ya exista.
+8. **Gráfico de evolución** (§6.7): queda pendiente la decisión Chart.js vs.
+   SVG generado en servidor, que el ADR 001 dejó abierta a propósito para
+   medirla ahora que el mapa ya existe.
 
-Primer slice recomendado: **3 y 4 juntos**. No dependen de ningún hueco de dato y
-desbloquean todo lo demás. La tarjeta (5) es lo primero que se puede mostrar con
-dato honesto, porque la «foto del presente» no necesita volumen histórico.
+Siguiente slice recomendado: la **tarjeta de producto (3)**. Es lo primero que se
+puede mostrar con dato honesto, porque la «foto del presente» no necesita volumen
+histórico.
 
 Bloqueado por: nada. Las decisiones de stack están cerradas en el ADR 001
 (`docs/decisions/001-stack-python-unico.md`) y la infraestructura de entrega
-—`GZipMiddleware`, htmx vendorizado— ya está puesta.
+—`GZipMiddleware`, htmx vendorizado, geometría— ya está puesta.
+
+Deuda menor que dejó el slice del mapa: la vista pública carga
+`saimc-material.css` entero, que arrastra los estilos de la curaduría que no usa
+(~6 KB gzipeados). No justifica partir la hoja todavía, pero conviene tenerlo
+anotado para cuando el dashboard crezca.
 
 ## `test_ninguna_vista_pide_assets_a_la_red` pasa en vacío para 3 de 4 rutas
 

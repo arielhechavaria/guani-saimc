@@ -1,0 +1,54 @@
+{#
+  Shell de la capa pública. Deliberadamente NO extiende `_shell.html`: ese trae
+  el rail de navegación del operador (Catálogo / Curaduría / Control), y una
+  página pública no puede ofrecer enlaces a la herramienta interna.
+
+  Reusa `saimc-material.css` porque ahí viven los tokens de diseño. Arrastra de
+  paso los estilos de la curaduría, que la capa pública no usa — son ~6 KB
+  gzipeados y no justifican partir la hoja todavía, pero conviene tenerlo
+  anotado para cuando el dashboard crezca.
+
+  htmx tampoco se carga acá: esta vista es un mapa estático de solo lectura y
+  no tiene una sola interacción parcial. La vista que la necesite lo agrega en
+  su propio `{% block scripts %}`, como documenta `_shell.html`.
+#}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — {% block title %}{% endblock %}</title>
+  <link href="/static/saimc-material.css?v={{ css_version() }}" rel="stylesheet" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+<div class="m3-public">
+
+  <header class="m3-public-top">
+    <div class="m3-kicker">SAIMC · Fase 0</div>
+    <h1 class="m3-title">{% block heading %}{% endblock %}</h1>
+    <p class="m3-subtitle">{% block subtitle %}{% endblock %}</p>
+  </header>
+
+  <main class="m3-public-main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="m3-public-foot">
+    {# La procedencia del dato es el diferencial del proyecto (§6.5), así que
+       el pie dice de qué está hecho el mapa en vez de esconderlo. #}
+    <p>
+      Precios recogidos de anuncios públicos del mercado informal y verificados
+      a mano, uno por uno. Ninguna cifra de esta página es una estimación.
+    </p>
+    <p>
+      Geometría de las provincias derivada de
+      <a href="https://www.naturalearthdata.com/">Natural Earth</a> (dominio
+      público).
+    </p>
+  </footer>
+
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from saimc.web.routers import catalog, control, curation, whatsapp_webhook
+from saimc.web.routers import catalog, control, curation, public, whatsapp_webhook
 
 # El despliegue lanza `uvicorn saimc.web.app:app` sin `--log-config`, y uvicorn
 # configura solo sus propios loggers: el raíz queda sin handler. Sin esto, un
@@ -127,6 +127,7 @@ app.mount(
     "/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static"
 )
 
+app.include_router(public.router)
 app.include_router(curation.router)
 app.include_router(control.router)
 app.include_router(catalog.router)
