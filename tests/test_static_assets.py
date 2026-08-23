@@ -34,9 +34,14 @@ FUENTES = [
     "/static/fonts/roboto.woff2",
     "/static/fonts/roboto-mono.woff2",
     "/static/fonts/material-symbols-rounded.woff2",
+    "/static/fonts/alice.woff2",
 ]
 
-VISTAS = ["/catalog", "/curation", "/control", "/curation/history"]
+# "/" y no solo las vistas del operador: el rediseño de la home pública
+# (docs/decisions.md, 2026-08-23) le agrega Alice, vendorizada acá mismo, y es
+# la vista con más riesgo de que alguien deje colada una línea a Google Fonts
+# copiada del prototipo `redesing/`.
+VISTAS = ["/", "/catalog", "/curation", "/control", "/curation/history"]
 
 
 @pytest.fixture

@@ -4621,3 +4621,49 @@ posible duplicado de Arroz/Santiago —hallazgos que solo vivían en la
 conversación— quedaron con su propia tarjeta en el Project para no perderse.
 =======
 >>>>>>> umbral-en-anuncios
+
+## 2026-08-23 — Rediseño Material 3 de la home pública, opción 1A
+
+Contexto: `redesing/saimc_desing_root_page/` traía tres opciones de layout
+(1A/1B/1C) para portar `public_home.html` al tratamiento Material 3 del resto
+de la app, con paleta nueva y tipografía Alice. El README dejaba la opción sin
+elegir (`[COMPLETAR: 1a/1b/1c]`).
+
+Decisión: se porta **1A "Sala de control"**. Es la única de las tres que
+incluye la sección "Cómo se movió" (series de evolución de precio); 1B y 1C la
+omiten, y esa sección es la pieza más reciente del proyecto (commit
+`de3fbc1`) — perderla al redisenar habría sido una regresión silenciosa. La
+paleta nueva (`#05668d`/`#028090`/`#c1f2e8`/`#9aaaa6`/`#aec092`) entra como
+custom properties `--ph-*` scoped dentro del `<style>` propio de
+`public_home.html`, no como reemplazo de los tokens `--m3-*` de
+`saimc-material.css`: esos los usa toda la herramienta del operador
+(catálogo/curaduría/control) y este slice es solo de la home pública. Se
+vendoriza Alice (peso 400, único que publica Google Fonts, subset latin,
+25.788 B) como cuarta fuente en `static/fonts/`, mismo patrón que Roboto/Roboto
+Mono/Material Symbols (entrada del 2026-08-20). El mapa sigue coloreando por
+los tres estados discretos que ya da `map_view.py` (`publicada`/`en-ingesta`/
+`sin-datos`), solo reestilizados con la paleta nueva — no se replica el
+degradé continuo por intensidad del prototipo (`Math.pow` en JS): eso
+necesitaría un umbral de intensidad que §12.6 prohíbe inventar, y ya lo cubre
+`test_el_mapa_no_colorea_por_precio`.
+
+Descartado: 1B ("Plano técnico") y 1C ("Terminal de datos"), por la razón de
+arriba. También reproducir el hover con panel flotante en JS del prototipo
+(React): el proyecto no tiene framework de UI y no lo amerita un tooltip —
+se mantiene `<title>` dentro de cada `<path>`, accesible y sin JS, más el
+panel estático "Concentración de la muestra" (armado en Jinja puro desde
+`map.provinces`, sin campos nuevos en el contexto de `public.py`).
+
+Consecuencia: `tests/test_static_assets.py` suma `alice.woff2` a `FUENTES` y
+`"/"` a `VISTAS` de `test_ninguna_vista_pide_assets_a_la_red` — la home
+pública quedaba sin ese chequeo justo al agregarle una fuente que sale de
+Google Fonts en tiempo de build. 828 tests verdes (+3 sobre 825). Se borra
+`redesing/saimc_desing_root_page/`: ya cumplió su función de handoff, mismo
+criterio que la entrada del 2026-08-20.
+
+**Nota aparte, fuera del alcance de este slice**: `docs/decisions.md` tiene
+marcadores de conflicto de merge sin resolver, commiteados en `f479718`
+("merge umbral-en-anuncios") — dos bloques, líneas ~3887-3960 y ~4004-4623 en
+la versión de archivo previa a esta entrada. No se tocan acá porque no son
+parte de este cambio y no se puede adivinar cuál lado del conflicto es el
+correcto sin más contexto; queda para una sesión que resuelva ese merge.

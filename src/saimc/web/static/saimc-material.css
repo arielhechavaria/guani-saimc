@@ -112,6 +112,18 @@ code, .m3-num { font-family: var(--m3-mono); }
   src: url("/static/fonts/material-symbols-rounded.woff2") format("woff2");
 }
 
+/* Alice (serif), vendorizada en /static/fonts, subset latin. La usa la home
+   pública para titulares y cifras grandes (`public_home.html`). A diferencia
+   de Roboto no es una fuente variable: Google solo la publica en peso 400, así
+   que se declara fijo en vez de con rango. */
+@font-face {
+  font-family: "Alice";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/alice.woff2") format("woff2");
+}
+
 .m3-icon {
   font-family: "Material Symbols Rounded";
   font-weight: 400;
