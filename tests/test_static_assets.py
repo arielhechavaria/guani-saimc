@@ -11,12 +11,15 @@ la cobertura de `GZipMiddleware` (`docs/decisions.md`, 2026-08-22).
 
 import hashlib
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from saimc.config import get_settings
 from saimc.web.app import HTMX_VERSION, app
+from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
 
 # Firma de un archivo WOFF2 (los cuatro primeros bytes).
@@ -45,14 +48,32 @@ VISTAS = ["/", "/catalog", "/curation", "/control", "/curation/history"]
 
 
 @pytest.fixture
-def client(session: Session) -> Iterator[TestClient]:
+def client(
+    session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> Iterator[TestClient]:
     def _get_db_override() -> Iterator[Session]:
         yield session
 
+    # `/catalog`, `/curation` y `/curation/history` van detrás de
+    # `require_operator`: sin este override devuelven 401 y el texto de esa
+    # vista nunca llega a ejecutarse, así que
+    # `test_ninguna_vista_pide_assets_a_la_red` pasaba en vacío para esas 3
+    # rutas. `GET /curation` además ingesta la bandeja antes de mostrar la
+    # cola (ver `TestIngestaAutomatica` en `test_curation.py`): sin aislar
+    # estos directorios, correrla acá escanearía y movería archivos reales de
+    # `inbox/` hacia `data/raw/`, la bandeja real del operador.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("SAIMC_INBOX_DIR", str(inbox))
+    monkeypatch.setenv("SAIMC_RAW_STORE_DIR", str(tmp_path / "data" / "raw"))
+    get_settings.cache_clear()
+
     app.dependency_overrides[get_db] = _get_db_override
+    app.dependency_overrides[require_operator] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    get_settings.cache_clear()
 
 
 class TestAssetsVendorizados:
