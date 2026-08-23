@@ -4725,3 +4725,33 @@ vez de asumido. La ruta automática (`WHATSAPP_CHANNEL` vía webhook de WAHA) no
 tiene este problema: `curation_queue()` ya usa `ingestion.source_reference`
 del canal conocido antes que la adivinanza de texto (entrada del 2026-08-17).
 No se corrió la suite: no hay cambio de código.
+
+---
+
+## 2026-08-23 — Arroz/Santiago 17.500×25kg no es duplicado: el volumen creció y lo desmiente
+
+Contexto: el Project #1 traía la tarjeta "Verificar posible duplicado: 3
+filas idénticas de Arroz/Santiago" — 3 filas iguales (17.500 CUP, 25 kg)
+provenientes de 3 ingestas distintas, con la sospecha de que fuera el mismo
+anuncio contado varias veces.
+
+Medido contra producción el 2026-08-23: hoy hay **11 filas**, no 3, con ese
+mismo precio y cantidad. `captured_at` distinto en cada una (2026-08-13 a
+2026-08-22, 10 días), la mayoría del mismo canal de WhatsApp
+(`channel_id=f18f1f67…`). Un par comparte `captured_at` a nivel de segundo
+(2026-08-20 12:53:30), lo que sí ameritaba revisar de cerca — pero
+`md5(original_text)` de las 10 ingestas con `source_type='whatsapp_channel'`
+da 10 hashes distintos: son 10 mensajes de texto diferentes, no el mismo
+mensaje recibido dos veces por el webhook. El canal repite el mismo precio en
+mensajes separados a lo largo de más de una semana.
+
+Decisión: no se borra ninguna fila. No es un duplicado — es exactamente el
+patrón de precio estable y denso en el tiempo que el proyecto busca (mismo
+criterio que "Arroz/Habana n=17 en 11 días distintos", `docs/decisions.md`
+2026-08-22 sobre el gráfico de evolución). La sospecha original tenía sentido
+con 3 filas y poco volumen; con 11 filas y captured_at repartido en 10 días
+distintos, la hipótesis de duplicado queda refutada por el propio dato.
+
+Consecuencia: tarjeta cerrada en el Project sin cambio de código ni de dato.
+Si en el futuro aparece un par con `captured_at` Y `md5(original_text)`
+iguales, ahí sí habría un duplicado real de ingesta — no fue el caso acá.
