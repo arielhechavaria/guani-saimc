@@ -4521,3 +4521,59 @@ en ingesta (La Habana 114, Santiago de Cuba 109) y 14 sin datos. El párrafo baj
 el mapa declara que ninguna cumple todavía el requisito de publicación, que es
 exactamente la «decisión metodológica» que §9.0 manda comunicar en vez de dejar
 implícita.
+
+## 2026-08-23 — Gráfico de evolución: SVG en servidor y sin línea entre los puntos
+
+Contexto: con las 7 filas ya curadas, el gráfico de evolución de §6.7 quedó
+desbloqueado. Traía dos decisiones: la que el ADR 001 dejó abierta a propósito
+—Chart.js contra SVG generado en servidor, «para medirla cuando el mapa ya
+exista»— y una que apareció al medir la densidad real de la serie.
+
+**Medición del 2026-08-23**, últimos 30 días: Arroz/La Habana tiene 17
+observaciones graficables en **11 días distintos**; Arroz/Santiago 14 en 7;
+Aceite/La Habana 5 en **2**; Azúcar/Santiago 5 en 3; Azúcar/La Habana 2 en 2.
+Pollo/La Habana tiene 3 observaciones **todas el mismo día**.
+
+Decisión 1: **SVG generado en servidor, no Chart.js.** Tercer apartamiento de
+§13.1, decidido midiendo como se había prometido. Con 17 puntos como máximo y sin
+ninguna interacción, los ~60 KB de Chart.js compran zoom, tooltips y animación
+que el gráfico no usa, y serían la única dependencia JS de una página que no
+tiene ninguna. Chart.js seguía siendo defendible —es vendorizable y cumple el
+invariante 3, a diferencia de MapLibre—; lo que lo descarta es que no había nada
+que comprar con esos bytes.
+
+Decisión 2, la de fondo: **no hay línea que una los puntos.** Con dato en 11 de
+30 días para la serie más densa y en 2 de 30 para Aceite, una línea continua
+entre el 14/08 y el 17/08 dibuja tres precios que nadie observó, y en Aceite
+uniría dos puntos afirmando un mes de precios inventados. §12.6 prohíbe inventar
+umbrales; el mismo criterio vale para inventar observaciones. El gráfico muestra
+cada anuncio como un punto en su fecha, con los huecos visibles y contados
+(«19 días sin anuncios»), que es exactamente lo que la muestra sostiene. La banda
+mín–máx y la mediana sí son horizontales de ancho completo: describen la muestra
+del período, no una interpolación temporal.
+
+**Una celda con un solo día no se grafica** (`MIN_DAYS = 2`). No es un umbral de
+los que §12.6 prohíbe —no decide si el dato es válido ni si se publica el precio,
+que la tarjeta ya muestra— es la condición aritmética para que un eje temporal
+signifique algo. Por eso Pollo/La Habana tiene tarjeta y no tiene gráfico.
+
+**El eje X abarca la ventana completa, no el rango de los datos.** Si las
+observaciones se apelotonan en unos pocos días, tiene que verse apelotonado
+dentro del mes; estirarlas hasta ocupar todo el ancho fingiría una cobertura
+pareja que no existe.
+
+Aparte, **refactor sin cambio de comportamiento**: la normalización de filas
+minoristas —moneda, `price_basis`, conversión de unidad y los tres filtros— se
+extrajo a `compute_retail_observations()`, y `compute_retail_ranges` pasó a ser
+un agrupamiento sobre esa salida. El gráfico era su tercer consumidor y copiarla
+otra vez garantizaba que las tres copias se separaran.
+
+Descartado: (a) Chart.js, por lo dicho; (b) unir los puntos con una línea, que
+es la representación que §6.7 describe («gráfico de líneas simple») pero que con
+esta densidad afirma datos inexistentes — se deja anotado como apartamiento
+consciente, a revisar cuando la serie sea diaria de verdad; (c) escalar el eje X
+al rango de los datos.
+
+Consecuencia: 825 tests verdes (+9). Contra producción se dibujan 5 series de
+las 6 tarjetas, y la que falta es Pollo por tener un solo día. La página pasó de
+31.442 a 43.892 bytes de HTML, todos comprimidos por el middleware.

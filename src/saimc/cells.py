@@ -378,6 +378,95 @@ def compute_retail_ranges(
     huso UTC sin ajustar a hora de Cuba: al ritmo de curaduría de la Fase 0
     (~1h diaria) un corrimiento de horas no cambia a qué día cae la fila.
     """
+    report = compute_retail_observations(session, days=days, hoy=hoy)
+
+    # Mismo criterio de fusión que `compute_cells` (ver su docstring):
+    # `unconverted` en la clave separa sin ambigüedad el grupo fundido del
+    # que quedó sin tasa resuelta.
+    RangeKey = tuple[str, str | None, str, str, bool]
+    grouped: dict[RangeKey, list[Decimal]] = {}
+    for observation in report.observations:
+        key: RangeKey = (
+            observation.product_name,
+            observation.province_name,
+            observation.currency,
+            observation.unit,
+            observation.unconverted,
+        )
+        grouped.setdefault(key, []).append(observation.unit_price)
+
+    ranges = [
+        RetailRange(
+            product_name=product_name,
+            province_name=province_name,
+            currency=currency,
+            unit=unit,
+            count=len(unit_prices),
+            median=statistics.median(unit_prices),
+            minimum=min(unit_prices),
+            maximum=max(unit_prices),
+            unconverted=unconverted,
+        )
+        for (
+            product_name,
+            province_name,
+            currency,
+            unit,
+            unconverted,
+        ), unit_prices in grouped.items()
+    ]
+
+    ranges.sort(
+        key=lambda r: (-r.count, r.product_name, r.province_name or "", r.unconverted)
+    )
+    return RetailRangeReport(
+        ranges=ranges,
+        excluded_by_minimum=report.excluded_by_minimum,
+        excluded_by_basis=report.excluded_by_basis,
+        excluded_by_unit=report.excluded_by_unit,
+    )
+
+
+@dataclass(frozen=True)
+class RetailObservation:
+    """Una fila minorista ya normalizada: su precio por unidad canónica y su día.
+
+    Es el grano del que sale todo lo demás. `compute_retail_ranges` la agrupa y
+    resume; la vista de evolución la necesita fila por fila, porque el gráfico
+    dibuja observaciones y no promedios diarios.
+    """
+
+    product_name: str
+    province_name: str | None
+    currency: str
+    unit: str
+    unconverted: bool
+    day: date
+    unit_price: Decimal
+
+
+@dataclass(frozen=True)
+class RetailObservationReport:
+    """Las observaciones normalizadas y lo que quedó afuera por no ser comprable."""
+
+    observations: list[RetailObservation]
+    excluded_by_minimum: int
+    excluded_by_basis: int
+    excluded_by_unit: int
+
+
+def compute_retail_observations(
+    session: Session, *, days: int = 7, hoy: date | None = None
+) -> RetailObservationReport:
+    """Normaliza fila por fila el universo minorista, sin agrupar.
+
+    Extraído de `compute_retail_ranges` el 2026-08-23, cuando el gráfico de
+    evolución pasó a ser el tercer consumidor de esta misma normalización —
+    moneda, `price_basis`, conversión de unidad y los tres filtros. Duplicarla
+    una vez más era garantizar que las tres copias se separaran. Los criterios y
+    su motivo siguen documentados en `compute_retail_ranges`, que ahora es un
+    agrupamiento sobre esta salida.
+    """
     cutoff = (hoy or date.today()) - timedelta(days=days)
 
     stmt = (
@@ -402,11 +491,7 @@ def compute_retail_ranges(
         .where(PriceHistory.quantity.is_not(None))
     )
 
-    # Mismo criterio de fusión que `compute_cells` (ver su docstring):
-    # `unconverted` en la clave separa sin ambigüedad el grupo fundido del
-    # que quedó sin tasa resuelta.
-    RangeKey = tuple[str, str | None, str, str, bool]
-    grouped: dict[RangeKey, list[Decimal]] = {}
+    observations: list[RetailObservation] = []
     excluded_by_minimum = 0
     excluded_by_basis = 0
     excluded_by_unit = 0
@@ -472,41 +557,20 @@ def compute_retail_ranges(
             excluded_by_unit += 1
             continue
 
-        key: RangeKey = (
-            product_name,
-            province_name,
-            key_currency,
-            target_unit,
-            unconverted,
+        observations.append(
+            RetailObservation(
+                product_name=product_name,
+                province_name=province_name,
+                currency=key_currency,
+                unit=target_unit,
+                unconverted=unconverted,
+                day=effective_date,
+                unit_price=converted,
+            )
         )
-        grouped.setdefault(key, []).append(converted)
 
-    ranges = [
-        RetailRange(
-            product_name=product_name,
-            province_name=province_name,
-            currency=currency,
-            unit=unit,
-            count=len(unit_prices),
-            median=statistics.median(unit_prices),
-            minimum=min(unit_prices),
-            maximum=max(unit_prices),
-            unconverted=unconverted,
-        )
-        for (
-            product_name,
-            province_name,
-            currency,
-            unit,
-            unconverted,
-        ), unit_prices in grouped.items()
-    ]
-
-    ranges.sort(
-        key=lambda r: (-r.count, r.product_name, r.province_name or "", r.unconverted)
-    )
-    return RetailRangeReport(
-        ranges=ranges,
+    return RetailObservationReport(
+        observations=observations,
         excluded_by_minimum=excluded_by_minimum,
         excluded_by_basis=excluded_by_basis,
         excluded_by_unit=excluded_by_unit,

@@ -16,12 +16,15 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from saimc.cells import compute_retail_ranges
+from datetime import date
+
+from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.models import PriceHistory, Province
 from saimc.progress import pilot_product_names
 from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
+from saimc.web.series_view import build_series
 
 router = APIRouter()
 
@@ -76,12 +79,24 @@ def public_home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
     report = compute_retail_ranges(db, days=_CARD_WINDOW_DAYS)
     cards = build_cards([r for r in report.ranges if r.product_name in pilot])
 
+    # Misma ventana que las tarjetas a propósito: el gráfico tiene que describir
+    # exactamente la muestra que la tarjeta resume, no otra. Dos ventanas
+    # distintas en la misma página harían que el rango del titular no coincida
+    # con lo que el usuario ve dibujado.
+    observations = compute_retail_observations(db, days=_CARD_WINDOW_DAYS)
+    series = build_series(
+        [o for o in observations.observations if o.product_name in pilot],
+        window_days=_CARD_WINDOW_DAYS,
+        hoy=date.today(),
+    )
+
     return request.app.state.templates.TemplateResponse(
         request,
         "public_home.html",
         {
             "map": build_map(_rows_by_province(db), _published_provinces(db)),
             "cards": cards,
+            "series": series,
             "window_days": _CARD_WINDOW_DAYS,
         },
     )

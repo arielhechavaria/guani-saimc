@@ -60,7 +60,7 @@ FastAPI + PostgreSQL + Jinja2 (server-rendered) + HTMX vendorizado + SVG inline
 | Dashboard público | Jinja2 server-rendered + **HTMX vendorizado** para swaps parciales | **Sin construir** |
 | Compresión de respuestas | `GZipMiddleware`, `compresslevel=6` | Implementado |
 | Mapa de calor | SVG inline de las 16 provincias | Geometría y ruta pública implementadas; falta el coloreado por precio |
-| Gráfico de evolución | Sin decidir. Ver «Lo que este ADR no decide» | **Sin construir** |
+| Gráfico de evolución | SVG generado en servidor (no Chart.js) | Implementado |
 | Cola de trabajos | Ninguna | Correcto para la fase |
 
 ## El camino, por fase
@@ -246,11 +246,16 @@ devuelven estructuras cerradas. Incumplidos, es una reescritura.
 
 ## Lo que este ADR no decide
 
-- **Cómo se dibuja el gráfico de evolución de §6.7.** Chart.js sigue siendo la
-  opción de §13.1 y no se aparta acá: es autocontenido y vendorizable, así que
-  cumple el invariante 3 igual que HTMX. Pero un gráfico de líneas con banda
-  mín–máx también es SVG generado en servidor. Se decide al construir esa vista,
-  midiendo el peso como se midió el de HTMX — no argumentando de memoria.
+- ~~**Cómo se dibuja el gráfico de evolución de §6.7.**~~ **Resuelto el
+  2026-08-23: SVG generado en servidor, no Chart.js.** Es el tercer apartamiento
+  de §13.1 y se decidió como se había prometido, midiendo: la serie más densa
+  —Arroz/La Habana— son 17 observaciones en 11 días de los últimos 30, y la más
+  rala son 5 en 2 días. Con esa cantidad de puntos y sin ninguna interacción, los
+  ~60 KB de Chart.js compran zoom, tooltips y animación que el gráfico no usa, y
+  serían la única dependencia JS de una página que no tiene ninguna. El mismo
+  argumento que descartó MapLibre, ahora con el número al lado. Chart.js seguía
+  siendo defendible —es vendorizable y cumple el invariante 3—; lo que lo
+  descarta es que no había nada que comprar con esos bytes.
 - ~~**De dónde sale la geometría de las provincias**, ni con qué herramienta se
   simplifica.~~ Resuelto el 2026-08-22: Natural Earth 10m 5.1.1, dominio
   público, simplificado con Douglas-Peucker a 0,008° por

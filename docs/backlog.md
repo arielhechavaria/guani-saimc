@@ -175,6 +175,13 @@ producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Hab
   respaldo de muestra, y da ese rótulo como estado por debajo del umbral.
 - **Rango mín–máx además del promedio** (§6.7, «banda gris»): entró con la
   tarjeta, que publica el rango como titular en vez de un promedio.
+- **Curadas las 7 filas** que señalaba `detect_basis_suspects` (2026-08-23, por
+  el operador). El detector quedó validado en la práctica: señaló 7, se
+  confirmaron 7, cero falsos positivos. Arroz/La Habana pasó de máximo 30.885 a
+  312 CUP/lb y Aceite de 1.264.260 a 4.000 CUP/l.
+- **Gráfico de evolución** (§6.7, `web/series_view.py`): SVG generado en
+  servidor, cerrando la decisión que el ADR 001 dejó abierta. Sin línea entre
+  los puntos: con dato en 11 de 30 días, unirlos inventaría precios.
 - **Estado de publicación por provincia** (§9.0, vinculante): el mapa colorea
   `publicada` / `en-ingesta` / `sin-datos` cruzando `Province.is_published`
   con la presencia de dato, y el conteo crudo hace de «progreso hacia el
@@ -182,30 +189,26 @@ producto × provincia con n≥5**: Arroz/Habana 63, Arroz/Santiago 36, Pollo/Hab
 
 ### Tareas, en orden de dependencia
 
-3. **Curar las 7 filas que señala `/control`.** Es trabajo de dato y bloquea la
-   publicación, no el código. Hasta hacerlo, 4 de las 6 tarjetas de `/` muestran
-   máximos falsos: Aceite/La Habana publica «2.100 – 1.264.260 CUP/l» y
-   Pollo/La Habana tiene además la mediana corrida a 3.400. **No conviene
-   exponer `/` públicamente hasta entonces.**
-5. **Colorear el mapa por precio** (§6.7): verde/amarillo/rojo contra el
-   promedio nacional. Hoy el mapa distingue solo cobertura, porque el gris de
-   §6.7 dice «sin datos **suficientes**» y la especificación nunca fija cuántas
-   observaciones son suficientes — §12.6 prohíbe inventar ese umbral. Hace falta
-   una medición que lo determine antes de agregar el tercer estado.
-6. **Índice de disponibilidad** (§7.3, tabla `availability_index`): la cantidad
+1. **Colorear el mapa por precio** (§6.7): verde/amarillo/rojo contra el
+   promedio nacional. Hoy el mapa distingue solo cobertura y publicación, porque
+   el gris de §6.7 dice «sin datos **suficientes**» y la especificación nunca
+   fija cuántas observaciones son suficientes — §12.6 prohíbe inventar ese
+   umbral. Hace falta una medición que lo determine antes de agregar el cuarto
+   estado.
+2. **Índice de disponibilidad** (§7.3, tabla `availability_index`): la cantidad
    de anuncios en los últimos N días es proxy directo de escasez y se calcula
    con el dato de hoy, sin campos nuevos.
-7. **Semáforo de tendencia** y **alerta de variación >10%** (§6.7): solo para
+3. **Semáforo de tendencia** y **alerta de variación >10%** (§6.7): solo para
    las celdas con densidad, que hoy son las siete de arriba.
-8. **Gráfico de evolución** (§6.7): queda pendiente la decisión Chart.js vs.
-   SVG generado en servidor, que el ADR 001 dejó abierta a propósito para
-   medirla ahora que el mapa ya existe.
 
-Siguiente slice recomendado: **el gráfico de evolución**. Es lo de mayor valor
-visible que queda, pero conviene hacerlo con el dato ya limpio — una serie diaria
-con las filas envenenadas dibuja picos falsos justo donde el usuario mira la
-tendencia. Trae además la decisión que el ADR 001 dejó abierta a propósito:
-Chart.js contra SVG generado en servidor, ahora medible porque el mapa ya existe.
+Siguiente slice recomendado: **el índice de disponibilidad (2)**, con la salvedad
+de que §7.3 define la tabla `availability_index` con `score`/`trend` pero **nunca
+dice cómo se calcula el score**. El «32/100» de su ejemplo y el «por debajo de
+30/100 → ESCASEZ» de §6.7 son un umbral sobre una escala inexistente, así que el
+0-100 tal cual está especificado no se puede construir sin inventarla (§12.6). Lo
+que sí: comparar la cantidad de anuncios contra la ventana anterior del mismo
+producto — «5 anuncios en 15 días contra 12 en los 15 previos» dice escasez sin
+fabricar puntaje ni umbral, y no depende de ningún precio.
 
 Bloqueado por: nada. Las decisiones de stack están cerradas en el ADR 001
 (`docs/decisions/001-stack-python-unico.md`) y la infraestructura de entrega
