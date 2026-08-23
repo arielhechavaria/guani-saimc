@@ -3884,6 +3884,7 @@ tres causas conocidas por las que se pierden fotos —el backfill filtra a solo
 texto y pide `downloadMedia=false`, el caption le gana a la foto en el
 webhook, y `image/webp` está excluido—, que siguen abiertas.
 
+<<<<<<< HEAD
 ## 2026-08-21 — Las fotos históricas de un canal no se pueden recuperar de WAHA
 
 Contexto: tras el logging de descartes se abrió el slice de traer las fotos
@@ -3955,6 +3956,8 @@ divergencia medición/producción que se corrigió dos veces este mismo día.
 
 Consecuencia: el próximo paso es leer `journalctl -u saimc -g
 webhook.descartado` cuando el canal publique fotos, y recién ahí decidir.
+=======
+>>>>>>> umbral-en-anuncios
 ## 2026-08-21 — El conjunto de referencia de H0 se cuenta en anuncios
 
 Contexto: revisando qué significan los contadores de `/control` apareció que
@@ -3998,6 +4001,7 @@ y lo que falta de 89 filas a **170 anuncios**. A ~21 filas/día eso es unas
 tres semanas, no cuatro días. El número de H0 no cambia (40.8%); cambia
 cuándo se lo puede llamar oficial. La medición anterior se habría declarado
 oficial con menos de la mitad de la evidencia que la spec pide.
+<<<<<<< HEAD
 
 ## 2026-08-22 — Sugerencia asistida de descarte, por regla explícita y no por similitud de texto
 
@@ -4615,3 +4619,5 @@ filtrable por Bloqueo. La entrada de `test_ninguna_vista_pide_assets_a_la_red`
 que pasaba en vacío, las dos filas de Picadillo sin cubrir por el detector y el
 posible duplicado de Arroz/Santiago —hallazgos que solo vivían en la
 conversación— quedaron con su propia tarjeta en el Project para no perderse.
+=======
+>>>>>>> umbral-en-anuncios
