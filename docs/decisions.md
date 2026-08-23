@@ -4667,3 +4667,61 @@ marcadores de conflicto de merge sin resolver, commiteados en `f479718`
 la versión de archivo previa a esta entrada. No se tocan acá porque no son
 parte de este cambio y no se puede adivinar cuál lado del conflicto es el
 correcto sin más contexto; queda para una sesión que resuelva ese merge.
+
+---
+
+## 2026-08-23 — `guess_source_reference` no se puede recalibrar contra WhatsApp: no hay dato que extraer
+
+Contexto: la entrada del 2026-08-11 dejó anotado que `guess_source_reference`
+prellena 0/29 contra el corpus real y que 18 de esos 29 son capturas de
+WhatsApp de vendedor individual, "va al backlog, no se toca acá". El Project
+#1 lo trae como tarjeta sin bloqueo ("Recalibrar `guess_source_reference`
+contra capturas de WhatsApp"), asumiendo que es una recalibración de patrón
+como cualquier otra.
+
+Medido contra `inbox/duplicates/` (351 capturas de WhatsApp no-backfill) antes
+de tocar código:
+
+1. **Vendedor individual (la mayoría del corpus, 18/29 en la muestra
+   clasificada)**: un chat de WhatsApp con un contacto no guardado no expone
+   ningún nombre en el texto — ni en la app ni, por lo tanto, en lo que el
+   operador copia o el OCR transcribe. El único identificador que aparece en
+   el encabezado es el teléfono ("+53 5 5550101 Hoy, 9:22 a. m.", entrada del
+   2026-08-11), que `redact_personal_data()` ya redacta antes de persistir
+   (`curation.py:1070-1071`) por mandato de §10.6. No es un hueco de la
+   heurística: es que el dato que haría falta para llenar `source_reference`
+   no existe en el texto, o existe y está prohibido guardarlo.
+
+2. **Página/canal comercial (la minoría)**: WhatsApp permite negrita
+   (`*texto*`) al principio del mensaje, y 22 de las 351 capturas empiezan
+   así. Pero se usa para lo que sea que el vendedor quiera resaltar — nombre
+   de producto ("*Harina NT Multipropósito*"), estado ("*Picadillo (
+   Agotado )*"), frase de venta ("*Continuamos con la venta*") — no
+   específicamente para el nombre de quien vende. De las 22, solo 4 (un único
+   canal, repetido) siguen el patrón "Nombre :" que sí identificaría al
+   remitente. Un regex de "negrita al inicio" prellenaría `source_reference`
+   con basura la mayoría de las veces — peor que dejarlo vacío, porque el
+   operador tendría que revisar y borrar en vez de solo completar. Y el único
+   caso limpio es la convención de un solo vendedor, no un patrón
+   generalizable: exactamente el error que `CLAUDE.md` prohíbe en la capa de
+   extracción («nunca derives un test del comportamiento de un extractor ya
+   escrito», y por extensión, de un solo caso observado).
+
+Decisión: no se toca `guess_source_reference`. La tarjeta se cierra con esta
+medición en vez de con código: el hallazgo de 2026-08-11 no era un patrón sin
+calibrar todavía, era el techo real de lo que el texto de WhatsApp puede dar
+sin violar §10.6 o sin degradar la calidad del prellenado.
+
+Descartado: extraer el teléfono igual y dejar que `redact_personal_data()`
+lo tape en `source_reference`. El resultado ("[teléfono removido] Hoy, 9:22
+a. m.") no identifica a nadie — no es una degradación seria del prellenado,
+es simplemente inútil, y construir el camino para llegar a un valor inútil no
+se justifica.
+
+Consecuencia: para capturas manuales (bandeja/pegado) de un vendedor
+individual, `source_reference` sigue dependiendo 100% de que el operador lo
+tipee — mismo comportamiento que hoy, ahora con el motivo medido y escrito en
+vez de asumido. La ruta automática (`WHATSAPP_CHANNEL` vía webhook de WAHA) no
+tiene este problema: `curation_queue()` ya usa `ingestion.source_reference`
+del canal conocido antes que la adivinanza de texto (entrada del 2026-08-17).
+No se corrió la suite: no hay cambio de código.
