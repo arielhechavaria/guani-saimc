@@ -4577,3 +4577,41 @@ al rango de los datos.
 Consecuencia: 825 tests verdes (+9). Contra producción se dibujan 5 series de
 las 6 tarjetas, y la que falta es Pollo por tener un solo día. La página pasó de
 31.442 a 43.892 bytes de HTML, todos comprimidos por el middleware.
+
+## 2026-08-23 — El seguimiento de tareas se muda a GitHub Projects
+
+Contexto: el operador reportó que le costaba hacer seguimiento del estado del
+proyecto solo con texto — `backlog.md` había crecido a 370 líneas de anexado en
+una semana y ya no daba una foto rápida de qué está hecho, qué falta y por qué
+está bloqueado cada ítem.
+
+Decisión: se crea el Project #1 en GitHub
+(`https://github.com/users/arielhechavaria/projects/1`), con tres campos propios
+además de `Status` (Todo/In Progress/Done, default de GitHub): `Área` (Dato,
+Precio y unidades, Visualización, Privacidad y alcance, Extracción y captura,
+Infraestructura/deuda) y `Bloqueo` (Ninguno, Decisión de producto, Decisión de
+privacidad, Evidencia/volumen insuficiente, Reservado para Fase 2, Umbral sin
+calibrar §12.6). Se volcaron las 29 tareas que tenía `backlog.md` — 10 hechas,
+19 pendientes—, cada una con su estado real verificado contra el código y la
+producción, no copiado a ciegas del texto.
+
+Los items son *draft issues* del Project, no issues del repositorio: viven solo
+ahí, sin aparecer en la pestaña Issues. Para un solo desarrollador es la fricción
+mínima — crear un issue real por tarea hubiera duplicado trabajo sin sumar nada,
+porque nadie más los va a buscar por fuera del tablero.
+
+`backlog.md` queda congelado con una nota que apunta al Project; no recibe
+entradas nuevas. `decisions.md` no cambia de rol: sigue siendo el log de por qué
+se decidió algo, mirando atrás — el Project es el qué falta, mirando adelante.
+
+Descartado: (a) issues reales del repositorio en vez de draft issues — más
+ceremonia sin beneficio para un operador único; (b) mantener los dos archivos
+—Project y `backlog.md`— sincronizados a mano, que es exactamente la carga
+cognitiva que motivó el cambio.
+
+Consecuencia: toda esta sesión —10 slices desde el ADR 001 hasta el gráfico de
+evolución— queda visible de un vistazo en el tablero, agrupable por Área y
+filtrable por Bloqueo. La entrada de `test_ninguna_vista_pide_assets_a_la_red`
+que pasaba en vacío, las dos filas de Picadillo sin cubrir por el detector y el
+posible duplicado de Arroz/Santiago —hallazgos que solo vivían en la
+conversación— quedaron con su propia tarjeta en el Project para no perderse.
