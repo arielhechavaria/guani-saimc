@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from datetime import date, timedelta
 
-from saimc.cells import compute_cells, compute_retail_ranges
+from saimc.cells import compute_availability, compute_cells, compute_retail_ranges
 from saimc.models import (
     Currency,
     PriceHistory,
@@ -1090,3 +1090,171 @@ class TestPriceBasis:
         (rango,) = compute_retail_ranges(session).ranges
 
         assert rango.median == Decimal("340")
+
+
+class TestComputeAvailability:
+    """Índice de disponibilidad (spec.md §7.3), sin score ni umbral.
+
+    §7.3 define `availability_index` con un `score` 0-100 y un `trend`, pero
+    nunca dice cómo calcular el score, y el ejemplo de §6.7 ("32/100 ->
+    Escasez") es un umbral sobre una escala que no existe — inventarla
+    violaría §12.6. Lo que sí se puede afirmar sin inventar nada es cuántos
+    anuncios minoristas hubo esta ventana contra la anterior, mismo ancho.
+    """
+
+    def _arroz(self, session: Session) -> Product:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(arroz)
+        session.commit()
+        return arroz
+
+    def _fila(
+        self,
+        session: Session,
+        *,
+        product: Product,
+        province: Province | None,
+        origen: RawIngestion,
+        published_date: date,
+    ) -> None:
+        _precio(
+            session, product=product, province=province, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            published_date=published_date,
+        )
+
+    def test_cuenta_ventana_actual_y_anterior_por_separado(
+        self, session: Session
+    ) -> None:
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-disponibilidad-basico")
+        hoy = date(2026, 8, 22)
+
+        # Ventana actual: [hoy-7, hoy) -> 3 filas dentro.
+        for dias_atras in (0, 2, 6):
+            self._fila(
+                session, product=arroz, province=None, origen=origen,
+                published_date=hoy - timedelta(days=dias_atras),
+            )
+        # Ventana anterior: [hoy-14, hoy-7) -> 1 fila dentro.
+        self._fila(
+            session, product=arroz, province=None, origen=origen,
+            published_date=hoy - timedelta(days=10),
+        )
+        session.commit()
+
+        (fila,) = compute_availability(session, days=7, hoy=hoy)
+
+        assert fila.product_name == "Arroz"
+        assert fila.current_count == 3
+        assert fila.previous_count == 1
+        assert fila.delta == 2
+
+    def test_producto_sin_anuncios_esta_semana_da_delta_negativo(
+        self, session: Session
+    ) -> None:
+        """El producto no desaparece de la lista solo porque se quedó en
+        silencio: `current_count=0` con `previous_count>0` es justamente la
+        señal de escasez que esta vista existe para mostrar, sin clasificarla.
+        """
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-disponibilidad-silencio")
+        hoy = date(2026, 8, 22)
+
+        for dias_atras in (8, 9, 12):
+            self._fila(
+                session, product=arroz, province=None, origen=origen,
+                published_date=hoy - timedelta(days=dias_atras),
+            )
+        session.commit()
+
+        (fila,) = compute_availability(session, days=7, hoy=hoy)
+
+        assert fila.current_count == 0
+        assert fila.previous_count == 3
+        assert fila.delta == -3
+
+    def test_sin_anuncios_en_ninguna_ventana_no_aparece(
+        self, session: Session
+    ) -> None:
+        """Nada que reportar no es lo mismo que 0 contra 0: fabricar una fila
+        en cero para todo el catálogo inventaría un dato que nadie observó."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-disponibilidad-viejo")
+        hoy = date(2026, 8, 22)
+
+        self._fila(
+            session, product=arroz, province=None, origen=origen,
+            published_date=hoy - timedelta(days=30),
+        )
+        session.commit()
+
+        assert compute_availability(session, days=7, hoy=hoy) == []
+
+    def test_separa_por_provincia(self, session: Session) -> None:
+        arroz = self._arroz(session)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        hab = Province(code="hab", name="La Habana")
+        session.add_all([scu, hab])
+        session.commit()
+        origen = _ingestion(session, "hash-disponibilidad-provincia")
+        hoy = date(2026, 8, 22)
+
+        for _ in range(2):
+            self._fila(
+                session, product=arroz, province=scu, origen=origen,
+                published_date=hoy - timedelta(days=1),
+            )
+        self._fila(
+            session, product=arroz, province=hab, origen=origen,
+            published_date=hoy - timedelta(days=1),
+        )
+        session.commit()
+
+        filas = compute_availability(session, days=7, hoy=hoy)
+
+        por_provincia = {f.province_name: f.current_count for f in filas}
+        assert por_provincia == {"Santiago de Cuba": 2, "La Habana": 1}
+
+    def test_el_dia_frontera_cae_en_la_ventana_actual(self, session: Session) -> None:
+        """`published_date == hoy - days` es el primer día de la ventana
+        actual, no el último de la anterior — mismo límite que usa
+        `compute_retail_observations` (`effective_date < cutoff` excluye,
+        no `<=`)."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-disponibilidad-frontera")
+        hoy = date(2026, 8, 22)
+
+        self._fila(
+            session, product=arroz, province=None, origen=origen,
+            published_date=hoy - timedelta(days=7),
+        )
+        session.commit()
+
+        (fila,) = compute_availability(session, days=7, hoy=hoy)
+
+        assert fila.current_count == 1
+        assert fila.previous_count == 0
+
+    def test_ordena_por_conteo_actual_descendente(self, session: Session) -> None:
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
+        arroz = self._arroz(session)
+        session.add(pollo)
+        session.commit()
+        origen = _ingestion(session, "hash-disponibilidad-orden")
+        hoy = date(2026, 8, 22)
+
+        self._fila(
+            session, product=arroz, province=None, origen=origen,
+            published_date=hoy - timedelta(days=1),
+        )
+        for _ in range(3):
+            self._fila(
+                session, product=pollo, province=None, origen=origen,
+                published_date=hoy - timedelta(days=1),
+            )
+        session.commit()
+
+        filas = compute_availability(session, days=7, hoy=hoy)
+
+        assert [f.product_name for f in filas] == ["Pollo", "Arroz"]

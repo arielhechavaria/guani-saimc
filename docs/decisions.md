@@ -4755,3 +4755,48 @@ distintos, la hipótesis de duplicado queda refutada por el propio dato.
 Consecuencia: tarjeta cerrada en el Project sin cambio de código ni de dato.
 Si en el futuro aparece un par con `captured_at` Y `md5(original_text)`
 iguales, ahí sí habría un duplicado real de ingesta — no fue el caso acá.
+
+---
+
+## 2026-08-23 — Índice de disponibilidad (§7.3): conteo de anuncios, no score
+
+Contexto: el Project #1 trae "Índice de disponibilidad (§7.3)" como la
+tarjeta "In Progress" recomendada. `spec.md` §7.3 define `availability_index`
+con columnas `score`/`trend`, y el ejemplo de §6.7 es "Pollo, Santiago, Score:
+32/100, Estado: Escasez" — pero la especificación nunca dice cómo se calcula
+ese score, y §12.6 prohíbe explícitamente inventar un umbral o una escala sin
+medición previa. Construir el 0-100 tal cual habría sido exactamente eso.
+
+Decisión: `cells.py` gana `compute_availability()`, que cuenta anuncios
+minoristas por producto × provincia en la ventana actual (`[hoy-days, hoy)`)
+contra la anterior, mismo ancho (`[hoy-2·days, hoy-days)`), reutilizando la
+normalización de `compute_retail_observations` (retail, cantidad resuelta,
+unidad convertible, compra mínima respetada). `Availability.delta` es la
+resta directa de los dos conteos — sin clasificar la magnitud en ninguna
+categoría. Va en `/control` (sección 8, nueva — corre la "Matriz de los
+pilotos" a 9), no en la home pública: es introspección del operador, mismo
+criterio que `basis_suspects`, y no un veredicto para el lector del
+dashboard. Filtrado por `products.is_pilot`, igual que `retail_ranges`.
+
+Un producto en cero anuncios esta ventana **no desaparece** de la tabla si
+tenía anuncios en la anterior — señal de escasez válida sin clasificarla. Un
+producto sin anuncios en ninguna de las dos ventanas sí se omite: fabricar un
+"0 contra 0" para todo el catálogo inventaría una observación que nadie hizo.
+
+Descartado: colorear la columna "Diferencia" en verde/rojo según el signo.
+Esta misma vista ya declara el criterio contrario para la matriz de pilotos
+("el color dice qué provincia, no qué tan bien va... sin umbral de dispersión
+fijado, la paleta es de identidad y no incluye rojo ni verde"): un semáforo
+sobre más/menos anuncios afirmaría el mismo tipo de juicio que ese texto
+rechaza, aunque no dependa de un umbral numérico.
+
+Consecuencia: TDD completo — `TestComputeAvailability` en `test_cells.py` (6
+casos, valores calculados a mano) antes de escribir `compute_availability`, y
+`TestDisponibilidad` en `test_control.py` (3 casos) para el wiring del
+router/plantilla. 837 tests verdes (+9 sobre 828). El servicio local
+(`systemctl restart saimc`) no se reinició en esta sesión —sin sudo
+interactivo disponible—, así que el router nuevo no está activo en
+`http://localhost:8000` todavía; el HTML se sirve actualizado porque Jinja2
+recarga plantillas por `mtime`, pero el contexto (`availability`) lo arma
+`control.py`, que sigue cargado en memoria con la versión anterior hasta el
+próximo restart.

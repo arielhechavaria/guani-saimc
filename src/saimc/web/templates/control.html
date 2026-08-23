@@ -507,7 +507,59 @@
     {% endif %}
   </section>
 
-  <!-- ---------- 8. Matriz de los pilotos ---------- -->
+  <!-- ---------- 8. Disponibilidad ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Disponibilidad</h2>
+      <span class="m3-sm m3-muted">anuncios esta ventana ({{ retail_range_days }} días) contra la anterior, mismo ancho</span>
+    </div>
+    <div class="m3-notes-grid">
+      <div>
+        <strong>Sin score ni umbral</strong> (§7.3, §12.6): la especificación define
+        <code>availability_index</code> con un score 0-100 pero nunca dice cómo calcularlo, y su
+        ejemplo ("32/100 → Escasez") es un umbral sobre una escala que no existe. Lo que se
+        muestra acá es el conteo crudo, dos ventanas iguales una al lado de la otra.
+      </div>
+      <div>
+        <strong>Un producto en cero esta semana no desaparece</strong> de la tabla si tenía
+        anuncios la semana anterior: es justo la fila que conviene mirar primero.
+      </div>
+    </div>
+
+    {% if not availability %}
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span>
+      <span>Ninguna celda tiene anuncios en esta ventana ni en la anterior todavía.</span>
+    </div>
+    {% else %}
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Producto</th>
+            <th scope="col">Provincia</th>
+            <th scope="col" style="text-align:right">Esta ventana</th>
+            <th scope="col" style="text-align:right">Anterior</th>
+            <th scope="col" style="text-align:right">Diferencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in availability %}
+          <tr>
+            <td class="m3-cell-strong">{{ fila.product_name }}</td>
+            <td class="m3-sm">{{ fila.province_name or "— sin provincia —" }}</td>
+            <td class="is-num">{{ fila.current_count }}</td>
+            <td class="is-num m3-dim">{{ fila.previous_count }}</td>
+            <td class="is-num">{{ "%+d"|format(fila.delta) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ---------- 9. Matriz de los pilotos ---------- -->
   <section>
     <div class="m3-section-head">
       <h2 class="m3-h2">Matriz de los pilotos</h2>

@@ -358,6 +358,85 @@ class TestRangoMinorista:
         assert "750.00 CUP/lb" in response.text
 
 
+class TestDisponibilidad:
+    """`GET /control` también muestra cuántos anuncios minoristas hubo esta
+    ventana contra la anterior, sin score ni umbral (spec.md §7.3, §12.6).
+    """
+
+    def test_sin_anuncios_muestra_aviso(self, client: TestClient) -> None:
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        assert "ninguna celda tiene anuncios en esta ventana" in response.text.lower()
+
+    def test_muestra_conteo_actual_anterior_y_diferencia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/disponibilidad.txt",
+            content_hash="hash-disponibilidad-control",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        for precio in ("700", "800"):  # ventana actual: sin published_date -> hoy
+            session.add(
+                PriceHistory(
+                    product_id=arroz.id, province_id=scu.id, price=Decimal(precio),
+                    currency=Currency.CUP.value, unit="lb",
+                    sale_format=SaleFormat.RETAIL.value, quantity=Decimal("1"),
+                    source_id=origen.id,
+                )
+            )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        assert "Disponibilidad" in response.text
+        assert "Arroz" in response.text
+        # 2 anuncios en la ventana actual, 0 en la anterior -> +2.
+        assert "+2" in response.text
+
+    def test_filtra_por_pilotos(self, client: TestClient, session: Session) -> None:
+        no_piloto = Product(
+            name="Producto no piloto", category="otros", unit="lb", aliases=[], is_pilot=False
+        )
+        session.add(no_piloto)
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/disponibilidad-no-piloto.txt",
+            content_hash="hash-disponibilidad-no-piloto",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=no_piloto.id, price=Decimal("100"),
+                currency=Currency.CUP.value, unit="lb",
+                sale_format=SaleFormat.RETAIL.value, quantity=Decimal("1"),
+                source_id=origen.id,
+            )
+        )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        assert "Producto no piloto" not in response.text
+
+
 class TestExclusionPorBasisSinResolver:
     """`price_basis` sin resolver excluye una fila del rango minorista, con un
     conteo separado del de compra mínima — el operador necesita distinguir

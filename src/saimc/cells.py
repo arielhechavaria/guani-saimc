@@ -578,6 +578,86 @@ def compute_retail_observations(
 
 
 @dataclass(frozen=True)
+class Availability:
+    """Anuncios minoristas por producto × provincia, esta ventana contra la
+    anterior — sin score ni umbral.
+
+    `spec.md` §7.3 define `availability_index` con un `score`/100 y un
+    `trend`, pero nunca dice cómo se calcula el score, y el ejemplo de §6.7
+    ("32/100 -> Escasez") es un umbral sobre una escala que la especificación
+    no fija en ninguna parte. Inventarla violaría §12.6. Lo único que se
+    puede afirmar sin inventar nada es cuántos anuncios hubo esta ventana
+    contra la anterior, mismo ancho: el operador o el lector del dashboard
+    juzgan qué tan grave es la diferencia, esta vista no la clasifica.
+    """
+
+    product_name: str
+    province_name: str | None
+    current_count: int
+    previous_count: int
+
+    @property
+    def delta(self) -> int:
+        """Positivo: más anuncios que la ventana anterior. Negativo: menos.
+        Ninguna magnitud se etiqueta "mucho"/"poco" — ver docstring de la
+        clase."""
+        return self.current_count - self.previous_count
+
+
+def compute_availability(
+    session: Session, *, days: int = 7, hoy: date | None = None
+) -> list[Availability]:
+    """Cuenta anuncios minoristas por producto × provincia en `[hoy-days, hoy)`
+    contra `[hoy-2*days, hoy-days)`.
+
+    Reutiliza `compute_retail_observations` pidiendo el doble de ventana
+    (`2*days`) y particiona el resultado en dos mitades por
+    `RetailObservation.day`, en vez de llamarla dos veces con `hoy` corrido:
+    esa función no tiene tope superior de fecha (cuenta todo lo que sea
+    `>= cutoff`, ver su docstring), así que una segunda llamada con `hoy`
+    más viejo traería de nuevo las filas de la ventana actual y las contaría
+    en las dos mitades.
+
+    Un producto que se queda en silencio no desaparece de la lista:
+    `current_count=0` con `previous_count>0` es señal válida (justo la que
+    esta vista existe para mostrar). Lo que sí se omite es la combinación
+    producto/provincia sin ninguna fila en ninguna de las dos ventanas —
+    fabricar un 0 contra 0 para todo el catálogo inventaría una observación
+    que nadie hizo.
+    """
+    hoy = hoy or date.today()
+    boundary = hoy - timedelta(days=days)
+    report = compute_retail_observations(session, days=days * 2, hoy=hoy)
+
+    counts: dict[tuple[str, str | None], list[int]] = {}
+    for observation in report.observations:
+        bucket = counts.setdefault(
+            (observation.product_name, observation.province_name), [0, 0]
+        )
+        if observation.day >= boundary:
+            bucket[0] += 1
+        else:
+            bucket[1] += 1
+
+    availability = [
+        Availability(
+            product_name=product_name,
+            province_name=province_name,
+            current_count=current_count,
+            previous_count=previous_count,
+        )
+        for (product_name, province_name), (
+            current_count,
+            previous_count,
+        ) in counts.items()
+    ]
+    availability.sort(
+        key=lambda a: (-a.current_count, a.product_name, a.province_name or "")
+    )
+    return availability
+
+
+@dataclass(frozen=True)
 class BasisSuspect:
     """Una fila `price_basis='unit'` que su propia celda desmiente.
 

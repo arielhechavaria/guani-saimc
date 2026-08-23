@@ -21,7 +21,12 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from saimc.cells import compute_cells, compute_retail_ranges, detect_basis_suspects
+from saimc.cells import (
+    compute_availability,
+    compute_cells,
+    compute_retail_ranges,
+    detect_basis_suspects,
+)
 from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
@@ -77,6 +82,9 @@ def control_panel(
     cells = [c for c in compute_cells(db) if c.product_name in pilot_filter]
     retail_report = compute_retail_ranges(db, days=days)
     retail_ranges = [r for r in retail_report.ranges if r.product_name in pilot_filter]
+    availability = [
+        a for a in compute_availability(db, days=days) if a.product_name in pilot_filter
+    ]
 
     progress = compute_phase0_progress(db)
     activity = compute_daily_activity(db, days=_ACTIVITY_DAYS)
@@ -111,6 +119,7 @@ def control_panel(
             "selected_province": selected,
             "retail_ranges": retail_ranges,
             "retail_range_days": days,
+            "availability": availability,
             # Sin filtrar por piloto, a diferencia de `retail_ranges`: el
             # filtro de compra mínima corre dentro de `compute_retail_ranges`,
             # antes de que acá se sepa de qué producto era cada fila. Preferí
