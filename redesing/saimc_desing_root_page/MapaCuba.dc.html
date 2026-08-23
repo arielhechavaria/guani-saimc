@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/industry-88349248-b54f-4ab1-9391-5d39e48bfdbb/styles.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alice&display=swap">
+  <style>:root { --font-heading: 'Alice', Georgia, serif; }</style>
+  <script src="_ds/industry-88349248-b54f-4ab1-9391-5d39e48bfdbb/_ds_bundle.js"></script>
+</helmet>
+<div style="position:relative; width:100%">
+  <svg viewBox="-8 -8 1016 358" style="display:block; width:100%; height:auto" role="img" aria-label="{{ ariaLabel }}">
+    <sc-for list="{{ grid }}" as="g" hint-placeholder-count="0">
+      <line x1="{{ g.x1 }}" y1="{{ g.y1 }}" x2="{{ g.x2 }}" y2="{{ g.y2 }}" stroke="{{ gridColor }}" stroke-width="0.7" stroke-dasharray="3 5"></line>
+    </sc-for>
+    <sc-for list="{{ provinces }}" as="p" hint-placeholder-count="16">
+      <path d="{{ p.path }}" fill="{{ p.fill }}" stroke="{{ p.stroke }}" stroke-width="{{ p.sw }}" stroke-linejoin="round" style="cursor:pointer; transition:fill .18s ease, stroke .18s ease" onMouseEnter="{{ p.enter }}" onMouseLeave="{{ leave }}"></path>
+    </sc-for>
+  </svg>
+
+  <sc-if value="{{ hovered }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute; right:0; top:0; pointer-events:none; padding:10px 14px; border:1px solid #028090; background:var(--color-bg); box-shadow:var(--shadow-md); min-width:210px">
+      <div style="font-family:var(--font-heading); font-size:19px; line-height:1.15; color:var(--color-text)">{{ hovered.name }}</div>
+      <div style="display:flex; justify-content:space-between; gap:16px; margin-top:6px; font-family:var(--font-body); font-size:13px; color:var(--color-neutral-600)">
+        <span>{{ hovered.label }}</span>
+        <span style="font-variant-numeric:tabular-nums; color:var(--color-text)">{{ hovered.rows }} obs.</span>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1000,&quot;height&quot;:360},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;dark&quot;,&quot;wire&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'dark'|'wire'&quot;},&quot;showGrid&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  state = { data: null, hover: null };
+
+  componentDidMount() {
+    import('./saimc-data.js').then((m) => this.setState({ data: m }));
+  }
+
+  mix(a, b, t) {
+    const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const [r1, g1, b1] = p(a), [r2, g2, b2] = p(b);
+    const h = (v) => Math.round(v).toString(16).padStart(2, '0');
+    return '#' + h(r1 + (r2 - r1) * t) + h(g1 + (g2 - g1) * t) + h(b1 + (b2 - b1) * t);
+  }
+
+  palette(variant) {
+    if (variant === 'dark') return {
+      grid: 'rgba(193,242,232,.15)', empty: '#0b2c3d', emptyStroke: '#17455c',
+      lo: '#028090', hi: '#c1f2e8', stroke: 'rgba(4,22,34,.9)', hoverStroke: '#ffffff',
+    };
+    if (variant === 'wire') return {
+      grid: 'rgba(5,102,141,.18)', empty: 'transparent', emptyStroke: '#9aaaa6',
+      lo: '#eef8f6', hi: '#5cb3ab', stroke: '#028090', hoverStroke: '#05668d', wire: true,
+    };
+    return {
+      grid: 'rgba(5,102,141,.12)', empty: '#dfe4e3', emptyStroke: '#9aaaa6',
+      lo: '#c1f2e8', hi: '#05668d', stroke: '#f2f2f3', hoverStroke: '#028090',
+    };
+  }
+
+  renderVals() {
+    const d = this.state.data;
+    const variant = this.props.variant ?? 'paper';
+    const P = this.palette(variant);
+
+    const grid = [];
+    if (this.props.showGrid !== false) {
+      for (let i = 1; i < 10; i++) grid.push({ x1: i * 100, y1: -8, x2: i * 100, y2: 350 });
+      for (let i = 1; i < 5; i++) grid.push({ x1: -8, y1: i * 68.4, x2: 1008, y2: i * 68.4 });
+    }
+
+    if (!d) return { grid, gridColor: P.grid, provinces: [], hovered: null, ariaLabel: 'Mapa de Cuba' };
+
+    const max = Math.max(...Object.values(d.ROWS_BY_PROVINCE));
+    const covered = Object.values(d.ROWS_BY_PROVINCE).filter((v) => v > 0).length;
+
+    const provinces = Object.keys(d.PROVINCE_PATHS).map((name) => {
+      const rows = d.ROWS_BY_PROVINCE[name] ?? 0;
+      const t = rows > 0 ? Math.pow(rows / max, 0.55) : 0;
+      const on = this.state.hover === name;
+      return {
+        name, rows, path: d.PROVINCE_PATHS[name],
+        label: d.PUBLISHED.includes(name) ? 'Publicada' : rows > 0 ? 'Recogiendo datos' : 'Sin datos todavía',
+        fill: rows > 0 ? this.mix(P.lo, P.hi, t) : P.empty,
+        stroke: on ? P.hoverStroke : rows > 0 ? P.stroke : P.emptyStroke,
+        sw: on ? 2.2 : P.wire && rows > 0 ? 0.9 + 1.7 * t : 1.1,
+        enter: () => this.setState({ hover: name }),
+      };
+    });
+
+    const h = provinces.find((p) => p.name === this.state.hover);
+
+    return {
+      grid, gridColor: P.grid, provinces,
+      hovered: h ? { name: h.name, rows: h.rows, label: h.label } : null,
+      leave: () => this.setState({ hover: null }),
+      ariaLabel: `Mapa de Cuba. ${covered} de 16 provincias con observaciones de precio; ${d.TOTAL_ROWS} observaciones en total.`,
+    };
+  }
+}
+</script>
+</body>
+</html>
