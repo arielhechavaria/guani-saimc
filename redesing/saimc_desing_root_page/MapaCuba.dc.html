@@ -24,7 +24,7 @@
   </svg>
 
   <sc-if value="{{ hovered }}" hint-placeholder-val="{{ false }}">
-    <div style="position:absolute; right:0; top:0; pointer-events:none; padding:10px 14px; border:1px solid #028090; background:var(--color-bg); box-shadow:var(--shadow-md); min-width:210px">
+    <div style="position:absolute; right:0; top:0; pointer-events:none; padding:10px 14px; border-radius:14px; background:var(--color-bg); box-shadow:0 2px 4px rgba(5,32,48,.1), 0 8px 20px rgba(5,32,48,.14); min-width:210px">
       <div style="font-family:var(--font-heading); font-size:19px; line-height:1.15; color:var(--color-text)">{{ hovered.name }}</div>
       <div style="display:flex; justify-content:space-between; gap:16px; margin-top:6px; font-family:var(--font-body); font-size:13px; color:var(--color-neutral-600)">
         <span>{{ hovered.label }}</span>
