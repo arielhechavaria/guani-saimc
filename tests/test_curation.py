@@ -36,7 +36,7 @@ from saimc.models import (
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
-from saimc.web.routers.curation import _EXTRA_BLANK_ROWS
+from saimc.web.routers.curation import _EXTRA_BLANK_ROWS, _last_capture_notice
 
 # --- helpers de armado ------------------------------------------------------
 
@@ -3758,3 +3758,81 @@ class TestRafagaDeMensajes:
         # La foto es `_FOCUS_UNKNOWN` y el texto `_FOCUS_MATCH`: manda el texto,
         # y la foto que lo ilustra viaja con él como evidencia vecina.
         assert f'/evidence/{foto.id}' in response.text
+
+
+class TestUltimaCaptura:
+    """El bache de captura del 2026-08-24 (WAHA deslogueado remotamente) se
+    leyó al principio como "cola vacía" por foco, cuando el problema real era
+    que no entraba nada nuevo desde hacía más de un día — nada en la pantalla
+    lo decía. `_last_capture_notice` es la medición pasiva que lo hace visible,
+    sin fabricar un umbral de "atrasado" (docs/decisions.md, 2026-08-24).
+    """
+
+    def test_sin_ninguna_ingesta_nunca_no_hay_nada_que_medir(
+        self, session: Session
+    ) -> None:
+        assert _last_capture_notice(session) is None
+
+    def test_menos_de_una_hora(self, session: Session) -> None:
+        ancla = datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)
+        _crear_raw_ingestion(session, hash_="hash-reciente", captured_at=ancla)
+
+        texto = _last_capture_notice(session, now=ancla + timedelta(minutes=30))
+
+        assert texto == "Última captura: hace menos de una hora."
+
+    def test_singular_de_una_hora(self, session: Session) -> None:
+        ancla = datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)
+        _crear_raw_ingestion(session, hash_="hash-1h", captured_at=ancla)
+
+        texto = _last_capture_notice(session, now=ancla + timedelta(hours=1, minutes=10))
+
+        assert texto == "Última captura: hace 1 hora."
+
+    def test_plural_de_horas(self, session: Session) -> None:
+        ancla = datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)
+        _crear_raw_ingestion(session, hash_="hash-5h", captured_at=ancla)
+
+        texto = _last_capture_notice(session, now=ancla + timedelta(hours=5))
+
+        assert texto == "Última captura: hace 5 horas."
+
+    def test_pasa_a_dias_despues_de_24_horas(self, session: Session) -> None:
+        ancla = datetime(2026, 8, 20, 12, 0, 0, tzinfo=UTC)
+        _crear_raw_ingestion(session, hash_="hash-2d", captured_at=ancla)
+
+        texto = _last_capture_notice(session, now=ancla + timedelta(days=2, hours=3))
+
+        assert texto == "Última captura: hace 2 días."
+
+    def test_singular_de_un_dia(self, session: Session) -> None:
+        ancla = datetime(2026, 8, 20, 12, 0, 0, tzinfo=UTC)
+        _crear_raw_ingestion(session, hash_="hash-1d", captured_at=ancla)
+
+        texto = _last_capture_notice(session, now=ancla + timedelta(days=1, hours=2))
+
+        assert texto == "Última captura: hace 1 día."
+
+    def test_toma_el_maximo_sin_importar_el_estado(self, session: Session) -> None:
+        """No solo `pending`: un anuncio ya curado o descartado también cuenta
+        como "algo entró", que es la pregunta que este indicador responde."""
+        vieja = _crear_raw_ingestion(
+            session, hash_="hash-vieja", captured_at=datetime(2026, 8, 1, tzinfo=UTC)
+        )
+        vieja.processing_status = ProcessingStatus.DISCARDED
+        reciente = datetime(2026, 8, 24, 10, 0, 0, tzinfo=UTC)
+        curada = _crear_raw_ingestion(session, hash_="hash-curada", captured_at=reciente)
+        curada.processing_status = ProcessingStatus.CURATED
+        session.commit()
+
+        texto = _last_capture_notice(session, now=reciente + timedelta(hours=2))
+
+        assert texto == "Última captura: hace 2 horas."
+
+    def test_el_endpoint_muestra_el_aviso(self, client: TestClient, session: Session) -> None:
+        _crear_raw_ingestion(session, hash_="hash-endpoint", captured_at=datetime.now(UTC))
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert "Última captura:" in response.text

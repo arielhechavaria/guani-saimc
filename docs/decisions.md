@@ -4800,3 +4800,34 @@ interactivo disponible—, así que el router nuevo no está activo en
 recarga plantillas por `mtime`, pero el contexto (`availability`) lo arma
 `control.py`, que sigue cargado en memoria con la versión anterior hasta el
 próximo restart.
+
+## 2026-08-24 — Indicador pasivo de última captura en `/curation`
+
+Contexto: el operador reportó "no hay elementos en la cola" el 2026-08-24.
+Medido contra producción: 173 `pending`, pero 0 mencionaban alguno de los 5
+productos piloto — la cola estaba 100% fuera de foco, no vacía. Investigando
+por qué, se encontró la causa real por separado: WAHA (el contenedor que
+conecta con WhatsApp) sufrió un logout remoto el 2026-08-23 a las 02:11:58
+UTC, ~7 segundos después de reautenticar tras un restart del contenedor —
+desde entonces ninguna captura nueva entraba, y nada en la pantalla lo decía.
+
+Decisión: `/curation` muestra ahora "Última captura: hace N horas/días",
+calculado sobre `MAX(raw_ingestions.captured_at)` en cualquier estado (no
+solo `pending`) — `_last_capture_notice` en `curation.py`. Es una medición,
+nunca un veredicto de "atrasado": mismo criterio que `age_days` en
+`exchange_rate/status.py` para la tasa de cambio (§12.6, sin ventana de
+vigencia asignada, no se inventa un umbral que la spec no fija).
+
+Descartado: una notificación activa (Telegram/email) que avise sin que el
+operador abra la app. Exige un proceso separado corriendo para chequear y
+disparar — la cola de trabajos que la decisión #3 de `CLAUDE.md` frena hasta
+validar H0. Queda anotado para revisar después de esa validación si el
+indicador pasivo no alcanza.
+
+Consecuencia: `_last_capture_notice(db, *, now=None)` en `curation.py`, mismo
+patrón de parámetro inyectable que `compute_rate_status(session, hoy=None)`
+para poder testear sin depender del reloj real. 8 tests nuevos en
+`TestUltimaCaptura` (`test_curation.py`), 845 tests verdes (+8 sobre 837).
+Sin cambio de esquema. El bache de WAHA en sí (la cuenta de WhatsApp
+deslogueada) sigue sin resolver — es operativo, requiere escanear un QR
+nuevo, no se toca desde acá.

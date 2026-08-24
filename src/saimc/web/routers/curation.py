@@ -31,7 +31,7 @@ la columna, redactado con `redact_personal_data()` antes de construir la fila.
 import re
 import uuid
 from collections.abc import Sequence
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -405,6 +405,36 @@ def _status_counts(db: Session, products: Sequence[Product]) -> dict[str, int]:
     return resultado
 
 
+def _last_capture_notice(db: Session, *, now: datetime | None = None) -> str | None:
+    """Hace cuánto entró la ingesta más reciente, en cualquier estado.
+
+    Medición, no veredicto — mismo criterio que `age_days` en
+    `exchange_rate/status.py` (§12.6: sin ventana de vigencia asignada, no se
+    inventa). Esto no marca nada como "atrasado", solo informa la antigüedad;
+    el operador es quien decide si eso es normal. Existe porque el bache de
+    captura del 2026-08-23 (WAHA deslogueado remotamente) se leyó al
+    principio como "cola vacía" por foco, cuando el problema real era que no
+    entraba nada nuevo desde hacía más de un día — nada en la pantalla lo
+    decía.
+    """
+    latest = db.execute(select(func.max(RawIngestion.captured_at))).scalar()
+    if latest is None:
+        return None
+    # SQLite (solo en tests, ver tests/conftest.py) no conserva el offset en
+    # el viaje de ida y vuelta pese a `DateTime(timezone=True)` — PostgreSQL sí.
+    # La columna es UTC por contrato (docstring del modelo), así que asumirlo
+    # acá es fiel al dato, no una adivinanza.
+    if latest.tzinfo is None:
+        latest = latest.replace(tzinfo=UTC)
+    hours = int(((now or datetime.now(UTC)) - latest).total_seconds() // 3600)
+    if hours < 1:
+        return "Última captura: hace menos de una hora."
+    if hours < 24:
+        return f"Última captura: hace {hours} hora{'s' if hours != 1 else ''}."
+    days = hours // 24
+    return f"Última captura: hace {days} día{'s' if days != 1 else ''}."
+
+
 def _unconverted_notice(unconverted: int) -> str | None:
     """Copia del aviso no bloqueante (design.md D7). `None` cuando no hay
     nada que avisar — el template lo omite con un simple `{% if notice %}`.
@@ -435,6 +465,7 @@ def _render_queue(
     burst: Sequence[RawIngestion] = (),
     discard_hints: Sequence[str] = (),
     channel_discard_stats: tuple[int, int] | None = None,
+    last_capture_notice: str | None = None,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -449,6 +480,7 @@ def _render_queue(
             "values": global_values,
             "error": error,
             "notice": _unconverted_notice(unconverted),
+            "last_capture_notice": last_capture_notice,
             "pasted": pasted,
             "currencies": [c.value for c in Currency],
             "units": UNITS,
@@ -695,6 +727,7 @@ def curation_queue(
         channel_discard_stats=(
             _channel_discard_stats(db, ingestion) if ingestion is not None else None
         ),
+        last_capture_notice=_last_capture_notice(db),
     )
 
 

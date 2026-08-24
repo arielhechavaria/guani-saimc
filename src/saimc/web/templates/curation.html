@@ -57,6 +57,18 @@
       {{ status_counts.out_of_focus }} fuera de foco
     </span>
     {% endif %}
+    {% if last_capture_notice %}
+    <!--
+      Medición, no veredicto (mismo criterio que age_days en /control): no hay
+      ventana de "captura vencida" definida, así que esto no se pinta como
+      warning. Existe para que un corte de captura (WAHA deslogueado, p. ej.)
+      no se confunda con "cola vacía por foco" — docs/decisions.md 2026-08-24.
+    -->
+    <span class="m3-pill" title="Ingesta más reciente en cualquier estado, no solo lo pendiente.">
+      <span class="m3-icon m3-icon-sm">schedule</span>
+      {{ last_capture_notice }}
+    </span>
+    {% endif %}
     <span class="m3-spacer"></span>
     <a class="m3-sm" href="/curation/history">Historial de curados →</a>
     {#
