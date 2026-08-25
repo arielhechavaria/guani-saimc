@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from saimc.models import Currency, Product, Province
+from saimc.units import canonical_unit
 
 # --- provincias --------------------------------------------------------------
 
@@ -368,6 +369,36 @@ class ExtractionProposal:
     # la columna homónima de `prices_history`. Nunca se adivina: un escalón
     # cuyo mínimo no se puede expresar en esa unidad no se propone.
     min_purchase_quantity: Decimal | None = None
+    # `"unit"` / `"total"`, y solo cuando el anuncio lo DECLARA y la aritmética
+    # lo confirma (ver `_declared_price_basis`). Apartamiento consciente de D4
+    # del design de `price_basis`, que fijaba no preproponerlo nunca por ser
+    # juicio del operador: el motivo está en `docs/decisions.md`, 2026-08-25.
+    # Sigue siendo una propuesta — la cola la muestra preseleccionada y el
+    # operador confirma o corrige, igual que con todo lo demás (§6.1).
+    price_basis: str | None = None
+
+
+#: Pistas del tipo «Sale 515 Cup Lb» / «Sale $281.82 Lb» / «Sale $1080 Unidad»:
+#: el anunciante escribe, además del precio de la oferta, a cuánto le sale al
+#: comprador cada unidad. Medido el 2026-08-25 sobre los 150 anuncios de texto
+#: curados: 18 lo dicen con esta forma.
+#:
+#: `cup` opcional en el medio porque aparece de las dos maneras en el mismo
+#: canal. La unidad se canonicaliza después, no acá: este patrón la captura
+#: cruda y `canonical_unit` decide si es una que el catálogo conoce.
+_DECLARED_UNIT_PRICE_RE = re.compile(
+    r"\bsale\s*\$?\s*([\d.,]+)\s*(?:cup\s*)?([a-záéíóúñ]+)",
+    re.IGNORECASE,
+)
+
+#: Tolerancia relativa al comparar el precio declarado contra las dos lecturas.
+#: No es un umbral de los que §12.6 prohíbe —no decide si un dato es válido ni
+#: si se publica—: absorbe el redondeo del propio anunciante, que escribe
+#: «281.82» donde la división exacta da 281,8181… El 1% es holgado para eso y
+#: sigue siendo dos órdenes de magnitud menor que la distancia entre las dos
+#: lecturas posibles (que difieren por el factor `quantity`, nunca menor a 2
+#: cuando esta regla corre).
+_DECLARED_PRICE_TOLERANCE = Decimal("0.01")
 
 
 def _normalize_number(raw: str) -> Decimal | None:
@@ -596,6 +627,57 @@ def _guess_product_phrase(line: str) -> str | None:
     return guess or None
 
 
+def _declared_price_basis(
+    text: str, *, price: Decimal | None, quantity: Decimal | None, unit: str | None
+) -> str | None:
+    """Lee «Sale X <unidad>» y decide qué cubre el precio, o `None`.
+
+    La pregunta que resuelve —¿el precio es de una unidad o del lote entero?—
+    NO se puede inferir de la cantidad. Está medido: «Picadillo de pollo
+    americano 40lb a 525» tiene cantidad 40 y el precio es **por libra**,
+    mientras «Cajas de Picadillo 50Lb $25,750» tiene cantidad 50 y el precio
+    es **del lote**. Mismo producto, misma unidad, cantidades parecidas, y
+    lecturas opuestas (docs/decisions.md, 2026-08-25).
+
+    Lo que sí se puede leer es cuando el anuncio lo dice. Con el número
+    declarado en la mano hay dos lecturas posibles del precio de la fila, y se
+    elige la que coincide:
+
+        precio / cantidad == declarado  → el precio cubre el lote  ("total")
+        precio            == declarado  → el precio ya es unitario ("unit")
+
+    Si no coincide ninguna, devuelve `None` **a propósito**: significa que el
+    anuncio dice algo que esta regla no entiende, y proponer ahí sería
+    exactamente el "adivinar" que la regla existe para evitar. Lo mismo si la
+    pista viene en otra unidad que la fila: convertir acá mezclaría dos
+    lecturas distintas y un error de cualquiera enmascararía al otro.
+    """
+    if price is None or quantity is None or quantity == 1 or unit is None:
+        return None
+
+    match = _DECLARED_UNIT_PRICE_RE.search(text)
+    if match is None:
+        return None
+
+    # Las comas de millar se quitan antes: `_normalize_number` no las acepta
+    # junto a un punto decimal, y el canal mayorista escribe «1,986.36».
+    declared = _normalize_number(re.sub(r",(?=\d{3}\b)", "", match.group(1)))
+    if declared is None or declared <= 0:
+        return None
+
+    if canonical_unit(match.group(2)) != unit:
+        return None
+
+    def coincide(candidate: Decimal) -> bool:
+        return abs(candidate - declared) <= declared * _DECLARED_PRICE_TOLERANCE
+
+    if coincide(price / quantity):
+        return "total"
+    if coincide(price):
+        return "unit"
+    return None
+
+
 def propose(
     text: str,
     products: Sequence[Product],
@@ -619,14 +701,18 @@ def propose(
     """
     quantity, unit = _extract_quantity(text)
     product = _match_product(text, products)
+    price = _extract_price(text)
     return ExtractionProposal(
         product=product,
         product_name_guess=_guess_product_phrase(text) if product is None else None,
-        price=_extract_price(text),
+        price=price,
         currency=_extract_currency(text),
         quantity=quantity,
         unit=unit,
         province=channel_province or _match_province(text, provinces),
+        price_basis=_declared_price_basis(
+            text, price=price, quantity=quantity, unit=unit
+        ),
     )
 
 

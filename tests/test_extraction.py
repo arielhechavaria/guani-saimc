@@ -1127,3 +1127,105 @@ class TestProvinciaDelCanal:
         propuestas = propose_all(texto, products, provinces)
 
         assert [p.province for p in propuestas] == [provinces[1], provinces[1]]
+
+
+class TestPriceBasisDeclaradoEnElAnuncio:
+    """`price_basis` propuesto SOLO cuando el anuncio lo declara y la
+    aritmética lo confirma.
+
+    Apartamiento consciente de D4 (`openspec/changes/archive/
+    2026-08-21-price-basis/design.md`), que fijaba no preproponer nunca este
+    campo por ser «juicio del operador». El motivo del apartamiento está en
+    `docs/decisions.md`: acá no se deriva de texto suelto — el vendedor
+    escribe «Sale 515 Cup Lb», y las dos lecturas posibles del precio se
+    contrastan contra ese número antes de proponer nada.
+
+    Los valores esperados están calculados a mano acá:
+      25000 / 50 = 500  → el precio cubre el lote entero
+      655 / 40 = 16,375 → el precio NO cubre el lote; 655 es el de la libra
+      31000 / 110 = 281,8181… ≈ 281,82 declarado (redondeo del anunciante)
+      26200 / 40 = 655 ≠ 900 declarado, y 26200 ≠ 900 → ninguna lectura cierra
+    """
+
+    def test_la_division_confirma_que_el_precio_es_del_lote(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = "Arroz saco de 50 lb a 25000. Sale 500 Cup Lb"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price == Decimal("25000")
+        assert propuesta.quantity == Decimal("50")
+        assert propuesta.price_basis == "total"
+
+    def test_el_precio_mismo_coincide_con_lo_declarado_por_unidad(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El anunciante repite el precio por libra como precio de la fila. La
+        división daría 16,375 —que no es lo declarado—, así que la lectura
+        correcta es que 655 ya viene por unidad."""
+        texto = "Pollo caja de 40 lb a 655. Sale 655 Cup Lb"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price == Decimal("655")
+        assert propuesta.price_basis == "unit"
+
+    def test_tolera_el_redondeo_del_anunciante(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Caso real (canal mayorista de Santiago): «Sacos Arroz Guyanes ...
+        $31000. Vienen por 110Lb. Sale 281.82Lb». La división exacta da
+        281,8181…, y el anuncio redondea a dos decimales."""
+        texto = "Arroz sacos de 110 lb a 31000. Sale $281.82 Lb"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis == "total"
+
+    def test_sin_pista_en_el_texto_no_se_propone_nada(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El comportamiento de siempre: sin declaración explícita el campo
+        queda para el operador, como fijaba D4."""
+        texto = "Arroz saco de 50 lb a 25000"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None
+
+    def test_si_la_pista_no_cierra_con_ninguna_lectura_no_se_propone(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Es la salvaguarda que hace honesta a la regla: cuando el número
+        declarado no coincide ni con el precio ni con el precio dividido, el
+        anuncio dice algo que no entendemos y proponer sería adivinar."""
+        texto = "Pollo caja de 40 lb a 26200. Sale 900 Cup Lb"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None
+
+    def test_una_pista_en_otra_unidad_no_se_usa(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """La fila está en libras y la pista habla de kilos: convertir acá
+        mezclaría la conversión de unidades con la lectura del basis, y un
+        error de cualquiera de las dos quedaría enmascarado en la otra."""
+        texto = "Arroz saco de 50 lb a 25000. Sale 500 Cup Kg"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None
+
+    def test_con_cantidad_uno_no_se_propone(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Con `quantity == 1` unitario y total son el mismo número: el campo
+        ni siquiera se le pide al operador (`_price_basis_required`), así que
+        proponer sería ruido."""
+        texto = "Arroz 1 lb a 500. Sale 500 Cup Lb"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None

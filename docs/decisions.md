@@ -5028,3 +5028,64 @@ que el id y la visibilidad viajan del grano al punto;
 público, imagen no); `tests/test_public_map.py` gana un caso end-to-end por
 cada sentido, seedeando una ingesta de texto y una de imagen contra `GET /`
 real.
+
+## 2026-08-25 — El extractor propone `price_basis` cuando el anuncio lo declara
+
+Contexto: el operador propuso inferir `price_basis` de la cantidad («si es
+mayor que 1, es por lote»). Medido contra producción, esa regla es **falsa**, y
+el contraejemplo es textual: la ingesta `e1d99e90` dice «Picadillo de pollo
+americano 40lb a 525» —cantidad 40, y 525 es el precio **por libra**— mientras
+que «Cajas de Picadillo 50Lb $25,750» tiene cantidad 50 y el precio **sí** es
+del lote. Mismo producto, misma unidad, cantidades parecidas, lecturas
+opuestas. La cantidad no lo decide.
+
+Pero la pregunta destapó un bug en vivo: **7 filas mal marcadas**, y la vista
+pública publicaba «Picadillo 10,30–580 CUP/lb». Corregidas en producción, en
+direcciones opuestas —5 de Picadillo de `total` a `unit`, 2 de Pollo de `unit`
+a `total`—, que es la mejor demostración de por qué la cantidad no alcanza.
+`detect_basis_suspects` pasó de 3 a 0, y el falso positivo que señalaba a la
+fila 525×40 (que estaba bien) desapareció solo: era la celda envenenada por
+las otras 5, no la fila.
+
+Lo que sí se puede leer es lo que el anuncio **declara**. Medido: 27 de 150
+anuncios de texto curados traen una pista explícita, y 18 usan la forma
+«Sale $X Lb».
+
+Decisión: `_declared_price_basis` (`extraction/engine.py`) lee «Sale X
+&lt;unidad&gt;» y contrasta el número declarado contra las dos lecturas posibles
+del precio de la fila: si `precio / cantidad` coincide, el precio cubre el lote
+(`total`); si coincide `precio` a secas, ya viene por unidad (`unit`). Si no
+coincide ninguna, devuelve `None` **a propósito** — el anuncio dice algo que la
+regla no entiende y proponer ahí sería adivinar. Tolerancia relativa del 1%,
+que no es un umbral de los que §12.6 prohíbe: no decide validez ni publicación,
+solo absorbe el redondeo del anunciante («281.82» donde la división da
+281,8181…).
+
+**Apartamiento declarado de D5/D4** (`openspec/changes/archive/
+2026-08-21-price-basis/design.md`), que fijaba `"price_basis": ""` *always* en
+`_values_from_proposal`, por ser juicio del operador. El motivo de apartarse:
+esa decisión asumía derivarlo de texto suelto, y acá no se deriva — el vendedor
+lo escribe y la aritmética lo verifica. Además, las 7 filas de hoy prueban que
+«es juicio del operador» no alcanza como salvaguarda. La propuesta sigue siendo
+propuesta: llega preseleccionada y el operador confirma o corrige (§6.1).
+
+Descartado: (a) convertir la unidad cuando la pista viene en otra que la fila
+(«25Kg … Sale $318.20 Lb») — mezclaría la conversión de unidades con la lectura
+del basis y un error de cualquiera enmascararía al otro; son 4 casos que quedan
+sin propuesta, que es el costo aceptado; (b) leer también «X la libra» (9
+anuncios) — es otra forma, sin número verificable aparte, y va en su propio
+slice; (c) incorporar spaCy, evaluado a pedido del operador: hace análisis
+sintáctico, no decide si un número es total o unitario, y el razonamiento real
+—dividir y contrastar contra el rango— ya existe en `detect_basis_suspects`.
+
+Consecuencia: 872 tests verdes (+7 sobre 865), con los casos escritos antes del
+código (`TestPriceBasisDeclaradoEnElAnuncio`). Verificado sobre las 24 líneas
+reales de producción que traen la pista: 15 reciben propuesta (9 `total` + 6
+`unit`), **todas aritméticamente correctas**, y 9 se abstienen. Cero propuestas
+equivocadas. Las 6 de `unit` tienen exactamente la forma de las 5 filas que
+estaban rotas hoy.
+
+Queda anotado un hallazgo aparte: en esos anuncios el extractor toma como
+`price` el número de la cláusula «Sale X» en vez del precio de la oferta
+(515 en vez de 25.750). El precio por unidad final sale bien igual, pero la
+fila guarda un precio que no es el del anuncio. Es un slice propio.

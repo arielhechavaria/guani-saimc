@@ -183,10 +183,15 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             else ""
         ),
         "province_id": str(proposal.province.id) if proposal.province else "",
-        # Nunca se prellena, ni siquiera vacío-vs-lleno (D5): a diferencia de
-        # `sale_format`/`packaging`/`min_purchase`, un basis heredado mal
-        # multiplica el precio final por `quantity` en vez de ser cosmético.
-        "price_basis": "",
+        # D5 fijaba no prellenarlo NUNCA, porque un basis equivocado multiplica
+        # el precio final por `quantity` en vez de ser cosmético. Ese riesgo
+        # sigue siendo cierto y por eso la propuesta llega vacía salvo en un
+        # caso: que el propio anuncio declare a cuánto sale la unidad («Sale
+        # 515 Cup Lb») **y** la aritmética confirme cuál de las dos lecturas
+        # cierra (`_declared_price_basis`). Ahí no se hereda ni se adivina, se
+        # lee. Apartamiento registrado en docs/decisions.md, 2026-08-25, con
+        # las 7 filas mal marcadas que lo motivaron.
+        "price_basis": proposal.price_basis or "",
     }
 
 
