@@ -259,6 +259,53 @@
       </span>
     </div>
     {% endif %}
+
+    {% if channel_intake %}
+    <h3 class="m3-h3 m3-mt">Descarte por canal</h3>
+    <p class="m3-sm m3-muted">
+      Ordenado por descartes absolutos, no por tasa: 5 descartes sobre 10 cuestan más hora de
+      curaduría que 2 sobre 2, aunque la tasa de estos últimos sea peor.
+      <strong>Captura manual</strong> agrupa los anuncios sin canal — la otra mitad del trabajo
+      del operador.
+    </p>
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Canal</th>
+            <th scope="col" style="text-align:right">Curados</th>
+            <th scope="col" style="text-align:right">Descartados</th>
+            <th scope="col" style="text-align:right">En cola</th>
+            <th scope="col" style="text-align:right">Tasa</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for canal in channel_intake %}
+          <tr>
+            <td class="m3-cell-strong">
+              {{ canal.channel_name or "Captura manual" }}
+              {% if canal.is_active == false %}<span class="m3-dim">(inactivo)</span>{% endif %}
+            </td>
+            <td class="is-num">{{ canal.curated }}</td>
+            <td class="is-num">{{ canal.discarded }}</td>
+            <td class="is-num">
+              {% if canal.pending %}<span class="m3-dim">{{ canal.pending }}</span>
+              {%- else %}<span class="is-zero">—</span>{% endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.discard_rate is none %}<span class="m3-dim">—</span>
+              {%- else %}
+              <span class="m3-chip m3-chip-sm {{ 'm3-chip-warn' if canal.above_objective else 'm3-chip-ok' }}">
+                {{ "%.0f"|format(canal.discard_rate * 100) }}%
+              </span>
+              {%- endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </section>
 
   <!-- ---------- 6. Tasa de cambio ---------- -->

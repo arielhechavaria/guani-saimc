@@ -5089,3 +5089,32 @@ Queda anotado un hallazgo aparte: en esos anuncios el extractor toma como
 `price` el número de la cláusula «Sale X» en vez del precio de la oferta
 (515 en vez de 25.750). El precio por unidad final sale bien igual, pero la
 fila guarda un precio que no es el del anuncio. Es un slice propio.
+
+## 2026-08-25 — Descarte por canal en /control
+
+Contexto: producción mide 61% de tasa de descarte global (objetivo §12.5:
+<30%). La propia vista ya recomendaba «mirar de qué canales viene lo que se
+descarta antes de tocar nada», pero ese desglose no existía —
+`compute_intake_health` solo agregaba en global. El pedido original derivó
+en un MCP server para escanear el repo (`project-map-mcp`); se descartó
+porque un escáner de archivos no puede saber qué debería existir (`missing`
+exige un manifiesto a mano, que ya es el GitHub Project #1) y no ataca el
+cuello de botella real: la suite corre en 26s con 872 tests, el desarrollo no
+es lo lento.
+
+Decisión: `compute_channel_intake` (progress.py) agrega curados/descartados/
+pendientes por `channel_id`, agrupando `NULL` como "Captura manual". Se
+ordena por descartes absolutos, no por tasa — 5 descartes sobre 10 cuestan más
+hora de curaduría que 2 sobre 2 aunque la tasa de éstos sea peor. Reusa el
+único umbral con veredicto del módulo (§12.5, <30%); no inventa uno propio
+por canal. Tabla nueva en `/control`, sección "Descarte por canal", visible
+solo si hay al menos una ingesta.
+
+Descartado: `project-map-mcp` (Node + Astro + diagrams-mcp en el VPS) — sin
+acceso SSH al VPS desde esta sesión, sin `diagrams-mcp` instalado, y
+contradice la decisión 1 de `CLAUDE.md` (Python únicamente hasta Fase 2).
+
+Consecuencia: el operador puede decidir con datos si vale la pena seguir
+suscrito a un canal ruidoso, o si la tasa alta describe qué se está
+capturando (texto sin precio) y no un problema de curaduría. No hay
+automatismo que dé de baja canales solo — sigue siendo decisión del operador.

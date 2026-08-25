@@ -28,7 +28,15 @@ from typing import Protocol
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from saimc.models import Currency, PriceHistory, ProcessingStatus, Product, Province, RawIngestion
+from saimc.models import (
+    Channel,
+    Currency,
+    PriceHistory,
+    ProcessingStatus,
+    Product,
+    Province,
+    RawIngestion,
+)
 
 # --- Objetivos del documento rector -------------------------------------------
 
@@ -173,6 +181,108 @@ def compute_intake_health(session: Session) -> IntakeHealth:
         curated=counts.get(ProcessingStatus.CURATED, 0),
         discarded=counts.get(ProcessingStatus.DISCARDED, 0),
     )
+
+
+# --- Descarte por canal ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ChannelIntake:
+    """La misma `IntakeHealth`, pero de un canal en particular.
+
+    `/control` ya mostraba la tasa de descarte global y decía «vale mirar de
+    qué canales viene lo que se descarta antes de tocar nada» — sin ese
+    desglose. Esta es la vista que lo responde: dónde poner (o sacar) la hora
+    diaria de curaduría, no solo cuánto rindió.
+
+    `channel_name is None` agrupa la captura manual (`channel_id` nulo) — la
+    otra mitad del trabajo del operador, y la única fila del desglose que él
+    controla de forma directa. `platform`/`is_active` quedan `None` en esa fila
+    porque no hay canal que describir.
+    """
+
+    channel_name: str | None
+    platform: str | None
+    is_active: bool | None
+    pending: int
+    curated: int
+    discarded: int
+
+    @property
+    def decided(self) -> int:
+        return self.curated + self.discarded
+
+    @property
+    def discard_rate(self) -> float | None:
+        """Mismo criterio que `IntakeHealth.discard_rate`: sin decididos, no
+        hay tasa que mostrar."""
+        if self.decided == 0:
+            return None
+        return self.discarded / self.decided
+
+    @property
+    def above_objective(self) -> bool:
+        """Reusa el único umbral con veredicto del módulo (§12.5, «<30%»). No
+        se inventa un objetivo propio por canal."""
+        rate = self.discard_rate
+        return rate is not None and rate > DISCARD_RATE_OBJECTIVE
+
+
+def compute_channel_intake(session: Session) -> list[ChannelIntake]:
+    """Desglose de `compute_intake_health` por canal, incluida la captura manual.
+
+    Ordenado por descartes absolutos, no por tasa: un canal con 100% de
+    descarte sobre dos anuncios cuesta minutos; uno con 40% sobre cincuenta
+    cuesta una tarde. Lo que importa priorizar es el trabajo perdido, no el
+    porcentaje. Un canal sin ninguna fila (recién dado de alta en /catalog) no
+    aparece — no hay nada medido que mostrar.
+    """
+    stmt = (
+        select(
+            Channel.name,
+            Channel.platform,
+            Channel.is_active,
+            RawIngestion.processing_status,
+            func.count(),
+        )
+        .select_from(RawIngestion)
+        .outerjoin(Channel, RawIngestion.channel_id == Channel.id)
+        .group_by(
+            RawIngestion.channel_id,
+            Channel.name,
+            Channel.platform,
+            Channel.is_active,
+            RawIngestion.processing_status,
+        )
+    )
+    rows = session.execute(stmt).all()
+
+    by_channel: dict[str | None, dict[str, object]] = {}
+    for name, platform, is_active, status, count in rows:
+        bucket = by_channel.setdefault(
+            name,
+            {"platform": platform, "is_active": is_active, "pending": 0, "curated": 0, "discarded": 0},
+        )
+        if status == ProcessingStatus.PENDING:
+            bucket["pending"] += count
+        elif status == ProcessingStatus.CURATED:
+            bucket["curated"] += count
+        elif status == ProcessingStatus.DISCARDED:
+            bucket["discarded"] += count
+
+    intake = [
+        ChannelIntake(
+            channel_name=name,
+            platform=data["platform"],
+            is_active=data["is_active"],
+            pending=data["pending"],
+            curated=data["curated"],
+            discarded=data["discarded"],
+        )
+        for name, data in by_channel.items()
+    ]
+    intake.sort(key=lambda c: c.discarded, reverse=True)
+    return intake
 
 
 # --- Ritmo ---------------------------------------------------------------------

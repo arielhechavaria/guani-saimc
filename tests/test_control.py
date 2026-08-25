@@ -786,6 +786,67 @@ class TestPanelDeProgreso:
 
         assert "Nada decidido todavía" in response.text
 
+    def test_muestra_el_descarte_por_canal(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`/control` recomendaba «mirar de qué canales viene lo que se
+        descarta» sin dar ese desglose. Ahora la tabla lo trae."""
+        from saimc.models import Channel
+        from saimc.models.channel import Platform
+
+        _cargar(session, precios=["420"])
+        canal = Channel(name="Ofertas Habana", platform=Platform.WHATSAPP_CHANNEL, is_active=True)
+        session.add(canal)
+        session.flush()
+        for i in range(2):
+            session.add(
+                RawIngestion(
+                    source_type=SourceType.INBOX_TEXT,
+                    file_path=f"raw/canal-{i}.txt",
+                    content_hash=f"hash-canal-{i}",
+                    content_type=ContentType.TEXT,
+                    processing_status=ProcessingStatus.DISCARDED,
+                    channel_id=canal.id,
+                    captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+                )
+            )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "Descarte por canal" in response.text
+        assert "Ofertas Habana" in response.text
+        assert "100%" in response.text
+
+    def test_agrupa_la_captura_manual_sin_canal(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La mitad del trabajo del operador es sin canal (`channel_id` nulo);
+        el desglose no puede dejarla fuera."""
+        session.add(
+            RawIngestion(
+                source_type=SourceType.INBOX_TEXT,
+                file_path="raw/manual-1.txt",
+                content_hash="hash-manual-1",
+                content_type=ContentType.TEXT,
+                processing_status=ProcessingStatus.DISCARDED,
+                captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+            )
+        )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "Captura manual" in response.text
+
+    def test_sin_ninguna_ingesta_no_muestra_la_tabla_de_canales(
+        self, client: TestClient
+    ) -> None:
+        """Nada cargado todavía: la tabla no tiene sentido de mostrar vacía."""
+        response = client.get("/control")
+
+        assert "Descarte por canal" not in response.text
+
 
 class TestPanelDeTasaDeCambio:
     """Visibilidad de la tasa: qué hay disponible y qué quedó aplicado."""

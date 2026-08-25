@@ -17,6 +17,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from saimc.models import (
+    Channel,
     Currency,
     PriceHistory,
     Product,
@@ -24,10 +25,12 @@ from saimc.models import (
     RawIngestion,
     SaleFormat,
 )
+from saimc.models.channel import Platform
 from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
 from saimc.progress import (
     DISCARD_RATE_OBJECTIVE,
     PHASE0_TARGET_ROWS,
+    compute_channel_intake,
     compute_coverage,
     compute_daily_activity,
     compute_intake_health,
@@ -443,3 +446,205 @@ class TestCoverage:
 
         assert all(c.province_name != "Holguín" for c in coverage)
         assert all(c.rows == 0 for c in coverage)
+
+
+# --- Descarte por canal --------------------------------------------------------
+
+
+def _canal(session: Session, name: str, *, is_active: bool = True) -> Channel:
+    row = Channel(name=name, platform=Platform.WHATSAPP_CHANNEL, is_active=is_active)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _ingestion_de_canal(
+    session: Session,
+    hash_: str,
+    status: ProcessingStatus,
+    channel: Channel | None,
+) -> RawIngestion:
+    row = RawIngestion(
+        source_type=SourceType.INBOX_TEXT,
+        file_path=f"raw/{hash_}.txt",
+        content_hash=hash_,
+        content_type=ContentType.TEXT,
+        processing_status=status,
+        channel_id=channel.id if channel is not None else None,
+        captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+class TestDescartePorCanal:
+    """De dónde viene lo que se descarta.
+
+    La tarjeta global de `compute_intake_health` dice cuánto se tira; ésta dice
+    de quién. Es el desglose que la propia vista de control recomendaba mirar y
+    que no existía.
+
+    Mismo criterio de umbrales que el resto del módulo: el único veredicto es el
+    «<30%» de `spec.md` §12.5, reusado tal cual. No se inventa ninguna marca
+    propia por canal.
+    """
+
+    def test_separa_los_conteos_por_canal(self, session: Session) -> None:
+        ruidoso = _canal(session, "Ofertas Habana")
+        bueno = _canal(session, "Agro Santiago")
+
+        # Ruidoso: 1 curado, 3 descartados, 2 pendientes.
+        _ingestion_de_canal(session, "ch-r-cur-1", ProcessingStatus.CURATED, ruidoso)
+        _ingestion_de_canal(session, "ch-r-des-1", ProcessingStatus.DISCARDED, ruidoso)
+        _ingestion_de_canal(session, "ch-r-des-2", ProcessingStatus.DISCARDED, ruidoso)
+        _ingestion_de_canal(session, "ch-r-des-3", ProcessingStatus.DISCARDED, ruidoso)
+        _ingestion_de_canal(session, "ch-r-pen-1", ProcessingStatus.PENDING, ruidoso)
+        _ingestion_de_canal(session, "ch-r-pen-2", ProcessingStatus.PENDING, ruidoso)
+        # Bueno: 3 curados, 1 descartado.
+        _ingestion_de_canal(session, "ch-b-cur-1", ProcessingStatus.CURATED, bueno)
+        _ingestion_de_canal(session, "ch-b-cur-2", ProcessingStatus.CURATED, bueno)
+        _ingestion_de_canal(session, "ch-b-cur-3", ProcessingStatus.CURATED, bueno)
+        _ingestion_de_canal(session, "ch-b-des-1", ProcessingStatus.DISCARDED, bueno)
+        session.commit()
+
+        intake = compute_channel_intake(session)
+        por_nombre = {c.channel_name: c for c in intake}
+
+        assert por_nombre["Ofertas Habana"].curated == 1
+        assert por_nombre["Ofertas Habana"].discarded == 3
+        assert por_nombre["Ofertas Habana"].pending == 2
+        assert por_nombre["Ofertas Habana"].decided == 4
+        assert por_nombre["Ofertas Habana"].discard_rate == 0.75
+        assert por_nombre["Agro Santiago"].curated == 3
+        assert por_nombre["Agro Santiago"].discarded == 1
+        assert por_nombre["Agro Santiago"].pending == 0
+        assert por_nombre["Agro Santiago"].discard_rate == 0.25
+
+    def test_ordena_por_descartes_absolutos_no_por_tasa(self, session: Session) -> None:
+        """Un 100% sobre dos anuncios no cuesta una hora de curaduría; 30
+        descartes sí. Lo que se ordena es el trabajo perdido, no el porcentaje."""
+        goteo = _canal(session, "Goteo")
+        torrente = _canal(session, "Torrente")
+
+        # Goteo: tasa perfecta de descarte (100%) sobre 2 anuncios.
+        _ingestion_de_canal(session, "ch-g-des-1", ProcessingStatus.DISCARDED, goteo)
+        _ingestion_de_canal(session, "ch-g-des-2", ProcessingStatus.DISCARDED, goteo)
+        # Torrente: 5 descartados sobre 10 decididos — tasa menor, daño mayor.
+        for i in range(5):
+            _ingestion_de_canal(
+                session, f"ch-t-des-{i}", ProcessingStatus.DISCARDED, torrente
+            )
+        for i in range(5):
+            _ingestion_de_canal(
+                session, f"ch-t-cur-{i}", ProcessingStatus.CURATED, torrente
+            )
+        session.commit()
+
+        intake = compute_channel_intake(session)
+
+        assert [c.channel_name for c in intake] == ["Torrente", "Goteo"]
+        assert intake[0].discarded == 5
+        assert intake[0].discard_rate == 0.5
+        assert intake[1].discarded == 2
+        assert intake[1].discard_rate == 1.0
+
+    def test_la_captura_manual_es_una_fila_propia(self, session: Session) -> None:
+        """Las capturas sin canal son la mitad del trabajo del operador. Dejarlas
+        fuera del desglose escondería justamente lo que él controla."""
+        canal = _canal(session, "Ofertas Habana")
+        _ingestion_de_canal(session, "ch-c-des-1", ProcessingStatus.DISCARDED, canal)
+        _ingestion_de_canal(session, "ch-m-des-1", ProcessingStatus.DISCARDED, None)
+        _ingestion_de_canal(session, "ch-m-des-2", ProcessingStatus.DISCARDED, None)
+        _ingestion_de_canal(session, "ch-m-cur-1", ProcessingStatus.CURATED, None)
+        session.commit()
+
+        intake = compute_channel_intake(session)
+        manual = [c for c in intake if c.channel_name is None]
+
+        assert len(manual) == 1
+        assert manual[0].discarded == 2
+        assert manual[0].curated == 1
+        assert manual[0].platform is None
+        assert manual[0].is_active is None
+
+    def test_omite_canales_que_no_trajeron_nada(self, session: Session) -> None:
+        """Un canal recién dado de alta en /catalog no tiene descarte que mostrar:
+        no tiene nada. Una fila de ceros afirmaría que se midió algo."""
+        activo = _canal(session, "Con dato")
+        _canal(session, "Sin dato")
+        _ingestion_de_canal(session, "ch-a-cur-1", ProcessingStatus.CURATED, activo)
+        session.commit()
+
+        intake = compute_channel_intake(session)
+
+        assert [c.channel_name for c in intake] == ["Con dato"]
+
+    def test_incluye_canales_inactivos_y_los_marca(self, session: Session) -> None:
+        """Apagar un canal en /catalog no borra lo que ya costó curar. El
+        histórico sigue explicando la tasa global, así que sigue visible."""
+        apagado = _canal(session, "Apagado", is_active=False)
+        _ingestion_de_canal(session, "ch-ap-des-1", ProcessingStatus.DISCARDED, apagado)
+        session.commit()
+
+        intake = compute_channel_intake(session)
+
+        assert len(intake) == 1
+        assert intake[0].channel_name == "Apagado"
+        assert intake[0].is_active is False
+
+    def test_sin_decididos_no_hay_tasa(self, session: Session) -> None:
+        """Solo pendientes: nada se decidió, así que no hay nada que medir.
+        Mismo criterio que `IntakeHealth.discard_rate`, no un 0% inventado."""
+        nuevo = _canal(session, "Recién llegado")
+        _ingestion_de_canal(session, "ch-n-pen-1", ProcessingStatus.PENDING, nuevo)
+        session.commit()
+
+        intake = compute_channel_intake(session)
+
+        assert intake[0].pending == 1
+        assert intake[0].decided == 0
+        assert intake[0].discard_rate is None
+        assert intake[0].above_objective is False
+
+    def test_reusa_el_objetivo_de_la_especificacion(self, session: Session) -> None:
+        """El único veredicto por canal es el «<30%» de §12.5, el mismo de la
+        tarjeta global. Ningún umbral nuevo entra por acá."""
+        malo = _canal(session, "Sobre el objetivo")
+        bueno = _canal(session, "Bajo el objetivo")
+        # 1 de 2 decididos = 50% > 30%.
+        _ingestion_de_canal(session, "ch-ma-des-1", ProcessingStatus.DISCARDED, malo)
+        _ingestion_de_canal(session, "ch-ma-cur-1", ProcessingStatus.CURATED, malo)
+        # 1 de 5 decididos = 20% < 30%.
+        _ingestion_de_canal(session, "ch-bu-des-1", ProcessingStatus.DISCARDED, bueno)
+        for i in range(4):
+            _ingestion_de_canal(
+                session, f"ch-bu-cur-{i}", ProcessingStatus.CURATED, bueno
+            )
+        session.commit()
+
+        por_nombre = {c.channel_name: c for c in compute_channel_intake(session)}
+
+        assert por_nombre["Sobre el objetivo"].above_objective is True
+        assert por_nombre["Bajo el objetivo"].above_objective is False
+
+    def test_los_conteos_por_canal_cuadran_con_la_tarjeta_global(
+        self, session: Session
+    ) -> None:
+        """El desglose explica la tarjeta de arriba; si no sumara lo mismo,
+        estaría contando otra cosa y las dos vistas se contradirían."""
+        uno = _canal(session, "Uno")
+        dos = _canal(session, "Dos")
+        _ingestion_de_canal(session, "ch-s-cur-1", ProcessingStatus.CURATED, uno)
+        _ingestion_de_canal(session, "ch-s-des-1", ProcessingStatus.DISCARDED, uno)
+        _ingestion_de_canal(session, "ch-s-pen-1", ProcessingStatus.PENDING, dos)
+        _ingestion_de_canal(session, "ch-s-des-2", ProcessingStatus.DISCARDED, dos)
+        _ingestion_de_canal(session, "ch-s-des-3", ProcessingStatus.DISCARDED, None)
+        session.commit()
+
+        intake = compute_channel_intake(session)
+        global_ = compute_intake_health(session)
+
+        assert sum(c.curated for c in intake) == global_.curated
+        assert sum(c.discarded for c in intake) == global_.discarded
+        assert sum(c.pending for c in intake) == global_.pending

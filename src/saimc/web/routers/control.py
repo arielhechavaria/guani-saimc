@@ -33,6 +33,7 @@ from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
     PHASE0_PRODUCTS_MIN,
     PHASE0_PROVINCES,
+    compute_channel_intake,
     compute_coverage,
     compute_daily_activity,
     compute_intake_health,
@@ -158,6 +159,7 @@ def control_panel(
             "gaps": compute_open_gaps(db),
             "coverage": compute_coverage(db),
             "health": compute_intake_health(db),
+            "channel_intake": compute_channel_intake(db),
             # Estado de la tasa de cambio. Ambas salen de la base: cargar
             # `/control` no golpea la API de elTOQUE (ver status.py).
             "rate_status": compute_rate_status(db),
