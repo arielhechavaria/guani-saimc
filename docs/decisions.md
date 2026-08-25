@@ -4988,3 +4988,43 @@ Consecuencia: 860 tests verdes (+1 sobre 859). El toggle en sí no tiene
 cobertura de Python —igual que el relabel existente—; el test nuevo
 (`test_el_campo_price_basis_trae_el_gancho_para_ocultarse`) solo afirma que
 el servidor renderiza el `id` del que el script depende.
+
+## 2026-08-25 — La Transparency Layer se cablea a la home pública
+
+Contexto: `GET /anuncio/{id}` (entrada anterior de esta misma fecha) quedó
+construido, probado y desplegado, pero sin ningún link real en la home
+pública — quedó anotado como "próximo slice" y el ítem del Project #1 se
+dejó en In Progress en vez de Done. El operador preguntó por qué no
+cerrarlo en la misma sesión si ya estaba todo lo necesario, y tenía razón:
+`RetailObservation` (el único punto que faltaba) es consumido solo por
+`series_view.build_series` —confirmado con grep antes de tocar nada—, así
+que el cambio no se ramifica hacia `card_view`/`matrix` como se temió antes.
+
+Decisión: `RetailObservation` (`cells.py`) gana `evidence_id` (`source_id`)
+y `evidence_is_public` (`content_type == TEXT`), resueltos una sola vez en
+`compute_retail_observations` con un join a `raw_ingestions` — el mismo
+criterio de "solo texto" que ya regía el endpoint, ahora expuesto en el
+grano en vez de repetido en cada vista. `SeriesPoint` (`series_view.py`)
+hereda los dos campos sin lógica propia. En `public_home.html`, un punto de
+la serie con `evidence_is_public` se envuelve en `<a href="/anuncio/{{
+evidence_id }}">`; el resto queda como `<circle>` suelto, igual que hoy.
+
+El join a `raw_ingestions` es `INNER`, no `LEFT`: `prices_history.source_id`
+es `NOT NULL` con FK a la tabla, así que no hay fila que perder — verificado
+contra el esquema antes de escribirlo, y confirmado después porque ningún
+test existente cambió de resultado.
+
+Descartado: envolver también el punto de imagen en un link a un endpoint
+que sabe que va a dar 404 — sería peor UX que no envolver nada, y el
+`title` del punto (visible al pasar el mouse) ya distingue los dos casos
+por su propio texto.
+
+Consecuencia: 865 tests verdes (+5 sobre 860). Medido contra producción: de
+las observaciones minoristas de productos piloto, 94 tienen evidencia de
+texto (enlazan) contra 57 de imagen (no enlazan) — la mayoría del gráfico
+va a mostrar el link. `tests/test_series_view.py` gana un caso que verifica
+que el id y la visibilidad viajan del grano al punto;
+`tests/test_cells.py` gana `TestComputeRetailObservationsEvidencia` (texto
+público, imagen no); `tests/test_public_map.py` gana un caso end-to-end por
+cada sentido, seedeando una ingesta de texto y una de imagen contra `GET /`
+real.

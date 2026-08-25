@@ -9,6 +9,8 @@ herramienta del operador.
 
 import importlib.util
 from collections.abc import Iterator
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 
@@ -16,6 +18,17 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from saimc.models import (
+    ContentType,
+    Currency,
+    PriceHistory,
+    Product,
+    Province,
+    RawIngestion,
+    SaleFormat,
+    SourceType,
+)
+from saimc.models.raw_ingestion import ProcessingStatus
 from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.map_cuba import PROVINCE_PATHS, VIEWBOX
@@ -227,3 +240,82 @@ class TestRutaPublica:
         assert "is-con-dato" not in svg or "is-sin-dato" in svg
         for clase in ("is-caro", "is-barato", "is-promedio"):
             assert clase not in svg
+
+
+class TestEnlaceDeEvidenciaEnLaSerie:
+    """Transparency Layer (docs/decisions.md, 2026-08-25): cada punto del
+    gráfico de evolución es un anuncio real, y solo el de evidencia de texto
+    puede enlazar a `/anuncio/{id}` — el de imagen no publica (§10.6)."""
+
+    def _ingestion(
+        self, session: Session, *, hash_: str, content_type: str
+    ) -> RawIngestion:
+        row = RawIngestion(
+            source_type=SourceType.INBOX_TEXT
+            if content_type == ContentType.TEXT
+            else SourceType.INBOX_IMAGE,
+            file_path=f"raw/{hash_}.dat",
+            content_hash=hash_,
+            content_type=content_type,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        session.add(row)
+        session.flush()
+        return row
+
+    def _precio(
+        self,
+        session: Session,
+        *,
+        product: Product,
+        province: Province,
+        source: RawIngestion,
+        dia: date,
+    ) -> None:
+        session.add(
+            PriceHistory(
+                product_id=product.id,
+                province_id=province.id,
+                price=Decimal("300"),
+                currency=Currency.CUP.value,
+                source_id=source.id,
+                unit="lb",
+                sale_format=SaleFormat.RETAIL.value,
+                quantity=Decimal("1"),
+                published_date=dia,
+            )
+        )
+
+    def test_evidencia_de_texto_enlaza_a_anuncio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        origen = self._ingestion(session, hash_="hash-texto", content_type=ContentType.TEXT)
+        self._precio(session, product=arroz, province=habana, source=origen, dia=date(2026, 8, 10))
+        self._precio(session, product=arroz, province=habana, source=origen, dia=date(2026, 8, 12))
+        session.commit()
+
+        texto = client.get("/").text
+
+        assert f'href="/anuncio/{origen.id}"' in texto
+
+    def test_evidencia_de_imagen_no_enlaza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        origen = self._ingestion(session, hash_="hash-imagen", content_type=ContentType.IMAGE)
+        self._precio(session, product=arroz, province=habana, source=origen, dia=date(2026, 8, 10))
+        self._precio(session, product=arroz, province=habana, source=origen, dia=date(2026, 8, 12))
+        session.commit()
+
+        texto = client.get("/").text
+
+        assert f'href="/anuncio/{origen.id}"' not in texto
+        assert 'class="ph-plot-dot is-linked"' not in texto

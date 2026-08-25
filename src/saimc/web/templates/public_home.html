@@ -149,6 +149,8 @@
   .ph-plot-median { stroke: var(--ph-median); stroke-width: 1.4; stroke-dasharray: 4 3; opacity: .8; }
   .ph-plot-axis { stroke: rgba(0, 0, 0, .18); stroke-width: 1; }
   .ph-plot-dot { fill: var(--ph-accent); }
+  .ph-plot-dot.is-linked { cursor: pointer; }
+  .ph-plot-dot.is-linked:hover { fill: var(--ph-accent-2); }
   .ph-plot-label { font-size: 11px; fill: currentColor; opacity: .55; }
   .ph-serie-foot { margin: .55rem 0 0; font-size: .75rem; opacity: .75; }
 
@@ -378,9 +380,17 @@
         <line class="ph-plot-axis" x1="6" x2="594" y1="144" y2="144" />
 
         {% for point in serie.points %}
+        {% if point.evidence_is_public %}
+        <a href="/anuncio/{{ point.evidence_id }}">
+          <circle class="ph-plot-dot is-linked" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5">
+            <title>{{ point.day_text }} — {{ point.price_text }} {{ serie.currency }}/{{ serie.unit }} — ver el anuncio</title>
+          </circle>
+        </a>
+        {% else %}
         <circle class="ph-plot-dot" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5">
           <title>{{ point.day_text }} — {{ point.price_text }} {{ serie.currency }}/{{ serie.unit }}</title>
         </circle>
+        {% endif %}
         {% endfor %}
 
         <text class="ph-plot-label" x="6" y="160">{{ serie.first_day_text }}</text>

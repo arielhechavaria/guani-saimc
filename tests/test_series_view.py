@@ -9,6 +9,7 @@ separadas por días dibuja precios que nadie observó. El mismo criterio por el
 que §12.6 prohíbe inventar umbrales aplica a inventar observaciones.
 """
 
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -24,6 +25,10 @@ from saimc.web.series_view import (
 HOY = date(2026, 8, 30)
 VENTANA = 30
 
+#: Fijo y no `uuid.uuid4()` en cada llamada: los casos que no le importa el
+#: id de evidencia solo necesitan que sea estable para comparar, no único.
+_EVIDENCE_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
 
 def _obs(
     dia: int,
@@ -32,6 +37,8 @@ def _obs(
     product: str = "Arroz",
     province: str | None = "La Habana",
     unconverted: bool = False,
+    evidence_id: uuid.UUID = _EVIDENCE_ID,
+    evidence_is_public: bool = False,
 ) -> RetailObservation:
     return RetailObservation(
         product_name=product,
@@ -41,6 +48,8 @@ def _obs(
         unconverted=unconverted,
         day=date(2026, 8, dia),
         unit_price=Decimal(precio),
+        evidence_id=evidence_id,
+        evidence_is_public=evidence_is_public,
     )
 
 
@@ -57,6 +66,26 @@ class TestBuildSeries:
         assert serie.maximum == Decimal("320")
         assert serie.first_day == date(2026, 8, 10)
         assert serie.last_day == date(2026, 8, 20)
+
+    def test_cada_punto_lleva_el_id_de_su_evidencia(self) -> None:
+        """Transparency Layer (docs/decisions.md, 2026-08-25): el punto
+        necesita el id de `raw_ingestions` y si esa evidencia es pública para
+        que la plantilla decida si lo envuelve en un link a `/anuncio/{id}`."""
+        otro_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
+        (serie,) = build_series(
+            [
+                _obs(10, "300", evidence_id=_EVIDENCE_ID, evidence_is_public=True),
+                _obs(20, "320", evidence_id=otro_id, evidence_is_public=False),
+            ],
+            window_days=VENTANA,
+            hoy=HOY,
+        )
+
+        primero, segundo = serie.points
+        assert primero.evidence_id == _EVIDENCE_ID
+        assert primero.evidence_is_public is True
+        assert segundo.evidence_id == otro_id
+        assert segundo.evidence_is_public is False
 
     def test_un_solo_dia_no_es_una_evolucion(self) -> None:
         """Dos observaciones el mismo día son dispersión, no evolución. La

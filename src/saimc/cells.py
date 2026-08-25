@@ -84,6 +84,7 @@ dashboard y no a la comparabilidad de la serie.
 from __future__ import annotations
 
 import statistics
+import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -91,7 +92,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.models import Currency, PriceHistory, Product, Province, SaleFormat
+from saimc.models import ContentType, Currency, PriceHistory, Product, Province, RawIngestion, SaleFormat
 from saimc.units import canonical_unit, convert_price_per_unit
 
 
@@ -443,6 +444,14 @@ class RetailObservation:
     unconverted: bool
     day: date
     unit_price: Decimal
+    #: `raw_ingestions.id` de la fila que sostiene esta observación —
+    #: Transparency Layer pública, `GET /anuncio/{id}` (docs/decisions.md,
+    #: entrada de 2026-08-25). `evidence_is_public` es quien decide si vale la
+    #: pena armar el enlace: ese endpoint da 404 igual para imagen, así que
+    #: acá se resuelve una vez por fila en vez de que cada vista repita el
+    #: mismo chequeo de `content_type`.
+    evidence_id: uuid.UUID
+    evidence_is_public: bool
 
 
 @dataclass(frozen=True)
@@ -483,9 +492,12 @@ def compute_retail_observations(
             PriceHistory.price_basis,
             PriceHistory.published_date,
             PriceHistory.created_at,
+            PriceHistory.source_id,
+            RawIngestion.content_type,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
+        .join(RawIngestion, RawIngestion.id == PriceHistory.source_id)
         .where(PriceHistory.sale_format == SaleFormat.RETAIL.value)
         .where(PriceHistory.unit.is_not(None))
         .where(PriceHistory.quantity.is_not(None))
@@ -508,6 +520,8 @@ def compute_retail_observations(
         price_basis,
         published_date,
         created_at,
+        source_id,
+        content_type,
     ) in session.execute(stmt):
         if quantity == 0:
             continue
@@ -566,6 +580,8 @@ def compute_retail_observations(
                 unconverted=unconverted,
                 day=effective_date,
                 unit_price=converted,
+                evidence_id=source_id,
+                evidence_is_public=content_type == ContentType.TEXT,
             )
         )
 

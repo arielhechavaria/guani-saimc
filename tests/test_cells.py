@@ -17,7 +17,12 @@ from sqlalchemy.orm import Session
 
 from datetime import date, timedelta
 
-from saimc.cells import compute_availability, compute_cells, compute_retail_ranges
+from saimc.cells import (
+    compute_availability,
+    compute_cells,
+    compute_retail_observations,
+    compute_retail_ranges,
+)
 from saimc.models import (
     Currency,
     PriceHistory,
@@ -31,12 +36,14 @@ from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
 from datetime import UTC, datetime
 
 
-def _ingestion(session: Session, hash_: str) -> RawIngestion:
+def _ingestion(
+    session: Session, hash_: str, *, content_type: str = ContentType.TEXT
+) -> RawIngestion:
     row = RawIngestion(
-        source_type=SourceType.INBOX_TEXT,
+        source_type=SourceType.INBOX_TEXT if content_type == ContentType.TEXT else SourceType.INBOX_IMAGE,
         file_path=f"raw/{hash_}.txt",
         content_hash=hash_,
-        content_type=ContentType.TEXT,
+        content_type=content_type,
         processing_status=ProcessingStatus.CURATED,
         captured_at=datetime(2026, 8, 1, tzinfo=UTC),
     )
@@ -327,6 +334,50 @@ class TestCeldaFundePorPriceCup:
         (celda,) = compute_cells(session)
 
         assert celda.unconverted is False
+
+
+class TestComputeRetailObservationsEvidencia:
+    """Transparency Layer pública (docs/decisions.md, 2026-08-25): cada
+    observación lleva el id de la ingesta cruda que la sostiene, y si esa
+    evidencia es pública (solo texto, §10.6)."""
+
+    def _arroz(self, session: Session) -> Product:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(arroz)
+        session.commit()
+        return arroz
+
+    def test_evidencia_de_texto_es_publica(self, session: Session) -> None:
+        arroz = self._arroz(session)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add(scu)
+        session.commit()
+        origen = _ingestion(session, "hash-evidencia-texto", content_type=ContentType.TEXT)
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+
+        (observacion,) = compute_retail_observations(session).observations
+
+        assert observacion.evidence_id == origen.id
+        assert observacion.evidence_is_public is True
+
+    def test_evidencia_de_imagen_no_es_publica(self, session: Session) -> None:
+        arroz = self._arroz(session)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add(scu)
+        session.commit()
+        origen = _ingestion(session, "hash-evidencia-imagen", content_type=ContentType.IMAGE)
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+        )
+
+        (observacion,) = compute_retail_observations(session).observations
+
+        assert observacion.evidence_id == origen.id
+        assert observacion.evidence_is_public is False
 
 
 class TestComputeRetailRanges:

@@ -28,6 +28,7 @@ ancho: describen la muestra entera del período, no una interpolación temporal.
 from __future__ import annotations
 
 import statistics
+import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -60,6 +61,12 @@ class SeriesPoint:
     price: Decimal
     x: float
     y: float
+    #: Transparency Layer (docs/decisions.md, 2026-08-25): id de
+    #: `raw_ingestions` que sostiene este punto, y si esa evidencia es
+    #: pública (solo texto — `evidence_is_public` ya resuelto en
+    #: `RetailObservation`, no se repite el chequeo de `content_type` acá).
+    evidence_id: uuid.UUID
+    evidence_is_public: bool
 
     @property
     def price_text(self) -> str:
@@ -197,6 +204,8 @@ def build_series(
                         price=row.unit_price,
                         x=round(to_x(row.day), 1),
                         y=round(to_y(row.unit_price), 1),
+                        evidence_id=row.evidence_id,
+                        evidence_is_public=row.evidence_is_public,
                     )
                     for row in rows
                 ),
