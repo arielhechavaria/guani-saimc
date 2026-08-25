@@ -188,6 +188,29 @@ async def toggle_pilot(
     return _back()
 
 
+@router.post("/catalog/products/{product_id}/unit")
+async def set_product_unit(
+    product_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Corrige la unidad de un producto ya existente.
+
+    El alta no tiene forma de editarse después: un producto cargado con la
+    unidad equivocada (Picadillo entró como "unidad" cuando sus observaciones
+    vienen en lb) queda fuera de la vista minorista para siempre, porque masa
+    y conteo no son convertibles entre sí. `unit` no admite NULL en el modelo
+    —a diferencia de `address`/`province_id` de canal—, así que un valor en
+    blanco cae al mismo default que usa `create_product`, no a nulo.
+    """
+    product = db.get(Product, product_id)
+    if product is None:
+        return _back()
+
+    form = await request.form()
+    product.unit = str(form.get("unit", "")).strip() or _DEFAULT_UNIT
+    db.flush()
+    return _back()
+
+
 @router.post("/catalog/channels")
 async def create_channel(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
     form = await request.form()

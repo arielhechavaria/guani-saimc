@@ -360,7 +360,15 @@
                 <span class="m3-strong">{{ product.name }}</span>
                 {% if product.is_pilot %}<span class="m3-badge">piloto</span>{% endif %}
               </div>
-              {% if product.unit %}<div class="m3-cell-sub">se mide por {{ product.unit }}</div>{% endif %}
+              <!-- Auto-envía al perder el foco, mismo criterio que la dirección
+                   de canal: un input de texto no dispara con cada tecla. -->
+              <form method="post" action="/catalog/products/{{ product.id }}/unit" class="m3-inline-form">
+                <span class="m3-field m3-field-compact">
+                  <input type="text" name="unit" value="{{ product.unit }}"
+                         class="m3-input" style="min-width:100px; font-size:12px; padding:4px 8px;"
+                         onchange="this.form.submit()" />
+                </span>
+              </form>
             </td>
             <td class="m3-sm m3-muted">{{ product.category or "—" }}</td>
             <td>

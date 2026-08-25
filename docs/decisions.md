@@ -4873,3 +4873,49 @@ gana `test_la_hoja_publica_se_sirve`, `test_la_home_publica_no_carga_la_hoja_del
 `test_el_css_publico_viaja_comprimido`. Medido: `/` sirve `saimc-public.css`
 y no referencia `saimc-material.css` en el `<link>`; `/catalog`, `/curation`
 y `/control` siguen con la hoja completa.
+
+## 2026-08-25 — `/catalog` gana edición de unidad de producto; los otros 3 ítems del Todo no eran código
+
+Contexto: de los 4 ítems del Project #1 sin bloqueo (`Bloqueo: Ninguno`), el
+operador pidió encararlos los cuatro en secuencia. Antes de tocar código se
+verificó cada uno contra la base de producción (este host es el propio
+servidor, `saimc.service` sobre `localhost:5432`) y contra el código:
+
+- **`sale_format` vacío (65 filas hoy, no 66 — el número del ítem es una
+  foto vieja) y las 2 filas de Picadillo con problemas**: no son código.
+  `sale_format` ya es un campo editable en la cola de curaduría (prueba de
+  la jabita); rellenarlo bien exige leer la evidencia de cada anuncio y es
+  exactamente la curaduría manual que la decisión 2 de `CLAUDE.md` reserva
+  al operador. Completarlas por SQL/lectura automática de evidencia sería
+  automatizar curaduría sobre la base que ya alimenta el dashboard público
+  — lo que esa decisión descarta explícitamente. Quedan para que el
+  operador las cure con la evidencia real.
+- **`provinces.aliases` como columna**: contradice una decisión ya escrita
+  en el código. `extraction/engine.py` (comentario junto a
+  `_PROVINCE_ALIASES`) explica que el diccionario vive en la capa de
+  extracción y no en `Province` porque es jerga de texto libre, no parte
+  del esquema (§9.0). El propio ítem se declara «no urgente, solo si el
+  diccionario se vuelve difícil de mantener» — son 38 líneas ordenadas, no
+  lo es. No se toca.
+
+**Solo «unidad de catálogo mal declarada en Picadillo» era accionable**, y
+tampoco tal como estaba escrito: el ítem decía «se corrige desde /catalog»
+pero esa edición no existía — `unit` solo se fijaba al dar de alta un
+producto, la tabla de catálogo lo mostraba de solo lectura.
+
+Decisión: `POST /catalog/products/{id}/unit`, mismo patrón que
+`set_channel_address` — auto-envío al perder el foco, sin botón aparte.
+Diferencia con `address`: `Product.unit` no admite NULL en el modelo, así
+que un valor en blanco cae al mismo default que usa `create_product`
+(`"unidad"`), no a nulo.
+
+Descartado: un `<details>` de edición multi-campo como `edit_channel` —
+el único campo roto es `unit`; agregar `category` a la misma pasada sería
+una feature que nadie pidió.
+
+Consecuencia: 853 tests verdes (+2 sobre 851). `_crear_producto` (fixture de
+`test_catalog.py`) gana el parámetro `unit`, default `"lb"` para no tocar los
+tests existentes. **Pendiente**: la corrección real del valor de Picadillo en
+producción (hoy 8 filas en lb con `Product.unit="unidad"`) todavía no se
+aplicó — `saimc.service` corre sin `--reload`, así que el endpoint nuevo no
+está activo hasta reiniciar el servicio con el código nuevo desplegado.

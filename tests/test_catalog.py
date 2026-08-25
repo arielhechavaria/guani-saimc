@@ -52,11 +52,12 @@ def _crear_producto(
     name: str,
     is_pilot: bool,
     aliases: list[str] | None = None,
+    unit: str = "lb",
 ) -> Product:
     producto = Product(
         name=name,
         category="carnes",
-        unit="lb",
+        unit=unit,
         aliases=aliases or [],
         is_pilot=is_pilot,
     )
@@ -245,6 +246,42 @@ class TestCatalogoProductos:
         assert response.status_code == 303
         productos = session.execute(select(Product).where(Product.name.ilike("arroz"))).scalars()
         assert len(list(productos)) == 1
+
+    def test_corrige_la_unidad_de_un_producto_ya_existente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El alta no tiene edición: un producto cargado con la unidad
+        equivocada (Picadillo entró como "unidad" con observaciones en lb)
+        queda fuera de la vista minorista para siempre sin esto."""
+        producto = _crear_producto(session, name="Picadillo", unit="unidad", is_pilot=True)
+
+        response = client.post(
+            f"/catalog/products/{producto.id}/unit",
+            data={"unit": "lb"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(Product, producto.id).unit == "lb"
+
+    def test_dejar_la_unidad_vacia_vuelve_al_default(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`unit` no admite NULL en el modelo, a diferencia de `address` de
+        canal: un valor en blanco no puede dejarlo nulo, cae al mismo default
+        que usa el alta."""
+        producto = _crear_producto(session, name="Picadillo", unit="lb", is_pilot=True)
+
+        response = client.post(
+            f"/catalog/products/{producto.id}/unit",
+            data={"unit": ""},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(Product, producto.id).unit == "unidad"
 
 
 # --- CRUD de canales seguidos -----------------------------------------------
