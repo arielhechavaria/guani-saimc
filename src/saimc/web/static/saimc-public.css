@@ -1,0 +1,79 @@
+/* saimc-public.css — subconjunto de saimc-material.css para la capa pública
+   ------------------------------------------------------------------
+   `_public_shell.html` cargaba la hoja entera del operador (~28 KB en disco,
+   ~6 KB gzipeados) para usar solo los tokens, el reset base, las tres fuentes
+   que la home pública necesita y `.m3-subtitle`. Todo lo demás —topnav,
+   curaduría, tablas, botones, chips, snackbar— es de `catalog`/`curation`/
+   `control` y nunca se ejecuta en una página pública de solo lectura.
+
+   Si una vista pública nueva necesita una clase del operador, se agrega acá
+   explícitamente: el criterio es "lo que usa la home pública", no "lo que
+   podría llegar a usar". */
+
+:root {
+  --m3-primary: #00696e;
+  --m3-primary-container: #cce8e9;
+  --m3-on-primary-container: #041f21;
+
+  --m3-bg: #f2f6f6;
+  --m3-surface: #ffffff;
+  --m3-surface-container: #eef4f4;
+  --m3-surface-container-high: #e3e9ea;
+
+  --m3-on-surface: #191c1c;
+  --m3-on-surface-variant: #3f4949;
+  --m3-outline: #6f7979;
+  --m3-outline-variant: #c4cfcf;
+  --m3-divider: #eef2f2;
+
+  --m3-font: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --m3-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--m3-bg);
+  color: var(--m3-on-surface);
+  font: 400 14px/20px var(--m3-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--m3-primary); text-decoration: none; }
+a:hover { color: var(--m3-primary); text-decoration: underline; }
+
+:focus-visible { outline: 2px solid var(--m3-primary); outline-offset: 2px; }
+::selection { background: var(--m3-surface-container-high); }
+
+/* Roboto, Roboto Mono y Alice vendorizadas en /static/fonts, subset latin.
+   Material Symbols queda fuera: ninguna vista pública usa iconos todavía. */
+@font-face {
+  font-family: "Roboto";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/static/fonts/roboto.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Roboto Mono";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url("/static/fonts/roboto-mono.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Alice";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/alice.woff2") format("woff2");
+}
+
+.m3-subtitle {
+  margin: 4px 0 0; font-size: 14px; line-height: 20px;
+  color: var(--m3-on-surface-variant); max-width: 62ch; text-wrap: pretty;
+}

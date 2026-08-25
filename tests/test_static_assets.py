@@ -83,6 +83,34 @@ class TestAssetsVendorizados:
         assert response.status_code == 200
         assert "--m3-primary" in response.text
 
+    def test_la_hoja_publica_se_sirve(self, client: TestClient) -> None:
+        """`saimc-public.css` es el subconjunto que carga `_public_shell.html`
+        (docs/decisions.md, split de la hoja del operador)."""
+        response = client.get("/static/saimc-public.css")
+
+        assert response.status_code == 200
+        assert "--m3-primary" in response.text
+
+    def test_la_home_publica_no_carga_la_hoja_del_operador(
+        self, client: TestClient
+    ) -> None:
+        """`/` es la única vista servida por `_public_shell.html`. Si vuelve a
+        enlazar `saimc-material.css` (la hoja completa del operador), el split
+        que evita arrastrar topnav/curaduría/botones se rompió en silencio."""
+        texto = client.get("/").text
+
+        assert '/static/saimc-public.css?v=' in texto
+        assert '/static/saimc-material.css?v=' not in texto
+
+    @pytest.mark.parametrize("ruta", ["/catalog", "/curation", "/control"])
+    def test_las_vistas_del_operador_siguen_con_la_hoja_completa(
+        self, client: TestClient, ruta: str
+    ) -> None:
+        texto = client.get(ruta).text
+
+        assert '/static/saimc-material.css?v=' in texto
+        assert '/static/saimc-public.css?v=' not in texto
+
     @pytest.mark.parametrize("ruta", FUENTES)
     def test_cada_fuente_se_sirve_y_es_un_woff2(
         self, client: TestClient, ruta: str
@@ -168,6 +196,15 @@ class TestCompresion:
         assert response.headers["content-encoding"] == "gzip"
         # El cliente lo descomprime y sigue siendo el CSS: comprimir no puede
         # cambiar lo que llega.
+        assert "--m3-primary" in response.text
+
+    def test_el_css_publico_viaja_comprimido(self, client: TestClient) -> None:
+        response = client.get(
+            "/static/saimc-public.css", headers={"accept-encoding": "gzip"}
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-encoding"] == "gzip"
         assert "--m3-primary" in response.text
 
     @pytest.mark.parametrize("ruta", FUENTES)

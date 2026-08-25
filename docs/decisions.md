@@ -4831,3 +4831,45 @@ para poder testear sin depender del reloj real. 8 tests nuevos en
 Sin cambio de esquema. El bache de WAHA en sí (la cuenta de WhatsApp
 deslogueada) sigue sin resolver — es operativo, requiere escanear un QR
 nuevo, no se toca desde acá.
+
+## 2026-08-25 — `saimc-public.css` separa la home pública del CSS del operador, y el hero pasa a claro
+
+Contexto: ítem del Project #1 («Vista pública carga saimc-material.css entero»).
+`_public_shell.html` enlazaba la hoja completa del operador (~28 KB en disco,
+~6 KB gzipeados) para usar solo los tokens, el reset base, tres fuentes y
+`.m3-subtitle`; arrastraba de paso topnav, tablas, botones, chips y snackbar
+de catálogo/curaduría/control que la home pública nunca ejecuta. Ya estaba
+anotado como deuda en el comentario de la plantilla desde el redesign
+(entrada del mapa de cobertura, 2026-08-22).
+
+De paso, el operador pidió que el panel de cobertura (`.ph-hero`) dejara de
+ser oscuro y pasara a claro/Material, para que toda la home comparta un
+lenguaje visual.
+
+Decisión: nace `src/saimc/web/static/saimc-public.css`, subconjunto explícito
+de `saimc-material.css` — mismos tokens `--m3-*` que usa el panel claro,
+reset base, `@font-face` de Roboto/Roboto Mono/Alice (Material Symbols queda
+afuera: ninguna vista pública usa iconos) y `.m3-subtitle`. `app.py` gana
+`_public_css_version()`, paralelo a `_css_version()`, con el mismo
+versionado por mtime para que el cache-busting no dependa del archivo
+equivocado. `_public_shell.html` pasa a enlazar `saimc-public.css`.
+
+El hero (`public_home.html`) cambia sus variables `--ph-dark-bg`/`--ph-dark-line`
+por `--ph-hero-bg`/`--ph-hero-line`, resueltas contra los tokens `--m3-*`
+claros, y todo lo que era `rgba(242,242,243,...)` (texto claro sobre fondo
+oscuro) pasa a `var(--m3-on-surface-variant)` o equivalente. El mapa
+(`is-publicada`/`is-en-ingesta`/`is-sin-datos`) sigue siendo categórico, no
+semáforo: se recalibra a tonos que funcionan sobre fondo claro sin tocar la
+decisión de 2026-08-22 que prohíbe verde/amarillo/rojo por precio (§12.6).
+
+Descartado: mover el `<style>` del hero (page-specific) a `saimc-public.css`
+— esas reglas son de una sola página, viajan gzipeadas con el HTML y no
+justifican una petición aparte; el criterio ya estaba escrito en el propio
+comentario de la plantilla.
+
+Consecuencia: 851 tests verdes (+6 sobre 845). `tests/test_static_assets.py`
+gana `test_la_hoja_publica_se_sirve`, `test_la_home_publica_no_carga_la_hoja_del_operador`,
+`test_las_vistas_del_operador_siguen_con_la_hoja_completa` y
+`test_el_css_publico_viaja_comprimido`. Medido: `/` sirve `saimc-public.css`
+y no referencia `saimc-material.css` en el `<link>`; `/catalog`, `/curation`
+y `/control` siguen con la hoja completa.

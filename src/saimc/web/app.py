@@ -72,12 +72,24 @@ app.state.templates = Jinja2Templates(
 # caché del navegador solo, sin que el operador tenga que limpiarlo a mano.
 _CSS_PATH = Path(__file__).parent / "static" / "saimc-material.css"
 
+# `saimc-public.css` es la hoja liviana que carga `_public_shell.html` — el
+# subconjunto de tokens/reset/fuentes que la home pública necesita, sin
+# arrastrar los ~22 KB del CSS del operador. Mismo motivo que `_CSS_PATH`
+# para el versionado por mtime: cambiarla no debe pedir reinicio ni dejar al
+# navegador con una copia vieja.
+_PUBLIC_CSS_PATH = Path(__file__).parent / "static" / "saimc-public.css"
+
 
 def _css_version() -> int:
     return int(_CSS_PATH.stat().st_mtime)
 
 
+def _public_css_version() -> int:
+    return int(_PUBLIC_CSS_PATH.stat().st_mtime)
+
+
 app.state.templates.env.globals["css_version"] = _css_version
+app.state.templates.env.globals["public_css_version"] = _public_css_version
 
 # htmx vendorizado (ADR 001, `docs/decisions/001-stack-python-unico.md`). No se
 # carga en ninguna plantilla todavía: el dashboard es quien lo va a usar, y la

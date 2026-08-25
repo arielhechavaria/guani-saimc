@@ -3,10 +3,10 @@
   el rail de navegación del operador (Catálogo / Curaduría / Control), y una
   página pública no puede ofrecer enlaces a la herramienta interna.
 
-  Reusa `saimc-material.css` porque ahí viven los tokens de diseño. Arrastra de
-  paso los estilos de la curaduría, que la capa pública no usa — son ~6 KB
-  gzipeados y no justifican partir la hoja todavía, pero conviene tenerlo
-  anotado para cuando el dashboard crezca.
+  Carga `saimc-public.css`, no `saimc-material.css`: la home pública solo
+  necesita los tokens, el reset base, tres fuentes y `.m3-subtitle`, y la
+  hoja del operador arrastraba topnav/curaduría/tablas/botones que esta vista
+  nunca ejecuta (docs/decisions.md, entrada del split).
 
   htmx tampoco se carga acá: esta vista es un mapa estático de solo lectura y
   no tiene una sola interacción parcial. La vista que la necesite lo agrega en
@@ -18,7 +18,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SAIMC — {% block title %}{% endblock %}</title>
-  <link href="/static/saimc-material.css?v={{ css_version() }}" rel="stylesheet" />
+  <link href="/static/saimc-public.css?v={{ public_css_version() }}" rel="stylesheet" />
   {% block head %}{% endblock %}
 </head>
 <body>

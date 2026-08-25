@@ -9,24 +9,27 @@
 
 {% block head %}
 <style>
-  /* Van acá y no en `saimc-material.css` mientras sea la única vista pública:
-     son pocas reglas, viajan gzipeadas con el HTML y no suman una petición.
+  /* Van acá y no en una hoja aparte mientras sea la única vista pública: son
+     pocas reglas, viajan gzipeadas con el HTML y no suman una petición.
 
      Paleta y tratamiento de este rediseño (docs/decisions.md, redesign
      `redesing/saimc_desing_root_page/`): custom properties con prefijo `--ph-`
      (page: home pública), separadas a propósito de los tokens `--m3-*` de
-     `saimc-material.css`. Esos tokens los usa toda la herramienta del
-     operador (catálogo/curaduría/control); esta paleta es solo de esta
-     página y no reemplaza `--m3-primary` en ningún lado. */
+     `saimc-public.css`. Esos tokens también los usa toda la herramienta del
+     operador vía `saimc-material.css` (catálogo/curaduría/control); esta
+     paleta es solo de esta página y no reemplaza `--m3-primary` en ningún
+     lado. */
   :root {
     --ph-font-heading: "Alice", Georgia, serif;
     --ph-accent: #05668d;        /* Baltic Blue — estructura, cifras de precio */
     --ph-accent-2: #028090;      /* Teal — relleno del mapa / dato en ingesta */
-    --ph-accent-2-light: #c1f2e8; /* Icy Aqua — acento sobre fondo oscuro / publicada */
     --ph-neutral: #9aaaa6;       /* Ash Grey — sin datos, líneas finas */
     --ph-median: #aec092;        /* Muted Olive — línea de mediana en series */
-    --ph-dark-bg: #052030;
-    --ph-dark-line: rgba(193, 242, 232, .18);
+    /* Hero claro, tokens Material 3 (`saimc-public.css`): la sección de
+       cobertura era un panel oscuro (decisión 2026-08-22); pasó a claro para
+       que toda la página comparta un solo lenguaje visual. */
+    --ph-hero-bg: var(--m3-surface);
+    --ph-hero-line: var(--m3-outline-variant);
     --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
     --ph-radius-lg: 24px;
     --ph-radius-md: 18px;
@@ -40,69 +43,69 @@
   .ph-h2 { margin: 0; font-family: var(--ph-font-heading); font-weight: 400;
            font-size: 1.75rem; }
 
-  /* ── Panel oscuro: cobertura ───────────────────────────────────────── */
+  /* ── Cobertura: tarjeta clara, tokens Material ────────────────────── */
   .ph-hero { position: relative; overflow: hidden; border-radius: var(--ph-radius-lg);
-             background: var(--ph-dark-bg); padding: 1.75rem 1.5rem 2rem;
-             margin-bottom: 2.5rem; }
+             background: var(--ph-hero-bg); box-shadow: var(--ph-elev);
+             padding: 1.75rem 1.5rem 2rem; margin-bottom: 2.5rem; }
   .ph-hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
     background-image:
-      linear-gradient(rgba(193,242,232,.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(193,242,232,.05) 1px, transparent 1px);
+      linear-gradient(var(--m3-divider) 1px, transparent 1px),
+      linear-gradient(90deg, var(--m3-divider) 1px, transparent 1px);
     background-size: 44px 44px; }
   .ph-hero > * { position: relative; }
 
   .ph-nav { display: flex; flex-wrap: wrap; gap: 1.25rem; margin: 0 0 1.5rem;
-            padding-bottom: 1rem; border-bottom: 1px solid var(--ph-dark-line);
+            padding-bottom: 1rem; border-bottom: 1px solid var(--ph-hero-line);
             font-size: .8125rem; letter-spacing: .08em; text-transform: uppercase; }
-  .ph-nav a { color: rgba(242, 242, 243, .64); }
-  .ph-nav a:hover { color: var(--ph-accent-2-light); text-decoration: none; }
+  .ph-nav a { color: var(--m3-on-surface-variant); }
+  .ph-nav a:hover { color: var(--ph-accent); text-decoration: none; }
 
   .ph-stats { display: grid; gap: .75rem; margin-bottom: 1.5rem;
               grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
-  .ph-stat { border-radius: var(--ph-radius-sm); background: rgba(193, 242, 232, .07);
-             border: 1px solid rgba(193, 242, 232, .16); padding: .8rem 1rem; }
+  .ph-stat { border-radius: var(--ph-radius-sm); background: var(--m3-surface-container);
+             border: 1px solid var(--m3-outline-variant); padding: .8rem 1rem; }
   .ph-stat-label { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
-                   color: rgba(242, 242, 243, .64); }
+                   color: var(--m3-on-surface-variant); }
   .ph-stat-value { margin-top: .2rem; font-family: var(--ph-font-heading); font-size: 1.75rem;
-                   line-height: 1.1; color: #f2f2f3; font-variant-numeric: tabular-nums; }
-  .ph-stat-value small { font-size: 1rem; color: rgba(242, 242, 243, .7); }
+                   line-height: 1.1; color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
+  .ph-stat-value small { font-size: 1rem; color: var(--m3-on-surface-variant); }
 
   .ph-map-wrap { position: relative; }
   .ph-map { width: 100%; height: auto; display: block; }
   .ph-map-province { stroke-width: 1.1; stroke-linejoin: round;
                       transition: fill .15s ease; }
-  .ph-map-province.is-publicada { fill: var(--ph-accent-2-light); stroke: rgba(4, 22, 34, .9); }
-  .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: rgba(4, 22, 34, .9); }
-  .ph-map-province.is-sin-datos { fill: #0b2c3d; stroke: #17455c; }
-  .ph-map-province:hover { fill: var(--ph-accent-2-light); }
+  .ph-map-province.is-publicada { fill: var(--m3-primary-container); stroke: var(--m3-primary); }
+  .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: #015a63; }
+  .ph-map-province.is-sin-datos { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); }
+  .ph-map-province:hover { fill: var(--ph-accent); stroke: var(--ph-accent); }
 
-  .ph-panel { border-radius: var(--ph-radius-sm); border: 1px solid rgba(193, 242, 232, .3);
-              background: rgba(5, 32, 48, .58); padding: 1rem 1.1rem; }
+  .ph-panel { border-radius: var(--ph-radius-sm); border: 1px solid var(--m3-outline-variant);
+              background: var(--m3-surface-container); padding: 1rem 1.1rem; }
   .ph-panel-title { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
-                     color: var(--ph-accent-2-light); padding-bottom: .6rem;
-                     border-bottom: 1px solid var(--ph-dark-line); margin-bottom: .7rem; }
+                     color: var(--ph-accent); padding-bottom: .6rem;
+                     border-bottom: 1px solid var(--ph-hero-line); margin-bottom: .7rem; }
   .ph-legend { display: grid; gap: .5rem; padding: 0; margin: 0; list-style: none;
-               font-size: .8125rem; color: rgba(242, 242, 243, .72); }
+               font-size: .8125rem; color: var(--m3-on-surface-variant); }
   .ph-legend li { display: flex; align-items: center; gap: .55rem; }
   .ph-swatch { width: 1rem; height: .65rem; border-radius: .2rem; flex: none; }
-  .ph-swatch.is-publicada { background: var(--ph-accent-2-light); }
+  .ph-swatch.is-publicada { background: var(--m3-primary-container); border: 1px solid var(--m3-primary); }
   .ph-swatch.is-en-ingesta { background: var(--ph-accent-2); }
-  .ph-swatch.is-sin-datos { background: #0b2c3d; border: 1px solid #17455c; }
+  .ph-swatch.is-sin-datos { background: var(--m3-surface-container-high); border: 1px solid var(--m3-outline-variant); }
 
   .ph-conc { display: grid; gap: .55rem; }
   .ph-conc-row { display: grid; grid-template-columns: minmax(0, 6rem) minmax(0, 1fr) 2rem;
                  align-items: center; gap: .6rem; font-size: .8125rem;
-                 color: rgba(242, 242, 243, .78); }
+                 color: var(--m3-on-surface-variant); }
   .ph-conc-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ph-conc-track { height: 6px; background: rgba(193, 242, 232, .14); border-radius: 3px; }
-  .ph-conc-fill { display: block; height: 6px; background: var(--ph-accent-2-light); border-radius: 3px; }
-  .ph-conc-n { text-align: right; font-variant-numeric: tabular-nums; color: #f2f2f3; }
+  .ph-conc-track { height: 6px; background: var(--m3-surface-container-high); border-radius: 3px; }
+  .ph-conc-fill { display: block; height: 6px; background: var(--ph-accent-2); border-radius: 3px; }
+  .ph-conc-n { text-align: right; font-variant-numeric: tabular-nums; color: var(--m3-on-surface); }
 
   .ph-panels { display: grid; gap: 1rem; margin-top: 1rem;
                grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 
   .ph-hero-note { margin: 1.25rem 0 0; max-width: 72ch; font-size: .875rem; line-height: 1.6;
-                  color: rgba(242, 242, 243, .78); text-wrap: pretty; }
+                  color: var(--m3-on-surface-variant); text-wrap: pretty; }
 
   /* ── Secciones claras: precios y series ──────────────────────────── */
   .ph-section { margin: 0 0 2.5rem; }
