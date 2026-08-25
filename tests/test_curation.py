@@ -486,6 +486,22 @@ class TestCurationQueueGet:
         assert response.status_code == 200
         assert '<option value="l" data-basis-label="litro" selected>' in response.text
 
+    def test_el_campo_price_basis_trae_el_gancho_para_ocultarse(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`price_basis_wrap_0` es el `id` que `_price_row_scripts.html` usa
+        para ocultar el campo cuando la cantidad vale 1 (unit y total dan el
+        mismo número ahí). El toggle en sí es JS, sin cobertura de Python —
+        mismo criterio D8 que `data-basis-label` arriba: acá solo se afirma
+        que el servidor renderiza el gancho del que ese script depende."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="hash-price-basis-wrap", original_text="pollo a 500")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="price_basis_wrap_0"' in response.text
+
     def test_texto_no_llama_al_ocr(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:

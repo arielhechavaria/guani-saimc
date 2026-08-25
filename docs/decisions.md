@@ -4962,3 +4962,29 @@ Consecuencia: 859 tests verdes (+6 sobre 853). `tests/test_transparency_layer.py
 nuevo: texto curado se muestra, imagen/pendiente/descartado/id inexistente
 dan 404, y el nombre del canal de origen no aparece en el HTML aunque la
 ingesta lo tenga cargado.
+
+## 2026-08-25 — El campo `price_basis` se oculta cuando la cantidad es 1
+
+Contexto: el operador venía notando que el campo "¿el precio es por unidad,
+o es el total?" se muestra en cada fila, aunque su propio texto de ayuda
+diga «obligatorio solo si la cantidad no es 1». Con `quantity == 1`, `unit` y
+`total` dan el mismo número (`cells.py`: dividir por 1 es la identidad), así
+que preguntar ahí es ruido — y es exactamente el caso más común de la cola.
+
+Decisión: JS cosmético en `_price_row_scripts.html`, mismo criterio D8 que
+ya regía el relabel de "por unidad" — el HTML server-rendered es el
+mecanismo que la especificación afirma; el script solo mejora la
+experiencia. Sin JS el campo queda visible siempre, que es el comportamiento
+de hoy: nunca se oculta del lado del servidor. `price_basis_wrap_{{ index0 }}`
+en `_price_row_card.html` es el gancho que el script togglea al escribir en
+`quantity_{{ index0 }}` (evento `input`, no `change`: es un `<input
+type="text">`, no un `<select>`).
+
+Descartado: ocultarlo server-side según `row.quantity` — el operador tipea
+la cantidad después de que la fila ya se renderizó (viene de la propuesta
+del extractor o en blanco), así que solo JS puede reaccionar en vivo.
+
+Consecuencia: 860 tests verdes (+1 sobre 859). El toggle en sí no tiene
+cobertura de Python —igual que el relabel existente—; el test nuevo
+(`test_el_campo_price_basis_trae_el_gancho_para_ocultarse`) solo afirma que
+el servidor renderiza el `id` del que el script depende.

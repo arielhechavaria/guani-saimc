@@ -27,4 +27,28 @@
       ? ('Precio por ' + label)
       : 'Precio de una sola unidad de esta fila';
   });
+
+  // Oculta el campo `price_basis` mientras la cantidad valga 1: ahí "unit" y
+  // "total" son el mismo número (`_price_row_card.html`, `m3-help` del
+  // campo), así que preguntar no aporta nada. Igual criterio D8 que el
+  // relabel de arriba: es cosmético, nunca el mecanismo que valida — si este
+  // script no corre, el campo queda visible siempre, que es el
+  // comportamiento sin JS. `input` y no `change`: la cantidad es un
+  // `<input type="text">`, no un `<select>`, y reaccionar tecla a tecla es
+  // lo que hace sentir el campo "vivo" mientras se escribe.
+  function syncBasisVisibility(quantityInput) {
+    var index = quantityInput.id.slice('quantity_'.length);
+    var wrap = document.getElementById('price_basis_wrap_' + index);
+    if (!wrap) return;
+
+    var value = parseFloat(quantityInput.value);
+    wrap.style.display = value === 1 ? 'none' : '';
+  }
+
+  document.addEventListener('input', function (event) {
+    var quantityInput = event.target.closest('input[id^="quantity_"]');
+    if (quantityInput) syncBasisVisibility(quantityInput);
+  });
+
+  document.querySelectorAll('input[id^="quantity_"]').forEach(syncBasisVisibility);
 </script>

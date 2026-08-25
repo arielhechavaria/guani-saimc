@@ -138,7 +138,13 @@
      spec). Sin preselección; obligatoria solo cuando `quantity != 1`
      (design.md, D3) — con cantidad uno, unitario y total son el mismo
      número y el servidor no la exige. #}
-  <div style="margin-top:22px">
+  {# Oculto por JS cuando `quantity_{{ index0 }}` vale 1: ahí "unit" y "total"
+     dan el mismo número (ver el `m3-help` de abajo), así que el campo es
+     ruido en la fila más común de la cola. Progresiva: sin JS queda
+     visible siempre, que es el comportamiento de hoy — nunca se oculta del
+     lado del servidor, mismo criterio D8 que el relabel de "por unidad" en
+     `_price_row_scripts.html`. #}
+  <div id="price_basis_wrap_{{ index0 }}" style="margin-top:22px">
     <label class="m3-field" style="display:block">
       <span class="m3-field-label" for="price_basis_{{ index0 }}">
         ¿El precio de esta fila es por unidad, o es el total del lote/anuncio?
