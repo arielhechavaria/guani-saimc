@@ -4919,3 +4919,46 @@ tests existentes. **Pendiente**: la corrección real del valor de Picadillo en
 producción (hoy 8 filas en lb con `Product.unit="unidad"`) todavía no se
 aplicó — `saimc.service` corre sin `--reload`, así que el endpoint nuevo no
 está activo hasta reiniciar el servicio con el código nuevo desplegado.
+
+## 2026-08-25 — Transparency Layer pública, solo para evidencia de texto
+
+Contexto: ítem del Project #1, bloqueado por «Decisión de privacidad».
+`docs/spec-map.md` ya tenía registrada la contradicción: la línea 321 de
+`spec.md` pide publicar «literalmente el archivo capturado», pero §10.6
+mitigación 2 exige mostrar «el anuncio, no la identidad del anunciante», y
+una captura de WhatsApp/Telegram trae nombre del remitente y a veces
+teléfono en los propios píxeles. Con texto pegado las tres mitigaciones de
+§10.6 se sostienen; con imagen no.
+
+Medido contra producción antes de decidir: de los 238 registros curados, 143
+son de texto (`inbox_text` + `whatsapp_channel` texto) y 95 de imagen. Sobre
+las 143 de texto, **0 contienen un patrón de 8 dígitos consecutivos**
+(formato de teléfono cubano) — se contó el patrón, no se leyó ni se mostró
+el contenido para esta medición.
+
+Decisión: `GET /anuncio/{ingestion_id}` en `routers/public.py`, sin auth
+(capa pública). Sirve `RawIngestion.original_text` solo cuando
+`content_type == TEXT` y `processing_status == CURATED`; cualquier otro caso
+—imagen, pendiente, descartado, id inexistente— da el mismo 404, para no
+filtrar por el código de estado si una evidencia de imagen existe o no.
+Nunca lee `channel_id` ni `source_reference`: el identificador de origen no
+se expone en la capa pública (`CLAUDE.md`).
+
+Descartado: publicar también imagen con alguna forma de redacción — exige
+OCR/ML para localizar y tapar nombre/teléfono en los píxeles, fuera de
+alcance en Fase 0 (CLAUDE.md, decisión 2). Queda documentada como la razón
+por la que el 40% de la evidencia (95 filas) sigue sin ruta pública.
+
+**Fuera de alcance de este slice, explícito**: la home pública todavía no
+enlaza a `/anuncio/{id}` desde ningún lado —ni las tarjetas de precio (un
+rango agrega n≥1 anuncios, no hay «el» anuncio) ni los puntos del gráfico de
+evolución (cada punto sí es exactamente un anuncio, pero `RetailObservation`
+—`cells.py`— no lleva el id de origen todavía; agregarlo toca la
+normalización que comparten tarjetas, gráfico y matriz de pilotos). El
+endpoint es real y navegable por URL directa; cablearlo a la UI es un
+próximo slice.
+
+Consecuencia: 859 tests verdes (+6 sobre 853). `tests/test_transparency_layer.py`
+nuevo: texto curado se muestra, imagen/pendiente/descartado/id inexistente
+dan 404, y el nombre del canal de origen no aparece en el HTML aunque la
+ingesta lo tenga cargado.

@@ -11,7 +11,9 @@ usuario ni dato de contacto en ninguna respuesta — `CLAUDE.md` fija que el
 identificador de usuario origen nunca se expone acá.
 """
 
-from fastapi import APIRouter, Depends, Request
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -19,7 +21,7 @@ from sqlalchemy.orm import Session
 from datetime import date
 
 from saimc.cells import compute_retail_observations, compute_retail_ranges
-from saimc.models import PriceHistory, Province
+from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
 from saimc.progress import pilot_product_names
 from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
@@ -98,5 +100,42 @@ def public_home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
             "cards": cards,
             "series": series,
             "window_days": _CARD_WINDOW_DAYS,
+        },
+    )
+
+
+@router.get("/anuncio/{ingestion_id}", response_class=HTMLResponse)
+def public_evidence(
+    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Transparency Layer (§10.6, mitigación 2): «el anuncio y su contenido
+    económico, no la identidad del anunciante».
+
+    Solo texto. Una captura de imagen trae nombre del remitente y a veces
+    teléfono en los propios píxeles (docs/spec-map.md, contradicción 1); el
+    texto pegado no —medido contra las 143 filas curadas de texto en
+    producción, 2026-08-25: ninguna contiene un patrón de teléfono— y ya no
+    hay forma de redactar una imagen sin OCR/ML, fuera de alcance en Fase 0
+    (CLAUDE.md, decisión 2). `channel_id`/`source_reference` nunca se leen acá:
+    el identificador de origen no se expone en la capa pública (CLAUDE.md).
+
+    404 idéntico si no existe, si es imagen o si nunca se curó: distinguir
+    "existe pero es imagen" de "no existe" filtraría información por el
+    camino que la mitigación 2 quiere cerrado.
+    """
+    ingestion = db.get(RawIngestion, ingestion_id)
+    if (
+        ingestion is None
+        or ingestion.content_type != ContentType.TEXT
+        or ingestion.processing_status != ProcessingStatus.CURATED
+    ):
+        raise HTTPException(status_code=404, detail="No hay anuncio público con ese id")
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "public_evidence.html",
+        {
+            "original_text": ingestion.original_text,
+            "captured_day": ingestion.captured_at.date(),
         },
     )
