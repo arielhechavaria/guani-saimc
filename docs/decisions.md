@@ -5118,3 +5118,29 @@ Consecuencia: el operador puede decidir con datos si vale la pena seguir
 suscrito a un canal ruidoso, o si la tasa alta describe qué se está
 capturando (texto sin precio) y no un problema de curaduría. No hay
 automatismo que dé de baja canales solo — sigue siendo decisión del operador.
+
+## 2026-08-26 — Filtro por producto en la vista pública
+
+Contexto: `/` mostraba las 5 tarjetas piloto y sus series sin forma de
+enfocarse en un producto. El operador pidió que la página, aun austera,
+dejara «trabajar sobre el producto y sus precios» — leído como consultar y
+acotar, no editar (editar es `/curation` y `/catalog`, y §5 de `CLAUDE.md`
+prohíbe auth en Fase 0).
+
+Decisión: `public_home` acepta `?producto=<slug>` y acota tarjetas y series a
+ese producto. `src/saimc/web/product_nav.py` arma la barra («Todos» + un ítem
+por piloto) y resuelve el slug; `product_slug` quita tildes con `unicodedata`
+(«Azúcar blanca» → «azucar-blanca»). Un slug que no matchea no da 404: la
+vista pública muestra todo. Es refinación de «tarjetas de producto» del
+alcance §9, no expone nada nuevo.
+
+Descartado: htmx para el intercambio parcial. `_public_shell` no lo carga a
+propósito; recargar esta página gzipeada no justifica sumar una dependencia
+JS a una audiencia con conexión lenta. Enlaces con query string, render
+entero de servidor. Si las recargas molestan, htmx es un añadido chico.
+
+Consecuencia: 897 tests verdes (+14 sobre 883), casos escritos antes del
+código (`tests/test_public_filter.py`). Queda el patrón para los dos slices
+siguientes: selector de ventana de días (`?dias=`) y tabla comparativa por
+provincia para el producto enfocado, ambos como query string sobre la misma
+ruta.

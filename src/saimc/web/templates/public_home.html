@@ -136,6 +136,18 @@
              text-transform: uppercase; padding: .3rem .75rem; border-radius: 999px;
              background: rgba(5, 102, 141, .1); color: var(--ph-accent); }
 
+  /* ── Barra de filtro por producto ───────────────────────────────── */
+  .ph-filter { display: flex; flex-wrap: wrap; gap: .5rem; padding: 0; margin: 0 0 1.25rem;
+               list-style: none; }
+  .ph-filter a { display: block; font-size: .75rem; letter-spacing: .04em;
+                 text-transform: uppercase; padding: .35rem .85rem; border-radius: 999px;
+                 border: 1px solid var(--m3-outline-variant); color: var(--m3-on-surface-variant); }
+  .ph-filter a:hover { border-color: var(--ph-accent); color: var(--ph-accent);
+                       text-decoration: none; }
+  .ph-filter a.is-selected { background: var(--ph-accent); border-color: var(--ph-accent);
+                             color: #fff; }
+  .ph-empty { margin: 0; font-size: .9375rem; color: var(--m3-on-surface-variant); }
+
   .ph-series { display: grid; gap: 1.1rem; padding: 0; margin: 0; list-style: none;
                grid-template-columns: repeat(3, 1fr); }
   .ph-serie { border-radius: var(--ph-radius-sm); background: #fff; box-shadow: var(--ph-elev);
@@ -295,13 +307,26 @@
   </div>
 </section>
 
-{% if cards %}
+{% if cards or selected_product %}
 <section class="ph-section" id="precios">
   <div class="ph-section-head">
     <h2 class="ph-h2">Precios observados</h2>
-    <span class="ph-section-tag">Ventana de {{ window_days }} días · CUP</span>
+    <span class="ph-section-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}</span>
   </div>
 
+  {# Barra de filtro: enlaces con `?producto=`, servidos enteros por el
+     servidor. Sin htmx —el `_public_shell` no lo carga a propósito— porque
+     recargar esta página gzipeada no justifica sumar una dependencia JS a una
+     audiencia con conexión lenta. #}
+  {% if product_nav | length > 1 %}
+  <ul class="ph-filter">
+    {% for choice in product_nav %}
+    <li><a href="{{ choice.query }}#precios"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if cards %}
   <ul class="ph-cards">
     {% for card in cards %}
     <li class="ph-card">
@@ -340,16 +365,25 @@
     el rango observado y cuántos anuncios lo respaldan. Los precios están llevados
     a una misma unidad y a pesos cubanos para que se puedan comparar.
   </p>
+  {% else %}
+  <p class="ph-empty">No hay anuncios de {{ selected_product }} en los últimos {{ window_days }} días.</p>
+  {% endif %}
 </section>
 {% endif %}
 
-{% if series %}
+{% if series or selected_product %}
 <section class="ph-section" id="como-se-movio">
   <div class="ph-section-head">
     <h2 class="ph-h2">Cómo se movió</h2>
     <span class="ph-section-tag">Un punto = un anuncio</span>
   </div>
 
+  {% if not series %}
+  <p class="ph-empty">
+    No hay suficientes días con anuncios de {{ selected_product }} para dibujar
+    su evolución. Hacen falta al menos dos días distintos con observación.
+  </p>
+  {% else %}
   {# Sin línea que una los puntos, y es deliberado: la serie más densa tiene
      dato en 14 de 30 días y la más rala en 3. Unir dos observaciones
      separadas por tres días dibuja tres precios que nadie observó. Se
@@ -410,6 +444,7 @@
     </li>
     {% endfor %}
   </ul>
+  {% endif %}
 </section>
 {% endif %}
 

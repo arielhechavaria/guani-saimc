@@ -26,6 +26,7 @@ from saimc.progress import pilot_product_names
 from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
+from saimc.web.product_nav import build_product_nav, resolve_product
 from saimc.web.series_view import build_series
 
 router = APIRouter()
@@ -73,24 +74,38 @@ def _published_provinces(session: Session) -> frozenset[str]:
 
 
 @router.get("/", response_class=HTMLResponse)
-def public_home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def public_home(
+    request: Request,
+    producto: str | None = None,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
     # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
     # Fase 0 se comprometió a medir (§9), y la cola larga son 59 filas en 53
     # productos que no sostienen ninguna afirmación.
-    pilot = frozenset(pilot_product_names(db))
+    pilot_names = pilot_product_names(db)
+    pilot = frozenset(pilot_names)
+
+    # `producto` es un slug de URL; `resolve_product` lo lleva de vuelta al
+    # nombre piloto o devuelve None (query string raro → se muestra todo, sin
+    # 404). El filtro es una refinación de la vista, no expone nada nuevo:
+    # sigue dentro de «tarjetas de producto» del alcance §9.
+    selected = resolve_product(pilot_names, producto)
+
     report = compute_retail_ranges(db, days=_CARD_WINDOW_DAYS)
-    cards = build_cards([r for r in report.ranges if r.product_name in pilot])
+    ranges = [r for r in report.ranges if r.product_name in pilot]
+    if selected is not None:
+        ranges = [r for r in ranges if r.product_name == selected]
+    cards = build_cards(ranges)
 
     # Misma ventana que las tarjetas a propósito: el gráfico tiene que describir
     # exactamente la muestra que la tarjeta resume, no otra. Dos ventanas
     # distintas en la misma página harían que el rango del titular no coincida
     # con lo que el usuario ve dibujado.
     observations = compute_retail_observations(db, days=_CARD_WINDOW_DAYS)
-    series = build_series(
-        [o for o in observations.observations if o.product_name in pilot],
-        window_days=_CARD_WINDOW_DAYS,
-        hoy=date.today(),
-    )
+    obs = [o for o in observations.observations if o.product_name in pilot]
+    if selected is not None:
+        obs = [o for o in obs if o.product_name == selected]
+    series = build_series(obs, window_days=_CARD_WINDOW_DAYS, hoy=date.today())
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -100,6 +115,8 @@ def public_home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
             "cards": cards,
             "series": series,
             "window_days": _CARD_WINDOW_DAYS,
+            "product_nav": build_product_nav(pilot_names, selected),
+            "selected_product": selected,
         },
     )
 
