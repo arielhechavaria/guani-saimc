@@ -5214,3 +5214,33 @@ tienen algo que mostrar.
 Consecuencia: 918 tests verdes (+9 sobre 909), casos antes del código
 (`TestResolveProvince`, `TestBuildProvinceNav`, `TestFiltroPorProvinciaEnLaRuta`).
 Cierra la simetría producto/provincia de la vista pública.
+
+## 2026-08-26 — Descarga CSV de la evidencia (GET /datos.csv)
+
+Contexto: 5º slice de interactividad de la vista pública. La procedencia del
+dato es el diferencial del proyecto (§6.5) pero solo se veía anuncio por
+anuncio, sin forma de bajar el conjunto.
+
+Decisión: `GET /datos.csv?producto=&provincia=&dias=` devuelve las
+observaciones minoristas de la vista (piloto, convertidas a CUP, dentro de la
+ventana y los filtros) como CSV adjunto. Columnas: producto, provincia, dia,
+precio_por_unidad, moneda, unidad, anuncio (id de raw_ingestions, que ya viaja
+en el HTML). **Ninguna columna personal**: sin channel_id, source_reference ni
+identificador de origen (CLAUDE.md). `_visible_observations` es ahora la única
+definición de "qué filas muestra la vista", compartida por página y CSV para
+que no diverjan. La página enlaza al CSV con los filtros activos (`csv_href`,
+compuesto por `download_href` en product_nav, misma regla que las barras).
+
+Apartamiento anotado de §9: la sección acota el alcance de visualización a
+"mapa de calor simple y tarjetas de producto", y un endpoint de descarga no es
+eso. Es una expansión, no una contradicción —§9 lista lo que entra, no prohíbe
+lo adyacente— y no expone nada que la página no muestre ya. Registrado acá y en
+el docstring de `public_data_csv`.
+
+Descartado: incluir `evidence_id` solo cuando la evidencia es pública (texto).
+El id de imagen tampoco es dato personal y `/anuncio/{id}` ya da 404 para
+imagen; condicionar la columna solo agregaba una rama sin cerrar ninguna fuga.
+
+Consecuencia: 926 tests verdes (+8 sobre 918), casos antes del código
+(`TestDescargaCsv`). Quedan 2 ítems de vista pública en el board: "última
+actualización" visible y URLs limpias /producto/<slug>.

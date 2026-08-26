@@ -151,6 +151,8 @@
   .ph-filter-province { margin-top: -.5rem; }
   .ph-filter-window { margin-top: -.5rem; font-size: .9em; }
   .ph-empty { margin: 0; font-size: .9375rem; color: var(--m3-on-surface-variant); }
+  .ph-download { margin: 1rem 0 0; font-size: .875rem; color: var(--m3-on-surface-variant); }
+  .ph-download a { color: var(--ph-accent); font-weight: 600; }
 
   .ph-series { display: grid; gap: 1.1rem; padding: 0; margin: 0; list-style: none;
                grid-template-columns: repeat(3, 1fr); }
@@ -426,6 +428,13 @@
     suficientes anuncios para dar un precio como cifra cerrada, así que se publica
     el rango observado y cuántos anuncios lo respaldan. Los precios están llevados
     a una misma unidad y a pesos cubanos para que se puedan comparar.
+  </p>
+
+  {# La procedencia del dato es el diferencial del proyecto (§6.5): el CSV baja
+     exactamente las observaciones de esta vista, con los filtros activos. #}
+  <p class="ph-download">
+    <a href="{{ csv_href }}">Descargar estos datos (CSV)</a> — un anuncio por fila,
+    con el enlace a cada uno.
   </p>
   {% else %}
   <p class="ph-empty">No hay anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %} en los últimos {{ window_days }} días.</p>

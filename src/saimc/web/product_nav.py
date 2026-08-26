@@ -83,11 +83,18 @@ def resolve_days(raw: str | int | None) -> int:
     return value if value in WINDOW_CHOICES else DEFAULT_WINDOW_DAYS
 
 
-def _query(*, producto: str = "", provincia: str = "", dias: int = DEFAULT_WINDOW_DAYS) -> str:
+def _query(
+    *,
+    producto: str = "",
+    provincia: str = "",
+    dias: int = DEFAULT_WINDOW_DAYS,
+    path: str = "/",
+) -> str:
     """Compone la URL con los ejes activos, en orden fijo producto/provincia/días.
 
     Omite `dias` cuando es el default para no ensuciar la URL compartible con
-    un parámetro redundante. La plantilla le agrega el ancla `#precios`.
+    un parámetro redundante. Las barras de filtro le agregan el ancla `#precios`;
+    la descarga usa `path="/datos.csv"`.
     """
     params = []
     if producto:
@@ -96,7 +103,15 @@ def _query(*, producto: str = "", provincia: str = "", dias: int = DEFAULT_WINDO
         params.append(f"provincia={provincia}")
     if dias != DEFAULT_WINDOW_DAYS:
         params.append(f"dias={dias}")
-    return "/?" + "&".join(params) if params else "/"
+    return f"{path}?" + "&".join(params) if params else path
+
+
+def download_href(
+    *, producto: str = "", provincia: str = "", dias: int = DEFAULT_WINDOW_DAYS
+) -> str:
+    """URL de `/datos.csv` con los mismos filtros que la vista, para que la
+    descarga traiga exactamente lo que se está viendo."""
+    return _query(producto=producto, provincia=provincia, dias=dias, path="/datos.csv")
 
 
 @dataclass(frozen=True)

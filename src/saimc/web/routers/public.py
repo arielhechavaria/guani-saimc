@@ -13,9 +13,11 @@ usuario ni dato de contacto en ninguna respuesta — `CLAUDE.md` fija que el
 identificador de usuario origen nunca se expone acá.
 """
 
+import csv
+import io
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -32,6 +34,8 @@ from saimc.web.product_nav import (
     build_product_nav,
     build_province_nav,
     build_window_nav,
+    download_href,
+    product_slug,
     resolve_days,
     resolve_product,
     resolve_province,
@@ -85,6 +89,34 @@ def _published_provinces(session: Session) -> frozenset[str]:
     )
 
 
+def _visible_observations(
+    session: Session,
+    *,
+    pilot: frozenset[str],
+    product: str | None,
+    province: str | None,
+    window: int,
+) -> list:
+    """Las observaciones minoristas que la vista pública muestra: piloto,
+    convertidas a CUP, dentro de la ventana y de los filtros activos.
+
+    Una sola definición para que la página (tarjetas y gráfico) y la descarga
+    CSV no puedan divergir: lo que se baja es exactamente lo que se ve.
+    `unconverted` queda afuera igual que en `build_cards` / `build_series`.
+    """
+    report = compute_retail_observations(session, days=window)
+    obs = [
+        o
+        for o in report.observations
+        if o.product_name in pilot and not o.unconverted
+    ]
+    if product is not None:
+        obs = [o for o in obs if o.product_name == product]
+    if province is not None:
+        obs = [o for o in obs if o.province_name == province]
+    return obs
+
+
 @router.get("/", response_class=HTMLResponse)
 def public_home(
     request: Request,
@@ -128,15 +160,17 @@ def public_home(
     # exactamente la muestra que la tarjeta resume, no otra. Dos ventanas
     # distintas en la misma página harían que el rango del titular no coincida
     # con lo que el usuario ve dibujado.
-    observations = compute_retail_observations(db, days=window)
-    obs = [o for o in observations.observations if o.product_name in pilot]
-    if selected is not None:
-        obs = [o for o in obs if o.product_name == selected]
-    if selected_province is not None:
-        obs = [o for o in obs if o.province_name == selected_province]
+    obs = _visible_observations(
+        db, pilot=pilot, product=selected, province=selected_province, window=window
+    )
     series = build_series(obs, window_days=window, hoy=date.today())
 
     prov = selected_province or ""
+    csv_href = download_href(
+        producto=product_slug(selected) if selected else "",
+        provincia=product_slug(selected_province) if selected_province else "",
+        dias=window,
+    )
     return request.app.state.templates.TemplateResponse(
         request,
         "public_home.html",
@@ -145,6 +179,7 @@ def public_home(
             "cards": cards,
             "series": series,
             "window_days": window,
+            "csv_href": csv_href,
             "product_nav": build_product_nav(
                 pilot_names, selected, window, selected_province=prov
             ),
@@ -160,6 +195,77 @@ def public_home(
             "selected_product": selected,
             "selected_province": selected_province,
         },
+    )
+
+
+#: Columnas del CSV. Solo lo que la página ya muestra: nada de `channel_id`,
+#: `source_reference` ni identificador de origen — `CLAUDE.md` fija que no se
+#: exponen en la capa pública. `anuncio` es el id de `raw_ingestions`, que ya
+#: viaja en el HTML como enlace a `/anuncio/{id}`.
+_CSV_COLUMNS = (
+    "producto",
+    "provincia",
+    "dia",
+    "precio_por_unidad",
+    "moneda",
+    "unidad",
+    "anuncio",
+)
+
+
+@router.get("/datos.csv")
+def public_data_csv(
+    producto: str | None = None,
+    provincia: str | None = None,
+    dias: str | None = None,
+    db: Session = Depends(get_db),
+) -> Response:
+    """La evidencia detrás de la vista pública, en CSV, con los mismos tres
+    filtros que `GET /`.
+
+    Apartamiento anotado de §9 (`docs/decisions.md`, 2026-08-26): la sección
+    acota el alcance a «mapa de calor simple y tarjetas de producto», y un
+    endpoint de descarga no es eso. Se hace igual porque la procedencia del
+    dato es el diferencial del proyecto (§6.5) y esto **no expone nada nuevo**:
+    es el mismo universo de `_visible_observations` que alimenta la página, en
+    otro formato. Sin `require_operator`, sin dato personal.
+    """
+    pilot = frozenset(pilot_product_names(db))
+    selected = resolve_product(tuple(pilot), producto)
+    selected_province = resolve_province(_all_province_names(db), provincia)
+    window = resolve_days(dias)
+
+    rows = sorted(
+        _visible_observations(
+            db,
+            pilot=pilot,
+            product=selected,
+            province=selected_province,
+            window=window,
+        ),
+        key=lambda o: (o.product_name, o.province_name or "", o.day),
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(_CSV_COLUMNS)
+    for o in rows:
+        writer.writerow(
+            (
+                o.product_name,
+                o.province_name or "",
+                o.day.isoformat(),
+                f"{o.unit_price:f}",
+                o.currency,
+                o.unit,
+                str(o.evidence_id),
+            )
+        )
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="saimc-precios.csv"'},
     )
 
 

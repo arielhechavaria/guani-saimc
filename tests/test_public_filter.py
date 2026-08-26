@@ -585,3 +585,123 @@ class TestFiltroPorProvinciaEnLaRuta:
         texto = client.get("/").text
 
         assert 'aria-current="true">Todas<' in texto
+
+
+class TestDescargaCsv:
+    """`GET /datos.csv`: la evidencia detrás de la vista, en CSV, con los mismos
+    tres filtros que `/`. No expone nada que la página no muestre ya."""
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        aceite = Product(
+            name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
+        )
+        no_piloto = Product(
+            name="Malanga", category="viandas", unit="lb", aliases=[], is_pilot=False
+        )
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, aceite, no_piloto, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-csv")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 18))
+        _precio(
+            session, product=arroz, province=habana, source=fuente,
+            dia=date(2026, 8, 21), price="330",
+        )
+        _precio(
+            session, product=arroz, province=santiago, source=fuente,
+            dia=date(2026, 8, 20), price="410",
+        )
+        _precio(session, product=aceite, province=habana, source=fuente, dia=date(2026, 8, 19))
+        _precio(session, product=no_piloto, province=habana, source=fuente, dia=date(2026, 8, 19))
+        session.commit()
+
+    def test_devuelve_csv_como_adjunto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        r = client.get("/datos.csv")
+
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/csv")
+        assert "attachment" in r.headers["content-disposition"]
+
+    def test_cabecera_y_una_fila_por_observacion_piloto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        lineas = client.get("/datos.csv").text.strip().splitlines()
+
+        assert lineas[0] == (
+            "producto,provincia,dia,precio_por_unidad,moneda,unidad,anuncio"
+        )
+        # 4 observaciones piloto (Malanga no cuenta).
+        assert len(lineas) == 1 + 4
+
+    def test_respeta_el_filtro_de_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/datos.csv?producto=arroz").text
+
+        assert "Aceite" not in texto
+        assert texto.count("Arroz") == 3
+
+    def test_respeta_el_filtro_de_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/datos.csv?provincia=santiago-de-cuba").text
+
+        assert "La Habana" not in texto
+        assert "Santiago de Cuba" in texto
+
+    def test_respeta_la_ventana(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+        arroz = session.query(Product).filter_by(name="Arroz").one()
+        habana = session.query(Province).filter_by(name="La Habana").one()
+        fuente = _ingestion(session, hash_="h-csv-lejano")
+        _precio(
+            session, product=arroz, province=habana, source=fuente,
+            dia=date.today() - timedelta(days=20), price="999",
+        )
+        session.commit()
+
+        assert "999" in client.get("/datos.csv?dias=30").text
+        assert "999" not in client.get("/datos.csv?dias=7").text
+
+    def test_excluye_los_no_piloto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        assert "Malanga" not in client.get("/datos.csv").text
+
+    def test_no_trae_columnas_personales(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/datos.csv").text.lower()
+
+        for termino in ("channel", "source_reference", "telefono", "phone", "remitente"):
+            assert termino not in texto
+
+    def test_la_pagina_enlaza_al_csv_con_los_filtros_activos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?producto=arroz&dias=7").text
+
+        # Jinja escapa el `&` del atributo href.
+        assert 'href="/datos.csv?producto=arroz&amp;dias=7"' in texto
