@@ -335,6 +335,48 @@
   </ul>
 
   {% if cards %}
+  {% if selected_product %}
+  {# Producto enfocado: una tabla comparativa por provincia dice más que N
+     tarjetas repetidas. Mismos datos y mismo orden que las tarjetas (por
+     cantidad de anuncios, lo mejor respaldado primero). Con n=1 el mínimo y el
+     máximo van como «—»: hay un dato, no un rango — mismo criterio que la
+     tarjeta, que en ese caso muestra solo la mediana. #}
+  <div class="ph-table-card">
+    <table class="m3-coverage ph-provinces">
+      <caption class="m3-subtitle">
+        {{ selected_product }} por provincia, ventana de {{ window_days }} días,
+        en {{ cards[0].currency }}/{{ cards[0].unit }}. «—» marca una sola
+        observación: hay un dato, todavía no un rango.
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Provincia</th>
+          <th scope="col" class="num">Mínimo</th>
+          <th scope="col" class="num">Mediana</th>
+          <th scope="col" class="num">Máximo</th>
+          <th scope="col" class="num">Anuncios</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for card in cards %}
+        <tr>
+          <td>{{ card.province_name }}</td>
+          {% if card.is_single_observation %}
+          <td class="num">—</td>
+          <td class="num">{{ card.median_text }}</td>
+          <td class="num">—</td>
+          {% else %}
+          <td class="num">{{ card.minimum_text }}</td>
+          <td class="num">{{ card.median_text }}</td>
+          <td class="num">{{ card.maximum_text }}</td>
+          {% endif %}
+          <td class="num">{{ card.count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
   <ul class="ph-cards">
     {% for card in cards %}
     <li class="ph-card">
@@ -366,6 +408,7 @@
     </li>
     {% endfor %}
   </ul>
+  {% endif %}
 
   <p class="m3-subtitle" style="margin:0">
     Todas las celdas están en <strong>muestra en formación</strong>: todavía no hay

@@ -227,17 +227,19 @@ class TestFiltroEnLaRuta:
         assert 'class="ph-filter"' in texto
         assert 'class="is-selected" aria-current="true">Todos<' in texto
 
-    def test_elegir_un_producto_acota_las_tarjetas(
+    def test_elegir_un_producto_acota_la_vista(
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
 
         texto = client.get("/?producto=arroz").text
 
-        # La barra de filtro nombra todos los productos; lo que se acota son
-        # las tarjetas. Se mira el marcado de tarjeta, no el nombre suelto.
-        assert '<span class="ph-card-product">Arroz</span>' in texto
-        assert '<span class="ph-card-product">Aceite</span>' not in texto
+        # Producto enfocado: tabla por provincia (ver TestTablaPorProvincia).
+        # La barra de filtro nombra todos los productos; los datos mostrados son
+        # solo del elegido.
+        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
+        assert "Arroz por provincia" in texto
+        assert "Aceite" not in tabla
 
     def test_resuelve_un_nombre_con_tilde(
         self, client: TestClient, session: Session
@@ -246,8 +248,9 @@ class TestFiltroEnLaRuta:
 
         texto = client.get("/?producto=azucar-blanca").text
 
-        assert '<span class="ph-card-product">Azúcar blanca</span>' in texto
-        assert '<span class="ph-card-product">Arroz</span>' not in texto
+        assert "Azúcar blanca por provincia" in texto
+        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
+        assert "Arroz" not in tabla
 
     def test_producto_inexistente_no_da_404(
         self, client: TestClient, session: Session
@@ -300,8 +303,9 @@ class TestFiltroEnLaRuta:
         response = client.get("/?producto=aceite")
 
         assert response.status_code == 200
-        # Aceite tiene una tarjeta (un día basta) pero no serie (hacen falta 2).
-        assert '<span class="ph-card-product">Aceite</span>' in response.text
+        # Aceite entra en la tabla por provincia (un día basta) pero no dibuja
+        # serie (hacen falta 2 días distintos).
+        assert "Aceite por provincia" in response.text
         assert "No hay suficientes días" in response.text
 
 
@@ -368,3 +372,86 @@ class TestVentanaEnLaRuta:
         assert "Ventana de 90 días" in texto
         assert 'aria-current="true">90 días<' in texto
         assert 'aria-current="true">Arroz<' in texto
+
+
+class TestTablaPorProvincia:
+    def _seed_arroz_dos_provincias(self, session: Session) -> None:
+        """Arroz en La Habana (3 anuncios, hay rango) y Santiago (1, dato suelto)."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-tabla")
+        for dia, precio in (
+            (date(2026, 8, 18), "300"),
+            (date(2026, 8, 20), "340"),
+            (date(2026, 8, 22), "320"),
+        ):
+            _precio(
+                session,
+                product=arroz,
+                province=habana,
+                source=fuente,
+                dia=dia,
+                price=precio,
+            )
+        _precio(
+            session,
+            product=arroz,
+            province=santiago,
+            source=fuente,
+            dia=date(2026, 8, 21),
+            price="500",
+        )
+        session.commit()
+
+    def test_producto_enfocado_muestra_tabla_por_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed_arroz_dos_provincias(session)
+
+        texto = client.get("/?producto=arroz").text
+
+        assert "ph-provinces" in texto
+        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
+        assert "La Habana" in tabla
+        assert "Santiago de Cuba" in tabla
+
+    def test_la_provincia_con_una_sola_observacion_no_finge_rango(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed_arroz_dos_provincias(session)
+
+        texto = client.get("/?producto=arroz").text
+        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
+        fila_santiago = tabla.split("Santiago de Cuba")[1].split("</tr>")[0]
+
+        # n=1: mínimo y máximo van como «—», solo la mediana lleva el valor.
+        assert fila_santiago.count("—") == 2
+        assert "500" in fila_santiago
+
+    def test_la_tabla_ordena_por_cantidad_de_anuncios(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed_arroz_dos_provincias(session)
+
+        tabla = (
+            client.get("/?producto=arroz")
+            .text.split("ph-provinces")[1]
+            .split("</table>")[0]
+        )
+
+        assert tabla.index("La Habana") < tabla.index("Santiago de Cuba")
+
+    def test_sin_producto_enfocado_no_hay_tabla_por_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed_arroz_dos_provincias(session)
+
+        texto = client.get("/").text
+
+        assert "ph-provinces" not in texto
+        assert 'class="ph-cards"' in texto

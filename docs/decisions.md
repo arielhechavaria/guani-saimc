@@ -5166,3 +5166,24 @@ mantienen la URL enumerable.
 Consecuencia: 905 tests verdes (+8 sobre 897), casos antes del código
 (`TestResolveDays`, `TestBuildWindowNav`, `TestVentanaEnLaRuta`). Falta el
 tercer slice: tabla comparativa por provincia para el producto enfocado.
+
+## 2026-08-26 — Tabla comparativa por provincia en la vista pública
+
+Contexto: tercer y último slice del pedido. Con un producto enfocado
+(`?producto=`), la home repetía N tarjetas casi idénticas, una por provincia.
+
+Decisión: con producto enfocado, `#precios` muestra una tabla (Provincia ·
+Mínimo · Mediana · Máximo · Anuncios) en vez del grid de tarjetas. Mismos
+datos y mismo orden que las tarjetas (`build_cards`, por cantidad de anuncios
+descendente); sin cómputo nuevo. Con n=1 el mínimo y el máximo van como «—»,
+igual criterio que la tarjeta que en ese caso muestra solo la mediana: hay un
+dato, no un rango. Sin producto enfocado se mantiene el grid de tarjetas. El
+rótulo §9.0 «muestra en formación» y el n por fila siguen visibles.
+
+Descartado: mostrar tarjetas y tabla a la vez. Duplicar el mismo dato en dos
+formas en la misma sección no agrega nada y alarga la página.
+
+Consecuencia: 909 tests verdes (+4 netos sobre 905), casos antes del código
+(`TestTablaPorProvincia`). Cierra el pedido de «trabajar sobre el producto y
+sus precios» en la vista pública: filtro por producto, ventana de días y
+comparación por provincia, todo por query string y render de servidor.
