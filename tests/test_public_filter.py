@@ -13,7 +13,7 @@ Lo que estos casos protegen:
 """
 
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -33,7 +33,14 @@ from saimc.models import (
 from saimc.models.raw_ingestion import ProcessingStatus
 from saimc.web.app import app
 from saimc.web.deps import get_db
-from saimc.web.product_nav import build_product_nav, product_slug, resolve_product
+from saimc.web.product_nav import (
+    DEFAULT_WINDOW_DAYS,
+    build_product_nav,
+    build_window_nav,
+    product_slug,
+    resolve_days,
+    resolve_product,
+)
 
 
 @pytest.fixture
@@ -163,6 +170,45 @@ class TestBuildProductNav:
         assert por_label["Aceite"].query == "/?producto=aceite"
         assert not por_label["Arroz"].is_selected
 
+    def test_la_ventana_no_default_viaja_en_el_query_del_producto(self) -> None:
+        nav = build_product_nav(("Arroz",), "Arroz", selected_days=7)
+        por_label = {c.label: c for c in nav}
+
+        assert por_label["Todos"].query == "/?dias=7"
+        assert por_label["Arroz"].query == "/?producto=arroz&dias=7"
+
+
+class TestResolveDays:
+    def test_acepta_las_tres_ventanas(self) -> None:
+        assert resolve_days("7") == 7
+        assert resolve_days("30") == 30
+        assert resolve_days("90") == 90
+        assert resolve_days(7) == 7
+
+    def test_cae_al_default_ante_basura(self) -> None:
+        assert resolve_days(None) == DEFAULT_WINDOW_DAYS
+        assert resolve_days("abc") == DEFAULT_WINDOW_DAYS
+        assert resolve_days("31") == DEFAULT_WINDOW_DAYS
+        assert resolve_days("-7") == DEFAULT_WINDOW_DAYS
+
+
+class TestBuildWindowNav:
+    def test_tres_opciones_con_la_activa_marcada(self) -> None:
+        nav = build_window_nav(7)
+        por_dias = {c.days: c for c in nav}
+
+        assert set(por_dias) == {7, 30, 90}
+        assert por_dias[7].is_selected
+        assert not por_dias[30].is_selected
+
+    def test_preserva_el_producto_elegido_en_el_query(self) -> None:
+        nav = build_window_nav(30, selected_name="Arroz")
+        por_dias = {c.days: c for c in nav}
+
+        # 30 es el default: no ensucia la URL con `dias=30`.
+        assert por_dias[30].query == "/?producto=arroz"
+        assert por_dias[7].query == "/?producto=arroz&dias=7"
+
 
 # --- ruta pública ----------------------------------------------------------
 
@@ -257,3 +303,68 @@ class TestFiltroEnLaRuta:
         # Aceite tiene una tarjeta (un día basta) pero no serie (hacen falta 2).
         assert '<span class="ph-card-product">Aceite</span>' in response.text
         assert "No hay suficientes días" in response.text
+
+
+class TestVentanaEnLaRuta:
+    def _seed_lejano_y_cercano(self, session: Session) -> None:
+        """Arroz con un anuncio a 10 días y otro a 3 días de hoy."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-ventana")
+        hoy = date.today()
+        _precio(
+            session,
+            product=arroz,
+            province=habana,
+            source=fuente,
+            dia=hoy - timedelta(days=10),
+            price="300",
+        )
+        _precio(
+            session,
+            product=arroz,
+            province=habana,
+            source=fuente,
+            dia=hoy - timedelta(days=3),
+            price="360",
+        )
+        session.commit()
+
+    def test_dias_7_recorta_la_muestra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed_lejano_y_cercano(session)
+
+        texto_30 = client.get("/?producto=arroz&dias=30").text
+        texto_7 = client.get("/?producto=arroz&dias=7").text
+
+        assert "Ventana de 30 días" in texto_30
+        assert "Ventana de 7 días" in texto_7
+        # A 30 días entran los dos (rango 300–360); a 7 solo el de 360.
+        assert "300" in texto_30
+        assert "300" not in texto_7.split('id="precios"')[1].split("</section>")[0]
+
+    def test_dias_invalido_cae_al_default(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed_lejano_y_cercano(session)
+
+        response = client.get("/?dias=999")
+
+        assert response.status_code == 200
+        assert "Ventana de 30 días" in response.text
+
+    def test_ventana_y_producto_se_combinan(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed_lejano_y_cercano(session)
+
+        texto = client.get("/?dias=90&producto=arroz").text
+
+        assert "Ventana de 90 días" in texto
+        assert 'aria-current="true">90 días<' in texto
+        assert 'aria-current="true">Arroz<' in texto

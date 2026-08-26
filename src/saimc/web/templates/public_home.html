@@ -146,6 +146,8 @@
                        text-decoration: none; }
   .ph-filter a.is-selected { background: var(--ph-accent); border-color: var(--ph-accent);
                              color: #fff; }
+  /* Segunda fila (ventana de días): más discreta, pegada a la de producto. */
+  .ph-filter-window { margin-top: -.5rem; font-size: .9em; }
   .ph-empty { margin: 0; font-size: .9375rem; color: var(--m3-on-surface-variant); }
 
   .ph-series { display: grid; gap: 1.1rem; padding: 0; margin: 0; list-style: none;
@@ -314,10 +316,10 @@
     <span class="ph-section-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}</span>
   </div>
 
-  {# Barra de filtro: enlaces con `?producto=`, servidos enteros por el
-     servidor. Sin htmx —el `_public_shell` no lo carga a propósito— porque
+  {# Barras de filtro: enlaces con `?producto=` y `?dias=`, servidos enteros por
+     el servidor. Sin htmx —el `_public_shell` no lo carga a propósito— porque
      recargar esta página gzipeada no justifica sumar una dependencia JS a una
-     audiencia con conexión lenta. #}
+     audiencia con conexión lenta. Cada enlace preserva el otro eje. #}
   {% if product_nav | length > 1 %}
   <ul class="ph-filter">
     {% for choice in product_nav %}
@@ -325,6 +327,12 @@
     {% endfor %}
   </ul>
   {% endif %}
+
+  <ul class="ph-filter ph-filter-window">
+    {% for choice in window_nav %}
+    <li><a href="{{ choice.query }}#precios"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
+    {% endfor %}
+  </ul>
 
   {% if cards %}
   <ul class="ph-cards">

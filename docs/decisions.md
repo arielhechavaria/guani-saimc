@@ -5144,3 +5144,25 @@ código (`tests/test_public_filter.py`). Queda el patrón para los dos slices
 siguientes: selector de ventana de días (`?dias=`) y tabla comparativa por
 provincia para el producto enfocado, ambos como query string sobre la misma
 ruta.
+
+## 2026-08-26 — Selector de ventana de días en la vista pública
+
+Contexto: segundo slice del pedido de «trabajar sobre el producto y sus
+precios». La ventana de tarjetas y series era fija en 30 días.
+
+Decisión: `?dias=` acepta 7, 30 o 90 (`product_nav.WINDOW_CHOICES`); cualquier
+otro valor cae a 30. Aplica a tarjetas y series juntas —el gráfico tiene que
+describir la misma muestra que la tarjeta resume—. Segunda barra de chips bajo
+la de producto; cada enlace preserva el otro eje. `dias=30` se omite de la URL
+por ser el default, para que el enlace compartible no lleve un parámetro
+redundante. El default y su motivo (medición 2026-08-22) se mudaron de
+`public._CARD_WINDOW_DAYS` a `product_nav.DEFAULT_WINDOW_DAYS`; la constante
+vieja quedó muerta y se borró.
+
+Descartado: ventana libre por número. Tres cortes nombrados —semana, mes,
+trimestre— cubren la pregunta sin pedirle al visitante que elija un N, y
+mantienen la URL enumerable.
+
+Consecuencia: 905 tests verdes (+8 sobre 897), casos antes del código
+(`TestResolveDays`, `TestBuildWindowNav`, `TestVentanaEnLaRuta`). Falta el
+tercer slice: tabla comparativa por provincia para el producto enfocado.
