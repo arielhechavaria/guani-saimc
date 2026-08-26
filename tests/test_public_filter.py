@@ -1,15 +1,16 @@
-"""Filtro por producto en la vista pública (`/?producto=<slug>`).
+"""Filtros de la vista pública: `?producto=`, `?provincia=` y `?dias=`.
 
 Lo que estos casos protegen:
 
-- El slug es estable y resuelve de vuelta al nombre, tildes incluidas
-  («azucar-blanca» -> «Azúcar blanca»).
-- Elegir un producto acota las tarjetas y las series a ese producto, y nada
-  más de la página (el mapa de cobertura no depende del producto elegido).
-- Un `producto` que no existe no da 404: una vista pública muestra todo ante
-  un query string raro.
-- Elegir un producto sin dato suficiente no rompe la página: muestra el aviso
-  y deja la barra de filtro para cambiar de producto.
+- El slug es estable y resuelve de vuelta al nombre, tildes y espacios
+  incluidos («azucar-blanca» -> «Azúcar blanca», «la-habana» -> «La Habana»).
+- Elegir un producto o una provincia acota las tarjetas y las series, y nada
+  más de la página (el mapa de cobertura no depende de los filtros).
+- Los tres ejes se combinan y cada enlace preserva los otros dos.
+- Un valor que no existe no da 404: una vista pública muestra todo ante un
+  query string raro.
+- Un filtro sin dato suficiente no rompe la página: muestra el aviso y deja
+  las barras para cambiar de filtro.
 """
 
 from collections.abc import Iterator
@@ -36,10 +37,12 @@ from saimc.web.deps import get_db
 from saimc.web.product_nav import (
     DEFAULT_WINDOW_DAYS,
     build_product_nav,
+    build_province_nav,
     build_window_nav,
     product_slug,
     resolve_days,
     resolve_product,
+    resolve_province,
 )
 
 
@@ -176,6 +179,40 @@ class TestBuildProductNav:
 
         assert por_label["Todos"].query == "/?dias=7"
         assert por_label["Arroz"].query == "/?producto=arroz&dias=7"
+
+
+class TestResolveProvince:
+    def test_resuelve_por_slug_con_espacios(self) -> None:
+        nombres = ("La Habana", "Santiago de Cuba")
+        assert resolve_province(nombres, "la-habana") == "La Habana"
+        assert resolve_province(nombres, "santiago-de-cuba") == "Santiago de Cuba"
+
+    def test_slug_vacio_o_desconocido_no_selecciona(self) -> None:
+        assert resolve_province(("La Habana",), "") is None
+        assert resolve_province(("La Habana",), None) is None
+        assert resolve_province(("La Habana",), "matanzas") is None
+
+
+class TestBuildProvinceNav:
+    def test_todas_va_primero_y_activo_sin_seleccion(self) -> None:
+        nav = build_province_nav(("La Habana", "Santiago de Cuba"), None)
+
+        assert nav[0].label == "Todas"
+        assert nav[0].slug == ""
+        assert nav[0].is_selected
+        assert all(not c.is_selected for c in nav[1:])
+
+    def test_preserva_producto_y_ventana_en_el_query(self) -> None:
+        nav = build_province_nav(
+            ("La Habana",), "La Habana", selected_product="Arroz", selected_days=7
+        )
+        por_label = {c.label: c for c in nav}
+
+        assert por_label["Todas"].query == "/?producto=arroz&dias=7"
+        assert (
+            por_label["La Habana"].query
+            == "/?producto=arroz&provincia=la-habana&dias=7"
+        )
 
 
 class TestResolveDays:
@@ -455,3 +492,96 @@ class TestTablaPorProvincia:
 
         assert "ph-provinces" not in texto
         assert 'class="ph-cards"' in texto
+
+
+class TestFiltroPorProvinciaEnLaRuta:
+    def _seed(self, session: Session) -> None:
+        """Arroz en Habana (2 días) y Santiago (1); Aceite solo en Habana."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        aceite = Product(
+            name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, aceite, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-prov")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 18))
+        _precio(
+            session,
+            product=arroz,
+            province=habana,
+            source=fuente,
+            dia=date(2026, 8, 21),
+            price="330",
+        )
+        _precio(
+            session,
+            product=arroz,
+            province=santiago,
+            source=fuente,
+            dia=date(2026, 8, 20),
+            price="410",
+        )
+        _precio(session, product=aceite, province=habana, source=fuente, dia=date(2026, 8, 19))
+        session.commit()
+
+    def test_elegir_provincia_acota_las_tarjetas_a_esa_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?provincia=santiago-de-cuba").text
+
+        # Santiago solo tiene Arroz; Aceite (solo Habana) no aparece.
+        assert '<span class="ph-card-product">Arroz</span>' in texto
+        assert '<span class="ph-card-product">Aceite</span>' not in texto
+        assert 'aria-current="true">Santiago de Cuba<' in texto
+
+    def test_provincia_y_producto_se_combinan(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana&producto=arroz").text
+
+        assert 'aria-current="true">La Habana<' in texto
+        assert 'aria-current="true">Arroz<' in texto
+        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
+        assert "La Habana" in tabla
+        assert "Santiago de Cuba" not in tabla
+
+    def test_provincia_inexistente_no_da_404(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        response = client.get("/?provincia=matanzas")
+
+        assert response.status_code == 200
+        assert 'aria-current="true">Todas<' in response.text
+
+    def test_provincia_sin_dato_piloto_avisa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+        session.add(Province(code="mat", name="Matanzas"))
+        session.commit()
+
+        response = client.get("/?provincia=matanzas")
+
+        # Matanzas existe pero no tiene fila piloto: 200 y aviso.
+        assert response.status_code == 200
+        assert "No hay anuncios" in response.text
+        assert "Matanzas" in response.text
+
+    def test_la_barra_de_provincia_esta_con_todas_marcado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/").text
+
+        assert 'aria-current="true">Todas<' in texto

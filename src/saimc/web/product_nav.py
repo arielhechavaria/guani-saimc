@@ -1,11 +1,12 @@
-"""Barras de filtro de la vista pública: por producto y por ventana de días.
+"""Barras de filtro de la vista pública: por producto, por provincia y por
+ventana de días.
 
 Mismo reparto que `map_view` / `card_view` / `series_view`: acá se arma la lista
 de opciones y cuál está activa, con su enlace ya compuesto; la plantilla solo la
 pinta. Que el slug, la resolución y la composición del query string vivan en
 Python y no en Jinja es lo que deja testear que «azucar-blanca» resuelve a
-«Azúcar blanca», y que elegir una ventana preserva el producto elegido, sin
-parsear HTML.
+«Azúcar blanca», y que elegir una provincia preserva el producto y la ventana
+elegidos, sin parsear HTML.
 """
 
 from __future__ import annotations
@@ -29,12 +30,13 @@ WINDOW_CHOICES: tuple[int, ...] = (7, 30, 90)
 
 
 def product_slug(name: str) -> str:
-    """Nombre de producto → segmento de URL estable.
+    """Nombre → segmento de URL estable. Sirve para producto y para provincia.
 
     Quita las tildes con `unicodedata`: `NFKD` descompone «á» en «a» + el
     acento como carácter combinante aparte, y `combining()` deja tirar solo
     ese. Es la vía idiomática en Python y cubre cualquier acento, no solo los
-    que se nos ocurran a mano. «Azúcar blanca» → «azucar-blanca».
+    que se nos ocurran a mano. «Azúcar blanca» → «azucar-blanca»,
+    «Santiago de Cuba» → «santiago-de-cuba».
     """
     sin_tildes = "".join(
         c
@@ -44,20 +46,28 @@ def product_slug(name: str) -> str:
     return "-".join(sin_tildes.lower().split())
 
 
-def resolve_product(
-    pilot_names: Sequence[str], slug: str | None
-) -> str | None:
-    """El nombre piloto cuyo slug coincide con `slug`, o `None`.
+def _resolve(names: Sequence[str], slug: str | None) -> str | None:
+    """El nombre cuyo slug coincide con `slug`, o `None`.
 
     `None` tanto si `slug` viene vacío como si no matchea ninguno: una vista
     pública no responde 404 por un query string raro, muestra todo.
     """
     if not slug:
         return None
-    for name in pilot_names:
+    for name in names:
         if product_slug(name) == slug:
             return name
     return None
+
+
+def resolve_product(pilot_names: Sequence[str], slug: str | None) -> str | None:
+    """El nombre piloto cuyo slug coincide con `slug`, o `None`."""
+    return _resolve(pilot_names, slug)
+
+
+def resolve_province(province_names: Sequence[str], slug: str | None) -> str | None:
+    """El nombre de provincia cuyo slug coincide con `slug`, o `None`."""
+    return _resolve(province_names, slug)
 
 
 def resolve_days(raw: str | int | None) -> int:
@@ -73,8 +83,8 @@ def resolve_days(raw: str | int | None) -> int:
     return value if value in WINDOW_CHOICES else DEFAULT_WINDOW_DAYS
 
 
-def _query(*, producto: str, dias: int) -> str:
-    """Compone `/`, `/?producto=x`, `/?dias=7` o `/?producto=x&dias=7`.
+def _query(*, producto: str = "", provincia: str = "", dias: int = DEFAULT_WINDOW_DAYS) -> str:
+    """Compone la URL con los ejes activos, en orden fijo producto/provincia/días.
 
     Omite `dias` cuando es el default para no ensuciar la URL compartible con
     un parámetro redundante. La plantilla le agrega el ancla `#precios`.
@@ -82,17 +92,19 @@ def _query(*, producto: str, dias: int) -> str:
     params = []
     if producto:
         params.append(f"producto={producto}")
+    if provincia:
+        params.append(f"provincia={provincia}")
     if dias != DEFAULT_WINDOW_DAYS:
         params.append(f"dias={dias}")
     return "/?" + "&".join(params) if params else "/"
 
 
 @dataclass(frozen=True)
-class ProductChoice:
-    """Una opción de la barra de filtro por producto."""
+class NavChoice:
+    """Una opción de cualquiera de las tres barras de filtro."""
 
     label: str
-    #: Slug del producto, o cadena vacía para «Todos».
+    #: Slug del ítem, o cadena vacía para «Todos» / «Todas».
     slug: str
     is_selected: bool
     #: Destino del enlace sin ancla; la plantilla le agrega `#precios`.
@@ -113,44 +125,86 @@ def build_product_nav(
     pilot_names: Iterable[str],
     selected_name: str | None,
     selected_days: int = DEFAULT_WINDOW_DAYS,
-) -> list[ProductChoice]:
+    *,
+    selected_province: str = "",
+) -> list[NavChoice]:
     """«Todos» + un ítem por producto piloto, marcando el activo.
 
-    Cada enlace preserva `selected_days`: cambiar de producto no debería
-    resetear la ventana que el usuario venía mirando.
+    Cada enlace preserva `selected_province` y `selected_days`: cambiar de
+    producto no debería resetear la provincia ni la ventana que se venía
+    mirando.
     """
+    prov_slug = product_slug(selected_province) if selected_province else ""
     choices = [
-        ProductChoice(
+        NavChoice(
             label="Todos",
             slug="",
             is_selected=selected_name is None,
-            query=_query(producto="", dias=selected_days),
+            query=_query(producto="", provincia=prov_slug, dias=selected_days),
         )
     ]
     for name in pilot_names:
         slug = product_slug(name)
         choices.append(
-            ProductChoice(
+            NavChoice(
                 label=name,
                 slug=slug,
                 is_selected=name == selected_name,
-                query=_query(producto=slug, dias=selected_days),
+                query=_query(producto=slug, provincia=prov_slug, dias=selected_days),
+            )
+        )
+    return choices
+
+
+def build_province_nav(
+    province_names: Iterable[str],
+    selected_name: str | None,
+    *,
+    selected_product: str = "",
+    selected_days: int = DEFAULT_WINDOW_DAYS,
+) -> list[NavChoice]:
+    """«Todas» + un ítem por provincia con dato piloto, marcando la activa.
+
+    Simétrica a `build_product_nav`; cada enlace preserva el producto y la
+    ventana elegidos.
+    """
+    prod_slug = product_slug(selected_product) if selected_product else ""
+    choices = [
+        NavChoice(
+            label="Todas",
+            slug="",
+            is_selected=selected_name is None,
+            query=_query(producto=prod_slug, provincia="", dias=selected_days),
+        )
+    ]
+    for name in province_names:
+        slug = product_slug(name)
+        choices.append(
+            NavChoice(
+                label=name,
+                slug=slug,
+                is_selected=name == selected_name,
+                query=_query(producto=prod_slug, provincia=slug, dias=selected_days),
             )
         )
     return choices
 
 
 def build_window_nav(
-    selected_days: int, selected_name: str | None = None
+    selected_days: int,
+    selected_name: str | None = None,
+    *,
+    selected_province: str = "",
 ) -> list[WindowChoice]:
-    """Las tres ventanas, marcando la activa y preservando el producto elegido."""
-    slug = product_slug(selected_name) if selected_name else ""
+    """Las tres ventanas, marcando la activa y preservando producto y provincia."""
+    prod_slug = product_slug(selected_name) if selected_name else ""
+    prov_slug = product_slug(selected_province) if selected_province else ""
     return [
         WindowChoice(
             label=f"{days} días",
             days=days,
             is_selected=days == selected_days,
-            query=_query(producto=slug, dias=days),
+            query=_query(producto=prod_slug, provincia=prov_slug, dias=days),
         )
         for days in WINDOW_CHOICES
     ]

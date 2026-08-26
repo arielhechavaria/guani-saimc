@@ -5187,3 +5187,30 @@ Consecuencia: 909 tests verdes (+4 netos sobre 905), casos antes del código
 (`TestTablaPorProvincia`). Cierra el pedido de «trabajar sobre el producto y
 sus precios» en la vista pública: filtro por producto, ventana de días y
 comparación por provincia, todo por query string y render de servidor.
+
+## 2026-08-26 — Filtro por provincia en la vista pública
+
+Contexto: el filtro por producto (a992d4f) dejó la vista pública asimétrica —
+se podía enfocar un producto pero no una provincia—. El board del Project #1
+no tenía ninguna tarea de vista pública; las de visualización estaban todas
+bloqueadas (umbral §12.6, privacidad, Fase 2). Se anotaron 4 ítems de vista
+pública en el board antes de empezar.
+
+Decisión: `?provincia=<slug>` acota tarjetas y series a esa provincia, simétrico
+al de producto. `product_slug` ya servía para nombres con espacios
+(«Santiago de Cuba» → «santiago-de-cuba»); `resolve_province` reusa la lógica
+de `resolve_product` vía `_resolve`. `?provincia=` se resuelve contra las 16
+provincias (conjunto estable): una elegida sin dato en la ventana igual
+resuelve y muestra su aviso. La barra lista las provincias con dato piloto en
+la ventana, más la elegida si quedó afuera. Los tres ejes (producto, provincia,
+días) se combinan y cada enlace preserva los otros dos (`_query` con orden fijo
+producto/provincia/días). `ProductChoice` → `NavChoice`, compartido por las
+barras de producto y provincia.
+
+Descartado: listar las 16 provincias siempre en la barra. La mayoría no tiene
+dato piloto y el chip llevaría a una página vacía; se listan solo las que
+tienen algo que mostrar.
+
+Consecuencia: 918 tests verdes (+9 sobre 909), casos antes del código
+(`TestResolveProvince`, `TestBuildProvinceNav`, `TestFiltroPorProvinciaEnLaRuta`).
+Cierra la simetría producto/provincia de la vista pública.

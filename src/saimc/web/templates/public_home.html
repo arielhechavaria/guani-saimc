@@ -146,7 +146,9 @@
                        text-decoration: none; }
   .ph-filter a.is-selected { background: var(--ph-accent); border-color: var(--ph-accent);
                              color: #fff; }
-  /* Segunda fila (ventana de días): más discreta, pegada a la de producto. */
+  /* Filas 2 y 3 (provincia y ventana): pegadas a la de producto. La de
+     ventana además más discreta. */
+  .ph-filter-province { margin-top: -.5rem; }
   .ph-filter-window { margin-top: -.5rem; font-size: .9em; }
   .ph-empty { margin: 0; font-size: .9375rem; color: var(--m3-on-surface-variant); }
 
@@ -309,20 +311,29 @@
   </div>
 </section>
 
-{% if cards or selected_product %}
+{% if cards or selected_product or selected_province %}
 <section class="ph-section" id="precios">
   <div class="ph-section-head">
     <h2 class="ph-h2">Precios observados</h2>
-    <span class="ph-section-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}</span>
+    <span class="ph-section-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}{% if selected_province %} · {{ selected_province }}{% endif %}</span>
   </div>
 
-  {# Barras de filtro: enlaces con `?producto=` y `?dias=`, servidos enteros por
-     el servidor. Sin htmx —el `_public_shell` no lo carga a propósito— porque
-     recargar esta página gzipeada no justifica sumar una dependencia JS a una
-     audiencia con conexión lenta. Cada enlace preserva el otro eje. #}
+  {# Barras de filtro: enlaces con `?producto=`, `?provincia=` y `?dias=`,
+     servidos enteros por el servidor. Sin htmx —el `_public_shell` no lo carga
+     a propósito— porque recargar esta página gzipeada no justifica sumar una
+     dependencia JS a una audiencia con conexión lenta. Cada enlace preserva
+     los otros ejes. #}
   {% if product_nav | length > 1 %}
   <ul class="ph-filter">
     {% for choice in product_nav %}
+    <li><a href="{{ choice.query }}#precios"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if province_nav | length > 1 %}
+  <ul class="ph-filter ph-filter-province">
+    {% for choice in province_nav %}
     <li><a href="{{ choice.query }}#precios"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
     {% endfor %}
   </ul>
@@ -417,12 +428,12 @@
     a una misma unidad y a pesos cubanos para que se puedan comparar.
   </p>
   {% else %}
-  <p class="ph-empty">No hay anuncios de {{ selected_product }} en los últimos {{ window_days }} días.</p>
+  <p class="ph-empty">No hay anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %} en los últimos {{ window_days }} días.</p>
   {% endif %}
 </section>
 {% endif %}
 
-{% if series or selected_product %}
+{% if series or selected_product or selected_province %}
 <section class="ph-section" id="como-se-movio">
   <div class="ph-section-head">
     <h2 class="ph-h2">Cómo se movió</h2>
@@ -431,8 +442,8 @@
 
   {% if not series %}
   <p class="ph-empty">
-    No hay suficientes días con anuncios de {{ selected_product }} para dibujar
-    su evolución. Hacen falta al menos dos días distintos con observación.
+    No hay suficientes días con anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %}
+    para dibujar la evolución. Hacen falta al menos dos días distintos con observación.
   </p>
   {% else %}
   {# Sin línea que una los puntos, y es deliberado: la serie más densa tiene
