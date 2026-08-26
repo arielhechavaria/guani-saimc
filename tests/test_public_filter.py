@@ -170,8 +170,28 @@ class TestBuildProductNav:
 
         assert not por_label["Todos"].is_selected
         assert por_label["Aceite"].is_selected
-        assert por_label["Aceite"].query == "/?producto=aceite"
         assert not por_label["Arroz"].is_selected
+
+    def test_chip_de_producto_usa_la_url_limpia_cuando_no_hay_otro_filtro(
+        self,
+    ) -> None:
+        """Sin provincia ni ventana no-default, el chip apunta a `/producto/<slug>`
+        en vez de `/?producto=<slug>`: más limpio para compartir."""
+        nav = build_product_nav(("Arroz", "Aceite"), None)
+        por_label = {c.label: c for c in nav}
+
+        assert por_label["Arroz"].query == "/producto/arroz"
+        assert por_label["Aceite"].query == "/producto/aceite"
+        assert por_label["Todos"].query == "/"
+
+    def test_con_otro_filtro_activo_el_chip_vuelve_al_query_string(self) -> None:
+        con_ventana = build_product_nav(("Arroz",), None, selected_days=7)
+        con_provincia = build_product_nav(
+            ("Arroz",), None, selected_province="La Habana"
+        )
+
+        assert con_ventana[1].query == "/?producto=arroz&dias=7"
+        assert con_provincia[1].query == "/?producto=arroz&provincia=la-habana"
 
     def test_la_ventana_no_default_viaja_en_el_query_del_producto(self) -> None:
         nav = build_product_nav(("Arroz",), "Arroz", selected_days=7)
@@ -764,3 +784,99 @@ class TestFrescuraDelDato:
         texto = client.get("/").text
 
         assert "Datos verificados hasta" not in texto
+
+
+class TestRutaProductoLimpia:
+    """`GET /producto/<slug>`: URL dedicada por producto, misma vista que
+    `/?producto=<slug>`. El query string sigue siendo alias válido."""
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        aceite = Product(
+            name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
+        )
+        azucar = Product(
+            name="Azúcar blanca", category="dulces", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, aceite, azucar, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-ruta")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 18))
+        _precio(
+            session, product=arroz, province=habana, source=fuente,
+            dia=date(2026, 8, 21), price="330",
+        )
+        _precio(
+            session, product=arroz, province=santiago, source=fuente,
+            dia=date(2026, 8, 20), price="410",
+        )
+        _precio(session, product=aceite, province=habana, source=fuente, dia=date(2026, 8, 19))
+        _precio(session, product=azucar, province=habana, source=fuente, dia=date(2026, 8, 19))
+        session.commit()
+
+    def test_muestra_la_vista_enfocada_en_el_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/producto/arroz").text
+
+        assert "Arroz por provincia" in texto
+        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
+        assert "Aceite" not in tabla
+
+    def test_resuelve_slug_con_tilde(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        r = client.get("/producto/azucar-blanca")
+
+        assert r.status_code == 200
+        assert "Azúcar blanca por provincia" in r.text
+
+    def test_slug_inexistente_da_404(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        assert client.get("/producto/inventado").status_code == 404
+
+    def test_acepta_provincia_y_dias_como_query(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/producto/arroz?provincia=la-habana&dias=7").text
+
+        assert "Ventana de 7 días" in texto
+        assert 'aria-current="true">La Habana<' in texto
+        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
+        assert "Santiago de Cuba" not in tabla
+
+    def test_el_query_string_sigue_siendo_alias(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        limpia = client.get("/producto/arroz").text
+        alias = client.get("/?producto=arroz").text
+
+        # Misma sección de precios (misma tabla por provincia).
+        assert "Arroz por provincia" in limpia
+        assert "Arroz por provincia" in alias
+
+    def test_el_titulo_refleja_el_producto_enfocado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        enfocado = client.get("/producto/arroz").text
+        home = client.get("/").text
+
+        assert "<title>SAIMC — Arroz — precios</title>" in enfocado
+        assert "<title>SAIMC — Precios y cobertura</title>" in home

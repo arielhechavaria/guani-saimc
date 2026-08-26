@@ -114,6 +114,19 @@ def download_href(
     return _query(producto=producto, provincia=provincia, dias=dias, path="/datos.csv")
 
 
+def _product_link(slug: str, *, provincia: str, dias: int) -> str:
+    """Enlace de un chip de producto: la URL limpia `/producto/<slug>` cuando no
+    hay otro filtro activo, y el query string en cuanto lo hay.
+
+    La ruta limpia solo sabe de un producto; provincia y ventana viajan como
+    query. Mantener las dos formas —y no forzar un redirect— es lo que pide el
+    ítem del board: `/producto/arroz` para compartir, `?producto=` como alias.
+    """
+    if not provincia and dias == DEFAULT_WINDOW_DAYS:
+        return f"/producto/{slug}"
+    return _query(producto=slug, provincia=provincia, dias=dias)
+
+
 @dataclass(frozen=True)
 class NavChoice:
     """Una opción de cualquiera de las tres barras de filtro."""
@@ -165,7 +178,7 @@ def build_product_nav(
                 label=name,
                 slug=slug,
                 is_selected=name == selected_name,
-                query=_query(producto=slug, provincia=prov_slug, dias=selected_days),
+                query=_product_link(slug, provincia=prov_slug, dias=selected_days),
             )
         )
     return choices

@@ -1,7 +1,10 @@
 {% extends "_public_shell.html" %}
 
-{% block title %}Precios y cobertura{% endblock %}
-{% block heading %}Qué cuesta, y dónde lo sabemos{% endblock %}
+{# Título y encabezado reflejan el foco: al compartir `/producto/arroz` lo que
+   se ve en la pestaña y en la vista previa del enlace es el producto, no un
+   genérico. #}
+{% block title %}{% if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %} — precios{% else %}Precios y cobertura{% endif %}{% endblock %}
+{% block heading %}{% if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}{% else %}Qué cuesta, y dónde lo sabemos{% endif %}{% endblock %}
 {% block subtitle %}
   {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones,
   {{ map.total_rows }} en total.

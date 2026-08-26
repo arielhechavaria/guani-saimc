@@ -135,13 +135,13 @@ def _visible_observations(
     return obs
 
 
-@router.get("/", response_class=HTMLResponse)
-def public_home(
+def _render_home(
     request: Request,
-    producto: str | None = None,
-    provincia: str | None = None,
-    dias: str | None = None,
-    db: Session = Depends(get_db),
+    db: Session,
+    *,
+    producto: str | None,
+    provincia: str | None,
+    dias: str | None,
 ) -> HTMLResponse:
     # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
     # Fase 0 se comprometió a medir (§9), y la cola larga son 59 filas en 53
@@ -219,6 +219,41 @@ def public_home(
             "selected_province": selected_province,
         },
     )
+
+
+@router.get("/", response_class=HTMLResponse)
+def public_home(
+    request: Request,
+    producto: str | None = None,
+    provincia: str | None = None,
+    dias: str | None = None,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Home pública. `producto`, `provincia` y `dias` son query string opcional;
+    un valor raro no da 404, se muestra todo."""
+    return _render_home(request, db, producto=producto, provincia=provincia, dias=dias)
+
+
+@router.get("/producto/{slug}", response_class=HTMLResponse)
+def public_product(
+    slug: str,
+    request: Request,
+    provincia: str | None = None,
+    dias: str | None = None,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """URL dedicada por producto. Misma vista que `/?producto=<slug>`, que sigue
+    siendo alias válido; `?provincia=` y `?dias=` también se aceptan acá.
+
+    Un slug desconocido da 404, a diferencia de `?producto=` raro que muestra
+    todo: en una ruta con nombre de recurso, «no existe» es la respuesta
+    correcta.
+    """
+    if resolve_product(pilot_product_names(db), slug) is None:
+        raise HTTPException(
+            status_code=404, detail="No hay producto público con ese nombre"
+        )
+    return _render_home(request, db, producto=slug, provincia=provincia, dias=dias)
 
 
 #: Columnas del CSV. Solo lo que la página ya muestra: nada de `channel_id`,

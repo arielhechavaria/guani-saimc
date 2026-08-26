@@ -5265,3 +5265,28 @@ precio piloto curado más nuevo, que es otra cosa.
 Consecuencia: 929 tests verdes (+3 sobre 926), casos antes del código
 (`TestFrescuraDelDato`). Queda 1 ítem de vista pública en el board: URLs
 limpias `/producto/<slug>`.
+
+## 2026-08-26 — URLs limpias /producto/<slug> en la vista pública
+
+Contexto: último de los ítems de vista pública del board. `/?producto=arroz`
+funcionaba pero no es una URL para compartir ni para leer.
+
+Decisión: `GET /producto/<slug>` renderiza la misma vista que `/?producto=`,
+que queda como alias válido (sin redirect: las dos formas viven). `?provincia=`
+y `?dias=` se aceptan también en la ruta limpia. Un slug desconocido en
+`/producto/<slug>` da **404** —en una ruta con nombre de recurso, «no existe»
+es correcto—, a diferencia de `?producto=` raro que sigue mostrando todo. El
+cuerpo de `public_home` se extrajo a `_render_home`, compartido por las dos
+rutas. Los chips de producto ahora apuntan a `/producto/<slug>` cuando no hay
+otro filtro activo (`_product_link`), y vuelven al query string en cuanto hay
+provincia o ventana no-default. El `<title>` y el encabezado reflejan el
+producto enfocado: al compartir el enlace, la vista previa muestra el producto,
+no un genérico.
+
+Descartado: redirect 301 de `?producto=` a `/producto/`. Rompería los enlaces
+ya compartidos con query string y obligaría a componer siempre la forma limpia
+en las barras, que no pueden expresar provincia ni ventana.
+
+Consecuencia: 937 tests verdes (+8 sobre 929), casos antes del código
+(`TestRutaProductoLimpia`, casos nuevos en `TestBuildProductNav`). Cierra los 5
+ítems de vista pública del board.
