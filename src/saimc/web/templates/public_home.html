@@ -153,6 +153,8 @@
   .ph-empty { margin: 0; font-size: .9375rem; color: var(--m3-on-surface-variant); }
   .ph-download { margin: 1rem 0 0; font-size: .875rem; color: var(--m3-on-surface-variant); }
   .ph-download a { color: var(--ph-accent); font-weight: 600; }
+  .ph-freshness { margin: 0 0 1.25rem; font-size: .8125rem; letter-spacing: .02em;
+                  color: var(--m3-on-surface-variant); }
 
   .ph-series { display: grid; gap: 1.1rem; padding: 0; margin: 0; list-style: none;
                grid-template-columns: repeat(3, 1fr); }
@@ -203,6 +205,15 @@
     <a href="#como-se-movio">Cómo se movió</a>
     <a href="#cobertura">Cobertura</a>
   </nav>
+
+  {# Frescura del dato: hasta qué día llega el anuncio piloto más reciente.
+     Antigüedad, no veredicto (§12.6): informa, no marca «atrasado». Va sin
+     ventana a propósito — no depende del filtro `?dias=`. #}
+  {% if data_freshness_day %}
+  <p class="ph-freshness">
+    Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
+  </p>
+  {% endif %}
 
   <div class="ph-stats">
     <div class="ph-stat">

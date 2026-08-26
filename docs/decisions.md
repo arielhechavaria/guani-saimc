@@ -5244,3 +5244,24 @@ imagen; condicionar la columna solo agregaba una rama sin cerrar ninguna fuga.
 Consecuencia: 926 tests verdes (+8 sobre 918), casos antes del código
 (`TestDescargaCsv`). Quedan 2 ítems de vista pública en el board: "última
 actualización" visible y URLs limpias /producto/<slug>.
+
+## 2026-08-26 — «Datos verificados hasta el …» en la vista pública
+
+Contexto: 6º slice de la vista pública. La home no decía hasta cuándo llega el
+dato; un visitante no podía saber si lo que ve es de esta semana o de hace un
+mes.
+
+Decisión: línea en el hero con el día del anuncio piloto más reciente
+(`_latest_price_day`, sobre `compute_retail_observations` sin ventana). Va sin
+ventana a propósito: no depende del filtro `?dias=`, porque si el dato más
+nuevo es viejo hay que verlo aunque la ventana elegida lo deje afuera.
+Antigüedad, no veredicto (§12.6): informa, no marca «atrasado».
+
+Descartado: reusar `_last_capture_notice` de `/curation`. Esa mide la ingesta
+más reciente en cualquier estado (incluye pendientes y descartados) y es señal
+para el operador. El visitante necesita la frescura del dato **publicado**: el
+precio piloto curado más nuevo, que es otra cosa.
+
+Consecuencia: 929 tests verdes (+3 sobre 926), casos antes del código
+(`TestFrescuraDelDato`). Queda 1 ítem de vista pública en el board: URLs
+limpias `/producto/<slug>`.

@@ -705,3 +705,62 @@ class TestDescargaCsv:
 
         # Jinja escapa el `&` del atributo href.
         assert 'href="/datos.csv?producto=arroz&amp;dias=7"' in texto
+
+
+class TestFrescuraDelDato:
+    """Línea de «datos verificados hasta el …» en la home: señal de antigüedad,
+    no veredicto (§12.6). Independiente de los filtros: si el anuncio más
+    reciente es viejo, hay que verlo aunque la ventana elegida lo deje afuera.
+    """
+
+    def test_toma_el_dia_del_anuncio_piloto_mas_reciente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        no_piloto = Product(
+            name="Malanga", category="viandas", unit="lb", aliases=[], is_pilot=False
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, no_piloto, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-fresh")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 12))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 15))
+        # Un no-piloto más nuevo no cuenta.
+        _precio(
+            session, product=no_piloto, province=habana, source=fuente,
+            dia=date(2026, 8, 25),
+        )
+        session.commit()
+
+        texto = client.get("/").text
+
+        assert "Datos verificados hasta el 15/08/2026" in texto
+
+    def test_es_independiente_de_la_ventana(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-fresh2")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 15))
+        session.commit()
+
+        # 15/08 queda fuera de una ventana de 7 días (hoy es 2026-08-26), pero
+        # la línea de frescura igual lo muestra.
+        texto = client.get("/?dias=7").text
+
+        assert "Datos verificados hasta el 15/08/2026" in texto
+
+    def test_sin_dato_no_muestra_la_linea(
+        self, client: TestClient, session: Session
+    ) -> None:
+        texto = client.get("/").text
+
+        assert "Datos verificados hasta" not in texto

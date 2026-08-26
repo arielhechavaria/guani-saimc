@@ -89,6 +89,24 @@ def _published_provinces(session: Session) -> frozenset[str]:
     )
 
 
+# Ventana efectivamente sin límite para la señal de frescura: no interesa un
+# corte temporal, sino el día del anuncio piloto más reciente de toda la serie.
+_FRESHNESS_WINDOW_DAYS = 36500
+
+
+def _latest_price_day(session: Session, pilot: frozenset[str]) -> date | None:
+    """El día del anuncio piloto más reciente que la vista podría mostrar,
+    sin ventana. Señal de antigüedad, no veredicto (§12.6): informa hasta
+    cuándo llega el dato, no marca nada como «atrasado»."""
+    report = compute_retail_observations(session, days=_FRESHNESS_WINDOW_DAYS)
+    days = [
+        o.day
+        for o in report.observations
+        if o.product_name in pilot and not o.unconverted
+    ]
+    return max(days) if days else None
+
+
 def _visible_observations(
     session: Session,
     *,
@@ -165,6 +183,9 @@ def public_home(
     )
     series = build_series(obs, window_days=window, hoy=date.today())
 
+    latest_day = _latest_price_day(db, pilot)
+    freshness_days_ago = (date.today() - latest_day).days if latest_day else None
+
     prov = selected_province or ""
     csv_href = download_href(
         producto=product_slug(selected) if selected else "",
@@ -180,6 +201,8 @@ def public_home(
             "series": series,
             "window_days": window,
             "csv_href": csv_href,
+            "data_freshness_day": latest_day,
+            "data_freshness_days_ago": freshness_days_ago,
             "product_nav": build_product_nav(
                 pilot_names, selected, window, selected_province=prov
             ),
