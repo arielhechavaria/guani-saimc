@@ -5290,3 +5290,37 @@ en las barras, que no pueden expresar provincia ni ventana.
 Consecuencia: 937 tests verdes (+8 sobre 929), casos antes del código
 (`TestRutaProductoLimpia`, casos nuevos en `TestBuildProductNav`). Cierra los 5
 ítems de vista pública del board.
+
+## 2026-08-30 — Inventario de requisitos en 16 módulos de pipeline
+
+Contexto: con H0 medido en 43,5% quedó claro que la ingesta sigue necesitando un
+operador humano, y que el orden de construcción de los módulos que faltan importa
+más que su lista. No había ningún lugar donde leer qué requisitos existen, cuáles
+están construidos y cuál bloquea a cuál: eso vivía repartido entre `spec.md` (1649
+líneas), `decisions.md` (5292) y el board.
+
+Decisión: `docs/requisitos.md`, inventario de todo requisito funcional agrupado en
+**16 módulos de pipeline** en 5 grupos, con su cita de sección, su fase, su fuerza
+normativa y el estado real contra el código. Incluye los 42 huecos que la
+especificación deja abiertos y 9 requisitos propuestos (`N-01`…`N-09`) que no salen
+de ningún documento. Es índice de consulta, no fuente: si difiere de `spec.md` o
+`decisions.md`, ganan ellos.
+
+Lo que el agrupamiento hace visible y las áreas del board no: la **cadena de
+bloqueo**. Contribución comunitaria depende de Reputación y de C3, y §10.7 con §9
+coinciden en que C3 debe estar operativo *antes* de habilitar el botón «subir dato».
+Inteligencia predictiva depende del volumen, que depende de H0. Ese es el orden de
+integración, y no es una preferencia: sale de la especificación.
+
+Descartado: agrupar por las áreas del board (Dato, Extracción y captura, Precio y
+unidades, Privacidad y alcance, Visualización, Infraestructura). Sirven para
+repartir trabajo, no para ver dependencias entre módulos. Los dos cortes conviven;
+el board sigue siendo el seguimiento activo de tareas.
+
+Consecuencia: queda registrado que de 16 módulos hay 4 ausentes (Validación,
+Reputación, Predictivo, Contribución comunitaria) y que de las doce publicaciones
+que §6.4.1 exige como vinculantes no existe ninguna — es el requisito vinculante
+más grande sin arrancar. Se anotan dos deudas de documentación: los marcadores de
+conflicto de merge commiteados en este mismo archivo (revisados: no hay
+contradicción de contenido, solo de posición) y los tres apartamientos posteriores
+que faltan en la tabla de `spec-map.md`.
