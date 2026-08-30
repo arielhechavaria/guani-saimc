@@ -1,0 +1,108 @@
+{#
+  Índice del gestor de documentos. Lista el catálogo cerrado de
+  `docs_catalog.py` con lo que se puede saber sin renderizar: cuánto ocupa,
+  cuántas líneas y cuándo se tocó.
+
+  El filtro de la caja de búsqueda es del lado del cliente y sobre título +
+  resumen: son 10 documentos, no justifica ni una consulta ni un endpoint.
+#}
+{% extends "_shell.html" %}
+
+{% block title %}Documentos{% endblock %}
+{% block heading %}Gestor de documentos{% endblock %}
+{% block subtitle %}
+  Los documentos del repositorio, legibles desde el navegador. El repositorio es
+  privado y esta vista también.
+{% endblock %}
+
+{% block head %}
+<style>
+  .docs-filter { margin-bottom: 20px; max-width: 420px; }
+  .docs-filter input {
+    width: 100%; padding: 10px 14px; font: inherit;
+    border: 1px solid var(--m3-outline, #79747e); border-radius: 8px;
+    background: var(--m3-surface, #fff); color: inherit;
+  }
+  .docs-list { display: grid; gap: 12px; }
+  .docs-card {
+    display: block; padding: 16px 18px; text-decoration: none; color: inherit;
+    border: 1px solid var(--m3-outline-variant, #cac4d0); border-radius: 12px;
+    background: var(--m3-surface, #fff); transition: border-color .13s;
+  }
+  .docs-card:hover { border-color: var(--m3-primary, #006a60); }
+  .docs-card.is-missing { opacity: .55; }
+  .docs-card-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .docs-card h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+  .docs-badge {
+    font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 5px; font-family: "Roboto Mono", monospace;
+  }
+  .docs-badge.rige { background: #dcede5; color: #1b6b4f; }
+  .docs-badge.congelado { background: #eceff3; color: #5a6472; }
+  .docs-badge.interno { background: #f6ebcf; color: #8a6212; }
+  .docs-card p { margin: 8px 0 0; font-size: .92rem; opacity: .8; max-width: 72ch; }
+  .docs-meta {
+    margin-top: 10px; font-family: "Roboto Mono", monospace; font-size: .74rem;
+    opacity: .6; display: flex; gap: 16px; flex-wrap: wrap;
+  }
+  .docs-empty { opacity: .6; font-style: italic; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="docs-filter">
+  <label class="visually-hidden" for="docs-q">Filtrar documentos</label>
+  <input id="docs-q" type="search" placeholder="Filtrar por título o descripción…"
+         autocomplete="off" />
+</div>
+
+<div class="docs-list" id="docs-list">
+  {% for stat in stats %}
+  <a class="docs-card{% if not stat.exists %} is-missing{% endif %}"
+     href="/docs/{{ stat.entry.slug }}"
+     data-buscar="{{ (stat.entry.title ~ ' ' ~ stat.entry.summary) | lower }}">
+    <span class="docs-card-top">
+      <h2>{{ stat.entry.title }}</h2>
+      <span class="docs-badge {{ stat.entry.standing }}">{{ stat.entry.standing }}</span>
+    </span>
+    <p>{{ stat.entry.summary }}</p>
+    <span class="docs-meta">
+      <span>{{ stat.entry.relative_path }}</span>
+      {% if stat.exists %}
+        <span>{{ "{:,}".format(stat.lines).replace(",", ".") }} líneas</span>
+        <span>{{ stat.kilobytes }} KB</span>
+        <span>modificado {{ stat.modified | havana("%d/%m/%Y") }}</span>
+      {% else %}
+        <span>NO ESTÁ EN EL DISCO</span>
+      {% endif %}
+    </span>
+  </a>
+  {% endfor %}
+</div>
+
+<p class="docs-empty" id="docs-none" hidden>Ningún documento coincide.</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Filtro de pantalla sobre 10 tarjetas ya renderizadas. Sin JS la caja no
+  // hace nada y la lista completa sigue visible, que es la degradación correcta.
+  (function () {
+    var caja = document.getElementById("docs-q");
+    var vacio = document.getElementById("docs-none");
+    var tarjetas = Array.prototype.slice.call(
+      document.querySelectorAll("#docs-list .docs-card")
+    );
+    caja.addEventListener("input", function () {
+      var q = caja.value.trim().toLowerCase();
+      var visibles = 0;
+      tarjetas.forEach(function (card) {
+        var coincide = !q || card.dataset.buscar.indexOf(q) !== -1;
+        card.hidden = !coincide;
+        if (coincide) visibles++;
+      });
+      vacio.hidden = visibles !== 0;
+    });
+  })();
+</script>
+{% endblock %}

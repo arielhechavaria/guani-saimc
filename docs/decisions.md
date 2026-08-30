@@ -5324,3 +5324,67 @@ más grande sin arrancar. Se anotan dos deudas de documentación: los marcadores
 conflicto de merge commiteados en este mismo archivo (revisados: no hay
 contradicción de contenido, solo de posición) y los tres apartamientos posteriores
 que faltan en la tabla de `spec-map.md`.
+
+## 2026-08-30 — Gestor de documentos en /docs, privado y con catálogo cerrado
+
+Contexto: el repositorio es privado, así que los documentos del proyecto solo se
+leían clonando. El operador pidió una página dedicada para leerlos online, «con
+su js con markdown, pdf, todo lo que se necesite», como gestor de documentos de
+Guani.
+
+Decisión: `GET /docs` (índice), `/docs/<slug>` (lectura) y `/docs/<slug>/raw`
+(archivo crudo), **todo detrás de `require_operator`**, la misma HTTP Basic de la
+curaduría. Es privado porque el catálogo incluye `pitch-v3.5.md` —el documento de
+inversión— y `decisions.md`, que ya filtró teléfonos reales una vez (2026-08-11).
+
+Tres decisiones de diseño dentro del slice:
+
+1. **Catálogo cerrado escrito a mano** (`web/docs_catalog.py`). El slug de la URL
+   nunca se concatena a una ruta: es clave de diccionario, y si no está, 404. No
+   hay `open()` que reciba texto del pedido, así que el traversal no tiene por
+   dónde entrar. Sumar un documento es agregar una línea, a propósito: qué se
+   puede leer desde la web es una decisión, no una consecuencia de dónde quedó un
+   archivo. `.env` vive en la misma raíz y hay un test que lo fija.
+2. **El markdown se renderiza en el navegador**, con `marked` 18.0.11 (MIT)
+   vendorizado en `/static/marked.umd.js`, sha512 del tarball de npm verificado
+   antes de extraerlo y sha256 fijado en los tests, igual que htmx. Evita sumar
+   una dependencia de Python: `pip install markdown` se propuso y el operador lo
+   descartó.
+3. **El PDF sale por `window.print()`** contra una hoja `@media print`. El
+   navegador ya sabe paginar y exportar; una librería de 350 KB haría lo mismo
+   peor.
+
+Descartado: renderizar del lado del servidor con un parser mínimo propio (~150
+líneas) — se evaluó como alternativa sin dependencia y el operador eligió el
+camino con JS. Descartado también un renderer JS por CDN: conexión lenta e
+intermitente, todo se vendoriza.
+
+Costo declarado: la vista **no degrada sin JavaScript** como pide la regla del
+2026-08-22; queda un `<noscript>` con enlace al `.md` crudo, que es el mismo
+contenido sin formato. Es el precio de no meter el renderer en el servidor.
+
+Consecuencia: 966 tests verdes (+31). Quedan en rojo los 2 de
+`test_public_filter.py` que envejecieron por fechas fijas en su seed, ajenos a
+este slice.
+
+## 2026-08-30 — Se apaga Swagger: publicaba el mapa de endpoints sin auth
+
+Contexto: al montar el gestor en `/docs` la ruta chocó con el Swagger UI que
+FastAPI monta solo. Al mirarlo se vio el problema real: el servicio escucha en
+0.0.0.0:8000 sin proxy delante, así que `/docs` y `/openapi.json` se servían **sin
+autenticación** y publicaban el mapa completo de endpoints a cualquiera que
+preguntara — `/curation/*`, `/catalog/*` y `/webhooks/whatsapp` incluidos.
+Verificado con curl contra producción antes de tocar nada.
+
+Decisión: `docs_url=None`, `redoc_url=None` y `openapi_url=None` en la
+construcción de la app. Nada del proyecto los consume: un solo operador, sin
+clientes de API, y Angular está diferido a la Fase 2 (§13.1). Tres tests fijan
+que las tres rutas den 404.
+
+Descartado: dejar Swagger y mover el gestor a otra ruta. Habría conservado la
+fuga por una preferencia de nombre. Descartado también ponerlo detrás de
+`require_operator` en vez de apagarlo: agrega superficie que nadie usa.
+
+Consecuencia: la firma HMAC sigue siendo la defensa real del webhook —esto no la
+reemplaza—, pero deja de haber un índice público que lo señale. Si alguna vez
+hace falta la consola de API, vuelve detrás de auth y en otra ruta.

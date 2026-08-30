@@ -1,0 +1,192 @@
+{#
+  Lectura de un documento. El markdown lo trae el navegador desde
+  `/docs/{slug}/raw` y lo convierte `marked`, vendorizado en /static.
+
+  El PDF sale por `window.print()` contra la hoja `@media print` de abajo: el
+  navegador ya sabe paginar y exportar a PDF, y meter una librería de 350 KB
+  para hacer lo mismo peor no se justifica.
+#}
+{% extends "_shell.html" %}
+
+{% block title %}{{ entry.title }}{% endblock %}
+{% block heading %}{{ entry.title }}{% endblock %}
+{% block subtitle %}{{ entry.summary }}{% endblock %}
+
+{% block head %}
+<style>
+  .doc-layout { display: grid; grid-template-columns: 240px 1fr; gap: 32px; align-items: start; }
+  @media (max-width: 900px) { .doc-layout { grid-template-columns: 1fr; } }
+
+  .doc-toc { position: sticky; top: 16px; max-height: calc(100vh - 60px); overflow-y: auto; }
+  .doc-toc h2 {
+    font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+    opacity: .55; margin: 0 0 10px; font-family: "Roboto Mono", monospace;
+  }
+  .doc-toc a {
+    display: block; padding: 3px 0 3px 10px; font-size: .85rem;
+    color: inherit; text-decoration: none; opacity: .78;
+    border-left: 2px solid transparent; line-height: 1.35;
+  }
+  .doc-toc a:hover { opacity: 1; border-left-color: var(--m3-primary, #006a60); }
+  .doc-toc a.lvl-3 { padding-left: 22px; font-size: .8rem; opacity: .62; }
+
+  .doc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  .doc-actions a, .doc-actions button {
+    font: inherit; font-size: .85rem; padding: 7px 14px; cursor: pointer;
+    border: 1px solid var(--m3-outline, #79747e); border-radius: 999px;
+    background: var(--m3-surface, #fff); color: inherit; text-decoration: none;
+  }
+  .doc-actions a:hover, .doc-actions button:hover { border-color: var(--m3-primary, #006a60); }
+
+  .doc-body { max-width: 78ch; overflow-wrap: break-word; }
+  .doc-body h1, .doc-body h2, .doc-body h3, .doc-body h4 {
+    line-height: 1.25; margin: 1.9em 0 .5em; scroll-margin-top: 20px;
+  }
+  .doc-body h1 { font-size: 1.7rem; }
+  .doc-body h2 { font-size: 1.32rem; padding-bottom: .25em;
+                 border-bottom: 1px solid var(--m3-outline-variant, #cac4d0); }
+  .doc-body h3 { font-size: 1.08rem; }
+  .doc-body p, .doc-body li { line-height: 1.65; }
+  .doc-body code {
+    font-family: "Roboto Mono", monospace; font-size: .86em;
+    background: var(--m3-surface-variant, #eceff3); padding: 1px 5px; border-radius: 4px;
+  }
+  .doc-body pre {
+    background: var(--m3-surface-variant, #eceff3); padding: 14px 16px;
+    border-radius: 8px; overflow-x: auto;
+  }
+  .doc-body pre code { background: none; padding: 0; }
+  .doc-body blockquote {
+    margin: 1em 0; padding: .2em 0 .2em 16px;
+    border-left: 3px solid var(--m3-primary, #006a60); opacity: .85;
+  }
+  /* Las tablas son el 80% del valor de `requisitos.md`: tienen que poder
+     scrollear solas sin que la página se vaya de ancho. */
+  .doc-table-scroll { overflow-x: auto; margin: 1.2em 0; }
+  .doc-body table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+  .doc-body th, .doc-body td {
+    border: 1px solid var(--m3-outline-variant, #cac4d0);
+    padding: 7px 10px; text-align: left; vertical-align: top;
+  }
+  .doc-body th { background: var(--m3-surface-variant, #eceff3); font-weight: 600; }
+  .doc-body img { max-width: 100%; }
+  .doc-body hr { border: none; border-top: 1px solid var(--m3-outline-variant, #cac4d0); margin: 2em 0; }
+
+  .doc-cargando { opacity: .6; font-style: italic; }
+  .doc-error {
+    border: 1px solid #96263a; background: #f6dce0; color: #96263a;
+    padding: 14px 16px; border-radius: 8px;
+  }
+
+  @media print {
+    .m3-topnav, .m3-topbar, .doc-toc, .doc-actions { display: none !important; }
+    .m3-shell, .m3-main, .m3-content { display: block; margin: 0; padding: 0; }
+    .doc-layout { display: block; }
+    .doc-body { max-width: none; font-size: 10.5pt; }
+    .doc-body h1, .doc-body h2, .doc-body h3 { break-after: avoid; }
+    .doc-body pre, .doc-body table, .doc-body blockquote { break-inside: avoid; }
+    a { text-decoration: none; color: inherit; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="doc-actions">
+  <a href="/docs">← Todos los documentos</a>
+  <button type="button" id="doc-print">Imprimir o guardar PDF</button>
+  <a href="/docs/{{ entry.slug }}/raw" download="{{ entry.slug }}.md">Descargar .md</a>
+</div>
+
+<noscript>
+  <p class="doc-error">
+    Este lector arma el documento en el navegador y necesita JavaScript.
+    Sin él, <a href="/docs/{{ entry.slug }}/raw">abrí el archivo crudo</a>:
+    es el mismo contenido, sin formato.
+  </p>
+</noscript>
+
+<div class="doc-layout">
+  <nav class="doc-toc" id="doc-toc" aria-label="Contenido del documento"></nav>
+  <article class="doc-body" id="doc-body">
+    <p class="doc-cargando">Cargando {{ "{:,}".format(stat.lines).replace(",", ".") }} líneas…</p>
+  </article>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/marked.umd.js?v={{ marked_version() }}"></script>
+<script>
+  (function () {
+    var cuerpo = document.getElementById("doc-body");
+    var toc = document.getElementById("doc-toc");
+
+    document.getElementById("doc-print").addEventListener("click", function () {
+      window.print();
+    });
+
+    function fallar(motivo) {
+      cuerpo.innerHTML = "";
+      var aviso = document.createElement("p");
+      aviso.className = "doc-error";
+      aviso.textContent = "No se pudo cargar el documento (" + motivo + "). ";
+      var link = document.createElement("a");
+      link.href = "/docs/{{ entry.slug }}/raw";
+      link.textContent = "Abrir el archivo crudo";
+      aviso.appendChild(link);
+      cuerpo.appendChild(aviso);
+    }
+
+    fetch("/docs/{{ entry.slug }}/raw", { credentials: "same-origin" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.text();
+      })
+      .then(function (md) {
+        // `marked` escapa el HTML crudo del markdown por defecto desde la v5,
+        // así que un documento con `<script>` adentro se muestra como texto.
+        cuerpo.innerHTML = marked.parse(md, { gfm: true, breaks: false });
+        envolverTablas();
+        construirIndice();
+      })
+      .catch(function (e) { fallar(e.message); });
+
+    // Las tablas anchas scrollean solas en vez de estirar la página.
+    function envolverTablas() {
+      Array.prototype.forEach.call(cuerpo.querySelectorAll("table"), function (t) {
+        var caja = document.createElement("div");
+        caja.className = "doc-table-scroll";
+        t.parentNode.insertBefore(caja, t);
+        caja.appendChild(t);
+      });
+    }
+
+    // Índice a partir de los encabezados reales del documento: h2 y h3, que es
+    // donde estos documentos ponen la estructura. El h1 es el título y ya está
+    // en la cabecera de la página.
+    function construirIndice() {
+      var encabezados = cuerpo.querySelectorAll("h2, h3");
+      if (!encabezados.length) return;
+
+      var titulo = document.createElement("h2");
+      titulo.textContent = "Contenido";
+      toc.appendChild(titulo);
+
+      var usados = Object.create(null);
+      Array.prototype.forEach.call(encabezados, function (h) {
+        var base = (h.textContent || "")
+          .toLowerCase().trim()
+          .replace(/[^\wáéíóúñü\s-]/g, "")
+          .replace(/\s+/g, "-") || "seccion";
+        usados[base] = (usados[base] || 0) + 1;
+        h.id = usados[base] > 1 ? base + "-" + usados[base] : base;
+
+        var a = document.createElement("a");
+        a.href = "#" + h.id;
+        a.textContent = h.textContent;
+        if (h.tagName === "H3") a.className = "lvl-3";
+        toc.appendChild(a);
+      });
+    }
+  })();
+</script>
+{% endblock %}

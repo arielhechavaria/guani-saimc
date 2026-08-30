@@ -15,7 +15,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from saimc.web.routers import catalog, control, curation, public, whatsapp_webhook
+from saimc.web.routers import (
+    catalog,
+    control,
+    curation,
+    docs,
+    public,
+    whatsapp_webhook,
+)
 
 # El despliegue lanza `uvicorn saimc.web.app:app` sin `--log-config`, y uvicorn
 # configura solo sus propios loggers: el raíz queda sin handler. Sin esto, un
@@ -32,7 +39,27 @@ logging.basicConfig(
     format="%(levelname)s %(name)s %(message)s",
 )
 
-app = FastAPI(title="SAIMC — Cola de curaduría")
+# `docs_url`/`redoc_url`/`openapi_url` en None, por dos motivos que apuntan al
+# mismo lado (docs/decisions.md, 2026-08-30):
+#
+# 1. **Cierra una fuga.** El servicio escucha en 0.0.0.0:8000 sin proxy delante,
+#    así que Swagger y `/openapi.json` se servían SIN AUTENTICACIÓN y publicaban
+#    el mapa completo de endpoints —`/curation/*`, `/catalog/*` y sobre todo
+#    `/webhooks/whatsapp`— a cualquiera que preguntara. Verificado contra
+#    producción antes de apagarlo. La firma HMAC del webhook sigue siendo la
+#    defensa real; esto le saca el cartel de encima.
+# 2. **Libera `/docs`** para el gestor de documentos, que es una vista del
+#    operador y no una consola de API.
+#
+# Nada del proyecto los consume: un solo operador, sin clientes de API, y
+# Angular está diferido a la Fase 2 (§13.1). Si algún día hace falta la consola,
+# vuelve detrás de `require_operator` y en otra ruta.
+app = FastAPI(
+    title="SAIMC — Cola de curaduría",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 # Compresión de respuestas. Faltaba: hasta el 2026-08-22 todo viajaba sin
 # comprimir, y `saimc-material.css` son 28.672 B en disco contra 6.079 B
@@ -109,6 +136,22 @@ HTMX_VERSION = "2.0.10"
 
 app.state.templates.env.globals["htmx_version"] = lambda: HTMX_VERSION
 
+# marked vendorizado, para el gestor de documentos (`/docs`). Renderiza el
+# markdown en el navegador y por eso no hace falta una dependencia de Python:
+# `pip install markdown` se descartó el 2026-08-30.
+#
+# Procedencia, verificada el 2026-08-30: el archivo es `package/lib/marked.umd.js`
+# del tarball oficial de npm
+# (https://registry.npmjs.org/marked/-/marked-18.0.11.tgz), cuyo `integrity`
+# sha512 publicado se comprobó ANTES de extraerlo. MIT.
+# `tests/test_static_assets.py` fija su sha256 y su tamaño, igual que con htmx.
+#
+# Cache-busting por versión y no por mtime, mismo motivo que htmx: el archivo es
+# inmutable entre bumps y un `git clone` le cambia el mtime sin cambiar un byte.
+MARKED_VERSION = "18.0.11"
+
+app.state.templates.env.globals["marked_version"] = lambda: MARKED_VERSION
+
 
 def _havana(value: datetime, fmt: str = "%Y-%m-%d %H:%M") -> str:
     """Filtro Jinja: formatea un datetime en hora de La Habana, no UTC.
@@ -143,4 +186,5 @@ app.include_router(public.router)
 app.include_router(curation.router)
 app.include_router(control.router)
 app.include_router(catalog.router)
+app.include_router(docs.router)
 app.include_router(whatsapp_webhook.router)

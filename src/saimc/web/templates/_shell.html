@@ -19,7 +19,7 @@
 </head>
 <body>
 {% set path = request.url.path %}
-{% set nav = 'catalog' if path.startswith('/catalog') else ('control' if path.startswith('/control') else 'curation') %}
+{% set nav = 'docs' if path.startswith('/docs') else ('catalog' if path.startswith('/catalog') else ('control' if path.startswith('/control') else 'curation')) %}
 <div class="m3-shell">
 
   <nav class="m3-topnav" aria-label="Secciones">
@@ -35,6 +35,10 @@
     <a class="m3-topnav-item{% if nav == 'control' %} is-active{% endif %}" href="/control"
        {% if nav == 'control' %}aria-current="page"{% endif %}>
       <span class="m3-icon">monitoring</span><span>Control</span>
+    </a>
+    <a class="m3-topnav-item{% if nav == 'docs' %} is-active{% endif %}" href="/docs"
+       {% if nav == 'docs' %}aria-current="page"{% endif %}>
+      <span class="m3-icon">menu_book</span><span>Documentos</span>
     </a>
   </nav>
 

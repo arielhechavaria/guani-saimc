@@ -33,6 +33,14 @@ WOFF2_MAGIC = b"wOF2"
 HTMX_SHA256 = "71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de"
 HTMX_BYTES = 51_238
 
+# marked 18.0.11 (MIT), extraído de `package/lib/marked.umd.js` del tarball
+# oficial de npm después de verificar su `integrity` sha512 publicado. Lo carga
+# el gestor de documentos para renderizar markdown en el navegador. Mismo
+# criterio que htmx: un blob que nadie puede volver a verificar es una deuda,
+# no un asset.
+MARKED_SHA256 = "69451c8541c9c1e7a4bf3ffc6f73c4d89633de92bfbe3e484dfe182ef8091f88"
+MARKED_BYTES = 44_679
+
 FUENTES = [
     "/static/fonts/roboto.woff2",
     "/static/fonts/roboto-mono.woff2",
@@ -158,6 +166,15 @@ class TestAssetsVendorizados:
 
         assert expuesta == HTMX_VERSION
         assert f'version:"{expuesta}"' in client.get("/static/htmx.min.js").text
+
+    def test_marked_es_el_archivo_que_se_verificó(self, client: TestClient) -> None:
+        """Misma guarda de cadena de suministro que htmx: si alguien reemplaza
+        el bundle, esto se pone rojo y obliga a repetir la verificación de
+        procedencia contra el tarball de npm."""
+        response = client.get("/static/marked.umd.js")
+
+        assert len(response.content) == MARKED_BYTES
+        assert hashlib.sha256(response.content).hexdigest() == MARKED_SHA256
 
     def test_bootstrap_ya_no_existe(self, client: TestClient) -> None:
         assert client.get("/static/bootstrap.min.css").status_code == 404
