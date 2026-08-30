@@ -1,0 +1,36 @@
+{#
+  Documento que no está en el catálogo, o que está pero desapareció del disco.
+
+  Es una página y no un JSON a propósito: `/docs/<slug>` se comparte y se
+  escribe a mano, así que equivocarse es normal, y un `{"detail": ...}` pelado
+  deja al operador sin menú y sin forma de volver.
+#}
+{% extends "_shell.html" %}
+
+{% block title %}Documento no encontrado{% endblock %}
+{% block heading %}Ese documento no está{% endblock %}
+{% block subtitle %}
+  {% if motivo == "disco" %}
+    Está en el catálogo pero no en el disco: alguien lo renombró o lo movió.
+  {% else %}
+    No hay ningún documento con ese nombre en el catálogo.
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<p style="margin-bottom: 18px;">
+  {% if motivo == "disco" %}
+    El catálogo apunta a <code>{{ ruta }}</code> y ahí no hay nada. Se arregla en
+    <code>src/saimc/web/docs_catalog.py</code>, que es la única lista de qué se
+    puede leer desde acá.
+  {% else %}
+    El catálogo es una lista cerrada. Estos son los documentos que hay:
+  {% endif %}
+</p>
+
+<ul style="line-height: 2;">
+  {% for entry in catalogo %}
+  <li><a href="/docs/{{ entry.slug }}">{{ entry.title }}</a></li>
+  {% endfor %}
+</ul>
+{% endblock %}

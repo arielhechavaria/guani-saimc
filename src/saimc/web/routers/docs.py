@@ -41,21 +41,34 @@ def docs_index(request: Request) -> HTMLResponse:
     )
 
 
+def _no_encontrado(request: Request, motivo: str, ruta: str = "") -> HTMLResponse:
+    """404 como página, no como JSON.
+
+    `/docs/<slug>` se escribe a mano y se comparte, así que equivocarse es
+    normal. Un `{"detail": ...}` pelado deja al operador sin menú y sin forma de
+    volver; esto le devuelve la lista de lo que sí hay.
+    """
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "docs_missing.html",
+        {"motivo": motivo, "ruta": ruta, "catalogo": docs_catalog.CATALOG},
+        status_code=status.HTTP_404_NOT_FOUND,
+    )
+
+
 @router.get("/docs/{slug}", response_class=HTMLResponse)
 def docs_view(request: Request, slug: str) -> HTMLResponse:
     entry = docs_catalog.find(slug)
     if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento desconocido")
+        return _no_encontrado(request, motivo="catalogo")
 
     stat = docs_catalog.stat_document(entry)
     if not stat.exists:
-        # El documento está en el catálogo pero no en el disco: alguien lo
-        # renombró o lo borró. 404 con el mismo cuerpo que un slug inventado
-        # —no hay nada que leer en ninguno de los dos casos— pero la lista sí
-        # lo muestra como faltante, que es donde se arregla.
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Documento no disponible"
-        )
+        # Está en el catálogo pero no en el disco: alguien lo renombró o lo
+        # movió. Se distingue del slug inventado porque se arregla en otro lado
+        # —el catálogo, no la URL— y el operador tiene que saber cuál de los dos
+        # es.
+        return _no_encontrado(request, motivo="disco", ruta=entry.relative_path)
 
     return request.app.state.templates.TemplateResponse(
         request,

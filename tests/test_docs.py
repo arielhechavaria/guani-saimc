@@ -176,6 +176,16 @@ class TestLectura:
         assert client.get("/docs/inventado").status_code == 404
         assert client.get("/docs/inventado/raw").status_code == 404
 
+    def test_el_404_es_una_pagina_con_menu_no_un_json(self, client: TestClient) -> None:
+        """Un slug errado no puede dejar al operador en un callejón: la vista
+        conserva la navegación y ofrece la lista de lo que sí existe."""
+        response = client.get("/docs/inventado")
+
+        assert response.status_code == 404
+        assert "application/json" not in response.headers["content-type"]
+        assert "m3-topnav" in response.text
+        assert 'href="/docs/spec"' in response.text
+
     def test_ofrece_descarga_e_impresion(self, client: TestClient) -> None:
         """Las dos salidas que pidió el operador: `.md` y PDF por el diálogo de
         impresión del navegador."""
