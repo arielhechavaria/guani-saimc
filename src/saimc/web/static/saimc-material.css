@@ -102,8 +102,11 @@ code, .m3-num { font-family: var(--m3-mono); }
 
 /* Iconos: Material Symbols Rounded, vendorizado en /static/fonts.
    Con el archivo local no hay llamada a Google en cada carga.
-   El archivo esta subseteado a las ligaduras que usan las plantillas
-   (5,7 KB contra los 370 KB de la fuente completa). */
+   El archivo esta subseteado a los iconos que usan las plantillas
+   (~10 KB contra los 370 KB de la fuente completa). Se regenera con
+   `python tools/build_icon_font.py` cada vez que una plantilla suma o
+   saca un icono; el manifiesto `.icons.txt` de al lado lista cuales
+   entraron y un test lo compara contra las plantillas. */
 @font-face {
   font-family: "Material Symbols Rounded";
   font-style: normal;

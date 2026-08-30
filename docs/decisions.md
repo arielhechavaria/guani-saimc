@@ -5388,3 +5388,34 @@ fuga por una preferencia de nombre. Descartado también ponerlo detrás de
 Consecuencia: la firma HMAC sigue siendo la defensa real del webhook —esto no la
 reemplaza—, pero deja de haber un índice público que lo señale. Si alguna vez
 hace falta la consola de API, vuelve detrás de auth y en otra ruta.
+
+## 2026-08-30 — La fuente de iconos se quedó corta; ahora la regenera una herramienta
+
+Contexto: al agregar el icono `menu_book` al menú (item «Documentos») el
+navegador dibujaba el texto crudo `menu_book` en vez del glifo. Al medir la
+fuente vendorizada apareció que el problema era más viejo: `material-symbols-rounded.woff2`
+se subseteó en `99c72eb` con los 28 iconos de entonces y nadie la regeneró
+después. Ya estaban rotos `flag` y `history` (`curation.html`) y `rule`
+(`control.html`); `menu_book` sumó el cuarto.
+
+Decisión: se regenera el subconjunto con los 32 iconos que hoy usan las
+plantillas (10.484 B contra los 5.756 anteriores) y se agrega
+`tools/build_icon_font.py`, que lee los nombres de icono de las plantillas, le
+pide a Google el subconjunto vía `icon_names` —el subsetting lo sigue haciendo
+el servidor de Google, sin `fontTools` en el venv— y escribe el `.woff2` más un
+manifiesto `.icons.txt` al lado. `tests/test_static_assets.py` compara ese
+manifiesto contra los iconos de las plantillas: sumar un icono sin correr la
+herramienta ahora pone la suite en rojo con el nombre del icono, en vez de
+romperse en silencio en pantalla.
+
+Descartado: subsetear a mano con `fontTools` (da un archivo la mitad de grande,
+4.912 B, pero mete una dependencia de build que el proyecto evita desde el
+2026-08-20). Descartado también fijar el sha256 del `.woff2` como con htmx: el
+archivo depende de qué devuelve Google y cambia sin que cambie nada del
+proyecto; el manifiesto de iconos es la unidad estable que sí tiene sentido
+versionar.
+
+Consecuencia: 968 tests verdes. Quedan los 2 de `test_public_filter.py` que
+envejecieron por fechas fijas en su seed, ajenos a esto. El comentario del
+`@font-face` en `saimc-material.css` deja de decir «35 ligaduras / 5,7 KB» y
+apunta a la herramienta.

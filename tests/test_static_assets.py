@@ -10,6 +10,7 @@ la cobertura de `GZipMiddleware` (`docs/decisions.md`, 2026-08-22).
 """
 
 import hashlib
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -132,12 +133,35 @@ class TestAssetsVendorizados:
 
     def test_los_iconos_van_subseteados(self, client: TestClient) -> None:
         """La fuente completa de Material Symbols pesa ~370 KB; subseteada a
-        las ligaduras que usan las plantillas, ~6 KB. El margen es amplio a
+        las ligaduras que usan las plantillas, ~10 KB. El margen es amplio a
         propósito: la cota corta un archivo sin subsetear, no una ligadura
         nueva."""
         response = client.get("/static/fonts/material-symbols-rounded.woff2")
 
         assert len(response.content) < 60_000
+
+    def test_el_subconjunto_cubre_todos_los_iconos_de_las_plantillas(self) -> None:
+        """Tripwire: la fuente se subsetea con `tools/build_icon_font.py`, que
+        deja un manifiesto al lado con los iconos que metió. Si una plantilla
+        suma un icono y nadie corre la herramienta, el manifiesto queda corto y
+        esto se pone rojo — en vez de que el navegador dibuje el texto crudo
+        `menu_book`. Pasó con `flag`, `history` y `rule` (2026-08-30)."""
+        templates = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "templates"
+        usados: set[str] = set()
+        for tpl in templates.glob("*.html"):
+            usados.update(
+                re.findall(r'class="m3-icon[^"]*">([a-z0-9_]+)<', tpl.read_text(encoding="utf-8"))
+            )
+
+        manifiesto = (
+            templates.parent / "static" / "fonts" / "material-symbols-rounded.icons.txt"
+        ).read_text(encoding="utf-8").split()
+
+        faltan = usados - set(manifiesto)
+        assert not faltan, (
+            f"iconos usados sin subsetear: {sorted(faltan)} — "
+            "corré `python tools/build_icon_font.py`"
+        )
 
     def test_htmx_se_sirve_desde_el_repo(self, client: TestClient) -> None:
         response = client.get("/static/htmx.min.js")
