@@ -173,28 +173,32 @@ Decisiones que lo modifican:
 ## 03 · Extracción
 
 **Hoy:** OCR y motor de reglas como asistentes de la cola, nunca autónomos.
-Extracción completa correcta: **43,5%** sobre 278 filas de 175 anuncios.
+Extracción completa correcta: **44,2%** sobre 278 filas de 175 anuncios.
+Motor de imagen: RapidOCR (modelos PP-OCR sobre ONNX) primario, Tesseract de
+respaldo (2026-08-31).
 
 El promedio esconde dos poblaciones muy distintas (medición del 2026-08-31,
-por fila):
+por fila, con RapidOCR):
 
 | | anuncios | filas | producto | precio | provincia | cant/unid | **completa** |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Texto | 91 | 180 | 92,8% | 72,8% | 98,9% | 73,9% | **64,4%** |
-| Imagen | 84 | 98 | 72,4% | 24,5% | 53,1% | 19,4% | **5,1%** |
-| Total | 175 | 278 | 85,6% | 57,2% | 82,7% | 54,7% | **43,5%** |
+| Imagen | 84 | 98 | 81,6% | 30,6% | 58,2% | 19,4% | **7,1%** |
+| Total | 175 | 278 | 88,8% | 57,9% | 84,5% | 54,7% | **44,2%** |
 
 Consecuencia directa: **sumar anuncios en la misma proporción no mueve el
-43,5%** — es el promedio ponderado de dos tasas fijas. El umbral de 300 de §3
+44,2%** — es el promedio ponderado de dos tasas fijas. El umbral de 300 de §3
 vuelve la medición oficial, no mejor.
 
-Dentro de las 98 filas de imagen, la culpa del fallo de precio se reparte: 35
-(35,7%) fallan con el número correcto ya transcripto por el OCR —recuperables
-con mejores reglas— y 39 (39,8%) fallan porque el OCR nunca produjo ese
-número. No es «el techo es el OCR» a secas: es mitad y mitad.
+Cambiar el motor de OCR (Tesseract → RapidOCR) subió mucho la transcripción
+—el precio confirmado pasa a estar presente en el texto en 78,6% de las filas
+de imagen, contra 58,2% con Tesseract— pero H0 completo apenas se movió
+(43,5%→44,2%). Queda un hueco de ~21 puntos entre «el número está en el
+texto» y «el motor lo extrae bien»: cambiar el OCR habilita el trabajo de
+reglas sobre texto legible, no lo reemplaza.
 
 Para que la extracción **completa** se mueva en la mitad de imagen, el cuello
-no es el precio sino cantidad/unidad (19,4%) y provincia (53,1%): una fila
+no es el precio sino cantidad/unidad (19,4%) y provincia (58,2%): una fila
 necesita los cuatro campos bien.
 
 | Id | Requisito | Fuente | Fase | Fuerza |
@@ -223,6 +227,7 @@ Decisiones que lo modifican:
 | 2026-08-25 | Proponer `price_basis` cuando el anuncio lo declara. **Apartamiento** de D5/D4 |
 | 2026-08-31 | **Descartado** excluir el número de "Sale X" de `_extract_price`: medido contra producción, regresa la precisión (55,8%→54,3%) en vez de mejorarla — la ambigüedad entre el precio del lote y el de "Sale" es real y depende del anuncio, no hay preferencia fija que acierte siempre |
 | 2026-08-31 | Marca de moneda como sufijo ("850$") y número pelado como último recurso: precio 55,8%→57,2%. **Decisión del operador**: prefiere revisar una propuesta dudosa a que el motor se abstenga |
+| 2026-08-31 | RapidOCR (modelos PP-OCR sobre ONNX) como motor primario de imagen, Tesseract de respaldo. Precio 78,6% presente en el texto contra 58,2% de Tesseract; en H0 completo 43,5%→44,2% — el cuello se corre a las reglas |
 
 **Propuestos:**
 

@@ -17,9 +17,12 @@ es un veredicto está en `CLAUDE.md`, sección «H0 — métrica de eficiencia»
    sucio la corrida se registra igual, pero marcada `git_dirty: true` y el
    número deja de ser atribuible a un commit — sirve para mirar, no para el
    histórico.
-3. **Tesseract disponible.** `tesseract --version` responde. Si falta, la corrida
-   igual sale pero `tesseract_version` queda `null` y las métricas de imagen se
-   hunden sin que nada más lo delate.
+3. **RapidOCR instalado (`pip install -e ".[ocr]"`), Tesseract como respaldo.**
+   Desde el 2026-08-31 el motor primario de imagen es RapidOCR
+   (`saimc.extraction.ocr`); Tesseract solo entra si RapidOCR no está instalado
+   o no encuentra texto en una imagen puntual. `tesseract --version` sigue
+   siendo útil para ese caso, pero su ausencia ya no hunde las métricas de
+   imagen como antes — cae a RapidOCR, no al revés.
 
 ---
 
@@ -44,7 +47,8 @@ En la salida, mirá en este orden:
   resultado válido: gobierna cuánto trabajo manual cuesta cada anuncio, no si el
   proyecto avanza.
 - **Sin texto del OCR** — si este número no es 0, hay imágenes cuyo OCR devolvió
-  vacío y están contando como extracción fallida. Revisá que Tesseract esté bien.
+  vacío (ni RapidOCR ni el respaldo de Tesseract encontraron nada) y están
+  contando como extracción fallida.
 
 ---
 
@@ -62,7 +66,7 @@ Sin la flag, además de imprimir el reporte, appendea **una línea JSON** a
 | `timestamp` | Cuándo se corrió (UTC). |
 | `git_commit`, `git_branch` | Qué versión del extractor produjo el número. |
 | `git_dirty` | `true` si el árbol estaba sucio → número no atribuible. |
-| `tesseract_version` | Qué OCR se usó; es el techo real de H0. |
+| `tesseract_version` | Versión del respaldo disponible en la máquina, no necesariamente el motor que transcribió — desde el 2026-08-31 el primario es RapidOCR y este campo no lo distingue. |
 | `is_official` | `true` solo con 300+ anuncios evaluados. |
 | Las 15 métricas del reporte | Aplanadas, tal cual se imprimieron. |
 

@@ -5627,3 +5627,59 @@ imagen el cuello no es el precio sino cantidad/unidad (19,4%) y provincia
 (53,1%), y una fila necesita los cuatro campos bien para contar. El costo es
 +63 filas propuestas sobre 1123 (+5,6%) que el operador revisa — aceptado por
 él explícitamente al tomar la decisión.
+
+## 2026-08-31 — RapidOCR como motor primario de imagen, Tesseract de respaldo
+
+Contexto: el desglose de H0 por tipo de evidencia (entrada anterior) mostró
+imagen al 5,1% de extracción completa contra 64,4% de texto, y que la mitad
+del fallo de precio en imagen ocurre con el número YA transcripto por
+Tesseract — la otra mitad, con el número perdido del todo. El operador
+propuso evaluar un motor local (`docs/decisions.md`, misma fecha, entrada
+sobre PaddleOCR/rapidocr).
+
+`paddlepaddle` (el runtime de PaddleOCR) publica wheels hasta cp313; el
+proyecto corre Python 3.14, así que PaddleOCR propiamente dicho no se puede
+instalar. `rapidocr` sí: es un wheel puro de Python que ejecuta los mismos
+modelos PP-OCR convertidos a ONNX, sobre `onnxruntime` (que tiene cp314).
+
+Medido contra las 98 filas de imagen curadas, ¿el precio confirmado aparece
+en la transcripción?: Tesseract 58,2%, RapidOCR 78,6% (+23, −3). En H0
+completo el salto es mucho menor —43,5% → 44,2%— porque el cuello se corre a
+las reglas de extracción: el número pasa a estar en el texto, pero el motor
+todavía no siempre lo agarra. RapidOCR **habilita** ese trabajo, no lo
+reemplaza.
+
+Decisión: `saimc.extraction.ocr.transcribe` es ahora una cascada. RapidOCR
+primero (`_transcribe_rapidocr`); si no está instalado, revienta con esa
+imagen puntual, o no encuentra ni un renglón, cae a Tesseract
+(`_transcribe_tesseract`, el código de siempre, sin cambios). El motor de
+RapidOCR se construye una sola vez por proceso (`_rapidocr_engine`, cacheado)
+y tarde —en la primera transcripción, no al importar el módulo— para no
+pagar el costo si nadie cura una imagen en esa corrida del server.
+
+`rapidocr` + `onnxruntime` quedan como dependencia opcional
+(`pyproject.toml`, extra `ocr`, 417 MB instalados) y no en `dependencies`: un
+entorno sin ellos sigue transcribiendo con Tesseract solo, sin romper nada —
+es exactamente la condición que el respaldo existe para cubrir.
+
+Descartado: (a) el modelo latino de reconocimiento (`latin_PP-OCRv5_rec_mobile`)
+en vez del chino por defecto — medido, da exactamente los mismos 44,2% (el
+modelo chino de PP-OCR ya cubre el alfabeto latino) y es más lento por
+imagen. (b) Reemplazar Tesseract en vez de poner a RapidOCR delante: perder
+el respaldo cambia "instalación opcional pesada" por "dependencia dura", y el
+20% de casos donde RapidOCR no encuentra nada seguirían sin transcribir.
+
+Consecuencia: 1011 tests verdes (+7 sobre 1004), con los casos escritos antes
+del código (`TestCascadaDeMotores`, que fuerza cada camino de la cascada con
+motores falsos, y `sin_rapidocr` para que el resto de `test_ocr.py` siga
+siendo determinista con o sin el paquete instalado). Medido de punta a punta
+contra la cola real, a través de `ocr.transcribe` real y no de una
+simulación: reproduce exacto lo medido antes de escribir código — precio
+57,2%→57,9%, producto 85,6%→88,8%, provincia 82,7%→84,5%, completa
+43,5%→44,2%. Costo: ~3,5s por imagen contra ~0,9s de Tesseract solo (~4×);
+una corrida de `measure.py` pasa de ~1,5 a ~5,5 minutos.
+
+Queda un hallazgo aparte, ya anotado en el requisito: ~21 puntos de hueco
+entre "el precio está en el texto" (78,6%) y "el motor lo extrae bien"
+(57,9%) en imagen. Es el próximo lever, y ahora sí se puede atacar sobre
+texto legible en vez de sobre ruido de Tesseract.

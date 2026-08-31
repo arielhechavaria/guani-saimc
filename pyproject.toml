@@ -26,6 +26,14 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+# Motor de OCR primario (`saimc.extraction.ocr`), con Tesseract de respaldo si
+# no está instalado. Opcional y no en `dependencies`: son 417 MB de modelos
+# ONNX que un entorno de desarrollo liviano puede no querer, y el módulo
+# degrada solo si falta (docs/decisions.md, 2026-08-31).
+ocr = [
+    "rapidocr>=3.9",
+    "onnxruntime>=1.29",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
