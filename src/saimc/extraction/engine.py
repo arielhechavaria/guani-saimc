@@ -111,6 +111,12 @@ _PRICE_BEFORE_CURRENCY_RE = re.compile(
 # usarse para CUP también— por eso esto solo ubica el número, la moneda la
 # sigue decidiendo `_extract_currency` por separado.
 _PRICE_DOLLAR_RE = re.compile(r"\$\s*(\d[\d.,]*)")
+# El mismo símbolo escrito DESPUÉS del número ("850$", "21900$"), forma
+# habitual de las publicaciones de Facebook/Marketplace que el operador
+# captura como imagen. `_PRICE_DOLLAR_RE` solo mira adelante, así que estas
+# líneas quedaban sin precio aunque el OCR hubiera transcripto el número
+# perfectamente (docs/decisions.md, 2026-08-31).
+_PRICE_DOLLAR_SUFFIX_RE = re.compile(r"(\d[\d.,]*)\s*\$")
 # Cuarta pista, la más específica: precio en dos monedas para el mismo ítem
 # ("43.5 o 30885" = 43.5 USD, o —al tipo de cambio propio del vendedor—
 # 30885 CUP). Patrón real de los canales de La Habana que publican catálogo
@@ -132,6 +138,54 @@ _UNIT_WORDS = ("lb", "kg", "cajas", "caja", "docena", "litro", "unidad")
 _QUANTITY_RE = re.compile(
     r"(\d[\d.,]*)\s*(" + "|".join(_UNIT_WORDS) + r")\b", re.IGNORECASE
 )
+
+# --- número pelado, último recurso ----------------------------------------
+#
+# Un número sin ninguna marca ("Papas prefritas 1kg 2500", "Picadillo x libras
+# 550"). Hasta el 2026-08-31 se descartaba a propósito por ambiguo; se propone
+# por decisión explícita del operador, que prefiere revisarlo a que el motor se
+# abstenga (docs/decisions.md). Sigue siendo el ÚLTIMO tramo de
+# `_extract_price`: cualquier pista real le gana.
+#
+# Los bordes `(?<![\d.,:+])` / `(?![\d.,:])` son las guardas que lo hacen
+# usable sobre texto de OCR: sin ellas la hora de la captura ("7:00") y el
+# teléfono del anunciante ("+53 5 4727826") entran como precio.
+_BARE_NUMBER_RE = re.compile(r"(?<![\d.,:+])(\d[\d.,]*)(?![\d.,:])")
+
+# Más de 6 dígitos es un teléfono, no un precio de este mercado.
+_BARE_NUMBER_MAX_DIGITS = 6
+
+# Un número pegado a su unidad es cantidad ("40 lb"), y ya lo lee
+# `_QUANTITY_RE`. Tomarlo también como precio confundiría los dos campos.
+_BARE_NUMBER_UNIT_TAIL_RE = re.compile(
+    r"(" + "|".join(_UNIT_WORDS) + r")\b", re.IGNORECASE
+)
+
+
+def _bare_price_candidate(text: str) -> Decimal | None:
+    """El mayor número suelto que puede ser un precio, o `None`.
+
+    El mayor y no el primero: en estas capturas el precio convive con
+    cantidades chicas ("1kg 2500", "5 unidade: 850") y es el número grande.
+    Se midió también "el último de la línea" contra el corpus real y da
+    exactamente el mismo resultado —en estos anuncios el precio es a la vez
+    el mayor y el último—, así que se elige el criterio que no depende de
+    dónde corte el renglón el OCR.
+    """
+    mejor: Decimal | None = None
+    for match in _BARE_NUMBER_RE.finditer(text):
+        crudo = match.group(1)
+        if len(re.sub(r"\D", "", crudo)) > _BARE_NUMBER_MAX_DIGITS:
+            continue
+        cola = text[match.end(1) : match.end(1) + 12].lstrip()
+        if _BARE_NUMBER_UNIT_TAIL_RE.match(cola):
+            continue
+        valor = _normalize_number(crudo)
+        if valor is None or valor <= 0:
+            continue
+        if mejor is None or valor > mejor:
+            mejor = valor
+    return mejor
 
 # --- precio escalonado ---------------------------------------------------
 
@@ -452,10 +506,14 @@ def _extract_price(text: str) -> Decimal | None:
         _PRICE_AFTER_A_RE.search(text)
         or _PRICE_BEFORE_CURRENCY_RE.search(text)
         or _PRICE_DOLLAR_RE.search(text)
+        # Marca de moneda escrita después del número: sigue siendo una pista
+        # explícita, así que va antes que el número pelado.
+        or _PRICE_DOLLAR_SUFFIX_RE.search(text)
     )
-    if match is None:
-        return None
-    return _normalize_number(match.group(1))
+    if match is not None:
+        return _normalize_number(match.group(1))
+    # Sin ninguna pista: el número pelado, que el operador revisa.
+    return _bare_price_candidate(text)
 
 
 def _extract_currency_explicit(text: str) -> str | None:

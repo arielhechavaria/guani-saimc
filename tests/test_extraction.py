@@ -123,6 +123,65 @@ class TestPrecio:
         assert propose(texto, products, provinces).price == esperado
 
 
+class TestPrecioSinMarcaDelantera:
+    """Formas de precio que el motor no veía, medidas sobre la mitad de imagen
+    del corpus (2026-08-31).
+
+    De las 98 filas de evidencia de imagen, 35 fallaban con el número correcto
+    perfectamente transcripto por el OCR: el motor no las alcanzaba porque
+    exigía una pista *delante* del número ("a 500", "$500", "500 cup"). Estas
+    dos formas no la tienen.
+
+    Las respuestas correctas de abajo salen de leer el anuncio, no de correr
+    el extractor: en "Papas prefritas 1kg 2500" el precio es 2500 y 1 es la
+    cantidad; en "al detalle 850$" el precio es 850.
+
+    El número pelado se propone por decisión explícita del operador
+    (2026-08-31): prefiere revisarlo y corregirlo a que el motor se abstenga.
+    """
+
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            # Marca de moneda ESCRITA DESPUÉS del número. `_PRICE_DOLLAR_RE`
+            # solo mira el símbolo adelante.
+            ("al detalle 850$", Decimal("850")),
+            ("Paquete de azucar 2lb 820$", Decimal("820")),
+            # Número pelado, sin ninguna marca: la forma más común en las
+            # capturas de publicaciones de un solo producto.
+            ("Papas prefritas 1kg 2500", Decimal("2500")),
+            ("Picadillo x libras 550", Decimal("550")),
+            ("Paquete de Salchichas 5 unidade: 850", Decimal("850")),
+            # Guardas: lo que NO debe tomarse como precio.
+            # Teléfono (más de 6 dígitos).
+            ("Llame al 63129470", None),
+            ("+53 54727826", None),
+            # Hora de la captura de pantalla.
+            ("7:00 O -** all", None),
+            # Un número pegado a su unidad es cantidad, no precio: sin ninguna
+            # otra pista en la línea, no hay precio que proponer.
+            ("Caja de 40 lb", None),
+        ],
+    )
+    def test_casos(
+        self,
+        texto: str,
+        esperado: Decimal | None,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        assert propose(texto, products, provinces).price == esperado
+
+    def test_la_pista_de_siempre_le_sigue_ganando_al_numero_pelado(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El número pelado es el último recurso, no un competidor: si la
+        línea trae la pista fuerte de siempre, esa manda aunque haya números
+        más grandes sueltos alrededor."""
+        propuesta = propose("Pollo 2024 unidades a 500", products, provinces)
+        assert propuesta.price == Decimal("500")
+
+
 class TestMoneda:
     @pytest.mark.parametrize(
         ("texto", "esperado"),

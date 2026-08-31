@@ -5583,3 +5583,47 @@ silencio (dos candidatos de precio, no uno), o dejarla sin proponer del todo,
 igual que ya hace `_declared_price_basis` cuando ninguna lectura cierra. La
 medición contra `prices_history` real —y no contra una suposición sobre qué
 "debería" ser correcto— es la que detectó esto antes de comitear nada.
+
+## 2026-08-31 — Precio con marca de moneda al final, y número pelado como último recurso
+
+Contexto: el desglose de H0 por tipo de evidencia mostró dos poblaciones muy
+distintas — texto 64,4% de extracción completa contra imagen 5,1% — y que el
+promedio de 43,5% no se mueve sumando anuncios en la misma proporción. Dentro
+de las 98 filas de imagen, 35 (35,7%) fallaban el precio **con el número
+correcto ya transcripto por el OCR**: el motor no las alcanzaba porque todas
+sus pistas exigen algo *delante* del número ("a 500", "$500", "500 cup"), y
+estas capturas escriben "al detalle 850$" (moneda al final) o directamente
+"Papas prefritas 1kg 2500" (sin marca ninguna).
+
+Decisión: dos tramos nuevos al final de `_extract_price`, en ese orden.
+`_PRICE_DOLLAR_SUFFIX_RE` reconoce el "$" escrito después del número — sigue
+siendo una pista explícita, así que va antes. `_bare_price_candidate` toma el
+mayor número suelto de la línea, con tres guardas medidas sobre texto de OCR
+real: descarta más de 6 dígitos (teléfono del anunciante), lo pegado a ":"
+o "+" (hora de la captura, prefijo telefónico) y lo seguido de una unidad
+(es cantidad, y ya lo lee `_QUANTITY_RE`). Cualquier pista real le sigue
+ganando: el número pelado es el último recurso, no un competidor.
+
+Proponer el número pelado **es decisión explícita del operador**: hasta hoy el
+motor se abstenía a propósito porque un número suelto es ambiguo, y el
+operador prefiere revisar una propuesta dudosa a completar el campo a mano.
+Es coherente con §6.1 —el sistema propone, el humano confirma o corrige— y
+con el criterio de CLAUDE.md de que la precisión gobierna cuánto trabajo
+manual cuesta cada anuncio, no si el dato es válido.
+
+Descartado: (a) tomar el ÚLTIMO número de la línea en vez del mayor — se
+midió contra el corpus real y da exactamente el mismo resultado, porque en
+estos anuncios el precio es a la vez el mayor y el último; se eligió el mayor
+por no depender de dónde corte el renglón el OCR. (b) Filtrar por magnitud
+mínima: el corpus tiene precios confirmados de 30 y 50 CUP, así que cualquier
+piso razonable los perdería.
+
+Consecuencia: 1004 tests verdes (+10), con los casos escritos antes del código
+(`TestPrecioSinMarcaDelantera`). Medido contra la cola real antes de
+comitear: **precisión de precio 55,8% → 57,2%** (en la mitad de imagen 24,5%
+→ 28,6%), sin regresión en producto, provincia ni cantidad/unidad. La
+extracción **completa** NO se mueve (43,5%) y era esperable: en la mitad de
+imagen el cuello no es el precio sino cantidad/unidad (19,4%) y provincia
+(53,1%), y una fila necesita los cuatro campos bien para contar. El costo es
++63 filas propuestas sobre 1123 (+5,6%) que el operador revisa — aceptado por
+él explícitamente al tomar la decisión.
