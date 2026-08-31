@@ -137,6 +137,18 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="rige",
     ),
     DocEntry(
+        slug="costos",
+        title="Costos de operación",
+        summary=(
+            "Qué cuesta tener el sistema funcionando y qué costaría cada "
+            "capacidad todavía no construida, con la cuenta a la vista para "
+            "rehacerla cuando cambie el volumen. Lo que solo sabe el operador "
+            "queda marcado a completar, nunca estimado."
+        ),
+        relative_path="docs/costos.md",
+        standing="rige",
+    ),
+    DocEntry(
         slug="setup",
         title="Puesta en marcha",
         summary=(
