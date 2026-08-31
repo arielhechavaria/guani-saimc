@@ -126,6 +126,17 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="rige",
     ),
     DocEntry(
+        slug="runbook-h0",
+        title="Runbook — Medir H0",
+        summary=(
+            "Los pasos para correr la medición de H0 y dejar registro de la "
+            "corrida: precondiciones, cómo mirar el número sin ensuciar el "
+            "histórico, cómo registrarlo y qué no hacer."
+        ),
+        relative_path="docs/runbook-medir-h0.md",
+        standing="rige",
+    ),
+    DocEntry(
         slug="setup",
         title="Puesta en marcha",
         summary=(

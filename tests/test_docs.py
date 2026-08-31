@@ -176,6 +176,18 @@ class TestLectura:
         assert client.get("/docs/inventado").status_code == 404
         assert client.get("/docs/inventado/raw").status_code == 404
 
+    def test_el_runbook_de_h0_esta_en_el_catalogo_y_se_lee(
+        self, client: TestClient
+    ) -> None:
+        """El procedimiento para medir H0 vive en `/docs`, no en un mensaje
+        suelto: el operador lo sigue cada vez que corre la medición."""
+        assert docs_catalog.BY_SLUG["runbook-h0"].standing == "rige"
+
+        response = client.get("/docs/runbook-h0")
+
+        assert response.status_code == 200
+        assert "Runbook — Medir H0" in response.text
+
     def test_el_404_es_una_pagina_con_menu_no_un_json(self, client: TestClient) -> None:
         """Un slug errado no puede dejar al operador en un callejón: la vista
         conserva la navegación y ofrece la lista de lo que sí existe."""
