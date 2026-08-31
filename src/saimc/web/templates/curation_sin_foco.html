@@ -1,0 +1,74 @@
+{#
+  Descarte en lote de pendientes sin producto del foco (docs/decisions.md,
+  2026-08-31). El operador ve la lista completa acá antes de confirmar nada
+  (spec.md §6.1) — el botón único de abajo manda de vuelta exactamente estos
+  ids como campos ocultos, no un "descartar todo" recalculado en el servidor.
+#}
+{% extends "_shell.html" %}
+
+{% block title %}Sin foco{% endblock %}
+{% block heading %}Descarte en lote — sin foco{% endblock %}
+{% block subtitle %}Pendientes donde ningún renglón menciona un producto piloto. Revisá la lista y confirmá.{% endblock %}
+
+{% block stats %}
+  <div class="m3-stat">
+    <div class="m3-stat-label">Sin foco</div>
+    <div class="m3-stat-value is-accent">{{ items|length }}</div>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="m3-stack" style="gap:20px">
+
+  <div class="m3-row">
+    <a class="m3-sm" href="/curation">&larr; Volver a la cola</a>
+  </div>
+
+  {% if not items %}
+  <div class="m3-card">
+    <div class="m3-empty">
+      <span class="m3-icon">check_circle</span>
+      <p style="margin:12px 0 0">No hay pendientes sin foco.</p>
+    </div>
+  </div>
+  {% else %}
+
+  <div class="m3-card m3-table-scroll">
+    <table class="m3-table">
+      <thead>
+        <tr>
+          <th scope="col">Capturado</th>
+          <th scope="col">Canal origen</th>
+          <th scope="col">Texto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td class="m3-nowrap m3-num m3-sm">{{ item.captured_at | havana }}</td>
+          <td class="m3-sm">{{ item.source_reference or "—" }}</td>
+          <td class="m3-sm">{{ (item.original_text or "") | truncate(200) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post" action="/curation/sin-foco/discard"
+        onsubmit="return confirm('¿Descartar estos {{ items|length }} pendientes? Quedan marcados como descartados, no se borran.');">
+    {% for item in items %}
+    <input type="hidden" name="ingestion_id" value="{{ item.id }}" />
+    {% endfor %}
+    <div class="m3-actionbar">
+      <span class="m3-sm m3-muted m3-spacer">
+        Descarta los {{ items|length }} pendientes de esta lista. Quedan <code>discarded</code>, nunca se borran.
+      </span>
+      <button type="submit" class="m3-btn m3-btn-danger m3-btn-lg">
+        <span class="m3-icon">block</span>Descartar {{ items|length }}
+      </button>
+    </div>
+  </form>
+
+  {% endif %}
+</div>
+{% endblock %}

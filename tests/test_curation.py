@@ -2744,6 +2744,181 @@ class TestCurationDiscard:
         assert list(session.execute(select(PriceHistory)).scalars()) == []
 
 
+# --- GET /curation/sin-foco ---------------------------------------------------
+
+
+class TestCurationSinFocoGet:
+    def test_lista_solo_lo_que_no_menciona_ningun_piloto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        con_foco = _crear_raw_ingestion(
+            session, hash_="hash-sf-con-foco", original_text="arroz blanco a 500 el saco"
+        )
+        sin_foco = _crear_raw_ingestion(
+            session, hash_="hash-sf-sin-foco", original_text="cemento a 500 el saco"
+        )
+
+        response = client.get("/curation/sin-foco")
+
+        assert response.status_code == 200
+        assert "cemento a 500 el saco" in response.text
+        assert str(sin_foco.id) in response.text
+        assert "arroz blanco a 500 el saco" not in response.text
+        assert str(con_foco.id) not in response.text
+
+    def test_excluye_imagen_sin_ocr_por_ser_relevancia_desconocida_no_sin_foco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`_FOCUS_UNKNOWN` (imagen sin OCR) no es lo mismo que `_FOCUS_NONE`:
+        acá no se sabe si menciona un piloto, no se confirmó que no lo haga."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        imagen_sin_ocr = _crear_raw_ingestion(
+            session,
+            hash_="hash-sf-imagen",
+            content_type=ContentType.IMAGE,
+            original_text=None,
+            file_path="foto.png",
+        )
+
+        response = client.get("/curation/sin-foco")
+
+        assert response.status_code == 200
+        assert str(imagen_sin_ocr.id) not in response.text
+        assert "No hay pendientes sin foco." in response.text
+
+    def test_sin_catalogo_piloto_no_lista_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin foco definido no hay señal que confirmar: afirmar "sin foco"
+        acá sería inventarla, no leerla (ver `_pending_out_of_focus`)."""
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-sf-sin-piloto", original_text="cemento a 500 el saco"
+        )
+
+        response = client.get("/curation/sin-foco")
+
+        assert response.status_code == 200
+        assert str(ingestion.id) not in response.text
+        assert "No hay pendientes sin foco." in response.text
+
+
+# --- POST /curation/sin-foco/discard ------------------------------------------
+
+
+class TestCurationSinFocoDiscard:
+    def test_descarta_exactamente_los_ids_enviados_y_no_toca_el_resto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        sin_foco_1 = _crear_raw_ingestion(
+            session, hash_="hash-sfd-1", original_text="cemento a 500 el saco"
+        )
+        sin_foco_2 = _crear_raw_ingestion(
+            session, hash_="hash-sfd-2", original_text="cabilla de media a 1200"
+        )
+        con_foco = _crear_raw_ingestion(
+            session, hash_="hash-sfd-3", original_text="arroz blanco a 500 el saco"
+        )
+        no_enviado = _crear_raw_ingestion(
+            session, hash_="hash-sfd-4", original_text="ferretería varios a 300"
+        )
+
+        response = client.post(
+            "/curation/sin-foco/discard",
+            data={"ingestion_id": [str(sin_foco_1.id), str(sin_foco_2.id)]},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/curation/sin-foco"
+
+        session.expire_all()
+        assert session.get(RawIngestion, sin_foco_1.id).processing_status == (
+            ProcessingStatus.DISCARDED
+        )
+        assert session.get(RawIngestion, sin_foco_2.id).processing_status == (
+            ProcessingStatus.DISCARDED
+        )
+        # ni lo que no vino en el POST (aunque también sea "sin foco") ni lo
+        # que sí menciona un piloto se tocan.
+        assert session.get(RawIngestion, no_enviado.id).processing_status == (
+            ProcessingStatus.PENDING
+        )
+        assert session.get(RawIngestion, con_foco.id).processing_status == (
+            ProcessingStatus.PENDING
+        )
+
+    def test_no_descarta_un_id_que_al_momento_del_post_ya_no_es_sin_foco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Revalida contra el estado actual, no confía en lo que diga el
+        form: protege contra un hidden input viejo si el catálogo piloto
+        cambió entre el GET que armó la lista y este POST."""
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        ya_no_califica = _crear_raw_ingestion(
+            session, hash_="hash-sfd-race", original_text="arroz blanco a 500 el saco"
+        )
+
+        response = client.post(
+            "/curation/sin-foco/discard",
+            data={"ingestion_id": str(ya_no_califica.id)},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(RawIngestion, ya_no_califica.id).processing_status == (
+            ProcessingStatus.PENDING
+        )
+
+    def test_no_toca_un_pendiente_que_ya_se_curo_en_otra_pestana(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ya_curado = _crear_raw_ingestion(
+            session, hash_="hash-sfd-ya-curado", original_text="cemento a 500 el saco"
+        )
+        ya_curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+
+        response = client.post(
+            "/curation/sin-foco/discard",
+            data={"ingestion_id": str(ya_curado.id)},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(RawIngestion, ya_curado.id).processing_status == (
+            ProcessingStatus.CURATED
+        )
+
+    def test_ignora_ids_invalidos_o_inexistentes_sin_romper_el_lote(
+        self, client: TestClient, session: Session
+    ) -> None:
+        sin_foco = _crear_raw_ingestion(
+            session, hash_="hash-sfd-junto-a-basura", original_text="cemento a 500 el saco"
+        )
+
+        response = client.post(
+            "/curation/sin-foco/discard",
+            data={
+                "ingestion_id": [
+                    "no-es-un-uuid",
+                    str(uuid.uuid4()),
+                    str(sin_foco.id),
+                ]
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(RawIngestion, sin_foco.id).processing_status == (
+            ProcessingStatus.DISCARDED
+        )
+
+
 # --- GET /evidence/{id} -------------------------------------------------------
 
 

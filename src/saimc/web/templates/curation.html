@@ -56,6 +56,12 @@
       <span class="m3-icon m3-icon-sm">visibility_off</span>
       {{ status_counts.out_of_focus }} fuera de foco
     </span>
+    <!--
+      Descarte en lote (docs/decisions.md, 2026-08-31), acotado a la señal
+      "sin producto del foco" — las otras dos de probable_discard_reasons
+      (agotado, mayorista) siguen descartándose de a una desde acá abajo.
+    -->
+    <a class="m3-sm" href="/curation/sin-foco">Descartar en lote →</a>
     {% endif %}
     {% if last_capture_notice %}
     <!--

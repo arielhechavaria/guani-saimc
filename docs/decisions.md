@@ -5419,3 +5419,32 @@ Consecuencia: 968 tests verdes. Quedan los 2 de `test_public_filter.py` que
 envejecieron por fechas fijas en su seed, ajenos a esto. El comentario del
 `@font-face` en `saimc-material.css` deja de decir «35 ligaduras / 5,7 KB» y
 apunta a la herramienta.
+
+## 2026-08-31 — Descarte en lote de pendientes sin foco
+
+Contexto: la tasa de descarte en producción es 67,8% contra un objetivo de 30%
+y el 84,5% de ese descarte es ruido de WhatsApp posterior a fijar los productos
+piloto. El operador lo tira de a uno desde la cola, gastando en triaje la hora
+diaria que §6.1 reserva para curar.
+
+Decisión: `GET /curation/sin-foco` lista todos los pendientes donde ningún
+renglón del texto menciona un producto del foco (`_FOCUS_NONE`) y
+`POST /curation/sin-foco/discard` los marca `discarded` en bloque. Acotado a esa
+única señal: las otras dos de `probable_discard_reasons` (agotado, mayorista)
+corren sobre el texto entero mientras el precio se extrae línea por línea, así
+que un anuncio puede decir «agotado» en un renglón y tener un precio válido en
+otro — agruparlas arriesgaría tirar una fila real y siguen descartándose de a
+una. La lista se muestra completa antes de confirmar (§6.1: el operador siempre
+confirma) y los ids viajan como campos ocultos, no se recalcula la lista en el
+POST; cada id se revalida igual contra `PENDING` + `_FOCUS_NONE` por si el
+catálogo piloto cambió entre el GET y el submit. `_FOCUS_UNKNOWN` (imagen sin
+OCR) queda afuera: su relevancia es desconocida, no negativa.
+
+Descartado: un botón «descartar todo» que recalcula en el servidor —rompe la
+regla de §6.1 de mostrar qué se va a tocar— y auto-descartar por regla sin
+intervención, que §6.1 prohíbe explícitamente.
+
+Consecuencia: 976 tests verdes (+10). Siguen en rojo los 2 de
+`test_public_filter.py` por fechas fijas en su seed, ajenos a este slice. El
+enlace «Descartar en lote →» aparece en la cabecera de `/curation` solo cuando
+el contador de pendientes fuera de foco es mayor que cero.

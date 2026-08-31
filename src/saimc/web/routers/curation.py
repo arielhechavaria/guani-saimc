@@ -300,6 +300,37 @@ def _pending_in_focus(db: Session, products: Sequence[Product]) -> list[RawInges
     ]
 
 
+def _pending_out_of_focus(db: Session, products: Sequence[Product]) -> list[RawIngestion]:
+    """Los pendientes SIN ningún producto del foco — la contracara exacta de
+    `_pending_in_focus`, acotada al descarte en lote (`docs/decisions.md`,
+    2026-08-31).
+
+    Filtra por `_FOCUS_NONE` únicamente, nunca por `content_type`: lo que
+    importa es que se haya CONFIRMADO que ningún renglón del texto menciona
+    un piloto, así que no hay precio real que perder al descartar en bloque.
+    `_FOCUS_UNKNOWN` (imagen sin OCR) queda afuera a propósito — su relevancia
+    es desconocida, no negativa, y confundirla con "sin foco" descartaría
+    imágenes que nadie llegó a mirar.
+
+    Sin catálogo piloto no hay señal que confirmar: devuelve vacío en vez de
+    tratar la cola entera como "sin foco". Es la guarda inversa de
+    `_pending_in_focus` (ahí "sin foco definido" no filtra nada, para no
+    esconder de más; acá no afirma nada, para no descartar de más — afirmar
+    "sin foco" sin foco definido sería inventar la señal, no leerla).
+    """
+    if not products:
+        return []
+    stmt = (
+        select(RawIngestion)
+        .where(RawIngestion.processing_status == ProcessingStatus.PENDING)
+        .order_by(RawIngestion.captured_at.asc())
+    )
+    pending = list(db.execute(stmt).scalars().all())
+    return [
+        ingestion for ingestion in pending if _focus_rank(ingestion, products) == _FOCUS_NONE
+    ]
+
+
 def _burst_context(db: Session, ingestion: RawIngestion) -> list[RawIngestion]:
     """Los mensajes que rodean al que se está curando, en orden cronológico.
 
@@ -734,6 +765,80 @@ def curation_queue(
         ),
         last_capture_notice=_last_capture_notice(db),
     )
+
+
+# Las dos rutas de acá abajo van declaradas ANTES que `submit_curation`
+# (`POST /curation/{ingestion_id}`) y `discard_curation`
+# (`POST /curation/{ingestion_id}/discard`): FastAPI intenta las rutas en
+# orden de registro y `{ingestion_id}` matchea cualquier string por igual, así
+# que si esas quedaran primero, un POST a `/curation/sin-foco/discard` caería
+# ahí con `ingestion_id="sin-foco"` y el 422 de validación de UUID lo tumbaría
+# antes de llegar acá.
+@router.get("/curation/sin-foco", response_class=HTMLResponse)
+def curation_out_of_focus(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    """Descarte en lote de pendientes sin producto del foco (`docs/decisions.md`,
+    2026-08-31).
+
+    Muestra la lista completa antes de que el operador confirme nada —
+    spec.md §6.1, "el operador siempre confirma o corrige": nunca es un botón
+    ciego. Cada id que se ve acá viaja como campo oculto en el formulario de
+    confirmación (`curation_sin_foco.html`), así que lo que se descarta es
+    exactamente lo que esta respuesta mostró, no una lista recalculada al
+    momento del submit (ver `discard_out_of_focus`).
+
+    Acotada exclusivamente a la señal "sin producto del foco"
+    (`_pending_out_of_focus`). Las otras dos de `probable_discard_reasons`
+    (agotado, mayorista) corren sobre el texto completo mientras el precio se
+    extrae línea por línea: un anuncio puede decir "agotado" en un renglón y
+    tener un precio válido en otro, así que agruparlas acá arriesgaría tirar
+    una fila real. Sin foco no corre ese riesgo — si ningún renglón nombra un
+    piloto, no hay precio que perder — y por eso siguen descartándose de a una
+    desde la cola normal.
+    """
+    products = _pilot_products(db)
+    items = _pending_out_of_focus(db, products)
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "curation_sin_foco.html",
+        {"items": items},
+    )
+
+
+@router.post("/curation/sin-foco/discard")
+async def discard_out_of_focus(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+    """Confirma el descarte en lote de exactamente lo que el operador vio.
+
+    Los ids viajan como campos ocultos repetidos (`ingestion_id`, uno por fila
+    de `curation_sin_foco.html`) en vez de recalcular `_pending_out_of_focus`
+    en este POST: así lo descartado es lo que el operador efectivamente miró
+    en esa carga de página, no lo que haya en la tabla al momento del click
+    (mismo principio de spec.md §6.1 que motiva mostrar la lista en primer
+    lugar).
+
+    Cada id se revalida igual contra `PENDING` + `_FOCUS_NONE` antes de
+    tocarlo — nunca confía ciegamente en el form: entre el GET y este POST
+    pudo curarse o descartarse a mano en otra pestaña, o pudo sumarse un
+    piloto nuevo en /catalog que reclasifica el anuncio. Lo que ya no
+    califica se ignora en silencio, sin romper el resto del lote; ningún otro
+    pendiente se toca (mismo contrato "todo o nada solo sobre lo pedido" que
+    `discard_curation`, pero por lote en vez de por uno).
+    """
+    form = await request.form()
+    products = _pilot_products(db)
+
+    for raw_id in form.getlist("ingestion_id"):
+        ingestion_id = _parse_uuid(str(raw_id))
+        if ingestion_id is None:
+            continue
+        ingestion = db.get(RawIngestion, ingestion_id)
+        if ingestion is None or ingestion.processing_status != ProcessingStatus.PENDING:
+            continue
+        if _focus_rank(ingestion, products) != _FOCUS_NONE:
+            continue
+        ingestion.processing_status = ProcessingStatus.DISCARDED
+
+    db.commit()
+    return RedirectResponse(url="/curation/sin-foco", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/evidence/{ingestion_id}")

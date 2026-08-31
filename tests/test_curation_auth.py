@@ -116,3 +116,11 @@ class TestRequireOperator:
         response = client.get("/control")
 
         assert response.status_code == 200
+
+    def test_sin_foco_tambien_queda_protegida(self, client: TestClient) -> None:
+        """El descarte en lote cuelga del mismo `router` que el resto de
+        `/curation` (`docs/decisions.md`, 2026-08-31) — hereda `require_operator`
+        sin declararlo aparte, mismo criterio que `/evidence` arriba."""
+        response = client.get("/curation/sin-foco")
+
+        assert response.status_code == 401
