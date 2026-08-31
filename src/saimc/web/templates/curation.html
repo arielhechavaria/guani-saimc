@@ -295,7 +295,28 @@
           {{ price_row_card(row, loop.index0, products, provinces, currencies, units) }}
           {% endfor %}
 
-          <input type="hidden" name="row_count" value="{{ rows|length }}" />
+          {#
+            Agregar una fila a mano: el extractor a veces propone menos filas
+            de las que tiene el anuncio (ítem del board, «propose_all: producto
+            mencionado una vez, precio repetido en varias líneas»), y el
+            operador la completa igual. El molde se renderiza con la misma
+            macro que las filas de arriba —una sola fuente de verdad para los
+            130 renglones de campos— y el JS del bloque de scripts lo clona y
+            le renumera los índices. Sin JS el botón no hace nada, pero las
+            filas ya visibles (candidatas + blancas) siguen alcanzando para la
+            mayoría de los anuncios.
+          #}
+          <template id="price-row-template" data-template-index="{{ row_count }}">
+            {{ price_row_card(blank_row, row_count, products, provinces, currencies, units) }}
+          </template>
+
+          <div class="m3-row" style="margin-bottom:16px">
+            <button type="button" class="m3-btn m3-btn-text" onclick="addProductCard()">
+              <span class="m3-icon m3-icon-sm">add</span>Agregar fila
+            </button>
+          </div>
+
+          <input type="hidden" name="row_count" value="{{ row_count }}" />
         </form>
 
         <form method="post" action="/curation/{{ ingestion.id }}/discard" id="discard-form"></form>
@@ -332,15 +353,66 @@
 {% block scripts %}
 {% include "_price_row_scripts.html" %}
 <script>
-  // Elimina la tarjeta del DOM sin tocar el form ni pisar `submit_curation`:
-  // sus campos indexados nunca viajan en el POST, así que la fila cae en la
-  // rama "fila vacía, se ignora sin error" que ya existe en el backend.
-  // Después renumera las etiquetas "Producto N" que quedan.
+  // El form manda `row_count` filas indexadas (`product_id_0`, `price_0`, …) y
+  // `submit_curation` itera `range(row_count)`, saltándose las vacías. Agregar
+  // y quitar filas es puro DOM: nunca se toca el backend.
+  //
+  // El índice de una fila nueva es un contador monótono sembrado en
+  // `row_count` — nunca se reusa, ni siquiera tras borrar una del medio, así
+  // que no hay que rastrear huecos. `row_count` solo sube: `range()` tiene que
+  // cubrir el índice más alto usado; los huecos que deja un borrado caen en la
+  // rama "fila vacía" del backend.
+  var curationForm = document.getElementById('curation-form');
+  var rowCountInput = curationForm
+    ? curationForm.querySelector('input[name="row_count"]')
+    : null;
+  var nextRowIndex = rowCountInput ? (parseInt(rowCountInput.value, 10) || 0) : 0;
+
+  // "Producto N" / número de fila: se recalcula por posición cada vez que la
+  // lista cambia, así el borrado del medio no deja un "Producto 3" huérfano.
+  // No toca los `name`/`id` indexados — esos son la identidad de la fila para
+  // el backend y no dependen de la posición visual.
+  function renumberProductCards() {
+    var cards = curationForm
+      ? curationForm.querySelectorAll('.m3-row-card')
+      : [];
+    cards.forEach(function (card, i) {
+      var label = card.querySelector('[data-product-label]');
+      if (label) label.textContent = 'Producto ' + (i + 1);
+      var num = card.querySelector('.m3-row-num');
+      if (num) num.textContent = i + 1;
+    });
+  }
+
   function removeProductCard(button) {
     button.closest('.m3-row-card').remove();
-    document.querySelectorAll('[data-product-label]').forEach(function (el, i) {
-      el.textContent = 'Producto ' + (i + 1);
-    });
+    renumberProductCards();
+  }
+
+  function addProductCard() {
+    var template = document.getElementById('price-row-template');
+    if (!template || !rowCountInput) return;
+
+    var templateIndex = parseInt(template.dataset.templateIndex, 10);
+    var index = nextRowIndex++;
+    var fragment = template.content.cloneNode(true);
+
+    // La macro renderiza cada campo como `<prefijo>_<templateIndex>`. Se
+    // reescribe solo el sufijo (`_N` al final del atributo), nunca un `N`
+    // suelto que pueda aparecer en el marcado.
+    if (index !== templateIndex) {
+      var suffix = new RegExp('_' + templateIndex + '$');
+      fragment.querySelectorAll('[name], [id], [for]').forEach(function (el) {
+        ['name', 'id', 'for'].forEach(function (attr) {
+          var value = el.getAttribute(attr);
+          if (value) el.setAttribute(attr, value.replace(suffix, '_' + index));
+        });
+      });
+    }
+
+    rowCountInput.parentNode.insertBefore(fragment, rowCountInput);
+    rowCountInput.value = Math.max(parseInt(rowCountInput.value, 10) || 0, index + 1);
+    renumberProductCards();
   }
 </script>
 {% endblock %}

@@ -5510,3 +5510,32 @@ colorear el delta verde/rojo: convertiría una medición en un semáforo.
 Consecuencia: 991 tests verdes (+8). La sección se ve vacía (con enlace al
 runbook) hasta que exista `docs/h0-runs.jsonl`. Los comentarios de sección de
 `control.html` se renumeraron: la vista pasó de 9 secciones a 10.
+
+## 2026-08-31 — Botón "Agregar fila" en el formulario de curaduría
+
+Contexto: `propose_all` a veces propone menos filas de las que tiene el anuncio
+(ítem del board, «producto mencionado una vez, precio repetido en varias
+líneas»). Había 3 filas en blanco fijas de cortesía y un botón para eliminar
+tarjetas, pero ninguna forma de agregar una cuarta.
+
+Decisión: botón "Agregar fila" que clona del lado del cliente un `<template>`
+renderizado con la misma macro `price_row_card` que las filas de arriba —una
+sola fuente de verdad para los ~130 renglones de campos—. El índice de cada
+fila nueva es un contador monótono sembrado en `row_count`: nunca se reusa, así
+que borrar una del medio no obliga a rastrear huecos (los índices intermedios
+llegan vacíos y caen en la rama de fila vacía que `submit_curation` ya tiene).
+El JS reescribe solo el sufijo `_N` al final de los atributos `name`/`id`/`for`
+del clon. El molde arranca con la provincia del canal, igual que las filas en
+blanco. `submit_curation` no se tocó: sigue iterando `range(row_count)`.
+
+Descartado: renderizar la fila nueva con htmx desde un endpoint. El ADR 001
+deja la curaduría deliberadamente sin htmx (51 KB que las tres vistas del
+operador no usan); el clon del `<template>` es JS plano, mismo estilo que el
+botón "Eliminar" y `_price_row_scripts.html`. Descartado también recortar las 3
+filas en blanco fijas ahora que hay botón: es otra decisión de UX, fuera del
+alcance de este pedido.
+
+Consecuencia: 994 tests verdes (+3). Sin JS el botón no hace nada y las filas
+visibles (candidatas + 3 blancas) siguen siendo el piso, igual que hoy. El
+`<template>` suma un `product_id_<row_count>` inerte al HTML — dos tests de GET
+que contaban ocurrencias ahora acotan el conteo al form visible.

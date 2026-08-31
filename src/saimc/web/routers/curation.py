@@ -494,6 +494,7 @@ def _render_queue(
     global_values: dict[str, str],
     error: str | None,
     status_counts: dict[str, int],
+    blank_row: dict[str, str] | None = None,
     status_code: int = 200,
     unconverted: int = 0,
     pasted: int = 0,
@@ -513,6 +514,13 @@ def _render_queue(
             "provinces": provinces,
             "rows": rows,
             "row_count": row_count,
+            # Molde para las filas que el operador agregue a mano desde el
+            # botón "Agregar fila": el JS del cliente clona este `<template>`
+            # y le renumera los índices. Mismo dict vacío que las filas en
+            # blanco de más, así que la macro `price_row_card` lo renderiza
+            # igual. Cae a un dict vacío en el POST con error de validación,
+            # donde el operador corrige lo que ya escribió.
+            "blank_row": blank_row or _values_from_proposal(None),
             "values": global_values,
             "error": error,
             "notice": _unconverted_notice(unconverted),
@@ -718,10 +726,18 @@ def curation_queue(
     # filas en blanco de más — el operador conoce la provincia del canal de
     # antemano, así que hasta una fila cargada a mano se beneficia de no
     # tener que elegirla.
+    # Molde para las filas que el operador agregue a mano después de cargar la
+    # página (botón "Agregar fila", clonado por JS). No entra en `rows` —no es
+    # una fila más del form ahora—, viaja aparte al `<template>`.
+    blank_row = _values_from_proposal(None)
+
     channel_province_id = _channel_province_id(db, ingestion) if ingestion is not None else None
     if channel_province_id is not None:
         for row in rows:
             row["province_id"] = channel_province_id
+        # Una fila agregada a mano también arranca con la provincia del canal:
+        # el operador ya la conoce, elegirla de nuevo sería trabajo de más.
+        blank_row["province_id"] = channel_province_id
 
     global_values = {
         "original_text": recognized_text,
@@ -747,6 +763,7 @@ def curation_queue(
         rows=rows,
         row_count=len(rows),
         global_values=global_values,
+        blank_row=blank_row,
         error=None,
         status_counts=_status_counts(db, products),
         unconverted=unconverted,

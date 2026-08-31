@@ -422,7 +422,11 @@ class TestCurationQueueGet:
         # el operador tiene que poder leerlo. Lo que no debe existir es una
         # fila prellenada para la línea del corte: queda la del arroz, más las
         # filas en blanco de cortesía con el `<select>` sin elegir.
-        assert response.text.count('value="" selected>— seleccionar —') == _EXTRA_BLANK_ROWS
+        # Se cuenta solo el form visible, no el `<template>` de "Agregar fila"
+        # (su tarjeta también trae el `<select>` sin elegir, pero es un molde
+        # inerte hasta que el JS lo clona).
+        form_visible = response.text.split('<template id="price-row-template"')[0]
+        assert form_visible.count('value="" selected>— seleccionar —') == _EXTRA_BLANK_ROWS
 
     def test_texto_multiproducto_prellena_una_fila_por_candidato(
         self, client: TestClient, session: Session
@@ -450,7 +454,8 @@ class TestCurationQueueGet:
     def test_muestra_filas_de_candidatos_mas_las_filas_en_blanco_extra(
         self, client: TestClient, session: Session
     ) -> None:
-        """2 candidatos + 3 filas en blanco fijas = 5 selects `product_id_*`."""
+        """2 candidatos + 3 filas en blanco fijas = 5 selects `product_id_*` en
+        el form visible (el `<template>` de "Agregar fila" trae uno más, inerte)."""
         _crear_producto(session, name="Pollo")
         _crear_producto(session, name="Picadillo")
         _crear_raw_ingestion(
@@ -465,8 +470,12 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert response.text.count('name="product_id_') == 5
+        form_visible, _, template = response.text.partition('<template id="price-row-template"')
+        assert form_visible.count('name="product_id_') == 5
         assert 'name="row_count" value="5"' in response.text
+        # El molde existe y trae su propia fila, indexada en row_count (5).
+        assert template.count('name="product_id_') == 1
+        assert 'name="product_id_5"' in template
 
     def test_canonicaliza_la_unidad_al_prellenar_el_select(
         self, client: TestClient, session: Session
@@ -2060,6 +2069,89 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert len(fila.packaging or "") <= PACKAGING_MAX_LENGTH
         assert "55550101" not in (fila.packaging or "")
+
+
+class TestAgregarFila:
+    """El botón "Agregar fila": el clonado es JS (sin cobertura de Python),
+    pero el molde `<template>` y su índice sí se afirman acá, y el submit tiene
+    que aceptar una fila en un índice más allá de lo que propuso el extractor."""
+
+    def test_el_get_trae_el_molde_y_el_boton(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-agregar-fila-get",
+            original_text="pollo a 500 habana",
+        )
+
+        texto = client.get("/curation").text
+
+        assert '<template id="price-row-template"' in texto
+        assert 'onclick="addProductCard()"' in texto
+        # El molde se indexa en `row_count`, el mismo número que el JS usa como
+        # semilla del contador: 1 candidato + 3 blancas = 4.
+        assert 'data-template-index="4"' in texto
+        assert 'name="row_count" value="4"' in texto
+
+    def test_el_submit_acepta_una_fila_en_un_indice_mas_alto_que_lo_propuesto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Simula lo que hace el JS: `row_count` sube y la fila nueva viaja en
+        un índice por encima de las que propuso el extractor."""
+        pollo = _crear_producto(session, name="Pollo")
+        arroz = _crear_producto(session, name="Arroz")
+        ingestion = _crear_raw_ingestion(
+            session,
+            hash_="hash-agregar-fila-submit",
+            original_text="pollo a 500 habana",
+        )
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                # 1 candidato (índice 0) + 3 blancas (1-3) + 1 agregada (4).
+                "row_count": "5",
+                "product_id_0": str(pollo.id),
+                "price_0": "500",
+                "product_id_4": str(arroz.id),
+                "price_4": "120",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        filas = session.execute(select(PriceHistory)).scalars().all()
+        assert {f.product_id for f in filas} == {pollo.id, arroz.id}
+
+    def test_el_submit_ignora_los_huecos_que_deja_un_borrado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Borrar una tarjeta del medio no baja `row_count`: los índices
+        intermedios llegan vacíos y caen en la rama de fila vacía."""
+        pollo = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-agregar-fila-hueco", original_text="pollo a 500 habana"
+        )
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "6",
+                "product_id_0": str(pollo.id),
+                "price_0": "500",
+                # índices 1-5 sin enviar: tarjetas borradas o vacías.
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.execute(select(PriceHistory)).scalars().one().product_id == pollo.id
 
 
 class TestPriceBasisSubmit:
