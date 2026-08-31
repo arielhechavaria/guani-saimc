@@ -5481,3 +5481,32 @@ todavía: lo crea la primera corrida real del operador. Sigue pendiente, como
 mejora separada, el desglose de precisión texto/imagen dentro del `H0Report`
 —hoy solo registra la composición del corpus, no la tasa por tipo de
 evidencia—, que es lo que haría medible el trabajo de OCR.
+
+## 2026-08-31 — Historial de H0 en /control, leído del JSONL
+
+Contexto: la medición de H0 quedó como comando (`python -m saimc.extraction.measure`)
+y su registro como archivo. El operador pidió adelantar la vista del histórico
+—lo liviano de la parte «medir H0 desde la interfaz», que en su forma completa
+está bloqueada porque re-correr el OCR sobre todo el corpus tarda minutos y no
+hay cola de trabajos en Fase 0 (decisión 3 de `CLAUDE.md`)—.
+
+Decisión: sección nueva en `/control` («Historial de H0», la 2ª) que llama a
+`read_h0_runs()` en cada carga y muestra una fila por corrida, más reciente
+arriba: fecha, commit (+ «árbol sucio» y rama si no es master), versión de
+Tesseract, las cinco precisiones, la tasa de descarte, los anuncios evaluados
+con la marca «/ 300» cuando la corrida no es oficial, y el delta de extracción
+completa contra la última corrida anterior con número. `read_h0_runs` vive al
+lado de `append_h0_run` en `measure.py`, tolera el archivo ausente y las líneas
+rotas (una línea ilegible se saltea, no tumba `/control`), y entrega un
+`H0RunSummary` —subconjunto de las 21 claves del registro—. El delta se muestra
+sin color: misma regla de «mide, no dictamina» que la columna «Diferencia» de
+Disponibilidad. De paso, `_h0_runs_path()` dejó de invocar `git rev-parse` y
+resuelve la raíz desde `__file__`, como `web/docs_catalog.py`.
+
+Descartado: pasar el histórico por la base. Ya se decidió arriba (misma fecha):
+es telemetría de experimento, el archivo es la fuente. Descartado también
+colorear el delta verde/rojo: convertiría una medición en un semáforo.
+
+Consecuencia: 991 tests verdes (+8). La sección se ve vacía (con enlace al
+runbook) hasta que exista `docs/h0-runs.jsonl`. Los comentarios de sección de
+`control.html` se renumeraron: la vista pasó de 9 secciones a 10.

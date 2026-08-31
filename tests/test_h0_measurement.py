@@ -37,6 +37,7 @@ from saimc.extraction.measure import (
     append_h0_run,
     compute_h0_report,
     h0_run_record,
+    read_h0_runs,
 )
 from saimc.models import (
     Channel,
@@ -1079,3 +1080,103 @@ class TestH0RunRecord:
         )
 
         assert json.loads(path.read_text(encoding="utf-8"))["git_dirty"] is True
+
+
+# --- N-05: lectura del histórico para /control -----------------------------
+#
+# `read_h0_runs` es la contracara de `append_h0_run`: parsea el archivo de
+# solo-anexado y lo entrega como resúmenes para la vista. Los casos fijan qué
+# tolera (archivo ausente, líneas rotas) y cómo calcula el delta.
+
+
+class TestReadH0Runs:
+    def _line(self, **overrides: object) -> str:
+        record: dict[str, object] = dict(
+            timestamp="2026-08-31T12:00:00+00:00",
+            git_commit="abc1234",
+            git_dirty=False,
+            git_branch="master",
+            tesseract_version="5.5.0",
+            is_official=False,
+            evaluated_ads_count=175,
+            evaluated_rows_count=278,
+            complete_accuracy=0.435,
+            product_accuracy=0.9,
+            price_accuracy=0.5,
+            province_accuracy=0.8,
+            quantity_unit_accuracy=0.7,
+            discard_rate=0.678,
+        )
+        record.update(overrides)
+        return json.dumps(record)
+
+    def test_archivo_ausente_devuelve_lista_vacia(self, tmp_path: Path) -> None:
+        assert read_h0_runs(tmp_path / "no-existe.jsonl") == []
+
+    def test_parsea_cada_linea_y_deriva_la_fecha(self, tmp_path: Path) -> None:
+        path = tmp_path / "h0-runs.jsonl"
+        path.write_text(self._line() + "\n", encoding="utf-8")
+
+        runs = read_h0_runs(path)
+
+        assert len(runs) == 1
+        assert runs[0].date == "2026-08-31"
+        assert runs[0].git_commit == "abc1234"
+        assert runs[0].complete_accuracy == 0.435
+        assert runs[0].discard_rate == 0.678
+        assert runs[0].complete_delta is None
+
+    def test_orden_cronologico_y_delta_contra_la_anterior(self, tmp_path: Path) -> None:
+        path = tmp_path / "h0-runs.jsonl"
+        path.write_text(
+            self._line(timestamp="2026-08-31T00:00:00+00:00", complete_accuracy=0.40)
+            + "\n"
+            + self._line(timestamp="2026-09-05T00:00:00+00:00", complete_accuracy=0.45)
+            + "\n",
+            encoding="utf-8",
+        )
+
+        runs = read_h0_runs(path)
+
+        assert [r.date for r in runs] == ["2026-08-31", "2026-09-05"]
+        assert runs[0].complete_delta is None
+        assert runs[1].complete_delta == pytest.approx(0.05)
+
+    def test_una_linea_rota_se_saltea_sin_tumbar_el_resto(self, tmp_path: Path) -> None:
+        path = tmp_path / "h0-runs.jsonl"
+        path.write_text(
+            self._line(git_commit="c1")
+            + "\n"
+            + "{ esto no es json valido\n"
+            + "\n"  # línea en blanco
+            + "[1, 2, 3]\n"  # json válido pero no un objeto
+            + self._line(git_commit="c2")
+            + "\n",
+            encoding="utf-8",
+        )
+
+        runs = read_h0_runs(path)
+
+        assert [r.git_commit for r in runs] == ["c1", "c2"]
+
+    def test_una_corrida_sin_numero_no_corta_el_delta_entre_las_que_si(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "h0-runs.jsonl"
+        path.write_text(
+            self._line(timestamp="2026-08-31T00:00:00+00:00", complete_accuracy=0.40)
+            + "\n"
+            + self._line(timestamp="2026-09-01T00:00:00+00:00", complete_accuracy=None)
+            + "\n"
+            + self._line(timestamp="2026-09-05T00:00:00+00:00", complete_accuracy=0.44)
+            + "\n",
+            encoding="utf-8",
+        )
+
+        runs = read_h0_runs(path)
+
+        assert runs[1].complete_accuracy is None
+        assert runs[1].complete_delta is None
+        # La tercera compara contra la primera con número (0.40), no contra el
+        # hueco del medio.
+        assert runs[2].complete_delta == pytest.approx(0.04)

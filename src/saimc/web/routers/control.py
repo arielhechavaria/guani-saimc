@@ -28,6 +28,7 @@ from saimc.cells import (
     detect_basis_suspects,
 )
 from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
+from saimc.extraction.measure import read_h0_runs
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
@@ -149,6 +150,10 @@ def control_panel(
             "single_observation": sum(1 for cell in cells if cell.count == 1),
             # Progreso de Fase 0 (spec.md §9) y su contexto.
             "progress": progress,
+            # Historial de H0: cada corrida registrada de `measure.py`, en
+            # orden cronológico. Lee `docs/h0-runs.jsonl` en cada carga (es un
+            # archivo chico); degrada a lista vacía si todavía no existe.
+            "h0_runs": read_h0_runs(),
             "activity": activity,
             "activity_days": _ACTIVITY_DAYS,
             # El máximo de la ventana escala las barras del gráfico. Va acá y

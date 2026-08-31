@@ -435,6 +435,12 @@ def _print_report(report: H0Report) -> None:
 
 _H0_RUNS_FILENAME = "h0-runs.jsonl"
 
+# `measure.py` vive en `src/saimc/extraction/`, así que la raíz del repo está
+# tres niveles arriba. Se resuelve desde `__file__` y no del cwd —mismo
+# criterio que `web/docs_catalog.py`— para que funcione desde donde sea que se
+# lance el comando o el server.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 def _git(args: list[str]) -> str | None:
     """Salida de un comando git, o `None` si git falla o no hay repo.
@@ -483,14 +489,8 @@ def _tesseract_version() -> str | None:
 
 
 def _h0_runs_path() -> Path:
-    """`docs/h0-runs.jsonl` en la raíz del repo.
-
-    Prefiere el toplevel real de git; cae a subir cuatro niveles desde este
-    archivo (`src/saimc/extraction/measure.py`) cuando no hay repo.
-    """
-    toplevel = _git(["rev-parse", "--show-toplevel"])
-    root = Path(toplevel) if toplevel else Path(__file__).resolve().parents[3]
-    return root / "docs" / _H0_RUNS_FILENAME
+    """`docs/h0-runs.jsonl` en la raíz del repo, resuelta desde `__file__`."""
+    return _REPO_ROOT / "docs" / _H0_RUNS_FILENAME
 
 
 def h0_run_record(
@@ -531,6 +531,110 @@ def append_h0_run(record: dict[str, object], path: Path) -> None:
     line = json.dumps(record, ensure_ascii=False, sort_keys=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
+
+
+@dataclass(frozen=True)
+class H0RunSummary:
+    """Una corrida registrada, con lo que `/control` muestra de ella.
+
+    Subconjunto de las 21 claves del registro completo: la vista del operador
+    necesita la fecha, la versión y las métricas que se comparan, no los
+    conteos de composición del corpus. El archivo en disco sigue siendo la
+    fuente entera.
+    """
+
+    date: str
+    timestamp: str
+    git_commit: str
+    git_dirty: bool
+    git_branch: str
+    tesseract_version: str | None
+    is_official: bool
+    evaluated_ads_count: int
+    evaluated_rows_count: int
+    complete_accuracy: float | None
+    product_accuracy: float | None
+    price_accuracy: float | None
+    province_accuracy: float | None
+    quantity_unit_accuracy: float | None
+    discard_rate: float | None
+    # Diferencia de extracción completa contra la última corrida anterior que
+    # haya registrado un número. `None` si es la primera con número, o si esta
+    # corrida no lo tiene. Una corrida "sin datos" en el medio no corta la
+    # comparación entre las que sí lo tienen.
+    complete_delta: float | None
+
+
+def _as_float(value: object) -> float | None:
+    """`float` de un número JSON; `None` para `null`, texto o `bool`."""
+    if isinstance(value, bool):
+        return None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _as_int(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def read_h0_runs(path: Path | None = None) -> list[H0RunSummary]:
+    """Lee `docs/h0-runs.jsonl` en orden cronológico (como se escribió).
+
+    Tolera todo lo que un archivo de solo-anexado acumula: que todavía no
+    exista, líneas en blanco, una línea a medio escribir, una que no es un
+    objeto JSON. Nada de eso puede tumbar `/control` — la línea ilegible se
+    saltea y el resto se lee igual.
+    """
+    target = path if path is not None else _h0_runs_path()
+    try:
+        raw = target.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    summaries: list[H0RunSummary] = []
+    previous_complete: float | None = None
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+
+        complete = _as_float(record.get("complete_accuracy"))
+        delta = (
+            complete - previous_complete
+            if complete is not None and previous_complete is not None
+            else None
+        )
+        timestamp = str(record.get("timestamp", ""))
+        tesseract = record.get("tesseract_version")
+        summaries.append(
+            H0RunSummary(
+                date=timestamp[:10],
+                timestamp=timestamp,
+                git_commit=str(record.get("git_commit", "unknown")),
+                git_dirty=bool(record.get("git_dirty", False)),
+                git_branch=str(record.get("git_branch", "unknown")),
+                tesseract_version=str(tesseract) if tesseract is not None else None,
+                is_official=bool(record.get("is_official", False)),
+                evaluated_ads_count=_as_int(record.get("evaluated_ads_count")),
+                evaluated_rows_count=_as_int(record.get("evaluated_rows_count")),
+                complete_accuracy=complete,
+                product_accuracy=_as_float(record.get("product_accuracy")),
+                price_accuracy=_as_float(record.get("price_accuracy")),
+                province_accuracy=_as_float(record.get("province_accuracy")),
+                quantity_unit_accuracy=_as_float(record.get("quantity_unit_accuracy")),
+                discard_rate=_as_float(record.get("discard_rate")),
+                complete_delta=delta,
+            )
+        )
+        if complete is not None:
+            previous_complete = complete
+
+    return summaries
 
 
 def main() -> None:

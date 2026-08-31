@@ -83,7 +83,93 @@
     </div>
   </section>
 
-  <!-- ---------- 2. Ritmo y actividad ---------- -->
+  <!-- ---------- 2. Historial de H0 (spec.md §12.5) ---------- -->
+  {% macro h0pct(value) %}{% if value is not none %}{{ "%.1f"|format(value * 100) }}%{% else %}—{% endif %}{% endmacro %}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Historial de H0</h2>
+      <span class="m3-sm m3-muted">
+        cada corrida de <code>measure.py</code>, más reciente arriba — mide cuánto
+        trabajo manual cuesta el volumen, no dictamina nada
+        (<code>spec.md</code> §12.5 y §12.6)
+      </span>
+    </div>
+
+    {% if not h0_runs %}
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span>
+      <span>
+        Sin corridas registradas todavía. Se llena al correr
+        <code>python -m saimc.extraction.measure</code> —
+        <a href="/docs/runbook-h0">ver el runbook</a>.
+      </span>
+    </div>
+    {% else %}
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Versión</th>
+            <th scope="col" style="text-align:right">Completa</th>
+            <th scope="col" style="text-align:right">Producto</th>
+            <th scope="col" style="text-align:right">Precio</th>
+            <th scope="col" style="text-align:right">Provincia</th>
+            <th scope="col" style="text-align:right">Cant./unidad</th>
+            <th scope="col" style="text-align:right">Descarte</th>
+            <th scope="col" style="text-align:right">Anuncios</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in h0_runs | reverse %}
+          <tr>
+            <td class="m3-nowrap m3-sm">{{ run.date }}</td>
+            <td class="m3-sm">
+              <code>{{ run.git_commit }}</code>
+              {% if run.git_dirty %}
+              <span class="m3-chip m3-chip-warn m3-chip-sm">árbol sucio</span>
+              {% endif %}
+              {% if run.git_branch not in ("master", "unknown") %}
+              <span class="m3-dim">· {{ run.git_branch }}</span>
+              {% endif %}
+              {% if run.tesseract_version %}
+              <span class="m3-dim">· tesseract {{ run.tesseract_version }}</span>
+              {% endif %}
+            </td>
+            <td class="is-num">
+              {% if run.complete_accuracy is not none %}
+              <strong>{{ "%.1f"|format(run.complete_accuracy * 100) }}%</strong>
+              {% if run.complete_delta is not none and run.complete_delta != 0 %}
+              <span class="m3-dim">{{ "%+.1f"|format(run.complete_delta * 100) }} pts</span>
+              {% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="is-num">{{ h0pct(run.product_accuracy) }}</td>
+            <td class="is-num">{{ h0pct(run.price_accuracy) }}</td>
+            <td class="is-num">{{ h0pct(run.province_accuracy) }}</td>
+            <td class="is-num">{{ h0pct(run.quantity_unit_accuracy) }}</td>
+            <td class="is-num">{{ h0pct(run.discard_rate) }}</td>
+            <td class="is-num">
+              {{ run.evaluated_ads_count }}
+              {% if not run.is_official %}
+              <span class="m3-dim">/ 300</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="m3-sm m3-muted" style="margin:10px 0 0">
+      «Completa» es el número de H0. Una corrida no es la medición oficial por
+      debajo de 300 anuncios evaluados (<code>spec.md</code> §3); la columna
+      «Anuncios» lo marca. «Árbol sucio» = el número no es atribuible a un
+      commit limpio.
+    </p>
+    {% endif %}
+  </section>
+
+  <!-- ---------- 3. Ritmo y actividad ---------- -->
   <section>
     <div class="m3-section-head">
       <h2 class="m3-h2">Ritmo de carga</h2>
@@ -118,7 +204,7 @@
     </div>
   </section>
 
-  <!-- ---------- 3. Huecos por responder ---------- -->
+  <!-- ---------- 4. Huecos por responder ---------- -->
   <section>
     {% set gap_icons = {
       'Sin provincia': 'place',
@@ -150,7 +236,7 @@
     </div>
   </section>
 
-  <!-- ---------- 4. Cobertura producto × provincia ---------- -->
+  <!-- ---------- 5. Cobertura producto × provincia ---------- -->
   <section>
     <div class="m3-section-head">
       <h2 class="m3-h2">Cobertura de la meta</h2>
@@ -197,7 +283,7 @@
     </div>
   </section>
 
-  <!-- ---------- 5. Salud de la ingesta ---------- -->
+  <!-- ---------- 6. Salud de la ingesta ---------- -->
   <section>
     <div class="m3-section-head">
       <h2 class="m3-h2">Salud de la ingesta</h2>
@@ -308,7 +394,7 @@
     {% endif %}
   </section>
 
-  <!-- ---------- 6. Tasa de cambio ---------- -->
+  <!-- ---------- 7. Tasa de cambio ---------- -->
   <section>
     <div class="m3-section-head"><h2 class="m3-h2">Tasa de cambio</h2></div>
     <p class="m3-note">
@@ -396,7 +482,7 @@
     {% endif %}
   </section>
 
-  <!-- ---------- 7. Rango minorista ---------- -->
+  <!-- ---------- 8. Rango minorista ---------- -->
   <section>
     <div class="m3-section-head">
       <h2 class="m3-h2">Rango minorista por producto</h2>
@@ -554,7 +640,7 @@
     {% endif %}
   </section>
 
-  <!-- ---------- 8. Disponibilidad ---------- -->
+  <!-- ---------- 9. Disponibilidad ---------- -->
   <section>
     <div class="m3-section-head">
       <h2 class="m3-h2">Disponibilidad</h2>
@@ -606,7 +692,7 @@
     {% endif %}
   </section>
 
-  <!-- ---------- 9. Matriz de los pilotos ---------- -->
+  <!-- ---------- 10. Matriz de los pilotos ---------- -->
   <section>
     <div class="m3-section-head">
       <h2 class="m3-h2">Matriz de los pilotos</h2>

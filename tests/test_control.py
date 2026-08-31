@@ -9,10 +9,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from saimc.extraction.measure import H0RunSummary
 from saimc.models import Currency, PriceHistory, Product, Province, RawIngestion, SaleFormat
 from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
 from saimc.web.app import app
 from saimc.web.deps import get_db
+from saimc.web.routers import control
 
 
 @pytest.fixture
@@ -907,3 +909,75 @@ class TestPanelDeTasaDeCambio:
         assert "hace 40 días" in texto
         for veredicto in ("vencida", "expirada", "caducada", "obsoleta"):
             assert veredicto not in texto
+
+
+class TestHistorialDeH0:
+    def _run(self, **overrides: object) -> H0RunSummary:
+        base: dict[str, object] = dict(
+            date="2026-08-31",
+            timestamp="2026-08-31T12:00:00+00:00",
+            git_commit="abc1234",
+            git_dirty=False,
+            git_branch="master",
+            tesseract_version="5.5.0",
+            is_official=False,
+            evaluated_ads_count=175,
+            evaluated_rows_count=278,
+            complete_accuracy=0.435,
+            product_accuracy=0.9,
+            price_accuracy=0.5,
+            province_accuracy=0.8,
+            quantity_unit_accuracy=0.7,
+            discard_rate=0.678,
+            complete_delta=None,
+        )
+        base.update(overrides)
+        return H0RunSummary(**base)  # type: ignore[arg-type]
+
+    def test_sin_corridas_muestra_el_aviso_y_enlaza_al_runbook(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(control, "read_h0_runs", lambda: [])
+
+        texto = client.get("/control").text
+
+        assert "Historial de H0" in texto
+        assert "Sin corridas registradas" in texto
+        assert 'href="/docs/runbook-h0"' in texto
+
+    def test_lista_cada_corrida_con_su_numero_y_su_commit(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        runs = [
+            self._run(git_commit="c1", complete_accuracy=0.40, complete_delta=None),
+            self._run(
+                git_commit="c2",
+                complete_accuracy=0.45,
+                complete_delta=0.05,
+                date="2026-09-05",
+            ),
+        ]
+        monkeypatch.setattr(control, "read_h0_runs", lambda: runs)
+
+        texto = client.get("/control").text
+
+        assert "45.0%" in texto and "40.0%" in texto
+        assert "c1" in texto and "c2" in texto
+        # Las columnas por métrica salen del macro `h0pct`: producto 0.9 → 90.0%.
+        assert "90.0%" in texto
+        # El delta de la corrida más nueva contra la anterior.
+        assert "+5.0 pts" in texto
+
+    def test_marca_la_corrida_no_oficial_y_el_arbol_sucio(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            control,
+            "read_h0_runs",
+            lambda: [self._run(is_official=False, git_dirty=True)],
+        )
+
+        texto = client.get("/control").text
+
+        assert "/ 300" in texto
+        assert "árbol sucio" in texto
