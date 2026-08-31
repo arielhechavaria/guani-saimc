@@ -5683,3 +5683,61 @@ Queda un hallazgo aparte, ya anotado en el requisito: ~21 puntos de hueco
 entre "el precio está en el texto" (78,6%) y "el motor lo extrae bien"
 (57,9%) en imagen. Es el próximo lever, y ahora sí se puede atacar sobre
 texto legible en vez de sobre ruido de Tesseract.
+
+## 2026-08-31 — Provincia y cantidad/unidad en imagen: sin lever de código, dos rescates descartados
+
+Contexto: con RapidOCR ya en producción, se investigó por qué cantidad/unidad
+(19,4%) y provincia (58,2%) siguen siendo el cuello de la extracción completa
+en imagen, mientras el precio se benefició del cambio de OCR.
+
+**Provincia — techo estructural, no bug.** Descompuesto contra las 98 filas
+de imagen: 58,2% OK, 38,8% el texto simplemente no menciona ninguna
+provincia, 2% menciona otra, 1% es ruido de pareo entre filas ambiguas. Se
+verificó si había margen por canales sin provincia cargada —la salida más
+barata posible, sin tocar el motor—: **77 de 84 imágenes curadas no vienen de
+ningún canal** (bandeja o pegado directo, sin `channel_province` posible por
+diseño), y las 9 que sí tienen canal ya tienen provincia cargada al 100%. No
+queda ni una fila por recuperar de esa vía.
+
+**Cantidad/unidad — dos intentos de rescatar la "línea huérfana", los dos
+descartados.** El patrón real: RapidOCR separa en líneas distintas el nombre
+del producto y la línea de precio+cantidad ("Papas prefritas" en una línea,
+"1kg 2500" en la siguiente) — `_extract_quantity("1kg 2500")` lee bien
+`(1, "kg")` en aislamiento, pero `propose_all` descarta la línea entera
+porque no tiene producto ni nombre candidato propio (el marcador de cantidad
+ocupa toda la línea).
+
+Se probaron dos variantes, simuladas contra el corpus real antes de tocar
+`engine.py`:
+
+1. Atribuir la línea huérfana al único producto que matchea en TODO el
+   anuncio (mismo criterio de `_tiered_proposals`). **Regresión clara**:
+   precio en imagen 30,6%→16,3%, cantidad 19,4%→9,2%, completa 7,1%→4,1%.
+   Causa: estas capturas de catálogo mayorista casi siempre tienen VARIOS
+   productos; que solo uno haya matcheado no significa que sea el único real
+   —el resto no matcheó por ruido de OCR, no porque no exista— y atribuirle
+   todas las huérfanas mezcla ofertas de productos distintos.
+2. Variante angosta: solo cuando hay EXACTAMENTE una línea huérfana en todo
+   el anuncio (evita el caso multi-producto de arriba), tomando el nombre de
+   la línea inmediata anterior con letras. **No mejora nada** (completa se
+   queda en 7,1%, precio incluso baja levemente 30,6%→28,6%): agregar la fila
+   rescatada introduce una candidata más que compite en
+   `_match_rows_to_candidates`, y en la práctica le quita el pareo a otra
+   fila del mismo anuncio tan seguido como lo que gana.
+
+Verificación adicional que descarta el atajo obvio: de las 98 filas de
+imagen, solo 17 son «cantidad 1 sin unidad» (el caso ambiguo de precio
+unitario) y **47 tienen cantidad confirmada mayor a 1** — la mayoría del
+fallo exige extraer un número real del texto, no completar un default.
+
+Descartado: las dos variantes de rescate de línea huérfana (código nunca
+llegó a comitearse, quedó en el scratchpad de la sesión). Cargar provincia
+por canal: no hay canales pendientes de cargar.
+
+Consecuencia: ningún código cambia en este slice. El hallazgo es negativo
+pero real — dos intentos razonables, medidos y rechazados, evitan que el
+próximo intento repita el mismo camino. Lo que queda es exactamente lo que
+`spec.md` §6.1 y `EXT-07` (`docs/requisitos.md`) ya anticipan: reglas y
+diccionarios agotaron su margen barato en cantidad/unidad y provincia de
+imagen; el siguiente lever es un LLM sobre lo que las reglas no resuelven,
+con confirmación humana — no otra regex.

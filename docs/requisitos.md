@@ -228,6 +228,7 @@ Decisiones que lo modifican:
 | 2026-08-31 | **Descartado** excluir el número de "Sale X" de `_extract_price`: medido contra producción, regresa la precisión (55,8%→54,3%) en vez de mejorarla — la ambigüedad entre el precio del lote y el de "Sale" es real y depende del anuncio, no hay preferencia fija que acierte siempre |
 | 2026-08-31 | Marca de moneda como sufijo ("850$") y número pelado como último recurso: precio 55,8%→57,2%. **Decisión del operador**: prefiere revisar una propuesta dudosa a que el motor se abstenga |
 | 2026-08-31 | RapidOCR (modelos PP-OCR sobre ONNX) como motor primario de imagen, Tesseract de respaldo. Precio 78,6% presente en el texto contra 58,2% de Tesseract; en H0 completo 43,5%→44,2% — el cuello se corre a las reglas |
+| 2026-08-31 | Provincia en imagen: sin lever, 77 de 84 imágenes no tienen canal y las que tienen ya cargan provincia al 100%. **Descartados** dos rescates de "línea huérfana" para cantidad/unidad — los dos regresan o quedan planos, medidos contra el corpus real |
 
 **Propuestos:**
 
