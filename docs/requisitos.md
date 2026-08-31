@@ -201,6 +201,7 @@ Decisiones que lo modifican:
 | 2026-08-20 | Leer el anuncio como bloque cuando hay escalón de volumen y un solo producto |
 | 2026-08-21 | Tesseract con `--psm 6`: la evidencia es una captura de chat, no una página |
 | 2026-08-25 | Proponer `price_basis` cuando el anuncio lo declara. **Apartamiento** de D5/D4 |
+| 2026-08-31 | **Descartado** excluir el número de "Sale X" de `_extract_price`: medido contra producción, regresa la precisión (55,8%→54,3%) en vez de mejorarla — la ambigüedad entre el precio del lote y el de "Sale" es real y depende del anuncio, no hay preferencia fija que acierte siempre |
 
 **Propuestos:**
 

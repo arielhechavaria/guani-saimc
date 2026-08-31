@@ -5539,3 +5539,47 @@ Consecuencia: 994 tests verdes (+3). Sin JS el botón no hace nada y las filas
 visibles (candidatas + 3 blancas) siguen siendo el piso, igual que hoy. El
 `<template>` suma un `product_id_<row_count>` inerte al HTML — dos tests de GET
 que contaban ocurrencias ahora acotan el conteo al form visible.
+
+## 2026-08-31 — Descartado: forzar la exclusión del número de "Sale X" en `_extract_price`
+
+Contexto: H-46 (`docs/requisitos.md` §03) señala que sobre líneas con cláusula
+"Sale X <unidad>" el extractor a veces guarda ese número derivado como precio
+en vez del precio real de la oferta — visto en `docs/decisions.md`, entrada
+sobre `price_basis` del 2026-08-25 ("515 en vez de 25.750"). Un audit sobre el
+dump de producción (`saimc_20260830T030008Z.sql.gz`, sin base de datos, solo
+parseando el `COPY` de `raw_ingestions`) contó 35 de 147 líneas con esta
+cláusula donde el extractor tomaba el número derivado en vez del número con
+"$" de la misma línea, y de ahí se estimó una mejora de ~2,6 puntos de
+precisión de precio si el extractor siempre prefiriera el número con "$".
+
+Se implementó esa regla (excluir el tramo de "Sale X" al buscar precio, con
+degradación al número excluido si no queda otro candidato) y se corrió
+`measure.py` contra la base real (860 filas, mismos conteos que el dump).
+**Resultado: precisión de precio 55,8% → 54,3%, extracción completa 43,5% →
+42,1% — una regresión, no una mejora.**
+
+Causa raíz del error de estimación: el audit inicial solo verificaba que el
+número con "$" y el número de "Sale" DIFERÍAN entre sí, nunca los contrastó
+contra `prices_history.price` (el valor real que el operador confirmó). Un
+canal mayorista de Santiago ("Radicamos Reparto Sueño") republica el mismo
+catálogo con frecuencia, y para la línea de Picadillo el operador confirmó el
+número de "Sale" (515, la tarifa por libra) en 6 de 9 reposteos y el número
+con "$" (el total del lote, 25.750 o 20.600) en los otros 3. La ambigüedad es
+real y depende de una decisión del operador caso por caso —cuál de las dos
+ofertas describe la fila que está curando—, no de cuál número aparece
+primero en el texto. Forzar una preferencia fija en cualquier dirección
+acierta en unos anuncios y falla en otros; no hay una regla universal que
+resuelva esto sin inventar información que el texto no da por sí solo.
+
+Descartado: la exclusión del tramo de "Sale X" tal como se implementó
+(revertida antes de comitear, `engine.py` y `tests/test_extraction.py`
+quedaron sin cambios).
+
+Consecuencia: H-46 sigue abierto. Lo que sí queda demostrado, con número, es
+que "hay ambigüedad real entre dos ofertas en la misma línea" no es lo mismo
+que "hay que elegir la que no es la de Sale" — cualquier fix futuro para
+H-46 necesita mostrarle la ambigüedad al operador en vez de resolverla en
+silencio (dos candidatos de precio, no uno), o dejarla sin proponer del todo,
+igual que ya hace `_declared_price_basis` cuando ninguna lectura cierra. La
+medición contra `prices_history` real —y no contra una suposición sobre qué
+"debería" ser correcto— es la que detectó esto antes de comitear nada.
