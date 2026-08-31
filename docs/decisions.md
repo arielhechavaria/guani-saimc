@@ -5448,3 +5448,36 @@ Consecuencia: 976 tests verdes (+10). Siguen en rojo los 2 de
 `test_public_filter.py` por fechas fijas en su seed, ajenos a este slice. El
 enlace «Descartar en lote →» aparece en la cabecera de `/curation` solo cuando
 el contador de pendientes fuera de foco es mayor que cero.
+
+## 2026-08-31 — H0 longitudinal: cada corrida se registra en un archivo, no en una tabla (N-05)
+
+Contexto: `measure.py` daba un número puntual y no quedaba registro por
+versión, así que no se podía afirmar que un cambio del extractor ayudó
+(`docs/requisitos.md`, N-05). Es la instrumentación previa a tocar el OCR
+—el techo real de H0—: sin ella cualquier cambio se afina a ciegas.
+
+Decisión: cada corrida real de `python -m saimc.extraction.measure` appendea
+una línea JSON a `docs/h0-runs.jsonl` con los 15 campos del `H0Report`
+aplanados más el contexto que los hace comparables: `timestamp`, `git_commit`
+(corto), `git_dirty`, `git_branch`, `tesseract_version` e `is_official`
+(mismo umbral de 300 anuncios que el aviso de la CLI). Se registra por
+defecto; `--no-record` lo salta. `compute_h0_report()` queda intacto y puro
+—las funciones nuevas (`h0_run_record`, `append_h0_run`) solo aplanan y
+escriben—. Un árbol sucio no bloquea el registro: queda con `git_dirty=true`
+y un aviso, porque el consumidor decide si confía en ese número.
+
+Descartado: una tabla `h0_measurement_runs` + Alembic. Es telemetría de
+experimento, no dato de dominio: su clave natural es el commit, no se
+relaciona con ninguna entidad del modelo, y `git log -p docs/h0-runs.jsonl`
+—el número al lado del código que lo movió— responde mejor la pregunta «¿este
+commit ayudó?» que una consulta SQL. Además una tabla dispararía el flujo de
+especificación completo que `CLAUDE.md` reserva para cambios de esquema, y la
+regla de alcance del proyecto es preferir la solución más simple que funcione.
+Si algún día hace falta el histórico en `/control`, importar el JSONL entonces
+es trivial y ya con el consumidor real definido.
+
+Consecuencia: 982 tests verdes (+6). El archivo `docs/h0-runs.jsonl` no existe
+todavía: lo crea la primera corrida real del operador. Sigue pendiente, como
+mejora separada, el desglose de precisión texto/imagen dentro del `H0Report`
+—hoy solo registra la composición del corpus, no la tasa por tipo de
+evidencia—, que es lo que haría medible el trabajo de OCR.

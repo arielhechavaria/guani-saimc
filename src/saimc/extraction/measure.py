@@ -24,12 +24,17 @@ exigente, era medir otro extractor — uno que en producción no existe.
 
 from __future__ import annotations
 
+import argparse
+import json
+import subprocess
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytesseract
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -417,11 +422,159 @@ def _print_report(report: H0Report) -> None:
         )
 
 
+# --- N-05: registro longitudinal de cada corrida ---------------------------
+#
+# `measure.py` da un número puntual; sin registro por versión no se puede
+# afirmar que un cambio del extractor ayudó (docs/requisitos.md, N-05). Cada
+# corrida real se appendea como una línea JSON a `docs/h0-runs.jsonl`, atada
+# al commit que la produjo. El archivo vive en git a propósito: `git log -p
+# docs/h0-runs.jsonl` es la interfaz de consulta —el número moviéndose al lado
+# del código que lo movió— y no cuesta una tabla ni una migración para 4 filas
+# al mes. Si algún día hace falta en `/control`, importar el JSONL entonces es
+# trivial (Opción A de la decisión 2026-08-31).
+
+_H0_RUNS_FILENAME = "h0-runs.jsonl"
+
+
+def _git(args: list[str]) -> str | None:
+    """Salida de un comando git, o `None` si git falla o no hay repo.
+
+    Nunca revienta la corrida: el registro es telemetría, no el objetivo.
+    """
+    # Argumentos fijos, sin shell y sin entrada del usuario: `git` con una
+    # lista literal, nunca una cadena interpolada.
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=Path(__file__).resolve().parent,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return completed.stdout.strip()
+
+
+def _git_revision() -> tuple[str, bool, str]:
+    """`(commit_corto, arbol_sucio, rama)`.
+
+    `commit` cae a `"unknown"` si git no responde —así el registro queda con
+    la marca de que su procedencia no es fiable— y `dirty` a `False`, porque
+    un checkout sin `.git` (un tarball) no está "sucio", solo no es un repo.
+    """
+    commit = _git(["rev-parse", "--short", "HEAD"]) or "unknown"
+    dirty = bool(_git(["status", "--porcelain"]))
+    branch = _git(["rev-parse", "--abbrev-ref", "HEAD"]) or "unknown"
+    return commit, dirty, branch
+
+
+def _tesseract_version() -> str | None:
+    """Versión del binario de Tesseract, o `None` si no está.
+
+    El OCR es el techo real de H0 (docs/requisitos.md §03), así que qué
+    Tesseract produjo el número es parte de su contexto. Degrada como
+    `ocr.transcribe`: la ausencia del binario no rompe nada.
+    """
+    try:
+        return str(pytesseract.get_tesseract_version())
+    except (pytesseract.TesseractNotFoundError, OSError, ValueError):
+        return None
+
+
+def _h0_runs_path() -> Path:
+    """`docs/h0-runs.jsonl` en la raíz del repo.
+
+    Prefiere el toplevel real de git; cae a subir cuatro niveles desde este
+    archivo (`src/saimc/extraction/measure.py`) cuando no hay repo.
+    """
+    toplevel = _git(["rev-parse", "--show-toplevel"])
+    root = Path(toplevel) if toplevel else Path(__file__).resolve().parents[3]
+    return root / "docs" / _H0_RUNS_FILENAME
+
+
+def h0_run_record(
+    report: H0Report,
+    *,
+    now: datetime,
+    commit: str,
+    dirty: bool,
+    branch: str,
+    tesseract_version: str | None,
+) -> dict[str, object]:
+    """Un registro de corrida, aplanado y serializable a una línea JSON.
+
+    Las 15 métricas del `H0Report` viajan tal cual (`asdict`), más el
+    contexto que las hace comparables entre versiones: cuándo, qué commit,
+    si el árbol estaba limpio, qué rama y qué Tesseract. `is_official` usa el
+    mismo umbral que el aviso de `_print_report` (`_H0_MINIMUM_ADS`).
+    """
+    return {
+        "timestamp": now.astimezone(UTC).isoformat(),
+        "git_commit": commit,
+        "git_dirty": dirty,
+        "git_branch": branch,
+        "tesseract_version": tesseract_version,
+        "is_official": report.evaluated_ads_count >= _H0_MINIMUM_ADS,
+        **asdict(report),
+    }
+
+
+def append_h0_run(record: dict[str, object], path: Path) -> None:
+    """Appendea el registro como una sola línea JSON.
+
+    Append puro: nunca reescribe ni reordena lo ya guardado —el historial es
+    el archivo—. `sort_keys` mantiene el orden de claves estable para que el
+    `git diff` de cada corrida muestre solo lo que cambió.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+
+
 def main() -> None:
-    """Punto de entrada: `python -m saimc.extraction.measure`."""
+    """Punto de entrada: `python -m saimc.extraction.measure`.
+
+    Registra la corrida en `docs/h0-runs.jsonl` salvo `--no-record`.
+    """
+    parser = argparse.ArgumentParser(
+        prog="python -m saimc.extraction.measure",
+        description="Mide H0 (spec.md §12.5) contra la cola de curaduría real.",
+    )
+    parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help=f"No persistir la corrida en docs/{_H0_RUNS_FILENAME} (N-05).",
+    )
+    args = parser.parse_args()
+
     with session_scope() as session:
         report = compute_h0_report(session)
     _print_report(report)
+
+    if args.no_record:
+        return
+
+    commit, dirty, branch = _git_revision()
+    record = h0_run_record(
+        report,
+        now=datetime.now(UTC),
+        commit=commit,
+        dirty=dirty,
+        branch=branch,
+        tesseract_version=_tesseract_version(),
+    )
+    path = _h0_runs_path()
+    append_h0_run(record, path)
+
+    print()
+    if dirty:
+        print(
+            "AVISO: árbol de trabajo sucio — este número no es atribuible a un "
+            "commit limpio. Quedó registrado igual, con git_dirty=true."
+        )
+    print(f"Corrida registrada en {path} (commit {commit}).")
 
 
 if __name__ == "__main__":

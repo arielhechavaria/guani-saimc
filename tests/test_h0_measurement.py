@@ -24,6 +24,7 @@ Más la tasa de descarte, sobre el total de anuncios procesados (curados +
 descartados), sin distinguir texto de imagen.
 """
 
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -31,7 +32,12 @@ from pathlib import Path
 import pytest
 from sqlalchemy.orm import Session
 
-from saimc.extraction.measure import compute_h0_report
+from saimc.extraction.measure import (
+    H0Report,
+    append_h0_run,
+    compute_h0_report,
+    h0_run_record,
+)
 from saimc.models import (
     Channel,
     ContentType,
@@ -911,3 +917,165 @@ class TestH0EmparejadoAmbiguo:
         # ...pero precio y cantidad salieron de la única línea que hay.
         assert report.price_accuracy == 1.0
         assert report.quantity_unit_accuracy == 1.0
+
+
+# --- N-05: registro longitudinal de cada corrida ----------------------------
+#
+# Los casos fijan la FORMA del registro (qué claves, qué tipos, cómo se
+# serializa) de antemano e independiente del código, igual que el resto de esta
+# suite. No miden extracción: `h0_run_record` solo aplana un `H0Report` ya
+# calculado y `append_h0_run` solo escribe una línea.
+
+
+class TestH0RunRecord:
+    def _report(self, **overrides: object) -> H0Report:
+        base: dict[str, object] = dict(
+            total_curated=10,
+            total_discarded=5,
+            total_processed=15,
+            discard_rate=1 / 3,
+            text_curated_count=6,
+            image_curated_count=4,
+            image_ocr_empty_count=0,
+            evaluated_rows_count=12,
+            evaluated_ads_count=10,
+            product_accuracy=0.9,
+            price_accuracy=0.5,
+            province_accuracy=0.8,
+            quantity_unit_accuracy=0.7,
+            complete_accuracy=0.435,
+        )
+        base.update(overrides)
+        return H0Report(**base)  # type: ignore[arg-type]
+
+    def test_aplana_el_reporte_con_metadatos_de_version(self) -> None:
+        record = h0_run_record(
+            self._report(),
+            now=datetime(2026, 8, 31, 12, 0, tzinfo=UTC),
+            commit="abc1234",
+            dirty=False,
+            branch="master",
+            tesseract_version="5.5.0",
+        )
+
+        assert record["timestamp"] == "2026-08-31T12:00:00+00:00"
+        assert record["git_commit"] == "abc1234"
+        assert record["git_dirty"] is False
+        assert record["git_branch"] == "master"
+        assert record["tesseract_version"] == "5.5.0"
+        # Las 15 métricas del H0Report viajan aplanadas dentro del registro.
+        assert record["complete_accuracy"] == 0.435
+        assert record["evaluated_ads_count"] == 10
+        assert record["price_accuracy"] == 0.5
+        assert record["discard_rate"] == pytest.approx(1 / 3)
+
+    def test_is_official_cruza_el_umbral_en_300_anuncios(self) -> None:
+        kw = dict(
+            now=datetime(2026, 8, 31, tzinfo=UTC),
+            commit="c",
+            dirty=False,
+            branch="master",
+            tesseract_version=None,
+        )
+        bajo = h0_run_record(self._report(evaluated_ads_count=299), **kw)  # type: ignore[arg-type]
+        justo = h0_run_record(self._report(evaluated_ads_count=300), **kw)  # type: ignore[arg-type]
+
+        assert bajo["is_official"] is False
+        assert justo["is_official"] is True
+
+    def test_append_escribe_una_linea_json_por_corrida(self, tmp_path: Path) -> None:
+        path = tmp_path / "sub" / "h0-runs.jsonl"
+        kw = dict(dirty=False, branch="master", tesseract_version=None)
+
+        append_h0_run(
+            h0_run_record(
+                self._report(),
+                now=datetime(2026, 8, 31, tzinfo=UTC),
+                commit="c1",
+                **kw,  # type: ignore[arg-type]
+            ),
+            path,
+        )
+        append_h0_run(
+            h0_run_record(
+                self._report(complete_accuracy=0.5),
+                now=datetime(2026, 9, 1, tzinfo=UTC),
+                commit="c2",
+                **kw,  # type: ignore[arg-type]
+            ),
+            path,
+        )
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 2
+        assert json.loads(lines[0])["git_commit"] == "c1"
+        assert json.loads(lines[1])["git_commit"] == "c2"
+        assert json.loads(lines[1])["complete_accuracy"] == 0.5
+
+    def test_append_no_reescribe_lo_ya_guardado(self, tmp_path: Path) -> None:
+        path = tmp_path / "h0-runs.jsonl"
+        path.write_text('{"git_commit": "viejo"}\n', encoding="utf-8")
+
+        append_h0_run(
+            h0_run_record(
+                self._report(),
+                now=datetime(2026, 8, 31, tzinfo=UTC),
+                commit="nuevo",
+                dirty=False,
+                branch="master",
+                tesseract_version=None,
+            ),
+            path,
+        )
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 2
+        assert json.loads(lines[0])["git_commit"] == "viejo"
+        assert json.loads(lines[1])["git_commit"] == "nuevo"
+
+    def test_sin_datos_serializa_nulls_sin_romper(self, tmp_path: Path) -> None:
+        vacio = self._report(
+            discard_rate=None,
+            evaluated_rows_count=0,
+            evaluated_ads_count=0,
+            product_accuracy=None,
+            price_accuracy=None,
+            province_accuracy=None,
+            quantity_unit_accuracy=None,
+            complete_accuracy=None,
+        )
+        path = tmp_path / "h0-runs.jsonl"
+
+        append_h0_run(
+            h0_run_record(
+                vacio,
+                now=datetime(2026, 8, 31, tzinfo=UTC),
+                commit="c",
+                dirty=False,
+                branch="master",
+                tesseract_version=None,
+            ),
+            path,
+        )
+
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        assert loaded["complete_accuracy"] is None
+        assert loaded["discard_rate"] is None
+        assert loaded["is_official"] is False
+
+    def test_arbol_sucio_queda_marcado_en_el_registro(self, tmp_path: Path) -> None:
+        path = tmp_path / "h0-runs.jsonl"
+
+        append_h0_run(
+            h0_run_record(
+                self._report(),
+                now=datetime(2026, 8, 31, tzinfo=UTC),
+                commit="abc1234",
+                dirty=True,
+                branch="n05-h0-longitudinal",
+                tesseract_version="5.5.0",
+            ),
+            path,
+        )
+
+        assert json.loads(path.read_text(encoding="utf-8"))["git_dirty"] is True
