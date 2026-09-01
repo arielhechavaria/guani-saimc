@@ -6,6 +6,7 @@ la resolución es un lookup de diccionario, así que ninguna secuencia de escape
 tiene por dónde entrar. Los casos de `TestNoHayTraversal` fijan esa propiedad.
 """
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -251,3 +252,99 @@ class TestMarkedVendorizado:
 
         assert expuesta == MARKED_VERSION
         assert f"marked v{expuesta}" in client.get("/static/marked.umd.js").text
+
+
+class TestBuscadorFunciona:
+    """El filtro esconde tarjetas con `el.hidden = true`, y eso solo funciona
+    si la hoja de estilos lo respeta.
+
+    `[hidden] { display: none }` viene del navegador, pero cualquier regla de
+    autor con `display` le gana — y `.docs-card` declara `display: block`. Sin
+    una regla propia, escribir en la caja marcaba las tarjetas como ocultas y
+    seguían visibles: el buscador parecía roto aunque el JS estuviera bien.
+
+    Es la misma clase de bug que el subconjunto de la fuente de iconos: no se
+    ve en el HTML renderizado, así que se prueba sobre el asset.
+    """
+
+    def _css(self) -> str:
+        """La hoja SIN comentarios: la regla tiene que existir de verdad, no
+        estar nombrada en una explicación."""
+        crudo = Path("src/saimc/web/static/saimc-material.css").read_text(
+            encoding="utf-8"
+        )
+        return re.sub(r"/\*.*?\*/", "", crudo, flags=re.DOTALL)
+
+    def test_la_hoja_de_estilos_hace_efectivo_el_atributo_hidden(self) -> None:
+        css = self._css()
+
+        assert "[hidden]" in css, (
+            "sin una regla propia para [hidden], cualquier `display` de autor "
+            "deja visible lo que el JS marcó como oculto"
+        )
+
+    def test_la_regla_gana_sobre_el_display_de_autor(self) -> None:
+        css = self._css()
+        bloque = css[css.index("[hidden]") : css.index("[hidden]") + 120]
+
+        assert "display" in bloque and "none" in bloque
+        assert "!important" in bloque, (
+            "sin !important la regla empata en especificidad con .docs-card y "
+            "gana la que esté después en el archivo — frágil"
+        )
+
+
+class TestAgrupadoYReciente:
+    """La lista abre mostrando lo último tocado, agrupado por vigencia.
+
+    El orden del catálogo en `docs_catalog.py` es deliberado (primero lo que
+    rige, al final lo congelado) y se conserva como orden de GRUPOS. Lo que
+    cambia es adentro de cada grupo: lo más recién modificado primero, que es
+    lo que el operador viene a buscar cuando abre la vista después de generar
+    un documento.
+    """
+
+    def test_los_grupos_van_en_orden_de_vigencia(self) -> None:
+        grupos = docs_catalog.grouped_stats()
+
+        assert [g.standing for g in grupos] == ["rige", "interno", "congelado"]
+
+    def test_dentro_de_un_grupo_lo_mas_reciente_va_primero(self) -> None:
+        grupos = docs_catalog.grouped_stats()
+        rige = next(g for g in grupos if g.standing == "rige")
+
+        fechas = [s.modified for s in rige.stats if s.modified is not None]
+        assert fechas == sorted(fechas, reverse=True)
+
+    def test_todo_documento_del_catalogo_cae_en_algun_grupo(self) -> None:
+        grupos = docs_catalog.grouped_stats()
+        agrupados = sum(len(g.stats) for g in grupos)
+
+        assert agrupados == len(docs_catalog.CATALOG)
+
+    def test_un_grupo_sin_documentos_no_se_lista(self) -> None:
+        """No hay encabezados vacíos: si algún día no queda nada congelado,
+        ese grupo simplemente no aparece."""
+        grupos = docs_catalog.grouped_stats()
+
+        assert all(g.stats for g in grupos)
+
+    def test_la_vista_muestra_los_encabezados_de_grupo(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/docs").text
+
+        assert "Rige" in texto
+        assert "Congelado" in texto
+
+    def test_el_documento_mas_reciente_aparece_antes_que_uno_viejo(
+        self, client: TestClient
+    ) -> None:
+        """La prueba de la promesa: lo último generado se ve primero."""
+        grupos = docs_catalog.grouped_stats()
+        rige = next(g for g in grupos if g.standing == "rige")
+        primero, ultimo = rige.stats[0], rige.stats[-1]
+
+        texto = client.get("/docs").text
+
+        assert texto.index(primero.entry.title) < texto.index(ultimo.entry.title)

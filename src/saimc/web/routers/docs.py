@@ -37,7 +37,7 @@ def docs_index(request: Request) -> HTMLResponse:
     return request.app.state.templates.TemplateResponse(
         request,
         "docs_index.html",
-        {"stats": docs_catalog.catalog_stats()},
+        {"grupos": docs_catalog.grouped_stats()},
     )
 
 

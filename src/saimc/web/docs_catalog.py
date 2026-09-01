@@ -234,6 +234,63 @@ def catalog_stats() -> list[DocStat]:
     return [stat_document(entry) for entry in CATALOG]
 
 
+# Orden de los grupos en la vista: el mismo criterio deliberado que ordena
+# `CATALOG` —primero lo que rige, al final lo congelado—, ahora explícito.
+_STANDING_ORDER: tuple[str, ...] = ("rige", "interno", "congelado")
+
+_STANDING_LABELS: dict[str, str] = {
+    "rige": "Rige",
+    "interno": "Material interno",
+    "congelado": "Congelado",
+}
+
+
+@dataclass(frozen=True)
+class DocGroup:
+    """Un grupo de la vista: los documentos que comparten vigencia."""
+
+    standing: str
+    label: str
+    stats: list[DocStat]
+
+
+def grouped_stats() -> list[DocGroup]:
+    """El catálogo agrupado por vigencia, y adentro lo más reciente primero.
+
+    Dos criterios distintos, a propósito. **Entre** grupos manda la vigencia,
+    que es el orden en que conviene leerlos y el que `CATALOG` ya fijaba a
+    mano. **Dentro** de cada grupo manda la fecha de modificación: cuando el
+    operador abre esta vista suele venir de generar o tocar un documento, y
+    ese es el que quiere ver primero.
+
+    Un documento que no está en el disco no tiene fecha; va al final de su
+    grupo, donde no estorba.
+
+    Un grupo sin documentos no se devuelve: encabezados vacíos son ruido.
+    """
+    por_vigencia: dict[str, list[DocStat]] = {}
+    for stat in catalog_stats():
+        por_vigencia.setdefault(stat.entry.standing, []).append(stat)
+
+    grupos: list[DocGroup] = []
+    for standing in _STANDING_ORDER:
+        stats = por_vigencia.get(standing)
+        if not stats:
+            continue
+        stats.sort(
+            key=lambda s: (s.modified is not None, s.modified),
+            reverse=True,
+        )
+        grupos.append(
+            DocGroup(
+                standing=standing,
+                label=_STANDING_LABELS.get(standing, standing),
+                stats=stats,
+            )
+        )
+    return grupos
+
+
 def find(slug: str) -> DocEntry | None:
     """Resuelve un slug del pedido contra la lista cerrada. Nunca toca el disco."""
     return BY_SLUG.get(slug)

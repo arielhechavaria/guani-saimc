@@ -8,6 +8,20 @@
    de los templates Jinja. No renombra ni quita atributos de los que
    dependen los tests (name=, action=, id=, value=). */
 
+/* ── Base ───────────────────────────────────────────────────────── */
+
+/* El navegador trae `[hidden] { display: none }`, pero es una regla SUYA y
+   cualquier `display` declarado acá le gana. Sin esto, un `el.hidden = true`
+   desde JS marca el elemento como oculto y lo deja visible igual — que es
+   exactamente lo que hacía parecer roto al buscador de `/docs`, cuyas
+   tarjetas declaran `display: block`.
+
+   `!important` porque la alternativa es empatar en especificidad con
+   cualquier regla de clase y depender del orden del archivo. */
+[hidden] {
+  display: none !important;
+}
+
 /* ── Tokens ─────────────────────────────────────────────────────── */
 :root {
   --m3-primary: #00696e;
