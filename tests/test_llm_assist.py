@@ -22,6 +22,16 @@ from saimc.models import Product, Province
 
 
 def _asistente_real_disponible() -> bool:
+    """El smoke real corre solo con una VARIABLE PROPIA, no con la clave.
+
+    Tener la clave configurada en el servidor es lo normal cuando el asistente
+    está en uso; que eso además hiciera gastar plata al correr la suite sería
+    un cobro que el operador nunca pidió. Correrlo es una decisión aparte:
+
+        SAIMC_LLM_SMOKE=1 .venv/bin/pytest tests/test_llm_assist.py
+    """
+    if os.environ.get("SAIMC_LLM_SMOKE") != "1":
+        return False
     if not os.environ.get("SAIMC_ANTHROPIC_API_KEY"):
         return False
     try:
@@ -592,7 +602,7 @@ class TestSoloSaleTextoRedactado:
 
 @pytest.mark.skipif(
     not _asistente_real_disponible(),
-    reason="sin SAIMC_ANTHROPIC_API_KEY o sin el extra `llm` instalado",
+    reason="requiere SAIMC_LLM_SMOKE=1, la clave y el extra `llm` — cuesta plata",
 )
 def test_smoke_asistente_real_devuelve_algo_valido(
     products: list[Product], provinces: list[Province]
