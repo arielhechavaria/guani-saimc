@@ -49,6 +49,21 @@ En la salida, mirá en este orden:
 - **Sin texto del OCR** — si este número no es 0, hay imágenes cuyo OCR devolvió
   vacío (ni RapidOCR ni el respaldo de Tesseract encontraron nada) y están
   contando como extracción fallida.
+- **Excluidos por asistencia** — solo aparece si usaste el asistente de LLM.
+  Son anuncios curados que quedaron **fuera de las precisiones**, y hay que
+  entender por qué: al confirmarlos tuviste una propuesta del modelo delante,
+  así que lo que guardaste pudo absorber un valor que escribió él. Si entraran,
+  H0 estaría midiendo las reglas contra algo que produjo el modelo — la misma
+  trampa que `CLAUDE.md` prohíbe para los tests.
+
+  **El número que mirás es el de lo NO asistido.** Es el único comparable con
+  todas las corridas anteriores del histórico, que son enteramente sin
+  asistencia.
+
+  Consecuencia que conviene tener presente: un anuncio asistido **no suma** al
+  umbral de 300. Asistir tiene ese costo, y es correcto que lo tenga — esos
+  anuncios no sirven como evidencia limpia de cuánto resuelven las reglas
+  solas.
 
 ---
 
@@ -67,6 +82,7 @@ Sin la flag, además de imprimir el reporte, appendea **una línea JSON** a
 | `git_commit`, `git_branch` | Qué versión del extractor produjo el número. |
 | `git_dirty` | `true` si el árbol estaba sucio → número no atribuible. |
 | `tesseract_version` | Versión del respaldo disponible en la máquina, no necesariamente el motor que transcribió — desde el 2026-08-31 el primario es RapidOCR y este campo no lo distingue. |
+| `assisted_ads_count`, `assisted_rows_count` | Cuánto quedó fuera de las precisiones por haber pasado por el asistente de LLM. En las corridas anteriores al asistente no existen y se leen como 0, que es lo que eran. |
 | `is_official` | `true` solo con 300+ anuncios evaluados. |
 | Las 15 métricas del reporte | Aplanadas, tal cual se imprimieron. |
 

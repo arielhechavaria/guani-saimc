@@ -923,6 +923,8 @@ class TestHistorialDeH0:
             is_official=False,
             evaluated_ads_count=175,
             evaluated_rows_count=278,
+            assisted_ads_count=0,
+            assisted_rows_count=0,
             complete_accuracy=0.435,
             product_accuracy=0.9,
             price_accuracy=0.5,
@@ -967,6 +969,27 @@ class TestHistorialDeH0:
         assert "90.0%" in texto
         # El delta de la corrida más nueva contra la anterior.
         assert "+5.0 pts" in texto
+
+    def test_muestra_cuantos_anuncios_quedaron_fuera_por_asistencia(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """El número de al lado mide SOLO lo no asistido. Si no se ve cuántos
+        quedaron afuera, la divergencia entre asistido y no asistido queda
+        enterrada en un archivo (design.md del asistente, D6)."""
+        monkeypatch.setattr(
+            control, "read_h0_runs", lambda: [self._run(assisted_ads_count=7)]
+        )
+
+        texto = client.get("/control").text
+
+        assert "7 asistidos fuera" in texto
+
+    def test_sin_asistencia_no_muestra_la_marca(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(control, "read_h0_runs", lambda: [self._run()])
+
+        assert "asistidos fuera" not in client.get("/control").text
 
     def test_marca_la_corrida_no_oficial_y_el_arbol_sucio(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch

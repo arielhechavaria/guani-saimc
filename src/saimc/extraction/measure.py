@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.db import session_scope
-from saimc.extraction import ocr
+from saimc.extraction import llm_assist, ocr
 from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.ingestion import origin
 from saimc.models import (
@@ -86,6 +86,13 @@ class H0Report:
     # fila: la pregunta «¿cuántas extracciones salieron bien?» se responde por
     # extracción, la pregunta «¿alcanza la muestra?» se responde por evidencia.
     evaluated_ads_count: int
+    # Anuncios y filas que pasaron por el asistente de LLM y por eso NO entran
+    # en las cinco precisiones de abajo. Se reportan aparte, no se esconden:
+    # la divergencia entre este conjunto y el medido es justamente la señal de
+    # que una respuesta del modelo se está confirmando de apuro
+    # (openspec/changes/llm-extraction-assist/design.md, D6).
+    assisted_ads_count: int
+    assisted_rows_count: int
     product_accuracy: float | None
     price_accuracy: float | None
     province_accuracy: float | None
@@ -241,7 +248,9 @@ def _quantity_unit_correct(
 
 
 def compute_h0_report(
-    session: Session, transcribe: Transcriber = ocr.transcribe
+    session: Session,
+    transcribe: Transcriber = ocr.transcribe,
+    assist_log_path: Path | None = None,
 ) -> H0Report:
     """Calcula el reporte de H0 re-corriendo `propose_all()` sobre lo ya curado.
 
@@ -282,10 +291,31 @@ def compute_h0_report(
     complete_correct = 0
     evaluated_rows_count = 0
     evaluated_ads_count = 0
+    assisted_ads_count = 0
+    assisted_rows_count = 0
+
+    # Qué ingestas pasaron por el asistente de LLM. Salen de la MEDICIÓN, no de
+    # la cola: siguen siendo anuncios curados y siguen contando en la tasa de
+    # descarte. Lo que no pueden es alimentar las precisiones, porque su verdad
+    # pudo absorber un valor que escribió el modelo y entonces H0 mediría las
+    # reglas contra algo que el modelo produjo (design.md del cambio, D6).
+    #
+    # Con el registro vacío —o ausente— este conjunto es vacío y los números
+    # son exactamente los de siempre: introducir el corte no mueve nada por sí
+    # solo.
+    assisted_ids = (
+        llm_assist.assisted_ingestion_ids(assist_log_path)
+        if assist_log_path is not None
+        else set()
+    )
 
     for ingestion in ingestions:
         confirmed_rows = history_by_source.get(ingestion.id, [])
         if not confirmed_rows:
+            continue
+        if str(ingestion.id) in assisted_ids:
+            assisted_ads_count += 1
+            assisted_rows_count += len(confirmed_rows)
             continue
         evaluated_ads_count += 1
         text = _evaluation_text(ingestion, transcribe)
@@ -345,6 +375,8 @@ def compute_h0_report(
             image_ocr_empty_count=image_ocr_empty_count,
             evaluated_rows_count=0,
             evaluated_ads_count=0,
+            assisted_ads_count=assisted_ads_count,
+            assisted_rows_count=assisted_rows_count,
             product_accuracy=None,
             price_accuracy=None,
             province_accuracy=None,
@@ -362,6 +394,8 @@ def compute_h0_report(
         image_ocr_empty_count=image_ocr_empty_count,
         evaluated_rows_count=evaluated_rows_count,
         evaluated_ads_count=evaluated_ads_count,
+        assisted_ads_count=assisted_ads_count,
+        assisted_rows_count=assisted_rows_count,
         product_accuracy=product_correct / evaluated_rows_count,
         price_accuracy=price_correct / evaluated_rows_count,
         province_accuracy=province_correct / evaluated_rows_count,
@@ -404,6 +438,16 @@ def _print_report(report: H0Report) -> None:
     print(f"Curados de imagen:       {report.image_curated_count} anuncios (OCR re-corrido)")
     print(f"  Sin texto del OCR:     {report.image_ocr_empty_count}")
     print(f"Anuncios evaluados:      {report.evaluated_ads_count} (el conjunto de referencia)")
+    if report.assisted_ads_count:
+        print(
+            f"  Excluidos por asistencia: {report.assisted_ads_count} anuncios "
+            f"({report.assisted_rows_count} filas)"
+        )
+        print(
+            "    Pasaron por el asistente de LLM, así que su verdad pudo "
+            "absorber un valor del modelo."
+        )
+        print("    Las precisiones de abajo miden SOLO lo no asistido.")
     print(f"Filas evaluadas:         {report.evaluated_rows_count} (un anuncio puede tener varias)")
     print()
     print(f"Precisión de producto:        {_format_pct(report.product_accuracy)}")
@@ -552,6 +596,10 @@ class H0RunSummary:
     is_official: bool
     evaluated_ads_count: int
     evaluated_rows_count: int
+    # Corridas anteriores al asistente no traen estas claves: se leen como 0,
+    # que es lo que efectivamente eran.
+    assisted_ads_count: int
+    assisted_rows_count: int
     complete_accuracy: float | None
     product_accuracy: float | None
     price_accuracy: float | None
@@ -622,6 +670,8 @@ def read_h0_runs(path: Path | None = None) -> list[H0RunSummary]:
                 is_official=bool(record.get("is_official", False)),
                 evaluated_ads_count=_as_int(record.get("evaluated_ads_count")),
                 evaluated_rows_count=_as_int(record.get("evaluated_rows_count")),
+                assisted_ads_count=_as_int(record.get("assisted_ads_count")),
+                assisted_rows_count=_as_int(record.get("assisted_rows_count")),
                 complete_accuracy=complete,
                 product_accuracy=_as_float(record.get("product_accuracy")),
                 price_accuracy=_as_float(record.get("price_accuracy")),
@@ -654,7 +704,9 @@ def main() -> None:
     args = parser.parse_args()
 
     with session_scope() as session:
-        report = compute_h0_report(session)
+        report = compute_h0_report(
+            session, assist_log_path=get_settings().llm_assist_log_path
+        )
     _print_report(report)
 
     if args.no_record:

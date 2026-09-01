@@ -135,6 +135,14 @@
               {% if run.tesseract_version %}
               <span class="m3-dim">· tesseract {{ run.tesseract_version }}</span>
               {% endif %}
+              {% if run.assisted_ads_count %}
+              {# El número de al lado mide SOLO lo no asistido: estos anuncios
+                 quedaron afuera porque su verdad pudo absorber un valor del
+                 modelo. Mostrarlo es lo que hace visible la divergencia. #}
+              <span class="m3-chip m3-chip-sm" title="Anuncios excluidos de la medición por haber pasado por el asistente de LLM">
+                {{ run.assisted_ads_count }} asistidos fuera
+              </span>
+              {% endif %}
             </td>
             <td class="is-num">
               {% if run.complete_accuracy is not none %}

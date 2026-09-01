@@ -30,8 +30,10 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from saimc.extraction import llm_assist
 from saimc.extraction.measure import (
     H0Report,
     append_h0_run,
@@ -940,6 +942,8 @@ class TestH0RunRecord:
             image_ocr_empty_count=0,
             evaluated_rows_count=12,
             evaluated_ads_count=10,
+            assisted_ads_count=0,
+            assisted_rows_count=0,
             product_accuracy=0.9,
             price_accuracy=0.5,
             province_accuracy=0.8,
@@ -1180,3 +1184,132 @@ class TestReadH0Runs:
         # La tercera compara contra la primera con número (0.40), no contra el
         # hueco del medio.
         assert runs[2].complete_delta == pytest.approx(0.04)
+
+
+class TestH0CorteAsistido:
+    """H0 sigue midiendo las REGLAS contra una verdad no contaminada.
+
+    Una fila confirmada con ayuda del modelo corre el riesgo de que la verdad
+    absorba un valor que escribió el modelo — y entonces H0 mediría las reglas
+    contra algo que el modelo produjo. Es la misma trampa que `CLAUDE.md`
+    prohíbe para los tests. El corte lo evita (`design.md`, D6).
+    """
+
+    def _id_de(self, session: Session, hash_: str) -> str:
+        ingestion = session.execute(
+            select(RawIngestion).where(RawIngestion.content_hash == hash_)
+        ).scalar_one()
+        return str(ingestion.id)
+
+    def _log(self, tmp_path, session: Session, *hashes: str):
+        ruta = tmp_path / "assist.jsonl"
+        for hash_ in hashes:
+            llm_assist.append_assist_run(
+                {
+                    "timestamp": "2026-09-01T00:00:00+00:00",
+                    "ingestion_id": self._id_de(session, hash_),
+                    "model": "m",
+                    "requested": ["quantity"],
+                    "answered": ["quantity"],
+                    "dropped": [],
+                    "degraded": False,
+                },
+                ruta,
+            )
+        return ruta
+
+    def test_sin_registro_los_numeros_son_los_de_siempre(
+        self, session: Session, dataset: None, tmp_path
+    ) -> None:
+        """La introducción del corte no mueve nada por sí sola: sin
+        asistencia, el conjunto no asistido ES el conjunto entero."""
+        sin_corte = compute_h0_report(session, transcribe=_transcribe_falso)
+        con_log_vacio = compute_h0_report(
+            session,
+            transcribe=_transcribe_falso,
+            assist_log_path=tmp_path / "no-existe.jsonl",
+        )
+
+        assert con_log_vacio.evaluated_rows_count == sin_corte.evaluated_rows_count
+        assert con_log_vacio.complete_accuracy == sin_corte.complete_accuracy
+        assert con_log_vacio.assisted_ads_count == 0
+        assert con_log_vacio.assisted_rows_count == 0
+
+    def test_un_anuncio_asistido_sale_del_conjunto_medido(
+        self, session: Session, dataset: None, tmp_path
+    ) -> None:
+        ruta = self._log(tmp_path, session, "caso-1")
+
+        report = compute_h0_report(
+            session, transcribe=_transcribe_falso, assist_log_path=ruta
+        )
+
+        assert report.evaluated_ads_count == 5
+        assert report.evaluated_rows_count == 5
+        assert report.assisted_ads_count == 1
+        assert report.assisted_rows_count == 1
+
+    def test_lo_asistido_no_altera_los_totales_de_curaduria(
+        self, session: Session, dataset: None, tmp_path
+    ) -> None:
+        """Sale de la MEDICIÓN, no de la cola: sigue siendo un anuncio curado."""
+        ruta = self._log(tmp_path, session, "caso-1")
+
+        report = compute_h0_report(
+            session, transcribe=_transcribe_falso, assist_log_path=ruta
+        )
+
+        assert report.total_curated == 6
+        assert report.discard_rate == pytest.approx(1 / 7)
+
+    def test_la_precision_se_calcula_sin_lo_asistido(
+        self, session: Session, dataset: None, tmp_path
+    ) -> None:
+        """`caso-1` es uno de los correctos: sacarlo BAJA la precisión de
+        producto. Que el número se mueva es exactamente el punto — mide otro
+        conjunto, y decirlo es más honesto que promediar los dos."""
+        entero = compute_h0_report(session, transcribe=_transcribe_falso)
+        ruta = self._log(tmp_path, session, "caso-1")
+        recortado = compute_h0_report(
+            session, transcribe=_transcribe_falso, assist_log_path=ruta
+        )
+
+        assert entero.product_accuracy == pytest.approx(5 / 6)
+        assert recortado.product_accuracy == pytest.approx(4 / 5)
+
+    def test_todo_asistido_deja_la_medicion_sin_datos(
+        self, session: Session, dataset: None, tmp_path
+    ) -> None:
+        """El borde: si se asistió todo, no queda nada limpio que medir y las
+        precisiones son `None`, no cero. Cero afirmaría que las reglas
+        fallaron; `None` dice que no hay evidencia."""
+        ruta = self._log(
+            tmp_path,
+            session,
+            "caso-1",
+            "caso-2",
+            "caso-3",
+            "caso-4",
+            "caso-5",
+            "caso-6",
+        )
+
+        report = compute_h0_report(
+            session, transcribe=_transcribe_falso, assist_log_path=ruta
+        )
+
+        assert report.evaluated_rows_count == 0
+        assert report.complete_accuracy is None
+        assert report.assisted_ads_count == 6
+
+    def test_una_ingesta_asistida_dos_veces_cuenta_una(
+        self, session: Session, dataset: None, tmp_path
+    ) -> None:
+        ruta = self._log(tmp_path, session, "caso-1", "caso-1")
+
+        report = compute_h0_report(
+            session, transcribe=_transcribe_falso, assist_log_path=ruta
+        )
+
+        assert report.assisted_ads_count == 1
+        assert report.evaluated_ads_count == 5
