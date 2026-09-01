@@ -16,6 +16,7 @@ blanco, nunca estimado por aproximación.
 | Concepto | Costo mensual | Nota |
 | --- | --- | --- |
 | VPS | *a completar* | Hetzner, 2 vCPU, 3,7 GB RAM, 38 GB de disco, sin GPU. Corre Postgres, la app y WAHA. |
+| Claude Pro | *a completar* | Herramienta de desarrollo del operador, no del sistema. **No cubre la API**: ver la sección del asistente. |
 | Dominio | *a completar* | |
 | API de elTOQUE (TRMI) | *a completar* | Requiere `api_key` (`SAIMC_ELTOQUE_API_KEY`). Si el plan en uso es gratuito, poné 0 y dejalo escrito: la gratuidad de un tercero es un supuesto que caduca. |
 | WAHA | 0 | Se autoaloja en el mismo VPS; no suma costo aparte. |
@@ -41,6 +42,26 @@ Salen del dump de producción del 2026-08-30, no de una estimación de escritori
 | Tokens de salida por llamada | ~150 | El JSON de respuesta, corto por diseño |
 
 Eso da **480.000 tokens de entrada** y **90.000 de salida** al mes.
+
+### Es un costo ADICIONAL al plan Pro, no está incluido
+
+Son dos facturas separadas y conviene tenerlo claro antes de mirar la tabla:
+
+| | Qué cubre | Relación con esto |
+| --- | --- | --- |
+| **Claude Pro** (~$20/mes, ya se paga) | Claude en la app web/móvil y Claude Code | **No incluye créditos de API.** No paga nada de lo de abajo. |
+| **API de Anthropic** | Llamadas programáticas desde el código de SAIMC | Es lo que costaría este asistente, con saldo propio. |
+
+El acceso programático se cobra por token contra un saldo que se carga aparte
+en `console.anthropic.com`. El primer desembolso no es el costo mensual sino la
+carga mínima de créditos que pida la consola; a este consumo, esa carga dura
+varios meses.
+
+**La alternativa de costo cero existe**: hacer la asistencia a mano con el plan
+Pro que ya se paga, pegando el texto del anuncio difícil y leyendo la
+respuesta. Lo que compran los dos dólares es no copiar y pegar ~20 veces por
+día y que el valor caiga directo en el formulario. A este volumen la cuenta
+cierra, pero la opción de no gastar nada es real y queda escrita acá.
 
 ### Costo por modelo
 
