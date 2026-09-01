@@ -34,6 +34,13 @@ ocr = [
     "rapidocr>=3.9",
     "onnxruntime>=1.29",
 ]
+# Asistente de extracción por LLM (`saimc.extraction.llm_assist`). Opcional por
+# el mismo motivo que `ocr`: sin el paquete —o sin clave— el asistente degrada
+# a "sin propuesta" y la cola de curaduría funciona igual que hoy. El costo de
+# la API es adicional al plan Pro del operador, ver docs/costos.md.
+llm = [
+    "anthropic>=1.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

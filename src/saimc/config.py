@@ -74,6 +74,26 @@ class Settings(BaseSettings):
     # el número correcto solo se conoce con más curaduría encima.
     burst_window_minutes: int = 10
 
+    # Asistente de extracción por LLM (`saimc.extraction.llm_assist`,
+    # openspec/changes/llm-extraction-assist). Solo llena los campos que las
+    # reglas dejaron sin resolver, y solo cuando el operador lo pide.
+    #
+    # Sin `anthropic_api_key` el asistente degrada a "sin propuesta" y la cola
+    # funciona exactamente como hoy — mismo criterio que `waha_api_key`, y por
+    # eso la ausencia es un estado soportado y no un error de configuración.
+    #
+    # **El costo es adicional al plan Pro del operador**: la API se factura
+    # aparte, por token (docs/costos.md).
+    anthropic_api_key: str | None = None
+    # Configurable para que cambiar de modelo nunca sea un cambio de código.
+    # Sonnet por defecto: lo que llega a esta capa es el residuo ambiguo que
+    # las reglas no supieron, y la diferencia con el tier más barato es menos
+    # de un dólar al mes a este volumen (design.md, D7).
+    llm_assist_model: str = "claude-sonnet-5"
+    # Mismo criterio que `el_toque_timeout` y `waha_timeout`: la llamada vive
+    # dentro de una request del operador, así que expira en vez de colgarla.
+    llm_assist_timeout: float = 30.0
+
 
 @lru_cache
 def get_settings() -> Settings:

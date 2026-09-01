@@ -11,6 +11,7 @@ Esa es la mitad de este módulo que puede hacer daño, y es la que se puede
 probar entera sin salir de la máquina.
 """
 
+import os
 from decimal import Decimal
 
 import pytest
@@ -18,6 +19,16 @@ import pytest
 from saimc.extraction import llm_assist
 from saimc.extraction.engine import ExtractionProposal
 from saimc.models import Product, Province
+
+
+def _asistente_real_disponible() -> bool:
+    if not os.environ.get("SAIMC_ANTHROPIC_API_KEY"):
+        return False
+    try:
+        import anthropic  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 @pytest.fixture
@@ -362,3 +373,251 @@ class TestEsquemaDeRespuesta:
 
         for campo in esquema["properties"].values():
             assert "null" in campo["type"]
+
+    def test_todo_campo_pedido_es_requerido(self) -> None:
+        """Con `additionalProperties: False`, declarar todo requerido deja la
+        forma completamente determinada. Abstenerse sigue siendo posible: el
+        campo viene, con `null` adentro."""
+        esquema = llm_assist.response_schema(frozenset({"product", "price"}))
+
+        assert set(esquema["required"]) == {"product", "price"}
+
+
+class _ClienteFalso:
+    """Imita lo único que este módulo le pide al SDK: `messages.create(...)`
+    devolviendo algo con `.content` de bloques con `.type` y `.text`."""
+
+    def __init__(self, texto: str | None = None, error: Exception | None = None):
+        self.texto = texto
+        self.error = error
+        self.llamadas: list[dict] = []
+        self.messages = self
+
+    def create(self, **kwargs: object) -> object:
+        self.llamadas.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        bloque = type("Bloque", (), {"type": "text", "text": self.texto})()
+        return type("Respuesta", (), {"content": [bloque]})()
+
+
+class TestLlamadaYDegradacion:
+    """Toda falla esperable degrada a «sin propuesta». Nunca levanta."""
+
+    def test_sin_clave_no_llama_ni_propone(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        cliente = _ClienteFalso(texto='{"quantity": 25}')
+
+        resultado = llm_assist.propose_missing(
+            "arroz 25 kg",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key=None,
+            client=cliente,
+        )
+
+        assert resultado.answered == frozenset()
+        assert cliente.llamadas == []
+
+    def test_sin_huecos_no_llama(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        cliente = _ClienteFalso(texto='{"quantity": 25}')
+
+        resultado = llm_assist.propose_missing(
+            "arroz 25 kg",
+            frozenset(),
+            products,
+            provinces,
+            api_key="k",
+            client=cliente,
+        )
+
+        assert resultado.answered == frozenset()
+        assert cliente.llamadas == []
+
+    @pytest.mark.parametrize(
+        "error",
+        [RuntimeError("boom"), TimeoutError("expiró"), OSError("red caída")],
+    )
+    def test_un_error_del_cliente_degrada(
+        self, error: Exception, products: list[Product], provinces: list[Province]
+    ) -> None:
+        resultado = llm_assist.propose_missing(
+            "arroz 25 kg",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(error=error),
+        )
+
+        assert resultado.answered == frozenset()
+
+    @pytest.mark.parametrize("cuerpo", ["no es json", "", "[1,2]", "null"])
+    def test_un_cuerpo_no_parseable_degrada(
+        self, cuerpo: str, products: list[Product], provinces: list[Province]
+    ) -> None:
+        resultado = llm_assist.propose_missing(
+            "arroz 25 kg",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(texto=cuerpo),
+        )
+
+        assert resultado.answered == frozenset()
+
+    def test_una_respuesta_sin_bloques_de_texto_degrada(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        cliente = _ClienteFalso(texto=None)
+        cliente.create = lambda **kw: type("R", (), {"content": []})()  # type: ignore[method-assign]
+
+        resultado = llm_assist.propose_missing(
+            "arroz 25 kg",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=cliente,
+        )
+
+        assert resultado.answered == frozenset()
+
+    def test_una_respuesta_valida_propone(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        resultado = llm_assist.propose_missing(
+            "sacos de arroz 25 kg",
+            frozenset({"quantity", "unit"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(texto='{"quantity": 25, "unit": "kg"}'),
+        )
+
+        assert resultado.quantity == Decimal("25")
+        assert resultado.unit == "kg"
+
+    def test_lo_que_no_resuelve_sigue_descartandose(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """La validación del núcleo puro no se saltea por venir de la red."""
+        resultado = llm_assist.propose_missing(
+            "algo",
+            frozenset({"product"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(texto='{"product": "Harina de yuca"}'),
+        )
+
+        assert resultado.product is None
+        assert "product" in resultado.dropped
+
+
+class TestSoloSaleTextoRedactado:
+    def test_el_telefono_no_viaja(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        cliente = _ClienteFalso(texto='{"quantity": 25}')
+
+        llm_assist.propose_missing(
+            "Sacos de arroz 25 kg\n+53 5 4728658\nllame ya",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=cliente,
+        )
+
+        enviado = str(cliente.llamadas[0]["messages"])
+        assert "4728658" not in enviado
+        assert "[teléfono removido]" in enviado
+
+    def test_el_texto_del_anuncio_si_viaja(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        cliente = _ClienteFalso(texto='{"quantity": 25}')
+
+        llm_assist.propose_missing(
+            "Sacos de arroz 25 kg",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=cliente,
+        )
+
+        assert "Sacos de arroz 25 kg" in str(cliente.llamadas[0]["messages"])
+
+    def test_se_pide_solo_lo_que_falta(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        cliente = _ClienteFalso(texto='{"quantity": 25}')
+
+        llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=cliente,
+        )
+
+        esquema = cliente.llamadas[0]["output_config"]["format"]["schema"]
+        assert set(esquema["properties"]) == {"quantity"}
+
+    def test_se_respeta_el_modelo_y_el_timeout_configurados(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        cliente = _ClienteFalso(texto="{}")
+
+        llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=cliente,
+            model="claude-haiku-4-5",
+        )
+
+        assert cliente.llamadas[0]["model"] == "claude-haiku-4-5"
+
+
+@pytest.mark.skipif(
+    not _asistente_real_disponible(),
+    reason="sin SAIMC_ANTHROPIC_API_KEY o sin el extra `llm` instalado",
+)
+def test_smoke_asistente_real_devuelve_algo_valido(
+    products: list[Product], provinces: list[Province]
+) -> None:
+    """Único test que llama a la API de verdad, y por eso **cuesta plata**
+    (centavos, ver `docs/costos.md`). Se saltea sin clave, igual que los smoke
+    de Tesseract y RapidOCR en `tests/test_ocr.py`.
+
+    Assertea que la respuesta es del tipo correcto y que respeta el contrato
+    del módulo — NUNCA qué debería haber contestado el modelo. Esa pregunta se
+    responde midiendo contra la cola real (`design.md`, D9).
+    """
+    resultado = llm_assist.propose_missing(
+        "Sacos de arroz 25 kg a 17500 cup, Santiago de Cuba",
+        frozenset({"quantity", "unit"}),
+        products,
+        provinces,
+        api_key=os.environ["SAIMC_ANTHROPIC_API_KEY"],
+    )
+
+    assert isinstance(resultado, llm_assist.AssistedFields)
+    # Lo que responda tiene que haber pasado la validación: nada fuera del
+    # vocabulario puede salir de acá.
+    if resultado.unit is not None:
+        assert resultado.unit in ("lb", "kg", "l", "ml", "unidad", "docena", "caja")
+    if resultado.quantity is not None:
+        assert resultado.quantity > 0
+    assert resultado.answered <= frozenset({"quantity", "unit"})

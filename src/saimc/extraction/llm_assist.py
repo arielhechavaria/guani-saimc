@@ -20,6 +20,7 @@ foco.
 
 from __future__ import annotations
 
+import json
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -28,7 +29,7 @@ from typing import Any
 
 from saimc.extraction.engine import ExtractionProposal
 from saimc.models import Product, Province
-from saimc.units import canonical_unit
+from saimc.units import UNITS, canonical_unit
 
 # Los cinco campos que el asistente puede llenar.
 #
@@ -113,12 +114,15 @@ def response_schema(requested: frozenset[str]) -> dict[str, Any]:
         "price": ["number", "string", "null"],
         "quantity": ["number", "string", "null"],
     }
+    campos = sorted(requested & ASSISTABLE_FIELDS)
     return {
         "type": "object",
-        "properties": {
-            name: {"type": tipos[name]}
-            for name in sorted(requested & ASSISTABLE_FIELDS)
-        },
+        "properties": {name: {"type": tipos[name]} for name in campos},
+        # Todo lo pedido es requerido: con `additionalProperties: False` eso
+        # deja la forma completamente determinada. Abstenerse sigue siendo
+        # posible —el campo viene, con `null` adentro—, que es justo lo que se
+        # quiere permitir sin permitir además una respuesta a medio armar.
+        "required": campos,
         "additionalProperties": False,
     }
 
@@ -209,3 +213,140 @@ def parse_response(
             valores[name] = resolved
 
     return AssistedFields(**valores, dropped=frozenset(dropped))
+
+
+# --- la llamada ------------------------------------------------------------
+
+_SYSTEM_PROMPT = (
+    "Sos un asistente de extracción de datos de anuncios del mercado informal "
+    "cubano. Recibís el texto de UN anuncio, transcripto por OCR y por lo "
+    "tanto con ruido: renglones de la interfaz del chat, texto cortado, "
+    "líneas fuera de orden.\n\n"
+    "Devolvés SOLO los campos que se te piden, en el esquema dado.\n\n"
+    "Reglas:\n"
+    "- Si no podés determinar un campo con confianza, respondé null. "
+    "Abstenerse es una respuesta correcta y preferible a adivinar.\n"
+    "- Para producto y provincia respondé exactamente uno de los nombres de "
+    "la lista que se te da, o null. No inventes nombres nuevos.\n"
+    "- El precio es el de la oferta, no una tarifa derivada que el anuncio "
+    "calcule aparte.\n"
+    "- La cantidad y la unidad son las del lote que ese precio compra."
+)
+
+
+def _build_prompt(
+    text: str,
+    requested: frozenset[str],
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+) -> str:
+    """El mensaje de usuario: catálogos cerrados y el texto ya redactado.
+
+    Los catálogos van en el pedido para que el modelo elija de una lista en
+    vez de generar texto libre. No reemplaza la validación de
+    `parse_response` —que igual descarta lo que no resuelva—: es la primera
+    de las dos guardas, no la única (`design.md`, D3).
+    """
+    nombres_producto = ", ".join(sorted(p.name for p in products))
+    nombres_provincia = ", ".join(sorted(p.name for p in provinces))
+    return (
+        f"Campos a completar: {', '.join(sorted(requested))}\n\n"
+        f"Productos del catálogo: {nombres_producto}\n"
+        f"Provincias: {nombres_provincia}\n"
+        f"Unidades válidas: {', '.join(UNITS)}\n\n"
+        f"Anuncio:\n{text}"
+    )
+
+
+def _response_text(response: object) -> str | None:
+    """El primer bloque de texto de la respuesta, o `None`."""
+    content = getattr(response, "content", None)
+    if not content:
+        return None
+    for block in content:
+        if getattr(block, "type", None) == "text":
+            return getattr(block, "text", None)
+    return None
+
+
+def propose_missing(
+    text: str,
+    requested: frozenset[str],
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+    *,
+    api_key: str | None,
+    client: Any | None = None,
+    model: str = "claude-sonnet-5",
+    timeout: float = 30.0,
+) -> AssistedFields:
+    """Pide al modelo los campos que las reglas no resolvieron.
+
+    Devuelve una propuesta vacía —nunca levanta— ante cualquier falla
+    esperable: sin clave, sin paquete instalado, sin huecos que preguntar,
+    error del cliente, timeout, cuerpo no parseable o respuesta que no
+    valida. Mismo contrato que `exchange_rate.eltoque.fetch_rate` y que
+    `extraction.ocr.transcribe`: el llamador trata la ausencia como un
+    resultado ordinario y el operador completa a mano, igual que hoy.
+
+    Sin reintento y sin backoff, por el mismo motivo que `eltoque` (design.md
+    D3 de aquel cambio): la llamada vive dentro de una request del operador y
+    sin cola —decisión cerrada 3— un reintento es solo más pared de espera.
+
+    `client` es el seam de test. En producción se deja en `None` y se arma el
+    cliente real; el import de `anthropic` es perezoso a propósito, para que
+    este módulo se pueda importar y testear sin el paquete opcional
+    instalado, igual que `ocr.py` hace con `rapidocr`.
+    """
+    gaps = requested & ASSISTABLE_FIELDS
+    if not gaps or not api_key:
+        return AssistedFields()
+
+    if client is None:
+        try:
+            import anthropic
+
+            client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+        except Exception:
+            # Paquete ausente o cliente que no se puede construir: este motor
+            # no es usable en esta máquina, que es la condición de degradación.
+            return AssistedFields()
+
+    from saimc.privacy import redact_personal_data
+
+    # La redacción va acá, en el borde de la llamada, y no solo antes de
+    # guardar: es lo que hace que la exposición nueva sea cero (`design.md`,
+    # D2). El archivo de evidencia nunca se adjunta.
+    redacted = redact_personal_data(text) or ""
+
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            system=_SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": _build_prompt(redacted, gaps, products, provinces),
+                }
+            ],
+            output_config={
+                "format": {
+                    "type": "json_schema",
+                    "schema": response_schema(gaps),
+                }
+            },
+        )
+    except Exception:
+        return AssistedFields()
+
+    raw = _response_text(response)
+    if not raw:
+        return AssistedFields()
+
+    try:
+        body = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return AssistedFields()
+
+    return parse_response(body, gaps, products, provinces)
