@@ -1,10 +1,16 @@
-"""Asistente de extracción por LLM — la mitad pura, sin red.
+"""Asistente de extracción por LLM.
 
 Cubre lo que `spec.md` §6.1 reserva para el modelo: «LLM únicamente para los
 casos que las reglas no resuelven, con el resultado siempre sujeto a
-confirmación humana» (`EXT-07`). Este módulo arma el pedido y valida la
-respuesta; hacer la llamada es otra mitad, y confirmar lo propuesto es del
-operador.
+confirmación humana» (`EXT-07`). Este módulo arma el pedido, hace la llamada,
+valida la respuesta y registra la invocación; confirmar lo propuesto es del
+operador y no pasa por acá.
+
+Tres partes, separadas a propósito para que la que puede hacer daño se pueda
+probar entera sin salir de la máquina: el núcleo puro (`missing_fields`,
+`response_schema`, `parse_response`), el registro de invocaciones, y la
+llamada (`propose_missing`), que degrada a «sin propuesta» ante cualquier
+falla esperable.
 
 **Nada de acá inventa vocabulario.** Un producto, una provincia o una unidad
 que el modelo nombre y que no exista ya en el catálogo se descarta como si no
@@ -24,7 +30,9 @@ import json
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
 from saimc.extraction.engine import ExtractionProposal
@@ -215,6 +223,96 @@ def parse_response(
     return AssistedFields(**valores, dropped=frozenset(dropped))
 
 
+# --- registro de invocaciones ----------------------------------------------
+#
+# Ninguna invocación puede ocurrir sin dejar rastro (`design.md`, D6). Es lo
+# que después permite medir H0 sobre el conjunto NO asistido —el número
+# comparable con todo el histórico de `docs/h0-runs.jsonl`— y lo que hace
+# detectable que una respuesta del modelo se esté confirmando de apuro.
+#
+# Misma FORMA que `measure.append_h0_run`/`read_h0_runs`: solo-anexado,
+# `sort_keys` para que el diff sea estable, lector tolerante a líneas rotas.
+#
+# **Distinto LUGAR, a propósito.** `h0-runs.jsonl` vive en `docs/` y va a git:
+# son ~4 líneas al mes y `git log -p` es su interfaz de consulta. Este registro
+# son ~600 al mes, está atado a ids de la base de producción y no significa
+# nada en otro checkout, así que vive bajo `data/`, que `.gitignore` ya
+# excluye por el mismo motivo que la evidencia.
+
+
+@dataclass(frozen=True)
+class AssistRun:
+    """Una invocación registrada."""
+
+    timestamp: str
+    ingestion_id: str
+    model: str
+    requested: list[str]
+    answered: list[str]
+    dropped: list[str]
+    # `True` cuando la llamada no dejó una respuesta utilizable (sin red,
+    # timeout, cuerpo ilegible). Se registra igual: un intento fallido también
+    # es información operativa.
+    degraded: bool
+
+
+def append_assist_run(record: dict[str, Any], path: Path) -> None:
+    """Anexa el registro como una sola línea JSON.
+
+    Nunca revienta: el registro es telemetría, no el objetivo. Si el disco no
+    coopera, la asistencia igual tiene que devolver lo que consiguió — mismo
+    criterio que `measure._git`.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(record, ensure_ascii=False, sort_keys=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        return
+
+
+def read_assist_runs(path: Path) -> list[AssistRun]:
+    """Lee el registro en orden cronológico, salteando lo ilegible."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    runs: list[AssistRun] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict) or "ingestion_id" not in record:
+            continue
+        runs.append(
+            AssistRun(
+                timestamp=str(record.get("timestamp", "")),
+                ingestion_id=str(record["ingestion_id"]),
+                model=str(record.get("model", "")),
+                requested=[str(f) for f in record.get("requested", []) or []],
+                answered=[str(f) for f in record.get("answered", []) or []],
+                dropped=[str(f) for f in record.get("dropped", []) or []],
+                degraded=bool(record.get("degraded", False)),
+            )
+        )
+    return runs
+
+
+def assisted_ingestion_ids(path: Path) -> set[str]:
+    """Qué ingestas pasaron alguna vez por el asistente.
+
+    Es lo que `measure.py` necesita para separar el conjunto no asistido, que
+    es el que sigue siendo comparable con las corridas anteriores.
+    """
+    return {run.ingestion_id for run in read_assist_runs(path)}
+
+
 # --- la llamada ------------------------------------------------------------
 
 _SYSTEM_PROMPT = (
@@ -279,6 +377,8 @@ def propose_missing(
     client: Any | None = None,
     model: str = "claude-sonnet-5",
     timeout: float = 30.0,
+    ingestion_id: str = "",
+    log_path: Path | None = None,
 ) -> AssistedFields:
     """Pide al modelo los campos que las reglas no resolvieron.
 
@@ -300,7 +400,31 @@ def propose_missing(
     """
     gaps = requested & ASSISTABLE_FIELDS
     if not gaps or not api_key:
+        # No hubo invocación: no hay nada que registrar. El registro cuenta
+        # intentos reales, no configuraciones ausentes ni filas sin huecos.
         return AssistedFields()
+
+    def _registrar(result: AssistedFields, *, degraded: bool) -> AssistedFields:
+        """Deja el rastro y devuelve el resultado.
+
+        Todo camino de salida de acá para abajo pasa por esta función: es lo
+        que hace cierto el requisito de que ninguna invocación ocurra sin
+        registro, en vez de depender de acordarse en cada `return`.
+        """
+        if log_path is not None:
+            append_assist_run(
+                {
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "ingestion_id": ingestion_id,
+                    "model": model,
+                    "requested": sorted(gaps),
+                    "answered": sorted(result.answered),
+                    "dropped": sorted(result.dropped),
+                    "degraded": degraded,
+                },
+                log_path,
+            )
+        return result
 
     if client is None:
         try:
@@ -310,7 +434,7 @@ def propose_missing(
         except Exception:
             # Paquete ausente o cliente que no se puede construir: este motor
             # no es usable en esta máquina, que es la condición de degradación.
-            return AssistedFields()
+            return _registrar(AssistedFields(), degraded=True)
 
     from saimc.privacy import redact_personal_data
 
@@ -338,15 +462,17 @@ def propose_missing(
             },
         )
     except Exception:
-        return AssistedFields()
+        return _registrar(AssistedFields(), degraded=True)
 
     raw = _response_text(response)
     if not raw:
-        return AssistedFields()
+        return _registrar(AssistedFields(), degraded=True)
 
     try:
         body = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
-        return AssistedFields()
+        return _registrar(AssistedFields(), degraded=True)
 
-    return parse_response(body, gaps, products, provinces)
+    return _registrar(
+        parse_response(body, gaps, products, provinces), degraded=False
+    )

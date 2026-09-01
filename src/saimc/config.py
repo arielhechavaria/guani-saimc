@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     # Mismo criterio que `el_toque_timeout` y `waha_timeout`: la llamada vive
     # dentro de una request del operador, así que expira en vez de colgarla.
     llm_assist_timeout: float = 30.0
+    # Registro de solo-anexado de cada invocación del asistente. Vive bajo
+    # `data/` —que `.gitignore` excluye— y no en `docs/` como
+    # `h0-runs.jsonl`: son ~600 líneas al mes atadas a ids de la base de
+    # producción, que no significan nada en otro checkout. Es lo que permite
+    # medir H0 sobre el conjunto no asistido (design.md, D6).
+    llm_assist_log_path: Path = Path("data/llm-assist-log.jsonl")
 
 
 @lru_cache

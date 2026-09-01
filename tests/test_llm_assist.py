@@ -621,3 +621,165 @@ def test_smoke_asistente_real_devuelve_algo_valido(
     if resultado.quantity is not None:
         assert resultado.quantity > 0
     assert resultado.answered <= frozenset({"quantity", "unit"})
+
+
+class TestRegistroDeInvocaciones:
+    """Ninguna invocación puede ocurrir sin dejar rastro (`design.md`, D6).
+
+    El registro es lo que después permite medir H0 sobre el conjunto NO
+    asistido, que es el número comparable con todo el histórico de
+    `docs/h0-runs.jsonl`. Sin él, una respuesta del modelo confirmada de apuro
+    entra en la verdad contra la que se miden las reglas y nadie se entera.
+    """
+
+    def test_una_llamada_exitosa_deja_una_linea(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        log = tmp_path / "assist.jsonl"
+
+        llm_assist.propose_missing(
+            "sacos de arroz 25 kg",
+            frozenset({"quantity", "unit"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(texto='{"quantity": 25, "unit": "quintal"}'),
+            ingestion_id="ing-1",
+            log_path=log,
+        )
+
+        corridas = llm_assist.read_assist_runs(log)
+        assert len(corridas) == 1
+        assert corridas[0].ingestion_id == "ing-1"
+        assert corridas[0].requested == ["quantity", "unit"]
+        assert corridas[0].answered == ["quantity"]
+        assert corridas[0].dropped == ["unit"]
+        assert corridas[0].degraded is False
+
+    def test_una_llamada_degradada_tambien_deja_rastro(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        log = tmp_path / "assist.jsonl"
+
+        llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(error=TimeoutError("expiró")),
+            ingestion_id="ing-2",
+            log_path=log,
+        )
+
+        corridas = llm_assist.read_assist_runs(log)
+        assert len(corridas) == 1
+        assert corridas[0].degraded is True
+        assert corridas[0].answered == []
+
+    def test_dos_invocaciones_suman_dos_lineas(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Solo-anexado: la segunda no pisa a la primera."""
+        log = tmp_path / "assist.jsonl"
+        for ident in ("ing-1", "ing-2"):
+            llm_assist.propose_missing(
+                "algo",
+                frozenset({"quantity"}),
+                products,
+                provinces,
+                api_key="k",
+                client=_ClienteFalso(texto='{"quantity": 5}'),
+                ingestion_id=ident,
+                log_path=log,
+            )
+
+        assert [c.ingestion_id for c in llm_assist.read_assist_runs(log)] == [
+            "ing-1",
+            "ing-2",
+        ]
+
+    def test_sin_clave_no_se_registra_nada(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """No hubo invocación: no hay nada que registrar. El registro cuenta
+        intentos reales, no configuraciones ausentes."""
+        log = tmp_path / "assist.jsonl"
+
+        llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key=None,
+            client=_ClienteFalso(texto='{"quantity": 5}'),
+            ingestion_id="ing-1",
+            log_path=log,
+        )
+
+        assert llm_assist.read_assist_runs(log) == []
+
+    def test_un_archivo_inexistente_se_lee_vacio(self, tmp_path) -> None:
+        assert llm_assist.read_assist_runs(tmp_path / "no-existe.jsonl") == []
+
+    def test_una_linea_rota_no_tumba_la_lectura(self, tmp_path) -> None:
+        """Mismo criterio tolerante que `measure.read_h0_runs`: un archivo de
+        solo-anexado acumula líneas a medio escribir y eso no puede romper a
+        quien lo lee."""
+        log = tmp_path / "assist.jsonl"
+        log.write_text(
+            '{"ingestion_id": "ok-1", "requested": [], "answered": [], '
+            '"dropped": [], "degraded": false, "model": "m", "timestamp": "t"}\n'
+            "\n"
+            "{esto no es json\n"
+            "[1, 2]\n"
+            '{"ingestion_id": "ok-2", "requested": [], "answered": [], '
+            '"dropped": [], "degraded": false, "model": "m", "timestamp": "t"}\n',
+            encoding="utf-8",
+        )
+
+        assert [c.ingestion_id for c in llm_assist.read_assist_runs(log)] == [
+            "ok-1",
+            "ok-2",
+        ]
+
+    def test_los_ids_asistidos_se_pueden_consultar(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Es lo que el commit 4 necesita para medir H0 sobre lo no asistido."""
+        log = tmp_path / "assist.jsonl"
+        for ident in ("ing-1", "ing-2", "ing-1"):
+            llm_assist.propose_missing(
+                "algo",
+                frozenset({"quantity"}),
+                products,
+                provinces,
+                api_key="k",
+                client=_ClienteFalso(texto='{"quantity": 5}'),
+                ingestion_id=ident,
+                log_path=log,
+            )
+
+        assert llm_assist.assisted_ingestion_ids(log) == {"ing-1", "ing-2"}
+
+    def test_un_fallo_al_escribir_el_registro_no_rompe_la_asistencia(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El registro es telemetría: si no se puede escribir, la curaduría
+        sigue. Mismo criterio que `measure._git`, que degrada en vez de
+        reventar la corrida."""
+        inaccesible = tmp_path / "no-existe" / "sub" / "assist.jsonl"
+        (tmp_path / "no-existe").write_text("soy un archivo, no un directorio")
+
+        resultado = llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(texto='{"quantity": 5}'),
+            ingestion_id="ing-1",
+            log_path=inaccesible,
+        )
+
+        assert resultado.quantity == Decimal("5")
