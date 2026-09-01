@@ -137,6 +137,18 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="rige",
     ),
     DocEntry(
+        slug="runbook-asistente-llm",
+        title="Runbook — Poner en marcha el asistente de extracción",
+        summary=(
+            "Los pasos para activar el asistente por LLM, en orden y con su "
+            "verificación cada uno: saldo, clave, dependencia, configuración, "
+            "primera llamada y comprobación de que H0 sigue comparable. "
+            "Incluye cómo apagarlo y qué vigilar."
+        ),
+        relative_path="docs/runbook-asistente-llm.md",
+        standing="rige",
+    ),
+    DocEntry(
         slug="costos",
         title="Costos de operación",
         summary=(
