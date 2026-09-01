@@ -44,6 +44,7 @@ from starlette.datastructures import FormData
 from saimc.config import get_settings
 from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, apply_resolution
 from saimc.extraction import ocr
+from saimc.extraction.llm_assist import missing_fields, propose_missing
 from saimc.extraction.engine import (
     ExtractionProposal,
     guess_published_date,
@@ -155,6 +156,7 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "min_purchase": "",
             "province_id": "",
             "price_basis": "",
+            "assisted": "",
         }
     return {
         # Sin fila propia todavía: existe recién cuando se confirma el submit.
@@ -192,6 +194,8 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         # lee. Apartamiento registrado en docs/decisions.md, 2026-08-25, con
         # las 7 filas mal marcadas que lo motivaron.
         "price_basis": proposal.price_basis or "",
+        # La llena `_curation_view` cuando la fila pasó por el asistente.
+        "assisted": "",
     }
 
 
@@ -503,6 +507,8 @@ def _render_queue(
     discard_hints: Sequence[str] = (),
     channel_discard_stats: tuple[int, int] | None = None,
     last_capture_notice: str | None = None,
+    assist_available: bool = False,
+    assisted_map: dict[str, list[str]] | None = None,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -514,6 +520,8 @@ def _render_queue(
             "provinces": provinces,
             "rows": rows,
             "row_count": row_count,
+            "assist_available": assist_available,
+            "assisted_map": assisted_map or {},
             # Molde para las filas que el operador agregue a mano desde el
             # botón "Agregar fila": el JS del cliente clona este `<template>`
             # y le renumera los índices. Mismo dict vacío que las filas en
@@ -651,6 +659,21 @@ def curation_queue(
     operador ya abre esta página una vez al día para curar en bloque; no hace
     falta un timer aparte para un volumen de Fase 0.
     """
+    return _curation_view(request, db, unconverted=unconverted, pasted=pasted)
+
+
+def _curation_view(
+    request: Request,
+    db: Session,
+    *,
+    unconverted: int = 0,
+    pasted: int = 0,
+    assist_ingestion_id: uuid.UUID | None = None,
+) -> HTMLResponse:
+    """Arma la vista de la cola. Compartida por el GET y por el endpoint de
+    asistencia, que es el mismo render con los huecos ya consultados al
+    modelo — así el botón no puede divergir de lo que la página muestra.
+    """
     settings = get_settings()
     ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir)
 
@@ -710,15 +733,36 @@ def curation_queue(
             guessed = guess_published_date(recognized_text, ingestion.captured_at)
             published_date_guess = guessed.isoformat() if guessed else ""
 
+    # La asistencia corre acá, con las propuestas de las reglas ya calculadas:
+    # lo que se le pide al modelo son exactamente los huecos que quedaron
+    # (design.md, D1). Nunca en el GET — solo cuando el operador lo pidió.
+    assisted_by_row: dict[int, list[str]] = {}
+    if (
+        assist_ingestion_id is not None
+        and ingestion is not None
+        and ingestion.id == assist_ingestion_id
+    ):
+        assisted_by_row = _run_assist(
+            proposals,
+            text=(ingestion.original_text or "") if ingestion.content_type == ContentType.TEXT else recognized_text,
+            products=products,
+            provinces=provinces,
+            ingestion_id=str(ingestion.id),
+            settings=settings,
+        )
+
     # Solo llegan al formulario las propuestas que cayeron en un producto del
     # foco. Una lista de precios de 25 renglones produce 25 candidatos, de los
     # cuales importan los pocos que son piloto: mostrar el resto obligaría al
     # operador a descartarlos de a uno, que es justamente el trabajo que esta
     # decisión elimina (`docs/decisions.md`, 2026-08-15). Lo descartado no se
     # pierde: el registro crudo es inmutable y conserva el anuncio entero.
-    rows = [
-        _values_from_proposal(proposal) for proposal in proposals if proposal.product is not None
-    ]
+    en_foco_idx = [i for i, p in enumerate(proposals) if p.product is not None]
+    rows = [_values_from_proposal(proposals[i]) for i in en_foco_idx]
+    # La marca viaja con la fila: el template la usa para que el operador vea
+    # qué campo salió del modelo y cuál de las reglas (design.md, D10).
+    for fila, original in zip(rows, en_foco_idx, strict=True):
+        fila["assisted"] = " ".join(assisted_by_row.get(original, []))
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
 
     # "El canal siempre manda" (docs/decisions.md, 2026-08-17): pisa lo que
@@ -781,6 +825,12 @@ def curation_queue(
             _channel_discard_stats(db, ingestion) if ingestion is not None else None
         ),
         last_capture_notice=_last_capture_notice(db),
+        # El botón solo se ofrece con clave configurada Y con al menos un
+        # hueco: ofrecerlo sobre un anuncio completo invitaría a gastar sin
+        # nada que ganar (spec del cambio, capacidad `curation-observation-capture`).
+        assist_available=bool(settings.anthropic_api_key)
+        and any(missing_fields(p) for p in proposals),
+        assisted_map={str(i): campos for i, campos in assisted_by_row.items()},
     )
 
 
@@ -791,6 +841,69 @@ def curation_queue(
 # que si esas quedaran primero, un POST a `/curation/sin-foco/discard` caería
 # ahí con `ingestion_id="sin-foco"` y el 422 de validación de UUID lo tumbaría
 # antes de llegar acá.
+def _run_assist(
+    proposals: list[ExtractionProposal],
+    *,
+    text: str,
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+    ingestion_id: str,
+    settings,
+) -> dict[int, list[str]]:
+    """Consulta al modelo los huecos de cada propuesta y los llena en el lugar.
+
+    Devuelve, por índice de propuesta, qué campos terminaron viniendo del
+    asistente. Solo se tocan campos que estaban en `None`: un valor que las
+    reglas resolvieron no se pisa nunca (design.md, D1).
+
+    Sin texto no hay nada que preguntar, y sin clave `propose_missing` ya
+    degrada por su cuenta sin llamar ni cobrar.
+    """
+    # Sin clave no se llama: `propose_missing` ya degradaría, pero cortar acá
+    # deja explícito que la ausencia de clave significa "no se intenta", y
+    # evita recorrer las propuestas para nada.
+    if not text or not settings.anthropic_api_key:
+        return {}
+
+    asistidos: dict[int, list[str]] = {}
+    for indice, proposal in enumerate(proposals):
+        huecos = missing_fields(proposal)
+        if not huecos:
+            continue
+        resultado = propose_missing(
+            text,
+            huecos,
+            products,
+            provinces,
+            api_key=settings.anthropic_api_key,
+            model=settings.llm_assist_model,
+            timeout=settings.llm_assist_timeout,
+            ingestion_id=ingestion_id,
+            log_path=settings.llm_assist_log_path,
+        )
+        llenados = []
+        for campo in sorted(resultado.answered):
+            if getattr(proposal, campo) is None:
+                setattr(proposal, campo, getattr(resultado, campo))
+                llenados.append(campo)
+        if llenados:
+            asistidos[indice] = llenados
+    return asistidos
+
+
+@router.post("/curation/{ingestion_id}/assist", response_class=HTMLResponse)
+def assist_curation(
+    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Pide al modelo los campos que las reglas no resolvieron.
+
+    POST y no GET a propósito: gasta plata, así que no puede dispararse por
+    una recarga del navegador ni por un prefetch. Vuelve a renderizar la misma
+    cola con los huecos ya llenos y marcados.
+    """
+    return _curation_view(request, db, assist_ingestion_id=ingestion_id)
+
+
 @router.get("/curation/sin-foco", response_class=HTMLResponse)
 def curation_out_of_focus(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     """Descarte en lote de pendientes sin producto del foco (`docs/decisions.md`,

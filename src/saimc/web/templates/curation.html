@@ -248,6 +248,25 @@
       </summary>
 
       <div class="m3-stack" style="gap:16px">
+        {#
+          Asistencia del modelo, SOLO cuando hay huecos y hay clave. Va en su
+          propio formulario porque es un POST distinto al de curar, y es POST
+          y no enlace porque gasta plata: una recarga del navegador no puede
+          dispararlo (design.md, D4).
+        #}
+        {% if assist_available %}
+        <form method="post" action="/curation/{{ ingestion.id }}/assist">
+          <button type="submit" class="m3-btn m3-btn-tonal">
+            <span class="m3-icon m3-icon-sm">auto_awesome</span>
+            Completar huecos con IA
+          </button>
+          <span class="m3-help">
+            Consulta al modelo solo los campos que las reglas no resolvieron.
+            Lo que devuelva llega marcado y hay que revisarlo.
+          </span>
+        </form>
+        {% endif %}
+
         <form method="post" action="/curation/{{ ingestion.id }}" id="curation-form">
           {% from "_price_row_card.html" import price_row_card %}
 
@@ -352,6 +371,32 @@
 
 {% block scripts %}
 {% include "_price_row_scripts.html" %}
+
+{#
+  Marca visual de los campos que vinieron del asistente (design.md, D10). El
+  riesgo de esta capa no es que el modelo se equivoque: es que se equivoque de
+  forma convincente sobre un formulario que se recorre rápido. Editar el campo
+  borra la marca — deja de ser una propuesta del modelo y pasa a ser del
+  operador.
+#}
+<script>
+  (function () {
+    var filas = {{ assisted_map | tojson }};
+    Object.keys(filas).forEach(function (indice) {
+      filas[indice].forEach(function (campo) {
+        var nombre = campo === "product" ? "product_id" : campo === "province" ? "province_id" : campo;
+        var el = document.querySelector('[name="' + nombre + '_' + indice + '"]');
+        if (!el) return;
+        el.dataset.assisted = "1";
+        el.addEventListener("input", function () { delete el.dataset.assisted; }, { once: true });
+        el.addEventListener("change", function () { delete el.dataset.assisted; }, { once: true });
+      });
+    });
+  })();
+</script>
+<style>
+  [data-assisted] { outline: 2px solid var(--m3-tertiary, #7d5260); outline-offset: 1px; }
+</style>
 <script>
   // El form manda `row_count` filas indexadas (`product_id_0`, `price_0`, …) y
   // `submit_curation` itera `range(row_count)`, saltándose las vacías. Agregar

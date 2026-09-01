@@ -36,6 +36,8 @@ from saimc.models import (
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
+from saimc.extraction import llm_assist
+from saimc.web.routers import curation
 from saimc.web.routers.curation import _EXTRA_BLANK_ROWS, _last_capture_notice
 
 # --- helpers de armado ------------------------------------------------------
@@ -4119,3 +4121,166 @@ class TestUltimaCaptura:
 
         assert response.status_code == 200
         assert "Última captura:" in response.text
+
+
+class TestAsistenteLLM:
+    """El botón y el endpoint de asistencia (`design.md`, D4 y D10).
+
+    Lo que se prueba acá es el contrato de la interfaz: cuándo se ofrece,
+    cuándo NO se llama, que solo llene huecos y que una falla no deje al
+    operador peor que antes. La calidad de lo que responda el modelo no se
+    prueba acá — se mide contra la cola real.
+    """
+
+    def _pendiente_con_hueco(self, session: Session) -> RawIngestion:
+        """Texto donde las reglas resuelven el producto y dejan la cantidad
+        sin resolver: el caso que el asistente existe para atacar."""
+        _crear_producto(session, name="Pollo", aliases=["pollo congelado"])
+        return _crear_raw_ingestion(
+            session,
+            hash_="hash-asistente-hueco",
+            original_text="pollo congelado a 500",
+        )
+
+    def test_sin_clave_configurada_no_se_ofrece_el_boton(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin clave el asistente no puede hacer nada: ofrecerlo sería
+        prometer algo que no va a pasar."""
+        self._pendiente_con_hueco(session)
+
+        assert "/assist" not in client.get("/curation").text
+
+    def test_con_clave_y_huecos_se_ofrece(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._pendiente_con_hueco(session)
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+
+        assert "/assist" in client.get("/curation").text
+
+    def test_abrir_la_cola_no_llama_a_la_api(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """La garantía de costo: cargar la página no gasta un peso."""
+        self._pendiente_con_hueco(session)
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+        llamadas: list[object] = []
+        monkeypatch.setattr(
+            curation,
+            "propose_missing",
+            lambda *a, **k: llamadas.append(1) or llm_assist.AssistedFields(),
+        )
+
+        client.get("/curation")
+
+        assert llamadas == []
+
+    def test_el_asistente_llena_el_hueco(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente_con_hueco(session)
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+        monkeypatch.setattr(
+            curation,
+            "propose_missing",
+            lambda *a, **k: llm_assist.AssistedFields(quantity=Decimal("40"), unit="lb"),
+        )
+
+        texto = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'value="40"' in texto
+
+    def test_no_pisa_lo_que_las_reglas_ya_resolvieron(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """La garantía de D1: el modelo no puede degradar un campo que ya
+        estaba bien. Acá responde un precio distinto y se ignora."""
+        ingestion = self._pendiente_con_hueco(session)
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+        monkeypatch.setattr(
+            curation,
+            "propose_missing",
+            lambda *a, **k: llm_assist.AssistedFields(price=Decimal("999")),
+        )
+
+        texto = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'value="500"' in texto
+        assert 'value="999"' not in texto
+
+    def test_una_asistencia_fallida_deja_el_formulario_usable(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente_con_hueco(session)
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+        monkeypatch.setattr(
+            curation, "propose_missing", lambda *a, **k: llm_assist.AssistedFields()
+        )
+
+        response = client.post(f"/curation/{ingestion.id}/assist")
+
+        assert response.status_code == 200
+        assert 'value="500"' in response.text
+
+    def test_los_campos_asistidos_quedan_marcados(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """D10: el riesgo no es que el modelo se equivoque, es que se
+        equivoque de forma convincente sobre un formulario que se recorre
+        rápido. La marca es lo que sostiene la revisión."""
+        ingestion = self._pendiente_con_hueco(session)
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+        monkeypatch.setattr(
+            curation,
+            "propose_missing",
+            lambda *a, **k: llm_assist.AssistedFields(quantity=Decimal("40")),
+        )
+
+        texto = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert "data-assisted" in texto
+
+    def test_sin_clave_el_endpoint_no_llama_pero_responde(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Aunque alguien llegue al endpoint a mano, sin clave no se gasta."""
+        ingestion = self._pendiente_con_hueco(session)
+        llamadas: list[object] = []
+        monkeypatch.setattr(
+            curation,
+            "propose_missing",
+            lambda *a, **k: llamadas.append(1) or llm_assist.AssistedFields(),
+        )
+
+        response = client.post(f"/curation/{ingestion.id}/assist")
+
+        assert response.status_code == 200
+        assert llamadas == []

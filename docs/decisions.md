@@ -5741,3 +5741,45 @@ próximo intento repita el mismo camino. Lo que queda es exactamente lo que
 diccionarios agotaron su margen barato en cantidad/unidad y provincia de
 imagen; el siguiente lever es un LLM sobre lo que las reglas no resuelven,
 con confirmación humana — no otra regex.
+
+## 2026-09-01 — Asistente de extracción por LLM: solo huecos, solo a pedido, solo texto redactado
+
+Contexto: tres intentos de mejorar las reglas se midieron y se descartaron el
+2026-08-31 (arbitraje de precio, y dos rescates de «línea huérfana»). Cambiar
+el OCR a RapidOCR subió la presencia del precio en el texto de 58,2% a 78,6%
+pero la extracción completa solo de 43,5% a 44,2%: quedaron ~21 puntos entre
+«el número está en el texto» y «el motor lo agarra». Es el punto donde §6.1 y
+`EXT-07` dejan de ser prematuros — «LLM únicamente para los casos que las
+reglas no resuelven, con confirmación humana».
+
+Decisión: `saimc/extraction/llm_assist.py` + `POST /curation/{id}/assist`,
+implementado en cinco commits (`openspec/changes/llm-extraction-assist/`).
+
+- **Solo huecos.** Se le piden los campos que `propose_all` dejó en `None`, y
+  no puede pisar uno resuelto. `currency` queda afuera: §6.1 manda inferir CUP
+  y nunca está vacía.
+- **Solo texto redactado.** `redact_personal_data()` corre en el borde de la
+  llamada, no solo antes de guardar. La imagen nunca sale del VPS.
+- **Solo a pedido.** Un botón, nunca automático al abrir un pendiente. El costo
+  lo decide el operador anuncio por anuncio.
+- **Catálogos cerrados, validados de nuevo del lado nuestro.** Un producto,
+  provincia o unidad que no resuelva se descarta como si no hubiera contestado.
+  Nada se da de alta desde la salida del modelo.
+- **Registro de solo-anexado por invocación**, en `data/` (no en `docs/` como
+  `h0-runs.jsonl`: son ~600 líneas al mes atadas a ids de producción).
+- **H0 se mide sobre el conjunto NO asistido.** Es lo único comparable con el
+  histórico. Consecuencia asumida: un anuncio asistido no suma al umbral de 300.
+
+Descartado: (a) un modelo de visión sobre la imagen cruda — resolvería mejor el
+problema de layout, pero mandaría a un tercero los píxeles con el teléfono del
+anunciante, una categoría que `spec-map.md` «Contradicción 1» nunca evaluó
+porque la acota a publicación; (b) un modelo local — el VPS tiene 2 vCPU, sin
+GPU y ~431 MB libres; (c) disparo automático o en lote — costo sin control del
+operador, y la decisión cerrada 3 prohíbe la cola que haría falta.
+
+Consecuencia: 1093 tests verdes. Dependencia y clave **ambas opcionales**: sin
+ellas el botón no se renderiza y la cola funciona igual que antes. Costo ~$1,86
+al mes con Sonnet 5, **adicional al plan Pro** (`docs/costos.md`). El riesgo
+vivo es el rubber-stamping: el registro lo hace detectable después, la marca
+visual lo hace menos probable en el momento, y ninguno de los dos lo hace
+imposible.
