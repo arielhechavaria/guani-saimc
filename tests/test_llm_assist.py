@@ -400,6 +400,7 @@ class _ClienteFalso:
     def __init__(self, texto: str | None = None, error: Exception | None = None):
         self.texto = texto
         self.error = error
+        self.usage: tuple[int, int] | None = None
         self.llamadas: list[dict] = []
         self.messages = self
 
@@ -408,7 +409,14 @@ class _ClienteFalso:
         if self.error is not None:
             raise self.error
         bloque = type("Bloque", (), {"type": "text", "text": self.texto})()
-        return type("Respuesta", (), {"content": [bloque]})()
+        usage = (
+            type("Uso", (), {
+                "input_tokens": self.usage[0], "output_tokens": self.usage[1]
+            })()
+            if self.usage is not None
+            else None
+        )
+        return type("Respuesta", (), {"content": [bloque], "usage": usage})()
 
 
 class TestLlamadaYDegradacion:
@@ -793,3 +801,216 @@ class TestRegistroDeInvocaciones:
         )
 
         assert resultado.quantity == Decimal("5")
+
+
+class TestConsumoYFallas:
+    """El registro tiene que poder responder dos preguntas del operador:
+    cuánto llevo gastado, y por qué están fallando las llamadas.
+
+    Hasta este slice guardaba solo `degraded: true`, con lo cual quedarse sin
+    saldo, perder la red y que expire el timeout eran indistinguibles.
+    """
+
+    def test_guarda_los_tokens_consumidos(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        log = tmp_path / "assist.jsonl"
+        cliente = _ClienteFalso(texto='{"quantity": 25}')
+        cliente.usage = (1200, 80)
+
+        llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=cliente,
+            ingestion_id="ing-1",
+            log_path=log,
+        )
+
+        corrida = llm_assist.read_assist_runs(log)[0]
+        assert corrida.input_tokens == 1200
+        assert corrida.output_tokens == 80
+
+    def test_una_respuesta_sin_usage_no_rompe(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El consumo es telemetría: que falte no puede tumbar la asistencia."""
+        log = tmp_path / "assist.jsonl"
+
+        resultado = llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(texto='{"quantity": 25}'),
+            ingestion_id="ing-1",
+            log_path=log,
+        )
+
+        assert resultado.quantity == Decimal("25")
+        assert llm_assist.read_assist_runs(log)[0].input_tokens == 0
+
+    @pytest.mark.parametrize(
+        ("error", "esperado"),
+        [
+            (TimeoutError("expiró"), "timeout"),
+            (ConnectionError("sin red"), "network"),
+            (RuntimeError("boom"), "other"),
+        ],
+    )
+    def test_clasifica_el_tipo_de_falla(
+        self,
+        error: Exception,
+        esperado: str,
+        tmp_path,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        log = tmp_path / "assist.jsonl"
+
+        llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(error=error),
+            ingestion_id="ing-1",
+            log_path=log,
+        )
+
+        assert llm_assist.read_assist_runs(log)[0].failure == esperado
+
+    def test_reconoce_el_saldo_agotado(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """La pregunta que motivó este slice: distinguir «se acabó la tarjeta»
+        de cualquier otra falla."""
+        log = tmp_path / "assist.jsonl"
+        error = RuntimeError("Your credit balance is too low to access the API")
+
+        llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(error=error),
+            ingestion_id="ing-1",
+            log_path=log,
+        )
+
+        assert llm_assist.read_assist_runs(log)[0].failure == "credit"
+
+    def test_una_llamada_exitosa_no_tiene_falla(
+        self, tmp_path, products: list[Product], provinces: list[Province]
+    ) -> None:
+        log = tmp_path / "assist.jsonl"
+
+        llm_assist.propose_missing(
+            "algo",
+            frozenset({"quantity"}),
+            products,
+            provinces,
+            api_key="k",
+            client=_ClienteFalso(texto='{"quantity": 25}'),
+            ingestion_id="ing-1",
+            log_path=log,
+        )
+
+        assert llm_assist.read_assist_runs(log)[0].failure == ""
+
+
+class TestResumenDeConsumo:
+    """Lo que `/control` muestra: cuántas llamadas, cuánto costaron y si el
+    saldo se agotó."""
+
+    def _linea(self, **campos: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "timestamp": "2026-09-01T10:00:00+00:00",
+            "ingestion_id": "ing-1",
+            "model": "claude-sonnet-5",
+            "requested": ["quantity"],
+            "answered": ["quantity"],
+            "dropped": [],
+            "degraded": False,
+            "input_tokens": 1000,
+            "output_tokens": 100,
+            "failure": "",
+        }
+        base.update(campos)
+        return base
+
+    def test_suma_llamadas_y_tokens(self, tmp_path) -> None:
+        log = tmp_path / "assist.jsonl"
+        for _ in range(3):
+            llm_assist.append_assist_run(self._linea(), log)
+
+        resumen = llm_assist.consumption_summary(log)
+
+        assert resumen.calls == 3
+        assert resumen.input_tokens == 3000
+        assert resumen.output_tokens == 300
+
+    def test_estima_el_costo_con_las_tarifas_del_modelo(self, tmp_path) -> None:
+        """1M de entrada a $2 y 1M de salida a $10 para Sonnet 5, las mismas
+        tarifas que publica `docs/costos.md`."""
+        log = tmp_path / "assist.jsonl"
+        llm_assist.append_assist_run(
+            self._linea(input_tokens=1_000_000, output_tokens=1_000_000), log
+        )
+
+        resumen = llm_assist.consumption_summary(log)
+
+        assert resumen.estimated_usd == pytest.approx(12.0)
+
+    def test_un_modelo_desconocido_no_rompe_la_estimacion(self, tmp_path) -> None:
+        """Cambiar de modelo por configuración no puede tumbar `/control`. Lo
+        que no se sabe tarifar no se suma, y se declara."""
+        log = tmp_path / "assist.jsonl"
+        llm_assist.append_assist_run(self._linea(model="modelo-nuevo"), log)
+
+        resumen = llm_assist.consumption_summary(log)
+
+        assert resumen.calls == 1
+        assert resumen.untariffed_calls == 1
+
+    def test_detecta_que_el_saldo_se_agoto(self, tmp_path) -> None:
+        log = tmp_path / "assist.jsonl"
+        llm_assist.append_assist_run(self._linea(), log)
+        llm_assist.append_assist_run(
+            self._linea(degraded=True, failure="credit"), log
+        )
+
+        assert llm_assist.consumption_summary(log).out_of_credit is True
+
+    def test_una_falla_vieja_seguida_de_exito_no_alarma(self, tmp_path) -> None:
+        """Lo que importa es si está fallando AHORA, no si alguna vez falló."""
+        log = tmp_path / "assist.jsonl"
+        llm_assist.append_assist_run(
+            self._linea(degraded=True, failure="credit"), log
+        )
+        llm_assist.append_assist_run(self._linea(), log)
+
+        assert llm_assist.consumption_summary(log).out_of_credit is False
+
+    def test_un_registro_vacio_no_rompe(self, tmp_path) -> None:
+        resumen = llm_assist.consumption_summary(tmp_path / "no-existe.jsonl")
+
+        assert resumen.calls == 0
+        assert resumen.estimated_usd == 0
+        assert resumen.out_of_credit is False
+
+    def test_cuenta_las_fallas_por_tipo(self, tmp_path) -> None:
+        log = tmp_path / "assist.jsonl"
+        llm_assist.append_assist_run(self._linea(degraded=True, failure="timeout"), log)
+        llm_assist.append_assist_run(self._linea(degraded=True, failure="timeout"), log)
+        llm_assist.append_assist_run(self._linea(), log)
+
+        resumen = llm_assist.consumption_summary(log)
+
+        assert resumen.failures == {"timeout": 2}
+        assert resumen.calls == 3

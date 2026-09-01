@@ -23,11 +23,12 @@ blanco, nunca estimado por aproximación.
 
 ---
 
-## Asistente de extracción por LLM (propuesto, todavía no construido)
+## Asistente de extracción por LLM (construido, apagado hasta que se configure)
 
 Corresponde a `openspec/changes/llm-extraction-assist/`. El modelo solo entra
 donde las reglas ya no resolvieron, y **solo cuando vos apretás el botón** — el
-costo no corre solo.
+costo no corre solo. Sin clave configurada el botón no aparece y no se gasta
+nada; los pasos para encenderlo están en el runbook del asistente.
 
 ### Supuestos de la cuenta
 
@@ -115,6 +116,16 @@ aplicaba al modelo local descartado, no a esto.
 gratis.
 
 ---
+
+## Dónde ver el gasto real
+
+Desde que el asistente hace su primera llamada, `/control` muestra la sección
+**«Consumo del asistente»** con las invocaciones, los tokens y el gasto
+estimado, calculado con las mismas tarifas de la tabla de arriba.
+
+**Las tarifas están en dos lugares**: acá para leerlas, y en
+`saimc/extraction/llm_assist.py` para calcular. Si cambian, hay que moverlas
+en los dos — está anotado también del lado del código.
 
 ## Cuándo actualizar este documento
 

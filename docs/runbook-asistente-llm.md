@@ -137,6 +137,26 @@ de la corrida.
 
 ---
 
+## Dónde mirar el consumo
+
+Una vez que hagas la primera llamada, `/control` suma la sección **«Consumo del
+asistente»**: invocaciones, gasto estimado, tokens y las fallas por tipo.
+
+Es el gasto **de SAIMC**, medido sobre lo que la propia API reportó consumir en
+cada respuesta — no el total de tu cuenta. Si algún día usás la misma clave
+para otra cosa, ese número queda por debajo.
+
+**Si el saldo se agota, la sección lo dice con un aviso destacado.** Importa
+porque de otro modo es invisible: quedarse sin créditos hace que el botón deje
+de proponer, pero la cola sigue funcionando igual y nada más cambia en
+pantalla.
+
+Una salvedad sobre ese aviso: reconocer «saldo insuficiente» entre todas las
+fallas posibles es una calibración razonada, **no verificada contra un error
+real** de la API — hace falta una cuenta sin créditos para producirlo. Si
+alguna vez te quedás sin saldo y la sección lo reporta como falla genérica en
+vez de decirlo, avisá: se ajusta con el mensaje real en la mano.
+
 ## Cómo apagarlo
 
 Sacá `SAIMC_ANTHROPIC_API_KEY` del `.env` y reiniciá. El botón desaparece y la

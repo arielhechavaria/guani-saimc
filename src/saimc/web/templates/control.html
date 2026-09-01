@@ -83,6 +83,62 @@
     </div>
   </section>
 
+  {% if assist.calls %}
+  <!-- ---------- 2bis. Consumo del asistente ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Consumo del asistente</h2>
+      <span class="m3-sm m3-muted">
+        gasto de SAIMC medido sobre lo que la API reportó consumir — no el
+        total de la cuenta. Tarifas y supuestos en el documento de costos.
+      </span>
+    </div>
+
+    {% if assist.out_of_credit %}
+    {# La última llamada falló por saldo. Sin este aviso el operador no tiene
+       cómo enterarse: la cola sigue funcionando igual, que es justo lo que lo
+       vuelve invisible. #}
+    <p class="m3-chip m3-chip-warn">
+      La última llamada falló por <strong>saldo insuficiente</strong>. Cargá
+      créditos; mientras tanto el botón no propone nada y la curaduría sigue a
+      mano, como siempre.
+    </p>
+    {% endif %}
+
+    <div class="m3-stats">
+      <div class="m3-stat">
+        <div class="m3-stat-label">Invocaciones</div>
+        <div class="m3-stat-value">{{ assist.calls }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Gasto estimado</div>
+        <div class="m3-stat-value">${{ "%.2f"|format(assist.estimated_usd) }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Tokens de entrada</div>
+        <div class="m3-stat-value">{{ assist.input_tokens }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Tokens de salida</div>
+        <div class="m3-stat-value">{{ assist.output_tokens }}</div>
+      </div>
+    </div>
+
+    {% if assist.failures %}
+    <p class="m3-sm m3-muted">
+      Fallas: {% for tipo, n in assist.failures.items() %}{{ n }} {{ tipo }}{{ ", " if not loop.last }}{% endfor %}
+    </p>
+    {% endif %}
+
+    {% if assist.untariffed_calls %}
+    <p class="m3-sm m3-muted">
+      {{ assist.untariffed_calls }} llamada{{ "s" if assist.untariffed_calls != 1 }}
+      con un modelo sin tarifa cargada: no entran en el gasto estimado.
+    </p>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <!-- ---------- 2. Historial de H0 (spec.md §12.5) ---------- -->
   {% macro h0pct(value) %}{% if value is not none %}{{ "%.1f"|format(value * 100) }}%{% else %}—{% endif %}{% endmacro %}
   <section>

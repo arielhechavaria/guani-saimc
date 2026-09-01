@@ -6,6 +6,11 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
+
+from pathlib import Path
+
+from saimc.config import get_settings
+from saimc.extraction import llm_assist
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -1004,3 +1009,69 @@ class TestHistorialDeH0:
 
         assert "/ 300" in texto
         assert "árbol sucio" in texto
+
+
+class TestConsumoDelAsistente:
+    """`/control` responde las dos preguntas del operador: cuánto llevo
+    gastado, y si se agotó el saldo."""
+
+    def _log(self, tmp_path, *lineas: dict) -> Path:
+        ruta = tmp_path / "assist.jsonl"
+        for linea in lineas:
+            base = {
+                "timestamp": "2026-09-01T10:00:00+00:00",
+                "ingestion_id": "ing-1",
+                "model": "claude-sonnet-5",
+                "requested": ["quantity"],
+                "answered": ["quantity"],
+                "dropped": [],
+                "degraded": False,
+                "input_tokens": 1000,
+                "output_tokens": 100,
+                "failure": "",
+            }
+            base.update(linea)
+            llm_assist.append_assist_run(base, ruta)
+        return ruta
+
+    def test_sin_invocaciones_no_muestra_la_seccion(
+        self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sin asistente conectado la sección sería ruido en una vista que ya
+        tiene diez."""
+        monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(tmp_path / "vacio.jsonl"))
+        get_settings.cache_clear()
+
+        assert "Consumo del asistente" not in client.get("/control").text
+
+    def test_muestra_llamadas_y_gasto_estimado(
+        self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ruta = self._log(tmp_path, {}, {}, {})
+        monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(ruta))
+        get_settings.cache_clear()
+
+        texto = client.get("/control").text
+
+        assert "Consumo del asistente" in texto
+        assert "3" in texto
+
+    def test_avisa_cuando_se_agoto_el_saldo(
+        self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ruta = self._log(tmp_path, {}, {"degraded": True, "failure": "credit"})
+        monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(ruta))
+        get_settings.cache_clear()
+
+        texto = client.get("/control").text
+
+        assert "saldo" in texto.lower()
+
+    def test_sin_saldo_agotado_no_avisa(
+        self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ruta = self._log(tmp_path, {}, {})
+        monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(ruta))
+        get_settings.cache_clear()
+
+        assert "sin saldo" not in client.get("/control").text.lower()

@@ -254,6 +254,15 @@ class AssistRun:
     # timeout, cuerpo ilegible). Se registra igual: un intento fallido también
     # es información operativa.
     degraded: bool
+    # Consumo real que reportó la API. En 0 cuando la llamada falló antes de
+    # consumir, o cuando la respuesta no trajo `usage`.
+    input_tokens: int
+    output_tokens: int
+    # Por qué falló, cuando falló: "credit", "timeout", "network", "auth" u
+    # "other". Vacío en una llamada exitosa. Sin esto, quedarse sin saldo y
+    # perder la red eran indistinguibles — que es justo lo que el operador
+    # necesitaba saber.
+    failure: str
 
 
 def append_assist_run(record: dict[str, Any], path: Path) -> None:
@@ -270,6 +279,14 @@ def append_assist_run(record: dict[str, Any], path: Path) -> None:
             handle.write(line + "\n")
     except OSError:
         return
+
+
+def _as_count(value: object) -> int:
+    """Entero no negativo, o 0. `bool` descartado a propósito, como en
+    `measure._as_int`."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, value)
 
 
 def read_assist_runs(path: Path) -> list[AssistRun]:
@@ -299,6 +316,9 @@ def read_assist_runs(path: Path) -> list[AssistRun]:
                 answered=[str(f) for f in record.get("answered", []) or []],
                 dropped=[str(f) for f in record.get("dropped", []) or []],
                 degraded=bool(record.get("degraded", False)),
+                input_tokens=_as_count(record.get("input_tokens")),
+                output_tokens=_as_count(record.get("output_tokens")),
+                failure=str(record.get("failure", "")),
             )
         )
     return runs
@@ -311,6 +331,102 @@ def assisted_ingestion_ids(path: Path) -> set[str]:
     es el que sigue siendo comparable con las corridas anteriores.
     """
     return {run.ingestion_id for run in read_assist_runs(path)}
+
+
+# --- consumo y fallas ------------------------------------------------------
+#
+# Las tarifas por millón de tokens. **`docs/costos.md` lleva estos mismos
+# números para que el operador los lea**, así que los dos lugares se mueven
+# juntos: acá se calcula, allá se explica. Un modelo que no esté en la tabla
+# no se tarifa y se declara aparte en vez de estimarse mal.
+_RATES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-haiku-4-5": (1.0, 5.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-opus-5": (5.0, 25.0),
+}
+
+# Señales para reconocer que se agotó el saldo. Es una **calibración
+# razonada, no una certeza**: no se pudo verificar contra un error real de la
+# API (hace falta una cuenta sin créditos para producirlo). El primer caso
+# real puede exigir ajustar esto, y eso es esperable, no un error de diseño —
+# mismo criterio que `ingestion.whatsapp_webhook` declaró para el payload de
+# WAHA. Mientras tanto la falla cae en "other", que no miente: dice que falló
+# sin afirmar por qué.
+_CREDIT_SIGNALS = ("credit balance", "insufficient", "quota", "billing")
+
+
+def classify_failure(error: BaseException) -> str:
+    """Por qué falló la llamada: credit / timeout / network / auth / other.
+
+    Clasifica por el mensaje y el status, no por la clase de excepción del
+    SDK, porque este módulo no importa `anthropic` (es opcional) y no puede
+    referirse a sus tipos.
+    """
+    mensaje = str(error).lower()
+    status = getattr(error, "status_code", None)
+
+    if any(signal in mensaje for signal in _CREDIT_SIGNALS):
+        return "credit"
+    if isinstance(error, TimeoutError) or "timeout" in mensaje or "timed out" in mensaje:
+        return "timeout"
+    if status in (401, 403) or "authentication" in mensaje or "api key" in mensaje:
+        return "auth"
+    if isinstance(error, ConnectionError) or "connection" in mensaje:
+        return "network"
+    return "other"
+
+
+@dataclass(frozen=True)
+class ConsumptionSummary:
+    """Lo que `/control` muestra del asistente."""
+
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    estimated_usd: float
+    # Llamadas con un modelo que no está en la tabla de tarifas: se cuentan
+    # pero no se estiman, para que el número de arriba no mienta.
+    untariffed_calls: int
+    # Fallas por tipo, solo las que hubo.
+    failures: dict[str, int]
+    # `True` cuando la ÚLTIMA llamada falló por saldo. Lo que importa es si
+    # está fallando ahora, no si alguna vez falló.
+    out_of_credit: bool
+
+
+def consumption_summary(path: Path) -> ConsumptionSummary:
+    """Resume el registro de invocaciones: cuánto se usó y cómo viene fallando."""
+    runs = read_assist_runs(path)
+    if not runs:
+        return ConsumptionSummary(0, 0, 0, 0.0, 0, {}, False)
+
+    entrada = sum(r.input_tokens for r in runs)
+    salida = sum(r.output_tokens for r in runs)
+
+    total = 0.0
+    sin_tarifa = 0
+    for run in runs:
+        tarifa = _RATES_USD_PER_MTOK.get(run.model)
+        if tarifa is None:
+            sin_tarifa += 1
+            continue
+        total += (run.input_tokens / 1_000_000) * tarifa[0]
+        total += (run.output_tokens / 1_000_000) * tarifa[1]
+
+    fallas: dict[str, int] = {}
+    for run in runs:
+        if run.failure:
+            fallas[run.failure] = fallas.get(run.failure, 0) + 1
+
+    return ConsumptionSummary(
+        calls=len(runs),
+        input_tokens=entrada,
+        output_tokens=salida,
+        estimated_usd=total,
+        untariffed_calls=sin_tarifa,
+        failures=fallas,
+        out_of_credit=runs[-1].failure == "credit",
+    )
 
 
 # --- la llamada ------------------------------------------------------------
@@ -353,6 +469,21 @@ def _build_prompt(
         f"Provincias: {nombres_provincia}\n"
         f"Unidades válidas: {', '.join(UNITS)}\n\n"
         f"Anuncio:\n{text}"
+    )
+
+
+def _usage_of(response: object) -> tuple[int, int]:
+    """Tokens consumidos según la API, o `(0, 0)`.
+
+    El consumo es telemetría: que la respuesta no lo traiga no puede tumbar la
+    asistencia, así que todo lo inesperado degrada a cero.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return (0, 0)
+    return (
+        _as_count(getattr(usage, "input_tokens", 0)),
+        _as_count(getattr(usage, "output_tokens", 0)),
     )
 
 
@@ -404,7 +535,13 @@ def propose_missing(
         # intentos reales, no configuraciones ausentes ni filas sin huecos.
         return AssistedFields()
 
-    def _registrar(result: AssistedFields, *, degraded: bool) -> AssistedFields:
+    def _registrar(
+        result: AssistedFields,
+        *,
+        degraded: bool,
+        usage: tuple[int, int] = (0, 0),
+        failure: str = "",
+    ) -> AssistedFields:
         """Deja el rastro y devuelve el resultado.
 
         Todo camino de salida de acá para abajo pasa por esta función: es lo
@@ -421,6 +558,9 @@ def propose_missing(
                     "answered": sorted(result.answered),
                     "dropped": sorted(result.dropped),
                     "degraded": degraded,
+                    "input_tokens": usage[0],
+                    "output_tokens": usage[1],
+                    "failure": failure,
                 },
                 log_path,
             )
@@ -431,10 +571,12 @@ def propose_missing(
             import anthropic
 
             client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
-        except Exception:
+        except Exception as error:
             # Paquete ausente o cliente que no se puede construir: este motor
             # no es usable en esta máquina, que es la condición de degradación.
-            return _registrar(AssistedFields(), degraded=True)
+            return _registrar(
+                AssistedFields(), degraded=True, failure=classify_failure(error)
+            )
 
     from saimc.privacy import redact_personal_data
 
@@ -461,18 +603,27 @@ def propose_missing(
                 }
             },
         )
-    except Exception:
-        return _registrar(AssistedFields(), degraded=True)
+    except Exception as error:
+        return _registrar(
+            AssistedFields(), degraded=True, failure=classify_failure(error)
+        )
 
+    consumo = _usage_of(response)
     raw = _response_text(response)
     if not raw:
-        return _registrar(AssistedFields(), degraded=True)
+        return _registrar(
+            AssistedFields(), degraded=True, usage=consumo, failure="other"
+        )
 
     try:
         body = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
-        return _registrar(AssistedFields(), degraded=True)
+        return _registrar(
+            AssistedFields(), degraded=True, usage=consumo, failure="other"
+        )
 
     return _registrar(
-        parse_response(body, gaps, products, provinces), degraded=False
+        parse_response(body, gaps, products, provinces),
+        degraded=False,
+        usage=consumo,
     )

@@ -28,6 +28,8 @@ from saimc.cells import (
     detect_basis_suspects,
 )
 from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
+from saimc.config import get_settings
+from saimc.extraction.llm_assist import consumption_summary
 from saimc.extraction.measure import read_h0_runs
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
@@ -154,6 +156,10 @@ def control_panel(
             # orden cronológico. Lee `docs/h0-runs.jsonl` en cada carga (es un
             # archivo chico); degrada a lista vacía si todavía no existe.
             "h0_runs": read_h0_runs(),
+            # Consumo del asistente. Sale del registro de invocaciones, no de
+            # una API de facturación: es el gasto de SAIMC medido sobre lo que
+            # la propia API reportó consumir, no el total de la cuenta.
+            "assist": consumption_summary(get_settings().llm_assist_log_path),
             "activity": activity,
             "activity_days": _ACTIVITY_DAYS,
             # El máximo de la ventana escala las barras del gráfico. Va acá y
