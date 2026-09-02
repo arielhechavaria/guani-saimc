@@ -447,7 +447,7 @@ code, .m3-num { font-family: var(--m3-mono); }
 
 .m3-actionbar {
   position: sticky; bottom: 0; z-index: 15;
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--m3-surface); border-radius: var(--m3-radius-lg);
   padding: 14px 20px;
   box-shadow: 0 -1px 3px rgba(0, 0, 0, .06), var(--m3-elev-3);
@@ -564,4 +564,19 @@ code, .m3-num { font-family: var(--m3-mono); }
 @media (max-width: 720px) {
   .m3-content, .m3-topbar, .m3-topnav { padding-left: 16px; padding-right: 16px; }
   .m3-topnav-item span:last-child { display: none; }
+
+  /* En el teléfono se apilaban DOS barras sticky: .m3-topnav (56px) y, pegada
+     abajo, .m3-topbar con título + subtítulo + stats. Entre las dos se comían
+     casi medio viewport y el formulario de curaduría quedaba espiando por una
+     rendija. La topnav —acá ya solo iconos— se queda fija; la topbar vuelve a
+     fluir con el contenido, como antes de que el rail lateral pasara a barra
+     superior (e25aaec). */
+  .m3-topbar { position: static; }
+  .m3-title { font-size: 22px; line-height: 28px; }
+
+  /* La barra de acciones no envolvía: "Descartar" + "Curar anuncio" (grande)
+     se salían del ancho del teléfono. Con flex-wrap en la regla base, acá se
+     reparten una fila propia a mitad y mitad, sin desbordar nunca. */
+  .m3-actionbar { justify-content: flex-end; }
+  .m3-actionbar .m3-btn { flex: 1 1 auto; }
 }

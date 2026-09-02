@@ -299,3 +299,52 @@ class TestCompresion:
         assert response.status_code == 200
         assert response.headers.get("content-encoding") != "gzip"
         assert "--m3-primary" in response.text
+
+
+class TestVistaMovil:
+    """La barra superior dejó de ser rail lateral y pasó a barra sticky
+    (e25aaec). En el teléfono eso apiló dos barras fijas —.m3-topnav y
+    .m3-topbar— que se comían casi medio viewport, y la barra de acciones de
+    curaduría no envolvía, así que "Descartar" + "Curar anuncio" se salían del
+    ancho. Como el bug del atributo `hidden`, no se ve en el HTML: se afirma
+    sobre el asset.
+    """
+
+    def _css(self) -> str:
+        crudo = Path("src/saimc/web/static/saimc-material.css").read_text(
+            encoding="utf-8"
+        )
+        return re.sub(r"/\*.*?\*/", "", crudo, flags=re.DOTALL)
+
+    def _bloque_movil(self, css: str) -> str:
+        inicio = css.index("@media (max-width: 720px)")
+        resto = css[inicio + 1 :]
+        siguiente = resto.find("@media")
+        return resto if siguiente == -1 else resto[:siguiente]
+
+    def test_la_barra_de_acciones_envuelve(self) -> None:
+        css = self._css()
+        bloque = css[
+            css.index(".m3-actionbar {") : css.index(".m3-actionbar {") + 300
+        ]
+
+        assert "flex-wrap: wrap" in bloque, (
+            "sin flex-wrap, los botones Descartar y Curar anuncio desbordan el "
+            "ancho del teléfono"
+        )
+
+    def test_la_cabecera_de_pagina_no_queda_sticky_en_movil(self) -> None:
+        bloque = self._bloque_movil(self._css())
+
+        assert ".m3-topbar" in bloque and "position: static" in bloque, (
+            ".m3-topnav ya es sticky arriba; si .m3-topbar sigue sticky debajo, "
+            "las dos juntas tapan medio viewport en el teléfono"
+        )
+
+    def test_los_botones_de_accion_se_reparten_la_fila_en_movil(self) -> None:
+        bloque = self._bloque_movil(self._css())
+
+        assert ".m3-actionbar .m3-btn" in bloque and "flex: 1" in bloque, (
+            "en el teléfono los dos botones comparten una fila propia a mitad "
+            "y mitad para no desbordar aun en pantallas de 320px"
+        )

@@ -5850,3 +5850,26 @@ especificación completo y es trabajo de varias sesiones, no un slice.
 Consecuencia: la tarea sale del GitHub Project. Si en algún momento el operador
 necesita tocar alias de provincia con frecuencia y sin deploy, se reabre como
 cambio especificado con UI incluida; la columna suelta no se implementa.
+
+## 2026-09-02 — La vista móvil se parchea, no se revierte el experimento de la barra superior
+Contexto: el operador reportó que la vista móvil «se rompió», sobre todo en
+`/curation`. Dos causas, las dos del commit `e25aaec` que cambió el rail
+lateral por una barra superior. Primero: el rail viejo era `display:none` en
+móvil, así que en el teléfono había una sola barra fija; la barra nueva
+(`.m3-topnav`, 56px sticky) más `.m3-topbar` (sticky en `top:56px`, con título
++ subtítulo + stats) apilaban ~230px de cromo fijo sobre un viewport de ~640px.
+Segundo: `.m3-actionbar` es `display:flex` sin `flex-wrap`, así que «Descartar»
++ «Curar anuncio» (grande) se salían del ancho del teléfono.
+Decisión: parche CSS, no revertir `e25aaec`. `flex-wrap: wrap` en la regla base
+de `.m3-actionbar`; y en `@media (max-width: 720px)`: `.m3-topbar` vuelve a
+`position: static`, el título baja a 22px, y los dos botones de acción se
+reparten una fila propia (`flex: 1 1 auto`). La barra superior de 56px —ya solo
+iconos en móvil— se queda fija.
+Descartado: revertir el experimento de la barra superior. `e25aaec` dejó dicho
+que revertir era un commit si no convencía, pero el problema es solo el
+tratamiento móvil, no la barra en sí; en escritorio funciona y el operador no
+pidió volver al rail. Revertir cambiaría escritorio para arreglar teléfono.
+Consecuencia: 1169 tests verdes (+3, todos sobre el CSS con el mismo patrón que
+el test del atributo `hidden`). Los 2 fallos de `test_public_filter.py` siguen
+preexistentes. La barra superior queda como estructura vigente, ya no como
+experimento sin cerrar.
