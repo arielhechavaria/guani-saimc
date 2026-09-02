@@ -5873,3 +5873,44 @@ Consecuencia: 1169 tests verdes (+3, todos sobre el CSS con el mismo patrón que
 el test del atributo `hidden`). Los 2 fallos de `test_public_filter.py` siguen
 preexistentes. La barra superior queda como estructura vigente, ya no como
 experimento sin cerrar.
+
+## 2026-09-02 — Retro-completado de price_basis por inferencia contra el vecindario
+Contexto: la «Matriz de los pilotos» de `/control` mostraba el mismo producto
+como varias series. Medido: de las duplicaciones dentro de un mismo
+producto/provincia/unidad/formato, la causa no era la unidad (kg vs lb, que
+`compute_cells` separa a propósito) sino `price_basis` nulo. Ese campo entró el
+2026-08-21; 132 filas cargadas entre el 10 y el 21 de agosto quedaron sin él y
+`cells.py` las aísla en su propia celda (`unresolved_basis`). Arroz/La Habana
+`kg` minorista aparecía como dos series, n=23 mediana 688,70 y n=20 mediana
+18.460. La regla basada en evidencia (`engine.py:_declared_price_basis`, que lee
+«Sale $X Lb» del anuncio) resolvió 0 de 110: esos avisos viejos escriben «sacos
+de 110 lb a 33 000» y nunca el precio unitario.
+Decisión: `src/saimc/basis_backfill.py`. Para cada fila sin basis se calculan
+las dos lecturas del mismo número —`as_unit` y `as_total = price/quantity`—,
+ambas convertidas a la unidad canónica del producto, y gana la que queda
+proporcionalmente más cerca de la mediana del vecindario (producto × provincia
+× formato de venta × unidad canónica). Sin umbral de precio, de margen ni de
+muestra mínima: §12.6. Sin vecindario no hay veredicto y la fila se queda nula.
+El vecindario solo lo forman filas `quantity == 1` o `price_basis == 'total'`
+—misma definición de «no ambigua» que `detect_basis_suspects`—: una fila
+`price_basis == 'unit'` con `quantity != 1` es justo la forma que se puede
+haber curado mal y no vota (un `24800 / 40 lb` de Pollo marcado `unit` movía la
+mediana de su celda de 710 a 12.755 CUP/lb). El valor inferido NO es un valor
+curado: cada escritura deja su rastro en `data/basis-backfill.jsonl`, log de
+solo-anexado, mismo criterio que `data/llm-assist-log.jsonl` (design.md D6) —
+sin columna nueva, sin migración. Aplicado una vez: 91 de 110 filas resueltas
+(87 `total`, 4 `unit`), 19 sin vecindario quedan nulas. La matriz pasó de 97 a
+86 celdas; Arroz/La Habana `kg` minorista es ahora una sola serie n=43.
+Descartado: (a) escribir el basis inferido en la columna sin marca de
+procedencia — lo vuelve indistinguible de lo curado y contamina la base de
+medición de H0; (b) curar las 110 a mano por la cola — garantía idéntica al
+resto pero una sesión entera de trabajo para deuda vieja; (c) excluir las 132
+de las vistas agregadas — deja fuera dato recuperable.
+Consecuencia: 1185 tests verdes (+16). Los 2 fallos de `test_public_filter.py`
+siguen preexistentes (2026-08-30), ajenos a este cambio. `measure.py` todavía no
+compara `price_basis`, así que el log no filtra ninguna métrica hoy; existe para
+cuando lo haga. Fuera de alcance: unas pocas filas con precio mal tecleado
+(ceros de más, ej. Pollo/La Habana con lectura de 465.500 CUP/lb) pasaron de
+celdas n=1 aisladas a la serie normalizada, donde inflan el `max` pero no la
+mediana; son un problema de calidad de dato distinto, que cubren
+`detect_basis_suspects` y la revisión del operador.

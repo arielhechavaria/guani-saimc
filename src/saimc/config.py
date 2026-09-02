@@ -100,6 +100,14 @@ class Settings(BaseSettings):
     # medir H0 sobre el conjunto no asistido (design.md, D6).
     llm_assist_log_path: Path = Path("data/llm-assist-log.jsonl")
 
+    # Procedencia del `price_basis` retro-completado por inferencia en las
+    # filas anteriores al campo (docs/decisions.md, 2026-09-02). Mismo lugar y
+    # mismo motivo que `llm_assist_log_path`: ata ids de la base de producción,
+    # así que vive bajo `data/` —que `.gitignore` excluye— y no en `docs/`. Es
+    # lo que mantiene distinguible el basis inferido del que curó el operador
+    # sin necesidad de una columna nueva.
+    basis_backfill_log_path: Path = Path("data/basis-backfill.jsonl")
+
 
 @lru_cache
 def get_settings() -> Settings:
