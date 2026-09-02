@@ -1,5 +1,6 @@
 """Vista de control del operador — `GET /control`."""
 
+import re
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -19,6 +20,7 @@ from saimc.extraction.measure import H0RunSummary
 from saimc.models import Currency, PriceHistory, Product, Province, RawIngestion, SaleFormat
 from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
 from saimc.web.app import app
+from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
 from saimc.web.routers import control
 
@@ -691,6 +693,188 @@ class TestColumnaNEnlazaAlHistorial:
             "&currency=USD&unit=lb&sale_format=wholesale" in response.text
         )
         assert "sin convertir" in response.text
+
+
+class TestDrillDownAislaLaCeldaExacta:
+    """El link `n =` tiene que llevar a *las filas de esa celda*, ni una más.
+
+    Desde que la matriz funde kg con lb (2026-09-02) la celda ya no se
+    identifica por la columna cruda `prices_history.unit`: `/curation/history`
+    recomputa `resolve_row` fila por fila y filtra por la unidad efectiva más
+    los tres flags (`unquantified`, `unresolved_basis`, `unconverted_unit`).
+    Antes de esto, el link de una celda de una sola observación caía sobre
+    todo el bloque producto/provincia/formato.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _sin_auth(self) -> Iterator[None]:
+        # `/curation/history` exige operador; su auth tiene cobertura propia
+        # en test_curation_auth.py.
+        app.dependency_overrides[require_operator] = lambda: None
+        yield
+        app.dependency_overrides.pop(require_operator, None)
+
+    def _curado(
+        self,
+        session: Session,
+        *,
+        product: Product,
+        province: Province,
+        ref: str,
+        price: str,
+        unit: str,
+        sale_format: str,
+        quantity: Decimal | None = Decimal("1"),
+        price_basis: str | None = None,
+    ) -> RawIngestion:
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path=f"raw/{ref}.txt",
+            content_hash=f"hash-{ref}",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+            source_reference=ref,
+        )
+        session.add(origen)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=product.id,
+                province_id=province.id,
+                price=Decimal(price),
+                currency=Currency.CUP.value,
+                unit=unit,
+                quantity=quantity,
+                price_basis=price_basis,
+                sale_format=sale_format,
+                source_id=origen.id,
+            )
+        )
+        session.commit()
+        return origen
+
+    @staticmethod
+    def _href(response_text: str, *, contains: str) -> str:
+        matches = re.findall(
+            r'href="(/curation/history\?product=Pollo[^"]*)"', response_text
+        )
+        for href in matches:
+            if contains in href:
+                return href.replace("&amp;", "&")
+        raise AssertionError(f"no hay link de celda que contenga {contains!r}")
+
+    @staticmethod
+    def _cuenta_anuncios(response_text: str) -> int:
+        return len(re.findall(r'href="/curation/[0-9a-f-]+/edit"', response_text))
+
+    def test_una_celda_resuelta_no_arrastra_la_celda_sin_basis_vecina(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([pollo, habana])
+        session.commit()
+        self._curado(
+            session, product=pollo, province=habana, ref="resuelta",
+            price="585.56", unit="lb", sale_format=SaleFormat.WHOLESALE.value,
+        )
+        self._curado(
+            session, product=pollo, province=habana, ref="sin-basis",
+            price="7810.00", unit="kg", quantity=Decimal("5"), price_basis=None,
+            sale_format=SaleFormat.WHOLESALE.value,
+        )
+
+        control_html = client.get("/control").text
+        href = self._href(control_html, contains="unresolved_basis=0")
+
+        historial = client.get(href).text
+        assert "585.56" in historial
+        assert "7810.00" not in historial
+        assert self._cuenta_anuncios(historial) == 1
+
+    def test_la_celda_sin_basis_tampoco_arrastra_la_resuelta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([pollo, habana])
+        session.commit()
+        self._curado(
+            session, product=pollo, province=habana, ref="resuelta",
+            price="585.56", unit="lb", sale_format=SaleFormat.WHOLESALE.value,
+        )
+        self._curado(
+            session, product=pollo, province=habana, ref="sin-basis",
+            price="7810.00", unit="kg", quantity=Decimal("5"), price_basis=None,
+            sale_format=SaleFormat.WHOLESALE.value,
+        )
+
+        control_html = client.get("/control").text
+        href = self._href(control_html, contains="unresolved_basis=1")
+
+        historial = client.get(href).text
+        assert "7810.00" in historial
+        assert "585.56" not in historial
+        assert self._cuenta_anuncios(historial) == 1
+
+    def test_una_celda_sin_cantidad_se_separa_de_la_resuelta_de_su_misma_unidad(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([pollo, habana])
+        session.commit()
+        self._curado(
+            session, product=pollo, province=habana, ref="con-cantidad",
+            price="703.50", unit="lb", sale_format=SaleFormat.RETAIL.value,
+        )
+        self._curado(
+            session, product=pollo, province=habana, ref="sin-cantidad",
+            price="8500.00", unit="lb", quantity=None,
+            sale_format=SaleFormat.RETAIL.value,
+        )
+
+        control_html = client.get("/control").text
+
+        solo_sin_cantidad = client.get(self._href(control_html, contains="unquantified=1")).text
+        assert "8500.00" in solo_sin_cantidad
+        assert "703.50" not in solo_sin_cantidad
+        assert self._cuenta_anuncios(solo_sin_cantidad) == 1
+
+        solo_resuelta = client.get(self._href(control_html, contains="unquantified=0")).text
+        assert "703.50" in solo_resuelta
+        assert "8500.00" not in solo_resuelta
+        assert self._cuenta_anuncios(solo_resuelta) == 1
+
+    def test_la_celda_fundida_sigue_incluyendo_las_filas_convertidas_de_otra_unidad(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La razón por la que el link antes omitía `unit=`: no esconder las
+        filas que entraron en kg y se convirtieron a lb. El filtro por unidad
+        efectiva las conserva.
+        """
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([pollo, habana])
+        session.commit()
+        self._curado(
+            session, product=pollo, province=habana, ref="en-libras",
+            price="700.00", unit="lb", sale_format=SaleFormat.RETAIL.value,
+        )
+        self._curado(
+            session, product=pollo, province=habana, ref="en-kilos",
+            price="1543.21", unit="kg", sale_format=SaleFormat.RETAIL.value,
+        )
+
+        control_html = client.get("/control").text
+        # Una sola celda fundida: n = 2, unidad efectiva lb.
+        href = self._href(control_html, contains="unit=lb&sale_format=retail&unquantified=0")
+
+        historial = client.get(href).text
+        assert "700.00" in historial
+        assert "1543.21" in historial
+        assert self._cuenta_anuncios(historial) == 2
 
 
 class TestPanelDeProgreso:

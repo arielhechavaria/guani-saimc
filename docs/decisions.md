@@ -5951,6 +5951,35 @@ Arroz/Santiago de 7 a 3. 1188 tests verdes (+3). Los 2 fallos de
 aparte lo que no fundió por `price_basis` nulo en su celda (ej. Pollo/La Habana
 `kg` mayorista, 6 filas sin basis y sin referencia en esa celda para inferirlo).
 
+## 2026-09-02 — El drill-down «n = …» filtra por identidad efectiva; corrige la omisión de `unit=` de la entrada anterior
+Contexto: la entrada de arriba dejó el enlace «n = …» de una celda fundida sin
+mandar `unit=` a `/curation/history`, para no esconder las filas convertidas.
+Pero el endpoint filtra por las columnas **crudas** de `prices_history`, así que
+sin `unit=` no filtraba por unidad en absoluto: clickear una celda de una sola
+observación (ej. Pollo/La Habana `lb` mayorista resuelta, n=1) abría también las
+filas de `kg` mayorista sin basis de la misma celda vecina. Las celdas de flag
+(`unquantified`, `unresolved_basis`) nunca fueron aislables por el endpoint
+—esos flags no son columnas—, la fusión solo lo hizo más visible.
+Decisión: la resolución de una fila cruda a su identidad efectiva —precio a CUP
+y por unidad canónica, más los cuatro flags— se extrae a `cells.resolve_row()`,
+que ahora usan `compute_cells` y `/curation/history`. El endpoint recomputa
+`resolve_row` fila por fila y filtra por unidad **efectiva** más tres params
+nuevos (`unquantified`, `unresolved_basis`, `unconverted_unit`, cada uno `0`/`1`
+o ausente). `control.html` manda siempre `unit=` (la unidad efectiva de la
+celda) y los tres flags. `currency` sigue crudo y solo lo manda la celda
+`unconverted`.
+Descartado: una clave opaca de celda con `/curation/history?cell=<clave>` que
+re-corriera `compute_cells` — obliga a que `compute_cells` arrastre `source_id`
+por celda, dato que hoy descarta. Filtrar solo por unidad y dejar los flags sin
+resolver — no arreglaba las celdas «sin cantidad» / «sin basis», que son
+justamente las de una sola observación que el operador reportó.
+Consecuencia: `/curation/history` depende de `saimc.cells` (import nuevo, sin
+ciclo). Queda sin cerrar la ambigüedad moneda↔celda: una celda fundida resuelta
+(que no manda `currency`) todavía puede mostrar filas de una celda `unconverted`
+vecina del mismo producto/provincia/unidad/formato; no es lo que se reportó y se
+deja anotado. 1191 tests verdes (+4). Los 2 fallos de `test_public_filter.py`
+siguen preexistentes (2026-08-30).
+
 ## 2026-09-02 — La matriz empareja minorista con mayorista y muestra el ratio (opción A)
 Contexto: tras fundir las unidades, las series que quedaban dentro de una
 tarjeta producto × provincia eran casi todas el corte por formato de venta,

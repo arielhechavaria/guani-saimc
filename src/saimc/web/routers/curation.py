@@ -41,6 +41,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
+from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, apply_resolution
 from saimc.extraction import ocr
@@ -1377,19 +1378,38 @@ def curation_history(
     currency: str | None = None,
     unit: str | None = None,
     sale_format: str | None = None,
+    unquantified: int | None = None,
+    unresolved_basis: int | None = None,
+    unconverted_unit: int | None = None,
     unconverted: int = 0,
 ) -> HTMLResponse:
     """Lista los anuncios ya curados, más recientes primero, para ubicar cuál
     corregir o eliminar — es la puerta de entrada a `GET /curation/{id}/edit`
     y a `POST /curation/{id}/delete`.
 
-    Los cinco filtros opcionales son la identidad exacta de una celda de
+    Los filtros opcionales son la identidad exacta de una celda de
     `compute_cells` (2026-08-12): la columna `n` de `/control` enlaza acá para
     mostrar «los anuncios detrás de este número». Un parámetro **ausente** no
     filtra por esa columna; un parámetro **presente pero vacío** (`unit=`)
     filtra por «sin responder» (NULL) — mismo contrato que ya usa
     `_SALE_FORMAT_VALUES` en el submit: la cadena vacía nunca se confunde con
     "no filtrar".
+
+    `unit` es la unidad **efectiva** de la fila, no la columna cruda
+    `prices_history.unit` (2026-09-02): desde que la matriz funde kg con lb,
+    una celda fundida abarca varias unidades crudas y solo se aísla
+    recomputando `resolve_row` fila por fila. Los tres flags —`unquantified`,
+    `unresolved_basis`, `unconverted_unit`, cada uno `0`/`1` o ausente— separan
+    la celda resuelta de las que quedaron pendientes por cantidad, basis o
+    unidad no convertible; sin ellos el link de una celda de una sola
+    observación caía sobre todo el bloque producto/provincia/formato. `currency`
+    sigue comparándose contra la moneda cruda y solo lo manda la celda
+    `unconverted` (ver 2026-08-13): la ambigüedad moneda↔celda no la cierra
+    este cambio y queda anotada en `docs/decisions.md`.
+
+    `unconverted` acá **no** filtra: es el conteo de filas guardadas sin
+    convertir que trae el redirect del submit para el aviso de
+    `_unconverted_notice`.
 
     Sin paginación: al volumen de Fase 0 (decenas de anuncios) toda la lista
     entra en una sola página, y paginar antes de tener ese problema es
@@ -1398,7 +1418,19 @@ def curation_history(
     agregarla en una sola consulta con `string_agg` ataría la vista al
     dialecto de PostgreSQL, que los tests no corren (ver tests/conftest.py).
     """
-    filtering = any(v is not None for v in (product, province, currency, unit, sale_format))
+    filtering = any(
+        v is not None
+        for v in (
+            product,
+            province,
+            currency,
+            unit,
+            sale_format,
+            unquantified,
+            unresolved_basis,
+            unconverted_unit,
+        )
+    )
 
     stmt = (
         select(RawIngestion)
@@ -1412,14 +1444,14 @@ def curation_history(
 
     for ingestion in all_ingestions:
         row_stmt = (
-            select(Product.name, Province.name, PriceHistory)
+            select(Product.name, Product.unit, Province.name, PriceHistory)
             .join(Product, Product.id == PriceHistory.product_id)
             .outerjoin(Province, Province.id == PriceHistory.province_id)
             .where(PriceHistory.source_id == ingestion.id)
             .order_by(PriceHistory.created_at)
         )
         matched: list[tuple[str, PriceHistory]] = []
-        for product_name, province_name, price in db.execute(row_stmt).all():
+        for product_name, product_unit, province_name, price in db.execute(row_stmt).all():
             if filtering:
                 if product is not None and product_name != product:
                     continue
@@ -1427,9 +1459,30 @@ def curation_history(
                     continue
                 if currency is not None and price.currency != currency:
                     continue
-                if unit is not None and (price.unit or "") != unit:
-                    continue
                 if sale_format is not None and (price.sale_format or "") != sale_format:
+                    continue
+                effective = resolve_row(
+                    currency=price.currency,
+                    price=price.price,
+                    price_cup=price.price_cup,
+                    quantity=price.quantity,
+                    price_basis=price.price_basis,
+                    unit=price.unit,
+                    product_unit=product_unit,
+                )
+                if unit is not None and (effective.unit or "") != unit:
+                    continue
+                if unquantified is not None and effective.unquantified != bool(unquantified):
+                    continue
+                if (
+                    unresolved_basis is not None
+                    and effective.unresolved_basis != bool(unresolved_basis)
+                ):
+                    continue
+                if (
+                    unconverted_unit is not None
+                    and effective.unconverted_unit != bool(unconverted_unit)
+                ):
                     continue
             matched.append((product_name, price))
 

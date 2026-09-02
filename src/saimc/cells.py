@@ -13,6 +13,12 @@ umbral. N se calibra con datos reales —«análisis de estabilidad de la median
 frente al tamaño de muestra»— y esta vista es justamente lo que permite
 hacerlo. Quien juzga es el operador.
 
+La resolución de cada fila cruda a su identidad efectiva —precio a CUP y por
+unidad canónica, más las cuatro marcas de lo pendiente— vive en `resolve_row`,
+no acá dentro: `/curation/history` la necesita fila por fila para aislar «los
+anuncios detrás de este número» de una celda fundida, y dos copias de esta
+lógica se desincronizarían.
+
 La moneda **ya no** entra en la clave de la celda fundida (2026-08-13):
 `price_cup` se llena desde §6.3 E, así que una fila en USD con conversión
 resuelta se funde con las filas en CUP del mismo producto/provincia/unidad/
@@ -161,6 +167,97 @@ class Cell:
         return self.maximum / self.minimum
 
 
+@dataclass(frozen=True)
+class ResolvedRow:
+    """La identidad efectiva de una fila de `prices_history`: el precio ya
+    normalizado a CUP y por unidad canónica, más las cuatro marcas que deciden
+    en qué celda cae.
+
+    Es lo que `compute_cells` agrupa. `/curation/history` la recomputa fila por
+    fila para responder «los anuncios detrás de este número» sin volver a
+    partir esta lógica en dos implementaciones que se desincronizan
+    (2026-09-02): antes de fundir kg con lb, el historial filtraba por la
+    columna cruda `prices_history.unit` y bastaba; ahora una celda fundida
+    abarca varias unidades crudas y solo se puede aislar recorriendo la misma
+    resolución.
+    """
+
+    effective_price: Decimal
+    currency: str
+    unit: str | None
+    unconverted: bool
+    unquantified: bool
+    unresolved_basis: bool
+    unconverted_unit: bool
+
+
+def resolve_row(
+    *,
+    currency: str,
+    price: Decimal,
+    price_cup: Decimal | None,
+    quantity: Decimal | None,
+    price_basis: str | None,
+    unit: str | None,
+    product_unit: str | None,
+) -> ResolvedRow:
+    """Lleva una fila cruda a su identidad efectiva. El orden importa y está
+    fijado por el docstring del módulo: moneda primero, cantidad/basis
+    después, unidad al final —se convierte un precio por unidad, así que solo
+    tiene sentido cuando ya lo es—.
+    """
+    if currency == Currency.CUP.value:
+        # Ya está en CUP: nada que convertir.
+        effective_price = price
+        key_currency, unconverted = Currency.CUP.value, False
+    elif price_cup is not None:
+        # Conversión resuelta (§6.3 E): se funde con el grupo CUP.
+        effective_price = price_cup
+        key_currency, unconverted = Currency.CUP.value, False
+    else:
+        # Sin tasa resuelta todavía: no se funde a ciegas, celda aparte.
+        effective_price = price
+        key_currency, unconverted = currency, True
+
+    unquantified = quantity is None or quantity == 0
+    unresolved_basis = False
+    if not unquantified:
+        if quantity == 1:
+            pass  # unitario y total son el mismo número: nada que dividir
+        elif price_basis == "unit":
+            pass  # el precio YA es por unidad
+        elif price_basis == "total":
+            effective_price = effective_price / quantity
+        else:
+            # No es «falta cantidad» (eso es `unquantified`): es «no se
+            # sabe si dividir». Asumir `total` es exactamente el bug de
+            # 2026-08-13 que este campo corrige.
+            unresolved_basis = True
+
+    key_unit = unit
+    unconverted_unit = False
+    if not unquantified and not unresolved_basis:
+        target_unit = canonical_unit(product_unit)
+        converted = convert_price_per_unit(effective_price, frm=unit, to=target_unit)
+        if converted is not None:
+            effective_price = converted
+            key_unit = target_unit
+        elif unit is not None:
+            # Tiene unidad pero no convierte: `caja` o magnitud distinta.
+            # `unit is None` no se marca — es «sin unidad», no «sin convertir».
+            unconverted_unit = True
+
+    return ResolvedRow(
+        effective_price=effective_price,
+        currency=key_currency,
+        unit=key_unit,
+        unconverted=unconverted,
+        unquantified=unquantified,
+        unresolved_basis=unresolved_basis,
+        unconverted_unit=unconverted_unit,
+    )
+
+
 def compute_cells(session: Session) -> list[Cell]:
     """Resume `prices_history` en celdas, de mayor a menor tamaño de muestra.
 
@@ -205,67 +302,27 @@ def compute_cells(session: Session) -> list[Cell]:
         price_cup,
         price_basis,
     ) in session.execute(stmt):
-        if currency == Currency.CUP.value:
-            # Ya está en CUP: nada que convertir.
-            effective_price = price
-            key_currency, unconverted = Currency.CUP.value, False
-        elif price_cup is not None:
-            # Conversión resuelta (§6.3 E): se funde con el grupo CUP.
-            effective_price = price_cup
-            key_currency, unconverted = Currency.CUP.value, False
-        else:
-            # Sin tasa resuelta todavía: no se funde a ciegas, celda aparte.
-            effective_price = price
-            key_currency, unconverted = currency, True
-
-        # La moneda se resuelve primero y la cantidad/basis después: dividir
-        # antes de convertir daría un precio unitario en la moneda de origen,
-        # que no es comparable con el resto de la celda.
-        unquantified = quantity is None or quantity == 0
-        unresolved_basis = False
-        if not unquantified:
-            if quantity == 1:
-                pass  # unitario y total son el mismo número: nada que dividir
-            elif price_basis == "unit":
-                pass  # el precio YA es por unidad
-            elif price_basis == "total":
-                effective_price = effective_price / quantity
-            else:
-                # No es «falta cantidad» (eso es `unquantified`): es «no se
-                # sabe si dividir». Asumir `total` es exactamente el bug de
-                # 2026-08-13 que este campo corrige.
-                unresolved_basis = True
-
-        # La unidad va al final: se convierte un precio **por unidad**, así
-        # que solo se intenta cuando `effective_price` ya es uno —cantidad y
-        # basis resueltos—. La fila sin cantidad o sin basis se queda con su
-        # unidad cruda; sin un precio por unidad confiable no hay nada que
-        # llevar a otra unidad. Ver docstring del módulo.
-        key_unit = unit
-        unconverted_unit = False
-        if not unquantified and not unresolved_basis:
-            target_unit = canonical_unit(product_unit)
-            converted = convert_price_per_unit(effective_price, frm=unit, to=target_unit)
-            if converted is not None:
-                effective_price = converted
-                key_unit = target_unit
-            elif unit is not None:
-                # Tiene unidad pero no convierte: `caja` o magnitud distinta.
-                # `unit is None` no se marca — es «sin unidad», no «sin convertir».
-                unconverted_unit = True
-
+        row = resolve_row(
+            currency=currency,
+            price=price,
+            price_cup=price_cup,
+            quantity=quantity,
+            price_basis=price_basis,
+            unit=unit,
+            product_unit=product_unit,
+        )
         key: CellKey = (
             product_name,
             province_name,
-            key_currency,
-            key_unit,
+            row.currency,
+            row.unit,
             sale_format,
-            unconverted,
-            unquantified,
-            unresolved_basis,
-            unconverted_unit,
+            row.unconverted,
+            row.unquantified,
+            row.unresolved_basis,
+            row.unconverted_unit,
         )
-        grouped.setdefault(key, []).append(effective_price)
+        grouped.setdefault(key, []).append(row.effective_price)
 
     cells = [
         Cell(
