@@ -5827,3 +5827,26 @@ Consecuencia: 1166 tests verdes (+46). El chequeo de WAHA degrada como
 `eltoque.fetch_rate` —timeout corto, nunca levanta— porque vive dentro de la
 carga de `/control` y no puede tumbarla. Verificado en vivo contra la instancia
 real del operador: devolvió `working` y la franja lo muestra como «conectado».
+
+## 2026-09-02 — Los alias de provincia se quedan en código, no pasan a `provinces`
+Contexto: el board tenía la tarea «`provinces.aliases` como columna (en vez de
+diccionario en código)». `_PROVINCE_ALIASES` en `saimc/extraction/engine.py`
+mapea jerga y abreviaturas informales («stgo», «habana», «scu») al nombre
+canónico de la provincia, y `_match_province` lo recorre de más largo a más
+corto. La tarea propone moverlo a una columna nueva en `provinces`.
+Decisión: no se hace. El diccionario sigue viviendo en la capa de extracción.
+El propio comentario de `engine.py` ya fija el motivo: las 16 provincias son
+esquema fijo, pero la jerga con que un anuncio las nombra no es parte del
+esquema y no le pertenece a `Province`.
+Descartado: la columna + seed en migración sin UI de edición — es movimiento
+lateral. Sin una pantalla en `/catalog` para gestionar alias, cambiar uno
+sigue exigiendo un deploy, igual que hoy, pero además suma una migración y el
+riesgo de reprocesar datos crudos. El precedente de `Product.aliases` (columna
+`JSON`, `list[str]`) confirma el patrón: también se creó sin UI y nadie la
+edita (`catalog.py` la inicializa vacía y no la vuelve a tocar). La versión que
+sí valdría la pena —columna + seed + `_match_province` leyendo de BD + UI en
+`/catalog`— toca esquema y motor de validación, así que entra por el flujo de
+especificación completo y es trabajo de varias sesiones, no un slice.
+Consecuencia: la tarea sale del GitHub Project. Si en algún momento el operador
+necesita tocar alias de provincia con frecuencia y sin deploy, se reabre como
+cambio especificado con UI incluida; la columna suelta no se implementa.
