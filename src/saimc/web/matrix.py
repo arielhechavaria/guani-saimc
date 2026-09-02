@@ -49,7 +49,7 @@ color dejaría de servir como identidad.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from saimc.cells import Cell
@@ -116,6 +116,14 @@ class CellWithBar:
 
     cell: Cell
     bar: RangeBar
+    # Mediana minorista ÷ mediana de esta celda, cuando esta celda es la
+    # mayorista y su grupo tiene una minorista **limpia** en la misma unidad
+    # (2026-09-02, opción A). `None` en cualquier otro caso: en la minorista,
+    # cuando no hay mayorista con qué comparar, cuando las unidades difieren,
+    # o cuando alguna de las dos arrastra un flag que le quita sentido a la
+    # mediana. Es una razón, no un veredicto: el `n` de las dos series queda a
+    # la vista al lado y §12.6 prohíbe fijar un corte de muestra mínima.
+    retail_ratio: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -128,11 +136,101 @@ class CellGroup:
     total: int
 
 
+# Orden de los formatos dentro de una unidad: el minorista arriba porque es el
+# precio que define `spec.md` §8.1 Nivel 0 y el que alimenta el dashboard
+# público; el mayorista debajo, como contexto. Cualquier otro valor —o el
+# nulo— va al final.
+_FORMAT_RANK = {"retail": 0, "wholesale": 1}
+
+
+def _cell_is_clean(cell: Cell) -> bool:
+    """La celda agrega precios por unidad en CUP, sin nada pendiente.
+
+    Solo estas comparan: una celda con `unconverted` (sin tasa), `unquantified`
+    (sin cantidad), `unresolved_basis` (sin saber si dividir) o
+    `unconverted_unit` (unidad sin equivalencia) tiene una mediana que no es un
+    precio por unidad en CUP, así que ponerla contra otra mediría dos cosas
+    distintas.
+    """
+    return not (
+        cell.unconverted
+        or cell.unquantified
+        or cell.unresolved_basis
+        or cell.unconverted_unit
+    )
+
+
+def _pair_formats(celdas: list[CellWithBar]) -> list[CellWithBar]:
+    """Empareja minorista y mayorista de la misma unidad y anota el ratio.
+
+    Dos pasos, los dos de presentación —ninguno toca la normalización—:
+
+    1. **Ratio.** Por cada unidad con una minorista limpia, la mayorista limpia
+       de esa misma unidad recibe `retail_ratio = mediana_minorista /
+       mediana_mayorista`. Se anota en la mayorista y no en la minorista
+       porque la minorista es la serie de referencia: la pregunta es «cuánto
+       más caro sale comprar suelto», no al revés.
+    2. **Orden.** Las series se reordenan para que la unidad con más muestra
+       quede arriba y, dentro de cada unidad, la minorista antes que la
+       mayorista. Así el par queda pegado en vez de separado por las series con
+       flag, que caen al final por su propio `_FORMAT_RANK`.
+    """
+    minorista_por_unidad: dict[str | None, Decimal] = {
+        c.cell.unit: c.cell.median
+        for c in celdas
+        if c.cell.sale_format == "retail" and _cell_is_clean(c.cell)
+    }
+
+    con_ratio = []
+    for c in celdas:
+        es_par_mayorista = (
+            c.cell.sale_format == "wholesale"
+            and _cell_is_clean(c.cell)
+            and c.cell.unit in minorista_por_unidad
+            and c.cell.median > 0
+        )
+        if es_par_mayorista:
+            ratio = minorista_por_unidad[c.cell.unit] / c.cell.median
+            con_ratio.append(replace(c, retail_ratio=ratio))
+        else:
+            con_ratio.append(c)
+
+    # Rango de cada unidad por su muestra combinada (desc), con la sin unidad
+    # al final. `sorted` es estable, así que dentro de cada casillero
+    # (unidad, formato) se conserva el orden por `-count` que trae `compute_cells`.
+    muestra_por_unidad: dict[str | None, int] = {}
+    for c in con_ratio:
+        muestra_por_unidad[c.cell.unit] = (
+            muestra_por_unidad.get(c.cell.unit, 0) + c.cell.count
+        )
+    rango_unidad = {
+        unidad: i
+        for i, unidad in enumerate(
+            sorted(
+                muestra_por_unidad,
+                key=lambda u: (-muestra_por_unidad[u], u or "￿"),
+            )
+        )
+    }
+
+    return sorted(
+        con_ratio,
+        key=lambda c: (
+            rango_unidad[c.cell.unit],
+            _FORMAT_RANK.get(c.cell.sale_format or "", 2),
+            -c.cell.count,
+        ),
+    )
+
+
 def group_cells(cells: list[Cell]) -> list[CellGroup]:
     """Agrupa por producto × provincia, con los grupos de mayor muestra primero.
 
-    El orden de las series dentro del grupo se hereda de `compute_cells` —que
-    ya ordena por tamaño de muestra— así que acá no se reordena.
+    Dentro de cada grupo las series se emparejan por formato (ver
+    `_pair_formats`): la minorista y la mayorista de una misma unidad quedan
+    adyacentes y la mayorista trae el ratio contra su minorista. El orden por
+    tamaño de muestra que trae `compute_cells` se conserva dentro de cada
+    casillero (unidad, formato).
 
     La provincia entra en la clave del grupo: fundir el Arroz de dos provincias
     bajo un mismo encabezado afirmaría una comparación que nadie pidió, y es
@@ -166,7 +264,7 @@ def group_cells(cells: list[Cell]) -> list[CellGroup]:
         CellGroup(
             product_name=product_name,
             province_name=province_name,
-            cells=celdas,
+            cells=_pair_formats(celdas),
             total=sum(c.cell.count for c in celdas),
         )
         for (product_name, province_name), celdas in grouped.items()

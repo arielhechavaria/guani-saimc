@@ -864,9 +864,11 @@
         amplia de la tabla.
       </div>
       <div>
-        <strong>El precio es por unidad</strong>: cada fila se divide por su cantidad. Una fila
-        sin cantidad no se puede normalizar y queda aparte, marcada «precio total». La unidad y
-        el formato sí parten la celda; la moneda ya no.
+        <strong>El precio es por unidad</strong>: cada fila se divide por su cantidad y se
+        lleva a la unidad canónica del producto, así que kg y lb del mismo producto son una
+        sola serie. El <strong>formato</strong> sí la parte —minorista y mayorista no son
+        comparables— y quedan emparejados, con el ratio entre los dos. Una fila sin cantidad,
+        sin base declarada o con una unidad sin equivalencia queda aparte, marcada.
       </div>
       <div>
         <strong>Una tarjeta vacía es un hueco de cobertura</strong> y no se esconde: cae al
@@ -968,6 +970,7 @@
                 {%- if cell.unresolved_basis %} <span class="m3-dim">precio sin dividir, falta declarar la base</span>{% endif %}
                 {%- if cell.unconverted %} <span class="m3-dim">sin convertir</span>{% endif %}
                 {%- if cell.unconverted_unit %} <span class="m3-dim">unidad sin equivalencia con la del catálogo</span>{% endif %}
+                {%- if item.retail_ratio %} · <span class="m3-dim">el minorista sale ×{{ "%.2f"|format(item.retail_ratio) }} sobre esta serie</span>{% endif %}
                 {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
               </span>
             </div>

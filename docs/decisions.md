@@ -5950,3 +5950,37 @@ Arroz/Santiago de 7 a 3. 1188 tests verdes (+3). Los 2 fallos de
 `test_public_filter.py` siguen preexistentes (2026-08-30). Queda como cola
 aparte lo que no fundió por `price_basis` nulo en su celda (ej. Pollo/La Habana
 `kg` mayorista, 6 filas sin basis y sin referencia en esa celda para inferirlo).
+
+## 2026-09-02 — La matriz empareja minorista con mayorista y muestra el ratio (opción A)
+Contexto: tras fundir las unidades, las series que quedaban dentro de una
+tarjeta producto × provincia eran casi todas el corte por formato de venta,
+apiladas sin orden y sin comparar. La brecha minorista/mayorista es estructura
+de mercado —el código ya la trata como «economía real»—, pero quedaba como dos
+filas sueltas entre las series con flag. Se analizaron tres formas (emparejar +
+ratio; formato como eje de columna; dos matrices separadas). El dato de
+producción: solo 6 de ~9 celdas piloto tienen los dos formatos, y 5 de esas 6
+con mayorista n ≤ 9. La brecha real medida es 1,05–1,20× en las celdas sólidas
+(no ~2,5× como asumía la entrada del 2026-08-12).
+Decisión: opción A. En `matrix.py:_pair_formats` —solo presentación, no toca la
+normalización—: (1) por cada unidad con una minorista limpia, la mayorista
+limpia de esa misma unidad recibe `CellWithBar.retail_ratio = mediana_minorista
+/ mediana_mayorista`; (2) las series se reordenan para que la unidad de más
+muestra quede arriba y, dentro de cada unidad, la minorista antes que la
+mayorista, así el par queda pegado. «Limpia» = sin `unconverted`,
+`unquantified`, `unresolved_basis` ni `unconverted_unit`: una mediana con
+cualquiera de esos no es un precio por unidad en CUP y compararla mediría dos
+cosas distintas. Sin corte de muestra mínima (§12.6): el `n` de las dos series
+queda a la vista al lado del ratio. En `control.html` la mayorista muestra «el
+minorista sale ×N sobre esta serie».
+Descartado: formato como eje de columna completo (opción B) — duplica el ancho
+de la matriz para poblar 6 celdas, 5 con n ≤ 9; se reevalúa cuando el mayorista
+pase de ~20 obs por celda. Dos matrices separadas (opción C) — `compute_retail_
+ranges` ya es la vista minorista-only; una mayorista aparte hoy tendría ~6
+celdas. Fundir formatos — sigue vigente que no son comparables (2026-08-12).
+Consecuencia: 1194 tests verdes (+6). Los 2 fallos de `test_public_filter.py`
+siguen preexistentes (2026-08-30). El ratio se apoya en la mediana mayorista,
+que a este volumen suele ser n ≤ 9 y en dos celdas n = 1 — por eso se muestra
+como razón cruda junto al `n`, nunca como veredicto. La entrada del 2026-08-12
+que estimaba ~2,5× de brecha queda para revisar cuando el mayorista tenga
+muestra: si la brecha real es ~1,15×, el argumento de «incomparables» se
+sostiene por ser universos distintos, no por la magnitud.

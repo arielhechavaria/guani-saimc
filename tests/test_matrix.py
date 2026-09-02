@@ -33,6 +33,7 @@ def _celda(
     median: str = "100",
     minimum: str = "100",
     maximum: str = "100",
+    unresolved_basis: bool = False,
 ) -> Cell:
     return Cell(
         product_name=product,
@@ -44,6 +45,7 @@ def _celda(
         median=Decimal(median),
         minimum=Decimal(minimum),
         maximum=Decimal(maximum),
+        unresolved_basis=unresolved_basis,
     )
 
 
@@ -199,6 +201,96 @@ class TestGroupCells:
 
     def test_lista_vacia_no_rompe(self) -> None:
         assert group_cells([]) == []
+
+
+class TestGroupCellsEmparejaFormatos:
+    """Dentro de un grupo, minorista y mayorista de la misma unidad quedan
+    adyacentes, y el mayorista trae el ratio contra su minorista (opción A del
+    2026-09-02). La brecha minorista/mayorista es estructura de mercado; hasta
+    ahora quedaba como dos filas sueltas entre las series con flag.
+    """
+
+    def test_pone_minorista_arriba_del_mayorista_de_la_misma_unidad(self) -> None:
+        """Entra desordenado (mayorista primero por venir antes en la lista);
+        sale con la unidad de más muestra arriba y minorista antes que
+        mayorista dentro de ella."""
+        celdas = [
+            _celda(unit="lb", sale_format="wholesale", count=3, median="250"),
+            _celda(unit="kg", sale_format="retail", count=2, median="600"),
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+        ]
+
+        grupo = group_cells(celdas)[0]
+        orden = [(c.cell.unit, c.cell.sale_format) for c in grupo.cells]
+
+        # `lb` suma 13 y `kg` 2, así que `lb` va primero; y dentro de `lb`,
+        # minorista antes que mayorista.
+        assert orden == [("lb", "retail"), ("lb", "wholesale"), ("kg", "retail")]
+
+    def test_el_mayorista_trae_el_ratio_minorista_sobre_mayorista(self) -> None:
+        """Minorista 300 / mayorista 250 = 1,2. Calculado a mano."""
+        celdas = [
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(unit="lb", sale_format="wholesale", count=3, median="250"),
+        ]
+
+        grupo = group_cells(celdas)[0]
+        por_formato = {c.cell.sale_format: c for c in grupo.cells}
+
+        assert por_formato["retail"].retail_ratio is None
+        assert por_formato["wholesale"].retail_ratio == Decimal("300") / Decimal("250")
+
+    def test_no_hay_ratio_si_la_unidad_no_coincide(self) -> None:
+        """Un mayorista en `kg` no se compara con un minorista en `lb`: son
+        series distintas aunque el producto sea el mismo."""
+        celdas = [
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(unit="kg", sale_format="wholesale", count=3, median="250"),
+        ]
+
+        grupo = group_cells(celdas)[0]
+        mayorista = [c for c in grupo.cells if c.cell.sale_format == "wholesale"][0]
+
+        assert mayorista.retail_ratio is None
+
+    def test_no_hay_ratio_si_una_de_las_dos_celdas_tiene_flag(self) -> None:
+        """Un mayorista con `unresolved_basis` agrega totales, no precios por
+        unidad: su mediana no es comparable con la del minorista."""
+        celdas = [
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(
+                unit="lb", sale_format="wholesale", count=3, median="250",
+                unresolved_basis=True,
+            ),
+        ]
+
+        grupo = group_cells(celdas)[0]
+        mayorista = [c for c in grupo.cells if c.cell.sale_format == "wholesale"][0]
+
+        assert mayorista.retail_ratio is None
+
+    def test_sin_mayorista_ninguna_celda_trae_ratio(self) -> None:
+        celdas = [
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+        ]
+
+        grupo = group_cells(celdas)[0]
+
+        assert all(c.retail_ratio is None for c in grupo.cells)
+
+    def test_un_mayorista_con_mediana_cero_no_divide(self) -> None:
+        celdas = [
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(
+                unit="lb", sale_format="wholesale", count=3,
+                median="0", minimum="0", maximum="0",
+            ),
+        ]
+
+        grupo = group_cells(celdas)[0]
+        mayorista = [c for c in grupo.cells if c.cell.sale_format == "wholesale"][0]
+
+        assert mayorista.retail_ratio is None
 
 
 class TestBuildMatrix:
