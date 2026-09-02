@@ -123,13 +123,13 @@ Decisiones que lo modifican:
 - **N-01 · Contrato de entrada explícito.** CAP-04 y CAP-05 son vinculantes, pero
   los cuatro productores llegan a `raw_ingestions` por caminos distintos. Si el plan
   es integrar módulos, este contrato es el primero que hay que declarar.
-- **N-02 · Alerta de ingesta detenida.** **Parcialmente cubierto el 2026-09-02**:
-  `/control` abre con una franja de estado que muestra la sesión de WAHA y avisa
-  en rojo si está caída o no responde. Sigue siendo pasivo —hay que entrar a
-  mirar—; una alerta que salga a buscar al operador queda pendiente.
-  Ya ocurrió: la sesión de WAHA cayó a
-  `FAILED` y toda la ingesta automática paró en silencio. Hoy solo hay un indicador
-  pasivo que exige que alguien mire.
+- **N-02 · Alerta de ingesta detenida.** **Parcialmente cubierto el 2026-09-02.**
+  El caso que lo motivó: la sesión de WAHA cayó a `FAILED` y toda la ingesta
+  automática paró en silencio, sin más síntoma que una cola que dejaba de crecer.
+  Desde el 2026-09-02 `/control` abre con una franja de estado que consulta la
+  sesión y avisa en rojo si está caída o no responde. **Lo que falta**: sigue
+  siendo pasivo — hay que entrar a mirar. Una alerta que salga a buscar al
+  operador queda pendiente.
 - **N-03 · Reproceso de descartados.** `discarded` es terminal: 373 anuncios no
   vuelven a mirarse aunque cambie el foco o mejore el extractor. Re-encolar por
   criterio, sin tocar la fila cruda.
