@@ -5914,3 +5914,39 @@ cuando lo haga. Fuera de alcance: unas pocas filas con precio mal tecleado
 celdas n=1 aisladas a la serie normalizada, donde inflan el `max` pero no la
 mediana; son un problema de calidad de dato distinto, que cubren
 `detect_basis_suspects` y la revisión del operador.
+
+## 2026-09-02 — La matriz de /control funde kg con lb; reemplaza la parte de unidad de la decisión de 2026-08-12
+Contexto: la «Matriz de los pilotos» seguía mostrando el mismo producto como
+varias series por unidad —Arroz/La Habana en `kg` y en `lb` por separado—.
+`compute_cells` separaba `unit` a propósito desde el 2026-08-12 («vista de
+control de carga»). El operador pidió lo contrario: para leer cómo se movió el
+pollo en La Habana, la diferencia kg/lb es ruido de formato de anuncio, no una
+serie distinta. La unidad base ya existía (`units.py:convert_price_per_unit`,
+por producto) y ya la usaban `compute_retail_ranges` y
+`compute_retail_observations`; faltaba aplicarla acá.
+Decisión: `compute_cells` lleva cada fila a la unidad canónica del producto
+(`Product.unit` vía `canonical_unit()`) con `convert_price_per_unit()`, después
+de dividir por `quantity`, y agrupa por esa unidad. `sale_format` **sigue**
+partiendo la celda (mayorista vs. minorista es economía real). La conversión
+solo se intenta en la fila resuelta: la que no tiene cantidad (`unquantified`)
+o basis (`unresolved_basis`) se queda con su unidad cruda, porque sin un precio
+por unidad confiable no hay nada que convertir. Lo que no convierte ni en
+principio —`caja`, que no declara cuánto contiene, o una magnitud distinta a la
+del catálogo— conserva su unidad y se marca `Cell.unconverted_unit`: misma idea
+que la exclusión de `compute_retail_ranges`, pero visible como celda. La fila
+sin `unit` sigue en su celda `unit=None` y **no** se marca —es «sin unidad», no
+«no se pudo convertir»—. En `control.html` el enlace «n = …» a
+`/curation/history` deja de mandar `unit=` en las celdas fundidas: filtrar por
+la unidad canónica escondería las filas convertidas.
+Descartado: mantener la separación por unidad y agregar una vista aparte —
+duplica lo que `compute_retail_ranges` ya hace y deja al operador reconciliando
+dos pantallas. Convertir también las filas sin cantidad/basis — daría un número
+que parece por unidad sin serlo.
+Consecuencia: reemplaza la parte de **unidad** de la entrada del 2026-08-12
+(«La celda de /control se parte por unidad y formato»); la parte de **formato de
+venta** de esa entrada sigue vigente. Medido contra producción: matriz de 86 a
+77 celdas; Pollo/La Habana de 7 series a 4, Arroz/La Habana de 7 a 2,
+Arroz/Santiago de 7 a 3. 1188 tests verdes (+3). Los 2 fallos de
+`test_public_filter.py` siguen preexistentes (2026-08-30). Queda como cola
+aparte lo que no fundió por `price_basis` nulo en su celda (ej. Pollo/La Habana
+`kg` mayorista, 6 filas sin basis y sin referencia en esa celda para inferirlo).

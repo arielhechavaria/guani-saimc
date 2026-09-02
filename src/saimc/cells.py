@@ -24,16 +24,32 @@ así que queda en su propia celda, con la moneda original en la clave y
 descrito más abajo: lo que falta resolver no se mezcla con lo resuelto, se
 deja visible aparte.
 
-`unit` y `sale_format` entran por el mismo motivo. Un precio por libra y uno por
-kilo no son la misma serie, y un saco mayorista no es comparable con la libra
-suelta aunque ambos digan `lb`. Fundirlos produce una mediana que no describe
+`sale_format` entra en la clave: un saco mayorista no es comparable con la libra
+suelta aunque ambos digan `lb`, y fundirlos produce una mediana que no describe
 nada — el caso real del 2026-08-12: `Arroz` en Santiago mezclaba 730 por libra,
 750 por kilo y dos sacos de 110 lb en una sola celda.
 
-Ambas columnas son nulables, y el nulo **no se funde con nada**: «sin responder»
-es su propia celda. Tratarlo como un valor más afirmaría una equivalencia que
+`unit` **ya no** separa kg de lb (2026-09-02). Hasta entonces esta vista era
+«control de carga» y los mantenía aparte a propósito; el operador pidió lo
+contrario: para leer cómo se movió un producto, la diferencia de formato de
+anuncio es ruido. Cada fila se lleva ahora a la unidad canónica del producto
+(`Product.unit`, pasada por `canonical_unit()`) con `convert_price_per_unit()`,
+que es el mismo camino que ya recorren `compute_retail_ranges` y
+`compute_retail_observations`. La conversión va **después** de dividir por
+`quantity` —convertir el total del lote daría otro número— y solo se intenta
+en la fila que quedó resuelta: la que no tiene cantidad o basis se queda con su
+unidad cruda, porque sin un precio por unidad confiable no hay nada que
+convertir. Lo que no convierte ni en principio —`caja`, que no dice cuánto
+contiene, o una magnitud distinta a la del catálogo— conserva su unidad y se
+marca `Cell.unconverted_unit`: misma idea que la exclusión de
+`compute_retail_ranges`, pero visible como celda en vez de contada aparte.
+
+`sale_format` es nulable y el nulo **no se funde con nada**: «sin responder» es
+su propia celda. Tratarlo como un valor más afirmaría una equivalencia que
 nadie declaró, que es el mismo criterio por el que `canonical_unit()` devuelve
-`None` en vez de adivinar. La contracara es que mientras el operador no responda
+`None` en vez de adivinar. Una fila sin `unit` cae en la misma lógica: su celda
+tiene `unit = None` y **no** se marca `unconverted_unit` —es «sin unidad», no
+«no se pudo convertir»—. La contracara es que mientras el operador no responda
 `sale_format` la cola de nulos crece — y eso es justamente lo que la vista debe
 dejar ver, no esconder.
 
@@ -123,6 +139,13 @@ class Cell:
     # representa el precio) — asumir 'total' para resolverla sería el mismo
     # bug que este campo corrige (ver docstring del módulo).
     unresolved_basis: bool = False
+    # `True` cuando la fila tiene unidad pero no se pudo llevar a la unidad
+    # canónica del producto (2026-09-02): `caja`, que no dice cuánto contiene,
+    # o una magnitud distinta a la del catálogo (masa contra conteo). NO se
+    # marca la fila sin unidad —esa es «sin unidad», no «no se pudo
+    # convertir»— ni la que sí se fundió. Mismo desenlace que la exclusión de
+    # `compute_retail_ranges`, pero acá la celda queda visible.
+    unconverted_unit: bool = False
 
     @property
     def spread(self) -> Decimal | None:
@@ -148,6 +171,7 @@ def compute_cells(session: Session) -> list[Cell]:
     stmt = (
         select(
             Product.name,
+            Product.unit,
             Province.name,
             PriceHistory.currency,
             PriceHistory.unit,
@@ -161,14 +185,17 @@ def compute_cells(session: Session) -> list[Cell]:
         .outerjoin(Province, Province.id == PriceHistory.province_id)
     )
 
-    # `unconverted`, `unquantified` y `unresolved_basis` entran en la clave
-    # para separar, sin ambigüedad, el grupo resuelto del que quedó
-    # pendiente: moneda, cantidad y basis respectivamente. Mezclar cualquiera
-    # de los tres afirmaría una equivalencia que nadie declaró.
-    CellKey = tuple[str, str | None, str, str | None, str | None, bool, bool, bool]
+    # `unconverted`, `unquantified`, `unresolved_basis` y `unconverted_unit`
+    # entran en la clave para separar, sin ambigüedad, el grupo resuelto del
+    # que quedó pendiente: moneda, cantidad, basis y unidad respectivamente.
+    # Mezclar cualquiera afirmaría una equivalencia que nadie declaró.
+    CellKey = tuple[
+        str, str | None, str, str | None, str | None, bool, bool, bool, bool
+    ]
     grouped: dict[CellKey, list[Decimal]] = {}
     for (
         product_name,
+        product_unit,
         province_name,
         currency,
         unit,
@@ -209,15 +236,34 @@ def compute_cells(session: Session) -> list[Cell]:
                 # 2026-08-13 que este campo corrige.
                 unresolved_basis = True
 
+        # La unidad va al final: se convierte un precio **por unidad**, así
+        # que solo se intenta cuando `effective_price` ya es uno —cantidad y
+        # basis resueltos—. La fila sin cantidad o sin basis se queda con su
+        # unidad cruda; sin un precio por unidad confiable no hay nada que
+        # llevar a otra unidad. Ver docstring del módulo.
+        key_unit = unit
+        unconverted_unit = False
+        if not unquantified and not unresolved_basis:
+            target_unit = canonical_unit(product_unit)
+            converted = convert_price_per_unit(effective_price, frm=unit, to=target_unit)
+            if converted is not None:
+                effective_price = converted
+                key_unit = target_unit
+            elif unit is not None:
+                # Tiene unidad pero no convierte: `caja` o magnitud distinta.
+                # `unit is None` no se marca — es «sin unidad», no «sin convertir».
+                unconverted_unit = True
+
         key: CellKey = (
             product_name,
             province_name,
             key_currency,
-            unit,
+            key_unit,
             sale_format,
             unconverted,
             unquantified,
             unresolved_basis,
+            unconverted_unit,
         )
         grouped.setdefault(key, []).append(effective_price)
 
@@ -239,6 +285,7 @@ def compute_cells(session: Session) -> list[Cell]:
             unconverted=unconverted,
             unquantified=unquantified,
             unresolved_basis=unresolved_basis,
+            unconverted_unit=unconverted_unit,
         )
         for (
             product_name,
@@ -249,6 +296,7 @@ def compute_cells(session: Session) -> list[Cell]:
             unconverted,
             unquantified,
             unresolved_basis,
+            unconverted_unit,
         ), prices in grouped.items()
     ]
 
@@ -268,6 +316,7 @@ def compute_cells(session: Session) -> list[Cell]:
             cell.unconverted,
             cell.unquantified,
             cell.unresolved_basis,
+            cell.unconverted_unit,
         )
     )
     return cells

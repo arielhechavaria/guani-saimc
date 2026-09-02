@@ -174,10 +174,15 @@ class TestComputeCells:
 
 
 class TestCeldaSeparaUnidadYFormato:
-    """Caso real del 2026-08-12: `Arroz` en Santiago traía 730 con `unit=lb` y
-    750 con `unit=kg` describiendo el mismo paquete de 1 kg, más dos sacos de
-    110 lb a 31.000 y 33.000. Agrupados solo por producto × provincia × moneda
-    daban una sola mediana que no significaba nada.
+    """El formato de venta sigue partiendo la celda; la unidad ya no.
+
+    Hasta el 2026-09-02 esta vista separaba kg de lb a propósito («vista de
+    control de carga»). El operador pidió lo contrario: para leer cómo se
+    movió el pollo en La Habana, la diferencia kg/lb es ruido. Ahora cada fila
+    se lleva a la unidad canónica del producto y se funde; solo lo que no
+    convierte ni en principio (`caja`, magnitudes distintas) queda aparte,
+    marcado `unconverted_unit`. Reemplaza la parte de unidad de la decisión de
+    2026-08-12; la parte de formato de venta sigue vigente.
     """
 
     def _arroz_y_santiago(self, session: Session) -> tuple[Product, Province]:
@@ -187,23 +192,101 @@ class TestCeldaSeparaUnidadYFormato:
         session.commit()
         return arroz, scu
 
-    def test_separa_por_unidad(self, session: Session) -> None:
+    def test_funde_kg_en_la_unidad_canonica_del_producto(self, session: Session) -> None:
+        """Dos por libra (300, 320) y una por kilo (700).
+
+        700/kg son 700 × 0,45359237 = 317,514659/lb, calculado a mano. Una
+        sola celda de tres observaciones en lb; mediana de
+        [300, 317,514659, 320] = 317,514659.
+        """
         arroz, scu = self._arroz_y_santiago(session)
         origen = _ingestion(session, "hash-unidad")
-        # Dos por libra (700, 800 -> mediana 750) y una por kilo (750).
-        _precio(session, product=arroz, province=scu, price="700", source=origen, unit="lb")
-        _precio(session, product=arroz, province=scu, price="800", source=origen, unit="lb")
-        _precio(session, product=arroz, province=scu, price="750", source=origen, unit="kg")
+        for p in ("300", "320"):
+            _precio(
+                session, product=arroz, province=scu, price=p, source=origen,
+                unit="lb", quantity="1", sale_format=SaleFormat.RETAIL.value,
+            )
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="kg", quantity="1", sale_format=SaleFormat.RETAIL.value,
+        )
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 1
+        celda = celdas[0]
+        assert celda.unit == "lb"
+        assert celda.count == 3
+        assert celda.median == Decimal("317.514659")
+        assert celda.unconverted_unit is False
+
+    def test_caja_no_convierte_y_queda_en_su_propia_serie(self, session: Session) -> None:
+        """`caja` no declara cuánto contiene: no se funde ni en principio."""
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
+        hab = Province(code="hab", name="La Habana")
+        session.add_all([pollo, hab])
+        session.commit()
+        origen = _ingestion(session, "hash-caja")
+        _precio(
+            session, product=pollo, province=hab, price="700", source=origen,
+            unit="lb", quantity="1", sale_format=SaleFormat.RETAIL.value,
+        )
+        _precio(
+            session, product=pollo, province=hab, price="23000", source=origen,
+            unit="caja", quantity="1", sale_format=SaleFormat.RETAIL.value,
+        )
         session.commit()
 
         celdas = compute_cells(session)
 
         assert len(celdas) == 2
         por_unidad = {c.unit: c for c in celdas}
-        assert por_unidad["lb"].count == 2
-        assert por_unidad["lb"].median == Decimal("750")
-        assert por_unidad["kg"].count == 1
-        assert por_unidad["kg"].median == Decimal("750")
+        assert por_unidad["lb"].unconverted_unit is False
+        assert por_unidad["caja"].unconverted_unit is True
+
+    def test_unidad_de_otra_magnitud_no_funde_y_queda_marcada(
+        self, session: Session
+    ) -> None:
+        """Catálogo en `unidad`, filas en `lb`: masa a conteo no convierte.
+
+        La fila conserva su unidad cruda y se marca — mismo desenlace que la
+        exclusión de `compute_retail_ranges`, pero acá visible como celda.
+        """
+        picadillo = Product(
+            name="Picadillo", category="carnes", unit="unidad", aliases=[]
+        )
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([picadillo, scu])
+        session.commit()
+        origen = _ingestion(session, "hash-picadillo")
+        _precio(
+            session, product=picadillo, province=scu, price="515", source=origen,
+            unit="lb", quantity="1", sale_format=SaleFormat.RETAIL.value,
+        )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        assert celda.unit == "lb"
+        assert celda.unconverted_unit is True
+
+    def test_sin_unidad_no_es_lo_mismo_que_no_haber_podido_convertir(
+        self, session: Session
+    ) -> None:
+        """Una fila `unit=None` es «sin unidad»: su celda no lleva la marca."""
+        arroz, scu = self._arroz_y_santiago(session)
+        origen = _ingestion(session, "hash-sin-unidad")
+        _precio(
+            session, product=arroz, province=scu, price="320", source=origen,
+            quantity="1", sale_format=SaleFormat.RETAIL.value,
+        )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        assert celda.unit is None
+        assert celda.unconverted_unit is False
 
     def test_separa_minorista_de_mayorista(self, session: Session) -> None:
         arroz, scu = self._arroz_y_santiago(session)

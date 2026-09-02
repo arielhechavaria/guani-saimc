@@ -955,12 +955,19 @@
                 {%- else %}<span class="m3-muted">sin formato</span>{% endif %}
               </span>
               <span class="m3-sm m3-muted">
-                <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}"
+                {# El filtro `unit=` solo cuando `cell.unit` es la columna cruda:
+                   celda sin unidad, o una de las tres que no se fundieron
+                   (sin cantidad, sin basis, unidad no convertible). En una
+                   celda fundida `cell.unit` es la unidad canónica y puede
+                   abarcar varias unidades crudas, así que filtrar por ella
+                   escondería las filas convertidas. #}
+                <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}{% if not cell.unit or cell.unconverted_unit or cell.unquantified or cell.unresolved_basis %}&unit={{ (cell.unit or '') | urlencode }}{% endif %}&sale_format={{ (cell.sale_format or '') | urlencode }}"
                    title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
                 · mediana <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and not cell.unresolved_basis and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
                 {%- if cell.unquantified %} <span class="m3-dim">precio total, sin cantidad</span>{% endif %}
                 {%- if cell.unresolved_basis %} <span class="m3-dim">precio sin dividir, falta declarar la base</span>{% endif %}
                 {%- if cell.unconverted %} <span class="m3-dim">sin convertir</span>{% endif %}
+                {%- if cell.unconverted_unit %} <span class="m3-dim">unidad sin equivalencia con la del catálogo</span>{% endif %}
                 {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
               </span>
             </div>
