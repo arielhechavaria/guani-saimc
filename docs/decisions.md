@@ -5783,3 +5783,47 @@ al mes con Sonnet 5, **adicional al plan Pro** (`docs/costos.md`). El riesgo
 vivo es el rubber-stamping: el registro lo hace detectable después, la marca
 visual lo hace menos probable en el momento, y ninguno de los dos lo hace
 imposible.
+
+## 2026-09-02 — Franja de estado en /control, y el estado de WAHA (N-02)
+
+Contexto: el operador pidió dos cosas que resultaron ser la misma. Primero, que
+WAHA se ve caído y `/control` no lo dice — que es exactamente el hueco **N-02**
+de `docs/requisitos.md`: «Ya ocurrió: la sesión cayó a `FAILED` y toda la
+ingesta automática paró en silencio». No había ningún chequeo en el código.
+Segundo, que `/control` no se lee de un vistazo. Medido: **once secciones en
+916 líneas**, todas con el mismo peso visual, y dos de ellas agregadas por mí
+el día anterior. No es un panel, es un informe largo.
+
+Las dos son el mismo problema: la vista no tiene jerarquía, así que para saber
+si algo se rompió hay que leerla entera.
+
+Decisión: `saimc/ingestion/whatsapp_health.py` consulta el estado de la sesión
+de WAHA, y `saimc/web/health_strip.py` arma una franja de indicadores que abre
+la vista — WhatsApp, última captura, cola, tasa de cambio y asistente.
+
+- **Ordenada por gravedad, no por catálogo.** Lo roto sube solo al primer
+  lugar; en un día sano la franja no exige nada.
+- **Cada tarjeta dice qué hacer**, no solo que algo pasa. Un semáforo sin
+  instrucción obliga a adivinar, que es el problema que vino a resolver, y
+  enlaza a la sección con el detalle para no ser un callejón sin salida.
+- **`off` no es `down`.** Una capacidad sin configurar se pinta gris y NO
+  cuenta para el aviso rojo: pintar de rojo algo que el operador no usa
+  entrena a ignorar el rojo.
+- El color no es la única señal: cada tarjeta trae el estado escrito.
+
+Descartado: (a) Bootstrap, Angular o React, que es la estética que el operador
+nombró — la decisión cerrada 1 los deja para Fase 2 y no hacen falta: el
+sistema Material 3 del proyecto ya tiene las piezas; (b) un umbral de "cola
+demasiado grande" — sería un número inventado de los que §12.6 prohíbe, así
+que la cola se muestra y no se juzga; (c) reordenar las once secciones, que era
+la otra mitad del pedido: con la franja arriba, el orden de abajo dejó de ser
+el problema, y moverlas costaba más riesgo que valor.
+
+Los dos umbrales que sí existen —2 días sin captura, 2 días de tasa vieja— no
+deciden si un dato es válido ni si se publica: solo eligen cuándo llamar la
+atención. Queda anotado porque §12.6 prohíbe los otros.
+
+Consecuencia: 1166 tests verdes (+46). El chequeo de WAHA degrada como
+`eltoque.fetch_rate` —timeout corto, nunca levanta— porque vive dentro de la
+carga de `/control` y no puede tumbarla. Verificado en vivo contra la instancia
+real del operador: devolvió `working` y la franja lo muestra como «conectado».

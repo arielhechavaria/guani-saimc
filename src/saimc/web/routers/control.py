@@ -30,6 +30,8 @@ from saimc.cells import (
 from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.config import get_settings
 from saimc.extraction.llm_assist import consumption_summary
+from saimc.ingestion.whatsapp_health import session_health
+from saimc.web.health_strip import build_strip, worst_level
 from saimc.extraction.measure import read_h0_runs
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
@@ -99,6 +101,29 @@ def control_panel(
     matrix = build_matrix(cells)
     selected = resolve_column(matrix, province)
 
+    settings = get_settings()
+    # Estado de WAHA. Es la única señal de la franja que sale de la red: WAHA
+    # corre en el mismo VPS y el timeout es corto, así que no demora el panel.
+    # Si no contesta, eso ES el dato (hueco N-02).
+    waha = session_health(
+        base_url=settings.waha_base_url,
+        api_key=settings.waha_api_key,
+        session=settings.waha_session,
+    )
+    ultima_captura = db.execute(select(func.max(RawIngestion.captured_at))).scalar_one()
+
+    intake = compute_intake_health(db)
+    rate_statuses = compute_rate_status(db)
+    assist = consumption_summary(settings.llm_assist_log_path)
+    strip = build_strip(
+        waha=waha,
+        last_capture=ultima_captura,
+        health=intake,
+        rate_statuses=rate_statuses,
+        assist=assist,
+        assist_configured=bool(settings.anthropic_api_key),
+    )
+
     curated = db.execute(
         select(func.count())
         .select_from(RawIngestion)
@@ -159,7 +184,7 @@ def control_panel(
             # Consumo del asistente. Sale del registro de invocaciones, no de
             # una API de facturación: es el gasto de SAIMC medido sobre lo que
             # la propia API reportó consumir, no el total de la cuenta.
-            "assist": consumption_summary(get_settings().llm_assist_log_path),
+            "assist": assist,
             "activity": activity,
             "activity_days": _ACTIVITY_DAYS,
             # El máximo de la ventana escala las barras del gráfico. Va acá y
@@ -169,11 +194,16 @@ def control_panel(
             "pace": pace,
             "gaps": compute_open_gaps(db),
             "coverage": compute_coverage(db),
-            "health": compute_intake_health(db),
+            "health": intake,
+            "waha": waha,
+            # La franja de estado que abre la vista: lo que exige acción hoy,
+            # ordenado por gravedad (`web/health_strip.py`).
+            "strip": strip,
+            "strip_level": worst_level(strip),
             "channel_intake": compute_channel_intake(db),
             # Estado de la tasa de cambio. Ambas salen de la base: cargar
             # `/control` no golpea la API de elTOQUE (ver status.py).
-            "rate_status": compute_rate_status(db),
+            "rate_status": rate_statuses,
             "applied_rates": compute_applied_rates(db),
             "phase0_products_min": PHASE0_PRODUCTS_MIN,
             "phase0_products_max": PHASE0_PRODUCTS_MAX,

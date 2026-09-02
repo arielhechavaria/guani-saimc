@@ -19,8 +19,94 @@
   </div>
 {% endblock %}
 
+{% block head %}
+<style>
+  /* Franja de estado. Colores por nivel, con el punto como señal primaria.
+     El color solo no alcanza si el operador no distingue bien los tonos, así
+     que cada tarjeta además trae el estado escrito en palabras. */
+  .hs { margin-bottom: 8px; }
+  .hs-grid {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+  .hs-card {
+    padding: 14px 16px; border-radius: 12px;
+    border: 1px solid var(--m3-outline-variant, #cac4d0);
+    background: var(--m3-surface, #fff);
+    border-left-width: 4px;
+  }
+  .hs-top { display: flex; align-items: center; gap: 8px; }
+  .hs-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .hs-label {
+    font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
+    opacity: .65; font-weight: 600;
+  }
+  .hs-value { font-size: 1.5rem; font-weight: 600; margin-top: 6px; line-height: 1.1; }
+  .hs-hint { font-size: .8rem; opacity: .75; margin-top: 8px; max-width: 40ch; }
+  .hs-link {
+    display: inline-block; margin-top: 10px; font-size: .78rem;
+    text-decoration: none; color: var(--m3-primary, #00696e);
+  }
+
+  .hs-ok   { border-left-color: #1b6b4f; }
+  .hs-ok   .hs-dot { background: #1b6b4f; }
+  .hs-warn { border-left-color: #8a6212; background: #fdf8ec; }
+  .hs-warn .hs-dot { background: #8a6212; }
+  .hs-down { border-left-color: #a4232b; background: #fdeced; }
+  .hs-down .hs-dot { background: #a4232b; }
+  /* Apagado: gris, deliberadamente sin alarma. Una capacidad sin usar no es
+     una capacidad rota, y pintarla de rojo entrena a ignorar el rojo. */
+  .hs-off  { border-left-color: #9aa0a6; opacity: .7; }
+  .hs-off  .hs-dot { background: #9aa0a6; }
+
+  .hs-banner {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-radius: 10px; margin: 0 0 14px;
+    font-weight: 500;
+  }
+  .hs-banner.hs-down { background: #fdeced; color: #7a1a20; }
+  .hs-banner.hs-warn { background: #fdf8ec; color: #6b4c0e; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="m3-stack-lg">
+
+  {#
+    ---------- 0. Franja de estado ----------
+    Lo que exige acción HOY, antes que cualquier informe. `/control` creció
+    hasta once secciones con el mismo peso visual, y eso lo volvió un informe
+    largo en vez de un panel: para saber si algo se rompió había que leerlo
+    entero. Acá arriba lo roto sube solo (`health_strip.build_strip` ordena por
+    gravedad) y cada tarjeta dice qué hacer, no solo que algo pasa.
+  #}
+  <section class="hs" aria-label="Estado del sistema">
+    {% if strip_level == "down" %}
+    <p class="hs-banner hs-down">
+      <span class="m3-icon">error</span>
+      Hay algo roto. Lo de abajo a la izquierda es lo que exige acción.
+    </p>
+    {% elif strip_level == "warn" %}
+    <p class="hs-banner hs-warn">
+      <span class="m3-icon">warning</span>
+      Nada roto, pero hay algo que conviene mirar.
+    </p>
+    {% endif %}
+
+    <div class="hs-grid">
+      {% for ind in strip %}
+      <div class="hs-card hs-{{ ind.level }}">
+        <div class="hs-top">
+          <span class="hs-dot"></span>
+          <span class="hs-label">{{ ind.label }}</span>
+        </div>
+        <div class="hs-value">{{ ind.value }}</div>
+        {% if ind.hint %}<div class="hs-hint">{{ ind.hint }}</div>{% endif %}
+        {% if ind.anchor %}<a class="hs-link" href="{{ ind.anchor }}">ver detalle →</a>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
 
   <!-- ---------- 1. Progreso hacia la meta de Fase 0 (spec.md §9) ---------- -->
   <section>
@@ -87,7 +173,7 @@
   <!-- ---------- 2bis. Consumo del asistente ---------- -->
   <section>
     <div class="m3-section-head">
-      <h2 class="m3-h2">Consumo del asistente</h2>
+      <h2 class="m3-h2" id="asistente">Consumo del asistente</h2>
       <span class="m3-sm m3-muted">
         gasto de SAIMC medido sobre lo que la API reportó consumir — no el
         total de la cuenta. Tarifas y supuestos en el documento de costos.
@@ -350,7 +436,7 @@
   <!-- ---------- 6. Salud de la ingesta ---------- -->
   <section>
     <div class="m3-section-head">
-      <h2 class="m3-h2">Salud de la ingesta</h2>
+      <h2 class="m3-h2" id="ingesta">Salud de la ingesta</h2>
       <span class="m3-sm m3-muted">
         la tasa de descarte se mide sobre lo <em>decidido</em> (curado + descartado); lo
         pendiente no entra porque todavía no se decidió nada
@@ -460,7 +546,7 @@
 
   <!-- ---------- 7. Tasa de cambio ---------- -->
   <section>
-    <div class="m3-section-head"><h2 class="m3-h2">Tasa de cambio</h2></div>
+    <div class="m3-section-head"><h2 class="m3-h2" id="tasa">Tasa de cambio</h2></div>
     <p class="m3-note">
       Todo esto sale de la base: <strong>cargar esta página no consulta a elTOQUE</strong>.
       Quien sale a la red es la curaduría, que es cuando la tasa se necesita. Al curar,

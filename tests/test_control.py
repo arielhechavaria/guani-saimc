@@ -11,6 +11,7 @@ from pathlib import Path
 
 from saimc.config import get_settings
 from saimc.extraction import llm_assist
+from saimc.ingestion.whatsapp_health import SessionHealth
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -1065,7 +1066,7 @@ class TestConsumoDelAsistente:
 
         texto = client.get("/control").text
 
-        assert "saldo" in texto.lower()
+        assert "falló por <strong>saldo insuficiente" in texto
 
     def test_sin_saldo_agotado_no_avisa(
         self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
@@ -1074,4 +1075,78 @@ class TestConsumoDelAsistente:
         monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(ruta))
         get_settings.cache_clear()
 
-        assert "sin saldo" not in client.get("/control").text.lower()
+        # Específico a propósito: un substring suelto matchea contra
+        # comentarios del HTML y del CSS, y ya pasó tres veces en este
+        # proyecto. Se busca el aviso real, no la palabra.
+        assert "falló por <strong>saldo insuficiente" not in client.get("/control").text
+
+
+class TestFranjaDeEstado:
+    """La franja que abre `/control`: lo que exige acción hoy, arriba de todo."""
+
+    def test_la_franja_se_renderiza(self, client: TestClient) -> None:
+        texto = client.get("/control").text
+
+        assert 'aria-label="Estado del sistema"' in texto
+        assert "hs-grid" in texto
+
+    def test_muestra_el_estado_de_whatsapp(self, client: TestClient) -> None:
+        """El indicador que motivó todo esto (hueco N-02): sin él, WAHA se
+        cae y la ingesta para en silencio."""
+        texto = client.get("/control").text
+
+        assert "WhatsApp" in texto
+
+    def test_sin_waha_configurado_no_pinta_nada_roto(
+        self, client: TestClient
+    ) -> None:
+        """Sin `waha_base_url` la capacidad está apagada, no rota. El panel no
+        puede gritar por algo que el operador no usa."""
+        texto = client.get("/control").text
+
+        assert "hs-banner hs-down" not in texto
+
+    def test_waha_caido_pone_el_banner_rojo(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            control,
+            "session_health",
+            lambda **kw: SessionHealth(configured=True, status="failed"),
+        )
+
+        texto = client.get("/control").text
+
+        assert "hs-banner hs-down" in texto
+        assert "Reiniciala en WAHA" in texto
+
+    def test_la_franja_enlaza_al_detalle(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Un semáforo sin salida obliga a buscar la sección a mano."""
+        monkeypatch.setattr(
+            control,
+            "session_health",
+            lambda **kw: SessionHealth(configured=True, status="working"),
+        )
+
+        texto = client.get("/control").text
+
+        assert 'href="#ingesta"' in texto
+        assert 'id="ingesta"' in texto
+
+    def test_cargar_control_no_rompe_si_waha_no_contesta(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """WAHA apagado es el caso normal, no un error: la vista tiene que
+        cargar igual y decirlo."""
+        monkeypatch.setattr(
+            control,
+            "session_health",
+            lambda **kw: SessionHealth(configured=True, status="unreachable"),
+        )
+
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        assert "no responde" in response.text
