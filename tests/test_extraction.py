@@ -280,6 +280,51 @@ class TestCantidad:
         assert propuesta.quantity == cantidad
         assert propuesta.unit == unidad
 
+    @pytest.mark.parametrize(
+        ("texto", "cantidad", "unidad"),
+        [
+            # El anuncio cotiza el precio por unidad de peso sin decir cuántas.
+            # El operador cura estas filas como (1, lb) — medido contra la cola
+            # el 2026-09-03, 4 filas así.
+            ("Azúcar x libra (470)", Decimal("1"), "lb"),
+            ("Picadillo de pollo x libra a 580", Decimal("1"), "lb"),
+            ("Azúcar Blanca a 420 cup por libra", Decimal("1"), "lb"),
+            ("Sal de cocina a 130 cup la libra", Decimal("1"), "lb"),
+            ("Picadillo x libras 550", Decimal("1"), "lb"),
+            ("se vende por kilo a 800", Decimal("1"), "kg"),
+            # Con "N unidad" explícito gana ese, no la pista de "por libra".
+            ("saco de 100 lb la libra a 30000", Decimal("100"), "lb"),
+        ],
+    )
+    def test_precio_por_libra_sin_cantidad_explicita(
+        self,
+        texto: str,
+        cantidad: Decimal | None,
+        unidad: str | None,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        propuesta = propose(texto, products, provinces)
+        assert propuesta.quantity == cantidad
+        assert propuesta.unit == unidad
+
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            # Un envase de volumen en la línea: el "por libra" es el precio
+            # derivado de un bulto, no la unidad de venta. No se propone (1, lb).
+            "Precio por saco: 32500 (sale a 295 la libra)",
+            "Paca de 30 paquetes, 21900 la libra",
+            "Caja de pollo, sale la lb a 281",
+        ],
+    )
+    def test_por_libra_con_envase_de_bulto_no_propone_cantidad(
+        self, texto: str, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose(texto, products, provinces)
+        assert propuesta.quantity is None
+        assert propuesta.unit is None
+
 
 class TestProducto:
     def test_matchea_por_alias(

@@ -139,6 +139,20 @@ _QUANTITY_RE = re.compile(
     r"(\d[\d.,]*)\s*(" + "|".join(_UNIT_WORDS) + r")\b", re.IGNORECASE
 )
 
+# "x libra", "por libra", "la libra", "/ lb" (y las mismas con kilo): el anuncio
+# cotiza el precio por unidad de peso sin decir cuántas. El operador cura esas
+# filas como `quantity=1, unit=lb` — medido contra la cola el 2026-09-03, 4
+# filas así ("Azúcar x libra (470)", "Picadillo de pollo x libra (580)").
+_PER_WEIGHT_UNIT_RE = re.compile(
+    r"(?:\bx\s*|\bpor\s+|\bla\s+|/\s*)(libra|lb|kilo|kg)s?\b", re.IGNORECASE
+)
+# Si la línea nombra un envase de bulto, ese "por libra" es el precio derivado
+# de un saco/paca/caja, no la unidad de venta al menudeo: no se propone (1, lb).
+_BULK_WORD_RE = re.compile(
+    r"\b(caja|cajas|cajon|cajones|saco|sacos|paca|pacas|paquete|paquetes|contenedor)\b",
+    re.IGNORECASE,
+)
+
 # --- número pelado, último recurso ----------------------------------------
 #
 # Un número sin ninguna marca ("Papas prefritas 1kg 2500", "Picadillo x libras
@@ -537,9 +551,19 @@ def _extract_currency(text: str) -> str:
 
 def _extract_quantity(text: str) -> tuple[Decimal | None, str | None]:
     match = _QUANTITY_RE.search(text)
-    if match is None:
-        return None, None
-    return _normalize_number(match.group(1)), match.group(2).lower()
+    if match is not None:
+        return _normalize_number(match.group(1)), match.group(2).lower()
+
+    # Sin "N unidad" explícito: ¿cotiza "por libra" / "por kilo"? Se asume una
+    # unidad, que es lo que confirma el operador. La guarda de envase evita
+    # aplicarlo a un anuncio de saco donde "la libra" es el precio unitario
+    # derivado del bulto, no la unidad de venta.
+    per_weight = _PER_WEIGHT_UNIT_RE.search(text)
+    if per_weight is not None and _BULK_WORD_RE.search(_strip_accents(text)) is None:
+        word = per_weight.group(1).lower()
+        return Decimal("1"), "kg" if word in ("kilo", "kg") else "lb"
+
+    return None, None
 
 
 def _strip_accents(value: str) -> str:

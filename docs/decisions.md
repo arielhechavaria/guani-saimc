@@ -6044,3 +6044,28 @@ cambio. +39 filas a completa, 0 regresiones (medido). **`docs/h0-runs.jsonl`
 tiene una discontinuidad acá**: las corridas anteriores a este commit y las
 posteriores no son comparables sobre el mismo corpus. 1200 tests verdes (+2).
 Los 2 fallos de `test_public_filter.py` siguen preexistentes (2026-08-30).
+
+## 2026-09-03 — Extracción: "por libra" sin cantidad explícita se propone como (1, lb)
+Contexto: pasada tight de la tarea 3 del plan de extracción. Después del fix de
+emparejado (1d1e602), las fallas de precio y cantidad que quedaban estaban
+fragmentadas en micro-patrones. Se simularon los dos más limpios contra el
+corpus real, monkeypatcheando `engine.*` antes de escribir código (metodología
+obs #272d / #276): (1) miles con espacio `31 000` → `31000` — **+0, descartado**,
+esos casos caen por line-drop o por elección de moneda, no por el separador;
+(2) "x libra" / "por libra" / "la libra" (y kilo) sin número.
+Decisión: solo (2). `_extract_quantity`, cuando `_QUANTITY_RE` no encuentra
+`N unidad`, busca `(x|por|la|/) (libra|lb|kilo|kg)s?` y devuelve `(1, lb|kg)` —
+la unidad implícita que el operador confirma en esas filas—. Guarda: no aplica
+si la línea nombra un envase de bulto (`_BULK_WORD_RE`: caja/saco/paca/
+paquete/cajón/contenedor), porque ahí "la libra" es el precio unitario derivado
+del saco, no la unidad de venta al menudeo.
+Descartado: proponer `quantity=None` en vez de `1` — `_quantity_unit_correct`
+compara la cantidad y `None != 1`, así que no cerraría la fila; y el operador
+efectivamente cura 1. Miles con espacio (patrón 1) — medido +0.
+Consecuencia: extracción completa **46,4% → 47,8%** en el corpus actual (183
+anuncios / 295 filas), +4 filas, 0 regresiones (medido con OCR cacheado, los 4
+casos son "X x libra (precio)"). 1210 tests verdes. Los 2 fallos de
+`test_public_filter.py` siguen preexistentes (2026-08-30). La cola de fallas de
+precio/cantidad restante —tokens pegados `Boquitas70.00cup`, doble moneda con
+lado USD curado, `$ 23.500 CUP` en línea sin producto— queda para el asistente
+LLM (tarea 4), que la resuelve mejor que más regex.
