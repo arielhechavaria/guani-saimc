@@ -713,6 +713,55 @@ class TestPriceBasisMigration:
         engine.dispose()
 
 
+class TestDiscardReasonMigration:
+    """`0017_raw_ingestions_discard_reason.py` — mismo patrón que `0016`:
+    `batch_alter_table` porque crea un CHECK y SQLite no soporta `ADD
+    CONSTRAINT`. Aditiva nullable, sin backfill: una fila descartada anterior
+    a la migración queda en NULL (motivo no registrado)."""
+
+    def test_upgrade_agrega_la_columna_y_downgrade_la_elimina(self) -> None:
+        modulo = _cargar_modulo_migracion("0017_raw_ingestions_discard_reason.py")
+
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "raw_ingestions",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            connection.execute(
+                sa.insert(metadata.tables["raw_ingestions"]).values(id=uuid.uuid4())
+            )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("raw_ingestions")}
+            assert "discard_reason" in columnas
+
+            valor = connection.execute(
+                sa.text("select discard_reason from raw_ingestions")
+            ).scalar_one()
+            assert valor is None
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("raw_ingestions")}
+            assert "discard_reason" not in columnas
+            assert "id" in columnas
+
+        engine.dispose()
+
+
 class TestExchangeRateCacheMigration:
     """`0007_exchange_rate_cache.py` — `upgrade()`/`downgrade()` corridos
     contra un engine SQLite real vía `Operations.context()`, igual que

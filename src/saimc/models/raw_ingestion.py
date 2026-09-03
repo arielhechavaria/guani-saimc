@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, Uuid
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from saimc.models.base import Base, utc_now
@@ -46,6 +46,28 @@ class ProcessingStatus(StrEnum):
     DISCARDED = "discarded"
 
 
+class DiscardReason(StrEnum):
+    """Por qué se descartó un anuncio (2026-09-03).
+
+    `spec.md` §12.5 define la tasa de descarte como «anuncios sin información
+    económica extraíble». Pero el operador también descarta anuncios que SÍ
+    traen producto y precio, solo que fuera del foco de la Fase 0 —no son de
+    los pilotos, o son mayorista puro—. Mezclar los dos hace que el número
+    diga «el sistema trae basura» cuando en realidad dice «esto es útil pero
+    hoy no lo seguimos».
+
+    - `OFF_FOCUS`: tiene dato económico, pero no es de interés ahora. Sale del
+      numerador Y del denominador de la tasa del spec.
+    - `NO_DATA`: sin precio, ilegible, agotado, spam. Es lo que §12.5 mide.
+
+    Nulo en las filas descartadas antes de este cambio: no se registró el
+    motivo y no se retropobla (mismo criterio que `price_basis` en `0016`).
+    """
+
+    OFF_FOCUS = "off_focus"
+    NO_DATA = "no_data"
+
+
 class RawIngestion(Base):
     __tablename__ = "raw_ingestions"
 
@@ -53,6 +75,13 @@ class RawIngestion(Base):
     # documento se puedan comparar sin traducción.
     __table_args__ = (
         Index("idx_raw_ingestions_hash", "content_hash", unique=True),
+        # Vocabulario cerrado, mismo patrón que `ck_prices_history_price_basis`:
+        # el dominio son exactamente dos valores más el nulo, y un tercero
+        # sería una pregunta distinta, no una palabra más.
+        CheckConstraint(
+            "discard_reason IS NULL OR discard_reason IN ('off_focus', 'no_data')",
+            name="ck_raw_ingestions_discard_reason",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -94,6 +123,10 @@ class RawIngestion(Base):
     processing_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=ProcessingStatus.PENDING
     )
+
+    # Solo se completa cuando `processing_status == DISCARDED`. Nulo en todo
+    # lo demás y en lo descartado antes del 2026-09-03. Ver `DiscardReason`.
+    discard_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Cuándo se capturó el material (fecha de modificación del archivo).
     captured_at: Mapped[datetime] = mapped_column(

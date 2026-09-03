@@ -1057,6 +1057,7 @@ class TestH0RunRecord:
             total_curated=10,
             total_discarded=5,
             total_processed=15,
+            discarded_off_focus=0,
             discard_rate=1 / 3,
             text_curated_count=6,
             image_curated_count=4,

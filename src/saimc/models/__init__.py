@@ -13,6 +13,7 @@ from saimc.models.product import Product
 from saimc.models.province import Province
 from saimc.models.raw_ingestion import (
     ContentType,
+    DiscardReason,
     ProcessingStatus,
     RawIngestion,
     SourceType,
@@ -24,6 +25,7 @@ __all__ = [
     "Channel",
     "ContentType",
     "Currency",
+    "DiscardReason",
     "ExchangeRateCache",
     "Platform",
     "PriceHistory",

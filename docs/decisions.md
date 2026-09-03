@@ -6069,3 +6069,41 @@ casos son "X x libra (precio)"). 1210 tests verdes. Los 2 fallos de
 precio/cantidad restante —tokens pegados `Boquitas70.00cup`, doble moneda con
 lado USD curado, `$ 23.500 CUP` en línea sin producto— queda para el asistente
 LLM (tarea 4), que la resuelve mejor que más regex.
+
+## 2026-09-03 — «Descarte» se parte en «sin dato útil» y «fuera de foco»
+Contexto: `spec.md` §12.5 define la tasa de descarte como «anuncios sin
+información económica extraíble», objetivo <30%. Pero el operador también
+descarta anuncios que traen producto y precio, solo que fuera del foco de la
+Fase 0 —no son de los pilotos, o son mayorista puro (ej. «Sazón Golden … $35,50
+CUP … Compra mínima: 5 cajones x 480 u»)—. `discard_curation` guardaba todo
+como `DISCARDED` sin motivo, así que los dos casos contaban igual y el 67% a la
+vista decía «el sistema trae basura» cuando en gran parte decía «esto es útil
+pero hoy no lo seguimos». De 378 descartes, el 66% son imágenes sin
+`original_text`: el motivo no se puede derivar después, hay que capturarlo en
+el momento.
+Decisión: `raw_ingestions.discard_reason` nullable (`DiscardReason`:
+`off_focus` / `no_data`), migración `0017`, sin backfill —los 378 previos
+quedan NULL = «motivo no registrado» y se cuentan como `no_data`, lo
+conservador—. `discard_curation` exige el motivo (`Form(...)`): dos botones en
+la cola, «Sin dato útil» y «Fuera de foco». `discard_out_of_focus` (el lote
+`/curation/sin-foco`) marca `off_focus` por construcción. `IntakeHealth.
+discard_rate` y `measure.H0Report.discard_rate` se redefinen a la fracción de
+§12.5: `(descartes - off_focus) / (decidido - off_focus)`, `None` si no queda
+nada que medir. `off_focus_rate` se reporta aparte como contexto —un número
+alto ahí dice que los canales suscritos venden mayormente cosas que la Fase 0
+no sigue, que es señal de selección de canales, no de calidad de extracción—.
+Descartado: no tocar nada y documentar que el número está inflado (parche que
+hay que recordar cada vez). Un estado terminal nuevo `out_of_scope` o uno
+aparcado `deferred` (onda expansiva sobre `processing_status`, que se usa en
+muchos lados; y un anuncio fuera de foco hoy puede volver a serlo en Fase 1,
+así que un motivo re-consultable es mejor que un estado nuevo). Filtrar en la
+ingesta (contradice curaduría manual primero + `raw_ingestions` inmutable).
+Consecuencia: `discard_reason` es metadato de procesamiento, como
+`processing_status` —que ya se modifica—, no toca la evidencia inmutable. La
+serie de `h0-runs.jsonl` sigue continua: las corridas anteriores tienen
+`discarded_off_focus = 0`, así que su `discard_rate` con la fórmula nueva da lo
+mismo que con la vieja; solo diverge a medida que se acumulen descartes
+`off_focus`. El número a la vista no se mueve todavía (los 378 históricos son
+NULL); se corrige a medida que el operador etiqueta los nuevos. 1217 tests
+verdes. Los 2 fallos de `test_public_filter.py` siguen preexistentes
+(2026-08-30).

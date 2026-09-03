@@ -438,8 +438,9 @@
     <div class="m3-section-head">
       <h2 class="m3-h2" id="ingesta">Salud de la ingesta</h2>
       <span class="m3-sm m3-muted">
-        la tasa de descarte se mide sobre lo <em>decidido</em> (curado + descartado); lo
-        pendiente no entra porque todavía no se decidió nada
+        la tasa de descarte se mide sobre lo <em>decidido</em> (curado + descartado), y solo
+        cuenta lo descartado <em>sin dato útil</em> — §12.5. Lo que se tira por no ser piloto
+        o ser mayorista puro va aparte, en «fuera de foco»
       </span>
     </div>
 
@@ -458,6 +459,13 @@
       <div class="m3-metric">
         <div class="m3-metric-label">Descartados</div>
         <div class="m3-metric-value-sm">{{ health.discarded }}</div>
+        {% if health.discarded_off_focus %}
+        <div class="m3-metric-hint">
+          {{ health.discarded_off_focus }} fuera de foco
+          {%- if health.off_focus_rate is not none %} ({{ "%.0f"|format(health.off_focus_rate * 100) }}% de lo decidido){% endif %}
+          — anuncios con dato, no de piloto. No cuentan en la tasa.
+        </div>
+        {% endif %}
       </div>
       <div class="m3-metric">
         <div class="m3-metric-label">Tasa de descarte</div>
@@ -475,9 +483,9 @@
         </div>
         <div class="m3-metric-hint">
           {% if health.discard_rate is none %}
-            Nada decidido todavía
+            Nada decidido todavía (sin contar lo fuera de foco)
           {% else %}
-            Objetivo de §12.5 — el único umbral con veredicto de toda esta vista
+            Solo «sin dato útil». Objetivo de §12.5 — el único umbral con veredicto de esta vista
           {% endif %}
         </div>
       </div>

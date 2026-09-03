@@ -35,7 +35,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -61,6 +61,7 @@ from saimc.models import (
     PACKAGING_MAX_LENGTH,
     ContentType,
     Currency,
+    DiscardReason,
     PriceHistory,
     Product,
     ProcessingStatus,
@@ -967,6 +968,9 @@ async def discard_out_of_focus(request: Request, db: Session = Depends(get_db)) 
         if _focus_rank(ingestion, products) != _FOCUS_NONE:
             continue
         ingestion.processing_status = ProcessingStatus.DISCARDED
+        # Todo lo que se descarta por esta ruta es, por construcción, «fuera de
+        # foco»: la lista es exactamente los pendientes sin ningún piloto.
+        ingestion.discard_reason = DiscardReason.OFF_FOCUS.value
 
     db.commit()
     return RedirectResponse(url="/curation/sin-foco", status_code=status.HTTP_303_SEE_OTHER)
@@ -1361,10 +1365,17 @@ async def submit_curation(
 
 @router.post("/curation/{ingestion_id}/discard")
 def discard_curation(
-    ingestion_id: uuid.UUID, db: Session = Depends(get_db)
+    ingestion_id: uuid.UUID,
+    reason: DiscardReason = Form(...),
+    db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    """El motivo es obligatorio (`spec.md` §12.5): «sin dato útil» (sin precio,
+    ilegible, agotado, spam) es lo que la tasa de descarte mide; «fuera de
+    foco» (tiene precio pero no es piloto/es mayorista puro) no, y se reporta
+    aparte. Los dos botones de la cola mandan uno u otro."""
     ingestion = _require_pending(db, ingestion_id)
     ingestion.processing_status = ProcessingStatus.DISCARDED
+    ingestion.discard_reason = reason.value
     db.commit()
     return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
 

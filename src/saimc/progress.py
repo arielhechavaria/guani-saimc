@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from saimc.models import (
     Channel,
     Currency,
+    DiscardReason,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -135,26 +136,53 @@ def compute_phase0_progress(session: Session) -> Phase0Progress:
 
 @dataclass(frozen=True)
 class IntakeHealth:
-    """Qué entra por la bandeja y qué proporción se termina descartando."""
+    """Qué entra por la bandeja y qué proporción se termina descartando.
+
+    `discarded` es el total de descartes (lo que le importa a «Descarte por
+    canal»: cinco descartes cuestan hora de curaduría sea cual sea el motivo).
+    `discarded_off_focus` son los que traían producto y precio pero no eran de
+    interés para la Fase 0 —no piloto, mayorista puro—; salen de la tasa que
+    fija `spec.md` §12.5 («anuncios sin información económica extraíble»)
+    porque ese anuncio sí es útil, solo que hoy no lo seguimos. Nulo en la
+    base = motivo no registrado (los 378 descartes previos al 2026-09-03), y
+    se cuenta como «sin dato» — lo conservador.
+    """
 
     pending: int
     curated: int
     discarded: int
+    discarded_off_focus: int = 0
 
     @property
     def decided(self) -> int:
         return self.curated + self.discarded
 
     @property
-    def discard_rate(self) -> float | None:
-        """`None` cuando no hay nada decidido todavía.
+    def _no_data_discarded(self) -> int:
+        """Descartes que §12.5 sí mide: sin precio, ilegible, agotado, spam."""
+        return self.discarded - self.discarded_off_focus
 
-        Cero decididos no es «0% de descarte»: es que no hay qué medir, y
-        mostrar 0% afirmaría algo que el dato no dice.
+    @property
+    def discard_rate(self) -> float | None:
+        """La tasa de `spec.md` §12.5: descartes «sin dato» sobre lo decidido,
+        una vez sacado lo que se tiró solo por estar fuera de foco.
+
+        `None` cuando, quitados los fuera de foco, no queda nada decidido: no
+        hay qué medir, y un 0% afirmaría algo que el dato no dice.
         """
+        base = self.decided - self.discarded_off_focus
+        if base == 0:
+            return None
+        return self._no_data_discarded / base
+
+    @property
+    def off_focus_rate(self) -> float | None:
+        """Qué fracción de lo decidido se tiró por estar fuera de foco. Es
+        contexto, no la métrica del spec: un número alto acá dice que los
+        canales suscritos venden mayormente cosas que la Fase 0 no sigue."""
         if self.decided == 0:
             return None
-        return self.discarded / self.decided
+        return self.discarded_off_focus / self.decided
 
     @property
     def above_objective(self) -> bool:
@@ -162,7 +190,8 @@ class IntakeHealth:
 
         Es la única comparación con veredicto de todo el módulo, y existe
         porque el número está escrito en la especificación, no porque parezca
-        razonable.
+        razonable. Compara contra `discard_rate` ya depurada de fuera de foco:
+        el umbral del spec aplica a la métrica del spec.
         """
         rate = self.discard_rate
         return rate is not None and rate > DISCARD_RATE_OBJECTIVE
@@ -176,10 +205,16 @@ def compute_intake_health(session: Session) -> IntakeHealth:
             )
         ).all()
     )
+    off_focus = session.execute(
+        select(func.count()).where(
+            RawIngestion.discard_reason == DiscardReason.OFF_FOCUS.value
+        )
+    ).scalar_one()
     return IntakeHealth(
         pending=counts.get(ProcessingStatus.PENDING, 0),
         curated=counts.get(ProcessingStatus.CURATED, 0),
         discarded=counts.get(ProcessingStatus.DISCARDED, 0),
+        discarded_off_focus=off_focus,
     )
 
 

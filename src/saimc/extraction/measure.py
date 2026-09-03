@@ -46,6 +46,7 @@ from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.ingestion import origin
 from saimc.models import (
     ContentType,
+    DiscardReason,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -67,6 +68,13 @@ class H0Report:
     total_curated: int
     total_discarded: int
     total_processed: int
+    # Descartes que traían dato económico pero no eran de interés para la Fase
+    # 0 (no piloto, mayorista puro). `discard_rate` los saca de la fracción —
+    # `spec.md` §12.5 mide «sin información económica extraíble», y esos
+    # anuncios sí la tienen (2026-09-03). Cero en las corridas anteriores a
+    # este cambio: la columna no existía, así que la serie de `h0-runs.jsonl`
+    # sigue siendo comparable con su propia historia.
+    discarded_off_focus: int
     discard_rate: float | None
     # Texto e imagen entran los dos en la medición. Se cuentan por separado
     # solo para poder leer la composición del corpus.
@@ -342,8 +350,19 @@ def compute_h0_report(
     total_curated_count = len(total_curated)
     total_discarded_count = len(total_discarded)
     total_processed = total_curated_count + total_discarded_count
+    discarded_off_focus = sum(
+        1
+        for ingestion in total_discarded
+        if ingestion.discard_reason == DiscardReason.OFF_FOCUS.value
+    )
+    # La tasa de spec.md §12.5: descartes «sin dato» sobre lo procesado, una
+    # vez sacado lo que se tiró solo por estar fuera de foco (mismo criterio
+    # que `progress.IntakeHealth.discard_rate`).
+    discard_base = total_processed - discarded_off_focus
     discard_rate = (
-        total_discarded_count / total_processed if total_processed > 0 else None
+        (total_discarded_count - discarded_off_focus) / discard_base
+        if discard_base > 0
+        else None
     )
 
     image_curated_count = sum(
@@ -443,6 +462,7 @@ def compute_h0_report(
             total_curated=total_curated_count,
             total_discarded=total_discarded_count,
             total_processed=total_processed,
+            discarded_off_focus=discarded_off_focus,
             discard_rate=discard_rate,
             text_curated_count=text_curated_count,
             image_curated_count=image_curated_count,
@@ -462,6 +482,7 @@ def compute_h0_report(
         total_curated=total_curated_count,
         total_discarded=total_discarded_count,
         total_processed=total_processed,
+        discarded_off_focus=discarded_off_focus,
         discard_rate=discard_rate,
         text_curated_count=text_curated_count,
         image_curated_count=image_curated_count,
@@ -506,7 +527,15 @@ def _print_report(report: H0Report) -> None:
     print(f"Procesados totales:      {report.total_processed}")
     print(f"  Curados:               {report.total_curated}")
     print(f"  Descartados:           {report.total_discarded}")
-    print(f"  Tasa de descarte:      {_format_pct(report.discard_rate)}")
+    if report.discarded_off_focus:
+        print(
+            f"    fuera de foco:       {report.discarded_off_focus} "
+            "(con dato, no piloto/mayorista — no cuentan en la tasa)"
+        )
+    print(
+        f"  Tasa de descarte:      {_format_pct(report.discard_rate)}  "
+        "(sin dato útil, §12.5)"
+    )
     print()
     print(f"Curados de texto:        {report.text_curated_count} anuncios")
     print(f"Curados de imagen:       {report.image_curated_count} anuncios (OCR re-corrido)")

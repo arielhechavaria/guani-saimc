@@ -24,6 +24,7 @@ from saimc.models import (
     Channel,
     ContentType,
     Currency,
+    DiscardReason,
     Platform,
     PriceHistory,
     ProcessingStatus,
@@ -558,8 +559,9 @@ class TestSinCandidatosAtajoDeUnClic:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert "Descartar (sin candidatos)" in response.text
+        assert "No se reconoció producto ni precio en este anuncio" in response.text
         assert f'/curation/{ingestion.id}/discard' in response.text
+        assert 'name="reason"' in response.text
 
     def test_con_candidato_piloto_no_muestra_el_atajo(
         self, client: TestClient, session: Session
@@ -573,7 +575,7 @@ class TestSinCandidatosAtajoDeUnClic:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert "Descartar (sin candidatos)" not in response.text
+        assert "No se reconoció producto ni precio en este anuncio" not in response.text
 
     def test_precio_de_producto_no_piloto_no_muestra_el_atajo(
         self, client: TestClient, session: Session
@@ -594,7 +596,7 @@ class TestSinCandidatosAtajoDeUnClic:
 
         assert response.status_code == 200
         assert "No hay elementos en la cola." in response.text
-        assert "Descartar (sin candidatos)" not in response.text
+        assert "No se reconoció producto ni precio en este anuncio" not in response.text
 
     def test_el_atajo_descarta_de_verdad(
         self, client: TestClient, session: Session
@@ -605,7 +607,9 @@ class TestSinCandidatosAtajoDeUnClic:
         )
 
         response = client.post(
-            f"/curation/{ingestion.id}/discard", follow_redirects=False
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "no_data"},
+            follow_redirects=False,
         )
 
         assert response.status_code == 303
@@ -747,7 +751,7 @@ class TestSugerenciaAsistidaDeDescarte:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert "Descartar (sin candidatos)" in response.text
+        assert "No se reconoció producto ni precio en este anuncio" in response.text
         assert "Probable descarte" not in response.text
 
     def test_tasa_historica_del_canal_se_muestra(
@@ -2825,7 +2829,9 @@ class TestCurationDiscard:
         ingestion = _crear_raw_ingestion(session, hash_="hash-discard-1")
 
         response = client.post(
-            f"/curation/{ingestion.id}/discard", follow_redirects=False
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "no_data"},
+            follow_redirects=False,
         )
 
         assert response.status_code == 303
@@ -2835,7 +2841,60 @@ class TestCurationDiscard:
         refrescado = session.get(RawIngestion, ingestion.id)
         assert refrescado is not None
         assert refrescado.processing_status == ProcessingStatus.DISCARDED
+        assert refrescado.discard_reason == DiscardReason.NO_DATA.value
         assert list(session.execute(select(PriceHistory)).scalars()) == []
+
+    def test_guarda_el_motivo_fuera_de_foco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-discard-off-focus")
+
+        response = client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "off_focus"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(RawIngestion, ingestion.id).discard_reason == (
+            DiscardReason.OFF_FOCUS.value
+        )
+
+    def test_el_motivo_es_obligatorio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """§12.5: la tasa de descarte solo cuenta «sin dato útil». Sin el
+        motivo no se sabe de cuál de los dos baldes es, así que el POST no
+        pasa."""
+        ingestion = _crear_raw_ingestion(session, hash_="hash-discard-sin-motivo")
+
+        response = client.post(
+            f"/curation/{ingestion.id}/discard", follow_redirects=False
+        )
+
+        assert response.status_code == 422
+        session.expire_all()
+        assert session.get(RawIngestion, ingestion.id).processing_status == (
+            ProcessingStatus.PENDING
+        )
+
+    def test_un_motivo_fuera_del_vocabulario_no_pasa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-discard-motivo-raro")
+
+        response = client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "porque_si"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        session.expire_all()
+        assert session.get(RawIngestion, ingestion.id).processing_status == (
+            ProcessingStatus.PENDING
+        )
 
 
 # --- GET /curation/sin-foco ---------------------------------------------------
@@ -2933,6 +2992,13 @@ class TestCurationSinFocoDiscard:
         )
         assert session.get(RawIngestion, sin_foco_2.id).processing_status == (
             ProcessingStatus.DISCARDED
+        )
+        # Todo lo descartado por esta ruta es "fuera de foco" por construcción.
+        assert session.get(RawIngestion, sin_foco_1.id).discard_reason == (
+            DiscardReason.OFF_FOCUS.value
+        )
+        assert session.get(RawIngestion, sin_foco_2.id).discard_reason == (
+            DiscardReason.OFF_FOCUS.value
         )
         # ni lo que no vino en el POST (aunque también sea "sin foco") ni lo
         # que sí menciona un piloto se tocan.

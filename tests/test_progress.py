@@ -14,6 +14,7 @@ huecos, cobertura— es medición cruda sin veredicto, mismo criterio que
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy.orm import Session
 
 from saimc.models import (
@@ -26,7 +27,12 @@ from saimc.models import (
     SaleFormat,
 )
 from saimc.models.channel import Platform
-from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
+from saimc.models.raw_ingestion import (
+    ContentType,
+    DiscardReason,
+    ProcessingStatus,
+    SourceType,
+)
 from saimc.progress import (
     DISCARD_RATE_OBJECTIVE,
     PHASE0_TARGET_ROWS,
@@ -44,6 +50,7 @@ def _ingestion(
     session: Session,
     hash_: str,
     status: ProcessingStatus = ProcessingStatus.CURATED,
+    discard_reason: str | None = None,
 ) -> RawIngestion:
     row = RawIngestion(
         source_type=SourceType.INBOX_TEXT,
@@ -51,6 +58,7 @@ def _ingestion(
         content_hash=hash_,
         content_type=ContentType.TEXT,
         processing_status=status,
+        discard_reason=discard_reason,
         captured_at=datetime(2026, 8, 1, tzinfo=UTC),
     )
     session.add(row)
@@ -236,6 +244,66 @@ class TestIntakeHealth:
         assert health.decided == 0
         assert health.discard_rate is None
         assert health.above_objective is False
+
+    def test_el_descarte_fuera_de_foco_sale_del_numerador_y_del_denominador(
+        self, session: Session
+    ) -> None:
+        """spec.md §12.5: la tasa mide «sin información económica extraíble». Un
+        anuncio con producto y precio, descartado solo por no ser piloto, es
+        útil — no cuenta ni arriba ni abajo de la fracción. Se reporta aparte."""
+        _ingestion(session, "hash-ff-cur-1", ProcessingStatus.CURATED)
+        _ingestion(session, "hash-ff-cur-2", ProcessingStatus.CURATED)
+        _ingestion(
+            session, "hash-ff-nodata", ProcessingStatus.DISCARDED, DiscardReason.NO_DATA
+        )
+        for i in range(3):
+            _ingestion(
+                session, f"hash-ff-off-{i}", ProcessingStatus.DISCARDED,
+                DiscardReason.OFF_FOCUS,
+            )
+        session.commit()
+
+        health = compute_intake_health(session)
+
+        assert health.discarded == 4          # los 4 descartes, para "Descarte por canal"
+        assert health.discarded_off_focus == 3
+        # sin dato: 1, sobre lo decidido menos lo fuera de foco: (2 + 1) = 3.
+        assert health.discard_rate == pytest.approx(1 / 3)
+        assert health.off_focus_rate == pytest.approx(3 / 6)
+        assert health.above_objective is True   # 33% > 30%
+
+    def test_descarte_sin_motivo_registrado_cuenta_como_sin_dato(
+        self, session: Session
+    ) -> None:
+        """Los 378 descartes anteriores a este cambio quedan en NULL. Se leen
+        como «sin dato» —lo conservador—: nunca se los saca de la tasa sin
+        saber que corresponde."""
+        _ingestion(session, "hash-null-cur", ProcessingStatus.CURATED)
+        _ingestion(session, "hash-null-desc", ProcessingStatus.DISCARDED)  # reason NULL
+        session.commit()
+
+        health = compute_intake_health(session)
+
+        assert health.discarded_off_focus == 0
+        assert health.discard_rate == 0.5
+
+    def test_solo_descartes_fuera_de_foco_no_deja_nada_que_medir(
+        self, session: Session
+    ) -> None:
+        _ingestion(
+            session, "hash-onlyff-1", ProcessingStatus.DISCARDED, DiscardReason.OFF_FOCUS
+        )
+        _ingestion(
+            session, "hash-onlyff-2", ProcessingStatus.DISCARDED, DiscardReason.OFF_FOCUS
+        )
+        session.commit()
+
+        health = compute_intake_health(session)
+
+        assert health.discarded == 2
+        assert health.discarded_off_focus == 2
+        assert health.discard_rate is None       # decidido - fuera de foco = 0
+        assert health.off_focus_rate == 1.0
 
 
 class TestDailyActivity:
