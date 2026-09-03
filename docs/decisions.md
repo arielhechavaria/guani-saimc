@@ -6107,3 +6107,29 @@ mismo que con la vieja; solo diverge a medida que se acumulen descartes
 NULL); se corrige a medida que el operador etiqueta los nuevos. 1217 tests
 verdes. Los 2 fallos de `test_public_filter.py` siguen preexistentes
 (2026-08-30).
+
+## 2026-09-03 — Los productos bandera no se acotan: la premisa de §12.5 no aplica
+Contexto: la nota de unidades de `spec.md` §12.5 dice que si la normalización de
+cantidad resulta ser el cuello de botella, «la respuesta correcta es acotar los
+productos bandera a aquellos con unidad de venta estable, no bajar el estándar».
+Se abrió una tarea para decidirlo cuando cantidad/unidad medía 42,4%.
+Decisión: **no se acota nada.** La nota pone dos condiciones y ninguna se
+cumple. (1) Ya no es el cuello: tras el fix de emparejado (`1d1e602`) y la regla
+«por libra» (`14eecd6`), cantidad/unidad está en **60,7%**, empatada con precio
+(61,0%) como la métrica más débil y a 9 puntos del mínimo de 70%, no a 28. (2)
+Los cinco pilotos **ya tienen unidad de venta estable**: filas de piloto con
+unidad no convertible en toda la historia, **cero**. Aceite `l`+`ml` (100%
+convertible), Arroz `lb`+`kg` (100%), Azúcar blanca `lb`+`kg` (100%), Pollo
+`lb`+`kg` (100%), Picadillo `lb` + 1 fila sin unidad (95%). Que el Arroz venga
+en kg y en lb no es inestabilidad: la libra son 0,45359237 kg por definición y
+`cells.py` funde las dos desde `468e740`. Las `caja` de Pollo que había las
+re-curó el operador.
+Descartado: recortar la lista igual «por prudencia» — no sacaría ni una fila
+problemática, sacaría productos sanos y achicaría la meta de Fase 0 sin ganar
+nada. Bajar el umbral de 70% — lo que §12.5 prohíbe explícitamente.
+Consecuencia: la meta de Fase 0 mantiene sus 5 pilotos. El 60,7% no viene de
+unidades inestables sino de que el extractor no propone **nada** en anuncios de
+imagen (el OCR parte el nombre del producto y la línea de precio en renglones
+distintos, obs. medida el 2026-08-31): eso es trabajo del asistente LLM, no de
+alcance. La tarea se reabre solo si entra un piloto nuevo que se venda en caja
+o paquete sin contenido declarado.
