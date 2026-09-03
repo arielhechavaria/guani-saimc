@@ -922,6 +922,127 @@ class TestH0EmparejadoAmbiguo:
         assert report.quantity_unit_accuracy == 1.0
 
 
+class TestH0EmparejadoMismoProductoVariasFilas:
+    """Un anuncio con el MISMO producto en dos filas —menudeo por kg y saco por
+    lb— y los dos candidatos correctos. Emparejar por orden los cruza y cuenta
+    las dos como fallo de precio Y de cantidad/unidad; emparejar por mejor
+    ajuste los alinea.
+
+    Caso real medido el 2026-09-03: los price-lists de canal (`COTORRO`,
+    `SAN JOSÉ`, `OFERTAS DEL DÍA`) publican «Arroz grano dorado 100 lb … o
+    30885» y «Arroz grano dorado 1 kg … o 688,7» en el mismo mensaje. El
+    extractor sacaba las dos filas bien; `_match_rows_to_candidates` las
+    pareaba por posición y las dos contaban mal. Eran 39 de 295 filas.
+    """
+
+    @pytest.fixture
+    def arroz(self, session: Session) -> Product:
+        producto = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(producto)
+        session.commit()
+        return producto
+
+    def test_dos_filas_del_mismo_producto_se_alinean_por_mejor_ajuste(
+        self, session: Session, arroz: Product, habana: Province
+    ) -> None:
+        texto = "Arroz 100 lb a 30000 habana\nArroz 1 kg a 700 habana\n"
+        ingestion = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/arroz-dos-formatos.txt",
+            content_hash="hash-arroz-dos-formatos",
+            content_type=ContentType.TEXT,
+            original_text=texto,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.flush()
+        # Orden cruzado a propósito: la PRIMERA fila confirmada corresponde a
+        # la SEGUNDA línea del anuncio. Con emparejado posicional, la fila de
+        # 700/kg se compara contra el candidato de 30000/lb y viceversa.
+        session.add(
+            PriceHistory(
+                product_id=arroz.id,
+                province_id=habana.id,
+                price=Decimal("700"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("1"),
+                unit="kg",
+                source_id=ingestion.id,
+            )
+        )
+        session.add(
+            PriceHistory(
+                product_id=arroz.id,
+                province_id=habana.id,
+                price=Decimal("30000"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("100"),
+                unit="lb",
+                source_id=ingestion.id,
+            )
+        )
+        session.commit()
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 2
+        assert report.price_accuracy == 1.0
+        assert report.quantity_unit_accuracy == 1.0
+        assert report.complete_accuracy == 1.0
+
+    def test_una_fila_bien_extraida_y_otra_no_no_se_prestan_el_acierto(
+        self, session: Session, arroz: Product, habana: Province
+    ) -> None:
+        """El mejor ajuste no infla: si el extractor solo sacó bien una de las
+        dos líneas del producto, la otra fila se queda con el candidato que
+        sobra —del mismo producto— y sigue fallando lo que el extractor no
+        extrajo. No hay candidato ajeno del que tomar prestado un acierto."""
+        # El anuncio solo tiene UNA línea de Arroz legible; la de kg está rota.
+        texto = "Arroz 100 lb a 30000 habana\nArroz saco a granel habana\n"
+        ingestion = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/arroz-una-legible.txt",
+            content_hash="hash-arroz-una-legible",
+            content_type=ContentType.TEXT,
+            original_text=texto,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=arroz.id,
+                province_id=habana.id,
+                price=Decimal("30000"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("100"),
+                unit="lb",
+                source_id=ingestion.id,
+            )
+        )
+        session.add(
+            PriceHistory(
+                product_id=arroz.id,
+                province_id=habana.id,
+                price=Decimal("700"),
+                currency=Currency.CUP.value,
+                quantity=Decimal("1"),
+                unit="kg",
+                source_id=ingestion.id,
+            )
+        )
+        session.commit()
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 2
+        # Una de las dos filas: la que el extractor sí sacó.
+        assert report.price_accuracy == pytest.approx(1 / 2)
+        assert report.complete_accuracy == pytest.approx(1 / 2)
+
+
 # --- N-05: registro longitudinal de cada corrida ----------------------------
 #
 # Los casos fijan la FORMA del registro (qué claves, qué tipos, cómo se

@@ -6013,3 +6013,34 @@ como razón cruda junto al `n`, nunca como veredicto. La entrada del 2026-08-12
 que estimaba ~2,5× de brecha queda para revisar cuando el mayorista tenga
 muestra: si la brecha real es ~1,15×, el argumento de «incomparables» se
 sostiene por ser universos distintos, no por la magnitud.
+
+## 2026-09-03 — H0: el emparejado fila↔candidato alinea por mejor ajuste cuando un producto se repite
+Contexto: la medición de H0 (`measure._match_rows_to_candidates`) emparejaba cada
+fila confirmada con el primer candidato del mismo `product_id`, por orden. En los
+price-lists de canal —«COTORRO / SAN JOSÉ / OFERTAS DEL DÍA»— el mismo producto
+aparece dos veces en un mensaje: «Arroz grano dorado 100 lb … o 30885» (saco
+mayorista) y «Arroz grano dorado 1 kg … o 688,7» (menudeo). El extractor sacaba
+las dos filas **bien**, pero el orden de las filas curadas no seguía el de las
+líneas del anuncio, así que el emparejado cruzaba menudeo↔mayorista y contaba las
+dos como fallo de precio Y de cantidad/unidad. Medido el 2026-09-03: 39 de 295
+filas. Era el grueso de las «37 confusiones kg↔lb» de la tarea 2 del plan de
+extracción — que resultó ser un bug de medición, no de reglas, igual que la
+tarea 1.
+Decisión: entre candidatos del **mismo producto**, `_assign_within_product`
+elige por mejor ajuste —costo con peso precio 1,0 / cantidad-unidad 0,5 /
+provincia 0,25, óptimo por `permutations` para conjuntos chicos, greedy si son
+grandes—. Solo reordena dentro de un `product_id` ya reconocido: no toma nada
+prestado de otro producto, así que alinear no puede inflar la métrica (la guarda
+de 2026-08-21 contra «regalar el precio de una línea ajena» sigue intacta para
+las filas cuyo producto no se reconoció). El reparto de las filas sin candidato
+del mismo producto no cambia.
+Descartado: dejar el emparejado posicional —pierde aciertos reales del extractor
+por el orden de curación—. Un matcher que cruce productos —riesgo de acreditar
+coincidencias, que es justo lo que la guarda de 2026-08-21 evita—.
+Consecuencia: **la métrica se volvió más fiel, el extractor no cambió**. En el
+corpus actual (183 anuncios / 295 filas) extracción completa **33,2% → 46,4%**;
+precio 45,8% → 61,0%; cantidad/unidad 42,4% → 59,0%; producto y provincia sin
+cambio. +39 filas a completa, 0 regresiones (medido). **`docs/h0-runs.jsonl`
+tiene una discontinuidad acá**: las corridas anteriores a este commit y las
+posteriores no son comparables sobre el mismo corpus. 1200 tests verdes (+2).
+Los 2 fallos de `test_public_filter.py` siguen preexistentes (2026-08-30).

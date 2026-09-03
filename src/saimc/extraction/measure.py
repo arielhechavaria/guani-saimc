@@ -25,6 +25,7 @@ exigente, era medir otro extractor — uno que en producción no existe.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import subprocess
 import uuid
@@ -143,6 +144,61 @@ def _price_history_by_source(session: Session) -> dict[uuid.UUID, list[PriceHist
     return grouped
 
 
+#: Peso de cada campo al elegir, entre varios candidatos del MISMO producto,
+#: cuál corresponde a una fila. El precio es la señal de identidad más fuerte
+#: —dos filas del mismo producto en el mismo anuncio casi siempre difieren en
+#: precio antes que en nada—, después la cantidad/unidad, y la provincia casi
+#: no discrimina porque la comparten todos los candidatos del anuncio.
+_PRICE_MISMATCH_COST = 1.0
+_QUANTITY_UNIT_MISMATCH_COST = 0.5
+_PROVINCE_MISMATCH_COST = 0.25
+
+
+def _pair_cost(row: PriceHistory, candidate: ExtractionProposal) -> float:
+    """Cuánto «no se parecen» una fila confirmada y un candidato. 0 = idénticos
+    en los tres campos que este emparejado mira."""
+    cost = 0.0
+    if not (candidate.price == row.price and candidate.currency == row.currency):
+        cost += _PRICE_MISMATCH_COST
+    if not _quantity_unit_correct(
+        candidate.quantity, candidate.unit, row.quantity, row.unit
+    ):
+        cost += _QUANTITY_UNIT_MISMATCH_COST
+    candidate_province_id = (
+        candidate.province.id if candidate.province is not None else None
+    )
+    if candidate_province_id != row.province_id:
+        cost += _PROVINCE_MISMATCH_COST
+    return cost
+
+
+def _assign_within_product(
+    rows: list[PriceHistory], candidates: list[ExtractionProposal]
+) -> list[tuple[PriceHistory, ExtractionProposal]]:
+    """Empareja filas y candidatos de un MISMO producto por mejor ajuste.
+
+    Con `permutations` cuando los dos conjuntos son chicos —el caso real: 2 o 3
+    filas de Arroz por anuncio— para dar el óptimo global; greedy por si algún
+    anuncio raro trae muchos de los dos lados. En los dos casos cada candidato
+    se usa una sola vez.
+    """
+    k = min(len(rows), len(candidates))
+    if len(rows) <= 6 and len(candidates) <= 6:
+        best_perm = min(
+            itertools.permutations(candidates, k),
+            key=lambda perm: sum(_pair_cost(rows[i], perm[i]) for i in range(k)),
+        )
+        return [(rows[i], best_perm[i]) for i in range(k)]
+
+    pool = list(candidates)
+    pairs = []
+    for row in rows[:k]:
+        chosen = min(pool, key=lambda c: _pair_cost(row, c))
+        pool.remove(chosen)
+        pairs.append((row, chosen))
+    return pairs
+
+
 def _match_rows_to_candidates(
     confirmed_rows: list[PriceHistory], candidates: list[ExtractionProposal]
 ) -> list[tuple[PriceHistory, ExtractionProposal]]:
@@ -150,10 +206,19 @@ def _match_rows_to_candidates(
     corresponde.
 
     Primero por `product_id` — es la señal más confiable cuando hay varios
-    productos en el mismo anuncio.
+    productos en el mismo anuncio. Cuando un producto aparece en **varias**
+    filas confirmadas y `propose_all` sacó **varios** candidatos suyos —el
+    price-list de canal que vende Arroz por kg al menudeo y por saco de lb al
+    por mayor en el mismo mensaje—, el reparto por orden los cruzaba y contaba
+    las dos filas como fallo aunque el extractor las hubiera sacado bien
+    (39 de 295 filas, medido 2026-09-03). Entre candidatos del mismo producto
+    se elige por **mejor ajuste** (`_assign_within_product`): no se toma nada
+    prestado de otro producto, así que alinear no puede inflar la métrica —
+    solo deja de perder aciertos reales por el orden.
 
-    Lo que no matchea así se reparte según cuántas líneas hayan quedado
-    libres, porque no es lo mismo no tener elección que tener que adivinar:
+    Lo que no matchea por `product_id` se reparte según cuántas líneas hayan
+    quedado libres, porque no es lo mismo no tener elección que tener que
+    adivinar:
 
     - **Una sola línea libre**: se empareja con ella. No hubo elección, y
       precio, cantidad y provincia igual pudieron extraerse bien aunque el
@@ -174,29 +239,38 @@ def _match_rows_to_candidates(
     disponible para la fila siguiente.
     """
     remaining = list(candidates)
-    pairs: list[tuple[PriceHistory, ExtractionProposal]] = []
+    matched: dict[int, ExtractionProposal] = {}
     unmatched_rows: list[PriceHistory] = []
 
+    # Agrupado por producto, en el orden en que cada producto aparece por
+    # primera vez en las filas confirmadas.
+    rows_by_product: dict[object, list[PriceHistory]] = {}
     for row in confirmed_rows:
-        match = next(
-            (c for c in remaining if c.product is not None and c.product.id == row.product_id),
-            None,
-        )
-        if match is not None:
-            remaining.remove(match)
-            pairs.append((row, match))
-        else:
+        rows_by_product.setdefault(row.product_id, []).append(row)
+
+    for product_id, rows in rows_by_product.items():
+        product_candidates = [
+            c for c in remaining if c.product is not None and c.product.id == product_id
+        ]
+        if not product_candidates:
+            unmatched_rows.extend(rows)
+            continue
+        for row, candidate in _assign_within_product(rows, product_candidates):
+            matched[id(row)] = candidate
+            remaining.remove(candidate)
+        for row in rows[len(product_candidates):]:
             unmatched_rows.append(row)
 
     for row in unmatched_rows:
         if not remaining:
-            pairs.append((row, ExtractionProposal()))
+            matched[id(row)] = ExtractionProposal()
         elif len(remaining) == 1:
-            pairs.append((row, remaining.pop(0)))
+            matched[id(row)] = remaining.pop(0)
         else:
-            pairs.append((row, ExtractionProposal(province=_shared_province(remaining))))
+            matched[id(row)] = ExtractionProposal(province=_shared_province(remaining))
 
-    return pairs
+    # Se devuelve en el orden original de `confirmed_rows`.
+    return [(row, matched[id(row)]) for row in confirmed_rows]
 
 
 def _shared_province(candidates: list[ExtractionProposal]) -> Province | None:
