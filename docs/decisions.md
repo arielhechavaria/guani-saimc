@@ -6133,3 +6133,27 @@ imagen (el OCR parte el nombre del producto y la línea de precio en renglones
 distintos, obs. medida el 2026-08-31): eso es trabajo del asistente LLM, no de
 alcance. La tarea se reabre solo si entra un piloto nuevo que se venda en caja
 o paquete sin contenido declarado.
+
+## 2026-09-03 — Sección «Hoy» en /control lee `requisitos.md`, no el GitHub Project
+Contexto: se pidió una vista en `/control` que le diga al operador/desarrollador
+en qué enfocar el día — una hora de curaduría, el resto en diseño o
+implementación. La fuente obvia para «qué falta» es el GitHub Project #1, pero
+`/control` tiene la convención de no depender de un servicio externo al cargar
+(mismo motivo por el que no consulta elTOQUE en vivo, ver `status.py`), y la
+app no tiene ninguna integración con la API de GitHub.
+Decisión: el bloque de diseño/implementación parsea `docs/requisitos.md`
+(tabla «Estado de los 16 módulos»), documento local ya versionado, en vez de
+llamar al Project. Módulo nuevo `requisitos_status.py`, mismo criterio
+fail-soft que `read_h0_runs`. Marca «accionable hoy» al módulo que no está
+terminado (`Estado` no empieza con «Construido» ni es «Fase 0 completa») y no
+tiene bloqueo (`Bloqueado por` = «—») — con la tabla actual, dos: Validación
+(05) y Antimanipulación C1–C4 (07).
+Descartado: enlazar al GitHub Project en vez de parsear nada — es más simple
+pero no «asiste», solo redirige. Consultar la API de GitHub en cada carga de
+`/control` — dependencia externa que la vista ya evita a propósito en todo lo
+demás.
+Consecuencia: `docs/requisitos.md` y el GitHub Project quedan como dos cortes
+del mismo sistema (uno por módulo de pipeline, el otro por área) que pueden
+desincronizarse — confirmado al escribir esto: el módulo 03 del documento cita
+datos del 31/8 y no las tareas 2 y 3 de extracción de esta semana. Mantener
+`requisitos.md` al día queda como slice aparte, todavía sin diseñar.

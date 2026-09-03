@@ -34,6 +34,7 @@ from saimc.ingestion.whatsapp_health import session_health
 from saimc.web.health_strip import build_strip, worst_level
 from saimc.extraction.measure import read_h0_runs
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
+from saimc.requisitos_status import read_module_status
 from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
     PHASE0_PRODUCTS_MIN,
@@ -181,6 +182,11 @@ def control_panel(
             # orden cronológico. Lee `docs/h0-runs.jsonl` en cada carga (es un
             # archivo chico); degrada a lista vacía si todavía no existe.
             "h0_runs": read_h0_runs(),
+            # Estado de los 16 módulos (docs/requisitos.md), para la sección
+            # «Hoy»: qué atacar en diseño/implementación además de la hora de
+            # curaduría. Fail-soft igual que `h0_runs`: tabla movida o archivo
+            # ausente degradan a lista vacía, no a error.
+            "module_status": read_module_status(),
             # Consumo del asistente. Sale del registro de invocaciones, no de
             # una API de facturación: es el gasto de SAIMC medido sobre lo que
             # la propia API reportó consumir, no el total de la cuenta.

@@ -108,6 +108,46 @@
     </div>
   </section>
 
+  <!-- ---------- 0.5. Hoy ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">Hoy</h2>
+      <span class="m3-sm m3-muted">
+        una hora de curaduría, el resto del día en diseño o implementación
+      </span>
+    </div>
+
+    <div class="m3-grid">
+      <div class="m3-metric">
+        <div class="m3-metric-label">Curaduría (~1 hora)</div>
+        <div class="m3-metric-value-sm">
+          {% if health.pending %}<a href="/curation">{{ health.pending }}</a>
+          {%- else %}<span class="m3-dim">0</span>{% endif %}
+        </div>
+        <div class="m3-metric-hint">en cola</div>
+      </div>
+
+      <div class="m3-metric">
+        <div class="m3-metric-label">Diseño / implementación (el resto del día)</div>
+        {% set accionables = module_status | selectattr("is_actionable", "equalto", true) | list %}
+        {% if not module_status %}
+        <p class="m3-sm m3-dim" style="margin:14px 0 0">Sin datos de <code>docs/requisitos.md</code>.</p>
+        {% elif not accionables %}
+        <p class="m3-sm m3-dim" style="margin:14px 0 0">Ningún módulo ni terminado ni bloqueado hoy.</p>
+        {% else %}
+        <div class="m3-row" style="gap:6px; margin-top:14px">
+          {% for modulo in accionables %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">{{ modulo.number }} · {{ modulo.name }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div class="m3-metric-hint" style="margin-top:10px">
+          <a href="/docs/requisitos">ver los 16 módulos →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ---------- 1. Progreso hacia la meta de Fase 0 (spec.md §9) ---------- -->
   <section>
     <div class="m3-section-head">
