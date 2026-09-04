@@ -133,31 +133,33 @@
    otro. Ese test es
    `tests/test_static_assets.py::TestEscalaResponsive`.
 
-   La escala son estos tres cortes, cada uno con un significado propio:
+   La escala son estos dos cortes, cada uno con un significado propio:
 
-       640px  una columna en la home pública (`.ph-cards`, `.ph-series`,
-              `.ph-panels` dejan la grilla).
        720px  cromo compacto del operador: topnav solo iconos, topbar deja de
               ser sticky, título a 22px, la barra de acciones se reparte
               la fila.
        900px  layouts de dos columnas a una: `/curation` (formulario +
               evidencia) y `/docs` (documento + TOC).
 
+   Había un tercero, 640px, para la home pública. Se fue el 2026-09-04 al
+   volver fluidas sus tres grillas (`auto-fit` + `minmax`): una grilla que se
+   adapta sola no necesita que nadie le anuncie el ancho. Es el camino para
+   los otros dos también — un corte responsive es la confesión de que el
+   layout no sabe acomodarse.
+
    Más `@media print` en `docs_view.html`, que no es un ancho.
 
    Por qué NO son las window size classes de Material (600 / 840), que sería
-   lo esperable habiendo decidido alinear todo bajo Material: los tres números
-   de arriba están atados a layouts que todavía no son fluidos, y moverlos
-   rompe cosas ya arregladas. Medido el 2026-09-04:
+   lo esperable habiendo decidido alinear todo bajo Material: los dos números
+   que quedan están atados a layouts que todavía no son fluidos, y moverlos
+   rompe algo ya arreglado. Medido el 2026-09-04:
 
      · 720 → 600 devolvería el bug del 2026-09-02 en el teléfono EN
        HORIZONTAL. Un teléfono acostado mide ~640-844 de ancho por ~360-390
        de alto: con 720 cae en compacto, con 600 no, y vuelve a comerse los
        ~230px de cromo fijo sobre un viewport de 360px de alto.
-     · 640 → 600 dejaría `.ph-cards` en `repeat(3, 1fr)` dentro de 600px:
-       ~178px por tarjeta de precio, con su barra de rango adentro.
 
-   La convergencia a 600/840 es correcta como destino, pero primero las
-   grillas tienen que dejar de ser de columnas fijas y la topnav tiene que
-   sobrevivir a 600px con las etiquetas puestas. Eso es trabajo de la
-   repatriación de componentes, no de renumerar cortes. */
+   El corte de la home pública sí se pudo eliminar, y no renumerándolo sino
+   sacándole el trabajo de encima. Los dos que quedan salen igual: 900 cuando
+   `/curation` y `/docs` acomoden sus dos columnas solas, y 720 cuando la
+   topnav sobreviva a 600px con las etiquetas puestas. */

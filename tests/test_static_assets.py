@@ -331,7 +331,7 @@ class TestEscalaResponsive:
     converger— está en el bloque «Breakpoints» de `design_tokens.css`.
     """
 
-    CORTES = {640, 720, 900}
+    CORTES = {720, 900}
 
     def test_ninguna_media_query_usa_un_corte_de_fantasia(self) -> None:
         raiz = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web"

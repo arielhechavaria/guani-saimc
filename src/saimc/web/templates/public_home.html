@@ -26,7 +26,6 @@
     --ph-font-heading: "Alice", Georgia, serif;
     --ph-accent: #05668d;        /* Baltic Blue — estructura, cifras de precio */
     --ph-accent-2: #028090;      /* Teal — relleno del mapa / dato en ingesta */
-    --ph-neutral: #9aaaa6;       /* Ash Grey — sin datos, líneas finas */
     --ph-median: #aec092;        /* Muted Olive — línea de mediana en series */
     /* Hero claro, tokens Material 3 (`saimc-public.css`): la sección de
        cobertura era un panel oscuro (decisión 2026-08-22); pasó a claro para
@@ -35,7 +34,6 @@
     --ph-hero-line: var(--m3-outline-variant);
     --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
     --ph-radius-lg: 24px;
-    --ph-radius-md: 18px;
     --ph-radius-sm: 14px;
   }
 
@@ -118,8 +116,12 @@
   .ph-section-tag { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase;
                      opacity: .65; white-space: nowrap; }
 
+  /* Fluida, no `repeat(3, 1fr)`: con columnas fijas, entre 700 y 900px de
+     ancho entraban tres tarjetas de 211-278px y la cifra de precio no
+     respiraba. `auto-fit` da 3 en escritorio (idéntico), 2 en tablet y 1 en
+     teléfono, sin necesidad de un corte responsive propio. */
   .ph-cards { display: grid; gap: 1.1rem; padding: 0; margin: 0 0 1.25rem; list-style: none;
-              grid-template-columns: repeat(3, 1fr); }
+              grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
   .ph-card { border-radius: var(--ph-radius-sm); background: #fff; box-shadow: var(--ph-elev);
              padding: 1.1rem 1.2rem 1rem; }
   .ph-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
@@ -160,7 +162,7 @@
                   color: var(--m3-on-surface-variant); }
 
   .ph-series { display: grid; gap: 1.1rem; padding: 0; margin: 0; list-style: none;
-               grid-template-columns: repeat(3, 1fr); }
+               grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
   .ph-serie { border-radius: var(--ph-radius-sm); background: #fff; box-shadow: var(--ph-elev);
               padding: 1rem 1.1rem .9rem; }
   .ph-serie-head { display: flex; align-items: baseline; justify-content: space-between;
@@ -176,11 +178,6 @@
   .ph-plot-dot.is-linked:hover { fill: var(--ph-accent-2); }
   .ph-plot-label { font-size: 11px; fill: currentColor; opacity: .55; }
   .ph-serie-foot { margin: .55rem 0 0; font-size: .75rem; opacity: .75; }
-
-  @media (max-width: 640px) {
-    .ph-cards, .ph-series { grid-template-columns: 1fr; }
-    .ph-panels { grid-template-columns: 1fr; }
-  }
 
   /* ── Tabla de cobertura accesible (respaldo del mapa) ───────────── */
   .ph-table-card { border-radius: var(--ph-radius-sm); background: #fff; box-shadow: var(--ph-elev);
