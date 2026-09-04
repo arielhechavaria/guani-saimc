@@ -860,3 +860,214 @@ class TestSeedProvinces:
         for fila in filas:
             assert fila["id"] == uuid.uuid5(modulo._PROVINCE_NS, fila["code"])
             assert fila["is_published"] is False
+
+
+def _crear_formato(
+    producto: Product,
+    *,
+    packaging: str = "caja",
+    quantity: str = "40",
+    unit: str = "lb",
+) -> "ProductFormat":
+    """Constructor puro, mismo patrón que `_crear_precio`: no toca la sesión,
+    así el `IntegrityError` de un caso negativo salta en el `commit()` del test
+    y no acá dentro."""
+    from saimc.models import ProductFormat
+
+    return ProductFormat(
+        product_id=producto.id,
+        packaging=packaging,
+        quantity=Decimal(quantity),
+        unit=unit,
+    )
+
+
+class TestProductFormatIdentity:
+    """`uq_product_formats_identity` sobre (product_id, packaging, quantity, unit)
+    — design.md D1. Es lo que hace segura la creación al vuelo: no hay texto que
+    se pueda escribir distinto, así que el segundo intento encuentra la fila."""
+
+    def test_triple_repetido_bajo_el_mismo_producto_rechazado(
+        self, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        session.add(_crear_formato(producto, packaging="caja", quantity="40", unit="lb"))
+        session.commit()
+
+        session.add(_crear_formato(producto, packaging="caja", quantity="40", unit="lb"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+    def test_el_mismo_triple_bajo_otro_producto_se_acepta(
+        self, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        arroz = _crear_producto(session, name="Arroz")
+        session.add(_crear_formato(pollo, packaging="caja", quantity="40", unit="lb"))
+        session.add(_crear_formato(arroz, packaging="caja", quantity="40", unit="lb"))
+        session.commit()  # no levanta: la unicidad es por producto
+
+    def test_misma_terna_distinta_cantidad_se_acepta(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        session.add(_crear_formato(producto, packaging="caja", quantity="40", unit="lb"))
+        session.add(_crear_formato(producto, packaging="caja", quantity="33", unit="lb"))
+        session.commit()  # el tamaño es identidad (design.md D1): son dos formatos
+
+
+class TestProductFormatPackagingCheck:
+    """`ck_product_formats_packaging` — vocabulario cerrado en la base, a
+    diferencia de `prices_history.unit` que a propósito no lo tiene (design.md
+    D2). `contenedor` y `paca` no son envases (D3)."""
+
+    @pytest.mark.parametrize("envase", ["paquete", "saco", "caja", "botella", "pomo", "a granel"])
+    def test_los_seis_envases_del_vocabulario_se_aceptan(
+        self, session: Session, envase: str
+    ) -> None:
+        producto = _crear_producto(session)
+        session.add(_crear_formato(producto, packaging=envase, quantity="1", unit="lb"))
+        session.commit()
+
+    def test_contenedor_rechazado(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        session.add(_crear_formato(producto, packaging="contenedor", quantity="1", unit="lb"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+    def test_paca_rechazada(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        session.add(_crear_formato(producto, packaging="paca", quantity="1", unit="kg"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+class TestProductFormatForeignKeyRestrict:
+    """FK `RESTRICT` — un formato referenciado por una fila de precio no se
+    puede borrar (design.md D7: los formatos no se retiran, solo se ordena la
+    lista; la única excepción es un formato con cero observaciones)."""
+
+    def test_borrar_formato_referenciado_por_un_precio_rechazado(
+        self, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+        formato = _crear_formato(producto)
+        session.add(formato)
+        session.flush()
+        session.add(_crear_precio(producto, fuente, format_id=formato.id))
+        session.commit()
+
+        session.delete(formato)
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+    def test_borrar_formato_sin_precios_se_permite(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        formato = _crear_formato(producto)
+        session.add(formato)
+        session.commit()
+
+        session.delete(formato)
+        session.commit()  # sin filas que lo referencien, se puede
+
+
+class TestPricesHistoryFormatId:
+    def test_format_id_none_aceptado(self, session: Session) -> None:
+        """NULL = «formato no establecido», agrega en su propia celda igual que
+        `unquantified` y `unresolved_basis` (spec: processing-layer-schema)."""
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+        precio = _crear_precio(producto, fuente, format_id=None)
+        session.add(precio)
+        session.commit()
+        assert precio.format_id is None
+
+    def test_packaging_legacy_guarda_el_texto_original(self, session: Session) -> None:
+        """Columna de respaldo para que `0019` pueda dropear `packaging` y el
+        downgrade lo recupere textual (design.md D6)."""
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+        precio = _crear_precio(
+            producto, fuente, packaging_legacy="Arroz importado a 320 la libra"
+        )
+        session.add(precio)
+        session.commit()
+        assert precio.packaging_legacy == "Arroz importado a 320 la libra"
+
+
+class TestProductFormatsMigration:
+    """`0018_product_formats.py` — **puramente aditiva** (design.md D4a): crea
+    `product_formats`, agrega `format_id` y `packaging_legacy` a
+    `prices_history`, y copia `packaging` → `packaging_legacy`. No mapea ni
+    dropea nada — eso es `0019`, que aterriza con el cambio de agregación.
+    Patrón de `TestUnitSaleFormatPackagingMigration`: SQLite real vía
+    `Operations.context()`, `batch_alter_table` porque hay un CHECK."""
+
+    def test_upgrade_es_aditiva_y_copia_packaging_downgrade_revierte(self) -> None:
+        modulo = _cargar_modulo_migracion("0018_product_formats.py")
+
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        # `product_formats` lleva una FK a `products`; en producción existe.
+        sa.Table(
+            "products",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        sa.Table(
+            "prices_history",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("packaging", sa.String(length=64)),
+        )
+        metadata.create_all(engine)
+
+        # Fila anterior a la migración con envase en texto libre: el
+        # guardarraíl es que `packaging` NO se toca y `packaging_legacy` queda
+        # con la copia textual — es lo que hace reversible al `0019` (D6).
+        fila_id = uuid.uuid4()
+        with engine.connect() as connection:
+            connection.execute(
+                sa.insert(metadata.tables["prices_history"]).values(
+                    id=fila_id, packaging="Arroz importado a 320 la libra"
+                )
+            )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            tablas = inspect(connection).get_table_names()
+            assert "product_formats" in tablas
+            cols_fmt = {c["name"] for c in inspect(connection).get_columns("product_formats")}
+            assert {"id", "product_id", "packaging", "quantity", "unit", "created_at"} <= cols_fmt
+
+            cols_ph = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert {"format_id", "packaging_legacy"} <= cols_ph
+            assert "packaging" in cols_ph  # aditiva: `packaging` sigue
+
+            fila = connection.execute(
+                sa.text(
+                    "select packaging, packaging_legacy, format_id from prices_history"
+                )
+            ).one()
+            assert fila == ("Arroz importado a 320 la libra", "Arroz importado a 320 la libra", None)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+
+            assert "product_formats" not in inspect(connection).get_table_names()
+            cols_ph = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert not ({"format_id", "packaging_legacy"} & cols_ph)
+            assert {"id", "packaging"} <= cols_ph
+            valor = connection.execute(
+                sa.text("select packaging from prices_history")
+            ).scalar_one()
+            assert valor == "Arroz importado a 320 la libra"
+
+        engine.dispose()

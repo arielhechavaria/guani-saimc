@@ -33,6 +33,32 @@ def canonical_unit(raw: str | None) -> str | None:
     return value if value in UNITS else None
 
 
+# Vocabulario cerrado de envases para `product_formats.packaging` (design.md, D2).
+# A diferencia de `UNITS` esta lista SÍ tiene un CHECK en la base: el envase es
+# la columna que ya se pudrió una vez con texto libre (14 valores para 7 reales,
+# `Caja`/`caja` duplicados, un pedazo de anuncio guardado como envase), y este
+# proyecto corre DML manual contra producción. Crecerlo cuesta una migración
+# chica, que es el precio correcto para un valor que keyea series publicadas.
+#
+# `contenedor` y `paca` quedan fuera a propósito (design.md, D3): una vasija de
+# contenido variable que transporta muchas unidades de otro formato es logística
+# aguas arriba, no una presentación. Lo que distingue al mayorista sobre el mismo
+# formato es `sale_format`, no el nombre de la vasija.
+PACKAGING: tuple[str, ...] = ("paquete", "saco", "caja", "botella", "pomo", "a granel")
+
+
+def canonical_packaging(raw: str | None) -> str | None:
+    """Envase canónico, o `None` si no está en el vocabulario. Nunca inventa.
+
+    Misma convención que `canonical_unit()`: normaliza espacios y capitalización,
+    y todo lo que no matchee exactamente cae a `None` en vez de adivinarse.
+    """
+    if not raw:
+        return None
+    value = raw.strip().lower()
+    return value if value in PACKAGING else None
+
+
 # Tamaño de cada unidad expresado en la unidad base de su magnitud —gramo para
 # masa, mililitro para volumen—, en vez de una tabla de pares origen/destino:
 # así sumar una unidad es una línea y no N entradas nuevas.

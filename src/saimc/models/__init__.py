@@ -10,6 +10,7 @@ from saimc.models.price_history import (
     SaleFormat,
 )
 from saimc.models.product import Product
+from saimc.models.product_format import ProductFormat
 from saimc.models.province import Province
 from saimc.models.raw_ingestion import (
     ContentType,
@@ -29,8 +30,9 @@ __all__ = [
     "ExchangeRateCache",
     "Platform",
     "PriceHistory",
-    "Product",
     "ProcessingStatus",
+    "Product",
+    "ProductFormat",
     "Province",
     "RawIngestion",
     "SaleFormat",

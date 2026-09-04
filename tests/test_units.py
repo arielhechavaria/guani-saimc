@@ -10,7 +10,13 @@ from decimal import Decimal
 
 import pytest
 
-from saimc.units import UNITS, canonical_unit, convert_price_per_unit
+from saimc.units import (
+    PACKAGING,
+    UNITS,
+    canonical_packaging,
+    canonical_unit,
+    convert_price_per_unit,
+)
 
 
 class TestVocabulario:
@@ -125,3 +131,50 @@ class TestConvertPricePerUnitNoConvertible:
 
     def test_unidad_destino_none_devuelve_none(self) -> None:
         assert convert_price_per_unit(Decimal("750"), frm="kg", to=None) is None
+
+
+class TestPackagingVocabulario:
+    def test_el_vocabulario_es_exactamente_el_acordado(self) -> None:
+        """Fijado a mano, no derivado de `PACKAGING`. `contenedor` y `paca`
+        quedan fuera a propósito: son vasijas de transporte de contenido
+        variable, no presentaciones (design.md, D3)."""
+        assert PACKAGING == ("paquete", "saco", "caja", "botella", "pomo", "a granel")
+
+
+class TestCanonicalPackagingFormasCanonicas:
+    @pytest.mark.parametrize("valor", list(PACKAGING))
+    def test_cada_forma_canonica_pasa_intacta(self, valor: str) -> None:
+        assert canonical_packaging(valor) == valor
+
+
+class TestCanonicalPackagingNormalizacion:
+    def test_caja_capitalizada_normaliza(self) -> None:
+        assert canonical_packaging("Caja") == "caja"
+
+    def test_caja_mayuscula_con_espacio_normaliza(self) -> None:
+        assert canonical_packaging("CAJA ") == "caja"
+
+    def test_a_granel_capitalizado_normaliza(self) -> None:
+        assert canonical_packaging("A granel") == "a granel"
+
+
+class TestCanonicalPackagingFueraDeVocabulario:
+    def test_contenedor_no_esta_en_el_vocabulario_devuelve_none(self) -> None:
+        assert canonical_packaging("contenedor") is None
+
+    def test_contenedor_capitalizado_tambien_devuelve_none(self) -> None:
+        assert canonical_packaging("Contenedor") is None
+
+    def test_paca_no_esta_en_el_vocabulario_devuelve_none(self) -> None:
+        assert canonical_packaging("paca") is None
+
+    def test_texto_arbitrario_devuelve_none(self) -> None:
+        assert canonical_packaging("Arroz importado a 320 la libra") is None
+
+
+class TestCanonicalPackagingVacio:
+    def test_cadena_vacia_devuelve_none(self) -> None:
+        assert canonical_packaging("") is None
+
+    def test_none_devuelve_none(self) -> None:
+        assert canonical_packaging(None) is None

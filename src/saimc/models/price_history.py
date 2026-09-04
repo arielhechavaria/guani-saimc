@@ -147,13 +147,36 @@ class PriceHistory(Base):
     # partir de `unit`: un precio derivado de dividir un saco lleva el mismo
     # `unit = "lb"` que uno genuinamente minorista (design.md, D4).
     sale_format: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    # Envase o presentación en texto libre ("saco de 25 kg"), capturado por el
-    # operador y redactado contra datos personales antes de persistir. Quien
-    # escriba acá debe recortar a `PACKAGING_MAX_LENGTH` DESPUÉS de redactar: el
-    # placeholder es más largo que el teléfono que reemplaza, así que un texto
-    # que entraba deja de entrar.
+    # Envase o presentación en texto libre ("saco de 25 kg"). **En retiro**: el
+    # envase pasa a ser parte de `format_id` con vocabulario cerrado. La
+    # migración `0019` mapea las filas y dropea esta columna; hasta entonces
+    # `curation.py` deja de escribirla en el commit 4. Quien todavía escriba
+    # acá debe recortar a `PACKAGING_MAX_LENGTH` DESPUÉS de redactar.
     packaging: Mapped[str | None] = mapped_column(
         String(PACKAGING_MAX_LENGTH), nullable=True
+    )
+    # Copia textual de `packaging` que hace `0018`, para que `0019` pueda
+    # dropear la columna y el downgrade recupere las variantes escritas a mano
+    # ("Arroz importado a 320 la libra") — el mapeo a formato es muchos-a-uno y
+    # con pérdida (design.md, D6). Una migración posterior la elimina cuando el
+    # mapeo esté confirmado en producción.
+    packaging_legacy: Mapped[str | None] = mapped_column(
+        String(PACKAGING_MAX_LENGTH), nullable=True
+    )
+    # Formato de venta: el triple (envase, cantidad, unidad) contra el que se
+    # agrega la serie (spec.md §5). `NULL` = «formato no establecido», agrega en
+    # su propia celda igual que `unquantified` — nunca se adivina (design.md
+    # D4). `quantity` y `unit` de la fila se escriben DESDE el formato y quedan
+    # denormalizados a propósito: `resolve_row`, `basis_backfill` y `measure`
+    # los leen hoy (design.md D8).
+    format_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "product_formats.id",
+            ondelete="RESTRICT",
+            name="fk_prices_history_format_id",
+        ),
+        nullable=True,
     )
     # Linaje al registro crudo. RESTRICT y nunca CASCADE: raw_ingestions es
     # inmutable y ningún precio publicado puede quedar sin su evidencia.
