@@ -1026,7 +1026,10 @@
                    declarado no hay nada que multiplicar y queda el de siempre. #}
                 {%- if cell.format_median is not none %}
                 · <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(cell.format_median) }} {{ cell.currency }}</strong>
-                <span class="m3-dim">la {{ cell.format_packaging }}</span>
+                {# «por caja» y no «la caja»: el artículo obligaría a conocer el
+                   género de cada envase («la paquete» salía mal), y «a granel»
+                   ya es una locución que no admite ninguno de los dos. #}
+                <span class="m3-dim">{% if cell.format_packaging == "a granel" %}a granel{% else %}por {{ cell.format_packaging }}{% endif %}</span>
                 · <span class="m3-dim">{{ "%.2f"|format(cell.median) }}/{{ cell.unit }} para comparar</span>
                 {%- else %}
                 · mediana <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and not cell.unresolved_basis and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
