@@ -6246,3 +6246,39 @@ historial no se retira nunca — ahora no se retira *el historial* (las
 observaciones sobreviven, solo pierden el vínculo), pero el formato sí puede
 borrarse. La ventana entre borrar y recurar dinamiza filas ya publicadas: caen
 a su propia celda de «sin formato» hasta que el operador las corrija.
+
+## 2026-09-04 — Bug: editar a CUP con formato nuevo perdía la corrección en silencio
+Contexto: dos corridas de H0 seguidas dieron un número idéntico, campo por
+campo, pese a que el operador había corregido ~81 anuncios en `/curation`
+entre una y otra medición (10:35-14:14). Los logs del servidor
+(`journalctl -u saimc.service`) mostraron la causa: de esos 81, **3 anuncios
+reventaron con 500 en cada intento** (2-3 reintentos cada uno, siempre el
+mismo error) y **1 nunca superó el 422**. Las correcciones de esos 4 nunca
+llegaron a guardarse.
+El 500 era `psycopg.errors.CheckViolation` contra
+`ck_prices_history_exchange_rate_cup` (`currency <> 'CUP' OR exchange_rate IS
+NULL`). Causa exacta en `curation.py::submit_edit`: `existing.currency` se
+asignaba a `"CUP"` y varias líneas después, todavía con el `exchange_rate`
+viejo sin limpiar, se llamaba a `_resolve_format_id` → `get_or_create_format`
+— que hace un `SELECT` y, si el formato no existe, un `session.flush()`
+explícito. Ambos flushean TODA la sesión, `existing` incluido, en ese estado a
+medio actualizar: `currency='CUP'` + `exchange_rate` no nulo a la vez.
+Decisión: dos cambios, uno necesario y uno defensivo.
+- `curation.py`: la resolución de tasa (`apply_resolution`, el bloque
+  `if currency == CUP / elif changed`) se mueve ANTES de
+  `_resolve_format_id`, para que `existing` nunca llegue a una llamada que
+  toca la base en un estado inconsistente. Es el fix real.
+- `formats.py::get_or_create_format`: el `SELECT` de existencia se envuelve
+  en `session.no_autoflush` — no alcanza solo (el `session.flush()` explícito
+  de más abajo igual flushea todo), pero cierra la clase de bug más chica
+  del autoflush implícito para cualquier llamador futuro, no solo este.
+Descartado: arreglarlo solo con `no_autoflush` en `formats.py`. Se probó
+primero y el mismo test seguía reventando, ahora en el `flush()` explícito de
+crear el formato — confirmó que el orden de asignación en `curation.py` era
+la causa real, no un detalle del autoflush.
+Consecuencia: **3 anuncios de producción** (`6879f132-05af-4f17-b03e-6b72df83c883`,
+`df7170ea-a0f7-450b-bb2d-491e8de7bddf`, `8a64f944-48ef-498a-b7cd-6c3ef72b7b4d`)
+y el de 422 (`2f43c911-3826-4487-83de-50b4e3a2149a`) siguen con su dato viejo:
+el operador tiene que recorregirlos una vez que el fix esté desplegado. TDD:
+RED con el `IntegrityError` reproducido en SQLite antes del fix, GREEN después
+(`tests/test_curation.py::TestConversionAlEditar::test_cambiar_a_cup_con_formato_nuevo_no_revienta_por_autoflush`).

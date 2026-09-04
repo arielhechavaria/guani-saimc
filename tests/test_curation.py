@@ -2672,6 +2672,68 @@ class TestConversionAlEditar:
         assert precio.exchange_rate_source == "elTOQUE"
         assert precio.price_cup == Decimal("11999.88")
 
+    def test_cambiar_a_cup_con_formato_nuevo_no_revienta_por_autoflush(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Bug real de producción (2026-09-04, docs/decisions.md): cambiar la
+        moneda a CUP en una fila que ya tenía `exchange_rate` no nulo, en el
+        mismo submit que resuelve un `format_id` nuevo, reventaba con
+        `IntegrityError`.
+
+        La causa: `existing.currency` se asigna a `"CUP"` unas líneas antes de
+        que `_resolve_format_id` llame a `get_or_create_format`, que hace un
+        `SELECT` — y ESE `SELECT` dispara el autoflush de la sesión antes de
+        que `apply_resolution(existing, NO_RATE)` (más abajo en el mismo
+        método) alcance a limpiar el `exchange_rate` viejo. La fila que
+        Postgres intenta persistir en ese instante tiene `currency='CUP'` +
+        `exchange_rate` no nulo a la vez → viola
+        `ck_prices_history_exchange_rate_cup`. En producción, 3 anuncios
+        reventaron así el mismo día y las tres correcciones se perdieron
+        (reintentado 2-3 veces cada uno, siempre el mismo error).
+        """
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-cup-autoflush")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        precio = _crear_precio_curado(
+            session, ingestion=curado, product=pollo, price="10.00", currency="USD"
+        )
+        precio.exchange_rate = Decimal("650.00")
+        precio.exchange_rate_date = date(2026, 4, 1)
+        precio.exchange_rate_source = "elTOQUE"
+        precio.price_cup = Decimal("6500.00")
+        session.commit()
+
+        response = client.post(
+            f"/curation/{curado.id}/edit",
+            data=_form_edicion(
+                curado,
+                {
+                    "product_id": str(pollo.id),
+                    "price": "10.00",
+                    "currency": Currency.CUP.value,  # el cambio que dispara el bug
+                    "price_id": str(precio.id),
+                    "packaging": "caja",
+                    "quantity": "40",
+                    "unit": "lb",
+                    "price_basis": "total",
+                },
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.refresh(precio)
+        assert precio.currency == Currency.CUP.value
+        assert precio.exchange_rate is None  # limpiado, no la tasa vieja de USD
+        formato = session.get(ProductFormat, precio.format_id)
+        assert formato is not None
+        assert (formato.packaging, formato.quantity, formato.unit) == (
+            "caja",
+            Decimal("40"),
+            "lb",
+        )
+
 
 class TestVocabularioDeEnvase:
     """El envase pasa a ser parte del formato de venta: `<select>` sobre

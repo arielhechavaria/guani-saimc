@@ -38,14 +38,26 @@ def get_or_create_format(
     if unit not in UNITS:
         raise ValueError(f"unidad fuera del vocabulario: {unit!r}")
 
-    existente = session.scalar(
-        select(ProductFormat).where(
-            ProductFormat.product_id == product_id,
-            ProductFormat.packaging == packaging,
-            ProductFormat.quantity == quantity,
-            ProductFormat.unit == unit,
+    # `no_autoflush`: este SELECT no debe forzar el autoflush de OTROS objetos
+    # sucios en la misma sesión. Bug real de producción (2026-09-04,
+    # docs/decisions.md): `curation.py::submit_edit` asigna `existing.currency
+    # = "CUP"` y unas líneas más abajo llama acá para resolver `format_id`,
+    # ANTES de limpiar `existing.exchange_rate` (eso pasa después, en
+    # `apply_resolution`). Sin este bloque, el autoflush de ESTE SELECT
+    # intentaba persistir esa fila a medio actualizar —CUP con una tasa
+    # vieja todavía puesta— y violaba `ck_prices_history_exchange_rate_cup`.
+    # El `session.flush()` explícito de abajo no lo afecta: sigue haciendo
+    # visible el formato recién creado a una segunda llamada dentro del mismo
+    # request.
+    with session.no_autoflush:
+        existente = session.scalar(
+            select(ProductFormat).where(
+                ProductFormat.product_id == product_id,
+                ProductFormat.packaging == packaging,
+                ProductFormat.quantity == quantity,
+                ProductFormat.unit == unit,
+            )
         )
-    )
     if existente is not None:
         return existente
 

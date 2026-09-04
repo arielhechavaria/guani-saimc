@@ -1707,6 +1707,28 @@ async def submit_edit(
         existing.province_id = province.id if province is not None else None
         existing.price = price_value
         existing.currency = row["currency"]
+        existing.published_date = published_date
+
+        # La resolución de tasa va ANTES de `_resolve_format_id` (bug real de
+        # producción, 2026-09-04, docs/decisions.md): ese helper puede crear
+        # un `ProductFormat` nuevo, y el `session.flush()` explícito que eso
+        # dispara persiste TODA la sesión, `existing` incluido. Si para
+        # entonces `existing.currency` ya fuera `"CUP"` pero `exchange_rate`
+        # todavía tuviera la tasa vieja de la moneda anterior sin limpiar,
+        # ese flush intentaba guardar una fila que viola
+        # `ck_prices_history_exchange_rate_cup` — reventaba con
+        # `IntegrityError` y la corrección entera se perdía. Resolviendo acá,
+        # `existing` nunca llega a `_resolve_format_id` en un estado a medio
+        # actualizar.
+        if row["currency"] == Currency.CUP.value:
+            apply_resolution(existing, NO_RATE)  # moneda nacional: nunca lleva tasa
+        elif changed or existing.exchange_rate is None:
+            anchor = anchor_date(existing.published_date, ingestion.captured_at)
+            apply_resolution(existing, resolver.resolve(existing.currency, anchor))
+            if existing.exchange_rate is None:
+                unconverted += 1
+        # si no cambió ni moneda ni precio y ya tenía tasa: no se toca (D6).
+
         existing.quantity = _parse_decimal(row["quantity"])
         existing.unit = canonical_unit(row["unit"])
         existing.sale_format = (
@@ -1720,16 +1742,6 @@ async def submit_edit(
         # arriba — ensanchar la tupla `updates` de 5 a 7 elementos para
         # cargarlos ya validados haría lo mismo con más superficie.
         existing.price_basis = _price_basis_value(row["price_basis"])
-        existing.published_date = published_date
-
-        if row["currency"] == Currency.CUP.value:
-            apply_resolution(existing, NO_RATE)  # moneda nacional: nunca lleva tasa
-        elif changed or existing.exchange_rate is None:
-            anchor = anchor_date(existing.published_date, ingestion.captured_at)
-            apply_resolution(existing, resolver.resolve(existing.currency, anchor))
-            if existing.exchange_rate is None:
-                unconverted += 1
-        # si no cambió ni moneda ni precio y ya tenía tasa: no se toca (D6).
 
     for price in to_delete:
         db.delete(price)
