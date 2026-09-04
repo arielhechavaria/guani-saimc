@@ -4371,3 +4371,111 @@ class TestHistorialFiltraPorFormato:
         assert response.status_code == 200
         assert "999" in response.text
         assert "12400" not in response.text
+
+
+class TestEditarCuradoBorrarFila:
+    """Al corregir un anuncio, el operador puede eliminar una de sus filas —
+    p. ej. una fila duplicada, o una que no correspondía. Distinto de
+    descartar el anuncio entero: acá el resto de las filas se conserva."""
+
+    def _dos_filas(self, session: Session) -> tuple[RawIngestion, PriceHistory, PriceHistory]:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-borrar-fila")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        a = _crear_precio_curado(session, ingestion=curado, product=pollo, price="100")
+        b = _crear_precio_curado(session, ingestion=curado, product=pollo, price="200")
+        return curado, a, b
+
+    def _campos(self, curado: RawIngestion, precio: PriceHistory, i: int, *, borrar: bool) -> dict:
+        d = {
+            f"product_id_{i}": str(precio.product_id),
+            f"price_{i}": str(precio.price),
+            f"currency_{i}": Currency.CUP.value,
+            f"quantity_{i}": "",
+            f"unit_{i}": "",
+            f"sale_format_{i}": "",
+            f"packaging_{i}": "",
+            f"min_purchase_{i}": "",
+            f"province_id_{i}": "",
+            f"price_id_{i}": str(precio.id),
+            f"price_basis_{i}": "",
+        }
+        if borrar:
+            d[f"delete_{i}"] = "on"
+        return d
+
+    def test_elimina_la_fila_marcada_y_conserva_el_resto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = self._dos_filas(session)
+        a_id, b_id = a.id, b.id
+
+        data = {
+            "source_reference": "",
+            "published_date": _fecha_pub(curado),
+            "row_count": "2",
+            **self._campos(curado, a, 0, borrar=True),
+            **self._campos(curado, b, 1, borrar=False),
+        }
+        response = client.post(f"/curation/{curado.id}/edit", data=data, follow_redirects=False)
+
+        assert response.status_code == 303
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert [f.id for f in filas] == [b_id]
+        # El anuncio sigue curado, no descartado.
+        assert session.get(RawIngestion, curado.id).processing_status == ProcessingStatus.CURATED
+
+    def test_una_fila_marcada_para_borrar_no_se_valida(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La fila que se va no tiene que pasar las reglas: un precio vacío en
+        la fila marcada no debe bloquear el guardado."""
+        curado, a, b = self._dos_filas(session)
+
+        campos_a = self._campos(curado, a, 0, borrar=True)
+        campos_a["price_0"] = ""  # inválido, pero se va
+        data = {
+            "source_reference": "",
+            "published_date": _fecha_pub(curado),
+            "row_count": "2",
+            **campos_a,
+            **self._campos(curado, b, 1, borrar=False),
+        }
+        response = client.post(f"/curation/{curado.id}/edit", data=data, follow_redirects=False)
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert [f.price for f in session.execute(select(PriceHistory)).scalars()] == [Decimal("200")]
+
+    def test_no_deja_borrar_todas_las_filas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un anuncio sin filas de precio no es una corrección: es un
+        descarte, y para eso está el botón de descartar."""
+        curado, a, b = self._dos_filas(session)
+
+        data = {
+            "source_reference": "",
+            "published_date": _fecha_pub(curado),
+            "row_count": "2",
+            **self._campos(curado, a, 0, borrar=True),
+            **self._campos(curado, b, 1, borrar=True),
+        }
+        response = client.post(f"/curation/{curado.id}/edit", data=data, follow_redirects=False)
+
+        assert response.status_code == 422
+        assert "descart" in response.text.lower()
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 2
+
+    def test_el_formulario_de_edicion_ofrece_borrar_cada_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = self._dos_filas(session)
+
+        html = client.get(f"/curation/{curado.id}/edit").text
+
+        assert 'name="delete_0"' in html
+        assert 'name="delete_1"' in html

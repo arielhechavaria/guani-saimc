@@ -51,4 +51,14 @@
   });
 
   document.querySelectorAll('input[id^="quantity_"]').forEach(syncBasisVisibility);
+
+  // Atenúa la tarjeta de una fila marcada para eliminar, para que se vea qué
+  // se va antes de guardar. Solo cosmético: sin JS, la casilla igual se
+  // envía y el servidor borra la fila lo mismo.
+  document.addEventListener('change', function (event) {
+    var box = event.target.closest('input[data-delete-row]');
+    if (!box) return;
+    var card = box.closest('.m3-row-card');
+    if (card) card.style.opacity = box.checked ? '0.45' : '';
+  });
 </script>

@@ -1579,7 +1579,9 @@ async def submit_edit(
     rate_fetcher: Fetcher = Depends(get_rate_fetcher),
 ) -> HTMLResponse | RedirectResponse:
     """Aplica la corrección: actualiza en el lugar las filas que el operador
-    reabrió, sin crear ni borrar ninguna.
+    reabrió. No crea filas nuevas; sí puede **borrar** una fila marcada con
+    `delete_i` —una duplicada, o una que no correspondía— siempre que quede
+    al menos una. Vaciar el anuncio entero es un descarte, no una corrección.
 
     Cada fila viaja con su propio `price_id_i`, a diferencia de la curaduría
     original: matchear solo por posición confundiría un reordenamiento
@@ -1616,6 +1618,7 @@ async def submit_edit(
         errors.append(published_date_error)
     typed_rows: list[dict[str, str]] = []
     updates: list[tuple[PriceHistory, Product, Decimal, Province | None, dict[str, str]]] = []
+    to_delete: list[PriceHistory] = []
 
     for i in range(row_count):
         row = _row_from_form(form, i)
@@ -1625,6 +1628,12 @@ async def submit_edit(
         existing = existing_by_id.get(price_uuid) if price_uuid is not None else None
         if existing is None:
             errors.append(f"Fila {i + 1}: no corresponde a una fila curada de este anuncio")
+            continue
+
+        # Fila marcada para borrar: se va sin validarse — un precio vacío en
+        # una fila que el operador está sacando no debe bloquear el guardado.
+        if form.get(f"delete_{i}"):
+            to_delete.append(existing)
             continue
 
         product = _resolve_row_product(db, products_by_name, row)
@@ -1653,6 +1662,14 @@ async def submit_edit(
             continue
 
         updates.append((existing, product, price_value, province, row))
+
+    # Un anuncio sin ninguna fila de precio no es una corrección, es un
+    # descarte — y para eso está `POST /curation/{id}/discard`, que además
+    # exige el motivo. Acá se rechaza antes de tocar nada.
+    if not errors and to_delete and not updates:
+        errors.append(
+            "No podés dejar el anuncio sin filas: si no sirve, usá «descartar» en su lugar."
+        )
 
     if errors:
         db.rollback()
@@ -1713,6 +1730,9 @@ async def submit_edit(
             if existing.exchange_rate is None:
                 unconverted += 1
         # si no cambió ni moneda ni precio y ya tenía tasa: no se toca (D6).
+
+    for price in to_delete:
+        db.delete(price)
 
     # Mismo criterio que `submit_curation`: solo se pisa si llegó algo. Vaciar
     # `source_reference` desde acá no está soportado en este slice.
