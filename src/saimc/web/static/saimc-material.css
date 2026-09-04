@@ -92,6 +92,17 @@
 
   --m3-font: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --m3-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ph-font-heading: "Alice", Georgia, serif;
+  --ph-accent: #05668d;
+  --ph-on-accent: #ffffff;
+  --ph-accent-wash: rgba(5, 102, 141, .1);
+  --ph-accent-2: #028090;
+  --ph-accent-2-line: #015a63;
+  --ph-median: #aec092;
+  --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
+  --ph-radius-lg: 24px;
+  --ph-radius-sm: 14px;
 }
 /* <<< END tokens generados */
 

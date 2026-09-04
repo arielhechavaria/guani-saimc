@@ -238,7 +238,7 @@ class TestTokensMaterial:
         assert bloque is not None, "el archivo no tiene un bloque `:root { … }`"
         # Sin los comentarios: el bloque los lleva adentro y traen `#hex`.
         limpio = re.sub(r"/\*.*?\*/", "", bloque.group(0), flags=re.DOTALL)
-        return dict(re.findall(r"(--m3-[a-z0-9-]+):\s*([^;]+);", limpio))
+        return dict(re.findall(r"(--(?:m3|ph)-[a-z0-9-]+):\s*([^;]+);", limpio))
 
     def _leer(self, *partes: str) -> str:
         raiz = Path(__file__).resolve().parents[1]
@@ -290,7 +290,9 @@ class TestTokensMaterial:
         citados: set[str] = set()
         for archivo in archivos:
             citados.update(
-                re.findall(r"var\((--m3-[a-z0-9-]+)", archivo.read_text(encoding="utf-8"))
+                re.findall(
+                    r"var\((--(?:m3|ph)-[a-z0-9-]+)", archivo.read_text(encoding="utf-8")
+                )
             )
 
         assert not citados - definidos, (
@@ -310,7 +312,7 @@ class TestTokensMaterial:
         con_respaldo: list[str] = []
         for tpl in sorted(raiz.glob("*.html")):
             for token, color in re.findall(
-                r"var\((--m3-[a-z0-9-]+),\s*(#[0-9a-fA-F]{3,8})\)",
+                r"var\((--(?:m3|ph)-[a-z0-9-]+),\s*(#[0-9a-fA-F]{3,8})\)",
                 tpl.read_text(encoding="utf-8"),
             ):
                 con_respaldo.append(f"{tpl.name}: var({token}, {color})")

@@ -22,20 +22,6 @@
      operador vía `saimc-material.css` (catálogo/curaduría/control); esta
      paleta es solo de esta página y no reemplaza `--m3-primary` en ningún
      lado. */
-  :root {
-    --ph-font-heading: "Alice", Georgia, serif;
-    --ph-accent: #05668d;        /* Baltic Blue — estructura, cifras de precio */
-    --ph-accent-2: #028090;      /* Teal — relleno del mapa / dato en ingesta */
-    --ph-median: #aec092;        /* Muted Olive — línea de mediana en series */
-    /* Hero claro, tokens Material 3 (`saimc-public.css`): la sección de
-       cobertura era un panel oscuro (decisión 2026-08-22); pasó a claro para
-       que toda la página comparta un solo lenguaje visual. */
-    --ph-hero-bg: var(--m3-surface);
-    --ph-hero-line: var(--m3-outline-variant);
-    --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
-    --ph-radius-lg: 24px;
-    --ph-radius-sm: 14px;
-  }
 
   .m3-public { max-width: 72rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
   .m3-public-foot { margin-top: 2.5rem; font-size: .8125rem; opacity: .75; }
@@ -46,7 +32,7 @@
 
   /* ── Cobertura: tarjeta clara, tokens Material ────────────────────── */
   .ph-hero { position: relative; overflow: hidden; border-radius: var(--ph-radius-lg);
-             background: var(--ph-hero-bg); box-shadow: var(--ph-elev);
+             background: var(--m3-surface); box-shadow: var(--ph-elev);
              padding: 1.75rem 1.5rem 2rem; margin-bottom: 2.5rem; }
   .ph-hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
     background-image:
@@ -56,7 +42,7 @@
   .ph-hero > * { position: relative; }
 
   .ph-nav { display: flex; flex-wrap: wrap; gap: 1.25rem; margin: 0 0 1.5rem;
-            padding-bottom: 1rem; border-bottom: 1px solid var(--ph-hero-line);
+            padding-bottom: 1rem; border-bottom: 1px solid var(--m3-outline-variant);
             font-size: .8125rem; letter-spacing: .08em; text-transform: uppercase; }
   .ph-nav a { color: var(--m3-on-surface-variant); }
   .ph-nav a:hover { color: var(--ph-accent); text-decoration: none; }
@@ -76,7 +62,7 @@
   .ph-map-province { stroke-width: 1.1; stroke-linejoin: round;
                       transition: fill .15s ease; }
   .ph-map-province.is-publicada { fill: var(--m3-primary-container); stroke: var(--m3-primary); }
-  .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: #015a63; }
+  .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: var(--ph-accent-2-line); }
   .ph-map-province.is-sin-datos { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); }
   .ph-map-province:hover { fill: var(--ph-accent); stroke: var(--ph-accent); }
 
@@ -84,7 +70,7 @@
               background: var(--m3-surface-container); padding: 1rem 1.1rem; }
   .ph-panel-title { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
                      color: var(--ph-accent); padding-bottom: .6rem;
-                     border-bottom: 1px solid var(--ph-hero-line); margin-bottom: .7rem; }
+                     border-bottom: 1px solid var(--m3-outline-variant); margin-bottom: .7rem; }
   .ph-legend { display: grid; gap: .5rem; padding: 0; margin: 0; list-style: none;
                font-size: .8125rem; color: var(--m3-on-surface-variant); }
   .ph-legend li { display: flex; align-items: center; gap: .55rem; }
@@ -112,7 +98,7 @@
   .ph-section { margin: 0 0 2.5rem; }
   .ph-section-head { display: flex; align-items: baseline; justify-content: space-between;
                       gap: 1.5rem; padding-bottom: .8rem; margin-bottom: 1.25rem;
-                      border-bottom: 1px solid rgba(0, 0, 0, .1); }
+                      border-bottom: 1px solid var(--m3-outline-variant); }
   .ph-section-tag { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase;
                      opacity: .65; white-space: nowrap; }
 
@@ -122,7 +108,7 @@
      teléfono, sin necesidad de un corte responsive propio. */
   .ph-cards { display: grid; gap: 1.1rem; padding: 0; margin: 0 0 1.25rem; list-style: none;
               grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
-  .ph-card { border-radius: var(--ph-radius-sm); background: #fff; box-shadow: var(--ph-elev);
+  .ph-card { border-radius: var(--ph-radius-sm); background: var(--m3-surface); box-shadow: var(--ph-elev);
              padding: 1.1rem 1.2rem 1rem; }
   .ph-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
   .ph-card-product { font-family: var(--ph-font-heading); font-size: 1.375rem; }
@@ -135,11 +121,11 @@
   .ph-card-unit { font-size: .75rem; opacity: .65; }
   .ph-card-median { margin-top: .45rem; font-size: .8125rem; opacity: .75; }
   .ph-card-sample { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
-                     margin-top: .9rem; padding-top: .7rem; border-top: 1px solid rgba(0, 0, 0, .08); }
+                     margin-top: .9rem; padding-top: .7rem; border-top: 1px solid var(--m3-divider); }
   .ph-card-n { font-weight: 600; font-variant-numeric: tabular-nums; }
   .ph-chip { flex: none; white-space: nowrap; font-size: .6875rem; letter-spacing: .04em;
              text-transform: uppercase; padding: .3rem .75rem; border-radius: 999px;
-             background: rgba(5, 102, 141, .1); color: var(--ph-accent); }
+             background: var(--ph-accent-wash); color: var(--ph-accent); }
 
   /* ── Barra de filtro por producto ───────────────────────────────── */
   .ph-filter { display: flex; flex-wrap: wrap; gap: .5rem; padding: 0; margin: 0 0 1.25rem;
@@ -150,7 +136,7 @@
   .ph-filter a:hover { border-color: var(--ph-accent); color: var(--ph-accent);
                        text-decoration: none; }
   .ph-filter a.is-selected { background: var(--ph-accent); border-color: var(--ph-accent);
-                             color: #fff; }
+                             color: var(--ph-on-accent); }
   /* Filas 2 y 3 (provincia y ventana): pegadas a la de producto. La de
      ventana además más discreta. */
   .ph-filter-province { margin-top: -.5rem; }
@@ -163,7 +149,7 @@
 
   .ph-series { display: grid; gap: 1.1rem; padding: 0; margin: 0; list-style: none;
                grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
-  .ph-serie { border-radius: var(--ph-radius-sm); background: #fff; box-shadow: var(--ph-elev);
+  .ph-serie { border-radius: var(--ph-radius-sm); background: var(--m3-surface); box-shadow: var(--ph-elev);
               padding: 1rem 1.1rem .9rem; }
   .ph-serie-head { display: flex; align-items: baseline; justify-content: space-between;
                     gap: .75rem; margin-bottom: .5rem; }
@@ -172,7 +158,7 @@
   .ph-plot { width: 100%; height: auto; display: block; overflow: visible; }
   .ph-plot-band { fill: var(--ph-accent-2); opacity: .1; }
   .ph-plot-median { stroke: var(--ph-median); stroke-width: 1.4; stroke-dasharray: 4 3; opacity: .8; }
-  .ph-plot-axis { stroke: rgba(0, 0, 0, .18); stroke-width: 1; }
+  .ph-plot-axis { stroke: var(--m3-outline-variant); stroke-width: 1; }
   .ph-plot-dot { fill: var(--ph-accent); }
   .ph-plot-dot.is-linked { cursor: pointer; }
   .ph-plot-dot.is-linked:hover { fill: var(--ph-accent-2); }
@@ -180,12 +166,12 @@
   .ph-serie-foot { margin: .55rem 0 0; font-size: .75rem; opacity: .75; }
 
   /* ── Tabla de cobertura accesible (respaldo del mapa) ───────────── */
-  .ph-table-card { border-radius: var(--ph-radius-sm); background: #fff; box-shadow: var(--ph-elev);
+  .ph-table-card { border-radius: var(--ph-radius-sm); background: var(--m3-surface); box-shadow: var(--ph-elev);
                     overflow: hidden; margin-top: 1.5rem; }
   .m3-coverage { width: 100%; border-collapse: collapse; font-size: .9375rem; }
   .m3-coverage caption { text-align: left; padding: 1rem 1.2rem 0; }
   .m3-coverage th, .m3-coverage td { text-align: left; padding: .55rem .8rem;
-                 border-bottom: 1px solid rgba(0,0,0,.06); }
+                 border-bottom: 1px solid var(--m3-divider); }
   .m3-coverage th:last-child, .m3-coverage td:last-child { padding-right: 1.2rem; }
   .m3-coverage th:first-child, .m3-coverage td:first-child { padding-left: 1.2rem; }
   .m3-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
