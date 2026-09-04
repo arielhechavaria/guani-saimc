@@ -295,7 +295,7 @@ class TestFiltroEnLaRuta:
         # La barra de filtro nombra todos los productos; los datos mostrados son
         # solo del elegido.
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
-        assert "Arroz por provincia" in texto
+        assert "Arroz por formato y provincia" in texto
         assert "Aceite" not in tabla
 
     def test_resuelve_un_nombre_con_tilde(
@@ -305,7 +305,7 @@ class TestFiltroEnLaRuta:
 
         texto = client.get("/?producto=azucar-blanca").text
 
-        assert "Azúcar blanca por provincia" in texto
+        assert "Azúcar blanca por formato y provincia" in texto
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
         assert "Arroz" not in tabla
 
@@ -362,7 +362,7 @@ class TestFiltroEnLaRuta:
         assert response.status_code == 200
         # Aceite entra en la tabla por provincia (un día basta) pero no dibuja
         # serie (hacen falta 2 días distintos).
-        assert "Aceite por provincia" in response.text
+        assert "Aceite por formato y provincia" in response.text
         assert "No hay suficientes días" in response.text
 
 
@@ -825,7 +825,7 @@ class TestRutaProductoLimpia:
 
         texto = client.get("/producto/arroz").text
 
-        assert "Arroz por provincia" in texto
+        assert "Arroz por formato y provincia" in texto
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
         assert "Aceite" not in tabla
 
@@ -837,7 +837,7 @@ class TestRutaProductoLimpia:
         r = client.get("/producto/azucar-blanca")
 
         assert r.status_code == 200
-        assert "Azúcar blanca por provincia" in r.text
+        assert "Azúcar blanca por formato y provincia" in r.text
 
     def test_slug_inexistente_da_404(
         self, client: TestClient, session: Session
@@ -867,8 +867,8 @@ class TestRutaProductoLimpia:
         alias = client.get("/?producto=arroz").text
 
         # Misma sección de precios (misma tabla por provincia).
-        assert "Arroz por provincia" in limpia
-        assert "Arroz por provincia" in alias
+        assert "Arroz por formato y provincia" in limpia
+        assert "Arroz por formato y provincia" in alias
 
     def test_el_titulo_refleja_el_producto_enfocado(
         self, client: TestClient, session: Session

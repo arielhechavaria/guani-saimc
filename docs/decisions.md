@@ -6190,3 +6190,26 @@ series. No se introduce ningún umbral por eso (§12.6): «muestra en formación
 sigue siendo incondicional en la vista pública y `/control` sigue sin veredicto.
 Queda pendiente separar por formato también `compute_retail_ranges`, que hoy
 colapsa el envase por la decisión del 2026-08-12.
+
+## 2026-09-04 — El rango minorista público se separa por formato
+Contexto: la entrada del 2026-09-04 sobre formatos separó `compute_cells`
+(Matriz interna) pero dejó `compute_retail_ranges` —que alimenta las tarjetas
+públicas— colapsando el envase, por la decisión del 2026-08-12. Ahí vive la
+pregunta original del operador: no «¿cómo se movió Arroz?» sino «¿cómo se movió
+el paquete de arroz?».
+Decisión: `RetailObservation` y `RetailRange` llevan la terna del formato;
+`compute_retail_ranges` mete `format_id` en su clave de agrupación. El titular
+de la tarjeta pública pasa a ser el precio del formato («16.685 CUP el saco de
+25 kg»), con el precio por unidad base al lado como comparador. El cálculo del
+precio del formato se factoriza en `_FormatPriced`, un mixin que comparten
+`Cell` y `RetailRange`. Supersede la parte de la decisión del 2026-08-12 que
+decía «el producto es uno solo aunque el envase varíe» para esta vista.
+Descartado: mantener la vista pública colapsando el formato mientras la interna
+lo separa — dejaría al dashboard respondiendo una pregunta distinta de la que
+el operador pidió, y las dos mitades del módulo divergiendo otra vez.
+Consecuencia: las tarjetas se multiplican por formato (4 rangos → 44 sobre el
+corpus actual), muchas con dos o tres observaciones. El rótulo «muestra en
+formación» ya cubre eso sin condición y no cambia. `compute_retail_observations`
+—que también alimenta el gráfico de evolución— lleva ahora la terna del formato
+pero el gráfico sigue dibujando la serie por unidad; separarlo por formato
+queda pendiente si el operador lo pide.

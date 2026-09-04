@@ -23,12 +23,18 @@ def _rango(
     median: str = "310",
     maximum: str = "320",
     unconverted: bool = False,
+    format_packaging: str | None = None,
+    format_quantity: str | None = None,
+    format_unit: str | None = None,
 ) -> RetailRange:
     return RetailRange(
         product_name=product,
         province_name=province,
         currency="CUP",
         unit="lb",
+        format_packaging=format_packaging,
+        format_quantity=Decimal(format_quantity) if format_quantity is not None else None,
+        format_unit=format_unit,
         count=count,
         median=Decimal(median),
         minimum=Decimal(minimum),
@@ -106,3 +112,35 @@ class TestBuildCards:
         (card,) = build_cards([_rango(count=2)])
 
         assert not card.is_single_observation
+
+
+class TestTarjetaConFormato:
+    """La pregunta del hogar es por el formato: el titular publicado es el
+    precio del formato, con el precio por unidad base al lado para comparar.
+    """
+
+    def test_la_tarjeta_lleva_la_etiqueta_y_el_precio_del_formato(self) -> None:
+        (card,) = build_cards(
+            [
+                _rango(
+                    median="302.73",
+                    minimum="290",
+                    maximum="315",
+                    format_packaging="saco",
+                    format_quantity="25",
+                    format_unit="kg",
+                )
+            ]
+        )
+
+        assert card.format_label == "saco de 25 kg"
+        # 302,73 CUP/lb x (25 kg -> 55,1156 lb) = 16.685 CUP el saco.
+        assert card.format_median_text == "16.685"
+        # El precio por unidad base sigue disponible como comparador.
+        assert card.median_text == "303"
+
+    def test_sin_formato_no_hay_etiqueta_ni_precio_de_formato(self) -> None:
+        (card,) = build_cards([_rango()])
+
+        assert card.format_label is None
+        assert card.format_median_text is None

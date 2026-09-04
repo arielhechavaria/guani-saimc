@@ -60,7 +60,12 @@ def format_price(value: Decimal) -> str:
 
 @dataclass(frozen=True)
 class ProductCard:
-    """Un producto en una provincia, con su rango y la muestra que lo respalda."""
+    """Un formato en una provincia, con su rango y la muestra que lo respalda.
+
+    `minimum`/`median`/`maximum` son el precio por unidad canónica del
+    producto — el comparador entre formatos. `format_*` traen el precio del
+    formato, que es el titular publicado cuando hay formato declarado.
+    """
 
     product_name: str
     province_name: str
@@ -70,6 +75,10 @@ class ProductCard:
     minimum: Decimal
     median: Decimal
     maximum: Decimal
+    format_label: str | None = None
+    format_minimum: Decimal | None = None
+    format_median: Decimal | None = None
+    format_maximum: Decimal | None = None
 
     @property
     def state(self) -> str:
@@ -86,6 +95,18 @@ class ProductCard:
     @property
     def maximum_text(self) -> str:
         return format_price(self.maximum)
+
+    @property
+    def format_minimum_text(self) -> str | None:
+        return None if self.format_minimum is None else format_price(self.format_minimum)
+
+    @property
+    def format_median_text(self) -> str | None:
+        return None if self.format_median is None else format_price(self.format_median)
+
+    @property
+    def format_maximum_text(self) -> str | None:
+        return None if self.format_maximum is None else format_price(self.format_maximum)
 
     @property
     def is_single_observation(self) -> bool:
@@ -124,6 +145,10 @@ def build_cards(ranges: list[RetailRange]) -> list[ProductCard]:
             minimum=r.minimum,
             median=r.median,
             maximum=r.maximum,
+            format_label=r.format_label,
+            format_minimum=r.format_minimum,
+            format_median=r.format_median,
+            format_maximum=r.format_maximum,
         )
         for r in ranges
         if r.province_name is not None and not r.unconverted

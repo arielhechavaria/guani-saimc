@@ -127,8 +127,69 @@ from saimc.models import (
 from saimc.units import canonical_unit, convert_price_per_unit, convert_quantity
 
 
+class _FormatPriced:
+    """Precio del formato para un agregado ya resumido por unidad canónica.
+
+    Lo comparten `Cell` (Matriz interna) y `RetailRange` (tarjetas públicas):
+    los dos guardan `median`/`minimum`/`maximum` como precio por unidad base y
+    la terna `(format_packaging, format_quantity, format_unit)` del formato de
+    venta. El titular publicado es el precio del formato; el precio por unidad
+    base no se reemplaza, se degrada a **comparador entre formatos** — la
+    respuesta a «¿me conviene la caja o la libra?» (design.md D8).
+
+    Espera esos atributos por composición de dataclass; no define campos.
+    """
+
+    unit: str | None
+    median: Decimal
+    minimum: Decimal
+    maximum: Decimal
+    format_packaging: str | None
+    format_quantity: Decimal | None
+    format_unit: str | None
+
+    @property
+    def format_label(self) -> str | None:
+        """«caja de 40 lb», o `None` sin formato. Es lo que la persona compra."""
+        if self.format_packaging is None or self.format_quantity is None:
+            return None
+        cantidad = format(self.format_quantity.normalize(), "f")
+        return f"{self.format_packaging} de {cantidad} {self.format_unit}"
+
+    @property
+    def _format_factor(self) -> Decimal | None:
+        """La cantidad del formato expresada en la unidad del agregado.
+
+        La normalización deja el precio por unidad canónica del producto; para
+        volver al precio del formato hace falta saber cuántas de esas unidades
+        trae. Un formato en kg sobre un producto canónico en lb necesita la
+        conversión (10 kg = 22,046 lb); si no es convertible —`caja`, o
+        magnitudes distintas— no hay precio de formato que derivar.
+        """
+        if self.format_quantity is None:
+            return None
+        return convert_quantity(self.format_quantity, frm=self.format_unit, to=self.unit)
+
+    def _in_format(self, value: Decimal) -> Decimal | None:
+        factor = self._format_factor
+        return None if factor is None else value * factor
+
+    @property
+    def format_median(self) -> Decimal | None:
+        """Mediana expresada como precio del formato. El titular publicado."""
+        return self._in_format(self.median)
+
+    @property
+    def format_minimum(self) -> Decimal | None:
+        return self._in_format(self.minimum)
+
+    @property
+    def format_maximum(self) -> Decimal | None:
+        return self._in_format(self.maximum)
+
+
 @dataclass(frozen=True)
-class Cell:
+class Cell(_FormatPriced):
     """Una celda de la matriz, con su muestra ya resumida."""
 
     product_name: str
@@ -168,50 +229,6 @@ class Cell:
     format_packaging: str | None = None
     format_quantity: Decimal | None = None
     format_unit: str | None = None
-
-    @property
-    def format_label(self) -> str | None:
-        """«caja de 40 lb», o `None` sin formato. Es lo que la persona compra."""
-        if self.format_packaging is None or self.format_quantity is None:
-            return None
-        cantidad = format(self.format_quantity.normalize(), "f")
-        return f"{self.format_packaging} de {cantidad} {self.format_unit}"
-
-    @property
-    def _format_factor(self) -> Decimal | None:
-        """La cantidad del formato expresada en la unidad de la celda.
-
-        `resolve_row()` deja el precio por unidad canónica del producto; para
-        volver al precio del formato hace falta saber cuántas de esas unidades
-        trae. Un formato en kg sobre un producto canónico en lb necesita la
-        conversión (10 kg = 22,046 lb); si no es convertible —`caja`, o
-        magnitudes distintas— no hay precio de formato que derivar.
-        """
-        if self.format_quantity is None:
-            return None
-        return convert_quantity(self.format_quantity, frm=self.format_unit, to=self.unit)
-
-    def _in_format(self, value: Decimal) -> Decimal | None:
-        factor = self._format_factor
-        return None if factor is None else value * factor
-
-    @property
-    def format_median(self) -> Decimal | None:
-        """Mediana expresada como precio del formato. El titular publicado.
-
-        `median` sigue siendo el precio por unidad base: no se reemplaza, se
-        degrada de eje de la serie a **comparador entre formatos** — la
-        respuesta a «¿me conviene la caja o la libra?» (design.md D8).
-        """
-        return self._in_format(self.median)
-
-    @property
-    def format_minimum(self) -> Decimal | None:
-        return self._in_format(self.minimum)
-
-    @property
-    def format_maximum(self) -> Decimal | None:
-        return self._in_format(self.maximum)
 
     @property
     def spread(self) -> Decimal | None:
@@ -478,14 +495,14 @@ def compute_cells(session: Session) -> list[Cell]:
 
 
 @dataclass(frozen=True)
-class RetailRange:
-    """Rango de precio **minorista** de un producto, normalizado por unidad.
+class RetailRange(_FormatPriced):
+    """Rango de precio **minorista** de un formato, normalizado por unidad.
 
-    A diferencia de `Cell`, esta fila ya no distingue envase ni formato: es
-    justamente lo que colapsa `compute_retail_ranges` una vez que descarta lo
-    mayorista y lo no comparable. `unit` queda igual en la salida porque es la
-    unidad canónica del producto, no un eje de agrupación — todas las filas de
-    una misma `RetailRange` ya están en esa unidad.
+    Hasta el 2026-09-04 no distinguía formato: colapsaba envase y respondía
+    «¿en qué rango se movió Arroz?». La pregunta del hogar es por el formato —
+    «¿cómo se movió el paquete de arroz?»— así que ahora `format_id` entra a la
+    identidad. `unit` sigue siendo la unidad canónica del producto: es la base
+    en la que se guarda `median`, y el comparador entre formatos.
     """
 
     product_name: str
@@ -499,6 +516,10 @@ class RetailRange:
     # Mismo criterio que `Cell.unconverted`: `True` cuando la fila quedó
     # separada por no tener `price_cup` resuelto.
     unconverted: bool = False
+    format_id: uuid.UUID | None = None
+    format_packaging: str | None = None
+    format_quantity: Decimal | None = None
+    format_unit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -585,10 +606,12 @@ def compute_retail_ranges(
     """
     report = compute_retail_observations(session, days=days, hoy=hoy)
 
-    # Mismo criterio de fusión que `compute_cells` (ver su docstring):
-    # `unconverted` en la clave separa sin ambigüedad el grupo fundido del
-    # que quedó sin tasa resuelta.
-    RangeKey = tuple[str, str | None, str, str, bool]
+    # `format_id` entra a la clave: el rango es por formato, no por producto
+    # (supersede 2026-08-12). `unconverted` sigue separando el grupo fundido
+    # del que quedó sin tasa, mismo criterio que `compute_cells`.
+    RangeKey = tuple[
+        str, str | None, str, str, bool, uuid.UUID | None, str | None, Decimal | None, str | None
+    ]
     grouped: dict[RangeKey, list[Decimal]] = {}
     for observation in report.observations:
         key: RangeKey = (
@@ -597,6 +620,10 @@ def compute_retail_ranges(
             observation.currency,
             observation.unit,
             observation.unconverted,
+            observation.format_id,
+            observation.format_packaging,
+            observation.format_quantity,
+            observation.format_unit,
         )
         grouped.setdefault(key, []).append(observation.unit_price)
 
@@ -611,6 +638,10 @@ def compute_retail_ranges(
             minimum=min(unit_prices),
             maximum=max(unit_prices),
             unconverted=unconverted,
+            format_id=format_id,
+            format_packaging=format_packaging,
+            format_quantity=format_quantity,
+            format_unit=format_unit,
         )
         for (
             product_name,
@@ -618,11 +649,21 @@ def compute_retail_ranges(
             currency,
             unit,
             unconverted,
+            format_id,
+            format_packaging,
+            format_quantity,
+            format_unit,
         ), unit_prices in grouped.items()
     ]
 
     ranges.sort(
-        key=lambda r: (-r.count, r.product_name, r.province_name or "", r.unconverted)
+        key=lambda r: (
+            -r.count,
+            r.product_name,
+            r.province_name or "",
+            r.format_label or "",
+            r.unconverted,
+        )
     )
     return RetailRangeReport(
         ranges=ranges,
@@ -656,6 +697,12 @@ class RetailObservation:
     #: mismo chequeo de `content_type`.
     evidence_id: uuid.UUID
     evidence_is_public: bool
+    #: Formato de venta de la fila, para que `compute_retail_ranges` agrupe por
+    #: él. `None` cuando la fila no tiene formato establecido.
+    format_id: uuid.UUID | None = None
+    format_packaging: str | None = None
+    format_quantity: Decimal | None = None
+    format_unit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -698,10 +745,15 @@ def compute_retail_observations(
             PriceHistory.created_at,
             PriceHistory.source_id,
             RawIngestion.content_type,
+            PriceHistory.format_id,
+            ProductFormat.packaging,
+            ProductFormat.quantity,
+            ProductFormat.unit,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
         .join(RawIngestion, RawIngestion.id == PriceHistory.source_id)
+        .outerjoin(ProductFormat, ProductFormat.id == PriceHistory.format_id)
         .where(PriceHistory.sale_format == SaleFormat.RETAIL.value)
         .where(PriceHistory.unit.is_not(None))
         .where(PriceHistory.quantity.is_not(None))
@@ -726,6 +778,10 @@ def compute_retail_observations(
         created_at,
         source_id,
         content_type,
+        format_id,
+        format_packaging,
+        format_quantity,
+        format_unit,
     ) in session.execute(stmt):
         if quantity == 0:
             continue
@@ -786,6 +842,10 @@ def compute_retail_observations(
                 unit_price=converted,
                 evidence_id=source_id,
                 evidence_is_public=content_type == ContentType.TEXT,
+                format_id=format_id,
+                format_packaging=format_packaging,
+                format_quantity=format_quantity,
+                format_unit=format_unit,
             )
         )
 

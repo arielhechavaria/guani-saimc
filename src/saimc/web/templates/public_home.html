@@ -371,12 +371,13 @@
   <div class="ph-table-card">
     <table class="m3-coverage ph-provinces">
       <caption class="m3-subtitle">
-        {{ selected_product }} por provincia, ventana de {{ window_days }} días,
-        en {{ cards[0].currency }}/{{ cards[0].unit }}. «—» marca una sola
+        {{ selected_product }} por formato y provincia, ventana de
+        {{ window_days }} días, en {{ cards[0].currency }}. «—» marca una sola
         observación: hay un dato, todavía no un rango.
       </caption>
       <thead>
         <tr>
+          <th scope="col">Formato</th>
           <th scope="col">Provincia</th>
           <th scope="col" class="num">Mínimo</th>
           <th scope="col" class="num">Mediana</th>
@@ -387,15 +388,16 @@
       <tbody>
         {% for card in cards %}
         <tr>
+          <td>{{ card.format_label | capitalize if card.format_label else "sin formato · " ~ card.unit }}</td>
           <td>{{ card.province_name }}</td>
           {% if card.is_single_observation %}
           <td class="num">—</td>
-          <td class="num">{{ card.median_text }}</td>
+          <td class="num">{{ card.format_median_text or card.median_text }}</td>
           <td class="num">—</td>
           {% else %}
-          <td class="num">{{ card.minimum_text }}</td>
-          <td class="num">{{ card.median_text }}</td>
-          <td class="num">{{ card.maximum_text }}</td>
+          <td class="num">{{ card.format_minimum_text or card.minimum_text }}</td>
+          <td class="num">{{ card.format_median_text or card.median_text }}</td>
+          <td class="num">{{ card.format_maximum_text or card.maximum_text }}</td>
           {% endif %}
           <td class="num">{{ card.count }}</td>
         </tr>
@@ -412,20 +414,26 @@
         <span class="ph-card-place">{{ card.province_name }}</span>
       </div>
 
+      {# Titular en la cosa que se compra: «Caja de pollo (40 lb)». El precio
+         por unidad base baja a comparador entre formatos. Sin formato
+         declarado, el titular sigue siendo el precio por unidad de siempre. #}
+      {% if card.format_label %}<div class="ph-card-format">{{ card.format_label | capitalize }}</div>{% endif %}
       {% if card.is_single_observation %}
       {# Con n=1 mínimo, mediana y máximo son el mismo número. Presentarlos
          como rango sugeriría una variación que no se observó. #}
       <div class="ph-card-range">
-        <span class="num">{{ card.median_text }}</span>
-        <span class="ph-card-unit">{{ card.currency }}/{{ card.unit }}</span>
+        <span class="num">{{ card.format_median_text or card.median_text }}</span>
+        <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
       </div>
-      <div class="ph-card-median">Una sola observación, sin rango todavía.</div>
+      <div class="ph-card-median">Una sola observación, sin rango todavía.
+        {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
       {% else %}
       <div class="ph-card-range">
-        <span class="num">{{ card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.maximum_text }}</span>
-        <span class="ph-card-unit">{{ card.currency }}/{{ card.unit }}</span>
+        <span class="num">{{ card.format_minimum_text or card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.format_maximum_text or card.maximum_text }}</span>
+        <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
       </div>
-      <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.median_text }}.</div>
+      <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
+        {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
       {% endif %}
 
       <div class="ph-card-sample">

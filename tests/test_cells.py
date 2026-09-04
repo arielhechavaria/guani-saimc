@@ -486,13 +486,11 @@ class TestComputeRetailObservationsEvidencia:
 
 
 class TestComputeRetailRanges:
-    """El producto sigue siendo uno solo aunque el formato varíe (2026-08-12):
-    Arroz a granel, por saco y por paquete no son series distintas. Pero fundir
-    sus precios crudos reintroduce el problema que separar por `sale_format`
-    resolvió — un saco de 110 lb a 31.000 no es comparable con un paquete a 750
-    aunque los dos sean "Arroz". Lo comparable es el precio **minorista** por
-    unidad canónica del producto: son ~2.5x más baratos por libra al por mayor,
-    que es economía real, no ruido de carga (ver docs/decisions.md).
+    """Desde el 2026-09-04 el rango minorista se separa por formato: «el
+    paquete de arroz» y «el saco de arroz» son series distintas, porque la
+    pregunta del hogar es por el formato, no por el producto. Supersede la
+    decisión del 2026-08-12 que los fundía. El precio por unidad canónica
+    sobrevive **solo** como comparador entre formatos.
     """
 
     def _arroz(self, session: Session, *, unit: str = "lb") -> Product:
@@ -525,6 +523,76 @@ class TestComputeRetailRanges:
         assert rango.unit == "lb"
         assert rango.count == 2
         assert rango.median == Decimal("750")
+
+    def test_dos_formatos_del_mismo_producto_son_dos_rangos(
+        self, session: Session
+    ) -> None:
+        arroz = self._arroz(session)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add(scu)
+        session.commit()
+        origen = _ingestion(session, "hash-rango-formatos")
+        paquete = _formato(session, product=arroz, packaging="paquete", quantity="1", unit="kg")
+        saco = _formato(session, product=arroz, packaging="saco", quantity="25", unit="kg")
+        _precio(
+            session, product=arroz, province=scu, price="688.70", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            price_basis="total", format_id=paquete.id,
+        )
+        _precio(
+            session, product=arroz, province=scu, price="16685", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="25",
+            price_basis="total", format_id=saco.id,
+        )
+        session.commit()
+
+        rangos = compute_retail_ranges(session).ranges
+
+        assert len(rangos) == 2
+        assert {r.format_label for r in rangos} == {"paquete de 1 kg", "saco de 25 kg"}
+
+    def test_el_titular_del_rango_es_el_precio_del_formato(
+        self, session: Session
+    ) -> None:
+        arroz = self._arroz(session)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add(scu)
+        session.commit()
+        origen = _ingestion(session, "hash-rango-precio-formato")
+        saco = _formato(session, product=arroz, packaging="saco", quantity="25", unit="kg")
+        _precio(
+            session, product=arroz, province=scu, price="16685", source=origen,
+            unit="kg", sale_format=SaleFormat.RETAIL.value, quantity="25",
+            price_basis="total", format_id=saco.id,
+        )
+        session.commit()
+
+        (rango,) = compute_retail_ranges(session).ranges
+
+        # 16685 / 25 kg = 667,4 CUP/kg = 302,73 CUP/lb es el comparador.
+        assert rango.median.quantize(Decimal("0.01")) == Decimal("302.73")
+        # El saco de 25 kg vuelve a costar 16.685.
+        assert rango.format_median.quantize(Decimal("1")) == Decimal("16685")
+        assert rango.format_label == "saco de 25 kg"
+
+    def test_sin_formato_el_rango_no_tiene_precio_de_formato(
+        self, session: Session
+    ) -> None:
+        arroz = self._arroz(session)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add(scu)
+        session.commit()
+        origen = _ingestion(session, "hash-rango-sin-formato")
+        _precio(
+            session, product=arroz, province=scu, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1", format_id=None,
+        )
+        session.commit()
+
+        (rango,) = compute_retail_ranges(session).ranges
+
+        assert rango.format_median is None
+        assert rango.format_label is None
 
     def test_saco_normalizado_no_se_funde_con_minorista(
         self, session: Session
