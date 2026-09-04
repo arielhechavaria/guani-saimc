@@ -9,7 +9,7 @@
   Los nombres indexados (`product_id_N`, `price_N`, `row_count`, …) y los `id`
   no cambian: `submit_curation` y los tests siguen viendo lo mismo.
 #}
-{% macro price_row_card(row, index0, products, provinces, currencies, units, edit_mode=False) %}
+{% macro price_row_card(row, index0, products, provinces, currencies, units, packaging, edit_mode=False) %}
 {# Nombres de unidad en español, para el control de `price_basis` de más
    abajo y para el `data-basis-label` que lee `_price_row_scripts.html`. Vive
    acá y no en `saimc.units` (D8): ese módulo es dueño del vocabulario de
@@ -171,19 +171,16 @@
     </summary>
     <div class="m3-grid-fields" style="margin-top:18px; padding-left:12px; border-left:2px solid var(--m3-outline-variant)">
       <label class="m3-field">
-        <span class="m3-field-label" for="packaging_format_{{ index0 }}">Envase (opcional)</span>
-        <select name="packaging_format_{{ index0 }}" id="packaging_format_{{ index0 }}" class="m3-select">
-          <option value=""{% if not row.packaging_format %} selected{% endif %}>— sin especificar —</option>
-          <option value="paquete"{% if row.packaging_format == "paquete" %} selected{% endif %}>Paquete</option>
-          <option value="saco"{% if row.packaging_format == "saco" %} selected{% endif %}>Saco</option>
-          <option value="a granel"{% if row.packaging_format == "a granel" %} selected{% endif %}>A granel</option>
-          <option value="otro"{% if row.packaging_format == "otro" %} selected{% endif %}>Otro…</option>
+        <span class="m3-field-label" for="packaging_{{ index0 }}">Envase (opcional)</span>
+        {# El envase + cantidad + unidad de esta fila resuelven el formato de
+           venta al confirmar. Vocabulario cerrado (saimc.units.PACKAGING): sin
+           texto libre no hay dónde tipear un envase mal escrito ni un teléfono. #}
+        <select name="packaging_{{ index0 }}" id="packaging_{{ index0 }}" class="m3-select">
+          <option value=""{% if not row.packaging %} selected{% endif %}>— sin envase —</option>
+          {% for envase in packaging %}
+          <option value="{{ envase }}"{% if row.packaging == envase %} selected{% endif %}>{{ envase | capitalize }}</option>
+          {% endfor %}
         </select>
-      </label>
-      <label class="m3-field">
-        <span class="m3-field-label" for="packaging_detail_{{ index0 }}">Si es «Otro» (opcional)</span>
-        <input type="text" name="packaging_detail_{{ index0 }}" id="packaging_detail_{{ index0 }}" value="{{ row.packaging_detail }}" maxlength="64" placeholder="funda, lata, pomo…"
-               class="m3-input" />
       </label>
       <label class="m3-field">
         <span class="m3-field-label" for="min_purchase_{{ index0 }}">Compra mínima (opcional)</span>

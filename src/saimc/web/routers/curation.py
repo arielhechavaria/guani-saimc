@@ -19,13 +19,14 @@ gate de `SaleFormat` (design.md, D4): solo se guarda cuando coincide con uno
 de los dos valores del enum, cualquier otra cosa (incluido un envío en
 blanco) degrada a `NULL`.
 
-`packaging` no es una unidad (2026-08-12): un saco trae 25 kg, 50 kg o 110 lb
-según el anuncio, y un paquete va de 1 kg a 2 lb — sin magnitud fija no sirve
-para normalizar precio por unidad, para eso están `unit`+`quantity`. El
-formulario pide el envase en dos campos, `packaging_format` (cerrado: Paquete
-/ Saco / A granel / Otro) y `packaging_detail` (libre, solo aplica con
-«Otro»), que `_packaging_from_form()` combina en el único string que guarda
-la columna, redactado con `redact_personal_data()` antes de construir la fila.
+El envase pasa a ser parte del formato de venta (`product_formats`): el
+formulario pide un `<select>` de envase del vocabulario cerrado
+(`saimc.units.PACKAGING`), y junto con `quantity`+`unit` de la misma fila
+resuelve el triple a un `ProductFormat` vía `get_or_create_format()`. Si el
+triple está completo, la fila queda con `format_id`; si falta el envase, con
+`format_id = NULL` — mismo criterio que `sale_format` en blanco. La columna
+`packaging` de texto libre ya no se escribe acá; la retira la migración
+`0019`.
 """
 
 import re
@@ -57,20 +58,21 @@ from saimc.extraction.engine import (
 from saimc.ingestion import origin
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.privacy import redact_personal_data
+from saimc.formats import get_or_create_format
 from saimc.models import (
-    PACKAGING_MAX_LENGTH,
     ContentType,
     Currency,
     DiscardReason,
     PriceHistory,
     Product,
     ProcessingStatus,
+    ProductFormat,
     Province,
     RawIngestion,
     SaleFormat,
     SourceType,
 )
-from saimc.units import UNITS, canonical_unit
+from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
 
@@ -82,60 +84,29 @@ router = APIRouter(dependencies=[Depends(require_operator)])
 # romper el submit (design.md, D4).
 _SALE_FORMAT_VALUES = {member.value for member in SaleFormat}
 
-# Vocabulario cerrado de presentación (2026-08-12): reemplaza el texto libre
-# original. `Otro` es la válvula de escape declarada — sin ella, un formato
-# real que no sea paquete/saco/a granel (funda, lata, pomo) no tendría dónde
-# ir, y forzarlo dentro de las tres opciones fijas sería inventar una
-# categoría que nadie eligió.
-_PACKAGING_LABELS = {"paquete": "Paquete", "saco": "Saco", "a granel": "A granel"}
+def _resolve_format_id(
+    db: Session, product_id: uuid.UUID, row: dict[str, str]
+) -> uuid.UUID | None:
+    """Resuelve el triple (envase, cantidad, unidad) de una fila del form a un
+    `format_id`, creando el `ProductFormat` si no existe.
 
-
-def _truncated_packaging(raw: str) -> str | None:
-    """Redacta el envase y lo recorta al ancho de la columna, en ese orden.
-
-    `PHONE_PLACEHOLDER` mide más que el teléfono que reemplaza, así que un
-    envase que pasaba el `maxlength` del formulario puede salir de la redacción
-    excedido. Sin este recorte, PostgreSQL aborta el insert y el operador pierde
-    el submit entero — y justo en el caso en que escribió un teléfono.
+    Devuelve `None` cuando el triple está incompleto —falta el envase, la
+    cantidad o la unidad, o alguno cae fuera del vocabulario canónico—: la fila
+    se guarda con `format_id = NULL`, mismo criterio que `sale_format` en
+    blanco. Nunca fabrica un formato a partir de datos parciales.
     """
-    redacted = redact_personal_data(raw)
-    if not redacted:
+    envase = canonical_packaging(row["packaging"])
+    unidad = canonical_unit(row["unit"])
+    cantidad = _parse_decimal(row["quantity"])
+    if envase is None or unidad is None or cantidad is None:
         return None
-    return redacted[:PACKAGING_MAX_LENGTH]
-
-
-def _packaging_from_form(fmt: str, detail: str) -> str | None:
-    """Combina el select cerrado y el detalle libre en el string que se guarda.
-
-    El detalle solo cuenta cuando `fmt == "otro"` — con Paquete/Saco/A granel
-    ya elegidos, `quantity`+`unit` dimensionan el lote y el detalle no agrega
-    nada que valga la pena guardar. Un `fmt` vacío o desconocido no fabrica un
-    valor a partir del detalle: es la misma regla que ya rige `sale_format`,
-    el envase es un juicio explícito, no algo que se infiera de texto suelto.
-    """
-    fmt = fmt.strip().lower()
-    if fmt == "otro":
-        combined = detail.strip()
-    else:
-        combined = _PACKAGING_LABELS.get(fmt, "")
-    if not combined:
-        return None
-    return _truncated_packaging(combined)
-
-
-def _split_packaging(existing: str | None) -> tuple[str, str]:
-    """Inverso de `_packaging_from_form`, para prellenar la corrección.
-
-    Filas cargadas antes del 2026-08-12 traen texto libre («Saco de arroz De
-    110 lb») que no calza con ninguna etiqueta cerrada: caen en «Otro» con el
-    texto original completo como detalle, en vez de perderlo.
-    """
-    if not existing:
-        return "", ""
-    for fmt, label in _PACKAGING_LABELS.items():
-        if existing == label:
-            return fmt, ""
-    return "otro", existing
+    return get_or_create_format(
+        db,
+        product_id=product_id,
+        packaging=envase,
+        quantity=cantidad,
+        unit=unidad,
+    ).id
 
 
 def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]:
@@ -153,8 +124,7 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "quantity": "",
             "unit": "",
             "sale_format": "",
-            "packaging_format": "",
-            "packaging_detail": "",
+            "packaging": "",
             "min_purchase": "",
             "province_id": "",
             "price_basis": "",
@@ -173,8 +143,9 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         # Nunca se prellena: es un juicio del operador, no algo que el motor
         # de extracción pueda inferir (design.md, D4 y "Data Flow").
         "sale_format": "",
-        "packaging_format": "",
-        "packaging_detail": "",
+        # El motor no propone envase; el operador lo elige y con
+        # `quantity`+`unit` de la fila resuelve el formato al confirmar.
+        "packaging": "",
         # El slice que design.md D7 dejaba pendiente, resuelto solo para la
         # forma que el motor sabe leer sin adivinar: el precio escalonado de
         # un anuncio mayorista («Más de 100 cajas 27,5»), donde el mínimo se
@@ -201,13 +172,16 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
     }
 
 
-def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
+def _values_from_price_history(
+    price: PriceHistory, fmt: ProductFormat | None = None
+) -> dict[str, str]:
     """Traduce una fila ya curada a los mismos strings que arma una propuesta.
 
     Mismo formato de salida que `_values_from_proposal` — es lo que permite
-    que la corrección reuse la tarjeta de la cola sin distinguir origen.
+    que la corrección reuse la tarjeta de la cola sin distinguir origen. `fmt`
+    es el `ProductFormat` de `price.format_id` ya cargado por el llamador (que
+    tiene la sesión): se usa para preseleccionar el envase.
     """
-    packaging_format, packaging_detail = _split_packaging(price.packaging)
     return {
         "price_id": str(price.id),
         "product_id": str(price.product_id),
@@ -216,8 +190,7 @@ def _values_from_price_history(price: PriceHistory) -> dict[str, str]:
         "quantity": str(price.quantity) if price.quantity is not None else "",
         "unit": price.unit or "",
         "sale_format": price.sale_format or "",
-        "packaging_format": packaging_format,
-        "packaging_detail": packaging_detail,
+        "packaging": fmt.packaging if fmt is not None else "",
         "min_purchase": (
             str(price.min_purchase_quantity)
             if price.min_purchase_quantity is not None
@@ -538,6 +511,7 @@ def _render_queue(
             "pasted": pasted,
             "currencies": [c.value for c in Currency],
             "units": UNITS,
+            "packaging": PACKAGING,
             "status_counts": status_counts,
             # Solo la vuelve True el GET normal (docs/decisions.md,
             # 2026-08-17): tras un error de validación en el POST (segundo
@@ -1173,8 +1147,7 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
         "quantity": str(form.get(f"quantity_{index}", "")).strip(),
         "unit": str(form.get(f"unit_{index}", "")).strip(),
         "sale_format": str(form.get(f"sale_format_{index}", "")).strip(),
-        "packaging_format": str(form.get(f"packaging_format_{index}", "")).strip(),
-        "packaging_detail": str(form.get(f"packaging_detail_{index}", "")).strip(),
+        "packaging": str(form.get(f"packaging_{index}", "")).strip(),
         "min_purchase": str(form.get(f"min_purchase_{index}", "")).strip(),
         "province_id": str(form.get(f"province_id_{index}", "")).strip(),
         "price_basis": str(form.get(f"price_basis_{index}", "")).strip(),
@@ -1282,13 +1255,12 @@ async def submit_curation(
                 sale_format=(
                     row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None
                 ),
-                # Redactado acá mismo, no en el bloque de más abajo (D5): ese
-                # bloque corre después de la rama de rollback todo-o-nada, y
-                # las filas ya se construyeron para entonces. El recorte va
-                # después de redactar y no antes: el placeholder es más largo
-                # que el teléfono que reemplaza, así que un texto que entraba en
-                # la columna deja de entrar apenas se redacta.
-                packaging=_packaging_from_form(row["packaging_format"], row["packaging_detail"]),
+                # El envase + `quantity` + `unit` resuelven el formato; si el
+                # triple está incompleto, `format_id` queda en NULL sin fabricar
+                # nada (design.md D4). `get_or_create_format` hace `flush()`, así
+                # que dos filas del mismo submit con el mismo triple reusan el
+                # `ProductFormat` en vez de chocar contra el UNIQUE.
+                format_id=_resolve_format_id(db, product.id, row),
                 min_purchase_quantity=_parse_min_purchase(row["min_purchase"]),
                 price_basis=price_basis,
                 published_date=published_date,
@@ -1338,10 +1310,10 @@ async def submit_curation(
 
     # Todo texto capturado que se persiste durante la curaduría pasa por
     # `redact_personal_data` antes de tocar la base — regla de `CLAUDE.md`
-    # sobre datos personales. Dos puntos, no uno: `packaging` ya se redactó
-    # arriba, inline en la construcción de cada `PriceHistory` (D5); acá
-    # abajo se redactan `source_reference` y `original_text`, que solo se
-    # conocen después de pasar la rama de error todo-o-nada.
+    # sobre datos personales. Con el envase ya sin texto libre (pasó a ser un
+    # `<select>` sobre `PACKAGING`), los únicos puntos que quedan son
+    # `source_reference` y `original_text`, que solo se conocen después de
+    # pasar la rama de error todo-o-nada.
 
     # `source_reference` está diseñado para completarse acá, no viola la
     # inmutabilidad de `raw_ingestions` (ver docstring del modelo).
@@ -1556,7 +1528,13 @@ def edit_curated(
     """
     ingestion = _require_curated(db, ingestion_id)
     prices = _curated_rows(db, ingestion_id)
-    rows = [_values_from_price_history(price) for price in prices]
+    rows = [
+        _values_from_price_history(
+            price,
+            db.get(ProductFormat, price.format_id) if price.format_id else None,
+        )
+        for price in prices
+    ]
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -1581,6 +1559,7 @@ def edit_curated(
             "error": None,
             "currencies": [c.value for c in Currency],
             "units": UNITS,
+            "packaging": PACKAGING,
         },
     )
 
@@ -1686,6 +1665,7 @@ async def submit_edit(
                 "error": " ".join(errors),
                 "currencies": [c.value for c in Currency],
                 "units": UNITS,
+                "packaging": PACKAGING,
             },
             status_code=422,
         )
@@ -1708,9 +1688,7 @@ async def submit_edit(
         existing.sale_format = (
             row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None
         )
-        existing.packaging = _packaging_from_form(
-            row["packaging_format"], row["packaging_detail"]
-        )
+        existing.format_id = _resolve_format_id(db, product.id, row)
         existing.min_purchase_quantity = _parse_min_purchase(row["min_purchase"])
         # Re-derivados de `row` con los mismos dos helpers puros que ya
         # validaron esta fila en el primer loop (D4): son funciones puras de

@@ -14,13 +14,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.extraction import ocr
 from saimc.models import (
-    PACKAGING_MAX_LENGTH,
     Channel,
     ContentType,
     Currency,
@@ -29,6 +28,7 @@ from saimc.models import (
     PriceHistory,
     ProcessingStatus,
     Product,
+    ProductFormat,
     Province,
     RawIngestion,
     SaleFormat,
@@ -134,7 +134,7 @@ def _crear_precio_curado(
     currency: str = Currency.CUP.value,
     unit: str | None = None,
     sale_format: str | None = None,
-    packaging: str | None = None,
+    format_id: uuid.UUID | None = None,
     min_purchase_quantity: Decimal | None = None,
     quantity: Decimal | None = None,
     price_basis: str | None = None,
@@ -152,7 +152,7 @@ def _crear_precio_curado(
         currency=currency,
         unit=unit,
         sale_format=sale_format,
-        packaging=packaging,
+        format_id=format_id,
         min_purchase_quantity=min_purchase_quantity,
         quantity=quantity,
         price_basis=price_basis,
@@ -927,8 +927,10 @@ class TestCamposDeJuicioDelOperadorQuedanVacios:
         # cajas — 100 cajas de 40 lb.
         assert 'id="price_1" value="27.5"' in response.text
         assert 'id="min_purchase_1" value="4000"' in response.text
-        # El envase y minorista/mayorista siguen siendo juicio del operador.
-        assert 'id="packaging_detail_1" value=""' in response.text
+        # El envase y minorista/mayorista siguen siendo juicio del operador:
+        # el `<select>` de envase existe y arranca sin elegir.
+        assert 'id="packaging_1"' in response.text
+        assert '<option value="" selected>— sin envase —</option>' in response.text
 
     def test_antecedente_confirmado_del_mismo_canal_y_producto_no_prellena_nada(
         self, client: TestClient, session: Session
@@ -961,7 +963,6 @@ class TestCamposDeJuicioDelOperadorQuedanVacios:
             ingestion=vieja,
             product=producto,
             sale_format="retail",
-            packaging="Saco",
             min_purchase_quantity=Decimal("1"),
         )
         # `_pending_in_focus` elige entre los `PENDING` — sin esto,
@@ -1801,45 +1802,22 @@ class TestCurationSubmit:
 
         assert response.status_code == 404
 
-    def test_persiste_unit_sale_format_y_packaging_tal_como_se_envian(
+    def test_elegir_un_formato_declarado_persiste_format_id_cantidad_y_unidad(
         self, client: TestClient, session: Session
     ) -> None:
-        """spec: filas distinguibles — los tres campos son independientes
-        entre sí y del resto de la fila (curation-observation-capture)."""
+        """spec: el formulario elige un formato declarado; `quantity`/`unit` de
+        la fila se escriben desde ese formato (curation-observation-capture)."""
         producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-unit-sale-format")
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "product_id_0": str(producto.id),
-                "price_0": "450",
-                "unit_0": "lb",
-                "sale_format_0": "wholesale",
-                "packaging_format_0": "saco",
-            },
-            follow_redirects=False,
+        formato = ProductFormat(
+            product_id=producto.id,
+            packaging="saco",
+            quantity=Decimal("25"),
+            unit="kg",
         )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        fila = session.execute(select(PriceHistory)).scalars().one()
-        assert fila.unit == "lb"
-        assert fila.sale_format == "wholesale"
-        assert fila.packaging == "Saco"
-
-    def test_packaging_no_se_confunde_con_la_cantidad_ni_con_la_unidad(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """spec: `quantity` y `unit` dimensionan el lote, `packaging` lo nombra.
-
-        Es la distinción que justifica el campo: sin ella, "saco de 25 kg" se
-        aplasta dentro de `quantity` y se pierde el envase."""
-        producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-packaging-vs-cantidad")
+        session.add(formato)
+        session.commit()
+        formato_id = formato.id
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-formato-declarado")
 
         response = client.post(
             f"/curation/{ingestion.id}",
@@ -1850,7 +1828,8 @@ class TestCurationSubmit:
                 "price_0": "17500",
                 "quantity_0": "25",
                 "unit_0": "kg",
-                "packaging_format_0": "saco",
+                "sale_format_0": "wholesale",
+                "packaging_0": "saco",
                 "price_basis_0": "total",
             },
             follow_redirects=False,
@@ -1860,9 +1839,80 @@ class TestCurationSubmit:
 
         session.expire_all()
         fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.format_id == formato_id
         assert fila.quantity == Decimal("25")
         assert fila.unit == "kg"
-        assert fila.packaging == "Saco"
+        assert fila.sale_format == "wholesale"
+        # No se crea un segundo formato: se reusa el declarado.
+        assert session.execute(select(func.count()).select_from(ProductFormat)).scalar() == 1
+
+    def test_un_formato_nuevo_se_crea_al_vuelo_desde_el_formulario(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: un formato que no existe se crea desde la curaduría sin salir
+        de la cola (curation-observation-capture)."""
+        producto = _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-formato-nuevo")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "12400",
+                "quantity_0": "80",
+                "unit_0": "lb",
+                "packaging_0": "caja",
+                "price_basis_0": "total",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        formato = session.execute(select(ProductFormat)).scalars().one()
+        assert (formato.product_id, formato.packaging, formato.quantity, formato.unit) == (
+            producto.id,
+            "caja",
+            Decimal("80"),
+            "lb",
+        )
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.format_id == formato.id
+
+    def test_el_mismo_triple_en_dos_anuncios_no_duplica_el_formato(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: crear el mismo formato dos veces desde otra redacción da la
+        misma fila (idempotencia de `get_or_create_format`)."""
+        producto = _crear_producto(session, name="Pollo")
+        uno = _crear_raw_ingestion(session, hash_="hash-post-triple-1")
+        dos = _crear_raw_ingestion(session, hash_="hash-post-triple-2")
+
+        for ingestion in (uno, dos):
+            respuesta = client.post(
+                f"/curation/{ingestion.id}",
+                data={
+                    "published_date": _fecha_pub(ingestion),
+                    "row_count": "1",
+                    "product_id_0": str(producto.id),
+                    "price_0": "12400",
+                    "quantity_0": "40",
+                    "unit_0": "lb",
+                    "packaging_0": "caja",
+                    "price_basis_0": "total",
+                },
+                follow_redirects=False,
+            )
+            assert respuesta.status_code == 303
+
+        session.expire_all()
+        formatos = list(session.execute(select(ProductFormat)).scalars())
+        assert len(formatos) == 1
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert {f.format_id for f in filas} == {formatos[0].id}
 
     def test_dos_filas_comparten_la_unidad_y_difieren_en_el_formato_de_venta(
         self, client: TestClient, session: Session
@@ -1983,12 +2033,13 @@ class TestCurationSubmit:
         fila = session.execute(select(PriceHistory)).scalars().one()
         assert fila.unit is None
 
-    def test_telefono_en_packaging_se_redacta_y_saco_queda_intacto(
+    def test_envase_en_blanco_guarda_format_id_null_y_crea_la_fila(
         self, client: TestClient, session: Session
     ) -> None:
-        """spec: un teléfono escrito en `packaging` se redacta."""
+        """spec: sin formato establecido se guarda `format_id = NULL`, y la
+        fila se crea igual — mismo criterio que `sale_format` en blanco."""
         producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-packaging-telefono")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-envase-vacio")
 
         response = client.post(
             f"/curation/{ingestion.id}",
@@ -1997,8 +2048,10 @@ class TestCurationSubmit:
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
-                "packaging_format_0": "otro",
-                "packaging_detail_0": "saco, llamar al 55550101",
+                "quantity_0": "10",
+                "unit_0": "lb",
+                "packaging_0": "",
+                "price_basis_0": "total",
             },
             follow_redirects=False,
         )
@@ -2007,74 +2060,9 @@ class TestCurationSubmit:
 
         session.expire_all()
         fila = session.execute(select(PriceHistory)).scalars().one()
-        assert fila.packaging is not None  # si fuera None la negativa pasaría sola
-        assert "55550101" not in fila.packaging
-        assert "saco" in fila.packaging
-
-    def test_packaging_vacio_guarda_null_y_no_cadena_vacia(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """Un envase sin llenar es NULL, no `""`.
-
-        La diferencia importa: `""` sería un tercer estado no declarado en un
-        campo cuya semántica de nulos ya es una concesión asumida. Un helper que
-        devolviera `(redactado or "")[:64]` pasaría todo lo demás igual."""
-        producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-packaging-vacio")
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "product_id_0": str(producto.id),
-                "price_0": "450",
-                "packaging_format_0": "",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        fila = session.execute(select(PriceHistory)).scalars().one()
-        assert fila.packaging is None
-
-    def test_packaging_redactado_nunca_excede_el_ancho_de_la_columna(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """La redacción alarga el texto: el placeholder mide 19 caracteres y
-        reemplaza 8 dígitos, +11 netos.
-
-        Un envase de 64 caracteres con un teléfono adentro sale redactado en 75
-        y no entra en `varchar(64)`: PostgreSQL corta el submit entero con
-        StringDataRightTruncation. SQLite no valida el ancho, así que este test
-        afirma sobre el largo y no sobre el motor."""
-        producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-post-packaging-largo")
-
-        envase = "saco de 25 kg de arroz, coordinar entrega antes, llamar 55550101"
-        assert len(envase) == PACKAGING_MAX_LENGTH
-
-        response = client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "product_id_0": str(producto.id),
-                "price_0": "450",
-                "packaging_format_0": "otro",
-                "packaging_detail_0": envase,
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-
-        session.expire_all()
-        fila = session.execute(select(PriceHistory)).scalars().one()
-        assert len(fila.packaging or "") <= PACKAGING_MAX_LENGTH
-        assert "55550101" not in (fila.packaging or "")
+        assert fila.format_id is None
+        assert fila.quantity == Decimal("10")  # la fila se crea con sus otros campos
+        assert session.execute(select(func.count()).select_from(ProductFormat)).scalar() == 0
 
 
 class TestAgregarFila:
@@ -2686,15 +2674,12 @@ class TestConversionAlEditar:
 
 
 class TestVocabularioDeEnvase:
-    """`packaging` deja de ser texto libre y pasa a vocabulario cerrado +
-    "Otro" (2026-08-12): un saco no tiene magnitud fija (25 kg, 50 kg, 110 lb
-    según el anuncio) y un paquete tampoco (1 kg de arroz, 2 lb de azúcar),
-    así que el envase no puede ser `unit` — pero sí puede ser una etiqueta
-    cerrada que no interfiere con `unit`+`quantity`, que siguen siendo la
-    fuente del cálculo de precio por unidad.
+    """El envase pasa a ser parte del formato de venta: `<select>` sobre
+    `PACKAGING`, sin texto libre. Con `quantity`+`unit` de la misma fila
+    resuelve el `ProductFormat` al confirmar (design.md D7).
     """
 
-    def test_saco_guarda_la_etiqueta_capitalizada(
+    def test_envase_del_vocabulario_resuelve_el_formato_con_cantidad_y_unidad(
         self, client: TestClient, session: Session
     ) -> None:
         producto = _crear_producto(session)
@@ -2706,20 +2691,31 @@ class TestVocabularioDeEnvase:
                 "published_date": _fecha_pub(ingestion),
                 "row_count": "1",
                 "product_id_0": str(producto.id),
-                "price_0": "450",
-                "packaging_format_0": "saco",
+                "price_0": "17500",
+                "quantity_0": "25",
+                "unit_0": "kg",
+                "packaging_0": "saco",
+                "price_basis_0": "total",
             },
             follow_redirects=False,
         )
 
         fila = session.execute(select(PriceHistory)).scalars().one()
-        assert fila.packaging == "Saco"
+        formato = session.get(ProductFormat, fila.format_id)
+        assert formato is not None
+        assert (formato.packaging, formato.quantity, formato.unit) == (
+            "saco",
+            Decimal("25"),
+            "kg",
+        )
 
-    def test_a_granel_guarda_la_etiqueta_capitalizada(
+    def test_envase_sin_cantidad_deja_el_formato_sin_resolver(
         self, client: TestClient, session: Session
     ) -> None:
+        """Triple incompleto (falta la cantidad) → `format_id = NULL`, sin
+        fabricar un formato a medias."""
         producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-envase-granel")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-envase-sin-cantidad")
 
         client.post(
             f"/curation/{ingestion.id}",
@@ -2728,90 +2724,39 @@ class TestVocabularioDeEnvase:
                 "row_count": "1",
                 "product_id_0": str(producto.id),
                 "price_0": "450",
-                "packaging_format_0": "a granel",
+                "unit_0": "kg",
+                "packaging_0": "saco",
             },
             follow_redirects=False,
         )
 
         fila = session.execute(select(PriceHistory)).scalars().one()
-        assert fila.packaging == "A granel"
+        assert fila.format_id is None
+        assert session.execute(select(func.count()).select_from(ProductFormat)).scalar() == 0
 
-    def test_otro_sin_detalle_no_guarda_nada(
+    def test_edit_preselecciona_el_envase_del_formato_curado(
         self, client: TestClient, session: Session
     ) -> None:
-        """"Otro" vacío no fabrica un valor: sin detalle no hay nada que decir."""
         producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-envase-otro-vacio")
-
-        client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "product_id_0": str(producto.id),
-                "price_0": "450",
-                "packaging_format_0": "otro",
-                "packaging_detail_0": "",
-            },
-            follow_redirects=False,
-        )
-
-        fila = session.execute(select(PriceHistory)).scalars().one()
-        assert fila.packaging is None
-
-    def test_detalle_sin_otro_seleccionado_se_ignora(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """El detalle solo cuenta si el operador eligió explícitamente "Otro" —
-        con "Saco" seleccionado, un detalle sobrante no debe colarse."""
-        producto = _crear_producto(session)
-        ingestion = _crear_raw_ingestion(session, hash_="hash-envase-detalle-ignorado")
-
-        client.post(
-            f"/curation/{ingestion.id}",
-            data={
-                "published_date": _fecha_pub(ingestion),
-                "row_count": "1",
-                "product_id_0": str(producto.id),
-                "price_0": "450",
-                "packaging_format_0": "saco",
-                "packaging_detail_0": "esto no debería aparecer",
-            },
-            follow_redirects=False,
-        )
-
-        fila = session.execute(select(PriceHistory)).scalars().one()
-        assert fila.packaging == "Saco"
-
-    def test_edit_prellena_otro_con_texto_libre_viejo(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """Filas cargadas antes del 2026-08-12 traen texto libre que no calza
-        con ninguna etiqueta cerrada — no se pierde, cae en "Otro" con el
-        texto original completo como detalle."""
-        producto = _crear_producto(session)
-        curado = _crear_raw_ingestion(session, hash_="hash-envase-edit-viejo")
+        curado = _crear_raw_ingestion(session, hash_="hash-envase-edit-formato")
         curado.processing_status = ProcessingStatus.CURATED
         session.commit()
-        _crear_precio_curado(
-            session, ingestion=curado, product=producto, price="31000",
-            packaging="Saco de arroz De 110 lb",
+        formato = ProductFormat(
+            product_id=producto.id,
+            packaging="paquete",
+            quantity=Decimal("10"),
+            unit="lb",
         )
-
-        response = client.get(f"/curation/{curado.id}/edit")
-
-        assert '<option value="otro" selected>' in response.text
-        assert 'value="Saco de arroz De 110 lb"' in response.text
-
-    def test_edit_prellena_etiqueta_cerrada_sin_detalle(
-        self, client: TestClient, session: Session
-    ) -> None:
-        producto = _crear_producto(session)
-        curado = _crear_raw_ingestion(session, hash_="hash-envase-edit-cerrado")
-        curado.processing_status = ProcessingStatus.CURATED
+        session.add(formato)
         session.commit()
         _crear_precio_curado(
-            session, ingestion=curado, product=producto, price="750", packaging="Paquete",
+            session,
+            ingestion=curado,
+            product=producto,
+            price="750",
+            quantity=Decimal("10"),
+            unit="lb",
+            format_id=formato.id,
         )
 
         response = client.get(f"/curation/{curado.id}/edit")
@@ -3330,6 +3275,11 @@ class TestEditarCuradoGet:
         curado = _crear_raw_ingestion(session, hash_="hash-edit-get")
         curado.processing_status = ProcessingStatus.CURATED
         session.commit()
+        formato = ProductFormat(
+            product_id=pollo.id, packaging="caja", quantity=Decimal("40"), unit="lb"
+        )
+        session.add(formato)
+        session.commit()
         precio = _crear_precio_curado(
             session,
             ingestion=curado,
@@ -3337,8 +3287,9 @@ class TestEditarCuradoGet:
             province=habana,
             price="500",
             unit="lb",
+            quantity=Decimal("40"),
             sale_format=SaleFormat.RETAIL.value,
-            packaging="jaba",
+            format_id=formato.id,
         )
 
         response = client.get(f"/curation/{curado.id}/edit")
@@ -3350,7 +3301,7 @@ class TestEditarCuradoGet:
         assert f'value="{habana.id}" selected' in response.text
         assert '<option value="lb" data-basis-label="libra" selected>' in response.text
         assert '<option value="retail" selected>' in response.text
-        assert 'value="jaba"' in response.text
+        assert '<option value="caja" selected>' in response.text
 
     def test_pendiente_no_se_puede_editar(
         self, client: TestClient, session: Session
@@ -3403,8 +3354,7 @@ def _form_edicion(
         "quantity_0": row.get("quantity", ""),
         "unit_0": row.get("unit", ""),
         "sale_format_0": row.get("sale_format", ""),
-        "packaging_format_0": row.get("packaging_format", ""),
-        "packaging_detail_0": row.get("packaging_detail", ""),
+        "packaging_0": row.get("packaging", ""),
         "min_purchase_0": row.get("min_purchase", ""),
         "province_id_0": row.get("province_id", ""),
         "price_id_0": row.get("price_id", ""),
@@ -3443,7 +3393,7 @@ class TestEditarCuradoPost:
         assert actualizado.id == precio.id
         assert actualizado.price == Decimal("420.00")
 
-    def test_actualiza_unit_sale_format_y_packaging(
+    def test_actualiza_unit_sale_format_y_formato(
         self, client: TestClient, session: Session
     ) -> None:
         pollo = _crear_producto(session, name="Pollo")
@@ -3459,19 +3409,26 @@ class TestEditarCuradoPost:
                 {
                     "product_id": str(pollo.id),
                     "price": "500",
-                    "unit": "lb",
+                    "quantity": "25",
+                    "unit": "kg",
                     "sale_format": "wholesale",
-                    "packaging_format": "otro",
-                    "packaging_detail": "saco de 25 kg",
+                    "packaging": "saco",
                     "price_id": str(precio.id),
+                    "price_basis": "total",
                 }
             ),
         )
 
         session.refresh(precio)
-        assert precio.unit == "lb"
+        assert precio.unit == "kg"
         assert precio.sale_format == SaleFormat.WHOLESALE.value
-        assert precio.packaging == "saco de 25 kg"
+        formato = session.get(ProductFormat, precio.format_id)
+        assert formato is not None
+        assert (formato.packaging, formato.quantity, formato.unit) == (
+            "saco",
+            Decimal("25"),
+            "kg",
+        )
 
     def test_compra_minima_round_trip_al_corregir(
         self, client: TestClient, session: Session
@@ -3591,7 +3548,7 @@ class TestEditarCuradoPost:
                 "quantity_0": "",
                 "unit_0": "",
                 "sale_format_0": "",
-                "packaging_format_0": "",
+                "packaging_0": "",
                 "province_id_0": "",
                 "price_id_0": str(precio_1.id),
                 "product_id_1": str(pollo.id),
@@ -3603,7 +3560,7 @@ class TestEditarCuradoPost:
                 "quantity_1": "",
                 "unit_1": "",
                 "sale_format_1": "",
-                "packaging_format_1": "",
+                "packaging_1": "",
                 "province_id_1": "",
                 "price_id_1": str(precio_2.id),
             },
