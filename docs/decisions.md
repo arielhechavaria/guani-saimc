@@ -6565,3 +6565,36 @@ Con esto la repatriación está completa, y el resultado se fija en un tripwire
 nuevo: `TestNingunColorFijoEnLasPlantillas` recorre **todas** las plantillas y
 falla si alguna vuelve a declarar un color a mano. La auditoría había contado
 **60**; hoy hay **cero** en todo el proyecto.
+
+## 2026-09-04 — Los seeds de la vista pública se anclan a hoy; la suite queda entera en verde
+Contexto: `test_public_filter.py` arrastraba **dos fallos desde al menos el
+2026-08-30**, anotados en varias entradas como «envejecieron por fechas fijas
+en su seed» y nunca atacados. Al mirarlos: los seeds sembraban anuncios con
+fechas absolutas de agosto de 2026 (`date(2026, 8, 18)` y vecinas), y la vista
+filtra por `?dias=N` contra `date.today()`. Con el reloj en el 4 de septiembre,
+una ventana de 7 días ya no alcanzaba a agosto, la página renderizaba vacía y
+los dos casos que piden `dias=7` fallaban — uno buscando el enlace al CSV que
+no se dibujaba, el otro reventando con `IndexError` al partir por una tabla que
+no estaba.
+Decisión: se agrega el helper `_hace(dias)` —`date.today() - timedelta(...)`—
+y **las 27 fechas absolutas de los cinco seeds pasan a offsets relativos**,
+conservando orden y espaciado exactos: 18/08 → hoy−6, 19/08 → hoy−5, 20/08 →
+hoy−4, 21/08 → hoy−3, 22/08 → hoy−2. Todos los offsets quedan entre 2 y 6, o
+sea dentro de la ventana más chica que ofrece la vista (7) y de la default
+(30). Es prueba por construcción: los dos lados —seed y filtro— cuelgan de
+`date.today()`, así que no queda dependencia del calendario.
+No se arreglaron solo los dos casos rojos: los 27 eran el mismo bug latente y
+el resto iba a caer igual al correrse el reloj un poco más.
+Descartado: (a) fijar la fecha del sistema en los tests con una librería tipo
+`freezegun`, que mete una dependencia para un problema que se resuelve con una
+resta; (b) ampliar la ventana o relajar los asserts, que haría pasar los tests
+sin que prueben lo que dicen probar; (c) tocar las cuatro fechas absolutas de
+`TestFrescuraDelDato`, que son **deliberadas**: ahí el assert es el string
+formateado en pantalla (`«Datos verificados hasta el 15/08/2026»`) y el punto
+de la prueba es justamente que esa línea NO depende de la ventana. Queda
+anotado en el docstring de `_hace()` para que nadie las «arregle» después.
+Consecuencia: **1325 tests verdes, cero fallos** — la suite queda entera en
+verde por primera vez desde que aparecieron estos dos. `test_respeta_la_ventana`
+sigue probando la exclusión de verdad, porque siembra su propia fila a −20 días
+con `date.today()` en vez de depender del seed. Se corrigió además un comentario
+que había caducado con el mismo problema: decía «hoy es 2026-08-26».

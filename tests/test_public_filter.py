@@ -57,6 +57,22 @@ def client(session: Session) -> Iterator[TestClient]:
     app.dependency_overrides.clear()
 
 
+def _hace(dias: int) -> date:
+    """Un día relativo a hoy, para sembrar dentro de la ventana que se filtra.
+
+    Los seeds de este archivo usaban fechas absolutas de agosto de 2026. Eso
+    funciona hasta que el reloj se corre: la vista filtra por `?dias=N` contra
+    `date.today()`, así que un anuncio fijo en el calendario sale de la ventana
+    solo, y el test empieza a fallar sin que nadie haya tocado el código. Pasó
+    el 2026-09-04 con los dos casos que piden `dias=7`.
+
+    La excepción deliberada es `TestFrescuraDelDato`, que sí usa fechas
+    absolutas: ahí lo que se afirma es el string formateado en pantalla y el
+    punto de la prueba es justamente que esa línea NO depende de la ventana.
+    """
+    return date.today() - timedelta(days=dias)
+
+
 def _ingestion(session: Session, *, hash_: str) -> RawIngestion:
     row = RawIngestion(
         source_type=SourceType.INBOX_TEXT,
@@ -107,23 +123,23 @@ def _seed_dos_productos(session: Session) -> None:
     session.commit()
 
     fuente = _ingestion(session, hash_="h-arroz")
-    _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 18))
+    _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(6))
     _precio(
         session,
         product=arroz,
         province=habana,
         source=fuente,
-        dia=date(2026, 8, 21),
+        dia=_hace(3),
         price="320",
     )
-    _precio(session, product=aceite, province=habana, source=fuente, dia=date(2026, 8, 20))
-    _precio(session, product=azucar, province=habana, source=fuente, dia=date(2026, 8, 19))
+    _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(4))
+    _precio(session, product=azucar, province=habana, source=fuente, dia=_hace(5))
     _precio(
         session,
         product=azucar,
         province=habana,
         source=fuente,
-        dia=date(2026, 8, 22),
+        dia=_hace(2),
         price="115",
     )
     session.commit()
@@ -443,9 +459,9 @@ class TestTablaPorProvincia:
         session.commit()
         fuente = _ingestion(session, hash_="h-tabla")
         for dia, precio in (
-            (date(2026, 8, 18), "300"),
-            (date(2026, 8, 20), "340"),
-            (date(2026, 8, 22), "320"),
+            (_hace(6), "300"),
+            (_hace(4), "340"),
+            (_hace(2), "320"),
         ):
             _precio(
                 session,
@@ -460,7 +476,7 @@ class TestTablaPorProvincia:
             product=arroz,
             province=santiago,
             source=fuente,
-            dia=date(2026, 8, 21),
+            dia=_hace(3),
             price="500",
         )
         session.commit()
@@ -528,13 +544,13 @@ class TestFiltroPorProvinciaEnLaRuta:
         session.add_all([arroz, aceite, habana, santiago])
         session.commit()
         fuente = _ingestion(session, hash_="h-prov")
-        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 18))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(6))
         _precio(
             session,
             product=arroz,
             province=habana,
             source=fuente,
-            dia=date(2026, 8, 21),
+            dia=_hace(3),
             price="330",
         )
         _precio(
@@ -542,10 +558,10 @@ class TestFiltroPorProvinciaEnLaRuta:
             product=arroz,
             province=santiago,
             source=fuente,
-            dia=date(2026, 8, 20),
+            dia=_hace(4),
             price="410",
         )
-        _precio(session, product=aceite, province=habana, source=fuente, dia=date(2026, 8, 19))
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(5))
         session.commit()
 
     def test_elegir_provincia_acota_las_tarjetas_a_esa_provincia(
@@ -626,17 +642,17 @@ class TestDescargaCsv:
         session.add_all([arroz, aceite, no_piloto, habana, santiago])
         session.commit()
         fuente = _ingestion(session, hash_="h-csv")
-        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 18))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(6))
         _precio(
             session, product=arroz, province=habana, source=fuente,
-            dia=date(2026, 8, 21), price="330",
+            dia=_hace(3), price="330",
         )
         _precio(
             session, product=arroz, province=santiago, source=fuente,
-            dia=date(2026, 8, 20), price="410",
+            dia=_hace(4), price="410",
         )
-        _precio(session, product=aceite, province=habana, source=fuente, dia=date(2026, 8, 19))
-        _precio(session, product=no_piloto, province=habana, source=fuente, dia=date(2026, 8, 19))
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(5))
+        _precio(session, product=no_piloto, province=habana, source=fuente, dia=_hace(5))
         session.commit()
 
     def test_devuelve_csv_como_adjunto(
@@ -772,8 +788,9 @@ class TestFrescuraDelDato:
         _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 15))
         session.commit()
 
-        # 15/08 queda fuera de una ventana de 7 días (hoy es 2026-08-26), pero
-        # la línea de frescura igual lo muestra.
+        # Fecha absoluta a propósito, y vieja a propósito: queda fuera de
+        # cualquier ventana razonable, y la línea de frescura igual la muestra.
+        # Es lo único de este archivo que NO usa `_hace()`.
         texto = client.get("/?dias=7").text
 
         assert "Datos verificados hasta el 15/08/2026" in texto
@@ -805,17 +822,17 @@ class TestRutaProductoLimpia:
         session.add_all([arroz, aceite, azucar, habana, santiago])
         session.commit()
         fuente = _ingestion(session, hash_="h-ruta")
-        _precio(session, product=arroz, province=habana, source=fuente, dia=date(2026, 8, 18))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(6))
         _precio(
             session, product=arroz, province=habana, source=fuente,
-            dia=date(2026, 8, 21), price="330",
+            dia=_hace(3), price="330",
         )
         _precio(
             session, product=arroz, province=santiago, source=fuente,
-            dia=date(2026, 8, 20), price="410",
+            dia=_hace(4), price="410",
         )
-        _precio(session, product=aceite, province=habana, source=fuente, dia=date(2026, 8, 19))
-        _precio(session, product=azucar, province=habana, source=fuente, dia=date(2026, 8, 19))
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(5))
+        _precio(session, product=azucar, province=habana, source=fuente, dia=_hace(5))
         session.commit()
 
     def test_muestra_la_vista_enfocada_en_el_producto(
