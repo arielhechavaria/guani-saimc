@@ -6327,3 +6327,48 @@ otros 18 fallbacks nunca se usaban. Costo medido: la hoja pública pasa de
 repatriación de los componentes hechos a mano (`.hs-*` de `/control`, `.ph-*`
 de la home pública, `.docs-*`/`.doc-*` de `/docs`), que son ~337 líneas de CSS
 viviendo dentro de plantillas.
+
+## 2026-09-04 — Escala de espaciado 4dp, y por qué los breakpoints NO se mueven a los de Material
+Contexto: segunda mitad del trabajo de alinear Guani bajo Material 3 (slice A2,
+después de la fuente única de tokens de `d2fd439`). Dos cosas sin sistema: el
+espaciado, escrito como literales px por todas partes, y cuatro cortes
+responsive distintos —640 en la home pública, 720 y 900 en la hoja del
+operador, 900 otra vez en `/docs`— sin escala ni nada que impidiera un quinto.
+Decisión, en tres partes:
+(a) Se define la escala de 4dp en `design_tokens.css` (`--m3-space-N`, donde N
+es el multiplicador: `--m3-space-6` son 24px). Cubre 4-32 más los dos saltos
+grandes que la hoja usaba, 56 y 96. Se sustituyeron **96 literales** en las dos
+hojas, restringido a `padding`/`margin`/`gap`: `top`/`left`/`right`/`bottom`
+quedan afuera porque son posicionamiento —`top: 56px` es el alto de la topnav,
+no un espacio, y tokenizarlo mentiría—. Cambio visual: **ninguno, probado**;
+revertir los tokens a px devuelve las hojas de `d2fd439` byte a byte.
+(b) **Los 41 literales fuera de grilla que quedan (6, 10, 13, 14, 18, 22, 26px)
+NO se snapearon.** Unos son ajustes ópticos de 1-3px y otros son la densidad de
+`/curation`, que el operador usa una hora por día: moverlos cambia cuánta
+información entra en pantalla sin que nadie lo haya pedido. La grilla es el
+default para lo nuevo, no un decreto retroactivo.
+(c) **Los breakpoints se quedan en 640/720/900 y NO pasan a las window size
+classes de Material (600/840)**, que era lo esperable habiendo decidido alinear
+todo bajo Material. Se documentan los tres en `design_tokens.css` con el layout
+al que responde cada uno, y un test impide que aparezca un cuarto.
+Descartado: renumerar a 600/840. Medido, rompe dos cosas ya resueltas. **720 →
+600** devuelve el bug del 2026-09-02 en el teléfono EN HORIZONTAL: acostado
+mide ~640-844 de ancho por ~360-390 de alto, con 720 cae en compacto y con 600
+no, así que vuelve a comerse los ~230px de cromo fijo sobre 360px de alto.
+**640 → 600** deja `.ph-cards` en `repeat(3, 1fr)` dentro de 600px: ~178px por
+tarjeta de precio, con su barra de rango adentro. Los tres números están atados
+a layouts que todavía no son fluidos; converger a Material exige antes que las
+grillas dejen de tener columnas fijas y que la topnav sobreviva a 600px con las
+etiquetas puestas. Eso es trabajo de la repatriación de componentes, no de
+renumerar cortes. Descartado también tokenizar los breakpoints: no se puede,
+`@media (max-width: var(--x))` no existe —las media queries se evalúan antes de
+que las custom properties tengan valor—, así que la escala se hace cumplir
+desde un test y no desde el CSS.
+Consecuencia: 1311 tests verdes (+3). Siguen los 2 de `test_public_filter.py`,
+preexistentes. Los tres casos nuevos son tripwires probados en rojo: un corte
+de fantasía, un espaciado en grilla escrito como literal, y la escala del test
+separándose de la de la fuente. El CSS que vive dentro de las plantillas
+(~337 líneas) queda afuera de las dos reglas a propósito: sale de ahí cuando se
+repatrien los componentes. Con esto A queda cerrado; sigue la repatriación
+(`.hs-*` de `/control`, `.ph-*` de la home pública, `.docs-*`/`.doc-*`), que es
+la que además destraba la convergencia a 600/840.

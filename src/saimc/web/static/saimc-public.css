@@ -62,6 +62,17 @@
   --m3-prov-2: #0b7285;  --m3-prov-2-soft: #c5f6fa;  --m3-prov-2-wash: #f0fbfc;
   --m3-prov-9: #6f7979;  --m3-prov-9-soft: #e3e9ea;  --m3-prov-9-wash: #f7fafa;
 
+  --m3-space-1: 4px;
+  --m3-space-2: 8px;
+  --m3-space-3: 12px;
+  --m3-space-4: 16px;
+  --m3-space-5: 20px;
+  --m3-space-6: 24px;
+  --m3-space-7: 28px;
+  --m3-space-8: 32px;
+  --m3-space-14: 56px;
+  --m3-space-24: 96px;
+
   --m3-radius-xs: 4px;
   --m3-radius-sm: 8px;
   --m3-radius-md: 12px;
@@ -121,6 +132,6 @@ a:hover { color: var(--m3-primary); text-decoration: underline; }
 }
 
 .m3-subtitle {
-  margin: 4px 0 0; font-size: 14px; line-height: 20px;
+  margin: var(--m3-space-1) 0 0; font-size: 14px; line-height: 20px;
   color: var(--m3-on-surface-variant); max-width: 62ch; text-wrap: pretty;
 }

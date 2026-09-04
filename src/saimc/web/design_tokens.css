@@ -73,6 +73,31 @@
   --m3-prov-2: #0b7285;  --m3-prov-2-soft: #c5f6fa;  --m3-prov-2-wash: #f0fbfc;
   --m3-prov-9: #6f7979;  --m3-prov-9-soft: #e3e9ea;  --m3-prov-9-wash: #f7fafa;
 
+  /* Escala de espaciado — grilla de 4dp de Material. El número ES el
+     multiplicador: `--m3-space-6` son 6 × 4 = 24px, así que el nombre se lee
+     sin tabla de consulta.
+
+     Cubre lo que las hojas ya usaban en grilla. NO se snapearon los valores
+     que estaban fuera (6, 10, 13, 14, 18, 22, 26px): unos son ajustes ópticos
+     —bordes, empujes de 1-3px— y otros son la densidad de `/curation`, que el
+     operador usa una hora por día. Forzarlos a la grilla cambiaría cuánta
+     información entra en pantalla sin que nadie lo haya pedido. La grilla es
+     el default para lo nuevo, no un decreto retroactivo. */
+  --m3-space-1: 4px;
+  --m3-space-2: 8px;
+  --m3-space-3: 12px;
+  --m3-space-4: 16px;
+  --m3-space-5: 20px;
+  --m3-space-6: 24px;
+  --m3-space-7: 28px;
+  --m3-space-8: 32px;
+  /* Los dos saltos grandes: aire de respiración al pie del contenido y el
+     alto del estado vacío. La escala tiene huecos a propósito —no hay 9 a 13
+     ni 15 a 23 porque nada los usa—; con el nombre siendo el multiplicador,
+     un hueco no confunde a nadie. */
+  --m3-space-14: 56px;
+  --m3-space-24: 96px;
+
   --m3-radius-xs: 4px;
   --m3-radius-sm: 8px;
   --m3-radius-md: 12px;
@@ -86,3 +111,40 @@
   --m3-font: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --m3-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+
+/* ── Breakpoints ─────────────────────────────────────────────────────────
+   NO son tokens y no pueden serlo: `@media (max-width: var(--x))` no existe
+   en CSS —las media queries se evalúan antes de que las custom properties
+   tengan valor—. Así que la única forma de tener una escala es escribir estos
+   números a mano en todas partes y que un test verifique que nadie inventó
+   otro. Ese test es
+   `tests/test_static_assets.py::TestEscalaResponsive`.
+
+   La escala son estos tres cortes, cada uno con un significado propio:
+
+       640px  una columna en la home pública (`.ph-cards`, `.ph-series`,
+              `.ph-panels` dejan la grilla).
+       720px  cromo compacto del operador: topnav solo iconos, topbar deja de
+              ser sticky, título a 22px, la barra de acciones se reparte
+              la fila.
+       900px  layouts de dos columnas a una: `/curation` (formulario +
+              evidencia) y `/docs` (documento + TOC).
+
+   Más `@media print` en `docs_view.html`, que no es un ancho.
+
+   Por qué NO son las window size classes de Material (600 / 840), que sería
+   lo esperable habiendo decidido alinear todo bajo Material: los tres números
+   de arriba están atados a layouts que todavía no son fluidos, y moverlos
+   rompe cosas ya arregladas. Medido el 2026-09-04:
+
+     · 720 → 600 devolvería el bug del 2026-09-02 en el teléfono EN
+       HORIZONTAL. Un teléfono acostado mide ~640-844 de ancho por ~360-390
+       de alto: con 720 cae en compacto, con 600 no, y vuelve a comerse los
+       ~230px de cromo fijo sobre un viewport de 360px de alto.
+     · 640 → 600 dejaría `.ph-cards` en `repeat(3, 1fr)` dentro de 600px:
+       ~178px por tarjeta de precio, con su barra de rango adentro.
+
+   La convergencia a 600/840 es correcta como destino, pero primero las
+   grillas tienen que dejar de ser de columnas fijas y la topnav tiene que
+   sobrevivir a 600px con las etiquetas puestas. Eso es trabajo de la
+   repatriación de componentes, no de renumerar cortes. */

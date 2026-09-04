@@ -318,6 +318,89 @@ class TestTokensMaterial:
         assert not con_respaldo, "quitá el color de respaldo:\n" + "\n".join(con_respaldo)
 
 
+class TestEscalaResponsive:
+    """Los cortes responsive son tres, y nadie inventa un cuarto.
+
+    `@media (max-width: var(--x))` no existe en CSS: las media queries se
+    evalúan antes de que las custom properties tengan valor, así que la escala
+    no puede vivir en `design_tokens.css` como token. Vive documentada ahí y se
+    hace cumplir desde acá.
+
+    Los tres números están atados a un layout concreto, no a las window size
+    classes de Material (600/840). El porqué —y qué habría que arreglar para
+    converger— está en el bloque «Breakpoints» de `design_tokens.css`.
+    """
+
+    CORTES = {640, 720, 900}
+
+    def test_ninguna_media_query_usa_un_corte_de_fantasia(self) -> None:
+        raiz = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web"
+        archivos = [*(raiz / "static").glob("*.css"), *(raiz / "templates").glob("*.html")]
+
+        intrusos: list[str] = []
+        for archivo in archivos:
+            for ancho in re.findall(
+                r"@media[^{]*?(?:max|min)-width:\s*(\d+)px", archivo.read_text(encoding="utf-8")
+            ):
+                if int(ancho) not in self.CORTES:
+                    intrusos.append(f"{archivo.name}: {ancho}px")
+
+        assert not intrusos, (
+            f"cortes fuera de la escala {sorted(self.CORTES)}: {intrusos} — "
+            "usá uno de los tres o agregá el nuevo al bloque «Breakpoints» de "
+            "design_tokens.css explicando a qué layout responde"
+        )
+
+
+class TestEscalaEspaciado:
+    """Un espaciado que cae en la grilla de 4dp se escribe con su token.
+
+    Solo `padding`, `margin` y `gap`, y solo en las dos hojas. Queda afuera a
+    propósito:
+
+    · `top`/`left`/`right`/`bottom`, que son posicionamiento — `top: 56px` es
+      la altura de la topnav, no un espacio, y tokenizarlo mentiría.
+    · Los valores fuera de grilla (6, 10, 13, 14, 18, 22, 26px). Son ajustes
+      ópticos y la densidad de `/curation`, que el operador usa una hora por
+      día; snapearlos cambiaría cuánta información entra en pantalla sin que
+      nadie lo pidiera. La grilla es el default para lo nuevo.
+    · El CSS que todavía vive dentro de las plantillas (~337 líneas). Sale de
+      ahí cuando se repatrien los componentes, no antes.
+    """
+
+    ESCALA = {4: 1, 8: 2, 12: 3, 16: 4, 20: 5, 24: 6, 28: 7, 32: 8, 56: 14, 96: 24}
+
+    def test_la_escala_del_test_es_la_de_la_fuente(self) -> None:
+        """Que este test y `design_tokens.css` no se separen en silencio."""
+        fuente = (
+            Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "design_tokens.css"
+        ).read_text(encoding="utf-8")
+        declarados = {
+            int(px): int(n) for n, px in re.findall(r"--m3-space-(\d+):\s*(\d+)px;", fuente)
+        }
+        assert declarados == self.ESCALA
+
+    def test_los_valores_en_grilla_usan_el_token(self) -> None:
+        raiz = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "static"
+        props = re.compile(
+            r"\b((?:padding|margin)(?:-(?:top|right|bottom|left))?|(?:row-|column-)?gap):"
+            r"\s*([^;{}]+);"
+        )
+
+        literales: list[str] = []
+        for hoja in sorted(raiz.glob("*.css")):
+            for prop, valor in props.findall(hoja.read_text(encoding="utf-8")):
+                for px in re.findall(r"(?<![-\w.])(\d+)px", valor):
+                    if int(px) in self.ESCALA:
+                        literales.append(
+                            f"{hoja.name}: {prop}: …{px}px… → var(--m3-space-{self.ESCALA[int(px)]})"
+                        )
+
+        assert not literales, "espaciados en grilla escritos como literal:\n" + "\n".join(
+            literales
+        )
+
+
 class TestCompresion:
     """`GZipMiddleware`: qué se comprime, qué no, y qué pasa sin soporte.
 
