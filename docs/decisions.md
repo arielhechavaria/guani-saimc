@@ -6282,3 +6282,48 @@ y el de 422 (`2f43c911-3826-4487-83de-50b4e3a2149a`) siguen con su dato viejo:
 el operador tiene que recorregirlos una vez que el fix esté desplegado. TDD:
 RED con el `IntegrityError` reproducido en SQLite antes del fix, GREEN después
 (`tests/test_curation.py::TestConversionAlEditar::test_cambiar_a_cup_con_formato_nuevo_no_revienta_por_autoflush`).
+
+## 2026-09-04 — Los tokens Material 3 tienen fuente única y una herramienta que los proyecta
+Contexto: el operador pidió alinear todo Guani bajo Material Design desde la
+Fase 0. Al auditar el estado apareció que Material 3 ya ES el sistema del
+proyecto —47 tokens, ~60 componentes, fuentes e iconos vendorizados, cero
+Bootstrap— pero derivado: `saimc-public.css` tenía 13 tokens **copiados a mano**
+desde `saimc-material.css`, y las plantillas citaban 20 veces
+`var(--m3-algo, #literal)` con fallbacks que ya no eran los colores del
+proyecto. Cuatro de esos literales estaban mal: `#006a60` contra el
+`--m3-primary` real `#00696e`, `#79747e` contra `--m3-outline` `#6f7979`, y
+`#cac4d0` (×5) contra `--m3-outline-variant` `#c4cfcf` —ese `#cac4d0` es del
+esquema violáceo BASE de Material, ni siquiera de este proyecto—. Peor: dos
+tokens se citaban **sin existir en ninguna hoja**, así que el color que se veía
+era siempre el fallback: `--m3-tertiary` (marca de campo asistido en
+`/curation`) y `--m3-surface-variant` (`code`/`pre`/`th` de `/docs`).
+Decisión: `src/saimc/web/design_tokens.css` es la fuente única —no se sirve,
+vive fuera de `static/`— y `tools/build_css_tokens.py` copia su bloque `:root`
+dentro de las dos hojas, entre centinelas, pelando los comentarios. Se definen
+los dos tokens que faltaban (`--m3-tertiary: #4b607c`, un azul apagado fuera
+del eje rojo/verde por la misma disciplina que los colores de provincia;
+`--m3-surface-variant: #dbe5e5`, neutral de la familia teal) y se eliminan los
+20 fallbacks literales de las plantillas. La hoja pública recibe el bloque
+COMPLETO: **esto enmienda la entrada del split de `saimc-public.css`**, cuyo
+criterio de recorte sigue vigente para los COMPONENTES —de ahí salían los
+~22 KB— pero deja de aplicarse a los tokens.
+Descartado: (a) un `tokens.css` aparte enlazado por los dos shells, que es la
+solución obvia y suma un round-trip a cada vista contra la conexión lenta e
+intermitente que fija CLAUDE.md; (b) solo un test que compare las dos listas a
+mano, que hace verificable la duplicación pero no la elimina, y la lista va a
+crecer cuando la home pública deje su sistema paralelo `--ph-*`; (c) corregir
+los fallbacks en vez de sacarlos: el shell garantiza la hoja, así que el
+literal nunca se usa y lo único que hace es envejecer sin que nadie lo note.
+Consecuencia: 1308 tests verdes (+4). Siguen los 2 de `test_public_filter.py`
+que envejecieron por fechas fijas en su seed, verificados idénticos contra el
+código sin modificar. Los cuatro casos nuevos son tripwires probados en rojo
+uno por uno, con el patrón del manifiesto de iconos (2026-08-30): nombran el
+token exacto y el comando a correr. Cambio visible en pantalla: solo los dos
+tokens que antes no existían —la marca de campo asistido pasa de violácea a
+azul, y los bloques de código de `/docs` de gris azulado a gris teal—; los
+otros 18 fallbacks nunca se usaban. Costo medido: la hoja pública pasa de
+1.129 a 1.790 B gzipeados, +661 B por visita nueva. Queda abierto el slice A2
+(escala de spacing 4dp y unificar los cuatro breakpoints), y detrás la
+repatriación de los componentes hechos a mano (`.hs-*` de `/control`, `.ph-*`
+de la home pública, `.docs-*`/`.doc-*` de `/docs`), que son ~337 líneas de CSS
+viviendo dentro de plantillas.

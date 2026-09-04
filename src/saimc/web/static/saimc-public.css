@@ -8,27 +8,74 @@
 
    Si una vista pública nueva necesita una clase del operador, se agrega acá
    explícitamente: el criterio es "lo que usa la home pública", no "lo que
-   podría llegar a usar". */
+   podría llegar a usar".
 
+   Ese criterio manda sobre los COMPONENTES, no sobre los tokens: desde el
+   2026-09-04 el bloque `:root` lo genera `tools/build_css_tokens.py` desde
+   `src/saimc/web/design_tokens.css`, completo y para las dos hojas. Los 13
+   tokens que antes vivían acá eran copia manual y se habían desincronizado
+   en silencio. */
+
+/* Fuente única: `src/saimc/web/design_tokens.css`. Recibe el bloque COMPLETO,
+   no los 13 tokens que antes se copiaban a mano. Medido el 2026-09-04: el
+   bloque son 1.567 B crudos y esta hoja pasa de 1.129 a 1.790 B gzipeados,
+   +661 B por visita nueva. Se paga porque el recorte de esta hoja siempre fue
+   de componentes —topnav, tablas, botones: de ahí salían los ~22 KB— y porque
+   la lista corta mantenida a mano ya se había desincronizado sin que nada lo
+   dijera. Los comentarios de cada token se quedan en la fuente y no viajan. */
+/* >>> BEGIN tokens generados — los edita tools/build_css_tokens.py, no vos */
 :root {
   --m3-primary: #00696e;
+  --m3-primary-hover: #00565b;
+  --m3-on-primary: #ffffff;
   --m3-primary-container: #cce8e9;
   --m3-on-primary-container: #041f21;
+  --m3-primary-fixed-dim: #b8ecef;
+
+  --m3-tertiary: #4b607c;
 
   --m3-bg: #f2f6f6;
   --m3-surface: #ffffff;
   --m3-surface-container: #eef4f4;
   --m3-surface-container-high: #e3e9ea;
+  --m3-surface-hover: #f7fafa;
+  --m3-surface-variant: #dbe5e5;
 
   --m3-on-surface: #191c1c;
   --m3-on-surface-variant: #3f4949;
   --m3-outline: #6f7979;
   --m3-outline-variant: #c4cfcf;
   --m3-divider: #eef2f2;
+  --m3-disabled: #8a9494;
+
+  --m3-error: #ba1a1a;
+  --m3-error-container: #ffdad6;
+  --m3-on-error-container: #410002;
+  --m3-success-container: #c3ecc9;
+  --m3-on-success-container: #05210d;
+  --m3-warn-container: #ffe6a8;
+  --m3-on-warn-container: #3d2f00;
+  --m3-warn: #e0a700;
+
+  --m3-prov-0: #3f5fd6;  --m3-prov-0-soft: #dbe4ff;  --m3-prov-0-wash: #f6f8ff;
+  --m3-prov-1: #7048e8;  --m3-prov-1-soft: #e5dbff;  --m3-prov-1-wash: #f9f6ff;
+  --m3-prov-2: #0b7285;  --m3-prov-2-soft: #c5f6fa;  --m3-prov-2-wash: #f0fbfc;
+  --m3-prov-9: #6f7979;  --m3-prov-9-soft: #e3e9ea;  --m3-prov-9-wash: #f7fafa;
+
+  --m3-radius-xs: 4px;
+  --m3-radius-sm: 8px;
+  --m3-radius-md: 12px;
+  --m3-radius-lg: 16px;
+  --m3-radius-full: 100px;
+
+  --m3-elev-1: 0 1px 3px rgba(0, 0, 0, .08);
+  --m3-elev-2: 0 1px 2px rgba(0, 0, 0, .2);
+  --m3-elev-3: 0 4px 12px rgba(0, 0, 0, .18);
 
   --m3-font: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --m3-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+/* <<< END tokens generados */
 
 * { box-sizing: border-box; }
 

@@ -27,16 +27,16 @@
     color: inherit; text-decoration: none; opacity: .78;
     border-left: 2px solid transparent; line-height: 1.35;
   }
-  .doc-toc a:hover { opacity: 1; border-left-color: var(--m3-primary, #006a60); }
+  .doc-toc a:hover { opacity: 1; border-left-color: var(--m3-primary); }
   .doc-toc a.lvl-3 { padding-left: 22px; font-size: .8rem; opacity: .62; }
 
   .doc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
   .doc-actions a, .doc-actions button {
     font: inherit; font-size: .85rem; padding: 7px 14px; cursor: pointer;
-    border: 1px solid var(--m3-outline, #79747e); border-radius: 999px;
-    background: var(--m3-surface, #fff); color: inherit; text-decoration: none;
+    border: 1px solid var(--m3-outline); border-radius: 999px;
+    background: var(--m3-surface); color: inherit; text-decoration: none;
   }
-  .doc-actions a:hover, .doc-actions button:hover { border-color: var(--m3-primary, #006a60); }
+  .doc-actions a:hover, .doc-actions button:hover { border-color: var(--m3-primary); }
 
   .doc-body { max-width: 78ch; overflow-wrap: break-word; }
   .doc-body h1, .doc-body h2, .doc-body h3, .doc-body h4 {
@@ -44,33 +44,33 @@
   }
   .doc-body h1 { font-size: 1.7rem; }
   .doc-body h2 { font-size: 1.32rem; padding-bottom: .25em;
-                 border-bottom: 1px solid var(--m3-outline-variant, #cac4d0); }
+                 border-bottom: 1px solid var(--m3-outline-variant); }
   .doc-body h3 { font-size: 1.08rem; }
   .doc-body p, .doc-body li { line-height: 1.65; }
   .doc-body code {
     font-family: "Roboto Mono", monospace; font-size: .86em;
-    background: var(--m3-surface-variant, #eceff3); padding: 1px 5px; border-radius: 4px;
+    background: var(--m3-surface-variant); padding: 1px 5px; border-radius: 4px;
   }
   .doc-body pre {
-    background: var(--m3-surface-variant, #eceff3); padding: 14px 16px;
+    background: var(--m3-surface-variant); padding: 14px 16px;
     border-radius: 8px; overflow-x: auto;
   }
   .doc-body pre code { background: none; padding: 0; }
   .doc-body blockquote {
     margin: 1em 0; padding: .2em 0 .2em 16px;
-    border-left: 3px solid var(--m3-primary, #006a60); opacity: .85;
+    border-left: 3px solid var(--m3-primary); opacity: .85;
   }
   /* Las tablas son el 80% del valor de `requisitos.md`: tienen que poder
      scrollear solas sin que la página se vaya de ancho. */
   .doc-table-scroll { overflow-x: auto; margin: 1.2em 0; }
   .doc-body table { border-collapse: collapse; width: 100%; font-size: .88rem; }
   .doc-body th, .doc-body td {
-    border: 1px solid var(--m3-outline-variant, #cac4d0);
+    border: 1px solid var(--m3-outline-variant);
     padding: 7px 10px; text-align: left; vertical-align: top;
   }
-  .doc-body th { background: var(--m3-surface-variant, #eceff3); font-weight: 600; }
+  .doc-body th { background: var(--m3-surface-variant); font-weight: 600; }
   .doc-body img { max-width: 100%; }
-  .doc-body hr { border: none; border-top: 1px solid var(--m3-outline-variant, #cac4d0); margin: 2em 0; }
+  .doc-body hr { border: none; border-top: 1px solid var(--m3-outline-variant); margin: 2em 0; }
 
   .doc-cargando { opacity: .6; font-style: italic; }
   .doc-error {

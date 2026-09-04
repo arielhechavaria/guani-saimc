@@ -219,6 +219,105 @@ class TestAssetsVendorizados:
         assert "unpkg.com" not in texto
 
 
+class TestTokensMaterial:
+    """Los tokens `--m3-*` salen de una fuente única y nadie los cita al aire.
+
+    `src/saimc/web/design_tokens.css` es la fuente; `tools/build_css_tokens.py`
+    la copia dentro de las dos hojas servidas. Los tres casos de acá cubren las
+    tres formas en que eso se rompe en silencio, todas medidas el 2026-09-04:
+
+    1. Se edita un token y no se corre la herramienta → una hoja queda vieja.
+    2. Se edita el bloque generado a mano → se pierde en la próxima corrida.
+    3. Se cita `var(--m3-loquesea)` con un token que no existe → gana el
+       fallback, que fue el caso de `--m3-tertiary` y `--m3-surface-variant`.
+    """
+
+    def _root(self, texto: str) -> dict[str, str]:
+        """Los pares nombre→valor del primer bloque `:root { … }` del archivo."""
+        bloque = re.search(r"^:root \{.*?^\}$", texto, re.DOTALL | re.MULTILINE)
+        assert bloque is not None, "el archivo no tiene un bloque `:root { … }`"
+        # Sin los comentarios: el bloque los lleva adentro y traen `#hex`.
+        limpio = re.sub(r"/\*.*?\*/", "", bloque.group(0), flags=re.DOTALL)
+        return dict(re.findall(r"(--m3-[a-z0-9-]+):\s*([^;]+);", limpio))
+
+    def _leer(self, *partes: str) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        return raiz.joinpath(*partes).read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("hoja", ["saimc-material.css", "saimc-public.css"])
+    def test_la_hoja_lleva_los_tokens_de_la_fuente(self, hoja: str) -> None:
+        """Tripwire de deriva. Rojo si se tocó un token sin correr la herramienta."""
+        fuente = self._root(self._leer("src", "saimc", "web", "design_tokens.css"))
+        servida = self._root(self._leer("src", "saimc", "web", "static", hoja))
+
+        distintos = {
+            nombre: (valor, servida.get(nombre))
+            for nombre, valor in fuente.items()
+            if servida.get(nombre) != valor
+        }
+        sobrantes = set(servida) - set(fuente)
+
+        assert not distintos and not sobrantes, (
+            f"{hoja} no coincide con design_tokens.css — "
+            f"desincronizados: {sorted(distintos)}, sobrantes: {sorted(sobrantes)} — "
+            "corré `python tools/build_css_tokens.py`"
+        )
+
+    def test_las_dos_hojas_declaran_el_mismo_bloque(self) -> None:
+        """La hoja pública recibe el bloque completo, no un subconjunto.
+
+        El recorte de `saimc-public.css` es de componentes. Cuando también
+        recortaba tokens, mantener las dos listas a mano las dejó con valores
+        distintos para el mismo nombre sin que nada lo dijera.
+        """
+        interna = self._leer("src", "saimc", "web", "static", "saimc-material.css")
+        publica = self._leer("src", "saimc", "web", "static", "saimc-public.css")
+
+        assert self._root(interna) == self._root(publica)
+
+    def test_ningun_token_citado_queda_sin_definir(self) -> None:
+        """Un `var(--m3-x)` con `x` inexistente es un color fuera del sistema.
+
+        Pasó con `--m3-tertiary` (marca de campo asistido) y
+        `--m3-surface-variant` (`code`/`pre`/`th` de `/docs`): las plantillas
+        los citaban, ninguna hoja los definía, y el color que se veía era el
+        del fallback — del esquema violáceo base de Material, no de este.
+        """
+        raiz = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web"
+        definidos = set(self._root(self._leer("src", "saimc", "web", "design_tokens.css")))
+
+        archivos = [*(raiz / "templates").glob("*.html"), *(raiz / "static").glob("*.css")]
+        citados: set[str] = set()
+        for archivo in archivos:
+            citados.update(
+                re.findall(r"var\((--m3-[a-z0-9-]+)", archivo.read_text(encoding="utf-8"))
+            )
+
+        assert not citados - definidos, (
+            f"tokens citados y nunca definidos: {sorted(citados - definidos)} — "
+            "agregalos a design_tokens.css y corré `python tools/build_css_tokens.py`"
+        )
+
+    def test_ninguna_plantilla_cita_un_token_con_color_de_respaldo(self) -> None:
+        """`var(--m3-primary, #006a60)` es una segunda paleta escondida.
+
+        Los shells garantizan la hoja, así que el respaldo nunca se usa: lo
+        único que hace es envejecer sin que nadie lo note. Los 20 que había
+        tenían cuatro colores que ya no eran los del proyecto, entre ellos
+        `#cac4d0`, que es del esquema violáceo base de Material.
+        """
+        raiz = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "templates"
+        con_respaldo: list[str] = []
+        for tpl in sorted(raiz.glob("*.html")):
+            for token, color in re.findall(
+                r"var\((--m3-[a-z0-9-]+),\s*(#[0-9a-fA-F]{3,8})\)",
+                tpl.read_text(encoding="utf-8"),
+            ):
+                con_respaldo.append(f"{tpl.name}: var({token}, {color})")
+
+        assert not con_respaldo, "quitá el color de respaldo:\n" + "\n".join(con_respaldo)
+
+
 class TestCompresion:
     """`GZipMiddleware`: qué se comprime, qué no, y qué pasa sin soporte.
 

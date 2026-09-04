@@ -23,6 +23,10 @@
 }
 
 /* ── Tokens ─────────────────────────────────────────────────────── */
+/* Fuente única: `src/saimc/web/design_tokens.css`. Este bloque es copia
+   generada — editarlo acá se pierde en la próxima corrida de la
+   herramienta, y `tests/test_static_assets.py` lo detecta antes. */
+/* >>> BEGIN tokens generados — los edita tools/build_css_tokens.py, no vos */
 :root {
   --m3-primary: #00696e;
   --m3-primary-hover: #00565b;
@@ -31,11 +35,14 @@
   --m3-on-primary-container: #041f21;
   --m3-primary-fixed-dim: #b8ecef;
 
+  --m3-tertiary: #4b607c;
+
   --m3-bg: #f2f6f6;
   --m3-surface: #ffffff;
   --m3-surface-container: #eef4f4;
   --m3-surface-container-high: #e3e9ea;
   --m3-surface-hover: #f7fafa;
+  --m3-surface-variant: #dbe5e5;
 
   --m3-on-surface: #191c1c;
   --m3-on-surface-variant: #3f4949;
@@ -53,7 +60,6 @@
   --m3-on-warn-container: #3d2f00;
   --m3-warn: #e0a700;
 
-  /* identidad de provincia — categórica, sin rojo ni verde (spec §12.6) */
   --m3-prov-0: #3f5fd6;  --m3-prov-0-soft: #dbe4ff;  --m3-prov-0-wash: #f6f8ff;
   --m3-prov-1: #7048e8;  --m3-prov-1-soft: #e5dbff;  --m3-prov-1-wash: #f9f6ff;
   --m3-prov-2: #0b7285;  --m3-prov-2-soft: #c5f6fa;  --m3-prov-2-wash: #f0fbfc;
@@ -72,6 +78,7 @@
   --m3-font: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --m3-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+/* <<< END tokens generados */
 
 /* ── Base ───────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
