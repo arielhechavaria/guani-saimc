@@ -322,8 +322,10 @@
             <input type="text" name="category" id="category" class="m3-input" />
           </label>
           <label class="m3-field">
-            <span class="m3-field-label" for="unit">Unidad (opcional)</span>
-            <input type="text" name="unit" id="unit" class="m3-input" />
+            <span class="m3-field-label" for="unit">Unidad</span>
+            <select name="unit" id="unit" class="m3-select">
+              {% for u in units %}<option value="{{ u }}"{% if u == "unidad" %} selected{% endif %}>{{ u }}</option>{% endfor %}
+            </select>
           </label>
           <div class="m3-span-2">
             <p class="m3-xs m3-muted" style="margin:0 0 10px">
@@ -360,15 +362,52 @@
                 <span class="m3-strong">{{ product.name }}</span>
                 {% if product.is_pilot %}<span class="m3-badge">piloto</span>{% endif %}
               </div>
-              <!-- Auto-envía al perder el foco, mismo criterio que la dirección
-                   de canal: un input de texto no dispara con cada tecla. -->
+              <!-- `unit` cerrado a `saimc.units.UNITS`: base de comparación del
+                   producto (§7.2), no unidad de venta. Auto-envía al cambiar. -->
               <form method="post" action="/catalog/products/{{ product.id }}/unit" class="m3-inline-form">
                 <span class="m3-field m3-field-compact">
-                  <input type="text" name="unit" value="{{ product.unit }}"
-                         class="m3-input" style="min-width:100px; font-size:12px; padding:4px 8px;"
-                         onchange="this.form.submit()" />
+                  <select name="unit" class="m3-select"
+                          style="min-width:90px; font-size:12px; padding:4px 8px;"
+                          onchange="this.form.submit()">
+                    {% for u in units %}<option value="{{ u }}"{% if u == product.unit %} selected{% endif %}>{{ u }}</option>{% endfor %}
+                  </select>
                 </span>
               </form>
+              {% set product_formats = formats_by_product.get(product.id, []) %}
+              <details class="m3-inline-form" style="margin-top:6px">
+                <summary class="m3-btn m3-btn-text m3-summary" style="padding:4px 8px; font-size:12px">
+                  <span class="m3-icon m3-icon-sm">inventory_2</span>Formatos ({{ product_formats | length }})
+                </summary>
+                <div class="m3-card m3-card-pad" style="margin-top:6px; min-width:320px; text-align:left">
+                  {% for fmt, obs in product_formats %}
+                  <div class="m3-row" style="gap:8px; align-items:center; padding:3px 0">
+                    <span class="m3-strong" style="flex:1">{{ fmt.packaging }} · {{ fmt.quantity | int }} {{ fmt.unit }}</span>
+                    <span class="m3-sm m3-muted">{{ obs }} obs.</span>
+                    {% if obs == 0 %}
+                    <form method="post" action="/catalog/formats/{{ fmt.id }}/delete" class="m3-inline-form">
+                      <button type="submit" class="m3-btn m3-btn-text" style="padding:2px 6px; font-size:12px">Borrar</button>
+                    </form>
+                    {% endif %}
+                  </div>
+                  {% else %}
+                  <p class="m3-xs m3-muted" style="margin:0 0 8px">Sin formatos declarados.</p>
+                  {% endfor %}
+                  <form method="post" action="/catalog/products/{{ product.id }}/formats"
+                        class="m3-row" style="gap:6px; margin-top:8px; flex-wrap:wrap">
+                    <select name="packaging" class="m3-select" style="font-size:12px; padding:4px 8px" required>
+                      <option value="" disabled selected>envase…</option>
+                      {% for p in packaging %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+                    </select>
+                    <input type="text" name="quantity" placeholder="cant." required
+                           class="m3-input m3-input-num" style="width:70px; font-size:12px; padding:4px 8px" />
+                    <select name="unit" class="m3-select" style="font-size:12px; padding:4px 8px" required>
+                      <option value="" disabled selected>unidad…</option>
+                      {% for u in units %}<option value="{{ u }}">{{ u }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="m3-btn m3-btn-tonal" style="padding:4px 12px; font-size:12px">Agregar</button>
+                  </form>
+                </div>
+              </details>
             </td>
             <td class="m3-sm m3-muted">{{ product.category or "—" }}</td>
             <td>

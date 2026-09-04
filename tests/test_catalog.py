@@ -15,6 +15,7 @@ import re
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 from urllib.parse import parse_qs, urlsplit
@@ -32,9 +33,12 @@ from saimc.ingestion.whatsapp_webhook import ParsedMessage
 from saimc.models import (
     Channel,
     ContentType,
+    Currency,
+    PriceHistory,
     Platform,
     ProcessingStatus,
     Product,
+    ProductFormat,
     Province,
     RawIngestion,
     SourceType,
@@ -265,23 +269,165 @@ class TestCatalogoProductos:
         session.expire_all()
         assert session.get(Product, producto.id).unit == "lb"
 
-    def test_dejar_la_unidad_vacia_vuelve_al_default(
+    def test_unidad_no_canonica_se_rechaza_sin_tocar_el_producto(
         self, client: TestClient, session: Session
     ) -> None:
-        """`unit` no admite NULL en el modelo, a diferencia de `address` de
-        canal: un valor en blanco no puede dejarlo nulo, cae al mismo default
-        que usa el alta."""
+        """`/catalog` deja de editar `unit` como texto libre: un valor fuera de
+        `saimc.units.UNITS` se rechaza con error, no se guarda ni se
+        reemplaza por un default silencioso (proposal: `products.unit`)."""
         producto = _crear_producto(session, name="Picadillo", unit="lb", is_pilot=True)
 
         response = client.post(
             f"/catalog/products/{producto.id}/unit",
-            data={"unit": ""},
+            data={"unit": "quintal"},
             follow_redirects=False,
         )
 
         assert response.status_code == 303
+        assert "error=" in response.headers["location"]
         session.expire_all()
-        assert session.get(Product, producto.id).unit == "unidad"
+        assert session.get(Product, producto.id).unit == "lb"  # intacto
+
+
+def _crear_raw_para_precio(session: Session, *, hash_: str) -> RawIngestion:
+    fuente = RawIngestion(
+        source_type=SourceType.INBOX_TEXT,
+        file_path=f"raw/{hash_}.txt",
+        content_hash=hash_,
+        content_type=ContentType.TEXT,
+        captured_at=datetime.now(UTC),
+    )
+    session.add(fuente)
+    session.flush()
+    return fuente
+
+
+class TestCatalogoFormatos:
+    """Declaración y administración de formatos de venta por producto
+    (design.md D7). Los formatos no se retiran nunca; la única excepción es
+    uno con cero observaciones, que es una corrección de tipeo, no un retiro.
+    """
+
+    def test_declarar_un_formato_lo_crea(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+
+        response = client.post(
+            f"/catalog/products/{producto.id}/formats",
+            data={"packaging": "caja", "quantity": "40", "unit": "lb"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        formato = session.execute(select(ProductFormat)).scalars().one()
+        assert (formato.product_id, formato.packaging, formato.quantity, formato.unit) == (
+            producto.id,
+            "caja",
+            Decimal("40"),
+            "lb",
+        )
+
+    def test_declarar_el_mismo_triple_no_duplica(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+        for _ in range(2):
+            client.post(
+                f"/catalog/products/{producto.id}/formats",
+                data={"packaging": "caja", "quantity": "40", "unit": "lb"},
+                follow_redirects=False,
+            )
+
+        assert len(list(session.execute(select(ProductFormat)).scalars())) == 1
+
+    def test_envase_fuera_del_vocabulario_se_rechaza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+
+        response = client.post(
+            f"/catalog/products/{producto.id}/formats",
+            data={"packaging": "contenedor", "quantity": "40", "unit": "lb"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        assert session.execute(select(ProductFormat)).scalars().first() is None
+
+    def test_borra_un_formato_sin_observaciones(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+        formato = ProductFormat(
+            product_id=producto.id, packaging="caja", quantity=Decimal("40"), unit="lb"
+        )
+        session.add(formato)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/formats/{formato.id}/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert session.get(ProductFormat, formato.id) is None
+
+    def test_no_borra_un_formato_con_observaciones(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+        fuente = _crear_raw_para_precio(session, hash_="hash-formato-con-precio")
+        formato = ProductFormat(
+            product_id=producto.id, packaging="caja", quantity=Decimal("40"), unit="lb"
+        )
+        session.add(formato)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=producto.id,
+                price=Decimal("12400"),
+                currency=Currency.CUP.value,
+                format_id=formato.id,
+                source_id=fuente.id,
+            )
+        )
+        session.commit()
+
+        response = client.post(
+            f"/catalog/formats/{formato.id}/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        assert session.get(ProductFormat, formato.id) is not None
+
+    def test_la_lista_muestra_el_formato_y_su_conteo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+        fuente = _crear_raw_para_precio(session, hash_="hash-conteo")
+        formato = ProductFormat(
+            product_id=producto.id, packaging="caja", quantity=Decimal("40"), unit="lb"
+        )
+        session.add(formato)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=producto.id,
+                price=Decimal("12400"),
+                currency=Currency.CUP.value,
+                format_id=formato.id,
+                source_id=fuente.id,
+            )
+        )
+        session.commit()
+
+        response = client.get("/catalog")
+
+        assert response.status_code == 200
+        assert "caja" in response.text
+        assert "40" in response.text
 
 
 # --- CRUD de canales seguidos -----------------------------------------------

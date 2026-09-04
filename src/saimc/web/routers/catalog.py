@@ -20,6 +20,7 @@ el sistema.
 """
 
 import uuid
+from decimal import Decimal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
@@ -29,10 +30,20 @@ from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.extraction.engine import mentions_any_product
+from saimc.formats import get_or_create_format
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.ingestion.whatsapp_backfill import fetch_channel_history
-from saimc.models import Channel, Platform, PriceHistory, Product, Province, RawIngestion
+from saimc.models import (
+    Channel,
+    Platform,
+    PriceHistory,
+    Product,
+    ProductFormat,
+    Province,
+    RawIngestion,
+)
 from saimc.models.raw_ingestion import SourceType
+from saimc.units import PACKAGING, UNITS, canonical_unit
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
 
@@ -42,7 +53,7 @@ router = APIRouter(dependencies=[Depends(require_operator)])
 # `unit` son NOT NULL sin default en el modelo, y trabar un alta por un dato
 # secundario sería repetir el error que este slice viene a corregir.
 _DEFAULT_CATEGORY = "sin categoría"
-_DEFAULT_UNIT = "unidad"
+_DEFAULT_UNIT = "unidad"  # canónico: está en `saimc.units.UNITS`
 
 _REDIRECT = status.HTTP_303_SEE_OTHER
 
@@ -105,6 +116,19 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         products_stmt = products_stmt.where(Product.name.ilike(f"%{q_producto}%"))
     products = list(db.execute(products_stmt).scalars())
 
+    # Formatos por producto, con su conteo de observaciones. El conteo decide
+    # qué formato es borrable (cero = corrección de tipeo) y cuál no se toca —
+    # design.md D7: los formatos no se retiran, la lista se ordena.
+    format_rows = db.execute(
+        select(ProductFormat, func.count(PriceHistory.id))
+        .outerjoin(PriceHistory, PriceHistory.format_id == ProductFormat.id)
+        .group_by(ProductFormat.id)
+        .order_by(func.count(PriceHistory.id).desc(), ProductFormat.created_at.desc())
+    ).all()
+    formats_by_product: dict[uuid.UUID, list[tuple[ProductFormat, int]]] = {}
+    for fmt, obs in format_rows:
+        formats_by_product.setdefault(fmt.product_id, []).append((fmt, obs))
+
     channels_stmt = select(Channel).order_by(Channel.is_active.desc(), Channel.name)
     if q_canal:
         channels_stmt = channels_stmt.where(Channel.name.ilike(f"%{q_canal}%"))
@@ -119,6 +143,9 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         "catalog.html",
         {
             "products": [(product, counts.get(product.id, 0)) for product in products],
+            "formats_by_product": formats_by_product,
+            "units": UNITS,
+            "packaging": PACKAGING,
             "channels": channels,
             "provinces": provinces,
             "platforms": list(Platform),
@@ -155,11 +182,14 @@ async def create_product(request: Request, db: Session = Depends(get_db)) -> Red
         db.flush()
         return _back()
 
+    # `unit` se canonicaliza; un valor fuera del vocabulario no traba el alta
+    # —sería el error que este slice corrige— pero tampoco se guarda crudo:
+    # cae al default y el operador lo ajusta después con el `<select>`.
     db.add(
         Product(
             name=name,
             category=str(form.get("category", "")).strip() or _DEFAULT_CATEGORY,
-            unit=str(form.get("unit", "")).strip() or _DEFAULT_UNIT,
+            unit=canonical_unit(str(form.get("unit", ""))) or _DEFAULT_UNIT,
             aliases=[],
             is_pilot=True,
         )
@@ -197,18 +227,87 @@ async def set_product_unit(
     El alta no tiene forma de editarse después: un producto cargado con la
     unidad equivocada (Picadillo entró como "unidad" cuando sus observaciones
     vienen en lb) queda fuera de la vista minorista para siempre, porque masa
-    y conteo no son convertibles entre sí. `unit` no admite NULL en el modelo
-    —a diferencia de `address`/`province_id` de canal—, así que un valor en
-    blanco cae al mismo default que usa `create_product`, no a nulo.
+    y conteo no son convertibles entre sí. `unit` deja de ser texto libre: un
+    valor fuera de `saimc.units.UNITS` se rechaza con error, no se guarda ni
+    se reemplaza por un default silencioso (proposal: `products.unit`).
     """
     product = db.get(Product, product_id)
     if product is None:
         return _back()
 
     form = await request.form()
-    product.unit = str(form.get("unit", "")).strip() or _DEFAULT_UNIT
+    unit = canonical_unit(str(form.get("unit", "")))
+    if unit is None:
+        return _back(error="Unidad fuera del vocabulario.")
+    product.unit = unit
     db.flush()
     return _back()
+
+
+@router.post("/catalog/products/{product_id}/formats")
+async def create_format(
+    product_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Declara un formato de venta `(envase, cantidad, unidad)` de un producto.
+
+    Es el mismo `get_or_create_format` que usa la curaduría al vuelo, así que
+    declarar acá y crear desde el formulario convergen en la misma fila: el
+    `UNIQUE` hace idempotente el alta. Un envase o unidad fuera de vocabulario,
+    o una cantidad no numérica, se rechazan con error sin tocar nada.
+    """
+    product = db.get(Product, product_id)
+    if product is None:
+        return _back()
+
+    form = await request.form()
+    raw_qty = str(form.get("quantity", "")).strip().replace(",", ".")
+    try:
+        quantity = Decimal(raw_qty)
+    except (ArithmeticError, ValueError):
+        return _back(error="Cantidad inválida.")
+    if quantity <= 0:
+        return _back(error="La cantidad debe ser mayor que cero.")
+
+    try:
+        get_or_create_format(
+            db,
+            product_id=product.id,
+            packaging=str(form.get("packaging", "")).strip().lower(),
+            quantity=quantity,
+            unit=str(form.get("unit", "")).strip().lower(),
+        )
+    except ValueError as exc:
+        return _back(error=str(exc))
+    db.flush()
+    return _back(message=f"Formato agregado a «{product.name}».")
+
+
+@router.post("/catalog/formats/{format_id}/delete")
+def delete_format(format_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
+    """Borra un formato, solo si nunca recibió una observación.
+
+    Los formatos no se retiran (design.md D7): que una caja de 40 lb deje de
+    aparecer un mes es escasez medida, no un registro obsoleto. La única
+    excepción es un formato con cero filas de precio — un typo (400 por 40) no
+    tiene historial que proteger y borrarlo es una corrección, no un retiro.
+    Pre-chequeo con SELECT, igual que `delete_channel`: capturar el
+    IntegrityError del FK `RESTRICT` dejaría la sesión envenenada.
+    """
+    formato = db.get(ProductFormat, format_id)
+    if formato is None:
+        return _back()
+
+    tiene_precios = db.execute(
+        select(PriceHistory.id).where(PriceHistory.format_id == format_id).limit(1)
+    ).first()
+    if tiene_precios is not None:
+        return _back(
+            error="Ese formato ya tiene observaciones: no se retira, su ausencia es dato."
+        )
+
+    db.delete(formato)
+    db.flush()
+    return _back(message="Formato eliminado.")
 
 
 @router.post("/catalog/channels")
