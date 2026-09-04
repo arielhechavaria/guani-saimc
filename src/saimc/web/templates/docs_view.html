@@ -17,10 +17,14 @@
   .doc-layout { display: grid; grid-template-columns: 240px 1fr; gap: 32px; align-items: start; }
   @media (max-width: 900px) { .doc-layout { grid-template-columns: 1fr; } }
 
+  /* El índice lateral y la tipografía del markdown NO se repatriaron: son
+     propias de esta vista, no reimplementaciones de un componente de la hoja
+     (docs/decisions.md, 2026-09-04). Lo que sí se fue: la botonera, el aviso
+     de error y el contenedor de scroll de las tablas. */
   .doc-toc { position: sticky; top: 16px; max-height: calc(100vh - 60px); overflow-y: auto; }
   .doc-toc h2 {
     font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
-    opacity: .55; margin: 0 0 10px; font-family: "Roboto Mono", monospace;
+    opacity: .55; margin: 0 0 10px; font-family: var(--m3-mono);
   }
   .doc-toc a {
     display: block; padding: 3px 0 3px 10px; font-size: .85rem;
@@ -30,13 +34,8 @@
   .doc-toc a:hover { opacity: 1; border-left-color: var(--m3-primary); }
   .doc-toc a.lvl-3 { padding-left: 22px; font-size: .8rem; opacity: .62; }
 
+  /* Solo la fila: los tres controles son `.m3-btn m3-btn-outlined`. */
   .doc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
-  .doc-actions a, .doc-actions button {
-    font: inherit; font-size: .85rem; padding: 7px 14px; cursor: pointer;
-    border: 1px solid var(--m3-outline); border-radius: 999px;
-    background: var(--m3-surface); color: inherit; text-decoration: none;
-  }
-  .doc-actions a:hover, .doc-actions button:hover { border-color: var(--m3-primary); }
 
   .doc-body { max-width: 78ch; overflow-wrap: break-word; }
   .doc-body h1, .doc-body h2, .doc-body h3, .doc-body h4 {
@@ -48,7 +47,7 @@
   .doc-body h3 { font-size: 1.08rem; }
   .doc-body p, .doc-body li { line-height: 1.65; }
   .doc-body code {
-    font-family: "Roboto Mono", monospace; font-size: .86em;
+    font-family: var(--m3-mono); font-size: .86em;
     background: var(--m3-surface-variant); padding: 1px 5px; border-radius: 4px;
   }
   .doc-body pre {
@@ -61,8 +60,14 @@
     border-left: 3px solid var(--m3-primary); opacity: .85;
   }
   /* Las tablas son el 80% del valor de `requisitos.md`: tienen que poder
-     scrollear solas sin que la página se vaya de ancho. */
-  .doc-table-scroll { overflow-x: auto; margin: 1.2em 0; }
+     scrollear solas sin que la página se vaya de ancho. El contenedor es
+     `.m3-table-scroll` de la hoja; acá solo se le agrega el aire vertical.
+
+     La tabla EN SÍ no usa `.m3-table` a propósito: esa es tabla de datos
+     —encabezado en versalitas, `nowrap`, sin bordes de celda, hover de fila—
+     y estas son grillas de referencia densas que necesitan borde en cada
+     celda y texto que envuelva. Comparten el nombre, no el problema. */
+  .doc-body .m3-table-scroll { margin: 1.2em 0; }
   .doc-body table { border-collapse: collapse; width: 100%; font-size: .88rem; }
   .doc-body th, .doc-body td {
     border: 1px solid var(--m3-outline-variant);
@@ -73,10 +78,6 @@
   .doc-body hr { border: none; border-top: 1px solid var(--m3-outline-variant); margin: 2em 0; }
 
   .doc-cargando { opacity: .6; font-style: italic; }
-  .doc-error {
-    border: 1px solid #96263a; background: #f6dce0; color: #96263a;
-    padding: 14px 16px; border-radius: 8px;
-  }
 
   @media print {
     .m3-topnav, .m3-topbar, .doc-toc, .doc-actions { display: none !important; }
@@ -92,13 +93,14 @@
 
 {% block content %}
 <div class="doc-actions">
-  <a href="/docs">← Todos los documentos</a>
-  <button type="button" id="doc-print">Imprimir o guardar PDF</button>
-  <a href="/docs/{{ entry.slug }}/raw" download="{{ entry.slug }}.md">Descargar .md</a>
+  <a class="m3-btn m3-btn-outlined" href="/docs">← Todos los documentos</a>
+  <button class="m3-btn m3-btn-outlined" type="button" id="doc-print">Imprimir o guardar PDF</button>
+  <a class="m3-btn m3-btn-outlined" href="/docs/{{ entry.slug }}/raw"
+     download="{{ entry.slug }}.md">Descargar .md</a>
 </div>
 
 <noscript>
-  <p class="doc-error">
+  <p class="m3-banner m3-banner-error m3-banner-block">
     Este lector arma el documento en el navegador y necesita JavaScript.
     Sin él, <a href="/docs/{{ entry.slug }}/raw">abrí el archivo crudo</a>:
     es el mismo contenido, sin formato.
@@ -127,7 +129,7 @@
     function fallar(motivo) {
       cuerpo.innerHTML = "";
       var aviso = document.createElement("p");
-      aviso.className = "doc-error";
+      aviso.className = "m3-banner m3-banner-error m3-banner-block";
       aviso.textContent = "No se pudo cargar el documento (" + motivo + "). ";
       var link = document.createElement("a");
       link.href = "/docs/{{ entry.slug }}/raw";
@@ -154,7 +156,7 @@
     function envolverTablas() {
       Array.prototype.forEach.call(cuerpo.querySelectorAll("table"), function (t) {
         var caja = document.createElement("div");
-        caja.className = "doc-table-scroll";
+        caja.className = "m3-table-scroll";
         t.parentNode.insertBefore(caja, t);
         caja.appendChild(t);
       });

@@ -20,6 +20,20 @@ from saimc.web.app import MARKED_VERSION, app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
 
+_TEMPLATES = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "templates"
+
+
+def _plantilla(nombre: str) -> str:
+    return (_TEMPLATES / nombre).read_text(encoding="utf-8")
+
+
+def _style_de(nombre: str) -> str:
+    """El bloque `<style>` de una plantilla, o cadena vacía si no tiene."""
+    texto = _plantilla(nombre)
+    if "<style>" not in texto:
+        return ""
+    return texto[texto.index("<style>") : texto.index("</style>")]
+
 
 @pytest.fixture
 def client(session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
@@ -193,19 +207,82 @@ class TestIndiceUsaComponentesCompartidos:
     def test_la_plantilla_ya_no_define_el_marco_ni_los_colores(self) -> None:
         """Tripwire de recaída: el `<style>` local se quedó con la composición
         interna de la tarjeta, no con el componente."""
-        plantilla = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "saimc"
-            / "web"
-            / "templates"
-            / "docs_index.html"
-        ).read_text(encoding="utf-8")
-        bloque = plantilla[plantilla.index("<style>") : plantilla.index("</style>")]
+        bloque = _style_de("docs_index.html")
 
         assert "#" not in bloque, "volvió un color fijo al CSS de la plantilla"
         for muerta in (".docs-card {", ".docs-badge", "border-radius: 12px"):
             assert muerta not in bloque, f"volvió a definirse el marco a mano: {muerta}"
+
+
+class TestLecturaUsaComponentesCompartidos:
+    """La botonera y el aviso de error de `/docs/<slug>` vienen de la hoja.
+
+    Se repatriaron `.doc-actions a/button` → `.m3-btn m3-btn-outlined`,
+    `.doc-error` → `.m3-banner m3-banner-error m3-banner-block` (dos colores
+    fijos fuera de paleta menos) y `.doc-table-scroll` → `.m3-table-scroll`.
+
+    Lo que NO se repatrió, a propósito: el índice lateral, la tipografía del
+    markdown y la hoja de impresión. Y la tabla en sí, que no es `.m3-table`:
+    esa es tabla de datos y estas son grillas de referencia densas.
+    """
+
+    def _view(self, client: TestClient) -> str:
+        return client.get("/docs/requisitos").text
+
+    def test_los_controles_son_botones_de_la_hoja(self, client: TestClient) -> None:
+        texto = self._view(client)
+
+        # `class="…"` y no la cadena suelta: el `<style>` de la plantilla la
+        # nombra en un comentario y ese comentario viaja en el HTML.
+        assert texto.count('class="m3-btn m3-btn-outlined"') == 3
+
+    def test_el_aviso_sin_javascript_es_un_banner(self, client: TestClient) -> None:
+        texto = self._view(client)
+
+        assert "m3-banner m3-banner-error m3-banner-block" in texto
+
+    def test_la_plantilla_ya_no_reimplementa_boton_ni_aviso(self) -> None:
+        bloque = _style_de("docs_view.html")
+
+        assert "#" not in bloque, "volvió un color fijo al CSS de la plantilla"
+        for muerta in (".doc-error", ".doc-actions a", "border-radius: 999px"):
+            assert muerta not in bloque, f"volvió a definirse a mano: {muerta}"
+
+
+class TestClasesDelJavascriptExisten:
+    """Toda clase que el JS asigna tiene que estar definida en algún lado.
+
+    Es la trampa de repatriar: al renombrar una clase en el CSS y en el HTML,
+    la que queda vieja es la del `className = "..."` del script — y eso no
+    falla, solo deja de verse bien, sin error en consola. Pasó al mover el
+    filtro de `/docs` y el envoltorio de tablas del lector.
+    """
+
+    PLANTILLAS = ("docs_index.html", "docs_view.html")
+
+    def test_ninguna_clase_asignada_por_js_quedo_huerfana(self) -> None:
+        hoja = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "saimc"
+            / "web"
+            / "static"
+            / "saimc-material.css"
+        ).read_text(encoding="utf-8")
+
+        huerfanas: list[str] = []
+        for nombre in self.PLANTILLAS:
+            plantilla = _plantilla(nombre)
+            definido = hoja + _style_de(nombre)
+            for asignacion in re.findall(r'className\s*=\s*"([^"]+)"', plantilla):
+                for clase in asignacion.split():
+                    if not re.search(rf"\.{re.escape(clase)}[^\w-]", definido):
+                        huerfanas.append(f"{nombre}: {clase}")
+
+        assert not huerfanas, (
+            "el JS asigna clases que no define ninguna hoja: "
+            f"{huerfanas} — se renombró el CSS y quedó el script viejo"
+        )
 
 
 class TestLectura:

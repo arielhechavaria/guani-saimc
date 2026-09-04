@@ -6418,3 +6418,47 @@ Quedan 3 de 4: `.doc-*` de `docs_view.html` (74 líneas, con TOC y tipografía
 de markdown que son genuinamente propias), `.hs-*` de `/control` (46 líneas,
 la tira de salud) y `.ph-*` de la home pública (181 líneas, un sistema
 paralelo completo y el único que toca una vista con usuarios reales).
+
+## 2026-09-04 — Repatriación, 2 de 4: el lector de /docs, y qué NO era duplicado
+Contexto: segundo paso de la repatriación. `docs_view.html` era el bloque más
+grande después de la home pública —74 líneas de `<style>`, 37 reglas— y la
+auditoría lo había marcado casi entero como duplicado. Al mirarlo de cerca, no
+lo era: la mayor parte es tipografía del markdown renderizado, que llega sin
+clases desde `marked` y por eso se estiliza con selectores de descendencia.
+Decisión: se repatrían tres cosas y se dejan explícitamente las demás.
+- `.doc-actions a/button` → `.m3-btn m3-btn-outlined`. Eran un pill con borde
+  reimplementado a mano.
+- `.doc-error` → `.m3-banner m3-banner-error m3-banner-block`, con dos colores
+  fijos menos (`#96263a`, `#f6dce0`, ninguno de la paleta). La variante
+  `.m3-banner-block` es nueva y necesaria: `.m3-banner` es `display: flex`
+  porque casi siempre es icono + rótulo, y con una frase que lleva un enlace
+  adentro el flex parte la oración en items sueltos separados por el `gap`.
+- `.doc-table-scroll` → `.m3-table-scroll`, que era idéntico salvo el margen.
+**Lo que no se repatrió, y por qué:** (a) el índice lateral sticky y la hoja
+`@media print`, que no existen en ninguna otra vista; (b) la tipografía del
+markdown, por lo mismo; (c) **la tabla del markdown NO pasa a `.m3-table`**,
+aunque la auditoría decía que la duplicaba. `.m3-table` es tabla de datos
+—encabezado en versalitas, `nowrap`, sin bordes de celda, hover de fila— y las
+de `requisitos.md` son grillas de referencia densas que necesitan borde en cada
+celda y texto que envuelva. Comparten el nombre, no el problema; forzarlas
+habría empeorado el documento que más se lee.
+Descartado: inventar un `.m3-btn-sm` para que los botones del lector queden del
+tamaño que tenían (7px/14px contra 10px/24px). El punto del trabajo es que un
+botón se vea igual en toda la app; agregar una variante para conservar la
+diferencia es conservar el problema con otro nombre. Si el tamaño estándar
+molesta en el uso, se decide como cambio de diseño, no como excepción de una
+vista.
+Consecuencia: 1318 tests verdes (+4). El `<style>` baja de 66 a 56 líneas de
+CSS real y de 3 colores fijos a 0 — mucho menos que en `docs_index` (35→21),
+justamente porque acá casi todo era propio. El total de líneas del bloque no
+baja: subió de 74 a 75 porque se documentó qué quedó afuera y por qué, que es
+más valioso que el renglón ahorrado.
+El test nuevo que importa es `TestClasesDelJavascriptExisten`: verifica que toda
+clase asignada con `className = "..."` en las plantillas de `/docs` esté
+definida en la hoja o en el `<style>` local. Es la trampa específica de
+repatriar —se renombra el CSS y el HTML, y queda vieja la del script, que no
+falla: solo deja de verse bien, sin error en consola— y estuvo a punto de pasar
+dos veces seguidas, con el filtro del índice y con el envoltorio de tablas.
+Quedan 2 de 4: `.hs-*` de `/control` (46 líneas, la tira de salud) y `.ph-*` de
+la home pública (181 líneas, sistema paralelo completo y la única vista con
+usuarios reales).

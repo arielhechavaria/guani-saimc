@@ -409,6 +409,11 @@ code, .m3-num { font-family: var(--m3-mono); }
 .m3-banner-warn { background: var(--m3-warn-container); color: var(--m3-on-warn-container); }
 .m3-banner-error { background: var(--m3-error-container); color: var(--m3-on-error-container); }
 .m3-banner-ok { background: var(--m3-success-container); color: var(--m3-on-success-container); }
+/* El banner es flex porque casi siempre es icono + rótulo en una fila. Cuando
+   lleva una frase con un enlace adentro, el flex parte la oración en items
+   sueltos y la separa con el `gap`: esta variante lo devuelve a bloque para
+   que el texto fluya. Repatriada de `.doc-error` (docs_view.html). */
+.m3-banner-block { display: block; }
 
 /* ── Campos (outlined text field) ───────────────────────────────── */
 .m3-field { position: relative; display: block; }
