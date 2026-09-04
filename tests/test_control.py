@@ -869,7 +869,11 @@ class TestDrillDownAislaLaCeldaExacta:
 
         control_html = client.get("/control").text
         # Una sola celda fundida: n = 2, unidad efectiva lb.
-        href = self._href(control_html, contains="unit=lb&sale_format=retail&unquantified=0")
+        # `format_id=` (vacío = sin formato) va entre `sale_format` y los flags
+        # desde que el formato entra a la identidad de la celda.
+        href = self._href(
+            control_html, contains="unit=lb&sale_format=retail&format_id=&unquantified=0"
+        )
 
         historial = client.get(href).text
         assert "700.00" in historial

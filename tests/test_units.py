@@ -16,6 +16,7 @@ from saimc.units import (
     canonical_packaging,
     canonical_unit,
     convert_price_per_unit,
+    convert_quantity,
 )
 
 
@@ -178,3 +179,48 @@ class TestCanonicalPackagingVacio:
 
     def test_none_devuelve_none(self) -> None:
         assert canonical_packaging(None) is None
+
+
+class TestConvertQuantity:
+    """Convierte una CANTIDAD, no un precio: el factor va al derecho, al revés
+    que `convert_price_per_unit`. Diez kilos son MÁS libras (22,05), mientras
+    que un precio por kilo es MENOS por libra."""
+
+    def test_de_kilo_a_libra_da_mas_libras(self) -> None:
+        # 10 kg = 10 * 1000 g / 453,59237 g = 22,046...
+        resultado = convert_quantity(Decimal("10"), frm="kg", to="lb")
+        assert resultado is not None
+        assert resultado.quantize(Decimal("0.001")) == Decimal("22.046")
+
+    def test_de_libra_a_kilo_da_menos_kilos(self) -> None:
+        resultado = convert_quantity(Decimal("40"), frm="lb", to="kg")
+        assert resultado is not None
+        assert resultado.quantize(Decimal("0.001")) == Decimal("18.144")
+
+    def test_es_el_inverso_de_convert_price_per_unit(self) -> None:
+        """La relación que hace fácil equivocarse: el precio va con el factor
+        invertido respecto de la cantidad."""
+        precio = convert_price_per_unit(Decimal("1000"), frm="kg", to="lb")
+        cantidad = convert_quantity(Decimal("1"), frm="kg", to="lb")
+        assert precio is not None and cantidad is not None
+        # Precio por kilo x cantidad de kilos == precio por libra x cantidad de libras.
+        assert (Decimal("1000") * Decimal("1")).quantize(Decimal("0.01")) == (
+            precio * cantidad
+        ).quantize(Decimal("0.01"))
+
+    def test_de_litro_a_mililitro(self) -> None:
+        assert convert_quantity(Decimal("1"), frm="l", to="ml") == Decimal("1000")
+
+    @pytest.mark.parametrize("valor", list(UNITS))
+    def test_la_misma_unidad_devuelve_la_cantidad_intacta(self, valor: str) -> None:
+        assert convert_quantity(Decimal("40"), frm=valor, to=valor) == Decimal("40")
+
+    def test_magnitudes_distintas_devuelve_none(self) -> None:
+        assert convert_quantity(Decimal("1"), frm="kg", to="l") is None
+
+    def test_unidad_sin_magnitud_devuelve_none(self) -> None:
+        assert convert_quantity(Decimal("1"), frm="caja", to="lb") is None
+
+    def test_unidad_none_devuelve_none(self) -> None:
+        assert convert_quantity(Decimal("1"), frm=None, to="lb") is None
+        assert convert_quantity(Decimal("1"), frm="lb", to=None) is None

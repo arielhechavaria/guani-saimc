@@ -1361,6 +1361,7 @@ def curation_history(
     currency: str | None = None,
     unit: str | None = None,
     sale_format: str | None = None,
+    format_id: str | None = None,
     unquantified: int | None = None,
     unresolved_basis: int | None = None,
     unconverted_unit: int | None = None,
@@ -1409,6 +1410,7 @@ def curation_history(
             currency,
             unit,
             sale_format,
+            format_id,
             unquantified,
             unresolved_basis,
             unconverted_unit,
@@ -1443,6 +1445,11 @@ def curation_history(
                 if currency is not None and price.currency != currency:
                     continue
                 if sale_format is not None and (price.sale_format or "") != sale_format:
+                    continue
+                # El formato es la identidad de la serie: sin este filtro, la
+                # celda de «caja de 40 lb» abriría también las del paquete de
+                # 10 lb — las dos llevan `unit = "lb"` y comparten el resto.
+                if format_id is not None and str(price.format_id or "") != format_id:
                     continue
                 effective = resolve_row(
                     currency=price.currency,

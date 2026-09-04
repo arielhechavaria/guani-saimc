@@ -117,3 +117,39 @@ def convert_price_per_unit(
         return None
 
     return price * target[1] / source[1]
+
+
+def convert_quantity(
+    quantity: Decimal, *, frm: str | None, to: str | None
+) -> Decimal | None:
+    """Convierte una **cantidad** de `frm` a `to`. Nunca inventa.
+
+    Es el complemento de `convert_price_per_unit` y su factor va **al revés**,
+    que es exactamente donde es fácil equivocarse: diez kilos son *más* libras
+    (22,05), mientras que un precio por kilo es *menos* por libra. De ahí que
+    el factor sea `tamaño(origen) / tamaño(destino)`, la inversa del otro.
+
+    La comprobación que mantiene honestas a las dos: `precio_por_kg × kgs`
+    tiene que dar lo mismo que `precio_por_lb × lbs`.
+
+    Hace falta para expresar el precio de un formato. `resolve_row()` deja el
+    precio por unidad canónica del producto —por libra, digamos—, y un formato
+    `(caja, 10, kg)` necesita saber cuántas libras son esos 10 kg para que
+    `precio_por_libra × cantidad` dé el precio de la caja.
+
+    Mismas exclusiones que `convert_price_per_unit`: unidad fuera del
+    vocabulario, unidad sin magnitud (`caja`), o magnitudes distintas.
+    """
+    if frm is None or to is None:
+        return None
+    if frm == to:
+        return quantity if frm in UNITS else None
+
+    source = _MAGNITUDES.get(frm)
+    target = _MAGNITUDES.get(to)
+    if source is None or target is None:
+        return None
+    if source[0] != target[0]:
+        return None
+
+    return quantity * source[1] / target[1]

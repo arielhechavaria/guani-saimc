@@ -49,6 +49,7 @@ color dejaría de servir como identidad.
 from __future__ import annotations
 
 import math
+import uuid
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
@@ -161,54 +162,75 @@ def _cell_is_clean(cell: Cell) -> bool:
 
 
 def _pair_formats(celdas: list[CellWithBar]) -> list[CellWithBar]:
-    """Empareja minorista y mayorista de la misma unidad y anota el ratio.
+    """Empareja minorista y mayorista **del mismo formato** y anota el ratio.
+
+    Hasta el 2026-09-04 el par se armaba por `unit`, que era lo único que
+    había. Con `product_formats` eso es incorrecto: la caja de 40 lb y el
+    paquete de 10 lb llevan los dos `unit = "lb"`, así que emparejarlos ponía
+    la mayorista de una contra la minorista del otro — dos cosas distintas,
+    que es el defecto que este cambio entero corrige, un nivel más abajo.
+
+    El par correcto es **el mismo formato en dos escalones de volumen**, y los
+    anuncios de contenedor lo prueban: «1475 cajas × 31,8 USD» contra «35
+    USD/caja por unidades en almacén» es la misma caja de 40 lb a dos precios.
+    El formato responde *qué comprás*; `sale_format`, *a qué volumen*.
 
     Dos pasos, los dos de presentación —ninguno toca la normalización—:
 
-    1. **Ratio.** Por cada unidad con una minorista limpia, la mayorista limpia
-       de esa misma unidad recibe `retail_ratio = mediana_minorista /
-       mediana_mayorista`. Se anota en la mayorista y no en la minorista
-       porque la minorista es la serie de referencia: la pregunta es «cuánto
-       más caro sale comprar suelto», no al revés.
-    2. **Orden.** Las series se reordenan para que la unidad con más muestra
-       quede arriba y, dentro de cada unidad, la minorista antes que la
-       mayorista. Así el par queda pegado en vez de separado por las series con
-       flag, que caen al final por su propio `_FORMAT_RANK`.
+    1. **Ratio.** Por cada formato con una minorista limpia, la mayorista
+       limpia de ese mismo formato recibe `retail_ratio = mediana_minorista /
+       mediana_mayorista`. Se anota en la mayorista porque la minorista es la
+       referencia: la pregunta es «cuánto más caro sale comprar suelto». El
+       ratio se calcula sobre `median` (precio por unidad base) y no sobre
+       `format_median`: como las dos series comparten formato, el factor de
+       conversión es el mismo y se cancela — pero hacerlo sobre el precio
+       normalizado lo deja bien definido incluso sin formato declarado.
+    2. **Orden.** El formato con más muestra queda arriba y, dentro de cada
+       formato, la minorista antes que la mayorista. Así el par queda pegado
+       en vez de separado por las series con flag, que caen al final por su
+       propio `_FORMAT_RANK`.
     """
-    minorista_por_unidad: dict[str | None, Decimal] = {
-        c.cell.unit: c.cell.median
+    minorista_por_formato: dict[tuple[uuid.UUID | None, str | None], Decimal] = {
+        (c.cell.format_id, c.cell.unit): c.cell.median
         for c in celdas
         if c.cell.sale_format == "retail" and _cell_is_clean(c.cell)
     }
 
     con_ratio = []
     for c in celdas:
+        clave = (c.cell.format_id, c.cell.unit)
         es_par_mayorista = (
             c.cell.sale_format == "wholesale"
             and _cell_is_clean(c.cell)
-            and c.cell.unit in minorista_por_unidad
+            and clave in minorista_por_formato
             and c.cell.median > 0
         )
         if es_par_mayorista:
-            ratio = minorista_por_unidad[c.cell.unit] / c.cell.median
-            con_ratio.append(replace(c, retail_ratio=ratio))
+            con_ratio.append(
+                replace(c, retail_ratio=minorista_por_formato[clave] / c.cell.median)
+            )
         else:
             con_ratio.append(c)
 
-    # Rango de cada unidad por su muestra combinada (desc), con la sin unidad
+    # Rango de cada formato por su muestra combinada (desc), con el sin formato
     # al final. `sorted` es estable, así que dentro de cada casillero
-    # (unidad, formato) se conserva el orden por `-count` que trae `compute_cells`.
-    muestra_por_unidad: dict[str | None, int] = {}
+    # (formato, volumen) se conserva el orden por `-count` de `compute_cells`.
+    muestra_por_formato: dict[tuple[uuid.UUID | None, str | None], int] = {}
+    etiqueta: dict[tuple[uuid.UUID | None, str | None], str] = {}
     for c in con_ratio:
-        muestra_por_unidad[c.cell.unit] = (
-            muestra_por_unidad.get(c.cell.unit, 0) + c.cell.count
-        )
-    rango_unidad = {
-        unidad: i
-        for i, unidad in enumerate(
+        clave = (c.cell.format_id, c.cell.unit)
+        muestra_por_formato[clave] = muestra_por_formato.get(clave, 0) + c.cell.count
+        # Desempate estable y legible: el UUID no sirve como criterio de orden
+        # —cambia entre entornos— así que se usa la etiqueta del formato, y el
+        # carácter alto manda al final lo que no tiene ninguna.
+        etiqueta[clave] = c.cell.format_label or c.cell.unit or "￿"
+
+    rango_formato = {
+        clave: i
+        for i, clave in enumerate(
             sorted(
-                muestra_por_unidad,
-                key=lambda u: (-muestra_por_unidad[u], u or "￿"),
+                muestra_por_formato,
+                key=lambda k: (-muestra_por_formato[k], etiqueta[k]),
             )
         )
     }
@@ -216,7 +238,7 @@ def _pair_formats(celdas: list[CellWithBar]) -> list[CellWithBar]:
     return sorted(
         con_ratio,
         key=lambda c: (
-            rango_unidad[c.cell.unit],
+            rango_formato[(c.cell.format_id, c.cell.unit)],
             _FORMAT_RANK.get(c.cell.sale_format or "", 2),
             -c.cell.count,
         ),

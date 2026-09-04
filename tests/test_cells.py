@@ -27,6 +27,7 @@ from saimc.models import (
     Currency,
     PriceHistory,
     Product,
+    ProductFormat,
     Province,
     RawIngestion,
     SaleFormat,
@@ -67,6 +68,7 @@ def _precio(
     price_cup: str | None = None,
     min_purchase_quantity: str | None = None,
     price_basis: str | None = None,
+    format_id: object | None = None,
 ) -> None:
     session.add(
         PriceHistory(
@@ -84,8 +86,28 @@ def _precio(
                 Decimal(min_purchase_quantity) if min_purchase_quantity is not None else None
             ),
             price_basis=price_basis,
+            format_id=format_id,
         )
     )
+
+
+def _formato(
+    session: Session,
+    *,
+    product: Product,
+    packaging: str,
+    quantity: str,
+    unit: str,
+) -> ProductFormat:
+    fmt = ProductFormat(
+        product_id=product.id,
+        packaging=packaging,
+        quantity=Decimal(quantity),
+        unit=unit,
+    )
+    session.add(fmt)
+    session.flush()
+    return fmt
 
 
 class TestComputeCells:
@@ -1392,3 +1414,133 @@ class TestComputeAvailability:
         filas = compute_availability(session, days=7, hoy=hoy)
 
         assert [f.product_name for f in filas] == ["Pollo", "Arroz"]
+
+
+class TestCeldaSeparaPorFormato:
+    """El formato de venta es la identidad de la serie (spec.md §5, «o a
+    unidades distintas declaradas como tales»). Revierte la exclusión que
+    `cells.py` documentaba: ninguna de las 39 filas de Pollo del corpus tiene
+    `quantity = 1`, así que el precio por unidad que esa regla producía no
+    corresponde a ninguna transacción observada.
+    """
+
+    def test_dos_formatos_del_mismo_producto_y_provincia_son_dos_celdas(
+        self, session: Session
+    ) -> None:
+        pollo = Product(name="Pollo", category="cárnicos", unit="lb")
+        session.add(pollo)
+        habana = Province(code="hab", name="La Habana")
+        session.add(habana)
+        session.flush()
+        fuente = _ingestion(session, "hash-formatos")
+        caja = _formato(session, product=pollo, packaging="caja", quantity="40", unit="lb")
+        paquete = _formato(
+            session, product=pollo, packaging="paquete", quantity="10", unit="lb"
+        )
+        _precio(
+            session, product=pollo, province=habana, price="12400", source=fuente,
+            unit="lb", quantity="40", price_basis="total", format_id=caja.id,
+        )
+        _precio(
+            session, product=pollo, province=habana, price="3500", source=fuente,
+            unit="lb", quantity="10", price_basis="total", format_id=paquete.id,
+        )
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 2
+        assert {c.format_id for c in celdas} == {caja.id, paquete.id}
+
+    def test_una_fila_sin_formato_no_se_funde_con_una_que_si_lo_tiene(
+        self, session: Session
+    ) -> None:
+        pollo = Product(name="Pollo", category="cárnicos", unit="lb")
+        session.add(pollo)
+        session.flush()
+        fuente = _ingestion(session, "hash-sin-formato")
+        caja = _formato(session, product=pollo, packaging="caja", quantity="40", unit="lb")
+        _precio(
+            session, product=pollo, province=None, price="12400", source=fuente,
+            unit="lb", quantity="40", price_basis="total", format_id=caja.id,
+        )
+        _precio(
+            session, product=pollo, province=None, price="12400", source=fuente,
+            unit="lb", quantity="40", price_basis="total", format_id=None,
+        )
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 2
+        sin_formato = [c for c in celdas if c.format_id is None]
+        assert len(sin_formato) == 1
+        assert sin_formato[0].format_label is None
+
+
+class TestPrecioDelFormato:
+    """El titular es lo que se compra, no una división. `resolve_row()` sigue
+    dando el precio por unidad base —el comparador entre formatos— y el precio
+    del formato se deriva multiplicándolo por su cantidad (design.md D8)."""
+
+    def test_el_precio_del_formato_es_la_mediana_por_su_cantidad(
+        self, session: Session
+    ) -> None:
+        pollo = Product(name="Pollo", category="cárnicos", unit="lb")
+        session.add(pollo)
+        session.flush()
+        fuente = _ingestion(session, "hash-precio-formato")
+        caja = _formato(session, product=pollo, packaging="caja", quantity="40", unit="lb")
+        _precio(
+            session, product=pollo, province=None, price="12400", source=fuente,
+            unit="lb", quantity="40", price_basis="total", format_id=caja.id,
+        )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        # 12.400 / 40 lb = 310 CUP/lb es el comparador; la caja vale 12.400.
+        assert celda.median == Decimal("310")
+        assert celda.format_median == Decimal("12400")
+        assert celda.format_label == "caja de 40 lb"
+
+    def test_el_formato_en_otra_unidad_se_convierte_a_la_del_producto(
+        self, session: Session
+    ) -> None:
+        """Producto canónico en lb, formato declarado en kg: la caja de 10 kg
+        son 22,046 lb, y su precio sale de multiplicar por esa cantidad."""
+        pollo = Product(name="Pollo", category="cárnicos", unit="lb")
+        session.add(pollo)
+        session.flush()
+        fuente = _ingestion(session, "hash-formato-kg")
+        caja = _formato(session, product=pollo, packaging="caja", quantity="10", unit="kg")
+        _precio(
+            session, product=pollo, province=None, price="7810", source=fuente,
+            unit="kg", quantity="10", price_basis="total", format_id=caja.id,
+        )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        # El anuncio real dice «354 CUP/LB»: 7810 / 10 kg = 781 CUP/kg,
+        # y 781 x 0,45359237 = 354,2554 -> 354.
+        assert celda.median.quantize(Decimal("1")) == Decimal("354")
+        # Y la caja vuelve a costar lo que costaba.
+        assert celda.format_median.quantize(Decimal("1")) == Decimal("7810")
+        assert celda.format_label == "caja de 10 kg"
+
+    def test_sin_formato_no_hay_precio_de_formato(self, session: Session) -> None:
+        pollo = Product(name="Pollo", category="cárnicos", unit="lb")
+        session.add(pollo)
+        session.flush()
+        fuente = _ingestion(session, "hash-sin-fmt-precio")
+        _precio(
+            session, product=pollo, province=None, price="310", source=fuente,
+            unit="lb", quantity="1", format_id=None,
+        )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        assert celda.format_median is None
+        assert celda.format_label is None

@@ -4307,3 +4307,67 @@ class TestAsistenteLLM:
 
         assert response.status_code == 200
         assert llamadas == []
+
+
+class TestHistorialFiltraPorFormato:
+    """El enlace «n =» de una celda de la Matriz tiene que aislar las filas de
+    ESE formato. Sin el filtro, una celda de «caja de 40 lb» abriría también
+    las del paquete de 10 lb: las dos llevan `unit = "lb"` y comparten el
+    resto de la identidad efectiva."""
+
+    def test_filtra_las_filas_del_formato_pedido(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-hist-formato")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        caja = ProductFormat(
+            product_id=pollo.id, packaging="caja", quantity=Decimal("40"), unit="lb"
+        )
+        paquete = ProductFormat(
+            product_id=pollo.id, packaging="paquete", quantity=Decimal("10"), unit="lb"
+        )
+        session.add_all([caja, paquete])
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=curado, product=pollo, price="12400",
+            quantity=Decimal("40"), unit="lb", price_basis="total", format_id=caja.id,
+        )
+        _crear_precio_curado(
+            session, ingestion=curado, product=pollo, price="3500",
+            quantity=Decimal("10"), unit="lb", price_basis="total", format_id=paquete.id,
+        )
+
+        response = client.get(f"/curation/history?product=Pollo&format_id={caja.id}")
+
+        assert response.status_code == 200
+        assert "12400" in response.text
+        assert "3500" not in response.text
+
+    def test_format_id_vacio_filtra_las_filas_sin_formato(
+        self, client: TestClient, session: Session
+    ) -> None:
+        pollo = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_="hash-hist-sin-formato")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        caja = ProductFormat(
+            product_id=pollo.id, packaging="caja", quantity=Decimal("40"), unit="lb"
+        )
+        session.add(caja)
+        session.commit()
+        _crear_precio_curado(
+            session, ingestion=curado, product=pollo, price="12400",
+            quantity=Decimal("40"), unit="lb", price_basis="total", format_id=caja.id,
+        )
+        _crear_precio_curado(
+            session, ingestion=curado, product=pollo, price="999",
+            quantity=Decimal("40"), unit="lb", price_basis="total", format_id=None,
+        )
+
+        response = client.get("/curation/history?product=Pollo&format_id=")
+
+        assert response.status_code == 200
+        assert "999" in response.text
+        assert "12400" not in response.text

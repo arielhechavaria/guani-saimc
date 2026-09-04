@@ -114,8 +114,17 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.models import ContentType, Currency, PriceHistory, Product, Province, RawIngestion, SaleFormat
-from saimc.units import canonical_unit, convert_price_per_unit
+from saimc.models import (
+    ContentType,
+    Currency,
+    PriceHistory,
+    Product,
+    ProductFormat,
+    Province,
+    RawIngestion,
+    SaleFormat,
+)
+from saimc.units import canonical_unit, convert_price_per_unit, convert_quantity
 
 
 @dataclass(frozen=True)
@@ -152,6 +161,57 @@ class Cell:
     # convertir»— ni la que sí se fundió. Mismo desenlace que la exclusión de
     # `compute_retail_ranges`, pero acá la celda queda visible.
     unconverted_unit: bool = False
+    # El formato de venta de la serie: la terna `(envase, cantidad, unidad)`
+    # contra la que se agrega. `None` = «formato no establecido», que agrega en
+    # su propia celda igual que `unquantified` — nunca se funde con lo resuelto.
+    format_id: uuid.UUID | None = None
+    format_packaging: str | None = None
+    format_quantity: Decimal | None = None
+    format_unit: str | None = None
+
+    @property
+    def format_label(self) -> str | None:
+        """«caja de 40 lb», o `None` sin formato. Es lo que la persona compra."""
+        if self.format_packaging is None or self.format_quantity is None:
+            return None
+        cantidad = format(self.format_quantity.normalize(), "f")
+        return f"{self.format_packaging} de {cantidad} {self.format_unit}"
+
+    @property
+    def _format_factor(self) -> Decimal | None:
+        """La cantidad del formato expresada en la unidad de la celda.
+
+        `resolve_row()` deja el precio por unidad canónica del producto; para
+        volver al precio del formato hace falta saber cuántas de esas unidades
+        trae. Un formato en kg sobre un producto canónico en lb necesita la
+        conversión (10 kg = 22,046 lb); si no es convertible —`caja`, o
+        magnitudes distintas— no hay precio de formato que derivar.
+        """
+        if self.format_quantity is None:
+            return None
+        return convert_quantity(self.format_quantity, frm=self.format_unit, to=self.unit)
+
+    def _in_format(self, value: Decimal) -> Decimal | None:
+        factor = self._format_factor
+        return None if factor is None else value * factor
+
+    @property
+    def format_median(self) -> Decimal | None:
+        """Mediana expresada como precio del formato. El titular publicado.
+
+        `median` sigue siendo el precio por unidad base: no se reemplaza, se
+        degrada de eje de la serie a **comparador entre formatos** — la
+        respuesta a «¿me conviene la caja o la libra?» (design.md D8).
+        """
+        return self._in_format(self.median)
+
+    @property
+    def format_minimum(self) -> Decimal | None:
+        return self._in_format(self.minimum)
+
+    @property
+    def format_maximum(self) -> Decimal | None:
+        return self._in_format(self.maximum)
 
     @property
     def spread(self) -> Decimal | None:
@@ -277,17 +337,38 @@ def compute_cells(session: Session) -> list[Cell]:
             PriceHistory.price,
             PriceHistory.price_cup,
             PriceHistory.price_basis,
+            PriceHistory.format_id,
+            ProductFormat.packaging,
+            ProductFormat.quantity,
+            ProductFormat.unit,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
+        .outerjoin(ProductFormat, ProductFormat.id == PriceHistory.format_id)
     )
 
     # `unconverted`, `unquantified`, `unresolved_basis` y `unconverted_unit`
     # entran en la clave para separar, sin ambigüedad, el grupo resuelto del
     # que quedó pendiente: moneda, cantidad, basis y unidad respectivamente.
     # Mezclar cualquiera afirmaría una equivalencia que nadie declaró.
+    #
+    # `format_id` entra por el mismo motivo, y es el eje que este módulo
+    # excluía hasta el 2026-09-04: el formato de venta ES la identidad de la
+    # serie, no una etiqueta sobre ella (ver docstring del módulo).
     CellKey = tuple[
-        str, str | None, str, str | None, str | None, bool, bool, bool, bool
+        str,
+        str | None,
+        str,
+        str | None,
+        str | None,
+        bool,
+        bool,
+        bool,
+        bool,
+        uuid.UUID | None,
+        str | None,
+        Decimal | None,
+        str | None,
     ]
     grouped: dict[CellKey, list[Decimal]] = {}
     for (
@@ -301,6 +382,10 @@ def compute_cells(session: Session) -> list[Cell]:
         price,
         price_cup,
         price_basis,
+        format_id,
+        format_packaging,
+        format_quantity,
+        format_unit,
     ) in session.execute(stmt):
         row = resolve_row(
             currency=currency,
@@ -321,6 +406,10 @@ def compute_cells(session: Session) -> list[Cell]:
             row.unquantified,
             row.unresolved_basis,
             row.unconverted_unit,
+            format_id,
+            format_packaging,
+            format_quantity,
+            format_unit,
         )
         grouped.setdefault(key, []).append(row.effective_price)
 
@@ -343,6 +432,10 @@ def compute_cells(session: Session) -> list[Cell]:
             unquantified=unquantified,
             unresolved_basis=unresolved_basis,
             unconverted_unit=unconverted_unit,
+            format_id=format_id,
+            format_packaging=format_packaging,
+            format_quantity=format_quantity,
+            format_unit=format_unit,
         )
         for (
             product_name,
@@ -354,6 +447,10 @@ def compute_cells(session: Session) -> list[Cell]:
             unquantified,
             unresolved_basis,
             unconverted_unit,
+            format_id,
+            format_packaging,
+            format_quantity,
+            format_unit,
         ), prices in grouped.items()
     ]
 
@@ -370,6 +467,7 @@ def compute_cells(session: Session) -> list[Cell]:
             cell.province_name or "",
             cell.unit or "",
             cell.sale_format or "",
+            cell.format_label or "",
             cell.unconverted,
             cell.unquantified,
             cell.unresolved_basis,

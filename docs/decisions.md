@@ -6157,3 +6157,36 @@ del mismo sistema (uno por módulo de pipeline, el otro por área) que pueden
 desincronizarse — confirmado al escribir esto: el módulo 03 del documento cita
 datos del 31/8 y no las tareas 2 y 3 de extracción de esta semana. Mantener
 `requisitos.md` al día queda como slice aparte, todavía sin diseñar.
+
+## 2026-09-04 — El formato de venta es la identidad de la serie de precios
+Contexto: la Matriz de `/control` publicaba una mediana por unidad canónica
+(«310 CUP/lb»). El operador la rechazó explicándosela a otra persona, y la
+evidencia lo respalda: **ninguna de las 39 filas de Pollo tiene `quantity = 1`**
+—las cantidades reales son 4, 10, 33, 40 lb y 10 kg—, así que ese número es una
+división que nadie pagó. El hogar no compra un kilo normalizado: compra el
+paquete, la caja, o la libra suelta.
+Decisión: la serie pasa a ser **producto × formato × provincia**, donde un
+formato es la terna `(envase, cantidad, unidad)` de `product_formats`. El
+tamaño es identidad, no variación: la caja de 40 lb y la de 33 lb son series
+distintas, y una de 80 entra sola el día que aparezca. El titular publicado es
+el precio del formato; el precio por unidad base **no se borra**, se degrada de
+eje a **comparador** entre formatos. `sale_format` sobrevive como eje
+perpendicular —el escalón de volumen sobre el mismo formato— y por eso el par
+minorista/mayorista de `matrix.py` ahora se arma por formato y ya no por
+unidad. Reemplaza la regla de `cells.py` que excluía el envase de la clave
+(«normalizado por cantidad, el envase dejó de ser un eje que separe series») y
+la parte del 2026-08-12 que dejó `packaging` como texto libre.
+Descartado: tratar el tamaño como variación de un default declarado por
+producto — no tiene forma de representar una caja de 80 lb sin ensuciar la
+serie de 40 o reescribir la histórica en silencio. Mantener `packaging` como
+texto libre: 266 filas ya habían producido 14 valores con `Caja`/`caja`,
+`Contenedor`/`contenedor` y un pedazo de anuncio guardado como envase.
+Consecuencia: `contenedor` y `paca` quedan fuera del vocabulario —vasijas de
+contenido variable que transportan otro formato son logística, no presentación—
+y sus 11 filas se remapean al formato que llevan debajo, sin perder ninguna
+observación. Partir por formato divide la densidad: 109 de 266 filas quedan sin
+formato tras la migración `0019`, y las que sí lo tienen se reparten en 43
+series. No se introduce ningún umbral por eso (§12.6): «muestra en formación»
+sigue siendo incondicional en la vista pública y `/control` sigue sin veredicto.
+Queda pendiente separar por formato también `compute_retail_ranges`, que hoy
+colapsa el envase por la decisión del 2026-08-12.
