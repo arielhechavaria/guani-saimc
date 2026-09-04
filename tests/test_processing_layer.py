@@ -1071,3 +1071,265 @@ class TestProductFormatsMigration:
             assert valor == "Arroz importado a 320 la libra"
 
         engine.dispose()
+
+
+class TestMapPackagingToFormatsMigration:
+    """`0019_map_packaging_to_formats.py` — mapea las variantes de `packaging`
+    a `product_formats` y recién entonces dropea la columna (design.md D4a).
+    Solo toca filas con `format_id IS NULL AND packaging IS NOT NULL`: las
+    curadas durante la cadena ya traen formato.
+    """
+
+    @staticmethod
+    def _schema(engine: object) -> sa.MetaData:
+        metadata = sa.MetaData()
+        sa.Table(
+            "products",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        sa.Table(
+            "product_formats",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("product_id", sa.Uuid(as_uuid=True), nullable=False),
+            sa.Column("packaging", sa.String(length=32), nullable=False),
+            sa.Column("quantity", sa.Numeric(precision=12, scale=3), nullable=False),
+            sa.Column("unit", sa.String(length=10), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        )
+        sa.Table(
+            "prices_history",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("product_id", sa.Uuid(as_uuid=True), nullable=False),
+            sa.Column("price", sa.Numeric(precision=12, scale=2), nullable=False),
+            sa.Column("quantity", sa.Numeric(precision=12, scale=3)),
+            sa.Column("unit", sa.String(length=10)),
+            sa.Column("price_basis", sa.String(length=10)),
+            sa.Column("packaging", sa.String(length=64)),
+            sa.Column("packaging_legacy", sa.String(length=64)),
+            sa.Column("format_id", sa.Uuid(as_uuid=True)),
+        )
+        metadata.create_all(engine)
+        return metadata
+
+    def test_mapea_el_corpus_y_rechaza_lo_que_no_es_determinista(self) -> None:
+        modulo = _cargar_modulo_migracion("0019_map_packaging_to_formats.py")
+
+        engine = create_engine("sqlite://")
+        metadata = self._schema(engine)
+        producto = uuid.uuid4()
+
+        # Una fila por línea de la tabla de mapeo del diseño, más los tres
+        # rechazos. El último elemento es el envase esperado, o None.
+        casos: list[tuple[str, str, str, str, str | None, str | None]] = [
+            ("Paquete", "700", "10", "lb", "total", "paquete"),
+            ("Saco", "17500", "25", "kg", "total", "saco"),
+            ("A granel", "340", "1", "lb", None, "a granel"),
+            ("Caja", "24800", "40", "lb", "total", "caja"),
+            ("caja", "27250", "50", "lb", "total", "caja"),
+            ("Saco de arroz De 110 lb", "31000", "110", "lb", "total", "saco"),
+            ("Paquete de arroz 1kg", "770", "1", "kg", "total", "paquete"),
+            ("Botella", "4000", "1", "l", "total", "botella"),
+            ("botella", "2100", "1", "l", "total", "botella"),
+            # `paca` no es envase (D3): trae 10 o 30 paquetes segun el anuncio
+            # y el precio guardado ya es el del paquete.
+            ("PACA que contiene 10 paquetes", "770", "1", "kg", "total", "paquete"),
+            ("Paca que contiene 30 paquetes", "0.93", "1", "kg", "total", "paquete"),
+            # `contenedor` sale del vocabulario; cada fila lleva debajo el
+            # formato que el contenedor transporta (evidencia en proposal.md).
+            ("Contenedor", "7810", "10", "kg", None, "caja"),
+            ("Contenedor", "31.80", "40", "lb", "total", "caja"),
+            ("Contenedor", "28.60", "25", "kg", "total", "saco"),
+            ("contenedor", "4.45", "900", "ml", "total", "botella"),
+            # Rechazo 1: un pedazo del anuncio guardado como envase.
+            ("Arroz importado a 320 la libra", "320", "1", "lb", None, None),
+            # Rechazos 2 y 3 (D5): `price == quantity` con basis 'unit' es el
+            # artefacto de «Arroz guyanes a $340lb» — no hay lote de 340 lb.
+            ("A granel", "340", "340", "lb", "unit", None),
+            ("A granel", "340", "340", "lb", "unit", None),
+        ]
+
+        ids: list[uuid.UUID] = []
+        with engine.connect() as connection:
+            connection.execute(sa.insert(metadata.tables["products"]).values(id=producto))
+            for packaging, price, quantity, unit, basis, _ in casos:
+                fila_id = uuid.uuid4()
+                ids.append(fila_id)
+                connection.execute(
+                    sa.insert(metadata.tables["prices_history"]).values(
+                        id=fila_id,
+                        product_id=producto,
+                        price=Decimal(price),
+                        quantity=Decimal(quantity),
+                        unit=unit,
+                        price_basis=basis,
+                        packaging=packaging,
+                        packaging_legacy=packaging,
+                    )
+                )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "packaging" not in columnas  # dropeada al final
+            assert "packaging_legacy" in columnas  # el respaldo sobrevive
+
+            ph = metadata.tables["prices_history"]
+            pf = metadata.tables["product_formats"]
+            for fila_id, caso in zip(ids, casos, strict=True):
+                _, _, quantity, unit, _, esperado = caso
+                got = connection.execute(
+                    sa.select(pf.c.packaging, pf.c.quantity, pf.c.unit)
+                    .select_from(ph.outerjoin(pf, pf.c.id == ph.c.format_id))
+                    .where(ph.c.id == fila_id)
+                ).one()
+                if esperado is None:
+                    assert got[0] is None, f"{caso[0]!r} debia quedar sin formato"
+                else:
+                    assert got[0] == esperado, f"{caso[0]!r} -> {got[0]!r}"
+                    assert Decimal(str(got[1])) == Decimal(quantity)
+                    assert got[2] == unit
+
+        engine.dispose()
+
+    def test_no_duplica_formatos_entre_filas_del_mismo_triple(self) -> None:
+        modulo = _cargar_modulo_migracion("0019_map_packaging_to_formats.py")
+
+        engine = create_engine("sqlite://")
+        metadata = self._schema(engine)
+        producto = uuid.uuid4()
+
+        with engine.connect() as connection:
+            connection.execute(sa.insert(metadata.tables["products"]).values(id=producto))
+            for _ in range(6):
+                connection.execute(
+                    sa.insert(metadata.tables["prices_history"]).values(
+                        id=uuid.uuid4(),
+                        product_id=producto,
+                        price=Decimal("7810"),
+                        quantity=Decimal("10"),
+                        unit="kg",
+                        packaging="Contenedor",
+                        packaging_legacy="Contenedor",
+                    )
+                )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            total = connection.execute(
+                sa.text("select count(*) from product_formats")
+            ).scalar_one()
+            assert total == 1  # las 6 filas de Cotorro comparten (caja, 10, kg)
+
+        engine.dispose()
+
+    def test_no_toca_las_filas_que_ya_traen_formato(self) -> None:
+        """Las curadas entre el commit 4 y este ya tienen `format_id`: el
+        backfill las filtra y no las re-mapea (design.md D4a)."""
+        modulo = _cargar_modulo_migracion("0019_map_packaging_to_formats.py")
+
+        engine = create_engine("sqlite://")
+        metadata = self._schema(engine)
+        producto = uuid.uuid4()
+        formato_previo = uuid.uuid4()
+        fila = uuid.uuid4()
+
+        with engine.connect() as connection:
+            connection.execute(sa.insert(metadata.tables["products"]).values(id=producto))
+            connection.execute(
+                sa.insert(metadata.tables["product_formats"]).values(
+                    id=formato_previo,
+                    product_id=producto,
+                    packaging="caja",
+                    quantity=Decimal("40"),
+                    unit="lb",
+                    created_at=datetime(2026, 9, 4, tzinfo=UTC),
+                )
+            )
+            connection.execute(
+                sa.insert(metadata.tables["prices_history"]).values(
+                    id=fila,
+                    product_id=producto,
+                    price=Decimal("100"),
+                    quantity=Decimal("25"),
+                    unit="kg",
+                    packaging="Saco",  # contradice al formato ya asignado
+                    packaging_legacy="Saco",
+                    format_id=formato_previo,
+                )
+            )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            total = connection.execute(
+                sa.text("select count(*) from product_formats")
+            ).scalar_one()
+            assert total == 1  # no se creo `(saco, 25, kg)`
+
+        engine.dispose()
+
+    def test_downgrade_devuelve_el_texto_original_verbatim(self) -> None:
+        """El mapeo es muchos-a-uno y con perdida: `Arroz importado a 320 la
+        libra` no se reconstruye desde un formato. Por eso `0018` copio la
+        columna a `packaging_legacy` (design.md D6)."""
+        modulo = _cargar_modulo_migracion("0019_map_packaging_to_formats.py")
+
+        engine = create_engine("sqlite://")
+        metadata = self._schema(engine)
+        producto = uuid.uuid4()
+        fila = uuid.uuid4()
+        texto = "Arroz importado a 320 la libra"
+
+        with engine.connect() as connection:
+            connection.execute(sa.insert(metadata.tables["products"]).values(id=producto))
+            connection.execute(
+                sa.insert(metadata.tables["prices_history"]).values(
+                    id=fila,
+                    product_id=producto,
+                    price=Decimal("320"),
+                    quantity=Decimal("1"),
+                    unit="lb",
+                    packaging=texto,
+                    packaging_legacy=texto,
+                )
+            )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "packaging" in columnas
+            ph = metadata.tables["prices_history"]
+            recuperado = connection.execute(
+                sa.select(ph.c.packaging).where(ph.c.id == fila)
+            ).scalar_one()
+            assert recuperado == texto
+
+        engine.dispose()
