@@ -380,14 +380,40 @@
                 </summary>
                 <div class="m3-card m3-card-pad" style="margin-top:6px; min-width:320px; text-align:left">
                   {% for fmt, obs in product_formats %}
-                  <div class="m3-row" style="gap:8px; align-items:center; padding:3px 0">
-                    <span class="m3-strong" style="flex:1">{{ fmt.packaging }} · {{ fmt.quantity | int }} {{ fmt.unit }}</span>
+                  {% set etiqueta = fmt.packaging ~ ' · ' ~ (fmt.quantity | int) ~ ' ' ~ fmt.unit %}
+                  <div class="m3-row" style="gap:8px; align-items:center; padding:3px 0; flex-wrap:wrap">
+                    <span class="m3-strong" style="flex:1">{{ etiqueta }}</span>
                     <span class="m3-sm m3-muted">{{ obs }} obs.</span>
                     {% if obs == 0 %}
-                    <form method="post" action="/catalog/formats/{{ fmt.id }}/delete" class="m3-inline-form">
+                    {# Editar solo sin observaciones: con historial ya cargado,
+                       reescribir el triple desalinearía el quantity/unit que
+                       cada fila denormalizó DESDE el formato (design.md D8). #}
+                    <details class="m3-inline-form">
+                      <summary class="m3-icon-btn m3-summary" title="Editar formato" style="padding:2px 6px">
+                        <span class="m3-icon m3-icon-sm">edit</span>
+                      </summary>
+                      <form method="post" action="/catalog/formats/{{ fmt.id }}/edit"
+                            class="m3-card m3-card-pad m3-row" style="gap:6px; margin-top:6px; flex-wrap:wrap; text-align:left">
+                        <select name="packaging" class="m3-select" style="font-size:12px; padding:4px 8px" required>
+                          {% for p in packaging %}<option value="{{ p }}"{% if p == fmt.packaging %} selected{% endif %}>{{ p }}</option>{% endfor %}
+                        </select>
+                        <input type="text" name="quantity" value="{{ fmt.quantity | int }}" required
+                               class="m3-input m3-input-num" style="width:70px; font-size:12px; padding:4px 8px" />
+                        <select name="unit" class="m3-select" style="font-size:12px; padding:4px 8px" required>
+                          {% for u in units %}<option value="{{ u }}"{% if u == fmt.unit %} selected{% endif %}>{{ u }}</option>{% endfor %}
+                        </select>
+                        <button type="submit" class="m3-btn m3-btn-tonal" style="padding:4px 12px; font-size:12px">Guardar</button>
+                      </form>
+                    </details>
+                    {% endif %}
+                    {# Borrar ya no depende de obs == 0: con historial, esas filas
+                       quedan sin formato (format_id NULL) en vez de bloquear el
+                       borrado — ver delete_format. El confirm() avisa cuál caso es. #}
+                    {% set confirmacion = ('¿Eliminar «' ~ etiqueta ~ '»? Tiene ' ~ obs ~ ' observación' ~ ('es' if obs != 1 else '') ~ ': quedan sin formato, se corrigen después desde /curation/history.') if obs else ('¿Eliminar «' ~ etiqueta ~ '»?') %}
+                    <form method="post" action="/catalog/formats/{{ fmt.id }}/delete" class="m3-inline-form"
+                          onsubmit="return confirm({{ confirmacion | tojson }});">
                       <button type="submit" class="m3-btn m3-btn-text" style="padding:2px 6px; font-size:12px">Borrar</button>
                     </form>
-                    {% endif %}
                   </div>
                   {% else %}
                   <p class="m3-xs m3-muted" style="margin:0 0 8px">Sin formatos declarados.</p>

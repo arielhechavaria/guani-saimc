@@ -25,7 +25,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
@@ -282,16 +282,19 @@ async def create_format(
     return _back(message=f"Formato agregado a «{product.name}».")
 
 
-@router.post("/catalog/formats/{format_id}/delete")
-def delete_format(format_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
-    """Borra un formato, solo si nunca recibió una observación.
+@router.post("/catalog/formats/{format_id}/edit")
+async def edit_format(
+    format_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Corrige el triple `(envase, cantidad, unidad)` de un formato sin
+    observaciones todavía.
 
-    Los formatos no se retiran (design.md D7): que una caja de 40 lb deje de
-    aparecer un mes es escasez medida, no un registro obsoleto. La única
-    excepción es un formato con cero filas de precio — un typo (400 por 40) no
-    tiene historial que proteger y borrarlo es una corrección, no un retiro.
-    Pre-chequeo con SELECT, igual que `delete_channel`: capturar el
-    IntegrityError del FK `RESTRICT` dejaría la sesión envenenada.
+    Solo antes de la primera observación: `quantity`/`unit` de cada fila de
+    precio se denormalizan DESDE el formato al momento de curar (design.md
+    D8), así que reescribir el triple con historial ya cargado desalinearía
+    en silencio esas copias contra el formato corregido. Con historial la vía
+    es `delete_format` — huerfana las filas a `format_id = NULL` — y recurar
+    cada una desde /curation/history (docs/decisions.md, 2026-09-04).
     """
     formato = db.get(ProductFormat, format_id)
     if formato is None:
@@ -302,12 +305,88 @@ def delete_format(format_id: uuid.UUID, db: Session = Depends(get_db)) -> Redire
     ).first()
     if tiene_precios is not None:
         return _back(
-            error="Ese formato ya tiene observaciones: no se retira, su ausencia es dato."
+            error="Ese formato ya tiene observaciones: borralo y recurá esas filas en vez de editarlo."
         )
 
+    form = await request.form()
+    raw_qty = str(form.get("quantity", "")).strip().replace(",", ".")
+    try:
+        quantity = Decimal(raw_qty)
+    except (ArithmeticError, ValueError):
+        return _back(error="Cantidad inválida.")
+    if quantity <= 0:
+        return _back(error="La cantidad debe ser mayor que cero.")
+
+    packaging = str(form.get("packaging", "")).strip().lower()
+    unit = str(form.get("unit", "")).strip().lower()
+    if packaging not in PACKAGING:
+        return _back(error="Envase fuera del vocabulario.")
+    if unit not in UNITS:
+        return _back(error="Unidad fuera del vocabulario.")
+
+    # Mismo `UNIQUE` que protege `get_or_create_format`: sin este chequeo, el
+    # `UPDATE` de abajo reventaría con un IntegrityError que deja la sesión
+    # envenenada en vez de un error legible.
+    choque = db.execute(
+        select(ProductFormat.id).where(
+            ProductFormat.product_id == formato.product_id,
+            ProductFormat.packaging == packaging,
+            ProductFormat.quantity == quantity,
+            ProductFormat.unit == unit,
+            ProductFormat.id != format_id,
+        )
+    ).first()
+    if choque is not None:
+        return _back(error="Ya existe un formato con ese envase, cantidad y unidad.")
+
+    formato.packaging = packaging
+    formato.quantity = quantity
+    formato.unit = unit
+    db.flush()
+    return _back(message="Formato corregido.")
+
+
+@router.post("/catalog/formats/{format_id}/delete")
+def delete_format(format_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
+    """Borra un formato. Si ya tiene observaciones, quedan sin formato
+    (`format_id = NULL`) en vez de bloquear el borrado.
+
+    Reemplaza la regla original (design.md D7, «un formato con historial no
+    se retira»): el operador puede necesitar borrar un formato que unas
+    observaciones nunca debieron tener —mal asignado en la curaduría, no un
+    typo en la declaración— y prefiere corregir cada fila a mano desde
+    /curation/history antes que dejarlas atadas para siempre a un formato
+    equivocado (docs/decisions.md, 2026-09-04). `format_id = NULL` es un
+    estado que toda la agregación ya soporta (`cells.py`): agrega en su
+    propia celda, igual que una fila que nunca tuvo envase capturado.
+
+    El `UPDATE` que huerfana las filas corre ANTES del `delete`: para cuando
+    el FK `RESTRICT` se evalúa, ya no queda ninguna fila apuntando a este
+    formato.
+    """
+    formato = db.get(ProductFormat, format_id)
+    if formato is None:
+        return _back()
+
+    huerfanas = db.execute(
+        update(PriceHistory)
+        .where(PriceHistory.format_id == format_id)
+        .values(format_id=None)
+    ).rowcount
+
+    etiqueta = f"{formato.packaging} · {formato.quantity.normalize():f} {formato.unit}"
     db.delete(formato)
     db.flush()
-    return _back(message="Formato eliminado.")
+
+    if huerfanas:
+        plural = "es" if huerfanas != 1 else ""
+        return _back(
+            message=(
+                f"Formato «{etiqueta}» eliminado. {huerfanas} observación{plural} "
+                "quedaron sin formato — corregilas desde /curation/history."
+            )
+        )
+    return _back(message=f"Formato «{etiqueta}» eliminado.")
 
 
 @router.post("/catalog/channels")

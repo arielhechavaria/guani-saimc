@@ -304,8 +304,11 @@ def _crear_raw_para_precio(session: Session, *, hash_: str) -> RawIngestion:
 
 class TestCatalogoFormatos:
     """Declaración y administración de formatos de venta por producto
-    (design.md D7). Los formatos no se retiran nunca; la única excepción es
-    uno con cero observaciones, que es una corrección de tipeo, no un retiro.
+    (design.md D7, con la excepción del borrado registrada en
+    docs/decisions.md 2026-09-04). Editar un formato solo es seguro sin
+    observaciones —no hay nada denormalizado que desalinear (D8)—; borrar es
+    incondicional, y con historial las filas quedan sin formato en vez de
+    bloquear el borrado.
     """
 
     def test_declarar_un_formato_lo_crea(
@@ -373,11 +376,62 @@ class TestCatalogoFormatos:
         assert response.status_code == 303
         assert session.get(ProductFormat, formato.id) is None
 
-    def test_no_borra_un_formato_con_observaciones(
+    def test_borra_un_formato_con_observaciones_las_deja_sin_formato(
         self, client: TestClient, session: Session
     ) -> None:
         producto = _crear_producto(session, name="Pollo", is_pilot=True)
         fuente = _crear_raw_para_precio(session, hash_="hash-formato-con-precio")
+        formato = ProductFormat(
+            product_id=producto.id, packaging="caja", quantity=Decimal("40"), unit="lb"
+        )
+        session.add(formato)
+        session.flush()
+        precio = PriceHistory(
+            product_id=producto.id,
+            price=Decimal("12400"),
+            currency=Currency.CUP.value,
+            format_id=formato.id,
+            source_id=fuente.id,
+        )
+        session.add(precio)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/formats/{formato.id}/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        assert session.get(ProductFormat, formato.id) is None
+        session.expire_all()
+        assert session.get(PriceHistory, precio.id).format_id is None  # huérfana, no borrada
+
+    def test_editar_un_formato_sin_observaciones_lo_corrige(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+        formato = ProductFormat(
+            product_id=producto.id, packaging="caja", quantity=Decimal("400"), unit="lb"
+        )
+        session.add(formato)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/formats/{formato.id}/edit",
+            data={"packaging": "caja", "quantity": "40", "unit": "lb"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        session.expire_all()
+        assert session.get(ProductFormat, formato.id).quantity == Decimal("40")
+
+    def test_no_edita_un_formato_con_observaciones(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+        fuente = _crear_raw_para_precio(session, hash_="hash-formato-no-editable")
         formato = ProductFormat(
             product_id=producto.id, packaging="caja", quantity=Decimal("40"), unit="lb"
         )
@@ -395,12 +449,41 @@ class TestCatalogoFormatos:
         session.commit()
 
         response = client.post(
-            f"/catalog/formats/{formato.id}/delete", follow_redirects=False
+            f"/catalog/formats/{formato.id}/edit",
+            data={"packaging": "caja", "quantity": "45", "unit": "lb"},
+            follow_redirects=False,
         )
 
         assert response.status_code == 303
         assert "error=" in response.headers["location"]
-        assert session.get(ProductFormat, formato.id) is not None
+        session.expire_all()
+        assert session.get(ProductFormat, formato.id).quantity == Decimal("40")  # intacto
+
+    def test_editar_a_un_triple_que_ya_existe_se_rechaza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo", is_pilot=True)
+        session.add(
+            ProductFormat(
+                product_id=producto.id, packaging="caja", quantity=Decimal("40"), unit="lb"
+            )
+        )
+        editable = ProductFormat(
+            product_id=producto.id, packaging="saco", quantity=Decimal("40"), unit="lb"
+        )
+        session.add(editable)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/formats/{editable.id}/edit",
+            data={"packaging": "caja", "quantity": "40", "unit": "lb"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        session.expire_all()
+        assert session.get(ProductFormat, editable.id).packaging == "saco"  # intacto
 
     def test_la_lista_muestra_el_formato_y_su_conteo(
         self, client: TestClient, session: Session

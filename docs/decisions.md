@@ -6213,3 +6213,36 @@ formación» ya cubre eso sin condición y no cambia. `compute_retail_observatio
 —que también alimenta el gráfico de evolución— lleva ahora la terna del formato
 pero el gráfico sigue dibujando la serie por unidad; separarlo por formato
 queda pendiente si el operador lo pide.
+
+## 2026-09-04 — Borrar un formato con observaciones las deja sin formato, en vez de bloquear
+Contexto: `/catalog` no tenía forma de corregir un formato de venta ya
+declarado. Editar faltaba directamente, y borrar (design.md D7) bloqueaba
+cualquier formato con al menos una observación — pensado contra el retiro por
+desuso («la caja de 40 lb dejó de traerse este mes»), pero también bloqueaba
+el caso real: un formato al que la curaduría le asignó observaciones que no
+le correspondían, y que el operador necesita poder deshacer.
+Decisión: se separan los dos casos por si hay historial o no.
+- **Editar** (`POST /catalog/formats/{id}/edit`, nuevo) solo si el formato
+  tiene cero observaciones: `quantity`/`unit` de cada fila de precio se
+  denormalizan DESDE el formato al momento de curar (design.md D8), así que
+  reescribir el triple con historial ya cargado desalinearía esas copias en
+  silencio. Sin observaciones no hay nada que desalinear.
+- **Borrar** deja de bloquearse por tener observaciones. Sus filas de
+  `prices_history` pasan a `format_id = NULL` —«sin formato», un estado que
+  toda la agregación ya soporta (`cells.py` agrupa por `format_id` y trata
+  `NULL` como su propia celda, igual que una fila sin envase capturado— y
+  después se borra el formato. El operador recura cada fila huérfana desde
+  `/curation/history`, reasignándole el formato correcto con el mismo flujo
+  que ya usa `/curation/{id}/edit`.
+Descartado: mantener editar y borrar con la misma regla que antes (bloquear
+con cualquier observación). Habría dejado sin arreglo el caso que lo motivó
+—un formato contaminado por una mala asignación— porque no hay forma de
+reasignar observaciones ya atadas sin antes soltarlas de ese formato.
+También se descartó que borrar reasigne solo o intente adivinar el formato
+correcto: D4 ya estableció que el sistema nunca adivina un dato que el
+operador no confirmó.
+Consecuencia: reemplaza la parte de design.md D7 que decía que un formato con
+historial no se retira nunca — ahora no se retira *el historial* (las
+observaciones sobreviven, solo pierden el vínculo), pero el formato sí puede
+borrarse. La ventana entre borrar y recurar dinamiza filas ya publicadas: caen
+a su propia celda de «sin formato» hasta que el operador las corrija.
