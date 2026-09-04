@@ -150,6 +150,64 @@ class TestIndice:
         assert "congelado" in texto
 
 
+class TestIndiceUsaComponentesCompartidos:
+    """El índice viste con las clases de la hoja, no con CSS propio.
+
+    La tarjeta con borde y el badge de vigencia estaban reimplementados en el
+    `<style>` de la plantilla, con tres colores fijos que no coincidían con
+    ninguna paleta del proyecto. Se repatriaron a `.m3-card-outlined` y
+    `.m3-badge-*` (docs/decisions.md, 2026-09-04).
+
+    Lo que se prueba es que la vista siga usando las clases compartidas: si
+    alguien vuelve a escribir el marco a mano, el color de un estado deja de
+    coincidir con el mismo estado en el resto de la app, y eso no se nota
+    mirando `/docs` sola.
+    """
+
+    def _index(self, client: TestClient) -> str:
+        return client.get("/docs").text
+
+    def test_las_tarjetas_usan_la_variante_de_borde_compartida(
+        self, client: TestClient
+    ) -> None:
+        texto = self._index(client)
+
+        assert "m3-card-outlined" in texto
+        assert "m3-card-link" in texto
+
+    def test_el_badge_de_vigencia_usa_las_variantes_compartidas(
+        self, client: TestClient
+    ) -> None:
+        """Cada standing mapea a la variante de color que le corresponde, y son
+        los mismos tokens que usan los chips del mismo estado."""
+        texto = self._index(client)
+
+        # Los tres standings de `_STANDING_ORDER` se renderizan siempre, así
+        # que las tres variantes tienen que aparecer: rige→ok, interno→warn,
+        # congelado→neutral (el default del mapeo).
+        assert "m3-badge-ok" in texto
+        assert "m3-badge-warn" in texto
+        assert "m3-badge-neutral" in texto
+        assert "m3-badge-mono" in texto
+
+    def test_la_plantilla_ya_no_define_el_marco_ni_los_colores(self) -> None:
+        """Tripwire de recaída: el `<style>` local se quedó con la composición
+        interna de la tarjeta, no con el componente."""
+        plantilla = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "saimc"
+            / "web"
+            / "templates"
+            / "docs_index.html"
+        ).read_text(encoding="utf-8")
+        bloque = plantilla[plantilla.index("<style>") : plantilla.index("</style>")]
+
+        assert "#" not in bloque, "volvió un color fijo al CSS de la plantilla"
+        for muerta in (".docs-card {", ".docs-badge", "border-radius: 12px"):
+            assert muerta not in bloque, f"volvió a definirse el marco a mano: {muerta}"
+
+
 class TestLectura:
     def test_la_vista_de_un_documento_carga(self, client: TestClient) -> None:
         response = client.get("/docs/requisitos")
@@ -259,7 +317,7 @@ class TestBuscadorFunciona:
     si la hoja de estilos lo respeta.
 
     `[hidden] { display: none }` viene del navegador, pero cualquier regla de
-    autor con `display` le gana — y `.docs-card` declara `display: block`. Sin
+    autor con `display` le gana — y `.m3-card-link` declara `display: block`. Sin
     una regla propia, escribir en la caja marcaba las tarjetas como ocultas y
     seguían visibles: el buscador parecía roto aunque el JS estuviera bien.
 
@@ -289,7 +347,7 @@ class TestBuscadorFunciona:
 
         assert "display" in bloque and "none" in bloque
         assert "!important" in bloque, (
-            "sin !important la regla empata en especificidad con .docs-card y "
+            "sin !important la regla empata en especificidad con .m3-card-link y "
             "gana la que esté después en el archivo — frágil"
         )
 

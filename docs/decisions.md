@@ -6372,3 +6372,49 @@ separándose de la de la fuente. El CSS que vive dentro de las plantillas
 repatrien los componentes. Con esto A queda cerrado; sigue la repatriación
 (`.hs-*` de `/control`, `.ph-*` de la home pública, `.docs-*`/`.doc-*`), que es
 la que además destraba la convergencia a 600/840.
+
+## 2026-09-04 — Repatriación, 1 de 4: el índice de /docs viste con la hoja compartida
+Contexto: primer paso de la repatriación de componentes, el trabajo que queda
+después de cerrar el slice A (tokens y escalas). La auditoría del estado visual
+contó ~337 líneas de CSS viviendo dentro de plantillas, casi todas
+reimplementando componentes que la hoja ya tiene. `docs_index.html` era el caso
+más limpio: 35 líneas de `<style>`, 17 reglas, y seis colores fijos para los
+tres badges de vigencia (`#dcede5`/`#1b6b4f` rige, `#eceff3`/`#5a6472`
+congelado, `#f6ebcf`/`#8a6212` interno) que no salían de ninguna paleta del
+proyecto, así que el mismo estado se veía de un color en `/docs` y de otro en
+el resto de la app.
+Decisión: se repatrían el marco y el badge, no la composición.
+- A `saimc-material.css`: `.m3-card-outlined` (variante de borde, que Material
+  3 define junto a la elevada), `.m3-card-link` (para envolver una tarjeta
+  entera en un `<a>`, que hasta ahora no se hacía) y `.m3-badge-mono` +
+  `.m3-badge-ok/-warn/-neutral`, con **los mismos tokens contenedor que
+  `.m3-chip-ok/-warn/-neutral`**: un estado se ve igual sea chip o badge.
+- El `<style>` de la plantilla baja de 35 a 21 líneas, de 17 reglas a 10 y de
+  seis colores fijos a cero. Lo que queda es composición interna de la tarjeta
+  —el flex del título con el badge, la fila de metadatos—, que no es un
+  componente y no tiene por qué subir a la hoja.
+- El buscador pasa a `.m3-input`, con un override de una línea: `.m3-input` es
+  transparente porque nació dentro de tarjetas, y acá vive sobre el fondo de
+  página.
+- El JS del filtro dejaba de encontrar las tarjetas al cambiar la clase, así
+  que ahora selecciona por `[data-buscar]`: el atributo es el contrato real del
+  filtro, la clase era presentación.
+Descartado: (a) mover el `<style>` entero a la hoja compartida, que sacaría el
+CSS de la plantilla sin resolver la duplicación —el objetivo es que haya menos
+CSS, no que esté en otro archivo—; (b) preservar los colores viejos como
+variantes nuevas, que es exactamente la segunda paleta que el slice A vino a
+eliminar; (c) reusar `.m3-chip` para el badge: el chip tiene borde, más padding
+y fuente de texto, y acá hace falta una etiqueta compacta y monoespaciada.
+Consecuencia: 1314 tests verdes (+3). Siguen los 2 de `test_public_filter.py`,
+preexistentes. Cambio visible en `/docs` —a diferencia de A1 y A2, que fueron
+invisibles a propósito—: los tres badges pasan a los colores canónicos de su
+estado (misma familia, distinto tono) y la tarjeta gana el ritmo de
+`.m3-card-pad` (20/24px contra los 16/18px que tenía a mano). Es el precio de
+unificar y era el punto del pedido. Se actualizó también el fundamento de
+`TestBuscadorFunciona`, que razonaba sobre `.docs-card` declarando
+`display: block`: ahora eso lo hace `.m3-card-link`, y el argumento del
+`[hidden] { display: none !important }` sigue en pie con el nombre correcto.
+Quedan 3 de 4: `.doc-*` de `docs_view.html` (74 líneas, con TOC y tipografía
+de markdown que son genuinamente propias), `.hs-*` de `/control` (46 líneas,
+la tira de salud) y `.ph-*` de la home pública (181 líneas, un sistema
+paralelo completo y el único que toca una vista con usuarios reales).
