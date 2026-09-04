@@ -401,6 +401,49 @@ class TestEscalaEspaciado:
         )
 
 
+class TestClasesDelJavascriptExisten:
+    """Toda clase que el JS asigna tiene que estar definida en algún lado.
+
+    Es la trampa de repatriar: al renombrar una clase en el CSS y en el HTML,
+    la que queda vieja es la del `className = "..."` del script — y eso **no
+    falla**. No hay error en consola, no hay test rojo: el elemento aparece
+    sin estilo y hay que verlo con el ojo. Estuvo por pasar dos veces seguidas
+    al mover el filtro del índice de `/docs` y el envoltorio de tablas del
+    lector.
+
+    Va sobre TODAS las plantillas, no sobre las que se repatriaron: el riesgo
+    es de cualquiera que tenga JS, y hoy el proyecto pasa limpio.
+    """
+
+    def test_ninguna_clase_asignada_por_js_quedo_huerfana(self) -> None:
+        raiz = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web"
+        hoja = (raiz / "static" / "saimc-material.css").read_text(encoding="utf-8")
+
+        huerfanas: list[str] = []
+        for tpl in sorted((raiz / "templates").glob("*.html")):
+            texto = tpl.read_text(encoding="utf-8")
+            local = (
+                texto[texto.index("<style>") : texto.index("</style>")]
+                if "<style>" in texto
+                else ""
+            )
+            definido = hoja + local
+
+            asignadas = re.findall(r'className\s*=\s*"([^"]+)"', texto)
+            for lista in re.findall(r"classList\.(?:add|remove|toggle)\(([^)]*)\)", texto):
+                asignadas.extend(re.findall(r'"([^"]+)"', lista))
+
+            for asignacion in asignadas:
+                for clase in asignacion.split():
+                    if not re.search(rf"\.{re.escape(clase)}[^\w-]", definido):
+                        huerfanas.append(f"{tpl.name}: {clase}")
+
+        assert not huerfanas, (
+            f"el JS asigna clases que no define ninguna hoja: {huerfanas} — "
+            "se renombró el CSS y quedó el script viejo"
+        )
+
+
 class TestCompresion:
     """`GZipMiddleware`: qué se comprime, qué no, y qué pasa sin soporte.
 

@@ -1269,6 +1269,70 @@ class TestConsumoDelAsistente:
         assert "falló por <strong>saldo insuficiente" not in client.get("/control").text
 
 
+class TestFranjaUsaComponentesCompartidos:
+    """La tira de salud vive en la hoja, no en el `<style>` de la plantilla.
+
+    Tenía ocho colores fijos —dos verdes, dos ámbares, dos rojos y dos
+    grises— ninguno de la paleta del proyecto. Se repatrió a `.m3-health-*`
+    y los colores se volvieron tokens (docs/decisions.md, 2026-09-04).
+
+    Lo que se fija acá es la regla del diseño original que más fácil se pierde
+    al refactorizar: **`off` no es `down`**. Una capacidad sin configurar va en
+    gris y no cuenta para el aviso rojo, porque pintar de rojo lo que el
+    operador no usa entrena a ignorar el rojo.
+    """
+
+    def _hoja(self) -> str:
+        return (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "saimc"
+            / "web"
+            / "static"
+            / "saimc-material.css"
+        ).read_text(encoding="utf-8")
+
+    def test_la_plantilla_ya_no_trae_css_propio(self) -> None:
+        plantilla = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "saimc"
+            / "web"
+            / "templates"
+            / "control.html"
+        ).read_text(encoding="utf-8")
+
+        assert "<style>" not in plantilla, (
+            "volvió CSS al `<style>` de control.html — el componente es "
+            "`.m3-health-*` y vive en saimc-material.css"
+        )
+        assert "hs-" not in plantilla
+
+    def test_los_cuatro_niveles_estan_definidos(self) -> None:
+        hoja = self._hoja()
+
+        for nivel in ("ok", "warn", "down", "off"):
+            assert f".m3-health-card.is-{nivel}" in hoja
+
+    def test_apagado_no_usa_el_color_de_roto(self) -> None:
+        """`off` en gris, `down` en rojo. Si alguien los unifica, la franja
+        empieza a gritar por capacidades que el operador no configuró."""
+        hoja = self._hoja()
+        apagado = hoja[hoja.index(".m3-health-card.is-off") :][:200]
+
+        assert "--m3-disabled" in apagado
+        assert "--m3-error" not in apagado
+
+    def test_los_colores_de_nivel_salen_de_tokens(self) -> None:
+        """Ni un `#hex` en el componente: el rojo de la franja tiene que ser el
+        mismo rojo que el del resto de la app."""
+        hoja = self._hoja()
+        bloque = hoja[hoja.index("── Tira de salud") : hoja.index("── Campos")]
+        sin_comentarios = re.sub(r"/\*.*?\*/", "", bloque, flags=re.DOTALL)
+
+        assert not re.findall(r"#[0-9a-fA-F]{3,6}", sin_comentarios)
+
+
 class TestFranjaDeEstado:
     """La franja que abre `/control`: lo que exige acción hoy, arriba de todo."""
 
@@ -1276,7 +1340,7 @@ class TestFranjaDeEstado:
         texto = client.get("/control").text
 
         assert 'aria-label="Estado del sistema"' in texto
-        assert "hs-grid" in texto
+        assert "m3-health-grid" in texto
 
     def test_muestra_el_estado_de_whatsapp(self, client: TestClient) -> None:
         """El indicador que motivó todo esto (hueco N-02): sin él, WAHA se
@@ -1292,7 +1356,7 @@ class TestFranjaDeEstado:
         puede gritar por algo que el operador no usa."""
         texto = client.get("/control").text
 
-        assert "hs-banner hs-down" not in texto
+        assert "m3-health-banner is-down" not in texto
 
     def test_waha_caido_pone_el_banner_rojo(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
@@ -1305,7 +1369,7 @@ class TestFranjaDeEstado:
 
         texto = client.get("/control").text
 
-        assert "hs-banner hs-down" in texto
+        assert "m3-health-banner is-down" in texto
         assert "Reiniciala en WAHA" in texto
 
     def test_la_franja_enlaza_al_detalle(

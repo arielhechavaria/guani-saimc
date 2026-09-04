@@ -6462,3 +6462,52 @@ dos veces seguidas, con el filtro del índice y con el envoltorio de tablas.
 Quedan 2 de 4: `.hs-*` de `/control` (46 líneas, la tira de salud) y `.ph-*` de
 la home pública (181 líneas, sistema paralelo completo y la única vista con
 usuarios reales).
+
+## 2026-09-04 — Repatriación, 3 de 4: la tira de salud de /control, y cuatro tokens que faltaban
+Contexto: tercer paso de la repatriación, y el más delicado hasta acá: la tira
+de salud es lo que el operador mira todos los días para saber si algo se rompió
+(docs/decisions.md, 2026-09-02). Vivía entera en el `<style>` de
+`control.html`: 49 líneas y **ocho colores fijos** —`#1b6b4f`, `#8a6212`,
+`#a4232b`, `#9aa0a6` para punto y borde; `#fdf8ec`, `#fdeced` para el fondo;
+`#7a1a20`, `#6b4c0e` para el texto del banner—. Ninguno salía de la paleta, así
+que el rojo de «algo está roto» no era el rojo del resto de la aplicación.
+Decisión: el componente pasa a `.m3-health-*` en `saimc-material.css`, con
+modificadores `is-ok/-warn/-down/-off` (la convención de la hoja, como
+`.is-active` o `.is-hero`), y los colores pasan a tokens.
+**Cuatro tokens nuevos, cada uno tapando un hueco real de la paleta:**
+- `--m3-success: #1b6b4f`. Faltaba por asimetría: `--m3-error` y `--m3-warn`
+  existían como base y success solo tenía `-container`. Por eso la tira se
+  pintaba el verde a mano.
+- `--m3-warn-strong: #8a6212`. `--m3-warn` (#e0a700) es ámbar brillante y
+  funciona como acento grueso —el borde superior de `.m3-gap`, el izquierdo de
+  `.m3-row-card.is-review`— pero en un punto de 9px sobre blanco no se lee. Son
+  dos roles distintos, no un duplicado; queda anotado por si conviene unificar
+  más adelante.
+- `--m3-warn-wash: #fdf8ec` y `--m3-error-wash: #fdeced`. Tinte pálido para
+  pintar una tarjeta entera; `-container` está calibrado para chips y banners
+  chicos y como fondo de tarjeta grita. Mismo escalón `-wash` que ya usaban los
+  colores de provincia.
+Se conservan las tres reglas del diseño original, anotadas ahora en la hoja
+para que sobrevivan al próximo refactor: el color no es la única señal, `off`
+NO es `down`, y cada tarjeta dice qué hacer y enlaza al detalle.
+Descartado: (a) snapear los colores a los `-container` existentes, que habría
+hecho la tarjeta de «roto» bastante más estridente sin que nadie lo pidiera;
+(b) usar `--m3-mono` en `.m3-health-value` para alinearlo con
+`.m3-metric-value`: acá el valor es una frase («conectado», «hace 2 días»), no
+una cifra que haya que alinear en columna; (c) dejar el componente en la
+plantilla por ser de una sola vista — `.m3-curation` y `.m3-matrix-*` también
+lo son y viven en la hoja: la convención del proyecto es esa.
+Consecuencia: 1322 tests verdes (+4). El `<style>` de `control.html`
+desaparece: la plantilla queda sin CSS propio. Verificado declaración por
+declaración contra la versión vieja con tokens expandidos: **todo el espaciado
+quedó idéntico** y los únicos cambios son cuatro colores, todos dentro de su
+familia — `down` de `#a4232b` a `#ba1a1a`, `off` de `#9aa0a6` a `#8a9494`, y el
+texto de los dos banners a `--m3-on-error-container` / `--m3-on-warn-container`,
+más oscuros que antes. Los verdes y ámbares del punto y el borde no se movieron.
+`TestClasesDelJavascriptExisten` se movió de `test_docs.py` a
+`test_static_assets.py` y ahora corre sobre **todas** las plantillas, no solo
+las de `/docs`: el riesgo de dejar una clase huérfana en un `className` es de
+cualquier vista con JS. Hoy el proyecto pasa limpio.
+Queda 1 de 4: `.ph-*` de la home pública (181 líneas, sistema paralelo completo
+con Alice serif). Es la única que toca una vista con usuarios reales y la que
+destraba la convergencia de breakpoints a 600/840.

@@ -249,42 +249,6 @@ class TestLecturaUsaComponentesCompartidos:
             assert muerta not in bloque, f"volvió a definirse a mano: {muerta}"
 
 
-class TestClasesDelJavascriptExisten:
-    """Toda clase que el JS asigna tiene que estar definida en algún lado.
-
-    Es la trampa de repatriar: al renombrar una clase en el CSS y en el HTML,
-    la que queda vieja es la del `className = "..."` del script — y eso no
-    falla, solo deja de verse bien, sin error en consola. Pasó al mover el
-    filtro de `/docs` y el envoltorio de tablas del lector.
-    """
-
-    PLANTILLAS = ("docs_index.html", "docs_view.html")
-
-    def test_ninguna_clase_asignada_por_js_quedo_huerfana(self) -> None:
-        hoja = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "saimc"
-            / "web"
-            / "static"
-            / "saimc-material.css"
-        ).read_text(encoding="utf-8")
-
-        huerfanas: list[str] = []
-        for nombre in self.PLANTILLAS:
-            plantilla = _plantilla(nombre)
-            definido = hoja + _style_de(nombre)
-            for asignacion in re.findall(r'className\s*=\s*"([^"]+)"', plantilla):
-                for clase in asignacion.split():
-                    if not re.search(rf"\.{re.escape(clase)}[^\w-]", definido):
-                        huerfanas.append(f"{nombre}: {clase}")
-
-        assert not huerfanas, (
-            "el JS asigna clases que no define ninguna hoja: "
-            f"{huerfanas} — se renombró el CSS y quedó el script viejo"
-        )
-
-
 class TestLectura:
     def test_la_vista_de_un_documento_carga(self, client: TestClient) -> None:
         response = client.get("/docs/requisitos")

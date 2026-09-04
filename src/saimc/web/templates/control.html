@@ -19,55 +19,7 @@
   </div>
 {% endblock %}
 
-{% block head %}
-<style>
-  /* Franja de estado. Colores por nivel, con el punto como señal primaria.
-     El color solo no alcanza si el operador no distingue bien los tonos, así
-     que cada tarjeta además trae el estado escrito en palabras. */
-  .hs { margin-bottom: 8px; }
-  .hs-grid {
-    display: grid; gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  }
-  .hs-card {
-    padding: 14px 16px; border-radius: 12px;
-    border: 1px solid var(--m3-outline-variant);
-    background: var(--m3-surface);
-    border-left-width: 4px;
-  }
-  .hs-top { display: flex; align-items: center; gap: 8px; }
-  .hs-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .hs-label {
-    font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
-    opacity: .65; font-weight: 600;
-  }
-  .hs-value { font-size: 1.5rem; font-weight: 600; margin-top: 6px; line-height: 1.1; }
-  .hs-hint { font-size: .8rem; opacity: .75; margin-top: 8px; max-width: 40ch; }
-  .hs-link {
-    display: inline-block; margin-top: 10px; font-size: .78rem;
-    text-decoration: none; color: var(--m3-primary);
-  }
 
-  .hs-ok   { border-left-color: #1b6b4f; }
-  .hs-ok   .hs-dot { background: #1b6b4f; }
-  .hs-warn { border-left-color: #8a6212; background: #fdf8ec; }
-  .hs-warn .hs-dot { background: #8a6212; }
-  .hs-down { border-left-color: #a4232b; background: #fdeced; }
-  .hs-down .hs-dot { background: #a4232b; }
-  /* Apagado: gris, deliberadamente sin alarma. Una capacidad sin usar no es
-     una capacidad rota, y pintarla de rojo entrena a ignorar el rojo. */
-  .hs-off  { border-left-color: #9aa0a6; opacity: .7; }
-  .hs-off  .hs-dot { background: #9aa0a6; }
-
-  .hs-banner {
-    display: flex; align-items: center; gap: 10px;
-    padding: 12px 16px; border-radius: 10px; margin: 0 0 14px;
-    font-weight: 500;
-  }
-  .hs-banner.hs-down { background: #fdeced; color: #7a1a20; }
-  .hs-banner.hs-warn { background: #fdf8ec; color: #6b4c0e; }
-</style>
-{% endblock %}
 
 {% block content %}
 <div class="m3-stack-lg">
@@ -80,29 +32,29 @@
     entero. Acá arriba lo roto sube solo (`health_strip.build_strip` ordena por
     gravedad) y cada tarjeta dice qué hacer, no solo que algo pasa.
   #}
-  <section class="hs" aria-label="Estado del sistema">
+  <section class="m3-health" aria-label="Estado del sistema">
     {% if strip_level == "down" %}
-    <p class="hs-banner hs-down">
+    <p class="m3-health-banner is-down">
       <span class="m3-icon">error</span>
       Hay algo roto. Lo de abajo a la izquierda es lo que exige acción.
     </p>
     {% elif strip_level == "warn" %}
-    <p class="hs-banner hs-warn">
+    <p class="m3-health-banner is-warn">
       <span class="m3-icon">warning</span>
       Nada roto, pero hay algo que conviene mirar.
     </p>
     {% endif %}
 
-    <div class="hs-grid">
+    <div class="m3-health-grid">
       {% for ind in strip %}
-      <div class="hs-card hs-{{ ind.level }}">
-        <div class="hs-top">
-          <span class="hs-dot"></span>
-          <span class="hs-label">{{ ind.label }}</span>
+      <div class="m3-health-card is-{{ ind.level }}">
+        <div class="m3-health-top">
+          <span class="m3-health-dot"></span>
+          <span class="m3-health-label">{{ ind.label }}</span>
         </div>
-        <div class="hs-value">{{ ind.value }}</div>
-        {% if ind.hint %}<div class="hs-hint">{{ ind.hint }}</div>{% endif %}
-        {% if ind.anchor %}<a class="hs-link" href="{{ ind.anchor }}">ver detalle →</a>{% endif %}
+        <div class="m3-health-value">{{ ind.value }}</div>
+        {% if ind.hint %}<div class="m3-health-hint">{{ ind.hint }}</div>{% endif %}
+        {% if ind.anchor %}<a class="m3-health-link" href="{{ ind.anchor }}">ver detalle →</a>{% endif %}
       </div>
       {% endfor %}
     </div>
