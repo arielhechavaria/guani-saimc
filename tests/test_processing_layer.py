@@ -1333,3 +1333,47 @@ class TestMapPackagingToFormatsMigration:
             assert recuperado == texto
 
         engine.dispose()
+
+
+class TestModeloYMigracionesNoDivergen:
+    """Guardarraíl contra el error que produjo el 500 del 2026-09-04.
+
+    `tests/conftest.py` arma el esquema con `Base.metadata.create_all`, o sea
+    con lo que el modelo declara — nunca con lo que las migraciones dejaron.
+    Por eso la suite entera pasó en verde con `PriceHistory.packaging` todavía
+    declarada después de que `0019` dropeara la columna: en SQLite existía, en
+    PostgreSQL no, y cualquier `SELECT` de la entidad completa reventaba.
+
+    Este caso corre **la cadena real** contra un engine SQLite y compara el
+    conjunto de columnas contra el del modelo. No valida tipos ni
+    restricciones: valida que nadie agregue o quite una columna en un lado sin
+    el otro, que es la clase de error que la suite no podía ver.
+    """
+
+    def test_las_columnas_de_prices_history_coinciden(self) -> None:
+        from alembic.script import ScriptDirectory
+
+        from saimc.models import PriceHistory
+
+        raiz = Path(__file__).resolve().parent.parent
+        script = ScriptDirectory(str(raiz / "alembic"))
+        # Cadena completa en orden, de la base a head.
+        revisiones = list(reversed(list(script.walk_revisions())))
+
+        engine = create_engine("sqlite://")
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                for rev in revisiones:
+                    _cargar_modulo_migracion(
+                        rev.path.rsplit("/", 1)[-1]
+                    ).upgrade()
+            connection.commit()
+            migradas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+
+        declaradas = {c.name for c in PriceHistory.__table__.columns}
+        assert migradas == declaradas, (
+            f"solo en las migraciones: {sorted(migradas - declaradas)} · "
+            f"solo en el modelo: {sorted(declaradas - migradas)}"
+        )
+        engine.dispose()

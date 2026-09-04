@@ -147,14 +147,10 @@ class PriceHistory(Base):
     # partir de `unit`: un precio derivado de dividir un saco lleva el mismo
     # `unit = "lb"` que uno genuinamente minorista (design.md, D4).
     sale_format: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    # Envase o presentación en texto libre ("saco de 25 kg"). **En retiro**: el
-    # envase pasa a ser parte de `format_id` con vocabulario cerrado. La
-    # migración `0019` mapea las filas y dropea esta columna; hasta entonces
-    # `curation.py` deja de escribirla en el commit 4. Quien todavía escriba
-    # acá debe recortar a `PACKAGING_MAX_LENGTH` DESPUÉS de redactar.
-    packaging: Mapped[str | None] = mapped_column(
-        String(PACKAGING_MAX_LENGTH), nullable=True
-    )
+    # `packaging` (texto libre) fue retirada por `0019`: el envase pasó a ser
+    # parte de `format_id`, con vocabulario cerrado y CHECK. Solo sobrevive su
+    # copia textual de respaldo, abajo.
+    #
     # Copia textual de `packaging` que hace `0018`, para que `0019` pueda
     # dropear la columna y el downgrade recupere las variantes escritas a mano
     # ("Arroz importado a 320 la libra") — el mapeo a formato es muchos-a-uno y
