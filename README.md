@@ -55,6 +55,9 @@ según qué vayas a usar:
   `SAIMC_WAHA_SESSION` — solo si vas a recibir mensajes de WhatsApp vía WAHA
   (ver «Captura automática por WhatsApp» abajo). Sin la clave HMAC,
   `/webhooks/whatsapp` rechaza todo.
+- `SAIMC_ANTHROPIC_API_KEY` — opcional. Habilita el botón de asistente de
+  extracción por LLM en `/curation` (ver «Rutina de curaduría» abajo). Sin
+  ella el botón no aparece y la cola funciona igual que hoy.
 
 ### Tests
 
@@ -142,12 +145,23 @@ entorno». `/control`, el panel público de solo lectura, no.
    cantidad y provincia: confirmá o corregí cada campo. Si es imagen, no hay
    propuesta — no hay OCR en este slice — y se completa todo a mano mirando
    la evidencia.
-3. **Curar** guarda el registro en `prices_history` y pasa al siguiente.
+3. Si quedaron campos sin resolver y `SAIMC_ANTHROPIC_API_KEY` está puesta,
+   aparece un botón para pedirle al asistente que proponga solo esos huecos
+   (`docs/decisions.md`, 2026-09-01). Nunca corre solo — lo dispara el
+   operador — y cada campo que llena queda marcado visualmente para que se
+   revise antes de confirmar. Sin la clave, este paso no existe y el flujo es
+   el de siempre.
+4. **Curar** guarda el registro en `prices_history` y pasa al siguiente.
    **Descartar** lo marca `discarded` cuando el anuncio no trae información
    económica útil.
-4. `/curation/history` lista lo ya procesado; desde ahí se puede editar o
+5. `/curation/history` lista lo ya procesado; desde ahí se puede editar o
    borrar un registro curado.
-5. La API completa (Swagger) queda en `http://127.0.0.1:8000/docs`.
+
+Swagger está apagado a propósito: publicaba el mapa completo de endpoints sin
+autenticación, `/webhooks/whatsapp` incluido (`docs/decisions.md`,
+2026-08-30). `/docs`, con la misma auth que `/curation`, es el gestor de
+documentos del repositorio — spec, decisiones, este mismo README — legible
+desde el navegador, no la API.
 
 Cada confirmación o corrección es, al mismo tiempo, el dato que después mide
 H0 (spec.md §6.1: «la cola de curaduría es simultáneamente la herramienta
@@ -155,10 +169,18 @@ de trabajo y el instrumento de medición»).
 
 ## Catálogo (`/catalog`)
 
-Las dos listas que gobiernan el foco de la Fase 0 (`docs/decisions.md`,
+Las listas que gobiernan el foco de la Fase 0 (`docs/decisions.md`,
 2026-08-15): qué **productos piloto** puede proponer la curaduría, y qué
-**canales** de WhatsApp se siguen. Ambas piden la misma autenticación que
-`/curation`.
+**canales** de WhatsApp se siguen. Toda la sección pide la misma
+autenticación que `/curation`.
+
+Cada producto declara además sus **formatos de venta** — envase, cantidad y
+unidad, por ejemplo «saco, 40, lb». No es metadata: es la identidad de la
+serie de precios (`docs/decisions.md`, 2026-09-04). El precio de un saco de 40
+lb y el de uno de 33 lb no son el mismo dato normalizado a distinta cantidad;
+son dos series distintas, porque así se compra. Un formato con observaciones
+asociadas no se puede borrar sin más: se edita, o se elimina y las
+observaciones quedan sin formato para recurarse a mano.
 
 Desde acá también se dispara el backfill de histórico de un canal contra la
 API de WAHA (`SAIMC_WAHA_*`), para traer mensajes anteriores al alta del
@@ -166,10 +188,13 @@ canal.
 
 ## Panel de control (`/control`)
 
-Espejo del operador, sin autenticación. Responde dos preguntas: cuánto falta
+Espejo del operador, sin autenticación. Abre con una franja de estado —
+WhatsApp, última captura, cola pendiente, tasa de cambio— ordenada por
+gravedad: en un día sano no exige nada, y lo roto sube solo al primer lugar
+(`docs/decisions.md`, 2026-09-02). Debajo responde dos preguntas: cuánto falta
 contra la meta de `spec.md` §9 (500 registros, 3–5 productos, 2 provincias) y
-si lo que se está cargando sirve (matriz cruda producto × provincia, rango
-minorista). No es el dashboard público de la Fase 1.
+si lo que se está cargando sirve (matriz cruda producto × formato ×
+provincia, rango minorista). No es el dashboard público de la Fase 1.
 
 ## Medición de H0
 

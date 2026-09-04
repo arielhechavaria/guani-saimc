@@ -6598,3 +6598,36 @@ verde por primera vez desde que aparecieron estos dos. `test_respeta_la_ventana`
 sigue probando la exclusión de verdad, porque siembra su propia fila a −20 días
 con `date.today()` en vez de depender del seed. Se corrigió además un comentario
 que había caducado con el mismo problema: decía «hoy es 2026-08-26».
+
+## 2026-09-04 — README al día: asistente LLM, formatos de venta, Swagger apagado
+Contexto: revisión de fin de semana del README contra el código real. Tres
+huecos, cada uno de un momento distinto:
+- **`SAIMC_ANTHROPIC_API_KEY` no existía en `env.example` ni en el README**,
+  desde que el asistente de extracción por LLM se sumó a `/curation` el
+  2026-09-01. La variable ya gobernaba si el botón aparece (`assist_available
+  = bool(settings.anthropic_api_key)` en `curation.py`); solo faltaba
+  documentarla.
+- **La sección de `/curation` no mencionaba el asistente en absoluto.**
+- **El README seguía diciendo que `/docs` era Swagger** («La API completa
+  (Swagger) queda en `http://127.0.0.1:8000/docs`»), afirmación falsa desde el
+  2026-08-30: `docs_url=None` en `app.py`, y `/docs` es hoy el gestor de
+  documentos del repositorio. Quien siguiera el README a partir de esa fecha
+  llegaba a una vista que no tenía nada que ver con lo prometido.
+- **`/catalog` no mencionaba los formatos de venta**, la cadena de 8 commits
+  que cambió qué identifica una serie de precios (2026-09-04, «El formato de
+  venta es la identidad de la serie»).
+- **`/control` no mencionaba la franja de estado** que abre la vista desde el
+  2026-09-02, ni que la matriz ahora es producto × formato × provincia.
+Decisión: se agregan las cinco piezas, con el mismo estilo que ya tenía el
+README —una o dos frases, motivo y cita a `docs/decisions.md`—, sin reescribir
+lo que ya estaba bien. `env.example` gana el bloque de
+`SAIMC_ANTHROPIC_API_KEY` con el mismo formato que las demás: motivo, qué pasa
+sin ella, dónde está el costo documentado.
+No hay convención de «actualizar el README cada semana» en `CLAUDE.md` ni acá:
+es reactivo, se corrige cuando una revisión encuentra una afirmación vencida o
+un flujo real sin documentar. Esta entrada lo deja registrado por si conviene
+formalizarlo más adelante.
+Consecuencia: 1325 tests verdes, sin cambios — ningún test depende del texto
+del README ni de `env.example`. Verificado contra el código, no supuesto:
+`assist_available`, `docs_url=None` y `product_formats` en la plantilla de
+catálogo, los tres leídos antes de escribir la frase que los describe.
