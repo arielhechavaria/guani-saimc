@@ -403,6 +403,45 @@ class TestEscalaEspaciado:
         )
 
 
+class TestNingunColorFijoEnLasPlantillas:
+    """Ningún `<style>` de plantilla declara un color a mano.
+
+    Es el resultado de la repatriación (docs/decisions.md, 2026-09-04): la
+    auditoría del estado visual contó **60** colores fijos repartidos en
+    cuatro plantillas, y varios no salían de ninguna paleta del proyecto —
+    `#cac4d0`, que es del esquema violáceo base de Material; los tres badges
+    de vigencia de `/docs`; los ocho de la tira de salud de `/control`.
+    El síntoma era que un mismo estado se veía de un color en una vista y de
+    otro en la de al lado.
+
+    Un color fijo nuevo en una plantilla es una segunda paleta empezando: el
+    lugar de un color es `design_tokens.css`, que es lo único que las dos
+    hojas leen.
+    """
+
+    def test_ninguna_plantilla_declara_un_color_a_mano(self) -> None:
+        raiz = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "templates"
+
+        encontrados: list[str] = []
+        for tpl in sorted(raiz.glob("*.html")):
+            texto = tpl.read_text(encoding="utf-8")
+            if "<style>" not in texto:
+                continue
+            bloque = texto[texto.index("<style>") : texto.index("</style>")]
+            # Sin comentarios: nombrar un color al explicar de dónde salió es
+            # justamente lo que queremos que la gente escriba.
+            css = re.sub(r"/\*.*?\*/", "", bloque, flags=re.DOTALL)
+            for color in re.findall(r"#[0-9a-fA-F]{3,6}\b", css) + re.findall(
+                r"rgba?\([^)]+\)", css
+            ):
+                encontrados.append(f"{tpl.name}: {color}")
+
+        assert not encontrados, (
+            f"colores fijos en el CSS de una plantilla: {encontrados} — "
+            "el lugar de un color es design_tokens.css"
+        )
+
+
 class TestClasesDelJavascriptExisten:
     """Toda clase que el JS asigna tiene que estar definida en algún lado.
 

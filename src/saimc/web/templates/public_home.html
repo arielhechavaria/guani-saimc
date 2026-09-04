@@ -49,8 +49,15 @@
 
   .ph-stats { display: grid; gap: .75rem; margin-bottom: 1.5rem;
               grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
-  .ph-stat { border-radius: var(--ph-radius-sm); background: var(--m3-surface-container);
-             border: 1px solid var(--m3-outline-variant); padding: .8rem 1rem; }
+  /* Las dos superficies de la página: `.ph-surface` es la elevada (tarjeta de
+     precio, serie, tabla) y `.ph-inset` la hundida (stat, panel del hero).
+     Estaban escritas cinco veces con los mismos tres valores cada una. */
+  .ph-surface { border-radius: var(--ph-radius-sm); background: var(--m3-surface);
+                box-shadow: var(--ph-elev); }
+  .ph-inset { border-radius: var(--ph-radius-sm); background: var(--m3-surface-container);
+              border: 1px solid var(--m3-outline-variant); }
+
+  .ph-stat { padding: .8rem 1rem; }
   .ph-stat-label { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
                    color: var(--m3-on-surface-variant); }
   .ph-stat-value { margin-top: .2rem; font-family: var(--ph-font-heading); font-size: 1.75rem;
@@ -66,8 +73,7 @@
   .ph-map-province.is-sin-datos { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); }
   .ph-map-province:hover { fill: var(--ph-accent); stroke: var(--ph-accent); }
 
-  .ph-panel { border-radius: var(--ph-radius-sm); border: 1px solid var(--m3-outline-variant);
-              background: var(--m3-surface-container); padding: 1rem 1.1rem; }
+  .ph-panel { padding: 1rem 1.1rem; }
   .ph-panel-title { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
                      color: var(--ph-accent); padding-bottom: .6rem;
                      border-bottom: 1px solid var(--m3-outline-variant); margin-bottom: .7rem; }
@@ -108,8 +114,7 @@
      teléfono, sin necesidad de un corte responsive propio. */
   .ph-cards { display: grid; gap: 1.1rem; padding: 0; margin: 0 0 1.25rem; list-style: none;
               grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
-  .ph-card { border-radius: var(--ph-radius-sm); background: var(--m3-surface); box-shadow: var(--ph-elev);
-             padding: 1.1rem 1.2rem 1rem; }
+  .ph-card { padding: 1.1rem 1.2rem 1rem; }
   .ph-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
   .ph-card-product { font-family: var(--ph-font-heading); font-size: 1.375rem; }
   .ph-card-place { font-size: .6875rem; letter-spacing: .1em; text-transform: uppercase; opacity: .65; }
@@ -149,8 +154,7 @@
 
   .ph-series { display: grid; gap: 1.1rem; padding: 0; margin: 0; list-style: none;
                grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
-  .ph-serie { border-radius: var(--ph-radius-sm); background: var(--m3-surface); box-shadow: var(--ph-elev);
-              padding: 1rem 1.1rem .9rem; }
+  .ph-serie { padding: 1rem 1.1rem .9rem; }
   .ph-serie-head { display: flex; align-items: baseline; justify-content: space-between;
                     gap: .75rem; margin-bottom: .5rem; }
   .ph-serie-title { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
@@ -166,16 +170,15 @@
   .ph-serie-foot { margin: .55rem 0 0; font-size: .75rem; opacity: .75; }
 
   /* ── Tabla de cobertura accesible (respaldo del mapa) ───────────── */
-  .ph-table-card { border-radius: var(--ph-radius-sm); background: var(--m3-surface); box-shadow: var(--ph-elev);
-                    overflow: hidden; margin-top: 1.5rem; }
-  .m3-coverage { width: 100%; border-collapse: collapse; font-size: .9375rem; }
-  .m3-coverage caption { text-align: left; padding: 1rem 1.2rem 0; }
-  .m3-coverage th, .m3-coverage td { text-align: left; padding: .55rem .8rem;
+  .ph-table-card { overflow: hidden; margin-top: 1.5rem; }
+  .ph-coverage { width: 100%; border-collapse: collapse; font-size: .9375rem; }
+  .ph-coverage caption { text-align: left; padding: 1rem 1.2rem 0; }
+  .ph-coverage th, .ph-coverage td { text-align: left; padding: .55rem .8rem;
                  border-bottom: 1px solid var(--m3-divider); }
-  .m3-coverage th:last-child, .m3-coverage td:last-child { padding-right: 1.2rem; }
-  .m3-coverage th:first-child, .m3-coverage td:first-child { padding-left: 1.2rem; }
-  .m3-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .m3-coverage tr.is-sin-datos { opacity: .55; }
+  .ph-coverage th:last-child, .ph-coverage td:last-child { padding-right: 1.2rem; }
+  .ph-coverage th:first-child, .ph-coverage td:first-child { padding-left: 1.2rem; }
+  .ph-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ph-coverage tr.is-sin-datos { opacity: .55; }
 </style>
 {% endblock %}
 
@@ -202,15 +205,15 @@
   {% endif %}
 
   <div class="ph-stats">
-    <div class="ph-stat">
+    <div class="ph-inset ph-stat">
       <div class="ph-stat-label">Observaciones</div>
       <div class="ph-stat-value">{{ map.total_rows }}</div>
     </div>
-    <div class="ph-stat">
+    <div class="ph-inset ph-stat">
       <div class="ph-stat-label">Provincias con dato</div>
       <div class="ph-stat-value">{{ map.covered }}<small>/{{ map.provinces | length }}</small></div>
     </div>
-    <div class="ph-stat">
+    <div class="ph-inset ph-stat">
       <div class="ph-stat-label">Publicadas</div>
       <div class="ph-stat-value">{{ map.published }}</div>
     </div>
@@ -230,7 +233,7 @@
     </svg>
 
     <div class="ph-panels">
-      <div class="ph-panel">
+      <div class="ph-inset ph-panel">
         <div class="ph-panel-title">Leyenda</div>
         <ul class="ph-legend">
           <li><span class="ph-swatch is-publicada"></span> Publicada</li>
@@ -239,7 +242,7 @@
         </ul>
       </div>
 
-      <div class="ph-panel">
+      <div class="ph-inset ph-panel">
         <div class="ph-panel-title">Concentración de la muestra</div>
         {% set con_dato = map.provinces | selectattr('rows', 'gt', 0) | sort(attribute='rows', reverse=true) | list %}
         {% if con_dato %}
@@ -278,8 +281,8 @@
   {# El tamaño de muestra va al lado del mapa y no escondido: §9.0 lo exige
      desde el día 1, en lugar de un titular de precio. Y el gris no es un
      defecto del sistema, es dónde todavía no se está mirando. #}
-  <div class="ph-table-card">
-    <table class="m3-coverage">
+  <div class="ph-surface ph-table-card">
+    <table class="ph-coverage">
       <caption class="m3-subtitle">
         Observaciones por provincia. El color del mapa dice dónde hay datos, no
         si el precio es alto o bajo: para eso hace falta decidir cuántas
@@ -351,8 +354,8 @@
      cantidad de anuncios, lo mejor respaldado primero). Con n=1 el mínimo y el
      máximo van como «—»: hay un dato, no un rango — mismo criterio que la
      tarjeta, que en ese caso muestra solo la mediana. #}
-  <div class="ph-table-card">
-    <table class="m3-coverage ph-provinces">
+  <div class="ph-surface ph-table-card">
+    <table class="ph-coverage ph-provinces">
       <caption class="m3-subtitle">
         {{ selected_product }} por formato y provincia, ventana de
         {{ window_days }} días, en {{ cards[0].currency }}. «—» marca una sola
@@ -391,7 +394,7 @@
   {% else %}
   <ul class="ph-cards">
     {% for card in cards %}
-    <li class="ph-card">
+    <li class="ph-surface ph-card">
       <div class="ph-card-top">
         <span class="ph-card-product">{{ card.product_name }}</span>
         <span class="ph-card-place">{{ card.province_name }}</span>
@@ -473,7 +476,7 @@
 
   <ul class="ph-series">
     {% for serie in series %}
-    <li class="ph-serie">
+    <li class="ph-surface ph-serie">
       <div class="ph-serie-head">
         <span class="ph-serie-title">{{ serie.product_name }} · {{ serie.province_name }}</span>
         <span class="ph-serie-scale">{{ serie.currency }}/{{ serie.unit }}</span>

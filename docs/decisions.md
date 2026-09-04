@@ -6511,3 +6511,57 @@ cualquier vista con JS. Hoy el proyecto pasa limpio.
 Queda 1 de 4: `.ph-*` de la home pública (181 líneas, sistema paralelo completo
 con Alice serif). Es la única que toca una vista con usuarios reales y la que
 destraba la convergencia de breakpoints a 600/840.
+
+## 2026-09-04 — Repatriación, 4 de 4: la home pública, y el azul se queda
+Contexto: último paso. La auditoría del estado visual había marcado
+`public_home.html` como «un sistema paralelo completo» de 181 líneas. Al
+leerlo entero, no lo era: **usaba 30 veces `var(--m3-*)` contra 36 veces
+`var(--ph-*)`**, y dos de sus tokens —`--ph-hero-bg`, `--ph-hero-line`— eran
+alias literales de `var(--m3-surface)` y `var(--m3-outline-variant)`. La
+divergencia real se reducía a una fuente (Alice), cuatro colores, una sombra y
+tres radios; de esos, `--ph-neutral` y `--ph-radius-md` tenían **cero usos**.
+Decisión del operador, preguntada explícitamente: **el azul `#05668d` de la
+capa pública se queda** como color de marca, distinto del teal `--m3-primary`
+del operador. El visitante ve azul y el operador teal, a propósito. Material 3
+no exige un solo acento: exige que los que haya estén en el sistema. Así que no
+se unifica el color, se lo promueve a token.
+Se hicieron tres pasos, uno por commit:
+1. **Grillas fluidas** (`79a7466`). `.ph-cards` y `.ph-series` eran
+   `repeat(3, 1fr)` con un corte duro en 640px, y eso dejaba una banda mala que
+   nadie había medido: **entre 700 y 900px de ancho entraban tres tarjetas de
+   211 a 278px**, con la cifra de precio adentro. Con `auto-fit` +
+   `minmax(18rem, 1fr)`: 1200px da 3 columnas de 372px (idéntico), 700-900px da
+   2 de 325-425px (mejor), 360-600px da 1 (idéntico). Con las tres grillas
+   fluidas el `@media (max-width: 640px)` se quedó sin trabajo y **la escala de
+   breakpoints bajó de tres cortes a dos**. Es el camino para los otros dos: un
+   corte responsive es la confesión de que el layout no sabe acomodarse.
+2. **Tokens fuera del HTML** (`d7c0c33`). El `:root` con los `--ph-*` vivía
+   dentro del `<style>`; pasa a `design_tokens.css`. Ganan nombre propio
+   `--ph-on-accent`, `--ph-accent-wash` y `--ph-accent-2-line`, que eran un
+   `#fff`, un `rgba()` y un `#015a63`. Cuatro hairlines `rgba(0,0,0,.06-.18)`
+   pasan a `--m3-divider` / `--m3-outline-variant`, que es lo que el resto de
+   la app usa para lo mismo. Los dos alias del hero se eliminan.
+3. **Superficies consolidadas**. `.ph-card`, `.ph-serie` y `.ph-table-card`
+   declaraban los mismos tres valores (radio + fondo + sombra); `.ph-stat` y
+   `.ph-panel`, otros tres. Quedan `.ph-surface` (elevada) y `.ph-inset`
+   (hundida), y cada clase conserva solo su padding. Y `.m3-coverage` pasa a
+   `.ph-coverage`: llevaba prefijo de clase compartida y se definía dentro del
+   HTML, así que quien la buscara en la hoja no encontraba nada.
+Descartado, y esto corrige mi propia estimación: en el plan dije que caerían
+«entre 20 y 25 reglas». **Cayeron 2.** No se forzaron `.ph-filter a` →
+`.m3-chip-btn` (el público es píldora de 999px y el del operador un rectángulo
+de 8px), `.ph-stat` → `.m3-stat` (el valor es Alice de 28px, no Roboto Mono de
+20px), ni `.ph-conc-track` → `.m3-progress-thin` (habría hecho falta anular su
+`margin` y su `max-width`, dos líneas para ahorrar dos). Igual que en
+`docs_view`, la mayor parte de lo que la auditoría llamó duplicación es
+composición propia: el mapa, el gráfico SVG, la grilla del hero, el interior de
+la tarjeta.
+Consecuencia: 1323 tests verdes (+1). El `<style>` baja de 147 a 129 líneas de
+CSS real, de **16 colores fijos a 0** y de 1 media query a 0. Verificado
+declaración por declaración con tokens expandidos: los cinco elementos que
+cambiaron de clase resuelven **exactamente lo mismo** que antes; la única
+diferencia es que `#fff` ahora se escribe `#ffffff`.
+Con esto la repatriación está completa, y el resultado se fija en un tripwire
+nuevo: `TestNingunColorFijoEnLasPlantillas` recorre **todas** las plantillas y
+falla si alguna vuelve a declarar un color a mano. La auditoría había contado
+**60**; hoy hay **cero** en todo el proyecto.
