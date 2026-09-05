@@ -6631,3 +6631,28 @@ Consecuencia: 1325 tests verdes, sin cambios — ningún test depende del texto
 del README ni de `env.example`. Verificado contra el código, no supuesto:
 `assist_available`, `docs_url=None` y `product_formats` en la plantilla de
 catálogo, los tres leídos antes de escribir la frase que los describe.
+
+## 2026-09-05 — La barra de rango de la matriz habla la escala del titular
+Contexto: el operador revisó una celda de «paquete de 1 kg · minorista» con
+n=22 que titulaba 688,70 CUP por paquete y cuya barra decía 273,52–385,55.
+Verificó los 22 anuncios a mano y ninguno traía esos números — la mediana sí
+era correcta. No eran precios inventados: eran los extremos reales (603 y 850
+CUP el paquete) expresados por libra, la unidad canónica del producto
+(273,52 = 603 × 0,45359237). Cuando el titular pasó al precio de formato el
+2026-09-04 (design.md D8), los extremos de la barra se quedaron en la unidad
+base y la línea terminó mezclando dos escalas.
+Decisión: en `control.html`, mínimo, máximo y el tooltip de la mediana usan
+`format_minimum`/`format_maximum`/`format_median` cuando la celda tiene
+formato, y los campos por unidad base cuando no. El comparador
+«312,39/lb para comparar» del titular no se toca: ahí la unidad base es
+justamente lo que se quiere leer (D8), y es el único lugar donde corresponde.
+Descartado: mostrar las dos escalas en la barra —cuatro números por celda
+para una vista que ya es densa— y mover la conversión a `build_range_bar`,
+que no hace falta: el factor de formato es un multiplicador constante, así
+que la amplitud (una razón) y la posición logarítmica de la mediana no
+cambian. Solo cambian las etiquetas.
+Consecuencia: 1329 tests verdes. La regla —lo que rodea al titular se expresa
+en la escala del titular— queda cubierta por
+`TestLaBarraDeRangoHablaLaUnidadDelTitular` en `tests/test_control.py`,
+incluido el caso sin formato, que sigue en unidad base. La home pública ya
+era consistente (`format_minimum_text or minimum_text`) y no se tocó.

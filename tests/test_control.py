@@ -17,7 +17,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.extraction.measure import H0RunSummary
-from saimc.models import Currency, PriceHistory, Product, Province, RawIngestion, SaleFormat
+from saimc.models import (
+    Currency,
+    PriceHistory,
+    Product,
+    ProductFormat,
+    Province,
+    RawIngestion,
+    SaleFormat,
+)
 from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
 from saimc.web.app import app
 from saimc.web.auth import require_operator
@@ -298,6 +306,107 @@ class TestControlPanel:
         for semaforo in ("#dc3545", "#198754", "text-danger", "text-success"):
             assert semaforo not in texto.split("<!-- ---------- 8.")[1]
 
+
+
+class TestLaBarraDeRangoHablaLaUnidadDelTitular:
+    """Reporte del operador (2026-09-05): una celda de «paquete de 1 kg ·
+    minorista» titulaba 688,70 CUP por paquete y la barra decía 273,52–385,55.
+    Revisó los 22 anuncios y ninguno traía esos valores — porque no eran
+    precios de paquete sino precios por libra, la unidad canónica del producto.
+    El titular pasó al formato el 2026-09-04 (design.md D8) y los extremos de
+    la barra se quedaron en la unidad base: dos escalas en la misma línea.
+    """
+
+    def _celda_con_formato(self, session: Session, *, precios: list[str]) -> None:
+        """Azúcar canónica en lb, vendida en paquete de 1 kg. Los precios son
+        por paquete, que es lo que dice el anuncio."""
+        azucar = Product(
+            name="Azúcar blanca", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([azucar, scu])
+        session.commit()
+        paquete = ProductFormat(
+            product_id=azucar.id, packaging="paquete", quantity=Decimal("1"), unit="kg"
+        )
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/barra.txt",
+            content_hash="hash-barra",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add_all([paquete, origen])
+        session.flush()
+        for precio in precios:
+            session.add(
+                PriceHistory(
+                    product_id=azucar.id,
+                    province_id=scu.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    source_id=origen.id,
+                    unit="kg",
+                    quantity=Decimal("1"),
+                    sale_format=SaleFormat.RETAIL.value,
+                    format_id=paquete.id,
+                )
+            )
+        session.commit()
+
+    def test_los_extremos_son_precios_de_paquete_y_no_por_libra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Tres anuncios de 603, 700 y 850 CUP el paquete. La barra tiene que
+        decir 603 y 850 — números que el operador puede reconocer en la cola —
+        y no su equivalente por libra (273,52 y 385,55), que no dijo nadie."""
+        self._celda_con_formato(session, precios=["603", "700", "850"])
+
+        matriz = client.get("/control").text.split("<!-- ---------- 10.")[1]
+
+        assert "603.00" in matriz
+        assert "850.00" in matriz
+        assert "273.52" not in matriz
+        assert "385.55" not in matriz
+
+    def test_el_tooltip_de_la_mediana_acompana_a_los_extremos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La marca de la mediana vive dentro de la barra, así que su tooltip
+        tiene que hablar la misma escala que los dos extremos: 700 el paquete,
+        no 317,51 la libra."""
+        self._celda_con_formato(session, precios=["603", "700", "850"])
+
+        matriz = client.get("/control").text.split("<!-- ---------- 10.")[1]
+
+        assert 'title="Mediana 700.00"' in matriz
+
+    def test_una_sola_observacion_se_reporta_en_precio_de_paquete(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin rango que dibujar la barra se reemplaza por una frase, y esa
+        frase es el mismo número leído de otra forma: tiene que seguir siendo
+        el precio del paquete. El 273,52 por libra sigue apareciendo aparte,
+        como comparador entre formatos —ahí sí corresponde—."""
+        self._celda_con_formato(session, precios=["603"])
+
+        matriz = client.get("/control").text.split("<!-- ---------- 10.")[1]
+
+        assert "Una sola observación: 603.00" in matriz
+        assert "273.52/lb para comparar" in matriz
+
+    def test_sin_formato_la_barra_sigue_en_la_unidad_base(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin formato declarado no hay precio de formato que derivar: el
+        titular ya es el precio por unidad y la barra lo acompaña."""
+        _cargar(session, precios=["420", "440"])
+
+        matriz = client.get("/control").text.split("<!-- ---------- 10.")[1]
+
+        assert "420.00" in matriz
+        assert "440.00" in matriz
 
 class TestRangoMinorista:
     """`GET /control` también resume el precio minorista por producto,

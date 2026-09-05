@@ -995,22 +995,34 @@
               </span>
             </div>
 
+            {# La barra habla la escala del titular (2026-09-05). Cuando la celda
+               tiene formato el titular es el precio del formato, y unos extremos
+               por unidad base ponían dos escalas en la misma línea: el operador
+               leía 688,70 por paquete sobre una barra de 273,52–385,55 y buscaba
+               esos números en sus anuncios, donde no estaban. Los tres campos de
+               formato son `None` a la vez —los tres salen del mismo factor—, así
+               que una sola condición los cubre. La geometría no se toca: el
+               factor es un multiplicador constante y la amplitud es una razón. #}
+            {% set en_formato = cell.format_median is not none %}
+            {% set minimo = cell.format_minimum if en_formato else cell.minimum %}
+            {% set maximo = cell.format_maximum if en_formato else cell.maximum %}
+            {% set mediana = cell.format_median if en_formato else cell.median %}
             {% if item.bar.has_range %}
             <div class="m3-range">
-              <span>{{ "%.2f"|format(cell.minimum) }}</span>
+              <span>{{ "%.2f"|format(minimo) }}</span>
               <span class="m3-range-track">
                 <span class="m3-range-fill" style="width: {{ "%.1f"|format(item.bar.width_pct) }}%;">
                   <span class="m3-range-median" style="left: {{ "%.1f"|format(item.bar.median_pct) }}%;"
-                        title="Mediana {{ "%.2f"|format(cell.median) }}"></span>
+                        title="Mediana {{ "%.2f"|format(mediana) }}"></span>
                 </span>
               </span>
-              <span>{{ "%.2f"|format(cell.maximum) }}</span>
+              <span>{{ "%.2f"|format(maximo) }}</span>
             </div>
             {% else %}
             <div class="m3-range">
               <span class="m3-sm m3-muted">
-                {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(cell.median) }}
-                {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(cell.median) }}{% endif %}
+                {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(mediana) }}
+                {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(mediana) }}{% endif %}
               </span>
             </div>
             {% endif %}
