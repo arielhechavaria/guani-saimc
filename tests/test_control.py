@@ -1511,3 +1511,76 @@ class TestFranjaDeEstado:
 
         assert response.status_code == 200
         assert "no responde" in response.text
+
+
+class TestLaTablaDeSospechososDeclaraDeDondeSaleLaReferencia:
+    """La referencia replegada a todas las provincias (2026-09-05) tiene que
+    verse en la fila. Si no, el operador no puede descartar que lo que mira sea
+    una diferencia regional real, y esta tabla existe justamente para que él
+    juzgue con los números a la vista."""
+
+    def _pollo(
+        self, session: Session, *, con_referencia_propia: bool
+    ) -> None:
+        """La caja de 40 lb a 24.800 marcada «por libra», sola en Santiago.
+        La Habana aporta la referencia (600, 620, 640 -> mediana 620)."""
+        pollo = Product(
+            name="Pollo", category="cárnicos", unit="lb", aliases=[], is_pilot=True
+        )
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([pollo, santiago, habana])
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/sospechosa.txt",
+            content_hash="hash-sospechosa",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+
+        def fila(provincia: Province, precio: str, cantidad: str, basis: str | None) -> None:
+            session.add(
+                PriceHistory(
+                    product_id=pollo.id,
+                    province_id=provincia.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    source_id=origen.id,
+                    unit="lb",
+                    quantity=Decimal(cantidad),
+                    sale_format=SaleFormat.RETAIL.value,
+                    price_basis=basis,
+                )
+            )
+
+        for precio in ("600", "620", "640"):
+            fila(habana, precio, "1", None)
+        if con_referencia_propia:
+            for precio in ("400", "400"):
+                fila(santiago, precio, "1", None)
+        fila(santiago, "24800", "40", "unit")
+        session.commit()
+
+    def test_marca_la_referencia_que_vino_de_otras_provincias(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._pollo(session, con_referencia_propia=False)
+
+        texto = client.get("/control").text
+
+        assert "todas las provincias" in texto
+
+    def test_no_la_marca_cuando_la_provincia_puso_su_propia_referencia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Santiago tiene sus dos filas de una libra, así que la referencia es
+        la suya y no hay nada que aclarar."""
+        self._pollo(session, con_referencia_propia=True)
+
+        texto = client.get("/control").text
+
+        assert "todas las provincias" not in texto

@@ -958,6 +958,12 @@ class BasisSuspect:
     as_total: Decimal
     #: Mediana de las filas NO ambiguas de la misma celda, contra la que se compara.
     reference: Decimal
+    #: `True` cuando `reference` no salió de la provincia de la fila sino de
+    #: todas juntas, porque la propia no tenía ninguna fila no ambigua
+    #: (2026-09-05). No se puede esconder: sin ese dato el operador no puede
+    #: descartar que lo que ve sea una diferencia regional real, y quien juzga
+    #: sigue siendo él.
+    reference_from_all_provinces: bool = False
 
     @property
     def ratio_to_reference(self) -> Decimal:
@@ -996,10 +1002,26 @@ def detect_basis_suspects(
     **Fila no ambigua** es la que no puede estar mal marcada de esta forma:
     `quantity == 1` (unitario y total son el mismo número) o
     `price_basis == 'total'` (el operador ya lo resolvió, y en el otro sentido).
-    Si una celda no tiene ninguna, **no hay veredicto**: la fila no se reporta.
-    Es el caso de Picadillo, cuyas cuatro filas `'unit'` con `quantity != 1`
-    están bien y no tienen contra qué contrastarse — inventarles un juicio sería
-    exactamente el error que este diseño evita (`docs/backlog.md`, 2026-08-22).
+    Si el producto no tiene ninguna, **no hay veredicto**: la fila no se
+    reporta. Es el caso de Picadillo, cuyas cuatro filas `'unit'` con
+    `quantity != 1` están bien y no tienen contra qué contrastarse — inventarles
+    un juicio sería exactamente el error que este diseño evita
+    (`docs/backlog.md`, 2026-08-22).
+
+    **La referencia se repliega a todas las provincias cuando la propia no
+    tiene ninguna** (2026-09-05). Hasta entonces el vecindario era siempre
+    producto × provincia × unidad, y eso dejaba ciego al detector justo en el
+    producto de una sola carga: la caja de pollo de 40 lb a 24.800 marcada
+    `'unit'` —que puso la caja en 992.000 CUP— era la única fila de pollo en
+    Santiago y nunca se reportó. No hay umbral nuevo: la regla sigue siendo
+    cuál de las dos lecturas queda más cerca en proporción, y lo único que
+    cambia es de dónde sale la mediana. Se sostiene porque las dos escalas no
+    se parecen — el error que se busca es del orden del factor de cantidad o
+    de conversión (×40, ×99) mientras que la diferencia real de precio entre
+    provincias es de ×1,5 como mucho—, pero el repliegue queda anotado en
+    `BasisSuspect.reference_from_all_provinces` para que el operador pueda
+    descartar una diferencia regional él mismo. Es un repliegue y no un
+    reemplazo: donde la provincia ya tenía vecindario, manda el suyo.
 
     Recorre el mismo universo de filas que `compute_retail_ranges` y con los
     mismos criterios de moneda y unidad; lo que cambia es que no agrega, señala.
@@ -1028,7 +1050,12 @@ def detect_basis_suspects(
     )
 
     SuspectKey = tuple[str, str | None, str]
+    # Mismo vecindario sin la provincia: es el repliegue, no un segundo criterio
+    # (ver docstring). Se llena en paralelo con el de arriba y solo se consulta
+    # cuando la provincia de la fila no aportó ninguna referencia.
+    ProductKey = tuple[str, str]
     unambiguous: dict[SuspectKey, list[Decimal]] = {}
+    unambiguous_anywhere: dict[ProductKey, list[Decimal]] = {}
     candidates: list[tuple[SuspectKey, dict[str, object]]] = []
 
     for (
@@ -1070,6 +1097,7 @@ def detect_basis_suspects(
             )
             if resolved is not None:
                 unambiguous.setdefault(key, []).append(resolved)
+                unambiguous_anywhere.setdefault((key[0], key[2]), []).append(resolved)
             continue
 
         if price_basis != "unit":
@@ -1103,8 +1131,11 @@ def detect_basis_suspects(
     suspects = []
     for key, row in candidates:
         sample = unambiguous.get(key)
+        from_all_provinces = not sample
         if not sample:
-            continue  # sin referencia no hay veredicto
+            sample = unambiguous_anywhere.get((key[0], key[2]))
+        if not sample:
+            continue  # sin referencia en ninguna provincia no hay veredicto
         reference = statistics.median(sample)
         if reference <= 0:
             continue
@@ -1116,7 +1147,13 @@ def detect_basis_suspects(
         if _proportional_distance(as_total, reference) < _proportional_distance(
             as_unit, reference
         ):
-            suspects.append(BasisSuspect(reference=reference, **row))  # type: ignore[arg-type]
+            suspects.append(
+                BasisSuspect(
+                    reference=reference,
+                    reference_from_all_provinces=from_all_provinces,
+                    **row,  # type: ignore[arg-type]
+                )
+            )
 
     suspects.sort(key=lambda s: -s.ratio_to_reference)
     return suspects

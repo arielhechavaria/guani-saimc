@@ -6692,3 +6692,37 @@ CUP sigue mal en la base y se corrige a mano desde `/curation/{id}/edit`.
 Queda pendiente el otro hallazgo del mismo reporte —`detect_basis_suspects` no
 puede levantar una fila cuya celda tiene una sola observación, porque no hay
 fila no ambigua contra la cual contrastar (`cells.py`)—, sin decidir.
+
+## 2026-09-05 — La referencia de `detect_basis_suspects` se repliega a todas las provincias
+Contexto: la caja de pollo de 40 lb a 24.800 marcada `price_basis='unit'` —la
+que puso la caja en 992.000 CUP y que el operador encontró a ojo en la
+matriz— nunca fue reportada por el detector. Verificado con un test que
+reproduce el escenario antes de tocar el código: era la única fila de pollo en
+Santiago, y sin ninguna fila no ambigua en esa provincia no había mediana
+contra la cual contrastarla. El vecindario era producto × provincia × unidad,
+así que el detector quedaba ciego justo en el producto de una sola carga, que
+es el más frágil y el que nadie más va a revisar.
+Decisión: cuando la provincia de la fila no aporta ninguna fila no ambigua, la
+referencia se repliega a la mediana de todas las provincias del mismo producto
+y unidad. Es un repliegue, no un reemplazo: donde la provincia ya tenía
+vecindario, sigue mandando el suyo. La fila señalada lo declara en
+`BasisSuspect.reference_from_all_provinces`, y `/control` lo escribe en la
+propia fila («todas las provincias») además de en la caption — sin ese dato el
+operador no puede descartar que lo que ve sea una diferencia regional real, y
+quien juzga sigue siendo él.
+No hay umbral nuevo y §12.6 sigue respetada: la regla es la misma —cuál de las
+dos lecturas queda más cerca en proporción de la referencia— y lo único que
+cambia es de dónde sale la mediana. Se sostiene porque las dos escalas no se
+parecen: el error que se busca es del orden del factor de cantidad o de
+conversión (×40, ×99) mientras que la diferencia real de precio entre
+provincias es de ×1,5 como mucho.
+Descartado: usar siempre todas las provincias, que tiraría la señal local
+donde sí existe; y detectar la fila por lo absurdo del precio de formato, que
+exige exactamente el corte de precio que §12.6 prohíbe. Queda anotada, sin
+decidir, una tercera idea que tampoco necesita umbral: comparar el precio
+publicado contra los números que aparecen en el texto crudo del anuncio —para
+esta fila, 24.800 está en el anuncio y 992.000 no—.
+Consecuencia: 1342 tests verdes. El caso Picadillo del 2026-08-22 queda
+intacto y con test propio: un producto sin filas no ambiguas en NINGUNA
+provincia sigue sin veredicto. Esto cierra el segundo hallazgo del reporte del
+2026-09-05; el primero es la entrada anterior sobre la copia de `price_basis`.

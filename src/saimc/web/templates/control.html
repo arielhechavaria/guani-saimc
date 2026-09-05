@@ -714,8 +714,10 @@
         Ordenadas por cuánto se aparta la lectura declarada. Se compara contra la
         mediana de las filas no ambiguas de la misma celda —cantidad uno, o
         <code>price_basis</code> ya resuelto como total—, nunca contra un corte
-        de precio fijo. Una celda sin filas no ambiguas no aparece acá: no hay
-        contra qué contrastarla.
+        de precio fijo. Si la provincia de la fila no tiene ninguna, la referencia
+        se repliega a todas juntas y la fila lo dice; un producto sin filas no
+        ambiguas en ninguna provincia no aparece acá, porque no hay contra qué
+        contrastarlo.
       </caption>
       <thead>
         <tr>
@@ -736,7 +738,15 @@
           <td class="num">{{ s.price }} × {{ s.quantity | round(3) }} {{ s.row_unit }}</td>
           <td class="num">{{ s.as_unit | round(2) }}/{{ s.unit }}</td>
           <td class="num"><strong>{{ s.as_total | round(2) }}</strong>/{{ s.unit }}</td>
-          <td class="num">{{ s.reference | round(2) }}/{{ s.unit }}</td>
+          {# La referencia replegada se marca en la fila y no solo en la caption:
+             el operador tiene que poder descartar una diferencia regional real
+             sin ir a buscar de dónde salió el número (2026-09-05). #}
+          <td class="num">
+            {{ s.reference | round(2) }}/{{ s.unit }}
+            {%- if s.reference_from_all_provinces %}
+            <br /><span class="m3-sm m3-dim">todas las provincias</span>
+            {%- endif %}
+          </td>
           <td class="num">×{{ s.ratio_to_reference | round(1) }}</td>
         </tr>
         {% endfor %}

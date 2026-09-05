@@ -207,3 +207,152 @@ class TestDetectBasisSuspects:
         sospechosas = detect_basis_suspects(session)
 
         assert [s.as_unit for s in sospechosas] == [Decimal("31000"), Decimal("3100")]
+
+
+class TestLaReferenciaSeAmpliaCuandoLaProvinciaNoTiene:
+    """Caso real del 2026-09-05: una caja de pollo de 40 lb a 24.800 se curó
+    como «precio por libra», así que la caja pasó a valer 992.000 CUP. El
+    detector no la levantó — era la única fila de pollo en Santiago, y sin
+    ninguna fila no ambigua en esa provincia no había contra qué contrastarla.
+
+    Quedarse callado ahí es la decisión del 2026-08-22 y sigue siendo correcta
+    cuando el producto no tiene referencia en ninguna parte. Pero cuando sí la
+    tiene en otra provincia, callarse deja ciego al detector justo en el
+    producto de una sola carga, que es el más frágil.
+
+    Ampliar el vecindario no introduce ningún umbral (§12.6): la regla sigue
+    siendo «cuál de las dos lecturas queda más cerca en proporción», y lo único
+    que cambia es de dónde sale la referencia. La escala del error que se busca
+    es multiplicativa y del orden del factor de cantidad o de conversión (×40,
+    ×99), mientras que la diferencia real de precio entre provincias es de
+    ×1,5 como mucho: la comparación sigue discriminando por márgenes enormes.
+    """
+
+    def _pollo(self, session: Session) -> tuple[Product, Province, Province]:
+        pollo = Product(name="Pollo", category="cárnicos", unit="lb", aliases=[])
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([pollo, santiago, habana])
+        session.commit()
+        return pollo, santiago, habana
+
+    def test_la_referencia_puede_venir_de_otra_provincia(self, session: Session) -> None:
+        """La caja de 40 lb a 24.800, sola en Santiago, contra tres filas de
+        una libra en La Habana (600, 620, 640 -> mediana 620).
+
+        Leída como declara, la fila vale 24.800/lb y se aparta 40 veces de esa
+        mediana. Leída como total da 620/lb, que cae justo encima. Gana total,
+        así que se señala.
+        """
+        pollo, santiago, habana = self._pollo(session)
+        origen = _ingestion(session, "hash-ref-otra-provincia")
+        for precio in ("600", "620", "640"):
+            _precio(
+                session, product=pollo, province=habana, price=precio, source=origen,
+                unit="lb", quantity="1", sale_format=RETAIL,
+            )
+        _precio(
+            session, product=pollo, province=santiago, price="24800", source=origen,
+            unit="lb", quantity="40", sale_format=RETAIL, price_basis="unit",
+        )
+        session.commit()
+
+        sospechosas = detect_basis_suspects(session)
+
+        assert len(sospechosas) == 1
+        caso = sospechosas[0]
+        assert caso.province_name == "Santiago de Cuba"
+        assert caso.as_unit == Decimal("24800")
+        assert caso.as_total == Decimal("620")
+        assert caso.reference == Decimal("620")
+
+    def test_la_fila_señalada_declara_que_su_referencia_es_de_otras_provincias(
+        self, session: Session
+    ) -> None:
+        """Quien juzga es el operador, así que no puede quedar escondido que la
+        referencia no es de la provincia de la fila: sin ese dato no puede
+        descartar una diferencia regional real."""
+        pollo, santiago, habana = self._pollo(session)
+        origen = _ingestion(session, "hash-ref-declara-origen")
+        for precio in ("600", "620", "640"):
+            _precio(
+                session, product=pollo, province=habana, price=precio, source=origen,
+                unit="lb", quantity="1", sale_format=RETAIL,
+            )
+        _precio(
+            session, product=pollo, province=santiago, price="24800", source=origen,
+            unit="lb", quantity="40", sale_format=RETAIL, price_basis="unit",
+        )
+        session.commit()
+
+        assert detect_basis_suspects(session)[0].reference_from_all_provinces is True
+
+    def test_la_provincia_propia_manda_cuando_tiene_referencia(
+        self, session: Session
+    ) -> None:
+        """La ampliación es un repliegue, no un reemplazo: donde ya había
+        vecindario propio, el resultado no cambia. Santiago tiene sus dos filas
+        de una libra a 400, así que la referencia es 400 y no la mediana de
+        La Habana (620)."""
+        pollo, santiago, habana = self._pollo(session)
+        origen = _ingestion(session, "hash-ref-propia-manda")
+        for precio in ("600", "620", "640"):
+            _precio(
+                session, product=pollo, province=habana, price=precio, source=origen,
+                unit="lb", quantity="1", sale_format=RETAIL,
+            )
+        for precio in ("400", "400"):
+            _precio(
+                session, product=pollo, province=santiago, price=precio, source=origen,
+                unit="lb", quantity="1", sale_format=RETAIL,
+            )
+        _precio(
+            session, product=pollo, province=santiago, price="24800", source=origen,
+            unit="lb", quantity="40", sale_format=RETAIL, price_basis="unit",
+        )
+        session.commit()
+
+        caso = detect_basis_suspects(session)[0]
+
+        assert caso.reference == Decimal("400")
+        assert caso.reference_from_all_provinces is False
+
+    def test_sin_referencia_en_ninguna_provincia_sigue_sin_veredicto(
+        self, session: Session
+    ) -> None:
+        """El caso Picadillo del 2026-08-22, intacto: si TODAS las filas del
+        producto son ambiguas, ampliar el vecindario no aporta ninguna
+        referencia y el detector se sigue callando."""
+        pollo, santiago, habana = self._pollo(session)
+        origen = _ingestion(session, "hash-ref-ninguna")
+        for provincia, precio, cantidad in (
+            (santiago, "525", "40"), (habana, "515", "50"), (habana, "460", "40"),
+        ):
+            _precio(
+                session, product=pollo, province=provincia, price=precio, source=origen,
+                unit="lb", quantity=cantidad, sale_format=RETAIL, price_basis="unit",
+            )
+        session.commit()
+
+        assert detect_basis_suspects(session) == []
+
+    def test_la_referencia_ampliada_no_cruza_productos(self, session: Session) -> None:
+        """El vecindario se amplía en provincia, nunca en producto: el precio
+        del arroz no dice nada sobre el del pollo."""
+        pollo, santiago, habana = self._pollo(session)
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        session.add(arroz)
+        session.commit()
+        origen = _ingestion(session, "hash-ref-no-cruza")
+        for precio in ("300", "310", "320"):
+            _precio(
+                session, product=arroz, province=habana, price=precio, source=origen,
+                unit="lb", quantity="1", sale_format=RETAIL,
+            )
+        _precio(
+            session, product=pollo, province=santiago, price="24800", source=origen,
+            unit="lb", quantity="40", sale_format=RETAIL, price_basis="unit",
+        )
+        session.commit()
+
+        assert detect_basis_suspects(session) == []
