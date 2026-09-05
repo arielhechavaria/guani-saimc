@@ -197,24 +197,37 @@
     </label>
   </div>
 
-  {# Envase y compra mínima: opcionales, colapsados. `<details>` nativo, sin JS. #}
+  {# Envase: entra en la clave de `ProductFormat` (formats.py::get_or_create_format,
+     junto con cantidad y unidad de esta fila) y, desde el 2026-09-05, es
+     evidencia que la extracción lee para proponer `price_basis`
+     (`_packaging_price_basis`, docs/decisions.md). No es un dato secundario,
+     así que va a la vista igual que `sale_format` y `price_basis` de arriba,
+     no colapsado con lo que sí es opcional de verdad. #}
+  <div style="margin-top:22px">
+    <label class="m3-field" style="display:block">
+      <span class="m3-field-label" for="packaging_{{ index0 }}">Envase</span>
+      {# Vocabulario cerrado (saimc.units.PACKAGING): sin texto libre no hay
+         dónde tipear un envase mal escrito ni un teléfono. #}
+      <select name="packaging_{{ index0 }}" id="packaging_{{ index0 }}" class="m3-select">
+        <option value=""{% if not row.packaging %} selected{% endif %}>— sin envase —</option>
+        {% for envase in packaging %}
+        <option value="{{ envase }}"{% if row.packaging == envase %} selected{% endif %}>{{ envase | capitalize }}</option>
+        {% endfor %}
+      </select>
+      <span class="m3-help">
+        Sin envase la fila no queda ligada a un formato publicable («caja de 40 lb», etc.)
+        y la extracción pierde una de sus pistas para saber si el precio es del lote.
+      </span>
+    </label>
+  </div>
+
+  {# Compra mínima: sí es opcional de verdad — no entra en ninguna clave ni
+     regla de extracción. `<details>` nativo, sin JS. #}
   <details class="mt-1" style="margin-top:16px">
     <summary class="m3-summary m3-btn m3-btn-text" style="padding:6px 10px">
-      <span class="m3-icon m3-icon-sm">add</span>Envase y compra mínima (opcional)
+      <span class="m3-icon m3-icon-sm">add</span>Compra mínima (opcional)
     </summary>
     <div class="m3-grid-fields" style="margin-top:18px; padding-left:12px; border-left:2px solid var(--m3-outline-variant)">
-      <label class="m3-field">
-        <span class="m3-field-label" for="packaging_{{ index0 }}">Envase (opcional)</span>
-        {# El envase + cantidad + unidad de esta fila resuelven el formato de
-           venta al confirmar. Vocabulario cerrado (saimc.units.PACKAGING): sin
-           texto libre no hay dónde tipear un envase mal escrito ni un teléfono. #}
-        <select name="packaging_{{ index0 }}" id="packaging_{{ index0 }}" class="m3-select">
-          <option value=""{% if not row.packaging %} selected{% endif %}>— sin envase —</option>
-          {% for envase in packaging %}
-          <option value="{{ envase }}"{% if row.packaging == envase %} selected{% endif %}>{{ envase | capitalize }}</option>
-          {% endfor %}
-        </select>
-      </label>
       <label class="m3-field">
         <span class="m3-field-label" for="min_purchase_{{ index0 }}">Compra mínima (opcional)</span>
         <input type="text" name="min_purchase_{{ index0 }}" id="min_purchase_{{ index0 }}" value="{{ row.min_purchase }}" class="m3-input m3-input-num" placeholder="sin mínimo" />
