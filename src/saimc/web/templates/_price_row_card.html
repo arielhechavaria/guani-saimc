@@ -16,6 +16,12 @@
    ALMACENAMIENTO, no de la copia de UI en español. #}
 {% set unit_words = {"lb": "libra", "kg": "kilo", "l": "litro", "ml": "mililitro",
                      "unidad": "unidad", "docena": "docena", "caja": "caja"} %}
+{# El plural va como diccionario propio y no como regla: «unidad» pluraliza en
+   «unidades» y cualquier regla que la contemple es más larga que la tabla. Lo
+   lee la opción «total» de `price_basis` y el relabel en vivo de
+   `_price_row_scripts.html`, vía `data-basis-label-plural`. #}
+{% set unit_words_plural = {"lb": "libras", "kg": "kilos", "l": "litros", "ml": "mililitros",
+                            "unidad": "unidades", "docena": "docenas", "caja": "cajas"} %}
 <div class="m3-card m3-card-pad m3-row-card{% if not row.product_id %} is-review{% endif %}" style="margin-bottom:16px">
 
   {% if not edit_mode %}
@@ -98,7 +104,7 @@
       <select name="unit_{{ index0 }}" id="unit_{{ index0 }}" class="m3-select">
         <option value="" {% if not row.unit %}selected{% endif %}>— sin unidad —</option>
         {% for unit in units %}
-        <option value="{{ unit }}" data-basis-label="{{ unit_words.get(unit, unit) }}" {% if row.unit == unit %}selected{% endif %}>{{ unit }}</option>
+        <option value="{{ unit }}" data-basis-label="{{ unit_words.get(unit, unit) }}" data-basis-label-plural="{{ unit_words_plural.get(unit, unit) }}" {% if row.unit == unit %}selected{% endif %}>{{ unit }}</option>
         {% endfor %}
       </select>
     </label>
@@ -160,7 +166,28 @@
         <option value="unit"{% if row.price_basis == "unit" %} selected{% endif %}>
           {% if row.unit %}Precio por {{ unit_words.get(row.unit, row.unit) }}{% else %}Precio de una sola unidad de esta fila{% endif %}
         </option>
-        <option value="total"{% if row.price_basis == "total" %} selected{% endif %}>Precio total del anuncio</option>
+        {# «Precio total del anuncio» no nombraba nada: para «caja de 40 lb a
+           24800» ninguna de las dos opciones decía lo que el anuncio cotiza, y
+           quien piensa en cajas lee «una caja es una unidad» y elige la de
+           arriba — el error real del 2026-09-05, que multiplicó el precio por
+           40. Nombrando el lote («las 40 libras juntas») la pareja queda
+           inequívoca contra «Precio por libra».
+
+           El envase NO entra en la copia aunque esté declarado: «la caja
+           completa» obligaría a conocer el género de cada uno («la paquete») y
+           «a granel» no admite artículo — el mismo motivo por el que
+           `control.html` escribe «por caja» y no «la caja». Cantidad y unidad
+           alcanzan, y están siempre que la pregunta importe.
+
+           `row.quantity` es el string del form: los ceros de escala se recortan
+           porque `str(Decimal)` sobre la columna da «40.00». Cantidad 1 vuelve
+           a la copia genérica — ahí las dos lecturas son el mismo número y el
+           campo se oculta, salvo sin JS. #}
+        {%- set cantidad = row.quantity.rstrip("0").rstrip(".") if "." in row.quantity else row.quantity %}
+        {%- set lote = cantidad ~ " " ~ unit_words_plural.get(row.unit, row.unit) if cantidad and cantidad != "1" and row.unit else "" %}
+        <option value="total"{% if row.price_basis == "total" %} selected{% endif %}>
+          {% if lote %}Precio de las {{ lote }} juntas{% else %}Precio total del anuncio{% endif %}
+        </option>
       </select>
       <span class="m3-help">
         Obligatorio solo si la cantidad no es 1. Ejemplo real: «Arroz guyanés a 340lb» cargado

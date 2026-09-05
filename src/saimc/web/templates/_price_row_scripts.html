@@ -1,31 +1,50 @@
 <script>
-  // Relabel en vivo de la opción "por unidad" del control de `price_basis`
-  // cuando el operador cambia la unidad de la fila DESPUÉS de cargar la
-  // página. Es una mejora cosmética, nunca el mecanismo probado: el texto
-  // server-rendered (macro `price_row_card`, `_price_row_card.html`) es lo
-  // que el escenario de la especificación afirma. Si este script nunca
-  // corre, la etiqueta puede quedar desactualizada pero el valor enviado y
-  // toda regla del servidor siguen intactos (design.md, D8).
+  // Relabel en vivo de las DOS opciones del control de `price_basis` cuando el
+  // operador cambia la unidad o la cantidad de la fila DESPUÉS de cargar la
+  // página. El texto server-rendered (macro `price_row_card`,
+  // `_price_row_card.html`) sigue siendo lo que el escenario de la
+  // especificación afirma, y si este script nunca corre el valor enviado y toda
+  // regla del servidor quedan intactos (design.md, D8).
   //
+  // Pero acá no es solo cosmético como el relabel original: en la cola la fila
+  // nueva llega vacía y el operador escribe cantidad y unidad JUSTO ANTES de
+  // responder el basis. Sin esto, la opción "total" diría «Precio total del
+  // anuncio» en el único momento en que se la lee — que es el error del
+  // 2026-09-05 documentado en `_price_row_card.html`.
+  function syncBasisLabels(index) {
+    var basisSelect = document.getElementById('price_basis_' + index);
+    var unitSelect = document.getElementById('unit_' + index);
+    if (!basisSelect || !unitSelect) return;
+
+    var selectedUnit = unitSelect.options[unitSelect.selectedIndex];
+    var singular = selectedUnit ? selectedUnit.getAttribute('data-basis-label') : null;
+    var plural = selectedUnit ? selectedUnit.getAttribute('data-basis-label-plural') : null;
+
+    var unitOption = basisSelect.querySelector('option[value="unit"]');
+    if (unitOption) {
+      unitOption.textContent = singular
+        ? ('Precio por ' + singular)
+        : 'Precio de una sola unidad de esta fila';
+    }
+
+    var totalOption = basisSelect.querySelector('option[value="total"]');
+    var quantityInput = document.getElementById('quantity_' + index);
+    if (totalOption) {
+      // `parseFloat` y de vuelta a string recorta los ceros de escala igual que
+      // el `rstrip` del server: "40.00" -> 40, "0.50" -> 0.5.
+      var cantidad = quantityInput ? parseFloat(quantityInput.value) : NaN;
+      totalOption.textContent = (plural && isFinite(cantidad) && cantidad !== 1)
+        ? ('Precio de las ' + cantidad + ' ' + plural + ' juntas')
+        : 'Precio total del anuncio';
+    }
+  }
+
   // Delegado en `document`, mismo estilo que el botón "Eliminar" de la fila
   // en curation.html: las filas se agregan/quitan del DOM sin recargar, así
   // que un listener atado a un elemento puntual no cubriría filas nuevas.
   document.addEventListener('change', function (event) {
     var unitSelect = event.target.closest('select[id^="unit_"]');
-    if (!unitSelect) return;
-
-    var index = unitSelect.id.slice('unit_'.length);
-    var basisSelect = document.getElementById('price_basis_' + index);
-    if (!basisSelect) return;
-
-    var unitOption = basisSelect.querySelector('option[value="unit"]');
-    if (!unitOption) return;
-
-    var selectedUnit = unitSelect.options[unitSelect.selectedIndex];
-    var label = selectedUnit ? selectedUnit.getAttribute('data-basis-label') : null;
-    unitOption.textContent = label
-      ? ('Precio por ' + label)
-      : 'Precio de una sola unidad de esta fila';
+    if (unitSelect) syncBasisLabels(unitSelect.id.slice('unit_'.length));
   });
 
   // Oculta el campo `price_basis` mientras la cantidad valga 1: ahí "unit" y
@@ -47,7 +66,9 @@
 
   document.addEventListener('input', function (event) {
     var quantityInput = event.target.closest('input[id^="quantity_"]');
-    if (quantityInput) syncBasisVisibility(quantityInput);
+    if (!quantityInput) return;
+    syncBasisVisibility(quantityInput);
+    syncBasisLabels(quantityInput.id.slice('quantity_'.length));
   });
 
   document.querySelectorAll('input[id^="quantity_"]').forEach(syncBasisVisibility);

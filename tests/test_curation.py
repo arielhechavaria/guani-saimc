@@ -496,7 +496,7 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert '<option value="l" data-basis-label="litro" selected>' in response.text
+        assert '<option value="l" data-basis-label="litro" data-basis-label-plural="litros" selected>' in response.text
 
     def test_el_campo_price_basis_trae_el_gancho_para_ocultarse(
         self, client: TestClient, session: Session
@@ -2435,6 +2435,143 @@ class TestPriceBasisTemplate:
         assert "Precio por libra" in response.text
 
 
+class TestLaOpcionTotalNombraElLoteQueCubre:
+    """Caso real del 2026-09-05: un anuncio de «caja de 40 lb a 24800» se curó
+    con `price_basis='unit'`, así que 24800 se leyó como precio POR LIBRA y la
+    caja terminó valiendo 992.000 CUP en la matriz.
+
+    La fila no tenía nada mal: el extractor no propone basis y el select no
+    preselecciona. Lo que falló es la copia. Con `unit='lb'` las dos opciones
+    se leían «Precio por libra» y «Precio total del anuncio», y ninguna nombra
+    lo que el anuncio realmente cotiza —una caja de 40 lb—. Quien piensa en
+    cajas lee «una caja es una unidad» y elige la de arriba.
+
+    La opción `total` pasa a nombrar el lote concreto de la fila. Los valores
+    enviados (`unit` / `total`) no cambian: es copia, no contrato.
+    """
+
+    def _fila_curada(
+        self,
+        session: Session,
+        *,
+        hash_: str,
+        quantity: Decimal | None,
+        unit: str | None,
+        packaging: str | None = None,
+        packaging_quantity: str = "40",
+        packaging_unit: str = "lb",
+    ) -> RawIngestion:
+        producto = _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(session, hash_=hash_)
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+
+        formato_id = None
+        if packaging is not None:
+            formato = ProductFormat(
+                product_id=producto.id,
+                packaging=packaging,
+                quantity=Decimal(packaging_quantity),
+                unit=packaging_unit,
+            )
+            session.add(formato)
+            session.commit()
+            formato_id = formato.id
+
+        _crear_precio_curado(
+            session, ingestion=curado, product=producto, price="24800",
+            quantity=quantity, unit=unit, format_id=formato_id,
+        )
+        return curado
+
+    def test_el_caso_de_la_caja_de_40_lb_queda_inequivoco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El caso que produjo el error, con su envase declarado. La copia NO
+        nombra el envase: «la caja completa» obligaría a conocer el género de
+        cada uno («la paquete») y «a granel» no admite artículo — el mismo
+        motivo por el que `control.html` escribe «por caja» y no «la caja». La
+        cantidad y la unidad alcanzan para desambiguar, y sirven también en la
+        fila sin envase, que es la mayoría."""
+        curado = self._fila_curada(
+            session, hash_="hash-basis-caja", quantity=Decimal("40"),
+            unit="lb", packaging="caja",
+        )
+
+        texto = client.get(f"/curation/{curado.id}/edit").text
+
+        assert "Precio de las 40 libras juntas" in texto
+        assert "Precio por libra" in texto
+
+    def test_sin_envase_nombra_la_cantidad_de_la_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El envase es opcional y vive colapsado, así que la mayoría de las
+        filas llegan sin él. La cantidad y la unidad sí están, y alcanzan."""
+        curado = self._fila_curada(
+            session, hash_="hash-basis-sin-envase", quantity=Decimal("40"), unit="lb",
+        )
+
+        texto = client.get(f"/curation/{curado.id}/edit").text
+
+        assert "Precio de las 40 libras juntas" in texto
+
+    def test_la_cantidad_no_arrastra_los_ceros_de_la_columna(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`str(price.quantity)` sobre una columna con escala da «40.00», y la
+        copia tiene que leerse como la escribiría una persona."""
+        curado = self._fila_curada(
+            session, hash_="hash-basis-ceros", quantity=Decimal("40.00"), unit="lb",
+        )
+
+        texto = client.get(f"/curation/{curado.id}/edit").text
+
+        assert "40 libras juntas" in texto
+        assert "40.00 libras" not in texto
+
+    def test_una_cantidad_fraccionaria_conserva_sus_decimales(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Recortar ceros no puede comerse un decimal real: media libra sigue
+        siendo media libra."""
+        curado = self._fila_curada(
+            session, hash_="hash-basis-fraccion", quantity=Decimal("0.50"), unit="lb",
+        )
+
+        texto = client.get(f"/curation/{curado.id}/edit").text
+
+        assert "Precio de las 0.5 libras juntas" in texto
+
+    def test_sin_cantidad_ni_unidad_queda_la_copia_generica(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin cantidad no hay lote que nombrar, y el campo ni siquiera es
+        obligatorio: la copia de siempre es la correcta."""
+        curado = self._fila_curada(
+            session, hash_="hash-basis-generico", quantity=None, unit=None,
+        )
+
+        texto = client.get(f"/curation/{curado.id}/edit").text
+
+        assert "Precio total del anuncio" in texto
+
+    def test_los_valores_enviados_no_cambian(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La copia cambia; el contrato con el servidor no. Si esto se rompe,
+        se rompe `submit_curation` y todas las filas ya curadas."""
+        curado = self._fila_curada(
+            session, hash_="hash-basis-contrato", quantity=Decimal("40"),
+            unit="lb", packaging="caja",
+        )
+
+        texto = client.get(f"/curation/{curado.id}/edit").text
+
+        assert 'value="unit"' in texto
+        assert 'value="total"' in texto
+
+
 class TestConversionAlCurar:
     """Resolución de tasa en `submit_curation` (`spec.md` §6.3 E, design D4).
 
@@ -3361,7 +3498,7 @@ class TestEditarCuradoGet:
         assert f'value="{pollo.id}" selected' in response.text
         assert 'value="500"' in response.text
         assert f'value="{habana.id}" selected' in response.text
-        assert '<option value="lb" data-basis-label="libra" selected>' in response.text
+        assert '<option value="lb" data-basis-label="libra" data-basis-label-plural="libras" selected>' in response.text
         assert '<option value="retail" selected>' in response.text
         assert '<option value="caja" selected>' in response.text
 

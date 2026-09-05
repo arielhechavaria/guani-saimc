@@ -6656,3 +6656,39 @@ en la escala del titular— queda cubierta por
 `TestLaBarraDeRangoHablaLaUnidadDelTitular` en `tests/test_control.py`,
 incluido el caso sin formato, que sigue en unidad base. La home pública ya
 era consistente (`format_minimum_text or minimum_text`) y no se tocó.
+
+## 2026-09-05 — La opción «total» de `price_basis` nombra el lote que cubre
+Contexto: un anuncio de «caja de pollo de 40 lb a 24800» se curó con
+`price_basis='unit'`. Con esa base el precio no se divide, así que 24800 se
+leyó como precio por libra y la caja terminó valiendo 992.000 CUP en la
+matriz. Verificado en el código, no supuesto: el error no vino de un default.
+`_declared_price_basis` solo propone base cuando el anuncio la declara
+explícitamente y la aritmética coincide, y el `<select>` arranca en «— sin
+responder —». Lo que falló es la copia: con `unit='lb'` las dos opciones se
+leían «Precio por libra» y «Precio total del anuncio», y ninguna nombra lo que
+el anuncio cotiza —una caja de 40 lb—. Quien piensa en cajas lee «una caja es
+una unidad» y elige la primera. Le pasa a toda fila con envase de caja o saco.
+Decisión: la opción `total` nombra el lote concreto de la fila — «Precio de
+las 40 libras juntas» — siempre que haya cantidad distinta de 1 y unidad. El
+plural va como diccionario propio junto a `unit_words`, porque «unidad» →
+«unidades» hace que cualquier regla sea más larga que la tabla. Los valores
+enviados (`unit` / `total`) no cambian: es copia, no contrato.
+El relabel en vivo de `_price_row_scripts.html` se extiende a esta opción y
+pasa a depender también de la cantidad. Deja de ser puramente cosmético, y por
+eso se documenta: en la cola la fila llega vacía y el operador escribe cantidad
+y unidad justo antes de responder la base, así que sin el relabel la opción
+diría «Precio total del anuncio» en el único momento en que se la lee. Sin JS
+el server sigue rindiendo la copia correcta para toda fila que ya tenga sus
+valores, y ninguna regla del servidor depende del texto (D8).
+Descartado: nombrar el envase («Precio de la caja completa»). Obligaría a
+conocer el género de cada uno —«la paquete» sale mal— y «a granel» no admite
+artículo; es el mismo motivo por el que `control.html` escribe «por caja» y no
+«la caja». Cantidad y unidad desambiguan igual y además cubren la fila sin
+envase, que es la mayoría porque el campo es opcional y vive colapsado.
+Consecuencia: 1335 tests verdes. Dos tests existentes que afirmaban el
+`<option>` de unidad completo se actualizaron por el nuevo
+`data-basis-label-plural`. Esto ataca la clase, no el caso: la fila de 992.000
+CUP sigue mal en la base y se corrige a mano desde `/curation/{id}/edit`.
+Queda pendiente el otro hallazgo del mismo reporte —`detect_basis_suspects` no
+puede levantar una fila cuya celda tiene una sola observación, porque no hay
+fila no ambigua contra la cual contrastar (`cells.py`)—, sin decidir.
