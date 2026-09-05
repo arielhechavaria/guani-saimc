@@ -6726,3 +6726,44 @@ Consecuencia: 1342 tests verdes. El caso Picadillo del 2026-08-22 queda
 intacto y con test propio: un producto sin filas no ambiguas en NINGUNA
 provincia sigue sin veredicto. Esto cierra el segundo hallazgo del reporte del
 2026-09-05; el primero es la entrada anterior sobre la copia de `price_basis`.
+
+## 2026-09-05 — `price_basis` se propone también por marcador de envase
+Contexto: cerrados los dos primeros hallazgos del reporte de la caja de 40 lb,
+quedaba la idea de usar el texto crudo del anuncio como fuente de verdad. La
+forma en que estaba planteada —comparar el precio publicado contra los números
+del anuncio— **no habría atrapado esa fila**, y conviene dejarlo escrito para
+no volver a proponerla: el anuncio dice «24800 la caja» con cantidad 40, y ni
+620 (24800/40) ni 992.000 (24800×40) aparecen en el texto, así que el conjunto
+de números es idéntico se declare `unit` o `total`. La aritmética contra el
+texto no puede distinguir las dos lecturas. Donde sí serviría —anuncios que
+declaran las dos cifras, «Precio por saco: 32500 (sale a 295 la libra)»— ya lo
+cubre `_declared_price_basis`.
+Lo que sí distingue las dos lecturas en esa fila es léxico: el anuncio dice
+«la caja». Revisados los anuncios reales citados en los tests, el marcador
+aparece seguido —«cajas de 40lb a 12000», «La caja 28,5 usd», «el saco a 500»,
+«30100mn el saco»— y no había ninguna regla que lo leyera.
+Decisión: `_packaging_price_basis` propone `'total'` cuando el anuncio nombra
+un envase del vocabulario cerrado junto al precio, en cualquiera de las dos
+formas reales («caja de …» o «la caja»). El marcador de unidad —«la libra»,
+«la lb», «cada unidad»— siempre gana, y también gana el patrón de
+`_declared_price_basis` aunque su aritmética no haya cerrado: si el anuncio
+habla de la libra, dice algo del precio unitario que esta regla no puede
+contradecir. «A granel» queda fuera del vocabulario de la regla: nombra la
+ausencia de envase y su precio es justamente el unitario. Con `quantity == 1`
+o sin precio no se propone nada, igual que la regla aritmética.
+Es un **apartamiento de D4 mayor** que el del 2026-08-21: allá el número
+declarado verifica la lectura antes de proponer, acá la evidencia es léxica y
+no hay verificación aritmética posible. Se acepta porque la propuesta nunca se
+persiste sola —el operador confirma cada fila en la cola— y porque el silencio
+ya demostró costar más: la caja de 992.000 CUP la encontró un humano mirando
+la matriz, no el sistema.
+Descartado: la comparación numérica contra el texto (no distingue las
+lecturas, ver arriba); y verificar que `price` aparezca entre los números del
+anuncio, que es señal genuina y sin umbral pero para otro problema —tipeos al
+cargar y errores de OCR—, y que no habría levantado esta fila. Queda anotada
+sin decidir.
+Consecuencia: 1352 tests verdes. Un test existente cambió de texto y no de
+intención: `test_sin_pista_en_el_texto_no_se_propone_nada` usaba «Arroz saco de
+50 lb a 25000», que bajo la regla nueva SÍ tiene pista; se le sacó el saco para
+que siga afirmando lo que su nombre dice. La regla se pasó por los veinte
+anuncios reales citados en los tests sin producir ningún falso positivo.

@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from saimc.models import Currency, Product, Province
-from saimc.units import canonical_unit
+from saimc.units import PACKAGING, canonical_unit
 
 # --- provincias --------------------------------------------------------------
 
@@ -468,6 +468,31 @@ _DECLARED_UNIT_PRICE_RE = re.compile(
 #: cuando esta regla corre).
 _DECLARED_PRICE_TOLERANCE = Decimal("0.01")
 
+#: Envases que nombran un lote cotizado como tal. Sale «a granel» del
+#: vocabulario de `saimc.units.PACKAGING`: nombra la ausencia de envase, y su
+#: precio es justamente el unitario. Se deriva del vocabulario en vez de
+#: repetirlo para que un envase nuevo entre acá solo.
+_LOTE_PACKAGING = "|".join(envase for envase in PACKAGING if envase != "a granel")
+
+#: «cajas de 40lb», «el saco a 500», «24800 la caja»: el envase nombrado como
+#: la cosa que se cotiza. Las dos formas son las que aparecen en los anuncios
+#: reales — el envase antes de la cantidad, o el artículo junto al precio.
+_PACKAGING_MARKER_RE = re.compile(
+    rf"\b(?:(?:{_LOTE_PACKAGING})s?\s+de\b"
+    rf"|(?:el|la|los|las)\s+(?:{_LOTE_PACKAGING})s?\b)",
+    re.IGNORECASE,
+)
+
+#: «la libra», «x lb», «cada unidad»: el anuncio declara que el precio es
+#: unitario. Veta la lectura de lote aunque el envase esté nombrado en la misma
+#: línea — el caso real de «Paca de 30 paquetes, 21900 la libra». El artículo o
+#: la preposición son obligatorios: «40lb» es una cantidad, no una declaración.
+_UNIT_MARKER_RE = re.compile(
+    r"\b(?:la|el|los|las|por|x|cada)\s+"
+    r"(?:libras?|lbs?|kilos?|kg|unidades?|litros?|ml|docenas?)\b",
+    re.IGNORECASE,
+)
+
 
 def _normalize_number(raw: str) -> Decimal | None:
     """Normaliza separadores de miles/decimales a un `Decimal` sin ambigüedad.
@@ -760,6 +785,40 @@ def _declared_price_basis(
     return None
 
 
+def _packaging_price_basis(
+    text: str, *, price: Decimal | None, quantity: Decimal | None
+) -> str | None:
+    """«cajas de 40lb a 12000» → `'total'`: el precio es del lote.
+
+    Segunda regla de `price_basis`, subordinada a `_declared_price_basis` y
+    más laxa que ella. Nace del caso del 2026-09-05: «caja de pollo de 40 lb a
+    24800» se curó como «por libra» y la caja terminó valiendo 992.000 CUP en
+    la matriz. El anuncio lo decía —«la caja»—, pero ninguna regla leía ese
+    marcador, y la aritmética no podía ayudar: ni 620 (24800/40) ni 992.000
+    (24800×40) aparecen en el texto, así que el conjunto de números del anuncio
+    es idéntico se declare `'unit'` o `'total'`. Solo queda la evidencia
+    léxica.
+
+    **Es un apartamiento de D4 mayor que el de `_declared_price_basis`**, y
+    conviene tenerlo presente al juzgar un falso positivo: allá el número
+    declarado verifica la lectura antes de proponer nada, acá no hay
+    verificación aritmética posible. Se acepta porque el operador confirma cada
+    fila en la cola —la propuesta nunca se persiste sola— y porque el silencio
+    ya demostró costar más: nadie revisa la fila que nadie señala.
+
+    **El marcador de unidad siempre gana**, y el de `_declared_price_basis`
+    también aunque su aritmética no haya cerrado: si el anuncio habla de la
+    libra, dice algo sobre el precio unitario que esta regla no puede
+    contradecir. Es el caso real de «Paca de 30 paquetes, 21900 la libra»,
+    donde el esqueleto es el mismo que el de arriba y la lectura es la opuesta.
+    """
+    if price is None or quantity is None or quantity == 1:
+        return None
+    if _UNIT_MARKER_RE.search(text) or _DECLARED_UNIT_PRICE_RE.search(text):
+        return None
+    return "total" if _PACKAGING_MARKER_RE.search(text) else None
+
+
 def propose(
     text: str,
     products: Sequence[Product],
@@ -792,9 +851,11 @@ def propose(
         quantity=quantity,
         unit=unit,
         province=channel_province or _match_province(text, provinces),
-        price_basis=_declared_price_basis(
-            text, price=price, quantity=quantity, unit=unit
-        ),
+        # La aritmética primero y el marcador de envase como repliegue: donde
+        # el anuncio declara un precio por unidad y el número lo confirma, esa
+        # lectura manda aunque el envase esté nombrado en la misma línea.
+        price_basis=_declared_price_basis(text, price=price, quantity=quantity, unit=unit)
+        or _packaging_price_basis(text, price=price, quantity=quantity),
     )
 
 

@@ -1291,8 +1291,16 @@ class TestPriceBasisDeclaradoEnElAnuncio:
         self, products: list[Product], provinces: list[Province]
     ) -> None:
         """El comportamiento de siempre: sin declaración explícita el campo
-        queda para el operador, como fijaba D4."""
-        texto = "Arroz saco de 50 lb a 25000"
+        queda para el operador, como fijaba D4.
+
+        El texto era «Arroz saco de 50 lb a 25000» hasta el 2026-09-05, cuando
+        nombrar el envase pasó a ser una pista por sí solo
+        (`_packaging_price_basis`). Se le sacó el saco para que el caso siga
+        siendo el que este test afirma —ninguna pista de ningún tipo—; el
+        anuncio con envase tiene ahora su propio test en
+        `TestPriceBasisPorMarcadorDeEnvase`.
+        """
+        texto = "Arroz 50 lb a 25000"
 
         propuesta = propose(texto, products, provinces)
 
@@ -1332,4 +1340,145 @@ class TestPriceBasisDeclaradoEnElAnuncio:
 
         propuesta = propose(texto, products, provinces)
 
+        assert propuesta.price_basis is None
+
+
+class TestPriceBasisPorMarcadorDeEnvase:
+    """Segunda regla de `price_basis`, más laxa que la aritmética y subordinada
+    a ella: cuando el anuncio pone el precio contra el envase —«cajas de 40lb a
+    12000», «el saco a 500», «24800 la caja»— ese precio es del lote.
+
+    Nace del caso del 2026-09-05: «caja de pollo de 40 lb a 24800» se curó como
+    «por libra», así que la caja pasó a valer 992.000 CUP en la matriz. El
+    anuncio lo decía —«la caja»—, pero ninguna regla leía ese marcador y la
+    aritmética no podía ayudar: ni 620 (24800/40) ni 992.000 (24800x40)
+    aparecen en el texto, así que los números del anuncio son idénticos se
+    declare `unit` o `total`.
+
+    Es un apartamiento de D4 mayor que el de
+    `TestPriceBasisDeclaradoEnElAnuncio`: allá el número declarado verifica la
+    lectura antes de proponer, acá la evidencia es léxica y no hay verificación
+    aritmética posible. Se acepta porque el operador confirma cada fila en la
+    cola y porque el silencio ya demostró costar más: nadie revisa la fila que
+    nadie señala.
+
+    El marcador de unidad SIEMPRE gana: «la libra», «la lb», «la unidad» dicen
+    que el precio es unitario aunque el envase esté nombrado en la misma línea.
+    Es el caso real de la paca —«Paca de 30 paquetes, 21900 la libra»—, donde
+    el esqueleto es el mismo y la lectura es la opuesta.
+    """
+
+    def test_el_envase_seguido_de_cantidad_y_precio_es_el_lote(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Anuncio real del repo. 12.000 es lo que cuesta la caja de 40 lb;
+        leído por libra daría 480.000 la caja."""
+        texto = "🐔 pollo congelado cajas de 40lb a 12000 stgo entrega dom"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.quantity == Decimal("40")
+        assert propuesta.price_basis == "total"
+
+    def test_el_articulo_y_el_envase_despues_del_precio_tambien_cuentan(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El caso que originó la regla, con el marcador donde el anuncio real
+        lo pone: después del número."""
+        texto = "Pollo caja de 40 lb, 24800 la caja"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis == "total"
+
+    def test_el_envase_en_otra_linea_cuenta_igual(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Anuncio real del repo: el envase y su precio viven en líneas
+        distintas, que es como escribe el canal mayorista."""
+        texto = "pollo entero\nsaco de 40 lb\nel saco a 500\n"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis == "total"
+
+    def test_la_libra_le_gana_al_envase(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Anuncio real del repo, y el contraejemplo que obliga al veto: el
+        esqueleto es «envase + cantidad + precio» igual que los de arriba, pero
+        «la libra» dice que 21.900 es unitario. Proponer `total` acá sería
+        exactamente el error que la regla quiere evitar, al revés."""
+        texto = "Paca de 30 paquetes, 21900 la libra"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None
+
+    def test_la_lb_abreviada_tambien_veta(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Anuncio real del repo. «sale la lb» no trae número, así que la regla
+        aritmética no lo lee; el veto sí."""
+        texto = "Caja de pollo, sale la lb a 281"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None
+
+    def test_el_envase_y_la_unidad_en_la_misma_linea_no_proponen(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Anuncio real del repo: «saco de 100 lb la libra a 30000» nombra el
+        saco y la libra. Con las dos pistas en conflicto no se propone nada."""
+        texto = "Arroz saco de 100 lb la libra a 30000"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None
+
+    def test_sin_envase_nombrado_no_se_propone(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """D4 sigue mandando donde no hay ninguna pista: el bug de 2026-08-13
+        («Arroz guyanés a 340 libras») no gana un basis inventado."""
+        texto = "Arroz guyanés a 340 lb"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None
+
+    def test_a_granel_no_es_un_marcador_de_lote(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """«a granel» está en el vocabulario de envases pero significa lo
+        contrario: no hay lote que cotizar, se vende por unidad suelta."""
+        texto = "Arroz a granel 340 lb a 25000"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis is None
+
+    def test_la_aritmetica_le_gana_al_marcador_de_envase(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Precedencia: cuando el anuncio declara el precio unitario Y la
+        aritmética lo confirma, esa lectura manda aunque el envase esté
+        nombrado. La regla nueva es un repliegue, no un reemplazo."""
+        texto = "Pollo caja de 40 lb a 655. Sale 655 Cup Lb"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.price_basis == "unit"
+
+    def test_con_cantidad_uno_el_marcador_no_propone_nada(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Mismo criterio que la regla aritmética: con `quantity == 1` las dos
+        lecturas son el mismo número y el campo ni se pide."""
+        texto = "Arroz paquete de 1 lb a 500"
+
+        propuesta = propose(texto, products, provinces)
+
+        assert propuesta.quantity == Decimal("1")
         assert propuesta.price_basis is None
