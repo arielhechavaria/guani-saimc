@@ -26,6 +26,7 @@ from saimc.models import (
     Currency,
     PriceHistory,
     Product,
+    ProductVariant,
     Province,
     RawIngestion,
     SaleFormat,
@@ -897,3 +898,51 @@ class TestRutaProductoLimpia:
 
         assert "<title>SAIMC — Arroz — precios</title>" in enfocado
         assert "<title>SAIMC — Precios y cobertura</title>" in home
+
+
+class TestVarianteEnTarjetaPublica:
+    """La variante declarada es su propia serie pública, distinguible de la
+    genérica (public-price-range: "wherever product series are shown — the
+    control matrix and the public range"; el hueco que sdd-tasks encontró en
+    el diseño de este cambio)."""
+
+    def test_la_tarjeta_publica_muestra_la_etiqueta_de_variante(
+        self, client: TestClient, session: Session
+    ) -> None:
+        aceite = Product(
+            name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([aceite, habana])
+        session.commit()
+        variante = ProductVariant(
+            product_id=aceite.id,
+            kind="girasol",
+            brand="Vitalín",
+            origin="importado",
+            kind_key="girasol",
+            brand_key="vitalin",
+            origin_key="importado",
+        )
+        session.add(variante)
+        session.commit()
+        origen = _ingestion(session, hash_="hash-variante-publica")
+        session.add(
+            PriceHistory(
+                product_id=aceite.id,
+                province_id=habana.id,
+                price=Decimal("450"),
+                currency=Currency.CUP.value,
+                source_id=origen.id,
+                unit="lb",
+                sale_format=SaleFormat.RETAIL.value,
+                quantity=Decimal("1"),
+                published_date=_hace(1),
+                variant_id=variante.id,
+            )
+        )
+        session.commit()
+
+        texto = client.get("/").text
+
+        assert "girasol Vitalín importado" in texto

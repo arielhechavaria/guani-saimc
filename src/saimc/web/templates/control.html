@@ -949,6 +949,15 @@
               · {{ columna.total }} observaci{% if columna.total != 1 %}ones{% else %}ón{% endif %}
             </span>
             {% endif %}
+            {# Declarar una variante mid-historia parte la serie en dos: nunca
+               queda silencioso, mismo criterio que `unconverted`/`unquantified`
+               (design.md D6, §12.6). #}
+            {% if columna.has_undeclared_variants %}
+            <span class="m3-xs m3-dim"
+                  title="Este producto tiene series con variante declarada y series sin declarar en esta provincia">
+              · mezcla variante declarada y sin declarar
+            </span>
+            {% endif %}
           </div>
 
           {% if not columna.cells %}
@@ -971,6 +980,12 @@
                 {% if cell.sale_format == "retail" %}minorista
                 {%- elif cell.sale_format == "wholesale" %}mayorista
                 {%- else %}<span class="m3-muted">sin volumen declarado</span>{% endif %}
+                ·
+                {# Segundo eje, libre y cruzable con el formato
+                   (product-variants). `None` = «sin variante declarada»,
+                   nunca se esconde — mismo criterio que «sin formato». #}
+                {% if cell.variant_label %}{{ cell.variant_label }}
+                {%- else %}<span class="m3-muted">sin variante declarada</span>{% endif %}
               </span>
               <span class="m3-sm m3-muted">
                 {# `unit` es la unidad efectiva de la celda (canónica si se

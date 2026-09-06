@@ -10,6 +10,7 @@ operador juzga. La escala es logarítmica porque la amplitud es una razón
 (máximo ÷ mínimo), no una diferencia.
 """
 
+import uuid
 from decimal import Decimal
 
 from saimc.cells import Cell
@@ -34,6 +35,7 @@ def _celda(
     minimum: str = "100",
     maximum: str = "100",
     unresolved_basis: bool = False,
+    variant_id: uuid.UUID | None = None,
 ) -> Cell:
     return Cell(
         product_name=product,
@@ -46,6 +48,7 @@ def _celda(
         minimum=Decimal(minimum),
         maximum=Decimal(maximum),
         unresolved_basis=unresolved_basis,
+        variant_id=variant_id,
     )
 
 
@@ -278,6 +281,59 @@ class TestGroupCellsEmparejaFormatos:
 
         assert all(c.retail_ratio is None for c in grupo.cells)
 
+    def test_no_hay_ratio_entre_variantes_distintas(self) -> None:
+        """spec: product-variants — los ejes son libremente cruzables y no se
+        funden en el emparejamiento (design.md D5): la mayorista de una
+        variante no se empareja con la minorista de otra."""
+        vitalin_id = uuid.uuid4()
+        magdalena_id = uuid.uuid4()
+        celdas = [
+            _celda(unit="lb", sale_format="retail", count=10, median="300", variant_id=vitalin_id),
+            _celda(
+                unit="lb", sale_format="wholesale", count=3, median="250",
+                variant_id=magdalena_id,
+            ),
+        ]
+
+        grupo = group_cells(celdas)[0]
+        mayorista = [c for c in grupo.cells if c.cell.sale_format == "wholesale"][0]
+
+        assert mayorista.retail_ratio is None
+
+
+class TestGroupCellsMarcaVariantesNoDeclaradas:
+    """`CellGroup.has_undeclared_variants` — el punto donde declarar una
+    variante partió la serie en dos nunca queda silencioso (design.md D6)."""
+
+    def test_grupo_mixto_marca_has_undeclared_variants(self) -> None:
+        vitalin_id = uuid.uuid4()
+        celdas = [
+            _celda(variant_id=vitalin_id, count=5),
+            _celda(variant_id=None, count=3),
+        ]
+
+        grupo = group_cells(celdas)[0]
+
+        assert grupo.has_undeclared_variants is True
+
+    def test_grupo_uniforme_con_variante_no_marca(self) -> None:
+        vitalin_id = uuid.uuid4()
+        celdas = [
+            _celda(variant_id=vitalin_id, count=5, sale_format="retail"),
+            _celda(variant_id=vitalin_id, count=3, sale_format="wholesale"),
+        ]
+
+        grupo = group_cells(celdas)[0]
+
+        assert grupo.has_undeclared_variants is False
+
+    def test_grupo_todo_sin_declarar_no_marca(self) -> None:
+        celdas = [_celda(variant_id=None, count=5)]
+
+        grupo = group_cells(celdas)[0]
+
+        assert grupo.has_undeclared_variants is False
+
     def test_un_mayorista_con_mediana_cero_no_divide(self) -> None:
         celdas = [
             _celda(unit="lb", sale_format="retail", count=10, median="300"),
@@ -317,6 +373,20 @@ class TestBuildMatrix:
             "Santiago de Cuba",
         ]
         assert [c.total for c in matriz.rows[0].columns] == [2, 5]
+
+    def test_el_cruce_propaga_has_undeclared_variants(self) -> None:
+        """El pivote no puede perder el hecho de grupo que design.md D6 pide
+        surgir en el encabezado — sin esto `control.html` no tiene de dónde
+        leerlo."""
+        vitalin_id = uuid.uuid4()
+        celdas = [
+            _celda(province="Santiago de Cuba", count=5, variant_id=vitalin_id),
+            _celda(province="Santiago de Cuba", count=3, variant_id=None),
+        ]
+
+        matriz = build_matrix(celdas)
+
+        assert matriz.rows[0].columns[0].has_undeclared_variants is True
 
     def test_el_orden_de_columnas_es_el_de_la_especificacion(self) -> None:
         """`PHASE0_PROVINCES` manda: La Habana antes que Santiago, sin importar

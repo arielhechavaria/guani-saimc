@@ -6767,3 +6767,47 @@ intención: `test_sin_pista_en_el_texto_no_se_propone_nada` usaba «Arroz saco d
 50 lb a 25000», que bajo la regla nueva SÍ tiene pista; se le sacó el saco para
 que siga afirmando lo que su nombre dice. La regla se pasó por los veinte
 anuncios reales citados en los tests sin producir ningún falso positivo.
+
+---
+
+## 2026-09-06 — Variantes de producto: sub-unidad, no producto; nombres existentes no se descomponen
+
+Contexto: la marca y el tipo de un producto («Vitalín», «girasol», «importado»)
+llegan en el corpus y hasta ahora se descartaban al no tener dónde guardarse
+— `_PRODUCT_DISQUALIFYING_MODIFIERS` y el alias de "azucar magdalena" hacia
+"Azúcar blanca" son la evidencia en el propio código. Declarar `kind`/`brand`/
+`origin` como un eje nuevo (`product_variants`) dejaba dos preguntas abiertas
+antes de tocar el esquema: ¿una variante declarada cuenta como una producto
+más contra el techo de `spec.md` §9 («3-5 productos bandera», «500 registros
+validados de 3-5 productos»)? Y con la marca ahora representable, ¿hay que
+descomponer los nombres de producto que ya cargan un tipo adentro —"Azúcar
+blanca", "Arroz criollo", "Picadillo"— para no tener dos formas de decir lo
+mismo?
+
+Decisión: una variante es una sub-unidad de su producto, nunca una producto
+independiente. No consume un cupo de "3-5 productos bandera" ni cuenta como
+su propia producto contra la meta de "500 registros validados"; `is_pilot`
+sigue viviendo únicamente en `Product`, y una variante hereda el foco de su
+padre sin tener un `is_pilot` propio. Y los nombres de producto existentes
+**no** se descomponen: "Azúcar blanca", "Arroz criollo" y "Picadillo"
+conservan su nombre tal cual lo tienen hoy; la migración `0020` es puramente
+aditiva, sin backfill y sin tabla de mapeo — no hay ninguna fila vieja que
+reescribir.
+
+Descartado: contar cada variante declarada como una producto nueva a los
+efectos de §9 — infla el foco cada vez que se declara una marca, cuando lo
+que en realidad crece es la densidad de una serie ya contada, no el número de
+productos que el operador vigila; `product_formats` sentó el mismo precedente
+(la caja de 40 lb no hizo de Pollo un sexto piloto). También se descartó
+decomponer los nombres existentes en producto + tipo: reescribe la identidad
+de la serie (`cells.py` agrupa por `product_name`), la ruta pública
+`/producto/{slug}` (`progress.py::pilot_product_names`) y redefiniría en
+silencio la línea base de `h0-runs.jsonl`, sin ninguna evidencia todavía que
+lo justifique.
+
+Consecuencia: `is_pilot` y el conteo de §9 se leen exclusivamente de
+`Product`; cualquier lectura futura de "cuántos productos hay" tiene que
+seguir ignorando `product_variants`. Dos formas de nombrar lo mismo pueden
+coexistir un tiempo — el nombre de producto "Azúcar blanca" y una futura
+variante `kind="blanca"` de un producto genérico "Azúcar" — hasta una
+consolidación posterior que decida con datos reales, no con esta migración.

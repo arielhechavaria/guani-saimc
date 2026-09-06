@@ -26,6 +26,9 @@ def _rango(
     format_packaging: str | None = None,
     format_quantity: str | None = None,
     format_unit: str | None = None,
+    variant_kind: str | None = None,
+    variant_brand: str | None = None,
+    variant_origin: str | None = None,
 ) -> RetailRange:
     return RetailRange(
         product_name=product,
@@ -40,6 +43,9 @@ def _rango(
         minimum=Decimal(minimum),
         maximum=Decimal(maximum),
         unconverted=unconverted,
+        variant_kind=variant_kind,
+        variant_brand=variant_brand,
+        variant_origin=variant_origin,
     )
 
 
@@ -144,3 +150,41 @@ class TestTarjetaConFormato:
 
         assert card.format_label is None
         assert card.format_median_text is None
+
+
+class TestTarjetaConVariante:
+    """La variante declarada es su propia serie pública, distinguible de la
+    genérica (public-price-range: "wherever product series are shown — the
+    control matrix and the public range")."""
+
+    def test_la_tarjeta_lleva_la_etiqueta_de_la_variante(self) -> None:
+        (card,) = build_cards(
+            [_rango(variant_kind="girasol", variant_brand="Vitalín", variant_origin="importado")]
+        )
+
+        assert card.variant_label == "girasol Vitalín importado"
+
+    def test_sin_variante_declarada_no_hay_etiqueta(self) -> None:
+        (card,) = build_cards([_rango()])
+
+        assert card.variant_label is None
+
+    def test_dos_variantes_del_mismo_producto_y_provincia_dan_dos_tarjetas_distintas(
+        self,
+    ) -> None:
+        cards = build_cards(
+            [
+                _rango(
+                    variant_kind="girasol", variant_brand="Vitalín", variant_origin="importado"
+                ),
+                _rango(
+                    variant_kind="girasol", variant_brand="Magdalena", variant_origin="importado"
+                ),
+            ]
+        )
+
+        assert len(cards) == 2
+        assert {c.variant_label for c in cards} == {
+            "girasol Vitalín importado",
+            "girasol Magdalena importado",
+        }

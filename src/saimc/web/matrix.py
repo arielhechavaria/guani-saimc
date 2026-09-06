@@ -135,6 +135,12 @@ class CellGroup:
     province_name: str | None
     cells: list[CellWithBar]
     total: int
+    # `True` cuando el grupo tiene al menos una celda con variante declarada y
+    # al menos una sin declarar: el punto donde declarar una variante partió
+    # la serie en dos (design.md D6). Nunca se oculta — mismo criterio que
+    # `unconverted`/`unquantified` (§12.6): se ve la fractura, no se adivina
+    # ni se esconde.
+    has_undeclared_variants: bool = False
 
 
 # Orden de los formatos dentro de una unidad: el minorista arriba porque es el
@@ -161,14 +167,23 @@ def _cell_is_clean(cell: Cell) -> bool:
     )
 
 
+# Clave de emparejamiento: variante primero (design.md D5), formato, unidad.
+_PairKey = tuple[uuid.UUID | None, uuid.UUID | None, str | None]
+
+
 def _pair_formats(celdas: list[CellWithBar]) -> list[CellWithBar]:
-    """Empareja minorista y mayorista **del mismo formato** y anota el ratio.
+    """Empareja minorista y mayorista **del mismo formato y variante** y anota
+    el ratio.
 
     Hasta el 2026-09-04 el par se armaba por `unit`, que era lo único que
     había. Con `product_formats` eso es incorrecto: la caja de 40 lb y el
     paquete de 10 lb llevan los dos `unit = "lb"`, así que emparejarlos ponía
     la mayorista de una contra la minorista del otro — dos cosas distintas,
     que es el defecto que este cambio entero corrige, un nivel más abajo.
+    Desde product-variants (design.md D5), la variante entra por el mismo
+    motivo: «Aceite Vitalín retail» no se empareja con «Aceite genérico
+    wholesale» aunque compartan formato — son series distintas porque una
+    declara una marca y la otra no.
 
     El par correcto es **el mismo formato en dos escalones de volumen**, y los
     anuncios de contenedor lo prueban: «1475 cajas × 31,8 USD» contra «35
@@ -177,28 +192,29 @@ def _pair_formats(celdas: list[CellWithBar]) -> list[CellWithBar]:
 
     Dos pasos, los dos de presentación —ninguno toca la normalización—:
 
-    1. **Ratio.** Por cada formato con una minorista limpia, la mayorista
-       limpia de ese mismo formato recibe `retail_ratio = mediana_minorista /
-       mediana_mayorista`. Se anota en la mayorista porque la minorista es la
-       referencia: la pregunta es «cuánto más caro sale comprar suelto». El
-       ratio se calcula sobre `median` (precio por unidad base) y no sobre
-       `format_median`: como las dos series comparten formato, el factor de
-       conversión es el mismo y se cancela — pero hacerlo sobre el precio
-       normalizado lo deja bien definido incluso sin formato declarado.
-    2. **Orden.** El formato con más muestra queda arriba y, dentro de cada
-       formato, la minorista antes que la mayorista. Así el par queda pegado
-       en vez de separado por las series con flag, que caen al final por su
+    1. **Ratio.** Por cada (variante, formato) con una minorista limpia, la
+       mayorista limpia de esa misma combinación recibe `retail_ratio =
+       mediana_minorista / mediana_mayorista`. Se anota en la mayorista
+       porque la minorista es la referencia: la pregunta es «cuánto más caro
+       sale comprar suelto». El ratio se calcula sobre `median` (precio por
+       unidad base) y no sobre `format_median`: como las dos series comparten
+       formato, el factor de conversión es el mismo y se cancela — pero
+       hacerlo sobre el precio normalizado lo deja bien definido incluso sin
+       formato declarado.
+    2. **Orden.** La combinación con más muestra queda arriba y, dentro de
+       ella, la minorista antes que la mayorista. Así el par queda pegado en
+       vez de separado por las series con flag, que caen al final por su
        propio `_FORMAT_RANK`.
     """
-    minorista_por_formato: dict[tuple[uuid.UUID | None, str | None], Decimal] = {
-        (c.cell.format_id, c.cell.unit): c.cell.median
+    minorista_por_formato: dict[_PairKey, Decimal] = {
+        (c.cell.variant_id, c.cell.format_id, c.cell.unit): c.cell.median
         for c in celdas
         if c.cell.sale_format == "retail" and _cell_is_clean(c.cell)
     }
 
     con_ratio = []
     for c in celdas:
-        clave = (c.cell.format_id, c.cell.unit)
+        clave: _PairKey = (c.cell.variant_id, c.cell.format_id, c.cell.unit)
         es_par_mayorista = (
             c.cell.sale_format == "wholesale"
             and _cell_is_clean(c.cell)
@@ -212,13 +228,13 @@ def _pair_formats(celdas: list[CellWithBar]) -> list[CellWithBar]:
         else:
             con_ratio.append(c)
 
-    # Rango de cada formato por su muestra combinada (desc), con el sin formato
-    # al final. `sorted` es estable, así que dentro de cada casillero
-    # (formato, volumen) se conserva el orden por `-count` de `compute_cells`.
-    muestra_por_formato: dict[tuple[uuid.UUID | None, str | None], int] = {}
-    etiqueta: dict[tuple[uuid.UUID | None, str | None], str] = {}
+    # Rango de cada combinación por su muestra combinada (desc), con el sin
+    # formato/variante al final. `sorted` es estable, así que dentro de cada
+    # casillero se conserva el orden por `-count` de `compute_cells`.
+    muestra_por_formato: dict[_PairKey, int] = {}
+    etiqueta: dict[_PairKey, str] = {}
     for c in con_ratio:
-        clave = (c.cell.format_id, c.cell.unit)
+        clave = (c.cell.variant_id, c.cell.format_id, c.cell.unit)
         muestra_por_formato[clave] = muestra_por_formato.get(clave, 0) + c.cell.count
         # Desempate estable y legible: el UUID no sirve como criterio de orden
         # —cambia entre entornos— así que se usa la etiqueta del formato, y el
@@ -238,7 +254,7 @@ def _pair_formats(celdas: list[CellWithBar]) -> list[CellWithBar]:
     return sorted(
         con_ratio,
         key=lambda c: (
-            rango_formato[(c.cell.format_id, c.cell.unit)],
+            rango_formato[(c.cell.variant_id, c.cell.format_id, c.cell.unit)],
             _FORMAT_RANK.get(c.cell.sale_format or "", 2),
             -c.cell.count,
         ),
@@ -288,6 +304,10 @@ def group_cells(cells: list[Cell]) -> list[CellGroup]:
             province_name=province_name,
             cells=_pair_formats(celdas),
             total=sum(c.cell.count for c in celdas),
+            has_undeclared_variants=(
+                any(c.cell.variant_id is not None for c in celdas)
+                and any(c.cell.variant_id is None for c in celdas)
+            ),
         )
         for (product_name, province_name), celdas in grouped.items()
     ]
@@ -323,6 +343,10 @@ class MatrixCell:
     column: ProvinceColumn
     cells: list[CellWithBar]
     total: int
+    # Propagado desde `CellGroup.has_undeclared_variants` (design.md D6): el
+    # pivote no puede perder este hecho de grupo, es lo único de donde
+    # `control.html` puede leerlo para el encabezado del cruce.
+    has_undeclared_variants: bool = False
 
 
 @dataclass(frozen=True)
@@ -414,7 +438,12 @@ def build_matrix(cells: list[Cell]) -> Matrix:
         grupo = por_provincia.get(columna.name)
         if grupo is None:
             return MatrixCell(column=columna, cells=[], total=0)
-        return MatrixCell(column=columna, cells=grupo.cells, total=grupo.total)
+        return MatrixCell(
+            column=columna,
+            cells=grupo.cells,
+            total=grupo.total,
+            has_undeclared_variants=grupo.has_undeclared_variants,
+        )
 
     filas = []
     for product_name, por_provincia in por_producto.items():

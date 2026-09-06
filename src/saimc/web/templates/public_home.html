@@ -374,7 +374,10 @@
       <tbody>
         {% for card in cards %}
         <tr>
-          <td>{{ card.format_label | capitalize if card.format_label else "sin formato · " ~ card.unit }}</td>
+          <td>
+            {{ card.format_label | capitalize if card.format_label else "sin formato · " ~ card.unit }}
+            {%- if card.variant_label %} · {{ card.variant_label }}{% endif %}
+          </td>
           <td>{{ card.province_name }}</td>
           {% if card.is_single_observation %}
           <td class="num">—</td>
@@ -404,6 +407,9 @@
          por unidad base baja a comparador entre formatos. Sin formato
          declarado, el titular sigue siendo el precio por unidad de siempre. #}
       {% if card.format_label %}<div class="ph-card-format">{{ card.format_label | capitalize }}</div>{% endif %}
+      {# Variante declarada (product-variants): distingue esta serie de la
+         genérica y de otras variantes del mismo producto/provincia. #}
+      {% if card.variant_label %}<div class="ph-card-variant">{{ card.variant_label }}</div>{% endif %}
       {% if card.is_single_observation %}
       {# Con n=1 mínimo, mediana y máximo son el mismo número. Presentarlos
          como rango sugeriría una variación que no se observó. #}

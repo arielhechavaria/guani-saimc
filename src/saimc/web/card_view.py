@@ -79,6 +79,10 @@ class ProductCard:
     format_minimum: Decimal | None = None
     format_median: Decimal | None = None
     format_maximum: Decimal | None = None
+    # Variante declarada (product-variants): «girasol Vitalín importado»,
+    # distinguiéndola de la genérica y de otras variantes del mismo producto
+    # en la misma provincia. `None` sin variante declarada.
+    variant_label: str | None = None
 
     @property
     def state(self) -> str:
@@ -149,6 +153,7 @@ def build_cards(ranges: list[RetailRange]) -> list[ProductCard]:
             format_minimum=r.format_minimum,
             format_median=r.format_median,
             format_maximum=r.format_maximum,
+            variant_label=r.variant_label,
         )
         for r in ranges
         if r.province_name is not None and not r.unconverted

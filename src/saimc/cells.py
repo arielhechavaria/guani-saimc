@@ -120,6 +120,7 @@ from saimc.models import (
     PriceHistory,
     Product,
     ProductFormat,
+    ProductVariant,
     Province,
     RawIngestion,
     SaleFormat,
@@ -188,8 +189,30 @@ class _FormatPriced:
         return self._in_format(self.maximum)
 
 
+class _VariantLabeled:
+    """Etiqueta de la variante declarada, para un agregado ya resumido.
+
+    Comparten esto `Cell` y `RetailRange`: los dos guardan `variant_id` más
+    las tres columnas de display (`variant_kind`/`variant_brand`/
+    `variant_origin`). `None` en `variant_id` es «variante no declarada», que
+    agrega en su propia celda igual que `format_id = NULL` (design.md D4).
+
+    Espera esos atributos por composición de dataclass; no define campos.
+    """
+
+    variant_kind: str | None
+    variant_brand: str | None
+    variant_origin: str | None
+
+    @property
+    def variant_label(self) -> str | None:
+        """«girasol Vitalín importado», o `None` sin variante declarada."""
+        ejes = [e for e in (self.variant_kind, self.variant_brand, self.variant_origin) if e]
+        return " ".join(ejes) if ejes else None
+
+
 @dataclass(frozen=True)
-class Cell(_FormatPriced):
+class Cell(_FormatPriced, _VariantLabeled):
     """Una celda de la matriz, con su muestra ya resumida."""
 
     product_name: str
@@ -229,6 +252,13 @@ class Cell(_FormatPriced):
     format_packaging: str | None = None
     format_quantity: Decimal | None = None
     format_unit: str | None = None
+    # La variante declarada (kind/brand/origin): segundo eje de identidad,
+    # libre y cruzable con el formato. `None` = «variante no declarada», que
+    # agrega en su propia celda igual que `format_id = NULL` (product-variants).
+    variant_id: uuid.UUID | None = None
+    variant_kind: str | None = None
+    variant_brand: str | None = None
+    variant_origin: str | None = None
 
     @property
     def spread(self) -> Decimal | None:
@@ -358,10 +388,15 @@ def compute_cells(session: Session) -> list[Cell]:
             ProductFormat.packaging,
             ProductFormat.quantity,
             ProductFormat.unit,
+            PriceHistory.variant_id,
+            ProductVariant.kind,
+            ProductVariant.brand,
+            ProductVariant.origin,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
         .outerjoin(ProductFormat, ProductFormat.id == PriceHistory.format_id)
+        .outerjoin(ProductVariant, ProductVariant.id == PriceHistory.variant_id)
     )
 
     # `unconverted`, `unquantified`, `unresolved_basis` y `unconverted_unit`
@@ -372,6 +407,10 @@ def compute_cells(session: Session) -> list[Cell]:
     # `format_id` entra por el mismo motivo, y es el eje que este módulo
     # excluía hasta el 2026-09-04: el formato de venta ES la identidad de la
     # serie, no una etiqueta sobre ella (ver docstring del módulo).
+    #
+    # `variant_id` es el segundo eje de identidad, libre y cruzable con el
+    # formato (product-variants): una variante declarada y la genérica del
+    # mismo producto nunca se funden.
     CellKey = tuple[
         str,
         str | None,
@@ -385,6 +424,10 @@ def compute_cells(session: Session) -> list[Cell]:
         uuid.UUID | None,
         str | None,
         Decimal | None,
+        str | None,
+        uuid.UUID | None,
+        str | None,
+        str | None,
         str | None,
     ]
     grouped: dict[CellKey, list[Decimal]] = {}
@@ -403,6 +446,10 @@ def compute_cells(session: Session) -> list[Cell]:
         format_packaging,
         format_quantity,
         format_unit,
+        variant_id,
+        variant_kind,
+        variant_brand,
+        variant_origin,
     ) in session.execute(stmt):
         row = resolve_row(
             currency=currency,
@@ -427,6 +474,10 @@ def compute_cells(session: Session) -> list[Cell]:
             format_packaging,
             format_quantity,
             format_unit,
+            variant_id,
+            variant_kind,
+            variant_brand,
+            variant_origin,
         )
         grouped.setdefault(key, []).append(row.effective_price)
 
@@ -453,6 +504,10 @@ def compute_cells(session: Session) -> list[Cell]:
             format_packaging=format_packaging,
             format_quantity=format_quantity,
             format_unit=format_unit,
+            variant_id=variant_id,
+            variant_kind=variant_kind,
+            variant_brand=variant_brand,
+            variant_origin=variant_origin,
         )
         for (
             product_name,
@@ -468,6 +523,10 @@ def compute_cells(session: Session) -> list[Cell]:
             format_packaging,
             format_quantity,
             format_unit,
+            variant_id,
+            variant_kind,
+            variant_brand,
+            variant_origin,
         ), prices in grouped.items()
     ]
 
@@ -485,6 +544,7 @@ def compute_cells(session: Session) -> list[Cell]:
             cell.unit or "",
             cell.sale_format or "",
             cell.format_label or "",
+            cell.variant_label or "",
             cell.unconverted,
             cell.unquantified,
             cell.unresolved_basis,
@@ -495,7 +555,7 @@ def compute_cells(session: Session) -> list[Cell]:
 
 
 @dataclass(frozen=True)
-class RetailRange(_FormatPriced):
+class RetailRange(_FormatPriced, _VariantLabeled):
     """Rango de precio **minorista** de un formato, normalizado por unidad.
 
     Hasta el 2026-09-04 no distinguía formato: colapsaba envase y respondía
@@ -520,6 +580,12 @@ class RetailRange(_FormatPriced):
     format_packaging: str | None = None
     format_quantity: Decimal | None = None
     format_unit: str | None = None
+    # Mismo criterio que en `Cell`: segundo eje de identidad, libre y
+    # cruzable con el formato (product-variants).
+    variant_id: uuid.UUID | None = None
+    variant_kind: str | None = None
+    variant_brand: str | None = None
+    variant_origin: str | None = None
 
 
 @dataclass(frozen=True)
@@ -608,9 +674,23 @@ def compute_retail_ranges(
 
     # `format_id` entra a la clave: el rango es por formato, no por producto
     # (supersede 2026-08-12). `unconverted` sigue separando el grupo fundido
-    # del que quedó sin tasa, mismo criterio que `compute_cells`.
+    # del que quedó sin tasa, mismo criterio que `compute_cells`. `variant_id`
+    # entra por el mismo motivo que en `compute_cells`: segundo eje de
+    # identidad, libre y cruzable con el formato (product-variants).
     RangeKey = tuple[
-        str, str | None, str, str, bool, uuid.UUID | None, str | None, Decimal | None, str | None
+        str,
+        str | None,
+        str,
+        str,
+        bool,
+        uuid.UUID | None,
+        str | None,
+        Decimal | None,
+        str | None,
+        uuid.UUID | None,
+        str | None,
+        str | None,
+        str | None,
     ]
     grouped: dict[RangeKey, list[Decimal]] = {}
     for observation in report.observations:
@@ -624,6 +704,10 @@ def compute_retail_ranges(
             observation.format_packaging,
             observation.format_quantity,
             observation.format_unit,
+            observation.variant_id,
+            observation.variant_kind,
+            observation.variant_brand,
+            observation.variant_origin,
         )
         grouped.setdefault(key, []).append(observation.unit_price)
 
@@ -642,6 +726,10 @@ def compute_retail_ranges(
             format_packaging=format_packaging,
             format_quantity=format_quantity,
             format_unit=format_unit,
+            variant_id=variant_id,
+            variant_kind=variant_kind,
+            variant_brand=variant_brand,
+            variant_origin=variant_origin,
         )
         for (
             product_name,
@@ -653,6 +741,10 @@ def compute_retail_ranges(
             format_packaging,
             format_quantity,
             format_unit,
+            variant_id,
+            variant_kind,
+            variant_brand,
+            variant_origin,
         ), unit_prices in grouped.items()
     ]
 
@@ -662,6 +754,7 @@ def compute_retail_ranges(
             r.product_name,
             r.province_name or "",
             r.format_label or "",
+            r.variant_label or "",
             r.unconverted,
         )
     )
@@ -703,6 +796,13 @@ class RetailObservation:
     format_packaging: str | None = None
     format_quantity: Decimal | None = None
     format_unit: str | None = None
+    #: Variante declarada de la fila (product-variants), para que
+    #: `compute_retail_ranges` agrupe por ella igual que por el formato.
+    #: `None` cuando la fila no tiene variante declarada.
+    variant_id: uuid.UUID | None = None
+    variant_kind: str | None = None
+    variant_brand: str | None = None
+    variant_origin: str | None = None
 
 
 @dataclass(frozen=True)
@@ -749,11 +849,16 @@ def compute_retail_observations(
             ProductFormat.packaging,
             ProductFormat.quantity,
             ProductFormat.unit,
+            PriceHistory.variant_id,
+            ProductVariant.kind,
+            ProductVariant.brand,
+            ProductVariant.origin,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
         .join(RawIngestion, RawIngestion.id == PriceHistory.source_id)
         .outerjoin(ProductFormat, ProductFormat.id == PriceHistory.format_id)
+        .outerjoin(ProductVariant, ProductVariant.id == PriceHistory.variant_id)
         .where(PriceHistory.sale_format == SaleFormat.RETAIL.value)
         .where(PriceHistory.unit.is_not(None))
         .where(PriceHistory.quantity.is_not(None))
@@ -782,6 +887,10 @@ def compute_retail_observations(
         format_packaging,
         format_quantity,
         format_unit,
+        variant_id,
+        variant_kind,
+        variant_brand,
+        variant_origin,
     ) in session.execute(stmt):
         if quantity == 0:
             continue
@@ -846,6 +955,10 @@ def compute_retail_observations(
                 format_packaging=format_packaging,
                 format_quantity=format_quantity,
                 format_unit=format_unit,
+                variant_id=variant_id,
+                variant_kind=variant_kind,
+                variant_brand=variant_brand,
+                variant_origin=variant_origin,
             )
         )
 

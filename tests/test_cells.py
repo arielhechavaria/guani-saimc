@@ -28,6 +28,7 @@ from saimc.models import (
     PriceHistory,
     Product,
     ProductFormat,
+    ProductVariant,
     Province,
     RawIngestion,
     SaleFormat,
@@ -69,6 +70,7 @@ def _precio(
     min_purchase_quantity: str | None = None,
     price_basis: str | None = None,
     format_id: object | None = None,
+    variant_id: object | None = None,
 ) -> None:
     session.add(
         PriceHistory(
@@ -87,8 +89,33 @@ def _precio(
             ),
             price_basis=price_basis,
             format_id=format_id,
+            variant_id=variant_id,
         )
     )
+
+
+def _variante(
+    session: Session,
+    *,
+    product: Product,
+    kind: str = "",
+    brand: str = "",
+    origin: str = "",
+) -> ProductVariant:
+    """Valores ya canónicos: el plegado de acento/mayúscula es
+    responsabilidad de `variant_key` (`test_variants.py`), no de esta capa."""
+    variante = ProductVariant(
+        product_id=product.id,
+        kind=kind,
+        brand=brand,
+        origin=origin,
+        kind_key=kind,
+        brand_key=brand,
+        origin_key=origin,
+    )
+    session.add(variante)
+    session.flush()
+    return variante
 
 
 def _formato(
@@ -1612,3 +1639,212 @@ class TestPrecioDelFormato:
 
         assert celda.format_median is None
         assert celda.format_label is None
+
+
+class TestCeldaSeparaPorVariante:
+    """La variante declarada es un segundo eje de identidad, libre y
+    cruzable con el formato (product-variants; design.md D4)."""
+
+    def test_sin_variante_declarada_la_celda_no_cambia(self, session: Session) -> None:
+        """spec: public-price-range — antes de declarar cualquier variante,
+        las celdas existentes no cambian."""
+        pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[])
+        session.add(pollo)
+        session.commit()
+        origen = _ingestion(session, "hash-sin-variante")
+        for p in ("100", "200", "300"):
+            _precio(session, product=pollo, province=None, price=p, source=origen)
+        session.commit()
+
+        (celda,) = compute_cells(session)
+
+        assert celda.count == 3
+        assert celda.median == Decimal("200")
+        assert celda.variant_id is None
+        assert celda.variant_label is None
+
+    def test_dos_variantes_son_dos_celdas_y_lo_sin_declarar_no_se_funde(
+        self, session: Session
+    ) -> None:
+        """spec: public-price-range — dos variantes del mismo producto son
+        dos celdas distintas, cada una con su propio conteo y mediana."""
+        aceite = Product(name="Aceite", category="aceites", unit="l", aliases=[])
+        session.add(aceite)
+        session.flush()
+        fuente = _ingestion(session, "hash-variantes")
+        vitalin = _variante(
+            session, product=aceite, kind="girasol", brand="Vitalín", origin="importado"
+        )
+        magdalena = _variante(
+            session, product=aceite, kind="girasol", brand="Magdalena", origin="importado"
+        )
+        _precio(session, product=aceite, province=None, price="100", source=fuente, variant_id=vitalin.id)
+        _precio(session, product=aceite, province=None, price="120", source=fuente, variant_id=vitalin.id)
+        _precio(session, product=aceite, province=None, price="90", source=fuente, variant_id=magdalena.id)
+        _precio(session, product=aceite, province=None, price="80", source=fuente, variant_id=None)
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 3
+        por_variante = {c.variant_id: c for c in celdas}
+        assert por_variante[vitalin.id].count == 2
+        assert por_variante[vitalin.id].median == Decimal("110")
+        assert por_variante[magdalena.id].count == 1
+        assert por_variante[None].count == 1
+
+    def test_una_variante_cruzada_con_dos_formatos_da_cuatro_celdas(
+        self, session: Session
+    ) -> None:
+        """spec: product-variants — tres ejes independientes; design.md D4 —
+        `_FormatPriced` no se toca."""
+        aceite = Product(name="Aceite", category="aceites", unit="l", aliases=[])
+        session.add(aceite)
+        session.flush()
+        fuente = _ingestion(session, "hash-variante-cruce-formato")
+        vitalin = _variante(
+            session, product=aceite, kind="girasol", brand="Vitalín", origin="importado"
+        )
+        botella = _formato(session, product=aceite, packaging="botella", quantity="1", unit="l")
+        caja = _formato(session, product=aceite, packaging="caja", quantity="12", unit="l")
+        for variant_id in (vitalin.id, None):
+            for formato in (botella, caja):
+                _precio(
+                    session, product=aceite, province=None, price="500", source=fuente,
+                    unit="l", quantity=str(formato.quantity), price_basis="total",
+                    format_id=formato.id, variant_id=variant_id,
+                )
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 4
+        assert {(c.variant_id, c.format_id) for c in celdas} == {
+            (vitalin.id, botella.id),
+            (vitalin.id, caja.id),
+            (None, botella.id),
+            (None, caja.id),
+        }
+
+    def test_el_precio_del_formato_no_cambia_por_declarar_variante(
+        self, session: Session
+    ) -> None:
+        aceite = Product(name="Aceite", category="aceites", unit="l", aliases=[])
+        session.add(aceite)
+        session.flush()
+        fuente = _ingestion(session, "hash-variante-formato-precio")
+        vitalin = _variante(
+            session, product=aceite, kind="girasol", brand="Vitalín", origin="importado"
+        )
+        caja = _formato(session, product=aceite, packaging="caja", quantity="12", unit="l")
+        _precio(
+            session, product=aceite, province=None, price="6000", source=fuente,
+            unit="l", quantity="12", price_basis="total", format_id=caja.id, variant_id=vitalin.id,
+        )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        # 6000 / 12 l = 500 CUP/l es el comparador; la caja vale 6000 — misma
+        # aritmética que sin variante declarada (`_FormatPriced` intacto).
+        assert celda.median == Decimal("500")
+        assert celda.format_median == Decimal("6000")
+        assert celda.variant_label == "girasol Vitalín importado"
+
+
+class TestFiltrarCeldasPorUnEjeDeVariante:
+    """Con kind/brand/origin viajando en la celda, agrupar por un solo eje es
+    un filtro en Python sobre lo ya calculado (public-price-range: "grouping
+    by one axis crosses the other two")."""
+
+    def test_filtrar_por_kind_cruza_la_marca(self, session: Session) -> None:
+        aceite = Product(name="Aceite", category="aceites", unit="l", aliases=[])
+        session.add(aceite)
+        session.flush()
+        fuente = _ingestion(session, "hash-filtro-eje")
+        vitalin = _variante(
+            session, product=aceite, kind="girasol", brand="Vitalín", origin="importado"
+        )
+        magdalena = _variante(
+            session, product=aceite, kind="girasol", brand="Magdalena", origin="importado"
+        )
+        _precio(session, product=aceite, province=None, price="100", source=fuente, variant_id=vitalin.id)
+        _precio(session, product=aceite, province=None, price="90", source=fuente, variant_id=magdalena.id)
+        session.commit()
+
+        celdas = compute_cells(session)
+        girasol = [c for c in celdas if c.variant_kind == "girasol"]
+
+        assert len(girasol) == 2
+        assert {c.variant_brand for c in girasol} == {"Vitalín", "Magdalena"}
+
+
+class TestDeclararVarianteNoBorraLaSerieGenerica:
+    def test_la_serie_generica_mantiene_su_conteo(self, session: Session) -> None:
+        """spec: public-price-range — declarar una variante nueva no borra ni
+        funde la serie de lo no declarado."""
+        aceite = Product(name="Aceite", category="aceites", unit="l", aliases=[])
+        session.add(aceite)
+        session.flush()
+        fuente = _ingestion(session, "hash-generica-intacta")
+        for _ in range(12):
+            _precio(session, product=aceite, province=None, price="100", source=fuente, variant_id=None)
+        session.commit()
+
+        vitalin = _variante(
+            session, product=aceite, kind="girasol", brand="Vitalín", origin="importado"
+        )
+        _precio(session, product=aceite, province=None, price="150", source=fuente, variant_id=vitalin.id)
+        session.commit()
+
+        celdas = compute_cells(session)
+
+        assert len(celdas) == 2
+        generica = next(c for c in celdas if c.variant_id is None)
+        declarada = next(c for c in celdas if c.variant_id == vitalin.id)
+        assert generica.count == 12
+        assert declarada.count == 1
+
+
+class TestVariantesEnRangoMinorista:
+    """`compute_retail_ranges`/`compute_retail_observations` cargan la misma
+    variante que `compute_cells` (public-price-range: "the variant enters the
+    aggregation key ... alongside the existing format axis")."""
+
+    def test_dos_variantes_dan_dos_rangos_y_dos_observaciones(
+        self, session: Session
+    ) -> None:
+        aceite = Product(name="Aceite", category="aceites", unit="l", aliases=[])
+        session.add(aceite)
+        session.commit()
+        fuente = _ingestion(session, "hash-rango-variante")
+        vitalin = _variante(
+            session, product=aceite, kind="girasol", brand="Vitalín", origin="importado"
+        )
+        magdalena = _variante(
+            session, product=aceite, kind="girasol", brand="Magdalena", origin="importado"
+        )
+        _precio(
+            session, product=aceite, province=None, price="500", source=fuente,
+            unit="l", sale_format=SaleFormat.RETAIL.value, quantity="1", variant_id=vitalin.id,
+        )
+        _precio(
+            session, product=aceite, province=None, price="450", source=fuente,
+            unit="l", sale_format=SaleFormat.RETAIL.value, quantity="1", variant_id=magdalena.id,
+        )
+        session.commit()
+
+        rangos = compute_retail_ranges(session).ranges
+        observaciones = compute_retail_observations(session).observations
+
+        assert len(rangos) == 2
+        assert {r.variant_id for r in rangos} == {vitalin.id, magdalena.id}
+        assert {r.variant_label for r in rangos} == {
+            "girasol Vitalín importado",
+            "girasol Magdalena importado",
+        }
+        assert {o.variant_id for o in observaciones} == {vitalin.id, magdalena.id}
+        assert {(o.variant_kind, o.variant_brand, o.variant_origin) for o in observaciones} == {
+            ("girasol", "Vitalín", "importado"),
+            ("girasol", "Magdalena", "importado"),
+        }
