@@ -9,7 +9,7 @@
   Los nombres indexados (`product_id_N`, `price_N`, `row_count`, …) y los `id`
   no cambian: `submit_curation` y los tests siguen viendo lo mismo.
 #}
-{% macro price_row_card(row, index0, products, provinces, currencies, units, packaging, edit_mode=False) %}
+{% macro price_row_card(row, index0, products, provinces, currencies, units, packaging, variant_options, edit_mode=False) %}
 {# Nombres de unidad en español, para el control de `price_basis` de más
    abajo y para el `data-basis-label` que lee `_price_row_scripts.html`. Vive
    acá y no en `saimc.units` (D8): ese módulo es dueño del vocabulario de
@@ -76,6 +76,28 @@
       -->
       <span class="m3-help">Solo productos piloto. <a href="/catalog">Administrar el foco</a>.</span>
     </label>
+
+    {# Datalists de variante por producto: uno por eje y por producto piloto,
+       con lo ya declarado para ese producto (product-variants, design.md D7).
+       No están dentro del <select> de arriba porque un <datalist> no puede
+       anidarse en un <select>. #}
+    {% for product in products %}
+    <datalist id="variant-kind-{{ product.id }}">
+      {% for valor in variant_options.get(product.id|string, {}).get("kind", []) %}
+      <option value="{{ valor }}"></option>
+      {% endfor %}
+    </datalist>
+    <datalist id="variant-brand-{{ product.id }}">
+      {% for valor in variant_options.get(product.id|string, {}).get("brand", []) %}
+      <option value="{{ valor }}"></option>
+      {% endfor %}
+    </datalist>
+    <datalist id="variant-origin-{{ product.id }}">
+      {% for valor in variant_options.get(product.id|string, {}).get("origin", []) %}
+      <option value="{{ valor }}"></option>
+      {% endfor %}
+    </datalist>
+    {% endfor %}
 
     <label class="m3-field">
       <span class="m3-field-label" for="price_{{ index0 }}">Precio</span>
@@ -219,6 +241,37 @@
         y la extracción pierde una de sus pistas para saber si el precio es del lote.
       </span>
     </label>
+  </div>
+
+  {# Variante: hasta tres ejes libres (tipo/marca/origen), elegidos de lo que
+     ya existe para este producto o tipeados si son nuevos — declarar y elegir
+     son el mismo acto (product-variants, design.md D7). Sin vocabulario
+     cerrado: cualquier texto es válido, y `_resolve_variant_id` pliega
+     acentos/mayúsculas al guardar, así que "Vitalín" y "vitalin" son la
+     misma variante. #}
+  <div style="margin-top:22px">
+    <span class="m3-field-label" style="display:block; margin-bottom:8px">Variante (opcional)</span>
+    <div class="m3-grid-fields" style="grid-template-columns:repeat(auto-fit, minmax(150px, 1fr))">
+      <label class="m3-field">
+        <span class="m3-field-label" for="variant_kind_{{ index0 }}">Tipo</span>
+        <input type="text" name="variant_kind_{{ index0 }}" id="variant_kind_{{ index0 }}" value="{{ row.variant_kind }}" list="variant-kind-{{ row.product_id }}" class="m3-input" placeholder="ej. girasol" />
+      </label>
+      <label class="m3-field">
+        <span class="m3-field-label" for="variant_brand_{{ index0 }}">Marca</span>
+        <input type="text" name="variant_brand_{{ index0 }}" id="variant_brand_{{ index0 }}" value="{{ row.variant_brand }}" list="variant-brand-{{ row.product_id }}" class="m3-input" placeholder="ej. Vitalín" />
+      </label>
+      <label class="m3-field">
+        <span class="m3-field-label" for="variant_origin_{{ index0 }}">Origen</span>
+        <input type="text" name="variant_origin_{{ index0 }}" id="variant_origin_{{ index0 }}" value="{{ row.variant_origin }}" list="variant-origin-{{ row.product_id }}" class="m3-input" placeholder="ej. importado" />
+      </label>
+    </div>
+    <span class="m3-help">
+      Dejalo en blanco si no se puede establecer — nunca inventes un tipo, marca u origen.
+      Elegí de la lista si ya existe; si escribís algo nuevo, se crea con esta fila. Dos
+      cosas a tener en cuenta: si cambiás el producto de esta fila, las sugerencias no se
+      actualizan solas; y una variante mal escrita queda pegada al anuncio hasta que se
+      corrija reeditando esta fila (todavía no hay pantalla en /catalog para borrarla).
+    </span>
   </div>
 
   {# Compra mínima: sí es opcional de verdad — no entra en ninguna clave ni

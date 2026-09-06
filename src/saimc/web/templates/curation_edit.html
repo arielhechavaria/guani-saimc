@@ -73,7 +73,7 @@
       </section>
 
       {% for row in rows %}
-      {{ price_row_card(row, loop.index0, products, provinces, currencies, units, packaging, edit_mode=True) }}
+      {{ price_row_card(row, loop.index0, products, provinces, currencies, units, packaging, variant_options, edit_mode=True) }}
       {% endfor %}
 
       <input type="hidden" name="row_count" value="{{ rows|length }}" />

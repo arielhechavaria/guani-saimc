@@ -29,6 +29,7 @@ from saimc.models import (
     ProcessingStatus,
     Product,
     ProductFormat,
+    ProductVariant,
     Province,
     RawIngestion,
     SaleFormat,
@@ -135,6 +136,7 @@ def _crear_precio_curado(
     unit: str | None = None,
     sale_format: str | None = None,
     format_id: uuid.UUID | None = None,
+    variant_id: uuid.UUID | None = None,
     min_purchase_quantity: Decimal | None = None,
     quantity: Decimal | None = None,
     price_basis: str | None = None,
@@ -153,6 +155,7 @@ def _crear_precio_curado(
         unit=unit,
         sale_format=sale_format,
         format_id=format_id,
+        variant_id=variant_id,
         min_purchase_quantity=min_purchase_quantity,
         quantity=quantity,
         price_basis=price_basis,
@@ -2063,6 +2066,195 @@ class TestCurationSubmit:
         assert fila.format_id is None
         assert fila.quantity == Decimal("10")  # la fila se crea con sus otros campos
         assert session.execute(select(func.count()).select_from(ProductFormat)).scalar() == 0
+
+
+class TestVariantesEnCuraduria:
+    """`variant_kind_i`/`variant_brand_i`/`variant_origin_i` — declarar y
+    elegir una variante son el mismo acto (design.md D7)."""
+
+    def test_elegir_una_variante_declarada_persiste_variant_id(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Aceite")
+        variante = ProductVariant(
+            product_id=producto.id,
+            kind="girasol",
+            brand="Vitalín",
+            origin="importado",
+            kind_key="girasol",
+            brand_key="vitalin",
+            origin_key="importado",
+        )
+        session.add(variante)
+        session.commit()
+        variante_id = variante.id
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-variante-declarada")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "variant_kind_0": "girasol",
+                "variant_brand_0": "Vitalín",
+                "variant_origin_0": "importado",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.variant_id == variante_id
+        assert session.execute(select(func.count()).select_from(ProductVariant)).scalar() == 1
+
+    def test_una_variante_nueva_se_crea_al_vuelo_desde_el_formulario(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Aceite")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-variante-nueva")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+                "variant_kind_0": "girasol",
+                "variant_brand_0": "Vitalín",
+                "variant_origin_0": "importado",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        variante = session.execute(select(ProductVariant)).scalars().one()
+        assert (variante.kind, variante.brand, variante.origin) == (
+            "girasol",
+            "Vitalín",
+            "importado",
+        )
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.variant_id == variante.id
+
+    def test_la_misma_terna_dos_veces_incluso_con_otro_acento_no_duplica(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: declarar la misma variante dos veces, incluso con otra
+        ortografía, no duplica (curation-observation-capture)."""
+        producto = _crear_producto(session, name="Aceite")
+        uno = _crear_raw_ingestion(session, hash_="hash-post-variante-terna-1")
+        dos = _crear_raw_ingestion(session, hash_="hash-post-variante-terna-2")
+
+        for ingestion, brand in ((uno, "Vitalín"), (dos, "VITALIN")):
+            respuesta = client.post(
+                f"/curation/{ingestion.id}",
+                data={
+                    "published_date": _fecha_pub(ingestion),
+                    "row_count": "1",
+                    "product_id_0": str(producto.id),
+                    "price_0": "450",
+                    "variant_kind_0": "girasol",
+                    "variant_brand_0": brand,
+                    "variant_origin_0": "importado",
+                },
+                follow_redirects=False,
+            )
+            assert respuesta.status_code == 303
+
+        session.expire_all()
+        variantes = list(session.execute(select(ProductVariant)).scalars())
+        assert len(variantes) == 1
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert {f.variant_id for f in filas} == {variantes[0].id}
+
+    def test_los_tres_campos_en_blanco_guarda_variant_id_null_y_crea_la_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Aceite")
+        ingestion = _crear_raw_ingestion(session, hash_="hash-post-variante-vacia")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data={
+                "published_date": _fecha_pub(ingestion),
+                "row_count": "1",
+                "product_id_0": str(producto.id),
+                "price_0": "450",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        session.expire_all()
+        fila = session.execute(select(PriceHistory)).scalars().one()
+        assert fila.variant_id is None
+        assert session.execute(select(func.count()).select_from(ProductVariant)).scalar() == 0
+
+    def test_edit_preselecciona_la_variante_de_la_fila_curada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Aceite")
+        curado = _crear_raw_ingestion(session, hash_="hash-variante-edit")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        variante = ProductVariant(
+            product_id=producto.id,
+            kind="girasol",
+            brand="Vitalín",
+            origin="importado",
+            kind_key="girasol",
+            brand_key="vitalin",
+            origin_key="importado",
+        )
+        session.add(variante)
+        session.commit()
+        _crear_precio_curado(
+            session,
+            ingestion=curado,
+            product=producto,
+            price="750",
+            variant_id=variante.id,
+        )
+
+        response = client.get(f"/curation/{curado.id}/edit")
+
+        assert response.status_code == 200
+        assert 'name="variant_kind_0" id="variant_kind_0" value="girasol"' in response.text
+        assert 'name="variant_brand_0" id="variant_brand_0" value="Vitalín"' in response.text
+        assert 'name="variant_origin_0" id="variant_origin_0" value="importado"' in response.text
+
+    def test_una_marca_ya_usada_aparece_en_el_datalist_del_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """spec: una marca ya usada se elige, no se retipea
+        (curation-observation-capture)."""
+        producto = _crear_producto(session, name="Aceite")
+        variante = ProductVariant(
+            product_id=producto.id,
+            kind="girasol",
+            brand="Vitalín",
+            origin="importado",
+            kind_key="girasol",
+            brand_key="vitalin",
+            origin_key="importado",
+        )
+        session.add(variante)
+        session.commit()
+        _crear_raw_ingestion(session, hash_="hash-variante-datalist")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert f'<datalist id="variant-brand-{producto.id}">' in response.text
+        assert '<option value="Vitalín">' in response.text
 
 
 class TestAgregarFila:

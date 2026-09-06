@@ -67,12 +67,14 @@ from saimc.models import (
     Product,
     ProcessingStatus,
     ProductFormat,
+    ProductVariant,
     Province,
     RawIngestion,
     SaleFormat,
     SourceType,
 )
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
+from saimc.variants import get_or_create_variant
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
 
@@ -109,6 +111,27 @@ def _resolve_format_id(
     ).id
 
 
+def _resolve_variant_id(
+    db: Session, product_id: uuid.UUID, row: dict[str, str]
+) -> uuid.UUID | None:
+    """Resuelve los tres ejes (kind/brand/origin) de una fila del form a un
+    `variant_id`, creando el `ProductVariant` si no existe.
+
+    Devuelve `None` cuando los tres ejes quedan vacíos: la fila se guarda con
+    `variant_id = NULL`, mismo criterio que `_resolve_format_id`. Nunca
+    fabrica una variante a partir de un eje adivinado — sin vocabulario
+    cerrado, cualquier texto no vacío es un eje válido (product-variants).
+    """
+    variante = get_or_create_variant(
+        db,
+        product_id=product_id,
+        kind=row["variant_kind"],
+        brand=row["variant_brand"],
+        origin=row["variant_origin"],
+    )
+    return variante.id if variante is not None else None
+
+
 def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]:
     """Traduce una `ExtractionProposal` a strings listos para prellenar una fila del form.
 
@@ -125,6 +148,11 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
             "unit": "",
             "sale_format": "",
             "packaging": "",
+            # La extracción no propone variante — decisión cerrada
+            # (product-variants): declararla es siempre un acto manual.
+            "variant_kind": "",
+            "variant_brand": "",
+            "variant_origin": "",
             "min_purchase": "",
             "province_id": "",
             "price_basis": "",
@@ -146,6 +174,11 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         # El motor no propone envase; el operador lo elige y con
         # `quantity`+`unit` de la fila resuelve el formato al confirmar.
         "packaging": "",
+        # La extracción no propone variante — decisión cerrada
+        # (product-variants): declararla es siempre un acto manual.
+        "variant_kind": "",
+        "variant_brand": "",
+        "variant_origin": "",
         # El slice que design.md D7 dejaba pendiente, resuelto solo para la
         # forma que el motor sabe leer sin adivinar: el precio escalonado de
         # un anuncio mayorista («Más de 100 cajas 27,5»), donde el mínimo se
@@ -173,14 +206,17 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
 
 
 def _values_from_price_history(
-    price: PriceHistory, fmt: ProductFormat | None = None
+    price: PriceHistory,
+    fmt: ProductFormat | None = None,
+    variant: ProductVariant | None = None,
 ) -> dict[str, str]:
     """Traduce una fila ya curada a los mismos strings que arma una propuesta.
 
     Mismo formato de salida que `_values_from_proposal` — es lo que permite
     que la corrección reuse la tarjeta de la cola sin distinguir origen. `fmt`
     es el `ProductFormat` de `price.format_id` ya cargado por el llamador (que
-    tiene la sesión): se usa para preseleccionar el envase.
+    tiene la sesión): se usa para preseleccionar el envase. `variant` es el
+    `ProductVariant` de `price.variant_id`, cargado de la misma forma.
     """
     return {
         "price_id": str(price.id),
@@ -191,6 +227,9 @@ def _values_from_price_history(
         "unit": price.unit or "",
         "sale_format": price.sale_format or "",
         "packaging": fmt.packaging if fmt is not None else "",
+        "variant_kind": variant.kind if variant is not None else "",
+        "variant_brand": variant.brand if variant is not None else "",
+        "variant_origin": variant.origin if variant is not None else "",
         "min_purchase": (
             str(price.min_purchase_quantity)
             if price.min_purchase_quantity is not None
@@ -395,6 +434,30 @@ def _pilot_products(db: Session) -> list[Product]:
     return list(db.execute(stmt).scalars().all())
 
 
+def _variant_options(db: Session) -> dict[str, dict[str, list[str]]]:
+    """Valores de variante ya declarados, por producto y por eje.
+
+    Alimenta el `<datalist>` de cada eje en `_price_row_card.html`: una vez
+    que un producto tiene un valor declarado, el próximo se elige en vez de
+    retipearse (product-variants — "pick, don't type"). Sin vocabulario
+    cerrado: esto no filtra nada, solo ofrece lo que ya existe.
+    """
+    opciones: dict[str, dict[str, list[str]]] = {}
+    variantes = db.execute(select(ProductVariant).order_by(ProductVariant.kind)).scalars()
+    for variante in variantes:
+        por_producto = opciones.setdefault(
+            str(variante.product_id), {"kind": [], "brand": [], "origin": []}
+        )
+        for eje, valor in (
+            ("kind", variante.kind),
+            ("brand", variante.brand),
+            ("origin", variante.origin),
+        ):
+            if valor and valor not in por_producto[eje]:
+                por_producto[eje].append(valor)
+    return opciones
+
+
 def _all_provinces(db: Session) -> list[Province]:
     return list(db.execute(select(Province).order_by(Province.name)).scalars().all())
 
@@ -473,6 +536,7 @@ def _render_queue(
     global_values: dict[str, str],
     error: str | None,
     status_counts: dict[str, int],
+    variant_options: dict[str, dict[str, list[str]]],
     blank_row: dict[str, str] | None = None,
     status_code: int = 200,
     unconverted: int = 0,
@@ -512,6 +576,7 @@ def _render_queue(
             "currencies": [c.value for c in Currency],
             "units": UNITS,
             "packaging": PACKAGING,
+            "variant_options": variant_options,
             "status_counts": status_counts,
             # Solo la vuelve True el GET normal (docs/decisions.md,
             # 2026-08-17): tras un error de validación en el POST (segundo
@@ -786,6 +851,7 @@ def _curation_view(
         blank_row=blank_row,
         error=None,
         status_counts=_status_counts(db, products),
+        variant_options=_variant_options(db),
         unconverted=unconverted,
         pasted=pasted,
         # `proposals` es la salida cruda de `propose_all`, antes del filtro
@@ -1148,6 +1214,9 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
         "unit": str(form.get(f"unit_{index}", "")).strip(),
         "sale_format": str(form.get(f"sale_format_{index}", "")).strip(),
         "packaging": str(form.get(f"packaging_{index}", "")).strip(),
+        "variant_kind": str(form.get(f"variant_kind_{index}", "")).strip(),
+        "variant_brand": str(form.get(f"variant_brand_{index}", "")).strip(),
+        "variant_origin": str(form.get(f"variant_origin_{index}", "")).strip(),
         "min_purchase": str(form.get(f"min_purchase_{index}", "")).strip(),
         "province_id": str(form.get(f"province_id_{index}", "")).strip(),
         "price_basis": str(form.get(f"price_basis_{index}", "")).strip(),
@@ -1261,6 +1330,11 @@ async def submit_curation(
                 # que dos filas del mismo submit con el mismo triple reusan el
                 # `ProductFormat` en vez de chocar contra el UNIQUE.
                 format_id=_resolve_format_id(db, product.id, row),
+                # Los tres ejes resuelven la variante; si los tres quedan
+                # vacíos, `variant_id` queda en NULL sin fabricar nada
+                # (product-variants). `get_or_create_variant` también hace
+                # `flush()`, mismo motivo que arriba.
+                variant_id=_resolve_variant_id(db, product.id, row),
                 min_purchase_quantity=_parse_min_purchase(row["min_purchase"]),
                 price_basis=price_basis,
                 published_date=published_date,
@@ -1289,6 +1363,7 @@ async def submit_curation(
             },
             error=" ".join(errors),
             status_counts=_status_counts(db, _pilot_products(db)),
+            variant_options=_variant_options(db),
             status_code=422,
         )
 
@@ -1539,6 +1614,7 @@ def edit_curated(
         _values_from_price_history(
             price,
             db.get(ProductFormat, price.format_id) if price.format_id else None,
+            db.get(ProductVariant, price.variant_id) if price.variant_id else None,
         )
         for price in prices
     ]
@@ -1567,6 +1643,7 @@ def edit_curated(
             "currencies": [c.value for c in Currency],
             "units": UNITS,
             "packaging": PACKAGING,
+            "variant_options": _variant_options(db),
         },
     )
 
@@ -1690,6 +1767,7 @@ async def submit_edit(
                 "currencies": [c.value for c in Currency],
                 "units": UNITS,
                 "packaging": PACKAGING,
+                "variant_options": _variant_options(db),
             },
             status_code=422,
         )
@@ -1735,6 +1813,9 @@ async def submit_edit(
             row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None
         )
         existing.format_id = _resolve_format_id(db, product.id, row)
+        # Misma razón que `_resolve_format_id` arriba (D6): va después de
+        # resolver la tasa, nunca antes.
+        existing.variant_id = _resolve_variant_id(db, product.id, row)
         existing.min_purchase_quantity = _parse_min_purchase(row["min_purchase"])
         # Re-derivados de `row` con los mismos dos helpers puros que ya
         # validaron esta fila en el primer loop (D4): son funciones puras de
