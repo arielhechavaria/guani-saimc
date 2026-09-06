@@ -6811,3 +6811,33 @@ seguir ignorando `product_variants`. Dos formas de nombrar lo mismo pueden
 coexistir un tiempo — el nombre de producto "Azúcar blanca" y una futura
 variante `kind="blanca"` de un producto genérico "Azúcar" — hasta una
 consolidación posterior que decida con datos reales, no con esta migración.
+
+## 2026-09-06 — El formato del catálogo se elige en la cola, y rellena en vez de postear
+
+Contexto: `/catalog` deja declarar formatos de venta por producto («botella de
+900 ml»), pero el formulario de curaduría no los ofrecía: el operador rearmaba
+el triple desde envase + cantidad + unidad, y `get_or_create_format` crea una
+fila nueva si el triple no coincide exacto. Tipear «0.9» + «L» donde el
+catálogo dice «900» + «ml» fabricaba un segundo `ProductFormat` para el mismo
+objeto de mercado — la fragmentación que el eje de formatos vino a cerrar.
+
+Decisión: un `<select>` con los formatos ya declarados para ese producto que,
+al elegirlo, **rellena** `packaging_N`/`quantity_N`/`unit_N` con JS plano. No
+tiene `name`, así que el POST llega idéntico al de hoy y `_resolve_format_id`
+no se toca. Las opciones las arma `_format_options`, espejo de
+`_variant_options`. La etiqueta sale de `saimc.formats.format_label`, nueva y
+única: `/catalog` la armaba a mano con otro separador y un `| int` que mostraba
+«0 L» para un formato de 0.9 L, y `cells.py` tenía su propia copia.
+
+Descartado: postear un `format_id` directo y saltear la resolución por triple.
+Habría que sostener dos caminos de escritura —el select y la carga a mano— y
+el que menos se ejercita es el que se pudre; además obliga a decidir qué gana
+cuando el `format_id` posteado contradice los tres campos. También se descartó
+preseleccionar el formato de la fila: el control rellena, no refleja estado, y
+mostrarlo apuntando al formato actual afirmaría que el triple salió de ahí.
+
+Consecuencia: el select hereda la limitación ya declarada de la variante —
+cambiar el producto de la fila no recarga las sugerencias, se corrige
+recargando la página—, y está dicho en su texto de ayuda. Un producto sin
+formatos declarados no lo renderiza y se carga a mano como antes. Cualquier
+pantalla nueva que nombre un formato usa `format_label`, no una copia.

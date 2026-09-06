@@ -379,8 +379,11 @@
                   <span class="m3-icon m3-icon-sm">inventory_2</span>Formatos ({{ product_formats | length }})
                 </summary>
                 <div class="m3-card m3-card-pad" style="margin-top:6px; min-width:320px; text-align:left">
-                  {% for fmt, obs in product_formats %}
-                  {% set etiqueta = fmt.packaging ~ ' · ' ~ (fmt.quantity | int) ~ ' ' ~ fmt.unit %}
+                  {# La etiqueta la arma `saimc.formats.format_label`, la misma
+                     que ven la Matriz y el select de la cola: acá se armaba a
+                     mano con otro separador y un `| int` que mostraba «0 L»
+                     para un formato de 0.9 L. #}
+                  {% for fmt, obs, etiqueta in product_formats %}
                   <div class="m3-row" style="gap:8px; align-items:center; padding:3px 0; flex-wrap:wrap">
                     <span class="m3-strong" style="flex:1">{{ etiqueta }}</span>
                     <span class="m3-sm m3-muted">{{ obs }} obs.</span>

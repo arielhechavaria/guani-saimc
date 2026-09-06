@@ -2257,6 +2257,143 @@ class TestVariantesEnCuraduria:
         assert '<option value="Vitalín">' in response.text
 
 
+class TestFormatoDelCatalogo:
+    """El `<select>` de formatos ya declarados en `/catalog`.
+
+    Sin él, el operador rearma el triple a mano en cada anuncio y «0.9 L» donde
+    el catálogo dice «900 ml» fabrica un `ProductFormat` gemelo en silencio.
+    Es capa de interfaz: rellena `packaging_N`/`quantity_N`/`unit_N` y el POST
+    llega idéntico al de hoy.
+    """
+
+    def _formato(
+        self,
+        session: Session,
+        producto: Product,
+        *,
+        packaging: str = "caja",
+        quantity: str = "40",
+        unit: str = "lb",
+    ) -> ProductFormat:
+        formato = ProductFormat(
+            product_id=producto.id,
+            packaging=packaging,
+            quantity=Decimal(quantity),
+            unit=unit,
+        )
+        session.add(formato)
+        session.commit()
+        return formato
+
+    def test_las_opciones_traen_el_triple_entero_y_su_etiqueta(
+        self, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Aceite")
+        self._formato(session, producto, packaging="botella", quantity="900", unit="ml")
+
+        opciones = curation._format_options(session)
+
+        assert opciones == {
+            str(producto.id): [
+                {
+                    "label": "botella de 900 ml",
+                    "packaging": "botella",
+                    "quantity": "900",
+                    "unit": "ml",
+                }
+            ]
+        }
+
+    def test_las_opciones_se_indexan_por_producto(self, session: Session) -> None:
+        aceite = _crear_producto(session, name="Aceite")
+        pollo = _crear_producto(session, name="Pollo")
+        self._formato(session, aceite, packaging="botella", quantity="900", unit="ml")
+        self._formato(session, pollo)
+
+        opciones = curation._format_options(session)
+
+        assert set(opciones) == {str(aceite.id), str(pollo.id)}
+        assert opciones[str(pollo.id)][0]["label"] == "caja de 40 lb"
+
+    def test_un_producto_sin_formatos_no_tiene_entrada(self, session: Session) -> None:
+        _crear_producto(session, name="Aceite")
+
+        assert curation._format_options(session) == {}
+
+    def test_la_cola_ofrece_el_formato_del_producto_detectado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo")
+        self._formato(session, producto)
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-formato-cola",
+            original_text="pollo a 500 habana",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="format_pick_0"' in response.text
+        assert 'data-packaging="caja"' in response.text
+        assert 'data-quantity="40"' in response.text
+        assert 'data-unit="lb"' in response.text
+        assert ">caja de 40 lb</option>" in response.text
+
+    def test_el_select_no_viaja_en_el_post(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin `name` no hay campo nuevo que el backend tenga que entender:
+        `_resolve_format_id` sigue viendo los tres campos de siempre."""
+        producto = _crear_producto(session, name="Pollo")
+        self._formato(session, producto)
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-formato-sin-name",
+            original_text="pollo a 500 habana",
+        )
+
+        response = client.get("/curation")
+
+        assert 'name="format_pick' not in response.text
+
+    def test_un_producto_sin_formatos_no_muestra_el_select(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El caso de arranque: nadie declaró formatos todavía y el operador
+        carga envase, cantidad y unidad a mano, como antes de este control."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-formato-sin-formatos",
+            original_text="pollo a 500 habana",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        # `data-format-pick` a secas no sirve: el string también está en el
+        # selector del JS, que se sirve siempre.
+        assert 'id="format_pick_0"' not in response.text
+        assert 'id="packaging_0"' in response.text
+
+    def test_la_edicion_tambien_ofrece_los_formatos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Pollo")
+        self._formato(session, producto)
+        curado = _crear_raw_ingestion(session, hash_="hash-formato-edit")
+        curado.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(session, ingestion=curado, product=producto, price="24800")
+
+        response = client.get(f"/curation/{curado.id}/edit")
+
+        assert response.status_code == 200
+        assert 'id="format_pick_0"' in response.text
+        assert ">caja de 40 lb</option>" in response.text
+
+
 class TestAgregarFila:
     """El botón "Agregar fila": el clonado es JS (sin cobertura de Python),
     pero el molde `<template>` y su índice sí se afirman acá, y el submit tiene

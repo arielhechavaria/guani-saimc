@@ -6,6 +6,9 @@ creación al vuelo — el operador nunca tipea un formato, elige envase de una
 lista cerrada, escribe un número y elige unidad, así que "caja 40", "caja de
 40" y "caja 40lb" colapsan al mismo triple y el segundo intento encuentra la
 fila que ya existe.
+
+`format_label` vive acá por la misma razón: es punto único de cómo se *nombra*
+el triple, igual que `get_or_create_format` lo es de cómo se resuelve.
 """
 
 from decimal import Decimal
@@ -16,6 +19,27 @@ from sqlalchemy.orm import Session
 
 from saimc.models import ProductFormat
 from saimc.units import PACKAGING, UNITS
+
+
+def format_quantity(quantity: Decimal) -> str:
+    """La cantidad tal como se escribe: «40», no «40.000»; «0.9», no «0.900».
+
+    `Numeric(12, 3)` devuelve siempre tres decimales de escala. Sin recortarlos
+    el operador ve un número que él nunca tipeó, y el `<select>` de formatos de
+    la cola rellenaría `quantity_N` con un texto distinto al que él pondría a
+    mano para el mismo formato.
+    """
+    return format(quantity.normalize(), "f")
+
+
+def format_label(packaging: str, quantity: Decimal, unit: str) -> str:
+    """«caja de 40 lb» — cómo se nombra un formato en pantalla.
+
+    La escriben `/catalog`, la Matriz y el `<select>` de la cola. Con una copia
+    por pantalla el mismo formato se lee distinto en cada una, que es
+    exactamente la confusión que el eje de formatos vino a cerrar.
+    """
+    return f"{packaging} de {format_quantity(quantity)} {unit}"
 
 
 def get_or_create_format(

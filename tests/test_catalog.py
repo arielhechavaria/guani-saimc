@@ -509,8 +509,9 @@ class TestCatalogoFormatos:
         response = client.get("/catalog")
 
         assert response.status_code == 200
-        assert "caja" in response.text
-        assert "40" in response.text
+        # La misma etiqueta que la Matriz y el select de la cola
+        # (`saimc.formats.format_label`), no una copia con otro separador.
+        assert "caja de 40 lb" in response.text
 
 
 # --- CRUD de canales seguidos -----------------------------------------------

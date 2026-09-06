@@ -8,6 +8,10 @@ la misma caja en dos anuncios.
 
 Casos sintéticos escritos antes que `src/saimc/formats.py` (CLAUDE.md: en la
 capa de validación el caso esperado va antes que el código).
+
+`format_label` vive en el mismo módulo y se prueba acá abajo: es punto único
+de cómo se *nombra* el triple, igual que `get_or_create_format` lo es de cómo
+se resuelve.
 """
 
 from decimal import Decimal
@@ -16,7 +20,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from saimc.formats import get_or_create_format
+from saimc.formats import format_label, format_quantity, get_or_create_format
 from saimc.models import Product, ProductFormat
 
 
@@ -133,3 +137,24 @@ class TestGetOrCreateFormatValidacion:
                 unit="quintal",
             )
         assert _contar_formatos(session) == 0
+
+
+class TestFormatLabel:
+    """Cómo se nombra el triple en pantalla. Punto único: lo leen `/catalog`,
+    la Matriz y el `<select>` de la cola, y tres copias harían que el mismo
+    formato se lea distinto en cada pantalla."""
+
+    def test_la_etiqueta_nombra_el_triple_en_espanol(self) -> None:
+        assert format_label("caja", Decimal("40"), "lb") == "caja de 40 lb"
+        assert format_label("botella", Decimal("900"), "ml") == "botella de 900 ml"
+
+    def test_la_escala_de_numeric_no_llega_a_la_pantalla(self) -> None:
+        """`Numeric(12, 3)` devuelve 40.000 y 0.900: el operador nunca tipeó
+        esos ceros, así que no los ve."""
+        assert format_label("caja", Decimal("40.000"), "lb") == "caja de 40 lb"
+        assert format_label("botella", Decimal("0.900"), "l") == "botella de 0.9 l"
+
+    def test_la_cantidad_sale_como_se_escribe(self) -> None:
+        assert format_quantity(Decimal("40.000")) == "40"
+        assert format_quantity(Decimal("0.900")) == "0.9"
+        assert format_quantity(Decimal("1")) == "1"

@@ -114,6 +114,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from saimc.formats import format_label
 from saimc.models import (
     ContentType,
     Currency,
@@ -152,10 +153,13 @@ class _FormatPriced:
     @property
     def format_label(self) -> str | None:
         """«caja de 40 lb», o `None` sin formato. Es lo que la persona compra."""
-        if self.format_packaging is None or self.format_quantity is None:
+        if (
+            self.format_packaging is None
+            or self.format_quantity is None
+            or self.format_unit is None
+        ):
             return None
-        cantidad = format(self.format_quantity.normalize(), "f")
-        return f"{self.format_packaging} de {cantidad} {self.format_unit}"
+        return format_label(self.format_packaging, self.format_quantity, self.format_unit)
 
     @property
     def _format_factor(self) -> Decimal | None:

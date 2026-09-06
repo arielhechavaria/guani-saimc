@@ -313,7 +313,7 @@
             compartida con curation_edit.html.
           #}
           {% for row in rows %}
-          {{ price_row_card(row, loop.index0, products, provinces, currencies, units, packaging, variant_options) }}
+          {{ price_row_card(row, loop.index0, products, provinces, currencies, units, packaging, variant_options, format_options) }}
           {% endfor %}
 
           {#
@@ -328,7 +328,7 @@
             mayoría de los anuncios.
           #}
           <template id="price-row-template" data-template-index="{{ row_count }}">
-            {{ price_row_card(blank_row, row_count, products, provinces, currencies, units, packaging, variant_options) }}
+            {{ price_row_card(blank_row, row_count, products, provinces, currencies, units, packaging, variant_options, format_options) }}
           </template>
 
           <div class="m3-row" style="margin-bottom:16px">

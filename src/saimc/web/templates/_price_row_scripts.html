@@ -73,6 +73,32 @@
 
   document.querySelectorAll('input[id^="quantity_"]').forEach(syncBasisVisibility);
 
+  // El `<select>` de formato del catálogo no se envía: copia el triple a los
+  // tres campos que el backend ya sabe resolver, así el POST llega idéntico al
+  // de una carga a mano y `_resolve_format_id` no cambia. Sin JS el select no
+  // hace nada y el operador carga los tres campos como siempre.
+  document.addEventListener('change', function (event) {
+    var pick = event.target.closest('select[data-format-pick]');
+    if (!pick) return;
+    var option = pick.options[pick.selectedIndex];
+    if (!option || !option.value) return;
+
+    var index = pick.id.slice('format_pick_'.length);
+    var packaging = document.getElementById('packaging_' + index);
+    var quantity = document.getElementById('quantity_' + index);
+    var unit = document.getElementById('unit_' + index);
+    if (packaging) packaging.value = option.getAttribute('data-packaging');
+    if (quantity) quantity.value = option.getAttribute('data-quantity');
+    if (unit) unit.value = option.getAttribute('data-unit');
+
+    // Asignar `.value` por código no dispara `change` ni `input`, así que el
+    // control de `price_basis` se quedaría con el texto de la cantidad y la
+    // unidad anteriores — que es justo el error del 2026-09-05 que el relabel
+    // en vivo vino a cerrar. Se lo avisa a mano.
+    if (quantity) syncBasisVisibility(quantity);
+    syncBasisLabels(index);
+  });
+
   // Atenúa la tarjeta de una fila marcada para eliminar, para que se vea qué
   // se va antes de guardar. Solo cosmético: sin JS, la casilla igual se
   // envía y el servidor borra la fila lo mismo.

@@ -58,7 +58,7 @@ from saimc.extraction.engine import (
 from saimc.ingestion import origin
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.privacy import redact_personal_data
-from saimc.formats import get_or_create_format
+from saimc.formats import format_label, format_quantity, get_or_create_format
 from saimc.models import (
     ContentType,
     Currency,
@@ -458,6 +458,35 @@ def _variant_options(db: Session) -> dict[str, dict[str, list[str]]]:
     return opciones
 
 
+def _format_options(db: Session) -> dict[str, list[dict[str, str]]]:
+    """Formatos ya declarados en `/catalog`, por producto.
+
+    Espejo de `_variant_options`, con un nivel menos: el formato es un triple
+    indivisible, así que cada opción viaja entera y el `<select>` de
+    `_price_row_card.html` la copia a `packaging_N`/`quantity_N`/`unit_N`.
+
+    Nada de esto llega al POST: el select no tiene `name` y la resolución sigue
+    siendo `_resolve_format_id` sobre los tres campos de siempre. Lo que evita
+    es que el operador rearme a mano un formato que ya existe y tipee «0.9 L»
+    donde el catálogo dice «900 ml» — dos `ProductFormat` para el mismo objeto
+    de mercado, que es la fragmentación que el eje de formatos vino a cerrar.
+    """
+    opciones: dict[str, list[dict[str, str]]] = {}
+    formatos = db.execute(
+        select(ProductFormat).order_by(ProductFormat.packaging, ProductFormat.quantity)
+    ).scalars()
+    for formato in formatos:
+        opciones.setdefault(str(formato.product_id), []).append(
+            {
+                "label": format_label(formato.packaging, formato.quantity, formato.unit),
+                "packaging": formato.packaging,
+                "quantity": format_quantity(formato.quantity),
+                "unit": formato.unit,
+            }
+        )
+    return opciones
+
+
 def _all_provinces(db: Session) -> list[Province]:
     return list(db.execute(select(Province).order_by(Province.name)).scalars().all())
 
@@ -537,6 +566,7 @@ def _render_queue(
     error: str | None,
     status_counts: dict[str, int],
     variant_options: dict[str, dict[str, list[str]]],
+    format_options: dict[str, list[dict[str, str]]],
     blank_row: dict[str, str] | None = None,
     status_code: int = 200,
     unconverted: int = 0,
@@ -577,6 +607,7 @@ def _render_queue(
             "units": UNITS,
             "packaging": PACKAGING,
             "variant_options": variant_options,
+            "format_options": format_options,
             "status_counts": status_counts,
             # Solo la vuelve True el GET normal (docs/decisions.md,
             # 2026-08-17): tras un error de validación en el POST (segundo
@@ -852,6 +883,7 @@ def _curation_view(
         error=None,
         status_counts=_status_counts(db, products),
         variant_options=_variant_options(db),
+        format_options=_format_options(db),
         unconverted=unconverted,
         pasted=pasted,
         # `proposals` es la salida cruda de `propose_all`, antes del filtro
@@ -1364,6 +1396,7 @@ async def submit_curation(
             error=" ".join(errors),
             status_counts=_status_counts(db, _pilot_products(db)),
             variant_options=_variant_options(db),
+            format_options=_format_options(db),
             status_code=422,
         )
 
@@ -1644,6 +1677,7 @@ def edit_curated(
             "units": UNITS,
             "packaging": PACKAGING,
             "variant_options": _variant_options(db),
+            "format_options": _format_options(db),
         },
     )
 
@@ -1768,6 +1802,7 @@ async def submit_edit(
                 "units": UNITS,
                 "packaging": PACKAGING,
                 "variant_options": _variant_options(db),
+                "format_options": _format_options(db),
             },
             status_code=422,
         )

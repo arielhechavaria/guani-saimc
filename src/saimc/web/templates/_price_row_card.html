@@ -9,7 +9,7 @@
   Los nombres indexados (`product_id_N`, `price_N`, `row_count`, …) y los `id`
   no cambian: `submit_curation` y los tests siguen viendo lo mismo.
 #}
-{% macro price_row_card(row, index0, products, provinces, currencies, units, packaging, variant_options, edit_mode=False) %}
+{% macro price_row_card(row, index0, products, provinces, currencies, units, packaging, variant_options, format_options, edit_mode=False) %}
 {# Nombres de unidad en español, para el control de `price_basis` de más
    abajo y para el `data-basis-label` que lee `_price_row_scripts.html`. Vive
    acá y no en `saimc.units` (D8): ese módulo es dueño del vocabulario de
@@ -226,6 +226,38 @@
      así que va a la vista igual que `sale_format` y `price_basis` de arriba,
      no colapsado con lo que sí es opcional de verdad. #}
   <div style="margin-top:22px">
+    {# Formatos ya declarados en /catalog para ESTE producto. El select no
+       tiene `name`: no viaja en el POST, solo copia el triple a
+       envase/cantidad/unidad (`_price_row_scripts.html`), así que
+       `_resolve_format_id` sigue viendo exactamente lo mismo que en una carga
+       a mano. Existe porque rearmar el triple a ojo fabrica gemelos —«0.9 L»
+       donde el catálogo dice «900 ml» son dos ProductFormat para el mismo
+       objeto de mercado. Sin formatos declarados no se renderiza y el
+       operador carga como siempre. #}
+    {% set formatos = format_options.get(row.product_id, []) %}
+    {% if formatos %}
+    <label class="m3-field" style="display:block; margin-bottom:18px">
+      <span class="m3-field-label" for="format_pick_{{ index0 }}">Formato del catálogo</span>
+      <select id="format_pick_{{ index0 }}" class="m3-select" data-format-pick>
+        {# Sin preselección a propósito: este control rellena, no refleja el
+           estado de la fila. Mostrarlo apuntando al formato actual afirmaría
+           que el triple de abajo salió de acá, y en una fila ya curada no
+           salió de ningún lado — lo escribió el operador. #}
+        <option value="" selected>— elegir para rellenar —</option>
+        {% for formato in formatos %}
+        <option value="{{ formato.label }}"
+                data-packaging="{{ formato.packaging }}"
+                data-quantity="{{ formato.quantity }}"
+                data-unit="{{ formato.unit }}">{{ formato.label }}</option>
+        {% endfor %}
+      </select>
+      <span class="m3-help">
+        Elegir uno rellena envase, cantidad y unidad de esta fila; sin elegir, se cargan
+        a mano como siempre. Igual que la variante: si cambiás el producto de esta fila,
+        la lista no se actualiza sola — se corrige recargando la página.
+      </span>
+    </label>
+    {% endif %}
     <label class="m3-field" style="display:block">
       <span class="m3-field-label" for="packaging_{{ index0 }}">Envase</span>
       {# Vocabulario cerrado (saimc.units.PACKAGING): sin texto libre no hay
