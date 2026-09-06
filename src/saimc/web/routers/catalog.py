@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.extraction.engine import mentions_any_product
-from saimc.formats import format_label, get_or_create_format
+from saimc.formats import format_label, format_quantity, get_or_create_format
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.ingestion.whatsapp_backfill import fetch_channel_history
 from saimc.models import (
@@ -125,10 +125,15 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         .group_by(ProductFormat.id)
         .order_by(func.count(PriceHistory.id).desc(), ProductFormat.created_at.desc())
     ).all()
-    formats_by_product: dict[uuid.UUID, list[tuple[ProductFormat, int, str]]] = {}
+    formats_by_product: dict[uuid.UUID, list[tuple[ProductFormat, int, str, str]]] = {}
     for fmt, obs in format_rows:
         formats_by_product.setdefault(fmt.product_id, []).append(
-            (fmt, obs, format_label(fmt.packaging, fmt.quantity, fmt.unit))
+            (
+                fmt,
+                obs,
+                format_label(fmt.packaging, fmt.quantity, fmt.unit),
+                format_quantity(fmt.quantity),
+            )
         )
 
     channels_stmt = select(Channel).order_by(Channel.is_active.desc(), Channel.name)

@@ -383,7 +383,7 @@
                      que ven la Matriz y el select de la cola: acá se armaba a
                      mano con otro separador y un `| int` que mostraba «0 L»
                      para un formato de 0.9 L. #}
-                  {% for fmt, obs, etiqueta in product_formats %}
+                  {% for fmt, obs, etiqueta, cantidad in product_formats %}
                   <div class="m3-row" style="gap:8px; align-items:center; padding:3px 0; flex-wrap:wrap">
                     <span class="m3-strong" style="flex:1">{{ etiqueta }}</span>
                     <span class="m3-sm m3-muted">{{ obs }} obs.</span>
@@ -400,7 +400,9 @@
                         <select name="packaging" class="m3-select" style="font-size:12px; padding:4px 8px" required>
                           {% for p in packaging %}<option value="{{ p }}"{% if p == fmt.packaging %} selected{% endif %}>{{ p }}</option>{% endfor %}
                         </select>
-                        <input type="text" name="quantity" value="{{ fmt.quantity | int }}" required
+                        {# `| int` truncaba: un formato de 0.9 L se editaba con
+                           un 0 en pantalla y guardaba 0. #}
+                        <input type="text" name="quantity" value="{{ cantidad }}" required
                                class="m3-input m3-input-num" style="width:70px; font-size:12px; padding:4px 8px" />
                         <select name="unit" class="m3-select" style="font-size:12px; padding:4px 8px" required>
                           {% for u in units %}<option value="{{ u }}"{% if u == fmt.unit %} selected{% endif %}>{{ u }}</option>{% endfor %}

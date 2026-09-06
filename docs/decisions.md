@@ -6841,3 +6841,20 @@ cambiar el producto de la fila no recarga las sugerencias, se corrige
 recargando la página—, y está dicho en su texto de ayuda. Un producto sin
 formatos declarados no lo renderiza y se carga a mano como antes. Cualquier
 pantalla nueva que nombre un formato usa `format_label`, no una copia.
+
+## 2026-09-06 — El `| int` del catálogo también corrompía al guardar, no solo al mostrar
+Contexto: la entrada anterior arregló el `| int` de la etiqueta de `/catalog`
+tratándolo como un problema de visualización. Estaba en dos lugares: el input
+de edición del formato lo seguía usando. Abrir «botella de 0.9 l» —editable
+porque no tiene observaciones— mostraba `0` en el campo, y guardar sin tocar
+nada reescribía el formato con cantidad 0.
+Decisión: el input toma la cantidad ya formateada por `saimc.formats.
+format_quantity`, que viaja en la tupla de `formats_by_product` junto a la
+etiqueta. Test de regresión en `test_catalog.py` que afirma el `0.9` y niega
+el `0`.
+Descartado: exponer `format_quantity` como filtro Jinja global. Un cuarto
+elemento en una tupla que ya llevaba tres es más chico y no agrega
+configuración de plantillas para un solo uso.
+Consecuencia: `formats_by_product` pasa a ser una tupla de cuatro. Cualquier
+pantalla que edite una cantidad de `Numeric(12,3)` tiene que usar
+`format_quantity`, nunca `| int`: el truncado no avisa.

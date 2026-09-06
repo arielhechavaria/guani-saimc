@@ -513,6 +513,32 @@ class TestCatalogoFormatos:
         # (`saimc.formats.format_label`), no una copia con otro separador.
         assert "caja de 40 lb" in response.text
 
+    def test_editar_formato_decimal_conserva_la_cantidad(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El input de edición muestra 0.9, no 0.
+
+        Sin observaciones el formato es editable, y el formulario venía
+        truncando la cantidad con `| int`: abrir «botella de 0.9 l» y guardar
+        sin tocar nada escribía 0, cambiando el formato en silencio.
+        """
+        producto = _crear_producto(session, name="Aceite", is_pilot=True, unit="l")
+        session.add(
+            ProductFormat(
+                product_id=producto.id,
+                packaging="botella",
+                quantity=Decimal("0.9"),
+                unit="l",
+            )
+        )
+        session.commit()
+
+        response = client.get("/catalog")
+
+        assert response.status_code == 200
+        assert 'name="quantity" value="0.9"' in response.text
+        assert 'name="quantity" value="0"' not in response.text
+
 
 # --- CRUD de canales seguidos -----------------------------------------------
 
