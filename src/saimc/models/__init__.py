@@ -11,6 +11,7 @@ from saimc.models.price_history import (
 )
 from saimc.models.product import Product
 from saimc.models.product_format import ProductFormat
+from saimc.models.product_variant import ProductVariant
 from saimc.models.province import Province
 from saimc.models.raw_ingestion import (
     ContentType,
@@ -33,6 +34,7 @@ __all__ = [
     "ProcessingStatus",
     "Product",
     "ProductFormat",
+    "ProductVariant",
     "Province",
     "RawIngestion",
     "SaleFormat",

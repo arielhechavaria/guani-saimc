@@ -994,6 +994,139 @@ class TestPricesHistoryFormatId:
         assert precio.packaging_legacy == "Arroz importado a 320 la libra"
 
 
+def _crear_variante(
+    producto: Product,
+    *,
+    kind: str = "girasol",
+    brand: str = "",
+    origin: str = "",
+) -> "ProductVariant":
+    """Constructor puro, mismo patrón que `_crear_formato`. Los valores ya
+    llegan canónicos: el plegado por acento/mayúscula es responsabilidad de
+    `variant_key` (`test_variants.py`), no de esta capa — acá las columnas
+    `_key` son una copia literal de las de display."""
+    from saimc.models import ProductVariant
+
+    return ProductVariant(
+        product_id=producto.id,
+        kind=kind,
+        brand=brand,
+        origin=origin,
+        kind_key=kind,
+        brand_key=brand,
+        origin_key=origin,
+    )
+
+
+class TestProductVariantIdentity:
+    """`uq_product_variants_identity` sobre las columnas plegadas
+    (product_id, kind_key, brand_key, origin_key) — design.md D1/D2. Las
+    columnas son `NOT NULL DEFAULT ''`: con columnas nullable, NULL no
+    deduplica contra NULL y la unicidad no cumpliría nada."""
+
+    def test_terna_repetida_bajo_el_mismo_producto_rechazada(
+        self, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        session.add(
+            _crear_variante(producto, kind="girasol", brand="vitalin", origin="importado")
+        )
+        session.commit()
+
+        session.add(
+            _crear_variante(producto, kind="girasol", brand="vitalin", origin="importado")
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+    def test_la_misma_terna_bajo_otro_producto_se_acepta(self, session: Session) -> None:
+        aceite = _crear_producto(session, name="Aceite")
+        arroz = _crear_producto(session, name="Arroz")
+        session.add(
+            _crear_variante(aceite, kind="girasol", brand="vitalin", origin="importado")
+        )
+        session.add(
+            _crear_variante(arroz, kind="girasol", brand="vitalin", origin="importado")
+        )
+        session.commit()  # no levanta: la unicidad es por producto
+
+    def test_identidad_parcial_repetida_rechazada(self, session: Session) -> None:
+        """Solo `kind` declarado, brand/origin vacíos en las dos filas: debe
+        deduplicar igual que una terna completa (spec: product-variants —
+        «una variante declarada con un solo eje también deduplica»)."""
+        producto = _crear_producto(session)
+        session.add(_crear_variante(producto, kind="girasol", brand="", origin=""))
+        session.commit()
+
+        session.add(_crear_variante(producto, kind="girasol", brand="", origin=""))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+class TestProductVariantNotEmptyCheck:
+    """`ck_product_variants_not_empty` — estructural, no de vocabulario
+    (design.md D1): sin ella la fila con los tres ejes vacíos sería una
+    segunda forma de decir «sin variante declarada», que ya cubre
+    `prices_history.variant_id = NULL`."""
+
+    def test_las_tres_columnas_vacias_rechazadas(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        session.add(_crear_variante(producto, kind="", brand="", origin=""))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+class TestProductVariantForeignKeyRestrict:
+    """FK `RESTRICT` — una variante referenciada por una fila de precio nunca
+    se puede borrar (spec: product-variants — «una variante con historial no
+    se puede borrar»)."""
+
+    def test_borrar_variante_referenciada_por_un_precio_rechazado(
+        self, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+        variante = _crear_variante(producto)
+        session.add(variante)
+        session.flush()
+        session.add(_crear_precio(producto, fuente, variant_id=variante.id))
+        session.commit()
+
+        session.delete(variante)
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+    def test_borrar_variante_sin_precios_se_permite(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        variante = _crear_variante(producto)
+        session.add(variante)
+        session.commit()
+
+        session.delete(variante)
+        session.commit()  # sin filas que la referencien, se puede
+
+
+class TestPricesHistoryVariantId:
+    def test_variant_id_none_aceptado(self, session: Session) -> None:
+        """NULL = «variante no declarada», agrega en su propia celda igual
+        que `format_id = NULL` (spec: processing-layer-schema)."""
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session)
+        precio = _crear_precio(producto, fuente, variant_id=None)
+        session.add(precio)
+        session.commit()
+        assert precio.variant_id is None
+
+    def test_product_variant_no_admite_is_pilot(self) -> None:
+        """Una variante es una sub-unidad, nunca una producto independiente:
+        no existe columna `is_pilot` en `ProductVariant` — `is_pilot` vive
+        solo en `Product` (spec: product-variants)."""
+        from saimc.models import ProductVariant
+
+        with pytest.raises(TypeError):
+            ProductVariant(kind="girasol", is_pilot=True)  # type: ignore[call-arg]
+
+
 class TestProductFormatsMigration:
     """`0018_product_formats.py` — **puramente aditiva** (design.md D4a): crea
     `product_formats`, agrega `format_id` y `packaging_legacy` a
@@ -1069,6 +1202,68 @@ class TestProductFormatsMigration:
                 sa.text("select packaging from prices_history")
             ).scalar_one()
             assert valor == "Arroz importado a 320 la libra"
+
+        engine.dispose()
+
+
+class TestProductVariantsMigration:
+    """`0020_product_variants.py` — puramente aditiva (design.md, Migration /
+    Rollout): crea `product_variants` y agrega `prices_history.variant_id`.
+    Sin backfill: a diferencia de `packaging`, la marca y el tipo nunca
+    estuvieron en ninguna columna, así que no hay dato de origen que copiar."""
+
+    def test_upgrade_crea_tabla_y_columna_downgrade_revierte(self) -> None:
+        modulo = _cargar_modulo_migracion("0020_product_variants.py")
+
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "products",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        sa.Table(
+            "prices_history",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        metadata.create_all(engine)
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            tablas = inspect(connection).get_table_names()
+            assert "product_variants" in tablas
+            cols_var = {
+                c["name"] for c in inspect(connection).get_columns("product_variants")
+            }
+            assert {
+                "id",
+                "product_id",
+                "kind",
+                "brand",
+                "origin",
+                "kind_key",
+                "brand_key",
+                "origin_key",
+                "created_at",
+            } <= cols_var
+
+            cols_ph = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "variant_id" in cols_ph
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+
+            assert "product_variants" not in inspect(connection).get_table_names()
+            cols_ph = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert "variant_id" not in cols_ph
 
         engine.dispose()
 

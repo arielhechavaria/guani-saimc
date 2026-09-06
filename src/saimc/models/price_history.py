@@ -174,6 +174,18 @@ class PriceHistory(Base):
         ),
         nullable=True,
     )
+    # Variante declarada (kind/brand/origin) contra la que agrega la serie
+    # (product-variants). `NULL` = «variante no declarada», agrega en su
+    # propia celda igual que `format_id = NULL` — nunca se adivina.
+    variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "product_variants.id",
+            ondelete="RESTRICT",
+            name="fk_prices_history_variant_id",
+        ),
+        nullable=True,
+    )
     # Linaje al registro crudo. RESTRICT y nunca CASCADE: raw_ingestions es
     # inmutable y ningún precio publicado puede quedar sin su evidencia.
     source_id: Mapped[uuid.UUID] = mapped_column(
