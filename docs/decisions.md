@@ -6891,3 +6891,30 @@ sí, `_UNIT_WORDS`; si no, sólo la guarda. Las tres causas restantes del anunci
 del operador —la línea con precio y sin producto que se descarta, la falta de
 herencia de encabezado fuera de escalones, y que `propose_all` nunca propone
 `price_basis`— quedan abiertas y no las toca esta entrada.
+
+## 2026-09-07 — Mapa de la cola: la vista de curaduría no permitía mirar
+Contexto: dos veces seguidas entregué pasos de verificación que pedían «abrí
+/curation y buscá tal anuncio». Es imposible por diseño: `/curation` muestra un
+solo pendiente —`en_foco[0]`, el más antiguo que mencione un piloto— y no había
+ruta para abrir uno puntual. El foco además esconde lo que no nombra un piloto,
+así que ni siquiera se sabía qué había. Medido: 284 pendientes, de los cuales
+201 son imágenes sin transcribir y 53 están fuera de foco.
+Decisión: `GET /curation/cola`, el mapa completo. Lista todos los pendientes con
+filtros (`foco`, `tipo`, `producto`, `q`), marcas emoji, contadores clicables por
+foco, y un enlace por fila a `GET /curation?id=<uuid>` que abre ese anuncio para
+curarlo. El salto acepta cualquier pendiente, también fuera de foco —es
+justamente lo que la vista existe para dejar ver— y un id inválido, inexistente o
+ya no pendiente degrada al primero de la cola en vez de dar 404.
+Descartado: correr OCR en el listado para que las imágenes muestren su texto.
+Son 201 de 284: pagaría la transcripción de la cola entera en cada carga de
+página, el mismo motivo por el que `_focus_rank` deja `_FOCUS_UNKNOWN` sin
+resolver. Se listan con su marca y se leen al abrirlas. También se descartó
+numerar la posición sobre la lista filtrada: «el #3» tiene que significar lo
+mismo en toda vista, así que se numera sobre la cola completa.
+Consecuencia: los emoji son vocabulario, no adorno — cada marca la decide
+`_queue_entry` en el router y la leyenda de la plantilla las nombra todas.
+Sumar una marca es tocar esa función, no la plantilla. Los iconos de Material
+que use una plantilla nueva tienen que estar ya en
+`material-symbols-rounded.icons.txt`, o hay que correr `tools/build_icon_font.py`
+(que baja de Google Fonts): acá se eligieron `filter_alt`, `inbox` y `edit`, que
+ya estaban, para no depender de la red.

@@ -5007,3 +5007,208 @@ class TestEditarCuradoBorrarFila:
 
         assert 'name="delete_0"' in html
         assert 'name="delete_1"' in html
+
+
+class TestVistaCola:
+    """El mapa de la cola: todos los pendientes, con filtros (2026-09-07).
+
+    Existe porque `/curation` muestra un pendiente por vez y esconde lo que
+    está fuera de foco, así que no había forma de ver qué hay ni de abrir un
+    anuncio puntual.
+    """
+
+    def test_lista_tambien_lo_que_esta_fuera_de_foco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session, hash_="cola-en-foco", original_text="Pollo a 1200 la lb"
+        )
+        _crear_raw_ingestion(
+            session, hash_="cola-fuera", original_text="Cemento gris a 25 usd"
+        )
+
+        html = client.get("/curation/cola").text
+
+        # La cola normal esconde el cemento; este mapa lo muestra.
+        assert "Pollo a 1200" in html
+        assert "Cemento gris" in html
+
+    def test_filtra_por_foco(self, client: TestClient, session: Session) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session, hash_="foco-si", original_text="Pollo a 1200 la lb"
+        )
+        _crear_raw_ingestion(
+            session, hash_="foco-no", original_text="Cemento gris a 25 usd"
+        )
+
+        solo_foco = client.get("/curation/cola?foco=si").text
+        assert "Pollo a 1200" in solo_foco
+        assert "Cemento gris" not in solo_foco
+
+        fuera = client.get("/curation/cola?foco=no").text
+        assert "Cemento gris" in fuera
+        assert "Pollo a 1200" not in fuera
+
+    def test_filtra_por_texto(self, client: TestClient, session: Session) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session, hash_="q-1", original_text="Aceite Saude 900 ml a 3400"
+        )
+        _crear_raw_ingestion(session, hash_="q-2", original_text="Pollo a 1200 la lb")
+
+        html = client.get("/curation/cola?q=900 ml").text
+
+        assert "Aceite Saude" in html
+        assert "Pollo a 1200" not in html
+
+    def test_la_imagen_sin_texto_se_marca_y_no_se_transcribe(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """El OCR de la cola entera en cada carga es justo lo que esta vista
+        no puede pagar: cientos de imágenes por página."""
+        _crear_raw_ingestion(
+            session,
+            hash_="img-sin-texto",
+            content_type=ContentType.IMAGE,
+            original_text=None,
+        )
+
+        def _explotar(*args: object, **kwargs: object) -> str:
+            raise AssertionError("la vista de cola no debe correr OCR")
+
+        monkeypatch.setattr(ocr, "transcribe", _explotar)
+
+        html = client.get("/curation/cola").text
+
+        assert "Imagen sin transcribir" in html
+
+    def test_la_posicion_no_cambia_al_filtrar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El `#` ubica en la cola completa; si dependiera del filtro activo,
+        «el 3» significaría algo distinto en cada vista."""
+        _crear_producto(session, name="Pollo")
+        base = datetime.now(UTC) - timedelta(hours=3)
+        _crear_raw_ingestion(
+            session,
+            hash_="pos-0",
+            original_text="Cemento gris a 25 usd",
+            captured_at=base,
+        )
+        _crear_raw_ingestion(
+            session,
+            hash_="pos-1",
+            original_text="Pollo a 1200 la lb",
+            captured_at=base + timedelta(hours=1),
+        )
+
+        html = client.get("/curation/cola?foco=si").text
+
+        # El pollo es el segundo de la cola completa aunque sea el único
+        # listado bajo este filtro: su celda de posición dice 1, no 0. Se
+        # mira la celda con su clase para que un "1" suelto de la página no
+        # haga pasar el test.
+        celdas = re.findall(r'<td class="m3-num m3-sm m3-muted m3-nowrap">(\d+)</td>', html)
+        assert celdas == ["1"]
+
+    def test_saltar_por_id_abre_ese_pendiente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_provincia(session)
+        base = datetime.now(UTC) - timedelta(hours=3)
+        _crear_raw_ingestion(
+            session,
+            hash_="salto-primero",
+            original_text="Pollo a 1200 la lb",
+            captured_at=base,
+        )
+        segundo = _crear_raw_ingestion(
+            session,
+            hash_="salto-segundo",
+            original_text="Pollo ahumado a 9999 la lb",
+            captured_at=base + timedelta(hours=1),
+        )
+
+        sin_id = client.get("/curation").text
+        assert "Pollo a 1200" in sin_id
+        assert "9999" not in sin_id
+
+        con_id = client.get(f"/curation?id={segundo.id}").text
+        assert "9999" in con_id
+
+    def test_saltar_a_uno_fuera_de_foco_lo_abre_igual(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El punto del mapa es ver lo que el foco esconde: si el salto
+        respetara el foco, la vista no serviría para eso."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="foco-ok", original_text="Pollo a 1200 la lb")
+        fuera = _crear_raw_ingestion(
+            session, hash_="foco-fuera", original_text="Cemento gris a 25 usd"
+        )
+
+        html = client.get(f"/curation?id={fuera.id}").text
+
+        assert "Cemento gris" in html
+
+    @pytest.mark.parametrize(
+        "sufijo",
+        [
+            "?id=no-es-un-uuid",
+            f"?id={uuid.uuid4()}",
+        ],
+    )
+    def test_id_invalido_o_inexistente_cae_a_la_cola_normal(
+        self, client: TestClient, session: Session, sufijo: str
+    ) -> None:
+        """Degrada en vez de 404: el operador vino a curar y la cola siempre
+        tiene algo mejor que un error."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="fallback", original_text="Pollo a 1200 la lb")
+
+        response = client.get(f"/curation{sufijo}")
+
+        assert response.status_code == 200
+        assert "Pollo a 1200" in response.text
+
+    def test_no_lista_lo_ya_curado_ni_lo_descartado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        curado = _crear_raw_ingestion(
+            session, hash_="ya-curado", original_text="Pollo curado a 1200"
+        )
+        curado.processing_status = ProcessingStatus.CURATED
+        descartado = _crear_raw_ingestion(
+            session, hash_="ya-descartado", original_text="Pollo descartado a 1300"
+        )
+        descartado.processing_status = ProcessingStatus.DISCARDED
+        session.commit()
+
+        html = client.get("/curation/cola").text
+
+        assert "Pollo curado" not in html
+        assert "Pollo descartado" not in html
+
+    def test_los_contadores_cuentan_la_cola_completa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Los atajos de arriba tienen que decir la forma de la cola entera,
+        no la del filtro activo: si contaran lo listado, «🎯 En foco 1» diría
+        siempre 1 estando ya dentro de ese filtro."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="c-foco", original_text="Pollo a 1200 la lb")
+        _crear_raw_ingestion(session, hash_="c-fuera", original_text="Cemento a 25 usd")
+        _crear_raw_ingestion(
+            session, hash_="c-img", content_type=ContentType.IMAGE, original_text=None
+        )
+
+        html = client.get("/curation/cola?foco=si").text
+
+        assert "🎯 En foco <strong>1</strong>" in html
+        assert "🖼️ Sin transcribir <strong>1</strong>" in html
+        assert "🚫 Fuera de foco <strong>1</strong>" in html
+        assert "Todos <strong>3</strong>" in html

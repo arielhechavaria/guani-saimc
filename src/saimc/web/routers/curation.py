@@ -32,6 +32,7 @@ triple está completo, la fila queda con `format_id`; si falta el envase, con
 import re
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -274,6 +275,135 @@ def _focus_rank(ingestion: RawIngestion, products: Sequence[Product]) -> int:
     if mentions_any_product(ingestion.original_text, products):
         return _FOCUS_MATCH
     return _FOCUS_NONE
+
+
+# Marcas de la vista de cola. Emoji y no `m3-icon` a pedido del operador
+# (2026-09-07): en una lista larga ubica más rápido un glifo con color propio
+# que una ligadura monocroma de Material Symbols. Cada una dice UNA cosa y
+# ninguna es decorativa — la leyenda de `curation_cola.html` las nombra todas.
+MARK_IN_FOCUS = "🎯"  # el texto menciona un producto piloto
+MARK_UNKNOWN = "🖼️"  # imagen sin transcribir: el foco no se sabe sin OCR
+MARK_OUT_OF_FOCUS = "🚫"  # texto sin ningún piloto
+MARK_HAS_PRICE = "💰"  # el motor sacó al menos un precio
+MARK_NO_PRICE = "🕳️"  # hay candidatos, pero ninguno con precio
+MARK_OUT_OF_STOCK = "❌"  # parece agotado
+MARK_WHOLESALE = "📦"  # parece venta por volumen
+
+_FOCUS_MARKS = {
+    _FOCUS_MATCH: MARK_IN_FOCUS,
+    _FOCUS_UNKNOWN: MARK_UNKNOWN,
+    _FOCUS_NONE: MARK_OUT_OF_FOCUS,
+}
+
+#: Valores de `?foco=` en `/curation/cola`. Ausente = no filtra.
+_FOCUS_FILTERS = {"si": _FOCUS_MATCH, "imagen": _FOCUS_UNKNOWN, "no": _FOCUS_NONE}
+
+
+@dataclass(frozen=True)
+class QueueEntry:
+    """Una fila de `/curation/cola`: el anuncio más lo que el motor ve en él.
+
+    Se arma en el router y no en la plantilla porque decidir qué marcas
+    aplican es lógica, no presentación: la plantilla sólo las imprime.
+    """
+
+    ingestion: RawIngestion
+    position: int
+    focus: int
+    marks: tuple[str, ...]
+    preview: str
+    products: tuple[str, ...]
+    row_count: int
+    priced_count: int
+
+    @property
+    def is_image_without_text(self) -> bool:
+        return self.focus == _FOCUS_UNKNOWN
+
+
+def _requested_pending(db: Session, focus_id: uuid.UUID | None) -> RawIngestion | None:
+    """El pendiente que `?id=` pide, o `None` si no sirve.
+
+    Revalida `PENDING` en vez de confiar en el id: entre que la vista de cola
+    se renderizó y el operador hizo clic, ese anuncio pudo curarse o
+    descartarse en otra pestaña. Devolver `None` deja que el llamador caiga al
+    primero de la cola, que es lo que el operador quería hacer igual.
+    """
+    if focus_id is None:
+        return None
+    ingestion = db.get(RawIngestion, focus_id)
+    if ingestion is None or ingestion.processing_status != ProcessingStatus.PENDING:
+        return None
+    return ingestion
+
+
+def _pending_all(db: Session) -> list[RawIngestion]:
+    """Todos los pendientes, más viejo primero. Sin filtro de foco.
+
+    `_pending_in_focus` esconde lo que no menciona un piloto, que es correcto
+    para curar de a uno pero deja al operador sin forma de ver qué hay en la
+    cola. Esta es la lista completa, y el foco pasa a ser una columna que se
+    filtra en vez de un filtro implícito (docs/decisions.md, 2026-09-07).
+    """
+    stmt = (
+        select(RawIngestion)
+        .where(RawIngestion.processing_status == ProcessingStatus.PENDING)
+        .order_by(RawIngestion.captured_at.asc())
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def _queue_entry(
+    ingestion: RawIngestion,
+    position: int,
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+) -> QueueEntry:
+    """Arma la fila de listado de un pendiente, SIN correr OCR.
+
+    Transcribir una imagen cuesta segundos y la cola tiene cientos: hacerlo
+    acá pagaría el OCR de toda la cola en cada carga de página, que es el
+    mismo motivo por el que `_focus_rank` deja `_FOCUS_UNKNOWN` en vez de
+    resolverlo. Una imagen sin texto se lista con su marca y se resuelve
+    abriéndola.
+    """
+    focus = _focus_rank(ingestion, products)
+    texto = ingestion.original_text or ""
+
+    marks = [_FOCUS_MARKS[focus]]
+    proposals: list[ExtractionProposal] = []
+    nombres: list[str] = []
+    if texto:
+        proposals = propose_all(texto, products, provinces)
+        # El nombre del catálogo cuando el motor lo reconoció; si no, el
+        # candidato que propondría dar de alta. Sin repetir y en orden de
+        # aparición, que es como el operador lee el anuncio.
+        for p in proposals:
+            nombre = p.product.name if p.product else p.product_name_guess
+            if nombre and nombre not in nombres:
+                nombres.append(nombre)
+
+    priced = sum(1 for p in proposals if p.price is not None)
+    if proposals:
+        marks.append(MARK_HAS_PRICE if priced else MARK_NO_PRICE)
+    if texto:
+        razones = probable_discard_reasons(texto, products)
+        if "parece indicar agotado" in razones:
+            marks.append(MARK_OUT_OF_STOCK)
+        if "parece venta mayorista/por volumen" in razones:
+            marks.append(MARK_WHOLESALE)
+
+    primera = next((ln.strip() for ln in texto.splitlines() if ln.strip()), "")
+    return QueueEntry(
+        ingestion=ingestion,
+        position=position,
+        focus=focus,
+        marks=tuple(marks),
+        preview=primera,
+        products=tuple(nombres),
+        row_count=len(proposals),
+        priced_count=priced,
+    )
 
 
 def _pending_in_focus(db: Session, products: Sequence[Product]) -> list[RawIngestion]:
@@ -705,12 +835,93 @@ async def paste_ads(request: Request, db: Session = Depends(get_db)) -> Redirect
     )
 
 
+@router.get("/curation/cola", response_class=HTMLResponse)
+def curation_overview(
+    request: Request,
+    db: Session = Depends(get_db),
+    foco: str | None = None,
+    tipo: str | None = None,
+    q: str | None = None,
+    producto: str | None = None,
+) -> HTMLResponse:
+    """El mapa de la cola: TODOS los pendientes, con filtros.
+
+    Existe porque `/curation` muestra un pendiente por vez —el más antiguo en
+    foco— y no había forma de ver qué más hay ni de abrir uno concreto. El
+    operador no podía verificar un cambio del extractor contra un anuncio
+    puntual sin curar toda la cola hasta llegar a él (docs/decisions.md,
+    2026-09-07).
+
+    No corre OCR: las imágenes sin transcribir se listan con su marca y su
+    contenido se resuelve al abrirlas. Ver `_queue_entry` para el motivo.
+
+    Sin paginación, mismo criterio que `/curation/history`: al volumen de
+    Fase 0 la cola entra en una página, y paginar antes de tener el problema
+    es complejidad sin uso (spec.md §12.6).
+    """
+    products = _pilot_products(db)
+    provinces = _all_provinces(db)
+
+    # La posición se numera sobre la cola COMPLETA y antes de filtrar, para
+    # que sea estable: si dependiera del filtro activo, «el #3» significaría
+    # algo distinto en cada vista y dejaría de servir para ubicarse.
+    todas = [
+        _queue_entry(ingestion, posicion, products, provinces)
+        for posicion, ingestion in enumerate(_pending_all(db))
+    ]
+    entradas = todas
+
+    # Contadores por foco, sobre la cola completa. Medido el 2026-09-07: de
+    # 284 pendientes, 201 son imágenes sin transcribir, así que la vista sin
+    # filtro abre en una pared de filas sin nada que leer. Los contadores son
+    # atajos de un clic a los tres subconjuntos, y de paso dicen la forma de
+    # la cola antes de que el operador filtre nada.
+    counts = {
+        "total": len(todas),
+        "si": sum(1 for e in todas if e.focus == _FOCUS_MATCH),
+        "imagen": sum(1 for e in todas if e.focus == _FOCUS_UNKNOWN),
+        "no": sum(1 for e in todas if e.focus == _FOCUS_NONE),
+    }
+
+    if foco in _FOCUS_FILTERS:
+        entradas = [e for e in entradas if e.focus == _FOCUS_FILTERS[foco]]
+    if tipo in (ContentType.TEXT, ContentType.IMAGE):
+        entradas = [e for e in entradas if e.ingestion.content_type == tipo]
+    if q:
+        aguja = q.strip().lower()
+        entradas = [
+            e for e in entradas if aguja in (e.ingestion.original_text or "").lower()
+        ]
+    if producto:
+        objetivo = producto.strip().lower()
+        entradas = [
+            e for e in entradas if any(objetivo in n.lower() for n in e.products)
+        ]
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "curation_cola.html",
+        {
+            "entries": entradas,
+            "counts": counts,
+            "filters": {
+                "foco": foco or "",
+                "tipo": tipo or "",
+                "q": q or "",
+                "producto": producto or "",
+            },
+            "pilots": [p.name for p in products],
+        },
+    )
+
+
 @router.get("/curation", response_class=HTMLResponse)
 def curation_queue(
     request: Request,
     db: Session = Depends(get_db),
     unconverted: int = 0,
     pasted: int = 0,
+    id: str | None = None,
 ) -> HTMLResponse:
     """Muestra el elemento `pending` más antiguo, con propuesta pre-llenada si hay texto.
 
@@ -730,8 +941,19 @@ def curation_queue(
     manual de correr `python -m saimc.ingestion` (docs/decisions.md). El
     operador ya abre esta página una vez al día para curar en bloque; no hace
     falta un timer aparte para un volumen de Fase 0.
+
+    `?id=` abre un pendiente puntual en vez del primero de la cola: es el
+    salto desde `/curation/cola` (2026-09-07). Acepta cualquier pendiente,
+    también uno fuera de foco — el punto de la vista de cola es justamente
+    poder mirar lo que el foco esconde. Un id que no existe, que ya no está
+    `pending` o que no es un UUID cae al comportamiento normal en vez de dar
+    404: el operador llegó acá para curar, y la cola siempre tiene algo mejor
+    que un error (el mismo criterio de degradar sin romper que usa
+    `discard_out_of_focus` cuando un id del lote ya no califica).
     """
-    return _curation_view(request, db, unconverted=unconverted, pasted=pasted)
+    return _curation_view(
+        request, db, unconverted=unconverted, pasted=pasted, focus_id=_parse_uuid(id or "")
+    )
 
 
 def _curation_view(
@@ -741,10 +963,13 @@ def _curation_view(
     unconverted: int = 0,
     pasted: int = 0,
     assist_ingestion_id: uuid.UUID | None = None,
+    focus_id: uuid.UUID | None = None,
 ) -> HTMLResponse:
     """Arma la vista de la cola. Compartida por el GET y por el endpoint de
     asistencia, que es el mismo render con los huecos ya consultados al
     modelo — así el botón no puede divergir de lo que la página muestra.
+
+    `focus_id` fija cuál pendiente se muestra; sin él, el primero en foco.
     """
     settings = get_settings()
     ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir)
@@ -753,7 +978,7 @@ def _curation_view(
     # necesita para decidir cuál de los pendientes aporta a una celda.
     products = _pilot_products(db)
     en_foco = _pending_in_focus(db, products)
-    ingestion = en_foco[0] if en_foco else None
+    ingestion = _requested_pending(db, focus_id) or (en_foco[0] if en_foco else None)
     provinces = _all_provinces(db)
 
     proposals: list[ExtractionProposal] = []
