@@ -132,11 +132,45 @@ _PRICE_DOLLAR_SUFFIX_RE = re.compile(r"(\d[\d.,]*)\s*\$")
 # 280") porque `_normalize_number` ya sabe recortarlo (`rstrip(".,")`).
 _DUAL_PRICE_TWO_CURRENCIES_RE = re.compile(r"(\d[\d.,]*)\s*[oO]\s*(\d[\d.,]*)")
 
-# Unidades conocidas para cantidad. "cajas"/"caja" antes que las demás no
-# hace falta por backtracking de regex, pero se deja explícito por claridad.
-_UNIT_WORDS = ("lb", "kg", "cajas", "caja", "docena", "litro", "unidad")
+# Unidades conocidas para cantidad: sólo las que `units.canonical_unit()` sabe
+# resolver. Reconocer una que no canonice sería peor que no reconocerla, porque
+# dejaría una magnitud huérfana —cantidad con `unit=None`— después de que
+# `curation.py` canonice la salida. `ml` y `l` entran acá porque ya son
+# canónicas en `units.UNITS`: es el "cambio aparte" que anticipaba el docstring
+# de ese módulo.
+_UNIT_WORDS = (
+    "lb",
+    "kg",
+    "cajas",
+    "caja",
+    "docena",
+    "litros",
+    "litro",
+    "ml",
+    "l",
+    "unidad",
+)
+
+# Magnitudes que el mercado escribe pero `units.UNITS` no almacena ("500 g",
+# "12 u", "250 cc"). NO entran en `_QUANTITY_RE` por el motivo de arriba, pero
+# sí tienen que impedir que su número se lea como precio: ése es el otro rol
+# que la tupla única cumplía sin decirlo, y confundirlos es lo que hacía que
+# "Vinagre 500 ml ➔ 220" propusiera 500.
+_NON_CANONICAL_MAGNITUDE_WORDS = ("gr", "g", "oz", "cc", "lt", "unidades", "uds", "u")
+
+
+def _alternation(words: Sequence[str]) -> str:
+    """Alternancia de regex con las formas largas primero.
+
+    El backtracking ya resolvería "lb" contra una alternancia que empiece por
+    "l", pero ordenar explícitamente evita depender de eso al agregar formas
+    que son prefijo de otras ("l"/"lb", "g"/"gr", "u"/"uds").
+    """
+    return "|".join(sorted(words, key=len, reverse=True))
+
+
 _QUANTITY_RE = re.compile(
-    r"(\d[\d.,]*)\s*(" + "|".join(_UNIT_WORDS) + r")\b", re.IGNORECASE
+    r"(\d[\d.,]*)\s*(" + _alternation(_UNIT_WORDS) + r")\b", re.IGNORECASE
 )
 
 # "x libra", "por libra", "la libra", "/ lb" (y las mismas con kilo): el anuncio
@@ -169,10 +203,18 @@ _BARE_NUMBER_RE = re.compile(r"(?<![\d.,:+])(\d[\d.,]*)(?![\d.,:])")
 # Más de 6 dígitos es un teléfono, no un precio de este mercado.
 _BARE_NUMBER_MAX_DIGITS = 6
 
-# Un número pegado a su unidad es cantidad ("40 lb"), y ya lo lee
-# `_QUANTITY_RE`. Tomarlo también como precio confundiría los dos campos.
+# Un número pegado a su unidad es una MAGNITUD, no un precio: dimensiona el
+# envase ("500 ml", "12 u") o el lote ("40 lb"). La guarda cubre más formas que
+# `_QUANTITY_RE` a propósito — acá alcanza con reconocer que el número está
+# tomado, aunque la unidad no sea almacenable.
+#
+# Sin esto el daño no era que faltara la cantidad sino que sobraba un precio:
+# `_bare_price_candidate` se queda con el número MAYOR de la línea, así que en
+# "Vinagre de claro 500 ml ➔ 220" el volumen le ganaba al precio (medido contra
+# la cola el 2026-09-07; docs/decisions.md).
 _BARE_NUMBER_UNIT_TAIL_RE = re.compile(
-    r"(" + "|".join(_UNIT_WORDS) + r")\b", re.IGNORECASE
+    r"(" + _alternation(_UNIT_WORDS + _NON_CANONICAL_MAGNITUDE_WORDS) + r")\b",
+    re.IGNORECASE,
 )
 
 

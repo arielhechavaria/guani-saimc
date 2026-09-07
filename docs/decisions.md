@@ -6858,3 +6858,36 @@ configuración de plantillas para un solo uso.
 Consecuencia: `formats_by_product` pasa a ser una tupla de cuatro. Cualquier
 pantalla que edite una cantidad de `Numeric(12,3)` tiene que usar
 `format_quantity`, nunca `| int`: el truncado no avisa.
+
+## 2026-09-07 — La tupla de unidades cumplía dos roles y confundirlos leía el envase como precio
+Contexto: el operador reportó que «🚨ACEITE de🌻 900ml🚨 / 3400cup x12u x caja /
+TOTAL 🟰 40800cup» salía mal. Investigando apareció una causa mucho más ancha que
+ese anuncio: `_UNIT_WORDS` no tenía unidades métricas chicas, y esa única tupla
+alimentaba dos cosas distintas — reconocer cantidad (`_QUANTITY_RE`) y proteger un
+número de leerse como precio (`_BARE_NUMBER_UNIT_TAIL_RE`). Como
+`_bare_price_candidate` se queda con el número MAYOR de la línea, en «Vinagre de
+claro 500 ml ➔ 220» el volumen le ganaba al precio y el motor proponía 500.
+Decisión: separar los dos roles. `_UNIT_WORDS` suma sólo lo que
+`units.canonical_unit()` sabe resolver (`ml`, `l`, `litros`) — es el «cambio
+aparte» que el docstring de `units.py` ya anticipaba. Las magnitudes que el
+mercado escribe pero `UNITS` no almacena (`g`, `gr`, `oz`, `cc`, `lt`, `u`,
+`uds`, `unidades`) van en `_NON_CANONICAL_MAGNITUDE_WORDS`, que sólo entra en la
+guarda de precio. Medido contra la cola (914 anuncios con texto, 3368 líneas
+únicas): 39 precios corregidos, 114 precios falsos borrados, 161 líneas ganan
+cantidad+unidad, 0 pierden la que tenían, y las filas suben de 2563 a 2800
+porque el precio falso caía dentro del nombre y dejaba a `_guess_product_phrase`
+en `None`, lo que hacía que `propose_all` descartara la línea entera.
+Descartado: meter todas las magnitudes en `_UNIT_WORDS`. `canonical_unit('g')`
+devuelve `None`, así que reconocer «500 g» como cantidad dejaría una magnitud
+huérfana —cantidad con `unit=None`— después de que `curation.py` canonice. Un
+campo vacío es honesto; una cantidad sin unidad, no. También se descartó
+resolver esto con el asistente LLM: `llm_assist.missing_fields()` sólo pregunta
+por campos en `None` y `_run_assist` sólo escribe sobre `None` (design.md D1),
+así que un precio mal extraído le es invisible por construcción — no es un hueco,
+es una respuesta segura y equivocada.
+Consecuencia: agregar una unidad al reconocimiento obliga a decidir en cuál de
+las dos listas va, y el criterio es único: ¿la resuelve `canonical_unit()`? Si
+sí, `_UNIT_WORDS`; si no, sólo la guarda. Las tres causas restantes del anuncio
+del operador —la línea con precio y sin producto que se descarta, la falta de
+herencia de encabezado fuera de escalones, y que `propose_all` nunca propone
+`price_basis`— quedan abiertas y no las toca esta entrada.

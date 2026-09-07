@@ -266,6 +266,12 @@ class TestCantidad:
             ("cajas de 40lb a 12000", Decimal("40"), "lb"),
             ("1 caja a 500", Decimal("1"), "caja"),
             ("sin cantidad visible", None, None),
+            # Volumen métrico: `ml` y `l` son unidades canónicas de `UNITS`,
+            # así que reconocerlas produce una cantidad que `canonical_unit()`
+            # acepta tal cual.
+            ("Aceite de 900 ml a 3400", Decimal("900"), "ml"),
+            ("Aceite de 900ml a 3400", Decimal("900"), "ml"),
+            ("Refresco Ciego Montero 1.5 L a 250", Decimal("1.5"), "l"),
         ],
     )
     def test_casos(
@@ -324,6 +330,81 @@ class TestCantidad:
         propuesta = propose(texto, products, provinces)
         assert propuesta.quantity is None
         assert propuesta.unit is None
+
+    @pytest.mark.parametrize(
+        ("texto", "precio"),
+        [
+            # `g`, `oz`, `cc` y `u` NO están en el vocabulario canónico de
+            # `units.UNITS`: reconocerlas como cantidad dejaría una magnitud
+            # huérfana que `canonical_unit()` tira a `None` después. Se
+            # protegen de leerse como precio, y nada más.
+            ("Mermelada de mango 3160 g ➔ 350", Decimal("350")),
+            ("Perfume de 100 oz a 4500", Decimal("4500")),
+            ("Motor de 250 cc a 90000", Decimal("90000")),
+            ("Caja x 12 u a 40800", Decimal("40800")),
+        ],
+    )
+    def test_unidad_fuera_del_vocabulario_canonico_no_propone_cantidad(
+        self,
+        texto: str,
+        precio: Decimal,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        propuesta = propose(texto, products, provinces)
+        assert propuesta.price == precio
+        assert propuesta.quantity is None
+        assert propuesta.unit is None
+
+
+class TestMagnitudDelEnvaseNoEsPrecio:
+    """La magnitud que dimensiona el envase nunca es el precio de la oferta.
+
+    Casos tomados de la forma real que tiene el corpus (`500 ml ➔ 220`), con la
+    respuesta correcta fijada leyendo el anuncio a mano: el vinagre cuesta 220,
+    y los 500 ml dicen cuánto trae la botella. El error sólo se ve cuando la
+    magnitud es MAYOR que el precio, porque el número pelado se resuelve
+    quedándose con el mayor de la línea.
+    """
+
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            ("🍸Vinagre de claro 500 ml ➔ 220", Decimal("220")),
+            ("🍷 Vino seco 500 ml ➔ 230", Decimal("230")),
+            ("🍊‎Zumo de Naranja 500 ml - 200", Decimal("200")),
+            ("🧉Mermelada de mango: 3160 g ➔ 350", Decimal("350")),
+            ("🍈 Trozos de Fruta Bomba en Almíbar (915 g) 480", Decimal("480")),
+            ("Aditivo para gasolina pomo 300ml 1250", Decimal("1250")),
+        ],
+    )
+    def test_el_precio_es_el_otro_numero(
+        self,
+        texto: str,
+        esperado: Decimal,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        assert propose(texto, products, provinces).price == esperado
+
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            # Renglones de catálogo que sólo describen la presentación: no
+            # tienen precio, y hasta ahora el motor inventaba uno con la
+            # magnitud del envase.
+            "Néctar de Naranja 200 ml",
+            "Shampoo Argán 300ml",
+            "❌ Refresco Ciego Montero 1.5 L",
+            "Caja de 24 Unidades",
+            "MAC N CHEESE (Pote 56G) M/SANTA SOFIA",
+            "Frutos secos (cóctel barbacoa) 100 g",
+        ],
+    )
+    def test_sin_otro_numero_no_hay_precio(
+        self, texto: str, products: list[Product], provinces: list[Province]
+    ) -> None:
+        assert propose(texto, products, provinces).price is None
 
 
 class TestProducto:

@@ -5,12 +5,18 @@ Este módulo es hermano de `cells.py` y `privacy.py`, no vive bajo
 `engine.py:_UNIT_WORDS` es una superficie de *reconocimiento* — formas
 flexionadas tal como aparecen en anuncios reales, calibradas para el recall
 de `_QUANTITY_RE` — mientras que `UNITS` acá es *canónico*: `l` y no
-`litro`, `caja` y no `cajas`, e incluye `ml`, que el reconocimiento
-deliberadamente no tiene todavía (soporte de "100 ML" en el extractor es un
-cambio aparte). Unificarlos forzaría flexiones a los valores almacenados o
-un cambio de recall del extractor dentro de un slice de esquema. Por eso
-`curation.py` llama `canonical_unit()` sobre la salida del extractor, pero
-`engine.py` no importa este módulo y no lo toca este cambio (design.md, D1).
+`litro`, `caja` y no `cajas`. Unificarlos forzaría flexiones a los valores
+almacenados. Por eso `curation.py` llama `canonical_unit()` sobre la salida
+del extractor.
+
+Desde 2026-09-07 el reconocimiento sí cubre `ml` y `l` (el "cambio aparte"
+que esta nota anticipaba). La regla que ordena las dos listas es este
+módulo: `engine._UNIT_WORDS` sólo admite formas que `canonical_unit()`
+resuelva, porque reconocer una que no resuelva dejaría una cantidad con
+`unit=None` después de canonizar. Las magnitudes que el mercado escribe y
+`UNITS` no almacena (`g`, `oz`, `cc`, `u`) viven en
+`engine._NON_CANONICAL_MAGNITUDE_WORDS` y sólo sirven para que su número no
+se lea como precio (docs/decisions.md, 2026-09-07).
 
 No hay CHECK de base de datos sobre `unit`: el vocabulario cerrado se aplica
 acá, en código de aplicación, así que ampliarlo nunca exige una migración.
