@@ -14,6 +14,7 @@ error
 expand_more
 fact_check
 filter_alt
+filter_alt_off
 flag
 forum
 help

@@ -6914,7 +6914,28 @@ mismo en toda vista, así que se numera sobre la cola completa.
 Consecuencia: los emoji son vocabulario, no adorno — cada marca la decide
 `_queue_entry` en el router y la leyenda de la plantilla las nombra todas.
 Sumar una marca es tocar esa función, no la plantilla. Los iconos de Material
-que use una plantilla nueva tienen que estar ya en
-`material-symbols-rounded.icons.txt`, o hay que correr `tools/build_icon_font.py`
-(que baja de Google Fonts): acá se eligieron `filter_alt`, `inbox` y `edit`, que
-ya estaban, para no depender de la red.
+que use una plantilla nueva tienen que estar en `material-symbols-rounded.icons.txt`,
+que se regenera con `tools/build_icon_font.py` — el tripwire de
+`test_static_assets.py` se pone rojo si alguien suma uno y no la corre.
+
+## 2026-09-07 — La conexión de desarrollo no es una restricción; la del usuario final sí
+Contexto: `CLAUDE.md` afirmaba «conexión a internet intermitente y lenta,
+preferí soluciones que no dependan de descargas grandes o servicios externos
+durante el desarrollo». El operador lo desmintió. Esa premisa venía sesgando
+decisiones: horas antes, en el mapa de la cola, se eligieron iconos ya
+subseteados en vez de correr `tools/build_icon_font.py` sólo para no bajar de
+Google Fonts.
+Decisión: se saca de `CLAUDE.md` la restricción sobre la conexión de desarrollo
+—también del motivo de la decisión cerrada 4, que la citaba— y se la reemplaza
+por lo contrario explícito: elegir por lo correcto, no por evitar la red. Se
+reevaluaron los tres iconos por mérito: `filter_alt` (filtrar no es buscar) y
+`edit` (el enlace abre a editar) quedan porque eran los correctos igual;
+`inbox` pasa a `filter_alt_off`, que dice exactamente «no hay resultados bajo
+estos filtros», y se regeneró la fuente (33 iconos, 10.716 B).
+Descartado: sacar también la premisa de la conexión del **usuario final**
+cubano. Es otra afirmación y sigue siendo cierta — sostiene la decisión cerrada
+1 (render en servidor, nada de SPA), los assets servidos desde el repo en vez
+de un CDN, y unas quince entradas de este mismo archivo. Confundirlas habría
+volteado la arquitectura por una corrección sobre el entorno de desarrollo.
+Consecuencia: `CLAUDE.md` ahora nombra las dos y advierte que no se confundan.
+Una decisión futura que invoque «la conexión» tiene que decir de cuál habla.
