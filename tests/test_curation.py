@@ -5082,7 +5082,7 @@ class TestVistaCola:
 
         html = client.get("/curation/cola").text
 
-        assert "Imagen sin transcribir" in html
+        assert "Se transcribe al abrirla" in html
 
     def test_la_posicion_no_cambia_al_filtrar(
         self, client: TestClient, session: Session
@@ -5110,7 +5110,7 @@ class TestVistaCola:
         # listado bajo este filtro: su celda de posición dice 1, no 0. Se
         # mira la celda con su clase para que un "1" suelto de la página no
         # haga pasar el test.
-        celdas = re.findall(r'<td class="m3-num m3-sm m3-muted m3-nowrap">(\d+)</td>', html)
+        celdas = re.findall(r'<td class="m3-num m3-sm m3-nowrap">(\d+)</td>', html)
         assert celdas == ["1"]
 
     def test_saltar_por_id_abre_ese_pendiente(
@@ -5208,7 +5208,7 @@ class TestVistaCola:
 
         html = client.get("/curation/cola?foco=si").text
 
-        assert "🎯 En foco <strong>1</strong>" in html
-        assert "🖼️ Sin transcribir <strong>1</strong>" in html
-        assert "🚫 Fuera de foco <strong>1</strong>" in html
-        assert "Todos <strong>3</strong>" in html
+        assert '🎯 En foco <span class="m3-tab-count">1</span>' in html
+        assert '🖼️ Sin transcribir <span class="m3-tab-count">1</span>' in html
+        assert '🚫 Fuera de foco <span class="m3-tab-count">1</span>' in html
+        assert 'Todos <span class="m3-tab-count">3</span>' in html

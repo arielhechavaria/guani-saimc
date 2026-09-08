@@ -536,6 +536,16 @@ code, .m3-num { font-family: var(--m3-mono); }
 .m3-cell-strong { font-weight: 500; }
 .m3-cell-sub { margin-top: 3px; font-size: 13px; color: var(--m3-on-surface-variant); }
 
+/* Glifo de clase de fila (`curation_cola.html`): un emoji por fila, alineado
+   en su propia columna angosta para que la vista se escanee de arriba abajo.
+   Clase propia y no `m3-icon-lg`, que dimensiona la fuente de Material
+   Symbols y acá no interviene. `line-height:1` evita que el emoji —más alto
+   que la caja de texto— estire el renglón de la tabla. */
+.m3-mark { width: 1px; font-size: 18px; line-height: 1; text-align: center; }
+/* La fila atenuada baja el glifo con ella: si el emoji quedara a color pleno
+   sobre texto gris, la fila sin contenido gritaría más que las que se leen. */
+.m3-row-off .m3-mark { opacity: .45; }
+
 /* ── Actividad (barras CSS, sin librería) ───────────────────────── */
 .m3-activity { display: flex; align-items: flex-end; gap: 6px; height: 96px; }
 .m3-activity > div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }

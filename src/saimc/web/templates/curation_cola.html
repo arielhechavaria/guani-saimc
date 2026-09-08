@@ -3,102 +3,82 @@
   2026-09-07). `/curation` muestra uno por vez y esconde lo que está fuera de
   foco; acá se ve todo y se salta a curar uno puntual con `?id=`.
 
-  Las marcas son emoji a pedido del operador: en una lista larga un glifo con
-  color propio se ubica más rápido que una ligadura monocroma. Cada una la
-  decide `_queue_entry` en el router, no esta plantilla.
+  Segunda versión: la primera se rechazó por ilegible (2026-09-08). Apilaba
+  hasta cuatro emoji por fila y usaba chips donde el sistema ya tiene pestañas
+  con conteo. Ahora hay UN glifo por fila —la clase de la fila, que es lo único
+  que se escanea de arriba abajo—, las señales con nombre van en `m3-badge`, y
+  las filas sin nada que leer se atenúan con `m3-row-off` en vez de competir a
+  contraste pleno con las que sí tienen texto.
 #}
 {% extends "_shell.html" %}
 
 {% block title %}Cola{% endblock %}
 {% block heading %}Mapa de la cola{% endblock %}
-{% block subtitle %}Todos los pendientes, en foco y fuera de él. Clic en una fila para curarla.{% endblock %}
+{% block subtitle %}Todos los pendientes, en foco y fuera de él.{% endblock %}
 
 {% block stats %}
   <div class="m3-stat">
     <div class="m3-stat-label">Pendientes</div>
     <div class="m3-stat-value">{{ counts.total }}</div>
   </div>
-  <div class="m3-stat">
-    <div class="m3-stat-label">Listados</div>
-    <div class="m3-stat-value is-accent">{{ entries|length }}</div>
-  </div>
 {% endblock %}
 
 {% block content %}
-<div class="m3-stack" style="gap:20px">
+<div class="m3-stack">
 
   <div class="m3-row">
     <a class="m3-sm" href="/curation">&larr; Volver a curar</a>
   </div>
 
   {#
-    Atajos de un clic. Sin ellos la vista sin filtro abre en la pared de
-    imágenes sin transcribir, que al 2026-09-07 son 201 de 284 pendientes:
-    la forma de la cola tiene que verse antes de leer una sola fila.
+    Pestañas y no chips: es el patrón del sistema para subconjuntos con
+    conteo, y a diferencia de los chips deja claro que son excluyentes.
   #}
-  <div class="m3-row" style="gap:8px;flex-wrap:wrap">
-    <a class="m3-chip m3-chip-btn{% if not filters.foco %} is-selected{% endif %}"
-       href="/curation/cola">Todos <strong>{{ counts.total }}</strong></a>
-    <a class="m3-chip m3-chip-btn{% if filters.foco == 'si' %} is-selected{% endif %}"
-       href="/curation/cola?foco=si">🎯 En foco <strong>{{ counts.si }}</strong></a>
-    <a class="m3-chip m3-chip-btn{% if filters.foco == 'imagen' %} is-selected{% endif %}"
-       href="/curation/cola?foco=imagen">🖼️ Sin transcribir <strong>{{ counts.imagen }}</strong></a>
-    <a class="m3-chip m3-chip-btn{% if filters.foco == 'no' %} is-selected{% endif %}"
-       href="/curation/cola?foco=no">🚫 Fuera de foco <strong>{{ counts.no }}</strong></a>
-  </div>
+  <nav class="m3-tabs" aria-label="Filtrar por foco">
+    <a class="m3-tab{% if not filters.foco %} is-active{% endif %}"
+       href="/curation/cola">Todos <span class="m3-tab-count">{{ counts.total }}</span></a>
+    <a class="m3-tab{% if filters.foco == 'si' %} is-active{% endif %}"
+       href="/curation/cola?foco=si">🎯 En foco <span class="m3-tab-count">{{ counts.si }}</span></a>
+    <a class="m3-tab{% if filters.foco == 'imagen' %} is-active{% endif %}"
+       href="/curation/cola?foco=imagen">🖼️ Sin transcribir <span class="m3-tab-count">{{ counts.imagen }}</span></a>
+    <a class="m3-tab{% if filters.foco == 'no' %} is-active{% endif %}"
+       href="/curation/cola?foco=no">🚫 Fuera de foco <span class="m3-tab-count">{{ counts.no }}</span></a>
+  </nav>
 
-  <div class="m3-card">
-    <form method="get" action="/curation/cola" class="m3-row" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
-      <label class="m3-field m3-field-compact">
-        <span class="m3-field-label">Foco</span>
-        <select name="foco" class="m3-select">
-          <option value="" {% if not filters.foco %}selected{% endif %}>Todos</option>
-          <option value="si" {% if filters.foco == 'si' %}selected{% endif %}>🎯 En foco</option>
-          <option value="imagen" {% if filters.foco == 'imagen' %}selected{% endif %}>🖼️ Imagen sin transcribir</option>
-          <option value="no" {% if filters.foco == 'no' %}selected{% endif %}>🚫 Fuera de foco</option>
-        </select>
-      </label>
-
-      <label class="m3-field m3-field-compact">
-        <span class="m3-field-label">Tipo</span>
-        <select name="tipo" class="m3-select">
-          <option value="" {% if not filters.tipo %}selected{% endif %}>Todos</option>
-          <option value="text" {% if filters.tipo == 'text' %}selected{% endif %}>Texto</option>
-          <option value="image" {% if filters.tipo == 'image' %}selected{% endif %}>Imagen</option>
-        </select>
-      </label>
-
-      <label class="m3-field m3-field-compact">
-        <span class="m3-field-label">Producto detectado</span>
-        <input type="text" name="producto" class="m3-input" value="{{ filters.producto }}"
-               placeholder="aceite" />
-      </label>
-
-      <label class="m3-field m3-field-compact" style="flex:1;min-width:200px">
-        <span class="m3-field-label">Buscar en el texto</span>
-        <input type="text" name="q" class="m3-input" value="{{ filters.q }}"
-               placeholder="900 ml" />
-      </label>
-
-      <button type="submit" class="m3-btn">
-        <span class="m3-icon">filter_alt</span>Filtrar
-      </button>
-      <a class="m3-btn m3-btn-text" href="/curation/cola">Limpiar</a>
-    </form>
-
-    <p class="m3-sm m3-muted" style="margin:12px 0 0">
-      🎯 en foco · 🖼️ imagen sin transcribir · 🚫 fuera de foco ·
-      💰 el motor sacó precio · 🕳️ hay filas sin precio ·
-      ❌ parece agotado · 📦 parece mayorista.
-      El foco de hoy: {{ pilots | join(", ") or "sin pilotos" }}.
-    </p>
-  </div>
+  <form method="get" action="/curation/cola" class="m3-row">
+    {# La pestaña activa viaja escondida: filtrar no debe sacarte del subconjunto. #}
+    {% if filters.foco %}<input type="hidden" name="foco" value="{{ filters.foco }}" />{% endif %}
+    <label class="m3-field m3-field-compact">
+      <span class="m3-field-label">Tipo</span>
+      <select name="tipo" class="m3-select">
+        <option value="" {% if not filters.tipo %}selected{% endif %}>Todos</option>
+        <option value="text" {% if filters.tipo == 'text' %}selected{% endif %}>Texto</option>
+        <option value="image" {% if filters.tipo == 'image' %}selected{% endif %}>Imagen</option>
+      </select>
+    </label>
+    <label class="m3-field m3-field-compact">
+      <span class="m3-field-label">Producto detectado</span>
+      <input type="text" name="producto" class="m3-input" value="{{ filters.producto }}"
+             placeholder="aceite" />
+    </label>
+    <label class="m3-field m3-field-compact m3-spacer">
+      <span class="m3-field-label">Buscar en el texto</span>
+      <input type="text" name="q" class="m3-input" value="{{ filters.q }}"
+             placeholder="900 ml" />
+    </label>
+    <button type="submit" class="m3-btn">
+      <span class="m3-icon">filter_alt</span>Filtrar
+    </button>
+    {% if filters.tipo or filters.producto or filters.q %}
+    <a class="m3-btn m3-btn-text" href="/curation/cola{% if filters.foco %}?foco={{ filters.foco }}{% endif %}">Limpiar</a>
+    {% endif %}
+  </form>
 
   {% if not entries %}
   <div class="m3-card">
     <div class="m3-empty">
       <span class="m3-icon">filter_alt_off</span>
-      <p style="margin:12px 0 0">Ningún pendiente coincide con estos filtros.</p>
+      <p>Ningún pendiente coincide. Probá con menos filtros o mirá otra pestaña.</p>
     </div>
   </div>
   {% else %}
@@ -107,51 +87,42 @@
     <table class="m3-table">
       <thead>
         <tr>
-          <th scope="col">#</th>
-          <th scope="col">Marcas</th>
-          <th scope="col">Capturado</th>
-          <th scope="col">Canal</th>
+          <th scope="col"><span class="m3-num">#</span></th>
+          <th scope="col"></th>
           <th scope="col">Anuncio</th>
-          <th scope="col">Detectado</th>
-          <th scope="col" class="m3-num">Filas</th>
+          <th scope="col" class="m3-num">Con precio</th>
+          <th scope="col">Capturado</th>
           <th scope="col"></th>
         </tr>
       </thead>
       <tbody>
         {% for e in entries %}
-        <tr>
-          <td class="m3-num m3-sm m3-muted m3-nowrap">{{ e.position }}</td>
-          <td class="m3-nowrap" style="font-size:1.15rem;letter-spacing:2px">{{ e.marks | join("") }}</td>
-          <td class="m3-nowrap m3-num m3-sm">{{ e.ingestion.captured_at | havana }}</td>
-          <td class="m3-sm">{{ e.ingestion.source_reference or "—" }}</td>
-          <td class="m3-sm">
+        {# Atenuada la fila que no tiene texto todavía: son la mayoría de la
+           cola y a contraste pleno tapan a las que sí se pueden leer. #}
+        <tr{% if e.is_image_without_text %} class="m3-row-off"{% endif %}>
+          <td class="m3-num m3-sm m3-nowrap">{{ e.position }}</td>
+          <td class="m3-mark" title="{{ e.mark_label }}">{{ e.mark }}</td>
+          <td>
             {% if e.is_image_without_text %}
-              <span class="m3-muted">Imagen sin transcribir — se lee al abrirla.</span>
+              <div class="m3-cell-sub">Se transcribe al abrirla.</div>
             {% else %}
-              {{ e.preview | truncate(110) }}
-            {% endif %}
-          </td>
-          <td class="m3-sm">
-            {% if e.products %}
-              {% for nombre in e.products[:4] %}
-                <span class="m3-chip m3-chip-sm m3-chip-neutral">{{ nombre | truncate(24) }}</span>
-              {% endfor %}
-              {% if e.products | length > 4 %}
-                <span class="m3-sm m3-muted">+{{ e.products | length - 4 }}</span>
-              {% endif %}
-            {% else %}
-              <span class="m3-muted">—</span>
+              <div class="m3-cell-strong">{{ e.preview | truncate(90) }}</div>
+              <div class="m3-cell-sub">
+                {% for nombre in e.products[:3] %}{{ nombre | truncate(22) }}{% if not loop.last %} · {% endif %}{% endfor %}
+                {% if e.products | length > 3 %} +{{ e.products | length - 3 }}{% endif %}
+                {% if not e.products %}sin producto detectado{% endif %}
+                {% for glifo, palabra, clase in e.flags %}
+                  <span class="m3-badge {{ clase }}">{{ glifo }} {{ palabra }}</span>
+                {% endfor %}
+              </div>
             {% endif %}
           </td>
           <td class="m3-num m3-sm m3-nowrap">
-            {% if e.row_count %}
-              {{ e.priced_count }}/{{ e.row_count }}
-            {% else %}
-              <span class="m3-muted">—</span>
-            {% endif %}
+            {% if e.row_count %}{{ e.priced_count }}/{{ e.row_count }}{% else %}—{% endif %}
           </td>
+          <td class="m3-nowrap m3-num m3-sm">{{ e.ingestion.captured_at | havana }}</td>
           <td class="m3-nowrap">
-            <a class="m3-btn m3-btn-text m3-sm" href="/curation?id={{ e.ingestion.id }}">
+            <a class="m3-btn m3-btn-text" href="/curation?id={{ e.ingestion.id }}">
               <span class="m3-icon">edit</span>Curar
             </a>
           </td>
@@ -162,9 +133,9 @@
   </div>
 
   <p class="m3-sm m3-muted">
-    La columna <strong>Filas</strong> es «con precio / candidatos» que el motor
-    propone hoy. El <strong>#</strong> es la posición en la cola completa, no en
-    la lista filtrada, así que no cambia al filtrar.
+    <strong>Con precio</strong> cuenta las filas que el motor propone con precio
+    sobre el total de candidatos. El <strong>#</strong> es la posición en la cola
+    completa, así que no se mueve al filtrar.
   </p>
 
   {% endif %}

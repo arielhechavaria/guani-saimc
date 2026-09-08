@@ -277,23 +277,25 @@ def _focus_rank(ingestion: RawIngestion, products: Sequence[Product]) -> int:
     return _FOCUS_NONE
 
 
-# Marcas de la vista de cola. Emoji y no `m3-icon` a pedido del operador
-# (2026-09-07): en una lista larga ubica más rápido un glifo con color propio
-# que una ligadura monocroma de Material Symbols. Cada una dice UNA cosa y
-# ninguna es decorativa — la leyenda de `curation_cola.html` las nombra todas.
-MARK_IN_FOCUS = "🎯"  # el texto menciona un producto piloto
-MARK_UNKNOWN = "🖼️"  # imagen sin transcribir: el foco no se sabe sin OCR
-MARK_OUT_OF_FOCUS = "🚫"  # texto sin ningún piloto
-MARK_HAS_PRICE = "💰"  # el motor sacó al menos un precio
-MARK_NO_PRICE = "🕳️"  # hay candidatos, pero ninguno con precio
-MARK_OUT_OF_STOCK = "❌"  # parece agotado
-MARK_WHOLESALE = "📦"  # parece venta por volumen
-
+# Emoji a pedido del operador (2026-09-07): en una lista larga ubica más rápido
+# un glifo con color propio que una ligadura monocroma.
+#
+# UNO por fila, no un racimo. La primera versión apilaba hasta cuatro y el
+# operador la rechazó por ilegible: cuatro glifos multicolor en una columna
+# angosta son ruido, no información. El glifo dice de qué CLASE es la fila
+# —las tres son mutuamente excluyentes porque salen de `_focus_rank`— y es lo
+# único que se escanea verticalmente.
 _FOCUS_MARKS = {
-    _FOCUS_MATCH: MARK_IN_FOCUS,
-    _FOCUS_UNKNOWN: MARK_UNKNOWN,
-    _FOCUS_NONE: MARK_OUT_OF_FOCUS,
+    _FOCUS_MATCH: ("🎯", "en foco"),
+    _FOCUS_UNKNOWN: ("🖼️", "imagen sin transcribir"),
+    _FOCUS_NONE: ("🚫", "fuera de foco"),
 }
+
+# Las señales secundarias NO son glifos sueltos: van con su palabra en un
+# `m3-badge`, que es como el sistema ya nombra un estado. «📦 mayorista» se lee;
+# un 📦 solo hay que ir a buscarlo a una leyenda.
+_FLAG_OUT_OF_STOCK = ("❌", "agotado", "m3-badge-warn")
+_FLAG_WHOLESALE = ("📦", "mayorista", "m3-badge-neutral")
 
 #: Valores de `?foco=` en `/curation/cola`. Ausente = no filtra.
 _FOCUS_FILTERS = {"si": _FOCUS_MATCH, "imagen": _FOCUS_UNKNOWN, "no": _FOCUS_NONE}
@@ -310,7 +312,9 @@ class QueueEntry:
     ingestion: RawIngestion
     position: int
     focus: int
-    marks: tuple[str, ...]
+    mark: str
+    mark_label: str
+    flags: tuple[tuple[str, str, str], ...]
     preview: str
     products: tuple[str, ...]
     row_count: int
@@ -369,8 +373,8 @@ def _queue_entry(
     """
     focus = _focus_rank(ingestion, products)
     texto = ingestion.original_text or ""
+    mark, mark_label = _FOCUS_MARKS[focus]
 
-    marks = [_FOCUS_MARKS[focus]]
     proposals: list[ExtractionProposal] = []
     nombres: list[str] = []
     if texto:
@@ -383,26 +387,28 @@ def _queue_entry(
             if nombre and nombre not in nombres:
                 nombres.append(nombre)
 
-    priced = sum(1 for p in proposals if p.price is not None)
-    if proposals:
-        marks.append(MARK_HAS_PRICE if priced else MARK_NO_PRICE)
+    # «Sacó precio» no lleva glifo: la columna de conteo ya dice `2/3`, que es
+    # el mismo dato con más precisión y sin sumar un color a la fila.
+    flags: list[tuple[str, str, str]] = []
     if texto:
         razones = probable_discard_reasons(texto, products)
         if "parece indicar agotado" in razones:
-            marks.append(MARK_OUT_OF_STOCK)
+            flags.append(_FLAG_OUT_OF_STOCK)
         if "parece venta mayorista/por volumen" in razones:
-            marks.append(MARK_WHOLESALE)
+            flags.append(_FLAG_WHOLESALE)
 
     primera = next((ln.strip() for ln in texto.splitlines() if ln.strip()), "")
     return QueueEntry(
         ingestion=ingestion,
         position=position,
         focus=focus,
-        marks=tuple(marks),
+        mark=mark,
+        mark_label=mark_label,
+        flags=tuple(flags),
         preview=primera,
         products=tuple(nombres),
         row_count=len(proposals),
-        priced_count=priced,
+        priced_count=sum(1 for p in proposals if p.price is not None),
     )
 
 
