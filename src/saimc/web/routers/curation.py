@@ -297,6 +297,19 @@ _FOCUS_MARKS = {
 _FLAG_OUT_OF_STOCK = ("❌", "agotado", "m3-badge-warn")
 _FLAG_WHOLESALE = ("📦", "mayorista", "m3-badge-neutral")
 
+#: Todo el vocabulario de emoji de la cola, en un solo lugar. `_FOCUS_MARKS` y
+#: los `_FLAG_*` son la fuente; `🗺️` es el enlace de entrada en `curation.html`
+#: y vive acá igual porque `tools/build_emoji_font.py` subsetea Noto Color Emoji
+#: a exactamente esta tupla, y `tests/test_static_assets.py` verifica que ni el
+#: manifiesto ni las plantillas se salgan de acá. Un emoji nuevo se agrega
+#: primero a esta tupla; si no, el tripwire se pone rojo.
+QUEUE_EMOJI: tuple[str, ...] = (
+    *(glifo for glifo, _ in _FOCUS_MARKS.values()),
+    _FLAG_OUT_OF_STOCK[0],
+    _FLAG_WHOLESALE[0],
+    "🗺️",
+)
+
 #: Valores de `?foco=` en `/curation/cola`. Ausente = no filtra.
 _FOCUS_FILTERS = {"si": _FOCUS_MATCH, "imagen": _FOCUS_UNKNOWN, "no": _FOCUS_NONE}
 
@@ -904,12 +917,19 @@ def curation_overview(
             e for e in entradas if any(objetivo in n.lower() for n in e.products)
         ]
 
+    # Los glifos de las pestañas salen del mismo `_FOCUS_MARKS` que la columna
+    # de cada fila: sin esto la plantilla los repetía a mano y podían divergir.
+    focus_marks = {
+        clave: _FOCUS_MARKS[rango][0] for clave, rango in _FOCUS_FILTERS.items()
+    }
+
     return request.app.state.templates.TemplateResponse(
         request,
         "curation_cola.html",
         {
             "entries": entradas,
             "counts": counts,
+            "focus_marks": focus_marks,
             "filters": {
                 "foco": foco or "",
                 "tipo": tipo or "",

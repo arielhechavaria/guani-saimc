@@ -6939,3 +6939,31 @@ de un CDN, y unas quince entradas de este mismo archivo. Confundirlas habría
 volteado la arquitectura por una corrección sobre el entorno de desarrollo.
 Consecuencia: `CLAUDE.md` ahora nombra las dos y advierte que no se confundan.
 Una decisión futura que invoque «la conexión» tiene que decir de cuál habla.
+
+## 2026-09-08 — Noto Color Emoji vendorizada: los emoji dejan de depender del sistema
+Contexto: la vista de cola usa emoji como vocabulario (pedido del operador), pero
+`saimc-material.css` autohospeda Roboto, Roboto Mono, Material Symbols y Alice y
+NO declaraba ninguna familia de emoji. En el Linux del operador `fc-list` no
+lista ninguna fuente de emoji: sólo renderizaban por el navegador de Windows, y
+en cualquier otro sistema el resultado cambiaba de forma y tamaño. El operador lo
+señaló como el defecto de fondo detrás de que la vista se viera «fea».
+Decisión: vendorizar Noto Color Emoji igual que Material Symbols. Herramienta
+hermana `tools/build_emoji_font.py` que importa `QUEUE_EMOJI` del router —la tupla
+única con los seis glifos— y pide a Google el subconjunto vía `text=`. Pesa
+6.728 B (la familia completa son ~10 MB). `@font-face` en `saimc-material.css` y
+`"Noto Color Emoji"` en el stack de `--m3-font` después de Roboto: el navegador
+la usa sólo para los code points que Roboto no cubre. Cuatro tests nuevos en
+`test_static_assets.py`, gemelos de los de iconos: se sirve, va subseteada, el
+manifiesto cubre `QUEUE_EMOJI`, ninguna plantilla usa un emoji fuera de esa
+tupla, y la fuente está declarada y en el stack.
+Descartado: (a) dejar los emoji al sistema, que es lo que estaba y es lo que el
+operador rechazo; (b) escanear las plantillas para juntar los glifos, como hace
+`build_icon_font.py` con los iconos: aca dos de los seis (agotado, mayorista)
+viven en el router, no en el HTML, asi que la fuente unica es `QUEUE_EMOJI` y la
+plantilla la recibe por contexto (`focus_marks`); (c) poner el `@font-face`
+tambien en `saimc-public.css` porque la home no usa emoji, y el token la nombra
+pero sin definirla ahi cae al sistema como antes, sin regresion.
+Consecuencia: un emoji nuevo se agrega primero a `QUEUE_EMOJI` en `curation.py`,
+despues se corre `python tools/build_emoji_font.py`; si no, el tripwire de
+`test_static_assets.py` se pone rojo. Queda sin verificar en este entorno que el
+navegador lo pinte a color (no hay navegador aca); lo confirma el operador.

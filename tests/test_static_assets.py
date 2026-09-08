@@ -47,6 +47,7 @@ FUENTES = [
     "/static/fonts/roboto-mono.woff2",
     "/static/fonts/material-symbols-rounded.woff2",
     "/static/fonts/alice.woff2",
+    "/static/fonts/noto-color-emoji.woff2",
 ]
 
 # "/" y no solo las vistas del operador: el rediseño de la home pública
@@ -162,6 +163,71 @@ class TestAssetsVendorizados:
             f"iconos usados sin subsetear: {sorted(faltan)} — "
             "corré `python tools/build_icon_font.py`"
         )
+
+    def test_los_emoji_van_subseteados(self, client: TestClient) -> None:
+        """Noto Color Emoji completa pesa ~10 MB; subseteada a los pocos glifos
+        de la cola, ~7 KB. La cota corta la fuente entera, no un glifo nuevo."""
+        response = client.get("/static/fonts/noto-color-emoji.woff2")
+
+        assert len(response.content) < 60_000
+
+    def test_el_subconjunto_de_emoji_cubre_el_vocabulario_del_router(self) -> None:
+        """Tripwire, gemelo del de iconos: la fuente se subsetea con
+        `tools/build_emoji_font.py` a partir de `QUEUE_EMOJI` en el router. Si
+        alguien suma un emoji a esa tupla y no corre la herramienta, el
+        manifiesto queda corto y esto se pone rojo — antes de que un navegador
+        sin fuente de emoji del sistema dibuje un cuadrado."""
+        from saimc.web.routers.curation import QUEUE_EMOJI
+
+        manifiesto = (
+            Path(__file__).resolve().parents[1]
+            / "src" / "saimc" / "web" / "static" / "fonts" / "noto-color-emoji.chars.txt"
+        ).read_text(encoding="utf-8").strip()
+
+        faltan = [g for g in QUEUE_EMOJI if g not in manifiesto]
+        assert not faltan, (
+            f"emoji en QUEUE_EMOJI sin subsetear: {faltan} — "
+            "corré `python tools/build_emoji_font.py`"
+        )
+
+    def test_ninguna_plantilla_usa_un_emoji_fuera_del_vocabulario(self) -> None:
+        """El vocabulario de emoji se decide en el router (`QUEUE_EMOJI`), no
+        suelto en el HTML. Un emoji nuevo en una plantilla que no esté en esa
+        tupla no lo cubre la fuente subseteada: se vería como cuadrado en el
+        Linux del operador."""
+        from saimc.web.routers.curation import QUEUE_EMOJI
+
+        # Rango de pictogramas + dingbats + flechas decorativas. No incluye el
+        # `→` de los enlaces (U+2192), que es tipografía, no emoji.
+        rango = re.compile(
+            "[\U0001F000-\U0001FAFF☀-➿⬀-⯿️]+"
+        )
+        vocabulario = set(QUEUE_EMOJI)
+        templates = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "templates"
+
+        sueltos: dict[str, list[str]] = {}
+        for tpl in templates.glob("*.html"):
+            for hallado in rango.findall(tpl.read_text(encoding="utf-8")):
+                if hallado.strip() and hallado not in vocabulario:
+                    sueltos.setdefault(tpl.name, []).append(hallado)
+
+        assert not sueltos, (
+            f"emoji en plantillas fuera de QUEUE_EMOJI: {sueltos} — "
+            "agregalos a esa tupla en curation.py y corré la herramienta"
+        )
+
+    def test_la_fuente_de_emoji_esta_declarada_y_en_el_stack(self) -> None:
+        """Sin `@font-face` la fuente vendorizada no se usa, y sin estar en
+        `--m3-font` el navegador no la elige para los code points de emoji: en
+        el Linux del operador, que no tiene fuente de emoji del sistema, la
+        vista quedaría con cuadrados."""
+        hoja = (
+            Path(__file__).resolve().parents[1]
+            / "src" / "saimc" / "web" / "static" / "saimc-material.css"
+        ).read_text(encoding="utf-8")
+
+        assert '@font-face' in hoja and 'noto-color-emoji.woff2' in hoja
+        assert '"Noto Color Emoji"' in re.search(r"--m3-font:[^;]+;", hoja).group(0)
 
     def test_htmx_se_sirve_desde_el_repo(self, client: TestClient) -> None:
         response = client.get("/static/htmx.min.js")

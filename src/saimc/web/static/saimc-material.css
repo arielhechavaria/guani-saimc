@@ -90,7 +90,7 @@
   --m3-elev-2: 0 1px 2px rgba(0, 0, 0, .2);
   --m3-elev-3: 0 4px 12px rgba(0, 0, 0, .18);
 
-  --m3-font: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --m3-font: Roboto, "Noto Color Emoji", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --m3-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --ph-font-heading: "Alice", Georgia, serif;
@@ -172,6 +172,22 @@ code, .m3-num { font-family: var(--m3-mono); }
   font-weight: 400;
   font-display: swap;
   src: url("/static/fonts/alice.woff2") format("woff2");
+}
+
+/* Noto Color Emoji, vendorizada en /static/fonts. Es la fuente de emoji de la
+   propia familia Material/Android, y está en el stack de `--m3-font` para que
+   los glifos de `/curation/cola` se vean iguales en cualquier sistema — en el
+   Linux del operador no hay ninguna fuente de emoji instalada. Subseteada a los
+   pocos glifos que la vista usa pesa ~7 KB; se regenera con
+   `python tools/build_emoji_font.py` y el manifiesto `.chars.txt` de al lado se
+   compara contra el router en un test. `swap` y no `block`: si tarda, un
+   glifo del sistema por un instante es mejor que una fila en blanco. */
+@font-face {
+  font-family: "Noto Color Emoji";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/noto-color-emoji.woff2") format("woff2");
 }
 
 .m3-icon {

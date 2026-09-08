@@ -38,11 +38,11 @@
     <a class="m3-tab{% if not filters.foco %} is-active{% endif %}"
        href="/curation/cola">Todos <span class="m3-tab-count">{{ counts.total }}</span></a>
     <a class="m3-tab{% if filters.foco == 'si' %} is-active{% endif %}"
-       href="/curation/cola?foco=si">🎯 En foco <span class="m3-tab-count">{{ counts.si }}</span></a>
+       href="/curation/cola?foco=si">{{ focus_marks.si }} En foco <span class="m3-tab-count">{{ counts.si }}</span></a>
     <a class="m3-tab{% if filters.foco == 'imagen' %} is-active{% endif %}"
-       href="/curation/cola?foco=imagen">🖼️ Sin transcribir <span class="m3-tab-count">{{ counts.imagen }}</span></a>
+       href="/curation/cola?foco=imagen">{{ focus_marks.imagen }} Sin transcribir <span class="m3-tab-count">{{ counts.imagen }}</span></a>
     <a class="m3-tab{% if filters.foco == 'no' %} is-active{% endif %}"
-       href="/curation/cola?foco=no">🚫 Fuera de foco <span class="m3-tab-count">{{ counts.no }}</span></a>
+       href="/curation/cola?foco=no">{{ focus_marks.no }} Fuera de foco <span class="m3-tab-count">{{ counts.no }}</span></a>
   </nav>
 
   <form method="get" action="/curation/cola" class="m3-row">
