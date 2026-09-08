@@ -176,12 +176,14 @@ code, .m3-num { font-family: var(--m3-mono); }
 
 /* Noto Color Emoji, vendorizada en /static/fonts. Es la fuente de emoji de la
    propia familia Material/Android, y está en el stack de `--m3-font` para que
-   los glifos de `/curation/cola` se vean iguales en cualquier sistema — en el
-   Linux del operador no hay ninguna fuente de emoji instalada. Subseteada a los
-   pocos glifos que la vista usa pesa ~7 KB; se regenera con
-   `python tools/build_emoji_font.py` y el manifiesto `.chars.txt` de al lado se
-   compara contra el router en un test. `swap` y no `block`: si tarda, un
-   glifo del sistema por un instante es mejor que una fila en blanco. */
+   todo el emoji se vea igual en cualquier sistema — en el Linux del operador no
+   hay ninguna fuente de emoji instalada. El subconjunto cubre dos cosas: las
+   marcas de la interfaz (`QUEUE_EMOJI` en el router) y los emoji que traen los
+   anuncios reales, que el operador lee al curar (`tools/scan_ad_emoji.py` los
+   junta desde `raw_ingestions`). Por eso pesa ~520 KB y no unos pocos: es
+   contenido de usuario, no un puñado de íconos. Se regenera con
+   `python tools/build_emoji_font.py`. `swap` y no `block`: si tarda, un glifo
+   del sistema por un instante es mejor que un hueco. */
 @font-face {
   font-family: "Noto Color Emoji";
   font-style: normal;

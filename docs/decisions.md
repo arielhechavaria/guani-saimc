@@ -6967,3 +6967,27 @@ Consecuencia: un emoji nuevo se agrega primero a `QUEUE_EMOJI` en `curation.py`,
 despues se corre `python tools/build_emoji_font.py`; si no, el tripwire de
 `test_static_assets.py` se pone rojo. Queda sin verificar en este entorno que el
 navegador lo pinte a color (no hay navegador aca); lo confirma el operador.
+
+## 2026-09-08 — El subconjunto de emoji se amplía al contenido de los anuncios
+Contexto: la entrada anterior vendorizó Noto Color Emoji subseteada a las 6
+marcas de la interfaz (~7 KB). El operador probó y avisó que «no está aplicado a
+todas las páginas»: el texto de los anuncios trae 231 emoji distintos (🤑, 🌟,
+🚨, 🍸…) en el 31% de la cola, y esos —que se ven en /curation, /curation/cola y
+/curation/history— caían al emoji del sistema, inexistente en su Linux.
+Decisión (elección del operador entre tres opciones con peso medido): vendorizar
+el subconjunto que cubre TAMBIÉN el corpus. `tools/scan_ad_emoji.py` (nuevo, y el
+único de `tools/` que toca la base de datos) lee `raw_ingestions`, extrae los
+emoji y amplía el manifiesto `noto-color-emoji.chars.txt`; `build_emoji_font.py`
+subsetea contra ese manifiesto versionado, sin necesitar la base. La fuente pasa
+a **519.556 B**. El `@font-face` se agrega también a `saimc-public.css` —la home
+casi no trae emoji, pero un nombre de producto puede (ya hay uno con ✅) y el
+token la nombra igual—.
+Descartado: (a) fuente del sistema (`apt install fonts-noto-color-emoji`): cubre
+todo sin peso de página, pero el operador prefirió no depender de un paso de
+instalación; (b) subset top-50 (~35 KB, 82% de las apariciones): el operador
+quiso cobertura completa del corpus visto.
+Consecuencia: la cola paga ~520 KB una vez (cacheado después). Un emoji nuevo en
+un anuncio futuro se ve con el glifo del sistema hasta que se corra
+`scan_ad_emoji.py` + `build_emoji_font.py` de nuevo — es la carrera que el
+operador aceptó al elegir esta opción. El manifiesto sólo crece: un emoji que
+salió de un anuncio ya borrado no se saca de la fuente salvo a mano.

@@ -122,10 +122,8 @@
   --m3-elev-3: 0 4px 12px rgba(0, 0, 0, .18);
 
   /* "Noto Color Emoji" va después de Roboto: el navegador la usa solo para los
-     code points que Roboto no cubre (los emoji de /curation/cola), el texto
-     normal sigue en Roboto. El @font-face está en saimc-material.css; la hoja
-     pública lo nombra pero no lo define, así que ahí cae al emoji del sistema
-     como hasta ahora — la home no usa emoji. */
+     code points que Roboto no cubre (todo el emoji), el texto normal sigue en
+     Roboto. El @font-face con el archivo vendorizado está en las dos hojas. */
   --m3-font: Roboto, "Noto Color Emoji", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --m3-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 

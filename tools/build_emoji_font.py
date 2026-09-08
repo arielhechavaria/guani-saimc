@@ -10,22 +10,24 @@ Por qué existe
 Los emoji eran lo único que caía a lo que tuviera el sistema — y en el Linux del
 operador `fc-list` no lista ninguna fuente de emoji, así que sólo renderizaban
 por el navegador de Windows. Noto Color Emoji es la fuente de emoji de la propia
-familia Material/Android; subseteada a los pocos glifos que la vista usa pesa
-~4,4 KB, menos que el subconjunto de Material Symbols que el repo ya sirve.
+familia Material/Android. El subconjunto cubre las marcas de la interfaz más los
+~230 emoji que traen los anuncios reales, así que pesa ~520 KB: es contenido de
+usuario, no un puñado de íconos (decisión del operador, 2026-09-08).
 
 Qué hace
 --------
-1. Importa `QUEUE_EMOJI` de `saimc.web.routers.curation` — la tupla única con
-   todo el vocabulario de emoji de la cola. No escanea las plantillas: los
-   glifos se deciden en el router (qué marca lleva cada fila), la plantilla sólo
-   los imprime.
+1. Junta los glifos a subsetear: `QUEUE_EMOJI` del router (el vocabulario de la
+   interfaz) más lo que haya en el manifiesto `noto-color-emoji.chars.txt`, que
+   `tools/scan_ad_emoji.py` mantiene con los emoji que traen los anuncios
+   reales. El manifiesto está versionado, así que esta herramienta no necesita
+   la base de datos.
 2. Le pide a Google Fonts el subconjunto con exactamente esos glifos, vía el
    parámetro `text`. El subsetting lo hace el servidor de Google: no hace falta
    `fontTools` ni `brotli` en el venv (mismo motivo que `build_icon_font.py`).
-3. Escribe el `.woff2` en `static/fonts/` y, al lado, un manifiesto con los
-   glifos. `tests/test_static_assets.py` compara ese manifiesto contra
-   `QUEUE_EMOJI` y contra lo que aparece en las plantillas: si alguien suma un
-   emoji y no corre esto, la suite se pone roja.
+3. Escribe el `.woff2` en `static/fonts/` y reescribe el manifiesto con la unión
+   ordenada. `tests/test_static_assets.py` compara ese manifiesto contra
+   `QUEUE_EMOJI` y contra las plantillas: si alguien suma un emoji de interfaz y
+   no corre esto, la suite se pone roja.
 
 Uso
 ---
@@ -68,10 +70,22 @@ def _fetch(url: str) -> bytes:
 
 
 def main() -> None:
-    glifos = list(QUEUE_EMOJI)
-    print(f"{len(glifos)} emoji en la vista de cola: {' '.join(glifos)}")
+    # El manifiesto y el subsetting trabajan por code point, no por glifo: un
+    # emoji con selector de variación (🖼️ = U+1F5BC U+FE0F) son dos entradas, y
+    # la fuente se subsetea por su cmap igual.
+    previos = (
+        set(MANIFEST_PATH.read_text(encoding="utf-8").strip())
+        if MANIFEST_PATH.exists()
+        else set()
+    )
+    del_ui = set("".join(QUEUE_EMOJI))
+    codepoints = sorted(previos | del_ui)
+    print(
+        f"{len(codepoints)} code points a subsetear "
+        f"({len(del_ui)} de interfaz, {len(codepoints) - len(del_ui & set(codepoints))} solo de anuncios)"
+    )
 
-    texto = urllib.parse.quote("".join(glifos))
+    texto = urllib.parse.quote("".join(codepoints))
     css = _fetch(_CSS_URL.format(text=texto)).decode("utf-8")
 
     inicio = css.find("url(")
@@ -85,9 +99,9 @@ def main() -> None:
         sys.exit("Lo que devolvió Google no es un WOFF2.")
 
     FONT_PATH.write_bytes(woff2)
-    MANIFEST_PATH.write_text("".join(glifos) + "\n", encoding="utf-8")
+    MANIFEST_PATH.write_text("".join(codepoints) + "\n", encoding="utf-8")
     print(f"escrito {FONT_PATH.relative_to(REPO_ROOT)} ({len(woff2):,} B)")
-    print(f"escrito {MANIFEST_PATH.relative_to(REPO_ROOT)}")
+    print(f"escrito {MANIFEST_PATH.relative_to(REPO_ROOT)} ({len(codepoints)} code points)")
 
 
 if __name__ == "__main__":

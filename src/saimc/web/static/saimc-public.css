@@ -146,6 +146,19 @@ a:hover { color: var(--m3-primary); text-decoration: underline; }
   src: url("/static/fonts/alice.woff2") format("woff2");
 }
 
+/* Noto Color Emoji, el mismo archivo que sirve la capa del operador. La home
+   pública casi no trae emoji, pero un nombre de producto puede tenerlo y la
+   familia ya está en el stack de `--m3-font`: sin este `@font-face` la home
+   caería al emoji del sistema, que en el Linux del operador no existe. Se
+   regenera con `python tools/build_emoji_font.py`. */
+@font-face {
+  font-family: "Noto Color Emoji";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/noto-color-emoji.woff2") format("woff2");
+}
+
 .m3-subtitle {
   margin: var(--m3-space-1) 0 0; font-size: 14px; line-height: 20px;
   color: var(--m3-on-surface-variant); max-width: 62ch; text-wrap: pretty;
