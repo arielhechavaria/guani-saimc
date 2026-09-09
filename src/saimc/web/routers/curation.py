@@ -74,6 +74,7 @@ from saimc.models import (
     SaleFormat,
     SourceType,
 )
+from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
 from saimc.variants import get_or_create_variant
 from saimc.web.auth import require_operator
@@ -578,9 +579,12 @@ def _pilot_products(db: Session) -> list[Product]:
     Un producto fuera del foco sigue en el catálogo y conserva sus precios
     históricos; lo que no puede es recibir precios nuevos. Volver a incluirlo
     es un clic en /catalog, no una migración.
+
+    La consulta vive en `saimc.progress.pilot_products` y no acá: la medición
+    de H0 necesita el mismo catálogo, y tenerlo escrito dos veces fue
+    exactamente el defecto del 2026-09-09 (`docs/decisions.md`).
     """
-    stmt = select(Product).where(Product.is_pilot.is_(True)).order_by(Product.name)
-    return list(db.execute(stmt).scalars().all())
+    return pilot_products(db)
 
 
 def _variant_options(db: Session) -> dict[str, dict[str, list[str]]]:

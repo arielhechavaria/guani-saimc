@@ -17,9 +17,20 @@ De dónde sale el texto evaluado, según el tipo de evidencia:
   El archivo original es inmutable, así que la transcripción es reproducible.
 
 La propuesta se re-corre con el MISMO contexto que tiene la cola de curaduría
-real, no con menos: la provincia fija del canal entra por `channel_province`
-(docs/decisions.md, 2026-08-17 y 2026-08-21). Medir sin ella no era más
-exigente, era medir otro extractor — uno que en producción no existe.
+real, no con menos. Medir con menos no era más exigente: era medir otro
+extractor, uno que en producción no existe. Dos insumos entran por eso:
+
+- **La provincia fija del canal**, por `channel_province` (docs/decisions.md,
+  2026-08-17 y 2026-08-21).
+- **El catálogo del foco**, por `_focus_products` (docs/decisions.md,
+  2026-09-09). La cola le pasa a `propose_all` solo los productos con
+  `is_pilot` (`_pilot_products` en `web/routers/curation.py`: «único punto por
+  donde el catálogo entra a la curaduría»); acá se consultaba `select(Product)`
+  sin filtro. Al 2026-09-09 eran 60 productos contra los 5 de producción, y los
+  55 de más no son inertes: `_match_product` devuelve el PRIMER producto de la
+  lista que matchea, así que un artefacto de parseo del catálogo —`Precio :`,
+  que aparece en casi todos los anuncios— le robaba el match al piloto y la
+  fila se contaba como fallo.
 """
 
 from __future__ import annotations
@@ -53,6 +64,7 @@ from saimc.models import (
     Province,
     RawIngestion,
 )
+from saimc.progress import pilot_products
 from saimc.units import canonical_unit
 
 
@@ -109,8 +121,13 @@ class H0Report:
     complete_accuracy: float | None
 
 
-def _all_products(session: Session) -> list[Product]:
-    return list(session.execute(select(Product)).scalars().all())
+def _focus_products(session: Session) -> list[Product]:
+    """El catálogo que ve el motor: el foco, igual que la cola de curaduría.
+
+    Delegado a `saimc.progress.pilot_products` para que la definición del foco
+    no vuelva a existir por duplicado — ver el docstring de módulo.
+    """
+    return pilot_products(session)
 
 
 def _all_provinces(session: Session) -> list[Province]:
@@ -208,7 +225,9 @@ def _assign_within_product(
 
 
 def _match_rows_to_candidates(
-    confirmed_rows: list[PriceHistory], candidates: list[ExtractionProposal]
+    confirmed_rows: list[PriceHistory],
+    candidates: list[ExtractionProposal],
+    channel_province: Province | None = None,
 ) -> list[tuple[PriceHistory, ExtractionProposal]]:
     """Empareja cada fila confirmada con el candidato de `propose_all` que le
     corresponde.
@@ -241,7 +260,14 @@ def _match_rows_to_candidates(
       coinciden en ella: no depende de qué línea se elija, porque la fija el
       canal para todo el anuncio (docs/decisions.md, 2026-08-17) y la cola de
       curaduría se la aplica a todas las filas por igual.
-    - **Ninguna línea libre**: propuesta vacía, como antes.
+    - **Ninguna línea libre**: propuesta sin producto ni precio, pero **con la
+      provincia del canal** si el anuncio viene de uno. La cola le pone esa
+      provincia a todas las filas del formulario sin mirar si el motor propuso
+      algo para ellas (`curation.py`: `row["province_id"] = channel_province_id`
+      sobre `rows` entero, y también sobre la fila en blanco que el operador
+      agrega a mano). Devolver `ExtractionProposal()` pelada contaba como fallo
+      una provincia que en producción siempre está puesta — el 12.9% de las
+      filas de texto al 2026-09-09.
 
     Ninguna línea se consume en el caso ambiguo: no se usó, así que sigue
     disponible para la fila siguiente.
@@ -271,7 +297,7 @@ def _match_rows_to_candidates(
 
     for row in unmatched_rows:
         if not remaining:
-            matched[id(row)] = ExtractionProposal()
+            matched[id(row)] = ExtractionProposal(province=channel_province)
         elif len(remaining) == 1:
             matched[id(row)] = remaining.pop(0)
         else:
@@ -373,7 +399,7 @@ def compute_h0_report(
     ingestions = _curated_ingestions(session)
     image_ocr_empty_count = 0
 
-    products = _all_products(session)
+    products = _focus_products(session)
     provinces = _all_provinces(session)
     history_by_source = _price_history_by_source(session)
 
@@ -421,14 +447,19 @@ def compute_h0_report(
         # fallo de provincia cada anuncio de canal cuyo mensaje no la nombra,
         # que es la forma NORMAL de un canal — el vendedor no repite dónde está
         # en cada publicación.
+        channel_province = origin.channel_province(session, ingestion)
         candidates = propose_all(
             text,
             products,
             provinces,
-            channel_province=origin.channel_province(session, ingestion),
+            channel_province=channel_province,
         )
 
-        for confirmed, proposal in _match_rows_to_candidates(confirmed_rows, candidates):
+        # La misma provincia va al emparejado: una fila que se queda sin línea
+        # libre la conserva igual, porque el formulario también se la pone.
+        for confirmed, proposal in _match_rows_to_candidates(
+            confirmed_rows, candidates, channel_province
+        ):
             evaluated_rows_count += 1
 
             is_product_ok = (

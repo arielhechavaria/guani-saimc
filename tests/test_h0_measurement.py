@@ -70,7 +70,14 @@ def _transcribe_falso(path: Path) -> str:
 @pytest.fixture
 def pollo(session: Session) -> Product:
     producto = Product(
-        name="Pollo", category="carnes", unit="lb", aliases=["pollo congelado"]
+        name="Pollo",
+        category="carnes",
+        unit="lb",
+        aliases=["pollo congelado"],
+        # El foco es lo que la cola le ofrece al motor, y desde el 2026-09-09 la
+        # medición usa el mismo catálogo: un producto sin `is_pilot` no se
+        # extrae ni en producción ni acá.
+        is_pilot=True,
     )
     session.add(producto)
     session.commit()
@@ -495,7 +502,7 @@ class TestH0ReportMultiProducto:
         self, session: Session, pollo: Product, habana: Province
     ) -> tuple[RawIngestion, Product]:
         picadillo = Product(
-            name="Picadillo", category="carnes", unit="lb", aliases=[]
+            name="Picadillo", category="carnes", unit="lb", aliases=[], is_pilot=True
         )
         session.add(picadillo)
         session.commit()
@@ -543,7 +550,7 @@ class TestH0ReportMultiProducto:
         # Fila 3: producto confirmado que ninguna línea del texto propuso
         # (Arroz no aparece en el texto). Ningún candidato matchea por
         # producto: las cuatro métricas cuentan como incorrectas para esta fila.
-        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         session.add(arroz)
         session.flush()
         session.add(
@@ -647,6 +654,68 @@ class TestH0ProvinciaDelCanal:
         assert report.province_accuracy == 1.0
         assert report.complete_accuracy == 1.0
 
+    def test_una_fila_sin_candidato_conserva_la_provincia_del_canal(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """Una fila que se queda sin línea libre igual tiene provincia.
+
+        `curation.py` aplica la provincia del canal a TODAS las filas del
+        formulario —incluida una que el operador agrega en blanco— sin mirar si
+        el motor propuso algo para ella (`row["province_id"] = channel_province_id`,
+        2026-08-17). La medición le daba `ExtractionProposal()` pelada y contaba
+        la provincia como fallo: otra vez, un extractor más ciego que el de
+        producción. Al 2026-09-09 esto afectaba al 12.9% de las filas de texto.
+
+        El producto y el precio SIGUEN siendo fallo: el canal aporta la
+        provincia y nada más.
+        """
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            province_id=habana.id,
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+
+        # Una sola línea usable -> un solo candidato, pero el operador confirmó
+        # DOS filas (menudeo y mayoreo del mismo producto).
+        ingestion = RawIngestion(
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales",
+            file_path="raw/sin-candidato-1.txt",
+            content_hash="sin-candidato-1",
+            content_type=ContentType.TEXT,
+            original_text="pollo congelado 40lb a 500",
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+            channel_id=canal.id,
+        )
+        session.add(ingestion)
+        session.flush()
+        for price, quantity in (("500", "40"), ("14", "1")):
+            session.add(
+                PriceHistory(
+                    product_id=pollo.id,
+                    province_id=habana.id,
+                    price=Decimal(price),
+                    currency=Currency.CUP.value,
+                    quantity=Decimal(quantity),
+                    unit="lb",
+                    source_id=ingestion.id,
+                )
+            )
+        session.commit()
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 2
+        # Las dos filas tienen la provincia del canal, igual que en el formulario.
+        assert report.province_accuracy == 1.0
+        # La segunda fila no tuvo candidato: su producto y su precio son fallo.
+        assert report.product_accuracy == 0.5
+        assert report.price_accuracy == 0.5
+
     def test_sin_canal_la_provincia_ausente_sigue_contando_como_fallo(
         self, session: Session, pollo: Product, habana: Province
     ) -> None:
@@ -670,6 +739,102 @@ class TestH0ProvinciaDelCanal:
         assert report.province_accuracy == 0.0
 
 
+class TestH0CatalogoDelFoco:
+    """La medición tiene que ofrecerle al motor el MISMO catálogo que la cola.
+
+    Mismo principio que `TestH0ProvinciaDelCanal`, sobre el otro insumo de
+    `propose_all`. La cola de curaduría le pasa solo los productos del foco
+    (`_pilot_products` en `web/routers/curation.py`: «único punto por donde el
+    catálogo entra a la curaduría»), pero `compute_h0_report` le pasaba el
+    catálogo entero — 60 productos contra 5 en producción al 2026-09-09.
+
+    Los 55 de más no son inertes: `_match_product` devuelve **el primero de la
+    lista** que matchea, así que un producto fuera del foco con nombre parecido
+    —o directamente un artefacto de parseo como `Precio :`, que matchea texto
+    presente en casi todos los anuncios— le roba el match al piloto y la fila
+    cuenta como fallo. Medir así no era más exigente: era medir otro extractor,
+    uno que en producción no existe.
+    """
+
+    def test_un_producto_fuera_del_foco_no_le_roba_el_match_al_piloto(
+        self, session: Session, habana: Province
+    ) -> None:
+        # El señuelo se inserta PRIMERO a propósito: sin `ORDER BY` el catálogo
+        # sale en orden de inserción y `_match_product` corta en el primero que
+        # matchea, así que este es el orden en que el defecto se manifiesta.
+        criollo = Product(
+            name="Arroz criollo",
+            category="sin categoría",
+            unit="unidad",
+            aliases=[],
+            is_pilot=False,
+        )
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        session.add_all([criollo, arroz])
+        session.commit()
+
+        _curar_texto(
+            session,
+            hash_="foco-1",
+            texto="arroz criollo a 300 cup la libra en la habana",
+            product_id=arroz.id,
+            price="300",
+            currency=Currency.CUP.value,
+            province_id=habana.id,
+            quantity="1",
+            unit="lb",
+        )
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        # La cola real solo ofrece "Arroz": es lo que el operador vio y
+        # confirmó, y es lo que la medición tiene que acreditar.
+        assert report.evaluated_rows_count == 1
+        assert report.product_accuracy == 1.0
+
+    def test_una_fila_contra_un_producto_fuera_del_foco_cuenta_como_fallo(
+        self, session: Session, habana: Province
+    ) -> None:
+        """Contrapeso: filtrar el catálogo no borra filas del denominador.
+
+        Las filas históricas confirmadas contra un producto que hoy está fuera
+        del foco —el operador lo dio de alta desde la cola antes de que el foco
+        se aplicara— siguen contando, y como fallo: la cola de hoy tampoco
+        podría proponerlo. Filtrar no puede ser una forma de inflar el número.
+        """
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        blanco = Product(
+            name="Azúcar blanco",
+            category="sin categoría",
+            unit="unidad",
+            aliases=[],
+            is_pilot=False,
+        )
+        session.add_all([arroz, blanco])
+        session.commit()
+
+        _curar_texto(
+            session,
+            hash_="foco-2",
+            texto="azucar blanco a 250 cup la libra en la habana",
+            product_id=blanco.id,
+            price="250",
+            currency=Currency.CUP.value,
+            province_id=habana.id,
+            quantity="1",
+            unit="lb",
+        )
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 1
+        assert report.product_accuracy == 0.0
+
+
 class TestH0UnidadConfirmadaEnLaFila:
     """La unidad se mide contra `prices_history.unit` —la que el operador
     confirmó para ESA fila— y no contra `Product.unit`, la del catálogo.
@@ -688,7 +853,7 @@ class TestH0UnidadConfirmadaEnLaFila:
     @pytest.fixture
     def arroz(self, session: Session) -> Product:
         # Unidad de catálogo `lb`: el arroz se vende por libra al menudeo.
-        producto = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        producto = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         session.add(producto)
         session.commit()
         return producto
@@ -743,7 +908,7 @@ class TestH0UnidadConfirmadaEnLaFila:
         """`engine.py` reconoce `litro` y `curation.py` guarda el canónico `l`
         (`saimc.units`). Los dos lados se canonicalizan antes de comparar, así
         que esa diferencia de vocabulario no cuenta como fallo."""
-        aceite = Product(name="Aceite", category="abarrotes", unit="l", aliases=[])
+        aceite = Product(name="Aceite", category="abarrotes", unit="l", aliases=[], is_pilot=True)
         session.add(aceite)
         session.commit()
         _curar_texto(
@@ -812,10 +977,10 @@ class TestH0EmparejadoAmbiguo:
         """Tres líneas reconocibles y una fila confirmada de un producto que no
         aparece en ninguna: quedan DOS candidatos sobrantes, así que el reparto
         posicional es una adivinanza."""
-        picadillo = Product(name="Picadillo", category="carnes", unit="lb", aliases=[])
-        aceite = Product(name="Aceite", category="abarrotes", unit="l", aliases=[])
+        picadillo = Product(name="Picadillo", category="carnes", unit="lb", aliases=[], is_pilot=True)
+        aceite = Product(name="Aceite", category="abarrotes", unit="l", aliases=[], is_pilot=True)
         # Confirmado pero ausente del texto: no lo nombra ninguna línea.
-        frijol = Product(name="Frijol", category="granos", unit="lb", aliases=[])
+        frijol = Product(name="Frijol", category="granos", unit="lb", aliases=[], is_pilot=True)
         session.add_all([picadillo, aceite, frijol])
         session.commit()
 
@@ -937,7 +1102,7 @@ class TestH0EmparejadoMismoProductoVariasFilas:
 
     @pytest.fixture
     def arroz(self, session: Session) -> Product:
-        producto = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        producto = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         session.add(producto)
         session.commit()
         return producto

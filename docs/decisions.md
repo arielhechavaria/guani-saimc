@@ -6991,3 +6991,145 @@ un anuncio futuro se ve con el glifo del sistema hasta que se corra
 `scan_ad_emoji.py` + `build_emoji_font.py` de nuevo — es la carrera que el
 operador aceptó al elegir esta opción. El manifiesto sólo crece: un emoji que
 salió de un anuncio ya borrado no se saca de la fuente salvo a mano.
+
+## 2026-09-09 — La medición de H0 le pasaba al motor el catálogo entero, no el foco
+Contexto: `compute_h0_report` construía el catálogo con `select(Product)` sin
+filtro, mientras la cola de curaduría le pasa a `propose_all` solo los productos
+con `is_pilot` (`_pilot_products`, «único punto por donde el catálogo entra a la
+curaduría», 2026-08-15). Al 2026-09-09 eran **60 productos contra 5**. Los 55 de
+más no son inertes: `_match_product` devuelve el PRIMER producto de la lista que
+matchea y la consulta no tenía `ORDER BY`, así que un artefacto de parseo del
+catálogo —`Precio :`, presente en casi todos los anuncios— o un casi-duplicado
+—`Arroz criollo` contra `Arroz`— le robaba el match al piloto y la fila se
+contaba como fallo. Es el mismo defecto que este archivo ya registró para la
+provincia del canal (2026-08-17): medir con menos contexto no es más exigente,
+es medir otro extractor.
+Decisión: la consulta del foco pasa a `saimc.progress.pilot_products` —hermana
+de `pilot_product_names`, con `where(is_pilot)` y `order_by(name)`— y la usan
+`extraction/measure.py` y `web/routers/curation.py::_pilot_products`. El
+`order_by` es parte del contrato, no cosmética: mismo filtro con distinto orden
+sigue siendo otro extractor. Dos tests fijan la respuesta de antemano: un
+señuelo fuera del foco no le roba el match al piloto, y una fila confirmada
+contra un producto fuera del foco sigue contando como fallo —filtrar no puede
+ser una forma de inflar el número—.
+Descartado: parchear la consulta de `measure.py` en el lugar. Dejaba la
+definición del foco escrita dos veces, que es exactamente lo que produjo el
+defecto; el docstring de `pilot_product_names` ya había argumentado eso mismo
+para los nombres en 2026-08-15.
+Consecuencia: las 9 corridas de `docs/h0-runs.jsonl` anteriores a esta fecha no
+son comparables con las siguientes — midieron un extractor con señuelos. La
+próxima corrida es la primera del extractor real. Las ~10 filas históricas
+confirmadas contra productos fuera del foco pasan a contar como fallo de
+producto, que es honesto: la cola de hoy tampoco podría proponerlas.
+
+## 2026-09-09 — CLAUDE.md decía «nada de bots» con WAHA hace 25 días en producción
+Contexto: la decisión cerrada 2 de `CLAUDE.md` seguía afirmando «curaduría
+manual primero, nada de scraping, bots de Telegram ni Playwright en Fase 0».
+El apartamiento estaba hecho y registrado desde el 2026-08-15 —webhook de WAHA,
+`SourceType.WHATSAPP_CHANNEL`, backfill manual desde `/catalog`— y al 2026-09-09
+esa ruta aporta **1235 de 1373 registros ingeridos (90%)**. El documento que se
+lee en cada sesión describía un proyecto que ya no existía. Costo concreto: en
+esta misma sesión el asistente le discutió al operador desde esa premisa falsa
+antes de verificarla contra el código.
+Decisión: la decisión 2 pasa a decir lo que es cierto —la curaduría sigue siendo
+manual, la captura ya no del todo— nombrando qué sigue prohibido (scraping,
+Playwright, bots de Telegram), qué está automatizado y desde cuándo, y qué parte
+del motivo original sigue en pie: el conjunto de referencia de H0 se etiqueta a
+mano, así que automatizar más entrada no produce dato etiquetado, produce más
+cola que drenar.
+Descartado: borrar la decisión 2. El motivo que la sostenía no murió, se acotó:
+sin conjunto etiquetado a mano no hay H0, y el cuello de hoy es el triage
+—267 pendientes, 68% de descarte— no la captura.
+Consecuencia: un apartamiento registrado acá no queda cerrado hasta que
+`CLAUDE.md` lo refleje; el registro en este archivo no alcanza, porque
+`CLAUDE.md` es el que se lee primero. Quedan por revisar con el mismo criterio
+la decisión 4 (dice «sin Docker» y WAHA corre en Docker en el VPS) y el motivo
+de la 3 (dice «con curaduría manual no hay trabajo asíncrono», y la ingesta por
+webhook sí lo es).
+
+## 2026-09-09 — Una fila sin candidato conserva la provincia del canal
+Contexto: consecuencia directa del arreglo del catálogo del foco de hoy. Con 5
+productos en vez de 60 el motor genera menos candidatos —762 contra 1673 sobre
+las 134 ingestas de texto— y las filas confirmadas que se quedan sin línea libre
+pasaron del 0.4% al **12.9%**. `_match_rows_to_candidates` le daba a esas filas
+un `ExtractionProposal()` pelado, así que su provincia contaba como fallo. Pero
+`curation.py` le pone la provincia del canal a TODAS las filas del formulario
+—`row["province_id"] = channel_province_id` sobre `rows` entero, y también sobre
+la fila en blanco que el operador agrega a mano (2026-08-17, «el canal siempre
+manda»)— sin mirar si el motor propuso algo para ellas. Era otra vez el mismo
+defecto de la corrida anterior: medir un extractor más ciego que el real.
+Decisión: `_match_rows_to_candidates` recibe `channel_province` y la rama «sin
+líneas libres» devuelve `ExtractionProposal(province=channel_province)` en vez
+de una propuesta pelada. El producto, el precio y la cantidad de esas filas
+siguen contando como fallo: el canal aporta la provincia y nada más.
+Descartado: dejarlo como estaba y explicar la caída de provincia como «el número
+honesto». No lo era en esa dimensión — producción sí completa esa provincia, así
+que contarla como fallo medía un extractor inexistente, exactamente el error que
+esta misma función ya había corregido para los candidatos que sí existen.
+Consecuencia: la caída de provincia de la corrida intermedia (90.8% → 81.3%) era
+en parte artefacto de este defecto, no señal. Las caídas de precio y
+cantidad/unidad, en cambio, se quedan: esas sí eran acierto por casualidad que
+los 55 productos señuelo regalaban al emparejar filas con líneas ajenas.
+
+## 2026-09-09 — El espacio como separador de miles hacía que "7 000 CUP" valiera 0
+Contexto: diagnóstico de la precisión de precio (42.0%) sobre las 232 filas de
+texto del corpus real. Los cinco patrones de precio capturaban `(\d[\d.,]*)`,
+sin espacio, y los canales del operador escriben "7 000 CUP", "27 400 CUP",
+"24 000" constantemente. En `"Paquete de 10 lb: 7 000 CUP"` el patrón enganchaba
+los `000` pegados a la moneda y `_normalize_number("000")` devolvía
+**Decimal("0")**; en `"27 400 CUP"` devolvía 400. Un precio de cero es peor que
+ninguno: el operador ve un número plausible en el formulario en vez de un campo
+vacío que le pide atención.
+Decisión: se extrae `_PRICE_NUMBER` y lo usan los cinco patrones anclados a una
+marca de precio (moneda, "$", "a ", y los dos lados del patrón de doble moneda).
+El grupo tiene que ser de exactamente tres dígitos: "30 8850" son dos números, no
+treinta mil ochocientos cincuenta. `_normalize_number` saca el espacio, incluido
+el duro (U+00A0), que WhatsApp y el OCR emiten indistinguible del normal.
+Descartado: aplicarlo también a `_BARE_NUMBER_RE`. Sin ancla de precio el
+espacio es ambiguo —"Km 34 500" es una dirección— y pegar los grupos inventaría
+precios donde hoy no hay ninguno.
+Consecuencia: **el arreglo no movió H0**. Medido sobre las 305 filas: precio
+42.0% → 42.3%, cantidad/unidad 50.5% → 50.2%, extracción completa 33.4% → 33.4%.
+Una fila para cada lado: ruido, no señal. Sobre las 232 filas de texto la
+clasificación de fallos quedó idéntica (107 OK, 63 sin precio propuesto, 57 con
+valor distinto). El arreglo es correcto y está cubierto por 10 casos nuevos,
+pero no era el cuello. La traza de la fila que motivó el fix lo muestra: el motor
+YA genera el candidato correcto (precio=7000 CUP, cant=10 lb) y
+`_match_rows_to_candidates` lo descarta, porque empareja por `product_id`
+primero y ese candidato quedó con `product=None` — la línea "Paquete de 10 lb"
+no nombra el producto, que está en la línea de encabezado ("Cuartos de Pollo
+MAR-JAC"). La fila se lleva el único candidato con producto reconocido, que trae
+el precio equivocado. No es un defecto de la medición: el extractor de verdad no
+supo atar el producto del encabezado a las líneas de formato, y en produccion esa
+atadura la hace el operador a mano. El próximo paso para mover precio es que el
+motor herede el producto entre líneas del mismo anuncio, no más ajustes de
+parseo de números.
+
+## 2026-09-09 — Las líneas de formato heredan el producto del encabezado
+Contexto: el price-list mayorista cubano declara el producto en el encabezado y
+el formato en las líneas siguientes ("Cuartos de Pollo MAR-JAC 4x10 lb" / "Caja
+de 40 lb: 27 400 CUP" / "Paquete de 10 lb: 7 000 CUP"). `_tiered_proposals` ya
+heredaba del encabezado, pero solo en la forma de ESCALONES por volumen ("Más de
+10 cajas 28"); esta forma no los tiene y caía a la lectura línea por línea, con
+las líneas de formato en `product=None`. La traza del 2026-09-09 mostró la
+consecuencia: el motor generaba el candidato con el precio correcto y
+`_match_rows_to_candidates` lo descartaba, porque empareja por `product_id`
+primero y la fila se llevaba el único candidato con producto reconocido —el del
+encabezado, con el precio equivocado ("4" salido de "4x10 lb")—.
+Decisión: en `propose_all`, una línea sin producto propio hereda el único
+producto del anuncio cuando trae precio y **nombra un envase**. Las dos
+condiciones importan. La primera es la misma que ya usa `_tiered_proposals`: con
+dos productos nombrados, atribuir un formato a uno sería inventar. La segunda
+sale de `units.PACKAGING`, el vocabulario cerrado que ya usa el resto del
+sistema, así que un envase nuevo entra una vez y la regla lo reconoce sola.
+Descartado: pedir «precio y cantidad» en vez de envase. Fue la primera versión y
+rompió un test existente: el ruido de OCR "$23,500.Sale 427.27Lb" trae precio
+(23500) y cantidad (427.27 lb) y quedaba convertido en una oferta de pollo.
+Nombrar un envase es lo que declara que la línea describe un formato; tener
+cifras, no.
+Consecuencia: primera mejora real de H0 de la jornada, medida sobre las 305
+filas. Precio 42.3% -> **47.9%** (+5.6), extracción completa 33.4% -> **35.1%**
+(+1.7), producto 80.3% -> 81.0%. Cantidad/unidad baja 50.2% -> 49.8%: al haber
+más candidatos con producto, el emparejado deja de regalar cantidades por azar
+—la misma deflación de casualidad que ya se vio al filtrar el catálogo—. Sobre
+las 232 filas de texto el precio pasa de 107 a 120 filas correctas.

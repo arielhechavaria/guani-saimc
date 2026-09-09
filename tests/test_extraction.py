@@ -123,6 +123,171 @@ class TestPrecio:
         assert propose(texto, products, provinces).price == esperado
 
 
+class TestHerenciaDeProductoEntreLineas:
+    """El encabezado nombra el producto; las líneas de formato solo el envase.
+
+    Forma canónica del price-list mayorista cubano, medida sobre el corpus real
+    el 2026-09-09:
+
+        🍗 Cuartos de Pollo MAR-JAC 4×10 lb
+        💰 Caja de 40 lb: 27 400 CUP
+        📦 Paquete de 10 lb: 7 000 CUP
+
+    `_tiered_proposals` ya hereda del encabezado, pero solo cuando hay líneas de
+    ESCALÓN por volumen ("Más de 10 cajas 28"). Esta forma no las tiene, así que
+    caía a la lectura línea por línea y las dos líneas de formato quedaban con
+    `product=None`. La consecuencia se midió: el motor generaba el candidato con
+    el precio correcto y `_match_rows_to_candidates` lo descartaba, porque
+    empareja por `product_id` primero. Los dos baldes más grandes de fallo
+    —«sin precio propuesto» 27.2% y «nada propuesto» en cantidad 25.9%— salen
+    de acá.
+
+    Se hereda con la MISMA condición que ya usa `_tiered_proposals`: solo si
+    todo el anuncio habla de un único producto. Con dos, atribuir el formato a
+    uno sería inventar.
+    """
+
+    def test_las_lineas_de_formato_heredan_el_producto_del_encabezado(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = (
+            "🍗 Cuartos de Pollo MAR-JAC 4×10 lb\n"
+            "💰 Caja de 40 lb: 27 400 CUP\n"
+            "📦 Paquete de 10 lb: 7 000 CUP\n"
+            "🔥 Calidad y buen rendimiento para tu hogar o negocio."
+        )
+
+        propuestas = propose_all(texto, products, provinces)
+
+        # Las dos líneas de formato, con su producto y su precio.
+        por_precio = {
+            p.price: p for p in propuestas if p.product is not None
+        }
+        assert Decimal("27400") in por_precio
+        assert Decimal("7000") in por_precio
+        assert por_precio[Decimal("27400")].product.name == "Pollo"
+        assert por_precio[Decimal("7000")].product.name == "Pollo"
+        # Y cada una conserva su propio formato.
+        assert por_precio[Decimal("27400")].quantity == Decimal("40")
+        assert por_precio[Decimal("7000")].quantity == Decimal("10")
+
+    def test_con_dos_productos_en_el_anuncio_no_se_hereda(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Contrapeso, el mismo que ya aplica `_tiered_proposals`: con más de un
+        producto nombrado, atribuir el formato a uno de ellos sería inventar."""
+        texto = (
+            "🍚 Arroz Grano Dorado 100 lb a 30 885\n"
+            "📦 Caja de 40 lb: 27 400 CUP\n"
+            "🍗 Pollo entero disponible"
+        )
+
+        propuestas = propose_all(texto, products, provinces)
+
+        heredadas = [
+            p
+            for p in propuestas
+            if p.product is not None and p.price == Decimal("27400")
+        ]
+        assert heredadas == []
+
+    def test_una_linea_sin_formato_no_hereda(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """La dirección no es una oferta.
+
+        "Calle 20 entre 100 y 101" trae un número que el motor lee como precio
+        (101), pero no declara ninguna cantidad. Heredar el producto ahí
+        convertiría una dirección en una fila de precio — el balde de «valor
+        distinto» que ya se midió. La cantidad es lo que distingue una línea de
+        formato de una de relleno.
+        """
+        texto = (
+            "🍚 Arroz Grano Dorado 100 lb a 30 885\n"
+            "📍 Calle 20 entre 100 y 101, Cotorro"
+        )
+
+        propuestas = propose_all(texto, products, provinces)
+
+        assert [p.price for p in propuestas if p.product is not None] == [
+            Decimal("30885")
+        ]
+
+    def test_una_linea_con_cantidad_pero_sin_envase_no_hereda(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El límite exacto de la regla: envase, no cantidad.
+
+        La primera versión pedía «precio y cantidad» y era demasiado laxa: el
+        ruido de OCR "$23,500.Sale 427.27Lb" trae las dos cosas (precio 23500,
+        cantidad 427.27 lb) y quedaba convertido en una oferta de pollo. Nombrar
+        un envase del vocabulario cerrado (`units.PACKAGING`) es lo que declara
+        que la línea describe un formato.
+        """
+        texto = "$23,500.Sale 427.27Lb\n🍗 Pollo entero a 100"
+
+        propuestas = propose_all(texto, products, provinces)
+
+        assert [p.price for p in propuestas if p.product is not None] == [
+            Decimal("100")
+        ]
+
+
+class TestSeparadorDeMilesConEspacio:
+    """"27 400 CUP" es veintisiete mil cuatrocientos, no 400 ni 0.
+
+    El espacio como separador de miles es constante en los canales del
+    operador ("7 000 CUP", "24 000", "27 400"). Todos los patrones de precio
+    capturaban `(\\d[\\d.,]*)`, sin espacio, así que en "7 000 CUP" el patrón
+    enganchaba los `000` pegados a la moneda y `_normalize_number("000")`
+    devolvía **Decimal("0")**: un precio de cero, que es peor que no extraer
+    nada — el operador ve un 0 plausible en el formulario en vez de un campo
+    vacío que le pide atención.
+
+    Medido sobre el corpus real el 2026-09-09: la precisión de precio estaba
+    en 42.0%, con "sin precio propuesto" (27.2%) y "valor distinto" (24.6%)
+    como los dos baldes más grandes.
+
+    Solo se toca el número que ya viene anclado a una marca de precio (moneda,
+    "$", "a "): ahí el espacio es inequívocamente separador de miles. El
+    número pelado (`_BARE_NUMBER_RE`) queda como está a propósito — sin ancla,
+    "Km 34 500" es ambiguo y pegar los grupos inventaría precios.
+    """
+
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            # El caso que devolvía 0.
+            ("Paquete de 10 lb: 7 000 CUP", Decimal("7000")),
+            ("Cuartos de pollo caja de 40 lb 27 400 CUP", Decimal("27400")),
+            # Con "a " delante.
+            ("Azúcar blanca saco de 25 kg a 24 000", Decimal("24000")),
+            ("🍚Arroz grano dorado 100 lb a 30 885", Decimal("30885")),
+            # Con símbolo de peso.
+            ("Aceite $7 000", Decimal("7000")),
+            # Espacio duro (U+00A0): WhatsApp y el OCR lo emiten igual que el
+            # espacio normal, y a ojo son indistinguibles.
+            ("Paquete de 10 lb: 7 000 CUP", Decimal("7000")),
+            # Más de un grupo.
+            ("Contenedor a 46 905 USD", Decimal("46905")),
+            # --- lo que NO tiene que cambiar ---
+            # Sin grupo de tres detrás del espacio: se queda como estaba.
+            ("Aceite 17.25 L a 60 USD", Decimal("60")),
+            ("20 usd la libra", Decimal("20")),
+            # Un grupo de cuatro no es separador de miles.
+            ("Arroz a 30 8850 CUP", Decimal("30")),
+        ],
+    )
+    def test_casos(
+        self,
+        texto: str,
+        esperado: Decimal | None,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        assert propose(texto, products, provinces).price == esperado
+
+
 class TestPrecioSinMarcaDelantera:
     """Formas de precio que el motor no veía, medidas sobre la mitad de imagen
     del corpus (2026-08-31).
