@@ -225,7 +225,9 @@ def _assign_within_product(
 
 
 def _match_rows_to_candidates(
-    confirmed_rows: list[PriceHistory], candidates: list[ExtractionProposal]
+    confirmed_rows: list[PriceHistory],
+    candidates: list[ExtractionProposal],
+    channel_province: Province | None = None,
 ) -> list[tuple[PriceHistory, ExtractionProposal]]:
     """Empareja cada fila confirmada con el candidato de `propose_all` que le
     corresponde.
@@ -258,7 +260,14 @@ def _match_rows_to_candidates(
       coinciden en ella: no depende de qué línea se elija, porque la fija el
       canal para todo el anuncio (docs/decisions.md, 2026-08-17) y la cola de
       curaduría se la aplica a todas las filas por igual.
-    - **Ninguna línea libre**: propuesta vacía, como antes.
+    - **Ninguna línea libre**: propuesta sin producto ni precio, pero **con la
+      provincia del canal** si el anuncio viene de uno. La cola le pone esa
+      provincia a todas las filas del formulario sin mirar si el motor propuso
+      algo para ellas (`curation.py`: `row["province_id"] = channel_province_id`
+      sobre `rows` entero, y también sobre la fila en blanco que el operador
+      agrega a mano). Devolver `ExtractionProposal()` pelada contaba como fallo
+      una provincia que en producción siempre está puesta — el 12.9% de las
+      filas de texto al 2026-09-09.
 
     Ninguna línea se consume en el caso ambiguo: no se usó, así que sigue
     disponible para la fila siguiente.
@@ -288,7 +297,7 @@ def _match_rows_to_candidates(
 
     for row in unmatched_rows:
         if not remaining:
-            matched[id(row)] = ExtractionProposal()
+            matched[id(row)] = ExtractionProposal(province=channel_province)
         elif len(remaining) == 1:
             matched[id(row)] = remaining.pop(0)
         else:
@@ -438,14 +447,19 @@ def compute_h0_report(
         # fallo de provincia cada anuncio de canal cuyo mensaje no la nombra,
         # que es la forma NORMAL de un canal — el vendedor no repite dónde está
         # en cada publicación.
+        channel_province = origin.channel_province(session, ingestion)
         candidates = propose_all(
             text,
             products,
             provinces,
-            channel_province=origin.channel_province(session, ingestion),
+            channel_province=channel_province,
         )
 
-        for confirmed, proposal in _match_rows_to_candidates(confirmed_rows, candidates):
+        # La misma provincia va al emparejado: una fila que se queda sin línea
+        # libre la conserva igual, porque el formulario también se la pone.
+        for confirmed, proposal in _match_rows_to_candidates(
+            confirmed_rows, candidates, channel_province
+        ):
             evaluated_rows_count += 1
 
             is_product_ok = (

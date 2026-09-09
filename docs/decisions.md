@@ -7046,3 +7046,27 @@ Consecuencia: un apartamiento registrado acá no queda cerrado hasta que
 la decisión 4 (dice «sin Docker» y WAHA corre en Docker en el VPS) y el motivo
 de la 3 (dice «con curaduría manual no hay trabajo asíncrono», y la ingesta por
 webhook sí lo es).
+
+## 2026-09-09 — Una fila sin candidato conserva la provincia del canal
+Contexto: consecuencia directa del arreglo del catálogo del foco de hoy. Con 5
+productos en vez de 60 el motor genera menos candidatos —762 contra 1673 sobre
+las 134 ingestas de texto— y las filas confirmadas que se quedan sin línea libre
+pasaron del 0.4% al **12.9%**. `_match_rows_to_candidates` le daba a esas filas
+un `ExtractionProposal()` pelado, así que su provincia contaba como fallo. Pero
+`curation.py` le pone la provincia del canal a TODAS las filas del formulario
+—`row["province_id"] = channel_province_id` sobre `rows` entero, y también sobre
+la fila en blanco que el operador agrega a mano (2026-08-17, «el canal siempre
+manda»)— sin mirar si el motor propuso algo para ellas. Era otra vez el mismo
+defecto de la corrida anterior: medir un extractor más ciego que el real.
+Decisión: `_match_rows_to_candidates` recibe `channel_province` y la rama «sin
+líneas libres» devuelve `ExtractionProposal(province=channel_province)` en vez
+de una propuesta pelada. El producto, el precio y la cantidad de esas filas
+siguen contando como fallo: el canal aporta la provincia y nada más.
+Descartado: dejarlo como estaba y explicar la caída de provincia como «el número
+honesto». No lo era en esa dimensión — producción sí completa esa provincia, así
+que contarla como fallo medía un extractor inexistente, exactamente el error que
+esta misma función ya había corregido para los candidatos que sí existen.
+Consecuencia: la caída de provincia de la corrida intermedia (90.8% → 81.3%) era
+en parte artefacto de este defecto, no señal. Las caídas de precio y
+cantidad/unidad, en cambio, se quedan: esas sí eran acierto por casualidad que
+los 55 productos señuelo regalaban al emparejar filas con líneas ajenas.

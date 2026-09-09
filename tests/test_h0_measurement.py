@@ -654,6 +654,68 @@ class TestH0ProvinciaDelCanal:
         assert report.province_accuracy == 1.0
         assert report.complete_accuracy == 1.0
 
+    def test_una_fila_sin_candidato_conserva_la_provincia_del_canal(
+        self, session: Session, pollo: Product, habana: Province
+    ) -> None:
+        """Una fila que se queda sin línea libre igual tiene provincia.
+
+        `curation.py` aplica la provincia del canal a TODAS las filas del
+        formulario —incluida una que el operador agrega en blanco— sin mirar si
+        el motor propuso algo para ella (`row["province_id"] = channel_province_id`,
+        2026-08-17). La medición le daba `ExtractionProposal()` pelada y contaba
+        la provincia como fallo: otra vez, un extractor más ciego que el de
+        producción. Al 2026-09-09 esto afectaba al 12.9% de las filas de texto.
+
+        El producto y el precio SIGUEN siendo fallo: el canal aporta la
+        provincia y nada más.
+        """
+        canal = Channel(
+            name="Groupej Morales",
+            platform=Platform.WHATSAPP_CHANNEL,
+            province_id=habana.id,
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+
+        # Una sola línea usable -> un solo candidato, pero el operador confirmó
+        # DOS filas (menudeo y mayoreo del mismo producto).
+        ingestion = RawIngestion(
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales",
+            file_path="raw/sin-candidato-1.txt",
+            content_hash="sin-candidato-1",
+            content_type=ContentType.TEXT,
+            original_text="pollo congelado 40lb a 500",
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+            channel_id=canal.id,
+        )
+        session.add(ingestion)
+        session.flush()
+        for price, quantity in (("500", "40"), ("14", "1")):
+            session.add(
+                PriceHistory(
+                    product_id=pollo.id,
+                    province_id=habana.id,
+                    price=Decimal(price),
+                    currency=Currency.CUP.value,
+                    quantity=Decimal(quantity),
+                    unit="lb",
+                    source_id=ingestion.id,
+                )
+            )
+        session.commit()
+
+        report = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_rows_count == 2
+        # Las dos filas tienen la provincia del canal, igual que en el formulario.
+        assert report.province_accuracy == 1.0
+        # La segunda fila no tuvo candidato: su producto y su precio son fallo.
+        assert report.product_accuracy == 0.5
+        assert report.price_accuracy == 0.5
+
     def test_sin_canal_la_provincia_ausente_sigue_contando_como_fallo(
         self, session: Session, pollo: Product, habana: Province
     ) -> None:
