@@ -7104,3 +7104,32 @@ supo atar el producto del encabezado a las líneas de formato, y en produccion e
 atadura la hace el operador a mano. El próximo paso para mover precio es que el
 motor herede el producto entre líneas del mismo anuncio, no más ajustes de
 parseo de números.
+
+## 2026-09-09 — Las líneas de formato heredan el producto del encabezado
+Contexto: el price-list mayorista cubano declara el producto en el encabezado y
+el formato en las líneas siguientes ("Cuartos de Pollo MAR-JAC 4x10 lb" / "Caja
+de 40 lb: 27 400 CUP" / "Paquete de 10 lb: 7 000 CUP"). `_tiered_proposals` ya
+heredaba del encabezado, pero solo en la forma de ESCALONES por volumen ("Más de
+10 cajas 28"); esta forma no los tiene y caía a la lectura línea por línea, con
+las líneas de formato en `product=None`. La traza del 2026-09-09 mostró la
+consecuencia: el motor generaba el candidato con el precio correcto y
+`_match_rows_to_candidates` lo descartaba, porque empareja por `product_id`
+primero y la fila se llevaba el único candidato con producto reconocido —el del
+encabezado, con el precio equivocado ("4" salido de "4x10 lb")—.
+Decisión: en `propose_all`, una línea sin producto propio hereda el único
+producto del anuncio cuando trae precio y **nombra un envase**. Las dos
+condiciones importan. La primera es la misma que ya usa `_tiered_proposals`: con
+dos productos nombrados, atribuir un formato a uno sería inventar. La segunda
+sale de `units.PACKAGING`, el vocabulario cerrado que ya usa el resto del
+sistema, así que un envase nuevo entra una vez y la regla lo reconoce sola.
+Descartado: pedir «precio y cantidad» en vez de envase. Fue la primera versión y
+rompió un test existente: el ruido de OCR "$23,500.Sale 427.27Lb" trae precio
+(23500) y cantidad (427.27 lb) y quedaba convertido en una oferta de pollo.
+Nombrar un envase es lo que declara que la línea describe un formato; tener
+cifras, no.
+Consecuencia: primera mejora real de H0 de la jornada, medida sobre las 305
+filas. Precio 42.3% -> **47.9%** (+5.6), extracción completa 33.4% -> **35.1%**
+(+1.7), producto 80.3% -> 81.0%. Cantidad/unidad baja 50.2% -> 49.8%: al haber
+más candidatos con producto, el emparejado deja de regalar cantidades por azar
+—la misma deflación de casualidad que ya se vio al filtrar el catálogo—. Sobre
+las 232 filas de texto el precio pasa de 107 a 120 filas correctas.

@@ -363,6 +363,26 @@ _DISQUALIFYING_MODIFIER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ¿Esta línea nombra un envase? Es lo que distingue una línea de FORMATO de un
+# renglón cualquiera que traiga números: "Caja de 40 lb: 27 400 CUP" declara un
+# formato; "$23,500.Sale 427.27Lb" (ruido de OCR) y "Calle 20 entre 100 y 101"
+# (una dirección) no, aunque los tres tengan cifras que el motor lee como precio
+# y hasta como cantidad.
+#
+# Se construye del mismo vocabulario cerrado que usa el resto del sistema
+# (`units.PACKAGING`), no de una lista paralela: un envase nuevo entra ahí una
+# vez y esta regla lo reconoce sola. El plural sale de `_plural_pattern`, igual
+# que en los modificadores y los alias de producto.
+_PACKAGING_WORD_RE = re.compile(
+    r"\b("
+    + "|".join(
+        r"\s+".join(_plural_pattern(palabra) for palabra in envase.split())
+        for envase in PACKAGING
+    )
+    + r")\b",
+    re.IGNORECASE,
+)
+
 
 # --- canal origen -------------------------------------------------------------
 
@@ -1124,6 +1144,21 @@ def propose_all(
     whole_text_province = channel_province or _match_province(text, provinces)
     whole_text_currency = _extract_currency_explicit(text)
 
+    # Producto que las líneas de formato pueden heredar del encabezado. La
+    # condición es la MISMA que ya usa `_tiered_proposals`: solo si todo el
+    # anuncio habla de un único producto, porque con dos, atribuir un formato a
+    # uno de ellos sería inventar.
+    mencionados = [
+        p
+        for p in (_match_product(raw.strip(), products) for raw in text.splitlines())
+        if p is not None
+    ]
+    producto_unico = (
+        mencionados[0]
+        if mencionados and all(p is mencionados[0] for p in mencionados)
+        else None
+    )
+
     proposals: list[ExtractionProposal] = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -1132,6 +1167,29 @@ def propose_all(
 
         price = _extract_price(line)
         product = _match_product(line, products)
+        quantity, unit = _extract_quantity(line)
+
+        # Línea de formato del price-list mayorista: declara envase y precio
+        # ("Caja de 40 lb: 27 400 CUP") pero no repite el producto, que está en
+        # el encabezado. `_tiered_proposals` ya heredaba en la forma de
+        # escalones por volumen; esta forma no los tiene y caía a la lectura
+        # línea por línea, dejando el candidato con el precio correcto sin
+        # producto — y `_match_rows_to_candidates`, que empareja por
+        # `product_id`, lo descartaba (2026-09-09).
+        #
+        # Nombrar un envase es la condición, no un detalle: es lo que distingue
+        # una línea de formato de un renglón cualquiera con cifras. Pedir solo
+        # "precio y cantidad" resultó demasiado laxo — convertía en oferta tanto
+        # una dirección ("Calle 20 entre 100 y 101", cuyo 101 se lee como
+        # precio) como el ruido de OCR ("$23,500.Sale 427.27Lb", que además
+        # produce una cantidad de 427.27 lb).
+        if (
+            product is None
+            and price is not None
+            and _PACKAGING_WORD_RE.search(_strip_accents(line.lower())) is not None
+        ):
+            product = producto_unico
+
         guess = _guess_product_phrase(line) if product is None else None
 
         if product is None and (price is None or guess is None):
@@ -1145,7 +1203,6 @@ def propose_all(
             # aparenta que el motor entendió algo. Se descarta.
             continue
 
-        quantity, unit = _extract_quantity(line)
         currency = (
             _extract_currency_explicit(line) or whole_text_currency or Currency.CUP.value
         )
