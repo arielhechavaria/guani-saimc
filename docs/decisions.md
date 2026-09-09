@@ -6991,3 +6991,33 @@ un anuncio futuro se ve con el glifo del sistema hasta que se corra
 `scan_ad_emoji.py` + `build_emoji_font.py` de nuevo — es la carrera que el
 operador aceptó al elegir esta opción. El manifiesto sólo crece: un emoji que
 salió de un anuncio ya borrado no se saca de la fuente salvo a mano.
+
+## 2026-09-09 — La medición de H0 le pasaba al motor el catálogo entero, no el foco
+Contexto: `compute_h0_report` construía el catálogo con `select(Product)` sin
+filtro, mientras la cola de curaduría le pasa a `propose_all` solo los productos
+con `is_pilot` (`_pilot_products`, «único punto por donde el catálogo entra a la
+curaduría», 2026-08-15). Al 2026-09-09 eran **60 productos contra 5**. Los 55 de
+más no son inertes: `_match_product` devuelve el PRIMER producto de la lista que
+matchea y la consulta no tenía `ORDER BY`, así que un artefacto de parseo del
+catálogo —`Precio :`, presente en casi todos los anuncios— o un casi-duplicado
+—`Arroz criollo` contra `Arroz`— le robaba el match al piloto y la fila se
+contaba como fallo. Es el mismo defecto que este archivo ya registró para la
+provincia del canal (2026-08-17): medir con menos contexto no es más exigente,
+es medir otro extractor.
+Decisión: la consulta del foco pasa a `saimc.progress.pilot_products` —hermana
+de `pilot_product_names`, con `where(is_pilot)` y `order_by(name)`— y la usan
+`extraction/measure.py` y `web/routers/curation.py::_pilot_products`. El
+`order_by` es parte del contrato, no cosmética: mismo filtro con distinto orden
+sigue siendo otro extractor. Dos tests fijan la respuesta de antemano: un
+señuelo fuera del foco no le roba el match al piloto, y una fila confirmada
+contra un producto fuera del foco sigue contando como fallo —filtrar no puede
+ser una forma de inflar el número—.
+Descartado: parchear la consulta de `measure.py` en el lugar. Dejaba la
+definición del foco escrita dos veces, que es exactamente lo que produjo el
+defecto; el docstring de `pilot_product_names` ya había argumentado eso mismo
+para los nombres en 2026-08-15.
+Consecuencia: las 9 corridas de `docs/h0-runs.jsonl` anteriores a esta fecha no
+son comparables con las siguientes — midieron un extractor con señuelos. La
+próxima corrida es la primera del extractor real. Las ~10 filas históricas
+confirmadas contra productos fuera del foco pasan a contar como fallo de
+producto, que es honesto: la cola de hoy tampoco podría proponerlas.

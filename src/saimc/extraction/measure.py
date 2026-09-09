@@ -17,9 +17,20 @@ De dónde sale el texto evaluado, según el tipo de evidencia:
   El archivo original es inmutable, así que la transcripción es reproducible.
 
 La propuesta se re-corre con el MISMO contexto que tiene la cola de curaduría
-real, no con menos: la provincia fija del canal entra por `channel_province`
-(docs/decisions.md, 2026-08-17 y 2026-08-21). Medir sin ella no era más
-exigente, era medir otro extractor — uno que en producción no existe.
+real, no con menos. Medir con menos no era más exigente: era medir otro
+extractor, uno que en producción no existe. Dos insumos entran por eso:
+
+- **La provincia fija del canal**, por `channel_province` (docs/decisions.md,
+  2026-08-17 y 2026-08-21).
+- **El catálogo del foco**, por `_focus_products` (docs/decisions.md,
+  2026-09-09). La cola le pasa a `propose_all` solo los productos con
+  `is_pilot` (`_pilot_products` en `web/routers/curation.py`: «único punto por
+  donde el catálogo entra a la curaduría»); acá se consultaba `select(Product)`
+  sin filtro. Al 2026-09-09 eran 60 productos contra los 5 de producción, y los
+  55 de más no son inertes: `_match_product` devuelve el PRIMER producto de la
+  lista que matchea, así que un artefacto de parseo del catálogo —`Precio :`,
+  que aparece en casi todos los anuncios— le robaba el match al piloto y la
+  fila se contaba como fallo.
 """
 
 from __future__ import annotations
@@ -53,6 +64,7 @@ from saimc.models import (
     Province,
     RawIngestion,
 )
+from saimc.progress import pilot_products
 from saimc.units import canonical_unit
 
 
@@ -109,8 +121,13 @@ class H0Report:
     complete_accuracy: float | None
 
 
-def _all_products(session: Session) -> list[Product]:
-    return list(session.execute(select(Product)).scalars().all())
+def _focus_products(session: Session) -> list[Product]:
+    """El catálogo que ve el motor: el foco, igual que la cola de curaduría.
+
+    Delegado a `saimc.progress.pilot_products` para que la definición del foco
+    no vuelva a existir por duplicado — ver el docstring de módulo.
+    """
+    return pilot_products(session)
 
 
 def _all_provinces(session: Session) -> list[Province]:
@@ -373,7 +390,7 @@ def compute_h0_report(
     ingestions = _curated_ingestions(session)
     image_ocr_empty_count = 0
 
-    products = _all_products(session)
+    products = _focus_products(session)
     provinces = _all_provinces(session)
     history_by_source = _price_history_by_source(session)
 

@@ -63,6 +63,25 @@ def pilot_product_names(session: Session) -> tuple[str, ...]:
     stmt = select(Product.name).where(Product.is_pilot.is_(True)).order_by(Product.name)
     return tuple(session.execute(stmt).scalars().all())
 
+
+def pilot_products(session: Session) -> list[Product]:
+    """Los productos del foco, en el orden en que el motor los ve.
+
+    Hermana de `pilot_product_names` y por el mismo motivo: el catálogo que se
+    le pasa a `propose_all` es UNA sola definición. La cola de curaduría la
+    aplicaba desde el 2026-08-15 (`_pilot_products` en `web/routers/curation.py`)
+    pero `extraction/measure.py` consultaba `select(Product)` sin filtro, así
+    que H0 medía un extractor con 55 productos de más que en producción nunca
+    se le ofrecen (2026-09-09, `docs/decisions.md`).
+
+    El `order_by` es parte del contrato, no cosmética: `_match_product` corta en
+    el PRIMER producto de la lista que matchea, así que dos consultas con el
+    mismo filtro y distinto orden siguen siendo dos extractores distintos.
+    """
+    stmt = select(Product).where(Product.is_pilot.is_(True)).order_by(Product.name)
+    return list(session.execute(stmt).scalars().all())
+
+
 # spec.md §9, «Provincias: 2 provincias (La Habana y Santiago de Cuba)». Las
 # nombra el documento: no es una elección de implementación.
 PHASE0_PROVINCES: tuple[str, ...] = ("La Habana", "Santiago de Cuba")
