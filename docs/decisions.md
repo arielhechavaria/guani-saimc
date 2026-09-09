@@ -7021,3 +7021,28 @@ son comparables con las siguientes — midieron un extractor con señuelos. La
 próxima corrida es la primera del extractor real. Las ~10 filas históricas
 confirmadas contra productos fuera del foco pasan a contar como fallo de
 producto, que es honesto: la cola de hoy tampoco podría proponerlas.
+
+## 2026-09-09 — CLAUDE.md decía «nada de bots» con WAHA hace 25 días en producción
+Contexto: la decisión cerrada 2 de `CLAUDE.md` seguía afirmando «curaduría
+manual primero, nada de scraping, bots de Telegram ni Playwright en Fase 0».
+El apartamiento estaba hecho y registrado desde el 2026-08-15 —webhook de WAHA,
+`SourceType.WHATSAPP_CHANNEL`, backfill manual desde `/catalog`— y al 2026-09-09
+esa ruta aporta **1235 de 1373 registros ingeridos (90%)**. El documento que se
+lee en cada sesión describía un proyecto que ya no existía. Costo concreto: en
+esta misma sesión el asistente le discutió al operador desde esa premisa falsa
+antes de verificarla contra el código.
+Decisión: la decisión 2 pasa a decir lo que es cierto —la curaduría sigue siendo
+manual, la captura ya no del todo— nombrando qué sigue prohibido (scraping,
+Playwright, bots de Telegram), qué está automatizado y desde cuándo, y qué parte
+del motivo original sigue en pie: el conjunto de referencia de H0 se etiqueta a
+mano, así que automatizar más entrada no produce dato etiquetado, produce más
+cola que drenar.
+Descartado: borrar la decisión 2. El motivo que la sostenía no murió, se acotó:
+sin conjunto etiquetado a mano no hay H0, y el cuello de hoy es el triage
+—267 pendientes, 68% de descarte— no la captura.
+Consecuencia: un apartamiento registrado acá no queda cerrado hasta que
+`CLAUDE.md` lo refleje; el registro en este archivo no alcanza, porque
+`CLAUDE.md` es el que se lee primero. Quedan por revisar con el mismo criterio
+la decisión 4 (dice «sin Docker» y WAHA corre en Docker en el VPS) y el motivo
+de la 3 (dice «con curaduría manual no hay trabajo asíncrono», y la ingesta por
+webhook sí lo es).
