@@ -123,6 +123,61 @@ class TestPrecio:
         assert propose(texto, products, provinces).price == esperado
 
 
+class TestSeparadorDeMilesConEspacio:
+    """"27 400 CUP" es veintisiete mil cuatrocientos, no 400 ni 0.
+
+    El espacio como separador de miles es constante en los canales del
+    operador ("7 000 CUP", "24 000", "27 400"). Todos los patrones de precio
+    capturaban `(\\d[\\d.,]*)`, sin espacio, así que en "7 000 CUP" el patrón
+    enganchaba los `000` pegados a la moneda y `_normalize_number("000")`
+    devolvía **Decimal("0")**: un precio de cero, que es peor que no extraer
+    nada — el operador ve un 0 plausible en el formulario en vez de un campo
+    vacío que le pide atención.
+
+    Medido sobre el corpus real el 2026-09-09: la precisión de precio estaba
+    en 42.0%, con "sin precio propuesto" (27.2%) y "valor distinto" (24.6%)
+    como los dos baldes más grandes.
+
+    Solo se toca el número que ya viene anclado a una marca de precio (moneda,
+    "$", "a "): ahí el espacio es inequívocamente separador de miles. El
+    número pelado (`_BARE_NUMBER_RE`) queda como está a propósito — sin ancla,
+    "Km 34 500" es ambiguo y pegar los grupos inventaría precios.
+    """
+
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            # El caso que devolvía 0.
+            ("Paquete de 10 lb: 7 000 CUP", Decimal("7000")),
+            ("Cuartos de pollo caja de 40 lb 27 400 CUP", Decimal("27400")),
+            # Con "a " delante.
+            ("Azúcar blanca saco de 25 kg a 24 000", Decimal("24000")),
+            ("🍚Arroz grano dorado 100 lb a 30 885", Decimal("30885")),
+            # Con símbolo de peso.
+            ("Aceite $7 000", Decimal("7000")),
+            # Espacio duro (U+00A0): WhatsApp y el OCR lo emiten igual que el
+            # espacio normal, y a ojo son indistinguibles.
+            ("Paquete de 10 lb: 7 000 CUP", Decimal("7000")),
+            # Más de un grupo.
+            ("Contenedor a 46 905 USD", Decimal("46905")),
+            # --- lo que NO tiene que cambiar ---
+            # Sin grupo de tres detrás del espacio: se queda como estaba.
+            ("Aceite 17.25 L a 60 USD", Decimal("60")),
+            ("20 usd la libra", Decimal("20")),
+            # Un grupo de cuatro no es separador de miles.
+            ("Arroz a 30 8850 CUP", Decimal("30")),
+        ],
+    )
+    def test_casos(
+        self,
+        texto: str,
+        esperado: Decimal | None,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        assert propose(texto, products, provinces).price == esperado
+
+
 class TestPrecioSinMarcaDelantera:
     """Formas de precio que el motor no veía, medidas sobre la mitad de imagen
     del corpus (2026-08-31).

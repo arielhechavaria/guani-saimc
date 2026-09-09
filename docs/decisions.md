@@ -7070,3 +7070,37 @@ Consecuencia: la caída de provincia de la corrida intermedia (90.8% → 81.3%) 
 en parte artefacto de este defecto, no señal. Las caídas de precio y
 cantidad/unidad, en cambio, se quedan: esas sí eran acierto por casualidad que
 los 55 productos señuelo regalaban al emparejar filas con líneas ajenas.
+
+## 2026-09-09 — El espacio como separador de miles hacía que "7 000 CUP" valiera 0
+Contexto: diagnóstico de la precisión de precio (42.0%) sobre las 232 filas de
+texto del corpus real. Los cinco patrones de precio capturaban `(\d[\d.,]*)`,
+sin espacio, y los canales del operador escriben "7 000 CUP", "27 400 CUP",
+"24 000" constantemente. En `"Paquete de 10 lb: 7 000 CUP"` el patrón enganchaba
+los `000` pegados a la moneda y `_normalize_number("000")` devolvía
+**Decimal("0")**; en `"27 400 CUP"` devolvía 400. Un precio de cero es peor que
+ninguno: el operador ve un número plausible en el formulario en vez de un campo
+vacío que le pide atención.
+Decisión: se extrae `_PRICE_NUMBER` y lo usan los cinco patrones anclados a una
+marca de precio (moneda, "$", "a ", y los dos lados del patrón de doble moneda).
+El grupo tiene que ser de exactamente tres dígitos: "30 8850" son dos números, no
+treinta mil ochocientos cincuenta. `_normalize_number` saca el espacio, incluido
+el duro (U+00A0), que WhatsApp y el OCR emiten indistinguible del normal.
+Descartado: aplicarlo también a `_BARE_NUMBER_RE`. Sin ancla de precio el
+espacio es ambiguo —"Km 34 500" es una dirección— y pegar los grupos inventaría
+precios donde hoy no hay ninguno.
+Consecuencia: **el arreglo no movió H0**. Medido sobre las 305 filas: precio
+42.0% → 42.3%, cantidad/unidad 50.5% → 50.2%, extracción completa 33.4% → 33.4%.
+Una fila para cada lado: ruido, no señal. Sobre las 232 filas de texto la
+clasificación de fallos quedó idéntica (107 OK, 63 sin precio propuesto, 57 con
+valor distinto). El arreglo es correcto y está cubierto por 10 casos nuevos,
+pero no era el cuello. La traza de la fila que motivó el fix lo muestra: el motor
+YA genera el candidato correcto (precio=7000 CUP, cant=10 lb) y
+`_match_rows_to_candidates` lo descarta, porque empareja por `product_id`
+primero y ese candidato quedó con `product=None` — la línea "Paquete de 10 lb"
+no nombra el producto, que está en la línea de encabezado ("Cuartos de Pollo
+MAR-JAC"). La fila se lleva el único candidato con producto reconocido, que trae
+el precio equivocado. No es un defecto de la medición: el extractor de verdad no
+supo atar el producto del encabezado a las líneas de formato, y en produccion esa
+atadura la hace el operador a mano. El próximo paso para mover precio es que el
+motor herede el producto entre líneas del mismo anuncio, no más ajustes de
+parseo de números.

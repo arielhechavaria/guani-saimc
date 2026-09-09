@@ -99,24 +99,45 @@ _CURRENCY_RE = re.compile(
 
 # --- precio y cantidad --------------------------------------------------------
 
+# Un número de precio, con el espacio admitido como separador de miles.
+#
+# Los canales del operador escriben "7 000 CUP", "27 400 CUP", "24 000"
+# constantemente. Sin los grupos de tres detrás del espacio, el patrón viejo
+# —`(\d[\d.,]*)`— enganchaba solo el pedazo pegado a la marca de moneda: "7 000
+# CUP" daba `Decimal("000")` = **0**, y "27 400 CUP" daba 400. Un precio de cero
+# es peor que ninguno: el operador ve un número plausible en vez de un campo
+# vacío que le pide atención.
+#
+# El grupo tiene que ser de EXACTAMENTE tres dígitos (`\d{3}(?!\d)`): "30 8850"
+# no es treinta mil ochocientos cincuenta, son dos números distintos. Se admite
+# el espacio duro (U+00A0) porque WhatsApp y el OCR lo emiten indistinguible del
+# normal.
+#
+# Esto vale solo para los patrones ANCLADOS a una marca de precio (moneda, "$",
+# "a "), donde el espacio es inequívocamente separador de miles. El número
+# pelado (`_BARE_NUMBER_RE`) queda deliberadamente afuera: sin ancla, "Km 34
+# 500" es ambiguo y pegar los grupos inventaría precios (2026-09-09).
+_PRICE_NUMBER = r"\d[\d.,]*(?:[  ]\d{3}(?!\d))*"
+
 # La palabra "a" antes de un número casi siempre precede al precio en este
 # mercado ("a 12000"); se intenta primero por ser la pista más fuerte.
-_PRICE_AFTER_A_RE = re.compile(r"\ba\s+(\d[\d.,]*)", re.IGNORECASE)
+_PRICE_AFTER_A_RE = re.compile(r"\ba\s+(" + _PRICE_NUMBER + r")", re.IGNORECASE)
 # Segunda pista: un número pegado a una marca de moneda también es precio.
 _PRICE_BEFORE_CURRENCY_RE = re.compile(
-    r"(\d[\d.,]*)\s*(" + "|".join(_CURRENCY_MARKERS) + r")\b", re.IGNORECASE
+    r"(" + _PRICE_NUMBER + r")\s*(" + "|".join(_CURRENCY_MARKERS) + r")\b",
+    re.IGNORECASE,
 )
 # Tercera pista: el símbolo "$" también marca precio, muy común en capturas de
 # tiendas informales. No implica moneda USD —en el mercado cubano "$" suele
 # usarse para CUP también— por eso esto solo ubica el número, la moneda la
 # sigue decidiendo `_extract_currency` por separado.
-_PRICE_DOLLAR_RE = re.compile(r"\$\s*(\d[\d.,]*)")
+_PRICE_DOLLAR_RE = re.compile(r"\$\s*(" + _PRICE_NUMBER + r")")
 # El mismo símbolo escrito DESPUÉS del número ("850$", "21900$"), forma
 # habitual de las publicaciones de Facebook/Marketplace que el operador
 # captura como imagen. `_PRICE_DOLLAR_RE` solo mira adelante, así que estas
 # líneas quedaban sin precio aunque el OCR hubiera transcripto el número
 # perfectamente (docs/decisions.md, 2026-08-31).
-_PRICE_DOLLAR_SUFFIX_RE = re.compile(r"(\d[\d.,]*)\s*\$")
+_PRICE_DOLLAR_SUFFIX_RE = re.compile(r"(" + _PRICE_NUMBER + r")\s*\$")
 # Cuarta pista, la más específica: precio en dos monedas para el mismo ítem
 # ("43.5 o 30885" = 43.5 USD, o —al tipo de cambio propio del vendedor—
 # 30885 CUP). Patrón real de los canales de La Habana que publican catálogo
@@ -130,7 +151,9 @@ _PRICE_DOLLAR_SUFFIX_RE = re.compile(r"(\d[\d.,]*)\s*\$")
 # distingue USD de CUP en este mercado). El separador "o"/"O" tolera el
 # punto suelto que a veces queda pegado al número de la izquierda ("0,40. O
 # 280") porque `_normalize_number` ya sabe recortarlo (`rstrip(".,")`).
-_DUAL_PRICE_TWO_CURRENCIES_RE = re.compile(r"(\d[\d.,]*)\s*[oO]\s*(\d[\d.,]*)")
+_DUAL_PRICE_TWO_CURRENCIES_RE = re.compile(
+    r"(" + _PRICE_NUMBER + r")\s*[oO]\s*(" + _PRICE_NUMBER + r")"
+)
 
 # Unidades conocidas para cantidad: sólo las que `units.canonical_unit()` sabe
 # resolver. Reconocer una que no canonice sería peor que no reconocerla, porque
@@ -548,6 +571,11 @@ def _normalize_number(raw: str) -> Decimal | None:
     esto, ese "." final rompe el fullmatch de separador de miles.
     """
     cleaned = raw.strip().rstrip(".,")
+    # El espacio como separador de miles ("7 000", "27 400"), incluido el duro
+    # (U+00A0). Se saca antes de mirar el punto y la coma porque los patrones de
+    # precio solo capturan grupos de tres bien formados: lo que llega acá con
+    # espacios ya está validado como un único número (2026-09-09).
+    cleaned = cleaned.replace(" ", "").replace(" ", "")
     if re.fullmatch(r"\d{1,3}(\.\d{3})+", cleaned):
         cleaned = cleaned.replace(".", "")
     elif re.fullmatch(r"\d{1,3}(,\d{3})+", cleaned):
