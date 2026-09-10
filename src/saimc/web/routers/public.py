@@ -32,6 +32,7 @@ from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import attach_blocks, build_product_panels
 from saimc.web.price_charts import (
+    build_evolution_blocks,
     build_headlines,
     build_province_comparison,
     build_range_series,
@@ -296,6 +297,22 @@ def _render_home(
     panel_headlines = build_headlines(obs, previous_obs)
     panel_ranges = build_range_series(obs, window_days=window, hoy=hoy)
 
+    # Ventanas «Precios» y «Cómo se movió» (slices 2 y 3 de los gráficos): con
+    # TODAS las provincias aunque haya una elegida —las preguntas son «¿dónde
+    # está más caro?» y «¿se separan o se acercan?»— y todos los piloto; la
+    # plantilla elige qué productos mostrar. Mismo corte del período anterior
+    # que el panel.
+    all_provinces_obs = _visible_observations(
+        db, pilot=pilot, products=None, province=None, window=window
+    )
+    all_provinces_previous = [
+        o
+        for o in _visible_observations(
+            db, pilot=pilot, products=None, province=None, window=2 * window
+        )
+        if o.day < hoy - timedelta(days=window)
+    ]
+
     csv_href = download_href(
         producto=active_slugs[0] if len(active_slugs) == 1 else "",
         productos=active_slugs if len(active_slugs) > 1 else (),
@@ -347,13 +364,9 @@ def _render_home(
                 active_products=active_products,
                 ver=open_views,
             ),
-            # Provincias lado a lado (slice 2 de los gráficos): con TODAS las
-            # provincias aunque haya una elegida —la pregunta es «¿dónde está más
-            # caro?»— y todos los piloto; la plantilla elige cuáles mostrar.
-            "province_comparisons": build_province_comparison(
-                _visible_observations(
-                    db, pilot=pilot, products=None, province=None, window=window
-                )
+            "province_comparisons": build_province_comparison(all_provinces_obs),
+            "evolution_blocks": build_evolution_blocks(
+                all_provinces_obs, all_provinces_previous, window_days=window, hoy=hoy
             ),
             "view_menu": view_menu,
             "open_views": open_views,

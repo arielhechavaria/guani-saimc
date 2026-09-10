@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 import statistics
+import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -613,3 +614,576 @@ def build_province_comparison(
 
     comparaciones.sort(key=lambda c: (-sum(r.count for r in c.rows), c.product_name, c.unit))
     return comparaciones
+
+
+# --- piezas comunes de «Cómo se movió» --------------------------------------
+
+#: Separación mínima entre dos etiquetas de texto en el mismo borde.
+_LABEL_GAP = 14.0
+
+
+def _spread_labels(ys: Sequence[float | None]) -> list[float | None]:
+    """Separa etiquetas que caerían encimadas: de arriba abajo, cada una al
+    menos `_LABEL_GAP` debajo de la anterior. Respeta los `None` y el orden."""
+    out = list(ys)
+    orden = sorted((i for i, v in enumerate(ys) if v is not None), key=lambda i: ys[i])
+    previa: float | None = None
+    for i in orden:
+        if previa is not None and out[i] - previa < _LABEL_GAP:
+            out[i] = previa + _LABEL_GAP
+        previa = out[i]
+    return [None if v is None else round(v, 1) for v in out]
+
+
+def _province_slots(*groups: Iterable[RetailObservation]) -> dict[str, int]:
+    """Índice de color de cada provincia, por orden alfabético sobre TODAS las
+    observaciones: el color sigue a la provincia (dataviz: nunca a su rango),
+    así que Santiago es el mismo tono aunque en un producto falte La Habana."""
+    nombres = sorted(
+        {o.province_name for g in groups for o in g if o.province_name and not o.unconverted}
+    )
+    return {n: i for i, n in enumerate(nombres)}
+
+
+def _by_product(
+    grupos: dict[_Key, list[RetailObservation]],
+) -> dict[tuple[str, str, str], dict[str, list[RetailObservation]]]:
+    out: dict[tuple[str, str, str], dict[str, list[RetailObservation]]] = {}
+    for (product, province, currency, unit), rows in grupos.items():
+        out.setdefault((product, currency, unit), {})[province] = rows
+    return out
+
+
+def _domain(values: Sequence[float], pad_share: float) -> tuple[float, float]:
+    lo, hi = min(values), max(values)
+    if lo == hi:
+        return lo * 0.9, hi * 1.1
+    pad = (hi - lo) * pad_share
+    return max(0.0, lo - pad), hi + pad
+
+
+# --- mes contra mes ---------------------------------------------------------
+
+SLOPE_WIDTH = 360.0
+SLOPE_HEIGHT = 176.0
+SLOPE_TOP = 44.0
+SLOPE_BOTTOM = 14.0
+SLOPE_X_BEFORE = 165.0
+SLOPE_X_NOW = 255.0
+
+
+@dataclass(frozen=True)
+class SlopeLine:
+    """Una provincia: la mediana del período anterior y la de ahora."""
+
+    province_name: str
+    slot: int
+    before_median: Decimal | None
+    now_median: Decimal | None
+    before_count: int
+    now_count: int
+    y_before: float | None
+    y_now: float | None
+    label_y_before: float | None
+    label_y_now: float | None
+
+    @property
+    def has_line(self) -> bool:
+        return self.before_median is not None and self.now_median is not None
+
+    @property
+    def change_pct(self) -> int | None:
+        if not self.has_line or self.before_median == 0:
+            return None
+        return round((float(self.now_median) / float(self.before_median) - 1) * 100)
+
+    @property
+    def change_text(self) -> str:
+        pct = self.change_pct
+        if pct is None:
+            return ""
+        return f"+{pct}%" if pct > 0 else (f"−{abs(pct)}%" if pct < 0 else "0%")
+
+    @property
+    def before_text(self) -> str:
+        return "" if self.before_median is None else format_price(self.before_median)
+
+    @property
+    def now_text(self) -> str:
+        return "" if self.now_median is None else format_price(self.now_median)
+
+
+@dataclass(frozen=True)
+class SlopeChart:
+    product_name: str
+    currency: str
+    unit: str
+    lines: tuple[SlopeLine, ...]
+    before_label: str
+    now_label: str
+
+    @property
+    def viewbox(self) -> str:
+        return f"0 0 {SLOPE_WIDTH:g} {SLOPE_HEIGHT:g}"
+
+    @property
+    def x_before(self) -> float:
+        return SLOPE_X_BEFORE
+
+    @property
+    def x_now(self) -> float:
+        return SLOPE_X_NOW
+
+    @property
+    def top(self) -> float:
+        return SLOPE_TOP
+
+    @property
+    def bottom_y(self) -> float:
+        return SLOPE_HEIGHT - SLOPE_BOTTOM
+
+
+def _robust_median(rows: Sequence[RetailObservation]) -> Decimal | None:
+    dentro, _ = split_outliers(rows)
+    return statistics.median([r.unit_price for r in dentro]) if dentro else None
+
+
+def build_month_vs_month(
+    current: Sequence[RetailObservation],
+    previous: Sequence[RetailObservation],
+    *,
+    window_days: int,
+    hoy: date,
+) -> list[SlopeChart]:
+    """Por producto: la mediana de cada provincia en el período anterior y en el
+    actual, del mismo largo. Responde «¿subió o bajó?» con dos números y su
+    muestra —el cambio en porcentaje, sin flecha ni color de alarma (§12.6)—.
+    Una provincia sin anuncios en uno de los dos períodos queda como punto
+    suelto, sin línea: no hay contra qué comparar.
+    """
+    slots = _province_slots(current, previous)
+    ahora, antes = _group(current), _group(previous)
+    por_producto: dict[tuple[str, str, str], dict[str, tuple[list, list]]] = {}
+    for key in set(ahora) | set(antes):
+        product, province, currency, unit = key
+        por_producto.setdefault((product, currency, unit), {})[province] = (
+            antes.get(key, []),
+            ahora.get(key, []),
+        )
+
+    plot_h = SLOPE_HEIGHT - SLOPE_TOP - SLOPE_BOTTOM
+    before_label = (
+        f"{_short_day(hoy - timedelta(days=2 * window_days))} – "
+        f"{_short_day(hoy - timedelta(days=window_days + 1))}"
+    )
+    now_label = f"{_short_day(hoy - timedelta(days=window_days))} – {_short_day(hoy)}"
+
+    charts: list[SlopeChart] = []
+    for (product, currency, unit), provincias in por_producto.items():
+        datos = []
+        for province, (rows_b, rows_n) in provincias.items():
+            mb, mn = _robust_median(rows_b), _robust_median(rows_n)
+            if mb is None and mn is None:
+                continue
+            datos.append((province, mb, mn, len(rows_b), len(rows_n)))
+        if not datos:
+            continue
+        lo, hi = _domain([float(v) for d in datos for v in (d[1], d[2]) if v is not None], 0.1)
+
+        def to_y(value: Decimal | None, *, _lo: float = lo, _hi: float = hi) -> float | None:
+            if value is None:
+                return None
+            return round(SLOPE_TOP + (1 - (float(value) - _lo) / (_hi - _lo)) * plot_h, 1)
+
+        datos.sort(key=lambda d: (-float(d[2] if d[2] is not None else d[1]), d[0]))
+        ys_b = [to_y(d[1]) for d in datos]
+        ys_n = [to_y(d[2]) for d in datos]
+        lab_b, lab_n = _spread_labels(ys_b), _spread_labels(ys_n)
+        lines = tuple(
+            SlopeLine(
+                province_name=d[0],
+                slot=slots.get(d[0], 0),
+                before_median=d[1],
+                now_median=d[2],
+                before_count=d[3],
+                now_count=d[4],
+                y_before=ys_b[i],
+                y_now=ys_n[i],
+                label_y_before=lab_b[i],
+                label_y_now=lab_n[i],
+            )
+            for i, d in enumerate(datos)
+        )
+        charts.append(SlopeChart(product, currency, unit, lines, before_label, now_label))
+
+    charts.sort(
+        key=lambda c: (-sum(l.now_count + l.before_count for l in c.lines), c.product_name, c.unit)
+    )
+    return charts
+
+
+# --- las provincias en el tiempo --------------------------------------------
+
+STEPS_WIDTH = 360.0
+STEPS_HEIGHT = 150.0
+STEPS_LEFT = 42.0
+STEPS_RIGHT = 70.0
+STEPS_TOP = 10.0
+STEPS_BOTTOM = 20.0
+
+
+@dataclass(frozen=True)
+class StepPoint:
+    """La mediana de una provincia en un período."""
+
+    x: float
+    y: float
+    median: Decimal
+    count: int
+    start: date
+
+    @property
+    def median_text(self) -> str:
+        return format_price(self.median)
+
+    @property
+    def start_text(self) -> str:
+        return _short_day(self.start)
+
+
+@dataclass(frozen=True)
+class StepLine:
+    province_name: str
+    slot: int
+    #: Trazo en escalones: horizontal a lo ancho de cada período con dato,
+    #: vertical entre períodos seguidos y cortado donde un período no tuvo
+    #: anuncios (un `M` nuevo). Ningún tramo une períodos no contiguos.
+    path: str
+    points: tuple[StepPoint, ...]
+    label_y: float | None
+
+    @property
+    def short_name(self) -> str:
+        return self.province_name if len(self.province_name) <= 10 else self.province_name.split()[0]
+
+
+@dataclass(frozen=True)
+class StepChart:
+    product_name: str
+    currency: str
+    unit: str
+    lines: tuple[StepLine, ...]
+    ticks: tuple[Tick, ...]
+    bin_days: int
+    first_label: str
+    last_label: str
+
+    @property
+    def viewbox(self) -> str:
+        return f"0 0 {STEPS_WIDTH:g} {STEPS_HEIGHT:g}"
+
+    @property
+    def x_left(self) -> float:
+        return STEPS_LEFT
+
+    @property
+    def x_right(self) -> float:
+        return STEPS_WIDTH - STEPS_RIGHT
+
+    @property
+    def label_x(self) -> float:
+        return STEPS_WIDTH - STEPS_RIGHT + 6
+
+    @property
+    def baseline_y(self) -> float:
+        return STEPS_HEIGHT - STEPS_BOTTOM
+
+    @property
+    def period_name(self) -> str:
+        return "semana" if self.bin_days == 7 else "día"
+
+    @property
+    def periods_with_data(self) -> int:
+        """Períodos distintos con al menos un anuncio, sumando provincias. Con
+        uno solo no hay evolución que dibujar."""
+        return len({p.start for l in self.lines for p in l.points})
+
+
+def build_median_steps(
+    observations: Sequence[RetailObservation], *, window_days: int, hoy: date
+) -> list[StepChart]:
+    """Por producto, la mediana de cada provincia por período, en un solo eje.
+
+    Mismos períodos que `build_range_series` (hacia atrás desde hoy). Cada
+    provincia usa su propio cerco robusto; el eje es común porque la pregunta
+    es si se separan o se acercan.
+    """
+    size = bin_days(window_days)
+    n_bins = math.ceil((window_days + 1) / size)
+    plot_w = STEPS_WIDTH - STEPS_LEFT - STEPS_RIGHT
+    plot_h = STEPS_HEIGHT - STEPS_TOP - STEPS_BOTTOM
+    slot_w = plot_w / n_bins
+    slots = _province_slots(observations)
+
+    def index(day: date) -> int:
+        return (hoy - day).days // size
+
+    charts: list[StepChart] = []
+    for (product, currency, unit), provincias in _by_product(_group(observations)).items():
+        medianas: dict[str, dict[int, tuple[Decimal, int]]] = {}
+        for province, rows in provincias.items():
+            rows = [r for r in rows if 0 <= index(r.day) < n_bins]
+            dentro, _ = split_outliers(rows)
+            por_periodo: dict[int, list[Decimal]] = {}
+            for r in dentro:
+                por_periodo.setdefault(n_bins - 1 - index(r.day), []).append(r.unit_price)
+            if por_periodo:
+                medianas[province] = {
+                    j: (statistics.median(v), len(v)) for j, v in por_periodo.items()
+                }
+        if not medianas:
+            continue
+        lo, hi = _domain([float(m) for p in medianas.values() for m, _ in p.values()], 0.08)
+
+        def to_y(value: Decimal, *, _lo: float = lo, _hi: float = hi) -> float:
+            return round(STEPS_TOP + (1 - (float(value) - _lo) / (_hi - _lo)) * plot_h, 1)
+
+        lineas = []
+        for province in sorted(medianas):
+            trazo = ""
+            puntos = []
+            previa = None
+            for j in sorted(medianas[province]):
+                med, n = medianas[province][j]
+                x0 = round(STEPS_LEFT + j * slot_w, 1)
+                x1 = round(STEPS_LEFT + (j + 1) * slot_w, 1)
+                y = to_y(med)
+                trazo += f" L{x0},{y}" if previa == j - 1 else f" M{x0},{y}"
+                trazo += f" L{x1},{y}"
+                previa = j
+                start = hoy - timedelta(days=(n_bins - 1 - j) * size + size - 1)
+                puntos.append(StepPoint(round((x0 + x1) / 2, 1), y, med, n, start))
+            lineas.append((province, trazo.strip(), tuple(puntos)))
+
+        etiquetas = _spread_labels([pts[-1].y for _, _, pts in lineas])
+        lines = tuple(
+            StepLine(province, slots.get(province, 0), trazo, pts, etiquetas[i])
+            for i, (province, trazo, pts) in enumerate(lineas)
+        )
+        ticks = tuple(
+            Tick(y=to_y(Decimal(str(round(v, 2)))), label=format_price(Decimal(str(round(v, 2)))))
+            for v in _nice_ticks(lo, hi)
+        )
+        first = hoy - timedelta(days=n_bins * size - 1)
+        charts.append(
+            StepChart(
+                product, currency, unit, lines, ticks, size, _short_day(first), _short_day(hoy)
+            )
+        )
+
+    charts.sort(key=lambda c: (-sum(p.count for l in c.lines for p in l.points), c.product_name))
+    return charts
+
+
+# --- calendario de anuncios -------------------------------------------------
+
+CAL_CELL = 16.0
+CAL_GAP = 3.0
+CAL_LEFT = 18.0
+CAL_TOP = 16.0
+_WEEKDAYS = ("L", "M", "X", "J", "V", "S", "D")
+
+
+@dataclass(frozen=True)
+class CalendarDay:
+    day: date
+    count: int
+    column: int
+    row: int
+    x: float
+    y: float
+
+    @property
+    def level(self) -> int:
+        """Tono del cuadro: 0 sin anuncios, 1 uno, 2 dos o tres, 3 cuatro o más.
+        Cortes de lectura, no umbrales de publicación (§12.6)."""
+        if self.count == 0:
+            return 0
+        if self.count == 1:
+            return 1
+        return 2 if self.count <= 3 else 3
+
+    @property
+    def day_text(self) -> str:
+        return _short_day(self.day)
+
+
+@dataclass(frozen=True)
+class CalendarChart:
+    product_name: str
+    days: tuple[CalendarDay, ...]
+    week_labels: tuple[XTick, ...]
+    columns: int
+
+    @property
+    def cell(self) -> float:
+        return CAL_CELL
+
+    @property
+    def left(self) -> float:
+        return CAL_LEFT
+
+    @property
+    def width(self) -> float:
+        return CAL_LEFT + self.columns * (CAL_CELL + CAL_GAP)
+
+    @property
+    def height(self) -> float:
+        return CAL_TOP + 7 * (CAL_CELL + CAL_GAP)
+
+    @property
+    def viewbox(self) -> str:
+        return f"0 0 {self.width:g} {self.height:g}"
+
+    @property
+    def weekday_labels(self) -> tuple[tuple[float, str], ...]:
+        return tuple(
+            (CAL_TOP + i * (CAL_CELL + CAL_GAP), letra) for i, letra in enumerate(_WEEKDAYS)
+        )
+
+
+def build_calendar(
+    observations: Sequence[RetailObservation], *, window_days: int, hoy: date
+) -> list[CalendarChart]:
+    """Por producto, un cuadro por día de la ventana: cuántos anuncios hubo,
+    sumando provincias. Semanas en columnas (de lunes a domingo) y días en
+    filas. Responde «¿qué tan fresco y parejo es el dato?»: muestra cada día sin
+    anuncios en vez de esconderlo. No dice precios."""
+    inicio = hoy - timedelta(days=window_days)
+    lunes = inicio - timedelta(days=inicio.weekday())
+    columnas = (hoy - lunes).days // 7 + 1
+
+    por_producto: dict[str, dict[date, int]] = {}
+    for o in observations:
+        if o.province_name is None or o.unconverted or not inicio <= o.day <= hoy:
+            continue
+        dias = por_producto.setdefault(o.product_name, {})
+        dias[o.day] = dias.get(o.day, 0) + 1
+
+    charts: list[CalendarChart] = []
+    for product, cuenta in por_producto.items():
+        dias = []
+        for d in range(window_days + 1):
+            dia = inicio + timedelta(days=d)
+            col, fila = (dia - lunes).days // 7, dia.weekday()
+            dias.append(
+                CalendarDay(
+                    day=dia,
+                    count=cuenta.get(dia, 0),
+                    column=col,
+                    row=fila,
+                    x=CAL_LEFT + col * (CAL_CELL + CAL_GAP),
+                    y=CAL_TOP + fila * (CAL_CELL + CAL_GAP),
+                )
+            )
+        etiquetas = tuple(
+            XTick(
+                x=CAL_LEFT + c * (CAL_CELL + CAL_GAP),
+                label=_short_day(max(inicio, lunes + timedelta(days=7 * c))),
+            )
+            for c in range(0, columnas, 2)
+        )
+        charts.append(CalendarChart(product, tuple(dias), etiquetas, columnas))
+
+    charts.sort(key=lambda c: (-sum(d.count for d in c.days), c.product_name))
+    return charts
+
+
+# --- la ventana «Cómo se movió» ---------------------------------------------
+
+
+@dataclass(frozen=True)
+class AdRow:
+    """Un anuncio de la ventana, con el precio tal como quedó —fuera de escala
+    incluido— y, si su evidencia es pública, el enlace a él (§6.5)."""
+
+    day: date
+    province_name: str
+    price: Decimal
+    currency: str
+    unit: str
+    evidence_id: uuid.UUID
+    evidence_is_public: bool
+
+    @property
+    def day_text(self) -> str:
+        return _short_day(self.day)
+
+    @property
+    def price_text(self) -> str:
+        return format_price(self.price)
+
+
+@dataclass(frozen=True)
+class EvolutionBlock:
+    """Lo que la ventana «Cómo se movió» dibuja de un producto: mes contra mes,
+    las provincias en el tiempo (solo si hay al menos dos períodos con dato),
+    el calendario de anuncios y la tabla de esos anuncios, que es también la
+    vista en tabla de los gráficos. Uno por producto con anuncios en la
+    ventana."""
+
+    product_name: str
+    slopes: tuple[SlopeChart, ...]
+    steps: tuple[StepChart, ...]
+    calendar: CalendarChart
+    ads: tuple[AdRow, ...] = ()
+
+    @property
+    def legend(self) -> tuple[tuple[int, str], ...]:
+        """(color, provincia) de las provincias que aparecen en los gráficos,
+        en el orden de sus colores: la identidad nunca queda solo en el color."""
+        vistas = {
+            (l.slot, l.province_name)
+            for chart in (*self.slopes, *self.steps)
+            for l in chart.lines
+        }
+        return tuple(sorted(vistas))
+
+
+def build_evolution_blocks(
+    current: Sequence[RetailObservation],
+    previous: Sequence[RetailObservation],
+    *,
+    window_days: int,
+    hoy: date,
+) -> list[EvolutionBlock]:
+    """Arma un bloque por producto con anuncios en la ventana, en el orden del
+    calendario (más anuncios primero)."""
+    slopes = build_month_vs_month(current, previous, window_days=window_days, hoy=hoy)
+    steps = build_median_steps(current, window_days=window_days, hoy=hoy)
+    inicio = hoy - timedelta(days=window_days)
+    anuncios: dict[str, list[AdRow]] = {}
+    for o in current:
+        # Mismo recorte que el calendario, para que la tabla cuente lo mismo.
+        if o.province_name is None or o.unconverted or not inicio <= o.day <= hoy:
+            continue
+        anuncios.setdefault(o.product_name, []).append(
+            AdRow(
+                o.day, o.province_name, o.unit_price, o.currency, o.unit,
+                o.evidence_id, o.evidence_is_public,
+            )
+        )
+    for filas in anuncios.values():
+        filas.sort(key=lambda a: (-a.day.toordinal(), a.province_name, a.price))
+    return [
+        EvolutionBlock(
+            product_name=cal.product_name,
+            slopes=tuple(s for s in slopes if s.product_name == cal.product_name),
+            steps=tuple(
+                s for s in steps if s.product_name == cal.product_name and s.periods_with_data >= 2
+            ),
+            calendar=cal,
+            ads=tuple(anuncios.get(cal.product_name, [])),
+        )
+        for cal in build_calendar(current, window_days=window_days, hoy=hoy)
+    ]

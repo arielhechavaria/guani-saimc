@@ -378,6 +378,34 @@
   .ph-compara-mediana { fill: var(--ph-accent); stroke: var(--m3-surface); stroke-width: 2; }
   .ph-compara-fila.is-atenuada { opacity: .35; }
 
+  /* ── «Cómo se movió» (slice 3 de los gráficos). El color sigue a la
+     provincia (dos tintas validadas para daltonismo), siempre con leyenda y
+     etiqueta directa: nunca el color solo. */
+  .ph-prov-0 { --prov: var(--m3-prov-0); }
+  .ph-prov-1 { --prov: var(--m3-prov-2); }
+  .ph-evo { display: grid; gap: .6rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--m3-divider); }
+  .ph-evo:last-of-type { border-bottom: 0; }
+  .ph-evo .ph-compara-titulo { margin: 0; font-weight: 400; }
+  .ph-evo-sub { font-size: .8125rem; font-weight: 500; color: var(--m3-on-surface); }
+  .ph-evo-sub span { margin-left: .35rem; font-weight: 400; font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-evo-leyenda { display: flex; flex-wrap: wrap; gap: .2rem .9rem; margin: 0; padding: 0; list-style: none; font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-evo-leyenda li { display: inline-flex; align-items: center; gap: .35rem; }
+  .ph-evo-muestra { width: 14px; height: 3px; border-radius: 2px; background: var(--prov); }
+  .ph-cal-leyenda svg { width: 12px; height: 12px; }
+  .ph-pendiente, .ph-pasos, .ph-calendario { display: block; width: 100%; height: auto; overflow: visible; }
+  .ph-calendario { max-width: 26rem; }
+  .ph-pendiente-col { font-size: 11px; font-weight: 500; fill: var(--m3-on-surface); }
+  .ph-pendiente-linea, .ph-pasos-linea { fill: none; stroke: var(--prov); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ph-pendiente-punto, .ph-pasos-punto { fill: var(--prov); stroke: var(--m3-surface); stroke-width: 2; }
+  .ph-pendiente-etq, .ph-pasos-etq { font-size: 11px; fill: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
+  .ph-cal-dia { stroke: var(--m3-surface); stroke-width: 1; }
+  .ph-cal-0 { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); }
+  .ph-cal-1 { fill: var(--ph-accent); fill-opacity: .3; }
+  .ph-cal-2 { fill: var(--ph-accent); fill-opacity: .62; }
+  .ph-cal-3 { fill: var(--ph-accent); }
+  .ph-evo-anuncios summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
+  .ph-evo-anuncios .ph-table-card { max-height: 16rem; overflow-y: auto; margin-top: .4rem; }
+
   /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
   .ph-sheet-scrim {
     position: fixed; inset: 0; z-index: 50;
@@ -743,38 +771,88 @@
             {% endif %}
 
           {% else %}
-            {% if series %}
-            {# Sin línea que una los puntos, y es deliberado: unir dos
-               observaciones separadas por días dibuja precios que nadie
-               observó. Los huecos son parte de la información. #}
-            <p class="ph-note">
-              Cada punto es un anuncio real, ubicado en el día en que se publicó. No se
-              dibuja una línea entre ellos: los días sin punto son días sin anuncios, y
-              unirlos inventaría precios que nadie vio.
-            </p>
-            <ul class="ph-series">
-              {% for serie in series %}
-              <li class="ph-inset ph-serie">
-                <div class="ph-serie-head">
-                  <span class="ph-serie-title">{{ serie.product_name }} · {{ serie.province_name }}</span>
-                  <span class="ph-serie-scale">{{ serie.currency }}/{{ serie.unit }}</span>
-                </div>
-                {% include "_price_plot.html" %}
-                <p class="ph-serie-foot">
-                  {{ serie.count }} anuncio{{ "s" if serie.count != 1 }} en
-                  {{ serie.days_with_data }} día{{ "s" if serie.days_with_data != 1 }} distinto{{ "s" if serie.days_with_data != 1 }}
-                  {% if serie.empty_days %}· {{ serie.empty_days }} día{{ "s" if serie.empty_days != 1 }} sin anuncios{% endif %}
-                  · línea punteada: {{ serie.median_text }}
-                </p>
-              </li>
+            {# «Cómo se movió» (slice 3 de los gráficos): por producto, mes
+               contra mes, las provincias en el tiempo y el calendario de
+               anuncios. Todas las provincias en el mismo eje, como en Precios.
+               Ninguna línea une períodos sin anuncios. #}
+            <p class="ph-win-tag">Ventana de {{ window_days }} días · todas las provincias</p>
+            {% for block in evolution_blocks if not active_products or block.product_name in active_products %}
+            <section class="ph-evo" aria-label="{{ block.product_name }}: cómo se movió">
+              <h3 class="ph-compara-titulo">{{ block.product_name }}</h3>
+              {% if block.legend | length > 1 %}
+              <ul class="ph-evo-leyenda">
+                {% for slot, provincia in block.legend %}
+                <li class="ph-prov-{{ slot % 2 }}"><span class="ph-evo-muestra" aria-hidden="true"></span>{{ provincia }}</li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+
+              {% for slope in block.slopes %}
+              <figure class="ph-compara-fig">
+                <figcaption class="ph-evo-sub">¿Subió o bajó? <span>mediana en {{ slope.currency }}/{{ slope.unit }} · (anuncios)</span></figcaption>
+                {% include "_slope_chart.html" %}
+              </figure>
               {% endfor %}
-            </ul>
+
+              {% for steps in block.steps %}
+              <figure class="ph-compara-fig">
+                <figcaption class="ph-evo-sub">Por {{ steps.period_name }} <span>mediana en {{ steps.currency }}/{{ steps.unit }} · la línea se corta donde no hubo anuncios</span></figcaption>
+                {% include "_steps_chart.html" %}
+              </figure>
+              {% else %}
+              <p class="ph-empty">
+                No hay suficientes días con anuncios de {{ block.product_name }} para dibujar
+                cómo se movió: hacen falta al menos dos {{ "semanas" if window_days >= 28 else "días" }} distintos con anuncios.
+              </p>
+              {% endfor %}
+
+              <figure class="ph-compara-fig">
+                <figcaption class="ph-evo-sub">Días con anuncios <span>todas las provincias juntas</span></figcaption>
+                {% set cal = block.calendar %}
+                {% include "_calendar_chart.html" %}
+                <ul class="ph-evo-leyenda ph-cal-leyenda">
+                  <li><svg viewBox="0 0 12 12" aria-hidden="true"><rect class="ph-cal-dia ph-cal-0" x=".5" y=".5" width="11" height="11" rx="2" /></svg>ninguno</li>
+                  <li><svg viewBox="0 0 12 12" aria-hidden="true"><rect class="ph-cal-dia ph-cal-1" x=".5" y=".5" width="11" height="11" rx="2" /></svg>1</li>
+                  <li><svg viewBox="0 0 12 12" aria-hidden="true"><rect class="ph-cal-dia ph-cal-2" x=".5" y=".5" width="11" height="11" rx="2" /></svg>2–3</li>
+                  <li><svg viewBox="0 0 12 12" aria-hidden="true"><rect class="ph-cal-dia ph-cal-3" x=".5" y=".5" width="11" height="11" rx="2" /></svg>4 o más</li>
+                </ul>
+              </figure>
+
+              {# Los anuncios detrás de los gráficos, uno por renglón y con su
+                 enlace: la procedencia es el diferencial (§6.5). Los fuera de
+                 escala también, con su precio real. Las capturas no enlazan. #}
+              <details class="ph-evo-anuncios">
+                <summary>Los {{ block.ads | length }} anuncio{{ "s" if block.ads | length != 1 }} de la ventana</summary>
+                <div class="ph-table-card">
+                  <table class="ph-coverage">
+                    <thead>
+                      <tr>
+                        <th scope="col">Día</th>
+                        <th scope="col">Provincia</th>
+                        <th scope="col" class="num">Precio</th>
+                        <th scope="col">Enlace</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for ad in block.ads %}
+                      <tr>
+                        <td class="num">{{ ad.day_text }}</td>
+                        <td>{{ ad.province_name }}</td>
+                        <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
+                        <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </section>
             {% else %}
             <p class="ph-empty">
-              No hay suficientes días con anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %}
-              para dibujar la evolución. Hacen falta al menos dos días distintos con observación.
+              No hay suficientes días con anuncios{% if selected_product %} de {{ selected_product }}{% endif %}
+              en los últimos {{ window_days }} días para dibujar cómo se movió.
             </p>
-            {% endif %}
+            {% endfor %}
           {% endif %}
 
           </div>

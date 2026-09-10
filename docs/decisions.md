@@ -7583,3 +7583,26 @@ Consecuencia: `_render_home` hace una consulta más de observaciones (sin filtro
 de producto ni provincia) para la comparación; con el volumen de la Fase 0 no
 pesa, y se puede compartir con la del panel si hace falta. Suite: 1539 pasan,
 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Gráficos del muestrario, slice 3: «Cómo se movió»
+Contexto: la ventana «Cómo se movió» seguía con los puntos por anuncio del
+gráfico viejo (`_price_plot.html`), que el operador descartó; el muestrario
+aprobado le asignó mes contra mes, dos provincias en el tiempo y el calendario.
+Decisión: `price_charts.build_evolution_blocks` arma un bloque por producto con
+anuncios en la ventana: mes contra mes (mediana robusta del período anterior
+del mismo largo contra la actual, con la muestra entre paréntesis y el cambio
+en %, sin flecha ni color de alarma), la mediana por período de cada provincia
+en escalones que se cortan donde no hubo anuncios (solo con dos períodos o más;
+si no, lo dice), el calendario de días con anuncios y una tabla plegada con
+cada anuncio y su enlace a `/anuncio/<id>`. Todas las provincias aunque haya
+una elegida, como en Precios. Color por provincia fijo por orden alfabético
+(`--m3-prov-0` / `--m3-prov-2`), siempre con leyenda y etiqueta directa.
+Descartado: dejar la procedencia solo en el CSV. El gráfico viejo era el único
+lugar de la home que enlazaba un precio a su anuncio; al reemplazarlo se perdía
+(lo detectó `test_public_map`), y la tabla lo recupera y sirve además de vista
+en tabla de los gráficos.
+Consecuencia: `_price_plot.html` y sus clases `.ph-plot-*` / `.ph-serie*`
+quedan sin uso; `series` sigue viajando a los paneles (`has_series`). Limpiarlos
+es aparte. Con más de dos provincias los colores se repiten (`slot % 2`): hay
+que sumar una tinta validada cuando entre la tercera. Suite: 1559 pasan,
+1 saltea.
