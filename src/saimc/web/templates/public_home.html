@@ -365,6 +365,19 @@
   .ph-rango-mediana { stroke: var(--ph-accent); stroke-width: 2.5; stroke-linecap: round; }
   .ph-rango-fuera { fill: var(--m3-warn-strong); }
 
+  /* ── Provincias lado a lado (slice 2 de los gráficos). Una sola tinta —la
+     identidad la da el nombre de cada fila—; en la hoja de provincia, las
+     demás se atenúan para que la propia resalte. */
+  .ph-compara-fig { margin: 0; display: grid; gap: .3rem; }
+  .ph-compara-titulo { font-family: var(--ph-font-heading); font-size: 1rem; color: var(--m3-on-surface); }
+  .ph-compara-titulo span { margin-left: .35rem; font-family: var(--m3-font); font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-compara { display: block; width: 100%; height: auto; overflow: visible; }
+  .ph-compara-prov { font-size: 11px; fill: var(--m3-on-surface-variant); }
+  .ph-compara-linea { stroke: var(--ph-accent); stroke-width: 2; stroke-linecap: round; }
+  .ph-compara-caja { fill: var(--ph-accent); fill-opacity: .32; }
+  .ph-compara-mediana { fill: var(--ph-accent); stroke: var(--m3-surface); stroke-width: 2; }
+  .ph-compara-fila.is-atenuada { opacity: .35; }
+
   /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
   .ph-sheet-scrim {
     position: fixed; inset: 0; z-index: 50;
@@ -604,6 +617,17 @@
 
           {% elif view.key == 'precios' %}
             <p class="ph-win-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}{% if selected_province %} · {{ selected_province }}{% endif %}</p>
+
+            {# Provincias lado a lado (slice 2 de los gráficos): «¿dónde está más
+               caro?», todas las provincias en el mismo eje aunque haya una
+               elegida —esa se resalta—. Para los productos prendidos, o todos. #}
+            {% set resaltar = selected_province %}
+            {% for comp in province_comparisons if not active_products or comp.product_name in active_products %}
+            <figure class="ph-compara-fig">
+              <figcaption class="ph-compara-titulo">{{ comp.product_name }} <span>{{ comp.currency }}/{{ comp.unit }} · la más cara arriba</span></figcaption>
+              {% include "_province_compare.html" %}
+            </figure>
+            {% endfor %}
 
             {# Barras de provincia y de días. Cada enlace preserva productos,
                días y ventanas abiertas: cambiar el filtro no cierra esta
@@ -871,12 +895,14 @@
             {%- endif -%}
           </span>
         </div>
-        {% if row.has_series %}
-        {% for serie in row.series %}
-        {% include "_price_plot.html" %}
-        {% endfor %}
-        {% elif row.has_data %}
-        <p class="ph-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar.</p>
+        {# «¿Dónde está más caro?» para este producto: todas las provincias en
+           el mismo eje, con la de esta hoja resaltada (slice 2 de los
+           gráficos). Reemplaza la evolución por provincia, que vive en la
+           ventana «Cómo se movió». #}
+        {% set comp = province_comparisons | selectattr('product_name', 'equalto', row.name) | first %}
+        {% if row.has_data and comp %}
+        {% set resaltar = selected_province %}
+        {% include "_province_compare.html" %}
         {% endif %}
       </section>
       {% endfor %}

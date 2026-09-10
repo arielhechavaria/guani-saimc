@@ -437,3 +437,179 @@ def build_headlines(
         )
     cifras.sort(key=lambda c: (-c.count, c.product_name, c.province_name))
     return cifras
+
+
+# --- provincias lado a lado -------------------------------------------------
+
+#: Lienzo de la comparación de provincias: una fila por provincia, nombre a la
+#: izquierda, cantidad de anuncios a la derecha y el eje de precio abajo.
+COMPARE_WIDTH = 360.0
+COMPARE_ROW = 34.0
+COMPARE_LEFT = 108.0
+COMPARE_RIGHT = 74.0
+COMPARE_TOP = 8.0
+COMPARE_BOTTOM = 22.0
+
+
+@dataclass(frozen=True)
+class CompareRow:
+    """Una provincia en la comparación: rango, mitad central, mediana y muestra."""
+
+    province_name: str
+    count: int
+    outliers: int
+    minimum: Decimal
+    q1: Decimal
+    median: Decimal
+    q3: Decimal
+    maximum: Decimal
+    x_min: float
+    x_q1: float
+    x_median: float
+    x_q3: float
+    x_max: float
+    y: float
+
+    @property
+    def minimum_text(self) -> str:
+        return format_price(self.minimum)
+
+    @property
+    def q1_text(self) -> str:
+        return format_price(self.q1)
+
+    @property
+    def median_text(self) -> str:
+        return format_price(self.median)
+
+    @property
+    def q3_text(self) -> str:
+        return format_price(self.q3)
+
+    @property
+    def maximum_text(self) -> str:
+        return format_price(self.maximum)
+
+    @property
+    def box_width(self) -> float:
+        return max(round(self.x_q3 - self.x_q1, 1), 2.0)
+
+
+@dataclass(frozen=True)
+class XTick:
+    x: float
+    label: str
+
+
+@dataclass(frozen=True)
+class ProvinceComparison:
+    """Un producto (en una moneda y una unidad) con sus provincias en un eje común."""
+
+    product_name: str
+    currency: str
+    unit: str
+    rows: tuple[CompareRow, ...]
+    ticks: tuple[XTick, ...]
+
+    @property
+    def height(self) -> float:
+        return COMPARE_TOP + len(self.rows) * COMPARE_ROW + COMPARE_BOTTOM
+
+    @property
+    def viewbox(self) -> str:
+        return f"0 0 {COMPARE_WIDTH:g} {self.height:g}"
+
+    @property
+    def x_left(self) -> float:
+        return COMPARE_LEFT
+
+    @property
+    def x_right(self) -> float:
+        return COMPARE_WIDTH - COMPARE_RIGHT
+
+    @property
+    def top(self) -> float:
+        return COMPARE_TOP
+
+    @property
+    def axis_y(self) -> float:
+        return self.height - COMPARE_BOTTOM
+
+
+def _as_price(value: float) -> Decimal:
+    return Decimal(str(round(value, 2)))
+
+
+def build_province_comparison(
+    observations: Sequence[RetailObservation],
+) -> list[ProvinceComparison]:
+    """Una comparación por producto × moneda × unidad, con una fila por provincia.
+
+    Cada provincia tiene su propio cerco robusto (es su celda la que dice qué
+    precio es imposible), pero todas comparten el eje: la pregunta es cuál está
+    más cara, y eso solo se lee en una escala común. La más cara —por mediana—
+    va primero. Unidades distintas no comparten eje: comparar libra con
+    kilogramo afirmaría una equivalencia que nadie calculó.
+    """
+    por_producto: dict[tuple[str, str, str], dict[str, list[RetailObservation]]] = {}
+    for (product, province, currency, unit), rows in _group(observations).items():
+        por_producto.setdefault((product, currency, unit), {})[province] = rows
+
+    plot_w = COMPARE_WIDTH - COMPARE_LEFT - COMPARE_RIGHT
+    comparaciones: list[ProvinceComparison] = []
+    for (product, currency, unit), provincias in por_producto.items():
+        resumen = []
+        for province, rows in provincias.items():
+            dentro, fuera = split_outliers(rows)
+            if not dentro:
+                continue
+            vals = sorted(float(r.unit_price) for r in dentro)
+            resumen.append((province, rows, fuera, dentro, vals))
+        if not resumen:
+            continue
+
+        lo = min(v[4][0] for v in resumen)
+        hi = max(v[4][-1] for v in resumen)
+        if lo == hi:
+            lo, hi = lo * 0.9, hi * 1.1
+        else:
+            pad = (hi - lo) * 0.06
+            lo, hi = max(0.0, lo - pad), hi + pad
+
+        def to_x(value: float, *, _lo: float = lo, _hi: float = hi) -> float:
+            return round(COMPARE_LEFT + (value - _lo) / (_hi - _lo) * plot_w, 1)
+
+        filas = []
+        for province, rows, fuera, dentro, vals in resumen:
+            precios = sorted(r.unit_price for r in dentro)
+            filas.append(
+                {
+                    "province_name": province,
+                    "count": len(rows),
+                    "outliers": len(fuera),
+                    "minimum": precios[0],
+                    "q1": _as_price(_quantile(vals, 0.25)),
+                    "median": statistics.median(precios),
+                    "q3": _as_price(_quantile(vals, 0.75)),
+                    "maximum": precios[-1],
+                    "x_min": to_x(vals[0]),
+                    "x_q1": to_x(_quantile(vals, 0.25)),
+                    "x_median": to_x(float(statistics.median(precios))),
+                    "x_q3": to_x(_quantile(vals, 0.75)),
+                    "x_max": to_x(vals[-1]),
+                }
+            )
+        filas.sort(key=lambda f: (-f["median"], f["province_name"]))
+        rows_out = tuple(
+            CompareRow(y=round(COMPARE_TOP + (i + 0.5) * COMPARE_ROW, 1), **f)
+            for i, f in enumerate(filas)
+        )
+        ticks = tuple(XTick(x=to_x(v), label=format_price(_as_price(v))) for v in _nice_ticks(lo, hi, 4))
+        comparaciones.append(
+            ProvinceComparison(
+                product_name=product, currency=currency, unit=unit, rows=rows_out, ticks=ticks
+            )
+        )
+
+    comparaciones.sort(key=lambda c: (-sum(r.count for r in c.rows), c.product_name, c.unit))
+    return comparaciones

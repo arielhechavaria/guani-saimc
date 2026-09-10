@@ -31,7 +31,11 @@ from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import attach_blocks, build_product_panels
-from saimc.web.price_charts import build_headlines, build_range_series
+from saimc.web.price_charts import (
+    build_headlines,
+    build_province_comparison,
+    build_range_series,
+)
 from saimc.web.product_nav import (
     build_product_chips,
     build_province_nav,
@@ -342,6 +346,14 @@ def _render_home(
                 selected_province=prov,
                 active_products=active_products,
                 ver=open_views,
+            ),
+            # Provincias lado a lado (slice 2 de los gráficos): con TODAS las
+            # provincias aunque haya una elegida —la pregunta es «¿dónde está más
+            # caro?»— y todos los piloto; la plantilla elige cuáles mostrar.
+            "province_comparisons": build_province_comparison(
+                _visible_observations(
+                    db, pilot=pilot, products=None, province=None, window=window
+                )
             ),
             "view_menu": view_menu,
             "open_views": open_views,

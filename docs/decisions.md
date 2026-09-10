@@ -7561,3 +7561,25 @@ Consecuencia: el panel ya no usa `_price_plot.html` (la hoja de provincia y la
 ventana «Cómo se movió» sí, hasta los slices 2 y 3). Los 9 anuncios fuera de
 escala del dato publicado se ven marcados; corregirlos es trabajo de curaduría.
 Suite: 1531 pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Gráficos del muestrario, slice 2: provincias lado a lado
+Contexto: segunda recomendación aceptada del muestrario: responder «¿dónde está
+más caro?» en la ventana Precios y en la hoja de provincia, sin colorear el mapa
+por precio (eso sigue fuera de alcance).
+Decisión: `price_charts.build_province_comparison` arma, por producto × moneda ×
+unidad, una fila por provincia con rango, mitad central (cuartiles), mediana y
+muestra, todas en un eje común; la más cara (por mediana) arriba. Cada provincia
+lleva su propio cerco robusto —es su celda la que dice qué precio es imposible—,
+pero comparten eje porque la pregunta es comparar. Unidades distintas no
+comparten eje. Se calcula con TODAS las provincias aunque haya una elegida:
+la ventana Precios la muestra al principio (para los productos prendidos, o
+todos) con la provincia elegida resaltada; la hoja de provincia la muestra por
+producto con la suya resaltada y las demás atenuadas, y deja de dibujar la
+evolución por provincia (`_price_plot.html`), que queda para «Cómo se movió».
+Partial `_province_compare.html`, una sola tinta: la identidad la da el nombre.
+Descartado: un color por provincia —con el nombre en la fila no hace falta, y
+un par de colores más obligaba a validar otra paleta—.
+Consecuencia: `_render_home` hace una consulta más de observaciones (sin filtro
+de producto ni provincia) para la comparación; con el volumen de la Fase 0 no
+pesa, y se puede compartir con la del panel si hace falta. Suite: 1539 pasan,
+1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
