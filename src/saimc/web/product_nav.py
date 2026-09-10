@@ -65,6 +65,25 @@ def resolve_product(pilot_names: Sequence[str], slug: str | None) -> str | None:
     return _resolve(pilot_names, slug)
 
 
+def resolve_products(pilot_names: Sequence[str], raw: str | None) -> list[str]:
+    """`?productos=aceite,arroz` → nombres piloto, en orden de aparición, sin
+    repetir, ignorando los slugs que no resuelven.
+
+    Cadena vacía o `None` → lista vacía (la vista muestra todo), mismo criterio
+    que `resolve_product`: un query string raro no da 404. El orden se conserva
+    porque es el de activación de los chips, y los slices siguientes lo usan
+    para decidir cuál panel entra primero.
+    """
+    if not raw:
+        return []
+    out: list[str] = []
+    for chunk in raw.split(","):
+        name = _resolve(pilot_names, chunk.strip())
+        if name is not None and name not in out:
+            out.append(name)
+    return out
+
+
 def resolve_province(province_names: Sequence[str], slug: str | None) -> str | None:
     """El nombre de provincia cuyo slug coincide con `slug`, o `None`."""
     return _resolve(province_names, slug)
@@ -86,18 +105,23 @@ def resolve_days(raw: str | int | None) -> int:
 def _query(
     *,
     producto: str = "",
+    productos: Sequence[str] = (),
     provincia: str = "",
     dias: int = DEFAULT_WINDOW_DAYS,
     path: str = "/",
 ) -> str:
     """Compone la URL con los ejes activos, en orden fijo producto/provincia/días.
 
-    Omite `dias` cuando es el default para no ensuciar la URL compartible con
-    un parámetro redundante. Las barras de filtro le agregan el ancla `#precios`;
+    `productos` (lista de slugs, multi-selección) gana sobre `producto` (slug
+    único, alias histórico) cuando trae algo: se emite `productos=a,b`. Omite
+    `dias` cuando es el default para no ensuciar la URL compartible con un
+    parámetro redundante. Las barras de filtro le agregan el ancla `#precios`;
     la descarga usa `path="/datos.csv"`.
     """
     params = []
-    if producto:
+    if productos:
+        params.append("productos=" + ",".join(productos))
+    elif producto:
         params.append(f"producto={producto}")
     if provincia:
         params.append(f"provincia={provincia}")
@@ -106,12 +130,37 @@ def _query(
     return f"{path}?" + "&".join(params) if params else path
 
 
+def products_query(
+    product_slugs: Sequence[str],
+    *,
+    provincia: str = "",
+    dias: int = DEFAULT_WINDOW_DAYS,
+    path: str = "/",
+) -> str:
+    """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
+    preservando provincia y ventana. La usan el riel de chips y los paneles
+    flotantes para componer el estado de togglear un producto."""
+    return _query(
+        productos=list(product_slugs), provincia=provincia, dias=dias, path=path
+    )
+
+
 def download_href(
-    *, producto: str = "", provincia: str = "", dias: int = DEFAULT_WINDOW_DAYS
+    *,
+    producto: str = "",
+    productos: Sequence[str] = (),
+    provincia: str = "",
+    dias: int = DEFAULT_WINDOW_DAYS,
 ) -> str:
     """URL de `/datos.csv` con los mismos filtros que la vista, para que la
     descarga traiga exactamente lo que se está viendo."""
-    return _query(producto=producto, provincia=provincia, dias=dias, path="/datos.csv")
+    return _query(
+        producto=producto,
+        productos=productos,
+        provincia=provincia,
+        dias=dias,
+        path="/datos.csv",
+    )
 
 
 def _product_link(slug: str, *, provincia: str, dias: int) -> str:
@@ -216,6 +265,58 @@ def build_province_nav(
             )
         )
     return choices
+
+
+@dataclass(frozen=True)
+class ProductChip:
+    """Un interruptor de producto del riel flotante sobre el mapa.
+
+    `query` es el estado resultante de togglear ESTE chip —prenderlo si está
+    apagado, apagarlo si está prendido—, preservando provincia y ventana. Sin
+    htmx todavía (slice 2): cada chip es un enlace de página completa.
+    """
+
+    label: str
+    slug: str
+    is_active: bool
+    query: str
+
+
+def build_product_chips(
+    pilot_names: Iterable[str],
+    active_names: Sequence[str],
+    *,
+    selected_province: str = "",
+    selected_days: int = DEFAULT_WINDOW_DAYS,
+) -> list[ProductChip]:
+    """Un chip por producto piloto, en el orden del catálogo.
+
+    El conjunto activo (`active_names`) viaja como `?productos=` en el orden en
+    que se fueron prendiendo. Togglear un chip agrega su slug al final o lo
+    quita, sin reordenar el resto.
+    """
+    prov_slug = product_slug(selected_province) if selected_province else ""
+    active_slugs = [product_slug(name) for name in active_names]
+    chips: list[ProductChip] = []
+    for name in pilot_names:
+        slug = product_slug(name)
+        is_active = slug in active_slugs
+        resultado = (
+            [s for s in active_slugs if s != slug]
+            if is_active
+            else [*active_slugs, slug]
+        )
+        chips.append(
+            ProductChip(
+                label=name,
+                slug=slug,
+                is_active=is_active,
+                query=products_query(
+                    resultado, provincia=prov_slug, dias=selected_days
+                ),
+            )
+        )
+    return chips
 
 
 def build_window_nav(

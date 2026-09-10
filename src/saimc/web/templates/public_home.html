@@ -1,14 +1,14 @@
 {% extends "_public_shell.html" %}
 
-{# Título y encabezado reflejan el foco: al compartir `/producto/arroz` lo que
-   se ve en la pestaña y en la vista previa del enlace es el producto, no un
-   genérico. #}
+{# Título refleja el foco: al compartir `/producto/arroz`, la pestaña y la
+   vista previa del enlace muestran el producto, no un genérico. #}
 {% block title %}{% if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %} — precios{% else %}Precios y cobertura{% endif %}{% endblock %}
-{% block heading %}{% if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}{% else %}Qué cuesta, y dónde lo sabemos{% endif %}{% endblock %}
-{% block subtitle %}
-  {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones,
-  {{ map.total_rows }} en total.
-{% endblock %}
+
+{# El encabezado del shell (`.m3-public-top`) se oculta por CSS en este bloque:
+   el <h1> y el subtítulo viven en el overlay del lienzo a pantalla completa
+   (`.ph-canvas`), no arriba de él. #}
+{% block heading %}{% endblock %}
+{% block subtitle %}{% endblock %}
 
 {% block head %}
 <style>
@@ -179,10 +179,294 @@
   .ph-coverage th:first-child, .ph-coverage td:first-child { padding-left: 1.2rem; }
   .ph-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .ph-coverage tr.is-sin-datos { opacity: .55; }
+
+  /* ══ Slice 1 — el mapa es el lienzo a pantalla completa ══════════════
+     El <h1> y la leyenda viven en el overlay del lienzo; el encabezado
+     del shell se oculta. El lienzo rompe el ancho del contenedor centrado
+     del shell con un margen negativo y ocupa 100dvh. Todo lo que hoy sigue
+     abajo queda igual, a un scroll: los slices 2–5 lo van reemplazando por
+     capas sobre el mapa. */
+  .m3-public-top { display: none; }
+  .m3-public { overflow-x: clip; }
+
+  .ph-canvas {
+    position: relative;
+    width: 100vw; margin-inline: calc(50% - 50vw); margin-top: -1.5rem;
+    min-height: 100vh; min-height: 100dvh;
+    display: grid; place-items: center;
+    padding: clamp(5rem, 14vh, 9rem) 6vw 4.5rem;
+    background: radial-gradient(ellipse at 50% 40%,
+      var(--m3-surface-hover) 0%, var(--m3-bg) 60%, var(--m3-surface-container-high) 100%);
+    overflow: hidden;
+  }
+  .ph-canvas .ph-map {
+    width: 100%; max-width: 68rem; max-height: 76dvh;
+    filter: drop-shadow(var(--m3-elev-1));
+  }
+  .ph-canvas .ph-map-province { transition: fill .5s ease, stroke .5s ease; }
+  .ph-canvas .ph-map-province:hover { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); cursor: default; }
+
+  .ph-canvas-head {
+    position: absolute; left: 6vw; right: 6vw; top: clamp(1.25rem, 4vh, 2.5rem);
+    display: grid; gap: .3rem;
+  }
+  .ph-canvas-kicker { font-size: .6875rem; letter-spacing: .16em; text-transform: uppercase;
+                      color: var(--ph-accent); }
+  .ph-canvas-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400;
+                     font-size: clamp(1.6rem, 4.5vw, 2.4rem); line-height: 1.12; }
+  .ph-canvas-sub { margin: .1rem 0 0; font-size: .875rem; color: var(--m3-on-surface-variant); }
+
+  .ph-canvas-legend {
+    position: absolute; left: 6vw; bottom: clamp(3.25rem, 8vh, 4.5rem);
+    max-width: min(22rem, 70vw); padding: .85rem 1.05rem;
+    border-radius: var(--ph-radius-sm);
+    background: var(--m3-surface);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    box-shadow: var(--ph-elev);
+  }
+  .ph-canvas-legend .ph-legend { margin: 0; }
+  .ph-canvas-count { margin: .6rem 0 0; padding-top: .55rem;
+                     border-top: 1px solid var(--m3-outline-variant);
+                     font-size: .8125rem; color: var(--m3-on-surface-variant);
+                     font-variant-numeric: tabular-nums; }
+
+  .ph-canvas-scroll {
+    position: absolute; left: 50%; bottom: clamp(1rem, 3vh, 1.75rem);
+    transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .8125rem; letter-spacing: .02em; color: var(--m3-on-surface-variant);
+    animation: ph-bob 2.4s ease-in-out infinite;
+  }
+  .ph-canvas-scroll:hover { color: var(--ph-accent); text-decoration: none; }
+  @keyframes ph-bob { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, 5px); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ph-canvas .ph-map-province { transition-duration: .01ms; }
+    .ph-canvas-scroll { animation: none; }
+  }
+
+  /* ── Slice 2 — riel de productos flotante sobre el mapa ──────────────
+     Chips toggle: enlace de página completa (sin htmx), activo = relleno
+     con el acento de la capa pública. Estado en `?productos=`. */
+  .ph-chip-rail {
+    position: absolute; left: 6vw; right: 6vw; top: clamp(5.5rem, 16vh, 8.5rem);
+    display: flex; flex-wrap: wrap; gap: .5rem; z-index: 1;
+  }
+  .ph-chip-toggle {
+    font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
+    padding: .4rem .95rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant);
+    background: var(--m3-surface);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    color: var(--m3-on-surface-variant);
+    transition: background .2s ease, color .2s ease, border-color .2s ease;
+  }
+  .ph-chip-toggle:hover { border-color: var(--ph-accent); color: var(--ph-accent); text-decoration: none; }
+  .ph-chip-toggle.is-active {
+    background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
+  }
+  @media (prefers-reduced-motion: reduce) { .ph-chip-toggle { transition: none; } }
+
+  /* ── Slice 4 — paneles flotantes por producto activo ────────────────
+     Pila a la derecha sobre el mapa (escritorio); apilada bajo el mapa en
+     pantallas angostas. Acordeón nativo (`<details>`). */
+  .ph-panel-stack {
+    position: absolute; right: 6vw; top: clamp(5.5rem, 16vh, 8.5rem);
+    width: min(23rem, 42vw); max-height: 72dvh; overflow-y: auto;
+    display: grid; gap: .75rem; z-index: 2;
+  }
+  .ph-fpanel-wrap { position: relative; }
+  .ph-fpanel {
+    border-radius: var(--ph-radius-sm);
+    background: var(--m3-surface);
+    background: color-mix(in srgb, var(--m3-surface) 96%, transparent);
+    box-shadow: var(--ph-elev);
+    animation: ph-panel-in .35s cubic-bezier(.2, .8, .2, 1) both;
+  }
+  @keyframes ph-panel-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+  .ph-fpanel-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem;
+    padding: .7rem 2.2rem .7rem .9rem; cursor: pointer; list-style: none;
+  }
+  .ph-fpanel-head::-webkit-details-marker { display: none; }
+  .ph-fpanel-name { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
+  .ph-fpanel-sum { font-size: .8125rem; color: var(--m3-on-surface-variant);
+                   font-variant-numeric: tabular-nums; }
+  .ph-fpanel-body { padding: 0 .9rem .9rem; display: grid; gap: .8rem; }
+  .ph-fpanel-plot-head { font-size: .75rem; color: var(--m3-on-surface-variant);
+                         display: flex; justify-content: space-between; margin-bottom: .2rem; }
+  .ph-fpanel-note { margin: 0; font-size: .8125rem; color: var(--m3-on-surface-variant);
+                    text-wrap: pretty; }
+  .ph-fpanel-detail { font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
+  .ph-fpanel-x {
+    position: absolute; top: .35rem; right: .35rem;
+    width: 1.6rem; height: 1.6rem; display: grid; place-items: center;
+    border-radius: 999px; font-size: 1.1rem; line-height: 1;
+    color: var(--m3-on-surface-variant); text-decoration: none;
+  }
+  .ph-fpanel-x:hover { background: var(--m3-surface-container-high); color: var(--m3-on-surface); }
+
+  @media (prefers-reduced-motion: reduce) { .ph-fpanel { animation: none; } }
+
+  /* ── Slice 5 — hoja de detalle de provincia ─────────────────────────
+     Drawer a la derecha (escritorio) / bottom-sheet (angosto). Entrada
+     animada, salida instantánea: htmx quita el nodo en el swap. */
+  .ph-sheet-scrim {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; justify-content: flex-end;
+    background: color-mix(in srgb, var(--m3-on-surface) 32%, transparent);
+  }
+  .ph-sheet-scrim-close { position: absolute; inset: 0; }
+  .ph-sheet {
+    position: relative; width: min(28rem, 100%); height: 100%;
+    background: var(--m3-surface); box-shadow: var(--m3-elev-3);
+    overflow-y: auto; padding: 1.25rem 1.4rem 2rem;
+    animation: ph-sheet-right .28s cubic-bezier(.2, .8, .2, 1) both;
+  }
+  @keyframes ph-sheet-right { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+  @keyframes ph-sheet-up { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+  .ph-sheet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .ph-sheet-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.5rem; }
+  .ph-sheet-x { font-size: 1.5rem; line-height: 1; color: var(--m3-on-surface-variant); text-decoration: none; }
+  .ph-sheet-x:hover { color: var(--m3-on-surface); }
+  .ph-sheet-sub { margin: .4rem 0 1.25rem; font-size: .8125rem; color: var(--m3-on-surface-variant); text-wrap: pretty; }
+  .ph-sheet-body { display: grid; gap: 1.25rem; }
+  .ph-sheet-row { display: grid; gap: .5rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--m3-divider); }
+  .ph-sheet-row:last-child { border-bottom: 0; padding-bottom: 0; }
+  .ph-sheet-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; }
+  .ph-sheet-row-name { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
+  .ph-sheet-row-sum { font-size: .8125rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
+  .ph-sheet-note { margin: 0; font-size: .8125rem; color: var(--m3-on-surface-variant); text-wrap: pretty; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ph-fpanel, .ph-sheet { animation: none; }
+  }
+
+  @media (max-width: 720px) {
+    .ph-panel-stack {
+      position: static; width: 100%; max-height: none; overflow: visible;
+      margin-top: 1rem;
+    }
+    .ph-sheet-scrim { justify-content: stretch; align-items: flex-end; }
+    .ph-sheet {
+      width: 100%; height: auto; max-height: 85dvh;
+      border-radius: var(--ph-radius-lg) var(--ph-radius-lg) 0 0;
+      animation-name: ph-sheet-up;
+    }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
+
+{# `#ph-live` envuelve todo lo que depende del conjunto de productos activos.
+   Con htmx cargado (slice 4), un chip o un botón de cerrar hacen `hx-get` a la
+   misma URL y htmx reemplaza solo este bloque —sin recargar CSS, cabecera ni
+   pie, y sin saltar el scroll—. Sin JS, el `href` de siempre hace la
+   navegación completa: la interacción degrada, no se rompe. #}
+<div id="ph-live"
+     hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true">
+
+{# ══ Lienzo: el mapa a pantalla completa ═══════════════════════════════
+   Slice 1 del rediseño (docs/decisions.md). El mapa era una tarjeta más
+   dentro de `.ph-hero`; ahora es el lienzo de la página. Sigue coloreado
+   por estado de publicación, no por precio (§9.0 / §12.6): el coloreado
+   por precio quedó fuera de alcance por ahora. La hoja de detalle por
+   provincia llega en el slice 5. #}
+<section class="ph-canvas" aria-labelledby="ph-canvas-title">
+  <div class="ph-canvas-head">
+    <span class="ph-canvas-kicker">SAIMC · Fase 0</span>
+    <h1 class="ph-canvas-title" id="ph-canvas-title">
+      {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
+      {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
+    </h1>
+    {% if data_freshness_day %}
+    <p class="ph-canvas-sub">
+      Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
+    </p>
+    {% endif %}
+  </div>
+
+  {# Riel de productos: cada chip togglea `?productos=`. `hx-get` lo resuelve
+     como swap parcial de `#ph-live`; el `href` (con ancla `#cobertura`) es el
+     fallback sin JS. Ninguno prendido = se muestran todos. #}
+  {% if product_chips %}
+  <nav class="ph-chip-rail" aria-label="Productos">
+    {% for chip in product_chips -%}
+    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}#cobertura" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
+    {%- endfor %}
+  </nav>
+  {% endif %}
+
+  {# Paneles flotantes (slice 4): uno por producto activo, con su rango
+     nacional y su evolución. Acordeón nativo (`<details>`); el primero abierto.
+     El × quita ese producto de `?productos=`. #}
+  {% if product_panels %}
+  <div class="ph-panel-stack">
+    {% for panel in product_panels %}
+    <div class="ph-fpanel-wrap">
+      <details class="ph-fpanel"{% if loop.first %} open{% endif %}>
+        <summary class="ph-fpanel-head">
+          <span class="ph-fpanel-name">{{ panel.name }}</span>
+          <span class="ph-fpanel-sum">
+            {%- if not panel.has_data -%}
+            sin anuncios en la ventana
+            {%- elif panel.is_single_value -%}
+            {{ panel.minimum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}
+            {%- else -%}
+            {{ panel.minimum_text }}–{{ panel.maximum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} · {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}
+            {%- endif -%}
+          </span>
+        </summary>
+        <div class="ph-fpanel-body">
+          {% if panel.has_series %}
+          {% for serie in panel.series %}
+          <div class="ph-fpanel-plot">
+            <div class="ph-fpanel-plot-head">{{ serie.province_name }} <span>{{ serie.currency }}/{{ serie.unit }}</span></div>
+            {% include "_price_plot.html" %}
+          </div>
+          {% endfor %}
+          {% elif panel.has_data %}
+          <p class="ph-fpanel-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar. El rango de arriba lo resume.</p>
+          {% else %}
+          <p class="ph-fpanel-note">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>
+          {% endif %}
+          <a class="ph-fpanel-detail" href="#precios">Ver el detalle por provincia ↓</a>
+        </div>
+      </details>
+      <a class="ph-fpanel-x" href="{{ panel.close_query }}#cobertura" hx-get="{{ panel.close_query }}" aria-label="Quitar {{ panel.name }} de la vista">×</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
+     nada; la tabla «Observaciones por provincia» de más abajo lleva el dato
+     en forma accesible. Cada provincia enlaza a su hoja de detalle (slice 5):
+     `hx-get` la abre como swap parcial, el `href` es el fallback sin JS. #}
+  <svg class="ph-map" viewBox="{{ map.viewbox }}" role="img"
+       aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
+    {% for province in map.provinces %}
+    {% set pl = province_link(province.slug) %}
+    <a href="{{ pl }}#cobertura" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle">
+      <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">
+        <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
+      </path>
+    </a>
+    {% endfor %}
+  </svg>
+
+  <div class="ph-canvas-legend">
+    <ul class="ph-legend">
+      <li><span class="ph-swatch is-publicada"></span> Publicada</li>
+      <li><span class="ph-swatch is-en-ingesta"></span> Recogiendo datos, todavía sin publicar</li>
+      <li><span class="ph-swatch is-sin-datos"></span> Sin datos todavía</li>
+    </ul>
+    <p class="ph-canvas-count">{{ map.covered }} de {{ map.provinces | length }} provincias con observaciones · {{ map.total_rows }} en total</p>
+  </div>
+
+  <a class="ph-canvas-scroll" href="#cobertura">Precios y cobertura <span aria-hidden="true">↓</span></a>
+</section>
 
 {# El titular es el RANGO, no la mediana sola: §9.0 prohíbe «un valor puntual
    presentado como medición consolidada», y con estas muestras un número único
@@ -219,47 +503,27 @@
     </div>
   </div>
 
-  <div class="ph-map-wrap">
-    {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
-       nada, y la tabla de más abajo es la que lleva el dato en forma
-       accesible. #}
-    <svg class="ph-map" viewBox="{{ map.viewbox }}" role="img"
-         aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
-      {% for province in map.provinces %}
-      <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">
-        <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
-      </path>
-      {% endfor %}
-    </svg>
-
-    <div class="ph-panels">
-      <div class="ph-inset ph-panel">
-        <div class="ph-panel-title">Leyenda</div>
-        <ul class="ph-legend">
-          <li><span class="ph-swatch is-publicada"></span> Publicada</li>
-          <li><span class="ph-swatch is-en-ingesta"></span> Recogiendo datos, todavía sin publicar</li>
-          <li><span class="ph-swatch is-sin-datos"></span> Sin datos todavía</li>
-        </ul>
-      </div>
-
-      <div class="ph-inset ph-panel">
-        <div class="ph-panel-title">Concentración de la muestra</div>
-        {% set con_dato = map.provinces | selectattr('rows', 'gt', 0) | sort(attribute='rows', reverse=true) | list %}
-        {% if con_dato %}
-        {% set max_rows = con_dato[0].rows %}
-        <div class="ph-conc">
-          {% for province in con_dato[:4] %}
-          <div class="ph-conc-row">
-            <span class="ph-conc-name">{{ province.name }}</span>
-            <span class="ph-conc-track"><span class="ph-conc-fill" style="width:{{ (province.rows / max_rows * 100) | round(1) }}%"></span></span>
-            <span class="ph-conc-n">{{ province.rows }}</span>
-          </div>
-          {% endfor %}
+  {# El mapa se mudó al lienzo a pantalla completa de arriba (`.ph-canvas`),
+     con su leyenda. Acá queda la lectura de concentración de la muestra, que
+     es tabla-de-apoyo del mapa, no el mapa. #}
+  <div class="ph-panels">
+    <div class="ph-inset ph-panel">
+      <div class="ph-panel-title">Concentración de la muestra</div>
+      {% set con_dato = map.provinces | selectattr('rows', 'gt', 0) | sort(attribute='rows', reverse=true) | list %}
+      {% if con_dato %}
+      {% set max_rows = con_dato[0].rows %}
+      <div class="ph-conc">
+        {% for province in con_dato[:4] %}
+        <div class="ph-conc-row">
+          <span class="ph-conc-name">{{ province.name }}</span>
+          <span class="ph-conc-track"><span class="ph-conc-fill" style="width:{{ (province.rows / max_rows * 100) | round(1) }}%"></span></span>
+          <span class="ph-conc-n">{{ province.rows }}</span>
         </div>
-        {% else %}
-        <p class="ph-hero-note" style="margin:0">Sin observaciones todavía.</p>
-        {% endif %}
+        {% endfor %}
       </div>
+      {% else %}
+      <p class="ph-hero-note" style="margin:0">Sin observaciones todavía.</p>
+      {% endif %}
     </div>
   </div>
 
@@ -313,26 +577,19 @@
   </div>
 </section>
 
-{% if cards or selected_product or selected_province %}
+{% if cards or active_products or selected_province %}
 <section class="ph-section" id="precios">
   <div class="ph-section-head">
     <h2 class="ph-h2">Precios observados</h2>
     <span class="ph-section-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}{% if selected_province %} · {{ selected_province }}{% endif %}</span>
   </div>
 
-  {# Barras de filtro: enlaces con `?producto=`, `?provincia=` y `?dias=`,
-     servidos enteros por el servidor. Sin htmx —el `_public_shell` no lo carga
-     a propósito— porque recargar esta página gzipeada no justifica sumar una
-     dependencia JS a una audiencia con conexión lenta. Cada enlace preserva
-     los otros ejes. #}
-  {% if product_nav | length > 1 %}
-  <ul class="ph-filter">
-    {% for choice in product_nav %}
-    <li><a href="{{ choice.query }}#precios"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
+  {# Barras de filtro de provincia y ventana: enlaces con `?provincia=` y
+     `?dias=`, servidos enteros por el servidor. Sin htmx —el `_public_shell`
+     no lo carga a propósito— porque recargar esta página gzipeada no justifica
+     sumar una dependencia JS a una audiencia con conexión lenta. El filtro de
+     producto se mudó al riel de chips sobre el mapa (slice 2). Cada enlace
+     preserva los otros ejes. #}
   {% if province_nav | length > 1 %}
   <ul class="ph-filter ph-filter-province">
     {% for choice in province_nav %}
@@ -456,7 +713,7 @@
 </section>
 {% endif %}
 
-{% if series or selected_product or selected_province %}
+{% if series or active_products or selected_province %}
 <section class="ph-section" id="como-se-movio">
   <div class="ph-section-head">
     <h2 class="ph-h2">Cómo se movió</h2>
@@ -488,35 +745,7 @@
         <span class="ph-serie-scale">{{ serie.currency }}/{{ serie.unit }}</span>
       </div>
 
-      <svg class="ph-plot" viewBox="{{ serie.viewbox }}" role="img"
-           aria-label="{{ serie.count }} anuncios de {{ serie.product_name }} en {{ serie.province_name }} entre {{ serie.first_day_text }} y {{ serie.last_day_text }}, de {{ serie.minimum_text }} a {{ serie.maximum_text }} {{ serie.currency }} por {{ serie.unit }}.">
-        {# Banda mín–máx: horizontal y de ancho completo a propósito. Describe
-           la muestra del período entero, no una interpolación en el tiempo. #}
-        <rect class="ph-plot-band" x="6" y="{{ serie.band_top }}"
-              width="588" height="{{ (serie.band_bottom - serie.band_top) or 1 }}" />
-        <line class="ph-plot-median" x1="6" x2="594"
-              y1="{{ serie.median_y }}" y2="{{ serie.median_y }}" />
-        <line class="ph-plot-axis" x1="6" x2="594" y1="144" y2="144" />
-
-        {% for point in serie.points %}
-        {% if point.evidence_is_public %}
-        <a href="/anuncio/{{ point.evidence_id }}">
-          <circle class="ph-plot-dot is-linked" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5">
-            <title>{{ point.day_text }} — {{ point.price_text }} {{ serie.currency }}/{{ serie.unit }} — ver el anuncio</title>
-          </circle>
-        </a>
-        {% else %}
-        <circle class="ph-plot-dot" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5">
-          <title>{{ point.day_text }} — {{ point.price_text }} {{ serie.currency }}/{{ serie.unit }}</title>
-        </circle>
-        {% endif %}
-        {% endfor %}
-
-        <text class="ph-plot-label" x="6" y="160">{{ serie.first_day_text }}</text>
-        <text class="ph-plot-label" x="594" y="160" text-anchor="end">{{ serie.last_day_text }}</text>
-        <text class="ph-plot-label" x="6" y="{{ serie.band_top - 3 }}">{{ serie.maximum_text }}</text>
-        <text class="ph-plot-label" x="6" y="{{ serie.band_bottom + 11 }}">{{ serie.minimum_text }}</text>
-      </svg>
+      {% include "_price_plot.html" %}
 
       <p class="ph-serie-foot">
         {{ serie.count }} anuncio{{ "s" if serie.count != 1 }} en
@@ -533,4 +762,61 @@
 </section>
 {% endif %}
 
+{% if selected_province %}
+{# ══ Hoja de detalle de provincia (slice 5) ═══════════════════════════
+   Se renderiza en el servidor cuando `?provincia=` está puesta; htmx la trae
+   y la quita como parte del swap de `#ph-live`. Recorre TODOS los productos
+   piloto de la provincia —no solo los chips activos—: responde «¿cómo está
+   todo acá?». Cerrarla saca `?provincia=` y conserva chips y ventana.
+   Sin trampa de foco de teclado todavía (haría falta JS): el × y el fondo
+   oscurecido sí son alcanzables. #}
+<div class="ph-sheet-scrim">
+  <a class="ph-sheet-scrim-close" href="{{ sheet_close_query }}#cobertura" hx-get="{{ sheet_close_query }}" aria-label="Cerrar el detalle" tabindex="-1"></a>
+  <aside class="ph-sheet" role="dialog" aria-modal="true" aria-labelledby="ph-sheet-title">
+    <header class="ph-sheet-head">
+      <h2 class="ph-sheet-title" id="ph-sheet-title">{{ selected_province }}</h2>
+      <a class="ph-sheet-x" href="{{ sheet_close_query }}#cobertura" hx-get="{{ sheet_close_query }}" aria-label="Cerrar">×</a>
+    </header>
+    <p class="ph-sheet-sub">
+      Los productos piloto en {{ selected_province }}, ventana de {{ window_days }} días.
+      Cada cifra lleva su muestra al lado; ninguna es una estimación.
+    </p>
+    <div class="ph-sheet-body">
+      {% for row in province_sheet_rows %}
+      <section class="ph-sheet-row">
+        <div class="ph-sheet-row-head">
+          <span class="ph-sheet-row-name">{{ row.name }}</span>
+          <span class="ph-sheet-row-sum">
+            {%- if not row.has_data -%}
+            todavía no hay dato acá
+            {%- elif row.is_single_value -%}
+            {{ row.minimum_text }} {{ row.currency }}/{{ row.unit }} · {{ row.count }} anuncio{{ "s" if row.count != 1 }}
+            {%- else -%}
+            {{ row.minimum_text }}–{{ row.maximum_text }} {{ row.currency }}/{{ row.unit }} · {{ row.count }} anuncio{{ "s" if row.count != 1 }}
+            {%- endif -%}
+          </span>
+        </div>
+        {% if row.has_series %}
+        {% for serie in row.series %}
+        {% include "_price_plot.html" %}
+        {% endfor %}
+        {% elif row.has_data %}
+        <p class="ph-sheet-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar.</p>
+        {% endif %}
+      </section>
+      {% endfor %}
+    </div>
+  </aside>
+</div>
+{% endif %}
+
+</div>{# /#ph-live #}
+{% endblock %}
+
+{% block scripts %}
+{# htmx vendorizado (ADR 001). La home era estática y no lo cargaba; con los
+   chips y los paneles del rediseño, cada toggle sin htmx sería una recarga
+   completa —CSS incluido— sobre una conexión lenta. `defer` y una sola
+   petición cacheable. Si no carga, todo degrada al `href` de cada enlace. #}
+<script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
 {% endblock %}

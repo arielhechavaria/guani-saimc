@@ -7250,3 +7250,118 @@ vistas de curaduría; agregar o renombrar una vista se toca ahí. Regla CSS nuev
 secciones, que deriva de `path.startswith('/curation')`. `curation_edit.html` y
 `/evidence/{id}` quedan sin el riel: son vistas de detalle, se llegan por
 contexto.
+
+## 2026-09-10 — Rediseño home pública, slice 1: el mapa es el lienzo a pantalla completa
+Contexto: prototipo de Claude Design en `design_handoff_home_publica/` (README
+con tokens y estados). La home hoy es un panel tipo BI; el rediseño hace del
+mapa de Cuba el lienzo de la pantalla, con chips de producto, paneles flotantes
+con histórico y hoja de detalle por provincia. Se implementa por slices; este
+es el 1.
+Decisión: en `public_home.html`, sección nueva `.ph-canvas` como primer bloque
+del contenido — full-bleed (`margin-inline: calc(50% - 50vw)` dentro del
+contenedor centrado del shell), `100dvh`, el SVG del mapa centrado y grande, con
+overlay: `<h1>`, frescura del dato, leyenda de estados y una señal de scroll a
+`#cobertura`. El encabezado del shell (`.m3-public-top`) se oculta por CSS en
+este bloque y los `{% block heading/subtitle %}` quedan vacíos: su contenido se
+reproduce en el overlay. El mapa se sacó de `.ph-hero` (había una sola copia y
+sigue habiendo una); `.ph-hero` conserva stats, concentración de muestra, nota
+metodológica y la tabla accesible «Observaciones por provincia».
+El mapa sigue coloreado por estado de publicación, NO por precio: el coloreo por
+precio (que `map_view.py` y `public.py` marcan como bloqueado por §9.0/§12.6)
+quedó fuera de alcance por decisión del operador el 2026-09-10.
+Descartado: mantener el encabezado del shell arriba del lienzo — un teléfono
+acostado se comía el mapa bajo el cromo fijo, y «a pantalla completa» dejaba de
+serlo. Sin `filter: drop-shadow` con color a mano: usa `var(--m3-elev-1)` para
+no romper `test_static_assets.py::TestNingunColorFijoEnLasPlantillas`.
+Consecuencia: `/` y `/producto/<slug>` comparten el lienzo (misma plantilla).
+Las provincias todavía no son clicables — la hoja de detalle llega en el slice
+5; los chips de producto, en el 2. Suite entera en verde con orden determinista
+(`-p no:randomly`): 1463 pasan, 1 saltea. `test_public_filter.py` tiene
+polución de orden preexistente ajena a este cambio (una corrida parcial puede
+dejar `test_respeta_la_ventana` en rojo; con la suite completa pasa).
+
+## 2026-09-10 — Rediseño home pública, slice 2: chips de producto multi-selección
+Contexto: el filtro de producto de la home era una sola pestaña (`?producto=`,
+un producto → tabla comparativa; sin producto → grilla). El rediseño lo quiere
+como riel de chips flotante sobre el mapa, multi-selección, que en los slices
+siguientes alimenta un panel flotante por producto activo.
+Decisión: eje nuevo `?productos=aceite,arroz` (lista, orden = activación).
+`product_nav.py` gana `resolve_products`, `ProductChip` + `build_product_chips`
+(el `query` de cada chip es el estado tras togglear ese chip, preservando
+provincia y ventana), y `_query` acepta `productos=` (gana sobre `producto=`
+cuando trae algo). `_render_home` resuelve el conjunto activo; `?producto=` y la
+ruta limpia `/producto/<slug>` siguen andando como alias de un solo producto.
+`selected` (un producto, y con él la tabla comparativa de `#precios`) solo
+existe con exactamente uno activo; con dos o más, la grilla de tarjetas acotada
+al conjunto. `_visible_observations` pasa de `product: str|None` a
+`products: frozenset|None`; el CSV lo respeta. El riel de chips va en el overlay
+del lienzo, sin htmx: cada chip es un enlace de página completa con ancla
+`#cobertura`. Se quitó la vieja `<ul class="ph-filter">` de producto; provincia
+y ventana siguen ahí.
+Descartado: threadear `?productos=` en `build_province_nav`/`build_window_nav`.
+Con dos o más productos activos, cambiar provincia o ventana los resetea (cae a
+«todo»). Es un slice intermedio; se corrige cuando los paneles del slice 4
+tengan su propio estado. Descartado también `?foco=`: no tiene consumidor
+visual hasta el slice 4 (coloreo del mapa / panel expandido), marcarlo sin
+efecto confundía.
+Consecuencia: `build_product_nav` queda sin uso en la plantilla pero se
+conserva (con sus tests) — el slice 4 puede reusar su lógica de URL limpia para
+`?foco=`. **Los tests se corren con
+`PYTHONPATH=<worktree>/src`**: el `.pth` editable del `.venv` compartido apunta
+al checkout principal, así que sin eso pytest prueba el código viejo y pasa en
+falso (fue lo que escondió estas 5 roturas al principio). Suite: 1477 pasan, 1
+saltea, con `PYTHONPATH` correcto y `-p no:randomly`.
+
+## 2026-09-10 — Rediseño home pública, slice 4: paneles flotantes + htmx en la capa pública
+Contexto: los chips del slice 2 prendían productos pero sin nada que mostrar
+sobre el mapa. El rediseño quiere un panel flotante por producto activo, con su
+rango nacional y su evolución.
+Decisión: `panel_view.py` nuevo — `ProductPanel` + `build_product_panels()`
+agrega por producto desde las tarjetas y las series que `_render_home` ya
+calcula (mín de mínimos / máx de máximos / suma de conteos / provincias
+distintas), en el orden de activación. Es lectura rápida, no medición nueva: la
+tabla por provincia de `#precios` sigue siendo la autoridad. La marca del
+gráfico se extrajo a la parcial `_price_plot.html`, compartida entre
+`#como-se-movio` y los paneles. Cada panel es un `<details>` (acordeón nativo,
+el primero abierto); el × quita ese producto de `?productos=`.
+**htmx entra en la capa pública** (`public_home.html` `{% block scripts %}`,
+`/static/htmx.min.js` ya vendorizado). `#ph-live` envuelve todo lo que depende
+del conjunto activo; chips y × llevan `hx-get` a la misma URL que su `href`, y
+htmx reemplaza solo `#ph-live` (`hx-select`/`outerHTML`/`hx-push-url`). Sin JS,
+el `href` hace la navegación completa: degrada, no se rompe. La Transparency
+Layer (`/anuncio/<id>`) sigue sin htmx.
+Descartado: `?foco=` y coloreo del mapa por panel expandido — el coloreo por
+precio quedó fuera de alcance (2026-09-10), así que el foco no tiene consumidor
+visual; el acordeón nativo alcanza. Descartado también mantener la marca del
+SVG duplicada en dos lugares.
+Consecuencia: al togglear un chip, el acordeón vuelve al estado inicial (primer
+panel abierto) — htmx re-renderiza `#ph-live` entero. Los paneles y las
+secciones `#precios`/`#como-se-movio` muestran el mismo dato hoy; el slice de
+cierre puede recortar la duplicación. Suite: 1488 pasan, 1 saltea
+(`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Rediseño home pública, slice 5: hoja de detalle de provincia
+Contexto: `?provincia=<slug>` ya filtraba `#precios`/`#como-se-movio`, pero el
+mapa no era clicable y no había una vista «todo lo de esta provincia».
+Decisión: cada `<path>` de provincia va envuelto en `<a href hx-get>` a
+`?provincia=<slug>` (preservando chips y ventana); `MapProvince` gana la
+propiedad `slug` (vía `product_slug`, el mismo que `resolve_province` usa para
+el ida y vuelta). Con `?provincia=` puesta, `_render_home` arma
+`province_sheet_rows` recorriendo TODOS los piloto de esa provincia —no los
+chips activos— reusando `build_product_panels` sobre tarjetas y series acotadas
+solo por provincia. La plantilla rinde una `<aside class="ph-sheet"
+role="dialog">` dentro de `#ph-live` (htmx la trae y la quita en el swap):
+drawer derecho en escritorio, bottom-sheet en angosto (corte 720). Un producto
+sin fila en la provincia entra con «todavía no hay dato acá». Cerrar (× o fondo
+oscurecido) va a `sheet_close_query` = la URL sin `provincia`, con `productos` y
+`dias`. Scrim con `color-mix(var(--m3-on-surface) 32%, transparent)`, no rgba a
+mano.
+Descartado: trampa de foco de teclado en la hoja (haría falta JS de verdad; el
+× y el fondo sí son alcanzables — queda como deuda anotada). Descartado también
+animar la salida: htmx quita el nodo en el swap, así que la entrada anima y la
+salida es instantánea.
+Consecuencia: el mapa ahora navega. `map_view.py` importa `product_nav`
+(sin ciclo: `product_nav` es solo stdlib). La hoja y el filtro `?provincia=` de
+`#precios` conviven —muestran lo mismo con distinto formato—; se unifican en el
+slice de cierre junto con la duplicación de paneles. Suite: 1494 pasan, 1
+saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).

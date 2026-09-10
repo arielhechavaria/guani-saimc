@@ -39,6 +39,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from saimc.web.map_cuba import PROVINCE_PATHS, VIEWBOX
+from saimc.web.product_nav import product_slug
 
 
 #: Etiquetas visibles de cada estado. Viven acá y no en la plantilla para que
@@ -59,6 +60,14 @@ class MapProvince:
     path: str
     rows: int
     is_published: bool
+
+    @property
+    def slug(self) -> str:
+        """Segmento de URL de la provincia, para el enlace del mapa a su hoja
+        de detalle. Mismo `product_slug` que resuelve `?provincia=` de vuelta
+        al nombre (`product_nav.resolve_province`), así que el ida y vuelta
+        cierra: «La Habana» → «la-habana» → «La Habana»."""
+        return product_slug(self.name)
 
     @property
     def has_data(self) -> bool:

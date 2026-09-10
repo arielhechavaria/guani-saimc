@@ -1,0 +1,37 @@
+{#
+  Gráfico de evolución de una serie (`series_view.PriceSeries`), como SVG
+  generado en el servidor. Se incluye desde `#como-se-movio` y desde los
+  paneles flotantes (`.ph-fpanel`), así que la marca vive en un solo lugar.
+
+  Espera la variable `serie`. Sin línea que una los puntos: los días sin punto
+  son días sin anuncios, y unirlos inventaría precios que nadie vio.
+#}
+<svg class="ph-plot" viewBox="{{ serie.viewbox }}" role="img"
+     aria-label="{{ serie.count }} anuncios de {{ serie.product_name }} en {{ serie.province_name }} entre {{ serie.first_day_text }} y {{ serie.last_day_text }}, de {{ serie.minimum_text }} a {{ serie.maximum_text }} {{ serie.currency }} por {{ serie.unit }}.">
+  {# Banda mín–máx: horizontal y de ancho completo a propósito. Describe la
+     muestra del período entero, no una interpolación en el tiempo. #}
+  <rect class="ph-plot-band" x="6" y="{{ serie.band_top }}"
+        width="588" height="{{ (serie.band_bottom - serie.band_top) or 1 }}" />
+  <line class="ph-plot-median" x1="6" x2="594"
+        y1="{{ serie.median_y }}" y2="{{ serie.median_y }}" />
+  <line class="ph-plot-axis" x1="6" x2="594" y1="144" y2="144" />
+
+  {% for point in serie.points %}
+  {% if point.evidence_is_public %}
+  <a href="/anuncio/{{ point.evidence_id }}">
+    <circle class="ph-plot-dot is-linked" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5">
+      <title>{{ point.day_text }} — {{ point.price_text }} {{ serie.currency }}/{{ serie.unit }} — ver el anuncio</title>
+    </circle>
+  </a>
+  {% else %}
+  <circle class="ph-plot-dot" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5">
+    <title>{{ point.day_text }} — {{ point.price_text }} {{ serie.currency }}/{{ serie.unit }}</title>
+  </circle>
+  {% endif %}
+  {% endfor %}
+
+  <text class="ph-plot-label" x="6" y="160">{{ serie.first_day_text }}</text>
+  <text class="ph-plot-label" x="594" y="160" text-anchor="end">{{ serie.last_day_text }}</text>
+  <text class="ph-plot-label" x="6" y="{{ serie.band_top - 3 }}">{{ serie.maximum_text }}</text>
+  <text class="ph-plot-label" x="6" y="{{ serie.band_bottom + 11 }}">{{ serie.minimum_text }}</text>
+</svg>

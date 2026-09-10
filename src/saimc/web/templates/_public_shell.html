@@ -8,9 +8,11 @@
   hoja del operador arrastraba topnav/curaduría/tablas/botones que esta vista
   nunca ejecuta (docs/decisions.md, entrada del split).
 
-  htmx tampoco se carga acá: esta vista es un mapa estático de solo lectura y
-  no tiene una sola interacción parcial. La vista que la necesite lo agrega en
-  su propio `{% block scripts %}`, como documenta `_shell.html`.
+  htmx no se carga en el shell: la vista que lo necesite lo agrega en su propio
+  `{% block scripts %}`, como documenta `_shell.html`. `public_home.html` lo
+  hace desde el slice 4 del rediseño para los chips y los paneles flotantes; el
+  resto de la capa pública (`/anuncio/<id>`, `/producto/<slug>` sin JS) sigue
+  degradando a navegación completa.
 #}
 <!doctype html>
 <html lang="es">

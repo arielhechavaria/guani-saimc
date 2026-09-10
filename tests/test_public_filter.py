@@ -37,12 +37,14 @@ from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.product_nav import (
     DEFAULT_WINDOW_DAYS,
+    build_product_chips,
     build_product_nav,
     build_province_nav,
     build_window_nav,
     product_slug,
     resolve_days,
     resolve_product,
+    resolve_products,
     resolve_province,
 )
 
@@ -218,6 +220,284 @@ class TestBuildProductNav:
         assert por_label["Arroz"].query == "/?producto=arroz&dias=7"
 
 
+class TestResolveProducts:
+    PILOT = ("Arroz", "Aceite", "Azúcar blanca")
+
+    def test_lista_vacia_ante_none_o_cadena_vacia(self) -> None:
+        assert resolve_products(self.PILOT, None) == []
+        assert resolve_products(self.PILOT, "") == []
+
+    def test_resuelve_en_orden_y_sin_repetir(self) -> None:
+        assert resolve_products(self.PILOT, "aceite,arroz,aceite") == ["Aceite", "Arroz"]
+
+    def test_ignora_los_slugs_que_no_resuelven(self) -> None:
+        assert resolve_products(self.PILOT, "arroz,inventado,azucar-blanca") == [
+            "Arroz",
+            "Azúcar blanca",
+        ]
+
+    def test_tolera_espacios_alrededor_de_las_comas(self) -> None:
+        assert resolve_products(self.PILOT, " arroz , aceite ") == ["Arroz", "Aceite"]
+
+
+class TestBuildProductChips:
+    PILOT = ("Arroz", "Aceite", "Pollo")
+
+    def test_un_chip_por_piloto_en_orden_de_catalogo(self) -> None:
+        chips = build_product_chips(self.PILOT, [])
+
+        assert [c.label for c in chips] == ["Arroz", "Aceite", "Pollo"]
+        assert all(not c.is_active for c in chips)
+
+    def test_marca_activos_los_del_conjunto(self) -> None:
+        chips = build_product_chips(self.PILOT, ["Aceite"])
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Aceite"].is_active
+        assert not por_label["Arroz"].is_active
+
+    def test_togglear_un_apagado_lo_agrega_al_final(self) -> None:
+        chips = build_product_chips(self.PILOT, ["Arroz"])
+        por_label = {c.label: c for c in chips}
+
+        # Prender Aceite → productos=arroz,aceite (orden de activación).
+        assert por_label["Aceite"].query == "/?productos=arroz,aceite"
+
+    def test_togglear_un_prendido_lo_quita(self) -> None:
+        chips = build_product_chips(self.PILOT, ["Arroz", "Aceite"])
+        por_label = {c.label: c for c in chips}
+
+        # Apagar Arroz → queda solo aceite; apagar el único → URL limpia.
+        assert por_label["Arroz"].query == "/?productos=aceite"
+        chips_uno = build_product_chips(self.PILOT, ["Arroz"])
+        assert {c.label: c for c in chips_uno}["Arroz"].query == "/"
+
+    def test_preserva_provincia_y_ventana_en_el_toggle(self) -> None:
+        chips = build_product_chips(
+            self.PILOT, ["Arroz"], selected_province="La Habana", selected_days=7
+        )
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Aceite"].query == (
+            "/?productos=arroz,aceite&provincia=la-habana&dias=7"
+        )
+
+
+class TestChipsMultiSeleccionEnLaRuta:
+    def test_productos_acota_a_la_union_de_los_activos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        # Dos activos → grilla de tarjetas (no la tabla de un solo producto),
+        # acotada a esos dos: Azúcar no aparece como tarjeta.
+        assert 'class="ph-cards"' in texto
+        assert "ph-provinces" not in texto
+        assert '<span class="ph-card-product">Arroz</span>' in texto
+        assert '<span class="ph-card-product">Aceite</span>' in texto
+        assert '<span class="ph-card-product">Azúcar blanca</span>' not in texto
+
+    def test_los_chips_reflejan_el_conjunto_activo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        assert 'aria-pressed="true">Arroz</a>' in texto
+        assert 'aria-pressed="true">Aceite</a>' in texto
+        assert 'aria-pressed="false">Azúcar blanca</a>' in texto
+
+    def test_un_solo_producto_via_productos_da_la_tabla_enfocada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz").text
+
+        # Exactamente uno → misma vista enfocada que `?producto=arroz`.
+        assert "Arroz por formato y provincia" in texto
+
+    def test_el_csv_de_la_pagina_lleva_los_productos_activos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        assert 'href="/datos.csv?productos=arroz,aceite"' in texto
+
+    def test_datos_csv_respeta_productos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/datos.csv?productos=arroz,aceite").text
+
+        assert "Arroz" in texto
+        assert "Aceite" in texto
+        assert "Azúcar blanca" not in texto
+
+
+class TestPanelesFlotantes:
+    def test_un_panel_por_producto_activo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        assert texto.count('class="ph-fpanel"') == 2
+        assert '<span class="ph-fpanel-name">Arroz</span>' in texto
+        assert '<span class="ph-fpanel-name">Aceite</span>' in texto
+
+    def test_sin_productos_no_hay_pila_de_paneles(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/").text
+
+        assert 'class="ph-panel-stack"' not in texto
+
+    def test_el_boton_de_cerrar_quita_ese_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        # El × de Arroz apunta a la vista sin Arroz (queda Aceite), por `href`
+        # (fallback) y por `hx-get` (swap parcial).
+        assert 'href="/?productos=aceite#cobertura" hx-get="/?productos=aceite"' in texto
+
+    def test_carga_htmx_y_arma_el_bloque_vivo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz").text
+
+        assert '/static/htmx.min.js?v=' in texto
+        assert 'id="ph-live"' in texto
+        # Los chips hacen `hx-get` además del `href` de fallback.
+        assert 'hx-get="/?productos=arroz,aceite"' in texto
+
+    def test_anuncio_no_carga_htmx(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La Transparency Layer sigue siendo HTML plano: htmx es solo de `/`."""
+        _seed_dos_productos(session)
+        ingestion = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/txt.dat",
+            content_hash="hash-anuncio-sin-htmx",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            original_text="Aceite a 1200",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.commit()
+
+        texto = client.get(f"/anuncio/{ingestion.id}").text
+
+        assert "htmx.min.js" not in texto
+
+
+class TestHojaDetalleProvincia:
+    def _seed(self, session: Session) -> None:
+        """Arroz y Aceite con dato en La Habana; Malanga piloto pero sin filas."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        aceite = Product(
+            name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
+        )
+        malanga = Product(
+            name="Malanga", category="viandas", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, aceite, malanga, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-hoja")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(6))
+        _precio(
+            session, product=arroz, province=habana, source=fuente,
+            dia=_hace(3), price="330",
+        )
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(4))
+        session.commit()
+
+    def test_provincia_en_la_url_abre_la_hoja(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana").text
+
+        assert 'class="ph-sheet"' in texto
+        assert 'role="dialog"' in texto
+        assert '<h2 class="ph-sheet-title" id="ph-sheet-title">La Habana</h2>' in texto
+
+    def test_sin_provincia_no_hay_hoja(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        assert 'class="ph-sheet"' not in client.get("/").text
+
+    def test_la_hoja_lista_todos_los_piloto_incluso_sin_dato(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        hoja = client.get("/?provincia=la-habana").text.split('class="ph-sheet"')[1]
+
+        assert "Arroz" in hoja
+        assert "Aceite" in hoja
+        # Malanga es piloto y no tiene ninguna fila en La Habana: aparece igual.
+        assert "Malanga" in hoja
+        assert "todavía no hay dato acá" in hoja
+
+    def test_la_hoja_ignora_el_filtro_de_chips(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La hoja responde «cómo está TODO acá», no solo lo prendido."""
+        self._seed(session)
+
+        hoja = (
+            client.get("/?provincia=la-habana&productos=arroz")
+            .text.split('class="ph-sheet"')[1]
+        )
+
+        assert "Aceite" in hoja
+
+    def test_cerrar_la_hoja_saca_provincia_y_conserva_los_chips(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana&productos=arroz").text
+
+        # El × y el fondo cierran a la misma URL: sin `provincia`, con `productos`.
+        assert 'href="/?productos=arroz#cobertura" hx-get="/?productos=arroz"' in texto
+
+    def test_las_provincias_del_mapa_son_enlaces(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/").text
+
+        assert (
+            'href="/?provincia=la-habana#cobertura" hx-get="/?provincia=la-habana"'
+            in texto
+        )
+
+
 class TestResolveProvince:
     def test_resuelve_por_slug_con_espacios(self) -> None:
         nombres = ("La Habana", "Santiago de Cuba")
@@ -297,9 +577,11 @@ class TestFiltroEnLaRuta:
 
         assert "Arroz" in texto
         assert "Aceite" in texto
-        # La barra de filtro está, con «Todos» marcado.
-        assert 'class="ph-filter"' in texto
-        assert 'class="is-selected" aria-current="true">Todos<' in texto
+        # El riel de chips de producto está, sin ninguno prendido: `?productos=`
+        # vacío = se muestra todo.
+        assert 'class="ph-chip-rail"' in texto
+        assert 'aria-pressed="false">Arroz</a>' in texto
+        assert 'aria-pressed="true"' not in texto
 
     def test_elegir_un_producto_acota_la_vista(
         self, client: TestClient, session: Session
@@ -334,7 +616,9 @@ class TestFiltroEnLaRuta:
         response = client.get("/?producto=leche-en-polvo")
 
         assert response.status_code == 200
-        assert 'class="is-selected" aria-current="true">Todos<' in response.text
+        # Slug raro → ningún producto activo, todos los chips apagados.
+        assert 'class="ph-chip-rail"' in response.text
+        assert 'aria-pressed="true"' not in response.text
 
     def test_el_mapa_de_cobertura_no_depende_del_filtro(
         self, client: TestClient, session: Session
@@ -367,7 +651,8 @@ class TestFiltroEnLaRuta:
 
         assert response.status_code == 200
         assert "No hay anuncios de Picadillo" in response.text
-        assert 'class="ph-filter"' in response.text
+        # El riel de chips sigue para poder cambiar de producto.
+        assert 'class="ph-chip-rail"' in response.text
 
     def test_producto_con_un_solo_dia_no_dibuja_evolucion_pero_no_rompe(
         self, client: TestClient, session: Session
@@ -445,7 +730,7 @@ class TestVentanaEnLaRuta:
 
         assert "Ventana de 90 días" in texto
         assert 'aria-current="true">90 días<' in texto
-        assert 'aria-current="true">Arroz<' in texto
+        assert 'aria-pressed="true">Arroz</a>' in texto
 
 
 class TestTablaPorProvincia:
@@ -585,7 +870,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         texto = client.get("/?provincia=la-habana&producto=arroz").text
 
         assert 'aria-current="true">La Habana<' in texto
-        assert 'aria-current="true">Arroz<' in texto
+        assert 'aria-pressed="true">Arroz</a>' in texto
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
         assert "La Habana" in tabla
         assert "Santiago de Cuba" not in tabla
