@@ -7420,3 +7420,32 @@ Consecuencia: la home no tiene scroll en ningún ancho. `build_province_nav` y
 de teclado y Escape en la hoja y en las ventanas (JS). Suite: 1507 pasan, 1
 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`). Layout sin verificar en
 navegador desde la sesión (no hay uno headless en el VPS).
+
+## 2026-09-10 — Ventanas flotantes arrastrables, minimizables y expandibles
+Contexto: el operador pidió que las ventanas flotantes (las del menú y los
+paneles de producto) se puedan arrastrar, minimizar y expandir.
+Decisión: primer JS propio de la capa pública, inline en el
+`{% block scripts %}` de `public_home.html`, fuera de `#ph-live` y como mejora
+progresiva: pone `.ph-js` en `<html>`, y sin eso los botones no se muestran y
+las ventanas quedan apiladas como antes. Los paneles de producto dejan de ser
+`<details>` y toman la misma forma que las ventanas del menú: `<section
+data-win>` con barra `[data-win-handle]` y botones `[data-win-min]` /
+`[data-win-max]` junto al ×. Arrastrar (umbral de 5px: un clic no despega la
+ventana) la pasa a `position: fixed` acotada al viewport; expandir (botón o
+doble clic en la barra) la estira al escenario del mapa; minimizar deja solo la
+barra. El estado vive en `sessionStorage` por id de ventana y se reaplica en
+`htmx:afterSettle`, porque htmx re-renderiza `#ph-live` entero en cada swap. En
+angosto (≤720) no se arrastra —las ventanas viven en la bandeja inferior—, pero
+minimizar y expandir sí. Iconos de los botones con pseudo-elementos CSS, sin
+glifos que un teléfono viejo pueda no tener.
+Descartado: archivo `.js` estático aparte. Sería cacheable, pero
+`TestClasesDelJavascriptExisten` solo mira las plantillas: inline, el test ya
+verifica que toda clase que asigna el script (`ph-js`, `is-floating`,
+`is-dragging`, `is-min`, `is-max`) esté definida. Descartado también guardar
+posiciones en la URL: son del visitante, no del estado compartible.
+Consecuencia: ~5 KB de JS (sin comprimir) viajan con cada respuesta de la home,
+también en los swaps de htmx. Arrastrar no es accesible por teclado (las
+ventanas funcionan igual sin arrastrarlas; minimizar y expandir son botones).
+Sintaxis del script verificada con `node --check` sobre el HTML renderizado;
+comportamiento sin verificar en navegador desde la sesión. Suite: 1509 pasan,
+1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).

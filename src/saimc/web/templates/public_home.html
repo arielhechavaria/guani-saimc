@@ -258,13 +258,12 @@
   }
   .ph-x:hover { background: var(--m3-surface-container-high); color: var(--m3-on-surface); text-decoration: none; }
 
-  /* Paneles de producto (slice 4): `<details>` abiertos por defecto. */
-  .ph-fpanel-wrap { position: relative; }
+  /* Paneles de producto (slice 4): misma forma de ventana que las del menú. */
   .ph-fpanel-head {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem;
-    padding: .7rem 2.4rem .7rem .9rem; cursor: pointer; list-style: none;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem;
+    padding: .55rem .5rem .55rem .9rem;
   }
-  .ph-fpanel-head::-webkit-details-marker { display: none; }
+  .ph-fpanel-titles { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; min-width: 0; }
   .ph-fpanel-name { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
   .ph-fpanel-sum { font-size: .8125rem; color: var(--m3-on-surface-variant);
                    font-variant-numeric: tabular-nums; }
@@ -272,7 +271,38 @@
   .ph-fpanel-plot-head { font-size: .75rem; color: var(--m3-on-surface-variant);
                          display: flex; justify-content: space-between; margin-bottom: .2rem; }
   .ph-fpanel-detail { font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
-  .ph-fpanel-wrap > .ph-x { position: absolute; top: .4rem; right: .4rem; }
+
+  /* ── Ventanas: arrastrar, minimizar, expandir ─────────────────────────
+     Mejora progresiva: el script del pie pone `.ph-js` en <html>; sin él los
+     botones no se muestran y las ventanas funcionan como antes (apiladas,
+     con su ×). Arrastrar pasa la ventana a `position: fixed`; expandir la
+     estira al escenario del mapa; minimizar deja solo la barra de título. */
+  .ph-winctls { display: flex; align-items: center; gap: .1rem; flex: none; }
+  .ph-winctl { display: none; }
+  .ph-js .ph-winctl {
+    display: grid; place-items: center; flex: none;
+    width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: 999px;
+    background: transparent; color: var(--m3-on-surface-variant); cursor: pointer;
+  }
+  .ph-js .ph-winctl:hover { background: var(--m3-surface-container-high); color: var(--m3-on-surface); }
+  .ph-winctl::before { content: ""; display: block; }
+  .ph-winctl-min::before { width: .7rem; height: 2px; border-radius: 1px; background: currentColor; }
+  .ph-winctl-max::before { width: .62rem; height: .62rem; border: 1.5px solid currentColor; border-radius: 2px; }
+  .is-max .ph-winctl-max::before { width: .42rem; height: .42rem; }
+
+  .ph-js [data-win-handle] { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .is-dragging, .is-dragging [data-win-handle] { cursor: grabbing; }
+  .is-dragging { box-shadow: var(--m3-elev-3); animation: none; }
+
+  .is-floating {
+    position: fixed; margin: 0;
+    max-height: calc(100dvh - 1rem);
+    display: flex; flex-direction: column;
+  }
+  .is-floating > .ph-win-body, .is-floating > .ph-fpanel-body { min-height: 0; overflow-y: auto; }
+  .is-max { max-height: none; }
+  .is-min > .ph-win-body, .is-min > .ph-fpanel-body { display: none; }
+  .is-min > .ph-win-head { border-bottom: 0; }
 
   /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
   .ph-sheet-scrim {
@@ -318,6 +348,9 @@
       gap: .6rem; padding: .6rem; overflow-y: auto;
     }
     .ph-win-stack, .ph-panel-stack { width: 100%; max-height: none; overflow: visible; margin: 0; }
+    /* Sin arrastre en angosto: la barra de título vuelve a dejar scrollear la
+       bandeja con el dedo. */
+    .ph-js [data-win-handle] { cursor: auto; touch-action: auto; }
     .ph-sheet-scrim { justify-content: stretch; align-items: flex-end; }
     .ph-sheet {
       width: 100%; height: auto; max-height: 85dvh;
@@ -403,10 +436,14 @@
       <div class="ph-win-stack">
         {% set win_titles = {'cobertura': 'Cobertura', 'precios': 'Precios observados', 'evolucion': 'Cómo se movió'} %}
         {% for view in view_menu %}
-        <section class="ph-win" id="{{ view.key }}" aria-labelledby="ph-win-{{ view.key }}-t"{% if not view.is_open %} hidden{% endif %}>
-          <header class="ph-win-head">
+        <section class="ph-win" data-win="{{ view.label }}" id="{{ view.key }}" aria-labelledby="ph-win-{{ view.key }}-t"{% if not view.is_open %} hidden{% endif %}>
+          <header class="ph-win-head" data-win-handle>
             <h2 class="ph-win-title" id="ph-win-{{ view.key }}-t">{{ win_titles[view.key] }}</h2>
-            <a class="ph-x" href="{{ view.query }}" hx-get="{{ view.query }}" aria-label="Cerrar {{ view.label }}">×</a>
+            <div class="ph-winctls">
+              <button type="button" class="ph-winctl ph-winctl-min" data-win-min aria-pressed="false" aria-label="Minimizar {{ view.label }}"></button>
+              <button type="button" class="ph-winctl ph-winctl-max" data-win-max aria-pressed="false" aria-label="Expandir {{ view.label }}"></button>
+              <a class="ph-x" href="{{ view.query }}" hx-get="{{ view.query }}" aria-label="Cerrar {{ view.label }}">×</a>
+            </div>
           </header>
           <div class="ph-win-body">
 
@@ -657,20 +694,26 @@
       {% if product_panels %}
       <div class="ph-panel-stack">
         {% for panel in product_panels %}
-        <div class="ph-fpanel-wrap">
-          <details class="ph-fpanel" open>
-            <summary class="ph-fpanel-head">
-              <span class="ph-fpanel-name">{{ panel.name }}</span>
-              <span class="ph-fpanel-sum">
-                {%- if not panel.has_data -%}
-                sin anuncios en la ventana
-                {%- elif panel.is_single_value -%}
-                {{ panel.minimum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}
-                {%- else -%}
-                {{ panel.minimum_text }}–{{ panel.maximum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} · {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}
-                {%- endif -%}
-              </span>
-            </summary>
+        <section class="ph-fpanel" data-win="{{ panel.name }}" id="ph-panel-{{ panel.slug }}" aria-label="{{ panel.name }}">
+            <header class="ph-fpanel-head" data-win-handle>
+              <div class="ph-fpanel-titles">
+                <span class="ph-fpanel-name">{{ panel.name }}</span>
+                <span class="ph-fpanel-sum">
+                  {%- if not panel.has_data -%}
+                  sin anuncios en la ventana
+                  {%- elif panel.is_single_value -%}
+                  {{ panel.minimum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}
+                  {%- else -%}
+                  {{ panel.minimum_text }}–{{ panel.maximum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} · {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}
+                  {%- endif -%}
+                </span>
+              </div>
+              <div class="ph-winctls">
+                <button type="button" class="ph-winctl ph-winctl-min" data-win-min aria-pressed="false" aria-label="Minimizar {{ panel.name }}"></button>
+                <button type="button" class="ph-winctl ph-winctl-max" data-win-max aria-pressed="false" aria-label="Expandir {{ panel.name }}"></button>
+                <a class="ph-x" href="{{ panel.close_query }}" hx-get="{{ panel.close_query }}" aria-label="Quitar {{ panel.name }} de la vista">×</a>
+              </div>
+            </header>
             <div class="ph-fpanel-body">
               {% if panel.has_series %}
               {% for serie in panel.series %}
@@ -686,9 +729,7 @@
               {% endif %}
               <a class="ph-fpanel-detail" href="{{ open_precios_query }}" hx-get="{{ open_precios_query }}">Ver el detalle por provincia</a>
             </div>
-          </details>
-          <a class="ph-x" href="{{ panel.close_query }}" hx-get="{{ panel.close_query }}" aria-label="Quitar {{ panel.name }} de la vista">×</a>
-        </div>
+        </section>
         {% endfor %}
       </div>
       {% endif %}
@@ -761,4 +802,206 @@
    de `#ph-live` en vez de recargar la página entera sobre una conexión lenta.
    `defer`, una sola petición cacheable. Si no carga, todo degrada al `href`. #}
 <script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
+
+{# Ventanas flotantes: arrastrar desde la barra de título (o doble clic para
+   expandir), minimizar y expandir. Mejora progresiva: sin este script los
+   botones no se muestran y las ventanas quedan apiladas como antes. El estado
+   —posición, minimizada, expandida— vive en `sessionStorage` por id de ventana
+   y se reaplica después de cada swap de htmx, que re-renderiza `#ph-live`
+   entero. Inline y fuera de `#ph-live`: una petición menos, y htmx no lo
+   re-ejecuta. En angosto (≤720px) no se arrastra —las ventanas viven en la
+   bandeja inferior—, pero minimizar y expandir sí andan. Las clases que asigna
+   están definidas en el `<style>` de arriba (lo verifica
+   `test_static_assets.py::TestClasesDelJavascriptExisten`). #}
+<script>
+(function () {
+  "use strict";
+  var CLAVE = "ph-ventanas";
+  var angosto = window.matchMedia("(max-width: 720px)");
+  var capa = 20;
+  var estado = leer();
+
+  document.documentElement.classList.add("ph-js");
+
+  function leer() {
+    try {
+      return JSON.parse(window.sessionStorage.getItem(CLAVE)) || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function guardar() {
+    try {
+      window.sessionStorage.setItem(CLAVE, JSON.stringify(estado));
+    } catch (e) {
+      /* Sin almacenamiento (modo privado): el estado vale hasta el próximo swap. */
+    }
+  }
+
+  function de(win) {
+    if (!estado[win.id]) estado[win.id] = {};
+    return estado[win.id];
+  }
+
+  function alFrente(win) {
+    capa += 1;
+    if (capa > 44) {
+      /* Renumerar por debajo de la hoja de provincia (z-index 50). */
+      var flotantes = Array.prototype.slice
+        .call(document.querySelectorAll("[data-win].is-floating"))
+        .sort(function (a, b) {
+          return (Number(a.style.zIndex) || 0) - (Number(b.style.zIndex) || 0);
+        });
+      capa = 20;
+      flotantes.forEach(function (w) {
+        capa += 1;
+        w.style.zIndex = String(capa);
+      });
+      capa += 1;
+    }
+    win.style.zIndex = String(capa);
+  }
+
+  function flotar(win, x, y, ancho) {
+    var vw = document.documentElement.clientWidth;
+    var vh = document.documentElement.clientHeight;
+    win.classList.add("is-floating");
+    win.style.left = Math.min(Math.max(x, 0), Math.max(vw - ancho, 0)) + "px";
+    win.style.top = Math.min(Math.max(y, 0), Math.max(vh - 48, 0)) + "px";
+    win.style.width = ancho + "px";
+    win.style.height = "";
+  }
+
+  function anclar(win) {
+    win.classList.remove("is-floating");
+    win.style.left = "";
+    win.style.top = "";
+    win.style.width = "";
+    win.style.height = "";
+    win.style.zIndex = "";
+  }
+
+  function expandir(win) {
+    var escenario = document.querySelector(".ph-stage");
+    var r = escenario
+      ? escenario.getBoundingClientRect()
+      : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    win.classList.add("is-floating");
+    win.style.left = r.left + 8 + "px";
+    win.style.top = r.top + 8 + "px";
+    win.style.width = Math.max(r.width - 16, 200) + "px";
+    win.style.height = Math.max(r.height - 16, 160) + "px";
+  }
+
+  function rotular(boton, activo, siActivo, siNo, nombre) {
+    if (!boton) return;
+    boton.setAttribute("aria-pressed", activo ? "true" : "false");
+    boton.setAttribute("aria-label", (activo ? siActivo : siNo) + " " + nombre);
+  }
+
+  function pintar(win) {
+    if (win.hidden) return;
+    var e = estado[win.id] || {};
+    var nombre = win.getAttribute("data-win") || "";
+    win.classList.toggle("is-min", !!e.min);
+    win.classList.toggle("is-max", !!e.max);
+    rotular(win.querySelector("[data-win-min]"), !!e.min, "Restaurar", "Minimizar", nombre);
+    rotular(win.querySelector("[data-win-max]"), !!e.max, "Restaurar", "Expandir", nombre);
+    if (e.max) {
+      expandir(win);
+      alFrente(win);
+    } else if (typeof e.x === "number" && !angosto.matches) {
+      flotar(win, e.x, e.y, e.w);
+      if (!win.style.zIndex) alFrente(win);
+    } else {
+      anclar(win);
+    }
+  }
+
+  function pintarTodas() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-win]"), pintar);
+  }
+
+  document.addEventListener("click", function (ev) {
+    var boton = ev.target.closest("[data-win-min], [data-win-max]");
+    if (!boton) return;
+    var win = boton.closest("[data-win]");
+    if (!win) return;
+    var e = de(win);
+    if (boton.hasAttribute("data-win-min")) {
+      e.min = !e.min;
+      if (e.min) e.max = false;
+    } else {
+      e.max = !e.max;
+      if (e.max) e.min = false;
+    }
+    guardar();
+    pintar(win);
+  });
+
+  document.addEventListener("dblclick", function (ev) {
+    var barra = ev.target.closest("[data-win-handle]");
+    if (!barra || ev.target.closest("a, button")) return;
+    var win = barra.closest("[data-win]");
+    if (!win) return;
+    var e = de(win);
+    e.max = !e.max;
+    if (e.max) e.min = false;
+    guardar();
+    pintar(win);
+  });
+
+  document.addEventListener("pointerdown", function (ev) {
+    var flotante = ev.target.closest("[data-win].is-floating");
+    if (flotante) alFrente(flotante);
+
+    var barra = ev.target.closest("[data-win-handle]");
+    if (!barra || ev.button !== 0 || angosto.matches || ev.target.closest("a, button")) return;
+    var win = barra.closest("[data-win]");
+    if (!win || win.classList.contains("is-max")) return;
+    var r = win.getBoundingClientRect();
+    var dx = ev.clientX - r.left;
+    var dy = ev.clientY - r.top;
+    var x0 = ev.clientX;
+    var y0 = ev.clientY;
+    var arrastrando = false;
+    barra.setPointerCapture(ev.pointerId);
+
+    function mover(m) {
+      if (!arrastrando) {
+        /* Umbral: un clic sin mover no despega la ventana de su pila. */
+        if (Math.abs(m.clientX - x0) + Math.abs(m.clientY - y0) < 5) return;
+        arrastrando = true;
+        win.classList.add("is-dragging");
+        alFrente(win);
+      }
+      flotar(win, m.clientX - dx, m.clientY - dy, r.width);
+    }
+
+    function soltar() {
+      barra.removeEventListener("pointermove", mover);
+      barra.removeEventListener("pointerup", soltar);
+      barra.removeEventListener("pointercancel", soltar);
+      if (!arrastrando) return;
+      win.classList.remove("is-dragging");
+      var e = de(win);
+      e.x = parseFloat(win.style.left);
+      e.y = parseFloat(win.style.top);
+      e.w = r.width;
+      guardar();
+    }
+
+    barra.addEventListener("pointermove", mover);
+    barra.addEventListener("pointerup", soltar);
+    barra.addEventListener("pointercancel", soltar);
+  });
+
+  /* htmx re-renderiza `#ph-live` entero: se reaplica el estado a los nodos nuevos. */
+  document.addEventListener("htmx:afterSettle", pintarTodas);
+  window.addEventListener("resize", pintarTodas);
+  if (angosto.addEventListener) angosto.addEventListener("change", pintarTodas);
+  pintarTodas();
+})();
+</script>
 {% endblock %}
