@@ -167,8 +167,8 @@
   .ph-menu-item:hover { background: var(--ph-accent-wash); color: var(--ph-accent); text-decoration: none; }
   .ph-menu-item.is-open { background: var(--ph-accent); color: var(--ph-on-accent); }
 
-  /* z-index 4: el tooltip de un chip tiene que pasar por encima de las pilas
-     de ventanas (z-index 2) que arrancan justo debajo del riel. */
+  /* z-index 4: el riel queda por encima de las pilas de ventanas (z-index 2)
+     que arrancan justo debajo, así el foco de un chip nunca queda tapado. */
   .ph-chip-rail {
     position: relative; z-index: 4;
     display: flex; flex-wrap: wrap; gap: .5rem;
@@ -188,29 +188,20 @@
     background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
   }
 
-  /* Chip de ícono: solo el ícono de Material Symbols. El nombre aparece como
-     tooltip al pasar por encima o con el foco del teclado; en pantalla táctil
-     lo dice el panel que se abre. Prendido, el mismo relleno de acento que un
-     chip de texto: el ícono es monocromo y toma el color del texto. */
-  .ph-chip-toggle.is-icon { position: relative; padding: .38rem .62rem; line-height: 1; }
+  /* Chip de ícono: el ícono de Material Symbols y, debajo, el nombre chico y
+     atenuado (opacidad .7) para que el ícono aproximado se entienda de un
+     vistazo. Forma de rectángulo redondeado y no de píldora: con dos líneas la
+     píldora se deforma. Prendido, el mismo relleno de acento que un chip de
+     texto; el ícono es monocromo y toma el color del texto. */
+  .ph-chip-toggle.is-icon {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 3px;
+    min-width: 3.5rem; padding: .4rem .6rem .35rem; border-radius: var(--m3-radius-md);
+    line-height: 1;
+  }
   .ph-chip-icon { display: block; font-size: 22px; }
+  .ph-chip-name { font-size: 10.5px; font-weight: 500; letter-spacing: .01em; white-space: nowrap; opacity: .7; }
+  .ph-chip-toggle.is-icon.is-active .ph-chip-name { opacity: .9; }
   .ph-fpanel-icon { font-size: 20px; color: var(--ph-accent); align-self: center; }
-  .ph-chip-toggle[data-label]::after {
-    content: attr(data-label);
-    position: absolute; left: 50%; top: calc(100% + 6px);
-    transform: translate(-50%, -2px);
-    padding: .3rem .6rem; border-radius: 6px;
-    background: var(--m3-on-surface); color: var(--m3-surface);
-    font: 500 .75rem/1.2 var(--m3-font); letter-spacing: .01em; white-space: nowrap;
-    box-shadow: var(--m3-elev-2);
-    opacity: 0; pointer-events: none;
-    transition: opacity .12s ease, transform .12s ease;
-  }
-  .ph-chip-toggle[data-label]:hover::after,
-  .ph-chip-toggle[data-label]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
-  @media (prefers-reduced-motion: reduce) {
-    .ph-chip-toggle[data-label]::after { transition: none; }
-  }
 
   /* El escenario: el mapa llena lo que queda; ventanas, paneles, leyenda y
      crédito flotan encima. */
@@ -456,12 +447,13 @@
      Ninguno prendido = se muestran todos. #}
   {% if product_chips %}
   <nav class="ph-chip-rail" aria-label="Productos">
-    {# Con ícono, el chip muestra solo el ícono; el nombre va como etiqueta
-       accesible y como tooltip al pasar por encima o con el foco del teclado.
-       Un producto sin ícono asignado sigue mostrando su nombre. #}
+    {# Con ícono, el chip muestra el ícono y debajo el nombre, chico y atenuado:
+       los íconos de Material son aproximados (solo `rice_bowl` es exacto) y el
+       nombre visible es lo que los hace legibles de un vistazo. El nombre es
+       además el nombre accesible del enlace. Sin ícono, solo el nombre. #}
     {% for chip in product_chips -%}
     {% if chip.icon -%}
-    <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}" aria-label="{{ chip.label }}" data-label="{{ chip.label }}"><span class="m3-icon ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span></a>
+    <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}"><span class="m3-icon ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span><span class="ph-chip-name">{{ chip.label }}</span></a>
     {%- else -%}
     <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
     {%- endif %}
