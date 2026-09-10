@@ -78,11 +78,7 @@ def main() -> None:
         if MANIFEST_PATH.exists()
         else set()
     )
-    # Interfaz = marcas de la cola de curaduría + íconos de producto de los
-    # chips de la home pública (`product_nav.PRODUCT_ICONS`).
-    from saimc.web.product_nav import PRODUCT_ICONS
-
-    del_ui = set("".join(QUEUE_EMOJI)) | set("".join(PRODUCT_ICONS.values()))
+    del_ui = set("".join(QUEUE_EMOJI))
     codepoints = sorted(previos | del_ui)
     print(
         f"{len(codepoints)} code points a subsetear "

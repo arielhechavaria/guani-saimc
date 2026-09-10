@@ -121,7 +121,31 @@ a:hover { color: var(--m3-primary); text-decoration: underline; }
 ::selection { background: var(--m3-surface-container-high); }
 
 /* Roboto, Roboto Mono y Alice vendorizadas en /static/fonts, subset latin.
-   Material Symbols queda fuera: ninguna vista pública usa iconos todavía. */
+   Material Symbols Rounded también: los chips de producto de la home usan sus
+   ligaduras (`product_nav.PRODUCT_ICONS`). Es el mismo archivo subseteado que
+   sirve la capa del operador; se regenera con `python tools/build_icon_font.py`
+   y el `?v=` sube cada vez que cambia el subconjunto. */
+@font-face {
+  font-family: "Material Symbols Rounded";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("/static/fonts/material-symbols-rounded.woff2?v=3") format("woff2");
+}
+
+.m3-icon {
+  font-family: "Material Symbols Rounded";
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  font-feature-settings: "liga";
+  -webkit-font-feature-settings: "liga";
+  vertical-align: middle;
+  user-select: none;
+}
 @font-face {
   font-family: "Roboto";
   font-style: normal;

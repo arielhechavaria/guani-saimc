@@ -7494,3 +7494,29 @@ y 🫒 para aceite (el aceite cubano es sobre todo de soya o girasol); se cambia
 tocando una línea del mapa y corriendo la herramienta. Un producto nuevo que
 pase a piloto aparece con su nombre hasta que alguien le asigne ícono. Suite:
 1514 pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Íconos de producto de Material Symbols, no emoji
+Reemplaza a la entrada anterior («Chips de producto con ícono solo»).
+Contexto: el operador aclaró que el proyecto está comprometido con Material, y
+esperaba íconos de Material Symbols, no emoji.
+Decisión: `PRODUCT_ICONS` pasa a nombres de ligadura de Material Symbols
+Rounded. Verificado contra los 4.239 íconos del catálogo: solo el arroz tiene
+uno propio (`rice_bowl`); el resto es la aproximación más cercana —pollo
+`yakitori` (el único etiquetado «grilled chicken»), picadillo `skillet`,
+azúcar `grain` (granulado), aceite `water_drop`—. El nombre sigue como tooltip y
+etiqueta accesible. La hoja pública declara ahora Material Symbols y `.m3-icon`
+(antes quedaba afuera: ninguna vista pública usaba íconos); es el mismo archivo
+subseteado que el del operador. `tools/build_icon_font.py` suma
+`PRODUCT_ICONS` a los íconos que junta de las plantillas; subconjunto regenerado
+(38 íconos, 12.508 B) y `?v=` de la fuente subido a 3 en las dos hojas. Prendido,
+el chip usa el relleno de acento de siempre: el ícono es monocromo. Se revirtió
+lo del emoji: la fuente de Noto vuelve a la de `c9b6b68` y
+`build_emoji_font.py` a su vocabulario original; el tripwire de íconos de
+producto ahora mira el manifiesto de Material Symbols.
+Descartado: mantener los emoji —Noto Color Emoji es la fuente de emoji de la
+familia Material/Android y cubre mejor los alimentos, pero no es la
+iconografía de Material—. Descartado dibujar íconos propios: rompe la
+coherencia con el resto de la interfaz.
+Consecuencia: cuatro de cinco íconos son aproximaciones; si alguno no se
+entiende, se cambia en una línea del mapa y corriendo `build_icon_font.py`.
+Suite: 1514 pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
