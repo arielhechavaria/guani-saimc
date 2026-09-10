@@ -648,6 +648,17 @@ class TestVentanasArrastrables:
         assert 'data-win="Precios" id="precios"' in texto
         assert 'id="ph-panel-arroz"' in texto
 
+    def test_cada_ventana_tiene_agarres_para_redimensionar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz&ver=precios").text
+
+        # 3 ventanas del menú + 1 panel: borde derecho, inferior y esquina.
+        for direccion in ("e", "s", "se"):
+            assert texto.count(f'data-win-grip="{direccion}"') == 4
+
     def test_el_script_de_ventanas_viaja_en_la_pagina(
         self, client: TestClient, session: Session
     ) -> None:
