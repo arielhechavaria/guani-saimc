@@ -293,19 +293,42 @@ def build_province_nav(
     return choices
 
 
+#: Ícono de cada producto piloto en los chips de la home, por slug. Solo
+#: presentación: vive en código y no en `products` para no tocar el esquema
+#: (CLAUDE.md: un cambio de esquema pide el flujo de especificación completo).
+#: Un producto sin entrada sigue mostrando su nombre. Cada emoji tiene que estar
+#: en el subconjunto vendorizado de Noto Color Emoji —lo verifica
+#: `test_static_assets.py` y lo suma `tools/build_emoji_font.py`—, o se vería
+#: distinto en cada teléfono.
+PRODUCT_ICONS: dict[str, str] = {
+    "arroz": "🍚",
+    "pollo": "🍗",
+    "picadillo": "🥩",
+    "azucar-blanca": "🍬",
+    "aceite": "🫒",
+}
+
+
+def product_icon(name: str) -> str | None:
+    """El ícono del producto, o `None` si no tiene uno asignado."""
+    return PRODUCT_ICONS.get(product_slug(name))
+
+
 @dataclass(frozen=True)
 class ProductChip:
     """Un interruptor de producto del riel flotante sobre el mapa.
 
     `query` es el estado resultante de togglear ESTE chip —prenderlo si está
-    apagado, apagarlo si está prendido—, preservando provincia y ventana. Sin
-    htmx todavía (slice 2): cada chip es un enlace de página completa.
+    apagado, apagarlo si está prendido—, preservando provincia y ventana.
+    `icon`, si el producto tiene uno, reemplaza al nombre en el chip; el
+    nombre queda como etiqueta accesible y como tooltip al pasar por encima.
     """
 
     label: str
     slug: str
     is_active: bool
     query: str
+    icon: str | None = None
 
 
 def build_product_chips(
@@ -339,6 +362,7 @@ def build_product_chips(
                 label=name,
                 slug=slug,
                 is_active=is_active,
+                icon=product_icon(name),
                 query=products_query(
                     resultado, provincia=prov_slug, dias=selected_days, ver=ver
                 ),
