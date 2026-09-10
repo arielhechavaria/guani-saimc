@@ -9,7 +9,7 @@ herramienta del operador.
 
 import importlib.util
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
@@ -245,7 +245,21 @@ class TestRutaPublica:
 class TestEnlaceDeEvidenciaEnLaSerie:
     """Transparency Layer (docs/decisions.md, 2026-08-25): cada punto del
     gráfico de evolución es un anuncio real, y solo el de evidencia de texto
-    puede enlazar a `/anuncio/{id}` — el de imagen no publica (§10.6)."""
+    puede enlazar a `/anuncio/{id}` — el de imagen no publica (§10.6).
+
+    Las fechas van RELATIVAS a hoy. La versión original fijaba 2026-08-10 y
+    2026-08-12, que el 2026-08-25 caían cómodas dentro de la ventana por
+    defecto de 30 días (`product_nav.DEFAULT_WINDOW_DAYS`) y el 2026-09-10
+    dejaron de caer: `build_series` recorta con `hoy - timedelta(days=30)`, así
+    que el gráfico se quedó con un punto y el enlace desapareció. El test de
+    texto se puso rojo solo, por el calendario, y el de imagen pasó a estar
+    verde por la razón equivocada — no había enlace que ocultar.
+
+    `tests/test_public_filter.py` ya traía la lección en su helper `_hace()`:
+    todo test que pegue a la vista pública fecha relativo a hoy, nunca duro.
+    `tests/test_series_view.py` resuelve lo mismo por el otro lado, pasándole
+    un `hoy=` explícito a `build_series`.
+    """
 
     def _ingestion(
         self, session: Session, *, hash_: str, content_type: str
@@ -295,8 +309,9 @@ class TestEnlaceDeEvidenciaEnLaSerie:
         session.add_all([arroz, habana])
         session.commit()
         origen = self._ingestion(session, hash_="hash-texto", content_type=ContentType.TEXT)
-        self._precio(session, product=arroz, province=habana, source=origen, dia=date(2026, 8, 10))
-        self._precio(session, product=arroz, province=habana, source=origen, dia=date(2026, 8, 12))
+        hoy = date.today()
+        self._precio(session, product=arroz, province=habana, source=origen, dia=hoy - timedelta(days=3))
+        self._precio(session, product=arroz, province=habana, source=origen, dia=hoy - timedelta(days=1))
         session.commit()
 
         texto = client.get("/").text
@@ -311,8 +326,9 @@ class TestEnlaceDeEvidenciaEnLaSerie:
         session.add_all([arroz, habana])
         session.commit()
         origen = self._ingestion(session, hash_="hash-imagen", content_type=ContentType.IMAGE)
-        self._precio(session, product=arroz, province=habana, source=origen, dia=date(2026, 8, 10))
-        self._precio(session, product=arroz, province=habana, source=origen, dia=date(2026, 8, 12))
+        hoy = date.today()
+        self._precio(session, product=arroz, province=habana, source=origen, dia=hoy - timedelta(days=3))
+        self._precio(session, product=arroz, province=habana, source=origen, dia=hoy - timedelta(days=1))
         session.commit()
 
         texto = client.get("/").text

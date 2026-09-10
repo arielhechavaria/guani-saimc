@@ -47,3 +47,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# La raíz del repo en `sys.path`, para que `from tests.test_cells import ...`
+# resuelva. `tests/` no es un paquete (no tiene `__init__.py`), así que sin
+# esto el import solo funciona con `python -m pytest` —que agrega el CWD por su
+# cuenta— y revienta en el colector con `.venv/bin/pytest`, que es el comando
+# documentado. Los dos tienen que andar.
+pythonpath = ["."]
