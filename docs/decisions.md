@@ -7199,3 +7199,29 @@ dibujaba por la ventana, no por §10.6. Regla que queda: todo test que pegue a
 la vista pública fecha relativo a hoy (`_hace()` en `test_public_filter.py`) o
 le pasa un `hoy=` explícito a `build_series` (`test_series_view.py`), nunca una
 fecha dura.
+
+## 2026-09-10 — El test de la franja de estado declara su premisa en vez de heredarla del `.env`
+Contexto: `test_control.py::TestFranjaDeEstado::test_sin_waha_configurado_no_pinta_nada_roto`
+fallaba en el checkout del operador y pasaba en cualquier worktree. No aislaba
+los settings del `.env` del cwd: su premisa es «sin WAHA configurado», pero el
+`.env` real tiene `SAIMC_WAHA_BASE_URL`, así que WAHA quedaba
+configurado-e-inalcanzable, `build_strip` lo ponía en `down` y la franja salía
+roja. Estaba detectado desde el 2026-09-07 y anotado como preexistente fuera de
+alcance; quedó invisible hasta hoy porque el colector abortaba antes de llegar
+(ver la entrada de `pythonpath` de esta misma fecha). Arreglar la colección no
+lo causó: lo destapó.
+Decisión: el test declara su premisa con `monkeypatch.setattr(control,
+"session_health", ...)` devolviendo `SessionHealth(configured=False,
+status="unknown")` —la forma exacta que produce `whatsapp_health` cuando falta
+la configuración—, igual que ya hace su hermano `test_waha_caido_pone_el_banner_rojo`.
+Descartado: `monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "")` + `cache_clear()`.
+Funciona, pero deja el aislamiento atado a cómo pydantic-settings interpreta la
+cadena vacía y a limpiar una caché global que los tests vecinos ya ensucian sin
+restaurarla. Declarar el estado de salud es más directo y no depende del
+entorno en absoluto.
+Consecuencia: la suite da igual con `.env` y sin él — 1463 pasan, 1 salta, 0
+fallan, verificado corriéndola con `SAIMC_WAHA_BASE_URL` puesto y sin poner.
+Regla que queda: un test que afirme «X no está configurado» declara el estado,
+nunca lo hereda del entorno. Y verificar la suite con las variables del
+operador puestas, no solo en un worktree limpio, que es lo que hizo que esto
+tardara tres días en verse.

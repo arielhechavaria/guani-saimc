@@ -1459,10 +1459,27 @@ class TestFranjaDeEstado:
         assert "WhatsApp" in texto
 
     def test_sin_waha_configurado_no_pinta_nada_roto(
-        self, client: TestClient
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Sin `waha_base_url` la capacidad está apagada, no rota. El panel no
-        puede gritar por algo que el operador no usa."""
+        puede gritar por algo que el operador no usa.
+
+        La premisa se declara acá, con la misma forma que devuelve
+        `whatsapp_health.session_health` cuando falta la configuración
+        (`configured=False, status="unknown"`). Antes se dejaba a merced del
+        `.env` del cwd, y eso lo volvía un test de dos resultados: verde en un
+        worktree limpio, **rojo siempre en el checkout del operador**, cuyo
+        `.env` sí tiene `SAIMC_WAHA_BASE_URL` — WAHA quedaba
+        configurado-e-inalcanzable, `build_strip` lo ponía en `down` y la
+        franja salía roja. Detectado el 2026-09-07 y anotado como preexistente;
+        se veía solo al correr la suite desde el checkout.
+        """
+        monkeypatch.setattr(
+            control,
+            "session_health",
+            lambda **kw: SessionHealth(configured=False, status="unknown"),
+        )
+
         texto = client.get("/control").text
 
         assert "m3-health-banner is-down" not in texto
