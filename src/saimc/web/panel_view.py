@@ -14,6 +14,7 @@ desambigua.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -67,12 +68,14 @@ def build_product_panels(
     *,
     selected_province: str = "",
     selected_days: int = DEFAULT_WINDOW_DAYS,
+    ver: Sequence[str] = (),
 ) -> list[ProductPanel]:
     """Un panel por producto activo, en el orden de activación.
 
     Un producto activo sin ninguna tarjeta en la ventana entra igual, con
     `count=0`: el panel dice que no hay dato y ofrece cerrarlo, en vez de
-    desaparecer sin explicación.
+    desaparecer sin explicación. `ver` (las ventanas abiertas del menú) viaja
+    en el `close_query` para que cerrar un panel no cierre ventanas.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_products]
@@ -93,6 +96,7 @@ def build_product_panels(
             [s for s in active_slugs if s != this_slug],
             provincia=prov_slug,
             dias=selected_days,
+            ver=ver,
         )
         if not pcards:
             panels.append(

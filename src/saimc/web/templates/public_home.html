@@ -4,9 +4,9 @@
    vista previa del enlace muestran el producto, no un genérico. #}
 {% block title %}{% if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %} — precios{% else %}Precios y cobertura{% endif %}{% endblock %}
 
-{# El encabezado del shell (`.m3-public-top`) se oculta por CSS en este bloque:
-   el <h1> y el subtítulo viven en el overlay del lienzo a pantalla completa
-   (`.ph-canvas`), no arriba de él. #}
+{# El encabezado y el pie del shell se ocultan por CSS en esta vista: la página
+   entera es el mapa. El <h1> vive en la barra superior del lienzo y el crédito
+   del mapa en su esquina. #}
 {% block heading %}{% endblock %}
 {% block subtitle %}{% endblock %}
 
@@ -15,68 +15,35 @@
   /* Van acá y no en una hoja aparte mientras sea la única vista pública: son
      pocas reglas, viajan gzipeadas con el HTML y no suman una petición.
 
-     Paleta y tratamiento de este rediseño (docs/decisions.md, redesign
-     `redesing/saimc_desing_root_page/`): custom properties con prefijo `--ph-`
-     (page: home pública), separadas a propósito de los tokens `--m3-*` de
-     `saimc-public.css`. Esos tokens también los usa toda la herramienta del
-     operador vía `saimc-material.css` (catálogo/curaduría/control); esta
-     paleta es solo de esta página y no reemplaza `--m3-primary` en ningún
-     lado. */
+     Paleta: custom properties `--ph-*` (public home) de `design_tokens.css`,
+     separadas de los `--m3-*` que usa también la herramienta del operador. */
 
-  .m3-public { max-width: 72rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-  .m3-public-foot { margin-top: 2.5rem; font-size: .8125rem; opacity: .75; }
-  .m3-public-foot p { margin: .35rem 0; }
-
-  .ph-h2 { margin: 0; font-family: var(--ph-font-heading); font-weight: 400;
-           font-size: 1.75rem; }
-
-  /* ── Cobertura: tarjeta clara, tokens Material ────────────────────── */
-  .ph-hero { position: relative; overflow: hidden; border-radius: var(--ph-radius-lg);
-             background: var(--m3-surface); box-shadow: var(--ph-elev);
-             padding: 1.75rem 1.5rem 2rem; margin-bottom: 2.5rem; }
-  .ph-hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
-    background-image:
-      linear-gradient(var(--m3-divider) 1px, transparent 1px),
-      linear-gradient(90deg, var(--m3-divider) 1px, transparent 1px);
-    background-size: 44px 44px; }
-  .ph-hero > * { position: relative; }
-
-  .ph-nav { display: flex; flex-wrap: wrap; gap: 1.25rem; margin: 0 0 1.5rem;
-            padding-bottom: 1rem; border-bottom: 1px solid var(--m3-outline-variant);
-            font-size: .8125rem; letter-spacing: .08em; text-transform: uppercase; }
-  .ph-nav a { color: var(--m3-on-surface-variant); }
-  .ph-nav a:hover { color: var(--ph-accent); text-decoration: none; }
-
-  .ph-stats { display: grid; gap: .75rem; margin-bottom: 1.5rem;
-              grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
-  /* Las dos superficies de la página: `.ph-surface` es la elevada (tarjeta de
-     precio, serie, tabla) y `.ph-inset` la hundida (stat, panel del hero).
-     Estaban escritas cinco veces con los mismos tres valores cada una. */
+  /* ── Superficies y piezas compartidas ──────────────────────────────── */
   .ph-surface { border-radius: var(--ph-radius-sm); background: var(--m3-surface);
                 box-shadow: var(--ph-elev); }
   .ph-inset { border-radius: var(--ph-radius-sm); background: var(--m3-surface-container);
               border: 1px solid var(--m3-outline-variant); }
 
-  .ph-stat { padding: .8rem 1rem; }
+  .ph-stats { display: grid; gap: .6rem;
+              grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
+  .ph-stat { padding: .7rem .85rem; }
   .ph-stat-label { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
                    color: var(--m3-on-surface-variant); }
-  .ph-stat-value { margin-top: .2rem; font-family: var(--ph-font-heading); font-size: 1.75rem;
+  .ph-stat-value { margin-top: .2rem; font-family: var(--ph-font-heading); font-size: 1.5rem;
                    line-height: 1.1; color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
-  .ph-stat-value small { font-size: 1rem; color: var(--m3-on-surface-variant); }
+  .ph-stat-value small { font-size: .95rem; color: var(--m3-on-surface-variant); }
 
   .ph-map { width: 100%; height: auto; display: block; }
-  .ph-map-province { stroke-width: 1.1; stroke-linejoin: round;
-                      transition: fill .15s ease; }
+  .ph-map-province { stroke-width: 1.1; stroke-linejoin: round; }
   .ph-map-province.is-publicada { fill: var(--m3-primary-container); stroke: var(--m3-primary); }
   .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: var(--ph-accent-2-line); }
   .ph-map-province.is-sin-datos { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); }
-  .ph-map-province:hover { fill: var(--ph-accent); stroke: var(--ph-accent); }
 
-  .ph-panel { padding: 1rem 1.1rem; }
+  .ph-panel { padding: .9rem 1rem; }
   .ph-panel-title { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
-                     color: var(--ph-accent); padding-bottom: .6rem;
-                     border-bottom: 1px solid var(--m3-outline-variant); margin-bottom: .7rem; }
-  .ph-legend { display: grid; gap: .5rem; padding: 0; margin: 0; list-style: none;
+                     color: var(--ph-accent); padding-bottom: .55rem;
+                     border-bottom: 1px solid var(--m3-outline-variant); margin-bottom: .65rem; }
+  .ph-legend { display: grid; gap: .45rem; padding: 0; margin: 0; list-style: none;
                font-size: .8125rem; color: var(--m3-on-surface-variant); }
   .ph-legend li { display: flex; align-items: center; gap: .55rem; }
   .ph-swatch { width: 1rem; height: .65rem; border-radius: .2rem; flex: none; }
@@ -93,67 +60,45 @@
   .ph-conc-fill { display: block; height: 6px; background: var(--ph-accent-2); border-radius: 3px; }
   .ph-conc-n { text-align: right; font-variant-numeric: tabular-nums; color: var(--m3-on-surface); }
 
-  .ph-panels { display: grid; gap: 1rem; margin-top: 1rem;
-               grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+  .ph-note { margin: 0; font-size: .8125rem; line-height: 1.6;
+             color: var(--m3-on-surface-variant); text-wrap: pretty; }
 
-  .ph-hero-note { margin: 1.25rem 0 0; max-width: 72ch; font-size: .875rem; line-height: 1.6;
-                  color: var(--m3-on-surface-variant); text-wrap: pretty; }
-
-  /* ── Secciones claras: precios y series ──────────────────────────── */
-  .ph-section { margin: 0 0 2.5rem; }
-  .ph-section-head { display: flex; align-items: baseline; justify-content: space-between;
-                      gap: 1.5rem; padding-bottom: .8rem; margin-bottom: 1.25rem;
-                      border-bottom: 1px solid var(--m3-outline-variant); }
-  .ph-section-tag { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase;
-                     opacity: .65; white-space: nowrap; }
-
-  /* Fluida, no `repeat(3, 1fr)`: con columnas fijas, entre 700 y 900px de
-     ancho entraban tres tarjetas de 211-278px y la cifra de precio no
-     respiraba. `auto-fit` da 3 en escritorio (idéntico), 2 en tablet y 1 en
-     teléfono, sin necesidad de un corte responsive propio. */
-  .ph-cards { display: grid; gap: 1.1rem; padding: 0; margin: 0 0 1.25rem; list-style: none;
-              grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
-  .ph-card { padding: 1.1rem 1.2rem 1rem; }
+  /* Tarjetas de precio: `auto-fit` + `minmax` se acomoda solo al ancho de la
+     ventana flotante, sin corte responsive propio. */
+  .ph-cards { display: grid; gap: .8rem; padding: 0; margin: 0; list-style: none;
+              grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+  .ph-card { padding: 1rem 1.1rem .9rem; }
   .ph-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
-  .ph-card-product { font-family: var(--ph-font-heading); font-size: 1.375rem; }
+  .ph-card-product { font-family: var(--ph-font-heading); font-size: 1.25rem; }
   .ph-card-place { font-size: .6875rem; letter-spacing: .1em; text-transform: uppercase; opacity: .65; }
-  .ph-card-range { display: flex; align-items: baseline; gap: .4rem; margin-top: .9rem;
+  .ph-card-range { display: flex; align-items: baseline; gap: .4rem; margin-top: .8rem;
                    font-variant-numeric: tabular-nums; }
-  .ph-card-range .num { font-family: var(--ph-font-heading); font-size: 1.85rem; line-height: 1;
+  .ph-card-range .num { font-family: var(--ph-font-heading); font-size: 1.65rem; line-height: 1;
                          color: var(--ph-accent); }
   .ph-card-range .sep { opacity: .45; font-size: 1.1rem; }
   .ph-card-unit { font-size: .75rem; opacity: .65; }
   .ph-card-median { margin-top: .45rem; font-size: .8125rem; opacity: .75; }
   .ph-card-sample { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
-                     margin-top: .9rem; padding-top: .7rem; border-top: 1px solid var(--m3-divider); }
+                     margin-top: .8rem; padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
   .ph-card-n { font-weight: 600; font-variant-numeric: tabular-nums; }
   .ph-chip { flex: none; white-space: nowrap; font-size: .6875rem; letter-spacing: .04em;
              text-transform: uppercase; padding: .3rem .75rem; border-radius: 999px;
              background: var(--ph-accent-wash); color: var(--ph-accent); }
 
-  /* ── Barra de filtro por producto ───────────────────────────────── */
-  .ph-filter { display: flex; flex-wrap: wrap; gap: .5rem; padding: 0; margin: 0 0 1.25rem;
-               list-style: none; }
+  .ph-filter { display: flex; flex-wrap: wrap; gap: .45rem; padding: 0; margin: 0; list-style: none; }
   .ph-filter a { display: block; font-size: .75rem; letter-spacing: .04em;
-                 text-transform: uppercase; padding: .35rem .85rem; border-radius: 999px;
+                 text-transform: uppercase; padding: .35rem .8rem; border-radius: 999px;
                  border: 1px solid var(--m3-outline-variant); color: var(--m3-on-surface-variant); }
-  .ph-filter a:hover { border-color: var(--ph-accent); color: var(--ph-accent);
-                       text-decoration: none; }
+  .ph-filter a:hover { border-color: var(--ph-accent); color: var(--ph-accent); text-decoration: none; }
   .ph-filter a.is-selected { background: var(--ph-accent); border-color: var(--ph-accent);
                              color: var(--ph-on-accent); }
-  /* Filas 2 y 3 (provincia y ventana): pegadas a la de producto. La de
-     ventana además más discreta. */
-  .ph-filter-province { margin-top: -.5rem; }
-  .ph-filter-window { margin-top: -.5rem; font-size: .9em; }
+  .ph-filter-window { font-size: .9em; }
   .ph-empty { margin: 0; font-size: .9375rem; color: var(--m3-on-surface-variant); }
-  .ph-download { margin: 1rem 0 0; font-size: .875rem; color: var(--m3-on-surface-variant); }
+  .ph-download { margin: 0; font-size: .875rem; color: var(--m3-on-surface-variant); }
   .ph-download a { color: var(--ph-accent); font-weight: 600; }
-  .ph-freshness { margin: 0 0 1.25rem; font-size: .8125rem; letter-spacing: .02em;
-                  color: var(--m3-on-surface-variant); }
 
-  .ph-series { display: grid; gap: 1.1rem; padding: 0; margin: 0; list-style: none;
-               grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
-  .ph-serie { padding: 1rem 1.1rem .9rem; }
+  .ph-series { display: grid; gap: .8rem; padding: 0; margin: 0; list-style: none; }
+  .ph-serie { padding: .9rem 1rem .8rem; }
   .ph-serie-head { display: flex; align-items: baseline; justify-content: space-between;
                     gap: .75rem; margin-bottom: .5rem; }
   .ph-serie-title { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
@@ -162,94 +107,70 @@
   .ph-plot-band { fill: var(--ph-accent-2); opacity: .1; }
   .ph-plot-median { stroke: var(--ph-median); stroke-width: 1.4; stroke-dasharray: 4 3; opacity: .8; }
   .ph-plot-axis { stroke: var(--m3-outline-variant); stroke-width: 1; }
-  .ph-plot-dot { fill: var(--ph-accent); }
+  .ph-plot-dot { fill: var(--ph-accent); animation: ph-dot-in .4s cubic-bezier(.2, .8, .2, 1) both; }
   .ph-plot-dot.is-linked { cursor: pointer; }
   .ph-plot-dot.is-linked:hover { fill: var(--ph-accent-2); }
   .ph-plot-label { font-size: 11px; fill: currentColor; opacity: .55; }
   .ph-serie-foot { margin: .55rem 0 0; font-size: .75rem; opacity: .75; }
+  @keyframes ph-dot-in { from { opacity: 0; } to { opacity: 1; } }
 
-  /* ── Tabla de cobertura accesible (respaldo del mapa) ───────────── */
-  .ph-table-card { overflow: hidden; margin-top: 1.5rem; }
-  .ph-coverage { width: 100%; border-collapse: collapse; font-size: .9375rem; }
-  .ph-coverage caption { text-align: left; padding: 1rem 1.2rem 0; }
-  .ph-coverage th, .ph-coverage td { text-align: left; padding: .55rem .8rem;
+  /* Tabla accesible: scrollea sola dentro de la ventana si no entra. */
+  .ph-table-card { overflow-x: auto; }
+  .ph-coverage { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  .ph-coverage caption { text-align: left; padding: .9rem 1rem 0; font-size: .8125rem;
+                         color: var(--m3-on-surface-variant); }
+  .ph-coverage th, .ph-coverage td { text-align: left; padding: .5rem .7rem;
                  border-bottom: 1px solid var(--m3-divider); }
-  .ph-coverage th:last-child, .ph-coverage td:last-child { padding-right: 1.2rem; }
-  .ph-coverage th:first-child, .ph-coverage td:first-child { padding-left: 1.2rem; }
+  .ph-coverage th:last-child, .ph-coverage td:last-child { padding-right: 1rem; }
+  .ph-coverage th:first-child, .ph-coverage td:first-child { padding-left: 1rem; }
   .ph-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .ph-coverage tr.is-sin-datos { opacity: .55; }
 
-  /* ══ Slice 1 — el mapa es el lienzo a pantalla completa ══════════════
-     El <h1> y la leyenda viven en el overlay del lienzo; el encabezado
-     del shell se oculta. El lienzo rompe el ancho del contenedor centrado
-     del shell con un margen negativo y ocupa 100dvh. Todo lo que hoy sigue
-     abajo queda igual, a un scroll: los slices 2–5 lo van reemplazando por
-     capas sobre el mapa. */
-  .m3-public-top { display: none; }
-  .m3-public { overflow-x: clip; }
+  /* ══ La página ES el mapa ═════════════════════════════════════════════
+     `100dvh` sin scroll: barra superior con el menú, riel de chips, y el
+     escenario del mapa ocupando el resto. Todo lo que antes estaba abajo
+     (cobertura, precios, evolución) se abre como ventana flotante desde el
+     menú. El encabezado y el pie del shell no se muestran acá. */
+  .m3-public-top, .m3-public-foot { display: none; }
+  .m3-public { max-width: none; margin: 0; padding: 0; }
 
   .ph-canvas {
     position: relative;
-    width: 100vw; margin-inline: calc(50% - 50vw); margin-top: -1.5rem;
-    min-height: 100vh; min-height: 100dvh;
-    display: grid; place-items: center;
-    padding: clamp(5rem, 14vh, 9rem) 6vw 4.5rem;
-    background: radial-gradient(ellipse at 50% 40%,
+    height: 100vh; height: 100dvh;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 45%,
       var(--m3-surface-hover) 0%, var(--m3-bg) 60%, var(--m3-surface-container-high) 100%);
-    overflow: hidden;
   }
-  .ph-canvas .ph-map {
-    width: 100%; max-width: 68rem; max-height: 76dvh;
-    filter: drop-shadow(var(--m3-elev-1));
-  }
-  .ph-canvas .ph-map-province { transition: fill .5s ease, stroke .5s ease; }
-  .ph-canvas .ph-map-province:hover { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); cursor: default; }
 
-  .ph-canvas-head {
-    position: absolute; left: 6vw; right: 6vw; top: clamp(1.25rem, 4vh, 2.5rem);
-    display: grid; gap: .3rem;
+  .ph-topbar {
+    position: relative; z-index: 3;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: .5rem 1.5rem; padding: .65rem clamp(1rem, 3vw, 2rem);
+    background: var(--m3-surface);
+    background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
+    box-shadow: var(--m3-elev-1);
   }
-  .ph-canvas-kicker { font-size: .6875rem; letter-spacing: .16em; text-transform: uppercase;
+  .ph-brand { display: grid; gap: .1rem; min-width: 0; }
+  .ph-canvas-kicker { font-size: .625rem; letter-spacing: .16em; text-transform: uppercase;
                       color: var(--ph-accent); }
   .ph-canvas-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400;
-                     font-size: clamp(1.6rem, 4.5vw, 2.4rem); line-height: 1.12; }
-  .ph-canvas-sub { margin: .1rem 0 0; font-size: .875rem; color: var(--m3-on-surface-variant); }
+                     font-size: clamp(1.15rem, 2.4vw, 1.55rem); line-height: 1.15; }
+  .ph-canvas-sub { margin: 0; font-size: .75rem; color: var(--m3-on-surface-variant); }
 
-  .ph-canvas-legend {
-    position: absolute; left: 6vw; bottom: clamp(3.25rem, 8vh, 4.5rem);
-    max-width: min(22rem, 70vw); padding: .85rem 1.05rem;
-    border-radius: var(--ph-radius-sm);
-    background: var(--m3-surface);
-    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
-    box-shadow: var(--ph-elev);
+  .ph-menu { display: flex; gap: .25rem; max-width: 100%; overflow-x: auto; }
+  .ph-menu-item {
+    flex: none; padding: .45rem .95rem; border-radius: var(--m3-radius-full);
+    font-size: .8125rem; font-weight: 500; white-space: nowrap;
+    color: var(--m3-on-surface-variant);
+    transition: background .2s ease, color .2s ease;
   }
-  .ph-canvas-legend .ph-legend { margin: 0; }
-  .ph-canvas-count { margin: .6rem 0 0; padding-top: .55rem;
-                     border-top: 1px solid var(--m3-outline-variant);
-                     font-size: .8125rem; color: var(--m3-on-surface-variant);
-                     font-variant-numeric: tabular-nums; }
+  .ph-menu-item:hover { background: var(--ph-accent-wash); color: var(--ph-accent); text-decoration: none; }
+  .ph-menu-item.is-open { background: var(--ph-accent); color: var(--ph-on-accent); }
 
-  .ph-canvas-scroll {
-    position: absolute; left: 50%; bottom: clamp(1rem, 3vh, 1.75rem);
-    transform: translateX(-50%);
-    display: inline-flex; align-items: center; gap: .4rem;
-    font-size: .8125rem; letter-spacing: .02em; color: var(--m3-on-surface-variant);
-    animation: ph-bob 2.4s ease-in-out infinite;
-  }
-  .ph-canvas-scroll:hover { color: var(--ph-accent); text-decoration: none; }
-  @keyframes ph-bob { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, 5px); } }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ph-canvas .ph-map-province { transition-duration: .01ms; }
-    .ph-canvas-scroll { animation: none; }
-  }
-
-  /* ── Slice 2 — riel de productos flotante sobre el mapa ──────────────
-     Chips toggle: enlace de página completa (sin htmx), activo = relleno
-     con el acento de la capa pública. Estado en `?productos=`. */
   .ph-chip-rail {
-    position: absolute; left: 6vw; right: 6vw; top: clamp(5.5rem, 16vh, 8.5rem);
-    display: flex; flex-wrap: wrap; gap: .5rem; z-index: 1;
+    position: relative; z-index: 2;
+    display: flex; flex-wrap: wrap; gap: .5rem;
+    padding: .7rem clamp(1rem, 3vw, 2rem) 0;
   }
   .ph-chip-toggle {
     font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
@@ -264,28 +185,84 @@
   .ph-chip-toggle.is-active {
     background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
   }
-  @media (prefers-reduced-motion: reduce) { .ph-chip-toggle { transition: none; } }
 
-  /* ── Slice 4 — paneles flotantes por producto activo ────────────────
-     Pila a la derecha sobre el mapa (escritorio); apilada bajo el mapa en
-     pantallas angostas. Acordeón nativo (`<details>`). */
-  .ph-panel-stack {
-    position: absolute; right: 6vw; top: clamp(5.5rem, 16vh, 8.5rem);
-    width: min(23rem, 42vw); max-height: 72dvh; overflow-y: auto;
-    display: grid; gap: .75rem; z-index: 2;
+  /* El escenario: el mapa llena lo que queda; ventanas, paneles, leyenda y
+     crédito flotan encima. */
+  .ph-stage {
+    position: relative; flex: 1; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: .75rem clamp(1rem, 3vw, 2rem) 2rem;
   }
-  .ph-fpanel-wrap { position: relative; }
-  .ph-fpanel {
+  .ph-stage .ph-map { height: 100%; max-width: 72rem; filter: drop-shadow(var(--m3-elev-1)); }
+  .ph-canvas .ph-map-province { transition: fill .35s ease, stroke .35s ease; cursor: pointer; }
+  .ph-canvas .ph-map-province:hover {
+    fill: color-mix(in srgb, var(--ph-accent) 24%, var(--m3-surface));
+    stroke: var(--ph-accent);
+  }
+
+  .ph-canvas-legend {
+    position: absolute; left: clamp(1rem, 3vw, 2rem); bottom: .75rem; z-index: 1;
+    max-width: min(20rem, 70vw); padding: .7rem .9rem;
+    border-radius: var(--ph-radius-sm);
+    background: var(--m3-surface);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    box-shadow: var(--ph-elev);
+  }
+  .ph-canvas-count { margin: .5rem 0 0; padding-top: .45rem;
+                     border-top: 1px solid var(--m3-outline-variant);
+                     font-size: .75rem; color: var(--m3-on-surface-variant);
+                     font-variant-numeric: tabular-nums; }
+  .ph-attrib { position: absolute; right: clamp(1rem, 3vw, 2rem); bottom: .5rem; z-index: 1;
+               margin: 0; font-size: .6875rem; color: var(--m3-on-surface-variant); }
+  .ph-attrib a { color: inherit; text-decoration: underline; }
+
+  /* ── Muelle de ventanas: izquierda las del menú, derecha los paneles de
+     producto. El muelle no captura clics; sus pilas sí. Cada pila scrollea
+     sola si no entra en la altura del escenario. */
+  .ph-dock {
+    position: absolute; inset: .75rem clamp(1rem, 3vw, 2rem) .75rem; z-index: 2;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+    pointer-events: none;
+  }
+  .ph-win-stack, .ph-panel-stack {
+    pointer-events: auto;
+    display: grid; gap: .75rem; align-content: start;
+    max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .ph-win-stack { width: min(30rem, 46vw); }
+  .ph-panel-stack { width: min(23rem, 38vw); margin-left: auto; }
+
+  .ph-win, .ph-fpanel {
     border-radius: var(--ph-radius-sm);
     background: var(--m3-surface);
     background: color-mix(in srgb, var(--m3-surface) 96%, transparent);
     box-shadow: var(--ph-elev);
     animation: ph-panel-in .35s cubic-bezier(.2, .8, .2, 1) both;
   }
+  .ph-win[hidden] { display: none; }
   @keyframes ph-panel-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+
+  .ph-win-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: .7rem .6rem .6rem 1rem; border-bottom: 1px solid var(--m3-divider);
+  }
+  .ph-win-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.2rem; }
+  .ph-win-tag { margin: 0; font-size: .6875rem; letter-spacing: .1em; text-transform: uppercase;
+                color: var(--m3-on-surface-variant); }
+  .ph-win-body { padding: .9rem 1rem 1.1rem; display: grid; gap: .9rem; }
+
+  .ph-x {
+    flex: none; width: 1.75rem; height: 1.75rem; display: grid; place-items: center;
+    border-radius: 999px; font-size: 1.15rem; line-height: 1;
+    color: var(--m3-on-surface-variant); text-decoration: none;
+  }
+  .ph-x:hover { background: var(--m3-surface-container-high); color: var(--m3-on-surface); text-decoration: none; }
+
+  /* Paneles de producto (slice 4): `<details>` abiertos por defecto. */
+  .ph-fpanel-wrap { position: relative; }
   .ph-fpanel-head {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem;
-    padding: .7rem 2.2rem .7rem .9rem; cursor: pointer; list-style: none;
+    padding: .7rem 2.4rem .7rem .9rem; cursor: pointer; list-style: none;
   }
   .ph-fpanel-head::-webkit-details-marker { display: none; }
   .ph-fpanel-name { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
@@ -294,22 +271,10 @@
   .ph-fpanel-body { padding: 0 .9rem .9rem; display: grid; gap: .8rem; }
   .ph-fpanel-plot-head { font-size: .75rem; color: var(--m3-on-surface-variant);
                          display: flex; justify-content: space-between; margin-bottom: .2rem; }
-  .ph-fpanel-note { margin: 0; font-size: .8125rem; color: var(--m3-on-surface-variant);
-                    text-wrap: pretty; }
   .ph-fpanel-detail { font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
-  .ph-fpanel-x {
-    position: absolute; top: .35rem; right: .35rem;
-    width: 1.6rem; height: 1.6rem; display: grid; place-items: center;
-    border-radius: 999px; font-size: 1.1rem; line-height: 1;
-    color: var(--m3-on-surface-variant); text-decoration: none;
-  }
-  .ph-fpanel-x:hover { background: var(--m3-surface-container-high); color: var(--m3-on-surface); }
+  .ph-fpanel-wrap > .ph-x { position: absolute; top: .4rem; right: .4rem; }
 
-  @media (prefers-reduced-motion: reduce) { .ph-fpanel { animation: none; } }
-
-  /* ── Slice 5 — hoja de detalle de provincia ─────────────────────────
-     Drawer a la derecha (escritorio) / bottom-sheet (angosto). Entrada
-     animada, salida instantánea: htmx quita el nodo en el swap. */
+  /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
   .ph-sheet-scrim {
     position: fixed; inset: 0; z-index: 50;
     display: flex; justify-content: flex-end;
@@ -335,17 +300,24 @@
   .ph-sheet-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; }
   .ph-sheet-row-name { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
   .ph-sheet-row-sum { font-size: .8125rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
-  .ph-sheet-note { margin: 0; font-size: .8125rem; color: var(--m3-on-surface-variant); text-wrap: pretty; }
 
   @media (prefers-reduced-motion: reduce) {
-    .ph-fpanel, .ph-sheet { animation: none; }
+    .ph-win, .ph-fpanel, .ph-sheet, .ph-plot-dot { animation: none; }
+    .ph-canvas .ph-map-province, .ph-chip-toggle, .ph-menu-item { transition: none; }
   }
 
+  /* Angosto: las dos pilas se juntan en una bandeja abajo que scrollea sola;
+     el mapa sigue siendo la página entera. */
   @media (max-width: 720px) {
-    .ph-panel-stack {
-      position: static; width: 100%; max-height: none; overflow: visible;
-      margin-top: 1rem;
+    .ph-topbar { padding: .55rem .9rem; }
+    .ph-chip-rail { padding: .5rem .9rem 0; }
+    .ph-stage { padding: .5rem .5rem 2rem; }
+    .ph-dock {
+      inset: auto 0 0 0; max-height: 62%;
+      flex-direction: column; align-items: stretch; justify-content: flex-start;
+      gap: .6rem; padding: .6rem; overflow-y: auto;
     }
+    .ph-win-stack, .ph-panel-stack { width: 100%; max-height: none; overflow: visible; margin: 0; }
     .ph-sheet-scrim { justify-content: stretch; align-items: flex-end; }
     .ph-sheet {
       width: 100%; height: auto; max-height: 85dvh;
@@ -358,422 +330,395 @@
 
 {% block content %}
 
-{# `#ph-live` envuelve todo lo que depende del conjunto de productos activos.
-   Con htmx cargado (slice 4), un chip o un botón de cerrar hacen `hx-get` a la
-   misma URL y htmx reemplaza solo este bloque —sin recargar CSS, cabecera ni
-   pie, y sin saltar el scroll—. Sin JS, el `href` de siempre hace la
+{# `#ph-live` envuelve todo lo que depende del estado de la URL (productos,
+   provincia, días, ventanas abiertas). Un chip, un ítem del menú, una
+   provincia o un × hacen `hx-get` a su propia URL y htmx reemplaza solo este
+   bloque —sin recargar CSS ni saltar—. Sin JS, el `href` de siempre hace la
    navegación completa: la interacción degrada, no se rompe. #}
 <div id="ph-live"
      hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true">
 
-{# ══ Lienzo: el mapa a pantalla completa ═══════════════════════════════
-   Slice 1 del rediseño (docs/decisions.md). El mapa era una tarjeta más
-   dentro de `.ph-hero`; ahora es el lienzo de la página. Sigue coloreado
-   por estado de publicación, no por precio (§9.0 / §12.6): el coloreado
-   por precio quedó fuera de alcance por ahora. La hoja de detalle por
-   provincia llega en el slice 5. #}
+{# ══ El lienzo es la página ════════════════════════════════════════════
+   El mapa sigue coloreado por estado de publicación, no por precio
+   (§9.0 / §12.6); el coloreo por precio quedó fuera de alcance. #}
 <section class="ph-canvas" aria-labelledby="ph-canvas-title">
-  <div class="ph-canvas-head">
-    <span class="ph-canvas-kicker">SAIMC · Fase 0</span>
-    <h1 class="ph-canvas-title" id="ph-canvas-title">
-      {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
-      {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
-    </h1>
-    {% if data_freshness_day %}
-    <p class="ph-canvas-sub">
-      Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
-    </p>
-    {% endif %}
-  </div>
 
-  {# Riel de productos: cada chip togglea `?productos=`. `hx-get` lo resuelve
-     como swap parcial de `#ph-live`; el `href` (con ancla `#cobertura`) es el
-     fallback sin JS. Ninguno prendido = se muestran todos. #}
+  <header class="ph-topbar">
+    <div class="ph-brand">
+      <span class="ph-canvas-kicker">SAIMC · Fase 0</span>
+      <h1 class="ph-canvas-title" id="ph-canvas-title">
+        {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
+        {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
+      </h1>
+      {# Frescura: hasta qué día llega el anuncio piloto más reciente.
+         Antigüedad, no veredicto (§12.6). #}
+      {% if data_freshness_day %}
+      <p class="ph-canvas-sub">
+        Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
+      </p>
+      {% endif %}
+    </div>
+
+    {# Menú del header: cada ítem abre o cierra su ventana flotante. Varias
+       pueden estar abiertas a la vez; el estado viaja en `?ver=`. #}
+    <nav class="ph-menu" aria-label="Secciones">
+      {% for view in view_menu -%}
+      <a class="ph-menu-item{% if view.is_open %} is-open{% endif %}" href="{{ view.query }}" hx-get="{{ view.query }}" aria-pressed="{{ 'true' if view.is_open else 'false' }}" aria-controls="{{ view.key }}">{{ view.label }}</a>
+      {%- endfor %}
+      <a class="ph-menu-item" href="{{ csv_href }}">Descargar CSV</a>
+    </nav>
+  </header>
+
+  {# Riel de productos: cada chip togglea `?productos=` y abre su panel.
+     Ninguno prendido = se muestran todos. #}
   {% if product_chips %}
   <nav class="ph-chip-rail" aria-label="Productos">
     {% for chip in product_chips -%}
-    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}#cobertura" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
+    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
     {%- endfor %}
   </nav>
   {% endif %}
 
-  {# Paneles flotantes (slice 4): uno por producto activo, con su rango
-     nacional y su evolución. `<details>` abiertos por defecto —así togglear un
-     chip no colapsa nada (htmx re-renderiza el bloque entero)—; el `<summary>`
-     sigue dejando plegar cada uno a mano. El × quita ese producto de
-     `?productos=`. #}
-  {% if product_panels %}
-  <div class="ph-panel-stack">
-    {% for panel in product_panels %}
-    <div class="ph-fpanel-wrap">
-      <details class="ph-fpanel" open>
-        <summary class="ph-fpanel-head">
-          <span class="ph-fpanel-name">{{ panel.name }}</span>
-          <span class="ph-fpanel-sum">
-            {%- if not panel.has_data -%}
-            sin anuncios en la ventana
-            {%- elif panel.is_single_value -%}
-            {{ panel.minimum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}
-            {%- else -%}
-            {{ panel.minimum_text }}–{{ panel.maximum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} · {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}
-            {%- endif -%}
-          </span>
-        </summary>
-        <div class="ph-fpanel-body">
-          {% if panel.has_series %}
-          {% for serie in panel.series %}
-          <div class="ph-fpanel-plot">
-            <div class="ph-fpanel-plot-head">{{ serie.province_name }} <span>{{ serie.currency }}/{{ serie.unit }}</span></div>
-            {% include "_price_plot.html" %}
+  <div class="ph-stage">
+    {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
+       nada; la tabla «Observaciones por provincia» de la ventana Cobertura lleva
+       el dato en forma accesible. Cada provincia abre su hoja de detalle. #}
+    <svg class="ph-map" viewBox="{{ map.viewbox }}" role="img"
+         aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
+      {% for province in map.provinces %}
+      {% set pl = province_link(province.slug) %}
+      <a href="{{ pl }}" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle">
+        <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">
+          <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
+        </path>
+      </a>
+      {% endfor %}
+    </svg>
+
+    <div class="ph-dock">
+
+      {# ── Ventanas del menú. Se renderizan siempre y las cerradas llevan
+         `hidden`: el HTML es el mismo que antes traía la página por scroll,
+         y abrir/cerrar solo cambia el atributo. #}
+      <div class="ph-win-stack">
+        {% set win_titles = {'cobertura': 'Cobertura', 'precios': 'Precios observados', 'evolucion': 'Cómo se movió'} %}
+        {% for view in view_menu %}
+        <section class="ph-win" id="{{ view.key }}" aria-labelledby="ph-win-{{ view.key }}-t"{% if not view.is_open %} hidden{% endif %}>
+          <header class="ph-win-head">
+            <h2 class="ph-win-title" id="ph-win-{{ view.key }}-t">{{ win_titles[view.key] }}</h2>
+            <a class="ph-x" href="{{ view.query }}" hx-get="{{ view.query }}" aria-label="Cerrar {{ view.label }}">×</a>
+          </header>
+          <div class="ph-win-body">
+
+          {% if view.key == 'cobertura' %}
+            <div class="ph-stats">
+              <div class="ph-inset ph-stat">
+                <div class="ph-stat-label">Observaciones</div>
+                <div class="ph-stat-value">{{ map.total_rows }}</div>
+              </div>
+              <div class="ph-inset ph-stat">
+                <div class="ph-stat-label">Provincias con dato</div>
+                <div class="ph-stat-value">{{ map.covered }}<small>/{{ map.provinces | length }}</small></div>
+              </div>
+              <div class="ph-inset ph-stat">
+                <div class="ph-stat-label">Publicadas</div>
+                <div class="ph-stat-value">{{ map.published }}</div>
+              </div>
+            </div>
+
+            <div class="ph-inset ph-panel">
+              <div class="ph-panel-title">Concentración de la muestra</div>
+              {% set con_dato = map.provinces | selectattr('rows', 'gt', 0) | sort(attribute='rows', reverse=true) | list %}
+              {% if con_dato %}
+              {% set max_rows = con_dato[0].rows %}
+              <div class="ph-conc">
+                {% for province in con_dato[:4] %}
+                <div class="ph-conc-row">
+                  <span class="ph-conc-name">{{ province.name }}</span>
+                  <span class="ph-conc-track"><span class="ph-conc-fill" style="width:{{ (province.rows / max_rows * 100) | round(1) }}%"></span></span>
+                  <span class="ph-conc-n">{{ province.rows }}</span>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <p class="ph-note">Sin observaciones todavía.</p>
+              {% endif %}
+            </div>
+
+            {# §9.0: «La ausencia de datos se comunica como decisión
+               metodológica, no como falla». #}
+            <p class="ph-note">
+              Una provincia se publica cuando acumula observaciones suficientes y sostenidas,
+              no cuando el calendario lo indica.
+              {% if map.published == 0 %}
+              Todavía <strong>ninguna</strong> cumple ese requisito, así que lo que ves acá es
+              lo que hay: qué se está midiendo y cuánto.
+              {% else %}
+              Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }};
+              las demás siguen en recolección.
+              {% endif %}
+              Preferimos mostrar poco y cierto antes que mucho y flojo.
+            </p>
+
+            {# El tamaño de muestra va a la vista, no escondido (§9.0). El conteo
+               crudo es el «progreso hacia el umbral»: sin porcentaje, porque el
+               denominador N está sin calibrar (§12.6). #}
+            <div class="ph-surface ph-table-card">
+              <table class="ph-coverage">
+                <caption>
+                  Observaciones por provincia. El color del mapa dice dónde hay datos, no
+                  si el precio es alto o bajo: para eso hace falta decidir cuántas
+                  observaciones sostienen una comparación, y ese umbral se mide, no se
+                  inventa.
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Provincia</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col" class="num">Observaciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for province in map.provinces %}
+                  <tr class="is-{{ province.state }}">
+                    <td>{{ province.name }}</td>
+                    <td>{{ province.label }}</td>
+                    <td class="num">{{ province.rows }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            {# La procedencia del dato es el diferencial del proyecto (§6.5). #}
+            <p class="ph-note">
+              Precios recogidos de anuncios públicos del mercado informal y verificados
+              a mano, uno por uno. Ninguna cifra de esta página es una estimación.
+            </p>
+
+          {% elif view.key == 'precios' %}
+            <p class="ph-win-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}{% if selected_province %} · {{ selected_province }}{% endif %}</p>
+
+            {# Barras de provincia y de días. Cada enlace preserva productos,
+               días y ventanas abiertas: cambiar el filtro no cierra esta
+               ventana. #}
+            {% if province_nav | length > 1 %}
+            <ul class="ph-filter ph-filter-province">
+              {% for choice in province_nav %}
+              <li><a href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+
+            <ul class="ph-filter ph-filter-window">
+              {% for choice in window_nav %}
+              <li><a href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
+              {% endfor %}
+            </ul>
+
+            {% if cards %}
+            {% if selected_product %}
+            {# Producto enfocado: tabla comparativa por formato y provincia. Con
+               n=1 el mínimo y el máximo van como «—»: hay un dato, no un rango. #}
+            <div class="ph-surface ph-table-card">
+              <table class="ph-coverage ph-provinces">
+                <caption>
+                  {{ selected_product }} por formato y provincia, ventana de
+                  {{ window_days }} días, en {{ cards[0].currency }}. «—» marca una sola
+                  observación: hay un dato, todavía no un rango.
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Formato</th>
+                    <th scope="col">Provincia</th>
+                    <th scope="col" class="num">Mínimo</th>
+                    <th scope="col" class="num">Mediana</th>
+                    <th scope="col" class="num">Máximo</th>
+                    <th scope="col" class="num">Anuncios</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for card in cards %}
+                  <tr>
+                    <td>
+                      {{ card.format_label | capitalize if card.format_label else "sin formato · " ~ card.unit }}
+                      {%- if card.variant_label %} · {{ card.variant_label }}{% endif %}
+                    </td>
+                    <td>{{ card.province_name }}</td>
+                    {% if card.is_single_observation %}
+                    <td class="num">—</td>
+                    <td class="num">{{ card.format_median_text or card.median_text }}</td>
+                    <td class="num">—</td>
+                    {% else %}
+                    <td class="num">{{ card.format_minimum_text or card.minimum_text }}</td>
+                    <td class="num">{{ card.format_median_text or card.median_text }}</td>
+                    <td class="num">{{ card.format_maximum_text or card.maximum_text }}</td>
+                    {% endif %}
+                    <td class="num">{{ card.count }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            {# El titular es el RANGO, no la mediana sola: §9.0 prohíbe «un valor
+               puntual presentado como medición consolidada». #}
+            <ul class="ph-cards">
+              {% for card in cards %}
+              <li class="ph-surface ph-card">
+                <div class="ph-card-top">
+                  <span class="ph-card-product">{{ card.product_name }}</span>
+                  <span class="ph-card-place">{{ card.province_name }}</span>
+                </div>
+                {% if card.format_label %}<div class="ph-card-format">{{ card.format_label | capitalize }}</div>{% endif %}
+                {% if card.variant_label %}<div class="ph-card-variant">{{ card.variant_label }}</div>{% endif %}
+                {% if card.is_single_observation %}
+                <div class="ph-card-range">
+                  <span class="num">{{ card.format_median_text or card.median_text }}</span>
+                  <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
+                </div>
+                <div class="ph-card-median">Una sola observación, sin rango todavía.
+                  {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
+                {% else %}
+                <div class="ph-card-range">
+                  <span class="num">{{ card.format_minimum_text or card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.format_maximum_text or card.maximum_text }}</span>
+                  <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
+                </div>
+                <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
+                  {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
+                {% endif %}
+                <div class="ph-card-sample">
+                  <span><span class="ph-card-n">{{ card.count }}</span> anuncio{{ "s" if card.count != 1 }} en {{ window_days }} días</span>
+                  <span class="ph-chip">{{ card.state }}</span>
+                </div>
+              </li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+
+            <p class="ph-note">
+              Todas las celdas están en <strong>muestra en formación</strong>: todavía no hay
+              suficientes anuncios para dar un precio como cifra cerrada, así que se publica
+              el rango observado y cuántos anuncios lo respaldan. Los precios están llevados
+              a una misma unidad y a pesos cubanos para que se puedan comparar.
+            </p>
+
+            {# El CSV baja exactamente las observaciones de esta vista (§6.5). #}
+            <p class="ph-download">
+              <a href="{{ csv_href }}">Descargar estos datos (CSV)</a> — un anuncio por fila,
+              con el enlace a cada uno.
+            </p>
+            {% else %}
+            <p class="ph-empty">No hay anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %} en los últimos {{ window_days }} días.</p>
+            {% endif %}
+
+          {% else %}
+            {% if series %}
+            {# Sin línea que una los puntos, y es deliberado: unir dos
+               observaciones separadas por días dibuja precios que nadie
+               observó. Los huecos son parte de la información. #}
+            <p class="ph-note">
+              Cada punto es un anuncio real, ubicado en el día en que se publicó. No se
+              dibuja una línea entre ellos: los días sin punto son días sin anuncios, y
+              unirlos inventaría precios que nadie vio.
+            </p>
+            <ul class="ph-series">
+              {% for serie in series %}
+              <li class="ph-inset ph-serie">
+                <div class="ph-serie-head">
+                  <span class="ph-serie-title">{{ serie.product_name }} · {{ serie.province_name }}</span>
+                  <span class="ph-serie-scale">{{ serie.currency }}/{{ serie.unit }}</span>
+                </div>
+                {% include "_price_plot.html" %}
+                <p class="ph-serie-foot">
+                  {{ serie.count }} anuncio{{ "s" if serie.count != 1 }} en
+                  {{ serie.days_with_data }} día{{ "s" if serie.days_with_data != 1 }} distinto{{ "s" if serie.days_with_data != 1 }}
+                  {% if serie.empty_days %}· {{ serie.empty_days }} día{{ "s" if serie.empty_days != 1 }} sin anuncios{% endif %}
+                  · línea punteada: {{ serie.median_text }}
+                </p>
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p class="ph-empty">
+              No hay suficientes días con anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %}
+              para dibujar la evolución. Hacen falta al menos dos días distintos con observación.
+            </p>
+            {% endif %}
+          {% endif %}
+
           </div>
-          {% endfor %}
-          {% elif panel.has_data %}
-          <p class="ph-fpanel-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar. El rango de arriba lo resume.</p>
-          {% else %}
-          <p class="ph-fpanel-note">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>
-          {% endif %}
-          <a class="ph-fpanel-detail" href="#precios">Ver el detalle por provincia ↓</a>
-        </div>
-      </details>
-      <a class="ph-fpanel-x" href="{{ panel.close_query }}#cobertura" hx-get="{{ panel.close_query }}" aria-label="Quitar {{ panel.name }} de la vista">×</a>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
+        </section>
+        {% endfor %}
+      </div>
 
-  {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
-     nada; la tabla «Observaciones por provincia» de más abajo lleva el dato
-     en forma accesible. Cada provincia enlaza a su hoja de detalle (slice 5):
-     `hx-get` la abre como swap parcial, el `href` es el fallback sin JS. #}
-  <svg class="ph-map" viewBox="{{ map.viewbox }}" role="img"
-       aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
-    {% for province in map.provinces %}
-    {% set pl = province_link(province.slug) %}
-    <a href="{{ pl }}#cobertura" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle">
-      <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">
-        <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
-      </path>
-    </a>
-    {% endfor %}
-  </svg>
-
-  <div class="ph-canvas-legend">
-    <ul class="ph-legend">
-      <li><span class="ph-swatch is-publicada"></span> Publicada</li>
-      <li><span class="ph-swatch is-en-ingesta"></span> Recogiendo datos, todavía sin publicar</li>
-      <li><span class="ph-swatch is-sin-datos"></span> Sin datos todavía</li>
-    </ul>
-    <p class="ph-canvas-count">{{ map.covered }} de {{ map.provinces | length }} provincias con observaciones · {{ map.total_rows }} en total</p>
-  </div>
-
-  <a class="ph-canvas-scroll" href="#cobertura">Precios y cobertura <span aria-hidden="true">↓</span></a>
-</section>
-
-{# El titular es el RANGO, no la mediana sola: §9.0 prohíbe «un valor puntual
-   presentado como medición consolidada», y con estas muestras un número único
-   sería exactamente eso. El tamaño de muestra va en la tarjeta, no al pie. #}
-
-<section class="ph-hero" id="cobertura">
-  <nav class="ph-nav">
-    <a href="#precios">Precios</a>
-    {% if not active_products and not selected_province %}<a href="#como-se-movio">Cómo se movió</a>{% endif %}
-    <a href="#cobertura">Cobertura</a>
-  </nav>
-
-  {# Frescura del dato: hasta qué día llega el anuncio piloto más reciente.
-     Antigüedad, no veredicto (§12.6): informa, no marca «atrasado». Va sin
-     ventana a propósito — no depende del filtro `?dias=`. #}
-  {% if data_freshness_day %}
-  <p class="ph-freshness">
-    Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
-  </p>
-  {% endif %}
-
-  <div class="ph-stats">
-    <div class="ph-inset ph-stat">
-      <div class="ph-stat-label">Observaciones</div>
-      <div class="ph-stat-value">{{ map.total_rows }}</div>
-    </div>
-    <div class="ph-inset ph-stat">
-      <div class="ph-stat-label">Provincias con dato</div>
-      <div class="ph-stat-value">{{ map.covered }}<small>/{{ map.provinces | length }}</small></div>
-    </div>
-    <div class="ph-inset ph-stat">
-      <div class="ph-stat-label">Publicadas</div>
-      <div class="ph-stat-value">{{ map.published }}</div>
-    </div>
-  </div>
-
-  {# El mapa se mudó al lienzo a pantalla completa de arriba (`.ph-canvas`),
-     con su leyenda. Acá queda la lectura de concentración de la muestra, que
-     es tabla-de-apoyo del mapa, no el mapa. #}
-  <div class="ph-panels">
-    <div class="ph-inset ph-panel">
-      <div class="ph-panel-title">Concentración de la muestra</div>
-      {% set con_dato = map.provinces | selectattr('rows', 'gt', 0) | sort(attribute='rows', reverse=true) | list %}
-      {% if con_dato %}
-      {% set max_rows = con_dato[0].rows %}
-      <div class="ph-conc">
-        {% for province in con_dato[:4] %}
-        <div class="ph-conc-row">
-          <span class="ph-conc-name">{{ province.name }}</span>
-          <span class="ph-conc-track"><span class="ph-conc-fill" style="width:{{ (province.rows / max_rows * 100) | round(1) }}%"></span></span>
-          <span class="ph-conc-n">{{ province.rows }}</span>
+      {# ── Paneles de producto (slice 4): uno por producto activo, con su
+         rango nacional y su evolución. El × quita ese producto. #}
+      {% if product_panels %}
+      <div class="ph-panel-stack">
+        {% for panel in product_panels %}
+        <div class="ph-fpanel-wrap">
+          <details class="ph-fpanel" open>
+            <summary class="ph-fpanel-head">
+              <span class="ph-fpanel-name">{{ panel.name }}</span>
+              <span class="ph-fpanel-sum">
+                {%- if not panel.has_data -%}
+                sin anuncios en la ventana
+                {%- elif panel.is_single_value -%}
+                {{ panel.minimum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}
+                {%- else -%}
+                {{ panel.minimum_text }}–{{ panel.maximum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} · {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}
+                {%- endif -%}
+              </span>
+            </summary>
+            <div class="ph-fpanel-body">
+              {% if panel.has_series %}
+              {% for serie in panel.series %}
+              <div class="ph-fpanel-plot">
+                <div class="ph-fpanel-plot-head">{{ serie.province_name }} <span>{{ serie.currency }}/{{ serie.unit }}</span></div>
+                {% include "_price_plot.html" %}
+              </div>
+              {% endfor %}
+              {% elif panel.has_data %}
+              <p class="ph-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar. El rango de arriba lo resume.</p>
+              {% else %}
+              <p class="ph-note">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>
+              {% endif %}
+              <a class="ph-fpanel-detail" href="{{ open_precios_query }}" hx-get="{{ open_precios_query }}">Ver el detalle por provincia</a>
+            </div>
+          </details>
+          <a class="ph-x" href="{{ panel.close_query }}" hx-get="{{ panel.close_query }}" aria-label="Quitar {{ panel.name }} de la vista">×</a>
         </div>
         {% endfor %}
       </div>
-      {% else %}
-      <p class="ph-hero-note" style="margin:0">Sin observaciones todavía.</p>
       {% endif %}
+
+    </div>{# /.ph-dock #}
+
+    <div class="ph-canvas-legend">
+      <ul class="ph-legend">
+        <li><span class="ph-swatch is-publicada"></span> Publicada</li>
+        <li><span class="ph-swatch is-en-ingesta"></span> Recogiendo datos, todavía sin publicar</li>
+        <li><span class="ph-swatch is-sin-datos"></span> Sin datos todavía</li>
+      </ul>
+      <p class="ph-canvas-count">{{ map.covered }} de {{ map.provinces | length }} provincias con observaciones · {{ map.total_rows }} en total</p>
     </div>
-  </div>
 
-  {# §9.0: «La ausencia de datos se comunica como decisión metodológica, no
-     como falla». Por eso el párrafo explica el criterio en vez de disculparse. #}
-  <p class="ph-hero-note">
-    Una provincia se publica cuando acumula observaciones suficientes y sostenidas,
-    no cuando el calendario lo indica.
-    {% if map.published == 0 %}
-    Todavía <strong>ninguna</strong> cumple ese requisito, así que lo que ves acá es
-    lo que hay: qué se está midiendo y cuánto.
-    {% else %}
-    Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }};
-    las demás siguen en recolección.
-    {% endif %}
-    Preferimos mostrar poco y cierto antes que mucho y flojo.
-  </p>
-
-  {# El tamaño de muestra va al lado del mapa y no escondido: §9.0 lo exige
-     desde el día 1, en lugar de un titular de precio. Y el gris no es un
-     defecto del sistema, es dónde todavía no se está mirando. #}
-  <div class="ph-surface ph-table-card">
-    <table class="ph-coverage">
-      <caption class="m3-subtitle">
-        Observaciones por provincia. El color del mapa dice dónde hay datos, no
-        si el precio es alto o bajo: para eso hace falta decidir cuántas
-        observaciones sostienen una comparación, y ese umbral se mide, no se
-        inventa.
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Provincia</th>
-          <th scope="col">Estado</th>
-          <th scope="col" class="num">Observaciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for province in map.provinces %}
-        <tr class="is-{{ province.state }}">
-          <td>{{ province.name }}</td>
-          <td>{{ province.label }}</td>
-          {# El conteo crudo es el «progreso hacia el umbral» de §9.0. No va
-             como porcentaje porque el denominador —N— está sin calibrar, y
-             §12.6 prohíbe inventarlo: «113 observaciones» es honesto, «57%
-             del umbral» no. #}
-          <td class="num">{{ province.rows }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+    <p class="ph-attrib">Mapa: <a href="https://www.naturalearthdata.com/">Natural Earth</a> (dominio público)</p>
+  </div>{# /.ph-stage #}
 </section>
-
-{% if cards or active_products or selected_province %}
-<section class="ph-section" id="precios">
-  <div class="ph-section-head">
-    <h2 class="ph-h2">Precios observados</h2>
-    <span class="ph-section-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}{% if selected_province %} · {{ selected_province }}{% endif %}</span>
-  </div>
-
-  {# Barras de filtro de provincia y ventana: enlaces con `?provincia=` y
-     `?dias=`, servidos enteros por el servidor. Sin htmx —el `_public_shell`
-     no lo carga a propósito— porque recargar esta página gzipeada no justifica
-     sumar una dependencia JS a una audiencia con conexión lenta. El filtro de
-     producto se mudó al riel de chips sobre el mapa (slice 2). Cada enlace
-     preserva los otros ejes. #}
-  {% if province_nav | length > 1 %}
-  <ul class="ph-filter ph-filter-province">
-    {% for choice in province_nav %}
-    <li><a href="{{ choice.query }}#precios"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
-  <ul class="ph-filter ph-filter-window">
-    {% for choice in window_nav %}
-    <li><a href="{{ choice.query }}#precios"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
-    {% endfor %}
-  </ul>
-
-  {% if cards %}
-  {% if selected_product %}
-  {# Producto enfocado: una tabla comparativa por provincia dice más que N
-     tarjetas repetidas. Mismos datos y mismo orden que las tarjetas (por
-     cantidad de anuncios, lo mejor respaldado primero). Con n=1 el mínimo y el
-     máximo van como «—»: hay un dato, no un rango — mismo criterio que la
-     tarjeta, que en ese caso muestra solo la mediana. #}
-  <div class="ph-surface ph-table-card">
-    <table class="ph-coverage ph-provinces">
-      <caption class="m3-subtitle">
-        {{ selected_product }} por formato y provincia, ventana de
-        {{ window_days }} días, en {{ cards[0].currency }}. «—» marca una sola
-        observación: hay un dato, todavía no un rango.
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Formato</th>
-          <th scope="col">Provincia</th>
-          <th scope="col" class="num">Mínimo</th>
-          <th scope="col" class="num">Mediana</th>
-          <th scope="col" class="num">Máximo</th>
-          <th scope="col" class="num">Anuncios</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for card in cards %}
-        <tr>
-          <td>
-            {{ card.format_label | capitalize if card.format_label else "sin formato · " ~ card.unit }}
-            {%- if card.variant_label %} · {{ card.variant_label }}{% endif %}
-          </td>
-          <td>{{ card.province_name }}</td>
-          {% if card.is_single_observation %}
-          <td class="num">—</td>
-          <td class="num">{{ card.format_median_text or card.median_text }}</td>
-          <td class="num">—</td>
-          {% else %}
-          <td class="num">{{ card.format_minimum_text or card.minimum_text }}</td>
-          <td class="num">{{ card.format_median_text or card.median_text }}</td>
-          <td class="num">{{ card.format_maximum_text or card.maximum_text }}</td>
-          {% endif %}
-          <td class="num">{{ card.count }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <ul class="ph-cards">
-    {% for card in cards %}
-    <li class="ph-surface ph-card">
-      <div class="ph-card-top">
-        <span class="ph-card-product">{{ card.product_name }}</span>
-        <span class="ph-card-place">{{ card.province_name }}</span>
-      </div>
-
-      {# Titular en la cosa que se compra: «Caja de pollo (40 lb)». El precio
-         por unidad base baja a comparador entre formatos. Sin formato
-         declarado, el titular sigue siendo el precio por unidad de siempre. #}
-      {% if card.format_label %}<div class="ph-card-format">{{ card.format_label | capitalize }}</div>{% endif %}
-      {# Variante declarada (product-variants): distingue esta serie de la
-         genérica y de otras variantes del mismo producto/provincia. #}
-      {% if card.variant_label %}<div class="ph-card-variant">{{ card.variant_label }}</div>{% endif %}
-      {% if card.is_single_observation %}
-      {# Con n=1 mínimo, mediana y máximo son el mismo número. Presentarlos
-         como rango sugeriría una variación que no se observó. #}
-      <div class="ph-card-range">
-        <span class="num">{{ card.format_median_text or card.median_text }}</span>
-        <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
-      </div>
-      <div class="ph-card-median">Una sola observación, sin rango todavía.
-        {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
-      {% else %}
-      <div class="ph-card-range">
-        <span class="num">{{ card.format_minimum_text or card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.format_maximum_text or card.maximum_text }}</span>
-        <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
-      </div>
-      <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
-        {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
-      {% endif %}
-
-      <div class="ph-card-sample">
-        <span><span class="ph-card-n">{{ card.count }}</span> anuncio{{ "s" if card.count != 1 }} en {{ window_days }} días</span>
-        <span class="ph-chip">{{ card.state }}</span>
-      </div>
-    </li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
-  <p class="m3-subtitle" style="margin:0">
-    Todas las celdas están en <strong>muestra en formación</strong>: todavía no hay
-    suficientes anuncios para dar un precio como cifra cerrada, así que se publica
-    el rango observado y cuántos anuncios lo respaldan. Los precios están llevados
-    a una misma unidad y a pesos cubanos para que se puedan comparar.
-  </p>
-
-  {# La procedencia del dato es el diferencial del proyecto (§6.5): el CSV baja
-     exactamente las observaciones de esta vista, con los filtros activos. #}
-  <p class="ph-download">
-    <a href="{{ csv_href }}">Descargar estos datos (CSV)</a> — un anuncio por fila,
-    con el enlace a cada uno.
-  </p>
-  {% else %}
-  <p class="ph-empty">No hay anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %} en los últimos {{ window_days }} días.</p>
-  {% endif %}
-</section>
-{% endif %}
-
-{# «Cómo se movió» es la vista general: solo aparece cuando NADA está en foco.
-   Con un producto activo, su evolución vive en el panel flotante; con una
-   provincia elegida, en la hoja de detalle. Así no se dibuja lo mismo dos
-   veces (slice de cierre). #}
-{% if series and not active_products and not selected_province %}
-<section class="ph-section" id="como-se-movio">
-  <div class="ph-section-head">
-    <h2 class="ph-h2">Cómo se movió</h2>
-    <span class="ph-section-tag">Un punto = un anuncio</span>
-  </div>
-
-  {# Sin línea que una los puntos, y es deliberado: la serie más densa tiene
-     dato en 14 de 30 días y la más rala en 3. Unir dos observaciones
-     separadas por tres días dibuja tres precios que nadie observó. Se
-     muestra dónde hubo anuncios y a cuánto; los huecos son parte de la
-     información. #}
-  <p class="m3-subtitle" style="margin:0 0 1.1rem">
-    Cada punto es un anuncio real, ubicado en el día en que se publicó. No se
-    dibuja una línea entre ellos: los días sin punto son días sin anuncios, y
-    unirlos inventaría precios que nadie vio.
-  </p>
-
-  <ul class="ph-series">
-    {% for serie in series %}
-    <li class="ph-surface ph-serie">
-      <div class="ph-serie-head">
-        <span class="ph-serie-title">{{ serie.product_name }} · {{ serie.province_name }}</span>
-        <span class="ph-serie-scale">{{ serie.currency }}/{{ serie.unit }}</span>
-      </div>
-
-      {% include "_price_plot.html" %}
-
-      <p class="ph-serie-foot">
-        {{ serie.count }} anuncio{{ "s" if serie.count != 1 }} en
-        {{ serie.days_with_data }} día{{ "s" if serie.days_with_data != 1 }} distinto{{ "s" if serie.days_with_data != 1 }}
-        {% if serie.empty_days %}
-        · {{ serie.empty_days }} día{{ "s" if serie.empty_days != 1 }} sin anuncios
-        {% endif %}
-        · línea punteada: {{ serie.median_text }}
-      </p>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
 
 {% if selected_province %}
 {# ══ Hoja de detalle de provincia (slice 5) ═══════════════════════════
-   Se renderiza en el servidor cuando `?provincia=` está puesta; htmx la trae
-   y la quita como parte del swap de `#ph-live`. Recorre TODOS los productos
-   piloto de la provincia —no solo los chips activos—: responde «¿cómo está
-   todo acá?». Cerrarla saca `?provincia=` y conserva chips y ventana.
-   Sin trampa de foco de teclado todavía (haría falta JS): el × y el fondo
-   oscurecido sí son alcanzables. #}
+   Modal: recorre TODOS los productos piloto de la provincia —no solo los
+   chips activos—. Cerrarla saca `?provincia=` y conserva el resto del
+   estado. Sin trampa de foco de teclado todavía (haría falta JS). #}
 <div class="ph-sheet-scrim">
-  <a class="ph-sheet-scrim-close" href="{{ sheet_close_query }}#cobertura" hx-get="{{ sheet_close_query }}" aria-label="Cerrar el detalle" tabindex="-1"></a>
+  <a class="ph-sheet-scrim-close" href="{{ sheet_close_query }}" hx-get="{{ sheet_close_query }}" aria-label="Cerrar el detalle" tabindex="-1"></a>
   <aside class="ph-sheet" role="dialog" aria-modal="true" aria-labelledby="ph-sheet-title">
     <header class="ph-sheet-head">
       <h2 class="ph-sheet-title" id="ph-sheet-title">{{ selected_province }}</h2>
-      <a class="ph-sheet-x" href="{{ sheet_close_query }}#cobertura" hx-get="{{ sheet_close_query }}" aria-label="Cerrar">×</a>
+      <a class="ph-sheet-x" href="{{ sheet_close_query }}" hx-get="{{ sheet_close_query }}" aria-label="Cerrar">×</a>
     </header>
     <p class="ph-sheet-sub">
       Los productos piloto en {{ selected_province }}, ventana de {{ window_days }} días.
@@ -799,7 +744,7 @@
         {% include "_price_plot.html" %}
         {% endfor %}
         {% elif row.has_data %}
-        <p class="ph-sheet-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar.</p>
+        <p class="ph-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar.</p>
         {% endif %}
       </section>
       {% endfor %}
@@ -812,9 +757,8 @@
 {% endblock %}
 
 {% block scripts %}
-{# htmx vendorizado (ADR 001). La home era estática y no lo cargaba; con los
-   chips y los paneles del rediseño, cada toggle sin htmx sería una recarga
-   completa —CSS incluido— sobre una conexión lenta. `defer` y una sola
-   petición cacheable. Si no carga, todo degrada al `href` de cada enlace. #}
+{# htmx vendorizado (ADR 001): chips, menú, provincias y × hacen swap parcial
+   de `#ph-live` en vez de recargar la página entera sobre una conexión lenta.
+   `defer`, una sola petición cacheable. Si no carga, todo degrada al `href`. #}
 <script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
 {% endblock %}

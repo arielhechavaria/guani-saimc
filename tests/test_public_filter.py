@@ -40,12 +40,14 @@ from saimc.web.product_nav import (
     build_product_chips,
     build_product_nav,
     build_province_nav,
+    build_view_menu,
     build_window_nav,
     product_slug,
     resolve_days,
     resolve_product,
     resolve_products,
     resolve_province,
+    resolve_views,
 )
 
 
@@ -371,7 +373,7 @@ class TestPanelesFlotantes:
 
         # El × de Arroz apunta a la vista sin Arroz (queda Aceite), por `href`
         # (fallback) y por `hx-get` (swap parcial).
-        assert 'href="/?productos=aceite#cobertura" hx-get="/?productos=aceite"' in texto
+        assert 'href="/?productos=aceite" hx-get="/?productos=aceite"' in texto
 
     def test_carga_htmx_y_arma_el_bloque_vivo(
         self, client: TestClient, session: Session
@@ -483,7 +485,7 @@ class TestHojaDetalleProvincia:
         texto = client.get("/?provincia=la-habana&productos=arroz").text
 
         # El × y el fondo cierran a la misma URL: sin `provincia`, con `productos`.
-        assert 'href="/?productos=arroz#cobertura" hx-get="/?productos=arroz"' in texto
+        assert 'href="/?productos=arroz" hx-get="/?productos=arroz"' in texto
 
     def test_las_provincias_del_mapa_son_enlaces(
         self, client: TestClient, session: Session
@@ -492,36 +494,128 @@ class TestHojaDetalleProvincia:
 
         texto = client.get("/").text
 
+        assert 'href="/?provincia=la-habana" hx-get="/?provincia=la-habana"' in texto
+
+
+class TestResolveViews:
+    def test_vacio_ante_none_o_cadena_vacia(self) -> None:
+        assert resolve_views(None) == []
+        assert resolve_views("") == []
+
+    def test_en_orden_de_apertura_sin_repetir_ni_desconocidas(self) -> None:
+        assert resolve_views("precios, cobertura,precios,inventada") == [
+            "precios",
+            "cobertura",
+        ]
+
+
+class TestBuildViewMenu:
+    def test_un_item_por_ventana_en_el_orden_del_menu(self) -> None:
+        menu = build_view_menu([])
+
+        assert [v.key for v in menu] == ["cobertura", "precios", "evolucion"]
+        assert all(not v.is_open for v in menu)
+
+    def test_abrir_agrega_al_final_y_cerrar_quita(self) -> None:
+        por_key = {v.key: v for v in build_view_menu(["precios"])}
+
+        assert por_key["precios"].is_open
+        assert por_key["precios"].query == "/"
+        assert por_key["cobertura"].query == "/?ver=precios,cobertura"
+
+    def test_preserva_productos_provincia_y_dias(self) -> None:
+        menu = build_view_menu(
+            [],
+            active_products=["Arroz"],
+            selected_province="La Habana",
+            selected_days=7,
+        )
+
+        assert menu[1].query == (
+            "/?productos=arroz&provincia=la-habana&dias=7&ver=precios"
+        )
+
+
+class TestVentanasDelMenu:
+    """La página es el mapa: cobertura, precios y evolución son ventanas
+    flotantes que se abren desde el menú del header, varias a la vez."""
+
+    def test_sin_ver_todas_las_ventanas_estan_cerradas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/").text
+
+        for key in ("cobertura", "precios", "evolucion"):
+            assert f'id="{key}" aria-labelledby="ph-win-{key}-t" hidden>' in texto
+
+    def test_ver_abre_varias_a_la_vez(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?ver=precios,evolucion").text
+
+        assert 'id="precios" aria-labelledby="ph-win-precios-t">' in texto
+        assert 'id="evolucion" aria-labelledby="ph-win-evolucion-t">' in texto
+        assert 'id="cobertura" aria-labelledby="ph-win-cobertura-t" hidden>' in texto
+
+    def test_el_menu_marca_las_abiertas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?ver=precios").text
+
+        assert 'class="ph-menu-item is-open" href="/" hx-get="/" aria-pressed="true"' in texto
+
+    def test_prender_un_chip_no_cierra_las_ventanas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?ver=precios").text
+
+        assert 'hx-get="/?productos=arroz&amp;ver=precios"' in texto
+
+    def test_elegir_provincia_no_cierra_las_ventanas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?ver=cobertura").text
+
+        assert 'hx-get="/?provincia=la-habana&amp;ver=cobertura"' in texto
+
+    def test_el_filtro_de_provincia_preserva_chips_y_ventanas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite&ver=precios").text
+
         assert (
-            'href="/?provincia=la-habana#cobertura" hx-get="/?provincia=la-habana"'
+            'hx-get="/?productos=arroz,aceite&amp;provincia=la-habana&amp;ver=precios"'
+            in texto
+        )
+
+    def test_ver_detalle_del_panel_abre_precios_sin_cerrar_otras(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz&ver=cobertura").text
+
+        assert (
+            'class="ph-fpanel-detail" href="/?productos=arroz&amp;ver=cobertura,precios"'
             in texto
         )
 
 
 class TestSliceDeCierre:
-    """`#como-se-movio` es solo la vista general; con foco, la evolución vive en
-    el panel o en la hoja, no duplicada. Y los paneles abren por defecto."""
-
-    def test_como_se_movio_aparece_sin_foco(
-        self, client: TestClient, session: Session
-    ) -> None:
-        _seed_dos_productos(session)
-
-        assert 'id="como-se-movio"' in client.get("/").text
-
-    def test_como_se_movio_se_oculta_con_producto_activo(
-        self, client: TestClient, session: Session
-    ) -> None:
-        _seed_dos_productos(session)
-
-        assert 'id="como-se-movio"' not in client.get("/?productos=arroz").text
-
-    def test_como_se_movio_se_oculta_con_provincia(
-        self, client: TestClient, session: Session
-    ) -> None:
-        _seed_dos_productos(session)
-
-        assert 'id="como-se-movio"' not in client.get("/?provincia=la-habana").text
+    """Los paneles de producto abren por defecto: togglear un chip no colapsa
+    el acordeón (htmx re-renderiza `#ph-live` entero)."""
 
     def test_los_paneles_abren_por_defecto(
         self, client: TestClient, session: Session
