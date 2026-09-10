@@ -108,15 +108,17 @@ def _query(
     productos: Sequence[str] = (),
     provincia: str = "",
     dias: int = DEFAULT_WINDOW_DAYS,
+    ver: Sequence[str] = (),
     path: str = "/",
 ) -> str:
-    """Compone la URL con los ejes activos, en orden fijo producto/provincia/días.
+    """Compone la URL con los ejes activos, en orden fijo
+    producto/provincia/días/ver.
 
     `productos` (lista de slugs, multi-selección) gana sobre `producto` (slug
-    único, alias histórico) cuando trae algo: se emite `productos=a,b`. Omite
-    `dias` cuando es el default para no ensuciar la URL compartible con un
-    parámetro redundante. Las barras de filtro le agregan el ancla `#precios`;
-    la descarga usa `path="/datos.csv"`.
+    único, alias histórico) cuando trae algo: se emite `productos=a,b`. `ver`
+    son las ventanas flotantes abiertas desde el menú del header. Omite `dias`
+    cuando es el default para no ensuciar la URL compartible con un parámetro
+    redundante. La descarga usa `path="/datos.csv"`.
     """
     params = []
     if productos:
@@ -127,6 +129,8 @@ def _query(
         params.append(f"provincia={provincia}")
     if dias != DEFAULT_WINDOW_DAYS:
         params.append(f"dias={dias}")
+    if ver:
+        params.append("ver=" + ",".join(ver))
     return f"{path}?" + "&".join(params) if params else path
 
 
@@ -135,13 +139,18 @@ def products_query(
     *,
     provincia: str = "",
     dias: int = DEFAULT_WINDOW_DAYS,
+    ver: Sequence[str] = (),
     path: str = "/",
 ) -> str:
     """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
-    preservando provincia y ventana. La usan el riel de chips y los paneles
-    flotantes para componer el estado de togglear un producto."""
+    preservando provincia, ventana de días y ventanas abiertas. La usan el
+    riel de chips, los paneles flotantes, el mapa y la hoja de provincia."""
     return _query(
-        productos=list(product_slugs), provincia=provincia, dias=dias, path=path
+        productos=list(product_slugs),
+        provincia=provincia,
+        dias=dias,
+        ver=list(ver),
+        path=path,
     )
 
 
@@ -239,19 +248,30 @@ def build_province_nav(
     *,
     selected_product: str = "",
     selected_days: int = DEFAULT_WINDOW_DAYS,
+    active_products: Sequence[str] = (),
+    ver: Sequence[str] = (),
 ) -> list[NavChoice]:
     """«Todas» + un ítem por provincia con dato piloto, marcando la activa.
 
-    Simétrica a `build_product_nav`; cada enlace preserva el producto y la
-    ventana elegidos.
+    Simétrica a `build_product_nav`; cada enlace preserva el producto (o el
+    conjunto `active_products` de los chips), la ventana de días y las
+    ventanas flotantes abiertas (`ver`): la barra vive dentro de la ventana
+    «Precios», y cambiar de provincia no puede cerrarla.
     """
     prod_slug = product_slug(selected_product) if selected_product else ""
+    active_slugs = [product_slug(n) for n in active_products]
     choices = [
         NavChoice(
             label="Todas",
             slug="",
             is_selected=selected_name is None,
-            query=_query(producto=prod_slug, provincia="", dias=selected_days),
+            query=_query(
+                producto=prod_slug,
+                productos=active_slugs,
+                provincia="",
+                dias=selected_days,
+                ver=ver,
+            ),
         )
     ]
     for name in province_names:
@@ -261,7 +281,13 @@ def build_province_nav(
                 label=name,
                 slug=slug,
                 is_selected=name == selected_name,
-                query=_query(producto=prod_slug, provincia=slug, dias=selected_days),
+                query=_query(
+                    producto=prod_slug,
+                    productos=active_slugs,
+                    provincia=slug,
+                    dias=selected_days,
+                    ver=ver,
+                ),
             )
         )
     return choices
@@ -288,12 +314,14 @@ def build_product_chips(
     *,
     selected_province: str = "",
     selected_days: int = DEFAULT_WINDOW_DAYS,
+    ver: Sequence[str] = (),
 ) -> list[ProductChip]:
     """Un chip por producto piloto, en el orden del catálogo.
 
     El conjunto activo (`active_names`) viaja como `?productos=` en el orden en
     que se fueron prendiendo. Togglear un chip agrega su slug al final o lo
-    quita, sin reordenar el resto.
+    quita, sin reordenar el resto. `ver` se preserva: prender un producto no
+    cierra las ventanas abiertas.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_names]
@@ -312,7 +340,7 @@ def build_product_chips(
                 slug=slug,
                 is_active=is_active,
                 query=products_query(
-                    resultado, provincia=prov_slug, dias=selected_days
+                    resultado, provincia=prov_slug, dias=selected_days, ver=ver
                 ),
             )
         )
@@ -324,16 +352,102 @@ def build_window_nav(
     selected_name: str | None = None,
     *,
     selected_province: str = "",
+    active_products: Sequence[str] = (),
+    ver: Sequence[str] = (),
 ) -> list[WindowChoice]:
-    """Las tres ventanas, marcando la activa y preservando producto y provincia."""
+    """Las tres ventanas de días, marcando la activa y preservando producto (o
+    el conjunto de chips), provincia y ventanas flotantes abiertas."""
     prod_slug = product_slug(selected_name) if selected_name else ""
     prov_slug = product_slug(selected_province) if selected_province else ""
+    active_slugs = [product_slug(n) for n in active_products]
     return [
         WindowChoice(
             label=f"{days} días",
             days=days,
             is_selected=days == selected_days,
-            query=_query(producto=prod_slug, provincia=prov_slug, dias=days),
+            query=_query(
+                producto=prod_slug,
+                productos=active_slugs,
+                provincia=prov_slug,
+                dias=days,
+                ver=ver,
+            ),
         )
         for days in WINDOW_CHOICES
     ]
+
+
+# --- ventanas flotantes del menú del header ----------------------------------
+
+#: Las ventanas que abre el menú del header, en el orden del menú. La clave es
+#: el valor que viaja en `?ver=` y el `id` de la ventana en la plantilla; la
+#: etiqueta es lo que se lee en el menú. «Ventana» acá es la ventana flotante
+#: sobre el mapa, no la ventana de días (`WINDOW_CHOICES`).
+VIEWS: tuple[tuple[str, str], ...] = (
+    ("cobertura", "Cobertura"),
+    ("precios", "Precios"),
+    ("evolucion", "Cómo se movió"),
+)
+_VIEW_KEYS = tuple(key for key, _ in VIEWS)
+
+
+def resolve_views(raw: str | None) -> list[str]:
+    """`?ver=precios,cobertura` → claves válidas, en orden de apertura, sin
+    repetir. Una clave desconocida se ignora, mismo criterio que
+    `resolve_products`: un query string raro no da 404."""
+    if not raw:
+        return []
+    out: list[str] = []
+    for chunk in raw.split(","):
+        key = chunk.strip()
+        if key in _VIEW_KEYS and key not in out:
+            out.append(key)
+    return out
+
+
+@dataclass(frozen=True)
+class ViewToggle:
+    """Un ítem del menú del header: abre o cierra su ventana flotante.
+
+    `query` es el estado tras togglearla —abrirla al final de `?ver=` o
+    sacarla—, preservando productos, provincia y ventana de días. El × de la
+    ventana usa el mismo `query` (con la ventana abierta, togglear = cerrar).
+    """
+
+    key: str
+    label: str
+    is_open: bool
+    query: str
+
+
+def build_view_menu(
+    open_keys: Sequence[str],
+    *,
+    active_products: Sequence[str] = (),
+    selected_province: str = "",
+    selected_days: int = DEFAULT_WINDOW_DAYS,
+) -> list[ViewToggle]:
+    """Un ítem por ventana, en el orden del menú. Varias pueden estar abiertas a
+    la vez: se apilan sobre el mapa."""
+    active_slugs = [product_slug(n) for n in active_products]
+    prov_slug = product_slug(selected_province) if selected_province else ""
+    items: list[ViewToggle] = []
+    for key, label in VIEWS:
+        is_open = key in open_keys
+        resultado = (
+            [k for k in open_keys if k != key] if is_open else [*open_keys, key]
+        )
+        items.append(
+            ViewToggle(
+                key=key,
+                label=label,
+                is_open=is_open,
+                query=products_query(
+                    active_slugs,
+                    provincia=prov_slug,
+                    dias=selected_days,
+                    ver=resultado,
+                ),
+            )
+        )
+    return items

@@ -34,6 +34,7 @@ from saimc.web.panel_view import build_product_panels
 from saimc.web.product_nav import (
     build_product_chips,
     build_province_nav,
+    build_view_menu,
     build_window_nav,
     download_href,
     product_slug,
@@ -42,6 +43,7 @@ from saimc.web.product_nav import (
     resolve_product,
     resolve_products,
     resolve_province,
+    resolve_views,
 )
 from saimc.web.series_view import build_series
 
@@ -147,6 +149,7 @@ def _render_home(
     productos: str | None,
     provincia: str | None,
     dias: str | None,
+    ver: str | None = None,
 ) -> HTMLResponse:
     # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
     # Fase 0 se comprometió a medir (§9), y la cola larga son 59 filas en 53
@@ -209,7 +212,26 @@ def _render_home(
     freshness_days_ago = (date.today() - latest_day).days if latest_day else None
 
     prov = selected_province or ""
+    prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_products]
+
+    # Ventanas flotantes abiertas desde el menú del header (`?ver=`). Varias a
+    # la vez. Todos los enlaces de la página las preservan: prender un chip,
+    # elegir una provincia o cambiar la ventana de días no cierra ninguna.
+    open_views = resolve_views(ver)
+    view_menu = build_view_menu(
+        open_views,
+        active_products=active_products,
+        selected_province=prov,
+        selected_days=window,
+    )
+    # «Ver el detalle» de un panel abre la ventana Precios sin cerrar las demás.
+    open_precios_query = products_query(
+        active_slugs,
+        provincia=prov_slug,
+        dias=window,
+        ver=open_views if "precios" in open_views else [*open_views, "precios"],
+    )
 
     # Hoja de detalle de provincia (slice 5). Se arma solo cuando `?provincia=`
     # está puesta, y recorre TODOS los productos piloto de esa provincia —no los
@@ -239,14 +261,16 @@ def _render_home(
             prov_series,
             selected_province=prov,
             selected_days=window,
+            ver=open_views,
         )
-        # Cerrar la hoja: saca `provincia`, conserva productos y ventana.
-        sheet_close_query = products_query(active_slugs, dias=window)
+        # Cerrar la hoja: saca `provincia`, conserva productos, días y ventanas.
+        sheet_close_query = products_query(active_slugs, dias=window, ver=open_views)
 
     def province_link(slug: str) -> str:
         """Enlace de una provincia del mapa a su hoja, preservando los chips
-        activos y la ventana."""
-        return products_query(active_slugs, provincia=slug, dias=window)
+        activos, la ventana de días y las ventanas flotantes abiertas."""
+        return products_query(active_slugs, provincia=slug, dias=window, ver=open_views)
+
     csv_href = download_href(
         producto=active_slugs[0] if len(active_slugs) == 1 else "",
         productos=active_slugs if len(active_slugs) > 1 else (),
@@ -269,6 +293,7 @@ def _render_home(
                 active_products,
                 selected_province=prov,
                 selected_days=window,
+                ver=open_views,
             ),
             "product_panels": build_product_panels(
                 active_products,
@@ -276,16 +301,26 @@ def _render_home(
                 series,
                 selected_province=prov,
                 selected_days=window,
+                ver=open_views,
             ),
             "province_nav": build_province_nav(
                 province_names,
                 selected_province,
                 selected_product=selected or "",
                 selected_days=window,
+                active_products=active_products,
+                ver=open_views,
             ),
             "window_nav": build_window_nav(
-                window, selected, selected_province=prov
+                window,
+                selected,
+                selected_province=prov,
+                active_products=active_products,
+                ver=open_views,
             ),
+            "view_menu": view_menu,
+            "open_views": open_views,
+            "open_precios_query": open_precios_query,
             "province_sheet_rows": province_sheet_rows,
             "sheet_close_query": sheet_close_query,
             "province_link": province_link,
@@ -303,13 +338,20 @@ def public_home(
     productos: str | None = None,
     provincia: str | None = None,
     dias: str | None = None,
+    ver: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Home pública. `productos` (multi-selección de chips), `producto` (alias de
-    uno), `provincia` y `dias` son query string opcional; un valor raro no da
-    404, se muestra todo."""
+    uno), `provincia`, `dias` y `ver` (ventanas flotantes abiertas) son query
+    string opcional; un valor raro no da 404, se muestra todo."""
     return _render_home(
-        request, db, producto=producto, productos=productos, provincia=provincia, dias=dias
+        request,
+        db,
+        producto=producto,
+        productos=productos,
+        provincia=provincia,
+        dias=dias,
+        ver=ver,
     )
 
 
@@ -319,6 +361,7 @@ def public_product(
     request: Request,
     provincia: str | None = None,
     dias: str | None = None,
+    ver: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """URL dedicada por producto. Misma vista que `/?producto=<slug>`, que sigue
@@ -333,7 +376,13 @@ def public_product(
             status_code=404, detail="No hay producto público con ese nombre"
         )
     return _render_home(
-        request, db, producto=slug, productos=None, provincia=provincia, dias=dias
+        request,
+        db,
+        producto=slug,
+        productos=None,
+        provincia=provincia,
+        dias=dias,
+        ver=ver,
     )
 
 

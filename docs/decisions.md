@@ -7387,3 +7387,36 @@ Consecuencia: en `/` sin filtros el comportamiento no cambia (la vista general
 sigue). Apenas se prende un chip o se elige una provincia, `#como-se-movio`
 desaparece. Suite: 1498 pasan, 1 saltea
 (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — La home pública es el mapa entero; lo demás son ventanas del menú
+Contexto: el operador marcó que el brief era «toda la página es el mapa» (el
+handoff también lo decía: «todo lo demás flota sobre el mapa»). Los slices 1–5
+habían dejado cobertura, precios y evolución como secciones a un scroll de
+distancia. Reemplaza la gating de `#como-se-movio` de la entrada anterior.
+Decisión: `.ph-canvas` es `100dvh` sin scroll, en columna: barra superior
+(`<h1>`, frescura y menú), riel de chips y un escenario que el mapa llena.
+El menú del header abre ventanas flotantes —Cobertura, Precios, Cómo se
+movió— y **varias pueden estar abiertas a la vez** (decisión del operador):
+se apilan a la izquierda; los paneles de producto, a la derecha; en angosto
+las dos pilas se juntan en una bandeja inferior que scrollea sola. Estado en
+`?ver=cobertura,precios,evolucion` (`product_nav.VIEWS`, `resolve_views`,
+`build_view_menu`); `_query` gana `ver` y todos los enlaces lo preservan
+(chips, × de panel, provincias del mapa, hoja, filtros de provincia y días),
+así nada cierra ventanas por accidente. Los filtros de provincia/días también
+preservan ahora el conjunto de chips —se cierra la limitación del slice 2—.
+Las ventanas se renderizan siempre y las cerradas llevan `hidden`: el HTML es
+el mismo que antes traía la página por scroll, abrir/cerrar solo cambia el
+atributo, y los tests de contenido siguen valiendo. El encabezado y el pie del
+shell se ocultan acá; el crédito de Natural Earth va en la esquina del mapa y
+la nota de procedencia al pie de la ventana Cobertura. Se borraron `.ph-hero`,
+`.ph-nav`, `.ph-section*` y la señal de scroll. Se quitaron las anclas
+`#cobertura`/`#precios` de los enlaces: ya no hay a dónde scrollear.
+Descartado: una sola ventana a la vez (el operador pidió todas). Descartado
+también renderizar solo las ventanas abiertas: aligera el swap, pero rompía
+decenas de tests de contenido y la página nunca mandó menos HTML que esto;
+queda como optimización si el peso se vuelve un problema medido.
+Consecuencia: la home no tiene scroll en ningún ancho. `build_province_nav` y
+`build_window_nav` aceptan `active_products` y `ver`. Deudas que siguen: foco
+de teclado y Escape en la hoja y en las ventanas (JS). Suite: 1507 pasan, 1
+saltea (`PYTHONPATH=<worktree>/src -p no:randomly`). Layout sin verificar en
+navegador desde la sesión (no hay uno headless en el VPS).
