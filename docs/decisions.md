@@ -7250,3 +7250,32 @@ vistas de curaduría; agregar o renombrar una vista se toca ahí. Regla CSS nuev
 secciones, que deriva de `path.startswith('/curation')`. `curation_edit.html` y
 `/evidence/{id}` quedan sin el riel: son vistas de detalle, se llegan por
 contexto.
+
+## 2026-09-10 — Rediseño home pública, slice 1: el mapa es el lienzo a pantalla completa
+Contexto: prototipo de Claude Design en `design_handoff_home_publica/` (README
+con tokens y estados). La home hoy es un panel tipo BI; el rediseño hace del
+mapa de Cuba el lienzo de la pantalla, con chips de producto, paneles flotantes
+con histórico y hoja de detalle por provincia. Se implementa por slices; este
+es el 1.
+Decisión: en `public_home.html`, sección nueva `.ph-canvas` como primer bloque
+del contenido — full-bleed (`margin-inline: calc(50% - 50vw)` dentro del
+contenedor centrado del shell), `100dvh`, el SVG del mapa centrado y grande, con
+overlay: `<h1>`, frescura del dato, leyenda de estados y una señal de scroll a
+`#cobertura`. El encabezado del shell (`.m3-public-top`) se oculta por CSS en
+este bloque y los `{% block heading/subtitle %}` quedan vacíos: su contenido se
+reproduce en el overlay. El mapa se sacó de `.ph-hero` (había una sola copia y
+sigue habiendo una); `.ph-hero` conserva stats, concentración de muestra, nota
+metodológica y la tabla accesible «Observaciones por provincia».
+El mapa sigue coloreado por estado de publicación, NO por precio: el coloreo por
+precio (que `map_view.py` y `public.py` marcan como bloqueado por §9.0/§12.6)
+quedó fuera de alcance por decisión del operador el 2026-09-10.
+Descartado: mantener el encabezado del shell arriba del lienzo — un teléfono
+acostado se comía el mapa bajo el cromo fijo, y «a pantalla completa» dejaba de
+serlo. Sin `filter: drop-shadow` con color a mano: usa `var(--m3-elev-1)` para
+no romper `test_static_assets.py::TestNingunColorFijoEnLasPlantillas`.
+Consecuencia: `/` y `/producto/<slug>` comparten el lienzo (misma plantilla).
+Las provincias todavía no son clicables — la hoja de detalle llega en el slice
+5; los chips de producto, en el 2. Suite entera en verde con orden determinista
+(`-p no:randomly`): 1463 pasan, 1 saltea. `test_public_filter.py` tiene
+polución de orden preexistente ajena a este cambio (una corrida parcial puede
+dejar `test_respeta_la_ventana` en rojo; con la suite completa pasa).
