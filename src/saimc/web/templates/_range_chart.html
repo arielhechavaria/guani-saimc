@@ -1,0 +1,34 @@
+{#
+  Rango por período (semana, o día con la ventana de 7) de una celda
+  producto × provincia, como SVG generado en el servidor
+  (`price_charts.build_range_series`). Cada barra va del precio más bajo al más
+  alto del período; la raya es la mediana; abajo, cuántos anuncios. Un período
+  sin anuncios queda vacío. Un precio fuera de escala no estira el eje: se marca
+  con un triángulo en el borde de su período. Espera `serie`.
+#}
+<svg class="ph-rango" viewBox="{{ serie.viewbox }}" role="img"
+     aria-label="Rango de precio por {{ serie.period_name }} de {{ serie.product_name }} en {{ serie.province_name }}, del {{ serie.first_label }} al {{ serie.last_label }}.">
+  {% for t in serie.ticks %}
+  <line class="ph-rango-grid" x1="{{ serie.x_left }}" x2="{{ serie.x_right }}" y1="{{ t.y }}" y2="{{ t.y }}" />
+  <text class="ph-rango-tick" x="{{ serie.x_left - 6 }}" y="{{ t.y + 3.5 }}" text-anchor="end">{{ t.label }}</text>
+  {% endfor %}
+  <line class="ph-rango-base" x1="{{ serie.x_left }}" x2="{{ serie.x_right }}" y1="{{ serie.baseline_y }}" y2="{{ serie.baseline_y }}" />
+  {% for b in serie.bins %}
+  {% if b.has_range %}
+  <rect class="ph-rango-barra" x="{{ b.x - serie.bar_width / 2 }}" y="{{ b.y_max - 2 }}" width="{{ serie.bar_width }}" height="{{ b.y_min - b.y_max + 4 }}" rx="3">
+    <title>{{ serie.period_name | capitalize }} del {{ b.start_text }}: de {{ b.minimum_text }} a {{ b.maximum_text }} {{ serie.currency }}/{{ serie.unit }}, mediana {{ b.median_text }} · {{ b.count }} anuncio{{ "s" if b.count != 1 }}</title>
+  </rect>
+  <line class="ph-rango-mediana" x1="{{ b.x - serie.bar_width / 2 - 3 }}" x2="{{ b.x + serie.bar_width / 2 + 3 }}" y1="{{ b.y_median }}" y2="{{ b.y_median }}" />
+  {% endif %}
+  <text class="ph-rango-n" x="{{ b.x }}" y="{{ serie.baseline_y + 14 }}" text-anchor="middle">{{ b.count if b.count else "·" }}</text>
+  {% endfor %}
+  {% for m in serie.outliers %}
+  {% if m.above %}
+  <polygon class="ph-rango-fuera" points="{{ m.x - 4 }},9 {{ m.x + 4 }},9 {{ m.x }},2">
+  {% else %}
+  <polygon class="ph-rango-fuera" points="{{ m.x - 4 }},{{ serie.baseline_y - 8 }} {{ m.x + 4 }},{{ serie.baseline_y - 8 }} {{ m.x }},{{ serie.baseline_y - 1 }}">
+  {% endif %}
+    <title>{{ m.day_text }}: {{ m.price_text }} {{ serie.currency }}/{{ serie.unit }}, fuera de escala</title>
+  </polygon>
+  {% endfor %}
+</svg>

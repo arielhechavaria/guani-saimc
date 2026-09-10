@@ -867,10 +867,12 @@ class TestFiltroEnLaRuta:
         response = client.get("/?producto=aceite")
 
         assert response.status_code == 200
-        # Aceite entra en la tabla por provincia (un día basta) pero no dibuja
-        # serie (hacen falta 2 días distintos): el panel flotante lo dice.
+        # Aceite entra en la tabla por provincia (un día basta) y tiene su cifra
+        # en el panel, pero no dibuja evolución (hacen falta 2 días distintos):
+        # la ventana «Cómo se movió» lo dice.
         assert "Aceite por formato y provincia" in response.text
-        assert "todavía no en dos días distintos" in response.text
+        assert '<span class="ph-cifra-valor">300</span>' in response.text
+        assert "No hay suficientes días" in response.text
 
 
 class TestVentanaEnLaRuta:

@@ -15,7 +15,7 @@ desambigua.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from saimc.web.card_view import ProductCard, format_price
@@ -25,7 +25,16 @@ from saimc.web.product_nav import (
     product_slug,
     products_query,
 )
+from saimc.web.price_charts import Headline, RangeSeries
 from saimc.web.series_view import PriceSeries
+
+
+@dataclass(frozen=True)
+class PanelBlock:
+    """Una provincia dentro del panel: su cifra y su rango por período."""
+
+    headline: Headline
+    ranges: RangeSeries | None
 
 
 @dataclass(frozen=True)
@@ -43,6 +52,9 @@ class ProductPanel:
     series: tuple[PriceSeries, ...]
     #: `?productos=` sin este producto: el destino del botón de cerrar.
     close_query: str
+    #: Cifra con su muestra y rango por período, un bloque por provincia
+    #: (`attach_blocks`). Vacío hasta que se le pegan.
+    blocks: tuple[PanelBlock, ...] = ()
 
     @property
     def has_data(self) -> bool:
@@ -139,3 +151,25 @@ def build_product_panels(
             )
         )
     return panels
+
+
+def attach_blocks(
+    panels: Sequence[ProductPanel],
+    headlines: Sequence[Headline],
+    ranges: Sequence[RangeSeries],
+) -> list[ProductPanel]:
+    """Pega a cada panel su cifra y su rango por período, un bloque por
+    provincia, en el orden de las cifras (la provincia con más anuncios
+    primero). Cifra y rango se emparejan por producto, provincia, moneda y
+    unidad: una celda con dos unidades no mezcla el rango de una con la cifra
+    de la otra."""
+    rango_de = {(r.product_name, r.province_name, r.currency, r.unit): r for r in ranges}
+    por_producto: dict[str, list[PanelBlock]] = {}
+    for h in headlines:
+        por_producto.setdefault(h.product_name, []).append(
+            PanelBlock(
+                headline=h,
+                ranges=rango_de.get((h.product_name, h.province_name, h.currency, h.unit)),
+            )
+        )
+    return [replace(p, blocks=tuple(por_producto.get(p.name, ()))) for p in panels]

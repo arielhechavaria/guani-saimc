@@ -345,6 +345,26 @@
     .ph-js .ph-grip { display: none; }
   }
 
+  /* ── Cifra con su muestra y rango por período, por provincia, en el panel.
+     La cifra va en la sans y con figuras proporcionales (es un número suelto,
+     no una columna); las marcas del eje y la muestra, en mono tabular. */
+  .ph-cifra { display: grid; gap: .35rem; padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
+  .ph-cifra:first-child { padding-top: 0; border-top: 0; }
+  .ph-cifra-prov { font-size: .6875rem; letter-spacing: .12em; text-transform: uppercase; color: var(--m3-on-surface-variant); }
+  .ph-cifra-fila { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; }
+  .ph-cifra-valor { font: 600 1.75rem/1 var(--m3-font); color: var(--m3-on-surface); }
+  .ph-cifra-unidad { font-size: .8125rem; color: var(--m3-on-surface-variant); }
+  .ph-cifra-cambio { font-size: .8125rem; font-weight: 500; color: var(--m3-on-surface); }
+  .ph-cifra-datos { display: flex; flex-wrap: wrap; gap: .15rem .9rem; margin: 0; padding: 0; list-style: none; font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-cifra-datos b { font-weight: 500; color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
+  .ph-rango { display: block; width: 100%; height: auto; overflow: visible; }
+  .ph-rango-grid { stroke: var(--m3-divider); stroke-width: 1; }
+  .ph-rango-base { stroke: var(--m3-outline-variant); stroke-width: 1; }
+  .ph-rango-tick, .ph-rango-n { font: 400 9.5px var(--m3-mono); fill: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
+  .ph-rango-barra { fill: var(--ph-accent); fill-opacity: .3; }
+  .ph-rango-mediana { stroke: var(--ph-accent); stroke-width: 2.5; stroke-linecap: round; }
+  .ph-rango-fuera { fill: var(--m3-warn-strong); }
+
   /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
   .ph-sheet-scrim {
     position: fixed; inset: 0; z-index: 50;
@@ -767,15 +787,31 @@
               </div>
             </header>
             <div class="ph-fpanel-body">
-              {% if panel.has_series %}
-              {% for serie in panel.series %}
-              <div class="ph-fpanel-plot">
-                <div class="ph-fpanel-plot-head">{{ serie.province_name }} <span>{{ serie.currency }}/{{ serie.unit }}</span></div>
-                {% include "_price_plot.html" %}
-              </div>
+              {# Por provincia: la cifra con su muestra (§9.0: nunca un valor
+                 suelto) y la comparación con el período anterior del mismo
+                 largo, como número y sin color de alarma (§12.6); debajo, el
+                 rango por período. Muestrario aprobado el 2026-09-10. #}
+              {% if panel.blocks %}
+              {% for bloque in panel.blocks %}
+              {% set cifra = bloque.headline %}
+              <section class="ph-cifra" aria-label="{{ panel.name }} en {{ cifra.province_name }}">
+                <div class="ph-cifra-prov">{{ cifra.province_name }}</div>
+                <div class="ph-cifra-fila">
+                  <span class="ph-cifra-valor">{{ cifra.median_text }}</span>
+                  <span class="ph-cifra-unidad">{{ cifra.currency }}/{{ cifra.unit }} · mediana</span>
+                  {% if cifra.change_text %}<span class="ph-cifra-cambio">{{ cifra.change_text }} vs los {{ window_days }} días anteriores</span>{% endif %}
+                </div>
+                <ul class="ph-cifra-datos">
+                  {% if not cifra.is_single_value %}<li>rango <b>{{ cifra.minimum_text }}–{{ cifra.maximum_text }}</b></li>{% endif %}
+                  <li><b>{{ cifra.count }}</b> anuncio{{ "s" if cifra.count != 1 }}{% if cifra.outliers %} ({{ cifra.outliers }} fuera de escala){% endif %}</li>
+                  <li>el último, del {{ cifra.last_day_text }}</li>
+                </ul>
+                {% if bloque.ranges %}
+                {% set serie = bloque.ranges %}
+                {% include "_range_chart.html" %}
+                {% endif %}
+              </section>
               {% endfor %}
-              {% elif panel.has_data %}
-              <p class="ph-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar. El rango de arriba lo resume.</p>
               {% else %}
               <p class="ph-note">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>
               {% endif %}

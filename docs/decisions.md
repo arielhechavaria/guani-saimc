@@ -7533,3 +7533,31 @@ Descartado: mantener el tooltip además del nombre, que repetía lo mismo.
 Consecuencia: los chips son más anchos (el más largo, «Azúcar blanca»); en
 angosto el riel hace wrap. Suite: 1514 pasan, 1 saltea
 (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Gráficos del muestrario, slice 1: cifra con su muestra y rango por período en el panel
+Contexto: el operador aceptó las recomendaciones del muestrario de gráficos
+(12 formas comparadas con los 264 anuncios reales): panel de producto = cifra
+con su muestra + rango por período; comparar provincias = lado a lado; «¿subió
+o bajó?» = mes contra mes; y antes que nada, que un precio mal cargado no
+deforme el eje.
+Decisión: módulo nuevo `price_charts.py`, con el reparto de siempre (Python
+agrupa y calcula coordenadas; la plantilla escupe SVG). Escala robusta:
+`robust_fence` —cuartiles en escala logarítmica, 3 anchos de caja, nunca menos
+de ×2— separa los precios fuera de escala, que se cuentan y se marcan con un
+triángulo en el borde pero no estiran el eje ni mueven la cifra. Es de dibujo,
+no de publicación: no decide qué se publica (§12.6). `build_range_series`: un
+rango por período (semanas para 30 y 90 días, días para 7), contados hacia atrás
+desde hoy, con los períodos sin anuncios vacíos y la cantidad de anuncios
+debajo. `build_headlines`: mediana, rango y muestra de la ventana, y la mediana
+del período anterior del mismo largo con su porcentaje de cambio —número, sin
+flecha ni color de alarma—. El período anterior sale de pedir el doble de días y
+quedarse con `día < hoy − ventana` (la ventana es `día ≥ hoy − ventana`: no se
+pisan). El panel pasa a mostrar, por provincia, esa cifra y el rango
+(`_range_chart.html`); `attach_blocks` empareja cifra y rango por producto,
+provincia, moneda y unidad.
+Descartado: una escala común a todas las provincias en el panel —aplasta las
+celdas baratas— y la mediana nacional mezclando provincias.
+Consecuencia: el panel ya no usa `_price_plot.html` (la hoja de provincia y la
+ventana «Cómo se movió» sí, hasta los slices 2 y 3). Los 9 anuncios fuera de
+escala del dato publicado se ven marcados; corregirlos es trabajo de curaduría.
+Suite: 1531 pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
