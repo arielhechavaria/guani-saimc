@@ -17,6 +17,7 @@ filter_alt
 filter_alt_off
 flag
 forum
+grain
 help
 history
 inbox
@@ -25,9 +26,13 @@ inventory_2
 menu_book
 monitoring
 open_in_new
+rice_bowl
 rule
 schedule
+skillet
 toggle_off
 toggle_on
 visibility_off
 warning
+water_drop
+yakitori

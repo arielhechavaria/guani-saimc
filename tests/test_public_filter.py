@@ -288,7 +288,7 @@ class TestBuildProductChips:
         chips = build_product_chips(("Arroz", "Malanga"), [])
         por_label = {c.label: c for c in chips}
 
-        assert por_label["Arroz"].icon == "🍚"
+        assert por_label["Arroz"].icon == "rice_bowl"
         # Sin ícono asignado, el chip sigue mostrando el nombre.
         assert por_label["Malanga"].icon is None
 
@@ -301,7 +301,8 @@ class TestChipsMultiSeleccionEnLaRuta:
 
         texto = client.get("/").text
 
-        assert '<span class="ph-chip-icon" aria-hidden="true">🍚</span>' in texto
+        # Ligadura de Material Symbols: el texto es el nombre del ícono.
+        assert '<span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span>' in texto
         # El nombre queda para lectores de pantalla y como tooltip.
         assert 'aria-label="Arroz" data-label="Arroz"' in texto
 

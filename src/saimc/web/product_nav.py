@@ -293,19 +293,28 @@ def build_province_nav(
     return choices
 
 
-#: Ícono de cada producto piloto en los chips de la home, por slug. Solo
+#: Ícono de cada producto piloto en los chips de la home, por slug: el nombre
+#: de la ligadura de Material Symbols Rounded (el proyecto sigue Material). Solo
 #: presentación: vive en código y no en `products` para no tocar el esquema
 #: (CLAUDE.md: un cambio de esquema pide el flujo de especificación completo).
-#: Un producto sin entrada sigue mostrando su nombre. Cada emoji tiene que estar
-#: en el subconjunto vendorizado de Noto Color Emoji —lo verifica
-#: `test_static_assets.py` y lo suma `tools/build_emoji_font.py`—, o se vería
-#: distinto en cada teléfono.
+#: Un producto sin entrada sigue mostrando su nombre.
+#:
+#: Material Symbols no tiene íconos propios para casi ningún alimento básico:
+#: solo `rice_bowl` es exacto. Los demás son la aproximación más cercana del
+#: catálogo (verificado contra los 4.239 íconos el 2026-09-10): pollo →
+#: `yakitori` (el único etiquetado «grilled chicken»), picadillo → `skillet`,
+#: azúcar → `grain` (granulado), aceite → `water_drop`. El nombre del producto
+#: sale igual como tooltip y como etiqueta accesible.
+#:
+#: Cada nombre tiene que estar en el subconjunto vendorizado de la fuente —lo
+#: suma `tools/build_icon_font.py` y lo verifica `test_static_assets.py`—, o el
+#: chip mostraría la palabra en vez del ícono.
 PRODUCT_ICONS: dict[str, str] = {
-    "arroz": "🍚",
-    "pollo": "🍗",
-    "picadillo": "🥩",
-    "azucar-blanca": "🍬",
-    "aceite": "🫒",
+    "arroz": "rice_bowl",
+    "pollo": "yakitori",
+    "picadillo": "skillet",
+    "azucar-blanca": "grain",
+    "aceite": "water_drop",
 }
 
 

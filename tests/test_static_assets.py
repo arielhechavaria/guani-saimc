@@ -196,25 +196,26 @@ class TestAssetsVendorizados:
             "corré `python tools/build_emoji_font.py`"
         )
 
-    def test_el_subconjunto_de_emoji_cubre_los_iconos_de_producto(self) -> None:
-        """Mismo tripwire para los íconos de los chips de la home pública: si
-        alguien suma un producto a `PRODUCT_ICONS` y no corre la herramienta,
-        el chip se vería distinto en cada teléfono (o como un cuadrado)."""
+    def test_el_subconjunto_de_iconos_cubre_los_de_producto(self) -> None:
+        """Los íconos de los chips de la home (`product_nav.PRODUCT_ICONS`) son
+        ligaduras de Material Symbols que salen de Python, no de una plantilla,
+        así que el tripwire de plantillas no los ve. Si alguien suma uno y no
+        corre `build_icon_font.py`, el chip mostraría el nombre de la ligadura
+        como texto en vez del ícono."""
         from saimc.web.product_nav import PRODUCT_ICONS
 
         manifiesto = set(
             (
                 Path(__file__).resolve().parents[1]
-                / "src" / "saimc" / "web" / "static" / "fonts" / "noto-color-emoji.chars.txt"
-            ).read_text(encoding="utf-8").strip()
+                / "src" / "saimc" / "web" / "static" / "fonts"
+                / "material-symbols-rounded.icons.txt"
+            ).read_text(encoding="utf-8").split()
         )
 
-        faltan = sorted(
-            {cp for glifo in PRODUCT_ICONS.values() for cp in glifo} - manifiesto
-        )
+        faltan = sorted(set(PRODUCT_ICONS.values()) - manifiesto)
         assert not faltan, (
             f"íconos de producto sin subsetear: {faltan} — "
-            "corré `python tools/build_emoji_font.py`"
+            "corré `python tools/build_icon_font.py`"
         )
 
     def test_ningun_emoji_de_plantilla_queda_fuera_de_la_fuente(self) -> None:

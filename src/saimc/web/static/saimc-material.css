@@ -159,7 +159,7 @@ code, .m3-num { font-family: var(--m3-mono); }
   font-style: normal;
   font-weight: 400;
   font-display: block;
-  src: url("/static/fonts/material-symbols-rounded.woff2?v=2") format("woff2");
+  src: url("/static/fonts/material-symbols-rounded.woff2?v=3") format("woff2");
 }
 
 /* Alice (serif), vendorizada en /static/fonts, subset latin. La usa la home
