@@ -7176,3 +7176,26 @@ subcadena del anuncio en vez de rastrear qué línea lo produjo. `101` aparece
 dentro de «Calle 20 entre 100 y 101» por casualidad. Las direcciones ya se
 descartan en `propose_all`. Rastrear procedencia real, nunca coincidencia de
 texto.
+
+## 2026-09-10 — La suite corre con `.venv/bin/pytest` y deja de pudrirse con el calendario
+Contexto: al mergear a master, `.venv/bin/pytest` cortaba en el colector con
+`ModuleNotFoundError: No module named 'tests'` y 29 tests no llegaban a correr.
+Aparte, `test_public_map.py::test_evidencia_de_texto_enlaza_a_anuncio` fallaba
+sin que nadie lo tocara. Dos cosas distintas, las dos preexistentes.
+Decisión: (1) `pythonpath = ["."]` en `[tool.pytest.ini_options]`. Los dos
+archivos de `basis` hacen `from tests.test_cells import ...`, pero `tests/` no
+es un paquete, así que el import solo resolvía con `python -m pytest`, que
+agrega el CWD por su cuenta. (2) Las fechas de `TestEnlaceDeEvidenciaEnLaSerie`
+pasan a ser relativas a hoy: fijaba 2026-08-10 y 2026-08-12, que el 2026-08-25
+caían dentro de la ventana por defecto de 30 días y el 2026-09-10 dejaron de
+caer, porque `build_series` recorta con `hoy - timedelta(days=30)`.
+Descartado: agregar `tests/__init__.py`. Convierte la carpeta en paquete e
+invita a más imports cruzados entre módulos de test, que es el acoplamiento que
+originó el problema. Una línea de config lo arregla sin cambiar la semántica.
+Consecuencia: `.venv/bin/pytest` y `python -m pytest` dan lo mismo — 1463
+pasan, 1 salta, 0 fallan. El test de imagen del mismo par estaba verde por la
+razón equivocada: aseguraba que no hubiera enlace cuando el enlace ya no se
+dibujaba por la ventana, no por §10.6. Regla que queda: todo test que pegue a
+la vista pública fecha relativo a hoy (`_hace()` en `test_public_filter.py`) o
+le pasa un `hoy=` explícito a `build_series` (`test_series_view.py`), nunca una
+fecha dura.
