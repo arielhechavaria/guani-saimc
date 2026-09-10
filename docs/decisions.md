@@ -7225,3 +7225,28 @@ Regla que queda: un test que afirme «X no está configurado» declara el estado
 nunca lo hereda del entorno. Y verificar la suite con las variables del
 operador puestas, no solo en un worktree limpio, que es lo que hizo que esto
 tardara tres días en verse.
+
+## 2026-09-10 — Riel de sub-secciones de Curaduría en el topbar
+Contexto: el operador pidió que «todas las páginas» estuvieran en el menú del
+header. El rail de secciones de `_shell.html` tiene solo cuatro entradas
+(Catálogo / Curaduría / Control / Documentos), y las tres sub-vistas de
+curaduría —cola (el mapa, 2026-09-07), historial y descarte en lote
+(2026-08-31)— se alcanzaban únicamente por enlaces sueltos dentro de `/curation`.
+Decisión: parcial nueva `_curation_tabs.html`, incluida desde el bloque `tabs`
+de las cuatro plantillas de curaduría. Rinde un `.m3-tabs` en el topbar con
+Curar / Cola / Historial / Sin foco; el activo sale de `request.url.path` por
+igualdad exacta (`?id=` no cambia el path, así que curar un anuncio puntual
+sigue marcando «Curar»). Se quitaron los breadcrumbs «Volver a curar/a la cola»
+y los enlaces «Ver toda la cola →» / «Historial de curados →» de `curation.html`,
+ya redundantes. El link contextual «Descartar en lote →», que solo aparece
+cuando hay pendientes fuera de foco, se deja.
+Descartado: subir las tres a entradas planas del rail de secciones (siete
+ítems). Aprieta el rail —sobre todo apilado en móvil— y mezcla dos niveles de
+navegación en la misma fila.
+Consecuencia: `_curation_tabs.html` es la fuente única de la navegación entre
+vistas de curaduría; agregar o renombrar una vista se toca ahí. Regla CSS nueva
+`.m3-topbar .m3-tabs { margin-top }` porque el bloque queda pegado a
+`.m3-topbar-row`. Las sub-vistas siguen marcando «Curaduría» en el rail de
+secciones, que deriva de `path.startswith('/curation')`. `curation_edit.html` y
+`/evidence/{id}` quedan sin el riel: son vistas de detalle, se llegan por
+contexto.

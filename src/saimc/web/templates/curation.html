@@ -19,6 +19,8 @@
   </div>
 {% endblock %}
 
+{% block tabs %}{% include "_curation_tabs.html" %}{% endblock %}
+
 {% block content %}
 {% if error %}
 <div class="m3-banner m3-banner-error" role="alert" style="margin-bottom:20px">
@@ -76,12 +78,6 @@
     </span>
     {% endif %}
     <span class="m3-spacer"></span>
-    {#
-      El mapa de la cola (2026-09-07): acá se ve un pendiente por vez, allá
-      todos con filtros, y se salta a uno puntual con ?id=.
-    #}
-    <a class="m3-sm" href="/curation/cola">🗺️ Ver toda la cola →</a>
-    <a class="m3-sm" href="/curation/history">Historial de curados →</a>
     {#
       Entrada rápida. El pegado es lo primero que se hace en la sesión (meter
       material) y la curaduría lo segundo, así que sigue arriba y colapsado.

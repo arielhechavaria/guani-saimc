@@ -297,6 +297,10 @@ code, .m3-num { font-family: var(--m3-mono); }
 }
 .m3-tab.is-active .m3-tab-count { background: var(--m3-primary-container); }
 
+/* Riel de sub-secciones dentro del topbar (`_curation_tabs.html`): el
+   {% block tabs %} queda pegado a `.m3-topbar-row`, que no aporta gap. */
+.m3-topbar .m3-tabs { margin-top: var(--m3-space-4); }
+
 /* ── Secciones y tarjetas ───────────────────────────────────────── */
 .m3-stack { display: flex; flex-direction: column; gap: var(--m3-space-6); }
 .m3-stack-lg { display: flex; flex-direction: column; gap: var(--m3-space-8); }

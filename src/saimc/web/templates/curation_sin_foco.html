@@ -17,12 +17,10 @@
   </div>
 {% endblock %}
 
+{% block tabs %}{% include "_curation_tabs.html" %}{% endblock %}
+
 {% block content %}
 <div class="m3-stack" style="gap:20px">
-
-  <div class="m3-row">
-    <a class="m3-sm" href="/curation">&larr; Volver a la cola</a>
-  </div>
 
   {% if not items %}
   <div class="m3-card">

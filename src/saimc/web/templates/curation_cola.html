@@ -23,16 +23,16 @@
   </div>
 {% endblock %}
 
+{% block tabs %}{% include "_curation_tabs.html" %}{% endblock %}
+
 {% block content %}
 <div class="m3-stack">
-
-  <div class="m3-row">
-    <a class="m3-sm" href="/curation">&larr; Volver a curar</a>
-  </div>
 
   {#
     Pestañas y no chips: es el patrón del sistema para subconjuntos con
     conteo, y a diferencia de los chips deja claro que son excluyentes.
+    Este segundo riel filtra DENTRO de la cola por marca de foco; el riel de
+    secciones de curaduría está arriba, en el topbar.
   #}
   <nav class="m3-tabs" aria-label="Filtrar por foco">
     <a class="m3-tab{% if not filters.foco %} is-active{% endif %}"
