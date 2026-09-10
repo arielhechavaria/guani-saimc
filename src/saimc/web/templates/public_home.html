@@ -304,6 +304,30 @@
   .is-min > .ph-win-body, .is-min > .ph-fpanel-body { display: none; }
   .is-min > .ph-win-head { border-bottom: 0; }
 
+  /* Redimensionar: agarres en el borde derecho, el inferior y la esquina.
+     Estirar una ventana apilada la despega (pasa a flotante). Ocultos sin JS,
+     con la ventana minimizada o expandida, y en angosto. */
+  /* Ancla de los agarres para la ventana apilada. `:not(.is-floating)`: sin
+     eso, esta regla —misma especificidad y declarada después— pisaba el
+     `position: fixed` de `.is-floating` y la ventana no se despegaba. */
+  .ph-win:not(.is-floating), .ph-fpanel:not(.is-floating) { position: relative; }
+  .ph-grip { display: none; position: absolute; z-index: 1; touch-action: none; }
+  .ph-js .ph-grip { display: block; }
+  .ph-grip-e { top: .75rem; bottom: .75rem; right: -3px; width: 8px; cursor: ew-resize; }
+  .ph-grip-s { left: .75rem; right: .75rem; bottom: -3px; height: 8px; cursor: ns-resize; }
+  .ph-grip-se { right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; }
+  .ph-grip-se::after {
+    content: ""; position: absolute; right: 5px; bottom: 5px; width: 7px; height: 7px;
+    border-right: 2px solid var(--m3-outline); border-bottom: 2px solid var(--m3-outline);
+    border-bottom-right-radius: 2px; opacity: .6;
+  }
+  .ph-grip-se:hover::after { opacity: 1; }
+  .is-min > .ph-grip, .is-max > .ph-grip { display: none; }
+  .is-resizing { user-select: none; -webkit-user-select: none; animation: none; box-shadow: var(--m3-elev-3); }
+  @media (max-width: 720px) {
+    .ph-js .ph-grip { display: none; }
+  }
+
   /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
   .ph-sheet-scrim {
     position: fixed; inset: 0; z-index: 50;
@@ -685,6 +709,9 @@
           {% endif %}
 
           </div>
+          <span class="ph-grip ph-grip-e" data-win-grip="e" aria-hidden="true"></span>
+          <span class="ph-grip ph-grip-s" data-win-grip="s" aria-hidden="true"></span>
+          <span class="ph-grip ph-grip-se" data-win-grip="se" aria-hidden="true"></span>
         </section>
         {% endfor %}
       </div>
@@ -729,6 +756,9 @@
               {% endif %}
               <a class="ph-fpanel-detail" href="{{ open_precios_query }}" hx-get="{{ open_precios_query }}">Ver el detalle por provincia</a>
             </div>
+            <span class="ph-grip ph-grip-e" data-win-grip="e" aria-hidden="true"></span>
+            <span class="ph-grip ph-grip-s" data-win-grip="s" aria-hidden="true"></span>
+            <span class="ph-grip ph-grip-se" data-win-grip="se" aria-hidden="true"></span>
         </section>
         {% endfor %}
       </div>
@@ -863,14 +893,17 @@
     win.style.zIndex = String(capa);
   }
 
-  function flotar(win, x, y, ancho) {
+  function flotar(win, x, y, ancho, alto) {
     var vw = document.documentElement.clientWidth;
     var vh = document.documentElement.clientHeight;
+    var px = Math.min(Math.max(x, 0), Math.max(vw - ancho, 0));
+    var py = Math.min(Math.max(y, 0), Math.max(vh - 48, 0));
     win.classList.add("is-floating");
-    win.style.left = Math.min(Math.max(x, 0), Math.max(vw - ancho, 0)) + "px";
-    win.style.top = Math.min(Math.max(y, 0), Math.max(vh - 48, 0)) + "px";
+    win.style.left = px + "px";
+    win.style.top = py + "px";
     win.style.width = ancho + "px";
-    win.style.height = "";
+    /* Sin alto guardado, la ventana toma el de su contenido. */
+    win.style.height = typeof alto === "number" ? Math.min(alto, vh - py - 8) + "px" : "";
   }
 
   function anclar(win) {
@@ -912,7 +945,7 @@
       expandir(win);
       alFrente(win);
     } else if (typeof e.x === "number" && !angosto.matches) {
-      flotar(win, e.x, e.y, e.w);
+      flotar(win, e.x, e.y, e.w, e.h);
       if (!win.style.zIndex) alFrente(win);
     } else {
       anclar(win);
@@ -965,6 +998,8 @@
     var dy = ev.clientY - r.top;
     var x0 = ev.clientX;
     var y0 = ev.clientY;
+    /* Si ya tenía alto elegido al redimensionarla, arrastrar lo conserva. */
+    var alto = win.style.height ? parseFloat(win.style.height) : undefined;
     var arrastrando = false;
     barra.setPointerCapture(ev.pointerId);
 
@@ -976,7 +1011,7 @@
         win.classList.add("is-dragging");
         alFrente(win);
       }
-      flotar(win, m.clientX - dx, m.clientY - dy, r.width);
+      flotar(win, m.clientX - dx, m.clientY - dy, r.width, alto);
     }
 
     function soltar() {
@@ -995,6 +1030,58 @@
     barra.addEventListener("pointermove", mover);
     barra.addEventListener("pointerup", soltar);
     barra.addEventListener("pointercancel", soltar);
+  });
+
+  /* Redimensionar desde los agarres: borde derecho (e), inferior (s) o
+     esquina (se). Estirar una ventana apilada la despega. Mínimos para que
+     la barra de título y los botones sigan entrando. */
+  var ANCHO_MIN = 240;
+  var ALTO_MIN = 120;
+
+  document.addEventListener("pointerdown", function (ev) {
+    var agarre = ev.target.closest("[data-win-grip]");
+    if (!agarre || ev.button !== 0 || angosto.matches) return;
+    var win = agarre.closest("[data-win]");
+    if (!win || win.classList.contains("is-max") || win.classList.contains("is-min")) return;
+    var dir = agarre.getAttribute("data-win-grip") || "";
+    var r = win.getBoundingClientRect();
+    var x0 = ev.clientX;
+    var y0 = ev.clientY;
+    ev.preventDefault();
+    flotar(win, r.left, r.top, r.width, r.height);
+    alFrente(win);
+    win.classList.add("is-resizing");
+    agarre.setPointerCapture(ev.pointerId);
+
+    function estirar(m) {
+      var vw = document.documentElement.clientWidth;
+      var vh = document.documentElement.clientHeight;
+      var izq = parseFloat(win.style.left);
+      var arriba = parseFloat(win.style.top);
+      if (dir.indexOf("e") !== -1) {
+        win.style.width = Math.min(Math.max(r.width + m.clientX - x0, ANCHO_MIN), vw - izq) + "px";
+      }
+      if (dir.indexOf("s") !== -1) {
+        win.style.height = Math.min(Math.max(r.height + m.clientY - y0, ALTO_MIN), vh - arriba - 8) + "px";
+      }
+    }
+
+    function soltarAgarre() {
+      agarre.removeEventListener("pointermove", estirar);
+      agarre.removeEventListener("pointerup", soltarAgarre);
+      agarre.removeEventListener("pointercancel", soltarAgarre);
+      win.classList.remove("is-resizing");
+      var e = de(win);
+      e.x = parseFloat(win.style.left);
+      e.y = parseFloat(win.style.top);
+      e.w = parseFloat(win.style.width);
+      e.h = parseFloat(win.style.height);
+      guardar();
+    }
+
+    agarre.addEventListener("pointermove", estirar);
+    agarre.addEventListener("pointerup", soltarAgarre);
+    agarre.addEventListener("pointercancel", soltarAgarre);
   });
 
   /* htmx re-renderiza `#ph-live` entero: se reaplica el estado a los nodos nuevos. */

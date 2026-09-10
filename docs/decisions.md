@@ -7449,3 +7449,22 @@ ventanas funcionan igual sin arrastrarlas; minimizar y expandir son botones).
 Sintaxis del script verificada con `node --check` sobre el HTML renderizado;
 comportamiento sin verificar en navegador desde la sesión. Suite: 1509 pasan,
 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Ventanas redimensionables desde sus bordes
+Contexto: además de arrastrar, minimizar y expandir, el operador pidió poder
+estirar y contraer cada ventana al tamaño que el visitante elija.
+Decisión: tres agarres por ventana (`[data-win-grip]`): borde derecho (`e`),
+inferior (`s`) y esquina (`se`, con marca visible). Estirar una ventana
+apilada la despega (pasa a flotante). Mínimos de 240×120 px para que la barra
+y los botones sigan entrando; máximos acotados al viewport. El alto elegido se
+guarda con la posición en `sessionStorage` y arrastrar lo conserva. Ocultos sin
+JS, con la ventana minimizada o expandida, y en angosto. Se corrigió además un
+choque de cascada: `.ph-win, .ph-fpanel { position: relative }` —misma
+especificidad y declarada después— pisaba el `position: fixed` de
+`.is-floating`; quedó como `:not(.is-floating)`.
+Descartado: `resize: both` nativo del navegador. Solo da la esquina, no deja
+fijar mínimos útiles ni avisa cuándo terminó para guardar el tamaño.
+Consecuencia: el borde izquierdo y el superior no redimensionan (habría que
+mover la ventana a la vez); se arrastra y después se estira. Suite: 1510
+pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`). Comportamiento sin
+verificar en navegador desde la sesión.
