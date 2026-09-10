@@ -7520,3 +7520,16 @@ coherencia con el resto de la interfaz.
 Consecuencia: cuatro de cinco íconos son aproximaciones; si alguno no se
 entiende, se cambia en una línea del mapa y corriendo `build_icon_font.py`.
 Suite: 1514 pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — El chip muestra el nombre debajo del ícono
+Contexto: con cuatro de cinco íconos aproximados, el operador pidió el nombre
+visible debajo, chico y a 70% de opacidad, para que se entiendan de un vistazo.
+Decisión: el chip de ícono pasa a dos líneas —ícono de 22px y `.ph-chip-name`
+de 10,5px a opacidad .7 (.9 prendido)—, en rectángulo redondeado
+(`--m3-radius-md`) porque la píldora se deforma con dos líneas. Se sacó el
+tooltip (`data-label` + `::after`) y el `aria-label`: el nombre visible es ahora
+el nombre accesible del enlace y el ícono sigue `aria-hidden`.
+Descartado: mantener el tooltip además del nombre, que repetía lo mismo.
+Consecuencia: los chips son más anchos (el más largo, «Azúcar blanca»); en
+angosto el riel hace wrap. Suite: 1514 pasan, 1 saltea
+(`PYTHONPATH=<worktree>/src -p no:randomly`).

@@ -303,8 +303,8 @@ class TestChipsMultiSeleccionEnLaRuta:
 
         # Ligadura de Material Symbols: el texto es el nombre del ícono.
         assert '<span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span>' in texto
-        # El nombre queda para lectores de pantalla y como tooltip.
-        assert 'aria-label="Arroz" data-label="Arroz"' in texto
+        # El nombre va visible debajo del ícono (y es el nombre accesible).
+        assert '<span class="ph-chip-name">Arroz</span>' in texto
 
     def test_productos_acota_a_la_union_de_los_activos(
         self, client: TestClient, session: Session
@@ -328,9 +328,9 @@ class TestChipsMultiSeleccionEnLaRuta:
 
         texto = client.get("/?productos=arroz,aceite").text
 
-        assert 'aria-pressed="true" aria-label="Arroz"' in texto
-        assert 'aria-pressed="true" aria-label="Aceite"' in texto
-        assert 'aria-pressed="false" aria-label="Azúcar blanca"' in texto
+        assert 'aria-pressed="true"><span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span><span class="ph-chip-name">Arroz</span></a>' in texto
+        assert 'aria-pressed="true"><span class="m3-icon ph-chip-icon" aria-hidden="true">water_drop</span><span class="ph-chip-name">Aceite</span></a>' in texto
+        assert 'aria-pressed="false"><span class="m3-icon ph-chip-icon" aria-hidden="true">grain</span><span class="ph-chip-name">Azúcar blanca</span></a>' in texto
 
     def test_un_solo_producto_via_productos_da_la_tabla_enfocada(
         self, client: TestClient, session: Session
@@ -785,7 +785,7 @@ class TestFiltroEnLaRuta:
         # El riel de chips de producto está, sin ninguno prendido: `?productos=`
         # vacío = se muestra todo.
         assert 'class="ph-chip-rail"' in texto
-        assert 'aria-pressed="false" aria-label="Arroz"' in texto
+        assert 'aria-pressed="false"><span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span><span class="ph-chip-name">Arroz</span></a>' in texto
         assert 'aria-pressed="true"' not in texto
 
     def test_elegir_un_producto_acota_la_vista(
@@ -935,7 +935,7 @@ class TestVentanaEnLaRuta:
 
         assert "Ventana de 90 días" in texto
         assert 'aria-current="true">90 días<' in texto
-        assert 'aria-pressed="true" aria-label="Arroz"' in texto
+        assert 'aria-pressed="true"><span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span><span class="ph-chip-name">Arroz</span></a>' in texto
 
 
 class TestTablaPorProvincia:
@@ -1075,7 +1075,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         texto = client.get("/?provincia=la-habana&producto=arroz").text
 
         assert 'aria-current="true">La Habana<' in texto
-        assert 'aria-pressed="true" aria-label="Arroz"' in texto
+        assert 'aria-pressed="true"><span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span><span class="ph-chip-name">Arroz</span></a>' in texto
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
         assert "La Habana" in tabla
         assert "Santiago de Cuba" not in tabla
