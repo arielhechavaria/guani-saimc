@@ -613,18 +613,52 @@ class TestVentanasDelMenu:
         )
 
 
-class TestSliceDeCierre:
-    """Los paneles de producto abren por defecto: togglear un chip no colapsa
-    el acordeón (htmx re-renderiza `#ph-live` entero)."""
+class TestVentanasArrastrables:
+    """Ventanas del menú y paneles de producto comparten forma: barra de título
+    arrastrable y botones de minimizar y expandir. El comportamiento es JS
+    (mejora progresiva); acá se afirma la marca que el script necesita."""
 
-    def test_los_paneles_abren_por_defecto(
+    def test_los_paneles_arrancan_expandidos(
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
 
         texto = client.get("/?productos=arroz,aceite").text
 
-        assert texto.count('<details class="ph-fpanel" open>') == 2
+        assert texto.count('<section class="ph-fpanel" data-win=') == 2
+        # Nada sale minimizado ni expandido del servidor: el estado lo aplica
+        # el script en el navegador.
+        assert 'class="ph-fpanel is-' not in texto
+        assert 'class="ph-win is-' not in texto
+
+    def test_cada_ventana_tiene_barra_y_controles(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz&ver=precios").text
+
+        # 3 ventanas del menú + 1 panel de producto.
+        barras = texto.count('<header class="ph-win-head" data-win-handle>') + texto.count(
+            '<header class="ph-fpanel-head" data-win-handle>'
+        )
+        assert barras == 4
+        assert texto.count('data-win-min aria-pressed="false"') == 4
+        assert texto.count('data-win-max aria-pressed="false"') == 4
+        assert 'data-win="Precios" id="precios"' in texto
+        assert 'id="ph-panel-arroz"' in texto
+
+    def test_el_script_de_ventanas_viaja_en_la_pagina(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/").text
+
+        assert 'classList.add("ph-js")' in texto
+        # Va en el bloque de scripts, después de htmx y fuera de `#ph-live`:
+        # htmx no lo re-ejecuta en cada swap.
+        assert texto.index('classList.add("ph-js")') > texto.index("htmx.min.js")
 
 
 class TestResolveProvince:
