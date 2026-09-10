@@ -498,6 +498,41 @@ class TestHojaDetalleProvincia:
         )
 
 
+class TestSliceDeCierre:
+    """`#como-se-movio` es solo la vista general; con foco, la evolución vive en
+    el panel o en la hoja, no duplicada. Y los paneles abren por defecto."""
+
+    def test_como_se_movio_aparece_sin_foco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        assert 'id="como-se-movio"' in client.get("/").text
+
+    def test_como_se_movio_se_oculta_con_producto_activo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        assert 'id="como-se-movio"' not in client.get("/?productos=arroz").text
+
+    def test_como_se_movio_se_oculta_con_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        assert 'id="como-se-movio"' not in client.get("/?provincia=la-habana").text
+
+    def test_los_paneles_abren_por_defecto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        assert texto.count('<details class="ph-fpanel" open>') == 2
+
+
 class TestResolveProvince:
     def test_resuelve_por_slug_con_espacios(self) -> None:
         nombres = ("La Habana", "Santiago de Cuba")
@@ -663,9 +698,9 @@ class TestFiltroEnLaRuta:
 
         assert response.status_code == 200
         # Aceite entra en la tabla por provincia (un día basta) pero no dibuja
-        # serie (hacen falta 2 días distintos).
+        # serie (hacen falta 2 días distintos): el panel flotante lo dice.
         assert "Aceite por formato y provincia" in response.text
-        assert "No hay suficientes días" in response.text
+        assert "todavía no en dos días distintos" in response.text
 
 
 class TestVentanaEnLaRuta:

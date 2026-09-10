@@ -7365,3 +7365,25 @@ Consecuencia: el mapa ahora navega. `map_view.py` importa `product_nav`
 `#precios` conviven —muestran lo mismo con distinto formato—; se unifican en el
 slice de cierre junto con la duplicación de paneles. Suite: 1494 pasan, 1
 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Rediseño home pública, slice de cierre (parcial): fin de la duplicación de gráficos
+Contexto: tras los slices 1–5, la evolución de precio se dibujaba hasta tres
+veces —panel flotante, hoja de provincia y sección `#como-se-movio`— y togglear
+un chip colapsaba el acordeón de paneles.
+Decisión: `#como-se-movio` pasa a ser SOLO la vista general: se renderiza
+únicamente cuando no hay ningún producto activo ni provincia elegida
+(`{% if series and not active_products and not selected_province %}`). Con foco,
+su gráfico ya vive en el panel (producto) o en la hoja (provincia). El enlace
+«Cómo se movió» de `.ph-nav` se condiciona igual. Los `<details>` de los
+paneles abren siempre (`open` fijo, sin `{% if loop.first %}`): togglear un chip
+ya no colapsa nada, y el `<summary>` sigue dejando plegar a mano. Se borró la
+regla CSS muerta `.ph-map-wrap` (el mapa salió de ahí en el slice 1).
+Descartado por ahora, queda como deuda: unificar la hoja de provincia con el
+filtro `?provincia=` de `#precios` (siguen mostrando lo mismo con distinto
+formato); recortar `#precios` vs. el resumen de los paneles; trampa de foco de
+teclado y Escape-cierra en la hoja (necesitan JS de verdad). Se dejan para
+cuando el operador revise el rediseño completo y decida cuánto recortar.
+Consecuencia: en `/` sin filtros el comportamiento no cambia (la vista general
+sigue). Apenas se prende un chip o se elige una provincia, `#como-se-movio`
+desaparece. Suite: 1498 pasan, 1 saltea
+(`PYTHONPATH=<worktree>/src -p no:randomly`).
