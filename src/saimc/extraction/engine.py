@@ -1063,7 +1063,33 @@ def _tiered_proposals(
     if product is None and guess is None:
         return None
 
-    base_line = next((line for line in plain if _extract_price(line) is not None), None)
+    con_precio = [line for line in plain if _extract_price(line) is not None]
+
+    # El catálogo de tienda no es un anuncio escalonado, aunque traiga un
+    # «Más de N» que active esta lectura.
+    #
+    # La premisa del bloque es que NINGUNA línea sola está completa: el
+    # encabezado declara el producto y las de precio heredan (forma medida el
+    # 2026-08-20, «ALITAS DE POLLO / CAJA DE 40 lb / La caja 28,5 usd o 25650»).
+    # Cuando dos o más líneas con precio nombran el producto, esa premisa es
+    # falsa: cada una es una oferta completa —un formato distinto del mismo
+    # producto— y la lectura línea por línea las saca todas, mientras el bloque
+    # colapsa el anuncio a dos filas y descarta el resto.
+    #
+    # Caso testigo (medido 2026-09-10): un catálogo con «Arroz grano dorado
+    # 100lb. 43,5 o 30885» y «Arroz grano dorado 1 kg. 0,97 o 688,7» se leía
+    # como bloque y proponía UNA fila con precio 34 —el kilómetro de
+    # «📍 Tienda San José Carretera Central Km 34», que era la primera línea
+    # con cifras—, sin leer nunca las dos que traían la respuesta. 30 de las 50
+    # filas con precio equivocado del corpus salían de este camino.
+    if product is not None:
+        propias = [
+            line for line in con_precio if _match_product(line, products) is product
+        ]
+        if len(propias) > 1:
+            return None
+
+    base_line = con_precio[0] if con_precio else None
     if base_line is None:
         return None
     base_price = _extract_price(base_line)

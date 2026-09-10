@@ -960,6 +960,76 @@ class TestProposeAllMultiProducto:
         assert resultados[0].product is products[0]
 
 
+class TestCatalogoNoEsBloqueEscalonado:
+    """Un catálogo de tienda no se lee como bloque, aunque traiga «Más de N».
+
+    La premisa del bloque escalonado es que NINGUNA línea sola está completa:
+    el encabezado declara el producto y las de precio heredan («ALITAS DE
+    POLLO / CAJA DE 40 lb / La caja 28,5 usd o 25650 cup.», forma medida el
+    2026-08-20). Cuando dos o más líneas CON PRECIO nombran el producto, esa
+    premisa es falsa: cada una es una oferta completa —un formato distinto del
+    mismo producto— y hay que leerlas una por una.
+
+    El caso testigo es real y caro. Un catálogo con decenas de productos en
+    cinco categorías traía al final un «Más de 10 pacas» que activaba la
+    lectura de bloque. El bloque colapsaba el anuncio entero a UNA fila con
+    precio **34** —el kilómetro de «📍 Tienda San José Carretera Central Km
+    34», que era la primera línea con cifras— y las dos líneas que sí tenían
+    la respuesta («Arroz grano dorado 100lb. 43,5 o 30885» y «1 kg. 0,97 o
+    688,7») no se leían nunca, porque `propose_all` corta apenas el bloque
+    devuelve algo.
+
+    Medido el 2026-09-10 contra el corpus real: **30 de las 50 filas con
+    precio equivocado (60%) salían de este camino.**
+    """
+
+    CATALOGO = (
+        "🌟 OFERTA DEL MIÉRCOLES\n"
+        "📍 Tienda San José Carretera Central Km 34, San José\n"
+        "🍝 Salsa para pasta: 3 kg: $3400\n"
+        "🍚 Arroz grano dorado 100 lb. 30885\n"
+        "🍚 Arroz grano dorado 1 kg. 688,7\n"
+        "Más de 10 pacas 681,6\n"
+    )
+
+    def test_el_kilometro_de_la_direccion_no_termina_de_precio(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuestas = propose_all(self.CATALOGO, products, provinces)
+
+        assert Decimal("34") not in [p.price for p in propuestas]
+
+    def test_los_dos_formatos_del_producto_se_leen_los_dos(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Lo que el bloque descartaba: el anuncio ofrece el mismo arroz en dos
+        formatos y las dos filas son datos distintos, no una sola oferta con
+        escalones."""
+        propuestas = propose_all(self.CATALOGO, products, provinces)
+
+        precios = {p.price for p in propuestas if p.product is products[1]}
+        assert Decimal("30885") in precios
+        assert Decimal("688.7") in precios
+
+    def test_un_solo_formato_sigue_leyendose_como_bloque(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """El contrapeso, que es la forma original medida el 2026-08-20: una
+        sola línea con precio nombra el producto, así que el escalón sigue
+        siendo un escalón y no una oferta aparte."""
+        texto = (
+            "🍗 Pollo entero en caja\n"
+            "La caja de 40 lb: 25650 cup.\n"
+            "Más de 10 cajas 25000\n"
+        )
+
+        propuestas = propose_all(texto, products, provinces)
+
+        assert len(propuestas) == 2
+        assert propuestas[0].price == Decimal("25650")
+        assert propuestas[1].price == Decimal("25000")
+
+
 class TestProposeAllPreciosEscalonados:
     """Un anuncio mayorista de un solo producto con precio por volumen.
 

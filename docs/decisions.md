@@ -7133,3 +7133,46 @@ filas. Precio 42.3% -> **47.9%** (+5.6), extracción completa 33.4% -> **35.1%**
 más candidatos con producto, el emparejado deja de regalar cantidades por azar
 —la misma deflación de casualidad que ya se vio al filtrar el catálogo—. Sobre
 las 232 filas de texto el precio pasa de 107 a 120 filas correctas.
+
+## 2026-09-10 — El catálogo de tienda deja de leerse como bloque escalonado
+Contexto: se abrió un cambio para mostrarle al asistente LLM los valores que las
+reglas extraen MAL —no solo los huecos—, porque D1 los hace invisibles por
+diseño. La medición contra el corpus real lo descartó antes de escribir nada:
+de las 50 filas con precio equivocado, 30 (60%) no salían de un valor ambiguo
+sino de `_tiered_proposals`, que reclamaba anuncios que no le correspondían. El
+testigo es un catálogo de tienda entero —decenas de productos en cinco
+categorías— que termina con un «Más de 10 pacas» y por eso activaba la lectura
+de bloque: colapsaba el anuncio a UNA fila con precio 34, el kilómetro de
+«📍 Tienda San José Carretera Central Km 34», que era la primera línea con
+cifras. Las dos líneas con la respuesta correcta («Arroz grano dorado 100lb.
+43,5 o 30885» y «1 kg. 0,97 o 688,7») no se leían nunca, porque `propose_all`
+corta apenas el bloque devuelve algo.
+Decisión: cuando dos o más líneas CON PRECIO nombran el producto,
+`_tiered_proposals` devuelve `None` y cede a la lectura línea por línea. La
+premisa del bloque es que ninguna línea sola está completa; dos líneas con
+precio que nombran el producto la falsifican, porque cada una es una oferta
+completa —un formato distinto del mismo producto—.
+Descartado: elegir el precio base de una línea que nombre el producto, dejando
+el bloque activo. Se implementó y se midió primero: subía precio (+8 filas de
+texto) pero BAJABA extracción completa (97 -> 93 filas), porque mover
+`base_price` reordena el emparejado de `_match_rows_to_candidates` sin arreglar
+que el catálogo se siga colapsando a dos filas. También se descartó, y esto es
+lo que originó todo, mostrarle valores sospechosos al LLM: habría costado un
+apartamiento argumentado de `spec.md` §6.1 para atacar menos fallos que este
+arreglo determinista, que no toca D1 ni pregunta nada.
+Consecuencia: la mejora más grande medida hasta ahora. Sobre las 232 filas de
+texto, extracción completa 41.8% -> **53.0%** (+11.2), precio 51.7% -> **65.5%**,
+producto 81.5% -> **90.5%**, cantidad/unidad 54.3% -> **66.8%**. Sobre la corrida
+completa de 305 filas, completa 31.8% -> **40.3%** (los absolutos están
+deprimidos porque el worktree no tiene `data/raw` y 60 de 61 anuncios de imagen
+transcriben vacío; las dos corridas comparten el handicap, así que el delta
+vale). Quedan sin atacar tres patrones ya cuantificados: precio dual USD/CUP en
+una línea (30% de las 50), «Sale N Cup Lb» ganándole al precio real (20%) y
+«31mil» sin expandir a 31000 (6%).
+Nota de método: dos mediciones previas de esta misma sesión afirmaron que 40% y
+luego 30% de los precios malos salían de líneas de dirección. Las dos eran
+falsas —el número real es 0%— porque localizaban el precio buscándolo como
+subcadena del anuncio en vez de rastrear qué línea lo produjo. `101` aparece
+dentro de «Calle 20 entre 100 y 101» por casualidad. Las direcciones ya se
+descartan en `propose_all`. Rastrear procedencia real, nunca coincidencia de
+texto.
