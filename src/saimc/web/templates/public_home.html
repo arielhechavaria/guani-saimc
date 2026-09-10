@@ -167,8 +167,10 @@
   .ph-menu-item:hover { background: var(--ph-accent-wash); color: var(--ph-accent); text-decoration: none; }
   .ph-menu-item.is-open { background: var(--ph-accent); color: var(--ph-on-accent); }
 
+  /* z-index 4: el tooltip de un chip tiene que pasar por encima de las pilas
+     de ventanas (z-index 2) que arrancan justo debajo del riel. */
   .ph-chip-rail {
-    position: relative; z-index: 2;
+    position: relative; z-index: 4;
     display: flex; flex-wrap: wrap; gap: .5rem;
     padding: .7rem clamp(1rem, 3vw, 2rem) 0;
   }
@@ -184,6 +186,33 @@
   .ph-chip-toggle:hover { border-color: var(--ph-accent); color: var(--ph-accent); text-decoration: none; }
   .ph-chip-toggle.is-active {
     background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
+  }
+
+  /* Chip de ícono: solo el emoji. El nombre aparece como tooltip al pasar por
+     encima o con el foco del teclado; en pantalla táctil lo dice el panel que
+     se abre. Prendido, un aro en el acento en vez de relleno oscuro, para que
+     el emoji se siga viendo. */
+  .ph-chip-toggle.is-icon { position: relative; padding: .3rem .6rem; line-height: 1; }
+  .ph-chip-icon { display: block; font-size: 1.35rem; line-height: 1; }
+  .ph-chip-toggle.is-icon.is-active {
+    background: var(--ph-accent-wash); border-color: var(--ph-accent);
+    box-shadow: inset 0 0 0 1px var(--ph-accent);
+  }
+  .ph-chip-toggle[data-label]::after {
+    content: attr(data-label);
+    position: absolute; left: 50%; top: calc(100% + 6px);
+    transform: translate(-50%, -2px);
+    padding: .3rem .6rem; border-radius: 6px;
+    background: var(--m3-on-surface); color: var(--m3-surface);
+    font: 500 .75rem/1.2 var(--m3-font); letter-spacing: .01em; white-space: nowrap;
+    box-shadow: var(--m3-elev-2);
+    opacity: 0; pointer-events: none;
+    transition: opacity .12s ease, transform .12s ease;
+  }
+  .ph-chip-toggle[data-label]:hover::after,
+  .ph-chip-toggle[data-label]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+  @media (prefers-reduced-motion: reduce) {
+    .ph-chip-toggle[data-label]::after { transition: none; }
   }
 
   /* El escenario: el mapa llena lo que queda; ventanas, paneles, leyenda y
@@ -430,8 +459,15 @@
      Ninguno prendido = se muestran todos. #}
   {% if product_chips %}
   <nav class="ph-chip-rail" aria-label="Productos">
+    {# Con ícono, el chip muestra solo el ícono; el nombre va como etiqueta
+       accesible y como tooltip al pasar por encima o con el foco del teclado.
+       Un producto sin ícono asignado sigue mostrando su nombre. #}
     {% for chip in product_chips -%}
+    {% if chip.icon -%}
+    <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}" aria-label="{{ chip.label }}" data-label="{{ chip.label }}"><span class="ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span></a>
+    {%- else -%}
     <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
+    {%- endif %}
     {%- endfor %}
   </nav>
   {% endif %}
@@ -724,7 +760,7 @@
         <section class="ph-fpanel" data-win="{{ panel.name }}" id="ph-panel-{{ panel.slug }}" aria-label="{{ panel.name }}">
             <header class="ph-fpanel-head" data-win-handle>
               <div class="ph-fpanel-titles">
-                <span class="ph-fpanel-name">{{ panel.name }}</span>
+                {% if panel.icon %}<span class="ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}<span class="ph-fpanel-name">{{ panel.name }}</span>
                 <span class="ph-fpanel-sum">
                   {%- if not panel.has_data -%}
                   sin anuncios en la ventana
@@ -799,7 +835,7 @@
       {% for row in province_sheet_rows %}
       <section class="ph-sheet-row">
         <div class="ph-sheet-row-head">
-          <span class="ph-sheet-row-name">{{ row.name }}</span>
+          {% if row.icon %}<span class="ph-fpanel-icon" aria-hidden="true">{{ row.icon }}</span>{% endif %}<span class="ph-sheet-row-name">{{ row.name }}</span>
           <span class="ph-sheet-row-sum">
             {%- if not row.has_data -%}
             todavía no hay dato acá

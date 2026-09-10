@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from saimc.web.card_view import ProductCard, format_price
-from saimc.web.product_nav import DEFAULT_WINDOW_DAYS, product_slug, products_query
+from saimc.web.product_nav import (
+    DEFAULT_WINDOW_DAYS,
+    product_icon,
+    product_slug,
+    products_query,
+)
 from saimc.web.series_view import PriceSeries
 
 
@@ -59,6 +64,11 @@ class ProductPanel:
     @property
     def has_series(self) -> bool:
         return bool(self.series)
+
+    @property
+    def icon(self) -> str | None:
+        """El ícono del producto, el mismo del chip, o `None` si no tiene."""
+        return product_icon(self.name)
 
 
 def build_product_panels(

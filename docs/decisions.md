@@ -7468,3 +7468,29 @@ Consecuencia: el borde izquierdo y el superior no redimensionan (habría que
 mover la ventana a la vez); se arrastra y después se estira. Suite: 1510
 pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`). Comportamiento sin
 verificar en navegador desde la sesión.
+
+## 2026-09-10 — Chips de producto con ícono solo; el nombre al pasar por encima
+Contexto: el operador pidió reemplazar el nombre de cada producto en los chips
+por un ícono. Se le planteó ícono + nombre (hay productos sin ícono claro y en
+pantalla táctil no hay «pasar por encima»); eligió ícono solo, con el nombre al
+pasar el mouse.
+Decisión: `product_nav.PRODUCT_ICONS` mapea slug → emoji para los cinco piloto
+reales: arroz 🍚, pollo 🍗, picadillo 🥩, azúcar blanca 🍬, aceite 🫒.
+`ProductChip.icon` lo trae; el chip muestra solo el emoji, con `aria-label` y un
+tooltip CSS (`data-label` + `::after`) al pasar por encima o con el foco del
+teclado. Prendido, aro en el acento en vez de relleno oscuro, para que el emoji
+se siga viendo. El mismo ícono va delante del nombre en el panel del producto y
+en la hoja de provincia: en táctil es donde se aprende qué ícono es qué. Un
+piloto sin entrada en el mapa sigue mostrando su nombre. 🫒 y 🍬 no estaban en el
+subconjunto vendorizado de Noto Color Emoji: `tools/build_emoji_font.py` ahora
+suma `PRODUCT_ICONS` al vocabulario de interfaz y se regeneró la fuente (238 code
+points, 521.572 B); un test nuevo en `test_static_assets.py` pone la suite en
+rojo si un ícono queda fuera.
+Descartado: una columna `icon` en `products` —cambio de esquema, pide el flujo
+de especificación completo para un dato de presentación—. Descartado también
+el `title` nativo: tarda en aparecer y duplicaría el tooltip propio.
+Consecuencia: los íconos más flojos son 🍬 para azúcar (no hay emoji de azúcar)
+y 🫒 para aceite (el aceite cubano es sobre todo de soya o girasol); se cambian
+tocando una línea del mapa y corriendo la herramienta. Un producto nuevo que
+pase a piloto aparece con su nombre hasta que alguien le asigne ícono. Suite:
+1514 pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).

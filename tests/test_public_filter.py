@@ -284,8 +284,27 @@ class TestBuildProductChips:
             "/?productos=arroz,aceite&provincia=la-habana&dias=7"
         )
 
+    def test_el_chip_trae_el_icono_del_producto_o_ninguno(self) -> None:
+        chips = build_product_chips(("Arroz", "Malanga"), [])
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Arroz"].icon == "🍚"
+        # Sin ícono asignado, el chip sigue mostrando el nombre.
+        assert por_label["Malanga"].icon is None
+
 
 class TestChipsMultiSeleccionEnLaRuta:
+    def test_el_chip_con_icono_muestra_solo_el_icono_y_nombra_al_pasar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/").text
+
+        assert '<span class="ph-chip-icon" aria-hidden="true">🍚</span>' in texto
+        # El nombre queda para lectores de pantalla y como tooltip.
+        assert 'aria-label="Arroz" data-label="Arroz"' in texto
+
     def test_productos_acota_a_la_union_de_los_activos(
         self, client: TestClient, session: Session
     ) -> None:
@@ -308,9 +327,9 @@ class TestChipsMultiSeleccionEnLaRuta:
 
         texto = client.get("/?productos=arroz,aceite").text
 
-        assert 'aria-pressed="true">Arroz</a>' in texto
-        assert 'aria-pressed="true">Aceite</a>' in texto
-        assert 'aria-pressed="false">Azúcar blanca</a>' in texto
+        assert 'aria-pressed="true" aria-label="Arroz"' in texto
+        assert 'aria-pressed="true" aria-label="Aceite"' in texto
+        assert 'aria-pressed="false" aria-label="Azúcar blanca"' in texto
 
     def test_un_solo_producto_via_productos_da_la_tabla_enfocada(
         self, client: TestClient, session: Session
@@ -495,6 +514,17 @@ class TestHojaDetalleProvincia:
         texto = client.get("/").text
 
         assert 'href="/?provincia=la-habana" hx-get="/?provincia=la-habana"' in texto
+
+    def test_un_piloto_sin_icono_sigue_mostrando_su_nombre(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Malanga es piloto y no está en `PRODUCT_ICONS`: su chip no queda
+        vacío, muestra el nombre como antes."""
+        self._seed(session)
+
+        texto = client.get("/").text
+
+        assert 'aria-pressed="false">Malanga</a>' in texto
 
 
 class TestResolveViews:
@@ -754,7 +784,7 @@ class TestFiltroEnLaRuta:
         # El riel de chips de producto está, sin ninguno prendido: `?productos=`
         # vacío = se muestra todo.
         assert 'class="ph-chip-rail"' in texto
-        assert 'aria-pressed="false">Arroz</a>' in texto
+        assert 'aria-pressed="false" aria-label="Arroz"' in texto
         assert 'aria-pressed="true"' not in texto
 
     def test_elegir_un_producto_acota_la_vista(
@@ -904,7 +934,7 @@ class TestVentanaEnLaRuta:
 
         assert "Ventana de 90 días" in texto
         assert 'aria-current="true">90 días<' in texto
-        assert 'aria-pressed="true">Arroz</a>' in texto
+        assert 'aria-pressed="true" aria-label="Arroz"' in texto
 
 
 class TestTablaPorProvincia:
@@ -1044,7 +1074,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         texto = client.get("/?provincia=la-habana&producto=arroz").text
 
         assert 'aria-current="true">La Habana<' in texto
-        assert 'aria-pressed="true">Arroz</a>' in texto
+        assert 'aria-pressed="true" aria-label="Arroz"' in texto
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
         assert "La Habana" in tabla
         assert "Santiago de Cuba" not in tabla
