@@ -1,0 +1,21 @@
+{#
+  Subnavegación de la sección Curaduría. Se incluye desde el `{% block tabs %}`
+  del topbar (ver `_shell.html`) para que las cuatro vistas de curaduría
+  —curar, mapa de la cola, historial y descarte en lote— se alcancen desde el
+  header y no solo desde enlaces sueltos dentro de cada página.
+
+  El destino activo se deriva de `request.url.path`, igual que el rail de
+  secciones del shell. `/curation` es coincidencia exacta a propósito: `?id=`
+  no cambia el path, así que curar un anuncio puntual sigue marcando «Curar».
+#}
+{% set cur = request.url.path %}
+<nav class="m3-tabs" aria-label="Vistas de curaduría">
+  <a class="m3-tab{% if cur == '/curation' %} is-active{% endif %}"
+     href="/curation"{% if cur == '/curation' %} aria-current="page"{% endif %}>Curar</a>
+  <a class="m3-tab{% if cur == '/curation/cola' %} is-active{% endif %}"
+     href="/curation/cola"{% if cur == '/curation/cola' %} aria-current="page"{% endif %}>Cola</a>
+  <a class="m3-tab{% if cur == '/curation/history' %} is-active{% endif %}"
+     href="/curation/history"{% if cur == '/curation/history' %} aria-current="page"{% endif %}>Historial</a>
+  <a class="m3-tab{% if cur == '/curation/sin-foco' %} is-active{% endif %}"
+     href="/curation/sin-foco"{% if cur == '/curation/sin-foco' %} aria-current="page"{% endif %}>Sin foco</a>
+</nav>
