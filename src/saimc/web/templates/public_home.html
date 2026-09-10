@@ -64,7 +64,6 @@
                    line-height: 1.1; color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
   .ph-stat-value small { font-size: 1rem; color: var(--m3-on-surface-variant); }
 
-  .ph-map-wrap { position: relative; }
   .ph-map { width: 100%; height: auto; display: block; }
   .ph-map-province { stroke-width: 1.1; stroke-linejoin: round;
                       transition: fill .15s ease; }
@@ -399,13 +398,15 @@
   {% endif %}
 
   {# Paneles flotantes (slice 4): uno por producto activo, con su rango
-     nacional y su evolución. Acordeón nativo (`<details>`); el primero abierto.
-     El × quita ese producto de `?productos=`. #}
+     nacional y su evolución. `<details>` abiertos por defecto —así togglear un
+     chip no colapsa nada (htmx re-renderiza el bloque entero)—; el `<summary>`
+     sigue dejando plegar cada uno a mano. El × quita ese producto de
+     `?productos=`. #}
   {% if product_panels %}
   <div class="ph-panel-stack">
     {% for panel in product_panels %}
     <div class="ph-fpanel-wrap">
-      <details class="ph-fpanel"{% if loop.first %} open{% endif %}>
+      <details class="ph-fpanel" open>
         <summary class="ph-fpanel-head">
           <span class="ph-fpanel-name">{{ panel.name }}</span>
           <span class="ph-fpanel-sum">
@@ -475,7 +476,7 @@
 <section class="ph-hero" id="cobertura">
   <nav class="ph-nav">
     <a href="#precios">Precios</a>
-    <a href="#como-se-movio">Cómo se movió</a>
+    {% if not active_products and not selected_province %}<a href="#como-se-movio">Cómo se movió</a>{% endif %}
     <a href="#cobertura">Cobertura</a>
   </nav>
 
@@ -713,19 +714,17 @@
 </section>
 {% endif %}
 
-{% if series or active_products or selected_province %}
+{# «Cómo se movió» es la vista general: solo aparece cuando NADA está en foco.
+   Con un producto activo, su evolución vive en el panel flotante; con una
+   provincia elegida, en la hoja de detalle. Así no se dibuja lo mismo dos
+   veces (slice de cierre). #}
+{% if series and not active_products and not selected_province %}
 <section class="ph-section" id="como-se-movio">
   <div class="ph-section-head">
     <h2 class="ph-h2">Cómo se movió</h2>
     <span class="ph-section-tag">Un punto = un anuncio</span>
   </div>
 
-  {% if not series %}
-  <p class="ph-empty">
-    No hay suficientes días con anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %}
-    para dibujar la evolución. Hacen falta al menos dos días distintos con observación.
-  </p>
-  {% else %}
   {# Sin línea que una los puntos, y es deliberado: la serie más densa tiene
      dato en 14 de 30 días y la más rala en 3. Unir dos observaciones
      separadas por tres días dibuja tres precios que nadie observó. Se
@@ -758,7 +757,6 @@
     </li>
     {% endfor %}
   </ul>
-  {% endif %}
 </section>
 {% endif %}
 
