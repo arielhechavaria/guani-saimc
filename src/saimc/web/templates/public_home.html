@@ -266,17 +266,73 @@
     background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
   }
   @media (prefers-reduced-motion: reduce) { .ph-chip-toggle { transition: none; } }
+
+  /* ── Slice 4 — paneles flotantes por producto activo ────────────────
+     Pila a la derecha sobre el mapa (escritorio); apilada bajo el mapa en
+     pantallas angostas. Acordeón nativo (`<details>`). */
+  .ph-panel-stack {
+    position: absolute; right: 6vw; top: clamp(5.5rem, 16vh, 8.5rem);
+    width: min(23rem, 42vw); max-height: 72dvh; overflow-y: auto;
+    display: grid; gap: .75rem; z-index: 2;
+  }
+  .ph-fpanel-wrap { position: relative; }
+  .ph-fpanel {
+    border-radius: var(--ph-radius-sm);
+    background: var(--m3-surface);
+    background: color-mix(in srgb, var(--m3-surface) 96%, transparent);
+    box-shadow: var(--ph-elev);
+    animation: ph-panel-in .35s cubic-bezier(.2, .8, .2, 1) both;
+  }
+  @keyframes ph-panel-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+  .ph-fpanel-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem;
+    padding: .7rem 2.2rem .7rem .9rem; cursor: pointer; list-style: none;
+  }
+  .ph-fpanel-head::-webkit-details-marker { display: none; }
+  .ph-fpanel-name { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
+  .ph-fpanel-sum { font-size: .8125rem; color: var(--m3-on-surface-variant);
+                   font-variant-numeric: tabular-nums; }
+  .ph-fpanel-body { padding: 0 .9rem .9rem; display: grid; gap: .8rem; }
+  .ph-fpanel-plot-head { font-size: .75rem; color: var(--m3-on-surface-variant);
+                         display: flex; justify-content: space-between; margin-bottom: .2rem; }
+  .ph-fpanel-note { margin: 0; font-size: .8125rem; color: var(--m3-on-surface-variant);
+                    text-wrap: pretty; }
+  .ph-fpanel-detail { font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
+  .ph-fpanel-x {
+    position: absolute; top: .35rem; right: .35rem;
+    width: 1.6rem; height: 1.6rem; display: grid; place-items: center;
+    border-radius: 999px; font-size: 1.1rem; line-height: 1;
+    color: var(--m3-on-surface-variant); text-decoration: none;
+  }
+  .ph-fpanel-x:hover { background: var(--m3-surface-container-high); color: var(--m3-on-surface); }
+
+  @media (prefers-reduced-motion: reduce) { .ph-fpanel { animation: none; } }
+
+  @media (max-width: 720px) {
+    .ph-panel-stack {
+      position: static; width: 100%; max-height: none; overflow: visible;
+      margin-top: 1rem;
+    }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 
+{# `#ph-live` envuelve todo lo que depende del conjunto de productos activos.
+   Con htmx cargado (slice 4), un chip o un botón de cerrar hacen `hx-get` a la
+   misma URL y htmx reemplaza solo este bloque —sin recargar CSS, cabecera ni
+   pie, y sin saltar el scroll—. Sin JS, el `href` de siempre hace la
+   navegación completa: la interacción degrada, no se rompe. #}
+<div id="ph-live"
+     hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true">
+
 {# ══ Lienzo: el mapa a pantalla completa ═══════════════════════════════
    Slice 1 del rediseño (docs/decisions.md). El mapa era una tarjeta más
    dentro de `.ph-hero`; ahora es el lienzo de la página. Sigue coloreado
    por estado de publicación, no por precio (§9.0 / §12.6): el coloreado
-   por precio quedó fuera de alcance por ahora. Los chips de producto, los
-   paneles flotantes y la hoja de detalle llegan en los slices 2–5. #}
+   por precio quedó fuera de alcance por ahora. La hoja de detalle por
+   provincia llega en el slice 5. #}
 <section class="ph-canvas" aria-labelledby="ph-canvas-title">
   <div class="ph-canvas-head">
     <span class="ph-canvas-kicker">SAIMC · Fase 0</span>
@@ -291,15 +347,57 @@
     {% endif %}
   </div>
 
-  {# Riel de productos (slice 2): cada chip togglea `?productos=`. Sin htmx
-     todavía — es un enlace de página completa; el ancla `#cobertura` deja el
-     lienzo a la vista tras recargar. Ninguno prendido = se muestran todos. #}
+  {# Riel de productos: cada chip togglea `?productos=`. `hx-get` lo resuelve
+     como swap parcial de `#ph-live`; el `href` (con ancla `#cobertura`) es el
+     fallback sin JS. Ninguno prendido = se muestran todos. #}
   {% if product_chips %}
   <nav class="ph-chip-rail" aria-label="Productos">
     {% for chip in product_chips -%}
-    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}#cobertura" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
+    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}#cobertura" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
     {%- endfor %}
   </nav>
+  {% endif %}
+
+  {# Paneles flotantes (slice 4): uno por producto activo, con su rango
+     nacional y su evolución. Acordeón nativo (`<details>`); el primero abierto.
+     El × quita ese producto de `?productos=`. #}
+  {% if product_panels %}
+  <div class="ph-panel-stack">
+    {% for panel in product_panels %}
+    <div class="ph-fpanel-wrap">
+      <details class="ph-fpanel"{% if loop.first %} open{% endif %}>
+        <summary class="ph-fpanel-head">
+          <span class="ph-fpanel-name">{{ panel.name }}</span>
+          <span class="ph-fpanel-sum">
+            {%- if not panel.has_data -%}
+            sin anuncios en la ventana
+            {%- elif panel.is_single_value -%}
+            {{ panel.minimum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}
+            {%- else -%}
+            {{ panel.minimum_text }}–{{ panel.maximum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} · {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}
+            {%- endif -%}
+          </span>
+        </summary>
+        <div class="ph-fpanel-body">
+          {% if panel.has_series %}
+          {% for serie in panel.series %}
+          <div class="ph-fpanel-plot">
+            <div class="ph-fpanel-plot-head">{{ serie.province_name }} <span>{{ serie.currency }}/{{ serie.unit }}</span></div>
+            {% include "_price_plot.html" %}
+          </div>
+          {% endfor %}
+          {% elif panel.has_data %}
+          <p class="ph-fpanel-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar. El rango de arriba lo resume.</p>
+          {% else %}
+          <p class="ph-fpanel-note">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>
+          {% endif %}
+          <a class="ph-fpanel-detail" href="#precios">Ver el detalle por provincia ↓</a>
+        </div>
+      </details>
+      <a class="ph-fpanel-x" href="{{ panel.close_query }}#cobertura" hx-get="{{ panel.close_query }}" aria-label="Quitar {{ panel.name }} de la vista">×</a>
+    </div>
+    {% endfor %}
+  </div>
   {% endif %}
 
   {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
@@ -603,35 +701,7 @@
         <span class="ph-serie-scale">{{ serie.currency }}/{{ serie.unit }}</span>
       </div>
 
-      <svg class="ph-plot" viewBox="{{ serie.viewbox }}" role="img"
-           aria-label="{{ serie.count }} anuncios de {{ serie.product_name }} en {{ serie.province_name }} entre {{ serie.first_day_text }} y {{ serie.last_day_text }}, de {{ serie.minimum_text }} a {{ serie.maximum_text }} {{ serie.currency }} por {{ serie.unit }}.">
-        {# Banda mín–máx: horizontal y de ancho completo a propósito. Describe
-           la muestra del período entero, no una interpolación en el tiempo. #}
-        <rect class="ph-plot-band" x="6" y="{{ serie.band_top }}"
-              width="588" height="{{ (serie.band_bottom - serie.band_top) or 1 }}" />
-        <line class="ph-plot-median" x1="6" x2="594"
-              y1="{{ serie.median_y }}" y2="{{ serie.median_y }}" />
-        <line class="ph-plot-axis" x1="6" x2="594" y1="144" y2="144" />
-
-        {% for point in serie.points %}
-        {% if point.evidence_is_public %}
-        <a href="/anuncio/{{ point.evidence_id }}">
-          <circle class="ph-plot-dot is-linked" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5">
-            <title>{{ point.day_text }} — {{ point.price_text }} {{ serie.currency }}/{{ serie.unit }} — ver el anuncio</title>
-          </circle>
-        </a>
-        {% else %}
-        <circle class="ph-plot-dot" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5">
-          <title>{{ point.day_text }} — {{ point.price_text }} {{ serie.currency }}/{{ serie.unit }}</title>
-        </circle>
-        {% endif %}
-        {% endfor %}
-
-        <text class="ph-plot-label" x="6" y="160">{{ serie.first_day_text }}</text>
-        <text class="ph-plot-label" x="594" y="160" text-anchor="end">{{ serie.last_day_text }}</text>
-        <text class="ph-plot-label" x="6" y="{{ serie.band_top - 3 }}">{{ serie.maximum_text }}</text>
-        <text class="ph-plot-label" x="6" y="{{ serie.band_bottom + 11 }}">{{ serie.minimum_text }}</text>
-      </svg>
+      {% include "_price_plot.html" %}
 
       <p class="ph-serie-foot">
         {{ serie.count }} anuncio{{ "s" if serie.count != 1 }} en
@@ -648,4 +718,13 @@
 </section>
 {% endif %}
 
+</div>{# /#ph-live #}
+{% endblock %}
+
+{% block scripts %}
+{# htmx vendorizado (ADR 001). La home era estática y no lo cargaba; con los
+   chips y los paneles del rediseño, cada toggle sin htmx sería una recarga
+   completa —CSS incluido— sobre una conexión lenta. `defer` y una sola
+   petición cacheable. Si no carga, todo degrada al `href` de cada enlace. #}
+<script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
 {% endblock %}

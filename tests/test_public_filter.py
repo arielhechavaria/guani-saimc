@@ -341,6 +341,72 @@ class TestChipsMultiSeleccionEnLaRuta:
         assert "Azúcar blanca" not in texto
 
 
+class TestPanelesFlotantes:
+    def test_un_panel_por_producto_activo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        assert texto.count('class="ph-fpanel"') == 2
+        assert '<span class="ph-fpanel-name">Arroz</span>' in texto
+        assert '<span class="ph-fpanel-name">Aceite</span>' in texto
+
+    def test_sin_productos_no_hay_pila_de_paneles(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/").text
+
+        assert 'class="ph-panel-stack"' not in texto
+
+    def test_el_boton_de_cerrar_quita_ese_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        # El × de Arroz apunta a la vista sin Arroz (queda Aceite), por `href`
+        # (fallback) y por `hx-get` (swap parcial).
+        assert 'href="/?productos=aceite#cobertura" hx-get="/?productos=aceite"' in texto
+
+    def test_carga_htmx_y_arma_el_bloque_vivo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz").text
+
+        assert '/static/htmx.min.js?v=' in texto
+        assert 'id="ph-live"' in texto
+        # Los chips hacen `hx-get` además del `href` de fallback.
+        assert 'hx-get="/?productos=arroz,aceite"' in texto
+
+    def test_anuncio_no_carga_htmx(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La Transparency Layer sigue siendo HTML plano: htmx es solo de `/`."""
+        _seed_dos_productos(session)
+        ingestion = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/txt.dat",
+            content_hash="hash-anuncio-sin-htmx",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            original_text="Aceite a 1200",
+            captured_at=datetime(2026, 8, 10, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.commit()
+
+        texto = client.get(f"/anuncio/{ingestion.id}").text
+
+        assert "htmx.min.js" not in texto
+
+
 class TestResolveProvince:
     def test_resuelve_por_slug_con_espacios(self) -> None:
         nombres = ("La Habana", "Santiago de Cuba")

@@ -130,6 +130,21 @@ def _query(
     return f"{path}?" + "&".join(params) if params else path
 
 
+def products_query(
+    product_slugs: Sequence[str],
+    *,
+    provincia: str = "",
+    dias: int = DEFAULT_WINDOW_DAYS,
+    path: str = "/",
+) -> str:
+    """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
+    preservando provincia y ventana. La usan el riel de chips y los paneles
+    flotantes para componer el estado de togglear un producto."""
+    return _query(
+        productos=list(product_slugs), provincia=provincia, dias=dias, path=path
+    )
+
+
 def download_href(
     *,
     producto: str = "",
@@ -296,8 +311,8 @@ def build_product_chips(
                 label=name,
                 slug=slug,
                 is_active=is_active,
-                query=_query(
-                    productos=resultado, provincia=prov_slug, dias=selected_days
+                query=products_query(
+                    resultado, provincia=prov_slug, dias=selected_days
                 ),
             )
         )

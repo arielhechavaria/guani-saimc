@@ -30,6 +30,7 @@ from saimc.progress import pilot_product_names
 from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
+from saimc.web.panel_view import build_product_panels
 from saimc.web.product_nav import (
     build_product_chips,
     build_province_nav,
@@ -228,6 +229,13 @@ def _render_home(
             "product_chips": build_product_chips(
                 pilot_names,
                 active_products,
+                selected_province=prov,
+                selected_days=window,
+            ),
+            "product_panels": build_product_panels(
+                active_products,
+                cards,
+                series,
                 selected_province=prov,
                 selected_days=window,
             ),

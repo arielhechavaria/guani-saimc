@@ -7311,3 +7311,31 @@ conserva (con sus tests) — el slice 4 puede reusar su lógica de URL limpia pa
 al checkout principal, así que sin eso pytest prueba el código viejo y pasa en
 falso (fue lo que escondió estas 5 roturas al principio). Suite: 1477 pasan, 1
 saltea, con `PYTHONPATH` correcto y `-p no:randomly`.
+
+## 2026-09-10 — Rediseño home pública, slice 4: paneles flotantes + htmx en la capa pública
+Contexto: los chips del slice 2 prendían productos pero sin nada que mostrar
+sobre el mapa. El rediseño quiere un panel flotante por producto activo, con su
+rango nacional y su evolución.
+Decisión: `panel_view.py` nuevo — `ProductPanel` + `build_product_panels()`
+agrega por producto desde las tarjetas y las series que `_render_home` ya
+calcula (mín de mínimos / máx de máximos / suma de conteos / provincias
+distintas), en el orden de activación. Es lectura rápida, no medición nueva: la
+tabla por provincia de `#precios` sigue siendo la autoridad. La marca del
+gráfico se extrajo a la parcial `_price_plot.html`, compartida entre
+`#como-se-movio` y los paneles. Cada panel es un `<details>` (acordeón nativo,
+el primero abierto); el × quita ese producto de `?productos=`.
+**htmx entra en la capa pública** (`public_home.html` `{% block scripts %}`,
+`/static/htmx.min.js` ya vendorizado). `#ph-live` envuelve todo lo que depende
+del conjunto activo; chips y × llevan `hx-get` a la misma URL que su `href`, y
+htmx reemplaza solo `#ph-live` (`hx-select`/`outerHTML`/`hx-push-url`). Sin JS,
+el `href` hace la navegación completa: degrada, no se rompe. La Transparency
+Layer (`/anuncio/<id>`) sigue sin htmx.
+Descartado: `?foco=` y coloreo del mapa por panel expandido — el coloreo por
+precio quedó fuera de alcance (2026-09-10), así que el foco no tiene consumidor
+visual; el acordeón nativo alcanza. Descartado también mantener la marca del
+SVG duplicada en dos lugares.
+Consecuencia: al togglear un chip, el acordeón vuelve al estado inicial (primer
+panel abierto) — htmx re-renderiza `#ph-live` entero. Los paneles y las
+secciones `#precios`/`#como-se-movio` muestran el mismo dato hoy; el slice de
+cierre puede recortar la duplicación. Suite: 1488 pasan, 1 saltea
+(`PYTHONPATH=<worktree>/src -p no:randomly`).
