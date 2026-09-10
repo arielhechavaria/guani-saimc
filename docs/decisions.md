@@ -7533,3 +7533,76 @@ Descartado: mantener el tooltip además del nombre, que repetía lo mismo.
 Consecuencia: los chips son más anchos (el más largo, «Azúcar blanca»); en
 angosto el riel hace wrap. Suite: 1514 pasan, 1 saltea
 (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Gráficos del muestrario, slice 1: cifra con su muestra y rango por período en el panel
+Contexto: el operador aceptó las recomendaciones del muestrario de gráficos
+(12 formas comparadas con los 264 anuncios reales): panel de producto = cifra
+con su muestra + rango por período; comparar provincias = lado a lado; «¿subió
+o bajó?» = mes contra mes; y antes que nada, que un precio mal cargado no
+deforme el eje.
+Decisión: módulo nuevo `price_charts.py`, con el reparto de siempre (Python
+agrupa y calcula coordenadas; la plantilla escupe SVG). Escala robusta:
+`robust_fence` —cuartiles en escala logarítmica, 3 anchos de caja, nunca menos
+de ×2— separa los precios fuera de escala, que se cuentan y se marcan con un
+triángulo en el borde pero no estiran el eje ni mueven la cifra. Es de dibujo,
+no de publicación: no decide qué se publica (§12.6). `build_range_series`: un
+rango por período (semanas para 30 y 90 días, días para 7), contados hacia atrás
+desde hoy, con los períodos sin anuncios vacíos y la cantidad de anuncios
+debajo. `build_headlines`: mediana, rango y muestra de la ventana, y la mediana
+del período anterior del mismo largo con su porcentaje de cambio —número, sin
+flecha ni color de alarma—. El período anterior sale de pedir el doble de días y
+quedarse con `día < hoy − ventana` (la ventana es `día ≥ hoy − ventana`: no se
+pisan). El panel pasa a mostrar, por provincia, esa cifra y el rango
+(`_range_chart.html`); `attach_blocks` empareja cifra y rango por producto,
+provincia, moneda y unidad.
+Descartado: una escala común a todas las provincias en el panel —aplasta las
+celdas baratas— y la mediana nacional mezclando provincias.
+Consecuencia: el panel ya no usa `_price_plot.html` (la hoja de provincia y la
+ventana «Cómo se movió» sí, hasta los slices 2 y 3). Los 9 anuncios fuera de
+escala del dato publicado se ven marcados; corregirlos es trabajo de curaduría.
+Suite: 1531 pasan, 1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Gráficos del muestrario, slice 2: provincias lado a lado
+Contexto: segunda recomendación aceptada del muestrario: responder «¿dónde está
+más caro?» en la ventana Precios y en la hoja de provincia, sin colorear el mapa
+por precio (eso sigue fuera de alcance).
+Decisión: `price_charts.build_province_comparison` arma, por producto × moneda ×
+unidad, una fila por provincia con rango, mitad central (cuartiles), mediana y
+muestra, todas en un eje común; la más cara (por mediana) arriba. Cada provincia
+lleva su propio cerco robusto —es su celda la que dice qué precio es imposible—,
+pero comparten eje porque la pregunta es comparar. Unidades distintas no
+comparten eje. Se calcula con TODAS las provincias aunque haya una elegida:
+la ventana Precios la muestra al principio (para los productos prendidos, o
+todos) con la provincia elegida resaltada; la hoja de provincia la muestra por
+producto con la suya resaltada y las demás atenuadas, y deja de dibujar la
+evolución por provincia (`_price_plot.html`), que queda para «Cómo se movió».
+Partial `_province_compare.html`, una sola tinta: la identidad la da el nombre.
+Descartado: un color por provincia —con el nombre en la fila no hace falta, y
+un par de colores más obligaba a validar otra paleta—.
+Consecuencia: `_render_home` hace una consulta más de observaciones (sin filtro
+de producto ni provincia) para la comparación; con el volumen de la Fase 0 no
+pesa, y se puede compartir con la del panel si hace falta. Suite: 1539 pasan,
+1 saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Gráficos del muestrario, slice 3: «Cómo se movió»
+Contexto: la ventana «Cómo se movió» seguía con los puntos por anuncio del
+gráfico viejo (`_price_plot.html`), que el operador descartó; el muestrario
+aprobado le asignó mes contra mes, dos provincias en el tiempo y el calendario.
+Decisión: `price_charts.build_evolution_blocks` arma un bloque por producto con
+anuncios en la ventana: mes contra mes (mediana robusta del período anterior
+del mismo largo contra la actual, con la muestra entre paréntesis y el cambio
+en %, sin flecha ni color de alarma), la mediana por período de cada provincia
+en escalones que se cortan donde no hubo anuncios (solo con dos períodos o más;
+si no, lo dice), el calendario de días con anuncios y una tabla plegada con
+cada anuncio y su enlace a `/anuncio/<id>`. Todas las provincias aunque haya
+una elegida, como en Precios. Color por provincia fijo por orden alfabético
+(`--m3-prov-0` / `--m3-prov-2`), siempre con leyenda y etiqueta directa.
+Descartado: dejar la procedencia solo en el CSV. El gráfico viejo era el único
+lugar de la home que enlazaba un precio a su anuncio; al reemplazarlo se perdía
+(lo detectó `test_public_map`), y la tabla lo recupera y sirve además de vista
+en tabla de los gráficos.
+Consecuencia: `_price_plot.html` y sus clases `.ph-plot-*` / `.ph-serie*`
+quedan sin uso; `series` sigue viajando a los paneles (`has_series`). Limpiarlos
+es aparte. Con más de dos provincias los colores se repiten (`slot % 2`): hay
+que sumar una tinta validada cuando entre la tercera. Suite: 1559 pasan,
+1 saltea.

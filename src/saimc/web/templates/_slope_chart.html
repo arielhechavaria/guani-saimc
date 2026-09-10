@@ -1,0 +1,35 @@
+{#
+  Mes contra mes para un producto (`price_charts.build_month_vs_month`): la
+  mediana de cada provincia en el período anterior y en el actual, del mismo
+  largo, con la cantidad de anuncios entre paréntesis y el cambio en porcentaje.
+  Sin flecha ni color de alarma (§12.6). Una provincia sin anuncios en uno de
+  los dos períodos queda como punto suelto. Espera `slope`.
+#}
+<svg class="ph-pendiente" viewBox="{{ slope.viewbox }}" role="img"
+     aria-label="{{ slope.product_name }}: mediana del {{ slope.before_label }} contra la del {{ slope.now_label }}, por provincia.">
+  <text class="ph-pendiente-col" x="{{ slope.x_before }}" y="14" text-anchor="middle">antes</text>
+  <text class="ph-rango-tick" x="{{ slope.x_before }}" y="28" text-anchor="middle">{{ slope.before_label }}</text>
+  <text class="ph-pendiente-col" x="{{ slope.x_now }}" y="14" text-anchor="middle">ahora</text>
+  <text class="ph-rango-tick" x="{{ slope.x_now }}" y="28" text-anchor="middle">{{ slope.now_label }}</text>
+  <line class="ph-rango-grid" x1="{{ slope.x_before }}" x2="{{ slope.x_before }}" y1="{{ slope.top - 8 }}" y2="{{ slope.bottom_y }}" />
+  <line class="ph-rango-grid" x1="{{ slope.x_now }}" x2="{{ slope.x_now }}" y1="{{ slope.top - 8 }}" y2="{{ slope.bottom_y }}" />
+  {% for l in slope.lines %}
+  <g class="ph-prov-{{ l.slot % 2 }}">
+    {% if l.has_line %}
+    <line class="ph-pendiente-linea" x1="{{ slope.x_before }}" y1="{{ l.y_before }}" x2="{{ slope.x_now }}" y2="{{ l.y_now }}" />
+    {% endif %}
+    {% if l.before_median is not none %}
+    <circle class="ph-pendiente-punto" cx="{{ slope.x_before }}" cy="{{ l.y_before }}" r="4.5">
+      <title>{{ l.province_name }}, {{ slope.before_label }}: mediana {{ l.before_text }} {{ slope.currency }}/{{ slope.unit }} · {{ l.before_count }} anuncio{{ "s" if l.before_count != 1 }}</title>
+    </circle>
+    <text class="ph-pendiente-etq" x="{{ slope.x_before - 10 }}" y="{{ l.label_y_before + 4 }}" text-anchor="end">{{ l.province_name }} {{ l.before_text }} ({{ l.before_count }})</text>
+    {% endif %}
+    {% if l.now_median is not none %}
+    <circle class="ph-pendiente-punto" cx="{{ slope.x_now }}" cy="{{ l.y_now }}" r="4.5">
+      <title>{{ l.province_name }}, {{ slope.now_label }}: mediana {{ l.now_text }} {{ slope.currency }}/{{ slope.unit }} · {{ l.now_count }} anuncio{{ "s" if l.now_count != 1 }}</title>
+    </circle>
+    <text class="ph-pendiente-etq" x="{{ slope.x_now + 10 }}" y="{{ l.label_y_now + 4 }}">{% if l.before_median is none %}{{ l.province_name }} {% endif %}{{ l.now_text }} ({{ l.now_count }}){% if l.change_text %} {{ l.change_text }}{% endif %}</text>
+    {% endif %}
+  </g>
+  {% endfor %}
+</svg>

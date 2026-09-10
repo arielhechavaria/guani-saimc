@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from datetime import date
+from datetime import date, timedelta
 
 from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
@@ -30,7 +30,13 @@ from saimc.progress import pilot_product_names
 from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
-from saimc.web.panel_view import build_product_panels
+from saimc.web.panel_view import attach_blocks, build_product_panels
+from saimc.web.price_charts import (
+    build_evolution_blocks,
+    build_headlines,
+    build_province_comparison,
+    build_range_series,
+)
 from saimc.web.product_nav import (
     build_product_chips,
     build_province_nav,
@@ -271,6 +277,42 @@ def _render_home(
         activos, la ventana de días y las ventanas flotantes abiertas."""
         return products_query(active_slugs, provincia=slug, dias=window, ver=open_views)
 
+    # Panel de producto (muestrario aprobado el 2026-09-10): cifra con su
+    # muestra, comparación con el período anterior del mismo largo y rango por
+    # período. El período anterior sale de la misma normalización y los mismos
+    # filtros que la ventana, pidiendo el doble de días y quedándose con la
+    # mitad vieja, así los dos períodos no se pisan.
+    hoy = date.today()
+    previous_obs = [
+        o
+        for o in _visible_observations(
+            db,
+            pilot=pilot,
+            products=active_set or None,
+            province=selected_province,
+            window=2 * window,
+        )
+        if o.day < hoy - timedelta(days=window)
+    ]
+    panel_headlines = build_headlines(obs, previous_obs)
+    panel_ranges = build_range_series(obs, window_days=window, hoy=hoy)
+
+    # Ventanas «Precios» y «Cómo se movió» (slices 2 y 3 de los gráficos): con
+    # TODAS las provincias aunque haya una elegida —las preguntas son «¿dónde
+    # está más caro?» y «¿se separan o se acercan?»— y todos los piloto; la
+    # plantilla elige qué productos mostrar. Mismo corte del período anterior
+    # que el panel.
+    all_provinces_obs = _visible_observations(
+        db, pilot=pilot, products=None, province=None, window=window
+    )
+    all_provinces_previous = [
+        o
+        for o in _visible_observations(
+            db, pilot=pilot, products=None, province=None, window=2 * window
+        )
+        if o.day < hoy - timedelta(days=window)
+    ]
+
     csv_href = download_href(
         producto=active_slugs[0] if len(active_slugs) == 1 else "",
         productos=active_slugs if len(active_slugs) > 1 else (),
@@ -295,13 +337,17 @@ def _render_home(
                 selected_days=window,
                 ver=open_views,
             ),
-            "product_panels": build_product_panels(
-                active_products,
-                cards,
-                series,
-                selected_province=prov,
-                selected_days=window,
-                ver=open_views,
+            "product_panels": attach_blocks(
+                build_product_panels(
+                    active_products,
+                    cards,
+                    series,
+                    selected_province=prov,
+                    selected_days=window,
+                    ver=open_views,
+                ),
+                panel_headlines,
+                panel_ranges,
             ),
             "province_nav": build_province_nav(
                 province_names,
@@ -317,6 +363,10 @@ def _render_home(
                 selected_province=prov,
                 active_products=active_products,
                 ver=open_views,
+            ),
+            "province_comparisons": build_province_comparison(all_provinces_obs),
+            "evolution_blocks": build_evolution_blocks(
+                all_provinces_obs, all_provinces_previous, window_days=window, hoy=hoy
             ),
             "view_menu": view_menu,
             "open_views": open_views,

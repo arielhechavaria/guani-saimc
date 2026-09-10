@@ -528,6 +528,116 @@ class TestHojaDetalleProvincia:
         assert 'aria-pressed="false">Malanga</a>' in texto
 
 
+class TestProvinciasLadoALadoEnLaRuta:
+    """Slice 2 de los gráficos: «¿dónde está más caro?» en la ventana Precios y
+    en la hoja de provincia."""
+
+    def _seed(self, session: Session) -> None:
+        """Arroz más caro en Santiago (400–420) que en La Habana (300–340)."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-lado")
+        for dias, provincia, precio in (
+            (6, habana, "300"),
+            (3, habana, "340"),
+            (5, santiago, "400"),
+            (2, santiago, "420"),
+        ):
+            _precio(session, product=arroz, province=provincia, source=fuente, dia=_hace(dias), price=precio)
+        session.commit()
+
+    def test_la_ventana_precios_compara_las_provincias_la_mas_cara_arriba(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?ver=precios").text
+        precios = texto.split('id="precios"')[1].split("</section>")[0]
+
+        assert 'class="ph-compara"' in precios
+        assert precios.index("Santiago de Cuba") < precios.index("La Habana")
+
+    def test_la_hoja_de_provincia_resalta_la_suya(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        hoja = client.get("/?provincia=la-habana").text.split('class="ph-sheet"')[1]
+
+        assert 'class="ph-compara"' in hoja
+        # Santiago se atenúa; La Habana, la de la hoja, no.
+        assert hoja.count('class="ph-compara-fila is-atenuada"') == 1
+
+
+class TestComoSeMovioEnLaRuta:
+    """Slice 3 de los gráficos: la ventana «Cómo se movió» muestra, por
+    producto, mes contra mes, las provincias en el tiempo y el calendario."""
+
+    def _seed(self, session: Session) -> None:
+        """Arroz en dos semanas distintas por provincia, y un anuncio de La
+        Habana en el período anterior (40 días atrás, con la ventana de 30)."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-evo")
+        for dias, provincia, precio in (
+            (40, habana, "280"),
+            (10, habana, "300"),
+            (3, habana, "340"),
+            (9, santiago, "400"),
+            (2, santiago, "420"),
+        ):
+            _precio(session, product=arroz, province=provincia, source=fuente, dia=_hace(dias), price=precio)
+        session.commit()
+
+    @staticmethod
+    def _ventana(texto: str) -> str:
+        return texto.split('id="evolucion"')[1].split('data-win-grip="e"')[0]
+
+    def test_dibuja_los_tres_graficos_con_leyenda(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        evo = self._ventana(client.get("/?ver=evolucion&dias=30").text)
+
+        assert 'class="ph-pendiente"' in evo
+        assert 'class="ph-pasos"' in evo
+        assert 'class="ph-calendario"' in evo
+        leyenda = evo.split('class="ph-evo-leyenda"')[1].split("</ul>")[0]
+        assert "La Habana" in leyenda
+        assert "Santiago de Cuba" in leyenda
+
+    def test_mes_contra_mes_dice_el_cambio_con_su_muestra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        evo = self._ventana(client.get("/?ver=evolucion&dias=30").text)
+
+        # La Habana: antes 280 (1 anuncio), ahora mediana de 300 y 340 = 320
+        # (2 anuncios) → 320 / 280 = 1,143 → +14%.
+        assert "320 (2) +14%" in evo
+
+    def test_con_una_provincia_elegida_sigue_comparando_todas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        evo = self._ventana(client.get("/?ver=evolucion&dias=30&provincia=la-habana").text)
+
+        assert "Santiago de Cuba" in evo
+
+
 class TestResolveViews:
     def test_vacio_ante_none_o_cadena_vacia(self) -> None:
         assert resolve_views(None) == []
@@ -867,10 +977,12 @@ class TestFiltroEnLaRuta:
         response = client.get("/?producto=aceite")
 
         assert response.status_code == 200
-        # Aceite entra en la tabla por provincia (un día basta) pero no dibuja
-        # serie (hacen falta 2 días distintos): el panel flotante lo dice.
+        # Aceite entra en la tabla por provincia (un día basta) y tiene su cifra
+        # en el panel, pero no dibuja evolución (hacen falta 2 días distintos):
+        # la ventana «Cómo se movió» lo dice.
         assert "Aceite por formato y provincia" in response.text
-        assert "todavía no en dos días distintos" in response.text
+        assert '<span class="ph-cifra-valor">300</span>' in response.text
+        assert "No hay suficientes días" in response.text
 
 
 class TestVentanaEnLaRuta:

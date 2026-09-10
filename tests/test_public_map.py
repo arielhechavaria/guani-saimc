@@ -334,4 +334,5 @@ class TestEnlaceDeEvidenciaEnLaSerie:
         texto = client.get("/").text
 
         assert f'href="/anuncio/{origen.id}"' not in texto
-        assert 'class="ph-plot-dot is-linked"' not in texto
+        # La tabla de anuncios de «Cómo se movió» la nombra, sin enlace.
+        assert ">captura</span>" in texto

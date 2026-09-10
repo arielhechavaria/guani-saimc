@@ -1,0 +1,20 @@
+{#
+  Calendario de anuncios de un producto (`price_charts.build_calendar`): un
+  cuadro por día de la ventana, semanas en columnas y días en filas; el tono
+  dice cuántos anuncios hubo, sumando provincias. Muestra cada día sin anuncios
+  en vez de esconderlo. No dice precios. Espera `cal`.
+#}
+<svg class="ph-calendario" viewBox="{{ cal.viewbox }}" role="img"
+     aria-label="{{ cal.product_name }}: días con anuncios en la ventana.">
+  {% for y, letra in cal.weekday_labels %}
+  <text class="ph-rango-tick" x="{{ cal.left - 5 }}" y="{{ y + 11.5 }}" text-anchor="end">{{ letra }}</text>
+  {% endfor %}
+  {% for t in cal.week_labels %}
+  <text class="ph-rango-tick" x="{{ t.x }}" y="10">{{ t.label }}</text>
+  {% endfor %}
+  {% for d in cal.days %}
+  <rect class="ph-cal-dia ph-cal-{{ d.level }}" x="{{ d.x }}" y="{{ d.y }}" width="{{ cal.cell }}" height="{{ cal.cell }}" rx="3">
+    <title>{{ d.day_text }}: {% if d.count %}{{ d.count }} anuncio{{ "s" if d.count != 1 }}{% else %}sin anuncios{% endif %}</title>
+  </rect>
+  {% endfor %}
+</svg>
