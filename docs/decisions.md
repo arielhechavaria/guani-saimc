@@ -7279,3 +7279,35 @@ Las provincias todavía no son clicables — la hoja de detalle llega en el slic
 (`-p no:randomly`): 1463 pasan, 1 saltea. `test_public_filter.py` tiene
 polución de orden preexistente ajena a este cambio (una corrida parcial puede
 dejar `test_respeta_la_ventana` en rojo; con la suite completa pasa).
+
+## 2026-09-10 — Rediseño home pública, slice 2: chips de producto multi-selección
+Contexto: el filtro de producto de la home era una sola pestaña (`?producto=`,
+un producto → tabla comparativa; sin producto → grilla). El rediseño lo quiere
+como riel de chips flotante sobre el mapa, multi-selección, que en los slices
+siguientes alimenta un panel flotante por producto activo.
+Decisión: eje nuevo `?productos=aceite,arroz` (lista, orden = activación).
+`product_nav.py` gana `resolve_products`, `ProductChip` + `build_product_chips`
+(el `query` de cada chip es el estado tras togglear ese chip, preservando
+provincia y ventana), y `_query` acepta `productos=` (gana sobre `producto=`
+cuando trae algo). `_render_home` resuelve el conjunto activo; `?producto=` y la
+ruta limpia `/producto/<slug>` siguen andando como alias de un solo producto.
+`selected` (un producto, y con él la tabla comparativa de `#precios`) solo
+existe con exactamente uno activo; con dos o más, la grilla de tarjetas acotada
+al conjunto. `_visible_observations` pasa de `product: str|None` a
+`products: frozenset|None`; el CSV lo respeta. El riel de chips va en el overlay
+del lienzo, sin htmx: cada chip es un enlace de página completa con ancla
+`#cobertura`. Se quitó la vieja `<ul class="ph-filter">` de producto; provincia
+y ventana siguen ahí.
+Descartado: threadear `?productos=` en `build_province_nav`/`build_window_nav`.
+Con dos o más productos activos, cambiar provincia o ventana los resetea (cae a
+«todo»). Es un slice intermedio; se corrige cuando los paneles del slice 4
+tengan su propio estado. Descartado también `?foco=`: no tiene consumidor
+visual hasta el slice 4 (coloreo del mapa / panel expandido), marcarlo sin
+efecto confundía.
+Consecuencia: `build_product_nav` queda sin uso en la plantilla pero se
+conserva (con sus tests) — el slice 4 puede reusar su lógica de URL limpia para
+`?foco=`. **Los tests se corren con
+`PYTHONPATH=<worktree>/src`**: el `.pth` editable del `.venv` compartido apunta
+al checkout principal, así que sin eso pytest prueba el código viejo y pasa en
+falso (fue lo que escondió estas 5 roturas al principio). Suite: 1477 pasan, 1
+saltea, con `PYTHONPATH` correcto y `-p no:randomly`.

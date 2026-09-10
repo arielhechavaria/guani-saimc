@@ -37,12 +37,14 @@ from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.product_nav import (
     DEFAULT_WINDOW_DAYS,
+    build_product_chips,
     build_product_nav,
     build_province_nav,
     build_window_nav,
     product_slug,
     resolve_days,
     resolve_product,
+    resolve_products,
     resolve_province,
 )
 
@@ -218,6 +220,127 @@ class TestBuildProductNav:
         assert por_label["Arroz"].query == "/?producto=arroz&dias=7"
 
 
+class TestResolveProducts:
+    PILOT = ("Arroz", "Aceite", "Azúcar blanca")
+
+    def test_lista_vacia_ante_none_o_cadena_vacia(self) -> None:
+        assert resolve_products(self.PILOT, None) == []
+        assert resolve_products(self.PILOT, "") == []
+
+    def test_resuelve_en_orden_y_sin_repetir(self) -> None:
+        assert resolve_products(self.PILOT, "aceite,arroz,aceite") == ["Aceite", "Arroz"]
+
+    def test_ignora_los_slugs_que_no_resuelven(self) -> None:
+        assert resolve_products(self.PILOT, "arroz,inventado,azucar-blanca") == [
+            "Arroz",
+            "Azúcar blanca",
+        ]
+
+    def test_tolera_espacios_alrededor_de_las_comas(self) -> None:
+        assert resolve_products(self.PILOT, " arroz , aceite ") == ["Arroz", "Aceite"]
+
+
+class TestBuildProductChips:
+    PILOT = ("Arroz", "Aceite", "Pollo")
+
+    def test_un_chip_por_piloto_en_orden_de_catalogo(self) -> None:
+        chips = build_product_chips(self.PILOT, [])
+
+        assert [c.label for c in chips] == ["Arroz", "Aceite", "Pollo"]
+        assert all(not c.is_active for c in chips)
+
+    def test_marca_activos_los_del_conjunto(self) -> None:
+        chips = build_product_chips(self.PILOT, ["Aceite"])
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Aceite"].is_active
+        assert not por_label["Arroz"].is_active
+
+    def test_togglear_un_apagado_lo_agrega_al_final(self) -> None:
+        chips = build_product_chips(self.PILOT, ["Arroz"])
+        por_label = {c.label: c for c in chips}
+
+        # Prender Aceite → productos=arroz,aceite (orden de activación).
+        assert por_label["Aceite"].query == "/?productos=arroz,aceite"
+
+    def test_togglear_un_prendido_lo_quita(self) -> None:
+        chips = build_product_chips(self.PILOT, ["Arroz", "Aceite"])
+        por_label = {c.label: c for c in chips}
+
+        # Apagar Arroz → queda solo aceite; apagar el único → URL limpia.
+        assert por_label["Arroz"].query == "/?productos=aceite"
+        chips_uno = build_product_chips(self.PILOT, ["Arroz"])
+        assert {c.label: c for c in chips_uno}["Arroz"].query == "/"
+
+    def test_preserva_provincia_y_ventana_en_el_toggle(self) -> None:
+        chips = build_product_chips(
+            self.PILOT, ["Arroz"], selected_province="La Habana", selected_days=7
+        )
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Aceite"].query == (
+            "/?productos=arroz,aceite&provincia=la-habana&dias=7"
+        )
+
+
+class TestChipsMultiSeleccionEnLaRuta:
+    def test_productos_acota_a_la_union_de_los_activos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        # Dos activos → grilla de tarjetas (no la tabla de un solo producto),
+        # acotada a esos dos: Azúcar no aparece como tarjeta.
+        assert 'class="ph-cards"' in texto
+        assert "ph-provinces" not in texto
+        assert '<span class="ph-card-product">Arroz</span>' in texto
+        assert '<span class="ph-card-product">Aceite</span>' in texto
+        assert '<span class="ph-card-product">Azúcar blanca</span>' not in texto
+
+    def test_los_chips_reflejan_el_conjunto_activo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        assert 'aria-pressed="true">Arroz</a>' in texto
+        assert 'aria-pressed="true">Aceite</a>' in texto
+        assert 'aria-pressed="false">Azúcar blanca</a>' in texto
+
+    def test_un_solo_producto_via_productos_da_la_tabla_enfocada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz").text
+
+        # Exactamente uno → misma vista enfocada que `?producto=arroz`.
+        assert "Arroz por formato y provincia" in texto
+
+    def test_el_csv_de_la_pagina_lleva_los_productos_activos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        assert 'href="/datos.csv?productos=arroz,aceite"' in texto
+
+    def test_datos_csv_respeta_productos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/datos.csv?productos=arroz,aceite").text
+
+        assert "Arroz" in texto
+        assert "Aceite" in texto
+        assert "Azúcar blanca" not in texto
+
+
 class TestResolveProvince:
     def test_resuelve_por_slug_con_espacios(self) -> None:
         nombres = ("La Habana", "Santiago de Cuba")
@@ -297,9 +420,11 @@ class TestFiltroEnLaRuta:
 
         assert "Arroz" in texto
         assert "Aceite" in texto
-        # La barra de filtro está, con «Todos» marcado.
-        assert 'class="ph-filter"' in texto
-        assert 'class="is-selected" aria-current="true">Todos<' in texto
+        # El riel de chips de producto está, sin ninguno prendido: `?productos=`
+        # vacío = se muestra todo.
+        assert 'class="ph-chip-rail"' in texto
+        assert 'aria-pressed="false">Arroz</a>' in texto
+        assert 'aria-pressed="true"' not in texto
 
     def test_elegir_un_producto_acota_la_vista(
         self, client: TestClient, session: Session
@@ -334,7 +459,9 @@ class TestFiltroEnLaRuta:
         response = client.get("/?producto=leche-en-polvo")
 
         assert response.status_code == 200
-        assert 'class="is-selected" aria-current="true">Todos<' in response.text
+        # Slug raro → ningún producto activo, todos los chips apagados.
+        assert 'class="ph-chip-rail"' in response.text
+        assert 'aria-pressed="true"' not in response.text
 
     def test_el_mapa_de_cobertura_no_depende_del_filtro(
         self, client: TestClient, session: Session
@@ -367,7 +494,8 @@ class TestFiltroEnLaRuta:
 
         assert response.status_code == 200
         assert "No hay anuncios de Picadillo" in response.text
-        assert 'class="ph-filter"' in response.text
+        # El riel de chips sigue para poder cambiar de producto.
+        assert 'class="ph-chip-rail"' in response.text
 
     def test_producto_con_un_solo_dia_no_dibuja_evolucion_pero_no_rompe(
         self, client: TestClient, session: Session
@@ -445,7 +573,7 @@ class TestVentanaEnLaRuta:
 
         assert "Ventana de 90 días" in texto
         assert 'aria-current="true">90 días<' in texto
-        assert 'aria-current="true">Arroz<' in texto
+        assert 'aria-pressed="true">Arroz</a>' in texto
 
 
 class TestTablaPorProvincia:
@@ -585,7 +713,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         texto = client.get("/?provincia=la-habana&producto=arroz").text
 
         assert 'aria-current="true">La Habana<' in texto
-        assert 'aria-current="true">Arroz<' in texto
+        assert 'aria-pressed="true">Arroz</a>' in texto
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
         assert "La Habana" in tabla
         assert "Santiago de Cuba" not in tabla

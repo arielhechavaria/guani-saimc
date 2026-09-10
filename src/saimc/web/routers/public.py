@@ -31,13 +31,14 @@ from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
 from saimc.web.product_nav import (
-    build_product_nav,
+    build_product_chips,
     build_province_nav,
     build_window_nav,
     download_href,
     product_slug,
     resolve_days,
     resolve_product,
+    resolve_products,
     resolve_province,
 )
 from saimc.web.series_view import build_series
@@ -111,7 +112,7 @@ def _visible_observations(
     session: Session,
     *,
     pilot: frozenset[str],
-    product: str | None,
+    products: frozenset[str] | None,
     province: str | None,
     window: int,
 ) -> list:
@@ -121,6 +122,7 @@ def _visible_observations(
     Una sola definición para que la página (tarjetas y gráfico) y la descarga
     CSV no puedan divergir: lo que se baja es exactamente lo que se ve.
     `unconverted` queda afuera igual que en `build_cards` / `build_series`.
+    `products` vacío o `None` no filtra: se muestran todos los piloto.
     """
     report = compute_retail_observations(session, days=window)
     obs = [
@@ -128,8 +130,8 @@ def _visible_observations(
         for o in report.observations
         if o.product_name in pilot and not o.unconverted
     ]
-    if product is not None:
-        obs = [o for o in obs if o.product_name == product]
+    if products:
+        obs = [o for o in obs if o.product_name in products]
     if province is not None:
         obs = [o for o in obs if o.province_name == province]
     return obs
@@ -140,6 +142,7 @@ def _render_home(
     db: Session,
     *,
     producto: str | None,
+    productos: str | None,
     provincia: str | None,
     dias: str | None,
 ) -> HTMLResponse:
@@ -149,11 +152,24 @@ def _render_home(
     pilot_names = pilot_product_names(db)
     pilot = frozenset(pilot_names)
 
-    # `producto`, `provincia` y `dias` son query string; cada uno resuelve a un
+    # `productos`, `provincia` y `dias` son query string; cada uno resuelve a un
     # valor válido o al default (query raro → se muestra todo con la ventana por
     # defecto, sin 404). Los filtros son una refinación de la vista, no exponen
     # nada nuevo: siguen dentro de «tarjetas de producto» del alcance §9.
-    selected = resolve_product(pilot_names, producto)
+    #
+    # `?productos=aceite,arroz` es la multi-selección de los chips (slice 2);
+    # `?producto=<slug>` y la ruta limpia `/producto/<slug>` siguen andando como
+    # alias de un solo producto. `selected` (uno) gobierna la vista enfocada de
+    # `#precios` —la tabla comparativa por provincia—, que solo tiene sentido
+    # con exactamente un producto.
+    active_products = resolve_products(pilot_names, productos)
+    if not active_products:
+        one = resolve_product(pilot_names, producto)
+        if one is not None:
+            active_products = [one]
+    active_set = frozenset(active_products)
+    selected = active_products[0] if len(active_products) == 1 else None
+
     selected_province = resolve_province(_all_province_names(db), provincia)
     window = resolve_days(dias)
 
@@ -168,8 +184,8 @@ def _render_home(
         province_names = sorted({*province_names, selected_province})
 
     ranges = pilot_ranges
-    if selected is not None:
-        ranges = [r for r in ranges if r.product_name == selected]
+    if active_set:
+        ranges = [r for r in ranges if r.product_name in active_set]
     if selected_province is not None:
         ranges = [r for r in ranges if r.province_name == selected_province]
     cards = build_cards(ranges)
@@ -179,7 +195,11 @@ def _render_home(
     # distintas en la misma página harían que el rango del titular no coincida
     # con lo que el usuario ve dibujado.
     obs = _visible_observations(
-        db, pilot=pilot, product=selected, province=selected_province, window=window
+        db,
+        pilot=pilot,
+        products=active_set or None,
+        province=selected_province,
+        window=window,
     )
     series = build_series(obs, window_days=window, hoy=date.today())
 
@@ -187,8 +207,10 @@ def _render_home(
     freshness_days_ago = (date.today() - latest_day).days if latest_day else None
 
     prov = selected_province or ""
+    active_slugs = [product_slug(name) for name in active_products]
     csv_href = download_href(
-        producto=product_slug(selected) if selected else "",
+        producto=active_slugs[0] if len(active_slugs) == 1 else "",
+        productos=active_slugs if len(active_slugs) > 1 else (),
         provincia=product_slug(selected_province) if selected_province else "",
         dias=window,
     )
@@ -203,8 +225,11 @@ def _render_home(
             "csv_href": csv_href,
             "data_freshness_day": latest_day,
             "data_freshness_days_ago": freshness_days_ago,
-            "product_nav": build_product_nav(
-                pilot_names, selected, window, selected_province=prov
+            "product_chips": build_product_chips(
+                pilot_names,
+                active_products,
+                selected_province=prov,
+                selected_days=window,
             ),
             "province_nav": build_province_nav(
                 province_names,
@@ -215,6 +240,7 @@ def _render_home(
             "window_nav": build_window_nav(
                 window, selected, selected_province=prov
             ),
+            "active_products": active_products,
             "selected_product": selected,
             "selected_province": selected_province,
         },
@@ -225,13 +251,17 @@ def _render_home(
 def public_home(
     request: Request,
     producto: str | None = None,
+    productos: str | None = None,
     provincia: str | None = None,
     dias: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """Home pública. `producto`, `provincia` y `dias` son query string opcional;
-    un valor raro no da 404, se muestra todo."""
-    return _render_home(request, db, producto=producto, provincia=provincia, dias=dias)
+    """Home pública. `productos` (multi-selección de chips), `producto` (alias de
+    uno), `provincia` y `dias` son query string opcional; un valor raro no da
+    404, se muestra todo."""
+    return _render_home(
+        request, db, producto=producto, productos=productos, provincia=provincia, dias=dias
+    )
 
 
 @router.get("/producto/{slug}", response_class=HTMLResponse)
@@ -253,7 +283,9 @@ def public_product(
         raise HTTPException(
             status_code=404, detail="No hay producto público con ese nombre"
         )
-    return _render_home(request, db, producto=slug, provincia=provincia, dias=dias)
+    return _render_home(
+        request, db, producto=slug, productos=None, provincia=provincia, dias=dias
+    )
 
 
 #: Columnas del CSV. Solo lo que la página ya muestra: nada de `channel_id`,
@@ -274,6 +306,7 @@ _CSV_COLUMNS = (
 @router.get("/datos.csv")
 def public_data_csv(
     producto: str | None = None,
+    productos: str | None = None,
     provincia: str | None = None,
     dias: str | None = None,
     db: Session = Depends(get_db),
@@ -288,8 +321,13 @@ def public_data_csv(
     es el mismo universo de `_visible_observations` que alimenta la página, en
     otro formato. Sin `require_operator`, sin dato personal.
     """
-    pilot = frozenset(pilot_product_names(db))
-    selected = resolve_product(tuple(pilot), producto)
+    pilot_names = pilot_product_names(db)
+    pilot = frozenset(pilot_names)
+    active = resolve_products(pilot_names, productos)
+    if not active:
+        one = resolve_product(pilot_names, producto)
+        if one is not None:
+            active = [one]
     selected_province = resolve_province(_all_province_names(db), provincia)
     window = resolve_days(dias)
 
@@ -297,7 +335,7 @@ def public_data_csv(
         _visible_observations(
             db,
             pilot=pilot,
-            product=selected,
+            products=frozenset(active) or None,
             province=selected_province,
             window=window,
         ),

@@ -244,6 +244,28 @@
     .ph-canvas .ph-map-province { transition-duration: .01ms; }
     .ph-canvas-scroll { animation: none; }
   }
+
+  /* ── Slice 2 — riel de productos flotante sobre el mapa ──────────────
+     Chips toggle: enlace de página completa (sin htmx), activo = relleno
+     con el acento de la capa pública. Estado en `?productos=`. */
+  .ph-chip-rail {
+    position: absolute; left: 6vw; right: 6vw; top: clamp(5.5rem, 16vh, 8.5rem);
+    display: flex; flex-wrap: wrap; gap: .5rem; z-index: 1;
+  }
+  .ph-chip-toggle {
+    font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
+    padding: .4rem .95rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant);
+    background: var(--m3-surface);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    color: var(--m3-on-surface-variant);
+    transition: background .2s ease, color .2s ease, border-color .2s ease;
+  }
+  .ph-chip-toggle:hover { border-color: var(--ph-accent); color: var(--ph-accent); text-decoration: none; }
+  .ph-chip-toggle.is-active {
+    background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
+  }
+  @media (prefers-reduced-motion: reduce) { .ph-chip-toggle { transition: none; } }
 </style>
 {% endblock %}
 
@@ -268,6 +290,17 @@
     </p>
     {% endif %}
   </div>
+
+  {# Riel de productos (slice 2): cada chip togglea `?productos=`. Sin htmx
+     todavía — es un enlace de página completa; el ancla `#cobertura` deja el
+     lienzo a la vista tras recargar. Ninguno prendido = se muestran todos. #}
+  {% if product_chips %}
+  <nav class="ph-chip-rail" aria-label="Productos">
+    {% for chip in product_chips -%}
+    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}#cobertura" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
+    {%- endfor %}
+  </nav>
+  {% endif %}
 
   {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
      nada; la tabla «Observaciones por provincia» de más abajo lleva el dato
@@ -402,26 +435,19 @@
   </div>
 </section>
 
-{% if cards or selected_product or selected_province %}
+{% if cards or active_products or selected_province %}
 <section class="ph-section" id="precios">
   <div class="ph-section-head">
     <h2 class="ph-h2">Precios observados</h2>
     <span class="ph-section-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}{% if selected_province %} · {{ selected_province }}{% endif %}</span>
   </div>
 
-  {# Barras de filtro: enlaces con `?producto=`, `?provincia=` y `?dias=`,
-     servidos enteros por el servidor. Sin htmx —el `_public_shell` no lo carga
-     a propósito— porque recargar esta página gzipeada no justifica sumar una
-     dependencia JS a una audiencia con conexión lenta. Cada enlace preserva
-     los otros ejes. #}
-  {% if product_nav | length > 1 %}
-  <ul class="ph-filter">
-    {% for choice in product_nav %}
-    <li><a href="{{ choice.query }}#precios"{% if choice.is_selected %} class="is-selected" aria-current="true"{% endif %}>{{ choice.label }}</a></li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
+  {# Barras de filtro de provincia y ventana: enlaces con `?provincia=` y
+     `?dias=`, servidos enteros por el servidor. Sin htmx —el `_public_shell`
+     no lo carga a propósito— porque recargar esta página gzipeada no justifica
+     sumar una dependencia JS a una audiencia con conexión lenta. El filtro de
+     producto se mudó al riel de chips sobre el mapa (slice 2). Cada enlace
+     preserva los otros ejes. #}
   {% if province_nav | length > 1 %}
   <ul class="ph-filter ph-filter-province">
     {% for choice in province_nav %}
@@ -545,7 +571,7 @@
 </section>
 {% endif %}
 
-{% if series or selected_product or selected_province %}
+{% if series or active_products or selected_province %}
 <section class="ph-section" id="como-se-movio">
   <div class="ph-section-head">
     <h2 class="ph-h2">Cómo se movió</h2>
