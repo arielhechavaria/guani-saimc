@@ -37,6 +37,7 @@ from saimc.web.product_nav import (
     build_window_nav,
     download_href,
     product_slug,
+    products_query,
     resolve_days,
     resolve_product,
     resolve_products,
@@ -209,6 +210,43 @@ def _render_home(
 
     prov = selected_province or ""
     active_slugs = [product_slug(name) for name in active_products]
+
+    # Hoja de detalle de provincia (slice 5). Se arma solo cuando `?provincia=`
+    # está puesta, y recorre TODOS los productos piloto de esa provincia —no los
+    # activos en los chips—: la hoja responde «¿cómo está todo acá?». Reusa
+    # `build_product_panels`, que ya agrega por producto (rango + serie) y deja
+    # entrar los que no tienen dato con `has_data=False`.
+    province_sheet_rows: list = []
+    sheet_close_query = ""
+    if selected_province is not None:
+        prov_ranges = [
+            r for r in pilot_ranges if r.province_name == selected_province
+        ]
+        prov_series = build_series(
+            _visible_observations(
+                db,
+                pilot=pilot,
+                products=None,
+                province=selected_province,
+                window=window,
+            ),
+            window_days=window,
+            hoy=date.today(),
+        )
+        province_sheet_rows = build_product_panels(
+            list(pilot_names),
+            build_cards(prov_ranges),
+            prov_series,
+            selected_province=prov,
+            selected_days=window,
+        )
+        # Cerrar la hoja: saca `provincia`, conserva productos y ventana.
+        sheet_close_query = products_query(active_slugs, dias=window)
+
+    def province_link(slug: str) -> str:
+        """Enlace de una provincia del mapa a su hoja, preservando los chips
+        activos y la ventana."""
+        return products_query(active_slugs, provincia=slug, dias=window)
     csv_href = download_href(
         producto=active_slugs[0] if len(active_slugs) == 1 else "",
         productos=active_slugs if len(active_slugs) > 1 else (),
@@ -248,6 +286,9 @@ def _render_home(
             "window_nav": build_window_nav(
                 window, selected, selected_province=prov
             ),
+            "province_sheet_rows": province_sheet_rows,
+            "sheet_close_query": sheet_close_query,
+            "province_link": province_link,
             "active_products": active_products,
             "selected_product": selected,
             "selected_province": selected_province,

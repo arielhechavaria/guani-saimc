@@ -407,6 +407,97 @@ class TestPanelesFlotantes:
         assert "htmx.min.js" not in texto
 
 
+class TestHojaDetalleProvincia:
+    def _seed(self, session: Session) -> None:
+        """Arroz y Aceite con dato en La Habana; Malanga piloto pero sin filas."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        aceite = Product(
+            name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
+        )
+        malanga = Product(
+            name="Malanga", category="viandas", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, aceite, malanga, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-hoja")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(6))
+        _precio(
+            session, product=arroz, province=habana, source=fuente,
+            dia=_hace(3), price="330",
+        )
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(4))
+        session.commit()
+
+    def test_provincia_en_la_url_abre_la_hoja(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana").text
+
+        assert 'class="ph-sheet"' in texto
+        assert 'role="dialog"' in texto
+        assert '<h2 class="ph-sheet-title" id="ph-sheet-title">La Habana</h2>' in texto
+
+    def test_sin_provincia_no_hay_hoja(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        assert 'class="ph-sheet"' not in client.get("/").text
+
+    def test_la_hoja_lista_todos_los_piloto_incluso_sin_dato(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        hoja = client.get("/?provincia=la-habana").text.split('class="ph-sheet"')[1]
+
+        assert "Arroz" in hoja
+        assert "Aceite" in hoja
+        # Malanga es piloto y no tiene ninguna fila en La Habana: aparece igual.
+        assert "Malanga" in hoja
+        assert "todavía no hay dato acá" in hoja
+
+    def test_la_hoja_ignora_el_filtro_de_chips(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La hoja responde «cómo está TODO acá», no solo lo prendido."""
+        self._seed(session)
+
+        hoja = (
+            client.get("/?provincia=la-habana&productos=arroz")
+            .text.split('class="ph-sheet"')[1]
+        )
+
+        assert "Aceite" in hoja
+
+    def test_cerrar_la_hoja_saca_provincia_y_conserva_los_chips(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana&productos=arroz").text
+
+        # El × y el fondo cierran a la misma URL: sin `provincia`, con `productos`.
+        assert 'href="/?productos=arroz#cobertura" hx-get="/?productos=arroz"' in texto
+
+    def test_las_provincias_del_mapa_son_enlaces(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/").text
+
+        assert (
+            'href="/?provincia=la-habana#cobertura" hx-get="/?provincia=la-habana"'
+            in texto
+        )
+
+
 class TestResolveProvince:
     def test_resuelve_por_slug_con_espacios(self) -> None:
         nombres = ("La Habana", "Santiago de Cuba")

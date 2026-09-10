@@ -308,10 +308,50 @@
 
   @media (prefers-reduced-motion: reduce) { .ph-fpanel { animation: none; } }
 
+  /* ── Slice 5 — hoja de detalle de provincia ─────────────────────────
+     Drawer a la derecha (escritorio) / bottom-sheet (angosto). Entrada
+     animada, salida instantánea: htmx quita el nodo en el swap. */
+  .ph-sheet-scrim {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; justify-content: flex-end;
+    background: color-mix(in srgb, var(--m3-on-surface) 32%, transparent);
+  }
+  .ph-sheet-scrim-close { position: absolute; inset: 0; }
+  .ph-sheet {
+    position: relative; width: min(28rem, 100%); height: 100%;
+    background: var(--m3-surface); box-shadow: var(--m3-elev-3);
+    overflow-y: auto; padding: 1.25rem 1.4rem 2rem;
+    animation: ph-sheet-right .28s cubic-bezier(.2, .8, .2, 1) both;
+  }
+  @keyframes ph-sheet-right { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+  @keyframes ph-sheet-up { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+  .ph-sheet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .ph-sheet-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.5rem; }
+  .ph-sheet-x { font-size: 1.5rem; line-height: 1; color: var(--m3-on-surface-variant); text-decoration: none; }
+  .ph-sheet-x:hover { color: var(--m3-on-surface); }
+  .ph-sheet-sub { margin: .4rem 0 1.25rem; font-size: .8125rem; color: var(--m3-on-surface-variant); text-wrap: pretty; }
+  .ph-sheet-body { display: grid; gap: 1.25rem; }
+  .ph-sheet-row { display: grid; gap: .5rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--m3-divider); }
+  .ph-sheet-row:last-child { border-bottom: 0; padding-bottom: 0; }
+  .ph-sheet-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; }
+  .ph-sheet-row-name { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
+  .ph-sheet-row-sum { font-size: .8125rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
+  .ph-sheet-note { margin: 0; font-size: .8125rem; color: var(--m3-on-surface-variant); text-wrap: pretty; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ph-fpanel, .ph-sheet { animation: none; }
+  }
+
   @media (max-width: 720px) {
     .ph-panel-stack {
       position: static; width: 100%; max-height: none; overflow: visible;
       margin-top: 1rem;
+    }
+    .ph-sheet-scrim { justify-content: stretch; align-items: flex-end; }
+    .ph-sheet {
+      width: 100%; height: auto; max-height: 85dvh;
+      border-radius: var(--ph-radius-lg) var(--ph-radius-lg) 0 0;
+      animation-name: ph-sheet-up;
     }
   }
 </style>
@@ -402,13 +442,17 @@
 
   {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
      nada; la tabla «Observaciones por provincia» de más abajo lleva el dato
-     en forma accesible. #}
+     en forma accesible. Cada provincia enlaza a su hoja de detalle (slice 5):
+     `hx-get` la abre como swap parcial, el `href` es el fallback sin JS. #}
   <svg class="ph-map" viewBox="{{ map.viewbox }}" role="img"
        aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
     {% for province in map.provinces %}
-    <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">
-      <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
-    </path>
+    {% set pl = province_link(province.slug) %}
+    <a href="{{ pl }}#cobertura" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle">
+      <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">
+        <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
+      </path>
+    </a>
     {% endfor %}
   </svg>
 
@@ -716,6 +760,54 @@
   </ul>
   {% endif %}
 </section>
+{% endif %}
+
+{% if selected_province %}
+{# ══ Hoja de detalle de provincia (slice 5) ═══════════════════════════
+   Se renderiza en el servidor cuando `?provincia=` está puesta; htmx la trae
+   y la quita como parte del swap de `#ph-live`. Recorre TODOS los productos
+   piloto de la provincia —no solo los chips activos—: responde «¿cómo está
+   todo acá?». Cerrarla saca `?provincia=` y conserva chips y ventana.
+   Sin trampa de foco de teclado todavía (haría falta JS): el × y el fondo
+   oscurecido sí son alcanzables. #}
+<div class="ph-sheet-scrim">
+  <a class="ph-sheet-scrim-close" href="{{ sheet_close_query }}#cobertura" hx-get="{{ sheet_close_query }}" aria-label="Cerrar el detalle" tabindex="-1"></a>
+  <aside class="ph-sheet" role="dialog" aria-modal="true" aria-labelledby="ph-sheet-title">
+    <header class="ph-sheet-head">
+      <h2 class="ph-sheet-title" id="ph-sheet-title">{{ selected_province }}</h2>
+      <a class="ph-sheet-x" href="{{ sheet_close_query }}#cobertura" hx-get="{{ sheet_close_query }}" aria-label="Cerrar">×</a>
+    </header>
+    <p class="ph-sheet-sub">
+      Los productos piloto en {{ selected_province }}, ventana de {{ window_days }} días.
+      Cada cifra lleva su muestra al lado; ninguna es una estimación.
+    </p>
+    <div class="ph-sheet-body">
+      {% for row in province_sheet_rows %}
+      <section class="ph-sheet-row">
+        <div class="ph-sheet-row-head">
+          <span class="ph-sheet-row-name">{{ row.name }}</span>
+          <span class="ph-sheet-row-sum">
+            {%- if not row.has_data -%}
+            todavía no hay dato acá
+            {%- elif row.is_single_value -%}
+            {{ row.minimum_text }} {{ row.currency }}/{{ row.unit }} · {{ row.count }} anuncio{{ "s" if row.count != 1 }}
+            {%- else -%}
+            {{ row.minimum_text }}–{{ row.maximum_text }} {{ row.currency }}/{{ row.unit }} · {{ row.count }} anuncio{{ "s" if row.count != 1 }}
+            {%- endif -%}
+          </span>
+        </div>
+        {% if row.has_series %}
+        {% for serie in row.series %}
+        {% include "_price_plot.html" %}
+        {% endfor %}
+        {% elif row.has_data %}
+        <p class="ph-sheet-note">Hay dato, pero todavía no en dos días distintos: sin evolución que dibujar.</p>
+        {% endif %}
+      </section>
+      {% endfor %}
+    </div>
+  </aside>
+</div>
 {% endif %}
 
 </div>{# /#ph-live #}

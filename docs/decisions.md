@@ -7339,3 +7339,29 @@ panel abierto) — htmx re-renderiza `#ph-live` entero. Los paneles y las
 secciones `#precios`/`#como-se-movio` muestran el mismo dato hoy; el slice de
 cierre puede recortar la duplicación. Suite: 1488 pasan, 1 saltea
 (`PYTHONPATH=<worktree>/src -p no:randomly`).
+
+## 2026-09-10 — Rediseño home pública, slice 5: hoja de detalle de provincia
+Contexto: `?provincia=<slug>` ya filtraba `#precios`/`#como-se-movio`, pero el
+mapa no era clicable y no había una vista «todo lo de esta provincia».
+Decisión: cada `<path>` de provincia va envuelto en `<a href hx-get>` a
+`?provincia=<slug>` (preservando chips y ventana); `MapProvince` gana la
+propiedad `slug` (vía `product_slug`, el mismo que `resolve_province` usa para
+el ida y vuelta). Con `?provincia=` puesta, `_render_home` arma
+`province_sheet_rows` recorriendo TODOS los piloto de esa provincia —no los
+chips activos— reusando `build_product_panels` sobre tarjetas y series acotadas
+solo por provincia. La plantilla rinde una `<aside class="ph-sheet"
+role="dialog">` dentro de `#ph-live` (htmx la trae y la quita en el swap):
+drawer derecho en escritorio, bottom-sheet en angosto (corte 720). Un producto
+sin fila en la provincia entra con «todavía no hay dato acá». Cerrar (× o fondo
+oscurecido) va a `sheet_close_query` = la URL sin `provincia`, con `productos` y
+`dias`. Scrim con `color-mix(var(--m3-on-surface) 32%, transparent)`, no rgba a
+mano.
+Descartado: trampa de foco de teclado en la hoja (haría falta JS de verdad; el
+× y el fondo sí son alcanzables — queda como deuda anotada). Descartado también
+animar la salida: htmx quita el nodo en el swap, así que la entrada anima y la
+salida es instantánea.
+Consecuencia: el mapa ahora navega. `map_view.py` importa `product_nav`
+(sin ciclo: `product_nav` es solo stdlib). La hoja y el filtro `?provincia=` de
+`#precios` conviven —muestran lo mismo con distinto formato—; se unifican en el
+slice de cierre junto con la duplicación de paneles. Suite: 1494 pasan, 1
+saltea (`PYTHONPATH=<worktree>/src -p no:randomly`).
