@@ -8011,3 +8011,18 @@ punto de carga chico.
 Consecuencia: solo CSS, mismo marcado (`_guani_avatar.html`,
 `hx-indicator="#ph-loading"`), ningún test tocado. Suite: 1577 pasan, 1
 saltea.
+
+## 2026-09-11 — Indicador de carga: +25% de tamaño, opacidad visible a .4
+
+Contexto: ajuste fino del operador sobre la entrada anterior (centrado +
+10% del tamaño original).
+
+Decisión: `.ph-loading` pasa de `.25rem` a `.3125rem` (+25% sobre el valor
+anterior, no sobre el original de 2.5rem). La opacidad visible
+(`.htmx-indicator.htmx-request`) pasa de `1` a `.4`. El keyframe del pulso
+(`ph-loading-pulse`) se deja en `1 ↔ .35` sin tocar a propósito: anima la
+opacidad del SVG de *adentro*, que se multiplica con la de `.ph-loading`
+—CSS anida opacidades—, así que el rango visible real ya cae solo en
+`.4 → .14` sin reescalar el keyframe.
+
+Consecuencia: solo CSS. Suite: 1577 pasan, 1 saltea.
