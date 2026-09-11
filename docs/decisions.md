@@ -7658,3 +7658,22 @@ recorte de marcadores.
 Consecuencia: se barrió el archivo entero con
 `grep -n '^<<<<<<<\|^=======\|^>>>>>>>'` después del arreglo: cero coincidencias,
 no quedó texto de conflicto sin resolver en ningún otro lado.
+
+## 2026-09-11 — Test flaky de la descarga CSV: comparaba contra el UUID del anuncio
+Contexto: `test_respeta_la_ventana` (`TestDescargaCsv`) buscaba `"999"` en el
+texto entero del CSV descargado. La columna `anuncio` es `PriceHistory.id`,
+un UUID al azar (`default=uuid.uuid4`, `price_history.py`): cada corrida trae
+UUIDs nuevos para las cuatro filas de `_seed` más la propia, y de vez en
+cuando alguno contiene la subcadena "999" por pura casualidad — falso
+positivo latente, no relacionado con la ventana de días que el test dice
+proteger.
+Decisión: el test parsea el CSV con `csv.DictReader` y compara solo la
+columna `precio_por_unidad`, nunca el texto crudo completo.
+Descartado: fijar el `id` de la fila en el fixture (pasarle un UUID
+constante a `_precio`) — tapa este caso puntual pero no la clase de bug: CUALQUIER
+aserto de substring futuro contra el texto entero del CSV puede volver a
+chocar con la columna `anuncio`.
+Consecuencia: ninguna otra aserción de esta clase compara contra el texto
+crudo con un valor numérico (las demás son nombres de producto/provincia,
+que un UUID hexadecimal no puede formar), así que no hay otro caso latente
+igual en este archivo.

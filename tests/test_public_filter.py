@@ -13,6 +13,8 @@ Lo que estos casos protegen:
   las barras para cambiar de filtro.
 """
 
+import csv
+import io
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -1307,6 +1309,11 @@ class TestDescargaCsv:
     def test_respeta_la_ventana(
         self, client: TestClient, session: Session
     ) -> None:
+        # Precios contra la columna `precio_por_unidad`, no contra el texto
+        # crudo del CSV: la última columna (`anuncio`) es un UUID al azar
+        # (PriceHistory.id) y buscar "999" en todo el texto es un falso
+        # positivo latente cada vez que ese UUID —de esta fila o de cualquier
+        # otra sembrada por `_seed`— contiene esos tres dígitos seguidos.
         self._seed(session)
         arroz = session.query(Product).filter_by(name="Arroz").one()
         habana = session.query(Province).filter_by(name="La Habana").one()
@@ -1317,8 +1324,13 @@ class TestDescargaCsv:
         )
         session.commit()
 
-        assert "999" in client.get("/datos.csv?dias=30").text
-        assert "999" not in client.get("/datos.csv?dias=7").text
+        def precios(dias: int) -> list[str]:
+            texto = client.get(f"/datos.csv?dias={dias}").text
+            filas = csv.DictReader(io.StringIO(texto))
+            return [fila["precio_por_unidad"] for fila in filas]
+
+        assert "999" in precios(30)
+        assert "999" not in precios(7)
 
     def test_excluye_los_no_piloto(
         self, client: TestClient, session: Session
