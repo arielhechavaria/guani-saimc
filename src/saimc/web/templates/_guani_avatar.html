@@ -19,18 +19,24 @@
    de una hoja externa sin duplicar el bloque de estilos. Si alguno de estos
    tokens cambia, este archivo se actualiza a mano junto con
    `design_tokens.css` — mismo trato que ya reciben los colores de
-   provincia. #}
+   provincia.
+
+   Las clases `ph-avatar-cara/pluma/vestimenta` no pintan nada acá: son
+   ganchos para que el indicador de carga (`public_home.html`) los
+   recoloree a gris/blanco vía CSS real (con `var(--m3-*)`, no hex) sin
+   tocar el default de acá, que sigue en los colores de marca para el
+   header. #}
 <svg class="ph-brand-avatar" viewBox="0 0 80 80" role="img" aria-label="Guani">
   <circle cx="40" cy="40" r="39" fill="#ffffff" stroke="#c4cfcf" stroke-width="2"/>
   <clipPath id="guani-avatar-clip"><circle cx="40" cy="40" r="37"/></clipPath>
   <g clip-path="url(#guani-avatar-clip)" transform="translate(40,40) scale(.8) translate(-40,-40)">
     <ellipse cx="40" cy="30" rx="34" ry="34" fill="#191c1c"/>
-    <circle cx="40" cy="34" r="27" fill="#05668d"/>
+    <circle class="ph-avatar-cara" cx="40" cy="34" r="27" fill="#05668d"/>
     <rect x="13" y="20" width="54" height="8" rx="4" fill="#191c1c"/>
-    <path d="M52,22 L57,3 L62,22 Z" fill="#e0a700"/>
+    <path class="ph-avatar-pluma" d="M52,22 L57,3 L62,22 Z" fill="#e0a700"/>
     <ellipse cx="33" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
     <ellipse cx="47" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
     <path d="M33,48 Q40,52 47,48" stroke="#ffffff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-    <ellipse cx="40" cy="72" rx="40" ry="20" fill="#028090"/>
+    <ellipse class="ph-avatar-vestimenta" cx="40" cy="72" rx="40" ry="20" fill="#028090"/>
   </g>
 </svg>
