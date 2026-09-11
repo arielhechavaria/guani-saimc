@@ -174,12 +174,21 @@
      bajo `#ph-live`—, así que la regla de visibilidad es de una sola clase
      compuesta, no un descendiente. Centrado en la pantalla (no en una
      esquina); tamaño .25rem → .3125rem (+25%) → .715625rem (+129%) →
-     2.146875rem (×3, el operador seguía sin verlo); opacidad visible 1 → .4. */
+     2.146875rem (×3) → 10.734375rem (×5); opacidad visible 1 → .4. Fondo:
+     el mismo `color-mix(in srgb, var(--m3-surface) 92%, transparent)` que
+     ya usan `.ph-topbar` y `.ph-canvas-legend` (design_tokens.css) — no un
+     color nuevo, el mismo tratamiento de «superficie flotante» que el
+     resto del cromo del lienzo. Con el badge propio del SVG (blanco,
+     opaco) adentro, el `padding` deja ver ese fondo como un anillo. */
   .ph-loading {
     position: fixed; top: 50%; left: 50%; z-index: 50;
-    width: 2.146875rem; height: 2.146875rem;
+    box-sizing: border-box;
+    width: 10.734375rem; height: 10.734375rem;
+    padding: .75rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
+    box-shadow: var(--m3-elev-2);
     transform: translate(-50%, -50%);
-    filter: drop-shadow(var(--m3-elev-2));
     opacity: 0; pointer-events: none; transition: opacity .15s ease;
   }
   .ph-loading.htmx-indicator.htmx-request { opacity: .4; }
