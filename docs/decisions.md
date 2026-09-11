@@ -8026,3 +8026,18 @@ opacidad del SVG de *adentro*, que se multiplica con la de `.ph-loading`
 `.4 → .14` sin reescalar el keyframe.
 
 Consecuencia: solo CSS. Suite: 1577 pasan, 1 saltea.
+
+## 2026-09-11 — Indicador de carga: +129% más, el operador no lo veía
+
+Contexto: después del ajuste anterior (+25%, opacidad .4) el operador
+reportó que seguía sin verlo. A .3125rem (5px) con techo de opacidad en .4
+—y el pulso llegando a .14— es un punto casi imperceptible; probable causa,
+no confirmada, de por qué no se veía.
+
+Decisión: `.ph-loading` pasa de `.3125rem` a `.715625rem` (+129% sobre el
+valor anterior, no sobre el original). Opacidad y posición quedan como en
+la entrada anterior — no se tocaron, el pedido fue solo de tamaño.
+
+Consecuencia: solo CSS. Suite: 1577 pasan, 1 saltea. Si a este tamaño
+tampoco se ve, el sospechoso que sigue es la opacidad tope de .4 (con el
+pulso llegando a .14), no el tamaño.
