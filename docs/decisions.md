@@ -7677,3 +7677,30 @@ Consecuencia: ninguna otra aserción de esta clase compara contra el texto
 crudo con un valor numérico (las demás son nombres de producto/provincia,
 que un UUID hexadecimal no puede formar), así que no hay otro caso latente
 igual en este archivo.
+
+## 2026-09-11 — Acordeón «qué es este gráfico» en los 5 gráficos de la home pública
+Contexto: el operador entiende sus propios gráficos de un vistazo (trasfondo
+técnico), pero notó que alguien sin ese trasfondo mirando el dashboard
+público quizás no. Preguntado el patrón de UI (nada de hover: no existe en
+táctil, mismo criterio que los chips), eligió un acordeón debajo de cada
+gráfico antes que un popover o un modal aparte.
+Decisión: `_chart_help.html` define la macro `chart_help(texto)` —un
+`<details>` nativo, sin JS, mismo patrón que `.ph-evo-anuncios` (la tabla de
+anuncios plegada)—, importada una vez en `public_home.html` y llamada justo
+debajo de cada uno de los 5 gráficos activos: `_range_chart.html` (panel de
+producto), `_province_compare.html` (ventana Precios y hoja de provincia,
+dos sitios), `_slope_chart.html`, `_steps_chart.html` y `_calendar_chart.html`
+(los tres de «Cómo se movió»). Cada llamada lleva su propio texto, describiendo
+la codificación visual real de ESE gráfico (qué es la barra, la raya, el
+punto, el color) en español llano. El ícono `info` ya estaba vendorizado
+(lo usan `control.html`/`curation.html`): no hizo falta tocar
+`tools/build_icon_font.py`.
+Descartado: (a) popover flotante — más CSS/posicionamiento para el mismo
+resultado y riesgo de cortarse en ventanas chicas; (b) modal aparte — más
+pasos para leer un párrafo corto; (c) una sola macro genérica sin texto por
+gráfico — cada gráfico tiene una codificación visual distinta, un texto
+único no serviría a ninguno bien.
+Consecuencia: cerrado por defecto, no cambia el layout ni los tests de
+conteo existentes (`ph-fpanel`, `data-win-min`, etc., ninguno cuenta
+`<details>` ni `<svg>` genéricamente). Producto en el catálogo sin gráfico
+en pantalla (p. ej. `_price_plot.html`, ya sin uso) no lleva acordeón.

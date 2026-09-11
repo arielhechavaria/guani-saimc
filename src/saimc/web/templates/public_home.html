@@ -437,6 +437,19 @@
   .ph-evo-anuncios summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
   .ph-evo-anuncios .ph-table-card { max-height: 16rem; overflow-y: auto; margin-top: .4rem; }
 
+  /* ── Acordeón «qué es este gráfico» (_chart_help.html), mismo patrón que
+     `.ph-evo-anuncios`: cerrado no estorba, no hace falta JS. */
+  .ph-chart-help { margin-top: .4rem; }
+  .ph-chart-help summary {
+    cursor: pointer; display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .75rem; font-weight: 600; color: var(--ph-accent);
+  }
+  .ph-chart-help summary .m3-icon { font-size: 16px; }
+  .ph-chart-help p {
+    margin: .35rem 0 0; font-size: .8125rem; line-height: 1.45;
+    color: var(--m3-on-surface-variant);
+  }
+
   /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
   .ph-sheet-scrim {
     position: fixed; inset: 0; z-index: 50;
@@ -495,6 +508,8 @@
 {% endblock %}
 
 {% block content %}
+
+{% from "_chart_help.html" import chart_help %}
 
 {# `#ph-live` envuelve todo lo que depende del estado de la URL (productos,
    provincia, días, ventanas abiertas). Un chip, un ítem del menú, una
@@ -691,6 +706,13 @@
             <figure class="ph-compara-fig">
               <figcaption class="ph-compara-titulo">{{ comp.product_name }} <span>{{ comp.currency }}/{{ comp.unit }} · la más cara arriba</span></figcaption>
               {% include "_province_compare.html" %}
+              {{ chart_help(
+                "Cada línea horizontal es el rango completo de precios de esa "
+                "provincia, de punta a punta; el óvalo relleno marca la mitad "
+                "central de los anuncios (ni los más baratos ni los más caros); "
+                "el punto es la mediana. Las provincias están ordenadas de la "
+                "más cara (arriba) a la más barata (abajo)."
+              ) }}
             </figure>
             {% endfor %}
 
@@ -828,6 +850,13 @@
               <figure class="ph-compara-fig">
                 <figcaption class="ph-evo-sub">¿Subió o bajó? <span>mediana en {{ slope.currency }}/{{ slope.unit }} · (anuncios)</span></figcaption>
                 {% include "_slope_chart.html" %}
+                {{ chart_help(
+                  "Cada línea conecta la mediana de una provincia en el "
+                  "período anterior (izquierda) con la del período actual "
+                  "(derecha): si la línea sube, el precio subió; si baja, "
+                  "bajó. El número entre paréntesis es cuántos anuncios "
+                  "sostienen esa mediana."
+                ) }}
               </figure>
               {% endfor %}
 
@@ -835,6 +864,12 @@
               <figure class="ph-compara-fig">
                 <figcaption class="ph-evo-sub">Por {{ steps.period_name }} <span>mediana en {{ steps.currency }}/{{ steps.unit }} · la línea se corta donde no hubo anuncios</span></figcaption>
                 {% include "_steps_chart.html" %}
+                {{ chart_help(
+                  "Cada línea sigue la mediana de una provincia, período a "
+                  "período, en escalones —no una curva suave—. Se corta donde "
+                  "no hubo anuncios en algún período: nunca une dos puntos "
+                  "salteando uno vacío."
+                ) }}
               </figure>
               {% else %}
               <p class="ph-empty">
@@ -853,6 +888,11 @@
                   <li><svg viewBox="0 0 12 12" aria-hidden="true"><rect class="ph-cal-dia ph-cal-2" x=".5" y=".5" width="11" height="11" rx="2" /></svg>2–3</li>
                   <li><svg viewBox="0 0 12 12" aria-hidden="true"><rect class="ph-cal-dia ph-cal-3" x=".5" y=".5" width="11" height="11" rx="2" /></svg>4 o más</li>
                 </ul>
+                {{ chart_help(
+                  "Cada cuadro es un día; cuanto más oscuro, más anuncios "
+                  "entraron ese día, sumando todas las provincias. No muestra "
+                  "precios, solo cuándo hubo actividad."
+                ) }}
               </figure>
 
               {# Los anuncios detrás de los gráficos, uno por renglón y con su
@@ -948,6 +988,13 @@
                 {% if bloque.ranges %}
                 {% set serie = bloque.ranges %}
                 {% include "_range_chart.html" %}
+                {{ chart_help(
+                  "La barra va del precio más bajo al más alto observado en "
+                  "ese período; la raya horizontal es la mediana (el valor de "
+                  "la mitad, no el promedio). El número debajo es cuántos "
+                  "anuncios hay; un triángulo señala un precio tan fuera de "
+                  "escala que no entra en la barra."
+                ) }}
                 {% endif %}
               </section>
               {% endfor %}
@@ -1018,6 +1065,14 @@
         {% if row.has_data and comp %}
         {% set resaltar = selected_province %}
         {% include "_province_compare.html" %}
+        {{ chart_help(
+          "Cada línea horizontal es el rango completo de precios de esa "
+          "provincia, de punta a punta; el óvalo relleno marca la mitad "
+          "central de los anuncios (ni los más baratos ni los más caros); "
+          "el punto es la mediana. Las provincias están ordenadas de la más "
+          "cara (arriba) a la más barata (abajo); " ~ selected_province ~ " se "
+          "destaca sobre las demás."
+        ) }}
         {% endif %}
       </section>
       {% endfor %}

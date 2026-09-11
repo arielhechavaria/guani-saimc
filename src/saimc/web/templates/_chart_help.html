@@ -1,0 +1,14 @@
+{#
+  Acordeón «qué es este gráfico»: un `<details>` nativo debajo del gráfico,
+  sin JS y con el mismo patrón que `.ph-evo-anuncios` (la tabla de anuncios
+  plegada). El operador entiende sus propios gráficos de un vistazo, pero
+  quien mira el dashboard público puede no tener ese trasfondo; la
+  explicación cerrada por defecto no le estorba a quien no la necesita.
+  `texto` es texto llano, sin marcado.
+#}
+{% macro chart_help(texto) -%}
+<details class="ph-chart-help">
+  <summary><span class="m3-icon" aria-hidden="true">info</span>Qué es este gráfico</summary>
+  <p>{{ texto }}</p>
+</details>
+{%- endmacro %}
