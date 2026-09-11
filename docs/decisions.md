@@ -7704,3 +7704,25 @@ Consecuencia: cerrado por defecto, no cambia el layout ni los tests de
 conteo existentes (`ph-fpanel`, `data-win-min`, etc., ninguno cuenta
 `<details>` ni `<svg>` genéricamente). Producto en el catálogo sin gráfico
 en pantalla (p. ej. `_price_plot.html`, ya sin uso) no lleva acordeón.
+
+## 2026-09-11 — Barra de minimizados (taskbar) removida: el menú del header alcanza
+Contexto: probada en producción, el operador decidió que la barra de
+minimizados estilo Ubuntu (`70adb68`, ajustada en `539c32a`) no hace falta —
+el menú del header (`.ph-menu`, abre/cierra cada ventana con su propio ítem)
+ya cubre esa necesidad.
+Decisión: revertidas manualmente las piezas de esas dos entradas —CSS
+(`.ph-taskbar`, `.ph-tb-item`, `.ph-tb-icon`, `.ph-tb-name`), el
+`<div data-taskbar>` del markup y la función `actualizarTaskbar()` con sus
+tres puntos de enganche (`pintarTodas`, el click handler, el restore por
+`data-tb-target`)—, sin tocar `git revert` porque las tres commits
+siguientes (chip que no cierra el panel, test del CSV, acordeón de los
+gráficos) tocan el mismo archivo y un revert automático las hubiera
+peleado. Minimizar vuelve a su comportamiento previo: colapsa la ventana a
+su barra de título, en el lugar donde estaba (apilada o flotante), sin
+sidebar.
+Descartado: dejar el botón de minimizar pero sin ningún lugar para
+restaurar la ventana —la habría dejado inalcanzable—.
+Consecuencia: `public_home.html` vuelve a su forma de antes del slice de
+hoy en esas piezas puntuales; el chip que no cierra el panel, el fix del
+test del CSV y el acordeón de los gráficos quedan intactos, no tienen
+relación con la barra.
