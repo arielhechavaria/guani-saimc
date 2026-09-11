@@ -7957,3 +7957,37 @@ Aparte, se agregó una diapositiva de cierre (16:9, avatar grande sobre
 fondo `--ph-accent`, «Gracias») como segundo artboard del mismo canvas de
 diseño de la entrada anterior — no es código, vive solo en el canvas
 publicado.
+
+## 2026-09-11 — El avatar de Guani deja de ser un tocororo
+
+Contexto: el operador corrigió el boceto del tocororo (dos entradas atrás):
+«Guani» es un término aborigen cubano, no un ave — pidió explícitamente un
+avatar taíno. Se le preguntó si lo quería como figura humana estilizada o
+como símbolo geométrico/petroglifo (más fiel a lo que realmente dejaron los
+taínos, que no eran figurativos); eligió figura humana, «lo más profesional
+posible».
+
+Decisión: `_guani_avatar.html` reemplaza el tocororo por un busto de
+cacique/cacica en el mismo trazo flat — proporciones normales, expresión
+serena, sin caricaturizar. Un solo elemento de adorno: una pluma sobre una
+vincha, no un tocado completo, que es ornamento de las culturas de las
+llanuras de Norteamérica, no del Caribe —confundirlas es el estereotipo más
+común y el que se quiso evitar a propósito—. El boceto se armó primero en
+el mismo canvas de Claude Design de las dos entradas anteriores (URL en la
+entrada del avatar original) y quedó con una nota propia adentro marcando
+que el ornamento sigue una referencia taína/caribeña más ajustada, pero que
+vale revisión con más fuentes antes de darlo por definitivo — no se trató
+como cerrado, se trató como primer boceto.
+
+De los seis colores del SVG, cinco son nuevos —piel, cabello, vincha,
+vestimenta, cuentas— y no existían en el sitio; el sexto (la pluma) reusa
+`--m3-warn`. Documentados en el comentario del archivo, mismo trato que ya
+recibía la paleta del tocororo.
+
+Descartado: quedarse con la figura como símbolo abstracto/petroglifo — el
+operador prefirió la figura humana explícitamente.
+
+Consecuencia: el reemplazo es transparente para el código — mismo archivo,
+mismo `class="ph-brand-avatar"`, mismo uso en kicker/indicador de
+carga/diapositiva de cierre —, así que ningún test cambió. Suite: 1577
+pasan, 1 saltea, sin roturas.
