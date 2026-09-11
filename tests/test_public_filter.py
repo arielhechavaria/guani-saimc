@@ -828,6 +828,22 @@ class TestVentanasArrastrables:
         assert 'class="ph-fpanel is-' not in texto
         assert 'class="ph-win is-' not in texto
 
+    def test_la_ventana_y_su_item_de_menu_se_emparejan_por_aria_controls(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Contrato del cierre optimista (2026-09-11): al tocar la × de una
+        ventana, el JS la esconde y apaga su ítem del menú antes de que
+        vuelva la respuesta, y los encuentra por el `aria-controls` del ítem
+        apuntando al `id` de la ventana. Ya existían los dos —no se agregó
+        marca nueva—, pero ahora hay código que depende de que sigan
+        coincidiendo."""
+        _seed_dos_productos(session)
+
+        texto = client.get("/?ver=cobertura").text
+
+        assert 'aria-controls="cobertura"' in texto
+        assert 'id="cobertura"' in texto
+
     def test_cada_ventana_tiene_barra_y_controles(
         self, client: TestClient, session: Session
     ) -> None:

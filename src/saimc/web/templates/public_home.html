@@ -411,9 +411,11 @@
      eso, esta regla —misma especificidad y declarada después— pisaba el
      `position: fixed` de `.is-floating` y la ventana no se despegaba. */
   .ph-win:not(.is-floating), .ph-fpanel:not(.is-floating) { position: relative; }
-  /* Cierre optimista del panel de producto: lo esconde en el acto, antes de
-     que vuelva la respuesta del `hx-get`. Se la pone y saca el JS del pie. */
-  .ph-fpanel.is-cerrado { display: none; }
+  /* Cierre optimista: esconde el panel o la ventana en el acto, antes de que
+     vuelva la respuesta del `hx-get`. Se la pone y saca el JS del pie. Es una
+     clase propia y no el `hidden` que ya usan las ventanas cerradas, para no
+     pelearse con el estado que renderiza el server. */
+  .ph-fpanel.is-cerrado, .ph-win.is-cerrado { display: none; }
   .ph-grip { display: none; position: absolute; z-index: 1; touch-action: none; }
   .ph-js .ph-grip { display: block; }
   .ph-grip-e { top: .75rem; bottom: .75rem; right: -3px; width: 8px; cursor: ew-resize; }
@@ -1554,41 +1556,60 @@
     mapa.setAttribute("viewBox", x + " " + y + " " + ancho + " " + alto);
   }
 
-  /* Cierre optimista del panel de producto (2026-09-11). El × sigue haciendo
-     su `hx-get` y TIENE que seguir haciéndolo: `close_query`
-     (`panel_view.py`) saca el producto de `?productos=`, y de ahí cuelgan
-     cinco cosas que el server resuelve y el cliente no —el estado del chip,
-     el filtro de «Comparar», el de «Cómo se movió», el enlace del CSV, y el
-     `selected` que aparece al quedar un solo producto y cambia hasta el
-     `<h1>`—. Lo único que agrega este bloque es el adelanto visual: esconde
-     el panel y apaga el chip en el acto, sin esperar la respuesta. Cuando
-     llega el swap, el server pisa todo con la verdad.
+  /* Cierre optimista del panel de producto y de las ventanas del menú
+     (2026-09-11). La × sigue haciendo su `hx-get` y TIENE que seguir
+     haciéndolo: en el panel, `close_query` (`panel_view.py`) saca el
+     producto de `?productos=` y de ahí cuelgan cinco cosas que el server
+     resuelve y el cliente no —el estado del chip, el filtro de «Comparar»,
+     el de «Cómo se movió», el enlace del CSV, y el `selected` que aparece al
+     quedar un solo producto y cambia hasta el `<h1>`—; en la ventana, saca
+     su clave de `?ver=`. Lo único que agrega este bloque es el adelanto
+     visual: esconde la caja y apaga su disparador en el acto, sin esperar la
+     respuesta. Cuando llega el swap, el server pisa todo con la verdad.
+
+     Los dos casos se emparejan por atributos que YA existían: el panel con
+     su chip por `data-product`, la ventana con su ítem de menú por el
+     `aria-controls` que apunta a su `id`.
 
      Si la petición falla —la conexión del usuario final es lenta e
-     intermitente, CLAUDE.md— se deshace el adelanto y el panel vuelve: es
-     preferible a dejarlo escondido mintiendo que se cerró. */
+     intermitente, CLAUDE.md— se deshace el adelanto y la caja vuelve: es
+     preferible a dejarla escondida mintiendo que se cerró. */
   var deshacerCierre = null;
 
-  function cerrarPanelOptimista(ev) {
-    var boton = ev.target.closest && ev.target.closest(".ph-fpanel .ph-x");
-    if (!boton) return;
-    var panel = boton.closest(".ph-fpanel");
-    if (!panel) return;
-    var slug = panel.getAttribute("data-product");
-    var chip = slug
-      ? document.querySelector('.ph-chip-toggle[data-product="' + slug + '"]')
+  function disparadorDe(caja) {
+    if (caja.classList.contains("ph-fpanel")) {
+      var slug = caja.getAttribute("data-product");
+      return slug
+        ? document.querySelector('.ph-chip-toggle[data-product="' + slug + '"]')
+        : null;
+    }
+    return caja.id
+      ? document.querySelector('.ph-menu-item[aria-controls="' + caja.id + '"]')
       : null;
+  }
 
-    panel.classList.add("is-cerrado");
-    if (chip) {
-      chip.classList.remove("is-active");
-      chip.setAttribute("aria-pressed", "false");
+  function cerrarOptimista(ev) {
+    var boton =
+      ev.target.closest && ev.target.closest(".ph-fpanel .ph-x, .ph-win .ph-x");
+    if (!boton) return;
+    var caja = boton.closest(".ph-fpanel, .ph-win");
+    if (!caja) return;
+    var disparador = disparadorDe(caja);
+    // El chip se marca `is-active`; el ítem del menú, `is-open`.
+    var claseActiva = caja.classList.contains("ph-fpanel")
+      ? "is-active"
+      : "is-open";
+
+    caja.classList.add("is-cerrado");
+    if (disparador) {
+      disparador.classList.remove(claseActiva);
+      disparador.setAttribute("aria-pressed", "false");
     }
     deshacerCierre = function () {
-      panel.classList.remove("is-cerrado");
-      if (chip) {
-        chip.classList.add("is-active");
-        chip.setAttribute("aria-pressed", "true");
+      caja.classList.remove("is-cerrado");
+      if (disparador) {
+        disparador.classList.add(claseActiva);
+        disparador.setAttribute("aria-pressed", "true");
       }
     };
   }
@@ -1599,7 +1620,7 @@
     deshacerCierre = null;
   }
 
-  document.addEventListener("click", cerrarPanelOptimista);
+  document.addEventListener("click", cerrarOptimista);
   document.addEventListener("htmx:responseError", revertirCierre);
   document.addEventListener("htmx:sendError", revertirCierre);
   document.addEventListener("htmx:afterSettle", function () {

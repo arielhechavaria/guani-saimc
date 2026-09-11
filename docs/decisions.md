@@ -8246,10 +8246,28 @@ atributo de un lado no rompe nada visible — el chip simplemente deja de
 apagarse, en silencio, el mismo modo de falla que
 `TestClasesDelJavascriptExisten` ya vigila para las clases.
 
-Fuera de alcance, anotado: las ventanas del menú (`.ph-win`) tienen la
-misma × con `hx-get` y la misma latencia. No se tocaron —el pedido era
-sobre el panel de producto— y generalizar el bloque es casi gratis si se
-quiere después.
-
 Consecuencia: un atributo nuevo en dos plantillas, una clase CSS, ~35
 líneas de JS y un test. Suite: 1578 pasan, 1 saltea.
+
+## 2026-09-11 — El cierre optimista se extiende a las ventanas del menú
+
+Contexto: quedaba anotado como fuera de alcance en la entrada anterior; el
+operador pidió hacerlo.
+
+Decisión: `cerrarPanelOptimista` pasa a `cerrarOptimista` y cubre
+`.ph-fpanel .ph-x` y `.ph-win .ph-x`. Las dos ramas difieren en dos cosas
+y nada más, así que se resuelven con dos condicionales y ninguna
+abstracción: cómo encontrar el disparador (el panel con su chip por
+`data-product`; la ventana con su ítem de menú por el `aria-controls` que
+ya apuntaba a su `id` — marca que YA existía, no se agregó nada) y qué
+clase apagarle (`is-active` en el chip, `is-open` en el ítem).
+
+Esconder es `.is-cerrado` para los dos, no el `hidden` que las ventanas
+cerradas ya traen del server: son dos estados distintos —«el server dice
+que está cerrada» y «el cliente se adelantó»— y mezclarlos haría que
+deshacer el adelanto le pisara el estado real.
+
+Consecuencia: test nuevo
+(`test_la_ventana_y_su_item_de_menu_se_emparejan_por_aria_controls`), que
+fija el emparejamiento del que ahora depende el JS. Suite: 1579 pasan, 1
+saltea.
