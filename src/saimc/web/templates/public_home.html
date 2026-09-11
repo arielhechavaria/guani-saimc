@@ -175,24 +175,17 @@
      tamaño del AVATAR (ya no del contenedor, que ahora también carga los
      punticos de abajo): .25rem → .3125rem → .715625rem → 2.146875rem →
      10.734375rem → 53.671875rem → 17.890625rem. Opacidad visible 1 → .4.
-     Fondo: el mismo `color-mix(in srgb, var(--m3-surface) 92%,
-     transparent)` que ya usan `.ph-topbar` y `.ph-canvas-legend`
-     (design_tokens.css), con `--m3-elev-2` de sombra — nada nuevo.
 
-     El pedido de esta vuelta —«que el avatar haga flip» + los tres
-     punticos de carga de abajo— cambia la forma del contenedor: de círculo
-     ajustado al avatar a tarjeta redondeada en columna (avatar arriba,
-     punticos abajo), porque ahora hay dos elementos que acomodar, no uno.
-     `perspective` en `.ph-loading` es lo que hace que el `rotateY` del
-     avatar se vea como una moneda girando (con foreshortening) y no como
-     un achicamiento horizontal plano. */
+     Sin fondo, sin borde, sin sombra: el operador pidió explícitamente que
+     el contenedor no se vea — solo el avatar (girando) y los tres
+     punticos, flotando directo sobre lo que haya atrás. `.ph-loading` es
+     puro layout (columna + centrado + `perspective`), nada visual.
+     `perspective` es lo que hace que el `rotateY` del avatar se vea como
+     una moneda girando (con foreshortening) y no como un achicamiento
+     horizontal plano. */
   .ph-loading {
     position: fixed; top: 50%; left: 50%; z-index: 50;
     display: flex; flex-direction: column; align-items: center; gap: .85rem;
-    padding: 1rem 1.5rem 1.35rem;
-    border-radius: var(--m3-radius-lg);
-    background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
-    box-shadow: var(--m3-elev-2);
     perspective: 40rem;
     transform: translate(-50%, -50%);
     opacity: 0; pointer-events: none; transition: opacity .15s ease;
