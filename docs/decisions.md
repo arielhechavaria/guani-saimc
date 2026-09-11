@@ -7864,3 +7864,25 @@ Consecuencia: cambio puramente visual (CSS), sin tocar Python ni el
 contrato de ningún test — la suite corre igual. La segunda idea del
 operador (una vista 2D con otro enfoque, tipo Street View) queda pendiente,
 sin definir todavía.
+
+## 2026-09-11 — Vista cercana de provincia: pinta por densidad, no por estado
+Contexto: continuación de la entrada anterior. El operador retomó la
+«segunda idea» (vista 2D con otro enfoque, tipo Street View) y, ante la
+pregunta de qué mostrar de cerca, se descartó cualquier variante que
+implicara ubicación real dentro de la provincia: el modelo no tiene
+municipio ni lat/long, solo provincia (`src/saimc/models/`), así que
+cualquier posición más fina que eso sería inventada —§12.6 lo prohíbe—.
+Decisión: cuando hay una provincia elegida (`selected_province`), el SVG
+fuerza la capa «densidad» (`MapProvince.density_ratio`, ya existente desde
+la capa de densidad del mapa completo) en vez del color por estado de
+publicación, sin importar qué capa esté elegida en el selector manual del
+menú —que sigue mostrando «publicación» como default y no cambia—. Un solo
+condicional en `public_home.html`: `{% if selected_layer == 'densidad' or
+selected_province %}`.
+Descartado: colocar chips/íconos de producto como capa espacial sobre la
+silueta agrandada —el operador prefirió la opción más simple, sombrear la
+forma misma—.
+Consecuencia: cambio de plantilla, sin Python nuevo. Tests nuevos en
+`TestCapaDelMapa` (`tests/test_public_map.py`): con provincia elegida pinta
+`is-densidad` aunque `capa` no se haya tocado; sin provincia elegida, la
+capa de publicación sigue de estado. Suite: 1575 pasan, 1 saltea.
