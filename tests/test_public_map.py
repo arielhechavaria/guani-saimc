@@ -350,6 +350,41 @@ class TestCapaDelMapa:
 
         assert "is-densidad" not in svg
 
+    def test_con_provincia_elegida_el_mapa_pinta_solo_esa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El operador pidió que «lo único que se pinte sea esa provincia»
+        (2026-09-11): con el zoom solo (16 `<path>` en el DOM, recortados por
+        `viewBox`), el margen del zoom dejaba asomar bordes de provincias
+        vecinas. Ahora las otras 15 ni se dibujan."""
+        session.add(Province(code="hab", name="La Habana"))
+        session.commit()
+
+        svg_todas = client.get("/").text.split('<svg class="ph-map"')[1].split("</svg>")[0]
+        svg_una = (
+            client.get("/?provincia=la-habana")
+            .text.split('<svg class="ph-map"')[1]
+            .split("</svg>")[0]
+        )
+
+        assert svg_todas.count('data-province="') == 16
+        assert svg_una.count('data-province="') == 1
+        assert 'data-province="la-habana"' in svg_una
+
+    def test_la_leyenda_de_densidad_cuenta_solo_esa_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Antes de esta entrada, con provincia elegida el mapa ya pintaba por
+        densidad (entrada anterior) pero la leyenda de abajo seguía mostrando
+        el conteo de las 16 —desincronizada con lo que el mapa pintaba—."""
+        session.add(Province(code="hab", name="La Habana"))
+        session.commit()
+
+        texto = client.get("/?provincia=la-habana").text
+
+        assert "en La Habana</p>" in texto
+        assert "en total</p>" not in texto
+
 
 class TestEnlaceDeEvidenciaEnLaSerie:
     """Transparency Layer (docs/decisions.md, 2026-08-25): cada punto del

@@ -715,8 +715,15 @@
        nada; la tabla «Observaciones por provincia» de la ventana Cobertura lleva
        el dato en forma accesible. Cada provincia abre su hoja de detalle. #}
     <svg class="ph-map" viewBox="{{ map.viewbox }}" role="img"
-         aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
+         aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}">
       {% for province in map.provinces %}
+      {# Con una provincia elegida, el mapa deja de dibujar las otras 15: el
+         operador pidió que «lo único que se pinte sea esa provincia», no
+         solo que el zoom la encuadre —con las 16 en el DOM, el margen del
+         zoom (`ZOOM_MARGEN` en el script del pie) dejaba asomar bordes de
+         provincias vecinas—. `province.name` contra `selected_province` es
+         la misma comparación por nombre que ya hace `MapProvince.state`. #}
+      {% if not selected_province or province.name == selected_province %}
       {% set pl = province_link(province.slug) %}
       <a href="{{ pl }}" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle" data-province="{{ province.slug }}">
         {# Con una provincia elegida el mapa ya está encuadrado en ella sola
@@ -732,6 +739,7 @@
           <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
         </path>
       </a>
+      {% endif %}
       {% endfor %}
     </svg>
 
@@ -1187,10 +1195,19 @@
         <a class="ph-layer-btn{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
         {% endfor %}
       </div>
-      {% if selected_layer == 'densidad' %}
+      {# Misma condición que el `<path>` de arriba: con provincia elegida el
+         mapa ya pinta por densidad aunque `capa` siga en «publicación», así
+         que la leyenda de abajo tiene que seguirla — si no, mostraba
+         «Publicada/En ingesta/Sin datos» al lado de un mapa que ya no
+         pintaba ninguno de esos tres estados. #}
+      {% if selected_layer == 'densidad' or selected_province %}
       <div class="ph-density-ramp" aria-hidden="true"></div>
       <p class="ph-density-labels"><span>Sin anuncios</span><span>{{ map.provinces[0].max_rows }} (la que más tiene)</span></p>
+      {% if selected_province %}
+      <p class="ph-canvas-count">Sombreado relativo a la provincia con más anuncios hoy · {{ map.provinces | selectattr("name", "equalto", selected_province) | map(attribute="rows") | first }} en {{ selected_province }}</p>
+      {% else %}
       <p class="ph-canvas-count">Sombreado relativo a la provincia con más anuncios hoy · {{ map.total_rows }} en total</p>
+      {% endif %}
       {% else %}
       <ul class="ph-legend">
         <li><span class="ph-swatch is-publicada"></span> Publicada</li>

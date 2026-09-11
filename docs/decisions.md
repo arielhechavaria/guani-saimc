@@ -8311,3 +8311,38 @@ Consecuencia: cuatro tests nuevos en `TestFiltroPorProvinciaEnLaRuta`
 (existencia del `<select>` y sus opciones, la opción elegida marcada, el
 chip solo con provincia elegida, los campos ocultos preservando los otros
 ejes). Suite: 1583 pasan, 1 saltea.
+
+## 2026-09-11 — Con provincia elegida, el mapa deja de dibujar las otras 15
+
+Contexto: el operador dijo que no le alcanzaba con «esa ventana flotante»
+—la hoja de detalle—: quería que «todo el sistema se adecúe solamente
+para esa provincia, incluso el mapa. Lo único que debe pintarse en el
+mapa es esa provincia». Verificado antes de tocar nada: precios,
+tarjetas, «Comparar» y «Cómo se movió» YA se acotaban a la provincia
+elegida (entradas de sesiones previas); lo que NO estaba filtrado era el
+mapa mismo — las 16 provincias seguían en el DOM, el zoom (`ZOOM_MARGEN`
+en `actualizarZoomDelMapa`) solo recortaba el `viewBox`, así que bordes de
+provincias vecinas asomaban dentro del encuadre.
+
+Decisión: el `{% for province in map.provinces %}` del SVG suma
+`{% if not selected_province or province.name == selected_province %}` —
+con una elegida, las otras 15 ni se dibujan, no solo quedan fuera de
+cuadro. `actualizarZoomDelMapa()` no cambia: sigue buscando el `<path>` de
+la provincia elegida por `data-province`, que sigue ahí. El
+`aria-label` del `<svg>` pasa a decir «Mapa de {{ provincia }}» en vez del
+conteo de cobertura de las 16, que ya no describe lo que hay dibujado.
+
+De paso, un bug encontrado al verificar: la leyenda de abajo del mapa
+tenía su propia condición (`selected_layer == 'densidad'`) que NO conocía
+`selected_province` —a diferencia del `<path>`, que sí fuerza densidad con
+provincia elegida desde una entrada anterior—, así que con capa
+«publicación» y una provincia elegida, el mapa pintaba por densidad pero
+la leyenda seguía mostrando «Publicada/En ingesta/Sin datos» y el conteo
+de las 16. Se le agregó la misma condición, y con provincia elegida el
+conteo pasa a ser el de esa provincia sola («N en {{ provincia }}»), no el
+total de las 16.
+
+Consecuencia: dos tests nuevos en `TestCapaDelMapa`
+(`test_con_provincia_elegida_el_mapa_pinta_solo_esa`,
+`test_la_leyenda_de_densidad_cuenta_solo_esa_provincia`). Suite: 1585
+pasan, 1 saltea.
