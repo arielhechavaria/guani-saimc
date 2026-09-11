@@ -8106,3 +8106,21 @@ Consecuencia: cambio de código real limitado al `transform` del badge —
 ningún test lo cubre porque ninguno afirma coordenadas del dibujo, y la
 suite sigue en 1577/1. El resto (cuerpo entero, toggle) vive solo en
 https://claude.ai/code/artifact/a9374a81-35e8-479d-ab7b-00b747f3e913.
+
+## 2026-09-11 — Indicador de carga ×5 y con fondo de superficie del sistema
+
+Contexto: el operador pidió, de nuevo en un solo mensaje, agrandar el
+indicador de carga ×5 y «usar los colores de fondo que hay en el sistema».
+
+Decisión: `.ph-loading` pasa de `2.146875rem` a `10.734375rem` (×5). Para
+el fondo, en vez de solo agrandar el SVG, se le agregó un fondo propio al
+contenedor: `color-mix(in srgb, var(--m3-surface) 92%, transparent)` —el
+mismo `color-mix` que ya usan `.ph-topbar` y `.ph-canvas-legend`
+(`design_tokens.css`), no un color inventado— más `box-shadow:
+var(--m3-elev-2)` y `border-radius: 999px`. Con `padding: .75rem` y
+`box-sizing: border-box`, ese fondo asoma como un anillo alrededor del
+badge blanco propio del SVG (que ya tenía su margen interno desde la
+entrada anterior) — dos superficies concéntricas, ninguna con un color que
+no estuviera ya en `design_tokens.css`.
+
+Consecuencia: solo CSS, mismo marcado. Suite: 1577 pasan, 1 saltea.
