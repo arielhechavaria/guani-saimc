@@ -8200,3 +8200,19 @@ Consecuencia: `prefers-reduced-motion` suma `.ph-loading-dots span` a la
 lista de animaciones que apaga (ya tenía al avatar). Solo CSS + un `<div>`
 nuevo con tres `<span>` vacíos; ningún test cambia. Suite: 1577 pasan, 1
 saltea.
+
+## 2026-09-11 — El contenedor del indicador deja de verse
+
+Contexto: el operador pidió sacarle al contenedor todo lo visual —sin
+borde, sin sombra, sin fondo—: «lo único que quiero ver es los punticos y
+el flip del avatar».
+
+Decisión: `.ph-loading` pierde `background`, `box-shadow`, `border-radius`
+y `padding`. Queda puro layout: `display: flex; flex-direction: column`,
+centrado y `perspective` (necesario para que el `rotateY` del avatar se
+vea 3D). El avatar y los tres puntos flotan directo sobre lo que haya
+detrás, sin tarjeta. No se tocó el círculo blanco propio del SVG del
+avatar (`_guani_avatar.html`) — eso es parte del dibujo, compartido con el
+header, no «el contenedor» del que hablaba el pedido.
+
+Consecuencia: solo CSS. Suite: 1577 pasan, 1 saltea.
