@@ -411,6 +411,9 @@
      eso, esta regla —misma especificidad y declarada después— pisaba el
      `position: fixed` de `.is-floating` y la ventana no se despegaba. */
   .ph-win:not(.is-floating), .ph-fpanel:not(.is-floating) { position: relative; }
+  /* Cierre optimista del panel de producto: lo esconde en el acto, antes de
+     que vuelva la respuesta del `hx-get`. Se la pone y saca el JS del pie. */
+  .ph-fpanel.is-cerrado { display: none; }
   .ph-grip { display: none; position: absolute; z-index: 1; touch-action: none; }
   .ph-js .ph-grip { display: block; }
   .ph-grip-e { top: .75rem; bottom: .75rem; right: -3px; width: 8px; cursor: ew-resize; }
@@ -625,9 +628,9 @@
        además el nombre accesible del enlace. Sin ícono, solo el nombre. #}
     {% for chip in product_chips -%}
     {% if chip.icon -%}
-    <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}"><span class="m3-icon ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span><span class="ph-chip-name">{{ chip.label }}</span></a>
+    <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}"><span class="m3-icon ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span><span class="ph-chip-name">{{ chip.label }}</span></a>
     {%- else -%}
-    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
+    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
     {%- endif %}
     {%- endfor %}
   </nav>
@@ -1035,7 +1038,7 @@
       {% if product_panels %}
       <div class="ph-panel-stack">
         {% for panel in product_panels %}
-        <section class="ph-fpanel" data-win="{{ panel.name }}" id="ph-panel-{{ panel.slug }}" aria-label="{{ panel.name }}">
+        <section class="ph-fpanel" data-win="{{ panel.name }}" data-product="{{ panel.slug }}" id="ph-panel-{{ panel.slug }}" aria-label="{{ panel.name }}">
             <header class="ph-fpanel-head" data-win-handle>
               <div class="ph-fpanel-titles">
                 {% if panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}<span class="ph-fpanel-name">{{ panel.name }}</span>
@@ -1551,6 +1554,58 @@
     mapa.setAttribute("viewBox", x + " " + y + " " + ancho + " " + alto);
   }
 
+  /* Cierre optimista del panel de producto (2026-09-11). El × sigue haciendo
+     su `hx-get` y TIENE que seguir haciéndolo: `close_query`
+     (`panel_view.py`) saca el producto de `?productos=`, y de ahí cuelgan
+     cinco cosas que el server resuelve y el cliente no —el estado del chip,
+     el filtro de «Comparar», el de «Cómo se movió», el enlace del CSV, y el
+     `selected` que aparece al quedar un solo producto y cambia hasta el
+     `<h1>`—. Lo único que agrega este bloque es el adelanto visual: esconde
+     el panel y apaga el chip en el acto, sin esperar la respuesta. Cuando
+     llega el swap, el server pisa todo con la verdad.
+
+     Si la petición falla —la conexión del usuario final es lenta e
+     intermitente, CLAUDE.md— se deshace el adelanto y el panel vuelve: es
+     preferible a dejarlo escondido mintiendo que se cerró. */
+  var deshacerCierre = null;
+
+  function cerrarPanelOptimista(ev) {
+    var boton = ev.target.closest && ev.target.closest(".ph-fpanel .ph-x");
+    if (!boton) return;
+    var panel = boton.closest(".ph-fpanel");
+    if (!panel) return;
+    var slug = panel.getAttribute("data-product");
+    var chip = slug
+      ? document.querySelector('.ph-chip-toggle[data-product="' + slug + '"]')
+      : null;
+
+    panel.classList.add("is-cerrado");
+    if (chip) {
+      chip.classList.remove("is-active");
+      chip.setAttribute("aria-pressed", "false");
+    }
+    deshacerCierre = function () {
+      panel.classList.remove("is-cerrado");
+      if (chip) {
+        chip.classList.add("is-active");
+        chip.setAttribute("aria-pressed", "true");
+      }
+    };
+  }
+
+  function revertirCierre() {
+    if (!deshacerCierre) return;
+    deshacerCierre();
+    deshacerCierre = null;
+  }
+
+  document.addEventListener("click", cerrarPanelOptimista);
+  document.addEventListener("htmx:responseError", revertirCierre);
+  document.addEventListener("htmx:sendError", revertirCierre);
+  document.addEventListener("htmx:afterSettle", function () {
+    // El swap trajo el estado real: ya no hay nada que deshacer.
+    deshacerCierre = null;
+  });
   document.addEventListener("htmx:afterSettle", pintarTodas);
   document.addEventListener("htmx:afterSettle", manejarFocoDeHoja);
   document.addEventListener("htmx:afterSettle", actualizarZoomDelMapa);

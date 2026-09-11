@@ -391,6 +391,23 @@ class TestPanelesFlotantes:
 
         assert 'class="ph-panel-stack"' not in texto
 
+    def test_el_panel_y_su_chip_comparten_data_product(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Contrato del cierre optimista (2026-09-11): al tocar la × de un
+        panel, el JS lo esconde y apaga su chip antes de que vuelva la
+        respuesta, y los empareja por `data-product`. Si un lado pierde el
+        atributo, el JS no falla —simplemente deja de apagar el chip, en
+        silencio—, que es el modo de romperse que
+        `TestClasesDelJavascriptExisten` ya documenta para las clases."""
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz,aceite").text
+
+        for slug in ("arroz", "aceite"):
+            assert f'class="ph-fpanel" data-win="{slug.capitalize()}" data-product="{slug}"' in texto
+            assert f'hx-get="/?productos=arroz,aceite" data-product="{slug}"' in texto
+
     def test_el_boton_de_cerrar_quita_ese_producto(
         self, client: TestClient, session: Session
     ) -> None:
