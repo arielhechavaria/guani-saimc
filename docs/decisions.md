@@ -7991,3 +7991,23 @@ Consecuencia: el reemplazo es transparente para el código — mismo archivo,
 mismo `class="ph-brand-avatar"`, mismo uso en kicker/indicador de
 carga/diapositiva de cierre —, así que ningún test cambió. Suite: 1577
 pasan, 1 saltea, sin roturas.
+
+## 2026-09-11 — El indicador de carga se centra y se achica al 10%
+
+Contexto: el operador pidió que el indicador de carga cubra toda petición
+(ya lo hacía: `hx-indicator` se hereda desde `#ph-live`, y los doce
+`hx-get` de la vista —chips, menú, provincias, ×, capa— viven todos
+adentro), y que en vez de la esquina superior derecha vaya centrado en la
+pantalla, con opacidad, al 10% del tamaño que tenía.
+
+Decisión: `.ph-loading` pasa de `top/right: 1rem` a
+`top: 50%; left: 50%; transform: translate(-50%, -50%)`, y de 2.5rem a
+.25rem (10% exacto). Al rebote (`ph-loading-bob`, un `translateY`) lo
+reemplaza un pulso de opacidad (`ph-loading-pulse`, 1 → .35 → 1): a 4px un
+rebote se sale de su propia caja y se ve roto, y un pulso de opacidad es
+además lo que el operador pidió con «con opacity» y el patrón usual de un
+punto de carga chico.
+
+Consecuencia: solo CSS, mismo marcado (`_guani_avatar.html`,
+`hx-indicator="#ph-loading"`), ningún test tocado. Suite: 1577 pasan, 1
+saltea.
