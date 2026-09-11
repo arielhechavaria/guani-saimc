@@ -8216,3 +8216,40 @@ avatar (`_guani_avatar.html`) — eso es parte del dibujo, compartido con el
 header, no «el contenedor» del que hablaba el pedido.
 
 Consecuencia: solo CSS. Suite: 1577 pasan, 1 saltea.
+
+## 2026-09-11 — Cierre del panel de producto: UI optimista, no JS puro
+
+Contexto: el operador observó que la × de un panel de producto dispara una
+petición al server y propuso manejarlo con JS. Verificado antes de
+responder: `close_query` (`panel_view.py`) no solo cierra la tarjeta —saca
+el producto de `?productos=`— y de eso cuelgan cinco cosas que el cliente
+no puede resolver solo: el estado del chip (`public.py:226`), el filtro de
+«Comparar» (`public_home.html:793`), el de «Cómo se movió»
+(`public_home.html:928`), el enlace del CSV, y el `selected =
+active_products[0]` de una sola selección (`public.py:185`), que cambia el
+`<h1>` y el `<title>`. JS puro que solo escondiera el `<section>` dejaría
+esas cinco desincronizadas.
+
+Decisión: UI optimista, elegida por el operador entre esa y «sin petición,
+solo JS». El `hx-get` queda igual —el server sigue siendo la fuente de
+verdad—; lo que se agrega es el adelanto visual: al tocar la ×, el JS
+esconde el panel (`.is-cerrado`) y apaga su chip en el acto, y el swap de
+htmx pisa todo cuando llega. Si la petición falla (conexión intermitente,
+el caso cubano de CLAUDE.md), `htmx:responseError`/`htmx:sendError`
+deshacen el adelanto y el panel vuelve, en vez de quedar escondido
+mintiendo que se cerró.
+
+Chips y paneles suman `data-product="<slug>"` para emparejarse: es el
+contrato que el JS necesita y lo cubre un test nuevo
+(`test_el_panel_y_su_chip_comparten_data_product`), porque perder ese
+atributo de un lado no rompe nada visible — el chip simplemente deja de
+apagarse, en silencio, el mismo modo de falla que
+`TestClasesDelJavascriptExisten` ya vigila para las clases.
+
+Fuera de alcance, anotado: las ventanas del menú (`.ph-win`) tienen la
+misma × con `hx-get` y la misma latencia. No se tocaron —el pedido era
+sobre el panel de producto— y generalizar el bloque es casi gratis si se
+quiere después.
+
+Consecuencia: un atributo nuevo en dos plantillas, una clase CSS, ~35
+líneas de JS y un test. Suite: 1578 pasan, 1 saltea.
