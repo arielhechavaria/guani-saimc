@@ -588,7 +588,12 @@
       {% for province in map.provinces %}
       {% set pl = province_link(province.slug) %}
       <a href="{{ pl }}" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle" data-province="{{ province.slug }}">
-        {% if selected_layer == 'densidad' %}
+        {# Con una provincia elegida el mapa ya está encuadrado en ella sola
+           (`actualizarZoomDelMapa`): ahí la vista cercana pinta por densidad
+           de anuncios en vez de por estado de publicación, sin importar la
+           capa manual del menú — es el «acercarse revela otra cosa» pedido
+           por el operador (2026-09-11), no un tercer valor de `capa`. #}
+        {% if selected_layer == 'densidad' or selected_province %}
         <path class="m3-map-province ph-map-province is-densidad" style="--dens: {{ '%.3f' | format(province.density_ratio) }}" d="{{ province.path }}">
         {% else %}
         <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">

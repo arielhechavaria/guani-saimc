@@ -323,6 +323,33 @@ class TestCapaDelMapa:
         assert 'data-provincia=""' in client.get("/").text
         assert 'data-provincia="la-habana"' in client.get("/?provincia=la-habana").text
 
+    def test_elegir_provincia_pinta_por_densidad_aunque_la_capa_sea_publicacion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Acercarse a una provincia (2026-09-11) cambia el enfoque visual a
+        densidad de anuncios, sin que el operador haya tocado el selector de
+        capa — que sigue en su default «publicación»."""
+        session.add(Province(code="hab", name="La Habana"))
+        session.commit()
+
+        texto = client.get("/?provincia=la-habana").text
+        svg = texto.split("<svg")[1].split("</svg>")[0]
+
+        assert "is-densidad" in svg
+        assert "--dens:" in svg
+        for clase in ("is-publicada", "is-en-ingesta", "is-sin-datos"):
+            assert clase not in svg
+
+    def test_sin_provincia_elegida_la_capa_de_publicacion_sigue_de_estado(
+        self, client: TestClient
+    ) -> None:
+        """El forzado a densidad es del zoom a una provincia, no un cambio al
+        default global: sin provincia elegida el mapa entero sigue pintando
+        por estado de publicación."""
+        svg = client.get("/").text.split("<svg")[1].split("</svg>")[0]
+
+        assert "is-densidad" not in svg
+
 
 class TestEnlaceDeEvidenciaEnLaSerie:
     """Transparency Layer (docs/decisions.md, 2026-08-25): cada punto del
