@@ -7726,3 +7726,44 @@ Consecuencia: `public_home.html` vuelve a su forma de antes del slice de
 hoy en esas piezas puntuales; el chip que no cierra el panel, el fix del
 test del CSV y el acordeón de los gráficos quedan intactos, no tienen
 relación con la barra.
+
+## 2026-09-11 — Las tres deudas del rediseño (slice de cierre, 2026-09-10): saldadas
+Contexto: el operador pidió resolver de una las tres deudas que el slice de
+cierre parcial del rediseño había dejado anotadas «para cuando el operador
+revise el rediseño completo y decida cuánto recortar».
+Decisión, en tres partes:
+1. **Trampa de foco + Escape en la hoja de provincia.** El `<h2 id="ph-sheet-
+   title">` gana `tabindex="-1"` para poder recibir foco por script.
+   `manejarFocoDeHoja()` (enganchada a `htmx:afterSettle` y a la carga
+   inicial) compara si el título está presente contra si lo estaba en el
+   swap anterior (`provinciaAbierta`): recién abierta, el foco entra al
+   título; recién cerrada, vuelve al enlace de esa provincia en el mapa
+   (por `aria-label`, si sigue ahí). Un `keydown` global cierra con Escape
+   (clickea `.ph-sheet-x`, que htmx ya intercepta) y atrapa Tab/Shift+Tab
+   dentro de `.ph-sheet` (`agarreDeFoco`, sobre `a[href]`,
+   `button:not([disabled])`, `input:not([disabled])`,
+   `[tabindex]:not([tabindex="-1"])`).
+2. **Unificada la hoja con el filtro `?provincia=` de Precios.** La hoja ya
+   mostraba, por producto, la misma `_province_compare.html` con la
+   provincia resaltada que Precios —mismo partial, mismo `resaltar`, dos
+   veces en pantalla a la vez—. Con `selected_province` puesto, Precios deja
+   de repetir ese bucle y muestra un aviso (`.ph-note`) que apunta a la hoja
+   abierta.
+3. **Recortado Precios contra el resumen de los paneles.** Un chip prendido
+   ya abre su panel con el desglose por provincia (`build_product_panels`);
+   la comparación de Precios para ESE MISMO producto era el mismo dato en
+   otra forma. El bucle de comparación de Precios pasa a excluir los
+   productos con panel activo (`comp.product_name not in active_products`);
+   sin nada prendido, sigue mostrando todos, como antes.
+Descartado: convertir la hoja en un `<dialog>` nativo —ganaría el atrapafoco
+gratis, pero exige que el script llame `.showModal()` en cada apertura
+(la hoja es HTML servido por htmx, no hay «mount» de componente) y su fondo
+(`::backdrop`) no es el `.ph-sheet-scrim` ya construido; más cambio para el
+mismo resultado. Descartado también mostrar la comparación de Precios para
+un producto SIN chip mientras hay uno CON chip —dejaría huecos raros en el
+medio del bucle sin ganar nada—.
+Consecuencia: dos tests nuevos en `TestProvinciasLadoALadoEnLaRuta`
+(`test_public_filter.py`) cubren 2 y 3; el string exacto del `<h2>` en
+`test_provincia_en_la_url_abre_la_hoja` se actualizó por el `tabindex="-1"`
+nuevo. Sin test de JS —el proyecto no tiene runner de JS, igual que el resto
+del script de ventanas—. Suite: 1561 pasan, 1 saltea.

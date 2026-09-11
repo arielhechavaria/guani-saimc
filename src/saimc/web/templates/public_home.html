@@ -661,11 +661,28 @@
           {% elif view.key == 'precios' %}
             <p class="ph-win-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}{% if selected_province %} · {{ selected_province }}{% endif %}</p>
 
+            {% if selected_province %}
+            {# La hoja de detalle (más abajo en este mismo documento) ya
+               muestra esta misma comparación, producto por producto, para
+               TODOS los piloto —no solo los prendidos—: repetirla acá era
+               el mismo gráfico dos veces (deuda anotada el 2026-09-10,
+               saldada el 2026-09-11). #}
+            {% if province_comparisons %}
+            <p class="ph-note">
+              La comparación entre provincias de {{ selected_province }} está,
+              producto por producto, en la hoja de detalle que está abierta.
+            </p>
+            {% endif %}
+            {% else %}
             {# Provincias lado a lado (slice 2 de los gráficos): «¿dónde está más
-               caro?», todas las provincias en el mismo eje aunque haya una
-               elegida —esa se resalta—. Para los productos prendidos, o todos. #}
+               caro?», todas las provincias en el mismo eje. Un producto con
+               chip prendido ya tiene su propio panel con el desglose por
+               provincia (a la derecha): mostrarlo también acá era el mismo
+               dato dos veces, así que esta comparación queda para lo que
+               NO tiene panel —con nada prendido, para todos—. Sin provincia
+               elegida (esta rama), no hay ninguna que resaltar. #}
             {% set resaltar = selected_province %}
-            {% for comp in province_comparisons if not active_products or comp.product_name in active_products %}
+            {% for comp in province_comparisons if not active_products or comp.product_name not in active_products %}
             <figure class="ph-compara-fig">
               <figcaption class="ph-compara-titulo">{{ comp.product_name }} <span>{{ comp.currency }}/{{ comp.unit }} · la más cara arriba</span></figcaption>
               {% include "_province_compare.html" %}
@@ -678,6 +695,7 @@
               ) }}
             </figure>
             {% endfor %}
+            {% endif %}
 
             {# Barras de provincia y de días. Cada enlace preserva productos,
                días y ventanas abiertas: cambiar el filtro no cierra esta
@@ -993,12 +1011,14 @@
 {# ══ Hoja de detalle de provincia (slice 5) ═══════════════════════════
    Modal: recorre TODOS los productos piloto de la provincia —no solo los
    chips activos—. Cerrarla saca `?provincia=` y conserva el resto del
-   estado. Sin trampa de foco de teclado todavía (haría falta JS). #}
+   estado. Trampa de foco y Escape-cierra: el script del pie
+   (`manejarFocoDeHoja`, `agarreDeFoco`). `tabindex="-1"` en el título: un
+   `<h2>` no es enfocable por default, y ahí es donde entra el foco al abrir. #}
 <div class="ph-sheet-scrim">
   <a class="ph-sheet-scrim-close" href="{{ sheet_close_query }}" hx-get="{{ sheet_close_query }}" aria-label="Cerrar el detalle" tabindex="-1"></a>
   <aside class="ph-sheet" role="dialog" aria-modal="true" aria-labelledby="ph-sheet-title">
     <header class="ph-sheet-head">
-      <h2 class="ph-sheet-title" id="ph-sheet-title">{{ selected_province }}</h2>
+      <h2 class="ph-sheet-title" id="ph-sheet-title" tabindex="-1">{{ selected_province }}</h2>
       <a class="ph-sheet-x" href="{{ sheet_close_query }}" hx-get="{{ sheet_close_query }}" aria-label="Cerrar">×</a>
     </header>
     <p class="ph-sheet-sub">
@@ -1305,10 +1325,68 @@
   });
 
   /* htmx re-renderiza `#ph-live` entero: se reaplica el estado a los nodos nuevos. */
+  /* Hoja de provincia: trampa de foco y Escape-cierra (deuda anotada en el
+     slice 5, 2026-09-10). El × y el fondo oscurecido ya cerraban sin esto;
+     lo que faltaba es lo que un mouse no necesita: que Tab no se escape del
+     diálogo y que Escape lo cierre, como cualquier modal accesible. */
+  var provinciaAbierta = null; // nombre de la provincia mientras la hoja está abierta
+
+  function elementosEnfocables(hoja) {
+    return hoja.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+  }
+
+  function agarreDeFoco(ev, hoja) {
+    var enfocables = elementosEnfocables(hoja);
+    if (!enfocables.length) return;
+    var primero = enfocables[0];
+    var ultimo = enfocables[enfocables.length - 1];
+    if (ev.shiftKey && document.activeElement === primero) {
+      ev.preventDefault();
+      ultimo.focus();
+    } else if (!ev.shiftKey && document.activeElement === ultimo) {
+      ev.preventDefault();
+      primero.focus();
+    }
+  }
+
+  document.addEventListener("keydown", function (ev) {
+    var hoja = document.querySelector(".ph-sheet");
+    if (!hoja) return;
+    if (ev.key === "Escape") {
+      var cerrar = hoja.querySelector(".ph-sheet-x");
+      if (cerrar) cerrar.click();
+    } else if (ev.key === "Tab") {
+      agarreDeFoco(ev, hoja);
+    }
+  });
+
+  function manejarFocoDeHoja() {
+    var titulo = document.getElementById("ph-sheet-title");
+    if (titulo && !provinciaAbierta) {
+      /* Se acaba de abrir: el foco va al título, como en cualquier diálogo
+         accesible —así un lector de pantalla anuncia qué se abrió antes de
+         leer el contenido. */
+      titulo.focus();
+    } else if (!titulo && provinciaAbierta) {
+      /* Se acaba de cerrar: el foco vuelve al enlace de esa provincia en el
+         mapa, si sigue ahí; si no lo encuentra, no hace nada —mejor que
+         nada es el default del navegador, no un error. */
+      var enlace = document.querySelector(
+        'a[aria-label="' + provinciaAbierta + ': ver detalle"]'
+      );
+      if (enlace) enlace.focus();
+    }
+    provinciaAbierta = titulo ? titulo.textContent : null;
+  }
+
   document.addEventListener("htmx:afterSettle", pintarTodas);
+  document.addEventListener("htmx:afterSettle", manejarFocoDeHoja);
   window.addEventListener("resize", pintarTodas);
   if (angosto.addEventListener) angosto.addEventListener("change", pintarTodas);
   pintarTodas();
+  manejarFocoDeHoja();
 })();
 </script>
 {% endblock %}

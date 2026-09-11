@@ -466,7 +466,8 @@ class TestHojaDetalleProvincia:
 
         assert 'class="ph-sheet"' in texto
         assert 'role="dialog"' in texto
-        assert '<h2 class="ph-sheet-title" id="ph-sheet-title">La Habana</h2>' in texto
+        # `tabindex="-1"`: ahí entra el foco al abrirse (trampa de foco, 2026-09-11).
+        assert '<h2 class="ph-sheet-title" id="ph-sheet-title" tabindex="-1">La Habana</h2>' in texto
 
     def test_sin_provincia_no_hay_hoja(
         self, client: TestClient, session: Session
@@ -576,6 +577,32 @@ class TestProvinciasLadoALadoEnLaRuta:
         assert 'class="ph-compara"' in hoja
         # Santiago se atenúa; La Habana, la de la hoja, no.
         assert hoja.count('class="ph-compara-fila is-atenuada"') == 1
+
+    def test_con_provincia_elegida_la_ventana_precios_no_repite_la_comparacion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        # La hoja de provincia ya muestra esta misma comparación por
+        # producto; repetirla en la ventana Precios era el mismo gráfico dos
+        # veces (deuda saldada el 2026-09-11).
+        self._seed(session)
+
+        texto = client.get("/?ver=precios&provincia=la-habana").text
+        precios = texto.split('id="precios"')[1].split("</section>")[0]
+
+        assert 'class="ph-compara"' not in precios
+        assert "La Habana" in precios  # el aviso que apunta a la hoja
+
+    def test_con_chip_prendido_la_ventana_precios_no_repite_el_panel(
+        self, client: TestClient, session: Session
+    ) -> None:
+        # El panel flotante de Arroz (a la derecha) ya desglosa por
+        # provincia; repetirlo en Precios era el mismo dato dos veces.
+        self._seed(session)
+
+        texto = client.get("/?ver=precios&productos=arroz").text
+        precios = texto.split('id="precios"')[1].split("</section>")[0]
+
+        assert 'class="ph-compara"' not in precios
 
 
 class TestComoSeMovioEnLaRuta:
