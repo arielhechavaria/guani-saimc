@@ -173,11 +173,11 @@
      `hx-indicator` se hereda, y todo chip/ítem de menú/provincia/× vive
      bajo `#ph-live`—, así que la regla de visibilidad es de una sola clase
      compuesta, no un descendiente. Centrado en la pantalla (no en una
-     esquina); tamaño .25rem → .3125rem (+25%, sobre el 10% del original
-     2.5rem de la vuelta anterior); opacidad visible 1 → .4. */
+     esquina); tamaño .25rem → .3125rem (+25%) → .715625rem (+129% sobre
+     ese valor, el operador no lo veía); opacidad visible 1 → .4. */
   .ph-loading {
     position: fixed; top: 50%; left: 50%; z-index: 50;
-    width: .3125rem; height: .3125rem;
+    width: .715625rem; height: .715625rem;
     transform: translate(-50%, -50%);
     filter: drop-shadow(var(--m3-elev-2));
     opacity: 0; pointer-events: none; transition: opacity .15s ease;
