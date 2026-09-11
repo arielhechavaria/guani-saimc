@@ -8073,3 +8073,36 @@ Consecuencia: mismo archivo, misma clase, mismo uso en las tres
 ubicaciones (kicker, indicador de carga, diapositiva de cierre del
 canvas — actualizada también). Ningún test cambió. Suite: 1577 pasan, 1
 saltea.
+
+## 2026-09-11 — Avatar con margen en el badge, versión de cuerpo entero
+
+Contexto: el operador calificó el badge de feo, pidió una versión de
+cuerpo entero y padding adentro del círculo. De paso pidió un «toggle para
+meter tema oscuro».
+
+Decisión — badge (sitio real): `_guani_avatar.html` — el dibujo llegaba
+justo al borde del círculo recortado. Se le agregó
+`transform="translate(40,40) scale(.8) translate(-40,-40)"` al `<g>` del
+contenido: achica todo un 20% alrededor del centro sin tocar ninguna
+coordenada del dibujo, dejando un margen visible de fondo blanco.
+
+Decisión — cuerpo entero (solo canvas de diseño): nueva silueta de pie
+—piernas, brazos, torso, más la misma cabeza que v3— en el mismo canvas de
+Claude Design, reemplazando al busto en la tarjeta «presentación» y en la
+diapositiva de cierre. Misma paleta de cuatro tokens que v3, sin colores
+nuevos. No se agregó al código: hoy no hay ningún lugar del sitio que use
+una figura de cuerpo entero, solo el badge circular (header/indicador).
+
+Decisión — toggle de tema oscuro: se agregó SOLO al canvas de diseño, como
+tweak (`data-props` booleano «Vista») que prueba el avatar y sus mockups
+contra un fondo oscuro. **No es un tema oscuro del sitio** — el sitio no
+tiene ninguno hoy, y esto no lo crea. Se interpretó así porque el pedido
+llegó en el mismo mensaje que el feedback visual del avatar, sin mención de
+alcance del sitio; si lo que se quiere es un tema oscuro real en producción
+es un trabajo aparte (toca `design_tokens.css`, cada plantilla, y un
+control persistente), a discutir como su propio slice.
+
+Consecuencia: cambio de código real limitado al `transform` del badge —
+ningún test lo cubre porque ninguno afirma coordenadas del dibujo, y la
+suite sigue en 1577/1. El resto (cuerpo entero, toggle) vive solo en
+https://claude.ai/code/artifact/a9374a81-35e8-479d-ab7b-00b747f3e913.
