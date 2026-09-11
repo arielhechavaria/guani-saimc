@@ -8177,3 +8177,26 @@ Consecuencia: `_guani_avatar.html` vuelve a ser un archivo sin
 distinciones por instancia —más simple que la vuelta anterior—. Ningún
 test afirma colores del SVG, así que ninguno cambió. Suite: 1577 pasan, 1
 saltea.
+
+## 2026-09-11 — El avatar del indicador gira (flip) y suma tres punticos
+
+Contexto: última petición de la tanda — el operador pidió que el avatar
+del indicador «haga flip, animado» y que abajo aparezcan los tres puntos
+de carga clásicos (uno, dos, tres puntitos).
+
+Decisión: `#ph-loading` pasa de contener solo el avatar a contener avatar
++ `.ph-loading-dots` (tres `<span>`). Eso cambia la forma del contenedor:
+de círculo ajustado al avatar (`border-radius: 999px`, tamaño = tamaño del
+avatar) a tarjeta redondeada en columna (`--m3-radius-lg`, `display: flex;
+flex-direction: column`) — con dos elementos que acomodar, el círculo
+dejó de tener sentido. El avatar reemplaza el pulso de opacidad de dos
+entradas atrás por `rotateY(0→360deg)` infinito; `perspective: 40rem` en
+`.ph-loading` hace que se vea como una moneda girando (con
+foreshortening) y no como un achicamiento horizontal plano. Los tres
+puntos son el patrón de siempre: mismo radio, mismo `--m3-outline`, demora
+escalonada 0/.2s/.4s.
+
+Consecuencia: `prefers-reduced-motion` suma `.ph-loading-dots span` a la
+lista de animaciones que apaga (ya tenía al avatar). Solo CSS + un `<div>`
+nuevo con tres `<span>` vacíos; ningún test cambia. Suite: 1577 pasan, 1
+saltea.
