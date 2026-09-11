@@ -1,10 +1,13 @@
-{# Avatar de «Guani»: un busto taíno estilizado — v3 (2026-09-11,
+{# Avatar de «Guani»: un busto taíno estilizado — v4 (2026-09-11,
    docs/decisions.md). v2 lo dibujó con colores figurativos (tono de piel,
    cabello) que no existían en ningún otro lado del sitio; el operador pidió
    sacarlos y usar la misma paleta Material que el resto del sistema. Acá no
    hay ningún color nuevo: los seis son los mismos tokens M3/PH que ya pinta
    el resto de la home pública —el busto es un ícono de marca en la paleta
-   del sitio, no una ilustración figurativa—.
+   del sitio, no una ilustración figurativa—. v4 suma un margen: el dibujo
+   entraba justo al borde del círculo recortado y quedaba apretado; el
+   `transform` de acá abajo lo achica un 20% alrededor del centro (40,40)
+   sin tocar ninguna coordenada del dibujo mismo.
 
    --ph-accent      #05668d  cara
    --m3-on-surface  #191c1c  cabello y vincha
@@ -20,7 +23,7 @@
 <svg class="ph-brand-avatar" viewBox="0 0 80 80" role="img" aria-label="Guani">
   <circle cx="40" cy="40" r="39" fill="#ffffff" stroke="#c4cfcf" stroke-width="2"/>
   <clipPath id="guani-avatar-clip"><circle cx="40" cy="40" r="37"/></clipPath>
-  <g clip-path="url(#guani-avatar-clip)">
+  <g clip-path="url(#guani-avatar-clip)" transform="translate(40,40) scale(.8) translate(-40,-40)">
     <ellipse cx="40" cy="30" rx="34" ry="34" fill="#191c1c"/>
     <circle cx="40" cy="34" r="27" fill="#05668d"/>
     <rect x="13" y="20" width="54" height="8" rx="4" fill="#191c1c"/>
