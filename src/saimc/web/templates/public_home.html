@@ -164,6 +164,24 @@
   .ph-brand-row { display: flex; align-items: center; gap: .65rem; min-width: 0; }
   .ph-brand-avatar { flex: none; width: 2.25rem; height: 2.25rem; }
   .ph-brand { display: grid; gap: .1rem; min-width: 0; }
+
+  /* Indicador de carga (2026-09-11): convención estándar de htmx — un
+     elemento con clase `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"`
+     en `#ph-live` hace que htmx le agregue `htmx-request` a ESTE mismo
+     elemento (no a un ancestro) durante cada `hx-get`, así que la regla de
+     visibilidad es de una sola clase compuesta, no un descendiente. */
+  .ph-loading {
+    position: fixed; top: 1rem; right: 1rem; z-index: 50;
+    width: 2.5rem; height: 2.5rem;
+    filter: drop-shadow(var(--m3-elev-2));
+    opacity: 0; pointer-events: none; transition: opacity .15s ease;
+  }
+  .ph-loading.htmx-indicator.htmx-request { opacity: 1; }
+  .ph-loading .ph-brand-avatar { width: 100%; height: 100%; animation: ph-loading-bob .9s ease-in-out infinite; }
+  @keyframes ph-loading-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-.3rem); }
+  }
   .ph-canvas-kicker { font-size: .625rem; letter-spacing: .16em; text-transform: uppercase;
                       color: var(--ph-accent); }
   .ph-canvas-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400;
@@ -488,7 +506,7 @@
   .ph-sheet-row-sum { font-size: .8125rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
 
   @media (prefers-reduced-motion: reduce) {
-    .ph-win, .ph-fpanel, .ph-sheet, .ph-plot-dot { animation: none; }
+    .ph-win, .ph-fpanel, .ph-sheet, .ph-plot-dot, .ph-loading .ph-brand-avatar { animation: none; }
     .ph-canvas .ph-map-province, .ph-chip-toggle, .ph-menu-item { transition: none; }
   }
 
@@ -527,7 +545,8 @@
    bloque —sin recargar CSS ni saltar—. Sin JS, el `href` de siempre hace la
    navegación completa: la interacción degrada, no se rompe. #}
 <div id="ph-live"
-     hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true">
+     hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true"
+     hx-indicator="#ph-loading">
 
 {# ══ El lienzo es la página ════════════════════════════════════════════
    El mapa sigue coloreado por estado de publicación, no por precio
@@ -1137,6 +1156,17 @@
 {% endif %}
 
 </div>{# /#ph-live #}
+
+{# Indicador de carga: htmx agrega/saca `htmx-request` acá —vía
+   `hx-indicator="#ph-loading"` en `#ph-live`— en cada `hx-get` de un chip,
+   ítem de menú o provincia. Vive FUERA de `#ph-live` a propósito: como ese
+   bloque se reemplaza entero (`hx-swap="outerHTML"`) en cada respuesta, un
+   indicador de adentro perdería su clase a mitad de la animación en vez de
+   apagarse prolijo. Sin JS no hay `htmx-request` que agregar: queda oculto
+   siempre, degradando en silencio como el resto de la capa htmx. #}
+<div id="ph-loading" class="ph-loading htmx-indicator" aria-hidden="true">
+  {% include "_guani_avatar.html" %}
+</div>
 {% endblock %}
 
 {% block scripts %}

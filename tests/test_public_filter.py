@@ -1597,6 +1597,26 @@ class TestRutaProductoLimpia:
         assert "Guani · SAIMC · Fase 0" in texto
         assert 'aria-label="Guani"' in texto  # el avatar del header
 
+    def test_el_indicador_de_carga_usa_el_avatar_y_vive_fuera_de_ph_live(
+        self, client: TestClient
+    ) -> None:
+        """El avatar dobla de indicador de carga (2026-09-11): htmx le agrega
+        `htmx-request` a `#ph-loading` en cada `hx-get` de `#ph-live` — tiene
+        que estar FUERA de ese bloque, si no el `outerHTML` swap lo borra a
+        mitad de la animación en vez de apagarlo prolijo."""
+        texto = client.get("/").text
+
+        assert 'hx-indicator="#ph-loading"' in texto
+        assert 'class="ph-loading htmx-indicator"' in texto
+        assert texto.count('aria-label="Guani"') == 2  # header + indicador
+
+        # `{# /#ph-live #}` no sobrevive al render (es un comentario Jinja);
+        # se ancla en el crédito del mapa, que sí es texto real y va cerca
+        # del final de `#ph-live` — el indicador tiene que venir después.
+        credito_del_mapa = texto.index("Natural Earth")
+        indicador = texto.index('id="ph-loading"')
+        assert credito_del_mapa < indicador  # fuera del bloque que htmx reemplaza
+
 
 class TestVarianteEnTarjetaPublica:
     """La variante declarada es su propia serie pública, distinguible de la
