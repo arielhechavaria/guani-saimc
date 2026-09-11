@@ -8041,3 +8041,35 @@ la entrada anterior — no se tocaron, el pedido fue solo de tamaño.
 Consecuencia: solo CSS. Suite: 1577 pasan, 1 saltea. Si a este tamaño
 tampoco se ve, el sospechoso que sigue es la opacidad tope de .4 (con el
 pulso llegando a .14), no el tamaño.
+
+## 2026-09-11 — Indicador ×3 más grande; el avatar deja los colores figurativos por tokens M3
+
+Contexto: el operador pidió dos cosas en el mismo pedido — el indicador de
+carga «tres veces el tamaño actual», y sacarle al avatar «esos colores
+vivos» para usar «la misma estética que manejamos en Material en todo el
+sistema». Lo primero es continuación directa de la entrada anterior:
+`.ph-loading` pasa de `.715625rem` a `2.146875rem` (×3), opacidad y
+posición sin tocar.
+
+Lo segundo es más de fondo. v2 (dos entradas atrás) había introducido cinco colores nuevos
+—piel, cabello, vincha, vestimenta, cuentas— que no existían en ningún
+otro lado del sitio: exactamente lo que la decisión del split de
+`saimc-public.css` (2026-09-04) y `TestNingunColorFijoEnLasPlantillas`
+vienen evitando. El tocororo original nunca había roto esa regla —sus
+siete colores ya eran tokens—; se rompió recién al pasar a la figura
+taína.
+
+Decisión: `_guani_avatar.html` recolorea el mismo busto (mismas formas,
+mismo trazo) con cuatro tokens existentes: cara `--ph-accent` (#05668d),
+cabello y vincha `--m3-on-surface` (#191c1c), pluma `--m3-warn` (#e0a700,
+sin cambios — ya era un token en v2), vestimenta `--ph-accent-2`
+(#028090). Ojos, boca y cuentas del collar pasan a `--m3-surface`
+(#ffffff) para tener contraste contra la cara ahora teal. El resultado es
+un ícono de marca en la paleta del sitio, no una ilustración figurativa —
+ningún color implica un tono de piel real, lo cual de paso separa el
+avatar del terreno resbaladizo de elegir un tono de piel.
+
+Consecuencia: mismo archivo, misma clase, mismo uso en las tres
+ubicaciones (kicker, indicador de carga, diapositiva de cierre del
+canvas — actualizada también). Ningún test cambió. Suite: 1577 pasan, 1
+saltea.
