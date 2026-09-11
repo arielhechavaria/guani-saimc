@@ -1334,6 +1334,61 @@ class TestFiltroPorProvinciaEnLaRuta:
 
         assert 'aria-current="true">Todas<' in texto
 
+    def test_el_select_de_provincia_lista_todas_las_que_tienen_dato(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Selector visible siempre junto al riel de chips (2026-09-11), no
+        solo adentro de la ventana «Precios» — mismo `province_nav`."""
+        self._seed(session)
+
+        texto = client.get("/").text
+
+        assert '<select name="provincia" class="ph-province-select"' in texto
+        assert '<option value="" selected>Todas</option>' in texto
+        assert "La Habana</option>" in texto
+        assert "Santiago de Cuba</option>" in texto
+
+    def test_elegir_provincia_marca_la_opcion_en_el_select(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?provincia=santiago-de-cuba").text
+
+        assert '<option value="santiago-de-cuba" selected>Santiago de Cuba</option>' in texto
+        assert '<option value="" selected>' not in texto
+
+    def test_el_chip_de_provincia_solo_aparece_con_una_elegida(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        sin_elegir = client.get("/").text
+        con_elegida = client.get("/?provincia=la-habana").text
+
+        assert '<span class="ph-province-chip">' not in sin_elegir
+        assert '<span class="ph-province-chip">' in con_elegida
+        cuerpo = con_elegida.split('<span class="ph-province-chip">')[1].split("</span>")[0]
+        assert "La Habana" in cuerpo
+
+    def test_el_select_preserva_los_otros_ejes_en_campos_ocultos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El <form> del selector no puede resetear producto/días/ventanas/capa
+        al cambiar de provincia — mismo principio que ya sostiene
+        `NavChoice.query` para los enlaces."""
+        self._seed(session)
+
+        texto = client.get(
+            "/?producto=arroz&dias=90&ver=cobertura&capa=densidad"
+        ).text
+        bloque = texto.split('<form class="ph-province-form"')[1].split("</form>")[0]
+
+        assert '<input type="hidden" name="productos" value="arroz">' in bloque
+        assert '<input type="hidden" name="dias" value="90">' in bloque
+        assert '<input type="hidden" name="ver" value="cobertura">' in bloque
+        assert '<input type="hidden" name="capa" value="densidad">' in bloque
+
 
 class TestDescargaCsv:
     """`GET /datos.csv`: la evidencia detrás de la vista, en CSV, con los mismos

@@ -267,6 +267,34 @@
   .ph-chip-toggle.is-icon.is-active .ph-chip-name { opacity: .9; }
   .ph-fpanel-icon { font-size: 20px; color: var(--ph-accent); align-self: center; }
 
+  /* Selector de provincia (2026-09-11): mismas proporciones que un chip de
+     texto (`.ph-chip-toggle`), para que se vea como parte del mismo riel
+     de filtros y no como un control aparte. */
+  .ph-province-form { display: inline-flex; align-items: center; }
+  .ph-province-select {
+    font: inherit; font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
+    padding: .4rem 2rem .4rem .95rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    color: var(--m3-on-surface-variant);
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'><path fill='%233f4949' d='M7 10l5 5 5-5z'/></svg>");
+    background-repeat: no-repeat; background-position: right .6rem center;
+  }
+  .ph-province-select:hover { border-color: var(--ph-accent); color: var(--ph-accent); }
+  .ph-province-submit {
+    font: inherit; font-size: .8125rem; font-weight: 500; margin-left: .4rem;
+    padding: .4rem .95rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--ph-accent); background: var(--ph-accent); color: var(--ph-on-accent);
+  }
+  .ph-province-chip {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .8125rem; font-weight: 500;
+    padding: .4rem .5rem .4rem .95rem; border-radius: var(--m3-radius-full);
+    background: var(--ph-accent); color: var(--ph-on-accent);
+  }
+  .ph-province-chip .ph-x { color: inherit; }
+
   /* El escenario: el mapa llena lo que queda; ventanas, paneles, leyenda y
      crédito flotan encima. */
   .ph-stage {
@@ -636,6 +664,47 @@
     {%- endif %}
     {%- endfor %}
   </nav>
+  {% endif %}
+
+  {# Selector de provincia (2026-09-11): antes vivía solo adentro de la
+     ventana «Precios» —había que abrirla para verlo—; el operador lo quiso
+     visible siempre, junto al riel de chips. Reusa `province_nav` (mismo
+     dato que sigue alimentando la lista `ph-filter-province` de más abajo,
+     que se deja como está — dos accesos al mismo filtro, no dos filtros).
+
+     Es un `<form>` real, no un `<select>` leído por JS: sin JS, el
+     `onchange` no engancha nada y el submit nativo (el botón de
+     `<noscript>`) hace la navegación completa igual —degrada, no se
+     rompe—, mismo principio que ya sostienen los enlaces de todo el resto
+     de la página. Los campos ocultos preservan los otros ejes; van
+     siempre, no solo cuando difieren del default, para no repetir en
+     Jinja los valores por defecto que ya viven en `product_nav.py` — el
+     costo es una URL con algún parámetro de más cuando todo está en su
+     default, no un comportamiento roto. #}
+  {% if province_nav | length > 1 %}
+  <form class="ph-province-form" action="/" method="get"
+        hx-get="/" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true"
+        onchange="this.requestSubmit ? this.requestSubmit() : this.submit()">
+    {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
+    <input type="hidden" name="dias" value="{{ window_days }}">
+    {% if open_views %}<input type="hidden" name="ver" value="{{ open_views | join(',') }}">{% endif %}
+    <input type="hidden" name="capa" value="{{ selected_layer }}">
+    <select name="provincia" class="ph-province-select" aria-label="Provincia">
+      {% for choice in province_nav %}
+      <option value="{{ choice.slug }}"{% if choice.is_selected %} selected{% endif %}>{{ choice.label }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit" class="ph-province-submit">Ver</button></noscript>
+  </form>
+  {% if selected_province %}
+  {# Chip de la provincia elegida: mismo `.ph-x` que ya usan panel y
+     ventana, apuntando a la query de «Todas» (siempre el primer choice de
+     `province_nav`) para volver a Cuba entera de un clic. #}
+  <span class="ph-province-chip">
+    {{ selected_province }}
+    <a class="ph-x" href="{{ province_nav[0].query }}" hx-get="{{ province_nav[0].query }}" aria-label="Volver a Cuba entera">×</a>
+  </span>
+  {% endif %}
   {% endif %}
 
   {# `data-provincia`: la lee `actualizarZoomDelMapa()` en el script del pie

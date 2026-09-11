@@ -8271,3 +8271,43 @@ Consecuencia: test nuevo
 (`test_la_ventana_y_su_item_de_menu_se_emparejan_por_aria_controls`), que
 fija el emparejamiento del que ahora depende el JS. Suite: 1579 pasan, 1
 saltea.
+
+## 2026-09-11 — Selector de provincia visible siempre, junto a los chips
+
+Contexto: el operador dijo que «el tema de las provincias no lo
+convence» — el filtro vivía solo adentro de la ventana «Precios» (había
+que abrirla para verlo). Pidió un `<select>` con un chip que muestre la
+provincia elegida; confirmado antes de tocar nada que Cuba entera como
+default y el filtrado real (precios, «Comparar», «Cómo se movió», CSV,
+`selected` de un solo producto) YA funcionaban — lo que faltaba era
+el control, no la lógica. Preguntado dónde vivía el `<select>` nuevo:
+eligió junto al riel de chips de producto, siempre visible, en vez de
+mover el filtro existente de la ventana «Precios» a un `<select>` en el
+mismo lugar.
+
+Decisión: nuevo `<form class="ph-province-form">` arriba del mapa, junto
+al riel de chips — reusa `province_nav` (`build_province_nav`, mismo dato
+que ya alimentaba la lista `ph-filter-province` de la ventana «Precios»,
+que se deja como está: dos accesos al mismo filtro, no dos filtros
+distintos). Es un `<form>` real con `hx-get` en vez de un `<select>`
+leído por JS a secas: sin JS, el `onchange` no engancha nada y el submit
+nativo —el botón que aparece por `<noscript>`— hace la navegación
+completa igual, mismo principio de degradación que ya sostienen todos
+los enlaces del resto de la página. Los campos ocultos (`productos`,
+`dias`, `ver`, `capa`) preservan los otros ejes; van siempre, no solo
+cuando difieren del default, para no repetir en Jinja los valores por
+defecto que ya son responsabilidad de `product_nav.py` — el costo
+conocido es algún parámetro de más en la URL cuando todo está en su
+default, no un comportamiento roto.
+
+Con una provincia elegida aparece `.ph-province-chip`, con el nombre y
+una × (mismo patrón que panel/ventana) que apunta al primer choice de
+`province_nav` («Todas») para volver a Cuba entera de un clic. No se le
+sumó el cierre optimista de las dos entradas anteriores: cambiar de
+provincia reescribe extensamente la página (zoom, hoja, título, `<h1>`),
+no hay una sola caja local que esconder.
+
+Consecuencia: cuatro tests nuevos en `TestFiltroPorProvinciaEnLaRuta`
+(existencia del `<select>` y sus opciones, la opción elegida marcada, el
+chip solo con provincia elegida, los campos ocultos preservando los otros
+ejes). Suite: 1583 pasan, 1 saltea.
