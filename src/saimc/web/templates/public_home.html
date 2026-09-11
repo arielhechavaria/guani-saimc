@@ -165,22 +165,31 @@
   .ph-brand-avatar { flex: none; width: 2.25rem; height: 2.25rem; }
   .ph-brand { display: grid; gap: .1rem; min-width: 0; }
 
-  /* Indicador de carga (2026-09-11): convención estándar de htmx — un
-     elemento con clase `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"`
-     en `#ph-live` hace que htmx le agregue `htmx-request` a ESTE mismo
-     elemento (no a un ancestro) durante cada `hx-get`, así que la regla de
-     visibilidad es de una sola clase compuesta, no un descendiente. */
+  /* Indicador de carga (2026-09-11, centrado y achicado a pedido del
+     operador): convención estándar de htmx — un elemento con clase
+     `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"` en
+     `#ph-live` hace que htmx le agregue `htmx-request` a ESTE mismo
+     elemento (no a un ancestro) durante CUALQUIER `hx-get` de adentro —
+     `hx-indicator` se hereda, y todo chip/ítem de menú/provincia/× vive
+     bajo `#ph-live`—, así que la regla de visibilidad es de una sola clase
+     compuesta, no un descendiente. Centrado en la pantalla (no en una
+     esquina) y al 10% del tamaño anterior: 2.5rem → .25rem. */
   .ph-loading {
-    position: fixed; top: 1rem; right: 1rem; z-index: 50;
-    width: 2.5rem; height: 2.5rem;
+    position: fixed; top: 50%; left: 50%; z-index: 50;
+    width: .25rem; height: .25rem;
+    transform: translate(-50%, -50%);
     filter: drop-shadow(var(--m3-elev-2));
     opacity: 0; pointer-events: none; transition: opacity .15s ease;
   }
   .ph-loading.htmx-indicator.htmx-request { opacity: 1; }
-  .ph-loading .ph-brand-avatar { width: 100%; height: 100%; animation: ph-loading-bob .9s ease-in-out infinite; }
-  @keyframes ph-loading-bob {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-.3rem); }
+  /* A este tamaño un rebote se sale de su propia caja y se ve roto: la
+     animación pasa a ser un pulso de opacidad, que es lo que el operador
+     pidió («con opacity») y además es el patrón usual de un punto de carga
+     chico. */
+  .ph-loading .ph-brand-avatar { width: 100%; height: 100%; animation: ph-loading-pulse .9s ease-in-out infinite; }
+  @keyframes ph-loading-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .35; }
   }
   .ph-canvas-kicker { font-size: .625rem; letter-spacing: .16em; text-transform: uppercase;
                       color: var(--ph-accent); }
