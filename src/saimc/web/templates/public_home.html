@@ -165,27 +165,30 @@
   .ph-brand-avatar { flex: none; width: 2.25rem; height: 2.25rem; }
   .ph-brand { display: grid; gap: .1rem; min-width: 0; }
 
-  /* Indicador de carga (2026-09-11, centrado y achicado a pedido del
-     operador): convención estándar de htmx — un elemento con clase
-     `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"` en
-     `#ph-live` hace que htmx le agregue `htmx-request` a ESTE mismo
+  /* Indicador de carga (2026-09-11, centrado, achicado y después reajustado
+     a pedido del operador): convención estándar de htmx — un elemento con
+     clase `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"`
+     en `#ph-live` hace que htmx le agregue `htmx-request` a ESTE mismo
      elemento (no a un ancestro) durante CUALQUIER `hx-get` de adentro —
      `hx-indicator` se hereda, y todo chip/ítem de menú/provincia/× vive
      bajo `#ph-live`—, así que la regla de visibilidad es de una sola clase
      compuesta, no un descendiente. Centrado en la pantalla (no en una
-     esquina) y al 10% del tamaño anterior: 2.5rem → .25rem. */
+     esquina); tamaño .25rem → .3125rem (+25%, sobre el 10% del original
+     2.5rem de la vuelta anterior); opacidad visible 1 → .4. */
   .ph-loading {
     position: fixed; top: 50%; left: 50%; z-index: 50;
-    width: .25rem; height: .25rem;
+    width: .3125rem; height: .3125rem;
     transform: translate(-50%, -50%);
     filter: drop-shadow(var(--m3-elev-2));
     opacity: 0; pointer-events: none; transition: opacity .15s ease;
   }
-  .ph-loading.htmx-indicator.htmx-request { opacity: 1; }
+  .ph-loading.htmx-indicator.htmx-request { opacity: .4; }
   /* A este tamaño un rebote se sale de su propia caja y se ve roto: la
      animación pasa a ser un pulso de opacidad, que es lo que el operador
      pidió («con opacity») y además es el patrón usual de un punto de carga
-     chico. */
+     chico. El keyframe sigue en 1↔.35 sin tocar: la opacidad es del SVG de
+     adentro, así que se MULTIPLICA con el .4 de `.ph-loading` (CSS anida
+     opacidades), y el rango visible real ya queda en .4 → .14 solo. */
   .ph-loading .ph-brand-avatar { width: 100%; height: 100%; animation: ph-loading-pulse .9s ease-in-out infinite; }
   @keyframes ph-loading-pulse {
     0%, 100% { opacity: 1; }
