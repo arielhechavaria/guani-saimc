@@ -33,11 +33,22 @@
                    line-height: 1.1; color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
   .ph-stat-value small { font-size: .95rem; color: var(--m3-on-surface-variant); }
 
+  /* `vector-effect: non-scaling-stroke`: al hacer zoom a una provincia (más
+     abajo, `actualizarZoomDelMapa`) el borde no se engrosa con la escala —
+     se ve del mismo grosor a cualquier zoom, como espera cualquier mapa. */
   .ph-map { width: 100%; height: auto; display: block; }
-  .ph-map-province { stroke-width: 1.1; stroke-linejoin: round; }
+  .ph-map-province { stroke-width: 1.1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .ph-map-province.is-publicada { fill: var(--m3-primary-container); stroke: var(--m3-primary); }
   .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: var(--ph-accent-2-line); }
   .ph-map-province.is-sin-datos { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); }
+
+  /* Capa «densidad de anuncios» (2026-09-11): una sola tinta, opacidad
+     continua según `MapProvince.density_ratio` (relativa al máximo actual,
+     nunca un umbral fijo). `--dens` lo pone el `style=` inline de cada
+     `<path>`; `.12` de piso para que una provincia en cero siga marcando su
+     contorno en vez de desaparecer. */
+  .ph-map-province.is-densidad { fill: var(--ph-accent); stroke: var(--m3-outline-variant);
+                                  fill-opacity: calc(.12 + .78 * var(--dens, 0)); }
 
   .ph-panel { padding: .9rem 1rem; }
   .ph-panel-title { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
@@ -229,6 +240,25 @@
                      border-top: 1px solid var(--m3-outline-variant);
                      font-size: .75rem; color: var(--m3-on-surface-variant);
                      font-variant-numeric: tabular-nums; }
+
+  /* Selector de capa del mapa (2026-09-11): dos pastillas chicas arriba de
+     la leyenda, mismo patrón visual que `.ph-menu-item`. */
+  .ph-layer-toggle { display: flex; gap: .3rem; margin-bottom: .6rem; }
+  .ph-layer-btn {
+    flex: 1; text-align: center; padding: .3rem .6rem; border-radius: var(--m3-radius-full);
+    font-size: .6875rem; font-weight: 500; white-space: nowrap;
+    color: var(--m3-on-surface-variant); border: 1px solid var(--m3-outline-variant);
+  }
+  .ph-layer-btn:hover { border-color: var(--ph-accent); color: var(--ph-accent); text-decoration: none; }
+  .ph-layer-btn.is-active { background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent); }
+  .ph-density-ramp {
+    height: .65rem; border-radius: .2rem;
+    background: linear-gradient(to right,
+      color-mix(in srgb, var(--ph-accent) 12%, transparent),
+      var(--ph-accent));
+  }
+  .ph-density-labels { display: flex; justify-content: space-between;
+                        margin: .3rem 0 0; font-size: .6875rem; color: var(--m3-on-surface-variant); }
   .ph-attrib { position: absolute; right: clamp(1rem, 3vw, 2rem); bottom: .5rem; z-index: 1;
                margin: 0; font-size: .6875rem; color: var(--m3-on-surface-variant); }
   .ph-attrib a { color: inherit; text-decoration: underline; }
@@ -537,7 +567,10 @@
   </nav>
   {% endif %}
 
-  <div class="ph-stage">
+  {# `data-provincia`: la lee `actualizarZoomDelMapa()` en el script del pie
+     para saber a qué provincia encuadrar el mapa, sin repetir la lógica de
+     `resolve_province` en JS. Vacío si no hay ninguna elegida. #}
+  <div class="ph-stage" data-provincia="{{ selected_province_slug }}">
     {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
        nada; la tabla «Observaciones por provincia» de la ventana Cobertura lleva
        el dato en forma accesible. Cada provincia abre su hoja de detalle. #}
@@ -545,8 +578,12 @@
          aria-label="Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.">
       {% for province in map.provinces %}
       {% set pl = province_link(province.slug) %}
-      <a href="{{ pl }}" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle">
+      <a href="{{ pl }}" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle" data-province="{{ province.slug }}">
+        {% if selected_layer == 'densidad' %}
+        <path class="m3-map-province ph-map-province is-densidad" style="--dens: {{ '%.3f' | format(province.density_ratio) }}" d="{{ province.path }}">
+        {% else %}
         <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">
+        {% endif %}
           <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
         </path>
       </a>
@@ -995,12 +1032,27 @@
     </div>{# /.ph-dock #}
 
     <div class="ph-canvas-legend">
+      {# Selector de capa (2026-09-11): «Publicación» es la de siempre
+         (§9.0, vinculante); «Densidad» sombrea por cantidad de anuncios,
+         relativa al máximo actual —presentacional, no decide qué se
+         publica, así que no choca con el umbral sin calibrar de §12.6. #}
+      <div class="ph-layer-toggle" role="group" aria-label="Capa del mapa">
+        {% for choice in layer_nav %}
+        <a class="ph-layer-btn{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
+        {% endfor %}
+      </div>
+      {% if selected_layer == 'densidad' %}
+      <div class="ph-density-ramp" aria-hidden="true"></div>
+      <p class="ph-density-labels"><span>Sin anuncios</span><span>{{ map.provinces[0].max_rows }} (la que más tiene)</span></p>
+      <p class="ph-canvas-count">Sombreado relativo a la provincia con más anuncios hoy · {{ map.total_rows }} en total</p>
+      {% else %}
       <ul class="ph-legend">
         <li><span class="ph-swatch is-publicada"></span> Publicada</li>
         <li><span class="ph-swatch is-en-ingesta"></span> Recogiendo datos, todavía sin publicar</li>
         <li><span class="ph-swatch is-sin-datos"></span> Sin datos todavía</li>
       </ul>
       <p class="ph-canvas-count">{{ map.covered }} de {{ map.provinces | length }} provincias con observaciones · {{ map.total_rows }} en total</p>
+      {% endif %}
     </div>
 
     <p class="ph-attrib">Mapa: <a href="https://www.naturalearthdata.com/">Natural Earth</a> (dominio público)</p>
@@ -1381,12 +1433,48 @@
     provinciaAbierta = titulo ? titulo.textContent : null;
   }
 
+  /* Zoom a la provincia elegida (2026-09-11): sin ninguna, el mapa muestra
+     Cuba entera —el `viewBox` que ya trae del server—; con una, el
+     `viewBox` pasa a encuadrarla, calculado acá con `getBBox()` (parsear el
+     `d` del SVG a mano del lado del server sería mucho más código para lo
+     mismo). Sin animación a propósito: un corte directo es la solución más
+     simple que funciona, y la hoja ya entra animada al lado, así que el
+     conjunto no se siente brusco. Sin JS, el mapa se queda en Cuba entera y
+     la hoja sigue funcionando igual —mejora progresiva, no requisito. */
+  var ZOOM_MARGEN = 1.4; // aire alrededor de la provincia encuadrada
+  var ZOOM_TOPE = 6; // no pasar de 6×: una provincia chica no debe pixelarse
+
+  function actualizarZoomDelMapa() {
+    var mapa = document.querySelector(".ph-map");
+    var stage = document.querySelector(".ph-stage");
+    if (!mapa || !stage) return;
+    var slug = stage.getAttribute("data-provincia");
+    if (!slug) return; // el server ya renderiza el viewBox completo
+    var ruta = mapa.querySelector('a[data-province="' + slug + '"] path');
+    if (!ruta) return;
+    var caja = ruta.getBBox();
+    if (!caja.width || !caja.height) return;
+    var completo = mapa.getAttribute("viewBox").split(/\s+/).map(Number);
+    var escala = Math.min(
+      completo[2] / (caja.width * ZOOM_MARGEN),
+      completo[3] / (caja.height * ZOOM_MARGEN),
+      ZOOM_TOPE
+    );
+    var ancho = completo[2] / escala;
+    var alto = completo[3] / escala;
+    var x = caja.x + caja.width / 2 - ancho / 2;
+    var y = caja.y + caja.height / 2 - alto / 2;
+    mapa.setAttribute("viewBox", x + " " + y + " " + ancho + " " + alto);
+  }
+
   document.addEventListener("htmx:afterSettle", pintarTodas);
   document.addEventListener("htmx:afterSettle", manejarFocoDeHoja);
+  document.addEventListener("htmx:afterSettle", actualizarZoomDelMapa);
   window.addEventListener("resize", pintarTodas);
   if (angosto.addEventListener) angosto.addEventListener("change", pintarTodas);
   pintarTodas();
   manejarFocoDeHoja();
+  actualizarZoomDelMapa();
 })();
 </script>
 {% endblock %}

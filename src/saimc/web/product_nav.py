@@ -28,6 +28,13 @@ DEFAULT_WINDOW_DAYS = 30
 #: trimestre.
 WINDOW_CHOICES: tuple[int, ...] = (7, 30, 90)
 
+#: Capas del mapa (2026-09-11): «publicación» es la de siempre (§9.0,
+#: vinculante); «densidad» es puramente presentacional —sombrea por
+#: `MapProvince.density_ratio`, relativo al máximo actual, sin ningún umbral
+#: de los que §12.6 prohíbe inventar—. La clave viaja en `?capa=`.
+LAYER_CHOICES: tuple[str, ...] = ("publicacion", "densidad")
+DEFAULT_LAYER = "publicacion"
+
 
 def product_slug(name: str) -> str:
     """Nombre → segmento de URL estable. Sirve para producto y para provincia.
@@ -102,6 +109,15 @@ def resolve_days(raw: str | int | None) -> int:
     return value if value in WINDOW_CHOICES else DEFAULT_WINDOW_DAYS
 
 
+def resolve_layer(raw: str | None) -> str:
+    """Query string → una de `LAYER_CHOICES`, o el default ante cualquier cosa.
+
+    Mismo criterio que `resolve_days`: un `?capa=` inválido no da 404 ni
+    error, cae a la capa por defecto.
+    """
+    return raw if raw in LAYER_CHOICES else DEFAULT_LAYER
+
+
 def _query(
     *,
     producto: str = "",
@@ -109,16 +125,18 @@ def _query(
     provincia: str = "",
     dias: int = DEFAULT_WINDOW_DAYS,
     ver: Sequence[str] = (),
+    capa: str = DEFAULT_LAYER,
     path: str = "/",
 ) -> str:
     """Compone la URL con los ejes activos, en orden fijo
-    producto/provincia/días/ver.
+    producto/provincia/días/ver/capa.
 
     `productos` (lista de slugs, multi-selección) gana sobre `producto` (slug
     único, alias histórico) cuando trae algo: se emite `productos=a,b`. `ver`
-    son las ventanas flotantes abiertas desde el menú del header. Omite `dias`
-    cuando es el default para no ensuciar la URL compartible con un parámetro
-    redundante. La descarga usa `path="/datos.csv"`.
+    son las ventanas flotantes abiertas desde el menú del header. `capa` es la
+    capa del mapa (§ mapa, 2026-09-11). Omite `dias` y `capa` cuando son el
+    default para no ensuciar la URL compartible con un parámetro redundante.
+    La descarga usa `path="/datos.csv"`.
     """
     params = []
     if productos:
@@ -131,6 +149,8 @@ def _query(
         params.append(f"dias={dias}")
     if ver:
         params.append("ver=" + ",".join(ver))
+    if capa != DEFAULT_LAYER:
+        params.append(f"capa={capa}")
     return f"{path}?" + "&".join(params) if params else path
 
 
@@ -140,16 +160,19 @@ def products_query(
     provincia: str = "",
     dias: int = DEFAULT_WINDOW_DAYS,
     ver: Sequence[str] = (),
+    capa: str = DEFAULT_LAYER,
     path: str = "/",
 ) -> str:
     """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
-    preservando provincia, ventana de días y ventanas abiertas. La usan el
-    riel de chips, los paneles flotantes, el mapa y la hoja de provincia."""
+    preservando provincia, ventana de días, ventanas abiertas y capa del mapa.
+    La usan el riel de chips, los paneles flotantes, el mapa y la hoja de
+    provincia."""
     return _query(
         productos=list(product_slugs),
         provincia=provincia,
         dias=dias,
         ver=list(ver),
+        capa=capa,
         path=path,
     )
 
@@ -250,13 +273,15 @@ def build_province_nav(
     selected_days: int = DEFAULT_WINDOW_DAYS,
     active_products: Sequence[str] = (),
     ver: Sequence[str] = (),
+    capa: str = DEFAULT_LAYER,
 ) -> list[NavChoice]:
     """«Todas» + un ítem por provincia con dato piloto, marcando la activa.
 
     Simétrica a `build_product_nav`; cada enlace preserva el producto (o el
-    conjunto `active_products` de los chips), la ventana de días y las
-    ventanas flotantes abiertas (`ver`): la barra vive dentro de la ventana
-    «Precios», y cambiar de provincia no puede cerrarla.
+    conjunto `active_products` de los chips), la ventana de días, las
+    ventanas flotantes abiertas (`ver`) y la capa del mapa (`capa`): la barra
+    vive dentro de la ventana «Precios», y cambiar de provincia no puede
+    cerrarla ni resetear ninguna de las dos.
     """
     prod_slug = product_slug(selected_product) if selected_product else ""
     active_slugs = [product_slug(n) for n in active_products]
@@ -271,6 +296,7 @@ def build_province_nav(
                 provincia="",
                 dias=selected_days,
                 ver=ver,
+                capa=capa,
             ),
         )
     ]
@@ -287,6 +313,7 @@ def build_province_nav(
                     provincia=slug,
                     dias=selected_days,
                     ver=ver,
+                    capa=capa,
                 ),
             )
         )
@@ -350,14 +377,15 @@ def build_product_chips(
     selected_province: str = "",
     selected_days: int = DEFAULT_WINDOW_DAYS,
     ver: Sequence[str] = (),
+    capa: str = DEFAULT_LAYER,
 ) -> list[ProductChip]:
     """Un chip por producto piloto, en el orden del catálogo.
 
     El conjunto activo (`active_names`) viaja como `?productos=` en el orden en
     que se fueron prendiendo. Un chip apagado agrega su slug al final al
     clickearlo; uno ya prendido no hace nada —cerrar su panel es cosa de la ×
-    del panel, no del chip—. `ver` se preserva: prender un producto no cierra
-    las ventanas abiertas.
+    del panel, no del chip—. `ver` y `capa` se preservan: prender un producto
+    no cierra las ventanas abiertas ni cambia la capa del mapa.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_names]
@@ -377,7 +405,7 @@ def build_product_chips(
                 is_active=is_active,
                 icon=product_icon(name),
                 query=products_query(
-                    resultado, provincia=prov_slug, dias=selected_days, ver=ver
+                    resultado, provincia=prov_slug, dias=selected_days, ver=ver, capa=capa
                 ),
             )
         )
@@ -391,9 +419,10 @@ def build_window_nav(
     selected_province: str = "",
     active_products: Sequence[str] = (),
     ver: Sequence[str] = (),
+    capa: str = DEFAULT_LAYER,
 ) -> list[WindowChoice]:
     """Las tres ventanas de días, marcando la activa y preservando producto (o
-    el conjunto de chips), provincia y ventanas flotantes abiertas."""
+    el conjunto de chips), provincia, ventanas flotantes abiertas y capa."""
     prod_slug = product_slug(selected_name) if selected_name else ""
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(n) for n in active_products]
@@ -408,6 +437,7 @@ def build_window_nav(
                 provincia=prov_slug,
                 dias=days,
                 ver=ver,
+                capa=capa,
             ),
         )
         for days in WINDOW_CHOICES
@@ -463,6 +493,7 @@ def build_view_menu(
     active_products: Sequence[str] = (),
     selected_province: str = "",
     selected_days: int = DEFAULT_WINDOW_DAYS,
+    capa: str = DEFAULT_LAYER,
 ) -> list[ViewToggle]:
     """Un ítem por ventana, en el orden del menú. Varias pueden estar abiertas a
     la vez: se apilan sobre el mapa."""
@@ -484,7 +515,41 @@ def build_view_menu(
                     provincia=prov_slug,
                     dias=selected_days,
                     ver=resultado,
+                    capa=capa,
                 ),
             )
         )
     return items
+
+
+def build_layer_nav(
+    selected_layer: str,
+    *,
+    active_products: Sequence[str] = (),
+    selected_province: str = "",
+    selected_days: int = DEFAULT_WINDOW_DAYS,
+    ver: Sequence[str] = (),
+) -> list[NavChoice]:
+    """Las dos capas del mapa, marcando la activa y preservando todo lo demás.
+
+    `NavChoice.slug` es la clave de `?capa=` (o cadena vacía para la capa por
+    defecto, mismo criterio que «Todos»/«Todas» en los otros ejes).
+    """
+    active_slugs = [product_slug(n) for n in active_products]
+    prov_slug = product_slug(selected_province) if selected_province else ""
+    etiquetas = {"publicacion": "Publicación", "densidad": "Densidad de anuncios"}
+    return [
+        NavChoice(
+            label=etiquetas[layer],
+            slug=layer,
+            is_selected=layer == selected_layer,
+            query=products_query(
+                active_slugs,
+                provincia=prov_slug,
+                dias=selected_days,
+                ver=ver,
+                capa=layer,
+            ),
+        )
+        for layer in LAYER_CHOICES
+    ]

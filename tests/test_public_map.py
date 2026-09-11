@@ -111,6 +111,35 @@ class TestBuildMap:
         assert por_nombre["Camagüey"].state == "sin-datos"
 
 
+class TestDensidadDeAnuncios:
+    """Capa «densidad» del mapa (2026-09-11): relativa al máximo actual, nunca
+    un umbral fijo —§12.6 prohíbe inventar uno, y esto no decide qué se
+    publica, solo cómo se sombrea."""
+
+    def test_sin_ninguna_observacion_todas_quedan_en_cero(self) -> None:
+        vista = build_map({})
+
+        assert all(p.density_ratio == 0.0 for p in vista.provinces)
+
+    def test_la_que_mas_tiene_pinta_a_fondo(self) -> None:
+        vista = build_map({"La Habana": 113, "Santiago de Cuba": 105})
+        por_nombre = {p.name: p for p in vista.provinces}
+
+        assert por_nombre["La Habana"].density_ratio == 1.0
+        assert por_nombre["Santiago de Cuba"].density_ratio == pytest.approx(
+            105 / 113
+        )
+        assert por_nombre["Camagüey"].density_ratio == 0.0
+
+    def test_una_sola_observacion_en_una_provincia_esa_pinta_a_fondo(self) -> None:
+        # 1 de 1 es el máximo posible: no hace falta ningún umbral para
+        # decidir que esa provincia se sombree al tope.
+        vista = build_map({"La Habana": 1})
+        por_nombre = {p.name: p for p in vista.provinces}
+
+        assert por_nombre["La Habana"].density_ratio == 1.0
+
+
 class TestEstadoDePublicacion:
     """§9.0: la interfaz distingue publicada de «en ingesta sin publicación».
 
@@ -240,6 +269,59 @@ class TestRutaPublica:
         assert "is-con-dato" not in svg or "is-sin-dato" in svg
         for clase in ("is-caro", "is-barato", "is-promedio"):
             assert clase not in svg
+
+
+class TestCapaDelMapa:
+    """Selector de capa (2026-09-11): «publicación» (default, sin tocar) y
+    «densidad», presentacional, sin umbral que calibrar."""
+
+    def test_por_defecto_es_la_capa_de_publicacion(self, client: TestClient) -> None:
+        texto = client.get("/").text
+        svg = texto.split("<svg")[1].split("</svg>")[0]
+
+        assert 'class="ph-layer-toggle"' in texto
+        assert "is-densidad" not in svg
+        assert "is-sin-datos" in svg  # las 16 sin dato, base vacía
+
+    def test_con_capa_densidad_pinta_por_cantidad_no_por_estado(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/?capa=densidad").text
+        svg = texto.split("<svg")[1].split("</svg>")[0]
+
+        assert "is-densidad" in svg
+        assert "--dens:" in svg
+        for clase in ("is-publicada", "is-en-ingesta", "is-sin-datos"):
+            assert clase not in svg
+
+    def test_una_capa_invalida_no_rompe_cae_a_publicacion(
+        self, client: TestClient
+    ) -> None:
+        r = client.get("/?capa=lo-que-sea")
+
+        assert r.status_code == 200
+        assert "is-densidad" not in r.text.split("<svg")[1].split("</svg>")[0]
+
+    def test_el_enlace_de_una_provincia_preserva_la_capa_elegida(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/?capa=densidad").text
+
+        assert "capa=densidad" in texto.split('id="precios"')[0]
+        # El propio enlace del mapa a la hoja lleva la capa.
+        svg = texto.split("<svg")[1].split("</svg>")[0]
+        assert "capa=densidad" in svg
+
+    def test_la_provincia_elegida_queda_en_data_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        # Lo lee `actualizarZoomDelMapa()` del lado del cliente; vacío sin
+        # ninguna elegida.
+        session.add(Province(code="hab", name="La Habana"))
+        session.commit()
+
+        assert 'data-provincia=""' in client.get("/").text
+        assert 'data-provincia="la-habana"' in client.get("/?provincia=la-habana").text
 
 
 class TestEnlaceDeEvidenciaEnLaSerie:

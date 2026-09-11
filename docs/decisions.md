@@ -7767,3 +7767,46 @@ Consecuencia: dos tests nuevos en `TestProvinciasLadoALadoEnLaRuta`
 `test_provincia_en_la_url_abre_la_hoja` se actualizó por el `tabindex="-1"`
 nuevo. Sin test de JS —el proyecto no tiene runner de JS, igual que el resto
 del script de ventanas—. Suite: 1561 pasan, 1 saltea.
+
+## 2026-09-11 — Zoom a la provincia elegida y capa «densidad de anuncios» en el mapa
+Contexto: el operador (trasfondo GIS/ArcGIS) pidió dos cosas para el mapa:
+(1) que elegir una provincia la encuadre visualmente, no solo abra la hoja
+lateral; (2) un selector de capas, en el sentido GIS del término —varias
+formas de sombrear la misma geometría—. Coloreo por precio y semáforo siguen
+bloqueados por el umbral sin calibrar (§12.6); la única capa nueva que no
+choca con eso es la densidad de anuncios, relativa al máximo actual.
+Decisión, en dos partes:
+1. **Zoom.** `actualizarZoomDelMapa()` (script del pie, sin animación) lee
+   `data-provincia` de `.ph-stage` (server-side, `selected_province_slug`),
+   calcula el `getBBox()` del `<path>` de esa provincia y reescribe el
+   `viewBox` del SVG para encuadrarla (margen ×1.4, tope 6× para no
+   pixelar una provincia chica). `.ph-map-province` gana
+   `vector-effect: non-scaling-stroke` para que el borde no se engrose con
+   el zoom. Sin JS, el mapa se queda en Cuba entera; la hoja sigue andando
+   igual —mejora progresiva, no requisito.
+2. **Capa «densidad».** `MapProvince.density_ratio` (`map_view.py`) es
+   `rows / max(rows de las 16)`, 0.0 sin ninguna observación en ningún
+   lado — relativo, nunca un umbral fijo, así que no choca con §12.6: no
+   decide qué se publica, solo cómo se sombrea. `?capa=densidad` (nuevo eje,
+   `product_nav.resolve_layer`/`build_layer_nav`/`LAYER_CHOICES`) se
+   enhebra por `_query`/`products_query` igual que `ver`, así que
+   sobrevive a cualquier otro clic de la página (chips, provincia, días,
+   ventanas, cerrar un panel). El selector vive arriba de la leyenda del
+   mapa, con la misma pinta que `.ph-menu-item`.
+Descartado: (a) animar el zoom con `requestAnimationFrame` interpolando el
+`viewBox` a mano, o con `transform` CSS sobre un `<g>` —la segunda tiene
+ambigüedad real de unidades (px CSS vs. unidades de usuario del `viewBox`)
+entre navegadores; un corte directo es la solución más simple que
+funciona, y la hoja ya entra animada al lado; (b) bucketes discretos para
+la densidad (como los 4 niveles del calendario) —con conteos por provincia
+en un rango mucho más amplio que los del calendario, una opacidad continua
+es más honesta que elegir cortes a mano; (c) etiquetar los extremos de la
+rampa con nombres de provincia —el número solo (`map.provinces[0].max_rows`)
+alcanza y no repite el nombre que ya está en el `<title>` de cada camino.
+Consecuencia: `capa` se suma a `_query`/`products_query` y a
+`build_product_panels` (el `close_query` de un panel también la
+preserva) — todo sitio que ya enhebraba `ver` ahora enhebra `capa` igual.
+12 tests nuevos (`TestDensidadDeAnuncios`, `TestCapaDelMapa` en
+`test_public_map.py`; `TestResolveLayer`, `TestBuildLayerNav` en
+`test_public_filter.py`). Sin test de JS para el zoom, mismo criterio que
+el resto del script de ventanas. Suite: 1573 pasan, 1 saltea.

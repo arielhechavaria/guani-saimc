@@ -20,6 +20,7 @@ from decimal import Decimal
 
 from saimc.web.card_view import ProductCard, format_price
 from saimc.web.product_nav import (
+    DEFAULT_LAYER,
     DEFAULT_WINDOW_DAYS,
     product_icon,
     product_slug,
@@ -91,13 +92,15 @@ def build_product_panels(
     selected_province: str = "",
     selected_days: int = DEFAULT_WINDOW_DAYS,
     ver: Sequence[str] = (),
+    capa: str = DEFAULT_LAYER,
 ) -> list[ProductPanel]:
     """Un panel por producto activo, en el orden de activación.
 
     Un producto activo sin ninguna tarjeta en la ventana entra igual, con
     `count=0`: el panel dice que no hay dato y ofrece cerrarlo, en vez de
-    desaparecer sin explicación. `ver` (las ventanas abiertas del menú) viaja
-    en el `close_query` para que cerrar un panel no cierre ventanas.
+    desaparecer sin explicación. `ver` (las ventanas abiertas del menú) y
+    `capa` (la capa del mapa) viajan en el `close_query` para que cerrar un
+    panel no cierre ventanas ni cambie la capa.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_products]
@@ -119,6 +122,7 @@ def build_product_panels(
             provincia=prov_slug,
             dias=selected_days,
             ver=ver,
+            capa=capa,
         )
         if not pcards:
             panels.append(

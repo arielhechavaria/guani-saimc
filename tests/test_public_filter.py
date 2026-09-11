@@ -38,7 +38,9 @@ from saimc.models.raw_ingestion import ProcessingStatus
 from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.product_nav import (
+    DEFAULT_LAYER,
     DEFAULT_WINDOW_DAYS,
+    build_layer_nav,
     build_product_chips,
     build_product_nav,
     build_province_nav,
@@ -46,6 +48,7 @@ from saimc.web.product_nav import (
     build_window_nav,
     product_slug,
     resolve_days,
+    resolve_layer,
     resolve_product,
     resolve_products,
     resolve_province,
@@ -890,6 +893,43 @@ class TestResolveDays:
         assert resolve_days("abc") == DEFAULT_WINDOW_DAYS
         assert resolve_days("31") == DEFAULT_WINDOW_DAYS
         assert resolve_days("-7") == DEFAULT_WINDOW_DAYS
+
+
+class TestResolveLayer:
+    def test_acepta_las_dos_capas(self) -> None:
+        assert resolve_layer("publicacion") == "publicacion"
+        assert resolve_layer("densidad") == "densidad"
+
+    def test_cae_al_default_ante_basura(self) -> None:
+        assert resolve_layer(None) == DEFAULT_LAYER
+        assert resolve_layer("") == DEFAULT_LAYER
+        assert resolve_layer("precio") == DEFAULT_LAYER
+
+
+class TestBuildLayerNav:
+    def test_dos_capas_marcando_la_activa(self) -> None:
+        elegidas = build_layer_nav("densidad")
+        por_slug = {c.slug: c for c in elegidas}
+
+        assert len(elegidas) == 2
+        assert por_slug["densidad"].is_selected
+        assert not por_slug["publicacion"].is_selected
+
+    def test_el_enlace_preserva_productos_provincia_dias_y_ventanas(self) -> None:
+        elegidas = build_layer_nav(
+            "publicacion",
+            active_products=["Arroz"],
+            selected_province="La Habana",
+            selected_days=7,
+            ver=["cobertura"],
+        )
+        por_slug = {c.slug: c for c in elegidas}
+
+        assert por_slug["densidad"].query == (
+            "/?productos=arroz&provincia=la-habana&dias=7&ver=cobertura&capa=densidad"
+        )
+        # La propia capa activa no ensucia la URL con `capa=publicacion`.
+        assert "capa=" not in por_slug["publicacion"].query
 
 
 class TestBuildWindowNav:

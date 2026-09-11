@@ -60,6 +60,24 @@ class MapProvince:
     path: str
     rows: int
     is_published: bool
+    #: El máximo de `rows` entre las 16, para `density_ratio`. Vive acá y no
+    #: como argumento aparte de la capa de densidad porque es el mismo valor
+    #: para las 16 provincias de un mismo `MapView`.
+    max_rows: int = 0
+
+    @property
+    def density_ratio(self) -> float:
+        """`rows` contra el máximo entre las 16 provincias, en 0..1.
+
+        Capa «densidad de anuncios» del mapa (2026-09-11): relativo al máximo
+        actual, nunca un umbral fijo —§12.6 prohíbe inventar uno, y esto no
+        decide qué se publica, solo cómo se sombrea—. La provincia con más
+        anuncios siempre pinta a fondo, tenga 5 o 5000; sin ninguna
+        observación en las 16, todas quedan en 0.0.
+        """
+        if self.max_rows <= 0:
+            return 0.0
+        return self.rows / self.max_rows
 
     @property
     def slug(self) -> str:
@@ -128,6 +146,7 @@ def build_map(
     alguien lo decidió explícitamente en la base.
     """
     publicadas = published or frozenset()
+    max_rows = max([*rows_by_province.values(), 0])
     return MapView(
         viewbox=VIEWBOX,
         provinces=tuple(
@@ -136,6 +155,7 @@ def build_map(
                 path=path,
                 rows=rows_by_province.get(name, 0),
                 is_published=name in publicadas,
+                max_rows=max_rows,
             )
             for name, path in sorted(PROVINCE_PATHS.items())
         ),
