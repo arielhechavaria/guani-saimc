@@ -7930,3 +7930,30 @@ Consecuencia: `tests/test_public_filter.py` — título actualizado
 el SVG del mapa dejaron de servir —el avatar es ahora el primer `<svg` de
 la página— y pasaron a anclar en `'<svg class="ph-map"'`. Suite: 1576
 pasan, 1 saltea.
+
+## 2026-09-11 — El avatar de Guani dobla de indicador de carga
+
+Contexto: siguiendo con la marca de la entrada anterior, el operador pidió
+un indicador de carga hecho con el mismo avatar, para los `hx-get` de
+chips/menú/provincia en la home pública (que hoy no tienen ninguno).
+
+Decisión: `#ph-live` suma `hx-indicator="#ph-loading"`; `#ph-loading` —el
+mismo `_guani_avatar.html`, con una animación de rebote— vive FUERA de
+`#ph-live`, después de su cierre, no adentro: ese bloque entero se
+reemplaza (`hx-swap="outerHTML"`) en cada respuesta, así que un indicador
+adentro perdería la clase `htmx-request` a mitad de la animación en vez de
+apagarse prolijo. Es la convención estándar de htmx (clase `htmx-indicator`
+más opacidad condicional), sin librería nueva. `prefers-reduced-motion`
+apaga el rebote, mismo trato que ya reciben las otras animaciones del
+lienzo.
+
+Consecuencia: test nuevo en `tests/test_public_filter.py`
+(`test_el_indicador_de_carga_usa_el_avatar_y_vive_fuera_de_ph_live`), que
+verifica la posición fuera de `#ph-live` anclando en el crédito del mapa
+(«Natural Earth»), no en el comentario Jinja —ese no sobrevive al render—.
+Suite: 1577 pasan, 1 saltea.
+
+Aparte, se agregó una diapositiva de cierre (16:9, avatar grande sobre
+fondo `--ph-accent`, «Gracias») como segundo artboard del mismo canvas de
+diseño de la entrada anterior — no es código, vive solo en el canvas
+publicado.
