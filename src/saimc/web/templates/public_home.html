@@ -174,27 +174,21 @@
      bajo `#ph-live`—, así que la regla de visibilidad es de una sola clase
      compuesta, no un descendiente. Centrado en la pantalla (no en una
      esquina); tamaño .25rem → .3125rem (+25%) → .715625rem (+129%) →
-     2.146875rem (×3) → 10.734375rem (×5) → 53.671875rem (×5 de nuevo, casi
-     859px); opacidad visible 1 → .4. Fondo del contenedor: el mismo
-     `color-mix(in srgb, var(--m3-surface) 92%, transparent)` que ya usan
-     `.ph-topbar` y `.ph-canvas-legend` (design_tokens.css). Con el badge
-     propio del SVG (blanco, opaco) adentro, el `padding` deja ver ese
-     fondo como un anillo.
+     2.146875rem (×3) → 10.734375rem (×5) → 53.671875rem (×5) → 17.890625rem
+     (÷3, el operador lo pidió más chico). Opacidad visible 1 → .4. Fondo
+     del contenedor: el mismo `color-mix(in srgb, var(--m3-surface) 92%,
+     transparent)` que ya usan `.ph-topbar` y `.ph-canvas-legend`
+     (design_tokens.css). Con el badge propio del SVG (blanco, opaco)
+     adentro, el `padding` deja ver ese fondo como un anillo.
 
-     Paleta a gris y blanco (pedido explícito, «como se usan en todo el
-     sistema»): el SVG de `_guani_avatar.html` es compartido con el header
-     y ahí SÍ lleva los colores de marca (teal/dorado) — recolorearlo
-     entero también los apagaría ahí, que no es lo que se pidió («el avatar
-     que se usa en el cargador»). `_guani_avatar.html` le puso clases
-     `ph-avatar-cara/pluma/vestimenta` a esos tres elementos como ganchos
-     (sin pintar nada ellas solas); acá, acotado a `.ph-loading svg`, se
-     recolorean a tokens grises reales del sistema —`var(--m3-*)`, no hex,
-     así que no pisa `TestNingunColorFijoEnLasPlantillas`—. Cabello/vincha
-     (#191c1c) y blancos quedan igual, ya son neutros. */
+     La paleta gris/blanco del avatar (pedida primero solo para acá) pasó
+     después a ser también la del header —mismo pedido, alcance ampliado—,
+     así que ya no hace falta ningún override puntual: es el default de
+     `_guani_avatar.html` (ver ese archivo). */
   .ph-loading {
     position: fixed; top: 50%; left: 50%; z-index: 50;
     box-sizing: border-box;
-    width: 53.671875rem; height: 53.671875rem;
+    width: 17.890625rem; height: 17.890625rem;
     padding: .75rem;
     border-radius: 999px;
     background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
@@ -203,9 +197,6 @@
     opacity: 0; pointer-events: none; transition: opacity .15s ease;
   }
   .ph-loading.htmx-indicator.htmx-request { opacity: .4; }
-  .ph-loading svg .ph-avatar-cara { fill: var(--m3-outline); }
-  .ph-loading svg .ph-avatar-pluma { fill: var(--m3-outline-variant); }
-  .ph-loading svg .ph-avatar-vestimenta { fill: var(--m3-disabled); }
   /* A este tamaño un rebote se sale de su propia caja y se ve roto: la
      animación pasa a ser un pulso de opacidad, que es lo que el operador
      pidió («con opacity») y además es el patrón usual de un punto de carga
