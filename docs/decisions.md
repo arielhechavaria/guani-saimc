@@ -7837,3 +7837,30 @@ correcto, no un caso raro. Test viejo
 `test_con_una_provincia_elegida_sigue_comparando_todas` (afirmaba lo
 contrario) reemplazado por `test_con_una_provincia_elegida_solo_esa`, con el
 aserto invertido. Suite: 1573 pasan, 1 saltea.
+
+## 2026-09-11 — Hoja de provincia a pantalla completa y translúcida («modo provincia»)
+Contexto: el operador preguntó por una vista 3D del mapa o algo al estilo
+Street View de Google Maps —«entrar» a un lugar en vez de solo verlo desde
+arriba—. 3D queda descartado: choca con la decisión cerrada 1 de CLAUDE.md
+(mapa SVG servido por el servidor, nada de motor de mapas ni dependencia de
+red en runtime, por la conexión del usuario final cubano). La alternativa
+que sí encaja con el stack: la hoja de detalle, que ya reacciona al zoom del
+mapa (2026-09-11, esta misma sesión), pasa a ocupar toda la pantalla y a ser
+translúcida en vez de opaca, así el mapa ya encuadrado en esa provincia se
+sigue viendo de fondo.
+Decisión: `.ph-sheet` pasa de cajón lateral (`min(28rem, 100%)`) a
+`width: 100%` en escritorio, y de fondo opaco a
+`color-mix(in srgb, var(--m3-surface) 92%, transparent)` —mismo porcentaje
+que ya usan `.ph-topbar` y `.ph-canvas-legend`, no un valor nuevo—. En
+angosto pasa de `max-height: 85dvh` a `height: 100dvh` para la misma
+consistencia. Sin `backdrop-filter`: desenfocar el fondo pesa en un teléfono
+de gama baja, y un alfa simple ya deja ver el mapa detrás sin costo de GPU.
+Descartado: (a) un mapa 3D real (three.js/WebGL) —contradice la decisión
+cerrada 1 y no hay ninguna dimensión de dato que pida altura—; (b) duplicar
+el SVG del mapa dentro de la hoja como hero recortado a esa provincia —el
+mapa de fondo, ya zoomeado por `actualizarZoomDelMapa()`, alcanza sin
+repetir geometría ni Python nuevo.
+Consecuencia: cambio puramente visual (CSS), sin tocar Python ni el
+contrato de ningún test — la suite corre igual. La segunda idea del
+operador (una vista 2D con otro enfoque, tipo Street View) queda pendiente,
+sin definir todavía.

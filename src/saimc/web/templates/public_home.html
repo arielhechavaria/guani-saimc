@@ -450,15 +450,24 @@
   }
 
   /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
+  {# «Modo provincia» (2026-09-11): pantalla completa en vez de cajón
+     lateral, y translúcida —no opaca— para que el mapa ya encuadrado en esa
+     provincia (`actualizarZoomDelMapa`) se siga viendo detrás, de fondo. Es
+     lo más cerca de «entrar» a la provincia que da el stack sin meter un
+     motor 3D: la decisión cerrada 1 de CLAUDE.md descarta esa vía (mapa
+     SVG, nada de dependencia de red en runtime). Sin `backdrop-filter`
+     —desenfocar el fondo pesa en un teléfono de gama baja; alfa simple
+     alcanza y no cuesta nada de GPU. #}
   .ph-sheet-scrim {
     position: fixed; inset: 0; z-index: 50;
-    display: flex; justify-content: flex-end;
-    background: color-mix(in srgb, var(--m3-on-surface) 32%, transparent);
+    display: flex; justify-content: stretch;
+    background: color-mix(in srgb, var(--m3-on-surface) 18%, transparent);
   }
   .ph-sheet-scrim-close { position: absolute; inset: 0; }
   .ph-sheet {
-    position: relative; width: min(28rem, 100%); height: 100%;
-    background: var(--m3-surface); box-shadow: var(--m3-elev-3);
+    position: relative; width: 100%; height: 100%;
+    background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
+    box-shadow: var(--m3-elev-3);
     overflow-y: auto; padding: 1.25rem 1.4rem 2rem;
     animation: ph-sheet-right .28s cubic-bezier(.2, .8, .2, 1) both;
   }
@@ -496,9 +505,9 @@
     /* Sin arrastre en angosto: la barra de título vuelve a dejar scrollear la
        bandeja con el dedo. */
     .ph-js [data-win-handle] { cursor: auto; touch-action: auto; }
-    .ph-sheet-scrim { justify-content: stretch; align-items: flex-end; }
+    .ph-sheet-scrim { align-items: flex-end; }
     .ph-sheet {
-      width: 100%; height: auto; max-height: 85dvh;
+      height: 100dvh; max-height: none;
       border-radius: var(--ph-radius-lg) var(--ph-radius-lg) 0 0;
       animation-name: ph-sheet-up;
     }
