@@ -7810,3 +7810,30 @@ preserva) — todo sitio que ya enhebraba `ver` ahora enhebra `capa` igual.
 `test_public_map.py`; `TestResolveLayer`, `TestBuildLayerNav` en
 `test_public_filter.py`). Sin test de JS para el zoom, mismo criterio que
 el resto del script de ventanas. Suite: 1573 pasan, 1 saltea.
+
+## 2026-09-11 — «Cómo se movió» respeta la provincia elegida (reemplaza el diseño de 2026-09-10)
+Contexto: al cerrar el zoom del mapa, el operador señaló el hueco real:
+elegir una provincia dice «solo me interesa ver los datos de esa provincia»,
+y «Cómo se movió» seguía mostrando las 16 siempre —la única ventana que no
+se enfocaba; Precios y los paneles de producto ya lo hacían—.
+Decisión: reemplaza el diseño original de la ventana («Rediseño home
+pública, Slice 3», 2026-09-10, y la nota de «La home pública es el mapa
+entero», mismo día), que fijaba TODAS las provincias a propósito «porque la
+pregunta es ¿dónde está más caro?». Con `?provincia=` puesta, `evolution_obs`
+y `evolution_previous` se filtran a esa sola provincia antes de pasar a
+`build_evolution_blocks` —filtrado en Python sobre lo que `all_provinces_obs`
+ya trajo, sin otra consulta a la base—. `province_comparisons` (Precios y la
+hoja de detalle) NO cambia: sigue con las 16 siempre, porque esa pregunta
+—«¿dónde está más caro?», con la propia resaltada— sigue siendo válida ahí.
+El rótulo de la ventana y del calendario pasan a decir el nombre de la
+provincia en vez de «todas las provincias» cuando hay una elegida.
+Descartado: filtrar también `province_comparisons` —rompería la hoja de
+detalle, que reusa esos mismos datos para su propio gráfico «dónde está más
+cara [la mía]» comparándola contra las otras 15—.
+Consecuencia: con una sola provincia, la leyenda de colores por provincia
+del bloque no aparece (`block.legend | length > 1`, ya condicional) y el
+gráfico de escalones/pendiente queda con una sola línea — comportamiento
+correcto, no un caso raro. Test viejo
+`test_con_una_provincia_elegida_sigue_comparando_todas` (afirmaba lo
+contrario) reemplazado por `test_con_una_provincia_elegida_solo_esa`, con el
+aserto invertido. Suite: 1573 pasan, 1 saltea.

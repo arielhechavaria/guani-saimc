@@ -850,9 +850,10 @@
           {% else %}
             {# «Cómo se movió» (slice 3 de los gráficos): por producto, mes
                contra mes, las provincias en el tiempo y el calendario de
-               anuncios. Todas las provincias en el mismo eje, como en Precios.
+               anuncios. Todas las provincias en el mismo eje —salvo que haya
+               una elegida: ahí es solo esa (2026-09-11, el hueco del zoom).
                Ninguna línea une períodos sin anuncios. #}
-            <p class="ph-win-tag">Ventana de {{ window_days }} días · todas las provincias</p>
+            <p class="ph-win-tag">Ventana de {{ window_days }} días · {% if selected_province %}{{ selected_province }}{% else %}todas las provincias{% endif %}</p>
             {% for block in evolution_blocks if not active_products or block.product_name in active_products %}
             <section class="ph-evo" aria-label="{{ block.product_name }}: cómo se movió">
               <h3 class="ph-compara-titulo">{{ block.product_name }}</h3>
@@ -897,7 +898,7 @@
               {% endfor %}
 
               <figure class="ph-compara-fig">
-                <figcaption class="ph-evo-sub">Días con anuncios <span>todas las provincias juntas</span></figcaption>
+                <figcaption class="ph-evo-sub">Días con anuncios <span>{% if selected_province %}{{ selected_province }}{% else %}todas las provincias juntas{% endif %}</span></figcaption>
                 {% set cal = block.calendar %}
                 {% include "_calendar_chart.html" %}
                 <ul class="ph-evo-leyenda ph-cal-leyenda">
@@ -908,8 +909,8 @@
                 </ul>
                 {{ chart_help(
                   "Cada cuadro es un día; cuanto más oscuro, más anuncios "
-                  "entraron ese día, sumando todas las provincias. No muestra "
-                  "precios, solo cuándo hubo actividad."
+                  "entraron ese día" ~ (" en " ~ selected_province if selected_province else ", sumando todas las provincias") ~
+                  ". No muestra precios, solo cuándo hubo actividad."
                 ) }}
               </figure>
 

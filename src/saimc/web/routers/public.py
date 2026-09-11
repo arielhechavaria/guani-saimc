@@ -309,11 +309,10 @@ def _render_home(
     panel_headlines = build_headlines(obs, previous_obs)
     panel_ranges = build_range_series(obs, window_days=window, hoy=hoy)
 
-    # Ventanas «Precios» y «Cómo se movió» (slices 2 y 3 de los gráficos): con
-    # TODAS las provincias aunque haya una elegida —las preguntas son «¿dónde
-    # está más caro?» y «¿se separan o se acercan?»— y todos los piloto; la
-    # plantilla elige qué productos mostrar. Mismo corte del período anterior
-    # que el panel.
+    # Comparación entre provincias (Precios y la hoja de detalle): SIEMPRE con
+    # las 16, aunque haya una elegida —la pregunta es «¿dónde está más caro?»,
+    # y la hoja resalta la propia contra todas las demás—. Todos los piloto;
+    # la plantilla elige qué productos mostrar.
     all_provinces_obs = _visible_observations(
         db, pilot=pilot, products=None, province=None, window=window
     )
@@ -324,6 +323,23 @@ def _render_home(
         )
         if o.day < hoy - timedelta(days=window)
     ]
+
+    # «Cómo se movió»: con una provincia elegida, SOLO esa —el operador la
+    # marcó como el hueco del zoom (2026-09-11): elegir una provincia dice
+    # «solo me interesa esta», y esta ventana seguía mostrando las 16 como si
+    # nada, la única que no se enfocaba (Precios y los paneles ya lo hacían).
+    # Se filtra en Python sobre lo ya traído arriba: misma consulta, sin
+    # pedirle a la base los mismos datos dos veces.
+    if selected_province is not None:
+        evolution_obs = [
+            o for o in all_provinces_obs if o.province_name == selected_province
+        ]
+        evolution_previous = [
+            o for o in all_provinces_previous if o.province_name == selected_province
+        ]
+    else:
+        evolution_obs = all_provinces_obs
+        evolution_previous = all_provinces_previous
 
     csv_href = download_href(
         producto=active_slugs[0] if len(active_slugs) == 1 else "",
@@ -390,7 +406,7 @@ def _render_home(
             "selected_layer": selected_layer,
             "province_comparisons": build_province_comparison(all_provinces_obs),
             "evolution_blocks": build_evolution_blocks(
-                all_provinces_obs, all_provinces_previous, window_days=window, hoy=hoy
+                evolution_obs, evolution_previous, window_days=window, hoy=hoy
             ),
             "view_menu": view_menu,
             "open_views": open_views,

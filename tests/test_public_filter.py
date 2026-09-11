@@ -662,14 +662,19 @@ class TestComoSeMovioEnLaRuta:
         # (2 anuncios) → 320 / 280 = 1,143 → +14%.
         assert "320 (2) +14%" in evo
 
-    def test_con_una_provincia_elegida_sigue_comparando_todas(
+    def test_con_una_provincia_elegida_solo_esa(
         self, client: TestClient, session: Session
     ) -> None:
+        # Elegir una provincia dice «solo me interesa esta» (2026-09-11): el
+        # hueco del zoom era justo este, la única ventana que seguía
+        # mostrando las 16 aunque hubiera una elegida.
         self._seed(session)
 
         evo = self._ventana(client.get("/?ver=evolucion&dias=30&provincia=la-habana").text)
 
-        assert "Santiago de Cuba" in evo
+        assert "Arroz" in evo
+        assert "Santiago de Cuba" not in evo
+        assert "Ventana de 30 días · La Habana" in evo
 
 
 class TestResolveViews:
