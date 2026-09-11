@@ -1,0 +1,20 @@
+{# Avatar de «Guani»: un tocororo estilizado, plano, sin degradados —boceto
+   2026-09-11 en el canvas de diseño (docs/decisions.md). Los siete colores
+   son tokens M3/PH existentes del sitio (--ph-accent, --ph-accent-2,
+   --ph-accent-2-line, --m3-error, --m3-surface, --m3-on-surface, --m3-outline-variant),
+   citados acá en hex porque un SVG no resuelve custom properties de una hoja
+   externa sin duplicar el bloque de estilos. Si alguno de esos tokens cambia, este
+   archivo se actualiza a mano junto con `design_tokens.css` — mismo trato que
+   ya reciben los colores de provincia. #}
+<svg class="ph-brand-avatar" viewBox="0 0 80 80" role="img" aria-label="Guani">
+  <circle cx="40" cy="40" r="39" fill="#ffffff" stroke="#c4cfcf" stroke-width="2"/>
+  <clipPath id="guani-avatar-clip"><circle cx="40" cy="40" r="37"/></clipPath>
+  <g clip-path="url(#guani-avatar-clip)">
+    <circle cx="40" cy="28" r="32" fill="#05668d"/>
+    <ellipse cx="40" cy="66" rx="40" ry="24" fill="#ffffff"/>
+    <ellipse cx="40" cy="80" rx="24" ry="16" fill="#ba1a1a"/>
+    <circle cx="50" cy="24" r="5" fill="#ffffff"/>
+    <circle cx="52" cy="24" r="2.4" fill="#191c1c"/>
+    <path d="M57,30 L69,34 L57,38 Z" fill="#191c1c"/>
+  </g>
+</svg>

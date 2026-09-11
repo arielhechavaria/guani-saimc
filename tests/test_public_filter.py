@@ -1584,8 +1584,18 @@ class TestRutaProductoLimpia:
         enfocado = client.get("/producto/arroz").text
         home = client.get("/").text
 
-        assert "<title>SAIMC — Arroz — precios</title>" in enfocado
-        assert "<title>SAIMC — Precios y cobertura</title>" in home
+        assert "<title>Guani — Arroz — precios</title>" in enfocado
+        assert "<title>Guani — Precios y cobertura</title>" in home
+
+    def test_el_kicker_muestra_guani_y_saimc_juntos(
+        self, client: TestClient
+    ) -> None:
+        """Branding (2026-09-11): «Guani» como nombre cercano/avatar, «SAIMC»
+        como nombre técnico al lado — ninguno reemplaza al otro."""
+        texto = client.get("/").text
+
+        assert "Guani · SAIMC · Fase 0" in texto
+        assert 'aria-label="Guani"' in texto  # el avatar del header
 
 
 class TestVarianteEnTarjetaPublica:

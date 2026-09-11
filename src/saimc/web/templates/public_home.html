@@ -161,6 +161,8 @@
     background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
     box-shadow: var(--m3-elev-1);
   }
+  .ph-brand-row { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+  .ph-brand-avatar { flex: none; width: 2.25rem; height: 2.25rem; }
   .ph-brand { display: grid; gap: .1rem; min-width: 0; }
   .ph-canvas-kicker { font-size: .625rem; letter-spacing: .16em; text-transform: uppercase;
                       color: var(--ph-accent); }
@@ -533,19 +535,22 @@
 <section class="ph-canvas" aria-labelledby="ph-canvas-title">
 
   <header class="ph-topbar">
-    <div class="ph-brand">
-      <span class="ph-canvas-kicker">SAIMC · Fase 0</span>
-      <h1 class="ph-canvas-title" id="ph-canvas-title">
-        {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
-        {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
-      </h1>
-      {# Frescura: hasta qué día llega el anuncio piloto más reciente.
-         Antigüedad, no veredicto (§12.6). #}
-      {% if data_freshness_day %}
-      <p class="ph-canvas-sub">
-        Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
-      </p>
-      {% endif %}
+    <div class="ph-brand-row">
+      {% include "_guani_avatar.html" %}
+      <div class="ph-brand">
+        <span class="ph-canvas-kicker">Guani · SAIMC · Fase 0</span>
+        <h1 class="ph-canvas-title" id="ph-canvas-title">
+          {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
+          {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
+        </h1>
+        {# Frescura: hasta qué día llega el anuncio piloto más reciente.
+           Antigüedad, no veredicto (§12.6). #}
+        {% if data_freshness_day %}
+        <p class="ph-canvas-sub">
+          Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
+        </p>
+        {% endif %}
+      </div>
     </div>
 
     {# Menú del header: cada ítem abre o cierra su ventana flotante. Varias

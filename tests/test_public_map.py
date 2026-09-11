@@ -214,7 +214,7 @@ class TestRutaPublica:
 
     def test_con_la_base_vacia_no_promete_cobertura(self, client: TestClient) -> None:
         texto = client.get("/").text
-        svg = texto.split("<svg")[1].split("</svg>")[0]
+        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
         assert "0 de 16 provincias" in texto
         assert "is-en-ingesta" not in svg
@@ -264,7 +264,7 @@ class TestRutaPublica:
         toda la página. Era correcto mientras la página fuera solo el mapa, y
         dejó de serlo al leer §9.0 completa: no prohíbe el precio, prohíbe el
         valor puntual sin respaldo de muestra.)"""
-        svg = client.get("/").text.split("<svg")[1].split("</svg>")[0]
+        svg = client.get("/").text.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
         assert "is-con-dato" not in svg or "is-sin-dato" in svg
         for clase in ("is-caro", "is-barato", "is-promedio"):
@@ -277,7 +277,7 @@ class TestCapaDelMapa:
 
     def test_por_defecto_es_la_capa_de_publicacion(self, client: TestClient) -> None:
         texto = client.get("/").text
-        svg = texto.split("<svg")[1].split("</svg>")[0]
+        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
         assert 'class="ph-layer-toggle"' in texto
         assert "is-densidad" not in svg
@@ -287,7 +287,7 @@ class TestCapaDelMapa:
         self, client: TestClient
     ) -> None:
         texto = client.get("/?capa=densidad").text
-        svg = texto.split("<svg")[1].split("</svg>")[0]
+        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
         assert "is-densidad" in svg
         assert "--dens:" in svg
@@ -300,7 +300,7 @@ class TestCapaDelMapa:
         r = client.get("/?capa=lo-que-sea")
 
         assert r.status_code == 200
-        assert "is-densidad" not in r.text.split("<svg")[1].split("</svg>")[0]
+        assert "is-densidad" not in r.text.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
     def test_el_enlace_de_una_provincia_preserva_la_capa_elegida(
         self, client: TestClient
@@ -309,7 +309,7 @@ class TestCapaDelMapa:
 
         assert "capa=densidad" in texto.split('id="precios"')[0]
         # El propio enlace del mapa a la hoja lleva la capa.
-        svg = texto.split("<svg")[1].split("</svg>")[0]
+        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
         assert "capa=densidad" in svg
 
     def test_la_provincia_elegida_queda_en_data_provincia(
@@ -333,7 +333,7 @@ class TestCapaDelMapa:
         session.commit()
 
         texto = client.get("/?provincia=la-habana").text
-        svg = texto.split("<svg")[1].split("</svg>")[0]
+        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
         assert "is-densidad" in svg
         assert "--dens:" in svg
@@ -346,7 +346,7 @@ class TestCapaDelMapa:
         """El forzado a densidad es del zoom a una provincia, no un cambio al
         default global: sin provincia elegida el mapa entero sigue pintando
         por estado de publicación."""
-        svg = client.get("/").text.split("<svg")[1].split("</svg>")[0]
+        svg = client.get("/").text.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
         assert "is-densidad" not in svg
 
