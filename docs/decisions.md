@@ -8124,3 +8124,33 @@ entrada anterior) — dos superficies concéntricas, ninguna con un color que
 no estuviera ya en `design_tokens.css`.
 
 Consecuencia: solo CSS, mismo marcado. Suite: 1577 pasan, 1 saltea.
+
+## 2026-09-11 — Indicador ×5 otra vez (~859px) y su paleta a gris y blanco
+
+Contexto: el operador pidió, en el mismo mensaje, multiplicar ×5 de nuevo
+el indicador de carga y «los colores quiero que sean gris y blanco como se
+usan en todo el sistema» — explícitamente sobre «el avatar que se usa en
+el cargador», no el avatar en general.
+
+Decisión — tamaño: `.ph-loading` pasa de `10.734375rem` a `53.671875rem`
+(×5, ≈859px — el operador lo pidió así de grande, se avisa el número
+exacto en vez de asumir que es un error).
+
+Decisión — color, solo para esta instancia: `_guani_avatar.html` es
+compartido con el header, que sigue con los colores de marca (teal/dorado)
+— no era eso lo que se pidió. Se le agregaron tres clases sin estilo propio
+(`ph-avatar-cara`, `ph-avatar-pluma`, `ph-avatar-vestimenta`) a esos
+elementos, como ganchos. `public_home.html` las recolorea, acotado a
+`.ph-loading svg`, a tokens grises reales: `--m3-outline` (cara),
+`--m3-outline-variant` (pluma), `--m3-disabled` (vestimenta) — todos
+`var(--m3-*)`, no hex, para no pisar
+`TestNingunColorFijoEnLasPlantillas`. Cabello/vincha (#191c1c) y blancos
+quedan igual, ya eran neutros.
+
+Intento descartado: selectores de atributo `[fill="#05668d"]` etc.
+—funcionan en CSS, pero meten hex literal en el `<style>` de la plantilla
+y rompieron `test_ninguna_plantilla_declara_un_color_a_mano` al primer
+intento; las clases lo resuelven sin ese costo.
+
+Consecuencia: solo CSS + tres atributos `class` sin comportamiento propio
+en el SVG compartido —el header no cambia—. Suite: 1577 pasan, 1 saltea.
