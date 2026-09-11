@@ -165,48 +165,62 @@
   .ph-brand-avatar { flex: none; width: 2.25rem; height: 2.25rem; }
   .ph-brand { display: grid; gap: .1rem; min-width: 0; }
 
-  /* Indicador de carga (2026-09-11, centrado, achicado y después reajustado
-     a pedido del operador): convención estándar de htmx — un elemento con
-     clase `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"`
+  /* Indicador de carga (2026-09-11): convención estándar de htmx — un
+     elemento con clase `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"`
      en `#ph-live` hace que htmx le agregue `htmx-request` a ESTE mismo
      elemento (no a un ancestro) durante CUALQUIER `hx-get` de adentro —
      `hx-indicator` se hereda, y todo chip/ítem de menú/provincia/× vive
      bajo `#ph-live`—, así que la regla de visibilidad es de una sola clase
-     compuesta, no un descendiente. Centrado en la pantalla (no en una
-     esquina); tamaño .25rem → .3125rem (+25%) → .715625rem (+129%) →
-     2.146875rem (×3) → 10.734375rem (×5) → 53.671875rem (×5) → 17.890625rem
-     (÷3, el operador lo pidió más chico). Opacidad visible 1 → .4. Fondo
-     del contenedor: el mismo `color-mix(in srgb, var(--m3-surface) 92%,
+     compuesta, no un descendiente. Centrado en la pantalla. Historial de
+     tamaño del AVATAR (ya no del contenedor, que ahora también carga los
+     punticos de abajo): .25rem → .3125rem → .715625rem → 2.146875rem →
+     10.734375rem → 53.671875rem → 17.890625rem. Opacidad visible 1 → .4.
+     Fondo: el mismo `color-mix(in srgb, var(--m3-surface) 92%,
      transparent)` que ya usan `.ph-topbar` y `.ph-canvas-legend`
-     (design_tokens.css). Con el badge propio del SVG (blanco, opaco)
-     adentro, el `padding` deja ver ese fondo como un anillo.
+     (design_tokens.css), con `--m3-elev-2` de sombra — nada nuevo.
 
-     La paleta gris/blanco del avatar (pedida primero solo para acá) pasó
-     después a ser también la del header —mismo pedido, alcance ampliado—,
-     así que ya no hace falta ningún override puntual: es el default de
-     `_guani_avatar.html` (ver ese archivo). */
+     El pedido de esta vuelta —«que el avatar haga flip» + los tres
+     punticos de carga de abajo— cambia la forma del contenedor: de círculo
+     ajustado al avatar a tarjeta redondeada en columna (avatar arriba,
+     punticos abajo), porque ahora hay dos elementos que acomodar, no uno.
+     `perspective` en `.ph-loading` es lo que hace que el `rotateY` del
+     avatar se vea como una moneda girando (con foreshortening) y no como
+     un achicamiento horizontal plano. */
   .ph-loading {
     position: fixed; top: 50%; left: 50%; z-index: 50;
-    box-sizing: border-box;
-    width: 17.890625rem; height: 17.890625rem;
-    padding: .75rem;
-    border-radius: 999px;
+    display: flex; flex-direction: column; align-items: center; gap: .85rem;
+    padding: 1rem 1.5rem 1.35rem;
+    border-radius: var(--m3-radius-lg);
     background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
     box-shadow: var(--m3-elev-2);
+    perspective: 40rem;
     transform: translate(-50%, -50%);
     opacity: 0; pointer-events: none; transition: opacity .15s ease;
   }
   .ph-loading.htmx-indicator.htmx-request { opacity: .4; }
-  /* A este tamaño un rebote se sale de su propia caja y se ve roto: la
-     animación pasa a ser un pulso de opacidad, que es lo que el operador
-     pidió («con opacity») y además es el patrón usual de un punto de carga
-     chico. El keyframe sigue en 1↔.35 sin tocar: la opacidad es del SVG de
-     adentro, así que se MULTIPLICA con el .4 de `.ph-loading` (CSS anida
-     opacidades), y el rango visible real ya queda en .4 → .14 solo. */
-  .ph-loading .ph-brand-avatar { width: 100%; height: 100%; animation: ph-loading-pulse .9s ease-in-out infinite; }
-  @keyframes ph-loading-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: .35; }
+  .ph-loading .ph-brand-avatar {
+    width: 17.890625rem; height: 17.890625rem;
+    animation: ph-loading-flip 1.4s ease-in-out infinite;
+  }
+  @keyframes ph-loading-flip {
+    0% { transform: rotateY(0deg); }
+    100% { transform: rotateY(360deg); }
+  }
+  /* Un puntico, dos punticos, tres punticos: el indicador de «cargando»
+     de toda la vida. Radio, color (`--m3-outline`) y demora escalonada
+     (0 / .2s / .4s) son los tres únicos números; el resto es la misma
+     idea repetida. */
+  .ph-loading-dots { display: flex; gap: .5rem; }
+  .ph-loading-dots span {
+    width: 1rem; height: 1rem; border-radius: 999px;
+    background: var(--m3-outline);
+    animation: ph-loading-dot 1s ease-in-out infinite;
+  }
+  .ph-loading-dots span:nth-child(2) { animation-delay: .2s; }
+  .ph-loading-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes ph-loading-dot {
+    0%, 80%, 100% { opacity: .3; transform: scale(.7); }
+    40% { opacity: 1; transform: scale(1); }
   }
   .ph-canvas-kicker { font-size: .625rem; letter-spacing: .16em; text-transform: uppercase;
                       color: var(--ph-accent); }
@@ -532,7 +546,7 @@
   .ph-sheet-row-sum { font-size: .8125rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
 
   @media (prefers-reduced-motion: reduce) {
-    .ph-win, .ph-fpanel, .ph-sheet, .ph-plot-dot, .ph-loading .ph-brand-avatar { animation: none; }
+    .ph-win, .ph-fpanel, .ph-sheet, .ph-plot-dot, .ph-loading .ph-brand-avatar, .ph-loading-dots span { animation: none; }
     .ph-canvas .ph-map-province, .ph-chip-toggle, .ph-menu-item { transition: none; }
   }
 
@@ -1192,6 +1206,7 @@
    siempre, degradando en silencio como el resto de la capa htmx. #}
 <div id="ph-loading" class="ph-loading htmx-indicator" aria-hidden="true">
   {% include "_guani_avatar.html" %}
+  <div class="ph-loading-dots"><span></span><span></span><span></span></div>
 </div>
 {% endblock %}
 
