@@ -7886,3 +7886,47 @@ Consecuencia: cambio de plantilla, sin Python nuevo. Tests nuevos en
 `TestCapaDelMapa` (`tests/test_public_map.py`): con provincia elegida pinta
 `is-densidad` aunque `capa` no se haya tocado; sin provincia elegida, la
 capa de publicación sigue de estado. Suite: 1575 pasan, 1 saltea.
+
+## 2026-09-11 — «Guani» como avatar/nombre cercano, SAIMC como nombre técnico
+
+Contexto: con una presentación la semana próxima, el operador pidió sumar
+identidad de marca al sitio público: le gusta «Guani» —el codename interno
+del proyecto, ya usado en CLAUDE.md y en `docs/decisions.md` antes de esta
+entrada— como nombre cercano/avatar, con SAIMC quedando como nombre técnico
+al lado, sin desaparecer. Pidió además un muñequito para Guani.
+
+Decisión — texto: `<title>` pasa de «SAIMC — …» a «Guani — …»
+(`_public_shell.html`); el kicker pasa de «SAIMC · Fase 0» a
+«Guani · SAIMC · Fase 0» en las dos plantillas que lo muestran
+(`_public_shell.html`, `public_home.html`). Alcance deliberado: la
+herramienta interna del operador (`_shell.html`, curaduría/control) queda
+sin tocar — no es lo que se muestra en una presentación, y no la pidió.
+
+Decisión — avatar: un tocororo (ave nacional de Cuba) estilizado en trazo
+flat, bocetado primero en un canvas de Claude Design (a pedido del
+operador) y después bajado a `_guani_avatar.html`, un SVG inline reusable
+por `{% include %}`. Sus siete colores son hex fijos, no `var(--m3-*)`: un
+SVG no resuelve custom properties de una hoja externa sin duplicar el
+bloque de estilos, así que se citó cada hex junto al nombre de su token de
+origen en un comentario, y quedan atados a mano a `design_tokens.css` si
+alguno cambia — mismo trato que ya reciben los colores de provincia. Vive
+en el header de `public_home.html` (`.ph-brand-row`, nuevo, envolviendo el
+avatar + el `.ph-brand` de siempre).
+
+Descartado: poner el mismo avatar en `_public_shell.html` (la página
+`/anuncio/<id>`). Al armarlo se encontró que `.m3-kicker`/`.m3-title`/
+`.m3-public-top` —las clases que ese shell ya usaba— nunca se migraron a
+`saimc-public.css` en el split del 2026-09-04: existen en
+`saimc-material.css` (la hoja del operador) pero no en la pública, así que
+esa página hoy renderiza su título y kicker sin ningún estilo. Meter un
+avatar prolijo al lado de texto sin estilar habría quedado peor, no mejor.
+Es un hallazgo aparte, no el trabajo de esta sesión — queda anotado acá
+para no perderlo, no resuelto.
+
+Consecuencia: `tests/test_public_filter.py` — título actualizado
+(`test_el_titulo_refleja_el_producto_enfocado`) y test nuevo
+(`test_el_kicker_muestra_guani_y_saimc_juntos`). Ocho asserts en
+`tests/test_public_map.py` que hacían `texto.split("<svg")[1]` para aislar
+el SVG del mapa dejaron de servir —el avatar es ahora el primer `<svg` de
+la página— y pasaron a anclar en `'<svg class="ph-map"'`. Suite: 1576
+pasan, 1 saltea.
