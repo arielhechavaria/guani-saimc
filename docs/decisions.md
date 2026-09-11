@@ -8154,3 +8154,26 @@ intento; las clases lo resuelven sin ese costo.
 
 Consecuencia: solo CSS + tres atributos `class` sin comportamiento propio
 en el SVG compartido —el header no cambia—. Suite: 1577 pasan, 1 saltea.
+
+## 2026-09-11 — El gris y blanco pasa a ser el único color del avatar
+
+Contexto: el operador achicó el indicador (÷3) y, de paso, pidió que «el
+otro avatar de Guani que está en el menú» —el del header, junto a
+`.ph-menu`— usara también los colores gris/blanco de la entrada anterior.
+Con eso, la distinción por instancia que introdujo esa entrada (gris solo
+en el cargador, marca en el header) queda sin motivo: las dos usan la
+misma paleta.
+
+Decisión: `_guani_avatar.html` — v5. El default del archivo pasa
+directamente a los tokens grises (`--m3-outline` cara, `--m3-on-surface`
+cabello/vincha —sin cambio—, `--m3-outline-variant` pluma, `--m3-disabled`
+vestimenta, `--m3-surface` blancos —sin cambio—). Se sacan las tres clases
+`ph-avatar-*` (ya no hace falta un gancho: no hay dos paletas que
+distinguir) y el override en `.ph-loading svg` de `public_home.html`,
+ahora redundante. `.ph-loading` pasa de `53.671875rem` a `17.890625rem`
+(÷3).
+
+Consecuencia: `_guani_avatar.html` vuelve a ser un archivo sin
+distinciones por instancia —más simple que la vuelta anterior—. Ningún
+test afirma colores del SVG, así que ninguno cambió. Suite: 1577 pasan, 1
+saltea.
