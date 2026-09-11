@@ -327,8 +327,11 @@ def product_icon(name: str) -> str | None:
 class ProductChip:
     """Un interruptor de producto del riel flotante sobre el mapa.
 
-    `query` es el estado resultante de togglear ESTE chip —prenderlo si está
-    apagado, apagarlo si está prendido—, preservando provincia y ventana.
+    `query` prende el producto si está apagado; si ya está prendido, `query`
+    es el estado actual sin cambios —clic en un chip activo no apaga nada—,
+    porque su panel ya tiene su propia × para cerrarse (`ProductPanel.close_query`
+    en `panel_view.py`). Antes el chip también apagaba, y era fácil cerrar un
+    panel sin querer al pasar por el riel; ver `docs/decisions.md` 2026-09-11.
     `icon`, si el producto tiene uno, reemplaza al nombre en el chip; el
     nombre queda como etiqueta accesible y como tooltip al pasar por encima.
     """
@@ -351,9 +354,10 @@ def build_product_chips(
     """Un chip por producto piloto, en el orden del catálogo.
 
     El conjunto activo (`active_names`) viaja como `?productos=` en el orden en
-    que se fueron prendiendo. Togglear un chip agrega su slug al final o lo
-    quita, sin reordenar el resto. `ver` se preserva: prender un producto no
-    cierra las ventanas abiertas.
+    que se fueron prendiendo. Un chip apagado agrega su slug al final al
+    clickearlo; uno ya prendido no hace nada —cerrar su panel es cosa de la ×
+    del panel, no del chip—. `ver` se preserva: prender un producto no cierra
+    las ventanas abiertas.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_names]
@@ -362,7 +366,7 @@ def build_product_chips(
         slug = product_slug(name)
         is_active = slug in active_slugs
         resultado = (
-            [s for s in active_slugs if s != slug]
+            active_slugs
             if is_active
             else [*active_slugs, slug]
         )

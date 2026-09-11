@@ -265,14 +265,16 @@ class TestBuildProductChips:
         # Prender Aceite → productos=arroz,aceite (orden de activación).
         assert por_label["Aceite"].query == "/?productos=arroz,aceite"
 
-    def test_togglear_un_prendido_lo_quita(self) -> None:
+    def test_un_chip_prendido_no_se_apaga_al_clickearlo(self) -> None:
+        # Clic en un chip ya activo no lo quita del conjunto: cerrar un
+        # producto es cosa de la × de su panel, no del riel de chips (antes
+        # sí lo apagaba, y era fácil cerrar un panel sin querer).
         chips = build_product_chips(self.PILOT, ["Arroz", "Aceite"])
         por_label = {c.label: c for c in chips}
 
-        # Apagar Arroz → queda solo aceite; apagar el único → URL limpia.
-        assert por_label["Arroz"].query == "/?productos=aceite"
+        assert por_label["Arroz"].query == "/?productos=arroz,aceite"
         chips_uno = build_product_chips(self.PILOT, ["Arroz"])
-        assert {c.label: c for c in chips_uno}["Arroz"].query == "/"
+        assert {c.label: c for c in chips_uno}["Arroz"].query == "/?productos=arroz"
 
     def test_preserva_provincia_y_ventana_en_el_toggle(self) -> None:
         chips = build_product_chips(

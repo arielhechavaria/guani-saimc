@@ -3884,7 +3884,6 @@ tres causas conocidas por las que se pierden fotos —el backfill filtra a solo
 texto y pide `downloadMedia=false`, el caption le gana a la foto en el
 webhook, y `image/webp` está excluido—, que siguen abiertas.
 
-<<<<<<< HEAD
 ## 2026-08-21 — Las fotos históricas de un canal no se pueden recuperar de WAHA
 
 Contexto: tras el logging de descartes se abrió el slice de traer las fotos
@@ -3956,8 +3955,7 @@ divergencia medición/producción que se corrigió dos veces este mismo día.
 
 Consecuencia: el próximo paso es leer `journalctl -u saimc -g
 webhook.descartado` cuando el canal publique fotos, y recién ahí decidir.
-=======
->>>>>>> umbral-en-anuncios
+
 ## 2026-08-21 — El conjunto de referencia de H0 se cuenta en anuncios
 
 Contexto: revisando qué significan los contadores de `/control` apareció que
@@ -4001,7 +3999,6 @@ y lo que falta de 89 filas a **170 anuncios**. A ~21 filas/día eso es unas
 tres semanas, no cuatro días. El número de H0 no cambia (40.8%); cambia
 cuándo se lo puede llamar oficial. La medición anterior se habría declarado
 oficial con menos de la mitad de la evidencia que la spec pide.
-<<<<<<< HEAD
 
 ## 2026-08-22 — Sugerencia asistida de descarte, por regla explícita y no por similitud de texto
 
@@ -4619,8 +4616,6 @@ filtrable por Bloqueo. La entrada de `test_ninguna_vista_pide_assets_a_la_red`
 que pasaba en vacío, las dos filas de Picadillo sin cubrir por el detector y el
 posible duplicado de Arroz/Santiago —hallazgos que solo vivían en la
 conversación— quedaron con su propia tarjeta en el Project para no perderse.
-=======
->>>>>>> umbral-en-anuncios
 
 ## 2026-08-23 — Rediseño Material 3 de la home pública, opción 1A
 
@@ -7627,3 +7622,39 @@ de tocar esa bandeja.
 Consecuencia: `public_home.html` es el único archivo tocado (CSS y script
 inline, sin JS nuevo por separado). `tests/test_static_assets.py` sigue en
 verde (clases del taskbar definidas en el `<style>` local).
+
+## 2026-09-11 — El chip de producto activo deja de cerrar su panel al clickearlo
+Contexto: con las ventanas ya manejables por su cuenta (×, minimizar, la barra
+de minimizados de hoy mismo), el operador notó que un chip activo seguía
+actuando como apagador: un clic sobre un chip ya prendido lo togglea a
+apagado y `product_panels` deja de incluirlo, así que la ventana desaparece
+sin pasar por su propia ×. Lo señaló como error propio de la decisión original
+(slice 2, 2026-09-10): dos controles —el chip y la ×— cerraban lo mismo, y el
+chip lo hacía sin avisar.
+Decisión: `build_product_chips` deja el conjunto activo sin cambios cuando el
+chip clickeado ya estaba prendido (antes lo sacaba); prender uno apagado sigue
+igual. Cerrar un panel es exclusivamente la × de `ProductPanel.close_query`
+(`panel_view.py`), que no se tocó.
+Descartado: deshabilitar el link del chip activo en el HTML (`pointer-events`
+o quitar el `href`) — más superficie de cambio (plantilla + CSS) para el mismo
+resultado; la solución en `product_nav.py` alcanza y no toca la plantilla.
+Consecuencia: `test_togglear_un_prendido_lo_quita` (`test_public_filter.py`)
+pasa a `test_un_chip_prendido_no_se_apaga_al_clickearlo`, con el aserto
+invertido. El resto de los chips (íconos, orden, `aria-pressed`) no cambia.
+
+## 2026-09-11 — Marcadores de conflicto sin resolver en `decisions.md`, limpiados
+Contexto: al mergear el slice de la barra de minimizados apareció un conflicto
+en este archivo; investigándolo aparecieron OTROS marcadores (`<<<<<<<` /
+`=======` / `>>>>>>>`) ya commiteados en `master` desde antes, de un merge
+viejo (`f479718`, "merge umbral-en-anuncios..."), alrededor de las entradas de
+agosto de fotos de WAHA y de la sugerencia de descarte. Sin relación con el
+slice de hoy.
+Decisión: en los dos bloques, el lado `umbral-en-anuncios` estaba vacío —no
+había contenido en conflicto real, solo los marcadores sin limpiar tras un
+merge trivial—. Se quitaron los tres marcadores de cada bloque; el contenido
+de las entradas de agosto queda intacto, tal como estaba del lado `HEAD`.
+Descartado: nada — no había dos versiones que reconciliar, era puro
+recorte de marcadores.
+Consecuencia: se barrió el archivo entero con
+`grep -n '^<<<<<<<\|^=======\|^>>>>>>>'` después del arreglo: cero coincidencias,
+no quedó texto de conflicto sin resolver en ningún otro lado.
