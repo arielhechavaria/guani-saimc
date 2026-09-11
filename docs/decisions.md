@@ -7615,11 +7615,15 @@ Decisión: `.is-min` ahora oculta la ventana entera; un `<div data-taskbar>`
 nuevo, armado por `actualizarTaskbar()` en el script del pie a partir de
 `estado` y el DOM (sin estado propio), junta un botón por ventana minimizada
 —ícono si lo tiene (paneles de producto) y nombre— y restaura al clic. Aparece
-solo si hay algo minimizado. En escritorio es una franja fija a la izquierda
-del escenario; en angosto, sin costado libre, baja a una segunda línea debajo
-del riel de chips (decisión del operador ante la pregunta directa).
-Descartado: reemplazar la bandeja inferior de angosto por la misma barra
-lateral —compite por el ancho ya escaso de los chips.
+solo si hay algo minimizado. Franja fija al borde derecho del escenario,
+igual en escritorio y en angosto (ajustado el mismo día: la primera versión
+la ponía a la izquierda y la angosta la bajaba a una línea bajo los chips; el
+operador pidió el mismo lado siempre). Con fondo y borde propios
+(`--m3-surface` + `--m3-outline-variant`): es un panel de cosas abiertas, no
+un chip más, y flotando sin límite no se leía como tal.
+Descartado: reemplazar la bandeja inferior de angosto por la barra lateral
+—compite por el ancho ya escaso de los chips; se optó por superponerla en vez
+de tocar esa bandeja.
 Consecuencia: `public_home.html` es el único archivo tocado (CSS y script
 inline, sin JS nuevo por separado). `tests/test_static_assets.py` sigue en
 verde (clases del taskbar definidas en el `<style>` local).

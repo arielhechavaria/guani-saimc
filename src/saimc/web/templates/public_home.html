@@ -351,25 +351,28 @@
   /* ── Barra de minimizados, estilo lanzador de Ubuntu ───────────────────
      Aparece sola cuando hay al menos una ventana minimizada; vacía, queda
      oculta y no ocupa lugar ni bloquea clics (la arma `actualizarTaskbar()`
-     en el script del pie). En escritorio es una franja fija a la izquierda
-     del escenario; en angosto no hay costado libre, así que baja a una
-     segunda línea debajo del riel de chips (ver media query más abajo). */
+     en el script del pie). Franja fija al borde derecho del escenario, igual
+     en escritorio y en angosto: es un panel de cosas abiertas, no un chip
+     más, así que lleva fondo y borde propios en vez de flotar sin límite. */
   .ph-taskbar {
-    position: fixed; left: .6rem; top: 50%; transform: translateY(-50%); z-index: 45;
-    display: flex; flex-direction: column; gap: .35rem;
+    position: fixed; right: .6rem; top: 50%; transform: translateY(-50%); z-index: 45;
+    display: flex; flex-direction: column; gap: .3rem;
     max-height: calc(100dvh - 2rem); overflow-y: auto;
+    padding: .5rem; border-radius: var(--m3-radius-lg);
+    background: var(--m3-surface);
+    background: color-mix(in srgb, var(--m3-surface) 96%, transparent);
+    border: 1px solid var(--m3-outline-variant);
+    box-shadow: var(--ph-elev);
   }
   .ph-taskbar[hidden] { display: none; }
   .ph-tb-item {
     display: flex; align-items: center; gap: .4rem; flex: none; max-width: 9rem;
-    padding: .4rem .7rem; border-radius: var(--m3-radius-full); border: 0;
-    background: var(--m3-surface);
-    background: color-mix(in srgb, var(--m3-surface) 94%, transparent);
-    box-shadow: var(--ph-elev);
+    padding: .4rem .6rem; border-radius: var(--m3-radius-md); border: 0;
+    background: transparent;
     color: var(--m3-on-surface-variant);
     font: 500 .75rem var(--m3-font); white-space: nowrap; cursor: pointer;
   }
-  .ph-tb-item:hover { color: var(--ph-accent); }
+  .ph-tb-item:hover { background: var(--m3-surface-container-high); color: var(--m3-on-surface); }
   .ph-tb-icon { font-size: 18px; flex: none; }
   .ph-tb-name { overflow: hidden; text-overflow: ellipsis; }
 
@@ -471,14 +474,6 @@
   @media (max-width: 720px) {
     .ph-topbar { padding: .55rem .9rem; }
     .ph-chip-rail { padding: .5rem .9rem 0; }
-    /* Sin costado libre en angosto: la barra de minimizados baja a una
-       segunda línea, debajo del riel de chips, en vez de flotar a la izquierda. */
-    .ph-taskbar {
-      position: static; left: auto; top: auto; transform: none;
-      flex-direction: row; max-height: none; overflow-x: auto; overflow-y: visible;
-      padding: .4rem .9rem 0;
-    }
-    .ph-tb-item { max-width: none; }
     .ph-stage { padding: .5rem .5rem 2rem; }
     .ph-dock {
       inset: auto 0 0 0; max-height: 62%;
