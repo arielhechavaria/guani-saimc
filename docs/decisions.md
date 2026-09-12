@@ -8493,3 +8493,85 @@ visible siempre» (2026-09-11). Suite: 1580 pasan, 1 saltea — mismo número
 que antes de tocar el relieve. Sin decisión tomada sobre tiles en vivo;
 retomar exige elegir proveedor comercial o autohospedaje, cada uno con su
 propio apartamiento a registrar aparte.
+
+## 2026-09-12 — El mapa pasa de SVG a Leaflet interactivo (tiles de OSM)
+
+Contexto: cerrando el hilo de las tres entradas anteriores (relieve
+Natural Earth revertido por pixelado al zoom → tiles en vivo elegidos
+sabiendo el costo → política de uso de OSM señalada), el operador confirmó
+«vamos con OpenStreetMap cueste lo que cueste». **Apartamiento consciente
+de la decisión cerrada 1** de CLAUDE.md (nada de motor de mapas ni
+dependencia de red en runtime, por la conexión del usuario final cubano):
+el operador la rompe a sabiendas, no por iniciativa de la sesión.
+
+Decisión — fuente de tiles: el servidor público de OSM
+(`tile.openstreetmap.org`) directo, sin API key, para no bloquear al
+operador con un alta de cuenta. Es apto para el volumen bajo de Fase 0
+(CLAUDE.md: ~1h de carga diaria) pero corre contra la política de uso de
+OSM para producción con usuarios reales sin arreglo previo — riesgo
+consciente, no escondido; si el tráfico crece, esto necesita moverse a un
+proveedor comercial (MapTiler/Stadia) o autohospedaje.
+
+Decisión — geometría: `map_cuba.py` (rutas SVG proyectadas) se borra.
+`tools/build_cuba_geojson.py`, nueva herramienta (mismo shapefile de
+`build_cuba_map.py`, reutiliza sus funciones de parseo), genera
+`static/cuba_provincias.geojson` — lon/lat real, no proyectado, con
+`slug` en cada feature para emparejar con el dato del server sin
+reimplementar `product_slug` en JS. Cada provincia es un `MultiPolygon`
+—no `Polygon`—: los cayos que sobreviven al filtro de área son tierra
+separada, no agujeros.
+
+Decisión — `map_view.py`: pierde `path`/`viewbox`. `build_map` ahora recibe
+`province_names` de afuera (`_all_province_names(db)`, la misma consulta
+que ya resolvía `?provincia=`) en vez de leerlos de la geometría —la
+geometría ya no vive en Python, vive en el `.geojson` estático—. Esto
+cambia un invariante real: antes las 16 provincias aparecían siempre
+aunque la tabla `provinces` estuviera vacía (la geometría las traía
+igual); ahora dependen de que la tabla esté sembrada, como en producción
+siempre lo está. Los tests que asumían lo viejo necesitan sembrar la
+tabla explícitamente (`_seed_provincias` en `test_public_map.py`).
+
+Decisión — integración: `routers/public.py` arma `map_provinces_json`
+(slug/estado/etiqueta/conteo/densidad/query por provincia) y lo deja en
+`<script id="ph-map-data">`; el JS del pie (`inicializarMapa`,
+`estiloDeProvincia`, `estiloAlPasarElMouse`, `navegarAProvincia`) lo lee
+junto con el `.geojson` (cacheado en `window.__cubaGeoJSON` para no
+pedirlo de nuevo en cada swap de htmx) y arma el mapa con Leaflet.
+`mapaLeaflet.remove()` antes de cada `inicializarMapa()` porque
+`htmx:afterSettle` reemplaza el `<div>` entero. Colores por tokens CSS
+reales (`getComputedStyle`, no hex duplicado): un `<path>` de Leaflet es
+un atributo de presentación SVG puesto por `setAttribute`, que no
+resuelve `var(--token)`. Clic navega con `htmx.ajax(..., pushUrl: true)`,
+mismo patrón que cualquier otro `hx-get` de la página.
+
+Cambio de comportamiento notado a propósito: con el SVG, elegir una
+provincia hacía que el server dejara de dibujar las otras 15 (pedido
+del operador el 2026-09-11). Con Leaflet las 16 siempre viajan —la
+geometría es un archivo estático que no cambia con el filtro, y esconder
+polígonos dejaría huecos sin color en cuanto el usuario hiciera pan—: la
+provincia elegida se resalta y las demás se atenúan (`opacidadRelleno *
+0.35`), mismo vocabulario «resaltar/atenuada» que ya usan los gráficos de
+comparación entre provincias.
+
+Vendorizado: Leaflet 1.9.4 (BSD-2-Clause), verificado byte a byte contra
+el `integrity` sha512 de npm antes de extraerlo — mismo trato que htmx y
+marked. Los íconos de `dist/images/` (control de capas, marcador por
+defecto) viajan aunque el mapa no los use hoy, para que `leaflet.css` no
+pida al vacío un archivo que no está.
+
+**Lo que se pierde de cobertura de tests**: con el SVG, pytest podía
+afirmar qué color pintaba cada provincia (`is-publicada`, `is-densidad`,
+etc.) porque el color era una clase CSS puesta por el server. Con Leaflet
+ese color lo decide `estiloDeProvincia()` en el navegador — pytest no
+ejecuta JS, así que ya no puede probarlo. Lo que sigue cubierto es el
+contrato de datos que ese script consume (`#ph-map-data`, `data-provincia`,
+`data-capa`, el `.geojson`); si ese contrato se rompe, el JS falla en
+silencio y el test lo agarra antes que un usuario. Verificación visual
+real queda pendiente del operador — no hay navegador en este entorno.
+
+Consecuencia: `tests/test_public_map.py` reescrito case por caso
+(`TestGeometria` contra el `.geojson`, no `map_cuba`; `TestCapaDelMapa`
+contra el JSON de datos, no clases SVG). `tests/test_static_assets.py`
+suma verificación de cadena de suministro de Leaflet y confirma —no
+esconde— que `tile.openstreetmap.org` aparece en la página. Suite: 1585
+pasan, 1 saltea.
