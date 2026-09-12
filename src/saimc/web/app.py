@@ -106,12 +106,6 @@ _CSS_PATH = Path(__file__).parent / "static" / "saimc-material.css"
 # navegador con una copia vieja.
 _PUBLIC_CSS_PATH = Path(__file__).parent / "static" / "saimc-public.css"
 
-# Fondo de relieve del mapa (2026-09-12, `tools/build_cuba_relief.py`). Mismo
-# motivo de versionado por mtime que el CSS: cambia poco —solo si se
-# regenera el asset— pero cuando cambia, el navegador no debe quedarse con
-# la versión vieja.
-_RELIEF_PATH = Path(__file__).parent / "static" / "relieve_cuba.webp"
-
 
 def _css_version() -> int:
     return int(_CSS_PATH.stat().st_mtime)
@@ -121,13 +115,8 @@ def _public_css_version() -> int:
     return int(_PUBLIC_CSS_PATH.stat().st_mtime)
 
 
-def _relief_version() -> int:
-    return int(_RELIEF_PATH.stat().st_mtime)
-
-
 app.state.templates.env.globals["css_version"] = _css_version
 app.state.templates.env.globals["public_css_version"] = _public_css_version
-app.state.templates.env.globals["relief_version"] = _relief_version
 
 # htmx vendorizado (ADR 001, `docs/decisions/001-stack-python-unico.md`). No se
 # carga en ninguna plantilla todavía: el dashboard es quien lo va a usar, y la

@@ -8442,3 +8442,54 @@ Consecuencia: dos tests nuevos en `TestAssetsVendorizados`
 (`tests/test_static_assets.py`) — que el asset se sirve como
 `image/webp`, y que la home pública lo referencia versionado. Suite: 1582
 pasan, 1 saltea.
+
+## 2026-09-12 — Fondo de relieve revertido; tiles en vivo, pausado
+
+Contexto: probado en el sitio real, el operador reportó el problema que el
+ráster de la entrada anterior no podía resolver: al no ser interactivo, no
+se ajusta a la pantalla, y al hacer zoom a una provincia (hasta 6×, `ZOOM_TOPE`
+en el script del mapa) se ve pixelado — ~650×207 px reales estirados bien
+más allá de su resolución nativa. El SVG vectorial no tiene ese problema
+—escala infinita, siempre nítido—, que es justamente lo que el fondo
+ráster sacrificaba a cambio de textura.
+
+El operador preguntó si la salida era OSM. Aclarado antes de tocar nada: el
+pixelado al zoom NO es un problema de fuente de datos (Natural Earth vs.
+OSM) — es un problema de imagen estática vs. interactivo. Un extracto único
+de OSM tendría el mismo techo de resolución. Lo único que de verdad resuelve
+«se ajusta a la pantalla y no se rompe con el zoom» es tiles interactivos en
+vivo (Leaflet u otro visor + un servidor de tiles) — pero eso es exactamente
+la dependencia de red en runtime que la decisión cerrada 1 prohíbe, y esa
+decisión protege la conexión del usuario final cubano, no la del entorno de
+desarrollo.
+
+El operador eligió esa vía (tiles en vivo) sabiendo el costo. Antes de
+construir nada se le señaló un segundo costo, operacional: el servidor de
+tiles gratuito de OpenStreetMap prohíbe en su política de uso que un sitio
+en producción con usuarios reales lo consuma sin arreglo previo —y esto ya
+está en producción (CLAUDE.md, Fase 0)—, así que las vías reales son un
+proveedor comercial (MapTiler/Stadia/Thunderforest, de pago) o
+autohospedar un servidor de tiles propio (que choca con la decisión
+cerrada 4: nada de infraestructura pesada antes de validar H0). Con las dos
+decisiones cerradas en juego (1 y 4) y ningún camino gratis y sin costo de
+infraestructura, el operador prefirió pausar en vez de decidir apurado.
+
+Decisión: se revierte el fondo de relieve de la entrada anterior —
+`tools/build_cuba_relief.py`, `relieve_cuba.webp`, `relief_version()`, el
+`<image>` del SVG, el `fill-opacity` de los tres estados y los dos tests de
+`TestAssetsVendorizados`—. El mapa vuelve a ser 100% vectorial, como antes
+de esa entrada. Esta entrada NO se borra —el archivo es de anexado—: queda
+como registro de lo que se probó, por qué no alcanzó, y las dos decisiones
+cerradas (1 y 4) que cualquier vía de tiles en vivo tiene que asumir a
+sabiendas si se retoma.
+
+Descartado, por ahora: fondo híbrido (relieve ráster solo en la vista de
+Cuba entera, plano al zoomear a una provincia) — se ofreció como opción
+intermedia sin costo de red ni de licencia; el operador prefirió ir
+directo a evaluar tiles en vivo.
+
+Consecuencia: código vuelto al estado de la entrada «Selector de provincia
+visible siempre» (2026-09-11). Suite: 1580 pasan, 1 saltea — mismo número
+que antes de tocar el relieve. Sin decisión tomada sobre tiles en vivo;
+retomar exige elegir proveedor comercial o autohospedaje, cada uno con su
+propio apartamiento a registrar aparte.

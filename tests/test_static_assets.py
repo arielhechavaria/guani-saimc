@@ -101,22 +101,6 @@ class TestAssetsVendorizados:
         assert response.status_code == 200
         assert "--m3-primary" in response.text
 
-    def test_el_relieve_del_mapa_se_sirve(self, client: TestClient) -> None:
-        """Fondo de relieve del mapa (2026-09-12, `tools/build_cuba_relief.py`),
-        Natural Earth, dominio público — mismo trato de versionado por mtime
-        que el CSS."""
-        response = client.get("/static/relieve_cuba.webp")
-
-        assert response.status_code == 200
-        assert response.headers["content-type"] == "image/webp"
-
-    def test_la_home_publica_referencia_el_relieve_versionado(
-        self, client: TestClient
-    ) -> None:
-        texto = client.get("/").text
-
-        assert '/static/relieve_cuba.webp?v=' in texto
-
     def test_la_home_publica_no_carga_la_hoja_del_operador(
         self, client: TestClient
     ) -> None:

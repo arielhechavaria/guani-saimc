@@ -38,14 +38,9 @@
      se ve del mismo grosor a cualquier zoom, como espera cualquier mapa. */
   .ph-map { width: 100%; height: auto; display: block; }
   .ph-map-province { stroke-width: 1.1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  /* `fill-opacity` (2026-09-12): con el fondo de relieve nuevo detrás, un
-     relleno opaco lo taparía entero. .55 deja leer el color de estado sin
-     esconder el relieve —medido a ojo, es el punto donde las tres franjas
-     de color siguen siendo obvias una contra otra sin que el mapa vuelva a
-     verse plano—. */
-  .ph-map-province.is-publicada { fill: var(--m3-primary-container); stroke: var(--m3-primary); fill-opacity: .55; }
-  .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: var(--ph-accent-2-line); fill-opacity: .55; }
-  .ph-map-province.is-sin-datos { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); fill-opacity: .55; }
+  .ph-map-province.is-publicada { fill: var(--m3-primary-container); stroke: var(--m3-primary); }
+  .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: var(--ph-accent-2-line); }
+  .ph-map-province.is-sin-datos { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); }
 
   /* Capa «densidad de anuncios» (2026-09-11): una sola tinta, opacidad
      continua según `MapProvince.density_ratio` (relativa al máximo actual,
@@ -312,7 +307,6 @@
   .ph-canvas .ph-map-province:hover {
     fill: color-mix(in srgb, var(--ph-accent) 24%, var(--m3-surface));
     stroke: var(--ph-accent);
-    fill-opacity: .85;
   }
 
   .ph-canvas-legend {
@@ -680,18 +674,6 @@
        el dato en forma accesible. Cada provincia abre su hoja de detalle. #}
     <svg class="ph-map" viewBox="{{ map.viewbox }}" role="img"
          aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}">
-      {# Fondo de relieve (2026-09-12): `relieve_cuba.webp`, generado por
-         `tools/build_cuba_relief.py` desde Natural Earth (mismo crédito que
-         ya lleva el pie del mapa, dominio público, sin atribución nueva).
-         Comparte el mismo `viewBox` que las 16 rutas —recortado y escalado
-         al mismo bounding box y proyección, ver el docstring de esa
-         herramienta— así que se alinea sin ningún cálculo en JS, y hace
-         zoom junto con ellas porque es del mismo `<svg>`. Las provincias van
-         semitransparentes (`fill-opacity` en cada `.is-*`) para que el
-         relieve se siga viendo debajo del color de estado/densidad. #}
-      <image href="/static/relieve_cuba.webp?v={{ relief_version() }}"
-             x="0" y="0" width="{{ map.viewbox.split()[2] }}" height="{{ map.viewbox.split()[3] }}"
-             preserveAspectRatio="none" aria-hidden="true"/>
       {% for province in map.provinces %}
       {# Con una provincia elegida, el mapa deja de dibujar las otras 15: el
          operador pidió que «lo único que se pinte sea esa provincia», no
