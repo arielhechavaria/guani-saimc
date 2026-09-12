@@ -114,10 +114,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--m3-primary); text-decoration: none; }
-a:hover { color: var(--m3-primary); text-decoration: underline; }
+/* El acento de la capa pública es `--ph-accent` (azul), NO `--m3-primary`
+   (teal). El 2026-09-04 se decidió que son dos colores de marca deliberados
+   —el visitante ve azul, el operador teal— y esta hoja seguía pintando cada
+   enlace y cada anillo de foco con el teal del operador. La home no lo
+   delataba porque no tiene enlaces sueltos en el cuerpo: se veía en
+   `/anuncio/<id>` («← Volver a precios») y en el pie del shell. */
+a { color: var(--ph-accent); text-decoration: none; }
+a:hover { color: var(--ph-accent); text-decoration: underline; }
 
-:focus-visible { outline: 2px solid var(--m3-primary); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--ph-accent); outline-offset: 2px; }
 ::selection { background: var(--m3-surface-container-high); }
 
 /* Roboto, Roboto Mono y Alice vendorizadas en /static/fonts, subset latin.
@@ -187,3 +193,89 @@ a:hover { color: var(--m3-primary); text-decoration: underline; }
   margin: var(--m3-space-1) 0 0; font-size: 14px; line-height: 20px;
   color: var(--m3-on-surface-variant); max-width: 62ch; text-wrap: pretty;
 }
+
+/* ── Shell público (`_public_shell.html`) ─────────────────────────────────
+   Estas seis clases estaban en el markup del shell desde que existe la capa
+   pública y NO tenían ninguna regla en ninguna hoja: `.m3-public`,
+   `.m3-public-top`, `.m3-kicker`, `.m3-title`, `.m3-public-main` y
+   `.m3-public-foot`.
+
+   Nadie lo vio porque las dos vistas que más se miran lo tapan sin quererlo:
+   `public_home.html` sobrescribe `{% block heading %}` y `{% block subtitle %}`
+   en vacío —su titular vive en la barra del lienzo— y trae ~600 líneas de
+   `<style>` propio. La única vista que renderiza el shell tal cual es
+   `/anuncio/<id>` (`public_evidence.html`), y salía a sangre contra los
+   bordes de la ventana, con el `<h1>` en el default del navegador (Times
+   bold) en vez del serif editorial.
+
+   La voz es la misma que ya usa la home en sus ventanas: `--ph-font-heading`
+   (Alice) en peso 400 para el titular, el kicker en versalitas chicas, y el
+   pie separado por un filete. */
+.m3-public {
+  max-width: 64rem;
+  /* `min-height` + columna para que el pie quede abajo también en una página
+     corta como `/anuncio/<id>`, sin `position: absolute`. */
+  min-height: 100vh; min-height: 100dvh;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 2.5rem) var(--m3-space-8);
+  display: flex; flex-direction: column;
+}
+
+.m3-public-top { padding: clamp(1.75rem, 5vw, 3rem) 0 var(--m3-space-5); }
+
+/* Mismo tratamiento que `.ph-win-tag` de la home: versalita chica y espaciada
+   que dice el contexto sin competir con el titular. */
+.m3-kicker {
+  font-size: 11px; line-height: 16px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--m3-on-surface-variant);
+}
+
+.m3-title {
+  margin: var(--m3-space-2) 0 0;
+  font-family: var(--ph-font-heading); font-weight: 400;
+  /* Escala fluida: 26px en teléfono, 38px en escritorio. Sin `clamp` el
+     titular de `/anuncio/<id>` («El anuncio detrás de este precio») envuelve
+     a tres líneas en 360px. */
+  font-size: clamp(1.625rem, 1.1rem + 2.2vw, 2.375rem);
+  line-height: 1.15; letter-spacing: -.01em;
+  color: var(--m3-on-surface);
+  max-width: 34ch; text-wrap: balance;
+}
+
+.m3-public-main { flex: 1; min-width: 0; }
+
+.m3-public-foot {
+  margin-top: var(--m3-space-8); padding-top: var(--m3-space-5);
+  border-top: 1px solid var(--m3-divider);
+  font-size: 12px; line-height: 18px;
+  color: var(--m3-on-surface-variant);
+}
+.m3-public-foot p { margin: 0 0 var(--m3-space-2); max-width: 62ch; text-wrap: pretty; }
+.m3-public-foot p:last-child { margin-bottom: 0; }
+/* El pie es texto secundario: el enlace hereda su gris y se distingue por el
+   subrayado, en vez de meter un azul saturado en el bloque más apagado. */
+.m3-public-foot a { color: inherit; text-decoration: underline; }
+
+/* ── Tarjeta de evidencia (`/anuncio/<id>`) ───────────────────────────────
+   Clase propia y NO `.ph-table-card`: ese nombre ya existe en el `<style>`
+   de la home con otro trabajo (contenedor de scroll de una tabla, muchas
+   veces anidado adentro de una ventana que ya tiene superficie). Darle fondo
+   y sombra al nombre compartido habría puesto tarjeta sobre tarjeta en la
+   home. Misma superficie que `.ph-win`/`.ph-fpanel`, eso sí. */
+.ph-evidence-card {
+  border-radius: var(--ph-radius-sm);
+  background: var(--m3-surface);
+  box-shadow: var(--ph-elev);
+  padding: clamp(1rem, 3vw, 1.5rem);
+  overflow-x: auto;
+}
+.ph-evidence-text {
+  margin: 0;
+  font: 400 14px/22px var(--m3-mono);
+  /* El anuncio se muestra tal como se publicó: envuelve, no se recorta ni
+     abre scroll horizontal, y una palabra sin espacios (una URL pegada) se
+     parte antes que desbordar. */
+  white-space: pre-wrap; word-break: break-word;
+}
+
+.m3-public-back { margin-top: var(--m3-space-5); }

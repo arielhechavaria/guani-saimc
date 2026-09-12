@@ -15,6 +15,7 @@ Lo que estos casos protegen:
 
 import csv
 import io
+import re
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -1711,3 +1712,18 @@ class TestVarianteEnTarjetaPublica:
         texto = client.get("/").text
 
         assert "girasol Vitalín importado" in texto
+        # `.ph-card-variant` no tenía NINGUNA regla (2026-09-12): el `<div>`
+        # con la variante renderizaba de bloque a full width, pegado al
+        # titular, sin el tratamiento secundario que ya usa `.ph-card-median`.
+        assert 'class="ph-card-variant"' in texto
+        assert re.search(r"\.ph-card-variant\b[^{]*\{[^}]*\}", texto)
+
+    def test_la_tarjeta_publica_declara_estilo_para_el_formato(
+        self, client: TestClient
+    ) -> None:
+        """Mismo hallazgo que la variante, para `.ph-card-format` — el `<div>`
+        del formato declarado («Bolsa 1kg») que se muestra entre el titular y
+        el rango de precio."""
+        texto = client.get("/").text
+
+        assert re.search(r"\.ph-card-format\b[^{]*\{[^}]*\}", texto)

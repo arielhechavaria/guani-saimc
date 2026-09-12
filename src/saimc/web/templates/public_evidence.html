@@ -10,11 +10,11 @@
 {# §10.6 mitigación 2: se muestra el anuncio y su contenido económico, nunca
    la identidad del anunciante. No hay nada acá que identifique el canal o
    grupo de origen — ver el comentario de `public_evidence` en routers/public.py. #}
-<div class="ph-table-card" style="padding:1.5rem">
-  <pre style="white-space:pre-wrap; word-break:break-word; margin:0; font:400 14px/22px var(--m3-mono);">{{ original_text }}</pre>
+<div class="ph-evidence-card">
+  <pre class="ph-evidence-text">{{ original_text }}</pre>
 </div>
 
-<p class="m3-subtitle" style="margin-top:1.25rem">
+<p class="m3-subtitle m3-public-back">
   <a href="/">← Volver a precios y cobertura</a>
 </p>
 {% endblock %}

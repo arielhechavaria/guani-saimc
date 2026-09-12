@@ -106,3 +106,58 @@ class TestEvidenciaPublica:
 
         assert response.status_code == 200
         assert "Groupej Morales Surl" not in response.text
+
+
+class TestDeudaEsteticaDelShellPublico:
+    """`_public_shell.html` es el layout que carga esta vista, y hasta el
+    2026-09-12 sus seis clases —`.m3-public`, `.m3-public-top`, `.m3-kicker`,
+    `.m3-title`, `.m3-public-main`, `.m3-public-foot`— no tenían NINGUNA regla
+    en `saimc-public.css`. `public_home.html` lo tapaba con su propio
+    `<style>` (y ocultando `.m3-public-top`); esta vista es la única que
+    renderiza el shell tal cual, así que salía a sangre contra el borde de la
+    ventana, con el `<h1>` en el default del navegador.
+
+    docs/decisions.md, entrada del 2026-09-12 («deudas estéticas de UI»)."""
+
+    def test_el_titular_usa_la_tipografia_editorial(self, client: TestClient, session: Session) -> None:
+        ingestion = _crear_ingestion(session)
+
+        response = client.get(f"/anuncio/{ingestion.id}")
+        hoja = client.get("/static/saimc-public.css").text
+
+        assert response.status_code == 200
+        assert '<h1 class="m3-title">' in response.text
+        assert ".m3-title {" in hoja
+        assert "var(--ph-font-heading)" in hoja[hoja.index(".m3-title {") :]
+
+    def test_la_tarjeta_de_evidencia_tiene_superficie_propia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El `<pre>` con el texto del anuncio vivía en `.ph-table-card`, una
+        clase que solo `public_home.html` define en su `<style>` — acá
+        renderizaba sin fondo, sin sombra y sin padding propio (el
+        `style="padding:1.5rem"` inline era lo único que sobrevivía)."""
+        ingestion = _crear_ingestion(session)
+
+        response = client.get(f"/anuncio/{ingestion.id}")
+        hoja = client.get("/static/saimc-public.css").text
+
+        assert 'class="ph-evidence-card"' in response.text
+        assert 'class="ph-evidence-text"' in response.text
+        assert ".ph-evidence-card {" in hoja
+        assert ".ph-evidence-text {" in hoja
+
+    def test_los_enlaces_publicos_usan_el_acento_azul_no_el_teal_del_operador(
+        self, client: TestClient
+    ) -> None:
+        """El 2026-09-04 se decidió que el acento de la capa pública es
+        `--ph-accent` (azul) y el del operador `--m3-primary` (teal) — dos
+        colores de marca deliberados. `saimc-public.css` pintaba `a { color:
+        var(--m3-primary) }`: el teal del operador colándose en la única
+        capa que el visitante final ve."""
+        hoja = client.get("/static/saimc-public.css").text
+        regla_link = hoja[hoja.index("\na {") :]
+        regla_link = regla_link[: regla_link.index("}")]
+
+        assert "var(--ph-accent)" in regla_link
+        assert "var(--m3-primary)" not in regla_link

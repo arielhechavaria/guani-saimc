@@ -80,6 +80,12 @@
   .ph-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
   .ph-card-product { font-family: var(--ph-font-heading); font-size: 1.25rem; }
   .ph-card-place { font-size: .6875rem; letter-spacing: .1em; text-transform: uppercase; opacity: .65; }
+  /* `format_label`/`variant_label` (card_view.py): metadata condicional entre
+     el titular y el precio — «Bolsa 1kg», «girasol Vitalín importado». Sin
+     regla renderizaban como `<div>` de bloque a full width sin margen,
+     pegados al titular. Mismo tratamiento que `.ph-card-median`: texto
+     secundario, no un chip — no son un estado, son una aclaración. */
+  .ph-card-format, .ph-card-variant { margin-top: .3rem; font-size: .8125rem; opacity: .75; }
   .ph-card-range { display: flex; align-items: baseline; gap: .4rem; margin-top: .8rem;
                    font-variant-numeric: tabular-nums; }
   .ph-card-range .num { font-family: var(--ph-font-heading); font-size: 1.65rem; line-height: 1;

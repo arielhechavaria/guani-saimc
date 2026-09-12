@@ -8658,3 +8658,77 @@ Verificado aparte, con un parser de HTML sobre el render de `/`,
 cierra balanceado en los tres. El conteo sobre la plantilla cruda daba 49
 abiertos contra 48 cerrados, que era artefacto de los `{% if %}` (abren y
 cierran en ramas distintas), no un `<div>` sin cerrar.
+
+## 2026-09-12 — Deudas estéticas de UI: el shell público sin regla, y el acento equivocado
+Contexto: pedido del operador después del cierre del slice del mapa a pantalla
+completa — «dale con las deudas esteticas de ui». Un cruce mecánico de clases
+usadas contra reglas declaradas (markup público vs. `saimc-public.css` + el
+`<style>` inline de `public_home.html`) encontró tres cosas reales, y descartó
+dos falsos positivos.
+
+Decisión: tres arreglos, todos en `src/saimc/web/static/saimc-public.css`.
+
+1. **El shell público (`_public_shell.html`) no tenía NINGUNA regla propia.**
+   `.m3-public`, `.m3-public-top`, `.m3-kicker`, `.m3-title`, `.m3-public-main`
+   y `.m3-public-foot` — las seis clases del layout compartido — llevaban toda
+   la vida sin una sola declaración en `saimc-public.css`. Nadie lo vio porque
+   `public_home.html` las tapa: sobrescribe `heading`/`subtitle` en vacío,
+   oculta `.m3-public-top` con `display: none` y trae ~600 líneas de
+   `<style>` propio. `/anuncio/<id>` (`public_evidence.html`) es la ÚNICA
+   vista que renderiza el shell tal cual, sin tapar nada, y salía a sangre
+   contra el borde de la ventana, con el `<h1>` en el default del navegador
+   (Times bold) en vez del serif editorial. Se agregaron las seis reglas,
+   con la misma voz que ya usan las ventanas de la home: `--ph-font-heading`
+   para el titular, versalita chica para el kicker, pie separado por un
+   filete.
+
+2. **El acento de los enlaces públicos era el teal del operador, no el azul
+   de la marca pública.** `saimc-public.css` pintaba `a { color:
+   var(--m3-primary) }` — `--m3-primary` es el teal de la herramienta
+   interna; el 2026-09-04 se decidió que la capa pública tiene su propio
+   acento, `--ph-accent` (azul), y son dos colores de marca deliberados. La
+   home no lo delataba porque no tiene enlaces sueltos en el cuerpo del
+   texto; se veía en el «← Volver a precios» de `/anuncio/<id>` y en el
+   enlace de Natural Earth del pie. Cambiado a `--ph-accent` en `a`, `a:hover`
+   y `:focus-visible`.
+
+3. **La tarjeta de evidencia (`/anuncio/<id>`) usaba `.ph-table-card`**, una
+   clase que solo el `<style>` de `public_home.html` define — acá renderizaba
+   sin fondo ni sombra, con el único `style="padding:1.5rem"` inline
+   sobreviviendo. Se le dio clase propia, `.ph-evidence-card` (misma
+   superficie que `.ph-win`/`.ph-fpanel`: `--ph-radius-sm`, `--m3-surface`,
+   `--ph-elev`) — no `.ph-table-card`, porque ese nombre ya tiene otro
+   trabajo en la home (contenedor de scroll de una tabla, a veces anidado
+   adentro de una ventana que ya es superficie); reusarlo acá habría puesto
+   tarjeta sobre tarjeta ahí.
+
+4. **`.ph-card-format`/`.ph-card-variant` (tarjetas de precio de `/`) no
+   tenían regla**: el `<div>` del formato declarado («Bolsa 1kg») o la
+   variante («girasol Vitalín importado») renderizaba de bloque a full
+   width, pegado al titular de la tarjeta, sin el tratamiento secundario que
+   ya usa `.ph-card-median` al lado. Mismo tratamiento que ese vecino:
+   `margin-top: .3rem; font-size: .8125rem; opacity: .75`.
+
+Descartado, tras revisar el markup y el CSS base de cada uno: `.ph-filter-
+province` y `.ph-provinces` (la lista de provincias y la tabla de la
+ventana «Precios»). Son modificadores sin ninguna regla propia, pero heredan
+el estilo COMPLETO y funcional de su clase base (`.ph-filter`, `.ph-coverage`)
+— no son un hueco de renderizado, son ganchos de selector sin necesidad
+visual distinta hoy. Inventarles una regla habría sido decorar por decorar,
+sin ninguna razón que lo pida. También descartado: el comentario que menciona
+`ph-attrib` en `public_home.html` — es prosa en pasado explicando qué había
+antes de sacar ese `<p>` (slice anterior), no una clase huérfana en markup.
+
+Fuera de alcance, señalado y no tocado: la deuda de CSS muerto que encontró el
+mismo cruce —14 selectores en el `<style>` de `public_home.html` (`.ph-
+series`, `.ph-serie*`, `.ph-plot*`) que solo estilan `_price_plot.html`, un
+partial que no referencia ningún template ni router— porque es housekeeping
+de código muerto, no una deuda estética, y este slice era específicamente
+sobre lo segundo.
+
+Consecuencia: `tests/test_transparency_layer.py` suma
+`TestDeudaEsteticaDelShellPublico` (3 casos: el `<h1>` usa la tipografía
+editorial, la tarjeta de evidencia tiene su propia superficie, los enlaces
+públicos citan `--ph-accent` y no `--m3-primary`). `tests/test_public_filter.py`
+extiende `TestVarianteEnTarjetaPublica` con la regla de `.ph-card-variant` y
+agrega el caso de `.ph-card-format`. Suite: 1594 pasan, 1 saltea.
