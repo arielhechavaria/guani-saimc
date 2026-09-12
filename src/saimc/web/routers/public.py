@@ -15,6 +15,7 @@ identificador de usuario origen nunca se expone acá.
 
 import csv
 import io
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -184,7 +185,8 @@ def _render_home(
     active_set = frozenset(active_products)
     selected = active_products[0] if len(active_products) == 1 else None
 
-    selected_province = resolve_province(_all_province_names(db), provincia)
+    all_province_names = _all_province_names(db)
+    selected_province = resolve_province(all_province_names, provincia)
     window = resolve_days(dias)
     selected_layer = resolve_layer(capa)
 
@@ -311,11 +313,33 @@ def _render_home(
         provincia=product_slug(selected_province) if selected_province else "",
         dias=window,
     )
+    map_view = build_map(all_province_names, _rows_by_province(db), _published_provinces(db))
+    # El mapa interactivo (Leaflet, 2026-09-12) no recorre `map.provinces` en
+    # Jinja como el SVG de antes: el JS del pie lee este JSON para colorear
+    # cada polígono de `cuba_provincias.geojson` por `slug` y armar el clic a
+    # `province_link`. `separators` compacto porque viaja en el HTML de cada
+    # carga, no para leerlo a mano.
+    map_provinces_json = json.dumps(
+        [
+            {
+                "slug": province.slug,
+                "state": province.state,
+                "label": province.label,
+                "rows": province.rows,
+                "density_ratio": round(province.density_ratio, 3),
+                "query": province_link(province.slug),
+            }
+            for province in map_view.provinces
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     return request.app.state.templates.TemplateResponse(
         request,
         "public_home.html",
         {
-            "map": build_map(_rows_by_province(db), _published_provinces(db)),
+            "map": map_view,
+            "map_provinces_json": map_provinces_json,
             "cards": cards,
             "series": series,
             "window_days": window,

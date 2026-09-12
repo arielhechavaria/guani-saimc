@@ -1,13 +1,26 @@
 """Mapa público: geometría, cobertura y la primera ruta sin operador.
 
-Lo que estos casos protegen no es cómo se ve el mapa —eso se mira— sino tres
-cosas que se rompen en silencio: que los nombres de la geometría sigan
-coincidiendo con los de la tabla `provinces`, que una provincia sin dato
-aparezca igual en vez de desaparecer, y que la vista pública no filtre la
-herramienta del operador.
+Lo que estos casos protegen no es cómo se ve el mapa —eso se mira, y desde
+el 2026-09-12 el color de cada provincia lo decide JS del lado del cliente
+(Leaflet), fuera del alcance de pytest— sino lo que Python sí controla: que
+los nombres de la geometría sigan coincidiendo con los de la tabla
+`provinces`, que una provincia sin dato aparezca igual en vez de
+desaparecer, que el JSON que el JS consume tenga los 16 nombres con su
+estado correcto, y que la vista pública no filtre la herramienta del
+operador.
+
+**Lo que dejó de poder probarse acá** (mapa Leaflet, docs/decisions.md
+2026-09-12): qué color pinta cada polígono, si la capa de densidad se
+aplica, si una provincia elegida se resalta sobre las demás — todo eso
+corre en `estiloDeProvincia()` del script del pie, que pytest no ejecuta.
+Lo que sigue cubierto es el contrato de datos que ese script consume
+(`#ph-map-data`, `data-provincia`, `data-capa`): si ese contrato se rompe,
+el JS falla en silencio y esto se pone rojo antes de que alguien lo note
+navegando.
 """
 
 import importlib.util
+import json
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -31,7 +44,6 @@ from saimc.models import (
 from saimc.models.raw_ingestion import ProcessingStatus
 from saimc.web.app import app
 from saimc.web.deps import get_db
-from saimc.web.map_cuba import PROVINCE_PATHS, VIEWBOX
 from saimc.web.map_view import build_map
 
 
@@ -50,6 +62,34 @@ def _nombres_sembrados() -> set[str]:
     return {name for _code, name in migracion._PROVINCE_CODES}
 
 
+def _geojson() -> dict:
+    ruta = (
+        Path(__file__).resolve().parent.parent
+        / "src" / "saimc" / "web" / "static" / "cuba_provincias.geojson"
+    )
+    return json.loads(ruta.read_text(encoding="utf-8"))
+
+
+def _map_data(texto: str) -> list[dict]:
+    """El `map_provinces_json` que `routers/public.py` deja en
+    `#ph-map-data`: una fila por provincia, lo que el JS lee para colorear
+    y armar el clic. No es HTML que haya que buscar por clase — es JSON."""
+    bloque = texto.split('id="ph-map-data">')[1].split("</script>")[0]
+    return json.loads(bloque)
+
+
+def _seed_provincias(session: Session) -> None:
+    """Las 16 provincias reales, sin ningún precio. `build_map` (desde el
+    2026-09-12) saca los nombres de la tabla `provinces`, no de la
+    geometría —al revés que hasta el 2026-09-11—, así que un test que
+    quiera ver las 16 en `#ph-map-data` tiene que sembrarlas: el fixture
+    `session` arranca con el esquema vacío, sin la migración
+    `0003_seed_provinces.py` que sí corre en producción."""
+    for i, nombre in enumerate(sorted(_nombres_sembrados())):
+        session.add(Province(code=f"p{i:02d}", name=nombre))
+    session.commit()
+
+
 @pytest.fixture
 def client(session: Session) -> Iterator[TestClient]:
     def _get_db_override() -> Iterator[Session]:
@@ -62,37 +102,44 @@ def client(session: Session) -> Iterator[TestClient]:
 
 
 class TestGeometria:
+    """La geometría real ya no vive en el repo como módulo Python
+    (`map_cuba.py` se borró, 2026-09-12, con el mapa SVG que la usaba):
+    vive en `static/cuba_provincias.geojson`, lon/lat de Natural Earth, que
+    Leaflet pide aparte (`tools/build_cuba_geojson.py`)."""
+
     def test_estan_las_dieciseis_provincias(self) -> None:
-        assert len(PROVINCE_PATHS) == 16
+        assert len(_geojson()["features"]) == 16
 
     def test_los_nombres_son_los_de_la_tabla_provinces(self) -> None:
         """El cruce entre geometría y dato se hace por nombre, sin tabla de
         traducción en el medio. Natural Earth trae «Ciudad de la Habana», el
-        nombre anterior a la reorganización de 2011, y `tools/build_cuba_map.py`
-        lo mapea; si esa corrección se pierde al regenerar, La Habana queda
+        nombre anterior a la reorganización de 2011, y
+        `tools/build_cuba_geojson.py` (vía `build_cuba_map.load_cuba`) lo
+        mapea; si esa corrección se pierde al regenerar, La Habana queda
         muda y nada más avisaría."""
-        assert set(PROVINCE_PATHS) == _nombres_sembrados()
+        nombres = {f["properties"]["name"] for f in _geojson()["features"]}
 
-    def test_ninguna_ruta_esta_vacia(self) -> None:
-        for name, path in PROVINCE_PATHS.items():
-            assert path.startswith("M"), name
-            assert path.endswith("Z"), name
-            # Un polígono necesita al menos tres vértices para encerrar área.
-            assert path.count(",") >= 3, name
+        assert nombres == _nombres_sembrados()
 
-    def test_el_viewbox_tiene_las_cuatro_medidas(self) -> None:
-        partes = VIEWBOX.split()
-
-        assert len(partes) == 4
-        assert [float(p) for p in partes[:2]] == [0.0, 0.0]
-        assert all(float(p) > 0 for p in partes[2:])
+    def test_cada_feature_tiene_slug_y_geometria_valida(self) -> None:
+        for feature in _geojson()["features"]:
+            assert feature["properties"]["slug"]
+            assert feature["geometry"]["type"] == "MultiPolygon"
+            polygons = feature["geometry"]["coordinates"]
+            assert len(polygons) >= 1
+            for polygon in polygons:
+                anillo = polygon[0]
+                # Un anillo cerrado (primer punto == último) con al menos
+                # tres vértices distintos encierra área.
+                assert anillo[0] == anillo[-1]
+                assert len(anillo) >= 4
 
 
 class TestBuildMap:
     def test_sin_datos_las_dieciseis_entran_en_cero(self) -> None:
         """El cero es el dato: dice dónde no se está mirando. Una provincia sin
         observaciones tiene que aparecer igual, no desaparecer del mapa."""
-        vista = build_map({})
+        vista = build_map(_nombres_sembrados(), {})
 
         assert len(vista.provinces) == 16
         assert vista.covered == 0
@@ -101,7 +148,9 @@ class TestBuildMap:
         assert all(p.state == "sin-datos" for p in vista.provinces)
 
     def test_cruza_los_conteos_con_la_geometria(self) -> None:
-        vista = build_map({"La Habana": 113, "Santiago de Cuba": 105})
+        vista = build_map(
+            _nombres_sembrados(), {"La Habana": 113, "Santiago de Cuba": 105}
+        )
         por_nombre = {p.name: p for p in vista.provinces}
 
         assert vista.covered == 2
@@ -117,12 +166,14 @@ class TestDensidadDeAnuncios:
     publica, solo cómo se sombrea."""
 
     def test_sin_ninguna_observacion_todas_quedan_en_cero(self) -> None:
-        vista = build_map({})
+        vista = build_map(_nombres_sembrados(), {})
 
         assert all(p.density_ratio == 0.0 for p in vista.provinces)
 
     def test_la_que_mas_tiene_pinta_a_fondo(self) -> None:
-        vista = build_map({"La Habana": 113, "Santiago de Cuba": 105})
+        vista = build_map(
+            _nombres_sembrados(), {"La Habana": 113, "Santiago de Cuba": 105}
+        )
         por_nombre = {p.name: p for p in vista.provinces}
 
         assert por_nombre["La Habana"].density_ratio == 1.0
@@ -134,7 +185,7 @@ class TestDensidadDeAnuncios:
     def test_una_sola_observacion_en_una_provincia_esa_pinta_a_fondo(self) -> None:
         # 1 de 1 es el máximo posible: no hace falta ningún umbral para
         # decidir que esa provincia se sombree al tope.
-        vista = build_map({"La Habana": 1})
+        vista = build_map(_nombres_sembrados(), {"La Habana": 1})
         por_nombre = {p.name: p for p in vista.provinces}
 
         assert por_nombre["La Habana"].density_ratio == 1.0
@@ -150,7 +201,7 @@ class TestEstadoDePublicacion:
 
     def test_con_dato_y_sin_publicar_es_ingesta_no_publicada(self) -> None:
         """El estado real de hoy: se recolecta y no se expone la serie."""
-        vista = build_map({"La Habana": 113})
+        vista = build_map(_nombres_sembrados(), {"La Habana": 113})
         habana = next(p for p in vista.provinces if p.name == "La Habana")
 
         assert habana.has_data
@@ -159,7 +210,7 @@ class TestEstadoDePublicacion:
         assert habana.label == "Recogiendo datos, todavía sin publicar"
 
     def test_publicada_se_muestra_como_tal(self) -> None:
-        vista = build_map({"La Habana": 113}, {"La Habana"})
+        vista = build_map(_nombres_sembrados(), {"La Habana": 113}, {"La Habana"})
         habana = next(p for p in vista.provinces if p.name == "La Habana")
 
         assert habana.state == "publicada"
@@ -168,7 +219,7 @@ class TestEstadoDePublicacion:
     def test_la_publicacion_manda_sobre_la_presencia_de_dato(self) -> None:
         """Publicar es una decisión ya tomada; esconderla porque el conteo está
         en cero sería el opuesto de lo que §9.0 pide mostrar."""
-        vista = build_map({}, {"La Habana"})
+        vista = build_map(_nombres_sembrados(), {}, {"La Habana"})
         habana = next(p for p in vista.provinces if p.name == "La Habana")
 
         assert habana.rows == 0
@@ -177,21 +228,23 @@ class TestEstadoDePublicacion:
     def test_omitir_el_conjunto_equivale_a_ninguna_publicada(self) -> None:
         """El default no afirma nada: una provincia sale publicada solo si
         alguien lo decidió explícitamente en la base."""
-        vista = build_map({"La Habana": 113})
+        vista = build_map(_nombres_sembrados(), {"La Habana": 113})
 
         assert vista.published == 0
         assert all(not p.is_published for p in vista.provinces)
 
     def test_una_provincia_desconocida_no_rompe_el_mapa(self) -> None:
-        """Un nombre que no existe en la geometría se ignora en vez de tumbar
-        la página pública."""
-        vista = build_map({"La Habana": 5, "Provincia Inventada": 99})
+        """Un nombre que no viene en `province_names` se ignora en vez de
+        tumbar la página pública."""
+        vista = build_map(
+            _nombres_sembrados(), {"La Habana": 5, "Provincia Inventada": 99}
+        )
 
         assert len(vista.provinces) == 16
         assert vista.total_rows == 5
 
     def test_las_provincias_salen_ordenadas(self) -> None:
-        nombres = [p.name for p in build_map({}).provinces]
+        nombres = [p.name for p in build_map(_nombres_sembrados(), {}).provinces]
 
         assert nombres == sorted(nombres)
 
@@ -203,22 +256,33 @@ class TestRutaPublica:
 
         assert response.status_code == 200
 
-    def test_dibuja_las_dieciseis_provincias(self, client: TestClient) -> None:
-        texto = client.get("/").text
+    def test_manda_los_datos_de_las_dieciseis_provincias(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`#ph-map-data` (`map_provinces_json`) es el contrato que
+        `estiloDeProvincia()` consume: una fila por provincia, con el mismo
+        slug que trae `cuba_provincias.geojson`, así que el JS las puede
+        emparejar."""
+        _seed_provincias(session)
 
-        for name in PROVINCE_PATHS:
-            assert name in texto
-        # Con el prefijo `class="`, porque el nombre suelto también aparece en
-        # las tres reglas del bloque `<style>`.
-        assert texto.count('class="m3-map-province') == 16
-
-    def test_con_la_base_vacia_no_promete_cobertura(self, client: TestClient) -> None:
         texto = client.get("/").text
-        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
+        filas = _map_data(texto)
+        slugs_geojson = {f["properties"]["slug"] for f in _geojson()["features"]}
+
+        assert len(filas) == 16
+        assert {fila["slug"] for fila in filas} == slugs_geojson
+        for fila in filas:
+            assert fila["state"] == "sin-datos"  # base vacía, ninguna con dato
+
+    def test_con_la_base_vacia_no_promete_cobertura(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_provincias(session)
+
+        texto = client.get("/").text
 
         assert "0 de 16 provincias" in texto
-        assert "is-en-ingesta" not in svg
-        assert svg.count("is-sin-datos") == 16
+        assert all(fila["state"] == "sin-datos" for fila in _map_data(texto))
 
     def test_declara_que_ninguna_provincia_esta_publicada(
         self, client: TestClient
@@ -260,39 +324,42 @@ class TestRutaPublica:
         muestra que §12.6 prohíbe inventar. El mapa distingue cobertura y nada
         más; las tarjetas sí publican precio, con su rótulo y su n.
 
-        (Reemplaza a un caso anterior que exigía que no apareciera «CUP» en
-        toda la página. Era correcto mientras la página fuera solo el mapa, y
-        dejó de serlo al leer §9.0 completa: no prohíbe el precio, prohíbe el
-        valor puntual sin respaldo de muestra.)"""
-        svg = client.get("/").text.split('<svg class="ph-map"')[1].split("</svg>")[0]
+        No hay ningún `is-caro`/`is-barato`/`is-promedio` en ningún lado del
+        proyecto —el coloreado real corre en JS y solo conoce `state` y
+        `density_ratio`, ninguno de los dos deriva de un precio—, así que
+        basta con que la página entera nunca los mencione."""
+        texto = client.get("/").text
 
-        assert "is-con-dato" not in svg or "is-sin-dato" in svg
         for clase in ("is-caro", "is-barato", "is-promedio"):
-            assert clase not in svg
+            assert clase not in texto
 
 
 class TestCapaDelMapa:
     """Selector de capa (2026-09-11): «publicación» (default, sin tocar) y
-    «densidad», presentacional, sin umbral que calibrar."""
+    «densidad», presentacional, sin umbral que calibrar.
+
+    Con el mapa Leaflet (2026-09-12) el color real de cada polígono lo pone
+    `estiloDeProvincia()` en JS, que pytest no ejecuta: lo que estos casos
+    afirman es el contrato de datos que ese script lee —`data-capa` en
+    `.ph-stage` y el `capa` que viaja en el `query` de cada fila de
+    `#ph-map-data`—, no el color final en pantalla."""
 
     def test_por_defecto_es_la_capa_de_publicacion(self, client: TestClient) -> None:
         texto = client.get("/").text
-        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
         assert 'class="ph-layer-toggle"' in texto
-        assert "is-densidad" not in svg
-        assert "is-sin-datos" in svg  # las 16 sin dato, base vacía
+        assert 'data-capa="publicacion"' in texto
 
-    def test_con_capa_densidad_pinta_por_cantidad_no_por_estado(
-        self, client: TestClient
+    def test_con_capa_densidad_queda_en_data_capa(
+        self, client: TestClient, session: Session
     ) -> None:
-        texto = client.get("/?capa=densidad").text
-        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
+        _seed_provincias(session)
 
-        assert "is-densidad" in svg
-        assert "--dens:" in svg
-        for clase in ("is-publicada", "is-en-ingesta", "is-sin-datos"):
-            assert clase not in svg
+        texto = client.get("/?capa=densidad").text
+
+        assert 'data-capa="densidad"' in texto
+        for fila in _map_data(texto):
+            assert 0.0 <= fila["density_ratio"] <= 1.0
 
     def test_una_capa_invalida_no_rompe_cae_a_publicacion(
         self, client: TestClient
@@ -300,22 +367,24 @@ class TestCapaDelMapa:
         r = client.get("/?capa=lo-que-sea")
 
         assert r.status_code == 200
-        assert "is-densidad" not in r.text.split('<svg class="ph-map"')[1].split("</svg>")[0]
+        assert 'data-capa="publicacion"' in r.text
 
     def test_el_enlace_de_una_provincia_preserva_la_capa_elegida(
-        self, client: TestClient
+        self, client: TestClient, session: Session
     ) -> None:
+        _seed_provincias(session)
+
         texto = client.get("/?capa=densidad").text
 
         assert "capa=densidad" in texto.split('id="precios"')[0]
-        # El propio enlace del mapa a la hoja lleva la capa.
-        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
-        assert "capa=densidad" in svg
+        # El `query` de cada fila del mapa —a donde navega el clic sobre el
+        # polígono— también la lleva.
+        assert all("capa=densidad" in fila["query"] for fila in _map_data(texto))
 
     def test_la_provincia_elegida_queda_en_data_provincia(
         self, client: TestClient, session: Session
     ) -> None:
-        # Lo lee `actualizarZoomDelMapa()` del lado del cliente; vacío sin
+        # Lo lee `inicializarMapa()` del lado del cliente; vacío sin
         # ninguna elegida.
         session.add(Province(code="hab", name="La Habana"))
         session.commit()
@@ -323,60 +392,45 @@ class TestCapaDelMapa:
         assert 'data-provincia=""' in client.get("/").text
         assert 'data-provincia="la-habana"' in client.get("/?provincia=la-habana").text
 
-    def test_elegir_provincia_pinta_por_densidad_aunque_la_capa_sea_publicacion(
+    def test_elegir_provincia_no_fuerza_data_capa_a_densidad(
         self, client: TestClient, session: Session
     ) -> None:
         """Acercarse a una provincia (2026-09-11) cambia el enfoque visual a
-        densidad de anuncios, sin que el operador haya tocado el selector de
-        capa — que sigue en su default «publicación»."""
+        densidad de anuncios, pero eso lo decide el JS leyendo
+        `data-provincia` —no un cambio en `data-capa`, que sigue reflejando
+        el selector manual del menú tal cual el operador lo dejó (default
+        «publicación»)."""
         session.add(Province(code="hab", name="La Habana"))
         session.commit()
 
         texto = client.get("/?provincia=la-habana").text
-        svg = texto.split('<svg class="ph-map"')[1].split("</svg>")[0]
 
-        assert "is-densidad" in svg
-        assert "--dens:" in svg
-        for clase in ("is-publicada", "is-en-ingesta", "is-sin-datos"):
-            assert clase not in svg
+        assert 'data-capa="publicacion"' in texto
+        assert 'data-provincia="la-habana"' in texto
 
-    def test_sin_provincia_elegida_la_capa_de_publicacion_sigue_de_estado(
-        self, client: TestClient
-    ) -> None:
-        """El forzado a densidad es del zoom a una provincia, no un cambio al
-        default global: sin provincia elegida el mapa entero sigue pintando
-        por estado de publicación."""
-        svg = client.get("/").text.split('<svg class="ph-map"')[1].split("</svg>")[0]
-
-        assert "is-densidad" not in svg
-
-    def test_con_provincia_elegida_el_mapa_pinta_solo_esa(
+    def test_con_provincia_elegida_el_mapa_sigue_mandando_las_dieciseis(
         self, client: TestClient, session: Session
     ) -> None:
-        """El operador pidió que «lo único que se pinte sea esa provincia»
-        (2026-09-11): con el zoom solo (16 `<path>` en el DOM, recortados por
-        `viewBox`), el margen del zoom dejaba asomar bordes de provincias
-        vecinas. Ahora las otras 15 ni se dibujan."""
-        session.add(Province(code="hab", name="La Habana"))
-        session.commit()
+        """Con el SVG (hasta el 2026-09-11), elegir una provincia hacía que
+        el server dejara de dibujar las otras 15. Con Leaflet (2026-09-12)
+        ya no tiene sentido: la geometría es un archivo estático que no
+        cambia con el filtro, y cuál provincia se resalta es una decisión
+        visual de `estiloDeProvincia()` en el cliente, no una omisión de
+        datos — las 16 siguen viajando siempre en `#ph-map-data`."""
+        _seed_provincias(session)
 
-        svg_todas = client.get("/").text.split('<svg class="ph-map"')[1].split("</svg>")[0]
-        svg_una = (
-            client.get("/?provincia=la-habana")
-            .text.split('<svg class="ph-map"')[1]
-            .split("</svg>")[0]
-        )
+        filas = _map_data(client.get("/?provincia=la-habana").text)
 
-        assert svg_todas.count('data-province="') == 16
-        assert svg_una.count('data-province="') == 1
-        assert 'data-province="la-habana"' in svg_una
+        assert len(filas) == 16
+        assert "la-habana" in {fila["slug"] for fila in filas}
 
     def test_la_leyenda_de_densidad_cuenta_solo_esa_provincia(
         self, client: TestClient, session: Session
     ) -> None:
-        """Antes de esta entrada, con provincia elegida el mapa ya pintaba por
-        densidad (entrada anterior) pero la leyenda de abajo seguía mostrando
-        el conteo de las 16 —desincronizada con lo que el mapa pintaba—."""
+        """La leyenda de abajo del mapa es Jinja puro (no depende del mapa
+        Leaflet ni de su JS): con provincia elegida cuenta esa sola, no las
+        16 —desincronizada antes de la entrada del 2026-09-11 que lo
+        corrigió—."""
         session.add(Province(code="hab", name="La Habana"))
         session.commit()
 

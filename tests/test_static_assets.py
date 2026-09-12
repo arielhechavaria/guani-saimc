@@ -5,6 +5,14 @@ e intermitente, así que una fuente que se cargue desde `fonts.googleapis.com`
 en runtime deja la interfaz sin iconos justo cuando la red falla. Estos casos
 fallan si alguien borra un archivo o vuelve a meter un CDN.
 
+**Excepción única y a propósito, desde el 2026-09-12**: los tiles del mapa
+interactivo (`tile.openstreetmap.org`). Es un apartamiento consciente de la
+misma decisión cerrada 1 que este archivo viene protegiendo —el operador lo
+pidió sabiendo el costo, ver `docs/decisions.md`—, no un descuido. Leaflet
+en sí (el motor) sigue vendorizado como todo lo demás; lo que sale a la red
+en cada pan/zoom son los tiles, que no se pueden vendorizar sin dejar de
+ser un mapa navegable.
+
 La misma restricción manda sobre cuántos bytes viajan, así que acá vive también
 la cobertura de `GZipMiddleware` (`docs/decisions.md`, 2026-08-22).
 """
@@ -19,7 +27,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
-from saimc.web.app import HTMX_VERSION, app
+from saimc.web.app import HTMX_VERSION, LEAFLET_VERSION, app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
 
@@ -41,6 +49,15 @@ HTMX_BYTES = 51_238
 # no un asset.
 MARKED_SHA256 = "69451c8541c9c1e7a4bf3ffc6f73c4d89633de92bfbe3e484dfe182ef8091f88"
 MARKED_BYTES = 44_679
+
+# Leaflet 1.9.4 (BSD-2-Clause), extraído de `package/dist/leaflet.js` y
+# `package/dist/leaflet.css` del tarball oficial de npm después de verificar
+# su `integrity` sha512 publicado (comprobado el 2026-09-12). Mismo criterio
+# que htmx y marked.
+LEAFLET_JS_SHA256 = "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
+LEAFLET_JS_BYTES = 147_552
+LEAFLET_CSS_SHA256 = "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6"
+LEAFLET_CSS_BYTES = 14_806
 
 FUENTES = [
     "/static/fonts/roboto.woff2",
@@ -296,6 +313,64 @@ class TestAssetsVendorizados:
 
         assert len(response.content) == MARKED_BYTES
         assert hashlib.sha256(response.content).hexdigest() == MARKED_SHA256
+
+    def test_leaflet_js_es_el_archivo_que_se_verificó(self, client: TestClient) -> None:
+        """Misma guarda de cadena de suministro que htmx y marked, para el
+        motor del mapa interactivo (2026-09-12)."""
+        response = client.get("/static/leaflet/leaflet.js")
+
+        assert len(response.content) == LEAFLET_JS_BYTES
+        assert hashlib.sha256(response.content).hexdigest() == LEAFLET_JS_SHA256
+
+    def test_leaflet_css_es_el_archivo_que_se_verificó(self, client: TestClient) -> None:
+        response = client.get("/static/leaflet/leaflet.css")
+
+        assert len(response.content) == LEAFLET_CSS_BYTES
+        assert hashlib.sha256(response.content).hexdigest() == LEAFLET_CSS_SHA256
+
+    def test_el_geojson_de_provincias_se_sirve(self, client: TestClient) -> None:
+        """Geometría de las 16 provincias para el mapa Leaflet
+        (`tools/build_cuba_geojson.py`, 2026-09-12) — reemplaza a las rutas
+        SVG que antes vivían en `map_cuba.py` (borrado)."""
+        response = client.get("/static/cuba_provincias.geojson")
+
+        assert response.status_code == 200
+        cuerpo = response.json()
+        assert len(cuerpo["features"]) == 16
+
+    def test_la_home_publica_referencia_el_geojson_versionado(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+
+        assert "/static/cuba_provincias.geojson?v=" in texto
+
+    def test_los_iconos_de_leaflet_se_sirven(self, client: TestClient) -> None:
+        """`leaflet.css` los pide por ruta relativa (`images/marker-icon.png`,
+        etc.) aunque el mapa de provincias no dibuje ningún marcador ni
+        control de capas: sin vendorizarlos, esas dos cosas pedirían un
+        archivo que 404 en silencio si alguna vez se prenden."""
+        for nombre in ("layers.png", "layers-2x.png", "marker-icon.png"):
+            assert client.get(f"/static/leaflet/images/{nombre}").status_code == 200
+
+    def test_la_home_publica_referencia_leaflet_versionado(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+
+        assert f"/static/leaflet/leaflet.js?v={LEAFLET_VERSION}" in texto
+        assert f"/static/leaflet/leaflet.css?v={LEAFLET_VERSION}" in texto
+
+    def test_el_mapa_pide_tiles_a_openstreetmap_a_propósito(
+        self, client: TestClient
+    ) -> None:
+        """La única referencia a un servicio externo que este archivo no
+        prohíbe (ver el docstring del módulo): confirma que sigue ahí y con
+        atribución, en vez de asumirlo."""
+        texto = client.get("/").text
+
+        assert "tile.openstreetmap.org" in texto
+        assert "openstreetmap.org/copyright" in texto
 
     def test_bootstrap_ya_no_existe(self, client: TestClient) -> None:
         assert client.get("/static/bootstrap.min.css").status_code == 404

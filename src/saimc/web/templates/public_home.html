@@ -11,6 +11,11 @@
 {% block subtitle %}{% endblock %}
 
 {% block head %}
+{# Leaflet vendorizado (docs/decisions.md, 2026-09-12 — mapa interactivo,
+   apartamiento consciente de la decisión cerrada 1). Hoja aparte y no
+   inline como el resto: son ~14 KB de un tercero, no reglas propias del
+   proyecto, y así el navegador la cachea igual que el bundle de htmx. #}
+<link rel="stylesheet" href="/static/leaflet/leaflet.css?v={{ leaflet_version() }}" />
 <style>
   /* Van acá y no en una hoja aparte mientras sea la única vista pública: son
      pocas reglas, viajan gzipeadas con el HTML y no suman una petición.
@@ -33,22 +38,15 @@
                    line-height: 1.1; color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
   .ph-stat-value small { font-size: .95rem; color: var(--m3-on-surface-variant); }
 
-  /* `vector-effect: non-scaling-stroke`: al hacer zoom a una provincia (más
-     abajo, `actualizarZoomDelMapa`) el borde no se engrosa con la escala —
-     se ve del mismo grosor a cualquier zoom, como espera cualquier mapa. */
-  .ph-map { width: 100%; height: auto; display: block; }
-  .ph-map-province { stroke-width: 1.1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .ph-map-province.is-publicada { fill: var(--m3-primary-container); stroke: var(--m3-primary); }
-  .ph-map-province.is-en-ingesta { fill: var(--ph-accent-2); stroke: var(--ph-accent-2-line); }
-  .ph-map-province.is-sin-datos { fill: var(--m3-surface-container-high); stroke: var(--m3-outline-variant); }
-
-  /* Capa «densidad de anuncios» (2026-09-11): una sola tinta, opacidad
-     continua según `MapProvince.density_ratio` (relativa al máximo actual,
-     nunca un umbral fijo). `--dens` lo pone el `style=` inline de cada
-     `<path>`; `.12` de piso para que una provincia en cero siga marcando su
-     contorno en vez de desaparecer. */
-  .ph-map-province.is-densidad { fill: var(--ph-accent); stroke: var(--m3-outline-variant);
-                                  fill-opacity: calc(.12 + .78 * var(--dens, 0)); }
+  /* Mapa interactivo (Leaflet, 2026-09-12): el contenedor solo necesita
+     tamaño explícito —Leaflet no tiene el `viewBox` con el que el SVG de
+     antes deducía su alto—; el coloreado por provincia ya no es CSS, lo
+     pone `estiloDeProvincia()` en el script del pie (Leaflet dibuja cada
+     polígono con `setAttribute` directo, que no resuelve `var(--token)`,
+     así que ese script lee los tokens con `getComputedStyle` en vez de
+     duplicarlos acá en hex). */
+  .ph-map { width: 100%; height: 100%; }
+  .ph-map .leaflet-control-attribution { font-size: .6875rem; }
 
   .ph-panel { padding: .9rem 1rem; }
   .ph-panel-title { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
@@ -303,11 +301,13 @@
     padding: .75rem clamp(1rem, 3vw, 2rem) 2rem;
   }
   .ph-stage .ph-map { height: 100%; max-width: 72rem; filter: drop-shadow(var(--m3-elev-1)); }
-  .ph-canvas .ph-map-province { transition: fill .35s ease, stroke .35s ease; cursor: pointer; }
-  .ph-canvas .ph-map-province:hover {
-    fill: color-mix(in srgb, var(--ph-accent) 24%, var(--m3-surface));
-    stroke: var(--ph-accent);
-  }
+  /* El hover de cada provincia ya no es `:hover` de CSS: Leaflet dibuja los
+     polígonos como SVG con atributos puestos por JS (`estiloDeProvincia()`),
+     no clases que una hoja pueda enganchar, así que el resaltado al pasar
+     el mouse también lo maneja ese script (`mouseover`/`mouseout` sobre
+     cada `layer`). El cursor de mano sí es CSS: Leaflet ya marca sus
+     polígonos interactivos con `.leaflet-interactive`. */
+  .ph-map .leaflet-interactive { cursor: pointer; transition: fill-opacity .2s ease; }
 
   .ph-canvas-legend {
     position: absolute; left: clamp(1rem, 3vw, 2rem); bottom: .75rem; z-index: 1;
@@ -537,7 +537,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .ph-win, .ph-fpanel, .ph-plot-dot, .ph-loading .ph-brand-avatar, .ph-loading-dots span { animation: none; }
-    .ph-canvas .ph-map-province, .ph-chip-toggle, .ph-menu-item { transition: none; }
+    .ph-map .leaflet-interactive, .ph-chip-toggle, .ph-menu-item { transition: none; }
   }
 
   /* Angosto: las dos pilas se juntan en una bandeja abajo que scrollea sola;
@@ -665,41 +665,20 @@
   {% endif %}
   {% endif %}
 
-  {# `data-provincia`: la lee `actualizarZoomDelMapa()` en el script del pie
-     para saber a qué provincia encuadrar el mapa, sin repetir la lógica de
-     `resolve_province` en JS. Vacío si no hay ninguna elegida. #}
-  <div class="ph-stage" data-provincia="{{ selected_province_slug }}">
-    {# `role="img"` + `aria-label`: para un lector de pantalla el mapa no dice
-       nada; la tabla «Observaciones por provincia» de la ventana Cobertura lleva
-       el dato en forma accesible. Cada provincia abre su hoja de detalle. #}
-    <svg class="ph-map" viewBox="{{ map.viewbox }}" role="img"
-         aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}">
-      {% for province in map.provinces %}
-      {# Con una provincia elegida, el mapa deja de dibujar las otras 15: el
-         operador pidió que «lo único que se pinte sea esa provincia», no
-         solo que el zoom la encuadre —con las 16 en el DOM, el margen del
-         zoom (`ZOOM_MARGEN` en el script del pie) dejaba asomar bordes de
-         provincias vecinas—. `province.name` contra `selected_province` es
-         la misma comparación por nombre que ya hace `MapProvince.state`. #}
-      {% if not selected_province or province.name == selected_province %}
-      {% set pl = province_link(province.slug) %}
-      <a href="{{ pl }}" hx-get="{{ pl }}" aria-label="{{ province.name }}: ver detalle" data-province="{{ province.slug }}">
-        {# Con una provincia elegida el mapa ya está encuadrado en ella sola
-           (`actualizarZoomDelMapa`): ahí la vista cercana pinta por densidad
-           de anuncios en vez de por estado de publicación, sin importar la
-           capa manual del menú — es el «acercarse revela otra cosa» pedido
-           por el operador (2026-09-11), no un tercer valor de `capa`. #}
-        {% if selected_layer == 'densidad' or selected_province %}
-        <path class="m3-map-province ph-map-province is-densidad" style="--dens: {{ '%.3f' | format(province.density_ratio) }}" d="{{ province.path }}">
-        {% else %}
-        <path class="m3-map-province ph-map-province is-{{ province.state }}" d="{{ province.path }}">
-        {% endif %}
-          <title>{{ province.name }} — {{ province.label }}, {{ province.rows }} observaciones</title>
-        </path>
-      </a>
-      {% endif %}
-      {% endfor %}
-    </svg>
+  {# `data-provincia`/`data-capa`: los lee `inicializarMapa()` en el script
+     del pie para saber qué provincia encuadrar y con qué criterio pintar,
+     sin repetir `resolve_province`/`resolve_layer` en JS. #}
+  <div class="ph-stage" data-provincia="{{ selected_province_slug }}" data-capa="{{ selected_layer }}">
+    {# Mapa interactivo (Leaflet, 2026-09-12): antes era un `<svg>` con las 16
+       rutas dibujadas por el server; ahora es un `<div>` vacío que
+       `inicializarMapa()` llena con tiles de OpenStreetMap + un polígono por
+       provincia, leyendo `cuba_provincias.geojson` (geometría, estática) y
+       el `<script id="ph-map-data">` de acá abajo (estado/cobertura, esto sí
+       cambia con cada filtro). Apartamiento consciente de la decisión
+       cerrada 1 — ver docs/decisions.md, 2026-09-12. #}
+    <div id="ph-leaflet-map" class="ph-map"
+         aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}"></div>
+    <script type="application/json" id="ph-map-data">{{ map_provinces_json | safe }}</script>
 
     <div class="ph-dock">
 
@@ -1168,7 +1147,13 @@
       {% endif %}
     </div>
 
-    <p class="ph-attrib">Mapa: <a href="https://www.naturalearthdata.com/">Natural Earth</a> (dominio público)</p>
+    {# Dos créditos, dos fuentes: los polígonos de provincia siguen siendo de
+       Natural Earth (dominio público, sin cambios); los tiles de fondo son
+       de OpenStreetMap —ODbL, atribución obligatoria—. Leaflet ya pone la
+       suya propia adentro del mapa (`attribution` del tile layer, esquina
+       inferior derecha); esta línea es la misma que ya tenía el pie,
+       ampliada, no un reemplazo. #}
+    <p class="ph-attrib">Mapa: <a href="https://www.naturalearthdata.com/">Natural Earth</a> (dominio público) · Tiles: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</p>
   </div>{# /.ph-stage #}
 </section>
 
@@ -1199,6 +1184,12 @@
    de `#ph-live` en vez de recargar la página entera sobre una conexión lenta.
    `defer`, una sola petición cacheable. Si no carga, todo degrada al `href`. #}
 <script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
+
+{# Leaflet vendorizado (docs/decisions.md, 2026-09-12). Sin `defer`: el mapa
+   es el contenido de la página, no una mejora progresiva —a diferencia de
+   htmx, sin JS acá no queda nada que degrade a un `href`, así que no tiene
+   sentido correrlo después del primer render. #}
+<script src="/static/leaflet/leaflet.js?v={{ leaflet_version() }}"></script>
 
 {# Ventanas flotantes: arrastrar desde la barra de título (o doble clic para
    expandir), minimizar y expandir. Mejora progresiva: sin este script los
@@ -1453,37 +1444,166 @@
 
   /* htmx re-renderiza `#ph-live` entero: se reaplica el estado a los nodos nuevos. */
 
-  /* Zoom a la provincia elegida (2026-09-11): sin ninguna, el mapa muestra
-     Cuba entera —el `viewBox` que ya trae del server—; con una, el
-     `viewBox` pasa a encuadrarla, calculado acá con `getBBox()` (parsear el
-     `d` del SVG a mano del lado del server sería mucho más código para lo
-     mismo). Sin animación a propósito: un corte directo es la solución más
-     simple que funciona. Sin JS, el mapa se queda en Cuba entera —mejora
-     progresiva, no requisito. */
-  var ZOOM_MARGEN = 1.4; // aire alrededor de la provincia encuadrada
-  var ZOOM_TOPE = 6; // no pasar de 6×: una provincia chica no debe pixelarse
+  /* Mapa interactivo (Leaflet, 2026-09-12): reemplaza al `<svg>` de las 16
+     rutas dibujadas por el server (docs/decisions.md — apartamiento
+     consciente de la decisión cerrada 1, el operador lo pidió sabiendo el
+     costo después de que el fondo de relieve estático se pixelara al
+     zoomear). `mapaLeaflet` es la instancia viva; como `htmx:afterSettle`
+     reemplaza el `<div id="ph-leaflet-map">` entero (vive adentro de
+     `#ph-live`, que hace `outerHTML` swap), hay que tirarla con `.remove()`
+     antes de armar una nueva — si no, Leaflet se queda escuchando eventos
+     (resize, teclado) sobre un contenedor que ya no está en el documento. */
+  var mapaLeaflet = null;
 
-  function actualizarZoomDelMapa() {
-    var mapa = document.querySelector(".ph-map");
+  // Un token por estado, no el color en hex: Leaflet dibuja cada polígono
+  // como SVG con `setAttribute` (no con reglas de una hoja), y un atributo
+  // de presentación SVG no resuelve `var(--token)` — así que se lee el
+  // valor computado UNA vez acá, en vez de duplicar los hex de
+  // `design_tokens.css` en este script.
+  var TOKEN_RELLENO_POR_ESTADO = {
+    "publicada": "--m3-primary-container",
+    "en-ingesta": "--ph-accent-2",
+    "sin-datos": "--m3-surface-container-high",
+  };
+  var TOKEN_TRAZO_POR_ESTADO = {
+    "publicada": "--m3-primary",
+    "en-ingesta": "--ph-accent-2-line",
+    "sin-datos": "--m3-outline-variant",
+  };
+
+  function tokenCSS(nombre) {
+    return getComputedStyle(document.documentElement).getPropertyValue(nombre).trim();
+  }
+
+  function datosDelMapa() {
+    // `#ph-map-data` es el `map_provinces_json` de `routers/public.py`: una
+    // fila por provincia (slug, estado, densidad, query de navegación), la
+    // parte que cambia con cada filtro. La geometría (`cuba_provincias.geojson`)
+    // es aparte y estática — no viaja de nuevo en cada respuesta.
+    var script = document.getElementById("ph-map-data");
+    var lista = script ? JSON.parse(script.textContent || "[]") : [];
+    var porSlug = {};
+    lista.forEach(function (fila) { porSlug[fila.slug] = fila; });
+    return porSlug;
+  }
+
+  function estiloDeProvincia(slug, datos, capa, provinciaElegida) {
+    var fila = datos[slug];
+    if (!fila) return { fillOpacity: 0, opacity: 0 };
+    var esElegida = provinciaElegida && slug === provinciaElegida;
+    // Con una provincia elegida el mapa ya pinta por densidad aunque `capa`
+    // siga en «publicación» — mismo criterio que ya regía el SVG desde el
+    // 2026-09-11, «acercarse revela otra cosa».
+    var porDensidad = capa === "densidad" || !!provinciaElegida;
+    var relleno, trazo, opacidadRelleno;
+    if (porDensidad) {
+      relleno = tokenCSS("--ph-accent");
+      trazo = tokenCSS("--m3-outline-variant");
+      opacidadRelleno = 0.12 + 0.78 * fila.density_ratio;
+    } else {
+      relleno = tokenCSS(TOKEN_RELLENO_POR_ESTADO[fila.state]);
+      trazo = tokenCSS(TOKEN_TRAZO_POR_ESTADO[fila.state]);
+      opacidadRelleno = 0.55;
+    }
+    // Con una provincia elegida, antes (SVG) las otras 15 dejaban de
+    // dibujarse del todo. Acá SÍ hay red de por medio (tiles de fondo): si
+    // se dejan de dibujar los polígonos, un pan del usuario deja huecos sin
+    // ningún color. Se atenúan en vez de esconderse — mismo «resaltar»
+    // que ya usan los gráficos de comparación entre provincias
+    // (`ph-compara-fila.is-atenuada`), mismo vocabulario, no uno nuevo.
+    if (provinciaElegida && !esElegida) opacidadRelleno *= 0.35;
+    return {
+      fillColor: relleno,
+      color: trazo,
+      weight: esElegida ? 2.4 : 1.1,
+      fillOpacity: opacidadRelleno,
+      opacity: 1,
+    };
+  }
+
+  function estiloAlPasarElMouse(estiloBase) {
+    return Object.assign({}, estiloBase, {
+      fillOpacity: Math.min(1, estiloBase.fillOpacity + 0.3),
+      color: tokenCSS("--ph-accent"),
+    });
+  }
+
+  function navegarAProvincia(query) {
+    if (window.htmx) {
+      // `pushUrl: true`, no un `history.pushState` de mano: así el manejo
+      // del botón atrás/adelante lo sigue resolviendo htmx, igual que en
+      // cualquier otro `hx-get` de la página.
+      htmx.ajax("GET", query, {
+        target: "#ph-live", select: "#ph-live", swap: "outerHTML", pushUrl: true,
+      });
+    } else {
+      window.location = query; // sin JS/htmx, degrada a navegación completa
+    }
+  }
+
+  function inicializarMapa() {
+    var contenedor = document.getElementById("ph-leaflet-map");
     var stage = document.querySelector(".ph-stage");
-    if (!mapa || !stage) return;
-    var slug = stage.getAttribute("data-provincia");
-    if (!slug) return; // el server ya renderiza el viewBox completo
-    var ruta = mapa.querySelector('a[data-province="' + slug + '"] path');
-    if (!ruta) return;
-    var caja = ruta.getBBox();
-    if (!caja.width || !caja.height) return;
-    var completo = mapa.getAttribute("viewBox").split(/\s+/).map(Number);
-    var escala = Math.min(
-      completo[2] / (caja.width * ZOOM_MARGEN),
-      completo[3] / (caja.height * ZOOM_MARGEN),
-      ZOOM_TOPE
-    );
-    var ancho = completo[2] / escala;
-    var alto = completo[3] / escala;
-    var x = caja.x + caja.width / 2 - ancho / 2;
-    var y = caja.y + caja.height / 2 - alto / 2;
-    mapa.setAttribute("viewBox", x + " " + y + " " + ancho + " " + alto);
+    if (!contenedor || !stage || !window.L) return;
+
+    if (mapaLeaflet) {
+      mapaLeaflet.remove();
+      mapaLeaflet = null;
+    }
+
+    var datos = datosDelMapa();
+    var capa = stage.getAttribute("data-capa") || "publicacion";
+    var provinciaElegida = stage.getAttribute("data-provincia") || "";
+
+    mapaLeaflet = L.map(contenedor, { attributionControl: true, scrollWheelZoom: true });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(mapaLeaflet);
+
+    function pintarProvincias(geojson) {
+      var capaProvincias = L.geoJSON(geojson, {
+        style: function (feature) {
+          return estiloDeProvincia(feature.properties.slug, datos, capa, provinciaElegida);
+        },
+        onEachFeature: function (feature, layer) {
+          var fila = datos[feature.properties.slug];
+          if (!fila) return;
+          layer.bindTooltip(feature.properties.name + " — " + fila.label + ", " + fila.rows + " observaciones");
+          var estiloBase = estiloDeProvincia(feature.properties.slug, datos, capa, provinciaElegida);
+          layer.on("mouseover", function () { layer.setStyle(estiloAlPasarElMouse(estiloBase)); });
+          layer.on("mouseout", function () { layer.setStyle(estiloBase); });
+          layer.on("click", function () { navegarAProvincia(fila.query); });
+        },
+      }).addTo(mapaLeaflet);
+
+      var capaElegida = null;
+      if (provinciaElegida) {
+        capaProvincias.eachLayer(function (layer) {
+          if (layer.feature.properties.slug === provinciaElegida) capaElegida = layer;
+        });
+      }
+      if (capaElegida) {
+        mapaLeaflet.fitBounds(capaElegida.getBounds(), { padding: [24, 24] });
+      } else {
+        mapaLeaflet.fitBounds(capaProvincias.getBounds());
+      }
+    }
+
+    // La geometría es estática (no cambia con los filtros): se cachea en
+    // memoria del lado del cliente para que un swap de htmx no la vuelva a
+    // pedir —el navegador ya la cachearía por HTTP igual, esto solo evita
+    // la ida y vuelta de red en la misma carga de página.
+    if (window.__cubaGeoJSON) {
+      pintarProvincias(window.__cubaGeoJSON);
+    } else {
+      fetch("/static/cuba_provincias.geojson?v={{ geojson_version() }}")
+        .then(function (respuesta) { return respuesta.json(); })
+        .then(function (geojson) {
+          window.__cubaGeoJSON = geojson;
+          pintarProvincias(geojson);
+        });
+    }
   }
 
   /* Cierre optimista del panel de producto y de las ventanas del menú
@@ -1558,11 +1678,11 @@
     deshacerCierre = null;
   });
   document.addEventListener("htmx:afterSettle", pintarTodas);
-  document.addEventListener("htmx:afterSettle", actualizarZoomDelMapa);
+  document.addEventListener("htmx:afterSettle", inicializarMapa);
   window.addEventListener("resize", pintarTodas);
   if (angosto.addEventListener) angosto.addEventListener("change", pintarTodas);
   pintarTodas();
-  actualizarZoomDelMapa();
+  inicializarMapa();
 })();
 </script>
 {% endblock %}

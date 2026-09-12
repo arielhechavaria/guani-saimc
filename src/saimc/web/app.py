@@ -106,6 +106,13 @@ _CSS_PATH = Path(__file__).parent / "static" / "saimc-material.css"
 # navegador con una copia vieja.
 _PUBLIC_CSS_PATH = Path(__file__).parent / "static" / "saimc-public.css"
 
+# Geometría de las 16 provincias para el mapa Leaflet (2026-09-12,
+# `tools/build_cuba_geojson.py`), lon/lat de Natural Earth. Mismo motivo de
+# versionado por mtime: el navegador lo cachea (66 KB que no cambian salvo
+# que se regenere el asset) sin quedarse con una copia vieja si algún día
+# cambia la geometría.
+_GEOJSON_PATH = Path(__file__).parent / "static" / "cuba_provincias.geojson"
+
 
 def _css_version() -> int:
     return int(_CSS_PATH.stat().st_mtime)
@@ -115,8 +122,13 @@ def _public_css_version() -> int:
     return int(_PUBLIC_CSS_PATH.stat().st_mtime)
 
 
+def _geojson_version() -> int:
+    return int(_GEOJSON_PATH.stat().st_mtime)
+
+
 app.state.templates.env.globals["css_version"] = _css_version
 app.state.templates.env.globals["public_css_version"] = _public_css_version
+app.state.templates.env.globals["geojson_version"] = _geojson_version
 
 # htmx vendorizado (ADR 001, `docs/decisions/001-stack-python-unico.md`). No se
 # carga en ninguna plantilla todavía: el dashboard es quien lo va a usar, y la
@@ -151,6 +163,31 @@ app.state.templates.env.globals["htmx_version"] = lambda: HTMX_VERSION
 MARKED_VERSION = "18.0.11"
 
 app.state.templates.env.globals["marked_version"] = lambda: MARKED_VERSION
+
+# Leaflet vendorizado, para el mapa interactivo de la home pública
+# (docs/decisions.md, 2026-09-12 — mapa de tiles en vivo, apartamiento
+# consciente de la decisión cerrada 1: el operador lo pidió sabiendo el
+# costo, después de que el fondo de relieve estático se pixelara al hacer
+# zoom a una provincia).
+#
+# Procedencia, verificada el 2026-09-12: los archivos son `package/dist/leaflet.js`
+# y `package/dist/leaflet.css` del tarball oficial de npm
+# (https://registry.npmjs.org/leaflet/-/leaflet-1.9.4.tgz), cuyo `integrity`
+# sha512 publicado se comprobó ANTES de extraerlo. BSD-2-Clause.
+# `tests/test_static_assets.py` fija su sha256 y su tamaño, igual que con htmx
+# y marked. Los íconos de `dist/images/` viajan aparte (no tienen hash de
+# npm publicado, son binarios chicos): `layers*.png` los pide `leaflet.css`
+# para el control de capas, `marker*.png` para el marcador por defecto —
+# ninguno de los dos se usa hoy (el mapa es solo polígonos de provincia),
+# pero se vendorizan igual para que la hoja no intente pedirlos a la red y
+# los reciba en silencio como 404 rotos.
+#
+# Cache-busting por versión y no por mtime, mismo motivo que htmx: los
+# archivos son inmutables entre bumps y un `git clone` les cambia el mtime
+# sin cambiar un byte.
+LEAFLET_VERSION = "1.9.4"
+
+app.state.templates.env.globals["leaflet_version"] = lambda: LEAFLET_VERSION
 
 
 def _havana(value: datetime, fmt: str = "%Y-%m-%d %H:%M") -> str:
