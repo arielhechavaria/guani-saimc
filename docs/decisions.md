@@ -8386,3 +8386,59 @@ invierte su test de dedup (`test_con_provincia_elegida_la_ventana_precios_no_rep
 → `test_con_provincia_elegida_la_ventana_precios_la_resalta`, con el
 aserto invertido). Test nuevo confirmando que no aparece ninguna hoja. Suite:
 1580 pasan, 1 saltea (bajó de 1585: seis tests eliminados, dos reescritos, uno nuevo).
+
+## 2026-09-12 — Fondo de relieve del mapa: Natural Earth, no OpenStreetMap
+
+Contexto: el operador comparó el mapa SVG plano contra OpenStreetMap y pidió
+mejorarlo visualmente. Se le marcó que un fondo estilo OSM en vivo (tiles)
+choca con la decisión cerrada 1 (nada de motor de mapas ni dependencia de
+red en runtime, por la conexión del usuario final cubano) — pero que
+renderizar un extracto UNA VEZ en build time y servirlo como imagen estática
+no rompe el motivo real de esa decisión. El operador pidió avanzar por esa
+vía; elegido el nivel de detalle: físico/relieve (terreno, ríos, costa —
+sin calles ni ciudades).
+
+Verificado antes de construir: el estilo «físico/relieve» no es lo que
+OpenStreetMap modela bien (su base es calles/POIs/límites administrativos).
+Es exactamente lo que ofrece Natural Earth —la fuente que las 16 provincias
+ya usan— en sus productos ráster de relieve sombreado. Se cambió de fuente
+antes de bajar nada.
+
+Decisión: `tools/build_cuba_relief.py`, nueva herramienta de build (mismo
+patrón de reproducibilidad que `build_cuba_map.py`) que:
+1. Recorta `NE2_HR_LC_SR_W_DR` (Natural Earth II alta resolución, relieve +
+   agua + drenajes, serie 10m) al bounding box en grados de las 16
+   provincias — el MISMO bounding box, no uno elegido a ojo.
+2. Un solo `Image.resize` no uniforme del recorte en píxeles crudos al
+   tamaño del `viewBox` reproduce el achatado por `stretch =
+   cos(latitud_media)` de la proyección de las provincias sin calcularlo
+   aparte.
+3. Se probó primero con la serie 50m (`NE2_50M_SR_W`, ~89 MB): el recorte
+   daba ~324×103 px, pixelado al escalar a los 1000 px del `viewBox`. La
+   serie 10m (~326 MB de origen) da ~650×207 px — el doble de lineal,
+   suficiente para un fondo estático.
+Salida: `src/saimc/web/static/relieve_cuba.webp`, 1000×342px, ~21 KB.
+Verificado dibujando las 16 rutas SVG encima: la costa de la imagen y los
+bordes vectoriales coinciden al píxel.
+
+Se integra como `<image>` dentro del mismo `<svg class="ph-map">`, antes del
+`{% for province %}` — comparte `viewBox`, así que se alinea sin ningún
+cálculo en JS y hace zoom junto con las provincias porque es del mismo
+elemento. Los tres estados de provincia (`is-publicada`/`is-en-ingesta`/
+`is-sin-datos`) suman `fill-opacity: .55` para dejar ver el relieve debajo
+del color; el hover sube a `.85` para que la marca de interacción siga
+leyéndose nítida. El pie del mapa («Mapa: Natural Earth, dominio público»)
+no cambia — ya cubre las dos fuentes, ninguna atribución nueva.
+
+Versionado: `relief_version()` en `app.py`, mismo patrón por mtime que
+`css_version()`/`public_css_version()` — si se regenera el asset, el
+navegador no se queda con la copia vieja.
+
+Descartado: OpenStreetMap en cualquier forma (tiles en vivo, que choca con
+la decisión cerrada 1; o un extracto propio, que hubiera sido peor
+herramienta para relieve y encima ODbL en vez de dominio público).
+
+Consecuencia: dos tests nuevos en `TestAssetsVendorizados`
+(`tests/test_static_assets.py`) — que el asset se sirve como
+`image/webp`, y que la home pública lo referencia versionado. Suite: 1582
+pasan, 1 saltea.
