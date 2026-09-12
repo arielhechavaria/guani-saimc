@@ -453,7 +453,13 @@ class TestPanelesFlotantes:
         assert "htmx.min.js" not in texto
 
 
-class TestHojaDetalleProvincia:
+class TestEnlacesDeProvinciaEnElMapa:
+    """Hasta el 2026-09-11 esta clase probaba también la hoja de detalle de
+    provincia (modal a pantalla completa); se sacó del todo el 2026-09-12
+    —tapaba el mapa, que ya se filtra y hace zoom solo con elegir la
+    provincia—. Lo que queda es lo que no dependía de ella: que el mapa
+    enlace a la vista filtrada, y los chips de producto."""
+
     def _seed(self, session: Session) -> None:
         """Arroz y Aceite con dato en La Habana; Malanga piloto pero sin filas."""
         arroz = Product(
@@ -477,61 +483,6 @@ class TestHojaDetalleProvincia:
         _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(4))
         session.commit()
 
-    def test_provincia_en_la_url_abre_la_hoja(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?provincia=la-habana").text
-
-        assert 'class="ph-sheet"' in texto
-        assert 'role="dialog"' in texto
-        # `tabindex="-1"`: ahí entra el foco al abrirse (trampa de foco, 2026-09-11).
-        assert '<h2 class="ph-sheet-title" id="ph-sheet-title" tabindex="-1">La Habana</h2>' in texto
-
-    def test_sin_provincia_no_hay_hoja(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        assert 'class="ph-sheet"' not in client.get("/").text
-
-    def test_la_hoja_lista_todos_los_piloto_incluso_sin_dato(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        hoja = client.get("/?provincia=la-habana").text.split('class="ph-sheet"')[1]
-
-        assert "Arroz" in hoja
-        assert "Aceite" in hoja
-        # Malanga es piloto y no tiene ninguna fila en La Habana: aparece igual.
-        assert "Malanga" in hoja
-        assert "todavía no hay dato acá" in hoja
-
-    def test_la_hoja_ignora_el_filtro_de_chips(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """La hoja responde «cómo está TODO acá», no solo lo prendido."""
-        self._seed(session)
-
-        hoja = (
-            client.get("/?provincia=la-habana&productos=arroz")
-            .text.split('class="ph-sheet"')[1]
-        )
-
-        assert "Aceite" in hoja
-
-    def test_cerrar_la_hoja_saca_provincia_y_conserva_los_chips(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?provincia=la-habana&productos=arroz").text
-
-        # El × y el fondo cierran a la misma URL: sin `provincia`, con `productos`.
-        assert 'href="/?productos=arroz" hx-get="/?productos=arroz"' in texto
-
     def test_las_provincias_del_mapa_son_enlaces(
         self, client: TestClient, session: Session
     ) -> None:
@@ -540,6 +491,18 @@ class TestHojaDetalleProvincia:
         texto = client.get("/").text
 
         assert 'href="/?provincia=la-habana" hx-get="/?provincia=la-habana"' in texto
+
+    def test_elegir_provincia_ya_no_abre_ninguna_hoja(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La hoja de detalle (modal a pantalla completa) se sacó del todo
+        el 2026-09-12: tapaba el mapa, que ya se zoomea y filtra solo con
+        elegir la provincia."""
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana").text
+
+        assert "ph-sheet" not in texto
 
     def test_un_piloto_sin_icono_sigue_mostrando_su_nombre(
         self, client: TestClient, session: Session
@@ -554,8 +517,8 @@ class TestHojaDetalleProvincia:
 
 
 class TestProvinciasLadoALadoEnLaRuta:
-    """Slice 2 de los gráficos: «¿dónde está más caro?» en la ventana Precios y
-    en la hoja de provincia."""
+    """Slice 2 de los gráficos: «¿dónde está más caro?» en la ventana Precios,
+    con la provincia elegida (si hay una) resaltada sobre las demás."""
 
     def _seed(self, session: Session) -> None:
         """Arroz más caro en Santiago (400–420) que en La Habana (300–340)."""
@@ -587,30 +550,23 @@ class TestProvinciasLadoALadoEnLaRuta:
         assert 'class="ph-compara"' in precios
         assert precios.index("Santiago de Cuba") < precios.index("La Habana")
 
-    def test_la_hoja_de_provincia_resalta_la_suya(
+    def test_con_provincia_elegida_la_ventana_precios_la_resalta(
         self, client: TestClient, session: Session
     ) -> None:
-        self._seed(session)
-
-        hoja = client.get("/?provincia=la-habana").text.split('class="ph-sheet"')[1]
-
-        assert 'class="ph-compara"' in hoja
-        # Santiago se atenúa; La Habana, la de la hoja, no.
-        assert hoja.count('class="ph-compara-fila is-atenuada"') == 1
-
-    def test_con_provincia_elegida_la_ventana_precios_no_repite_la_comparacion(
-        self, client: TestClient, session: Session
-    ) -> None:
-        # La hoja de provincia ya muestra esta misma comparación por
-        # producto; repetirla en la ventana Precios era el mismo gráfico dos
-        # veces (deuda saldada el 2026-09-11).
+        """Hasta el 2026-09-11 esto se veía en la hoja de detalle; la hoja se
+        sacó del todo el 2026-09-12 y la ventana «Precios» pasó a ser el
+        único lugar donde se ve esta comparación, con o sin provincia
+        elegida — antes, con provincia elegida, mostraba solo una nota
+        apuntando a la hoja en vez del gráfico."""
         self._seed(session)
 
         texto = client.get("/?ver=precios&provincia=la-habana").text
         precios = texto.split('id="precios"')[1].split("</section>")[0]
 
-        assert 'class="ph-compara"' not in precios
-        assert "La Habana" in precios  # el aviso que apunta a la hoja
+        assert 'class="ph-compara"' in precios
+        # Santiago se atenúa; La Habana, la elegida, no.
+        assert precios.count('class="ph-compara-fila is-atenuada"') == 1
+        assert "La Habana se destaca sobre las demás." in precios
 
     def test_con_chip_prendido_la_ventana_precios_no_repite_el_panel(
         self, client: TestClient, session: Session

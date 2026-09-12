@@ -8346,3 +8346,43 @@ Consecuencia: dos tests nuevos en `TestCapaDelMapa`
 (`test_con_provincia_elegida_el_mapa_pinta_solo_esa`,
 `test_la_leyenda_de_densidad_cuenta_solo_esa_provincia`). Suite: 1585
 pasan, 1 saltea.
+
+## 2026-09-12 — La hoja de detalle de provincia se saca del todo
+
+Contexto: después de mergear la entrada anterior, el operador reportó que
+seguía saliendo «ese flotante que no me deja ver la provincia» — la hoja
+de detalle a pantalla completa (slice 5, 2026-09-10) se abre
+automáticamente con toda `?provincia=`, sin forma de elegir provincia sin
+que se abra. Preguntado entre desacoplarla (elegir provincia solo
+filtra/zoomea; la hoja se abre aparte) o sacarla del todo, eligió sacarla.
+
+Decisión: se elimina el bloque `.ph-sheet-scrim`/`.ph-sheet` completo de
+`public_home.html` (marcado, CSS, keyframes, media query angosto), la
+trampa de foco y el manejo de foco al abrir/cerrar en el JS
+(`agarreDeFoco`, `manejarFocoDeHoja`, el listener de `keydown` para
+Escape), y su cómputo en `routers/public.py`
+(`province_sheet_rows`/`sheet_close_query`, que reusaba
+`build_product_panels` — la función sigue viva para los paneles
+flotantes reales, que no se tocaron).
+
+Encontrado al sacarla: la ventana «Precios», con provincia elegida, no
+mostraba el gráfico «¿dónde está más caro?» —mostraba una nota diciendo
+que estaba «en la hoja de detalle que está abierta» (deuda saldada el
+2026-09-11, ver esa entrada)—. Sin hoja, esa nota apuntaba a la nada y el
+gráfico no se veía en ningún lado con provincia elegida. Se fusionaron las
+dos ramas: «Precios» muestra ese gráfico siempre ahora, con o sin
+provincia, resaltando la elegida cuando la hay (mismo `resaltar` que ya
+usaba la rama sin provincia).
+
+Descartado: desacoplar la hoja de la selección de provincia (dejarla
+como una acción aparte). El operador prefirió sacarla directamente —el
+dato que mostraba (productos piloto de la provincia, comparación entre
+provincias) ya está disponible filtrado en las ventanas del menú.
+
+Consecuencia: `TestHojaDetalleProvincia` pasa a `TestEnlacesDeProvinciaEnElMapa`,
+con los dos tests que no dependían de la hoja (enlaces del mapa, chip sin
+ícono); los cinco tests de la hoja se eliminan. `TestProvinciasLadoALadoEnLaRuta`
+invierte su test de dedup (`test_con_provincia_elegida_la_ventana_precios_no_repite_la_comparacion`
+→ `test_con_provincia_elegida_la_ventana_precios_la_resalta`, con el
+aserto invertido). Test nuevo confirmando que no aparece ninguna hoja. Suite:
+1580 pasan, 1 saltea (bajó de 1585: seis tests eliminados, dos reescritos, uno nuevo).

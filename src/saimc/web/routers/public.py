@@ -245,46 +245,10 @@ def _render_home(
         capa=selected_layer,
     )
 
-    # Hoja de detalle de provincia (slice 5). Se arma solo cuando `?provincia=`
-    # está puesta, y recorre TODOS los productos piloto de esa provincia —no los
-    # activos en los chips—: la hoja responde «¿cómo está todo acá?». Reusa
-    # `build_product_panels`, que ya agrega por producto (rango + serie) y deja
-    # entrar los que no tienen dato con `has_data=False`.
-    province_sheet_rows: list = []
-    sheet_close_query = ""
-    if selected_province is not None:
-        prov_ranges = [
-            r for r in pilot_ranges if r.province_name == selected_province
-        ]
-        prov_series = build_series(
-            _visible_observations(
-                db,
-                pilot=pilot,
-                products=None,
-                province=selected_province,
-                window=window,
-            ),
-            window_days=window,
-            hoy=date.today(),
-        )
-        province_sheet_rows = build_product_panels(
-            list(pilot_names),
-            build_cards(prov_ranges),
-            prov_series,
-            selected_province=prov,
-            selected_days=window,
-            ver=open_views,
-            capa=selected_layer,
-        )
-        # Cerrar la hoja: saca `provincia`, conserva productos, días, ventanas y capa.
-        sheet_close_query = products_query(
-            active_slugs, dias=window, ver=open_views, capa=selected_layer
-        )
-
     def province_link(slug: str) -> str:
-        """Enlace de una provincia del mapa a su hoja, preservando los chips
-        activos, la ventana de días, las ventanas flotantes abiertas y la
-        capa del mapa."""
+        """Enlace de una provincia del mapa a la vista filtrada por ella,
+        preservando los chips activos, la ventana de días, las ventanas
+        flotantes abiertas y la capa del mapa."""
         return products_query(
             active_slugs, provincia=slug, dias=window, ver=open_views, capa=selected_layer
         )
@@ -411,8 +375,6 @@ def _render_home(
             "view_menu": view_menu,
             "open_views": open_views,
             "open_precios_query": open_precios_query,
-            "province_sheet_rows": province_sheet_rows,
-            "sheet_close_query": sheet_close_query,
             "province_link": province_link,
             "active_products": active_products,
             "selected_product": selected,

@@ -535,44 +535,8 @@
     color: var(--m3-on-surface-variant);
   }
 
-  /* ── Hoja de detalle de provincia (slice 5): modal, drawer / bottom-sheet. */
-  {# «Modo provincia» (2026-09-11): pantalla completa en vez de cajón
-     lateral, y translúcida —no opaca— para que el mapa ya encuadrado en esa
-     provincia (`actualizarZoomDelMapa`) se siga viendo detrás, de fondo. Es
-     lo más cerca de «entrar» a la provincia que da el stack sin meter un
-     motor 3D: la decisión cerrada 1 de CLAUDE.md descarta esa vía (mapa
-     SVG, nada de dependencia de red en runtime). Sin `backdrop-filter`
-     —desenfocar el fondo pesa en un teléfono de gama baja; alfa simple
-     alcanza y no cuesta nada de GPU. #}
-  .ph-sheet-scrim {
-    position: fixed; inset: 0; z-index: 50;
-    display: flex; justify-content: stretch;
-    background: color-mix(in srgb, var(--m3-on-surface) 18%, transparent);
-  }
-  .ph-sheet-scrim-close { position: absolute; inset: 0; }
-  .ph-sheet {
-    position: relative; width: 100%; height: 100%;
-    background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
-    box-shadow: var(--m3-elev-3);
-    overflow-y: auto; padding: 1.25rem 1.4rem 2rem;
-    animation: ph-sheet-right .28s cubic-bezier(.2, .8, .2, 1) both;
-  }
-  @keyframes ph-sheet-right { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
-  @keyframes ph-sheet-up { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
-  .ph-sheet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-  .ph-sheet-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.5rem; }
-  .ph-sheet-x { font-size: 1.5rem; line-height: 1; color: var(--m3-on-surface-variant); text-decoration: none; }
-  .ph-sheet-x:hover { color: var(--m3-on-surface); }
-  .ph-sheet-sub { margin: .4rem 0 1.25rem; font-size: .8125rem; color: var(--m3-on-surface-variant); text-wrap: pretty; }
-  .ph-sheet-body { display: grid; gap: 1.25rem; }
-  .ph-sheet-row { display: grid; gap: .5rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--m3-divider); }
-  .ph-sheet-row:last-child { border-bottom: 0; padding-bottom: 0; }
-  .ph-sheet-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; }
-  .ph-sheet-row-name { font-family: var(--ph-font-heading); font-size: 1.0625rem; }
-  .ph-sheet-row-sum { font-size: .8125rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
-
   @media (prefers-reduced-motion: reduce) {
-    .ph-win, .ph-fpanel, .ph-sheet, .ph-plot-dot, .ph-loading .ph-brand-avatar, .ph-loading-dots span { animation: none; }
+    .ph-win, .ph-fpanel, .ph-plot-dot, .ph-loading .ph-brand-avatar, .ph-loading-dots span { animation: none; }
     .ph-canvas .ph-map-province, .ph-chip-toggle, .ph-menu-item { transition: none; }
   }
 
@@ -591,12 +555,6 @@
     /* Sin arrastre en angosto: la barra de título vuelve a dejar scrollear la
        bandeja con el dedo. */
     .ph-js [data-win-handle] { cursor: auto; touch-action: auto; }
-    .ph-sheet-scrim { align-items: flex-end; }
-    .ph-sheet {
-      height: 100dvh; max-height: none;
-      border-radius: var(--ph-radius-lg) var(--ph-radius-lg) 0 0;
-      animation-name: ph-sheet-up;
-    }
   }
 </style>
 {% endblock %}
@@ -851,26 +809,18 @@
           {% elif view.key == 'precios' %}
             <p class="ph-win-tag">Ventana de {{ window_days }} días · CUP{% if selected_product %} · {{ selected_product }}{% endif %}{% if selected_province %} · {{ selected_province }}{% endif %}</p>
 
-            {% if selected_province %}
-            {# La hoja de detalle (más abajo en este mismo documento) ya
-               muestra esta misma comparación, producto por producto, para
-               TODOS los piloto —no solo los prendidos—: repetirla acá era
-               el mismo gráfico dos veces (deuda anotada el 2026-09-10,
-               saldada el 2026-09-11). #}
-            {% if province_comparisons %}
-            <p class="ph-note">
-              La comparación entre provincias de {{ selected_province }} está,
-              producto por producto, en la hoja de detalle que está abierta.
-            </p>
-            {% endif %}
-            {% else %}
             {# Provincias lado a lado (slice 2 de los gráficos): «¿dónde está más
                caro?», todas las provincias en el mismo eje. Un producto con
                chip prendido ya tiene su propio panel con el desglose por
                provincia (a la derecha): mostrarlo también acá era el mismo
                dato dos veces, así que esta comparación queda para lo que
-               NO tiene panel —con nada prendido, para todos—. Sin provincia
-               elegida (esta rama), no hay ninguna que resaltar. #}
+               NO tiene panel —con nada prendido, para todos—. Con una
+               provincia elegida, `resaltar` la destaca sobre las demás; esto
+               reemplaza a la nota que hasta el 2026-09-11 mandaba a la hoja
+               de detalle («está, producto por producto, en la hoja que está
+               abierta») — la hoja se sacó del todo (2026-09-12) y este
+               gráfico es ahora el único lugar donde se ve esta comparación,
+               con o sin provincia elegida. #}
             {% set resaltar = selected_province %}
             {% for comp in province_comparisons if not active_products or comp.product_name not in active_products %}
             <figure class="ph-compara-fig">
@@ -882,10 +832,10 @@
                 "central de los anuncios (ni los más baratos ni los más caros); "
                 "el punto es la mediana. Las provincias están ordenadas de la "
                 "más cara (arriba) a la más barata (abajo)."
+                ~ (" " ~ selected_province ~ " se destaca sobre las demás." if selected_province else "")
               ) }}
             </figure>
             {% endfor %}
-            {% endif %}
 
             {# Barras de provincia y de días. Cada enlace preserva productos,
                días y ventanas abiertas: cambiar el filtro no cierra esta
@@ -1222,62 +1172,12 @@
   </div>{# /.ph-stage #}
 </section>
 
-{% if selected_province %}
-{# ══ Hoja de detalle de provincia (slice 5) ═══════════════════════════
-   Modal: recorre TODOS los productos piloto de la provincia —no solo los
-   chips activos—. Cerrarla saca `?provincia=` y conserva el resto del
-   estado. Trampa de foco y Escape-cierra: el script del pie
-   (`manejarFocoDeHoja`, `agarreDeFoco`). `tabindex="-1"` en el título: un
-   `<h2>` no es enfocable por default, y ahí es donde entra el foco al abrir. #}
-<div class="ph-sheet-scrim">
-  <a class="ph-sheet-scrim-close" href="{{ sheet_close_query }}" hx-get="{{ sheet_close_query }}" aria-label="Cerrar el detalle" tabindex="-1"></a>
-  <aside class="ph-sheet" role="dialog" aria-modal="true" aria-labelledby="ph-sheet-title">
-    <header class="ph-sheet-head">
-      <h2 class="ph-sheet-title" id="ph-sheet-title" tabindex="-1">{{ selected_province }}</h2>
-      <a class="ph-sheet-x" href="{{ sheet_close_query }}" hx-get="{{ sheet_close_query }}" aria-label="Cerrar">×</a>
-    </header>
-    <p class="ph-sheet-sub">
-      Los productos piloto en {{ selected_province }}, ventana de {{ window_days }} días.
-      Cada cifra lleva su muestra al lado; ninguna es una estimación.
-    </p>
-    <div class="ph-sheet-body">
-      {% for row in province_sheet_rows %}
-      <section class="ph-sheet-row">
-        <div class="ph-sheet-row-head">
-          {% if row.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ row.icon }}</span>{% endif %}<span class="ph-sheet-row-name">{{ row.name }}</span>
-          <span class="ph-sheet-row-sum">
-            {%- if not row.has_data -%}
-            todavía no hay dato acá
-            {%- elif row.is_single_value -%}
-            {{ row.minimum_text }} {{ row.currency }}/{{ row.unit }} · {{ row.count }} anuncio{{ "s" if row.count != 1 }}
-            {%- else -%}
-            {{ row.minimum_text }}–{{ row.maximum_text }} {{ row.currency }}/{{ row.unit }} · {{ row.count }} anuncio{{ "s" if row.count != 1 }}
-            {%- endif -%}
-          </span>
-        </div>
-        {# «¿Dónde está más caro?» para este producto: todas las provincias en
-           el mismo eje, con la de esta hoja resaltada (slice 2 de los
-           gráficos). Reemplaza la evolución por provincia, que vive en la
-           ventana «Cómo se movió». #}
-        {% set comp = province_comparisons | selectattr('product_name', 'equalto', row.name) | first %}
-        {% if row.has_data and comp %}
-        {% set resaltar = selected_province %}
-        {% include "_province_compare.html" %}
-        {{ chart_help(
-          "Cada línea horizontal es el rango completo de precios de esa "
-          "provincia, de punta a punta; el óvalo relleno marca la mitad "
-          "central de los anuncios (ni los más baratos ni los más caros); "
-          "el punto es la mediana. Las provincias están ordenadas de la más "
-          "cara (arriba) a la más barata (abajo); " ~ selected_province ~ " se "
-          "destaca sobre las demás."
-        ) }}
-        {% endif %}
-      </section>
-      {% endfor %}
-    </div>
-  </aside>
-</div>
-{% endif %}
+{# La hoja de detalle de provincia (modal a pantalla completa) se sacó del
+   todo (2026-09-12): el operador la quería fuera —tapaba el mapa, que ya
+   se zoomea y filtra solo con elegir la provincia (2026-09-11 y esta
+   fecha)—. El dato que mostraba (productos piloto de la provincia,
+   comparación entre provincias) sigue disponible filtrado en las
+   ventanas del menú («Precios», «Comparar»). Ver docs/decisions.md. #}
 
 </div>{# /#ph-live #}
 
@@ -1552,70 +1452,14 @@
   });
 
   /* htmx re-renderiza `#ph-live` entero: se reaplica el estado a los nodos nuevos. */
-  /* Hoja de provincia: trampa de foco y Escape-cierra (deuda anotada en el
-     slice 5, 2026-09-10). El × y el fondo oscurecido ya cerraban sin esto;
-     lo que faltaba es lo que un mouse no necesita: que Tab no se escape del
-     diálogo y que Escape lo cierre, como cualquier modal accesible. */
-  var provinciaAbierta = null; // nombre de la provincia mientras la hoja está abierta
-
-  function elementosEnfocables(hoja) {
-    return hoja.querySelectorAll(
-      'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-  }
-
-  function agarreDeFoco(ev, hoja) {
-    var enfocables = elementosEnfocables(hoja);
-    if (!enfocables.length) return;
-    var primero = enfocables[0];
-    var ultimo = enfocables[enfocables.length - 1];
-    if (ev.shiftKey && document.activeElement === primero) {
-      ev.preventDefault();
-      ultimo.focus();
-    } else if (!ev.shiftKey && document.activeElement === ultimo) {
-      ev.preventDefault();
-      primero.focus();
-    }
-  }
-
-  document.addEventListener("keydown", function (ev) {
-    var hoja = document.querySelector(".ph-sheet");
-    if (!hoja) return;
-    if (ev.key === "Escape") {
-      var cerrar = hoja.querySelector(".ph-sheet-x");
-      if (cerrar) cerrar.click();
-    } else if (ev.key === "Tab") {
-      agarreDeFoco(ev, hoja);
-    }
-  });
-
-  function manejarFocoDeHoja() {
-    var titulo = document.getElementById("ph-sheet-title");
-    if (titulo && !provinciaAbierta) {
-      /* Se acaba de abrir: el foco va al título, como en cualquier diálogo
-         accesible —así un lector de pantalla anuncia qué se abrió antes de
-         leer el contenido. */
-      titulo.focus();
-    } else if (!titulo && provinciaAbierta) {
-      /* Se acaba de cerrar: el foco vuelve al enlace de esa provincia en el
-         mapa, si sigue ahí; si no lo encuentra, no hace nada —mejor que
-         nada es el default del navegador, no un error. */
-      var enlace = document.querySelector(
-        'a[aria-label="' + provinciaAbierta + ': ver detalle"]'
-      );
-      if (enlace) enlace.focus();
-    }
-    provinciaAbierta = titulo ? titulo.textContent : null;
-  }
 
   /* Zoom a la provincia elegida (2026-09-11): sin ninguna, el mapa muestra
      Cuba entera —el `viewBox` que ya trae del server—; con una, el
      `viewBox` pasa a encuadrarla, calculado acá con `getBBox()` (parsear el
      `d` del SVG a mano del lado del server sería mucho más código para lo
      mismo). Sin animación a propósito: un corte directo es la solución más
-     simple que funciona, y la hoja ya entra animada al lado, así que el
-     conjunto no se siente brusco. Sin JS, el mapa se queda en Cuba entera y
-     la hoja sigue funcionando igual —mejora progresiva, no requisito. */
+     simple que funciona. Sin JS, el mapa se queda en Cuba entera —mejora
+     progresiva, no requisito. */
   var ZOOM_MARGEN = 1.4; // aire alrededor de la provincia encuadrada
   var ZOOM_TOPE = 6; // no pasar de 6×: una provincia chica no debe pixelarse
 
@@ -1714,12 +1558,10 @@
     deshacerCierre = null;
   });
   document.addEventListener("htmx:afterSettle", pintarTodas);
-  document.addEventListener("htmx:afterSettle", manejarFocoDeHoja);
   document.addEventListener("htmx:afterSettle", actualizarZoomDelMapa);
   window.addEventListener("resize", pintarTodas);
   if (angosto.addEventListener) angosto.addEventListener("change", pintarTodas);
   pintarTodas();
-  manejarFocoDeHoja();
   actualizarZoomDelMapa();
 })();
 </script>
