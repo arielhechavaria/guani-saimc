@@ -534,3 +534,116 @@ class TestEnlaceDeEvidenciaEnLaSerie:
         assert f'href="/anuncio/{origen.id}"' not in texto
         # La tabla de anuncios de «Cómo se movió» la nombra, sin enlace.
         assert ">captura</span>" in texto
+
+
+class TestElMapaEsLaApp:
+    """El mapa cubre el lienzo entero y el cromo flota encima (2026-09-12).
+
+    Pedido del operador: «El mapa debe ser toda la app […] los menús de los
+    productos y las provincias y todo lo demás debe salir sobre el mapa de
+    forma flotante. Los chips de productos y las provincias deben salir en la
+    misma fila […] como cuando usamos flex y hacemos space between».
+
+    **Qué puede y qué no puede afirmar un test de pytest acá.** Que los dos
+    grupos queden efectivamente en una fila con el aire en el medio lo decide
+    el CSS, y sin navegador no hay layout que medir. Lo que sí se verifica es
+    la precondición estructural —que sean HERMANOS dentro de un solo
+    contenedor de filtros, no dos bloques apilados— más la declaración del
+    `space-between` en la hoja embebida. Si alguien vuelve a partir la fila en
+    dos contenedores, esto se pone rojo; si alguien rompe el ancho de un chip,
+    no. La verificación visual es del operador.
+    """
+
+    def test_el_riel_de_chips_y_la_provincia_comparten_la_fila_de_filtros(
+        self, client: TestClient, session: Session
+    ) -> None:
+        # Los dos grupos son condicionales y el test pasaría en falso si no
+        # encontrara nada que ordenar: el riel necesita al menos un producto
+        # piloto (`product_chips`), y el grupo de provincia, más de un ítem
+        # en `province_nav` —que se arma con las provincias que TIENEN dato
+        # piloto, más la elegida (`routers/public.py`)—. Con la provincia en
+        # la URL alcanza sembrarla, y además es el estado que el operador
+        # pidió ver: el `<select>` y el chip juntos.
+        session.add(
+            Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        )
+        _seed_provincias(session)
+        texto = client.get("/?provincia=la-habana").text
+
+        fila = texto.index('class="ph-filters"')
+        chips = texto.index('class="ph-chip-rail"')
+        provincia = texto.index('class="ph-province-group"')
+        # El `<select>` y el chip de «quitar la provincia» viven los dos
+        # adentro del grupo, no uno en cada punta de la fila.
+        assert texto.index('class="ph-province-form"') > provincia
+        assert texto.index('<span class="ph-province-chip">') > provincia
+        # El escenario del mapa es el primer hermano DESPUÉS de la fila: que
+        # los dos grupos caigan antes que él es lo que prueba que están los
+        # dos adentro del mismo contenedor y no uno afuera.
+        escenario = texto.index('class="ph-stage"')
+
+        assert fila < chips < provincia < escenario
+
+    def test_la_fila_de_filtros_reparte_con_space_between(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+        regla = texto[texto.index("  .ph-filters {") :]
+        regla = regla[: regla.index("}")]
+
+        assert "justify-content: space-between" in regla
+        assert "display: flex" in regla
+
+    def test_el_escenario_del_mapa_va_a_sangre_y_el_cromo_por_encima(
+        self, client: TestClient
+    ) -> None:
+        """`.ph-stage` sale del flujo y cubre el lienzo; el cromo tiene que
+        quedar por encima de las capas internas de Leaflet (que llegan a
+        1000), no en el 1..4 de antes."""
+        texto = client.get("/").text
+        escenario = texto[texto.index("  .ph-stage {") :]
+        escenario = escenario[: escenario.index("}")]
+
+        assert "position: absolute" in escenario
+        assert "inset: 0" in escenario
+        assert "z-index: 0" in escenario
+
+        for clase in (".ph-topbar", ".ph-filters", ".ph-dock-layer", ".ph-loading"):
+            regla = texto[texto.index(f"  {clase} {{") :]
+            regla = regla[: regla.index("}")]
+            z = regla[regla.index("z-index:") :]
+            assert int(z[len("z-index:") : z.index(";")]) > 1000, clase
+
+    def test_el_muelle_de_ventanas_no_vive_adentro_del_mapa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El muelle era hijo de `.ph-stage`. Con el escenario cubriendo el
+        lienzo entero, ahí habría tapado la barra superior: una ventana
+        arrastrada hacia arriba se metía abajo de la barra y no había forma de
+        agarrar su título. Ahora es hermano y ocupa el hueco que queda."""
+        _seed_provincias(session)
+        texto = client.get("/").text
+
+        mapa = texto.index('id="ph-leaflet-map"')
+        capa_del_muelle = texto.index('class="ph-dock-layer"')
+        muelle = texto.index('class="ph-dock"')
+
+        assert mapa < capa_del_muelle < muelle
+
+    def test_el_credito_del_mapa_no_se_duplica(self, client: TestClient) -> None:
+        """Había un `<p class="ph-attrib">` en la esquina inferior derecha y el
+        control de atribución de Leaflet en esa misma esquina: dos cajas
+        pisándose. Quedó el de Leaflet, con los dos créditos adentro."""
+        texto = client.get("/").text
+
+        assert "ph-attrib" not in texto
+        # Leaflet recibe los dos créditos juntos y los pone una sola vez.
+        assert texto.count("OpenStreetMap</a> contributors") == 1
+        assert 'Provincias: <a href="https://www.naturalearthdata.com/">' in texto
+
+        # El pie del shell (`_public_shell.html`) tiene su propia línea de
+        # Natural Earth desde antes de Leaflet, y se queda: habla de la
+        # procedencia del dato (§6.5), no es el crédito de la esquina del
+        # mapa. Lo que se eliminó fue el `<p class="ph-attrib">`, que caía
+        # justo encima del control de atribución de Leaflet.
+        assert "Geometría de las provincias derivada de" in texto

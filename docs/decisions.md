@@ -8575,3 +8575,86 @@ contra el JSON de datos, no clases SVG). `tests/test_static_assets.py`
 suma verificación de cadena de suministro de Leaflet y confirma —no
 esconde— que `tile.openstreetmap.org` aparece en la página. Suite: 1585
 pasan, 1 saltea.
+
+## 2026-09-12 — El mapa es la app: el cromo flota, y los z-index arrancan en 1100
+Contexto: pedido del operador después del pase a Leaflet — «El mapa debe ser
+toda la app, es decir los menús de los productos y las provincias y todo lo
+demás debe salir sobre el mapa de forma flotante. Los chips de productos y las
+provincias deben salir en la misma fila, de ser posible en resolución de
+escritorio, como cuando usamos flex y hacemos space between». Buscando dónde
+meter eso apareció un bug introducido por el pase a Leaflet del mismo día:
+**todo el cromo de la página vivía en z-index 1..4, y Leaflet numera sus
+propias capas internas en 200..1000** (panes de tiles y overlays, controles,
+esquinas). Mientras el mapa era un `<svg>` propio esos números alcanzaban; con
+Leaflet, la barra superior, el riel de chips, las ventanas y el indicador de
+carga quedaron **debajo** del mapa.
+
+Decisión: tres cosas, todas en `templates/public_home.html`.
+
+1. **El escenario sale del flujo.** `.ph-stage` pasa de ser un hijo más del
+   flex column (que consumía lo que sobraba después de la barra y los chips) a
+   `position: absolute; inset: 0; z-index: 0`, con `.ph-map` al 100 % de las
+   dos dimensiones. El mapa cubre `.ph-canvas` entero, a sangre, y todo lo
+   demás flota encima. El degradado de `.ph-canvas` queda de fondo a propósito:
+   si los tiles no cargan —la conexión del usuario final, motivo de la decisión
+   cerrada 1— se ve eso y no un vacío blanco.
+
+2. **La escala de z-index arranca en 1100**, documentada en un comentario al
+   lado de `.ph-stage` para que el próximo que agregue una capa no vuelva a
+   elegir un número chico: `0` escenario · `1100` leyenda · `1200` muelle de
+   ventanas y paneles · `1300` barra superior y fila de filtros · `1400`
+   indicador de carga. Cualquier cosa que tenga que verse sobre el mapa va por
+   encima de 1000.
+
+3. **Una sola fila de filtros.** `.ph-filters` envuelve el riel de chips de
+   producto y un `.ph-province-group` nuevo (el `<select>` de provincia más el
+   chip de «volver a Cuba entera») con `display: flex; justify-content:
+   space-between`. Antes eran dos bloques apilados. En angosto (≤720 px) se
+   apilan solos por `flex-wrap` y el grupo de provincia pasa a `width: 100%`
+   alineado a la izquierda, en vez de quedar pegado al borde derecho. La fila
+   lleva `pointer-events: none` y sus dos grupos `auto`: el aire del medio es
+   mapa, y ahí el arrastre tiene que llegarle al mapa y no morir contra un
+   contenedor invisible.
+
+El muelle de ventanas se mudó de adentro de `.ph-stage` a un `.ph-dock-layer`
+propio (`flex: 1; min-height: 0`), el único hijo del flex column que crece: las
+ventanas ocupan exactamente el hueco que queda debajo del cromo, sin que nadie
+calcule alturas. Dentro del escenario habría tapado la barra superior, y una
+ventana arrastrada hacia arriba se metía abajo de ella sin forma de agarrar su
+título.
+
+Descartado: dejar `.ph-stage` en el flujo y subirle el alto con `calc()`
+restando barra y filtros. Anda hasta que la barra envuelve a dos líneas —que
+envuelve, tiene `flex-wrap`— y entonces el alto queda mal por una cantidad que
+depende del ancho de la ventana. El layout ya sabe medir eso; el `calc()` era
+duplicarlo a mano.
+
+También descartado: subir el cromo con `z-index: 5..9` en vez de 1100. Es el
+mismo trabajo y queda igual de roto, porque el techo a superar son los 1000 de
+Leaflet, no los 4 de antes.
+
+Consecuencia: se eliminó `<p class="ph-attrib">` (CSS y markup). Caía en la
+esquina inferior derecha, la misma que el control de atribución de Leaflet: dos
+cajas de crédito pisándose. Los dos créditos —Natural Earth por los polígonos,
+OpenStreetMap por los tiles, ODbL, obligatoria— viajan ahora en el
+`attribution` del tile layer que arma `inicializarMapa()`. El pie del shell
+(`_public_shell.html`) conserva su propia línea de Natural Earth: habla de la
+procedencia del dato (§6.5), no es el crédito de la esquina del mapa.
+
+`tests/test_public_map.py` suma `TestElMapaEsLaApp` (5 casos: los dos grupos
+hermanos en una sola fila, el `space-between` declarado, el escenario a sangre,
+los cuatro z-index del cromo por encima de 1000, el muelle afuera del
+escenario, el crédito sin duplicar). El docstring de la clase dice qué NO
+prueba: que la fila se vea como una fila lo decide el CSS, y sin navegador no
+hay layout que medir — eso queda de la verificación del operador.
+`tests/test_public_filter.py` re-ancló el caso del indicador de carga: usaba el
+crédito «Natural Earth» como marca del final de `#ph-live`, y al mudarse ese
+crédito al `attribution` de Leaflet quedó impreso en el JS del pie, después del
+indicador. Ahora se ancla en el pie de la leyenda del mapa, que sí es el último
+markup de `#ph-live`. Suite: 1590 pasan, 1 saltea.
+
+Verificado aparte, con un parser de HTML sobre el render de `/`,
+`/?provincia=la-habana` y `/?productos=aceite&ver=precios`: el árbol de `<div>`
+cierra balanceado en los tres. El conteo sobre la plantilla cruda daba 49
+abiertos contra 48 cerrados, que era artefacto de los `{% if %}` (abren y
+cierran en ramas distintas), no un `<div>` sin cerrar.

@@ -1655,11 +1655,14 @@ class TestRutaProductoLimpia:
         assert texto.count('aria-label="Guani"') == 2  # header + indicador
 
         # `{# /#ph-live #}` no sobrevive al render (es un comentario Jinja);
-        # se ancla en el crédito del mapa, que sí es texto real y va cerca
-        # del final de `#ph-live` — el indicador tiene que venir después.
-        credito_del_mapa = texto.index("Natural Earth")
+        # se ancla en el pie de la leyenda del mapa, que es el último markup
+        # real de `#ph-live` — el indicador tiene que venir después. El
+        # crédito «Natural Earth» servía de ancla hasta el 2026-09-12, pero
+        # pasó al `attribution` de Leaflet: ahora se imprime en el JS del
+        # final y queda DESPUÉS del indicador sin que eso signifique nada.
+        pie_de_la_leyenda = texto.index('class="ph-canvas-count"')
         indicador = texto.index('id="ph-loading"')
-        assert credito_del_mapa < indicador  # fuera del bloque que htmx reemplaza
+        assert pie_de_la_leyenda < indicador  # fuera del bloque que htmx reemplaza
 
 
 class TestVarianteEnTarjetaPublica:

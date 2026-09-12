@@ -152,7 +152,7 @@
   }
 
   .ph-topbar {
-    position: relative; z-index: 3;
+    position: relative; z-index: 1300;
     display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
     gap: .5rem 1.5rem; padding: .65rem clamp(1rem, 3vw, 2rem);
     background: var(--m3-surface);
@@ -182,7 +182,7 @@
      una moneda girando (con foreshortening) y no como un achicamiento
      horizontal plano. */
   .ph-loading {
-    position: fixed; top: 50%; left: 50%; z-index: 50;
+    position: fixed; top: 50%; left: 50%; z-index: 1400;
     display: flex; flex-direction: column; align-items: center; gap: .85rem;
     perspective: 40rem;
     transform: translate(-50%, -50%);
@@ -229,13 +229,27 @@
   .ph-menu-item:hover { background: var(--ph-accent-wash); color: var(--ph-accent); text-decoration: none; }
   .ph-menu-item.is-open { background: var(--ph-accent); color: var(--ph-on-accent); }
 
-  /* z-index 4: el riel queda por encima de las pilas de ventanas (z-index 2)
-     que arrancan justo debajo, así el foco de un chip nunca queda tapado. */
-  .ph-chip-rail {
-    position: relative; z-index: 4;
-    display: flex; flex-wrap: wrap; gap: .5rem;
+  /* Fila de filtros (2026-09-12): productos a la izquierda, provincia a la
+     derecha, `space-between` — el operador los quería en la misma fila en
+     escritorio, no uno debajo del otro. En angosto se apilan solos por el
+     `flex-wrap` (el riel de chips ya scrollea si no entra).
+
+     `pointer-events: none` en la fila y `auto` en sus dos grupos: el hueco
+     del medio es aire sobre el mapa, y ahí el arrastre tiene que llegarle
+     al mapa, no morir contra un contenedor invisible. */
+  .ph-filters {
+    position: relative; z-index: 1300;
+    display: flex; flex-wrap: wrap; align-items: flex-start;
+    justify-content: space-between; gap: .5rem 1rem;
     padding: .7rem clamp(1rem, 3vw, 2rem) 0;
+    pointer-events: none;
   }
+  .ph-filters > * { pointer-events: auto; }
+
+  .ph-chip-rail {
+    display: flex; flex-wrap: wrap; gap: .5rem; min-width: 0;
+  }
+  .ph-province-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
   .ph-chip-toggle {
     font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
     padding: .4rem .95rem; border-radius: var(--m3-radius-full);
@@ -293,14 +307,30 @@
   }
   .ph-province-chip .ph-x { color: inherit; }
 
-  /* El escenario: el mapa llena lo que queda; ventanas, paneles, leyenda y
-     crédito flotan encima. */
-  .ph-stage {
-    position: relative; flex: 1; min-height: 0;
-    display: flex; align-items: center; justify-content: center;
-    padding: .75rem clamp(1rem, 3vw, 2rem) 2rem;
-  }
-  .ph-stage .ph-map { height: 100%; max-width: 72rem; filter: drop-shadow(var(--m3-elev-1)); }
+  /* ── El mapa ES la app (2026-09-12) ────────────────────────────────────
+     Antes `.ph-stage` era un hijo más del flex column: la barra superior y
+     el riel de chips le comían alto y el mapa quedaba en lo que sobraba.
+     Ahora el escenario se saca del flujo (`absolute; inset: 0`) y cubre el
+     `.ph-canvas` entero a sangre; la barra, los filtros y el muelle de
+     ventanas flotan ENCIMA.
+
+     **La escala de z-index arranca en 1100 y no en 1**: Leaflet numera sus
+     propias capas internas —panes 200/400, controles 800, esquinas 1000— y
+     todo el cromo de esta página vivía en 1..4, o sea DEBAJO del mapa desde
+     que el mapa dejó de ser un `<svg>` propio. Cualquier cosa que tenga que
+     verse sobre el mapa va por encima de 1000:
+
+       0     `.ph-stage` (el mapa)
+       1100  leyenda (adentro del stage, que es su propio contexto)
+       1200  muelle de ventanas y paneles
+       1300  barra superior y fila de filtros
+       1400  indicador de carga
+
+     El degradado de `.ph-canvas` queda de fondo aunque el mapa lo tape: si
+     los tiles no cargan —la conexión del usuario final, que es el motivo de
+     la decisión cerrada 1— se ve eso en vez de un vacío blanco. */
+  .ph-stage { position: absolute; inset: 0; z-index: 0; }
+  .ph-stage .ph-map { width: 100%; height: 100%; }
   /* El hover de cada provincia ya no es `:hover` de CSS: Leaflet dibuja los
      polígonos como SVG con atributos puestos por JS (`estiloDeProvincia()`),
      no clases que una hoja pueda enganchar, así que el resaltado al pasar
@@ -310,7 +340,7 @@
   .ph-map .leaflet-interactive { cursor: pointer; transition: fill-opacity .2s ease; }
 
   .ph-canvas-legend {
-    position: absolute; left: clamp(1rem, 3vw, 2rem); bottom: .75rem; z-index: 1;
+    position: absolute; left: clamp(1rem, 3vw, 2rem); bottom: .75rem; z-index: 1100;
     max-width: min(20rem, 70vw); padding: .7rem .9rem;
     border-radius: var(--ph-radius-sm);
     background: var(--m3-surface);
@@ -340,15 +370,29 @@
   }
   .ph-density-labels { display: flex; justify-content: space-between;
                         margin: .3rem 0 0; font-size: .6875rem; color: var(--m3-on-surface-variant); }
-  .ph-attrib { position: absolute; right: clamp(1rem, 3vw, 2rem); bottom: .5rem; z-index: 1;
-               margin: 0; font-size: .6875rem; color: var(--m3-on-surface-variant); }
-  .ph-attrib a { color: inherit; text-decoration: underline; }
+  /* El crédito del mapa ya no es un `<p>` propio en la esquina: Leaflet
+     dibuja el suyo (`attribution` del tile layer) en ese mismo lugar, así
+     que había dos cajas de crédito pisándose. Los dos créditos —Natural
+     Earth por los polígonos, OpenStreetMap por los tiles— viajan ahora en
+     el `attribution` que arma `inicializarMapa()`. */
 
   /* ── Muelle de ventanas: izquierda las del menú, derecha los paneles de
      producto. El muelle no captura clics; sus pilas sí. Cada pila scrollea
-     sola si no entra en la altura del escenario. */
+     sola si no entra en la altura disponible.
+
+     `.ph-dock-layer` (2026-09-12) es el hueco que queda debajo del cromo:
+     es el ÚNICO hijo del flex column que crece (`flex: 1`), así que las
+     ventanas arrancan siempre debajo de la barra y los filtros por layout,
+     sin que nadie tenga que calcular su alto. Antes el muelle vivía dentro
+     de `.ph-stage`; al pasar el escenario a cubrir el canvas entero, ahí
+     habría quedado tapando la barra superior (y una ventana arrastrada
+     hacia arriba se metía abajo de ella, sin forma de agarrar su título). */
+  .ph-dock-layer {
+    position: relative; z-index: 1200;
+    flex: 1; min-height: 0; pointer-events: none;
+  }
   .ph-dock {
-    position: absolute; inset: .75rem clamp(1rem, 3vw, 2rem) .75rem; z-index: 2;
+    position: absolute; inset: .75rem clamp(1rem, 3vw, 2rem) .75rem;
     display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
     pointer-events: none;
   }
@@ -544,8 +588,11 @@
      el mapa sigue siendo la página entera. */
   @media (max-width: 720px) {
     .ph-topbar { padding: .55rem .9rem; }
-    .ph-chip-rail { padding: .5rem .9rem 0; }
-    .ph-stage { padding: .5rem .5rem 2rem; }
+    /* En angosto los dos grupos de filtros se apilan (no hay ancho para la
+       fila con `space-between`) y el de provincia queda a la izquierda,
+       alineado con los chips, en vez de pegado al borde derecho. */
+    .ph-filters { padding: .5rem .9rem 0; justify-content: flex-start; }
+    .ph-province-group { width: 100%; }
     .ph-dock {
       inset: auto 0 0 0; max-height: 62%;
       flex-direction: column; align-items: stretch; justify-content: flex-start;
@@ -606,6 +653,11 @@
     </nav>
   </header>
 
+  {# Fila de filtros (2026-09-12): productos a la izquierda, provincia a la
+     derecha, en la MISMA fila con `space-between` — antes eran dos bloques
+     apilados. Flota sobre el mapa, que ahora cubre el canvas entero. #}
+  <div class="ph-filters">
+
   {# Riel de productos: cada chip togglea `?productos=` y abre su panel.
      Ninguno prendido = se muestran todos. #}
   {% if product_chips %}
@@ -640,6 +692,7 @@
      costo es una URL con algún parámetro de más cuando todo está en su
      default, no un comportamiento roto. #}
   {% if province_nav | length > 1 %}
+  <div class="ph-province-group">
   <form class="ph-province-form" action="/" method="get"
         hx-get="/" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true"
         onchange="this.requestSubmit ? this.requestSubmit() : this.submit()">
@@ -663,7 +716,10 @@
     <a class="ph-x" href="{{ province_nav[0].query }}" hx-get="{{ province_nav[0].query }}" aria-label="Volver a Cuba entera">×</a>
   </span>
   {% endif %}
+  </div>{# /.ph-province-group #}
   {% endif %}
+
+  </div>{# /.ph-filters #}
 
   {# `data-provincia`/`data-capa`: los lee `inicializarMapa()` en el script
      del pie para saber qué provincia encuadrar y con qué criterio pintar,
@@ -679,7 +735,12 @@
     <div id="ph-leaflet-map" class="ph-map"
          aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}"></div>
     <script type="application/json" id="ph-map-data">{{ map_provinces_json | safe }}</script>
+  </div>{# /.ph-stage — el mapa, a sangre, detrás de todo #}
 
+  {# El muelle vive AFUERA del escenario (2026-09-12): es el único hijo del
+     flex column que crece, así que ocupa exactamente el hueco que queda
+     debajo de la barra y los filtros, sin calcular alturas. #}
+  <div class="ph-dock-layer">
     <div class="ph-dock">
 
       {# ── Ventanas del menú. Se renderizan siempre y las cerradas llevan
@@ -1113,7 +1174,10 @@
       {% endif %}
 
     </div>{# /.ph-dock #}
+  </div>{# /.ph-dock-layer #}
 
+    {# La leyenda se posiciona contra `.ph-canvas` (que es `relative`), no
+       contra el escenario: queda abajo a la izquierda igual que siempre. #}
     <div class="ph-canvas-legend">
       {# Selector de capa (2026-09-11): «Publicación» es la de siempre
          (§9.0, vinculante); «Densidad» sombrea por cantidad de anuncios,
@@ -1147,14 +1211,11 @@
       {% endif %}
     </div>
 
-    {# Dos créditos, dos fuentes: los polígonos de provincia siguen siendo de
-       Natural Earth (dominio público, sin cambios); los tiles de fondo son
-       de OpenStreetMap —ODbL, atribución obligatoria—. Leaflet ya pone la
-       suya propia adentro del mapa (`attribution` del tile layer, esquina
-       inferior derecha); esta línea es la misma que ya tenía el pie,
-       ampliada, no un reemplazo. #}
-    <p class="ph-attrib">Mapa: <a href="https://www.naturalearthdata.com/">Natural Earth</a> (dominio público) · Tiles: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</p>
-  </div>{# /.ph-stage #}
+    {# Los dos créditos —Natural Earth por los polígonos, OpenStreetMap por
+       los tiles— los pone Leaflet en su propio control de atribución
+       (`attribution` del tile layer en `inicializarMapa()`). Antes había acá
+       un `<p class="ph-attrib">` con lo mismo, en la misma esquina que el
+       control de Leaflet: dos cajas pisándose. #}
 </section>
 
 {# La hoja de detalle de provincia (modal a pantalla completa) se sacó del
@@ -1556,9 +1617,15 @@
     var provinciaElegida = stage.getAttribute("data-provincia") || "";
 
     mapaLeaflet = L.map(contenedor, { attributionControl: true, scrollWheelZoom: true });
+    // Los dos créditos van acá y no en un `<p>` aparte: el control de
+    // atribución de Leaflet ocupa esa misma esquina, y tener las dos cosas
+    // era una caja encima de la otra. OSM es ODbL: la atribución no es
+    // decorativa, es obligatoria.
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      attribution:
+        'Provincias: <a href="https://www.naturalearthdata.com/">Natural Earth</a>' +
+        ' · Tiles: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(mapaLeaflet);
 
     function pintarProvincias(geojson) {
