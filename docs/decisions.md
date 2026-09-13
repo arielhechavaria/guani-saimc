@@ -8970,3 +8970,22 @@ Consecuencia: `tests/test_public_map.py` suma
 filtros trae `top: auto`/`bottom: 0`/`display: flex` en la regla angosta —
 no en la de escritorio—, y `.ph-dock` reserva el hueco de 4.5rem). Suite:
 1603 pasan, 1 saltea.
+
+## 2026-09-13 — Brújula: la leyenda también le deja el hueco a la barra de abajo
+Contexto: el operador confirmó que la barra de filtros abajo del todo (ver
+entrada anterior) «no esta mal», pero «no se ve bien por el ccartel de
+publicacion / densdidad» — la leyenda del mapa (`.ph-canvas-legend`, el
+selector Publicación/Densidad + las referencias de color) vive en la misma
+esquina inferior izquierda donde acaba de aterrizar la barra nueva, y las
+dos se pisan.
+
+Decisión: mismo patrón que ya se usó para `.ph-dock` en la entrada
+anterior — reservarle el hueco, no rediseñar nada. Solo dentro de
+`@media (max-width: 720px)`: `.ph-canvas-legend { bottom: 4.5rem; }`, el
+mismo valor que ya usa `.ph-dock` para no quedar debajo de la barra de
+chips+provincia. La regla de escritorio no se toca.
+
+Consecuencia: `tests/test_public_map.py` suma un caso a
+`TestFiltrosEnAngostoVanAlLadoContrarioDelCompas`
+(`test_la_leyenda_tambien_le_deja_hueco_a_la_barra_de_abajo`). Suite: 1604
+pasan, 1 saltea.

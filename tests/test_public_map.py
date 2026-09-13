@@ -869,3 +869,22 @@ class TestFiltrosEnAngostoVanAlLadoContrarioDelCompas:
         texto = client.get("/").text
 
         assert "inset: auto 0 4.5rem 0" in texto
+
+    def test_la_leyenda_tambien_le_deja_hueco_a_la_barra_de_abajo(
+        self, client: TestClient
+    ) -> None:
+        """La leyenda (Publicación/Densidad) vivía en la esquina inferior
+        izquierda, el mismo lugar donde aterriza la barra de
+        chips+provincia en angosto — «no se ve bien por el cartel de
+        publicación / densidad» (el operador). Mismo hueco que ya reserva
+        `.ph-dock`.
+
+        Acá el override angosto no repite `left`/`right` (solo pisa
+        `bottom`), así que no hay una marca como `left: 0` para desambiguar:
+        se toma la ÚLTIMA aparición de la regla, que es la del `@media`
+        —viene después de la de escritorio en el archivo—."""
+        texto = client.get("/").text
+        desde = texto.rindex(".ph-canvas-legend {")
+        regla = texto[desde : texto.index("}", desde)]
+
+        assert "bottom: 4.5rem" in regla

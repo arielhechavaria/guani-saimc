@@ -829,6 +829,12 @@
       flex-direction: column; align-items: stretch; justify-content: flex-start;
       gap: .6rem; padding: .6rem; overflow-y: auto;
     }
+    /* La leyenda (Publicación/Densidad) vivía en la esquina inferior
+       izquierda, el mismo lugar donde ahora aterriza la barra de
+       chips+provincia — «no se ve bien por el cartel de publicación /
+       densidad» (el operador). Mismo hueco de 4.5rem que ya reserva
+       `.ph-dock`, para que quede arriba de la barra nueva y no debajo. */
+    .ph-canvas-legend { bottom: 4.5rem; }
     .ph-win-stack, .ph-panel-stack { width: 100%; max-height: none; overflow: visible; margin: 0; }
     /* Sin arrastre en angosto: la barra de título vuelve a dejar scrollear la
        bandeja con el dedo. */
