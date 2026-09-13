@@ -9318,3 +9318,31 @@ sí hay 4 tests de endpoint nuevos para cuándo aparece/no aparece la
 insignia. Sigue pendiente que el operador vea el resultado real en
 navegador — mismo motivo que el slice anterior, sin Postgres accesible
 en el entorno de la sesión.
+
+## 2026-09-13 — Insignia: apilar por producto en vez de ocultar con 2+
+Contexto: el operador probó la insignia de la entrada anterior y reportó
+"no veo los iconos... lo vi en algún momento pero no está presente todo
+el tiempo". Preguntado si tenía uno o varios productos prendidos a la
+vez, confirmó: varios. La regla original —ocultar la insignia entera con
+2+ productos activos, para no superponer íconos en el mismo punto— se
+disparaba sola porque los chips no se apagan al tocarlos de nuevo
+(`ProductChip`, decisión previa 2026-09-11: cerrar es cosa de la × del
+panel), así que acumular productos activos sin querer es el uso normal,
+no un caso raro.
+Decisión: en vez de ocultar, se apila una insignia por cada producto
+activo con dato en la provincia elegida (`.ph-map-badge-stack`, columna
+con `gap`), dentro del mismo `<template id="ph-map-badge">` y el mismo
+`L.divIcon`/marcador — `inicializarMapa()` no cambió, sigue clonando un
+solo elemento. `panel_con_dato` deja de filtrarse a `length == 1`.
+Descartado: pedirle al operador que primero cierre los paneles sobrantes
+—le traslada a él un problema de diseño—; una insignia combinada con
+todos los productos en una sola línea —ilegible pasado de 2 productos,
+y no se sabe de antemano cuántos van a estar activos—.
+Consecuencia: con muchos productos activos a la vez la columna puede
+crecer bastante alto sobre la provincia; no se puso un tope porque no
+hay evidencia todavía de que eso pase en uso real (el operador prueba
+con 1-2 productos por ahora). Tests actualizados: el que afirmaba "con 2
+productos no hay insignia" se reemplaza por uno que cuenta 2
+`.ph-map-badge` dentro del stack, más uno nuevo que confirma que un
+producto activo SIN dato en esa provincia no deja un hueco vacío en la
+columna.
