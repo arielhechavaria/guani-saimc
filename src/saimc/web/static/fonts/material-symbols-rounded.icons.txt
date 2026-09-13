@@ -24,6 +24,7 @@ history
 inbox
 info
 inventory_2
+layers
 map
 menu_book
 monitoring

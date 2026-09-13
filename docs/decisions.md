@@ -8989,3 +8989,34 @@ Consecuencia: `tests/test_public_map.py` suma un caso a
 `TestFiltrosEnAngostoVanAlLadoContrarioDelCompas`
 (`test_la_leyenda_tambien_le_deja_hueco_a_la_barra_de_abajo`). Suite: 1604
 pasan, 1 saltea.
+
+## 2026-09-13 — Brújula: la leyenda colapsa a un botón en angosto
+Contexto: el hueco de 4.5rem del slice anterior no alcanzó — el operador
+avisó que la leyenda «esta muy cerca de los productos y molesta» todavía,
+e invitó a resolverlo con creatividad: «o lo movemos de lugar o lo
+ocultamos y mostramos de alguna forma… vista movil».
+
+Decisión: mismo idioma visual que ya tiene el compás, aplicado a la
+leyenda. Solo dentro de `@media (max-width: 720px)`: `.ph-canvas-legend`
+colapsa a un botón redondo chico (`.ph-legend-toggle`, ícono `layers`) que
+vive en el mismo rincón inferior izquierdo; tocarlo revela la tarjeta
+completa (Publicación/Densidad + referencias de color), que aparece por
+encima del botón (`bottom: 7.75rem`, arriba de los `4.5rem` del botón) en
+vez de reemplazarlo — así el mismo botón sigue disponible para volver a
+cerrarla. `opacity`+`visibility` para ocultarla (sus botones de capa,
+`.ph-layer-btn`, son focales — igual que el dock, y a diferencia del
+título del compás, que no tiene nada enfocable propio). El toggle es JS
+(`alternarLeyenda`, mismo patrón que `alternarCompas` sin la rama de
+hover: el botón no existe en escritorio, así que no hace falta distinguir
+mouse de táctil) más `:focus-within` para teclado.
+
+En escritorio no cambia nada: `.ph-legend-toggle` queda en `display: none`
+y la leyenda sigue siempre abierta, como toda la vida — el operador acotó
+el pedido a «vista movil».
+
+Consecuencia: cinco íconos de Material Symbols nuevos entraron al subset
+en total desde que empezó «Brújula» (`download`, `map`, `remove`, `sell`,
+`show_chart`); este slice suma uno más, `layers`, vía
+`tools/build_icon_font.py`. `tests/test_public_map.py` suma
+`TestLaLeyendaColapsaEnAngosto` (4 casos) y reescribe el test del hueco
+anterior, superado por este mecanismo. Suite: 1608 pasan, 1 saltea.

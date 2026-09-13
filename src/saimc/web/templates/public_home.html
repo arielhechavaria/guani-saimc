@@ -544,6 +544,10 @@
     background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
     box-shadow: var(--ph-elev);
   }
+  /* El botón que colapsa la leyenda solo existe en angosto (ver el
+     `@media` del final) — en escritorio la leyenda sigue siempre abierta,
+     así que el botón no tiene nada que hacer ahí. */
+  .ph-legend-toggle { display: none; }
   .ph-canvas-count { margin: .5rem 0 0; padding-top: .45rem;
                      border-top: 1px solid var(--m3-outline-variant);
                      font-size: .75rem; color: var(--m3-on-surface-variant);
@@ -829,12 +833,36 @@
       flex-direction: column; align-items: stretch; justify-content: flex-start;
       gap: .6rem; padding: .6rem; overflow-y: auto;
     }
-    /* La leyenda (Publicación/Densidad) vivía en la esquina inferior
-       izquierda, el mismo lugar donde ahora aterriza la barra de
-       chips+provincia — «no se ve bien por el cartel de publicación /
-       densidad» (el operador). Mismo hueco de 4.5rem que ya reserva
-       `.ph-dock`, para que quede arriba de la barra nueva y no debajo. */
-    .ph-canvas-legend { bottom: 4.5rem; }
+    /* La leyenda (Publicación/Densidad) seguía «muy cerca de los
+       productos» y molestando aun con el hueco de arriba (ajuste del
+       operador, mismo día: «hay que ser creativo… o lo movemos de lugar o
+       lo ocultamos y mostramos de alguna forma»). Colapsa al mismo idioma
+       que el compás: un botón redondo chico (`.ph-legend-toggle`, oculto
+       en escritorio) que revela la leyenda completa al tocarlo —no
+       siempre abierta compitiendo por el rincón—.
+
+       El botón se queda en el hueco de 4.5rem que ya reservaba la leyenda
+       entera; la leyenda, al abrirse, sube un poco más (7.75rem) para no
+       taparlo — así el mismo botón sigue ahí para volver a cerrarla. */
+    .ph-legend-toggle {
+      display: flex; align-items: center; justify-content: center;
+      position: absolute; left: 1rem; bottom: 4.5rem; z-index: 1100;
+      width: 2.75rem; height: 2.75rem; border-radius: 999px;
+      appearance: none; -webkit-appearance: none;
+      border: none; margin: 0; padding: 0; font: inherit; cursor: pointer;
+      background: var(--m3-surface); color: var(--m3-on-surface-variant);
+      box-shadow: var(--ph-elev);
+    }
+    .ph-canvas-legend {
+      bottom: 7.75rem;
+      opacity: 0; visibility: hidden; transform: translateY(.4rem);
+      transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+    }
+    .ph-legend-nav.is-active .ph-canvas-legend,
+    .ph-legend-nav:focus-within .ph-canvas-legend {
+      opacity: 1; visibility: visible; transform: none;
+      transition: opacity .18s ease, transform .18s ease, visibility 0s linear 0s;
+    }
     .ph-win-stack, .ph-panel-stack { width: 100%; max-height: none; overflow: visible; margin: 0; }
     /* Sin arrastre en angosto: la barra de título vuelve a dejar scrollear la
        bandeja con el dedo. */
@@ -1450,39 +1478,55 @@
   </div>{# /.ph-dock-layer #}
 
     {# La leyenda se posiciona contra `.ph-canvas` (que es `relative`), no
-       contra el escenario: queda abajo a la izquierda igual que siempre. #}
-    <div class="ph-canvas-legend">
-      {# Selector de capa (2026-09-11): «Publicación» es la de siempre
-         (§9.0, vinculante); «Densidad» sombrea por cantidad de anuncios,
-         relativa al máximo actual —presentacional, no decide qué se
-         publica, así que no choca con el umbral sin calibrar de §12.6. #}
-      <div class="ph-layer-toggle" role="group" aria-label="Capa del mapa">
-        {% for choice in layer_nav %}
-        <a class="ph-layer-btn{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
-        {% endfor %}
+       contra el escenario: queda abajo a la izquierda igual que siempre.
+
+       `.ph-legend-nav` (2026-09-13, ajuste del operador: «esa leyenda…
+       esta muy cerca de los productos y molesta» — en angosto, donde la
+       barra de chips ahora vive abajo del todo): en escritorio no hace
+       nada —el botón de acá abajo se queda en `display: none` y la
+       leyenda sigue siempre abierta, como toda la vida—. En angosto
+       (ver el `@media` del final) la leyenda colapsa a este botón
+       redondo, mismo idioma que el compás: chico, discreto, revela el
+       contenido al tocarlo en vez de competir por el rincón con los
+       chips. #}
+    <div class="ph-legend-nav">
+      <button type="button" class="ph-legend-toggle" aria-label="Mostrar la leyenda del mapa">
+        <span class="m3-icon">layers</span>
+      </button>
+
+      <div class="ph-canvas-legend">
+        {# Selector de capa (2026-09-11): «Publicación» es la de siempre
+           (§9.0, vinculante); «Densidad» sombrea por cantidad de anuncios,
+           relativa al máximo actual —presentacional, no decide qué se
+           publica, así que no choca con el umbral sin calibrar de §12.6. #}
+        <div class="ph-layer-toggle" role="group" aria-label="Capa del mapa">
+          {% for choice in layer_nav %}
+          <a class="ph-layer-btn{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
+          {% endfor %}
+        </div>
+        {# Misma condición que el `<path>` de arriba: con provincia elegida el
+           mapa ya pinta por densidad aunque `capa` siga en «publicación», así
+           que la leyenda de abajo tiene que seguirla — si no, mostraba
+           «Publicada/En ingesta/Sin datos» al lado de un mapa que ya no
+           pintaba ninguno de esos tres estados. #}
+        {% if selected_layer == 'densidad' or selected_province %}
+        <div class="ph-density-ramp" aria-hidden="true"></div>
+        <p class="ph-density-labels"><span>Sin anuncios</span><span>{{ map.provinces[0].max_rows }} (la que más tiene)</span></p>
+        {% if selected_province %}
+        <p class="ph-canvas-count">Sombreado relativo a la provincia con más anuncios hoy · {{ map.provinces | selectattr("name", "equalto", selected_province) | map(attribute="rows") | first }} en {{ selected_province }}</p>
+        {% else %}
+        <p class="ph-canvas-count">Sombreado relativo a la provincia con más anuncios hoy · {{ map.total_rows }} en total</p>
+        {% endif %}
+        {% else %}
+        <ul class="ph-legend">
+          <li><span class="ph-swatch is-publicada"></span> Publicada</li>
+          <li><span class="ph-swatch is-en-ingesta"></span> Recogiendo datos, todavía sin publicar</li>
+          <li><span class="ph-swatch is-sin-datos"></span> Sin datos todavía</li>
+        </ul>
+        <p class="ph-canvas-count">{{ map.covered }} de {{ map.provinces | length }} provincias con observaciones · {{ map.total_rows }} en total</p>
+        {% endif %}
       </div>
-      {# Misma condición que el `<path>` de arriba: con provincia elegida el
-         mapa ya pinta por densidad aunque `capa` siga en «publicación», así
-         que la leyenda de abajo tiene que seguirla — si no, mostraba
-         «Publicada/En ingesta/Sin datos» al lado de un mapa que ya no
-         pintaba ninguno de esos tres estados. #}
-      {% if selected_layer == 'densidad' or selected_province %}
-      <div class="ph-density-ramp" aria-hidden="true"></div>
-      <p class="ph-density-labels"><span>Sin anuncios</span><span>{{ map.provinces[0].max_rows }} (la que más tiene)</span></p>
-      {% if selected_province %}
-      <p class="ph-canvas-count">Sombreado relativo a la provincia con más anuncios hoy · {{ map.provinces | selectattr("name", "equalto", selected_province) | map(attribute="rows") | first }} en {{ selected_province }}</p>
-      {% else %}
-      <p class="ph-canvas-count">Sombreado relativo a la provincia con más anuncios hoy · {{ map.total_rows }} en total</p>
-      {% endif %}
-      {% else %}
-      <ul class="ph-legend">
-        <li><span class="ph-swatch is-publicada"></span> Publicada</li>
-        <li><span class="ph-swatch is-en-ingesta"></span> Recogiendo datos, todavía sin publicar</li>
-        <li><span class="ph-swatch is-sin-datos"></span> Sin datos todavía</li>
-      </ul>
-      <p class="ph-canvas-count">{{ map.covered }} de {{ map.provinces | length }} provincias con observaciones · {{ map.total_rows }} en total</p>
-      {% endif %}
-    </div>
+    </div>{# /.ph-legend-nav #}
 
     {# Los dos créditos —Natural Earth por los polígonos, OpenStreetMap por
        los tiles— los pone Leaflet en su propio control de atribución
@@ -2088,9 +2132,24 @@
     if (haciaAfuera) programarCierreCompas();
   });
 
+  // Leyenda del mapa colapsada en angosto (2026-09-13): mismo patrón que
+  // `alternarCompas`, sin la parte de hover — el botón solo existe en
+  // angosto (`.ph-legend-toggle` en `display: none` en escritorio), así
+  // que no hace falta distinguir mouse de táctil acá.
+  function alternarLeyenda(ev) {
+    var envoltorio = document.querySelector(".ph-legend-nav");
+    if (!envoltorio) return;
+    if (ev.target.closest(".ph-legend-toggle")) {
+      envoltorio.classList.toggle("is-active");
+      return;
+    }
+    if (!envoltorio.contains(ev.target)) envoltorio.classList.remove("is-active");
+  }
+
   document.addEventListener("click", cerrarOptimista);
   document.addEventListener("click", zoomDelMapa);
   document.addEventListener("click", alternarCompas);
+  document.addEventListener("click", alternarLeyenda);
   document.addEventListener("htmx:responseError", revertirCierre);
   document.addEventListener("htmx:sendError", revertirCierre);
   document.addEventListener("htmx:afterSettle", function () {

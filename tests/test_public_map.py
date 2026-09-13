@@ -870,21 +870,67 @@ class TestFiltrosEnAngostoVanAlLadoContrarioDelCompas:
 
         assert "inset: auto 0 4.5rem 0" in texto
 
-    def test_la_leyenda_tambien_le_deja_hueco_a_la_barra_de_abajo(
+    def test_la_leyenda_no_queda_siempre_abierta_en_angosto(
         self, client: TestClient
     ) -> None:
-        """La leyenda (Publicación/Densidad) vivía en la esquina inferior
-        izquierda, el mismo lugar donde aterriza la barra de
-        chips+provincia en angosto — «no se ve bien por el cartel de
-        publicación / densidad» (el operador). Mismo hueco que ya reserva
-        `.ph-dock`.
-
-        Acá el override angosto no repite `left`/`right` (solo pisa
-        `bottom`), así que no hay una marca como `left: 0` para desambiguar:
-        se toma la ÚLTIMA aparición de la regla, que es la del `@media`
-        —viene después de la de escritorio en el archivo—."""
+        """La leyenda (Publicación/Densidad) seguía «muy cerca de los
+        productos» y molestando aun reservándole hueco (ajuste del operador,
+        el mismo día: «hay que ser creativo… o lo movemos de lugar o lo
+        ocultamos y mostramos de alguna forma»). Ver
+        `TestLaLeyendaColapsaEnAngosto` para el mecanismo completo."""
         texto = client.get("/").text
-        desde = texto.rindex(".ph-canvas-legend {")
-        regla = texto[desde : texto.index("}", desde)]
+        regla = texto[texto.index(".ph-legend-nav.is-active .ph-canvas-legend") :]
+        regla = regla[: regla.index("}")]
 
-        assert "bottom: 4.5rem" in regla
+        assert "opacity: 1" in regla
+
+
+class TestLaLeyendaColapsaEnAngosto:
+    """La leyenda (Publicación/Densidad) colapsa a un botón redondo en
+    angosto (2026-09-13): mismo idioma que el compás — chico, discreto,
+    revela el contenido al tocarlo, no siempre abierta compitiendo con la
+    barra de chips por el mismo rincón. En escritorio no cambia nada: la
+    leyenda sigue siempre abierta, como toda la vida."""
+
+    def test_el_boton_esta_oculto_en_escritorio(self, client: TestClient) -> None:
+        texto = client.get("/").text
+        regla = texto[texto.index("  .ph-legend-toggle { display: none; }") :]
+        regla = regla[: regla.index(";")]
+
+        assert "display: none" in regla
+
+    def test_el_boton_aparece_en_angosto_y_la_leyenda_arranca_oculta(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+
+        regla_boton = texto[texto.index("    .ph-legend-toggle {") :]
+        regla_boton = regla_boton[: regla_boton.index("}")]
+        assert "display: flex" in regla_boton
+
+        # La MISMA búsqueda de `.ph-canvas-legend {` que ya usan otros tests
+        # de esta clase encuentra la regla de escritorio primero (sin
+        # `opacity`); la de angosto es la siguiente aparición.
+        desde = texto.index("  .ph-canvas-legend {")
+        desde = texto.index("  .ph-canvas-legend {", desde + 1)
+        regla_oculta = texto[desde : texto.index("}", desde)]
+        assert "opacity: 0" in regla_oculta
+        assert "visibility: hidden" in regla_oculta
+
+    def test_tocar_el_boton_revela_la_leyenda_por_js(self, client: TestClient) -> None:
+        """Mismo patrón que `alternarCompas`, sin la parte de hover: el botón
+        solo existe en angosto (`display: none` en escritorio), así que no
+        hace falta distinguir mouse de táctil acá."""
+        texto = client.get("/").text
+
+        assert "function alternarLeyenda(ev)" in texto
+        assert 'envoltorio.classList.toggle("is-active")' in texto
+        assert 'document.addEventListener("click", alternarLeyenda)' in texto
+
+    def test_el_boton_tiene_su_propio_icono_y_nombre_accesible(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+
+        assert 'class="ph-legend-toggle" aria-label="Mostrar la leyenda del mapa"' in texto
+        assert '<span class="m3-icon">layers</span>' in texto
