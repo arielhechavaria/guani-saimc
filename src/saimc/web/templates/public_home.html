@@ -157,17 +157,32 @@
       var(--m3-surface-hover) 0%, var(--m3-bg) 60%, var(--m3-surface-container-high) 100%);
   }
 
-  .ph-topbar {
-    position: relative; z-index: 1300;
-    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-    gap: .5rem 1.5rem; padding: .65rem clamp(1rem, 3vw, 2rem);
+  /* ── Brújula (2026-09-13) ───────────────────────────────────────────────
+     El avatar ES el control, anclado a la esquina como el layers/zoom de un
+     mapa — no una barra que cruza arriba. Salió de un rediseño evaluado en
+     canvas de Claude Design (cuatro direcciones «rectas» + tres que
+     fusionan cromo y mapa; el operador eligió esta y pidió más creatividad
+     todavía: «sentir que topbar, menú y mapa son una sola cosa»). Compás +
+     título + dock vertical + zoom del mapa quedan unidos por un hilo fino,
+     y todo es `position: absolute` sobre `.ph-canvas` — ya no hay una barra
+     que le reste alto al escenario.
+
+     Esto cambia el reparto de `.ph-canvas` (flex column): con el compás y
+     compañía fuera del flujo, `.ph-dock-layer` (flex:1) pasa a ocupar la
+     altura ENTERA del lienzo, no lo que sobraba debajo de una barra — el
+     `inset` de `.ph-dock` es quien ahora aparta a las ventanas del compás
+     (ver ese comentario, más abajo). */
+  .ph-compass {
+    position: absolute; left: 1.625rem; top: 1.625rem; z-index: 1300;
+    width: 4rem; height: 4rem; border-radius: 999px;
     background: var(--m3-surface);
-    background: color-mix(in srgb, var(--m3-surface) 92%, transparent);
-    box-shadow: var(--m3-elev-1);
+    box-shadow: 0 0 0 5px var(--ph-accent-wash),
+                0 10px 26px color-mix(in srgb, var(--m3-on-surface) 22%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    display: flex; align-items: center; justify-content: center;
   }
-  .ph-brand-row { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+  .ph-compass .ph-brand-avatar { width: 3.25rem; height: 3.25rem; }
   .ph-brand-avatar { flex: none; width: 2.25rem; height: 2.25rem; }
-  .ph-brand { display: grid; gap: .1rem; min-width: 0; }
 
   /* Indicador de carga (2026-09-11): convención estándar de htmx — un
      elemento con clase `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"`
@@ -219,43 +234,144 @@
     0%, 80%, 100% { opacity: .3; transform: scale(.7); }
     40% { opacity: 1; transform: scale(1); }
   }
+
+  /* El hilo: conecta compás → título y compás → dock, para que las tres
+     piezas se lean como un solo objeto. Puramente decorativo
+     (`aria-hidden`); va ANTES en el DOM que compás/título/dock para pintar
+     detrás de ellos sin necesitar un z-index propio (mismo nivel 1300:
+     dentro de una misma capa, lo último en el DOM pinta encima). */
+  .ph-compass-thread {
+    position: absolute; left: 3.5625rem; top: 5.75rem; z-index: 1300;
+    width: 2px; height: 16.75rem; border-radius: 2px;
+    background: linear-gradient(180deg, var(--ph-accent-wash) 0%, transparent 100%);
+  }
+  .ph-compass-link {
+    position: absolute; left: 5.625rem; top: 3.5625rem; z-index: 1300;
+    width: 1.125rem; height: 2px; border-radius: 2px;
+    background: color-mix(in srgb, var(--ph-accent) 30%, transparent);
+  }
+
+  /* Título directo sobre el mapa, sin caja dura: el halo es el propio fondo
+     del grupo —un degradado radial que se desvanece—, así que crece y se
+     apaga con el contenido real (título corto o «Aceite en La Habana») en
+     vez de ser un rectángulo de tamaño fijo puesto detrás. */
+  .ph-compass-title-group {
+    position: absolute; left: 7.25rem; top: 1.5rem; z-index: 1300;
+    display: grid; gap: .2rem; max-width: min(28rem, 56vw);
+    padding: .7rem 1.75rem .7rem 1.1rem; border-radius: 1.75rem;
+    background: radial-gradient(ellipse 130% 160% at 20% 50%,
+      color-mix(in srgb, var(--m3-surface) 90%, transparent) 0%,
+      color-mix(in srgb, var(--m3-surface) 55%, transparent) 55%,
+      transparent 85%);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
   .ph-canvas-kicker { font-size: .625rem; letter-spacing: .16em; text-transform: uppercase;
                       color: var(--ph-accent); }
   .ph-canvas-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400;
-                     font-size: clamp(1.15rem, 2.4vw, 1.55rem); line-height: 1.15; }
+                     font-size: clamp(1.15rem, 2.4vw, 1.5rem); line-height: 1.15;
+                     text-wrap: balance; }
   .ph-canvas-sub { margin: 0; font-size: .75rem; color: var(--m3-on-surface-variant); }
 
-  .ph-menu { display: flex; gap: .25rem; max-width: 100%; overflow-x: auto; }
+  /* Dock vertical: cobertura/precios/evolución, la descarga, y el zoom del
+     mapa — los tres grupos del compás, uno debajo del otro, unidos por el
+     mismo hilo. Reemplaza la barra horizontal de antes: `.ph-menu` sigue
+     siendo el mismo `<nav>`, ahora en columna en vez de fila. */
+  .ph-menu {
+    position: absolute; left: 2.25rem; top: 6.875rem; z-index: 1300;
+    display: flex; flex-direction: column; align-items: flex-start; gap: .625rem;
+  }
+  .ph-menu-divider { width: 1.625rem; height: 1px; margin: .125rem 0 .125rem .5625rem;
+                      background: var(--m3-outline-variant); }
+
+  /* Cada ítem es un círculo de ícono; abierto (o con el mouse encima) saca
+     una etiqueta a la derecha, como una burbuja que nace del círculo — no
+     un tooltip aparte. `max-width` + `overflow: hidden` en la etiqueta (no
+     `display: none`) es lo que anima la aparición, y deja que la etiqueta
+     mida lo que el texto real necesite en vez de un ancho fijo. */
   .ph-menu-item {
-    flex: none; padding: .45rem .95rem; border-radius: var(--m3-radius-full);
-    font-size: .8125rem; font-weight: 500; white-space: nowrap;
+    position: relative; display: flex; align-items: center;
+    height: 2.75rem; border-radius: var(--m3-radius-full);
+    background: color-mix(in srgb, var(--m3-surface) 65%, transparent);
+    border: 1px solid color-mix(in srgb, var(--m3-surface) 80%, transparent);
+    box-shadow: 0 3px 12px color-mix(in srgb, var(--m3-on-surface) 14%, transparent);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     color: var(--m3-on-surface-variant);
-    transition: background .2s ease, color .2s ease;
+    overflow: hidden;
+    transition: background .2s ease, border-color .2s ease, box-shadow .2s ease, color .2s ease;
   }
-  .ph-menu-item:hover { background: var(--ph-accent-wash); color: var(--ph-accent); text-decoration: none; }
-  .ph-menu-item.is-open { background: var(--ph-accent); color: var(--ph-on-accent); }
-
-  /* Fila de filtros (2026-09-12): productos a la izquierda, provincia a la
-     derecha, `space-between` — el operador los quería en la misma fila en
-     escritorio, no uno debajo del otro. En angosto se apilan solos por el
-     `flex-wrap` (el riel de chips ya scrollea si no entra).
-
-     `pointer-events: none` en la fila y `auto` en sus dos grupos: el hueco
-     del medio es aire sobre el mapa, y ahí el arrastre tiene que llegarle
-     al mapa, no morir contra un contenedor invisible. */
-  .ph-filters {
-    position: relative; z-index: 1300;
-    display: flex; flex-wrap: wrap; align-items: flex-start;
-    justify-content: space-between; gap: .5rem 1rem;
-    padding: .7rem clamp(1rem, 3vw, 2rem) 0;
-    pointer-events: none;
+  .ph-menu-icon {
+    flex: none; width: 2.75rem; height: 2.75rem;
+    display: flex; align-items: center; justify-content: center;
   }
-  .ph-filters > * { pointer-events: auto; }
+  .ph-menu-label {
+    flex: none; max-width: 0; opacity: 0; overflow: hidden;
+    font-size: .8125rem; font-weight: 600; white-space: nowrap;
+    transition: max-width .25s ease, opacity .2s ease, padding .25s ease;
+  }
+  .ph-menu-item:hover .ph-menu-label, .ph-menu-item.is-open .ph-menu-label {
+    max-width: 12rem; opacity: 1; padding-right: .9rem;
+  }
+  .ph-menu-item:hover {
+    background: var(--ph-accent-wash); border-color: var(--ph-accent); color: var(--ph-accent);
+    text-decoration: none;
+  }
+  .ph-menu-item.is-open, .ph-menu-item.is-open:hover {
+    background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--ph-accent) 35%, transparent);
+  }
+
+  /* El zoom del mapa entra al dock: Leaflet pone el suyo arriba a la
+     izquierda por defecto (`zoomControl`), justo donde va el compás —
+     `inicializarMapa()` lo desactiva (`zoomControl: false`) y estos dos
+     botones llaman `mapaLeaflet.zoomIn()/zoomOut()` por delegación de
+     evento (junto a `cerrarOptimista`, más abajo: el header entero se
+     re-renderiza en cada swap de htmx, así que un listener puesto acá se
+     perdería; delegado en `document` sobrevive al swap). */
+  .ph-menu-zoom {
+    display: flex; flex-direction: column; width: 2.75rem;
+    border-radius: var(--m3-radius-full); overflow: hidden;
+    background: color-mix(in srgb, var(--m3-surface) 65%, transparent);
+    border: 1px solid color-mix(in srgb, var(--m3-surface) 80%, transparent);
+    box-shadow: 0 3px 12px color-mix(in srgb, var(--m3-on-surface) 14%, transparent);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .ph-menu-zoom button {
+    /* Reseteo a mano y no `all: unset`: ese atajo también borra `outline`,
+       y con eso se va el anillo de foco de `:focus-visible` que ya define
+       `saimc-public.css` — un botón sin indicador de foco para quien
+       navega con teclado. */
+    appearance: none; -webkit-appearance: none;
+    border: none; background: none; margin: 0; padding: 0; font: inherit;
+    box-sizing: border-box; cursor: pointer;
+    width: 100%; height: 2.5rem; display: flex; align-items: center; justify-content: center;
+    color: var(--m3-on-surface-variant);
+  }
+  .ph-menu-zoom button:hover { background: var(--ph-accent-wash); color: var(--ph-accent); }
+  .ph-menu-zoom-sep { height: 1px; margin: 0 .625rem; background: var(--m3-outline-variant); }
+
+  /* Chips de producto + provincia, juntos en una sola píldora de vidrio
+     arriba a la derecha — antes era una fila a lo ancho con
+     `space-between`; ahora es una isla más, como el compás. */
+  .ph-compass-filters {
+    position: absolute; right: clamp(1rem, 3vw, 2rem); top: clamp(1rem, 3vw, 1.75rem);
+    z-index: 1300;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem;
+    max-width: min(34rem, 62vw);
+    padding: .5rem .65rem;
+    border-radius: 1.5rem;
+    background: color-mix(in srgb, var(--m3-surface) 62%, transparent);
+    border: 1px solid color-mix(in srgb, var(--m3-surface) 78%, transparent);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--m3-on-surface) 12%, transparent);
+    backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
+  }
+  .ph-compass-filters-sep { align-self: stretch; width: 1px; margin: .3rem 0;
+                             background: var(--m3-outline-variant); }
 
   .ph-chip-rail {
     display: flex; flex-wrap: wrap; gap: .5rem; min-width: 0;
   }
   .ph-province-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+
   .ph-chip-toggle {
     font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
     padding: .4rem .95rem; border-radius: var(--m3-radius-full);
@@ -386,19 +502,26 @@
      producto. El muelle no captura clics; sus pilas sí. Cada pila scrollea
      sola si no entra en la altura disponible.
 
-     `.ph-dock-layer` (2026-09-12) es el hueco que queda debajo del cromo:
-     es el ÚNICO hijo del flex column que crece (`flex: 1`), así que las
-     ventanas arrancan siempre debajo de la barra y los filtros por layout,
-     sin que nadie tenga que calcular su alto. Antes el muelle vivía dentro
-     de `.ph-stage`; al pasar el escenario a cubrir el canvas entero, ahí
-     habría quedado tapando la barra superior (y una ventana arrastrada
-     hacia arriba se metía abajo de ella, sin forma de agarrar su título). */
+     `.ph-dock-layer` es el hueco que queda debajo del cromo: es el ÚNICO
+     hijo del flex column que crece (`flex: 1`). Desde que el cromo pasó a
+     ser el compás (2026-09-13, sin una barra que reserve alto), este hijo
+     pasa a ocupar el lienzo ENTERO — es el `inset` de `.ph-dock`, acá
+     abajo, el que aparta a las ventanas del compás y del dock vertical,
+     no el layout de `.ph-canvas`.
+
+     Ese `inset` tiene los cuatro lados escritos a mano y no el atajo de
+     3 valores: la IZQUIERDA necesita más aire que el resto —6.5rem— para
+     que la pila de ventanas del menú no arranque debajo del compás y su
+     dock vertical (que ocupan, aproximadamente, x:0–90px, y:0–400px); el
+     TOP necesita 6.5rem también, para que la pila de paneles de producto
+     (a la derecha) no arranque debajo de la píldora de chips+provincia,
+     que vive en esa misma esquina. */
   .ph-dock-layer {
     position: relative; z-index: 1200;
     flex: 1; min-height: 0; pointer-events: none;
   }
   .ph-dock {
-    position: absolute; inset: .75rem clamp(1rem, 3vw, 2rem) .75rem;
+    position: absolute; inset: 6.5rem clamp(1rem, 3vw, 2rem) .75rem 6.5rem;
     display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
     pointer-events: none;
   }
@@ -593,12 +716,24 @@
   /* Angosto: las dos pilas se juntan en una bandeja abajo que scrollea sola;
      el mapa sigue siendo la página entera. */
   @media (max-width: 720px) {
-    .ph-topbar { padding: .55rem .9rem; }
-    /* En angosto los dos grupos de filtros se apilan (no hay ancho para la
-       fila con `space-between`) y el de provincia queda a la izquierda,
-       alineado con los chips, en vez de pegado al borde derecho. */
-    .ph-filters { padding: .5rem .9rem 0; justify-content: flex-start; }
-    .ph-province-group { width: 100%; }
+    /* El compás se achica; el dock vertical lo sigue, y la píldora de
+       filtros baja de la esquina superior derecha a una banda propia
+       debajo del compás — a lo ancho no entran las dos cosas juntas sin
+       que la píldora tape el título. */
+    .ph-compass { left: 1rem; top: 1rem; width: 3rem; height: 3rem; }
+    .ph-compass .ph-brand-avatar { width: 2.4rem; height: 2.4rem; }
+    .ph-compass-thread { left: 2.5625rem; top: 4.375rem; height: 13.5rem; }
+    .ph-compass-link { left: 4.125rem; top: 2.4375rem; }
+    .ph-compass-title-group { left: 5.25rem; top: .875rem; max-width: calc(100vw - 6.5rem); }
+    .ph-canvas-title { font-size: 1.05rem; }
+    .ph-menu { left: 1.375rem; top: 5rem; gap: .5rem; }
+    .ph-menu-item { height: 2.25rem; }
+    .ph-menu-icon { width: 2.25rem; height: 2.25rem; }
+    .ph-menu-zoom { width: 2.25rem; }
+    .ph-menu-zoom button { height: 2rem; }
+    .ph-compass-filters {
+      left: .9rem; right: .9rem; top: 3.75rem; max-width: none;
+    }
     .ph-dock {
       inset: auto 0 0 0; max-height: 62%;
       flex-direction: column; align-items: stretch; justify-content: flex-start;
@@ -630,39 +765,58 @@
    (§9.0 / §12.6); el coloreo por precio quedó fuera de alcance. #}
 <section class="ph-canvas" aria-labelledby="ph-canvas-title">
 
-  <header class="ph-topbar">
-    <div class="ph-brand-row">
-      {% include "_guani_avatar.html" %}
-      <div class="ph-brand">
-        <span class="ph-canvas-kicker">Guani · SAIMC · Fase 0</span>
-        <h1 class="ph-canvas-title" id="ph-canvas-title">
-          {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
-          {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
-        </h1>
-        {# Frescura: hasta qué día llega el anuncio piloto más reciente.
-           Antigüedad, no veredicto (§12.6). #}
-        {% if data_freshness_day %}
-        <p class="ph-canvas-sub">
-          Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
-        </p>
-        {% endif %}
-      </div>
+  {# Brújula (2026-09-13): el avatar es el control, anclado a la esquina —
+     ver el comentario de `.ph-compass` en el `<style>` para el porqué. El
+     hilo decorativo va primero para pintar detrás del compás y el dock. #}
+  <div class="ph-compass-thread" aria-hidden="true"></div>
+  <div class="ph-compass-link" aria-hidden="true"></div>
+
+  <div class="ph-compass">
+    {% include "_guani_avatar.html" %}
+  </div>
+
+  <div class="ph-compass-title-group">
+    <span class="ph-canvas-kicker">Guani · SAIMC · Fase 0</span>
+    <h1 class="ph-canvas-title" id="ph-canvas-title">
+      {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
+      {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
+    </h1>
+    {# Frescura: hasta qué día llega el anuncio piloto más reciente.
+       Antigüedad, no veredicto (§12.6). #}
+    {% if data_freshness_day %}
+    <p class="ph-canvas-sub">
+      Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
+    </p>
+    {% endif %}
+  </div>
+
+  {# Dock del compás: cada ítem abre o cierra su ventana flotante. Varias
+     pueden estar abiertas a la vez; el estado viaja en `?ver=`. La descarga
+     y el zoom reusan `.ph-menu-item` (mismo círculo) sin `is-open`, porque
+     ninguno de los dos alterna un estado propio. #}
+  <nav class="ph-menu" aria-label="Secciones">
+    {% for view in view_menu -%}
+    <a class="ph-menu-item{% if view.is_open %} is-open{% endif %}" href="{{ view.query }}" hx-get="{{ view.query }}" aria-pressed="{{ 'true' if view.is_open else 'false' }}" aria-controls="{{ view.key }}" aria-label="{{ view.label }}"><span class="ph-menu-icon"><span class="m3-icon">{{ view.icon }}</span></span><span class="ph-menu-label">{{ view.label }}</span></a>
+    {%- endfor %}
+    <div class="ph-menu-divider"></div>
+    <a class="ph-menu-item" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="ph-menu-icon"><span class="m3-icon">download</span></span><span class="ph-menu-label">Descargar CSV</span></a>
+    <div class="ph-menu-divider"></div>
+    {# Zoom del mapa (2026-09-13): Leaflet ya no dibuja el suyo
+       (`zoomControl: false` en `inicializarMapa()`) — chocaba con el
+       compás, que vive justo en esa esquina. Estos dos botones llaman
+       `mapaLeaflet.zoomIn()/zoomOut()` por delegación de evento, ver el
+       script del pie junto a `cerrarOptimista`. #}
+    <div class="ph-menu-zoom">
+      <button type="button" data-zoom-in aria-label="Acercar el mapa"><span class="m3-icon">add</span></button>
+      <div class="ph-menu-zoom-sep"></div>
+      <button type="button" data-zoom-out aria-label="Alejar el mapa"><span class="m3-icon">remove</span></button>
     </div>
+  </nav>
 
-    {# Menú del header: cada ítem abre o cierra su ventana flotante. Varias
-       pueden estar abiertas a la vez; el estado viaja en `?ver=`. #}
-    <nav class="ph-menu" aria-label="Secciones">
-      {% for view in view_menu -%}
-      <a class="ph-menu-item{% if view.is_open %} is-open{% endif %}" href="{{ view.query }}" hx-get="{{ view.query }}" aria-pressed="{{ 'true' if view.is_open else 'false' }}" aria-controls="{{ view.key }}">{{ view.label }}</a>
-      {%- endfor %}
-      <a class="ph-menu-item" href="{{ csv_href }}">Descargar CSV</a>
-    </nav>
-  </header>
-
-  {# Fila de filtros (2026-09-12): productos a la izquierda, provincia a la
-     derecha, en la MISMA fila con `space-between` — antes eran dos bloques
-     apilados. Flota sobre el mapa, que ahora cubre el canvas entero. #}
-  <div class="ph-filters">
+  {# Chips de producto + provincia, juntos en una sola píldora de vidrio
+     arriba a la derecha (`.ph-compass-filters`) — antes era una fila a lo
+     ancho con `space-between`; ahora es una isla más, como el compás. #}
+  <div class="ph-compass-filters">
 
   {# Riel de productos: cada chip togglea `?productos=` y abre su panel.
      Ninguno prendido = se muestran todos. #}
@@ -680,6 +834,10 @@
     {%- endif %}
     {%- endfor %}
   </nav>
+  {% endif %}
+
+  {% if product_chips and province_nav | length > 1 %}
+  <div class="ph-compass-filters-sep" aria-hidden="true"></div>
   {% endif %}
 
   {# Selector de provincia (2026-09-11): antes vivía solo adentro de la
@@ -725,7 +883,7 @@
   </div>{# /.ph-province-group #}
   {% endif %}
 
-  </div>{# /.ph-filters #}
+  </div>{# /.ph-compass-filters #}
 
   {# `data-provincia`/`data-capa`: los lee `inicializarMapa()` en el script
      del pie para saber qué provincia encuadrar y con qué criterio pintar,
@@ -1622,7 +1780,10 @@
     var capa = stage.getAttribute("data-capa") || "publicacion";
     var provinciaElegida = stage.getAttribute("data-provincia") || "";
 
-    mapaLeaflet = L.map(contenedor, { attributionControl: true, scrollWheelZoom: true });
+    // `zoomControl: false` (2026-09-13): Leaflet dibuja el suyo arriba a la
+    // izquierda por defecto, justo donde vive el compás — el +/- del dock
+    // (`.ph-menu-zoom`) lo reemplaza, ver el listener delegado más abajo.
+    mapaLeaflet = L.map(contenedor, { attributionControl: true, scrollWheelZoom: true, zoomControl: false });
     // Los dos créditos van acá y no en un `<p>` aparte: el control de
     // atribución de Leaflet ocupa esa misma esquina, y tener las dos cosas
     // era una caja encima de la otra. OSM es ODbL: la atribución no es
@@ -1743,7 +1904,20 @@
     deshacerCierre = null;
   }
 
+  // Zoom del mapa (2026-09-13): botones del dock del compás, sin `hx-get`
+  // —no navegan, solo acercan/alejan el mapa que ya está—. Delegado en
+  // `document` y no un listener puesto al crear el botón: `#ph-live` (y con
+  // él el dock entero) se reemplaza en cada swap de htmx, así que un
+  // listener directo se perdería; delegado sobrevive porque escucha en un
+  // ancestro que nunca se reemplaza.
+  function zoomDelMapa(ev) {
+    if (!mapaLeaflet) return;
+    if (ev.target.closest("[data-zoom-in]")) mapaLeaflet.zoomIn();
+    else if (ev.target.closest("[data-zoom-out]")) mapaLeaflet.zoomOut();
+  }
+
   document.addEventListener("click", cerrarOptimista);
+  document.addEventListener("click", zoomDelMapa);
   document.addEventListener("htmx:responseError", revertirCierre);
   document.addEventListener("htmx:sendError", revertirCierre);
   document.addEventListener("htmx:afterSettle", function () {

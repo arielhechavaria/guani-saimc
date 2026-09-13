@@ -537,24 +537,29 @@ class TestEnlaceDeEvidenciaEnLaSerie:
 
 
 class TestElMapaEsLaApp:
-    """El mapa cubre el lienzo entero y el cromo flota encima (2026-09-12).
+    """El mapa cubre el lienzo entero y el cromo flota encima (2026-09-12,
+    ampliado 2026-09-13 con el rediseño «Brújula»).
 
-    Pedido del operador: «El mapa debe ser toda la app […] los menús de los
-    productos y las provincias y todo lo demás debe salir sobre el mapa de
-    forma flotante. Los chips de productos y las provincias deben salir en la
-    misma fila […] como cuando usamos flex y hacemos space between».
+    Pedido original del operador: «El mapa debe ser toda la app […] los menús
+    de los productos y las provincias y todo lo demás debe salir sobre el
+    mapa de forma flotante». El primer intento puso los chips y la provincia
+    en una fila a lo ancho con `space-between`; no convenció («necesito algo
+    mas creativo… sentir que el topbar menu y mapa es una sola cosa») y se
+    evaluaron variantes en un canvas de Claude Design. La elegida —«Brújula»—
+    hace del avatar el control mismo, anclado a la esquina como el
+    layers/zoom de un mapa, con un dock vertical y una píldora de vidrio para
+    chips+provincia en vez de una barra horizontal.
 
-    **Qué puede y qué no puede afirmar un test de pytest acá.** Que los dos
-    grupos queden efectivamente en una fila con el aire en el medio lo decide
-    el CSS, y sin navegador no hay layout que medir. Lo que sí se verifica es
-    la precondición estructural —que sean HERMANOS dentro de un solo
-    contenedor de filtros, no dos bloques apilados— más la declaración del
-    `space-between` en la hoja embebida. Si alguien vuelve a partir la fila en
-    dos contenedores, esto se pone rojo; si alguien rompe el ancho de un chip,
-    no. La verificación visual es del operador.
+    **Qué puede y qué no puede afirmar un test de pytest acá.** Que el compás,
+    el título y el dock se lean como una sola pieza lo decide el CSS (el
+    hilo, el vidrio, el desenfoque), y sin navegador no hay layout que medir.
+    Lo que sí se verifica es la precondición estructural —chips y provincia
+    HERMANOS dentro de la misma píldora de filtros, no dos bloques
+    apilados— más los z-index del cromo nuevo. La verificación visual es del
+    operador.
     """
 
-    def test_el_riel_de_chips_y_la_provincia_comparten_la_fila_de_filtros(
+    def test_el_riel_de_chips_y_la_provincia_comparten_la_pildora_de_filtros(
         self, client: TestClient, session: Session
     ) -> None:
         # Los dos grupos son condicionales y el test pasaría en falso si no
@@ -570,36 +575,40 @@ class TestElMapaEsLaApp:
         _seed_provincias(session)
         texto = client.get("/?provincia=la-habana").text
 
-        fila = texto.index('class="ph-filters"')
+        pildora = texto.index('class="ph-compass-filters"')
         chips = texto.index('class="ph-chip-rail"')
         provincia = texto.index('class="ph-province-group"')
         # El `<select>` y el chip de «quitar la provincia» viven los dos
-        # adentro del grupo, no uno en cada punta de la fila.
+        # adentro del grupo, no uno en cada punta de la píldora.
         assert texto.index('class="ph-province-form"') > provincia
         assert texto.index('<span class="ph-province-chip">') > provincia
-        # El escenario del mapa es el primer hermano DESPUÉS de la fila: que
-        # los dos grupos caigan antes que él es lo que prueba que están los
-        # dos adentro del mismo contenedor y no uno afuera.
+        # El escenario del mapa es el primer hermano DESPUÉS de la píldora:
+        # que los dos grupos caigan antes que él es lo que prueba que están
+        # los dos adentro del mismo contenedor y no uno afuera.
         escenario = texto.index('class="ph-stage"')
 
-        assert fila < chips < provincia < escenario
+        assert pildora < chips < provincia < escenario
 
-    def test_la_fila_de_filtros_reparte_con_space_between(
+    def test_la_pildora_de_filtros_flota_como_vidrio_en_la_esquina(
         self, client: TestClient
     ) -> None:
+        """Ya no es una fila a lo ancho con `space-between`: es una isla más,
+        anclada arriba a la derecha, con el mismo tratamiento de vidrio
+        (translúcida + `backdrop-filter`) que el resto del compás."""
         texto = client.get("/").text
-        regla = texto[texto.index("  .ph-filters {") :]
+        regla = texto[texto.index("  .ph-compass-filters {") :]
         regla = regla[: regla.index("}")]
 
-        assert "justify-content: space-between" in regla
-        assert "display: flex" in regla
+        assert "position: absolute" in regla
+        assert "right:" in regla
+        assert "backdrop-filter:" in regla
 
     def test_el_escenario_del_mapa_va_a_sangre_y_el_cromo_por_encima(
         self, client: TestClient
     ) -> None:
         """`.ph-stage` sale del flujo y cubre el lienzo; el cromo tiene que
         quedar por encima de las capas internas de Leaflet (que llegan a
-        1000), no en el 1..4 de antes."""
+        1000), no en el 1..4 de antes de que existiera Leaflet."""
         texto = client.get("/").text
         escenario = texto[texto.index("  .ph-stage {") :]
         escenario = escenario[: escenario.index("}")]
@@ -608,11 +617,43 @@ class TestElMapaEsLaApp:
         assert "inset: 0" in escenario
         assert "z-index: 0" in escenario
 
-        for clase in (".ph-topbar", ".ph-filters", ".ph-dock-layer", ".ph-loading"):
+        for clase in (".ph-compass", ".ph-menu", ".ph-compass-filters", ".ph-dock-layer", ".ph-loading"):
             regla = texto[texto.index(f"  {clase} {{") :]
             regla = regla[: regla.index("}")]
             z = regla[regla.index("z-index:") :]
             assert int(z[len("z-index:") : z.index(";")]) > 1000, clase
+
+    def test_el_compas_el_titulo_y_el_dock_van_unidos_por_un_hilo(
+        self, client: TestClient
+    ) -> None:
+        """El pedido era «sentir que topbar, menú y mapa son una sola cosa»:
+        `.ph-compass-thread`/`.ph-compass-link` son el hilo decorativo que
+        conecta las piezas — sin ellos, el compás, el título y el dock
+        volverían a leerse como tres cosas sueltas flotando."""
+        texto = client.get("/").text
+
+        assert 'class="ph-compass-thread" aria-hidden="true"' in texto
+        assert 'class="ph-compass-link" aria-hidden="true"' in texto
+        # El hilo va ANTES en el DOM que el compás: pinta detrás sin z-index
+        # propio (mismo nivel 1300; lo último en el DOM pinta encima).
+        hilo = texto.index('class="ph-compass-thread"')
+        compas = texto.index('class="ph-compass"')
+        assert hilo < compas
+
+    def test_el_zoom_del_mapa_vive_en_el_dock_y_leaflet_no_dibuja_el_suyo(
+        self, client: TestClient
+    ) -> None:
+        """Leaflet dibuja su propio control de zoom arriba a la izquierda por
+        defecto — justo donde vive el compás. `zoomControl: false` lo saca;
+        `[data-zoom-in]`/`[data-zoom-out]` lo reemplazan, llamando a
+        `mapaLeaflet.zoomIn()/zoomOut()` por delegación de evento."""
+        texto = client.get("/").text
+
+        assert "zoomControl: false" in texto
+        assert "data-zoom-in" in texto
+        assert "data-zoom-out" in texto
+        assert "mapaLeaflet.zoomIn()" in texto
+        assert "mapaLeaflet.zoomOut()" in texto
 
     def test_el_muelle_de_ventanas_no_vive_adentro_del_mapa(
         self, client: TestClient, session: Session

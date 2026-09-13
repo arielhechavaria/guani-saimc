@@ -457,6 +457,18 @@ VIEWS: tuple[tuple[str, str], ...] = (
 )
 _VIEW_KEYS = tuple(key for key, _ in VIEWS)
 
+#: Ícono de Material Symbols por ventana del menú (2026-09-13, rediseño
+#: «Brújula»): el menú pasó de texto a un dock de botones redondos, y un botón
+#: redondo sin texto necesita un ícono para decir qué hace. Mismo patrón que
+#: `PRODUCT_ICONS`: el nombre visible sigue siendo la fuente de verdad
+#: (`aria-label` del botón y la etiqueta que sale al abrir la ventana), el
+#: ícono es una ayuda visual, aproximada como los de producto.
+VIEW_ICONS: dict[str, str] = {
+    "cobertura": "map",
+    "precios": "sell",
+    "evolucion": "show_chart",
+}
+
 
 def resolve_views(raw: str | None) -> list[str]:
     """`?ver=precios,cobertura` → claves válidas, en orden de apertura, sin
@@ -485,6 +497,7 @@ class ViewToggle:
     label: str
     is_open: bool
     query: str
+    icon: str
 
 
 def build_view_menu(
@@ -510,6 +523,7 @@ def build_view_menu(
                 key=key,
                 label=label,
                 is_open=is_open,
+                icon=VIEW_ICONS[key],
                 query=products_query(
                     active_slugs,
                     provincia=prov_slug,

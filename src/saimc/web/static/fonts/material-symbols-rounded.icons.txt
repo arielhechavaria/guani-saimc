@@ -8,6 +8,7 @@ check_circle
 close
 content_paste
 delete
+download
 edit
 edit_note
 error
@@ -23,12 +24,16 @@ history
 inbox
 info
 inventory_2
+map
 menu_book
 monitoring
 open_in_new
+remove
 rice_bowl
 rule
 schedule
+sell
+show_chart
 skillet
 toggle_off
 toggle_on

@@ -62,12 +62,14 @@ def icon_names() -> list[str]:
     nombres: set[str] = set()
     for tpl in sorted(TEMPLATES_DIR.glob("*.html")):
         nombres.update(_ICON_RE.findall(tpl.read_text(encoding="utf-8")))
-    # Los íconos de producto de los chips de la home salen de Python, no de una
+    # Los íconos de producto de los chips, y los de las ventanas del menú del
+    # compás, salen de Python (`PRODUCT_ICONS`/`VIEW_ICONS`), no de una
     # plantilla: el regex no los ve.
     sys.path.insert(0, str(REPO_ROOT / "src"))
-    from saimc.web.product_nav import PRODUCT_ICONS
+    from saimc.web.product_nav import PRODUCT_ICONS, VIEW_ICONS
 
     nombres.update(PRODUCT_ICONS.values())
+    nombres.update(VIEW_ICONS.values())
     if not nombres:
         sys.exit("No se encontró ningún icono en las plantillas — ¿cambió el marcado?")
     return sorted(nombres)

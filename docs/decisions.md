@@ -8732,3 +8732,74 @@ editorial, la tarjeta de evidencia tiene su propia superficie, los enlaces
 públicos citan `--ph-accent` y no `--m3-primary`). `tests/test_public_filter.py`
 extiende `TestVarianteEnTarjetaPublica` con la regla de `.ph-card-variant` y
 agrega el caso de `.ph-card-format`. Suite: 1594 pasan, 1 saltea.
+
+## 2026-09-13 — Rediseño del topbar: «Brújula»
+Contexto: pedido del operador — «necesito volver a disenar el toolbar el
+menu principal […] alli arriba del mapa y no me convence mucho». Se armaron
+cuatro direcciones «rectas» (Segmentado, Compacta, Editorial, Iconos
+grandes) en un canvas de Claude Design para evaluar. El operador eligió
+Segmentado, pero pidió una vuelta más: «necesito algo mas creativo […]
+sentir que el topbar menu y mapa es una sola cosa». Se armaron tres
+direcciones nuevas que fusionan cromo y mapa (Cristal flotante, Brújula de
+esquina, Degradado sin costura); eligió Brújula y pidió refinarla antes de
+implementar.
+
+Decisión: la barra horizontal (`.ph-topbar`) desaparece. El avatar de Guani
+pasa a ser el control mismo, un círculo anclado a la esquina superior
+izquierda como el control de capas/zoom de un mapa, con un dock vertical de
+botones debajo (Cobertura, Precios, Cómo se movió, Descargar CSV, zoom del
+mapa) y el título flotando directo sobre el mapa sin caja dura —un halo
+radial como fondo, no un rectángulo—. Un hilo fino conecta compás → título
+→ dock para que las tres piezas se lean como un solo objeto, no tres cosas
+sueltas. Los chips de producto y el selector de provincia se consolidan en
+una sola píldora de vidrio (`backdrop-filter`) arriba a la derecha,
+reemplazando la fila a lo ancho con `space-between` del slice anterior.
+
+Todo el cromo pasa de `position: relative` (dentro del flujo del flex
+column de `.ph-canvas`) a `position: absolute`, así que `.ph-dock-layer`
+(que ya era `flex: 1`) pasa a ocupar el lienzo ENTERO en vez de lo que
+sobraba debajo de una barra. Eso obligó a mover la responsabilidad de
+apartar las ventanas del compás al `inset` de `.ph-dock`: los cuatro lados
+se escriben a mano (izquierda 6.5rem para que la pila de ventanas del menú
+no arranque debajo del dock vertical; arriba 6.5rem para que la pila de
+paneles de producto no arranque debajo de la píldora de filtros).
+
+El zoom de Leaflet (`zoomControl`, arriba a la izquierda por defecto)
+chocaba exactamente con el compás — se desactivó (`zoomControl: false`) y
+dos botones nuevos en el dock (`[data-zoom-in]`/`[data-zoom-out]`) llaman
+`mapaLeaflet.zoomIn()/zoomOut()` por delegación de evento en `document`,
+mismo patrón que ya usa `cerrarOptimista`: el header entero vive dentro de
+`#ph-live` y se reemplaza en cada swap de htmx, así que un listener puesto
+al crear el botón se perdería.
+
+`ViewToggle` (`product_nav.py`) suma un campo `icon`, poblado desde
+`VIEW_ICONS` (mismo patrón que `PRODUCT_ICONS`) — un botón redondo sin texto
+necesita un ícono. Cinco íconos nuevos entraron al subset de Material
+Symbols (`download`, `map`, `remove`, `sell`, `show_chart`; `add` ya estaba)
+vía `tools/build_icon_font.py`, que ahora también escanea `VIEW_ICONS` y no
+solo `PRODUCT_ICONS` — los de `view_menu` salen de Python, invisibles para
+el regex que lee las plantillas.
+
+Descartado: `all: unset` para resetear los botones de zoom. Además de
+`border`/`background`/`padding`, también borra `outline`, y con eso se va el
+anillo de `:focus-visible` que ya define `saimc-public.css` — un botón sin
+indicador de foco para quien navega con teclado. Reseteo a mano en su
+lugar, dejando `outline` sin tocar.
+
+Encontrado y corregido al mismo tiempo (no al momento del primer pase): la
+primera versión del bloque CSS nuevo se armó cortando el viejo desde
+`.ph-topbar` hasta `.ph-province-chip .ph-x`, y el corte se llevó puesto —
+sin querer— TODO el CSS del indicador de carga (`.ph-loading`,
+`.ph-loading-dots`, las dos animaciones), que vivía en el medio de ese
+tramo. El indicador se quedó sin estilo un momento; se recuperó el bloque
+exacto del último commit y se reinsertó entero, sin tocarlo.
+
+Consecuencia: `tests/test_public_map.py::TestElMapaEsLaApp` se reescribe
+para el nuevo cromo — chips+provincia hermanos dentro de
+`.ph-compass-filters` (no ya `.ph-filters` con `space-between`), los cinco
+z-index del compás por encima de 1000, el hilo decorativo antes que el
+compás en el DOM, y el contrato de `zoomControl: false` +
+`data-zoom-in`/`data-zoom-out`. Verificado aparte, con un parser de HTML
+sobre el estado más cargado (producto activo, provincia elegida, las tres
+ventanas del menú abiertas a la vez): el árbol de `<div>` cierra
+balanceado. Suite: 1596 pasan, 1 saltea.
