@@ -9231,3 +9231,22 @@ Consecuencia: el modo texto de `lint_drift.py` sigue igual para uso por
 terminal (`docs/checklist-pr.md` lo sigue apuntando ahí). El piso no se
 movió (65 ruff + 142 mypy, sin drift). Tests con el JSON completo mockeado
 en `TestLintDrift`, incluido el caso de degradación cuando no parsea.
+
+## 2026-09-13 — /control/lint-drift muestra toda la deuda, no solo el drift
+Contexto: el operador vio la versión con banners/tabla en producción y
+señaló que faltaban hallazgos — la página solo mostraba lo nuevo contra el
+piso (1 de 66 en ruff), no los otros 65 que ya estaban ahí desde antes. La
+intención original ("elemento visual que explique los errores") era ver
+la deuda completa, no solo el delta del día.
+Decisión: `_calcular_drift` en `scripts/lint_drift.py` suma `known`
+(`actual - nuevos`: lo que sigue presente y ya era parte del piso) al JSON
+de cada herramienta. El modo texto no cambia —sigue mostrando solo
+new/resolved, 65+142 líneas todos los días por terminal sería ruido, no
+señal para el chequeo diario—; `known` es exclusivo de `--json`. La
+plantilla lo agrega como un tercer desplegable ("N ya conocidos, parte del
+piso"), mismo patrón que "resueltos" pero con badge neutral en vez de
+verde/rojo.
+Consecuencia: la página ahora expone los 65+142 hallazgos completos,
+colapsados por default (no compiten visualmente con lo nuevo, que es lo
+urgente). Test nuevo en `TestLintDrift` que cubre el caso. Sin drift de
+piso por este cambio.

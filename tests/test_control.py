@@ -1605,12 +1605,18 @@ class TestLaTablaDeSospechososDeclaraDeDondeSaleLaReferencia:
 
 
 def _reporte_json(
-    *, has_new: bool, committed: bool = False, skipped_dirty: bool = False, nuevos: list[dict] | None = None
+    *,
+    has_new: bool,
+    committed: bool = False,
+    skipped_dirty: bool = False,
+    nuevos: list[dict] | None = None,
+    conocidos: list[dict] | None = None,
 ) -> str:
     """El shape exacto que `scripts/lint_drift.py --json` imprime — ver
     `_calcular_drift`/`main` ahí. Un helper acá en vez de repetir el dict
     entero en cada test."""
     ruff_new = nuevos or []
+    ruff_known = conocidos or []
     return json.dumps(
         {
             "autofix": {
@@ -1625,8 +1631,9 @@ def _reporte_json(
                     "baseline": 65,
                     "new": ruff_new,
                     "resolved": [],
+                    "known": ruff_known,
                 },
-                {"tool": "mypy", "total": 142, "baseline": 142, "new": [], "resolved": []},
+                {"tool": "mypy", "total": 142, "baseline": 142, "new": [], "resolved": [], "known": []},
             ],
             "has_new": has_new,
         }
@@ -1688,6 +1695,32 @@ class TestLintDrift:
         assert "E501" in response.text
         assert "src/saimc/cells.py" in response.text
         assert "Line too long" in response.text
+
+    def test_deuda_conocida_se_ve_completa_no_solo_el_drift(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Pedido explícito del operador: no alcanza con ver el hallazgo
+        nuevo, quiere poder ver toda la deuda (piso) desde la misma
+        pantalla, no solo el conteo agregado."""
+        conocido = [
+            {"file": "src/saimc/web/price_charts.py", "code": "E741", "message": "Ambiguous name", "count": 4}
+        ]
+
+        def _fake_run(
+            args: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args, returncode=0, stdout=_reporte_json(has_new=False, conocidos=conocido), stderr=""
+            )
+
+        monkeypatch.setattr(control.subprocess, "run", _fake_run)
+
+        response = client.post("/control/lint-drift")
+
+        assert response.status_code == 200
+        assert "ya conocido" in response.text
+        assert "E741" in response.text
+        assert "src/saimc/web/price_charts.py" in response.text
 
     def test_salida_no_json_degrada_a_texto_crudo(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch

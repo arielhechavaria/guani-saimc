@@ -108,6 +108,27 @@
       </table>
     </details>
     {% endif %}
+
+    {% if tool.known %}
+    <details style="margin-top:8px">
+      <summary class="m3-sm m3-muted">
+        {{ tool.known | sum(attribute="count") }} ya conocido{{ "s" if tool.known | sum(attribute="count") != 1 }},
+        parte del piso — ver la deuda completa
+      </summary>
+      <table class="m3-table" style="margin-top:12px">
+        <tbody>
+          {% for h in tool.known %}
+          <tr>
+            <td><span class="m3-badge m3-badge-mono m3-badge-neutral">{{ h.code }}</span></td>
+            <td class="m3-sm"><code>{{ h.file }}</code></td>
+            <td class="m3-sm">{{ h.message }}</td>
+            <td class="num">{{ h.count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
   </section>
   {% endfor %}
 
