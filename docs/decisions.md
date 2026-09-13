@@ -9119,3 +9119,30 @@ Consecuencia: `ruff check .` y `mypy` quedan disponibles y honestos, pero no
 integrados a ningún gate (no hay CI/CD, decisión 4). Los 65 + 141 hallazgos
 reales quedan como deuda visible, no como bloqueo — decidir cuándo se
 atacan es un slice aparte.
+
+## 2026-09-13 — scripts/lint_drift.py: ratchet de deuda, no reparador
+Contexto: propuesta del operador — correr ruff/mypy a diario y "atacar" un
+número de hallazgos sin supervisión. Se discutió la distinción entre arreglo
+mecánico (sin criterio, seguro sin revisión) y arreglo semántico (qué hacer
+con un `Decimal / None`, un `union-attr` — decisión de negocio, no de estilo).
+Automatizar el segundo sin supervisión reproduce el riesgo mismo que motivó
+`docs/checklist-pr.md`: un cambio que calla al type-checker sin que nadie
+verifique que la resolución es correcta.
+Decisión: `scripts/lint_drift.py` hace exactamente dos cosas y nada más.
+(1) `ruff check --fix` (el seguro, nunca `--unsafe-fixes`) y commitea el
+resultado si el árbol estaba limpio — sin push, igual que cualquier commit
+de este repo. (2) Compara los hallazgos que quedan (ruff + mypy) contra
+`docs/lint-baseline.json` y reporta qué es nuevo (exit 1) y qué se resolvió,
+sin tocar ninguno. `--update-baseline` es la única forma de mover el piso, y
+la usa el operador después de revisar. Si el árbol tiene cambios sin
+commitear al arrancar, salta el autofix/commit entero (no se mezcla con
+trabajo en curso) y solo reporta.
+Piso inicial: 65 hallazgos de ruff + 141 de mypy (los mismos de la entrada
+anterior), guardados en `docs/lint-baseline.json`.
+Descartado: que el job arregle hallazgos semánticos, aunque sea "solo
+algunos por día" — no hay forma de que una herramienta sepa cuál es la
+resolución correcta de un `Decimal / None` en este dominio; esa decisión es
+del operador o de una sesión con supervisión, vía `docs/checklist-pr.md`.
+Pendiente, no resuelto acá: **cómo** se dispara "diario" (cron/systemd en el
+VPS, o un job programado de Claude Code) — toca la decisión cerrada 4 si es
+infraestructura a operar, así que queda para que el operador elija.
