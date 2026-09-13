@@ -119,6 +119,18 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="rige",
     ),
     DocEntry(
+        slug="checklist-pr",
+        title="Checklist de revisión de slice",
+        summary=(
+            "Cuatro ejes mecánicos —trazabilidad, calidad del test, smells "
+            "típicos de código generado por IA, blast radius— que se aplican "
+            "antes de cerrar cualquier slice, además de lo que ya exige "
+            "CLAUDE.md."
+        ),
+        relative_path="docs/checklist-pr.md",
+        standing="rige",
+    ),
+    DocEntry(
         slug="readme",
         title="README",
         summary="Puerta de entrada al repositorio: qué es, cómo se corre, qué vistas hay.",

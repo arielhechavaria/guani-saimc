@@ -9055,3 +9055,24 @@ Consecuencia: `tests/test_public_map.py::TestLaLeyendaColapsaEnAngosto` se
 reescribe para el nuevo contrato (el botón vive dentro de `<nav
 class="ph-menu">`; `alternarLeyenda` apunta a `.ph-canvas-legend`
 directo, marca `is-open` en el botón). Suite: 1609 pasan, 1 saltea.
+
+## 2026-09-13 — Checklist de revisión de slice, contra el código que se ve bien y pudre
+Contexto: con vistas a sumar desarrolladores —y ya trabajando con código
+generado por IA en cada sesión— el olfato del operador para detectar un diff
+podrido no escala ni es transferible. Es el mismo riesgo que ya pagan caro
+empresas grandes: PRs largos, prolijos, con tests en verde, que explotan meses
+después porque nada objetivo los frenó a tiempo.
+Decisión: se agrega `docs/checklist-pr.md`, checklist mecánico de cuatro ejes
+(trazabilidad, calidad del test con prueba de mutación mental, smells típicos
+de código generado por IA, blast radius), fundado en prácticas con nombre
+propio (problema del oráculo, code smells de Fowler) en vez de reglas
+inventadas ad hoc. Se suma como cuarto requisito de cierre de slice en
+`CLAUDE.md` § Alcance, junto a tests + decisión + commit. Se agrega al
+catálogo cerrado de `/docs` (`docs_catalog.py`, slug `checklist-pr`) y se
+referencia desde `README.md`.
+Descartado: gate automático (hook pre-commit/pre-push) y linter (ruff/mypy)
+por ahora — el primero tensiona con la decisión 4 (sin CI/CD hasta validar
+H0) y necesita aval explícito antes de tocarla; el segundo queda como
+candidato a próximo slice. No se resuelven los tres frentes a la vez.
+Consecuencia: cerrar un slice exige pasar este checklist, no solo tests en
+verde. `CLAUDE.md`, `README.md` y el catálogo de `/docs` apuntan al archivo.

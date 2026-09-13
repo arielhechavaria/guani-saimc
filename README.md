@@ -4,7 +4,8 @@ Sistema Abierto de Inteligencia de Mercado para Cuba.
 
 Documento rector: `docs/spec.md`. Para consultarlo sin leerlo entero,
 `docs/spec-map.md`. Instrucciones de trabajo: `CLAUDE.md`. Qué falta y
-por qué, en orden de prioridad: `docs/backlog.md`.
+por qué, en orden de prioridad: `docs/backlog.md`. Cómo revisar un slice
+antes de cerrarlo: `docs/checklist-pr.md`.
 
 `docs/pitch-v3.5.md` es el documento de inversión, congelado. No rige: si
 contradice a `docs/spec.md`, gana `docs/spec.md`.
