@@ -8803,3 +8803,56 @@ compás en el DOM, y el contrato de `zoomControl: false` +
 sobre el estado más cargado (producto activo, provincia elegida, las tres
 ventanas del menú abiertas a la vez): el árbol de `<div>` cierra
 balanceado. Suite: 1596 pasan, 1 saltea.
+
+## 2026-09-13 — Brújula, ajuste: dock oculto hasta tocar el avatar
+Contexto: el operador probó el rediseño «Brújula» en vivo, ajustó
+`.ph-compass-filters` a mano en DevTools (le sacó fondo, borde, sombra,
+radio y el layout flex — le gustó cómo quedaba «vidrio sobre vidrio» de
+menos, ya que los chips y el `<select>` traen su propia superficie) y pidió
+además que el dock vertical (`.ph-menu`) quede oculto por defecto y
+aparezca solo al pasar el mouse —o tocar, en táctil— sobre el avatar.
+
+Decisión, en dos partes.
+
+1. **`.ph-compass-filters` queda tal cual el operador la dejó**: sin
+   `background`/`border`/`box-shadow`/`border-radius`/`display: flex`. Se
+   restauró únicamente el `backdrop-filter` sin prefijo (el pegado solo
+   traía `-webkit-backdrop-filter`): Chrome y Firefox no leen la variante
+   con prefijo si no está también la estándar, así que sin ella el blur no
+   se habría visto en la mayoría de los navegadores. El `clamp(1rem, 3vw,
+   1rem)` del `right` se simplificó a `1rem` fijo —con el mismo piso y
+   techo, el `clamp` no hacía nada.
+
+2. **El dock aparece al interactuar con el avatar, no siempre**.
+   `.ph-compass-nav` envuelve avatar + hilo + dock en una sola zona de
+   hover: sin ese envoltorio, mover el mouse del avatar hacia el dock por
+   el hilo (2px de ancho) perdería el `:hover` a mitad de camino, porque
+   `:hover` no salta el espacio entre dos hermanos. Tres disparadores, no
+   uno: `:hover` (mouse), `:focus-within` (teclado — tabular hasta el
+   botón lo revela) y `.is-active` (JS, alternado al tocar/cliquear el
+   avatar). El compás pasa de `<div>` a `<button type="button">` para ser
+   real receptor de foco y click.
+
+   Ocultar con `opacity`/`visibility` y no `display: none`: con
+   `display: none` los ítems del dock saldrían del orden de tabulación
+   para siempre, y nadie podría llegar a ellos con teclado. `visibility`
+   con demora (`0s linear .18s` al cerrar, `0s` al abrir) es lo que además
+   los saca de la tabulación mientras están cerrados, sin que la
+   transición de opacidad se corte a la mitad.
+
+   `pointer-events: auto` en `.ph-compass-nav`, no `none` como el resto
+   del cromo transparente de la página: con `none`, `:hover`/
+   `:focus-within` nunca dispararían —ese valor saca al elemento de la
+   detección de mouse por completo—. El costo aceptado: un rectángulo
+   inerte para arrastrar el mapa, de ~6.5rem × 27rem en la esquina
+   superior izquierda; se puede arrastrar desde cualquier otro punto.
+
+Descartado: seguir el patrón `pointer-events: none` en el envoltorio y
+resolver el hover con JS (mousemove con tolerancia de distancia en vez de
+`:hover` puro). Más código para el mismo resultado, y CSS solo ya alcanza.
+
+Consecuencia: `tests/test_public_map.py` suma
+`TestDockOcultoHastaTocarElAvatar` (3 casos: el compás es un `<button>` y
+el dock vive adentro del envoltorio en el orden hilo→botón→dock; se oculta
+por `opacity`/`visibility`, nunca por `display: none`; `alternarCompas`
+existe y está registrado por delegación). Suite: 1599 pasan, 1 saltea.

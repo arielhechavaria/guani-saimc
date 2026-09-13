@@ -688,3 +688,64 @@ class TestElMapaEsLaApp:
         # mapa. Lo que se eliminó fue el `<p class="ph-attrib">`, que caía
         # justo encima del control de atribución de Leaflet.
         assert "Geometría de las provincias derivada de" in texto
+
+
+class TestDockOcultoHastaTocarElAvatar:
+    """Ajuste del operador sobre «Brújula» (2026-09-13): el dock vertical
+    (`.ph-menu`) ya no está siempre visible — aparece al pasar el mouse, al
+    llegar por teclado o al tocar/cliquear el avatar, y el compás pasa a ser
+    un `<button>` de verdad.
+
+    El operador también reescribió `.ph-compass-filters` a mano en DevTools
+    (sin fondo/borde/sombra/`display: flex`) y pidió dejarla exactamente
+    así; ese caso lo cubre `TestElMapaEsLaApp`.
+    """
+
+    def test_el_compas_es_un_boton_y_el_dock_vive_adentro_del_envoltorio(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+
+        envoltorio = texto.index('class="ph-compass-nav"')
+        compas = texto.index('<button type="button" class="ph-compass"')
+        hilo = texto.index('class="ph-compass-thread"')
+        dock = texto.index('<nav class="ph-menu"')
+
+        # Los tres viven ADENTRO de `.ph-compass-nav`, en ese orden: el
+        # hilo primero (pinta detrás), después el botón, después el dock.
+        assert envoltorio < hilo < compas < dock
+
+    def test_el_dock_arranca_oculto_y_solo_el_hover_lo_revela_por_css(
+        self, client: TestClient
+    ) -> None:
+        """No hay `display: none` de por medio —eso sacaría los ítems del
+        orden de tabulación para siempre—: es `opacity`/`visibility`, y el
+        `:hover`/`:focus-within`/`.is-active` de `.ph-compass-nav` es lo que
+        lo revela. Sin eso, tabular hasta un ítem del dock quedaría
+        imposible (nunca se vuelve visible)."""
+        texto = client.get("/").text
+
+        regla_oculta = texto[texto.index(".ph-compass-thread, .ph-menu {") :]
+        regla_oculta = regla_oculta[: regla_oculta.index("}")]
+        assert "opacity: 0" in regla_oculta
+        assert "visibility: hidden" in regla_oculta
+        assert "display: none" not in regla_oculta
+
+        regla_revelada = texto[texto.index(".ph-compass-nav:hover .ph-compass-thread") :]
+        regla_revelada = regla_revelada[: regla_revelada.index("}")]
+        assert ":hover" in regla_revelada
+        assert ":focus-within" in regla_revelada
+        assert ".is-active" in regla_revelada
+        assert "opacity: 1" in regla_revelada
+        assert "visibility: visible" in regla_revelada
+
+    def test_tocar_el_avatar_alterna_is_active_por_js(self, client: TestClient) -> None:
+        """En táctil no hay `:hover`: `alternarCompas` es el mecanismo real
+        para abrir/cerrar el dock con el dedo, delegado en `document` por la
+        misma razón que `zoomDelMapa` y `cerrarOptimista` — el compás entero
+        vive adentro de `#ph-live` y se reemplaza en cada swap de htmx."""
+        texto = client.get("/").text
+
+        assert "function alternarCompas(ev)" in texto
+        assert 'envoltorio.classList.toggle("is-active")' in texto
+        assert 'document.addEventListener("click", alternarCompas)' in texto

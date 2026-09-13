@@ -173,6 +173,11 @@
      `inset` de `.ph-dock` es quien ahora aparta a las ventanas del compás
      (ver ese comentario, más abajo). */
   .ph-compass {
+    /* Ahora es un `<button>` (2026-09-13: abre/cierra el dock) y no un
+       `<div>` decorativo — reseteo a mano del cromo de botón nativo, sin
+       tocar `outline`: mismo motivo que `.ph-menu-zoom button`, más abajo. */
+    appearance: none; -webkit-appearance: none; border: none; font: inherit;
+    margin: 0; padding: 0; cursor: pointer;
     position: absolute; left: 1.625rem; top: 1.625rem; z-index: 1300;
     width: 4rem; height: 4rem; border-radius: 999px;
     background: var(--m3-surface);
@@ -233,6 +238,50 @@
   @keyframes ph-loading-dot {
     0%, 80%, 100% { opacity: .3; transform: scale(.7); }
     40% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Dock oculto hasta pasar el mouse —o tocar, en táctil— el avatar
+     (2026-09-13, ajuste del operador): antes el dock vertical estaba
+     siempre visible; ahora es un menú que se despliega, y el compás es el
+     botón que lo abre.
+
+     `.ph-compass-nav` envuelve avatar + hilo + dock en UNA sola zona de
+     hover, no tres por separado: sin el envoltorio, mover el mouse del
+     avatar hacia abajo por el hilo (2px de ancho) perdería el `:hover`
+     antes de llegar al dock —`:hover` no «salta» el espacio entre dos
+     hermanos, así que hacía falta un padre común que cubriera todo el
+     trayecto.
+
+     `pointer-events: auto` en el envoltorio y no `none` (como el resto del
+     cromo transparente de esta página): con `none` el elemento queda
+     afuera de la detección de mouse por completo, y `:hover`/
+     `:focus-within` no dispararían nunca. El costo es un rectángulo inerte
+     para arrastrar el mapa (la esquina superior izquierda, ~6.5rem ×
+     27rem) — se puede arrastrar desde cualquier otro punto.
+
+     Tres formas de abrirlo, no una sola: `:hover` (mouse), `:focus-within`
+     (teclado — tabular hasta el botón lo revela, y recién ahí sus ítems
+     entran al orden de tabulación gracias a `visibility`), y `.is-active`
+     (JS, alternada al tocar/cliquear el avatar — ver `alternarCompas` en
+     el script del pie). `visibility` y no solo `opacity`: con `opacity`
+     sola, los enlaces del dock seguirían tabulables mientras están
+     invisibles. La demora de `visibility` (`0s linear .18s`) deja que la
+     opacidad se apague antes de sacarlos del todo; al abrir, entran de
+     inmediato (delay `0s`). */
+  .ph-compass-nav {
+    position: absolute; left: 0; top: 0;
+    width: 6.5rem; height: 27rem;
+    pointer-events: auto;
+  }
+  .ph-compass-thread, .ph-menu {
+    opacity: 0; visibility: hidden; transform: translateX(-.35rem);
+    transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+  }
+  .ph-compass-nav:hover .ph-compass-thread, .ph-compass-nav:hover .ph-menu,
+  .ph-compass-nav:focus-within .ph-compass-thread, .ph-compass-nav:focus-within .ph-menu,
+  .ph-compass-nav.is-active .ph-compass-thread, .ph-compass-nav.is-active .ph-menu {
+    opacity: 1; visibility: visible; transform: none;
+    transition: opacity .18s ease, transform .18s ease, visibility 0s linear 0s;
   }
 
   /* El hilo: conecta compás → título y compás → dock, para que las tres
@@ -352,16 +401,18 @@
   /* Chips de producto + provincia, juntos en una sola píldora de vidrio
      arriba a la derecha — antes era una fila a lo ancho con
      `space-between`; ahora es una isla más, como el compás. */
+  /* Ajuste del operador (2026-09-13, probado a mano en DevTools): sin
+     tarjeta de vidrio propia — nada de fondo, borde, sombra ni radio. Los
+     chips y el `<select>` ya traen su propia superficie
+     (`.ph-chip-toggle`/`.ph-province-select`); la caja extra encima se
+     sentía como vidrio sobre vidrio. `right` fijo en vez del `clamp` de
+     antes: con el mismo valor de piso y de techo, el `clamp` no hacía
+     nada. Sin `top` ni `display: flex`: los grupos (riel de chips,
+     selector de provincia) caen en su posición estática, uno debajo del
+     otro, en vez de en una fila. */
   .ph-compass-filters {
-    position: absolute; right: clamp(1rem, 3vw, 2rem); top: clamp(1rem, 3vw, 1.75rem);
-    z-index: 1300;
-    display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem;
-    max-width: min(34rem, 62vw);
+    position: absolute; right: 1rem; z-index: 1300;
     padding: .5rem .65rem;
-    border-radius: 1.5rem;
-    background: color-mix(in srgb, var(--m3-surface) 62%, transparent);
-    border: 1px solid color-mix(in srgb, var(--m3-surface) 78%, transparent);
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--m3-on-surface) 12%, transparent);
     backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
   }
   .ph-compass-filters-sep { align-self: stretch; width: 1px; margin: .3rem 0;
@@ -765,14 +816,41 @@
    (§9.0 / §12.6); el coloreo por precio quedó fuera de alcance. #}
 <section class="ph-canvas" aria-labelledby="ph-canvas-title">
 
-  {# Brújula (2026-09-13): el avatar es el control, anclado a la esquina —
-     ver el comentario de `.ph-compass` en el `<style>` para el porqué. El
+  {# Brújula (2026-09-13): el avatar es el botón que abre el dock — ver el
+     comentario de `.ph-compass-nav` en el `<style>` para el porqué del
+     envoltorio y las tres formas de abrirlo (hover, foco, toque/clic). El
      hilo decorativo va primero para pintar detrás del compás y el dock. #}
-  <div class="ph-compass-thread" aria-hidden="true"></div>
   <div class="ph-compass-link" aria-hidden="true"></div>
 
-  <div class="ph-compass">
-    {% include "_guani_avatar.html" %}
+  <div class="ph-compass-nav">
+    <div class="ph-compass-thread" aria-hidden="true"></div>
+
+    <button type="button" class="ph-compass" aria-label="Guani · SAIMC · abrir el menú">
+      {% include "_guani_avatar.html" %}
+    </button>
+
+    {# Dock del compás: cada ítem abre o cierra su ventana flotante. Varias
+       pueden estar abiertas a la vez; el estado viaja en `?ver=`. La
+       descarga y el zoom reusan `.ph-menu-item` (mismo círculo) sin
+       `is-open`, porque ninguno de los dos alterna un estado propio. #}
+    <nav class="ph-menu" aria-label="Secciones">
+      {% for view in view_menu -%}
+      <a class="ph-menu-item{% if view.is_open %} is-open{% endif %}" href="{{ view.query }}" hx-get="{{ view.query }}" aria-pressed="{{ 'true' if view.is_open else 'false' }}" aria-controls="{{ view.key }}" aria-label="{{ view.label }}"><span class="ph-menu-icon"><span class="m3-icon">{{ view.icon }}</span></span><span class="ph-menu-label">{{ view.label }}</span></a>
+      {%- endfor %}
+      <div class="ph-menu-divider"></div>
+      <a class="ph-menu-item" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="ph-menu-icon"><span class="m3-icon">download</span></span><span class="ph-menu-label">Descargar CSV</span></a>
+      <div class="ph-menu-divider"></div>
+      {# Zoom del mapa (2026-09-13): Leaflet ya no dibuja el suyo
+         (`zoomControl: false` en `inicializarMapa()`) — chocaba con el
+         compás, que vive justo en esa esquina. Estos dos botones llaman
+         `mapaLeaflet.zoomIn()/zoomOut()` por delegación de evento, ver el
+         script del pie junto a `cerrarOptimista`. #}
+      <div class="ph-menu-zoom">
+        <button type="button" data-zoom-in aria-label="Acercar el mapa"><span class="m3-icon">add</span></button>
+        <div class="ph-menu-zoom-sep"></div>
+        <button type="button" data-zoom-out aria-label="Alejar el mapa"><span class="m3-icon">remove</span></button>
+      </div>
+    </nav>
   </div>
 
   <div class="ph-compass-title-group">
@@ -789,29 +867,6 @@
     </p>
     {% endif %}
   </div>
-
-  {# Dock del compás: cada ítem abre o cierra su ventana flotante. Varias
-     pueden estar abiertas a la vez; el estado viaja en `?ver=`. La descarga
-     y el zoom reusan `.ph-menu-item` (mismo círculo) sin `is-open`, porque
-     ninguno de los dos alterna un estado propio. #}
-  <nav class="ph-menu" aria-label="Secciones">
-    {% for view in view_menu -%}
-    <a class="ph-menu-item{% if view.is_open %} is-open{% endif %}" href="{{ view.query }}" hx-get="{{ view.query }}" aria-pressed="{{ 'true' if view.is_open else 'false' }}" aria-controls="{{ view.key }}" aria-label="{{ view.label }}"><span class="ph-menu-icon"><span class="m3-icon">{{ view.icon }}</span></span><span class="ph-menu-label">{{ view.label }}</span></a>
-    {%- endfor %}
-    <div class="ph-menu-divider"></div>
-    <a class="ph-menu-item" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="ph-menu-icon"><span class="m3-icon">download</span></span><span class="ph-menu-label">Descargar CSV</span></a>
-    <div class="ph-menu-divider"></div>
-    {# Zoom del mapa (2026-09-13): Leaflet ya no dibuja el suyo
-       (`zoomControl: false` en `inicializarMapa()`) — chocaba con el
-       compás, que vive justo en esa esquina. Estos dos botones llaman
-       `mapaLeaflet.zoomIn()/zoomOut()` por delegación de evento, ver el
-       script del pie junto a `cerrarOptimista`. #}
-    <div class="ph-menu-zoom">
-      <button type="button" data-zoom-in aria-label="Acercar el mapa"><span class="m3-icon">add</span></button>
-      <div class="ph-menu-zoom-sep"></div>
-      <button type="button" data-zoom-out aria-label="Alejar el mapa"><span class="m3-icon">remove</span></button>
-    </div>
-  </nav>
 
   {# Chips de producto + provincia, juntos en una sola píldora de vidrio
      arriba a la derecha (`.ph-compass-filters`) — antes era una fila a lo
@@ -1916,8 +1971,24 @@
     else if (ev.target.closest("[data-zoom-out]")) mapaLeaflet.zoomOut();
   }
 
+  // Abrir/cerrar el dock del compás al tocar el avatar (2026-09-13): en
+  // mouse ya alcanza con `:hover`/`:focus-within` puro CSS, pero táctil no
+  // tiene «hover» — tocar el avatar alterna `.is-active` en `.ph-compass-nav`
+  // (ver ese comentario en el `<style>`), y tocar afuera lo cierra, como
+  // cualquier menú desplegable.
+  function alternarCompas(ev) {
+    var envoltorio = document.querySelector(".ph-compass-nav");
+    if (!envoltorio) return;
+    if (ev.target.closest(".ph-compass")) {
+      envoltorio.classList.toggle("is-active");
+      return;
+    }
+    if (!envoltorio.contains(ev.target)) envoltorio.classList.remove("is-active");
+  }
+
   document.addEventListener("click", cerrarOptimista);
   document.addEventListener("click", zoomDelMapa);
+  document.addEventListener("click", alternarCompas);
   document.addEventListener("htmx:responseError", revertirCierre);
   document.addEventListener("htmx:sendError", revertirCierre);
   document.addEventListener("htmx:afterSettle", function () {
