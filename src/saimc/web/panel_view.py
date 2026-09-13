@@ -23,6 +23,7 @@ from saimc.web.price_charts import Headline, RangeSeries
 from saimc.web.product_nav import (
     DEFAULT_LAYER,
     DEFAULT_WINDOW_DAYS,
+    has_product_illustration,
     product_icon,
     product_slug,
     products_query,
@@ -82,6 +83,13 @@ class ProductPanel:
     def icon(self) -> str | None:
         """El ícono del producto, el mismo del chip, o `None` si no tiene."""
         return product_icon(self.name)
+
+    @property
+    def has_illustration(self) -> bool:
+        """Si el producto tiene ícono ilustrado propio para este panel
+        (`templates/_product_illustration.html`), en vez del glifo de
+        Material Symbols que usa el chip."""
+        return has_product_illustration(self.name)
 
 
 def build_product_panels(

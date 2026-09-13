@@ -146,9 +146,15 @@ def _guardar_baseline(hallazgos: dict[str, Counter[Signature]]) -> None:
 def _calcular_drift(nombre: str, actual: Counter[Signature], base: Counter[Signature]) -> dict:
     """Un hallazgo por entrada, no agregado por código: `--json` lo necesita
     entero para poder mostrar cada fila (`control_lint_drift.html`), y el
-    reporte de texto se arma sobre esto mismo, no por separado."""
+    reporte de texto se arma sobre esto mismo, no por separado.
+
+    `known` (lo que ya estaba en el piso y sigue ahí) solo lo consume
+    `--json` — la web pidió ver la deuda completa, no solo el drift. El modo
+    texto se queda con `new`/`resolved`: para el chequeo diario por terminal,
+    65+142 líneas todos los días es ruido, no señal."""
     nuevos = actual - base
     resueltos = base - actual
+    conocidos = actual - nuevos
     return {
         "tool": nombre,
         "total": sum(actual.values()),
@@ -160,6 +166,10 @@ def _calcular_drift(nombre: str, actual: Counter[Signature], base: Counter[Signa
         "resolved": [
             {"file": archivo, "code": codigo, "message": mensaje, "count": cuenta}
             for (archivo, codigo, mensaje), cuenta in sorted(resueltos.items())
+        ],
+        "known": [
+            {"file": archivo, "code": codigo, "message": mensaje, "count": cuenta}
+            for (archivo, codigo, mensaje), cuenta in sorted(conocidos.items())
         ],
     }
 

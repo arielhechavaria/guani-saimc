@@ -76,6 +76,16 @@ class TestBuildProductPanels:
         (solo,) = build_product_panels(["Arroz"], [_card("Arroz", "La Habana")], [])
         assert solo.close_query == "/"
 
+    def test_producto_piloto_tiene_ilustracion(self) -> None:
+        (panel,) = build_product_panels(["Aceite"], [_card("Aceite", "La Habana")], [])
+
+        assert panel.has_illustration
+
+    def test_producto_sin_entrada_no_tiene_ilustracion(self) -> None:
+        (panel,) = build_product_panels(["Café"], [], [])
+
+        assert not panel.has_illustration
+
     def test_close_query_preserva_provincia_y_ventana(self) -> None:
         cards = [_card("Arroz", "La Habana"), _card("Aceite", "La Habana")]
 
