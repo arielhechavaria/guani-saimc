@@ -393,6 +393,30 @@ class TestBuscadorFunciona:
         )
 
 
+class TestGuiaDeLectura:
+    """El orden de lectura para un dev nuevo (docs/decisions.md, 2026-09-13):
+    faltaba contenido, no una plataforma externa."""
+
+    def test_esta_en_el_catalogo_y_rige(self) -> None:
+        entry = docs_catalog.BY_SLUG["empezar-aqui"]
+
+        assert entry.standing == "rige"
+
+    def test_enumera_los_cinco_documentos_en_orden(self, client: TestClient) -> None:
+        texto = client.get("/docs/empezar-aqui/raw").text
+
+        orden = ["/docs/readme", "/docs/spec-map", "/docs/decisiones", "/docs/instrucciones", "/docs/checklist-pr"]
+        posiciones = [texto.index(slug) for slug in orden]
+
+        assert posiciones == sorted(posiciones)
+
+    def test_se_lee_desde_el_endpoint(self, client: TestClient) -> None:
+        response = client.get("/docs/empezar-aqui")
+
+        assert response.status_code == 200
+        assert "Empezá acá" in response.text
+
+
 class TestAgrupadoYReciente:
     """La lista abre mostrando lo último tocado, agrupado por vigencia.
 

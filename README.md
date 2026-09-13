@@ -2,6 +2,9 @@
 
 Sistema Abierto de Inteligencia de Mercado para Cuba.
 
+¿Te sumás al proyecto? Empezá por `docs/empezar-aqui.md`, el orden de
+lectura del resto.
+
 Documento rector: `docs/spec.md`. Para consultarlo sin leerlo entero,
 `docs/spec-map.md`. Instrucciones de trabajo: `CLAUDE.md`. Qué falta y
 por qué, en orden de prioridad: `docs/backlog.md`. Cómo revisar un slice

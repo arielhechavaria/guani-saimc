@@ -9076,3 +9076,22 @@ H0) y necesita aval explícito antes de tocarla; el segundo queda como
 candidato a próximo slice. No se resuelven los tres frentes a la vez.
 Consecuencia: cerrar un slice exige pasar este checklist, no solo tests en
 verde. `CLAUDE.md`, `README.md` y el catálogo de `/docs` apuntan al archivo.
+
+## 2026-09-13 — Orden de lectura para un dev nuevo en `/docs`
+Contexto: se evaluó adoptar una plataforma externa de documentación
+(Docusaurus, MkDocs, GitBook) pensando en incorporar un desarrollador. Al
+revisar el código, `/docs` ya cumple ese rol —catálogo cerrado, markdown
+renderizado, agrupado por vigencia— así que faltaba contenido, no
+herramienta: el índice agrupa por vigencia (criterio de mantenimiento), no
+por secuencia de lectura para quien arranca de cero.
+Decisión: se agrega `docs/empezar-aqui.md`, entrada nueva del catálogo
+(`docs_catalog.py`, slug `empezar-aqui`, standing `rige`) con el orden de
+lectura: README → spec-map → decisions → CLAUDE.md → checklist-pr.
+Referenciado desde `README.md`.
+Descartado: adoptar un generador de sitios externo. Duplicaría `/docs` en
+otro stack, contra la decisión 1 (Python únicamente) y la decisión 4 (sin
+infraestructura nueva hasta validar H0), sin agregar capacidad real.
+Consecuencia: `/docs` abre mostrando primero la guía de lectura (es el
+documento más reciente del grupo "rige"). Los tests de `tests/test_docs.py`
+que iteran sobre `docs_catalog.CATALOG` cubren la entrada nueva sin
+cambios; se suma un caso puntual para fijar su contenido.

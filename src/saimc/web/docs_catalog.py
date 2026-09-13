@@ -54,6 +54,16 @@ class DocEntry:
 # lo congelado. Es el orden en que conviene leerlos, no el alfabético.
 CATALOG: tuple[DocEntry, ...] = (
     DocEntry(
+        slug="empezar-aqui",
+        title="Empezá acá",
+        summary=(
+            "Orden de lectura para quien se suma al proyecto: qué abrir "
+            "primero, segundo y así, antes de tocar código."
+        ),
+        relative_path="docs/empezar-aqui.md",
+        standing="rige",
+    ),
+    DocEntry(
         slug="spec",
         title="Especificación técnica",
         summary=(
