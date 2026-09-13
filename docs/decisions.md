@@ -8943,3 +8943,30 @@ tienen más de una regla con el mismo selector — la de posición/z-index, y
 la que oculta por defecto o la del `@media` angosto, sin z-index — el
 test ahora busca la que trae `z-index:`, no la primera aparición cruda
 del selector). Suite: 1601 pasan, 1 saltea.
+
+## 2026-09-13 — Brújula: en angosto, filtros al lado opuesto del compás
+Contexto: el operador confirmó que el escritorio quedó bien, pero en
+angosto seguía sin convencer — «los productos y las provincias ahora se
+van a convertir en una barra situada en el lado contrario a la barra que
+sale de el avatar de guani… hablar solamente para el movil».
+
+El compás vive arriba a la izquierda —título y dock se despliegan desde
+ahí, hacia abajo—. La píldora de chips+provincia, que hasta ahora bajaba a
+una banda justo debajo del compás (`top: 3.75rem`), competía por la misma
+región de la pantalla que el título y el dock recién revelados: exactamente
+el tipo de choque que el operador venía señalando.
+
+Decisión, solo dentro de `@media (max-width: 720px)` — la regla de
+escritorio (sin `display: flex`, tal como el operador la dejó en DevTools
+la vez anterior) no se toca: `.ph-compass-filters` se muda al lado opuesto,
+abajo del todo (`top: auto; bottom: 0; left: 0; right: 0`), como una barra
+propia a lo ancho (`display: flex; flex-wrap: wrap; justify-content:
+center`). `.ph-dock` (la bandeja de ventanas, que en angosto ya se anclaba
+abajo) le reserva el hueco: `inset: auto 0 4.5rem 0` en vez de `0`, y
+`max-height` baja de 62% a 52% para no competir por el mismo espacio.
+
+Consecuencia: `tests/test_public_map.py` suma
+`TestFiltrosEnAngostoVanAlLadoContrarioDelCompas` (2 casos: la píldora de
+filtros trae `top: auto`/`bottom: 0`/`display: flex` en la regla angosta —
+no en la de escritorio—, y `.ph-dock` reserva el hueco de 4.5rem). Suite:
+1603 pasan, 1 saltea.

@@ -824,3 +824,48 @@ class TestDockOcultoHastaTocarElAvatar:
         assert "function alternarCompas(ev)" in texto
         assert 'envoltorio.classList.toggle("is-active")' in texto
         assert 'document.addEventListener("click", alternarCompas)' in texto
+
+
+class TestFiltrosEnAngostoVanAlLadoContrarioDelCompas:
+    """Ajuste del operador (2026-09-13): «en el movil… los productos y las
+    provincias ahora se van a convertir en una barra situada en el lado
+    contrario a la barra que sale de el avatar de guani». El compás vive
+    arriba a la izquierda —título y dock se despliegan desde ahí—; en
+    angosto la píldora de chips+provincia se muda al lado opuesto, abajo
+    del todo, como una barra propia a lo ancho. Solo en angosto: la regla
+    de escritorio (sin `display: flex`, tal como la dejó el operador en
+    DevTools) no se toca."""
+
+    def _regla_angosta(self, texto: str, selector: str) -> str:
+        """La primera ocurrencia de `selector {` que trae `left: 0` es la
+        del `@media` angosto — la de escritorio no toca `left`."""
+        desde = 0
+        while True:
+            desde = texto.index(f"{selector} {{", desde)
+            fin = texto.index("}", desde)
+            cuerpo = texto[desde:fin]
+            if "left: 0" in cuerpo:
+                return cuerpo
+            desde = fin
+
+    def test_la_pildora_de_filtros_baja_al_fondo_en_angosto(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+        regla = self._regla_angosta(texto, "    .ph-compass-filters")
+
+        assert "top: auto" in regla
+        assert "bottom: 0" in regla
+        assert "display: flex" in regla
+
+    def test_la_bandeja_de_ventanas_le_deja_hueco_a_la_barra_de_abajo(
+        self, client: TestClient
+    ) -> None:
+        """Las dos cosas se anclan abajo en angosto — sin coordinarlas, la
+        bandeja de ventanas (`.ph-dock`) quedaría tapada por la barra nueva
+        de chips+provincia, o al revés. `inset` es un atajo (no hay
+        `left: 0` literal que buscar, a diferencia de `.ph-compass-filters`),
+        así que alcanza con el valor completo, único en el archivo."""
+        texto = client.get("/").text
+
+        assert "inset: auto 0 4.5rem 0" in texto

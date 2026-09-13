@@ -806,11 +806,26 @@
     .ph-menu-icon { width: 2.25rem; height: 2.25rem; }
     .ph-menu-zoom { width: 2.25rem; }
     .ph-menu-zoom button { height: 2rem; }
+    /* La píldora de chips+provincia baja del todo (2026-09-13, ajuste del
+       operador: «en el movil… los productos y las provincias ahora se van
+       a convertir en una barra situada en el lado contrario a la barra
+       que sale del avatar»): el compás vive arriba a la izquierda —con su
+       título y su dock desplegándose desde ahí—, así que en angosto los
+       chips y la provincia se van al lado opuesto, abajo del todo, como
+       una barra propia a lo ancho. En escritorio esto no aplica: la regla
+       de acá arriba (sin `display: flex`, tal como la dejó el operador en
+       DevTools) sigue intacta. */
     .ph-compass-filters {
-      left: .9rem; right: .9rem; top: 3.75rem; max-width: none;
+      left: 0; right: 0; top: auto; bottom: 0;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+      gap: .5rem .75rem;
+      padding: .6rem .9rem;
+      max-width: none;
     }
     .ph-dock {
-      inset: auto 0 0 0; max-height: 62%;
+      /* `4.5rem` de hueco abajo: lo que reserva la barra de chips+provincia
+         de arriba, para que la bandeja de ventanas no le quede debajo. */
+      inset: auto 0 4.5rem 0; max-height: 52%;
       flex-direction: column; align-items: stretch; justify-content: flex-start;
       gap: .6rem; padding: .6rem; overflow-y: auto;
     }
