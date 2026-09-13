@@ -9076,3 +9076,46 @@ H0) y necesita aval explícito antes de tocarla; el segundo queda como
 candidato a próximo slice. No se resuelven los tres frentes a la vez.
 Consecuencia: cerrar un slice exige pasar este checklist, no solo tests en
 verde. `CLAUDE.md`, `README.md` y el catálogo de `/docs` apuntan al archivo.
+
+## 2026-09-13 — ruff + mypy en pyproject.toml
+Contexto: siguiendo la entrada anterior (checklist de revisión de slice), la
+capa mecánica y barata que ese documento asume que ya corrió no existía. Sin
+ella, el checklist gasta sus cuatro ejes en cosas que una herramienta
+detecta sola.
+Decisión: se agrega `ruff>=0.16` y `mypy>=2.3` a `dev` en `pyproject.toml`,
+con configuración ajustada contra el código real —no la config por
+defecto— para que la señal sea honesta:
+- ruff: `select = [E,F,I,B,UP,SIM,C4,A,RUF,S]`, `line-length = 110`.
+  `ignore` RUF001/002/003 (disparan con cualquier acento o guión largo de la
+  prosa en español que pide CLAUDE.md — pensadas para homoglifos en
+  identificadores, no prosa). `S101` exceptuado en `tests/*` (`assert` es la
+  forma estándar de pytest). `Depends`/`Query`/etc. de FastAPI exceptuados de
+  B008 vía `flake8-bugbear.extend-immutable-calls` (sacarlos del default
+  rompería la inyección de dependencias).
+- mypy: adopción gradual (`check_untyped_defs` sin exigir anotar todo el
+  código heredado el día 1), `mypy_path = "src"` + `explicit_package_bases`
+  para resolver `saimc.*` por ruta y no por el paquete editable —el `.pth`
+  del venv compartido apunta a `master`, no a este worktree. `pytesseract` y
+  `anthropic` con `ignore_missing_imports` (el primero no trae stubs; el
+  segundo es la dependencia opcional del extra `llm`, docs/costos.md).
+Se corrió una vez contra el repo real para no dejar la herramienta gritando
+falsos positivos desde el día 1 (`--fix` seguro: 28 arreglos mecánicos,
+reordenar imports, `datetime.UTC`, literales — sin cambio de comportamiento,
+1609 tests siguen en verde). Dos falsos positivos puntuales que no entraban
+en la config general se resolvieron en el código: `tests/test_processing_layer.py`
+ganó un import bajo `TYPE_CHECKING` para que la anotación de retorno entre
+comillas de `_crear_formato`/`_crear_variante` deje de leerse como nombre
+indefinido (el import real sigue adentro de la función, sin cambio de
+runtime); `src/saimc/extraction/measure.py` ganó `# noqa: S603,S607` en el
+`subprocess.run(["git", ...])` de telemetría (lista literal, sin shell, ya
+razonado en un comentario propio).
+Descartado: arreglar los hallazgos reales que quedan (65 de ruff, 141 de
+mypy) en este mismo slice — mezclaría "agregar la herramienta" con "tocar
+la mitad del repo", que es justo lo que el checklist de la entrada anterior
+pide declarar aparte. El hallazgo más señalado: `src/saimc/cells.py:341`,
+división de un `Decimal` contra algo que mypy tipa como `None` — el tipo de
+bug que hoy no truena porque ningún test pisa ese camino.
+Consecuencia: `ruff check .` y `mypy` quedan disponibles y honestos, pero no
+integrados a ningún gate (no hay CI/CD, decisión 4). Los 65 + 141 hallazgos
+reales quedan como deuda visible, no como bloqueo — decidir cuándo se
+atacan es un slice aparte.

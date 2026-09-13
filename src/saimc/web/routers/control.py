@@ -27,14 +27,12 @@ from saimc.cells import (
     compute_retail_ranges,
     detect_basis_suspects,
 )
-from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.config import get_settings
+from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.extraction.llm_assist import consumption_summary
-from saimc.ingestion.whatsapp_health import session_health
-from saimc.web.health_strip import build_strip, worst_level
 from saimc.extraction.measure import read_h0_runs
+from saimc.ingestion.whatsapp_health import session_health
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
-from saimc.requisitos_status import read_module_status
 from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
     PHASE0_PRODUCTS_MIN,
@@ -48,7 +46,9 @@ from saimc.progress import (
     compute_phase0_progress,
     pilot_product_names,
 )
+from saimc.requisitos_status import read_module_status
 from saimc.web.deps import get_db
+from saimc.web.health_strip import build_strip, worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
 
 router = APIRouter()

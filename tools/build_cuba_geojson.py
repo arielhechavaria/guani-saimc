@@ -40,10 +40,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from build_cuba_map import SIMPLIFY_EPSILON, load_cuba, simplify  # noqa: E402
+from build_cuba_map import SIMPLIFY_EPSILON, load_cuba, simplify
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from saimc.web.product_nav import product_slug  # noqa: E402
+from saimc.web.product_nav import product_slug
 
 
 def main() -> int:

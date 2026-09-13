@@ -55,11 +55,11 @@ from __future__ import annotations
 
 import json
 import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Sequence
 from uuid import UUID
 
 from sqlalchemy import select

@@ -19,7 +19,7 @@ existe— NO se hace abriendo esta lista: es otro contenido, escrito para afuera
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # `docs_catalog.py` vive en `src/saimc/web/`, así que la raíz del repositorio
@@ -238,7 +238,7 @@ def stat_document(entry: DocEntry) -> DocStat:
         exists=True,
         lines=raw.count(b"\n") + (0 if raw.endswith(b"\n") or not raw else 1),
         bytes_=len(raw),
-        modified=datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc),
+        modified=datetime.fromtimestamp(path.stat().st_mtime, tz=UTC),
     )
 
 

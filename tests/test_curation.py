@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
-from saimc.extraction import ocr
+from saimc.extraction import llm_assist, ocr
 from saimc.models import (
     Channel,
     ContentType,
@@ -38,7 +38,6 @@ from saimc.models import (
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
-from saimc.extraction import llm_assist
 from saimc.web.routers import curation
 from saimc.web.routers.curation import _EXTRA_BLANK_ROWS, _last_capture_notice
 

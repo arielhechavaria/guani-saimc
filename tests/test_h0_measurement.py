@@ -54,7 +54,6 @@ from saimc.models import (
     SourceType,
 )
 
-
 # Transcripciones simuladas, por nombre de archivo de la evidencia. Un archivo
 # ausente devuelve "" — el mismo contrato que `ocr.transcribe` real, que degrada
 # a texto vacío ante fallos esperables.

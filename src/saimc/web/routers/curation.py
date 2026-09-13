@@ -47,7 +47,6 @@ from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, apply_resolution
 from saimc.extraction import ocr
-from saimc.extraction.llm_assist import missing_fields, propose_missing
 from saimc.extraction.engine import (
     ExtractionProposal,
     guess_published_date,
@@ -56,17 +55,17 @@ from saimc.extraction.engine import (
     probable_discard_reasons,
     propose_all,
 )
+from saimc.extraction.llm_assist import missing_fields, propose_missing
+from saimc.formats import format_label, format_quantity, get_or_create_format
 from saimc.ingestion import origin
 from saimc.ingestion.inbox import ingest_inbox
-from saimc.privacy import redact_personal_data
-from saimc.formats import format_label, format_quantity, get_or_create_format
 from saimc.models import (
     ContentType,
     Currency,
     DiscardReason,
     PriceHistory,
-    Product,
     ProcessingStatus,
+    Product,
     ProductFormat,
     ProductVariant,
     Province,
@@ -74,6 +73,7 @@ from saimc.models import (
     SaleFormat,
     SourceType,
 )
+from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
 from saimc.variants import get_or_create_variant

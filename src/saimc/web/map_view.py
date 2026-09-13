@@ -52,7 +52,6 @@ from dataclasses import dataclass
 
 from saimc.web.product_nav import product_slug
 
-
 #: Etiquetas visibles de cada estado. Viven acá y no en la plantilla para que
 #: los tests puedan afirmarlas sin parsear HTML, y para que exista un solo lugar
 #: donde se lee qué dice la interfaz.

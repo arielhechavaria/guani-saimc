@@ -11,11 +11,10 @@ tener umbral». N se calibra más adelante con datos reales, y esta misma vista
 es la que va a permitir hacerlo.
 """
 
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
-
-from datetime import date, timedelta
 
 from saimc.cells import (
     compute_availability,
@@ -34,8 +33,6 @@ from saimc.models import (
     SaleFormat,
 )
 from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
-
-from datetime import UTC, datetime
 
 
 def _ingestion(

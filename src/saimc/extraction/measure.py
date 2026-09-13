@@ -67,7 +67,6 @@ from saimc.models import (
 from saimc.progress import pilot_products
 from saimc.units import canonical_unit
 
-
 # El OCR se inyecta para que la suite no dependa del binario de Tesseract y
 # para poder fijar transcripciones conocidas en los tests.
 Transcriber = Callable[[Path], str]
@@ -628,8 +627,8 @@ def _git(args: list[str]) -> str | None:
     # Argumentos fijos, sin shell y sin entrada del usuario: `git` con una
     # lista literal, nunca una cadena interpolada.
     try:
-        completed = subprocess.run(
-            ["git", *args],
+        completed = subprocess.run(  # noqa: S603 — sin shell, args fijos
+            ["git", *args],  # noqa: S607 — "git" del PATH, no una ruta externa
             capture_output=True,
             text=True,
             check=True,

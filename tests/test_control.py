@@ -4,19 +4,17 @@ import re
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
-from pathlib import Path
-
-from saimc.config import get_settings
-from saimc.extraction import llm_assist
-from saimc.ingestion.whatsapp_health import SessionHealth
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from saimc.config import get_settings
+from saimc.extraction import llm_assist
 from saimc.extraction.measure import H0RunSummary
+from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.models import (
     Currency,
     PriceHistory,

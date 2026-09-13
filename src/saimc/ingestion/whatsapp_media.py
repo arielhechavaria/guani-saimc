@@ -18,7 +18,6 @@ from urllib.parse import urlsplit
 
 import httpx
 
-
 # Las tres formas de nombrar "esta misma máquina". Se normalizan a una sola
 # porque en el despliegue real se mezclan de verdad: WAHA arma `media.url` con
 # el hostname que tiene configurado (`http://localhost:3000/...`) mientras que
