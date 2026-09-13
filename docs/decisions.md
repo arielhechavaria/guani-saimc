@@ -9299,3 +9299,40 @@ y su slug al frozenset. Verificado con test de endpoint
 (`test_provincia_y_producto_acota_el_panel_a_esa_provincia`) y de unidad
 en `panel_view` — pendiente que el operador vea las 5 formas en el
 navegador, son dibujadas a mano sin herramienta de diseño.
+
+## 2026-09-13 — Insignia sobre el mapa + sin sombreado en la provincia elegida
+Contexto: el operador probó el slice anterior (ícono en el panel flotante)
+y aclaró dos cosas al ver el mapa: (1) esperaba el ícono pegado a la
+provincia dentro del mapa, no solo en la ventana flotante aparte — se
+preguntó explícitamente y confirmó vía AskUserQuestion; (2) la provincia
+elegida se pinta con el relleno de la capa «densidad» (forzado desde
+`estiloDeProvincia`, ver 2026-09-12) y pidió sacarlo: «con los bordes me
+basta».
+Decisión: (1) Insignia server-rendered (ícono ilustrado + mediana + conteo)
+en un `<template id="ph-map-badge">` dentro de `.ph-stage`, que
+`inicializarMapa()` clona con `L.divIcon` (`iconSize:[0,0]` +
+`iconAnchor:[0,0]` + `translate(-50%,-50%)` en CSS, para centrarla sin
+conocer su ancho de antemano) en `capaElegida.getBounds().getCenter()`
+—el centro del recuadro, no el centroide exacto del polígono, alcanza
+para una insignia—. Solo se arma con UNA provincia elegida y UN producto
+activo con dato ahí (`product_panels | selectattr("has_data") | length
+== 1`): con más de un producto activo no se dibuja, para no superponer
+íconos en el mismo punto; el panel flotante sigue siendo la fuente
+completa en ese caso. (2) `estiloDeProvincia()`: `if (esElegida)
+opacidadRelleno = 0` después de la atenuación de las otras 15 — el borde
+(`weight` ya venía más grueso para la elegida) y ahora también la
+insignia siguen marcando cuál es, la capa densidad no se toca para el
+resto del mapa ni para el toggle Publicación/Densidad general.
+Descartado: mover el ícono del panel flotante al mapa en vez de sumarlo
+—el panel sigue siendo necesario para el rango completo y el cambio %,
+que no entran en una insignia chica—; centroide geométrico real (turf.js
+o similar) en vez de `getBounds().getCenter()` — de más para una forma
+que ya se ve encuadrada a pantalla completa, el bounding-box alcanza.
+Consecuencia: `interactive:false` + `pointer-events:none` en la insignia
+para que el clic/hover siga llegando al polígono de abajo. Sin test
+automatizado para el sombreado (es JS puro sobre Leaflet, sin arnés de
+test de UI en el repo, mismo criterio que el resto de `estiloDeProvincia`);
+sí hay 4 tests de endpoint nuevos para cuándo aparece/no aparece la
+insignia. Sigue pendiente que el operador vea el resultado real en
+navegador — mismo motivo que el slice anterior, sin Postgres accesible
+en el entorno de la sesión.

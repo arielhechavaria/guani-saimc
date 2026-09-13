@@ -1276,6 +1276,50 @@ class TestFiltroPorProvinciaEnLaRuta:
         assert 'class="ph-fpanel-illustration"' in panel
         assert "ph-fpanel-icon" not in panel
 
+    def test_provincia_con_un_producto_activo_pone_insignia_en_el_mapa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La insignia (ícono + cifra) sobre la provincia solo se arma
+        cuando hay UNA provincia elegida y UN producto activo con dato ahí
+        — `inicializarMapa()` la clona con `L.divIcon` (2026-09-13)."""
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana&producto=arroz").text
+        insignia = texto.split('id="ph-map-badge"')[1].split("</template>")[0]
+
+        assert 'id="ph-map-badge"' in texto
+        assert "2 anuncios" in insignia
+
+    def test_sin_provincia_elegida_no_hay_insignia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?producto=arroz").text
+
+        assert 'id="ph-map-badge"' not in texto
+
+    def test_provincia_elegida_sin_producto_no_hay_insignia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana").text
+
+        assert 'id="ph-map-badge"' not in texto
+
+    def test_con_dos_productos_activos_no_hay_insignia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Dos íconos en el mismo punto se superpondrían: con más de un
+        producto activo la insignia no se dibuja, el panel flotante sigue
+        siendo la fuente completa."""
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana&productos=arroz,aceite").text
+
+        assert 'id="ph-map-badge"' not in texto
+
     def test_provincia_inexistente_no_da_404(
         self, client: TestClient, session: Session
     ) -> None:
