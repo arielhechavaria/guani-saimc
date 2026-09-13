@@ -879,18 +879,21 @@ class TestFiltrosEnAngostoVanAlLadoContrarioDelCompas:
         ocultamos y mostramos de alguna forma»). Ver
         `TestLaLeyendaColapsaEnAngosto` para el mecanismo completo."""
         texto = client.get("/").text
-        regla = texto[texto.index(".ph-legend-nav.is-active .ph-canvas-legend") :]
+        regla = texto[texto.index(".ph-canvas-legend.is-active") :]
         regla = regla[: regla.index("}")]
 
         assert "opacity: 1" in regla
 
 
 class TestLaLeyendaColapsaEnAngosto:
-    """La leyenda (Publicación/Densidad) colapsa a un botón redondo en
-    angosto (2026-09-13): mismo idioma que el compás — chico, discreto,
-    revela el contenido al tocarlo, no siempre abierta compitiendo con la
-    barra de chips por el mismo rincón. En escritorio no cambia nada: la
-    leyenda sigue siempre abierta, como toda la vida."""
+    """La leyenda (Publicación/Densidad) colapsa en angosto (2026-09-13, en
+    dos pasos el mismo día): primero a un botón redondo suelto en su propia
+    esquina; el operador pidió mudar ESE botón adentro del dock del compás
+    —«quiero que ese boton este dentro de la barra… que aparece cuando se
+    interactua con [el avatar]»—, no dejarlo flotando aparte. El botón y la
+    leyenda ya no comparten un envoltorio común en el DOM: viven en dos
+    puntos distintos de la página, unidos solo por JS. En escritorio no
+    cambia nada: la leyenda sigue siempre abierta, como toda la vida."""
 
     def test_el_boton_esta_oculto_en_escritorio(self, client: TestClient) -> None:
         texto = client.get("/").text
@@ -899,12 +902,23 @@ class TestLaLeyendaColapsaEnAngosto:
 
         assert "display: none" in regla
 
+    def test_el_boton_vive_adentro_del_dock_del_compas(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+
+        dock = texto.index('<nav class="ph-menu"')
+        cierre_dock = texto.index("</nav>", dock)
+        boton = texto.index('class="ph-menu-item ph-legend-toggle"')
+
+        assert dock < boton < cierre_dock
+
     def test_el_boton_aparece_en_angosto_y_la_leyenda_arranca_oculta(
         self, client: TestClient
     ) -> None:
         texto = client.get("/").text
 
-        regla_boton = texto[texto.index("    .ph-legend-toggle {") :]
+        regla_boton = texto[texto.index(".ph-menu-item.ph-legend-toggle {") :]
         regla_boton = regla_boton[: regla_boton.index("}")]
         assert "display: flex" in regla_boton
 
@@ -920,11 +934,14 @@ class TestLaLeyendaColapsaEnAngosto:
     def test_tocar_el_boton_revela_la_leyenda_por_js(self, client: TestClient) -> None:
         """Mismo patrón que `alternarCompas`, sin la parte de hover: el botón
         solo existe en angosto (`display: none` en escritorio), así que no
-        hace falta distinguir mouse de táctil acá."""
+        hace falta distinguir mouse de táctil acá. El botón y la leyenda
+        viven en dos puntos distintos del DOM, así que esto apunta a
+        `.ph-canvas-legend` directo, no a un envoltorio compartido."""
         texto = client.get("/").text
 
         assert "function alternarLeyenda(ev)" in texto
-        assert 'envoltorio.classList.toggle("is-active")' in texto
+        assert 'leyenda.classList.toggle("is-active")' in texto
+        assert 'boton.classList.toggle("is-open")' in texto
         assert 'document.addEventListener("click", alternarLeyenda)' in texto
 
     def test_el_boton_tiene_su_propio_icono_y_nombre_accesible(
@@ -932,5 +949,5 @@ class TestLaLeyendaColapsaEnAngosto:
     ) -> None:
         texto = client.get("/").text
 
-        assert 'class="ph-legend-toggle" aria-label="Mostrar la leyenda del mapa"' in texto
+        assert 'class="ph-menu-item ph-legend-toggle" aria-pressed="false" aria-label="Mostrar la leyenda del mapa"' in texto
         assert '<span class="m3-icon">layers</span>' in texto

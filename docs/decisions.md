@@ -9020,3 +9020,38 @@ en total desde que empezó «Brújula» (`download`, `map`, `remove`, `sell`,
 `tools/build_icon_font.py`. `tests/test_public_map.py` suma
 `TestLaLeyendaColapsaEnAngosto` (4 casos) y reescribe el test del hueco
 anterior, superado por este mecanismo. Suite: 1608 pasan, 1 saltea.
+
+## 2026-09-13 — Brújula: el botón de la leyenda se muda adentro del dock
+Contexto: el operador, tras ver el botón redondo colapsado de la leyenda
+—«esta muy bien»—, pidió mudarlo: «quiero que ese boton este dentro de la
+barra que esta dentro de guani avatar, la que aparece cuando se
+interactua con el». El botón deja de ser una pieza suelta en su propia
+esquina y pasa a ser un ítem más del dock del compás.
+
+Decisión: el `<button class="ph-legend-toggle">` se muda adentro de
+`<nav class="ph-menu">`, con la clase `.ph-menu-item` (mismo círculo con
+etiqueta revelable que ya usan Cobertura/Precios/Evolución/Descargar CSV),
+después del zoom. Sigue en `display: none` en escritorio —la leyenda
+sigue siempre abierta ahí, sin nada que este botón deba abrir—.
+
+Esto rompe el supuesto de la versión anterior: botón y contenido ya NO
+comparten un envoltorio común en el DOM (el botón vive dentro del compás,
+arriba a la izquierda; la leyenda sigue en su rincón de siempre, abajo a
+la izquierda), así que `:focus-within` y el `contains()` de JS que
+dependían de un padre compartido dejaron de servir. `alternarLeyenda`
+pasa a alternar `.is-active` en `.ph-canvas-legend` DIRECTO (buscada por
+`document.querySelector`, no por contención), sin importar dónde vive el
+botón que la dispara; y de paso el botón se marca `is-open` (mismo relleno
+de acento que ya tienen los ítems de vista) para que se vea cuál de los
+dos estados —dock abierto, leyenda abierta— está activo.
+
+Con el botón fuera de esa esquina, ya no hace falta reservarle un hueco
+propio ahí: la leyenda vuelve a `bottom: 4.5rem`, el mismo valor que ya
+usa el resto del cromo de abajo para librar la barra de chips+provincia,
+en vez de los `7.75rem` que necesitaba para no taparlo cuando el botón
+vivía justo debajo.
+
+Consecuencia: `tests/test_public_map.py::TestLaLeyendaColapsaEnAngosto` se
+reescribe para el nuevo contrato (el botón vive dentro de `<nav
+class="ph-menu">`; `alternarLeyenda` apunta a `.ph-canvas-legend`
+directo, marca `is-open` en el botón). Suite: 1609 pasan, 1 saltea.
