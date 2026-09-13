@@ -1,5 +1,6 @@
 """Vista de control del operador — `GET /control`."""
 
+import json
 import re
 import subprocess
 import sys
@@ -1603,13 +1604,44 @@ class TestLaTablaDeSospechososDeclaraDeDondeSaleLaReferencia:
         assert "todas las provincias" not in texto
 
 
-class TestLintDrift:
-    """`POST /control/lint-drift`: dispara `scripts/lint_drift.py` y muestra
-    su salida tal cual. El proceso real se mockea — corre en 2-3 segundos
-    contra ruff/mypy reales, y este test no necesita eso, solo que el
-    endpoint invoque bien el comando y refleje lo que devuelve."""
+def _reporte_json(
+    *, has_new: bool, committed: bool = False, skipped_dirty: bool = False, nuevos: list[dict] | None = None
+) -> str:
+    """El shape exacto que `scripts/lint_drift.py --json` imprime — ver
+    `_calcular_drift`/`main` ahí. Un helper acá en vez de repetir el dict
+    entero en cada test."""
+    ruff_new = nuevos or []
+    return json.dumps(
+        {
+            "autofix": {
+                "attempted": not skipped_dirty,
+                "skipped_dirty": skipped_dirty,
+                "committed": committed,
+            },
+            "drift": [
+                {
+                    "tool": "ruff",
+                    "total": 65 + len(ruff_new),
+                    "baseline": 65,
+                    "new": ruff_new,
+                    "resolved": [],
+                },
+                {"tool": "mypy", "total": 142, "baseline": 142, "new": [], "resolved": []},
+            ],
+            "has_new": has_new,
+        }
+    )
 
-    def test_corre_el_script_y_muestra_su_salida(
+
+class TestLintDrift:
+    """`POST /control/lint-drift`: dispara `scripts/lint_drift.py --json` y
+    muestra cada hallazgo como banner/tabla, no como texto plano (pedido
+    del operador tras ver la primera versión). El proceso real se mockea —
+    corre en 2-3 segundos contra ruff/mypy reales, y este test no necesita
+    eso, solo que el endpoint invoque bien el comando y refleje lo que
+    devuelve."""
+
+    def test_sin_hallazgos_nuevos_muestra_banner_ok(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         capturado: dict[str, object] = {}
@@ -1619,7 +1651,7 @@ class TestLintDrift:
         ) -> subprocess.CompletedProcess[str]:
             capturado["args"] = args
             return subprocess.CompletedProcess(
-                args, returncode=0, stdout="Sin cambios contra el piso.\n", stderr=""
+                args, returncode=0, stdout=_reporte_json(has_new=False, committed=True), stderr=""
             )
 
         monkeypatch.setattr(control.subprocess, "run", _fake_run)
@@ -1628,20 +1660,23 @@ class TestLintDrift:
 
         assert response.status_code == 200
         assert "Sin cambios contra el piso." in response.text
-        assert "Sin hallazgos nuevos" in response.text
+        assert "Arreglos mecánicos aplicados y commiteados" in response.text
         args = capturado["args"]
         assert isinstance(args, list)
         assert args[0] == sys.executable
-        assert args[-1].endswith("scripts/lint_drift.py")
+        assert any(a.endswith("scripts/lint_drift.py") for a in args)
+        assert "--json" in args
 
-    def test_hallazgo_nuevo_se_marca_para_revisar(
+    def test_hallazgo_nuevo_se_muestra_como_fila_de_tabla(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        nuevo = [{"file": "src/saimc/cells.py", "code": "E501", "message": "Line too long", "count": 1}]
+
         def _fake_run(
             args: list[str], **kwargs: object
         ) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
-                args, returncode=1, stdout="NUEVOS (1) — necesitan revisión\n", stderr=""
+                args, returncode=1, stdout=_reporte_json(has_new=True, nuevos=nuevo), stderr=""
             )
 
         monkeypatch.setattr(control.subprocess, "run", _fake_run)
@@ -1649,5 +1684,28 @@ class TestLintDrift:
         response = client.post("/control/lint-drift")
 
         assert response.status_code == 200
-        assert "Hay hallazgos nuevos" in response.text
-        assert "NUEVOS (1)" in response.text
+        assert "hallazgo nuevo" in response.text
+        assert "E501" in response.text
+        assert "src/saimc/cells.py" in response.text
+        assert "Line too long" in response.text
+
+    def test_salida_no_json_degrada_a_texto_crudo(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Si el script no devuelve JSON válido (crash, formato viejo), la
+        vista no revienta: muestra la salida cruda en vez de un 500."""
+
+        def _fake_run(
+            args: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args, returncode=1, stdout="", stderr="Traceback: algo explotó\n"
+            )
+
+        monkeypatch.setattr(control.subprocess, "run", _fake_run)
+
+        response = client.post("/control/lint-drift")
+
+        assert response.status_code == 200
+        assert "No se pudo interpretar la salida" in response.text
+        assert "algo explotó" in response.text

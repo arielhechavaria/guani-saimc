@@ -21,6 +21,9 @@ Uso:
     python scripts/lint_drift.py --update-baseline # el operador ya revisó
                                                     # los hallazgos nuevos:
                                                     # los vuelve el piso nuevo
+    python scripts/lint_drift.py --json            # mismo reporte, para un
+                                                    # consumidor programático
+                                                    # (POST /control/lint-drift)
 """
 
 from __future__ import annotations
@@ -140,22 +143,42 @@ def _guardar_baseline(hallazgos: dict[str, Counter[Signature]]) -> None:
     BASELINE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _reportar_drift(nombre: str, actual: Counter[Signature], base: Counter[Signature]) -> bool:
+def _calcular_drift(nombre: str, actual: Counter[Signature], base: Counter[Signature]) -> dict:
+    """Un hallazgo por entrada, no agregado por código: `--json` lo necesita
+    entero para poder mostrar cada fila (`control_lint_drift.html`), y el
+    reporte de texto se arma sobre esto mismo, no por separado."""
     nuevos = actual - base
     resueltos = base - actual
-    print(f"\n=== {nombre} ===")
-    print(f"Total actual: {sum(actual.values())} (piso: {sum(base.values())})")
-    if nuevos:
-        print(f"NUEVOS ({sum(nuevos.values())}) — necesitan revisión, no se tocaron solos:")
-        for (archivo, codigo, mensaje), cuenta in sorted(nuevos.items()):
-            print(f"  [{codigo}] {archivo} x{cuenta} — {mensaje}")
-    if resueltos:
-        print(f"Resueltos desde el piso ({sum(resueltos.values())}):")
-        for (archivo, codigo, mensaje), cuenta in sorted(resueltos.items()):
-            print(f"  [{codigo}] {archivo} x{cuenta} — {mensaje}")
-    if not nuevos and not resueltos:
+    return {
+        "tool": nombre,
+        "total": sum(actual.values()),
+        "baseline": sum(base.values()),
+        "new": [
+            {"file": archivo, "code": codigo, "message": mensaje, "count": cuenta}
+            for (archivo, codigo, mensaje), cuenta in sorted(nuevos.items())
+        ],
+        "resolved": [
+            {"file": archivo, "code": codigo, "message": mensaje, "count": cuenta}
+            for (archivo, codigo, mensaje), cuenta in sorted(resueltos.items())
+        ],
+    }
+
+
+def _imprimir_drift(drift: dict) -> None:
+    print(f"\n=== {drift['tool']} ===")
+    print(f"Total actual: {drift['total']} (piso: {drift['baseline']})")
+    if drift["new"]:
+        n = sum(d["count"] for d in drift["new"])
+        print(f"NUEVOS ({n}) — necesitan revisión, no se tocaron solos:")
+        for d in drift["new"]:
+            print(f"  [{d['code']}] {d['file']} x{d['count']} — {d['message']}")
+    if drift["resolved"]:
+        n = sum(d["count"] for d in drift["resolved"])
+        print(f"Resueltos desde el piso ({n}):")
+        for d in drift["resolved"]:
+            print(f"  [{d['code']}] {d['file']} x{d['count']} — {d['message']}")
+    if not drift["new"] and not drift["resolved"]:
         print("Sin cambios contra el piso.")
-    return bool(nuevos)
 
 
 def main() -> int:
@@ -170,21 +193,37 @@ def main() -> int:
         action="store_true",
         help="Escribe los hallazgos actuales como el nuevo piso y termina.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Reporte de drift en JSON por stdout, para un consumidor "
+        "programático (POST /control/lint-drift). No imprime la narración.",
+    )
     args = parser.parse_args()
 
+    # `attempted`/`skipped_dirty`/`committed` son mutuamente excluyentes y
+    # cubren los tres desenlaces posibles del paso 1 — `--json` los necesita
+    # como datos, no como texto ya armado.
+    autofix = {"attempted": False, "skipped_dirty": False, "committed": False}
     if not args.no_autofix and not args.update_baseline:
         if _git_dirty():
-            print(
-                "Árbol de trabajo con cambios sin commitear: no corro --fix ni "
-                "commiteo nada (CLAUDE.md — no se mezcla con trabajo en curso). "
-                "Sigo solo con el reporte de drift, sobre lo que hay ahora."
-            )
+            autofix["skipped_dirty"] = True
+            if not args.json:
+                print(
+                    "Árbol de trabajo con cambios sin commitear: no corro --fix ni "
+                    "commiteo nada (CLAUDE.md — no se mezcla con trabajo en curso). "
+                    "Sigo solo con el reporte de drift, sobre lo que hay ahora."
+                )
         else:
+            autofix["attempted"] = True
             _ruff_autofix()
-            if _git_commit_autofix():
-                print("Arreglos mecánicos commiteados (sin push).")
-            else:
-                print("Nada que --fix pudiera arreglar solo.")
+            autofix["committed"] = _git_commit_autofix()
+            if not args.json:
+                print(
+                    "Arreglos mecánicos commiteados (sin push)."
+                    if autofix["committed"]
+                    else "Nada que --fix pudiera arreglar solo."
+                )
 
     hallazgos = {"ruff": _ruff_findings(), "mypy": _mypy_findings()}
 
@@ -194,9 +233,14 @@ def main() -> int:
         return 0
 
     piso = _cargar_baseline()
-    hay_nuevos = False
-    for herramienta in ("ruff", "mypy"):
-        hay_nuevos |= _reportar_drift(herramienta, hallazgos[herramienta], piso[herramienta])
+    drifts = [_calcular_drift(h, hallazgos[h], piso[h]) for h in ("ruff", "mypy")]
+    hay_nuevos = any(d["new"] for d in drifts)
+
+    if args.json:
+        print(json.dumps({"autofix": autofix, "drift": drifts, "has_new": hay_nuevos}, ensure_ascii=False))
+    else:
+        for drift in drifts:
+            _imprimir_drift(drift)
 
     return 1 if hay_nuevos else 0
 
