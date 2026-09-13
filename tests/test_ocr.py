@@ -17,8 +17,8 @@ que la corre, que es exactamente la clase de test que miente.
 import shutil
 from pathlib import Path
 
-import pytest
 import pytesseract
+import pytest
 from PIL import Image, ImageDraw, ImageFont
 
 from saimc.extraction import ocr

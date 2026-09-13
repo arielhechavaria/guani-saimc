@@ -17,13 +17,12 @@ import csv
 import io
 import json
 import uuid
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-
-from datetime import date, timedelta
 
 from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion

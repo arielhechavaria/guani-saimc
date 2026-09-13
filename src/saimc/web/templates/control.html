@@ -97,6 +97,18 @@
           <a href="/docs/requisitos">ver los 16 módulos →</a>
         </div>
       </div>
+
+      <div class="m3-metric">
+        <div class="m3-metric-label">Deuda de lint</div>
+        <div class="m3-metric-hint" style="margin-top:4px">
+          ruff + mypy contra <code>docs/lint-baseline.json</code> — arregla
+          lo mecánico solo, nunca lo que necesita criterio
+          (<a href="/docs/checklist-pr">checklist-pr</a>).
+        </div>
+        <form method="post" action="/control/lint-drift" style="margin-top:14px">
+          <button type="submit" class="m3-btn m3-btn-outlined">Correr ruff + mypy</button>
+        </form>
+      </div>
     </div>
   </section>
 

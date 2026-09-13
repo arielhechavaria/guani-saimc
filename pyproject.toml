@@ -25,6 +25,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.16",
+    "mypy>=2.3",
 ]
 # Motor de OCR primario (`saimc.extraction.ocr`), con Tesseract de respaldo si
 # no está instalado. Opcional y no en `dependencies`: son 417 MB de modelos
@@ -53,3 +55,80 @@ testpaths = ["tests"]
 # cuenta— y revienta en el colector con `.venv/bin/pytest`, que es el comando
 # documentado. Los dos tienen que andar.
 pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+# `alembic/versions/` es autogenerado por `alembic revision --autogenerate`:
+# no vale la pena pedirle el mismo estándar que al código escrito a mano.
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+# E/F: lo que ya cubría flake8 (errores, imports/nombres sin usar).
+# I: imports ordenados. B: bugbear (except demasiado amplio, mutable default,
+# variable de loop sin usar — exactamente los smells de docs/checklist-pr.md
+# §3). UP: sintaxis moderna para 3.12. SIM/C4: simplificaciones mecánicas.
+# A: no tapar builtins. RUF: reglas propias de ruff. S: bandit (seguridad) —
+# ya había `# noqa: S310` a mano en tools/, esto lo hace real en vez de decorativo.
+select = ["E", "F", "I", "B", "UP", "SIM", "C4", "A", "RUF", "S"]
+# RUF001/002/003 (carácter unicode "ambiguo") disparan con cada guión largo o
+# vocal acentuada de la prosa en español que pide CLAUDE.md — pensadas para
+# detectar homoglifos en identificadores, no para comentarios en español.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+# `assert` es la forma estándar de aserción de pytest, no una validación de
+# producción que se pise con `python -O` — no es el riesgo que S101 vigila.
+"tests/*" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["saimc"]
+
+[tool.ruff.lint.flake8-bugbear]
+# `Depends`/`Query`/etc. en un default es el mecanismo de inyección de
+# dependencias de FastAPI, no el antipatrón de "mutable default" que B008
+# vigila — sacarlo del default rompería la inyección.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Security",
+    "fastapi.Form",
+    "fastapi.File",
+]
+
+[tool.mypy]
+python_version = "3.12"
+# Resuelve `saimc.*` por ruta, no por el paquete instalado en editable —el
+# .pth del venv compartido apunta al checkout de `master`, no a este worktree
+# (docs/decisions.md). Analizar por archivo evita que mypy revise el código
+# equivocado.
+mypy_path = "src"
+explicit_package_bases = true
+files = ["src", "tests"]
+exclude = ["alembic/versions"]
+# Adopción gradual: no exigimos anotar todo el código heredado el día 1 —eso
+# desalienta el uso del tipado real. Sí exigimos que lo que SÍ está anotado
+# sea consistente, y que ningún camino ignore silenciosamente `None`.
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+# Sin stubs propios ni `py.typed`: no es una brecha del código, es que el
+# paquete no se anota a sí mismo. Mismo motivo por el que es dependencia
+# opcional (pyproject.toml, extra `ocr`).
+module = "pytesseract"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Extra opcional `llm` (pyproject.toml): sin el paquete instalado —o sin
+# clave— el asistente degrada solo (docs/costos.md). Un entorno `.[dev]` sin
+# `.[llm]` no debería ver esto como un error del código.
+module = "anthropic"
+ignore_missing_imports = true

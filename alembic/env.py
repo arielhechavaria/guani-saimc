@@ -6,18 +6,18 @@ una sola fuente de verdad y nada de credenciales versionadas.
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import saimc.models.price_history
+import saimc.models.product
+import saimc.models.province
+import saimc.models.raw_ingestion  # noqa: F401
+from alembic import context
 from saimc.config import get_settings
 
 # Importar los modelos registra las tablas en Base.metadata, que es lo que
 # `alembic revision --autogenerate` compara contra la base real.
-from saimc.models import Base  # noqa: F401
-import saimc.models.price_history  # noqa: F401
-import saimc.models.product  # noqa: F401
-import saimc.models.province  # noqa: F401
-import saimc.models.raw_ingestion  # noqa: F401
+from saimc.models import Base
 
 config = context.config
 

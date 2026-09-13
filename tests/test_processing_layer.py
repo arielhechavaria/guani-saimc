@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pytest
 import sqlalchemy as sa
@@ -29,6 +30,13 @@ from saimc.models import (
     RawIngestion,
     SourceType,
 )
+
+# Solo para las anotaciones de retorno entre comillas de `_crear_formato` y
+# `_crear_variante` más abajo: el import real para construirlos vive adentro
+# de cada función a propósito (mismo patrón que `_crear_precio`), así que acá
+# alcanza con lo que el chequeo estático necesita ver.
+if TYPE_CHECKING:
+    from saimc.models import ProductFormat, ProductVariant
 
 _MIGRACIONES_DIR = Path(__file__).resolve().parent.parent / "alembic" / "versions"
 

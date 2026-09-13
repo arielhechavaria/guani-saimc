@@ -14,7 +14,18 @@ recomendación). Es el espejo del operador, y por eso muestra medición sin
 emitir juicios: los únicos dos objetivos que aparecen —500 registros de 3–5
 productos en 2 provincias (§9), tasa de descarte <30% (§12.5)— están escritos
 en el documento rector. Ningún otro umbral se inventa acá (§12.6).
+
+Una tercera cosa vive acá, aparte de las dos preguntas de arriba: el botón
+de `POST /control/lint-drift`, que dispara `scripts/lint_drift.py` (ruff +
+mypy, arreglo mecánico + reporte de drift contra `docs/lint-baseline.json`,
+razonado en `docs/decisions.md`). No mide nada de curaduría — vive acá porque
+es la vista que el operador abre para "¿cómo estamos hoy?", y esto es parte
+de esa pregunta para quien programa, no para quien cura.
 """
+
+import subprocess
+import sys
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -27,14 +38,12 @@ from saimc.cells import (
     compute_retail_ranges,
     detect_basis_suspects,
 )
-from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.config import get_settings
+from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.extraction.llm_assist import consumption_summary
-from saimc.ingestion.whatsapp_health import session_health
-from saimc.web.health_strip import build_strip, worst_level
 from saimc.extraction.measure import read_h0_runs
+from saimc.ingestion.whatsapp_health import session_health
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
-from saimc.requisitos_status import read_module_status
 from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
     PHASE0_PRODUCTS_MIN,
@@ -48,10 +57,18 @@ from saimc.progress import (
     compute_phase0_progress,
     pilot_product_names,
 )
+from saimc.requisitos_status import read_module_status
 from saimc.web.deps import get_db
+from saimc.web.health_strip import build_strip, worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
 
 router = APIRouter()
+
+# `control.py` vive en `src/saimc/web/routers/`, cuatro niveles bajo la raíz
+# del repo. Mismo criterio de resolver por `__file__` que `docs_catalog.py` y
+# `measure.py`.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_LINT_DRIFT_SCRIPT = _REPO_ROOT / "scripts" / "lint_drift.py"
 
 # Ventana de la vista de rango minorista. 7 días —una semana— como default
 # razonable para "cómo se movió el precio": ni tan corta que un día flojo de
@@ -215,5 +232,31 @@ def control_panel(
             "phase0_products_max": PHASE0_PRODUCTS_MAX,
             "phase0_provinces": PHASE0_PROVINCES,
             "pilot_products": pilot_products,
+        },
+    )
+
+
+@router.post("/control/lint-drift", response_class=HTMLResponse)
+def run_lint_drift(request: Request) -> HTMLResponse:
+    """Dispara `scripts/lint_drift.py` y muestra su salida tal cual.
+
+    Ruta absoluta fija, sin entrada del pedido: lo único que decide qué
+    corre es este archivo, nunca el cliente HTTP. El script en sí ya decide
+    solo (docs/decisions.md) si conviene aplicar el `--fix` seguro y
+    commitear, o si el árbol sucio lo frena — acá no se repite ese criterio.
+    """
+    resultado = subprocess.run(  # noqa: S603 — ruta absoluta fija, sin shell, sin entrada del pedido
+        [sys.executable, str(_LINT_DRIFT_SCRIPT)],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "control_lint_drift.html",
+        {
+            "lint_output": (resultado.stdout + resultado.stderr).strip(),
+            "lint_ok": resultado.returncode == 0,
         },
     )

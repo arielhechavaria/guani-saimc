@@ -9095,3 +9095,134 @@ Consecuencia: `/docs` abre mostrando primero la guía de lectura (es el
 documento más reciente del grupo "rige"). Los tests de `tests/test_docs.py`
 que iteran sobre `docs_catalog.CATALOG` cubren la entrada nueva sin
 cambios; se suma un caso puntual para fijar su contenido.
+## 2026-09-13 — ruff + mypy en pyproject.toml
+Contexto: siguiendo la entrada anterior (checklist de revisión de slice), la
+capa mecánica y barata que ese documento asume que ya corrió no existía. Sin
+ella, el checklist gasta sus cuatro ejes en cosas que una herramienta
+detecta sola.
+Decisión: se agrega `ruff>=0.16` y `mypy>=2.3` a `dev` en `pyproject.toml`,
+con configuración ajustada contra el código real —no la config por
+defecto— para que la señal sea honesta:
+- ruff: `select = [E,F,I,B,UP,SIM,C4,A,RUF,S]`, `line-length = 110`.
+  `ignore` RUF001/002/003 (disparan con cualquier acento o guión largo de la
+  prosa en español que pide CLAUDE.md — pensadas para homoglifos en
+  identificadores, no prosa). `S101` exceptuado en `tests/*` (`assert` es la
+  forma estándar de pytest). `Depends`/`Query`/etc. de FastAPI exceptuados de
+  B008 vía `flake8-bugbear.extend-immutable-calls` (sacarlos del default
+  rompería la inyección de dependencias).
+- mypy: adopción gradual (`check_untyped_defs` sin exigir anotar todo el
+  código heredado el día 1), `mypy_path = "src"` + `explicit_package_bases`
+  para resolver `saimc.*` por ruta y no por el paquete editable —el `.pth`
+  del venv compartido apunta a `master`, no a este worktree. `pytesseract` y
+  `anthropic` con `ignore_missing_imports` (el primero no trae stubs; el
+  segundo es la dependencia opcional del extra `llm`, docs/costos.md).
+Se corrió una vez contra el repo real para no dejar la herramienta gritando
+falsos positivos desde el día 1 (`--fix` seguro: 28 arreglos mecánicos,
+reordenar imports, `datetime.UTC`, literales — sin cambio de comportamiento,
+1609 tests siguen en verde). Dos falsos positivos puntuales que no entraban
+en la config general se resolvieron en el código: `tests/test_processing_layer.py`
+ganó un import bajo `TYPE_CHECKING` para que la anotación de retorno entre
+comillas de `_crear_formato`/`_crear_variante` deje de leerse como nombre
+indefinido (el import real sigue adentro de la función, sin cambio de
+runtime); `src/saimc/extraction/measure.py` ganó `# noqa: S603,S607` en el
+`subprocess.run(["git", ...])` de telemetría (lista literal, sin shell, ya
+razonado en un comentario propio).
+Descartado: arreglar los hallazgos reales que quedan (65 de ruff, 141 de
+mypy) en este mismo slice — mezclaría "agregar la herramienta" con "tocar
+la mitad del repo", que es justo lo que el checklist de la entrada anterior
+pide declarar aparte. El hallazgo más señalado: `src/saimc/cells.py:341`,
+división de un `Decimal` contra algo que mypy tipa como `None` — el tipo de
+bug que hoy no truena porque ningún test pisa ese camino.
+Consecuencia: `ruff check .` y `mypy` quedan disponibles y honestos, pero no
+integrados a ningún gate (no hay CI/CD, decisión 4). Los 65 + 141 hallazgos
+reales quedan como deuda visible, no como bloqueo — decidir cuándo se
+atacan es un slice aparte.
+
+## 2026-09-13 — scripts/lint_drift.py: ratchet de deuda, no reparador
+Contexto: propuesta del operador — correr ruff/mypy a diario y "atacar" un
+número de hallazgos sin supervisión. Se discutió la distinción entre arreglo
+mecánico (sin criterio, seguro sin revisión) y arreglo semántico (qué hacer
+con un `Decimal / None`, un `union-attr` — decisión de negocio, no de estilo).
+Automatizar el segundo sin supervisión reproduce el riesgo mismo que motivó
+`docs/checklist-pr.md`: un cambio que calla al type-checker sin que nadie
+verifique que la resolución es correcta.
+Decisión: `scripts/lint_drift.py` hace exactamente dos cosas y nada más.
+(1) `ruff check --fix` (el seguro, nunca `--unsafe-fixes`) y commitea el
+resultado si el árbol estaba limpio — sin push, igual que cualquier commit
+de este repo. (2) Compara los hallazgos que quedan (ruff + mypy) contra
+`docs/lint-baseline.json` y reporta qué es nuevo (exit 1) y qué se resolvió,
+sin tocar ninguno. `--update-baseline` es la única forma de mover el piso, y
+la usa el operador después de revisar. Si el árbol tiene cambios sin
+commitear al arrancar, salta el autofix/commit entero (no se mezcla con
+trabajo en curso) y solo reporta.
+Piso inicial: 65 hallazgos de ruff + 141 de mypy (los mismos de la entrada
+anterior), guardados en `docs/lint-baseline.json`.
+Descartado: que el job arregle hallazgos semánticos, aunque sea "solo
+algunos por día" — no hay forma de que una herramienta sepa cuál es la
+resolución correcta de un `Decimal / None` en este dominio; esa decisión es
+del operador o de una sesión con supervisión, vía `docs/checklist-pr.md`.
+Pendiente, no resuelto acá: **cómo** se dispara "diario" (cron/systemd en el
+VPS, o un job programado de Claude Code) — toca la decisión cerrada 4 si es
+infraestructura a operar, así que queda para que el operador elija.
+
+## 2026-09-13 — conftest.py fuerza `saimc` al checkout del worktree, no al de master
+Contexto: al escribir el test de `POST /control/lint-drift` (entrada
+siguiente), `monkeypatch.setattr(control.subprocess, ...)` reventó con
+`AttributeError` — el módulo `control` cargado no tenía el código que
+acababa de escribir. Causa: el venv compartido tiene `saimc` instalado en
+editable (`pip install -e`) apuntando al checkout de `master`, fijo desde que
+se instaló; no sabe de worktrees. Cada `pytest` corrido en este worktree
+durante esta sesión (entradas de checklist-pr, ruff/mypy) importó `saimc` de
+`master`, no de acá. Ya estaba anotado como hallazgo de sesiones anteriores
+("PYTHONPATH=<worktree>/src obligatorio") pero exigía acordarse de
+exportarlo a mano cada vez, y hoy no se hizo.
+Impacto real de lo ya cerrado hoy: ninguno. Los cambios de las dos entradas
+anteriores (checklist-pr.md, config de ruff/mypy, el fix de
+`test_processing_layer.py`) son documentación, configuración de herramienta
+o anotaciones de tipo bajo `TYPE_CHECKING` — verificados por `ruff`/`mypy`
+directo sobre los archivos (que sí leen del worktree, no pasan por el
+paquete instalado) o sin comportamiento en runtime que un test pudiera
+romper. El riesgo era silencioso para cualquier cambio *futuro* que sí
+tocara comportamiento de la app.
+Decisión: `tests/conftest.py` inserta `<este_checkout>/src` al frente de
+`sys.path` antes de cualquier `import saimc`, así se resuelve siempre contra
+el checkout de donde corre pytest, gane o no la carrera contra el `.pth` del
+sitio. Nota: esto cubre `pytest`. Correr `uvicorn` a mano en un worktree
+sigue necesitando `PYTHONPATH=<worktree>/src` explícito — no hay conftest.py
+para invocaciones fuera de pytest.
+Descartado: seguir dependiendo de acordarse de exportar `PYTHONPATH` cada
+sesión — ya falló dos veces (esta y una anterior, registrada en Engram).
+Consecuencia: `pytest` en cualquier worktree de este repo prueba su propio
+código, no el de `master`, sin variables de entorno. Suite: 1611 pasan (2 más
+que antes: los tests nuevos de la entrada siguiente), 1 saltea.
+
+## 2026-09-13 — Botón en /control dispara scripts/lint_drift.py
+Contexto: siguiendo la entrada de `lint_drift.py`, el operador propuso
+disparar el job desde `/control` con un click en vez de un cron/systemd —
+evita la infraestructura de la decisión 4 (no hay servidor que operar) y
+sigue siendo una acción deliberada, no un job sin supervisión. Se preguntó
+explícitamente el alcance: ¿el botón solo reporta, o también aplica el
+`--fix` seguro y commitea como el script completo? El operador eligió lo
+segundo — el webapp gana la capacidad de invocar un subproceso y escribir al
+repo vía HTTP, sin autenticación (decisión 5).
+Decisión: `POST /control/lint-drift` (nuevo, en `control.py`) corre
+`scripts/lint_drift.py` como subproceso con ruta absoluta fija —el pedido
+HTTP no participa de qué se ejecuta— y devuelve su salida tal cual en
+`control_lint_drift.html`, una página chica aparte (no la vista completa de
+`/control`, para no duplicar el armado de contexto de `control_panel`).
+Botón `m3-btn` + `<form method="post">`, mismo patrón que ya usa
+`catalog.html` — no HTMX (vendorizado desde el 2026-08-22 pero sin uso real
+todavía; introducirlo recién acá hubiera sido una decisión de frontend más
+grande que "agregar un botón"). El script tarda ~2.6s: corre síncrono dentro
+del request, sin cola (decisión 3 sigue sin tocarse).
+Descartado: que el botón solo reporte sin escribir (alternativa más
+conservadora que propuse y el operador no eligió) — queda registrado el
+tradeoff por si se revisita: cualquiera que llegue a `/control` sin
+autenticarse puede ahora hacer que el servidor cree un commit.
+Consecuencia: piso de `docs/lint-baseline.json` actualizado (65 ruff + 142
+mypy — sumó 1: el propio `run_lint_drift` devuelve `Any` de
+`TemplateResponse`, mismo patrón ya aceptado 13 veces en el resto del
+código). Tests con el subproceso mockeado en `TestLintDrift`
+(`tests/test_control.py`); confirmado también en vivo con `curl` contra un
+`uvicorn` real (detectó el árbol sucio de esta misma sesión y saltó el
+autofix, como debía).

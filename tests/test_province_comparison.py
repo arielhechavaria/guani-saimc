@@ -65,7 +65,7 @@ class TestProvinciasLadoALado:
 
         assert habana.x_min < habana.x_q1 < habana.x_median < habana.x_q3 < habana.x_max
         assert santiago.x_median > habana.x_median
-        assert COMPARE_LEFT <= habana.x_min
+        assert habana.x_min >= COMPARE_LEFT
         assert santiago.x_max <= COMPARE_WIDTH - COMPARE_RIGHT
 
     def test_el_precio_imposible_no_estira_la_escala(self) -> None:

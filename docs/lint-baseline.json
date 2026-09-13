@@ -1,0 +1,1071 @@
+{
+  "generated_at": "2026-09-13T15:14:39.166730+00:00",
+  "ruff": [
+    {
+      "signature": [
+        "src/saimc/basis_backfill.py",
+        "S101",
+        "Use of `assert` detected"
+      ],
+      "count": 3
+    },
+    {
+      "signature": [
+        "src/saimc/progress.py",
+        "E501",
+        "Line too long (117 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "E501",
+        "Line too long (112 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "E741",
+        "Ambiguous variable name: `l`"
+      ],
+      "count": 4
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/catalog.py",
+        "E501",
+        "Line too long (111 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/curation.py",
+        "A002",
+        "Function argument `id` is shadowing a Python builtin"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/curation.py",
+        "E501",
+        "Line too long (116 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/public.py",
+        "C416",
+        "Unnecessary dict comprehension (rewrite using `dict()`)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "RUF059",
+        "Unpacked variable `canales` is never used"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "RUF059",
+        "Unpacked variable `provincias` is never used"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "RUF059",
+        "Unpacked variable `tabla` is never used"
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_cells.py",
+        "RUF015",
+        "Prefer `next(c for c in celdas if c.unconverted)` over single element slice"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_cells.py",
+        "RUF015",
+        "Prefer `next(c for c in celdas if c.unit is None)` over single element slice"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_cells.py",
+        "RUF015",
+        "Prefer `next(c for c in celdas if c.unresolved_basis)` over single element slice"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_cells.py",
+        "RUF015",
+        "Prefer `next(c for c in celdas if not c.unconverted)` over single element slice"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_cells.py",
+        "RUF015",
+        "Prefer `next(c for c in celdas if not c.unresolved_basis)` over single element slice"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_cells.py",
+        "RUF015",
+        "Prefer `next(r for r in rangos if not r.unconverted)` over single element slice"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_cells.py",
+        "RUF015",
+        "Prefer `next(r for r in rangos if r.unconverted)` over single element slice"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_control.py",
+        "C408",
+        "Unnecessary `dict()` call (rewrite as a literal)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_curation.py",
+        "E501",
+        "Line too long (119 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_curation.py",
+        "E501",
+        "Line too long (120 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_curation.py",
+        "F841",
+        "Local variable `a_id` is assigned to but never used"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_curation.py",
+        "RUF059",
+        "Unpacked variable `a` is never used"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_curation.py",
+        "RUF059",
+        "Unpacked variable `b` is never used"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "E741",
+        "Ambiguous variable name: `l`"
+      ],
+      "count": 7
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "RUF012",
+        "Mutable default value for class attribute"
+      ],
+      "count": 4
+    },
+    {
+      "signature": [
+        "tests/test_h0_measurement.py",
+        "C408",
+        "Unnecessary `dict()` call (rewrite as a literal)"
+      ],
+      "count": 4
+    },
+    {
+      "signature": [
+        "tests/test_matrix.py",
+        "RUF015",
+        "Prefer `next(...)` over single element slice"
+      ],
+      "count": 4
+    },
+    {
+      "signature": [
+        "tests/test_price_charts.py",
+        "RUF012",
+        "Mutable default value for class attribute"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_province_comparison.py",
+        "RUF005",
+        "Consider iterable unpacking instead of concatenation"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_public_filter.py",
+        "E501",
+        "Line too long (159 > 110)"
+      ],
+      "count": 3
+    },
+    {
+      "signature": [
+        "tests/test_public_filter.py",
+        "E501",
+        "Line too long (160 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_public_filter.py",
+        "E501",
+        "Line too long (161 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_public_filter.py",
+        "E501",
+        "Line too long (164 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_public_map.py",
+        "E501",
+        "Line too long (125 > 110)"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_static_assets.py",
+        "RUF012",
+        "Mutable default value for class attribute"
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tools/build_cuba_map.py",
+        "B905",
+        "`zip()` without an explicit `strict=` parameter"
+      ],
+      "count": 3
+    },
+    {
+      "signature": [
+        "tools/build_emoji_font.py",
+        "S310",
+        "Audit URL open for permitted schemes. Allowing use of `file:` or custom schemes is often unexpected."
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tools/build_icon_font.py",
+        "S310",
+        "Audit URL open for permitted schemes. Allowing use of `file:` or custom schemes is often unexpected."
+      ],
+      "count": 1
+    }
+  ],
+  "mypy": [
+    {
+      "signature": [
+        "src/saimc/basis_backfill.py",
+        "assignment",
+        "Incompatible types in assignment (expression has type \"object\", variable has type \"str | None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/cells.py",
+        "arg-type",
+        "Argument \"unit\" to \"RetailObservation\" has incompatible type \"str | None\"; expected \"str\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/cells.py",
+        "arg-type",
+        "Argument 1 to \"_proportional_distance\" has incompatible type \"Decimal | None\"; expected \"Decimal\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "src/saimc/cells.py",
+        "no-redef",
+        "Name \"as_total\" already defined on line 1226"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/cells.py",
+        "no-redef",
+        "Name \"as_unit\" already defined on line 1225"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/cells.py",
+        "operator",
+        "Unsupported operand types for / (\"Decimal\" and \"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/cells.py",
+        "unused-ignore",
+        "Unused \"type: ignore\" comment"
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "src/saimc/exchange_rate/service.py",
+        "call-overload",
+        "No overload variant of \"get\" of \"dict\" matches argument types \"str\", \"str\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/extraction/ocr.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"str\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/ingestion/whatsapp_webhook.py",
+        "arg-type",
+        "Argument 1 to \"_parse_media\" has incompatible type \"Any | dict[Any, Any] | None\"; expected \"dict[str, Any]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/ingestion/whatsapp_webhook.py",
+        "union-attr",
+        "Item \"None\" of \"Any | dict[Any, Any] | None\" has no attribute \"get\""
+      ],
+      "count": 5
+    },
+    {
+      "signature": [
+        "src/saimc/models/channel.py",
+        "union-attr",
+        "Item \"None\" of \"str | None\" has no attribute \"endswith\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/progress.py",
+        "arg-type",
+        "Argument \"curated\" to \"ChannelIntake\" has incompatible type \"object\"; expected \"int\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/progress.py",
+        "arg-type",
+        "Argument \"discarded\" to \"ChannelIntake\" has incompatible type \"object\"; expected \"int\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/progress.py",
+        "arg-type",
+        "Argument \"is_active\" to \"ChannelIntake\" has incompatible type \"object\"; expected \"bool | None\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/progress.py",
+        "arg-type",
+        "Argument \"pending\" to \"ChannelIntake\" has incompatible type \"object\"; expected \"int\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/progress.py",
+        "arg-type",
+        "Argument \"platform\" to \"ChannelIntake\" has incompatible type \"object\"; expected \"str | None\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/progress.py",
+        "arg-type",
+        "Argument 1 to \"dict\" has incompatible type \"Sequence[Row[tuple[str, int]]]\"; expected \"Iterable[tuple[Never, Never]]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/progress.py",
+        "var-annotated",
+        "Need type annotation for \"counts\" (hint: \"counts: dict[<type>, <type>] = ...\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/card_view.py",
+        "assignment",
+        "Incompatible types in assignment (expression has type \"Decimal\", variable has type \"str\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "arg-type",
+        "Argument \"key\" to \"sorted\" has incompatible type \"Callable[[int], float | None]\"; expected \"Callable[[int], SupportsDunderLT[Any] | SupportsDunderGT[Any]]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "arg-type",
+        "Argument 1 to \"float\" has incompatible type \"Decimal | None\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "arg-type",
+        "Argument 1 to \"tuple\" has incompatible type \"dict[date, int]\"; expected \"Iterable[CalendarDay]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "arg-type",
+        "Argument 2 to \"CompareRow\" has incompatible type \"**dict[str, object]\"; expected \"Decimal\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "arg-type",
+        "Argument 2 to \"CompareRow\" has incompatible type \"**dict[str, object]\"; expected \"float\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "arg-type",
+        "Argument 2 to \"CompareRow\" has incompatible type \"**dict[str, object]\"; expected \"int\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "arg-type",
+        "Argument 2 to \"CompareRow\" has incompatible type \"**dict[str, object]\"; expected \"str\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "assignment",
+        "Incompatible types in assignment (expression has type \"list[Never]\", variable has type \"dict[date, int]\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "attr-defined",
+        "\"dict[date, int]\" has no attribute \"append\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "attr-defined",
+        "\"object\" has no attribute \"lines\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "operator",
+        "Unsupported operand type for unary - (\"object\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "operator",
+        "Unsupported operand types for - (\"None\" and \"float\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/price_charts.py",
+        "return-value",
+        "Incompatible return value type (got \"float | None\", expected \"SupportsDunderLT[Any] | SupportsDunderGT[Any]\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/catalog.py",
+        "arg-type",
+        "Argument 1 to \"dict\" has incompatible type \"Sequence[Row[tuple[UUID, int]]]\"; expected \"Iterable[tuple[Never, Never]]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/catalog.py",
+        "attr-defined",
+        "\"Result[Any]\" has no attribute \"rowcount\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/catalog.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"HTMLResponse\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/catalog.py",
+        "var-annotated",
+        "Need type annotation for \"counts\" (hint: \"counts: dict[<type>, <type>] = ...\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/control.py",
+        "arg-type",
+        "Argument 1 to \"compute_pace\" has incompatible type \"list[DayActivity]\"; expected \"list[_HasRows]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/control.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"HTMLResponse\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/curation.py",
+        "arg-type",
+        "Argument 1 to \"dict\" has incompatible type \"Sequence[Row[tuple[str, int]]]\"; expected \"Iterable[tuple[Never, Never]]\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/curation.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"HTMLResponse | RedirectResponse\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/curation.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"HTMLResponse\""
+      ],
+      "count": 5
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/curation.py",
+        "var-annotated",
+        "Need type annotation for \"counts\" (hint: \"counts: dict[<type>, <type>] = ...\")"
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/docs.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"HTMLResponse\""
+      ],
+      "count": 3
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/public.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"HTMLResponse\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "src/saimc/web/routers/whatsapp_webhook.py",
+        "assignment",
+        "Incompatible types in assignment (expression has type \"Path | None\", variable has type \"Path\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_basis_backfill.py",
+        "union-attr",
+        "Item \"None\" of \"PriceHistory | None\" has no attribute \"price_basis\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Channel | None\" has no attribute \"address\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Channel | None\" has no attribute \"external_id\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Channel | None\" has no attribute \"name\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Channel | None\" has no attribute \"notes\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Channel | None\" has no attribute \"platform\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Channel | None\" has no attribute \"province_id\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Channel | None\" has no attribute \"url\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Match[str] | None\" has no attribute \"group\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"PriceHistory | None\" has no attribute \"format_id\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Product | None\" has no attribute \"is_pilot\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"Product | None\" has no attribute \"unit\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"ProductFormat | None\" has no attribute \"packaging\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_catalog.py",
+        "union-attr",
+        "Item \"None\" of \"ProductFormat | None\" has no attribute \"quantity\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_cells.py",
+        "union-attr",
+        "Item \"None\" of \"Decimal | None\" has no attribute \"quantize\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_control.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"Path\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_control.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"str\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_curation.py",
+        "func-returns-value",
+        "\"append\" of \"list\" does not return a value (it only ever returns None)"
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_curation.py",
+        "union-attr",
+        "Item \"None\" of \"RawIngestion | None\" has no attribute \"discard_reason\""
+      ],
+      "count": 3
+    },
+    {
+      "signature": [
+        "tests/test_curation.py",
+        "union-attr",
+        "Item \"None\" of \"RawIngestion | None\" has no attribute \"processing_status\""
+      ],
+      "count": 11
+    },
+    {
+      "signature": [
+        "tests/test_docs.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"str\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "operator",
+        "Unsupported left operand type for - (\"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "operator",
+        "Unsupported left operand type for < (\"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "operator",
+        "Unsupported operand types for - (\"None\" and \"float\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "operator",
+        "Unsupported operand types for - (\"float\" and \"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "operator",
+        "Unsupported operand types for < (\"float\" and \"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "operator",
+        "Unsupported operand types for > (\"float\" and \"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_evolution_charts.py",
+        "type-var",
+        "Value of type variable \"SupportsRichComparisonT\" of \"sorted\" cannot be \"float | None\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_extraction.py",
+        "arg-type",
+        "Argument 2 to \"propose\" has incompatible type \"list[Province]\"; expected \"Sequence[Product]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_extraction.py",
+        "union-attr",
+        "Item \"None\" of \"Product | None\" has no attribute \"name\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_matrix.py",
+        "arg-type",
+        "Argument 1 to \"resolve_column\" has incompatible type \"object\"; expected \"Matrix\""
+      ],
+      "count": 4
+    },
+    {
+      "signature": [
+        "tests/test_panel_blocks.py",
+        "union-attr",
+        "Item \"None\" of \"RangeSeries | None\" has no attribute \"province_name\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_price_charts.py",
+        "operator",
+        "Unsupported left operand type for < (\"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_price_charts.py",
+        "operator",
+        "Unsupported operand types for < (\"float\" and \"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_price_charts.py",
+        "operator",
+        "Unsupported operand types for > (\"float\" and \"None\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_privacy.py",
+        "arg-type",
+        "Argument 1 to \"len\" has incompatible type \"str | None\"; expected \"Sized\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_privacy.py",
+        "index",
+        "Value of type \"str | None\" is not indexable"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_privacy.py",
+        "operator",
+        "Unsupported right operand type for in (\"str | None\")"
+      ],
+      "count": 3
+    },
+    {
+      "signature": [
+        "tests/test_privacy.py",
+        "union-attr",
+        "Item \"None\" of \"str | None\" has no attribute \"count\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_processing_layer.py",
+        "arg-type",
+        "Argument 1 to \"create_all\" of \"MetaData\" has incompatible type \"object\"; expected \"Engine | Connection | MockConnection\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_processing_layer.py",
+        "unused-ignore",
+        "Unused \"type: ignore\" comment"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_public_map.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"dict[Any, Any]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_public_map.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"list[dict[Any, Any]]\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_rate_status.py",
+        "assignment",
+        "Incompatible types in assignment (expression has type \"Province | None\", variable has type \"Province\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_rate_status.py",
+        "assignment",
+        "Incompatible types in assignment (expression has type \"RawIngestion | None\", variable has type \"RawIngestion\")"
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_static_assets.py",
+        "union-attr",
+        "Item \"None\" of \"Match[str] | None\" has no attribute \"group\""
+      ],
+      "count": 1
+    },
+    {
+      "signature": [
+        "tests/test_whatsapp_webhook.py",
+        "no-any-return",
+        "Returning Any from function declared to return \"Response\""
+      ],
+      "count": 2
+    },
+    {
+      "signature": [
+        "tests/test_whatsapp_webhook.py",
+        "unused-ignore",
+        "Unused \"type: ignore\" comment"
+      ],
+      "count": 1
+    }
+  ]
+}

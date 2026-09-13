@@ -1,22 +1,22 @@
 """Vista de control del operador — `GET /control`."""
 
 import re
+import subprocess
+import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
-from pathlib import Path
-
-from saimc.config import get_settings
-from saimc.extraction import llm_assist
-from saimc.ingestion.whatsapp_health import SessionHealth
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from saimc.config import get_settings
+from saimc.extraction import llm_assist
 from saimc.extraction.measure import H0RunSummary
+from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.models import (
     Currency,
     PriceHistory,
@@ -1601,3 +1601,53 @@ class TestLaTablaDeSospechososDeclaraDeDondeSaleLaReferencia:
         texto = client.get("/control").text
 
         assert "todas las provincias" not in texto
+
+
+class TestLintDrift:
+    """`POST /control/lint-drift`: dispara `scripts/lint_drift.py` y muestra
+    su salida tal cual. El proceso real se mockea — corre en 2-3 segundos
+    contra ruff/mypy reales, y este test no necesita eso, solo que el
+    endpoint invoque bien el comando y refleje lo que devuelve."""
+
+    def test_corre_el_script_y_muestra_su_salida(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        capturado: dict[str, object] = {}
+
+        def _fake_run(
+            args: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            capturado["args"] = args
+            return subprocess.CompletedProcess(
+                args, returncode=0, stdout="Sin cambios contra el piso.\n", stderr=""
+            )
+
+        monkeypatch.setattr(control.subprocess, "run", _fake_run)
+
+        response = client.post("/control/lint-drift")
+
+        assert response.status_code == 200
+        assert "Sin cambios contra el piso." in response.text
+        assert "Sin hallazgos nuevos" in response.text
+        args = capturado["args"]
+        assert isinstance(args, list)
+        assert args[0] == sys.executable
+        assert args[-1].endswith("scripts/lint_drift.py")
+
+    def test_hallazgo_nuevo_se_marca_para_revisar(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _fake_run(
+            args: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args, returncode=1, stdout="NUEVOS (1) — necesitan revisión\n", stderr=""
+            )
+
+        monkeypatch.setattr(control.subprocess, "run", _fake_run)
+
+        response = client.post("/control/lint-drift")
+
+        assert response.status_code == 200
+        assert "Hay hallazgos nuevos" in response.text
+        assert "NUEVOS (1)" in response.text

@@ -27,6 +27,13 @@ No reemplaza el flujo de especificación completo (`openspec/`) que `CLAUDE.md`
 ya exige para esquema de datos o motor de validación — ahí este checklist se
 aplica **además**, no en lugar de.
 
+Tampoco reemplaza a `ruff`/`mypy` (`.venv/bin/ruff check .`,
+`.venv/bin/mypy`): corré esos primero. Son gratis, mecánicos y no requieren
+criterio — no vale la pena gastar los cuatro ejes de abajo revisando algo que
+una herramienta ya señala sola. `scripts/lint_drift.py` puede correrlos por
+vos, aplicar el `--fix` seguro y avisar si aparece un hallazgo nuevo contra
+`docs/lint-baseline.json` — ver el razonamiento en `docs/decisions.md`.
+
 ## El checklist
 
 ### 1. Trazabilidad — ¿el diff es lo que dice ser?

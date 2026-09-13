@@ -19,6 +19,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from saimc.web.card_view import ProductCard, format_price
+from saimc.web.price_charts import Headline, RangeSeries
 from saimc.web.product_nav import (
     DEFAULT_LAYER,
     DEFAULT_WINDOW_DAYS,
@@ -26,7 +27,6 @@ from saimc.web.product_nav import (
     product_slug,
     products_query,
 )
-from saimc.web.price_charts import Headline, RangeSeries
 from saimc.web.series_view import PriceSeries
 
 

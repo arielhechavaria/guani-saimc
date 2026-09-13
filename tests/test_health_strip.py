@@ -7,8 +7,6 @@ ni red.
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from saimc.exchange_rate.status import RateStatus
 from saimc.extraction.llm_assist import ConsumptionSummary
 from saimc.ingestion.whatsapp_health import SessionHealth
