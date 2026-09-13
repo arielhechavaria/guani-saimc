@@ -8856,3 +8856,53 @@ Consecuencia: `tests/test_public_map.py` suma
 el dock vive adentro del envoltorio en el orden hilo→botón→dock; se oculta
 por `opacity`/`visibility`, nunca por `display: none`; `alternarCompas`
 existe y está registrado por delegación). Suite: 1599 pasan, 1 saltea.
+
+## 2026-09-13 — Brújula: saca el rectángulo invisible que rompía el mapa en celular
+Contexto: el operador probó el ajuste anterior y reportó dos cosas — sacar
+el `backdrop-filter`/`-webkit-backdrop-filter` de `.ph-compass-filters`
+(quedó pedido a medias la vez anterior), y que en escritorio el revelado
+del dock andaba bien pero «en el móvil es un desastre».
+
+El desastre tenía una causa concreta: `.ph-compass-nav` (el envoltorio que
+sostiene el `:hover` entre avatar y dock) tenía tamaño fijo
+(`width: 6.5rem; height: 27rem`) y `pointer-events: auto` para que el
+`:hover` de CSS pudiera dispararse. Ese rectángulo —invisible pero real
+para el mouse— tapaba el arrastre del mapa en una franja de ~104×432px en
+la esquina superior izquierda, que en un viewport de celular es más de
+medio alto de pantalla.
+
+Decisión: sacar el rectángulo entero, no achicarlo. `.ph-compass-nav` pasa
+a ser un envoltorio sin posición ni tamaño propios —solo agrupa en el
+DOM—; sus hijos siguen posicionándose contra `.ph-canvas`, como si el
+envoltorio no existiera para efectos de layout. El revelado por mouse ya
+no es `:hover` de CSS: es JS (`abrirCompas`/`programarCierreCompas`,
+delegados por `mouseover`/`mouseout` con chequeo de `relatedTarget`, que sí
+burbujean —`mouseenter`/`mouseleave` no—) con una demora de 300ms, que
+tolera cruzar el hueco de 2px del hilo entre avatar y dock sin que el dock
+se cierre a mitad de camino. `:focus-within` (teclado) y `.is-active` (JS,
+al tocar/cliquear) se mantienen igual, sin necesitar geometría.
+
+Efecto secundario que hubo que resolver: con el hover ahora manejado por
+JS y el toque también por JS (`alternarCompas`), un click sobre el avatar
+ya hovereado en desktop toggleaba `.is-active` a la INVERSA de lo que el
+hover acababa de poner, cerrando el dock al toque. Se resolvió con
+`matchMedia("(hover: hover)")`: en un dispositivo con hover real, clickear
+el avatar solo confirma que quede abierto (no alterna); en uno sin hover
+—táctil—, el toque es el único disparador y sí alterna.
+
+Descartado: agrandar el rectángulo para que también cubriera el título
+(pensando que «el menú del título» pedía ocultar el título también) en vez
+de sacarlo. Un rectángulo más grande agrava exactamente el problema que
+se está resolviendo. Se interpretó el pedido como «el dock debe
+comportarse igual en ancho y en móvil», no como pedir ocultar el título —
+si la lectura es la otra, es un cambio de alcance nuevo, no una corrección
+de este.
+
+Consecuencia: `.ph-compass-filters` queda sin `background`/`border`/
+`box-shadow`/`backdrop-filter`, solo `position`/`right`/`padding`. Dos
+tests de `tests/test_public_map.py::TestElMapaEsLaApp`/
+`TestDockOcultoHastaTocarElAvatar` se reescriben para el nuevo contrato
+(sin vidrio en la píldora; sin `.ph-compass-nav {` con geometría propia;
+el hover de mouse documentado por JS, no por `:hover` de CSS) y se agrega
+un caso para `abrirCompas`/`programarCierreCompas`. Suite: 1600 pasan, 1
+saltea.

@@ -589,19 +589,23 @@ class TestElMapaEsLaApp:
 
         assert pildora < chips < provincia < escenario
 
-    def test_la_pildora_de_filtros_flota_como_vidrio_en_la_esquina(
+    def test_la_pildora_de_filtros_va_sin_vidrio_ajuste_del_operador(
         self, client: TestClient
     ) -> None:
         """Ya no es una fila a lo ancho con `space-between`: es una isla más,
-        anclada arriba a la derecha, con el mismo tratamiento de vidrio
-        (translúcida + `backdrop-filter`) que el resto del compás."""
+        anclada arriba a la derecha. El operador la probó a mano en DevTools
+        y pidió dejarla SIN fondo, borde, sombra ni `backdrop-filter` — los
+        chips y el `<select>` ya traen su propia superficie, y la caja extra
+        se sentía como vidrio sobre vidrio."""
         texto = client.get("/").text
         regla = texto[texto.index("  .ph-compass-filters {") :]
         regla = regla[: regla.index("}")]
 
         assert "position: absolute" in regla
         assert "right:" in regla
-        assert "backdrop-filter:" in regla
+        assert "background" not in regla
+        assert "box-shadow" not in regla
+        assert "backdrop-filter" not in regla
 
     def test_el_escenario_del_mapa_va_a_sangre_y_el_cromo_por_encima(
         self, client: TestClient
@@ -715,14 +719,19 @@ class TestDockOcultoHastaTocarElAvatar:
         # hilo primero (pinta detrás), después el botón, después el dock.
         assert envoltorio < hilo < compas < dock
 
-    def test_el_dock_arranca_oculto_y_solo_el_hover_lo_revela_por_css(
+    def test_el_dock_arranca_oculto_y_focus_within_o_is_active_lo_revelan_por_css(
         self, client: TestClient
     ) -> None:
         """No hay `display: none` de por medio —eso sacaría los ítems del
-        orden de tabulación para siempre—: es `opacity`/`visibility`, y el
-        `:hover`/`:focus-within`/`.is-active` de `.ph-compass-nav` es lo que
-        lo revela. Sin eso, tabular hasta un ítem del dock quedaría
-        imposible (nunca se vuelve visible)."""
+        orden de tabulación para siempre—: es `opacity`/`visibility`.
+
+        `:hover` de CSS quedó afuera a propósito (ajuste del mismo día): sin
+        un rectángulo que cubra el hueco entre avatar y dock, un `:hover`
+        puro cerraría el dock a mitad de camino al cruzar ese hueco por el
+        hilo de 2px. El hover real lo maneja JS con demora
+        (`abrirCompas`/`programarCierreCompas`, ver el otro test); acá solo
+        quedan los dos disparadores que sí son puro CSS: `:focus-within`
+        (teclado) y `.is-active` (la clase que ese JS y el toque alternan)."""
         texto = client.get("/").text
 
         regla_oculta = texto[texto.index(".ph-compass-thread, .ph-menu {") :]
@@ -731,13 +740,34 @@ class TestDockOcultoHastaTocarElAvatar:
         assert "visibility: hidden" in regla_oculta
         assert "display: none" not in regla_oculta
 
-        regla_revelada = texto[texto.index(".ph-compass-nav:hover .ph-compass-thread") :]
+        regla_revelada = texto[texto.index(".ph-compass-nav:focus-within .ph-compass-thread") :]
         regla_revelada = regla_revelada[: regla_revelada.index("}")]
-        assert ":hover" in regla_revelada
         assert ":focus-within" in regla_revelada
         assert ".is-active" in regla_revelada
         assert "opacity: 1" in regla_revelada
         assert "visibility: visible" in regla_revelada
+
+        # El rectángulo invisible de la primera versión (position/width/
+        # height/pointer-events en `.ph-compass-nav`) tapaba el arrastre del
+        # mapa en celular — no puede volver.
+        assert ".ph-compass-nav {" not in texto
+
+    def test_el_hover_de_mouse_lo_maneja_js_con_demora_no_hover_de_css(
+        self, client: TestClient
+    ) -> None:
+        """`mouseover`/`mouseout` burbujean —`mouseenter`/`mouseleave` no—,
+        así que sirven para delegar en `document`; `relatedTarget` distingue
+        salir de veras del envoltorio de pasar a otro hijo suyo. La demora
+        (300ms) tolera cruzar el hueco entre avatar y dock sin que el dock se
+        cierre a mitad de camino."""
+        texto = client.get("/").text
+
+        assert "function abrirCompas()" in texto
+        assert "function programarCierreCompas()" in texto
+        assert 'document.addEventListener("mouseover"' in texto
+        assert 'document.addEventListener("mouseout"' in texto
+        assert "ev.relatedTarget" in texto
+        assert "}, 300)" in texto
 
     def test_tocar_el_avatar_alterna_is_active_por_js(self, client: TestClient) -> None:
         """En táctil no hay `:hover`: `alternarCompas` es el mecanismo real

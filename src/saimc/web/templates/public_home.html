@@ -241,43 +241,40 @@
   }
 
   /* Dock oculto hasta pasar el mouse —o tocar, en táctil— el avatar
-     (2026-09-13, ajuste del operador): antes el dock vertical estaba
-     siempre visible; ahora es un menú que se despliega, y el compás es el
-     botón que lo abre.
+     (2026-09-13, ajuste del operador; revisado el mismo día: la primera
+     versión usaba un `.ph-compass-nav` con tamaño fijo y
+     `pointer-events: auto` para sostener el `:hover` entre avatar y dock,
+     y ese rectángulo (6.5rem × 27rem) tapaba el arrastre del mapa en una
+     franja enorme de la pantalla en celular —«un desastre», con razón—.
 
-     `.ph-compass-nav` envuelve avatar + hilo + dock en UNA sola zona de
-     hover, no tres por separado: sin el envoltorio, mover el mouse del
-     avatar hacia abajo por el hilo (2px de ancho) perdería el `:hover`
-     antes de llegar al dock —`:hover` no «salta» el espacio entre dos
-     hermanos, así que hacía falta un padre común que cubriera todo el
-     trayecto.
+     Ahora `.ph-compass-nav` es un envoltorio SIN posición ni tamaño
+     propios (agrupa en el DOM nada más; sus hijos siguen posicionándose
+     contra `.ph-canvas`, el ancestro `position: relative` de siempre): no
+     hay ningún rectángulo invisible que bloquee el mapa.
 
-     `pointer-events: auto` en el envoltorio y no `none` (como el resto del
-     cromo transparente de esta página): con `none` el elemento queda
-     afuera de la detección de mouse por completo, y `:hover`/
-     `:focus-within` no dispararían nunca. El costo es un rectángulo inerte
-     para arrastrar el mapa (la esquina superior izquierda, ~6.5rem ×
-     27rem) — se puede arrastrar desde cualquier otro punto.
+     Tres formas de abrirlo:
+     - `:focus-within` — puro CSS, sin geometría: tabular hasta el botón
+       revela el dock, y ahí sus ítems entran al orden de tabulación
+       (gracias a `visibility`, ver abajo).
+     - `.is-active` — JS, alternada al tocar/cliquear el avatar
+       (`alternarCompas`, script del pie). Es lo único que sostiene
+       táctil, que no tiene «hover».
+     - hover con demora — TAMBIÉN JS (`abrirCompas`/`programarCierreCompas`,
+       delegados por `mouseover`/`mouseout` con `relatedTarget`), no
+       `:hover` de CSS: sin un rectángulo que cubra el hueco entre avatar y
+       dock, mover el mouse por el hilo de 2px cruza un instante por fuera
+       de cualquier elemento, y un `:hover` puro cerraría el dock a mitad
+       de camino. La demora (300ms) tolera ese cruce; si el mouse llega al
+       dock antes de que se cumpla, el cierre programado se cancela.
 
-     Tres formas de abrirlo, no una sola: `:hover` (mouse), `:focus-within`
-     (teclado — tabular hasta el botón lo revela, y recién ahí sus ítems
-     entran al orden de tabulación gracias a `visibility`), y `.is-active`
-     (JS, alternada al tocar/cliquear el avatar — ver `alternarCompas` en
-     el script del pie). `visibility` y no solo `opacity`: con `opacity`
-     sola, los enlaces del dock seguirían tabulables mientras están
-     invisibles. La demora de `visibility` (`0s linear .18s`) deja que la
-     opacidad se apague antes de sacarlos del todo; al abrir, entran de
-     inmediato (delay `0s`). */
-  .ph-compass-nav {
-    position: absolute; left: 0; top: 0;
-    width: 6.5rem; height: 27rem;
-    pointer-events: auto;
-  }
+     `visibility` y no solo `opacity`: con `opacity` sola, los enlaces del
+     dock seguirían tabulables mientras están invisibles. La demora de
+     `visibility` (`0s linear .18s`) deja que la opacidad se apague antes
+     de sacarlos del todo; al abrir, entran de inmediato (delay `0s`). */
   .ph-compass-thread, .ph-menu {
     opacity: 0; visibility: hidden; transform: translateX(-.35rem);
     transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
   }
-  .ph-compass-nav:hover .ph-compass-thread, .ph-compass-nav:hover .ph-menu,
   .ph-compass-nav:focus-within .ph-compass-thread, .ph-compass-nav:focus-within .ph-menu,
   .ph-compass-nav.is-active .ph-compass-thread, .ph-compass-nav.is-active .ph-menu {
     opacity: 1; visibility: visible; transform: none;
@@ -413,7 +410,6 @@
   .ph-compass-filters {
     position: absolute; right: 1rem; z-index: 1300;
     padding: .5rem .65rem;
-    backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
   }
   .ph-compass-filters-sep { align-self: stretch; width: 1px; margin: .3rem 0;
                              background: var(--m3-outline-variant); }
@@ -1971,20 +1967,68 @@
     else if (ev.target.closest("[data-zoom-out]")) mapaLeaflet.zoomOut();
   }
 
-  // Abrir/cerrar el dock del compás al tocar el avatar (2026-09-13): en
-  // mouse ya alcanza con `:hover`/`:focus-within` puro CSS, pero táctil no
-  // tiene «hover» — tocar el avatar alterna `.is-active` en `.ph-compass-nav`
-  // (ver ese comentario en el `<style>`), y tocar afuera lo cierra, como
-  // cualquier menú desplegable.
+  // Abrir/cerrar el dock del compás (2026-09-13, revisado el mismo día:
+  // ver el porqué del cambio en el comentario de `.ph-compass-nav` en el
+  // `<style>` — la primera versión usaba un rectángulo invisible para
+  // sostener el `:hover` de CSS, y ese rectángulo tapaba el arrastre del
+  // mapa en celular).
+  //
+  // `alternarCompas` cubre táctil: tocar el avatar alterna `.is-active`;
+  // tocar afuera lo cierra, como cualquier menú desplegable. En un
+  // dispositivo CON hover real, el click no alterna —solo confirma que
+  // quede abierto (`abrirCompas`, más abajo)—: si alternara, un click
+  // sobre el avatar ya hovereado lo cerraría al toque, porque el hover ya
+  // lo había abierto un instante antes.
   function alternarCompas(ev) {
     var envoltorio = document.querySelector(".ph-compass-nav");
     if (!envoltorio) return;
     if (ev.target.closest(".ph-compass")) {
-      envoltorio.classList.toggle("is-active");
+      var tieneHover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
+      if (tieneHover) abrirCompas();
+      else envoltorio.classList.toggle("is-active");
       return;
     }
     if (!envoltorio.contains(ev.target)) envoltorio.classList.remove("is-active");
   }
+
+  // `abrirCompas`/`programarCierreCompas` cubren mouse: sin el rectángulo
+  // invisible de antes, `:hover` puro de CSS cerraría el dock a mitad de
+  // camino al cruzar el hueco entre el avatar y el dock (el hilo mide 2px
+  // de ancho). `mouseover`/`mouseout` sí burbujean —`mouseenter`/
+  // `mouseleave` no— y `relatedTarget` dice si el mouse se fue de verdad o
+  // solo pasó a otro hijo del mismo envoltorio. Una demora de 300ms tolera
+  // el cruce del hueco: si el mouse llega al dock antes de que se cumpla,
+  // `abrirCompas()` cancela el cierre programado.
+  var cierreCompasPendiente = null;
+
+  function abrirCompas() {
+    if (cierreCompasPendiente) {
+      clearTimeout(cierreCompasPendiente);
+      cierreCompasPendiente = null;
+    }
+    var envoltorio = document.querySelector(".ph-compass-nav");
+    if (envoltorio) envoltorio.classList.add("is-active");
+  }
+
+  function programarCierreCompas() {
+    var envoltorio = document.querySelector(".ph-compass-nav");
+    if (!envoltorio) return;
+    if (cierreCompasPendiente) clearTimeout(cierreCompasPendiente);
+    cierreCompasPendiente = setTimeout(function () {
+      envoltorio.classList.remove("is-active");
+      cierreCompasPendiente = null;
+    }, 300);
+  }
+
+  document.addEventListener("mouseover", function (ev) {
+    if (ev.target.closest(".ph-compass-nav")) abrirCompas();
+  });
+  document.addEventListener("mouseout", function (ev) {
+    var envoltorio = ev.target.closest(".ph-compass-nav");
+    if (!envoltorio) return;
+    var haciaAfuera = !ev.relatedTarget || !envoltorio.contains(ev.relatedTarget);
+    if (haciaAfuera) programarCierreCompas();
+  });
 
   document.addEventListener("click", cerrarOptimista);
   document.addEventListener("click", zoomDelMapa);
