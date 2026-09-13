@@ -9208,3 +9208,26 @@ código). Tests con el subproceso mockeado en `TestLintDrift`
 (`tests/test_control.py`); confirmado también en vivo con `curl` contra un
 `uvicorn` real (detectó el árbol sucio de esta misma sesión y saltó el
 autofix, como debía).
+
+## 2026-09-13 — /control/lint-drift muestra elementos visuales, no texto plano
+Contexto: al ver la primera versión en producción, el operador pidió un
+elemento visual que explicara los hallazgos en vez de un `<pre>` con el
+texto crudo del script.
+Decisión: `scripts/lint_drift.py` gana `--json` (paralelo al modo texto, que
+no cambió: se comparó línea por línea contra la salida anterior) — imprime
+`{autofix, drift: [{tool, total, baseline, new, resolved}], has_new}` en vez
+de la narración. `POST /control/lint-drift` ahora llama con `--json`, parsea
+y arma la página con los componentes M3 que ya existían para exactamente
+este propósito (`m3-banner-ok/-warn`, `m3-badge-mono-ok/-warn`, `m3-table`)
+en vez de inventar estilos nuevos. Si el JSON no parsea (el script crasheó,
+cambió de forma), degrada al texto crudo en un banner de error — no un 500.
+Efecto lateral: sumé dos iconos nuevos (`new_releases`, `task_alt`) a las
+plantillas, y `tests/test_static_assets.py::test_el_subconjunto_cubre...`
+—que existe justo para esto— se puso roja hasta correr
+`python tools/build_icon_font.py` (regenera el subconjunto vendorizado
+contra Google Fonts, ver ese archivo). Sin sorpresas: es la herramienta que
+el propio mensaje del test nombra.
+Consecuencia: el modo texto de `lint_drift.py` sigue igual para uso por
+terminal (`docs/checklist-pr.md` lo sigue apuntando ahí). El piso no se
+movió (65 ruff + 142 mypy, sin drift). Tests con el JSON completo mockeado
+en `TestLintDrift`, incluido el caso de degradación cuando no parsea.

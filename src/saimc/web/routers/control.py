@@ -23,6 +23,7 @@ es la vista que el operador abre para "¿cómo estamos hoy?", y esto es parte
 de esa pregunta para quien programa, no para quien cura.
 """
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -244,19 +245,35 @@ def run_lint_drift(request: Request) -> HTMLResponse:
     corre es este archivo, nunca el cliente HTTP. El script en sí ya decide
     solo (docs/decisions.md) si conviene aplicar el `--fix` seguro y
     commitear, o si el árbol sucio lo frena — acá no se repite ese criterio.
+
+    `--json` para poder mostrar cada hallazgo como elemento visual (banner +
+    tabla), no como texto plano — pedido explícito del operador después de
+    ver la primera versión. Si el parseo falla por lo que sea, degrada al
+    texto crudo (`lint_output`) en vez de romper la página: la plantilla
+    decide qué mostrar según `lint_parsed`.
     """
     resultado = subprocess.run(  # noqa: S603 — ruta absoluta fija, sin shell, sin entrada del pedido
-        [sys.executable, str(_LINT_DRIFT_SCRIPT)],
+        [sys.executable, str(_LINT_DRIFT_SCRIPT), "--json"],
         cwd=_REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
+    contexto: dict[str, object] = {
+        "lint_output": (resultado.stdout + resultado.stderr).strip(),
+        "lint_parsed": False,
+    }
+    try:
+        reporte = json.loads(resultado.stdout)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    else:
+        contexto.update(
+            lint_parsed=True,
+            lint_ok=not reporte["has_new"],
+            lint_autofix=reporte["autofix"],
+            lint_drift=reporte["drift"],
+        )
     return request.app.state.templates.TemplateResponse(
-        request,
-        "control_lint_drift.html",
-        {
-            "lint_output": (resultado.stdout + resultado.stderr).strip(),
-            "lint_ok": resultado.returncode == 0,
-        },
+        request, "control_lint_drift.html", contexto
     )

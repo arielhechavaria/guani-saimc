@@ -2,22 +2,116 @@
 
 {% block title %}Deuda de lint{% endblock %}
 {% block heading %}Deuda de lint{% endblock %}
-{% block subtitle %}Salida de scripts/lint_drift.py — ruff + mypy contra docs/lint-baseline.json.{% endblock %}
+{% block subtitle %}scripts/lint_drift.py — ruff + mypy contra docs/lint-baseline.json.{% endblock %}
 
 {% block content %}
 <div class="m3-stack-lg">
+
+  {% if not lint_parsed %}
+  {#
+    Degradación: el script no devolvió JSON válido (crasheó, o algo cambió
+    su salida). Mejor mostrar la salida cruda que romper la página — mismo
+    criterio de `docs_catalog.stat_document` con un documento que falta.
+  #}
+  <div class="m3-banner m3-banner-error" role="alert">
+    <span class="m3-icon">error</span>
+    <span>No se pudo interpretar la salida del script. Texto crudo abajo.</span>
+  </div>
+  <pre style="white-space:pre-wrap">{{ lint_output }}</pre>
+
+  {% else %}
+
+  {# ---------- Qué hizo el paso 1 (autofix) ---------- #}
   <section>
-    <div class="m3-section-head">
-      <h2 class="m3-h2">
-        {% if lint_ok %}Sin hallazgos nuevos{% else %}Hay hallazgos nuevos — revisar{% endif %}
-      </h2>
-      <span class="m3-sm m3-muted">
-        Lo mecánico ya se arregló solo si el árbol estaba limpio. Lo que sigue acá abajo necesita criterio
-        (<a href="/docs/checklist-pr">checklist-pr</a>).
+    {% if lint_autofix.skipped_dirty %}
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">edit_note</span>
+      <span>
+        El árbol tenía cambios sin commitear: no se corrió <code>ruff --fix</code>
+        ni se commiteó nada, para no mezclarse con trabajo en curso.
       </span>
     </div>
-    <pre style="white-space:pre-wrap">{{ lint_output }}</pre>
+    {% elif lint_autofix.committed %}
+    <div class="m3-banner m3-banner-ok" role="alert">
+      <span class="m3-icon">task_alt</span>
+      <span>Arreglos mecánicos aplicados y commiteados (sin push).</span>
+    </div>
+    {% else %}
+    <div class="m3-banner" role="status">
+      <span class="m3-icon">info</span>
+      <span>Se corrió <code>ruff --fix</code>: nada que arreglara solo.</span>
+    </div>
+    {% endif %}
   </section>
+
+  {# ---------- Un bloque por herramienta ---------- #}
+  {% for tool in lint_drift %}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">{{ tool.tool }}</h2>
+      <span class="m3-sm m3-muted">{{ tool.total }} hallazgos actuales · piso {{ tool.baseline }}</span>
+    </div>
+
+    {% if not tool.new and not tool.resolved %}
+    <p class="m3-sm m3-dim" style="margin:8px 0 0">Sin cambios contra el piso.</p>
+    {% endif %}
+
+    {% if tool.new %}
+    <div class="m3-banner m3-banner-warn" style="margin-bottom:12px" role="alert">
+      <span class="m3-icon">new_releases</span>
+      <span>
+        <strong>{{ tool.new | sum(attribute="count") }}</strong>
+        hallazgo{{ "s" if tool.new | sum(attribute="count") != 1 }} nuevo{{ "s" if tool.new | sum(attribute="count") != 1 }}
+        contra el piso — necesita{{ "n" if tool.new | sum(attribute="count") != 1 }} criterio, no se
+        tocaron solos (<a href="/docs/checklist-pr">checklist-pr</a>).
+      </span>
+    </div>
+    <table class="m3-table" style="margin-bottom:20px">
+      <thead>
+        <tr>
+          <th scope="col">Regla</th>
+          <th scope="col">Archivo</th>
+          <th scope="col">Mensaje</th>
+          <th scope="col" class="num">Veces</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in tool.new %}
+        <tr>
+          <td><span class="m3-badge m3-badge-mono m3-badge-warn">{{ h.code }}</span></td>
+          <td class="m3-sm"><code>{{ h.file }}</code></td>
+          <td class="m3-sm">{{ h.message }}</td>
+          <td class="num">{{ h.count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if tool.resolved %}
+    <details>
+      <summary class="m3-sm m3-muted">
+        {{ tool.resolved | sum(attribute="count") }} resuelto{{ "s" if tool.resolved | sum(attribute="count") != 1 }}
+        desde el piso
+      </summary>
+      <table class="m3-table" style="margin-top:12px">
+        <tbody>
+          {% for h in tool.resolved %}
+          <tr>
+            <td><span class="m3-badge m3-badge-mono m3-badge-ok">{{ h.code }}</span></td>
+            <td class="m3-sm"><code>{{ h.file }}</code></td>
+            <td class="m3-sm">{{ h.message }}</td>
+            <td class="num">{{ h.count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  {% endif %}
 
   <a href="/control" class="m3-btn m3-btn-outlined">← Volver a Control</a>
 </div>

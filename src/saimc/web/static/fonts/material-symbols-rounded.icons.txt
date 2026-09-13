@@ -28,6 +28,7 @@ layers
 map
 menu_book
 monitoring
+new_releases
 open_in_new
 remove
 rice_bowl
@@ -36,6 +37,7 @@ schedule
 sell
 show_chart
 skillet
+task_alt
 toggle_off
 toggle_on
 visibility_off
