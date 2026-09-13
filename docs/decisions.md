@@ -9400,3 +9400,43 @@ agrupado (`test_panel_blocks.py::TestGroupBlocksByProvince`, 3 casos) y
 el render por provincia (`test_public_filter.py`, ids
 `ph-map-badge-<slug>` por provincia, incluido el caso sin
 `selected_province`).
+
+## 2026-09-13 — Insignia colapsa a cluster con 2+ productos (sin tope)
+Contexto: el operador vio la columna de insignias apiladas y señaló la
+preocupación real detrás de todo el hilo del día: hoy son 5 productos
+piloto, pero mañana pueden ser 200 — una columna que crece 1:1 con
+productos activos no escala. Trajo como referencia
+https://googlemaps.github.io/js-markerclusterer/ preguntando qué idea de
+ahí se podía robar. La pieza aplicable no es el clustering geográfico en
+sí (sin geolocalización por anuncio no hay puntos que agrupar) sino el
+patrón de interacción: colapsado por defecto a un círculo con un número,
+que se abre recién al tocarlo.
+Decisión: con 2+ productos con dato en una provincia, la insignia
+colapsa a un cluster — `<details class="ph-map-badge-cluster">` +
+`<summary class="ph-map-badge-count">{{ N }}</summary>`, nativos del
+navegador, sin JS propio (mismo mecanismo que ya usa `_range_chart.html`
+para la ayuda de los gráficos). El stack de `.ph-map-badge` por producto
+queda adentro, oculto hasta que se abre. Con un solo producto no hay
+nada que clusterizar: se pinta la insignia sola, sin círculo, igual que
+antes. El ítem repetido (ícono+mediana+conteo) se extrajo a
+`templates/_map_badge_item.html` para no duplicarlo entre el caso simple
+y cada fila del cluster. `pointer-events` se reorganiza: el wrap sigue en
+`none` (el resto de la provincia sigue siendo clickeable para navegar),
+pero `.ph-map-badge-root` —la raíz de cada insignia, clusterizada o
+no— pasa a `auto`, porque el círculo del cluster sí necesita recibir el
+click para abrirse.
+Descartado: JS propio con `addEventListener` para el toggle — `<details>`
+ya lo resuelve gratis, sin estado que mantener sincronizado entre
+re-renders de htmx. Tope numérico duro (ej. "mostrar máximo 5 y agregar
++195 aparte") — el cluster ya resuelve el problema de espacio sin
+inventar un umbral nuevo que calibrar; si el cluster abierto llega a ser
+demasiado alto con cientos de productos, ese es el próximo problema a
+mirar cuando exista de verdad, no antes.
+Consecuencia: el número del círculo es la cantidad de PRODUCTOS con dato
+ahí, no una suma de anuncios ni de precios entre productos distintos
+(mezclaría monedas/unidades sin sentido) — mismo criterio que ya regía
+`spec.md` §9.0 contra un valor puntual sin respaldo. 2 tests nuevos en
+`test_public_filter.py` (colapsa con 2+, no colapsa con 1). Sigue
+pendiente la verificación visual real del operador — ni el clic para
+abrir el cluster ni el `<details>` nativo se pueden probar con
+`TestClient`, solo su presencia en el HTML.
