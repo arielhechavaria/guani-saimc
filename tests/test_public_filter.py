@@ -1318,18 +1318,38 @@ class TestFiltroPorProvinciaEnLaRuta:
 
         assert 'id="ph-map-badge-' not in texto
 
-    def test_con_dos_productos_activos_se_apilan_dos_insignias(
+    def test_con_dos_productos_activos_colapsa_a_cluster(
         self, client: TestClient, session: Session
     ) -> None:
         """La primera versión ocultaba la insignia entera con 2+ productos
         activos para no superponerlas; el operador la vio "desaparecer" al
-        prender un segundo chip sin querer (los chips no se apagan solos) y
-        lo reportó como intermitente. Ahora se apila una por producto."""
+        prender un segundo chip sin querer. La segunda apilaba sin tope —el
+        operador señaló que hoy son 5 productos piloto pero mañana pueden
+        ser 200—. Ahora colapsa a un cluster (círculo con la cantidad,
+        `<details>`/`<summary>` nativos) que se abre al tocarlo."""
         self._seed(session)
 
-        texto = client.get("/?provincia=la-habana&productos=arroz,aceite").text
+        insignia = self._insignia(
+            client.get("/?provincia=la-habana&productos=arroz,aceite").text,
+            "la-habana",
+        )
 
-        assert self._insignia(texto, "la-habana").count('class="ph-map-badge"') == 2
+        assert 'class="ph-map-badge-root ph-map-badge-cluster"' in insignia
+        assert '<summary class="ph-map-badge-count"' in insignia and ">2<" in insignia
+        assert insignia.count('class="ph-map-badge"') == 2
+
+    def test_con_un_producto_activo_no_colapsa_a_cluster(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Con un solo producto no hay nada que clusterizar: se pinta la
+        insignia sola, sin el círculo de conteo."""
+        self._seed(session)
+
+        insignia = self._insignia(
+            client.get("/?provincia=la-habana&producto=arroz").text, "la-habana"
+        )
+
+        assert "ph-map-badge-cluster" not in insignia
 
     def test_producto_activo_sin_dato_en_la_provincia_no_apila_insignia_vacia(
         self, client: TestClient, session: Session

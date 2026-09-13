@@ -477,18 +477,33 @@
   .ph-fpanel-icon { font-size: 20px; color: var(--ph-accent); align-self: center; }
   .ph-fpanel-illustration { width: 20px; height: 20px; color: var(--ph-accent); align-self: center; flex: none; }
 
-  /* Insignia sobre el mapa (2026-09-13): `L.divIcon` sin caja propia de
-     Leaflet —`leaflet-div-icon` trae fondo/borde blancos por defecto—, la
-     caja es enteramente nuestra. `iconSize:[0,0]` + `iconAnchor:[0,0]` deja
-     el punto exacto en el centro de la provincia; el translate acá adentro
-     centra la píldora sobre ese punto sin conocer su ancho de antemano
-     (el texto varía con el precio). `pointer-events: none` para que el
-     clic siga llegando al polígono de abajo, no a la insignia. */
+  /* Insignia sobre el mapa (2026-09-13, colapsada a cluster el mismo día
+     — idea de https://googlemaps.github.io/js-markerclusterer/, pedido del
+     operador pensando en escala: hoy 5 productos piloto, mañana pueden ser
+     200, y una columna de insignias sin tope no aguanta eso). `L.divIcon`
+     sin caja propia de Leaflet —`leaflet-div-icon` trae fondo/borde blancos
+     por defecto—, la caja es enteramente nuestra. `iconSize:[0,0]` +
+     `iconAnchor:[0,0]` deja el punto exacto en el centro de la provincia;
+     `.ph-map-badge-root` centra el contenido sobre ese punto sin conocer su
+     tamaño de antemano (varía con el precio y con cuántos productos hay).
+     `pointer-events: none` en el wrap para que el clic en el resto de la
+     provincia siga llegando al polígono; `.ph-map-badge-root` lo reactiva
+     porque con 2+ productos el círculo del cluster SÍ tiene que ser
+     clickeable. Con un solo producto no hay nada que clusterizar: se pinta
+     la insignia sola, igual que antes. */
   .leaflet-div-icon.ph-map-badge-wrap { background: none; border: none; pointer-events: none; }
-  .ph-map-badge-stack {
-    display: flex; flex-direction: column; align-items: center; gap: .3rem;
-    transform: translate(-50%, -50%);
+  .ph-map-badge-root { transform: translate(-50%, -50%); pointer-events: auto; }
+  .ph-map-badge-cluster { display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+  /* `<details>`/`<summary>` nativos: abrir/cerrar sin JS propio, mismo
+     mecanismo que ya usa `_range_chart.html` para la ayuda de los gráficos. */
+  .ph-map-badge-count {
+    display: flex; align-items: center; justify-content: center; list-style: none; cursor: pointer;
+    width: 26px; height: 26px; border-radius: var(--m3-radius-full);
+    background: var(--ph-accent); color: var(--ph-on-accent);
+    font-size: .75rem; font-weight: 700; box-shadow: var(--ph-elev);
   }
+  .ph-map-badge-count::-webkit-details-marker { display: none; }
+  .ph-map-badge-stack { display: flex; flex-direction: column; align-items: center; gap: .3rem; }
   .ph-map-badge {
     display: inline-flex; align-items: center; gap: .4rem;
     background: var(--m3-surface); color: var(--m3-on-surface); white-space: nowrap;
@@ -1071,33 +1086,35 @@
     <div id="ph-leaflet-map" class="ph-map"
          aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}"></div>
     <script type="application/json" id="ph-map-data">{{ map_provinces_json | safe }}</script>
-    {# Insignia por provincia (2026-09-13, corregida dos veces el mismo
+    {# Insignia por provincia (2026-09-13, corregida tres veces el mismo
        día — ver docs/decisions.md): una por cada provincia con dato de
-       algún producto activo, NO solo con `selected_province` elegida —esa
-       fue la primera versión, y el operador reportó "si no tengo ninguna
-       provincia seleccionada y selecciono algún producto entonces no se
-       ven". `map_badges_by_province` (agrupado en Python, `panel_view.
+       algún producto activo, NO solo con `selected_province` elegida.
+       `map_badges_by_province` (agrupado en Python, `panel_view.
        group_blocks_by_province`) ya trae una sola provincia cuando hay una
        elegida —`blocks` viene filtrado desde `_render_home`— y una por
-       provincia con dato cuando se mira el país entero. Con una provincia
-       elegida puede apilar más de un producto ahí; sin elegir ninguna, cada
-       provincia lleva sus propios productos activos. `onEachFeature` busca
-       `ph-map-badge-<slug>` por cada polígono y clona el que encuentra con
-       `L.divIcon`; markup server-rendered para no duplicar
-       `_product_illustration.html` en JS. #}
+       provincia con dato cuando se mira el país entero.
+
+       Con 2+ productos con dato ahí, colapsa a un cluster (idea de
+       googlemaps/js-markerclusterer, pedido del operador pensando en
+       escala: hoy 5 productos piloto, mañana pueden ser 200 — una columna
+       de insignias sin tope no aguanta eso): un círculo con la cantidad,
+       que se abre con `<details>`/`<summary>` nativos, sin JS propio. Con
+       uno solo no hay nada que clusterizar, se pinta la insignia sola.
+       `onEachFeature` busca `ph-map-badge-<slug>` por cada polígono y
+       clona el que encuentra con `L.divIcon`. #}
     {% for slug, items in map_badges_by_province.items() %}
     <template id="ph-map-badge-{{ slug }}">
-      <div class="ph-map-badge-stack">
-        {% for panel, bloque in items %}
-        <div class="ph-map-badge">
-          {% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}
-          <span class="ph-map-badge-text">
-            <b>{{ bloque.headline.median_text }}</b> {{ bloque.headline.currency }}/{{ bloque.headline.unit }}
-            <small>{{ bloque.headline.count }} anuncio{{ "s" if bloque.headline.count != 1 }}</small>
-          </span>
+      {% if items | length > 1 %}
+      <details class="ph-map-badge-root ph-map-badge-cluster">
+        <summary class="ph-map-badge-count" aria-label="{{ items | length }} productos con dato en esta provincia">{{ items | length }}</summary>
+        <div class="ph-map-badge-stack">
+          {% for panel, bloque in items %}{% include "_map_badge_item.html" %}{% endfor %}
         </div>
-        {% endfor %}
-      </div>
+      </details>
+      {% else %}
+      {% set panel, bloque = items[0] %}
+      <div class="ph-map-badge-root">{% include "_map_badge_item.html" %}</div>
+      {% endif %}
     </template>
     {% endfor %}
   </div>{# /.ph-stage — el mapa, a sangre, detrás de todo #}
