@@ -1,0 +1,50 @@
+{#
+  Ícono ilustrado del producto para el header del panel flotante
+  (`ph-fpanel`), a diferencia de `PRODUCT_ICONS` (ligaduras de Material
+  Symbols que usan los chips): Material Symbols no tiene un glifo cercano a
+  "botella de aceite" ni a "bolsa de azúcar", así que estos cinco se
+  dibujaron a mano para los productos piloto (2026-09-13, ver
+  `product_nav.PRODUCT_ILLUSTRATIONS`). Sin color propio —heredan
+  `currentColor`, que fija `.ph-fpanel-illustration` a `--ph-accent`— para no
+  abrir una paleta fija nueva (`TestNingunColorFijoEnLasPlantillas`).
+
+  Solo se incluye cuando `panel.has_illustration` es cierto. Espera `panel`.
+#}
+{% if panel.slug == "aceite" %}
+<svg class="ph-fpanel-illustration" viewBox="0 0 48 48" fill="none" role="img" aria-hidden="true">
+  <path d="M20 8h8v6.2c3.6 1.6 6 5.1 6 9.3v16a4.5 4.5 0 0 1-4.5 4.5h-11A4.5 4.5 0 0 1 14 39.5v-16c0-4.2 2.4-7.7 6-9.3V8Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
+  <path d="M18 8h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+  <path d="M15.5 25.5h17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+  <path d="M24 30.5c1.6 1.8 2.4 3.1 2.4 4.4a2.4 2.4 0 1 1-4.8 0c0-1.3.8-2.6 2.4-4.4Z" fill="currentColor" />
+</svg>
+{% elif panel.slug == "arroz" %}
+<svg class="ph-fpanel-illustration" viewBox="0 0 48 48" fill="none" role="img" aria-hidden="true">
+  <path d="M9 23h30a15 8 0 0 1-.4 2.7C36.7 32 31 36 24 36s-12.7-4-14.6-10.3A15 8 0 0 1 9 23Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
+  <path d="M12 23a12 6 0 1 1 24 0" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+  <ellipse cx="19.5" cy="16" rx="1.7" ry="1.1" fill="currentColor" transform="rotate(-20 19.5 16)" />
+  <ellipse cx="24" cy="14" rx="1.7" ry="1.1" fill="currentColor" />
+  <ellipse cx="28.5" cy="16" rx="1.7" ry="1.1" fill="currentColor" transform="rotate(20 28.5 16)" />
+  <path d="M33 12l6 26" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  <path d="M37 13l4.5 25.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+</svg>
+{% elif panel.slug == "pollo" %}
+<svg class="ph-fpanel-illustration" viewBox="0 0 48 48" fill="none" role="img" aria-hidden="true">
+  <path d="M17 14c6-4.5 14-2.7 17 3 2.6 4.7 1 10-3.4 13.2l-9.3 9.3a3.6 3.6 0 0 1-5.4-4.7l1-1.2a3.6 3.6 0 0 1-4.6-5.5l1.3-1.3a3.6 3.6 0 0 1-4.3-5.7l1.6-1.6C9.3 16.6 11.8 18.2 17 14Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
+  <path d="M22.5 15c4 .3 7.6 2.8 9 6.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+</svg>
+{% elif panel.slug == "picadillo" %}
+<svg class="ph-fpanel-illustration" viewBox="0 0 48 48" fill="none" role="img" aria-hidden="true">
+  <circle cx="21" cy="24" r="11" stroke="currentColor" stroke-width="2.2" />
+  <path d="M30 18l10.5-6.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+  <path d="M38.5 9.5l3 5.2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+  <path d="M16 21l2.6 2.6M22 20l2.6 5.4M26.5 22.5l-2 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+</svg>
+{% elif panel.slug == "azucar-blanca" %}
+<svg class="ph-fpanel-illustration" viewBox="0 0 48 48" fill="none" role="img" aria-hidden="true">
+  <path d="M20 8c-1.6 2-2 3.6-1 5.4L14.5 18A6 6 0 0 0 12 23v11a6 6 0 0 0 6 6h12a6 6 0 0 0 6-6V23a6 6 0 0 0-2.5-4.9L29 13.4c1-1.8.6-3.4-1-5.4" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" />
+  <path d="M17 13.5h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+  <circle cx="20.5" cy="27" r="1.3" fill="currentColor" />
+  <circle cx="25.5" cy="30" r="1.3" fill="currentColor" />
+  <circle cx="22" cy="33.5" r="1.3" fill="currentColor" />
+</svg>
+{% endif %}

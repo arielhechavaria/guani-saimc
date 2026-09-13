@@ -350,6 +350,25 @@ def product_icon(name: str) -> str | None:
     return PRODUCT_ICONS.get(product_slug(name))
 
 
+#: Productos piloto con ícono ilustrado propio en el panel flotante de
+#: producto (`templates/_product_illustration.html`), a diferencia de
+#: `PRODUCT_ICONS` de arriba —ligaduras de Material Symbols, para los
+#: chips—. Se agregó porque la aproximación de Material era demasiado
+#: genérica para el panel (aceite → una gota cualquiera, no una botella) y
+#: el operador la pidió explícitamente el 2026-09-13. Un SVG dibujado a
+#: mano por producto piloto, sin color propio (usa `currentColor`, hereda
+#: `--ph-accent` vía `.ph-fpanel-illustration`) para no abrir una paleta
+#: fija nueva. Un producto piloto sin entrada acá cae a `product_icon`.
+PRODUCT_ILLUSTRATIONS: frozenset[str] = frozenset(
+    {"arroz", "pollo", "picadillo", "azucar-blanca", "aceite"}
+)
+
+
+def has_product_illustration(name: str) -> bool:
+    """Si el producto tiene ícono ilustrado propio para el panel."""
+    return product_slug(name) in PRODUCT_ILLUSTRATIONS
+
+
 @dataclass(frozen=True)
 class ProductChip:
     """Un interruptor de producto del riel flotante sobre el mapa.

@@ -1258,6 +1258,24 @@ class TestFiltroPorProvinciaEnLaRuta:
         assert "La Habana" in tabla
         assert "Santiago de Cuba" not in tabla
 
+    def test_provincia_y_producto_acota_el_panel_a_esa_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El panel de producto (ícono + mediana + rango + conteo) no lista
+        las 16 provincias cuando hay una elegida: solo la enfocada, mismo
+        criterio que la tabla y «Cómo se movió» (2026-09-13). El header pasa
+        a un ícono ilustrado propio en vez del glifo de Material Symbols."""
+        self._seed(session)
+
+        texto = client.get("/?provincia=la-habana&producto=arroz").text
+        panel = texto.split('class="ph-fpanel"')[1].split("</section>")[0]
+
+        assert panel.count('class="ph-cifra"') == 1
+        assert 'aria-label="Arroz en La Habana"' in panel
+        assert "Santiago de Cuba" not in panel
+        assert 'class="ph-fpanel-illustration"' in panel
+        assert "ph-fpanel-icon" not in panel
+
     def test_provincia_inexistente_no_da_404(
         self, client: TestClient, session: Session
     ) -> None:

@@ -9250,3 +9250,34 @@ Consecuencia: la página ahora expone los 65+142 hallazgos completos,
 colapsados por default (no compiten visualmente con lo nuevo, que es lo
 urgente). Test nuevo en `TestLintDrift` que cubre el caso. Sin drift de
 piso por este cambio.
+
+## 2026-09-13 — Ícono ilustrado por producto en el panel (no Material Symbols)
+Contexto: al elegir una provincia y un producto en la home pública, el
+panel flotante (`.ph-fpanel`) ya acotaba sus bloques a esa sola provincia
+—mediana, rango y conteo salen filtrados por `selected_province` desde
+antes de este cambio, vía `_visible_observations`—, pero el ícono del
+header seguía siendo la aproximación genérica de Material Symbols
+(`PRODUCT_ICONS`: aceite → `water_drop`, una gota cualquiera, no una
+botella). El operador lo pidió explícito, con experiencia previa
+representando información agregada sobre mapas (OpenLayers + cluster).
+Decisión: ícono ilustrado propio por producto piloto, SVG dibujado a mano
+e incluido inline (`templates/_product_illustration.html`, mismo patrón
+que `_range_chart.html`), solo en el header del panel — los chips del
+riel siguen con Material Symbols, no se tocaron. `product_nav.PRODUCT_ILLUSTRATIONS`
+(frozenset de slugs) + `has_product_illustration()` deciden si el panel
+usa la ilustración o cae al glifo de `product_icon()`. Sin color propio:
+`currentColor`, que `.ph-fpanel-illustration` fija a `--ph-accent` — no
+abre una paleta fija nueva (`TestNingunColorFijoEnLasPlantillas`).
+Descartado: vendorizar un set de íconos ilustrativos de terceros — suma
+licencia a trackear y una dependencia de red por 5 archivos chicos que se
+pueden dibujar a mano; también extender `PRODUCT_ICONS`/`tools/build_icon_font.py`
+buscando el glifo de Material Symbols más parecido — evaluado y
+descartado porque el pedido explícito era una ilustración reconocible
+(botella), no una aproximación mejor dentro del mismo catálogo genérico.
+Consecuencia: un producto piloto nuevo sin entrada en `PRODUCT_ILLUSTRATIONS`
+cae al ícono de Material Symbols del chip (o sin ícono, igual que hoy);
+agregar su ilustración es sumar un `{% elif %}` a `_product_illustration.html`
+y su slug al frozenset. Verificado con test de endpoint
+(`test_provincia_y_producto_acota_el_panel_a_esa_provincia`) y de unidad
+en `panel_view` — pendiente que el operador vea las 5 formas en el
+navegador, son dibujadas a mano sin herramienta de diseño.

@@ -475,6 +475,7 @@
   .ph-chip-name { font-size: 10.5px; font-weight: 500; letter-spacing: .01em; white-space: nowrap; opacity: .7; }
   .ph-chip-toggle.is-icon.is-active .ph-chip-name { opacity: .9; }
   .ph-fpanel-icon { font-size: 20px; color: var(--ph-accent); align-self: center; }
+  .ph-fpanel-illustration { width: 20px; height: 20px; color: var(--ph-accent); align-self: center; flex: none; }
 
   /* Selector de provincia (2026-09-11): mismas proporciones que un chip de
      texto (`.ph-chip-toggle`), para que se vea como parte del mismo riel
@@ -1424,7 +1425,7 @@
         <section class="ph-fpanel" data-win="{{ panel.name }}" data-product="{{ panel.slug }}" id="ph-panel-{{ panel.slug }}" aria-label="{{ panel.name }}">
             <header class="ph-fpanel-head" data-win-handle>
               <div class="ph-fpanel-titles">
-                {% if panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}<span class="ph-fpanel-name">{{ panel.name }}</span>
+                {% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}<span class="ph-fpanel-name">{{ panel.name }}</span>
                 <span class="ph-fpanel-sum">
                   {%- if not panel.has_data -%}
                   sin anuncios en la ventana
