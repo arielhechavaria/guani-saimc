@@ -622,7 +622,16 @@ class TestElMapaEsLaApp:
         assert "z-index: 0" in escenario
 
         for clase in (".ph-compass", ".ph-menu", ".ph-compass-filters", ".ph-dock-layer", ".ph-loading"):
-            regla = texto[texto.index(f"  {clase} {{") :]
+            # `.ph-compass`/`.ph-menu`/`.ph-compass-filters` tienen más de una
+            # regla con el mismo selector+llave (la de posición/z-index, y la
+            # que oculta por defecto o la del media query angosto, sin
+            # z-index) — se busca la que trae `z-index:`, no la primera
+            # aparición cruda del selector.
+            desde = texto.index(f"  {clase} {{")
+            regla = texto[desde:]
+            while "z-index:" not in regla[: regla.index("}") + 1]:
+                desde = texto.index(f"  {clase} {{", desde + 1)
+                regla = texto[desde:]
             regla = regla[: regla.index("}")]
             z = regla[regla.index("z-index:") :]
             assert int(z[len("z-index:") : z.index(";")]) > 1000, clase
@@ -734,7 +743,10 @@ class TestDockOcultoHastaTocarElAvatar:
         (teclado) y `.is-active` (la clase que ese JS y el toque alternan)."""
         texto = client.get("/").text
 
-        regla_oculta = texto[texto.index(".ph-compass-thread, .ph-menu {") :]
+        # El dock necesita `visibility` (sus enlaces son focales); el hilo,
+        # el enlace decorativo y el título NO —van con `opacity` nada más,
+        # ver el siguiente test para el porqué.
+        regla_oculta = texto[texto.index("  .ph-menu {") :]
         regla_oculta = regla_oculta[: regla_oculta.index("}")]
         assert "opacity: 0" in regla_oculta
         assert "visibility: hidden" in regla_oculta
@@ -744,13 +756,46 @@ class TestDockOcultoHastaTocarElAvatar:
         regla_revelada = regla_revelada[: regla_revelada.index("}")]
         assert ":focus-within" in regla_revelada
         assert ".is-active" in regla_revelada
+        assert ".ph-compass-title-group" in regla_revelada
         assert "opacity: 1" in regla_revelada
-        assert "visibility: visible" in regla_revelada
+
+        regla_dock_visible = texto[
+            texto.index(".ph-compass-nav:focus-within .ph-menu, .ph-compass-nav.is-active .ph-menu") :
+        ]
+        regla_dock_visible = regla_dock_visible[: regla_dock_visible.index("}")]
+        assert "visibility: visible" in regla_dock_visible
 
         # El rectángulo invisible de la primera versión (position/width/
         # height/pointer-events en `.ph-compass-nav`) tapaba el arrastre del
         # mapa en celular — no puede volver.
         assert ".ph-compass-nav {" not in texto
+
+    def test_el_titulo_se_oculta_sin_romper_el_nombre_accesible_de_la_seccion(
+        self, client: TestClient
+    ) -> None:
+        """El operador pidió que «el header que dice guani saimc y todo lo
+        demas» se oculte igual que el dock (2026-09-13). Pero
+        `<section class="ph-canvas">` usa `aria-labelledby="ph-canvas-title"`
+        —apunta al `<h1>` de ese título— y `visibility: hidden` (o
+        `display: none`) saca a un elemento del cómputo de nombre accesible:
+        ocultar el título así habría dejado a la sección sin nombre la
+        mayor parte del tiempo. Por eso el título se oculta con `opacity`
+        nada más, nunca `visibility`."""
+        texto = client.get("/").text
+
+        assert 'aria-labelledby="ph-canvas-title"' in texto
+        assert 'id="ph-canvas-title"' in texto
+
+        regla_oculta = texto[
+            texto.index(".ph-compass-thread, .ph-compass-link, .ph-compass-title-group {") :
+        ]
+        regla_oculta = regla_oculta[: regla_oculta.index("}")]
+        assert "opacity: 0" in regla_oculta
+        assert "visibility" not in regla_oculta
+
+        # El botón trae su propio nombre por si un lector de pantalla
+        # aterriza ahí directo, sin pasar por el título.
+        assert 'aria-label="Guani · SAIMC · abrir el menú"' in texto
 
     def test_el_hover_de_mouse_lo_maneja_js_con_demora_no_hover_de_css(
         self, client: TestClient

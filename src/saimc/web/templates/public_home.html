@@ -240,12 +240,18 @@
     40% { opacity: 1; transform: scale(1); }
   }
 
-  /* Dock oculto hasta pasar el mouse —o tocar, en táctil— el avatar
-     (2026-09-13, ajuste del operador; revisado el mismo día: la primera
-     versión usaba un `.ph-compass-nav` con tamaño fijo y
-     `pointer-events: auto` para sostener el `:hover` entre avatar y dock,
-     y ese rectángulo (6.5rem × 27rem) tapaba el arrastre del mapa en una
-     franja enorme de la pantalla en celular —«un desastre», con razón—.
+  /* Todo el compás —título incluido, no solo el dock— oculto hasta pasar
+     el mouse, tabular, o tocar/cliquear el avatar (2026-09-13, ajuste del
+     operador, en dos pasos el mismo día: primero solo el dock; después
+     «el header que dice guani saimc y todo lo demas» se sumó al mismo
+     mecanismo — ver más abajo por qué el título se oculta distinto que el
+     dock).
+
+     La primera versión de este mecanismo usaba un `.ph-compass-nav` con
+     tamaño fijo y `pointer-events: auto` para sostener el `:hover` entre
+     avatar y dock, y ese rectángulo (6.5rem × 27rem) tapaba el arrastre
+     del mapa en una franja enorme de la pantalla en celular —«un
+     desastre», con razón—.
 
      Ahora `.ph-compass-nav` es un envoltorio SIN posición ni tamaño
      propios (agrupa en el DOM nada más; sus hijos siguen posicionándose
@@ -271,13 +277,35 @@
      dock seguirían tabulables mientras están invisibles. La demora de
      `visibility` (`0s linear .18s`) deja que la opacidad se apague antes
      de sacarlos del todo; al abrir, entran de inmediato (delay `0s`). */
-  .ph-compass-thread, .ph-menu {
+  /* Título, hilo y enlace decorativo: se ocultan con `opacity` NADA MÁS,
+     sin `visibility` — a diferencia del dock, de acá abajo. Ninguno de
+     los tres tiene contenido enfocable propio, y el `<h1>` en particular
+     es el `aria-labelledby` de `<section class="ph-canvas">`: si se
+     ocultara con `visibility`/`display: none`, la sección se quedaría sin
+     nombre accesible mientras nadie pasa el mouse. */
+  .ph-compass-thread, .ph-compass-link, .ph-compass-title-group {
+    opacity: 0; transform: translateX(-.35rem);
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  /* El dock SÍ necesita `visibility`: sus enlaces son focales, y sin
+     sacarlos del árbol de accesibilidad mientras están ocultos, tabular
+     los alcanzaría de todos modos, invisibles. */
+  .ph-menu {
     opacity: 0; visibility: hidden; transform: translateX(-.35rem);
     transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
   }
-  .ph-compass-nav:focus-within .ph-compass-thread, .ph-compass-nav:focus-within .ph-menu,
-  .ph-compass-nav.is-active .ph-compass-thread, .ph-compass-nav.is-active .ph-menu {
-    opacity: 1; visibility: visible; transform: none;
+  .ph-compass-nav:focus-within .ph-compass-thread,
+  .ph-compass-nav:focus-within .ph-compass-link,
+  .ph-compass-nav:focus-within .ph-compass-title-group,
+  .ph-compass-nav:focus-within .ph-menu,
+  .ph-compass-nav.is-active .ph-compass-thread,
+  .ph-compass-nav.is-active .ph-compass-link,
+  .ph-compass-nav.is-active .ph-compass-title-group,
+  .ph-compass-nav.is-active .ph-menu {
+    opacity: 1; transform: none;
+  }
+  .ph-compass-nav:focus-within .ph-menu, .ph-compass-nav.is-active .ph-menu {
+    visibility: visible;
     transition: opacity .18s ease, transform .18s ease, visibility 0s linear 0s;
   }
 
@@ -812,18 +840,42 @@
    (§9.0 / §12.6); el coloreo por precio quedó fuera de alcance. #}
 <section class="ph-canvas" aria-labelledby="ph-canvas-title">
 
-  {# Brújula (2026-09-13): el avatar es el botón que abre el dock — ver el
-     comentario de `.ph-compass-nav` en el `<style>` para el porqué del
-     envoltorio y las tres formas de abrirlo (hover, foco, toque/clic). El
-     hilo decorativo va primero para pintar detrás del compás y el dock. #}
-  <div class="ph-compass-link" aria-hidden="true"></div>
-
+  {# Brújula (2026-09-13): el avatar es el botón que abre TODO lo demás —
+     título incluido, no solo el dock (ajuste del operador: «el header que
+     dice guani saimc y todo lo demas solo debe estar visible cuando un
+     hover o un click sobre el avatar»). Ver el comentario de
+     `.ph-compass-nav` en el `<style>` para el porqué del envoltorio y las
+     tres formas de abrirlo (hover, foco, toque/clic). El hilo y el enlace
+     decorativos van primero para pintar detrás del compás. #}
   <div class="ph-compass-nav">
     <div class="ph-compass-thread" aria-hidden="true"></div>
+    <div class="ph-compass-link" aria-hidden="true"></div>
 
     <button type="button" class="ph-compass" aria-label="Guani · SAIMC · abrir el menú">
       {% include "_guani_avatar.html" %}
     </button>
+
+    {# `aria-labelledby="ph-canvas-title"` en `<section class="ph-canvas">`
+       (más abajo) sigue apuntando a este `<h1>` aunque esté oculto: se
+       oculta con `opacity` nada más —nunca `visibility`/`display: none`—
+       para que el nombre accesible de la sección no desaparezca mientras
+       nadie lo está mirando. El botón, además, ya trae su propio
+       `aria-label` con la marca, así que un lector de pantalla que
+       aterrice ahí directo igual sabe dónde está. #}
+    <div class="ph-compass-title-group">
+      <span class="ph-canvas-kicker">Guani · SAIMC · Fase 0</span>
+      <h1 class="ph-canvas-title" id="ph-canvas-title">
+        {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
+        {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
+      </h1>
+      {# Frescura: hasta qué día llega el anuncio piloto más reciente.
+         Antigüedad, no veredicto (§12.6). #}
+      {% if data_freshness_day %}
+      <p class="ph-canvas-sub">
+        Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
+      </p>
+      {% endif %}
+    </div>
 
     {# Dock del compás: cada ítem abre o cierra su ventana flotante. Varias
        pueden estar abiertas a la vez; el estado viaja en `?ver=`. La
@@ -847,21 +899,6 @@
         <button type="button" data-zoom-out aria-label="Alejar el mapa"><span class="m3-icon">remove</span></button>
       </div>
     </nav>
-  </div>
-
-  <div class="ph-compass-title-group">
-    <span class="ph-canvas-kicker">Guani · SAIMC · Fase 0</span>
-    <h1 class="ph-canvas-title" id="ph-canvas-title">
-      {%- if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %}
-      {%- else %}Qué cuesta, y dónde lo sabemos{% endif -%}
-    </h1>
-    {# Frescura: hasta qué día llega el anuncio piloto más reciente.
-       Antigüedad, no veredicto (§12.6). #}
-    {% if data_freshness_day %}
-    <p class="ph-canvas-sub">
-      Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
-    </p>
-    {% endif %}
   </div>
 
   {# Chips de producto + provincia, juntos en una sola píldora de vidrio

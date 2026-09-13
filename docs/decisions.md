@@ -8906,3 +8906,40 @@ tests de `tests/test_public_map.py::TestElMapaEsLaApp`/
 el hover de mouse documentado por JS, no por `:hover` de CSS) y se agrega
 un caso para `abrirCompas`/`programarCierreCompas`. Suite: 1600 pasan, 1
 saltea.
+
+## 2026-09-13 — Brújula: el título también se oculta hasta interactuar con el avatar
+Contexto: el operador confirmó una lectura que había quedado abierta —«el
+header que dice guani saimc y todo lo demas solo debe estar visible
+cuando un hoiver o un lick sobre el avatar»—. El dock ya se ocultaba así;
+el título (kicker + `<h1>` + frescura del dato) seguía siempre visible.
+
+Decisión: `.ph-compass-title-group` y `.ph-compass-link` (el enlace corto
+que lo conectaba al compás) se mudan adentro de `.ph-compass-nav` y se
+suman al mismo mecanismo de revelado que ya tenía el dock —hover con
+demora por JS, `:focus-within` por teclado, `.is-active` al tocar/cliquear
+el avatar—.
+
+Con una diferencia deliberada en CÓMO se ocultan. El dock se oculta con
+`opacity` + `visibility` (sus enlaces son focales: sin `visibility`,
+tabular los alcanzaría igual, invisibles). El título, el hilo y el enlace
+decorativo se ocultan con `opacity` NADA MÁS. El motivo:
+`<section class="ph-canvas">` usa `aria-labelledby="ph-canvas-title"`,
+apuntando al `<h1>` de ese título — y `visibility: hidden` (como
+`display: none`) saca a un elemento del cómputo de nombre accesible. Si el
+título se hubiera ocultado igual que el dock, la sección se habría
+quedado sin nombre accesible la mayor parte del tiempo, mientras nadie
+pasa el mouse por el avatar. Con `opacity` sola el elemento sigue en el
+árbol de accesibilidad —el `<h1>` sigue siendo un nombre válido para
+`aria-labelledby`— aunque esté invisible y sin ítems focales que
+tabular (no tiene ninguno). El botón del compás además trae su propio
+`aria-label` con la marca, para quien un lector de pantalla lleve directo
+ahí sin pasar por el título.
+
+Consecuencia: `tests/test_public_map.py` extiende
+`TestDockOcultoHastaTocarElAvatar` con
+`test_el_titulo_se_oculta_sin_romper_el_nombre_accesible_de_la_seccion`, y
+ajusta el test de z-index (`.ph-compass`/`.ph-menu`/`.ph-compass-filters`
+tienen más de una regla con el mismo selector — la de posición/z-index, y
+la que oculta por defecto o la del `@media` angosto, sin z-index — el
+test ahora busca la que trae `z-index:`, no la primera aparición cruda
+del selector). Suite: 1601 pasan, 1 saltea.
