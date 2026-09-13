@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T14:56:24.248922+00:00",
+  "generated_at": "2026-09-13T15:14:39.166730+00:00",
   "ruff": [
     {
       "signature": [
@@ -625,7 +625,7 @@
         "no-any-return",
         "Returning Any from function declared to return \"HTMLResponse\""
       ],
-      "count": 1
+      "count": 2
     },
     {
       "signature": [

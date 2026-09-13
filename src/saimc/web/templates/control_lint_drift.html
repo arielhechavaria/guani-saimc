@@ -1,0 +1,24 @@
+{% extends "_shell.html" %}
+
+{% block title %}Deuda de lint{% endblock %}
+{% block heading %}Deuda de lint{% endblock %}
+{% block subtitle %}Salida de scripts/lint_drift.py — ruff + mypy contra docs/lint-baseline.json.{% endblock %}
+
+{% block content %}
+<div class="m3-stack-lg">
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2">
+        {% if lint_ok %}Sin hallazgos nuevos{% else %}Hay hallazgos nuevos — revisar{% endif %}
+      </h2>
+      <span class="m3-sm m3-muted">
+        Lo mecánico ya se arregló solo si el árbol estaba limpio. Lo que sigue acá abajo necesita criterio
+        (<a href="/docs/checklist-pr">checklist-pr</a>).
+      </span>
+    </div>
+    <pre style="white-space:pre-wrap">{{ lint_output }}</pre>
+  </section>
+
+  <a href="/control" class="m3-btn m3-btn-outlined">← Volver a Control</a>
+</div>
+{% endblock %}

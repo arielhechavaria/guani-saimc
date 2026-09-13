@@ -7,15 +7,28 @@ levantar una base real por test costaría tiempo sin agregar cobertura útil.
 El esquema real de PostgreSQL se verifica aplicando la migración de Alembic.
 """
 
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
-import pytest
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+# El venv compartido tiene `saimc` instalado en editable con `pip install -e`,
+# que apunta a UN checkout fijo — no sabe de worktrees. Sin esto, correr
+# `pytest` desde un worktree importa `saimc` del OTRO checkout (el que estaba
+# activo cuando se instaló), en silencio: mismo nombre de paquete, código
+# distinto — un test puede pasar probando un archivo que no es el que se
+# editó. `insert(0, ...)` gana contra el `.pth` del sitio porque siempre se
+# resuelve antes: es lo primero en `sys.path`, y `saimc` se resuelve una sola
+# vez, la primera vez que algo lo importa.
+_SRC = str(Path(__file__).resolve().parent.parent / "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
-from saimc.models import Base
+import pytest  # noqa: E402 — después del sys.path.insert a propósito
+from sqlalchemy import create_engine, event  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+
+from saimc.models import Base  # noqa: E402
 
 
 @pytest.fixture
