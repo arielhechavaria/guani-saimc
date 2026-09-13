@@ -1071,23 +1071,24 @@
     <div id="ph-leaflet-map" class="ph-map"
          aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}"></div>
     <script type="application/json" id="ph-map-data">{{ map_provinces_json | safe }}</script>
-    {# Insignia sobre la provincia enfocada (2026-09-13, corregida el mismo
-       día — ver docs/decisions.md): una por CADA producto activo con dato
-       ahí, apiladas en una sola columna. La primera versión ocultaba todo
-       con 2+ productos prendidos para no superponerlos; el operador la vio
-       "desaparecer" al prender un segundo chip sin querer (los chips no se
-       apagan solos, se cierran con la × del panel) y lo reportó como
-       intermitente. `inicializarMapa()` clona el stack entero con un solo
-       `L.divIcon` centrado en el `getBounds().getCenter()` de la provincia
-       elegida; markup server-rendered para no duplicar
+    {# Insignia por provincia (2026-09-13, corregida dos veces el mismo
+       día — ver docs/decisions.md): una por cada provincia con dato de
+       algún producto activo, NO solo con `selected_province` elegida —esa
+       fue la primera versión, y el operador reportó "si no tengo ninguna
+       provincia seleccionada y selecciono algún producto entonces no se
+       ven". `map_badges_by_province` (agrupado en Python, `panel_view.
+       group_blocks_by_province`) ya trae una sola provincia cuando hay una
+       elegida —`blocks` viene filtrado desde `_render_home`— y una por
+       provincia con dato cuando se mira el país entero. Con una provincia
+       elegida puede apilar más de un producto ahí; sin elegir ninguna, cada
+       provincia lleva sus propios productos activos. `onEachFeature` busca
+       `ph-map-badge-<slug>` por cada polígono y clona el que encuentra con
+       `L.divIcon`; markup server-rendered para no duplicar
        `_product_illustration.html` en JS. #}
-    {% set panel_con_dato = product_panels | selectattr("has_data") | list %}
-    {% if selected_province and panel_con_dato %}
-    <template id="ph-map-badge">
+    {% for slug, items in map_badges_by_province.items() %}
+    <template id="ph-map-badge-{{ slug }}">
       <div class="ph-map-badge-stack">
-        {% for panel in panel_con_dato %}
-        {% if panel.blocks %}
-        {% set bloque = panel.blocks[0] %}
+        {% for panel, bloque in items %}
         <div class="ph-map-badge">
           {% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}
           <span class="ph-map-badge-text">
@@ -1095,11 +1096,10 @@
             <small>{{ bloque.headline.count }} anuncio{{ "s" if bloque.headline.count != 1 }}</small>
           </span>
         </div>
-        {% endif %}
         {% endfor %}
       </div>
     </template>
-    {% endif %}
+    {% endfor %}
   </div>{# /.ph-stage — el mapa, a sangre, detrás de todo #}
 
   {# El muelle vive AFUERA del escenario (2026-09-12): es el único hijo del
@@ -2023,6 +2023,28 @@
           layer.on("mouseover", function () { layer.setStyle(estiloAlPasarElMouse(estiloBase)); });
           layer.on("mouseout", function () { layer.setStyle(estiloBase); });
           layer.on("click", function () { navegarAProvincia(fila.query); });
+
+          // Insignia de esta provincia (`#ph-map-badge-<slug>`,
+          // server-rendered — `panel_view.group_blocks_by_province`): se
+          // clona su HTML porque el ícono ilustrado sale de
+          // `_product_illustration.html`, no de JS. Anda tanto con una
+          // provincia elegida (una insignia) como mirando el país entero
+          // (una por cada provincia con dato de algún producto activo).
+          // `getBounds().getCenter()` es el centro del recuadro, no el
+          // centroide real del polígono — alcanza para una insignia.
+          var plantillaInsignia = document.getElementById("ph-map-badge-" + feature.properties.slug);
+          if (plantillaInsignia) {
+            L.marker(layer.getBounds().getCenter(), {
+              icon: L.divIcon({
+                className: "ph-map-badge-wrap",
+                html: plantillaInsignia.innerHTML,
+                iconSize: [0, 0],
+                iconAnchor: [0, 0],
+              }),
+              interactive: false,
+              keyboard: false,
+            }).addTo(mapaLeaflet);
+          }
         },
       }).addTo(mapaLeaflet);
 
@@ -2034,25 +2056,6 @@
       }
       if (capaElegida) {
         mapaLeaflet.fitBounds(capaElegida.getBounds(), { padding: [24, 24] });
-        // Insignia del único producto activo con dato en esta provincia
-        // (`#ph-map-badge`, server-rendered): se clona su HTML porque el
-        // ícono ilustrado sale de `_product_illustration.html`, no de JS.
-        // `getBounds().getCenter()` es el centro del recuadro, no el
-        // centroide real del polígono — alcanza para una insignia, no hace
-        // falta la geometría exacta.
-        var plantillaInsignia = document.getElementById("ph-map-badge");
-        if (plantillaInsignia) {
-          L.marker(capaElegida.getBounds().getCenter(), {
-            icon: L.divIcon({
-              className: "ph-map-badge-wrap",
-              html: plantillaInsignia.innerHTML,
-              iconSize: [0, 0],
-              iconAnchor: [0, 0],
-            }),
-            interactive: false,
-            keyboard: false,
-          }).addTo(mapaLeaflet);
-        }
       } else {
         mapaLeaflet.fitBounds(capaProvincias.getBounds());
       }

@@ -185,3 +185,20 @@ def attach_blocks(
             )
         )
     return [replace(p, blocks=tuple(por_producto.get(p.name, ()))) for p in panels]
+
+
+def group_blocks_by_province(
+    panels: Sequence[ProductPanel],
+) -> dict[str, list[tuple[ProductPanel, PanelBlock]]]:
+    """Bloques de todos los paneles (con dato) agrupados por provincia, para
+    la insignia del mapa: una por provincia con dato de algún producto
+    activo, sin depender de si hay una `selected_province` elegida —cuando
+    la hay, `blocks` ya viene filtrado a esa sola provincia (`_render_home`),
+    así que el resultado tiene una sola clave; sin elegir ninguna, una por
+    cada provincia con dato."""
+    agrupado: dict[str, list[tuple[ProductPanel, PanelBlock]]] = {}
+    for panel in panels:
+        for bloque in panel.blocks:
+            slug = product_slug(bloque.headline.province_name)
+            agrupado.setdefault(slug, []).append((panel, bloque))
+    return agrupado

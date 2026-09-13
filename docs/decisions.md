@@ -9364,3 +9364,39 @@ productos no hay insignia" se reemplaza por uno que cuenta 2
 `.ph-map-badge` dentro del stack, más uno nuevo que confirma que un
 producto activo SIN dato en esa provincia no deja un hueco vacío en la
 columna.
+
+## 2026-09-13 — Insignia también sin provincia elegida (una por cada una)
+Contexto: el operador confirmó que la insignia SÍ se ve con una provincia
+elegida, pero "si no tengo ninguna provincia seleccionada y selecciono
+algún productos entonces no se ven". Causa real: las dos entradas
+anteriores de hoy condicionaban todo el bloque a `selected_province`
+truthy — mirando el país entero (`GET /` sin `?provincia=`) nunca se
+armaba ningún `<template>`, sin importar cuántos productos estuvieran
+activos ni cuánto dato tuvieran.
+Decisión: se saca la dependencia de `selected_province` del todo. La
+agrupación pasa de Jinja a Python: `panel_view.group_blocks_by_province`
+recorre los bloques de TODOS los paneles activos y arma
+`dict[slug_provincia, list[(ProductPanel, PanelBlock)]]`
+(`routers/public.py`, contexto `map_badges_by_province`). La plantilla
+ya no arma un solo `<template id="ph-map-badge">`: arma uno por cada
+provincia con dato (`id="ph-map-badge-<slug>"`). El JS se mueve de "una
+vez después de `fitBounds`" a adentro de `onEachFeature`, que ya corre
+una vez por provincia — busca su propio `ph-map-badge-<slug>` y lo clona
+si existe. Con una provincia elegida el resultado no cambia (`blocks` ya
+viene filtrado a esa sola provincia desde `_render_home`, así que
+`agrupado` tiene una sola clave); sin elegir ninguna, aparece una
+insignia por cada provincia con dato del producto activo — el
+comportamiento tipo "cluster" que el operador pedía desde el principio
+(spec original: ícono al elegir producto, sin mencionar que hiciera
+falta acotar a una provincia primero).
+Descartado: mantener dos code paths (uno con provincia elegida, otro
+sin) — la agrupación por provincia sirve para los dos casos sin
+bifurcar, es menos código y menos superficie de bug.
+Consecuencia: `product_panels` pasa a calcularse una sola vez en
+`_render_home` (antes se armaba inline dentro del diccionario de
+contexto) y se reusa para `"product_panels"` y `map_badges_by_province`
+— mismo resultado, sin duplicar el cálculo. 8 tests cubren ahora el
+agrupado (`test_panel_blocks.py::TestGroupBlocksByProvince`, 3 casos) y
+el render por provincia (`test_public_filter.py`, ids
+`ph-map-badge-<slug>` por provincia, incluido el caso sin
+`selected_province`).
