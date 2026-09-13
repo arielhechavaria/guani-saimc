@@ -477,6 +477,23 @@
   .ph-fpanel-icon { font-size: 20px; color: var(--ph-accent); align-self: center; }
   .ph-fpanel-illustration { width: 20px; height: 20px; color: var(--ph-accent); align-self: center; flex: none; }
 
+  /* Insignia sobre el mapa (2026-09-13): `L.divIcon` sin caja propia de
+     Leaflet —`leaflet-div-icon` trae fondo/borde blancos por defecto—, la
+     caja es enteramente nuestra. `iconSize:[0,0]` + `iconAnchor:[0,0]` deja
+     el punto exacto en el centro de la provincia; el translate acá adentro
+     centra la píldora sobre ese punto sin conocer su ancho de antemano
+     (el texto varía con el precio). `pointer-events: none` para que el
+     clic siga llegando al polígono de abajo, no a la insignia. */
+  .leaflet-div-icon.ph-map-badge-wrap { background: none; border: none; pointer-events: none; }
+  .ph-map-badge {
+    display: inline-flex; align-items: center; gap: .4rem; transform: translate(-50%, -50%);
+    background: var(--m3-surface); color: var(--m3-on-surface); white-space: nowrap;
+    padding: .3rem .6rem; border-radius: var(--m3-radius-full); box-shadow: var(--ph-elev);
+    font-size: .75rem; font-weight: 600;
+  }
+  .ph-map-badge .ph-fpanel-illustration, .ph-map-badge .ph-fpanel-icon { width: 18px; height: 18px; font-size: 18px; }
+  .ph-map-badge-text small { display: block; font-weight: 400; opacity: .7; font-size: .6875rem; }
+
   /* Selector de provincia (2026-09-11): mismas proporciones que un chip de
      texto (`.ph-chip-toggle`), para que se vea como parte del mismo riel
      de filtros y no como un control aparte. */
@@ -1050,6 +1067,27 @@
     <div id="ph-leaflet-map" class="ph-map"
          aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}"></div>
     <script type="application/json" id="ph-map-data">{{ map_provinces_json | safe }}</script>
+    {# Insignia sobre la provincia enfocada (2026-09-13): ícono + cifra del
+       ÚNICO producto activo con dato ahí. Con más de un producto prendido no
+       se dibuja —se superpondrían en el mismo punto—, el panel flotante
+       sigue siendo la fuente completa. `inicializarMapa()` la clona con
+       `L.divIcon` centrada en el `getBounds().getCenter()` de la provincia
+       elegida; markup server-rendered para no duplicar `_product_illustration.html`
+       en JS. #}
+    {% set panel_con_dato = product_panels | selectattr("has_data") | list %}
+    {% if selected_province and panel_con_dato | length == 1 and panel_con_dato[0].blocks %}
+    {% set panel = panel_con_dato[0] %}
+    {% set bloque = panel.blocks[0] %}
+    <template id="ph-map-badge">
+      <div class="ph-map-badge">
+        {% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}
+        <span class="ph-map-badge-text">
+          <b>{{ bloque.headline.median_text }}</b> {{ bloque.headline.currency }}/{{ bloque.headline.unit }}
+          <small>{{ bloque.headline.count }} anuncio{{ "s" if bloque.headline.count != 1 }}</small>
+        </span>
+      </div>
+    </template>
+    {% endif %}
   </div>{# /.ph-stage — el mapa, a sangre, detrás de todo #}
 
   {# El muelle vive AFUERA del escenario (2026-09-12): es el único hijo del
@@ -1898,6 +1936,10 @@
     // que ya usan los gráficos de comparación entre provincias
     // (`ph-compara-fila.is-atenuada`), mismo vocabulario, no uno nuevo.
     if (provinciaElegida && !esElegida) opacidadRelleno *= 0.35;
+    // La provincia enfocada no necesita relleno: el borde ya la marca y la
+    // insignia/panel dicen la cifra — el sombreado solo competía
+    // visualmente (pedido del operador, 2026-09-13).
+    if (esElegida) opacidadRelleno = 0;
     return {
       fillColor: relleno,
       color: trazo,
@@ -1980,6 +2022,25 @@
       }
       if (capaElegida) {
         mapaLeaflet.fitBounds(capaElegida.getBounds(), { padding: [24, 24] });
+        // Insignia del único producto activo con dato en esta provincia
+        // (`#ph-map-badge`, server-rendered): se clona su HTML porque el
+        // ícono ilustrado sale de `_product_illustration.html`, no de JS.
+        // `getBounds().getCenter()` es el centro del recuadro, no el
+        // centroide real del polígono — alcanza para una insignia, no hace
+        // falta la geometría exacta.
+        var plantillaInsignia = document.getElementById("ph-map-badge");
+        if (plantillaInsignia) {
+          L.marker(capaElegida.getBounds().getCenter(), {
+            icon: L.divIcon({
+              className: "ph-map-badge-wrap",
+              html: plantillaInsignia.innerHTML,
+              iconSize: [0, 0],
+              iconAnchor: [0, 0],
+            }),
+            interactive: false,
+            keyboard: false,
+          }).addTo(mapaLeaflet);
+        }
       } else {
         mapaLeaflet.fitBounds(capaProvincias.getBounds());
       }
