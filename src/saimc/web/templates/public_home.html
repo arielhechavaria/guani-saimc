@@ -485,8 +485,12 @@
      (el texto varía con el precio). `pointer-events: none` para que el
      clic siga llegando al polígono de abajo, no a la insignia. */
   .leaflet-div-icon.ph-map-badge-wrap { background: none; border: none; pointer-events: none; }
+  .ph-map-badge-stack {
+    display: flex; flex-direction: column; align-items: center; gap: .3rem;
+    transform: translate(-50%, -50%);
+  }
   .ph-map-badge {
-    display: inline-flex; align-items: center; gap: .4rem; transform: translate(-50%, -50%);
+    display: inline-flex; align-items: center; gap: .4rem;
     background: var(--m3-surface); color: var(--m3-on-surface); white-space: nowrap;
     padding: .3rem .6rem; border-radius: var(--m3-radius-full); box-shadow: var(--ph-elev);
     font-size: .75rem; font-weight: 600;
@@ -1067,24 +1071,32 @@
     <div id="ph-leaflet-map" class="ph-map"
          aria-label="{% if selected_province %}Mapa de {{ selected_province }}.{% else %}Mapa de Cuba. {{ map.covered }} de {{ map.provinces | length }} provincias con observaciones de precio.{% endif %}"></div>
     <script type="application/json" id="ph-map-data">{{ map_provinces_json | safe }}</script>
-    {# Insignia sobre la provincia enfocada (2026-09-13): ícono + cifra del
-       ÚNICO producto activo con dato ahí. Con más de un producto prendido no
-       se dibuja —se superpondrían en el mismo punto—, el panel flotante
-       sigue siendo la fuente completa. `inicializarMapa()` la clona con
-       `L.divIcon` centrada en el `getBounds().getCenter()` de la provincia
-       elegida; markup server-rendered para no duplicar `_product_illustration.html`
-       en JS. #}
+    {# Insignia sobre la provincia enfocada (2026-09-13, corregida el mismo
+       día — ver docs/decisions.md): una por CADA producto activo con dato
+       ahí, apiladas en una sola columna. La primera versión ocultaba todo
+       con 2+ productos prendidos para no superponerlos; el operador la vio
+       "desaparecer" al prender un segundo chip sin querer (los chips no se
+       apagan solos, se cierran con la × del panel) y lo reportó como
+       intermitente. `inicializarMapa()` clona el stack entero con un solo
+       `L.divIcon` centrado en el `getBounds().getCenter()` de la provincia
+       elegida; markup server-rendered para no duplicar
+       `_product_illustration.html` en JS. #}
     {% set panel_con_dato = product_panels | selectattr("has_data") | list %}
-    {% if selected_province and panel_con_dato | length == 1 and panel_con_dato[0].blocks %}
-    {% set panel = panel_con_dato[0] %}
-    {% set bloque = panel.blocks[0] %}
+    {% if selected_province and panel_con_dato %}
     <template id="ph-map-badge">
-      <div class="ph-map-badge">
-        {% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}
-        <span class="ph-map-badge-text">
-          <b>{{ bloque.headline.median_text }}</b> {{ bloque.headline.currency }}/{{ bloque.headline.unit }}
-          <small>{{ bloque.headline.count }} anuncio{{ "s" if bloque.headline.count != 1 }}</small>
-        </span>
+      <div class="ph-map-badge-stack">
+        {% for panel in panel_con_dato %}
+        {% if panel.blocks %}
+        {% set bloque = panel.blocks[0] %}
+        <div class="ph-map-badge">
+          {% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}
+          <span class="ph-map-badge-text">
+            <b>{{ bloque.headline.median_text }}</b> {{ bloque.headline.currency }}/{{ bloque.headline.unit }}
+            <small>{{ bloque.headline.count }} anuncio{{ "s" if bloque.headline.count != 1 }}</small>
+          </span>
+        </div>
+        {% endif %}
+        {% endfor %}
       </div>
     </template>
     {% endif %}

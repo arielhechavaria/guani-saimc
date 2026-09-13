@@ -1308,17 +1308,31 @@ class TestFiltroPorProvinciaEnLaRuta:
 
         assert 'id="ph-map-badge"' not in texto
 
-    def test_con_dos_productos_activos_no_hay_insignia(
+    def test_con_dos_productos_activos_se_apilan_dos_insignias(
         self, client: TestClient, session: Session
     ) -> None:
-        """Dos íconos en el mismo punto se superpondrían: con más de un
-        producto activo la insignia no se dibuja, el panel flotante sigue
-        siendo la fuente completa."""
+        """La primera versión ocultaba la insignia entera con 2+ productos
+        activos para no superponerlas; el operador la vio "desaparecer" al
+        prender un segundo chip sin querer (los chips no se apagan solos) y
+        lo reportó como intermitente. Ahora se apila una por producto."""
         self._seed(session)
 
         texto = client.get("/?provincia=la-habana&productos=arroz,aceite").text
+        insignia = texto.split('id="ph-map-badge"')[1].split("</template>")[0]
 
-        assert 'id="ph-map-badge"' not in texto
+        assert insignia.count('class="ph-map-badge"') == 2
+
+    def test_producto_activo_sin_dato_en_la_provincia_no_apila_insignia_vacia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Aceite no tiene dato en Santiago (solo Habana): con Santiago
+        elegida, Arroz sí apila su insignia pero Aceite no deja una vacía."""
+        self._seed(session)
+
+        texto = client.get("/?provincia=santiago-de-cuba&productos=arroz,aceite").text
+        insignia = texto.split('id="ph-map-badge"')[1].split("</template>")[0]
+
+        assert insignia.count('class="ph-map-badge"') == 1
 
     def test_provincia_inexistente_no_da_404(
         self, client: TestClient, session: Session
