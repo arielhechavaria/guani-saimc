@@ -1276,28 +1276,38 @@ class TestFiltroPorProvinciaEnLaRuta:
         assert 'class="ph-fpanel-illustration"' in panel
         assert "ph-fpanel-icon" not in panel
 
+    def _insignia(self, texto: str, slug: str) -> str:
+        return texto.split(f'id="ph-map-badge-{slug}"')[1].split("</template>")[0]
+
     def test_provincia_con_un_producto_activo_pone_insignia_en_el_mapa(
         self, client: TestClient, session: Session
     ) -> None:
-        """La insignia (ícono + cifra) sobre la provincia solo se arma
-        cuando hay UNA provincia elegida y UN producto activo con dato ahí
-        — `inicializarMapa()` la clona con `L.divIcon` (2026-09-13)."""
+        """La insignia (ícono + cifra) sobre la provincia se arma con una
+        provincia elegida y un producto activo con dato ahí —
+        `onEachFeature` la clona con `L.divIcon` (2026-09-13)."""
         self._seed(session)
 
         texto = client.get("/?provincia=la-habana&producto=arroz").text
-        insignia = texto.split('id="ph-map-badge"')[1].split("</template>")[0]
 
-        assert 'id="ph-map-badge"' in texto
-        assert "2 anuncios" in insignia
+        assert 'id="ph-map-badge-la-habana"' in texto
+        assert "2 anuncios" in self._insignia(texto, "la-habana")
 
-    def test_sin_provincia_elegida_no_hay_insignia(
+    def test_sin_provincia_elegida_hay_una_insignia_por_provincia_con_dato(
         self, client: TestClient, session: Session
     ) -> None:
+        """Corrección 2026-09-13: la primera versión solo armaba la insignia
+        con una `selected_province` elegida — el operador reportó "si no
+        tengo ninguna provincia seleccionada y selecciono algún producto
+        entonces no se ven". Mirando el país entero tiene que haber una
+        insignia por cada provincia con dato, no ninguna."""
         self._seed(session)
 
         texto = client.get("/?producto=arroz").text
 
-        assert 'id="ph-map-badge"' not in texto
+        assert "2 anuncios" in self._insignia(texto, "la-habana")
+        assert "1 anuncio" in self._insignia(texto, "santiago-de-cuba")
+        # Cada insignia es de su propia provincia, no una combinada.
+        assert "Santiago" not in self._insignia(texto, "la-habana")
 
     def test_provincia_elegida_sin_producto_no_hay_insignia(
         self, client: TestClient, session: Session
@@ -1306,7 +1316,7 @@ class TestFiltroPorProvinciaEnLaRuta:
 
         texto = client.get("/?provincia=la-habana").text
 
-        assert 'id="ph-map-badge"' not in texto
+        assert 'id="ph-map-badge-' not in texto
 
     def test_con_dos_productos_activos_se_apilan_dos_insignias(
         self, client: TestClient, session: Session
@@ -1318,9 +1328,8 @@ class TestFiltroPorProvinciaEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?provincia=la-habana&productos=arroz,aceite").text
-        insignia = texto.split('id="ph-map-badge"')[1].split("</template>")[0]
 
-        assert insignia.count('class="ph-map-badge"') == 2
+        assert self._insignia(texto, "la-habana").count('class="ph-map-badge"') == 2
 
     def test_producto_activo_sin_dato_en_la_provincia_no_apila_insignia_vacia(
         self, client: TestClient, session: Session
@@ -1330,9 +1339,8 @@ class TestFiltroPorProvinciaEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?provincia=santiago-de-cuba&productos=arroz,aceite").text
-        insignia = texto.split('id="ph-map-badge"')[1].split("</template>")[0]
 
-        assert insignia.count('class="ph-map-badge"') == 1
+        assert self._insignia(texto, "santiago-de-cuba").count('class="ph-map-badge"') == 1
 
     def test_provincia_inexistente_no_da_404(
         self, client: TestClient, session: Session

@@ -30,7 +30,7 @@ from saimc.progress import pilot_product_names
 from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
-from saimc.web.panel_view import attach_blocks, build_product_panels
+from saimc.web.panel_view import attach_blocks, build_product_panels, group_blocks_by_province
 from saimc.web.price_charts import (
     build_evolution_blocks,
     build_headlines,
@@ -318,6 +318,28 @@ def _render_home(
     # cada polígono de `cuba_provincias.geojson` por `slug` y armar el clic a
     # `province_link`. `separators` compacto porque viaja en el HTML de cada
     # carga, no para leerlo a mano.
+    # Insignia del mapa (2026-09-13): un panel por producto activo con dato,
+    # agrupado por provincia. Se calcula acá y no `selected_province` porque
+    # tiene que verse también mirando el país entero, no solo con una
+    # provincia elegida (esa es la parte que el operador reportó como "no se
+    # ve nada" — solo se armaba con `selected_province`).
+    product_panels = attach_blocks(
+        build_product_panels(
+            active_products,
+            cards,
+            series,
+            selected_province=prov,
+            selected_days=window,
+            ver=open_views,
+            capa=selected_layer,
+        ),
+        panel_headlines,
+        panel_ranges,
+    )
+    map_badges_by_province = group_blocks_by_province(
+        [p for p in product_panels if p.has_data]
+    )
+
     map_provinces_json = json.dumps(
         [
             {
@@ -339,6 +361,7 @@ def _render_home(
         {
             "map": map_view,
             "map_provinces_json": map_provinces_json,
+            "map_badges_by_province": map_badges_by_province,
             "cards": cards,
             "series": series,
             "window_days": window,
@@ -353,19 +376,7 @@ def _render_home(
                 ver=open_views,
                 capa=selected_layer,
             ),
-            "product_panels": attach_blocks(
-                build_product_panels(
-                    active_products,
-                    cards,
-                    series,
-                    selected_province=prov,
-                    selected_days=window,
-                    ver=open_views,
-                    capa=selected_layer,
-                ),
-                panel_headlines,
-                panel_ranges,
-            ),
+            "product_panels": product_panels,
             "province_nav": build_province_nav(
                 province_names,
                 selected_province,
