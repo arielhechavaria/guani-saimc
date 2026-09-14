@@ -9704,3 +9704,23 @@ constante de módulo. 13 tests nuevos: `test_price_charts.py::
 TestBuildCellAds` (5), `test_panel_blocks.py` (+2) y
 `test_public_filter.py::TestAnunciosEnElPanel` (2). Suite completa:
 1652 casos, sin deuda de lint nueva.
+
+## 2026-09-14 — Atribución de la TRMI en el pie de la capa pública
+Contexto: revisión de mejoras no consideradas para la home; spec.md §5
+("Posicionamiento frente a elTOQUE") marca como vinculante que "toda serie
+derivada que use la TRMI como base de conversión debe atribuirla
+visiblemente". La capa pública convierte a CUP usando la TRMI (todo lo que
+no queda `unconverted`) sin mencionar la fuente en ningún lado — cero
+menciones de elTOQUE fuera de `/control`, que es operador-only.
+Decisión: se agrega una línea de atribución al pie de `_public_shell.html`,
+junto al crédito ya existente a Natural Earth. Al vivir en el shell y no en
+`public_home.html`, llega a toda la capa pública (`/`, `/anuncio/{id}`,
+`/producto/{slug}`) sin repetirse por vista.
+Descartado: marcar la atribución por tarjeta o por bloque de precio. El
+requisito es "visible", no "junto a cada cifra"; repetirlo en cada tarjeta
+sería ruido que compite con la jerarquía visual que se vino cuidando toda
+la sesión (§6.7).
+Consecuencia: cualquier vista pública nueva que use este shell hereda la
+atribución sin tocar nada. Si algún día se agrega una fuente alternativa de
+tipo de cambio (redundancia obligatoria, §5), este pie es el lugar natural
+para sumarla.

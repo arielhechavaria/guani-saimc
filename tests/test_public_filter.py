@@ -1959,6 +1959,19 @@ class TestRutaProductoLimpia:
         assert pie_de_la_leyenda < indicador  # fuera del bloque que htmx reemplaza
 
 
+class TestAtribucionTRMI:
+    """spec.md §5, «Posicionamiento frente a elTOQUE»: «Toda serie derivada
+    que use la TRMI como base de conversión debe atribuirla visiblemente».
+    Vinculante (spec-map.md). Vive en `_public_shell.html`, así que llega
+    a toda la capa pública sin repetirse por vista."""
+
+    def test_el_pie_atribuye_la_trmi_a_eltoque(self, client: TestClient) -> None:
+        texto = client.get("/").text
+
+        assert "Tasa Representativa del Mercado" in texto
+        assert 'href="https://eltoque.com/"' in texto
+
+
 class TestVarianteEnTarjetaPublica:
     """La variante declarada es su propia serie pública, distinguible de la
     genérica (public-price-range: "wherever product series are shown — the
