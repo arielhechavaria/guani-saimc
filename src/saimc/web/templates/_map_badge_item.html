@@ -1,13 +1,14 @@
 {#
-  Un ítem de la insignia del mapa: ícono + mediana + conteo de un producto
-  en una provincia. Compartido entre la insignia sola (un solo producto con
-  dato ahí) y cada fila del stack adentro del cluster (2+, ver
-  `public_home.html` — "Insignia sobre el mapa"). Espera `panel` y `bloque`.
+  Un ítem de la insignia del mapa: cartelito de precio (ícono + mediana +
+  conteo) de un producto en una provincia. Compartido entre la insignia
+  sola (un solo producto con dato ahí) y cada fila del stack adentro del
+  cluster (2+, ver `public_home.html` — "Insignia sobre el mapa"). Espera
+  `panel` y `bloque`.
 #}
 <div class="ph-map-badge">
   {% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}
   <span class="ph-map-badge-text">
-    <b>{{ bloque.headline.median_text }}</b> {{ bloque.headline.currency }}/{{ bloque.headline.unit }}
+    <b>{{ bloque.headline.median_text }}</b> <span class="ph-map-badge-unidad">{{ bloque.headline.currency }}/{{ bloque.headline.unit }}</span>
     <small>{{ bloque.headline.count }} anuncio{{ "s" if bloque.headline.count != 1 }}</small>
   </span>
 </div>

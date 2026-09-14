@@ -9440,3 +9440,42 @@ ahí, no una suma de anuncios ni de precios entre productos distintos
 pendiente la verificación visual real del operador — ni el clic para
 abrir el cluster ni el `<details>` nativo se pueden probar con
 `TestClient`, solo su presencia en el HTML.
+
+## 2026-09-14 — Insignia rediseñada: cartelito de precio, no píldora SaaS
+Contexto: el operador aprobó la mecánica del cluster pero calificó la
+estética de la insignia como "un asco" y pidió una pasada de diseño real
+en vez de solo funcional. La versión anterior era exactamente el default
+genérico de IA: píldora blanca redondeada, sombra gris suave, texto sans
+— el mismo look que cualquier tarjeta de notificación SaaS, sin relación
+con el proyecto.
+Decisión: se usó el skill `frontend-design` para una pasada de diseño
+deliberada. Concepto elegido: "cartelito de precio de mercado", no
+notificación — el objeto real que este proyecto capta. Cambios concretos
+en `public_home.html`/`_map_badge_item.html`: (1) fondo sólido
+`--ph-accent` en vez de blanco —la marca de la capa pública, no un color
+nuevo—; (2) la cifra pasa a Alice (`--ph-font-heading`), la misma serif
+que ya usan `.ph-card-range .num` y `.ph-stat-value` para "el número que
+importa" en el resto de la app, en vez de sans genérico; (3) forma de
+cartelito con una colita triangular que señala el punto exacto del mapa
+(`::after` + `transform: translate(-50%, calc(-100% - 7px))` en la raíz),
+como un pin, en vez de flotar centrada como un toast; (4) el cluster pasa
+a ser una ficha/moneda —círculo sólido del mismo azul con un canto claro
+(`border: 2px solid var(--ph-on-accent)`) y el número también en Alice—,
+mismo material que el cartelito pero otra forma porque señala una
+cantidad, no un precio. Se mantiene centrado sobre el punto (no con
+colita): es el criterio de cualquier librería de clustering, el punto
+ES el cluster.
+Descartado: paleta o tipografía nuevas para este componente — meterle
+una identidad propia a una insignia chica la aislaría del resto de la
+página; la pasada de diseño reutiliza exactamente lo que la home pública
+ya tiene (azul de marca, serif de cifras), no inventa una tercera cosa.
+Un ícono de "pin" de mapa genérico en vez de la colita dibujada — ya
+existen las 5 ilustraciones de producto (aceite, arroz, etc.), sumar
+otro ícono redundaría.
+Consecuencia: sin cambios de comportamiento ni de tests (mismas clases
+`ph-map-badge`/`ph-map-badge-count`/`ph-map-badge-cluster`, los 8 tests
+de insignia siguen pasando tal cual); es una pasada puramente visual.
+Sigue pendiente la verificación real en navegador — es la tercera vez en
+el día que este componente se ajusta a ciegas sin poder verlo el mismo
+Claude, dado que el Postgres local del entorno de desarrollo no tiene
+credenciales válidas.

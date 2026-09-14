@@ -477,41 +477,66 @@
   .ph-fpanel-icon { font-size: 20px; color: var(--ph-accent); align-self: center; }
   .ph-fpanel-illustration { width: 20px; height: 20px; color: var(--ph-accent); align-self: center; flex: none; }
 
-  /* Insignia sobre el mapa (2026-09-13, colapsada a cluster el mismo día
-     — idea de https://googlemaps.github.io/js-markerclusterer/, pedido del
-     operador pensando en escala: hoy 5 productos piloto, mañana pueden ser
-     200, y una columna de insignias sin tope no aguanta eso). `L.divIcon`
-     sin caja propia de Leaflet —`leaflet-div-icon` trae fondo/borde blancos
-     por defecto—, la caja es enteramente nuestra. `iconSize:[0,0]` +
-     `iconAnchor:[0,0]` deja el punto exacto en el centro de la provincia;
-     `.ph-map-badge-root` centra el contenido sobre ese punto sin conocer su
-     tamaño de antemano (varía con el precio y con cuántos productos hay).
-     `pointer-events: none` en el wrap para que el clic en el resto de la
-     provincia siga llegando al polígono; `.ph-map-badge-root` lo reactiva
-     porque con 2+ productos el círculo del cluster SÍ tiene que ser
-     clickeable. Con un solo producto no hay nada que clusterizar: se pinta
-     la insignia sola, igual que antes. */
+  /* Insignia sobre el mapa: "cartelito de precio", no notificación SaaS
+     (rediseño 2026-09-14, a pedido del operador — la primera versión era
+     una píldora blanca con sombra, el default genérico). La referencia es
+     el objeto real que este proyecto capta: el cartelito de precio escrito
+     a mano en un puesto del mercado informal. Color sólido en `--ph-accent`
+     (la marca de la capa pública, no un color nuevo), la cifra en Alice
+     —la misma serif que ya usan `.ph-card-range .num` y `.ph-stat-value`
+     para "el número que importa"—, y una colita que señala el punto exacto
+     en vez de flotar centrada como un toast. El cluster (2+ productos) es
+     una ficha/moneda en el mismo azul: mismo material, otra forma, porque
+     no señala un precio sino una cantidad.
+
+     `L.divIcon` sin caja propia de Leaflet —`leaflet-div-icon` trae
+     fondo/borde blancos por defecto—, la caja es enteramente nuestra.
+     `iconSize:[0,0]` + `iconAnchor:[0,0]` deja el punto exacto en el
+     centro de la provincia; `.ph-map-badge-root` ancla el contenido sobre
+     ese punto sin conocer su tamaño de antemano (varía con el precio y con
+     cuántos productos hay) — la ficha del cluster se centra sobre el punto
+     (mismo criterio que cualquier librería de clustering: el punto es el
+     cluster), el cartelito de un producto solo cuelga de él por la colita,
+     como un pin. `pointer-events: none` en el wrap para que el clic en el
+     resto de la provincia siga llegando al polígono; `.ph-map-badge-root`
+     lo reactiva porque con 2+ productos la ficha del cluster SÍ tiene que
+     ser clickeable. */
   .leaflet-div-icon.ph-map-badge-wrap { background: none; border: none; pointer-events: none; }
   .ph-map-badge-root { transform: translate(-50%, -50%); pointer-events: auto; }
-  .ph-map-badge-cluster { display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+  .ph-map-badge-root:not(.ph-map-badge-cluster) { transform: translate(-50%, calc(-100% - 7px)); }
+  .ph-map-badge-cluster { display: flex; flex-direction: column; align-items: center; gap: .35rem; }
   /* `<details>`/`<summary>` nativos: abrir/cerrar sin JS propio, mismo
-     mecanismo que ya usa `_range_chart.html` para la ayuda de los gráficos. */
+     mecanismo que ya usa `_range_chart.html` para la ayuda de los gráficos.
+     El borde claro es el canto de la ficha/moneda, no un chrome de UI. */
   .ph-map-badge-count {
     display: flex; align-items: center; justify-content: center; list-style: none; cursor: pointer;
-    width: 26px; height: 26px; border-radius: var(--m3-radius-full);
+    width: 30px; height: 30px; border-radius: var(--m3-radius-full);
     background: var(--ph-accent); color: var(--ph-on-accent);
-    font-size: .75rem; font-weight: 700; box-shadow: var(--ph-elev);
+    border: 2px solid var(--ph-on-accent); box-shadow: var(--ph-elev);
+    font-family: var(--ph-font-heading); font-size: 1.0625rem;
   }
   .ph-map-badge-count::-webkit-details-marker { display: none; }
-  .ph-map-badge-stack { display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+  .ph-map-badge-stack { display: flex; flex-direction: column; align-items: center; gap: .5rem; }
   .ph-map-badge {
-    display: inline-flex; align-items: center; gap: .4rem;
-    background: var(--m3-surface); color: var(--m3-on-surface); white-space: nowrap;
-    padding: .3rem .6rem; border-radius: var(--m3-radius-full); box-shadow: var(--ph-elev);
-    font-size: .75rem; font-weight: 600;
+    position: relative; display: inline-flex; align-items: center; gap: .4rem;
+    background: var(--ph-accent); color: var(--ph-on-accent); white-space: nowrap;
+    padding: .3rem .55rem .32rem; border-radius: 8px; box-shadow: var(--ph-elev);
   }
-  .ph-map-badge .ph-fpanel-illustration, .ph-map-badge .ph-fpanel-icon { width: 18px; height: 18px; font-size: 18px; }
-  .ph-map-badge-text small { display: block; font-weight: 400; opacity: .7; font-size: .6875rem; }
+  /* La colita del cartelito: un triángulo del mismo azul, no un chrome
+     aparte — por eso `border-color` y no un `::before` con drop-shadow
+     propio, que se vería como una segunda sombra flotando. */
+  .ph-map-badge::after {
+    content: ""; position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%);
+    width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-top: 7px solid var(--ph-accent);
+  }
+  .ph-map-badge .ph-fpanel-illustration, .ph-map-badge .ph-fpanel-icon {
+    width: 17px; height: 17px; font-size: 17px; color: var(--ph-on-accent);
+  }
+  .ph-map-badge-text { display: flex; flex-direction: column; line-height: 1.2; }
+  .ph-map-badge-text b { font-family: var(--ph-font-heading); font-weight: 400; font-size: .9375rem; }
+  .ph-map-badge-text .ph-map-badge-unidad { font-size: .625rem; opacity: .85; }
+  .ph-map-badge-text small { font-size: .625rem; font-weight: 500; opacity: .85; letter-spacing: .01em; }
 
   /* Selector de provincia (2026-09-11): mismas proporciones que un chip de
      texto (`.ph-chip-toggle`), para que se vea como parte del mismo riel
