@@ -412,10 +412,19 @@
     font-size: .8125rem; font-weight: 600; white-space: nowrap;
     transition: max-width .25s ease, opacity .2s ease, padding .25s ease;
   }
-  .ph-menu-item:hover .ph-menu-label, .ph-menu-item.is-open .ph-menu-label {
+  /* `:focus-visible` junto a `:hover` (auditoría de accesibilidad,
+     2026-09-14, idea #7 del reporte de mejoras no consideradas): sin esto,
+     alguien que navega con teclado y ve la pantalla —pero no usa mouse—
+     tabulaba de círculo en círculo sin ver NUNCA la etiqueta ("Cobertura",
+     "Precios observados"...) hasta activar uno. Un lector de pantalla ya
+     la escucha igual —cada ítem trae su propio `aria-label`—; esto es para
+     quien sí ve pero no puede hacer hover. */
+  .ph-menu-item:hover .ph-menu-label,
+  .ph-menu-item:focus-visible .ph-menu-label,
+  .ph-menu-item.is-open .ph-menu-label {
     max-width: 12rem; opacity: 1; padding-right: .9rem;
   }
-  .ph-menu-item:hover {
+  .ph-menu-item:hover, .ph-menu-item:focus-visible {
     background: var(--ph-accent-wash); border-color: var(--ph-accent); color: var(--ph-accent);
     text-decoration: none;
   }

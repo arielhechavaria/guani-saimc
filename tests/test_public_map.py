@@ -646,6 +646,22 @@ class TestElMapaEsLaApp:
         # No toca el botón real ni su nombre accesible.
         assert 'aria-label="Guani · SAIMC · abrir el menú"' in texto
 
+    def test_el_menu_del_compas_muestra_su_etiqueta_al_enfocarlo_con_teclado(
+        self, client: TestClient
+    ) -> None:
+        """Auditoría de accesibilidad (2026-09-14), idea #7 del reporte de
+        mejoras no consideradas: la etiqueta de cada ítem del compás
+        ("Cobertura", "Precios observados"...) solo aparecía con `:hover` o
+        ya abierto — alguien que ve la pantalla pero navega solo con
+        teclado tabulaba círculo por círculo sin ver ningún texto hasta
+        activar uno. Un lector de pantalla ya lo escucha igual (cada ítem
+        trae su propio `aria-label`, sin cambios acá)."""
+        texto = client.get("/").text
+
+        regla = texto[texto.index(".ph-menu-item:hover .ph-menu-label") :]
+        regla = regla[: regla.index("}")]
+        assert ".ph-menu-item:focus-visible .ph-menu-label" in regla
+
     def test_el_escenario_del_mapa_va_a_sangre_y_el_cromo_por_encima(
         self, client: TestClient
     ) -> None:

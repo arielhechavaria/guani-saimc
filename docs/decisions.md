@@ -9857,3 +9857,44 @@ página — dentro del margen que el "haz todas las tareas" ya cubre.
 Consecuencia: si el operador prueba la home en una pestaña nueva/incógnito
 debería ver el anillo pulsar tres veces sobre el compás; en una visita
 repetida (mismo navegador) no vuelve a aparecer.
+
+## 2026-09-14 — Auditoría de accesibilidad: un gap real, el resto ya estaba bien
+Contexto: idea #7 del reporte de mejoras no consideradas — verificar teclado
+y lector de pantalla sobre todo lo nuevo de la sesión (`<details>`/chevron/
+drag), solo probado visualmente hasta ahora.
+Auditoría realizada (sin navegador real disponible en esta sesión —
+Postgres inaccesible—, así que fue lectura de código y de la cadena
+HTML→CSS→accesibilidad, no una prueba con lector de pantalla real):
+- `<details>`/`<summary>` (insignia del mapa, bloques `.ph-cifra`, acordeón
+  de anuncios): semántica nativa correcta. El triángulo por defecto se
+  oculta con `list-style`/`::-webkit-details-marker`, que es puramente
+  visual y no toca el rol/estado que expone el navegador. El chevron
+  (`expand_more`) es `aria-hidden="true"` — no duplica lo que ya anuncia
+  `<summary>` por su cuenta.
+- Insignia con solo un número visible (`.ph-map-badge-count`) ya traía
+  `aria-label` descriptivo desde que se escribió, el mismo día. Los
+  acordeones de anuncios tienen texto propio autodescriptivo ("3 anuncios
+  detrás de esta cifra") — no necesitan `aria-label` aparte.
+- `:focus-visible` global (`saimc-public.css`) sigue aplicando sobre todo lo
+  nuevo: nada lo pisó con un reset que borre `outline`.
+- Controles de ventana (cerrar/minimizar/maximizar) son `<button>`/`<a>`
+  reales con `aria-label`/`aria-pressed`; arrastrar (`data-win-handle`) es
+  mouse/touch únicamente, pero es conveniencia de reposicionamiento, no
+  contenido — la ventana se usa entera sin necesidad de arrastrarla.
+- El mapa Leaflet tiene alternativa accesible ya existente: el `<select>`
+  de provincia (`ph-province-form`) degrada sin JS y cubre lo que el mapa
+  no puede para quien no puede clickear un polígono.
+Encontrado y corregido: `.ph-menu-item` (los círculos del compás —
+Cobertura/Precios observados/Evolución/Descarga/Leyenda) solo revelaba su
+etiqueta de texto con `:hover` o `.is-open`, nunca con `:focus-visible`.
+Un lector de pantalla ya escuchaba el nombre correcto (cada ítem trae su
+propio `aria-label`, sin relación con la etiqueta visual) pero alguien que
+ve la pantalla y navega solo con teclado tabulaba círculo por círculo sin
+ver ningún texto hasta activar uno a ciegas.
+Decisión: se agrega `:focus-visible` a las dos reglas de `.ph-menu-item`
+(revelado de `.ph-menu-label` y el resaltado de fondo/borde/color), mismo
+tratamiento que ya recibe `:hover`. Cambio de una línea por regla, cero
+riesgo de layout.
+Consecuencia: con esto se cierran las 7 ideas del reporte de mejoras no
+consideradas de esta sesión — 5 implementadas, 1 diagnosticada y registrada
+como candidato (idea #5, `/producto/{slug}` liviano), y esta auditoría.
