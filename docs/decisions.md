@@ -9565,3 +9565,45 @@ comillas dentro del primer paréntesis que cierra, y `"[data-win].is-max"`
 prolijo igual. Sin test automatizado del comportamiento en sí —es JS
 puro sobre `position`/contextos de apilamiento, sin arnés de test de UI
 en el repo—; el operador tiene que confirmar en el navegador.
+
+## 2026-09-14 — El panel flotante deja de fundir formatos distintos
+Contexto: el operador preguntó por qué la tarjeta de pollo no mostraba
+cómo varía el precio según el envase, y al verificar salió que el
+mecanismo SÍ existe —`compute_retail_ranges` (`cells.py`) ya agrupa por
+formato, y `/control` y la tabla enfocada de `#precios` ya lo muestran—.
+El operador corrigió: en `/control` SÍ ve esa variación; en home, no.
+Causa raíz: el PANEL FLOTANTE (`.ph-fpanel`) es la única vista que la
+pierde. `price_charts._group` —de la que salen `Headline` (la cifra) y
+`RangeSeries` (el gráfico de rango)— agrupaba por producto × provincia ×
+moneda × unidad, sin el formato: una botella y una garrafa del mismo
+aceite en la misma provincia se fundían en un solo rango ciego al
+envase, aunque `/control` y la tabla ya las separaban.
+Decisión: se sumó el formato al eje de agrupado de `_group`
+(`price_charts.py`), y `Headline`/`RangeSeries` ganaron el campo
+`format_label`. Con eso, `panel_view.attach_blocks` ya arma un
+`PanelBlock` por provincia × formato en vez de uno por provincia a
+secas —solo hizo falta emparejar `rango_de` por la misma clave ampliada—.
+La plantilla (`.ph-cifra-prov`) muestra "La Habana · Botella de 1 L"
+en vez de solo "La Habana" cuando el producto tiene formato declarado.
+Otras cuatro funciones de `price_charts.py` también usan `_group`
+(`build_province_comparison`, `_by_product`/`build_median_steps`,
+`build_month_vs_month`) pero responden preguntas de PROVINCIA
+("¿dónde está más caro?", "¿subió o bajó?"), no de formato —ahí se
+vuelve a fundir el formato explícitamente después de agrupar, para no
+cambiarles el comportamiento (ya probado, sigue pasando sin tocar).
+`panel_view.group_blocks_by_province` (la insignia del mapa, entrada de
+ayer) también se ajustó: con 2+ formatos del mismo producto en la misma
+provincia se queda con uno solo —el de más muestra—, porque la insignia
+es una lectura rápida y desglosar por formato ahí sería ruido, no señal.
+Descartado: mostrar el precio propio del formato (como hace
+`card_view.format_median`, "302,73 CUP/lb × 25 kg → 16.685 CUP el
+saco") en el panel también — el pedido era separar el eje, no sumar una
+cifra nueva; queda anotado como posible mejora si hace falta.
+Consecuencia: `capitalize` de Jinja también pone en minúscula el resto
+del string, así que "botella de 1 L" se leía "Botella de 1 l" con la
+unidad rota — se cambió a subir solo la primera letra a mano
+(`cifra.format_label[0] | upper`). 8 tests nuevos cubren el eje nuevo:
+`test_price_charts.py::TestEjeDeFormato` (3), `test_panel_blocks.py`
+(2, uno por `attach_blocks` y uno por `group_blocks_by_province`) y
+`test_public_filter.py::TestFormatoEnElPanel` (2, endpoint). Suite
+completa sin regresiones (1640 casos) y sin deuda de lint nueva.

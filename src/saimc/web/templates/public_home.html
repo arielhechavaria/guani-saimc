@@ -1565,15 +1565,22 @@
               </div>
             </header>
             <div class="ph-fpanel-body">
-              {# Por provincia: la cifra con su muestra (§9.0: nunca un valor
+              {# Por provincia —y por formato, si el producto lo declara
+                 (2026-09-14: antes se fundían en un solo bloque, perdiendo
+                 la pregunta «¿cómo varía según el envase?» que /control ya
+                 contestaba)—: la cifra con su muestra (§9.0: nunca un valor
                  suelto) y la comparación con el período anterior del mismo
                  largo, como número y sin color de alarma (§12.6); debajo, el
                  rango por período. Muestrario aprobado el 2026-09-10. #}
               {% if panel.blocks %}
               {% for bloque in panel.blocks %}
               {% set cifra = bloque.headline %}
-              <section class="ph-cifra" aria-label="{{ panel.name }} en {{ cifra.province_name }}">
-                <div class="ph-cifra-prov">{{ cifra.province_name }}</div>
+              <section class="ph-cifra" aria-label="{{ panel.name }} en {{ cifra.province_name }}{% if cifra.format_label %}, {{ cifra.format_label }}{% endif %}">
+                {# `capitalize` de Jinja también pone en minúscula el resto
+                   del texto —«botella de 1 L» pasaría a «Botella de 1 l»,
+                   con la unidad rota—, así que acá se sube solo la primera
+                   letra. #}
+                <div class="ph-cifra-prov">{{ cifra.province_name }}{% if cifra.format_label %} · {{ cifra.format_label[0] | upper }}{{ cifra.format_label[1:] }}{% endif %}</div>
                 <div class="ph-cifra-fila">
                   <span class="ph-cifra-valor">{{ cifra.median_text }}</span>
                   <span class="ph-cifra-unidad">{{ cifra.currency }}/{{ cifra.unit }} · mediana</span>

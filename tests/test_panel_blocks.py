@@ -13,7 +13,16 @@ from saimc.web.price_charts import build_headlines, build_range_series
 HOY = date(2026, 8, 30)
 
 
-def _obs(product: str, province: str, dia: int, precio: str) -> RetailObservation:
+def _obs(
+    product: str,
+    province: str,
+    dia: int,
+    precio: str,
+    *,
+    format_packaging: str | None = None,
+    format_quantity: str | None = None,
+    format_unit: str | None = None,
+) -> RetailObservation:
     return RetailObservation(
         product_name=product,
         province_name=province,
@@ -24,7 +33,22 @@ def _obs(product: str, province: str, dia: int, precio: str) -> RetailObservatio
         unit_price=Decimal(precio),
         evidence_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
         evidence_is_public=False,
+        format_packaging=format_packaging,
+        format_quantity=Decimal(format_quantity) if format_quantity is not None else None,
+        format_unit=format_unit,
     )
+
+
+def _obs_aceite_dos_formatos() -> list[RetailObservation]:
+    """Aceite en La Habana, dos formatos: dos anuncios en botella de 1 L y
+    uno en garrafa de 5 L — reusado por los tests de formato de abajo."""
+    botella = {"format_packaging": "botella", "format_quantity": "1", "format_unit": "L"}
+    garrafa = {"format_packaging": "garrafa", "format_quantity": "5", "format_unit": "L"}
+    return [
+        _obs("Aceite", "La Habana", 30, "300", **botella),
+        _obs("Aceite", "La Habana", 29, "310", **botella),
+        _obs("Aceite", "La Habana", 28, "1400", **garrafa),
+    ]
 
 
 def _card(product: str, province: str) -> ProductCard:
@@ -69,6 +93,28 @@ class TestAttachBlocks:
         (panel,) = attach_blocks(build_product_panels(["Arroz"], [], []), [], [])
 
         assert panel.blocks == ()
+
+    def test_dos_formatos_en_la_misma_provincia_dan_dos_bloques(self) -> None:
+        """2026-09-14: antes botella y garrafa se fundían en un solo bloque
+        de La Habana; ahora cada formato trae el suyo, sin mezclar su cifra
+        ni su rango con el del otro."""
+        obs = _obs_aceite_dos_formatos()
+        panels = build_product_panels(["Aceite"], [_card("Aceite", "La Habana")], [])
+
+        (panel,) = attach_blocks(
+            panels,
+            build_headlines(obs, []),
+            build_range_series(obs, window_days=30, hoy=HOY),
+        )
+
+        assert len(panel.blocks) == 2
+        por_formato = {b.headline.format_label: b for b in panel.blocks}
+        botella, garrafa = por_formato["botella de 1 L"], por_formato["garrafa de 5 L"]
+        assert botella.headline.count == 2
+        assert garrafa.headline.count == 1
+        # El rango de cada bloque es el de SU formato, no el fundido.
+        assert botella.ranges is not None and botella.ranges.format_label == "botella de 1 L"
+        assert garrafa.ranges is not None and garrafa.ranges.format_label == "garrafa de 5 L"
 
 
 class TestGroupBlocksByProvince:
@@ -117,3 +163,21 @@ class TestGroupBlocksByProvince:
         panels = attach_blocks(build_product_panels(["Picadillo"], [], []), [], [])
 
         assert group_blocks_by_province(panels) == {}
+
+    def test_varios_formatos_del_mismo_producto_no_inflan_la_insignia(self) -> None:
+        """La insignia del mapa es una lectura rápida, no desglosa por
+        formato (eso es del panel, 2026-09-14): con botella y garrafa de
+        Aceite en La Habana, se queda con una sola entrada — la de más
+        anuncios, que es la que `panel.blocks` ya trae primero."""
+        obs = _obs_aceite_dos_formatos()
+        panels = attach_blocks(
+            build_product_panels(["Aceite"], [_card("Aceite", "La Habana")], []),
+            build_headlines(obs, []),
+            build_range_series(obs, window_days=30, hoy=HOY),
+        )
+
+        agrupado = group_blocks_by_province(panels)
+
+        assert len(agrupado["la-habana"]) == 1
+        _, bloque = agrupado["la-habana"][0]
+        assert bloque.headline.format_label == "botella de 1 L"
