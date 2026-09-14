@@ -450,12 +450,20 @@
   .ph-compass-filters {
     position: absolute; right: 1rem; z-index: 1300;
     padding: .5rem .65rem;
+    /* Sin `max-width` el catálogo crecería la isla a lo ancho de todo el
+       mapa (5 productos hoy no lo notan; 200, sí) — la capa el `right: 1rem`
+       de arriba deja de ser una esquina y pasa a ser una franja. */
+    max-width: min(22rem, 60vw);
   }
   .ph-compass-filters-sep { align-self: stretch; width: 1px; margin: .3rem 0;
                              background: var(--m3-outline-variant); }
 
   .ph-chip-rail {
     display: flex; flex-wrap: wrap; gap: .5rem; min-width: 0;
+    /* Mismo motivo que el `max-width` de arriba, en el otro eje: sin tope,
+       un catálogo grande crece la isla hacia abajo hasta tapar el mapa.
+       Con 5 productos esto no scrollea nunca — el contenido entra entero. */
+    max-height: 6.5rem; overflow-y: auto; overscroll-behavior: contain;
   }
   .ph-province-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 

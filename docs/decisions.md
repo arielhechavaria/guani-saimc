@@ -9743,3 +9743,26 @@ slice — se deja explícito en el HTML en vez de omitirlo en silencio.
 Consecuencia: cualquier vista pública nueva que extienda el shell hereda
 `og:title`/`og:description` genéricos automáticamente; si necesita algo más
 específico, solo sobrescribe `{% block og_description %}`.
+
+## 2026-09-14 — Tope de tamaño al riel de chips de producto
+Contexto: idea #3 del reporte de mejoras no consideradas. `.ph-compass-filters`
+(la isla de filtros arriba a la derecha del mapa) no tenía `max-width`, y
+`.ph-chip-rail` no tenía `max-height`: con los 5 productos de hoy no se nota,
+pero un catálogo de 200 estiraría la isla a lo ancho de todo el mapa y
+después hacia abajo hasta taparlo — el riesgo real que el operador ya había
+nombrado antes en esta sesión para la insignia del mapa ("hoy solo tenemos 5
+productos mañana pueden ser 200"), sin resolver todavía para el riel de chips.
+Decisión: `.ph-compass-filters` suma `max-width: min(22rem, 60vw)`;
+`.ph-chip-rail` suma `max-height: 6.5rem; overflow-y: auto;
+overscroll-behavior: contain` — mismo patrón ya usado en `.ph-evo-anuncios
+.ph-table-card` y en el panel flotante. Con 5 chips el contenido entra
+entero y no aparece scroll; con un catálogo grande, la isla se congela en
+tamaño y el riel scrollea internamente en vez de invadir el mapa.
+Descartado: buscador/agrupación por categoría dentro del riel. El reporte lo
+nombraba como posible mejora, pero construirlo hoy es diseñar para 200
+productos que no existen — sobreingeniería contra la regla de alcance del
+proyecto. Queda anotado como candidato: si el catálogo crece de verdad, la
+solución sigue siendo un buscador o agrupación, no otro tope de CSS.
+Consecuencia: el contenimiento por CSS aguanta el crecimiento del catálogo
+sin romper el layout; el día que haga falta un buscador real, la referencia
+es esta entrada.
