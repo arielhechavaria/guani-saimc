@@ -9996,3 +9996,27 @@ reusándola para la URL y para `is_full_navigation`.
 Consecuencia: `_product_link`/`build_product_nav` siguen sin uso real —
 quedan para otra sesión decidir si se retiran o se les encuentra un lugar.
 Suite completa: 1681 casos, sin deuda de lint nueva.
+
+## 2026-09-14 — El chip se queda en el mapa; la vista simple se alcanza desde el panel
+Reemplaza a la entrada del mismo día «El riel de chips engancha a la ruta
+limpia». El operador probó ese enganche y no le gustó: «no me gusta que
+vaya directo a esa vista y luego me das la opción de volver al mapa,
+déjame en el mapa y permíteme ir a esa vista» — quería el flujo al revés.
+Decisión: se revierte `build_product_chips` a su comportamiento de
+siempre —todo chip va a `?productos=`, siempre con `hx-get`, nunca a la
+ruta limpia—. En su lugar, `ProductPanel` suma `light_query`
+(`panel_view.py`, vía el nuevo `light_product_query` en `product_nav.py`):
+el panel flotante de cada producto activo trae ahora DOS enlaces —«Ver el
+detalle por provincia» (de siempre) y «Vista simple para compartir»,
+apuntando a `/producto/<slug>` sin `hx-get` por el mismo motivo técnico de
+antes (esa vista no tiene `#ph-live`, un swap parcial no encontraría nada
+que reemplazar). `light_query` preserva `provincia`/`dias` si están
+puestos —la vista liviana los sigue aceptando—; no lleva `ver` ni `capa`,
+que ahí no significan nada.
+Descartado: mantener el enganche del chip y agregar SOLO el enlace del
+panel (las dos entradas a la vez). El operador pidió explícitamente una
+sola dirección: el mapa es el default, la vista simple es la salida
+consciente, no algo en lo que se puede caer sin querer con el primer clic.
+Consecuencia: `_product_link`/`build_product_nav` (código huérfano, ver la
+entrada revertida) siguen sin uso real. Suite completa: 1679 casos, sin
+deuda de lint nueva.
