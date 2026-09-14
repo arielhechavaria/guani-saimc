@@ -9793,3 +9793,35 @@ Consecuencia: si el operador confirma que esto alcanza, se puede agregar un
 script chico que corra el `grep` de arriba. Si hace falta un dashboard de
 verdad, es la primera pieza de trabajo con esquema que corresponde pasar
 por explorar → proponer → especificar → diseñar → implementar → verificar.
+
+## 2026-09-14 — /producto/{slug} liviano: queda como candidato, no implementado
+Contexto: idea #5 del reporte de mejoras no consideradas. `/producto/{slug}`
+es el link pensado para compartir (el `<title>`, y desde hoy `og:title`/
+`og:description`, ya reflejan el producto), pero carga la página completa:
+mapa Leaflet interactivo + tiles de OSM + compás + dock de ventanas.
+Se investigó el porqué antes de decidir si tocarlo: las tarjetas de precio
+(`.ph-cards`, lo más liviano que tiene la vista) NO son una sección aparte
+—viven adentro de `<section class="ph-win" data-win="...">`, la misma
+ventana flotante/arrastrable/maximizable que se apoya sobre
+`<section class="ph-canvas">` y su mapa Leaflet a sangre (`position:
+absolute; inset:0`). Hoy no existe ninguna variante de esta página sin
+mapa: sacar Leaflet deja el lienzo de fondo vacío y rompe el layout del
+resto, porque todo lo demás se posiciona respecto a él.
+Decisión: NO se construye una variante liviana en este slice. Es una
+decisión de arquitectura de página nueva (qué sobrevive sin el mapa: ¿las
+tarjetas solamente? ¿el gráfico de rango? ¿el enlace de vuelta al mapa
+interactivo?), no un arreglo mecánico — y es exactamente la superficie que
+el operador señaló como "la piedra angular" del proyecto (2026-09-14, ver
+memoria de sesión). Tomar esa decisión en piloto automático, sin poder
+verla en un navegador real en esta sesión (Postgres inaccesible, sin QA
+visual posible), es el tipo de apuesta que CLAUDE.md pide frenar y avisar
+en vez de resolver sola.
+Descartado: forzar una versión a medias (ocultar el mapa por CSS sin
+rediseñar el layout). Deja una página rota a la vista de cualquiera que
+reciba el link — peor que no tocar nada.
+Consecuencia: candidato a fase futura, ya diagnosticado y listo para
+ejecutar cuando el operador defina el alcance. Camino recomendado: una
+plantilla nueva y chica que reuse `cards`/`ProductCard` (`card_view.py`,
+ya calculados en `routers/public.py::public_product`) sin `_public_shell`
+del mapa — sin Leaflet, sin compás, sin dock —, con un enlace de vuelta a
+`/?producto={slug}` para quien quiera el mapa interactivo completo.
