@@ -9638,3 +9638,35 @@ uno existente ajustado a la nueva estructura del DOM
 (`test_sin_formato_declarado_sigue_una_sola_cifra`, que buscaba
 `</div>` donde ahora hay `</summary>`). Suite completa: 1643 casos, sin
 deuda de lint nueva.
+
+## 2026-09-14 — Chevron Material + chip de formato en el panel
+Contexto: recién agregado el colapso de bloques, el operador pidió dos
+cosas más, explícitamente "filosofía material": (1) una marca visual de
+que el bloque se abre/cierra —el triángulo nativo del `<details>` no
+alcanza, casi no se nota en algunos motores—; (2) que el formato, el eje
+nuevo de la sesión, se lea como un concepto importante con chip/label/
+color, no como texto de relleno.
+Decisión: mismo criterio de la pasada de diseño anterior (reusar lo que
+la home pública ya tiene, no inventar una identidad nueva). (1) Chevron: `expand_more` de Material Symbols —ya
+vendorizado, lo usa `/control`, cero costo de red—, con
+`transform: rotate(180deg)` atado a `.ph-cifra[open]`; se ocultó el
+triángulo nativo (`list-style: none` + `::-webkit-details-marker`) para
+no duplicar la señal. (2) El formato pasa de texto plano con middot a
+`<span class="ph-chip">` — la MISMA clase que ya usa `.ph-card-sample`
+para «muestra en formación» en las tarjetas simples, no un chip
+inventado para la ocasión: mismo lenguaje visual en toda la home
+pública para «esto es una etiqueta categórica».
+Descartado: chip también para la provincia — con dos chips por fila
+(provincia + formato) ninguno de los dos se lee como EL dato importante;
+la provincia sigue como texto porque es el eje estructural (siempre
+está), el formato es el que varía y el que hay que notar. Chip para
+`change_text` (¿sube/baja?) — ya tiene peso visual propio
+(`.ph-cifra-cambio`, junto al precio grande) y convertirlo en chip
+hubiera competido con el del formato por atención.
+Consecuencia: tests existentes ajustados — las dos aserciones que
+buscaban `"La Habana · Botella de 1 L"` como string contiguo dejaron de
+servir (el middot desapareció, provincia y formato son `<span>`
+separados) y pasan a verificar presencia del chip
+(`'<span class="ph-chip">Botella de 1 L</span>' in panel`); la que
+verificaba ausencia de «·» pasa a verificar ausencia de la clase
+`ph-chip` — assertion más directa sobre lo que realmente importa.

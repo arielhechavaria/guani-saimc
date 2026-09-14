@@ -823,12 +823,24 @@
   .ph-cifra { padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
   .ph-cifra:first-child { padding-top: 0; border-top: 0; }
   .ph-cifra-prov {
-    display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
-    cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    cursor: pointer; list-style: none;
     font-size: .6875rem; letter-spacing: .12em; text-transform: uppercase; color: var(--m3-on-surface-variant);
   }
-  .ph-cifra-prov-precio { flex: none; font-variant-numeric: tabular-nums; }
+  /* Chrome/Safari ponen el triángulo nativo vía pseudo-elemento propio, no
+     `list-style` — sin esto quedaría el triángulo Y el chevron juntos. */
+  .ph-cifra-prov::-webkit-details-marker { display: none; }
+  .ph-cifra-prov-titulo { display: flex; align-items: center; gap: .4rem; min-width: 0; flex-wrap: wrap; }
+  .ph-cifra-prov-aside { display: flex; align-items: center; gap: .3rem; flex: none; }
+  .ph-cifra-prov-precio { font-variant-numeric: tabular-nums; }
   .ph-cifra[open] .ph-cifra-prov-precio { display: none; }
+  /* Chevron Material —`expand_more`, ya vendorizado (lo usa `/control`)—
+     en vez de confiar en el triángulo nativo, que en algunos motores casi
+     no se nota: el operador pidió una marca explícita de que el bloque se
+     abre/cierra. Gira con el propio atributo `[open]` de `<details>`, sin
+     JS. */
+  .ph-cifra-chevron { font-size: 18px; transition: transform .18s ease; }
+  .ph-cifra[open] .ph-cifra-chevron { transform: rotate(180deg); }
   .ph-cifra-body { display: grid; gap: .35rem; margin-top: .55rem; }
   .ph-cifra-fila { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; }
   .ph-cifra-valor { font: 600 1.75rem/1 var(--m3-font); color: var(--m3-on-surface); }
@@ -1592,14 +1604,31 @@
                  vistazo, mismo mecanismo nativo que ya usa la insignia del
                  mapa (`<details>`, sin JS propio). El operador lo pidió el
                  2026-09-14 al ver el panel crecer con la separación por
-                 formato del mismo día. #}
+                 formato del mismo día.
+
+                 Mismo día, segunda vuelta: el operador pidió una marca visual
+                 explícita de que el bloque se puede abrir/cerrar —no alcanza
+                 con el triángulo nativo del navegador, que en algunos motores
+                 casi no se nota— y que el formato, el concepto nuevo de la
+                 sesión, se lea como algo importante y no como texto de
+                 relleno. El chevron (`expand_more`, Material Symbols,
+                 gira 180° con `[open]`) resuelve lo primero; el formato pasa
+                 a `.ph-chip` —la MISMA clase que ya usa `.ph-card-sample`
+                 para «muestra en formación», no un chip nuevo— para lo
+                 segundo. #}
               {% if panel.blocks %}
               {% for bloque in panel.blocks %}
               {% set cifra = bloque.headline %}
               <details class="ph-cifra"{% if loop.first %} open{% endif %} aria-label="{{ panel.name }} en {{ cifra.province_name }}{% if cifra.format_label %}, {{ cifra.format_label }}{% endif %}">
                 <summary class="ph-cifra-prov">
-                  <span>{{ cifra.province_name }}{% if cifra.format_label_display %} · {{ cifra.format_label_display }}{% endif %}</span>
-                  <span class="ph-cifra-prov-precio">{{ cifra.median_text }} {{ cifra.currency }}/{{ cifra.unit }}</span>
+                  <span class="ph-cifra-prov-titulo">
+                    <span>{{ cifra.province_name }}</span>
+                    {% if cifra.format_label_display %}<span class="ph-chip">{{ cifra.format_label_display }}</span>{% endif %}
+                  </span>
+                  <span class="ph-cifra-prov-aside">
+                    <span class="ph-cifra-prov-precio">{{ cifra.median_text }} {{ cifra.currency }}/{{ cifra.unit }}</span>
+                    <span class="m3-icon ph-cifra-chevron" aria-hidden="true">expand_more</span>
+                  </span>
                 </summary>
                 <div class="ph-cifra-body">
                   <div class="ph-cifra-fila">
