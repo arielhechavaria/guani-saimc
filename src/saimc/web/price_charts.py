@@ -1168,6 +1168,35 @@ class AdRow:
         return format_price(self.price)
 
 
+def build_cell_ads(observations: Sequence[RetailObservation]) -> dict[_Key, list[AdRow]]:
+    """Los anuncios detrás de cada celda —producto × provincia × moneda ×
+    unidad × formato, misma clave que `_group`—, con el precio tal como
+    quedó (fuera de escala incluido, igual que `AdRow` en «Cómo se
+    movió») y el enlace a `/anuncio/{id}` cuando la evidencia es pública
+    (§6.5). Pensada para pegarse a un `Headline`/`PanelBlock` por la
+    misma tupla, así el panel puede responder «¿de dónde salió ESTA
+    cifra?» sin mezclarla con las demás provincias o formatos del mismo
+    producto —que es justo lo que ya hace «Cómo se movió», pero a nivel
+    de producto entero, no de celda (2026-09-14, pedido del operador
+    comparando con el recorrido hacia atrás que ya tiene `/control`)."""
+    por_celda: dict[_Key, list[AdRow]] = {}
+    for key, filas in _group(observations).items():
+        # `_group` ya descarta `province_name is None`, pero eso no cruza la
+        # frontera de función para mypy: se repite el chequeo acá, igual que
+        # ya hace `build_evolution_blocks` con el mismo campo.
+        filas_ads = [
+            AdRow(
+                o.day, o.province_name, o.unit_price, o.currency, o.unit,
+                o.evidence_id, o.evidence_is_public,
+            )
+            for o in filas
+            if o.province_name is not None
+        ]
+        filas_ads.sort(key=lambda a: -a.day.toordinal())
+        por_celda[key] = filas_ads
+    return por_celda
+
+
 @dataclass(frozen=True)
 class EvolutionBlock:
     """Lo que la ventana «Cómo se movió» dibuja de un producto: mes contra mes,

@@ -1652,6 +1652,38 @@
                     "escala que no entra en la barra."
                   ) }}
                   {% endif %}
+                  {# Recorrido hacia atrás hasta el anuncio (§6.5): mismo
+                     patrón que ya usa «Cómo se movió» (`.ph-evo-anuncios`),
+                     pero acotado a ESTA celda —no hace falta columna de
+                     provincia, ya está en el `<summary>` de arriba— (pedido
+                     del operador el 2026-09-14, comparando con el enlace
+                     «ver anuncios» que ya tiene `/control` sobre cada
+                     número de la matriz). #}
+                  {% if bloque.ads %}
+                  <details class="ph-evo-anuncios">
+                    <summary>{{ bloque.ads | length }} anuncio{{ "s" if bloque.ads | length != 1 }} detrás de esta cifra</summary>
+                    <div class="ph-table-card">
+                      <table class="ph-coverage">
+                        <thead>
+                          <tr>
+                            <th scope="col">Día</th>
+                            <th scope="col" class="num">Precio</th>
+                            <th scope="col">Enlace</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for ad in bloque.ads %}
+                          <tr>
+                            <td class="num">{{ ad.day_text }}</td>
+                            <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
+                            <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
+                          </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                  {% endif %}
                 </div>
               </details>
               {% endfor %}

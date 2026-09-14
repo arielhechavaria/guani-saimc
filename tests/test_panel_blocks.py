@@ -8,9 +8,10 @@ from decimal import Decimal
 from saimc.cells import RetailObservation
 from saimc.web.card_view import ProductCard
 from saimc.web.panel_view import attach_blocks, build_product_panels, group_blocks_by_province
-from saimc.web.price_charts import build_headlines, build_range_series
+from saimc.web.price_charts import build_cell_ads, build_headlines, build_range_series
 
 HOY = date(2026, 8, 30)
+_EVIDENCE_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 def _obs(
@@ -22,6 +23,8 @@ def _obs(
     format_packaging: str | None = None,
     format_quantity: str | None = None,
     format_unit: str | None = None,
+    evidence_id: uuid.UUID = _EVIDENCE_ID,
+    evidence_is_public: bool = False,
 ) -> RetailObservation:
     return RetailObservation(
         product_name=product,
@@ -31,8 +34,8 @@ def _obs(
         unconverted=False,
         day=date(2026, 8, dia),
         unit_price=Decimal(precio),
-        evidence_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
-        evidence_is_public=False,
+        evidence_id=evidence_id,
+        evidence_is_public=evidence_is_public,
         format_packaging=format_packaging,
         format_quantity=Decimal(format_quantity) if format_quantity is not None else None,
         format_unit=format_unit,
@@ -42,12 +45,19 @@ def _obs(
 def _obs_aceite_dos_formatos() -> list[RetailObservation]:
     """Aceite en La Habana, dos formatos: dos anuncios en botella de 1 L y
     uno en garrafa de 5 L — reusado por los tests de formato de abajo."""
-    botella = {"format_packaging": "botella", "format_quantity": "1", "format_unit": "L"}
-    garrafa = {"format_packaging": "garrafa", "format_quantity": "5", "format_unit": "L"}
     return [
-        _obs("Aceite", "La Habana", 30, "300", **botella),
-        _obs("Aceite", "La Habana", 29, "310", **botella),
-        _obs("Aceite", "La Habana", 28, "1400", **garrafa),
+        _obs(
+            "Aceite", "La Habana", 30, "300",
+            format_packaging="botella", format_quantity="1", format_unit="L",
+        ),
+        _obs(
+            "Aceite", "La Habana", 29, "310",
+            format_packaging="botella", format_quantity="1", format_unit="L",
+        ),
+        _obs(
+            "Aceite", "La Habana", 28, "1400",
+            format_packaging="garrafa", format_quantity="5", format_unit="L",
+        ),
     ]
 
 
@@ -93,6 +103,39 @@ class TestAttachBlocks:
         (panel,) = attach_blocks(build_product_panels(["Arroz"], [], []), [], [])
 
         assert panel.blocks == ()
+
+    def test_ads_by_cell_pega_los_anuncios_de_esa_celda(self) -> None:
+        """Recorrido hacia atrás (§6.5): cada bloque trae solo SUS anuncios,
+        sin mezclar la otra provincia."""
+        id_habana = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
+        id_santiago = uuid.UUID("00000000-0000-0000-0000-0000000000a2")
+        obs = [
+            _obs("Arroz", "La Habana", 30, "300", evidence_id=id_habana),
+            _obs("Arroz", "Santiago de Cuba", 28, "320", evidence_id=id_santiago),
+        ]
+        cards = [_card("Arroz", "La Habana"), _card("Arroz", "Santiago de Cuba")]
+        panels = build_product_panels(["Arroz"], cards, [])
+
+        (panel,) = attach_blocks(
+            panels,
+            build_headlines(obs, []),
+            build_range_series(obs, window_days=30, hoy=HOY),
+            build_cell_ads(obs),
+        )
+
+        por_provincia = {b.headline.province_name: b for b in panel.blocks}
+        assert [a.evidence_id for a in por_provincia["La Habana"].ads] == [id_habana]
+        assert [a.evidence_id for a in por_provincia["Santiago de Cuba"].ads] == [id_santiago]
+
+    def test_sin_ads_by_cell_los_bloques_quedan_sin_anuncios(self) -> None:
+        obs = [_obs("Arroz", "La Habana", 30, "300")]
+        panels = build_product_panels(["Arroz"], [_card("Arroz", "La Habana")], [])
+
+        (panel,) = attach_blocks(
+            panels, build_headlines(obs, []), build_range_series(obs, window_days=30, hoy=HOY)
+        )
+
+        assert panel.blocks[0].ads == ()
 
     def test_dos_formatos_en_la_misma_provincia_dan_dos_bloques(self) -> None:
         """2026-09-14: antes botella y garrafa se fundían en un solo bloque

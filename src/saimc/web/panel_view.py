@@ -14,12 +14,12 @@ desambigua.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from saimc.web.card_view import ProductCard, format_price
-from saimc.web.price_charts import Headline, RangeSeries
+from saimc.web.price_charts import AdRow, Headline, RangeSeries
 from saimc.web.product_nav import (
     DEFAULT_LAYER,
     DEFAULT_WINDOW_DAYS,
@@ -43,6 +43,10 @@ class PanelBlock:
 
     headline: Headline
     ranges: RangeSeries | None
+    #: Los anuncios detrás de esta celda exacta (§6.5, «¿de dónde salió?»),
+    #: con su enlace a `/anuncio/{id}` cuando la evidencia es pública.
+    #: Vacío si no se pegó (`attach_blocks` sin `ads_by_cell`).
+    ads: tuple[AdRow, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -175,24 +179,31 @@ def attach_blocks(
     panels: Sequence[ProductPanel],
     headlines: Sequence[Headline],
     ranges: Sequence[RangeSeries],
+    ads_by_cell: Mapping[tuple[str, str, str, str, str | None], Sequence[AdRow]] | None = None,
 ) -> list[ProductPanel]:
     """Pega a cada panel su cifra y su rango por período, un bloque por
     provincia × formato, en el orden de las cifras (más anuncios primero).
     Cifra y rango se emparejan por producto, provincia, moneda, unidad y
     formato (2026-09-14: se sumó el formato al emparejado — antes una celda
     con dos formatos mezclaba el rango de uno con la cifra del otro apenas
-    coincidían provincia+unidad)."""
+    coincidían provincia+unidad).
+
+    `ads_by_cell` (`price_charts.build_cell_ads`, misma clave de 5) es
+    opcional: sin él, todo bloque queda con `ads=()` — el recorrido hacia
+    atrás hasta el anuncio (§6.5, pedido el 2026-09-14 comparando con
+    `/control`) es un agregado, no un requisito para armar el panel."""
     rango_de = {
         (r.product_name, r.province_name, r.currency, r.unit, r.format_label): r for r in ranges
     }
+    ads_by_cell = ads_by_cell or {}
     por_producto: dict[str, list[PanelBlock]] = {}
     for h in headlines:
+        clave = (h.product_name, h.province_name, h.currency, h.unit, h.format_label)
         por_producto.setdefault(h.product_name, []).append(
             PanelBlock(
                 headline=h,
-                ranges=rango_de.get(
-                    (h.product_name, h.province_name, h.currency, h.unit, h.format_label)
-                ),
+                ranges=rango_de.get(clave),
+                ads=tuple(ads_by_cell.get(clave, ())),
             )
         )
     return [replace(p, blocks=tuple(por_producto.get(p.name, ()))) for p in panels]

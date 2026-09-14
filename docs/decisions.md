@@ -9688,3 +9688,37 @@ separados) y pasan a verificar presencia del chip
 (`'<span class="ph-chip">Botella de 1 L</span>' in panel`); la que
 verificaba ausencia de «·» pasa a verificar ausencia de la clase
 `ph-chip` — assertion más directa sobre lo que realmente importa.
+
+## 2026-09-14 — Recorrido hacia atrás: de cada cifra a sus anuncios
+Contexto: el operador preguntó qué había pensado para que, desde la
+tarjeta de precios, se pudiera llegar hasta los anuncios de origen —
+"justo como hacemos en /control". Verificado antes de responder: el
+mecanismo público YA existe (`GET /anuncio/{id}`, texto redactado, §6.5)
+y YA se usa, pero solo dentro de «Cómo se movió» (`.ph-evo-anuncios`,
+`AdRow`/`build_evolution_blocks`) — ahí lista los anuncios de todo el
+PRODUCTO, mezclando provincias y formatos. Faltaba engancharlo a cada
+`.ph-cifra` puntual, que es la celda que el visitante realmente está
+mirando.
+Decisión: `price_charts.build_cell_ads(observations)` agrupa con la
+MISMA clave que `_group` (producto×provincia×moneda×unidad×formato) y
+arma un `AdRow` por anuncio de esa celda exacta, más reciente primero.
+`PanelBlock` gana el campo `ads: tuple[AdRow, ...]`; `attach_blocks`
+recibe un `ads_by_cell` opcional (`Mapping` con la misma clave de 5) y
+lo empareja igual que ya hace con `ranges`. La plantilla reusa el mismo
+acordeón `.ph-evo-anuncios` que ya existía —ni una clase CSS nueva—,
+solo sin la columna «Provincia» (redundante: ya está en el `<summary>`
+del bloque).
+Descartado: un endpoint nuevo tipo `/curation/history` para el público
+—esa ruta es del operador, filtra el catálogo entero; acá alcanza con
+lo que ya se computa para el panel—. Filtrar por outliers en la lista de
+anuncios — mismo criterio que `AdRow` en «Cómo se movió»: el precio
+real, tal como quedó, se muestra igual, no se esconde.
+Consecuencia: dos ajustes de lint post-implementación — mypy exigió
+repetir el chequeo `province_name is not None` dentro de
+`build_cell_ads` (la garantía de `_group` no cruza la frontera de
+función); ruff marcó un default mutable (`uuid.UUID(...)` como valor
+por defecto de parámetro) en el helper de test, resuelto con una
+constante de módulo. 13 tests nuevos: `test_price_charts.py::
+TestBuildCellAds` (5), `test_panel_blocks.py` (+2) y
+`test_public_filter.py::TestAnunciosEnElPanel` (2). Suite completa:
+1652 casos, sin deuda de lint nueva.

@@ -32,6 +32,7 @@ from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import attach_blocks, build_product_panels, group_blocks_by_province
 from saimc.web.price_charts import (
+    build_cell_ads,
     build_evolution_blocks,
     build_headlines,
     build_province_comparison,
@@ -273,6 +274,11 @@ def _render_home(
     ]
     panel_headlines = build_headlines(obs, previous_obs)
     panel_ranges = build_range_series(obs, window_days=window, hoy=hoy)
+    # Recorrido hacia atrás hasta el anuncio (§6.5), por celda —no por
+    # producto entero, que es lo que ya hacía «Cómo se movió»—: pedido el
+    # 2026-09-14 comparando con el enlace «ver anuncios» que ya tiene
+    # `/control` sobre cada número de la matriz.
+    panel_ads = build_cell_ads(obs)
     # Tarjeta simple (2026-09-14): mismo cambio vs. período anterior que ya
     # muestra el panel flotante, para que `#precios` conteste "¿sube o baja?"
     # sin abrir otra ventana (spec.md §6.7). `cards` se reasigna acá y no se
@@ -340,6 +346,7 @@ def _render_home(
         ),
         panel_headlines,
         panel_ranges,
+        panel_ads,
     )
     map_badges_by_province = group_blocks_by_province(
         [p for p in product_panels if p.has_data]
