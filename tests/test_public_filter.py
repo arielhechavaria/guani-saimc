@@ -459,6 +459,37 @@ class TestFormatoEnElPanel:
         assert "La Habana · Botella de 1 L" in panel
         assert "La Habana · Pomo de 5 L" in panel
 
+    def test_solo_el_primer_bloque_arranca_abierto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El operador lo pidió al ver el panel crecer con la separación
+        por formato: con 2+ bloques, solo el de más muestra (que ya viene
+        primero) arranca abierto; el resto colapsa a su `<summary>`."""
+        aceite = Product(
+            name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([aceite, habana])
+        session.commit()
+        botella = _formato(session, product=aceite, packaging="botella", quantity="1", unit="L")
+        pomo = _formato(session, product=aceite, packaging="pomo", quantity="5", unit="L")
+        fuente = _ingestion(session, hash_="h-abierto")
+        # Botella: 2 anuncios (más muestra, va primero). Pomo: 1.
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(5), format_id=botella.id)
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(4), format_id=botella.id)
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(3), format_id=pomo.id)
+        session.commit()
+
+        texto = client.get("/?producto=aceite").text
+        panel = texto.split('id="ph-panel-aceite"')[1].split('<a class="ph-fpanel-detail"')[0]
+        bloques = panel.split('<details class="ph-cifra"')[1:]
+
+        assert len(bloques) == 2
+        assert bloques[0].startswith(" open")
+        assert "Botella de 1 L" in bloques[0]
+        assert not bloques[1].startswith(" open")
+        assert "Pomo de 5 L" in bloques[1]
+
     def test_sin_formato_declarado_sigue_una_sola_cifra(
         self, client: TestClient, session: Session
     ) -> None:
@@ -477,7 +508,7 @@ class TestFormatoEnElPanel:
         panel = texto.split('id="ph-panel-arroz"')[1].split('<a class="ph-fpanel-detail"')[0]
 
         assert panel.count('class="ph-cifra"') == 1
-        assert "·" not in panel.split('class="ph-cifra-prov"')[1].split("</div>")[0]
+        assert "·" not in panel.split('class="ph-cifra-prov"')[1].split("</summary>")[0]
 
 
 class TestPanelesFlotantes:
