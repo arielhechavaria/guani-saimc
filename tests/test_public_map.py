@@ -607,6 +607,61 @@ class TestElMapaEsLaApp:
         assert "box-shadow" not in regla
         assert "backdrop-filter" not in regla
 
+    def test_el_riel_de_chips_tiene_tope_de_ancho_y_alto(
+        self, client: TestClient
+    ) -> None:
+        """Hoy son 5 productos y caben en una fila; el reporte de mejoras no
+        consideradas (2026-09-14) marcó que sin un tope, un catálogo grande
+        (200 productos) crece la isla de filtros hasta tapar el mapa: a lo
+        ancho porque `.ph-compass-filters` no tenía `max-width` y el
+        `flex-wrap` se estira hasta donde haya sitio, y a lo alto porque
+        `.ph-chip-rail` no tenía techo. Con 5 chips ninguno de los dos topes
+        se nota (nunca alcanzan a scrollear)."""
+        texto = client.get("/").text
+
+        isla = texto[texto.index("  .ph-compass-filters {") :]
+        isla = isla[: isla.index("}")]
+        assert "max-width:" in isla
+
+        riel = texto[texto.index("  .ph-chip-rail {") :]
+        riel = riel[: riel.index("}")]
+        assert "max-height:" in riel
+        assert "overflow-y: auto" in riel
+
+    def test_pista_de_primera_visita_en_el_compas(self, client: TestClient) -> None:
+        """Reporte de mejoras no consideradas (2026-09-14), idea #6: el
+        compás arranca colapsado y sin ninguna etiqueta visible — nada le
+        dice a un visitante nuevo que ahí adentro hay un menú. Un pulso de
+        una sola vez (JS gatea con localStorage; no server-rendered, así
+        que el HTML es idéntico en cada visita) respeta
+        `prefers-reduced-motion` y no toca el mecanismo de abrir/cerrar ya
+        en producción."""
+        texto = client.get("/").text
+
+        assert "guani:compas-visto" in texto
+        assert 'boton.classList.add("ph-pista")' in texto
+        assert "ph-pista-pulso" in texto
+        desde = texto.index("@media (prefers-reduced-motion: reduce)")
+        assert ".ph-pista" in texto[desde : desde + 150]
+        # No toca el botón real ni su nombre accesible.
+        assert 'aria-label="Guani · SAIMC · abrir el menú"' in texto
+
+    def test_el_menu_del_compas_muestra_su_etiqueta_al_enfocarlo_con_teclado(
+        self, client: TestClient
+    ) -> None:
+        """Auditoría de accesibilidad (2026-09-14), idea #7 del reporte de
+        mejoras no consideradas: la etiqueta de cada ítem del compás
+        ("Cobertura", "Precios observados"...) solo aparecía con `:hover` o
+        ya abierto — alguien que ve la pantalla pero navega solo con
+        teclado tabulaba círculo por círculo sin ver ningún texto hasta
+        activar uno. Un lector de pantalla ya lo escucha igual (cada ítem
+        trae su propio `aria-label`, sin cambios acá)."""
+        texto = client.get("/").text
+
+        regla = texto[texto.index(".ph-menu-item:hover .ph-menu-label") :]
+        regla = regla[: regla.index("}")]
+        assert ".ph-menu-item:focus-visible .ph-menu-label" in regla
+
     def test_el_escenario_del_mapa_va_a_sangre_y_el_cromo_por_encima(
         self, client: TestClient
     ) -> None:

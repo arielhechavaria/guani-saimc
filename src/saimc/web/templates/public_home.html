@@ -4,6 +4,8 @@
    vista previa del enlace muestran el producto, no un genérico. #}
 {% block title %}{% if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %} — precios{% else %}Precios y cobertura{% endif %}{% endblock %}
 
+{% block og_description %}{% if selected_product %}Precios de {{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %} en el mercado informal cubano, verificados anuncio por anuncio.{% else %}Precios del mercado informal cubano, verificados anuncio por anuncio, provincia por provincia.{% endif %}{% endblock %}
+
 {# El encabezado y el pie del shell se ocultan por CSS en esta vista: la página
    entera es el mapa. El <h1> vive en la barra superior del lienzo y el crédito
    del mapa en su esquina. #}
@@ -199,6 +201,24 @@
   .ph-compass .ph-brand-avatar { width: 3.25rem; height: 3.25rem; }
   .ph-brand-avatar { flex: none; width: 2.25rem; height: 2.25rem; }
 
+  /* Pista de primera visita (script del pie agrega/saca `.ph-pista`): un
+     anillo que se expande y se apaga, tres veces, para señalar que el
+     compás tiene algo adentro antes de que nadie lo toque. Puramente
+     decorativo —`::after` sin contenido en el árbol de accesibilidad—, no
+     cambia tamaño ni posición de nada real. */
+  .ph-compass.ph-pista::after {
+    content: ""; position: absolute; inset: -6px; border-radius: inherit;
+    border: 2px solid var(--ph-accent); pointer-events: none;
+    animation: ph-pista-pulso 1.8s ease-out 3;
+  }
+  @keyframes ph-pista-pulso {
+    0% { transform: scale(1); opacity: .85; }
+    100% { transform: scale(1.35); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ph-compass.ph-pista::after { animation: none; opacity: .85; }
+  }
+
   /* Indicador de carga (2026-09-11): convención estándar de htmx — un
      elemento con clase `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"`
      en `#ph-live` hace que htmx le agregue `htmx-request` a ESTE mismo
@@ -392,10 +412,19 @@
     font-size: .8125rem; font-weight: 600; white-space: nowrap;
     transition: max-width .25s ease, opacity .2s ease, padding .25s ease;
   }
-  .ph-menu-item:hover .ph-menu-label, .ph-menu-item.is-open .ph-menu-label {
+  /* `:focus-visible` junto a `:hover` (auditoría de accesibilidad,
+     2026-09-14, idea #7 del reporte de mejoras no consideradas): sin esto,
+     alguien que navega con teclado y ve la pantalla —pero no usa mouse—
+     tabulaba de círculo en círculo sin ver NUNCA la etiqueta ("Cobertura",
+     "Precios observados"...) hasta activar uno. Un lector de pantalla ya
+     la escucha igual —cada ítem trae su propio `aria-label`—; esto es para
+     quien sí ve pero no puede hacer hover. */
+  .ph-menu-item:hover .ph-menu-label,
+  .ph-menu-item:focus-visible .ph-menu-label,
+  .ph-menu-item.is-open .ph-menu-label {
     max-width: 12rem; opacity: 1; padding-right: .9rem;
   }
-  .ph-menu-item:hover {
+  .ph-menu-item:hover, .ph-menu-item:focus-visible {
     background: var(--ph-accent-wash); border-color: var(--ph-accent); color: var(--ph-accent);
     text-decoration: none;
   }
@@ -448,12 +477,20 @@
   .ph-compass-filters {
     position: absolute; right: 1rem; z-index: 1300;
     padding: .5rem .65rem;
+    /* Sin `max-width` el catálogo crecería la isla a lo ancho de todo el
+       mapa (5 productos hoy no lo notan; 200, sí) — la capa el `right: 1rem`
+       de arriba deja de ser una esquina y pasa a ser una franja. */
+    max-width: min(22rem, 60vw);
   }
   .ph-compass-filters-sep { align-self: stretch; width: 1px; margin: .3rem 0;
                              background: var(--m3-outline-variant); }
 
   .ph-chip-rail {
     display: flex; flex-wrap: wrap; gap: .5rem; min-width: 0;
+    /* Mismo motivo que el `max-width` de arriba, en el otro eje: sin tope,
+       un catálogo grande crece la isla hacia abajo hasta tapar el mapa.
+       Con 5 productos esto no scrollea nunca — el contenido entra entero. */
+    max-height: 6.5rem; overflow-y: auto; overscroll-behavior: contain;
   }
   .ph-province-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 
@@ -2390,6 +2427,44 @@
     var haciaAfuera = !ev.relatedTarget || !envoltorio.contains(ev.relatedTarget);
     if (haciaAfuera) programarCierreCompas();
   });
+
+  // Pista de primera visita (2026-09-14, reporte de mejoras no
+  // consideradas, idea #6): el compás arranca colapsado y sin ninguna
+  // etiqueta visible —nada le dice a un visitante nuevo que ahí adentro
+  // está Cobertura/Precios/Evolución—. Un pulso en el borde (CSS,
+  // `.ph-pista` en `<style>`) solo la primera vez que ESTE navegador entra
+  // a la página, y solo hasta el primer toque/clic/foco sobre el compás.
+  // Auto-contenido a propósito: no toca `alternarCompas`/`abrirCompas` de
+  // arriba, cero riesgo sobre el mecanismo de abrir/cerrar ya en producción.
+  (function () {
+    var YA_VISTO = "guani:compas-visto";
+    var visto = true;
+    try {
+      visto = !!localStorage.getItem(YA_VISTO);
+    } catch (e) {
+      visto = true; // sin storage (privado/bloqueado): no se muestra la pista
+    }
+    if (visto) return;
+
+    var boton = document.querySelector(".ph-compass");
+    var envoltorio = document.querySelector(".ph-compass-nav");
+    if (!boton || !envoltorio) return;
+    boton.classList.add("ph-pista");
+
+    function descartarPista() {
+      boton.classList.remove("ph-pista");
+      try {
+        localStorage.setItem(YA_VISTO, "1");
+      } catch (e) {
+        /* sin storage: la pista vuelve a salir la próxima visita, no rompe nada */
+      }
+    }
+    envoltorio.addEventListener("pointerdown", descartarPista, { once: true });
+    envoltorio.addEventListener("focusin", descartarPista, { once: true });
+    boton.addEventListener("animationend", function () {
+      boton.classList.remove("ph-pista");
+    });
+  })();
 
   // Leyenda del mapa colapsada en angosto (2026-09-13, en dos pasos: el
   // botón que la revela vivía suelto en su propia esquina, y el operador

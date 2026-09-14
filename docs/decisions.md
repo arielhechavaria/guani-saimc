@@ -9722,3 +9722,197 @@ constante de módulo. 13 tests nuevos: `test_price_charts.py::
 TestBuildCellAds` (5), `test_panel_blocks.py` (+2) y
 `test_public_filter.py::TestAnunciosEnElPanel` (2). Suite completa:
 1652 casos, sin deuda de lint nueva.
+
+## 2026-09-14 — Atribución de la TRMI en el pie de la capa pública
+Contexto: revisión de mejoras no consideradas para la home; spec.md §5
+("Posicionamiento frente a elTOQUE") marca como vinculante que "toda serie
+derivada que use la TRMI como base de conversión debe atribuirla
+visiblemente". La capa pública convierte a CUP usando la TRMI (todo lo que
+no queda `unconverted`) sin mencionar la fuente en ningún lado — cero
+menciones de elTOQUE fuera de `/control`, que es operador-only.
+Decisión: se agrega una línea de atribución al pie de `_public_shell.html`,
+junto al crédito ya existente a Natural Earth. Al vivir en el shell y no en
+`public_home.html`, llega a toda la capa pública (`/`, `/anuncio/{id}`,
+`/producto/{slug}`) sin repetirse por vista.
+Descartado: marcar la atribución por tarjeta o por bloque de precio. El
+requisito es "visible", no "junto a cada cifra"; repetirlo en cada tarjeta
+sería ruido que compite con la jerarquía visual que se vino cuidando toda
+la sesión (§6.7).
+Consecuencia: cualquier vista pública nueva que use este shell hereda la
+atribución sin tocar nada. Si algún día se agrega una fuente alternativa de
+tipo de cambio (redundancia obligatoria, §5), este pie es el lugar natural
+para sumarla.
+
+## 2026-09-14 — Open Graph en la capa pública
+Contexto: idea #2 del reporte de mejoras no consideradas para la home. El
+`<title>` ya cambia por vista/producto pensando en compartir, pero un link
+pegado en WhatsApp o Telegram —el canal por el que se mueve este mercado—
+no mostraba ninguna vista previa: cero `og:title`/`og:description` en
+`_public_shell.html`.
+Decisión: se agregan `og:type`, `og:site_name`, `og:url`, `og:title` (via
+`self.title()`, reusa el bloque `title` ya existente) y `og:description`
+(bloque nuevo `og_description`, con default genérico en el shell y override
+por vista en `public_home.html` — con y sin producto enfocado— y
+`public_evidence.html`). `<meta name="description">` reusa el mismo bloque
+para no mantener dos textos.
+Descartado: `og:image`. No hay ningún asset de marca en el repo (ni logo ni
+banner); generarlo o pedirlo es una decisión de diseño aparte, no de este
+slice — se deja explícito en el HTML en vez de omitirlo en silencio.
+Consecuencia: cualquier vista pública nueva que extienda el shell hereda
+`og:title`/`og:description` genéricos automáticamente; si necesita algo más
+específico, solo sobrescribe `{% block og_description %}`.
+
+## 2026-09-14 — Tope de tamaño al riel de chips de producto
+Contexto: idea #3 del reporte de mejoras no consideradas. `.ph-compass-filters`
+(la isla de filtros arriba a la derecha del mapa) no tenía `max-width`, y
+`.ph-chip-rail` no tenía `max-height`: con los 5 productos de hoy no se nota,
+pero un catálogo de 200 estiraría la isla a lo ancho de todo el mapa y
+después hacia abajo hasta taparlo — el riesgo real que el operador ya había
+nombrado antes en esta sesión para la insignia del mapa ("hoy solo tenemos 5
+productos mañana pueden ser 200"), sin resolver todavía para el riel de chips.
+Decisión: `.ph-compass-filters` suma `max-width: min(22rem, 60vw)`;
+`.ph-chip-rail` suma `max-height: 6.5rem; overflow-y: auto;
+overscroll-behavior: contain` — mismo patrón ya usado en `.ph-evo-anuncios
+.ph-table-card` y en el panel flotante. Con 5 chips el contenido entra
+entero y no aparece scroll; con un catálogo grande, la isla se congela en
+tamaño y el riel scrollea internamente en vez de invadir el mapa.
+Descartado: buscador/agrupación por categoría dentro del riel. El reporte lo
+nombraba como posible mejora, pero construirlo hoy es diseñar para 200
+productos que no existen — sobreingeniería contra la regla de alcance del
+proyecto. Queda anotado como candidato: si el catálogo crece de verdad, la
+solución sigue siendo un buscador o agrupación, no otro tope de CSS.
+Consecuencia: el contenimiento por CSS aguanta el crecimiento del catálogo
+sin romper el layout; el día que haga falta un buscador real, la referencia
+es esta entrada.
+
+## 2026-09-14 — Instrumentación mínima de visitas a la capa pública
+Contexto: idea #4 del reporte de mejoras no consideradas. spec.md §9 fija
+la meta de Fase 1 en "100 usuarios activos diarios", pero no existe ninguna
+forma de saber si se cumple: cero analítica en la home pública.
+Decisión: middleware ASGI (`saimc/web/analytics.py`,
+`registrar_visitas_publicas`) que deja una línea de log INFO por cada GET
+exitoso (200) a una vista pública real (`/`, `/producto/{slug}`,
+`/anuncio/{id}`), excluyendo los `hx-get` disparados por la propia página
+(chips/selector de provincia — misma visita, no una nueva) y cualquier ruta
+de operador o asset estático. El campo `visitor` es `sha256(IP+día)`
+truncado, nunca la IP en texto plano. Sin tabla nueva: no toca el esquema,
+así que no dispara el flujo de especificación completo que CLAUDE.md reserva
+para esos cambios. El operador agrega a mano sobre el log
+(`journalctl | grep public.pageview | grep -oP 'visitor=\K\S+' | sort -u | wc -l`
+por día, receta en el docstring del módulo).
+Descartado: una tabla de eventos en la base de datos con un dashboard
+propio. Es lo que un producto de analítica real haría, pero es una decisión
+de esquema (migración, política de retención, diseño de agregación) que
+CLAUDE.md marca como territorio del flujo de especificación completo — no
+algo para decidir en piloto automático mientras el operador está afuera.
+Esta instrumentación es el paso mínimo reversible: pasa de "cero dato" a
+"materia prima agregable a mano", sin comprometer a nada más grande.
+Consecuencia: si el operador confirma que esto alcanza, se puede agregar un
+script chico que corra el `grep` de arriba. Si hace falta un dashboard de
+verdad, es la primera pieza de trabajo con esquema que corresponde pasar
+por explorar → proponer → especificar → diseñar → implementar → verificar.
+
+## 2026-09-14 — /producto/{slug} liviano: queda como candidato, no implementado
+Contexto: idea #5 del reporte de mejoras no consideradas. `/producto/{slug}`
+es el link pensado para compartir (el `<title>`, y desde hoy `og:title`/
+`og:description`, ya reflejan el producto), pero carga la página completa:
+mapa Leaflet interactivo + tiles de OSM + compás + dock de ventanas.
+Se investigó el porqué antes de decidir si tocarlo: las tarjetas de precio
+(`.ph-cards`, lo más liviano que tiene la vista) NO son una sección aparte
+—viven adentro de `<section class="ph-win" data-win="...">`, la misma
+ventana flotante/arrastrable/maximizable que se apoya sobre
+`<section class="ph-canvas">` y su mapa Leaflet a sangre (`position:
+absolute; inset:0`). Hoy no existe ninguna variante de esta página sin
+mapa: sacar Leaflet deja el lienzo de fondo vacío y rompe el layout del
+resto, porque todo lo demás se posiciona respecto a él.
+Decisión: NO se construye una variante liviana en este slice. Es una
+decisión de arquitectura de página nueva (qué sobrevive sin el mapa: ¿las
+tarjetas solamente? ¿el gráfico de rango? ¿el enlace de vuelta al mapa
+interactivo?), no un arreglo mecánico — y es exactamente la superficie que
+el operador señaló como "la piedra angular" del proyecto (2026-09-14, ver
+memoria de sesión). Tomar esa decisión en piloto automático, sin poder
+verla en un navegador real en esta sesión (Postgres inaccesible, sin QA
+visual posible), es el tipo de apuesta que CLAUDE.md pide frenar y avisar
+en vez de resolver sola.
+Descartado: forzar una versión a medias (ocultar el mapa por CSS sin
+rediseñar el layout). Deja una página rota a la vista de cualquiera que
+reciba el link — peor que no tocar nada.
+Consecuencia: candidato a fase futura, ya diagnosticado y listo para
+ejecutar cuando el operador defina el alcance. Camino recomendado: una
+plantilla nueva y chica que reuse `cards`/`ProductCard` (`card_view.py`,
+ya calculados en `routers/public.py::public_product`) sin `_public_shell`
+del mapa — sin Leaflet, sin compás, sin dock —, con un enlace de vuelta a
+`/?producto={slug}` para quien quiera el mapa interactivo completo.
+
+## 2026-09-14 — Pista de primera visita en el compás
+Contexto: idea #6 del reporte de mejoras no consideradas. Investigando antes
+de tocar nada se confirmó que el gap es más profundo de lo que sonaba: TODO
+el compás —título `<h1>`, "Qué cuesta y dónde lo sabemos", nota de frescura,
+y el menú Cobertura/Precios/Evolución/Descarga/Zoom— arranca oculto
+(`opacity: 0`) detrás de un botón circular sin ninguna etiqueta visible
+(`.ph-compass`, solo `aria-label` para lector de pantalla). Un visitante
+nuevo, sobre todo en celular (sin hover real), no tiene ninguna pista de que
+ese círculo abre algo. El riel de chips de producto SÍ es visible y
+accionable sin ayuda —no es el problema real, contra lo que sonaba el ítem
+del reporte—; el compás sí lo es.
+Decisión: pulso de una sola vez alrededor del botón del compás (`::after`,
+CSS puro, `animation: ph-pista-pulso 1.8s ease-out 3`), gateado por
+`localStorage` desde JS (`guani:compas-visto`) para que se muestre solo en
+la primera visita de ese navegador y desaparezca apenas se toca, hace foco
+o se hace clic en el compás. Respeta `prefers-reduced-motion: reduce`
+(queda un anillo fijo, sin animación, mismo criterio que el resto de esta
+vista). Auto-contenido en un IIFE aparte al pie del archivo: no modifica
+`alternarCompas`/`abrirCompas` ni ninguna lógica ya en producción.
+Descartado: mostrar las etiquetas del menú siempre en vez de solo al
+interactuar. Es un cambio de layout dentro de `.ph-menu` que no se puede
+verificar visualmente en esta sesión (Postgres inaccesible, sin navegador
+real) — mismo motivo que frenó la idea #5. El pulso es aditivo puro: no
+reordena ni redimensiona nada existente, así que no corre ese riesgo.
+Descartado también: no tocar nada y dejarlo para cuando el operador pueda
+ver la página. Esta pieza, a diferencia de la #5, es chica, reversible con
+una línea (sacar la clase del botón) y no toca la arquitectura de la
+página — dentro del margen que el "haz todas las tareas" ya cubre.
+Consecuencia: si el operador prueba la home en una pestaña nueva/incógnito
+debería ver el anillo pulsar tres veces sobre el compás; en una visita
+repetida (mismo navegador) no vuelve a aparecer.
+
+## 2026-09-14 — Auditoría de accesibilidad: un gap real, el resto ya estaba bien
+Contexto: idea #7 del reporte de mejoras no consideradas — verificar teclado
+y lector de pantalla sobre todo lo nuevo de la sesión (`<details>`/chevron/
+drag), solo probado visualmente hasta ahora.
+Auditoría realizada (sin navegador real disponible en esta sesión —
+Postgres inaccesible—, así que fue lectura de código y de la cadena
+HTML→CSS→accesibilidad, no una prueba con lector de pantalla real):
+- `<details>`/`<summary>` (insignia del mapa, bloques `.ph-cifra`, acordeón
+  de anuncios): semántica nativa correcta. El triángulo por defecto se
+  oculta con `list-style`/`::-webkit-details-marker`, que es puramente
+  visual y no toca el rol/estado que expone el navegador. El chevron
+  (`expand_more`) es `aria-hidden="true"` — no duplica lo que ya anuncia
+  `<summary>` por su cuenta.
+- Insignia con solo un número visible (`.ph-map-badge-count`) ya traía
+  `aria-label` descriptivo desde que se escribió, el mismo día. Los
+  acordeones de anuncios tienen texto propio autodescriptivo ("3 anuncios
+  detrás de esta cifra") — no necesitan `aria-label` aparte.
+- `:focus-visible` global (`saimc-public.css`) sigue aplicando sobre todo lo
+  nuevo: nada lo pisó con un reset que borre `outline`.
+- Controles de ventana (cerrar/minimizar/maximizar) son `<button>`/`<a>`
+  reales con `aria-label`/`aria-pressed`; arrastrar (`data-win-handle`) es
+  mouse/touch únicamente, pero es conveniencia de reposicionamiento, no
+  contenido — la ventana se usa entera sin necesidad de arrastrarla.
+- El mapa Leaflet tiene alternativa accesible ya existente: el `<select>`
+  de provincia (`ph-province-form`) degrada sin JS y cubre lo que el mapa
+  no puede para quien no puede clickear un polígono.
+Encontrado y corregido: `.ph-menu-item` (los círculos del compás —
+Cobertura/Precios observados/Evolución/Descarga/Leyenda) solo revelaba su
+etiqueta de texto con `:hover` o `.is-open`, nunca con `:focus-visible`.
+Un lector de pantalla ya escuchaba el nombre correcto (cada ítem trae su
+propio `aria-label`, sin relación con la etiqueta visual) pero alguien que
+ve la pantalla y navega solo con teclado tabulaba círculo por círculo sin
+ver ningún texto hasta activar uno a ciegas.
+Decisión: se agrega `:focus-visible` a las dos reglas de `.ph-menu-item`
+(revelado de `.ph-menu-label` y el resaltado de fondo/borde/color), mismo
+tratamiento que ya recibe `:hover`. Cambio de una línea por regla, cero
+riesgo de layout.
+Consecuencia: con esto se cierran las 7 ideas del reporte de mejoras no
+consideradas de esta sesión — 5 implementadas, 1 diagnosticada y registrada
+como candidato (idea #5, `/producto/{slug}` liviano), y esta auditoría.

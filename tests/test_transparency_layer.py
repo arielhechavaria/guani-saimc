@@ -64,6 +64,23 @@ class TestEvidenciaPublica:
         assert "Arroz Santiago 25kg a 8.500 CUP" in response.text
         assert "20/08/2026" in response.text
 
+    def test_la_vista_previa_al_compartir_menciona_la_fecha_no_el_texto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """og:description usa la fecha de captura, nunca el texto del
+        anuncio: es contenido de un anunciante, no algo que Guani deba
+        redactar como su propia descripción de marca."""
+        ingestion = _crear_ingestion(session)
+
+        texto = client.get(f"/anuncio/{ingestion.id}").text
+
+        assert 'property="og:title" content="Guani — El anuncio"' in texto
+        assert (
+            'property="og:description" content="El anuncio original detrás de '
+            'este precio, capturado el 20/08/2026. Tal como se publicó, sin editar."'
+            in texto
+        )
+
     def test_imagen_da_404(self, client: TestClient, session: Session) -> None:
         """Los píxeles de una captura traen nombre del remitente y a veces
         teléfono (docs/spec-map.md, contradicción 1): no hay forma de
