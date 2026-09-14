@@ -53,12 +53,12 @@ from saimc.web.product_nav import (
     download_href,
     product_slug,
     products_query,
-    resolve_days,
     resolve_layer,
     resolve_product,
     resolve_products,
     resolve_province,
     resolve_views,
+    resolve_window,
 )
 from saimc.web.series_view import build_series
 
@@ -133,17 +133,25 @@ def _visible_observations(
     pilot: frozenset[str],
     products: frozenset[str] | None,
     province: str | None,
-    window: int,
+    desde: date,
+    hasta: date,
 ) -> list:
     """Las observaciones minoristas que la vista pública muestra: piloto,
-    convertidas a CUP, dentro de la ventana y de los filtros activos.
+    convertidas a CUP, dentro del rango de calendario y de los filtros
+    activos.
 
     Una sola definición para que la página (tarjetas y gráfico) y la descarga
     CSV no puedan divergir: lo que se baja es exactamente lo que se ve.
     `unconverted` queda afuera igual que en `build_cards` / `build_series`.
     `products` vacío o `None` no filtra: se muestran todos los piloto.
+
+    `desde`/`hasta` (2026-09-14, date picker): se traducen a `days`/`hoy`/
+    `hasta` de `compute_retail_observations` tal que `cutoff == desde` —
+    `days=(hasta-desde).days, hoy=hasta` reproduce exactamente ese corte.
     """
-    report = compute_retail_observations(session, days=window)
+    report = compute_retail_observations(
+        session, days=(hasta - desde).days, hoy=hasta, hasta=hasta
+    )
     obs = [
         o
         for o in report.observations
@@ -162,7 +170,8 @@ def _build_focused_product_panel(
     pilot: frozenset[str],
     product_name: str,
     selected_province: str | None,
-    window: int,
+    desde: date,
+    hasta: date,
 ) -> ProductPanel:
     """Arma el panel de UN producto enfocado: cifra, rango y anuncios por
     provincia (y formato) — lo que usa la vista liviana de `/producto/{slug}`
@@ -177,9 +186,10 @@ def _build_focused_product_panel(
     """
     active_products = [product_name]
     active_set = frozenset(active_products)
-    hoy = date.today()
+    window = (hasta - desde).days
+    hoy = hasta
 
-    report = compute_retail_ranges(db, days=window)
+    report = compute_retail_ranges(db, days=window, hoy=hoy, hasta=hasta)
     ranges = [
         r
         for r in report.ranges
@@ -190,7 +200,7 @@ def _build_focused_product_panel(
     cards = build_cards(ranges)
 
     obs = _visible_observations(
-        db, pilot=pilot, products=active_set, province=selected_province, window=window
+        db, pilot=pilot, products=active_set, province=selected_province, desde=desde, hasta=hasta
     )
     series = build_series(obs, window_days=window, hoy=hoy)
     previous_obs = [
@@ -200,9 +210,10 @@ def _build_focused_product_panel(
             pilot=pilot,
             products=active_set,
             province=selected_province,
-            window=2 * window,
+            desde=desde - timedelta(days=window),
+            hasta=hasta,
         )
-        if o.day < hoy - timedelta(days=window)
+        if o.day < desde
     ]
     panel_headlines = build_headlines(obs, previous_obs)
     panel_ranges = build_range_series(obs, window_days=window, hoy=hoy)
@@ -214,7 +225,8 @@ def _build_focused_product_panel(
             cards,
             series,
             selected_province=selected_province or "",
-            selected_days=window,
+            selected_desde=desde,
+            selected_hasta=hasta,
         ),
         panel_headlines,
         panel_ranges,
@@ -230,6 +242,8 @@ def _render_home(
     producto: str | None,
     productos: str | None,
     provincia: str | None,
+    desde: str | None,
+    hasta: str | None,
     dias: str | None,
     ver: str | None = None,
     capa: str | None = None,
@@ -260,10 +274,12 @@ def _render_home(
 
     all_province_names = _all_province_names(db)
     selected_province = resolve_province(all_province_names, provincia)
-    window = resolve_days(dias)
+    ventana_desde, ventana_hasta = resolve_window(desde, hasta, dias)
+    window = (ventana_hasta - ventana_desde).days
+    hoy = ventana_hasta
     selected_layer = resolve_layer(capa)
 
-    report = compute_retail_ranges(db, days=window)
+    report = compute_retail_ranges(db, days=window, hoy=hoy, hasta=ventana_hasta)
     pilot_ranges = [r for r in report.ranges if r.product_name in pilot]
 
     # La barra de provincia lista las que tienen dato piloto en esta ventana; si
@@ -289,9 +305,10 @@ def _render_home(
         pilot=pilot,
         products=active_set or None,
         province=selected_province,
-        window=window,
+        desde=ventana_desde,
+        hasta=ventana_hasta,
     )
-    series = build_series(obs, window_days=window, hoy=date.today())
+    series = build_series(obs, window_days=window, hoy=hoy)
 
     latest_day = _latest_price_day(db, pilot)
     freshness_days_ago = (date.today() - latest_day).days if latest_day else None
@@ -308,32 +325,38 @@ def _render_home(
         open_views,
         active_products=active_products,
         selected_province=prov,
-        selected_days=window,
+        selected_desde=ventana_desde,
+        selected_hasta=ventana_hasta,
         capa=selected_layer,
     )
     # «Ver el detalle» de un panel abre la ventana Precios sin cerrar las demás.
     open_precios_query = products_query(
         active_slugs,
         provincia=prov_slug,
-        dias=window,
+        desde=ventana_desde,
+        hasta=ventana_hasta,
         ver=open_views if "precios" in open_views else [*open_views, "precios"],
         capa=selected_layer,
     )
 
     def province_link(slug: str) -> str:
         """Enlace de una provincia del mapa a la vista filtrada por ella,
-        preservando los chips activos, la ventana de días, las ventanas
+        preservando los chips activos, el rango de calendario, las ventanas
         flotantes abiertas y la capa del mapa."""
         return products_query(
-            active_slugs, provincia=slug, dias=window, ver=open_views, capa=selected_layer
+            active_slugs,
+            provincia=slug,
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+            ver=open_views,
+            capa=selected_layer,
         )
 
     # Panel de producto (muestrario aprobado el 2026-09-10): cifra con su
     # muestra, comparación con el período anterior del mismo largo y rango por
     # período. El período anterior sale de la misma normalización y los mismos
-    # filtros que la ventana, pidiendo el doble de días y quedándose con la
-    # mitad vieja, así los dos períodos no se pisan.
-    hoy = date.today()
+    # filtros que la ventana, pidiendo un rango del mismo largo justo antes de
+    # `ventana_desde`, así los dos períodos no se pisan.
     previous_obs = [
         o
         for o in _visible_observations(
@@ -341,9 +364,10 @@ def _render_home(
             pilot=pilot,
             products=active_set or None,
             province=selected_province,
-            window=2 * window,
+            desde=ventana_desde - timedelta(days=window),
+            hasta=ventana_hasta,
         )
-        if o.day < hoy - timedelta(days=window)
+        if o.day < ventana_desde
     ]
     panel_headlines = build_headlines(obs, previous_obs)
     panel_ranges = build_range_series(obs, window_days=window, hoy=hoy)
@@ -363,14 +387,19 @@ def _render_home(
     # y la hoja resalta la propia contra todas las demás—. Todos los piloto;
     # la plantilla elige qué productos mostrar.
     all_provinces_obs = _visible_observations(
-        db, pilot=pilot, products=None, province=None, window=window
+        db, pilot=pilot, products=None, province=None, desde=ventana_desde, hasta=ventana_hasta
     )
     all_provinces_previous = [
         o
         for o in _visible_observations(
-            db, pilot=pilot, products=None, province=None, window=2 * window
+            db,
+            pilot=pilot,
+            products=None,
+            province=None,
+            desde=ventana_desde - timedelta(days=window),
+            hasta=ventana_hasta,
         )
-        if o.day < hoy - timedelta(days=window)
+        if o.day < ventana_desde
     ]
 
     # «Cómo se movió»: con una provincia elegida, SOLO esa —el operador la
@@ -394,7 +423,8 @@ def _render_home(
         producto=active_slugs[0] if len(active_slugs) == 1 else "",
         productos=active_slugs if len(active_slugs) > 1 else (),
         provincia=product_slug(selected_province) if selected_province else "",
-        dias=window,
+        desde=ventana_desde,
+        hasta=ventana_hasta,
     )
     map_view = build_map(all_province_names, _rows_by_province(db), _published_provinces(db))
     # El mapa interactivo (Leaflet, 2026-09-12) no recorre `map.provinces` en
@@ -413,7 +443,8 @@ def _render_home(
             cards,
             series,
             selected_province=prov,
-            selected_days=window,
+            selected_desde=ventana_desde,
+            selected_hasta=ventana_hasta,
             ver=open_views,
             capa=selected_layer,
         ),
@@ -450,6 +481,8 @@ def _render_home(
             "cards": cards,
             "series": series,
             "window_days": window,
+            "selected_desde": ventana_desde,
+            "selected_hasta": ventana_hasta,
             "csv_href": csv_href,
             "data_freshness_day": latest_day,
             "data_freshness_days_ago": freshness_days_ago,
@@ -457,7 +490,8 @@ def _render_home(
                 pilot_names,
                 active_products,
                 selected_province=prov,
-                selected_days=window,
+                selected_desde=ventana_desde,
+                selected_hasta=ventana_hasta,
                 ver=open_views,
                 capa=selected_layer,
             ),
@@ -466,24 +500,28 @@ def _render_home(
                 province_names,
                 selected_province,
                 selected_product=selected or "",
-                selected_days=window,
+                selected_desde=ventana_desde,
+                selected_hasta=ventana_hasta,
                 active_products=active_products,
                 ver=open_views,
                 capa=selected_layer,
             ),
             "window_nav": build_window_nav(
-                window,
+                ventana_desde,
+                ventana_hasta,
                 selected,
                 selected_province=prov,
                 active_products=active_products,
                 ver=open_views,
                 capa=selected_layer,
+                hoy=hoy,
             ),
             "layer_nav": build_layer_nav(
                 selected_layer,
                 active_products=active_products,
                 selected_province=prov,
-                selected_days=window,
+                selected_desde=ventana_desde,
+                selected_hasta=ventana_hasta,
                 ver=open_views,
             ),
             "selected_layer": selected_layer,
@@ -509,13 +547,17 @@ def public_home(
     producto: str | None = None,
     productos: str | None = None,
     provincia: str | None = None,
+    desde: str | None = None,
+    hasta: str | None = None,
     dias: str | None = None,
     ver: str | None = None,
     capa: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Home pública. `productos` (multi-selección de chips), `producto` (alias de
-    uno), `provincia`, `dias`, `ver` (ventanas flotantes abiertas) y `capa`
+    uno), `provincia`, `desde`/`hasta` (rango de calendario del date picker,
+    2026-09-14; `dias` sigue aceptándose como alias de compatibilidad —ver
+    `resolve_window`—), `ver` (ventanas flotantes abiertas) y `capa`
     (capa del mapa) son query string opcional; un valor raro no da 404, se
     muestra todo."""
     return _render_home(
@@ -524,6 +566,8 @@ def public_home(
         producto=producto,
         productos=productos,
         provincia=provincia,
+        desde=desde,
+        hasta=hasta,
         dias=dias,
         ver=ver,
         capa=capa,
@@ -535,6 +579,8 @@ def public_product(
     slug: str,
     request: Request,
     provincia: str | None = None,
+    desde: str | None = None,
+    hasta: str | None = None,
     dias: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
@@ -550,10 +596,10 @@ def public_product(
     entrada que reemplaza a la del mismo día que la registraba como
     candidato sin implementar).
 
-    `?provincia=` y `?dias=` siguen aceptándose para acotar el panel; `?ver=`
-    y `?capa=` ya no significan nada acá —no hay ventanas ni capas de mapa
-    en esta vista— y un enlace viejo con esos parámetros los ignora en vez
-    de romperse.
+    `?provincia=` y `?desde=`/`?hasta=` (o `?dias=`, alias de compatibilidad)
+    siguen aceptándose para acotar el panel; `?ver=` y `?capa=` ya no
+    significan nada acá —no hay ventanas ni capas de mapa en esta vista— y
+    un enlace viejo con esos parámetros los ignora en vez de romperse.
 
     Un slug desconocido da 404, a diferencia de `?producto=` raro que muestra
     todo: en una ruta con nombre de recurso, «no existe» es la respuesta
@@ -569,14 +615,15 @@ def public_product(
     pilot = frozenset(pilot_names)
     all_province_names = _all_province_names(db)
     selected_province = resolve_province(all_province_names, provincia)
-    window = resolve_days(dias)
+    ventana_desde, ventana_hasta = resolve_window(desde, hasta, dias)
 
     panel = _build_focused_product_panel(
         db,
         pilot=pilot,
         product_name=product_name,
         selected_province=selected_province,
-        window=window,
+        desde=ventana_desde,
+        hasta=ventana_hasta,
     )
     latest_day = _latest_price_day(db, pilot)
     freshness_days_ago = (date.today() - latest_day).days if latest_day else None
@@ -593,14 +640,18 @@ def public_product(
             "public_product_light.html",
             {
                 "panel": panel,
-                "window_days": window,
+                "window_days": (ventana_hasta - ventana_desde).days,
+                "selected_desde": ventana_desde,
+                "selected_hasta": ventana_hasta,
                 "data_freshness_day": latest_day,
                 "data_freshness_days_ago": freshness_days_ago,
                 "selected_province": selected_province,
+                "selected_province_slug": product_slug(selected_province) if selected_province else "",
                 "map_href": products_query(
                     [slug],
                     provincia=product_slug(selected_province) if selected_province else "",
-                    dias=window,
+                    desde=ventana_desde,
+                    hasta=ventana_hasta,
                 ),
             },
         ),
@@ -627,6 +678,8 @@ def public_data_csv(
     producto: str | None = None,
     productos: str | None = None,
     provincia: str | None = None,
+    desde: str | None = None,
+    hasta: str | None = None,
     dias: str | None = None,
     db: Session = Depends(get_db),
 ) -> Response:
@@ -648,7 +701,7 @@ def public_data_csv(
         if one is not None:
             active = [one]
     selected_province = resolve_province(_all_province_names(db), provincia)
-    window = resolve_days(dias)
+    ventana_desde, ventana_hasta = resolve_window(desde, hasta, dias)
 
     rows = sorted(
         _visible_observations(
@@ -656,7 +709,8 @@ def public_data_csv(
             pilot=pilot,
             products=frozenset(active) or None,
             province=selected_province,
-            window=window,
+            desde=ventana_desde,
+            hasta=ventana_hasta,
         ),
         key=lambda o: (o.product_name, o.province_name or "", o.day),
     )

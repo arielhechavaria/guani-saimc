@@ -10002,3 +10002,64 @@ consciente, no algo en lo que se puede caer sin querer con el primer clic.
 Consecuencia: `_product_link`/`build_product_nav` (código huérfano, ver la
 entrada revertida) siguen sin uso real. Suite completa: 1679 casos, sin
 deuda de lint nueva.
+
+## 2026-09-14 — Date picker de rango de calendario en la home pública
+Contexto: al corregir el enganche del riel de chips, el operador pidió
+pensar el siguiente tema — "necesitamos un componente de fechas... que
+va a regir el tiempo que se está midiendo para los anuncios procesados,
+hoy estamos asumiendo los últimos 30 días". Se investigó el motor antes de
+diseñar (fork dedicado): `compute_retail_observations`/`compute_retail_
+ranges` (`cells.py`) filtran fecha en Python puro (`cutoff = hoy -
+timedelta(days=days)`, sin tope superior), no en SQL — agregar un tope
+opcional era un cambio chico y aditivo. Se le preguntó al operador si el
+picker debía elegir un rango de calendario real (desde→hasta) o solo
+presets de N días con mejor UI; eligió lo primero.
+Decisión, en capas:
+- **Motor** (`cells.py`): `compute_retail_observations`/`compute_retail_
+  ranges` suman `hasta: date | None = None` — `None` (el default) es
+  exactamente el comportamiento de siempre, así que ningún caller existente
+  (`/control`, `compute_availability`) se entera del cambio.
+- **Capa de URLs** (`product_nav.py`): nuevo `resolve_window(desde, hasta,
+  dias, hoy=None)` — `desde`/`hasta` explícitos y válidos (ISO, desde ≤
+  hasta) ganan; si no, cae a `?dias=` de siempre (compatibilidad con
+  enlaces viejos). Todo constructor de URL (`_query`, `products_query`,
+  `light_product_query`, `download_href`, `build_product_chips`,
+  `build_province_nav`, `build_view_menu`, `build_layer_nav`,
+  `build_window_nav`) pasa de `dias: int` a `desde: date, hasta: date`
+  explícitos y obligatorios —sin default—: un caller que no los pase
+  falla en el momento (`TypeError`/mypy), no en silencio.
+- **`desde`/`hasta` viajan SIEMPRE explícitos en la URL**, a diferencia de
+  `dias` (que se omitía en el default). Es la respuesta directa al pedido
+  de "que siempre se pueda ver el rango en uso": una URL que dice
+  exactamente qué ventana mira es más clara para compartir, no menos —y
+  evita que un link compartido muestre datos distintos según cuándo lo
+  abra el destinatario (antes, `?dias=30` sin fecha ancla recalculaba
+  "los últimos 30 días" contra el reloj de quien lo abre).
+- **Router** (`routers/public.py`): resuelve el rango efectivo una vez y
+  lo pasa como `hoy=hasta`/`window_days=(hasta-desde).days` a las 5
+  funciones de `price_charts.py` que binean por período —sin tocar sus
+  firmas, que ya aceptaban `hoy`/`window_days`—. Aplica tanto a la home
+  con mapa como a `/producto/{slug}`.
+- **UI**: dos `<input type="date">` siempre visibles —junto al riel de
+  chips y el selector de provincia en la home, junto a la nota de frescura
+  en la vista liviana—, precargados con el rango en uso (eso ES el "que
+  siempre se pueda ver"). `<form>` real sin `onchange` de auto-submit —dos
+  campos, no uno— con botón "Ver" explícito; degrada sin JS. Los atajos de
+  7/30/90 días (`window_nav`) se preservan tal cual junto al picker, ahora
+  expresados como el rango de calendario que representan.
+Descartado: omitir `desde`/`hasta` de la URL cuando coinciden con el
+default (como hacía `dias`). Habría dejado el rango implícito otra vez,
+justo lo que el pedido quería evitar.
+Descartado: auto-submit al cambiar cualquiera de las dos fechas. Con dos
+campos, cambiar el primero dispararía un envío con el segundo todavía
+viejo — dos navegaciones en vez de una, y una de ellas con datos a medio
+completar.
+Consecuencia: superficie de test grande (motor + capa de URLs + router +
+plantillas, ~9 archivos) pero acotada y ya cubierta; toda la suite verde.
+Un efecto colateral cosmético del reporte de `lint_drift.py`: el nuevo
+docstring de `compute_retail_observations` corrió unas líneas más abajo un
+`no-redef` de mypy ya aceptado (`as_total`/`as_unit`, sin relación con este
+cambio) — aparece como "nuevo" + "resuelto" en la misma corrida porque el
+piso es por número de línea, no cambió la deuda real (142 antes, 142
+ahora). Queda para que el operador corra `--update-baseline` si lo
+confirma, no se tocó solo.

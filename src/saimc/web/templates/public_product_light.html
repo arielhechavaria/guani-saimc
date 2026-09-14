@@ -64,6 +64,32 @@ Sin anuncios en los últimos {{ window_days }} días.
   .ph-lite-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
   .ph-lite-vacio { margin-top: var(--m3-space-5); color: var(--m3-on-surface-variant); }
   .ph-lite-mapa { margin-top: var(--m3-space-6); }
+
+  /* Date picker de rango de calendario (2026-09-14, pedido del operador:
+     "que siempre se pueda ver el rango en uso y que se pueda cambiar").
+     Sin JS ni hx-get acá: la vista liviana no tiene nada parcial que
+     actualizar, un submit normal alcanza. */
+  .ph-lite-window {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+    margin-top: var(--m3-space-3);
+  }
+  .ph-lite-window-label {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .8125rem; font-weight: 500;
+    padding: .3rem .7rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant);
+    background: var(--m3-surface); color: var(--m3-on-surface-variant);
+  }
+  .ph-lite-window-label-text { font-size: .6875rem; letter-spacing: .05em; opacity: .8; }
+  .ph-lite-window-label input[type="date"] {
+    font: inherit; font-size: .8125rem; color: inherit;
+    border: none; background: none; padding: 0; min-width: 0;
+  }
+  .ph-lite-window-submit {
+    font: inherit; font-size: .8125rem; font-weight: 500;
+    padding: .4rem .95rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--ph-accent); background: var(--ph-accent); color: var(--ph-on-accent);
+  }
 </style>
 {% endblock %}
 
@@ -73,6 +99,19 @@ Sin anuncios en los últimos {{ window_days }} días.
   Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
 </p>
 {% endif %}
+
+<form class="ph-lite-window" method="get">
+  {% if selected_province_slug %}<input type="hidden" name="provincia" value="{{ selected_province_slug }}">{% endif %}
+  <label class="ph-lite-window-label">
+    <span class="ph-lite-window-label-text">Desde</span>
+    <input type="date" name="desde" value="{{ selected_desde.isoformat() }}">
+  </label>
+  <label class="ph-lite-window-label">
+    <span class="ph-lite-window-label-text">Hasta</span>
+    <input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}">
+  </label>
+  <button type="submit" class="ph-lite-window-submit">Ver</button>
+</form>
 
 {% if panel.blocks %}
 <ul class="ph-lite-blocks">

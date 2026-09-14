@@ -14,6 +14,7 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 #: Ventana por defecto de tarjetas y series (días). 30 y no los 7 de `/control`:
 #: esa vista responde «¿cómo se movió esta semana?» para el operador, y esta
@@ -118,25 +119,70 @@ def resolve_layer(raw: str | None) -> str:
     return raw if raw in LAYER_CHOICES else DEFAULT_LAYER
 
 
+def _parse_iso_date(raw: str | None) -> date | None:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def default_window(hoy: date | None = None) -> tuple[date, date]:
+    """El rango de siempre: últimos `DEFAULT_WINDOW_DAYS` días hasta hoy."""
+    hoy = hoy or date.today()
+    return hoy - timedelta(days=DEFAULT_WINDOW_DAYS), hoy
+
+
+def resolve_window(
+    desde_raw: str | None,
+    hasta_raw: str | None,
+    dias_raw: str | int | None,
+    *,
+    hoy: date | None = None,
+) -> tuple[date, date]:
+    """Rango de calendario efectivo para el date picker (2026-09-14, reporte
+    de mejoras no consideradas — pedido del operador después de esa idea).
+
+    `desde`/`hasta` explícitos ganan si son fechas ISO válidas y
+    `desde <= hasta`. Si no —ausentes, mal formadas, o al revés— cae al
+    `?dias=` de siempre (`resolve_days`): un enlace viejo sigue funcionando,
+    y un query string roto no da 404 ni error, mismo criterio que el resto
+    de los filtros de esta vista.
+    """
+    hoy = hoy or date.today()
+    desde = _parse_iso_date(desde_raw)
+    hasta = _parse_iso_date(hasta_raw)
+    if desde is not None and hasta is not None and desde <= hasta:
+        return desde, hasta
+    dias = resolve_days(dias_raw)
+    return hoy - timedelta(days=dias), hoy
+
+
 def _query(
     *,
     producto: str = "",
     productos: Sequence[str] = (),
     provincia: str = "",
-    dias: int = DEFAULT_WINDOW_DAYS,
+    desde: date,
+    hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     path: str = "/",
 ) -> str:
     """Compone la URL con los ejes activos, en orden fijo
-    producto/provincia/días/ver/capa.
+    producto/provincia/desde/hasta/ver/capa.
 
     `productos` (lista de slugs, multi-selección) gana sobre `producto` (slug
     único, alias histórico) cuando trae algo: se emite `productos=a,b`. `ver`
     son las ventanas flotantes abiertas desde el menú del header. `capa` es la
-    capa del mapa (§ mapa, 2026-09-11). Omite `dias` y `capa` cuando son el
-    default para no ensuciar la URL compartible con un parámetro redundante.
-    La descarga usa `path="/datos.csv"`.
+    capa del mapa (§ mapa, 2026-09-11).
+
+    `desde`/`hasta` van SIEMPRE explícitos (2026-09-14) —a diferencia de
+    `capa`, que se omite si es el default—: son la respuesta directa al
+    pedido de que el rango en uso se vea siempre, y una URL que dice
+    exactamente qué ventana mira es más clara para compartir, no menos. La
+    descarga usa `path="/datos.csv"`.
     """
     params = []
     if productos:
@@ -145,45 +191,47 @@ def _query(
         params.append(f"producto={producto}")
     if provincia:
         params.append(f"provincia={provincia}")
-    if dias != DEFAULT_WINDOW_DAYS:
-        params.append(f"dias={dias}")
+    params.append(f"desde={desde.isoformat()}")
+    params.append(f"hasta={hasta.isoformat()}")
     if ver:
         params.append("ver=" + ",".join(ver))
     if capa != DEFAULT_LAYER:
         params.append(f"capa={capa}")
-    return f"{path}?" + "&".join(params) if params else path
+    return f"{path}?" + "&".join(params)
 
 
 def products_query(
     product_slugs: Sequence[str],
     *,
     provincia: str = "",
-    dias: int = DEFAULT_WINDOW_DAYS,
+    desde: date,
+    hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     path: str = "/",
 ) -> str:
     """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
-    preservando provincia, ventana de días, ventanas abiertas y capa del mapa.
-    La usan el riel de chips, los paneles flotantes, el mapa y la hoja de
-    provincia."""
+    preservando provincia, rango de calendario, ventanas abiertas y capa del
+    mapa. La usan el riel de chips, los paneles flotantes, el mapa y la hoja
+    de provincia."""
     return _query(
         productos=list(product_slugs),
         provincia=provincia,
-        dias=dias,
+        desde=desde,
+        hasta=hasta,
         ver=list(ver),
         capa=capa,
         path=path,
     )
 
 
-def light_product_query(slug: str, *, provincia: str = "", dias: int = DEFAULT_WINDOW_DAYS) -> str:
+def light_product_query(slug: str, *, provincia: str = "", desde: date, hasta: date) -> str:
     """Enlace a la vista liviana de un producto (`/producto/<slug>`, sin
-    mapa, 2026-09-14) desde el panel flotante. Preserva provincia y ventana
-    de días si están puestas —esa vista los sigue aceptando aunque no tenga
-    mapa ni ventanas que perder—; no lleva `ver` ni `capa` porque ninguno de
-    los dos significa nada ahí."""
-    return _query(provincia=provincia, dias=dias, path=f"/producto/{slug}")
+    mapa, 2026-09-14) desde el panel flotante. Preserva provincia y rango de
+    calendario si están puestos —esa vista los sigue aceptando aunque no
+    tenga mapa ni ventanas que perder—; no lleva `ver` ni `capa` porque
+    ninguno de los dos significa nada ahí."""
+    return _query(provincia=provincia, desde=desde, hasta=hasta, path=f"/producto/{slug}")
 
 
 def download_href(
@@ -191,7 +239,8 @@ def download_href(
     producto: str = "",
     productos: Sequence[str] = (),
     provincia: str = "",
-    dias: int = DEFAULT_WINDOW_DAYS,
+    desde: date,
+    hasta: date,
 ) -> str:
     """URL de `/datos.csv` con los mismos filtros que la vista, para que la
     descarga traiga exactamente lo que se está viendo."""
@@ -199,22 +248,23 @@ def download_href(
         producto=producto,
         productos=productos,
         provincia=provincia,
-        dias=dias,
+        desde=desde,
+        hasta=hasta,
         path="/datos.csv",
     )
 
 
-def _product_link(slug: str, *, provincia: str, dias: int) -> str:
+def _product_link(slug: str, *, provincia: str, desde: date, hasta: date, hoy: date | None = None) -> str:
     """Enlace de un chip de producto: la URL limpia `/producto/<slug>` cuando no
     hay otro filtro activo, y el query string en cuanto lo hay.
 
-    La ruta limpia solo sabe de un producto; provincia y ventana viajan como
+    La ruta limpia solo sabe de un producto; provincia y rango viajan como
     query. Mantener las dos formas —y no forzar un redirect— es lo que pide el
     ítem del board: `/producto/arroz` para compartir, `?producto=` como alias.
     """
-    if not provincia and dias == DEFAULT_WINDOW_DAYS:
+    if not provincia and (desde, hasta) == default_window(hoy):
         return f"/producto/{slug}"
-    return _query(producto=slug, provincia=provincia, dias=dias)
+    return _query(producto=slug, provincia=provincia, desde=desde, hasta=hasta)
 
 
 @dataclass(frozen=True)
@@ -242,15 +292,16 @@ class WindowChoice:
 def build_product_nav(
     pilot_names: Iterable[str],
     selected_name: str | None,
-    selected_days: int = DEFAULT_WINDOW_DAYS,
+    selected_desde: date,
+    selected_hasta: date,
     *,
     selected_province: str = "",
 ) -> list[NavChoice]:
     """«Todos» + un ítem por producto piloto, marcando el activo.
 
-    Cada enlace preserva `selected_province` y `selected_days`: cambiar de
-    producto no debería resetear la provincia ni la ventana que se venía
-    mirando.
+    Cada enlace preserva `selected_province` y el rango de calendario:
+    cambiar de producto no debería resetear la provincia ni la ventana que
+    se venía mirando.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     choices = [
@@ -258,7 +309,7 @@ def build_product_nav(
             label="Todos",
             slug="",
             is_selected=selected_name is None,
-            query=_query(producto="", provincia=prov_slug, dias=selected_days),
+            query=_query(producto="", provincia=prov_slug, desde=selected_desde, hasta=selected_hasta),
         )
     ]
     for name in pilot_names:
@@ -268,7 +319,9 @@ def build_product_nav(
                 label=name,
                 slug=slug,
                 is_selected=name == selected_name,
-                query=_product_link(slug, provincia=prov_slug, dias=selected_days),
+                query=_product_link(
+                    slug, provincia=prov_slug, desde=selected_desde, hasta=selected_hasta
+                ),
             )
         )
     return choices
@@ -279,7 +332,8 @@ def build_province_nav(
     selected_name: str | None,
     *,
     selected_product: str = "",
-    selected_days: int = DEFAULT_WINDOW_DAYS,
+    selected_desde: date,
+    selected_hasta: date,
     active_products: Sequence[str] = (),
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
@@ -287,7 +341,7 @@ def build_province_nav(
     """«Todas» + un ítem por provincia con dato piloto, marcando la activa.
 
     Simétrica a `build_product_nav`; cada enlace preserva el producto (o el
-    conjunto `active_products` de los chips), la ventana de días, las
+    conjunto `active_products` de los chips), el rango de calendario, las
     ventanas flotantes abiertas (`ver`) y la capa del mapa (`capa`): la barra
     vive dentro de la ventana «Precios», y cambiar de provincia no puede
     cerrarla ni resetear ninguna de las dos.
@@ -303,7 +357,8 @@ def build_province_nav(
                 producto=prod_slug,
                 productos=active_slugs,
                 provincia="",
-                dias=selected_days,
+                desde=selected_desde,
+                hasta=selected_hasta,
                 ver=ver,
                 capa=capa,
             ),
@@ -320,7 +375,8 @@ def build_province_nav(
                     producto=prod_slug,
                     productos=active_slugs,
                     provincia=slug,
-                    dias=selected_days,
+                    desde=selected_desde,
+                    hasta=selected_hasta,
                     ver=ver,
                     capa=capa,
                 ),
@@ -410,7 +466,8 @@ def build_product_chips(
     active_names: Sequence[str],
     *,
     selected_province: str = "",
-    selected_days: int = DEFAULT_WINDOW_DAYS,
+    selected_desde: date,
+    selected_hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
 ) -> list[ProductChip]:
@@ -419,8 +476,9 @@ def build_product_chips(
     El conjunto activo (`active_names`) viaja como `?productos=` en el orden en
     que se fueron prendiendo. Un chip apagado agrega su slug al final al
     clickearlo; uno ya prendido no hace nada —cerrar su panel es cosa de la ×
-    del panel, no del chip—. `ver` y `capa` se preservan: prender un producto
-    no cierra las ventanas abiertas ni cambia la capa del mapa.
+    del panel, no del chip—. `ver`, `capa` y el rango de calendario se
+    preservan: prender un producto no cierra las ventanas abiertas, ni
+    cambia la capa del mapa, ni resetea la ventana de fechas.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_names]
@@ -440,7 +498,12 @@ def build_product_chips(
                 is_active=is_active,
                 icon=product_icon(name),
                 query=products_query(
-                    resultado, provincia=prov_slug, dias=selected_days, ver=ver, capa=capa
+                    resultado,
+                    provincia=prov_slug,
+                    desde=selected_desde,
+                    hasta=selected_hasta,
+                    ver=ver,
+                    capa=capa,
                 ),
             )
         )
@@ -448,16 +511,26 @@ def build_product_chips(
 
 
 def build_window_nav(
-    selected_days: int,
+    selected_desde: date,
+    selected_hasta: date,
     selected_name: str | None = None,
     *,
     selected_province: str = "",
     active_products: Sequence[str] = (),
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
+    hoy: date | None = None,
 ) -> list[WindowChoice]:
-    """Las tres ventanas de días, marcando la activa y preservando producto (o
-    el conjunto de chips), provincia, ventanas flotantes abiertas y capa."""
+    """Atajos rápidos del date picker (2026-09-14): «7/30/90 días» siguen
+    siendo los mismos tres cortes de lectura de siempre, ahora expresados
+    como el rango de calendario que representan (`hoy - N días` a `hoy`) en
+    vez de un `?dias=N` aparte. Marca el activo solo si el rango elegido
+    coincide EXACTO con uno de los tres —un rango personalizado no marca
+    ninguno, que es la señal correcta: no es ninguno de los presets—.
+    Preserva producto (o el conjunto de chips), provincia, ventanas
+    flotantes abiertas y capa.
+    """
+    hoy = hoy or date.today()
     prod_slug = product_slug(selected_name) if selected_name else ""
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(n) for n in active_products]
@@ -465,12 +538,13 @@ def build_window_nav(
         WindowChoice(
             label=f"{days} días",
             days=days,
-            is_selected=days == selected_days,
+            is_selected=(selected_desde, selected_hasta) == (hoy - timedelta(days=days), hoy),
             query=_query(
                 producto=prod_slug,
                 productos=active_slugs,
                 provincia=prov_slug,
-                dias=days,
+                desde=hoy - timedelta(days=days),
+                hasta=hoy,
                 ver=ver,
                 capa=capa,
             ),
@@ -540,7 +614,8 @@ def build_view_menu(
     *,
     active_products: Sequence[str] = (),
     selected_province: str = "",
-    selected_days: int = DEFAULT_WINDOW_DAYS,
+    selected_desde: date,
+    selected_hasta: date,
     capa: str = DEFAULT_LAYER,
 ) -> list[ViewToggle]:
     """Un ítem por ventana, en el orden del menú. Varias pueden estar abiertas a
@@ -562,7 +637,8 @@ def build_view_menu(
                 query=products_query(
                     active_slugs,
                     provincia=prov_slug,
-                    dias=selected_days,
+                    desde=selected_desde,
+                    hasta=selected_hasta,
                     ver=resultado,
                     capa=capa,
                 ),
@@ -576,7 +652,8 @@ def build_layer_nav(
     *,
     active_products: Sequence[str] = (),
     selected_province: str = "",
-    selected_days: int = DEFAULT_WINDOW_DAYS,
+    selected_desde: date,
+    selected_hasta: date,
     ver: Sequence[str] = (),
 ) -> list[NavChoice]:
     """Las dos capas del mapa, marcando la activa y preservando todo lo demás.
@@ -595,7 +672,8 @@ def build_layer_nav(
             query=products_query(
                 active_slugs,
                 provincia=prov_slug,
-                dias=selected_days,
+                desde=selected_desde,
+                hasta=selected_hasta,
                 ver=ver,
                 capa=layer,
             ),

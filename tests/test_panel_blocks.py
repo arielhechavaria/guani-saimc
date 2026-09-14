@@ -2,7 +2,7 @@
 rango por período, un bloque por provincia."""
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from saimc.cells import RetailObservation
@@ -11,7 +11,17 @@ from saimc.web.panel_view import attach_blocks, build_product_panels, group_bloc
 from saimc.web.price_charts import build_cell_ads, build_headlines, build_range_series
 
 HOY = date(2026, 8, 30)
+DESDE = HOY - timedelta(days=30)
 _EVIDENCE_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+def _panels(*args: object, **kwargs: object) -> list:
+    """`build_product_panels` con el rango de calendario de siempre en estos
+    tests (`DESDE`-`HOY`) ya puesto — ninguno de estos casos ejercita el
+    date picker en sí, solo necesita un rango válido para armar el panel."""
+    kwargs.setdefault("selected_desde", DESDE)
+    kwargs.setdefault("selected_hasta", HOY)
+    return build_product_panels(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def _obs(
@@ -82,7 +92,7 @@ class TestAttachBlocks:
             _obs("Arroz", "Santiago de Cuba", 28, "320"),
             _obs("Aceite", "La Habana", 30, "3400"),
         ]
-        panels = build_product_panels(["Arroz"], [_card("Arroz", "La Habana")], [])
+        panels = _panels(["Arroz"], [_card("Arroz", "La Habana")], [])
 
         (panel,) = attach_blocks(
             panels,
@@ -100,7 +110,7 @@ class TestAttachBlocks:
         assert all(b.ranges.province_name == b.headline.province_name for b in panel.blocks)
 
     def test_sin_cifras_el_panel_queda_sin_bloques(self) -> None:
-        (panel,) = attach_blocks(build_product_panels(["Arroz"], [], []), [], [])
+        (panel,) = attach_blocks(_panels(["Arroz"], [], []), [], [])
 
         assert panel.blocks == ()
 
@@ -114,7 +124,7 @@ class TestAttachBlocks:
             _obs("Arroz", "Santiago de Cuba", 28, "320", evidence_id=id_santiago),
         ]
         cards = [_card("Arroz", "La Habana"), _card("Arroz", "Santiago de Cuba")]
-        panels = build_product_panels(["Arroz"], cards, [])
+        panels = _panels(["Arroz"], cards, [])
 
         (panel,) = attach_blocks(
             panels,
@@ -129,7 +139,7 @@ class TestAttachBlocks:
 
     def test_sin_ads_by_cell_los_bloques_quedan_sin_anuncios(self) -> None:
         obs = [_obs("Arroz", "La Habana", 30, "300")]
-        panels = build_product_panels(["Arroz"], [_card("Arroz", "La Habana")], [])
+        panels = _panels(["Arroz"], [_card("Arroz", "La Habana")], [])
 
         (panel,) = attach_blocks(
             panels, build_headlines(obs, []), build_range_series(obs, window_days=30, hoy=HOY)
@@ -142,7 +152,7 @@ class TestAttachBlocks:
         de La Habana; ahora cada formato trae el suyo, sin mezclar su cifra
         ni su rango con el del otro."""
         obs = _obs_aceite_dos_formatos()
-        panels = build_product_panels(["Aceite"], [_card("Aceite", "La Habana")], [])
+        panels = _panels(["Aceite"], [_card("Aceite", "La Habana")], [])
 
         (panel,) = attach_blocks(
             panels,
@@ -172,7 +182,7 @@ class TestGroupBlocksByProvince:
         ]
         cards = [_card("Arroz", "La Habana"), _card("Arroz", "Santiago de Cuba")]
         panels = attach_blocks(
-            build_product_panels(["Arroz"], cards, []),
+            _panels(["Arroz"], cards, []),
             build_headlines(obs, []),
             build_range_series(obs, window_days=30, hoy=HOY),
         )
@@ -188,7 +198,7 @@ class TestGroupBlocksByProvince:
             _obs("Aceite", "La Habana", 29, "3400"),
         ]
         panels = attach_blocks(
-            build_product_panels(
+            _panels(
                 ["Arroz", "Aceite"],
                 [_card("Arroz", "La Habana"), _card("Aceite", "La Habana")],
                 [],
@@ -203,7 +213,7 @@ class TestGroupBlocksByProvince:
         assert {p.name for p, _ in agrupado["la-habana"]} == {"Arroz", "Aceite"}
 
     def test_producto_sin_bloques_no_agrega_nada(self) -> None:
-        panels = attach_blocks(build_product_panels(["Picadillo"], [], []), [], [])
+        panels = attach_blocks(_panels(["Picadillo"], [], []), [], [])
 
         assert group_blocks_by_province(panels) == {}
 
@@ -214,7 +224,7 @@ class TestGroupBlocksByProvince:
         anuncios, que es la que `panel.blocks` ya trae primero."""
         obs = _obs_aceite_dos_formatos()
         panels = attach_blocks(
-            build_product_panels(["Aceite"], [_card("Aceite", "La Habana")], []),
+            _panels(["Aceite"], [_card("Aceite", "La Habana")], []),
             build_headlines(obs, []),
             build_range_series(obs, window_days=30, hoy=HOY),
         )

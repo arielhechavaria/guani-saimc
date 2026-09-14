@@ -16,13 +16,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import date
 from decimal import Decimal
 
 from saimc.web.card_view import ProductCard, format_price
 from saimc.web.price_charts import AdRow, Headline, RangeSeries
 from saimc.web.product_nav import (
     DEFAULT_LAYER,
-    DEFAULT_WINDOW_DAYS,
     has_product_illustration,
     light_product_query,
     product_icon,
@@ -114,7 +114,8 @@ def build_product_panels(
     series: list[PriceSeries],
     *,
     selected_province: str = "",
-    selected_days: int = DEFAULT_WINDOW_DAYS,
+    selected_desde: date,
+    selected_hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
 ) -> list[ProductPanel]:
@@ -144,11 +145,14 @@ def build_product_panels(
         close_query = products_query(
             [s for s in active_slugs if s != this_slug],
             provincia=prov_slug,
-            dias=selected_days,
+            desde=selected_desde,
+            hasta=selected_hasta,
             ver=ver,
             capa=capa,
         )
-        light_query = light_product_query(this_slug, provincia=prov_slug, dias=selected_days)
+        light_query = light_product_query(
+            this_slug, provincia=prov_slug, desde=selected_desde, hasta=selected_hasta
+        )
         if not pcards:
             panels.append(
                 ProductPanel(
