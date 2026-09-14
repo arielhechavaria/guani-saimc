@@ -814,9 +814,22 @@
   /* ── Cifra con su muestra y rango por período, por provincia, en el panel.
      La cifra va en la sans y con figuras proporcionales (es un número suelto,
      no una columna); las marcas del eje y la muestra, en mono tabular. */
-  .ph-cifra { display: grid; gap: .35rem; padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
+  {# `<details>`/`<summary>` (2026-09-14): con 2+ bloques —varias provincias
+     o, desde la separación por formato del mismo día, varios envases— solo
+     el primero arranca abierto; el resto colapsa a su `<summary>` con la
+     cifra de vistazo, mismo mecanismo nativo que ya usa la insignia del
+     mapa. El operador lo pidió al ver crecer el panel con la separación
+     por formato. #}
+  .ph-cifra { padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
   .ph-cifra:first-child { padding-top: 0; border-top: 0; }
-  .ph-cifra-prov { font-size: .6875rem; letter-spacing: .12em; text-transform: uppercase; color: var(--m3-on-surface-variant); }
+  .ph-cifra-prov {
+    display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
+    cursor: pointer;
+    font-size: .6875rem; letter-spacing: .12em; text-transform: uppercase; color: var(--m3-on-surface-variant);
+  }
+  .ph-cifra-prov-precio { flex: none; font-variant-numeric: tabular-nums; }
+  .ph-cifra[open] .ph-cifra-prov-precio { display: none; }
+  .ph-cifra-body { display: grid; gap: .35rem; margin-top: .55rem; }
   .ph-cifra-fila { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; }
   .ph-cifra-valor { font: 600 1.75rem/1 var(--m3-font); color: var(--m3-on-surface); }
   .ph-cifra-unidad { font-size: .8125rem; color: var(--m3-on-surface-variant); }
@@ -1571,38 +1584,47 @@
                  contestaba)—: la cifra con su muestra (§9.0: nunca un valor
                  suelto) y la comparación con el período anterior del mismo
                  largo, como número y sin color de alarma (§12.6); debajo, el
-                 rango por período. Muestrario aprobado el 2026-09-10. #}
+                 rango por período. Muestrario aprobado el 2026-09-10.
+
+                 Con 2+ bloques (varias provincias o varios formatos) solo el
+                 primero —el de más muestra, ya viene ordenado así— arranca
+                 abierto; el resto colapsa a `<summary>` con su cifra de
+                 vistazo, mismo mecanismo nativo que ya usa la insignia del
+                 mapa (`<details>`, sin JS propio). El operador lo pidió el
+                 2026-09-14 al ver el panel crecer con la separación por
+                 formato del mismo día. #}
               {% if panel.blocks %}
               {% for bloque in panel.blocks %}
               {% set cifra = bloque.headline %}
-              <section class="ph-cifra" aria-label="{{ panel.name }} en {{ cifra.province_name }}{% if cifra.format_label %}, {{ cifra.format_label }}{% endif %}">
-                {# `capitalize` de Jinja también pone en minúscula el resto
-                   del texto —«botella de 1 L» pasaría a «Botella de 1 l»,
-                   con la unidad rota—, así que acá se sube solo la primera
-                   letra. #}
-                <div class="ph-cifra-prov">{{ cifra.province_name }}{% if cifra.format_label %} · {{ cifra.format_label[0] | upper }}{{ cifra.format_label[1:] }}{% endif %}</div>
-                <div class="ph-cifra-fila">
-                  <span class="ph-cifra-valor">{{ cifra.median_text }}</span>
-                  <span class="ph-cifra-unidad">{{ cifra.currency }}/{{ cifra.unit }} · mediana</span>
-                  {% if cifra.change_text %}<span class="ph-cifra-cambio">{{ cifra.change_text }} vs los {{ window_days }} días anteriores</span>{% endif %}
+              <details class="ph-cifra"{% if loop.first %} open{% endif %} aria-label="{{ panel.name }} en {{ cifra.province_name }}{% if cifra.format_label %}, {{ cifra.format_label }}{% endif %}">
+                <summary class="ph-cifra-prov">
+                  <span>{{ cifra.province_name }}{% if cifra.format_label_display %} · {{ cifra.format_label_display }}{% endif %}</span>
+                  <span class="ph-cifra-prov-precio">{{ cifra.median_text }} {{ cifra.currency }}/{{ cifra.unit }}</span>
+                </summary>
+                <div class="ph-cifra-body">
+                  <div class="ph-cifra-fila">
+                    <span class="ph-cifra-valor">{{ cifra.median_text }}</span>
+                    <span class="ph-cifra-unidad">{{ cifra.currency }}/{{ cifra.unit }} · mediana</span>
+                    {% if cifra.change_text %}<span class="ph-cifra-cambio">{{ cifra.change_text }} vs los {{ window_days }} días anteriores</span>{% endif %}
+                  </div>
+                  <ul class="ph-cifra-datos">
+                    {% if not cifra.is_single_value %}<li>rango <b>{{ cifra.minimum_text }}–{{ cifra.maximum_text }}</b></li>{% endif %}
+                    <li><b>{{ cifra.count }}</b> anuncio{{ "s" if cifra.count != 1 }}{% if cifra.outliers %} ({{ cifra.outliers }} fuera de escala){% endif %}</li>
+                    <li>el último, del {{ cifra.last_day_text }}</li>
+                  </ul>
+                  {% if bloque.ranges %}
+                  {% set serie = bloque.ranges %}
+                  {% include "_range_chart.html" %}
+                  {{ chart_help(
+                    "La barra va del precio más bajo al más alto observado en "
+                    "ese período; la raya horizontal es la mediana (el valor de "
+                    "la mitad, no el promedio). El número debajo es cuántos "
+                    "anuncios hay; un triángulo señala un precio tan fuera de "
+                    "escala que no entra en la barra."
+                  ) }}
+                  {% endif %}
                 </div>
-                <ul class="ph-cifra-datos">
-                  {% if not cifra.is_single_value %}<li>rango <b>{{ cifra.minimum_text }}–{{ cifra.maximum_text }}</b></li>{% endif %}
-                  <li><b>{{ cifra.count }}</b> anuncio{{ "s" if cifra.count != 1 }}{% if cifra.outliers %} ({{ cifra.outliers }} fuera de escala){% endif %}</li>
-                  <li>el último, del {{ cifra.last_day_text }}</li>
-                </ul>
-                {% if bloque.ranges %}
-                {% set serie = bloque.ranges %}
-                {% include "_range_chart.html" %}
-                {{ chart_help(
-                  "La barra va del precio más bajo al más alto observado en "
-                  "ese período; la raya horizontal es la mediana (el valor de "
-                  "la mitad, no el promedio). El número debajo es cuántos "
-                  "anuncios hay; un triángulo señala un precio tan fuera de "
-                  "escala que no entra en la barra."
-                ) }}
-                {% endif %}
-              </section>
+              </details>
               {% endfor %}
               {% else %}
               <p class="ph-note">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>

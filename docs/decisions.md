@@ -9607,3 +9607,34 @@ unidad rota — se cambió a subir solo la primera letra a mano
 (2, uno por `attach_blocks` y uno por `group_blocks_by_province`) y
 `test_public_filter.py::TestFormatoEnElPanel` (2, endpoint). Suite
 completa sin regresiones (1640 casos) y sin deuda de lint nueva.
+
+## 2026-09-14 — Panel: solo el primer bloque arranca abierto
+Contexto: apenas cerrada la separación por formato, el operador vio el
+panel crecer con 2+ bloques por producto (una provincia por formato) y
+pidió que todos menos el primero arranquen colapsados, con opción de
+abrir y cerrar.
+Decisión: cada `.ph-cifra` pasa de `<section>` a `<details>`, con
+`<summary class="ph-cifra-prov">` mostrando provincia + formato + la
+mediana de vistazo (oculta cuando el bloque está abierto, porque ya se
+repite grande adentro). Solo el primer bloque —el de más muestra, que ya
+viene ordenado así desde `build_headlines`— lleva el atributo `open`
+(`{% if loop.first %} open{% endif %}`); el resto arranca cerrado.
+Mismo mecanismo nativo que ya usa la insignia del mapa (`<details>`/
+`<summary>`, sin JS propio), aplicado ahora también acá. De paso, para
+resolver el mismo problema de `capitalize` que ya había aparecido en la
+entrada anterior, `format_label_display` (property nueva en `Headline`)
+reemplaza el `[0]|upper` inline de la plantilla por código Python
+testeable.
+Descartado: JS propio para el estado abierto/cerrado — `<details>` lo
+resuelve gratis. Recordar cuál bloque estaba abierto entre re-renders de
+htmx — no se pidió, y el criterio "el de más muestra" ya es determinista
+y estable mientras la muestra no cambie de orden.
+Consecuencia: `.ph-cifra` deja de ser `display: grid` directo —ahora
+ese layout vive en `.ph-cifra-body`, adentro del `<details>`, porque
+`<summary>` pasó a ser un hijo directo y compite por ese grid—. 3 tests
+nuevos (`test_price_charts.py` +2 para `format_label_display`,
+`test_public_filter.py::test_solo_el_primer_bloque_arranca_abierto`) y
+uno existente ajustado a la nueva estructura del DOM
+(`test_sin_formato_declarado_sigue_una_sola_cifra`, que buscaba
+`</div>` donde ahora hay `</summary>`). Suite completa: 1643 casos, sin
+deuda de lint nueva.

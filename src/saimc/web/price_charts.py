@@ -418,6 +418,16 @@ class Headline:
         return "" if self.previous_median is None else format_price(self.previous_median)
 
     @property
+    def format_label_display(self) -> str | None:
+        """`format_label` con solo la primera letra en mayúscula, o `None`
+        sin formato. El filtro `capitalize` de Jinja pone en minúscula TODO
+        el resto del texto —«botella de 1 L» quedaría «Botella de 1 l», con
+        la unidad rota—, así que se resuelve acá en vez de en la plantilla."""
+        if self.format_label is None:
+            return None
+        return self.format_label[0].upper() + self.format_label[1:]
+
+    @property
     def last_day_text(self) -> str:
         return _short_day(self.last_day)
 

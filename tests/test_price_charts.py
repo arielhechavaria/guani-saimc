@@ -232,6 +232,22 @@ class TestEjeDeFormato:
 
         assert {s.format_label for s in series} == {"botella de 1 L", "garrafa de 5 L"}
 
+    def test_format_label_display_sube_solo_la_primera_letra(self) -> None:
+        """`capitalize` de Jinja pondría en minúscula TODO el resto —«Botella
+        de 1 l», con la unidad rota—; esta property solo toca la primera."""
+        (cifra,) = build_headlines(
+            [_obs(30, "300", format_packaging="botella", format_quantity="1", format_unit="L")],
+            [],
+        )
+
+        assert cifra.format_label == "botella de 1 L"
+        assert cifra.format_label_display == "Botella de 1 L"
+
+    def test_format_label_display_sin_formato_es_none(self) -> None:
+        (cifra,) = build_headlines([_obs(30, "300")], [])
+
+        assert cifra.format_label_display is None
+
     def test_sin_formato_sigue_agrupando_junto_como_antes(self) -> None:
         """Sin formato declarado en ninguna fila, el comportamiento no
         cambia: sigue siendo una sola cifra."""
