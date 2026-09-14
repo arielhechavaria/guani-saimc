@@ -14,7 +14,9 @@ from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from saimc.web.analytics import registrar_visitas_publicas
 from saimc.web.routers import (
     catalog,
     control,
@@ -81,6 +83,11 @@ app = FastAPI(
 # saltea solo. El SVG sí entra (`image/svg+xml` no está excluido), que es lo que
 # queremos para el mapa de calor: es texto y comprime muy bien.
 app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
+
+# Instrumentación mínima de la capa pública (spec.md §9, Fase 1: «100
+# usuarios activos diarios») — ver el docstring de `analytics.py`. Sin esto
+# no hay ninguna forma de saber si esa meta se cumplió o no.
+app.add_middleware(BaseHTTPMiddleware, dispatch=registrar_visitas_publicas)
 
 # Resuelto con `Path(__file__)` y no relativo al cwd: así funciona sin
 # importar desde dónde se lance uvicorn. Vive en `app.state` (y no como

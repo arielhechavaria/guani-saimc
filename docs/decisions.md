@@ -9766,3 +9766,30 @@ solución sigue siendo un buscador o agrupación, no otro tope de CSS.
 Consecuencia: el contenimiento por CSS aguanta el crecimiento del catálogo
 sin romper el layout; el día que haga falta un buscador real, la referencia
 es esta entrada.
+
+## 2026-09-14 — Instrumentación mínima de visitas a la capa pública
+Contexto: idea #4 del reporte de mejoras no consideradas. spec.md §9 fija
+la meta de Fase 1 en "100 usuarios activos diarios", pero no existe ninguna
+forma de saber si se cumple: cero analítica en la home pública.
+Decisión: middleware ASGI (`saimc/web/analytics.py`,
+`registrar_visitas_publicas`) que deja una línea de log INFO por cada GET
+exitoso (200) a una vista pública real (`/`, `/producto/{slug}`,
+`/anuncio/{id}`), excluyendo los `hx-get` disparados por la propia página
+(chips/selector de provincia — misma visita, no una nueva) y cualquier ruta
+de operador o asset estático. El campo `visitor` es `sha256(IP+día)`
+truncado, nunca la IP en texto plano. Sin tabla nueva: no toca el esquema,
+así que no dispara el flujo de especificación completo que CLAUDE.md reserva
+para esos cambios. El operador agrega a mano sobre el log
+(`journalctl | grep public.pageview | grep -oP 'visitor=\K\S+' | sort -u | wc -l`
+por día, receta en el docstring del módulo).
+Descartado: una tabla de eventos en la base de datos con un dashboard
+propio. Es lo que un producto de analítica real haría, pero es una decisión
+de esquema (migración, política de retención, diseño de agregación) que
+CLAUDE.md marca como territorio del flujo de especificación completo — no
+algo para decidir en piloto automático mientras el operador está afuera.
+Esta instrumentación es el paso mínimo reversible: pasa de "cero dato" a
+"materia prima agregable a mano", sin comprometer a nada más grande.
+Consecuencia: si el operador confirma que esto alcanza, se puede agregar un
+script chico que corra el `grep` de arriba. Si hace falta un dashboard de
+verdad, es la primera pieza de trabajo con esquema que corresponde pasar
+por explorar → proponer → especificar → diseñar → implementar → verificar.
