@@ -9825,3 +9825,35 @@ plantilla nueva y chica que reuse `cards`/`ProductCard` (`card_view.py`,
 ya calculados en `routers/public.py::public_product`) sin `_public_shell`
 del mapa — sin Leaflet, sin compás, sin dock —, con un enlace de vuelta a
 `/?producto={slug}` para quien quiera el mapa interactivo completo.
+
+## 2026-09-14 — Pista de primera visita en el compás
+Contexto: idea #6 del reporte de mejoras no consideradas. Investigando antes
+de tocar nada se confirmó que el gap es más profundo de lo que sonaba: TODO
+el compás —título `<h1>`, "Qué cuesta y dónde lo sabemos", nota de frescura,
+y el menú Cobertura/Precios/Evolución/Descarga/Zoom— arranca oculto
+(`opacity: 0`) detrás de un botón circular sin ninguna etiqueta visible
+(`.ph-compass`, solo `aria-label` para lector de pantalla). Un visitante
+nuevo, sobre todo en celular (sin hover real), no tiene ninguna pista de que
+ese círculo abre algo. El riel de chips de producto SÍ es visible y
+accionable sin ayuda —no es el problema real, contra lo que sonaba el ítem
+del reporte—; el compás sí lo es.
+Decisión: pulso de una sola vez alrededor del botón del compás (`::after`,
+CSS puro, `animation: ph-pista-pulso 1.8s ease-out 3`), gateado por
+`localStorage` desde JS (`guani:compas-visto`) para que se muestre solo en
+la primera visita de ese navegador y desaparezca apenas se toca, hace foco
+o se hace clic en el compás. Respeta `prefers-reduced-motion: reduce`
+(queda un anillo fijo, sin animación, mismo criterio que el resto de esta
+vista). Auto-contenido en un IIFE aparte al pie del archivo: no modifica
+`alternarCompas`/`abrirCompas` ni ninguna lógica ya en producción.
+Descartado: mostrar las etiquetas del menú siempre en vez de solo al
+interactuar. Es un cambio de layout dentro de `.ph-menu` que no se puede
+verificar visualmente en esta sesión (Postgres inaccesible, sin navegador
+real) — mismo motivo que frenó la idea #5. El pulso es aditivo puro: no
+reordena ni redimensiona nada existente, así que no corre ese riesgo.
+Descartado también: no tocar nada y dejarlo para cuando el operador pueda
+ver la página. Esta pieza, a diferencia de la #5, es chica, reversible con
+una línea (sacar la clase del botón) y no toca la arquitectura de la
+página — dentro del margen que el "haz todas las tareas" ya cubre.
+Consecuencia: si el operador prueba la home en una pestaña nueva/incógnito
+debería ver el anillo pulsar tres veces sobre el compás; en una visita
+repetida (mismo navegador) no vuelve a aparecer.

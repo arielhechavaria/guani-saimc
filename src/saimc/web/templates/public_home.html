@@ -201,6 +201,24 @@
   .ph-compass .ph-brand-avatar { width: 3.25rem; height: 3.25rem; }
   .ph-brand-avatar { flex: none; width: 2.25rem; height: 2.25rem; }
 
+  /* Pista de primera visita (script del pie agrega/saca `.ph-pista`): un
+     anillo que se expande y se apaga, tres veces, para señalar que el
+     compás tiene algo adentro antes de que nadie lo toque. Puramente
+     decorativo —`::after` sin contenido en el árbol de accesibilidad—, no
+     cambia tamaño ni posición de nada real. */
+  .ph-compass.ph-pista::after {
+    content: ""; position: absolute; inset: -6px; border-radius: inherit;
+    border: 2px solid var(--ph-accent); pointer-events: none;
+    animation: ph-pista-pulso 1.8s ease-out 3;
+  }
+  @keyframes ph-pista-pulso {
+    0% { transform: scale(1); opacity: .85; }
+    100% { transform: scale(1.35); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ph-compass.ph-pista::after { animation: none; opacity: .85; }
+  }
+
   /* Indicador de carga (2026-09-11): convención estándar de htmx — un
      elemento con clase `htmx-indicator` arranca invisible; `hx-indicator="#ph-loading"`
      en `#ph-live` hace que htmx le agregue `htmx-request` a ESTE mismo
@@ -2400,6 +2418,44 @@
     var haciaAfuera = !ev.relatedTarget || !envoltorio.contains(ev.relatedTarget);
     if (haciaAfuera) programarCierreCompas();
   });
+
+  // Pista de primera visita (2026-09-14, reporte de mejoras no
+  // consideradas, idea #6): el compás arranca colapsado y sin ninguna
+  // etiqueta visible —nada le dice a un visitante nuevo que ahí adentro
+  // está Cobertura/Precios/Evolución—. Un pulso en el borde (CSS,
+  // `.ph-pista` en `<style>`) solo la primera vez que ESTE navegador entra
+  // a la página, y solo hasta el primer toque/clic/foco sobre el compás.
+  // Auto-contenido a propósito: no toca `alternarCompas`/`abrirCompas` de
+  // arriba, cero riesgo sobre el mecanismo de abrir/cerrar ya en producción.
+  (function () {
+    var YA_VISTO = "guani:compas-visto";
+    var visto = true;
+    try {
+      visto = !!localStorage.getItem(YA_VISTO);
+    } catch (e) {
+      visto = true; // sin storage (privado/bloqueado): no se muestra la pista
+    }
+    if (visto) return;
+
+    var boton = document.querySelector(".ph-compass");
+    var envoltorio = document.querySelector(".ph-compass-nav");
+    if (!boton || !envoltorio) return;
+    boton.classList.add("ph-pista");
+
+    function descartarPista() {
+      boton.classList.remove("ph-pista");
+      try {
+        localStorage.setItem(YA_VISTO, "1");
+      } catch (e) {
+        /* sin storage: la pista vuelve a salir la próxima visita, no rompe nada */
+      }
+    }
+    envoltorio.addEventListener("pointerdown", descartarPista, { once: true });
+    envoltorio.addEventListener("focusin", descartarPista, { once: true });
+    boton.addEventListener("animationend", function () {
+      boton.classList.remove("ph-pista");
+    });
+  })();
 
   // Leyenda del mapa colapsada en angosto (2026-09-13, en dos pasos: el
   // botón que la revela vivía suelto en su propia esquina, y el operador

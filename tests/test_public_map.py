@@ -628,6 +628,24 @@ class TestElMapaEsLaApp:
         assert "max-height:" in riel
         assert "overflow-y: auto" in riel
 
+    def test_pista_de_primera_visita_en_el_compas(self, client: TestClient) -> None:
+        """Reporte de mejoras no consideradas (2026-09-14), idea #6: el
+        compás arranca colapsado y sin ninguna etiqueta visible — nada le
+        dice a un visitante nuevo que ahí adentro hay un menú. Un pulso de
+        una sola vez (JS gatea con localStorage; no server-rendered, así
+        que el HTML es idéntico en cada visita) respeta
+        `prefers-reduced-motion` y no toca el mecanismo de abrir/cerrar ya
+        en producción."""
+        texto = client.get("/").text
+
+        assert "guani:compas-visto" in texto
+        assert 'boton.classList.add("ph-pista")' in texto
+        assert "ph-pista-pulso" in texto
+        desde = texto.index("@media (prefers-reduced-motion: reduce)")
+        assert ".ph-pista" in texto[desde : desde + 150]
+        # No toca el botón real ni su nombre accesible.
+        assert 'aria-label="Guani · SAIMC · abrir el menú"' in texto
+
     def test_el_escenario_del_mapa_va_a_sangre_y_el_cromo_por_encima(
         self, client: TestClient
     ) -> None:
