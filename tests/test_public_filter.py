@@ -465,6 +465,65 @@ class TestChipsMultiSeleccionEnLaRuta:
         assert "Azúcar blanca" not in texto
 
 
+class TestOverflowDeChips:
+    """Rediseño horizontal (2026-09-14, pedido del operador — «los
+    productos son 5 hoy, el día que haya más se pone un ícono para abrir
+    el modal con los otros elementos»): el riel se autolimita a los
+    primeros `VISIBLE_CHIP_COUNT` (5) productos piloto; el resto se pliega
+    detrás de un disparador `<details>`, sin JS propio, mismo patrón que
+    el cluster de la insignia del mapa."""
+
+    def _seed(self, session: Session, nombres: list[str]) -> None:
+        for nombre in nombres:
+            session.add(
+                Product(name=nombre, category="varios", unit="lb", aliases=[], is_pilot=True)
+            )
+        session.commit()
+
+    def test_con_cinco_o_menos_no_aparece_el_disparador(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session, ["Arroz", "Aceite", "Azúcar", "Pollo", "Picadillo"])
+
+        texto = client.get("/").text
+
+        assert 'class="ph-chip-overflow"' not in texto
+
+    def test_con_mas_de_cinco_el_disparador_muestra_el_resto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`pilot_product_names` ordena alfabético: con 7 productos, los 5
+        primeros van al riel visible y los últimos 2 al panel."""
+        self._seed(
+            session,
+            ["Aceite", "Arroz", "Azúcar", "Boniato", "Calabaza", "Frijol", "Malanga"],
+        )
+
+        texto = client.get("/").text
+
+        assert 'class="ph-chip-overflow"' in texto
+        assert 'aria-label="Ver 2 productos más"' in texto
+        rail = texto.split('class="ph-chip-rail"')[1].split("</nav>")[0]
+        visible, panel = rail.split('class="ph-chip-overflow-panel"')
+
+        for nombre in ("Aceite", "Arroz", "Azúcar", "Boniato", "Calabaza"):
+            assert nombre in visible
+        for nombre in ("Frijol", "Malanga"):
+            assert nombre not in visible
+            assert nombre in panel
+
+    def test_un_solo_producto_de_mas_usa_singular(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(
+            session, ["Aceite", "Arroz", "Azúcar", "Boniato", "Calabaza", "Frijol"]
+        )
+
+        texto = client.get("/").text
+
+        assert 'aria-label="Ver 1 producto más"' in texto
+
+
 class TestDatePickerSiempreVisible:
     """Date picker de rango de calendario (2026-09-14, pedido del operador:
     «que siempre se pueda ver el rango en uso y que se pueda cambiar»).

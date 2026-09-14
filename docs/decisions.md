@@ -10081,3 +10081,46 @@ cambio) — aparece como "nuevo" + "resuelto" en la misma corrida porque el
 piso es por número de línea, no cambió la deuda real (142 antes, 142
 ahora). Queda para que el operador corra `--update-baseline` si lo
 confirma, no se tocó solo.
+
+## 2026-09-14 — Isla de filtros en horizontal, con overflow de chips
+Contexto: el operador marcó mal ubicados en escritorio los tres grupos que
+viven en `.ph-compass-filters` (chips de producto, selector de provincia,
+y el date picker recién agregado) — quedaban apilados uno debajo del otro
+por una decisión del 2026-09-13 ("sin `display: flex`... caen en su
+posición estática, uno debajo del otro"), que tenía sentido con dos grupos
+pero no con tres, y menos con sitio de sobra al costado en escritorio.
+Pidió explícitamente diseño horizontal, usando el skill `frontend-design`,
+con un mecanismo de overflow para los chips: "los productos son 5 hoy, el
+día que haya más se pone un ícono para abrir el modal con los otros
+elementos".
+Decisión:
+- `.ph-compass-filters` pasa a `display: flex; flex-wrap: wrap; align-
+  items: center` en la regla base (antes solo la versión angosta de
+  `@media` lo tenía) — los tres grupos caen en una sola fila cuando hay
+  sitio, envolviendo solo si hace falta.
+- El riel de chips se autolimita a `VISIBLE_CHIP_COUNT = 5` (hoy son
+  exactamente 5 productos piloto: el mecanismo no se nota todavía, y
+  empieza a actuar el día que se sume un sexto). El resto se pliega detrás
+  de un disparador `<details>` con ícono `more_horiz` y contador "+N" —
+  mismo patrón sin JS que ya usa el cluster de la insignia del mapa—, que
+  abre un panel flotante (mismo `--ph-elev`/superficie que el resto de la
+  capa pública) con los chips restantes.
+- Reemplaza la contención reactiva de hoy mismo (`.ph-chip-rail` con
+  `max-height`/scroll, agregada horas antes en el reporte de mejoras no
+  consideradas): con el tope deliberado de 5 + overflow, un catálogo de
+  200 productos pesa en la barra lo mismo que uno de 5 — no hace falta
+  además un tope de scroll defensivo.
+- `.ph-compass-filters` deja el `max-width` reactivo de antes (pensado
+  solo para contener el riel) por uno puramente defensivo contra el borde
+  de la ventana (`calc(100vw - 2rem)`), ya que los tres grupos ahora se
+  autolimitan por su cuenta.
+Descartado: un modal real (overlay a pantalla completa con fondo oscuro).
+El pedido usaba la palabra "modal" mencionando su función ("abrir con los
+otros elementos"), no la pidió como pieza de UI específica; un panel
+flotante anclado (mismo patrón `<details>` que el cluster del mapa) cumple
+la misma función sin JS nuevo ni la fricción de bloquear el resto de la
+página para ver dos chips más.
+Consecuencia: sin poder verificar visualmente en un navegador real esta
+sesión (Postgres inaccesible) — igual que el resto del trabajo visual de
+hoy, queda para que el operador confirme cómo se ve. Suite completa: 1692
+casos, sin deuda de lint nueva.

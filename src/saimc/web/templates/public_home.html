@@ -462,37 +462,64 @@
   .ph-menu-zoom button:hover { background: var(--ph-accent-wash); color: var(--ph-accent); }
   .ph-menu-zoom-sep { height: 1px; margin: 0 .625rem; background: var(--m3-outline-variant); }
 
-  /* Chips de producto + provincia, juntos en una sola píldora de vidrio
-     arriba a la derecha — antes era una fila a lo ancho con
-     `space-between`; ahora es una isla más, como el compás. */
-  /* Ajuste del operador (2026-09-13, probado a mano en DevTools): sin
-     tarjeta de vidrio propia — nada de fondo, borde, sombra ni radio. Los
-     chips y el `<select>` ya traen su propia superficie
-     (`.ph-chip-toggle`/`.ph-province-select`); la caja extra encima se
-     sentía como vidrio sobre vidrio. `right` fijo en vez del `clamp` de
-     antes: con el mismo valor de piso y de techo, el `clamp` no hacía
-     nada. Sin `top` ni `display: flex`: los grupos (riel de chips,
-     selector de provincia) caen en su posición estática, uno debajo del
-     otro, en vez de en una fila. */
+  /* Chips de producto + provincia + rango de fechas, en una sola barra
+     horizontal arriba a la derecha — como el compás, otra isla flotante.
+     Rediseño 2026-09-14 (frontend-design): hasta acá los tres grupos caían
+     apilados uno debajo del otro incluso en escritorio, con sitio de sobra
+     al costado sin usar — el operador lo marcó mal ubicado y pidió
+     horizontal. `display: flex` en la fila de arriba en vez de la caída
+     estática de antes; `flex-wrap: wrap` es la red de seguridad para una
+     ventana angosta en escritorio (el angosto de verdad sigue con su barra
+     propia abajo, más abajo en este archivo). Sin tarjeta de vidrio
+     propia —nada de fondo, borde, sombra ni radio—: los chips, el
+     `<select>` y los `<input type="date">` ya traen su propia superficie;
+     la caja extra encima se sentía como vidrio sobre vidrio (ajuste del
+     operador, 2026-09-13, se mantiene). */
   .ph-compass-filters {
     position: absolute; right: 1rem; z-index: 1300;
     padding: .5rem .65rem;
-    /* Sin `max-width` el catálogo crecería la isla a lo ancho de todo el
-       mapa (5 productos hoy no lo notan; 200, sí) — la capa el `right: 1rem`
-       de arriba deja de ser una esquina y pasa a ser una franja. */
-    max-width: min(22rem, 60vw);
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+    /* El riel de chips ya se autolimita a 5 + el disparador de overflow
+       (ver `.ph-chip-overflow` más abajo) — no hace falta un `max-width`
+       reactivo acá: un catálogo de 200 productos pesa lo mismo en esta
+       barra que uno de 5. El tope de abajo es solo para no pegar contra
+       el borde de la ventana en un monitor angosto. */
+    max-width: calc(100vw - 2rem);
   }
   .ph-compass-filters-sep { align-self: stretch; width: 1px; margin: .3rem 0;
                              background: var(--m3-outline-variant); }
 
-  .ph-chip-rail {
-    display: flex; flex-wrap: wrap; gap: .5rem; min-width: 0;
-    /* Mismo motivo que el `max-width` de arriba, en el otro eje: sin tope,
-       un catálogo grande crece la isla hacia abajo hasta tapar el mapa.
-       Con 5 productos esto no scrollea nunca — el contenido entra entero. */
-    max-height: 6.5rem; overflow-y: auto; overscroll-behavior: contain;
-  }
+  .ph-chip-rail { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
   .ph-province-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+
+  /* Disparador de overflow del riel (2026-09-14): aparece SOLO cuando hay
+     más productos piloto que los que el riel muestra —hoy son 5 y no
+     aparece nunca—, mismo `<details>` sin JS que ya usa el cluster de la
+     insignia del mapa. Mismo tamaño y forma que un chip con ícono
+     (`.ph-chip-toggle.is-icon`) para que la fila no cambie de silueta a
+     mitad de camino. */
+  .ph-chip-overflow { position: relative; }
+  .ph-chip-overflow-trigger {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 3px;
+    min-width: 3.5rem; padding: .4rem .6rem .35rem; border-radius: var(--m3-radius-md);
+    line-height: 1; cursor: pointer; list-style: none;
+    font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
+    border: 1px solid var(--m3-outline-variant);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    color: var(--m3-on-surface-variant);
+  }
+  .ph-chip-overflow-trigger::-webkit-details-marker { display: none; }
+  .ph-chip-overflow-trigger:hover,
+  .ph-chip-overflow[open] .ph-chip-overflow-trigger { border-color: var(--ph-accent); color: var(--ph-accent); }
+  .ph-chip-overflow-icon { display: block; font-size: 22px; }
+  .ph-chip-overflow-count { font-size: 10.5px; font-weight: 500; letter-spacing: .01em; opacity: .7; }
+  .ph-chip-overflow-panel {
+    position: absolute; top: calc(100% + .4rem); right: 0; z-index: 1301;
+    display: flex; flex-direction: column; gap: .35rem; min-width: 10rem;
+    padding: .6rem; border-radius: var(--ph-radius-sm);
+    background: var(--m3-surface); box-shadow: var(--ph-elev);
+  }
+  .ph-chip-overflow-panel .ph-chip-toggle { justify-content: flex-start; }
 
   .ph-chip-toggle {
     font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
@@ -1158,26 +1185,44 @@
      ancho con `space-between`; ahora es una isla más, como el compás. #}
   <div class="ph-compass-filters">
 
-  {# Riel de productos: cada chip togglea `?productos=` y abre su panel.
-     Ninguno prendido = se muestran todos. #}
-  {% if product_chips %}
-  <nav class="ph-chip-rail" aria-label="Productos">
-    {# Con ícono, el chip muestra el ícono y debajo el nombre, chico y atenuado:
-       los íconos de Material son aproximados (solo `rice_bowl` es exacto) y el
-       nombre visible es lo que los hace legibles de un vistazo. El nombre es
-       además el nombre accesible del enlace. Sin ícono, solo el nombre.
+  {# Un chip togglea `?productos=` y abre su panel. Ninguno prendido = se
+     muestran todos. El chip SIEMPRE se queda en el mapa —nunca salta a la
+     vista liviana de `/producto/<slug>` (2026-09-14, ajuste del operador:
+     «no me gusta que vaya directo a esa vista»)—; por eso `hx-get` va
+     siempre puesto, sin condición. La vista liviana se alcanza desde el
+     panel flotante. Macro y no un `{% for %}` repetido: el mismo chip se
+     pinta en el riel visible y, si desborda, adentro del panel de
+     overflow de más abajo. #}
+  {% macro chip_toggle(chip) -%}
+  {% if chip.icon -%}
+  <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}"><span class="m3-icon ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span><span class="ph-chip-name">{{ chip.label }}</span></a>
+  {%- else -%}
+  <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
+  {%- endif %}
+  {%- endmacro %}
 
-       El chip SIEMPRE se queda en el mapa —nunca salta a la vista liviana de
-       `/producto/<slug>` (2026-09-14, ajuste del operador: «no me gusta que
-       vaya directo a esa vista»)—; por eso `hx-get` va siempre puesto, sin
-       condición. La vista liviana se alcanza desde el panel flotante. #}
-    {% for chip in product_chips -%}
-    {% if chip.icon -%}
-    <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}"><span class="m3-icon ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span><span class="ph-chip-name">{{ chip.label }}</span></a>
-    {%- else -%}
-    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
-    {%- endif %}
-    {%- endfor %}
+  {# Riel de productos, autolimitado a `VISIBLE_CHIP_COUNT` (2026-09-14,
+     rediseño horizontal): hoy son 5 productos piloto y entran todos, sin
+     que aparezca el disparador de más abajo. El día que el catálogo crezca
+     más allá de eso, el resto se pliega detrás de un ícono «⋯» en vez de
+     seguir estirando la barra —el pedido explícito del operador—. #}
+  {% set VISIBLE_CHIP_COUNT = 5 %}
+  {% set visible_chips = product_chips[:VISIBLE_CHIP_COUNT] %}
+  {% set overflow_chips = product_chips[VISIBLE_CHIP_COUNT:] %}
+  {% if visible_chips %}
+  <nav class="ph-chip-rail" aria-label="Productos">
+    {% for chip in visible_chips %}{{ chip_toggle(chip) }}{% endfor %}
+    {% if overflow_chips %}
+    <details class="ph-chip-overflow">
+      <summary class="ph-chip-overflow-trigger" aria-label="Ver {{ overflow_chips | length }} producto{{ 's' if overflow_chips | length != 1 }} más">
+        <span class="m3-icon ph-chip-overflow-icon" aria-hidden="true">more_horiz</span>
+        <span class="ph-chip-overflow-count" aria-hidden="true">+{{ overflow_chips | length }}</span>
+      </summary>
+      <div class="ph-chip-overflow-panel">
+        {% for chip in overflow_chips %}{{ chip_toggle(chip) }}{% endfor %}
+      </div>
+    </details>
+    {% endif %}
   </nav>
   {% endif %}
 
