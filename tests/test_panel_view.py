@@ -101,3 +101,35 @@ class TestBuildProductPanels:
         assert por_nombre["Arroz"].close_query == (
             "/?productos=aceite&provincia=la-habana&dias=7"
         )
+
+    def test_light_query_apunta_a_la_ruta_limpia_del_producto(self) -> None:
+        """La puerta de salida hacia la vista liviana (2026-09-14): el panel
+        se queda en el mapa por defecto, `light_query` es cómo se sale de
+        ahí a propósito."""
+        (panel,) = build_product_panels(["Arroz"], [_card("Arroz", "La Habana")], [])
+
+        assert panel.light_query == "/producto/arroz"
+
+    def test_light_query_preserva_provincia_y_ventana(self) -> None:
+        (panel,) = build_product_panels(
+            ["Arroz"],
+            [_card("Arroz", "La Habana")],
+            [],
+            selected_province="La Habana",
+            selected_days=7,
+        )
+
+        assert panel.light_query == "/producto/arroz?provincia=la-habana&dias=7"
+
+    def test_light_query_no_lleva_ver_ni_capa(self) -> None:
+        """La vista liviana no tiene ventanas ni capas de mapa: preservarlas
+        ahí no significaría nada."""
+        (panel,) = build_product_panels(
+            ["Arroz"],
+            [_card("Arroz", "La Habana")],
+            [],
+            ver=["precios"],
+            capa="densidad",
+        )
+
+        assert panel.light_query == "/producto/arroz"

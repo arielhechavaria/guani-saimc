@@ -24,6 +24,7 @@ from saimc.web.product_nav import (
     DEFAULT_LAYER,
     DEFAULT_WINDOW_DAYS,
     has_product_illustration,
+    light_product_query,
     product_icon,
     product_slug,
     products_query,
@@ -64,6 +65,11 @@ class ProductPanel:
     series: tuple[PriceSeries, ...]
     #: `?productos=` sin este producto: el destino del botón de cerrar.
     close_query: str
+    #: `/producto/<slug>`: la vista liviana sin mapa, para compartir
+    #: (2026-09-14). El panel se queda en el mapa por defecto —el operador
+    #: lo pidió explícito, «no me gusta que vaya directo a esa vista»—; esto
+    #: es la puerta de salida hacia ella, no la entrada.
+    light_query: str = ""
     #: Cifra con su muestra y rango por período, un bloque por provincia
     #: (`attach_blocks`). Vacío hasta que se le pegan.
     blocks: tuple[PanelBlock, ...] = ()
@@ -142,6 +148,7 @@ def build_product_panels(
             ver=ver,
             capa=capa,
         )
+        light_query = light_product_query(this_slug, provincia=prov_slug, dias=selected_days)
         if not pcards:
             panels.append(
                 ProductPanel(
@@ -155,6 +162,7 @@ def build_product_panels(
                     maximum=Decimal(0),
                     series=pseries,
                     close_query=close_query,
+                    light_query=light_query,
                 )
             )
             continue
@@ -170,6 +178,7 @@ def build_product_panels(
                 maximum=max(c.maximum for c in pcards),
                 series=pseries,
                 close_query=close_query,
+                light_query=light_query,
             )
         )
     return panels
