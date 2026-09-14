@@ -18,6 +18,7 @@ import io
 import json
 import uuid
 from datetime import date, timedelta
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
@@ -30,7 +31,12 @@ from saimc.progress import pilot_product_names
 from saimc.web.card_view import attach_trends, build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
-from saimc.web.panel_view import attach_blocks, build_product_panels, group_blocks_by_province
+from saimc.web.panel_view import (
+    ProductPanel,
+    attach_blocks,
+    build_product_panels,
+    group_blocks_by_province,
+)
 from saimc.web.price_charts import (
     build_cell_ads,
     build_evolution_blocks,
@@ -148,6 +154,73 @@ def _visible_observations(
     if province is not None:
         obs = [o for o in obs if o.province_name == province]
     return obs
+
+
+def _build_focused_product_panel(
+    db: Session,
+    *,
+    pilot: frozenset[str],
+    product_name: str,
+    selected_province: str | None,
+    window: int,
+) -> ProductPanel:
+    """Arma el panel de UN producto enfocado: cifra, rango y anuncios por
+    provincia (y formato) — lo que usa la vista liviana de `/producto/{slug}`
+    (2026-09-14, reporte de mejoras no consideradas, idea #5).
+
+    Repite parte de lo que `_render_home` arma inline para el caso general
+    (varios productos a la vez, más `cards`/`series` para el resto de esa
+    página: chips, `#precios`, CSV). No se extrajo un helper compartido para
+    los dos casos a propósito: `_render_home` ya está probada y en
+    producción, y tocarla como efecto secundario de esta vista nueva es el
+    tipo de riesgo que no se puede verificar sin un navegador real.
+    """
+    active_products = [product_name]
+    active_set = frozenset(active_products)
+    hoy = date.today()
+
+    report = compute_retail_ranges(db, days=window)
+    ranges = [
+        r
+        for r in report.ranges
+        if r.product_name in pilot
+        and r.product_name in active_set
+        and (selected_province is None or r.province_name == selected_province)
+    ]
+    cards = build_cards(ranges)
+
+    obs = _visible_observations(
+        db, pilot=pilot, products=active_set, province=selected_province, window=window
+    )
+    series = build_series(obs, window_days=window, hoy=hoy)
+    previous_obs = [
+        o
+        for o in _visible_observations(
+            db,
+            pilot=pilot,
+            products=active_set,
+            province=selected_province,
+            window=2 * window,
+        )
+        if o.day < hoy - timedelta(days=window)
+    ]
+    panel_headlines = build_headlines(obs, previous_obs)
+    panel_ranges = build_range_series(obs, window_days=window, hoy=hoy)
+    panel_ads = build_cell_ads(obs)
+
+    (panel,) = attach_blocks(
+        build_product_panels(
+            active_products,
+            cards,
+            series,
+            selected_province=selected_province or "",
+            selected_days=window,
+        ),
+        panel_headlines,
+        panel_ranges,
+        panel_ads,
+    )
+    return panel
 
 
 def _render_home(
@@ -463,30 +536,74 @@ def public_product(
     request: Request,
     provincia: str | None = None,
     dias: str | None = None,
-    ver: str | None = None,
-    capa: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """URL dedicada por producto. Misma vista que `/?producto=<slug>`, que sigue
-    siendo alias válido; `?provincia=`, `?dias=` y `?capa=` también se aceptan acá.
+    """URL dedicada por producto — la que queda en la barra de direcciones
+    tras elegir un chip sin otro filtro activo (`_product_link`,
+    `product_nav.py`) y la pensada para compartir.
+
+    Vista liviana a propósito (2026-09-14, reporte de mejoras no
+    consideradas, idea #5): sin mapa, sin Leaflet, sin compás ni dock —
+    reemplaza el mapa de 147 KB + tiles en vivo por un enlace hacia él, para
+    quien lo quiera. `/?producto=<slug>` sigue siendo la vista completa e
+    interactiva; dejó de ser lo mismo que esta ruta (docs/decisions.md,
+    entrada que reemplaza a la del mismo día que la registraba como
+    candidato sin implementar).
+
+    `?provincia=` y `?dias=` siguen aceptándose para acotar el panel; `?ver=`
+    y `?capa=` ya no significan nada acá —no hay ventanas ni capas de mapa
+    en esta vista— y un enlace viejo con esos parámetros los ignora en vez
+    de romperse.
 
     Un slug desconocido da 404, a diferencia de `?producto=` raro que muestra
     todo: en una ruta con nombre de recurso, «no existe» es la respuesta
     correcta.
     """
-    if resolve_product(pilot_product_names(db), slug) is None:
+    pilot_names = pilot_product_names(db)
+    product_name = resolve_product(pilot_names, slug)
+    if product_name is None:
         raise HTTPException(
             status_code=404, detail="No hay producto público con ese nombre"
         )
-    return _render_home(
-        request,
+
+    pilot = frozenset(pilot_names)
+    all_province_names = _all_province_names(db)
+    selected_province = resolve_province(all_province_names, provincia)
+    window = resolve_days(dias)
+
+    panel = _build_focused_product_panel(
         db,
-        producto=slug,
-        productos=None,
-        provincia=provincia,
-        dias=dias,
-        ver=ver,
-        capa=capa,
+        pilot=pilot,
+        product_name=product_name,
+        selected_province=selected_province,
+        window=window,
+    )
+    latest_day = _latest_price_day(db, pilot)
+    freshness_days_ago = (date.today() - latest_day).days if latest_day else None
+
+    # `cast` y no dejar que mypy infiera `Any`: es la ÚNICA ruta pública que
+    # arma su propio `TemplateResponse` en vez de delegar en `_render_home`
+    # (que ya suma esta misma imprecisión de tipos a la deuda aceptada del
+    # proyecto, junto con `public_evidence`) — sumar una tercera instancia
+    # sin marcarla explícitamente sería deuda nueva y silenciosa.
+    return cast(
+        HTMLResponse,
+        request.app.state.templates.TemplateResponse(
+            request,
+            "public_product_light.html",
+            {
+                "panel": panel,
+                "window_days": window,
+                "data_freshness_day": latest_day,
+                "data_freshness_days_ago": freshness_days_ago,
+                "selected_province": selected_province,
+                "map_href": products_query(
+                    [slug],
+                    provincia=product_slug(selected_province) if selected_province else "",
+                    dias=window,
+                ),
+            },
+        ),
     )
 
 

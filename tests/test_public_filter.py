@@ -1831,8 +1831,12 @@ class TestFrescuraDelDato:
 
 
 class TestRutaProductoLimpia:
-    """`GET /producto/<slug>`: URL dedicada por producto, misma vista que
-    `/?producto=<slug>`. El query string sigue siendo alias válido."""
+    """`GET /producto/<slug>`: URL dedicada por producto.
+
+    Hasta el 2026-09-14 era alias exacto de `/?producto=<slug>`; desde esa
+    fecha es la vista LIVIANA (reporte de mejoras no consideradas, idea #5)
+    — sin mapa, sin Leaflet, sin compás ni dock. `/?producto=<slug>` sigue
+    siendo la vista completa e interactiva."""
 
     def _seed(self, session: Session) -> None:
         arroz = Product(
@@ -1869,9 +1873,11 @@ class TestRutaProductoLimpia:
 
         texto = client.get("/producto/arroz").text
 
-        assert "Arroz por formato y provincia" in texto
-        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
-        assert "Aceite" not in tabla
+        assert ">La Habana<" in texto
+        assert ">Santiago de Cuba<" in texto
+        # Un solo panel por construcción: no hay forma de que se cuele el
+        # nombre de otro producto piloto.
+        assert "Aceite" not in texto
 
     def test_resuelve_slug_con_tilde(
         self, client: TestClient, session: Session
@@ -1881,7 +1887,7 @@ class TestRutaProductoLimpia:
         r = client.get("/producto/azucar-blanca")
 
         assert r.status_code == 200
-        assert "Azúcar blanca por formato y provincia" in r.text
+        assert "<h1" in r.text and ">Azúcar blanca<" in r.text
 
     def test_slug_inexistente_da_404(
         self, client: TestClient, session: Session
@@ -1897,22 +1903,50 @@ class TestRutaProductoLimpia:
 
         texto = client.get("/producto/arroz?provincia=la-habana&dias=7").text
 
-        assert "Ventana de 7 días" in texto
-        assert 'aria-current="true">La Habana<' in texto
-        tabla = texto.split("ph-provinces")[1].split("</table>")[0]
-        assert "Santiago de Cuba" not in tabla
+        assert ">La Habana<" in texto
+        assert "Santiago de Cuba" not in texto
 
-    def test_el_query_string_sigue_siendo_alias(
+    def test_ver_y_capa_ya_no_significan_nada_pero_no_rompen(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un enlace viejo con `?ver=`/`?capa=` (parámetros de la vista con
+        mapa) no tiene por qué dar error acá: simplemente se ignoran."""
+        self._seed(session)
+
+        r = client.get("/producto/arroz?ver=precios&capa=densidad")
+
+        assert r.status_code == 200
+
+    def test_ya_no_es_alias_la_ruta_limpia_no_trae_el_mapa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """2026-09-14: `/producto/<slug>` deja de ser un alias exacto de
+        `/?producto=<slug>` — pasa a ser la vista liviana (reporte de
+        mejoras no consideradas, idea #5). La ruta con `?producto=` sigue
+        cargando el mapa Leaflet completo; la ruta limpia no."""
+        self._seed(session)
+
+        limpia = client.get("/producto/arroz").text
+        con_mapa = client.get("/?producto=arroz").text
+
+        assert "leaflet.css" not in limpia
+        assert 'id="ph-leaflet-map"' not in limpia
+        assert "leaflet.css" in con_mapa
+        assert 'id="ph-leaflet-map"' in con_mapa
+
+        # El mismo dato de fondo sigue ahí, solo que sin el mapa alrededor.
+        assert ">La Habana<" in limpia
+        assert "La Habana" in con_mapa
+
+    def test_la_ruta_limpia_enlaza_de_vuelta_al_mapa_interactivo(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
 
-        limpia = client.get("/producto/arroz").text
-        alias = client.get("/?producto=arroz").text
+        texto = client.get("/producto/arroz").text
 
-        # Misma sección de precios (misma tabla por provincia).
-        assert "Arroz por formato y provincia" in limpia
-        assert "Arroz por formato y provincia" in alias
+        assert 'href="/?productos=arroz"' in texto
+        assert "Ver Arroz en el mapa interactivo" in texto
 
     def test_el_titulo_refleja_el_producto_enfocado(
         self, client: TestClient, session: Session
