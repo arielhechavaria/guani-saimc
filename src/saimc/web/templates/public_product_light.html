@@ -1,0 +1,125 @@
+{#
+  Vista liviana de `/producto/{slug}` (2026-09-14, reporte de mejoras no
+  consideradas, idea #5). Extiende `_public_shell.html` DIRECTO, no
+  `public_home.html`: esta ruta es la que queda en la barra de direcciones
+  tras un clic común (sin provincia ni ventana filtrada, ver
+  `_product_link` en `product_nav.py`) y la pensada para compartir — no
+  puede arrastrar el mapa Leaflet, el compás ni el dock. `panel` es el
+  `ProductPanel` que arma `_build_focused_product_panel`
+  (`routers/public.py`), ya con sus bloques (cifra + rango + anuncios) por
+  provincia y formato.
+
+  El CSS de acá abajo es chico y propio a propósito: `.ph-cifra`/`.ph-chip`/
+  `.ph-evo-anuncios` de `public_home.html` están pensadas para flotar sobre
+  un mapa (vidrio, `backdrop-filter`) y viven en el `<style>` de esa
+  plantilla, no en `saimc-public.css` — traerlas tal cual encima de un fondo
+  de página común se vería como una ventana flotante sin ventana. Nombres
+  con prefijo `ph-lite-` para no confundirse con esas, aunque conviven en
+  páginas distintas y no colisionarían.
+#}
+{% extends "_public_shell.html" %}
+
+{% block title %}{{ panel.name }} — precios{% endblock %}
+{% block heading %}{{ panel.name }}{% endblock %}
+{% block subtitle %}
+{%- if panel.has_data -%}
+{%- if panel.is_single_value -%}
+{{ panel.minimum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}
+{%- else -%}
+{{ panel.minimum_text }}–{{ panel.maximum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} · {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}
+{%- endif -%}
+{%- else -%}
+Sin anuncios en los últimos {{ window_days }} días.
+{%- endif -%}
+{% endblock %}
+
+{% block og_description %}Precios de {{ panel.name }}{% if selected_province %} en {{ selected_province }}{% endif %} en el mercado informal cubano, verificados anuncio por anuncio.{% endblock %}
+
+{% block head %}
+<style>
+  .ph-lite-fresh { margin-top: var(--m3-space-2); }
+  .ph-lite-blocks { display: grid; gap: var(--m3-space-4); margin-top: var(--m3-space-5); padding: 0; list-style: none; }
+  .ph-lite-card {
+    border-radius: var(--ph-radius-sm); background: var(--m3-surface);
+    box-shadow: var(--ph-elev); padding: clamp(1rem, 3vw, 1.5rem);
+  }
+  .ph-lite-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .3rem .9rem; }
+  .ph-lite-provincia { font-family: var(--ph-font-heading); font-size: 1.15rem; }
+  .ph-lite-chip {
+    display: inline-block; margin-left: .55rem; padding: .15rem .6rem;
+    border-radius: var(--m3-radius-full); background: var(--ph-accent-wash);
+    color: var(--ph-accent); font-size: .75rem; font-weight: 600; vertical-align: middle;
+  }
+  .ph-lite-precio { font-family: var(--ph-font-heading); font-size: 1.5rem; white-space: nowrap; }
+  .ph-lite-precio small { font-family: inherit; font-size: .8125rem; font-weight: 400; opacity: .7; }
+  .ph-lite-cambio { margin: .3rem 0 0; font-size: .8125rem; color: var(--m3-on-surface-variant); }
+  .ph-lite-datos {
+    display: flex; flex-wrap: wrap; gap: .2rem .9rem; margin: .6rem 0 0;
+    padding: 0; list-style: none; font-size: .8125rem; color: var(--m3-on-surface-variant);
+  }
+  .ph-lite-anuncios { margin-top: .7rem; }
+  .ph-lite-anuncios summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
+  .ph-lite-tabla { width: 100%; border-collapse: collapse; margin-top: .5rem; font-size: .8125rem; }
+  .ph-lite-tabla th, .ph-lite-tabla td { padding: .3rem .5rem; text-align: left; border-bottom: 1px solid var(--m3-outline-variant); }
+  .ph-lite-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ph-lite-vacio { margin-top: var(--m3-space-5); color: var(--m3-on-surface-variant); }
+  .ph-lite-mapa { margin-top: var(--m3-space-6); }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if data_freshness_day %}
+<p class="m3-subtitle ph-lite-fresh">
+  Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
+</p>
+{% endif %}
+
+{% if panel.blocks %}
+<ul class="ph-lite-blocks">
+  {% for bloque in panel.blocks %}
+  {% set cifra = bloque.headline %}
+  <li class="ph-lite-card">
+    <div class="ph-lite-top">
+      <span class="ph-lite-provincia">{{ cifra.province_name }}{% if cifra.format_label_display %}<span class="ph-lite-chip">{{ cifra.format_label_display }}</span>{% endif %}</span>
+      <span class="ph-lite-precio">{{ cifra.median_text }} <small>{{ cifra.currency }}/{{ cifra.unit }}</small></span>
+    </div>
+    {% if cifra.change_text %}
+    <p class="ph-lite-cambio">{{ cifra.change_text }} vs los {{ window_days }} días anteriores</p>
+    {% endif %}
+    <ul class="ph-lite-datos">
+      {% if not cifra.is_single_value %}<li>rango <b>{{ cifra.minimum_text }}–{{ cifra.maximum_text }}</b></li>{% endif %}
+      <li><b>{{ cifra.count }}</b> anuncio{{ "s" if cifra.count != 1 }}{% if cifra.outliers %} ({{ cifra.outliers }} fuera de escala){% endif %}</li>
+      <li>el último, del {{ cifra.last_day_text }}</li>
+    </ul>
+    {% if bloque.ads %}
+    <details class="ph-lite-anuncios">
+      <summary>{{ bloque.ads | length }} anuncio{{ "s" if bloque.ads | length != 1 }} detrás de esta cifra</summary>
+      <table class="ph-lite-tabla">
+        <thead>
+          <tr>
+            <th scope="col">Día</th>
+            <th scope="col" class="num">Precio</th>
+            <th scope="col">Enlace</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ad in bloque.ads %}
+          <tr>
+            <td class="num">{{ ad.day_text }}</td>
+            <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
+            <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="ph-lite-vacio">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>
+{% endif %}
+
+<p class="ph-lite-mapa"><a href="{{ map_href }}">Ver {{ panel.name }} en el mapa interactivo</a></p>
+{% endblock %}

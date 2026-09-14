@@ -9898,3 +9898,51 @@ riesgo de layout.
 Consecuencia: con esto se cierran las 7 ideas del reporte de mejoras no
 consideradas de esta sesión — 5 implementadas, 1 diagnosticada y registrada
 como candidato (idea #5, `/producto/{slug}` liviano), y esta auditoría.
+
+## 2026-09-14 — /producto/{slug} pasa a ser la vista liviana
+Reemplaza a la entrada del mismo día «/producto/{slug} liviano: queda como
+candidato, no implementado». El operador pidió estudiarlo mejor y volver
+con un plan; ese estudio encontró un dato que cambiaba el peso de la
+decisión (ver abajo) y, con el plan revisado, dio luz verde («metele»).
+Contexto: `_product_link` (`product_nav.py`) ya hacía que cualquier chip de
+producto, sin provincia ni ventana filtrada —el caso común—, apuntara a
+`/producto/{slug}` y `hx-push-url="true"` empujara esa URL a la barra de
+direcciones. No era solo "el link para compartir": es la URL en la que
+termina casi cualquier sesión real tras un solo clic. Estudiado el costo:
+Leaflet solo (JS+CSS) son 162.358 B sin comprimir (~46 KB gzip) más los
+tiles de OpenStreetMap en vivo —varias a varias decenas de peticiones HTTP
+a un host externo—, contra una conexión que CLAUDE.md marca como lenta e
+intermitente. Todo lo que un panel de producto necesita (`ProductPanel` con
+sus bloques por provincia y formato: cifra, rango, tendencia, anuncios) ya
+se calculaba sin depender del mapa.
+Decisión: `/producto/{slug}` renderiza `public_product_light.html` —sin
+Leaflet, sin compás, sin dock—, con un enlace de vuelta a `/?producto=
+{slug}` (`_build_focused_product_panel`, `routers/public.py`) para quien
+quiera el mapa interactivo. `?provincia=`/`?dias=` se siguen aceptando para
+acotar el panel; `?ver=`/`?capa=` (ventanas y capa del mapa) ya no
+significan nada acá y se ignoran en silencio en vez de romper un enlace
+viejo. `/?producto={slug}` sigue siendo la vista completa, sin cambios.
+Descartado: una ruta nueva aparte (ej. `/producto/{slug}/simple`) dejando
+la ruta limpia como estaba. Habría hecho falta inventar un mecanismo nuevo
+para que alguien llegue a esa URL —hoy no hay botón de «compartir»—, y sin
+eso la vista liviana quedaba sin ningún enlace real hacia ella. Elegido
+explícitamente por el operador entre las dos opciones presentadas.
+Descartado también: reusar el CSS de `.ph-cifra`/`.ph-chip`/`.ph-evo-
+anuncios` de `public_home.html` tal cual. Esas clases están pensadas para
+flotar sobre un mapa (vidrio, `backdrop-filter`) y viven en el `<style>` de
+esa plantilla, no en `saimc-public.css`; traerlas sin cambios a una página
+de fondo común se habría visto como una ventana flotante sin ventana. Se
+escribió un CSS chico y propio (`ph-lite-*`), reusando los tokens
+compartidos (`--ph-*`, `.m3-title`) que ya carga `_public_shell.html`.
+Se dejó afuera de v1 el gráfico SVG de rango (`_range_chart.html`) y su
+acordeón de ayuda: son autocontenidos pero añaden ~8 clases de CSS propias
+sin las que el texto numérico (mediana, rango, conteo) ya contesta la
+pregunta. Candidato a sumar después si el operador lo pide viendo la
+página real.
+Consecuencia: `test_el_query_string_sigue_siendo_alias` (2026-09-11) dejó
+de ser cierto y se reescribió como `test_ya_no_es_alias_la_ruta_limpia_no_
+trae_el_mapa`, afirmando explícitamente la diferencia. Suite completa:
+1674 casos, sin deuda de lint nueva (un `no-any-return` nuevo en mypy —
+tercera instancia del mismo `TemplateResponse` sin tipar que ya cargaban
+`_render_home` y `public_evidence`— resuelto con `cast`, no con un bump de
+piso).
