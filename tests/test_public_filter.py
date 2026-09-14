@@ -29,6 +29,7 @@ from saimc.models import (
     Currency,
     PriceHistory,
     Product,
+    ProductFormat,
     ProductVariant,
     Province,
     RawIngestion,
@@ -106,6 +107,7 @@ def _precio(
     source: RawIngestion,
     dia: date,
     price: str = "300",
+    format_id: object | None = None,
 ) -> None:
     session.add(
         PriceHistory(
@@ -118,8 +120,20 @@ def _precio(
             sale_format=SaleFormat.RETAIL.value,
             quantity=Decimal("1"),
             published_date=dia,
+            format_id=format_id,
         )
     )
+
+
+def _formato(
+    session: Session, *, product: Product, packaging: str, quantity: str, unit: str
+) -> ProductFormat:
+    formato = ProductFormat(
+        product_id=product.id, packaging=packaging, quantity=Decimal(quantity), unit=unit
+    )
+    session.add(formato)
+    session.flush()
+    return formato
 
 
 def _seed_dos_productos(session: Session) -> None:
@@ -414,6 +428,56 @@ class TestTendenciaEnLaTarjeta:
         tarjeta = texto.split('class="ph-surface ph-card"')[1].split("</li>")[0]
 
         assert "ph-card-trend" not in tarjeta
+
+
+class TestFormatoEnElPanel:
+    def test_dos_formatos_en_la_misma_provincia_dan_dos_cifras(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """2026-09-14: el panel flotante ya no funde botella y garrafa del
+        mismo producto en una sola cifra — mismo eje de formato que ya
+        distinguía `/control` (`cells.py`) y la tabla enfocada de
+        `#precios`."""
+        aceite = Product(
+            name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([aceite, habana])
+        session.commit()
+        botella = _formato(session, product=aceite, packaging="botella", quantity="1", unit="L")
+        pomo = _formato(session, product=aceite, packaging="pomo", quantity="5", unit="L")
+        fuente = _ingestion(session, hash_="h-formato")
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(5), format_id=botella.id)
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(4), format_id=botella.id)
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(3), format_id=pomo.id)
+        session.commit()
+
+        texto = client.get("/?producto=aceite").text
+        panel = texto.split('id="ph-panel-aceite"')[1].split('<a class="ph-fpanel-detail"')[0]
+
+        assert panel.count('class="ph-cifra"') == 2
+        assert "La Habana · Botella de 1 L" in panel
+        assert "La Habana · Pomo de 5 L" in panel
+
+    def test_sin_formato_declarado_sigue_una_sola_cifra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-sin-formato")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(4))
+        session.commit()
+
+        texto = client.get("/?producto=arroz").text
+        panel = texto.split('id="ph-panel-arroz"')[1].split('<a class="ph-fpanel-detail"')[0]
+
+        assert panel.count('class="ph-cifra"') == 1
+        assert "·" not in panel.split('class="ph-cifra-prov"')[1].split("</div>")[0]
 
 
 class TestPanelesFlotantes:

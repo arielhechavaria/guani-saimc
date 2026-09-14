@@ -32,6 +32,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from saimc.cells import RetailObservation
+from saimc.formats import format_label as _etiqueta_de_formato
 from saimc.web.card_view import format_price
 
 #: Cerco robusto: un precio queda fuera de escala si se aleja de la mitad
@@ -108,19 +109,33 @@ def _nice_ticks(lo: float, hi: float, count: int = 3) -> list[float]:
     return ticks
 
 
-_Key = tuple[str, str, str, str]
+_Key = tuple[str, str, str, str, str | None]
+
+
+def observation_format_label(o: RetailObservation) -> str | None:
+    """La etiqueta del formato de una observación, o `None` sin formato
+    establecido — misma regla que `_FormatPriced.format_label` en `cells.py`,
+    repetida acá porque `RetailObservation` no trae la propiedad (es la fila
+    ya aplanada para series, no una celda agregada)."""
+    if o.format_packaging is None or o.format_quantity is None or o.format_unit is None:
+        return None
+    return _etiqueta_de_formato(o.format_packaging, o.format_quantity, o.format_unit)
 
 
 def _group(observations: Iterable[RetailObservation]) -> dict[_Key, list[RetailObservation]]:
-    """Por producto × provincia × moneda × unidad. Descarta lo mismo que
-    `series_view` y por el mismo motivo: sin provincia (la vista es por
-    provincia) y `unconverted` (mezclarla afirmaría una equivalencia que nadie
-    calculó)."""
+    """Por producto × provincia × moneda × unidad × formato (2026-09-14: el
+    formato se sumó al eje de agrupado — antes una botella y una garrafa del
+    mismo producto se fundían en una sola cifra/serie, perdiendo justo la
+    pregunta «¿cómo varía el precio según el envase?» que `/control` ya
+    contestaba desde la matriz). Descarta lo mismo que `series_view` y por el
+    mismo motivo: sin provincia (la vista es por provincia) y `unconverted`
+    (mezclarla afirmaría una equivalencia que nadie calculó)."""
     grupos: dict[_Key, list[RetailObservation]] = {}
     for o in observations:
         if o.province_name is None or o.unconverted:
             continue
-        grupos.setdefault((o.product_name, o.province_name, o.currency, o.unit), []).append(o)
+        clave = (o.product_name, o.province_name, o.currency, o.unit, observation_format_label(o))
+        grupos.setdefault(clave, []).append(o)
     return grupos
 
 
@@ -194,7 +209,7 @@ class Tick:
 
 @dataclass(frozen=True)
 class RangeSeries:
-    """El rango por período de una celda producto × provincia."""
+    """El rango por período de una celda producto × provincia × formato."""
 
     product_name: str
     province_name: str
@@ -205,6 +220,9 @@ class RangeSeries:
     ticks: tuple[Tick, ...]
     bar_width: float
     bin_days: int
+    #: Formato de venta de la celda («bolsa de 25 kg»), o `None` sin formato
+    #: establecido (2026-09-14, ver `_group`).
+    format_label: str | None = None
 
     @property
     def count(self) -> int:
@@ -264,7 +282,7 @@ def build_range_series(
         return (hoy - day).days // size  # 0 = el período más reciente
 
     series: list[RangeSeries] = []
-    for (product, province, currency, unit), rows in _group(observations).items():
+    for (product, province, currency, unit, formato), rows in _group(observations).items():
         rows = [r for r in rows if 0 <= index(r.day) < n_bins]
         dentro, fuera = split_outliers(rows)
         if not dentro:
@@ -325,6 +343,7 @@ def build_range_series(
                 ticks=ticks,
                 bar_width=round(min(slot * 0.45, 16.0), 1),
                 bin_days=size,
+                format_label=formato,
             )
         )
 
@@ -357,6 +376,9 @@ class Headline:
     previous_median: Decimal | None
     previous_count: int
     last_day: date
+    #: Formato de venta de la celda («bolsa de 25 kg»), o `None` sin formato
+    #: establecido (2026-09-14, ver `price_charts._group`).
+    format_label: str | None = None
 
     @property
     def is_single_value(self) -> bool:
@@ -417,7 +439,7 @@ def build_headlines(
         prices = sorted(r.unit_price for r in dentro)
         prev_rows = anteriores.get(key, [])
         prev_dentro, _ = split_outliers(prev_rows)
-        product, province, currency, unit = key
+        product, province, currency, unit, formato = key
         cifras.append(
             Headline(
                 product_name=product,
@@ -433,6 +455,7 @@ def build_headlines(
                     statistics.median([r.unit_price for r in prev_dentro]) if prev_dentro else None
                 ),
                 previous_count=len(prev_rows),
+                format_label=formato,
                 last_day=max(r.day for r in rows),
             )
         )
@@ -552,9 +575,14 @@ def build_province_comparison(
     va primero. Unidades distintas no comparten eje: comparar libra con
     kilogramo afirmaría una equivalencia que nadie calculó.
     """
+    # Acá se vuelve a fundir el formato (2026-09-14): la pregunta de esta
+    # vista es «¿dónde está más cara?», entre provincias — no «¿cómo varía
+    # según el envase?», que ya contesta el panel de producto. `unit_price`
+    # ya es comparable entre formatos, así que blindar el resultado de antes
+    # del eje de formato es correcto acá, no una regresión.
     por_producto: dict[tuple[str, str, str], dict[str, list[RetailObservation]]] = {}
-    for (product, province, currency, unit), rows in _group(observations).items():
-        por_producto.setdefault((product, currency, unit), {})[province] = rows
+    for (product, province, currency, unit, _formato), rows in _group(observations).items():
+        por_producto.setdefault((product, currency, unit), {}).setdefault(province, []).extend(rows)
 
     plot_w = COMPARE_WIDTH - COMPARE_LEFT - COMPARE_RIGHT
     comparaciones: list[ProvinceComparison] = []
@@ -648,9 +676,11 @@ def _province_slots(*groups: Iterable[RetailObservation]) -> dict[str, int]:
 def _by_product(
     grupos: dict[_Key, list[RetailObservation]],
 ) -> dict[tuple[str, str, str], dict[str, list[RetailObservation]]]:
+    # Funde el formato (2026-09-14, mismo motivo que `build_province_comparison`):
+    # las vistas que usan esto comparan provincias, no formatos.
     out: dict[tuple[str, str, str], dict[str, list[RetailObservation]]] = {}
-    for (product, province, currency, unit), rows in grupos.items():
-        out.setdefault((product, currency, unit), {})[province] = rows
+    for (product, province, currency, unit, _formato), rows in grupos.items():
+        out.setdefault((product, currency, unit), {}).setdefault(province, []).extend(rows)
     return out
 
 
@@ -763,13 +793,17 @@ def build_month_vs_month(
     """
     slots = _province_slots(current, previous)
     ahora, antes = _group(current), _group(previous)
+    # Fundido a propósito (2026-09-14, mismo motivo que
+    # `build_province_comparison`): «¿subió o bajó?» es una pregunta de
+    # provincia, no de formato.
     por_producto: dict[tuple[str, str, str], dict[str, tuple[list, list]]] = {}
     for key in set(ahora) | set(antes):
-        product, province, currency, unit = key
-        por_producto.setdefault((product, currency, unit), {})[province] = (
-            antes.get(key, []),
-            ahora.get(key, []),
+        product, province, currency, unit, _formato = key
+        entrada = por_producto.setdefault((product, currency, unit), {}).setdefault(
+            province, ([], [])
         )
+        entrada[0].extend(antes.get(key, []))
+        entrada[1].extend(ahora.get(key, []))
 
     plot_h = SLOPE_HEIGHT - SLOPE_TOP - SLOPE_BOTTOM
     before_label = (

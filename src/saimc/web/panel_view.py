@@ -33,7 +33,13 @@ from saimc.web.series_view import PriceSeries
 
 @dataclass(frozen=True)
 class PanelBlock:
-    """Una provincia dentro del panel: su cifra y su rango por período."""
+    """Una provincia —y, si el producto tiene formato declarado, un formato—
+    dentro del panel: su cifra y su rango por período. Antes de 2026-09-14
+    había uno por provincia a secas; ahora un producto con varios formatos
+    en la misma provincia (botella y garrafa de aceite, por ejemplo) trae un
+    bloque por cada uno, en vez de fundirlos en un solo rango ciego al
+    envase (mismo eje que ya distinguía `/control` y la tabla enfocada de
+    `#precios`, ver `docs/decisions.md`)."""
 
     headline: Headline
     ranges: RangeSeries | None
@@ -171,17 +177,22 @@ def attach_blocks(
     ranges: Sequence[RangeSeries],
 ) -> list[ProductPanel]:
     """Pega a cada panel su cifra y su rango por período, un bloque por
-    provincia, en el orden de las cifras (la provincia con más anuncios
-    primero). Cifra y rango se emparejan por producto, provincia, moneda y
-    unidad: una celda con dos unidades no mezcla el rango de una con la cifra
-    de la otra."""
-    rango_de = {(r.product_name, r.province_name, r.currency, r.unit): r for r in ranges}
+    provincia × formato, en el orden de las cifras (más anuncios primero).
+    Cifra y rango se emparejan por producto, provincia, moneda, unidad y
+    formato (2026-09-14: se sumó el formato al emparejado — antes una celda
+    con dos formatos mezclaba el rango de uno con la cifra del otro apenas
+    coincidían provincia+unidad)."""
+    rango_de = {
+        (r.product_name, r.province_name, r.currency, r.unit, r.format_label): r for r in ranges
+    }
     por_producto: dict[str, list[PanelBlock]] = {}
     for h in headlines:
         por_producto.setdefault(h.product_name, []).append(
             PanelBlock(
                 headline=h,
-                ranges=rango_de.get((h.product_name, h.province_name, h.currency, h.unit)),
+                ranges=rango_de.get(
+                    (h.product_name, h.province_name, h.currency, h.unit, h.format_label)
+                ),
             )
         )
     return [replace(p, blocks=tuple(por_producto.get(p.name, ()))) for p in panels]
@@ -195,10 +206,20 @@ def group_blocks_by_province(
     activo, sin depender de si hay una `selected_province` elegida —cuando
     la hay, `blocks` ya viene filtrado a esa sola provincia (`_render_home`),
     así que el resultado tiene una sola clave; sin elegir ninguna, una por
-    cada provincia con dato."""
+    cada provincia con dato.
+
+    La insignia no desglosa por formato —ese detalle es del panel, acá es
+    una lectura rápida—: con varios bloques del mismo producto en la misma
+    provincia (uno por formato, desde 2026-09-14) se queda con el primero,
+    que ya es el de más anuncios porque `panel.blocks` viene ordenado así."""
     agrupado: dict[str, list[tuple[ProductPanel, PanelBlock]]] = {}
+    vistos: set[tuple[str, str]] = set()
     for panel in panels:
         for bloque in panel.blocks:
             slug = product_slug(bloque.headline.province_name)
+            clave = (panel.name, slug)
+            if clave in vistos:
+                continue
+            vistos.add(clave)
             agrupado.setdefault(slug, []).append((panel, bloque))
     return agrupado

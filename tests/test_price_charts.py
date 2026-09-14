@@ -38,6 +38,9 @@ def _obs(
     *,
     province: str | None = "La Habana",
     unconverted: bool = False,
+    format_packaging: str | None = None,
+    format_quantity: str | None = None,
+    format_unit: str | None = None,
 ) -> RetailObservation:
     return RetailObservation(
         product_name="Arroz",
@@ -49,6 +52,9 @@ def _obs(
         unit_price=Decimal(precio),
         evidence_id=_EVIDENCE_ID,
         evidence_is_public=False,
+        format_packaging=format_packaging,
+        format_quantity=Decimal(format_quantity) if format_quantity is not None else None,
+        format_unit=format_unit,
     )
 
 
@@ -192,3 +198,44 @@ class TestCifraConSuMuestra:
         assert cifra.maximum == Decimal("300")
         assert cifra.count == 5
         assert cifra.outliers == 1
+
+
+class TestEjeDeFormato:
+    """El formato entra al eje de agrupado (2026-09-14): una botella y una
+    garrafa del mismo producto ya no se funden en una sola cifra o serie —
+    mismo eje que `/control` ya usaba en la matriz (`cells.py`), que era
+    justo lo que le faltaba al panel flotante de la home pública."""
+
+    def test_build_headlines_separa_por_formato(self) -> None:
+        botella = [
+            _obs(30, "300", format_packaging="botella", format_quantity="1", format_unit="L"),
+            _obs(29, "310", format_packaging="botella", format_quantity="1", format_unit="L"),
+        ]
+        garrafa = [
+            _obs(28, "1400", format_packaging="garrafa", format_quantity="5", format_unit="L")
+        ]
+
+        cifras = build_headlines(botella + garrafa, [])
+
+        assert len(cifras) == 2
+        por_formato = {c.format_label: c for c in cifras}
+        assert por_formato["botella de 1 L"].count == 2
+        assert por_formato["garrafa de 5 L"].count == 1
+
+    def test_build_range_series_separa_por_formato(self) -> None:
+        botella = [_obs(30, "300", format_packaging="botella", format_quantity="1", format_unit="L")]
+        garrafa = [
+            _obs(30, "1400", format_packaging="garrafa", format_quantity="5", format_unit="L")
+        ]
+
+        series = build_range_series(botella + garrafa, window_days=7, hoy=HOY)
+
+        assert {s.format_label for s in series} == {"botella de 1 L", "garrafa de 5 L"}
+
+    def test_sin_formato_sigue_agrupando_junto_como_antes(self) -> None:
+        """Sin formato declarado en ninguna fila, el comportamiento no
+        cambia: sigue siendo una sola cifra."""
+        (cifra,) = build_headlines([_obs(30, "300"), _obs(29, "310")], [])
+
+        assert cifra.format_label is None
+        assert cifra.count == 2

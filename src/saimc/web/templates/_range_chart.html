@@ -1,13 +1,13 @@
 {#
   Rango por período (semana, o día con la ventana de 7) de una celda
-  producto × provincia, como SVG generado en el servidor
+  producto × provincia × formato, como SVG generado en el servidor
   (`price_charts.build_range_series`). Cada barra va del precio más bajo al más
   alto del período; la raya es la mediana; abajo, cuántos anuncios. Un período
   sin anuncios queda vacío. Un precio fuera de escala no estira el eje: se marca
   con un triángulo en el borde de su período. Espera `serie`.
 #}
 <svg class="ph-rango" viewBox="{{ serie.viewbox }}" role="img"
-     aria-label="Rango de precio por {{ serie.period_name }} de {{ serie.product_name }} en {{ serie.province_name }}, del {{ serie.first_label }} al {{ serie.last_label }}.">
+     aria-label="Rango de precio por {{ serie.period_name }} de {{ serie.product_name }} en {{ serie.province_name }}{% if serie.format_label %}, {{ serie.format_label }}{% endif %}, del {{ serie.first_label }} al {{ serie.last_label }}.">
   {% for t in serie.ticks %}
   <line class="ph-rango-grid" x1="{{ serie.x_left }}" x2="{{ serie.x_right }}" y1="{{ t.y }}" y2="{{ t.y }}" />
   <text class="ph-rango-tick" x="{{ serie.x_left - 6 }}" y="{{ t.y + 3.5 }}" text-anchor="end">{{ t.label }}</text>
