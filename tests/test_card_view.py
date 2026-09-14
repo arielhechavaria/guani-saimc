@@ -8,10 +8,12 @@ pero como **rango** y nunca como valor puntual, siempre con el tamaño de muestr
 a la vista y rotulado «muestra en formación» mientras N siga sin calibrar.
 """
 
+from datetime import date
 from decimal import Decimal
 
 from saimc.cells import RetailRange
-from saimc.web.card_view import SAMPLE_FORMING, build_cards, format_price
+from saimc.web.card_view import SAMPLE_FORMING, attach_trends, build_cards, format_price
+from saimc.web.price_charts import Headline
 
 
 def _rango(
@@ -188,3 +190,81 @@ class TestTarjetaConVariante:
             "girasol Vitalín importado",
             "girasol Magdalena importado",
         }
+
+
+def _cifra(
+    *,
+    product: str = "Arroz",
+    province: str = "La Habana",
+    median: str = "330",
+    previous_median: str | None = "300",
+) -> Headline:
+    return Headline(
+        product_name=product,
+        province_name=province,
+        currency="CUP",
+        unit="lb",
+        count=5,
+        outliers=0,
+        median=Decimal(median),
+        minimum=Decimal(median),
+        maximum=Decimal(median),
+        previous_median=Decimal(previous_median) if previous_median is not None else None,
+        previous_count=5,
+        last_day=date(2026, 9, 1),
+    )
+
+
+class TestAttachTrends:
+    """`attach_trends`: la tarjeta simple contesta «¿sube o baja?» (spec.md
+    §6.7) con el mismo número sin color que ya usa el panel flotante —nunca
+    un semáforo, eso sigue bloqueado por §12.6."""
+
+    def test_pega_el_cambio_de_la_cifra_que_coincide(self) -> None:
+        (card,) = attach_trends(
+            build_cards([_rango(product="Arroz", province="La Habana")]),
+            [_cifra(product="Arroz", province="La Habana", median="330", previous_median="300")],
+        )
+
+        assert card.change_text == "+10%"
+
+    def test_sin_cifra_coincidente_el_cambio_queda_vacio(self) -> None:
+        (card,) = attach_trends(
+            build_cards([_rango(product="Arroz", province="La Habana")]),
+            [_cifra(product="Aceite", province="La Habana")],
+        )
+
+        assert card.change_text == ""
+
+    def test_no_mezcla_el_cambio_de_otra_provincia(self) -> None:
+        """Arroz tiene cifra en Santiago pero la tarjeta es de La Habana: no
+        hay que pegarle un cambio que no le corresponde."""
+        (card,) = attach_trends(
+            build_cards([_rango(product="Arroz", province="La Habana")]),
+            [_cifra(product="Arroz", province="Santiago de Cuba")],
+        )
+
+        assert card.change_text == ""
+
+    def test_sin_periodo_anterior_no_hay_cambio_que_mostrar(self) -> None:
+        (card,) = attach_trends(
+            build_cards([_rango(product="Arroz", province="La Habana")]),
+            [_cifra(product="Arroz", province="La Habana", previous_median=None)],
+        )
+
+        assert card.change_text == ""
+
+
+class TestIconoDeTarjeta:
+    """Ancla visual de la tarjeta (2026-09-14): la misma ilustración/glifo
+    que ya usa el panel flotante, no un ícono nuevo."""
+
+    def test_producto_piloto_tiene_ilustracion(self) -> None:
+        (card,) = build_cards([_rango(product="Aceite")])
+
+        assert card.has_illustration
+
+    def test_producto_sin_entrada_no_tiene_ilustracion(self) -> None:
+        (card,) = build_cards([_rango(product="Café")])
+
+        assert not card.has_illustration

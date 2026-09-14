@@ -24,17 +24,36 @@ decisiones de esta vista:
 3. El **tamaño de muestra va siempre visible**, al lado del precio y no en una
    nota al pie.
 
-Lo que esta vista **no** hace todavía, y está en `docs/backlog.md`: semáforo de
-tendencia, alerta de variación, índice de disponibilidad y recomendación de
-compra. Los cuatro necesitan o densidad de serie o un umbral sin calibrar.
+Lo que esta vista **no** hace todavía, y está en el GitHub Project (ver
+`docs/backlog.md`): semáforo de tendencia (color/alarma), índice de
+disponibilidad y recomendación de compra. Los tres necesitan un umbral sin
+calibrar que §12.6 prohíbe inventar.
+
+**El cambio vs. el período anterior sí se muestra** (`change_text`, desde
+2026-09-14): es el mismo número sin color que ya usa el panel flotante
+(`Headline.change_text`, §12.6 — comparación como número, nunca semáforo), no
+uno de los cuatro bloqueados. Responde «¿sube o baja?» sin inventar ningún
+umbral; el operador lo pidió explícitamente para que la tarjeta simple
+conteste las tres preguntas de §6.7 (caro/barato, sube/baja, con qué muestra)
+sin tener que abrir el panel flotante.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
+from typing import TYPE_CHECKING
 
 from saimc.cells import RetailRange
+from saimc.web.product_nav import has_product_illustration, product_icon, product_slug
+
+if TYPE_CHECKING:
+    # Bajo `TYPE_CHECKING` nomás: `price_charts.py` importa `format_price` de
+    # este mismo módulo, así que un import normal acá sería circular en
+    # runtime. `from __future__ import annotations` ya vuelve perezosa la
+    # anotación de tipos, así que mypy lo resuelve igual sin ejecutarlo.
+    from saimc.web.price_charts import Headline
 
 #: Rótulo de §9.0 para una celda por debajo del umbral de publicación. Hoy son
 #: todas, porque N está sin calibrar y las Fases 0-1 son su calibración.
@@ -83,10 +102,30 @@ class ProductCard:
     # distinguiéndola de la genérica y de otras variantes del mismo producto
     # en la misma provincia. `None` sin variante declarada.
     variant_label: str | None = None
+    #: Cambio vs. el período anterior del mismo largo, ya formateado
+    #: (`Headline.change_text`, p. ej. «+8%»); `""` sin comparación posible.
+    #: Se pega con `attach_trends`, vacío hasta entonces.
+    change_text: str = ""
 
     @property
     def state(self) -> str:
         return SAMPLE_FORMING
+
+    @property
+    def slug(self) -> str:
+        return product_slug(self.product_name)
+
+    @property
+    def icon(self) -> str | None:
+        """El ícono Material Symbols del producto, o `None` si no tiene."""
+        return product_icon(self.product_name)
+
+    @property
+    def has_illustration(self) -> bool:
+        """Si el producto tiene ícono ilustrado propio (ver
+        `templates/_product_illustration.html`) para el ancla visual de la
+        tarjeta, en vez del glifo de Material Symbols del chip."""
+        return has_product_illustration(self.product_name)
 
     @property
     def minimum_text(self) -> str:
@@ -160,3 +199,24 @@ def build_cards(ranges: list[RetailRange]) -> list[ProductCard]:
     ]
     cards.sort(key=lambda c: (-c.count, c.product_name, c.province_name))
     return cards
+
+
+def attach_trends(cards: list[ProductCard], headlines: Sequence[Headline]) -> list[ProductCard]:
+    """Pega a cada tarjeta el cambio vs. el período anterior, si hay uno.
+
+    Reusa `Headline.change_text` tal cual —el mismo número sin color que ya
+    muestra el panel flotante (`panel_view.attach_blocks`)—, emparejado por
+    producto + provincia + moneda + unidad. Una tarjeta de formato o variante
+    comparte el cambio agregado de todo el producto en esa provincia: no hay
+    comparación previa a nivel de formato/variante todavía, y aproximarla con
+    el agregado es preferible a no mostrar nada."""
+    cambio_de = {
+        (h.product_name, h.province_name, h.currency, h.unit): h.change_text for h in headlines
+    }
+    return [
+        replace(
+            c,
+            change_text=cambio_de.get((c.product_name, c.province_name, c.currency, c.unit), ""),
+        )
+        for c in cards
+    ]

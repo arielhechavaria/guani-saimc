@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
 from saimc.progress import pilot_product_names
-from saimc.web.card_view import build_cards
+from saimc.web.card_view import attach_trends, build_cards
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import attach_blocks, build_product_panels, group_blocks_by_province
@@ -273,6 +273,11 @@ def _render_home(
     ]
     panel_headlines = build_headlines(obs, previous_obs)
     panel_ranges = build_range_series(obs, window_days=window, hoy=hoy)
+    # Tarjeta simple (2026-09-14): mismo cambio vs. período anterior que ya
+    # muestra el panel flotante, para que `#precios` conteste "¿sube o baja?"
+    # sin abrir otra ventana (spec.md §6.7). `cards` se reasigna acá y no se
+    # vuelve a construir: todo lo que lo use de ahora en más ya lleva el dato.
+    cards = attach_trends(cards, panel_headlines)
 
     # Comparación entre provincias (Precios y la hoja de detalle): SIEMPRE con
     # las 16, aunque haya una elegida —la pregunta es «¿dónde está más caro?»,

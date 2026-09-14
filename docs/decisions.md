@@ -9479,3 +9479,69 @@ Sigue pendiente la verificación real en navegador — es la tercera vez en
 el día que este componente se ajusta a ciegas sin poder verlo el mismo
 Claude, dado que el Postgres local del entorno de desarrollo no tiene
 credenciales válidas.
+
+## 2026-09-14 — Candidato a fase futura: vista simple por tipo de usuario
+Contexto: el operador planteó la prueba de la tía sin formación técnica —
+si le pasa el link de Guani, ¿responde la página lo que ella espera sin
+esfuerzo? `spec.md` §6.7 fija exactamente esa vara: "cualquier cubano, en
+5 segundos" tiene que saber si un producto está caro/barato, si sube o
+baja, si conviene comprar ahora. Contrastado contra la home actual —
+mediana vs. promedio explicada en un tooltip, capas "densidad/
+publicación", ventanas flotantes arrastrables, triángulos de "fuera de
+escala"—, la respuesta es que no la pasa: son elementos que asumen
+cierta alfabetización estadística y de interfaz.
+Decisión: no se resuelve ahora. Se anota como candidato a fase futura:
+una vista/módulo separado por tipo de usuario (lego vs. quien quiere el
+detalle metodológico), en vez de simplificar la vista única existente.
+No es un ajuste de copy: el semáforo rojo/verde y el "precio promedio"
+que pide §6.7 son EXACTAMENTE lo que el resto del proyecto bloquea a
+propósito hoy — `§12.6` prohíbe inventar umbrales sin calibrar, y por
+eso `routers/public.py` ya documenta "el coloreado del mapa por precio y
+los semáforos siguen bloqueados por el umbral sin calibrar (§12.6)". Una
+vista simple honesta recién es posible cuando exista un umbral real que
+calibrar (atado a H0, §3/§9), no antes — construirla hoy obligaría a
+inventar el mismo umbral que el proyecto ya se negó a inventar en el
+mapa.
+Descartado: simplificar la vista única actual quitándole las etiquetas
+técnicas sin más — mediana/rango/muestra no son ruido cosmético, son la
+disciplina anti-§9.0 (nunca un valor puntual sin respaldo); sacarlos
+para "verse simple" escondería la incertidumbre, no la resolvería.
+Consecuencia: ninguna todavía — es un candidato registrado, no una
+tarea. Se retoma cuando H0 tenga un número real (criterio de salida de
+Fase 0, `spec.md` §9) o cuando el operador decida priorizarlo antes.
+
+## 2026-09-14 — Tarjeta simple: cambio vs. período anterior + ícono
+Contexto: siguiendo la prueba de la tía (entrada anterior), se revisó
+`.ph-card` (`#precios` sin producto único enfocado) contra las tres
+preguntas de §6.7. Ya contestaba «¿caro o barato?» en prosa simple
+(mediana traducida a «mitad de los anuncios, cerca de X», no la palabra
+«mediana» suelta) y «¿con qué respaldo?» (muestra siempre visible). Le
+faltaba «¿sube o baja?»: ese dato existe hace tiempo
+(`Headline.change_text`, ya usado en el panel flotante) pero nunca llegó
+a la tarjeta simple.
+Decisión: `card_view.attach_trends(cards, headlines)` empareja por
+producto+provincia+moneda+unidad (mismo patrón que
+`panel_view.attach_blocks`) y pega `ProductCard.change_text`. La
+plantilla lo muestra con la clase ya existente `.ph-cifra-cambio` —el
+mismo número sin color que el panel, no un elemento nuevo—, como línea
+propia entre la mediana y la muestra. De paso, la tarjeta suma el ícono
+ilustrado del producto (`ProductCard.has_illustration`/`.icon`/`.slug`,
+mismas properties que ya tenía `ProductPanel`) como ancla visual junto
+al nombre, reusando `_product_illustration.html` con `{% set panel =
+card %}`.
+Descartado: un semáforo o flecha de color sobre el cambio — seguiría
+siendo el umbral inventado que §12.6 prohíbe; el número solo (como ya
+lo hace el panel) es la versión honesta. Calcular el cambio a nivel de
+formato/variante en vez de aggregate por producto — no hay comparación
+histórica por formato calculada todavía en ningún lado; una tarjeta de
+formato hereda el cambio agregado del producto entero en esa provincia,
+documentado como aproximación en el docstring de `attach_trends`.
+Consecuencia: import circular latente entre `card_view.py` y
+`price_charts.py` (`price_charts` ya importaba `format_price` de
+`card_view`) resuelto con `Headline` importado solo bajo
+`TYPE_CHECKING` en `card_view.py` —la anotación es perezosa por `from
+__future__ import annotations`, así que mypy la resuelve sin ejecutar
+el import en runtime—. 8 tests nuevos: `test_card_view.py`
+(`TestAttachTrends`, `TestIconoDeTarjeta`) y `test_public_filter.py`
+(`TestTendenciaEnLaTarjeta`, con y sin período anterior). Sigue
+pendiente la verificación visual real del operador.
