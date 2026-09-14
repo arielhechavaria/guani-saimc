@@ -380,6 +380,13 @@ class ProductChip:
     panel sin querer al pasar por el riel; ver `docs/decisions.md` 2026-09-11.
     `icon`, si el producto tiene uno, reemplaza al nombre en el chip; el
     nombre queda como etiqueta accesible y como tooltip al pasar por encima.
+
+    `is_full_navigation` (2026-09-14): `True` cuando `query` apunta a la ruta
+    limpia `/producto/<slug>` —la vista liviana, sin mapa— en vez de
+    `?productos=`. La plantilla usa esto para NO poner `hx-get`: esa vista no
+    tiene `#ph-live` ni nada que un swap parcial pueda encontrar, así que el
+    clic tiene que ser una navegación de página entera, no un intercambio
+    dentro de la actual.
     """
 
     label: str
@@ -387,6 +394,7 @@ class ProductChip:
     is_active: bool
     query: str
     icon: str | None = None
+    is_full_navigation: bool = False
 
 
 def build_product_chips(
@@ -405,6 +413,14 @@ def build_product_chips(
     clickearlo; uno ya prendido no hace nada —cerrar su panel es cosa de la ×
     del panel, no del chip—. `ver` y `capa` se preservan: prender un producto
     no cierra las ventanas abiertas ni cambia la capa del mapa.
+
+    Encender un chip cuando el resultado queda en UN solo producto y no hay
+    ningún otro filtro puesto (provincia, ventana de días, ventanas abiertas,
+    capa no default) apunta a la ruta limpia `/producto/<slug>` —la vista
+    liviana, sin mapa (2026-09-14, reporte de mejoras no consideradas, idea
+    #5)— en vez de `?productos=`. Dos o más productos activos, o cualquier
+    filtro puesto, siguen en `?productos=`, que sí sabe combinarlos; la vista
+    liviana solo entiende un producto.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_names]
@@ -417,15 +433,28 @@ def build_product_chips(
             if is_active
             else [*active_slugs, slug]
         )
+        va_a_vista_liviana = (
+            len(resultado) == 1
+            and not prov_slug
+            and selected_days == DEFAULT_WINDOW_DAYS
+            and not ver
+            and capa == DEFAULT_LAYER
+        )
+        destino = (
+            f"/producto/{resultado[0]}"
+            if va_a_vista_liviana
+            else products_query(
+                resultado, provincia=prov_slug, dias=selected_days, ver=ver, capa=capa
+            )
+        )
         chips.append(
             ProductChip(
                 label=name,
                 slug=slug,
                 is_active=is_active,
                 icon=product_icon(name),
-                query=products_query(
-                    resultado, provincia=prov_slug, dias=selected_days, ver=ver, capa=capa
-                ),
+                query=destino,
+                is_full_navigation=va_a_vista_liviana,
             )
         )
     return chips

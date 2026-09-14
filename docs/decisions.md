@@ -9946,3 +9946,35 @@ trae_el_mapa`, afirmando explícitamente la diferencia. Suite completa:
 tercera instancia del mismo `TemplateResponse` sin tipar que ya cargaban
 `_render_home` y `public_evidence`— resuelto con `cast`, no con un bump de
 piso).
+
+## 2026-09-14 — El riel de chips engancha a la ruta limpia
+Contexto: al preguntar "¿cómo llego a /producto/{slug}?" se destapó un error
+de la entrada anterior («/producto/{slug} pasa a ser la vista liviana»):
+esa entrada asumía que el riel de chips visible (`.ph-chip-rail`,
+`build_product_chips`) ya apuntaba a la ruta limpia al prender el primer
+producto. Falso — usaba `products_query` directo, que siempre arma
+`?productos=`. La única función que sabía armar `/producto/<slug>`
+(`_product_link`, vía `build_product_nav`) no estaba enganchada a ningún
+lado: código huérfano con tests propios pero sin alcance real. Hasta esta
+entrada, `/producto/{slug}` solo se llegaba escribiendo la URL a mano.
+Decisión: `build_product_chips` arma la ruta limpia cuando encender un chip
+deja UN solo producto activo y no hay ningún otro filtro puesto (provincia,
+ventana de días, ventanas abiertas, capa de mapa no default) — mismo
+criterio que ya tenía `_product_link`, sumándole `ver`/`capa` porque
+`build_product_chips` sí los conoce. Dos o más productos, o cualquier
+filtro puesto, siguen en `?productos=`.
+El punto no obvio: la ruta limpia no puede llevar `hx-get`. El riel vive
+dentro de `public_home.html` y sus chips normalmente hacen un swap parcial
+contra `#ph-live` (`hx-target`/`hx-select` heredados); `public_product_
+light.html` no tiene ese elemento —ni ningún otro DOM compatible—, así que
+un swap ahí no encontraría nada que reemplazar y dejaría el riel roto.
+`ProductChip` suma `is_full_navigation: bool`; la plantilla omite `hx-get`
+en ese caso y el clic pasa a ser una navegación de página entera.
+Descartado: reusar `_product_link`/`build_product_nav` tal cual. Esa función
+no sabe de `ver`/`capa`, y extenderla exigía tocar su único caller actual
+(código no wireado, fuera de alcance de este slice). Se escribió la
+condición directo en `build_product_chips`, calculándola una sola vez y
+reusándola para la URL y para `is_full_navigation`.
+Consecuencia: `_product_link`/`build_product_nav` siguen sin uso real —
+quedan para otra sesión decidir si se retiran o se les encuentra un lugar.
+Suite completa: 1681 casos, sin deuda de lint nueva.
