@@ -163,12 +163,22 @@ class TestAssetsVendorizados:
         deja un manifiesto al lado con los iconos que metió. Si una plantilla
         suma un icono y nadie corre la herramienta, el manifiesto queda corto y
         esto se pone rojo — en vez de que el navegador dibuje el texto crudo
-        `menu_book`. Pasó con `flag`, `history` y `rule` (2026-08-30)."""
+        `menu_book`. Pasó con `flag`, `history` y `rule` (2026-08-30).
+
+        `[^>]*` antes del `>` final (2026-09-14, hallado a mano): sin eso, un
+        `<span class="m3-icon ..." aria-hidden="true">nombre</span>` —el
+        patrón que ya usan varios iconos decorativos de esta misma
+        plantilla— no matcheaba nunca, porque el regex exigía que `>` viniera
+        pegado a la comilla de `class`. El tripwire no había tripeado nunca
+        con ese patrón: `more_horiz`/`calendar_month` quedaron sin
+        subsetear y el test seguía en verde."""
         templates = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "templates"
         usados: set[str] = set()
         for tpl in templates.glob("*.html"):
             usados.update(
-                re.findall(r'class="m3-icon[^"]*">([a-z0-9_]+)<', tpl.read_text(encoding="utf-8"))
+                re.findall(
+                    r'class="m3-icon[^"]*"[^>]*>([a-z0-9_]+)<', tpl.read_text(encoding="utf-8")
+                )
             )
 
         manifiesto = (

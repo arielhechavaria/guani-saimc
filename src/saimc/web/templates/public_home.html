@@ -479,12 +479,17 @@
     position: absolute; right: 1rem; z-index: 1300;
     padding: .5rem .65rem;
     display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
-    /* El riel de chips ya se autolimita a 5 + el disparador de overflow
-       (ver `.ph-chip-overflow` más abajo) — no hace falta un `max-width`
-       reactivo acá: un catálogo de 200 productos pesa lo mismo en esta
-       barra que uno de 5. El tope de abajo es solo para no pegar contra
-       el borde de la ventana en un monitor angosto. */
-    max-width: calc(100vw - 2rem);
+    /* El riel de chips ya se autolimita a 5 + el disparador de overflow, y
+       el rango de fechas a un ícono — un catálogo de 200 productos pesa
+       lo mismo en esta barra que uno de 5, así que el `max-width` de acá
+       ya no es para contener el contenido. Es para dejar un margen real
+       contra `.ph-compass-title-group` (`left: 7.25rem`, hasta `28rem` de
+       ancho cuando el compás está activo): sin este tope, en una ventana
+       angosta de escritorio las dos islas podían llegar a tocarse. 38rem
+       reservados a la izquierda cubren ese máximo con aire de sobra; el
+       resto envuelve a una segunda fila (`flex-wrap: wrap`, arriba) en
+       vez de solaparse. */
+    max-width: min(46rem, calc(100vw - 38rem));
   }
   .ph-compass-filters-sep { align-self: stretch; width: 1px; margin: .3rem 0;
                              background: var(--m3-outline-variant); }
@@ -513,13 +518,6 @@
   .ph-chip-overflow[open] .ph-chip-overflow-trigger { border-color: var(--ph-accent); color: var(--ph-accent); }
   .ph-chip-overflow-icon { display: block; font-size: 22px; }
   .ph-chip-overflow-count { font-size: 10.5px; font-weight: 500; letter-spacing: .01em; opacity: .7; }
-  .ph-chip-overflow-panel {
-    position: absolute; top: calc(100% + .4rem); right: 0; z-index: 1301;
-    display: flex; flex-direction: column; gap: .35rem; min-width: 10rem;
-    padding: .6rem; border-radius: var(--ph-radius-sm);
-    background: var(--m3-surface); box-shadow: var(--ph-elev);
-  }
-  .ph-chip-overflow-panel .ph-chip-toggle { justify-content: flex-start; }
 
   .ph-chip-toggle {
     font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
@@ -643,11 +641,46 @@
   /* Date picker de rango de calendario (2026-09-14, pedido del operador:
      "que siempre se pueda ver el rango en uso y que se pueda cambiar") —
      mismo lenguaje visual que `.ph-province-*` de arriba, misma isla
-     siempre visible. Los `<input type="date">` YA muestran el rango
-     elegido con solo mirarlos: es la respuesta directa al "que siempre se
-     pueda ver", sin un texto aparte que pueda desincronizarse. */
-  .ph-window-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-  .ph-window-form { display: inline-flex; align-items: center; gap: .35rem; }
+     siempre visible.
+
+     Segunda vuelta el mismo día: con todo en una sola fila, los dos
+     `<input type="date">` sueltos ocupaban demasiado sitio en la barra —
+     el operador pidió compactarlos detrás de un ícono más, igual que ya
+     se hizo con los chips que desbordan. El rango en uso lo siguen
+     diciendo los atajos 7/30/90 (el que está marcado) y, si no coincide
+     con ninguno, el ícono del calendario se enciende — misma idea de "que
+     siempre se pueda ver", con menos ancho ocupado. */
+  .ph-window-group { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+  .ph-window-shortcuts { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .ph-window-shortcut {
+    font-size: .75rem; font-weight: 500;
+    padding: .3rem .65rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    color: var(--m3-on-surface-variant);
+  }
+  .ph-window-shortcut:hover { border-color: var(--ph-accent); color: var(--ph-accent); text-decoration: none; }
+  .ph-window-shortcut.is-selected {
+    background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
+  }
+
+  .ph-window-custom { position: relative; }
+  .ph-window-custom-trigger {
+    display: flex; align-items: center; justify-content: center;
+    width: 1.9rem; height: 1.9rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    color: var(--m3-on-surface-variant);
+    cursor: pointer; list-style: none;
+  }
+  .ph-window-custom-trigger::-webkit-details-marker { display: none; }
+  .ph-window-custom-trigger .m3-icon { font-size: 18px; }
+  .ph-window-custom-trigger:hover,
+  .ph-window-custom[open] .ph-window-custom-trigger { border-color: var(--ph-accent); color: var(--ph-accent); }
+  .ph-window-custom-trigger.is-selected {
+    background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
+  }
+  .ph-window-form { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
   .ph-window-label {
     display: inline-flex; align-items: center; gap: .3rem;
     font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
@@ -667,18 +700,18 @@
     padding: .4rem .95rem; border-radius: var(--m3-radius-full);
     border: 1px solid var(--ph-accent); background: var(--ph-accent); color: var(--ph-on-accent);
   }
-  .ph-window-shortcuts { display: flex; flex-wrap: wrap; gap: .3rem; }
-  .ph-window-shortcut {
-    font-size: .75rem; font-weight: 500;
-    padding: .3rem .65rem; border-radius: var(--m3-radius-full);
-    border: 1px solid var(--m3-outline-variant);
-    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
-    color: var(--m3-on-surface-variant);
+
+  /* Panel flotante de overflow, compartido: el disparador "+N" del riel de
+     chips y el ícono de calendario del rango personalizado abren el mismo
+     tipo de tarjeta anclada debajo, misma superficie que el resto de la
+     capa pública. */
+  .ph-filter-popover {
+    position: absolute; top: calc(100% + .4rem); right: 0; z-index: 1301;
+    display: flex; flex-direction: column; gap: .35rem; min-width: 10rem;
+    padding: .6rem; border-radius: var(--ph-radius-sm);
+    background: var(--m3-surface); box-shadow: var(--ph-elev);
   }
-  .ph-window-shortcut:hover { border-color: var(--ph-accent); color: var(--ph-accent); text-decoration: none; }
-  .ph-window-shortcut.is-selected {
-    background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
-  }
+  .ph-filter-popover .ph-chip-toggle { justify-content: flex-start; }
 
   /* ── El mapa ES la app (2026-09-12) ────────────────────────────────────
      Antes `.ph-stage` era un hijo más del flex column: la barra superior y
@@ -1218,7 +1251,7 @@
         <span class="m3-icon ph-chip-overflow-icon" aria-hidden="true">more_horiz</span>
         <span class="ph-chip-overflow-count" aria-hidden="true">+{{ overflow_chips | length }}</span>
       </summary>
-      <div class="ph-chip-overflow-panel">
+      <div class="ph-filter-popover">
         {% for chip in overflow_chips %}{{ chip_toggle(chip) }}{% endfor %}
       </div>
     </details>
@@ -1276,36 +1309,47 @@
 
   <div class="ph-compass-filters-sep" aria-hidden="true"></div>
 
-  {# Date picker de rango de calendario, siempre visible (2026-09-14, pedido
-     del operador: «que siempre se pueda ver el rango en uso y que se pueda
-     cambiar»). Mismo patrón que el selector de provincia: `<form>` real,
-     degrada sin JS —acá SIN auto-submit, a propósito: son dos campos, y
-     auto-enviar al cambiar el primero mandaría la fecha vieja en el
-     segundo—, un botón "Ver" explícito. `window_nav` (7/30/90 días) queda
-     al lado como atajo a los cortes de lectura de siempre, sin reemplazar
-     el picker. #}
+  {# Rango de calendario, siempre visible (2026-09-14, pedido del operador:
+     «que siempre se pueda ver el rango en uso y que se pueda cambiar»,
+     compactado en la segunda vuelta del mismo día para que todo entre en
+     una fila). Los atajos 7/30/90 dicen el rango en uso de un vistazo —el
+     marcado es el activo—; si ninguno coincide, el ícono del calendario
+     se enciende en su lugar (`es_personalizado`, calculado una vez y
+     reusado para no repetir el filtro). El ícono abre el mismo patrón de
+     panel flotante que el overflow de chips, con el `<form>` real de
+     siempre adentro: sin auto-submit —son dos campos, y auto-enviar al
+     cambiar el primero mandaría la fecha vieja en el segundo—, un botón
+     "Ver" explícito. #}
+  {% set es_personalizado = not (window_nav | selectattr('is_selected') | list) %}
   <div class="ph-window-group">
-  <form class="ph-window-form" action="/" method="get"
-        hx-get="/" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true">
-    {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
-    {% if selected_province_slug %}<input type="hidden" name="provincia" value="{{ selected_province_slug }}">{% endif %}
-    {% if open_views %}<input type="hidden" name="ver" value="{{ open_views | join(',') }}">{% endif %}
-    <input type="hidden" name="capa" value="{{ selected_layer }}">
-    <label class="ph-window-label">
-      <span class="ph-window-label-text">Desde</span>
-      <input type="date" name="desde" value="{{ selected_desde.isoformat() }}">
-    </label>
-    <label class="ph-window-label">
-      <span class="ph-window-label-text">Hasta</span>
-      <input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}">
-    </label>
-    <button type="submit" class="ph-window-submit">Ver</button>
-  </form>
   <div class="ph-window-shortcuts">
     {% for choice in window_nav %}
     <a class="ph-window-shortcut{% if choice.is_selected %} is-selected{% endif %}" href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
     {% endfor %}
   </div>
+  <details class="ph-window-custom">
+    <summary class="ph-window-custom-trigger{% if es_personalizado %} is-selected{% endif %}" aria-label="Rango de fechas personalizado{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}">
+      <span class="m3-icon" aria-hidden="true">calendar_month</span>
+    </summary>
+    <div class="ph-filter-popover">
+      <form class="ph-window-form" action="/" method="get"
+            hx-get="/" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true">
+        {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
+        {% if selected_province_slug %}<input type="hidden" name="provincia" value="{{ selected_province_slug }}">{% endif %}
+        {% if open_views %}<input type="hidden" name="ver" value="{{ open_views | join(',') }}">{% endif %}
+        <input type="hidden" name="capa" value="{{ selected_layer }}">
+        <label class="ph-window-label">
+          <span class="ph-window-label-text">Desde</span>
+          <input type="date" name="desde" value="{{ selected_desde.isoformat() }}">
+        </label>
+        <label class="ph-window-label">
+          <span class="ph-window-label-text">Hasta</span>
+          <input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}">
+        </label>
+        <button type="submit" class="ph-window-submit">Ver</button>
+      </form>
+    </div>
+  </details>
   </div>{# /.ph-window-group #}
 
   </div>{# /.ph-compass-filters #}

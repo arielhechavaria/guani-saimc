@@ -10124,3 +10124,36 @@ Consecuencia: sin poder verificar visualmente en un navegador real esta
 sesión (Postgres inaccesible) — igual que el resto del trabajo visual de
 hoy, queda para que el operador confirme cómo se ve. Suite completa: 1692
 casos, sin deuda de lint nueva.
+
+## 2026-09-14 — Compás y filtros con margen; rango de fechas compactado a ícono
+Contexto: segunda vuelta sobre el rediseño horizontal de horas antes. El
+operador pidió: (1) un margen garantizado entre el avatar del compás y la
+isla de filtros, y (2) compactar el rango de fechas al mismo patrón que
+los chips — los atajos 7/30/90 quedan visibles, y un ícono más abre el
+panel con los campos `desde`/`hasta` para un rango a medida.
+Decisión:
+- `.ph-compass-filters` reserva `38rem` a la izquierda (`max-width: min(46rem,
+  calc(100vw - 38rem))`) — cubre el máximo real de `.ph-compass-title-group`
+  (`left: 7.25rem` + hasta `28rem` de ancho cuando el compás está activo)
+  con aire de sobra, así las dos islas nunca llegan a tocarse en una
+  ventana angosta de escritorio.
+- El rango de fechas pasa de dos `<input type="date">` sueltos en la barra
+  a un ícono `calendar_month` (mismo patrón `<details>` que el overflow de
+  chips) que abre el `<form>` de siempre. Se enciende (`is-selected`) solo
+  cuando el rango activo no coincide con ninguno de los tres atajos —
+  calculado una vez (`es_personalizado`) y reusado.
+- El panel flotante del overflow de chips y el del rango personalizado
+  comparten CSS (`.ph-filter-popover`, antes duplicado en dos clases):
+  misma tarjeta anclada debajo del disparador que abre.
+Bug encontrado al camino, no buscado: el regex que escanea qué íconos usan
+las plantillas (`test_static_assets.py` Y `tools/build_icon_font.py`,
+copias idénticas) exigía que `>` viniera pegado a la comilla de `class`,
+así que cualquier ícono con OTRO atributo en el medio (`aria-hidden`,
+`style`) quedaba fuera del escaneo sin que el test lo notara. Ya afectaba
+en producción a `description` en `/curation` y `/curation/editar` —
+dibujaba el nombre crudo en vez del ícono, desde antes de esta sesión.
+Corregido en los dos lugares (`[^>]*` antes del `>` final) y la fuente
+regenerada con los 49 íconos reales (antes 46, silenciosamente 3 cortos).
+Consecuencia: sin poder verificar visualmente en navegador esta sesión
+(Postgres inaccesible) — el operador confirma el margen y el ícono nuevo a
+mano. Suite completa: 1692 casos, sin deuda de lint nueva.
