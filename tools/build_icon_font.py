@@ -37,9 +37,17 @@ FONT_PATH = REPO_ROOT / "src" / "saimc" / "web" / "static" / "fonts" / "material
 MANIFEST_PATH = FONT_PATH.with_suffix(".icons.txt")
 
 # `<span class="m3-icon ...">nombre</span>` — el `class` puede traer más de una
-# clase (`m3-icon m3-icon-sm m3-dim`), así que se acepta cualquier cosa hasta el
-# `">`. Todas comparten `font-family` y por lo tanto el mismo subconjunto.
-_ICON_RE = re.compile(r'class="m3-icon[^"]*">([a-z0-9_]+)<')
+# clase (`m3-icon m3-icon-sm m3-dim`) y el tag, otros atributos después del
+# `class` (`aria-hidden="true"`, `style="..."`): el `[^>]*` de después de la
+# comilla cubre eso. Todas comparten `font-family` y por lo tanto el mismo
+# subconjunto.
+#
+# 2026-09-14: sin el `[^>]*`, cualquier ícono con un atributo entre `class` y
+# `>` —`expand_more`, ya en el manifiesto por una regeneración anterior, y
+# `description` en `/curation` y `/curation/editar`— quedaba fuera del
+# escaneo en silencio: la herramienta seguía terminando en verde, pero el
+# ícono no entraba al subconjunto y el navegador dibujaba el nombre crudo.
+_ICON_RE = re.compile(r'class="m3-icon[^"]*"[^>]*>([a-z0-9_]+)<')
 
 # Axis fijos: opsz 20..48 cubre los tres tamaños del CSS (16/20/24 px), y
 # wght/FILL/GRAD en su valor por defecto. Mismo formato que la URL con la que se

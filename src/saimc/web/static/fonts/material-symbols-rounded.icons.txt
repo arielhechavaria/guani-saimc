@@ -2,12 +2,14 @@ add
 auto_awesome
 block
 bolt
+calendar_month
 center_focus_strong
 check
 check_circle
 close
 content_paste
 delete
+description
 download
 edit
 edit_note
@@ -28,6 +30,7 @@ layers
 map
 menu_book
 monitoring
+more_horiz
 new_releases
 open_in_new
 remove

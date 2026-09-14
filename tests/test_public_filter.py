@@ -504,7 +504,7 @@ class TestOverflowDeChips:
         assert 'class="ph-chip-overflow"' in texto
         assert 'aria-label="Ver 2 productos más"' in texto
         rail = texto.split('class="ph-chip-rail"')[1].split("</nav>")[0]
-        visible, panel = rail.split('class="ph-chip-overflow-panel"')
+        visible, panel = rail.split('class="ph-filter-popover"')
 
         for nombre in ("Aceite", "Arroz", "Azúcar", "Boniato", "Calabaza"):
             assert nombre in visible
