@@ -512,6 +512,54 @@ class TestFormatoEnElPanel:
         assert "ph-chip" not in panel.split('class="ph-cifra-prov"')[1].split("</summary>")[0]
 
 
+class TestAnunciosEnElPanel:
+    def test_el_bloque_enlaza_a_sus_anuncios(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Recorrido hacia atrás hasta el anuncio (§6.5), 2026-09-14, pedido
+        comparando con el enlace "ver anuncios" que ya tiene `/control`
+        sobre cada número de la matriz."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-anuncios")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5))
+        session.commit()
+
+        texto = client.get("/?producto=arroz").text
+        panel = texto.split('id="ph-panel-arroz"')[1].split('<a class="ph-fpanel-detail"')[0]
+
+        assert "1 anuncio detrás de esta cifra" in panel
+        assert '<a href="/anuncio/' in panel
+
+    def test_cada_bloque_solo_enlaza_sus_propios_anuncios(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Dos provincias, un anuncio cada una: el bloque de Santiago no
+        debe traer el anuncio de La Habana ni viceversa."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-anuncios-dos")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5))
+        _precio(session, product=arroz, province=santiago, source=fuente, dia=_hace(4))
+        session.commit()
+
+        texto = client.get("/?producto=arroz").text
+        panel = texto.split('id="ph-panel-arroz"')[1].split('<a class="ph-fpanel-detail"')[0]
+        bloques = panel.split('<details class="ph-cifra"')[1:]
+
+        assert len(bloques) == 2
+        assert all("1 anuncio detrás de esta cifra" in b for b in bloques)
+
+
 class TestPanelesFlotantes:
     def test_un_panel_por_producto_activo(
         self, client: TestClient, session: Session

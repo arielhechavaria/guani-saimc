@@ -22,6 +22,7 @@ from saimc.web.price_charts import (
     PAD_RIGHT,
     WIDTH,
     bin_days,
+    build_cell_ads,
     build_headlines,
     build_range_series,
     robust_fence,
@@ -41,6 +42,8 @@ def _obs(
     format_packaging: str | None = None,
     format_quantity: str | None = None,
     format_unit: str | None = None,
+    evidence_id: uuid.UUID = _EVIDENCE_ID,
+    evidence_is_public: bool = False,
 ) -> RetailObservation:
     return RetailObservation(
         product_name="Arroz",
@@ -50,8 +53,8 @@ def _obs(
         unconverted=unconverted,
         day=date(2026, 8, dia),
         unit_price=Decimal(precio),
-        evidence_id=_EVIDENCE_ID,
-        evidence_is_public=False,
+        evidence_id=evidence_id,
+        evidence_is_public=evidence_is_public,
         format_packaging=format_packaging,
         format_quantity=Decimal(format_quantity) if format_quantity is not None else None,
         format_unit=format_unit,
@@ -255,3 +258,59 @@ class TestEjeDeFormato:
 
         assert cifra.format_label is None
         assert cifra.count == 2
+
+
+class TestBuildCellAds:
+    """`build_cell_ads`: el recorrido hacia atrás hasta el anuncio (§6.5),
+    por celda exacta — mismas claves que `_group`, para pegarse a un
+    `Headline` sin mezclar provincias ni formatos distintos."""
+
+    def test_agrupa_por_la_misma_clave_que_group(self) -> None:
+        id_habana = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
+        id_santiago = uuid.UUID("00000000-0000-0000-0000-0000000000a2")
+        obs = [
+            _obs(30, "300", province="La Habana", evidence_id=id_habana),
+            _obs(29, "310", province="Santiago de Cuba", evidence_id=id_santiago),
+        ]
+
+        por_celda = build_cell_ads(obs)
+
+        assert len(por_celda) == 2
+        claves = {k[1] for k in por_celda}  # provincia es el segundo campo de _Key
+        assert claves == {"La Habana", "Santiago de Cuba"}
+
+    def test_no_mezcla_formatos_distintos_de_la_misma_provincia(self) -> None:
+        botella = _obs(
+            30, "300", format_packaging="botella", format_quantity="1", format_unit="L"
+        )
+        garrafa = _obs(
+            29, "1400", format_packaging="garrafa", format_quantity="5", format_unit="L"
+        )
+
+        por_celda = build_cell_ads([botella, garrafa])
+
+        assert len(por_celda) == 2
+        assert all(len(ads) == 1 for ads in por_celda.values())
+
+    def test_incluye_el_enlace_cuando_la_evidencia_es_publica(self) -> None:
+        eid = uuid.UUID("00000000-0000-0000-0000-0000000000b1")
+        por_celda = build_cell_ads([_obs(30, "300", evidence_id=eid, evidence_is_public=True)])
+
+        (ads,) = por_celda.values()
+        assert ads[0].evidence_id == eid
+        assert ads[0].evidence_is_public
+
+    def test_incluye_los_precios_fuera_de_escala(self) -> None:
+        """`AdRow` no filtra outliers —el precio real, tal como quedó,
+        mismo criterio que «Cómo se movió» (`build_evolution_blocks`)."""
+        filas = [_obs(d, "300") for d in (26, 27, 28, 29)] + [_obs(30, "24800")]
+
+        (ads,) = build_cell_ads(filas).values()
+
+        assert len(ads) == 5
+        assert Decimal("24800") in {a.price for a in ads}
+
+    def test_mas_reciente_primero(self) -> None:
+        (ads,) = build_cell_ads([_obs(20, "300"), _obs(30, "310"), _obs(25, "305")]).values()
+
+        assert [a.day for a in ads] == [date(2026, 8, 30), date(2026, 8, 25), date(2026, 8, 20)]
