@@ -607,26 +607,24 @@ class TestElMapaEsLaApp:
         assert "box-shadow" not in regla
         assert "backdrop-filter" not in regla
 
-    def test_el_riel_de_chips_tiene_tope_de_ancho_y_alto(
+    def test_la_isla_de_filtros_no_crece_sin_limite(
         self, client: TestClient
     ) -> None:
-        """Hoy son 5 productos y caben en una fila; el reporte de mejoras no
-        consideradas (2026-09-14) marcó que sin un tope, un catálogo grande
-        (200 productos) crece la isla de filtros hasta tapar el mapa: a lo
-        ancho porque `.ph-compass-filters` no tenía `max-width` y el
-        `flex-wrap` se estira hasta donde haya sitio, y a lo alto porque
-        `.ph-chip-rail` no tenía techo. Con 5 chips ninguno de los dos topes
-        se nota (nunca alcanzan a scrollear)."""
+        """El reporte de mejoras no consideradas (2026-09-14) marcó que sin
+        un tope, un catálogo grande (200 productos) crece la isla de
+        filtros hasta tapar el mapa. Ese día el tope era reactivo (scroll
+        del riel); el rediseño horizontal del mismo día lo reemplaza por
+        uno deliberado: el riel se autolimita a `VISIBLE_CHIP_COUNT` chips
+        y el resto se pliega detrás de un disparador de overflow (ver
+        `TestOverflowDeChips`) — así que `.ph-compass-filters` ya no
+        necesita un `max-width` reactivo, solo uno defensivo contra el
+        borde de la ventana."""
         texto = client.get("/").text
 
         isla = texto[texto.index("  .ph-compass-filters {") :]
         isla = isla[: isla.index("}")]
+        assert "display: flex" in isla
         assert "max-width:" in isla
-
-        riel = texto[texto.index("  .ph-chip-rail {") :]
-        riel = riel[: riel.index("}")]
-        assert "max-height:" in riel
-        assert "overflow-y: auto" in riel
 
     def test_pista_de_primera_visita_en_el_compas(self, client: TestClient) -> None:
         """Reporte de mejoras no consideradas (2026-09-14), idea #6: el
