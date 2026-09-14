@@ -85,6 +85,15 @@ def _hace(dias: int) -> date:
     return date.today() - timedelta(days=dias)
 
 
+def _ventana_default() -> tuple[date, date]:
+    """El rango de calendario que la vista arma sin `?desde=`/`?hasta=`/
+    `?dias=` en el query string: últimos 30 días desde hoy (2026-09-14, date
+    picker). Mismo motivo que `_hace`: fijar una fecha absoluta rompería
+    solo cuando el reloj se corre."""
+    hoy = date.today()
+    return hoy - timedelta(days=30), hoy
+
+
 def _ingestion(session: Session, *, hash_: str) -> RawIngestion:
     row = RawIngestion(
         source_type=SourceType.INBOX_TEXT,
@@ -196,50 +205,69 @@ class TestResolveProduct:
 
 
 class TestBuildProductNav:
+    """`build_product_nav` (y `_product_link` por debajo) no está enganchada
+    a ningún lado de la app en producción — código huérfano desde el
+    2026-09-14 (ver docs/decisions.md, «El chip se queda en el mapa»). Se
+    sigue probando igual: sigue siendo parte de la superficie pública del
+    módulo, y romperla en silencio sin un test que avise sería peor que no
+    usarla."""
+
+    # Rango de 10 días a propósito, no de 30: así el par nunca coincide con
+    # el default (últimos 30 días hasta hoy) sin importar qué día real sea
+    # "hoy" cuando corra el test — mismo motivo que `_hace`.
+    DESDE, HASTA = date(2026, 8, 15), date(2026, 8, 25)
+
     def test_todos_va_primero_y_activo_sin_seleccion(self) -> None:
-        nav = build_product_nav(("Arroz", "Aceite"), None)
+        nav = build_product_nav(("Arroz", "Aceite"), None, self.DESDE, self.HASTA)
 
         assert nav[0].label == "Todos"
         assert nav[0].slug == ""
-        assert nav[0].query == "/"
+        assert nav[0].query == f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
         assert nav[0].is_selected
         assert all(not c.is_selected for c in nav[1:])
 
     def test_marca_el_producto_elegido(self) -> None:
-        nav = build_product_nav(("Arroz", "Aceite"), "Aceite")
+        nav = build_product_nav(("Arroz", "Aceite"), "Aceite", self.DESDE, self.HASTA)
         por_label = {c.label: c for c in nav}
 
         assert not por_label["Todos"].is_selected
         assert por_label["Aceite"].is_selected
         assert not por_label["Arroz"].is_selected
 
-    def test_chip_de_producto_usa_la_url_limpia_cuando_no_hay_otro_filtro(
+    def test_chip_de_producto_usa_la_url_limpia_cuando_coincide_con_el_default(
         self,
     ) -> None:
-        """Sin provincia ni ventana no-default, el chip apunta a `/producto/<slug>`
-        en vez de `/?producto=<slug>`: más limpio para compartir."""
-        nav = build_product_nav(("Arroz", "Aceite"), None)
+        """Sin provincia y con el rango por defecto (últimos 30 días hasta
+        hoy —`_product_link` compara contra `date.today()` cuando no se le
+        pasa `hoy`—), el chip apunta a `/producto/<slug>` en vez de
+        `/?producto=<slug>`: más limpio para compartir. Fecha relativa a
+        hoy y no absoluta, mismo motivo que `_hace`."""
+        desde, hasta = _ventana_default()
+        nav = build_product_nav(("Arroz", "Aceite"), None, desde, hasta)
         por_label = {c.label: c for c in nav}
 
         assert por_label["Arroz"].query == "/producto/arroz"
         assert por_label["Aceite"].query == "/producto/aceite"
-        assert por_label["Todos"].query == "/"
+        assert por_label["Todos"].query == f"/?desde={desde.isoformat()}&hasta={hasta.isoformat()}"
 
-    def test_con_otro_filtro_activo_el_chip_vuelve_al_query_string(self) -> None:
-        con_ventana = build_product_nav(("Arroz",), None, selected_days=7)
+    def test_con_provincia_el_chip_vuelve_al_query_string(self) -> None:
         con_provincia = build_product_nav(
-            ("Arroz",), None, selected_province="La Habana"
+            ("Arroz",), None, self.DESDE, self.HASTA, selected_province="La Habana"
         )
 
-        assert con_ventana[1].query == "/?producto=arroz&dias=7"
-        assert con_provincia[1].query == "/?producto=arroz&provincia=la-habana"
+        assert con_provincia[1].query == (
+            f"/?producto=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}"
+        )
 
     def test_la_ventana_no_default_viaja_en_el_query_del_producto(self) -> None:
-        nav = build_product_nav(("Arroz",), "Arroz", selected_days=7)
+        nav = build_product_nav(("Arroz",), "Arroz", self.DESDE, self.HASTA)
         por_label = {c.label: c for c in nav}
 
-        assert por_label["Todos"].query == "/?dias=7"
-        assert por_label["Arroz"].query == "/?producto=arroz&dias=7"
+        assert por_label["Todos"].query == f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        assert por_label["Arroz"].query == (
+            f"/?producto=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        )
 
 
 class TestResolveProducts:
@@ -264,50 +292,63 @@ class TestResolveProducts:
 
 class TestBuildProductChips:
     PILOT = ("Arroz", "Aceite", "Pollo")
+    DESDE, HASTA = date(2026, 8, 15), date(2026, 9, 14)
+
+    def _chips(self, active: list[str], **kwargs: object) -> list:
+        kwargs.setdefault("selected_desde", self.DESDE)
+        kwargs.setdefault("selected_hasta", self.HASTA)
+        return build_product_chips(self.PILOT, active, **kwargs)  # type: ignore[arg-type]
 
     def test_un_chip_por_piloto_en_orden_de_catalogo(self) -> None:
-        chips = build_product_chips(self.PILOT, [])
+        chips = self._chips([])
 
         assert [c.label for c in chips] == ["Arroz", "Aceite", "Pollo"]
         assert all(not c.is_active for c in chips)
 
     def test_marca_activos_los_del_conjunto(self) -> None:
-        chips = build_product_chips(self.PILOT, ["Aceite"])
+        chips = self._chips(["Aceite"])
         por_label = {c.label: c for c in chips}
 
         assert por_label["Aceite"].is_active
         assert not por_label["Arroz"].is_active
 
     def test_togglear_un_apagado_lo_agrega_al_final(self) -> None:
-        chips = build_product_chips(self.PILOT, ["Arroz"])
+        chips = self._chips(["Arroz"])
         por_label = {c.label: c for c in chips}
 
         # Prender Aceite → productos=arroz,aceite (orden de activación).
-        assert por_label["Aceite"].query == "/?productos=arroz,aceite"
+        assert por_label["Aceite"].query == (
+            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        )
 
     def test_un_chip_prendido_no_se_apaga_al_clickearlo(self) -> None:
         # Clic en un chip ya activo no lo quita del conjunto: cerrar un
         # producto es cosa de la × de su panel, no del riel de chips (antes
         # sí lo apagaba, y era fácil cerrar un panel sin querer).
-        chips = build_product_chips(self.PILOT, ["Arroz", "Aceite"])
+        chips = self._chips(["Arroz", "Aceite"])
         por_label = {c.label: c for c in chips}
 
-        assert por_label["Arroz"].query == "/?productos=arroz,aceite"
-        chips_uno = build_product_chips(self.PILOT, ["Arroz"])
-        assert {c.label: c for c in chips_uno}["Arroz"].query == "/?productos=arroz"
-
-    def test_preserva_provincia_y_ventana_en_el_toggle(self) -> None:
-        chips = build_product_chips(
-            self.PILOT, ["Arroz"], selected_province="La Habana", selected_days=7
+        assert por_label["Arroz"].query == (
+            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
         )
+        chips_uno = self._chips(["Arroz"])
+        assert {c.label: c for c in chips_uno}["Arroz"].query == (
+            f"/?productos=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        )
+
+    def test_preserva_provincia_y_rango_en_el_toggle(self) -> None:
+        chips = self._chips(["Arroz"], selected_province="La Habana")
         por_label = {c.label: c for c in chips}
 
         assert por_label["Aceite"].query == (
-            "/?productos=arroz,aceite&provincia=la-habana&dias=7"
+            f"/?productos=arroz,aceite&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}"
         )
 
     def test_el_chip_trae_el_icono_del_producto_o_ninguno(self) -> None:
-        chips = build_product_chips(("Arroz", "Malanga"), [])
+        chips = build_product_chips(
+            ("Arroz", "Malanga"), [], selected_desde=self.DESDE, selected_hasta=self.HASTA
+        )
         por_label = {c.label: c for c in chips}
 
         assert por_label["Arroz"].icon == "rice_bowl"
@@ -335,12 +376,14 @@ class TestChipsMultiSeleccionEnLaRuta:
         (2026-09-14, ajuste del operador: «no me gusta que vaya directo a
         esa vista») — siempre `?productos=`, siempre con `hx-get`."""
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/").text
 
         assert (
-            '<a class="ph-chip-toggle is-icon" href="/?productos=arroz" '
-            'hx-get="/?productos=arroz" data-product="arroz" aria-pressed="false">'
+            f'<a class="ph-chip-toggle is-icon" href="/?productos=arroz&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}" hx-get="/?productos=arroz&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}" data-product="arroz" aria-pressed="false">'
         ) in texto
 
     def test_el_panel_flotante_enlaza_a_la_vista_simple_sin_hx_get(
@@ -350,12 +393,16 @@ class TestChipsMultiSeleccionEnLaRuta:
         riel de chips: `light_query` en el panel, sin `hx-get` porque esa
         vista no tiene `#ph-live` que un swap parcial pueda encontrar."""
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?productos=arroz").text
 
         panel = texto.split('id="ph-panel-arroz"')[1].split("</section>")[0]
-        assert '<a class="ph-fpanel-detail" href="/producto/arroz">Vista simple para compartir</a>' in panel
-        assert 'hx-get="/producto/arroz"' not in panel
+        assert (
+            f'<a class="ph-fpanel-detail" href="/producto/arroz?desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}">Vista simple para compartir</a>'
+        ) in panel
+        assert "hx-get=\"/producto/arroz" not in panel
 
     def test_productos_acota_a_la_union_de_los_activos(
         self, client: TestClient, session: Session
@@ -397,10 +444,14 @@ class TestChipsMultiSeleccionEnLaRuta:
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?productos=arroz,aceite").text
 
-        assert 'href="/datos.csv?productos=arroz,aceite"' in texto
+        assert (
+            f'href="/datos.csv?productos=arroz,aceite&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}"'
+        ) in texto
 
     def test_datos_csv_respeta_productos(
         self, client: TestClient, session: Session
@@ -412,6 +463,84 @@ class TestChipsMultiSeleccionEnLaRuta:
         assert "Arroz" in texto
         assert "Aceite" in texto
         assert "Azúcar blanca" not in texto
+
+
+class TestDatePickerSiempreVisible:
+    """Date picker de rango de calendario (2026-09-14, pedido del operador:
+    «que siempre se pueda ver el rango en uso y que se pueda cambiar»).
+    Vive en `.ph-compass-filters` —la misma isla del riel de chips y el
+    selector de provincia—, no escondido dentro de la ventana «Precios»."""
+
+    def test_los_campos_de_fecha_muestran_el_rango_en_uso(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+        desde = date(2026, 8, 1)
+        hasta = date(2026, 8, 20)
+
+        texto = client.get(f"/?desde={desde.isoformat()}&hasta={hasta.isoformat()}").text
+
+        bloque = texto.split('<form class="ph-window-form"')[1].split("</form>")[0]
+        assert f'<input type="date" name="desde" value="{desde.isoformat()}">' in bloque
+        assert f'<input type="date" name="hasta" value="{hasta.isoformat()}">' in bloque
+
+    def test_el_rango_por_defecto_tambien_se_ve_precargado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin ningún filtro puesto, el picker igual muestra el rango que
+        está en uso —los últimos 30 días—, no queda vacío."""
+        _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
+
+        texto = client.get("/").text
+
+        bloque = texto.split('<form class="ph-window-form"')[1].split("</form>")[0]
+        assert f'<input type="date" name="desde" value="{desde.isoformat()}">' in bloque
+        assert f'<input type="date" name="hasta" value="{hasta.isoformat()}">' in bloque
+
+    def test_el_formulario_preserva_productos_provincia_y_ventanas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get(
+            "/?productos=arroz&provincia=la-habana&ver=cobertura&capa=densidad"
+        ).text
+
+        bloque = texto.split('<form class="ph-window-form"')[1].split("</form>")[0]
+        assert '<input type="hidden" name="productos" value="arroz">' in bloque
+        assert '<input type="hidden" name="provincia" value="la-habana">' in bloque
+        assert '<input type="hidden" name="ver" value="cobertura">' in bloque
+        assert '<input type="hidden" name="capa" value="densidad">' in bloque
+
+    def test_los_atajos_de_siempre_siguen_ahi_junto_al_picker(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """7/30/90 días no desaparecen: quedan como acceso rápido junto al
+        picker, no reemplazados por él."""
+        _seed_dos_productos(session)
+
+        texto = client.get("/").text
+
+        assert 'class="ph-window-shortcuts"' in texto
+        assert (
+            texto.count('class="ph-window-shortcut is-selected"')
+            + texto.count('class="ph-window-shortcut"')
+        ) == 3
+
+    def test_el_atajo_del_rango_activo_queda_marcado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin filtro, el rango efectivo son los 30 días de siempre: el
+        atajo «30 días» —y solo ese— queda marcado."""
+        _seed_dos_productos(session)
+
+        texto = client.get("/").text
+
+        bloque = texto.split('class="ph-window-shortcuts"')[1].split("</div>")[0]
+        assert 'class="ph-window-shortcut is-selected"' in bloque
+        assert bloque.count("is-selected") == 1
+        assert bloque.split("is-selected")[1].split("</a>")[0].endswith(">30 días")
 
 
 class TestTendenciaEnLaTarjeta:
@@ -620,35 +749,46 @@ class TestPanelesFlotantes:
         silencio—, que es el modo de romperse que
         `TestClasesDelJavascriptExisten` ya documenta para las clases."""
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?productos=arroz,aceite").text
 
         for slug in ("arroz", "aceite"):
             assert f'class="ph-fpanel" data-win="{slug.capitalize()}" data-product="{slug}"' in texto
-            assert f'hx-get="/?productos=arroz,aceite" data-product="{slug}"' in texto
+            assert (
+                f'hx-get="/?productos=arroz,aceite&amp;desde={desde.isoformat()}'
+                f'&amp;hasta={hasta.isoformat()}" data-product="{slug}"'
+            ) in texto
 
     def test_el_boton_de_cerrar_quita_ese_producto(
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?productos=arroz,aceite").text
 
         # El × de Arroz apunta a la vista sin Arroz (queda Aceite), por `href`
         # (fallback) y por `hx-get` (swap parcial).
-        assert 'href="/?productos=aceite" hx-get="/?productos=aceite"' in texto
+        assert (
+            f'href="/?productos=aceite&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}" '
+            f'hx-get="/?productos=aceite&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}"'
+        ) in texto
 
     def test_carga_htmx_y_arma_el_bloque_vivo(
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?productos=arroz").text
 
         assert '/static/htmx.min.js?v=' in texto
         assert 'id="ph-live"' in texto
         # Los chips hacen `hx-get` además del `href` de fallback.
-        assert 'hx-get="/?productos=arroz,aceite"' in texto
+        assert (
+            f'hx-get="/?productos=arroz,aceite&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}"'
+        ) in texto
 
     def test_anuncio_no_carga_htmx(
         self, client: TestClient, session: Session
@@ -706,10 +846,14 @@ class TestEnlacesDeProvinciaEnElMapa:
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/").text
 
-        assert 'href="/?provincia=la-habana" hx-get="/?provincia=la-habana"' in texto
+        assert (
+            f'href="/?provincia=la-habana&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}" '
+            f'hx-get="/?provincia=la-habana&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}"'
+        ) in texto
 
     def test_elegir_provincia_ya_no_abre_ninguna_hoja(
         self, client: TestClient, session: Session
@@ -882,29 +1026,38 @@ class TestResolveViews:
 
 
 class TestBuildViewMenu:
+    DESDE, HASTA = date(2026, 8, 15), date(2026, 8, 25)
+
     def test_un_item_por_ventana_en_el_orden_del_menu(self) -> None:
-        menu = build_view_menu([])
+        menu = build_view_menu([], selected_desde=self.DESDE, selected_hasta=self.HASTA)
 
         assert [v.key for v in menu] == ["cobertura", "precios", "evolucion"]
         assert all(not v.is_open for v in menu)
 
     def test_abrir_agrega_al_final_y_cerrar_quita(self) -> None:
-        por_key = {v.key: v for v in build_view_menu(["precios"])}
+        por_key = {
+            v.key: v
+            for v in build_view_menu(["precios"], selected_desde=self.DESDE, selected_hasta=self.HASTA)
+        }
 
         assert por_key["precios"].is_open
-        assert por_key["precios"].query == "/"
-        assert por_key["cobertura"].query == "/?ver=precios,cobertura"
+        assert por_key["precios"].query == f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        assert por_key["cobertura"].query == (
+            f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}&ver=precios,cobertura"
+        )
 
-    def test_preserva_productos_provincia_y_dias(self) -> None:
+    def test_preserva_productos_provincia_y_rango(self) -> None:
         menu = build_view_menu(
             [],
             active_products=["Arroz"],
             selected_province="La Habana",
-            selected_days=7,
+            selected_desde=self.DESDE,
+            selected_hasta=self.HASTA,
         )
 
         assert menu[1].query == (
-            "/?productos=arroz&provincia=la-habana&dias=7&ver=precios"
+            f"/?productos=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&ver=precios"
         )
 
 
@@ -937,38 +1090,52 @@ class TestVentanasDelMenu:
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?ver=precios").text
 
-        assert 'class="ph-menu-item is-open" href="/" hx-get="/" aria-pressed="true"' in texto
+        assert (
+            f'class="ph-menu-item is-open" href="/?desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}" '
+            f'hx-get="/?desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}" aria-pressed="true"'
+        ) in texto
 
     def test_prender_un_chip_no_cierra_las_ventanas(
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?ver=precios").text
 
-        assert 'hx-get="/?productos=arroz&amp;ver=precios"' in texto
+        assert (
+            f'hx-get="/?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
+            f'&amp;ver=precios"'
+        ) in texto
 
     def test_elegir_provincia_no_cierra_las_ventanas(
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?ver=cobertura").text
 
-        assert 'hx-get="/?provincia=la-habana&amp;ver=cobertura"' in texto
+        assert (
+            f'hx-get="/?provincia=la-habana&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
+            f'&amp;ver=cobertura"'
+        ) in texto
 
     def test_el_filtro_de_provincia_preserva_chips_y_ventanas(
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?productos=arroz,aceite&ver=precios").text
 
         assert (
-            'hx-get="/?productos=arroz,aceite&amp;provincia=la-habana&amp;ver=precios"'
+            f'hx-get="/?productos=arroz,aceite&amp;provincia=la-habana&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;ver=precios"'
             in texto
         )
 
@@ -976,11 +1143,13 @@ class TestVentanasDelMenu:
         self, client: TestClient, session: Session
     ) -> None:
         _seed_dos_productos(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/?productos=arroz&ver=cobertura").text
 
         assert (
-            'class="ph-fpanel-detail" href="/?productos=arroz&amp;ver=cobertura,precios"'
+            f'class="ph-fpanel-detail" href="/?productos=arroz&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;ver=cobertura,precios"'
             in texto
         )
 
@@ -1073,24 +1242,34 @@ class TestResolveProvince:
 
 
 class TestBuildProvinceNav:
+    DESDE, HASTA = date(2026, 8, 15), date(2026, 8, 25)
+
     def test_todas_va_primero_y_activo_sin_seleccion(self) -> None:
-        nav = build_province_nav(("La Habana", "Santiago de Cuba"), None)
+        nav = build_province_nav(
+            ("La Habana", "Santiago de Cuba"), None, selected_desde=self.DESDE, selected_hasta=self.HASTA
+        )
 
         assert nav[0].label == "Todas"
         assert nav[0].slug == ""
         assert nav[0].is_selected
         assert all(not c.is_selected for c in nav[1:])
 
-    def test_preserva_producto_y_ventana_en_el_query(self) -> None:
+    def test_preserva_producto_y_rango_en_el_query(self) -> None:
         nav = build_province_nav(
-            ("La Habana",), "La Habana", selected_product="Arroz", selected_days=7
+            ("La Habana",),
+            "La Habana",
+            selected_product="Arroz",
+            selected_desde=self.DESDE,
+            selected_hasta=self.HASTA,
         )
         por_label = {c.label: c for c in nav}
 
-        assert por_label["Todas"].query == "/?producto=arroz&dias=7"
-        assert (
-            por_label["La Habana"].query
-            == "/?producto=arroz&provincia=la-habana&dias=7"
+        assert por_label["Todas"].query == (
+            f"/?producto=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        )
+        assert por_label["La Habana"].query == (
+            f"/?producto=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}"
         )
 
 
@@ -1120,47 +1299,70 @@ class TestResolveLayer:
 
 
 class TestBuildLayerNav:
+    DESDE, HASTA = date(2026, 8, 15), date(2026, 8, 25)
+
     def test_dos_capas_marcando_la_activa(self) -> None:
-        elegidas = build_layer_nav("densidad")
+        elegidas = build_layer_nav("densidad", selected_desde=self.DESDE, selected_hasta=self.HASTA)
         por_slug = {c.slug: c for c in elegidas}
 
         assert len(elegidas) == 2
         assert por_slug["densidad"].is_selected
         assert not por_slug["publicacion"].is_selected
 
-    def test_el_enlace_preserva_productos_provincia_dias_y_ventanas(self) -> None:
+    def test_el_enlace_preserva_productos_provincia_rango_y_ventanas(self) -> None:
         elegidas = build_layer_nav(
             "publicacion",
             active_products=["Arroz"],
             selected_province="La Habana",
-            selected_days=7,
+            selected_desde=self.DESDE,
+            selected_hasta=self.HASTA,
             ver=["cobertura"],
         )
         por_slug = {c.slug: c for c in elegidas}
 
         assert por_slug["densidad"].query == (
-            "/?productos=arroz&provincia=la-habana&dias=7&ver=cobertura&capa=densidad"
+            f"/?productos=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&ver=cobertura&capa=densidad"
         )
         # La propia capa activa no ensucia la URL con `capa=publicacion`.
         assert "capa=" not in por_slug["publicacion"].query
 
 
 class TestBuildWindowNav:
+    """Atajos rápidos del date picker (2026-09-14): 7/30/90 días, expresados
+    como el rango de calendario que representan (`hoy - N` a `hoy`)."""
+
+    HOY = date(2026, 9, 14)
+
     def test_tres_opciones_con_la_activa_marcada(self) -> None:
-        nav = build_window_nav(7)
+        desde_7 = self.HOY - timedelta(days=7)
+        nav = build_window_nav(desde_7, self.HOY, hoy=self.HOY)
         por_dias = {c.days: c for c in nav}
 
         assert set(por_dias) == {7, 30, 90}
         assert por_dias[7].is_selected
         assert not por_dias[30].is_selected
 
+    def test_un_rango_personalizado_no_marca_ningun_atajo(self) -> None:
+        """Un rango que no coincide EXACTO con ninguno de los tres presets
+        —ni en largo ni en que `hasta` sea hoy— no marca ninguno: es la
+        señal correcta, no es ninguno de los atajos."""
+        nav = build_window_nav(date(2026, 8, 1), date(2026, 8, 10), hoy=self.HOY)
+
+        assert not any(c.is_selected for c in nav)
+
     def test_preserva_el_producto_elegido_en_el_query(self) -> None:
-        nav = build_window_nav(30, selected_name="Arroz")
+        desde_30 = self.HOY - timedelta(days=30)
+        nav = build_window_nav(desde_30, self.HOY, selected_name="Arroz", hoy=self.HOY)
         por_dias = {c.days: c for c in nav}
 
-        # 30 es el default: no ensucia la URL con `dias=30`.
-        assert por_dias[30].query == "/?producto=arroz"
-        assert por_dias[7].query == "/?producto=arroz&dias=7"
+        assert por_dias[30].query == (
+            f"/?producto=arroz&desde={desde_30.isoformat()}&hasta={self.HOY.isoformat()}"
+        )
+        desde_7 = self.HOY - timedelta(days=7)
+        assert por_dias[7].query == (
+            f"/?producto=arroz&desde={desde_7.isoformat()}&hasta={self.HOY.isoformat()}"
+        )
 
 
 # --- ruta pública ----------------------------------------------------------
@@ -1653,10 +1855,12 @@ class TestFiltroPorProvinciaEnLaRuta:
     def test_el_select_preserva_los_otros_ejes_en_campos_ocultos(
         self, client: TestClient, session: Session
     ) -> None:
-        """El <form> del selector no puede resetear producto/días/ventanas/capa
+        """El <form> del selector no puede resetear producto/rango/ventanas/capa
         al cambiar de provincia — mismo principio que ya sostiene
         `NavChoice.query` para los enlaces."""
         self._seed(session)
+        hoy = date.today()
+        desde = hoy - timedelta(days=90)
 
         texto = client.get(
             "/?producto=arroz&dias=90&ver=cobertura&capa=densidad"
@@ -1664,7 +1868,8 @@ class TestFiltroPorProvinciaEnLaRuta:
         bloque = texto.split('<form class="ph-province-form"')[1].split("</form>")[0]
 
         assert '<input type="hidden" name="productos" value="arroz">' in bloque
-        assert '<input type="hidden" name="dias" value="90">' in bloque
+        assert f'<input type="hidden" name="desde" value="{desde.isoformat()}">' in bloque
+        assert f'<input type="hidden" name="hasta" value="{hoy.isoformat()}">' in bloque
         assert '<input type="hidden" name="ver" value="cobertura">' in bloque
         assert '<input type="hidden" name="capa" value="densidad">' in bloque
 
@@ -1791,12 +1996,20 @@ class TestDescargaCsv:
     def test_la_pagina_enlaza_al_csv_con_los_filtros_activos(
         self, client: TestClient, session: Session
     ) -> None:
+        """`?dias=` sigue funcionando como alias de compatibilidad
+        (`resolve_window`) y se resuelve al rango de calendario real antes
+        de armar el enlace del CSV."""
         self._seed(session)
+        hoy = date.today()
+        desde = hoy - timedelta(days=7)
 
         texto = client.get("/?producto=arroz&dias=7").text
 
         # Jinja escapa el `&` del atributo href.
-        assert 'href="/datos.csv?producto=arroz&amp;dias=7"' in texto
+        assert (
+            f'href="/datos.csv?producto=arroz&amp;desde={desde.isoformat()}&amp;hasta={hoy.isoformat()}"'
+            in texto
+        )
 
 
 class TestFrescuraDelDato:
@@ -1908,6 +2121,32 @@ class TestRutaProductoLimpia:
         # nombre de otro producto piloto.
         assert "Aceite" not in texto
 
+    def test_trae_su_propio_date_picker_precargado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La vista liviana también tiene el date picker (2026-09-14) — sin
+        `hx-get`, un submit normal alcanza porque no hay nada parcial que
+        actualizar."""
+        self._seed(session)
+        desde, hasta = _ventana_default()
+
+        texto = client.get("/producto/arroz").text
+
+        assert 'class="ph-lite-window" method="get"' in texto
+        assert f'<input type="date" name="desde" value="{desde.isoformat()}">' in texto
+        assert f'<input type="date" name="hasta" value="{hasta.isoformat()}">' in texto
+
+    def test_el_date_picker_respeta_un_rango_explicito(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+        desde, hasta = date(2026, 8, 1), date(2026, 8, 20)
+
+        texto = client.get(f"/producto/arroz?desde={desde.isoformat()}&hasta={hasta.isoformat()}").text
+
+        assert f'<input type="date" name="desde" value="{desde.isoformat()}">' in texto
+        assert f'<input type="date" name="hasta" value="{hasta.isoformat()}">' in texto
+
     def test_resuelve_slug_con_tilde(
         self, client: TestClient, session: Session
     ) -> None:
@@ -1971,10 +2210,13 @@ class TestRutaProductoLimpia:
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
+        desde, hasta = _ventana_default()
 
         texto = client.get("/producto/arroz").text
 
-        assert 'href="/?productos=arroz"' in texto
+        assert (
+            f'href="/?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}"'
+        ) in texto
         assert "Ver Arroz en el mapa interactivo" in texto
 
     def test_el_titulo_refleja_el_producto_enfocado(

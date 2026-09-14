@@ -619,7 +619,7 @@ class RetailRangeReport:
 
 
 def compute_retail_ranges(
-    session: Session, *, days: int = 7, hoy: date | None = None
+    session: Session, *, days: int = 7, hoy: date | None = None, hasta: date | None = None
 ) -> RetailRangeReport:
     """Rango de precio minorista por producto, últimos `days` días.
 
@@ -674,7 +674,7 @@ def compute_retail_ranges(
     huso UTC sin ajustar a hora de Cuba: al ritmo de curaduría de la Fase 0
     (~1h diaria) un corrimiento de horas no cambia a qué día cae la fila.
     """
-    report = compute_retail_observations(session, days=days, hoy=hoy)
+    report = compute_retail_observations(session, days=days, hoy=hoy, hasta=hasta)
 
     # `format_id` entra a la clave: el rango es por formato, no por producto
     # (supersede 2026-08-12). `unconverted` sigue separando el grupo fundido
@@ -820,7 +820,7 @@ class RetailObservationReport:
 
 
 def compute_retail_observations(
-    session: Session, *, days: int = 7, hoy: date | None = None
+    session: Session, *, days: int = 7, hoy: date | None = None, hasta: date | None = None
 ) -> RetailObservationReport:
     """Normaliza fila por fila el universo minorista, sin agrupar.
 
@@ -830,6 +830,12 @@ def compute_retail_observations(
     una vez más era garantizar que las tres copias se separaran. Los criterios y
     su motivo siguen documentados en `compute_retail_ranges`, que ahora es un
     agrupamiento sobre esta salida.
+
+    `hasta` (2026-09-14, date picker de rango de calendario en la home
+    pública): tope superior opcional, `None` por default —sin tope, todo lo
+    que sea `>= cutoff` entra, comportamiento sin cambios para cada caller
+    que no lo pase (`/control`, `compute_availability`, todo lo de antes).
+    Puesto, acota el otro lado: `[cutoff, hasta]` en vez de `[cutoff, ∞)`.
     """
     cutoff = (hoy or date.today()) - timedelta(days=days)
 
@@ -901,6 +907,8 @@ def compute_retail_observations(
 
         effective_date = published_date or created_at.date()
         if effective_date < cutoff:
+            continue
+        if hasta is not None and effective_date > hasta:
             continue
 
         # Después de los otros filtros a propósito: el conteo cuenta filas que

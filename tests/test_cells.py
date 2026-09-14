@@ -837,6 +837,50 @@ class TestComputeRetailRanges:
         assert rango.count == 1
         assert rango.median == Decimal("700")
 
+    def test_hasta_excluye_lo_posterior_al_rango_elegido(self, session: Session) -> None:
+        """Date picker de rango de calendario (2026-09-14): `hasta` acota el
+        otro lado de la ventana — sin tocar `cutoff`/`days`, sigue siendo
+        `[cutoff, hasta]` en vez de `[cutoff, ∞)`."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-hasta")
+        hoy = date(2026, 8, 12)
+        _precio(
+            session, product=arroz, province=None, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            published_date=hoy - timedelta(days=5),
+        )
+        _precio(
+            session, product=arroz, province=None, price="9999", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            published_date=hoy,
+        )
+
+        rangos = compute_retail_ranges(
+            session, days=30, hoy=hoy, hasta=hoy - timedelta(days=1)
+        ).ranges
+
+        (rango,) = rangos
+        assert rango.count == 1
+        assert rango.median == Decimal("700")
+
+    def test_sin_hasta_no_hay_tope_superior(self, session: Session) -> None:
+        """`hasta=None` (el default) es el comportamiento de siempre: nada
+        de lo que ya funcionaba (`/control`, `compute_availability`) se ve
+        afectado por sumar el parámetro."""
+        arroz = self._arroz(session)
+        origen = _ingestion(session, "hash-sin-hasta")
+        hoy = date(2026, 8, 12)
+        _precio(
+            session, product=arroz, province=None, price="700", source=origen,
+            unit="lb", sale_format=SaleFormat.RETAIL.value, quantity="1",
+            published_date=hoy,
+        )
+
+        rangos = compute_retail_ranges(session, days=7, hoy=hoy).ranges
+
+        (rango,) = rangos
+        assert rango.count == 1
+
     def test_sin_published_date_usa_fecha_de_carga(self, session: Session) -> None:
         """Sin pasar `hoy`: `created_at` lo pone `utc_now()` al insertar (recién,
         durante el test), así que cae dentro de cualquier ventana razonable sin

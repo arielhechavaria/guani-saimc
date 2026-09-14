@@ -613,6 +613,46 @@
   }
   .ph-province-chip .ph-x { color: inherit; }
 
+  /* Date picker de rango de calendario (2026-09-14, pedido del operador:
+     "que siempre se pueda ver el rango en uso y que se pueda cambiar") —
+     mismo lenguaje visual que `.ph-province-*` de arriba, misma isla
+     siempre visible. Los `<input type="date">` YA muestran el rango
+     elegido con solo mirarlos: es la respuesta directa al "que siempre se
+     pueda ver", sin un texto aparte que pueda desincronizarse. */
+  .ph-window-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  .ph-window-form { display: inline-flex; align-items: center; gap: .35rem; }
+  .ph-window-label {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
+    padding: .3rem .7rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    color: var(--m3-on-surface-variant);
+  }
+  .ph-window-label:hover { border-color: var(--ph-accent); color: var(--ph-accent); }
+  .ph-window-label-text { font-size: .6875rem; letter-spacing: .05em; opacity: .8; }
+  .ph-window-label input[type="date"] {
+    font: inherit; font-size: .8125rem; color: inherit;
+    border: none; background: none; padding: 0; min-width: 0;
+  }
+  .ph-window-submit {
+    font: inherit; font-size: .8125rem; font-weight: 500;
+    padding: .4rem .95rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--ph-accent); background: var(--ph-accent); color: var(--ph-on-accent);
+  }
+  .ph-window-shortcuts { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .ph-window-shortcut {
+    font-size: .75rem; font-weight: 500;
+    padding: .3rem .65rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant);
+    background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
+    color: var(--m3-on-surface-variant);
+  }
+  .ph-window-shortcut:hover { border-color: var(--ph-accent); color: var(--ph-accent); text-decoration: none; }
+  .ph-window-shortcut.is-selected {
+    background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent);
+  }
+
   /* ── El mapa ES la app (2026-09-12) ────────────────────────────────────
      Antes `.ph-stage` era un hijo más del flex column: la barra superior y
      el riel de chips le comían alto y el mapa quedaba en lo que sobraba.
@@ -1166,7 +1206,8 @@
         hx-get="/" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true"
         onchange="this.requestSubmit ? this.requestSubmit() : this.submit()">
     {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
-    <input type="hidden" name="dias" value="{{ window_days }}">
+    <input type="hidden" name="desde" value="{{ selected_desde.isoformat() }}">
+    <input type="hidden" name="hasta" value="{{ selected_hasta.isoformat() }}">
     {% if open_views %}<input type="hidden" name="ver" value="{{ open_views | join(',') }}">{% endif %}
     <input type="hidden" name="capa" value="{{ selected_layer }}">
     <select name="provincia" class="ph-province-select" aria-label="Provincia">
@@ -1187,6 +1228,40 @@
   {% endif %}
   </div>{# /.ph-province-group #}
   {% endif %}
+
+  <div class="ph-compass-filters-sep" aria-hidden="true"></div>
+
+  {# Date picker de rango de calendario, siempre visible (2026-09-14, pedido
+     del operador: «que siempre se pueda ver el rango en uso y que se pueda
+     cambiar»). Mismo patrón que el selector de provincia: `<form>` real,
+     degrada sin JS —acá SIN auto-submit, a propósito: son dos campos, y
+     auto-enviar al cambiar el primero mandaría la fecha vieja en el
+     segundo—, un botón "Ver" explícito. `window_nav` (7/30/90 días) queda
+     al lado como atajo a los cortes de lectura de siempre, sin reemplazar
+     el picker. #}
+  <div class="ph-window-group">
+  <form class="ph-window-form" action="/" method="get"
+        hx-get="/" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true">
+    {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
+    {% if selected_province_slug %}<input type="hidden" name="provincia" value="{{ selected_province_slug }}">{% endif %}
+    {% if open_views %}<input type="hidden" name="ver" value="{{ open_views | join(',') }}">{% endif %}
+    <input type="hidden" name="capa" value="{{ selected_layer }}">
+    <label class="ph-window-label">
+      <span class="ph-window-label-text">Desde</span>
+      <input type="date" name="desde" value="{{ selected_desde.isoformat() }}">
+    </label>
+    <label class="ph-window-label">
+      <span class="ph-window-label-text">Hasta</span>
+      <input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}">
+    </label>
+    <button type="submit" class="ph-window-submit">Ver</button>
+  </form>
+  <div class="ph-window-shortcuts">
+    {% for choice in window_nav %}
+    <a class="ph-window-shortcut{% if choice.is_selected %} is-selected{% endif %}" href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
+    {% endfor %}
+  </div>
+  </div>{# /.ph-window-group #}
 
   </div>{# /.ph-compass-filters #}
 
