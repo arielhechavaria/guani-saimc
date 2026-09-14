@@ -9545,3 +9545,41 @@ el import en runtime—. 8 tests nuevos: `test_card_view.py`
 (`TestAttachTrends`, `TestIconoDeTarjeta`) y `test_public_filter.py`
 (`TestTendenciaEnLaTarjeta`, con y sin período anterior). Sigue
 pendiente la verificación visual real del operador.
+
+## 2026-09-14 — Fix: controles del panel maximizado tapados por el compás
+Contexto: el operador reportó que con un panel de producto maximizado
+era imposible trabajar porque sus controles (minimizar/cerrar) quedaban
+detrás de otros íconos. Causa raíz, no visual sino de contexto de
+apilamiento CSS: `.ph-dock-layer` (`position: relative; z-index: 1200`)
+crea su propio contexto de apilamiento. `alFrente()` le pone a cada
+ventana un `z-index` a mano (20-44, «por debajo de la hoja de
+provincia») pero ESE número solo compite contra sus ventanas hermanas
+DENTRO de `.ph-dock-layer` — nunca contra la barra superior (z-index
+1300, un HERMANO de `.ph-dock-layer`, no un descendiente). Ni siquiera
+`position: fixed` (que ya tiene `.is-floating`) escapa el contexto de un
+ancestro que ya lo fijó: es el gotcha clásico de "fixed atrapado en un
+ancestro con z-index". Una ventana expandida a pantalla completa
+(`expandir()`, `.is-max`) queda entonces SIEMPRE detrás del compás,
+sin importar qué tan alto suba `alFrente()` el número.
+Decisión: en vez de subirle el z-index a la ventana (no serviría de
+nada, es el mismo contexto), `pintar()` llama a `actualizarDockLayer()`,
+que prende `.ph-dock-layer.has-max` (z-index 1500, arriba de la barra y
+del indicador de carga) mientras exista alguna `[data-win].is-max` en la
+página, y lo apaga si no. Documentado en el comentario de la escala de
+z-index (arriba de `.ph-stage`) para que la próxima vez que alguien
+toque esa escala vea la trampa antes de repetirla.
+Descartado: escribir `expandir()` con `position: fixed` sacando la
+ventana del DOM de `.ph-dock-layer` (moverla a `document.body`
+temporalmente) — funcionaría, pero perdería el `pointer-events` y la
+lógica de agarres/arrastre que dependen de la jerarquía actual; el fix
+de una sola clase en el ancestro es más chico y no toca nada de eso.
+Consecuencia: al escribir `actualizarDockLayer()` con el
+`document.querySelector(...)` anidado directo como segundo argumento de
+`classList.toggle(...)`, `TestClasesDelJavascriptExisten` lo marcó como
+clase huérfana — el regex del test extrae CUALQUIER string entre
+comillas dentro del primer paréntesis que cierra, y `"[data-win].is-max"`
+(el selector) quedó adentro de esa captura. Se resolvió sacando el
+`querySelector` a una variable aparte antes del `.toggle(...)`, más
+prolijo igual. Sin test automatizado del comportamiento en sí —es JS
+puro sobre `position`/contextos de apilamiento, sin arnés de test de UI
+en el repo—; el operador tiene que confirmar en el navegador.

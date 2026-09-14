@@ -594,10 +594,21 @@
        1200  muelle de ventanas y paneles
        1300  barra superior y fila de filtros
        1400  indicador de carga
+       1500  muelle CON una ventana expandida (`.has-max`, ver abajo)
 
-     El degradado de `.ph-canvas` queda de fondo aunque el mapa lo tape: si
-     los tiles no cargan —la conexión del usuario final, que es el motivo de
-     la decisión cerrada 1— se ve eso en vez de un vacío blanco. */
+     `.ph-dock-layer` fija su propio z-index (1200): es un contexto de
+     apilamiento nuevo, así que el `z-index` que `alFrente()` pone A MANO en
+     cada `.ph-win`/`.ph-fpanel` (20-44, comentario ahí mismo) compite SOLO
+     contra sus hermanas ventanas, nunca contra algo de otro nivel de esta
+     escala — ni con `position: fixed`, que no escapa el contexto de un
+     ancestro que ya lo tiene. Una ventana expandida a pantalla completa
+     (`.is-max`, `expandir()`) queda entonces SIEMPRE detrás de la barra
+     superior (1300): sus propios controles (minimizar/cerrar) terminaban
+     tapados por los del compás, imposibles de tocar (reportado por el
+     operador, 2026-09-14). `pintar()` marca `.ph-dock-layer.has-max` en vez
+     de subir el z-index de la ventana —no serviría de nada, ver arriba— para
+     que el contexto entero se pare encima de la barra mientras algo esté
+     expandido. */
   .ph-stage { position: absolute; inset: 0; z-index: 0; }
   .ph-stage .ph-map { width: 100%; height: 100%; }
   /* El hover de cada provincia ya no es `:hover` de CSS: Leaflet dibuja los
@@ -682,6 +693,10 @@
     position: relative; z-index: 1200;
     flex: 1; min-height: 0; pointer-events: none;
   }
+  /* Ver la escala de z-index más arriba: sin esto, una ventana expandida a
+     pantalla completa queda detrás de la barra superior y sus propios
+     controles no se pueden tocar. `pintar()` prende/apaga esta clase. */
+  .ph-dock-layer.has-max { z-index: 1500; }
   .ph-dock {
     position: absolute; inset: 6.5rem clamp(1rem, 3vw, 2rem) .75rem 6.5rem;
     display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
@@ -1784,6 +1799,18 @@
     boton.setAttribute("aria-label", (activo ? siActivo : siNo) + " " + nombre);
   }
 
+  function actualizarDockLayer() {
+    // `.ph-dock-layer` fija su propio z-index (1200): el de cada ventana
+    // (`alFrente()`, 20-44) compite solo contra sus hermanas, nunca contra
+    // la barra superior (1300) — ver el comentario de la escala más arriba.
+    // Mientras haya una ventana expandida, el contexto entero sube por
+    // encima de la barra; si no, vuelve a su lugar.
+    var capaDock = document.querySelector(".ph-dock-layer");
+    if (!capaDock) return;
+    var hayMaximizada = !!document.querySelector("[data-win].is-max");
+    capaDock.classList.toggle("has-max", hayMaximizada);
+  }
+
   function pintar(win) {
     if (win.hidden) return;
     var e = estado[win.id] || {};
@@ -1801,6 +1828,7 @@
     } else {
       anclar(win);
     }
+    actualizarDockLayer();
   }
 
   function pintarTodas() {
