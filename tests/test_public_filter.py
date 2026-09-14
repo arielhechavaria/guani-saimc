@@ -293,8 +293,10 @@ class TestBuildProductChips:
         por_label = {c.label: c for c in chips}
 
         assert por_label["Arroz"].query == "/?productos=arroz,aceite"
+        # Con Arroz como único activo y sin ningún otro filtro, el estado
+        # "sin cambios" ES la ruta limpia (ver TestChipHaciaLaVistaLiviana).
         chips_uno = build_product_chips(self.PILOT, ["Arroz"])
-        assert {c.label: c for c in chips_uno}["Arroz"].query == "/?productos=arroz"
+        assert {c.label: c for c in chips_uno}["Arroz"].query == "/producto/arroz"
 
     def test_preserva_provincia_y_ventana_en_el_toggle(self) -> None:
         chips = build_product_chips(
@@ -315,6 +317,52 @@ class TestBuildProductChips:
         assert por_label["Malanga"].icon is None
 
 
+class TestChipHaciaLaVistaLiviana:
+    """Prender el PRIMER chip sin ningún otro filtro apunta a la ruta
+    limpia `/producto/<slug>` —vista liviana, sin mapa (2026-09-14, reporte
+    de mejoras no consideradas, idea #5)— en vez de `?productos=`."""
+
+    PILOT = ("Arroz", "Aceite", "Pollo")
+
+    def test_prender_el_unico_chip_sin_filtros_va_a_la_ruta_limpia(self) -> None:
+        chips = build_product_chips(self.PILOT, [])
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Arroz"].query == "/producto/arroz"
+        assert por_label["Arroz"].is_full_navigation
+
+    def test_prender_un_segundo_producto_no_va_a_la_ruta_limpia(self) -> None:
+        chips = build_product_chips(self.PILOT, ["Arroz"])
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Aceite"].query == "/?productos=arroz,aceite"
+        assert not por_label["Aceite"].is_full_navigation
+
+    def test_con_provincia_elegida_no_va_a_la_ruta_limpia(self) -> None:
+        """La vista liviana no sabe de provincias: acotar por provincia
+        sigue necesitando el mapa/`?productos=`."""
+        chips = build_product_chips(self.PILOT, [], selected_province="La Habana")
+        por_label = {c.label: c for c in chips}
+
+        assert not por_label["Arroz"].is_full_navigation
+        assert "provincia=la-habana" in por_label["Arroz"].query
+
+    def test_con_ventana_de_dias_distinta_del_default_no_va_a_la_ruta_limpia(self) -> None:
+        chips = build_product_chips(self.PILOT, [], selected_days=7)
+        por_label = {c.label: c for c in chips}
+
+        assert not por_label["Arroz"].is_full_navigation
+
+    def test_con_ventana_flotante_abierta_no_va_a_la_ruta_limpia(self) -> None:
+        """La vista liviana no tiene ventanas: si ya había una abierta
+        (`?ver=`), perderla al aterrizar ahí sería un cambio de estado
+        silencioso."""
+        chips = build_product_chips(self.PILOT, [], ver=["precios"])
+        por_label = {c.label: c for c in chips}
+
+        assert not por_label["Arroz"].is_full_navigation
+
+
 class TestChipsMultiSeleccionEnLaRuta:
     def test_el_chip_con_icono_muestra_solo_el_icono_y_nombra_al_pasar(
         self, client: TestClient, session: Session
@@ -327,6 +375,39 @@ class TestChipsMultiSeleccionEnLaRuta:
         assert '<span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span>' in texto
         # El nombre va visible debajo del ícono (y es el nombre accesible).
         assert '<span class="ph-chip-name">Arroz</span>' in texto
+
+    def test_el_chip_hacia_la_vista_liviana_no_lleva_hx_get(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin ningún filtro puesto, prender el primer chip apunta a la
+        ruta limpia (2026-09-14) — esa vista no tiene `#ph-live`, así que el
+        clic tiene que navegar la página entera, no pedirle a htmx un swap
+        parcial que no encontraría nada que reemplazar."""
+        _seed_dos_productos(session)
+
+        texto = client.get("/").text
+
+        assert (
+            '<a class="ph-chip-toggle is-icon" href="/producto/arroz" '
+            'data-product="arroz" aria-pressed="false">'
+            '<span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span>'
+            '<span class="ph-chip-name">Arroz</span></a>'
+        ) in texto
+
+    def test_el_chip_hacia_multiseleccion_si_lleva_hx_get(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Con un producto ya activo, prender otro SIGUE siendo `?productos=`
+        — la vista liviana solo entiende un producto — y ese caso conserva
+        el swap parcial de siempre."""
+        _seed_dos_productos(session)
+
+        texto = client.get("/?productos=arroz").text
+
+        assert (
+            '<a class="ph-chip-toggle is-icon" href="/?productos=arroz,aceite" '
+            'hx-get="/?productos=arroz,aceite" data-product="aceite" aria-pressed="false">'
+        ) in texto
 
     def test_productos_acota_a_la_union_de_los_activos(
         self, client: TestClient, session: Session

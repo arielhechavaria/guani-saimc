@@ -1124,12 +1124,17 @@
     {# Con ícono, el chip muestra el ícono y debajo el nombre, chico y atenuado:
        los íconos de Material son aproximados (solo `rice_bowl` es exacto) y el
        nombre visible es lo que los hace legibles de un vistazo. El nombre es
-       además el nombre accesible del enlace. Sin ícono, solo el nombre. #}
+       además el nombre accesible del enlace. Sin ícono, solo el nombre.
+
+       `chip.is_full_navigation` (2026-09-14): cuando el destino es la ruta
+       limpia `/producto/<slug>` —vista liviana, sin mapa— el clic tiene que
+       ser una navegación de página entera. Esa vista no tiene `#ph-live`:
+       un swap parcial ahí no encontraría nada que reemplazar. #}
     {% for chip in product_chips -%}
     {% if chip.icon -%}
-    <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}"><span class="m3-icon ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span><span class="ph-chip-name">{{ chip.label }}</span></a>
+    <a class="ph-chip-toggle is-icon{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}"{% if not chip.is_full_navigation %} hx-get="{{ chip.query }}"{% endif %} data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}"><span class="m3-icon ph-chip-icon" aria-hidden="true">{{ chip.icon }}</span><span class="ph-chip-name">{{ chip.label }}</span></a>
     {%- else -%}
-    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" hx-get="{{ chip.query }}" data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
+    <a class="ph-chip-toggle{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}"{% if not chip.is_full_navigation %} hx-get="{{ chip.query }}"{% endif %} data-product="{{ chip.slug }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">{{ chip.label }}</a>
     {%- endif %}
     {%- endfor %}
   </nav>
