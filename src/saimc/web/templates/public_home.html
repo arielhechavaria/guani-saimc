@@ -78,6 +78,12 @@
               grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
   .ph-card { padding: 1rem 1.1rem .9rem; }
   .ph-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
+  /* Ícono + nombre como un solo grupo (2026-09-14): `.ph-card-top` reparte
+     dos extremos con `space-between` — un tercer hijo suelto (el ícono) lo
+     empujaría al medio. El ancla visual es la misma ilustración/glifo que ya
+     usa el panel flotante (`.ph-fpanel-illustration`/`.ph-fpanel-icon`), no
+     un ícono nuevo para la tarjeta. */
+  .ph-card-title { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
   .ph-card-product { font-family: var(--ph-font-heading); font-size: 1.25rem; }
   .ph-card-place { font-size: .6875rem; letter-spacing: .1em; text-transform: uppercase; opacity: .65; }
   /* `format_label`/`variant_label` (card_view.py): metadata condicional entre
@@ -93,6 +99,10 @@
   .ph-card-range .sep { opacity: .45; font-size: 1.1rem; }
   .ph-card-unit { font-size: .75rem; opacity: .65; }
   .ph-card-median { margin-top: .45rem; font-size: .8125rem; opacity: .75; }
+  /* «¿Sube o baja?» (spec.md §6.7), la pregunta que le faltaba a esta
+     tarjeta — mismo número sin color que ya usa `.ph-cifra-cambio` en el
+     panel flotante, reusado tal cual (2026-09-14). */
+  .ph-card-trend { margin-top: .3rem; }
   .ph-card-sample { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
                      margin-top: .8rem; padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
   .ph-card-n { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -1352,7 +1362,11 @@
               {% for card in cards %}
               <li class="ph-surface ph-card">
                 <div class="ph-card-top">
-                  <span class="ph-card-product">{{ card.product_name }}</span>
+                  <span class="ph-card-title">
+                    {% set panel = card %}
+                    {% if card.has_illustration %}{% include "_product_illustration.html" %}{% elif card.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ card.icon }}</span>{% endif %}
+                    <span class="ph-card-product">{{ card.product_name }}</span>
+                  </span>
                   <span class="ph-card-place">{{ card.province_name }}</span>
                 </div>
                 {% if card.format_label %}<div class="ph-card-format">{{ card.format_label | capitalize }}</div>{% endif %}
@@ -1372,6 +1386,7 @@
                 <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
                   {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
                 {% endif %}
+                {% if card.change_text %}<div class="ph-cifra-cambio ph-card-trend">{{ card.change_text }} vs. los {{ window_days }} días anteriores</div>{% endif %}
                 <div class="ph-card-sample">
                   <span><span class="ph-card-n">{{ card.count }}</span> anuncio{{ "s" if card.count != 1 }} en {{ window_days }} días</span>
                   <span class="ph-chip">{{ card.state }}</span>

@@ -371,6 +371,51 @@ class TestChipsMultiSeleccionEnLaRuta:
         assert "Azúcar blanca" not in texto
 
 
+class TestTendenciaEnLaTarjeta:
+    def test_la_tarjeta_muestra_el_cambio_vs_el_periodo_anterior(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`.ph-card` contesta "¿sube o baja?" (spec.md §6.7) sin abrir el
+        panel flotante — mismo `Headline.change_text` que ya usaba el panel,
+        reusado en la tarjeta simple (2026-09-14), y el ícono ilustrado como
+        ancla visual en vez de solo el nombre."""
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-tendencia")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(10), price="330")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(40), price="300")
+        session.commit()
+
+        texto = client.get("/").text
+        tarjeta = texto.split('class="ph-surface ph-card"')[1].split("</li>")[0]
+
+        assert '<div class="ph-cifra-cambio ph-card-trend">+10%' in tarjeta
+        assert "vs. los 30 días anteriores" in tarjeta
+        assert 'class="ph-fpanel-illustration"' in tarjeta
+
+    def test_sin_periodo_anterior_la_tarjeta_no_muestra_cambio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-sin-tendencia")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5))
+        session.commit()
+
+        texto = client.get("/").text
+        tarjeta = texto.split('class="ph-surface ph-card"')[1].split("</li>")[0]
+
+        assert "ph-card-trend" not in tarjeta
+
+
 class TestPanelesFlotantes:
     def test_un_panel_por_producto_activo(
         self, client: TestClient, session: Session
