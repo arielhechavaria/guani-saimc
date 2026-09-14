@@ -456,8 +456,9 @@ class TestFormatoEnElPanel:
         panel = texto.split('id="ph-panel-aceite"')[1].split('<a class="ph-fpanel-detail"')[0]
 
         assert panel.count('class="ph-cifra"') == 2
-        assert "La Habana · Botella de 1 L" in panel
-        assert "La Habana · Pomo de 5 L" in panel
+        assert "La Habana" in panel
+        assert '<span class="ph-chip">Botella de 1 L</span>' in panel
+        assert '<span class="ph-chip">Pomo de 5 L</span>' in panel
 
     def test_solo_el_primer_bloque_arranca_abierto(
         self, client: TestClient, session: Session
@@ -508,7 +509,7 @@ class TestFormatoEnElPanel:
         panel = texto.split('id="ph-panel-arroz"')[1].split('<a class="ph-fpanel-detail"')[0]
 
         assert panel.count('class="ph-cifra"') == 1
-        assert "·" not in panel.split('class="ph-cifra-prov"')[1].split("</summary>")[0]
+        assert "ph-chip" not in panel.split('class="ph-cifra-prov"')[1].split("</summary>")[0]
 
 
 class TestPanelesFlotantes:
