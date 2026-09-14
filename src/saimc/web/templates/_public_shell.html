@@ -20,6 +20,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Guani — {% block title %}{% endblock %}</title>
+  {# Vista previa al compartir (WhatsApp/Telegram, el canal por el que se
+     mueve este mercado): sin esto un link pegado no muestra nada. Sin
+     og:image — no hay ningún asset de marca en el repo todavía; agregarlo
+     es una decisión de diseño aparte, no de este slice. #}
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Guani" />
+  <meta property="og:url" content="{{ request.url }}" />
+  <meta property="og:title" content="Guani — {{ self.title() }}" />
+  <meta property="og:description" content="{% block og_description %}Precios del mercado informal cubano, verificados anuncio por anuncio, provincia por provincia.{% endblock %}" />
+  <meta name="description" content="{{ self.og_description() }}" />
   <link href="/static/saimc-public.css?v={{ public_css_version() }}" rel="stylesheet" />
   {% block head %}{% endblock %}
 </head>

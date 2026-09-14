@@ -4,6 +4,8 @@
    vista previa del enlace muestran el producto, no un genérico. #}
 {% block title %}{% if selected_product %}{{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %} — precios{% else %}Precios y cobertura{% endif %}{% endblock %}
 
+{% block og_description %}{% if selected_product %}Precios de {{ selected_product }}{% if selected_province %} en {{ selected_province }}{% endif %} en el mercado informal cubano, verificados anuncio por anuncio.{% else %}Precios del mercado informal cubano, verificados anuncio por anuncio, provincia por provincia.{% endif %}{% endblock %}
+
 {# El encabezado y el pie del shell se ocultan por CSS en esta vista: la página
    entera es el mapa. El <h1> vive en la barra superior del lienzo y el crédito
    del mapa en su esquina. #}

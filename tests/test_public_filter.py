@@ -1959,6 +1959,37 @@ class TestRutaProductoLimpia:
         assert pie_de_la_leyenda < indicador  # fuera del bloque que htmx reemplaza
 
 
+class TestOpenGraph:
+    """Vista previa al compartir en WhatsApp/Telegram: sin og:title/
+    og:description un link pegado no muestra nada. `og:image` queda afuera
+    a propósito — no hay ningún asset de marca en el repo."""
+
+    def test_home_sin_producto_usa_la_descripcion_generica(
+        self, client: TestClient
+    ) -> None:
+        texto = client.get("/").text
+
+        assert 'property="og:title" content="Guani — Precios y cobertura"' in texto
+        assert (
+            'property="og:description" content="Precios del mercado informal cubano, '
+            'verificados anuncio por anuncio, provincia por provincia."' in texto
+        )
+        assert 'name="description" content="Precios del mercado informal cubano' in texto
+
+    def test_producto_enfocado_menciona_el_producto_en_la_descripcion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        TestRutaProductoLimpia()._seed(session)
+
+        texto = client.get("/producto/arroz").text
+
+        assert 'property="og:title" content="Guani — Arroz — precios"' in texto
+        assert (
+            'property="og:description" content="Precios de Arroz en el mercado '
+            'informal cubano, verificados anuncio por anuncio."' in texto
+        )
+
+
 class TestAtribucionTRMI:
     """spec.md §5, «Posicionamiento frente a elTOQUE»: «Toda serie derivada
     que use la TRMI como base de conversión debe atribuirla visiblemente».

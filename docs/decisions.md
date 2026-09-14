@@ -9724,3 +9724,22 @@ Consecuencia: cualquier vista pública nueva que use este shell hereda la
 atribución sin tocar nada. Si algún día se agrega una fuente alternativa de
 tipo de cambio (redundancia obligatoria, §5), este pie es el lugar natural
 para sumarla.
+
+## 2026-09-14 — Open Graph en la capa pública
+Contexto: idea #2 del reporte de mejoras no consideradas para la home. El
+`<title>` ya cambia por vista/producto pensando en compartir, pero un link
+pegado en WhatsApp o Telegram —el canal por el que se mueve este mercado—
+no mostraba ninguna vista previa: cero `og:title`/`og:description` en
+`_public_shell.html`.
+Decisión: se agregan `og:type`, `og:site_name`, `og:url`, `og:title` (via
+`self.title()`, reusa el bloque `title` ya existente) y `og:description`
+(bloque nuevo `og_description`, con default genérico en el shell y override
+por vista en `public_home.html` — con y sin producto enfocado— y
+`public_evidence.html`). `<meta name="description">` reusa el mismo bloque
+para no mantener dos textos.
+Descartado: `og:image`. No hay ningún asset de marca en el repo (ni logo ni
+banner); generarlo o pedirlo es una decisión de diseño aparte, no de este
+slice — se deja explícito en el HTML en vez de omitirlo en silencio.
+Consecuencia: cualquier vista pública nueva que extienda el shell hereda
+`og:title`/`og:description` genéricos automáticamente; si necesita algo más
+específico, solo sobrescribe `{% block og_description %}`.

@@ -5,6 +5,7 @@
 {% block subtitle %}
   Capturado el {{ captured_day.strftime("%d/%m/%Y") }}. Tal como se publicó, sin editar.
 {% endblock %}
+{% block og_description %}El anuncio original detrás de este precio, capturado el {{ captured_day.strftime("%d/%m/%Y") }}. Tal como se publicó, sin editar.{% endblock %}
 
 {% block content %}
 {# §10.6 mitigación 2: se muestra el anuncio y su contenido económico, nunca
