@@ -201,6 +201,24 @@ def build_cards(ranges: list[RetailRange]) -> list[ProductCard]:
     return cards
 
 
+def group_cards_by_province(
+    cards: Sequence[ProductCard], province_names: Sequence[str]
+) -> list[tuple[str, list[ProductCard]]]:
+    """Las tarjetas agrupadas por provincia, en el orden de `province_names`
+    (ya alfabético — lo resuelve `_render_home`, acá no se reordena nada).
+
+    Para el modo «Tablero» (2026-09-16): mismas tarjetas que ya arma
+    `build_cards`, mismo componente `.ph-card` de siempre, solo agrupadas en
+    vez de en una sola lista plana. Una provincia sin ninguna tarjeta no
+    entra —no hay nada que agrupar bajo su nombre."""
+    por_provincia: dict[str, list[ProductCard]] = {}
+    for card in cards:
+        por_provincia.setdefault(card.province_name, []).append(card)
+    return [
+        (name, por_provincia[name]) for name in province_names if name in por_provincia
+    ]
+
+
 def attach_trends(cards: list[ProductCard], headlines: Sequence[Headline]) -> list[ProductCard]:
     """Pega a cada tarjeta el cambio vs. el período anterior, si hay uno.
 

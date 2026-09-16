@@ -19,15 +19,18 @@
    proyecto, y así el navegador la cachea igual que el bundle de htmx. #}
 <link rel="stylesheet" href="/static/leaflet/leaflet.css?v={{ leaflet_version() }}" />
 <style>
-  /* Van acá y no en una hoja aparte mientras sea la única vista pública: son
+  /* Van acá y no en una hoja aparte mientras sea la única vista con mapa: son
      pocas reglas, viajan gzipeadas con el HTML y no suman una petición.
+     `.ph-surface`/`.ph-note`/`.ph-cards`/`.ph-card-*`/`.ph-chip`/
+     `.ph-fpanel-icon`/`.ph-fpanel-illustration`/`.ph-cifra-cambio` SÍ se
+     movieron a `saimc-public.css` (2026-09-16, modo Tablero): dejaron de ser
+     de una sola vista el día que `public_dashboard.html` empezó a reusar la
+     misma tarjeta (`_product_card_item.html`) sin cargar este `<style>`.
 
      Paleta: custom properties `--ph-*` (public home) de `design_tokens.css`,
      separadas de los `--m3-*` que usa también la herramienta del operador. */
 
   /* ── Superficies y piezas compartidas ──────────────────────────────── */
-  .ph-surface { border-radius: var(--ph-radius-sm); background: var(--m3-surface);
-                box-shadow: var(--ph-elev); }
   .ph-inset { border-radius: var(--ph-radius-sm); background: var(--m3-surface-container);
               border: 1px solid var(--m3-outline-variant); }
 
@@ -70,47 +73,6 @@
   .ph-conc-track { height: 6px; background: var(--m3-surface-container-high); border-radius: 3px; }
   .ph-conc-fill { display: block; height: 6px; background: var(--ph-accent-2); border-radius: 3px; }
   .ph-conc-n { text-align: right; font-variant-numeric: tabular-nums; color: var(--m3-on-surface); }
-
-  .ph-note { margin: 0; font-size: .8125rem; line-height: 1.6;
-             color: var(--m3-on-surface-variant); text-wrap: pretty; }
-
-  /* Tarjetas de precio: `auto-fit` + `minmax` se acomoda solo al ancho de la
-     ventana flotante, sin corte responsive propio. */
-  .ph-cards { display: grid; gap: .8rem; padding: 0; margin: 0; list-style: none;
-              grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
-  .ph-card { padding: 1rem 1.1rem .9rem; }
-  .ph-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
-  /* Ícono + nombre como un solo grupo (2026-09-14): `.ph-card-top` reparte
-     dos extremos con `space-between` — un tercer hijo suelto (el ícono) lo
-     empujaría al medio. El ancla visual es la misma ilustración/glifo que ya
-     usa el panel flotante (`.ph-fpanel-illustration`/`.ph-fpanel-icon`), no
-     un ícono nuevo para la tarjeta. */
-  .ph-card-title { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
-  .ph-card-product { font-family: var(--ph-font-heading); font-size: 1.25rem; }
-  .ph-card-place { font-size: .6875rem; letter-spacing: .1em; text-transform: uppercase; opacity: .65; }
-  /* `format_label`/`variant_label` (card_view.py): metadata condicional entre
-     el titular y el precio — «Bolsa 1kg», «girasol Vitalín importado». Sin
-     regla renderizaban como `<div>` de bloque a full width sin margen,
-     pegados al titular. Mismo tratamiento que `.ph-card-median`: texto
-     secundario, no un chip — no son un estado, son una aclaración. */
-  .ph-card-format, .ph-card-variant { margin-top: .3rem; font-size: .8125rem; opacity: .75; }
-  .ph-card-range { display: flex; align-items: baseline; gap: .4rem; margin-top: .8rem;
-                   font-variant-numeric: tabular-nums; }
-  .ph-card-range .num { font-family: var(--ph-font-heading); font-size: 1.65rem; line-height: 1;
-                         color: var(--ph-accent); }
-  .ph-card-range .sep { opacity: .45; font-size: 1.1rem; }
-  .ph-card-unit { font-size: .75rem; opacity: .65; }
-  .ph-card-median { margin-top: .45rem; font-size: .8125rem; opacity: .75; }
-  /* «¿Sube o baja?» (spec.md §6.7), la pregunta que le faltaba a esta
-     tarjeta — mismo número sin color que ya usa `.ph-cifra-cambio` en el
-     panel flotante, reusado tal cual (2026-09-14). */
-  .ph-card-trend { margin-top: .3rem; }
-  .ph-card-sample { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
-                     margin-top: .8rem; padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
-  .ph-card-n { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .ph-chip { flex: none; white-space: nowrap; font-size: .6875rem; letter-spacing: .04em;
-             text-transform: uppercase; padding: .3rem .75rem; border-radius: 999px;
-             background: var(--ph-accent-wash); color: var(--ph-accent); }
 
   .ph-filter { display: flex; flex-wrap: wrap; gap: .45rem; padding: 0; margin: 0; list-style: none; }
   .ph-filter a { display: block; font-size: .75rem; letter-spacing: .04em;
@@ -546,8 +508,6 @@
   .ph-chip-icon { display: block; font-size: 22px; }
   .ph-chip-name { font-size: 10.5px; font-weight: 500; letter-spacing: .01em; white-space: nowrap; opacity: .7; }
   .ph-chip-toggle.is-icon.is-active .ph-chip-name { opacity: .9; }
-  .ph-fpanel-icon { font-size: 20px; color: var(--ph-accent); align-self: center; }
-  .ph-fpanel-illustration { width: 20px; height: 20px; color: var(--ph-accent); align-self: center; flex: none; }
 
   /* Insignia sobre el mapa: "cartelito de precio", no notificación SaaS
      (rediseño 2026-09-14, a pedido del operador — la primera versión era
@@ -983,7 +943,6 @@
   .ph-cifra-fila { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; }
   .ph-cifra-valor { font: 600 1.75rem/1 var(--m3-font); color: var(--m3-on-surface); }
   .ph-cifra-unidad { font-size: .8125rem; color: var(--m3-on-surface-variant); }
-  .ph-cifra-cambio { font-size: .8125rem; font-weight: 500; color: var(--m3-on-surface); }
   .ph-cifra-datos { display: flex; flex-wrap: wrap; gap: .15rem .9rem; margin: 0; padding: 0; list-style: none; font-size: .75rem; color: var(--m3-on-surface-variant); }
   .ph-cifra-datos b { font-weight: 500; color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
   .ph-rango { display: block; width: 100%; height: auto; overflow: visible; }
@@ -1188,6 +1147,11 @@
       {%- endfor %}
       <div class="ph-menu-divider"></div>
       <a class="ph-menu-item" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="ph-menu-icon"><span class="m3-icon">download</span></span><span class="ph-menu-label">Descargar CSV</span></a>
+      <div class="ph-menu-divider"></div>
+      {# Tablero (2026-09-16): mismas tarjetas de siempre, agrupadas por
+         provincia, sin mapa ni Leaflet — quien prefiera no cargar 147 KB de
+         mapa más los tiles en vivo tiene una salida desde acá mismo. #}
+      <a class="ph-menu-item" href="{{ tablero_href }}" aria-label="Ver como tablero de tarjetas"><span class="ph-menu-icon"><span class="m3-icon">dashboard</span></span><span class="ph-menu-label">Tablero</span></a>
       <div class="ph-menu-divider"></div>
       {# Zoom del mapa (2026-09-13): Leaflet ya no dibuja el suyo
          (`zoomControl: false` en `inicializarMapa()`) — chocaba con el
@@ -1615,38 +1579,7 @@
                puntual presentado como medición consolidada». #}
             <ul class="ph-cards">
               {% for card in cards %}
-              <li class="ph-surface ph-card">
-                <div class="ph-card-top">
-                  <span class="ph-card-title">
-                    {% set panel = card %}
-                    {% if card.has_illustration %}{% include "_product_illustration.html" %}{% elif card.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ card.icon }}</span>{% endif %}
-                    <span class="ph-card-product">{{ card.product_name }}</span>
-                  </span>
-                  <span class="ph-card-place">{{ card.province_name }}</span>
-                </div>
-                {% if card.format_label %}<div class="ph-card-format">{{ card.format_label | capitalize }}</div>{% endif %}
-                {% if card.variant_label %}<div class="ph-card-variant">{{ card.variant_label }}</div>{% endif %}
-                {% if card.is_single_observation %}
-                <div class="ph-card-range">
-                  <span class="num">{{ card.format_median_text or card.median_text }}</span>
-                  <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
-                </div>
-                <div class="ph-card-median">Una sola observación, sin rango todavía.
-                  {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
-                {% else %}
-                <div class="ph-card-range">
-                  <span class="num">{{ card.format_minimum_text or card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.format_maximum_text or card.maximum_text }}</span>
-                  <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
-                </div>
-                <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
-                  {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
-                {% endif %}
-                {% if card.change_text %}<div class="ph-cifra-cambio ph-card-trend">{{ card.change_text }} vs. los {{ window_days }} días anteriores</div>{% endif %}
-                <div class="ph-card-sample">
-                  <span><span class="ph-card-n">{{ card.count }}</span> anuncio{{ "s" if card.count != 1 }} en {{ window_days }} días</span>
-                  <span class="ph-chip">{{ card.state }}</span>
-                </div>
-              </li>
+              {% include "_product_card_item.html" %}
               {% endfor %}
             </ul>
             {% endif %}

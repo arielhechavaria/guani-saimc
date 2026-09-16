@@ -12,7 +12,13 @@ from datetime import date
 from decimal import Decimal
 
 from saimc.cells import RetailRange
-from saimc.web.card_view import SAMPLE_FORMING, attach_trends, build_cards, format_price
+from saimc.web.card_view import (
+    SAMPLE_FORMING,
+    attach_trends,
+    build_cards,
+    format_price,
+    group_cards_by_province,
+)
 from saimc.web.price_charts import Headline
 
 
@@ -268,3 +274,34 @@ class TestIconoDeTarjeta:
         (card,) = build_cards([_rango(product="Café")])
 
         assert not card.has_illustration
+
+
+class TestAgrupadoPorProvincia:
+    """Para el modo Tablero (2026-09-16): mismas tarjetas, agrupadas."""
+
+    def test_agrupa_en_el_orden_de_province_names(self) -> None:
+        cards = build_cards(
+            [
+                _rango(product="Arroz", province="Santiago de Cuba"),
+                _rango(product="Arroz", province="La Habana"),
+                _rango(product="Aceite", province="La Habana"),
+            ]
+        )
+
+        agrupado = group_cards_by_province(cards, ["La Habana", "Santiago de Cuba"])
+
+        assert [nombre for nombre, _ in agrupado] == ["La Habana", "Santiago de Cuba"]
+        productos_habana = {c.product_name for c in dict(agrupado)["La Habana"]}
+        assert productos_habana == {"Arroz", "Aceite"}
+        productos_santiago = {c.product_name for c in dict(agrupado)["Santiago de Cuba"]}
+        assert productos_santiago == {"Arroz"}
+
+    def test_una_provincia_sin_ninguna_tarjeta_no_entra(self) -> None:
+        cards = build_cards([_rango(product="Arroz", province="La Habana")])
+
+        agrupado = group_cards_by_province(cards, ["La Habana", "Santiago de Cuba"])
+
+        assert [nombre for nombre, _ in agrupado] == ["La Habana"]
+
+    def test_sin_tarjetas_no_hay_grupos(self) -> None:
+        assert group_cards_by_province([], ["La Habana", "Santiago de Cuba"]) == []

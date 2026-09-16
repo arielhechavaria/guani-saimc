@@ -287,6 +287,60 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
 }
 .ph-theme-toggle:hover { background: var(--m3-surface-container-high); }
 
+/* ── Tarjeta de producto (`.ph-card`) ──────────────────────────────────────
+   Vivía solo en el `<style>` de `public_home.html` («mientras sea la única
+   vista pública»). Dejó de serlo el 2026-09-16: el modo Tablero
+   (`public_dashboard.html`) reusa la misma tarjeta vía
+   `_product_card_item.html` sin cargar ese `<style>` — moverla acá es lo que
+   hace que las dos vistas la pinten igual, en vez de que la segunda copia el
+   marcado y no el CSS (mismo tipo de bug que `--m3-tertiary` citado sin
+   definir, 2026-09-04). `.ph-note` y `.ph-chip` viajan con ella por la misma
+   razón: la nota de «muestra en formación» y el rótulo de estado del pie de
+   cada tarjeta. */
+.ph-note { margin: 0; font-size: .8125rem; line-height: 1.6;
+           color: var(--m3-on-surface-variant); text-wrap: pretty; }
+
+.ph-surface { border-radius: var(--ph-radius-sm); background: var(--m3-surface);
+              box-shadow: var(--ph-elev); }
+
+/* `auto-fit` + `minmax` se acomoda solo al ancho del contenedor —ventana
+   flotante o sección del tablero—, sin corte responsive propio. */
+.ph-cards { display: grid; gap: .8rem; padding: 0; margin: 0; list-style: none;
+            grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.ph-card { padding: 1rem 1.1rem .9rem; }
+.ph-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
+/* Ícono + nombre como un solo grupo: `.ph-card-top` reparte dos extremos con
+   `space-between` — un tercer hijo suelto (el ícono) lo empujaría al medio.
+   El ancla visual es `.ph-fpanel-illustration`/`.ph-fpanel-icon`, la misma
+   ilustración/glifo que ya usaba el panel flotante, no un ícono nuevo. */
+.ph-card-title { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
+.ph-fpanel-icon { font-size: 20px; color: var(--ph-accent); align-self: center; }
+.ph-fpanel-illustration { width: 20px; height: 20px; color: var(--ph-accent); align-self: center; flex: none; }
+.ph-card-product { font-family: var(--ph-font-heading); font-size: 1.25rem; }
+.ph-card-place { font-size: .6875rem; letter-spacing: .1em; text-transform: uppercase; opacity: .65; }
+/* `format_label`/`variant_label` (card_view.py): metadata condicional entre
+   el titular y el precio — «Bolsa 1kg», «girasol Vitalín importado». Mismo
+   tratamiento que `.ph-card-median`: texto secundario, no un chip — no son
+   un estado, son una aclaración. */
+.ph-card-format, .ph-card-variant { margin-top: .3rem; font-size: .8125rem; opacity: .75; }
+.ph-card-range { display: flex; align-items: baseline; gap: .4rem; margin-top: .8rem;
+                 font-variant-numeric: tabular-nums; }
+.ph-card-range .num { font-family: var(--ph-font-heading); font-size: 1.65rem; line-height: 1;
+                       color: var(--ph-accent); }
+.ph-card-range .sep { opacity: .45; font-size: 1.1rem; }
+.ph-card-unit { font-size: .75rem; opacity: .65; }
+.ph-card-median { margin-top: .45rem; font-size: .8125rem; opacity: .75; }
+/* «¿Sube o baja?» (spec.md §6.7): mismo número sin color que
+   `.ph-cifra-cambio` del panel flotante, reusado tal cual. */
+.ph-cifra-cambio { font-size: .8125rem; font-weight: 500; color: var(--m3-on-surface); }
+.ph-card-trend { margin-top: .3rem; }
+.ph-card-sample { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+                   margin-top: .8rem; padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
+.ph-card-n { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ph-chip { flex: none; white-space: nowrap; font-size: .6875rem; letter-spacing: .04em;
+           text-transform: uppercase; padding: .3rem .75rem; border-radius: 999px;
+           background: var(--ph-accent-wash); color: var(--ph-accent); }
+
 /* Mismo mecanismo que la hoja del operador (saimc-material.css): dos
    `.m3-icon` estáticos por botón, CSS alterna cuál se ve — el subsetter de
    íconos solo puede ver nombres literales en las plantillas, no un

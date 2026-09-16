@@ -1,0 +1,43 @@
+{#
+  Un `<li class="ph-card">`, esperando `card` (ProductCard) y `window_days`
+  en contexto — `{% include %}` hereda el contexto de quien llama, así que
+  alcanza con que el `{% for card in ... %}` que envuelve este include use
+  ese nombre de variable.
+
+  Extraído de la ventana flotante «Precios» (2026-09-16) para que el modo
+  Tablero (`public_dashboard.html`) use exactamente la misma tarjeta —§9.0
+  vinculante sobre qué puede publicarse como titular— en vez de reimplementar
+  el marcado y arriesgar que las dos copias se desincronicen.
+#}
+<li class="ph-surface ph-card">
+  <div class="ph-card-top">
+    <span class="ph-card-title">
+      {% set panel = card %}
+      {% if card.has_illustration %}{% include "_product_illustration.html" %}{% elif card.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ card.icon }}</span>{% endif %}
+      <span class="ph-card-product">{{ card.product_name }}</span>
+    </span>
+    <span class="ph-card-place">{{ card.province_name }}</span>
+  </div>
+  {% if card.format_label %}<div class="ph-card-format">{{ card.format_label | capitalize }}</div>{% endif %}
+  {% if card.variant_label %}<div class="ph-card-variant">{{ card.variant_label }}</div>{% endif %}
+  {% if card.is_single_observation %}
+  <div class="ph-card-range">
+    <span class="num">{{ card.format_median_text or card.median_text }}</span>
+    <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
+  </div>
+  <div class="ph-card-median">Una sola observación, sin rango todavía.
+    {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
+  {% else %}
+  <div class="ph-card-range">
+    <span class="num">{{ card.format_minimum_text or card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.format_maximum_text or card.maximum_text }}</span>
+    <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
+  </div>
+  <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
+    {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
+  {% endif %}
+  {% if card.change_text %}<div class="ph-cifra-cambio ph-card-trend">{{ card.change_text }} vs. los {{ window_days }} días anteriores</div>{% endif %}
+  <div class="ph-card-sample">
+    <span><span class="ph-card-n">{{ card.count }}</span> anuncio{{ "s" if card.count != 1 }} en {{ window_days }} días</span>
+    <span class="ph-chip">{{ card.state }}</span>
+  </div>
+</li>
