@@ -42,6 +42,13 @@
         document.documentElement.setAttribute("data-theme", nuevo);
         try { localStorage.setItem(CLAVE, nuevo); } catch (e) { /* sin storage: dura la pestaña */ }
         Array.prototype.forEach.call(botones, pintar);
+        // Todo lo que sea un `var()` de CSS sigue al atributo solo. Lo que
+        // NO es CSS —el mapa Leaflet de `public_home.html`, que lee
+        // `tokenCSS()` una vez y le pasa un hex literal a cada polígono—
+        // necesita que alguien le avise. Evento, no llamar a la función
+        // directo: este script no sabe si `inicializarMapa` existe en esta
+        // página, y no tiene por qué saberlo.
+        document.dispatchEvent(new CustomEvent("guani:tema-cambiado"));
       });
     });
   })();
