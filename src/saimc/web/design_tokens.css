@@ -158,6 +158,82 @@
   --ph-radius-sm: 14px;
 }
 
+/* ── Modo oscuro ────────────────────────────────────────────────────────
+   Un segundo bloque `:root`, no un `@media (prefers-color-scheme)`: el
+   toggle es la fuente de verdad (persiste en `localStorage`, ver el script
+   antiparpadeo de cada shell), y una media query no puede perder contra un
+   atributo — sería el sistema pisando la elección explícita del operador o
+   del visitante. El script de cada shell decide el atributo ANTES de pintar
+   —leyendo `localStorage` y, si no hay nada guardado, `matchMedia`— así que
+   el resultado visual es el mismo que una media query cuando nadie tocó el
+   toggle, sin la pelea de especificidad.
+
+   `tools/build_css_tokens.py` proyecta ESTE bloque tal cual, igual que el
+   de arriba, a las dos hojas servidas — mismo tratamiento, misma prueba de
+   sincronía (`TestModoOscuro`).
+
+   Solo colores. Lo que no es color —tipografía, espaciado, radios, las tres
+   sombras `--m3-elev-*`, la sombra propia `--ph-elev`— no tiene «versión
+   oscura»: una sombra rgba(0,0,0,…) ya se nota menos sobre un fondo oscuro
+   por sí sola, y forzarla más oscura no suma nada. Tampoco los roles
+   «fixed» (`--m3-primary-fixed-dim`): por definición de Material 3 no
+   cambian con el tema, son la superficie estable para pintar encima sea
+   cual sea el esquema activo.
+
+   Contraste verificado (WCAG, texto normal ≥ 4.5:1, UI/borde ≥ 3:1) contra
+   el fondo o contenedor que cada rol acompaña: el más bajo de los catorce
+   pares de texto es 7,13:1; el borde (`--m3-outline`) da 5,6:1. El único por
+   debajo de 3:1 es `--m3-outline-variant` contra `--m3-surface`, y es
+   exactamente su rol en el esquema claro también: una línea divisoria
+   apenas insinuada, no un borde que alguien necesite leer. */
+:root[data-theme="dark"] {
+  --m3-primary: #6cd4d9;
+  --m3-primary-hover: #58c1c6;
+  --m3-on-primary: #003337;
+  --m3-primary-container: #004f54;
+  --m3-on-primary-container: #b8ecef;
+  --m3-tertiary: #b7c8e4;
+
+  --m3-bg: #0e1414;
+  --m3-surface: #141b1b;
+  --m3-surface-container: #1a2222;
+  --m3-surface-container-high: #222d2d;
+  --m3-surface-hover: #1e2727;
+  --m3-surface-variant: #2a3535;
+
+  --m3-on-surface: #e1e3e3;
+  --m3-on-surface-variant: #bdc7c7;
+  --m3-outline: #8a9494;
+  --m3-outline-variant: #3f4949;
+  --m3-divider: #2a3535;
+  --m3-disabled: #6b7575;
+
+  --m3-error: #ffb4ab;
+  --m3-error-container: #5c1a1a;
+  --m3-on-error-container: #ffdad6;
+  --m3-success-container: #1f4d2c;
+  --m3-on-success-container: #c3ecc9;
+  --m3-warn-container: #4a3b00;
+  --m3-on-warn-container: #ffe6a8;
+  --m3-warn: #f0bb2e;
+  --m3-success: #6fdba3;
+  --m3-warn-strong: #f0bb2e;
+  --m3-warn-wash: #241f0d;
+  --m3-error-wash: #2b1616;
+
+  --m3-prov-0: #93a9ff;  --m3-prov-0-soft: #1f2c54;  --m3-prov-0-wash: #12172a;
+  --m3-prov-1: #bda3ff;  --m3-prov-1-soft: #2d2154;  --m3-prov-1-wash: #191428;
+  --m3-prov-2: #6ad7e6;  --m3-prov-2-soft: #103439;  --m3-prov-2-wash: #0d1f22;
+  --m3-prov-9: #a3adad;  --m3-prov-9-soft: #2a3434;  --m3-prov-9-wash: #1a2222;
+
+  --ph-accent: #7ec8ea;
+  --ph-on-accent: #00344a;
+  --ph-accent-wash: rgba(126, 200, 234, .14);
+  --ph-accent-2: #4fb8c7;
+  --ph-accent-2-line: #bdf0f5;
+  --ph-median: #c3d4a8;
+}
+
 /* ── Breakpoints ─────────────────────────────────────────────────────────
    NO son tokens y no pueden serlo: `@media (max-width: var(--x))` no existe
    en CSS —las media queries se evalúan antes de que las custom properties

@@ -12,6 +12,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SAIMC — {% block title %}{% endblock %}</title>
+  {% include "_theme_toggle_head.html" %}
   {# Una sola hoja, vendorizada (mismo criterio que CLAUDE.md: una descarga
      menos en conexión lenta). Reemplaza bootstrap.min.css + curation.css. #}
   <link href="/static/saimc-material.css?v={{ css_version() }}" rel="stylesheet" />
@@ -40,6 +41,11 @@
        {% if nav == 'docs' %}aria-current="page"{% endif %}>
       <span class="m3-icon">menu_book</span><span>Documentos</span>
     </a>
+    <span class="m3-spacer"></span>
+    <button type="button" class="m3-icon-btn theme-toggle" title="Cambiar a modo oscuro">
+      <span class="m3-icon theme-toggle-icon-dark">dark_mode</span>
+      <span class="m3-icon theme-toggle-icon-light">light_mode</span>
+    </button>
   </nav>
 
   <main class="m3-main">
@@ -74,6 +80,7 @@
 
    `htmx_version()` sale de `HTMX_VERSION` en `app.py`, que es la única fuente
    del número. #}
+{% include "_theme_toggle_script.html" %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

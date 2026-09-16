@@ -1,0 +1,24 @@
+{#
+  Decide `data-theme` ANTES de la hoja y de pintar nada. Si esto corriera
+  después —o en `{% block scripts %}`, al pie— habría un parpadeo
+  claro→oscuro en cada carga (FOUC). `localStorage` manda; sin nada
+  guardado, sigue al sistema (`prefers-color-scheme`).
+
+  `{% include %}` y no un `<script src>`: Jinja lo resuelve del lado del
+  servidor al armar la respuesta, así que compartirlo entre los dos shells
+  no suma ningún pedido nuevo del navegador — sigue siendo una sola
+  descarga, mismo criterio que por qué los tokens se proyectan a las hojas
+  en vez de vivir en un archivo aparte (design_tokens.css).
+
+  Mismo patrón defensivo que la pista de primera visita de
+  `public_home.html`: `try`/`catch` alrededor de `localStorage`, porque sin
+  storage (privado/bloqueado) esto no tiene por qué romper la carga.
+#}
+<script>
+  (function () {
+    var guardado = null;
+    try { guardado = localStorage.getItem("guani:theme"); } catch (e) { guardado = null; }
+    var oscuro = guardado ? guardado === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    if (oscuro) document.documentElement.setAttribute("data-theme", "dark");
+  })();
+</script>

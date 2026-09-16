@@ -56,28 +56,39 @@ TARGETS = [
 BEGIN = "/* >>> BEGIN tokens generados — los edita tools/build_css_tokens.py, no vos */"
 END = "/* <<< END tokens generados */"
 
-# El bloque `:root` de la fuente, con los comentarios que lleve adentro. El
-# `re.DOTALL` es a propósito: los comentarios explicativos de `--m3-tertiary` y
-# `--m3-surface-variant` viven dentro del bloque y tienen que viajar con él.
-_ROOT_RE = re.compile(r"^:root \{.*?^\}$", re.DOTALL | re.MULTILINE)
+# El `:root` claro y el `:root[data-theme="dark"]` de la fuente, con los
+# comentarios que lleven adentro. El `re.DOTALL` es a propósito: los
+# comentarios explicativos de `--m3-tertiary` y `--m3-surface-variant` (y,
+# desde el modo oscuro, el bloque entero que lo explica) viven dentro de cada
+# selector y tienen que viajar con él.
+_ROOT_RE = re.compile(r'^:root(\[data-theme="dark"\])? \{.*?^\}$', re.DOTALL | re.MULTILINE)
 
 
 def extract_root_block(source: str) -> str:
-    """Devuelve el `:root { … }` de la fuente, sin comentarios.
+    """Devuelve los bloques `:root { … }` de la fuente (claro y oscuro),
+    concatenados y sin comentarios.
 
     El porqué de cada token vive en `design_tokens.css` y se lee ahí. Mandarlo
     también al navegador costaba ~1,1 KB gzipeados **en la hoja pública**, que
     es la que ve cualquiera con un teléfono y datos móviles: pesaba más que
     duplicar la hoja entera. Los comentarios se quedan en la fuente.
+
+    Dos bloques y no uno desde el modo oscuro (2026-09-16): mismo criterio,
+    misma herramienta, sin distinguir cuántos haya — el `findall` no le pone
+    un límite a dos.
     """
-    match = _ROOT_RE.search(source)
-    if match is None:
+    encontrados = list(_ROOT_RE.finditer(source))
+    if not encontrados:
         raise SystemExit(f"{SOURCE_PATH} no tiene un bloque `:root {{ … }}`")
 
-    bloque = re.sub(r"[ \t]*/\*.*?\*/\n?", "", match.group(0), flags=re.DOTALL)
-    # Los comentarios se llevan su línea, pero dejan huecos dobles donde
-    # separaban dos grupos. Un solo renglón en blanco alcanza para agrupar.
-    return re.sub(r"\n{3,}", "\n\n", bloque)
+    limpios = []
+    for match in encontrados:
+        sin_comentarios = re.sub(r"[ \t]*/\*.*?\*/\n?", "", match.group(0), flags=re.DOTALL)
+        # Los comentarios se llevan su línea, pero dejan huecos dobles donde
+        # separaban dos grupos. Un solo renglón en blanco alcanza para agrupar.
+        limpios.append(re.sub(r"\n{3,}", "\n\n", sin_comentarios).strip("\n"))
+
+    return "\n\n".join(limpios)
 
 
 def render(target_text: str, block: str) -> str:

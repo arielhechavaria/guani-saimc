@@ -10299,3 +10299,73 @@ de todo el dominio.
 Consecuencia: sin cambio de comportamiento. Suite completa: 1694 casos,
 ruff en el piso. Si aparece una tercera clase con esta misma forma, ahí sí
 vale la pena revisar de nuevo.
+
+## 2026-09-16 — Modo oscuro en todo el sistema: toggle persistente, sin nueva dependencia
+Contexto: pedido explícito del operador, "todo el sistema" — las tres
+superficies (shell del operador, shell público, home pública con su propio
+compás flotante).
+Decisión: el sistema de tokens ya obligaba a que todo color viviera en
+`design_tokens.css` y se citara vía `var(--m3-x)`/`var(--ph-x)` (test
+`TestTokensMaterial` desde 2026-09-04), incluidos los SVG inline
+(`stroke: var(--prov)` en `public_home.html`) — así que el modo oscuro no
+tocó una plantilla por su color: agregó un segundo `:root[data-theme="dark"]`
+en `design_tokens.css` con el mismo nombre de cada token de color y un valor
+distinto, y `tools/build_css_tokens.py` (antes un solo bloque, ahora
+`_ROOT_RE` matchea los dos) lo proyecta a las dos hojas igual que el claro.
+`data-theme` en `<html>` decide qué bloque gana. Nada fuera de color se
+tocó: tipografía, espaciado, radios y las sombras `rgba(0,0,0,…)` son las
+mismas en los dos temas — una sombra ya se nota menos sobre fondo oscuro
+por sí sola.
+El toggle: un script compartido por `{% include %}` (server-side, no suma
+un pedido del navegador) en `_theme_toggle_head.html` decide el tema ANTES
+de la hoja —`localStorage`, si no hay nada guardado sigue a
+`prefers-color-scheme`— para no parpadear, y `_theme_toggle_script.html`
+cablea el clic de cualquier `.theme-toggle` por clase, no por id.
+`public_home.html` esconde `.m3-public-top` entero (su titular vive en la
+barra del lienzo), así que necesita su propio botón — lo metió como un
+`.ph-menu-item` más en el dock del compás, reusando exactamente el patrón
+ya establecido por `.ph-legend-toggle` en vez de inventar una posición
+flotante nueva sobre un layout que ya tuvo varias rondas de ajuste fino de
+z-index/márgenes esta semana.
+El ícono NO lo reescribe JS: son dos `.m3-icon` estáticos por botón
+(`dark_mode`/`light_mode`) y el CSS alterna cuál se ve. `textContent` en
+runtime habría dejado `light_mode` fuera del manifiesto del subsetter de
+íconos (`tools/build_icon_font.py`, que solo lee nombres literales en las
+plantillas) y el navegador habría dibujado el nombre crudo al pasar a
+oscuro.
+Paleta oscura: valores M3 estándar derivados de la teal/azul existentes —el
+primario se invierte de tono oscuro a tono claro (`#00696e` → `#6cd4d9`),
+igual que en cualquier esquema Material oscuro—, no una paleta nueva.
+Contraste verificado con la fórmula WCAG (luminancia relativa): el texto
+más bajo de catorce pares da 7,13:1 (mínimo exigido 4,5:1); el borde
+(`--m3-outline`) da 5,6:1. `TestModoOscuro.test_ningun_token_de_color_se_queda_sin_version_oscura`
+impide que un token de color quede sin par oscuro salvo que esté en una
+lista cerrada y explicada (roles «fixed» de Material 3, que no cambian
+entre temas, y las tres sombras).
+Descartado: (a) `@media (prefers-color-scheme)` como mecanismo — perdería
+contra el toggle explícito, el operador o el visitante tienen que poder
+pisar al sistema. (b) Reescribir el ícono con JS — rompe el subsetter, ver
+arriba. (c) Reusar `.m3-icon-btn` (operador) también en la capa pública —
+`saimc-public.css` no la tenía (el split de 2026-08-30 la dejó afuera junto
+con topnav/curaduría/botones) y sumarla ahí habría sido cruzar el split por
+comodidad; se escribió `.ph-theme-toggle` propia, misma idea que
+`--ph-accent` frente a `--m3-primary`.
+Verificado con Chromium headless (mismo mecanismo que las sesiones
+anteriores de esta semana) contra una página de prueba con la estructura
+real de los dos shells y las hojas generadas: clic real, cambio de ícono,
+contraste visual correcto en las dos identidades (teal del operador, azul
+serif de lo público) sin mezclarlas. `public_home.html` no se pudo probar
+en navegador esta sesión (sin credenciales de Postgres); se apoya en la
+suite (1704 casos) y en que reusa un patrón (`.ph-menu-item`) ya probado en
+producción.
+`test_el_colapso_no_trae_javascript` (`/control`, 2026-08-XX) asumía CERO
+`<script>` en la página como forma de probar que el colapso de
+`<details>` no necesita JS. Dejó de ser cierto —el shell del operador
+ahora siempre trae el suyo, compartido y ajeno al colapso— así que la
+prueba se reescribió para exigir que CUALQUIER script presente sea el del
+tema, no que no haya ninguno: sigue probando lo mismo, con la premisa
+correcta.
+Consecuencia: suite completa, 1704 casos (+10), ruff en el piso. La fuente
+de íconos subsetted crece de 49 a 51 nombres (`dark_mode` y `light_mode`,
+ninguno de los dos usado antes de este slice). `docs/lint-baseline.json` sin
+cambios.

@@ -1,0 +1,48 @@
+{#
+  Atiende el clic de cada `.theme-toggle` y sincroniza `aria-pressed`/título.
+  El ícono NO lo toca: son dos `.m3-icon` estáticos por botón
+  (`.theme-toggle-icon-dark`/`-light`) y el CSS alterna cuál se ve según
+  `data-theme` — ver el comentario junto a esas dos reglas en
+  `saimc-material.css`/`saimc-public.css`. Si esto reescribiera el texto del
+  ícono en vez de elegir entre los dos, el subsetter de íconos nunca vería
+  el segundo nombre (solo lee lo que aparece literal en las plantillas) y el
+  navegador dibujaría el nombre crudo al pasar a oscuro.
+
+  Selector de CLASE, no de id a propósito: `public_home.html` mete un
+  segundo botón dentro del dock del compás (el shell público esconde
+  `.m3-public-top` en esa vista), y los dos comparten esta misma lógica sin
+  chocar — un id repetido dejaría el segundo sin cablear.
+
+  Va antes de `{% block scripts %}` para correr sin importar qué meta ahí
+  cada vista, y para que ya encuentre en el DOM cualquier `.theme-toggle`
+  que una plantilla agregue dentro de `{% block content %}`, que se
+  renderiza antes en el documento.
+#}
+<script>
+  (function () {
+    var CLAVE = "guani:theme";
+
+    function actual() {
+      return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+    }
+
+    function pintar(boton) {
+      var oscuro = actual() === "dark";
+      boton.setAttribute("aria-pressed", oscuro ? "true" : "false");
+      var etiqueta = oscuro ? "Cambiar a modo claro" : "Cambiar a modo oscuro";
+      if (boton.hasAttribute("title")) boton.title = etiqueta;
+      if (boton.hasAttribute("aria-label")) boton.setAttribute("aria-label", etiqueta);
+    }
+
+    var botones = document.querySelectorAll(".theme-toggle");
+    Array.prototype.forEach.call(botones, function (boton) {
+      pintar(boton);
+      boton.addEventListener("click", function () {
+        var nuevo = actual() === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", nuevo);
+        try { localStorage.setItem(CLAVE, nuevo); } catch (e) { /* sin storage: dura la pestaña */ }
+        Array.prototype.forEach.call(botones, pintar);
+      });
+    });
+  })();
+</script>

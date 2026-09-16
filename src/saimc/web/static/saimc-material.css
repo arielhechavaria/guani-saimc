@@ -104,6 +104,54 @@
   --ph-radius-lg: 24px;
   --ph-radius-sm: 14px;
 }
+
+:root[data-theme="dark"] {
+  --m3-primary: #6cd4d9;
+  --m3-primary-hover: #58c1c6;
+  --m3-on-primary: #003337;
+  --m3-primary-container: #004f54;
+  --m3-on-primary-container: #b8ecef;
+  --m3-tertiary: #b7c8e4;
+
+  --m3-bg: #0e1414;
+  --m3-surface: #141b1b;
+  --m3-surface-container: #1a2222;
+  --m3-surface-container-high: #222d2d;
+  --m3-surface-hover: #1e2727;
+  --m3-surface-variant: #2a3535;
+
+  --m3-on-surface: #e1e3e3;
+  --m3-on-surface-variant: #bdc7c7;
+  --m3-outline: #8a9494;
+  --m3-outline-variant: #3f4949;
+  --m3-divider: #2a3535;
+  --m3-disabled: #6b7575;
+
+  --m3-error: #ffb4ab;
+  --m3-error-container: #5c1a1a;
+  --m3-on-error-container: #ffdad6;
+  --m3-success-container: #1f4d2c;
+  --m3-on-success-container: #c3ecc9;
+  --m3-warn-container: #4a3b00;
+  --m3-on-warn-container: #ffe6a8;
+  --m3-warn: #f0bb2e;
+  --m3-success: #6fdba3;
+  --m3-warn-strong: #f0bb2e;
+  --m3-warn-wash: #241f0d;
+  --m3-error-wash: #2b1616;
+
+  --m3-prov-0: #93a9ff;  --m3-prov-0-soft: #1f2c54;  --m3-prov-0-wash: #12172a;
+  --m3-prov-1: #bda3ff;  --m3-prov-1-soft: #2d2154;  --m3-prov-1-wash: #191428;
+  --m3-prov-2: #6ad7e6;  --m3-prov-2-soft: #103439;  --m3-prov-2-wash: #0d1f22;
+  --m3-prov-9: #a3adad;  --m3-prov-9-soft: #2a3434;  --m3-prov-9-wash: #1a2222;
+
+  --ph-accent: #7ec8ea;
+  --ph-on-accent: #00344a;
+  --ph-accent-wash: rgba(126, 200, 234, .14);
+  --ph-accent-2: #4fb8c7;
+  --ph-accent-2-line: #bdf0f5;
+  --ph-median: #c3d4a8;
+}
 /* <<< END tokens generados */
 
 /* ── Base ───────────────────────────────────────────────────────── */
@@ -402,6 +450,17 @@ code, .m3-num { font-family: var(--m3-mono); }
 .m3-icon-btn.is-on { color: var(--m3-primary); }
 .m3-icon-btn.is-danger { color: var(--m3-error); }
 .m3-icon-btn.is-danger:hover { background: var(--m3-error-container); }
+
+/* Toggle de tema: dos `.m3-icon` estáticos, no uno que JS reescribe. El
+   subsetter de íconos (`tools/build_icon_font.py`) solo ve nombres que
+   aparecen literalmente en las plantillas — un `textContent` puesto en
+   runtime nunca entraría al manifiesto, y el navegador dibujaría el nombre
+   crudo en vez del glifo al pasar a oscuro. Con los dos presentes y el CSS
+   alternando `display`, el subsetter los ve a los dos; JS solo toca
+   `data-theme`/`aria-pressed`/`title` (`_theme_toggle_script.html`). */
+.theme-toggle-icon-light { display: none; }
+:root[data-theme="dark"] .theme-toggle-icon-dark { display: none; }
+:root[data-theme="dark"] .theme-toggle-icon-light { display: inline; }
 
 /* ── Chips y etiquetas ──────────────────────────────────────────── */
 .m3-chip {

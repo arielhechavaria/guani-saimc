@@ -8,6 +8,7 @@ check
 check_circle
 close
 content_paste
+dark_mode
 delete
 description
 download
@@ -27,6 +28,7 @@ inbox
 info
 inventory_2
 layers
+light_mode
 map
 menu_book
 monitoring

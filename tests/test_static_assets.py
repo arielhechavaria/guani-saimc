@@ -21,6 +21,7 @@ import hashlib
 import re
 from collections.abc import Iterator
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -500,6 +501,147 @@ class TestTokensMaterial:
                 con_respaldo.append(f"{tpl.name}: var({token}, {color})")
 
         assert not con_respaldo, "quitá el color de respaldo:\n" + "\n".join(con_respaldo)
+
+
+class TestModoOscuro:
+    """El bloque oscuro sigue al claro: mismo mecanismo, misma cobertura.
+
+    `design_tokens.css` tiene dos `:root`: el claro (arriba) y
+    `:root[data-theme="dark"]` (§Modo oscuro). `tools/build_css_tokens.py`
+    proyecta los dos a las dos hojas servidas — estos casos son la versión
+    para el segundo bloque de lo que `TestTokensMaterial` ya hace para el
+    primero, más un chequeo sin equivalente ahí: que ningún token de color
+    se quede sin versión oscura. Una tarjeta clara en una página por lo
+    demás oscura no es un detalle menor, es un bug visible a simple vista.
+    """
+
+    #: Tokens que NO son color (tipografía, espaciado, radios) o que
+    #: Material 3 define como estables entre temas («fixed») — el porqué de
+    #: cada uno está en design_tokens.css §Modo oscuro. Lista cerrada a
+    #: mano: agregar acá es la forma correcta de declarar «este no
+    #: necesita oscuro», no dejarlo afuera en silencio.
+    SIN_VERSION_OSCURA: ClassVar[set[str]] = {
+        "--m3-primary-fixed-dim",
+        "--m3-elev-1",
+        "--m3-elev-2",
+        "--m3-elev-3",
+        "--m3-font",
+        "--m3-mono",
+        "--m3-space-1",
+        "--m3-space-2",
+        "--m3-space-3",
+        "--m3-space-4",
+        "--m3-space-5",
+        "--m3-space-6",
+        "--m3-space-7",
+        "--m3-space-8",
+        "--m3-space-14",
+        "--m3-space-24",
+        "--m3-radius-xs",
+        "--m3-radius-sm",
+        "--m3-radius-md",
+        "--m3-radius-lg",
+        "--m3-radius-full",
+        "--ph-font-heading",
+        "--ph-radius-lg",
+        "--ph-radius-sm",
+        "--ph-elev",
+    }
+
+    def _bloques(self, texto: str) -> tuple[dict[str, str], dict[str, str]]:
+        """(claro, oscuro): pares nombre→valor de los dos `:root` del archivo."""
+        claro = re.search(r"^:root \{.*?^\}$", texto, re.DOTALL | re.MULTILINE)
+        oscuro = re.search(r'^:root\[data-theme="dark"\] \{.*?^\}$', texto, re.DOTALL | re.MULTILINE)
+        assert claro is not None, "falta el bloque `:root { … }`"
+        assert oscuro is not None, 'falta el bloque `:root[data-theme="dark"] { … }`'
+
+        def _pares(bloque: str) -> dict[str, str]:
+            limpio = re.sub(r"/\*.*?\*/", "", bloque, flags=re.DOTALL)
+            return dict(re.findall(r"(--(?:m3|ph)-[a-z0-9-]+):\s*([^;]+);", limpio))
+
+        return _pares(claro.group(0)), _pares(oscuro.group(0))
+
+    def _leer(self, *partes: str) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        return raiz.joinpath(*partes).read_text(encoding="utf-8")
+
+    def test_ningun_token_de_color_se_queda_sin_version_oscura(self) -> None:
+        claro, oscuro = self._bloques(self._leer("src", "saimc", "web", "design_tokens.css"))
+        faltantes = set(claro) - set(oscuro) - self.SIN_VERSION_OSCURA
+
+        assert not faltantes, (
+            f"sin versión oscura: {sorted(faltantes)} — agregalos al bloque "
+            '`:root[data-theme="dark"]` o, si de verdad no aplica, a '
+            "SIN_VERSION_OSCURA con el motivo"
+        )
+
+    def test_la_lista_de_excepciones_no_tiene_nombres_que_ya_no_existen(self) -> None:
+        """Que la lista de arriba no se pudra: si un token se borra, se borra
+        también acá — no puede quedar mintiendo que un token existe."""
+        claro, _ = self._bloques(self._leer("src", "saimc", "web", "design_tokens.css"))
+        raros = self.SIN_VERSION_OSCURA - set(claro)
+
+        assert not raros, f"ya no existen en el bloque claro: {sorted(raros)}"
+
+    @pytest.mark.parametrize("hoja", ["saimc-material.css", "saimc-public.css"])
+    def test_la_hoja_lleva_el_bloque_oscuro_de_la_fuente(self, hoja: str) -> None:
+        """Tripwire de deriva, versión oscura de
+        `TestTokensMaterial.test_la_hoja_lleva_los_tokens_de_la_fuente`."""
+        _, fuente_oscuro = self._bloques(self._leer("src", "saimc", "web", "design_tokens.css"))
+        _, servido_oscuro = self._bloques(self._leer("src", "saimc", "web", "static", hoja))
+
+        assert fuente_oscuro == servido_oscuro, (
+            f"{hoja}: bloque oscuro desincronizado — corré "
+            "`python tools/build_css_tokens.py`"
+        )
+
+    @pytest.mark.parametrize("hoja", ["saimc-material.css", "saimc-public.css"])
+    def test_la_hoja_alterna_los_dos_iconos_del_toggle(self, hoja: str) -> None:
+        """El subsetter de íconos (`tools/build_icon_font.py`) solo ve
+        nombres que aparecen literales en las plantillas — sin las dos
+        reglas de acá, uno de los dos estados del botón dibuja el nombre
+        crudo del ícono en vez del glifo."""
+        texto = self._leer("src", "saimc", "web", "static", hoja)
+
+        assert ".theme-toggle-icon-light { display: none; }" in texto
+        assert ':root[data-theme="dark"] .theme-toggle-icon-dark { display: none; }' in texto
+        assert ':root[data-theme="dark"] .theme-toggle-icon-light { display: inline; }' in texto
+
+
+class TestToggleDeTema:
+    """El botón existe en los tres lugares que hoy sirven vistas.
+
+    `/`, la home pública, es un caso aparte: esconde `.m3-public-top` entero
+    (su titular vive en la barra del lienzo), así que necesita su propio
+    botón dentro del dock del compás — no basta con el del shell.
+    """
+
+    def _leer(self, *partes: str) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        return raiz.joinpath(*partes).read_text(encoding="utf-8")
+
+    def test_shell_del_operador_trae_el_toggle(self) -> None:
+        texto = self._leer("src", "saimc", "web", "templates", "_shell.html")
+        assert 'class="m3-icon-btn theme-toggle"' in texto
+
+    def test_shell_publico_trae_el_toggle(self) -> None:
+        texto = self._leer("src", "saimc", "web", "templates", "_public_shell.html")
+        assert "theme-toggle" in texto
+
+    def test_home_publica_trae_su_propio_toggle(self) -> None:
+        texto = self._leer("src", "saimc", "web", "templates", "public_home.html")
+        assert 'class="ph-menu-item theme-toggle"' in texto
+
+    def test_los_dos_shells_deciden_el_tema_antes_de_la_hoja(self) -> None:
+        """Antiparpadeo: si el include corriera después del `<link
+        rel="stylesheet">` —o peor, en `{% block scripts %}`, al pie—, cada
+        carga mostraría un instante en el tema equivocado."""
+        for nombre in ("_shell.html", "_public_shell.html"):
+            texto = self._leer("src", "saimc", "web", "templates", nombre)
+            pos_toggle = texto.index("_theme_toggle_head.html")
+            pos_hoja = texto.index('rel="stylesheet"')
+
+            assert pos_toggle < pos_hoja, f"{nombre}: decide el tema después de cargar la hoja"
 
 
 class TestEscalaResponsive:
