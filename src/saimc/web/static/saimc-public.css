@@ -353,6 +353,26 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
 .ph-card-spark { width: 4.5rem; height: 1.25rem; flex: none; }
 .ph-card-spark circle { fill: var(--ph-accent); opacity: .55; }
 
+/* Identidad de provincia por posición en el catálogo (Dirección D, agrupar
+   el tablero, 2026-09-16): `card_view.province_color_slots` decide el slot
+   (0/1/2/9), estas cuatro clases son la única forma de citarlo en CSS.
+
+   Nunca la variante corta-el-token-a-mano de armar el nombre completo del
+   token adentro de un atributo `style`: Jinja interpolando el número deja
+   el prefijo `--m3-prov-` pegado a una llave `{{` en el HTML servido, y
+   `TestTokensMaterial` escanea el texto crudo de cada archivo —comentarios
+   incluidos, ya lo probó esta misma frase— buscando exactamente ese
+   prefijo sin número como un token citado y nunca definido.
+
+   Mismo mecanismo que `.m3-slot-N` en saimc-material.css (la matriz de
+   `/control`): `--prov` es genérico, se fija una vez acá y CUALQUIER hijo
+   lo hereda solo — el índice de salto y el borde de `.ph-card` dentro de
+   cada `<details>` no repiten la clase. */
+.ph-prov-0 { --prov: var(--m3-prov-0); }
+.ph-prov-1 { --prov: var(--m3-prov-1); }
+.ph-prov-2 { --prov: var(--m3-prov-2); }
+.ph-prov-9 { --prov: var(--m3-prov-9); }
+
 /* Mismo mecanismo que la hoja del operador (saimc-material.css): dos
    `.m3-icon` estáticos por botón, CSS alterna cuál se ve — el subsetter de
    íconos solo puede ver nombres literales en las plantillas, no un

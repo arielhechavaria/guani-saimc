@@ -10523,3 +10523,66 @@ enlace del dock para confirmar que `document.cookie` queda en
 `vista=tablero` después.
 Consecuencia: suite completa, 1727 casos (+4), ruff y mypy en el piso.
 Cierra la Dirección D — los tres slices completos.
+
+## 2026-09-16 — Agrupación del tablero: índice de salto + secciones colapsables + color por provincia
+Contexto: el tablero (Dirección D, ya cerrado) publica todas las tarjetas de
+todas las provincias en una sola lista plana. El operador reportó que con
+varias provincias «hay muchas y es fácil perderse», y pidió un mecanismo de
+agrupación/navegación —colapsar, agrupar, usar colores— para la vista de
+Tablero (no el mapa). Se investigó con el skill `design` (Claude Design):
+tres direcciones (A: secciones colapsables + índice de salto; B: pivote por
+producto; C: chips de filtro + borde de color) más una mezcla explícita A+C
+pedida por el operador. Eligió esa mezcla («D: filtro + colapsables»).
+Decisión: de esa Dirección D se implementó primero la mitad de agrupación —
+`card_view.group_cards_by_province` (ya existía) ahora se acompaña de
+`card_view.province_color_slots`: identidad de color por posición
+alfabética en el catálogo completo de provincias (`_all_province_names`,
+ordenado), mismo criterio que `matrix._province_slot`/`.m3-slot-N` en
+`/control` pero acotado a 3 slots con nombre propio (`_NAMED_PROVINCE_SLOTS
+= 3`) — el resto cae en el slot neutral `9`; sin paleta para dieciséis
+provincias distintas. `public_dashboard.html` reemplaza `<section>` por
+`<details class="ph-dash-section ph-prov-N">` con `<summary>` (punto +
+nombre + conteo + chevron) — sin JS, mismo patrón ya usado en `/docs`—, la
+primera (o la única, con `?provincia=` activo) abierta por defecto. Con más
+de una provincia visible se agrega `<nav class="ph-dash-jump">`, un índice
+con un enlace por provincia (punto de color + nombre + conteo) que ancla al
+`id` de cada `<details>`. El borde de color de `.ph-card` dentro del
+tablero hereda `--prov` del `<details>` contenedor —no repite la clase por
+tarjeta.
+El color por provincia se calcula sobre `all_province_names` (el catálogo
+completo) y no sobre `cards_by_province` (el resultado ya filtrado): un
+primer intento lo calculó sobre la lista filtrada y rompía la promesa del
+propio `province_color_slots` (»identidad estable, no por los datos de la
+carga actual«) — filtrar a una sola provincia con `?provincia=` la dejaba
+sola en la lista y le asignaba el slot 0 por accidente de posición, no por
+su lugar real en el catálogo. Corregido antes de cerrar el slice; test
+`test_el_slot_de_color_no_cambia_al_filtrar_por_provincia` cubre el caso.
+La primera implementación del token de color también citaba
+`var(--m3-prov-{{ n }})` armado con interpolación de Jinja dentro de un
+atributo `style` — rompía `TestTokensMaterial` (escanea el texto crudo del
+archivo buscando tokens `--m3-*`/`--ph-*` citados y nunca definidos, y
+`{{` corta el nombre del token antes del número). Corregido con el mismo
+patrón que `.m3-slot-N`: clases CSS (`.ph-prov-0/1/2/9`) que fijan `--prov`
+una sola vez, heredado por los hijos sin repetir la clase.
+Descartado: agrandar la paleta a una identidad de color por cada una de las
+16 provincias — inventaría una jerarquía visual que nadie decidió y que no
+se sostiene con solo 3 nombres propios ya elegidos en `design_tokens.css`.
+Descartado también forzar con JS que el índice de salto abra el `<details>`
+de destino al navegar: el `id` vive en el propio `<details>`, no en un
+descendiente, así que el auto-open nativo del navegador no aplica —el
+salto lleva al `<summary>` (siempre visible aunque esté colapsado), un
+clic más para expandir. Se mantiene la vía sin JS (agrega ~1727 líneas y
+otro `<script>` que hoy no existe en esta vista) mientras nadie reporte que
+el clic extra molesta.
+Consecuencia: pendiente la otra mitad de la Dirección D (chips de filtro
+por provincia/producto en el propio tablero — `product_chips`/
+`province_nav` ya están en el contexto de la plantilla, sin usar todavía;
+requiere migrar `.ph-filter`/`.ph-chip-toggle` a `saimc-public.css`, mismo
+motivo que ya obligó a migrar `.ph-card*`/`.ph-surface` en el slice 1).
+Suite completa: 1734 casos (+7 sobre los 1727 previos), ruff y mypy sin
+deuda nueva propia (el drift de mypy en `cells.py`/`ocr.py` es de código no
+tocado en este slice). Verificado con render real (`TestClient` + SQLite en
+memoria, 5 provincias sembradas a mano) servido y capturado con Chromium
+headless en 900px: índice de salto con los 5 puntos de color correctos,
+primera sección alfabética abierta, resto colapsadas, y el color de La
+Habana idéntico con y sin `?provincia=la-habana`.
