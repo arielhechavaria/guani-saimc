@@ -10157,3 +10157,32 @@ regenerada con los 49 íconos reales (antes 46, silenciosamente 3 cortos).
 Consecuencia: sin poder verificar visualmente en navegador esta sesión
 (Postgres inaccesible) — el operador confirma el margen y el ícono nuevo a
 mano. Suite completa: 1692 casos, sin deuda de lint nueva.
+
+## 2026-09-16 — /docs sin breakpoint de 900px: sidebar fluido en vez de grid+media query
+Contexto: el operador pidió converger el sistema de breakpoints hacia algo
+que no dependa de números "de fantasía" — la duda concreta era por qué
+`design_tokens.css` no usa las window size classes de Material (600/840)
+en vez de 720/900. Investigando, el propio comentario ya lo explicaba: no
+es una cuestión de alinearse a un estándar, es que esos dos cortes todavía
+sostienen layouts no fluidos (medido el 2026-09-04, renumerar rompe el bug
+de teléfono en horizontal). El camino real es repetir lo que ya sacó el
+corte de 640px de la home pública: hacer el layout fluido y que el
+breakpoint deje de hacer falta.
+Decisión: `.doc-layout` (`/docs`, TOC + documento) pasa de
+`grid-template-columns: 240px 1fr` + `@media (max-width: 900px)` a flexbox
+con el patrón "Sidebar" de Every Layout: `.doc-toc { flex: 1 1 240px }`,
+`.doc-body { flex: 999 1 0; min-width: 50% }`. Colapsa a una columna cuando
+el contenedor no alcanza para el TOC + el 50% del cuerpo, sin ningún número
+de breakpoint involucrado. `CORTES` en `test_static_assets.py` sigue en
+`{720, 900}` — 900 sigue vivo porque `.m3-curation` (`/curation`) todavía lo
+usa, con una complicación extra: el panel de evidencia pasa de
+`position: sticky` a `static` en el mismo corte, así que eliminarlo ahí no
+es un simple cambio de `grid` a `flex` y queda para un slice aparte.
+Descartado: `@container` en vez de `@media` — mismo problema (un número
+literal en px, solo que escala al contenedor en vez del viewport) y además
+se escapa por completo del test `TestEscalaResponsive`, que solo regexea
+`@media`. No resuelve nada, esconde el número.
+Consecuencia: `design_tokens.css` §Breakpoints y el docstring de
+`TestEscalaResponsive` (que decía "tres cortes" desde antes de esta sesión,
+stale desde que se sacó el de 640px el 2026-09-04) quedan actualizados.
+Suite completa: 1691 casos, sin deuda nueva.

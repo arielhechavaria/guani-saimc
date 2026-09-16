@@ -14,8 +14,14 @@
 
 {% block head %}
 <style>
-  .doc-layout { display: grid; grid-template-columns: 240px 1fr; gap: 32px; align-items: start; }
-  @media (max-width: 900px) { .doc-layout { grid-template-columns: 1fr; } }
+  /* Sidebar de Every Layout: sin breakpoint. `.doc-toc` pide 240px pero cede;
+     `.doc-body` con flex-grow:999 y min-width:50% se queda con todo lo que
+     sobra y solo baja de línea cuando ni con el 50% entra junto al TOC. La
+     misma idea que sacó el corte de 640px de la home pública (design_tokens.css
+     §Breakpoints). */
+  .doc-layout { display: flex; flex-wrap: wrap; gap: 32px; align-items: start; }
+  .doc-toc { flex: 1 1 240px; }
+  .doc-body { flex: 999 1 0; min-width: 50%; }
 
   /* El índice lateral y la tipografía del markdown NO se repatriaron: son
      propias de esta vista, no reimplementaciones de un componente de la hoja
