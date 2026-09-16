@@ -56,6 +56,7 @@
 </div>
 
 {% if cards_by_province %}
+{% set tablero_extra = true %}
 {% for province_name, province_cards in cards_by_province %}
 <section class="ph-dash-section">
   <h2 class="ph-dash-section-title">{{ province_name }}</h2>

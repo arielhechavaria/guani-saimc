@@ -491,6 +491,12 @@ def _render_home(
     # elige el router y no un `{% if %}` adentro de `public_home.html`
     # (~2700 líneas ya delicadas): las dos vistas son archivos separados.
     cards_by_province = group_cards_by_province(cards, province_names)
+    # Sparkline de la tarjeta enriquecida (slice 2, Dirección D): la misma
+    # `PriceSeries` que ya arma «Cómo se movió», solo indexada por celda para
+    # que la plantilla la encuentre sin recorrer la lista. Sin entrada =
+    # `MIN_DAYS` no se cumplió (build_series.py) — la tarjeta no dibuja nada,
+    # no un sparkline vacío.
+    series_by_card = {(s.product_name, s.province_name, s.currency, s.unit): s for s in series}
     template_name = "public_dashboard.html" if selected_vista == "tablero" else "public_home.html"
     return request.app.state.templates.TemplateResponse(
         request,
@@ -563,6 +569,7 @@ def _render_home(
             "selected_province": selected_province,
             "vista": selected_vista,
             "cards_by_province": cards_by_province,
+            "series_by_card": series_by_card,
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
         },

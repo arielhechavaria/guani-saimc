@@ -2495,6 +2495,52 @@ class TestVistaTableroEnLaRuta:
         assert texto.index("La Habana") < texto.index("Santiago de Cuba")
         assert texto.count('class="ph-surface ph-card"') == 3
 
+    def test_la_tarjeta_del_tablero_trae_barra_y_sparkline(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Slice 2 (Dirección D): Arroz/La Habana tiene 2 días de dato —
+        cumple `card.median_pct is not none` y el `MIN_DAYS` de
+        `series_view.build_series`—, así que su tarjeta lleva las dos piezas
+        prestadas de B y C."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        tarjeta_arroz = texto[texto.index("Arroz") : texto.index("Aceite")]
+
+        assert "ph-card-bar-track" in tarjeta_arroz
+        assert "ph-card-bar-tick" in tarjeta_arroz
+        assert "ph-card-spark" in tarjeta_arroz
+        # Puntos sueltos, nunca una línea que los una (series_view.py, §12.6):
+        # el sparkline es `<circle>`, no `<polyline>`/`<path>`.
+        assert "<polyline" not in tarjeta_arroz
+        assert tarjeta_arroz.count("<circle") == 2  # 2 días de dato
+
+    def test_la_tarjeta_de_una_sola_observacion_no_trae_barra_ni_sparkline(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Aceite/La Habana: una sola observación, sin rango — `median_pct`
+        es `None` y no hay `PriceSeries` (`MIN_DAYS` no se cumple)."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        tarjeta_aceite = texto[texto.index("Aceite") :]
+
+        assert "ph-card-bar-track" not in tarjeta_aceite
+        assert "ph-card-spark" not in tarjeta_aceite
+
+    def test_la_ventana_precios_del_mapa_no_cambia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`tablero_extra` es opt-in: la ventana flotante «Precios» del mapa
+        usa la misma `_product_card_item.html` y no tiene que ganar ni la
+        barra ni el sparkline."""
+        self._seed(session)
+
+        texto = client.get("/?ver=precios").text
+
+        assert "ph-card-bar-track" not in texto
+        assert "ph-card-spark" not in texto
+
     def test_vista_tablero_respeta_el_filtro_de_producto(
         self, client: TestClient, session: Session
     ) -> None:

@@ -10455,3 +10455,39 @@ de íconos subsetted suma `dashboard` (52 nombres). Dos tests de
 `TestVarianteEnTarjetaPublica` que buscaban la regla CSS inline en el HTML
 de `/` se reescribieron para buscarla en `saimc-public.css`, donde vive
 ahora.
+
+## 2026-09-16 — Slice 2 del modo Tablero: tarjeta enriquecida (barra + sparkline)
+Contexto: segundo slice de la Dirección D elegida sobre las propuestas de
+diseño. Faltaban las dos piezas prestadas de las direcciones B y C que la
+distinguen de A pura: una barra de rango por tarjeta y un sparkline de
+tendencia.
+Decisión: `ProductCard.median_pct` (nueva propiedad, `card_view.py`) — dónde
+cae la mediana dentro del propio [mínimo, máximo] en escala logarítmica,
+mismo criterio que `matrix.build_range_bar` pero autocontenido (la barra
+siempre ocupa el 100% de la tarjeta; no hay fila con la que comparar el
+ancho). Usa el rango de FORMATO cuando hay uno declarado, para que la barra
+describa el mismo número que ya muestra el texto de al lado. `None` con una
+sola observación — la plantilla ya trata ese caso aparte.
+El sparkline reusa la `PriceSeries` que ya arma `series_view.build_series`
+para «Cómo se movió» (`routers/public.py` arma `series_by_card`, un índice
+por celda, cero cómputo nuevo) y la dibuja como puntos sueltos
+(`<circle>`), **nunca una línea que los una**: es la decisión de fondo de
+`series_view.py` (§12.6) — Aceite/La Habana puede tener 3 observaciones en
+30 días, y una línea continua afirmaría veintisiete días de precio que
+nadie observó. El `viewBox` del SVG grande (600×170) se reescala solo al
+tamaño chico de la tarjeta; no hay geometría nueva que calcular, solo un
+`width`/`height` de CSS distintos.
+Las dos piezas son opt-in vía `tablero_extra` en `_product_card_item.html`
+—lo pone `public_dashboard.html` antes del `for`, la ventana flotante
+«Precios» del mapa nunca lo define—, así que siguen siendo una sola
+plantilla de tarjeta, no dos copias.
+Sin color por dirección en ninguna de las dos piezas: §12.6 ya decidió
+(`card_view.py`, docstring del módulo) que el cambio se muestra como
+número, nunca como semáforo. El primer borrador de este slice —hecho con
+las propuestas de diseño iniciales, antes de leer `series_view.py`— tenía
+justo eso: una línea continua entre puntos y color ámbar/verde según
+suba o baje. Se corrigieron los dos antes de escribir una sola línea de
+código real, al confirmar que contradecían decisiones ya tomadas.
+Verificado igual que el slice 1: `TestClient` + SQLite en memoria
+renderizado a archivo, mirado en Chromium headless contra la hoja real.
+Consecuencia: suite completa, 1723 casos (+7), ruff y mypy en el piso.

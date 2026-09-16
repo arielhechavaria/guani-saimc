@@ -8,6 +8,24 @@
   Tablero (`public_dashboard.html`) use exactamente la misma tarjeta —§9.0
   vinculante sobre qué puede publicarse como titular— en vez de reimplementar
   el marcado y arriesgar que las dos copias se desincronicen.
+
+  `tablero_extra` (slice 2, Dirección D elegida sobre las propuestas de
+  diseño): opt-in, no una diferencia entre dos copias. Con la bandera en
+  contexto —la pone `public_dashboard.html` antes del `{% for %}`, la
+  ventana «Precios» nunca la define— suma dos piezas prestadas de las otras
+  direcciones sin agregar una segunda plantilla de tarjeta:
+
+  1. La barra de `card.median_pct`: dónde cae la mediana dentro del propio
+     mínimo-máximo (idea de la Matriz de `/control`, autocontenida acá — no
+     hay fila con la que comparar el ancho).
+  2. El sparkline de `series_by_card` (idea de la Analítica): los MISMOS
+     puntos que ya dibuja «Cómo se movió» (`series_view.build_series`),
+     reescalados por el propio `viewBox` del SVG a un tamaño chico — no hay
+     geometría nueva que calcular. Puntos sueltos, **sin línea que los una**:
+     `series_view.py` explica por qué (§12.6) — conectar Aceite/La Habana,
+     que puede tener apenas 3 observaciones en 30 días, afirmaría veintisiete
+     días de precio que nadie vio. Es la misma disciplina del gráfico grande,
+     solo que en miniatura.
 #}
 <li class="ph-surface ph-card">
   <div class="ph-card-top">
@@ -32,10 +50,23 @@
     <span class="num">{{ card.format_minimum_text or card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.format_maximum_text or card.maximum_text }}</span>
     <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
   </div>
+  {% if tablero_extra is defined and tablero_extra and card.median_pct is not none %}
+  <div class="ph-card-bar-track"><div class="ph-card-bar-fill"></div><div class="ph-card-bar-tick" style="left:{{ card.median_pct }}%"></div></div>
+  {% endif %}
   <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
     {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
   {% endif %}
-  {% if card.change_text %}<div class="ph-cifra-cambio ph-card-trend">{{ card.change_text }} vs. los {{ window_days }} días anteriores</div>{% endif %}
+  <div class="ph-card-evo">
+    {% if card.change_text %}<div class="ph-cifra-cambio ph-card-trend">{{ card.change_text }} vs. los {{ window_days }} días anteriores</div>{% endif %}
+    {% if tablero_extra is defined and tablero_extra %}
+    {% set serie = series_by_card.get((card.product_name, card.province_name, card.currency, card.unit)) %}
+    {% if serie %}
+    <svg class="ph-card-spark" viewBox="{{ serie.viewbox }}" preserveAspectRatio="none" aria-hidden="true">
+      {% for punto in serie.points %}<circle cx="{{ punto.x }}" cy="{{ punto.y }}" r="5" />{% endfor %}
+    </svg>
+    {% endif %}
+    {% endif %}
+  </div>
   <div class="ph-card-sample">
     <span><span class="ph-card-n">{{ card.count }}</span> anuncio{{ "s" if card.count != 1 }} en {{ window_days }} días</span>
     <span class="ph-chip">{{ card.state }}</span>
