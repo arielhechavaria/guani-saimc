@@ -577,14 +577,31 @@ code, .m3-num { font-family: var(--m3-mono); }
 .m3-activity-axis > div { flex: 1; text-align: center; font: 400 11px var(--m3-mono); color: var(--m3-disabled); }
 
 /* ── Curaduría: dos columnas ────────────────────────────────────── */
-.m3-curation { display: grid; grid-template-columns: minmax(300px, 5fr) minmax(360px, 7fr); gap: var(--m3-space-5); align-items: start; }
-/* 180px de .m3-topbar + 56px de .m3-topnav apilada arriba (ver comentario
-   junto a .m3-topnav): la evidencia empieza justo debajo de las dos. Scroll
+/* Sin breakpoint: flex con wrap. Evidencia y formulario comparten fila en
+   proporción 5:7 mientras entren sus mínimos con el gap entre medio, y se
+   apilan cuando no — el layout decide solo. `min(…, 100%)` evita que el
+   formulario desborde un teléfono más angosto que su propio mínimo. */
+.m3-curation {
+  container: curation / inline-size;
+  display: flex; flex-wrap: wrap; gap: var(--m3-space-5); align-items: start;
+}
+.m3-curation > .m3-evidence { flex: 5 1 0; min-width: min(300px, 100%); }
+.m3-curation > :not(.m3-evidence) { flex: 7 1 0; min-width: min(360px, 100%); }
+/* La evidencia sticky solo tiene sentido lado a lado: apilada, se pegaría
+   arriba y taparía el formulario al scrollear. El umbral NO es un corte: es
+   la condición de wrap de arriba en píxeles (300 + 20 del gap + 360), y
+   `TestCuraduriaFluida` la recalcula desde las reglas para que no se
+   desincronicen.
+
+   236px = 180 de .m3-topbar + 56 de .m3-topnav, las dos sticky (ver
+   comentario junto a .m3-topnav): la evidencia empieza justo debajo. Scroll
    propio acotado al alto restante del viewport: sin esto, un anuncio largo
    (o con ráfaga desplegada) estira la card más allá de la pantalla y, al
    quedar sticky, la única forma de ver el resto es scrollear toda la página
    en vez de solo la evidencia. */
-.m3-evidence { position: sticky; top: 236px; max-height: calc(100vh - 236px - var(--m3-space-5)); overflow-y: auto; }
+@container curation (width >= 680px) {
+  .m3-evidence { position: sticky; top: 236px; max-height: calc(100vh - 236px - var(--m3-space-5)); overflow-y: auto; }
+}
 .m3-evidence pre {
   margin: 0; padding: var(--m3-space-4);
   background: var(--m3-surface-hover); border: 1px solid #e0e6e6; border-radius: var(--m3-radius-sm);
@@ -714,10 +731,6 @@ code, .m3-num { font-family: var(--m3-mono); }
 }
 
 /* ── Responsive ─────────────────────────────────────────────────── */
-@media (max-width: 900px) {
-  .m3-curation { grid-template-columns: 1fr; }
-  .m3-evidence { position: static; max-height: none; overflow-y: visible; }
-}
 @media (max-width: 720px) {
   .m3-content, .m3-topbar, .m3-topnav { padding-left: var(--m3-space-4); padding-right: var(--m3-space-4); }
   .m3-topnav-item span:last-child { display: none; }
@@ -730,6 +743,11 @@ code, .m3-num { font-family: var(--m3-mono); }
      superior (e25aaec). */
   .m3-topbar { position: static; }
   .m3-title { font-size: 22px; line-height: 28px; }
+
+  /* El `top: 236px` de la evidencia sticky da por hecho que la topbar
+     también es sticky. Acá dejó de serlo, así que la evidencia fluye aunque
+     todavía entre lado a lado (curaduría a 712–720px). */
+  .m3-evidence { position: static; max-height: none; overflow-y: visible; }
 
   /* La barra de acciones no envolvía: "Descartar" + "Curar anuncio" (grande)
      se salían del ancho del teléfono. Con flex-wrap en la regla base, acá se

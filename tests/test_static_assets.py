@@ -503,19 +503,19 @@ class TestTokensMaterial:
 
 
 class TestEscalaResponsive:
-    """Los cortes responsive son dos, y nadie inventa un tercero.
+    """Queda un solo corte responsive, 720px, y nadie inventa otro.
 
     `@media (max-width: var(--x))` no existe en CSS: las media queries se
     evalúan antes de que las custom properties tengan valor, así que la escala
     no puede vivir en `design_tokens.css` como token. Vive documentada ahí y se
     hace cumplir desde acá.
 
-    Los dos números están atados a un layout concreto, no a las window size
-    classes de Material (600/840). El porqué —y qué habría que arreglar para
-    converger— está en el bloque «Breakpoints» de `design_tokens.css`.
+    El número está atado al cromo del operador, no a las window size classes
+    de Material (600/840). El porqué —y qué habría que arreglar para sacarlo
+    también— está en el bloque «Breakpoints» de `design_tokens.css`.
     """
 
-    CORTES = {720, 900}
+    CORTES = {720}
 
     def test_ninguna_media_query_usa_un_corte_de_fantasia(self) -> None:
         raiz = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web"
@@ -531,8 +531,80 @@ class TestEscalaResponsive:
 
         assert not intrusos, (
             f"cortes fuera de la escala {sorted(self.CORTES)}: {intrusos} — "
-            "usá uno de los tres o agregá el nuevo al bloque «Breakpoints» de "
+            "usá el que hay o agregá el nuevo al bloque «Breakpoints» de "
             "design_tokens.css explicando a qué layout responde"
+        )
+
+
+
+class TestCuraduriaFluida:
+    """`/curation` decide sus columnas sola; la evidencia sticky solo la refleja.
+
+    `.m3-curation` es flex con wrap: la evidencia (mínimo 300px) y el
+    formulario (mínimo 360px) comparten fila mientras entren con el gap entre
+    medio, y se apilan cuando no. Ese es el único lugar donde se decide.
+
+    La evidencia sticky necesita saber qué decidió el layout —apilada y
+    sticky, se pegaría arriba y taparía el formulario—, y eso lo pregunta una
+    container query sobre el propio `.m3-curation`. El umbral de esa query NO
+    es un corte: es la condición de wrap de flexbox escrita en píxeles
+    (`mínimo evidencia + gap + mínimo formulario`). Este test la recalcula
+    desde las reglas, así que tocar un mínimo o el gap sin tocar la query
+    rompe acá y no en la pantalla del operador.
+    """
+
+    CONTENEDORES = frozenset({"curation"})
+
+    @staticmethod
+    def _web() -> Path:
+        return Path(__file__).resolve().parents[1] / "src" / "saimc" / "web"
+
+    def _hoja(self) -> str:
+        return (self._web() / "static" / "saimc-material.css").read_text(encoding="utf-8")
+
+    def _regla(self, css: str, selector: str) -> str:
+        match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", css)
+        assert match, f"falta la regla `{selector}` en saimc-material.css"
+        return match.group(1)
+
+    def _minimo(self, css: str, selector: str) -> int:
+        match = re.search(r"min-width:\s*min\((\d+)px,\s*100%\)", self._regla(css, selector))
+        assert match, f"`{selector}` tiene que declarar `min-width: min(<px>, 100%)`"
+        return int(match.group(1))
+
+    def test_el_umbral_sticky_es_la_condicion_de_wrap(self) -> None:
+        css = self._hoja()
+        evidencia = self._minimo(css, ".m3-curation > .m3-evidence")
+        formulario = self._minimo(css, ".m3-curation > :not(.m3-evidence)")
+
+        paso = re.search(r"gap:\s*var\(--m3-space-(\d+)\)", self._regla(css, ".m3-curation"))
+        assert paso, "el gap de `.m3-curation` tiene que ser un token de espaciado"
+        tokens = (self._web() / "design_tokens.css").read_text(encoding="utf-8")
+        gap = re.search(rf"--m3-space-{paso.group(1)}:\s*(\d+)px;", tokens)
+        assert gap
+
+        umbral = re.search(r"@container curation \(width >= (\d+)px\)", css)
+        assert umbral, "falta `@container curation (width >= <px>)` para la evidencia sticky"
+        assert int(umbral.group(1)) == evidencia + int(gap.group(1)) + formulario
+
+    def test_la_evidencia_solo_es_sticky_lado_a_lado(self) -> None:
+        css = self._hoja()
+        consulta = re.search(r"@container curation \([^)]*\)\s*\{(.*?)\n\}", css, re.S)
+        assert consulta and "position: sticky" in consulta.group(1)
+
+        fuera = css.replace(consulta.group(0), "")
+        pegadas = re.findall(r"([^{}]*\.m3-evidence)\s*\{[^}]*position:\s*sticky", fuera)
+        assert not pegadas, f"evidencia sticky fuera de la container query: {pegadas}"
+
+    def test_ninguna_container_query_sin_derivar(self) -> None:
+        archivos = [*(self._web() / "static").glob("*.css"), *(self._web() / "templates").glob("*.html")]
+        nombres = {
+            nombre
+            for archivo in archivos
+            for nombre in re.findall(r"@container\s+([\w-]+)", archivo.read_text(encoding="utf-8"))
+        }
+        assert nombres <= self.CONTENEDORES, (
+            f"container queries sin test que derive su umbral: {sorted(nombres - self.CONTENEDORES)}"
         )
 
 
