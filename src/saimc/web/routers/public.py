@@ -508,12 +508,6 @@ def _render_home(
     # su propio docstring.
     province_slots = province_color_slots(sorted(all_province_names))
     province_slugs = {name: product_slug(name) for name, _ in cards_by_province}
-    # Sparkline de la tarjeta enriquecida (slice 2, Dirección D): la misma
-    # `PriceSeries` que ya arma «Cómo se movió», solo indexada por celda para
-    # que la plantilla la encuentre sin recorrer la lista. Sin entrada =
-    # `MIN_DAYS` no se cumplió (build_series.py) — la tarjeta no dibuja nada,
-    # no un sparkline vacío.
-    series_by_card = {(s.product_name, s.province_name, s.currency, s.unit): s for s in series}
     template_name = "public_dashboard.html" if selected_vista == "tablero" else "public_home.html"
     return request.app.state.templates.TemplateResponse(
         request,
@@ -588,7 +582,6 @@ def _render_home(
             "cards_by_province": cards_by_province,
             "province_slots": province_slots,
             "province_slugs": province_slugs,
-            "series_by_card": series_by_card,
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
         },

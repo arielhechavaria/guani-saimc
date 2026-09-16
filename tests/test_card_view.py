@@ -11,8 +11,6 @@ a la vista y rotulado «muestra en formación» mientras N siga sin calibrar.
 from datetime import date
 from decimal import Decimal
 
-import pytest
-
 from saimc.cells import RetailRange
 from saimc.web.card_view import (
     SAMPLE_FORMING,
@@ -277,53 +275,6 @@ class TestIconoDeTarjeta:
         (card,) = build_cards([_rango(product="Café")])
 
         assert not card.has_illustration
-
-
-class TestMedianPct:
-    """Dónde cae la mediana dentro de [mínimo, máximo], escala log — la barra
-    de la tarjeta enriquecida del tablero (2026-09-16, slice 2, Dirección D).
-    Valores calculados a mano, antes e independientemente de correr el
-    código: mismo criterio que `matrix.build_range_bar`."""
-
-    def test_mediana_centrada_en_un_rango_simetrico_en_log(self) -> None:
-        # log(20/5)/log(20/5) centrado exacto: minimo=5, maximo=20, mediana=
-        # la media geométrica (10) cae siempre al 50% en escala log.
-        (card,) = build_cards([_rango(minimum="5", median="10", maximum="20")])
-
-        assert card.median_pct == pytest.approx(50.0, abs=0.01)
-
-    def test_mediana_pegada_al_minimo_cuando_el_maximo_es_un_extremo_suelto(self) -> None:
-        # Caso típico de una celda que mezcla minorista con un saco
-        # mayorista: la masa de observaciones abajo, el máximo lejos.
-        (card,) = build_cards([_rango(minimum="300", median="310", maximum="3000")])
-
-        assert card.median_pct is not None
-        assert card.median_pct < 15.0
-
-    def test_none_con_una_sola_observacion(self) -> None:
-        (card,) = build_cards([_rango(count=1, minimum="300", median="300", maximum="300")])
-
-        assert card.median_pct is None
-
-    def test_usa_el_rango_de_formato_cuando_hay_uno_declarado(self) -> None:
-        (card,) = build_cards(
-            [
-                _rango(
-                    minimum="300",
-                    median="310",
-                    maximum="320",
-                    format_packaging="bolsa",
-                    format_quantity="1",
-                    format_unit="kg",
-                )
-            ]
-        )
-
-        # El rango de formato calculado en build_cards es otro (ver
-        # TestTarjetaConFormato) — alcanza con que median_pct no reviente y
-        # quede en [0, 100] usando ESE rango, no el canónico.
-        assert card.median_pct is not None
-        assert 0.0 <= card.median_pct <= 100.0
 
 
 class TestAgrupadoPorProvincia:

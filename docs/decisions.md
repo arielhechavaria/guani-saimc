@@ -10586,3 +10586,28 @@ memoria, 5 provincias sembradas a mano) servido y capturado con Chromium
 headless en 900px: índice de salto con los 5 puntos de color correctos,
 primera sección alfabética abierta, resto colapsadas, y el color de La
 Habana idéntico con y sin `?provincia=la-habana`.
+
+## 2026-09-16 — Tablero: se revierte a la Dirección A pura, sin la barra ni el sparkline
+Contexto: el tablero llevaba, desde el slice 2, la tarjeta «enriquecida»
+(barra de mediana prestada de B + sparkline prestado de C) sobre la base de
+la Dirección A. El operador pidió explícitamente volver a «la primera
+opción sin mezclar» —Dirección A pura— para la tarjeta del tablero
+(distinto de la Dirección D de agrupación, que sigue en pie).
+Decisión: se quitó por completo la vía `tablero_extra` de
+`_product_card_item.html` —vuelve a ser exactamente la misma tarjeta que ya
+pinta la ventana flotante «Precios», sin ninguna bifurcación—, junto con
+todo lo que solo existía para sostenerla: `ProductCard.median_pct`
+(card_view.py), el cálculo de `series_by_card` en `_render_home`
+(routers/public.py) y las clases `.ph-card-bar-track/-fill/-tick`,
+`.ph-card-evo`, `.ph-card-spark` (saimc-public.css). `public_dashboard.html`
+ya no fija `{% set tablero_extra = true %}`.
+Descartado: dejar el código de la barra/sparkline sin usar por si se pide
+de vuelta más adelante — muerto y sin tests, se pudre en silencio; está en
+el historial de git (`b83132e`) si hace falta retomarlo.
+Consecuencia: la Dirección D de agrupación (colapsables + índice de salto +
+color por provincia) no se toca — son dos ejes independientes del mismo
+tablero, uno de contenido de la tarjeta y otro de cómo se organizan.
+Suite: 1727 casos (los 7 de la tarjeta enriquecida se quitan, ninguno
+nuevo), ruff y mypy sin deuda nueva. Verificado con el mismo render real ya
+usado para la agrupación: la tarjeta vuelve a mostrar solo rango, mediana y
+muestra, sin barra ni sparkline.
