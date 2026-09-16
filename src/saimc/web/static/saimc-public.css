@@ -341,18 +341,6 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
            text-transform: uppercase; padding: .3rem .75rem; border-radius: 999px;
            background: var(--ph-accent-wash); color: var(--ph-accent); }
 
-/* Tarjeta enriquecida del tablero (slice 2, Dirección D): opt-in vía
-   `tablero_extra` en `_product_card_item.html`, la ventana «Precios» nunca
-   las pinta. Sin color por dirección —ni acá ni en `.ph-card-spark`—:
-   §12.6 ya decidió que el cambio se muestra como número, nunca como
-   semáforo (`.ph-cifra-cambio` tampoco lo tiene). */
-.ph-card-bar-track { position: relative; height: 5px; background: var(--m3-surface-container-high); border-radius: 3px; margin-top: .55rem; }
-.ph-card-bar-fill { position: absolute; inset: 0; border-radius: 3px; background: var(--ph-accent); opacity: .35; }
-.ph-card-bar-tick { position: absolute; top: -3px; width: 2px; height: 11px; background: var(--m3-on-surface); border-radius: 1px; }
-.ph-card-evo { display: flex; align-items: center; gap: .5rem; }
-.ph-card-spark { width: 4.5rem; height: 1.25rem; flex: none; }
-.ph-card-spark circle { fill: var(--ph-accent); opacity: .55; }
-
 /* Identidad de provincia por posición en el catálogo (Dirección D, agrupar
    el tablero, 2026-09-16): `card_view.province_color_slots` decide el slot
    (0/1/2/9), estas cuatro clases son la única forma de citarlo en CSS.
