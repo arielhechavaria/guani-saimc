@@ -10390,3 +10390,17 @@ Consecuencia: cubre las cinco citas de `tokenCSS()` del archivo (son las
 únicas en toda la capa de plantillas — `grep -rl getComputedStyle
 templates/` no encuentra otra). Suite completa: 1704 casos, sin deuda
 nueva.
+
+## 2026-09-16 — Tiles del mapa: se quedan claros en modo oscuro, a propósito
+Contexto: al cerrar el modo oscuro, quedó la pregunta de si los tiles base
+de OpenStreetMap (calles, tierra, agua) debían oscurecerse también —son una
+imagen, no CSS, así que necesitarían un proveedor de tiles distinto para
+modo oscuro (ej. CartoDB dark_matter).
+Decisión: se quedan claros siempre. El operador eligió no sumar el segundo
+proveedor.
+Descartado: un tile provider oscuro — habría sido un segundo apartamiento
+de la decisión cerrada 1 (además del ya vigente para
+`tile.openstreetmap.org`), sin necesidad clara que lo justifique.
+Consecuencia: ninguna en código. Los polígonos de provincia, chips e
+íconos sobre el mapa sí siguen al tema (ver la entrada anterior); la base
+cartográfica no, por diseño.
