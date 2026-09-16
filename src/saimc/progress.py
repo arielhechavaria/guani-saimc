@@ -90,6 +90,18 @@ PHASE0_PROVINCES: tuple[str, ...] = ("La Habana", "Santiago de Cuba")
 DISCARD_RATE_OBJECTIVE = 0.30
 
 
+def _above_objective(rate: float | None) -> bool:
+    """Compara una tasa de descarte ya calculada contra el «<30%» de §12.5.
+
+    Libre y no método porque `IntakeHealth` y `ChannelIntake` calculan
+    `discard_rate` con criterios distintos (la primera neta lo fuera de
+    foco, la segunda no) — no son la misma métrica, así que no comparten
+    clase base; comparten solo este último paso, y por eso lo único que se
+    extrae es la comparación, no el cálculo.
+    """
+    return rate is not None and rate > DISCARD_RATE_OBJECTIVE
+
+
 # --- Progreso hacia la meta ----------------------------------------------------
 
 
@@ -212,8 +224,7 @@ class IntakeHealth:
         razonable. Compara contra `discard_rate` ya depurada de fuera de foco:
         el umbral del spec aplica a la métrica del spec.
         """
-        rate = self.discard_rate
-        return rate is not None and rate > DISCARD_RATE_OBJECTIVE
+        return _above_objective(self.discard_rate)
 
 
 def compute_intake_health(session: Session) -> IntakeHealth:
@@ -278,8 +289,7 @@ class ChannelIntake:
     def above_objective(self) -> bool:
         """Reusa el único umbral con veredicto del módulo (§12.5, «<30%»). No
         se inventa un objetivo propio por canal."""
-        rate = self.discard_rate
-        return rate is not None and rate > DISCARD_RATE_OBJECTIVE
+        return _above_objective(self.discard_rate)
 
 
 def compute_channel_intake(session: Session) -> list[ChannelIntake]:

@@ -10271,3 +10271,31 @@ Consecuencia: sin cambios de código, solo `openspec/config.yaml`. YAML
 validado con `yaml.safe_load`. Suite completa: 1694 casos, ruff en el piso;
 los 4 hallazgos nuevos de mypy (`cells.py`, `rapidocr`) son preexistentes y
 ajenos a este archivo.
+
+## 2026-09-16 — IntakeHealth/ChannelIntake: se descarta herencia, se extrae una función
+Contexto: el operador preguntó por qué `IntakeHealth` y `ChannelIntake`
+(`src/saimc/progress.py`) no usan herencia, señalando que comparten
+`pending`/`curated`/`discarded`, `decided` y `above_objective` letra por
+letra.
+Decisión: no aplicar herencia. `discard_rate` significa cosas distintas en
+cada clase —`IntakeHealth` neta `discarded_off_focus` del numerador y
+denominador, `ChannelIntake` no, porque `compute_channel_intake` nunca
+desglosa el descarte por canal según motivo—, así que no es la misma
+métrica con dos nombres: es una relación "tiene-un-umbral-en-común", no
+"es-un". Forzar una clase base habría heredado un campo sin sentido
+(`discarded_off_focus` por canal) o pisado el método, violando sustitución.
+Contado además: ninguna de las ~30 dataclasses del dominio hereda de otra
+—la única herencia del repo es la que exige el framework (`Base` de
+SQLAlchemy, `Settings` de Pydantic)—, así que meter una acá habría sido la
+excepción, no la continuación de un patrón.
+Se extrajo `_above_objective(rate)`, función libre, único fragmento
+idéntico de verdad entre las dos clases; `pending`/`curated`/`discarded`/
+`decided` quedan repetidos a propósito (`CLAUDE.md`: tres líneas similares
+es mejor que una abstracción prematura).
+Descartado: Template Method con clase base abstracta — correcto en teoría
+(el patrón existe justo para "mismo algoritmo, paso final distinto"), pero
+sobreingeniería para 2 clases y 3 miembros duplicados, y la única jerarquía
+de todo el dominio.
+Consecuencia: sin cambio de comportamiento. Suite completa: 1694 casos,
+ruff en el piso. Si aparece una tercera clase con esta misma forma, ahí sí
+vale la pena revisar de nuevo.
