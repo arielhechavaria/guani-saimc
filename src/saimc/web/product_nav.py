@@ -36,6 +36,14 @@ WINDOW_CHOICES: tuple[int, ...] = (7, 30, 90)
 LAYER_CHOICES: tuple[str, ...] = ("publicacion", "densidad")
 DEFAULT_LAYER = "publicacion"
 
+#: Presentación de `/` (2026-09-16): «mapa» es la de siempre —Leaflet, tiles,
+#: compás—; «tablero» son las mismas tarjetas que ya arma `build_cards`,
+#: agrupadas por provincia, sin mapa ni Leaflet. Mismo criterio que `capa`:
+#: la clave viaja en `?vista=` y se omite de la URL cuando es la default, para
+#: no ensuciar el enlace que ya comparte todo el mundo.
+VISTA_CHOICES: tuple[str, ...] = ("mapa", "tablero")
+DEFAULT_VISTA = "mapa"
+
 
 def product_slug(name: str) -> str:
     """Nombre → segmento de URL estable. Sirve para producto y para provincia.
@@ -119,6 +127,14 @@ def resolve_layer(raw: str | None) -> str:
     return raw if raw in LAYER_CHOICES else DEFAULT_LAYER
 
 
+def resolve_vista(raw: str | None) -> str:
+    """Query string → una de `VISTA_CHOICES`, o el default ante cualquier cosa.
+
+    Mismo criterio que `resolve_layer`: un `?vista=` inválido no da 404 ni
+    error, cae al mapa."""
+    return raw if raw in VISTA_CHOICES else DEFAULT_VISTA
+
+
 def _parse_iso_date(raw: str | None) -> date | None:
     if not raw:
         return None
@@ -168,21 +184,25 @@ def _query(
     hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
+    vista: str = DEFAULT_VISTA,
     path: str = "/",
 ) -> str:
     """Compone la URL con los ejes activos, en orden fijo
-    producto/provincia/desde/hasta/ver/capa.
+    producto/provincia/desde/hasta/ver/capa/vista.
 
     `productos` (lista de slugs, multi-selección) gana sobre `producto` (slug
     único, alias histórico) cuando trae algo: se emite `productos=a,b`. `ver`
     son las ventanas flotantes abiertas desde el menú del header. `capa` es la
-    capa del mapa (§ mapa, 2026-09-11).
+    capa del mapa (§ mapa, 2026-09-11). `vista` es mapa/tablero
+    (2026-09-16) — se preserva igual que `capa` para que cambiar de
+    producto, provincia o ventana de días no expulse de vuelta al mapa a
+    quien eligió el tablero.
 
     `desde`/`hasta` van SIEMPRE explícitos (2026-09-14) —a diferencia de
-    `capa`, que se omite si es el default—: son la respuesta directa al
-    pedido de que el rango en uso se vea siempre, y una URL que dice
-    exactamente qué ventana mira es más clara para compartir, no menos. La
-    descarga usa `path="/datos.csv"`.
+    `capa`/`vista`, que se omiten si son el default—: son la respuesta
+    directa al pedido de que el rango en uso se vea siempre, y una URL que
+    dice exactamente qué ventana mira es más clara para compartir, no
+    menos. La descarga usa `path="/datos.csv"`.
     """
     params = []
     if productos:
@@ -197,6 +217,8 @@ def _query(
         params.append("ver=" + ",".join(ver))
     if capa != DEFAULT_LAYER:
         params.append(f"capa={capa}")
+    if vista != DEFAULT_VISTA:
+        params.append(f"vista={vista}")
     return f"{path}?" + "&".join(params)
 
 
@@ -208,18 +230,20 @@ def products_query(
     hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
+    vista: str = DEFAULT_VISTA,
     path: str = "/",
 ) -> str:
     """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
-    preservando provincia, rango de calendario, ventanas abiertas y capa del
-    mapa. La usan el riel de chips, los paneles flotantes, el mapa y la hoja
-    de provincia."""
+    preservando provincia, rango de calendario, ventanas abiertas, capa del
+    mapa y vista (mapa/tablero). La usan el riel de chips, los paneles
+    flotantes, el mapa y la hoja de provincia."""
     return _query(
         productos=list(product_slugs),
         provincia=provincia,
         desde=desde,
         hasta=hasta,
         ver=list(ver),
+        vista=vista,
         capa=capa,
         path=path,
     )
@@ -337,14 +361,16 @@ def build_province_nav(
     active_products: Sequence[str] = (),
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
+    vista: str = DEFAULT_VISTA,
 ) -> list[NavChoice]:
     """«Todas» + un ítem por provincia con dato piloto, marcando la activa.
 
     Simétrica a `build_product_nav`; cada enlace preserva el producto (o el
     conjunto `active_products` de los chips), el rango de calendario, las
-    ventanas flotantes abiertas (`ver`) y la capa del mapa (`capa`): la barra
-    vive dentro de la ventana «Precios», y cambiar de provincia no puede
-    cerrarla ni resetear ninguna de las dos.
+    ventanas flotantes abiertas (`ver`), la capa del mapa (`capa`) y la vista
+    (`vista`, mapa/tablero): la barra vive dentro de la ventana «Precios», y
+    cambiar de provincia no puede cerrarla, resetear la capa ni devolver al
+    mapa a quien eligió el tablero.
     """
     prod_slug = product_slug(selected_product) if selected_product else ""
     active_slugs = [product_slug(n) for n in active_products]
@@ -361,6 +387,7 @@ def build_province_nav(
                 hasta=selected_hasta,
                 ver=ver,
                 capa=capa,
+                vista=vista,
             ),
         )
     ]
@@ -379,6 +406,7 @@ def build_province_nav(
                     hasta=selected_hasta,
                     ver=ver,
                     capa=capa,
+                    vista=vista,
                 ),
             )
         )
@@ -470,15 +498,17 @@ def build_product_chips(
     selected_hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
+    vista: str = DEFAULT_VISTA,
 ) -> list[ProductChip]:
     """Un chip por producto piloto, en el orden del catálogo.
 
     El conjunto activo (`active_names`) viaja como `?productos=` en el orden en
     que se fueron prendiendo. Un chip apagado agrega su slug al final al
     clickearlo; uno ya prendido no hace nada —cerrar su panel es cosa de la ×
-    del panel, no del chip—. `ver`, `capa` y el rango de calendario se
-    preservan: prender un producto no cierra las ventanas abiertas, ni
-    cambia la capa del mapa, ni resetea la ventana de fechas.
+    del panel, no del chip—. `ver`, `capa`, `vista` y el rango de calendario
+    se preservan: prender un producto no cierra las ventanas abiertas, ni
+    cambia la capa del mapa, ni devuelve al mapa a quien eligió el tablero,
+    ni resetea la ventana de fechas.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_names]
@@ -504,6 +534,7 @@ def build_product_chips(
                     hasta=selected_hasta,
                     ver=ver,
                     capa=capa,
+                    vista=vista,
                 ),
             )
         )
@@ -519,6 +550,7 @@ def build_window_nav(
     active_products: Sequence[str] = (),
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
+    vista: str = DEFAULT_VISTA,
     hoy: date | None = None,
 ) -> list[WindowChoice]:
     """Atajos rápidos del date picker (2026-09-14): «7/30/90 días» siguen
@@ -528,7 +560,7 @@ def build_window_nav(
     coincide EXACTO con uno de los tres —un rango personalizado no marca
     ninguno, que es la señal correcta: no es ninguno de los presets—.
     Preserva producto (o el conjunto de chips), provincia, ventanas
-    flotantes abiertas y capa.
+    flotantes abiertas, capa y vista.
     """
     hoy = hoy or date.today()
     prod_slug = product_slug(selected_name) if selected_name else ""
@@ -547,6 +579,7 @@ def build_window_nav(
                 hasta=hoy,
                 ver=ver,
                 capa=capa,
+                vista=vista,
             ),
         )
         for days in WINDOW_CHOICES

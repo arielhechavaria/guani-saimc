@@ -9,6 +9,7 @@ check_circle
 close
 content_paste
 dark_mode
+dashboard
 delete
 description
 download

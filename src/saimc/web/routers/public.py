@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
 from saimc.progress import pilot_product_names
-from saimc.web.card_view import attach_trends, build_cards
+from saimc.web.card_view import attach_trends, build_cards, group_cards_by_province
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import (
@@ -58,6 +58,7 @@ from saimc.web.product_nav import (
     resolve_products,
     resolve_province,
     resolve_views,
+    resolve_vista,
     resolve_window,
 )
 from saimc.web.series_view import build_series
@@ -247,6 +248,7 @@ def _render_home(
     dias: str | None,
     ver: str | None = None,
     capa: str | None = None,
+    vista: str | None = None,
 ) -> HTMLResponse:
     # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
     # Fase 0 se comprometió a medir (§9), y la cola larga son 59 filas en 53
@@ -277,6 +279,7 @@ def _render_home(
     ventana_desde, ventana_hasta = resolve_window(desde, hasta, dias)
     window = (ventana_hasta - ventana_desde).days
     hoy = ventana_hasta
+    selected_vista = resolve_vista(vista)
     selected_layer = resolve_layer(capa)
 
     report = compute_retail_ranges(db, days=window, hoy=hoy, hasta=ventana_hasta)
@@ -350,6 +353,18 @@ def _render_home(
             hasta=ventana_hasta,
             ver=open_views,
             capa=selected_layer,
+        )
+
+    def vista_link(destino: str) -> str:
+        """Enlace al mapa o al tablero, preservando producto(s), provincia y
+        rango de calendario — no `ver`/`capa`, que son estado del mapa y no
+        significan nada en el tablero (2026-09-16)."""
+        return products_query(
+            active_slugs,
+            provincia=prov_slug,
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+            vista=destino,
         )
 
     # Panel de producto (muestrario aprobado el 2026-09-10): cifra con su
@@ -471,9 +486,21 @@ def _render_home(
         ensure_ascii=False,
         separators=(",", ":"),
     )
+    # Tablero (2026-09-16): mismas tarjetas de siempre, agrupadas por
+    # provincia — nada que la vista mapa no calculara ya. La plantilla la
+    # elige el router y no un `{% if %}` adentro de `public_home.html`
+    # (~2700 líneas ya delicadas): las dos vistas son archivos separados.
+    cards_by_province = group_cards_by_province(cards, province_names)
+    # Sparkline de la tarjeta enriquecida (slice 2, Dirección D): la misma
+    # `PriceSeries` que ya arma «Cómo se movió», solo indexada por celda para
+    # que la plantilla la encuentre sin recorrer la lista. Sin entrada =
+    # `MIN_DAYS` no se cumplió (build_series.py) — la tarjeta no dibuja nada,
+    # no un sparkline vacío.
+    series_by_card = {(s.product_name, s.province_name, s.currency, s.unit): s for s in series}
+    template_name = "public_dashboard.html" if selected_vista == "tablero" else "public_home.html"
     return request.app.state.templates.TemplateResponse(
         request,
-        "public_home.html",
+        template_name,
         {
             "map": map_view,
             "map_provinces_json": map_provinces_json,
@@ -494,6 +521,7 @@ def _render_home(
                 selected_hasta=ventana_hasta,
                 ver=open_views,
                 capa=selected_layer,
+                vista=selected_vista,
             ),
             "product_panels": product_panels,
             "province_nav": build_province_nav(
@@ -505,6 +533,7 @@ def _render_home(
                 active_products=active_products,
                 ver=open_views,
                 capa=selected_layer,
+                vista=selected_vista,
             ),
             "window_nav": build_window_nav(
                 ventana_desde,
@@ -514,6 +543,7 @@ def _render_home(
                 active_products=active_products,
                 ver=open_views,
                 capa=selected_layer,
+                vista=selected_vista,
                 hoy=hoy,
             ),
             "layer_nav": build_layer_nav(
@@ -537,6 +567,11 @@ def _render_home(
             "selected_product": selected,
             "selected_province_slug": prov_slug,
             "selected_province": selected_province,
+            "vista": selected_vista,
+            "cards_by_province": cards_by_province,
+            "series_by_card": series_by_card,
+            "mapa_href": vista_link("mapa"),
+            "tablero_href": vista_link("tablero"),
         },
     )
 
@@ -552,14 +587,26 @@ def public_home(
     dias: str | None = None,
     ver: str | None = None,
     capa: str | None = None,
+    vista: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Home pública. `productos` (multi-selección de chips), `producto` (alias de
     uno), `provincia`, `desde`/`hasta` (rango de calendario del date picker,
     2026-09-14; `dias` sigue aceptándose como alias de compatibilidad —ver
-    `resolve_window`—), `ver` (ventanas flotantes abiertas) y `capa`
-    (capa del mapa) son query string opcional; un valor raro no da 404, se
-    muestra todo."""
+    `resolve_window`—), `ver` (ventanas flotantes abiertas), `capa`
+    (capa del mapa) y `vista` (mapa/tablero, 2026-09-16) son query string
+    opcional; un valor raro no da 404, se muestra todo.
+
+    `?vista=` explícito manda siempre —un link compartido con `?vista=tablero`
+    tiene que abrir en tablero pase lo que pase—; sin él, cae a la cookie
+    `vista` (slice 3, 2026-09-16), que el toggle escribe al click. Es cookie y
+    no `localStorage` a propósito: `localStorage` no lo puede leer el
+    servidor, así que una visita nueva a esta ruta renderizaría el mapa
+    completo —Leaflet, tiles— y recién después un redirect en el cliente
+    mandaría al tablero. Dos cargas, la más pesada primero, exactamente en
+    contra de por qué existe el tablero (aliviar la conexión lenta). La
+    cookie deja que el servidor elija la plantilla correcta de entrada."""
+    vista_efectiva = vista if vista is not None else request.cookies.get("vista")
     return _render_home(
         request,
         db,
@@ -571,6 +618,7 @@ def public_home(
         dias=dias,
         ver=ver,
         capa=capa,
+        vista=vista_efectiva,
     )
 
 

@@ -40,6 +40,7 @@ sin tener que abrir el panel flotante.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
@@ -162,6 +163,38 @@ class ProductCard:
         """
         return self.count == 1
 
+    @property
+    def median_pct(self) -> float | None:
+        """Dónde cae la mediana dentro del propio [mínimo, máximo], en escala
+        logarítmica — 2026-09-16, Dirección D (tablero) sobre las propuestas
+        de diseño.
+
+        Mismo criterio que `matrix.build_range_bar`, pero autocontenido: esa
+        barra escala el ANCHO contra el resto de una tabla; esta no tiene con
+        qué comparar, así que siempre ocupa el 100% de la tarjeta y lo único
+        que varía es dónde cae la marca de la mediana. Log y no lineal por el
+        mismo motivo que ahí: un saco mayorista mezclado con precio minorista
+        estira el máximo mucho más de lo que separa al resto de las
+        observaciones, y una escala lineal aplastaría la marca contra el
+        borde izquierdo.
+
+        Usa el rango de FORMATO cuando hay uno declarado —el mismo que
+        `format_minimum_text`/`format_median_text`/`format_maximum_text` ya
+        muestran como titular—, para que la barra describa el mismo número
+        que el texto de al lado.
+
+        `None` sin rango que dibujar: mínimo ≤ 0 (no debería pasar con
+        precios, pero `build_range_bar` se cubre del mismo caso) o mínimo ==
+        máximo —una sola observación, que la plantilla ya trata aparte
+        (`is_single_observation`)."""
+        minimo = self.format_minimum if self.format_minimum is not None else self.minimum
+        maximo = self.format_maximum if self.format_maximum is not None else self.maximum
+        mediana = self.format_median if self.format_median is not None else self.median
+        if minimo <= 0 or maximo <= minimo:
+            return None
+        spread = math.log(float(maximo) / float(minimo))
+        return min(100.0, max(0.0, math.log(float(mediana) / float(minimo)) / spread * 100.0))
+
 
 def build_cards(ranges: list[RetailRange]) -> list[ProductCard]:
     """Arma las tarjetas publicables a partir de los rangos minoristas.
@@ -199,6 +232,24 @@ def build_cards(ranges: list[RetailRange]) -> list[ProductCard]:
     ]
     cards.sort(key=lambda c: (-c.count, c.product_name, c.province_name))
     return cards
+
+
+def group_cards_by_province(
+    cards: Sequence[ProductCard], province_names: Sequence[str]
+) -> list[tuple[str, list[ProductCard]]]:
+    """Las tarjetas agrupadas por provincia, en el orden de `province_names`
+    (ya alfabético — lo resuelve `_render_home`, acá no se reordena nada).
+
+    Para el modo «Tablero» (2026-09-16): mismas tarjetas que ya arma
+    `build_cards`, mismo componente `.ph-card` de siempre, solo agrupadas en
+    vez de en una sola lista plana. Una provincia sin ninguna tarjeta no
+    entra —no hay nada que agrupar bajo su nombre."""
+    por_provincia: dict[str, list[ProductCard]] = {}
+    for card in cards:
+        por_provincia.setdefault(card.province_name, []).append(card)
+    return [
+        (name, por_provincia[name]) for name in province_names if name in por_provincia
+    ]
 
 
 def attach_trends(cards: list[ProductCard], headlines: Sequence[Headline]) -> list[ProductCard]:

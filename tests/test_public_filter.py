@@ -41,6 +41,7 @@ from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.product_nav import (
     DEFAULT_LAYER,
+    DEFAULT_VISTA,
     DEFAULT_WINDOW_DAYS,
     build_layer_nav,
     build_product_chips,
@@ -55,6 +56,7 @@ from saimc.web.product_nav import (
     resolve_products,
     resolve_province,
     resolve_views,
+    resolve_vista,
 )
 
 
@@ -1357,6 +1359,17 @@ class TestResolveLayer:
         assert resolve_layer("precio") == DEFAULT_LAYER
 
 
+class TestResolveVista:
+    def test_acepta_mapa_y_tablero(self) -> None:
+        assert resolve_vista("mapa") == "mapa"
+        assert resolve_vista("tablero") == "tablero"
+
+    def test_cae_al_default_ante_basura(self) -> None:
+        assert resolve_vista(None) == DEFAULT_VISTA
+        assert resolve_vista("") == DEFAULT_VISTA
+        assert resolve_vista("dashboard") == DEFAULT_VISTA
+
+
 class TestBuildLayerNav:
     DESDE, HASTA = date(2026, 8, 15), date(2026, 8, 25)
 
@@ -1422,6 +1435,14 @@ class TestBuildWindowNav:
         assert por_dias[7].query == (
             f"/?producto=arroz&desde={desde_7.isoformat()}&hasta={self.HOY.isoformat()}"
         )
+
+    def test_preserva_la_vista_tablero_en_el_query(self) -> None:
+        """Cambiar la ventana de días en el tablero no puede devolver al
+        mapa (2026-09-16)."""
+        desde_30 = self.HOY - timedelta(days=30)
+        nav = build_window_nav(desde_30, self.HOY, vista="tablero", hoy=self.HOY)
+
+        assert all("vista=tablero" in c.query for c in nav)
 
 
 # --- ruta pública ----------------------------------------------------------
@@ -2413,11 +2434,15 @@ class TestVarianteEnTarjetaPublica:
         texto = client.get("/").text
 
         assert "girasol Vitalín importado" in texto
+        assert 'class="ph-card-variant"' in texto
         # `.ph-card-variant` no tenía NINGUNA regla (2026-09-12): el `<div>`
         # con la variante renderizaba de bloque a full width, pegado al
         # titular, sin el tratamiento secundario que ya usa `.ph-card-median`.
-        assert 'class="ph-card-variant"' in texto
-        assert re.search(r"\.ph-card-variant\b[^{]*\{[^}]*\}", texto)
+        # Vive en `saimc-public.css` (2026-09-16, `.ph-card` se movió del
+        # `<style>` de esta página a la hoja compartida), no inline: se
+        # busca ahí, no en el HTML de `/`.
+        hoja = client.get("/static/saimc-public.css").text
+        assert re.search(r"\.ph-card-variant\b[^{]*\{[^}]*\}", hoja)
 
     def test_la_tarjeta_publica_declara_estilo_para_el_formato(
         self, client: TestClient
@@ -2425,6 +2450,181 @@ class TestVarianteEnTarjetaPublica:
         """Mismo hallazgo que la variante, para `.ph-card-format` — el `<div>`
         del formato declarado («Bolsa 1kg») que se muestra entre el titular y
         el rango de precio."""
+        hoja = client.get("/static/saimc-public.css").text
+
+        assert re.search(r"\.ph-card-format\b[^{]*\{[^}]*\}", hoja)
+
+
+class TestVistaTableroEnLaRuta:
+    """`?vista=tablero`: las mismas tarjetas de siempre, agrupadas por
+    provincia, sin mapa. `?vista=mapa` (o sin el parámetro) sigue siendo la
+    vista con Leaflet (2026-09-16, Dirección D elegida sobre las propuestas
+    de diseño)."""
+
+    def _seed(self, session: Session) -> None:
+        """Arroz en Habana (2 días) y Santiago (1); Aceite solo en Habana."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        aceite = Product(name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, aceite, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-vista")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(6))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(3), price="330")
+        _precio(session, product=arroz, province=santiago, source=fuente, dia=_hace(4), price="410")
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(5))
+        session.commit()
+
+    def test_sin_vista_muestra_el_mapa(self, client: TestClient, session: Session) -> None:
+        self._seed(session)
+
         texto = client.get("/").text
 
-        assert re.search(r"\.ph-card-format\b[^{]*\{[^}]*\}", texto)
+        assert 'id="ph-leaflet-map"' in texto
+        assert "ph-dash-section" not in texto
+
+    def test_vista_tablero_agrupa_las_tarjetas_por_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'id="ph-leaflet-map"' not in texto
+        assert texto.index("La Habana") < texto.index("Santiago de Cuba")
+        assert texto.count('class="ph-surface ph-card"') == 3
+
+    def test_la_tarjeta_del_tablero_trae_barra_y_sparkline(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Slice 2 (Dirección D): Arroz/La Habana tiene 2 días de dato —
+        cumple `card.median_pct is not none` y el `MIN_DAYS` de
+        `series_view.build_series`—, así que su tarjeta lleva las dos piezas
+        prestadas de B y C."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        tarjeta_arroz = texto[texto.index("Arroz") : texto.index("Aceite")]
+
+        assert "ph-card-bar-track" in tarjeta_arroz
+        assert "ph-card-bar-tick" in tarjeta_arroz
+        assert "ph-card-spark" in tarjeta_arroz
+        # Puntos sueltos, nunca una línea que los una (series_view.py, §12.6):
+        # el sparkline es `<circle>`, no `<polyline>`/`<path>`.
+        assert "<polyline" not in tarjeta_arroz
+        assert tarjeta_arroz.count("<circle") == 2  # 2 días de dato
+
+    def test_la_tarjeta_de_una_sola_observacion_no_trae_barra_ni_sparkline(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Aceite/La Habana: una sola observación, sin rango — `median_pct`
+        es `None` y no hay `PriceSeries` (`MIN_DAYS` no se cumple)."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        tarjeta_aceite = texto[texto.index("Aceite") :]
+
+        assert "ph-card-bar-track" not in tarjeta_aceite
+        assert "ph-card-spark" not in tarjeta_aceite
+
+    def test_la_ventana_precios_del_mapa_no_cambia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`tablero_extra` es opt-in: la ventana flotante «Precios» del mapa
+        usa la misma `_product_card_item.html` y no tiene que ganar ni la
+        barra ni el sparkline."""
+        self._seed(session)
+
+        texto = client.get("/?ver=precios").text
+
+        assert "ph-card-bar-track" not in texto
+        assert "ph-card-spark" not in texto
+
+    def test_la_cookie_vista_decide_sin_query_string(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Slice 3: sin `?vista=` en la URL, la cookie manda — el servidor
+        elige la plantilla de entrada, sin redirect en el cliente."""
+        self._seed(session)
+        client.cookies.set("vista", "tablero")
+
+        texto = client.get("/").text
+
+        assert 'id="ph-leaflet-map"' not in texto
+        assert "ph-dash-section" in texto
+
+    def test_el_query_string_explicito_gana_a_la_cookie(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un link compartido con `?vista=mapa` tiene que abrir en mapa pase
+        lo que pase, aunque la cookie diga tablero."""
+        self._seed(session)
+        client.cookies.set("vista", "tablero")
+
+        texto = client.get("/?vista=mapa").text
+
+        assert 'id="ph-leaflet-map"' in texto
+
+    def test_una_cookie_invalida_cae_al_mapa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+        client.cookies.set("vista", "satelite")
+
+        texto = client.get("/").text
+
+        assert 'id="ph-leaflet-map"' in texto
+
+    def test_los_enlaces_del_toggle_llevan_la_clase_y_el_dato_para_la_cookie(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`_vista_cookie_script.html` cablea por `.js-vista-link` +
+        `data-vista`, no por id — tiene que estar en los dos enlaces del
+        tablero y en el del dock del mapa."""
+        self._seed(session)
+
+        tablero = client.get("/?vista=tablero").text
+        assert re.search(r'class="js-vista-link[^"]*" data-vista="mapa"', tablero)
+        assert re.search(r'class="js-vista-link[^"]*" data-vista="tablero"', tablero)
+
+        mapa = client.get("/").text
+        assert re.search(r'class="ph-menu-item js-vista-link" data-vista="tablero"', mapa)
+
+    def test_vista_tablero_respeta_el_filtro_de_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=arroz").text
+
+        assert "Arroz" in texto
+        assert "Aceite" not in texto
+
+    def test_una_vista_invalida_cae_al_mapa(self, client: TestClient, session: Session) -> None:
+        self._seed(session)
+
+        respuesta = client.get("/?vista=satelite")
+
+        assert respuesta.status_code == 200
+        assert 'id="ph-leaflet-map"' in respuesta.text
+
+    def test_el_toggle_preserva_filtro_y_ventana_en_los_dos_sentidos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=arroz&provincia=la-habana").text
+
+        assert 'href="/?productos=arroz&amp;provincia=la-habana' in texto
+        assert "vista=mapa" not in texto  # mapa es el default: no ensucia la URL
+        assert 'aria-current="true">Tablero</a>' in texto
+
+    def test_el_enlace_al_tablero_esta_en_el_dock_del_mapa_y_preserva_el_filtro(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?productos=arroz").text
+
+        assert re.search(r'href="/\?productos=arroz[^"]*vista=tablero[^"]*"', texto)

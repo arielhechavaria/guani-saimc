@@ -10422,3 +10422,122 @@ de la decisión cerrada 1 (además del ya vigente para
 Consecuencia: ninguna en código. Los polígonos de provincia, chips e
 íconos sobre el mapa sí siguen al tema (ver la entrada anterior); la base
 cartográfica no, por diseño.
+
+## 2026-09-16 — Slice 1 del modo Tablero: `?vista=mapa|tablero`, tarjetas agrupadas por provincia
+Contexto: el operador pidió un modo de presentación alternativo al mapa en
+`/`, con gráficos y tablas. Se investigó y se propusieron tres direcciones
+de diseño con el skill `design` (Claude Design) más una cuarta mezclando
+piezas a pedido del operador; eligió **D — Tarjetas enriquecidas**. Este
+slice es la base sin enriquecer: el toggle funcionando de punta a punta con
+las tarjetas de siempre. La barra de rango y el sparkline de D quedan para
+el slice 2.
+Decisión: `?vista=mapa|tablero` (`product_nav.py`: `VISTA_CHOICES`,
+`DEFAULT_VISTA`, `resolve_vista`), mismo criterio que `?capa=` — se omite de
+la URL cuando es el default y se preserva en los enlaces que ya preservaban
+`capa` (`_query`, `products_query`, `build_province_nav`,
+`build_product_chips`, `build_window_nav`). NO se preservó en
+`build_view_menu`/`build_layer_nav`/`build_product_panels`: son conceptos
+exclusivos del lienzo del mapa (ventanas flotantes, capa del mapa, paneles),
+que el tablero no usa ni usará — preservarlo ahí no protege nada.
+`routers/public.py` elige la plantilla (`public_dashboard.html` vs
+`public_home.html`) en vez de un `{% if %}` adentro de las ~2700 líneas ya
+delicadas de `public_home.html`. Las tarjetas se agrupan con
+`card_view.group_cards_by_province` (nueva), mismas `ProductCard` de
+siempre — cero cómputo nuevo, el router ya las tenía.
+La tarjeta (`<li class="ph-surface ph-card">…`) se extrajo de la ventana
+flotante «Precios» a `_product_card_item.html`, compartida por las dos
+plantillas: reimplementarla a mano en el tablero arriesgaba que las dos
+copias se desincronizaran (mismo tipo de bug que `--m3-tertiary` citado sin
+definir, 2026-09-04).
+Bug real encontrado por la suite, no por revisión: el CSS de `.ph-card`,
+`.ph-surface`, `.ph-note`, `.ph-chip`, `.ph-fpanel-icon`/
+`.ph-fpanel-illustration` y `.ph-cifra-cambio` vivía ENTERO en el `<style>`
+propio de `public_home.html`, con el comentario explícito «mientras sea la
+única vista pública» — dejó de serlo con este slice, y las tarjetas del
+tablero salían sin ningún estilo (bullets de lista nativos, íconos SVG sin
+`width`/`height` ocupando cientos de píxeles). Se movieron a
+`saimc-public.css`, la hoja compartida; lo que sigue siendo exclusivo del
+mapa (`.ph-map`, `.ph-panel`, `.ph-legend`, `.ph-conc-*`, `.ph-series`/
+`.ph-plot-*`, `.ph-filter*`) se quedó donde estaba.
+Verificado renderizando la ruta real (FastAPI `TestClient` + SQLite en
+memoria, mismo motor que la suite) a un archivo y mirándolo en Chromium
+headless contra la hoja real, con el mapa y el tablero — no un mockup —, a
+1200px y 420px. El mapa se re-verificó también, para confirmar que sacar
+CSS de `public_home.html` no le rompió nada.
+Descartado: duplicar el CSS de la tarjeta en el `<style>` del tablero en vez
+de mover el original — es exactamente el patrón que ya causó
+desincronización dos veces en este proyecto (tokens `--m3-*` antes del
+2026-09-04, ver `TestTokensMaterial`).
+Consecuencia: suite completa, 1716 casos (+12), ruff en el piso. La fuente
+de íconos subsetted suma `dashboard` (52 nombres). Dos tests de
+`TestVarianteEnTarjetaPublica` que buscaban la regla CSS inline en el HTML
+de `/` se reescribieron para buscarla en `saimc-public.css`, donde vive
+ahora.
+
+## 2026-09-16 — Slice 2 del modo Tablero: tarjeta enriquecida (barra + sparkline)
+Contexto: segundo slice de la Dirección D elegida sobre las propuestas de
+diseño. Faltaban las dos piezas prestadas de las direcciones B y C que la
+distinguen de A pura: una barra de rango por tarjeta y un sparkline de
+tendencia.
+Decisión: `ProductCard.median_pct` (nueva propiedad, `card_view.py`) — dónde
+cae la mediana dentro del propio [mínimo, máximo] en escala logarítmica,
+mismo criterio que `matrix.build_range_bar` pero autocontenido (la barra
+siempre ocupa el 100% de la tarjeta; no hay fila con la que comparar el
+ancho). Usa el rango de FORMATO cuando hay uno declarado, para que la barra
+describa el mismo número que ya muestra el texto de al lado. `None` con una
+sola observación — la plantilla ya trata ese caso aparte.
+El sparkline reusa la `PriceSeries` que ya arma `series_view.build_series`
+para «Cómo se movió» (`routers/public.py` arma `series_by_card`, un índice
+por celda, cero cómputo nuevo) y la dibuja como puntos sueltos
+(`<circle>`), **nunca una línea que los una**: es la decisión de fondo de
+`series_view.py` (§12.6) — Aceite/La Habana puede tener 3 observaciones en
+30 días, y una línea continua afirmaría veintisiete días de precio que
+nadie observó. El `viewBox` del SVG grande (600×170) se reescala solo al
+tamaño chico de la tarjeta; no hay geometría nueva que calcular, solo un
+`width`/`height` de CSS distintos.
+Las dos piezas son opt-in vía `tablero_extra` en `_product_card_item.html`
+—lo pone `public_dashboard.html` antes del `for`, la ventana flotante
+«Precios» del mapa nunca lo define—, así que siguen siendo una sola
+plantilla de tarjeta, no dos copias.
+Sin color por dirección en ninguna de las dos piezas: §12.6 ya decidió
+(`card_view.py`, docstring del módulo) que el cambio se muestra como
+número, nunca como semáforo. El primer borrador de este slice —hecho con
+las propuestas de diseño iniciales, antes de leer `series_view.py`— tenía
+justo eso: una línea continua entre puntos y color ámbar/verde según
+suba o baje. Se corrigieron los dos antes de escribir una sola línea de
+código real, al confirmar que contradecían decisiones ya tomadas.
+Verificado igual que el slice 1: `TestClient` + SQLite en memoria
+renderizado a archivo, mirado en Chromium headless contra la hoja real.
+Consecuencia: suite completa, 1723 casos (+7), ruff y mypy en el piso.
+
+## 2026-09-16 — Slice 3 del modo Tablero: recordar la vista con cookie, no localStorage
+Contexto: cierre de la Dirección D (tablero de tarjetas) elegida sobre las
+propuestas de diseño. Faltaba recordar la última vista elegida entre
+visitas nuevas a `/`.
+Decisión: cookie `vista` (slice 3), no `localStorage` como el toggle de
+tema. Se le preguntó al operador porque el problema es real y de fondo:
+`localStorage` no lo puede leer el servidor, así que una visita nueva a `/`
+sin `?vista=` en la URL renderizaría igual el mapa completo —Leaflet,
+tiles— y recién después un redirect en el cliente mandaría al tablero. Dos
+cargas, la más pesada primero, exactamente en contra de por qué existe el
+tablero (aliviar la conexión lenta). El operador eligió cookie: el toggle
+la escribe al click (`_vista_cookie_script.html`, cableado por
+`.js-vista-link`/`data-vista`, no por id — mismo criterio que
+`_theme_toggle_script.html`) y `routers/public.py` la lee como fallback
+cuando no hay `?vista=` explícito (`vista_efectiva = vista if vista is not
+None else request.cookies.get("vista")`) — el servidor elige la plantilla
+correcta de entrada, sin redirect.
+`?vista=` explícito en la URL sigue ganando siempre a la cookie: un link
+compartido con `?vista=mapa` tiene que abrir en mapa pase lo que pase. Una
+cookie con basura cae al mapa igual que un `?vista=` con basura —mismo
+`resolve_vista`, ninguna validación nueva.
+Es la primera cookie del proyecto —hasta ahora todo era query string o
+`localStorage`—, y queda documentada como tal en el docstring de
+`public_home()` para que quede claro por qué se rompió el patrón.
+Verificado en dos capas: `TestClient` + cookie seteada a mano para la
+lógica del servidor (query string gana a la cookie, cookie inválida cae al
+mapa), y Chromium headless disparando el evento de clic real sobre el
+enlace del dock para confirmar que `document.cookie` queda en
+`vista=tablero` después.
+Consecuencia: suite completa, 1727 casos (+4), ruff y mypy en el piso.
+Cierra la Dirección D — los tres slices completos.
