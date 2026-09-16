@@ -10186,3 +10186,50 @@ Consecuencia: `design_tokens.css` §Breakpoints y el docstring de
 `TestEscalaResponsive` (que decía "tres cortes" desde antes de esta sesión,
 stale desde que se sacó el de 640px el 2026-09-04) quedan actualizados.
 Suite completa: 1691 casos, sin deuda nueva.
+
+## 2026-09-16 — /curation sin breakpoint de 900px: flex con wrap + container query derivada
+Contexto: después de sacar el 900px de `/docs`, quedaba `/curation`
+(evidencia + formulario). No alcanzaba con pasar de grid a flex: en el mismo
+corte la evidencia pasa de `sticky` (con alto acotado y scroll propio) a
+estática, y ese estado tiene que seguir a cuándo se apilan las columnas —
+apilada y sticky, la evidencia se pega arriba y tapa el formulario. CSS no
+tiene un selector de «este ítem flex bajó de línea».
+Decisión: tres piezas, cada una atada a su causa real.
+(1) `.m3-curation` pasa a flex con wrap; evidencia `flex: 5 1 0` con
+`min-width: min(300px, 100%)`, formulario `flex: 7 1 0` con
+`min(360px, 100%)`. Reproduce el 5:7 del grid (`flex-basis: 0`), y el
+`min(…, 100%)` evita que el formulario desborde un teléfono más angosto que
+su mínimo. El layout decide solo cuándo apilar.
+(2) La evidencia sticky vive dentro de `@container curation (width >= 680px)`
+sobre el propio `.m3-curation`. 680 = 300 + 20 (gap) + 360: es exactamente la
+condición con que flexbox arma las líneas, medida sobre el mismo ancho de
+contenido, así que no es un corte sino un espejo del layout.
+`TestCuraduriaFluida` lo recalcula desde las reglas y el token del gap, y
+exige un test así para cualquier container query nueva. Tres mutantes
+verificados en rojo: mínimo cambiado sin tocar la query, sticky fuera de la
+query, query borrada.
+(3) Dentro de `@media (max-width: 720px)` la evidencia vuelve a estática:
+su `top: 236px` asume la topbar sticky, y ahí la topbar deja de serlo. Es la
+dependencia real de ese número, no de la cantidad de columnas.
+`CORTES` queda en `{720}`.
+Descartado: (a) JS con ResizeObserver comparando el `offsetTop` de los dos
+hijos — sin ningún número, pero suma un script a dos plantillas para algo que
+CSS resuelve, y sin JS la evidencia queda en el estado que se elija por
+defecto. (b) `@container` con un umbral elegido a mano, que es el mismo
+breakpoint escondido donde `TestEscalaResponsive` no mira. (c) El
+`auto-fit` de la home pública: reparte en columnas iguales y perdería el 5:7.
+Verificado con Chromium headless sobre una página de prueba con la
+estructura de `_shell.html` y la hoja vieja contra la nueva, de 400 a 1280px
+de ancho y con alto de 800 y 375 (sin la app ni la base).
+Consecuencia: el cambio de columnas ya no está en 900px de viewport sino en
+680px de contenido (~745px de viewport con el padding de escritorio). Entre
+745 y 900px `/curation` muestra ahora dos columnas con la evidencia sticky
+donde antes apilaba; entre 712 y 720px, dos columnas con la evidencia
+estática. Un teléfono acostado de más de ~745px de ancho (844×390) pasa a
+ver la evidencia en una caja sticky de ~120px de alto al lado del formulario:
+es el mismo bug de alto del cromo fijo (2026-09-02) que el corte de 720 no
+cubre por encima de ese ancho, y lo ataca el slice siguiente, no este. La
+topnav desborda en horizontal en la página de prueba (a 860 y a 400px),
+igual con la hoja vieja; en parte es porque ahí no carga la fuente de
+íconos, y lo que sea real también es del slice siguiente. Suite completa:
+1694 casos (+3), ruff en el piso.

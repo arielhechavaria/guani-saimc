@@ -166,39 +166,45 @@
    otro. Ese test es
    `tests/test_static_assets.py::TestEscalaResponsive`.
 
-   La escala son estos dos cortes, cada uno con un significado propio:
+   Queda un solo corte:
 
        720px  cromo compacto del operador: topnav solo iconos, topbar deja de
               ser sticky, título a 22px, la barra de acciones se reparte
-              la fila.
-       900px  colapsa a una columna lo que `/curation` (formulario +
-              evidencia) todavía no resuelve solo: el panel de evidencia
-              pasa de sticky a estático en el mismo corte, y ese acople es
-              lo que falta romper para sacarlo del todo.
+              la fila, y la evidencia de `/curation` deja de ser sticky (su
+              `top: 236px` da por hecho una topbar sticky).
 
-   Había un tercero, 640px, para la home pública. Se fue el 2026-09-04 al
-   volver fluidas sus tres grillas (`auto-fit` + `minmax`): una grilla que se
-   adapta sola no necesita que nadie le anuncie el ancho. `/docs` (documento +
-   TOC) siguió el mismo camino el 2026-09-16, pero con flexbox en vez de
-   grid: `.doc-toc` pide 240px y cede, `.doc-body` (`flex-grow:999`,
-   `min-width:50%`) se queda con lo que sobra y solo baja de línea cuando ni
-   el 50% entra junto al TOC — sin breakpoint, porque no hay ningún estado
-   (como el sticky/estático de la evidencia) atado a cuándo colapsa.
+   Un corte responsive es la confesión de que el layout no sabe acomodarse.
+   Los que había se fueron sacándoles el trabajo de encima, no
+   renumerándolos:
+
+     · 640px (home pública), 2026-09-04: sus tres grillas pasaron a
+       `auto-fit` + `minmax`.
+     · 900px (`/docs` y `/curation`), 2026-09-16: flexbox con wrap. En
+       `/docs` el TOC pide 240px y cede, y el documento (`flex-grow:999`,
+       `min-width:50%`) se queda con el resto. En `/curation` evidencia y
+       formulario comparten fila 5:7 mientras entren sus mínimos (300 y
+       360px) con el gap, y se apilan cuando no.
+
+   `/curation` tenía un acople extra: la evidencia sticky solo sirve lado a
+   lado — apilada, se pega arriba y tapa el formulario. Lo resuelve una
+   container query sobre el propio `.m3-curation` (`width >= 680px`). Ese
+   número no es un corte: es la condición de wrap de flexbox escrita en
+   píxeles (300 + 20 + 360), y `TestCuraduriaFluida` la recalcula desde las
+   reglas, así que no puede desincronizarse del layout. Toda container query
+   nueva necesita un test así; el mismo archivo lo exige.
 
    Más `@media print` en `docs_view.html`, que no es un ancho.
 
-   Por qué NO son las window size classes de Material (600 / 840), que sería
-   lo esperable habiendo decidido alinear todo bajo Material: los dos números
-   que quedan están atados a layouts que todavía no son fluidos, y moverlos
-   rompe algo ya arreglado. Medido el 2026-09-04:
+   Por qué el 720 NO es el 600 de las window size classes de Material, que
+   sería lo esperable habiendo decidido alinear todo bajo Material: está atado
+   al cromo, que todavía no es fluido. Medido el 2026-09-04:
 
      · 720 → 600 devolvería el bug del 2026-09-02 en el teléfono EN
        HORIZONTAL. Un teléfono acostado mide ~640-844 de ancho por ~360-390
        de alto: con 720 cae en compacto, con 600 no, y vuelve a comerse los
        ~230px de cromo fijo sobre un viewport de 360px de alto.
 
-   El corte de la home pública sí se pudo eliminar, y no renumerándolo sino
-   sacándole el trabajo de encima. `/docs` siguió el mismo camino. Quedan
-   dos: 900 cuando `/curation` resuelva el acople sticky/estático de la
-   evidencia con el colapso de columnas, y 720 cuando la topnav sobreviva a
-   600px con las etiquetas puestas. */
+   Ese bug es de ALTO, no de ancho: 720 es un proxy. Un teléfono acostado de
+   más de 720px (844×390) ya se lo come hoy. Sale cuando la topnav sobreviva
+   a 600px con las etiquetas puestas y el cromo fijo deje de depender del
+   ancho. */
