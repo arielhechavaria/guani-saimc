@@ -10245,3 +10245,29 @@ prefirió cerrar con la comparación ya hecha.
 Consecuencia: sin cambios de código. Vuelve a levantarse si `decisions.md`
 seguís creciendo al ritmo actual (duplicaría otra vez en ~semanas) o si el
 tiempo de parseo se vuelve perceptible en uso real, no simulado.
+
+## 2026-09-16 — openspec/config.yaml actualizado: arrastraba el estado del 2026-08-12
+Contexto: el operador pidió revisar `openspec/config.yaml` por contexto viejo.
+Confirmado por fecha de último commit (5a67f94, 2026-08-12): quedó atrás de
+cuatro cambios reales, todos posteriores.
+Decisión: cuatro correcciones.
+1. `constraints.closed_decisions` no mencionaba los dos apartamientos de WAHA
+   (2026-08-15, CLAUDE.md decisiones 2 y 4): ingesta de WhatsApp automatizada
+   y WAHA en Docker. Se agregaron como excepción a cada decisión, no como
+   decisión nueva.
+2. `quality.linter`/`type_checker` decían `none`; ruff y mypy entraron el
+   2026-09-13 (`24b629c`) con `scripts/lint_drift.py` como ratchet contra
+   `docs/lint-baseline.json`. Corregido a los comandos reales.
+3. `constraints.process` no incluía `docs/checklist-pr.md` (agregado
+   2026-09-13) entre los requisitos para cerrar un slice, y `CLAUDE.md` § Alcance
+   ya lo exige como cuarto punto.
+4. `references` no listaba `docs/checklist-pr.md` ni `docs/lint-baseline.json`.
+Verificado que NO estaba desactualizado: `testing.command: ".venv/bin/pytest"`.
+El comentario de `pyproject.toml` sobre que ese comando "revienta" databa de
+antes de `886f33c` (2026-09-10), que agregó `pythonpath = ["."]` para que
+funcionen los dos. Confirmado corriendo `.venv/bin/pytest` directo: pasa.
+Casi lo "corrijo" por el comentario sin probarlo primero.
+Consecuencia: sin cambios de código, solo `openspec/config.yaml`. YAML
+validado con `yaml.safe_load`. Suite completa: 1694 casos, ruff en el piso;
+los 4 hallazgos nuevos de mypy (`cells.py`, `rapidocr`) son preexistentes y
+ajenos a este archivo.
