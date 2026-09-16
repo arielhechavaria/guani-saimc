@@ -338,6 +338,16 @@ class TestBuildProductChips:
             f"/?productos=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
         )
 
+    def test_con_toggle_true_un_chip_prendido_si_se_apaga(self) -> None:
+        """Tablero (2026-09-16): no hay panel flotante con su propia × ahí,
+        así que `toggle=True` invierte el comportamiento de arriba."""
+        chips = self._chips(["Arroz", "Aceite"], toggle=True)
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Arroz"].query == (
+            f"/?productos=aceite&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        )
+
     def test_preserva_provincia_y_rango_en_el_toggle(self) -> None:
         chips = self._chips(["Arroz"], selected_province="La Habana")
         por_label = {c.label: c for c in chips}
@@ -2548,12 +2558,16 @@ class TestVistaTableroEnLaRuta:
     def test_vista_tablero_respeta_el_filtro_de_producto(
         self, client: TestClient, session: Session
     ) -> None:
+        """Los chips de filtro (2026-09-16) listan TODOS los productos piloto
+        —incluido Aceite, apagado— para poder prenderlos; lo que tiene que
+        respetar el filtro son las tarjetas, no la página entera."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero&productos=arroz").text
+        tarjetas = texto[texto.index('class="ph-dash-section-body"') :]
 
-        assert "Arroz" in texto
-        assert "Aceite" not in texto
+        assert "Arroz" in tarjetas
+        assert "Aceite" not in tarjetas
 
     def test_una_vista_invalida_cae_al_mapa(self, client: TestClient, session: Session) -> None:
         self._seed(session)
@@ -2633,3 +2647,60 @@ class TestVistaTableroEnLaRuta:
 
         assert 'class="ph-dash-section ph-prov-0" id="la-habana"' in sin_filtro
         assert 'class="ph-dash-section ph-prov-1" id="santiago-de-cuba"' in con_filtro
+
+    def test_los_chips_de_filtro_listan_todo_el_catalogo_piloto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Los chips no dependen del filtro activo — listan todos los
+        productos piloto (prendidos o no) para poder togglearlos."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=arroz").text
+        filtros = texto[: texto.index('class="ph-dash-section-body"')]
+
+        assert re.search(r'class="ph-dash-chip is-active"[^>]*>[\s\S]*?Arroz', filtros)
+        assert re.search(r'class="ph-dash-chip"[^>]*>[\s\S]*?Aceite', filtros)
+
+    def test_un_chip_de_producto_activo_se_apaga_al_clickearlo_en_el_tablero(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`toggle=True` en el tablero: a diferencia del riel del mapa, acá
+        el chip prendido SÍ trae un link para apagarse (no hay panel con
+        su propia ×) — la query del chip de Arroz, único producto activo,
+        no debe llevar `productos=` (lista vacía = parámetro ausente)."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=arroz").text
+        filtros = texto[: texto.index('class="ph-dash-section-body"')]
+        chip_arroz = re.search(
+            r'<a class="ph-dash-chip is-active" href="([^"]+)"[^>]*>[\s\S]*?Arroz', filtros
+        )
+
+        assert chip_arroz is not None
+        assert "productos=" not in chip_arroz.group(1)
+
+    def test_los_filtros_siguen_visibles_aunque_no_queden_tarjetas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un filtro que deja cero resultados tiene que poder deshacerse
+        desde la propia vista, no solo editando la URL a mano. Aceite no
+        tiene dato en Santiago (ver `_seed`): la combinación da cero
+        tarjetas."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
+
+        assert "Sin anuncios verificados en esta ventana todavía." in texto
+        assert 'class="ph-dash-filters"' in texto
+        assert 'class="ph-dash-chip is-active"' in texto  # Aceite/Santiago siguen marcados
+
+    def test_el_selector_de_provincia_marca_la_activa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
+        filtros = texto[: texto.index('class="ph-dash-section-body"')]
+
+        assert re.search(r'class="ph-dash-chip is-active"[^>]*>[\s\S]*?Santiago de Cuba', filtros)
+        assert re.search(r'class="ph-dash-chip"[^>]*>[\s\S]*?Todas', filtros)

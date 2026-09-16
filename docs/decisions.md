@@ -10637,3 +10637,33 @@ visibles en el tablero (hoy `product_chips`/`province_nav` están en el
 contexto de la plantilla sin usar). Suite: 1727 casos sin cambios, ruff y
 mypy sin deuda nueva. Verificado con render real + Chromium: fila de varias
 tarjetas y tarjeta única, ambas sin sombra ni borde de color.
+
+## 2026-09-16 — Tablero: filtros de producto y provincia visibles como chips
+Contexto: segundo slice del pedido «en todo momento es importante poder
+aplicar filtros... sobre la tabla y sobre las cards». Antes del tablero
+`product_chips`/`province_nav` ya se calculaban en `_render_home` pero
+`public_dashboard.html` nunca los pintaba — la única forma de filtrar era
+editar la URL a mano.
+Decisión: chips planos (mismo criterio visual que las tarjetas del slice
+anterior: relleno gris, sin sombra) para producto y provincia, arriba de
+todo, ANTES del bloque que decide si hay tarjetas o el aviso de vacío —así
+un filtro que deja cero resultados se puede deshacer desde la propia
+vista. `province_nav` ya traía «Todas» como primera opción, sirve tal
+cual. Para producto hizo falta un cambio real: `build_product_chips`
+tenía el comportamiento «un chip prendido no se apaga solo» (decisión
+2026-09-11, pensada para el riel flotante del mapa, que cierra su panel
+con una × propia) — en el tablero no hay panel, así que un chip prendido
+sin forma de apagarlo sería un filtro sin salida. Se agregó
+`toggle: bool = False` a `build_product_chips` (default preserva el
+comportamiento del mapa sin tocar sus tests) y `routers/public.py` pasa
+`toggle=True` solo cuando `vista == "tablero"`.
+Descartado: un `<select>` de provincia como en el mapa (`.ph-province-form`)
+— ese patrón existe para convivir con el `<form>`/htmx del compás sobre el
+canvas; el tablero es una página de contenido plano, chips de igual
+jerarquía visual que los de producto son más simples y ya cubren el caso
+(`province_nav` es corto, no necesita un desplegable).
+Consecuencia: la búsqueda de texto libre y el modo tabla (mismo pedido)
+siguen pendientes. Suite: 1732 casos (+5), ruff/mypy sin deuda nueva.
+Verificado con render real + Chromium: chips visibles con y sin filtro
+activo, y siguen visibles —con el filtro marcado— cuando el resultado
+queda en cero tarjetas.

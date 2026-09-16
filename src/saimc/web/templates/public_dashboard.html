@@ -76,6 +76,29 @@
     box-shadow: none; background: var(--m3-surface-container); border-radius: var(--ph-radius-sm);
   }
 
+  /* Filtros del tablero (2026-09-16, pedido explícito: "en todo momento
+     es importante poder aplicar filtros... sobre la tabla y sobre las
+     cards"): chips planos, mismo criterio de superficie que la tarjeta de
+     arriba —relleno gris, sin sombra—, activo con el mismo lavado de
+     acento que ya usa `.ph-chip` (estado «muestra en formación»). Viven
+     antes del bloque condicional de las tarjetas, más abajo en este
+     archivo: un filtro que deja la provincia o el producto en cero
+     resultados tiene que seguir mostrando el propio filtro para poder
+     deshacerlo, no solo el aviso de «sin anuncios». `province_nav` ya
+     trae «Todas» como primera opción —undo del filtro de provincia sin
+     un botón aparte—; el de producto es `toggle=True` en
+     `product_nav.build_product_chips` por la misma razón (el riel del
+     mapa no lo necesita: ahí cierra el panel con su propia ×, acá no hay
+     panel). */
+  .ph-dash-filters { display: flex; flex-wrap: wrap; gap: var(--m3-space-2) var(--m3-space-5); margin-bottom: var(--m3-space-5); }
+  .ph-dash-filter-group { display: flex; flex-wrap: wrap; gap: var(--m3-space-2); }
+  .ph-dash-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .4rem .85rem;
+                  border-radius: 100px; background: var(--m3-surface-container); color: var(--m3-on-surface-variant);
+                  font-size: .8125rem; text-decoration: none; }
+  .ph-dash-chip:hover { text-decoration: none; }
+  .ph-dash-chip.is-active { background: var(--ph-accent-wash); color: var(--ph-accent); }
+  .ph-dash-chip-icon { font-size: 1rem; }
+
   @media (max-width: 720px) {
     .ph-dash-top { padding-top: 1.25rem; }
   }
@@ -94,6 +117,28 @@
     <a class="js-vista-link{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
   </div>
 </div>
+
+{% if product_chips or province_nav | length > 1 %}
+<div class="ph-dash-filters" role="group" aria-label="Filtros">
+  {% if product_chips %}
+  <div class="ph-dash-filter-group" aria-label="Productos">
+    {% for chip in product_chips %}
+    <a class="ph-dash-chip{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">
+      {% if chip.icon %}<span class="m3-icon ph-dash-chip-icon" aria-hidden="true">{{ chip.icon }}</span>{% endif %}
+      {{ chip.label }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if province_nav | length > 1 %}
+  <div class="ph-dash-filter-group" aria-label="Provincia">
+    {% for choice in province_nav %}
+    <a class="ph-dash-chip{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" aria-pressed="{{ 'true' if choice.is_selected else 'false' }}">{{ choice.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 {% if cards_by_province %}
 

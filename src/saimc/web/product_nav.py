@@ -499,16 +499,21 @@ def build_product_chips(
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     vista: str = DEFAULT_VISTA,
+    toggle: bool = False,
 ) -> list[ProductChip]:
     """Un chip por producto piloto, en el orden del catálogo.
 
     El conjunto activo (`active_names`) viaja como `?productos=` en el orden en
-    que se fueron prendiendo. Un chip apagado agrega su slug al final al
-    clickearlo; uno ya prendido no hace nada —cerrar su panel es cosa de la ×
-    del panel, no del chip—. `ver`, `capa`, `vista` y el rango de calendario
-    se preservan: prender un producto no cierra las ventanas abiertas, ni
-    cambia la capa del mapa, ni devuelve al mapa a quien eligió el tablero,
-    ni resetea la ventana de fechas.
+    que se fueron prendiendo. Con `toggle=False` (el riel flotante sobre el
+    mapa, el default) un chip apagado agrega su slug al final al clickearlo;
+    uno ya prendido no hace nada —cerrar su panel es cosa de la × del panel,
+    no del chip—. Con `toggle=True` (el tablero, 2026-09-16: no hay panel con
+    su propia × ahí, así que el chip tiene que poder apagarse solo) un chip
+    prendido sí se saca del conjunto al clickearlo. `ver`, `capa`, `vista` y
+    el rango de calendario se preservan en los dos casos: prender o apagar un
+    producto no cierra las ventanas abiertas, ni cambia la capa del mapa, ni
+    devuelve al mapa a quien eligió el tablero, ni resetea la ventana de
+    fechas.
     """
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_names]
@@ -516,11 +521,10 @@ def build_product_chips(
     for name in pilot_names:
         slug = product_slug(name)
         is_active = slug in active_slugs
-        resultado = (
-            active_slugs
-            if is_active
-            else [*active_slugs, slug]
-        )
+        if is_active:
+            resultado = [s for s in active_slugs if s != slug] if toggle else active_slugs
+        else:
+            resultado = [*active_slugs, slug]
         chips.append(
             ProductChip(
                 label=name,

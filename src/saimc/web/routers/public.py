@@ -533,6 +533,9 @@ def _render_home(
                 ver=open_views,
                 capa=selected_layer,
                 vista=selected_vista,
+                # El tablero no tiene panel flotante con su propia × — el
+                # chip tiene que poder apagarse solo (product_nav.py).
+                toggle=selected_vista == "tablero",
             ),
             "product_panels": product_panels,
             "province_nav": build_province_nav(
