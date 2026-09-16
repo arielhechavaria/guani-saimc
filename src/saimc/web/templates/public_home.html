@@ -1151,7 +1151,7 @@
       {# Tablero (2026-09-16): mismas tarjetas de siempre, agrupadas por
          provincia, sin mapa ni Leaflet — quien prefiera no cargar 147 KB de
          mapa más los tiles en vivo tiene una salida desde acá mismo. #}
-      <a class="ph-menu-item" href="{{ tablero_href }}" aria-label="Ver como tablero de tarjetas"><span class="ph-menu-icon"><span class="m3-icon">dashboard</span></span><span class="ph-menu-label">Tablero</span></a>
+      <a class="ph-menu-item js-vista-link" data-vista="tablero" href="{{ tablero_href }}" aria-label="Ver como tablero de tarjetas"><span class="ph-menu-icon"><span class="m3-icon">dashboard</span></span><span class="ph-menu-label">Tablero</span></a>
       <div class="ph-menu-divider"></div>
       {# Zoom del mapa (2026-09-13): Leaflet ya no dibuja el suyo
          (`zoomControl: false` en `inicializarMapa()`) — chocaba con el

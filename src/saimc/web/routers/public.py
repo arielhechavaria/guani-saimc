@@ -595,7 +595,18 @@ def public_home(
     2026-09-14; `dias` sigue aceptándose como alias de compatibilidad —ver
     `resolve_window`—), `ver` (ventanas flotantes abiertas), `capa`
     (capa del mapa) y `vista` (mapa/tablero, 2026-09-16) son query string
-    opcional; un valor raro no da 404, se muestra todo."""
+    opcional; un valor raro no da 404, se muestra todo.
+
+    `?vista=` explícito manda siempre —un link compartido con `?vista=tablero`
+    tiene que abrir en tablero pase lo que pase—; sin él, cae a la cookie
+    `vista` (slice 3, 2026-09-16), que el toggle escribe al click. Es cookie y
+    no `localStorage` a propósito: `localStorage` no lo puede leer el
+    servidor, así que una visita nueva a esta ruta renderizaría el mapa
+    completo —Leaflet, tiles— y recién después un redirect en el cliente
+    mandaría al tablero. Dos cargas, la más pesada primero, exactamente en
+    contra de por qué existe el tablero (aliviar la conexión lenta). La
+    cookie deja que el servidor elija la plantilla correcta de entrada."""
+    vista_efectiva = vista if vista is not None else request.cookies.get("vista")
     return _render_home(
         request,
         db,
@@ -607,7 +618,7 @@ def public_home(
         dias=dias,
         ver=ver,
         capa=capa,
-        vista=vista,
+        vista=vista_efectiva,
     )
 
 

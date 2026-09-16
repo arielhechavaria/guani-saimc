@@ -1,0 +1,30 @@
+{#
+  Guarda en una cookie (no `localStorage`, ver el motivo en el docstring de
+  `routers.public.public_home`) la última vista elegida entre mapa y
+  tablero, para que la próxima visita a `/` sin `?vista=` explícito arranque
+  ahí — el servidor la lee, no hace falta redirect ni JS para que decida qué
+  plantilla mandar.
+
+  `.js-vista-link data-vista="mapa|tablero"` marca cada enlace: el del
+  tablero en el dock del compás (`public_home.html`) y los dos del
+  segmentado Mapa/Tablero (`public_dashboard.html`). No cancela la
+  navegación —el enlace sigue siendo un `<a href>` normal, funciona igual
+  sin JS—, solo escribe la cookie antes de que el navegador siga el link.
+
+  Va en `_public_shell.html`, no en cada plantilla: las dos la extienden.
+#}
+<script>
+  (function () {
+    var enlaces = document.querySelectorAll(".js-vista-link");
+    Array.prototype.forEach.call(enlaces, function (enlace) {
+      enlace.addEventListener("click", function () {
+        var destino = enlace.dataset.vista;
+        try {
+          document.cookie = "vista=" + destino + ";path=/;max-age=31536000;samesite=lax";
+        } catch (e) {
+          /* sin cookies (privado/bloqueado): el enlace igual navega, solo no queda recordado */
+        }
+      });
+    });
+  })();
+</script>

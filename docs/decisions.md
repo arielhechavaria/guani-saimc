@@ -10491,3 +10491,35 @@ código real, al confirmar que contradecían decisiones ya tomadas.
 Verificado igual que el slice 1: `TestClient` + SQLite en memoria
 renderizado a archivo, mirado en Chromium headless contra la hoja real.
 Consecuencia: suite completa, 1723 casos (+7), ruff y mypy en el piso.
+
+## 2026-09-16 — Slice 3 del modo Tablero: recordar la vista con cookie, no localStorage
+Contexto: cierre de la Dirección D (tablero de tarjetas) elegida sobre las
+propuestas de diseño. Faltaba recordar la última vista elegida entre
+visitas nuevas a `/`.
+Decisión: cookie `vista` (slice 3), no `localStorage` como el toggle de
+tema. Se le preguntó al operador porque el problema es real y de fondo:
+`localStorage` no lo puede leer el servidor, así que una visita nueva a `/`
+sin `?vista=` en la URL renderizaría igual el mapa completo —Leaflet,
+tiles— y recién después un redirect en el cliente mandaría al tablero. Dos
+cargas, la más pesada primero, exactamente en contra de por qué existe el
+tablero (aliviar la conexión lenta). El operador eligió cookie: el toggle
+la escribe al click (`_vista_cookie_script.html`, cableado por
+`.js-vista-link`/`data-vista`, no por id — mismo criterio que
+`_theme_toggle_script.html`) y `routers/public.py` la lee como fallback
+cuando no hay `?vista=` explícito (`vista_efectiva = vista if vista is not
+None else request.cookies.get("vista")`) — el servidor elige la plantilla
+correcta de entrada, sin redirect.
+`?vista=` explícito en la URL sigue ganando siempre a la cookie: un link
+compartido con `?vista=mapa` tiene que abrir en mapa pase lo que pase. Una
+cookie con basura cae al mapa igual que un `?vista=` con basura —mismo
+`resolve_vista`, ninguna validación nueva.
+Es la primera cookie del proyecto —hasta ahora todo era query string o
+`localStorage`—, y queda documentada como tal en el docstring de
+`public_home()` para que quede claro por qué se rompió el patrón.
+Verificado en dos capas: `TestClient` + cookie seteada a mano para la
+lógica del servidor (query string gana a la cookie, cookie inválida cae al
+mapa), y Chromium headless disparando el evento de clic real sobre el
+enlace del dock para confirmar que `document.cookie` queda en
+`vista=tablero` después.
+Consecuencia: suite completa, 1727 casos (+4), ruff y mypy en el piso.
+Cierra la Dirección D — los tres slices completos.

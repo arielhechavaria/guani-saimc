@@ -2541,6 +2541,56 @@ class TestVistaTableroEnLaRuta:
         assert "ph-card-bar-track" not in texto
         assert "ph-card-spark" not in texto
 
+    def test_la_cookie_vista_decide_sin_query_string(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Slice 3: sin `?vista=` en la URL, la cookie manda — el servidor
+        elige la plantilla de entrada, sin redirect en el cliente."""
+        self._seed(session)
+        client.cookies.set("vista", "tablero")
+
+        texto = client.get("/").text
+
+        assert 'id="ph-leaflet-map"' not in texto
+        assert "ph-dash-section" in texto
+
+    def test_el_query_string_explicito_gana_a_la_cookie(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un link compartido con `?vista=mapa` tiene que abrir en mapa pase
+        lo que pase, aunque la cookie diga tablero."""
+        self._seed(session)
+        client.cookies.set("vista", "tablero")
+
+        texto = client.get("/?vista=mapa").text
+
+        assert 'id="ph-leaflet-map"' in texto
+
+    def test_una_cookie_invalida_cae_al_mapa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+        client.cookies.set("vista", "satelite")
+
+        texto = client.get("/").text
+
+        assert 'id="ph-leaflet-map"' in texto
+
+    def test_los_enlaces_del_toggle_llevan_la_clase_y_el_dato_para_la_cookie(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`_vista_cookie_script.html` cablea por `.js-vista-link` +
+        `data-vista`, no por id — tiene que estar en los dos enlaces del
+        tablero y en el del dock del mapa."""
+        self._seed(session)
+
+        tablero = client.get("/?vista=tablero").text
+        assert re.search(r'class="js-vista-link[^"]*" data-vista="mapa"', tablero)
+        assert re.search(r'class="js-vista-link[^"]*" data-vista="tablero"', tablero)
+
+        mapa = client.get("/").text
+        assert re.search(r'class="ph-menu-item js-vista-link" data-vista="tablero"', mapa)
+
     def test_vista_tablero_respeta_el_filtro_de_producto(
         self, client: TestClient, session: Session
     ) -> None:

@@ -50,8 +50,8 @@
     <p class="ph-dash-subtitle">Anuncios verificados a mano, agrupados por producto y provincia, en los últimos {{ window_days }} días.</p>
   </div>
   <div class="ph-vista-toggle" role="group" aria-label="Presentación">
-    <a href="{{ mapa_href }}"{% if vista == "mapa" %} class="is-selected" aria-current="true"{% endif %}>Mapa</a>
-    <a href="{{ tablero_href }}"{% if vista == "tablero" %} class="is-selected" aria-current="true"{% endif %}>Tablero</a>
+    <a class="js-vista-link{% if vista == "mapa" %} is-selected{% endif %}" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}>Mapa</a>
+    <a class="js-vista-link{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
   </div>
 </div>
 
