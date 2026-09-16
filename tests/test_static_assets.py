@@ -503,14 +503,14 @@ class TestTokensMaterial:
 
 
 class TestEscalaResponsive:
-    """Los cortes responsive son tres, y nadie inventa un cuarto.
+    """Los cortes responsive son dos, y nadie inventa un tercero.
 
     `@media (max-width: var(--x))` no existe en CSS: las media queries se
     evalúan antes de que las custom properties tengan valor, así que la escala
     no puede vivir en `design_tokens.css` como token. Vive documentada ahí y se
     hace cumplir desde acá.
 
-    Los tres números están atados a un layout concreto, no a las window size
+    Los dos números están atados a un layout concreto, no a las window size
     classes de Material (600/840). El porqué —y qué habría que arreglar para
     converger— está en el bloque «Breakpoints» de `design_tokens.css`.
     """

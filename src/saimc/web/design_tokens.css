@@ -171,14 +171,19 @@
        720px  cromo compacto del operador: topnav solo iconos, topbar deja de
               ser sticky, título a 22px, la barra de acciones se reparte
               la fila.
-       900px  layouts de dos columnas a una: `/curation` (formulario +
-              evidencia) y `/docs` (documento + TOC).
+       900px  colapsa a una columna lo que `/curation` (formulario +
+              evidencia) todavía no resuelve solo: el panel de evidencia
+              pasa de sticky a estático en el mismo corte, y ese acople es
+              lo que falta romper para sacarlo del todo.
 
    Había un tercero, 640px, para la home pública. Se fue el 2026-09-04 al
    volver fluidas sus tres grillas (`auto-fit` + `minmax`): una grilla que se
-   adapta sola no necesita que nadie le anuncie el ancho. Es el camino para
-   los otros dos también — un corte responsive es la confesión de que el
-   layout no sabe acomodarse.
+   adapta sola no necesita que nadie le anuncie el ancho. `/docs` (documento +
+   TOC) siguió el mismo camino el 2026-09-16, pero con flexbox en vez de
+   grid: `.doc-toc` pide 240px y cede, `.doc-body` (`flex-grow:999`,
+   `min-width:50%`) se queda con lo que sobra y solo baja de línea cuando ni
+   el 50% entra junto al TOC — sin breakpoint, porque no hay ningún estado
+   (como el sticky/estático de la evidencia) atado a cuándo colapsa.
 
    Más `@media print` en `docs_view.html`, que no es un ancho.
 
@@ -193,6 +198,7 @@
        ~230px de cromo fijo sobre un viewport de 360px de alto.
 
    El corte de la home pública sí se pudo eliminar, y no renumerándolo sino
-   sacándole el trabajo de encima. Los dos que quedan salen igual: 900 cuando
-   `/curation` y `/docs` acomoden sus dos columnas solas, y 720 cuando la
-   topnav sobreviva a 600px con las etiquetas puestas. */
+   sacándole el trabajo de encima. `/docs` siguió el mismo camino. Quedan
+   dos: 900 cuando `/curation` resuelva el acople sticky/estático de la
+   evidencia con el colapso de columnas, y 720 cuando la topnav sobreviva a
+   600px con las etiquetas puestas. */
