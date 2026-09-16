@@ -1210,6 +1210,14 @@
          descarga. #}
       <div class="ph-menu-divider"></div>
       <button type="button" class="ph-menu-item ph-legend-toggle" aria-pressed="false" aria-label="Mostrar la leyenda del mapa"><span class="ph-menu-icon"><span class="m3-icon">layers</span></span><span class="ph-menu-label">Leyenda</span></button>
+      {# `.m3-public-top` (con el toggle del shell) queda `display:none` en
+         esta vista — ver el comentario junto a esa regla, más arriba. Sin
+         este segundo botón el visitante de `/` no tendría forma de cambiar
+         de tema. Comparte `.theme-toggle` con el del shell:
+         `_theme_toggle_script.html` cablea los dos por clase, no por id, y
+         los mantiene sincronizados si alguna vez conviven los dos visibles. #}
+      <div class="ph-menu-divider"></div>
+      <button type="button" class="ph-menu-item theme-toggle" aria-pressed="false" aria-label="Cambiar a modo oscuro"><span class="ph-menu-icon"><span class="m3-icon theme-toggle-icon-dark" aria-hidden="true">dark_mode</span><span class="m3-icon theme-toggle-icon-light" aria-hidden="true">light_mode</span></span><span class="ph-menu-label">Modo oscuro</span></button>
     </nav>
   </div>
 

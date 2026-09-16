@@ -256,12 +256,25 @@ class TestControlPanel:
     def test_el_colapso_no_trae_javascript(
         self, client: TestClient, session: Session
     ) -> None:
-        """`<details>` nativo: nada que descargar con la conexión caída."""
+        """`<details>` nativo: el colapso no necesita nada propio.
+
+        Hasta el modo oscuro (2026-09-16) `/control` no traía NINGÚN
+        `<script>`, así que alcanzaba con `"<script" not in texto`. El
+        shell del operador ahora siempre trae el suyo —compartido,
+        page-agnóstico, `_theme_toggle_head.html`/`_theme_toggle_script.html`—,
+        así que la prueba se vuelve más específica en vez de desaparecer:
+        cualquier `<script>` que aparezca tiene que ser el del tema, nunca
+        uno propio del colapso.
+        """
         self._cargar_dos_productos(session)
 
         texto = client.get("/control").text
 
-        assert "<script" not in texto
+        scripts = re.findall(r"<script[^>]*>(.*?)</script>", texto, re.DOTALL)
+        assert scripts, "el shell siempre trae el script del tema"
+        assert all("guani:theme" in s for s in scripts), (
+            "un script fuera del toggle de tema volvió a aparecer en /control"
+        )
 
     def _cargar_dos_productos(self, session: Session) -> None:
         azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[], is_pilot=True)
