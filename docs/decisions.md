@@ -10215,3 +10215,33 @@ topnav desborda en horizontal en la página de prueba (a 860 y a 400px),
 igual con la hoja vieja; en parte es porque ahí no carga la fuente de
 íconos, y lo que sea real también es del slice siguiente. Suite completa:
 1694 casos (+3), ruff en el piso.
+
+## 2026-09-16 — Re-evaluado /docs (markdown en el cliente, sin dependencia Python): sigue igual
+Contexto: el operador pidió reevaluar la decisión del 2026-08-30 —renderizar
+markdown con `marked` en el navegador en vez de `pip install markdown` en el
+servidor— para ver si el estado del proyecto la había vuelto obsoleta.
+Comparado punto por punto: (1) dependencias Python, 11 en `pyproject.toml`
+tanto el 2026-08-30 como hoy, ni una nueva — el argumento de no sumar una no
+se debilitó. (2) Bytes por la red: medido con `markdown` (Python) sobre
+`decisions.md`, `pitch-v3.5.md` y `spec.md` — el HTML comprimido con gzip pesa
+prácticamente lo mismo que el markdown crudo comprimido (+6,6 KB en el peor
+caso sobre 231 KB); server-side no ahorra transferencia, nunca fue un
+argumento real. (3) La regla de degradación sin JS del 2026-08-22 sigue sin
+cumplirse ahí, igual que en agosto. Lo único que cambió: `decisions.md` casi
+se duplicó (5.326→10.217 líneas, 315→638 KB) en dos semanas y media, sin poda
+posible por ser de anexado. Medido en Chromium real con `Emulation.setCPUThrottlingRate`:
+parsear y renderizar `decisions.md` con `marked` tarda 289ms en CPU nativa y
+1,49s simulando un celular gama media (6×) — nada catastrófico, pero ya en la
+zona donde un dispositivo débil lo nota, sobre el documento que "más se
+consulta hacia atrás" según su propio catálogo.
+Decisión: no se migra. El costo medido no justifica el cambio todavía, y los
+dos argumentos originales (dependencia, bytes) siguen intactos o nunca
+aplicaron. Queda una razón a favor de migrar que la decisión original no
+consideró —anclas por sección estables y citables, hoy reconstruidas por JS
+en cada carga— pero no alcanza sola.
+Descartado: migrar ahora a render server-side. Medir el tamaño de archivo en
+que el parseo se vuelve un problema real, antes de decidir: el operador
+prefirió cerrar con la comparación ya hecha.
+Consecuencia: sin cambios de código. Vuelve a levantarse si `decisions.md`
+seguís creciendo al ritmo actual (duplicaría otra vez en ~semanas) o si el
+tiempo de parseo se vuelve perceptible en uso real, no simulado.
