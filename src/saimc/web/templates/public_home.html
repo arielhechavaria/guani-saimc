@@ -2696,6 +2696,14 @@
   });
   document.addEventListener("htmx:afterSettle", pintarTodas);
   document.addEventListener("htmx:afterSettle", inicializarMapa);
+  // Modo oscuro (2026-09-16, `_theme_toggle_script.html`): los polígonos de
+  // provincia los pinta `estiloDeProvincia()` con `tokenCSS()` —lee el color
+  // UNA vez y se lo pasa a Leaflet como hex literal, no como `var(--x)`—,
+  // así que un cambio de tema no los toca solo. Reusa el mismo camino que
+  // ya repinta el mapa en cada swap de htmx: recrea todo, no parchea colores
+  // sueltos, y la geometría sigue cacheada (`window.__cubaGeoJSON`) así que
+  // no sale a la red de nuevo.
+  document.addEventListener("guani:tema-cambiado", inicializarMapa);
   window.addEventListener("resize", pintarTodas);
   if (angosto.addEventListener) angosto.addEventListener("change", pintarTodas);
   pintarTodas();

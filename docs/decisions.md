@@ -10369,3 +10369,24 @@ Consecuencia: suite completa, 1704 casos (+10), ruff en el piso. La fuente
 de íconos subsetted crece de 49 a 51 nombres (`dark_mode` y `light_mode`,
 ninguno de los dos usado antes de este slice). `docs/lint-baseline.json` sin
 cambios.
+
+## 2026-09-16 — Fix: los polígonos del mapa no seguían al toggle de tema
+Contexto: el operador probó el modo oscuro y preguntó si era normal que "el
+mapa como tal" no cambiara. Investigando: `estiloDeProvincia()` en
+`public_home.html` pinta cada polígono con `tokenCSS()`
+(`getComputedStyle(...).getPropertyValue(...)`), que lee el color UNA vez y
+se lo pasa a Leaflet como hex literal — a diferencia del resto del sistema,
+que cita `var(--m3-x)` directo en CSS y el navegador re-evalúa solo. Nada
+disparaba un repintado al tocar el toggle, así que los polígonos quedaban
+con el color de cuando cargó la página.
+Decisión: `_theme_toggle_script.html` dispara `guani:tema-cambiado`
+(evento de `document`, no llamada directa: el script compartido no sabe si
+`inicializarMapa` existe en la página) después de aplicar el tema nuevo, y
+`public_home.html` lo escucha igual que ya escucha `htmx:afterSettle` para
+repintar el mapa en cada swap. Mismo camino, no uno nuevo: recrea todo el
+mapa, y la geometría sigue cacheada (`window.__cubaGeoJSON`) así que no
+sale a la red de nuevo.
+Consecuencia: cubre las cinco citas de `tokenCSS()` del archivo (son las
+únicas en toda la capa de plantillas — `grep -rl getComputedStyle
+templates/` no encuentra otra). Suite completa: 1704 casos, sin deuda
+nueva.
