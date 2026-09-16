@@ -10667,3 +10667,53 @@ siguen pendientes. Suite: 1732 casos (+5), ruff/mypy sin deuda nueva.
 Verificado con render real + Chromium: chips visibles con y sin filtro
 activo, y siguen visibles —con el filtro marcado— cuando el resultado
 queda en cero tarjetas.
+
+## 2026-09-16 — Tablero: búsqueda instantánea de texto libre
+Contexto: tercer y último slice del pedido «en todo momento poder aplicar
+filtros, búsquedas sobre la tabla y sobre las cards». El operador ya había
+elegido búsqueda instantánea del lado del cliente (JS) frente a la
+alternativa por formulario/recarga, cuando se le preguntó explícitamente.
+Decisión: mismo patrón que ya usa `/docs` (`docs_index.html`,
+`data-buscar` + `hidden` + grupo sin coincidencias se esconde): cada
+`<li class="ph-card">` trae `data-buscar="producto provincia"` en
+minúscula (`_product_card_item.html`, así que también sale con la
+tarjeta de la ventana flotante «Precios», sin uso ahí). Una caja de texto
+(`.ph-input`, nueva en `saimc-public.css` — ver más abajo) filtra sobre
+eso. Con texto en la caja: una provincia sin ninguna coincidencia esconde
+su `<details>` entero Y su entrada en el índice de salto; la que sí tiene
+alguna, se fuerza a abierta (buscar y no ver el resultado por un
+acordeón cerrado sería peor que no ofrecer la búsqueda). Al vaciar la
+caja, cada sección vuelve exactamente al estado con el que llegó del
+servidor (capturado una vez al cargar la página vía `dataset.eraAbierta`),
+no a «todo abierto».
+Dos bugs encontrados y corregidos ANTES de cerrar el slice, los dos por
+verificación con render real + Chromium, ninguno por los tests (que no
+ejecutan JS):
+1. **`.ph-dash-jump a[hidden]` no escondía nada**: `.ph-dash-jump a {
+   display: inline-flex; ... }`, una regla de esta misma plantilla, tiene
+   más especificidad que el `[hidden] { display: none }` que trae el
+   navegador por default, así que ganaba y el chip del índice de salto
+   quedaba visible aunque JS le pusiera `hidden = true`. Se agregó
+   `.ph-dash-jump a[hidden] { display: none; }` explícito.
+2. **`.m3-input` no existe en la hoja pública**: vive solo en
+   `saimc-material.css` (la del operador) y copiarla tal cual traía su
+   anillo de foco en `--m3-primary` (teal), pisando la separación de
+   acento ya decidida el 2026-09-04 (`--ph-accent`, azul, para toda esta
+   hoja). Se creó `.ph-input` en `saimc-public.css` en vez de reusar o
+   duplicar la del operador. De paso, `.visually-hidden` —que el `<label>`
+   del buscador necesita y que `docs_index.html` ya usaba sin que
+   existiera en ninguna hoja, un bug preexistente y ajeno a este slice,
+   no tocado— se agregó a `saimc-public.css` (no a la del operador, fuera
+   de alcance).
+Descartado: mismo criterio que el resto del tablero — nada de mostrar el
+texto buscado en un semáforo de color, y la búsqueda nunca toca lo que se
+manda al servidor (§9.0/§12.6 no aplican acá, pero la disciplina de «un
+solo criterio de verdad, sin JS decidiendo cifras» se mantiene igual).
+Consecuencia: cierra el pedido de agrupación + minimalismo + filtros +
+búsqueda del tablero. El modo de presentación tabla (mismo pedido
+original, «también posibilidad de cambiar a tabla») queda para otra
+sesión — no se abrió en este slice. Suite: 1735 casos (+3 sobre el slice
+anterior), ruff y mypy sin deuda nueva. Verificado con render real +
+Chromium: búsqueda que cae en una sola provincia, búsqueda sin
+coincidencias, y vaciar la caja para confirmar que el estado vuelve
+exacto al original.

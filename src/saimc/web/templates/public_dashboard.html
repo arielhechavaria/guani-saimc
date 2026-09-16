@@ -43,6 +43,11 @@
                     border-radius: 100px; background: var(--m3-surface); box-shadow: var(--m3-elev-1);
                     font-size: .78rem; color: var(--m3-on-surface); text-decoration: none; }
   .ph-dash-jump a:hover { text-decoration: none; box-shadow: var(--m3-elev-2); }
+  /* La búsqueda (más abajo) esconde un chip de salto poniéndole el
+     atributo `hidden` — el `display: inline-flex` de arriba tiene más
+     especificidad que el `[hidden] { display: none }` del navegador y lo
+     ganaría si no se repite acá explícito. */
+  .ph-dash-jump a[hidden] { display: none; }
   .ph-dash-jump .n { opacity: .55; font-size: .72rem; }
   .ph-dash-dot { width: .6rem; height: .6rem; border-radius: 50%; flex: none; background: var(--prov); }
 
@@ -99,6 +104,15 @@
   .ph-dash-chip.is-active { background: var(--ph-accent-wash); color: var(--ph-accent); }
   .ph-dash-chip-icon { font-size: 1rem; }
 
+  /* Búsqueda instantánea (2026-09-16, mismo pedido: "en todo momento
+     poder aplicar... búsquedas sobre... las cards"): del lado del
+     cliente, mismo patrón que ya usa `/docs` (`docs_index.html`) — sobre
+     tarjetas ya renderizadas, sin ida y vuelta al servidor. Sin JS la
+     caja no hace nada y el tablero completo sigue visible, la
+     degradación correcta. `.ph-input` (saimc-public.css), no `.m3-input`
+     —esa es de la hoja del operador—. */
+  .ph-dash-search { margin-bottom: var(--m3-space-5); max-width: 420px; }
+
   @media (max-width: 720px) {
     .ph-dash-top { padding-top: 1.25rem; }
   }
@@ -117,6 +131,14 @@
     <a class="js-vista-link{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
   </div>
 </div>
+
+{% if cards_by_province %}
+<div class="ph-dash-search">
+  <label class="visually-hidden" for="tablero-q">Buscar producto o provincia</label>
+  <input id="tablero-q" class="ph-input" type="search"
+         placeholder="Buscar producto o provincia…" autocomplete="off" />
+</div>
+{% endif %}
 
 {% if product_chips or province_nav | length > 1 %}
 <div class="ph-dash-filters" role="group" aria-label="Filtros">
@@ -176,7 +198,9 @@
 </details>
 {% endfor %}
 
-<p class="ph-note" style="margin-top: var(--m3-space-8);">
+<p class="ph-note" id="tablero-none" hidden>Ningún producto ni provincia coincide con la búsqueda.</p>
+
+<p class="ph-note" id="tablero-nota-formacion" style="margin-top: var(--m3-space-8);">
   Todas las celdas están en <strong>muestra en formación</strong>: todavía no hay
   suficientes anuncios para dar un precio como cifra cerrada, así que se publica
   el rango observado y cuántos anuncios lo respaldan. Ninguna cifra es una
@@ -185,4 +209,55 @@
 {% else %}
 <p class="ph-note" style="margin-top: var(--m3-space-6);">Sin anuncios verificados en esta ventana todavía.</p>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Filtro instantáneo sobre las tarjetas ya renderizadas — mismo patrón
+  // que ya usa /docs (docs_index.html): del lado del cliente, sin ida y
+  // vuelta al servidor. Sin JS la caja no hace nada y el tablero completo
+  // sigue visible, la degradación correcta.
+  (function () {
+    var caja = document.getElementById("tablero-q");
+    if (!caja) return;
+    var vacio = document.getElementById("tablero-none");
+    var notaFormacion = document.getElementById("tablero-nota-formacion");
+    var tarjetas = Array.prototype.slice.call(document.querySelectorAll("[data-buscar]"));
+    var secciones = Array.prototype.slice.call(document.querySelectorAll(".ph-dash-section"));
+    var saltos = Array.prototype.slice.call(document.querySelectorAll(".ph-dash-jump a"));
+    // Estado con el que cada sección llegó del servidor (la primera, o la
+    // única con un filtro de provincia activo) — se restaura al vaciar la
+    // caja, en vez de dejar todo forzado a abierto para siempre.
+    secciones.forEach(function (sec) { sec.dataset.eraAbierta = sec.open ? "1" : "0"; });
+
+    caja.addEventListener("input", function () {
+      var q = caja.value.trim().toLowerCase();
+      var visibles = 0;
+      tarjetas.forEach(function (tarjeta) {
+        var coincide = !q || tarjeta.dataset.buscar.indexOf(q) !== -1;
+        tarjeta.hidden = !coincide;
+        if (coincide) visibles++;
+      });
+      // Una provincia sin coincidencias esconde también su sección; la que
+      // sí tiene, se abre sola —buscar y no ver el resultado por un
+      // acordeón cerrado sería peor que no ofrecer la búsqueda—. Sin
+      // texto en la caja, cada sección vuelve a como llegó del servidor.
+      secciones.forEach(function (sec) {
+        var algunaVisible = Array.prototype.slice
+          .call(sec.querySelectorAll("[data-buscar]"))
+          .some(function (t) { return !t.hidden; });
+        sec.hidden = !!q && !algunaVisible;
+        sec.open = q ? algunaVisible : sec.dataset.eraAbierta === "1";
+      });
+      saltos.forEach(function (salto) {
+        var seccion = document.getElementById(salto.getAttribute("href").slice(1));
+        salto.hidden = !!q && !!seccion && seccion.hidden;
+      });
+      vacio.hidden = visibles !== 0;
+      // Hablar de «todas las celdas» cuando la búsqueda no dejó ninguna a
+      // la vista sería confuso — se esconde junto con el mismo criterio.
+      if (notaFormacion) notaFormacion.hidden = !!q && visibles === 0;
+    });
+  })();
+</script>
 {% endblock %}

@@ -2704,3 +2704,40 @@ class TestVistaTableroEnLaRuta:
 
         assert re.search(r'class="ph-dash-chip is-active"[^>]*>[\s\S]*?Santiago de Cuba', filtros)
         assert re.search(r'class="ph-dash-chip"[^>]*>[\s\S]*?Todas', filtros)
+
+    def test_la_caja_de_busqueda_aparece_solo_si_hay_tarjetas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        con_tarjetas = client.get("/?vista=tablero").text
+        assert 'id="tablero-q"' in con_tarjetas
+
+        sin_tarjetas = client.get("/?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
+        assert 'id="tablero-q"' not in sin_tarjetas
+
+    def test_cada_tarjeta_trae_su_texto_buscable_en_minuscula(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`data-buscar` combina producto + provincia — mismo patrón que ya
+        usa `/docs` — para que la caja de búsqueda filtre por cualquiera de
+        los dos sin abrir el `<details>` a mano."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'data-buscar="arroz la habana"' in texto
+        assert 'data-buscar="aceite la habana"' in texto
+        assert 'data-buscar="arroz santiago de cuba"' in texto
+
+    def test_la_ventana_precios_del_mapa_tambien_trae_data_buscar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`_product_card_item.html` es una sola plantilla para las dos
+        vistas — el atributo sale con la tarjeta aunque el mapa no tenga
+        ninguna caja de búsqueda que lo use."""
+        self._seed(session)
+
+        texto = client.get("/?ver=precios").text
+
+        assert "data-buscar=" in texto

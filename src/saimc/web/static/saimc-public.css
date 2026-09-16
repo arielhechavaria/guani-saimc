@@ -300,6 +300,26 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
 .ph-note { margin: 0; font-size: .8125rem; line-height: 1.6;
            color: var(--m3-on-surface-variant); text-wrap: pretty; }
 
+/* Campo de texto de la capa pública (2026-09-16, caja de búsqueda del
+   tablero): NO reusa `.m3-input` —esa vive solo en saimc-material.css, la
+   hoja del operador— y copiarla tal cual traería su anillo de foco en
+   `--m3-primary` (teal), rompiendo la separación de acento ya decidida
+   más arriba en este archivo (`--ph-accent`, azul, es el de esta hoja). */
+.ph-input { width: 100%; padding: var(--m3-space-3) var(--m3-space-4);
+            font: 400 15px var(--m3-font); color: var(--m3-on-surface);
+            background: var(--m3-surface);
+            border: 1px solid var(--m3-outline); border-radius: var(--m3-radius-xs); }
+.ph-input:hover { border-color: var(--m3-on-surface); }
+.ph-input:focus { border-color: var(--ph-accent); border-width: 2px; padding: 11px 15px; outline: none; }
+
+/* Oculta visualmente sin sacar del árbol de accesibilidad —un `<label>`
+   que ya dice lo mismo que el `placeholder` del campo, por ejemplo—.
+   Mismo nombre que ya usa `docs_index.html`, pero esa plantilla vive en
+   `saimc-material.css` y esta clase faltaba ahí también: se agrega acá
+   porque es lo que este slice necesita, no se toca la hoja del operador. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+                   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 .ph-surface { border-radius: var(--ph-radius-sm); background: var(--m3-surface);
               box-shadow: var(--ph-elev); }
 
