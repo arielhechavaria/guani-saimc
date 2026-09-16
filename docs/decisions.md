@@ -10611,3 +10611,29 @@ Suite: 1727 casos (los 7 de la tarjeta enriquecida se quitan, ninguno
 nuevo), ruff y mypy sin deuda nueva. Verificado con el mismo render real ya
 usado para la agrupación: la tarjeta vuelve a mostrar solo rango, mediana y
 muestra, sin barra ni sparkline.
+
+## 2026-09-16 — Tablero: tarjetas planas, sin sombra ni borde de color
+Contexto: el operador pidió que las tarjetas del Tablero fueran «más
+minimalistas» en el diseño (no en el contenido) — «nada de elevations ni
+border color» — como parte de un pedido más amplio (ver consecuencia).
+Decisión: dentro de `.ph-dash-section` (el tablero, no la ventana flotante
+«Precios» del mapa, que sigue con `.ph-surface` normal) las tarjetas pierden
+`box-shadow` y el borde de color por provincia (`.ph-dash-section .ph-card`
+ya no lleva `border-left: 3px solid var(--prov)`). La separación visual sin
+sombra ni borde pasa a ser un relleno plano (`--m3-surface-container`,
+el mismo gris ya usado en el toggle Mapa/Tablero) contra el blanco del
+`<details>` contenedor. Primer intento fue un divisor `border-bottom` entre
+tarjetas — descartado al verificar con render real: la grilla es
+multi-columna (auto-fit), así que dos tarjetas en la misma fila quedan con
+bordes inferiores disparejos según su posición, no según si son la última
+de la lista.
+Descartado: quitarle la sombra también al `<details>` contenedor de cada
+provincia — el pedido fue sobre «las tarjetas», no sobre la sección que las
+agrupa; esa sigue funcionando como unidad plegable con su propia superficie.
+Consecuencia: primer slice de un pedido más grande («la vista tablero...
+posibilidad de cambiar a tabla... filtros y búsquedas en todo momento sobre
+tabla y tarjetas») — quedan pendientes el modo tabla y los filtros/búsqueda
+visibles en el tablero (hoy `product_chips`/`province_nav` están en el
+contexto de la plantilla sin usar). Suite: 1727 casos sin cambios, ruff y
+mypy sin deuda nueva. Verificado con render real + Chromium: fila de varias
+tarjetas y tarjeta única, ambas sin sombra ni borde de color.

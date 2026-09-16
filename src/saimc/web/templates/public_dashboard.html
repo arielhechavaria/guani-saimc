@@ -63,10 +63,18 @@
   .ph-dash-section[open] .ph-dash-chev { transform: rotate(180deg); }
   .ph-dash-section-body { padding: 0 var(--m3-space-5) var(--m3-space-5); border-top: 1px solid var(--m3-divider); }
   .ph-dash-section-body .ph-cards { margin-top: var(--m3-space-4); }
-  /* El borde solo dentro del tablero: `.ph-card` en sí no lo lleva —lo
-     comparte con la ventana flotante «Precios», que no tiene provincia
-     única por tarjeta para colorear una barra entera. */
-  .ph-dash-section .ph-card { border-left: 3px solid var(--prov); padding-left: calc(1.1rem - 3px); }
+  /* Tarjetas planas dentro del tablero (2026-09-16, pedido explícito: "nada
+     de elevations ni border color"): `.ph-card` afuera —la ventana flotante
+     «Precios»— sigue con sombra y esquinas redondeadas de `.ph-surface`; acá
+     adentro se apaga esa superficie. La grilla es multi-columna (auto-fit),
+     así que un divisor inferior no sirve —dos tarjetas en la misma fila
+     terminan con bordes disparejos—: la separación pasa a ser un relleno
+     gris neutro (`--m3-surface-container`, ya usado en el toggle Mapa/
+     Tablero) contra el blanco de `.ph-dash-section`, sin sombra ni borde de
+     color por provincia. */
+  .ph-dash-section .ph-card {
+    box-shadow: none; background: var(--m3-surface-container); border-radius: var(--ph-radius-sm);
+  }
 
   @media (max-width: 720px) {
     .ph-dash-top { padding-top: 1.25rem; }
