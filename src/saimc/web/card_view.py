@@ -252,6 +252,32 @@ def group_cards_by_province(
     ]
 
 
+#: Slots de color con nombre propio en `design_tokens.css`
+#: (`--m3-prov-0`/`-1`/`-2`); el resto cae en el neutral `9`. Mismo criterio
+#: que `matrix._province_slot`, pero acotado a 3 en vez de a
+#: `_PROVINCE_SLOTS = 4`: esa constante deja pasar un `% 4` que puede dar 3,
+#: y no hay `--m3-prov-3` — no se toca matrix.py en este slice (no es lo que
+#: se pidió), pero acá sí importa no repetir el mismo hueco.
+_NAMED_PROVINCE_SLOTS = 3
+_OTHER_PROVINCE_SLOT = 9
+
+
+def province_color_slots(province_names: Sequence[str]) -> dict[str, int]:
+    """Slot de color (0/1/2/9) por provincia, en el orden en que se reciben
+    —ya alfabético, mismo orden que agrupa `group_cards_by_province`—.
+
+    Tablero (2026-09-16, Dirección D — índice de salto + borde de tarjeta):
+    identidad por posición en el catálogo, no por los datos, para que el
+    color de una provincia no cambie de una carga a otra. Sin paleta para
+    dieciséis provincias distintas: las primeras tres tienen color propio, el
+    resto comparte el neutral — forzar una paleta más grande inventaría una
+    identidad que nadie decidió."""
+    return {
+        name: i if i < _NAMED_PROVINCE_SLOTS else _OTHER_PROVINCE_SLOT
+        for i, name in enumerate(province_names)
+    }
+
+
 def attach_trends(cards: list[ProductCard], headlines: Sequence[Headline]) -> list[ProductCard]:
     """Pega a cada tarjeta el cambio vs. el período anterior, si hay uno.
 

@@ -28,7 +28,12 @@ from sqlalchemy.orm import Session
 from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
 from saimc.progress import pilot_product_names
-from saimc.web.card_view import attach_trends, build_cards, group_cards_by_province
+from saimc.web.card_view import (
+    attach_trends,
+    build_cards,
+    group_cards_by_province,
+    province_color_slots,
+)
 from saimc.web.deps import get_db
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import (
@@ -491,6 +496,18 @@ def _render_home(
     # elige el router y no un `{% if %}` adentro de `public_home.html`
     # (~2700 líneas ya delicadas): las dos vistas son archivos separados.
     cards_by_province = group_cards_by_province(cards, province_names)
+    # Índice de salto + borde de la tarjeta (slice 4, Dirección D — agrupar
+    # el tablero): un slot de color por provincia, sobre `all_province_names`
+    # (el catálogo completo, alfabético) y no sobre `cards_by_province` — esa
+    # segunda lista varía con el filtro activo, y una provincia cambiando de
+    # color según si `?provincia=` la deja sola en pantalla rompe la propia
+    # promesa de `province_color_slots`: identidad estable, no por los datos
+    # de la carga actual. El slug para el ancla de cada `<details id="...">`
+    # sí puede quedarse en el resultado filtrado — mismo `product_slug` que
+    # ya resuelve `?provincia=`, «sirve para producto y para provincia» dice
+    # su propio docstring.
+    province_slots = province_color_slots(sorted(all_province_names))
+    province_slugs = {name: product_slug(name) for name, _ in cards_by_province}
     # Sparkline de la tarjeta enriquecida (slice 2, Dirección D): la misma
     # `PriceSeries` que ya arma «Cómo se movió», solo indexada por celda para
     # que la plantilla la encuentre sin recorrer la lista. Sin entrada =
@@ -569,6 +586,8 @@ def _render_home(
             "selected_province": selected_province,
             "vista": selected_vista,
             "cards_by_province": cards_by_province,
+            "province_slots": province_slots,
+            "province_slugs": province_slugs,
             "series_by_card": series_by_card,
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),

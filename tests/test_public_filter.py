@@ -2628,3 +2628,54 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/?productos=arroz").text
 
         assert re.search(r'href="/\?productos=arroz[^"]*vista=tablero[^"]*"', texto)
+
+    def test_el_tablero_agrupa_en_details_colapsables_con_la_primera_abierta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Dirección D, slice de agrupación: `<details>` nativo, sin JS. Solo
+        la primera provincia (o la única) viene con `open`."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert '<details class="ph-dash-section ph-prov-0" id="la-habana" open>' in texto
+        assert '<details class="ph-dash-section ph-prov-1" id="santiago-de-cuba">' in texto
+
+    def test_el_indice_de_salto_solo_aparece_con_mas_de_una_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        con_dos_provincias = client.get("/?vista=tablero").text
+        assert '<nav class="ph-dash-jump"' in con_dos_provincias
+
+        con_una_provincia = client.get("/?vista=tablero&provincia=la-habana").text
+        assert '<nav class="ph-dash-jump"' not in con_una_provincia
+
+    def test_el_indice_de_salto_enlaza_al_id_de_cada_seccion_con_su_conteo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert '<a class="ph-prov-0" href="#la-habana">' in texto
+        assert '<a class="ph-prov-1" href="#santiago-de-cuba">' in texto
+        assert "· 2" in texto  # La Habana: Arroz + Aceite
+        assert "· 1" in texto  # Santiago: solo Arroz
+
+    def test_el_slot_de_color_no_cambia_al_filtrar_por_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El slot sale de `all_province_names` (el catálogo completo), no
+        de `cards_by_province` (el resultado filtrado) — si dependiera del
+        filtro, La Habana pasaría de `ph-prov-0` a `ph-prov-0` por accidente
+        de ser la primera de una lista de una sola provincia, y no porque su
+        identidad sea estable."""
+        self._seed(session)
+
+        sin_filtro = client.get("/?vista=tablero").text
+        con_filtro = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
+
+        assert 'class="ph-dash-section ph-prov-0" id="la-habana"' in sin_filtro
+        assert 'class="ph-dash-section ph-prov-1" id="santiago-de-cuba"' in con_filtro

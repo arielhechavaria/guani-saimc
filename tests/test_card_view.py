@@ -20,6 +20,7 @@ from saimc.web.card_view import (
     build_cards,
     format_price,
     group_cards_by_province,
+    province_color_slots,
 )
 from saimc.web.price_charts import Headline
 
@@ -354,3 +355,23 @@ class TestAgrupadoPorProvincia:
 
     def test_sin_tarjetas_no_hay_grupos(self) -> None:
         assert group_cards_by_province([], ["La Habana", "Santiago de Cuba"]) == []
+
+
+class TestSlotsDeColorPorProvincia:
+    """Identidad de color por posición en el catálogo (Dirección D, 2026-09-16)."""
+
+    def test_las_tres_primeras_tienen_slot_propio(self) -> None:
+        slots = province_color_slots(["La Habana", "Santiago de Cuba", "Matanzas"])
+
+        assert slots == {"La Habana": 0, "Santiago de Cuba": 1, "Matanzas": 2}
+
+    def test_de_la_cuarta_en_adelante_cae_en_el_neutral(self) -> None:
+        slots = province_color_slots(
+            ["La Habana", "Santiago de Cuba", "Matanzas", "Holguín", "Camagüey"]
+        )
+
+        assert slots["Holguín"] == 9
+        assert slots["Camagüey"] == 9
+
+    def test_lista_vacia_no_produce_slots(self) -> None:
+        assert province_color_slots([]) == {}
