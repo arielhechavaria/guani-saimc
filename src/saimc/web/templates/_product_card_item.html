@@ -8,8 +8,14 @@
   Tablero (`public_dashboard.html`) use exactamente la misma tarjeta —§9.0
   vinculante sobre qué puede publicarse como titular— en vez de reimplementar
   el marcado y arriesgar que las dos copias se desincronicen.
+
+  `data-buscar` (2026-09-16): producto + provincia en minúscula, para el
+  filtro instantáneo del tablero (mismo patrón que `data-buscar` en
+  `docs_index.html`). Vive acá y no en `public_dashboard.html` porque es
+  la tarjeta la que sabe su propio texto buscable; la ventana «Precios»
+  simplemente no tiene ninguna caja de búsqueda que lo lea.
 #}
-<li class="ph-surface ph-card">
+<li class="ph-surface ph-card" data-buscar="{{ (card.product_name ~ ' ' ~ card.province_name) | lower }}">
   <div class="ph-card-top">
     <span class="ph-card-title">
       {% set panel = card %}

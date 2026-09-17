@@ -56,9 +56,11 @@ from saimc.web.product_nav import (
     build_view_menu,
     build_window_nav,
     download_href,
+    light_product_query,
     product_slug,
     products_query,
     resolve_layer,
+    resolve_presentacion,
     resolve_product,
     resolve_products,
     resolve_province,
@@ -254,6 +256,7 @@ def _render_home(
     ver: str | None = None,
     capa: str | None = None,
     vista: str | None = None,
+    presentacion: str | None = None,
 ) -> HTMLResponse:
     # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
     # Fase 0 se comprometió a medir (§9), y la cola larga son 59 filas en 53
@@ -285,6 +288,10 @@ def _render_home(
     window = (ventana_hasta - ventana_desde).days
     hoy = ventana_hasta
     selected_vista = resolve_vista(vista)
+    # Solo importa dentro del tablero, pero se resuelve siempre (mismo
+    # criterio que `capa`/`vista`): un `?presentacion=` en el mapa no hace
+    # nada, no rompe nada.
+    selected_presentacion = resolve_presentacion(presentacion)
     selected_layer = resolve_layer(capa)
 
     report = compute_retail_ranges(db, days=window, hoy=hoy, hasta=ventana_hasta)
@@ -370,6 +377,20 @@ def _render_home(
             desde=ventana_desde,
             hasta=ventana_hasta,
             vista=destino,
+        )
+
+    def presentacion_link(destino: str) -> str:
+        """Enlace a tarjetas o tabla DENTRO del tablero (2026-09-17),
+        preservando producto(s), provincia y rango de calendario — mismo
+        criterio que `vista_link`. `vista="tablero"` fijo: este toggle solo
+        se pinta ahí, nunca en el mapa."""
+        return products_query(
+            active_slugs,
+            provincia=prov_slug,
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+            vista="tablero",
+            presentacion=destino,
         )
 
     # Panel de producto (muestrario aprobado el 2026-09-10): cifra con su
@@ -508,6 +529,20 @@ def _render_home(
     # su propio docstring.
     province_slots = province_color_slots(sorted(all_province_names))
     province_slugs = {name: product_slug(name) for name, _ in cards_by_province}
+    # Modo tabla (2026-09-17): cada fila enlaza su producto a la vista
+    # liviana `/producto/<slug>` que ya existe (2026-09-14) — no reinventa
+    # una vista de detalle, apunta a la que ya hay. Clave (producto,
+    # provincia): una celda con más de un formato/variante comparte fila de
+    # todos modos, no hace falta desambiguar más.
+    product_hrefs = {
+        (c.product_name, c.province_name): light_product_query(
+            product_slug(c.product_name),
+            provincia=product_slug(c.province_name),
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+        )
+        for c in cards
+    }
     template_name = "public_dashboard.html" if selected_vista == "tablero" else "public_home.html"
     return request.app.state.templates.TemplateResponse(
         request,
@@ -533,6 +568,10 @@ def _render_home(
                 ver=open_views,
                 capa=selected_layer,
                 vista=selected_vista,
+                presentacion=selected_presentacion,
+                # El tablero no tiene panel flotante con su propia × — el
+                # chip tiene que poder apagarse solo (product_nav.py).
+                toggle=selected_vista == "tablero",
             ),
             "product_panels": product_panels,
             "province_nav": build_province_nav(
@@ -545,6 +584,7 @@ def _render_home(
                 ver=open_views,
                 capa=selected_layer,
                 vista=selected_vista,
+                presentacion=selected_presentacion,
             ),
             "window_nav": build_window_nav(
                 ventana_desde,
@@ -582,8 +622,12 @@ def _render_home(
             "cards_by_province": cards_by_province,
             "province_slots": province_slots,
             "province_slugs": province_slugs,
+            "product_hrefs": product_hrefs,
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
+            "presentacion": selected_presentacion,
+            "tarjetas_href": presentacion_link("tarjetas"),
+            "tabla_href": presentacion_link("tabla"),
         },
     )
 
@@ -600,13 +644,15 @@ def public_home(
     ver: str | None = None,
     capa: str | None = None,
     vista: str | None = None,
+    presentacion: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Home pública. `productos` (multi-selección de chips), `producto` (alias de
     uno), `provincia`, `desde`/`hasta` (rango de calendario del date picker,
     2026-09-14; `dias` sigue aceptándose como alias de compatibilidad —ver
     `resolve_window`—), `ver` (ventanas flotantes abiertas), `capa`
-    (capa del mapa) y `vista` (mapa/tablero, 2026-09-16) son query string
+    (capa del mapa), `vista` (mapa/tablero, 2026-09-16) y `presentacion`
+    (tarjetas/tabla dentro del tablero, 2026-09-17) son query string
     opcional; un valor raro no da 404, se muestra todo.
 
     `?vista=` explícito manda siempre —un link compartido con `?vista=tablero`
@@ -631,6 +677,7 @@ def public_home(
         ver=ver,
         capa=capa,
         vista=vista_efectiva,
+        presentacion=presentacion,
     )
 
 

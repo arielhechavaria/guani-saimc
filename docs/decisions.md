@@ -10629,3 +10629,151 @@ Suite: 1727 casos (los 7 de la tarjeta enriquecida se quitan, ninguno
 nuevo), ruff y mypy sin deuda nueva. Verificado con el mismo render real ya
 usado para la agrupación: la tarjeta vuelve a mostrar solo rango, mediana y
 muestra, sin barra ni sparkline.
+
+## 2026-09-16 — Tablero: tarjetas planas, sin sombra ni borde de color
+Contexto: el operador pidió que las tarjetas del Tablero fueran «más
+minimalistas» en el diseño (no en el contenido) — «nada de elevations ni
+border color» — como parte de un pedido más amplio (ver consecuencia).
+Decisión: dentro de `.ph-dash-section` (el tablero, no la ventana flotante
+«Precios» del mapa, que sigue con `.ph-surface` normal) las tarjetas pierden
+`box-shadow` y el borde de color por provincia (`.ph-dash-section .ph-card`
+ya no lleva `border-left: 3px solid var(--prov)`). La separación visual sin
+sombra ni borde pasa a ser un relleno plano (`--m3-surface-container`,
+el mismo gris ya usado en el toggle Mapa/Tablero) contra el blanco del
+`<details>` contenedor. Primer intento fue un divisor `border-bottom` entre
+tarjetas — descartado al verificar con render real: la grilla es
+multi-columna (auto-fit), así que dos tarjetas en la misma fila quedan con
+bordes inferiores disparejos según su posición, no según si son la última
+de la lista.
+Descartado: quitarle la sombra también al `<details>` contenedor de cada
+provincia — el pedido fue sobre «las tarjetas», no sobre la sección que las
+agrupa; esa sigue funcionando como unidad plegable con su propia superficie.
+Consecuencia: primer slice de un pedido más grande («la vista tablero...
+posibilidad de cambiar a tabla... filtros y búsquedas en todo momento sobre
+tabla y tarjetas») — quedan pendientes el modo tabla y los filtros/búsqueda
+visibles en el tablero (hoy `product_chips`/`province_nav` están en el
+contexto de la plantilla sin usar). Suite: 1727 casos sin cambios, ruff y
+mypy sin deuda nueva. Verificado con render real + Chromium: fila de varias
+tarjetas y tarjeta única, ambas sin sombra ni borde de color.
+
+## 2026-09-16 — Tablero: filtros de producto y provincia visibles como chips
+Contexto: segundo slice del pedido «en todo momento es importante poder
+aplicar filtros... sobre la tabla y sobre las cards». Antes del tablero
+`product_chips`/`province_nav` ya se calculaban en `_render_home` pero
+`public_dashboard.html` nunca los pintaba — la única forma de filtrar era
+editar la URL a mano.
+Decisión: chips planos (mismo criterio visual que las tarjetas del slice
+anterior: relleno gris, sin sombra) para producto y provincia, arriba de
+todo, ANTES del bloque que decide si hay tarjetas o el aviso de vacío —así
+un filtro que deja cero resultados se puede deshacer desde la propia
+vista. `province_nav` ya traía «Todas» como primera opción, sirve tal
+cual. Para producto hizo falta un cambio real: `build_product_chips`
+tenía el comportamiento «un chip prendido no se apaga solo» (decisión
+2026-09-11, pensada para el riel flotante del mapa, que cierra su panel
+con una × propia) — en el tablero no hay panel, así que un chip prendido
+sin forma de apagarlo sería un filtro sin salida. Se agregó
+`toggle: bool = False` a `build_product_chips` (default preserva el
+comportamiento del mapa sin tocar sus tests) y `routers/public.py` pasa
+`toggle=True` solo cuando `vista == "tablero"`.
+Descartado: un `<select>` de provincia como en el mapa (`.ph-province-form`)
+— ese patrón existe para convivir con el `<form>`/htmx del compás sobre el
+canvas; el tablero es una página de contenido plano, chips de igual
+jerarquía visual que los de producto son más simples y ya cubren el caso
+(`province_nav` es corto, no necesita un desplegable).
+Consecuencia: la búsqueda de texto libre y el modo tabla (mismo pedido)
+siguen pendientes. Suite: 1732 casos (+5), ruff/mypy sin deuda nueva.
+Verificado con render real + Chromium: chips visibles con y sin filtro
+activo, y siguen visibles —con el filtro marcado— cuando el resultado
+queda en cero tarjetas.
+
+## 2026-09-16 — Tablero: búsqueda instantánea de texto libre
+Contexto: tercer y último slice del pedido «en todo momento poder aplicar
+filtros, búsquedas sobre la tabla y sobre las cards». El operador ya había
+elegido búsqueda instantánea del lado del cliente (JS) frente a la
+alternativa por formulario/recarga, cuando se le preguntó explícitamente.
+Decisión: mismo patrón que ya usa `/docs` (`docs_index.html`,
+`data-buscar` + `hidden` + grupo sin coincidencias se esconde): cada
+`<li class="ph-card">` trae `data-buscar="producto provincia"` en
+minúscula (`_product_card_item.html`, así que también sale con la
+tarjeta de la ventana flotante «Precios», sin uso ahí). Una caja de texto
+(`.ph-input`, nueva en `saimc-public.css` — ver más abajo) filtra sobre
+eso. Con texto en la caja: una provincia sin ninguna coincidencia esconde
+su `<details>` entero Y su entrada en el índice de salto; la que sí tiene
+alguna, se fuerza a abierta (buscar y no ver el resultado por un
+acordeón cerrado sería peor que no ofrecer la búsqueda). Al vaciar la
+caja, cada sección vuelve exactamente al estado con el que llegó del
+servidor (capturado una vez al cargar la página vía `dataset.eraAbierta`),
+no a «todo abierto».
+Dos bugs encontrados y corregidos ANTES de cerrar el slice, los dos por
+verificación con render real + Chromium, ninguno por los tests (que no
+ejecutan JS):
+1. **`.ph-dash-jump a[hidden]` no escondía nada**: `.ph-dash-jump a {
+   display: inline-flex; ... }`, una regla de esta misma plantilla, tiene
+   más especificidad que el `[hidden] { display: none }` que trae el
+   navegador por default, así que ganaba y el chip del índice de salto
+   quedaba visible aunque JS le pusiera `hidden = true`. Se agregó
+   `.ph-dash-jump a[hidden] { display: none; }` explícito.
+2. **`.m3-input` no existe en la hoja pública**: vive solo en
+   `saimc-material.css` (la del operador) y copiarla tal cual traía su
+   anillo de foco en `--m3-primary` (teal), pisando la separación de
+   acento ya decidida el 2026-09-04 (`--ph-accent`, azul, para toda esta
+   hoja). Se creó `.ph-input` en `saimc-public.css` en vez de reusar o
+   duplicar la del operador. De paso, `.visually-hidden` —que el `<label>`
+   del buscador necesita y que `docs_index.html` ya usaba sin que
+   existiera en ninguna hoja, un bug preexistente y ajeno a este slice,
+   no tocado— se agregó a `saimc-public.css` (no a la del operador, fuera
+   de alcance).
+Descartado: mismo criterio que el resto del tablero — nada de mostrar el
+texto buscado en un semáforo de color, y la búsqueda nunca toca lo que se
+manda al servidor (§9.0/§12.6 no aplican acá, pero la disciplina de «un
+solo criterio de verdad, sin JS decidiendo cifras» se mantiene igual).
+Consecuencia: cierra el pedido de agrupación + minimalismo + filtros +
+búsqueda del tablero. El modo de presentación tabla (mismo pedido
+original, «también posibilidad de cambiar a tabla») queda para otra
+sesión — no se abrió en este slice. Suite: 1735 casos (+3 sobre el slice
+anterior), ruff y mypy sin deuda nueva. Verificado con render real +
+Chromium: búsqueda que cae en una sola provincia, búsqueda sin
+coincidencias, y vaciar la caja para confirmar que el estado vuelve
+exacto al original.
+
+## 2026-09-17 — Tablero: modo tabla, cierra el pedido de la vista alternativa
+Contexto: cuarto y último slice del pedido «dentro de esta vista es necesario
+tener también la posibilidad de cambiar de presentación a tabla». Al
+retomarlo el operador señaló que ya existe `/producto/<slug>` (vista liviana
+de un producto, 2026-09-14) — se investigó y es una cosa distinta: un
+producto a la vez, agrupado por provincia en tarjetas, pensada para
+compartir. El modo tabla es ortogonal —muchos productos y provincias a la
+vez, una fila por celda— así que no la reemplaza, pero cada fila SÍ enlaza a
+esa vista liviana para el detalle (`product_hrefs`, con `light_product_query`
+que ya existía).
+Decisión: `?presentacion=tarjetas|tabla` (nuevo eje, independiente de
+`vista`; `PRESENTACION_CHOICES`/`DEFAULT_PRESENTACION`/`resolve_presentacion`
+en `product_nav.py`, mismo criterio que `vista`) gobierna, DENTRO del
+tablero, si `public_dashboard.html` pinta las secciones colapsables de
+siempre o una `<table>` plana: provincia, producto (enlazado), precio,
+mediana, muestra, cambio. Sin agrupar por `<details>` —una columna ya dice
+la provincia— así que tampoco hay índice de salto en modo tabla, no tiene
+sentido sin secciones que saltar. La búsqueda instantánea (slice anterior)
+sigue funcionando SIN NINGÚN cambio de JS: filtra por `[data-buscar]`, que
+no le importa si el elemento es un `<li>` o un `<tr>`. Toggle Tarjetas/Tabla
+con el mismo componente visual que Mapa/Tablero (`.ph-vista-toggle`, pill
+genérico) pero sin cookie propia —no se pidió recordar la presentación, y
+agregar una segunda cookie sin pedido es alcance de más.
+`presentacion` se hiló por `_query`/`products_query`/`build_province_nav`/
+`build_product_chips` (mismo mecanismo ya usado para `vista` en el slice de
+filtros): cambiar de producto o provincia estando en la tabla no devuelve a
+tarjetas.
+Descartado: agrupar la tabla por provincia con sub-encabezados — la columna
+ya cumple esa función y una tabla sin agrupar es más fácil de escanear/
+ordenar mentalmente que una con secciones intercaladas. Descartado también
+que el modo tabla tenga su propia cookie de preferencia, por el mismo
+motivo que el toggle Mapa/Tablero si tuviera dos ejes que recordar sería
+alcance no pedido.
+Consecuencia: cierra el pedido completo de la sesión (minimalismo + filtros
++ búsqueda + modo tabla) sobre la vista Tablero. Suite: 1744 casos (+9),
+ruff y mypy sin deuda nueva. Verificado con render real + Chromium: la
+tabla en 1000px y en 420px (el ancho de la tabla se contiene solo con
+scroll horizontal PROPIO, sin empujar el body — confirmado con
+`document.body.scrollWidth` == viewport), la búsqueda filtrando filas, el
+toggle preservando filtro y provincia, y el enlace de cada fila apuntando a
+`/producto/<slug>?provincia=...`.
