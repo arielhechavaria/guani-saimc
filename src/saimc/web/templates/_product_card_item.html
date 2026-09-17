@@ -33,50 +33,11 @@
   </div>
   {% if card.format_label %}<div class="ph-card-format">{{ card.format_label | capitalize }}</div>{% endif %}
   {% if card.variant_label %}<div class="ph-card-variant">{{ card.variant_label }}</div>{% endif %}
-  {% if card.is_single_observation %}
-  <div class="ph-card-range">
-    <span class="num">{{ card.format_median_text or card.median_text }}</span>
-    <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
-  </div>
-  <div class="ph-card-median">Una sola observación, sin rango todavía.
-    {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
-  {% else %}
-  <div class="ph-card-range">
-    <span class="num">{{ card.format_minimum_text or card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.format_maximum_text or card.maximum_text }}</span>
-    <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
-  </div>
-  <div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
-    {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
-  {% endif %}
+  {% include "_product_price_range.html" %}
   {% if card.change_text %}<div class="ph-cifra-cambio ph-card-trend">{{ card.change_text }} vs. los {{ window_days }} días anteriores</div>{% endif %}
   <div class="ph-card-sample">
     <span><span class="ph-card-n">{{ card.count }}</span> anuncio{{ "s" if card.count != 1 }} en {{ window_days }} días</span>
     <span class="ph-chip">{{ card.state }}</span>
   </div>
-  {% set _ads = card_ads.get((card.product_name, card.province_name, card.currency, card.unit, card.format_label), []) %}
-  {% if _ads %}
-  <details class="ph-evo-anuncios">
-    <summary>{{ _ads | length }} anuncio{{ "s" if _ads | length != 1 }} detrás de esta cifra</summary>
-    <div class="ph-table-card">
-      <table class="ph-coverage">
-        <thead>
-          <tr>
-            <th scope="col">Día</th>
-            <th scope="col" class="num">Precio</th>
-            <th scope="col">Enlace</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for ad in _ads %}
-          <tr>
-            <td class="num">{{ ad.day_text }}</td>
-            <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
-            <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </details>
-  {% endif %}
+  {% include "_product_card_ads.html" %}
 </li>

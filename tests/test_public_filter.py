@@ -2530,7 +2530,50 @@ class TestVistaTableroEnLaRuta:
 
         assert 'id="ph-leaflet-map"' not in texto
         assert texto.index("La Habana") < texto.index("Santiago de Cuba")
-        assert texto.count('class="ph-surface ph-card"') == 3
+        # Tres combinaciones producto×provincia: Arroz/Habana, Arroz/Santiago
+        # y Aceite/Habana. Desde el 2026-09-17 la tarjeta del tablero es
+        # `ph-group` (una por producto y provincia, con sus formatos adentro).
+        assert texto.count('class="ph-surface ph-card ph-group"') == 3
+
+    def test_los_formatos_de_un_producto_comparten_una_tarjeta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El arreglo del 2026-09-17: el formato deja de ser una tarjeta.
+
+        Antes, dos formatos del mismo producto en la misma provincia daban dos
+        `.ph-card`; ahora dan una con dos filas. El titular de cada formato no
+        cambia —sigue siendo el precio del envase, decisión del 2026-09-04—,
+        cambia cuántas tarjetas se pintan.
+        """
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        saco25 = _formato(session, product=arroz, packaging="saco", quantity="25", unit="kg")
+        saco50 = _formato(session, product=arroz, packaging="saco", quantity="50", unit="kg")
+        fuente = _ingestion(session, hash_="h-formatos")
+        _precio(
+            session, product=arroz, province=habana, source=fuente,
+            dia=_hace(5), format_id=saco25.id,
+        )
+        _precio(
+            session, product=arroz, province=habana, source=fuente,
+            dia=_hace(4), price="330", format_id=saco25.id,
+        )
+        _precio(
+            session, product=arroz, province=habana, source=fuente,
+            dia=_hace(3), price="290", format_id=saco50.id,
+        )
+        session.commit()
+
+        texto = client.get("/?vista=tablero").text
+
+        assert texto.count('class="ph-surface ph-card ph-group"') == 1
+        assert texto.count('class="ph-group-format"') == 2
+        assert "Saco de 25 kg" in texto
+        assert "Saco de 50 kg" in texto
+        # El conteo del `<summary>` cuenta productos, no formatos.
+        assert "1 producto<" in texto
 
     def test_la_cookie_vista_decide_sin_query_string(
         self, client: TestClient, session: Session
