@@ -361,6 +361,26 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
            text-transform: uppercase; padding: .3rem .75rem; border-radius: 999px;
            background: var(--ph-accent-wash); color: var(--ph-accent); }
 
+/* Recorrido hacia atrás hasta el anuncio (§6.5, 2026-09-17): migradas desde
+   el `<style>` de `public_home.html`, donde vivían asumiendo que solo esa
+   plantilla pintaba `_product_card_item.html` — dejó de ser cierto con el
+   tablero. `.ph-table-card` es un contenedor de SCROLL, no una superficie
+   (`.ph-evidence-card`, más abajo en esta hoja, es la tarjeta con fondo y
+   sombra de `/anuncio/<id>`; nombre distinto a propósito, ver su propio
+   comentario). */
+.ph-table-card { overflow-x: auto; }
+.ph-coverage { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.ph-coverage caption { text-align: left; padding: .9rem 1rem 0; font-size: .8125rem;
+                       color: var(--m3-on-surface-variant); }
+.ph-coverage th, .ph-coverage td { text-align: left; padding: .5rem .7rem;
+               border-bottom: 1px solid var(--m3-divider); }
+.ph-coverage th:last-child, .ph-coverage td:last-child { padding-right: 1rem; }
+.ph-coverage th:first-child, .ph-coverage td:first-child { padding-left: 1rem; }
+.ph-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ph-coverage tr.is-sin-datos { opacity: .55; }
+.ph-evo-anuncios summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
+.ph-evo-anuncios .ph-table-card { max-height: 16rem; overflow-y: auto; margin-top: .4rem; }
+
 /* Identidad de provincia por posición en el catálogo (Dirección D, agrupar
    el tablero, 2026-09-16): `card_view.province_color_slots` decide el slot
    (0/1/2/9), estas cuatro clases son la única forma de citarlo en CSS.

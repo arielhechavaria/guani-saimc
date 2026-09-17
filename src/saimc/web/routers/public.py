@@ -623,6 +623,12 @@ def _render_home(
             "province_slots": province_slots,
             "province_slugs": province_slugs,
             "product_hrefs": product_hrefs,
+            # Recorrido hacia atrás hasta el anuncio (§6.5), por celda —mismo
+            # `panel_ads`/`build_cell_ads` que ya arma «Cómo se movió» y el
+            # panel flotante de producto, misma clave de 5 (2026-09-17,
+            # pedido del operador: la tarjeta del tablero no tenía este
+            # enlace y el panel del mapa sí).
+            "card_ads": panel_ads,
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
             "presentacion": selected_presentacion,

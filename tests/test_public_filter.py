@@ -2838,3 +2838,35 @@ class TestVistaTableroEnLaRuta:
 
         assert "Arroz" in cuerpo
         assert "Aceite" not in cuerpo
+
+    def test_la_tarjeta_del_tablero_trae_el_recorrido_hasta_el_anuncio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El operador reportó que esta tarjeta no tenía el enlace que sí
+        tiene el panel flotante de producto sobre el mapa (2026-09-17) —
+        mismo `card_ads`/`build_cell_ads`, misma clave de 5."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        # Los chips de filtro también dicen "Aceite"/"Arroz" (orden
+        # alfabético) antes de que empiecen las tarjetas — se descarta esa
+        # zona para no cortar en el índice equivocado.
+        cuerpo = texto[texto.index('class="ph-dash-section-body"') :]
+        tarjeta_arroz = cuerpo[cuerpo.index("Arroz") : cuerpo.index("Aceite")]
+
+        assert "ph-evo-anuncios" in tarjeta_arroz
+        assert "2 anuncios detrás de esta cifra" in tarjeta_arroz
+        assert re.search(r'href="/anuncio/[^"]+">ver anuncio</a>', tarjeta_arroz)
+
+    def test_la_ventana_precios_del_mapa_tambien_trae_el_recorrido_hasta_el_anuncio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`_product_card_item.html` es compartida — el mismo enlace que se
+        pidió para el tablero sale también en el panel flotante «Precios»
+        del mapa, que ya lo tenía disponible vía `card_ads`."""
+        self._seed(session)
+
+        texto = client.get("/?ver=precios").text
+
+        assert "ph-evo-anuncios" in texto
+        assert re.search(r'href="/anuncio/[^"]+">ver anuncio</a>', texto)
