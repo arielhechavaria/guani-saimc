@@ -607,10 +607,11 @@ class TestDatePickerSiempreVisible:
         texto = client.get("/").text
 
         assert 'class="ph-window-shortcuts"' in texto
-        assert (
-            texto.count('class="ph-window-shortcut is-selected"')
-            + texto.count('class="ph-window-shortcut"')
-        ) == 3
+        # Por prefijo y no por el atributo entero: la lista de clases del
+        # atajo creció con `ph-tap-44` (2026-09-17) y una comparación exacta
+        # se rompe cada vez que se le suma una clase, sin que cambie nada de
+        # lo que este caso quiere proteger.
+        assert texto.count('class="ph-window-shortcut ') == 3
 
     def test_el_atajo_del_rango_activo_queda_marcado(
         self, client: TestClient, session: Session
@@ -622,7 +623,7 @@ class TestDatePickerSiempreVisible:
         texto = client.get("/").text
 
         bloque = texto.split('class="ph-window-shortcuts"')[1].split("</div>")[0]
-        assert 'class="ph-window-shortcut is-selected"' in bloque
+        assert "ph-window-shortcut" in bloque
         assert bloque.count("is-selected") == 1
         assert bloque.split("is-selected")[1].split("</a>")[0].endswith(">30 días")
 

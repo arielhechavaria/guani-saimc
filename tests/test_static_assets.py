@@ -1010,3 +1010,75 @@ class TestVistaMovil:
             "en el teléfono los dos botones comparten una fila propia a mitad "
             "y mitad para no desbordar aun en pantallas de 320px"
         )
+
+
+class TestBlancoTactilDeLaIslaDeFiltros:
+    """44px de área sensible en los controles del mapa, sin agrandarlos.
+
+    Medido con Chromium a 390x844 contra el sitio en vivo el 2026-09-17: el
+    disparador del calendario daba 30x30, los atajos de días 32 de alto, el
+    botón Ver 35 y el selector de provincia 35. Todos por debajo del mínimo
+    de 44px, y son los controles principales de la página pública.
+
+    La isla flota sobre el mapa, así que agrandarlos de verdad es mapa que se
+    tapa —en un teléfono acostado el alto disponible es ~390px—. Por eso el
+    área crece con un `::after` y el dibujo no se mueve. `<select>` e
+    `<input>` no admiten pseudo-elementos: esos dos sí crecen.
+    """
+
+    def _home(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        return (
+            raiz / "src" / "saimc" / "web" / "templates" / "public_home.html"
+        ).read_text(encoding="utf-8")
+
+    def test_la_regla_declara_44px(self) -> None:
+        css = self._home()
+        inicio = css.index(".ph-tap-44::after {")
+        bloque = css[inicio : inicio + 260]
+
+        assert "height: 44px" in bloque, (
+            "sin los 44px el área sensible vuelve al tamaño dibujado, que es "
+            "lo que la regla existe para corregir"
+        )
+
+    def test_el_calendario_crece_tambien_a_lo_ancho(self) -> None:
+        """Es el único que tampoco llega a 44 de ancho: mide 30x30."""
+        css = self._home()
+        inicio = css.index(".ph-window-custom-trigger.ph-tap-44::after {")
+        bloque = css[inicio : inicio + 200]
+
+        assert "width: 44px" in bloque
+
+    @pytest.mark.parametrize(
+        "control",
+        [
+            "ph-window-shortcut ph-tap-44",
+            "ph-window-custom-trigger ph-tap-44",
+            "ph-window-submit ph-tap-44",
+        ],
+    )
+    def test_los_controles_llevan_la_clase(self, control: str) -> None:
+        assert control in self._home(), (
+            f"«{control}» perdió la clase: la regla existe pero no la aplica "
+            "nadie, que es peor que no tenerla (parece resuelto y no lo está)"
+        )
+
+    def test_select_e_input_crecen_de_verdad(self) -> None:
+        """Son elementos reemplazados: `::after` no los alcanza."""
+        css = self._home()
+
+        for selector in (".ph-province-select {", ".ph-window-label {"):
+            inicio = css.index(selector)
+            assert "min-height: 44px" in css[inicio : inicio + 400], selector
+
+    def test_los_atajos_se_separan_lo_suficiente(self) -> None:
+        """Dos áreas extendidas vecinas no se pisan: el gap pasó a .5rem."""
+        css = self._home()
+        inicio = css.index(".ph-window-shortcuts {")
+        bloque = css[inicio : inicio + 120]
+
+        assert "gap: .5rem" in bloque, (
+            "con .3rem las áreas de 44px de dos atajos contiguos se solapan y "
+            "el toque cae en el vecino"
+        )

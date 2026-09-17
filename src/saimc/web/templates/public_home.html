@@ -564,6 +564,9 @@
   .ph-province-form { display: inline-flex; align-items: center; }
   .ph-province-select {
     font: inherit; font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
+    /* Blanco táctil: un `<select>` no admite `::after`, así que crece de
+       verdad (ver el bloque `.ph-tap-44` más abajo). */
+    min-height: 44px;
     padding: .4rem 2rem .4rem .95rem; border-radius: var(--m3-radius-full);
     border: 1px solid var(--m3-outline-variant);
     background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
@@ -598,8 +601,39 @@
      diciendo los atajos 7/30/90 (el que está marcado) y, si no coincide
      con ninguno, el ícono del calendario se enciende — misma idea de "que
      siempre se pueda ver", con menos ancho ocupado. */
-  .ph-window-group { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
-  .ph-window-shortcuts { display: flex; flex-wrap: wrap; gap: .3rem; }
+  /* Blanco táctil de 44px sin cambiar el tamaño visible (2026-09-17).
+
+     Medido con Chromium a 390x844 contra el sitio en vivo: los controles de
+     la isla de filtros quedaban en 30x30 (el calendario), 55x32 y 62x32 (los
+     atajos de días), 52x35 (Ver) y 151x35 (el selector de provincia). Todos
+     por debajo del mínimo de 44px, y son los controles principales de la
+     página que más gente va a abrir desde un teléfono.
+
+     Se agranda el área sensible con un `::after` en vez de agrandar el
+     control: el operador pidió expresamente compactar estas piezas
+     (decisions.md, 2026-09-14, "compactarlos detrás de un ícono"), y la isla
+     flota sobre el mapa — cada píxel que crece es mapa que tapa, y en un
+     teléfono acostado el alto disponible es ~390px. Así el dibujo no se
+     mueve ni un píxel y el dedo igual acierta.
+
+     El `gap` pasa de .3rem a .5rem para que dos áreas extendidas vecinas no
+     se pisen: el atajo más chico mide 55px de ancho, la extensión sólo
+     crece en alto, y 8px de separación alcanzan para que no se solapen. */
+  .ph-tap-44 { position: relative; }
+  .ph-tap-44::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    height: 44px; transform: translateY(-50%);
+    /* No pinta nada: sólo recibe el toque. */
+  }
+  /* El disparador del calendario es el único que tampoco llega a 44 de
+     ancho (mide 30x30), así que su área crece en los dos ejes. */
+  .ph-window-custom-trigger.ph-tap-44::after { left: 50%; right: auto; width: 44px; transform: translate(-50%, -50%); }
+  /* `<select>` e `<input>` son elementos reemplazados: no admiten `::after`,
+     así que a esos dos sí hay que crecerlos de verdad. Su `min-height: 44px`
+     vive en la regla de cada uno, más arriba, junto al resto de su caja. */
+
+  .ph-window-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  .ph-window-shortcuts { display: flex; flex-wrap: wrap; gap: .5rem; }
   .ph-window-shortcut {
     font-size: .75rem; font-weight: 500;
     padding: .3rem .65rem; border-radius: var(--m3-radius-full);
@@ -632,6 +666,10 @@
   .ph-window-label {
     display: inline-flex; align-items: center; gap: .3rem;
     font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
+    /* Blanco táctil: el `<input type="date">` que envuelve tampoco admite
+       `::after`. No cuesta nada de mapa — vive dentro del panel que sólo
+       aparece al abrir el calendario. */
+    min-height: 44px;
     padding: .3rem .7rem; border-radius: var(--m3-radius-full);
     border: 1px solid var(--m3-outline-variant);
     background: color-mix(in srgb, var(--m3-surface) 90%, transparent);
@@ -1282,11 +1320,11 @@
   <div class="ph-window-group">
   <div class="ph-window-shortcuts">
     {% for choice in window_nav %}
-    <a class="ph-window-shortcut{% if choice.is_selected %} is-selected{% endif %}" href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
+    <a class="ph-window-shortcut ph-tap-44{% if choice.is_selected %} is-selected{% endif %}" href="{{ choice.query }}" hx-get="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
     {% endfor %}
   </div>
   <details class="ph-window-custom">
-    <summary class="ph-window-custom-trigger{% if es_personalizado %} is-selected{% endif %}" aria-label="Rango de fechas personalizado{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}">
+    <summary class="ph-window-custom-trigger ph-tap-44{% if es_personalizado %} is-selected{% endif %}" aria-label="Rango de fechas personalizado{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}">
       <span class="m3-icon" aria-hidden="true">calendar_month</span>
     </summary>
     <div class="ph-filter-popover">
@@ -1304,7 +1342,7 @@
           <span class="ph-window-label-text">Hasta</span>
           <input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}">
         </label>
-        <button type="submit" class="ph-window-submit">Ver</button>
+        <button type="submit" class="ph-window-submit ph-tap-44">Ver</button>
       </form>
     </div>
   </details>

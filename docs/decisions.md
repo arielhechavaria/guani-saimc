@@ -10831,3 +10831,46 @@ Consecuencia: el tablero pasa de 50 tarjetas a 9 con los mismos datos.
 de calor arriba, tabla abajo), que se apoya sobre esta agrupación.
 Suite: 1759 casos (+13), ruff y mypy sin deuda nueva. Prueba de mutación
 hecha: con la clave de agrupación rota caen 5 unitarios y 1 de integración.
+
+## 2026-09-17 — Mobile first pasa a ser regla, y la primera medición del costo
+Contexto: el operador enunció «mobile first» como regla del proyecto. No
+estaba escrita en ningún lado —`CLAUDE.md`, `docs/` y `openspec/` no la
+mencionan— así que hasta hoy no gobernaba nada. Se midió el sitio en vivo con
+Chromium a 390x844 (iPhone 12/13/14) para saber qué costó su ausencia, en vez
+de suponerlo.
+Lo que salió BIEN, y conviene registrar para no «arreglarlo»: **cero desborde
+horizontal** en las cuatro páginas medidas (`/`, tablero, tabla y
+`/producto/<slug>`), y el mapa ocupa exactamente una pantalla de alto, sin
+cromo fijo que lo tape, tanto vertical como acostado. El `100dvh` con
+respaldo `100vh` está bien puesto. El pecado clásico de no hacer mobile first
+—que la página se vaya de ancho— no está.
+Lo que salió MAL: **blancos táctiles**. En el mapa, el disparador del
+calendario mide 30x30, los atajos de días 32 de alto, el botón Ver 35 y el
+selector de provincia 35 — todos por debajo del mínimo de 44px, y son los
+controles principales de la página pública. El tablero suma 378 elementos por
+debajo de 44px y el detalle de producto 99 (26 de ellos los enlaces «ver
+anuncio», de 65x15).
+Decisión: se arregla la isla de filtros del mapa con una clase `.ph-tap-44`
+que agranda el área sensible con un `::after`, **sin mover el dibujo**. El
+operador había pedido expresamente compactar estos controles (2026-09-14) y
+la isla flota sobre el mapa: cada píxel que crecen es mapa que tapan, y en un
+teléfono acostado el alto disponible es ~390px. `<select>` e `<input>` no
+admiten pseudo-elementos, así que esos dos sí crecen de verdad (el del
+calendario no cuesta nada: vive dentro del panel que sólo aparece al abrirlo).
+El `gap` de los atajos pasa de .3rem a .5rem para que dos áreas extendidas
+vecinas no se pisen.
+Descartado: (a) agrandar los controles a 44px reales — revierte el pedido de
+compactar y come mapa; (b) un corte responsive que los agrande solo en
+teléfono — el área extendida no molesta en escritorio y un corte nuevo va
+contra la línea de eliminarlos (2026-09-04, 2026-09-16).
+Consecuencia: queda pendiente el resto del inventario —los 378 del tablero y
+los 99 del detalle—, que son otro slice. La regla debería entrar a
+`CLAUDE.md` para que gobierne de acá en adelante.
+Verificación: banco aislado en Chromium con el `<style>` y el marcado reales
+a 390px, midiendo con `elementFromPoint` el área que efectivamente recibe el
+toque: 7 de 7 controles llegan a 44x44 y ninguno cambia de tamaño visible.
+Esa es la prueba; los 7 casos nuevos en `test_static_assets.py` son la
+guarda de regresión, no la medición.
+Suite: 1766 casos (+7). Dos casos existentes de `TestDatePickerSiempreVisible`
+comparaban el atributo `class` entero y se aflojaron a comparar por prefijo:
+se rompían al sumar una clase sin que cambiara nada de lo que protegen.
