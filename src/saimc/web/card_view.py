@@ -321,6 +321,128 @@ def group_products_by_province(
     ]
 
 
+#: Con menos de tres provincias un degradado miente: pintar dos puntos de
+#: punta a punta hace ver una diferencia del 6% como si fuera el rango entero
+#: del país. NO es un umbral de publicación de §12.6 —no decide qué se
+#: muestra, las dos celdas se muestran igual— sino cuándo una escala dice algo
+#: más que el orden. Con dos puntos, el orden ya está en la posición.
+_MINIMO_PARA_DEGRADADO = 3
+
+
+@dataclass(frozen=True)
+class PriceCell:
+    """Una provincia dentro de la tira de un producto."""
+
+    province_name: str
+    unit_price: Decimal
+    count: int
+    format_label: str | None
+    #: Posición en la escala, 0 la más barata y 100 la más cara, o `None`
+    #: cuando la tira no pinta degradado.
+    pct: int | None
+
+    @property
+    def price_text(self) -> str:
+        return format_price(self.unit_price)
+
+    @property
+    def slug(self) -> str:
+        return product_slug(self.province_name)
+
+
+@dataclass(frozen=True)
+class ProductStrip:
+    """Un producto y sus provincias, de la más barata a la más cara.
+
+    Compara con el **precio por unidad**, que es exactamente el rol que le da
+    la decisión del 2026-09-04: «el precio por unidad base al lado como
+    comparador». El titular de compra sigue siendo el precio del envase, en la
+    tarjeta; acá se contesta otra pregunta —dónde conviene— y para esa la
+    unidad canónica es la única cifra comparable entre provincias.
+
+    **No calcula ninguna cifra nueva.** No existe un agregado
+    producto×provincia en el proyecto (`build_headlines` también agrupa por
+    formato), y promediar entre formatos sería inventar un estadístico. En su
+    lugar cada provincia queda representada por su **formato mejor
+    respaldado**, cuyo precio por unidad la tarjeta ya publica al pie
+    («Comparás a 300/lb»). Es una regla de selección, no un cálculo.
+    """
+
+    product_name: str
+    currency: str
+    unit: str
+    cells: tuple[PriceCell, ...]
+
+    @property
+    def count(self) -> int:
+        return sum(c.count for c in self.cells)
+
+    @property
+    def has_gradient(self) -> bool:
+        return any(c.pct is not None for c in self.cells)
+
+    @property
+    def slug(self) -> str:
+        return product_slug(self.product_name)
+
+    @property
+    def icon(self) -> str | None:
+        return product_icon(self.product_name)
+
+
+def build_price_strips(cards: Sequence[ProductCard]) -> list[ProductStrip]:
+    """Una tira por producto, con sus provincias ordenadas por precio.
+
+    El color de cada celda lo pinta la plantilla a partir de `pct`, sobre una
+    escala continua de un solo tono: no hay bandas ni semáforo, así que no
+    hace falta ningún umbral de los que §12.6 prohíbe inventar. Lo que dice la
+    escala es la posición relativa entre lo observado, y el número y la
+    muestra van escritos en cada celda, nunca sólo el color.
+    """
+    # Representante de cada provincia: el formato con más anuncios detrás.
+    # El desempate por etiqueta mantiene la salida estable entre corridas.
+    mejor: dict[tuple[str, str, str, str], ProductCard] = {}
+    for card in cards:
+        clave = (card.product_name, card.province_name, card.currency, card.unit)
+        actual = mejor.get(clave)
+        if actual is None or (-card.count, card.format_label or "") < (
+            -actual.count,
+            actual.format_label or "",
+        ):
+            mejor[clave] = card
+
+    por_producto: dict[tuple[str, str, str], list[ProductCard]] = {}
+    for (product_name, _, currency, unit), card in mejor.items():
+        por_producto.setdefault((product_name, currency, unit), []).append(card)
+
+    tiras: list[ProductStrip] = []
+    for (product_name, currency, unit), miembros in por_producto.items():
+        miembros.sort(key=lambda c: (c.median, c.province_name))
+        precios = [c.median for c in miembros]
+        piso, techo = min(precios), max(precios)
+        degrada = len(miembros) >= _MINIMO_PARA_DEGRADADO and techo > piso
+
+        celdas = tuple(
+            PriceCell(
+                province_name=c.province_name,
+                unit_price=c.median,
+                count=c.count,
+                format_label=c.format_label,
+                # `round()` sobre un Decimal sin decimales ya devuelve int.
+                pct=round((c.median - piso) / (techo - piso) * 100) if degrada else None,
+            )
+            for c in miembros
+        )
+        tiras.append(
+            ProductStrip(
+                product_name=product_name, currency=currency, unit=unit, cells=celdas
+            )
+        )
+
+    tiras.sort(key=lambda t: (-t.count, t.product_name))
+    return tiras
+
+
 #: Slots de color con nombre propio en `design_tokens.css`
 #: (`--m3-prov-0`/`-1`/`-2`); el resto cae en el neutral `9`. Mismo criterio
 #: que `matrix._province_slot`, pero acotado a 3 en vez de a

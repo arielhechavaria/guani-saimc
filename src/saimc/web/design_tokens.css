@@ -150,6 +150,20 @@
   --ph-accent-2: #028090;
   --ph-accent-2-line: #015a63;
   --ph-median: #aec092;
+  /* Escala de precio de la tira del tablero (2026-09-17). Dos extremos de un
+     solo tono; los pasos intermedios los interpola `color-mix` en la
+     plantilla, así que es continua y NO tiene bandas — que es justo lo que
+     habría exigido un umbral de los que §12.6 prohíbe inventar. Un semáforo
+     sigue bloqueado: esto dice posición relativa entre lo observado, no si un
+     precio «está bien».
+
+     Deriva de `--ph-accent`, no del eje rojo/verde, por la misma disciplina
+     que los colores de provincia. Y ningún texto se pinta encima: el medio de
+     cualquier degradado secuencial no llega a 4.5:1 ni con tinta ni con
+     blanco (medido), así que la cifra va sobre la superficie, al lado de la
+     barra de color, y no dentro de ella. */
+  --ph-price-low: #e8f1f6;
+  --ph-price-high: #05668d;
   /* Sombra propia, azulada y de dos capas: la página pública es de lectura y
      usa tarjetas más grandes que la herramienta, donde `--m3-elev-1` queda
      corta. */
@@ -232,6 +246,10 @@
   --ph-accent-2: #4fb8c7;
   --ph-accent-2-line: #bdf0f5;
   --ph-median: #c3d4a8;
+  /* En oscuro la escala se invierte en luminancia: «más caro» sigue siendo
+     «más tinta», y sobre fondo oscuro eso es más claro, no más oscuro. */
+  --ph-price-low: #16303c;
+  --ph-price-high: #7ec8ea;
 }
 
 /* ── Breakpoints ─────────────────────────────────────────────────────────

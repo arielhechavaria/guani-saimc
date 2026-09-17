@@ -10874,3 +10874,49 @@ guarda de regresión, no la medición.
 Suite: 1766 casos (+7). Dos casos existentes de `TestDatePickerSiempreVisible`
 comparaban el atributo `class` entero y se aflojaron a comparar por prefijo:
 se rompían al sumar una clase sin que cambiara nada de lo que protegen.
+
+## 2026-09-17 — Se desbloquea el color por precio, pero sólo como escala continua
+Contexto: el tablero necesitaba un vistazo de arriba que contestara «dónde
+conviene» sin leer tarjeta por tarjeta. Al ir a implementarlo apareció que el
+docstring de `routers/public.py` declara bloqueado «el coloreado del mapa por
+precio y los semáforos… por el umbral sin calibrar (§12.6)». Se verificó la
+spec antes de tocar nada: **§12.6 no prohíbe el color**, prohíbe asignar valor
+a cinco umbrales (N, período de sostenimiento, categorías mínimas, criterios
+de fuente, ventana de la tasa) sin medirlos. Y §6.7, que es donde vive el
+verde/amarillo/rojo contra el promedio, está marcado como **prosa** en
+`spec-map.md`, no como vinculante.
+Lo que realmente exigía un umbral inventado era el esquema de §6.7: decir qué
+cuenta como «en el promedio» es fijar una banda que nadie midió. Eso sigue
+bloqueado.
+Decisión (autorizada explícitamente por el operador): se habilita una escala
+**continua de un solo tono** para la tira del tablero, y se mantiene bloqueado
+el semáforo. Las tres restricciones que la hacen compatible con §12.6:
+(a) **Sin bandas.** El color sale de `color-mix` entre `--ph-price-low` y
+    `--ph-price-high` con un porcentaje por celda, no de cinco escalones. No
+    hay ningún corte que decida a qué categoría pertenece un precio.
+(b) **Sin veredicto.** Dice posición relativa entre lo observado —esta
+    provincia está más cara que aquella—, nunca si un precio «está bien». El
+    pie de la tira lo dice con todas las letras.
+(c) **El color nunca es lo único.** Cada celda lleva la cifra y el número de
+    anuncios escritos (§9.0), y con menos de tres provincias la escala ni se
+    pinta: dos puntos no son una escala, y pintarlos de punta a punta haría
+    ver un 6% de diferencia como si fuera el rango entero del país.
+La tira compara por **precio por unidad**, que es el rol que le asigna la
+decisión del 2026-09-04; el titular de compra sigue siendo el precio del
+envase, en la tarjeta. Como no existe un agregado producto×provincia
+—`build_headlines` también agrupa por formato—, cada provincia queda
+representada por su **formato mejor respaldado**: una regla de selección sobre
+cifras ya publicadas, no un estadístico nuevo.
+Descartado: (a) el semáforo de §6.7 — exige la banda que §12.6 prohíbe;
+(b) rojo/verde — reservado a error/éxito, misma disciplina que la paleta de
+provincias; (c) texto encima del color — medido: el medio de cualquier
+degradado secuencial no llega a 4.5:1 ni con tinta ni con blanco, así que la
+barra va arriba y la cifra debajo, sobre la superficie.
+Consecuencia: `--ph-price-low`/`--ph-price-high` entran a `design_tokens.css`
+(claro y oscuro, invertidos en luminancia: «más caro» es «más tinta», y sobre
+fondo oscuro eso es más claro). El coloreado del **mapa** sigue sin tocarse.
+Verificación: render real servido con los estáticos locales y fotografiado a
+390x844 y 1440x1000 — 3 tiras, 9 celdas, cero desborde horizontal, ninguna
+celda por debajo de 44px de alto, y la escala de arroz repartida en 0/35/54/100
+con azúcar en plano por tener sólo dos provincias.
+Suite: 1780 casos (+14).

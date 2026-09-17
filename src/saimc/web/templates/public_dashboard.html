@@ -133,6 +133,51 @@
   .ph-dash-table-producto:hover { text-decoration: underline; }
   .ph-dash-table-sample { color: var(--m3-on-surface-variant); }
 
+  /* Tira de precio (2026-09-17): ver `_price_strips.html` para qué se
+     desbloqueó y qué sigue bloqueado.
+
+     Mobile first: las celdas son una grilla fluida con un mínimo de 8.5rem,
+     así que en un teléfono entran dos por fila y se acomodan solas a más
+     cuando hay ancho. Cada celda es un enlace de 44px de alto mínimo — el
+     blanco táctil que la auditoría del 2026-09-17 encontró que faltaba en
+     todas partes. */
+  .ph-strips { margin-bottom: var(--m3-space-8); }
+  .ph-strips-title { margin: 0 0 var(--m3-space-1); font-family: var(--ph-font-heading); font-weight: 400;
+                     font-size: clamp(1.25rem, 1rem + 1vw, 1.5rem); color: var(--m3-on-surface); }
+  .ph-strips-hint { margin: 0 0 var(--m3-space-5); font-size: .85rem; line-height: 1.5;
+                    color: var(--m3-on-surface-variant); max-width: 62ch; text-wrap: pretty; }
+
+  .ph-strip { margin-bottom: var(--m3-space-5); }
+  .ph-strip-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--m3-space-2);
+                   margin-bottom: var(--m3-space-2); }
+  .ph-strip-icon { font-size: 1.1rem; color: var(--ph-accent); }
+  .ph-strip-name { font-weight: 500; }
+  .ph-strip-unit, .ph-strip-flat { font-size: .78rem; color: var(--m3-on-surface-variant); }
+
+  .ph-strip-cells { list-style: none; margin: 0; padding: 0;
+                    display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+                    gap: var(--m3-space-2); }
+  .ph-strip-cell { display: flex; flex-direction: column; gap: .15rem; min-height: 44px;
+                   padding: var(--m3-space-2) var(--m3-space-3) var(--m3-space-3);
+                   border-radius: var(--m3-radius-sm); background: var(--m3-surface);
+                   color: var(--m3-on-surface); text-decoration: none; }
+  .ph-strip-cell:hover { text-decoration: none; box-shadow: var(--m3-elev-1); }
+  /* La barra es lo único que lleva el color de la escala: `--nivel` lo
+     escribe la plantilla por celda (0% la más barata, 100% la más cara). */
+  .ph-strip-bar { display: block; height: 6px; border-radius: var(--m3-radius-xs);
+                  margin-bottom: var(--m3-space-2);
+                  background: color-mix(in srgb, var(--ph-price-high) var(--nivel, 0%), var(--ph-price-low)); }
+  .ph-strip-bar.is-flat { background: var(--m3-surface-container-high); }
+  .ph-strip-prov { font-size: .8rem; color: var(--m3-on-surface-variant); }
+  .ph-strip-price { font-size: 1.15rem; font-weight: 500; letter-spacing: -.01em; }
+  .ph-strip-n { font-size: .72rem; color: var(--m3-on-surface-variant); }
+
+  .ph-strips-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--m3-space-2);
+                      margin: 0; font-size: .75rem; line-height: 1.5; color: var(--m3-on-surface-variant);
+                      max-width: 70ch; text-wrap: pretty; }
+  .ph-strips-ramp { display: inline-block; width: 5rem; height: 8px; border-radius: var(--m3-radius-xs);
+                    background: linear-gradient(90deg, var(--ph-price-low), var(--ph-price-high)); }
+
   /* Tarjeta agrupada por producto (2026-09-17): los formatos dejan de ser
      una tarjeta cada uno y pasan a ser filas adentro de la del producto.
      Ver `_product_group_item.html` para el porqué.
@@ -225,6 +270,12 @@
 {% endif %}
 
 {% if cards_by_province %}
+
+{# La tira va antes de las dos presentaciones: es el vistazo de arriba, y
+   contesta «dónde conviene» sin obligar a leer una tarjeta ni una fila.
+   Misma idea apilada que se prototipó: primero el dibujo, después el
+   detalle, sin un modo más que aprender. #}
+{% include "_price_strips.html" %}
 
 {% if presentacion == "tabla" %}
 <div class="ph-dash-table-wrap">

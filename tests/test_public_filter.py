@@ -2914,3 +2914,96 @@ class TestVistaTableroEnLaRuta:
 
         assert "ph-evo-anuncios" in texto
         assert re.search(r'href="/anuncio/[^"]+">ver anuncio</a>', texto)
+
+
+class TestTiraDePrecioEnLaPagina:
+    """La tira de calor del tablero, de punta a punta.
+
+    Lo que estos casos protegen es el límite de lo que se desbloqueó
+    (2026-09-17): escala continua de posición relativa, sí; semáforo y bandas,
+    no. Y que el color nunca sea lo único que dice el dato.
+    """
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        provincias = {}
+        for code, nombre in (("hab", "La Habana"), ("scu", "Santiago de Cuba"), ("hol", "Holguín")):
+            provincias[nombre] = Province(code=code, name=nombre)
+        session.add_all([arroz, *provincias.values()])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-tira")
+        for nombre, precio, dia in (
+            ("Santiago de Cuba", "200", 6),
+            ("La Habana", "250", 5),
+            ("Holguín", "300", 4),
+        ):
+            _precio(
+                session, product=arroz, province=provincias[nombre],
+                source=fuente, dia=_hace(dia), price=precio,
+            )
+        session.commit()
+
+    def test_la_tira_ordena_de_mas_barata_a_mas_cara(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        tira = texto.split('class="ph-strip-cells"')[1].split("</ul>")[0]
+
+        assert tira.index("Santiago de Cuba") < tira.index("La Habana") < tira.index("Holguín")
+
+    def test_la_escala_va_de_0_a_100_con_el_medio_en_el_medio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """200/250/300: el del medio cae justo en 50, sin banda ninguna."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert "--nivel: 0%" in texto
+        assert "--nivel: 50%" in texto
+        assert "--nivel: 100%" in texto
+
+    def test_cada_celda_lleva_su_cifra_y_su_muestra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """§9.0: el número de observaciones va siempre a la vista, y el color
+        nunca es lo único que dice el dato."""
+        self._seed(session)
+
+        tira = client.get("/?vista=tablero").text.split('class="ph-strip-cells"')[1]
+
+        assert 'class="ph-strip-price num"' in tira
+        assert 'class="ph-strip-n"' in tira
+
+    def test_con_dos_provincias_no_se_pinta_escala(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Dos puntos no son una escala: pintarlos de punta a punta haría ver
+        una diferencia chica como si fuera el rango entero del país."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-dos")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5), price="300")
+        _precio(
+            session, product=arroz, province=santiago, source=fuente, dia=_hace(4), price="282"
+        )
+        session.commit()
+
+        texto = client.get("/?vista=tablero").text
+
+        assert "--nivel:" not in texto
+        assert "ph-strip-bar is-flat" in texto
+        assert "hace falta una tercera provincia" in texto
+
+    def test_el_mapa_no_pinta_la_tira(self, client: TestClient, session: Session) -> None:
+        """Se desbloqueó la tira del tablero, no el coloreado del mapa."""
+        self._seed(session)
+
+        texto = client.get("/").text
+
+        assert "ph-strip-cells" not in texto

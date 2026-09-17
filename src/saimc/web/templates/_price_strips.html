@@ -1,0 +1,59 @@
+{#
+  La tira de calor del tablero: dónde está más barato cada producto.
+  Espera `price_strips` (card_view.ProductStrip) y `strip_hrefs`.
+
+  Qué se desbloqueó y qué no (2026-09-17, autorizado por el operador; ver
+  `docs/decisions.md`): sigue bloqueado el **semáforo** —decir si un precio
+  «está bien» exige el umbral que §12.6 prohíbe inventar—. Lo que se habilita
+  es una escala **continua** de un solo tono que dice posición relativa entre
+  lo observado: sin bandas, sin verde/rojo, sin veredicto. Con menos de tres
+  provincias ni siquiera se pinta (`has_gradient`), porque dos puntos no son
+  una escala.
+
+  El color nunca lleva texto encima: el medio de cualquier degradado
+  secuencial no llega a 4.5:1 ni con tinta ni con blanco. La barra de color va
+  arriba y la cifra debajo, sobre la superficie, con su contraste de siempre.
+
+  Compara por unidad canónica (CUP/lb, CUP/l) porque es la única cifra
+  comparable entre provincias — el rol que le asigna la decisión del
+  2026-09-04. El titular de compra sigue siendo el precio del envase, abajo,
+  en la tarjeta.
+#}
+{% if price_strips %}
+<section class="ph-strips" aria-labelledby="tiras-titulo">
+  <h2 class="ph-strips-title" id="tiras-titulo">Dónde está más barato</h2>
+  <p class="ph-strips-hint">Comparado por libra o por litro, según el producto: es la única cifra que se puede comparar entre provincias. Lo que pagás por el envase está en las tarjetas de abajo.</p>
+
+  {% for strip in price_strips %}
+  <div class="ph-strip">
+    <div class="ph-strip-head">
+      {% if strip.icon %}<span class="m3-icon ph-strip-icon" aria-hidden="true">{{ strip.icon }}</span>{% endif %}
+      <span class="ph-strip-name">{{ strip.product_name }}</span>
+      <span class="ph-strip-unit">{{ strip.currency }}/{{ strip.unit }}</span>
+      {% if not strip.has_gradient %}<span class="ph-strip-flat">sin escala todavía: hace falta una tercera provincia</span>{% endif %}
+    </div>
+    <ul class="ph-strip-cells">
+      {% for cell in strip.cells %}
+      <li>
+        <a class="ph-strip-cell" href="{{ strip_hrefs.get((strip.product_name, cell.province_name), '#') }}">
+          {% if cell.pct is none %}
+          <span class="ph-strip-bar is-flat"></span>
+          {% else %}
+          <span class="ph-strip-bar" style="--nivel: {{ cell.pct }}%"></span>
+          {% endif %}
+          <span class="ph-strip-prov">{{ cell.province_name }}</span>
+          <span class="ph-strip-price num">{{ cell.price_text }}</span>
+          <span class="ph-strip-n">{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+
+  <p class="ph-strips-legend">
+    <span class="ph-strips-ramp" aria-hidden="true"></span>
+    De más barato a más caro, comparando sólo entre las provincias que hoy tienen dato. No dice si un precio es alto o bajo: para eso hace falta un umbral que todavía no está medido.
+  </p>
+</section>
+{% endif %}
