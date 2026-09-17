@@ -1,0 +1,54 @@
+{#
+  Un `<li class="ph-card">` por producto×provincia, con sus formatos adentro.
+  Espera `group` (card_view.ProductGroup), `window_days` y `card_ads`.
+
+  Por qué existe (2026-09-17): el tablero servía una tarjeta por FORMATO —50
+  tarjetas para 5 productos en 2 provincias, cada una con su tabla de anuncios
+  desplegada—. La decisión del 2026-09-04 («El rango minorista público se
+  separa por formato») no se toca: cada formato conserva su titular, que es el
+  precio del envase, con el precio por unidad al lado como comparador. Lo único
+  que cambia es que comparten tarjeta en vez de tener una cada uno.
+
+  Las dos piezas que se repiten por formato —el bloque de precio y la tabla de
+  anuncios— se incluyen desde los mismos parciales que usa la tarjeta suelta
+  (`_product_price_range.html`, `_product_card_ads.html`), para que las dos
+  vistas no se desincronicen.
+
+  Muestra y cambio van arriba, a nivel de producto: el cambio es el mismo para
+  todos los formatos —`attach_trends` empareja sin formato— y repetirlo por
+  fila diría cinco veces lo mismo.
+#}
+<li class="ph-surface ph-card ph-group" data-buscar="{{ (group.product_name ~ ' ' ~ group.province_name) | lower }}">
+  <div class="ph-card-top">
+    <span class="ph-card-title">
+      {% set panel = group %}
+      {% if group.has_illustration %}{% include "_product_illustration.html" %}{% elif group.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ group.icon }}</span>{% endif %}
+      <span class="ph-card-product">{{ group.product_name }}</span>
+    </span>
+    <span class="ph-card-place">{{ group.province_name }}</span>
+  </div>
+
+  <div class="ph-group-meta">
+    <span><span class="ph-card-n">{{ group.count }}</span> anuncio{{ "s" if group.count != 1 }} en {{ window_days }} días</span>
+    {% if group.change_text %}<span class="ph-cifra-cambio">{{ group.change_text }} vs. los {{ window_days }} días anteriores</span>{% endif %}
+    <span class="ph-chip">{{ group.state }}</span>
+  </div>
+
+  <ul class="ph-group-formats">
+    {% for card in group.cards %}
+    <li class="ph-group-format">
+      {% if card.format_label %}
+      <div class="ph-card-format">{{ card.format_label | capitalize }}</div>
+      {% elif group.cards | length > 1 %}
+      {# Solo vale aclararlo cuando convive con formatos declarados: sola en la
+         tarjeta, la fila sin formato ya es el producto entero. #}
+      <div class="ph-card-format ph-group-nofmt">Sin formato declarado</div>
+      {% endif %}
+      {% if card.variant_label %}<div class="ph-card-variant">{{ card.variant_label }}</div>{% endif %}
+      {% include "_product_price_range.html" %}
+      <div class="ph-group-format-sample">{{ card.count }} anuncio{{ "s" if card.count != 1 }}</div>
+      {% include "_product_card_ads.html" %}
+    </li>
+    {% endfor %}
+  </ul>
+</li>

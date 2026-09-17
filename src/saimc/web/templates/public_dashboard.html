@@ -133,6 +133,35 @@
   .ph-dash-table-producto:hover { text-decoration: underline; }
   .ph-dash-table-sample { color: var(--m3-on-surface-variant); }
 
+  /* Tarjeta agrupada por producto (2026-09-17): los formatos dejan de ser
+     una tarjeta cada uno y pasan a ser filas adentro de la del producto.
+     Ver `_product_group_item.html` para el porqué.
+
+     Sin corte responsive: la fila de formato es fluida (`auto-fit` +
+     `minmax`), así que en un teléfono va una por línea y se acomoda sola a
+     dos o tres cuando hay ancho — mismo criterio con el que se sacaron los
+     cortes de 640 y 900 (docs/decisions.md, 2026-09-04 y 2026-09-16). El
+     mínimo de 15rem es el ancho al que el titular más largo que publicamos
+     («56.950–60.300 CUP») todavía entra sin cortarse. */
+  .ph-group-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--m3-space-2) var(--m3-space-3);
+                   margin-top: var(--m3-space-2); font-size: .8125rem; color: var(--m3-on-surface-variant); }
+  /* La separación entre formatos es el `gap` de la grilla, no un filete por
+     fila: con `auto-fit` la cantidad de columnas cambia con el ancho, así
+     que un `border-top` por hijo se ve alineado en una columna y salteado en
+     dos. El único filete es el de arriba de la lista, que siempre está en el
+     mismo lugar. (Se probó `:has()` para el caso de un solo formato y se
+     descartó: no lo usa ninguna otra hoja del proyecto y no vale estrenarlo
+     acá para algo cosmético, con usuarios en teléfonos viejos.) */
+  .ph-group-formats { list-style: none; margin: var(--m3-space-4) 0 0; padding-top: var(--m3-space-4);
+                      padding-inline: 0; padding-bottom: 0; border-top: 1px solid var(--m3-divider);
+                      display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--m3-space-5); }
+  .ph-group-format { min-width: 0; }
+  .ph-group-nofmt { color: var(--m3-on-surface-variant); font-style: italic; }
+  .ph-group-format-sample { margin-top: var(--m3-space-2); font-size: .78rem; color: var(--m3-on-surface-variant); }
+  /* El bloque de precio dentro de una fila de formato baja un escalón: el
+     titular de la tarjeta ahora es el producto, no cada envase. */
+  .ph-group-format .ph-card-range { font-size: 1.35rem; }
+
   @media (max-width: 720px) {
     .ph-dash-top { padding-top: 1.25rem; }
   }
@@ -241,34 +270,38 @@
 </div>
 {% else %}
 
-{% if cards_by_province | length > 1 %}
+{% if groups_by_province | length > 1 %}
 <nav class="ph-dash-jump" aria-label="Ir a una provincia">
-  {% for province_name, province_cards in cards_by_province %}
+  {% for province_name, province_groups in groups_by_province %}
   <a class="ph-prov-{{ province_slots[province_name] }}" href="#{{ province_slugs[province_name] }}">
     <span class="ph-dash-dot"></span>
-    {{ province_name }} <span class="n">· {{ province_cards | length }}</span>
+    {{ province_name }} <span class="n">· {{ province_groups | length }}</span>
   </a>
   {% endfor %}
 </nav>
 {% endif %}
 
-{% for province_name, province_cards in cards_by_province %}
+{% for province_name, province_groups in groups_by_province %}
 {# Abierta la primera (orienta sin exigir un clic) o la única —con una sola
    provincia (filtro activo) colapsar no ayuda a nadie, solo suma un clic.
    `ph-prov-N` fija `--prov` una vez en el `<details>`; el punto del
    `<summary>` y el borde de `.ph-card` adentro lo heredan — las custom
-   properties heredan solas, no hace falta repetir la clase en cada hijo. #}
-<details class="ph-dash-section ph-prov-{{ province_slots[province_name] }}" id="{{ province_slugs[province_name] }}"{% if loop.first or cards_by_province | length == 1 %} open{% endif %}>
+   properties heredan solas, no hace falta repetir la clase en cada hijo.
+
+   Desde el 2026-09-17 el bucle es de `ProductGroup`, no de `ProductCard`: el
+   conteo del `<summary>` vuelve a ser productos de verdad. Antes decía «32
+   productos» en La Habana cuando los productos eran 5 y 32 eran los formatos. #}
+<details class="ph-dash-section ph-prov-{{ province_slots[province_name] }}" id="{{ province_slugs[province_name] }}"{% if loop.first or groups_by_province | length == 1 %} open{% endif %}>
   <summary>
     <span class="ph-dash-dot"></span>
     {{ province_name }}
-    <span class="ph-dash-count">{{ province_cards | length }} producto{{ "s" if province_cards | length != 1 }}</span>
+    <span class="ph-dash-count">{{ province_groups | length }} producto{{ "s" if province_groups | length != 1 }}</span>
     <span class="ph-dash-chev">⌄</span>
   </summary>
   <div class="ph-dash-section-body">
     <ul class="ph-cards">
-      {% for card in province_cards %}
-      {% include "_product_card_item.html" %}
+      {% for group in province_groups %}
+      {% include "_product_group_item.html" %}
       {% endfor %}
     </ul>
   </div>

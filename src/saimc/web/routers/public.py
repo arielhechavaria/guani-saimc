@@ -32,6 +32,7 @@ from saimc.web.card_view import (
     attach_trends,
     build_cards,
     group_cards_by_province,
+    group_products_by_province,
     province_color_slots,
 )
 from saimc.web.deps import get_db
@@ -517,6 +518,11 @@ def _render_home(
     # elige el router y no un `{% if %}` adentro de `public_home.html`
     # (~2700 líneas ya delicadas): las dos vistas son archivos separados.
     cards_by_province = group_cards_by_province(cards, province_names)
+    # Tarjetas del tablero (2026-09-17): una por producto×provincia, con los
+    # formatos adentro. El modo tabla se queda con `cards_by_province` —una
+    # fila por formato ahí no abruma, es lo que una tabla hace—, así que
+    # conviven las dos agrupaciones y cada presentación usa la suya.
+    groups_by_province = group_products_by_province(cards, province_names)
     # Índice de salto + borde de la tarjeta (slice 4, Dirección D — agrupar
     # el tablero): un slot de color por provincia, sobre `all_province_names`
     # (el catálogo completo, alfabético) y no sobre `cards_by_province` — esa
@@ -620,6 +626,7 @@ def _render_home(
             "selected_province": selected_province,
             "vista": selected_vista,
             "cards_by_province": cards_by_province,
+            "groups_by_province": groups_by_province,
             "province_slots": province_slots,
             "province_slugs": province_slugs,
             "product_hrefs": product_hrefs,

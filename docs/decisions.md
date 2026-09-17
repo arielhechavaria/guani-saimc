@@ -10810,3 +10810,42 @@ Suite: 1746 casos (+2), ruff y mypy sin deuda nueva. Verificado con render
 real + Chromium: el resumen "N anuncios detrás de esta cifra" en cada
 tarjeta del tablero, y al abrirlo la tabla de día/precio/enlace con "ver
 anuncio" funcionando.
+
+## 2026-09-17 — El formato deja de ser una tarjeta: el tablero agrupa por producto
+Contexto: el operador pidió rediseñar el tablero porque «deja mucho que
+desear». Medido con `curl` a `/?vista=tablero`: **50 tarjetas, 50 `<table>`,
+54 `<details>` y 362 filas «ver anuncio»** para 5 productos en 2 provincias.
+El `<summary>` decía «32 productos» en La Habana cuando los productos son 5;
+los 32 eran formatos. La causa es la decisión del 2026-09-04 («El rango
+minorista público se separa por formato»), que metió `format_id` en la
+identidad de la serie — correcta y con evidencia detrás (ninguna de las 39
+filas de Pollo tenía `quantity = 1`), pero nadie había mirado qué pasaba
+cuando esa identidad se pintaba como una tarjeta por cada valor.
+Al diseñar el reemplazo la propuesta inicial era pasar el titular al precio
+por libra. **Eso es exactamente lo que el operador ya había rechazado el
+2026-09-04**, así que se descartó antes de escribir código: el problema no
+era cuál es el titular, era cuántas tarjetas hay.
+Decisión: `card_view.ProductGroup` + `group_products_by_province()` agrupan
+las tarjetas por (producto, provincia, moneda, unidad) —la misma clave que ya
+usa `attach_trends`— y el tablero pinta una tarjeta por grupo con los formatos
+como filas adentro (`_product_group_item.html`). **Ninguna cifra cambia**:
+cada formato conserva su titular, que sigue siendo el precio del envase con el
+precio por unidad al lado como comparador. `ProductGroup.count` es la suma de
+las muestras de sus formatos, que son conjuntos disjuntos — aritmética, no un
+estadístico nuevo; no se recalcula ninguna mediana ni ningún rango.
+El bloque de precio y la tabla de anuncios se extrajeron a
+`_product_price_range.html` y `_product_card_ads.html`, incluidos tanto por la
+tarjeta suelta (ventana «Precios» del mapa) como por la agrupada, para que las
+dos no se desincronicen.
+Descartado: (a) mover el titular al precio por unidad — revierte el
+2026-09-04 y muestra una cifra que nadie paga; (b) tocar el modo
+`presentacion=tabla`, donde una fila por formato no abrume: es lo que una
+tabla hace, así que conviven las dos agrupaciones y cada presentación usa la
+suya; (c) el flujo `openspec/` completo — no toca esquema ni motor de
+validación, solo reagrupa para mostrar.
+Consecuencia: el tablero pasa de 50 tarjetas a 9 con los mismos datos.
+`cards_by_province` y `groups_by_province` conviven en el contexto de
+`public_dashboard.html`. Queda pendiente el resto del rediseño apilado (tiras
+de calor arriba, tabla abajo), que se apoya sobre esta agrupación.
+Suite: 1759 casos (+13), ruff y mypy sin deuda nueva. Prueba de mutación
+hecha: con la clave de agrupación rota caen 5 unitarios y 1 de integración.

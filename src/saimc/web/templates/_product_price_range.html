@@ -1,0 +1,31 @@
+{#
+  El bloque de precio de una tarjeta: el rango como titular y la mediana
+  adentro, nunca la mediana sola (§9.0, vinculante). Espera `card`
+  (ProductCard) en contexto.
+
+  Extraído de `_product_card_item.html` el 2026-09-17, cuando el tablero pasó
+  a agrupar los formatos dentro de una tarjeta por producto×provincia
+  (`_product_group_item.html`): las dos vistas tienen que publicar el titular
+  con exactamente el mismo criterio, y dos copias del marcado se
+  desincronizan. Misma razón por la que la tarjeta entera se había extraído
+  antes para el tablero.
+
+  Con formato declarado el titular es el precio del envase y el precio por
+  unidad base queda al lado como comparador — decisión del 2026-09-04, «El
+  rango minorista público se separa por formato».
+#}
+{% if card.is_single_observation %}
+<div class="ph-card-range">
+  <span class="num">{{ card.format_median_text or card.median_text }}</span>
+  <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
+</div>
+<div class="ph-card-median">Una sola observación, sin rango todavía.
+  {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
+{% else %}
+<div class="ph-card-range">
+  <span class="num">{{ card.format_minimum_text or card.minimum_text }}</span><span class="sep">–</span><span class="num">{{ card.format_maximum_text or card.maximum_text }}</span>
+  <span class="ph-card-unit">{{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</span>
+</div>
+<div class="ph-card-median">Mitad de los anuncios, cerca de {{ card.format_median_text or card.median_text }}.
+  {%- if card.format_label %} Comparás a {{ card.median_text }}/{{ card.unit }}.{% endif %}</div>
+{% endif %}
