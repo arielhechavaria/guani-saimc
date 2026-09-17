@@ -10759,3 +10759,36 @@ scroll horizontal PROPIO, sin empujar el body — confirmado con
 `document.body.scrollWidth` == viewport), la búsqueda filtrando filas, el
 toggle preservando filtro y provincia, y el enlace de cada fila apuntando a
 `/producto/<slug>?provincia=...`.
+
+## 2026-09-17 — Tarjeta del tablero: recorrido hacia atrás hasta el anuncio
+Contexto: el operador reportó que las tarjetas del tablero no tenían el
+enlace a los anuncios que arman esa cifra, cuando el panel flotante de
+producto sobre el mapa sí lo tiene. Se investigó: el enlace ya existía como
+funcionalidad (`.ph-cifra` + `.ph-evo-anuncios`, `panel_view.py` +
+`price_charts.build_cell_ads`, pedido del 2026-09-14 comparando con «ver
+anuncios» de `/control`), pero SOLO en el panel flotante de UN producto
+enfocado —una pieza de UI distinta de la tarjeta simple (`.ph-card`) que
+usan tanto el panel «Precios» del mapa como el tablero—; la tarjeta simple
+nunca lo tuvo, en ninguna de las dos vistas.
+Decisión: `_render_home` ya calculaba `panel_ads` (`build_cell_ads(obs)`)
+para el panel de producto — se pasa también al contexto de plantilla como
+`card_ads`, sin recalcular nada. `_product_card_item.html` (la tarjeta
+compartida) busca sus anuncios con la misma clave de 5 que ya usa
+`price_charts._Key` (producto, provincia, moneda, unidad, formato) y, si
+hay alguno, agrega el mismo `<details class="ph-evo-anuncios">` con tabla
+de día/precio/enlace que ya usaba `.ph-cifra`. Al ser una plantilla
+compartida, el enlace aparece en las DOS vistas que la usan: el tablero
+(lo que se pidió) y el panel «Precios» del mapa (que tampoco lo tenía, y
+ahora queda consistente con el resto del sitio).
+CSS migrada a `saimc-public.css` (`.ph-table-card`/`.ph-coverage`/
+`.ph-evo-anuncios`): vivía en el `<style>` de `public_home.html` asumiendo
+que ninguna otra plantilla pintaba `_product_card_item.html` con anuncios
+—mismo tipo de migración que la de `.ph-card`/`.ph-surface` del primer
+slice del tablero, mismo motivo (dejó de ser cierto).
+Descartado: agregar el mismo enlace a las filas de la tabla (modo
+`presentacion=tabla`) — el operador preguntó específicamente por «las
+tarjetas»; queda para pedirlo aparte si hace falta ahí también.
+Suite: 1746 casos (+2), ruff y mypy sin deuda nueva. Verificado con render
+real + Chromium: el resumen "N anuncios detrás de esta cifra" en cada
+tarjeta del tablero, y al abrirlo la tabla de día/precio/enlace con "ver
+anuncio" funcionando.

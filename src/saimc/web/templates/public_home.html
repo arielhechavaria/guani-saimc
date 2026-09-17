@@ -103,18 +103,6 @@
   .ph-serie-foot { margin: .55rem 0 0; font-size: .75rem; opacity: .75; }
   @keyframes ph-dot-in { from { opacity: 0; } to { opacity: 1; } }
 
-  /* Tabla accesible: scrollea sola dentro de la ventana si no entra. */
-  .ph-table-card { overflow-x: auto; }
-  .ph-coverage { width: 100%; border-collapse: collapse; font-size: .875rem; }
-  .ph-coverage caption { text-align: left; padding: .9rem 1rem 0; font-size: .8125rem;
-                         color: var(--m3-on-surface-variant); }
-  .ph-coverage th, .ph-coverage td { text-align: left; padding: .5rem .7rem;
-                 border-bottom: 1px solid var(--m3-divider); }
-  .ph-coverage th:last-child, .ph-coverage td:last-child { padding-right: 1rem; }
-  .ph-coverage th:first-child, .ph-coverage td:first-child { padding-left: 1rem; }
-  .ph-coverage td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .ph-coverage tr.is-sin-datos { opacity: .55; }
-
   /* ══ La página ES el mapa ═════════════════════════════════════════════
      `100dvh` sin scroll: barra superior con el menú, riel de chips, y el
      escenario del mapa ocupando el resto. Todo lo que antes estaba abajo
@@ -991,8 +979,6 @@
   .ph-cal-1 { fill: var(--ph-accent); fill-opacity: .3; }
   .ph-cal-2 { fill: var(--ph-accent); fill-opacity: .62; }
   .ph-cal-3 { fill: var(--ph-accent); }
-  .ph-evo-anuncios summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
-  .ph-evo-anuncios .ph-table-card { max-height: 16rem; overflow-y: auto; margin-top: .4rem; }
 
   /* ── Acordeón «qué es este gráfico» (_chart_help.html), mismo patrón que
      `.ph-evo-anuncios`: cerrado no estorba, no hace falta JS. */
