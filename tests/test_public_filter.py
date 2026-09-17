@@ -41,6 +41,7 @@ from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.product_nav import (
     DEFAULT_LAYER,
+    DEFAULT_PRESENTACION,
     DEFAULT_VISTA,
     DEFAULT_WINDOW_DAYS,
     build_layer_nav,
@@ -52,6 +53,7 @@ from saimc.web.product_nav import (
     product_slug,
     resolve_days,
     resolve_layer,
+    resolve_presentacion,
     resolve_product,
     resolve_products,
     resolve_province,
@@ -355,6 +357,17 @@ class TestBuildProductChips:
         assert por_label["Aceite"].query == (
             f"/?productos=arroz,aceite&provincia=la-habana&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}"
+        )
+
+    def test_preserva_la_presentacion_tabla_en_el_toggle(self) -> None:
+        """Prender/apagar un producto en la tabla no puede devolver a
+        tarjetas a quien eligió la tabla (2026-09-17)."""
+        chips = self._chips(["Arroz"], presentacion="tabla")
+        por_label = {c.label: c for c in chips}
+
+        assert por_label["Aceite"].query == (
+            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&presentacion=tabla"
         )
 
     def test_el_chip_trae_el_icono_del_producto_o_ninguno(self) -> None:
@@ -1378,6 +1391,20 @@ class TestResolveVista:
         assert resolve_vista(None) == DEFAULT_VISTA
         assert resolve_vista("") == DEFAULT_VISTA
         assert resolve_vista("dashboard") == DEFAULT_VISTA
+
+
+class TestResolvePresentacion:
+    """Tarjetas/tabla DENTRO del tablero (2026-09-17) — mismo criterio que
+    `TestResolveVista`."""
+
+    def test_acepta_tarjetas_y_tabla(self) -> None:
+        assert resolve_presentacion("tarjetas") == "tarjetas"
+        assert resolve_presentacion("tabla") == "tabla"
+
+    def test_cae_al_default_ante_basura(self) -> None:
+        assert resolve_presentacion(None) == DEFAULT_PRESENTACION
+        assert resolve_presentacion("") == DEFAULT_PRESENTACION
+        assert resolve_presentacion("grafico") == DEFAULT_PRESENTACION
 
 
 class TestBuildLayerNav:
@@ -2741,3 +2768,73 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/?ver=precios").text
 
         assert "data-buscar=" in texto
+
+    def test_sin_presentacion_explicita_muestra_tarjetas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'class="ph-dash-section' in texto
+        assert 'class="ph-dash-table"' not in texto
+
+    def test_presentacion_tabla_muestra_una_tabla_plana_sin_colapsables(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&presentacion=tabla").text
+
+        assert 'class="ph-dash-table"' in texto
+        assert 'class="ph-dash-section' not in texto
+        assert '<nav class="ph-dash-jump"' not in texto
+        # Misma búsqueda instantánea, sobre filas en vez de tarjetas.
+        assert 'id="tablero-q"' in texto
+        assert 'data-buscar="arroz la habana"' in texto
+
+    def test_una_presentacion_invalida_cae_a_tarjetas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&presentacion=grafico").text
+
+        assert 'class="ph-dash-section' in texto
+        assert 'class="ph-dash-table"' not in texto
+
+    def test_el_toggle_tarjetas_tabla_preserva_filtro_y_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get(
+            "/?vista=tablero&presentacion=tabla&productos=arroz&provincia=la-habana"
+        ).text
+
+        assert re.search(
+            r'href="/\?productos=arroz&amp;provincia=la-habana[^"]*"[^>]*>Tarjetas</a>', texto
+        )
+        assert 'aria-current="true">Tabla</a>' in texto
+
+    def test_la_fila_de_la_tabla_enlaza_a_la_vista_liviana_del_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El operador señaló que `/producto/<slug>` ya existe — la tabla
+        reusa esa vista en vez de reinventar una página de detalle."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&presentacion=tabla").text
+
+        assert re.search(r'href="/producto/arroz\?provincia=la-habana[^"]*"', texto)
+
+    def test_la_tabla_respeta_el_filtro_de_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&presentacion=tabla&productos=arroz").text
+        cuerpo = texto[texto.index("<tbody>") : texto.index("</tbody>")]
+
+        assert "Arroz" in cuerpo
+        assert "Aceite" not in cuerpo

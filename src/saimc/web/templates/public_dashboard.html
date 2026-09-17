@@ -111,7 +111,27 @@
      caja no hace nada y el tablero completo sigue visible, la
      degradación correcta. `.ph-input` (saimc-public.css), no `.m3-input`
      —esa es de la hoja del operador—. */
-  .ph-dash-search { margin-bottom: var(--m3-space-5); max-width: 420px; }
+  .ph-dash-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--m3-space-4); margin-bottom: var(--m3-space-5); }
+  .ph-dash-search { flex: 1 1 260px; max-width: 420px; margin-bottom: 0; }
+
+  /* Modo tabla (2026-09-17, mismo pedido que la búsqueda: "posibilidad de
+     cambiar de presentación a tabla"): mismos datos que las tarjetas, sin
+     agrupar por provincia —una columna dice cuál es—, así que no hay
+     `<details>` que abrir ni índice de salto que mostrar; la búsqueda de
+     arriba sigue funcionando igual, filtra por `[data-buscar]` sin
+     importar si el elemento es un `<li>` o un `<tr>`. */
+  .ph-dash-table-wrap { overflow-x: auto; background: var(--m3-surface); border-radius: var(--ph-radius-sm); }
+  .ph-dash-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  .ph-dash-table th, .ph-dash-table td { padding: var(--m3-space-3) var(--m3-space-4); text-align: left; white-space: nowrap; }
+  .ph-dash-table th { font: 500 .7rem var(--m3-font); letter-spacing: .04em; text-transform: uppercase;
+                       color: var(--m3-on-surface-variant); border-bottom: 1px solid var(--m3-divider); }
+  .ph-dash-table td { border-bottom: 1px solid var(--m3-divider); }
+  .ph-dash-table tbody tr:last-child td { border-bottom: none; }
+  .ph-dash-table tbody tr[hidden] { display: none; }
+  .ph-dash-table-prov { display: inline-flex; align-items: center; gap: .45rem; }
+  .ph-dash-table-producto { color: var(--m3-on-surface); text-decoration: none; font-weight: 500; }
+  .ph-dash-table-producto:hover { text-decoration: underline; }
+  .ph-dash-table-sample { color: var(--m3-on-surface-variant); }
 
   @media (max-width: 720px) {
     .ph-dash-top { padding-top: 1.25rem; }
@@ -133,10 +153,23 @@
 </div>
 
 {% if cards_by_province %}
-<div class="ph-dash-search">
-  <label class="visually-hidden" for="tablero-q">Buscar producto o provincia</label>
-  <input id="tablero-q" class="ph-input" type="search"
-         placeholder="Buscar producto o provincia…" autocomplete="off" />
+<div class="ph-dash-toolbar">
+  <div class="ph-dash-search">
+    <label class="visually-hidden" for="tablero-q">Buscar producto o provincia</label>
+    <input id="tablero-q" class="ph-input" type="search"
+           placeholder="Buscar producto o provincia…" autocomplete="off" />
+  </div>
+  {# Mismo componente visual que el toggle Mapa/Tablero de arriba —es un
+     pill genérico, no algo específico de esa pareja— pero sin
+     `js-vista-link`/`data-vista`: esos cablean la cookie que recuerda
+     mapa/tablero (slice 3, Dirección D) y esta presentación no tiene
+     cookie propia, se resetea a tarjetas en cada carga nueva a propósito
+     —no se pidió recordarla, y una segunda cookie sin pedido es alcance
+     de más. #}
+  <div class="ph-vista-toggle" role="group" aria-label="Presentación de datos">
+    <a class="{% if presentacion == "tarjetas" %}is-selected{% endif %}" href="{{ tarjetas_href }}"{% if presentacion == "tarjetas" %} aria-current="true"{% endif %}>Tarjetas</a>
+    <a class="{% if presentacion == "tabla" %}is-selected{% endif %}" href="{{ tabla_href }}"{% if presentacion == "tabla" %} aria-current="true"{% endif %}>Tabla</a>
+  </div>
 </div>
 {% endif %}
 
@@ -163,6 +196,50 @@
 {% endif %}
 
 {% if cards_by_province %}
+
+{% if presentacion == "tabla" %}
+<div class="ph-dash-table-wrap">
+  <table class="ph-dash-table">
+    <thead>
+      <tr>
+        <th>Provincia</th>
+        <th>Producto</th>
+        <th>Precio</th>
+        <th>Mediana</th>
+        <th>Muestra</th>
+        <th>Cambio</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for province_name, province_cards in cards_by_province %}
+      {% for card in province_cards %}
+      <tr data-buscar="{{ (card.product_name ~ ' ' ~ card.province_name) | lower }}">
+        <td>
+          <span class="ph-dash-table-prov ph-prov-{{ province_slots[province_name] }}">
+            <span class="ph-dash-dot"></span>{{ province_name }}
+          </span>
+        </td>
+        <td>
+          <a class="ph-dash-table-producto" href="{{ product_hrefs.get((card.product_name, card.province_name), '#') }}">{{ card.product_name }}</a>
+          {%- if card.format_label %} <span class="ph-dash-table-sample">({{ card.format_label }})</span>{% endif -%}
+        </td>
+        <td>
+          {%- if card.is_single_observation -%}
+          {{ card.format_median_text or card.median_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
+          {%- else -%}
+          {{ card.format_minimum_text or card.minimum_text }}–{{ card.format_maximum_text or card.maximum_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
+          {%- endif -%}
+        </td>
+        <td>{% if card.is_single_observation %}—{% else %}{{ card.format_median_text or card.median_text }}{% endif %}</td>
+        <td class="ph-dash-table-sample">{{ card.count }} · {{ card.state }}</td>
+        <td class="ph-dash-table-sample">{{ card.change_text or "—" }}</td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
 
 {% if cards_by_province | length > 1 %}
 <nav class="ph-dash-jump" aria-label="Ir a una provincia">
@@ -197,6 +274,7 @@
   </div>
 </details>
 {% endfor %}
+{% endif %}
 
 <p class="ph-note" id="tablero-none" hidden>Ningún producto ni provincia coincide con la búsqueda.</p>
 

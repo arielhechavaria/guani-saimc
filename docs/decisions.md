@@ -10717,3 +10717,45 @@ anterior), ruff y mypy sin deuda nueva. Verificado con render real +
 Chromium: búsqueda que cae en una sola provincia, búsqueda sin
 coincidencias, y vaciar la caja para confirmar que el estado vuelve
 exacto al original.
+
+## 2026-09-17 — Tablero: modo tabla, cierra el pedido de la vista alternativa
+Contexto: cuarto y último slice del pedido «dentro de esta vista es necesario
+tener también la posibilidad de cambiar de presentación a tabla». Al
+retomarlo el operador señaló que ya existe `/producto/<slug>` (vista liviana
+de un producto, 2026-09-14) — se investigó y es una cosa distinta: un
+producto a la vez, agrupado por provincia en tarjetas, pensada para
+compartir. El modo tabla es ortogonal —muchos productos y provincias a la
+vez, una fila por celda— así que no la reemplaza, pero cada fila SÍ enlaza a
+esa vista liviana para el detalle (`product_hrefs`, con `light_product_query`
+que ya existía).
+Decisión: `?presentacion=tarjetas|tabla` (nuevo eje, independiente de
+`vista`; `PRESENTACION_CHOICES`/`DEFAULT_PRESENTACION`/`resolve_presentacion`
+en `product_nav.py`, mismo criterio que `vista`) gobierna, DENTRO del
+tablero, si `public_dashboard.html` pinta las secciones colapsables de
+siempre o una `<table>` plana: provincia, producto (enlazado), precio,
+mediana, muestra, cambio. Sin agrupar por `<details>` —una columna ya dice
+la provincia— así que tampoco hay índice de salto en modo tabla, no tiene
+sentido sin secciones que saltar. La búsqueda instantánea (slice anterior)
+sigue funcionando SIN NINGÚN cambio de JS: filtra por `[data-buscar]`, que
+no le importa si el elemento es un `<li>` o un `<tr>`. Toggle Tarjetas/Tabla
+con el mismo componente visual que Mapa/Tablero (`.ph-vista-toggle`, pill
+genérico) pero sin cookie propia —no se pidió recordar la presentación, y
+agregar una segunda cookie sin pedido es alcance de más.
+`presentacion` se hiló por `_query`/`products_query`/`build_province_nav`/
+`build_product_chips` (mismo mecanismo ya usado para `vista` en el slice de
+filtros): cambiar de producto o provincia estando en la tabla no devuelve a
+tarjetas.
+Descartado: agrupar la tabla por provincia con sub-encabezados — la columna
+ya cumple esa función y una tabla sin agrupar es más fácil de escanear/
+ordenar mentalmente que una con secciones intercaladas. Descartado también
+que el modo tabla tenga su propia cookie de preferencia, por el mismo
+motivo que el toggle Mapa/Tablero si tuviera dos ejes que recordar sería
+alcance no pedido.
+Consecuencia: cierra el pedido completo de la sesión (minimalismo + filtros
++ búsqueda + modo tabla) sobre la vista Tablero. Suite: 1744 casos (+9),
+ruff y mypy sin deuda nueva. Verificado con render real + Chromium: la
+tabla en 1000px y en 420px (el ancho de la tabla se contiene solo con
+scroll horizontal PROPIO, sin empujar el body — confirmado con
+`document.body.scrollWidth` == viewport), la búsqueda filtrando filas, el
+toggle preservando filtro y provincia, y el enlace de cada fila apuntando a
+`/producto/<slug>?provincia=...`.
