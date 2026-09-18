@@ -37,7 +37,6 @@ from saimc.web.card_view import (
     build_cards,
     build_price_strips,
     group_cards_by_province,
-    group_products_by_province,
     province_color_slots,
 )
 from saimc.web.deps import get_db
@@ -66,7 +65,6 @@ from saimc.web.product_nav import (
     product_slug,
     products_query,
     resolve_layer,
-    resolve_presentacion,
     resolve_product,
     resolve_products,
     resolve_province,
@@ -262,7 +260,6 @@ def _render_home(
     ver: str | None = None,
     capa: str | None = None,
     vista: str | None = None,
-    presentacion: str | None = None,
 ) -> HTMLResponse:
     # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
     # Fase 0 se comprometió a medir (§9), y la cola larga son 59 filas en 53
@@ -294,10 +291,6 @@ def _render_home(
     window = (ventana_hasta - ventana_desde).days
     hoy = ventana_hasta
     selected_vista = resolve_vista(vista)
-    # Solo importa dentro del tablero, pero se resuelve siempre (mismo
-    # criterio que `capa`/`vista`): un `?presentacion=` en el mapa no hace
-    # nada, no rompe nada.
-    selected_presentacion = resolve_presentacion(presentacion)
     selected_layer = resolve_layer(capa)
 
     report = compute_retail_ranges(db, days=window, hoy=hoy, hasta=ventana_hasta)
@@ -385,19 +378,29 @@ def _render_home(
             vista=destino,
         )
 
-    def presentacion_link(destino: str) -> str:
-        """Enlace a tarjetas o tabla DENTRO del tablero (2026-09-17),
-        preservando producto(s), provincia y rango de calendario — mismo
-        criterio que `vista_link`. `vista="tablero"` fijo: este toggle solo
-        se pinta ahí, nunca en el mapa."""
-        return products_query(
+    def accion_href(ventana: str) -> str:
+        """Enlace del menú de acciones del tablero a una ventana flotante del
+        mapa (2026-09-18: el operador pidió que las acciones del compás
+        —Cobertura, Cómo se movió— tuvieran lugar acá también).
+
+        `&vista=mapa` va pegado A MANO al final, no vía el `vista=` de
+        `products_query`: ese parámetro se OMITE de la URL cuando coincide
+        con `DEFAULT_VISTA` —que es «mapa»— para no ensuciar el enlace común
+        (mismo criterio que `capa`). Acá es justo el caso en que hace falta
+        que quede explícito: un enlace sin `?vista=` en la URL cae a la
+        cookie que recuerda «tablero» (slice 3, Dirección D), y quien está
+        parado en el tablero casi seguro tiene esa cookie puesta — el clic
+        no llevaría a ningún lado, porque las ventanas flotantes solo
+        existen en `public_home.html`. Se verificó con Chromium: sin este
+        agregado, el enlace generado no traía `vista=` en absoluto."""
+        base = products_query(
             active_slugs,
             provincia=prov_slug,
             desde=ventana_desde,
             hasta=ventana_hasta,
-            vista="tablero",
-            presentacion=destino,
+            ver=[ventana],
         )
+        return f"{base}&vista=mapa"
 
     # Panel de producto (muestrario aprobado el 2026-09-10): cifra con su
     # muestra, comparación con el período anterior del mismo largo y rango por
@@ -523,28 +526,27 @@ def _render_home(
     # elige el router y no un `{% if %}` adentro de `public_home.html`
     # (~2700 líneas ya delicadas): las dos vistas son archivos separados.
     cards_by_province = group_cards_by_province(cards, province_names)
-    # Tarjetas del tablero (2026-09-17): una por producto×provincia, con los
-    # formatos adentro. El modo tabla se queda con `cards_by_province` —una
-    # fila por formato ahí no abruma, es lo que una tabla hace—, así que
-    # conviven las dos agrupaciones y cada presentación usa la suya.
-    groups_by_province = group_products_by_province(cards, province_names)
     # Tira de precio (2026-09-17): el vistazo de arriba del tablero. Sale de
     # las mismas tarjetas, sin recalcular ninguna cifra — ver
     # `card_view.build_price_strips` y `templates/_price_strips.html` para qué
     # se desbloqueó de §12.6 y qué sigue bloqueado.
     price_strips = build_price_strips(cards)
-    # Índice de salto + borde de la tarjeta (slice 4, Dirección D — agrupar
-    # el tablero): un slot de color por provincia, sobre `all_province_names`
-    # (el catálogo completo, alfabético) y no sobre `cards_by_province` — esa
-    # segunda lista varía con el filtro activo, y una provincia cambiando de
-    # color según si `?provincia=` la deja sola en pantalla rompe la propia
-    # promesa de `province_color_slots`: identidad estable, no por los datos
-    # de la carga actual. El slug para el ancla de cada `<details id="...">`
-    # sí puede quedarse en el resultado filtrado — mismo `product_slug` que
-    # ya resuelve `?provincia=`, «sirve para producto y para provincia» dice
-    # su propio docstring.
-    province_slots = province_color_slots(sorted(all_province_names))
-    province_slugs = {name: product_slug(name) for name, _ in cards_by_province}
+    # Color por provincia en la tabla del tablero (2026-09-18, arreglo: el
+    # operador reportó que todas las filas se veían del mismo color). Era un
+    # bug real, no una percepción: hasta acá el slot salía de
+    # `sorted(all_province_names)` —el catálogo completo de 16, alfabético—
+    # para que el color de una provincia no cambiara de una carga a otra
+    # (slice 4, Dirección D, 2026-09-16). Pero con datos reales solo en dos
+    # provincias hoy (`La Habana` índice 8, `Santiago de Cuba` índice 14 en
+    # ese orden), las dos caen fuera de los tres slots con nombre propio y
+    # las dos quedan en el mismo neutral — la promesa de estabilidad no vale
+    # nada si nunca hay más de un color visible. Se calcula ahora sobre
+    # `province_names` (las que tienen dato EN ESTA vista, ya alfabético):
+    # dos provincias con dato son slot 0 y 1, con colores distintos de
+    # verdad. Se pierde la estabilidad entre cargas a cambio de que el color
+    # sirva para algo hoy; se vuelve a evaluar cuando haya más de tres
+    # provincias reales.
+    province_slots = province_color_slots(province_names)
     # Modo tabla (2026-09-17): cada fila enlaza su producto a la vista
     # liviana `/producto/<slug>` que ya existe (2026-09-14) — no reinventa
     # una vista de detalle, apunta a la que ya hay. Clave (producto,
@@ -596,7 +598,6 @@ def _render_home(
                 ver=open_views,
                 capa=selected_layer,
                 vista=selected_vista,
-                presentacion=selected_presentacion,
                 # El tablero no tiene panel flotante con su propia × — el
                 # chip tiene que poder apagarse solo (product_nav.py).
                 toggle=selected_vista == "tablero",
@@ -612,7 +613,6 @@ def _render_home(
                 ver=open_views,
                 capa=selected_layer,
                 vista=selected_vista,
-                presentacion=selected_presentacion,
             ),
             "window_nav": build_window_nav(
                 ventana_desde,
@@ -648,11 +648,9 @@ def _render_home(
             "selected_province": selected_province,
             "vista": selected_vista,
             "cards_by_province": cards_by_province,
-            "groups_by_province": groups_by_province,
             "price_strips": price_strips,
             "strip_hrefs": strip_hrefs,
             "province_slots": province_slots,
-            "province_slugs": province_slugs,
             "product_hrefs": product_hrefs,
             # Recorrido hacia atrás hasta el anuncio (§6.5), por celda —mismo
             # `panel_ads`/`build_cell_ads` que ya arma «Cómo se movió» y el
@@ -662,9 +660,8 @@ def _render_home(
             "card_ads": panel_ads,
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
-            "presentacion": selected_presentacion,
-            "tarjetas_href": presentacion_link("tarjetas"),
-            "tabla_href": presentacion_link("tabla"),
+            "cobertura_href": accion_href("cobertura"),
+            "evolucion_href": accion_href("evolucion"),
         },
     )
 
@@ -681,15 +678,13 @@ def public_home(
     ver: str | None = None,
     capa: str | None = None,
     vista: str | None = None,
-    presentacion: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Home pública. `productos` (multi-selección de chips), `producto` (alias de
     uno), `provincia`, `desde`/`hasta` (rango de calendario del date picker,
     2026-09-14; `dias` sigue aceptándose como alias de compatibilidad —ver
     `resolve_window`—), `ver` (ventanas flotantes abiertas), `capa`
-    (capa del mapa), `vista` (mapa/tablero, 2026-09-16) y `presentacion`
-    (tarjetas/tabla dentro del tablero, 2026-09-17) son query string
+    (capa del mapa) y `vista` (mapa/tablero, 2026-09-16) son query string
     opcional; un valor raro no da 404, se muestra todo.
 
     `?vista=` explícito manda siempre —un link compartido con `?vista=tablero`
@@ -714,7 +709,6 @@ def public_home(
         ver=ver,
         capa=capa,
         vista=vista_efectiva,
-        presentacion=presentacion,
     )
 
 

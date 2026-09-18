@@ -41,7 +41,6 @@ from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.product_nav import (
     DEFAULT_LAYER,
-    DEFAULT_PRESENTACION,
     DEFAULT_VISTA,
     DEFAULT_WINDOW_DAYS,
     build_layer_nav,
@@ -53,7 +52,6 @@ from saimc.web.product_nav import (
     product_slug,
     resolve_days,
     resolve_layer,
-    resolve_presentacion,
     resolve_product,
     resolve_products,
     resolve_province,
@@ -357,17 +355,6 @@ class TestBuildProductChips:
         assert por_label["Aceite"].query == (
             f"/?productos=arroz,aceite&provincia=la-habana&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}"
-        )
-
-    def test_preserva_la_presentacion_tabla_en_el_toggle(self) -> None:
-        """Prender/apagar un producto en la tabla no puede devolver a
-        tarjetas a quien eligió la tabla (2026-09-17)."""
-        chips = self._chips(["Arroz"], presentacion="tabla")
-        por_label = {c.label: c for c in chips}
-
-        assert por_label["Aceite"].query == (
-            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}"
-            f"&hasta={self.HASTA.isoformat()}&presentacion=tabla"
         )
 
     def test_el_chip_trae_el_icono_del_producto_o_ninguno(self) -> None:
@@ -1392,20 +1379,6 @@ class TestResolveVista:
         assert resolve_vista(None) == DEFAULT_VISTA
         assert resolve_vista("") == DEFAULT_VISTA
         assert resolve_vista("dashboard") == DEFAULT_VISTA
-
-
-class TestResolvePresentacion:
-    """Tarjetas/tabla DENTRO del tablero (2026-09-17) — mismo criterio que
-    `TestResolveVista`."""
-
-    def test_acepta_tarjetas_y_tabla(self) -> None:
-        assert resolve_presentacion("tarjetas") == "tarjetas"
-        assert resolve_presentacion("tabla") == "tabla"
-
-    def test_cae_al_default_ante_basura(self) -> None:
-        assert resolve_presentacion(None) == DEFAULT_PRESENTACION
-        assert resolve_presentacion("") == DEFAULT_PRESENTACION
-        assert resolve_presentacion("grafico") == DEFAULT_PRESENTACION
 
 
 class TestBuildLayerNav:
@@ -2494,10 +2467,13 @@ class TestVarianteEnTarjetaPublica:
 
 
 class TestVistaTableroEnLaRuta:
-    """`?vista=tablero`: las mismas tarjetas de siempre, agrupadas por
-    provincia, sin mapa. `?vista=mapa` (o sin el parámetro) sigue siendo la
-    vista con Leaflet (2026-09-16, Dirección D elegida sobre las propuestas
-    de diseño)."""
+    """`?vista=tablero`: una tabla plana con todos los datos, sin mapa.
+
+    Hasta el 2026-09-17 convivían dos presentaciones detrás de un toggle
+    (tarjetas agrupadas con índice de salto, y esta tabla). El operador pidió
+    sacar las tarjetas del tablero (2026-09-18): la tabla queda como la única
+    forma de verlo — no hay `?presentacion=` que resolver ni toggle que
+    mostrar."""
 
     def _seed(self, session: Session) -> None:
         """Arroz en Habana (2 días) y Santiago (1); Aceite solo en Habana."""
@@ -2520,61 +2496,23 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/").text
 
         assert 'id="ph-leaflet-map"' in texto
-        assert "ph-dash-section" not in texto
+        assert 'class="ph-dash-table"' not in texto
 
-    def test_vista_tablero_agrupa_las_tarjetas_por_provincia(
+    def test_vista_tablero_muestra_una_tabla_con_todas_las_combinaciones(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
+        cuerpo = texto[texto.index("<tbody>") : texto.index("</tbody>")]
 
         assert 'id="ph-leaflet-map"' not in texto
+        assert 'class="ph-dash-table"' in texto
+        # Tres combinaciones producto×provincia×formato: Arroz/Habana,
+        # Arroz/Santiago, Aceite/Habana — sin agrupar por formato, la tabla
+        # es la presentación plana de siempre.
+        assert cuerpo.count("<tr") == 3
         assert texto.index("La Habana") < texto.index("Santiago de Cuba")
-        # Tres combinaciones producto×provincia: Arroz/Habana, Arroz/Santiago
-        # y Aceite/Habana. Desde el 2026-09-17 la tarjeta del tablero es
-        # `ph-group` (una por producto y provincia, con sus formatos adentro).
-        assert texto.count('class="ph-surface ph-card ph-group"') == 3
-
-    def test_los_formatos_de_un_producto_comparten_una_tarjeta(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """El arreglo del 2026-09-17: el formato deja de ser una tarjeta.
-
-        Antes, dos formatos del mismo producto en la misma provincia daban dos
-        `.ph-card`; ahora dan una con dos filas. El titular de cada formato no
-        cambia —sigue siendo el precio del envase, decisión del 2026-09-04—,
-        cambia cuántas tarjetas se pintan.
-        """
-        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
-        habana = Province(code="hab", name="La Habana")
-        session.add_all([arroz, habana])
-        session.commit()
-        saco25 = _formato(session, product=arroz, packaging="saco", quantity="25", unit="kg")
-        saco50 = _formato(session, product=arroz, packaging="saco", quantity="50", unit="kg")
-        fuente = _ingestion(session, hash_="h-formatos")
-        _precio(
-            session, product=arroz, province=habana, source=fuente,
-            dia=_hace(5), format_id=saco25.id,
-        )
-        _precio(
-            session, product=arroz, province=habana, source=fuente,
-            dia=_hace(4), price="330", format_id=saco25.id,
-        )
-        _precio(
-            session, product=arroz, province=habana, source=fuente,
-            dia=_hace(3), price="290", format_id=saco50.id,
-        )
-        session.commit()
-
-        texto = client.get("/?vista=tablero").text
-
-        assert texto.count('class="ph-surface ph-card ph-group"') == 1
-        assert texto.count('class="ph-group-format"') == 2
-        assert "Saco de 25 kg" in texto
-        assert "Saco de 50 kg" in texto
-        # El conteo del `<summary>` cuenta productos, no formatos.
-        assert "1 producto<" in texto
 
     def test_la_cookie_vista_decide_sin_query_string(
         self, client: TestClient, session: Session
@@ -2587,7 +2525,7 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/").text
 
         assert 'id="ph-leaflet-map"' not in texto
-        assert "ph-dash-section" in texto
+        assert 'class="ph-dash-table"' in texto
 
     def test_el_query_string_explicito_gana_a_la_cookie(
         self, client: TestClient, session: Session
@@ -2631,14 +2569,14 @@ class TestVistaTableroEnLaRuta:
     ) -> None:
         """Los chips de filtro (2026-09-16) listan TODOS los productos piloto
         —incluido Aceite, apagado— para poder prenderlos; lo que tiene que
-        respetar el filtro son las tarjetas, no la página entera."""
+        respetar el filtro es la tabla, no la página entera."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero&productos=arroz").text
-        tarjetas = texto[texto.index('class="ph-dash-section-body"') :]
+        cuerpo = texto[texto.index("<tbody>") : texto.index("</tbody>")]
 
-        assert "Arroz" in tarjetas
-        assert "Aceite" not in tarjetas
+        assert "Arroz" in cuerpo
+        assert "Aceite" not in cuerpo
 
     def test_una_vista_invalida_cae_al_mapa(self, client: TestClient, session: Session) -> None:
         self._seed(session)
@@ -2655,8 +2593,16 @@ class TestVistaTableroEnLaRuta:
 
         texto = client.get("/?vista=tablero&productos=arroz&provincia=la-habana").text
 
+        # El toggle Mapa/Tablero no ensucia su propio enlace con el default
+        # (mismo criterio que `capa`). El menú de acciones sí escribe
+        # `vista=mapa` a propósito en sus dos enlaces —para no caer en la
+        # cookie que recuerda «tablero», ver `TestMenuDeAccionesEnElTablero`—
+        # así que la comparación se acota al enlace del toggle, no a toda la
+        # página.
+        toggle = re.search(r'<a class="js-vista-link[^>]*data-vista="mapa"[^>]*href="([^"]+)"', texto)
+        assert toggle is not None
+        assert "vista=mapa" not in toggle.group(1)
         assert 'href="/?productos=arroz&amp;provincia=la-habana' in texto
-        assert "vista=mapa" not in texto  # mapa es el default: no ensucia la URL
         assert 'aria-current="true">Tablero</a>' in texto
 
     def test_el_enlace_al_tablero_esta_en_el_dock_del_mapa_y_preserva_el_filtro(
@@ -2668,56 +2614,23 @@ class TestVistaTableroEnLaRuta:
 
         assert re.search(r'href="/\?productos=arroz[^"]*vista=tablero[^"]*"', texto)
 
-    def test_el_tablero_agrupa_en_details_colapsables_con_la_primera_abierta(
+    def test_el_color_de_provincia_distingue_las_que_tienen_dato(
         self, client: TestClient, session: Session
     ) -> None:
-        """Dirección D, slice de agrupación: `<details>` nativo, sin JS. Solo
-        la primera provincia (o la única) viene con `open`."""
+        """Arreglo del 2026-09-18: antes el slot salía de `all_province_names`
+        —el catálogo completo de 16, alfabético— y con datos reales solo en
+        dos provincias (`La Habana` índice 8, `Santiago de Cuba` índice 14 en
+        ese orden) las dos caían en el mismo neutral: la tabla se veía de un
+        solo color. Ahora sale de las provincias CON DATO en esta vista, así
+        que dos provincias reales son dos slots reales, distintos entre sí."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
 
-        assert '<details class="ph-dash-section ph-prov-0" id="la-habana" open>' in texto
-        assert '<details class="ph-dash-section ph-prov-1" id="santiago-de-cuba">' in texto
-
-    def test_el_indice_de_salto_solo_aparece_con_mas_de_una_provincia(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        con_dos_provincias = client.get("/?vista=tablero").text
-        assert '<nav class="ph-dash-jump"' in con_dos_provincias
-
-        con_una_provincia = client.get("/?vista=tablero&provincia=la-habana").text
-        assert '<nav class="ph-dash-jump"' not in con_una_provincia
-
-    def test_el_indice_de_salto_enlaza_al_id_de_cada_seccion_con_su_conteo(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-
-        assert '<a class="ph-prov-0 ph-tap-44" href="#la-habana">' in texto
-        assert '<a class="ph-prov-1 ph-tap-44" href="#santiago-de-cuba">' in texto
-        assert "· 2" in texto  # La Habana: Arroz + Aceite
-        assert "· 1" in texto  # Santiago: solo Arroz
-
-    def test_el_slot_de_color_no_cambia_al_filtrar_por_provincia(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """El slot sale de `all_province_names` (el catálogo completo), no
-        de `cards_by_province` (el resultado filtrado) — si dependiera del
-        filtro, La Habana pasaría de `ph-prov-0` a `ph-prov-0` por accidente
-        de ser la primera de una lista de una sola provincia, y no porque su
-        identidad sea estable."""
-        self._seed(session)
-
-        sin_filtro = client.get("/?vista=tablero").text
-        con_filtro = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
-
-        assert 'class="ph-dash-section ph-prov-0" id="la-habana"' in sin_filtro
-        assert 'class="ph-dash-section ph-prov-1" id="santiago-de-cuba"' in con_filtro
+        assert 'class="ph-dash-table-prov ph-prov-0">' in texto
+        assert 'class="ph-dash-table-prov ph-prov-1">' in texto
+        # Nunca las dos en el neutral (el bug que se corrigió).
+        assert texto.count('class="ph-dash-table-prov ph-prov-9">') == 0
 
     def test_los_chips_de_filtro_listan_todo_el_catalogo_piloto(
         self, client: TestClient, session: Session
@@ -2727,7 +2640,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?vista=tablero&productos=arroz").text
-        filtros = texto[: texto.index('class="ph-dash-section-body"')]
+        filtros = texto[: texto.index("<tbody>")]
 
         assert re.search(r'class="ph-dash-chip ph-tap-44 is-active"[^>]*>[\s\S]*?Arroz', filtros)
         assert re.search(r'class="ph-dash-chip ph-tap-44"[^>]*>[\s\S]*?Aceite', filtros)
@@ -2742,21 +2655,21 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?vista=tablero&productos=arroz").text
-        filtros = texto[: texto.index('class="ph-dash-section-body"')]
+        filtros = texto[: texto.index("<tbody>")]
         chip_arroz = re.search(
-            r'<a class="ph-dash-chip ph-tap-44 is-active" href="([^"]+)"[^>]*>[\s\S]*?Arroz', filtros
+            r'<a class="ph-dash-chip ph-tap-44 is-active" href="([^"]+)"[^>]*>[\s\S]*?Arroz',
+            filtros,
         )
 
         assert chip_arroz is not None
         assert "productos=" not in chip_arroz.group(1)
 
-    def test_los_filtros_siguen_visibles_aunque_no_queden_tarjetas(
+    def test_los_filtros_siguen_visibles_aunque_no_queden_filas(
         self, client: TestClient, session: Session
     ) -> None:
         """Un filtro que deja cero resultados tiene que poder deshacerse
         desde la propia vista, no solo editando la URL a mano. Aceite no
-        tiene dato en Santiago (ver `_seed`): la combinación da cero
-        tarjetas."""
+        tiene dato en Santiago (ver `_seed`): la combinación da cero filas."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
@@ -2771,30 +2684,30 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
-        filtros = texto[: texto.index('class="ph-dash-section-body"')]
+        filtros = texto[: texto.index("<tbody>")]
 
         assert re.search(
             r'class="ph-dash-chip ph-tap-44 is-active"[^>]*>[\s\S]*?Santiago de Cuba', filtros
         )
         assert re.search(r'class="ph-dash-chip ph-tap-44"[^>]*>[\s\S]*?Todas', filtros)
 
-    def test_la_caja_de_busqueda_aparece_solo_si_hay_tarjetas(
+    def test_la_caja_de_busqueda_aparece_solo_si_hay_filas(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
 
-        con_tarjetas = client.get("/?vista=tablero").text
-        assert 'id="tablero-q"' in con_tarjetas
+        con_filas = client.get("/?vista=tablero").text
+        assert 'id="tablero-q"' in con_filas
 
-        sin_tarjetas = client.get("/?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
-        assert 'id="tablero-q"' not in sin_tarjetas
+        sin_filas = client.get("/?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
+        assert 'id="tablero-q"' not in sin_filas
 
-    def test_cada_tarjeta_trae_su_texto_buscable_en_minuscula(
+    def test_cada_fila_trae_su_texto_buscable_en_minuscula(
         self, client: TestClient, session: Session
     ) -> None:
         """`data-buscar` combina producto + provincia — mismo patrón que ya
         usa `/docs` — para que la caja de búsqueda filtre por cualquiera de
-        los dos sin abrir el `<details>` a mano."""
+        los dos."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
@@ -2806,116 +2719,120 @@ class TestVistaTableroEnLaRuta:
     def test_la_ventana_precios_del_mapa_tambien_trae_data_buscar(
         self, client: TestClient, session: Session
     ) -> None:
-        """`_product_card_item.html` es una sola plantilla para las dos
-        vistas — el atributo sale con la tarjeta aunque el mapa no tenga
-        ninguna caja de búsqueda que lo use."""
+        """`_product_card_item.html` (el panel flotante del mapa) sigue
+        trayendo el atributo aunque el tablero ya no use tarjetas."""
         self._seed(session)
 
         texto = client.get("/?ver=precios").text
 
         assert "data-buscar=" in texto
 
-    def test_sin_presentacion_explicita_muestra_tarjetas(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-
-        assert 'class="ph-dash-section' in texto
-        assert 'class="ph-dash-table"' not in texto
-
-    def test_presentacion_tabla_muestra_una_tabla_plana_sin_colapsables(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero&presentacion=tabla").text
-
-        assert 'class="ph-dash-table"' in texto
-        assert 'class="ph-dash-section' not in texto
-        assert '<nav class="ph-dash-jump"' not in texto
-        # Misma búsqueda instantánea, sobre filas en vez de tarjetas.
-        assert 'id="tablero-q"' in texto
-        assert 'data-buscar="arroz la habana"' in texto
-
-    def test_una_presentacion_invalida_cae_a_tarjetas(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero&presentacion=grafico").text
-
-        assert 'class="ph-dash-section' in texto
-        assert 'class="ph-dash-table"' not in texto
-
-    def test_el_toggle_tarjetas_tabla_preserva_filtro_y_provincia(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get(
-            "/?vista=tablero&presentacion=tabla&productos=arroz&provincia=la-habana"
-        ).text
-
-        assert re.search(
-            r'href="/\?productos=arroz&amp;provincia=la-habana[^"]*"[^>]*>Tarjetas</a>', texto
-        )
-        assert 'aria-current="true">Tabla</a>' in texto
-
     def test_la_fila_de_la_tabla_enlaza_a_la_vista_liviana_del_producto(
         self, client: TestClient, session: Session
     ) -> None:
         """El operador señaló que `/producto/<slug>` ya existe — la tabla
-        reusa esa vista en vez de reinventar una página de detalle."""
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero&presentacion=tabla").text
-
-        assert re.search(r'href="/producto/arroz\?provincia=la-habana[^"]*"', texto)
-
-    def test_la_tabla_respeta_el_filtro_de_producto(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero&presentacion=tabla&productos=arroz").text
-        cuerpo = texto[texto.index("<tbody>") : texto.index("</tbody>")]
-
-        assert "Arroz" in cuerpo
-        assert "Aceite" not in cuerpo
-
-    def test_la_tarjeta_del_tablero_trae_el_recorrido_hasta_el_anuncio(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """El operador reportó que esta tarjeta no tenía el enlace que sí
-        tiene el panel flotante de producto sobre el mapa (2026-09-17) —
-        mismo `card_ads`/`build_cell_ads`, misma clave de 5."""
+        reusa esa vista en vez de reinventar una página de detalle. Es
+        también donde queda el recorrido hasta el anuncio (`ver anuncio`):
+        la tabla no lo trae inline, un clic la lleva."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
-        # Los chips de filtro también dicen "Aceite"/"Arroz" (orden
-        # alfabético) antes de que empiecen las tarjetas — se descarta esa
-        # zona para no cortar en el índice equivocado.
-        cuerpo = texto[texto.index('class="ph-dash-section-body"') :]
-        tarjeta_arroz = cuerpo[cuerpo.index("Arroz") : cuerpo.index("Aceite")]
 
-        assert "ph-evo-anuncios" in tarjeta_arroz
-        assert "2 anuncios detrás de esta cifra" in tarjeta_arroz
-        assert re.search(r'href="/anuncio/[^"]+">ver anuncio</a>', tarjeta_arroz)
+        assert re.search(r'href="/producto/arroz\?provincia=la-habana[^"]*"', texto)
 
     def test_la_ventana_precios_del_mapa_tambien_trae_el_recorrido_hasta_el_anuncio(
         self, client: TestClient, session: Session
     ) -> None:
-        """`_product_card_item.html` es compartida — el mismo enlace que se
-        pidió para el tablero sale también en el panel flotante «Precios»
-        del mapa, que ya lo tenía disponible vía `card_ads`."""
+        """`_product_card_item.html` es compartida — el enlace hasta el
+        anuncio sigue en el panel flotante «Precios» del mapa, que ya lo
+        tenía disponible vía `card_ads`. El tablero (tabla) no lo repite
+        inline; se llega desde ahí a `/producto/<slug>`, que sí lo trae."""
         self._seed(session)
 
         texto = client.get("/?ver=precios").text
 
         assert "ph-evo-anuncios" in texto
         assert re.search(r'href="/anuncio/[^"]+">ver anuncio</a>', texto)
+
+
+class TestMenuDeAccionesEnElTablero:
+    """El menú de acciones del tablero (2026-09-18): el operador pidió que
+    las acciones del compás del mapa —Cobertura, Cómo se movió, CSV, tema—
+    tuvieran lugar también acá."""
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-acciones")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(3))
+        session.commit()
+
+    def test_el_disparador_es_el_mismo_avatar_del_mapa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'class="ph-actions-trigger ph-tap-44"' in texto
+        assert 'viewBox="0 0 80 80"' in texto  # _guani_avatar.html
+
+    def test_cobertura_y_evolucion_llevan_al_mapa_con_la_ventana_abierta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El caso real que importa: quien está parado en el tablero casi
+        seguro tiene la cookie `vista=tablero` puesta (la escribió el propio
+        toggle al llegar acá). Sin `&vista=mapa` explícito en el enlace, el
+        clic caería de vuelta al tablero por la cookie — no llevaría a
+        ningún lado, porque las ventanas flotantes solo existen en
+        `public_home.html`."""
+        self._seed(session)
+        client.cookies.set("vista", "tablero")
+
+        texto = client.get("/?vista=tablero").text
+
+        cobertura = re.search(r'href="([^"]*ver=cobertura[^"]*)"', texto)
+        evolucion = re.search(r'href="([^"]*ver=evolucion[^"]*)"', texto)
+        assert cobertura is not None and "vista=mapa" in cobertura.group(1)
+        assert evolucion is not None and "vista=mapa" in evolucion.group(1)
+
+        # Y el enlace generado de verdad abre el mapa, cookie puesta y todo
+        # — no alcanza con que la URL "parezca" correcta. El HTML trae el
+        # `&` escapado como `&amp;`; hay que decodificarlo antes de pedirlo,
+        # como hace un navegador de verdad al seguir el href.
+        href = cobertura.group(1).replace("&amp;", "&")
+        respuesta = client.get(href)
+        assert 'id="ph-leaflet-map"' in respuesta.text
+
+    def test_csv_descarga_directo_sin_pasar_por_el_mapa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert re.search(r'href="/datos\.csv\?desde=[^"]+"', texto)
+
+    def test_el_toggle_de_tema_esta_en_el_menu(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'class="ph-actions-item ph-tap-44 theme-toggle"' in texto
+
+    def test_el_menu_no_aparece_en_el_mapa(self, client: TestClient, session: Session) -> None:
+        """El compás del mapa ya tiene sus propias acciones — este menú es
+        específico del tablero, sin lienzo sobre el que flotar."""
+        self._seed(session)
+
+        texto = client.get("/").text
+
+        assert "ph-actions-trigger" not in texto
+
 
 
 class TestTiraDePrecioEnLaPagina:

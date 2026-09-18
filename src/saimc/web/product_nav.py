@@ -44,13 +44,6 @@ DEFAULT_LAYER = "publicacion"
 VISTA_CHOICES: tuple[str, ...] = ("mapa", "tablero")
 DEFAULT_VISTA = "mapa"
 
-#: Presentación DENTRO del tablero (2026-09-17): mismos datos, dos formas de
-#: mostrarlos. No es un tercer valor de `VISTA_CHOICES` —el mapa no tiene
-#: presentación de tabla— por eso vive en su propio eje, ortogonal a `vista`.
-PRESENTACION_CHOICES: tuple[str, ...] = ("tarjetas", "tabla")
-DEFAULT_PRESENTACION = "tarjetas"
-
-
 def product_slug(name: str) -> str:
     """Nombre → segmento de URL estable. Sirve para producto y para provincia.
 
@@ -141,12 +134,6 @@ def resolve_vista(raw: str | None) -> str:
     return raw if raw in VISTA_CHOICES else DEFAULT_VISTA
 
 
-def resolve_presentacion(raw: str | None) -> str:
-    """Query string → una de `PRESENTACION_CHOICES`, o el default (tarjetas)
-    ante cualquier cosa. Mismo criterio que `resolve_vista`."""
-    return raw if raw in PRESENTACION_CHOICES else DEFAULT_PRESENTACION
-
-
 def _parse_iso_date(raw: str | None) -> date | None:
     if not raw:
         return None
@@ -197,11 +184,10 @@ def _query(
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     vista: str = DEFAULT_VISTA,
-    presentacion: str = DEFAULT_PRESENTACION,
     path: str = "/",
 ) -> str:
     """Compone la URL con los ejes activos, en orden fijo
-    producto/provincia/desde/hasta/ver/capa/vista/presentacion.
+    producto/provincia/desde/hasta/ver/capa/vista.
 
     `productos` (lista de slugs, multi-selección) gana sobre `producto` (slug
     único, alias histórico) cuando trae algo: se emite `productos=a,b`. `ver`
@@ -209,15 +195,13 @@ def _query(
     capa del mapa (§ mapa, 2026-09-11). `vista` es mapa/tablero
     (2026-09-16) — se preserva igual que `capa` para que cambiar de
     producto, provincia o ventana de días no expulse de vuelta al mapa a
-    quien eligió el tablero. `presentacion` es tarjetas/tabla DENTRO del
-    tablero (2026-09-17) — mismo criterio: cambiar de producto, provincia o
-    ventana no debe expulsar de vuelta a tarjetas a quien eligió la tabla.
+    quien eligió el tablero.
 
     `desde`/`hasta` van SIEMPRE explícitos (2026-09-14) —a diferencia de
-    `capa`/`vista`/`presentacion`, que se omiten si son el default—: son la
-    respuesta directa al pedido de que el rango en uso se vea siempre, y una
-    URL que dice exactamente qué ventana mira es más clara para compartir,
-    no menos. La descarga usa `path="/datos.csv"`.
+    `capa`/`vista`, que se omiten si son el default—: son la respuesta
+    directa al pedido de que el rango en uso se vea siempre, y una URL que
+    dice exactamente qué ventana mira es más clara para compartir, no menos.
+    La descarga usa `path="/datos.csv"`.
     """
     params = []
     if productos:
@@ -234,8 +218,6 @@ def _query(
         params.append(f"capa={capa}")
     if vista != DEFAULT_VISTA:
         params.append(f"vista={vista}")
-    if presentacion != DEFAULT_PRESENTACION:
-        params.append(f"presentacion={presentacion}")
     return f"{path}?" + "&".join(params)
 
 
@@ -248,13 +230,12 @@ def products_query(
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     vista: str = DEFAULT_VISTA,
-    presentacion: str = DEFAULT_PRESENTACION,
     path: str = "/",
 ) -> str:
     """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
     preservando provincia, rango de calendario, ventanas abiertas, capa del
-    mapa, vista (mapa/tablero) y presentación (tarjetas/tabla). La usan el
-    riel de chips, los paneles flotantes, el mapa y la hoja de provincia."""
+    mapa y vista (mapa/tablero). La usan el riel de chips, los paneles
+    flotantes, el mapa y la hoja de provincia."""
     return _query(
         productos=list(product_slugs),
         provincia=provincia,
@@ -263,7 +244,6 @@ def products_query(
         ver=list(ver),
         vista=vista,
         capa=capa,
-        presentacion=presentacion,
         path=path,
     )
 
@@ -381,18 +361,15 @@ def build_province_nav(
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     vista: str = DEFAULT_VISTA,
-    presentacion: str = DEFAULT_PRESENTACION,
 ) -> list[NavChoice]:
     """«Todas» + un ítem por provincia con dato piloto, marcando la activa.
 
     Simétrica a `build_product_nav`; cada enlace preserva el producto (o el
     conjunto `active_products` de los chips), el rango de calendario, las
-    ventanas flotantes abiertas (`ver`), la capa del mapa (`capa`), la vista
-    (`vista`, mapa/tablero) y la presentación (`presentacion`, tarjetas/tabla
-    dentro del tablero): la barra vive dentro de la ventana «Precios» y de
-    los chips del tablero, y cambiar de provincia no puede cerrarla, resetear
-    la capa, devolver al mapa a quien eligió el tablero, ni sacar de la tabla
-    a quien la eligió.
+    ventanas flotantes abiertas (`ver`), la capa del mapa (`capa`) y la vista
+    (`vista`, mapa/tablero): la barra vive dentro de la ventana «Precios» y
+    de los chips del tablero, y cambiar de provincia no puede cerrarla,
+    resetear la capa, ni devolver al mapa a quien eligió el tablero.
     """
     prod_slug = product_slug(selected_product) if selected_product else ""
     active_slugs = [product_slug(n) for n in active_products]
@@ -410,7 +387,6 @@ def build_province_nav(
                 ver=ver,
                 capa=capa,
                 vista=vista,
-                presentacion=presentacion,
             ),
         )
     ]
@@ -430,7 +406,6 @@ def build_province_nav(
                     ver=ver,
                     capa=capa,
                     vista=vista,
-                    presentacion=presentacion,
                 ),
             )
         )
@@ -523,7 +498,6 @@ def build_product_chips(
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     vista: str = DEFAULT_VISTA,
-    presentacion: str = DEFAULT_PRESENTACION,
     toggle: bool = False,
 ) -> list[ProductChip]:
     """Un chip por producto piloto, en el orden del catálogo.
@@ -564,7 +538,6 @@ def build_product_chips(
                     ver=ver,
                     capa=capa,
                     vista=vista,
-                    presentacion=presentacion,
                 ),
             )
         )

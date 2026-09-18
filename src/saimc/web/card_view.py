@@ -219,108 +219,6 @@ def group_cards_by_province(
     ]
 
 
-@dataclass(frozen=True)
-class ProductGroup:
-    """Los formatos de un producto en una provincia, bajo una sola tarjeta.
-
-    **No reabre la decisión del 2026-09-04** («El rango minorista público se
-    separa por formato»). El titular publicado de cada formato sigue siendo el
-    precio del envase —«16.685 CUP el saco de 25 kg»— con el precio por unidad
-    base al lado como comparador, exactamente como quedó decidido. Lo único que
-    cambia es **cuántas tarjetas** se pintan: los formatos de un mismo producto
-    en una misma provincia comparten una, en vez de una cada uno.
-
-    El motivo es de lectura, no de medición: al 2026-09-17 el tablero servía
-    50 tarjetas para 5 productos en 2 provincias —una por formato— con su tabla
-    de anuncios cada una. Colapsarlas deja 9, sin tocar ninguna cifra.
-
-    `count` es la suma de las muestras de sus formatos. No es un estadístico
-    nuevo: cada formato agrupa observaciones distintas (`format_id` entra en la
-    clave de `compute_retail_ranges`), así que la suma no cuenta dos veces
-    nada. Ninguna mediana ni ningún rango se recalcula acá.
-    """
-
-    product_name: str
-    province_name: str
-    currency: str
-    unit: str
-    cards: tuple[ProductCard, ...]
-
-    @property
-    def count(self) -> int:
-        """Anuncios detrás del producto entero en esta provincia."""
-        return sum(c.count for c in self.cards)
-
-    @property
-    def state(self) -> str:
-        return SAMPLE_FORMING
-
-    @property
-    def slug(self) -> str:
-        return product_slug(self.product_name)
-
-    @property
-    def icon(self) -> str | None:
-        return product_icon(self.product_name)
-
-    @property
-    def has_illustration(self) -> bool:
-        return has_product_illustration(self.product_name)
-
-    @property
-    def change_text(self) -> str:
-        """El cambio del producto en esta provincia, o `""` si no hay.
-
-        `attach_trends` le pega el mismo agregado a todos los formatos del
-        producto —empareja por (producto, provincia, moneda, unidad), sin
-        formato—, así que tomar el primero no elige entre valores distintos:
-        elige el único que hay.
-        """
-        for card in self.cards:
-            if card.change_text:
-                return card.change_text
-        return ""
-
-
-def group_products_by_province(
-    cards: Sequence[ProductCard], province_names: Sequence[str]
-) -> list[tuple[str, list[ProductGroup]]]:
-    """Las tarjetas agrupadas por provincia y, dentro, por producto.
-
-    Misma forma de retorno que `group_cards_by_province` —para que la
-    plantilla del tablero cambie de bucle y no de estructura— pero cada
-    elemento es un `ProductGroup` con sus formatos adentro.
-
-    Los grupos de cada provincia van por muestra total descendente, mismo
-    criterio que `build_cards` usa para las tarjetas sueltas: lo mejor
-    respaldado primero. Adentro, los formatos conservan el orden en que
-    llegaron, que ya es el de `build_cards`.
-    """
-    por_clave: dict[tuple[str, str, str, str], list[ProductCard]] = {}
-    for card in cards:
-        clave = (card.product_name, card.province_name, card.currency, card.unit)
-        por_clave.setdefault(clave, []).append(card)
-
-    grupos = [
-        ProductGroup(
-            product_name=product_name,
-            province_name=province_name,
-            currency=currency,
-            unit=unit,
-            cards=tuple(miembros),
-        )
-        for (product_name, province_name, currency, unit), miembros in por_clave.items()
-    ]
-    grupos.sort(key=lambda g: (-g.count, g.product_name, g.province_name))
-
-    por_provincia: dict[str, list[ProductGroup]] = {}
-    for grupo in grupos:
-        por_provincia.setdefault(grupo.province_name, []).append(grupo)
-    return [
-        (name, por_provincia[name]) for name in province_names if name in por_provincia
-    ]
-
-
 #: Con menos de tres provincias un degradado miente: pintar dos puntos de
 #: punta a punta hace ver una diferencia del 6% como si fuera el rango entero
 #: del país. NO es un umbral de publicación de §12.6 —no decide qué se
@@ -457,12 +355,19 @@ def province_color_slots(province_names: Sequence[str]) -> dict[str, int]:
     """Slot de color (0/1/2/9) por provincia, en el orden en que se reciben
     —ya alfabético, mismo orden que agrupa `group_cards_by_province`—.
 
-    Tablero (2026-09-16, Dirección D — índice de salto + borde de tarjeta):
-    identidad por posición en el catálogo, no por los datos, para que el
-    color de una provincia no cambie de una carga a otra. Sin paleta para
-    dieciséis provincias distintas: las primeras tres tienen color propio, el
-    resto comparte el neutral — forzar una paleta más grande inventaría una
-    identidad que nadie decidió."""
+    Puramente posicional: no mira precio ni cantidad de anuncios, solo el
+    orden de la lista que le pasan. Sin paleta para dieciséis provincias
+    distintas: las primeras tres tienen color propio, el resto comparte el
+    neutral — forzar una paleta más grande inventaría una identidad que
+    nadie decidió.
+
+    Qué lista pasarle es decisión de quien llama, no de esta función. El
+    tablero (2026-09-16) la llamó primero sobre el catálogo completo de 16
+    —identidad estable entre cargas—, pero con datos reales solo en dos
+    provincias eso las dejaba a las dos en el mismo slot neutral: la tabla
+    se veía de un solo color (2026-09-18, ver `routers/public.py`). Ahí se
+    cambió a llamarla sobre las provincias con dato EN LA VISTA ACTUAL, a
+    costa de la estabilidad entre cargas."""
     return {
         name: i if i < _NAMED_PROVINCE_SLOTS else _OTHER_PROVINCE_SLOT
         for i, name in enumerate(province_names)
