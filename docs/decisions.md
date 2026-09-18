@@ -11097,7 +11097,6 @@ dos puntos de color en rgb distinto (`rgb(63,95,214)` La Habana vs.
 `rgb(112,72,232)` Santiago).
 Suite: 1777 casos.
 
-<<<<<<< HEAD
 ---
 
 ## 2026-09-18 — `n` en /control pasa a declarar de cuántos emisores y días viene
@@ -11149,7 +11148,7 @@ mensajes, 0 celdas donde `sources + unidentified_sources` supere `count`, 0 con
 `days > count`, 0 con `days == 0`—. Suite: 1791 casos. Sin drift de ruff
 (65 = piso); los 2 hallazgos nuevos de mypy en `cells.py` son los mismos del
 piso corridos de línea, y los de `rapidocr` son dependencia opcional ausente.
-=======
+
 
 ## 2026-09-18 — Tablero como dashboard (dirección C), slice 1: lista de productos + cobertura
 Contexto: el operador pidió que el tablero deje de ser «el mapa sin mapa» y
@@ -11214,7 +11213,6 @@ etiquetas a 35px y la última se salía del borde. Queda pendiente, y es del
 mapa: con el ancho de la ventana flotante la etiqueta «14/09» del calendario
 también roza el borde derecho. Siguen abiertas las dos decisiones del slice 1
 (qué mediana manda entre lista y tira, y `attach_trends` pisando formatos).
->>>>>>> worktree-tablero-dashboard-c
 
 
 ## 2026-09-18 — El «Cambio» de la tarjeta y de la tabla es el del producto en la provincia (slice 3)
