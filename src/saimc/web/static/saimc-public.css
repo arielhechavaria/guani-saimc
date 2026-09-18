@@ -97,6 +97,8 @@
   --ph-accent-2: #028090;
   --ph-accent-2-line: #015a63;
   --ph-median: #aec092;
+  --ph-price-low: #e8f1f6;
+  --ph-price-high: #05668d;
   --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
   --ph-radius-lg: 24px;
   --ph-radius-sm: 14px;
@@ -148,6 +150,8 @@
   --ph-accent-2: #4fb8c7;
   --ph-accent-2-line: #bdf0f5;
   --ph-median: #c3d4a8;
+  --ph-price-low: #16303c;
+  --ph-price-high: #7ec8ea;
 }
 /* <<< END tokens generados */
 
@@ -287,6 +291,33 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
 }
 .ph-theme-toggle:hover { background: var(--m3-surface-container-high); }
 
+/* ── Blanco táctil de 44px (`.ph-tap-44`) ──────────────────────────────────
+   Medido con Chromium a 390x844 contra el sitio en vivo (2026-09-17): los
+   controles de la capa pública quedaban entre 15 y 35px de alto. El mapa
+   tenía 11 por debajo del mínimo, el tablero 378 y el detalle de producto 99
+   —26 de ellos los enlaces «ver anuncio», de 65x15—.
+
+   Agranda el área sensible sin mover el dibujo. Es deliberado: la isla de
+   filtros flota sobre el mapa —cada píxel que crece es mapa que tapa, y en un
+   teléfono acostado el alto disponible es ~390px— y el operador había pedido
+   expresamente compactar esos controles (decisions.md, 2026-09-14).
+
+   `<select>` e `<input>` son elementos reemplazados y no admiten `::after`:
+   esos crecen de verdad, con `min-height` en su propia regla.
+
+   Nació en el `<style>` de `public_home.html` y se mudó acá el 2026-09-17,
+   mismo camino que ya recorrieron `.ph-card` y `.ph-coverage`: dejó de ser
+   exclusiva del mapa. */
+.ph-tap-44 { position: relative; }
+.ph-tap-44::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%;
+  height: 44px; transform: translateY(-50%);
+  /* No pinta nada: sólo recibe el toque. */
+}
+/* Para lo que tampoco llega a 44 de ancho (un ícono suelto), el área crece
+   en los dos ejes. */
+.ph-tap-44.ph-tap-ancho::after { left: 50%; right: auto; width: 44px; transform: translate(-50%, -50%); }
+
 /* ── Tarjeta de producto (`.ph-card`) ──────────────────────────────────────
    Vivía solo en el `<style>` de `public_home.html` («mientras sea la única
    vista pública»). Dejó de serlo el 2026-09-16: el modo Tablero
@@ -372,7 +403,16 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
 .ph-coverage { width: 100%; border-collapse: collapse; font-size: .875rem; }
 .ph-coverage caption { text-align: left; padding: .9rem 1rem 0; font-size: .8125rem;
                        color: var(--m3-on-surface-variant); }
-.ph-coverage th, .ph-coverage td { text-align: left; padding: .5rem .7rem;
+/* Padding vertical a .75rem (2026-09-17, mobile-first): con .5rem la fila
+   medía 37px de alto, por debajo del blanco táctil de 44px — y es la fila
+   que trae el enlace «ver anuncio» (65x15 medido, el más chico de todo el
+   detalle de producto). Se sube el padding de toda la fila en vez de
+   extender el área del enlace con un `::after` (patrón de `.ph-tap-44`, más
+   abajo en esta hoja): las filas van pegadas sin espacio entre sí, y
+   extender solo el enlace habría invadido la fila vecina. Sube el alto de
+   TODAS las columnas —día y precio también—, que es preferible a una fila
+   dispareja. */
+.ph-coverage th, .ph-coverage td { text-align: left; padding: .75rem .7rem;
                border-bottom: 1px solid var(--m3-divider); }
 .ph-coverage th:last-child, .ph-coverage td:last-child { padding-right: 1rem; }
 .ph-coverage th:first-child, .ph-coverage td:first-child { padding-left: 1rem; }

@@ -60,7 +60,13 @@ Sin anuncios en los últimos {{ window_days }} días.
   .ph-lite-anuncios { margin-top: .7rem; }
   .ph-lite-anuncios summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
   .ph-lite-tabla { width: 100%; border-collapse: collapse; margin-top: .5rem; font-size: .8125rem; }
-  .ph-lite-tabla th, .ph-lite-tabla td { padding: .3rem .5rem; text-align: left; border-bottom: 1px solid var(--m3-outline-variant); }
+  /* Padding vertical a .75rem (2026-09-17, mobile-first): con .3rem la fila
+     con el enlace «ver anuncio» medía 65x15 —el elemento más chico de todo
+     el detalle de producto—. Mismo criterio que `.ph-coverage` en
+     saimc-public.css (misma tabla, nombre distinto en esta vista liviana):
+     sube el padding de la fila entera, no solo del enlace, porque las filas
+     van pegadas sin espacio entre sí. */
+  .ph-lite-tabla th, .ph-lite-tabla td { padding: .75rem .5rem; text-align: left; border-bottom: 1px solid var(--m3-outline-variant); }
   .ph-lite-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
   .ph-lite-vacio { margin-top: var(--m3-space-5); color: var(--m3-on-surface-variant); }
   .ph-lite-mapa { margin-top: var(--m3-space-6); }

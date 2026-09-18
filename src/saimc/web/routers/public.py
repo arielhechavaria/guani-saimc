@@ -5,8 +5,12 @@ de producto» dentro del alcance de la **Fase 0** (`decisions.md`, 2026-08-22).
 Hoy `GET /` tiene: mapa de cobertura por provincia (§9.0), tarjetas de rango
 minorista con muestra visible, gráfico de evolución, y filtros por producto,
 provincia y ventana de días vía query string (`?producto=`, `?provincia=`,
-`?dias=`, 2026-08-26). El coloreado del mapa por precio y los semáforos siguen
-bloqueados por el umbral sin calibrar (§12.6).
+`?dias=`, 2026-08-26). El coloreado del **mapa** por precio y los **semáforos**
+siguen bloqueados por el umbral sin calibrar (§12.6): decir si un precio
+«está bien» exige una banda que nadie midió. Lo que sí se habilitó el
+2026-09-17 es la tira del tablero (`card_view.build_price_strips`): una
+escala continua de posición relativa, sin bandas, sin veredicto, y con la
+cifra y la muestra escritas en cada celda — no fija ningún umbral.
 
 Sin `require_operator` a propósito: es la capa pública. Y sin identificador de
 usuario ni dato de contacto en ninguna respuesta — `CLAUDE.md` fija que el
@@ -31,6 +35,7 @@ from saimc.progress import pilot_product_names
 from saimc.web.card_view import (
     attach_trends,
     build_cards,
+    build_price_strips,
     group_cards_by_province,
     group_products_by_province,
     province_color_slots,
@@ -523,6 +528,11 @@ def _render_home(
     # fila por formato ahí no abruma, es lo que una tabla hace—, así que
     # conviven las dos agrupaciones y cada presentación usa la suya.
     groups_by_province = group_products_by_province(cards, province_names)
+    # Tira de precio (2026-09-17): el vistazo de arriba del tablero. Sale de
+    # las mismas tarjetas, sin recalcular ninguna cifra — ver
+    # `card_view.build_price_strips` y `templates/_price_strips.html` para qué
+    # se desbloqueó de §12.6 y qué sigue bloqueado.
+    price_strips = build_price_strips(cards)
     # Índice de salto + borde de la tarjeta (slice 4, Dirección D — agrupar
     # el tablero): un slot de color por provincia, sobre `all_province_names`
     # (el catálogo completo, alfabético) y no sobre `cards_by_province` — esa
@@ -548,6 +558,18 @@ def _render_home(
             hasta=ventana_hasta,
         )
         for c in cards
+    }
+    # Cada celda de la tira lleva a la misma vista liviana que ya usan las
+    # filas de la tabla: no se inventa un destino nuevo.
+    strip_hrefs = {
+        (s.product_name, cell.province_name): light_product_query(
+            product_slug(s.product_name),
+            provincia=product_slug(cell.province_name),
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+        )
+        for s in price_strips
+        for cell in s.cells
     }
     template_name = "public_dashboard.html" if selected_vista == "tablero" else "public_home.html"
     return request.app.state.templates.TemplateResponse(
@@ -627,6 +649,8 @@ def _render_home(
             "vista": selected_vista,
             "cards_by_province": cards_by_province,
             "groups_by_province": groups_by_province,
+            "price_strips": price_strips,
+            "strip_hrefs": strip_hrefs,
             "province_slots": province_slots,
             "province_slugs": province_slugs,
             "product_hrefs": product_hrefs,

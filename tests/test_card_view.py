@@ -18,6 +18,7 @@ from saimc.web.card_view import (
     build_cards,
     format_price,
     group_cards_by_province,
+    build_price_strips,
     group_products_by_province,
     province_color_slots,
 )
@@ -479,3 +480,146 @@ class TestSlotsDeColorPorProvincia:
 
     def test_lista_vacia_no_produce_slots(self) -> None:
         assert province_color_slots([]) == {}
+
+
+class TestTiraDePrecio:
+    """La tira de calor: dónde está más barato, provincia por provincia.
+
+    Compara con el **precio por unidad**, que es el rol que le asigna la
+    decisión del 2026-09-04 («con el precio por unidad base al lado como
+    comparador»). No calcula ninguna cifra nueva: como no existe un agregado
+    producto×provincia —`build_headlines` también agrupa por formato—, cada
+    provincia queda representada por su formato mejor respaldado, que es una
+    cifra que la tarjeta ya publica.
+
+    Valores esperados calculados a mano, antes de correr el constructor.
+    """
+
+    def _card(
+        self, *, province: str, median: str, count: int, packaging: str = "saco"
+    ) -> RetailRange:
+        return _rango(
+            product="Arroz",
+            province=province,
+            median=median,
+            minimum=median,
+            maximum=median,
+            count=count,
+            format_packaging=packaging,
+            format_quantity="25",
+            format_unit="kg",
+        )
+
+    def test_una_celda_por_provincia_ordenadas_de_mas_barata_a_mas_cara(self) -> None:
+        cards = build_cards(
+            [
+                self._card(province="La Habana", median="300", count=9),
+                self._card(province="Santiago de Cuba", median="282", count=7),
+                self._card(province="Holguín", median="315", count=4),
+            ]
+        )
+
+        (tira,) = build_price_strips(cards)
+
+        assert [c.province_name for c in tira.cells] == [
+            "Santiago de Cuba",
+            "La Habana",
+            "Holguín",
+        ]
+
+    def test_representa_a_la_provincia_su_formato_mejor_respaldado(self) -> None:
+        """No se promedia entre formatos: gana el que más anuncios tiene."""
+        cards = build_cards(
+            [
+                self._card(province="La Habana", median="300", count=9, packaging="saco"),
+                self._card(province="La Habana", median="348", count=2, packaging="bolsa"),
+            ]
+        )
+
+        (tira,) = build_price_strips(cards)
+
+        (celda,) = tira.cells
+        assert celda.unit_price == Decimal("300")
+        assert celda.count == 9
+        assert celda.format_label == "saco de 25 kg"
+
+    def test_con_tres_o_mas_provincias_la_escala_va_de_0_a_100(self) -> None:
+        cards = build_cards(
+            [
+                self._card(province="Santiago de Cuba", median="200", count=5),
+                self._card(province="La Habana", median="250", count=5),
+                self._card(province="Holguín", median="300", count=5),
+            ]
+        )
+
+        (tira,) = build_price_strips(cards)
+
+        # 200 es el piso, 300 el techo, 250 queda justo en el medio.
+        assert [c.pct for c in tira.cells] == [0, 50, 100]
+        assert tira.has_gradient
+
+    def test_con_menos_de_tres_provincias_no_hay_degradado(self) -> None:
+        """Dos puntos no son una escala: pintarlos de punta a punta haría ver
+        un 6% de diferencia como si fuera el rango entero del país."""
+        cards = build_cards(
+            [
+                self._card(province="La Habana", median="300", count=5),
+                self._card(province="Santiago de Cuba", median="282", count=5),
+            ]
+        )
+
+        (tira,) = build_price_strips(cards)
+
+        assert not tira.has_gradient
+        assert [c.pct for c in tira.cells] == [None, None]
+
+    def test_todas_al_mismo_precio_no_produce_degradado(self) -> None:
+        """Sin dispersión no hay nada que graduar, y dividir por cero menos."""
+        cards = build_cards(
+            [
+                self._card(province="La Habana", median="300", count=5),
+                self._card(province="Santiago de Cuba", median="300", count=5),
+                self._card(province="Holguín", median="300", count=5),
+            ]
+        )
+
+        (tira,) = build_price_strips(cards)
+
+        assert not tira.has_gradient
+
+    def test_cada_producto_tiene_su_propia_tira(self) -> None:
+        cards = build_cards(
+            [
+                _rango(product="Arroz", province="La Habana", count=9),
+                _rango(product="Pollo", province="La Habana", count=4),
+            ]
+        )
+
+        tiras = build_price_strips(cards)
+
+        assert [t.product_name for t in tiras] == ["Arroz", "Pollo"]
+
+    def test_las_tiras_van_por_muestra_total(self) -> None:
+        cards = build_cards(
+            [
+                _rango(product="Pollo", province="La Habana", count=3),
+                _rango(product="Pollo", province="Santiago de Cuba", count=9),
+                _rango(product="Arroz", province="La Habana", count=8),
+            ]
+        )
+
+        tiras = build_price_strips(cards)
+
+        assert [t.product_name for t in tiras] == ["Pollo", "Arroz"]
+        assert [t.count for t in tiras] == [12, 8]
+
+    def test_la_celda_conserva_la_muestra_que_la_sostiene(self) -> None:
+        """§9.0: el número de observaciones va a la vista, siempre."""
+        cards = build_cards([self._card(province="La Habana", median="300", count=9)])
+
+        (tira,) = build_price_strips(cards)
+
+        assert tira.cells[0].count == 9
+
+    def test_sin_tarjetas_no_hay_tiras(self) -> None:
+        assert build_price_strips([]) == []
