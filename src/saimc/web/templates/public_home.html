@@ -565,7 +565,7 @@
   .ph-province-select {
     font: inherit; font-size: .8125rem; font-weight: 500; letter-spacing: .01em;
     /* Blanco táctil: un `<select>` no admite `::after`, así que crece de
-       verdad (ver el bloque `.ph-tap-44` más abajo). */
+       verdad (`.ph-tap-44` vive en `saimc-public.css`). */
     min-height: 44px;
     padding: .4rem 2rem .4rem .95rem; border-radius: var(--m3-radius-full);
     border: 1px solid var(--m3-outline-variant);
@@ -601,36 +601,9 @@
      diciendo los atajos 7/30/90 (el que está marcado) y, si no coincide
      con ninguno, el ícono del calendario se enciende — misma idea de "que
      siempre se pueda ver", con menos ancho ocupado. */
-  /* Blanco táctil de 44px sin cambiar el tamaño visible (2026-09-17).
-
-     Medido con Chromium a 390x844 contra el sitio en vivo: los controles de
-     la isla de filtros quedaban en 30x30 (el calendario), 55x32 y 62x32 (los
-     atajos de días), 52x35 (Ver) y 151x35 (el selector de provincia). Todos
-     por debajo del mínimo de 44px, y son los controles principales de la
-     página que más gente va a abrir desde un teléfono.
-
-     Se agranda el área sensible con un `::after` en vez de agrandar el
-     control: el operador pidió expresamente compactar estas piezas
-     (decisions.md, 2026-09-14, "compactarlos detrás de un ícono"), y la isla
-     flota sobre el mapa — cada píxel que crece es mapa que tapa, y en un
-     teléfono acostado el alto disponible es ~390px. Así el dibujo no se
-     mueve ni un píxel y el dedo igual acierta.
-
-     El `gap` pasa de .3rem a .5rem para que dos áreas extendidas vecinas no
-     se pisen: el atajo más chico mide 55px de ancho, la extensión sólo
-     crece en alto, y 8px de separación alcanzan para que no se solapen. */
-  .ph-tap-44 { position: relative; }
-  .ph-tap-44::after {
-    content: ""; position: absolute; left: 0; right: 0; top: 50%;
-    height: 44px; transform: translateY(-50%);
-    /* No pinta nada: sólo recibe el toque. */
-  }
-  /* El disparador del calendario es el único que tampoco llega a 44 de
-     ancho (mide 30x30), así que su área crece en los dos ejes. */
-  .ph-window-custom-trigger.ph-tap-44::after { left: 50%; right: auto; width: 44px; transform: translate(-50%, -50%); }
-  /* `<select>` e `<input>` son elementos reemplazados: no admiten `::after`,
-     así que a esos dos sí hay que crecerlos de verdad. Su `min-height: 44px`
-     vive en la regla de cada uno, más arriba, junto al resto de su caja. */
+  /* El blanco táctil de 44px (`.ph-tap-44`) vive en `saimc-public.css`:
+     dejó de ser exclusivo del mapa. El disparador del calendario suma
+     `.ph-tap-ancho` porque tampoco llega a 44 de ancho (mide 30x30). */
 
   .ph-window-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
   .ph-window-shortcuts { display: flex; flex-wrap: wrap; gap: .5rem; }
@@ -1324,7 +1297,7 @@
     {% endfor %}
   </div>
   <details class="ph-window-custom">
-    <summary class="ph-window-custom-trigger ph-tap-44{% if es_personalizado %} is-selected{% endif %}" aria-label="Rango de fechas personalizado{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}">
+    <summary class="ph-window-custom-trigger ph-tap-44 ph-tap-ancho{% if es_personalizado %} is-selected{% endif %}" aria-label="Rango de fechas personalizado{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}">
       <span class="m3-icon" aria-hidden="true">calendar_month</span>
     </summary>
     <div class="ph-filter-popover">

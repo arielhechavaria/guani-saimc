@@ -1032,8 +1032,14 @@ class TestBlancoTactilDeLaIslaDeFiltros:
             raiz / "src" / "saimc" / "web" / "templates" / "public_home.html"
         ).read_text(encoding="utf-8")
 
+    def _hoja(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        return (
+            raiz / "src" / "saimc" / "web" / "static" / "saimc-public.css"
+        ).read_text(encoding="utf-8")
+
     def test_la_regla_declara_44px(self) -> None:
-        css = self._home()
+        css = self._hoja()
         inicio = css.index(".ph-tap-44::after {")
         bloque = css[inicio : inicio + 260]
 
@@ -1042,10 +1048,15 @@ class TestBlancoTactilDeLaIslaDeFiltros:
             "lo que la regla existe para corregir"
         )
 
-    def test_el_calendario_crece_tambien_a_lo_ancho(self) -> None:
-        """Es el único que tampoco llega a 44 de ancho: mide 30x30."""
-        css = self._home()
-        inicio = css.index(".ph-window-custom-trigger.ph-tap-44::after {")
+    def test_la_regla_vive_en_la_hoja_compartida(self) -> None:
+        """Dejó de ser exclusiva del mapa: el tablero y el detalle de producto
+        también la usan, y una copia por plantilla se desincroniza."""
+        assert ".ph-tap-44 {" not in self._home()
+
+    def test_hay_un_modificador_para_crecer_a_lo_ancho(self) -> None:
+        """Para un ícono suelto, que tampoco llega a 44 de ancho."""
+        css = self._hoja()
+        inicio = css.index(".ph-tap-44.ph-tap-ancho::after {")
         bloque = css[inicio : inicio + 200]
 
         assert "width: 44px" in bloque
@@ -1054,7 +1065,7 @@ class TestBlancoTactilDeLaIslaDeFiltros:
         "control",
         [
             "ph-window-shortcut ph-tap-44",
-            "ph-window-custom-trigger ph-tap-44",
+            "ph-window-custom-trigger ph-tap-44 ph-tap-ancho",
             "ph-window-submit ph-tap-44",
         ],
     )
@@ -1081,4 +1092,58 @@ class TestBlancoTactilDeLaIslaDeFiltros:
         assert "gap: .5rem" in bloque, (
             "con .3rem las áreas de 44px de dos atajos contiguos se solapan y "
             "el toque cae en el vecino"
+        )
+
+
+class TestBlancoTactilDelTablero:
+    """44px en los controles principales del tablero (2026-09-17).
+
+    Medido con Chromium a 390px: el toggle Mapa/Tablero daba 31px de alto, el
+    de Tarjetas/Tabla lo mismo, los chips de filtro 33px, el índice de salto
+    33px, y el producto dentro de la fila de tabla 16px. En total el tablero
+    tenía 378 elementos por debajo de 44px, la mayoría filas de tabla y
+    enlaces «ver anuncio» — este caso cubre los controles de navegación
+    principales; el resto son evidencia dentro de un `<details>` que ya exige
+    un clic para verse, no la primera interacción de la página.
+    """
+
+    def _dashboard(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        return (
+            raiz / "src" / "saimc" / "web" / "templates" / "public_dashboard.html"
+        ).read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        "fragmento",
+        [
+            'class="js-vista-link ph-tap-44{% if vista == "mapa"',
+            'class="js-vista-link ph-tap-44{% if vista == "tablero"',
+            'class="ph-tap-44{% if presentacion == "tarjetas"',
+            'class="ph-tap-44{% if presentacion == "tabla"',
+            'class="ph-dash-chip ph-tap-44{% if chip.is_active',
+            'class="ph-dash-chip ph-tap-44{% if choice.is_selected',
+            'ph-tap-44" href="#{{ province_slugs[province_name] }}"',
+            'class="ph-dash-table-producto ph-tap-44"',
+        ],
+    )
+    def test_el_control_lleva_la_clase(self, fragmento: str) -> None:
+        assert fragmento in self._dashboard(), (
+            f"«{fragmento}» perdió `ph-tap-44`: el control vuelve a medir "
+            "menos de 44px sin que ningún test lo note"
+        )
+
+    def test_el_toggle_de_arriba_tiene_aire_antes_del_siguiente(self) -> None:
+        """Dos `.ph-tap-44` apilados sin separación se pisan las áreas
+        extendidas (medido: la de arriba queda cortada a la mitad). El
+        toggle Mapa/Tablero vive en `.ph-dash-top`, que necesita al menos
+        22px de aire abajo — la mitad del área extendida — antes del
+        siguiente control con la misma clase."""
+        css = self._dashboard()
+        inicio = css.index(".ph-dash-top {")
+        bloque = css[inicio : inicio + 200]
+
+        assert "space-6" in bloque or "space-8" in bloque, (
+            "el padding-bottom de .ph-dash-top bajó de --m3-space-6 (24px): "
+            "por debajo de 22px el toggle Mapa/Tablero se pisa con el de "
+            "Tarjetas/Tabla que viene después"
         )

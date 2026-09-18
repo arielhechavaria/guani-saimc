@@ -291,6 +291,33 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
 }
 .ph-theme-toggle:hover { background: var(--m3-surface-container-high); }
 
+/* ── Blanco táctil de 44px (`.ph-tap-44`) ──────────────────────────────────
+   Medido con Chromium a 390x844 contra el sitio en vivo (2026-09-17): los
+   controles de la capa pública quedaban entre 15 y 35px de alto. El mapa
+   tenía 11 por debajo del mínimo, el tablero 378 y el detalle de producto 99
+   —26 de ellos los enlaces «ver anuncio», de 65x15—.
+
+   Agranda el área sensible sin mover el dibujo. Es deliberado: la isla de
+   filtros flota sobre el mapa —cada píxel que crece es mapa que tapa, y en un
+   teléfono acostado el alto disponible es ~390px— y el operador había pedido
+   expresamente compactar esos controles (decisions.md, 2026-09-14).
+
+   `<select>` e `<input>` son elementos reemplazados y no admiten `::after`:
+   esos crecen de verdad, con `min-height` en su propia regla.
+
+   Nació en el `<style>` de `public_home.html` y se mudó acá el 2026-09-17,
+   mismo camino que ya recorrieron `.ph-card` y `.ph-coverage`: dejó de ser
+   exclusiva del mapa. */
+.ph-tap-44 { position: relative; }
+.ph-tap-44::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%;
+  height: 44px; transform: translateY(-50%);
+  /* No pinta nada: sólo recibe el toque. */
+}
+/* Para lo que tampoco llega a 44 de ancho (un ícono suelto), el área crece
+   en los dos ejes. */
+.ph-tap-44.ph-tap-ancho::after { left: 50%; right: auto; width: 44px; transform: translate(-50%, -50%); }
+
 /* ── Tarjeta de producto (`.ph-card`) ──────────────────────────────────────
    Vivía solo en el `<style>` de `public_home.html` («mientras sea la única
    vista pública»). Dejó de serlo el 2026-09-16: el modo Tablero

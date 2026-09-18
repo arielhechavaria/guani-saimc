@@ -10920,3 +10920,31 @@ Verificación: render real servido con los estáticos locales y fotografiado a
 celda por debajo de 44px de alto, y la escala de arroz repartida en 0/35/54/100
 con azúcar en plano por tener sólo dos provincias.
 Suite: 1780 casos (+14).
+
+## 2026-09-17 — Blanco táctil de 44px en el tablero, y la clase se comparte
+Contexto: la auditoría del mismo día había medido 378 elementos del tablero
+por debajo de 44px. Se cierra la parte de los controles de navegación
+principales: los dos toggles (Mapa/Tablero, Tarjetas/Tabla), los chips de
+filtro, el índice de salto por provincia y el producto dentro de cada fila de
+tabla. Quedan afuera —a propósito— las filas de evidencia dentro de un
+`<details>`, que ya exigen un clic para verse.
+Decisión: la clase `.ph-tap-44` se muda de `public_home.html` a
+`saimc-public.css`: dejó de ser exclusiva del mapa en cuanto el tablero la
+necesitó, mismo camino que ya recorrieron `.ph-card` y `.ph-coverage`. Se
+suma un modificador `.ph-tap-ancho` para el único caso que tampoco llega a 44
+de ancho (el disparador del calendario, 30x30).
+Al envolverse en varias filas, dos áreas extendidas vecinas podían pisarse:
+`.ph-dash-jump` y `.ph-dash-filter-group` suben su `gap` de `--m3-space-2`
+(8px) a `--m3-space-3` (12px), y la fila de la tabla sube su padding vertical
+a 14px para que el área del enlace no se salga hacia la fila de al lado.
+Descartado: repetir la regla en cada plantilla — es exactamente el problema
+que ya resolvió mover `.ph-card` a la hoja compartida.
+Verificación: banco aislado con el `<style>` real de `public_dashboard.html`
+Y el espaciado real entre bloques (`.ph-dash-top`, `.ph-dash-toolbar`,
+`.ph-dash-filters`) — la primera pasada, apilando los controles sin ese
+espaciado, dio dos falsos «NO» por un artefacto del banco (las áreas
+extendidas de dos toggles contiguos se pisaban entre sí sin el
+`padding-bottom` real de por medio); reconstruido con el espaciado real,
+9 de 9 controles llegan a 44px sin cambiar su tamaño visible.
+Suite: 1790 casos (+9, más 5 aflojados que comparaban el atributo `class`
+entero y se rompían al sumar cualquier clase).

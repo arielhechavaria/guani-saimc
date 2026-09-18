@@ -2698,8 +2698,8 @@ class TestVistaTableroEnLaRuta:
 
         texto = client.get("/?vista=tablero").text
 
-        assert '<a class="ph-prov-0" href="#la-habana">' in texto
-        assert '<a class="ph-prov-1" href="#santiago-de-cuba">' in texto
+        assert '<a class="ph-prov-0 ph-tap-44" href="#la-habana">' in texto
+        assert '<a class="ph-prov-1 ph-tap-44" href="#santiago-de-cuba">' in texto
         assert "· 2" in texto  # La Habana: Arroz + Aceite
         assert "· 1" in texto  # Santiago: solo Arroz
 
@@ -2729,8 +2729,8 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/?vista=tablero&productos=arroz").text
         filtros = texto[: texto.index('class="ph-dash-section-body"')]
 
-        assert re.search(r'class="ph-dash-chip is-active"[^>]*>[\s\S]*?Arroz', filtros)
-        assert re.search(r'class="ph-dash-chip"[^>]*>[\s\S]*?Aceite', filtros)
+        assert re.search(r'class="ph-dash-chip ph-tap-44 is-active"[^>]*>[\s\S]*?Arroz', filtros)
+        assert re.search(r'class="ph-dash-chip ph-tap-44"[^>]*>[\s\S]*?Aceite', filtros)
 
     def test_un_chip_de_producto_activo_se_apaga_al_clickearlo_en_el_tablero(
         self, client: TestClient, session: Session
@@ -2744,7 +2744,7 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/?vista=tablero&productos=arroz").text
         filtros = texto[: texto.index('class="ph-dash-section-body"')]
         chip_arroz = re.search(
-            r'<a class="ph-dash-chip is-active" href="([^"]+)"[^>]*>[\s\S]*?Arroz', filtros
+            r'<a class="ph-dash-chip ph-tap-44 is-active" href="([^"]+)"[^>]*>[\s\S]*?Arroz', filtros
         )
 
         assert chip_arroz is not None
@@ -2763,7 +2763,7 @@ class TestVistaTableroEnLaRuta:
 
         assert "Sin anuncios verificados en esta ventana todavía." in texto
         assert 'class="ph-dash-filters"' in texto
-        assert 'class="ph-dash-chip is-active"' in texto  # Aceite/Santiago siguen marcados
+        assert 'class="ph-dash-chip ph-tap-44 is-active"' in texto  # Aceite/Santiago siguen marcados
 
     def test_el_selector_de_provincia_marca_la_activa(
         self, client: TestClient, session: Session
@@ -2773,8 +2773,10 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
         filtros = texto[: texto.index('class="ph-dash-section-body"')]
 
-        assert re.search(r'class="ph-dash-chip is-active"[^>]*>[\s\S]*?Santiago de Cuba', filtros)
-        assert re.search(r'class="ph-dash-chip"[^>]*>[\s\S]*?Todas', filtros)
+        assert re.search(
+            r'class="ph-dash-chip ph-tap-44 is-active"[^>]*>[\s\S]*?Santiago de Cuba', filtros
+        )
+        assert re.search(r'class="ph-dash-chip ph-tap-44"[^>]*>[\s\S]*?Todas', filtros)
 
     def test_la_caja_de_busqueda_aparece_solo_si_hay_tarjetas(
         self, client: TestClient, session: Session
