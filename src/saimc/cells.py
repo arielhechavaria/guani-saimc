@@ -107,7 +107,7 @@ from __future__ import annotations
 
 import statistics
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -264,6 +264,56 @@ class Cell(_FormatPriced, _VariantLabeled):
     variant_brand: str | None = None
     variant_origin: str | None = None
 
+    # --- Composición de la muestra (2026-09-18) ---------------------------
+    # `count` cuenta mensajes, y solo se lee como si contara observaciones
+    # independientes. Medido contra producción: la celda de Arroz en Santiago
+    # tenía 27 mensajes de 2 emisores en 15 días, con el 85% de un solo canal.
+    # No son duplicados —`raw_ingestions.content_hash` es único y no hay uno
+    # repetido en todo el corpus; `docs/decisions.md` 2026-08-23 ya lo
+    # verificó contra este mismo grupo—: son reposteos reales del mismo
+    # vendedor, que es dato legítimo y con fecha. Lo que engaña no es la fila,
+    # es el número: `n = 27` afirma una densidad que la muestra no tiene.
+    #
+    # `spec.md` §10.7 C1 pide para la Fase 0 exactamente esto —«informativa:
+    # tamaño de muestra visible»— y C4 nombra la señal que estos campos hacen
+    # legible: «concentración inusual del aporte por fuente o canal en una
+    # celda». Son mediciones, no veredicto: acá no hay umbral de cuántos
+    # emisores son pocos (§12.6), lo decide quien mira.
+    #
+    # Emisores identificados por `raw_ingestions.channel_id`.
+    sources: int = 0
+    # Filas cuya ingesta no declara canal: no dicen de quién vienen. Contarlas
+    # todas como un emisor afirmaría que son el mismo vendedor; contar cada
+    # una como emisor propio afirmaría que son distintos. Ninguna de las dos
+    # cosas está declarada, así que se cuentan aparte — mismo criterio que
+    # `unconverted` y `unquantified`, que no se funden con lo resuelto. Al
+    # 2026-09-18 son 106 de 336 filas en producción, así que no es un borde.
+    unidentified_sources: int = 0
+    # Días distintos en los que la celda tiene alguna observación, con el
+    # mismo repliegue que ya usan `compute_retail_observations` y
+    # `compute_availability`: `published_date or created_at.date()`.
+    days: int = 0
+
+    @property
+    def sample_label(self) -> str | None:
+        """«2 emisores · 15 días», o `None` sin composición calculada.
+
+        Se arma acá y no en Jinja por el mismo motivo que `variant_label`: una
+        cadena construida en la plantilla no se puede testear. No dice nunca
+        «0 emisores» —sería falso: no es que no haya vendedor, es que la
+        ingesta no declara cuál— ni esconde las filas sin identificar.
+        """
+        if not self.days and not self.sources and not self.unidentified_sources:
+            return None
+        if self.sources:
+            emisores = f"{self.sources} emisor" + ("es" if self.sources > 1 else "")
+            if self.unidentified_sources:
+                emisores += f" +{self.unidentified_sources} sin identificar"
+        else:
+            emisores = f"{self.unidentified_sources} sin emisor identificado"
+        dias = f"{self.days} día" + ("s" if self.days > 1 else "")
+        return f"{emisores} · {dias}"
+
     @property
     def spread(self) -> Decimal | None:
         """Cuántas veces el máximo contiene al mínimo.
@@ -276,6 +326,35 @@ class Cell(_FormatPriced, _VariantLabeled):
         if self.minimum == 0:
             return None
         return self.maximum / self.minimum
+
+
+@dataclass
+class _Sample:
+    """Lo que se acumula por celda mientras se recorren las filas.
+
+    Antes del 2026-09-18 era una `list[Decimal]` de precios y alcanzaba. Ahora
+    la celda también reporta de cuántos emisores y de cuántos días viene su
+    muestra (ver los campos de composición en `Cell`), y esos dos no se pueden
+    derivar de los precios: hay que verlos fila por fila. Mutable a propósito —
+    es un acumulador local de `compute_cells`, no un valor de dominio.
+    """
+
+    prices: list[Decimal] = field(default_factory=list)
+    channels: set[uuid.UUID] = field(default_factory=set)
+    # Conteo y no set: una ingesta sin canal no tiene identidad de emisor que
+    # deduplicar. Ver el comentario de `Cell.unidentified_sources`.
+    unidentified: int = 0
+    days: set[date] = field(default_factory=set)
+
+    def add(
+        self, *, price: Decimal, channel_id: uuid.UUID | None, day: date
+    ) -> None:
+        self.prices.append(price)
+        if channel_id is None:
+            self.unidentified += 1
+        else:
+            self.channels.add(channel_id)
+        self.days.add(day)
 
 
 @dataclass(frozen=True)
@@ -396,11 +475,18 @@ def compute_cells(session: Session) -> list[Cell]:
             ProductVariant.kind,
             ProductVariant.brand,
             ProductVariant.origin,
+            # Composición de la muestra: de quién viene y de qué día. El join a
+            # `raw_ingestions` es interno porque `source_id` es NOT NULL — toda
+            # fila tiene su evidencia (ver el comentario de la columna).
+            RawIngestion.channel_id,
+            PriceHistory.published_date,
+            PriceHistory.created_at,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
         .outerjoin(ProductFormat, ProductFormat.id == PriceHistory.format_id)
         .outerjoin(ProductVariant, ProductVariant.id == PriceHistory.variant_id)
+        .join(RawIngestion, RawIngestion.id == PriceHistory.source_id)
     )
 
     # `unconverted`, `unquantified`, `unresolved_basis` y `unconverted_unit`
@@ -434,7 +520,7 @@ def compute_cells(session: Session) -> list[Cell]:
         str | None,
         str | None,
     ]
-    grouped: dict[CellKey, list[Decimal]] = {}
+    grouped: dict[CellKey, _Sample] = {}
     for (
         product_name,
         product_unit,
@@ -454,6 +540,9 @@ def compute_cells(session: Session) -> list[Cell]:
         variant_kind,
         variant_brand,
         variant_origin,
+        channel_id,
+        published_date,
+        created_at,
     ) in session.execute(stmt):
         row = resolve_row(
             currency=currency,
@@ -483,7 +572,11 @@ def compute_cells(session: Session) -> list[Cell]:
             variant_brand,
             variant_origin,
         )
-        grouped.setdefault(key, []).append(row.effective_price)
+        grouped.setdefault(key, _Sample()).add(
+            price=row.effective_price,
+            channel_id=channel_id,
+            day=published_date or created_at.date(),
+        )
 
     cells = [
         Cell(
@@ -492,14 +585,17 @@ def compute_cells(session: Session) -> list[Cell]:
             currency=currency,
             unit=unit,
             sale_format=sale_format,
-            count=len(prices),
+            count=len(muestra.prices),
             # La mediana se calcula en Python y no en SQL a propósito:
             # `percentile_cont` es de PostgreSQL y los tests corren sobre
             # SQLite (ver tests/conftest.py). Con el volumen de la Fase 0 la
             # diferencia de costo es irrelevante.
-            median=statistics.median(prices),
-            minimum=min(prices),
-            maximum=max(prices),
+            median=statistics.median(muestra.prices),
+            minimum=min(muestra.prices),
+            maximum=max(muestra.prices),
+            sources=len(muestra.channels),
+            unidentified_sources=muestra.unidentified,
+            days=len(muestra.days),
             unconverted=unconverted,
             unquantified=unquantified,
             unresolved_basis=unresolved_basis,
@@ -531,7 +627,7 @@ def compute_cells(session: Session) -> list[Cell]:
             variant_kind,
             variant_brand,
             variant_origin,
-        ), prices in grouped.items()
+        ), muestra in grouped.items()
     ]
 
     # Los desempates son explícitos porque partir la celda multiplica los

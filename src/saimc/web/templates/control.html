@@ -1010,6 +1010,18 @@
                    solo cuando la celda no se convirtió (ver 2026-08-13). #}
                 <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}&format_id={{ (cell.format_id or '') | urlencode }}&unquantified={{ 1 if cell.unquantified else 0 }}&unresolved_basis={{ 1 if cell.unresolved_basis else 0 }}&unconverted_unit={{ 1 if cell.unconverted_unit else 0 }}"
                    title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
+                {# `n` cuenta MENSAJES, y solo se lee como si contara
+                   observaciones independientes. El caso real medido el
+                   2026-09-18: Arroz/Santiago tenía 27 mensajes de 2 emisores
+                   en 15 días, con el 85% de un solo canal. No son duplicados
+                   —`content_hash` es único, ver decisions.md 2026-08-23— pero
+                   la densidad que sugiere `n = 27` no existe. §10.7 C1 pide
+                   para la Fase 0 exactamente esto: tamaño de muestra visible.
+                   Es medición, no veredicto: acá no hay umbral de cuántos
+                   emisores son pocos (§12.6), lo decide quien mira. #}
+                {%- if cell.sample_label %}
+                <span class="m3-dim" title="De cuántos emisores distintos y en cuántos días viene esta muestra">· {{ cell.sample_label }}</span>
+                {%- endif %}
                 {# Titular en la cosa que se compra; el precio por unidad base
                    baja a comparador entre formatos (design.md D8). Sin formato
                    declarado no hay nada que multiplicar y queda el de siempre. #}
