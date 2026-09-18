@@ -10948,3 +10948,29 @@ extendidas de dos toggles contiguos se pisaban entre sí sin el
 9 de 9 controles llegan a 44px sin cambiar su tamaño visible.
 Suite: 1790 casos (+9, más 5 aflojados que comparaban el atributo `class`
 entero y se rompían al sumar cualquier clase).
+
+## 2026-09-17 — Fuente mínima a 11px, y la fila de evidencia de /producto/<slug>
+Contexto: quedaban dos pendientes de la auditoría mobile-first del mismo día:
+la fuente más chica del sitio (10px) y la fila de evidencia del detalle de
+producto (65x15, distinta de la que ya se arregló en el tablero).
+Se encontró que `/producto/<slug>` tiene su **propia** copia de la tabla de
+evidencia —`.ph-lite-tabla` en `public_product_light.html`, con `.3rem` de
+padding— separada de `.ph-coverage` en `saimc-public.css`. Mismo problema,
+dos lugares: el arreglo del tablero no la cubría.
+Decisión: mismo criterio que ya se aplicó a `.ph-coverage` — sube el padding
+de la fila entera (`.3rem` → `.75rem`) en vez de extender el enlace con
+`::after`, porque las filas van pegadas sin espacio entre sí. Y el
+`.625rem` (10px) del cartelito flotante del mapa (`.ph-map-badge-unidad`,
+la unidad y el conteo de anuncios) sube a `.6875rem` (11px), el mismo tamaño
+que ya usan las otras etiquetas secundarias del sitio (`.ph-card-place`,
+`.ph-chip`) — no se inventó un tamaño nuevo. El cartelito es `white-space:
+nowrap` y de ancho automático, así que crecer el texto no lo desborda.
+Descartado: tocar `.ph-canvas-kicker` (también a 10px) — es el wordmark de
+marca «Guani · SAIMC · Fase 0», cromo decorativo que nadie necesita leer
+para usar el sitio, no dato. Fuera de alcance de esta auditoría, que mide
+texto que el visitante necesita leer.
+Verificación: la fila de `.ph-lite-tabla` se midió en Chromium contra el HTML
+real de `/producto/arroz` (vía TestClient con `?provincia=` — sin eso el
+panel no trae anuncios y la tabla no se pinta), servido con los estáticos
+locales ya modificados: **45px de alto, confirmado.**
+Suite: 1792 casos (+2).

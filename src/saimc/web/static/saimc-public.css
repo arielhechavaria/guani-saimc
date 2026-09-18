@@ -403,7 +403,16 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
 .ph-coverage { width: 100%; border-collapse: collapse; font-size: .875rem; }
 .ph-coverage caption { text-align: left; padding: .9rem 1rem 0; font-size: .8125rem;
                        color: var(--m3-on-surface-variant); }
-.ph-coverage th, .ph-coverage td { text-align: left; padding: .5rem .7rem;
+/* Padding vertical a .75rem (2026-09-17, mobile-first): con .5rem la fila
+   medía 37px de alto, por debajo del blanco táctil de 44px — y es la fila
+   que trae el enlace «ver anuncio» (65x15 medido, el más chico de todo el
+   detalle de producto). Se sube el padding de toda la fila en vez de
+   extender el área del enlace con un `::after` (patrón de `.ph-tap-44`, más
+   abajo en esta hoja): las filas van pegadas sin espacio entre sí, y
+   extender solo el enlace habría invadido la fila vecina. Sube el alto de
+   TODAS las columnas —día y precio también—, que es preferible a una fila
+   dispareja. */
+.ph-coverage th, .ph-coverage td { text-align: left; padding: .75rem .7rem;
                border-bottom: 1px solid var(--m3-divider); }
 .ph-coverage th:last-child, .ph-coverage td:last-child { padding-right: 1rem; }
 .ph-coverage th:first-child, .ph-coverage td:first-child { padding-left: 1rem; }

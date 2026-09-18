@@ -555,8 +555,13 @@
   }
   .ph-map-badge-text { display: flex; flex-direction: column; line-height: 1.2; }
   .ph-map-badge-text b { font-family: var(--ph-font-heading); font-weight: 400; font-size: .9375rem; }
-  .ph-map-badge-text .ph-map-badge-unidad { font-size: .625rem; opacity: .85; }
-  .ph-map-badge-text small { font-size: .625rem; font-weight: 500; opacity: .85; letter-spacing: .01em; }
+  /* .6875rem (11px), no .625rem (10px): mismo tamaño que ya usan las otras
+     etiquetas secundarias del sitio (`.ph-card-place`, `.ph-chip` en
+     saimc-public.css) — la auditoría mobile-first del 2026-09-17 midió 10px
+     como la fuente más chica del mapa. El cartelito es `nowrap` y de ancho
+     automático, así que crecer el texto no lo desborda ni lo recorta. */
+  .ph-map-badge-text .ph-map-badge-unidad { font-size: .6875rem; opacity: .85; }
+  .ph-map-badge-text small { font-size: .6875rem; font-weight: 500; opacity: .85; letter-spacing: .01em; }
 
   /* Selector de provincia (2026-09-11): mismas proporciones que un chip de
      texto (`.ph-chip-toggle`), para que se vea como parte del mismo riel

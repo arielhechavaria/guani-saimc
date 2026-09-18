@@ -1147,3 +1147,40 @@ class TestBlancoTactilDelTablero:
             "por debajo de 22px el toggle Mapa/Tablero se pisa con el de "
             "Tarjetas/Tabla que viene después"
         )
+
+
+class TestFuenteYFilaDeEvidencia:
+    """Dos hallazgos más de la auditoría mobile-first del 2026-09-17: la
+    fuente más chica del sitio (10px, en el cartelito del mapa) y la fila
+    más chica del detalle de producto (65x15, el enlace «ver anuncio»)."""
+
+    def _hoja(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        return (
+            raiz / "src" / "saimc" / "web" / "static" / "saimc-public.css"
+        ).read_text(encoding="utf-8")
+
+    def _home(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        return (
+            raiz / "src" / "saimc" / "web" / "templates" / "public_home.html"
+        ).read_text(encoding="utf-8")
+
+    def test_la_fila_de_evidencia_sube_su_padding(self) -> None:
+        """37px de alto medido con .5rem de padding, por debajo de 44px. Sube
+        el padding de toda la fila —no solo del enlace— porque las filas van
+        pegadas sin espacio: extender solo el enlace habría invadido la
+        vecina."""
+        css = self._hoja()
+        inicio = css.index(".ph-coverage th, .ph-coverage td {")
+        bloque = css[inicio : inicio + 140]
+
+        assert "padding: .75rem" in bloque, (
+            "con .5rem la fila que trae «ver anuncio» mide 37px de alto, por "
+            "debajo del blanco táctil de 44px"
+        )
+
+    def test_ningun_texto_del_cartelito_del_mapa_baja_de_11px(self) -> None:
+        """.625rem (10px) era la fuente más chica del sitio, medida en el
+        cartelito flotante del mapa."""
+        assert ".625rem" not in self._home().split("ph-map-badge-text")[1][:200]
