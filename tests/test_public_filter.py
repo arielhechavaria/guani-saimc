@@ -2967,6 +2967,75 @@ class TestDetalleDeProductoEnElTablero:
         assert 'id="detalle-titulo"' not in texto
 
 
+class TestCambioUnicoEnElTablero:
+    """El «Cambio» de la tabla, el de la lista de productos y el de las
+    tarjetas del mapa son el mismo número (2026-09-18, slice 3).
+
+    Antes la tabla mostraba el cambio del último formato de la provincia:
+    arroz en La Habana decía −12% en todas las filas, el de «saco de 50 kg»
+    con un solo anuncio, cuando la lista decía −3%.
+
+    Valores esperados, a mano (ventana de 30 días; el período anterior son
+    los 30 días previos). Arroz en La Habana, dos formatos de 1 lb:
+    - paquete: antes 300, 300, 300; ahora 330, 330, 330 → +10% él solo.
+    - saco (un anuncio): antes 320; ahora 290 → −9% él solo.
+    Todo el producto: antes 300, 300, 300, 320 → mediana 300; ahora 330, 330,
+    330, 290 → mediana 330 → +10%. Ese es el número de todas las filas."""
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        paquete = _formato(session, product=arroz, packaging="paquete", quantity="1", unit="lb")
+        saco = _formato(session, product=arroz, packaging="saco", quantity="1", unit="lb")
+        fuente = _ingestion(session, hash_="h-cambio")
+        for dia, precio in ((45, "300"), (42, "300"), (40, "300"), (12, "330"), (8, "330"), (3, "330")):
+            _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(dia),
+                    price=precio, format_id=paquete.id)
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(44),
+                price="320", format_id=saco.id)
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5),
+                price="290", format_id=saco.id)
+        session.commit()
+
+    def test_todas_las_filas_de_la_tabla_llevan_el_cambio_del_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        tabla = texto[texto.index('class="ph-dash-table"') :]
+        cuerpo = tabla[tabla.index("<tbody>") : tabla.index("</tbody>")]
+
+        assert cuerpo.count("<tr") == 2  # un renglón por formato
+        assert cuerpo.count('<td class="ph-dash-table-sample">+10%</td>') == 2
+        assert "−9%" not in texto  # el cambio de un solo formato no se cuela
+
+    def test_la_tabla_y_la_lista_dicen_lo_mismo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        fila = re.search(r'<span class="ph-watch-name">Arroz[\s\S]*?</a>', texto)
+
+        assert fila is not None
+        assert '<span class="ph-watch-change">+10%</span>' in fila.group(0)
+
+    def test_la_tarjeta_del_mapa_dice_lo_mismo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`attach_trends` alimenta también las tarjetas de la ventana
+        «Precios» del mapa: el arreglo llega a las dos vistas."""
+        self._seed(session)
+
+        texto = client.get("/?ver=precios").text
+
+        assert "+10%" in texto
+        assert "−9%" not in texto
+
+
 class TestTiraDePrecioEnLaPagina:
     """La tira de calor del tablero, de punta a punta.
 

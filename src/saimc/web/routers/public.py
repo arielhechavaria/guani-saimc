@@ -404,12 +404,6 @@ def _render_home(
     # 2026-09-14 comparando con el enlace «ver anuncios» que ya tiene
     # `/control` sobre cada número de la matriz.
     panel_ads = build_cell_ads(obs)
-    # Tarjeta simple (2026-09-14): mismo cambio vs. período anterior que ya
-    # muestra el panel flotante, para que `#precios` conteste "¿sube o baja?"
-    # sin abrir otra ventana (spec.md §6.7). `cards` se reasigna acá y no se
-    # vuelve a construir: todo lo que lo use de ahora en más ya lleva el dato.
-    cards = attach_trends(cards, panel_headlines)
-
     # Comparación entre provincias (Precios y la hoja de detalle): SIEMPRE con
     # las 16, aunque haya una elegida —la pregunta es «¿dónde está más caro?»,
     # y la hoja resalta la propia contra todas las demás—. Todos los piloto;
@@ -429,6 +423,20 @@ def _render_home(
         )
         if o.day < ventana_desde
     ]
+    # «¿Subió o bajó?» de todos los productos en todas las provincias: la
+    # única fuente del cambio que se muestra —en las tarjetas, en la lista de
+    # productos del tablero y en «Cómo se movió»—, para que el mismo producto
+    # en la misma provincia no diga dos números distintos en la misma
+    # pantalla.
+    slopes = build_month_vs_month(
+        all_provinces_obs, all_provinces_previous, window_days=window, hoy=hoy
+    )
+    # Tarjeta simple (2026-09-14): cambio vs. período anterior, para que
+    # `#precios` conteste "¿sube o baja?" sin abrir otra ventana (spec.md
+    # §6.7). `cards` se reasigna acá y no se vuelve a construir: todo lo que
+    # lo use de ahora en más ya lleva el dato. Hasta el 2026-09-18 salía de
+    # `panel_headlines` (uno por formato) y el último pisaba a los demás.
+    cards = attach_trends(cards, slopes)
 
     # «Cómo se movió»: con una provincia elegida, SOLO esa —el operador la
     # marcó como el hueco del zoom (2026-09-11): elegir una provincia dice
@@ -560,9 +568,7 @@ def _render_home(
         build_watchlist(
             pilot_names,
             active_products,
-            build_month_vs_month(
-                all_provinces_obs, all_provinces_previous, window_days=window, hoy=hoy
-            ),
+            slopes,
             provinces=province_names,
             selected_province=prov_slug,
             desde=ventana_desde,

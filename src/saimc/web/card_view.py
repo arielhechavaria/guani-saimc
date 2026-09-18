@@ -31,7 +31,7 @@ calibrar que §12.6 prohíbe inventar.
 
 **El cambio vs. el período anterior sí se muestra** (`change_text`, desde
 2026-09-14): es el mismo número sin color que ya usa el panel flotante
-(`Headline.change_text`, §12.6 — comparación como número, nunca semáforo), no
+(`SlopeLine.change_text`, §12.6 — comparación como número, nunca semáforo), no
 uno de los cuatro bloqueados. Responde «¿sube o baja?» sin inventar ningún
 umbral; el operador lo pidió explícitamente para que la tarjeta simple
 conteste las tres preguntas de §6.7 (caro/barato, sube/baja, con qué muestra)
@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     # este mismo módulo, así que un import normal acá sería circular en
     # runtime. `from __future__ import annotations` ya vuelve perezosa la
     # anotación de tipos, así que mypy lo resuelve igual sin ejecutarlo.
-    from saimc.web.price_charts import Headline
+    from saimc.web.price_charts import SlopeChart
 
 #: Rótulo de §9.0 para una celda por debajo del umbral de publicación. Hoy son
 #: todas, porque N está sin calibrar y las Fases 0-1 son su calibración.
@@ -103,7 +103,7 @@ class ProductCard:
     # en la misma provincia. `None` sin variante declarada.
     variant_label: str | None = None
     #: Cambio vs. el período anterior del mismo largo, ya formateado
-    #: (`Headline.change_text`, p. ej. «+8%»); `""` sin comparación posible.
+    #: (`SlopeLine.change_text`, p. ej. «+8%»); `""` sin comparación posible.
     #: Se pega con `attach_trends`, vacío hasta entonces.
     change_text: str = ""
 
@@ -374,17 +374,25 @@ def province_color_slots(province_names: Sequence[str]) -> dict[str, int]:
     }
 
 
-def attach_trends(cards: list[ProductCard], headlines: Sequence[Headline]) -> list[ProductCard]:
+def attach_trends(cards: list[ProductCard], slopes: Sequence[SlopeChart]) -> list[ProductCard]:
     """Pega a cada tarjeta el cambio vs. el período anterior, si hay uno.
 
-    Reusa `Headline.change_text` tal cual —el mismo número sin color que ya
-    muestra el panel flotante (`panel_view.attach_blocks`)—, emparejado por
-    producto + provincia + moneda + unidad. Una tarjeta de formato o variante
-    comparte el cambio agregado de todo el producto en esa provincia: no hay
-    comparación previa a nivel de formato/variante todavía, y aproximarla con
-    el agregado es preferible a no mostrar nada."""
+    El cambio es el del producto en esa provincia —el «¿subió o bajó?» de
+    `price_charts.build_month_vs_month`, el mismo número sin color que
+    muestran la lista de productos del tablero y la ventana «Cómo se
+    movió»—, emparejado por producto + provincia + moneda + unidad. Una
+    tarjeta de formato o variante comparte ese cambio agregado: no hay
+    comparación previa a nivel de formato/variante todavía, y mostrar el
+    agregado es preferible a no mostrar nada.
+
+    Hasta el 2026-09-18 salía de un titular por formato (`build_headlines`)
+    y un diccionario que se quedaba con el último: arroz en La Habana
+    mostraba −12% en las once tarjetas, el de «saco de 50 kg» —un solo
+    anuncio—, cuando el cambio del producto era −3%."""
     cambio_de = {
-        (h.product_name, h.province_name, h.currency, h.unit): h.change_text for h in headlines
+        (s.product_name, line.province_name, s.currency, s.unit): line.change_text
+        for s in slopes
+        for line in s.lines
     }
     return [
         replace(

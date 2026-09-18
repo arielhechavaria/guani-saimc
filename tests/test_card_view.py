@@ -8,10 +8,11 @@ pero como **rango** y nunca como valor puntual, siempre con el tamaño de muestr
 a la vista y rotulado «muestra en formación» mientras N siga sin calibrar.
 """
 
+import uuid
 from datetime import date
 from decimal import Decimal
 
-from saimc.cells import RetailRange
+from saimc.cells import RetailObservation, RetailRange
 from saimc.web.card_view import (
     SAMPLE_FORMING,
     attach_trends,
@@ -21,7 +22,7 @@ from saimc.web.card_view import (
     group_cards_by_province,
     province_color_slots,
 )
-from saimc.web.price_charts import Headline
+from saimc.web.price_charts import Headline, build_month_vs_month
 
 
 def _rango(
@@ -225,39 +226,114 @@ def _cifra(
 
 class TestAttachTrends:
     """`attach_trends`: la tarjeta simple contesta «¿sube o baja?» (spec.md
-    §6.7) con el mismo número sin color que ya usa el panel flotante —nunca
-    un semáforo, eso sigue bloqueado por §12.6."""
+    §6.7) con el mismo número sin color que la lista de productos y el
+    «¿subió o bajó?» de «Cómo se movió» —los tres salen de
+    `build_month_vs_month`—, nunca un semáforo, eso sigue bloqueado por §12.6.
 
-    def test_pega_el_cambio_de_la_cifra_que_coincide(self) -> None:
-        (card,) = attach_trends(
-            build_cards([_rango(product="Arroz", province="La Habana")]),
-            [_cifra(product="Arroz", province="La Habana", median="330", previous_median="300")],
+    Hasta el 2026-09-18 salía de un titular por formato y un diccionario que
+    se quedaba con el último: arroz en La Habana mostraba −12% en las once
+    tarjetas, y ese −12% era el de «saco de 50 kg», con un solo anuncio.
+
+    Valores esperados, a mano. HOY = 30/08/2026, ventana de 30 días:
+    - Arroz, La Habana: ahora 300 y 330 → mediana 315; antes 300 y 300 → 300.
+      315/300 − 1 = +5%.
+    - Pollo, La Habana: ahora 700; antes 750 → 700/750 − 1 = −6,7% → −7%.
+    - Arroz, Santiago: ahora 400, sin período anterior → sin cambio."""
+
+    HOY = date(2026, 8, 30)
+
+    def _obs(
+        self, product: str, province: str, mes: int, dia: int, precio: str, unit: str = "lb"
+    ) -> RetailObservation:
+        return RetailObservation(
+            product_name=product,
+            province_name=province,
+            currency="CUP",
+            unit=unit,
+            unconverted=False,
+            day=date(2026, mes, dia),
+            unit_price=Decimal(precio),
+            evidence_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            evidence_is_public=False,
         )
 
-        assert card.change_text == "+10%"
+    def _slopes(self, unit: str = "lb"):
+        ahora = [
+            self._obs("Arroz", "La Habana", 8, 20, "300", unit),
+            self._obs("Arroz", "La Habana", 8, 25, "330", unit),
+            self._obs("Arroz", "Santiago de Cuba", 8, 22, "400", unit),
+            self._obs("Pollo", "La Habana", 8, 18, "700", unit),
+        ]
+        antes = [
+            self._obs("Arroz", "La Habana", 7, 10, "300", unit),
+            self._obs("Arroz", "La Habana", 7, 12, "300", unit),
+            self._obs("Pollo", "La Habana", 7, 10, "750", unit),
+        ]
+        return build_month_vs_month(ahora, antes, window_days=30, hoy=self.HOY)
 
-    def test_sin_cifra_coincidente_el_cambio_queda_vacio(self) -> None:
+    def test_pega_el_cambio_de_la_provincia_y_el_producto_de_la_tarjeta(self) -> None:
         (card,) = attach_trends(
-            build_cards([_rango(product="Arroz", province="La Habana")]),
-            [_cifra(product="Aceite", province="La Habana")],
+            build_cards([_rango(product="Arroz", province="La Habana")]), self._slopes()
+        )
+
+        assert card.change_text == "+5%"
+
+    def test_cambio_negativo_con_signo_menos_tipografico(self) -> None:
+        (card,) = attach_trends(
+            build_cards([_rango(product="Pollo", province="La Habana")]), self._slopes()
+        )
+
+        assert card.change_text == "−7%"
+
+    def test_todos_los_formatos_de_la_celda_comparten_el_mismo_cambio(self) -> None:
+        """El caso que se rompía: varios formatos de arroz en La Habana. Cada
+        tarjeta de formato lleva el cambio del producto en esa provincia, no
+        el de uno de los formatos —peor si ese formato tiene un solo anuncio—."""
+        tarjetas = attach_trends(
+            build_cards(
+                [
+                    _rango(product="Arroz", format_packaging="saco", format_quantity="100",
+                           format_unit="lb"),
+                    _rango(product="Arroz", format_packaging="saco", format_quantity="50",
+                           format_unit="kg", count=1),
+                    _rango(product="Arroz", format_packaging="paquete", format_quantity="1",
+                           format_unit="kg"),
+                ]
+            ),
+            self._slopes(),
+        )
+
+        assert len(tarjetas) == 3
+        assert {c.change_text for c in tarjetas} == {"+5%"}
+
+    def test_sin_grafico_del_producto_el_cambio_queda_vacio(self) -> None:
+        (card,) = attach_trends(
+            build_cards([_rango(product="Aceite", province="La Habana")]), self._slopes()
         )
 
         assert card.change_text == ""
 
     def test_no_mezcla_el_cambio_de_otra_provincia(self) -> None:
-        """Arroz tiene cifra en Santiago pero la tarjeta es de La Habana: no
+        """Arroz tiene cambio en La Habana pero la tarjeta es de Camagüey: no
         hay que pegarle un cambio que no le corresponde."""
         (card,) = attach_trends(
-            build_cards([_rango(product="Arroz", province="La Habana")]),
-            [_cifra(product="Arroz", province="Santiago de Cuba")],
+            build_cards([_rango(product="Arroz", province="Camagüey")]), self._slopes()
         )
 
         assert card.change_text == ""
 
     def test_sin_periodo_anterior_no_hay_cambio_que_mostrar(self) -> None:
         (card,) = attach_trends(
+            build_cards([_rango(product="Arroz", province="Santiago de Cuba")]), self._slopes()
+        )
+
+        assert card.change_text == ""
+
+    def test_no_mezcla_el_cambio_de_otra_unidad(self) -> None:
+        """La tarjeta es por libra; el cambio que existe es por litro."""
+        (card,) = attach_trends(
             build_cards([_rango(product="Arroz", province="La Habana")]),
-            [_cifra(product="Arroz", province="La Habana", previous_median=None)],
+            self._slopes(unit="l"),
         )
 
         assert card.change_text == ""

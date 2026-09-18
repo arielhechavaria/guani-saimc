@@ -11215,3 +11215,36 @@ mapa: con el ancho de la ventana flotante la etiqueta «14/09» del calendario
 también roza el borde derecho. Siguen abiertas las dos decisiones del slice 1
 (qué mediana manda entre lista y tira, y `attach_trends` pisando formatos).
 >>>>>>> worktree-tablero-dashboard-c
+
+
+## 2026-09-18 — El «Cambio» de la tarjeta y de la tabla es el del producto en la provincia (slice 3)
+Contexto: comparando el tablero con datos de producción apareció una
+contradicción en la misma pantalla: la lista de productos decía arroz en La
+Habana −3% y todas las filas de la tabla decían −12%. Reproducido contra la
+base: `build_headlines` arma un titular por formato (5 formatos de arroz en La
+Habana, con cambios de −4%, +15%, sin dato, +1% y −12%) y `attach_trends`
+armaba `{(producto, provincia, moneda, unidad): change_text}` —sin formato en
+la clave—, así que el último titular pisaba a los demás. El −12% era el de
+«saco de 50 kg», con **un solo anuncio**, pegado a las once tarjetas. El
+docstring decía que la tarjeta comparte «el cambio agregado de todo el
+producto en esa provincia»; la implementación no calculaba ningún agregado.
+Decisión: `attach_trends(cards, slopes)` toma el cambio de
+`price_charts.build_month_vs_month` —el mismo «¿subió o bajó?» de la lista, del
+detalle y de «Cómo se movió»— por producto + provincia + moneda + unidad. Las
+tres cifras salen de una sola llamada, que el router hace una vez y reparte.
+Arroz en La Habana pasa a −3% en las once filas. Se retira de `card_view` la
+dependencia de `Headline` para esto (queda para `attach_blocks`).
+Descartado: (a) que cada fila de formato muestre su propio cambio, con «—»
+cuando ese formato no tiene período anterior. Es defendible —es lo que ya hace
+el panel flotante del mapa por celda— pero da cinco números distintos para un
+mismo producto y varios de ellos con 1 a 3 anuncios de sustento; queda como
+alternativa si el operador prefiere leer cada envase por separado.
+(b) Arreglar solo el diccionario para que no pise: seguiría sin ser un
+agregado.
+Consecuencia: el arreglo llega también a las tarjetas de la ventana «Precios»
+del mapa, que usan el mismo `attach_trends`; los números de esas tarjetas
+cambian (para bien: dejan de mostrar el de un formato cualquiera). El panel
+flotante del mapa conserva su cambio por celda (formato), porque su celda es
+por formato. Sigue abierta la otra mitad de la contradicción del tablero: qué
+mediana manda entre la lista/detalle (todos los formatos por libra) y la tira
+«dónde está más barato» (por formato).
