@@ -11096,3 +11096,55 @@ residuales, la tabla con sus filas, el disparador de acciones visible, y los
 dos puntos de color en rgb distinto (`rgb(63,95,214)` La Habana vs.
 `rgb(112,72,232)` Santiago).
 Suite: 1777 casos.
+
+---
+
+## 2026-09-18 — `n` en /control pasa a declarar de cuántos emisores y días viene
+
+Contexto: revisando la matriz de pilotos, el operador cuestionó que «saco de
+100 lb» y «saco de 100 lb criollo» sean dos series hermanas. Midiendo la
+fragmentación para responder, reporté que el 71% de las filas eran reposteos
+duplicados. **Eso estaba mal medido**: agrupé por `(producto, provincia,
+precio, unidad, cantidad)`, que confunde tres cosas distintas — un raw con
+varios productos (78 raws producen de 2 a 5 filas; son catálogos mayoristas),
+el mismo vendedor reposteando en días distintos, y precios que coinciden de
+verdad. No hay ni un `content_hash` repetido en `raw_ingestions`: el índice
+único funciona y no existe duplicado de ingesta. La entrada del 2026-08-23
+(«Arroz/Santiago 17.500×25kg no es duplicado») ya había investigado este mismo
+grupo —entonces 11 filas, hoy 31, con 31 hashes distintos en 18 días— y sigue
+vigente: no se borra ninguna fila. Lo que sí es real es otra cosa: la celda de
+Arroz en Santiago tiene 27 mensajes de 2 emisores en 15 días con el 85% de un
+solo canal, y la de Pollo en La Habana 20 mensajes con el 90% de uno. `n = 27`
+afirma una densidad que la muestra no tiene. Es la señal que §10.7 C4 nombra
+(«concentración inusual del aporte por fuente o canal en una celda»), y C1
+pide para la Fase 0 justamente hacerla visible: «informativa: tamaño de
+muestra visible».
+
+Decisión: `Cell` gana tres campos de composición —`sources` (canales
+distintos), `unidentified_sources` (filas cuya ingesta no declara canal) y
+`days` (días distintos, con el repliegue ya existente `published_date or
+created_at.date()`)— más `sample_label`, que los lee como «2 emisores · 15
+días». `compute_cells` joinea `raw_ingestions` para traerlos. `/control` lo
+pinta al lado de `n`. Sin umbral de cuántos emisores son pocos: §12.6 lo
+prohíbe y quien juzga es el operador.
+
+Descartado: (a) borrar o colapsar filas repetidas — contradice la decisión del
+2026-08-23 y destruiría la serie temporal, que es el dato que el proyecto
+busca; (b) contar las filas sin `channel_id` como un emisor —afirmaría que son
+el mismo vendedor— o como un emisor cada una —afirmaría que son distintos—:
+ninguna de las dos está declarada, así que se cuentan aparte y visibles, mismo
+criterio que `unconverted`/`unquantified`. No es un borde: son 106 de 336
+filas (65 de imagen del inbox, 37 de WhatsApp sin canal, 4 de texto).
+
+Consecuencia: la pregunta que abrió la sesión —qué ejes merecen partir una
+serie— queda en condiciones de decidirse con muestra honesta en vez de con `n`
+inflada, y sigue abierta. `RetailRange` (tablero público) **no** recibe estos
+campos: es otra vista y otro slice. Queda anotado que la prueba de separación
+por eje, corrida sobre estos datos, dio ≤×1,19 para la variante y ≤×1,29 para
+`sale_format` — por debajo del ruido interno de la celda, pero no concluyente
+mientras la mitad de cada celda venga de un emisor.
+Verificación: `compute_cells` corrido contra producción —79 celdas, 336
+mensajes, 0 celdas donde `sources + unidentified_sources` supere `count`, 0 con
+`days > count`, 0 con `days == 0`—. Suite: 1791 casos. Sin drift de ruff
+(65 = piso); los 2 hallazgos nuevos de mypy en `cells.py` son los mismos del
+piso corridos de línea, y los de `rapidocr` son dependencia opcional ausente.

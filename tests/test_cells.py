@@ -17,13 +17,16 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from saimc.cells import (
+    Cell,
     compute_availability,
     compute_cells,
     compute_retail_observations,
     compute_retail_ranges,
 )
 from saimc.models import (
+    Channel,
     Currency,
+    Platform,
     PriceHistory,
     Product,
     ProductFormat,
@@ -36,7 +39,11 @@ from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
 
 
 def _ingestion(
-    session: Session, hash_: str, *, content_type: str = ContentType.TEXT
+    session: Session,
+    hash_: str,
+    *,
+    content_type: str = ContentType.TEXT,
+    channel: Channel | None = None,
 ) -> RawIngestion:
     row = RawIngestion(
         source_type=SourceType.INBOX_TEXT if content_type == ContentType.TEXT else SourceType.INBOX_IMAGE,
@@ -45,10 +52,18 @@ def _ingestion(
         content_type=content_type,
         processing_status=ProcessingStatus.CURATED,
         captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        channel_id=channel.id if channel else None,
     )
     session.add(row)
     session.flush()
     return row
+
+
+def _canal(session: Session, name: str) -> Channel:
+    canal = Channel(name=name, platform=Platform.WHATSAPP_CHANNEL)
+    session.add(canal)
+    session.flush()
+    return canal
 
 
 def _precio(
@@ -217,6 +232,260 @@ class TestComputeCells:
 
     def test_sin_datos_devuelve_lista_vacia(self, session: Session) -> None:
         assert compute_cells(session) == []
+
+
+class TestComposicionDeMuestra:
+    """`count` cuenta mensajes; solo, se lee como si contara observaciones
+    independientes. Medido contra producción el 2026-09-18: la celda de Arroz
+    en Santiago tenía 27 mensajes de 2 emisores en 15 días, con el 85% de un
+    solo canal, y la de Pollo en La Habana 20 mensajes con el 90% de uno. No
+    son duplicados —`content_hash` es único y el 2026-08-23 ya lo verificó
+    contra este mismo grupo—: son reposteos reales del mismo vendedor. Pero
+    `n = 27` afirma una densidad que la muestra no tiene.
+
+    `spec.md` §10.7 C1 pide para la Fase 0 exactamente esto —«informativa:
+    tamaño de muestra visible»— y C4 nombra la señal: «concentración inusual
+    del aporte por fuente o canal en una celda».
+
+    Los tres números se calculan a mano acá, antes de correr el agregador.
+    """
+
+    def _arroz_scu(self, session: Session) -> tuple[Product, Province]:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        return arroz, scu
+
+    def test_un_emisor_reposteando_no_multiplica_los_emisores(
+        self, session: Session
+    ) -> None:
+        """El caso real de «Tienda: ⚜️ The Boss»: 5 mensajes, 1 emisor, 5 días."""
+        arroz, scu = self._arroz_scu(session)
+        canal = _canal(session, "Tienda: The Boss")
+        for dia in range(1, 6):
+            origen = _ingestion(session, f"hash-boss-{dia}", channel=canal)
+            _precio(
+                session,
+                product=arroz,
+                province=scu,
+                price="300",
+                source=origen,
+                published_date=date(2026, 8, dia),
+            )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        assert celda.count == 5
+        assert celda.sources == 1
+        assert celda.unidentified_sources == 0
+        assert celda.days == 5
+
+    def test_cuenta_emisores_y_dias_distintos(self, session: Session) -> None:
+        """3 mensajes: canal A el día 1 y el 2, canal B el día 1.
+        -> 3 mensajes, 2 emisores, 2 días."""
+        arroz, scu = self._arroz_scu(session)
+        a, b = _canal(session, "Canal A"), _canal(session, "Canal B")
+        for hash_, canal, dia in (
+            ("hash-a1", a, 1),
+            ("hash-a2", a, 2),
+            ("hash-b1", b, 1),
+        ):
+            origen = _ingestion(session, hash_, channel=canal)
+            _precio(
+                session,
+                product=arroz,
+                province=scu,
+                price="300",
+                source=origen,
+                published_date=date(2026, 8, dia),
+            )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        assert celda.count == 3
+        assert celda.sources == 2
+        assert celda.days == 2
+
+    def test_sin_canal_no_se_funde_en_un_emisor_ni_se_reparte_en_varios(
+        self, session: Session
+    ) -> None:
+        """Una ingesta sin `channel_id` no dice de quién viene. Contarlas
+        todas como un emisor afirmaría que son el mismo vendedor; contar cada
+        una como emisor propio afirmaría que son distintos. Ninguna de las dos
+        cosas está declarada, así que quedan aparte y visibles — mismo criterio
+        que `unconverted` y `unquantified`, que no se funden con lo resuelto.
+
+        No es un caso de borde: al 2026-09-18 son 106 de 336 filas en
+        producción (65 de imagen del inbox, 37 de WhatsApp sin canal, 4 de
+        texto).
+        """
+        arroz, scu = self._arroz_scu(session)
+        for hash_ in ("hash-suelta-1", "hash-suelta-2"):
+            origen = _ingestion(session, hash_)
+            _precio(
+                session,
+                product=arroz,
+                province=scu,
+                price="300",
+                source=origen,
+                published_date=date(2026, 8, 1),
+            )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        assert celda.count == 2
+        assert celda.sources == 0
+        assert celda.unidentified_sources == 2
+        assert celda.days == 1
+
+    def test_emisor_identificado_y_sin_identificar_conviven_en_la_celda(
+        self, session: Session
+    ) -> None:
+        """La celda mixta es el caso mayoritario en producción (18 celdas,
+        219 filas): 2 mensajes de un canal + 1 sin canal."""
+        arroz, scu = self._arroz_scu(session)
+        canal = _canal(session, "Canal A")
+        for hash_ in ("hash-mix-1", "hash-mix-2"):
+            origen = _ingestion(session, hash_, channel=canal)
+            _precio(
+                session,
+                product=arroz,
+                province=scu,
+                price="300",
+                source=origen,
+                published_date=date(2026, 8, 1),
+            )
+        suelta = _ingestion(session, "hash-mix-3")
+        _precio(
+            session,
+            product=arroz,
+            province=scu,
+            price="300",
+            source=suelta,
+            published_date=date(2026, 8, 1),
+        )
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        assert celda.count == 3
+        assert celda.sources == 1
+        assert celda.unidentified_sources == 1
+
+    def test_el_dia_cae_a_la_fecha_de_carga_sin_published_date(
+        self, session: Session
+    ) -> None:
+        """Mismo repliegue que ya usan `compute_retail_observations` y
+        `compute_availability`: `published_date or created_at.date()`. No se
+        inventa un tercer criterio con `captured_at`."""
+        arroz, scu = self._arroz_scu(session)
+        canal = _canal(session, "Canal A")
+        # Una con fecha declarada de otro día, otra sin declarar (cae en hoy).
+        con_fecha = _ingestion(session, "hash-fecha-1", channel=canal)
+        _precio(
+            session,
+            product=arroz,
+            province=scu,
+            price="300",
+            source=con_fecha,
+            published_date=date(2026, 8, 1),
+        )
+        sin_fecha = _ingestion(session, "hash-fecha-2", channel=canal)
+        _precio(session, product=arroz, province=scu, price="300", source=sin_fecha)
+        session.commit()
+
+        celda = compute_cells(session)[0]
+
+        assert celda.count == 2
+        assert celda.days == 2
+
+    def test_las_celdas_separadas_cuentan_su_propia_composicion(
+        self, session: Session
+    ) -> None:
+        """La composición es por celda, no por producto: separar minorista de
+        mayorista tiene que repartir también los emisores y los días."""
+        arroz, scu = self._arroz_scu(session)
+        a, b = _canal(session, "Canal A"), _canal(session, "Canal B")
+        for hash_, canal, dia in (
+            ("hash-r1", a, 1),
+            ("hash-r2", b, 2),
+            ("hash-r3", a, 3),
+        ):
+            origen = _ingestion(session, hash_, channel=canal)
+            _precio(
+                session,
+                product=arroz,
+                province=scu,
+                price="300",
+                source=origen,
+                sale_format=SaleFormat.RETAIL.value,
+                published_date=date(2026, 8, dia),
+            )
+        mayorista = _ingestion(session, "hash-w1", channel=a)
+        _precio(
+            session,
+            product=arroz,
+            province=scu,
+            price="280",
+            source=mayorista,
+            sale_format=SaleFormat.WHOLESALE.value,
+            published_date=date(2026, 8, 1),
+        )
+        session.commit()
+
+        celdas = compute_cells(session)
+        minorista = next(c for c in celdas if c.sale_format == SaleFormat.RETAIL.value)
+        mayor = next(c for c in celdas if c.sale_format == SaleFormat.WHOLESALE.value)
+
+        assert (minorista.count, minorista.sources, minorista.days) == (3, 2, 3)
+        assert (mayor.count, mayor.sources, mayor.days) == (1, 1, 1)
+
+
+class TestSampleLabel:
+    """La etiqueta que lee la composición. Vive acá y no en Jinja por el mismo
+    motivo que `variant_label` y `format_label`: una cadena armada en la
+    plantilla no se puede testear."""
+
+    def _celda(self, **kwargs: int) -> Cell:
+        base = {
+            "product_name": "Arroz",
+            "province_name": "Santiago de Cuba",
+            "currency": "CUP",
+            "unit": "lb",
+            "sale_format": None,
+            "count": 1,
+            "median": Decimal("300"),
+            "minimum": Decimal("300"),
+            "maximum": Decimal("300"),
+        }
+        return Cell(**{**base, **kwargs})  # type: ignore[arg-type]
+
+    def test_varios_emisores_y_varios_dias(self) -> None:
+        celda = self._celda(count=27, sources=2, days=15)
+        assert celda.sample_label == "2 emisores · 15 días"
+
+    def test_un_emisor_y_un_dia_van_en_singular(self) -> None:
+        celda = self._celda(count=1, sources=1, days=1)
+        assert celda.sample_label == "1 emisor · 1 día"
+
+    def test_sin_emisor_identificado_no_dice_cero_emisores(self) -> None:
+        """«0 emisores» sería falso: no es que no haya vendedor, es que la
+        ingesta no declara cuál."""
+        celda = self._celda(count=2, sources=0, unidentified_sources=2, days=1)
+        assert celda.sample_label == "2 sin emisor identificado · 1 día"
+
+    def test_identificados_y_sin_identificar_conviven(self) -> None:
+        celda = self._celda(count=3, sources=1, unidentified_sources=1, days=2)
+        assert celda.sample_label == "1 emisor +1 sin identificar · 2 días"
+
+    def test_celda_sin_composicion_calculada_no_inventa_etiqueta(self) -> None:
+        """Los campos tienen default 0 para no romper construcciones
+        posicionales viejas; con todo en cero no hay nada que afirmar."""
+        assert self._celda().sample_label is None
 
 
 class TestCeldaSeparaUnidadYFormato:

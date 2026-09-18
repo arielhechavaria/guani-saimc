@@ -5,7 +5,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -19,7 +19,9 @@ from saimc.extraction import llm_assist
 from saimc.extraction.measure import H0RunSummary
 from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.models import (
+    Channel,
     Currency,
+    Platform,
     PriceHistory,
     Product,
     ProductFormat,
@@ -816,6 +818,106 @@ class TestColumnaNEnlazaAlHistorial:
             "&currency=USD&unit=lb&sale_format=wholesale" in response.text
         )
         assert "sin convertir" in response.text
+
+
+class TestLaMatrizMuestraLaComposicionDeLaMuestra:
+    """Junto a `n` va de cuántos emisores y de cuántos días viene la muestra
+    (2026-09-18). Sin eso, `n = 5` de un solo vendedor reposteando se lee igual
+    que `n = 5` de cinco vendedores distintos, que es la señal que `spec.md`
+    §10.7 C4 nombra («concentración inusual del aporte por fuente o canal en
+    una celda») y que C1 pide hacer visible en la Fase 0.
+    """
+
+    def _arroz_en_santiago(self, session: Session) -> tuple[Product, Province]:
+        arroz = Product(
+            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
+        )
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        return arroz, scu
+
+    def _cargar(
+        self,
+        session: Session,
+        producto: Product,
+        provincia: Province,
+        *,
+        hash_: str,
+        canal: Channel | None,
+        dia: int,
+    ) -> None:
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path=f"raw/{hash_}.txt",
+            content_hash=hash_,
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+            channel_id=canal.id if canal else None,
+        )
+        session.add(origen)
+        session.flush()
+        session.add(
+            PriceHistory(
+                product_id=producto.id,
+                province_id=provincia.id,
+                price=Decimal("300"),
+                currency=Currency.CUP.value,
+                unit="lb",
+                sale_format=SaleFormat.RETAIL.value,
+                published_date=date(2026, 8, dia),
+                source_id=origen.id,
+            )
+        )
+
+    def test_un_solo_emisor_reposteando_se_ve_como_tal(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El caso real de «Tienda: ⚜️ The Boss»: 4 mensajes, 1 emisor."""
+        arroz, scu = self._arroz_en_santiago(session)
+        canal = Channel(name="Tienda: The Boss", platform=Platform.WHATSAPP_CHANNEL)
+        session.add(canal)
+        session.flush()
+        for dia in range(1, 5):
+            self._cargar(session, arroz, scu, hash_=f"h-boss-{dia}", canal=canal, dia=dia)
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "n = 4" in response.text
+        assert "1 emisor · 4 días" in response.text
+
+    def test_varios_emisores_se_distinguen_de_uno_solo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz, scu = self._arroz_en_santiago(session)
+        a = Channel(name="Canal A", platform=Platform.WHATSAPP_CHANNEL)
+        b = Channel(name="Canal B", platform=Platform.WHATSAPP_CHANNEL)
+        session.add_all([a, b])
+        session.flush()
+        self._cargar(session, arroz, scu, hash_="h-a1", canal=a, dia=1)
+        self._cargar(session, arroz, scu, hash_="h-b1", canal=b, dia=1)
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "2 emisores · 1 día" in response.text
+
+    def test_sin_canal_declarado_no_afirma_un_emisor(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Es el caso de las capturas del inbox, 106 de 336 filas en
+        producción al 2026-09-18: no dicen de quién vienen."""
+        arroz, scu = self._arroz_en_santiago(session)
+        self._cargar(session, arroz, scu, hash_="h-s1", canal=None, dia=1)
+        self._cargar(session, arroz, scu, hash_="h-s2", canal=None, dia=1)
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "2 sin emisor identificado · 1 día" in response.text
+        assert "0 emisores" not in response.text
 
 
 class TestDrillDownAislaLaCeldaExacta:
