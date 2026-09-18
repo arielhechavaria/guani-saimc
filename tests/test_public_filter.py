@@ -3009,3 +3009,61 @@ class TestTiraDePrecioEnLaPagina:
         texto = client.get("/").text
 
         assert "ph-strip-cells" not in texto
+
+    def test_el_ancho_de_cada_bloque_es_proporcional_a_sus_anuncios(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Fidelidad contra el artboard `Apilado` aprobado en Claude Design
+        (2026-09-18): ahí el ancho de cada bloque era la evidencia. El `<li>`
+        de cada celda lleva `flex-grow` = su propio `count` — no una
+        proporción calculada en Python, el reparto lo hace flexbox."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        provincias = {}
+        for code, nombre in (("hab", "La Habana"), ("scu", "Santiago de Cuba"), ("hol", "Holguín")):
+            provincias[nombre] = Province(code=code, name=nombre)
+        session.add_all([arroz, *provincias.values()])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-anchos")
+        combinaciones = [
+            ("Santiago de Cuba", "200", 2),
+            ("La Habana", "250", 9),
+            ("Holguín", "300", 3),
+        ]
+        for nombre, precio, n in combinaciones:
+            for i in range(n):
+                _precio(
+                    session, product=arroz, province=provincias[nombre],
+                    source=fuente, dia=_hace(i + 1), price=precio,
+                )
+        session.commit()
+
+        texto = client.get("/?vista=tablero").text
+        tira = texto.split('class="ph-strip-cells"')[1].split("</ul>")[0]
+
+        assert "flex-grow: 9;" in tira
+        assert "flex-grow: 2;" in tira
+        assert "flex-grow: 3;" in tira
+
+    def test_la_cinta_muestra_el_mas_barato_de_cada_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`strip.cells[0]` ya es la celda más barata — la cinta no calcula
+        ningún agregado nuevo, muestra la misma cifra que la tira de abajo."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        cinta = texto.split('class="ph-strips-ticker"')[1].split("</div>")[0]
+
+        assert "Arroz" in cinta
+        assert "200" in cinta
+        assert "Santiago de Cuba" in cinta
+
+    def test_la_cinta_enlaza_a_la_provincia_mas_barata(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        cinta = texto.split('class="ph-strips-ticker"')[1].split("</div>")[0]
+
+        assert re.search(r'href="/producto/arroz\?provincia=santiago-de-cuba[^"]*"', cinta)
