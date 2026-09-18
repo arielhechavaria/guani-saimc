@@ -11097,6 +11097,7 @@ dos puntos de color en rgb distinto (`rgb(63,95,214)` La Habana vs.
 `rgb(112,72,232)` Santiago).
 Suite: 1777 casos.
 
+<<<<<<< HEAD
 ---
 
 ## 2026-09-18 — `n` en /control pasa a declarar de cuántos emisores y días viene
@@ -11148,3 +11149,69 @@ mensajes, 0 celdas donde `sources + unidentified_sources` supere `count`, 0 con
 `days > count`, 0 con `days == 0`—. Suite: 1791 casos. Sin drift de ruff
 (65 = piso); los 2 hallazgos nuevos de mypy en `cells.py` son los mismos del
 piso corridos de línea, y los de `rapidocr` son dependencia opcional ausente.
+=======
+
+## 2026-09-18 — Tablero como dashboard (dirección C), slice 1: lista de productos + cobertura
+Contexto: el operador pidió que el tablero deje de ser «el mapa sin mapa» y
+pase a ser un dashboard con todo lo que hoy vive en el menú del avatar del
+mapa (Cobertura, Precios, Cómo se movió, CSV, tema); el mapa no se toca. Se
+prototiparon tres direcciones en Claude Design (Consola, Informe, Por
+producto) y eligió **C — Por producto**: lista de seguimiento a la izquierda,
+detalle a la derecha. **Reemplaza** a la entrada del 2026-09-16 («Slice 1 del
+modo Tablero») en el punto en que decía que las ventanas del mapa eran
+«conceptos exclusivos del lienzo, que el tablero no usa ni usará».
+Decisión: slice 1 de 2. `watchlist_view.build_watchlist` arma una fila por
+producto piloto con la mediana de cada provincia y el cambio contra el período
+anterior, tomados tal cual de `build_month_vs_month` —el mismo «¿subió o
+bajó?» de «Cómo se movió»—, sin flecha ni color (§12.6). Una fila elige ese
+producto y solo ese (`?productos=<slug>`); «Todos los productos» vuelve al
+tablero completo. Los chips de producto se retiran (los reemplaza la lista);
+los de provincia se quedan. El menú `<details>` del avatar se retira: Mapa,
+CSV y tema quedan a la vista en la cabecera, Cobertura pasa al cuerpo, y
+«Cómo se movió» sigue enlazando a la ventana del mapa hasta el slice 2
+(detalle por producto con sus gráficos). La frescura del dato pasa a verse sin
+abrir nada. Mobile first: una columna lista → contenido → cobertura; dos
+columnas desde 64rem (el shell se abre a 84rem solo en esta plantilla).
+Descartado: conservar la multi-selección de productos en la lista — la
+dirección C elige un producto a la vez; una URL vieja con varios
+(`?productos=a,b`) sigue funcionando y marca los dos, pero la lista no arma
+selecciones nuevas. Descartado también portar las ventanas flotantes tal cual:
+están atadas al lienzo Leaflet.
+Consecuencia: dos cifras de «mediana por libra» conviven ahora en la misma
+pantalla y no coinciden (la lista junta todos los formatos convertidos a
+CUP/lb; la tira «dónde está más barato» usa las tarjetas por formato — p. ej.
+Picadillo en La Habana 463 contra 530); queda para decidir cuál manda. La
+columna «Cambio» de la tabla sigue con su propio cálculo (`attach_trends`,
+que empareja titulares por producto × provincia × moneda × unidad y pisa los
+formatos entre sí), distinto del de la lista; también pendiente.
+
+
+## 2026-09-18 — Tablero como dashboard (dirección C), slice 2: detalle por producto
+Contexto: cierra el pedido del slice 1. Con un producto elegido en la lista, el
+tablero tiene que mostrar lo que en el mapa son las ventanas «Precios» y «Cómo
+se movió», sin mandar al mapa.
+Decisión: con `?productos=<slug>` de UN solo producto, la página agrega el
+detalle (`#detalle-titulo`): rango por provincia, «¿subió o bajó?», mediana por
+semana, calendario de días con anuncios y la tabla de los anuncios detrás, con
+su enlace (§6.5). Reusa los mismos parciales del mapa (`_province_compare`,
+`_slope_chart`, `_steps_chart`, `_calendar_chart`, `_chart_help`) y los mismos
+datos que el router ya armaba (`province_comparisons`, `evolution_blocks`), así
+el tablero y el mapa no pueden contradecirse; la lista de productos y el
+«antes y ahora» del detalle salen de `build_month_vs_month`, la misma fuente.
+Sin producto, o con varios (una URL heredada), no hay detalle: la lista ya los
+resume. Se retira el enlace provisorio «Cómo se movió» de la cabecera y, con él,
+`accion_href`/`evolucion_href` del router. El CSS de los gráficos se muda de
+`public_home.html` a `saimc-public.css` —mismo motivo por el que `.ph-card`
+se mudó el 2026-09-16: el tablero no carga el `<style>` del mapa—; en el mapa
+quedan solo `.ph-prov-0/1`, su paleta propia.
+Descartado: reescribir los gráficos para el tablero. Son parciales de SVG que
+ya pasaron por la auditoría de accesibilidad del mapa; duplicarlos habría sido
+dos copias que se despegan.
+Consecuencia: los SVG escalan su texto al ancho del contenedor; en el mapa la
+ventana los acota, acá se acotan a mano (`.ph-pasos` 30rem, `.ph-calendario`
+12rem) — un calendario de ~113 unidades estirado a todo el panel llevaba sus
+etiquetas a 35px y la última se salía del borde. Queda pendiente, y es del
+mapa: con el ancho de la ventana flotante la etiqueta «14/09» del calendario
+también roza el borde derecho. Siguen abiertas las dos decisiones del slice 1
+(qué mediana manda entre lista y tira, y `attach_trends` pisando formatos).
+>>>>>>> worktree-tablero-dashboard-c

@@ -51,6 +51,7 @@ from saimc.web.price_charts import (
     build_cell_ads,
     build_evolution_blocks,
     build_headlines,
+    build_month_vs_month,
     build_province_comparison,
     build_range_series,
 )
@@ -73,6 +74,7 @@ from saimc.web.product_nav import (
     resolve_window,
 )
 from saimc.web.series_view import build_series
+from saimc.web.watchlist_view import build_watchlist
 
 router = APIRouter()
 
@@ -378,30 +380,6 @@ def _render_home(
             vista=destino,
         )
 
-    def accion_href(ventana: str) -> str:
-        """Enlace del menú de acciones del tablero a una ventana flotante del
-        mapa (2026-09-18: el operador pidió que las acciones del compás
-        —Cobertura, Cómo se movió— tuvieran lugar acá también).
-
-        `&vista=mapa` va pegado A MANO al final, no vía el `vista=` de
-        `products_query`: ese parámetro se OMITE de la URL cuando coincide
-        con `DEFAULT_VISTA` —que es «mapa»— para no ensuciar el enlace común
-        (mismo criterio que `capa`). Acá es justo el caso en que hace falta
-        que quede explícito: un enlace sin `?vista=` en la URL cae a la
-        cookie que recuerda «tablero» (slice 3, Dirección D), y quien está
-        parado en el tablero casi seguro tiene esa cookie puesta — el clic
-        no llevaría a ningún lado, porque las ventanas flotantes solo
-        existen en `public_home.html`. Se verificó con Chromium: sin este
-        agregado, el enlace generado no traía `vista=` en absoluto."""
-        base = products_query(
-            active_slugs,
-            provincia=prov_slug,
-            desde=ventana_desde,
-            hasta=ventana_hasta,
-            ver=[ventana],
-        )
-        return f"{base}&vista=mapa"
-
     # Panel de producto (muestrario aprobado el 2026-09-10): cifra con su
     # muestra, comparación con el período anterior del mismo largo y rango por
     # período. El período anterior sale de la misma normalización y los mismos
@@ -573,6 +551,26 @@ def _render_home(
         for s in price_strips
         for cell in s.cells
     }
+    # Lista de productos del tablero (dirección C, 2026-09-18): mediana y
+    # cambio por provincia, sacados del mismo «¿subió o bajó?» que dibuja
+    # «Cómo se movió» —`build_month_vs_month` sobre las 16 provincias, sin
+    # filtro de producto: la lista tiene que mostrarlos a todos para poder
+    # elegir—. Solo en el tablero; el mapa no la usa.
+    watchlist = (
+        build_watchlist(
+            pilot_names,
+            active_products,
+            build_month_vs_month(
+                all_provinces_obs, all_provinces_previous, window_days=window, hoy=hoy
+            ),
+            provinces=province_names,
+            selected_province=prov_slug,
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+        )
+        if selected_vista == "tablero"
+        else None
+    )
     template_name = "public_dashboard.html" if selected_vista == "tablero" else "public_home.html"
     return request.app.state.templates.TemplateResponse(
         request,
@@ -660,8 +658,7 @@ def _render_home(
             "card_ads": panel_ads,
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
-            "cobertura_href": accion_href("cobertura"),
-            "evolucion_href": accion_href("evolucion"),
+            "watchlist": watchlist,
         },
     )
 
