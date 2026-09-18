@@ -1121,14 +1121,15 @@ class TestBlancoTactilDelTablero:
         [
             'class="js-vista-link ph-tap-44{% if vista == "mapa"',
             'class="js-vista-link ph-tap-44{% if vista == "tablero"',
-            'class="ph-dash-chip ph-tap-44{% if chip.is_active',
             'class="ph-dash-chip ph-tap-44{% if choice.is_selected',
             'class="ph-dash-table-producto ph-tap-44"',
-            'class="ph-actions-trigger ph-tap-44"',
-            'class="ph-actions-item ph-tap-44" href="{{ cobertura_href }}"',
-            'class="ph-actions-item ph-tap-44" href="{{ evolucion_href }}"',
-            'class="ph-actions-item ph-tap-44" href="{{ csv_href }}"',
-            'class="ph-actions-item ph-tap-44 theme-toggle"',
+            # Dirección C (2026-09-18): el menú `<details>` del avatar pasó a
+            # ser acciones a la vista en la cabecera, y los chips de producto
+            # una lista cuyas filas ya miden 52px de alto (no necesitan la
+            # clase: `min-height` en `.ph-watch-row`).
+            'class="ph-dash-action ph-tap-44" href="{{ evolucion_href }}"',
+            'class="ph-dash-action ph-tap-44" href="{{ csv_href }}"',
+            'class="ph-dash-action ph-tap-44 theme-toggle"',
         ],
     )
     def test_el_control_lleva_la_clase(self, fragmento: str) -> None:

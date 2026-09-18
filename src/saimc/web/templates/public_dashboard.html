@@ -24,53 +24,95 @@
 <style>
   .m3-public-top { display: none; }
 
-  .ph-dash-top { padding: clamp(1.75rem, 5vw, 3rem) 0 var(--m3-space-6); display: flex; align-items: flex-start; justify-content: space-between; gap: var(--m3-space-4); flex-wrap: wrap; }
-  .ph-dash-title { margin: var(--m3-space-2) 0 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: clamp(1.625rem, 1.1rem + 2.2vw, 2.375rem); line-height: 1.15; letter-spacing: -.01em; color: var(--m3-on-surface); max-width: 34ch; text-wrap: balance; }
-  .ph-dash-subtitle { margin: var(--m3-space-2) 0 0; color: var(--m3-on-surface-variant); max-width: 46ch; }
+  /* Dirección C (2026-09-18): el shell limita a 64rem, pensado para
+     páginas de lectura. Un dashboard de dos columnas necesita más; se abre
+     solo acá, sin tocar el shell de las demás vistas. */
+  .m3-public { max-width: 84rem; }
+
+  .ph-dash-top { padding: var(--m3-space-5) 0 var(--m3-space-6); display: flex; align-items: center; justify-content: space-between; gap: var(--m3-space-3) var(--m3-space-4); flex-wrap: wrap; border-bottom: 1px solid var(--m3-divider); margin-bottom: var(--m3-space-5); }
+  .ph-dash-brand { display: flex; align-items: center; gap: var(--m3-space-3); min-width: 0; }
+  .ph-dash-brand .ph-brand-avatar { width: 2.5rem; height: 2.5rem; flex: none; }
+  .ph-dash-fresh { margin: .15rem 0 0; font-size: .78rem; color: var(--m3-on-surface-variant); }
+  .ph-dash-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: clamp(1.625rem, 1.1rem + 2.2vw, 2.375rem); line-height: 1.15; letter-spacing: -.01em; color: var(--m3-on-surface); text-wrap: balance; }
 
   .ph-vista-toggle { display: inline-flex; background: var(--m3-surface-container); border-radius: 100px; padding: 3px; flex: none; }
   .ph-vista-toggle a { padding: var(--m3-space-2) var(--m3-space-4); border-radius: 100px; font: 500 13px var(--m3-font); color: var(--m3-on-surface-variant); text-decoration: none; }
   .ph-vista-toggle a:hover { text-decoration: none; }
   .ph-vista-toggle a.is-selected { background: var(--m3-surface); box-shadow: var(--m3-elev-1); color: var(--ph-accent); }
 
-  .ph-dash-top-actions { display: flex; align-items: center; gap: var(--m3-space-3); flex: none; }
+  /* Acciones a la vista, sin menú: son tres y entran en un teléfono si
+     van como íconos. La etiqueta aparece cuando hay ancho. El toggle de
+     tema comparte `.theme-toggle`: `_theme_toggle_script.html` cablea
+     todas las instancias por clase, y qué ícono se ve ya lo resuelve
+     `saimc-public.css`. */
+  .ph-dash-actions { display: flex; align-items: center; gap: var(--m3-space-2); flex-wrap: wrap; }
+  .ph-dash-action { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-width: 44px; min-height: 44px; padding: 0 .7rem;
+                    border-radius: 100px; border: 1px solid var(--m3-outline-variant); background: var(--m3-surface);
+                    font: 500 .8125rem var(--m3-font); color: var(--m3-on-surface); text-decoration: none; cursor: pointer; }
+  .ph-dash-action:hover { text-decoration: none; border-color: var(--ph-accent); }
+  .ph-dash-action .m3-icon { font-size: 18px; color: var(--ph-accent); }
+  .ph-dash-action-label { display: none; }
+  @media (min-width: 40rem) { .ph-dash-action-label { display: inline; } }
 
-  /* Menú de acciones (2026-09-18): mismo avatar que abre el compás del
-     mapa, acá abriendo un `<details>` en vez de un dock posicionado —no hay
-     lienzo sobre el que flotar, así que no tiene sentido portar
-     `.ph-compass-nav`. `.ph-actions` es el `<details>`; su `<summary>` no
-     lleva marcador nativo, mismo trato que `.ph-window-custom-trigger` del
-     mapa. */
-  .ph-actions { position: relative; }
-  .ph-actions-trigger {
-    display: flex; align-items: center; justify-content: center;
-    width: 2.5rem; height: 2.5rem; border-radius: 100px; cursor: pointer; list-style: none;
-    background: var(--m3-surface-container); border: 1px solid transparent;
+  /* Layout: una columna en el orden lista → contenido → cobertura; dos
+     columnas desde 64rem, con la lista y la cobertura apiladas a la
+     izquierda y el contenido ocupando la derecha entera. */
+  .ph-dash-layout { display: grid; gap: var(--m3-space-5); grid-template-columns: minmax(0, 1fr);
+                    grid-template-areas: "lista" "main" "cobertura"; }
+  .ph-dash-watch { grid-area: lista; }
+  .ph-dash-cov { grid-area: cobertura; }
+  .ph-dash-main { grid-area: main; min-width: 0; }
+  @media (min-width: 64rem) {
+    .ph-dash-layout { grid-template-columns: 22rem minmax(0, 1fr); grid-template-rows: auto 1fr;
+                      grid-template-areas: "lista main" "cobertura main"; align-items: start; }
   }
-  .ph-actions-trigger::-webkit-details-marker { display: none; }
-  .ph-actions-trigger:hover, .ph-actions[open] .ph-actions-trigger { border-color: var(--ph-accent); }
-  .ph-actions-trigger .ph-brand-avatar { width: 1.75rem; height: 1.75rem; }
 
-  .ph-actions-menu {
-    position: absolute; top: calc(100% + .4rem); right: 0; z-index: 20;
-    display: flex; flex-direction: column; gap: 2px; min-width: 12rem;
-    padding: .4rem; border-radius: var(--ph-radius-sm);
-    background: var(--m3-surface); box-shadow: var(--ph-elev);
-  }
-  .ph-actions-item {
-    display: flex; align-items: center; gap: .6rem; min-height: 44px;
-    padding: 0 var(--m3-space-3); border-radius: var(--m3-radius-sm);
-    font: 500 .8125rem var(--m3-font); color: var(--m3-on-surface); text-decoration: none;
-    border: none; background: none; width: 100%; text-align: left; cursor: pointer;
-  }
-  .ph-actions-item:hover { text-decoration: none; background: var(--m3-surface-hover); }
-  .ph-actions-item .m3-icon { font-size: 18px; color: var(--m3-on-surface-variant); }
-  .ph-actions-divider { height: 1px; margin: .3rem .2rem; background: var(--m3-divider); }
-  /* El toggle de tema comparte `.theme-toggle`: `_theme_toggle_script.html`
-     cablea todas las instancias por clase, no por id, así que este botón
-     queda sincronizado con el del shell sin script propio. Qué ícono se ve
-     (`.theme-toggle-icon-dark`/`-light`) ya lo resuelve la regla global en
-     `saimc-public.css` — no se repite acá. */
+  .ph-dash-panel { background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: var(--ph-radius-sm);
+                   padding: var(--m3-space-4); display: flex; flex-direction: column; gap: var(--m3-space-3); }
+  .ph-dash-panel-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.25rem; color: var(--m3-on-surface); }
+  .ph-dash-panel-sub { margin: -.4rem 0 0; font-size: .78rem; line-height: 1.45; color: var(--m3-on-surface-variant); }
+
+  /* La lista: `--cols` (una por provincia con dato) lo escribe la
+     plantilla. Con las dos provincias de hoy entra cómoda a 390px; con
+     muchas más, cada celda se achica — se revisa cuando haya más de tres,
+     igual que los colores de provincia (2026-09-18). */
+  .ph-watch { display: flex; flex-direction: column; gap: 2px; }
+  .ph-watch-head, .ph-watch-row { display: grid; gap: var(--m3-space-2); align-items: center;
+                                  grid-template-columns: minmax(0, 1.25fr) repeat(var(--cols, 1), minmax(0, 1fr)); }
+  .ph-watch-head { padding: 0 var(--m3-space-3) var(--m3-space-1); font-size: .7rem; color: var(--m3-on-surface-variant); }
+  /* El punto no se achica y el nombre se corta con «…»: con el recorte en
+     el contenedor entero, un nombre de provincia largo empujaba el
+     punto fuera de la vista y la columna perdía su color. */
+  .ph-watch-prov { display: flex; align-items: center; justify-content: flex-end; gap: .35rem; min-width: 0; }
+  .ph-watch-prov .ph-dash-dot { flex: none; }
+  .ph-watch-prov-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ph-watch-row { min-height: 52px; padding: var(--m3-space-2) var(--m3-space-3); border-radius: var(--m3-radius-sm);
+                  color: var(--m3-on-surface); text-decoration: none; }
+  .ph-watch-row:hover { text-decoration: none; background: var(--m3-surface-hover); }
+  .ph-watch-row.is-active { background: var(--ph-accent-wash); }
+  .ph-watch-all { grid-template-columns: minmax(0, 1fr); min-height: 44px; }
+  .ph-watch-name { display: flex; flex-direction: column; font-weight: 500; font-size: .9rem; min-width: 0; }
+  .ph-watch-name small { font-weight: 400; font-size: .7rem; color: var(--m3-on-surface-variant); }
+  .ph-watch-cell { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+  .ph-watch-median { font-weight: 500; font-variant-numeric: tabular-nums; }
+  .ph-watch-change { font-size: .72rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
+  .ph-watch-none { color: var(--m3-on-surface-variant); }
+
+  .ph-cov-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--m3-space-2); }
+  .ph-cov-stats > div { display: flex; flex-direction: column; gap: .1rem; }
+  .ph-cov-label { font-size: .7rem; color: var(--m3-on-surface-variant); }
+  .ph-cov-value { font-size: 1.35rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .ph-cov-value small { font-size: .8rem; font-weight: 400; color: var(--m3-on-surface-variant); }
+  .ph-cov-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--m3-space-2); }
+  .ph-cov-bars li { display: grid; grid-template-columns: 8rem minmax(0, 1fr) 2.5rem; gap: var(--m3-space-2); align-items: center; font-size: .8125rem; }
+  .ph-cov-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ph-cov-track { height: 8px; border-radius: 4px; background: var(--m3-surface-container-high); }
+  .ph-cov-fill { display: block; height: 8px; border-radius: 4px; background: var(--prov, var(--ph-accent)); }
+  .ph-cov-n { text-align: right; font-variant-numeric: tabular-nums; }
+  .ph-cov-note { margin: 0; font-size: .78rem; line-height: 1.5; color: var(--m3-on-surface-variant); }
+
+  .ph-dash-head { display: flex; flex-direction: column; gap: var(--m3-space-3); margin-bottom: var(--m3-space-5); }
+  .ph-dash-head .ph-dash-filters { margin-bottom: 0; }
 
   /* Índice de salto + secciones colapsables + borde de color (Dirección D,
      agrupar el tablero, 2026-09-16): `<details>` nativo en vez de
@@ -307,58 +349,132 @@
 {% endblock %}
 
 {% block content %}
-<div class="ph-dash-top">
-  <div>
-    <div class="m3-kicker">Guani · SAIMC · Fase 0</div>
-    <h1 class="ph-dash-title">Precios del mercado informal cubano</h1>
-    <p class="ph-dash-subtitle">Anuncios verificados a mano, agrupados por producto y provincia, en los últimos {{ window_days }} días.</p>
+{# Dirección C (2026-09-18, elegida por el operador entre tres prototipos
+   de Claude Design): el tablero pasa a ser un dashboard con forma de lista
+   de seguimiento. A la izquierda, los productos (elegir uno enfoca la
+   página) y la cobertura; a la derecha, lo que el tablero ya mostraba —la
+   tira «dónde está más barato» y la tabla por formato—. Nada de lo que
+   había se pierde, se reubica:
+
+   - chips de producto → la lista (un producto a la vez; «Todos los
+     productos» es el tablero completo);
+   - chips de provincia → se quedan, arriba del contenido;
+   - menú del avatar → acciones a la vista en la cabecera (Mapa, CSV,
+     tema); Cobertura pasa al cuerpo de la página.
+
+   Mobile first: una sola columna en el orden lista → contenido → cobertura
+   (la cobertura es contexto, no lo primero que se busca en un teléfono);
+   las dos columnas aparecen recién cuando hay ancho de sobra. #}
+<header class="ph-dash-top">
+  <div class="ph-dash-brand">
+    {% include "_guani_avatar.html" %}
+    <div>
+      <div class="m3-kicker">Guani · SAIMC · Fase 0</div>
+      {# La frescura queda a la vista (en el mapa se esconde detrás del
+         avatar): es lo único que dice qué tan viejo es el dato (§12.6). #}
+      {% if data_freshness_day %}
+      <p class="ph-dash-fresh">Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} · hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}{% endif %}</p>
+      {% endif %}
+    </div>
   </div>
-  <div class="ph-dash-top-actions">
+  <nav class="ph-dash-actions" aria-label="Acciones">
     <div class="ph-vista-toggle" role="group" aria-label="Presentación">
       <a class="js-vista-link ph-tap-44{% if vista == "mapa" %} is-selected{% endif %}" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}>Mapa</a>
       <a class="js-vista-link ph-tap-44{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
     </div>
-    {# Menú de acciones (2026-09-18, pedido del operador: «las acciones que
-       están en el mapa dentro del avatar acá en esta vista tablero deben
-       estar»). En el mapa viven en el dock del compás —Cobertura, Precios,
-       Cómo se movió, CSV, zoom, leyenda, tema—, atado a la posición
-       absoluta del lienzo Leaflet; no se porta tal cual, porque acá no hay
-       lienzo sobre el que flotar.
+    {# Provisorio: «Cómo se movió» sigue llevando a la ventana del mapa
+       (`&vista=mapa` explícito, ver `accion_href`) hasta que el detalle
+       por producto la traiga a esta página. #}
+    <a class="ph-dash-action ph-tap-44" href="{{ evolucion_href }}" aria-label="Cómo se movió, en el mapa"><span class="m3-icon" aria-hidden="true">show_chart</span><span class="ph-dash-action-label">Cómo se movió</span></a>
+    <a class="ph-dash-action ph-tap-44" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="m3-icon" aria-hidden="true">download</span><span class="ph-dash-action-label">CSV</span></a>
+    <button type="button" class="ph-dash-action ph-tap-44 theme-toggle" aria-pressed="false" aria-label="Cambiar a modo oscuro">
+      <span class="m3-icon theme-toggle-icon-dark" aria-hidden="true">dark_mode</span>
+      <span class="m3-icon theme-toggle-icon-light" aria-hidden="true">light_mode</span>
+    </button>
+  </nav>
+</header>
 
-       De esas siete, cuatro tienen sentido en el tablero: Cobertura y Cómo
-       se movió llevan al mapa con esa ventana ya abierta (`?vista=mapa`
-       explícito en `accion_href`, `routers/public.py` — sin eso un enlace
-       sin `?vista=` cae a la cookie que recuerda «tablero» y el clic no
-       llevaría a ningún lado). CSV descarga directo, sin pasar por el mapa.
-       Tema alterna in-place. Quedan afuera: Precios (es literalmente lo que
-       ya muestra esta página), y zoom/leyenda (no hay mapa que acercar ni
-       colorear acá).
+<div class="ph-dash-layout">
 
-       `<details>` nativo, mismo patrón sin JS que el selector de fecha
-       personalizada del mapa (`.ph-window-custom`). #}
-    <details class="ph-actions">
-      <summary class="ph-actions-trigger ph-tap-44" aria-label="Acciones">
-        {% include "_guani_avatar.html" %}
-      </summary>
-      <div class="ph-actions-menu" role="menu">
-        <a class="ph-actions-item ph-tap-44" href="{{ cobertura_href }}" role="menuitem">
-          <span class="m3-icon" aria-hidden="true">map</span>Cobertura
-        </a>
-        <a class="ph-actions-item ph-tap-44" href="{{ evolucion_href }}" role="menuitem">
-          <span class="m3-icon" aria-hidden="true">show_chart</span>Cómo se movió
-        </a>
-        <a class="ph-actions-item ph-tap-44" href="{{ csv_href }}" role="menuitem">
-          <span class="m3-icon" aria-hidden="true">download</span>Descargar CSV
-        </a>
-        <div class="ph-actions-divider"></div>
-        <button type="button" class="ph-actions-item ph-tap-44 theme-toggle" role="menuitem" aria-pressed="false" aria-label="Cambiar a modo oscuro">
-          <span class="m3-icon theme-toggle-icon-dark" aria-hidden="true">dark_mode</span>
-          <span class="m3-icon theme-toggle-icon-light" aria-hidden="true">light_mode</span>
-          Modo oscuro
-        </button>
-      </div>
-    </details>
+{% if watchlist %}
+<section class="ph-dash-panel ph-dash-watch" aria-labelledby="lista-titulo">
+  <h2 class="ph-dash-panel-title" id="lista-titulo">Productos</h2>
+  <p class="ph-dash-panel-sub">Mediana de los últimos {{ window_days }} días y su cambio contra los {{ window_days }} anteriores. Sin flecha ni color: una baja es buena para quien compra y mala para quien vende. «—» bajo la mediana: no hubo anuncios en el período anterior.</p>
+  <div class="ph-watch" style="--cols: {{ watchlist.provinces | length }}">
+    {% if watchlist.provinces %}
+    <div class="ph-watch-head" aria-hidden="true">
+      <span>Producto</span>
+      {% for province_name in watchlist.provinces %}
+      <span class="ph-watch-prov ph-prov-{{ province_slots.get(province_name, 9) }}"><span class="ph-dash-dot"></span><span class="ph-watch-prov-name">{{ province_name }}</span></span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <a class="ph-watch-row ph-watch-all{% if watchlist.all_is_active %} is-active{% endif %}" href="{{ watchlist.all_query }}"{% if watchlist.all_is_active %} aria-current="true"{% endif %}>
+      <span class="ph-watch-name">Todos los productos</span>
+    </a>
+    {% for row in watchlist.rows %}
+    <a class="ph-watch-row{% if row.is_active %} is-active{% endif %}" href="{{ row.query }}"{% if row.is_active %} aria-current="true"{% endif %}>
+      <span class="ph-watch-name">{{ row.product_name }}{% if row.unit %}<small>{{ row.currency }}/{{ row.unit }}</small>{% endif %}</span>
+      {% for cell in row.cells %}
+      <span class="ph-watch-cell">
+        {%- if cell %}
+        <span class="visually-hidden">{{ cell.province_name }}:</span>
+        <span class="ph-watch-median">{{ cell.median_text }}</span>
+        <span class="ph-watch-change">{{ cell.change_text or "—" }}</span>
+        {%- else %}
+        <span class="ph-watch-none">—</span>
+        {%- endif %}
+      </span>
+      {% endfor %}
+    </a>
+    {% endfor %}
   </div>
+</section>
+{% endif %}
+
+{# Cobertura (antes una ventana del mapa, alcanzable desde el menú del
+   avatar): mismo `map` que la dibuja allá, mismos números y la misma nota
+   de §9.0 —la ausencia de datos se comunica como decisión metodológica,
+   no como falla—. #}
+<section class="ph-dash-panel ph-dash-cov" aria-labelledby="cobertura-titulo">
+  <h2 class="ph-dash-panel-title" id="cobertura-titulo">Cobertura</h2>
+  <div class="ph-cov-stats">
+    <div><span class="ph-cov-label">Observaciones</span><span class="ph-cov-value">{{ map.total_rows }}</span></div>
+    <div><span class="ph-cov-label">Provincias con dato</span><span class="ph-cov-value">{{ map.covered }}<small>/{{ map.provinces | length }}</small></span></div>
+    <div><span class="ph-cov-label">Publicadas</span><span class="ph-cov-value">{{ map.published }}</span></div>
+  </div>
+  {% set con_dato = map.provinces | selectattr('rows', 'gt', 0) | sort(attribute='rows', reverse=true) | list %}
+  {% if con_dato %}
+  {% set max_rows = con_dato[0].rows %}
+  <ul class="ph-cov-bars">
+    {% for province in con_dato %}
+    <li class="ph-prov-{{ province_slots.get(province.name, 9) }}">
+      <span class="ph-cov-name">{{ province.name }}</span>
+      <span class="ph-cov-track"><span class="ph-cov-fill" style="width:{{ (province.rows / max_rows * 100) | round(1) }}%"></span></span>
+      <span class="ph-cov-n">{{ province.rows }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <p class="ph-cov-note">
+    Una provincia se publica cuando acumula observaciones suficientes y sostenidas,
+    no cuando el calendario lo indica.
+    {% if map.published == 0 %}Todavía <strong>ninguna</strong> cumple ese requisito.{% else %}Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }}; las demás siguen en recolección.{% endif %}
+    Preferimos mostrar poco y cierto antes que mucho y flojo.
+  </p>
+</section>
+
+<div class="ph-dash-main">
+
+<div class="ph-dash-head">
+  <h1 class="ph-dash-title">{% if active_products %}{{ active_products | join(", ") }}{% else %}Todos los productos{% endif %}</h1>
+  {% if province_nav | length > 1 %}
+  <div class="ph-dash-filters" role="group" aria-label="Provincia">
+    {% for choice in province_nav %}
+    <a class="ph-dash-chip ph-tap-44{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" aria-pressed="{{ 'true' if choice.is_selected else 'false' }}">{{ choice.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 {% if cards_by_province %}
@@ -368,28 +484,6 @@
     <input id="tablero-q" class="ph-input" type="search"
            placeholder="Buscar producto o provincia…" autocomplete="off" />
   </div>
-</div>
-{% endif %}
-
-{% if product_chips or province_nav | length > 1 %}
-<div class="ph-dash-filters" role="group" aria-label="Filtros">
-  {% if product_chips %}
-  <div class="ph-dash-filter-group" aria-label="Productos">
-    {% for chip in product_chips %}
-    <a class="ph-dash-chip ph-tap-44{% if chip.is_active %} is-active{% endif %}" href="{{ chip.query }}" aria-pressed="{{ 'true' if chip.is_active else 'false' }}">
-      {% if chip.icon %}<span class="m3-icon ph-dash-chip-icon" aria-hidden="true">{{ chip.icon }}</span>{% endif %}
-      {{ chip.label }}
-    </a>
-    {% endfor %}
-  </div>
-  {% endif %}
-  {% if province_nav | length > 1 %}
-  <div class="ph-dash-filter-group" aria-label="Provincia">
-    {% for choice in province_nav %}
-    <a class="ph-dash-chip ph-tap-44{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" aria-pressed="{{ 'true' if choice.is_selected else 'false' }}">{{ choice.label }}</a>
-    {% endfor %}
-  </div>
-  {% endif %}
 </div>
 {% endif %}
 
@@ -462,6 +556,9 @@
 {% else %}
 <p class="ph-note" style="margin-top: var(--m3-space-6);">Sin anuncios verificados en esta ventana todavía.</p>
 {% endif %}
+
+</div>{# /.ph-dash-main #}
+</div>{# /.ph-dash-layout #}
 {% endblock %}
 
 {% block scripts %}

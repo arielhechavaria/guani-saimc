@@ -11096,3 +11096,38 @@ residuales, la tabla con sus filas, el disparador de acciones visible, y los
 dos puntos de color en rgb distinto (`rgb(63,95,214)` La Habana vs.
 `rgb(112,72,232)` Santiago).
 Suite: 1777 casos.
+
+
+## 2026-09-18 — Tablero como dashboard (dirección C), slice 1: lista de productos + cobertura
+Contexto: el operador pidió que el tablero deje de ser «el mapa sin mapa» y
+pase a ser un dashboard con todo lo que hoy vive en el menú del avatar del
+mapa (Cobertura, Precios, Cómo se movió, CSV, tema); el mapa no se toca. Se
+prototiparon tres direcciones en Claude Design (Consola, Informe, Por
+producto) y eligió **C — Por producto**: lista de seguimiento a la izquierda,
+detalle a la derecha. **Reemplaza** a la entrada del 2026-09-16 («Slice 1 del
+modo Tablero») en el punto en que decía que las ventanas del mapa eran
+«conceptos exclusivos del lienzo, que el tablero no usa ni usará».
+Decisión: slice 1 de 2. `watchlist_view.build_watchlist` arma una fila por
+producto piloto con la mediana de cada provincia y el cambio contra el período
+anterior, tomados tal cual de `build_month_vs_month` —el mismo «¿subió o
+bajó?» de «Cómo se movió»—, sin flecha ni color (§12.6). Una fila elige ese
+producto y solo ese (`?productos=<slug>`); «Todos los productos» vuelve al
+tablero completo. Los chips de producto se retiran (los reemplaza la lista);
+los de provincia se quedan. El menú `<details>` del avatar se retira: Mapa,
+CSV y tema quedan a la vista en la cabecera, Cobertura pasa al cuerpo, y
+«Cómo se movió» sigue enlazando a la ventana del mapa hasta el slice 2
+(detalle por producto con sus gráficos). La frescura del dato pasa a verse sin
+abrir nada. Mobile first: una columna lista → contenido → cobertura; dos
+columnas desde 64rem (el shell se abre a 84rem solo en esta plantilla).
+Descartado: conservar la multi-selección de productos en la lista — la
+dirección C elige un producto a la vez; una URL vieja con varios
+(`?productos=a,b`) sigue funcionando y marca los dos, pero la lista no arma
+selecciones nuevas. Descartado también portar las ventanas flotantes tal cual:
+están atadas al lienzo Leaflet.
+Consecuencia: dos cifras de «mediana por libra» conviven ahora en la misma
+pantalla y no coinciden (la lista junta todos los formatos convertidos a
+CUP/lb; la tira «dónde está más barato» usa las tarjetas por formato — p. ej.
+Picadillo en La Habana 463 contra 530); queda para decidir cuál manda. La
+columna «Cambio» de la tabla sigue con su propio cálculo (`attach_trends`,
+que empareja titulares por producto × provincia × moneda × unidad y pisa los
+formatos entre sí), distinto del de la lista; también pendiente.
