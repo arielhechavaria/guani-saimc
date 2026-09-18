@@ -18,11 +18,36 @@
   comparable entre provincias — el rol que le asigna la decisión del
   2026-09-04. El titular de compra sigue siendo el precio del envase, abajo,
   en la tarjeta.
+
+  Segunda vuelta (2026-09-18, fidelidad contra el artboard `Apilado` que el
+  operador había aprobado en Claude Design): ahí el ancho de cada bloque era
+  la evidencia. Acá el `<li>` de cada celda lleva `flex-grow: cell.count` —
+  más anuncios, más ancho— con `min-width: 8.5rem` como piso, así que en un
+  teléfono (poco espacio sobrante) las celdas quedan casi parejas y en
+  escritorio (espacio de sobra) la diferencia se ve. Es el mismo algoritmo
+  que el prototipo calculaba a mano, resuelto gratis por flexbox.
+
+  La cinta de arriba (`ph-strips-ticker`) es el vistazo de todos los
+  productos que también tenía el artboard — acá contenida al bloque, sin
+  repintar el cromo de la página entera. Muestra `strip.cells[0]`, que ya es
+  la celda más barata de cada tira: no es un agregado nuevo.
 #}
 {% if price_strips %}
 <section class="ph-strips" aria-labelledby="tiras-titulo">
   <h2 class="ph-strips-title" id="tiras-titulo">Dónde está más barato</h2>
   <p class="ph-strips-hint">Comparado por libra o por litro, según el producto: es la única cifra que se puede comparar entre provincias. Lo que pagás por el envase está en las tarjetas de abajo.</p>
+
+  <div class="ph-strips-ticker" role="list" aria-label="El más barato de cada producto">
+    {% for strip in price_strips %}
+    {% set barata = strip.cells[0] %}
+    <a class="ph-ticker-item" role="listitem" href="{{ strip_hrefs.get((strip.product_name, barata.province_name), '#') }}">
+      <span class="ph-ticker-label">{{ strip.product_name }}</span>
+      <span class="ph-ticker-price num">{{ barata.price_text }}</span>
+      <span class="ph-ticker-unit">{{ strip.currency }}/{{ strip.unit }}</span>
+      <span class="ph-ticker-prov">· {{ barata.province_name }}</span>
+    </a>
+    {% endfor %}
+  </div>
 
   {% for strip in price_strips %}
   <div class="ph-strip">
@@ -34,7 +59,7 @@
     </div>
     <ul class="ph-strip-cells">
       {% for cell in strip.cells %}
-      <li>
+      <li style="flex-grow: {{ cell.count }}; flex-basis: 0; min-width: 8.5rem;">
         <a class="ph-strip-cell" href="{{ strip_hrefs.get((strip.product_name, cell.province_name), '#') }}">
           {% if cell.pct is none %}
           <span class="ph-strip-bar is-flat"></span>
@@ -53,7 +78,7 @@
 
   <p class="ph-strips-legend">
     <span class="ph-strips-ramp" aria-hidden="true"></span>
-    De más barato a más caro, comparando sólo entre las provincias que hoy tienen dato. No dice si un precio es alto o bajo: para eso hace falta un umbral que todavía no está medido.
+    De más barato a más caro, comparando sólo entre las provincias que hoy tienen dato. El ancho de cada bloque es cuántos anuncios lo sostienen. No dice si un precio es alto o bajo: para eso hace falta un umbral que todavía no está medido.
   </p>
 </section>
 {% endif %}

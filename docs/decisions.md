@@ -10992,3 +10992,45 @@ real de `/producto/arroz` (vía TestClient con `?provincia=` — sin eso el
 panel no trae anuncios y la tabla no se pinta), servido con los estáticos
 locales ya modificados: **45px de alto, confirmado.**
 Suite: 1792 casos (+2).
+
+## 2026-09-18 — Fidelidad de la tira de precio contra el artboard aprobado
+Contexto: el operador comparó la implementación de la tira (`94aede6`) contra
+el artboard `Apilado` (`ApiladoEscritorio.dc.html`/`ApiladoMovil.dc.html`) que
+había aprobado en Claude Design y no se parecía. Tenía razón: la primera
+versión simplificó demasiado sin decirlo con claridad — quedó en una grilla
+de celdas de tamaño parejo, cuando la idea central del mockup era que el
+**ancho** de cada bloque fuera la evidencia (cuántos anuncios lo sostienen).
+Decisión: se corrige la fidelidad en dos ejes, manteniendo la restricción de
+contraste medida en la ronda anterior (el medio de cualquier degradado
+secuencial no llega a 4.5:1 con ningún color de texto, así que el color
+sigue sin llevar texto encima):
+1. **Ancho proporcional.** Cada celda es un `<li>` con `flex-grow:
+   cell.count; flex-basis: 0; min-width: 8.5rem`. No se calcula ningún
+   porcentaje en Python: el propio algoritmo de resolución de longitudes
+   flexibles de CSS reparte el espacio sobrante proporcional al conteo
+   cuando sobra espacio (escritorio) y lo aplasta contra el `min-width`
+   cuando no sobra (teléfono) — la misma degradación mobile-first que el
+   prototipo calculaba a mano con una función de redistribución iterativa,
+   acá gratis y sin agregar ningún corte de ancho nuevo.
+2. **Cinta de precios.** Arriba de la tira, un vistazo de todos los
+   productos con su precio más barato — mismo espíritu que la cinta oscura
+   del artboard. Se simplificó a propósito: se queda en el tono claro de la
+   página, contenida al bloque de la tira, en vez de repintar el cromo de
+   toda la vista (eso hubiera sido un slice de otro alcance, tocando el
+   header entero del tablero). Y no calcula ningún agregado nuevo: muestra
+   `strip.cells[0]`, la celda más barata que la tira ya tiene calculada.
+También sube la altura de la barra de color (6px → 10px, ahora hace doble
+trabajo de color y forma) y el tamaño del título de la sección, sin llegar al
+tamaño del h1 real de la página —seguiría rompiendo la jerarquía de
+encabezados si igualara al titular de arriba.
+Descartado explícitamente, y avisado: (a) texto sobre el degradado — el
+problema de contraste medido en la ronda anterior sigue sin resolverse, así
+que la barra se queda como acento, no como fondo con texto encima; (b) una
+cinta oscura a todo el ancho de la página — cambiaría el cromo de la vista
+entera, fuera del alcance de «arreglar la tira».
+Verificación: caso de test con conteos deliberadamente desparejos (16/3/1/6)
+para que la diferencia de ancho sea visible, más render real en Chromium a
+1440px (La Habana 471px vs. Holguín 136px, mismo mínimo) y a 390px (136–214px,
+casi parejo: el aplastamiento contra el mínimo funciona). Prueba de mutación
+hecha: `flex-grow` fijo en vez de `cell.count` tira el caso nuevo.
+Suite: 1795 casos (+3).
