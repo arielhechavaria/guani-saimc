@@ -33,6 +33,45 @@
   .ph-vista-toggle a:hover { text-decoration: none; }
   .ph-vista-toggle a.is-selected { background: var(--m3-surface); box-shadow: var(--m3-elev-1); color: var(--ph-accent); }
 
+  .ph-dash-top-actions { display: flex; align-items: center; gap: var(--m3-space-3); flex: none; }
+
+  /* Menú de acciones (2026-09-18): mismo avatar que abre el compás del
+     mapa, acá abriendo un `<details>` en vez de un dock posicionado —no hay
+     lienzo sobre el que flotar, así que no tiene sentido portar
+     `.ph-compass-nav`. `.ph-actions` es el `<details>`; su `<summary>` no
+     lleva marcador nativo, mismo trato que `.ph-window-custom-trigger` del
+     mapa. */
+  .ph-actions { position: relative; }
+  .ph-actions-trigger {
+    display: flex; align-items: center; justify-content: center;
+    width: 2.5rem; height: 2.5rem; border-radius: 100px; cursor: pointer; list-style: none;
+    background: var(--m3-surface-container); border: 1px solid transparent;
+  }
+  .ph-actions-trigger::-webkit-details-marker { display: none; }
+  .ph-actions-trigger:hover, .ph-actions[open] .ph-actions-trigger { border-color: var(--ph-accent); }
+  .ph-actions-trigger .ph-brand-avatar { width: 1.75rem; height: 1.75rem; }
+
+  .ph-actions-menu {
+    position: absolute; top: calc(100% + .4rem); right: 0; z-index: 20;
+    display: flex; flex-direction: column; gap: 2px; min-width: 12rem;
+    padding: .4rem; border-radius: var(--ph-radius-sm);
+    background: var(--m3-surface); box-shadow: var(--ph-elev);
+  }
+  .ph-actions-item {
+    display: flex; align-items: center; gap: .6rem; min-height: 44px;
+    padding: 0 var(--m3-space-3); border-radius: var(--m3-radius-sm);
+    font: 500 .8125rem var(--m3-font); color: var(--m3-on-surface); text-decoration: none;
+    border: none; background: none; width: 100%; text-align: left; cursor: pointer;
+  }
+  .ph-actions-item:hover { text-decoration: none; background: var(--m3-surface-hover); }
+  .ph-actions-item .m3-icon { font-size: 18px; color: var(--m3-on-surface-variant); }
+  .ph-actions-divider { height: 1px; margin: .3rem .2rem; background: var(--m3-divider); }
+  /* El toggle de tema comparte `.theme-toggle`: `_theme_toggle_script.html`
+     cablea todas las instancias por clase, no por id, así que este botón
+     queda sincronizado con el del shell sin script propio. Qué ícono se ve
+     (`.theme-toggle-icon-dark`/`-light`) ya lo resuelve la regla global en
+     `saimc-public.css` — no se repite acá. */
+
   /* Índice de salto + secciones colapsables + borde de color (Dirección D,
      agrupar el tablero, 2026-09-16): `<details>` nativo en vez de
      `<section>` fija — sin JS, mismo patrón que ya usa `/docs`. Abierta la
@@ -274,9 +313,51 @@
     <h1 class="ph-dash-title">Precios del mercado informal cubano</h1>
     <p class="ph-dash-subtitle">Anuncios verificados a mano, agrupados por producto y provincia, en los últimos {{ window_days }} días.</p>
   </div>
-  <div class="ph-vista-toggle" role="group" aria-label="Presentación">
-    <a class="js-vista-link ph-tap-44{% if vista == "mapa" %} is-selected{% endif %}" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}>Mapa</a>
-    <a class="js-vista-link ph-tap-44{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
+  <div class="ph-dash-top-actions">
+    <div class="ph-vista-toggle" role="group" aria-label="Presentación">
+      <a class="js-vista-link ph-tap-44{% if vista == "mapa" %} is-selected{% endif %}" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}>Mapa</a>
+      <a class="js-vista-link ph-tap-44{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
+    </div>
+    {# Menú de acciones (2026-09-18, pedido del operador: «las acciones que
+       están en el mapa dentro del avatar acá en esta vista tablero deben
+       estar»). En el mapa viven en el dock del compás —Cobertura, Precios,
+       Cómo se movió, CSV, zoom, leyenda, tema—, atado a la posición
+       absoluta del lienzo Leaflet; no se porta tal cual, porque acá no hay
+       lienzo sobre el que flotar.
+
+       De esas siete, cuatro tienen sentido en el tablero: Cobertura y Cómo
+       se movió llevan al mapa con esa ventana ya abierta (`?vista=mapa`
+       explícito en `accion_href`, `routers/public.py` — sin eso un enlace
+       sin `?vista=` cae a la cookie que recuerda «tablero» y el clic no
+       llevaría a ningún lado). CSV descarga directo, sin pasar por el mapa.
+       Tema alterna in-place. Quedan afuera: Precios (es literalmente lo que
+       ya muestra esta página), y zoom/leyenda (no hay mapa que acercar ni
+       colorear acá).
+
+       `<details>` nativo, mismo patrón sin JS que el selector de fecha
+       personalizada del mapa (`.ph-window-custom`). #}
+    <details class="ph-actions">
+      <summary class="ph-actions-trigger ph-tap-44" aria-label="Acciones">
+        {% include "_guani_avatar.html" %}
+      </summary>
+      <div class="ph-actions-menu" role="menu">
+        <a class="ph-actions-item ph-tap-44" href="{{ cobertura_href }}" role="menuitem">
+          <span class="m3-icon" aria-hidden="true">map</span>Cobertura
+        </a>
+        <a class="ph-actions-item ph-tap-44" href="{{ evolucion_href }}" role="menuitem">
+          <span class="m3-icon" aria-hidden="true">show_chart</span>Cómo se movió
+        </a>
+        <a class="ph-actions-item ph-tap-44" href="{{ csv_href }}" role="menuitem">
+          <span class="m3-icon" aria-hidden="true">download</span>Descargar CSV
+        </a>
+        <div class="ph-actions-divider"></div>
+        <button type="button" class="ph-actions-item ph-tap-44 theme-toggle" role="menuitem" aria-pressed="false" aria-label="Cambiar a modo oscuro">
+          <span class="m3-icon theme-toggle-icon-dark" aria-hidden="true">dark_mode</span>
+          <span class="m3-icon theme-toggle-icon-light" aria-hidden="true">light_mode</span>
+          Modo oscuro
+        </button>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -286,17 +367,6 @@
     <label class="visually-hidden" for="tablero-q">Buscar producto o provincia</label>
     <input id="tablero-q" class="ph-input" type="search"
            placeholder="Buscar producto o provincia…" autocomplete="off" />
-  </div>
-  {# Mismo componente visual que el toggle Mapa/Tablero de arriba —es un
-     pill genérico, no algo específico de esa pareja— pero sin
-     `js-vista-link`/`data-vista`: esos cablean la cookie que recuerda
-     mapa/tablero (slice 3, Dirección D) y esta presentación no tiene
-     cookie propia, se resetea a tarjetas en cada carga nueva a propósito
-     —no se pidió recordarla, y una segunda cookie sin pedido es alcance
-     de más. #}
-  <div class="ph-vista-toggle" role="group" aria-label="Presentación de datos">
-    <a class="ph-tap-44{% if presentacion == "tarjetas" %} is-selected{% endif %}" href="{{ tarjetas_href }}"{% if presentacion == "tarjetas" %} aria-current="true"{% endif %}>Tarjetas</a>
-    <a class="ph-tap-44{% if presentacion == "tabla" %} is-selected{% endif %}" href="{{ tabla_href }}"{% if presentacion == "tabla" %} aria-current="true"{% endif %}>Tabla</a>
   </div>
 </div>
 {% endif %}
@@ -331,7 +401,14 @@
    detalle, sin un modo más que aprender. #}
 {% include "_price_strips.html" %}
 
-{% if presentacion == "tabla" %}
+{# Solo tabla (2026-09-18, pedido explícito del operador: "quita las
+   tarjetas del tablero solo la tabla"). Hasta acá convivían dos
+   presentaciones —tarjetas agrupadas con índice de salto, y esta tabla—
+   detrás de un toggle. Se retira la de tarjetas entera: el toggle, el
+   índice de salto, los `<details>` colapsables y `card_view.ProductGroup`
+   (que existía solo para esa presentación). La tabla queda como la única
+   forma de ver el tablero — no hay nada más que elegir, así que tampoco
+   hay pill de "Tarjetas/Tabla" que mostrar. #}
 <div class="ph-dash-table-wrap">
   <table class="ph-dash-table">
     <thead>
@@ -373,46 +450,6 @@
     </tbody>
   </table>
 </div>
-{% else %}
-
-{% if groups_by_province | length > 1 %}
-<nav class="ph-dash-jump" aria-label="Ir a una provincia">
-  {% for province_name, province_groups in groups_by_province %}
-  <a class="ph-prov-{{ province_slots[province_name] }} ph-tap-44" href="#{{ province_slugs[province_name] }}">
-    <span class="ph-dash-dot"></span>
-    {{ province_name }} <span class="n">· {{ province_groups | length }}</span>
-  </a>
-  {% endfor %}
-</nav>
-{% endif %}
-
-{% for province_name, province_groups in groups_by_province %}
-{# Abierta la primera (orienta sin exigir un clic) o la única —con una sola
-   provincia (filtro activo) colapsar no ayuda a nadie, solo suma un clic.
-   `ph-prov-N` fija `--prov` una vez en el `<details>`; el punto del
-   `<summary>` y el borde de `.ph-card` adentro lo heredan — las custom
-   properties heredan solas, no hace falta repetir la clase en cada hijo.
-
-   Desde el 2026-09-17 el bucle es de `ProductGroup`, no de `ProductCard`: el
-   conteo del `<summary>` vuelve a ser productos de verdad. Antes decía «32
-   productos» en La Habana cuando los productos eran 5 y 32 eran los formatos. #}
-<details class="ph-dash-section ph-prov-{{ province_slots[province_name] }}" id="{{ province_slugs[province_name] }}"{% if loop.first or groups_by_province | length == 1 %} open{% endif %}>
-  <summary>
-    <span class="ph-dash-dot"></span>
-    {{ province_name }}
-    <span class="ph-dash-count">{{ province_groups | length }} producto{{ "s" if province_groups | length != 1 }}</span>
-    <span class="ph-dash-chev">⌄</span>
-  </summary>
-  <div class="ph-dash-section-body">
-    <ul class="ph-cards">
-      {% for group in province_groups %}
-      {% include "_product_group_item.html" %}
-      {% endfor %}
-    </ul>
-  </div>
-</details>
-{% endfor %}
-{% endif %}
 
 <p class="ph-note" id="tablero-none" hidden>Ningún producto ni provincia coincide con la búsqueda.</p>
 

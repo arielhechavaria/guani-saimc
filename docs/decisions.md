@@ -11016,3 +11016,65 @@ para que la diferencia de ancho sea visible, más render real en Chromium a
 casi parejo: el aplastamiento contra el mínimo funciona). Prueba de mutación
 hecha: `flex-grow` fijo en vez de `cell.count` tira el caso nuevo.
 Suite: 1795 casos (+3).
+
+## 2026-09-18 — Se retiran las tarjetas del tablero, entra el menú de acciones, se arregla el color por provincia
+Contexto: tres pedidos del operador sobre el tablero, cerrados en un slice.
+
+**1. Solo tabla.** El tablero tenía dos presentaciones (tarjetas agrupadas con
+índice de salto, y tabla) detrás de un toggle `?presentacion=`. El operador
+pidió sacar las tarjetas y dejar solo la tabla. Se retira el eje entero, no
+solo el toggle visible: `PRESENTACION_CHOICES`/`DEFAULT_PRESENTACION`/
+`resolve_presentacion` en `product_nav.py`, el parámetro `presentacion` en
+`_query`/`products_query`/`build_product_chips`/`build_province_nav` y en las
+dos rutas del router, `card_view.ProductGroup`/`group_products_by_province`
+(código muerto sin la vista que los usaba) y la plantilla
+`_product_group_item.html`. La tabla (`cards_by_province`,
+`group_cards_by_province`) queda intacta: nunca dependió de la agrupación por
+producto, sigue una fila por formato, igual que siempre.
+Descartado: dejar el parámetro `?presentacion=` aceptado pero sin efecto —
+sería un query string que miente sobre lo que hace.
+
+**2. Menú de acciones en el tablero.** El compás del mapa tiene siete
+acciones (Cobertura, Precios, Cómo se movió, CSV, Tablero, zoom, leyenda,
+tema), ninguna alcanzable desde el tablero. Se agregó `<details class="ph-
+actions">` en la cabecera, mismo avatar (`_guani_avatar.html`) que abre el
+compás, con cuatro de las siete: Cobertura y Cómo se movió (enlazan al mapa
+con esa ventana abierta), CSV (descarga directo) y tema (alterna in-place,
+mismo `.theme-toggle` que ya cablea `_theme_toggle_script.html` por clase).
+Quedan afuera Precios (es literalmente lo que ya muestra el tablero) y
+zoom/leyenda (no hay mapa que acercar ni colorear acá). No se portan las
+ventanas flotantes tal cual —están atadas a la posición absoluta del lienzo
+Leaflet, que el tablero no tiene a propósito (147 KB menos)—, se enlaza al
+mapa con la ventana pedida.
+**Bug real encontrado construyendo esto**: los enlaces a Cobertura/Evolución
+se armaban con `products_query(..., vista="mapa")`, pero `_query` OMITE
+`vista=` de la URL cuando coincide con `DEFAULT_VISTA` (que es «mapa», para
+no ensuciar el caso común) — así que el enlace nunca llevaba `vista=` en
+absoluto, y quien está en el tablero casi seguro tiene la cookie `vista=
+tablero` puesta: el clic devolvía al tablero en vez de abrir la ventana.
+Se corrigió pegando `&vista=mapa` a mano al final del href, fuera del
+mecanismo de omisión. Verificado con un test que reproduce el escenario real
+completo: cookie en «tablero», seguir el enlace generado, confirmar que
+efectivamente renderiza el mapa.
+
+**3. Bug de color: la tabla se veía de un solo color.** No era percepción:
+`province_slots` salía de `province_color_slots(sorted(all_province_names))`
+—el catálogo completo de 16 provincias, alfabético— para que el color fuera
+estable entre cargas (Dirección D, 2026-09-16). Con datos reales solo en dos
+provincias hoy, `La Habana` cae en el índice 8 y `Santiago de Cuba` en el 14
+de esa lista de 16 —las dos muy por fuera de los tres slots con nombre
+propio (0/1/2)— así que las dos caían en el mismo neutral (9). La promesa de
+estabilidad no valía nada si nunca hay más de un color visible. Se cambió a
+calcular sobre `province_names` (las provincias CON dato en la vista actual,
+ya alfabético): dos provincias reales son ahora dos slots reales y distintos.
+Se pierde la estabilidad entre cargas —si mañana se suma una tercera
+provincia, los colores de las dos actuales pueden correrse—; se vuelve a
+evaluar cuando haya más de tres provincias reales.
+Consecuencia menor: `province_slugs` (usado solo por el índice de salto que
+se retiró) y `groups_by_province`/`ProductGroup` salen del contexto y del
+código.
+Verificación: render real con Chromium confirmando 0 tarjetas/secciones
+residuales, la tabla con sus filas, el disparador de acciones visible, y los
+dos puntos de color en rgb distinto (`rgb(63,95,214)` La Habana vs.
+`rgb(112,72,232)` Santiago).
+Suite: 1777 casos.

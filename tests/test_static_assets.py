@@ -1098,13 +1098,16 @@ class TestBlancoTactilDeLaIslaDeFiltros:
 class TestBlancoTactilDelTablero:
     """44px en los controles principales del tablero (2026-09-17).
 
-    Medido con Chromium a 390px: el toggle Mapa/Tablero daba 31px de alto, el
-    de Tarjetas/Tabla lo mismo, los chips de filtro 33px, el índice de salto
-    33px, y el producto dentro de la fila de tabla 16px. En total el tablero
-    tenía 378 elementos por debajo de 44px, la mayoría filas de tabla y
-    enlaces «ver anuncio» — este caso cubre los controles de navegación
-    principales; el resto son evidencia dentro de un `<details>` que ya exige
-    un clic para verse, no la primera interacción de la página.
+    Medido con Chromium a 390px: el toggle Mapa/Tablero daba 31px de alto,
+    los chips de filtro 33px, y el producto dentro de la fila de tabla 16px.
+    En total el tablero tenía 378 elementos por debajo de 44px, la mayoría
+    filas de tabla y enlaces «ver anuncio» — este caso cubre los controles de
+    navegación principales; el resto son evidencia dentro de un `<details>`
+    que ya exige un clic para verse, no la primera interacción de la página.
+
+    El toggle Tarjetas/Tabla y el índice de salto por provincia se retiraron
+    el 2026-09-18 junto con las tarjetas del tablero (pedido del operador):
+    ya no hay fragmentos que protegerles la clase.
     """
 
     def _dashboard(self) -> str:
@@ -1118,12 +1121,14 @@ class TestBlancoTactilDelTablero:
         [
             'class="js-vista-link ph-tap-44{% if vista == "mapa"',
             'class="js-vista-link ph-tap-44{% if vista == "tablero"',
-            'class="ph-tap-44{% if presentacion == "tarjetas"',
-            'class="ph-tap-44{% if presentacion == "tabla"',
             'class="ph-dash-chip ph-tap-44{% if chip.is_active',
             'class="ph-dash-chip ph-tap-44{% if choice.is_selected',
-            'ph-tap-44" href="#{{ province_slugs[province_name] }}"',
             'class="ph-dash-table-producto ph-tap-44"',
+            'class="ph-actions-trigger ph-tap-44"',
+            'class="ph-actions-item ph-tap-44" href="{{ cobertura_href }}"',
+            'class="ph-actions-item ph-tap-44" href="{{ evolucion_href }}"',
+            'class="ph-actions-item ph-tap-44" href="{{ csv_href }}"',
+            'class="ph-actions-item ph-tap-44 theme-toggle"',
         ],
     )
     def test_el_control_lleva_la_clase(self, fragmento: str) -> None:
