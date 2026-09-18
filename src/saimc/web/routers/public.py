@@ -380,34 +380,6 @@ def _render_home(
             vista=destino,
         )
 
-    def accion_href(ventana: str) -> str:
-        """Enlace del menú de acciones del tablero a una ventana flotante del
-        mapa (2026-09-18: el operador pidió que las acciones del compás
-        —Cobertura, Cómo se movió— tuvieran lugar acá también).
-
-        Dirección C (2026-09-18): Cobertura ya vive en la propia página del
-        tablero, así que solo queda «Cómo se movió», hasta que el detalle
-        por producto la traiga adentro (slice siguiente).
-
-        `&vista=mapa` va pegado A MANO al final, no vía el `vista=` de
-        `products_query`: ese parámetro se OMITE de la URL cuando coincide
-        con `DEFAULT_VISTA` —que es «mapa»— para no ensuciar el enlace común
-        (mismo criterio que `capa`). Acá es justo el caso en que hace falta
-        que quede explícito: un enlace sin `?vista=` en la URL cae a la
-        cookie que recuerda «tablero» (slice 3, Dirección D), y quien está
-        parado en el tablero casi seguro tiene esa cookie puesta — el clic
-        no llevaría a ningún lado, porque las ventanas flotantes solo
-        existen en `public_home.html`. Se verificó con Chromium: sin este
-        agregado, el enlace generado no traía `vista=` en absoluto."""
-        base = products_query(
-            active_slugs,
-            provincia=prov_slug,
-            desde=ventana_desde,
-            hasta=ventana_hasta,
-            ver=[ventana],
-        )
-        return f"{base}&vista=mapa"
-
     # Panel de producto (muestrario aprobado el 2026-09-10): cifra con su
     # muestra, comparación con el período anterior del mismo largo y rango por
     # período. El período anterior sale de la misma normalización y los mismos
@@ -687,7 +659,6 @@ def _render_home(
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
             "watchlist": watchlist,
-            "evolucion_href": accion_href("evolucion"),
         },
     )
 

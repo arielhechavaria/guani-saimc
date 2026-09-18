@@ -2573,7 +2573,10 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?vista=tablero&productos=arroz").text
-        cuerpo = texto[texto.index("<tbody>") : texto.index("</tbody>")]
+        # La tabla principal, no el primer `<tbody>` de la página: con un
+        # producto elegido el detalle trae antes la tabla de sus anuncios.
+        tabla = texto[texto.index('class="ph-dash-table"') :]
+        cuerpo = tabla[tabla.index("<tbody>") : tabla.index("</tbody>")]
 
         assert "Arroz" in cuerpo
         assert "Aceite" not in cuerpo
@@ -2827,27 +2830,17 @@ class TestAccionesYCoberturaEnElTablero:
         assert '<span class="ph-cov-name">La Habana</span>' in cobertura
         assert "no cuando el calendario lo indica" in cobertura
 
-    def test_como_se_movio_lleva_al_mapa_con_la_ventana_abierta(
+    def test_como_se_movio_ya_no_saca_al_mapa(
         self, client: TestClient, session: Session
     ) -> None:
-        """Provisorio hasta que el detalle por producto la traiga adentro.
-        El caso real que importa: quien está parado en el tablero casi
-        seguro tiene la cookie `vista=tablero` puesta. Sin `&vista=mapa`
-        explícito en el enlace, el clic caería de vuelta al tablero por la
-        cookie — las ventanas flotantes solo existen en `public_home.html`."""
+        """Slice 2 (2026-09-18): «Cómo se movió» vive en el detalle del
+        producto, dentro del tablero. El enlace provisorio a la ventana del
+        mapa (`?ver=evolucion&vista=mapa`) se retira."""
         self._seed(session)
-        client.cookies.set("vista", "tablero")
 
         texto = client.get("/?vista=tablero").text
 
-        evolucion = re.search(r'href="([^"]*ver=evolucion[^"]*)"', texto)
-        assert evolucion is not None and "vista=mapa" in evolucion.group(1)
-
-        # Y el enlace generado de verdad abre el mapa, cookie puesta y todo.
-        # El HTML trae el `&` escapado como `&amp;`; hay que decodificarlo
-        # antes de pedirlo, como hace un navegador al seguir el href.
-        respuesta = client.get(evolucion.group(1).replace("&amp;", "&"))
-        assert 'id="ph-leaflet-map"' in respuesta.text
+        assert "ver=evolucion" not in texto
 
     def test_csv_descarga_directo_sin_pasar_por_el_mapa(
         self, client: TestClient, session: Session
@@ -2876,6 +2869,102 @@ class TestAccionesYCoberturaEnElTablero:
         texto = client.get("/").text
 
         assert "ph-dash-actions" not in texto
+
+
+class TestDetalleDeProductoEnElTablero:
+    """Dirección C, slice 2 (2026-09-18): con un producto elegido, el tablero
+    muestra su detalle —rango por provincia, antes y ahora, por semana, días
+    con anuncios y los anuncios detrás— con los mismos parciales que las
+    ventanas del mapa. Sin producto elegido no hay detalle: la lista ya
+    resume a todos.
+
+    Valores esperados, a mano, con la ventana por defecto (30 días):
+    Arroz en La Habana, período anterior 300 y 300 → mediana 300; ventana
+    actual 300 y 330 → mediana 315. Santiago: 410, sin período anterior."""
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        aceite = Product(name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, aceite, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-detalle")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(45))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(40))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(12))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(3), price="330")
+        _precio(session, product=arroz, province=santiago, source=fuente, dia=_hace(4), price="410")
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(5))
+        session.commit()
+
+    def _detalle(self, texto: str) -> str:
+        inicio = texto.index('id="detalle-titulo"')
+        return texto[inicio : texto.index("</section>", inicio)]
+
+    def test_sin_producto_elegido_no_hay_detalle(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        assert 'id="detalle-titulo"' not in client.get("/?vista=tablero").text
+
+    def test_con_un_producto_elegido_aparecen_sus_graficos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+
+        assert 'class="ph-compara"' in detalle  # rango por provincia
+        assert 'class="ph-pendiente"' in detalle  # antes y ahora
+        assert 'class="ph-pasos"' in detalle  # por semana
+        assert 'class="ph-calendario"' in detalle  # días con anuncios
+
+    def test_antes_y_ahora_trae_las_medianas_de_la_ventana(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        pendiente = detalle[detalle.index('class="ph-pendiente"') :]
+
+        assert ">300<" in pendiente or ">300 " in pendiente
+        assert "315" in pendiente
+
+    def test_el_detalle_es_solo_del_producto_elegido(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+
+        assert "Aceite" not in detalle
+
+    def test_los_anuncios_del_detalle_se_pueden_recorrer(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La procedencia es el diferencial (§6.5): los anuncios que sostienen
+        los gráficos, uno por renglón. Cuatro de arroz en la ventana: dos en
+        La Habana dentro de los 30 días (hace 12 y hace 3), uno en Santiago;
+        los de hace 40 y 45 son del período anterior y no entran."""
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+
+        assert 'class="ph-evo-anuncios"' in detalle
+        assert "Los 3 anuncios de la ventana" in detalle
+
+    def test_con_dos_productos_de_una_url_vieja_no_hay_detalle(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El detalle es de UN producto; `?productos=a,b` (enlace heredado)
+        muestra la tabla de los dos, sin detalle."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=arroz,aceite").text
+
+        assert 'id="detalle-titulo"' not in texto
 
 
 class TestTiraDePrecioEnLaPagina:

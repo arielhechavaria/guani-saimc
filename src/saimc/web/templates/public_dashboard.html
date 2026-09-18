@@ -111,6 +111,22 @@
   .ph-cov-n { text-align: right; font-variant-numeric: tabular-nums; }
   .ph-cov-note { margin: 0; font-size: .78rem; line-height: 1.5; color: var(--m3-on-surface-variant); }
 
+  /* Detalle del producto elegido (slice 2): los gráficos son los del mapa
+     —su CSS vive en `saimc-public.css`—; acá solo se ordenan. Rango y
+     «¿subió o bajó?» lado a lado cuando hay ancho, uno debajo del otro en
+     un teléfono. */
+  .ph-dash-detail { display: flex; flex-direction: column; gap: var(--m3-space-4); margin-bottom: var(--m3-space-6); }
+  .ph-dash-detail-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: clamp(1.25rem, 1.05rem + .9vw, 1.6rem); color: var(--m3-on-surface); }
+  .ph-dash-detail-grid { display: grid; gap: var(--m3-space-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+  .ph-dash-detail-evo { gap: var(--m3-space-4); }
+  /* Los dibujos de SVG se escalan al ancho del contenedor, texto incluido:
+     un calendario de ~113 unidades de ancho estirado a todo el panel lleva
+     sus etiquetas a 35px, y la última se sale del borde. En el mapa la
+     ventana ya los acota; acá, con el panel a todo el ancho, se acotan a
+     mano. */
+  .ph-dash-detail .ph-pasos { max-width: 30rem; }
+  .ph-dash-detail .ph-calendario { max-width: 12rem; }
+
   .ph-dash-head { display: flex; flex-direction: column; gap: var(--m3-space-3); margin-bottom: var(--m3-space-5); }
   .ph-dash-head .ph-dash-filters { margin-bottom: 0; }
 
@@ -349,6 +365,7 @@
 {% endblock %}
 
 {% block content %}
+{% from "_chart_help.html" import chart_help %}
 {# Dirección C (2026-09-18, elegida por el operador entre tres prototipos
    de Claude Design): el tablero pasa a ser un dashboard con forma de lista
    de seguimiento. A la izquierda, los productos (elegir uno enfoca la
@@ -382,10 +399,6 @@
       <a class="js-vista-link ph-tap-44{% if vista == "mapa" %} is-selected{% endif %}" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}>Mapa</a>
       <a class="js-vista-link ph-tap-44{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
     </div>
-    {# Provisorio: «Cómo se movió» sigue llevando a la ventana del mapa
-       (`&vista=mapa` explícito, ver `accion_href`) hasta que el detalle
-       por producto la traiga a esta página. #}
-    <a class="ph-dash-action ph-tap-44" href="{{ evolucion_href }}" aria-label="Cómo se movió, en el mapa"><span class="m3-icon" aria-hidden="true">show_chart</span><span class="ph-dash-action-label">Cómo se movió</span></a>
     <a class="ph-dash-action ph-tap-44" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="m3-icon" aria-hidden="true">download</span><span class="ph-dash-action-label">CSV</span></a>
     <button type="button" class="ph-dash-action ph-tap-44 theme-toggle" aria-pressed="false" aria-label="Cambiar a modo oscuro">
       <span class="m3-icon theme-toggle-icon-dark" aria-hidden="true">dark_mode</span>
@@ -494,6 +507,116 @@
    Misma idea apilada que se prototipó: primero el dibujo, después el
    detalle, sin un modo más que aprender. #}
 {% include "_price_strips.html" %}
+
+{# Detalle del producto elegido (dirección C, slice 2, 2026-09-18): lo que
+   en el mapa son las ventanas «Precios» y «Cómo se movió», acá en el cuerpo
+   de la página y solo de ese producto. Mismos parciales, mismas cifras
+   —`province_comparisons` y `evolution_blocks`, que el router ya armaba—,
+   así el tablero y el mapa no pueden contradecirse. Solo con UN producto:
+   con varios (una URL vieja) o ninguno, la lista ya los resume. #}
+{% if selected_product %}
+{% set comp = province_comparisons | selectattr("product_name", "equalto", selected_product) | first %}
+{% set block = evolution_blocks | selectattr("product_name", "equalto", selected_product) | first %}
+{% if comp or block %}
+<section class="ph-dash-detail" aria-labelledby="detalle-titulo">
+  <h2 class="ph-dash-detail-title" id="detalle-titulo">Cómo está {{ selected_product }}</h2>
+  <div class="ph-dash-detail-grid">
+    {% if comp %}
+    <figure class="ph-dash-panel ph-compara-fig">
+      <figcaption class="ph-evo-sub">Rango por provincia <span>{{ comp.currency }}/{{ comp.unit }} · la más cara arriba</span></figcaption>
+      {% set resaltar = selected_province %}
+      {% include "_province_compare.html" %}
+      {{ chart_help(
+        "Cada línea horizontal es el rango completo de precios de esa "
+        "provincia, de punta a punta; el óvalo relleno marca la mitad "
+        "central de los anuncios; el punto es la mediana."
+        ~ (" " ~ selected_province ~ " se destaca sobre las demás." if selected_province else "")
+      ) }}
+    </figure>
+    {% endif %}
+    {% if block %}
+    {% for slope in block.slopes %}
+    <figure class="ph-dash-panel ph-compara-fig">
+      <figcaption class="ph-evo-sub">¿Subió o bajó? <span>mediana en {{ slope.currency }}/{{ slope.unit }} · (anuncios)</span></figcaption>
+      {% include "_slope_chart.html" %}
+      {{ chart_help(
+        "Cada línea conecta la mediana de una provincia en el período "
+        "anterior (izquierda) con la del actual (derecha). El número entre "
+        "paréntesis es cuántos anuncios la sostienen."
+      ) }}
+    </figure>
+    {% endfor %}
+    {% endif %}
+  </div>
+
+  {% if block %}
+  <div class="ph-dash-panel ph-dash-detail-evo">
+    {% if block.legend | length > 1 %}
+    <ul class="ph-evo-leyenda">
+      {% for slot, provincia in block.legend %}
+      <li class="ph-prov-{{ slot % 2 }}"><span class="ph-evo-muestra" aria-hidden="true"></span>{{ provincia }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% for steps in block.steps %}
+    <figure class="ph-compara-fig">
+      <figcaption class="ph-evo-sub">Por {{ steps.period_name }} <span>mediana en {{ steps.currency }}/{{ steps.unit }} · la línea se corta donde no hubo anuncios</span></figcaption>
+      {% include "_steps_chart.html" %}
+      {{ chart_help(
+        "Cada línea sigue la mediana de una provincia, período a período, "
+        "en escalones. Se corta donde no hubo anuncios: nunca une dos "
+        "puntos salteando uno vacío."
+      ) }}
+    </figure>
+    {% else %}
+    <p class="ph-empty">
+      No hay suficientes días con anuncios de {{ selected_product }} para dibujar
+      cómo se movió: hacen falta al menos dos {{ "semanas" if window_days >= 28 else "días" }} distintos con anuncios.
+    </p>
+    {% endfor %}
+
+    <figure class="ph-compara-fig">
+      <figcaption class="ph-evo-sub">Días con anuncios <span>{% if selected_province %}{{ selected_province }}{% else %}todas las provincias juntas{% endif %}</span></figcaption>
+      {% set cal = block.calendar %}
+      {% include "_calendar_chart.html" %}
+      {{ chart_help(
+        "Cada cuadro es un día; cuanto más oscuro, más anuncios entraron "
+        "ese día. No muestra precios, solo cuándo hubo actividad."
+      ) }}
+    </figure>
+
+    {# Los anuncios detrás de los gráficos (§6.5), con su enlace; las
+       capturas no enlazan. Misma tabla que la ventana del mapa. #}
+    <details class="ph-evo-anuncios">
+      <summary>Los {{ block.ads | length }} anuncio{{ "s" if block.ads | length != 1 }} de la ventana</summary>
+      <div class="ph-table-card">
+        <table class="ph-coverage">
+          <thead>
+            <tr>
+              <th scope="col">Día</th>
+              <th scope="col">Provincia</th>
+              <th scope="col" class="num">Precio</th>
+              <th scope="col">Enlace</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ad in block.ads %}
+            <tr>
+              <td class="num">{{ ad.day_text }}</td>
+              <td>{{ ad.province_name }}</td>
+              <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
+              <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endif %}
 
 {# Solo tabla (2026-09-18, pedido explícito del operador: "quita las
    tarjetas del tablero solo la tabla"). Hasta acá convivían dos

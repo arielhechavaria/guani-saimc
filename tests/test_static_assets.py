@@ -1127,7 +1127,6 @@ class TestBlancoTactilDelTablero:
             # ser acciones a la vista en la cabecera, y los chips de producto
             # una lista cuyas filas ya miden 52px de alto (no necesitan la
             # clase: `min-height` en `.ph-watch-row`).
-            'class="ph-dash-action ph-tap-44" href="{{ evolucion_href }}"',
             'class="ph-dash-action ph-tap-44" href="{{ csv_href }}"',
             'class="ph-dash-action ph-tap-44 theme-toggle"',
         ],
