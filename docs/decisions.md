@@ -11347,3 +11347,39 @@ Consecuencia: medido con Chromium contra datos reales, «Todos» a 390 px pasa d
 y 2,3 a 1280, sin desborde ni scroll interno. Siguen S7 («Sobre los datos»:
 cobertura, método y fuente en un solo bloque) y S8 («Mi provincia» que se
 recuerda).
+
+
+## 2026-09-19 — Tablero: «Sobre los datos» reúne cobertura, lectura, fuente y descarga (S7)
+Contexto: tercera entrega del plan «una cifra, un lugar» (dirección E). Después
+de S6, lo que explica de dónde sale lo que se ve estaba repartido en cuatro
+sitios: la Cobertura en un panel, la guía de lectura («sin flecha ni color»,
+«(base N)») en un párrafo largo bajo el título de la lista, la descarga en un
+ícono de la cabecera y la fuente en ninguna parte.
+Decisión: (1) El panel «Cobertura» pasa a llamarse «Sobre los datos» y absorbe,
+en este orden: la cobertura de siempre (observaciones, provincias con dato,
+publicadas, barras por provincia y la nota de §9.0 de por qué se publica cuando
+hay muestra suficiente), «Cómo leer las cifras» (qué es la mediana, que el
+cambio va sin flecha ni color, qué es «(base N)» y «—»), «De dónde salen» (redes
+sociales y grupos de mensajería del mercado informal, verificados a mano antes
+de entrar en una cifra; ya lo dice el `og:description` del sitio) y la descarga
+CSV con su etiqueta a la vista. (2) La cabecera queda con Mapa/Tablero y el tema:
+el CSV sale de ella, así que hay un solo enlace de descarga. (3) La lista
+conserva solo la frase que dice qué mide («Mediana de los últimos 30 días y su
+cambio contra los 30 anteriores»). (4) **La frescura no se repite en el bloque:**
+el prototipo E la traía, pero la cabecera ya la muestra («Datos verificados
+hasta el…») y repetirla contradice «una cifra, un lugar». (5) **Apartamiento del
+plan:** el plan decía que el bloque absorbe la nota de §9.0 «muestra en
+formación». No lo hace: §9.0 y la entrada del 2026-08-22 exigen que el rótulo
+acompañe a la cifra, y a 390 px el bloque queda al final de la página, lejos de
+ella. El rótulo se queda bajo la lista, una sola vez.
+Descartado: (a) dejar el CSV también en la cabecera —dos enlaces al mismo
+archivo—; (b) mover el rótulo §9.0 al bloque, como decía el plan —lo separa de
+las cifras que rotula—; (c) afirmar una ventana de días sobre «Observaciones»
+(«187 anuncios de los últimos 30 días» del prototipo): el conteo del mapa no está
+acotado a esa ventana y no se publica lo que no se mide (§12.6).
+Consecuencia: medido con Chromium contra datos reales, «Todos» a 390 px pasa de
+1,9 a 2,1 pantallas y el detalle de Arroz de 4,2 a 4,4 (el bloque explica más
+que el panel anterior), sin desborde a 390 ni a 1280; la descarga mide 201×44 px.
+El CSV queda al final de la página en el teléfono: si se echa de menos arriba,
+es un cambio de una línea en la cabecera. Sigue S8 («Mi provincia» que se
+recuerda).

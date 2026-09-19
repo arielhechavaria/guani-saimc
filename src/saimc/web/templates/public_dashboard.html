@@ -53,18 +53,22 @@
   .ph-dash-action .m3-icon { font-size: 18px; color: var(--ph-accent); }
   .ph-dash-action-label { display: none; }
   @media (min-width: 40rem) { .ph-dash-action-label { display: inline; } }
+  /* La descarga del bloque «Sobre los datos»: sola en su fila, con la
+     etiqueta siempre visible (en la cabecera solo cabe el ícono). */
+  .ph-dash-action-wide { align-self: flex-start; }
+  .ph-dash-action-wide .ph-dash-action-label { display: inline; }
 
-  /* Layout: una columna en el orden lista → contenido → cobertura; dos
-     columnas desde 64rem, con la lista y la cobertura apiladas a la
+  /* Layout: una columna en el orden lista → contenido → «Sobre los datos»;
+     dos columnas desde 64rem, con la lista y ese bloque apilados a la
      izquierda y el contenido ocupando la derecha entera. */
   .ph-dash-layout { display: grid; gap: var(--m3-space-5); grid-template-columns: minmax(0, 1fr);
-                    grid-template-areas: "lista" "main" "cobertura"; }
+                    grid-template-areas: "lista" "main" "datos"; }
   .ph-dash-watch { grid-area: lista; }
-  .ph-dash-cov { grid-area: cobertura; }
+  .ph-dash-datos { grid-area: datos; }
   .ph-dash-main { grid-area: main; min-width: 0; }
   @media (min-width: 64rem) {
     .ph-dash-layout { grid-template-columns: 22rem minmax(0, 1fr); grid-template-rows: auto 1fr;
-                      grid-template-areas: "lista main" "cobertura main"; align-items: start; }
+                      grid-template-areas: "lista main" "datos main"; align-items: start; }
   }
 
   .ph-dash-panel { background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: var(--ph-radius-sm);
@@ -294,7 +298,9 @@
      productos» es el tablero completo);
    - chips de provincia → se quedan, arriba del contenido;
    - menú del avatar → acciones a la vista en la cabecera (Mapa, CSV,
-     tema); Cobertura pasa al cuerpo de la página.
+     tema); Cobertura pasa al cuerpo de la página. (S7, 2026-09-19: el CSV
+     y la Cobertura se reúnen en «Sobre los datos»; la cabecera queda con
+     Mapa/Tablero y el tema.)
 
    Mobile first: una sola columna en el orden lista → contenido → cobertura
    (la cobertura es contexto, no lo primero que se busca en un teléfono);
@@ -316,7 +322,6 @@
       <a class="js-vista-link ph-tap-44{% if vista == "mapa" %} is-selected{% endif %}" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}>Mapa</a>
       <a class="js-vista-link ph-tap-44{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
     </div>
-    <a class="ph-dash-action ph-tap-44" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="m3-icon" aria-hidden="true">download</span><span class="ph-dash-action-label">CSV</span></a>
     <button type="button" class="ph-dash-action ph-tap-44 theme-toggle" aria-pressed="false" aria-label="Cambiar a modo oscuro">
       <span class="m3-icon theme-toggle-icon-dark" aria-hidden="true">dark_mode</span>
       <span class="m3-icon theme-toggle-icon-light" aria-hidden="true">light_mode</span>
@@ -329,7 +334,7 @@
 {% if watchlist %}
 <section class="ph-dash-panel ph-dash-watch" aria-labelledby="lista-titulo">
   <h2 class="ph-dash-panel-title" id="lista-titulo">Productos</h2>
-  <p class="ph-dash-panel-sub">Mediana de los últimos {{ window_days }} días y su cambio contra los {{ window_days }} anteriores. Sin flecha ni color: una baja es buena para quien compra y mala para quien vende. «(base N)» son los anuncios del mes anterior con los que se compara; «—», que no hubo ninguno.</p>
+  <p class="ph-dash-panel-sub">Mediana de los últimos {{ window_days }} días y su cambio contra los {{ window_days }} anteriores.</p>
   <div class="ph-watch" style="--cols: {{ watchlist.provinces | length }}">
     {% if watchlist.provinces %}
     <div class="ph-watch-head" aria-hidden="true">
@@ -368,12 +373,14 @@
 </section>
 {% endif %}
 
-{# Cobertura (antes una ventana del mapa, alcanzable desde el menú del
-   avatar): mismo `map` que la dibuja allá, mismos números y la misma nota
-   de §9.0 —la ausencia de datos se comunica como decisión metodológica,
-   no como falla—. #}
-<section class="ph-dash-panel ph-dash-cov" aria-labelledby="cobertura-titulo">
-  <h2 class="ph-dash-panel-title" id="cobertura-titulo">Cobertura</h2>
+{# Sobre los datos (S7, 2026-09-19): lo que explica de dónde sale lo que se
+   ve, en un solo lugar —cobertura (antes una ventana del mapa: mismo `map`,
+   mismos números y la misma nota de §9.0, la ausencia de datos como decisión
+   metodológica y no como falla), cómo leer las cifras, la fuente y la
+   descarga—. El rótulo «muestra en formación» NO vive acá: §9.0 lo quiere
+   pegado a la cifra, y queda bajo la lista. #}
+<section class="ph-dash-panel ph-dash-datos" aria-labelledby="datos-titulo">
+  <h2 class="ph-dash-panel-title" id="datos-titulo">Sobre los datos</h2>
   <div class="ph-cov-stats">
     <div><span class="ph-cov-label">Observaciones</span><span class="ph-cov-value">{{ map.total_rows }}</span></div>
     <div><span class="ph-cov-label">Provincias con dato</span><span class="ph-cov-value">{{ map.covered }}<small>/{{ map.provinces | length }}</small></span></div>
@@ -398,6 +405,9 @@
     {% if map.published == 0 %}Todavía <strong>ninguna</strong> cumple ese requisito.{% else %}Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }}; las demás siguen en recolección.{% endif %}
     Preferimos mostrar poco y cierto antes que mucho y flojo.
   </p>
+  <p class="ph-cov-note"><strong>Cómo leer las cifras.</strong> La cifra es la mediana: el precio del medio entre los anuncios, no el promedio, así que un anuncio muy caro o muy barato no la mueve. Va con su moneda y su unidad. El cambio va sin flecha ni color: una baja es buena para quien compra y mala para quien vende. «(base N)» son los anuncios del período anterior con los que se compara; «—», que no hubo ninguno.</p>
+  <p class="ph-cov-note"><strong>De dónde salen.</strong> Los anuncios se toman de redes sociales y grupos de mensajería del mercado informal, y cada uno se verifica a mano antes de entrar en una cifra.</p>
+  <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span><span class="ph-dash-action-label">Descargar los datos (CSV)</span></a>
 </section>
 
 <div class="ph-dash-main">

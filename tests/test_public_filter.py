@@ -2781,7 +2781,7 @@ class TestAccionesYCoberturaEnElTablero:
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
-        cobertura = texto[texto.index('id="cobertura-titulo"') :]
+        cobertura = texto[texto.index('id="datos-titulo"') :]
 
         assert "ver=cobertura" not in texto
         assert re.search(r'Observaciones</span><span class="ph-cov-value">1<', cobertura)
@@ -2809,8 +2809,9 @@ class TestAccionesYCoberturaEnElTablero:
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
+        bloque = texto[texto.index('id="datos-titulo"') :]
 
-        assert re.search(r'class="ph-dash-action ph-tap-44" href="/datos\.csv\?desde=[^"]+"', texto)
+        assert re.search(r'href="/datos\.csv\?desde=[^"]+"', bloque)
 
     def test_el_toggle_de_tema_esta_en_la_cabecera(
         self, client: TestClient, session: Session
@@ -2830,6 +2831,102 @@ class TestAccionesYCoberturaEnElTablero:
         texto = client.get("/").text
 
         assert "ph-dash-actions" not in texto
+
+
+class TestSobreLosDatosEnElTablero:
+    """S7 (2026-09-19): el bloque «Sobre los datos» reúne lo que explica de
+    dónde sale lo que se ve —cobertura, cómo leer las cifras, la fuente y la
+    descarga— en un solo lugar. Cada cosa vive ahí y no en otro sitio; el
+    rótulo §9.0 «muestra en formación» es la excepción: va pegado a las
+    cifras, no en un bloque al final."""
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-sobre-datos")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(3))
+        session.commit()
+
+    def _bloque(self, texto: str) -> str:
+        inicio = texto.index('id="datos-titulo"')
+        return texto[inicio : texto.index("</section>", inicio)]
+
+    def test_el_bloque_reune_cobertura_lectura_fuente_y_descarga(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        bloque = self._bloque(texto)
+
+        assert ">Sobre los datos</h2>" in bloque
+        assert 'id="cobertura-titulo"' not in texto
+        assert '<span class="ph-cov-name">La Habana</span>' in bloque
+        assert "sin flecha ni color" in bloque.lower()
+        assert "«(base N)»" in bloque
+        assert "se verifica a mano" in bloque
+        assert re.search(r'href="/datos\.csv\?desde=[^"]+"', bloque)
+
+    def test_la_descarga_ya_no_esta_en_la_cabecera(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        inicio = texto.index('<header class="ph-dash-top">')
+        cabecera = texto[inicio : texto.index("</header>", inicio)]
+
+        assert "datos.csv" not in cabecera
+        assert 'class="ph-dash-action ph-tap-44 theme-toggle"' in cabecera
+        assert texto.count("/datos.csv?") == 1
+
+    def test_la_guia_de_lectura_sale_de_la_lista(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La lista conserva la frase que dice qué mide (mediana y ventana);
+        el porqué de «sin flecha ni color» y qué es la base viven en el bloque."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        lista = texto[texto.index('id="lista-titulo"') : texto.index('id="datos-titulo"')]
+
+        assert "Mediana de los últimos" in lista
+        assert "Sin flecha ni color" not in lista
+        assert "(base N)" not in lista
+        assert texto.lower().count("sin flecha ni color") == 1
+
+    def test_el_rotulo_de_muestra_en_formacion_queda_junto_a_las_cifras(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """§9.0: el rótulo acompaña a la cifra. Se queda entre la lista y el
+        bloque, no dentro de él."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        rotulo = texto.index("<strong>muestra en formación</strong>")
+
+        assert texto.count("<strong>muestra en formación</strong>") == 1
+        assert texto.index('id="lista-titulo"') < rotulo < texto.index('id="datos-titulo"')
+
+    def test_la_frescura_queda_solo_en_la_cabecera(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert texto.count("Datos verificados hasta el") == 1
+        assert "Datos verificados hasta el" not in self._bloque(texto)
+
+    def test_el_mapa_no_cambia(self, client: TestClient, session: Session) -> None:
+        self._seed(session)
+
+        texto = client.get("/").text
+
+        assert "Sobre los datos" not in texto
+        assert 'id="datos-titulo"' not in texto
 
 
 class TestDetalleDeProductoEnElTablero:
