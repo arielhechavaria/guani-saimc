@@ -2513,6 +2513,7 @@ class TestVistaTableroEnLaRuta:
         assert '<span class="ph-watch-name">Aceite' in texto
         assert "<table" not in texto
         assert texto.index("La Habana") < texto.index("Santiago de Cuba")
+
     def test_la_cookie_vista_decide_sin_query_string(
         self, client: TestClient, session: Session
     ) -> None:
@@ -2577,6 +2578,7 @@ class TestVistaTableroEnLaRuta:
 
         assert panel.count('class="ph-envases-prov ph-prov') == 2  # La Habana y Santiago
         assert "Aceite" not in panel
+
     def test_una_vista_invalida_cae_al_mapa(self, client: TestClient, session: Session) -> None:
         self._seed(session)
 
@@ -2631,6 +2633,7 @@ class TestVistaTableroEnLaRuta:
         assert 'class="ph-envases-prov ph-prov-1"' in texto
         # Nunca las dos en el neutral (el bug que se corrigió).
         assert texto.count('class="ph-envases-prov ph-prov-9"') == 0
+
     def test_la_lista_de_productos_trae_todo_el_catalogo_piloto(
         self, client: TestClient, session: Session
     ) -> None:
@@ -2972,6 +2975,7 @@ class TestCambioUnicoEnElTablero:
         # (2026-09-19), así que ni el del producto ni el de un formato.
         assert "<th>Cambio</th>" not in texto
         assert "+10%" not in panel and "−9%" not in panel
+
     def test_la_tabla_y_la_lista_dicen_lo_mismo(
         self, client: TestClient, session: Session
     ) -> None:

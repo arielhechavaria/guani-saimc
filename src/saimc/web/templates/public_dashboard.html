@@ -525,10 +525,9 @@
   {# Por envase (S6, 2026-09-19): lo que era la tabla de «Todos». `cards_by_province`
      ya viene filtrada por el producto elegido (y la provincia, si hay), y
      agrupada por provincia en orden alfabético. #}
-  {% set moneda = cards_by_province[0][1][0].currency %}
   <div class="ph-dash-panel ph-envases">
     <h3 class="ph-dash-panel-title">Por envase</h3>
-    <p class="ph-dash-panel-sub">Lo que se paga por el envase completo, en {{ moneda }}; si no declara envase, por unidad.</p>
+    <p class="ph-dash-panel-sub">Lo que se paga por el envase completo, con su moneda en cada fila; si no declara envase, por unidad.</p>
     {% for province_name, province_cards in cards_by_province %}
     <div class="ph-envases-prov ph-prov-{{ province_slots.get(province_name, 9) }}">
       <h4 class="ph-envases-prov-name"><span class="ph-dash-dot"></span>{{ province_name }}</h4>
