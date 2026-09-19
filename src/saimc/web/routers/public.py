@@ -293,6 +293,10 @@ def _render_home(
     hoy = ventana_hasta
     selected_vista = resolve_vista(vista)
     selected_layer = resolve_layer(capa)
+    # En el tablero (prototipo E, 2026-09-19) la provincia elegida enfoca solo
+    # la lista de «Todos»; el detalle de un producto compara todas las
+    # provincias, que es para lo que sirve. El mapa sí filtra por ella.
+    scope_province = None if selected_vista == "tablero" else selected_province
 
     report = compute_retail_ranges(db, days=window, hoy=hoy, hasta=ventana_hasta)
     pilot_ranges = [r for r in report.ranges if r.product_name in pilot]
@@ -307,8 +311,8 @@ def _render_home(
     ranges = pilot_ranges
     if active_set:
         ranges = [r for r in ranges if r.product_name in active_set]
-    if selected_province is not None:
-        ranges = [r for r in ranges if r.province_name == selected_province]
+    if scope_province is not None:
+        ranges = [r for r in ranges if r.province_name == scope_province]
     cards = build_cards(ranges)
 
     # Misma ventana que las tarjetas a propósito: el gráfico tiene que describir
@@ -319,7 +323,7 @@ def _render_home(
         db,
         pilot=pilot,
         products=active_set or None,
-        province=selected_province,
+        province=scope_province,
         desde=ventana_desde,
         hasta=ventana_hasta,
     )
@@ -390,7 +394,7 @@ def _render_home(
             db,
             pilot=pilot,
             products=active_set or None,
-            province=selected_province,
+            province=scope_province,
             desde=ventana_desde - timedelta(days=window),
             hasta=ventana_hasta,
         )
@@ -443,12 +447,10 @@ def _render_home(
     # nada, la única que no se enfocaba (Precios y los paneles ya lo hacían).
     # Se filtra en Python sobre lo ya traído arriba: misma consulta, sin
     # pedirle a la base los mismos datos dos veces.
-    if selected_province is not None:
-        evolution_obs = [
-            o for o in all_provinces_obs if o.province_name == selected_province
-        ]
+    if scope_province is not None:
+        evolution_obs = [o for o in all_provinces_obs if o.province_name == scope_province]
         evolution_previous = [
-            o for o in all_provinces_previous if o.province_name == selected_province
+            o for o in all_provinces_previous if o.province_name == scope_province
         ]
     else:
         evolution_obs = all_provinces_obs

@@ -1,18 +1,28 @@
 {#
-  Tablero (2026-09-16, slice 1 de la Dirección D elegida sobre las
-  propuestas de diseño): mismas tarjetas que ya arma `card_view.build_cards`
-  para la ventana flotante «Precios» del mapa, agrupadas por provincia, sin
-  Leaflet ni tiles. `routers/public.py` elige esta plantilla en vez de
-  `public_home.html` cuando `?vista=tablero`.
+  Tablero. Reconstruido el 2026-09-19 sobre el prototipo E aprobado en Claude
+  Design (`E-desktop-todos`, `E-desktop-detalle`, `E-movil-*`): la disposición
+  de la página es la del prototipo —cabecera blanca con marca y acciones,
+  columna principal con una tarjeta por producto, barra lateral con la
+  frescura y «Sobre los datos»—, no una lista compacta con un panel vacío al
+  lado (que era la dirección C y es lo que había hasta hoy).
 
-  No repite el header de `.m3-public-top` del shell (kicker + h1 + subtitle +
-  toggle de tema): acá también hace falta el toggle Mapa/Tablero al lado, así
-  que arma el propio, mismo criterio que `public_home.html` (que esconde
-  `.m3-public-top` entero porque su titular vive en la barra del lienzo).
+  `routers/public.py` elige esta plantilla en vez de `public_home.html`
+  cuando `?vista=tablero`. Dos vistas dentro de ella:
 
-  El pie SÍ queda visible (a diferencia de la home con mapa): es una vista
-  liviana, no una con su propio cromo — mismo criterio que `/producto/<slug>`
-  — y la atribución de §6.5 tiene que verse.
+  - «Todos» (sin producto elegido): «Qué cuesta hoy», el selector «¿En qué
+    provincia estás?» y una tarjeta por producto piloto. Con una provincia
+    elegida las tarjetas se enfocan en ella y las demás van en chico.
+  - Detalle (`?productos=<uno>`): tarjeta resumen con la comparación entre
+    provincias, «Cómo se movió», «Cuánto varía», «Por envase» y los anuncios
+    detrás de las cifras. Compara SIEMPRE todas las provincias.
+
+  Los colores salen de los tokens de `saimc-public.css` (los mismos que usa el
+  prototipo), así que el modo oscuro sigue andando. El pie de atribución del
+  shell (§6.5) queda visible.
+
+  §9.0: cada cifra va rotulada «muestra en formación» mientras N siga sin
+  calibrar. El prototipo no traía el rótulo; queda una vez por vista, pegado
+  al título, no en la barra lateral.
 #}
 {% extends "_public_shell.html" %}
 
@@ -24,547 +34,409 @@
 <style>
   .m3-public-top { display: none; }
 
-  /* Dirección C (2026-09-18): el shell limita a 64rem, pensado para
-     páginas de lectura. Un dashboard de dos columnas necesita más; se abre
-     solo acá, sin tocar el shell de las demás vistas. */
-  .m3-public { max-width: 84rem; }
+  /* El shell limita a 64rem y da relleno lateral, pensado para páginas de
+     lectura. El tablero tiene una cabecera de borde a borde y su propio
+     contenedor, así que se abre solo acá. */
+  .m3-public { max-width: none; padding: 0 0 var(--m3-space-8); }
+  .m3-public-main { padding: 0; }
+  .m3-public-foot { width: 100%; max-width: calc(70rem + 2 * clamp(1rem, 4vw, 4rem)); box-sizing: border-box;
+                    margin-inline: auto; padding-inline: clamp(1rem, 4vw, 4rem); }
 
-  .ph-dash-top { padding: var(--m3-space-5) 0 var(--m3-space-6); display: flex; align-items: center; justify-content: space-between; gap: var(--m3-space-3) var(--m3-space-4); flex-wrap: wrap; border-bottom: 1px solid var(--m3-divider); margin-bottom: var(--m3-space-5); }
-  .ph-dash-brand { display: flex; align-items: center; gap: var(--m3-space-3); min-width: 0; }
-  .ph-dash-brand .ph-brand-avatar { width: 2.5rem; height: 2.5rem; flex: none; }
-  .ph-dash-fresh { margin: .15rem 0 0; font-size: .78rem; color: var(--m3-on-surface-variant); }
-  .ph-dash-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: clamp(1.625rem, 1.1rem + 2.2vw, 2.375rem); line-height: 1.15; letter-spacing: -.01em; color: var(--m3-on-surface); text-wrap: balance; }
-
-  .ph-vista-toggle { display: inline-flex; background: var(--m3-surface-container); border-radius: 100px; padding: 3px; flex: none; }
-  .ph-vista-toggle a { padding: var(--m3-space-2) var(--m3-space-4); border-radius: 100px; font: 500 13px var(--m3-font); color: var(--m3-on-surface-variant); text-decoration: none; }
+  /* ── Cabecera ─────────────────────────────────────────────────────────
+     Móvil: marca + descarga + tema en la primera fila y el toggle
+     Mapa/Tablero debajo. Escritorio: todo en una fila. */
+  .ph-top { background: var(--m3-surface); border-bottom: 1px solid var(--m3-outline-variant); }
+  .ph-top-inner { display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--m3-space-2);
+                  padding: 6px clamp(.75rem, 3vw, 2.5rem) 10px 1rem; }
+  .ph-top-brand { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; padding-top: 4px; }
+  .ph-top-brand .ph-brand-avatar { width: 2.25rem; height: 2.25rem; flex: none; }
+  .ph-wordmark { font-family: var(--ph-font-heading); font-size: 19px; color: var(--m3-on-surface); }
+  .ph-top-tag { display: none; font-size: 12px; color: var(--m3-outline); }
+  .ph-vista-wrap { order: 3; flex: 0 0 100%; padding-top: 2px; }
+  .ph-vista-toggle { display: inline-flex; background: var(--m3-surface-container); border-radius: 100px; padding: 3px; }
+  .ph-vista-toggle a { min-height: 36px; padding: 0 18px; display: inline-flex; align-items: center; border-radius: 100px;
+                       font: 500 13px var(--m3-font); color: var(--m3-on-surface-variant); text-decoration: none; }
   .ph-vista-toggle a:hover { text-decoration: none; }
-  .ph-vista-toggle a.is-selected { background: var(--m3-surface); box-shadow: var(--m3-elev-1); color: var(--ph-accent); }
+  .ph-vista-toggle a.is-selected { background: var(--m3-surface); box-shadow: var(--m3-elev-1); color: var(--m3-primary); }
+  .ph-top-csv { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; min-height: 44px;
+                font: 500 14px var(--m3-font); color: var(--m3-primary); text-decoration: none; }
+  .ph-top-csv:hover { text-decoration: none; color: var(--m3-primary-hover); }
+  .ph-top-csv .m3-icon { font-size: 20px; }
+  .ph-top-csv-label { display: none; }
+  .ph-dash-action { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-width: 44px; min-height: 44px; padding: 0;
+                    border-radius: 100px; border: 0; background: transparent; color: var(--m3-on-surface); cursor: pointer;
+                    font: 500 14px var(--m3-font); text-decoration: none; }
+  .ph-dash-action:hover { text-decoration: none; }
+  .ph-dash-action .m3-icon { font-size: 20px; }
+  @media (min-width: 48rem) {
+    .ph-top-inner { flex-wrap: nowrap; gap: var(--m3-space-3); padding: 14px clamp(1rem, 3vw, 2.5rem); }
+    .ph-top-brand { padding-top: 0; }
+    .ph-wordmark { font-size: 22px; }
+    .ph-top-tag { display: inline; }
+    .ph-vista-wrap { order: 0; flex: 0 0 auto; padding-top: 0; }
+    .ph-top-csv-label { display: inline; }
+    .ph-top-csv { padding: 0 var(--m3-space-2); }
+    .ph-dash-action.theme-toggle { border: 1px solid var(--m3-outline-variant); background: var(--m3-surface); }
+  }
 
-  /* Acciones a la vista, sin menú: son tres y entran en un teléfono si
-     van como íconos. La etiqueta aparece cuando hay ancho. El toggle de
-     tema comparte `.theme-toggle`: `_theme_toggle_script.html` cablea
-     todas las instancias por clase, y qué ícono se ve ya lo resuelve
-     `saimc-public.css`. */
-  .ph-dash-actions { display: flex; align-items: center; gap: var(--m3-space-2); flex-wrap: wrap; }
-  .ph-dash-action { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-width: 44px; min-height: 44px; padding: 0 .7rem;
-                    border-radius: 100px; border: 1px solid var(--m3-outline-variant); background: var(--m3-surface);
-                    font: 500 .8125rem var(--m3-font); color: var(--m3-on-surface); text-decoration: none; cursor: pointer; }
-  .ph-dash-action:hover { text-decoration: none; border-color: var(--ph-accent); }
-  .ph-dash-action .m3-icon { font-size: 18px; color: var(--ph-accent); }
-  .ph-dash-action-label { display: none; }
-  @media (min-width: 40rem) { .ph-dash-action-label { display: inline; } }
-  /* La descarga del bloque «Sobre los datos»: sola en su fila, con la
-     etiqueta siempre visible (en la cabecera solo cabe el ícono). */
-  .ph-dash-action-wide { align-self: flex-start; }
-  .ph-dash-action-wide .ph-dash-action-label { display: inline; }
-
-  /* Layout: una columna en el orden lista → contenido → «Sobre los datos»;
-     dos columnas desde 64rem, con la lista y ese bloque apilados a la
-     izquierda y el contenido ocupando la derecha entera. */
-  .ph-dash-layout { display: grid; gap: var(--m3-space-5); grid-template-columns: minmax(0, 1fr);
-                    grid-template-areas: "lista" "main" "datos"; }
-  .ph-dash-watch { grid-area: lista; }
-  .ph-dash-datos { grid-area: datos; }
-  .ph-dash-main { grid-area: main; min-width: 0; }
+  /* ── Disposición ──────────────────────────────────────────────────────
+     Móvil: frescura → contenido → «Sobre los datos». Escritorio: contenido a
+     la izquierda; a la derecha, frescura, navegación de productos (solo en
+     el detalle) y «Sobre los datos». */
+  .ph-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--m3-space-4);
+               grid-template-areas: "fresh" "main" "datos";
+               max-width: calc(70rem + 2 * clamp(1rem, 4vw, 4rem)); margin: 0 auto;
+               padding: var(--m3-space-4) clamp(1rem, 4vw, 4rem) var(--m3-space-2); box-sizing: border-box; }
+  .ph-fresh { grid-area: fresh; }
+  .ph-main { grid-area: main; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+  .ph-nav.ph-panel { grid-area: nav; display: none; }
+  .ph-datos { grid-area: datos; }
   @media (min-width: 64rem) {
-    .ph-dash-layout { grid-template-columns: 22rem minmax(0, 1fr); grid-template-rows: auto 1fr;
-                      grid-template-areas: "lista main" "datos main"; align-items: start; }
+    .ph-layout { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 40px; align-items: start;
+                 grid-template-rows: auto auto auto 1fr; padding-top: 36px;
+                 grid-template-areas: "main fresh" "main nav" "main datos" "main ."; }
+    .ph-nav.ph-panel { display: flex; }
   }
 
-  .ph-dash-panel { background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: var(--ph-radius-sm);
-                   padding: var(--m3-space-4); display: flex; flex-direction: column; gap: var(--m3-space-3); }
-  .ph-dash-panel-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.25rem; color: var(--m3-on-surface); }
-  .ph-dash-panel-sub { margin: -.4rem 0 0; font-size: .78rem; line-height: 1.45; color: var(--m3-on-surface-variant); }
+  .ph-fresh { display: flex; align-items: center; gap: 10px; background: var(--m3-surface);
+              border: 1px solid var(--m3-outline-variant); border-radius: 12px; padding: 10px 14px;
+              font-size: 13px; color: var(--m3-on-surface); }
+  .ph-fresh .m3-icon { font-size: 18px; color: var(--m3-primary); flex: none; }
 
-  /* La lista: `--cols` (una por provincia con dato) lo escribe la
-     plantilla. Con las dos provincias de hoy entra cómoda a 390px; con
-     muchas más, cada celda se achica — se revisa cuando haya más de tres,
-     igual que los colores de provincia (2026-09-18). */
-  .ph-watch { display: flex; flex-direction: column; gap: 2px; }
-  .ph-watch-head, .ph-watch-row { display: grid; gap: var(--m3-space-2); align-items: start;
-                                  grid-template-columns: minmax(0, 1.25fr) repeat(var(--cols, 1), minmax(0, 1fr)); }
-  .ph-watch-head { padding: 0 var(--m3-space-3) var(--m3-space-1); font-size: .7rem; color: var(--m3-on-surface-variant); }
-  /* El punto no se achica y el nombre se corta con «…»: con el recorte en
-     el contenedor entero, un nombre de provincia largo empujaba el
-     punto fuera de la vista y la columna perdía su color. */
-  .ph-watch-prov { display: flex; align-items: center; justify-content: flex-end; gap: .35rem; min-width: 0; }
-  .ph-watch-prov .ph-dash-dot { flex: none; }
-  .ph-watch-prov-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ph-watch-row { min-height: 52px; padding: var(--m3-space-2) var(--m3-space-3); border-radius: var(--m3-radius-sm);
-                  color: var(--m3-on-surface); text-decoration: none; }
-  .ph-watch-row:hover { text-decoration: none; background: var(--m3-surface-hover); }
-  .ph-watch-row.is-active { background: var(--ph-accent-wash); }
-  .ph-watch-all { grid-template-columns: minmax(0, 1fr); min-height: 44px; }
-  .ph-watch-name { display: flex; flex-direction: column; font-weight: 500; font-size: .9rem; min-width: 0; }
-  .ph-watch-name small { font-weight: 400; font-size: .7rem; color: var(--m3-on-surface-variant); }
-  .ph-watch-cell { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
-  .ph-watch-median { font-weight: 500; font-variant-numeric: tabular-nums; }
-  .ph-watch-change { font-size: .72rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
-  .ph-watch-n { font-size: .72rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
-  /* «más barata» absorbe a la tira «dónde está más barato» (2026-09-19): texto sobre un fondo
-     suave, nunca solo color, y sin ser semáforo —dice cuál es la menor, no si «está bien»—. */
-  .ph-watch-cheapest { margin-top: .15rem; padding: 1px .5rem; border-radius: 100px; font-size: .68rem; font-weight: 500;
-                       background: var(--ph-accent-wash); color: var(--ph-accent); white-space: nowrap; }
-  .ph-watch-none { color: var(--m3-on-surface-variant); }
-  /* Con una provincia elegida las demás van en chico bajo la fila, ocupando
-     todo el ancho de la grilla: sin ellas, «más barata» no tendría contra qué
-     compararse a la vista. */
-  .ph-watch-otras { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0 var(--m3-space-3);
-                    font-size: .72rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
-  .ph-watch-filtro { display: flex; flex-direction: column; gap: var(--m3-space-2); }
-  .ph-watch-filtro .ph-dash-filters { margin-bottom: 0; }
+  /* ── Superficies ──────────────────────────────────────────────────────── */
+  .ph-panel { background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: 16px;
+              padding: 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .ph-panel-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 19px; color: var(--m3-on-surface); }
+  .ph-panel-sub { margin: -6px 0 0; font-size: 12px; color: var(--m3-outline); line-height: 1.5; }
+  .ph-eyebrow { font-size: 12px; color: var(--m3-outline); letter-spacing: .04em; }
+  .ph-h1 { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 30px; line-height: 1.15; color: var(--m3-on-surface); }
+  .ph-intro { display: flex; flex-direction: column; gap: 4px; }
+  .ph-sub { margin: 2px 0 0; font-size: 14px; color: var(--m3-on-surface-variant); line-height: 1.5; }
+  .ph-formacion { margin: 0; font-size: 12px; color: var(--m3-outline); line-height: 1.5; }
+  @media (min-width: 40rem) { .ph-h1 { font-size: 36px; } }
 
-  .ph-cov-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--m3-space-2); }
-  .ph-cov-stats > div { display: flex; flex-direction: column; gap: .1rem; }
-  .ph-cov-label { font-size: .7rem; color: var(--m3-on-surface-variant); }
-  .ph-cov-value { font-size: 1.35rem; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .ph-cov-value small { font-size: .8rem; font-weight: 400; color: var(--m3-on-surface-variant); }
-  .ph-cov-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--m3-space-2); }
-  .ph-cov-bars li { display: grid; grid-template-columns: 8rem minmax(0, 1fr) 2.5rem; gap: var(--m3-space-2); align-items: center; font-size: .8125rem; }
-  .ph-cov-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ph-cov-track { height: 8px; border-radius: 4px; background: var(--m3-surface-container-high); }
-  .ph-cov-fill { display: block; height: 8px; border-radius: 4px; background: var(--prov, var(--ph-accent)); }
-  .ph-cov-n { text-align: right; font-variant-numeric: tabular-nums; }
-  .ph-cov-note { margin: 0; font-size: .78rem; line-height: 1.5; color: var(--m3-on-surface-variant); }
+  /* ── «¿En qué provincia estás?» ───────────────────────────────────────── */
+  .ph-mi-prov { display: flex; flex-direction: column; gap: 6px; }
+  .ph-mi-prov-label { font-size: 12px; color: var(--m3-outline); }
+  .ph-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ph-dash-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; box-sizing: border-box;
+                  border-radius: 22px; border: 1px solid var(--m3-outline-variant); background: var(--m3-surface);
+                  color: var(--m3-on-surface); font: 400 14px var(--m3-font); text-decoration: none; white-space: nowrap; }
+  .ph-dash-chip:hover { text-decoration: none; border-color: var(--m3-outline); }
+  .ph-dash-chip.is-active { background: var(--m3-on-surface); border-color: var(--m3-on-surface); color: var(--m3-surface); }
+  .ph-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--prov, var(--m3-prov-9)); }
+  .ph-dot-lg { width: 10px; height: 10px; }
 
-  /* Detalle del producto elegido (slice 2): los gráficos son los del mapa
-     —su CSS vive en `saimc-public.css`—; acá solo se ordenan. Rango y
-     «¿subió o bajó?» lado a lado cuando hay ancho, uno debajo del otro en
-     un teléfono. */
-  .ph-dash-detail { display: flex; flex-direction: column; gap: var(--m3-space-4); margin-bottom: var(--m3-space-6); }
-  .ph-dash-detail-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: clamp(1.25rem, 1.05rem + .9vw, 1.6rem); color: var(--m3-on-surface); }
-  .ph-dash-detail-grid { display: grid; gap: var(--m3-space-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
-  .ph-dash-detail-evo { gap: var(--m3-space-4); }
-  /* Los dibujos de SVG se escalan al ancho del contenedor, texto incluido:
-     un calendario de ~113 unidades de ancho estirado a todo el panel lleva
-     sus etiquetas a 35px, y la última se sale del borde. En el mapa la
-     ventana ya los acota; acá, con el panel a todo el ancho, se acotan a
-     mano. */
-  .ph-dash-detail .ph-pasos { max-width: 30rem; }
-  .ph-dash-detail .ph-calendario { max-width: 12rem; }
-
-  .ph-dash-head { display: flex; flex-direction: column; gap: var(--m3-space-3); margin-bottom: var(--m3-space-5); }
-
-  /* Índice de salto + secciones colapsables + borde de color (Dirección D,
-     agrupar el tablero, 2026-09-16): `<details>` nativo en vez de
-     `<section>` fija — sin JS, mismo patrón que ya usa `/docs`. Abierta la
-     primera (orienta sin exigir un clic) o la única —con una sola provincia
-     (filtro activo) colapsar no ayuda a nadie, solo suma un clic. */
-  .ph-dash-jump { display: flex; flex-wrap: wrap; gap: var(--m3-space-3); margin-bottom: var(--m3-space-6); }
-  .ph-dash-jump a { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .7rem .4rem .55rem;
-                    border-radius: 100px; background: var(--m3-surface); box-shadow: var(--m3-elev-1);
-                    font-size: .78rem; color: var(--m3-on-surface); text-decoration: none; }
-  .ph-dash-jump a:hover { text-decoration: none; box-shadow: var(--m3-elev-2); }
-  /* La búsqueda (más abajo) esconde un chip de salto poniéndole el
-     atributo `hidden` — el `display: inline-flex` de arriba tiene más
-     especificidad que el `[hidden] { display: none }` del navegador y lo
-     ganaría si no se repite acá explícito. */
-  .ph-dash-jump a[hidden] { display: none; }
-  .ph-dash-jump .n { opacity: .55; font-size: .72rem; }
-  .ph-dash-dot { width: .6rem; height: .6rem; border-radius: 50%; flex: none; background: var(--prov); }
-
-  .ph-dash-section {
-    margin-top: var(--m3-space-4); border: none; padding: 0;
-    background: var(--m3-surface); border-radius: var(--ph-radius-sm); box-shadow: var(--ph-elev);
-    overflow: hidden;
-  }
-  .ph-dash-section summary {
-    display: flex; align-items: center; gap: var(--m3-space-3); cursor: pointer; list-style: none;
-    padding: var(--m3-space-4) var(--m3-space-5);
-    font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.15rem;
-  }
-  .ph-dash-section summary::-webkit-details-marker { display: none; }
-  .ph-dash-section .ph-dash-count { margin-left: auto; font: 500 .7rem var(--m3-font); letter-spacing: .04em;
-                                     text-transform: uppercase; color: var(--m3-on-surface-variant); }
-  .ph-dash-section .ph-dash-chev { font-size: 1.2rem; color: var(--m3-on-surface-variant); transition: transform .15s ease; }
-  .ph-dash-section[open] .ph-dash-chev { transform: rotate(180deg); }
-  .ph-dash-section-body { padding: 0 var(--m3-space-5) var(--m3-space-5); border-top: 1px solid var(--m3-divider); }
-  .ph-dash-section-body .ph-cards { margin-top: var(--m3-space-4); }
-  /* Tarjetas planas dentro del tablero (2026-09-16, pedido explícito: "nada
-     de elevations ni border color"): `.ph-card` afuera —la ventana flotante
-     «Precios»— sigue con sombra y esquinas redondeadas de `.ph-surface`; acá
-     adentro se apaga esa superficie. La grilla es multi-columna (auto-fit),
-     así que un divisor inferior no sirve —dos tarjetas en la misma fila
-     terminan con bordes disparejos—: la separación pasa a ser un relleno
-     gris neutro (`--m3-surface-container`, ya usado en el toggle Mapa/
-     Tablero) contra el blanco de `.ph-dash-section`, sin sombra ni borde de
-     color por provincia. */
-  .ph-dash-section .ph-card {
-    box-shadow: none; background: var(--m3-surface-container); border-radius: var(--ph-radius-sm);
+  /* ── Tarjeta de producto ──────────────────────────────────────────────── */
+  .ph-tarjetas { display: flex; flex-direction: column; gap: 16px; }
+  .ph-tarjeta { position: relative; display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; padding: 16px;
+             background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: 16px;
+             color: var(--m3-on-surface); text-decoration: none; }
+  .ph-tarjeta:hover { text-decoration: none; border-color: var(--m3-outline); }
+  .ph-tarjeta-titulo { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-right: 32px; }
+  .ph-tarjeta-nombre { font-family: var(--ph-font-heading); font-size: 20px; }
+  .ph-tarjeta-unidad { font-size: 12px; color: var(--m3-outline); }
+  .ph-chev { flex: none; color: var(--m3-on-surface-variant); transition: transform .15s; }
+  .ph-tarjeta-chev { position: absolute; top: 14px; right: 12px; }
+  .ph-cols { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 16px; }
+  .ph-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .ph-col-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--m3-on-surface-variant); }
+  .ph-fig { font-family: var(--m3-mono); font-size: 26px; font-weight: 500; line-height: 1.15; }
+  .ph-fig-unit { font-size: 11px; font-weight: 400; color: var(--m3-outline); }
+  .ph-col-change { font-size: 12px; color: var(--m3-on-surface-variant); }
+  .ph-col-n { font-size: 12px; color: var(--m3-outline); }
+  .ph-col-none { font-size: 14px; color: var(--m3-on-surface-variant); padding-top: 4px; }
+  .ph-pill { background: var(--m3-primary-container); color: var(--m3-on-primary-container); font-size: 11px; font-weight: 500;
+             padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .ph-otras { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-top: 12px; font-size: 13px;
+              border-top: 1px solid var(--m3-surface-container-high); color: var(--m3-on-surface-variant); }
+  .ph-otras strong { font-family: var(--m3-mono); font-weight: 500; color: var(--m3-on-surface); }
+  .ph-tarjeta.is-foco .ph-fig { font-size: 34px; }
+  @media (min-width: 64rem) {
+    .ph-tarjeta { display: grid; grid-template-columns: 190px minmax(0, 1fr) 24px; column-gap: 24px; align-items: center; padding: 18px 22px; }
+    .ph-tarjeta-titulo { flex-direction: column; align-items: flex-start; gap: 2px; padding-right: 0; }
+    .ph-tarjeta-nombre { font-size: 22px; }
+    .ph-tarjeta-chev { position: static; }
+    .ph-otras { grid-column: 1 / -1; }
   }
 
-  /* Filtros del tablero (2026-09-16, pedido explícito: "en todo momento
-     es importante poder aplicar filtros... sobre la tabla y sobre las
-     cards"): chips planos, mismo criterio de superficie que la tarjeta de
-     arriba —relleno gris, sin sombra—, activo con el mismo lavado de
-     acento que ya usa `.ph-chip` (estado «muestra en formación»). Viven
-     antes del bloque condicional de las tarjetas, más abajo en este
-     archivo: un filtro que deja la provincia o el producto en cero
-     resultados tiene que seguir mostrando el propio filtro para poder
-     deshacerlo, no solo el aviso de «sin anuncios». `province_nav` ya
-     trae «Todas» como primera opción —undo del filtro de provincia sin
-     un botón aparte—; el de producto es `toggle=True` en
-     `product_nav.build_product_chips` por la misma razón (el riel del
-     mapa no lo necesita: ahí cierra el panel con su propia ×, acá no hay
-     panel). */
-  .ph-dash-filters { display: flex; flex-wrap: wrap; gap: var(--m3-space-2) var(--m3-space-5); margin-bottom: var(--m3-space-5); }
-  .ph-dash-filter-group { display: flex; flex-wrap: wrap; gap: var(--m3-space-3); }
-  .ph-dash-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .4rem .85rem;
-                  border-radius: 100px; background: var(--m3-surface-container); color: var(--m3-on-surface-variant);
-                  font-size: .8125rem; text-decoration: none; }
-  .ph-dash-chip:hover { text-decoration: none; }
-  .ph-dash-chip.is-active { background: var(--ph-accent-wash); color: var(--ph-accent); }
-  .ph-dash-chip-icon { font-size: 1rem; }
+  /* ── Detalle ──────────────────────────────────────────────────────────── */
+  .ph-back { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; color: var(--m3-primary); text-decoration: none; }
+  .ph-back:hover { text-decoration: underline; }
+  .ph-titulo { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .ph-titulo .ph-h1 { font-size: 34px; }
+  .ph-titulo-meta { font-size: 13px; color: var(--m3-outline); }
+  .ph-resumen .ph-fig { font-size: 30px; }
+  @media (min-width: 40rem) { .ph-resumen .ph-fig { font-size: 36px; } }
+  .ph-resumen-frase { margin: 0; padding-top: 12px; border-top: 1px solid var(--m3-surface-container-high);
+                      font-size: 14px; line-height: 1.5; color: var(--m3-on-surface); }
+  .ph-graficos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (min-width: 40rem) { .ph-graficos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .ph-leyenda { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--m3-on-surface-variant); }
+  .ph-leyenda li { display: flex; align-items: center; gap: 6px; }
+  .ph-panel .ph-compara-fig { margin: 0; }
+  .ph-panel .ph-pasos, .ph-panel .ph-compara { max-width: 100%; }
+  .ph-nota { margin: 0; font-size: 12px; color: var(--m3-outline); line-height: 1.5; }
 
-
-  /* Por envase (S6, 2026-09-19): la tabla por formato, que ocupaba casi la
-     mitad de «Todos», pasa al detalle del producto y se agrupa por provincia
-     —el nombre va una vez, en el encabezado del grupo, no en cada fila—. Las
-     dos tablas de un grupo (los 3 envases de más muestra y el resto, dentro
-     de un `<details>`) comparten `<colgroup>` para que las columnas alineen. */
-  .ph-envases { gap: var(--m3-space-4); }
-  .ph-envases-prov { display: flex; flex-direction: column; gap: var(--m3-space-2); }
-  .ph-envases-prov-name { display: flex; align-items: center; gap: .45rem; margin: 0; font: 500 .9rem var(--m3-font); color: var(--m3-on-surface); }
+  /* Por envase: las dos tablas de un grupo (los 3 de más muestra y el resto,
+     dentro de un `<details>`) comparten `<colgroup>` para alinear. Móvil: el
+     envase con su «mediana · anuncios» debajo y el precio a la derecha;
+     escritorio: cuatro columnas. */
+  .ph-envases-prov { display: flex; flex-direction: column; gap: 2px; }
+  .ph-envases-prov + .ph-envases-prov { margin-top: var(--m3-space-3); }
+  .ph-envases-prov-name { display: flex; align-items: center; gap: 8px; margin: 0; font: 500 14px var(--m3-font); color: var(--m3-on-surface); }
   .ph-envases-scroll { overflow-x: auto; }
-  .ph-envases-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .85rem; }
-  .ph-envases-table th { text-align: left; font: 500 .64rem var(--m3-font); letter-spacing: .02em; text-transform: uppercase;
-                         color: var(--m3-on-surface-variant); padding: 6px 8px; border-bottom: 1px solid var(--m3-outline-variant); }
-  .ph-envases-table td { padding: 10px 8px; border-bottom: 1px solid var(--m3-divider); vertical-align: top; }
-  .ph-envases-table tbody tr:last-child td { border-bottom: none; }
+  .ph-envases-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+  .ph-envases-table th { text-align: left; font: 400 11px var(--m3-font); color: var(--m3-outline); padding: 6px 0 0; }
+  .ph-envases-table td { padding: 10px 0; border-top: 1px solid var(--m3-surface-container-high); vertical-align: top; }
+  .ph-envases-table thead { display: none; }
   .ph-envases-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ph-envases-table .mono { font-family: var(--m3-mono); }
+  .ph-envases-table col:nth-child(1) { width: 50%; }
+  .ph-envases-table col:nth-child(2) { width: 50%; }
+  .ph-envases-table col:nth-child(n+3), .ph-envases-table td:nth-child(n+3), .ph-envases-table th:nth-child(n+3) { display: none; }
   .ph-envases-nombre { font-weight: 500; }
-  /* La variante declarada («Criollo», «Argentino»…) distingue dos filas del mismo
-     envase, que sin ella parecen repetidas. */
-  .ph-envases-variante { display: block; font-weight: 400; font-size: .75rem; color: var(--m3-on-surface-variant); }
-  .ph-envases-mas summary { cursor: pointer; display: flex; align-items: center; min-height: 44px;
-                            font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
-
-  /* Tarjeta agrupada por producto (2026-09-17): los formatos dejan de ser
-     una tarjeta cada uno y pasan a ser filas adentro de la del producto.
-     Ver `_product_group_item.html` para el porqué.
-
-     Sin corte responsive: la fila de formato es fluida (`auto-fit` +
-     `minmax`), así que en un teléfono va una por línea y se acomoda sola a
-     dos o tres cuando hay ancho — mismo criterio con el que se sacaron los
-     cortes de 640 y 900 (docs/decisions.md, 2026-09-04 y 2026-09-16). El
-     mínimo de 15rem es el ancho al que el titular más largo que publicamos
-     («56.950–60.300 CUP») todavía entra sin cortarse. */
-  .ph-group-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--m3-space-2) var(--m3-space-3);
-                   margin-top: var(--m3-space-2); font-size: .8125rem; color: var(--m3-on-surface-variant); }
-  /* La separación entre formatos es el `gap` de la grilla, no un filete por
-     fila: con `auto-fit` la cantidad de columnas cambia con el ancho, así
-     que un `border-top` por hijo se ve alineado en una columna y salteado en
-     dos. El único filete es el de arriba de la lista, que siempre está en el
-     mismo lugar. (Se probó `:has()` para el caso de un solo formato y se
-     descartó: no lo usa ninguna otra hoja del proyecto y no vale estrenarlo
-     acá para algo cosmético, con usuarios en teléfonos viejos.) */
-  .ph-group-formats { list-style: none; margin: var(--m3-space-4) 0 0; padding-top: var(--m3-space-4);
-                      padding-inline: 0; padding-bottom: 0; border-top: 1px solid var(--m3-divider);
-                      display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--m3-space-5); }
-  .ph-group-format { min-width: 0; }
-  .ph-group-nofmt { color: var(--m3-on-surface-variant); font-style: italic; }
-  .ph-group-format-sample { margin-top: var(--m3-space-2); font-size: .78rem; color: var(--m3-on-surface-variant); }
-  /* El bloque de precio dentro de una fila de formato baja un escalón: el
-     titular de la tarjeta ahora es el producto, no cada envase. */
-  .ph-group-format .ph-card-range { font-size: 1.35rem; }
-
-  @media (max-width: 720px) {
-    .ph-dash-top { padding-top: 1.25rem; }
+  .ph-envases-variante, .ph-envases-meta { display: block; font-weight: 400; font-size: 12px; color: var(--m3-outline); }
+  .ph-envases-table .precio { text-align: right; white-space: nowrap; }
+  .ph-envases-mas summary { cursor: pointer; display: flex; align-items: center; min-height: 44px; list-style: none;
+                            font-size: 13px; color: var(--m3-primary); }
+  .ph-envases-mas summary::-webkit-details-marker { display: none; }
+  .ph-envases-mas summary::after { content: " ›"; white-space: pre; }
+  @media (min-width: 40rem) {
+    .ph-envases-table thead { display: table-header-group; }
+    .ph-envases-table col:nth-child(1) { width: 34%; }
+    .ph-envases-table col:nth-child(2) { width: 30%; }
+    .ph-envases-table col:nth-child(3) { width: 18%; }
+    .ph-envases-table col:nth-child(4) { width: 18%; }
+    .ph-envases-table col:nth-child(n+3) { display: table-column; }
+    .ph-envases-table td:nth-child(n+3), .ph-envases-table th:nth-child(n+3) { display: table-cell; }
+    .ph-envases-meta { display: none; }
+    .ph-envases-table .precio { text-align: left; }
+    .ph-envases-table td:nth-child(4) { color: var(--m3-outline); }
   }
+
+  /* Los anuncios detrás de las cifras (§6.5): fila plegada como en el
+     prototipo; al abrir, la misma tabla de la ventana del mapa. */
+  .ph-anuncios summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+                         gap: 12px; min-height: 44px; }
+  .ph-anuncios summary::-webkit-details-marker { display: none; }
+  .ph-anuncios-titulo { display: flex; flex-direction: column; gap: 2px; }
+  .ph-anuncios-titulo b { font: 400 19px var(--ph-font-heading); color: var(--m3-on-surface); }
+  .ph-anuncios-titulo span { font-size: 12px; color: var(--m3-outline); }
+  .ph-anuncios[open] summary .ph-chev { transform: rotate(90deg); }
+  .ph-anuncios .ph-table-card { margin-top: var(--m3-space-3); overflow-x: auto; }
+
+  /* ── Barra lateral ────────────────────────────────────────────────────── */
+  .ph-nav.ph-panel { flex-direction: column; gap: 4px; }
+  .ph-nav .ph-panel-title { padding-bottom: 6px; }
+  .ph-nav-item { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px;
+                 border-radius: 10px; font-size: 14px; color: var(--m3-on-surface); text-decoration: none; }
+  .ph-nav-item:hover { text-decoration: none; background: var(--m3-surface-hover); }
+  .ph-nav-item.is-active { background: var(--m3-primary-container); font-weight: 500; }
+  .ph-datos-lista { margin: 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 8px;
+                    font-size: 13px; color: var(--m3-on-surface-variant); line-height: 1.5; }
+  .ph-datos-lista strong { color: var(--m3-on-surface); }
+  .ph-dash-action-wide { align-self: flex-start; padding: 0; gap: 6px; border-radius: 0; color: var(--m3-primary); }
+  .ph-dash-action-wide .m3-icon { color: var(--m3-primary); }
 </style>
 {% endblock %}
 
 {% block content %}
-{% from "_chart_help.html" import chart_help %}
-{# Una fila de «Por envase»: envase, precio del envase (rango, o el único
-   precio si hay un solo anuncio), mediana y cuántos anuncios. #}
+{# Chevron en SVG: la fuente de íconos del sitio es un subset y no lo trae. #}
+{% macro chev(clase="") -%}
+<svg class="ph-chev {{ clase }}" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+{%- endmacro %}
+
+{# Una fila de «Por envase»: envase (con su variante), precio del envase (rango,
+   o el único precio si hay un solo anuncio), mediana y cuántos anuncios. En
+   el móvil las dos últimas columnas se esconden y la mediana y los anuncios
+   pasan a una línea debajo del nombre. #}
 {% macro fila_envase(card) -%}
 <tr>
   <td class="ph-envases-nombre">{{ card.format_label_display or "Sin envase declarado" }}
-    {%- if card.variant_label %}<span class="ph-envases-variante">{{ card.variant_label }}</span>{% endif %}</td>
-  <td>
+    {%- if card.variant_label %}<span class="ph-envases-variante">{{ card.variant_label }}</span>{% endif %}<span class="ph-envases-meta">{% if not card.is_single_observation %}mediana {{ card.format_median_text or card.median_text }} · {% endif %}{{ card.count }} anuncio{{ "s" if card.count != 1 }}</span></td>
+  <td class="mono precio">
     {%- if card.is_single_observation -%}
     {{ card.format_median_text or card.median_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
     {%- else -%}
     {{ card.format_minimum_text or card.minimum_text }}–{{ card.format_maximum_text or card.maximum_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
     {%- endif -%}
   </td>
-  <td class="num">{% if card.is_single_observation %}—{% else %}{{ card.format_median_text or card.median_text }}{% endif %}</td>
+  <td class="mono num">{% if card.is_single_observation %}—{% else %}{{ card.format_median_text or card.median_text }}{% endif %}</td>
   <td class="num">{{ card.count }}</td>
 </tr>
 {%- endmacro %}
-{# Dirección C (2026-09-18, elegida por el operador entre tres prototipos
-   de Claude Design): el tablero pasa a ser un dashboard con forma de lista
-   de seguimiento. A la izquierda, los productos (elegir uno enfoca la
-   página) y la cobertura; a la derecha, lo que el tablero ya mostraba —la
-   tira «dónde está más barato» y la tabla por formato—. Nada de lo que
-   había se pierde, se reubica:
 
-   - chips de producto → la lista (un producto a la vez; «Todos los
-     productos» es el tablero completo);
-   - chips de provincia → se quedan, arriba del contenido;
-   - menú del avatar → acciones a la vista en la cabecera (Mapa, CSV,
-     tema); Cobertura pasa al cuerpo de la página. (S7, 2026-09-19: el CSV
-     y la Cobertura se reúnen en «Sobre los datos»; la cabecera queda con
-     Mapa/Tablero y el tema.)
+{# Una provincia dentro de una tarjeta: punto de color, nombre, «más barata»,
+   la cifra con su unidad, el cambio contra el período anterior y cuántos
+   anuncios la respaldan. Sin dato, «sin datos todavía». #}
+{% macro columna(nombre, cell, unidad) -%}
+<div class="ph-col ph-prov-{{ province_slots.get(nombre, 9) }}">
+  <div class="ph-col-name"><span class="ph-dot"></span>{{ nombre }}{% if cell and cell.is_cheapest %}<span class="ph-pill">más barata</span>{% endif %}</div>
+  {% if cell -%}
+  <div class="ph-fig">{{ cell.median_text }}{% if unidad %} <span class="ph-fig-unit">{{ unidad }}</span>{% endif %}</div>
+  <div class="ph-col-change">{% if cell.change_text %}{{ cell.change_text }} (base {{ cell.previous_count }}){% else %}sin mes anterior{% endif %}</div>
+  <div class="ph-col-n">{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}</div>
+  {%- else -%}
+  <div class="ph-col-none">sin datos todavía</div>
+  {%- endif %}
+</div>
+{%- endmacro %}
 
-   Mobile first: una sola columna en el orden lista → contenido → cobertura
-   (la cobertura es contexto, no lo primero que se busca en un teléfono);
-   las dos columnas aparecen recién cuando hay ancho de sobra. #}
-<header class="ph-dash-top">
-  <div class="ph-dash-brand">
-    {% include "_guani_avatar.html" %}
-    <div>
-      <div class="m3-kicker">Guani · SAIMC · Fase 0</div>
-      {# La frescura queda a la vista (en el mapa se esconde detrás del
-         avatar): es lo único que dice qué tan viejo es el dato (§12.6). #}
-      {% if data_freshness_day %}
-      <p class="ph-dash-fresh">Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} · hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}{% endif %}</p>
-      {% endif %}
+{# Las otras provincias, en chico, bajo una tarjeta enfocada en la elegida. #}
+{% macro otras(cells) -%}
+{% if cells -%}
+<div class="ph-otras">
+  {%- for c in cells %}
+  <span class="ph-prov-{{ province_slots.get(c.province_name, 9) }}"><span class="ph-dot"></span> {{ c.province_name }}: <strong>{{ c.median_text }}</strong> · {{ c.count }} anuncio{{ "s" if c.count != 1 }}</span>{% if c.is_cheapest %}<span class="ph-pill">más barata</span>{% endif %}
+  {%- endfor %}
+</div>
+{%- endif %}
+{%- endmacro %}
+
+{% set foco = watchlist.provinces | length < watchlist.all_provinces | length %}
+{% set fila = (watchlist.rows | selectattr("product_name", "equalto", selected_product) | first) if selected_product else none %}
+
+<header class="ph-top">
+  <div class="ph-top-inner">
+    <div class="ph-top-brand">
+      {% include "_guani_avatar.html" %}
+      <span class="ph-wordmark">Guani</span>
+      <span class="ph-top-tag">SAIMC · Fase 0</span>
     </div>
-  </div>
-  <nav class="ph-dash-actions" aria-label="Acciones">
-    <div class="ph-vista-toggle" role="group" aria-label="Presentación">
+    <div class="ph-vista-wrap"><div class="ph-vista-toggle" role="group" aria-label="Presentación">
       <a class="js-vista-link ph-tap-44{% if vista == "mapa" %} is-selected{% endif %}" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}>Mapa</a>
       <a class="js-vista-link ph-tap-44{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
-    </div>
+    </div></div>
+    <a class="ph-top-csv" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="m3-icon" aria-hidden="true">download</span><span class="ph-top-csv-label">CSV</span></a>
     <button type="button" class="ph-dash-action ph-tap-44 theme-toggle" aria-pressed="false" aria-label="Cambiar a modo oscuro">
       <span class="m3-icon theme-toggle-icon-dark" aria-hidden="true">dark_mode</span>
       <span class="m3-icon theme-toggle-icon-light" aria-hidden="true">light_mode</span>
     </button>
-  </nav>
+  </div>
 </header>
 
-<div class="ph-dash-layout">
+<div class="ph-layout">
 
-{% if watchlist %}
-<section class="ph-dash-panel ph-dash-watch" aria-labelledby="lista-titulo">
-  <h2 class="ph-dash-panel-title" id="lista-titulo">Productos</h2>
-  <p class="ph-dash-panel-sub">Mediana de los últimos {{ window_days }} días y su cambio contra los {{ window_days }} anteriores.</p>
-  {# «Mi provincia» (S8, 2026-09-19): el único selector de provincia de la
-     página, arriba de lo que enfoca. Sigue en el panel aunque el filtro deje
-     cero resultados: es el modo de deshacerlo. `data-provincia` lo lee el
-     script de `_vista_cookie_script.html` para recordar la elección. #}
-  {% if province_nav | length > 1 %}
-  <div class="ph-watch-filtro">
-    <p class="ph-dash-panel-sub" id="mi-provincia-etiqueta">¿En qué provincia estás?</p>
-    <div class="ph-dash-filters" role="group" aria-labelledby="mi-provincia-etiqueta">
-      {% for choice in province_nav %}
-      <a class="ph-dash-chip ph-tap-44{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" data-provincia="{{ choice.slug }}" aria-pressed="{{ 'true' if choice.is_selected else 'false' }}">{{ choice.label }}</a>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-  <div class="ph-watch" style="--cols: {{ watchlist.provinces | length }}">
-    {% if watchlist.provinces %}
-    <div class="ph-watch-head" aria-hidden="true">
-      <span>Producto</span>
-      {% for province_name in watchlist.provinces %}
-      <span class="ph-watch-prov ph-prov-{{ province_slots.get(province_name, 9) }}"><span class="ph-dash-dot"></span><span class="ph-watch-prov-name">{{ province_name }}</span></span>
-      {% endfor %}
-    </div>
-    {% endif %}
-    <a class="ph-watch-row ph-watch-all{% if watchlist.all_is_active %} is-active{% endif %}" href="{{ watchlist.all_query }}"{% if watchlist.all_is_active %} aria-current="true"{% endif %}>
-      <span class="ph-watch-name">Todos los productos</span>
-    </a>
-    {% for row in watchlist.rows %}
-    <a class="ph-watch-row{% if row.is_active %} is-active{% endif %}" href="{{ row.query }}"{% if row.is_active %} aria-current="true"{% endif %}>
-      <span class="ph-watch-name">{{ row.product_name }}{% if row.unit %}<small>{{ row.currency }}/{{ row.unit }}</small>{% endif %}</span>
-      {% for cell in row.cells %}
-      <span class="ph-watch-cell">
-        {%- if cell %}
-        <span class="visually-hidden">{{ cell.province_name }}:</span>
-        <span class="ph-watch-median">{{ cell.median_text }}</span>
-        <span class="ph-watch-change">{% if cell.change_text %}{{ cell.change_text }} (base {{ cell.previous_count }}){% else %}—{% endif %}</span>
-        <span class="ph-watch-n">{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}</span>
-        {% if cell.is_cheapest %}<span class="ph-watch-cheapest">más barata</span>{% endif %}
-        {%- else %}
-        <span class="ph-watch-none">—</span>
-        {%- endif %}
-      </span>
-      {% endfor %}
-      {% if row.otras %}
-      <span class="ph-watch-otras">
-        {%- for otra in row.otras %}
-        <span>{{ otra.province_name }}: {{ otra.median_text }} · {{ otra.count }} anuncio{{ "s" if otra.count != 1 }}{% if otra.is_cheapest %} · más barata{% endif %}</span>
-        {%- endfor %}
-      </span>
-      {% endif %}
-    </a>
-    {% endfor %}
-  </div>
-  {# §9.0: la cifra va rotulada «muestra en formación» mientras N siga sin
-     calibrar. La nota vivía bajo la tabla por formato; la lista está en todas
-     las vistas del tablero, así que el rótulo sigue a la vista. #}
-  <p class="ph-dash-panel-sub">Todas las cifras están en <strong>muestra en formación</strong>: todavía no hay suficientes anuncios para dar un precio como cifra cerrada, así que se publica la mediana y cuántos anuncios la respaldan. Ninguna cifra es una estimación.</p>
-</section>
+{% if data_freshness_day %}
+<div class="ph-fresh"><span class="m3-icon" aria-hidden="true">info</span><span>Datos verificados hasta el <strong>{{ data_freshness_day.strftime('%d/%m') }}</strong>{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} · hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}{% endif %}</span></div>
 {% endif %}
 
-{# Sobre los datos (S7, 2026-09-19): lo que explica de dónde sale lo que se
-   ve, en un solo lugar —cobertura (antes una ventana del mapa: mismo `map`,
-   mismos números y la misma nota de §9.0, la ausencia de datos como decisión
-   metodológica y no como falla), cómo leer las cifras, la fuente y la
-   descarga—. El rótulo «muestra en formación» NO vive acá: §9.0 lo quiere
-   pegado a la cifra, y queda bajo la lista. #}
-<section class="ph-dash-panel ph-dash-datos" aria-labelledby="datos-titulo">
-  <h2 class="ph-dash-panel-title" id="datos-titulo">Sobre los datos</h2>
-  <div class="ph-cov-stats">
-    <div><span class="ph-cov-label">Observaciones</span><span class="ph-cov-value">{{ map.total_rows }}</span></div>
-    <div><span class="ph-cov-label">Provincias con dato</span><span class="ph-cov-value">{{ map.covered }}<small>/{{ map.provinces | length }}</small></span></div>
-    <div><span class="ph-cov-label">Publicadas</span><span class="ph-cov-value">{{ map.published }}</span></div>
-  </div>
-  {% set con_dato = map.provinces | selectattr('rows', 'gt', 0) | sort(attribute='rows', reverse=true) | list %}
-  {% if con_dato %}
-  {% set max_rows = con_dato[0].rows %}
-  <ul class="ph-cov-bars">
-    {% for province in con_dato %}
-    <li class="ph-prov-{{ province_slots.get(province.name, 9) }}">
-      <span class="ph-cov-name">{{ province.name }}</span>
-      <span class="ph-cov-track"><span class="ph-cov-fill" style="width:{{ (province.rows / max_rows * 100) | round(1) }}%"></span></span>
-      <span class="ph-cov-n">{{ province.rows }}</span>
-    </li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-  <p class="ph-cov-note">
-    Una provincia se publica cuando acumula observaciones suficientes y sostenidas,
-    no cuando el calendario lo indica.
-    {% if map.published == 0 %}Todavía <strong>ninguna</strong> cumple ese requisito.{% else %}Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }}; las demás siguen en recolección.{% endif %}
-    Preferimos mostrar poco y cierto antes que mucho y flojo.
-  </p>
-  <p class="ph-cov-note"><strong>Cómo leer las cifras.</strong> La cifra es la mediana: el precio del medio entre los anuncios, no el promedio, así que un anuncio muy caro o muy barato no la mueve. Va con su moneda y su unidad. El cambio va sin flecha ni color: una baja es buena para quien compra y mala para quien vende. «(base N)» son los anuncios del período anterior con los que se compara; «—», que no hubo ninguno.</p>
-  <p class="ph-cov-note"><strong>De dónde salen.</strong> Los anuncios se toman de redes sociales y grupos de mensajería del mercado informal, y cada uno se verifica a mano antes de entrar en una cifra.</p>
-  <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span><span class="ph-dash-action-label">Descargar los datos (CSV)</span></a>
-</section>
-
-<div class="ph-dash-main">
-
-<div class="ph-dash-head">
-  <h1 class="ph-dash-title">{% if active_products %}{{ active_products | join(", ") }}{% else %}Todos los productos{% endif %}</h1>
-</div>
-
-{% if cards_by_province %}
-
-{# Detalle del producto elegido (dirección C, slice 2, 2026-09-18): lo que
-   en el mapa son las ventanas «Precios» y «Cómo se movió», acá en el cuerpo
-   de la página y solo de ese producto. Mismos parciales, mismas cifras
-   —`province_comparisons` y `evolution_blocks`, que el router ya armaba—,
-   así el tablero y el mapa no pueden contradecirse. Solo con UN producto:
-   con varios (una URL vieja) o ninguno, la lista ya los resume. #}
-{% if selected_product %}
-{% set comp = province_comparisons | selectattr("product_name", "equalto", selected_product) | first %}
-{% set block = evolution_blocks | selectattr("product_name", "equalto", selected_product) | first %}
-{% if comp or block %}
-<section class="ph-dash-detail" aria-labelledby="detalle-titulo">
-  <h2 class="ph-dash-detail-title" id="detalle-titulo">Cómo está {{ selected_product }}</h2>
-  <div class="ph-dash-detail-grid">
-    {% if comp %}
-    <figure class="ph-dash-panel ph-compara-fig">
-      <figcaption class="ph-evo-sub">Rango por provincia <span>{{ comp.currency }}/{{ comp.unit }} · la más cara arriba</span></figcaption>
-      {% set resaltar = selected_province %}
-      {% include "_province_compare.html" %}
-      {{ chart_help(
-        "Cada línea horizontal es el rango completo de precios de esa "
-        "provincia, de punta a punta; el óvalo relleno marca la mitad "
-        "central de los anuncios; el punto es la mediana."
-        ~ (" " ~ selected_province ~ " se destaca sobre las demás." if selected_province else "")
-      ) }}
-    </figure>
-    {% endif %}
-    {% if block %}
-    {% for slope in block.slopes %}
-    <figure class="ph-dash-panel ph-compara-fig">
-      <figcaption class="ph-evo-sub">¿Subió o bajó? <span>mediana en {{ slope.currency }}/{{ slope.unit }} · (anuncios)</span></figcaption>
-      {% include "_slope_chart.html" %}
-      {{ chart_help(
-        "Cada línea conecta la mediana de una provincia en el período "
-        "anterior (izquierda) con la del actual (derecha). El número entre "
-        "paréntesis es cuántos anuncios la sostienen."
-      ) }}
-    </figure>
-    {% endfor %}
-    {% endif %}
+<main class="ph-main">
+{% if not fila %}
+  {# ── «Todos»: qué cuesta hoy ─────────────────────────────────────────── #}
+  <div class="ph-intro">
+    <span class="ph-eyebrow">TABLERO</span>
+    <h1 class="ph-h1">Qué cuesta hoy</h1>
+    <p class="ph-sub">Mediana de los últimos {{ window_days }} días, sobre {{ watchlist.total_ads }} anuncios verificados a mano.</p>
+    <p class="ph-formacion">Todas las cifras están en <strong>muestra en formación</strong>: se publica la mediana y cuántos anuncios la respaldan; ninguna cifra es una estimación.</p>
   </div>
 
-  {% if block %}
-  <div class="ph-dash-panel ph-dash-detail-evo">
-    {% if block.legend | length > 1 %}
-    <ul class="ph-evo-leyenda">
-      {% for slot, provincia in block.legend %}
-      <li class="ph-prov-{{ slot % 2 }}"><span class="ph-evo-muestra" aria-hidden="true"></span>{{ provincia }}</li>
+  {# «Mi provincia» (S8): el único selector de provincia de la página. Sigue a
+     la vista aunque un filtro deje cero resultados: es el modo de deshacerlo.
+     `data-provincia` lo lee el script de `_vista_cookie_script.html` para
+     recordar la elección. #}
+  {% if province_nav | length > 1 %}
+  <div class="ph-mi-prov">
+    <span class="ph-mi-prov-label" id="mi-provincia-etiqueta">¿En qué provincia estás?</span>
+    <div class="ph-chips" role="group" aria-labelledby="mi-provincia-etiqueta">
+      {% for choice in province_nav %}
+      <a class="ph-dash-chip ph-tap-44{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" data-provincia="{{ choice.slug }}" aria-pressed="{{ 'true' if choice.is_selected else 'false' }}">{% if choice.slug %}<span class="ph-dot ph-prov-{{ province_slots.get(choice.label, 9) }}"></span>{% endif %}{{ choice.label }}</a>
       {% endfor %}
-    </ul>
-    {% endif %}
-    {% for steps in block.steps %}
-    <figure class="ph-compara-fig">
-      <figcaption class="ph-evo-sub">Por {{ steps.period_name }} <span>mediana en {{ steps.currency }}/{{ steps.unit }} · la línea se corta donde no hubo anuncios</span></figcaption>
-      {% include "_steps_chart.html" %}
-      {{ chart_help(
-        "Cada línea sigue la mediana de una provincia, período a período, "
-        "en escalones. Se corta donde no hubo anuncios: nunca une dos "
-        "puntos salteando uno vacío."
-      ) }}
-    </figure>
-    {% else %}
-    <p class="ph-empty">
-      No hay suficientes días con anuncios de {{ selected_product }} para dibujar
-      cómo se movió: hacen falta al menos dos {{ "semanas" if window_days >= 28 else "días" }} distintos con anuncios.
-    </p>
-    {% endfor %}
-
-    <figure class="ph-compara-fig">
-      <figcaption class="ph-evo-sub">Días con anuncios <span>{% if selected_province %}{{ selected_province }}{% else %}todas las provincias juntas{% endif %}</span></figcaption>
-      {% set cal = block.calendar %}
-      {% include "_calendar_chart.html" %}
-      {{ chart_help(
-        "Cada cuadro es un día; cuanto más oscuro, más anuncios entraron "
-        "ese día. No muestra precios, solo cuándo hubo actividad."
-      ) }}
-    </figure>
-
-    {# Los anuncios detrás de los gráficos (§6.5), con su enlace; las
-       capturas no enlazan. Misma tabla que la ventana del mapa. #}
-    <details class="ph-evo-anuncios">
-      <summary>Los {{ block.ads | length }} anuncio{{ "s" if block.ads | length != 1 }} de la ventana</summary>
-      <div class="ph-table-card">
-        <table class="ph-coverage">
-          <thead>
-            <tr>
-              <th scope="col">Día</th>
-              <th scope="col">Provincia</th>
-              <th scope="col" class="num">Precio</th>
-              <th scope="col">Enlace</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for ad in block.ads %}
-            <tr>
-              <td class="num">{{ ad.day_text }}</td>
-              <td>{{ ad.province_name }}</td>
-              <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
-              <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </details>
+    </div>
   </div>
   {% endif %}
 
-  {# Por envase (S6, 2026-09-19): lo que era la tabla de «Todos». `cards_by_province`
-     ya viene filtrada por el producto elegido (y la provincia, si hay), y
-     agrupada por provincia en orden alfabético. #}
-  <div class="ph-dash-panel ph-envases">
-    <h3 class="ph-dash-panel-title">Por envase</h3>
-    <p class="ph-dash-panel-sub">Lo que se paga por el envase completo, con su moneda en cada fila; si no declara envase, por unidad.</p>
+  <div class="ph-tarjetas">
+    {% for row in watchlist.rows %}
+    {% set unidad = (row.currency ~ "/" ~ row.unit) if row.unit else row.currency %}
+    <a class="ph-tarjeta{% if foco %} is-foco{% endif %}" href="{{ row.query }}">
+      <div class="ph-tarjeta-titulo"><span class="ph-tarjeta-nombre">{{ row.product_name }}</span>{% if unidad %}<span class="ph-tarjeta-unidad">{{ unidad }}</span>{% endif %}</div>
+      <div class="ph-cols" style="--n: {{ watchlist.provinces | length }}">
+        {% for cell in row.cells %}{{ columna(watchlist.provinces[loop.index0], cell, unidad) }}{% endfor %}
+      </div>
+      {{ chev("ph-tarjeta-chev") }}
+      {{ otras(row.otras) }}
+    </a>
+    {% endfor %}
+  </div>
+
+{% else %}
+  {# ── Detalle de un producto ──────────────────────────────────────────── #}
+  {% set unidad = (fila.currency ~ "/" ~ fila.unit) if fila.unit else fila.currency %}
+  <div>
+    <a class="ph-back" href="{{ watchlist.all_query }}">‹ Todos los productos</a>
+    <div class="ph-titulo">
+      <h1 class="ph-h1">{{ selected_product }}</h1>
+      {% if unidad %}<span class="ph-titulo-meta">{{ unidad }} · últimos {{ window_days }} días</span>{% endif %}
+    </div>
+  </div>
+  <p class="ph-formacion">Todas las cifras están en <strong>muestra en formación</strong>: se publica la mediana y cuántos anuncios la respaldan; ninguna cifra es una estimación.</p>
+
+  <section class="ph-panel ph-resumen" aria-label="Resumen de {{ selected_product }}">
+    <div class="ph-cols" style="--n: {{ watchlist.all_provinces | length }}">
+      {% for cell in fila.todas %}{{ columna(watchlist.all_provinces[loop.index0], cell, unidad) }}{% endfor %}
+    </div>
+    {% if fila.barata and fila.contra %}
+    <p class="ph-resumen-frase"><strong>{{ fila.barata.province_name }}</strong> es la más barata: {{ fila.barata.median_text }} contra {% for c in fila.contra %}{{ c.median_text }} en {{ c.province_name }}{% if not loop.last %}{{ " y " if loop.revindex == 2 else ", " }}{% endif %}{% endfor %}.</p>
+    {% endif %}
+  </section>
+
+  {% set comp = province_comparisons | selectattr("product_name", "equalto", selected_product) | first %}
+  {% set block = evolution_blocks | selectattr("product_name", "equalto", selected_product) | first %}
+  {% if comp or block %}
+  <div class="ph-graficos">
+    {% if block %}
+    {% for steps in block.steps %}
+    <section class="ph-panel">
+      <h2 class="ph-panel-title">Cómo se movió</h2>
+      <p class="ph-panel-sub">Mediana por {{ steps.period_name }}, {{ steps.currency }}/{{ steps.unit }} · la línea se corta donde no hubo anuncios</p>
+      {% if block.legend | length > 1 %}
+      <ul class="ph-leyenda">
+        {% for slot, provincia in block.legend %}<li class="ph-prov-{{ slot % 2 }}"><span class="ph-dot ph-dot-lg"></span>{{ provincia }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      <figure class="ph-compara-fig">{% include "_steps_chart.html" %}</figure>
+      <p class="ph-nota">Cada punto es la mediana de {{ "esa semana" if steps.period_name == "semana" else "ese día" }}; su tamaño, cuántos anuncios la sostienen. La última {{ steps.period_name }} llega hasta el {{ selected_hasta.strftime('%d/%m') }}.</p>
+    </section>
+    {% else %}
+    <section class="ph-panel">
+      <h2 class="ph-panel-title">Cómo se movió</h2>
+      <p class="ph-empty">No hay suficientes días con anuncios de {{ selected_product }} para dibujar cómo se movió: hacen falta al menos dos {{ "semanas" if window_days >= 28 else "días" }} distintos con anuncios.</p>
+    </section>
+    {% endfor %}
+    {% endif %}
+    {% if comp %}
+    <section class="ph-panel">
+      <h2 class="ph-panel-title">Cuánto varía</h2>
+      <p class="ph-panel-sub">Rango completo, mitad central de los anuncios y mediana · {{ comp.currency }}/{{ comp.unit }}</p>
+      {% if block and block.legend | length > 1 %}
+      <ul class="ph-leyenda">
+        {% for slot, provincia in block.legend %}<li class="ph-prov-{{ slot % 2 }}"><span class="ph-dot ph-dot-lg"></span>{{ provincia }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% set resaltar = none %}
+      <figure class="ph-compara-fig">{% include "_province_compare.html" %}</figure>
+      <p class="ph-nota">Sirve para saber si la mediana es representativa: un rango angosto significa que casi todos piden lo mismo.</p>
+    </section>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if cards_by_province %}
+  {# Por envase: lo que se paga por el envase completo. `cards_by_province` ya
+     viene filtrada por el producto elegido, con todas las provincias, agrupada
+     por provincia en orden alfabético. #}
+  <section class="ph-panel ph-envases" aria-label="Por envase">
+    <h2 class="ph-panel-title">Por envase</h2>
+    <p class="ph-panel-sub">Lo que se paga por el envase completo, con su moneda en cada fila; si no declara envase, por unidad.</p>
     {% for province_name, province_cards in cards_by_province %}
     <div class="ph-envases-prov ph-prov-{{ province_slots.get(province_name, 9) }}">
-      <h4 class="ph-envases-prov-name"><span class="ph-dash-dot"></span>{{ province_name }}</h4>
+      <h3 class="ph-envases-prov-name"><span class="ph-dot ph-dot-lg"></span>{{ province_name }}</h3>
       <div class="ph-envases-scroll">
         <table class="ph-envases-table">
-          <colgroup><col style="width: 32%"><col style="width: 30%"><col style="width: 18%"><col style="width: 20%"></colgroup>
-          <thead><tr><th>Envase</th><th>Precio</th><th class="num">Mediana</th><th class="num">Anuncios</th></tr></thead>
+          <colgroup><col><col><col><col></colgroup>
+          <thead><tr><th>Envase</th><th>Precio del envase</th><th class="num">Mediana</th><th class="num">Anuncios</th></tr></thead>
           <tbody>
             {% for card in province_cards[:3] %}{{ fila_envase(card) }}{% endfor %}
           </tbody>
@@ -575,7 +447,7 @@
         <summary>Ver los {{ province_cards | length }} envases de {{ province_name }}</summary>
         <div class="ph-envases-scroll">
           <table class="ph-envases-table">
-            <colgroup><col style="width: 32%"><col style="width: 30%"><col style="width: 18%"><col style="width: 20%"></colgroup>
+            <colgroup><col><col><col><col></colgroup>
             <tbody>
               {% for card in province_cards[3:] %}{{ fila_envase(card) }}{% endfor %}
             </tbody>
@@ -585,15 +457,70 @@
       {% endif %}
     </div>
     {% endfor %}
-  </div>
+  </section>
+  {% endif %}
+
+  {# Los anuncios detrás de las cifras (§6.5), con su enlace; las capturas no
+     enlazan. Misma tabla que la ventana del mapa. #}
+  {% if block and block.ads %}
+  <details class="ph-panel ph-anuncios">
+    <summary>
+      <span class="ph-anuncios-titulo"><b>Los {{ block.ads | length }} anuncio{{ "s" if block.ads | length != 1 }} de la ventana</b><span>Cada uno con su enlace a la captura pública</span></span>
+      {{ chev() }}
+    </summary>
+    <div class="ph-table-card">
+      <table class="ph-coverage">
+        <thead>
+          <tr>
+            <th scope="col">Día</th>
+            <th scope="col">Provincia</th>
+            <th scope="col" class="num">Precio</th>
+            <th scope="col">Enlace</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ad in block.ads %}
+          <tr>
+            <td class="num">{{ ad.day_text }}</td>
+            <td>{{ ad.province_name }}</td>
+            <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
+            <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+{% endif %}
+</main>
+
+{% if selected_product %}
+<nav class="ph-nav ph-panel" aria-label="Productos">
+  <h2 class="ph-panel-title">Productos</h2>
+  {% for r in watchlist.rows %}
+  <a class="ph-nav-item{% if r.is_active %} is-active{% endif %}" href="{{ r.query }}"{% if r.is_active %} aria-current="true"{% endif %}>{{ r.product_name }}{{ chev() }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{# Sobre los datos: lo que explica de dónde sale lo que se ve, en un solo
+   lugar —cobertura (antes una ventana del mapa: mismo `map`), cómo leer las
+   cifras, la fuente y la descarga—. #}
+<section class="ph-panel ph-datos" aria-labelledby="datos-titulo">
+  <h2 class="ph-panel-title" id="datos-titulo">Sobre los datos</h2>
+  <ul class="ph-datos-lista">
+    <li><strong>{{ watchlist.total_ads }} anuncios</strong> de los últimos {{ window_days }} días, verificados a mano uno por uno.</li>
+    {% if data_freshness_day and data_freshness_days_ago and data_freshness_days_ago > 0 %}
+    <li>Datos hasta el <strong>{{ data_freshness_day.strftime('%d/%m') }}</strong>: hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }} no entran anuncios nuevos.</li>
+    {% endif %}
+    <li><strong>{{ map.covered }} de {{ map.provinces | length }} provincias</strong> tienen datos.
+      {% if map.published == 0 %}Ninguna está publicada todavía: se publica cuando hay muestra suficiente y sostenida, no cuando lo dice el calendario.{% else %}Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }}; las demás siguen en recolección, porque se publica cuando hay muestra suficiente y sostenida, no cuando lo dice el calendario.{% endif %}</li>
+    <li>La cifra es la <strong>mediana</strong>, con su moneda y su unidad: la única comparable entre provincias.</li>
+    <li>«(base N)» son los anuncios del período anterior contra los que se compara el cambio; «sin mes anterior», que no hubo ninguno.</li>
+  </ul>
+  <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span><span>Descargar los datos (CSV)</span></a>
 </section>
-{% endif %}
-{% endif %}
 
-{% else %}
-<p class="ph-note" style="margin-top: var(--m3-space-6);">Sin anuncios verificados en esta ventana todavía.</p>
-{% endif %}
-
-</div>{# /.ph-dash-main #}
-</div>{# /.ph-dash-layout #}
+</div>{# /.ph-layout #}
 {% endblock %}

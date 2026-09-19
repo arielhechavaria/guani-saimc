@@ -58,6 +58,15 @@ class WatchRow:
     #: sí tienen dato, para verlas en chico junto a la principal. Vacío sin
     #: provincia elegida: ahí todas son columnas.
     otras: tuple[WatchCell, ...] = ()
+    #: Una por cada provincia de `Watchlist.all_provinces`, con o sin foco: el
+    #: detalle de un producto compara todas las provincias aunque la lista
+    #: esté enfocada en una. `None` donde no hay anuncios.
+    todas: tuple[WatchCell | None, ...] = ()
+    #: La provincia de mediana más baja y las demás con dato, para la frase
+    #: «X es la más barata: 298 contra 318 en Y». `None` y `()` si no hay
+    #: con qué comparar (menos de dos provincias con dato, o empate).
+    barata: WatchCell | None = None
+    contra: tuple[WatchCell, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -66,6 +75,13 @@ class Watchlist:
     rows: tuple[WatchRow, ...]
     all_query: str
     all_is_active: bool
+    #: Todas las provincias con dato, sin importar el foco (`provinces` queda
+    #: en la elegida cuando hay foco).
+    all_provinces: tuple[str, ...] = ()
+    #: Anuncios en la ventana que respaldan las medianas de la lista: la suma
+    #: de todas las celdas de todos los productos. Es lo que dice la página
+    #: en «sobre N anuncios verificados a mano».
+    total_ads: int = 0
 
 
 def _chart_for(product: str, slopes: Sequence[SlopeChart]) -> SlopeChart | None:
@@ -111,7 +127,9 @@ def build_watchlist(
     con varios productos (`?productos=arroz,pollo`) marca todos los activos;
     la lista en sí nunca arma una multi-selección nueva."""
     activos = set(active_products)
-    foco = next((p for p in provinces if selected_province and product_slug(p) == selected_province), None)
+    foco = next(
+        (p for p in provinces if selected_province and product_slug(p) == selected_province), None
+    )
     columnas = (foco,) if foco else tuple(provinces)
 
     def query(slugs: list[str]) -> str:
@@ -120,6 +138,7 @@ def build_watchlist(
         )
 
     rows = []
+    total_ads = 0
     for name in pilot_names:
         chart = _chart_for(name, slopes)
         por_provincia = {}
@@ -135,6 +154,9 @@ def build_watchlist(
                     previous_count=line.before_count,
                     is_cheapest=line.province_name == barata,
                 )
+        total_ads += sum(c.count for c in por_provincia.values())
+        mas_barata = next((c for c in por_provincia.values() if c.is_cheapest), None)
+        todas = tuple(por_provincia.get(p) for p in provinces)
         slug = product_slug(name)
         rows.append(
             WatchRow(
@@ -146,7 +168,12 @@ def build_watchlist(
                 cells=tuple(por_provincia.get(p) for p in columnas),
                 query=query([slug]),
                 is_active=name in activos,
-                otras=tuple(por_provincia[p] for p in provinces if foco and p != foco and p in por_provincia),
+                otras=tuple(
+                    por_provincia[p] for p in provinces if foco and p != foco and p in por_provincia
+                ),
+                todas=todas,
+                barata=mas_barata,
+                contra=tuple(c for c in todas if c and c is not mas_barata) if mas_barata else (),
             )
         )
     return Watchlist(
@@ -154,4 +181,6 @@ def build_watchlist(
         rows=tuple(rows),
         all_query=query([]),
         all_is_active=not activos,
+        all_provinces=tuple(provinces),
+        total_ads=total_ads,
     )

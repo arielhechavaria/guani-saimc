@@ -1136,22 +1136,17 @@ class TestBlancoTactilDelTablero:
             "menos de 44px sin que ningún test lo note"
         )
 
-    def test_el_toggle_de_arriba_tiene_aire_antes_del_siguiente(self) -> None:
+    def test_el_toggle_va_en_su_propia_fila_en_el_movil(self) -> None:
         """Dos `.ph-tap-44` apilados sin separación se pisan las áreas
-        extendidas (medido: la de arriba queda cortada a la mitad). El
-        toggle Mapa/Tablero vive en `.ph-dash-top`, que necesita al menos
-        22px de aire abajo — la mitad del área extendida — antes del
-        siguiente control con la misma clase."""
+        extendidas (medido: la de arriba queda cortada a la mitad). En el
+        móvil el toggle Mapa/Tablero va en su propia fila, debajo de la marca
+        y las acciones, con aire arriba (`.ph-vista-wrap`)."""
         css = self._dashboard()
-        inicio = css.index(".ph-dash-top {")
-        bloque = css[inicio : inicio + 200]
+        inicio = css.index(".ph-vista-wrap {")
+        bloque = css[inicio : css.index("}", inicio)]
 
-        assert "space-6" in bloque or "space-8" in bloque, (
-            "el padding-bottom de .ph-dash-top bajó de --m3-space-6 (24px): "
-            "por debajo de 22px el toggle Mapa/Tablero se pisa con el de "
-            "Tarjetas/Tabla que viene después"
-        )
-
+        assert "flex: 0 0 100%" in bloque
+        assert "padding-top" in bloque
 
 class TestFuenteYFilaDeEvidencia:
     """Dos hallazgos más de la auditoría mobile-first del 2026-09-17: la

@@ -243,3 +243,39 @@ class TestMiProvincia:
 
         assert lista.provinces == ("La Habana", "Santiago de Cuba")
         assert all(r.otras == () for r in lista.rows)
+
+
+class TestParaElDetalleYElResumen:
+    """Reconstrucción sobre el prototipo E (2026-09-19): el detalle de un
+    producto compara todas las provincias aunque la lista esté enfocada en
+    una, y la página dice cuántos anuncios respaldan las cifras.
+
+    Valores esperados, a mano (ver el docstring del módulo): Arroz, La Habana
+    310 (2 anuncios) y Santiago 400 (1); Pollo solo La Habana (1). En la
+    ventana hay 2 + 1 + 1 = 4 anuncios."""
+
+    def test_el_total_de_anuncios_suma_todas_las_celdas_de_la_ventana(self) -> None:
+        assert _lista([]).total_ads == 4
+
+    def test_el_total_no_cambia_con_una_provincia_elegida(self) -> None:
+        assert _lista([], "santiago-de-cuba").total_ads == 4
+
+    def test_todas_trae_la_fila_completa_aunque_haya_foco(self) -> None:
+        arroz = _fila(_lista([], "santiago-de-cuba"), "Arroz")
+
+        assert [c.province_name for c in arroz.todas if c] == ["La Habana", "Santiago de Cuba"]
+
+    def test_las_provincias_de_todas_no_dependen_del_foco(self) -> None:
+        assert _lista([], "santiago-de-cuba").all_provinces == ("La Habana", "Santiago de Cuba")
+
+    def test_la_mas_barata_y_contra_quien_se_compara(self) -> None:
+        arroz = _fila(_lista([]), "Arroz")
+
+        assert arroz.barata is not None and arroz.barata.province_name == "La Habana"
+        assert [c.province_name for c in arroz.contra] == ["Santiago de Cuba"]
+
+    def test_sin_con_que_comparar_no_hay_mas_barata(self) -> None:
+        pollo = _fila(_lista([]), "Pollo")
+
+        assert pollo.barata is None
+        assert pollo.contra == ()

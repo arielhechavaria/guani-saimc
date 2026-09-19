@@ -11445,3 +11445,51 @@ es esta y el arreglo es el del párrafo anterior. La revisión también sugirió
 asertar el contenido de la línea de las otras provincias (mediana, plural de
 «anuncio», «más barata») a nivel HTML; hoy solo se asierta la presencia y el
 nombre, y los valores se cubren en `tests/test_watchlist_view.py`.
+
+
+## 2026-09-19 — Tablero: reconstruido sobre el prototipo E aprobado (corrige la disposición de S5–S8)
+Contexto: al cerrar S5–S8 el operador dijo que la vista «no contiene nada que
+ver con el artefacto de Claude Design». Renderizados el prototipo E y la página
+a los mismos anchos, tenía razón: E es una cabecera blanca, una tarjeta por
+producto en la columna principal y una barra lateral (frescura, «Productos» en
+el detalle, «Sobre los datos» en viñetas); lo entregado era la lista compacta de
+22 rem del prototipo C con la columna principal vacía en «Todos», un panel
+«Cobertura» con barras y el selector de provincia dentro de la lista. S5–S8
+habían aplicado la *filosofía* de E (una cifra, un lugar) como cambios
+incrementales sobre la estructura de C, y se verificaron con pruebas y alturas
+de página, nunca contra el prototipo; además se declaró «plan completo».
+Decisión: se reconstruye `public_dashboard.html` con la disposición de E.
+(1) Cabecera de borde a borde: marca «Guani», toggle Mapa/Tablero, CSV y tema
+(en móvil, el toggle en su propia fila). (2) «Todos»: «Qué cuesta hoy», «¿En qué
+provincia estás?» como píldoras (la activa oscura) y una tarjeta por producto
+con las provincias lado a lado, cifra grande, cambio con su base y «más
+barata»; con una provincia elegida, ella en grande y las demás en una línea
+chica. (3) Detalle: «‹ Todos los productos», tarjeta resumen con la frase «X es
+la más barata: 298 contra 318 en Y», «Cómo se movió» y «Cuánto varía» lado a
+lado, «Por envase» (con la variante), y los anuncios en una fila plegada. (4)
+Barra lateral en escritorio: chip de frescura, «Productos» (solo en el detalle)
+y «Sobre los datos» en cinco viñetas con el CSV. (5) La provincia elegida
+enfoca solo la lista de «Todos»; **el detalle compara siempre todas las
+provincias** (`scope_province` en el router). (6) Datos nuevos en la lista:
+`total_ads` (suma de anuncios de las celdas de la ventana: es el «sobre N
+anuncios» del subtítulo y la primera viñeta), `todas`, `barata`, `contra`.
+Se conserva de S5–S8: una cifra en un solo lugar, «Por envase» con variante, la
+cookie `provincia` que escribe el clic y lee solo el tablero (y su límite
+conocido, ver la corrección de S8).
+Desviaciones deliberadas de E, para que no vuelvan a ser sorpresa: (a) el rótulo
+§9.0 «muestra en formación» va una vez por vista bajo el título (E no lo traía y
+es obligatorio); (b) el subtítulo no dice «en CUP» porque cada cifra lleva su
+moneda; (c) los chips dicen «Santiago de Cuba» completo (E móvil abrevia); (d)
+los productos van en orden alfabético (el de E era el de la maqueta); (e) los gráficos
+son los reales, no los dibujos del prototipo; (f) sin «¿Subió o bajó?» ni el
+calendario de días con anuncios en el detalle (E no los trae: el cambio ya está
+en la tarjeta resumen; siguen en el mapa); (g) sin las barras de cobertura por
+provincia (E las resume en «2 de 16 provincias tienen datos»).
+Descartado: seguir corrigiendo S5–S8 por partes —más de lo mismo sin comparar
+contra el prototipo—.
+Consecuencia: verificado renderizando el prototipo y la página a 390 y 1280 px
+en «Todos», «Mi provincia» y el detalle; sin desborde horizontal de 320 a 1600
+px; ningún control por debajo de 44 px (el toggle Mapa/Tablero lo extiende
+`ph-tap-44`); modo oscuro por los tokens del sitio. Regla de proceso: un slice
+de interfaz no se cierra sin las capturas del prototipo y de la página lado a
+lado.
