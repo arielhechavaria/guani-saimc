@@ -410,39 +410,54 @@ class TestTiraDePrecio:
 
     Compara con el **precio por unidad**, que es el rol que le asigna la
     decisión del 2026-09-04 («con el precio por unidad base al lado como
-    comparador»). No calcula ninguna cifra nueva: como no existe un agregado
-    producto×provincia —`build_headlines` también agrupa por formato—, cada
-    provincia queda representada por su formato mejor respaldado, que es una
-    cifra que la tarjeta ya publica.
+    comparador»).
+
+    Desde el 2026-09-18 (slice 4) sus cifras salen de `build_month_vs_month`,
+    la misma fuente que la lista de productos, el detalle y las tarjetas: una
+    mediana por producto × provincia con **todos los formatos juntos**, que
+    ya usan las comparaciones entre provincias desde el 2026-09-14. Antes la
+    tira elegía «el formato mejor respaldado» de cada provincia porque «no
+    existe un agregado producto×provincia»; existe, y esa elección hacía que
+    la lista dijera 463 y la tira 530 para el mismo picadillo.
 
     Valores esperados calculados a mano, antes de correr el constructor.
+    HOY = 30/08/2026; ventana de 30 días; solo período actual.
     """
 
-    def _card(
-        self, *, province: str, median: str, count: int, packaging: str = "saco"
-    ) -> RetailRange:
-        return _rango(
-            product="Arroz",
-            province=province,
-            median=median,
-            minimum=median,
-            maximum=median,
-            count=count,
-            format_packaging=packaging,
-            format_quantity="25",
-            format_unit="kg",
-        )
+    HOY = date(2026, 8, 30)
+
+    def _slopes(self, **por_provincia: list[str]):
+        """`Arroz` por provincia: {"La Habana": ["300", "310"], ...}."""
+        return self._slopes_de({("Arroz", p): precios for p, precios in por_provincia.items()})
+
+    def _slopes_de(self, celdas: dict[tuple[str, str], list[str]], *, antes=None):
+        ahora = [
+            RetailObservation(
+                product_name=producto,
+                province_name=provincia.replace("_", " "),
+                currency="CUP",
+                unit="lb",
+                unconverted=False,
+                day=date(2026, 8, 10 + i),
+                unit_price=Decimal(precio),
+                evidence_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                evidence_is_public=False,
+            )
+            for (producto, provincia), precios in celdas.items()
+            for i, precio in enumerate(precios)
+        ]
+        return build_month_vs_month(ahora, antes or [], window_days=30, hoy=self.HOY)
 
     def test_una_celda_por_provincia_ordenadas_de_mas_barata_a_mas_cara(self) -> None:
-        cards = build_cards(
-            [
-                self._card(province="La Habana", median="300", count=9),
-                self._card(province="Santiago de Cuba", median="282", count=7),
-                self._card(province="Holguín", median="315", count=4),
-            ]
+        slopes = self._slopes_de(
+            {
+                ("Arroz", "La Habana"): ["300"],
+                ("Arroz", "Santiago de Cuba"): ["282"],
+                ("Arroz", "Holguín"): ["315"],
+            }
         )
 
-        (tira,) = build_price_strips(cards)
+        (tira,) = build_price_strips(slopes)
 
         assert [c.province_name for c in tira.cells] == [
             "Santiago de Cuba",
@@ -450,32 +465,49 @@ class TestTiraDePrecio:
             "Holguín",
         ]
 
-    def test_representa_a_la_provincia_su_formato_mejor_respaldado(self) -> None:
-        """No se promedia entre formatos: gana el que más anuncios tiene."""
-        cards = build_cards(
-            [
-                self._card(province="La Habana", median="300", count=9, packaging="saco"),
-                self._card(province="La Habana", median="348", count=2, packaging="bolsa"),
-            ]
-        )
+    def test_junta_todos_los_anuncios_de_la_provincia_sin_elegir_un_formato(self) -> None:
+        """El caso que se contradecía con la lista. La Habana: 300, 300, 400,
+        420, 440 → ordenados, la mediana es el del medio, 400, con 5 anuncios.
+        Elegir «el formato con más anuncios» (420, 440 y 400 → 420) daba otro
+        número y otra muestra para la misma provincia."""
+        slopes = self._slopes_de({("Arroz", "La Habana"): ["300", "300", "400", "420", "440"]})
 
-        (tira,) = build_price_strips(cards)
+        (tira,) = build_price_strips(slopes)
 
         (celda,) = tira.cells
-        assert celda.unit_price == Decimal("300")
-        assert celda.count == 9
-        assert celda.format_label == "saco de 25 kg"
+        assert celda.unit_price == Decimal("400")
+        assert celda.count == 5
 
-    def test_con_tres_o_mas_provincias_la_escala_va_de_0_a_100(self) -> None:
-        cards = build_cards(
-            [
-                self._card(province="Santiago de Cuba", median="200", count=5),
-                self._card(province="La Habana", median="250", count=5),
-                self._card(province="Holguín", median="300", count=5),
-            ]
+    def test_la_cifra_es_la_misma_que_la_de_la_lista_de_productos(self) -> None:
+        """Una sola fuente: lo que dice la tira coincide con la celda de la
+        lista de productos (`watchlist_view`) para el mismo producto y
+        provincia, mediana y muestra."""
+        from saimc.web.watchlist_view import build_watchlist
+
+        slopes = self._slopes_de({("Arroz", "La Habana"): ["300", "300", "400", "420", "440"]})
+
+        (tira,) = build_price_strips(slopes)
+        lista = build_watchlist(
+            ["Arroz"], [], slopes, provinces=["La Habana"], selected_province="",
+            desde=date(2026, 7, 31), hasta=self.HOY,
         )
 
-        (tira,) = build_price_strips(cards)
+        celda_tira = tira.cells[0]
+        celda_lista = lista.rows[0].cells[0]
+        assert celda_lista is not None
+        assert celda_tira.price_text == celda_lista.median_text
+        assert celda_tira.count == celda_lista.count
+
+    def test_con_tres_o_mas_provincias_la_escala_va_de_0_a_100(self) -> None:
+        slopes = self._slopes_de(
+            {
+                ("Arroz", "Santiago de Cuba"): ["200"],
+                ("Arroz", "La Habana"): ["250"],
+                ("Arroz", "Holguín"): ["300"],
+            }
+        )
+
+        (tira,) = build_price_strips(slopes)
 
         # 200 es el piso, 300 el techo, 250 queda justo en el medio.
         assert [c.pct for c in tira.cells] == [0, 50, 100]
@@ -484,65 +516,107 @@ class TestTiraDePrecio:
     def test_con_menos_de_tres_provincias_no_hay_degradado(self) -> None:
         """Dos puntos no son una escala: pintarlos de punta a punta haría ver
         un 6% de diferencia como si fuera el rango entero del país."""
-        cards = build_cards(
-            [
-                self._card(province="La Habana", median="300", count=5),
-                self._card(province="Santiago de Cuba", median="282", count=5),
-            ]
+        slopes = self._slopes_de(
+            {("Arroz", "La Habana"): ["300"], ("Arroz", "Santiago de Cuba"): ["282"]}
         )
 
-        (tira,) = build_price_strips(cards)
+        (tira,) = build_price_strips(slopes)
 
         assert not tira.has_gradient
         assert [c.pct for c in tira.cells] == [None, None]
 
     def test_todas_al_mismo_precio_no_produce_degradado(self) -> None:
         """Sin dispersión no hay nada que graduar, y dividir por cero menos."""
-        cards = build_cards(
-            [
-                self._card(province="La Habana", median="300", count=5),
-                self._card(province="Santiago de Cuba", median="300", count=5),
-                self._card(province="Holguín", median="300", count=5),
-            ]
+        slopes = self._slopes_de(
+            {
+                ("Arroz", "La Habana"): ["300"],
+                ("Arroz", "Santiago de Cuba"): ["300"],
+                ("Arroz", "Holguín"): ["300"],
+            }
         )
 
-        (tira,) = build_price_strips(cards)
+        (tira,) = build_price_strips(slopes)
 
         assert not tira.has_gradient
 
     def test_cada_producto_tiene_su_propia_tira(self) -> None:
-        cards = build_cards(
-            [
-                _rango(product="Arroz", province="La Habana", count=9),
-                _rango(product="Pollo", province="La Habana", count=4),
-            ]
+        slopes = self._slopes_de(
+            {
+                ("Arroz", "La Habana"): ["300"] * 9,
+                ("Pollo", "La Habana"): ["700"] * 4,
+            }
         )
 
-        tiras = build_price_strips(cards)
+        tiras = build_price_strips(slopes)
 
         assert [t.product_name for t in tiras] == ["Arroz", "Pollo"]
 
     def test_las_tiras_van_por_muestra_total(self) -> None:
-        cards = build_cards(
-            [
-                _rango(product="Pollo", province="La Habana", count=3),
-                _rango(product="Pollo", province="Santiago de Cuba", count=9),
-                _rango(product="Arroz", province="La Habana", count=8),
-            ]
+        slopes = self._slopes_de(
+            {
+                ("Pollo", "La Habana"): ["700"] * 3,
+                ("Pollo", "Santiago de Cuba"): ["690"] * 9,
+                ("Arroz", "La Habana"): ["300"] * 8,
+            }
         )
 
-        tiras = build_price_strips(cards)
+        tiras = build_price_strips(slopes)
 
         assert [t.product_name for t in tiras] == ["Pollo", "Arroz"]
         assert [t.count for t in tiras] == [12, 8]
 
     def test_la_celda_conserva_la_muestra_que_la_sostiene(self) -> None:
         """§9.0: el número de observaciones va a la vista, siempre."""
-        cards = build_cards([self._card(province="La Habana", median="300", count=9)])
+        slopes = self._slopes(**{"La_Habana": ["300"] * 9})
 
-        (tira,) = build_price_strips(cards)
+        (tira,) = build_price_strips(slopes)
 
         assert tira.cells[0].count == 9
 
-    def test_sin_tarjetas_no_hay_tiras(self) -> None:
+    def test_una_provincia_sin_anuncios_en_la_ventana_no_tiene_celda(self) -> None:
+        """Solo tiene dato del período anterior: no hay precio de ahora que
+        poner en la tira, y no se inventa uno."""
+        antes = [
+            RetailObservation(
+                product_name="Arroz",
+                province_name="Holguín",
+                currency="CUP",
+                unit="lb",
+                unconverted=False,
+                day=date(2026, 7, 10),
+                unit_price=Decimal("310"),
+                evidence_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                evidence_is_public=False,
+            )
+        ]
+        slopes = self._slopes_de({("Arroz", "La Habana"): ["300"]}, antes=antes)
+
+        (tira,) = build_price_strips(slopes)
+
+        assert [c.province_name for c in tira.cells] == ["La Habana"]
+
+    def test_el_filtro_de_producto_deja_solo_esas_tiras(self) -> None:
+        """Igual que los chips de hoy: ninguno prendido muestra todos."""
+        slopes = self._slopes_de(
+            {("Arroz", "La Habana"): ["300"], ("Pollo", "La Habana"): ["700"]}
+        )
+
+        assert [t.product_name for t in build_price_strips(slopes, products=["Pollo"])] == ["Pollo"]
+        assert len(build_price_strips(slopes, products=[])) == 2
+
+    def test_el_filtro_de_provincia_deja_solo_esa_celda(self) -> None:
+        slopes = self._slopes_de(
+            {("Arroz", "La Habana"): ["300"], ("Arroz", "Santiago de Cuba"): ["282"]}
+        )
+
+        (tira,) = build_price_strips(slopes, province="Santiago de Cuba")
+
+        assert [c.province_name for c in tira.cells] == ["Santiago de Cuba"]
+
+    def test_una_tira_que_se_queda_sin_celdas_no_se_devuelve(self) -> None:
+        slopes = self._slopes_de({("Arroz", "La Habana"): ["300"]})
+
+        assert build_price_strips(slopes, province="Holguín") == []
+
+    def test_sin_datos_no_hay_tiras(self) -> None:
         assert build_price_strips([]) == []

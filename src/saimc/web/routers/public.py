@@ -512,11 +512,14 @@ def _render_home(
     # elige el router y no un `{% if %}` adentro de `public_home.html`
     # (~2700 líneas ya delicadas): las dos vistas son archivos separados.
     cards_by_province = group_cards_by_province(cards, province_names)
-    # Tira de precio (2026-09-17): el vistazo de arriba del tablero. Sale de
-    # las mismas tarjetas, sin recalcular ninguna cifra — ver
+    # Tira de precio (2026-09-17): el vistazo de arriba del tablero. Desde el
+    # 2026-09-18 sale de `slopes` —la misma mediana por producto y provincia
+    # que la lista, el detalle y el cambio de las tarjetas— y no de «el
+    # formato mejor respaldado» de cada tarjeta, que daba otro número para lo
+    # mismo. Los filtros de la página se aplican acá: `slopes` trae todo. Ver
     # `card_view.build_price_strips` y `templates/_price_strips.html` para qué
     # se desbloqueó de §12.6 y qué sigue bloqueado.
-    price_strips = build_price_strips(cards)
+    price_strips = build_price_strips(slopes, products=active_products, province=selected_province)
     # Color por provincia en la tabla del tablero (2026-09-18, arreglo: el
     # operador reportó que todas las filas se veían del mismo color). Era un
     # bug real, no una percepción: hasta acá el slot salía de

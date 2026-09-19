@@ -3036,6 +3036,91 @@ class TestCambioUnicoEnElTablero:
         assert "−9%" not in texto
 
 
+class TestUnaSolaMedianaEnElTablero:
+    """La tira, la cinta, la lista de productos y las tarjetas dicen la misma
+    mediana para el mismo producto y provincia (2026-09-18, slice 4).
+
+    Antes la tira representaba a cada provincia con «el formato mejor
+    respaldado» y la lista juntaba todos los formatos: con datos reales,
+    picadillo en La Habana daba 463 en la lista y 530 en la tira.
+
+    Valores esperados, a mano. Arroz en La Habana, dos formatos de 1 lb, todos
+    dentro de los últimos 30 días:
+    - paquete: 300, 300 (2 anuncios)
+    - saco: 400, 420, 440 (3 anuncios, el mejor respaldado)
+    Todos juntos: 300, 300, 400, 420, 440 → mediana 400, 5 anuncios.
+    (Elegir el saco, que era lo que hacía la tira, daba 420 y 3 anuncios.)"""
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        paquete = _formato(session, product=arroz, packaging="paquete", quantity="1", unit="lb")
+        saco = _formato(session, product=arroz, packaging="saco", quantity="1", unit="lb")
+        fuente = _ingestion(session, hash_="h-mediana")
+        for dia, precio, formato in (
+            (20, "300", paquete), (15, "300", paquete),
+            (10, "400", saco), (6, "420", saco), (2, "440", saco),
+        ):
+            _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(dia),
+                    price=precio, format_id=formato.id)
+        session.commit()
+
+    def test_la_tira_junta_todos_los_formatos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        tira = texto[texto.index('class="ph-strip-cells"') :]
+        tira = tira[: tira.index("</ul>")]
+
+        assert '<span class="ph-strip-price num">400</span>' in tira
+        assert '<span class="ph-strip-n">5 anuncios</span>' in tira
+
+    def test_la_cinta_dice_lo_mismo(self, client: TestClient, session: Session) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        cinta = texto[texto.index('class="ph-strips-ticker"') :]
+        cinta = cinta[: cinta.index("</div>")]
+
+        assert '<span class="ph-ticker-price num">400</span>' in cinta
+
+    def test_la_lista_de_productos_dice_lo_mismo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        fila = re.search(r'<span class="ph-watch-name">Arroz[\s\S]*?</a>', texto)
+
+        assert fila is not None
+        assert '<span class="ph-watch-median">400</span>' in fila.group(0)
+
+    def test_el_filtro_de_producto_sigue_acotando_la_tira(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Con un producto elegido, la tira muestra solo ese: `slopes` trae
+        todos y el filtro se aplica al armarla."""
+        self._seed(session)
+        aceite = Product(name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True)
+        session.add(aceite)
+        session.commit()
+        habana = session.query(Province).filter_by(code="hab").one()
+        fuente = _ingestion(session, hash_="h-mediana-aceite")
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(3), price="330")
+        session.commit()
+
+        todas = client.get("/?vista=tablero").text
+        solo_arroz = client.get("/?vista=tablero&productos=arroz").text
+
+        assert 'class="ph-strip-name">Aceite<' in todas
+        assert 'class="ph-strip-name">Aceite<' not in solo_arroz
+        assert 'class="ph-strip-name">Arroz<' in solo_arroz
+
+
 class TestTiraDePrecioEnLaPagina:
     """La tira de calor del tablero, de punta a punta.
 

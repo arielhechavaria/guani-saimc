@@ -11246,3 +11246,37 @@ flotante del mapa conserva su cambio por celda (formato), porque su celda es
 por formato. Sigue abierta la otra mitad de la contradicción del tablero: qué
 mediana manda entre la lista/detalle (todos los formatos por libra) y la tira
 «dónde está más barato» (por formato).
+
+
+## 2026-09-19 — La tira «dónde está más barato» usa la misma mediana que la lista (slice 4)
+Contexto: con datos de producción, la lista de productos y la tira del mismo
+tablero decían cosas distintas para el mismo producto y provincia: picadillo en
+La Habana 463 en la lista y 530 en la tira (10 anuncios contra 4), lo que
+cambiaba el mensaje —La Habana un 19% más barata que Santiago, o casi igual—.
+Causa: `build_price_strips` representaba a cada provincia con su «formato mejor
+respaldado» (la tarjeta con más anuncios), con el argumento —escrito en su
+docstring del 2026-09-17— de que «no existe un agregado producto×provincia» y
+de que promediar formatos sería inventar un estadístico. Ese agregado sí
+existe: `build_month_vs_month` lo calcula y las comparaciones entre provincias
+lo usan desde el 2026-09-14 («¿dónde está más caro? es una pregunta de
+provincia, no de formato»).
+Decisión: `build_price_strips(slopes, *, products=(), province=None)` toma de
+`build_month_vs_month` la mediana de ahora y la cantidad de anuncios de cada
+producto × provincia, con todos los formatos juntos —la misma cifra de la
+lista de productos, el detalle y el cambio de las tarjetas—. Los filtros de la
+página (producto y provincia) se aplican al armarla, porque `slopes` trae todo;
+una provincia con dato solo del período anterior no tiene celda. `PriceCell`
+pierde `format_label` (la plantilla nunca lo mostraba). El router reusa los
+mismos `slopes` que ya calculaba. Verificado contra producción: las 9 celdas de
+la tira coinciden con la lista en mediana y en anuncios.
+Descartado: (a) dejar la tira como estaba y aclarar en pantalla que compara «el
+formato mejor respaldado» —dos números para lo mismo seguiría siendo un dato
+que el visitante no puede reconciliar—; (b) cambiar la lista para que también
+elija un formato —perdería la muestra completa, y la lista es donde el
+visitante ve cuánto sostiene cada cifra.
+Consecuencia: el ancho de cada bloque de la tira (`flex-grow` = anuncios) pasa
+a reflejar la muestra completa de la provincia y no la de un solo formato, así
+que los bloques se ven más parejos entre sí en los productos con muchos
+formatos. Sigue abierta, y es del operador, la otra decisión del tablero: si
+cada fila de formato de la tabla muestra el cambio del producto (hoy) o el
+suyo propio.
