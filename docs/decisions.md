@@ -11422,3 +11422,26 @@ puesta sigue siendo el mapa. A 390 px la página pasa de 2,1 a 2,2 pantallas con
 provincia elegida, sin desborde. Sin elegir, el encabezado «Santiago de Cuba»
 de la lista sigue cortándose (2 columnas en 22 rem): elegir provincia lo evita,
 no lo arregla. Con esto el plan «tablero coherente» (S5–S8) queda completo.
+
+
+## 2026-09-19 — Corrección a S8: la cookie `provincia` solo se borra con un clic normal en «Todas»
+Contexto: la revisión de S8 (`c0c0fde`) marcó que la entrada anterior afirma
+«sin JS no hay cookie que escribir, así que no queda un estado del que no se
+pueda salir». Solo vale si la cookie nunca se escribió: una cookie escrita en
+una sesión con JS sigue ahí si después el JS falla. Además el clic en «Todas»
+la borra en el evento `click`; el clic del botón del medio dispara `auxclick` y
+Ctrl/Cmd-clic abre otra pestaña, así que en esos casos la cookie sigue y el
+tablero vuelve a enfocarse en la provincia guardada aunque el chip diga «Todas».
+Decisión: no se toca código. Queda como límite conocido: se sale con un clic
+normal en «Todas», que es lo que hace casi todo el mundo. Reemplaza en ese
+punto a la frase citada de la entrada de S8.
+Descartado: darle a «Todas» un `?provincia=todas` explícito —ganaría a la cookie
+en esa página, pero los enlaces de producto que salen de ella no llevan
+provincia y la cookie volvería a aplicarse—; el arreglo completo es que el
+servidor borre la cookie al recibir ese valor (`Set-Cookie` con `max-age=0`),
+que cambia la regla «el servidor solo lee» y pide su propia revisión.
+Consecuencia: si alguien reporta que «Todas» no suelta la provincia, la causa
+es esta y el arreglo es el del párrafo anterior. La revisión también sugirió
+asertar el contenido de la línea de las otras provincias (mediana, plural de
+«anuncio», «más barata») a nivel HTML; hoy solo se asierta la presencia y el
+nombre, y los valores se cubren en `tests/test_watchlist_view.py`.
