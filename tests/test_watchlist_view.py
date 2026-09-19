@@ -54,7 +54,7 @@ ANTERIOR = [
 ]
 
 
-def _lista(active: list[str], provincia: str = "la-habana"):
+def _lista(active: list[str], provincia: str = ""):
     slopes = build_month_vs_month(ACTUAL, ANTERIOR, window_days=30, hoy=HOY)
     return build_watchlist(
         PILOTO,
@@ -118,14 +118,14 @@ class TestSeleccion:
     def test_cada_fila_elige_un_solo_producto_y_preserva_el_resto(self) -> None:
         """A diferencia de los chips (que suman a la multi-selección), una
         fila de la lista reemplaza la selección entera."""
-        pollo = _fila(_lista(["Arroz"]), "Pollo")
+        pollo = _fila(_lista(["Arroz"], provincia="la-habana"), "Pollo")
 
         assert pollo.query == (
             "/?productos=pollo&provincia=la-habana&desde=2026-07-31&hasta=2026-08-30&vista=tablero"
         )
 
     def test_todos_quita_el_producto_y_preserva_el_resto(self) -> None:
-        assert _lista(["Arroz"]).all_query == (
+        assert _lista(["Arroz"], provincia="la-habana").all_query == (
             "/?provincia=la-habana&desde=2026-07-31&hasta=2026-08-30&vista=tablero"
         )
 
@@ -190,3 +190,56 @@ class TestMasBarata:
         )
 
         assert [c.is_cheapest for c in lista.rows[0].cells if c] == [False, False]
+
+
+class TestMiProvincia:
+    """S8 (2026-09-19): con una provincia elegida la lista se enfoca en ella —
+    una sola columna— y las demás pasan a una línea chica por fila (`otras`),
+    para que «más barata» siga teniendo con qué compararse a la vista.
+
+    Valores esperados, a mano (ver el docstring del módulo): Arroz, La Habana
+    310 y Santiago 400; Pollo solo tiene La Habana."""
+
+    def test_con_provincia_elegida_hay_una_sola_columna(self) -> None:
+        lista = _lista([], "santiago-de-cuba")
+
+        assert lista.provinces == ("Santiago de Cuba",)
+        assert all(len(r.cells) == 1 for r in lista.rows)
+
+    def test_la_celda_principal_es_la_de_la_provincia_elegida(self) -> None:
+        (celda,) = _fila(_lista([], "santiago-de-cuba"), "Arroz").cells
+
+        assert celda is not None
+        assert celda.province_name == "Santiago de Cuba"
+        assert celda.median_text == "400"
+
+    def test_las_demas_provincias_pasan_a_otras(self) -> None:
+        (otra,) = _fila(_lista([], "santiago-de-cuba"), "Arroz").otras
+
+        assert otra.province_name == "La Habana"
+        assert otra.median_text == "310"
+
+    def test_una_provincia_sin_dato_del_producto_deja_vacia_su_celda(self) -> None:
+        """Pollo solo tiene La Habana: elegida Santiago, la celda principal
+        queda vacía y La Habana se ve en `otras`. No se esconde el dato."""
+        pollo = _fila(_lista([], "santiago-de-cuba"), "Pollo")
+
+        assert pollo.cells == (None,)
+        assert [c.province_name for c in pollo.otras] == ["La Habana"]
+
+    def test_la_mas_barata_se_decide_entre_todas_no_solo_la_elegida(self) -> None:
+        arroz = _fila(_lista([], "santiago-de-cuba"), "Arroz")
+
+        assert arroz.cells[0] is not None and arroz.cells[0].is_cheapest is False
+        assert arroz.otras[0].is_cheapest is True
+
+    def test_sin_provincia_elegida_no_hay_otras(self) -> None:
+        assert all(r.otras == () for r in _lista([]).rows)
+
+    def test_una_provincia_que_no_es_columna_deja_la_lista_completa(self) -> None:
+        """Un slug válido pero sin dato piloto (o basura, o una cookie
+        vieja) no vacía la lista: se ven todas las columnas."""
+        lista = _lista([], "camaguey")
+
+        assert lista.provinces == ("La Habana", "Santiago de Cuba")
+        assert all(r.otras == () for r in lista.rows)

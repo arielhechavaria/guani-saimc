@@ -663,8 +663,16 @@ def public_home(
     completo —Leaflet, tiles— y recién después un redirect en el cliente
     mandaría al tablero. Dos cargas, la más pesada primero, exactamente en
     contra de por qué existe el tablero (aliviar la conexión lenta). La
-    cookie deja que el servidor elija la plantilla correcta de entrada."""
+    cookie deja que el servidor elija la plantilla correcta de entrada.
+
+    `provincia` sigue la misma regla (S8, 2026-09-19), solo en el tablero:
+    `?provincia=` explícito manda; sin él, la cookie `provincia` que escribe el
+    clic en un chip de «¿En qué provincia estás?». El mapa no la lee —su
+    encuadre no cambia por una preferencia que nadie le pidió—, y un valor
+    de cookie que no sea provincia se ignora en `resolve_province`."""
     vista_efectiva = vista if vista is not None else request.cookies.get("vista")
+    if provincia is None and vista_efectiva == "tablero":
+        provincia = request.cookies.get("provincia")
     return _render_home(
         request,
         db,

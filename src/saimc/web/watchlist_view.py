@@ -54,6 +54,10 @@ class WatchRow:
     cells: tuple[WatchCell | None, ...]
     query: str
     is_active: bool
+    #: Con una provincia elegida (S8), las celdas de las demás provincias que
+    #: sí tienen dato, para verlas en chico junto a la principal. Vacío sin
+    #: provincia elegida: ahí todas son columnas.
+    otras: tuple[WatchCell, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -99,10 +103,16 @@ def build_watchlist(
     provincia de `provinces`.
 
     `selected_province` es el slug de la provincia elegida (o vacío): las
-    queries la preservan, igual que el rango de calendario. Una URL heredada
+    queries la preservan, igual que el rango de calendario. Si coincide con
+    una de `provinces`, la lista se enfoca en ella (S8): una sola columna, y
+    las demás pasan a `WatchRow.otras`; «más barata» se sigue decidiendo entre
+    todas. Si no coincide (una provincia sin dato piloto, una cookie vieja),
+    no hay foco y se ven todas las columnas. Una URL heredada
     con varios productos (`?productos=arroz,pollo`) marca todos los activos;
     la lista en sí nunca arma una multi-selección nueva."""
     activos = set(active_products)
+    foco = next((p for p in provinces if selected_province and product_slug(p) == selected_province), None)
+    columnas = (foco,) if foco else tuple(provinces)
 
     def query(slugs: list[str]) -> str:
         return products_query(
@@ -133,13 +143,14 @@ def build_watchlist(
                 icon=product_icon(name),
                 currency=chart.currency if chart else "",
                 unit=chart.unit if chart else "",
-                cells=tuple(por_provincia.get(p) for p in provinces),
+                cells=tuple(por_provincia.get(p) for p in columnas),
                 query=query([slug]),
                 is_active=name in activos,
+                otras=tuple(por_provincia[p] for p in provinces if foco and p != foco and p in por_provincia),
             )
         )
     return Watchlist(
-        provinces=tuple(provinces),
+        provinces=columnas,
         rows=tuple(rows),
         all_query=query([]),
         all_is_active=not activos,

@@ -106,6 +106,13 @@
   .ph-watch-cheapest { margin-top: .15rem; padding: 1px .5rem; border-radius: 100px; font-size: .68rem; font-weight: 500;
                        background: var(--ph-accent-wash); color: var(--ph-accent); white-space: nowrap; }
   .ph-watch-none { color: var(--m3-on-surface-variant); }
+  /* Con una provincia elegida las demás van en chico bajo la fila, ocupando
+     todo el ancho de la grilla: sin ellas, «más barata» no tendría contra qué
+     compararse a la vista. */
+  .ph-watch-otras { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0 var(--m3-space-3);
+                    font-size: .72rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
+  .ph-watch-filtro { display: flex; flex-direction: column; gap: var(--m3-space-2); }
+  .ph-watch-filtro .ph-dash-filters { margin-bottom: 0; }
 
   .ph-cov-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--m3-space-2); }
   .ph-cov-stats > div { display: flex; flex-direction: column; gap: .1rem; }
@@ -137,7 +144,6 @@
   .ph-dash-detail .ph-calendario { max-width: 12rem; }
 
   .ph-dash-head { display: flex; flex-direction: column; gap: var(--m3-space-3); margin-bottom: var(--m3-space-5); }
-  .ph-dash-head .ph-dash-filters { margin-bottom: 0; }
 
   /* Índice de salto + secciones colapsables + borde de color (Dirección D,
      agrupar el tablero, 2026-09-16): `<details>` nativo en vez de
@@ -335,6 +341,20 @@
 <section class="ph-dash-panel ph-dash-watch" aria-labelledby="lista-titulo">
   <h2 class="ph-dash-panel-title" id="lista-titulo">Productos</h2>
   <p class="ph-dash-panel-sub">Mediana de los últimos {{ window_days }} días y su cambio contra los {{ window_days }} anteriores.</p>
+  {# «Mi provincia» (S8, 2026-09-19): el único selector de provincia de la
+     página, arriba de lo que enfoca. Sigue en el panel aunque el filtro deje
+     cero resultados: es el modo de deshacerlo. `data-provincia` lo lee el
+     script de `_vista_cookie_script.html` para recordar la elección. #}
+  {% if province_nav | length > 1 %}
+  <div class="ph-watch-filtro">
+    <p class="ph-dash-panel-sub" id="mi-provincia-etiqueta">¿En qué provincia estás?</p>
+    <div class="ph-dash-filters" role="group" aria-labelledby="mi-provincia-etiqueta">
+      {% for choice in province_nav %}
+      <a class="ph-dash-chip ph-tap-44{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" data-provincia="{{ choice.slug }}" aria-pressed="{{ 'true' if choice.is_selected else 'false' }}">{{ choice.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   <div class="ph-watch" style="--cols: {{ watchlist.provinces | length }}">
     {% if watchlist.provinces %}
     <div class="ph-watch-head" aria-hidden="true">
@@ -363,6 +383,13 @@
         {%- endif %}
       </span>
       {% endfor %}
+      {% if row.otras %}
+      <span class="ph-watch-otras">
+        {%- for otra in row.otras %}
+        <span>{{ otra.province_name }}: {{ otra.median_text }} · {{ otra.count }} anuncio{{ "s" if otra.count != 1 }}{% if otra.is_cheapest %} · más barata{% endif %}</span>
+        {%- endfor %}
+      </span>
+      {% endif %}
     </a>
     {% endfor %}
   </div>
@@ -414,13 +441,6 @@
 
 <div class="ph-dash-head">
   <h1 class="ph-dash-title">{% if active_products %}{{ active_products | join(", ") }}{% else %}Todos los productos{% endif %}</h1>
-  {% if province_nav | length > 1 %}
-  <div class="ph-dash-filters" role="group" aria-label="Provincia">
-    {% for choice in province_nav %}
-    <a class="ph-dash-chip ph-tap-44{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}" aria-pressed="{{ 'true' if choice.is_selected else 'false' }}">{{ choice.label }}</a>
-    {% endfor %}
-  </div>
-  {% endif %}
 </div>
 
 {% if cards_by_province %}

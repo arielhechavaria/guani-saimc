@@ -2713,7 +2713,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
-        filtros = texto[texto.index('class="ph-dash-head"') :]
+        filtros = texto[texto.index('id="lista-titulo"') :]
 
         assert re.search(
             r'class="ph-dash-chip ph-tap-44 is-active"[^>]*>[\s\S]*?Santiago de Cuba', filtros
@@ -2831,6 +2831,131 @@ class TestAccionesYCoberturaEnElTablero:
         texto = client.get("/").text
 
         assert "ph-dash-actions" not in texto
+
+
+class TestMiProvinciaEnElTablero:
+    """S8 (2026-09-19): «¿En qué provincia estás?» arriba de la lista, y el
+    tablero recuerda la elección. `?provincia=` explícito manda siempre; sin
+    él, en el tablero, cae a la cookie `provincia` que escribe el clic en un
+    chip. En el mapa la cookie no se lee: el mapa no cambia."""
+
+    def _seed(self, session: Session) -> None:
+        """Arroz en Habana (2 días) y Santiago (1); Aceite solo en Habana."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        aceite = Product(name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, aceite, habana, santiago])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-mi-provincia")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(6))
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(3), price="330")
+        _precio(session, product=arroz, province=santiago, source=fuente, dia=_hace(4), price="410")
+        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(5))
+        session.commit()
+
+    def _lista(self, texto: str) -> str:
+        return texto[texto.index('id="lista-titulo"') : texto.index('id="datos-titulo"')]
+
+    def test_el_selector_esta_arriba_de_la_lista(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+        arriba = texto[texto.index('id="lista-titulo"') : texto.index('<div class="ph-watch"')]
+
+        assert "¿En qué provincia estás?" in arriba
+        assert 'data-provincia="la-habana"' in arriba
+        assert 'data-provincia="santiago-de-cuba"' in arriba
+        assert 'data-provincia=""' in arriba  # «Todas»
+
+    def test_el_encabezado_ya_no_repite_los_chips_de_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'aria-label="Provincia"' not in texto
+        assert texto.count('data-provincia="santiago-de-cuba"') == 1
+
+    def test_con_provincia_la_lista_se_enfoca_y_las_otras_van_en_chico(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        lista = self._lista(client.get("/?vista=tablero&provincia=santiago-de-cuba").text)
+
+        assert lista.count('class="ph-watch-prov ') == 1
+        assert '<span class="ph-watch-prov-name">Santiago de Cuba</span>' in lista
+        assert re.search(r'class="ph-watch-otras">[\s\S]*?La Habana:', lista)
+
+    def test_sin_provincia_no_hay_lineas_de_otras(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        lista = self._lista(client.get("/?vista=tablero").text)
+
+        assert lista.count('class="ph-watch-prov ') == 2
+        assert "ph-watch-otras" not in lista
+
+    def test_la_cookie_provincia_enfoca_el_tablero_sin_query_string(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+        client.cookies.set("provincia", "santiago-de-cuba")
+
+        lista = self._lista(client.get("/?vista=tablero").text)
+
+        assert lista.count('class="ph-watch-prov ') == 1
+        assert "ph-watch-otras" in lista
+
+    def test_el_query_string_explicito_gana_a_la_cookie(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+        client.cookies.set("provincia", "santiago-de-cuba")
+
+        lista = self._lista(client.get("/?vista=tablero&provincia=la-habana").text)
+
+        assert '<span class="ph-watch-prov-name">La Habana</span>' in lista
+        assert '<span class="ph-watch-prov-name">Santiago de Cuba</span>' not in lista
+
+    def test_una_cookie_invalida_no_vacia_ni_rompe_el_tablero(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+        client.cookies.set("provincia", "narnia")
+
+        r = client.get("/?vista=tablero")
+
+        assert r.status_code == 200
+        assert self._lista(r.text).count('class="ph-watch-prov ') == 2
+
+    def test_la_cookie_no_toca_el_mapa(self, client: TestClient, session: Session) -> None:
+        self._seed(session)
+        sin_cookie = client.get("/?vista=mapa").text
+        client.cookies.set("provincia", "santiago-de-cuba")
+
+        con_cookie = client.get("/?vista=mapa").text
+
+        assert con_cookie == sin_cookie
+
+    def test_el_clic_en_un_chip_escribe_o_borra_la_cookie(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El servidor solo lee la cookie; la escribe el clic, como la de
+        `vista`: recordar lo que el usuario eligió, no lo que abrió por un
+        enlace ajeno."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert "a[data-provincia]" in texto
+        assert 'document.cookie = "provincia="' in texto
+        assert "max-age=0" in texto
 
 
 class TestSobreLosDatosEnElTablero:

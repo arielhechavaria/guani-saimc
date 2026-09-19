@@ -11,6 +11,12 @@
   navegación —el enlace sigue siendo un `<a href>` normal, funciona igual
   sin JS—, solo escribe la cookie antes de que el navegador siga el link.
 
+  Lo mismo con la provincia (S8, 2026-09-19): cada chip de «¿En qué provincia
+  estás?» lleva `data-provincia="<slug>"` (vacío en «Todas»). El clic escribe
+  la cookie `provincia`, o la borra si es «Todas», y el servidor la lee solo
+  en el tablero. Se escribe al clic y no al abrir `?provincia=`: se recuerda
+  lo que el usuario eligió, no lo que abrió por un enlace ajeno.
+
   Va en `_public_shell.html`, no en cada plantilla: las dos la extienden.
 #}
 <script>
@@ -23,6 +29,22 @@
           document.cookie = "vista=" + destino + ";path=/;max-age=31536000;samesite=lax";
         } catch (e) {
           /* sin cookies (privado/bloqueado): el enlace igual navega, solo no queda recordado */
+        }
+      });
+    });
+
+    var chips = document.querySelectorAll("a[data-provincia]");
+    Array.prototype.forEach.call(chips, function (chip) {
+      chip.addEventListener("click", function () {
+        var slug = chip.dataset.provincia;
+        try {
+          if (slug) {
+            document.cookie = "provincia=" + slug + ";path=/;max-age=31536000;samesite=lax";
+          } else {
+            document.cookie = "provincia=;path=/;max-age=0;samesite=lax";
+          }
+        } catch (e) {
+          /* sin cookies: el enlace igual navega, solo no queda recordado */
         }
       });
     });

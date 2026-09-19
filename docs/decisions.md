@@ -11383,3 +11383,42 @@ que el panel anterior), sin desborde a 390 ni a 1280; la descarga mide 201×44 p
 El CSV queda al final de la página en el teléfono: si se echa de menos arriba,
 es un cambio de una línea en la cabecera. Sigue S8 («Mi provincia» que se
 recuerda).
+
+
+## 2026-09-19 — Tablero: «Mi provincia», un selector arriba de la lista que se recuerda (S8)
+Contexto: última entrega del plan «una cifra, un lugar» (dirección E). El
+selector de provincia vivía junto al título del detalle, después de la lista en
+un teléfono, y solo filtraba el detalle: la lista seguía mostrando todas las
+provincias en columnas (la de «Santiago de Cuba» se corta con «…» a 390 px) y
+quien vuelve cada día tenía que volver a elegir la suya.
+Decisión: (1) Un solo selector, «¿En qué provincia estás?», arriba de la lista
+—se quita el de junto al título—, con «Todas» y las provincias con dato piloto.
+Sigue a la vista aunque el filtro deje cero resultados, que es como se deshace.
+(2) Con una provincia elegida la lista se enfoca: una sola columna con esa
+provincia, y las demás pasan a una línea chica bajo cada fila («La Habana: 298 ·
+40 anuncios · más barata»), como en el prototipo E. «Más barata» se sigue
+decidiendo entre todas las provincias con dato: sin la línea chica, la etiqueta
+no tendría contra qué compararse a la vista. Si el slug no es una columna (una
+provincia sin dato piloto, una cookie vieja) no hay foco y se ven todas.
+(3) Se recuerda con la cookie `provincia` (un año, `SameSite=Lax`, misma forma
+que `vista`), con esta regla: `?provincia=` explícito manda; sin él, **solo en
+el tablero**, el servidor lee la cookie; un valor que no sea provincia se
+ignora. El mapa no la lee, así que no cambia. (4) La cookie la escribe el clic
+en un chip (JS, `a[data-provincia]`), y «Todas» la borra. No se escribe al abrir
+un `?provincia=` de un enlace ajeno: se recuerda lo que el usuario eligió, no lo
+que le mandaron. Sin JS no hay cookie que escribir, así que no queda un estado
+del que no se pueda salir.
+Descartado: (a) escribir la cookie desde el servidor cuando llega `?provincia=`
+—un enlace compartido le cambiaría la provincia por defecto al que lo abre—;
+(b) dejar las columnas de todas las provincias y solo resaltar la elegida —no
+arregla el encabezado cortado ni acorta la lista en el teléfono—; (c) mostrar
+solo la provincia elegida sin las otras —«más barata» quedaría sin sustento a la
+vista—; (d) leer la cookie también en el mapa —cambiaría su encuadre por una
+preferencia que nadie pidió allí.
+Consecuencia: medido con Chromium contra datos reales, el clic en «Santiago de
+Cuba» escribe la cookie y `/?vista=tablero` sin query vuelve enfocado en ella;
+`?provincia=la-habana` explícito gana; «Todas» la borra; el mapa con la cookie
+puesta sigue siendo el mapa. A 390 px la página pasa de 2,1 a 2,2 pantallas con
+provincia elegida, sin desborde. Sin elegir, el encabezado «Santiago de Cuba»
+de la lista sigue cortándose (2 columnas en 22 rem): elegir provincia lo evita,
+no lo arregla. Con esto el plan «tablero coherente» (S5–S8) queda completo.
