@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from saimc.web.price_charts import SlopeChart
+from saimc.web.price_charts import SlopeChart, SlopeLine
 from saimc.web.product_nav import product_icon, product_slug, products_query
 
 
@@ -34,6 +34,10 @@ class WatchCell:
     #: anterior: sin contra qué comparar, no se muestra ningún cambio.
     change_text: str
     previous_count: int
+    #: La de mediana más baja entre las provincias con dato del producto. Solo
+    #: hay una si se puede comparar (dos o más provincias) y sin empate. Es lo
+    #: que antes contestaba la tira «dónde está más barato».
+    is_cheapest: bool = False
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,17 @@ def _chart_for(product: str, slopes: Sequence[SlopeChart]) -> SlopeChart | None:
     return max(propios, key=lambda s: sum(line.now_count for line in s.lines))
 
 
+def _mas_barata(lines: Sequence[SlopeLine]) -> str | None:
+    """La provincia de mediana más baja, o `None` si no hay con qué comparar
+    (menos de dos provincias con dato) o si la más baja está empatada."""
+    if len(lines) < 2:
+        return None
+    medianas = sorted((line.now_median, line.province_name) for line in lines)
+    if medianas[0][0] == medianas[1][0]:
+        return None
+    return medianas[0][1]
+
+
 def build_watchlist(
     pilot_names: Sequence[str],
     active_products: Sequence[str],
@@ -99,15 +114,16 @@ def build_watchlist(
         chart = _chart_for(name, slopes)
         por_provincia = {}
         if chart is not None:
-            for line in chart.lines:
-                if line.now_median is None:
-                    continue
+            con_dato = [line for line in chart.lines if line.now_median is not None]
+            barata = _mas_barata(con_dato)
+            for line in con_dato:
                 por_provincia[line.province_name] = WatchCell(
                     province_name=line.province_name,
                     median_text=line.now_text,
                     count=line.now_count,
                     change_text=line.change_text,
                     previous_count=line.before_count,
+                    is_cheapest=line.province_name == barata,
                 )
         slug = product_slug(name)
         rows.append(

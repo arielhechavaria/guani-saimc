@@ -40,7 +40,7 @@ sin tener que abrir el panel flotante.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING
@@ -217,139 +217,6 @@ def group_cards_by_province(
     return [
         (name, por_provincia[name]) for name in province_names if name in por_provincia
     ]
-
-
-#: Con menos de tres provincias un degradado miente: pintar dos puntos de
-#: punta a punta hace ver una diferencia del 6% como si fuera el rango entero
-#: del país. NO es un umbral de publicación de §12.6 —no decide qué se
-#: muestra, las dos celdas se muestran igual— sino cuándo una escala dice algo
-#: más que el orden. Con dos puntos, el orden ya está en la posición.
-_MINIMO_PARA_DEGRADADO = 3
-
-
-@dataclass(frozen=True)
-class PriceCell:
-    """Una provincia dentro de la tira de un producto."""
-
-    province_name: str
-    unit_price: Decimal
-    count: int
-    #: Posición en la escala, 0 la más barata y 100 la más cara, o `None`
-    #: cuando la tira no pinta degradado.
-    pct: int | None
-
-    @property
-    def price_text(self) -> str:
-        return format_price(self.unit_price)
-
-    @property
-    def slug(self) -> str:
-        return product_slug(self.province_name)
-
-
-@dataclass(frozen=True)
-class ProductStrip:
-    """Un producto y sus provincias, de la más barata a la más cara.
-
-    Compara con el **precio por unidad**, que es exactamente el rol que le da
-    la decisión del 2026-09-04: «el precio por unidad base al lado como
-    comparador». El titular de compra sigue siendo el precio del envase, en la
-    tarjeta; acá se contesta otra pregunta —dónde conviene— y para esa la
-    unidad canónica es la única cifra comparable entre provincias.
-
-    **No calcula ninguna cifra propia.** Cada celda es la mediana por unidad
-    del producto en esa provincia, con todos sus formatos juntos, tal como la
-    calcula `price_charts.build_month_vs_month` —la misma que ven la lista de
-    productos, el detalle y el cambio de las tarjetas—. Hasta el 2026-09-18
-    cada provincia quedaba representada por su «formato mejor respaldado»
-    porque «no existe un agregado producto×provincia»; existe, ya lo usan las
-    comparaciones entre provincias desde el 2026-09-14, y esa elección hacía
-    que el mismo producto dijera 463 en la lista y 530 en la tira.
-    """
-
-    product_name: str
-    currency: str
-    unit: str
-    cells: tuple[PriceCell, ...]
-
-    @property
-    def count(self) -> int:
-        return sum(c.count for c in self.cells)
-
-    @property
-    def has_gradient(self) -> bool:
-        return any(c.pct is not None for c in self.cells)
-
-    @property
-    def slug(self) -> str:
-        return product_slug(self.product_name)
-
-    @property
-    def icon(self) -> str | None:
-        return product_icon(self.product_name)
-
-
-def build_price_strips(
-    slopes: Sequence[SlopeChart],
-    *,
-    products: Collection[str] = (),
-    province: str | None = None,
-) -> list[ProductStrip]:
-    """Una tira por producto, con sus provincias ordenadas por precio.
-
-    Las cifras salen de `slopes` (`build_month_vs_month`): la mediana de
-    ahora de cada provincia y cuántos anuncios la sostienen. `products` y
-    `province` son los filtros de la página —vacío y `None` son «todos»— y se
-    aplican acá, porque `slopes` trae todos los productos y provincias. Una
-    provincia sin anuncios en la ventana (solo dato del período anterior) no
-    tiene celda: no hay precio de ahora que mostrar.
-
-    El color de cada celda lo pinta la plantilla a partir de `pct`, sobre una
-    escala continua de un solo tono: no hay bandas ni semáforo, así que no
-    hace falta ningún umbral de los que §12.6 prohíbe inventar. Lo que dice la
-    escala es la posición relativa entre lo observado, y el número y la
-    muestra van escritos en cada celda, nunca sólo el color.
-    """
-    tiras: list[ProductStrip] = []
-    for chart in slopes:
-        if products and chart.product_name not in products:
-            continue
-        miembros = sorted(
-            (
-                (line.province_name, line.now_median, line.now_count)
-                for line in chart.lines
-                if line.now_median is not None
-                and (province is None or line.province_name == province)
-            ),
-            key=lambda m: (m[1], m[0]),
-        )
-        if not miembros:
-            continue
-        precios = [m[1] for m in miembros]
-        piso, techo = min(precios), max(precios)
-        degrada = len(miembros) >= _MINIMO_PARA_DEGRADADO and techo > piso
-
-        celdas = tuple(
-            PriceCell(
-                province_name=nombre,
-                unit_price=precio,
-                count=cuenta,
-                # `round()` sobre un Decimal sin decimales ya devuelve int.
-                pct=round((precio - piso) / (techo - piso) * 100) if degrada else None,
-            )
-            for nombre, precio, cuenta in miembros
-        )
-        tiras.append(
-            ProductStrip(
-                product_name=chart.product_name,
-                currency=chart.currency,
-                unit=chart.unit,
-                cells=celdas,
-            )
-        )
-
-    tiras.sort(key=lambda t: (-t.count, t.product_name))
-    return tiras
 
 
 #: Slots de color con nombre propio en `design_tokens.css`

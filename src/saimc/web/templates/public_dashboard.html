@@ -77,7 +77,7 @@
      muchas más, cada celda se achica — se revisa cuando haya más de tres,
      igual que los colores de provincia (2026-09-18). */
   .ph-watch { display: flex; flex-direction: column; gap: 2px; }
-  .ph-watch-head, .ph-watch-row { display: grid; gap: var(--m3-space-2); align-items: center;
+  .ph-watch-head, .ph-watch-row { display: grid; gap: var(--m3-space-2); align-items: start;
                                   grid-template-columns: minmax(0, 1.25fr) repeat(var(--cols, 1), minmax(0, 1fr)); }
   .ph-watch-head { padding: 0 var(--m3-space-3) var(--m3-space-1); font-size: .7rem; color: var(--m3-on-surface-variant); }
   /* El punto no se achica y el nombre se corta con «…»: con el recorte en
@@ -96,6 +96,11 @@
   .ph-watch-cell { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
   .ph-watch-median { font-weight: 500; font-variant-numeric: tabular-nums; }
   .ph-watch-change { font-size: .72rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
+  .ph-watch-n { font-size: .72rem; color: var(--m3-on-surface-variant); font-variant-numeric: tabular-nums; }
+  /* «más barata» absorbe a la tira «dónde está más barato» (2026-09-19): texto sobre un fondo
+     suave, nunca solo color, y sin ser semáforo —dice cuál es la menor, no si «está bien»—. */
+  .ph-watch-cheapest { margin-top: .15rem; padding: 1px .5rem; border-radius: 100px; font-size: .68rem; font-weight: 500;
+                       background: var(--ph-accent-wash); color: var(--ph-accent); white-space: nowrap; }
   .ph-watch-none { color: var(--m3-on-surface-variant); }
 
   .ph-cov-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--m3-space-2); }
@@ -201,15 +206,6 @@
   .ph-dash-chip.is-active { background: var(--ph-accent-wash); color: var(--ph-accent); }
   .ph-dash-chip-icon { font-size: 1rem; }
 
-  /* Búsqueda instantánea (2026-09-16, mismo pedido: "en todo momento
-     poder aplicar... búsquedas sobre... las cards"): del lado del
-     cliente, mismo patrón que ya usa `/docs` (`docs_index.html`) — sobre
-     tarjetas ya renderizadas, sin ida y vuelta al servidor. Sin JS la
-     caja no hace nada y el tablero completo sigue visible, la
-     degradación correcta. `.ph-input` (saimc-public.css), no `.m3-input`
-     —esa es de la hoja del operador—. */
-  .ph-dash-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--m3-space-4); margin-bottom: var(--m3-space-5); }
-  .ph-dash-search { flex: 1 1 260px; max-width: 420px; margin-bottom: 0; }
 
   /* Modo tabla (2026-09-17, mismo pedido que la búsqueda: "posibilidad de
      cambiar de presentación a tabla"): mismos datos que las tarjetas, sin
@@ -224,110 +220,10 @@
                        color: var(--m3-on-surface-variant); border-bottom: 1px solid var(--m3-divider); }
   .ph-dash-table td { border-bottom: 1px solid var(--m3-divider); }
   .ph-dash-table tbody tr:last-child td { border-bottom: none; }
-  .ph-dash-table tbody tr[hidden] { display: none; }
   .ph-dash-table-prov { display: inline-flex; align-items: center; gap: .45rem; }
   .ph-dash-table-producto { color: var(--m3-on-surface); text-decoration: none; font-weight: 500; }
   .ph-dash-table-producto:hover { text-decoration: underline; }
   .ph-dash-table-sample { color: var(--m3-on-surface-variant); }
-
-  /* Tira de precio (2026-09-17): ver `_price_strips.html` para qué se
-     desbloqueó y qué sigue bloqueado.
-
-     Mobile first: las celdas son una grilla fluida con un mínimo de 8.5rem,
-     así que en un teléfono entran dos por fila y se acomodan solas a más
-     cuando hay ancho. Cada celda es un enlace de 44px de alto mínimo — el
-     blanco táctil que la auditoría del 2026-09-17 encontró que faltaba en
-     todas partes.
-
-     Segunda vuelta (2026-09-18): el operador comparó contra el artboard
-     `Apilado` que había aprobado en Claude Design y no se parecía — ahí la
-     idea central era que el ANCHO de cada bloque fuera la evidencia
-     (cuántos anuncios lo sostienen), y la primera versión de acá había
-     quedado en una grilla pareja, sin esa lectura. Se corrige sin volver al
-     texto sobre degradado del mockup (medido en su momento: el medio de
-     cualquier degradado secuencial no llega a 4.5:1 ni con tinta ni con
-     blanco) — la tarjeta blanca con la barrita de color se queda, lo que
-     cambia es que ahora el ANCHO de la tarjeta, no solo el color, lleva el
-     dato: `flex-grow` proporcional a `cell.count`.
-
-     Por qué así y no un ancho en píxeles calculado en Python: con
-     `flex-grow: N; flex-basis: 0; min-width: 8.5rem` el propio algoritmo de
-     flexbox reparte el espacio sobrante proporcional al conteo cuando hay
-     lugar de sobra (escritorio) y lo aplasta contra el mínimo cuando no
-     (teléfono) — exactamente la degradación mobile-first que el prototipo
-     resolvía a mano con una función de redistribución iterativa, gratis, sin
-     un corte de ancho nuevo. */
-  .ph-strips { margin-bottom: var(--m3-space-8); }
-  .ph-strips-title { margin: 0 0 var(--m3-space-1); font-family: var(--ph-font-heading); font-weight: 400;
-                     font-size: clamp(1.5rem, 1.15rem + 1.4vw, 1.9375rem); color: var(--m3-on-surface); }
-  .ph-strips-hint { margin: 0 0 var(--m3-space-4); font-size: .85rem; line-height: 1.5;
-                    color: var(--m3-on-surface-variant); max-width: 62ch; text-wrap: pretty; }
-
-  /* La cinta: un vistazo de todos los productos antes de entrar producto por
-     producto, mismo espíritu que la del artboard aprobado —ahí era una
-     barra oscura a todo el ancho; acá se queda en el tono claro de la
-     página, conteniendo el cambio al bloque de la tira en vez de repintar
-     el cromo de toda la vista, que es alcance de otro slice—. Muestra el
-     precio más barato de cada producto: no es un agregado nuevo, es
-     `tira.cells[0]`, la misma celda que ya se pinta abajo. */
-  .ph-strips-ticker { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: var(--m3-space-6);
-                      border-radius: var(--m3-radius-sm); background: var(--m3-surface-container);
-                      overflow: hidden; }
-  .ph-ticker-item { display: flex; align-items: baseline; gap: .4rem; min-height: 44px;
-                    padding: var(--m3-space-2) var(--m3-space-4); flex: 1 1 auto; white-space: nowrap;
-                    border-right: 1px solid var(--m3-divider); color: var(--m3-on-surface);
-                    text-decoration: none; }
-  .ph-ticker-item:last-child { border-right: none; }
-  .ph-ticker-item:hover { text-decoration: none; background: var(--m3-surface-hover); }
-  .ph-ticker-label { font-size: .75rem; color: var(--m3-on-surface-variant); }
-  .ph-ticker-price { font-weight: 500; font-variant-numeric: tabular-nums; }
-  .ph-ticker-unit { font-size: .72rem; color: var(--m3-on-surface-variant); }
-  .ph-ticker-prov { font-size: .72rem; color: var(--m3-on-surface-variant); }
-
-  .ph-strip { margin-bottom: var(--m3-space-6); }
-  .ph-strip-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--m3-space-2);
-                   margin-bottom: var(--m3-space-2); }
-  .ph-strip-icon { font-size: 1.1rem; color: var(--ph-accent); }
-  .ph-strip-name { font-family: var(--ph-font-heading); font-size: 1.05rem; }
-  .ph-strip-unit, .ph-strip-flat { font-size: .78rem; color: var(--m3-on-surface-variant); }
-
-  /* `flex-wrap: wrap` es la red de seguridad, no el plan: con 2 o 3
-     provincias (el caso real hoy) todo entra en una fila y el ancho
-     proporcional se lee de punta a punta. Con más provincias de las que
-     entren a 8.5rem cada una, la fila se corta — sigue siendo legible por
-     fila, deja de serlo de punta a punta, que es la misma renuncia que ya
-     hace el propio prototipo con 16 provincias. */
-  .ph-strip-cells { list-style: none; margin: 0; padding: 0;
-                    display: flex; flex-wrap: wrap; gap: var(--m3-space-2); }
-  /* El `<li>` es el item flex de verdad (hijo directo de `<ul>`): el
-     `flex-grow`/`min-width` proporcionales al conteo van ahí, escritos
-     inline por celda. El `<a>` adentro solo se estira a llenarlo. */
-  .ph-strip-cells > li { display: flex; }
-  .ph-strip-cell { display: flex; flex-direction: column; gap: .15rem; min-height: 44px;
-                   flex: 1 1 auto; width: 100%;
-                   padding: var(--m3-space-2) var(--m3-space-3) var(--m3-space-3);
-                   border-radius: var(--m3-radius-sm); background: var(--m3-surface);
-                   color: var(--m3-on-surface); text-decoration: none; }
-  .ph-strip-cell:hover { text-decoration: none; box-shadow: var(--m3-elev-1); }
-  /* La barra es lo único que lleva el color de la escala: `--nivel` lo
-     escribe la plantilla por celda (0% la más barata, 100% la más cara). Más
-     alta que la primera vuelta (6px → 10px): con el ancho ahora proporcional
-     a la evidencia, la barra hace doble trabajo —color y forma— y necesita
-     más presencia visual para leerse como el protagonista del bloque. */
-  .ph-strip-bar { display: block; height: 10px; border-radius: var(--m3-radius-xs);
-                  margin-bottom: var(--m3-space-2);
-                  background: color-mix(in srgb, var(--ph-price-high) var(--nivel, 0%), var(--ph-price-low)); }
-  .ph-strip-bar.is-flat { background: var(--m3-surface-container-high); }
-  .ph-strip-prov { font-size: .8rem; color: var(--m3-on-surface-variant); white-space: nowrap;
-                   overflow: hidden; text-overflow: ellipsis; }
-  .ph-strip-price { font-size: 1.15rem; font-weight: 500; letter-spacing: -.01em; }
-  .ph-strip-n { font-size: .72rem; color: var(--m3-on-surface-variant); }
-
-  .ph-strips-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--m3-space-2);
-                      margin: 0; font-size: .75rem; line-height: 1.5; color: var(--m3-on-surface-variant);
-                      max-width: 70ch; text-wrap: pretty; }
-  .ph-strips-ramp { display: inline-block; width: 5rem; height: 8px; border-radius: var(--m3-radius-xs);
-                    background: linear-gradient(90deg, var(--ph-price-low), var(--ph-price-high)); }
 
   /* Tarjeta agrupada por producto (2026-09-17): los formatos dejan de ser
      una tarjeta cada uno y pasan a ser filas adentro de la del producto.
@@ -412,7 +308,7 @@
 {% if watchlist %}
 <section class="ph-dash-panel ph-dash-watch" aria-labelledby="lista-titulo">
   <h2 class="ph-dash-panel-title" id="lista-titulo">Productos</h2>
-  <p class="ph-dash-panel-sub">Mediana de los últimos {{ window_days }} días y su cambio contra los {{ window_days }} anteriores. Sin flecha ni color: una baja es buena para quien compra y mala para quien vende. «—» bajo la mediana: no hubo anuncios en el período anterior.</p>
+  <p class="ph-dash-panel-sub">Mediana de los últimos {{ window_days }} días y su cambio contra los {{ window_days }} anteriores. Sin flecha ni color: una baja es buena para quien compra y mala para quien vende. «(base N)» son los anuncios del mes anterior con los que se compara; «—», que no hubo ninguno.</p>
   <div class="ph-watch" style="--cols: {{ watchlist.provinces | length }}">
     {% if watchlist.provinces %}
     <div class="ph-watch-head" aria-hidden="true">
@@ -433,7 +329,9 @@
         {%- if cell %}
         <span class="visually-hidden">{{ cell.province_name }}:</span>
         <span class="ph-watch-median">{{ cell.median_text }}</span>
-        <span class="ph-watch-change">{{ cell.change_text or "—" }}</span>
+        <span class="ph-watch-change">{% if cell.change_text %}{{ cell.change_text }} (base {{ cell.previous_count }}){% else %}—{% endif %}</span>
+        <span class="ph-watch-n">{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}</span>
+        {% if cell.is_cheapest %}<span class="ph-watch-cheapest">más barata</span>{% endif %}
         {%- else %}
         <span class="ph-watch-none">—</span>
         {%- endif %}
@@ -491,22 +389,6 @@
 </div>
 
 {% if cards_by_province %}
-<div class="ph-dash-toolbar">
-  <div class="ph-dash-search">
-    <label class="visually-hidden" for="tablero-q">Buscar producto o provincia</label>
-    <input id="tablero-q" class="ph-input" type="search"
-           placeholder="Buscar producto o provincia…" autocomplete="off" />
-  </div>
-</div>
-{% endif %}
-
-{% if cards_by_province %}
-
-{# La tira va antes de las dos presentaciones: es el vistazo de arriba, y
-   contesta «dónde conviene» sin obligar a leer una tarjeta ni una fila.
-   Misma idea apilada que se prototipó: primero el dibujo, después el
-   detalle, sin un modo más que aprender. #}
-{% include "_price_strips.html" %}
 
 {# Detalle del producto elegido (dirección C, slice 2, 2026-09-18): lo que
    en el mapa son las ventanas «Precios» y «Cómo se movió», acá en el cuerpo
@@ -635,13 +517,12 @@
         <th>Precio</th>
         <th>Mediana</th>
         <th>Muestra</th>
-        <th>Cambio</th>
       </tr>
     </thead>
     <tbody>
       {% for province_name, province_cards in cards_by_province %}
       {% for card in province_cards %}
-      <tr data-buscar="{{ (card.product_name ~ ' ' ~ card.province_name) | lower }}">
+      <tr>
         <td>
           <span class="ph-dash-table-prov ph-prov-{{ province_slots[province_name] }}">
             <span class="ph-dash-dot"></span>{{ province_name }}
@@ -660,7 +541,6 @@
         </td>
         <td>{% if card.is_single_observation %}—{% else %}{{ card.format_median_text or card.median_text }}{% endif %}</td>
         <td class="ph-dash-table-sample">{{ card.count }} · {{ card.state }}</td>
-        <td class="ph-dash-table-sample">{{ card.change_text or "—" }}</td>
       </tr>
       {% endfor %}
       {% endfor %}
@@ -668,9 +548,7 @@
   </table>
 </div>
 
-<p class="ph-note" id="tablero-none" hidden>Ningún producto ni provincia coincide con la búsqueda.</p>
-
-<p class="ph-note" id="tablero-nota-formacion" style="margin-top: var(--m3-space-8);">
+<p class="ph-note" style="margin-top: var(--m3-space-8);">
   Todas las celdas están en <strong>muestra en formación</strong>: todavía no hay
   suficientes anuncios para dar un precio como cifra cerrada, así que se publica
   el rango observado y cuántos anuncios lo respaldan. Ninguna cifra es una
@@ -682,55 +560,4 @@
 
 </div>{# /.ph-dash-main #}
 </div>{# /.ph-dash-layout #}
-{% endblock %}
-
-{% block scripts %}
-<script>
-  // Filtro instantáneo sobre las tarjetas ya renderizadas — mismo patrón
-  // que ya usa /docs (docs_index.html): del lado del cliente, sin ida y
-  // vuelta al servidor. Sin JS la caja no hace nada y el tablero completo
-  // sigue visible, la degradación correcta.
-  (function () {
-    var caja = document.getElementById("tablero-q");
-    if (!caja) return;
-    var vacio = document.getElementById("tablero-none");
-    var notaFormacion = document.getElementById("tablero-nota-formacion");
-    var tarjetas = Array.prototype.slice.call(document.querySelectorAll("[data-buscar]"));
-    var secciones = Array.prototype.slice.call(document.querySelectorAll(".ph-dash-section"));
-    var saltos = Array.prototype.slice.call(document.querySelectorAll(".ph-dash-jump a"));
-    // Estado con el que cada sección llegó del servidor (la primera, o la
-    // única con un filtro de provincia activo) — se restaura al vaciar la
-    // caja, en vez de dejar todo forzado a abierto para siempre.
-    secciones.forEach(function (sec) { sec.dataset.eraAbierta = sec.open ? "1" : "0"; });
-
-    caja.addEventListener("input", function () {
-      var q = caja.value.trim().toLowerCase();
-      var visibles = 0;
-      tarjetas.forEach(function (tarjeta) {
-        var coincide = !q || tarjeta.dataset.buscar.indexOf(q) !== -1;
-        tarjeta.hidden = !coincide;
-        if (coincide) visibles++;
-      });
-      // Una provincia sin coincidencias esconde también su sección; la que
-      // sí tiene, se abre sola —buscar y no ver el resultado por un
-      // acordeón cerrado sería peor que no ofrecer la búsqueda—. Sin
-      // texto en la caja, cada sección vuelve a como llegó del servidor.
-      secciones.forEach(function (sec) {
-        var algunaVisible = Array.prototype.slice
-          .call(sec.querySelectorAll("[data-buscar]"))
-          .some(function (t) { return !t.hidden; });
-        sec.hidden = !!q && !algunaVisible;
-        sec.open = q ? algunaVisible : sec.dataset.eraAbierta === "1";
-      });
-      saltos.forEach(function (salto) {
-        var seccion = document.getElementById(salto.getAttribute("href").slice(1));
-        salto.hidden = !!q && !!seccion && seccion.hidden;
-      });
-      vacio.hidden = visibles !== 0;
-      // Hablar de «todas las celdas» cuando la búsqueda no dejó ninguna a
-      // la vista sería confuso — se esconde junto con el mismo criterio.
-      if (notaFormacion) notaFormacion.hidden = !!q && visibles === 0;
-    });
-  })();
-</script>
 {% endblock %}

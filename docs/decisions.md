@@ -11280,3 +11280,37 @@ que los bloques se ven más parejos entre sí en los productos con muchos
 formatos. Sigue abierta, y es del operador, la otra decisión del tablero: si
 cada fila de formato de la tabla muestra el cambio del producto (hoy) o el
 suyo propio.
+
+
+## 2026-09-19 — Tablero: una cifra, un lugar (S5): la lista absorbe la tira y se quita lo repetido
+Contexto: el operador rechazó el tablero («información repetida, no hay una
+filosofía clara de qué debe ver el usuario») y pidió una vista coherente y útil.
+Medido con Chromium contra datos reales: «Todos» a 390 px medía 6,3 pantallas;
+la mediana de arroz en La Habana aparecía en tres lugares (lista, cinta, tira) y
+el cambio en cinco; la tabla por formato ocupaba 2.452 px con «La Habana» 49
+veces. Se prototipó la dirección E en Claude Design (una cifra, un lugar; tres
+capas: cuánto cuesta y se mueve → de dónde sale → puedo confiar) y el operador
+la aprobó para arrancar por S5. Reemplaza al diseño de cinta y tiras del
+2026-09-17/18 (artboard «Apilado»), aprobado entonces por el operador.
+Decisión: (1) la lista de productos absorbe lo único que la tira decía y la
+lista no: cada celda lleva cuántos anuncios la sostienen, la base del cambio
+—«−4% (base 52)», los anuncios del mes anterior con los que se compara— y la
+etiqueta «más barata» en la provincia de menor mediana (solo con dos o más
+provincias con dato y sin empate; texto, no semáforo: dice cuál es la menor, no
+si «está bien», así que no fija umbral y no toca §12.6). (2) Se quitan la cinta
+del más barato, las tiras por producto, la caja de búsqueda con su script
+(quedó de cuando había 50 tarjetas; hoy son 5 productos) y la columna «Cambio»
+de la tabla (repetía once veces el cambio del producto). (3) Código muerto
+fuera: `build_price_strips`, `ProductStrip`, `PriceCell`, `strip_hrefs`, la
+plantilla `_price_strips.html`, su CSS y sus tests. El mapa no cambia; sus
+tarjetas siguen usando `attach_trends`. Medido después: 4,8 pantallas a 390 px
+(de 6,3), sin desborde, sin restos.
+Descartado: (a) dejar la tira y ordenar la lista alrededor —seguiría habiendo
+dos maneras de leer la misma cifra—; (b) quitar la tira sin pasar «más barata»
+y los anuncios a la lista —se perdía «dónde está más barato», la pregunta
+central de §6.7—.
+Consecuencia: la tabla por formato sigue en «Todos» (49 filas) hasta S6, que la
+pasa al detalle del producto; el bloque «Sobre los datos» (cobertura, método,
+fuente) es S7 y el selector «Mi provincia» que se recuerda, S8. Queda a la vista,
+sin resolver, que el encabezado de la columna «Santiago de Cuba» se corta con
+«…» en la lista a 390 px.

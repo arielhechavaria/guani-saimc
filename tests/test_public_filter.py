@@ -2721,31 +2721,6 @@ class TestVistaTableroEnLaRuta:
         )
         assert re.search(r'class="ph-dash-chip ph-tap-44"[^>]*>[\s\S]*?Todas', filtros)
 
-    def test_la_caja_de_busqueda_aparece_solo_si_hay_filas(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        con_filas = client.get("/?vista=tablero").text
-        assert 'id="tablero-q"' in con_filas
-
-        sin_filas = client.get("/?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
-        assert 'id="tablero-q"' not in sin_filas
-
-    def test_cada_fila_trae_su_texto_buscable_en_minuscula(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """`data-buscar` combina producto + provincia — mismo patrón que ya
-        usa `/docs` — para que la caja de búsqueda filtre por cualquiera de
-        los dos."""
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-
-        assert 'data-buscar="arroz la habana"' in texto
-        assert 'data-buscar="aceite la habana"' in texto
-        assert 'data-buscar="arroz santiago de cuba"' in texto
-
     def test_la_ventana_precios_del_mapa_tambien_trae_data_buscar(
         self, client: TestClient, session: Session
     ) -> None:
@@ -2968,8 +2943,9 @@ class TestDetalleDeProductoEnElTablero:
 
 
 class TestCambioUnicoEnElTablero:
-    """El «Cambio» de la tabla, el de la lista de productos y el de las
-    tarjetas del mapa son el mismo número (2026-09-18, slice 3).
+    """El cambio de la lista de productos y el de las tarjetas del mapa son el
+    mismo número (2026-09-18, slice 3); la tabla del tablero ya no lo repite
+    (2026-09-19, S5).
 
     Antes la tabla mostraba el cambio del último formato de la provincia:
     arroz en La Habana decía −12% en todas las filas, el de «saco de 50 kg»
@@ -2999,7 +2975,7 @@ class TestCambioUnicoEnElTablero:
                 price="290", format_id=saco.id)
         session.commit()
 
-    def test_todas_las_filas_de_la_tabla_llevan_el_cambio_del_producto(
+    def test_la_tabla_no_repite_el_cambio_de_cada_formato(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
@@ -3009,8 +2985,10 @@ class TestCambioUnicoEnElTablero:
         cuerpo = tabla[tabla.index("<tbody>") : tabla.index("</tbody>")]
 
         assert cuerpo.count("<tr") == 2  # un renglón por formato
-        assert cuerpo.count('<td class="ph-dash-table-sample">+10%</td>') == 2
-        assert "−9%" not in texto  # el cambio de un solo formato no se cuela
+        # El cambio vive en la lista de productos; la tabla es solo precios
+        # (2026-09-19, S5), así que ni el del producto ni el de un formato.
+        assert "<th>Cambio</th>" not in texto
+        assert "+10%" not in cuerpo and "−9%" not in cuerpo
 
     def test_la_tabla_y_la_lista_dicen_lo_mismo(
         self, client: TestClient, session: Session
@@ -3021,7 +2999,7 @@ class TestCambioUnicoEnElTablero:
         fila = re.search(r'<span class="ph-watch-name">Arroz[\s\S]*?</a>', texto)
 
         assert fila is not None
-        assert '<span class="ph-watch-change">+10%</span>' in fila.group(0)
+        assert '<span class="ph-watch-change">+10% (base 4)</span>' in fila.group(0)
 
     def test_la_tarjeta_del_mapa_dice_lo_mismo(
         self, client: TestClient, session: Session
@@ -3037,12 +3015,10 @@ class TestCambioUnicoEnElTablero:
 
 
 class TestUnaSolaMedianaEnElTablero:
-    """La tira, la cinta, la lista de productos y las tarjetas dicen la misma
-    mediana para el mismo producto y provincia (2026-09-18, slice 4).
-
-    Antes la tira representaba a cada provincia con «el formato mejor
-    respaldado» y la lista juntaba todos los formatos: con datos reales,
-    picadillo en La Habana daba 463 en la lista y 530 en la tira.
+    """La lista de productos junta todos los formatos de la provincia (slice 4,
+    2026-09-19). La tira «dónde está más barato», que antes elegía «el formato
+    mejor respaldado» y daba 530 donde la lista daba 463, salió del tablero en
+    S5; esto protege que la única cifra que queda no vuelva a elegir un formato.
 
     Valores esperados, a mano. Arroz en La Habana, dos formatos de 1 lb, todos
     dentro de los últimos 30 días:
@@ -3067,27 +3043,6 @@ class TestUnaSolaMedianaEnElTablero:
                     price=precio, format_id=formato.id)
         session.commit()
 
-    def test_la_tira_junta_todos_los_formatos(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-        tira = texto[texto.index('class="ph-strip-cells"') :]
-        tira = tira[: tira.index("</ul>")]
-
-        assert '<span class="ph-strip-price num">400</span>' in tira
-        assert '<span class="ph-strip-n">5 anuncios</span>' in tira
-
-    def test_la_cinta_dice_lo_mismo(self, client: TestClient, session: Session) -> None:
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-        cinta = texto[texto.index('class="ph-strips-ticker"') :]
-        cinta = cinta[: cinta.index("</div>")]
-
-        assert '<span class="ph-ticker-price num">400</span>' in cinta
-
     def test_la_lista_de_productos_dice_lo_mismo(
         self, client: TestClient, session: Session
     ) -> None:
@@ -3099,174 +3054,89 @@ class TestUnaSolaMedianaEnElTablero:
         assert fila is not None
         assert '<span class="ph-watch-median">400</span>' in fila.group(0)
 
-    def test_el_filtro_de_producto_sigue_acotando_la_tira(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """Con un producto elegido, la tira muestra solo ese: `slopes` trae
-        todos y el filtro se aplica al armarla."""
-        self._seed(session)
-        aceite = Product(name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True)
-        session.add(aceite)
-        session.commit()
-        habana = session.query(Province).filter_by(code="hab").one()
-        fuente = _ingestion(session, hash_="h-mediana-aceite")
-        _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(3), price="330")
-        session.commit()
-
-        todas = client.get("/?vista=tablero").text
-        solo_arroz = client.get("/?vista=tablero&productos=arroz").text
-
-        assert 'class="ph-strip-name">Aceite<' in todas
-        assert 'class="ph-strip-name">Aceite<' not in solo_arroz
-        assert 'class="ph-strip-name">Arroz<' in solo_arroz
 
 
-class TestTiraDePrecioEnLaPagina:
-    """La tira de calor del tablero, de punta a punta.
+class TestListaAbsorbeLaTira:
+    """S5 (2026-09-19): la lista de productos muestra lo que antes mostraban la
+    cinta y las tiras —quién es más barata y cuántos anuncios sostienen cada
+    cifra—, y esas dos piezas salen del tablero.
 
-    Lo que estos casos protegen es el límite de lo que se desbloqueó
-    (2026-09-17): escala continua de posición relativa, sí; semáforo y bandas,
-    no. Y que el color nunca sea lo único que dice el dato.
-    """
+    Valores esperados, a mano. Arroz de 1 lb en dos provincias, todo dentro de
+    los últimos 30 días: La Habana 300, 300 → mediana 300, 2 anuncios;
+    Santiago 400, 410 → mediana 405, 2 anuncios. La Habana es la más barata."""
 
     def _seed(self, session: Session) -> None:
-        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
-        provincias = {}
-        for code, nombre in (("hab", "La Habana"), ("scu", "Santiago de Cuba"), ("hol", "Holguín")):
-            provincias[nombre] = Province(code=code, name=nombre)
-        session.add_all([arroz, *provincias.values()])
-        session.commit()
-        fuente = _ingestion(session, hash_="h-tira")
-        for nombre, precio, dia in (
-            ("Santiago de Cuba", "200", 6),
-            ("La Habana", "250", 5),
-            ("Holguín", "300", 4),
-        ):
-            _precio(
-                session, product=arroz, province=provincias[nombre],
-                source=fuente, dia=_hace(dia), price=precio,
-            )
-        session.commit()
-
-    def test_la_tira_ordena_de_mas_barata_a_mas_cara(
-        self, client: TestClient, session: Session
-    ) -> None:
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-        tira = texto.split('class="ph-strip-cells"')[1].split("</ul>")[0]
-
-        assert tira.index("Santiago de Cuba") < tira.index("La Habana") < tira.index("Holguín")
-
-    def test_la_escala_va_de_0_a_100_con_el_medio_en_el_medio(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """200/250/300: el del medio cae justo en 50, sin banda ninguna."""
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-
-        assert "--nivel: 0%" in texto
-        assert "--nivel: 50%" in texto
-        assert "--nivel: 100%" in texto
-
-    def test_cada_celda_lleva_su_cifra_y_su_muestra(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """§9.0: el número de observaciones va siempre a la vista, y el color
-        nunca es lo único que dice el dato."""
-        self._seed(session)
-
-        tira = client.get("/?vista=tablero").text.split('class="ph-strip-cells"')[1]
-
-        assert 'class="ph-strip-price num"' in tira
-        assert 'class="ph-strip-n"' in tira
-
-    def test_con_dos_provincias_no_se_pinta_escala(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """Dos puntos no son una escala: pintarlos de punta a punta haría ver
-        una diferencia chica como si fuera el rango entero del país."""
         arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         habana = Province(code="hab", name="La Habana")
         santiago = Province(code="scu", name="Santiago de Cuba")
         session.add_all([arroz, habana, santiago])
         session.commit()
-        fuente = _ingestion(session, hash_="h-dos")
-        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5), price="300")
-        _precio(
-            session, product=arroz, province=santiago, source=fuente, dia=_hace(4), price="282"
-        )
+        fuente = _ingestion(session, hash_="h-absorbe")
+        anuncios = ((9, "300", habana), (5, "300", habana), (8, "400", santiago), (3, "410", santiago))
+        for dia, precio, prov in anuncios:
+            _precio(session, product=arroz, province=prov, source=fuente, dia=_hace(dia), price=precio)
         session.commit()
 
+    def _fila(self, session: Session, client: TestClient) -> str:
         texto = client.get("/?vista=tablero").text
+        fila = re.search(r'<span class="ph-watch-name">Arroz[\s\S]*?</a>', texto)
+        assert fila is not None
+        return fila.group(0)
 
-        assert "--nivel:" not in texto
-        assert "ph-strip-bar is-flat" in texto
-        assert "hace falta una tercera provincia" in texto
-
-    def test_el_mapa_no_pinta_la_tira(self, client: TestClient, session: Session) -> None:
-        """Se desbloqueó la tira del tablero, no el coloreado del mapa."""
-        self._seed(session)
-
-        texto = client.get("/").text
-
-        assert "ph-strip-cells" not in texto
-
-    def test_el_ancho_de_cada_bloque_es_proporcional_a_sus_anuncios(
+    def test_la_celda_de_la_provincia_mas_barata_lleva_la_etiqueta(
         self, client: TestClient, session: Session
     ) -> None:
-        """Fidelidad contra el artboard `Apilado` aprobado en Claude Design
-        (2026-09-18): ahí el ancho de cada bloque era la evidencia. El `<li>`
-        de cada celda lleva `flex-grow` = su propio `count` — no una
-        proporción calculada en Python, el reparto lo hace flexbox."""
+        self._seed(session)
+
+        fila = self._fila(session, client)
+
+        assert fila.count("más barata") == 1
+        assert fila.index("más barata") < fila.index('<span class="ph-watch-median">405</span>')
+
+    def test_cada_celda_dice_cuantos_anuncios_la_sostienen(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        fila = self._fila(session, client)
+
+        assert fila.count('<span class="ph-watch-n">2 anuncios</span>') == 2
+
+    def test_el_cambio_muestra_la_base_contra_la_que_se_compara(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin período anterior no hay cambio: sigue el «—», sin base."""
+        self._seed(session)
+
+        fila = self._fila(session, client)
+
+        assert fila.count('<span class="ph-watch-change">—</span>') == 2
+
+    def test_con_periodo_anterior_el_cambio_lleva_su_base(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Arroz en La Habana: antes 250, 250 (mes anterior); ahora 300, 300.
+        300/250 − 1 = +20%, contra 2 anuncios: «+20% (base 2)». Sin la base,
+        un cambio contra un solo anuncio se lee igual que uno contra cien."""
         arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
-        provincias = {}
-        for code, nombre in (("hab", "La Habana"), ("scu", "Santiago de Cuba"), ("hol", "Holguín")):
-            provincias[nombre] = Province(code=code, name=nombre)
-        session.add_all([arroz, *provincias.values()])
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
         session.commit()
-        fuente = _ingestion(session, hash_="h-anchos")
-        combinaciones = [
-            ("Santiago de Cuba", "200", 2),
-            ("La Habana", "250", 9),
-            ("Holguín", "300", 3),
-        ]
-        for nombre, precio, n in combinaciones:
-            for i in range(n):
-                _precio(
-                    session, product=arroz, province=provincias[nombre],
-                    source=fuente, dia=_hace(i + 1), price=precio,
-                )
+        fuente = _ingestion(session, hash_="h-base")
+        for dia, precio in ((45, "250"), (40, "250"), (9, "300"), (5, "300")):
+            _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(dia), price=precio)
         session.commit()
 
-        texto = client.get("/?vista=tablero").text
-        tira = texto.split('class="ph-strip-cells"')[1].split("</ul>")[0]
+        fila = self._fila(session, client)
 
-        assert "flex-grow: 9;" in tira
-        assert "flex-grow: 2;" in tira
-        assert "flex-grow: 3;" in tira
+        assert '<span class="ph-watch-change">+20% (base 2)</span>' in fila
 
-    def test_la_cinta_muestra_el_mas_barato_de_cada_producto(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """`strip.cells[0]` ya es la celda más barata — la cinta no calcula
-        ningún agregado nuevo, muestra la misma cifra que la tira de abajo."""
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-        cinta = texto.split('class="ph-strips-ticker"')[1].split("</div>")[0]
-
-        assert "Arroz" in cinta
-        assert "200" in cinta
-        assert "Santiago de Cuba" in cinta
-
-    def test_la_cinta_enlaza_a_la_provincia_mas_barata(
+    def test_ya_no_hay_cinta_ni_tiras_ni_busqueda_ni_columna_de_cambio(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
-        cinta = texto.split('class="ph-strips-ticker"')[1].split("</div>")[0]
 
-        assert re.search(r'href="/producto/arroz\?provincia=santiago-de-cuba[^"]*"', cinta)
+        for resto in ("ph-strips", "ph-strip-cell", "ph-ticker-item", "tablero-q", "<th>Cambio</th>"):
+            assert resto not in texto, resto

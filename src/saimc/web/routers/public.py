@@ -8,9 +8,10 @@ provincia y ventana de días vía query string (`?producto=`, `?provincia=`,
 `?dias=`, 2026-08-26). El coloreado del **mapa** por precio y los **semáforos**
 siguen bloqueados por el umbral sin calibrar (§12.6): decir si un precio
 «está bien» exige una banda que nadie midió. Lo que sí se habilitó el
-2026-09-17 es la tira del tablero (`card_view.build_price_strips`): una
-escala continua de posición relativa, sin bandas, sin veredicto, y con la
-cifra y la muestra escritas en cada celda — no fija ningún umbral.
+2026-09-17 fue la tira del tablero; desde el 2026-09-19 esa lectura —cuál
+provincia es la más barata, con la cifra y la muestra escritas— la hace la
+lista de productos (`watchlist_view`): una etiqueta de posición relativa, sin
+bandas, sin veredicto, que no fija ningún umbral.
 
 Sin `require_operator` a propósito: es la capa pública. Y sin identificador de
 usuario ni dato de contacto en ninguna respuesta — `CLAUDE.md` fija que el
@@ -35,7 +36,6 @@ from saimc.progress import pilot_product_names
 from saimc.web.card_view import (
     attach_trends,
     build_cards,
-    build_price_strips,
     group_cards_by_province,
     province_color_slots,
 )
@@ -512,14 +512,6 @@ def _render_home(
     # elige el router y no un `{% if %}` adentro de `public_home.html`
     # (~2700 líneas ya delicadas): las dos vistas son archivos separados.
     cards_by_province = group_cards_by_province(cards, province_names)
-    # Tira de precio (2026-09-17): el vistazo de arriba del tablero. Desde el
-    # 2026-09-18 sale de `slopes` —la misma mediana por producto y provincia
-    # que la lista, el detalle y el cambio de las tarjetas— y no de «el
-    # formato mejor respaldado» de cada tarjeta, que daba otro número para lo
-    # mismo. Los filtros de la página se aplican acá: `slopes` trae todo. Ver
-    # `card_view.build_price_strips` y `templates/_price_strips.html` para qué
-    # se desbloqueó de §12.6 y qué sigue bloqueado.
-    price_strips = build_price_strips(slopes, products=active_products, province=selected_province)
     # Color por provincia en la tabla del tablero (2026-09-18, arreglo: el
     # operador reportó que todas las filas se veían del mismo color). Era un
     # bug real, no una percepción: hasta acá el slot salía de
@@ -549,18 +541,6 @@ def _render_home(
             hasta=ventana_hasta,
         )
         for c in cards
-    }
-    # Cada celda de la tira lleva a la misma vista liviana que ya usan las
-    # filas de la tabla: no se inventa un destino nuevo.
-    strip_hrefs = {
-        (s.product_name, cell.province_name): light_product_query(
-            product_slug(s.product_name),
-            provincia=product_slug(cell.province_name),
-            desde=ventana_desde,
-            hasta=ventana_hasta,
-        )
-        for s in price_strips
-        for cell in s.cells
     }
     # Lista de productos del tablero (dirección C, 2026-09-18): mediana y
     # cambio por provincia, sacados del mismo «¿subió o bajó?» que dibuja
@@ -655,8 +635,6 @@ def _render_home(
             "selected_province": selected_province,
             "vista": selected_vista,
             "cards_by_province": cards_by_province,
-            "price_strips": price_strips,
-            "strip_hrefs": strip_hrefs,
             "province_slots": province_slots,
             "product_hrefs": product_hrefs,
             # Recorrido hacia atrás hasta el anuncio (§6.5), por celda —mismo

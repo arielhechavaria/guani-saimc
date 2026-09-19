@@ -153,3 +153,40 @@ class TestSeleccion:
         pollo = _fila(_lista([], provincia=""), "Pollo")
 
         assert "provincia=" not in pollo.query
+
+
+class TestMasBarata:
+    """La lista absorbe a la tira «dónde está más barato» (2026-09-19, S5): la
+    celda de la provincia con la mediana más baja lleva la etiqueta. Solo si hay
+    con qué comparar —dos provincias con dato— y sin empate: con dos medianas
+    iguales, ninguna es «la más barata».
+
+    Valores esperados, a mano (ver el docstring del módulo): Arroz, La Habana
+    310 y Santiago 400 → La Habana. Pollo solo tiene La Habana."""
+
+    def test_la_provincia_mas_barata_se_marca(self) -> None:
+        arroz = _fila(_lista([]), "Arroz")
+
+        assert [c.is_cheapest for c in arroz.cells if c] == [True, False]
+
+    def test_con_una_sola_provincia_con_dato_no_hay_con_que_comparar(self) -> None:
+        (habana, santiago) = _fila(_lista([]), "Pollo").cells
+
+        assert habana is not None and habana.is_cheapest is False
+        assert santiago is None
+
+    def test_un_producto_sin_datos_no_marca_nada(self) -> None:
+        assert _fila(_lista([]), "Aceite").cells == (None, None)
+
+    def test_con_medianas_iguales_ninguna_es_la_mas_barata(self) -> None:
+        ahora = [
+            _obs("Arroz", "La Habana", 8, 20, "300"),
+            _obs("Arroz", "Santiago de Cuba", 8, 22, "300"),
+        ]
+        slopes = build_month_vs_month(ahora, [], window_days=30, hoy=HOY)
+        lista = build_watchlist(
+            ["Arroz"], [], slopes, provinces=PROVINCIAS, selected_province="",
+            desde=DESDE, hasta=HOY,
+        )
+
+        assert [c.is_cheapest for c in lista.rows[0].cells if c] == [False, False]
