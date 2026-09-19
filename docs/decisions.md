@@ -11314,3 +11314,36 @@ pasa al detalle del producto; el bloque «Sobre los datos» (cobertura, método,
 fuente) es S7 y el selector «Mi provincia» que se recuerda, S8. Queda a la vista,
 sin resolver, que el encabezado de la columna «Santiago de Cuba» se corta con
 «…» en la lista a 390 px.
+
+
+## 2026-09-19 — Tablero: la tabla por formato pasa al detalle como «Por envase» (S6)
+Contexto: segunda entrega del plan «una cifra, un lugar» (dirección E, aprobada
+por el operador). Después de S5, «Todos» seguía siendo una tabla de 49 filas de
+2.452 px con el nombre de la provincia repetido en cada una: casi la mitad de
+la página, y ninguna pregunta del usuario común («¿cuánto cuesta?») pasa por
+leer envases.
+Decisión: (1) «Todos» ya no lleva tabla: es la lista de productos y la
+cobertura. (2) Con un producto elegido, el detalle agrega el panel «Por envase»:
+un grupo por provincia con su nombre una sola vez en el encabezado, y por cada
+envase el precio del envase (rango, o el único precio si hay un solo anuncio),
+la mediana y los anuncios. Se ven los 3 de más muestra y el resto queda en un
+`<details>` nativo («Ver los 11 envases de La Habana»), sin JS. Las dos tablas
+de un grupo comparten `<colgroup>` para alinear columnas. (3) Cada fila muestra
+su **variante** declarada («Criollo», «Argentino»): con datos reales «saco de
+100 lb» aparecía dos veces en La Habana porque eran dos variantes que la tabla
+vieja no decía, y parecían filas repetidas (`ProductCard.format_label_display`,
+que ya existía en `Headline`, se agrega a la tarjeta). (4) §9.0: la nota «muestra
+en formación» vivía bajo la tabla; se muda bajo la lista de productos, que está
+en todas las vistas del tablero, así que el rótulo obligatorio sigue a la vista
+(S7 la consolida en «Sobre los datos»). (5) Sale el enlace de cada fila a la
+vista liviana `/producto/<slug>` (`product_hrefs`): ya no hay tabla de la que
+salir; esa vista sigue existiendo y se alcanza desde el mapa.
+Descartado: (a) dejar la tabla en «Todos» colapsada por defecto —seguiría siendo
+un bloque que el usuario común no necesita y que compite con la lista—;
+(b) mostrar todos los envases sin recorte —11 filas en La Habana repetirían el
+problema dentro del detalle—.
+Consecuencia: medido con Chromium contra datos reales, «Todos» a 390 px pasa de
+6,3 pantallas (al empezar el plan) a 1,9; el detalle de Arroz mide 4,2 a 390 px
+y 2,3 a 1280, sin desborde ni scroll interno. Siguen S7 («Sobre los datos»:
+cobertura, método y fuente en un solo bloque) y S8 («Mi provincia» que se
+recuerda).

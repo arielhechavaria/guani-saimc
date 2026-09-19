@@ -1122,7 +1122,6 @@ class TestBlancoTactilDelTablero:
             'class="js-vista-link ph-tap-44{% if vista == "mapa"',
             'class="js-vista-link ph-tap-44{% if vista == "tablero"',
             'class="ph-dash-chip ph-tap-44{% if choice.is_selected',
-            'class="ph-dash-table-producto ph-tap-44"',
             # Dirección C (2026-09-18): el menú `<details>` del avatar pasó a
             # ser acciones a la vista en la cabecera, y los chips de producto
             # una lista cuyas filas ya miden 52px de alto (no necesitan la

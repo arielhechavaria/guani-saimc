@@ -62,7 +62,6 @@ from saimc.web.product_nav import (
     build_view_menu,
     build_window_nav,
     download_href,
-    light_product_query,
     product_slug,
     products_query,
     resolve_layer,
@@ -528,20 +527,6 @@ def _render_home(
     # sirva para algo hoy; se vuelve a evaluar cuando haya más de tres
     # provincias reales.
     province_slots = province_color_slots(province_names)
-    # Modo tabla (2026-09-17): cada fila enlaza su producto a la vista
-    # liviana `/producto/<slug>` que ya existe (2026-09-14) — no reinventa
-    # una vista de detalle, apunta a la que ya hay. Clave (producto,
-    # provincia): una celda con más de un formato/variante comparte fila de
-    # todos modos, no hace falta desambiguar más.
-    product_hrefs = {
-        (c.product_name, c.province_name): light_product_query(
-            product_slug(c.product_name),
-            provincia=product_slug(c.province_name),
-            desde=ventana_desde,
-            hasta=ventana_hasta,
-        )
-        for c in cards
-    }
     # Lista de productos del tablero (dirección C, 2026-09-18): mediana y
     # cambio por provincia, sacados del mismo «¿subió o bajó?» que dibuja
     # «Cómo se movió» —`build_month_vs_month` sobre las 16 provincias, sin
@@ -636,7 +621,6 @@ def _render_home(
             "vista": selected_vista,
             "cards_by_province": cards_by_province,
             "province_slots": province_slots,
-            "product_hrefs": product_hrefs,
             # Recorrido hacia atrás hasta el anuncio (§6.5), por celda —mismo
             # `panel_ads`/`build_cell_ads` que ya arma «Cómo se movió» y el
             # panel flotante de producto, misma clave de 5 (2026-09-17,

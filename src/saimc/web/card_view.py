@@ -108,6 +108,16 @@ class ProductCard:
     change_text: str = ""
 
     @property
+    def format_label_display(self) -> str | None:
+        """`format_label` con solo la primera letra en mayúscula, o `None` sin
+        formato. El filtro `capitalize` de Jinja pone en minúscula todo el
+        resto —«botella de 1 L» quedaría «Botella de 1 l», con la unidad
+        rota—, así que se resuelve acá y no en la plantilla."""
+        if self.format_label is None:
+            return None
+        return self.format_label[0].upper() + self.format_label[1:]
+
+    @property
     def state(self) -> str:
         return SAMPLE_FORMING
 

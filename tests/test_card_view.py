@@ -402,3 +402,22 @@ class TestSlotsDeColorPorProvincia:
 
     def test_lista_vacia_no_produce_slots(self) -> None:
         assert province_color_slots([]) == {}
+
+
+class TestEtiquetaDeEnvase:
+    """`format_label_display`: el envase como se lee en pantalla, con la primera
+    letra en mayúscula y sin tocar el resto —el filtro `capitalize` de Jinja
+    pone en minúscula todo lo demás y rompería «botella de 1 L» en «1 l»."""
+
+    def test_pone_en_mayuscula_solo_la_primera_letra(self) -> None:
+        (card,) = build_cards(
+            [_rango(format_packaging="botella", format_quantity="1", format_unit="L")]
+        )
+
+        assert card.format_label == "botella de 1 L"
+        assert card.format_label_display == "Botella de 1 L"
+
+    def test_sin_envase_no_hay_etiqueta(self) -> None:
+        (card,) = build_cards([_rango()])
+
+        assert card.format_label_display is None

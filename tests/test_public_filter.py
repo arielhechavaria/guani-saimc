@@ -2498,22 +2498,21 @@ class TestVistaTableroEnLaRuta:
         assert 'id="ph-leaflet-map"' in texto
         assert 'class="ph-dash-table"' not in texto
 
-    def test_vista_tablero_muestra_una_tabla_con_todas_las_combinaciones(
+    def test_vista_tablero_muestra_la_lista_de_todos_los_productos_sin_mapa(
         self, client: TestClient, session: Session
     ) -> None:
+        """«Todos» es la lista de productos: una fila por producto piloto, sin
+        mapa y —desde S6, 2026-09-19— sin la tabla por formato, que pasó al
+        detalle de cada producto."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
-        cuerpo = texto[texto.index("<tbody>") : texto.index("</tbody>")]
 
         assert 'id="ph-leaflet-map"' not in texto
-        assert 'class="ph-dash-table"' in texto
-        # Tres combinaciones producto×provincia×formato: Arroz/Habana,
-        # Arroz/Santiago, Aceite/Habana — sin agrupar por formato, la tabla
-        # es la presentación plana de siempre.
-        assert cuerpo.count("<tr") == 3
+        assert '<span class="ph-watch-name">Arroz' in texto
+        assert '<span class="ph-watch-name">Aceite' in texto
+        assert "<table" not in texto
         assert texto.index("La Habana") < texto.index("Santiago de Cuba")
-
     def test_la_cookie_vista_decide_sin_query_string(
         self, client: TestClient, session: Session
     ) -> None:
@@ -2525,7 +2524,7 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/").text
 
         assert 'id="ph-leaflet-map"' not in texto
-        assert 'class="ph-dash-table"' in texto
+        assert 'class="ph-dash-layout"' in texto
 
     def test_el_query_string_explicito_gana_a_la_cookie(
         self, client: TestClient, session: Session
@@ -2567,20 +2566,17 @@ class TestVistaTableroEnLaRuta:
     def test_vista_tablero_respeta_el_filtro_de_producto(
         self, client: TestClient, session: Session
     ) -> None:
-        """Los chips de filtro (2026-09-16) listan TODOS los productos piloto
-        —incluido Aceite, apagado— para poder prenderlos; lo que tiene que
-        respetar el filtro es la tabla, no la página entera."""
+        """La lista de productos muestra TODOS los piloto —incluido Aceite— para
+        poder elegirlos; lo que respeta el filtro es el detalle: «Por envase»
+        trae solo los envases del producto elegido."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero&productos=arroz").text
-        # La tabla principal, no el primer `<tbody>` de la página: con un
-        # producto elegido el detalle trae antes la tabla de sus anuncios.
-        tabla = texto[texto.index('class="ph-dash-table"') :]
-        cuerpo = tabla[tabla.index("<tbody>") : tabla.index("</tbody>")]
+        panel = texto[texto.index('class="ph-dash-panel ph-envases"') :]
+        panel = panel[: panel.index("</section>")]
 
-        assert "Arroz" in cuerpo
-        assert "Aceite" not in cuerpo
-
+        assert panel.count('class="ph-envases-prov ph-prov') == 2  # La Habana y Santiago
+        assert "Aceite" not in panel
     def test_una_vista_invalida_cae_al_mapa(self, client: TestClient, session: Session) -> None:
         self._seed(session)
 
@@ -2623,18 +2619,18 @@ class TestVistaTableroEnLaRuta:
         """Arreglo del 2026-09-18: antes el slot salía de `all_province_names`
         —el catálogo completo de 16, alfabético— y con datos reales solo en
         dos provincias (`La Habana` índice 8, `Santiago de Cuba` índice 14 en
-        ese orden) las dos caían en el mismo neutral: la tabla se veía de un
-        solo color. Ahora sale de las provincias CON DATO en esta vista, así
-        que dos provincias reales son dos slots reales, distintos entre sí."""
+        ese orden) las dos caían en el mismo neutral. Ahora sale de las
+        provincias CON DATO en esta vista, así que dos provincias reales son
+        dos slots reales, distintos entre sí. Desde S6 el color lo llevan los
+        grupos de «Por envase» (antes, cada fila de la tabla)."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/?vista=tablero&productos=arroz").text
 
-        assert 'class="ph-dash-table-prov ph-prov-0">' in texto
-        assert 'class="ph-dash-table-prov ph-prov-1">' in texto
+        assert 'class="ph-envases-prov ph-prov-0"' in texto
+        assert 'class="ph-envases-prov ph-prov-1"' in texto
         # Nunca las dos en el neutral (el bug que se corrigió).
-        assert texto.count('class="ph-dash-table-prov ph-prov-9">') == 0
-
+        assert texto.count('class="ph-envases-prov ph-prov-9"') == 0
     def test_la_lista_de_productos_trae_todo_el_catalogo_piloto(
         self, client: TestClient, session: Session
     ) -> None:
@@ -2714,7 +2710,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
-        filtros = texto[: texto.index("<tbody>")]
+        filtros = texto[texto.index('class="ph-dash-head"') :]
 
         assert re.search(
             r'class="ph-dash-chip ph-tap-44 is-active"[^>]*>[\s\S]*?Santiago de Cuba', filtros
@@ -2731,19 +2727,6 @@ class TestVistaTableroEnLaRuta:
         texto = client.get("/?ver=precios").text
 
         assert "data-buscar=" in texto
-
-    def test_la_fila_de_la_tabla_enlaza_a_la_vista_liviana_del_producto(
-        self, client: TestClient, session: Session
-    ) -> None:
-        """El operador señaló que `/producto/<slug>` ya existe — la tabla
-        reusa esa vista en vez de reinventar una página de detalle. Es
-        también donde queda el recorrido hasta el anuncio (`ver anuncio`):
-        la tabla no lo trae inline, un clic la lleva."""
-        self._seed(session)
-
-        texto = client.get("/?vista=tablero").text
-
-        assert re.search(r'href="/producto/arroz\?provincia=la-habana[^"]*"', texto)
 
     def test_la_ventana_precios_del_mapa_tambien_trae_el_recorrido_hasta_el_anuncio(
         self, client: TestClient, session: Session
@@ -2975,21 +2958,20 @@ class TestCambioUnicoEnElTablero:
                 price="290", format_id=saco.id)
         session.commit()
 
-    def test_la_tabla_no_repite_el_cambio_de_cada_formato(
+    def test_por_envase_no_repite_el_cambio_de_cada_formato(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
-        tabla = texto[texto.index('class="ph-dash-table"') :]
-        cuerpo = tabla[tabla.index("<tbody>") : tabla.index("</tbody>")]
+        texto = client.get("/?vista=tablero&productos=arroz").text
+        panel = texto[texto.index('class="ph-dash-panel ph-envases"') :]
+        panel = panel[: panel.index("</section>")]
 
-        assert cuerpo.count("<tr") == 2  # un renglón por formato
-        # El cambio vive en la lista de productos; la tabla es solo precios
-        # (2026-09-19, S5), así que ni el del producto ni el de un formato.
+        assert panel.count("<tr") == 3  # el encabezado y un renglón por formato
+        # El cambio vive en la lista de productos; «Por envase» es solo precios
+        # (2026-09-19), así que ni el del producto ni el de un formato.
         assert "<th>Cambio</th>" not in texto
-        assert "+10%" not in cuerpo and "−9%" not in cuerpo
-
+        assert "+10%" not in panel and "−9%" not in panel
     def test_la_tabla_y_la_lista_dicen_lo_mismo(
         self, client: TestClient, session: Session
     ) -> None:
@@ -3081,7 +3063,7 @@ class TestListaAbsorbeLaTira:
         texto = client.get("/?vista=tablero").text
         fila = re.search(r'<span class="ph-watch-name">Arroz[\s\S]*?</a>', texto)
         assert fila is not None
-        return fila.group(0)
+        return str(fila.group(0))
 
     def test_la_celda_de_la_provincia_mas_barata_lleva_la_etiqueta(
         self, client: TestClient, session: Session
@@ -3140,3 +3122,166 @@ class TestListaAbsorbeLaTira:
 
         for resto in ("ph-strips", "ph-strip-cell", "ph-ticker-item", "tablero-q", "<th>Cambio</th>"):
             assert resto not in texto, resto
+
+
+class TestPorEnvaseEnElDetalle:
+    """S6 (2026-09-19): la tabla por formato deja «Todos» y pasa al detalle del
+    producto como «Por envase», agrupada por provincia sin repetirla en cada
+    fila. Los envases de la nota §9.0 («muestra en formación») siguen a la
+    vista: la nota se muda a la lista de productos.
+
+    Valores esperados, a mano. Arroz, envases de 1 lb (el precio del envase es
+    el precio por libra), todo dentro de los últimos 30 días:
+    - La Habana: paquete 300, 320 (2 anuncios: rango 300–320, mediana 310);
+      saco 400 (1 anuncio: precio 400, sin mediana, «—»).
+    - Santiago de Cuba: paquete 410 (1 anuncio).
+    Con más de 3 envases en una provincia se ven los 3 de más muestra y el
+    resto queda en un desplegable."""
+
+    def _seed(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        santiago = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, habana, santiago])
+        session.commit()
+        paquete = _formato(session, product=arroz, packaging="paquete", quantity="1", unit="lb")
+        saco = _formato(session, product=arroz, packaging="saco", quantity="1", unit="lb")
+        fuente = _ingestion(session, hash_="h-envases")
+        for dia, precio, prov, formato in (
+            (9, "300", habana, paquete), (5, "320", habana, paquete),
+            (7, "400", habana, saco), (3, "410", santiago, paquete),
+        ):
+            _precio(session, product=arroz, province=prov, source=fuente, dia=_hace(dia),
+                    price=precio, format_id=formato.id)
+        session.commit()
+
+    def _por_envase(self, client: TestClient) -> str:
+        texto = str(client.get("/?vista=tablero&productos=arroz").text)
+        inicio = texto.index('class="ph-dash-panel ph-envases"')
+        return texto[inicio : texto.index("</section>", inicio)]
+
+    def test_en_todos_ya_no_hay_tabla_por_formato(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'class="ph-dash-panel ph-envases"' not in texto
+        assert "<table" not in texto
+
+    def test_con_un_producto_hay_un_grupo_por_provincia(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        panel = self._por_envase(client)
+
+        assert panel.count('class="ph-envases-prov-name"') == 2
+        assert panel.index("La Habana") < panel.index("Santiago de Cuba")
+
+    def test_la_provincia_no_se_repite_en_cada_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        panel = self._por_envase(client)
+
+        assert panel.count("La Habana") == 1  # el encabezado del grupo, no cada fila
+
+    def test_cada_fila_dice_envase_precio_mediana_y_anuncios(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        panel = self._por_envase(client)
+        habana = panel[: panel.index("Santiago de Cuba")]
+
+        # paquete: 2 anuncios, primero por tener más muestra; rango 300–320, mediana 310.
+        assert habana.index("Paquete de 1 lb") < habana.index("Saco de 1 lb")
+        assert re.search(r"Paquete de 1 lb[\s\S]*?300–320 CUP[\s\S]*?>310<[\s\S]*?>2<", habana)
+        # saco: una sola observación → un precio y «—» de mediana.
+        assert re.search(r"Saco de 1 lb[\s\S]*?400 CUP[\s\S]*?>—<[\s\S]*?>1<", habana)
+
+    def test_la_provincia_elegida_deja_solo_su_grupo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=arroz&provincia=santiago-de-cuba").text
+        panel = texto[texto.index('class="ph-dash-panel ph-envases"') :]
+        panel = panel[: panel.index("</section>")]
+
+        assert panel.count('class="ph-envases-prov-name"') == 1
+        assert "Santiago de Cuba" in panel and "La Habana" not in panel
+
+    def test_con_mas_de_tres_envases_el_resto_va_en_un_desplegable(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La Habana con 4 envases de 1 lb y muestras 4, 3, 2 y 1: se ven los
+        tres mayores y el cuarto (botella, 1 anuncio) queda adentro."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-envases-4")
+        for envase, anuncios in (("paquete", 4), ("saco", 3), ("caja", 2), ("botella", 1)):
+            formato = _formato(session, product=arroz, packaging=envase, quantity="1", unit="lb")
+            for i in range(anuncios):
+                _precio(session, product=arroz, province=habana, source=fuente,
+                        dia=_hace(2 + i), price="300", format_id=formato.id)
+        session.commit()
+
+        panel = self._por_envase(client)
+        visible, _, oculto = panel.partition('<details class="ph-envases-mas">')
+
+        assert "Ver los 4 envases de La Habana" in oculto
+        assert all(e in visible for e in ("Paquete de 1 lb", "Saco de 1 lb", "Caja de 1 lb"))
+        assert "Botella de 1 lb" not in visible and "Botella de 1 lb" in oculto
+
+    def test_dos_filas_del_mismo_envase_se_distinguen_por_su_variante(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Con datos reales, «saco de 100 lb» aparecía dos veces en La Habana:
+        eran dos variantes (una genérica y una «Criollo») que la tabla vieja no
+        mostraba, así que parecían filas repetidas. Cada fila dice cuál es."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        criollo = ProductVariant(
+            product_id=arroz.id, kind="Criollo", brand=None, origin=None,
+            kind_key="criollo", brand_key=None, origin_key=None,
+        )
+        session.add(criollo)
+        session.commit()
+        fuente = _ingestion(session, hash_="h-envases-variante")
+        for dia, precio, variante in ((6, "300", None), (4, "350", criollo)):
+            session.add(PriceHistory(
+                product_id=arroz.id, province_id=habana.id, price=Decimal(precio),
+                currency=Currency.CUP.value, source_id=fuente.id, unit="lb",
+                sale_format=SaleFormat.RETAIL.value, quantity=Decimal("1"),
+                published_date=_hace(dia), variant_id=variante.id if variante else None,
+            ))
+        session.commit()
+
+        panel = self._por_envase(client)
+
+        assert panel.count("Sin envase declarado") == 2
+        assert panel.count('class="ph-envases-variante"') == 1
+        assert '<span class="ph-envases-variante">Criollo</span>' in panel
+
+    def test_la_nota_de_muestra_en_formacion_sigue_a_la_vista_en_todos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """§9.0: la cifra va rotulada «muestra en formación» mientras N siga sin
+        calibrar. La nota vivía bajo la tabla; ahora vive bajo la lista, que
+        está en todas las vistas del tablero."""
+        self._seed(session)
+
+        for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
+            texto = client.get(url).text
+
+            nota = "<strong>muestra en formación</strong>"
+            assert texto.count(nota) == 1, url
+            assert texto.index(nota) > texto.index('id="lista-titulo"')

@@ -207,23 +207,27 @@
   .ph-dash-chip-icon { font-size: 1rem; }
 
 
-  /* Modo tabla (2026-09-17, mismo pedido que la búsqueda: "posibilidad de
-     cambiar de presentación a tabla"): mismos datos que las tarjetas, sin
-     agrupar por provincia —una columna dice cuál es—, así que no hay
-     `<details>` que abrir ni índice de salto que mostrar; la búsqueda de
-     arriba sigue funcionando igual, filtra por `[data-buscar]` sin
-     importar si el elemento es un `<li>` o un `<tr>`. */
-  .ph-dash-table-wrap { overflow-x: auto; background: var(--m3-surface); border-radius: var(--ph-radius-sm); }
-  .ph-dash-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-  .ph-dash-table th, .ph-dash-table td { padding: 14px var(--m3-space-4); text-align: left; white-space: nowrap; }
-  .ph-dash-table th { font: 500 .7rem var(--m3-font); letter-spacing: .04em; text-transform: uppercase;
-                       color: var(--m3-on-surface-variant); border-bottom: 1px solid var(--m3-divider); }
-  .ph-dash-table td { border-bottom: 1px solid var(--m3-divider); }
-  .ph-dash-table tbody tr:last-child td { border-bottom: none; }
-  .ph-dash-table-prov { display: inline-flex; align-items: center; gap: .45rem; }
-  .ph-dash-table-producto { color: var(--m3-on-surface); text-decoration: none; font-weight: 500; }
-  .ph-dash-table-producto:hover { text-decoration: underline; }
-  .ph-dash-table-sample { color: var(--m3-on-surface-variant); }
+  /* Por envase (S6, 2026-09-19): la tabla por formato, que ocupaba casi la
+     mitad de «Todos», pasa al detalle del producto y se agrupa por provincia
+     —el nombre va una vez, en el encabezado del grupo, no en cada fila—. Las
+     dos tablas de un grupo (los 3 envases de más muestra y el resto, dentro
+     de un `<details>`) comparten `<colgroup>` para que las columnas alineen. */
+  .ph-envases { gap: var(--m3-space-4); }
+  .ph-envases-prov { display: flex; flex-direction: column; gap: var(--m3-space-2); }
+  .ph-envases-prov-name { display: flex; align-items: center; gap: .45rem; margin: 0; font: 500 .9rem var(--m3-font); color: var(--m3-on-surface); }
+  .ph-envases-scroll { overflow-x: auto; }
+  .ph-envases-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .85rem; }
+  .ph-envases-table th { text-align: left; font: 500 .64rem var(--m3-font); letter-spacing: .02em; text-transform: uppercase;
+                         color: var(--m3-on-surface-variant); padding: 6px 8px; border-bottom: 1px solid var(--m3-outline-variant); }
+  .ph-envases-table td { padding: 10px 8px; border-bottom: 1px solid var(--m3-divider); vertical-align: top; }
+  .ph-envases-table tbody tr:last-child td { border-bottom: none; }
+  .ph-envases-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ph-envases-nombre { font-weight: 500; }
+  /* La variante declarada («Criollo», «Argentino»…) distingue dos filas del mismo
+     envase, que sin ella parecen repetidas. */
+  .ph-envases-variante { display: block; font-weight: 400; font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-envases-mas summary { cursor: pointer; display: flex; align-items: center; min-height: 44px;
+                            font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
 
   /* Tarjeta agrupada por producto (2026-09-17): los formatos dejan de ser
      una tarjeta cada uno y pasan a ser filas adentro de la del producto.
@@ -262,6 +266,23 @@
 
 {% block content %}
 {% from "_chart_help.html" import chart_help %}
+{# Una fila de «Por envase»: envase, precio del envase (rango, o el único
+   precio si hay un solo anuncio), mediana y cuántos anuncios. #}
+{% macro fila_envase(card) -%}
+<tr>
+  <td class="ph-envases-nombre">{{ card.format_label_display or "Sin envase declarado" }}
+    {%- if card.variant_label %}<span class="ph-envases-variante">{{ card.variant_label }}</span>{% endif %}</td>
+  <td>
+    {%- if card.is_single_observation -%}
+    {{ card.format_median_text or card.median_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
+    {%- else -%}
+    {{ card.format_minimum_text or card.minimum_text }}–{{ card.format_maximum_text or card.maximum_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
+    {%- endif -%}
+  </td>
+  <td class="num">{% if card.is_single_observation %}—{% else %}{{ card.format_median_text or card.median_text }}{% endif %}</td>
+  <td class="num">{{ card.count }}</td>
+</tr>
+{%- endmacro %}
 {# Dirección C (2026-09-18, elegida por el operador entre tres prototipos
    de Claude Design): el tablero pasa a ser un dashboard con forma de lista
    de seguimiento. A la izquierda, los productos (elegir uno enfoca la
@@ -340,6 +361,10 @@
     </a>
     {% endfor %}
   </div>
+  {# §9.0: la cifra va rotulada «muestra en formación» mientras N siga sin
+     calibrar. La nota vivía bajo la tabla por formato; la lista está en todas
+     las vistas del tablero, así que el rótulo sigue a la vista. #}
+  <p class="ph-dash-panel-sub">Todas las cifras están en <strong>muestra en formación</strong>: todavía no hay suficientes anuncios para dar un precio como cifra cerrada, así que se publica la mediana y cuántos anuncios la respaldan. Ninguna cifra es una estimación.</p>
 </section>
 {% endif %}
 
@@ -496,64 +521,46 @@
     </details>
   </div>
   {% endif %}
+
+  {# Por envase (S6, 2026-09-19): lo que era la tabla de «Todos». `cards_by_province`
+     ya viene filtrada por el producto elegido (y la provincia, si hay), y
+     agrupada por provincia en orden alfabético. #}
+  {% set moneda = cards_by_province[0][1][0].currency %}
+  <div class="ph-dash-panel ph-envases">
+    <h3 class="ph-dash-panel-title">Por envase</h3>
+    <p class="ph-dash-panel-sub">Lo que se paga por el envase completo, en {{ moneda }}; si no declara envase, por unidad.</p>
+    {% for province_name, province_cards in cards_by_province %}
+    <div class="ph-envases-prov ph-prov-{{ province_slots.get(province_name, 9) }}">
+      <h4 class="ph-envases-prov-name"><span class="ph-dash-dot"></span>{{ province_name }}</h4>
+      <div class="ph-envases-scroll">
+        <table class="ph-envases-table">
+          <colgroup><col style="width: 32%"><col style="width: 30%"><col style="width: 18%"><col style="width: 20%"></colgroup>
+          <thead><tr><th>Envase</th><th>Precio</th><th class="num">Mediana</th><th class="num">Anuncios</th></tr></thead>
+          <tbody>
+            {% for card in province_cards[:3] %}{{ fila_envase(card) }}{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if province_cards | length > 3 %}
+      <details class="ph-envases-mas">
+        <summary>Ver los {{ province_cards | length }} envases de {{ province_name }}</summary>
+        <div class="ph-envases-scroll">
+          <table class="ph-envases-table">
+            <colgroup><col style="width: 32%"><col style="width: 30%"><col style="width: 18%"><col style="width: 20%"></colgroup>
+            <tbody>
+              {% for card in province_cards[3:] %}{{ fila_envase(card) }}{% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
 </section>
 {% endif %}
 {% endif %}
 
-{# Solo tabla (2026-09-18, pedido explícito del operador: "quita las
-   tarjetas del tablero solo la tabla"). Hasta acá convivían dos
-   presentaciones —tarjetas agrupadas con índice de salto, y esta tabla—
-   detrás de un toggle. Se retira la de tarjetas entera: el toggle, el
-   índice de salto, los `<details>` colapsables y `card_view.ProductGroup`
-   (que existía solo para esa presentación). La tabla queda como la única
-   forma de ver el tablero — no hay nada más que elegir, así que tampoco
-   hay pill de "Tarjetas/Tabla" que mostrar. #}
-<div class="ph-dash-table-wrap">
-  <table class="ph-dash-table">
-    <thead>
-      <tr>
-        <th>Provincia</th>
-        <th>Producto</th>
-        <th>Precio</th>
-        <th>Mediana</th>
-        <th>Muestra</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for province_name, province_cards in cards_by_province %}
-      {% for card in province_cards %}
-      <tr>
-        <td>
-          <span class="ph-dash-table-prov ph-prov-{{ province_slots[province_name] }}">
-            <span class="ph-dash-dot"></span>{{ province_name }}
-          </span>
-        </td>
-        <td>
-          <a class="ph-dash-table-producto ph-tap-44" href="{{ product_hrefs.get((card.product_name, card.province_name), '#') }}">{{ card.product_name }}</a>
-          {%- if card.format_label %} <span class="ph-dash-table-sample">({{ card.format_label }})</span>{% endif -%}
-        </td>
-        <td>
-          {%- if card.is_single_observation -%}
-          {{ card.format_median_text or card.median_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
-          {%- else -%}
-          {{ card.format_minimum_text or card.minimum_text }}–{{ card.format_maximum_text or card.maximum_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
-          {%- endif -%}
-        </td>
-        <td>{% if card.is_single_observation %}—{% else %}{{ card.format_median_text or card.median_text }}{% endif %}</td>
-        <td class="ph-dash-table-sample">{{ card.count }} · {{ card.state }}</td>
-      </tr>
-      {% endfor %}
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-
-<p class="ph-note" style="margin-top: var(--m3-space-8);">
-  Todas las celdas están en <strong>muestra en formación</strong>: todavía no hay
-  suficientes anuncios para dar un precio como cifra cerrada, así que se publica
-  el rango observado y cuántos anuncios lo respaldan. Ninguna cifra es una
-  estimación.
-</p>
 {% else %}
 <p class="ph-note" style="margin-top: var(--m3-space-6);">Sin anuncios verificados en esta ventana todavía.</p>
 {% endif %}
