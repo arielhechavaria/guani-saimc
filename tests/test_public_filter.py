@@ -119,13 +119,14 @@ def _precio(
     dia: date,
     price: str = "300",
     format_id: object | None = None,
+    currency: str = Currency.CUP.value,
 ) -> None:
     session.add(
         PriceHistory(
             product_id=product.id,
             province_id=province.id,
             price=Decimal(price),
-            currency=Currency.CUP.value,
+            currency=currency,
             source_id=source.id,
             unit="lb",
             sale_format=SaleFormat.RETAIL.value,
@@ -3560,6 +3561,68 @@ class TestPorEnvaseEnElDetalle:
         assert "Lo que se paga por el envase, en CUP (no por libra)" in panel
         assert "<th>Precio del envase (CUP)</th>" in panel
         assert precios and not any("CUP" in c for c in precios)
+
+    def test_con_exactamente_cuatro_envases_no_hay_desplegable(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El borde del corte: con cuatro entran los cuatro y el `<details>`
+        no se emite. Con cinco ya hay desplegable, y eso lo prueba el test de
+        arriba; acá se fija el lado de abajo para que mover el corte otra vez
+        no pase inadvertido."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-envases-justo-4")
+        for envase, anuncios in (("paquete", 4), ("saco", 3), ("caja", 2), ("botella", 1)):
+            formato = _formato(session, product=arroz, packaging=envase, quantity="1", unit="lb")
+            for i in range(anuncios):
+                _precio(session, product=arroz, province=habana, source=fuente,
+                        dia=_hace(2 + i), price="300", format_id=formato.id)
+        session.commit()
+
+        panel = self._por_envase(client)
+
+        assert "ph-envases-mas" not in panel
+        assert "envases de La Habana" not in panel
+        assert all(
+            e in panel
+            for e in ("Paquete de 1 lb", "Saco de 1 lb", "Caja de 1 lb", "Botella de 1 lb")
+        )
+
+    def test_el_panel_nunca_mezcla_dos_monedas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Por qué la moneda puede vivir en el encabezado y no en cada fila.
+
+        `build_cards` descarta las filas `unconverted` —moneda extranjera sin
+        tasa resuelta— y `_resolve_row` funde en CUP todo lo que sí se pudo
+        convertir, así que toda tarjeta que llega al panel es CUP. Acá se
+        siembra un anuncio en USD sin tasa junto a los de CUP: no aparece, y
+        el encabezado sigue diciendo una sola moneda. Si algún día una fila en
+        otra moneda llegara al panel, este test cae y hay que devolverle la
+        moneda a la fila.
+        """
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        paquete = _formato(session, product=arroz, packaging="paquete", quantity="1", unit="lb")
+        saco = _formato(session, product=arroz, packaging="saco", quantity="1", unit="lb")
+        fuente = _ingestion(session, hash_="h-envases-dos-monedas")
+        for dia in (9, 7, 5):
+            _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(dia),
+                    price="300", format_id=paquete.id)
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(4),
+                price="2", format_id=saco.id, currency=Currency.USD.value)
+        session.commit()
+
+        panel = self._por_envase(client)
+
+        assert panel.count("<th>Precio del envase (") == 1
+        assert "<th>Precio del envase (CUP)</th>" in panel
+        assert "USD" not in panel
+        assert "Paquete de 1 lb" in panel and "Saco de 1 lb" not in panel
 
     def test_dos_filas_del_mismo_envase_se_distinguen_por_su_variante(
         self, client: TestClient, session: Session

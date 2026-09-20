@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from saimc.cells import RetailObservation
 from saimc.web.price_charts import build_month_vs_month
-from saimc.web.watchlist_view import build_watchlist
+from saimc.web.watchlist_view import WatchRow, build_watchlist
 
 HOY = date(2026, 8, 30)
 DESDE = date(2026, 7, 31)
@@ -327,4 +327,27 @@ class TestOrdenPorMuestra:
         )
 
         assert [r.product_name for r in lista.rows] == ["Ají", "Ajo", "Nabo", "Ñame", "Ocra"]
+
+
+class TestUnidadEnPalabra:
+    """`WatchRow.unit_noun` es lo que el subtítulo de «Por envase» escribe
+    dentro de la frase («no por libra»). Fuera del vocabulario no se inventa
+    una palabra: cae al valor canónico, que se lee peor pero no miente."""
+
+    def _fila(self, unit: str) -> WatchRow:
+        return WatchRow(
+            product_name="Arroz", slug="arroz", icon=None, currency="CUP", unit=unit,
+            cells=(), query="", is_active=False,
+        )
+
+    def test_del_vocabulario_sale_la_palabra(self) -> None:
+        assert self._fila("lb").unit_noun == "libra"
+
+    def test_fuera_del_vocabulario_queda_la_unidad_canonica(self) -> None:
+        assert self._fila("onza").unit_noun == "onza"
+
+    def test_sin_unidad_no_hay_palabra(self) -> None:
+        """Un producto sin anuncios en la ventana no trae unidad, y la
+        plantilla se apoya en que esto sea falso para no escribir «(no por )»."""
+        assert self._fila("").unit_noun == ""
 

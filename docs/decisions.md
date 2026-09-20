@@ -11575,3 +11575,29 @@ primer bloque: así también cubre el tramo de 48 a 64 rem, donde «Todos» sigu
 sin menú. (iii) Queda probado que `has-nav` se emite bajo la misma condición
 que dibuja el menú, comparando las dos vistas renderizadas: la clase y el
 `<nav>` aparecen juntos o no aparecen.
+
+## 2026-09-20 — Por qué el panel «Por envase» tiene una sola moneda
+Contexto: la entrada de hoy «Alineación con el prototipo E, 2 de 4» justificó
+sacar la moneda de cada fila diciendo que un producto «no puede tenerlas en el
+mismo panel, porque `_chart_for` ya elige un solo gráfico —una moneda y una
+unidad— por producto». El repaso del slice preguntó qué pasa si una tarjeta
+trae otra moneda que la del encabezado, y al ir a mirarlo la razón escrita no
+se sostiene: `_chart_for` gobierna `fila` —la fila de la lista de productos,
+de donde sale el encabezado—, no las tarjetas del panel, que salen de
+`build_cards` y se agrupan por (producto, provincia, moneda, unidad).
+Decisión: la conclusión se mantiene y el motivo se reemplaza. El panel tiene
+una sola moneda porque `build_cards` descarta las filas `unconverted`
+(`card_view.py`, «moneda extranjera cuya tasa no se resolvió») y `_resolve_row`
+funde en CUP todo lo que sí se pudo convertir. Lo que sobrevive es CUP, sin
+excepción. Queda probado por `test_el_panel_nunca_mezcla_dos_monedas`, que
+siembra un anuncio en USD sin tasa junto a los de CUP y verifica que no llega
+al panel y que el encabezado nombra una sola moneda.
+Descartado: (a) dejar la razón vieja, que da la respuesta correcta apoyada en
+el mecanismo equivocado y se cae sola el día que alguien toque `_chart_for`;
+(b) imprimir la moneda en la fila cuando difiere de la del encabezado, que fue
+lo primero que escribí: es una rama que no puede ejecutarse nunca, y este
+proyecto muere por sobreingeniería antes que por falta de defensas.
+Consecuencia: si algún día se publicara una tarjeta sin fundir a CUP —una tasa
+resuelta por otra vía, o el filtro `unconverted` relajado—, el test cae y ahí
+sí hay que devolverle la moneda a la fila. El encabezado es correcto mientras
+ese filtro esté en pie, y el test es lo que lo sostiene.
