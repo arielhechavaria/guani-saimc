@@ -26,8 +26,30 @@ from decimal import Decimal
 
 UNITS: tuple[str, ...] = ("lb", "kg", "l", "ml", "unidad", "docena", "caja")
 
+#: El nombre con el que cada unidad se escribe DENTRO de una frase («no por
+#: libra»). `UNITS` es corto y canónico porque nombra lo que se almacena;
+#: esto nombra lo que se lee, y por eso vive al lado y no en una plantilla.
+UNIT_NOUNS: dict[str, str] = {
+    "lb": "libra",
+    "kg": "kilo",
+    "l": "litro",
+    "ml": "mililitro",
+    "unidad": "unidad",
+    "docena": "docena",
+    "caja": "caja",
+}
+
 # Formas que produce el extractor u operadores y no son canónicas.
 _ALIASES = {"litro": "l", "litros": "l", "cajas": "caja"}
+
+
+def unit_noun(unit: str | None) -> str | None:
+    """El nombre con el que se escribe la unidad en una frase, o `None`.
+
+    Nunca inventa: una unidad fuera del vocabulario devuelve `None` y quien la
+    muestre decide qué poner en su lugar, igual que `canonical_unit`.
+    """
+    return UNIT_NOUNS.get(unit) if unit else None
 
 
 def canonical_unit(raw: str | None) -> str | None:

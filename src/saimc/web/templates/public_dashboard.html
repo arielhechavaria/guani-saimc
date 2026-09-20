@@ -263,20 +263,20 @@
 {%- endmacro %}
 
 {# Una fila de «Por envase»: envase (con su variante), precio del envase (rango,
-   o el único precio si hay un solo anuncio), mediana y cuántos anuncios. En
+   o una sola cifra si todos piden lo mismo), mediana y cuántos anuncios. En
    el móvil las dos últimas columnas se esconden y la mediana y los anuncios
-   pasan a una línea debajo del nombre. #}
+   pasan a una línea debajo del nombre.
+
+   La moneda va en el encabezado de la columna y no en cada fila (prototipo
+   E): el panel es de un producto y su moneda es una sola. La excepción es la
+   fila sin envase declarado, que no es un envase sino el precio por unidad y
+   lleva su «/unidad» a la vista para no quedar bajo un encabezado que no le
+   corresponde. #}
 {% macro fila_envase(card) -%}
 <tr>
   <td class="ph-envases-nombre">{{ card.format_label_display or "Sin envase declarado" }}
     {%- if card.variant_label %}<span class="ph-envases-variante">{{ card.variant_label }}</span>{% endif %}<span class="ph-envases-meta">{% if not card.is_single_observation %}mediana {{ card.format_median_text or card.median_text }} · {% endif %}{{ card.count }} anuncio{{ "s" if card.count != 1 }}</span></td>
-  <td class="mono precio">
-    {%- if card.is_single_observation -%}
-    {{ card.format_median_text or card.median_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
-    {%- else -%}
-    {{ card.format_minimum_text or card.minimum_text }}–{{ card.format_maximum_text or card.maximum_text }} {{ card.currency }}{% if not card.format_label %}/{{ card.unit }}{% endif %}
-    {%- endif -%}
-  </td>
+  <td class="mono precio">{{ card.format_span_text }}{% if not card.format_label %}/{{ card.unit }}{% endif %}</td>
   <td class="mono num">{% if card.is_single_observation %}—{% else %}{{ card.format_median_text or card.median_text }}{% endif %}</td>
   <td class="num">{{ card.count }}</td>
 </tr>
@@ -444,27 +444,27 @@
      por provincia en orden alfabético. #}
   <section class="ph-panel ph-envases" aria-label="Por envase">
     <h2 class="ph-panel-title">Por envase</h2>
-    <p class="ph-panel-sub">Lo que se paga por el envase completo, con su moneda en cada fila; si no declara envase, por unidad.</p>
+    <p class="ph-panel-sub">Lo que se paga por el envase{% if fila.currency %}, en {{ fila.currency }}{% endif %}{% if fila.unit_noun %} (no por {{ fila.unit_noun }}){% endif %}</p>
     {% for province_name, province_cards in cards_by_province %}
     <div class="ph-envases-prov ph-prov-{{ province_slots.get(province_name, 9) }}">
       <h3 class="ph-envases-prov-name"><span class="ph-dot ph-dot-lg"></span>{{ province_name }}</h3>
       <div class="ph-envases-scroll">
         <table class="ph-envases-table">
           <colgroup><col><col><col><col></colgroup>
-          <thead><tr><th>Envase</th><th>Precio del envase</th><th class="num">Mediana</th><th class="num">Anuncios</th></tr></thead>
+          <thead><tr><th>Envase</th><th>Precio del envase{% if fila.currency %} ({{ fila.currency }}){% endif %}</th><th class="num">Mediana</th><th class="num">Anuncios</th></tr></thead>
           <tbody>
-            {% for card in province_cards[:3] %}{{ fila_envase(card) }}{% endfor %}
+            {% for card in province_cards[:4] %}{{ fila_envase(card) }}{% endfor %}
           </tbody>
         </table>
       </div>
-      {% if province_cards | length > 3 %}
+      {% if province_cards | length > 4 %}
       <details class="ph-envases-mas">
         <summary>Ver los {{ province_cards | length }} envases de {{ province_name }}</summary>
         <div class="ph-envases-scroll">
           <table class="ph-envases-table">
             <colgroup><col><col><col><col></colgroup>
             <tbody>
-              {% for card in province_cards[3:] %}{{ fila_envase(card) }}{% endfor %}
+              {% for card in province_cards[4:] %}{{ fila_envase(card) }}{% endfor %}
             </tbody>
           </table>
         </div>

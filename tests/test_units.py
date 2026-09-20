@@ -12,11 +12,13 @@ import pytest
 
 from saimc.units import (
     PACKAGING,
+    UNIT_NOUNS,
     UNITS,
     canonical_packaging,
     canonical_unit,
     convert_price_per_unit,
     convert_quantity,
+    unit_noun,
 )
 
 
@@ -224,3 +226,29 @@ class TestConvertQuantity:
     def test_unidad_none_devuelve_none(self) -> None:
         assert convert_quantity(Decimal("1"), frm=None, to="lb") is None
         assert convert_quantity(Decimal("1"), frm="lb", to=None) is None
+
+
+class TestUnitNoun:
+    """El nombre con el que la unidad se escribe dentro de una frase («no por
+    libra»). Los pares se fijan acá a mano, no se derivan del módulo."""
+
+    def test_cada_unidad_del_vocabulario_tiene_nombre(self) -> None:
+        assert {u: unit_noun(u) for u in UNITS} == {
+            "lb": "libra",
+            "kg": "kilo",
+            "l": "litro",
+            "ml": "mililitro",
+            "unidad": "unidad",
+            "docena": "docena",
+            "caja": "caja",
+        }
+
+    def test_no_sobra_ningun_nombre(self) -> None:
+        """`UNIT_NOUNS` no nombra unidades que no se almacenan."""
+        assert set(UNIT_NOUNS) == set(UNITS)
+
+    def test_fuera_del_vocabulario_no_inventa(self) -> None:
+        assert unit_noun("onza") is None
+        assert unit_noun("") is None
+        assert unit_noun(None) is None
+

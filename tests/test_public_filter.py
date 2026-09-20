@@ -3187,10 +3187,19 @@ class TestDetalleDeProductoEnElTablero:
     def test_la_navegacion_de_productos_solo_esta_en_el_detalle(
         self, client: TestClient, session: Session
     ) -> None:
+        """La clase `has-nav` de la grilla y el propio menú tienen que ir
+        juntos: es esa clase la que le reserva su fila en la barra lateral, y
+        si una aparece sin la otra el menú pierde su lugar o queda una fila
+        vacía que duplica el aire."""
         self._seed(session)
 
-        assert '<nav class="ph-nav' not in client.get("/?vista=tablero").text
-        assert '<nav class="ph-nav' in client.get("/?vista=tablero&productos=arroz").text
+        todos = client.get("/?vista=tablero").text
+        detalle = client.get("/?vista=tablero&productos=arroz").text
+
+        assert '<nav class="ph-nav' not in todos
+        assert '<div class="ph-layout">' in todos
+        assert '<nav class="ph-nav' in detalle
+        assert '<div class="ph-layout has-nav">' in detalle
 
 
 class TestCambioUnicoEnElTablero:
@@ -3468,9 +3477,9 @@ class TestPorEnvaseEnElDetalle:
 
         # paquete: 2 anuncios, primero por tener más muestra; rango 300–320, mediana 310.
         assert habana.index("Paquete de 1 lb") < habana.index("Saco de 1 lb")
-        assert re.search(r"Paquete de 1 lb[\s\S]*?300–320 CUP[\s\S]*?>310<[\s\S]*?>2<", habana)
+        assert re.search(r"Paquete de 1 lb[\s\S]*?>300–320<[\s\S]*?>310<[\s\S]*?>2<", habana)
         # saco: una sola observación → un precio y «—» de mediana.
-        assert re.search(r"Saco de 1 lb[\s\S]*?400 CUP[\s\S]*?>—<[\s\S]*?>1<", habana)
+        assert re.search(r"Saco de 1 lb[\s\S]*?>400<[\s\S]*?>—<[\s\S]*?>1<", habana)
 
     def test_la_provincia_elegida_no_recorta_los_envases(
         self, client: TestClient, session: Session
@@ -3486,17 +3495,20 @@ class TestPorEnvaseEnElDetalle:
         assert panel.count('class="ph-envases-prov-name"') == 2
         assert "Santiago de Cuba" in panel and "La Habana" in panel
 
-    def test_con_mas_de_tres_envases_el_resto_va_en_un_desplegable(
+    def test_con_mas_de_cuatro_envases_el_resto_va_en_un_desplegable(
         self, client: TestClient, session: Session
     ) -> None:
-        """La Habana con 4 envases de 1 lb y muestras 4, 3, 2 y 1: se ven los
-        tres mayores y el cuarto (botella, 1 anuncio) queda adentro."""
+        """La Habana con 5 envases de 1 lb y muestras 5, 4, 3, 2 y 1: se ven
+        los cuatro mayores —los que muestra el prototipo— y el quinto (pomo,
+        1 anuncio) queda adentro."""
         arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         habana = Province(code="hab", name="La Habana")
         session.add_all([arroz, habana])
         session.commit()
-        fuente = _ingestion(session, hash_="h-envases-4")
-        for envase, anuncios in (("paquete", 4), ("saco", 3), ("caja", 2), ("botella", 1)):
+        fuente = _ingestion(session, hash_="h-envases-5")
+        for envase, anuncios in (
+            ("paquete", 5), ("saco", 4), ("caja", 3), ("botella", 2), ("pomo", 1)
+        ):
             formato = _formato(session, product=arroz, packaging=envase, quantity="1", unit="lb")
             for i in range(anuncios):
                 _precio(session, product=arroz, province=habana, source=fuente,
@@ -3506,9 +3518,48 @@ class TestPorEnvaseEnElDetalle:
         panel = self._por_envase(client)
         visible, _, oculto = panel.partition('<details class="ph-envases-mas">')
 
-        assert "Ver los 4 envases de La Habana" in oculto
-        assert all(e in visible for e in ("Paquete de 1 lb", "Saco de 1 lb", "Caja de 1 lb"))
-        assert "Botella de 1 lb" not in visible and "Botella de 1 lb" in oculto
+        assert "Ver los 5 envases de La Habana" in oculto
+        assert all(
+            e in visible
+            for e in ("Paquete de 1 lb", "Saco de 1 lb", "Caja de 1 lb", "Botella de 1 lb")
+        )
+        assert "Pomo de 1 lb" not in visible and "Pomo de 1 lb" in oculto
+
+    def test_el_precio_no_repite_la_misma_cifra_dos_veces(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Dos anuncios del mismo envase al mismo precio no son un rango:
+        «300–300» inventaría una variación que no se observó."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        paquete = _formato(session, product=arroz, packaging="paquete", quantity="1", unit="lb")
+        fuente = _ingestion(session, hash_="h-envases-plano")
+        for dia in (6, 4):
+            _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(dia),
+                    price="300", format_id=paquete.id)
+        session.commit()
+
+        panel = self._por_envase(client)
+
+        assert "300–300" not in panel
+        assert re.search(r"Paquete de 1 lb[\s\S]*?>300<[\s\S]*?>300<[\s\S]*?>2<", panel)
+
+    def test_la_moneda_va_en_el_encabezado_y_no_en_cada_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Prototipo E: el panel es de un producto y su moneda es una sola, así
+        que se dice una vez en el subtítulo y en la columna."""
+        self._seed(session)
+
+        panel = self._por_envase(client)
+
+        precios = re.findall(r'<td class="mono precio">([^<]*)</td>', panel)
+
+        assert "Lo que se paga por el envase, en CUP (no por libra)" in panel
+        assert "<th>Precio del envase (CUP)</th>" in panel
+        assert precios and not any("CUP" in c for c in precios)
 
     def test_dos_filas_del_mismo_envase_se_distinguen_por_su_variante(
         self, client: TestClient, session: Session

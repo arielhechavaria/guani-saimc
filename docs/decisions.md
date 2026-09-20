@@ -11527,3 +11527,51 @@ Consecuencia: el orden es estable mientras la muestra no cambie de posición;
 cuando entren más provincias, el criterio sigue siendo el producto entero. El
 aire entre paneles es de 16 px en las dos vistas y en todos los anchos
 medidos (390, 768, 1024, 1280 y 1600), sin desborde horizontal.
+
+## 2026-09-20 — Alineación con el prototipo E, 2 de 4: «Por envase»
+Contexto: el panel «Por envase» del tablero se leía distinto al prototipo en
+cuatro puntos: mostraba tres envases donde el prototipo muestra cuatro,
+escribía «26.000–26.000 CUP» cuando todos los anuncios piden lo mismo,
+repetía la moneda en cada fila, y el subtítulo hablaba de «envase completo»
+sin decir cuál es la unidad que NO se está cobrando, que es justo la
+confusión que el panel existe para deshacer.
+Decisión: (1) `CardView.format_span_text` escribe una sola cifra cuando el
+mínimo y el máximo del envase coinciden, y el rango cuando difieren. No
+alcanzaba con `is_single_observation`: nueve anuncios pidiendo 26.000 son
+nueve observaciones y un solo precio, y el guión inventaba una dispersión que
+no se observó. (2) La moneda sale de las filas y pasa al encabezado de la
+columna («Precio del envase (CUP)») y al subtítulo: el panel es de un
+producto y su moneda es una sola, así que decirla doce veces es ruido. La
+excepción es la fila sin envase declarado, que no es un envase sino el precio
+por unidad y conserva su «/lb» a la vista para no quedar bajo un encabezado
+que no le corresponde. (3) El subtítulo pasa a «Lo que se paga por el envase,
+en CUP (no por libra)», con la unidad escrita en palabra. Para eso se agrega
+`UNIT_NOUNS` y `unit_noun()` en `saimc.units`: `UNITS` nombra lo que se
+almacena, esto nombra lo que se lee, y vive al lado y no en la plantilla
+porque es vocabulario del dominio. Fuera del vocabulario devuelve `None` y
+quien lo muestra cae al valor canónico: se lee peor, pero no miente. (4) El
+corte del desplegable pasa de tres envases a cuatro, que es lo que muestra el
+prototipo antes de «Ver los N envases de X».
+Descartado: (a) formatear el rango en la plantilla con un `{% if %}`: la
+regla «mínimo y máximo iguales son un precio, no un rango» es del dato, no
+del HTML, y se prueba sola en `card_view`; (b) derivar el nombre de la unidad
+con un diccionario dentro de la plantilla, que lo dejaría fuera del alcance
+de los tests y duplicado en la próxima vista que lo necesite; (c) dejar la
+moneda en cada fila «por si acaso un producto tuviera dos»: no puede tenerlas
+en el mismo panel, porque `_chart_for` ya elige un solo gráfico —una moneda y
+una unidad— por producto.
+Consecuencia: el precio del envase y el de la mediana quedan en la misma
+escala y sin moneda repetida, así que la tabla se puede leer en columna. Si
+algún día un producto se publicara en dos monedas, el encabezado diría solo
+una: el corte está en `_chart_for`, no acá, y habría que partir el panel.
+Se aplican además las tres observaciones del repaso del slice A. (i) El
+desempate de orden compara la letra base, sin tildes: comparar el texto crudo
+mandaba «Ñame» detrás de «Pollo» —la Ñ es U+00D1 y la P es U+0050— y separaba
+«Ají» de «Ajo». Queda con las enes, que es donde se lo busca; no es la
+ordenación completa del español, donde la Ñ es letra propia después de la N,
+pero no manda ningún nombre a un lugar donde nadie lo buscaría. (ii) La prueba
+de la grilla de una columna mira todo el CSS anterior a los 64 rem, no el
+primer bloque: así también cubre el tramo de 48 a 64 rem, donde «Todos» sigue
+sin menú. (iii) Queda probado que `has-nav` se emite bajo la misma condición
+que dibuja el menú, comparando las dos vistas renderizadas: la clase y el
+`<nav>` aparecen juntos o no aparecen.

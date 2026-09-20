@@ -1151,10 +1151,9 @@ class TestBlancoTactilDelTablero:
         orden del documento alcanza, así que las áreas viven solo en el bloque
         de 64rem, con un juego aparte para cuando hay navegación."""
         css = self._dashboard()
-        inicio = css.index(".ph-layout { display: grid;")
-        base = css[inicio : css.index("}", inicio)]
+        hasta_64 = css[: css.index("@media (min-width: 64rem) {")]
 
-        assert "grid-template-areas" not in base
+        assert "grid-template-areas" not in hasta_64
         assert ".ph-layout.has-nav { grid-template-rows:" in css
 
     def test_el_toggle_va_en_su_propia_fila_en_el_movil(self) -> None:

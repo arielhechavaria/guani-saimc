@@ -15,10 +15,12 @@ noticia para quien compra y mala para quien vende.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
+from saimc.units import unit_noun
 from saimc.web.price_charts import SlopeChart, SlopeLine
 from saimc.web.product_nav import product_icon, product_slug, products_query
 
@@ -68,6 +70,12 @@ class WatchRow:
     barata: WatchCell | None = None
     contra: tuple[WatchCell, ...] = ()
 
+    @property
+    def unit_noun(self) -> str:
+        """«libra» para «lb»: la unidad escrita dentro de una frase. Fuera del
+        vocabulario cae al valor canónico, que se lee peor pero no miente."""
+        return unit_noun(self.unit) or self.unit
+
 
 @dataclass(frozen=True)
 class Watchlist:
@@ -103,6 +111,18 @@ def _mas_barata(lines: Sequence[SlopeLine]) -> str | None:
     if medianas[0][0] == medianas[1][0]:
         return None
     return medianas[0][1]
+
+
+def _alfabeto(nombre: str) -> tuple[str, str]:
+    """Clave para ordenar como se ordena en español y no por code point.
+
+    Comparar el texto crudo manda «Ñame» detrás de «Pollo» (U+00D1 > 'P') y
+    separa «Ajo» de «Ají». Se compara sin tildes —la letra base— y se guarda
+    el nombre original como segunda clave, así dos que solo difieren en la
+    tilde siguen teniendo un orden fijo.
+    """
+    plano = unicodedata.normalize("NFD", nombre.lower())
+    return ("".join(c for c in plano if unicodedata.category(c) != "Mn"), nombre)
 
 
 def build_watchlist(
@@ -181,7 +201,7 @@ def build_watchlist(
                 contra=tuple(c for c in todas if c and c is not mas_barata) if mas_barata else (),
             )
         )
-    rows.sort(key=lambda r: (-sum(c.count for c in r.todas if c), r.product_name))
+    rows.sort(key=lambda r: (-sum(c.count for c in r.todas if c), _alfabeto(r.product_name)))
     return Watchlist(
         provinces=columnas,
         rows=tuple(rows),

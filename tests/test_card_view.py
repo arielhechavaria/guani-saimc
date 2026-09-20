@@ -421,3 +421,39 @@ class TestEtiquetaDeEnvase:
         (card,) = build_cards([_rango()])
 
         assert card.format_label_display is None
+
+
+class TestPrecioDelEnvase:
+    """`format_span_text` (2026-09-20, alineación con el prototipo E): el
+    precio del envase se escribe con una sola cifra cuando el mínimo y el
+    máximo son el mismo número. «26.000–26.000» inventaba una variación que
+    no se observó, y pasaba con nueve anuncios pidiendo todos lo mismo, así
+    que `is_single_observation` no alcanzaba."""
+
+    def test_sin_dispersion_va_una_sola_cifra(self) -> None:
+        (card,) = build_cards([_rango(count=9, minimum="300", median="300", maximum="300")])
+
+        assert card.format_span_text == "300"
+
+    def test_con_dispersion_va_el_rango(self) -> None:
+        (card,) = build_cards([_rango(count=5, minimum="300", median="310", maximum="320")])
+
+        assert card.format_span_text == "300–320"
+
+    def test_un_solo_anuncio_va_una_sola_cifra(self) -> None:
+        (card,) = build_cards([_rango(count=1, minimum="400", median="400", maximum="400")])
+
+        assert card.format_span_text == "400"
+
+    def test_con_envase_declarado_usa_el_precio_del_envase(self) -> None:
+        """Un saco de 100 lb a 300 por libra son 30.000 el saco, y el precio
+        del envase es el que se muestra, no el de la libra."""
+        (card,) = build_cards([
+            _rango(
+                count=9, minimum="300", median="300", maximum="300",
+                format_packaging="saco", format_quantity="100", format_unit="lb",
+            )
+        ])
+
+        assert card.format_span_text == "30.000"
+

@@ -162,6 +162,19 @@ class ProductCard:
         return None if self.format_maximum is None else format_price(self.format_maximum)
 
     @property
+    def format_span_text(self) -> str:
+        """El precio del envase: una cifra cuando el mínimo y el máximo son el
+        mismo número, el rango cuando hay dispersión.
+
+        No alcanza con `is_single_observation`: varios anuncios pueden pedir
+        todos lo mismo, y escribir «26.000–26.000» inventa una variación que
+        no se observó. Sin envase declarado cae al precio por unidad.
+        """
+        lo = self.format_minimum_text or self.minimum_text
+        hi = self.format_maximum_text or self.maximum_text
+        return lo if lo == hi else f"{lo}–{hi}"
+
+    @property
     def is_single_observation(self) -> bool:
         """Con una sola observación no hay rango, hay un dato suelto.
 

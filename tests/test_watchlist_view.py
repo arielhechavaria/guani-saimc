@@ -315,3 +315,16 @@ class TestOrdenPorMuestra:
         )
 
         assert [r.product_name for r in lista.rows] == ["Aceite", "Arroz", "Pollo"]
+
+    def test_el_desempate_ordena_como_el_espanol(self) -> None:
+        """«Ñame» va entre «Nabo» y «Ocra», no detrás de todo: comparar el
+        texto crudo lo mandaba al final porque U+00D1 es mayor que «P». La
+        tilde tampoco separa: «Ají» queda junto a «Ajo»."""
+        slopes = build_month_vs_month([], [], window_days=30, hoy=HOY)
+        lista = build_watchlist(
+            ["Ocra", "Ñame", "Nabo", "Ajo", "Ají"], [], slopes, provinces=PROVINCIAS,
+            selected_province="", desde=DESDE, hasta=HOY,
+        )
+
+        assert [r.product_name for r in lista.rows] == ["Ají", "Ajo", "Nabo", "Ñame", "Ocra"]
+
