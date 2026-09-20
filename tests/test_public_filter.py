@@ -2796,7 +2796,7 @@ class TestAccionesYCoberturaEnElTablero:
         bloque = texto[texto.index('id="datos-titulo"') :]
 
         assert "ver=cobertura" not in texto
-        assert "<strong>1 de 1 provincias</strong> tienen datos." in bloque
+        assert "<strong>1 de 1 provincia</strong> tiene datos." in bloque
         assert "Ninguna está publicada todavía" in bloque
         assert "no cuando lo dice el calendario" in bloque
 
@@ -2999,7 +2999,7 @@ class TestSobreLosDatosEnElTablero:
 
         assert ">Sobre los datos</h2>" in bloque
         assert 'id="cobertura-titulo"' not in texto
-        assert "<strong>1 de 1 provincias</strong> tienen datos." in bloque
+        assert "<strong>1 de 1 provincia</strong> tiene datos." in bloque
         assert "<strong>mediana</strong>" in bloque
         assert "«(base N)»" in bloque
         assert "verificados a mano uno por uno" in bloque
@@ -3180,6 +3180,9 @@ class TestDetalleDeProductoEnElTablero:
 
         assert "<strong>La Habana</strong> es la más barata" in detalle
         assert detalle.count('class="ph-envases-prov-name"') == 2
+        # «Cómo se movió» y «Cuánto varía» traen la leyenda de las dos
+        # provincias: con el detalle filtrado a una sola no habría leyenda.
+        assert detalle.count('class="ph-leyenda"') == 2
 
     def test_la_navegacion_de_productos_solo_esta_en_el_detalle(
         self, client: TestClient, session: Session

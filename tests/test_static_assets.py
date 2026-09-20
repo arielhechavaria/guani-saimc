@@ -1148,6 +1148,7 @@ class TestBlancoTactilDelTablero:
         assert "flex: 0 0 100%" in bloque
         assert "padding-top" in bloque
 
+
 class TestFuenteYFilaDeEvidencia:
     """Dos hallazgos más de la auditoría mobile-first del 2026-09-17: la
     fuente más chica del sitio (10px, en el cartelito del mapa) y la fila
