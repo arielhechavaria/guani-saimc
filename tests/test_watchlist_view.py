@@ -72,8 +72,10 @@ def _fila(lista, nombre: str):
 
 
 class TestFilas:
-    def test_una_fila_por_producto_piloto_en_su_orden(self) -> None:
-        assert [r.product_name for r in _lista([]).rows] == ["Aceite", "Arroz", "Pollo"]
+    def test_una_fila_por_cada_producto_piloto(self) -> None:
+        """Todos los piloto aparecen, tengan o no anuncios (el orden lo cubre
+        `TestOrdenPorMuestra`)."""
+        assert sorted(r.product_name for r in _lista([]).rows) == ["Aceite", "Arroz", "Pollo"]
 
     def test_las_columnas_son_las_provincias_recibidas(self) -> None:
         assert _lista([]).provinces == ("La Habana", "Santiago de Cuba")
@@ -279,3 +281,37 @@ class TestParaElDetalleYElResumen:
 
         assert pollo.barata is None
         assert pollo.contra == ()
+
+
+class TestOrdenPorMuestra:
+    """Prototipo E (2026-09-20): los productos se listan de más a menos
+    anuncios, no alfabéticamente —la lista contesta «qué cuesta hoy», y lo
+    que más se anuncia es lo que más gente mira—. El menú lateral del detalle
+    recorre las mismas filas, así que hereda el orden.
+
+    Valores esperados, a mano (ver el docstring del módulo): Arroz 3 anuncios
+    (La Habana 2 + Santiago 1), Pollo 1, Aceite 0."""
+
+    def test_las_filas_van_de_mas_a_menos_anuncios(self) -> None:
+        assert [r.product_name for r in _lista([]).rows] == ["Arroz", "Pollo", "Aceite"]
+
+    def test_el_orden_no_depende_de_la_provincia_elegida(self) -> None:
+        """Con Santiago elegida, Arroz sigue primero: el orden sale de todos
+        los anuncios del producto, no de los de la provincia enfocada (ahí
+        Arroz tiene 1 y Pollo 0)."""
+        assert [r.product_name for r in _lista([], "santiago-de-cuba").rows] == [
+            "Arroz",
+            "Pollo",
+            "Aceite",
+        ]
+
+    def test_con_la_misma_muestra_desempata_el_alfabeto(self) -> None:
+        """Dos productos sin anuncios: el orden tiene que ser estable entre
+        cargas, no el que devuelva el diccionario."""
+        slopes = build_month_vs_month([], [], window_days=30, hoy=HOY)
+        lista = build_watchlist(
+            ["Pollo", "Aceite", "Arroz"], [], slopes, provinces=PROVINCIAS,
+            selected_province="", desde=DESDE, hasta=HOY,
+        )
+
+        assert [r.product_name for r in lista.rows] == ["Aceite", "Arroz", "Pollo"]

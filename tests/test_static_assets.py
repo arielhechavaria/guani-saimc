@@ -1136,6 +1136,27 @@ class TestBlancoTactilDelTablero:
             "menos de 44px sin que ningún test lo note"
         )
 
+    def test_la_navegacion_de_productos_aparece_desde_la_tableta(self) -> None:
+        """Se escondía hasta 64rem: en una tableta el detalle se quedaba sin
+        ningún modo de saltar de un producto a otro."""
+        assert (
+            "@media (min-width: 48rem) { .ph-nav.ph-panel { display: flex; } }"
+            in self._dashboard()
+        )
+
+    def test_la_grilla_de_una_columna_no_nombra_filas(self) -> None:
+        """Una fila nombrada que queda vacía —la navegación, escondida en el
+        teléfono y ausente en «Todos»— mide cero pero conserva su `gap` a los
+        dos lados: medido, 32px de aire donde tocaban 16. En una columna el
+        orden del documento alcanza, así que las áreas viven solo en el bloque
+        de 64rem, con un juego aparte para cuando hay navegación."""
+        css = self._dashboard()
+        inicio = css.index(".ph-layout { display: grid;")
+        base = css[inicio : css.index("}", inicio)]
+
+        assert "grid-template-areas" not in base
+        assert ".ph-layout.has-nav { grid-template-rows:" in css
+
     def test_el_toggle_va_en_su_propia_fila_en_el_movil(self) -> None:
         """Dos `.ph-tap-44` apilados sin separación se pisan las áreas
         extendidas (medido: la de arriba queda cortada a la mitad). En el

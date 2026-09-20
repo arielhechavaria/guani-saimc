@@ -115,8 +115,13 @@ def build_watchlist(
     desde: date,
     hasta: date,
 ) -> Watchlist:
-    """Arma la lista en el orden de `pilot_names`, con una columna por cada
+    """Arma la lista de más a menos anuncios, con una columna por cada
     provincia de `provinces`.
+
+    El orden sale de la muestra del producto entero —todas las provincias,
+    aunque haya una enfocada (prototipo E)—: la lista contesta «qué cuesta
+    hoy» y arriba va lo que más gente anuncia. Con la misma muestra desempata
+    el alfabeto, para que el orden no cambie de una carga a otra.
 
     `selected_province` es el slug de la provincia elegida (o vacío): las
     queries la preservan, igual que el rango de calendario. Si coincide con
@@ -176,6 +181,7 @@ def build_watchlist(
                 contra=tuple(c for c in todas if c and c is not mas_barata) if mas_barata else (),
             )
         )
+    rows.sort(key=lambda r: (-sum(c.count for c in r.todas if c), r.product_name))
     return Watchlist(
         provinces=columnas,
         rows=tuple(rows),

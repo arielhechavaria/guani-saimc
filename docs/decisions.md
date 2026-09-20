@@ -11493,3 +11493,37 @@ px; ningún control por debajo de 44 px (el toggle Mapa/Tablero lo extiende
 `ph-tap-44`); modo oscuro por los tokens del sitio. Regla de proceso: un slice
 de interfaz no se cierra sin las capturas del prototipo y de la página lado a
 lado.
+
+
+## 2026-09-20 — Tablero: orden por muestra y el menú de productos desde la tableta (alineación E, 1/4)
+Contexto: comparado el prototipo E aprobado contra la página, con la misma
+ventana de datos, aparecieron doce diferencias. El operador pidió alinearlas
+todas, en cuatro entregas. Esta es la primera.
+Decisión: (1) `build_watchlist` ordena las filas de más a menos anuncios del
+producto entero —todas las provincias, aunque haya una enfocada—, con el
+alfabeto como desempate para que el orden no cambie de una carga a otra. Con
+los datos de hoy da Arroz, Pollo, Picadillo, Aceite, Azúcar blanca, que es el
+orden del prototipo; antes era alfabético. Arregla a la vez las tarjetas de
+«Todos» y el menú lateral, que recorre las mismas filas. (2) El menú
+«Productos» se escondía por debajo de 64 rem: en una tableta el detalle se
+quedaba sin ningún modo de saltar de un producto a otro salvo volver a
+«Todos». Ahora se muestra desde 48 rem, apilado entre el contenido y «Sobre
+los datos», y sigue siendo barra lateral desde 64 rem. En el teléfono no está,
+igual que en el prototipo.
+(3) La grilla de una columna deja de nombrar filas. Una fila nombrada que
+queda vacía —la navegación, escondida en el teléfono y ausente en «Todos»—
+mide cero pero conserva su `gap` a los dos lados: medido, 32 px de aire entre
+el contenido y «Sobre los datos» donde tocaban 16. En una columna alcanza el
+orden del documento, así que las áreas viven solo en el bloque de 64 rem, con
+un juego aparte (`.has-nav`, que pone la plantilla) para cuando hay un
+producto elegido. El aire doble también estaba en «Todos» a 1280 desde la
+reconstrucción sobre E; queda corregido de paso.
+Descartado: (a) ordenar por el dato de la provincia enfocada —la lista se
+reordenaría al elegir provincia y se perdería de vista el producto que se
+venía mirando—; (b) mostrar el menú también en el teléfono: el prototipo no lo
+trae y ahí se vuelve con «‹ Todos los productos»; (c) dejar la fila `nav`
+declarada y confiar en que una fila vacía no ocupa: ocupa sus dos `gap`.
+Consecuencia: el orden es estable mientras la muestra no cambie de posición;
+cuando entren más provincias, el criterio sigue siendo el producto entero. El
+aire entre paneles es de 16 px en las dos vistas y en todos los anchos
+medidos (390, 768, 1024, 1280 y 1600), sin desborde horizontal.
