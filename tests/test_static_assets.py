@@ -1208,12 +1208,35 @@ class TestListaCompactaDelTablero:
         como escondidas y seguirían a la vista."""
         assert self._valor(".ph-fila[hidden]", "display") == "none"
 
+    def _con_display(self, clase: str) -> list[str]:
+        """Los selectores de toda regla que nombra `clase` como clase entera y
+        define `display`. Mira también los compuestos (`.ph-lista .ph-buscar`,
+        `div.ph-buscar`), que `_valor` no ve: solo compara el selector exacto."""
+        nombra = re.compile(rf"(?<![\w-])\.{re.escape(clase)}(?![\w-])")
+        return [
+            ", ".join(selectores)
+            for selectores, cuerpo in self._reglas()
+            if any(nombra.search(s) for s in selectores)
+            and re.search(r"(?:^|;)\s*display\s*:", cuerpo)
+        ]
+
     def test_lo_que_solo_esconde_el_atributo_no_tiene_display_propio(self) -> None:
         """El envoltorio del buscador y el «no hay resultados» se muestran y
         se esconden con `hidden`. Si alguno tuviera `display`, quedaría
-        siempre a la vista, o el buscador sin script."""
-        assert self._valor(".ph-vacio", "display") is None
-        assert self._valor(".ph-buscar", "display") is None
+        siempre a la vista, o el buscador sin script. Se miran todas las reglas
+        que los nombran, no solo la del selector exacto."""
+        assert self._con_display("ph-vacio") == []
+        assert self._con_display("ph-buscar") == []
+
+    def test_el_guardia_de_display_distingue_clases_y_ve_compuestos(self) -> None:
+        """Prueba del propio guardia, contra el CSS real: sin esto podría estar
+        mirando una lista vacía para siempre y dar verde sin mirar nada."""
+        # Ve un compuesto: `.ph-lista-cab > span` define `display`.
+        assert ".ph-lista-cab > span" in self._con_display("ph-lista-cab")
+        # Respeta el borde de la clase: `.ph-buscar-caja` define `display` y no
+        # por eso `.ph-buscar` lo tiene.
+        assert ".ph-buscar-caja" in self._con_display("ph-buscar-caja")
+        assert self._con_display("ph-buscar") == []
 
     @pytest.mark.parametrize(
         "selector",
@@ -1262,6 +1285,17 @@ class TestListaCompactaDelTablero:
         quita el lugar. Sin esto, 298 con pastilla queda corrida contra 685."""
         assert self._valor(".ph-cel", "align-items") == "flex-end"
         assert self._valor(".ph-cel-cifra", "flex-direction") == "row-reverse"
+
+    def test_el_bloque_scripts_conserva_lo_del_padre(self) -> None:
+        """Un `{% block %}` que redefine el del padre lo pisa entero. Hoy el
+        `scripts` del padre está vacío, pero la vista que agrega HTMX o cualquier
+        otro script lo hace desde ahí, y el buscador no debe llevárselo puesto."""
+        raiz = Path(__file__).resolve().parents[1]
+        fuente = (raiz / "src" / "saimc" / "web" / "templates" / "public_dashboard.html").read_text(
+            encoding="utf-8"
+        )
+
+        assert "{% block scripts %}{{ super() }}" in fuente
 
     def test_no_quedan_reglas_de_la_tarjeta(self) -> None:
         """La tarjeta salió de la lista; su CSS suelto sería peso muerto que

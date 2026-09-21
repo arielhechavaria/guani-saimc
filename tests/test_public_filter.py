@@ -2923,7 +2923,7 @@ class TestMiProvinciaEnElTablero:
 
         assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]  # Aceite, Arroz
         assert self._cabecera(lista) == ["Santiago de Cuba"]  # la cabecera sigue a la elegida
-        assert 'class="ph-fila is-foco"' in lista
+        assert "is-foco" not in lista  # el foco se ve en las columnas, no en una clase sin regla
         assert re.search(r'class="ph-otras">[\s\S]*?La Habana:', lista)
 
     def test_sin_provincia_no_hay_lineas_de_otras(
@@ -3084,16 +3084,44 @@ class TestBuscadorYListaCompacta:
         # Varias palabras: se buscan todas, en cualquier orden.
         assert ".every(" in texto
 
-    def test_el_vacio_ofrece_borrar_la_busqueda_y_dice_cuantos_hay(
+    def test_el_vacio_ofrece_borrar_la_busqueda(
         self, client: TestClient, session: Session
     ) -> None:
+        """Dice «para ver todos» y no «para ver los N»: con un solo producto el
+        número obligaba a escribir «para ver los 1»."""
         self._seed(session)
 
         texto = self._todos(client)
 
         assert 'id="sin-resultados" hidden' in texto
         assert 'id="limpiar-busqueda"' in texto
-        assert "para ver los 3." in texto
+        assert "para ver todos." in texto
+        assert "para ver los" not in texto
+
+    def test_sin_productos_no_hay_buscador_ni_mensaje_de_vacio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Sin filas no hay nada que buscar. El script revelaba «Ningún producto
+        coincide… para ver los 0» al cargar, sin que nadie hubiera escrito
+        nada, porque cero filas visibles se leía como «sin resultados»."""
+        texto = self._todos(client)
+
+        assert 'id="buscar"' not in texto
+        assert 'id="sin-resultados"' not in texto
+        assert "var caja = document.getElementById" not in texto  # ni el script
+
+    def test_el_vacio_solo_se_muestra_con_una_consulta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La otra mitad del arreglo, para el día que haya filas y el campo esté:
+        cero coincidencias sin consulta es una lista vacía, no una búsqueda sin
+        resultados. Es texto de fuente, como el resto de las pruebas del script:
+        el repositorio no ejecuta JavaScript en sus pruebas."""
+        self._seed(session)
+
+        texto = self._todos(client)
+
+        assert "vacio.hidden = palabras.length === 0 || visibles !== 0" in texto
 
     def test_la_cabecera_no_se_lee_dos_veces(
         self, client: TestClient, session: Session
@@ -3771,9 +3799,13 @@ class TestListaAbsorbeLaTira:
 
         assert '<span class="ph-cel-cambio">+20% (base 2)</span>' in fila
 
-    def test_ya_no_hay_cinta_ni_tiras_ni_busqueda_ni_columna_de_cambio(
+    def test_ya_no_hay_cinta_ni_tiras_ni_columna_de_cambio(
         self, client: TestClient, session: Session
     ) -> None:
+        """La cinta, las tiras y la columna «Cambio» salieron del tablero en S5,
+        y con ellas la búsqueda de entonces. La búsqueda volvió el 2026-09-21
+        con otro marcado (`id="buscar"`, ver `TestBuscadorYListaCompacta`); lo
+        que se vigila acá es que no vuelva el de S5 (`tablero-q`)."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text

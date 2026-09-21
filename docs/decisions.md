@@ -11814,3 +11814,53 @@ tienen coincidencia) y cómo llega la categoría a `WatchRow`, que hoy no la
 lleva —`build_watchlist` recibe los nombres piloto, no la categoría—. Aparte
 del agrupado, curar la categoría de los 55 productos se va a pagar en más
 lugares que este.
+
+## 2026-09-21 — Los hallazgos del repaso de la lista compacta
+Contexto: el repaso de la lista compacta y el buscador devolvió nueve
+hallazgos —cinco avisos y cuatro sugerencias— y ninguno bloqueante. Se
+verificó cada uno contra el código antes de tocar nada: seis eran reales, uno era
+infundado pero barato de cubrir, uno era un artefacto de cómo se le pasó el
+código al revisor y uno se acepta.
+Decisión: (1) Real: con la lista vacía la página mostraba «Ningún producto
+coincide… para ver los 0» al cargar, sin que nadie hubiera escrito, porque
+cero filas visibles se leía como «sin resultados». Ahora sin filas no hay
+campo, ni mensaje, ni script, y el script solo muestra el vacío cuando hay una
+consulta. (2) Real: `test_ya_no_hay_cinta_ni_tiras_ni_busqueda_ni_columna_de_cambio`
+decía «ni búsqueda» junto a un buscador nuevo. Se renombró y se explicó que la
+búsqueda volvió con otro marcado; lo que vigila es que no vuelva el de S5.
+(3) Real: `is-foco` seguía saliendo en cada fila y en una prueba, pero su única
+regla se borró con la tarjeta. Se quitó la clase y la variable `foco`, que solo
+la usaba. (4) Real: el guardia que impide un `display` sobre lo que esconde
+`hidden` solo miraba el selector exacto y no habría visto
+`.ph-lista .ph-buscar { display: … }`. Ahora mira toda regla que nombre la
+clase, y una prueba del propio guardia lo comprueba contra el CSS real.
+(5) `estado` se usaba sin la guarda que sí tenían `vacio` y `limpiar`. (6) El
+vacío decía «para ver los N»: con un solo producto, «los 1». Ahora dice «para
+ver todos». (7) El bloque `scripts` no llamaba a `super()`. El del padre está
+vacío hoy, así que el aviso era infundado, pero se agregó igual: la vista que
+sume HTMX u otro script lo hace desde ese bloque y no debe llevárselo puesto.
+(8) Artefacto: el revisor leyó que el script escribe su expresión regular con
+los caracteres combinantes literales y que por eso una prueba no podía
+coincidir. No es así: el archivo tiene las secuencias de escape Unicode
+escritas en ASCII —verificado en disco, y la prueba que «no podía coincidir»
+pasa—. Quien las decodificó fue el transporte al armar el prompt del revisor;
+el propio revisor lo advirtió («si el relevo alteró el escape, este hallazgo se
+disuelve»). Se conserva su resultado tal cual, sin editar. (9) Aceptado: el
+comportamiento del script no tiene prueba automática de ejecución, y las tres
+pruebas que lo tocan afirman texto de fuente. Es la práctica del repositorio,
+que no ejecuta JavaScript en sus pruebas —los otros dos scripts del sitio
+tampoco—; se verificó a mano en Chromium, con 40 filas: consulta vacía y solo
+de espacios (muestran todo, sin mensaje), «azucar» (2), «ñame» y «name» (1),
+«jamon» (1), «zzz» (0, con el mensaje y «Borrarla», que limpia, vuelve a 40 y
+devuelve el foco al campo), la cabecera pegada al bajar a la fila 21, y el
+catálogo vacío.
+Descartado: sumar un motor de JavaScript (Node, QuickJS) o Playwright a las
+dependencias de desarrollo por quince líneas de script: es una dependencia y
+un modo de fallo nuevos para algo que ya se comprobó a mano. Si el script
+crece, el cálculo cambia.
+Consecuencia: 22 mutaciones, todas cazadas —las 15 de antes y siete nuevas,
+una de ellas el selector compuesto que el guardia viejo no veía—. Lección para
+el próximo relevo: el transporte decodifica las secuencias de escape Unicode
+de cualquier texto que se le pasa a una herramienta, así que un candidato que
+las contenga llega alterado al revisor; hay que avisarle o pasarlas sin
+escribirlas.

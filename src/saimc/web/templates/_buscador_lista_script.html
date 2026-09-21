@@ -20,11 +20,11 @@
   (function () {
     var caja = document.getElementById("buscar");
     var envoltorio = document.querySelector(".ph-buscar");
-    if (!caja || !envoltorio) return;
+    var estado = document.getElementById("buscar-estado");
+    if (!caja || !envoltorio || !estado) return;
 
     var filas = document.querySelectorAll(".ph-fila");
     var vacio = document.getElementById("sin-resultados");
-    var estado = document.getElementById("buscar-estado");
     var limpiar = document.getElementById("limpiar-busqueda");
 
     /* Mismo plegado que `_sin_tildes` en Python. `normalize` es ES2015: sin
@@ -43,7 +43,9 @@
         fila.hidden = !coincide;
         if (coincide) visibles += 1;
       });
-      if (vacio) vacio.hidden = visibles !== 0;
+      /* «Ningún producto coincide» solo con una consulta: sin consulta, cero
+         filas es una lista vacía, no una búsqueda sin resultados. */
+      if (vacio) vacio.hidden = palabras.length === 0 || visibles !== 0;
       /* Lo que se anuncia a un lector de pantalla: solo cuando hay consulta. */
       if (!palabras.length) {
         estado.textContent = "";

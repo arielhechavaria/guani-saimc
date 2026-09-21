@@ -377,7 +377,6 @@
 </div>
 {%- endmacro %}
 
-{% set foco = watchlist.provinces | length < watchlist.all_provinces | length %}
 {% set fila = (watchlist.rows | selectattr("product_name", "equalto", selected_product) | first) if selected_product else none %}
 
 <header class="ph-top">
@@ -429,6 +428,7 @@
   </div>
   {% endif %}
 
+  {% if watchlist.rows %}
   {# Buscador (prototipo D): filtra la lista sin ir al servidor, plegando
      tildes y mayúsculas. Nace escondido y lo muestra el script del final de la
      página: sin script no habría nada que lo hiciera andar, y un campo que no
@@ -452,7 +452,7 @@
     <div class="ph-filas">
       {% for row in watchlist.rows %}
       {% set unidad = (row.currency ~ "/" ~ row.unit) if row.unit else row.currency %}
-      <a class="ph-fila{% if foco %} is-foco{% endif %}" href="{{ row.query }}" data-busqueda="{{ row.busqueda }}">
+      <a class="ph-fila" href="{{ row.query }}" data-busqueda="{{ row.busqueda }}">
         <span class="ph-fila-titulo"><span class="ph-fila-nombre">{{ row.product_name }}</span>{% if unidad %}<span class="ph-fila-unidad">{{ unidad }}</span>{% endif %}</span>
         {% for cell in row.cells %}{{ celda(watchlist.provinces[loop.index0], cell) }}{% endfor %}
         {{ chev("ph-fila-chev") }}
@@ -460,8 +460,9 @@
       </a>
       {% endfor %}
     </div>
-    <p class="ph-vacio" id="sin-resultados" hidden>Ningún producto coincide con la búsqueda. <button type="button" id="limpiar-busqueda">Borrarla</button> para ver los {{ watchlist.rows | length }}.</p>
+    <p class="ph-vacio" id="sin-resultados" hidden>Ningún producto coincide con la búsqueda. <button type="button" id="limpiar-busqueda">Borrarla</button> para ver todos.</p>
   </section>
+  {% endif %}
 
 {% else %}
   {# ── Detalle de un producto ──────────────────────────────────────────── #}
@@ -644,4 +645,4 @@
 
 {# El buscador filtra la lista de «Todos»; el detalle no tiene lista, así que
    no se le manda el script. #}
-{% block scripts %}{% if not selected_product %}{% include "_buscador_lista_script.html" %}{% endif %}{% endblock %}
+{% block scripts %}{{ super() }}{% if not selected_product and watchlist.rows %}{% include "_buscador_lista_script.html" %}{% endif %}{% endblock %}
