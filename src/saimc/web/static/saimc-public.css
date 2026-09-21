@@ -102,6 +102,8 @@
   --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
   --ph-radius-lg: 24px;
   --ph-radius-sm: 14px;
+  --ph-side-w: clamp(30rem, 32vw, 36rem);
+  --ph-bar-h: 9rem;
 }
 
 :root[data-theme="dark"] {

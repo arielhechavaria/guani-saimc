@@ -807,13 +807,12 @@
     display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
     pointer-events: none;
   }
-  .ph-win-stack, .ph-panel-stack {
+  .ph-win-stack {
     pointer-events: auto;
     display: grid; gap: .75rem; align-content: start;
     max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
   }
   .ph-win-stack { width: min(30rem, 46vw); }
-  .ph-panel-stack { width: min(29rem, 46vw); margin-left: auto; }
 
   .ph-win, .ph-fpanel {
     border-radius: var(--ph-radius-sm);
@@ -855,6 +854,72 @@
                          display: flex; justify-content: space-between; margin-bottom: .2rem; }
   .ph-fpanel-detail { font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
   .ph-fpanel-links { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
+
+
+  /* ── Panel lateral anclado (2026-09-21) ─────────────────────────────────
+     Columna a la derecha, a altura completa, que encoge el mapa: el escenario
+     deja de cubrir el lienzo entero (`right: var(--ph-side-w)`) y Leaflet se
+     encuadra en lo que queda, sin tapar provincias ni hacer cuentas de
+     relleno. 30rem son los que necesita la tabla (cinco columnas y la
+     sparkline); crece hasta el 32 % del ancho. La barra de filtros se corre
+     a la izquierda del panel. Z-index 1150: sobre el mapa (0–1100) y bajo el
+     muelle (1200), así una ventana del menú nunca queda tapada. */
+  .ph-canvas.has-side .ph-stage { right: var(--ph-side-w); }
+  .ph-canvas.has-side.is-side-collapsed .ph-stage { right: 0; }
+  .ph-canvas.has-side .ph-compass-filters {
+    right: calc(var(--ph-side-w) + 1rem); max-width: calc(100vw - var(--ph-side-w) - 9rem);
+  }
+  .ph-canvas.has-side.is-side-collapsed .ph-compass-filters { right: 1rem; max-width: none; }
+  .ph-side {
+    position: absolute; top: 0; right: 0; bottom: 0; width: var(--ph-side-w); z-index: 1150;
+    display: flex; flex-direction: column;
+    background: var(--m3-surface); border-left: 1px solid var(--m3-outline-variant);
+    box-shadow: var(--ph-elev);
+  }
+  .is-side-collapsed > .ph-side { display: none; }
+  .ph-side-head {
+    display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex: none;
+    padding: .8rem .6rem .6rem 1rem; border-bottom: 1px solid var(--m3-divider);
+  }
+  .ph-side-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.2rem; }
+  .ph-side-sum { margin-left: .6rem; font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-side-toggle, .ph-side-expand, .ph-side-open {
+    appearance: none; -webkit-appearance: none; margin: 0; font: inherit; cursor: pointer;
+    border: 1px solid var(--m3-outline-variant); background: var(--m3-surface);
+    color: var(--m3-on-surface-variant);
+  }
+  .ph-side-toggle { width: 2.25rem; height: 2.25rem; border-radius: 999px; font-size: 1.25rem; line-height: 1; }
+  .ph-side-toggle:hover, .ph-side-open:hover, .ph-side-expand:hover { border-color: var(--ph-accent); color: var(--ph-accent); }
+  .ph-side-expand { display: none; min-height: 2.25rem; padding: 0 .9rem; border-radius: 999px; font-size: .8125rem; font-weight: 600; }
+  .ph-side-open {
+    display: none; position: absolute; right: 0; top: 7rem; z-index: 1150; min-height: 2.75rem;
+    padding: 0 .8rem 0 .65rem; border-right: 0; border-radius: .75rem 0 0 .75rem;
+    font-size: .8125rem; font-weight: 600; box-shadow: var(--ph-elev);
+  }
+  .is-side-collapsed > .ph-side-open { display: inline-flex; align-items: center; gap: .3rem; }
+  .ph-side-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+                  padding: 0 .9rem 1rem; display: grid; gap: .8rem; align-content: start;
+                  /* Sin esto las filas se reparten el alto fijo del panel y la barra de
+                     pestañas (un `overflow-x`, mínimo 0) se aplasta a una raya. */
+                  grid-auto-rows: max-content; }
+  .ph-side-body > .ph-tabs { position: sticky; top: 0; z-index: 1; background: var(--m3-surface); }
+  @media (max-width: 720px) {
+    /* Hoja inferior: encima de la barra de filtros (su alto lo mide el script
+       en `--ph-bar-h`) y con dos alturas. El mapa se encuadra en lo que queda
+       arriba de la vista previa. */
+    .ph-canvas.has-side .ph-stage { right: 0; }
+    .ph-canvas.has-side .ph-compass-filters,
+    .ph-canvas.has-side.is-side-collapsed .ph-compass-filters { right: 0; max-width: none; }
+    .ph-side, .is-side-collapsed > .ph-side {
+      display: flex; top: auto; left: 0; right: 0; width: auto; bottom: var(--ph-bar-h);
+      height: 40vh; height: 40dvh; border-left: 0; border-radius: 1.25rem 1.25rem 0 0;
+      box-shadow: 0 -6px 24px color-mix(in srgb, var(--m3-on-surface) 14%, transparent);
+    }
+    .ph-side.is-expanded { height: calc(100vh - var(--ph-bar-h) - 4.5rem);
+                           height: calc(100dvh - var(--ph-bar-h) - 4.5rem); }
+    .ph-side-toggle, .is-side-collapsed > .ph-side-open, .ph-side-open { display: none; }
+    .ph-side-expand { display: inline-flex; align-items: center; }
+  }
 
   /* ── Ventana con pestañas por producto (prototipo B, 2026-09-21) ────────
      Una sola ventana en lugar de un panel por producto: una pestaña por
@@ -908,7 +973,8 @@
   .ph-pgrid .num { text-align: right; font-variant-numeric: tabular-nums; }
   .ph-pgrid tbody tr.is-hover { background: var(--ph-accent-wash); }
   .ph-pg-med { font-weight: 700; }
-  .ph-pg-spark { width: 7rem; }
+  .ph-pg-spark { width: 6.5rem; }
+  .ph-pgrid thead th, .ph-pgrid tbody th { white-space: nowrap; }
   .ph-sp { display: block; width: 100%; max-width: 7rem; height: auto; overflow: visible; }
   .ph-sp .ph-sp-line { fill: none; stroke: var(--ph-accent); stroke-width: 1.8;
                        stroke-linecap: round; stroke-linejoin: round; }
@@ -1099,7 +1165,7 @@
       opacity: 1; visibility: visible; transform: none;
       transition: opacity .18s ease, transform .18s ease, visibility 0s linear 0s;
     }
-    .ph-win-stack, .ph-panel-stack { width: 100%; max-height: none; overflow: visible; margin: 0; }
+    .ph-win-stack { width: 100%; max-height: none; overflow: visible; margin: 0; }
     /* Sin arrastre en angosto: la barra de título vuelve a dejar scrollear la
        bandeja con el dedo. */
     .ph-js [data-win-handle] { cursor: auto; touch-action: auto; }
@@ -1123,7 +1189,7 @@
 {# ══ El lienzo es la página ════════════════════════════════════════════
    El mapa sigue coloreado por estado de publicación, no por precio
    (§9.0 / §12.6); el coloreo por precio quedó fuera de alcance. #}
-<section class="ph-canvas" aria-labelledby="ph-canvas-title">
+<section class="ph-canvas{% if product_grids %} has-side{% endif %}" aria-labelledby="ph-canvas-title">
 
   {# Brújula (2026-09-13): el avatar es el botón que abre TODO lo demás —
      título incluido, no solo el dock (ajuste del operador: «el header que
@@ -1740,29 +1806,36 @@
         {% endfor %}
       </div>
 
-      {# ── Ventana con pestañas por producto (prototipo B, 2026-09-21): una
-         pestaña por producto abierto y, adentro, la tabla por provincia con
-         su sparkline (`province_grid.py`). Reemplaza a la pila de un panel
-         por producto (slice 4): lo que cada panel decía sigue en la pestaña,
-         dentro del desplegable «Detalle por provincia y formato». Cambiar de
-         pestaña, ordenar la tabla y elegir el tipo de gráfico son del
-         cliente (script del pie): no hay ida y vuelta al server, que en una
-         conexión lenta se paga. La × de cada pestaña quita solo ese
-         producto (`close_query`), igual que la del panel de antes. #}
-      {% if product_grids %}
-      <div class="ph-panel-stack">
-        <section class="ph-fpanel ph-tabbed" data-win="Precios por provincia" id="ph-panel-tabs" aria-label="Precios por provincia" data-spark="line">
-            <header class="ph-fpanel-head" data-win-handle>
-              <div class="ph-fpanel-titles">
-                <span class="ph-fpanel-name">Precios por provincia</span>
-                <span class="ph-fpanel-sum">últimos {{ window_days }} días</span>
-              </div>
-              <div class="ph-winctls">
-                <button type="button" class="ph-winctl ph-winctl-min" data-win-min aria-pressed="false" aria-label="Minimizar Precios por provincia"></button>
-                <button type="button" class="ph-winctl ph-winctl-max" data-win-max aria-pressed="false" aria-label="Expandir Precios por provincia"></button>
-              </div>
-            </header>
-            <div class="ph-fpanel-body">
+    </div>{# /.ph-dock #}
+  </div>{# /.ph-dock-layer #}
+
+  {# ── Panel lateral anclado (2026-09-21): la ventana con pestañas del
+     prototipo B dejó de flotar. El operador la vio y prefirió la disposición
+     de un mapa con un espacio fijo al lado que cuenta lo seleccionado
+     (dash.gallery/dash-uber-rides-demo). Es hijo del lienzo y no del muelle
+     de ventanas: no se arrastra ni se redimensiona. En escritorio es una
+     columna a la derecha que ENCOGE el mapa (`.has-side`), plegable con el
+     botón del borde; en angosto es una hoja inferior con dos alturas —vista
+     previa y «Ver todas»—, con un botón y no solo arrastrando (Material
+     Design 3 pide una alternativa a la manija).
+
+     Cambiar de pestaña, ordenar la tabla y elegir el tipo de gráfico son del
+     cliente (script del pie): no hay ida y vuelta al server, que en una
+     conexión lenta se paga. La × de cada pestaña quita solo ese producto
+     (`close_query`). Lo que decía cada panel de producto (slice 4) sigue
+     dentro de «Detalle por provincia y formato», abierto si hay una
+     provincia elegida. #}
+  {% if product_grids %}
+  <aside class="ph-side ph-tabbed" id="ph-side" aria-label="Precios por provincia" data-spark="line">
+    <header class="ph-side-head">
+      <div class="ph-side-titles">
+        <h2 class="ph-side-title">Precios por provincia</h2>
+        <span class="ph-side-sum">últimos {{ window_days }} días</span>
+      </div>
+      <button type="button" class="ph-side-toggle" data-side-toggle aria-expanded="true" aria-controls="ph-side-body" aria-label="Plegar el panel de precios por provincia">›</button>
+      <button type="button" class="ph-side-expand" data-side-expand aria-expanded="false" aria-controls="ph-side-body">Ver todas</button>
+    </header>
+    <div class="ph-side-body" id="ph-side-body">
               <div class="ph-tabs" role="tablist" aria-label="Productos abiertos">
                 {% for grid in product_grids %}
                 {% set panel = product_panels[loop.index0] %}
@@ -1820,7 +1893,7 @@
                 {% else %}
                 <p class="ph-note">Ningún anuncio de {{ grid.product_name }} en los últimos {{ window_days }} días.</p>
                 {% endif %}
-                <details class="ph-pane-mas">
+                <details class="ph-pane-mas"{% if selected_province %} open{% endif %}>
                   <summary>Detalle por provincia y formato</summary>
                   <div class="ph-pane-mas-body">
               {% if panel.blocks %}
@@ -1910,16 +1983,10 @@
                 </details>
               </div>
               {% endfor %}
-            </div>
-            <span class="ph-grip ph-grip-e" data-win-grip="e" aria-hidden="true"></span>
-            <span class="ph-grip ph-grip-s" data-win-grip="s" aria-hidden="true"></span>
-            <span class="ph-grip ph-grip-se" data-win-grip="se" aria-hidden="true"></span>
-        </section>
-      </div>
-      {% endif %}
-
-    </div>{# /.ph-dock #}
-  </div>{# /.ph-dock-layer #}
+    </div>
+  </aside>
+  <button type="button" class="ph-side-open" data-side-toggle aria-expanded="false" aria-controls="ph-side-body" aria-label="Mostrar el panel de precios por provincia"><span aria-hidden="true">‹</span> Precios</button>
+  {% endif %}
 
     {# La leyenda se posiciona contra `.ph-canvas` (que es `relative`), no
        contra el escenario: queda abajo a la izquierda igual que siempre.
@@ -2347,11 +2414,33 @@
      mapa se encuadra en lo que queda libre, para que Cuba no quede escondida
      detrás de la tabla (en el prototipo B el mapa se corría a la izquierda). */
   function espacioBajoLaVentana() {
-    var ventana = document.querySelector(".ph-tabbed");
-    if (!ventana) return [0, 0];
-    var caja = ventana.getBoundingClientRect();
-    if (angosto.matches) return [0, Math.max(0, window.innerHeight - caja.top)];
-    return [Math.max(0, window.innerWidth - caja.left), 0];
+    var panel = document.querySelector(".ph-side");
+    // En escritorio el escenario ya se encogió (`.has-side`): no hay nada
+    // que reservar. En angosto la hoja se apoya sobre el mapa.
+    if (!panel || !angosto.matches) return [0, 0];
+    return [0, Math.max(0, window.innerHeight - panel.getBoundingClientRect().top)];
+  }
+
+  /* Encuadra Cuba —o la provincia elegida— en lo que deja libre el panel.
+     `invalidateSize` primero: al plegar o abrir la columna el contenedor
+     cambió de ancho y Leaflet no se entera solo. */
+  function encuadrarMapa() {
+    if (!mapaLeaflet || !poligonos || !estadoMapa) return;
+    mapaLeaflet.invalidateSize({ animate: false });
+    var elegida = null;
+    if (estadoMapa.provincia) {
+      poligonos.eachLayer(function (capa) {
+        if (capa.feature.properties.slug === estadoMapa.provincia) elegida = capa;
+      });
+    }
+    var libre = espacioBajoLaVentana();
+    if (elegida) {
+      mapaLeaflet.fitBounds(elegida.getBounds(), {
+        paddingTopLeft: [24, 24], paddingBottomRight: [24 + libre[0], 24 + libre[1]],
+      });
+    } else {
+      mapaLeaflet.fitBounds(poligonos.getBounds(), { paddingBottomRight: libre });
+    }
   }
 
   function precioDe(fila) {
@@ -2514,21 +2603,7 @@
       }).addTo(mapaLeaflet);
 
       poligonos = capaProvincias;
-      var capaElegida = null;
-      if (provinciaElegida) {
-        capaProvincias.eachLayer(function (layer) {
-          if (layer.feature.properties.slug === provinciaElegida) capaElegida = layer;
-        });
-      }
-      if (capaElegida) {
-        var libre = espacioBajoLaVentana();
-        mapaLeaflet.fitBounds(capaElegida.getBounds(), {
-          paddingTopLeft: [24, 24], paddingBottomRight: [24 + libre[0], 24 + libre[1]],
-        });
-      } else {
-        var reservado = espacioBajoLaVentana();
-        mapaLeaflet.fitBounds(capaProvincias.getBounds(), { paddingBottomRight: reservado });
-      }
+      encuadrarMapa();
     }
 
     // La geometría es estática (no cambia con los filtros): se cachea en
@@ -2847,7 +2922,52 @@
     filas.forEach(function (fila) { cuerpo.appendChild(fila); });
   }
 
+  /* Estado del panel lateral (2026-09-21): plegado en escritorio, hoja
+     expandida en angosto. Se recuerda entre swaps de htmx, que re-renderizan
+     el panel, y el plegado también entre cargas (sessionStorage; si el
+     navegador no lo deja, se pierde y ya). */
+  var panelPlegado = false;
+  var hojaExpandida = false;
+  try { panelPlegado = sessionStorage.getItem("ph-lateral") === "1"; } catch (e) { /* sin storage */ }
+
+  function medirBarraInferior() {
+    var lienzo = document.querySelector(".ph-canvas");
+    var barra = document.querySelector(".ph-compass-filters");
+    if (lienzo && barra) lienzo.style.setProperty("--ph-bar-h", barra.offsetHeight + "px");
+  }
+
+  function aplicarEstadoDelPanel() {
+    var lienzo = document.querySelector(".ph-canvas");
+    var panel = document.querySelector(".ph-side");
+    if (!lienzo || !panel) return;
+    lienzo.classList[panelPlegado ? "add" : "remove"]("is-side-collapsed");
+    panel.classList[hojaExpandida ? "add" : "remove"]("is-expanded");
+    Array.prototype.forEach.call(document.querySelectorAll("[data-side-toggle]"), function (b) {
+      b.setAttribute("aria-expanded", panelPlegado ? "false" : "true");
+    });
+    var hoja = panel.querySelector("[data-side-expand]");
+    if (hoja) {
+      hoja.setAttribute("aria-expanded", hojaExpandida ? "true" : "false");
+      hoja.textContent = hojaExpandida ? "Ver menos" : "Ver todas";
+    }
+  }
+
+  function clicEnElPanelLateral(ev) {
+    if (!ev.target.closest) return;
+    if (ev.target.closest("[data-side-toggle]")) {
+      panelPlegado = !panelPlegado;
+      try { sessionStorage.setItem("ph-lateral", panelPlegado ? "1" : "0"); } catch (e) { /* sin storage */ }
+      aplicarEstadoDelPanel();
+      encuadrarMapa();
+    } else if (ev.target.closest("[data-side-expand]")) {
+      hojaExpandida = !hojaExpandida;
+      aplicarEstadoDelPanel();
+    }
+  }
+
   function iniciarPestanas() {
+    medirBarraInferior();
+    aplicarEstadoDelPanel();
     var ventana = document.querySelector(".ph-tabbed");
     if (!ventana) { pestanaActiva = ""; pestanasConocidas = []; return; }
     var actuales = Array.prototype.map.call(ventana.querySelectorAll(".ph-tab-btn"), function (b) {
@@ -2892,6 +3012,7 @@
   });
 
   document.addEventListener("click", clicEnLaVentana);
+  document.addEventListener("click", clicEnElPanelLateral);
   document.addEventListener("click", cerrarOptimista);
   document.addEventListener("click", zoomDelMapa);
   document.addEventListener("click", alternarCompas);
@@ -2915,6 +3036,7 @@
   // no sale a la red de nuevo.
   document.addEventListener("guani:tema-cambiado", inicializarMapa);
   window.addEventListener("resize", pintarTodas);
+  window.addEventListener("resize", medirBarraInferior);
   if (angosto.addEventListener) angosto.addEventListener("change", pintarTodas);
   pintarTodas();
   iniciarPestanas();

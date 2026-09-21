@@ -16,6 +16,7 @@ import json
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from html.parser import HTMLParser
 
 import pytest
 from fastapi.testclient import TestClient
@@ -54,7 +55,40 @@ def _map_data(texto: str) -> dict[str, dict]:
 
 def _ventana(texto: str) -> str:
     """El HTML de la ventana con pestañas, sin el resto de la página."""
-    return texto.split('class="ph-fpanel ph-tabbed"')[1].split("</section>")[0]
+    return texto.split('class="ph-side ph-tabbed"')[1].split("</aside>")[0]
+
+
+class _Ancestros(HTMLParser):
+    """Las clases de cada ancestro del primer elemento con la clase pedida."""
+
+    VACIOS = frozenset({"br", "hr", "img", "input", "meta", "link", "path", "circle", "rect", "line", "use"})
+
+    def __init__(self, clase: str) -> None:
+        super().__init__()
+        self.clase = clase
+        self.pila: list[str] = []
+        self.resultado: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        clases = dict(attrs).get("class") or ""
+        if self.resultado is None and self.clase in clases.split():
+            self.resultado = [c for c in self.pila if c]
+        if tag not in self.VACIOS:
+            self.pila.append(clases)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag not in self.VACIOS and self.pila:
+            self.pila.pop()
+
+
+def _clases_de_los_ancestros(texto: str, clase: str) -> list[str]:
+    """Solo desde `.ph-canvas` hacia adentro, para que el resultado no dependa
+    del shell de la página."""
+    analizador = _Ancestros(clase)
+    analizador.feed(texto)
+    ancestros = analizador.resultado or []
+    lienzo = "ph-canvas has-side"
+    return ancestros[ancestros.index(lienzo) :] if lienzo in ancestros else ancestros
 
 
 @pytest.fixture
@@ -157,7 +191,7 @@ class TestDatosDelMapa:
 
 class TestVentanaConPestanias:
     def test_sin_productos_no_hay_ventana(self, client: TestClient, datos: None) -> None:
-        assert 'class="ph-fpanel ph-tabbed"' not in client.get("/").text
+        assert 'class="ph-side ph-tabbed"' not in client.get("/").text
 
     def test_una_pestania_por_producto_activo(self, client: TestClient, datos: None) -> None:
         ventana = _ventana(client.get("/?productos=arroz,pollo").text)
@@ -239,3 +273,55 @@ class TestVentanaConPestanias:
         assert "nacional" not in ventana.lower()
         assert ">300<" in ventana
         assert ">400<" in ventana
+
+
+class TestPanelLateralAnclado:
+    """Tras el prototipo B el operador pidió dejar de flotar la ventana
+    (2026-09-21): es una columna anclada a la derecha, a altura completa, que
+    encoge el mapa; en angosto pasa a hoja inferior. Nada de arrastrar."""
+
+    def test_con_producto_el_lienzo_reserva_la_columna(self, client: TestClient, datos: None) -> None:
+        assert 'class="ph-canvas has-side"' in client.get("/?productos=arroz").text
+
+    def test_sin_producto_el_mapa_ocupa_todo_el_ancho(self, client: TestClient, datos: None) -> None:
+        assert 'class="ph-canvas has-side"' not in client.get("/").text
+
+    def test_no_es_una_ventana_arrastrable(self, client: TestClient, datos: None) -> None:
+        """El script de arrastre engancha todo `[data-win]`; el panel anclado
+        no lo lleva, ni agarradores de tamaño, ni minimizar/expandir."""
+        panel = _ventana(client.get("/?productos=arroz").text)
+
+        for marca in ("data-win", "data-win-handle", "data-win-grip", "data-win-min", "data-win-max"):
+            assert marca not in panel
+
+    def test_se_puede_plegar_y_hay_con_que_volver_a_abrirlo(self, client: TestClient, datos: None) -> None:
+        texto = client.get("/?productos=arroz").text
+
+        # Plegar (en el panel) y reabrir (en el borde, visible solo plegado).
+        assert 'class="ph-side-toggle" data-side-toggle aria-expanded="true"' in texto
+        assert 'class="ph-side-open" data-side-toggle aria-expanded="false"' in texto
+
+    def test_en_angosto_la_hoja_se_expande_con_un_boton_y_no_solo_arrastrando(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """Material Design 3: la manija de una hoja necesita una alternativa
+        a arrastrar."""
+        panel = _ventana(client.get("/?productos=arroz").text)
+
+        assert "data-side-expand" in panel
+        assert ">Ver todas<" in panel
+
+    def test_el_panel_no_vive_en_el_muelle_de_ventanas(self, client: TestClient, datos: None) -> None:
+        """El muelle sigue siendo de las ventanas del menú, que flotan: el
+        panel es hijo directo del lienzo, no del muelle."""
+        assert _clases_de_los_ancestros(client.get("/?productos=arroz").text, "ph-side") == [
+            "ph-canvas has-side"
+        ]
+
+    def test_con_provincia_elegida_su_detalle_llega_abierto(self, client: TestClient, datos: None) -> None:
+        panel = _ventana(client.get("/?productos=arroz&provincia=la-habana").text)
+
+        assert '<details class="ph-pane-mas" open>' in panel
+
+    def test_sin_provincia_elegida_el_detalle_llega_cerrado(self, client: TestClient, datos: None) -> None:
+        assert '<details class="ph-pane-mas">' in _ventana(client.get("/?productos=arroz").text)

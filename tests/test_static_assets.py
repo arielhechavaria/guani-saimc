@@ -546,6 +546,10 @@ class TestModoOscuro:
         "--ph-radius-lg",
         "--ph-radius-sm",
         "--ph-elev",
+        # Medidas del panel lateral de `/`, no colores: el ancho de la columna
+        # y el alto de la barra de filtros en angosto.
+        "--ph-side-w",
+        "--ph-bar-h",
     }
 
     def _bloques(self, texto: str) -> tuple[dict[str, str], dict[str, str]]:

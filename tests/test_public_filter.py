@@ -803,7 +803,7 @@ class TestPanelesFlotantes:
 
         # Una sola ventana con una pestaña por producto (prototipo B,
         # 2026-09-21), no una pila de paneles.
-        assert texto.count('class="ph-fpanel ph-tabbed"') == 1
+        assert texto.count('class="ph-side ph-tabbed"') == 1
         assert texto.count('role="tab"') == 2
         assert 'aria-controls="ph-panel-arroz">Arroz</button>' in texto
         assert 'aria-controls="ph-panel-aceite">Aceite</button>' in texto
@@ -1250,7 +1250,10 @@ class TestVentanasArrastrables:
 
         texto = client.get("/?productos=arroz,aceite").text
 
-        assert texto.count('<section class="ph-fpanel ph-tabbed" data-win=') == 1
+        # El panel de precios es una columna anclada (2026-09-21): ya no es
+        # una ventana del muelle, así que no lleva `data-win`.
+        assert texto.count('<aside class="ph-side ph-tabbed"') == 1
+        assert 'data-win="Precios por provincia"' not in texto
         # Nada sale minimizado ni expandido del servidor: el estado lo aplica
         # el script en el navegador.
         assert 'class="ph-fpanel is-' not in texto
@@ -1279,15 +1282,14 @@ class TestVentanasArrastrables:
 
         texto = client.get("/?productos=arroz&ver=precios").text
 
-        # 3 ventanas del menú + 1 panel de producto.
-        barras = texto.count('<header class="ph-win-head" data-win-handle>') + texto.count(
-            '<header class="ph-fpanel-head" data-win-handle>'
-        )
-        assert barras == 4
-        assert texto.count('data-win-min aria-pressed="false"') == 4
-        assert texto.count('data-win-max aria-pressed="false"') == 4
+        # Las 3 ventanas del menú; el panel de precios es una columna anclada
+        # (2026-09-21) y ya no se arrastra.
+        barras = texto.count('<header class="ph-win-head" data-win-handle>')
+        assert barras == 3
+        assert texto.count('data-win-min aria-pressed="false"') == 3
+        assert texto.count('data-win-max aria-pressed="false"') == 3
         assert 'data-win="Precios" id="precios"' in texto
-        assert 'id="ph-panel-arroz"' in texto
+        assert 'id="ph-panel-arroz"' in texto  # el detalle de la pestaña
 
     def test_cada_ventana_tiene_agarres_para_redimensionar(
         self, client: TestClient, session: Session
@@ -1296,9 +1298,10 @@ class TestVentanasArrastrables:
 
         texto = client.get("/?productos=arroz&ver=precios").text
 
-        # 3 ventanas del menú + 1 panel: borde derecho, inferior y esquina.
+        # Las 3 ventanas del menú: borde derecho, inferior y esquina. El panel
+        # de precios anclado no se redimensiona.
         for direccion in ("e", "s", "se"):
-            assert texto.count(f'data-win-grip="{direccion}"') == 4
+            assert texto.count(f'data-win-grip="{direccion}"') == 3
 
     def test_el_script_de_ventanas_viaja_en_la_pagina(
         self, client: TestClient, session: Session
@@ -1824,7 +1827,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?provincia=la-habana&producto=arroz").text
-        ventana = texto.split('class="ph-fpanel ph-tabbed"')[1].split("</section>")[0]
+        ventana = texto.split('class="ph-side ph-tabbed"')[1].split("</aside>")[0]
         # La tabla por provincia compara las 16 (es para lo que sirve); el
         # detalle de la pestaña sí se acota a la provincia elegida.
         panel = ventana.split('class="ph-pane-mas"')[1]
