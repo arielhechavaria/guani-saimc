@@ -1169,6 +1169,106 @@ class TestBlancoTactilDelTablero:
         assert "padding-top" in bloque
 
 
+class TestListaCompactaDelTablero:
+    """El CSS de la lista compacta y del buscador (2026-09-21, prototipo D).
+
+    Cada prueba fija una trampa concreta que apareció al construirla y que un
+    test de HTML no ve, porque el HTML sale bien y lo que falla es cómo se ve:
+    un atributo `hidden` que pierde contra un `display`, un campo que hace
+    zoom en iOS, una cabecera pegada que deja ver las filas por detrás."""
+
+    def _css(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        fuente = (
+            raiz / "src" / "saimc" / "web" / "templates" / "public_dashboard.html"
+        ).read_text(encoding="utf-8")
+        return re.sub(r"/\*.*?\*/", "", fuente, flags=re.S)
+
+    def _reglas(self) -> list[tuple[list[str], str]]:
+        """(selectores, cuerpo) de cada regla, también las de dentro de un
+        `@media`: la expresión solo toma llaves sin llaves adentro."""
+        return [
+            ([x.strip() for x in m.group(1).split(",")], m.group(2))
+            for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", self._css())
+        ]
+
+    def _valor(self, selector: str, propiedad: str) -> str | None:
+        """El valor de `propiedad` en la primera regla que nombra `selector`
+        y la define."""
+        for selectores, cuerpo in self._reglas():
+            if selector in selectores:
+                m = re.search(rf"(?:^|;)\s*{re.escape(propiedad)}\s*:\s*([^;]+)", cuerpo)
+                if m:
+                    return m.group(1).strip()
+        return None
+
+    def test_esconder_una_fila_le_gana_al_display_de_autor(self) -> None:
+        """`.ph-fila` es `display: grid`, y un `display` de autor le gana al
+        `hidden` del navegador: sin esta regla el buscador marcaría las filas
+        como escondidas y seguirían a la vista."""
+        assert self._valor(".ph-fila[hidden]", "display") == "none"
+
+    def test_lo_que_solo_esconde_el_atributo_no_tiene_display_propio(self) -> None:
+        """El envoltorio del buscador y el «no hay resultados» se muestran y
+        se esconden con `hidden`. Si alguno tuviera `display`, quedaría
+        siempre a la vista, o el buscador sin script."""
+        assert self._valor(".ph-vacio", "display") is None
+        assert self._valor(".ph-buscar", "display") is None
+
+    @pytest.mark.parametrize(
+        "selector",
+        [".ph-fila", ".ph-buscar-caja", ".ph-buscar-input", ".ph-vacio button"],
+    )
+    def test_los_controles_de_la_lista_miden_44px_o_mas(self, selector: str) -> None:
+        alto = self._valor(selector, "min-height")
+
+        assert alto is not None, f"{selector} perdió su `min-height`"
+        assert int(alto.removesuffix("px")) >= 44, f"{selector}: {alto}"
+
+    def test_el_campo_no_provoca_zoom_en_ios(self) -> None:
+        """Safari en iOS hace zoom al enfocar un campo de menos de 16px, y en el
+        teléfono es la pantalla en la que más se va a usar."""
+        letra = self._valor(".ph-buscar-input", "font")
+
+        assert letra is not None
+        tamano = re.search(r"(\d+)px", letra)
+
+        assert tamano is not None, letra
+        assert int(tamano.group(1)) >= 16, letra
+
+    def test_la_cabecera_queda_pegada_y_tapa_lo_que_pasa_por_detras(self) -> None:
+        """Sin fondo propio, las filas se verían a través de la cabecera fija."""
+        assert self._valor(".ph-lista-cab", "position") == "sticky"
+        assert self._valor(".ph-lista-cab", "top") == "0"
+        assert self._valor(".ph-lista-cab", "background") == "var(--m3-surface)"
+
+    def test_el_chevron_solo_desde_la_tableta(self) -> None:
+        """En el teléfono cada píxel de ancho es de una cifra: sin chevrón ni su
+        columna. Desde 48rem vuelven, y con ellos la última columna, que lo
+        empuja al borde derecho."""
+        corte = "@media (min-width: 48rem) {\n    .ph-lista"
+        columnas = "repeat(var(--n, 2), minmax(0, 220px)) minmax(16px, 1fr)"
+        css = self._css()
+        hasta_48, desde_48 = css[: css.index(corte)], css[css.index(corte) :]
+
+        assert re.search(r"\.ph-fila-chev, \.ph-lista-cab-chev \{ display: none; \}", hasta_48)
+        assert columnas in desde_48
+        assert columnas not in hasta_48
+
+    def test_la_cifra_queda_pegada_al_borde_derecho(self) -> None:
+        """Alinear las cifras a la derecha sirve para comparar hacia abajo, y
+        solo si la cifra está SIEMPRE en el borde: la pastilla «más barata» va
+        a su izquierda (`row-reverse`, con la cifra primera en el HTML) y no le
+        quita el lugar. Sin esto, 298 con pastilla queda corrida contra 685."""
+        assert self._valor(".ph-cel", "align-items") == "flex-end"
+        assert self._valor(".ph-cel-cifra", "flex-direction") == "row-reverse"
+
+    def test_no_quedan_reglas_de_la_tarjeta(self) -> None:
+        """La tarjeta salió de la lista; su CSS suelto sería peso muerto que
+        nadie borra porque nadie sabe si algo lo usa."""
+        assert ".ph-tarjeta" not in self._css()
+
+
 class TestFuenteYFilaDeEvidencia:
     """Dos hallazgos más de la auditoría mobile-first del 2026-09-17: la
     fuente más chica del sitio (10px, en el cartelito del mapa) y la fila

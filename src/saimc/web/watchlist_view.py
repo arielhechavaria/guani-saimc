@@ -76,6 +76,13 @@ class WatchRow:
         vocabulario cae al valor canónico, que se lee peor pero no miente."""
         return unit_noun(self.unit) or self.unit
 
+    @property
+    def busqueda(self) -> str:
+        """El nombre plegado para el buscador de la lista: la fila lo lleva en
+        `data-busqueda` y el script compara la consulta, plegada igual, contra
+        esto. Plegarlo acá y no en el navegador deja un solo criterio."""
+        return _sin_tildes(self.product_name)
+
 
 @dataclass(frozen=True)
 class Watchlist:
@@ -138,6 +145,14 @@ def _mas_barata(lines: Sequence[SlopeLine]) -> str | None:
     return medianas[0][1]
 
 
+def _sin_tildes(texto: str) -> str:
+    """El texto en minúsculas y con la letra base, sin tildes ni diéresis:
+    «Azúcar» → «azucar», «Ñame» → «name». Es lo que comparan el orden de la
+    lista y el buscador, para que «azucar» encuentre «Azúcar blanca»."""
+    plano = unicodedata.normalize("NFD", texto.lower())
+    return "".join(c for c in plano if unicodedata.category(c) != "Mn")
+
+
 def _alfabeto(nombre: str) -> tuple[str, str]:
     """Clave para ordenar como se ordena en español y no por code point.
 
@@ -146,8 +161,7 @@ def _alfabeto(nombre: str) -> tuple[str, str]:
     el nombre original como segunda clave, así dos que solo difieren en la
     tilde siguen teniendo un orden fijo.
     """
-    plano = unicodedata.normalize("NFD", nombre.lower())
-    return ("".join(c for c in plano if unicodedata.category(c) != "Mn"), nombre)
+    return (_sin_tildes(nombre), nombre)
 
 
 def build_watchlist(

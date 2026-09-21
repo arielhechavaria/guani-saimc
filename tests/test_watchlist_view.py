@@ -409,3 +409,50 @@ class TestEnQueEstaEscritaLaMediana:
         assert self._lista(("", "")).medida == ""
         assert self._lista().medida == ""
 
+
+class TestBusquedaDeLaFila:
+    """`WatchRow.busqueda` es el nombre plegado que cada fila de la lista lleva
+    en `data-busqueda`. El script del navegador pliega la consulta igual y
+    busca por subcadena, así que esta mitad es la que decide qué encuentra
+    quién escribe sin tildes ni mayúsculas.
+
+    Los pares se escriben a mano: «Azúcar» → «azucar» es lo que un cubano
+    espera al teclear en un teléfono sin acentos."""
+
+    def _fila(self, nombre: str) -> WatchRow:
+        return WatchRow(
+            product_name=nombre, slug="x", icon=None, currency="CUP", unit="lb",
+            cells=(), query="", is_active=False,
+        )
+
+    def test_quita_las_tildes_y_pasa_a_minusculas(self) -> None:
+        assert self._fila("Azúcar blanca").busqueda == "azucar blanca"
+        assert self._fila("JAMÓN").busqueda == "jamon"
+
+    def test_la_enie_se_pliega_a_la_ene(self) -> None:
+        """Quien escribe «name» encuentra «Ñame», y quien escribe «ñame» también:
+        la consulta se pliega igual del otro lado."""
+        assert self._fila("Ñame").busqueda == "name"
+
+    def test_las_dieresis_tambien(self) -> None:
+        assert self._fila("Pingüino").busqueda == "pinguino"
+
+    def test_lo_que_ya_esta_plano_no_cambia(self) -> None:
+        assert self._fila("arroz").busqueda == "arroz"
+        assert self._fila("Aceite de oliva").busqueda == "aceite de oliva"
+
+    def test_un_nombre_vacio_no_rompe(self) -> None:
+        assert self._fila("").busqueda == ""
+
+    def test_es_el_mismo_plegado_que_ordena_la_lista(self) -> None:
+        """Una sola definición de «sin tildes» para el orden y para el buscador:
+        si mañana cambia una, cambia la otra, y «Ají» sigue junto a «Ajo» en
+        los dos lados."""
+        lista = build_watchlist(
+            ["Ajo", "Ají"], [], build_month_vs_month([], [], window_days=30, hoy=HOY),
+            provinces=PROVINCIAS, selected_province="", desde=DESDE, hasta=HOY,
+        )
+
+        assert [r.busqueda for r in lista.rows] == ["aji", "ajo"]
+        assert [r.product_name for r in lista.rows] == ["Ají", "Ajo"]
+

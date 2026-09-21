@@ -11730,3 +11730,87 @@ Consecuencia: la rama neutra es una red para un estado que hoy no se alcanza.
 Queda explícito acá para que nadie la lea como código muerto: el día que una
 tarjeta llegue sin fundir a CUP, la viñeta sigue siendo cierta en vez de
 quedarse muda.
+
+## 2026-09-21 — «Todos» pasa de tarjetas a una lista compacta con buscador
+Contexto: con 5 productos las tarjetas del prototipo E se ven bien, pero cada
+una mide 175 px en el teléfono, y el catálogo ya tiene 60 productos con 5
+marcados como piloto. Medido sobre una base sintética de 40 productos piloto
+(la misma para los dos códigos): 8.788 px en el móvil, 10,4 pantallas de
+scroll para encontrar uno. E había sacado la búsqueda por ruido —con 5
+productos sobraba—; con 40 hace falta, y el operador pidió volver a la lista
+compacta y al buscador que ya estaban diseñados en D.
+Decisión: (1) La lista de «Todos» es la de D: una fila por producto, con la
+cabecera de columnas una sola vez —pegada arriba al hacer scroll, porque una
+columna sin nombre no dice de quién es la cifra— en vez del nombre de la
+provincia repetido en cada tarjeta. La fila conserva todo lo que E le pedía a
+la tarjeta: mediana, «más barata», cambio con su «(base N)», cuántos
+anuncios, «sin datos todavía», «sin mes anterior» y el modo «Mi provincia»
+con las otras en una línea. D no traía «(base N)» ni el conteo en la fila
+(decía «poca base antes»); se agregaron porque son las dos honestidades que E
+introdujo, y una lista más corta no es motivo para perderlas. Las cifras van
+alineadas por el borde derecho y el nombre del producto en sans de 14 px,
+como en D: alinear a la derecha es lo que deja comparar hacia abajo, y solo
+funciona si la cifra está siempre en el borde, así que la pastilla «más
+barata» va a su izquierda (`row-reverse`; en el HTML la cifra sigue primero,
+que es como la lee un lector de pantalla). (2) Buscador: filtra en el
+navegador las filas que ya llegaron, plegando tildes y mayúsculas —«azucar»
+encuentra «Azúcar blanca», «name» encuentra «Ñame»— y buscando varias
+palabras en cualquier orden. El nombre viene plegado del
+servidor (`WatchRow.busqueda`, la misma función que ordena la lista) y el
+script pliega la consulta igual. Nace `hidden` y lo muestra el script: sin
+script no hay nada que lo haga andar, y un campo que no hace nada es peor que
+no tenerlo. El script solo viaja a «Todos». (3) El chevrón y su columna solo
+desde 48 rem: en el teléfono cada píxel de ancho es de una cifra, y las
+filas de D tampoco lo traen. (4) El resumen del detalle sigue usando la
+tarjeta de E (`columna`), sin cambios.
+Medido (390 px de ancho y 1280, misma base): con 40 productos, de 8.788 a
+3.961 px en el móvil (10,4 a 4,7 pantallas) y de 6.587 a 3.029 px en
+escritorio (7,3 a 3,4). Con los 5 de hoy, la lista de 940 a 357 px y la
+página de 1.846 a 1.436 px en el móvil (en escritorio, la lista de 764 a
+312). Sin desborde horizontal en ningún ancho, y el buscador probado en el
+navegador con 40 filas.
+Descartado: (a) tarjetas hasta N productos y filas después: dos diseños que
+mantener y probar, y la vista compacta no se vería en producción con 5
+productos, así que no se podría verificar; forzarla con `?lista=` obligaba a
+pasar el parámetro por las 11 funciones de `product_nav` que arman enlaces
+(20 llamadas, compartidas con el mapa); (b) buscar también por provincia
+(«Buscar producto o provincia», como en D):
+en E la provincia se elige con los chips de «Mi provincia», que enfocan la
+lista, y buscarla duplicaría el control sin un resultado que mostrar. El
+campo dice «Buscar producto»; (c) buscar en el servidor con `?q=`: una ida y
+vuelta por consulta con la conexión de un usuario cubano, contra un filtro
+instantáneo que no agrega superficie al router; (d) agrupar por categoría:
+entrada siguiente.
+Consecuencia: es un apartamiento de E, elegido por el operador tras ver el
+costo medido, y la tarjeta de E deja de existir en «Todos». La tabla asume
+pocas provincias sin foco (hoy 2): con más, la lista debería arrancar
+enfocada en «Mi provincia» (S8), que es como ya escalaban las tarjetas. Las
+15 pruebas que dependían de las clases de la tarjeta se reapuntaron sin
+cambiar lo que afirman, y una que habría quedado en verde para siempre
+(«las tarjetas no aparecen en el mapa», sobre una clase que ya no existe) se
+reapuntó también. Cada regla de CSS y cada pieza del buscador se probó
+rompiéndola a propósito: 15 mutaciones, 15 cazadas.
+
+## 2026-09-21 — Agrupar la lista de productos por categoría: anotado, no construido
+Contexto: al pedir la lista compacta se planteó agrupar por categoría, con
+secciones plegables sin JavaScript, como segunda salida al scroll con muchos
+productos. Hoy no sirve: de los 60 productos del catálogo, 55 tienen
+`category = 'sin categoría'`, y también 2 de los 5 pilotos (Picadillo y
+Azúcar blanca). Las únicas categorías con contenido son `granos`, `aceites`,
+`carnes`, `lacteos` y `huevos`, con un producto cada una.
+Decisión: no se construye ahora. Se deja anotado con su condición: primero se
+cura el catálogo, que es trabajo de datos y no de código; después el agrupado
+es poco código —`build_watchlist` agrupa las filas por `Product.category` y
+cada grupo va en un `<details open>`—, y la lista compacta ya lo admite sin
+rediseñar nada.
+Descartado: agruparlo hoy. Con 55 de 60 en «sin categoría» habría un bloque
+enorme y un encabezado que no dice nada: se pagaría el código para no ganar
+nada.
+Consecuencia: el disparador para reabrirlo es más de ~15 productos piloto y
+al menos 3 categorías con 3 productos o más; hasta entonces el buscador y la
+fila compacta cubren el volumen. Quedan dos cosas por decidir cuando se abra:
+qué hace el buscador con los grupos plegados (lo natural es abrir los que
+tienen coincidencia) y cómo llega la categoría a `WatchRow`, que hoy no la
+lleva —`build_watchlist` recibe los nombres piloto, no la categoría—. Aparte
+del agrupado, curar la categoría de los 55 productos se va a pagar en más
+lugares que este.

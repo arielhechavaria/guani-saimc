@@ -1,0 +1,72 @@
+{#
+  Buscador de la lista de productos del tablero (prototipo D, 2026-09-21).
+
+  Filtra en el navegador las filas que el servidor ya mandó: no hay pedido, no
+  hay recarga, y funciona con la conexión que tenga quien lo usa. Cada fila
+  trae su nombre ya plegado en `data-busqueda` (minúsculas y sin tildes, lo
+  hace `WatchRow.busqueda`), y acá se pliega la consulta igual, así «azucar»
+  encuentra «Azúcar blanca» y «name» encuentra «Ñame».
+
+  Varias palabras se buscan todas, en cualquier orden: «blanca azucar» sirve.
+
+  El buscador nace `hidden` en el HTML y este script lo muestra. Sin script no
+  hay nada que lo haga andar, y un campo que no hace nada es peor que no
+  tenerlo: la lista completa queda ahí, sin filtrar, que es lo que hay hoy.
+
+  `hidden` en las filas lo respeta `.ph-fila[hidden]`, que existe justamente
+  porque un `display` de autor le gana al atributo.
+#}
+<script>
+  (function () {
+    var caja = document.getElementById("buscar");
+    var envoltorio = document.querySelector(".ph-buscar");
+    if (!caja || !envoltorio) return;
+
+    var filas = document.querySelectorAll(".ph-fila");
+    var vacio = document.getElementById("sin-resultados");
+    var estado = document.getElementById("buscar-estado");
+    var limpiar = document.getElementById("limpiar-busqueda");
+
+    /* Mismo plegado que `_sin_tildes` en Python. `normalize` es ES2015: sin
+       él se compara solo en minúsculas, que es peor pero no rompe nada. */
+    function plano(texto) {
+      var t = String(texto).toLowerCase();
+      return t.normalize ? t.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : t;
+    }
+
+    function filtrar() {
+      var palabras = plano(caja.value).split(/\s+/).filter(Boolean);
+      var visibles = 0;
+      Array.prototype.forEach.call(filas, function (fila) {
+        var nombre = fila.getAttribute("data-busqueda") || "";
+        var coincide = palabras.every(function (p) { return nombre.indexOf(p) !== -1; });
+        fila.hidden = !coincide;
+        if (coincide) visibles += 1;
+      });
+      if (vacio) vacio.hidden = visibles !== 0;
+      /* Lo que se anuncia a un lector de pantalla: solo cuando hay consulta. */
+      if (!palabras.length) {
+        estado.textContent = "";
+      } else if (visibles === 0) {
+        estado.textContent = "Ningún producto coincide";
+      } else {
+        estado.textContent = visibles + (visibles === 1 ? " producto" : " productos");
+      }
+    }
+
+    caja.addEventListener("input", filtrar);
+    /* Al volver con «atrás» el navegador devuelve el texto escrito pero no
+       dispara `input`: se vuelve a filtrar para que lista y campo coincidan. */
+    window.addEventListener("pageshow", filtrar);
+    if (limpiar) {
+      limpiar.addEventListener("click", function () {
+        caja.value = "";
+        filtrar();
+        caja.focus();
+      });
+    }
+
+    envoltorio.hidden = false;
+    filtrar();
+  })();
+</script>

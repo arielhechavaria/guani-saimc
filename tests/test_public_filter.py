@@ -2505,10 +2505,10 @@ class TestVistaTableroEnLaRuta:
         assert 'id="ph-leaflet-map"' in texto
         assert 'class="ph-dash-table"' not in texto
 
-    def test_vista_tablero_muestra_una_tarjeta_por_producto_sin_mapa(
+    def test_vista_tablero_muestra_una_fila_por_producto_sin_mapa(
         self, client: TestClient, session: Session
     ) -> None:
-        """«Todos» es «Qué cuesta hoy»: una tarjeta por producto piloto, sin mapa
+        """«Todos» es «Qué cuesta hoy»: una fila por producto piloto, sin mapa
         y sin la tabla por formato, que vive en el detalle de cada producto."""
         self._seed(session)
 
@@ -2516,8 +2516,8 @@ class TestVistaTableroEnLaRuta:
 
         assert 'id="ph-leaflet-map"' not in texto
         assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in texto
-        assert '<span class="ph-tarjeta-nombre">Arroz</span>' in texto
-        assert '<span class="ph-tarjeta-nombre">Aceite</span>' in texto
+        assert '<span class="ph-fila-nombre">Arroz</span>' in texto
+        assert '<span class="ph-fila-nombre">Aceite</span>' in texto
         assert "<table" not in texto
         assert texto.index("La Habana") < texto.index("Santiago de Cuba")
 
@@ -2671,7 +2671,7 @@ class TestVistaTableroEnLaRuta:
         assert todos is not None and "productos=" not in todos.group(1)
         assert "vista=tablero" in todos.group(1)
 
-    def test_la_tarjeta_muestra_la_mediana_de_cada_provincia(
+    def test_la_fila_muestra_la_mediana_de_cada_provincia(
         self, client: TestClient, session: Session
     ) -> None:
         """Arroz en Santiago (`_seed`): un solo anuncio de 410, así que la
@@ -2680,30 +2680,33 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
-        tarjeta = re.search(r'<span class="ph-tarjeta-nombre">Arroz</span>[\s\S]*?</a>', texto)
+        fila = re.search(r'<span class="ph-fila-nombre">Arroz</span>[\s\S]*?</a>', texto)
 
-        assert tarjeta is not None
-        assert "Santiago de Cuba" in tarjeta.group(0)
-        assert '<div class="ph-fig">410 ' in tarjeta.group(0)
-        assert "sin mes anterior" in tarjeta.group(0)
+        assert fila is not None
+        assert "Santiago de Cuba" in fila.group(0)
+        assert '<span class="ph-cel-mediana">410</span>' in fila.group(0)
+        assert "sin mes anterior" in fila.group(0)
 
-    def test_las_tarjetas_no_aparecen_en_el_mapa(
+    def test_las_filas_no_aparecen_en_el_mapa(
         self, client: TestClient, session: Session
     ) -> None:
+        """Se conservó al pasar de tarjetas a filas: con el nombre de clase
+        viejo habría seguido en verde para siempre, porque esa clase ya no
+        existe en ningún lado. Un test que no puede fallar no protege nada."""
         self._seed(session)
 
-        assert 'class="ph-tarjeta' not in client.get("/").text
+        assert 'class="ph-fila' not in client.get("/").text
 
     def test_el_selector_sigue_visible_aunque_la_provincia_no_tenga_dato(
         self, client: TestClient, session: Session
     ) -> None:
-        """Un filtro que deja una tarjeta vacía tiene que poder deshacerse desde
+        """Un filtro que deja una fila vacía tiene que poder deshacerse desde
         la propia vista. Aceite no tiene dato en Santiago (ver `_seed`): su
-        tarjeta lo dice y el selector sigue ahí para volver a «Todas»."""
+        fila lo dice y el selector sigue ahí para volver a «Todas»."""
         self._seed(session)
 
         texto = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
-        aceite = re.search(r'<span class="ph-tarjeta-nombre">Aceite</span>[\s\S]*?</a>', texto)
+        aceite = re.search(r'<span class="ph-fila-nombre">Aceite</span>[\s\S]*?</a>', texto)
 
         assert aceite is not None and "sin datos todavía" in aceite.group(0)
         assert 'data-provincia=""' in texto
@@ -2871,11 +2874,21 @@ class TestMiProvinciaEnElTablero:
         session.commit()
 
     def _lista(self, texto: str) -> str:
-        return texto[texto.index('<div class="ph-tarjetas">') : texto.index('id="datos-titulo"')]
+        return texto[texto.index('<section class="ph-panel ph-lista"') : texto.index('id="datos-titulo"')]
 
     def _columnas(self, texto: str) -> list[str]:
-        """Los nombres de provincia de cada columna principal de las tarjetas."""
-        return re.findall(r'<div class="ph-col-name"><span class="ph-dot"></span>([^<]+)', texto)
+        """La provincia de cada celda principal de las filas. En la lista el
+        nombre va oculto a la vista dentro de cada celda (la cabecera lo dice
+        una sola vez y un lector de pantalla no la ve), y es lo que se lee."""
+        return re.findall(
+            r'<div class="ph-cel[^"]*">\s*<span class="visually-hidden">([^:<]+): </span>', texto
+        )
+
+    def _cabecera(self, texto: str) -> list[str]:
+        """Los nombres de provincia de la cabecera de columnas."""
+        cab = texto[texto.index('class="ph-lista-cab"') :]
+        cab = cab[: cab.index('<div class="ph-filas">')]
+        return re.findall(r'<span class="ph-dot"></span>([^<]+)</span>', cab)
 
     def test_el_selector_esta_arriba_de_la_lista(
         self, client: TestClient, session: Session
@@ -2883,7 +2896,8 @@ class TestMiProvinciaEnElTablero:
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
-        arriba = texto[texto.index('id="mi-provincia-etiqueta"') : texto.index('<div class="ph-tarjetas">')]
+        desde = texto.index('id="mi-provincia-etiqueta"')
+        arriba = texto[desde : texto.index('<section class="ph-panel ph-lista"')]
 
         assert "¿En qué provincia estás?" in arriba
         assert 'data-provincia="la-habana"' in arriba
@@ -2908,7 +2922,8 @@ class TestMiProvinciaEnElTablero:
         lista = self._lista(client.get("/?vista=tablero&provincia=santiago-de-cuba").text)
 
         assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]  # Aceite, Arroz
-        assert 'class="ph-tarjeta is-foco"' in lista
+        assert self._cabecera(lista) == ["Santiago de Cuba"]  # la cabecera sigue a la elegida
+        assert 'class="ph-fila is-foco"' in lista
         assert re.search(r'class="ph-otras">[\s\S]*?La Habana:', lista)
 
     def test_sin_provincia_no_hay_lineas_de_otras(
@@ -2918,7 +2933,8 @@ class TestMiProvinciaEnElTablero:
 
         lista = self._lista(client.get("/?vista=tablero").text)
 
-        assert len(self._columnas(lista)) == 4  # dos tarjetas, dos provincias cada una
+        assert len(self._columnas(lista)) == 4  # dos filas, dos provincias cada una
+        assert self._cabecera(lista) == ["La Habana", "Santiago de Cuba"]  # una sola vez
         assert "ph-otras" not in lista
 
     def test_la_cookie_provincia_enfoca_el_tablero_sin_query_string(
@@ -2975,6 +2991,154 @@ class TestMiProvinciaEnElTablero:
         assert "a[data-provincia]" in texto
         assert 'document.cookie = "provincia="' in texto
         assert "max-age=0" in texto
+
+
+class TestBuscadorYListaCompacta:
+    """La lista de «Todos» pasó de tarjetas a filas compactas con un buscador
+    (2026-09-21, prototipo D): con 40 productos las tarjetas eran 10 pantallas
+    de scroll en el teléfono, y las filas 4,7 medidas sobre la misma base.
+
+    Valores esperados, a mano: tres productos piloto con La Habana como única
+    provincia. Azúcar blanca (300, 320), Ñame (150) y Arroz (200, 210, 220)."""
+
+    def _seed(self, session: Session) -> None:
+        habana = Province(code="hab", name="La Habana")
+        session.add(habana)
+        productos = {
+            nombre: Product(name=nombre, category="x", unit="lb", aliases=[], is_pilot=True)
+            for nombre in ("Azúcar blanca", "Ñame", "Arroz")
+        }
+        session.add_all(productos.values())
+        session.commit()
+        fuente = _ingestion(session, hash_="h-buscador")
+        for nombre, precios in (
+            ("Azúcar blanca", ("300", "320")),
+            ("Ñame", ("150",)),
+            ("Arroz", ("200", "210", "220")),
+        ):
+            for i, precio in enumerate(precios):
+                _precio(
+                    session, product=productos[nombre], province=habana, source=fuente,
+                    dia=_hace(2 + i), price=precio,
+                )
+        session.commit()
+
+    def _todos(self, client: TestClient) -> str:
+        return str(client.get("/?vista=tablero").text)
+
+    def test_cada_fila_lleva_su_nombre_plegado_para_el_buscador(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El script compara la consulta contra `data-busqueda`; si el servidor
+        no la pliega, «azucar» no encuentra «Azúcar blanca»."""
+        self._seed(session)
+
+        texto = self._todos(client)
+
+        assert 'data-busqueda="azucar blanca"' in texto
+        assert 'data-busqueda="name"' in texto
+        assert 'data-busqueda="arroz"' in texto
+        assert texto.count("data-busqueda=") == 3
+
+    def test_el_buscador_nace_escondido_y_es_un_campo_de_busqueda(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Escondido, porque sin script no habría nada que lo hiciera andar y un
+        campo que no hace nada es peor que no tenerlo. Lo muestra el script."""
+        self._seed(session)
+
+        texto = self._todos(client)
+
+        assert '<div class="ph-buscar" role="search" hidden>' in texto
+        assert 'type="search"' in texto and 'aria-label="Buscar producto"' in texto
+        # La cantidad de resultados se anuncia a un lector de pantalla.
+        assert 'id="buscar-estado" role="status" aria-live="polite"' in texto
+
+    def test_el_script_muestra_el_buscador_y_no_pide_nada_al_servidor(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Filtra las filas que ya llegaron: ni un pedido, ni HTMX. Es lo que
+        lo hace instantáneo con la conexión de quien lo usa."""
+        self._seed(session)
+
+        texto = self._todos(client)
+        script = texto[texto.index("(function () {\n    var caja") :]
+        script = script[: script.index("</script>")]
+
+        assert "envoltorio.hidden = false" in script
+        for pedido in ("fetch(", "XMLHttpRequest", "hx-", "sendBeacon"):
+            assert pedido not in script, pedido
+
+    def test_el_script_pliega_la_consulta_como_el_servidor(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La otra mitad de `WatchRow.busqueda`: NFD y fuera las marcas
+        combinantes. Si alguien cambia una mitad y no la otra, «name» deja de
+        encontrar «Ñame» sin que ningún test del servidor lo note."""
+        self._seed(session)
+
+        texto = self._todos(client)
+
+        assert 'normalize("NFD")' in texto
+        assert "[\\u0300-\\u036f]" in texto
+        # Varias palabras: se buscan todas, en cualquier orden.
+        assert ".every(" in texto
+
+    def test_el_vacio_ofrece_borrar_la_busqueda_y_dice_cuantos_hay(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = self._todos(client)
+
+        assert 'id="sin-resultados" hidden' in texto
+        assert 'id="limpiar-busqueda"' in texto
+        assert "para ver los 3." in texto
+
+    def test_la_cabecera_no_se_lee_dos_veces(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La cabecera nombra la provincia una vez, a la vista; cada celda la
+        lleva además oculta, para quien no ve la cabecera. Si la cabecera no
+        estuviera `aria-hidden`, un lector de pantalla diría el nombre dos
+        veces por fila."""
+        self._seed(session)
+
+        texto = self._todos(client)
+
+        assert '<div class="ph-lista-cab" aria-hidden="true">' in texto
+        assert texto.count('<span class="visually-hidden">La Habana: </span>') == 3  # una por fila
+
+    def test_el_buscador_solo_esta_en_la_lista_de_todos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Ni el mapa ni el detalle de un producto tienen lista que filtrar, y
+        al detalle tampoco se le manda el script."""
+        self._seed(session)
+
+        for url in ("/?vista=mapa", "/?vista=tablero&productos=arroz"):
+            texto = client.get(url).text
+            assert 'id="buscar"' not in texto, url
+            assert "var caja = document.getElementById" not in texto, url
+
+    def test_las_filas_enlazan_al_detalle_de_su_producto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Cada fila es un solo enlace al detalle de su producto. Los slugs se
+        escriben a mano: «Azúcar blanca» → «azucar-blanca», «Ñame» → «name»."""
+        self._seed(session)
+
+        texto = self._todos(client)
+        enlaces = re.findall(
+            r'<a class="ph-fila" href="([^"]+)" data-busqueda="([^"]*)">', texto
+        )
+        por_nombre = {busqueda: href for href, busqueda in enlaces}
+
+        assert set(por_nombre) == {"azucar blanca", "name", "arroz"}
+        assert "productos=azucar-blanca&amp;" in por_nombre["azucar blanca"]
+        assert "productos=name&amp;" in por_nombre["name"]
+        assert "productos=arroz&amp;" in por_nombre["arroz"]
+        assert all("vista=tablero" in href for href in por_nombre.values())
 
 
 class TestSobreLosDatosEnElTablero:
@@ -3464,10 +3628,10 @@ class TestCambioUnicoEnElTablero:
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
-        fila = re.search(r'<span class="ph-tarjeta-nombre">Arroz</span>[\s\S]*?</a>', texto)
+        fila = re.search(r'<span class="ph-fila-nombre">Arroz</span>[\s\S]*?</a>', texto)
 
         assert fila is not None
-        assert '<div class="ph-col-change">+10% (base 4)</div>' in fila.group(0)
+        assert '<span class="ph-cel-cambio">+10% (base 4)</span>' in fila.group(0)
 
     def test_la_tarjeta_del_mapa_dice_lo_mismo(
         self, client: TestClient, session: Session
@@ -3517,10 +3681,10 @@ class TestUnaSolaMedianaEnElTablero:
         self._seed(session)
 
         texto = client.get("/?vista=tablero").text
-        fila = re.search(r'<span class="ph-tarjeta-nombre">Arroz</span>[\s\S]*?</a>', texto)
+        fila = re.search(r'<span class="ph-fila-nombre">Arroz</span>[\s\S]*?</a>', texto)
 
         assert fila is not None
-        assert '<div class="ph-fig">400 ' in fila.group(0)
+        assert '<span class="ph-cel-mediana">400</span>' in fila.group(0)
 
 
 
@@ -3547,7 +3711,7 @@ class TestListaAbsorbeLaTira:
 
     def _fila(self, session: Session, client: TestClient) -> str:
         texto = client.get("/?vista=tablero").text
-        fila = re.search(r'<span class="ph-tarjeta-nombre">Arroz</span>[\s\S]*?</a>', texto)
+        fila = re.search(r'<span class="ph-fila-nombre">Arroz</span>[\s\S]*?</a>', texto)
         assert fila is not None
         return str(fila.group(0))
 
@@ -3557,9 +3721,17 @@ class TestListaAbsorbeLaTira:
         self._seed(session)
 
         fila = self._fila(session, client)
+        # Una celda por provincia, en el orden de la cabecera. Se comprueba en
+        # cuál está la etiqueta y no en qué lugar del texto: dentro de la celda
+        # la cifra y la pastilla se ordenan a la vista con CSS.
+        celdas = fila.split('<div class="ph-cel ')[1:]
+        habana = next(c for c in celdas if "La Habana: " in c)
+        santiago = next(c for c in celdas if "Santiago de Cuba: " in c)
 
         assert fila.count("más barata") == 1
-        assert fila.index("más barata") < fila.index('<div class="ph-fig">405 ')
+        assert "más barata" in habana and "más barata" not in santiago
+        assert '<span class="ph-cel-mediana">300</span>' in habana
+        assert '<span class="ph-cel-mediana">405</span>' in santiago
 
     def test_cada_celda_dice_cuantos_anuncios_la_sostienen(
         self, client: TestClient, session: Session
@@ -3568,7 +3740,7 @@ class TestListaAbsorbeLaTira:
 
         fila = self._fila(session, client)
 
-        assert fila.count('<div class="ph-col-n">2 anuncios</div>') == 2
+        assert fila.count('<span class="ph-cel-n">2 anuncios</span>') == 2
 
     def test_el_cambio_muestra_la_base_contra_la_que_se_compara(
         self, client: TestClient, session: Session
@@ -3578,7 +3750,7 @@ class TestListaAbsorbeLaTira:
 
         fila = self._fila(session, client)
 
-        assert fila.count('<div class="ph-col-change">sin mes anterior</div>') == 2
+        assert fila.count('<span class="ph-cel-cambio">sin mes anterior</span>') == 2
 
     def test_con_periodo_anterior_el_cambio_lleva_su_base(
         self, client: TestClient, session: Session
@@ -3597,7 +3769,7 @@ class TestListaAbsorbeLaTira:
 
         fila = self._fila(session, client)
 
-        assert '<div class="ph-col-change">+20% (base 2)</div>' in fila
+        assert '<span class="ph-cel-cambio">+20% (base 2)</span>' in fila
 
     def test_ya_no_hay_cinta_ni_tiras_ni_busqueda_ni_columna_de_cambio(
         self, client: TestClient, session: Session

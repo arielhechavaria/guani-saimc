@@ -145,17 +145,77 @@
   .ph-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--prov, var(--m3-prov-9)); }
   .ph-dot-lg { width: 10px; height: 10px; }
 
-  /* ── Tarjeta de producto ──────────────────────────────────────────────── */
-  .ph-tarjetas { display: flex; flex-direction: column; gap: 16px; }
-  .ph-tarjeta { position: relative; display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; padding: 16px;
-             background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: 16px;
-             color: var(--m3-on-surface); text-decoration: none; }
-  .ph-tarjeta:hover { text-decoration: none; border-color: var(--m3-outline); }
-  .ph-tarjeta-titulo { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-right: 32px; }
-  .ph-tarjeta-nombre { font-family: var(--ph-font-heading); font-size: 20px; }
-  .ph-tarjeta-unidad { font-size: 12px; color: var(--m3-outline); }
+  /* ── Lista compacta de productos (prototipo D) ───────────────────────── */
   .ph-chev { flex: none; color: var(--m3-on-surface-variant); transition: transform .15s; }
-  .ph-tarjeta-chev { position: absolute; top: 14px; right: 12px; }
+  .ph-lista { padding: 12px 6px 6px; gap: 8px; }
+  .ph-lista .ph-panel-title, .ph-lista .ph-panel-sub { padding: 0 8px; }
+  .ph-lista-cab, .ph-fila { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--n, 2), minmax(0, 1fr));
+                            column-gap: 8px; align-items: center; }
+  /* La cabecera nombra las provincias una sola vez y se queda pegada arriba:
+     con la lista larga, una columna sin nombre no dice de quién es la cifra. */
+  .ph-lista-cab { position: sticky; top: 0; z-index: 1; padding: 6px 8px; background: var(--m3-surface);
+                  border-bottom: 1px solid var(--m3-outline-variant); font-size: 11px; color: var(--m3-on-surface-variant); }
+  .ph-lista-cab > span { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .ph-lista-cab > span + span { justify-content: flex-end; }
+  .ph-fila { min-height: 56px; padding: 8px; box-sizing: border-box; border-bottom: 1px solid var(--m3-divider);
+             color: var(--m3-on-surface); text-decoration: none; }
+  .ph-fila:last-child { border-bottom: 0; }
+  .ph-fila:hover { text-decoration: none; background: var(--m3-surface-container-high); }
+  /* El atributo `hidden` pierde contra un `display` de autor: sin esta regla
+     el buscador escondería las filas sin que se fueran. */
+  .ph-fila[hidden] { display: none; }
+  .ph-fila-titulo { display: flex; flex-direction: column; min-width: 0; }
+  .ph-fila-nombre { font: 500 14px/1.25 var(--m3-font); overflow-wrap: anywhere; }
+  .ph-fila-unidad { font-size: 11px; color: var(--m3-outline); }
+  /* El chevrón y su columna sólo desde la tableta: en el teléfono cada píxel
+     de ancho es de una cifra. */
+  .ph-fila-chev, .ph-lista-cab-chev { display: none; }
+  .ph-cel { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; min-width: 0; text-align: right; }
+  /* `row-reverse`: la cifra va primero en el HTML (un lector de pantalla dice
+     «298, más barata») y queda pegada al borde derecho, con la pastilla a su
+     izquierda. Así todas las cifras de una columna se alinean por la derecha,
+     tengan pastilla o no, que es para lo que se alinean. */
+  .ph-cel-cifra { display: flex; flex-direction: row-reverse; flex-wrap: wrap; justify-content: flex-start;
+                  align-items: baseline; gap: 2px 6px; }
+  .ph-cel-mediana { font-family: var(--m3-mono); font-size: 16px; font-weight: 500; line-height: 1.2; }
+  .ph-cel-meta { display: flex; flex-direction: column; align-items: flex-end; }
+  .ph-cel-cambio { font-size: 12px; line-height: 1.3; color: var(--m3-on-surface-variant); }
+  .ph-cel-n { font-size: 11px; line-height: 1.3; color: var(--m3-outline); }
+  .ph-cel-nada { font-size: 12px; line-height: 1.3; color: var(--m3-on-surface-variant); }
+  .ph-pill { background: var(--m3-primary-container); color: var(--m3-on-primary-container); font-size: 11px; font-weight: 500;
+             padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .ph-cel .ph-pill { font-size: 10px; padding: 1px 6px; }
+  .ph-vacio { margin: 0; padding: 12px 10px; font-size: 14px; color: var(--m3-on-surface-variant); }
+  .ph-vacio button { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--m3-primary);
+                     font: inherit; text-decoration: underline; cursor: pointer; }
+  @media (min-width: 48rem) {
+    .ph-lista { padding: 16px 12px 8px; }
+    .ph-lista .ph-panel-title, .ph-lista .ph-panel-sub { padding: 0 10px; }
+    .ph-lista-cab, .ph-fila { grid-template-columns: 190px repeat(var(--n, 2), minmax(0, 220px)) minmax(16px, 1fr); column-gap: 16px; padding-inline: 10px; }
+    .ph-fila { padding-block: 10px; }
+    .ph-fila-chev, .ph-lista-cab-chev { display: block; justify-self: end; }
+    .ph-fila-nombre { font-size: 15px; }
+    .ph-cel-meta { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 0 8px; }
+    .ph-cel-n::before { content: "·"; margin-right: 8px; }
+  }
+
+  /* Cuántas cifras trae cada provincia cuando hay una elegida: las otras van
+     en una línea al pie de la fila, como en el prototipo. */
+  .ph-otras { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-top: 6px; font-size: 12px;
+              color: var(--m3-on-surface-variant); }
+  .ph-otras strong { font-family: var(--m3-mono); font-weight: 500; color: var(--m3-on-surface); }
+  .ph-fila .ph-otras { grid-column: 1 / -1; }
+
+  /* Buscador: sólo se ve si hay script que lo haga andar (ver el bloque
+     `scripts`). 16 px de letra para que iOS no haga zoom al enfocarlo. */
+  .ph-buscar-caja { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; box-sizing: border-box;
+                    border: 1px solid var(--m3-outline-variant); border-radius: 22px; background: var(--m3-surface);
+                    color: var(--m3-on-surface-variant); }
+  .ph-buscar-caja:focus-within { outline: 2px solid var(--m3-primary); outline-offset: 2px; }
+  .ph-buscar-input { flex: 1; min-width: 0; min-height: 44px; border: 0; outline: none; background: transparent;
+                     font: 400 16px var(--m3-font); color: var(--m3-on-surface); }
+
+  /* Sólo lo que el detalle sigue usando de la tarjeta: el resumen. */
   .ph-cols { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 16px; }
   .ph-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .ph-col-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--m3-on-surface-variant); }
@@ -164,19 +224,6 @@
   .ph-col-change { font-size: 12px; color: var(--m3-on-surface-variant); }
   .ph-col-n { font-size: 12px; color: var(--m3-outline); }
   .ph-col-none { font-size: 14px; color: var(--m3-on-surface-variant); padding-top: 4px; }
-  .ph-pill { background: var(--m3-primary-container); color: var(--m3-on-primary-container); font-size: 11px; font-weight: 500;
-             padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
-  .ph-otras { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-top: 12px; font-size: 13px;
-              border-top: 1px solid var(--m3-surface-container-high); color: var(--m3-on-surface-variant); }
-  .ph-otras strong { font-family: var(--m3-mono); font-weight: 500; color: var(--m3-on-surface); }
-  .ph-tarjeta.is-foco .ph-fig { font-size: 34px; }
-  @media (min-width: 64rem) {
-    .ph-tarjeta { display: grid; grid-template-columns: 190px minmax(0, 1fr) 24px; column-gap: 24px; align-items: center; padding: 18px 22px; }
-    .ph-tarjeta-titulo { flex-direction: column; align-items: flex-start; gap: 2px; padding-right: 0; }
-    .ph-tarjeta-nombre { font-size: 22px; }
-    .ph-tarjeta-chev { position: static; }
-    .ph-otras { grid-column: 1 / -1; }
-  }
 
   /* ── Detalle ──────────────────────────────────────────────────────────── */
   .ph-back { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; color: var(--m3-primary); text-decoration: none; }
@@ -312,6 +359,24 @@
 {%- endif %}
 {%- endmacro %}
 
+{# Una provincia dentro de una fila de la lista compacta: la cifra, si es la
+   más barata, el cambio con su base y cuántos anuncios la respaldan. El nombre
+   de la provincia va en la cabecera de la lista; para quien lee con lector de
+   pantalla, la cabecera no existe (`aria-hidden`), así que cada celda lo lleva
+   oculto a la vista. Es el mismo contenido que `columna`, sin repetir el
+   nombre en cada producto. #}
+{% macro celda(nombre, cell) -%}
+<div class="ph-cel ph-prov-{{ province_slots.get(nombre, 9) }}">
+  <span class="visually-hidden">{{ nombre }}: </span>
+  {% if cell -%}
+  <span class="ph-cel-cifra"><span class="ph-cel-mediana">{{ cell.median_text }}</span>{% if cell.is_cheapest %}<span class="ph-pill">más barata</span>{% endif %}</span>
+  <span class="ph-cel-meta"><span class="ph-cel-cambio">{% if cell.change_text %}{{ cell.change_text }} (base {{ cell.previous_count }}){% else %}sin mes anterior{% endif %}</span><span class="ph-cel-n">{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}</span></span>
+  {%- else -%}
+  <span class="ph-cel-nada">sin datos todavía</span>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
 {% set foco = watchlist.provinces | length < watchlist.all_provinces | length %}
 {% set fila = (watchlist.rows | selectattr("product_name", "equalto", selected_product) | first) if selected_product else none %}
 
@@ -364,19 +429,39 @@
   </div>
   {% endif %}
 
-  <div class="ph-tarjetas">
-    {% for row in watchlist.rows %}
-    {% set unidad = (row.currency ~ "/" ~ row.unit) if row.unit else row.currency %}
-    <a class="ph-tarjeta{% if foco %} is-foco{% endif %}" href="{{ row.query }}">
-      <div class="ph-tarjeta-titulo"><span class="ph-tarjeta-nombre">{{ row.product_name }}</span>{% if unidad %}<span class="ph-tarjeta-unidad">{{ unidad }}</span>{% endif %}</div>
-      <div class="ph-cols" style="--n: {{ watchlist.provinces | length }}">
-        {% for cell in row.cells %}{{ columna(watchlist.provinces[loop.index0], cell, unidad) }}{% endfor %}
-      </div>
-      {{ chev("ph-tarjeta-chev") }}
-      {{ otras(row.otras) }}
-    </a>
-    {% endfor %}
+  {# Buscador (prototipo D): filtra la lista sin ir al servidor, plegando
+     tildes y mayúsculas. Nace escondido y lo muestra el script del final de la
+     página: sin script no habría nada que lo hiciera andar, y un campo que no
+     hace nada es peor que no tenerlo. #}
+  <div class="ph-buscar" role="search" hidden>
+    <label class="ph-buscar-caja">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+      <input class="ph-buscar-input" id="buscar" type="search" placeholder="Buscar producto" aria-label="Buscar producto" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search">
+    </label>
+    <p class="visually-hidden" id="buscar-estado" role="status" aria-live="polite"></p>
   </div>
+
+  <section class="ph-panel ph-lista" style="--n: {{ watchlist.provinces | length }}" aria-labelledby="lista-titulo">
+    <h2 class="ph-panel-title" id="lista-titulo">Productos</h2>
+    <p class="ph-panel-sub">Mediana de {{ window_days }} días · cambio contra el período anterior</p>
+    <div class="ph-lista-cab" aria-hidden="true">
+      <span>Producto</span>
+      {% for nombre in watchlist.provinces %}<span class="ph-prov-{{ province_slots.get(nombre, 9) }}"><span class="ph-dot"></span>{{ nombre }}</span>{% endfor %}
+      <span class="ph-lista-cab-chev"></span>
+    </div>
+    <div class="ph-filas">
+      {% for row in watchlist.rows %}
+      {% set unidad = (row.currency ~ "/" ~ row.unit) if row.unit else row.currency %}
+      <a class="ph-fila{% if foco %} is-foco{% endif %}" href="{{ row.query }}" data-busqueda="{{ row.busqueda }}">
+        <span class="ph-fila-titulo"><span class="ph-fila-nombre">{{ row.product_name }}</span>{% if unidad %}<span class="ph-fila-unidad">{{ unidad }}</span>{% endif %}</span>
+        {% for cell in row.cells %}{{ celda(watchlist.provinces[loop.index0], cell) }}{% endfor %}
+        {{ chev("ph-fila-chev") }}
+        {{ otras(row.otras) }}
+      </a>
+      {% endfor %}
+    </div>
+    <p class="ph-vacio" id="sin-resultados" hidden>Ningún producto coincide con la búsqueda. <button type="button" id="limpiar-busqueda">Borrarla</button> para ver los {{ watchlist.rows | length }}.</p>
+  </section>
 
 {% else %}
   {# ── Detalle de un producto ──────────────────────────────────────────── #}
@@ -556,3 +641,7 @@
    crédito a elTOQUE se mudó a una viñeta de ese mismo panel. El mapa y el
    resto de la capa pública lo conservan. #}
 {% block footer %}{% endblock %}
+
+{# El buscador filtra la lista de «Todos»; el detalle no tiene lista, así que
+   no se le manda el script. #}
+{% block scripts %}{% if not selected_product %}{% include "_buscador_lista_script.html" %}{% endif %}{% endblock %}
