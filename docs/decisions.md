@@ -11643,3 +11643,65 @@ se repite; no confunde porque ahí cada fila lleva su nombre a la izquierda.
 Medido en el navegador: sin desborde a 390 y 1280, y la mediana más ancha que
 hay hoy («3.476», de Aceite) no se sale del dibujo ni toca la línea de su
 fila —0 px de desborde, 29 px de aire—.
+
+## 2026-09-21 — Alineación con el prototipo E, 4 de 4: textos y dos apartamientos
+Contexto: quedaban dos viñetas de «Sobre los datos» que no decían lo que dice
+el prototipo, y dos cosas que el prototipo no trae y el tablero sí: el rótulo
+«muestra en formación» y el pie de atribución del shell. El operador autorizó
+sacarlas del tablero.
+Decisión: (1) La viñeta de la mediana pasa a «La cifra es la mediana en CUP
+por libra o por litro», como el prototipo. La frase no es un literal: la arma
+`Watchlist.medida` con la moneda y las unidades que hay en pantalla, y si
+hubiera dos monedas se calla en vez de escribir una sola y mentir. (2) La
+viñeta de la base pierde la coletilla «“sin mes anterior”, que no hubo
+ninguno». (3) **Apartamiento de §6.5**: el pie de atribución no se dibuja en
+`?vista=tablero`. El pie del shell pasó a ser `{% block footer %}` y esta
+vista lo deja vacío. §6.5 pide que todo dato publicado conteste de dónde
+salió, cuándo, qué procesos atravesó y por qué se confía: eso lo contesta el
+panel «Sobre los datos», que ya estaba y ahora además se queda con el crédito
+a elTOQUE. (4) **Apartamiento del 2026-08-22**: el rótulo «muestra en
+formación» se va de las dos pantallas del tablero. Lo pedía aquella entrada,
+no el texto de §9.0; lo vinculante de §9.0 (línea 1242) es que la interfaz
+diga qué provincias están publicadas y cuáles en ingesta y que la ausencia se
+lea como decisión metodológica, y eso lo sigue diciendo la viñeta «N de 16
+provincias tienen datos. Ninguna está publicada todavía…».
+Descartado: (a) apagar el pie entero incluido el crédito a elTOQUE, que era lo
+pedido al pie de la letra: es un crédito a un tercero por la tasa con la que se
+convierte a CUP lo que esta misma página muestra, y una maqueta no es motivo
+para dejar de darlo. Se mudó a una viñeta; (b) dejar el rótulo «una vez por
+vista» en chico, que es lo que había: seguía siendo un renglón que el
+prototipo no trae y que la viñeta ya cubre; (c) escribir «en CUP» fijo en la
+plantilla, que es cierto hoy sólo porque `build_cards` descarta lo no
+convertido (ver la entrada de ayer) y sería falso el día que eso cambie.
+Consecuencia: los dos apartamientos están acotados a `?vista=tablero` y
+anotados en `docs/spec-map.md`. El mapa y el resto de la capa pública
+conservan el pie entero y el rótulo, y hay un test por cada mitad: que el
+tablero no los tiene y que el mapa sí. Si mañana se quisiera apagar el pie en
+el mapa, el crédito a elTOQUE y la geometría de Natural Earth necesitan otro
+lugar antes.
+
+## 2026-09-21 — Los tres hallazgos del repaso del slice D
+Contexto: el repaso del slice anterior devolvió un aviso y dos sugerencias, y
+el operador pidió arreglar los tres.
+Decisión: (1) El `{% block footer %}` vacío es de toda la plantilla, así que
+apaga el pie en las dos pantallas del tablero, pero sólo la de lista probaba
+que lo que lo compensa —el crédito a elTOQUE y la viñeta de §9.0— sigue en su
+lugar. Las dos pruebas recorren ahora las dos URL. Quedó confirmado de paso
+que «Sobre los datos» se dibuja también en el detalle, que era justo lo que el
+repaso no podía ver desde el diff. (2) `Watchlist.medida` filtraba por
+`r.unit` y escribía `r.unit_noun`. Hoy son equivalentes porque `unit_noun` cae
+al valor canónico, así que el «en CUP por  o por libra» que el repaso describe
+no se puede alcanzar; pero filtrar por una cosa y formatear otra es una trampa
+puesta para el futuro, y ahora filtra por lo que escribe. El invariante que
+los hace equivalentes queda fijado en `test_hay_palabra_exactamente_cuando_hay_unidad`.
+(3) La entrada anterior decía «hay un test por cada mitad»; era cierto para el
+pie y no para el rótulo, que sólo se probaba por ausencia en el tablero. Se
+agrega la mitad que faltaba: que «muestra en formación» sigue estando en el
+mapa.
+Descartado: inventar una fila con `unit` lleno y `unit_noun` vacío para probar
+el caso (2): es un estado que el código no produce, y un test así prueba una
+ficción. Se fija el invariante que lo vuelve imposible, que es lo que de
+verdad hay que cuidar.
+Consecuencia: el aviso del repaso era una cobertura ausente y no un defecto
+—las aserciones nuevas pasaron a la primera, así que el detalle ya estaba
+bien—, y ahora está cubierta.

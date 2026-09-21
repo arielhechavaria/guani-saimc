@@ -142,6 +142,8 @@ Lo implementado que no coincide con el documento, con su entrada en `decisions.m
 | Marcas de tiempo | `TIMESTAMP` | `TIMESTAMPTZ` | 2026-08-06 |
 | H0 como veredicto de fase | Tabla de decisión avanzar/detener (§3, 56–62) | Métrica de eficiencia; los umbrales 85/70 son referencia de escala | 2026-08-12 |
 | Motor del mapa de calor | §13.1: MapLibre GL | SVG inline de las 16 provincias, con la geometría vendorizada. **Decidido, sin construir** | 2026-08-22 |
+| Pie de atribución del dato | §6.5: la procedencia acompaña a lo publicado | No se dibuja en `?vista=tablero`; ahí las cuatro preguntas las contesta el panel «Sobre los datos», que además se quedó con el crédito a elTOQUE. Intacto en el mapa y en el resto de la capa pública | 2026-09-21 |
+| Rótulo «muestra en formación» | Entrada del 2026-08-22, no el texto de §9.0 | Fuera del tablero. Lo vinculante de §9.0 —qué provincias están publicadas y cuáles en ingesta, y la ausencia como decisión— lo dice la viñeta «N de 16 provincias tienen datos» | 2026-09-21 |
 
 El último está razonado en `docs/decisions/001-stack-python-unico.md`, que es
 además el ADR que §13.1 (línea 1636) pide por nombre.

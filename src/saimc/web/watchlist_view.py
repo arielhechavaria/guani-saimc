@@ -91,6 +91,31 @@ class Watchlist:
     #: en «sobre N anuncios verificados a mano».
     total_ads: int = 0
 
+    @property
+    def medida(self) -> str:
+        """«en CUP por libra o por litro»: en qué está escrita la mediana.
+
+        Se arma con lo que hay en pantalla y no con un literal: si un día
+        entrara otra moneda, la frase se calla en vez de mentir. Vacía
+        también cuando no hay ninguna fila con dato, que es cuando no hay
+        ninguna cifra de la que hablar.
+        """
+        # Se filtra por `unit_noun`, que es lo que se escribe, y no por `unit`:
+        # hoy son lo mismo —`unit_noun` cae al valor canónico cuando no conoce
+        # la unidad— pero filtrar por una cosa y formatear otra deja abierto un
+        # «en CUP por  o por libra» el día que dejen de coincidir.
+        con_dato = [r for r in self.rows if r.currency and r.unit_noun]
+        monedas = {r.currency for r in con_dato}
+        if len(monedas) != 1:
+            return ""
+        nombres = sorted({r.unit_noun for r in con_dato})
+        unidades = (
+            nombres[0]
+            if len(nombres) == 1
+            else ", por ".join(nombres[:-1]) + " o por " + nombres[-1]
+        )
+        return f"en {monedas.pop()} por {unidades}"
+
 
 def _chart_for(product: str, slopes: Sequence[SlopeChart]) -> SlopeChart | None:
     """El gráfico del producto. Si hubiera más de uno (dos monedas o

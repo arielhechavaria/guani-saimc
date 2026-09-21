@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from saimc.cells import RetailObservation
 from saimc.web.price_charts import build_month_vs_month
-from saimc.web.watchlist_view import WatchRow, build_watchlist
+from saimc.web.watchlist_view import Watchlist, WatchRow, build_watchlist
 
 HOY = date(2026, 8, 30)
 DESDE = date(2026, 7, 31)
@@ -350,4 +350,56 @@ class TestUnidadEnPalabra:
         """Un producto sin anuncios en la ventana no trae unidad, y la
         plantilla se apoya en que esto sea falso para no escribir «(no por )»."""
         assert self._fila("").unit_noun == ""
+
+    def test_hay_palabra_exactamente_cuando_hay_unidad(self) -> None:
+        """El invariante del que se cuelga `Watchlist.medida`, que filtra por
+        `unit_noun` porque es lo que escribe: mientras `unit_noun` sea vacío
+        exactamente cuando `unit` lo es, filtrar por uno u otro da lo mismo.
+        Si alguien hiciera que una unidad conocida devolviera vacío, esto cae
+        acá y no en una frase rota en pantalla."""
+        for unidad in ("lb", "kg", "l", "ml", "unidad", "docena", "caja", "onza"):
+            assert bool(self._fila(unidad).unit_noun) is bool(unidad), unidad
+        assert bool(self._fila("").unit_noun) is False
+
+
+class TestEnQueEstaEscritaLaMediana:
+    """`Watchlist.medida` arma «en CUP por libra o por litro», la frase que el
+    prototipo E pone en «Sobre los datos». Se deriva de lo que hay en
+    pantalla: un literal se volvería mentira el día que entre otra moneda."""
+
+    def _lista(self, *pares: tuple[str, str]) -> Watchlist:
+        return Watchlist(
+            provinces=("La Habana",),
+            rows=tuple(
+                WatchRow(
+                    product_name=f"P{i}", slug=f"p{i}", icon=None, currency=moneda,
+                    unit=unidad, cells=(), query="", is_active=False,
+                )
+                for i, (moneda, unidad) in enumerate(pares)
+            ),
+            all_query="",
+            all_is_active=False,
+        )
+
+    def test_una_moneda_y_dos_unidades(self) -> None:
+        assert self._lista(("CUP", "lb"), ("CUP", "l")).medida == "en CUP por libra o por litro"
+
+    def test_una_sola_unidad_no_lleva_disyuntiva(self) -> None:
+        assert self._lista(("CUP", "lb"), ("CUP", "lb")).medida == "en CUP por libra"
+
+    def test_tres_unidades_se_enumeran(self) -> None:
+        lista = self._lista(("CUP", "lb"), ("CUP", "l"), ("CUP", "docena"))
+
+        assert lista.medida == "en CUP por docena, por libra o por litro"
+
+    def test_con_dos_monedas_se_calla(self) -> None:
+        """No hay una frase honesta que cubra las dos, así que no se escribe
+        ninguna: la plantilla deja la viñeta sin la medida."""
+        assert self._lista(("CUP", "lb"), ("USD", "lb")).medida == ""
+
+    def test_sin_filas_con_dato_se_calla(self) -> None:
+        """Un producto piloto sin anuncios en la ventana no trae moneda ni
+        unidad, y no hay ninguna cifra de la que hablar."""
+        assert self._lista(("", "")).medida == ""
+        assert self._lista().medida == ""
 

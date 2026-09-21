@@ -53,9 +53,15 @@
     {% block content %}{% endblock %}
   </main>
 
+  {# La procedencia del dato es el diferencial del proyecto (§6.5), así que
+     el pie dice de qué está hecho el mapa en vez de esconderlo.
+
+     Es un bloque desde el 2026-09-21 porque el tablero lo apaga: ahí la
+     procedencia vive en su propio panel «Sobre los datos» y el pie repetía.
+     Ver `docs/decisions.md`, entrada de ese día. Quien no lo sobreescriba lo
+     sigue teniendo, que es lo que hacen el mapa y el resto de la capa. #}
+  {% block footer %}
   <footer class="m3-public-foot">
-    {# La procedencia del dato es el diferencial del proyecto (§6.5), así que
-       el pie dice de qué está hecho el mapa en vez de esconderlo. #}
     <p>
       Precios recogidos de anuncios públicos del mercado informal y verificados
       a mano, uno por uno. Ninguna cifra de esta página es una estimación.
@@ -71,6 +77,7 @@
       Informal (TRMI) de elTOQUE</a>.
     </p>
   </footer>
+  {% endblock %}
 
 </div>
 {% include "_theme_toggle_script.html" %}

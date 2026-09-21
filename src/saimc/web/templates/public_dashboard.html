@@ -17,12 +17,16 @@
     detrás de las cifras. Compara SIEMPRE todas las provincias.
 
   Los colores salen de los tokens de `saimc-public.css` (los mismos que usa el
-  prototipo), así que el modo oscuro sigue andando. El pie de atribución del
-  shell (§6.5) queda visible.
+  prototipo), así que el modo oscuro sigue andando.
 
-  §9.0: cada cifra va rotulada «muestra en formación» mientras N siga sin
-  calibrar. El prototipo no traía el rótulo; queda una vez por vista, pegado
-  al título, no en la barra lateral.
+  Dos apartamientos declarados el 2026-09-21 (`docs/decisions.md`), los dos
+  acotados a esta vista:
+  - El pie de atribución del shell (§6.5) no se dibuja acá; el crédito a
+    elTOQUE, que es de un tercero, se mudó a «Sobre los datos».
+  - El rótulo «muestra en formación» de cada pantalla se fue. Lo pedía la
+    entrada del 2026-08-22, no el texto de §9.0: lo vinculante de §9.0 es que
+    la interfaz diga qué provincias están publicadas y cuáles en ingesta, y
+    eso lo dice la viñeta «N de 16 provincias tienen datos».
 #}
 {% extends "_public_shell.html" %}
 
@@ -127,7 +131,6 @@
   .ph-h1 { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 30px; line-height: 1.15; color: var(--m3-on-surface); }
   .ph-intro { display: flex; flex-direction: column; gap: 4px; }
   .ph-sub { margin: 2px 0 0; font-size: 14px; color: var(--m3-on-surface-variant); line-height: 1.5; }
-  .ph-formacion { margin: 0; font-size: 12px; color: var(--m3-outline); line-height: 1.5; }
   @media (min-width: 40rem) { .ph-h1 { font-size: 36px; } }
 
   /* ── «¿En qué provincia estás?» ───────────────────────────────────────── */
@@ -344,7 +347,6 @@
     <span class="ph-eyebrow">TABLERO</span>
     <h1 class="ph-h1">Qué cuesta hoy</h1>
     <p class="ph-sub">Mediana de los últimos {{ window_days }} días, sobre {{ watchlist.total_ads }} anuncio{{ "s" if watchlist.total_ads != 1 }} verificados a mano.</p>
-    <p class="ph-formacion">Todas las cifras están en <strong>muestra en formación</strong>: se publica la mediana y cuántos anuncios la respaldan; ninguna cifra es una estimación.</p>
   </div>
 
   {# «Mi provincia» (S8): el único selector de provincia de la página. Sigue a
@@ -386,7 +388,6 @@
       {% if unidad %}<span class="ph-titulo-meta">{{ unidad }} · últimos {{ window_days }} días</span>{% endif %}
     </div>
   </div>
-  <p class="ph-formacion">Todas las cifras están en <strong>muestra en formación</strong>: se publica la mediana y cuántos anuncios la respaldan; ninguna cifra es una estimación.</p>
 
   <section class="ph-panel ph-resumen" aria-label="Resumen de {{ selected_product }}">
     <div class="ph-cols" style="--n: {{ watchlist.all_provinces | length }}">
@@ -531,11 +532,23 @@
     {% endif %}
     <li><strong>{{ map.covered }} de {{ map.provinces | length }} provincia{{ "s" if map.provinces | length != 1 }}</strong> {{ "tiene" if map.covered == 1 else "tienen" }} datos.
       {% if map.published == 0 %}Ninguna está publicada todavía: se publica cuando hay muestra suficiente y sostenida, no cuando lo dice el calendario.{% else %}Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }}; las demás siguen en recolección, porque se publica cuando hay muestra suficiente y sostenida, no cuando lo dice el calendario.{% endif %}</li>
-    <li>La cifra es la <strong>mediana</strong>, con su moneda y su unidad: la única comparable entre provincias.</li>
-    <li>«(base N)» son los anuncios del período anterior contra los que se compara el cambio; «sin mes anterior», que no hubo ninguno.</li>
+    <li>La cifra es la <strong>mediana</strong>{% if watchlist.medida %} {{ watchlist.medida }}{% endif %}: la única comparable entre provincias.</li>
+    <li>«(base N)» son los anuncios del período anterior contra los que se compara el cambio.</li>
+    {# El pie del shell no se dibuja en esta vista, así que el crédito a
+       elTOQUE por la tasa con la que se convierte a CUP vive acá: es de un
+       tercero y no se puede dejar de dar por un cambio de maqueta. #}
+    <li>Los precios en moneda extranjera se convierten a CUP con la <a href="https://eltoque.com/">Tasa Representativa del Mercado Informal (TRMI) de elTOQUE</a>.</li>
   </ul>
   <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span><span>Descargar los datos (CSV)</span></a>
 </section>
 
 </div>{# /.ph-layout #}
 {% endblock %}
+
+{# Apartamiento declarado de §6.5 (2026-09-21, `docs/decisions.md`): el pie de
+   atribución del shell no se dibuja en el tablero. Sus tres párrafos acá
+   sobraban o estaban de más: la procedencia ya la da «Sobre los datos», la
+   geometría de Natural Earth es del mapa y el tablero no tiene mapa, y el
+   crédito a elTOQUE se mudó a una viñeta de ese mismo panel. El mapa y el
+   resto de la capa pública lo conservan. #}
+{% block footer %}{% endblock %}

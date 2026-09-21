@@ -3037,18 +3037,70 @@ class TestSobreLosDatosEnElTablero:
         assert texto.count("«(base N)»") == 1
         assert "«(base N)»" in self._bloque(texto)
 
-    def test_el_rotulo_de_muestra_en_formacion_queda_junto_a_las_cifras(
+    def test_el_estado_de_publicacion_se_dice_sin_el_rotulo(
         self, client: TestClient, session: Session
     ) -> None:
-        """§9.0: el rótulo acompaña a la cifra. Va entre el título y las
-        tarjetas, no dentro de «Sobre los datos»."""
+        """Apartamiento del 2026-09-21: el rótulo «muestra en formación» se fue
+        del tablero. Lo pedía la entrada del 2026-08-22, no el texto de §9.0.
+
+        Lo vinculante de §9.0 es que la interfaz diga qué provincias están
+        publicadas y cuáles en ingesta, y que la ausencia se lea como decisión
+        y no como falla. Eso lo sigue diciendo la viñeta, y es lo que este
+        test cuida: si mañana se cae, §9.0 queda sin cubrir."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
-        rotulo = texto.index("<strong>muestra en formación</strong>")
+        for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
+            texto = client.get(url).text
+            datos = self._bloque(texto)
 
-        assert texto.count("<strong>muestra en formación</strong>") == 1
-        assert texto.index('<h1 class="ph-h1">') < rotulo < texto.index('<div class="ph-tarjetas">')
+            assert "muestra en formación" not in texto, url
+            assert "<strong>1 de 1 provincia</strong> tiene datos" in datos, url
+            assert "Ninguna está publicada todavía" in datos, url
+            assert "no cuando lo dice el calendario" in datos, url
+
+    def test_la_medida_de_la_mediana_sale_del_dato(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Prototipo E: «la mediana en CUP por libra o por litro». La frase se
+        arma con lo que hay en pantalla; con otra moneda mezclada se calla en
+        vez de mentir, y eso lo prueba `tests/test_watchlist_view.py`."""
+        self._seed(session)
+
+        datos = self._bloque(client.get("/?vista=tablero").text)
+
+        assert "<strong>mediana</strong> en CUP por libra: la única comparable" in datos
+
+    def test_el_credito_a_eltoque_no_se_pierde_con_el_pie(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El tablero apaga el pie del shell, y uno de sus párrafos era el
+        crédito a elTOQUE por la tasa con la que se convierte a CUP. Es de un
+        tercero: se mudó a «Sobre los datos», no se dejó de dar.
+
+        Se comprueba en las dos pantallas: el `{% block footer %}` vacío es de
+        toda la plantilla, así que apaga el pie también en el detalle, y ahí
+        el crédito tiene que llegar igual."""
+        self._seed(session)
+
+        for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
+            texto = client.get(url).text
+
+            assert 'class="m3-public-foot"' not in texto, url
+            assert "eltoque.com" in self._bloque(texto), url
+
+    def test_el_mapa_conserva_el_pie_entero(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El apartamiento es del tablero y de nadie más: en el mapa siguen
+        el pie entero y el rótulo «muestra en formación»."""
+        self._seed(session)
+
+        texto = client.get("/?vista=mapa").text
+
+        assert 'class="m3-public-foot"' in texto
+        assert "naturalearthdata.com" in texto
+        assert "eltoque.com" in texto
+        assert "muestra en formación" in texto
 
     def test_la_frescura_esta_en_el_chip_y_en_una_vineta(
         self, client: TestClient, session: Session
@@ -3784,16 +3836,12 @@ class TestPorEnvaseEnElDetalle:
         assert panel.count('class="ph-envases-variante"') == 1
         assert '<span class="ph-envases-variante">Criollo</span>' in panel
 
-    def test_la_nota_de_muestra_en_formacion_sigue_a_la_vista_en_todos(
+    def test_el_rotulo_de_muestra_en_formacion_no_esta_en_ninguna_pantalla(
         self, client: TestClient, session: Session
     ) -> None:
-        """§9.0: la cifra va rotulada «muestra en formación» mientras N siga sin
-        calibrar. El rótulo va una vez por vista, bajo el título."""
+        """Apartamiento del 2026-09-21: el rótulo se fue de las dos pantallas
+        del tablero, no de una. En el mapa sigue."""
         self._seed(session)
 
         for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
-            texto = client.get(url).text
-
-            nota = "<strong>muestra en formación</strong>"
-            assert texto.count(nota) == 1, url
-            assert texto.index(nota) > texto.index('<h1 class="ph-h1">')
+            assert "muestra en formación" not in client.get(url).text, url
