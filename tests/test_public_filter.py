@@ -120,6 +120,7 @@ def _precio(
     price: str = "300",
     format_id: object | None = None,
     currency: str = Currency.CUP.value,
+    unit: str = "lb",
 ) -> None:
     session.add(
         PriceHistory(
@@ -128,7 +129,7 @@ def _precio(
             price=Decimal(price),
             currency=currency,
             source_id=source.id,
-            unit="lb",
+            unit=unit,
             sale_format=SaleFormat.RETAIL.value,
             quantity=Decimal("1"),
             published_date=dia,
@@ -2977,10 +2978,13 @@ class TestMiProvinciaEnElTablero:
 
 
 class TestSobreLosDatosEnElTablero:
-    """«Sobre los datos» (prototipo E): cinco viñetas —cuántos anuncios, hasta
-    cuándo, cuántas provincias, qué es la cifra y qué es la base— y la descarga.
-    El rótulo §9.0 «muestra en formación» es la excepción: va bajo el título,
-    pegado a las cifras, no en la barra lateral."""
+    """«Sobre los datos» (prototipo E): las viñetas —cuántos anuncios, hasta
+    cuándo, cuántas provincias, qué es la cifra, qué es la base y con qué tasa
+    se convierte— y la descarga.
+
+    Desde el apartamiento del 2026-09-21 este panel es además el único lugar
+    del tablero donde vive la procedencia: el pie del shell no se dibuja acá y
+    el rótulo «muestra en formación» tampoco."""
 
     def _seed(self, session: Session) -> None:
         arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
@@ -3066,9 +3070,32 @@ class TestSobreLosDatosEnElTablero:
         vez de mentir, y eso lo prueba `tests/test_watchlist_view.py`."""
         self._seed(session)
 
+        for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
+            datos = self._bloque(client.get(url).text)
+
+            assert "<strong>mediana</strong> en CUP por libra: la única comparable" in datos, url
+
+    def test_con_dos_unidades_la_medida_las_enumera(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La frase exacta del prototipo —«en CUP por libra o por litro»—
+        necesita dos unidades en pantalla, que la semilla de esta clase no
+        tiene. Se agrega un producto por litro."""
+        self._seed(session)
+        aceite = Product(name="Aceite", category="grasas", unit="l", aliases=[], is_pilot=True)
+        habana = session.query(Province).one()
+        session.add(aceite)
+        session.commit()
+        _precio(
+            session, product=aceite, province=habana,
+            source=_ingestion(session, hash_="h-sobre-datos-l"),
+            dia=_hace(3), unit="l",
+        )
+        session.commit()
+
         datos = self._bloque(client.get("/?vista=tablero").text)
 
-        assert "<strong>mediana</strong> en CUP por libra: la única comparable" in datos
+        assert "<strong>mediana</strong> en CUP por libra o por litro: la única" in datos
 
     def test_el_credito_a_eltoque_no_se_pierde_con_el_pie(
         self, client: TestClient, session: Session

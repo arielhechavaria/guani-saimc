@@ -532,7 +532,11 @@
     {% endif %}
     <li><strong>{{ map.covered }} de {{ map.provinces | length }} provincia{{ "s" if map.provinces | length != 1 }}</strong> {{ "tiene" if map.covered == 1 else "tienen" }} datos.
       {% if map.published == 0 %}Ninguna está publicada todavía: se publica cuando hay muestra suficiente y sostenida, no cuando lo dice el calendario.{% else %}Hoy hay <strong>{{ map.published }}</strong> publicada{{ "s" if map.published != 1 }}; las demás siguen en recolección, porque se publica cuando hay muestra suficiente y sostenida, no cuando lo dice el calendario.{% endif %}</li>
-    <li>La cifra es la <strong>mediana</strong>{% if watchlist.medida %} {{ watchlist.medida }}{% endif %}: la única comparable entre provincias.</li>
+    {# Sin `else` la viñeta decía sólo «la mediana: la única comparable» justo
+       cuando hay dos monedas —el caso en que `medida` se calla—, que es
+       precisamente cuando avisar que cada cifra trae la suya es lo correcto.
+       La rama neutra es la que traía la viñeta antes de este slice. #}
+    <li>La cifra es la <strong>mediana</strong>{% if watchlist.medida %} {{ watchlist.medida }}{% else %}, con su moneda y su unidad{% endif %}: la única comparable entre provincias.</li>
     <li>«(base N)» son los anuncios del período anterior contra los que se compara el cambio.</li>
     {# El pie del shell no se dibuja en esta vista, así que el crédito a
        elTOQUE por la tasa con la que se convierte a CUP vive acá: es de un

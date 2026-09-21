@@ -11705,3 +11705,28 @@ verdad hay que cuidar.
 Consecuencia: el aviso del repaso era una cobertura ausente y no un defecto
 —las aserciones nuevas pasaron a la primera, así que el detalle ya estaba
 bien—, y ahora está cubierta.
+
+## 2026-09-21 — Los tres hallazgos del segundo repaso del slice D
+Contexto: el repaso del candidato ya corregido devolvió otros tres, y uno era
+una regresión que había metido yo.
+Decisión: (1) La regresión. Al poner la medida entre `{% if %}` sin `else`, la
+viñeta quedaba en «La cifra es la mediana: la única comparable» justo cuando
+`medida` se calla —dos monedas—, que es precisamente cuando avisar que cada
+cifra trae la suya es lo correcto. Vuelve la rama neutra «, con su moneda y su
+unidad», que es lo que la viñeta decía antes de este slice. (2) La medida sólo
+se probaba en un estado. Ahora se prueba en las dos pantallas y con dos
+unidades, que es la frase exacta del prototipo («en CUP por libra o por
+litro») y que la semilla no daba. (3) La prueba del invariante recorría ocho
+unidades escritas a mano y comparaba contra `bool(unidad)`, que dentro del
+bucle es siempre verdadero: media aserción no decía nada. Ahora recorre
+`UNITS`, así que la unidad que se agregue al catálogo entra sola.
+Descartado: probar la rama neutra renderizando la página. Con dos monedas no
+se llega: `build_cards` descarta lo no convertido, así que no hay semilla real
+que la dibuje. Se probó a nivel de propiedad —`medida` devuelve vacío con dos
+monedas— y se descartó además un test que afirmara el texto de la plantilla:
+pasa por mirar el código, no por lo que la página hace, y este repositorio ya
+tiene bastante de eso.
+Consecuencia: la rama neutra es una red para un estado que hoy no se alcanza.
+Queda explícito acá para que nadie la lea como código muerto: el día que una
+tarjeta llegue sin fundir a CUP, la viñeta sigue siendo cierta en vez de
+quedarse muda.

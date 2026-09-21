@@ -18,6 +18,7 @@ from datetime import date
 from decimal import Decimal
 
 from saimc.cells import RetailObservation
+from saimc.units import UNITS
 from saimc.web.price_charts import build_month_vs_month
 from saimc.web.watchlist_view import Watchlist, WatchRow, build_watchlist
 
@@ -356,10 +357,15 @@ class TestUnidadEnPalabra:
         `unit_noun` porque es lo que escribe: mientras `unit_noun` sea vacío
         exactamente cuando `unit` lo es, filtrar por uno u otro da lo mismo.
         Si alguien hiciera que una unidad conocida devolviera vacío, esto cae
-        acá y no en una frase rota en pantalla."""
-        for unidad in ("lb", "kg", "l", "ml", "unidad", "docena", "caja", "onza"):
-            assert bool(self._fila(unidad).unit_noun) is bool(unidad), unidad
-        assert bool(self._fila("").unit_noun) is False
+        acá y no en una frase rota en pantalla.
+
+        Se recorre `UNITS` y no una lista escrita a mano: la unidad que se
+        agregue mañana al catálogo entra sola en la prueba, que es justo
+        cuando hace falta."""
+        assert UNITS, "sin catálogo no hay invariante que probar"
+        for unidad in (*UNITS, "onza"):
+            assert self._fila(unidad).unit_noun != "", unidad
+        assert self._fila("").unit_noun == ""
 
 
 class TestEnQueEstaEscritaLaMediana:
