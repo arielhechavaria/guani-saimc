@@ -1,9 +1,14 @@
 {#
   Provincias lado a lado para un producto (`price_charts.build_province_comparison`):
   la línea es el rango, la caja la mitad central de los anuncios, el punto la
-  mediana; a la derecha, cuántos anuncios. Todas en el mismo eje: responde
+  mediana; a la derecha, la mediana escrita. Todas en el mismo eje: responde
   «¿dónde está más caro?», la más cara primero. Espera `comp`; si se pasa
   `resaltar` (un nombre de provincia), las demás se atenúan.
+
+  A la derecha iba «44 anuncios» hasta el 2026-09-20. La cifra que se busca al
+  mirar este gráfico es la mediana —el punto—, y leerla del eje es trabajo;
+  cuántos anuncios la sostienen ya lo dice la tarjeta de arriba y sigue en el
+  `title` de cada fila.
 #}
 <svg class="ph-compara" viewBox="{{ comp.viewbox }}" role="img"
      aria-label="{{ comp.product_name }}: rango, mitad central y mediana por provincia, en {{ comp.currency }}/{{ comp.unit }}.">
@@ -12,13 +17,13 @@
   <text class="ph-rango-tick" x="{{ t.x }}" y="{{ comp.axis_y + 14 }}" text-anchor="middle">{{ t.label }}</text>
   {% endfor %}
   {% for row in comp.rows %}
-  <g class="ph-compara-fila{% if resaltar and row.province_name != resaltar %} is-atenuada{% endif %}">
+  <g class="ph-compara-fila ph-prov-{{ row.slot % 2 }}{% if resaltar and row.province_name != resaltar %} is-atenuada{% endif %}">
     <title>{{ row.province_name }}: mediana {{ row.median_text }} {{ comp.currency }}/{{ comp.unit }}; mitad central {{ row.q1_text }}–{{ row.q3_text }}; rango {{ row.minimum_text }}–{{ row.maximum_text }}; {{ row.count }} anuncio{{ "s" if row.count != 1 }}{% if row.outliers %}, {{ row.outliers }} fuera de escala{% endif %}</title>
     <text class="ph-compara-prov" x="{{ comp.x_left - 10 }}" y="{{ row.y + 4 }}" text-anchor="end">{{ row.province_name }}</text>
     <line class="ph-compara-linea" x1="{{ row.x_min }}" x2="{{ row.x_max }}" y1="{{ row.y }}" y2="{{ row.y }}" />
     <rect class="ph-compara-caja" x="{{ row.x_q1 }}" y="{{ row.y - 5 }}" width="{{ row.box_width }}" height="10" rx="5" />
     <circle class="ph-compara-mediana" cx="{{ row.x_median }}" cy="{{ row.y }}" r="5" />
-    <text class="ph-rango-n" x="{{ comp.x_right + 8 }}" y="{{ row.y + 3.5 }}">{{ row.count }} anuncio{{ "s" if row.count != 1 }}</text>
+    <text class="ph-compara-mediana-txt" x="{{ comp.width }}" y="{{ row.y + 4 }}" text-anchor="end">{{ row.median_text }}</text>
   </g>
   {% endfor %}
 </svg>

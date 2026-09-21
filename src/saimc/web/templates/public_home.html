@@ -1558,7 +1558,10 @@
             {% for block in evolution_blocks if not active_products or block.product_name in active_products %}
             <section class="ph-evo" aria-label="{{ block.product_name }}: cómo se movió">
               <h3 class="ph-compara-titulo">{{ block.product_name }}</h3>
-              {% if block.legend | length > 1 %}
+              {# Sin condición desde el 2026-09-20: la etiqueta al final de
+                 cada línea se fue del gráfico de pasos, así que con una sola
+                 provincia la leyenda es el único lugar que la nombra. #}
+              {% if block.legend %}
               <ul class="ph-evo-leyenda">
                 {% for slot, provincia in block.legend %}
                 <li class="ph-prov-{{ slot % 2 }}"><span class="ph-evo-muestra" aria-hidden="true"></span>{{ provincia }}</li>

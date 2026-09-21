@@ -6,7 +6,7 @@ HOY = domingo 30/08/2026; la ventana de 30 días va del viernes 31/07 al 30/08.
 """
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from saimc.cells import RetailObservation
@@ -18,6 +18,11 @@ from saimc.web.price_charts import (
 )
 
 HOY = date(2026, 8, 30)
+
+
+def _obs_dia(province: str, dia: date, precio: str) -> RetailObservation:
+    """Como `_obs` pero con la fecha entera, para series que cruzan meses."""
+    return _obs(province, dia.day, precio, mes=dia.month)
 
 
 def _obs(province: str, dia: int, precio: str, *, mes: int = 8) -> RetailObservation:
@@ -115,6 +120,84 @@ class TestProvinciasEnElTiempo:
         (chart,) = build_median_steps(solo_santiago, window_days=30, hoy=HOY)
 
         assert {l.province_name: l.slot for l in chart.lines}["Santiago de Cuba"] == 1
+
+
+class TestFechasYTamanoDelPaso:
+    """Alineación con el prototipo E (2026-09-20). El gráfico de pasos perdió
+    las etiquetas al final de cada línea —se pisaban entre sí y se llevaban
+    58 px de ancho— y ganó una fecha debajo de cada período. El punto pasó a
+    medir según cuántos anuncios sostienen su mediana, que es lo que la nota
+    al pie venía prometiendo con el radio fijo en 3."""
+
+    OBS = (
+        _obs("La Habana", 30, "300"),
+        _obs("La Habana", 23, "310"),
+        _obs("La Habana", 5, "290"),
+        _obs("Santiago de Cuba", 30, "400"),
+    )
+
+    def test_hay_una_fecha_por_periodo_con_dato(self) -> None:
+        """Semanas con dato: la del 3–9, la del 17–23 y la del 24–30 de agosto.
+        Tres períodos, tres fechas, en orden y sin repetir."""
+        (chart,) = build_median_steps(self.OBS, window_days=30, hoy=HOY)
+
+        assert [e for _, e in chart.period_ticks] == ["03/08", "17/08", "24/08"]
+        xs = [x for x, _ in chart.period_ticks]
+        assert xs == sorted(xs)
+
+    def test_con_noventa_dias_las_fechas_se_ralean_sin_perder_la_ultima(self) -> None:
+        """Trece semanas con dato no entran: «28/07» mide 34 px y una semana de
+        306 px repartidos en trece mide 23,5. Se ralean a una de cada dos, y la
+        última queda sí o sí porque es la que comenta la nota al pie."""
+        un_dia = date(2026, 8, 30) - timedelta(days=90)
+        largo = [
+            _obs_dia("La Habana", un_dia + timedelta(days=n), "300") for n in range(0, 91, 7)
+        ]
+
+        (chart,) = build_median_steps(largo, window_days=90, hoy=HOY)
+
+        periodos = {p.start for linea in chart.lines for p in linea.points}
+        etiquetas = [e for _, e in chart.period_ticks]
+
+        assert len(periodos) == 13
+        assert etiquetas == ["01/06", "15/06", "29/06", "13/07", "27/07", "10/08", "24/08"]
+        assert etiquetas[-1] == chart.period_ticks[-1][1]
+
+    def test_el_punto_de_mas_anuncios_es_el_mas_grande(self) -> None:
+        """Dos anuncios en una semana y uno en otra: el radio crece con la
+        muestra, y ninguno sale de la banda."""
+        obs = [
+            _obs("La Habana", 30, "300"),
+            _obs("La Habana", 29, "310"),
+            _obs("La Habana", 23, "290"),
+        ]
+
+        (chart,) = build_median_steps(obs, window_days=30, hoy=HOY)
+        (linea,) = chart.lines
+        por_muestra = {p.count: p.radius for p in linea.points}
+
+        assert por_muestra[2] > por_muestra[1]
+        assert all(3.0 <= p.radius <= 6.5 for p in linea.points)
+
+    def test_con_una_sola_muestra_todos_los_puntos_miden_igual(self) -> None:
+        """Sin nada contra qué comparar, el tamaño no dice nada: no se infla
+        el único punto para que parezca que lo respalda algo."""
+        (chart,) = build_median_steps([_obs("La Habana", 30, "300")], window_days=30, hoy=HOY)
+        (linea,) = chart.lines
+
+        assert [p.radius for p in linea.points] == [3.0]
+
+    def test_el_ultimo_dia_es_el_del_ultimo_anuncio_y_no_el_fin_de_la_ventana(self) -> None:
+        """El error que esto arregla: la nota decía «llega hasta el 30/08»
+        —el fin de la ventana— cuando el último anuncio era del 25/08,
+        prometiendo cinco días de dato que no existen."""
+        obs = [_obs("La Habana", 25, "300"), _obs("La Habana", 18, "310")]
+
+        (chart,) = build_median_steps(obs, window_days=30, hoy=HOY)
+
+        assert chart.last_day == date(2026, 8, 25)
+        assert chart.last_day_text == "25/08"
+        assert chart.last_label == "30/08"
 
 
 class TestCalendario:

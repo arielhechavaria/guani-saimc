@@ -2,8 +2,11 @@
   Las provincias en el tiempo para un producto (`price_charts.build_median_steps`):
   la mediana de cada provincia por período, en escalones y en un solo eje. La
   línea se corta donde un período no tuvo anuncios: nunca une períodos que no
-  están seguidos. Etiqueta al final de cada línea; el color sigue a la
-  provincia (`slot`). Espera `steps`.
+  están seguidos. El color sigue a la provincia (`slot`) y quién es cada
+  color lo dice la leyenda que pone cada vista, no una etiqueta al final de la
+  línea: con dos líneas que terminan cerca las etiquetas se pisaban, y el
+  margen que pedían valía más como dibujo. El tamaño del punto dice cuántos
+  anuncios sostienen esa mediana. Espera `steps`.
 #}
 <svg class="ph-pasos" viewBox="{{ steps.viewbox }}" role="img"
      aria-label="{{ steps.product_name }}: mediana por {{ steps.period_name }} de cada provincia, del {{ steps.first_label }} al {{ steps.last_label }}; la línea se corta donde no hubo anuncios.">
@@ -12,19 +15,17 @@
   <text class="ph-rango-tick" x="{{ steps.x_left - 6 }}" y="{{ t.y + 3.5 }}" text-anchor="end">{{ t.label }}</text>
   {% endfor %}
   <line class="ph-rango-base" x1="{{ steps.x_left }}" x2="{{ steps.x_right }}" y1="{{ steps.baseline_y }}" y2="{{ steps.baseline_y }}" />
-  <text class="ph-rango-tick" x="{{ steps.x_left }}" y="{{ steps.baseline_y + 14 }}">{{ steps.first_label }}</text>
-  <text class="ph-rango-tick" x="{{ steps.x_right }}" y="{{ steps.baseline_y + 14 }}" text-anchor="end">{{ steps.last_label }}</text>
+  {% for x, etiqueta in steps.period_ticks %}
+  <text class="ph-rango-tick" x="{{ x }}" y="{{ steps.baseline_y + 14 }}" text-anchor="middle">{{ etiqueta }}</text>
+  {% endfor %}
   {% for l in steps.lines %}
   <g class="ph-prov-{{ l.slot % 2 }}">
     <path class="ph-pasos-linea" d="{{ l.path }}" />
     {% for p in l.points %}
-    <circle class="ph-pasos-punto" cx="{{ p.x }}" cy="{{ p.y }}" r="3">
+    <circle class="ph-pasos-punto" cx="{{ p.x }}" cy="{{ p.y }}" r="{{ p.radius }}">
       <title>{{ l.province_name }}, {{ steps.period_name }} del {{ p.start_text }}: mediana {{ p.median_text }} {{ steps.currency }}/{{ steps.unit }} · {{ p.count }} anuncio{{ "s" if p.count != 1 }}</title>
     </circle>
     {% endfor %}
-    {% if l.label_y is not none %}
-    <text class="ph-pasos-etq" x="{{ steps.label_x }}" y="{{ l.label_y + 4 }}">{{ l.short_name }}</text>
-    {% endif %}
   </g>
   {% endfor %}
 </svg>

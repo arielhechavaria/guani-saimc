@@ -11601,3 +11601,45 @@ Consecuencia: si algún día se publicara una tarjeta sin fundir a CUP —una ta
 resuelta por otra vía, o el filtro `unconverted` relajado—, el test cae y ahí
 sí hay que devolverle la moneda a la fila. El encabezado es correcto mientras
 ese filtro esté en pie, y el test es lo que lo sostiene.
+
+## 2026-09-21 — Alineación con el prototipo E, 3 de 4: los gráficos
+Contexto: «Cómo se movió» y «Cuánto varía» se leían distinto al prototipo, y
+los dos parciales (`_steps_chart.html`, `_province_compare.html`) los comparte
+el mapa, así que cada arreglo vale para las dos vistas. Al medir aparecieron
+cinco diferencias y una mentira.
+Decisión: (1) La mentira primero. La nota decía «La última semana llega hasta
+el {fin de la ventana}». Con el último anuncio del 07/09 y la ventana cerrando
+el 19/09, prometía doce días de dato que no existen. Ahora `StepChart` lleva
+`last_day` —el día del último anuncio del producto dentro de la ventana— y la
+nota dice ese. (2) Una fecha debajo de cada período en vez de solo el
+principio y el fin de la ventana, que no marcaban ningún punto del dibujo. Se
+ralean cuando no entran: con 90 días son trece períodos y «28/07» mide más que
+uno, así que se cuenta hacia atrás desde el final y el último nunca se cae.
+(3) Se fueron las etiquetas al final de cada línea: con dos líneas que
+terminan cerca se pisaban, y pedían 70 px de margen derecho para 12 que hacen
+falta. La leyenda —que ya estaba— queda como el único lugar donde se dice de
+quién es cada tinta, y por eso deja de esconderse cuando hay una sola
+provincia. El dibujo gana 58 px. (4) El tamaño del punto pasa a decir cuántos
+anuncios sostienen esa mediana. La nota ya lo prometía y el radio estaba fijo
+en 3: era otra cosa que el pie decía y el dibujo no hacía. Crece con la raíz,
+porque lo que el ojo compara es el área. (5) A la derecha de cada provincia en
+«Cuánto varía» va la mediana escrita y no «44 anuncios»: es la cifra que se
+viene a buscar, y leerla del eje es trabajo. Cuántos anuncios la sostienen ya
+está en la tarjeta de arriba y sigue en el `title` de la fila. (6) La leyenda
+de «Cuánto varía» pasa debajo del dibujo, como el prototipo; la de «Cómo se
+movió» se queda arriba.
+Descartado: (a) rehacer la geometría del gráfico de pasos como la del
+prototipo, que ancla los puntos y no dibuja el escalón a lo ancho del período:
+el escalón es más fiel a «mediana por semana» y no era lo que se pidió
+alinear; (b) dejar «N anuncios» a la derecha y agregar la mediana: son 74 px
+de margen para repetir un dato que ya está dos veces en la pantalla; (c)
+ralear las fechas con un número fijo de etiquetas: depende del ancho del
+período, no de cuántos haya.
+Consecuencia: `_province_compare.html` pasó a pintar cada fila con la tinta de
+su provincia (`CompareRow.slot`). No estaba en la lista, pero al poner la
+leyenda debajo quedó a la vista que era una leyenda de colores sobre un
+dibujo de un solo color. En el mapa hay más provincias que tintas y el color
+se repite; no confunde porque ahí cada fila lleva su nombre a la izquierda.
+Medido en el navegador: sin desborde a 390 y 1280, y la mediana más ancha que
+hay hoy («3.476», de Aceite) no se sale del dibujo ni toca la línea de su
+fila —0 px de desborde, 29 px de aire—.

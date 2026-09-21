@@ -1000,8 +1000,13 @@ class TestProvinciasLadoALadoEnLaRuta:
         precios = texto.split('id="precios"')[1].split("</section>")[0]
 
         assert 'class="ph-compara"' in precios
-        # Santiago se atenúa; La Habana, la elegida, no.
-        assert precios.count('class="ph-compara-fila is-atenuada"') == 1
+        # Santiago se atenúa; La Habana, la elegida, no. Se cuentan las filas
+        # y las atenuadas por separado: desde el 2026-09-20 cada fila lleva
+        # además la clase de color de su provincia, y fijar la cadena entera
+        # hacía fallar el test por un cambio de tinta que no es lo que mira.
+        filas = re.findall(r'<g class="ph-compara-fila([^"]*)"', precios)
+        assert len(filas) == 2
+        assert sum("is-atenuada" in f for f in filas) == 1
         assert "La Habana se destaca sobre las demás." in precios
 
     def test_con_chip_prendido_la_ventana_precios_no_repite_el_panel(
@@ -3201,6 +3206,129 @@ class TestDetalleDeProductoEnElTablero:
         assert '<div class="ph-layout">' in todos
         assert '<nav class="ph-nav' in detalle
         assert '<div class="ph-layout has-nav">' in detalle
+
+
+class TestGraficosComoElPrototipo:
+    """Alineación con el prototipo E (2026-09-20), en los parciales que el
+    tablero comparte con el mapa.
+
+    El último anuncio de la semilla es de hace 3 días y la ventana termina
+    hoy: la nota al pie tiene que decir el día del anuncio, no el de la
+    ventana."""
+
+    def _seed(self, session: Session) -> None:
+        """La misma semilla del detalle: estos gráficos son los de esa vista."""
+        TestDetalleDeProductoEnElTablero()._seed(session)
+
+    def _detalle(self, texto: str) -> str:
+        return TestDetalleDeProductoEnElTablero()._detalle(texto)
+
+    def test_la_nota_dice_el_ultimo_dia_con_dato_y_no_el_fin_de_la_ventana(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El error que esto arregla: decía «llega hasta el <hoy>» con el
+        último anuncio doce días atrás, prometiendo dato que no existe."""
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        nota = detalle[detalle.index("La última semana llega hasta el") :]
+
+        assert _hace(3).strftime("%d/%m") in nota[:60]
+        assert _hace(0).strftime("%d/%m") not in nota[:60]
+
+    def test_el_paso_ya_no_rotula_el_final_de_cada_linea(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Las etiquetas se pisaban cuando dos líneas terminaban cerca. Quién
+        es cada tinta lo dice la leyenda, que por eso deja de ser opcional."""
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+
+        assert "ph-pasos-etq" not in detalle
+        assert 'class="ph-leyenda"' in detalle
+
+    def test_las_fechas_son_las_de_los_periodos_y_no_las_de_la_ventana(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Antes se escribían dos fechas: el principio y el fin de la ventana,
+        que no marcan ningún punto del dibujo. Ahora va una debajo de cada
+        período con dato, en el inicio de ese período.
+
+        La semilla deja dos semanas con anuncios —la de hace 12 días y la de
+        hace 3 y 4—, que empiezan hace 13 y hace 6 días."""
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        pasos = detalle[detalle.index('class="ph-pasos"') : detalle.index("</svg>")]
+        fechas = re.findall(r'text-anchor="middle">([^<]+)</text>', pasos)
+
+        assert fechas == [_hace(13).strftime("%d/%m"), _hace(6).strftime("%d/%m")]
+        # Las de la ventana, que es lo que se escribía antes, ya no están.
+        assert _hace(30).strftime("%d/%m") not in fechas
+        assert _hace(0).strftime("%d/%m") not in fechas
+
+    def test_a_la_derecha_de_cada_provincia_va_la_mediana_y_no_los_anuncios(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Prototipo E: la cifra que se viene a buscar es la mediana. Cuántos
+        anuncios la sostienen sigue en el `title` de la fila."""
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        compara = detalle[detalle.index('class="ph-compara"') :]
+        compara = compara[: compara.index("</svg>")]
+
+        assert "ph-compara-mediana-txt" in compara
+        assert "anuncios</text>" not in compara
+        assert ">410<" in compara  # la mediana de Santiago, escrita
+        assert "410 CUP/lb" in compara  # y en el title, con su unidad
+
+    def test_los_dos_graficos_pintan_cada_provincia_del_mismo_color(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La leyenda es una sola para los dos dibujos, así que la tinta de
+        una provincia tiene que ser la misma en los dos. Hasta el 2026-09-20
+        «Cuánto varía» era todo de un color y la leyenda no explicaba nada."""
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+
+        def tintas(marca: str, clase: str, corte: str) -> dict[str, str]:
+            """Provincia → clase de color, leyendo el primer `title` de cada
+            grupo: el de pasos trae uno por punto y el de comparación uno por
+            fila, así que se toma el primero de cada `<g>`."""
+            desde = detalle.index(marca)
+            svg = detalle[desde : detalle.index("</svg>", desde)]
+            fuera = {}
+            for slot, cuerpo in re.findall(clase + r"(.*?)</g>", svg, re.S):
+                nombre = re.search(r"<title>([^" + corte + r"]+)" + corte, cuerpo)
+                assert nombre is not None, cuerpo[:200]
+                fuera[nombre.group(1)] = slot
+            return fuera
+
+        en_pasos = tintas('class="ph-pasos"', r'<g class="ph-prov-(\d)">', ",")
+        en_compara = tintas(
+            'class="ph-compara"', r'<g class="ph-compara-fila ph-prov-(\d)[^"]*">', ":"
+        )
+
+        assert set(en_pasos) == {"La Habana", "Santiago de Cuba"}
+        assert en_pasos == en_compara
+
+    def test_la_leyenda_de_cuanto_varia_va_debajo_del_dibujo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """En «Cómo se movió» la leyenda va arriba y en «Cuánto varía» abajo,
+        como el prototipo: ahí cada fila ya trae su nombre a la izquierda, así
+        que la leyenda es un recordatorio del color, no la identificación."""
+        self._seed(session)
+
+        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        varia = detalle[detalle.index(">Cuánto varía</h2>") :]
+        movio = detalle[detalle.index(">Cómo se movió</h2>") : detalle.index(">Cuánto varía</h2>")]
+
+        assert varia.index('class="ph-compara"') < varia.index('class="ph-leyenda"')
+        assert movio.index('class="ph-leyenda"') < movio.index('class="ph-pasos"')
 
 
 class TestCambioUnicoEnElTablero:

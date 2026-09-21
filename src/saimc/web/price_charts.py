@@ -480,7 +480,9 @@ def build_headlines(
 COMPARE_WIDTH = 360.0
 COMPARE_ROW = 34.0
 COMPARE_LEFT = 108.0
-COMPARE_RIGHT = 74.0
+#: A la derecha de cada fila va la mediana y no «44 anuncios», que es lo que
+#: iba hasta el 2026-09-20 y pedía 74 px. Alcanza con lo que mide «3.476».
+COMPARE_RIGHT = 44.0
 COMPARE_TOP = 8.0
 COMPARE_BOTTOM = 22.0
 
@@ -490,6 +492,10 @@ class CompareRow:
     """Una provincia en la comparación: rango, mitad central, mediana y muestra."""
 
     province_name: str
+    #: Índice de color de la provincia, el mismo que usa «Cómo se movió»: los
+    #: dos gráficos del detalle comparten leyenda, así que tienen que
+    #: compartir tinta o la leyenda no explica nada.
+    slot: int
     count: int
     outliers: int
     minimum: Decimal
@@ -562,6 +568,11 @@ class ProvinceComparison:
         return COMPARE_WIDTH - COMPARE_RIGHT
 
     @property
+    def width(self) -> float:
+        """El borde derecho del dibujo, donde termina la mediana de cada fila."""
+        return COMPARE_WIDTH
+
+    @property
     def top(self) -> float:
         return COMPARE_TOP
 
@@ -595,6 +606,7 @@ def build_province_comparison(
         por_producto.setdefault((product, currency, unit), {}).setdefault(province, []).extend(rows)
 
     plot_w = COMPARE_WIDTH - COMPARE_LEFT - COMPARE_RIGHT
+    slots = _province_slots(observations)
     comparaciones: list[ProvinceComparison] = []
     for (product, currency, unit), provincias in por_producto.items():
         resumen = []
@@ -624,6 +636,7 @@ def build_province_comparison(
             filas.append(
                 {
                     "province_name": province,
+                    "slot": slots.get(province, 0),
                     "count": len(rows),
                     "outliers": len(fuera),
                     "minimum": precios[0],
@@ -871,9 +884,32 @@ def build_month_vs_month(
 STEPS_WIDTH = 360.0
 STEPS_HEIGHT = 150.0
 STEPS_LEFT = 42.0
-STEPS_RIGHT = 70.0
+#: Alcanza para que el último punto no quede cortado. Hasta el 2026-09-20
+#: eran 70: el ancho que pedían las etiquetas al final de cada línea, que se
+#: fueron a la leyenda. El dibujo gana esos 58 px.
+STEPS_RIGHT = 12.0
 STEPS_TOP = 10.0
 STEPS_BOTTOM = 20.0
+
+#: Lo que mide una fecha «28/07» a 10 px, con aire. Debajo de eso, dos
+#: etiquetas de períodos vecinos se tocan y hay que ralear.
+STEPS_LABEL_WIDTH = 34.0
+STEP_RADIUS_MIN = 3.0
+STEP_RADIUS_MAX = 6.5
+
+
+def _step_radius(count: int, most: int) -> float:
+    """El radio del punto dice cuántos anuncios sostienen esa mediana.
+
+    Crece con la raíz y no con el número: lo que el ojo compara es el área del
+    círculo, así que con el radio lineal el doble de anuncios se vería cuatro
+    veces más grande. Con una sola muestra en todo el gráfico no hay nada que
+    comparar y todos los puntos miden igual.
+    """
+    if most <= 1:
+        return STEP_RADIUS_MIN
+    crecimiento = math.sqrt(max(count, 1) / most)
+    return round(STEP_RADIUS_MIN + (STEP_RADIUS_MAX - STEP_RADIUS_MIN) * crecimiento, 1)
 
 
 @dataclass(frozen=True)
@@ -885,6 +921,8 @@ class StepPoint:
     median: Decimal
     count: int
     start: date
+    #: Proporcional a `count` dentro del gráfico; ver `_step_radius`.
+    radius: float = STEP_RADIUS_MIN
 
     @property
     def median_text(self) -> str:
@@ -904,11 +942,6 @@ class StepLine:
     #: anuncios (un `M` nuevo). Ningún tramo une períodos no contiguos.
     path: str
     points: tuple[StepPoint, ...]
-    label_y: float | None
-
-    @property
-    def short_name(self) -> str:
-        return self.province_name if len(self.province_name) <= 10 else self.province_name.split()[0]
 
 
 @dataclass(frozen=True)
@@ -921,6 +954,11 @@ class StepChart:
     bin_days: int
     first_label: str
     last_label: str
+    #: El último día en que este producto tuvo un anuncio dentro de la
+    #: ventana. No es el fin de la ventana: la nota al pie dice hasta dónde
+    #: llega el dibujo, y decir «hasta el 19/09» cuando el último anuncio es
+    #: del 07/09 promete doce días de dato que no existen.
+    last_day: date | None = None
 
     @property
     def viewbox(self) -> str:
@@ -935,8 +973,27 @@ class StepChart:
         return STEPS_WIDTH - STEPS_RIGHT
 
     @property
-    def label_x(self) -> float:
-        return STEPS_WIDTH - STEPS_RIGHT + 6
+    def last_day_text(self) -> str:
+        """El último día con dato, o el fin de la ventana si no se sabe."""
+        return _short_day(self.last_day) if self.last_day else self.last_label
+
+    @property
+    def period_ticks(self) -> tuple[tuple[float, str], ...]:
+        """(x, fecha) de cada período con dato, para escribir una fecha debajo
+        de cada uno y no solo debajo del primero y del último.
+
+        Se ralean cuando no entran: con 90 días son trece períodos y «28/07»
+        mide más que un período entero. Se cuenta hacia atrás desde el final,
+        así el último período —el que comenta la nota al pie— nunca se cae.
+        """
+        por_x = {p.x: p.start for line in self.lines for p in line.points}
+        orden = sorted(por_x)
+        if not orden:
+            return ()
+        ancho = (STEPS_WIDTH - STEPS_LEFT - STEPS_RIGHT) / len(orden)
+        cada = max(1, math.ceil(STEPS_LABEL_WIDTH / ancho))
+        elegidos = sorted(orden[::-1][::cada])
+        return tuple((x, _short_day(por_x[x])) for x in elegidos)
 
     @property
     def baseline_y(self) -> float:
@@ -992,6 +1049,9 @@ def build_median_steps(
         def to_y(value: Decimal, *, _lo: float = lo, _hi: float = hi) -> float:
             return round(STEPS_TOP + (1 - (float(value) - _lo) / (_hi - _lo)) * plot_h, 1)
 
+        # El punto más grande del gráfico es el de más anuncios, y todos los
+        # demás se miden contra ese: la comparación es dentro del producto.
+        mas = max(n for p in medianas.values() for _, n in p.values())
         lineas = []
         for province in sorted(medianas):
             trazo = ""
@@ -1006,22 +1066,34 @@ def build_median_steps(
                 trazo += f" L{x1},{y}"
                 previa = j
                 start = hoy - timedelta(days=(n_bins - 1 - j) * size + size - 1)
-                puntos.append(StepPoint(round((x0 + x1) / 2, 1), y, med, n, start))
+                puntos.append(
+                    StepPoint(
+                        round((x0 + x1) / 2, 1), y, med, n, start, _step_radius(n, mas)
+                    )
+                )
             lineas.append((province, trazo.strip(), tuple(puntos)))
 
-        etiquetas = _spread_labels([pts[-1].y for _, _, pts in lineas])
         lines = tuple(
-            StepLine(province, slots.get(province, 0), trazo, pts, etiquetas[i])
-            for i, (province, trazo, pts) in enumerate(lineas)
+            StepLine(province, slots.get(province, 0), trazo, pts)
+            for province, trazo, pts in lineas
         )
         ticks = tuple(
             Tick(y=to_y(Decimal(str(round(v, 2)))), label=format_price(Decimal(str(round(v, 2)))))
             for v in _nice_ticks(lo, hi)
         )
         first = hoy - timedelta(days=n_bins * size - 1)
+        dias = [r.day for rows in provincias.values() for r in rows if 0 <= index(r.day) < n_bins]
         charts.append(
             StepChart(
-                product, currency, unit, lines, ticks, size, _short_day(first), _short_day(hoy)
+                product,
+                currency,
+                unit,
+                lines,
+                ticks,
+                size,
+                _short_day(first),
+                _short_day(hoy),
+                max(dias) if dias else None,
             )
         )
 

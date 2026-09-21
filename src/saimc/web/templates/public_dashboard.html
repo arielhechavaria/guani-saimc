@@ -406,13 +406,13 @@
     <section class="ph-panel">
       <h2 class="ph-panel-title">Cómo se movió</h2>
       <p class="ph-panel-sub">Mediana por {{ steps.period_name }}, {{ steps.currency }}/{{ steps.unit }} · la línea se corta donde no hubo anuncios</p>
-      {% if block.legend | length > 1 %}
+      {% if block.legend %}
       <ul class="ph-leyenda">
         {% for slot, provincia in block.legend %}<li class="ph-prov-{{ slot % 2 }}"><span class="ph-dot ph-dot-lg"></span>{{ provincia }}</li>{% endfor %}
       </ul>
       {% endif %}
       <figure class="ph-compara-fig">{% include "_steps_chart.html" %}</figure>
-      <p class="ph-nota">Cada punto es la mediana de {{ "esa semana" if steps.period_name == "semana" else "ese día" }}; su tamaño, cuántos anuncios la sostienen. La última {{ steps.period_name }} llega hasta el {{ selected_hasta.strftime('%d/%m') }}.</p>
+      <p class="ph-nota">Cada punto es la mediana de {{ "esa semana" if steps.period_name == "semana" else "ese día" }}; su tamaño, cuántos anuncios la sostienen. La última {{ steps.period_name }} llega hasta el {{ steps.last_day_text }}.</p>
     </section>
     {% else %}
     <section class="ph-panel">
@@ -425,13 +425,13 @@
     <section class="ph-panel">
       <h2 class="ph-panel-title">Cuánto varía</h2>
       <p class="ph-panel-sub">Rango completo, mitad central de los anuncios y mediana · {{ comp.currency }}/{{ comp.unit }}</p>
-      {% if block and block.legend | length > 1 %}
+      {% set resaltar = none %}
+      <figure class="ph-compara-fig">{% include "_province_compare.html" %}</figure>
+      {% if block and block.legend %}
       <ul class="ph-leyenda">
         {% for slot, provincia in block.legend %}<li class="ph-prov-{{ slot % 2 }}"><span class="ph-dot ph-dot-lg"></span>{{ provincia }}</li>{% endfor %}
       </ul>
       {% endif %}
-      {% set resaltar = none %}
-      <figure class="ph-compara-fig">{% include "_province_compare.html" %}</figure>
       <p class="ph-nota">Sirve para saber si la mediana es representativa: un rango angosto significa que casi todos piden lo mismo.</p>
     </section>
     {% endif %}
