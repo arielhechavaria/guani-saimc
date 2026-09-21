@@ -371,6 +371,14 @@ class TestBuildProductChips:
         assert por_label["Malanga"].icon is None
 
 
+def _detalle_de_la_fila(texto: str, producto: str, provincia: str) -> str:
+    """El HTML de la fila de detalle que se abre al expandir la fila de esa
+    provincia en la tabla del producto (2026-09-21: reemplazó al desplegable
+    «Detalle por provincia y formato»)."""
+    resto = texto.split(f'id="ph-mas-{producto}-{provincia}"')[1]
+    return re.split(r'<tr class="ph-dt-row"|<p class="ph-pane-(?:sin|nota)"', resto)[0]
+
+
 class TestChipsMultiSeleccionEnLaRuta:
     def test_el_chip_con_icono_muestra_solo_el_icono_y_nombra_al_pasar(
         self, client: TestClient, session: Session
@@ -412,7 +420,7 @@ class TestChipsMultiSeleccionEnLaRuta:
 
         texto = client.get("/?productos=arroz").text
 
-        panel = texto.split('id="ph-panel-arroz"')[1].split("</section>")[0]
+        panel = texto.split('id="ph-panel-arroz"')[1].split("</aside>")[0]
         assert (
             f'<a class="ph-fpanel-detail" href="/producto/arroz?desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}">Vista simple para compartir</a>'
@@ -686,19 +694,18 @@ class TestFormatoEnElPanel:
         session.commit()
 
         texto = client.get("/?producto=aceite").text
-        panel = texto.split('id="ph-panel-aceite"')[1].split('<a class="ph-fpanel-detail"')[0]
+        panel = _detalle_de_la_fila(texto, "aceite", "la-habana")
 
-        assert panel.count('class="ph-cifra"') == 2
-        assert "La Habana" in panel
+        assert panel.count('<section class="ph-dt-fmt"') == 2
+        assert 'aria-label="Aceite en La Habana, botella de 1 L"' in panel
         assert '<span class="ph-chip">Botella de 1 L</span>' in panel
         assert '<span class="ph-chip">Pomo de 5 L</span>' in panel
 
-    def test_solo_el_primer_bloque_arranca_abierto(
+    def test_los_formatos_van_del_de_mas_muestra_al_de_menos(
         self, client: TestClient, session: Session
     ) -> None:
-        """El operador lo pidió al ver el panel crecer con la separación
-        por formato: con 2+ bloques, solo el de más muestra (que ya viene
-        primero) arranca abierto; el resto colapsa a su `<summary>`."""
+        """Los dos formatos se ven a la vez al expandir la fila (ya no hay un
+        desplegable por formato): primero el de más anuncios."""
         aceite = Product(
             name="Aceite", category="grasas", unit="lb", aliases=[], is_pilot=True
         )
@@ -715,14 +722,10 @@ class TestFormatoEnElPanel:
         session.commit()
 
         texto = client.get("/?producto=aceite").text
-        panel = texto.split('id="ph-panel-aceite"')[1].split('<a class="ph-fpanel-detail"')[0]
-        bloques = panel.split('<details class="ph-cifra"')[1:]
+        panel = _detalle_de_la_fila(texto, "aceite", "la-habana")
 
-        assert len(bloques) == 2
-        assert bloques[0].startswith(" open")
-        assert "Botella de 1 L" in bloques[0]
-        assert not bloques[1].startswith(" open")
-        assert "Pomo de 5 L" in bloques[1]
+        assert panel.index("Botella de 1 L") < panel.index("Pomo de 5 L")
+        assert '<details class="ph-cifra"' not in panel
 
     def test_sin_formato_declarado_sigue_una_sola_cifra(
         self, client: TestClient, session: Session
@@ -739,10 +742,10 @@ class TestFormatoEnElPanel:
         session.commit()
 
         texto = client.get("/?producto=arroz").text
-        panel = texto.split('id="ph-panel-arroz"')[1].split('<a class="ph-fpanel-detail"')[0]
+        panel = _detalle_de_la_fila(texto, "arroz", "la-habana")
 
-        assert panel.count('class="ph-cifra"') == 1
-        assert "ph-chip" not in panel.split('class="ph-cifra-prov"')[1].split("</summary>")[0]
+        assert panel.count('<section class="ph-dt-fmt"') == 1
+        assert "ph-chip" not in panel
 
 
 class TestAnunciosEnElPanel:
@@ -786,11 +789,13 @@ class TestAnunciosEnElPanel:
         session.commit()
 
         texto = client.get("/?producto=arroz").text
-        panel = texto.split('id="ph-panel-arroz"')[1].split('<a class="ph-fpanel-detail"')[0]
-        bloques = panel.split('<details class="ph-cifra"')[1:]
+        habana_html = _detalle_de_la_fila(texto, "arroz", "la-habana")
+        santiago_html = _detalle_de_la_fila(texto, "arroz", "santiago-de-cuba")
 
-        assert len(bloques) == 2
-        assert all("1 anuncio detrás de esta cifra" in b for b in bloques)
+        assert "1 anuncio detrás de esta cifra" in habana_html
+        assert "1 anuncio detrás de esta cifra" in santiago_html
+        assert habana_html.count("ver anuncio") + habana_html.count("captura") == 1
+        assert santiago_html.count("ver anuncio") + santiago_html.count("captura") == 1
 
 
 class TestPanelesFlotantes:
@@ -1828,13 +1833,11 @@ class TestFiltroPorProvinciaEnLaRuta:
 
         texto = client.get("/?provincia=la-habana&producto=arroz").text
         ventana = texto.split('class="ph-side ph-tabbed"')[1].split("</aside>")[0]
-        # La tabla por provincia compara las 16 (es para lo que sirve); el
-        # detalle de la pestaña sí se acota a la provincia elegida.
-        panel = ventana.split('class="ph-pane-mas"')[1]
-
-        assert panel.count('class="ph-cifra"') == 1
-        assert 'aria-label="Arroz en La Habana"' in panel
-        assert "Santiago de Cuba" not in panel
+        # La tabla compara todas las provincias (es para lo que sirve) y la
+        # elegida llega expandida; las demás se pueden abrir.
+        assert 'class="ph-dt-more is-open" id="ph-mas-arroz-la-habana"' in ventana
+        assert 'class="ph-dt-more" id="ph-mas-arroz-santiago-de-cuba"' in ventana
+        assert 'aria-label="Arroz en La Habana"' in ventana
         assert 'class="ph-fpanel-illustration"' in ventana
         assert "ph-fpanel-icon" not in ventana
 

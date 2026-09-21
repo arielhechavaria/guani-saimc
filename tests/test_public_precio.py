@@ -256,14 +256,13 @@ class TestVentanaConPestanias:
 
         assert "provincia=santiago-de-cuba" in ventana
 
-    def test_el_detalle_anterior_del_producto_sigue_en_la_pestania(
+    def test_los_enlaces_de_la_pestania_siguen_debajo_de_la_tabla(
         self, client: TestClient, datos: None
     ) -> None:
-        """Nada de lo que el panel decía se pierde: pasa a un desplegable."""
         ventana = _ventana(client.get("/?productos=arroz").text)
 
-        assert "ph-cifra" in ventana
         assert "Vista simple para compartir" in ventana
+        assert "Ver el detalle por provincia" in ventana
 
     def test_el_titular_es_el_rango_entre_provincias_y_no_una_mediana_nacional(
         self, client: TestClient, datos: None
@@ -318,10 +317,68 @@ class TestPanelLateralAnclado:
             "ph-canvas has-side"
         ]
 
-    def test_con_provincia_elegida_su_detalle_llega_abierto(self, client: TestClient, datos: None) -> None:
-        panel = _ventana(client.get("/?productos=arroz&provincia=la-habana").text)
 
-        assert '<details class="ph-pane-mas" open>' in panel
+class TestTablaExpandible:
+    """«Detalle por provincia y formato» dejó de ser un desplegable aparte
+    (2026-09-21): cada fila de la tabla se expande y trae por dentro la cifra
+    de cada formato, su rango por período y los anuncios detrás. Una sola
+    tabla en lugar de dos vistas de la misma información."""
 
-    def test_sin_provincia_elegida_el_detalle_llega_cerrado(self, client: TestClient, datos: None) -> None:
-        assert '<details class="ph-pane-mas">' in _ventana(client.get("/?productos=arroz").text)
+    def test_no_queda_el_desplegable_aparte(self, client: TestClient, datos: None) -> None:
+        assert "ph-pane-mas" not in _ventana(client.get("/?productos=arroz").text)
+
+    def test_cada_fila_con_dato_tiene_su_boton_y_su_fila_de_detalle(
+        self, client: TestClient, datos: None
+    ) -> None:
+        ventana = _ventana(client.get("/?productos=arroz").text)
+
+        assert ventana.count('class="ph-row-toggle"') == 2
+        assert ventana.count('class="ph-dt-more') == 2
+        assert 'aria-controls="ph-mas-arroz-la-habana"' in ventana
+        assert 'id="ph-mas-arroz-la-habana"' in ventana
+
+    def test_el_detalle_trae_la_cifra_de_cada_provincia(self, client: TestClient, datos: None) -> None:
+        ventana = _ventana(client.get("/?productos=arroz").text)
+
+        assert 'aria-label="Arroz en La Habana"' in ventana
+        assert 'aria-label="Arroz en Santiago de Cuba"' in ventana
+        assert "ph-cifra-body" in ventana
+
+    def test_el_detalle_trae_el_rango_por_periodo_y_los_anuncios_con_su_enlace(
+        self, client: TestClient, datos: None
+    ) -> None:
+        ventana = _ventana(client.get("/?productos=arroz").text)
+
+        assert "ph-rango" in ventana
+        assert "detrás de esta cifra" in ventana
+        assert 'href="/anuncio/' in ventana
+
+    def test_arranca_cerrada_sin_provincia_elegida(self, client: TestClient, datos: None) -> None:
+        ventana = _ventana(client.get("/?productos=arroz").text)
+
+        assert 'aria-expanded="true"' not in ventana.split("<tbody>")[1]
+        assert 'class="ph-dt-more is-open' not in ventana
+
+    def test_la_provincia_elegida_llega_expandida_y_las_demas_no(
+        self, client: TestClient, datos: None
+    ) -> None:
+        ventana = _ventana(client.get("/?productos=arroz&provincia=la-habana").text)
+
+        assert 'class="ph-dt-more is-open" id="ph-mas-arroz-la-habana"' in ventana
+        assert 'class="ph-dt-more" id="ph-mas-arroz-santiago-de-cuba"' in ventana
+
+    def test_con_provincia_elegida_las_demas_filas_siguen_teniendo_detalle(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """Elegir una provincia enfoca el mapa, no vacía la tabla: el detalle
+        de Santiago sigue ahí para abrirlo."""
+        ventana = _ventana(client.get("/?productos=arroz&provincia=la-habana").text)
+
+        assert 'aria-label="Arroz en Santiago de Cuba"' in ventana
+
+    def test_sin_javascript_todo_se_ve_expandido(self, client: TestClient, datos: None) -> None:
+        """Mejora progresiva: el cierre lo pone el script (`.ph-js`), no el
+        HTML; sin él la tabla no esconde nada."""
+        texto = client.get("/?productos=arroz").text
+
+        assert ".ph-js .ph-dt-more:not(.is-open)" in texto

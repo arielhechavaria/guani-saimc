@@ -987,6 +987,27 @@
   .ph-tabbed[data-spark="cols"] .ph-sp .ph-sp-end { display: none; }
   .ph-pane-mas > summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
   .ph-pane-mas-body { display: grid; gap: .8rem; margin-top: .6rem; }
+
+  /* Tabla expandible (2026-09-21): cada fila de provincia se abre y trae el
+     detalle por formato, el rango por período y los anuncios. Sin JS todo se
+     ve abierto: el cierre lo hace `.ph-js`, que el script pone en <html>. */
+  .ph-dt-x { width: 2.25rem; text-align: center; padding: 0; }
+  .ph-row-toggle {
+    appearance: none; -webkit-appearance: none; margin: 0; padding: 0; cursor: pointer;
+    width: 2.25rem; height: 2.25rem; border: 0; background: none; border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--m3-on-surface-variant);
+  }
+  .ph-row-toggle:hover { color: var(--ph-accent); background: var(--ph-accent-wash); }
+  .ph-chev { width: .5rem; height: .5rem; border: solid currentColor; border-width: 0 2px 2px 0;
+             transform: rotate(-45deg); transition: transform .15s ease; }
+  .ph-row-toggle[aria-expanded="true"] .ph-chev { transform: rotate(45deg); }
+  .ph-dt-more > td { padding: .2rem .35rem .9rem; background: var(--m3-surface-container);
+                     border-top: 0; height: auto; }
+  .ph-js .ph-dt-more:not(.is-open) { display: none; }
+  .ph-dt-fmt { display: grid; gap: .3rem; }
+  .ph-dt-fmt + .ph-dt-fmt { margin-top: .9rem; padding-top: .7rem; border-top: 1px solid var(--m3-divider); }
+  .ph-dt-fmt-head { margin: 0; }
   .ph-price-ramp { background: linear-gradient(to right, var(--ph-price-low), var(--ph-price-high));
                    border: 1px solid var(--m3-outline-variant); }
   @media (max-width: 720px) {
@@ -1058,33 +1079,8 @@
   /* ── Cifra con su muestra y rango por período, por provincia, en el panel.
      La cifra va en la sans y con figuras proporcionales (es un número suelto,
      no una columna); las marcas del eje y la muestra, en mono tabular. */
-  {# `<details>`/`<summary>` (2026-09-14): con 2+ bloques —varias provincias
-     o, desde la separación por formato del mismo día, varios envases— solo
-     el primero arranca abierto; el resto colapsa a su `<summary>` con la
-     cifra de vistazo, mismo mecanismo nativo que ya usa la insignia del
-     mapa. El operador lo pidió al ver crecer el panel con la separación
-     por formato. #}
-  .ph-cifra { padding-top: .65rem; border-top: 1px solid var(--m3-divider); }
-  .ph-cifra:first-child { padding-top: 0; border-top: 0; }
-  .ph-cifra-prov {
-    display: flex; align-items: center; justify-content: space-between; gap: .5rem;
-    cursor: pointer; list-style: none;
-    font-size: .6875rem; letter-spacing: .12em; text-transform: uppercase; color: var(--m3-on-surface-variant);
-  }
-  /* Chrome/Safari ponen el triángulo nativo vía pseudo-elemento propio, no
-     `list-style` — sin esto quedaría el triángulo Y el chevron juntos. */
-  .ph-cifra-prov::-webkit-details-marker { display: none; }
-  .ph-cifra-prov-titulo { display: flex; align-items: center; gap: .4rem; min-width: 0; flex-wrap: wrap; }
-  .ph-cifra-prov-aside { display: flex; align-items: center; gap: .3rem; flex: none; }
-  .ph-cifra-prov-precio { font-variant-numeric: tabular-nums; }
-  .ph-cifra[open] .ph-cifra-prov-precio { display: none; }
-  /* Chevron Material —`expand_more`, ya vendorizado (lo usa `/control`)—
-     en vez de confiar en el triángulo nativo, que en algunos motores casi
-     no se nota: el operador pidió una marca explícita de que el bloque se
-     abre/cierra. Gira con el propio atributo `[open]` de `<details>`, sin
-     JS. */
-  .ph-cifra-chevron { font-size: 18px; transition: transform .18s ease; }
-  .ph-cifra[open] .ph-cifra-chevron { transform: rotate(180deg); }
+  /* La cifra vive dentro de la fila expandible de la tabla (2026-09-21); antes
+     colgaba de un `<details>` por provincia y formato. */
   .ph-cifra-body { display: grid; gap: .35rem; margin-top: .55rem; }
   .ph-cifra-fila { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; }
   .ph-cifra-valor { font: 600 1.75rem/1 var(--m3-font); color: var(--m3-on-surface); }
@@ -1874,17 +1870,87 @@
                       <th scope="col" class="num" aria-sort="none"><button type="button" data-sort="chg">Cambio</button></th>
                       <th scope="col">Tendencia</th>
                       <th scope="col" class="num ph-col-n" aria-sort="none"><button type="button" data-sort="n">Anuncios</button></th>
+                      <th scope="col" class="ph-dt-x" aria-label="Detalle"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {% for row in grid.rows %}
-                    <tr data-slug="{{ row.slug }}" data-name="{{ row.province_name }}" data-med="{{ row.median }}" data-chg="{{ row.change if row.change is not none }}" data-n="{{ row.count }}">
+                    {% set abierta = selected_province and row.province_name == selected_province %}
+                    <tr class="ph-dt-row" data-slug="{{ row.slug }}" data-name="{{ row.province_name }}" data-med="{{ row.median }}" data-chg="{{ row.change if row.change is not none }}" data-n="{{ row.count }}">
                       <th scope="row"><a href="{{ province_link(row.slug) }}" hx-get="{{ province_link(row.slug) }}">{{ row.province_name }}</a></th>
                       <td class="num ph-pg-med">{{ row.median_text }}</td>
                       <td class="num">{{ row.change_text }}</td>
                       <td class="ph-pg-spark">{% if row.spark %}<svg class="ph-sp" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path class="ph-sp-area" d="{{ row.spark.area }}"/><path class="ph-sp-cols" d="{{ row.spark.cols }}"/><path class="ph-sp-line" d="{{ row.spark.line }}"/><circle class="ph-sp-end" cx="{{ row.spark.end[0] }}" cy="{{ row.spark.end[1] }}" r="2.6"/></svg>{% endif %}</td>
                       <td class="num ph-col-n">{{ row.count }}</td>
+                      <td class="ph-dt-x">{% if row.details %}<button type="button" class="ph-row-toggle" aria-expanded="{{ 'true' if abierta else 'false' }}" aria-controls="ph-mas-{{ grid.slug }}-{{ row.slug }}" aria-label="Detalle de {{ row.province_name }}"><span class="ph-chev" aria-hidden="true"></span></button>{% endif %}</td>
                     </tr>
+                    {# Al expandir la fila: lo que antes era «Detalle por provincia
+                       y formato», aparte de la tabla. Un bloque por formato con su
+                       cifra, su rango por período y los anuncios detrás (§6.5,
+                       «¿de dónde salió?»). La fila compara provincias con los
+                       formatos fundidos; acá se separan, que es la pregunta
+                       «¿cómo varía según el envase?» de 2026-09-14. Sin JS se ve
+                       todo abierto (`.ph-js` es quien lo cierra). #}
+                    {% if row.details %}
+                    <tr class="ph-dt-more{% if abierta %} is-open{% endif %}" id="ph-mas-{{ grid.slug }}-{{ row.slug }}">
+                      <td colspan="6">
+                        {% for bloque in row.details %}
+                        {% set cifra = bloque.headline %}
+                        <section class="ph-dt-fmt" aria-label="{{ grid.product_name }} en {{ cifra.province_name }}{% if cifra.format_label %}, {{ cifra.format_label }}{% endif %}">
+                          {% if cifra.format_label_display %}<p class="ph-dt-fmt-head"><span class="ph-chip">{{ cifra.format_label_display }}</span></p>{% endif %}
+                          <div class="ph-cifra-body">
+                            <div class="ph-cifra-fila">
+                              <span class="ph-cifra-valor">{{ cifra.median_text }}</span>
+                              <span class="ph-cifra-unidad">{{ cifra.currency }}/{{ cifra.unit }} · mediana</span>
+                              {% if cifra.change_text %}<span class="ph-cifra-cambio">{{ cifra.change_text }} vs los {{ window_days }} días anteriores</span>{% endif %}
+                            </div>
+                            <ul class="ph-cifra-datos">
+                              {% if not cifra.is_single_value %}<li>rango <b>{{ cifra.minimum_text }}–{{ cifra.maximum_text }}</b></li>{% endif %}
+                              <li><b>{{ cifra.count }}</b> anuncio{{ "s" if cifra.count != 1 }}{% if cifra.outliers %} ({{ cifra.outliers }} fuera de escala){% endif %}</li>
+                              <li>el último, del {{ cifra.last_day_text }}</li>
+                            </ul>
+                            {% if bloque.ranges %}
+                            {% set serie = bloque.ranges %}
+                            {% include "_range_chart.html" %}
+                            {{ chart_help(
+                              "La barra va del precio más bajo al más alto observado en "
+                              "ese período; la raya horizontal es la mediana (el valor de "
+                              "la mitad, no el promedio). El número debajo es cuántos "
+                              "anuncios hay; un triángulo señala un precio tan fuera de "
+                              "escala que no entra en la barra."
+                            ) }}
+                            {% endif %}
+                            {% if bloque.ads %}
+                            <details class="ph-evo-anuncios">
+                              <summary>{{ bloque.ads | length }} anuncio{{ "s" if bloque.ads | length != 1 }} detrás de esta cifra</summary>
+                              <div class="ph-table-card">
+                                <table class="ph-coverage">
+                                  <thead>
+                                    <tr>
+                                      <th scope="col">Día</th>
+                                      <th scope="col" class="num">Precio</th>
+                                      <th scope="col">Enlace</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {% for ad in bloque.ads %}
+                                    <tr>
+                                      <td class="num">{{ ad.day_text }}</td>
+                                      <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
+                                      <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
+                                    </tr>
+                                    {% endfor %}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </details>
+                            {% endif %}
+                          </div>
+                        </section>
+                        {% endfor %}
+                      </td>
+                    </tr>
+                    {% endif %}
                     {% endfor %}
                   </tbody>
                 </table>
@@ -1893,83 +1959,6 @@
                 {% else %}
                 <p class="ph-note">Ningún anuncio de {{ grid.product_name }} en los últimos {{ window_days }} días.</p>
                 {% endif %}
-                <details class="ph-pane-mas"{% if selected_province %} open{% endif %}>
-                  <summary>Detalle por provincia y formato</summary>
-                  <div class="ph-pane-mas-body">
-              {% if panel.blocks %}
-              {% for bloque in panel.blocks %}
-              {% set cifra = bloque.headline %}
-              <details class="ph-cifra"{% if loop.first %} open{% endif %} aria-label="{{ panel.name }} en {{ cifra.province_name }}{% if cifra.format_label %}, {{ cifra.format_label }}{% endif %}">
-                <summary class="ph-cifra-prov">
-                  <span class="ph-cifra-prov-titulo">
-                    <span>{{ cifra.province_name }}</span>
-                    {% if cifra.format_label_display %}<span class="ph-chip">{{ cifra.format_label_display }}</span>{% endif %}
-                  </span>
-                  <span class="ph-cifra-prov-aside">
-                    <span class="ph-cifra-prov-precio">{{ cifra.median_text }} {{ cifra.currency }}/{{ cifra.unit }}</span>
-                    <span class="m3-icon ph-cifra-chevron" aria-hidden="true">expand_more</span>
-                  </span>
-                </summary>
-                <div class="ph-cifra-body">
-                  <div class="ph-cifra-fila">
-                    <span class="ph-cifra-valor">{{ cifra.median_text }}</span>
-                    <span class="ph-cifra-unidad">{{ cifra.currency }}/{{ cifra.unit }} · mediana</span>
-                    {% if cifra.change_text %}<span class="ph-cifra-cambio">{{ cifra.change_text }} vs los {{ window_days }} días anteriores</span>{% endif %}
-                  </div>
-                  <ul class="ph-cifra-datos">
-                    {% if not cifra.is_single_value %}<li>rango <b>{{ cifra.minimum_text }}–{{ cifra.maximum_text }}</b></li>{% endif %}
-                    <li><b>{{ cifra.count }}</b> anuncio{{ "s" if cifra.count != 1 }}{% if cifra.outliers %} ({{ cifra.outliers }} fuera de escala){% endif %}</li>
-                    <li>el último, del {{ cifra.last_day_text }}</li>
-                  </ul>
-                  {% if bloque.ranges %}
-                  {% set serie = bloque.ranges %}
-                  {% include "_range_chart.html" %}
-                  {{ chart_help(
-                    "La barra va del precio más bajo al más alto observado en "
-                    "ese período; la raya horizontal es la mediana (el valor de "
-                    "la mitad, no el promedio). El número debajo es cuántos "
-                    "anuncios hay; un triángulo señala un precio tan fuera de "
-                    "escala que no entra en la barra."
-                  ) }}
-                  {% endif %}
-                  {# Recorrido hacia atrás hasta el anuncio (§6.5): mismo
-                     patrón que ya usa «Cómo se movió» (`.ph-evo-anuncios`),
-                     pero acotado a ESTA celda —no hace falta columna de
-                     provincia, ya está en el `<summary>` de arriba— (pedido
-                     del operador el 2026-09-14, comparando con el enlace
-                     «ver anuncios» que ya tiene `/control` sobre cada
-                     número de la matriz). #}
-                  {% if bloque.ads %}
-                  <details class="ph-evo-anuncios">
-                    <summary>{{ bloque.ads | length }} anuncio{{ "s" if bloque.ads | length != 1 }} detrás de esta cifra</summary>
-                    <div class="ph-table-card">
-                      <table class="ph-coverage">
-                        <thead>
-                          <tr>
-                            <th scope="col">Día</th>
-                            <th scope="col" class="num">Precio</th>
-                            <th scope="col">Enlace</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {% for ad in bloque.ads %}
-                          <tr>
-                            <td class="num">{{ ad.day_text }}</td>
-                            <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
-                            <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
-                          </tr>
-                          {% endfor %}
-                        </tbody>
-                      </table>
-                    </div>
-                  </details>
-                  {% endif %}
-                </div>
-              </details>
-              {% endfor %}
-              {% else %}
-              <p class="ph-note">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>
-              {% endif %}
               <div class="ph-fpanel-links">
                 <a class="ph-fpanel-detail" href="{{ open_precios_query }}" hx-get="{{ open_precios_query }}">Ver el detalle por provincia</a>
                 {# Sin `hx-get` a propósito (2026-09-14): la vista liviana no
@@ -1979,8 +1968,6 @@
                    entrada —el operador la pidió así explícitamente. #}
                 <a class="ph-fpanel-detail" href="{{ panel.light_query }}">Vista simple para compartir</a>
               </div>
-                  </div>
-                </details>
               </div>
               {% endfor %}
     </div>
@@ -2906,7 +2893,14 @@
     celda.setAttribute("aria-sort", direccion);
     var signo = direccion === "ascending" ? 1 : -1;
     var cuerpo = tabla.tBodies[0];
-    var filas = Array.prototype.slice.call(cuerpo.rows);
+    // Cada fila de provincia lleva pegada su fila de detalle: se ordenan las
+    // primeras y el detalle viaja con la suya.
+    var filas = Array.prototype.slice.call(cuerpo.querySelectorAll("tr.ph-dt-row"));
+    var detalles = new Map();
+    filas.forEach(function (fila) {
+      var sig = fila.nextElementSibling;
+      if (sig && sig.classList.contains("ph-dt-more")) detalles.set(fila, sig);
+    });
     filas.sort(function (a, b) {
       var x = a.getAttribute("data-" + clave);
       var y = b.getAttribute("data-" + clave);
@@ -2919,7 +2913,18 @@
       if (isNaN(ny)) return -1;
       return signo * (nx - ny);
     });
-    filas.forEach(function (fila) { cuerpo.appendChild(fila); });
+    filas.forEach(function (fila) {
+      cuerpo.appendChild(fila);
+      if (detalles.has(fila)) cuerpo.appendChild(detalles.get(fila));
+    });
+  }
+
+  function alternarDetalle(boton) {
+    var detalle = document.getElementById(boton.getAttribute("aria-controls"));
+    if (!detalle) return;
+    var abrir = boton.getAttribute("aria-expanded") !== "true";
+    boton.setAttribute("aria-expanded", abrir ? "true" : "false");
+    detalle.classList[abrir ? "add" : "remove"]("is-open");
   }
 
   /* Estado del panel lateral (2026-09-21): plegado en escritorio, hoja
@@ -2989,6 +2994,8 @@
     if (pestana) { activarPestana(pestana.getAttribute("data-product")); return; }
     var orden = ev.target.closest("[data-sort]");
     if (orden) { ordenarTabla(orden); return; }
+    var detalle = ev.target.closest(".ph-row-toggle");
+    if (detalle) { alternarDetalle(detalle); return; }
     var tipo = ev.target.closest("[data-spark]");
     if (tipo) elegirTipoSparkline(tipo.getAttribute("data-spark"));
   }

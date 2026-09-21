@@ -22,12 +22,21 @@ Mismo reparto que `matrix.py` y `watchlist_view.py`: acá se arma la estructura
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
 from saimc.units import unit_noun
-from saimc.web.price_charts import SlopeChart, StepChart, StepLine, format_price
+from saimc.web.panel_view import PanelBlock
+from saimc.web.price_charts import (
+    AdRow,
+    Headline,
+    RangeSeries,
+    SlopeChart,
+    StepChart,
+    StepLine,
+    format_price,
+)
 from saimc.web.product_nav import product_slug
 from saimc.web.watchlist_view import _alfabeto, _chart_for
 
@@ -70,6 +79,10 @@ class GridRow:
     #: 0 (la más barata con dato) a 1 (la más cara); ver `price_layer`.
     tint: float
     spark: Sparkline | None = None
+    #: Lo que se ve al expandir la fila: un bloque por formato con su cifra, su
+    #: rango por período y los anuncios detrás (`group_detail`). Vacío si no se
+    #: pegó.
+    details: tuple[PanelBlock, ...] = ()
 
     @property
     def has_data(self) -> bool:
@@ -203,14 +216,47 @@ def _step_for(chart: SlopeChart | None, steps: Sequence[StepChart]) -> StepChart
     )
 
 
+def group_detail(
+    headlines: Sequence[Headline],
+    ranges: Sequence[RangeSeries],
+    ads_by_cell: Mapping[tuple[str, str, str, str, str | None], Sequence[AdRow]],
+) -> dict[tuple[str, str], tuple[PanelBlock, ...]]:
+    """Los bloques de detalle agrupados por (producto, provincia), en el orden
+    de las cifras (más anuncios primero), listos para pegar a cada fila.
+
+    Es lo mismo que `panel_view.attach_blocks` arma para el panel del mapa, con
+    dos diferencias: se agrupa por provincia y no por producto, y sale de las
+    observaciones de TODAS las provincias, no de las que filtra la provincia
+    elegida —cada fila de la tabla tiene que poder expandirse—. Cifra, rango y
+    anuncios se emparejan por producto, provincia, moneda, unidad y formato:
+    el formato no se funde acá aunque la fila sí lo funda para comparar
+    provincias (`price_charts._by_product`).
+    """
+    rango_de = {(r.product_name, r.province_name, r.currency, r.unit, r.format_label): r for r in ranges}
+    agrupado: dict[tuple[str, str], list[PanelBlock]] = {}
+    for h in headlines:
+        clave = (h.product_name, h.province_name, h.currency, h.unit, h.format_label)
+        agrupado.setdefault((h.product_name, h.province_name), []).append(
+            PanelBlock(
+                headline=h,
+                ranges=rango_de.get(clave),
+                ads=tuple(ads_by_cell.get(clave, ())),
+            )
+        )
+    return {k: tuple(v) for k, v in agrupado.items()}
+
+
 def build_product_grids(
     active_products: Sequence[str],
     slopes: Sequence[SlopeChart],
     steps: Sequence[StepChart],
     provinces: Sequence[str],
+    details: Mapping[tuple[str, str], Sequence[PanelBlock]] | None = None,
 ) -> tuple[ProductGrid, ...]:
     """Una tabla por producto activo, en el orden recibido, con las 16
-    provincias repartidas entre las que tienen anuncios y las que no."""
+    provincias repartidas entre las que tienen anuncios y las que no.
+    `details` (`group_detail`) es opcional: sin él las filas no se expanden."""
+    detalle = details or {}
     grillas = []
     for name in active_products:
         chart = _chart_for(name, slopes)
@@ -237,6 +283,7 @@ def build_product_grids(
                     count=line.now_count,
                     tint=0.5 if hi == lo else round((mediana - lo) / (hi - lo), 3),
                     spark=sparks.get(line.province_name),
+                    details=tuple(detalle.get((name, line.province_name), ())),
                 )
             )
         filas.sort(key=lambda r: (-r.median, _alfabeto(r.province_name)))

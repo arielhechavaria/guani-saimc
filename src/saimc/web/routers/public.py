@@ -74,7 +74,7 @@ from saimc.web.product_nav import (
     resolve_vista,
     resolve_window,
 )
-from saimc.web.province_grid import build_product_grids, price_layer
+from saimc.web.province_grid import build_product_grids, group_detail, price_layer
 from saimc.web.series_view import build_series
 from saimc.web.watchlist_view import build_watchlist
 
@@ -454,7 +454,25 @@ def _render_home(
     # contradigan. Siempre las 16, aunque haya una provincia elegida: el mapa
     # se tiñe comparando entre todas.
     steps = build_median_steps(all_provinces_obs, window_days=window, hoy=hoy)
-    product_grids = build_product_grids(active_products, slopes, steps, all_province_names)
+    # Lo que trae cada fila al expandirse (cifra por formato, rango por período
+    # y anuncios detrás): de TODAS las provincias, aunque haya una elegida —el
+    # mapa se enfoca en ella, la tabla no se vacía—. Sin provincia elegida ya
+    # está calculado arriba para el panel del mapa; con una, se recalcula.
+    if scope_province is None:
+        detail_headlines, detail_ranges, detail_ads = panel_headlines, panel_ranges, panel_ads
+    else:
+        detail_obs = [o for o in all_provinces_obs if o.product_name in active_set]
+        detail_previous = [o for o in all_provinces_previous if o.product_name in active_set]
+        detail_headlines = build_headlines(detail_obs, detail_previous)
+        detail_ranges = build_range_series(detail_obs, window_days=window, hoy=hoy)
+        detail_ads = build_cell_ads(detail_obs)
+    product_grids = build_product_grids(
+        active_products,
+        slopes,
+        steps,
+        all_province_names,
+        details=group_detail(detail_headlines, detail_ranges, detail_ads),
+    )
     price_by_province = price_layer(product_grids)
 
     # «Cómo se movió»: con una provincia elegida, SOLO esa —el operador la

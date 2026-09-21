@@ -25,14 +25,28 @@ from datetime import date
 from decimal import Decimal
 
 from saimc.cells import RetailObservation
-from saimc.web.price_charts import build_median_steps, build_month_vs_month
-from saimc.web.province_grid import build_product_grids, price_layer
+from saimc.web.price_charts import (
+    build_cell_ads,
+    build_headlines,
+    build_median_steps,
+    build_month_vs_month,
+    build_range_series,
+)
+from saimc.web.province_grid import build_product_grids, group_detail, price_layer
 
 HOY = date(2026, 8, 30)
 PROVINCIAS = ["La Habana", "Santiago de Cuba", "Guantánamo"]
 
 
-def _obs(product: str, province: str, mes: int, dia: int, precio: str) -> RetailObservation:
+def _obs(
+    product: str,
+    province: str,
+    mes: int,
+    dia: int,
+    precio: str,
+    formato: tuple[str, str, str] | None = None,
+) -> RetailObservation:
+    empaque, cantidad, unidad = formato or (None, None, None)
     return RetailObservation(
         product_name=product,
         province_name=province,
@@ -43,6 +57,9 @@ def _obs(product: str, province: str, mes: int, dia: int, precio: str) -> Retail
         unit_price=Decimal(precio),
         evidence_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
         evidence_is_public=False,
+        format_packaging=empaque,
+        format_quantity=None if cantidad is None else Decimal(cantidad),
+        format_unit=unidad,
     )
 
 
@@ -201,3 +218,68 @@ class TestCapaPrecioDelMapa:
 
     def test_una_provincia_sin_dato_no_aparece(self) -> None:
         assert "guantanamo" not in price_layer(_grillas(["Arroz"]))
+
+
+def _detalle(actual=ACTUAL, anterior=ANTERIOR):
+    return group_detail(
+        build_headlines(actual, anterior),
+        build_range_series(actual, window_days=30, hoy=HOY),
+        build_cell_ads(actual),
+    )
+
+
+class TestDetalleDeLaFila:
+    """Cada fila de provincia se expande y trae por dentro lo que antes vivía
+    aparte, en «Detalle por provincia y formato»: la cifra de cada formato con
+    su rango por período y los anuncios detrás. La fila sigue comparando
+    provincias con los formatos fundidos (`_by_product`); el detalle los
+    separa."""
+
+    def test_agrupa_los_bloques_por_producto_y_provincia(self) -> None:
+        detalle = _detalle()
+
+        assert set(detalle) == {
+            ("Arroz", "La Habana"),
+            ("Arroz", "Santiago de Cuba"),
+            ("Pollo", "La Habana"),
+        }
+
+    def test_el_bloque_trae_cifra_rango_y_anuncios(self) -> None:
+        (bloque,) = _detalle()[("Arroz", "La Habana")]
+
+        assert bloque.headline.median_text == "300"
+        assert bloque.headline.count == 3
+        assert bloque.ranges is not None
+        assert len(bloque.ads) == 3
+
+    def test_los_anuncios_van_del_mas_reciente_al_mas_viejo(self) -> None:
+        (bloque,) = _detalle()[("Arroz", "La Habana")]
+
+        assert [a.price_text for a in bloque.ads] == ["320", "300", "280"]
+
+    def test_un_producto_con_dos_formatos_en_la_misma_provincia_trae_un_bloque_por_formato(
+        self,
+    ) -> None:
+        botella = ("botella", "1", "L")
+        garrafa = ("garrafa", "5", "L")
+        actual = [
+            _obs("Aceite", "La Habana", 8, 20, "300", botella),
+            _obs("Aceite", "La Habana", 8, 21, "310", botella),
+            _obs("Aceite", "La Habana", 8, 22, "1400", garrafa),
+        ]
+
+        bloques = _detalle(actual, [])[("Aceite", "La Habana")]
+
+        assert [b.headline.format_label for b in bloques] == ["botella de 1 L", "garrafa de 5 L"]
+
+    def test_las_filas_reciben_su_detalle_por_nombre_de_provincia(self) -> None:
+        slopes = build_month_vs_month(ACTUAL, ANTERIOR, window_days=30, hoy=HOY)
+        steps = build_median_steps(ACTUAL, window_days=30, hoy=HOY)
+
+        (grilla,) = build_product_grids(["Arroz"], slopes, steps, PROVINCIAS, details=_detalle())
+
+        assert len(_fila(grilla, "La Habana").details) == 1
+        assert len(_fila(grilla, "Santiago de Cuba").details) == 1
+
+    def test_sin_detalle_las_filas_quedan_sin_bloques(self) -> None:
+        assert _fila(_grillas(["Arroz"])[0], "La Habana").details == ()
