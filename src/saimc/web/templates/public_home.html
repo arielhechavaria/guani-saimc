@@ -52,6 +52,11 @@
      duplicarlos acá en hex). */
   .ph-map { width: 100%; height: 100%; }
   .ph-map .leaflet-control-attribution { font-size: .6875rem; }
+  /* Con el zoom fraccionario (`zoomSnap: 0.25`, ver `inicializarMapa`) el
+     `plus-lighter` con el que Leaflet 1.9 tapa las costuras entre tiles pinta
+     una raya blanca donde se solapan dos niveles de tiles. Sin la mezcla las
+     costuras quedan, pero apenas se ven. */
+  .ph-map img.leaflet-tile { mix-blend-mode: normal; }
 
   .ph-panel { padding: .9rem 1rem; }
   .ph-panel-title { font-size: .6875rem; letter-spacing: .14em; text-transform: uppercase;
@@ -808,7 +813,7 @@
     max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
   }
   .ph-win-stack { width: min(30rem, 46vw); }
-  .ph-panel-stack { width: min(23rem, 38vw); margin-left: auto; }
+  .ph-panel-stack { width: min(29rem, 46vw); margin-left: auto; }
 
   .ph-win, .ph-fpanel {
     border-radius: var(--ph-radius-sm);
@@ -850,6 +855,78 @@
                          display: flex; justify-content: space-between; margin-bottom: .2rem; }
   .ph-fpanel-detail { font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
   .ph-fpanel-links { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
+
+  /* ── Ventana con pestañas por producto (prototipo B, 2026-09-21) ────────
+     Una sola ventana en lugar de un panel por producto: una pestaña por
+     producto abierto y, adentro, la tabla por provincia con su sparkline.
+     Los tres dibujos de la sparkline viajan todos; el atributo
+     `data-spark` de la ventana decide cuál se ve (línea, área o barras). */
+  .ph-tabs { display: flex; gap: .1rem; overflow-x: auto; border-bottom: 1px solid var(--m3-divider); }
+  .ph-tab { position: relative; display: inline-flex; align-items: center; flex: none;
+            border-radius: .6rem .6rem 0 0; }
+  .ph-tab-btn {
+    appearance: none; -webkit-appearance: none; border: 0; background: none; margin: 0;
+    font: inherit; font-size: .875rem; font-weight: 500; cursor: pointer;
+    padding: 0 .3rem 0 .8rem; min-height: 2.75rem; color: var(--m3-on-surface-variant);
+  }
+  .ph-tab-x { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 .7rem 0 .2rem;
+              font-size: 1.05rem; line-height: 1; color: var(--m3-outline); }
+  .ph-tab-x:hover { color: var(--ph-accent); text-decoration: none; }
+  .ph-tab.is-active { box-shadow: inset 0 -2px 0 var(--ph-accent); }
+  .ph-tab.is-active .ph-tab-btn { color: var(--m3-on-surface); font-weight: 700; }
+  .ph-pane { display: grid; gap: .7rem; }
+  .ph-pane[hidden] { display: none; }
+  .ph-pane-head { display: flex; align-items: flex-end; justify-content: space-between; gap: .75rem; }
+  .ph-pane-name { margin: 0; font-family: var(--ph-font-heading); font-weight: 400;
+                  font-size: 1.35rem; line-height: 1.1; display: flex; align-items: center; gap: .45rem; }
+  .ph-pane-unit { margin: .15rem 0 0; font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-pane-rango { margin: 0; text-align: right; font-size: .875rem; color: var(--m3-on-surface-variant); }
+  .ph-pane-rango b { font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.5rem;
+                     color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
+  .ph-pane-rango span { display: block; font-size: .75rem; }
+  .ph-pane-tools { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .ph-pane-cap, .ph-pane-sin, .ph-pane-nota { margin: 0; font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px;
+            border: 1px solid var(--m3-outline-variant); }
+  .ph-seg-btn {
+    appearance: none; -webkit-appearance: none; border: 0; background: none; margin: 0;
+    font: inherit; font-size: .75rem; cursor: pointer; padding: 0 .7rem; min-height: 1.75rem;
+    border-radius: 999px; color: var(--m3-on-surface-variant);
+  }
+  .ph-seg-btn.is-on { background: var(--ph-accent); color: var(--ph-on-accent); font-weight: 700; }
+  .ph-pgrid { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+  .ph-pgrid th, .ph-pgrid td { padding: 0 .35rem; height: 2.15rem; text-align: left; font-weight: 400;
+                               border-top: 1px solid var(--m3-divider); }
+  .ph-pgrid thead th { height: 2rem; border-top: 0; background: var(--m3-surface-container);
+                       font-size: .6875rem; letter-spacing: .08em; text-transform: uppercase;
+                       color: var(--m3-on-surface-variant); }
+  .ph-pgrid thead button { appearance: none; -webkit-appearance: none; border: 0; background: none;
+                           margin: 0; padding: 0; font: inherit; letter-spacing: inherit;
+                           text-transform: inherit; color: inherit; cursor: pointer; min-height: 2rem; }
+  .ph-pgrid thead th[aria-sort="ascending"] button::after { content: " \2191"; }
+  .ph-pgrid thead th[aria-sort="descending"] button::after { content: " \2193"; }
+  .ph-pgrid .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ph-pgrid tbody tr.is-hover { background: var(--ph-accent-wash); }
+  .ph-pg-med { font-weight: 700; }
+  .ph-pg-spark { width: 7rem; }
+  .ph-sp { display: block; width: 100%; max-width: 7rem; height: auto; overflow: visible; }
+  .ph-sp .ph-sp-line { fill: none; stroke: var(--ph-accent); stroke-width: 1.8;
+                       stroke-linecap: round; stroke-linejoin: round; }
+  .ph-sp .ph-sp-area { fill: var(--ph-accent); fill-opacity: .18; stroke: none; display: none; }
+  .ph-sp .ph-sp-cols { fill: var(--ph-accent); fill-opacity: .85; stroke: none; display: none; }
+  .ph-sp .ph-sp-end { fill: var(--ph-accent); }
+  .ph-tabbed[data-spark="area"] .ph-sp .ph-sp-area { display: inline; }
+  .ph-tabbed[data-spark="cols"] .ph-sp .ph-sp-cols { display: inline; }
+  .ph-tabbed[data-spark="cols"] .ph-sp .ph-sp-line,
+  .ph-tabbed[data-spark="cols"] .ph-sp .ph-sp-end { display: none; }
+  .ph-pane-mas > summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--ph-accent); }
+  .ph-pane-mas-body { display: grid; gap: .8rem; margin-top: .6rem; }
+  .ph-price-ramp { background: linear-gradient(to right, var(--ph-price-low), var(--ph-price-high));
+                   border: 1px solid var(--m3-outline-variant); }
+  @media (max-width: 720px) {
+    .ph-pgrid .ph-col-n { display: none; }
+    .ph-pg-spark { width: 5.5rem; }
+  }
 
   /* ── Ventanas: arrastrar, minimizar, expandir ─────────────────────────
      Mejora progresiva: el script del pie pone `.ph-js` en <html>; sin él los
@@ -1663,58 +1740,89 @@
         {% endfor %}
       </div>
 
-      {# ── Paneles de producto (slice 4): uno por producto activo, con su
-         rango nacional y su evolución. El × quita ese producto. #}
-      {% if product_panels %}
+      {# ── Ventana con pestañas por producto (prototipo B, 2026-09-21): una
+         pestaña por producto abierto y, adentro, la tabla por provincia con
+         su sparkline (`province_grid.py`). Reemplaza a la pila de un panel
+         por producto (slice 4): lo que cada panel decía sigue en la pestaña,
+         dentro del desplegable «Detalle por provincia y formato». Cambiar de
+         pestaña, ordenar la tabla y elegir el tipo de gráfico son del
+         cliente (script del pie): no hay ida y vuelta al server, que en una
+         conexión lenta se paga. La × de cada pestaña quita solo ese
+         producto (`close_query`), igual que la del panel de antes. #}
+      {% if product_grids %}
       <div class="ph-panel-stack">
-        {% for panel in product_panels %}
-        <section class="ph-fpanel" data-win="{{ panel.name }}" data-product="{{ panel.slug }}" id="ph-panel-{{ panel.slug }}" aria-label="{{ panel.name }}">
+        <section class="ph-fpanel ph-tabbed" data-win="Precios por provincia" id="ph-panel-tabs" aria-label="Precios por provincia" data-spark="line">
             <header class="ph-fpanel-head" data-win-handle>
               <div class="ph-fpanel-titles">
-                {% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}<span class="ph-fpanel-name">{{ panel.name }}</span>
-                <span class="ph-fpanel-sum">
-                  {%- if not panel.has_data -%}
-                  sin anuncios en la ventana
-                  {%- elif panel.is_single_value -%}
-                  {{ panel.minimum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}
-                  {%- else -%}
-                  {{ panel.minimum_text }}–{{ panel.maximum_text }} {{ panel.currency }}/{{ panel.unit }} · {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} · {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}
-                  {%- endif -%}
-                </span>
+                <span class="ph-fpanel-name">Precios por provincia</span>
+                <span class="ph-fpanel-sum">últimos {{ window_days }} días</span>
               </div>
               <div class="ph-winctls">
-                <button type="button" class="ph-winctl ph-winctl-min" data-win-min aria-pressed="false" aria-label="Minimizar {{ panel.name }}"></button>
-                <button type="button" class="ph-winctl ph-winctl-max" data-win-max aria-pressed="false" aria-label="Expandir {{ panel.name }}"></button>
-                <a class="ph-x" href="{{ panel.close_query }}" hx-get="{{ panel.close_query }}" aria-label="Quitar {{ panel.name }} de la vista">×</a>
+                <button type="button" class="ph-winctl ph-winctl-min" data-win-min aria-pressed="false" aria-label="Minimizar Precios por provincia"></button>
+                <button type="button" class="ph-winctl ph-winctl-max" data-win-max aria-pressed="false" aria-label="Expandir Precios por provincia"></button>
               </div>
             </header>
             <div class="ph-fpanel-body">
-              {# Por provincia —y por formato, si el producto lo declara
-                 (2026-09-14: antes se fundían en un solo bloque, perdiendo
-                 la pregunta «¿cómo varía según el envase?» que /control ya
-                 contestaba)—: la cifra con su muestra (§9.0: nunca un valor
-                 suelto) y la comparación con el período anterior del mismo
-                 largo, como número y sin color de alarma (§12.6); debajo, el
-                 rango por período. Muestrario aprobado el 2026-09-10.
-
-                 Con 2+ bloques (varias provincias o varios formatos) solo el
-                 primero —el de más muestra, ya viene ordenado así— arranca
-                 abierto; el resto colapsa a `<summary>` con su cifra de
-                 vistazo, mismo mecanismo nativo que ya usa la insignia del
-                 mapa (`<details>`, sin JS propio). El operador lo pidió el
-                 2026-09-14 al ver el panel crecer con la separación por
-                 formato del mismo día.
-
-                 Mismo día, segunda vuelta: el operador pidió una marca visual
-                 explícita de que el bloque se puede abrir/cerrar —no alcanza
-                 con el triángulo nativo del navegador, que en algunos motores
-                 casi no se nota— y que el formato, el concepto nuevo de la
-                 sesión, se lea como algo importante y no como texto de
-                 relleno. El chevron (`expand_more`, Material Symbols,
-                 gira 180° con `[open]`) resuelve lo primero; el formato pasa
-                 a `.ph-chip` —la MISMA clase que ya usa `.ph-card-sample`
-                 para «muestra en formación», no un chip nuevo— para lo
-                 segundo. #}
+              <div class="ph-tabs" role="tablist" aria-label="Productos abiertos">
+                {% for grid in product_grids %}
+                {% set panel = product_panels[loop.index0] %}
+                <span class="ph-tab{% if loop.first %} is-active{% endif %}">
+                  <button type="button" role="tab" class="ph-tab-btn" id="ph-tab-{{ grid.slug }}" data-product="{{ grid.slug }}" aria-selected="{{ 'true' if loop.first else 'false' }}" aria-controls="ph-panel-{{ grid.slug }}">{{ grid.product_name }}</button>
+                  <a class="ph-tab-x" href="{{ panel.close_query }}" hx-get="{{ panel.close_query }}" aria-label="Quitar {{ grid.product_name }} de la vista">×</a>
+                </span>
+                {% endfor %}
+              </div>
+              {% for grid in product_grids %}
+              {% set panel = product_panels[loop.index0] %}
+              <div class="ph-pane" role="tabpanel" id="ph-panel-{{ grid.slug }}" data-product="{{ grid.slug }}" aria-labelledby="ph-tab-{{ grid.slug }}"{% if not loop.first %} hidden{% endif %}>
+                <div class="ph-pane-head">
+                  <div>
+                    <h3 class="ph-pane-name">{% if panel.has_illustration %}{% include "_product_illustration.html" %}{% elif panel.icon %}<span class="m3-icon ph-fpanel-icon" aria-hidden="true">{{ panel.icon }}</span>{% endif %}{{ grid.product_name }}</h3>
+                    {% if grid.rows %}<p class="ph-pane-unit">{{ grid.currency }} por {{ grid.unit_noun }}</p>{% endif %}
+                  </div>
+                  {% if grid.rows %}
+                  <p class="ph-pane-rango">de <b>{{ grid.low_text }}</b> a <b>{{ grid.high_text }}</b><span>{{ grid.count }} anuncio{{ "s" if grid.count != 1 }} · {{ grid.province_count }} provincia{{ "s" if grid.province_count != 1 }}</span></p>
+                  {% endif %}
+                </div>
+                {% if grid.rows %}
+                <div class="ph-pane-tools">
+                  <span class="ph-pane-cap">Mediana de cada {{ grid.period_name }}</span>
+                  <div class="ph-seg" role="group" aria-label="Tipo de gráfico">
+                    <button type="button" class="ph-seg-btn is-on" data-spark="line" aria-pressed="true">Línea</button>
+                    <button type="button" class="ph-seg-btn" data-spark="area" aria-pressed="false">Área</button>
+                    <button type="button" class="ph-seg-btn" data-spark="cols" aria-pressed="false">Barras</button>
+                  </div>
+                </div>
+                <table class="ph-pgrid">
+                  <thead>
+                    <tr>
+                      <th scope="col" aria-sort="none"><button type="button" data-sort="name">Provincia</button></th>
+                      <th scope="col" class="num" aria-sort="descending"><button type="button" data-sort="med">Mediana</button></th>
+                      <th scope="col" class="num" aria-sort="none"><button type="button" data-sort="chg">Cambio</button></th>
+                      <th scope="col">Tendencia</th>
+                      <th scope="col" class="num ph-col-n" aria-sort="none"><button type="button" data-sort="n">Anuncios</button></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in grid.rows %}
+                    <tr data-slug="{{ row.slug }}" data-name="{{ row.province_name }}" data-med="{{ row.median }}" data-chg="{{ row.change if row.change is not none }}" data-n="{{ row.count }}">
+                      <th scope="row"><a href="{{ province_link(row.slug) }}" hx-get="{{ province_link(row.slug) }}">{{ row.province_name }}</a></th>
+                      <td class="num ph-pg-med">{{ row.median_text }}</td>
+                      <td class="num">{{ row.change_text }}</td>
+                      <td class="ph-pg-spark">{% if row.spark %}<svg class="ph-sp" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path class="ph-sp-area" d="{{ row.spark.area }}"/><path class="ph-sp-cols" d="{{ row.spark.cols }}"/><path class="ph-sp-line" d="{{ row.spark.line }}"/><circle class="ph-sp-end" cx="{{ row.spark.end[0] }}" cy="{{ row.spark.end[1] }}" r="2.6"/></svg>{% endif %}</td>
+                      <td class="num ph-col-n">{{ row.count }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+                {% if grid.sin_datos %}<p class="ph-pane-sin">Sin anuncios en la ventana: {{ grid.sin_datos | join(", ") }}.</p>{% endif %}
+                <p class="ph-pane-nota">El cambio es contra los {{ window_days }} días anteriores y va sin flecha ni color: una baja es buena noticia para quien compra y mala para quien vende.</p>
+                {% else %}
+                <p class="ph-note">Ningún anuncio de {{ grid.product_name }} en los últimos {{ window_days }} días.</p>
+                {% endif %}
+                <details class="ph-pane-mas">
+                  <summary>Detalle por provincia y formato</summary>
+                  <div class="ph-pane-mas-body">
               {% if panel.blocks %}
               {% for bloque in panel.blocks %}
               {% set cifra = bloque.headline %}
@@ -1798,12 +1906,15 @@
                    entrada —el operador la pidió así explícitamente. #}
                 <a class="ph-fpanel-detail" href="{{ panel.light_query }}">Vista simple para compartir</a>
               </div>
+                  </div>
+                </details>
+              </div>
+              {% endfor %}
             </div>
             <span class="ph-grip ph-grip-e" data-win-grip="e" aria-hidden="true"></span>
             <span class="ph-grip ph-grip-s" data-win-grip="s" aria-hidden="true"></span>
             <span class="ph-grip ph-grip-se" data-win-grip="se" aria-hidden="true"></span>
         </section>
-        {% endfor %}
       </div>
       {% endif %}
 
@@ -1837,7 +1948,11 @@
          que la leyenda de abajo tiene que seguirla — si no, mostraba
          «Publicada/En ingesta/Sin datos» al lado de un mapa que ya no
          pintaba ninguno de esos tres estados. #}
-      {% if selected_layer == 'densidad' or selected_province %}
+      {% if selected_layer == 'precio' %}
+      <div class="ph-density-ramp ph-price-ramp" aria-hidden="true"></div>
+      <p class="ph-density-labels"><span>Más barata</span><span>Más cara entre las provincias con dato</span></p>
+      <p class="ph-canvas-count">El tono compara las provincias entre sí para el producto de la pestaña abierta; ninguna es «buena» ni «mala». Gris: sin anuncios en la ventana.</p>
+      {% elif selected_layer == 'densidad' or selected_province %}
       <div class="ph-density-ramp" aria-hidden="true"></div>
       <p class="ph-density-labels"><span>Sin anuncios</span><span>{{ map.provinces[0].max_rows }} (la que más tiene)</span></p>
       {% if selected_province %}
@@ -2205,16 +2320,74 @@
     return porSlug;
   }
 
+  /* Capa «precio» (2026-09-21, ventana con pestañas): cada provincia se
+     tiñe entre `--ph-price-low` y `--ph-price-high` según su mediana del
+     producto de la pestaña abierta (`fila.precio[slug].t`, de 0 a 1,
+     relativo a las provincias con dato del propio producto: sin umbral,
+     §12.6). Sin verde ni rojo. La pestaña abierta es estado del cliente:
+     cambiarla repinta los polígonos sin volver a armar el mapa. */
+  var pestanaActiva = "";
+  var tipoSparkline = "line";
+  var pestanasConocidas = [];
+  var estadoMapa = null;
+  var poligonos = null;
+
+  function mezclarColor(desde, hasta, t) {
+    var a = /^#([0-9a-f]{6})$/i.exec(desde), b = /^#([0-9a-f]{6})$/i.exec(hasta);
+    if (!a || !b) return hasta;
+    var x = parseInt(a[1], 16), y = parseInt(b[1], 16), canal = [16, 8, 0].map(function (d) {
+      var p = (x >> d) & 255, q = (y >> d) & 255;
+      return Math.round(p + (q - p) * t);
+    });
+    return "rgb(" + canal.join(",") + ")";
+  }
+
+  /* Lo que la ventana con pestañas le tapa al mapa, como [derecha, abajo] en
+     píxeles: en escritorio flota a la derecha y en angosto se apila abajo. El
+     mapa se encuadra en lo que queda libre, para que Cuba no quede escondida
+     detrás de la tabla (en el prototipo B el mapa se corría a la izquierda). */
+  function espacioBajoLaVentana() {
+    var ventana = document.querySelector(".ph-tabbed");
+    if (!ventana) return [0, 0];
+    var caja = ventana.getBoundingClientRect();
+    if (angosto.matches) return [0, Math.max(0, window.innerHeight - caja.top)];
+    return [Math.max(0, window.innerWidth - caja.left), 0];
+  }
+
+  function precioDe(fila) {
+    return (fila.precio && fila.precio[pestanaActiva]) || null;
+  }
+
+  function textoDelTooltip(nombre, fila, capa) {
+    var base = nombre + " — " + fila.label + ", " + fila.rows + " observaciones";
+    var precio = capa === "precio" ? precioDe(fila) : null;
+    return precio ? nombre + " — " + precio.m + " · " + fila.rows + " observaciones" : base;
+  }
+
   function estiloDeProvincia(slug, datos, capa, provinciaElegida) {
     var fila = datos[slug];
     if (!fila) return { fillOpacity: 0, opacity: 0 };
     var esElegida = provinciaElegida && slug === provinciaElegida;
+    var porPrecio = capa === "precio";
     // Con una provincia elegida el mapa ya pinta por densidad aunque `capa`
     // siga en «publicación» — mismo criterio que ya regía el SVG desde el
-    // 2026-09-11, «acercarse revela otra cosa».
-    var porDensidad = capa === "densidad" || !!provinciaElegida;
+    // 2026-09-11, «acercarse revela otra cosa». La capa de precio no: ahí la
+    // provincia elegida se marca con el borde y el tinte sigue comparando.
+    var porDensidad = capa === "densidad" || (!!provinciaElegida && !porPrecio);
     var relleno, trazo, opacidadRelleno;
-    if (porDensidad) {
+    if (porPrecio) {
+      var precio = precioDe(fila);
+      trazo = tokenCSS("--m3-outline-variant");
+      if (precio) {
+        // Nunca desde 0: la provincia más barata tiene que verse teñida y no
+        // confundirse con el fondo del mapa.
+        relleno = mezclarColor(tokenCSS("--ph-price-low"), tokenCSS("--ph-price-high"), 0.15 + 0.85 * precio.t);
+        opacidadRelleno = 0.85;
+      } else {
+        relleno = tokenCSS("--m3-surface-container-high");
+        opacidadRelleno = 0.55;
+      }
+    } else if (porDensidad) {
       relleno = tokenCSS("--ph-accent");
       trazo = tokenCSS("--m3-outline-variant");
       opacidadRelleno = 0.12 + 0.78 * fila.density_ratio;
@@ -2229,11 +2402,11 @@
     // ningún color. Se atenúan en vez de esconderse — mismo «resaltar»
     // que ya usan los gráficos de comparación entre provincias
     // (`ph-compara-fila.is-atenuada`), mismo vocabulario, no uno nuevo.
-    if (provinciaElegida && !esElegida) opacidadRelleno *= 0.35;
+    if (provinciaElegida && !esElegida && !porPrecio) opacidadRelleno *= 0.35;
     // La provincia enfocada no necesita relleno: el borde ya la marca y la
     // insignia/panel dicen la cifra — el sombreado solo competía
     // visualmente (pedido del operador, 2026-09-13).
-    if (esElegida) opacidadRelleno = 0;
+    if (esElegida && !porPrecio) opacidadRelleno = 0;
     return {
       fillColor: relleno,
       color: trazo,
@@ -2276,11 +2449,16 @@
     var datos = datosDelMapa();
     var capa = stage.getAttribute("data-capa") || "publicacion";
     var provinciaElegida = stage.getAttribute("data-provincia") || "";
+    estadoMapa = { datos: datos, capa: capa, provincia: provinciaElegida };
+    poligonos = null;
 
     // `zoomControl: false` (2026-09-13): Leaflet dibuja el suyo arriba a la
     // izquierda por defecto, justo donde vive el compás — el +/- del dock
     // (`.ph-menu-zoom`) lo reemplaza, ver el listener delegado más abajo.
-    mapaLeaflet = L.map(contenedor, { attributionControl: true, scrollWheelZoom: true, zoomControl: false });
+    // `zoomSnap: 0.25`: con el zoom entero de Leaflet, encuadrar Cuba en lo
+    // que deja libre la ventana con pestañas saltaba al nivel entero de abajo
+    // y el mapa quedaba a la mitad. El +/- del dock sigue moviendo de a 1.
+    mapaLeaflet = L.map(contenedor, { attributionControl: true, scrollWheelZoom: true, zoomControl: false, zoomSnap: 0.25 });
     // Los dos créditos van acá y no en un `<p>` aparte: el control de
     // atribución de Leaflet ocupa esa misma esquina, y tener las dos cosas
     // era una caja encima de la otra. OSM es ODbL: la atribución no es
@@ -2300,10 +2478,15 @@
         onEachFeature: function (feature, layer) {
           var fila = datos[feature.properties.slug];
           if (!fila) return;
-          layer.bindTooltip(feature.properties.name + " — " + fila.label + ", " + fila.rows + " observaciones");
-          var estiloBase = estiloDeProvincia(feature.properties.slug, datos, capa, provinciaElegida);
-          layer.on("mouseover", function () { layer.setStyle(estiloAlPasarElMouse(estiloBase)); });
-          layer.on("mouseout", function () { layer.setStyle(estiloBase); });
+          layer.bindTooltip(textoDelTooltip(feature.properties.name, fila, capa));
+          layer.on("mouseover", function () {
+            layer.setStyle(estiloAlPasarElMouse(estiloDeProvincia(feature.properties.slug, datos, capa, provinciaElegida)));
+            marcarFila(feature.properties.slug, true);
+          });
+          layer.on("mouseout", function () {
+            layer.setStyle(estiloDeProvincia(feature.properties.slug, datos, capa, provinciaElegida));
+            marcarFila(feature.properties.slug, false);
+          });
           layer.on("click", function () { navegarAProvincia(fila.query); });
 
           // Insignia de esta provincia (`#ph-map-badge-<slug>`,
@@ -2330,6 +2513,7 @@
         },
       }).addTo(mapaLeaflet);
 
+      poligonos = capaProvincias;
       var capaElegida = null;
       if (provinciaElegida) {
         capaProvincias.eachLayer(function (layer) {
@@ -2337,9 +2521,13 @@
         });
       }
       if (capaElegida) {
-        mapaLeaflet.fitBounds(capaElegida.getBounds(), { padding: [24, 24] });
+        var libre = espacioBajoLaVentana();
+        mapaLeaflet.fitBounds(capaElegida.getBounds(), {
+          paddingTopLeft: [24, 24], paddingBottomRight: [24 + libre[0], 24 + libre[1]],
+        });
       } else {
-        mapaLeaflet.fitBounds(capaProvincias.getBounds());
+        var reservado = espacioBajoLaVentana();
+        mapaLeaflet.fitBounds(capaProvincias.getBounds(), { paddingBottomRight: reservado });
       }
     }
 
@@ -2568,6 +2756,142 @@
     }
   }
 
+
+  /* Ventana con pestañas (prototipo B, 2026-09-21). Todo delegado en
+     `document` y reaplicado en cada swap de htmx, que re-renderiza `#ph-live`
+     entero (mismo motivo que `cerrarOptimista`). Sin JS la ventana sigue
+     siendo una tabla legible: la primera pestaña abierta y las demás
+     ocultas, con el enlace de cada provincia. */
+  function repintarProvincias() {
+    if (!poligonos || !estadoMapa) return;
+    poligonos.eachLayer(function (capa) {
+      var slug = capa.feature.properties.slug;
+      var fila = estadoMapa.datos[slug];
+      capa.setStyle(estiloDeProvincia(slug, estadoMapa.datos, estadoMapa.capa, estadoMapa.provincia));
+      if (fila) capa.setTooltipContent(textoDelTooltip(capa.feature.properties.name, fila, estadoMapa.capa));
+    });
+  }
+
+  function marcarFila(slug, encendida) {
+    var fila = document.querySelector('.ph-pane:not([hidden]) tr[data-slug="' + slug + '"]');
+    if (fila) fila.classList[encendida ? "add" : "remove"]("is-hover");
+  }
+
+  function resaltarPoligono(slug, encendido) {
+    if (!poligonos || !estadoMapa) return;
+    poligonos.eachLayer(function (capa) {
+      if (capa.feature.properties.slug !== slug) return;
+      var estilo = estiloDeProvincia(slug, estadoMapa.datos, estadoMapa.capa, estadoMapa.provincia);
+      capa.setStyle(encendido ? estiloAlPasarElMouse(estilo) : estilo);
+    });
+  }
+
+  function activarPestana(slug, sinRepintar) {
+    var ventana = document.querySelector(".ph-tabbed");
+    if (!ventana) { pestanaActiva = ""; return; }
+    var botones = Array.prototype.slice.call(ventana.querySelectorAll(".ph-tab-btn"));
+    var existe = botones.some(function (b) { return b.getAttribute("data-product") === slug; });
+    if (!existe) slug = botones.length ? botones[0].getAttribute("data-product") : "";
+    botones.forEach(function (b) {
+      var abierta = b.getAttribute("data-product") === slug;
+      b.setAttribute("aria-selected", abierta ? "true" : "false");
+      b.parentNode.classList[abierta ? "add" : "remove"]("is-active");
+    });
+    Array.prototype.forEach.call(ventana.querySelectorAll(".ph-pane"), function (panel) {
+      panel.hidden = panel.getAttribute("data-product") !== slug;
+    });
+    pestanaActiva = slug;
+    if (!sinRepintar) repintarProvincias();
+  }
+
+  function elegirTipoSparkline(tipo) {
+    var ventana = document.querySelector(".ph-tabbed");
+    if (!ventana) return;
+    tipoSparkline = tipo;
+    ventana.setAttribute("data-spark", tipo);
+    Array.prototype.forEach.call(ventana.querySelectorAll(".ph-seg-btn"), function (b) {
+      var esta = b.getAttribute("data-spark") === tipo;
+      b.classList[esta ? "add" : "remove"]("is-on");
+      b.setAttribute("aria-pressed", esta ? "true" : "false");
+    });
+  }
+
+  function ordenarTabla(boton) {
+    var tabla = boton.closest("table");
+    if (!tabla) return;
+    var clave = boton.getAttribute("data-sort");
+    var celda = boton.parentNode;
+    var actual = celda.getAttribute("aria-sort");
+    var direccion = actual === "descending" ? "ascending"
+      : actual === "ascending" ? "descending"
+      : (clave === "name" ? "ascending" : "descending");
+    Array.prototype.forEach.call(tabla.querySelectorAll("thead th[aria-sort]"), function (th) {
+      th.setAttribute("aria-sort", "none");
+    });
+    celda.setAttribute("aria-sort", direccion);
+    var signo = direccion === "ascending" ? 1 : -1;
+    var cuerpo = tabla.tBodies[0];
+    var filas = Array.prototype.slice.call(cuerpo.rows);
+    filas.sort(function (a, b) {
+      var x = a.getAttribute("data-" + clave);
+      var y = b.getAttribute("data-" + clave);
+      if (clave === "name") return signo * x.localeCompare(y, "es");
+      var nx = parseFloat(x), ny = parseFloat(y);
+      // Una fila sin cambio no tiene qué comparar: va al final en cualquier
+      // sentido, no entre las que bajaron y las que subieron.
+      if (isNaN(nx) && isNaN(ny)) return 0;
+      if (isNaN(nx)) return 1;
+      if (isNaN(ny)) return -1;
+      return signo * (nx - ny);
+    });
+    filas.forEach(function (fila) { cuerpo.appendChild(fila); });
+  }
+
+  function iniciarPestanas() {
+    var ventana = document.querySelector(".ph-tabbed");
+    if (!ventana) { pestanaActiva = ""; pestanasConocidas = []; return; }
+    var actuales = Array.prototype.map.call(ventana.querySelectorAll(".ph-tab-btn"), function (b) {
+      return b.getAttribute("data-product");
+    });
+    // Un producto recién prendido abre su pestaña; si no, se conserva la que
+    // el visitante tenía abierta (el swap de htmx la habría vuelto a la primera).
+    var nuevos = actuales.filter(function (slug) { return pestanasConocidas.indexOf(slug) === -1; });
+    var abrir = pestanasConocidas.length && nuevos.length ? nuevos[nuevos.length - 1] : pestanaActiva;
+    pestanasConocidas = actuales;
+    elegirTipoSparkline(tipoSparkline);
+    activarPestana(abrir, true);
+  }
+
+  function clicEnLaVentana(ev) {
+    var blanco = ev.target.closest && ev.target.closest(".ph-tabbed");
+    if (!blanco) return;
+    var pestana = ev.target.closest(".ph-tab-btn");
+    if (pestana) { activarPestana(pestana.getAttribute("data-product")); return; }
+    var orden = ev.target.closest("[data-sort]");
+    if (orden) { ordenarTabla(orden); return; }
+    var tipo = ev.target.closest("[data-spark]");
+    if (tipo) elegirTipoSparkline(tipo.getAttribute("data-spark"));
+  }
+
+  function filaBajoElMouse(ev) {
+    return ev.target.closest ? ev.target.closest(".ph-pgrid tbody tr[data-slug]") : null;
+  }
+  document.addEventListener("mouseover", function (ev) {
+    var fila = filaBajoElMouse(ev);
+    if (fila && !(ev.relatedTarget && fila.contains(ev.relatedTarget))) {
+      fila.classList.add("is-hover");
+      resaltarPoligono(fila.getAttribute("data-slug"), true);
+    }
+  });
+  document.addEventListener("mouseout", function (ev) {
+    var fila = filaBajoElMouse(ev);
+    if (fila && !(ev.relatedTarget && fila.contains(ev.relatedTarget))) {
+      fila.classList.remove("is-hover");
+      resaltarPoligono(fila.getAttribute("data-slug"), false);
+    }
+  });
+
+  document.addEventListener("click", clicEnLaVentana);
   document.addEventListener("click", cerrarOptimista);
   document.addEventListener("click", zoomDelMapa);
   document.addEventListener("click", alternarCompas);
@@ -2579,6 +2903,8 @@
     deshacerCierre = null;
   });
   document.addEventListener("htmx:afterSettle", pintarTodas);
+  // Antes que el mapa: `estiloDeProvincia()` lee la pestaña abierta.
+  document.addEventListener("htmx:afterSettle", iniciarPestanas);
   document.addEventListener("htmx:afterSettle", inicializarMapa);
   // Modo oscuro (2026-09-16, `_theme_toggle_script.html`): los polígonos de
   // provincia los pinta `estiloDeProvincia()` con `tokenCSS()` —lee el color
@@ -2591,6 +2917,7 @@
   window.addEventListener("resize", pintarTodas);
   if (angosto.addEventListener) angosto.addEventListener("change", pintarTodas);
   pintarTodas();
+  iniciarPestanas();
   inicializarMapa();
 })();
 </script>

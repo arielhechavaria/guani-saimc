@@ -49,6 +49,7 @@ from saimc.web.product_nav import (
     build_province_nav,
     build_view_menu,
     build_window_nav,
+    effective_layer,
     product_slug,
     resolve_days,
     resolve_layer,
@@ -800,9 +801,12 @@ class TestPanelesFlotantes:
 
         texto = client.get("/?productos=arroz,aceite").text
 
-        assert texto.count('class="ph-fpanel"') == 2
-        assert '<span class="ph-fpanel-name">Arroz</span>' in texto
-        assert '<span class="ph-fpanel-name">Aceite</span>' in texto
+        # Una sola ventana con una pestaña por producto (prototipo B,
+        # 2026-09-21), no una pila de paneles.
+        assert texto.count('class="ph-fpanel ph-tabbed"') == 1
+        assert texto.count('role="tab"') == 2
+        assert 'aria-controls="ph-panel-arroz">Arroz</button>' in texto
+        assert 'aria-controls="ph-panel-aceite">Aceite</button>' in texto
 
     def test_sin_productos_no_hay_pila_de_paneles(
         self, client: TestClient, session: Session
@@ -813,7 +817,7 @@ class TestPanelesFlotantes:
 
         assert 'class="ph-panel-stack"' not in texto
 
-    def test_el_panel_y_su_chip_comparten_data_product(
+    def test_la_pestania_y_su_chip_comparten_data_product(
         self, client: TestClient, session: Session
     ) -> None:
         """Contrato del cierre optimista (2026-09-11): al tocar la × de un
@@ -828,7 +832,8 @@ class TestPanelesFlotantes:
         texto = client.get("/?productos=arroz,aceite").text
 
         for slug in ("arroz", "aceite"):
-            assert f'class="ph-fpanel" data-win="{slug.capitalize()}" data-product="{slug}"' in texto
+            assert f'role="tab" class="ph-tab-btn" id="ph-tab-{slug}" data-product="{slug}"' in texto
+            assert f'role="tabpanel" id="ph-panel-{slug}" data-product="{slug}"' in texto
             assert (
                 f'hx-get="/?productos=arroz,aceite&amp;desde={desde.isoformat()}'
                 f'&amp;hasta={hasta.isoformat()}" data-product="{slug}"'
@@ -1245,7 +1250,7 @@ class TestVentanasArrastrables:
 
         texto = client.get("/?productos=arroz,aceite").text
 
-        assert texto.count('<section class="ph-fpanel" data-win=') == 2
+        assert texto.count('<section class="ph-fpanel ph-tabbed" data-win=') == 1
         # Nada sale minimizado ni expandido del servidor: el estado lo aplica
         # el script en el navegador.
         assert 'class="ph-fpanel is-' not in texto
@@ -1367,14 +1372,32 @@ class TestResolveDays:
 
 
 class TestResolveLayer:
-    def test_acepta_las_dos_capas(self) -> None:
+    def test_acepta_las_tres_capas(self) -> None:
         assert resolve_layer("publicacion") == "publicacion"
         assert resolve_layer("densidad") == "densidad"
+        assert resolve_layer("precio") == "precio"
 
     def test_cae_al_default_ante_basura(self) -> None:
         assert resolve_layer(None) == DEFAULT_LAYER
         assert resolve_layer("") == DEFAULT_LAYER
-        assert resolve_layer("precio") == DEFAULT_LAYER
+        assert resolve_layer("verde") == DEFAULT_LAYER
+
+    def test_el_default_es_precio(self) -> None:
+        """Elegir un producto tiene que teñir el mapa sin que nadie toque la
+        capa; quien quiera la de siempre la pide y viaja como `?capa=publicacion`."""
+        assert DEFAULT_LAYER == "precio"
+
+
+class TestEffectiveLayer:
+    def test_sin_productos_precio_no_tiene_que_pintar_y_cae_a_publicacion(self) -> None:
+        assert effective_layer("precio", []) == "publicacion"
+
+    def test_con_productos_precio_se_queda(self) -> None:
+        assert effective_layer("precio", ["Arroz"]) == "precio"
+
+    def test_las_otras_capas_no_dependen_de_los_productos(self) -> None:
+        assert effective_layer("densidad", []) == "densidad"
+        assert effective_layer("publicacion", ["Arroz"]) == "publicacion"
 
 
 class TestResolveVista:
@@ -1391,13 +1414,24 @@ class TestResolveVista:
 class TestBuildLayerNav:
     DESDE, HASTA = date(2026, 8, 15), date(2026, 8, 25)
 
-    def test_dos_capas_marcando_la_activa(self) -> None:
-        elegidas = build_layer_nav("densidad", selected_desde=self.DESDE, selected_hasta=self.HASTA)
+    def test_con_productos_hay_tres_capas_marcando_la_activa(self) -> None:
+        elegidas = build_layer_nav(
+            "densidad",
+            active_products=["Arroz"],
+            selected_desde=self.DESDE,
+            selected_hasta=self.HASTA,
+        )
         por_slug = {c.slug: c for c in elegidas}
 
-        assert len(elegidas) == 2
+        assert [c.slug for c in elegidas] == ["publicacion", "densidad", "precio"]
         assert por_slug["densidad"].is_selected
         assert not por_slug["publicacion"].is_selected
+
+    def test_sin_productos_no_se_ofrece_precio(self) -> None:
+        """Sin un producto abierto no hay de qué pintar el precio."""
+        elegidas = build_layer_nav("publicacion", selected_desde=self.DESDE, selected_hasta=self.HASTA)
+
+        assert [c.slug for c in elegidas] == ["publicacion", "densidad"]
 
     def test_el_enlace_preserva_productos_provincia_rango_y_ventanas(self) -> None:
         elegidas = build_layer_nav(
@@ -1409,13 +1443,17 @@ class TestBuildLayerNav:
             ver=["cobertura"],
         )
         por_slug = {c.slug: c for c in elegidas}
-
-        assert por_slug["densidad"].query == (
+        base = (
             f"/?productos=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
-            f"&hasta={self.HASTA.isoformat()}&ver=cobertura&capa=densidad"
+            f"&hasta={self.HASTA.isoformat()}&ver=cobertura"
         )
-        # La propia capa activa no ensucia la URL con `capa=publicacion`.
-        assert "capa=" not in por_slug["publicacion"].query
+
+        assert por_slug["densidad"].query == f"{base}&capa=densidad"
+        # La capa por defecto es la única que no ensucia la URL: la de siempre
+        # (publicación) ahora viaja explícita, porque sin ella el mapa se tiñe
+        # por precio.
+        assert por_slug["publicacion"].query == f"{base}&capa=publicacion"
+        assert "capa=" not in por_slug["precio"].query
 
 
 class TestBuildWindowNav:
@@ -1786,13 +1824,16 @@ class TestFiltroPorProvinciaEnLaRuta:
         self._seed(session)
 
         texto = client.get("/?provincia=la-habana&producto=arroz").text
-        panel = texto.split('class="ph-fpanel"')[1].split("</section>")[0]
+        ventana = texto.split('class="ph-fpanel ph-tabbed"')[1].split("</section>")[0]
+        # La tabla por provincia compara las 16 (es para lo que sirve); el
+        # detalle de la pestaña sí se acota a la provincia elegida.
+        panel = ventana.split('class="ph-pane-mas"')[1]
 
         assert panel.count('class="ph-cifra"') == 1
         assert 'aria-label="Arroz en La Habana"' in panel
         assert "Santiago de Cuba" not in panel
-        assert 'class="ph-fpanel-illustration"' in panel
-        assert "ph-fpanel-icon" not in panel
+        assert 'class="ph-fpanel-illustration"' in ventana
+        assert "ph-fpanel-icon" not in ventana
 
     def _insignia(self, texto: str, slug: str) -> str:
         return texto.split(f'id="ph-map-badge-{slug}"')[1].split("</template>")[0]

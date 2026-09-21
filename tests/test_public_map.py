@@ -321,8 +321,9 @@ class TestRutaPublica:
 
     def test_el_mapa_no_colorea_por_precio(self, client: TestClient) -> None:
         """El coloreado verde/amarillo/rojo de §6.7 necesita un umbral de
-        muestra que §12.6 prohíbe inventar. El mapa distingue cobertura y nada
-        más; las tarjetas sí publican precio, con su rótulo y su n.
+        muestra que §12.6 prohíbe inventar. Desde el 2026-09-21 el mapa tiene una
+        capa «precio», pero de un solo matiz y relativa a las provincias con
+        dato: ninguna clase dice «caro» ni «barato».
 
         No hay ningún `is-caro`/`is-barato`/`is-promedio` en ningún lado del
         proyecto —el coloreado real corre en JS y solo conoce `state` y

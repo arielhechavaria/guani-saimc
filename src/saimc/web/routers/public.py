@@ -51,6 +51,7 @@ from saimc.web.price_charts import (
     build_cell_ads,
     build_evolution_blocks,
     build_headlines,
+    build_median_steps,
     build_month_vs_month,
     build_province_comparison,
     build_range_series,
@@ -62,6 +63,7 @@ from saimc.web.product_nav import (
     build_view_menu,
     build_window_nav,
     download_href,
+    effective_layer,
     product_slug,
     products_query,
     resolve_layer,
@@ -72,6 +74,7 @@ from saimc.web.product_nav import (
     resolve_vista,
     resolve_window,
 )
+from saimc.web.province_grid import build_product_grids, price_layer
 from saimc.web.series_view import build_series
 from saimc.web.watchlist_view import build_watchlist
 
@@ -293,6 +296,9 @@ def _render_home(
     hoy = ventana_hasta
     selected_vista = resolve_vista(vista)
     selected_layer = resolve_layer(capa)
+    # `selected_layer` es la que viaja en los enlaces; `map_layer` la que el
+    # mapa dibuja: «precio» sin ningún producto abierto no tiene qué pintar.
+    map_layer = effective_layer(selected_layer, active_products)
     # En el tablero (prototipo E, 2026-09-19) la provincia elegida enfoca solo
     # la lista de «Todos»; el detalle de un producto compara todas las
     # provincias, que es para lo que sirve. El mapa sí filtra por ella.
@@ -441,6 +447,16 @@ def _render_home(
     # `panel_headlines` (uno por formato) y el último pisaba a los demás.
     cards = attach_trends(cards, slopes)
 
+    # Ventana con pestañas (prototipo B, 2026-09-21): una tabla por producto
+    # activo, con las 16 provincias. La mediana y el cambio salen de los mismos
+    # `slopes` de arriba y la sparkline de las medianas por período de «Cómo se
+    # movió»: ninguna cifra nueva, para que la tabla y los gráficos no se
+    # contradigan. Siempre las 16, aunque haya una provincia elegida: el mapa
+    # se tiñe comparando entre todas.
+    steps = build_median_steps(all_provinces_obs, window_days=window, hoy=hoy)
+    product_grids = build_product_grids(active_products, slopes, steps, all_province_names)
+    price_by_province = price_layer(product_grids)
+
     # «Cómo se movió»: con una provincia elegida, SOLO esa —el operador la
     # marcó como el hueco del zoom (2026-09-11): elegir una provincia dice
     # «solo me interesa esta», y esta ventana seguía mostrando las 16 como si
@@ -501,6 +517,7 @@ def _render_home(
                 "label": province.label,
                 "rows": province.rows,
                 "density_ratio": round(province.density_ratio, 3),
+                "precio": price_by_province.get(province.slug, {}),
                 "query": province_link(province.slug),
             }
             for province in map_view.provinces
@@ -600,14 +617,15 @@ def _render_home(
                 hoy=hoy,
             ),
             "layer_nav": build_layer_nav(
-                selected_layer,
+                map_layer,
                 active_products=active_products,
                 selected_province=prov,
                 selected_desde=ventana_desde,
                 selected_hasta=ventana_hasta,
                 ver=open_views,
             ),
-            "selected_layer": selected_layer,
+            "selected_layer": map_layer,
+            "product_grids": product_grids,
             "province_comparisons": build_province_comparison(all_provinces_obs),
             "evolution_blocks": build_evolution_blocks(
                 evolution_obs, evolution_previous, window_days=window, hoy=hoy

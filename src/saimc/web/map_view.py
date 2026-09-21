@@ -16,6 +16,11 @@ su estado; `build_map` los recibe de afuera (`_all_province_names`, la
 consulta a `Province` que ya usaba `resolve_province`) en vez de leerlos de un
 archivo de geometría, así que ya no depende de que exista ningún SVG.
 
+**La capa «precio» no vive acá** (2026-09-21, ventana con pestañas): el tinte
+por producto sale de `province_grid.price_layer` y viaja en la misma fila de
+`#ph-map-data`. Es relativo a las provincias con dato y sin umbral, así que no
+choca con lo que sigue.
+
 **Por qué no hay un umbral de «datos suficientes».** `spec.md` §6.7 describe el
 gris del mapa como «sin datos suficientes», pero nunca dice cuántas
 observaciones son suficientes, y §12.6 es explícita: los umbrales que la

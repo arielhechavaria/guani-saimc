@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from saimc.web.card_view import ProductCard
 from saimc.web.panel_view import build_product_panels
+from saimc.web.product_nav import DEFAULT_LAYER
 
 HOY = date(2026, 9, 14)
 DESDE = HOY - timedelta(days=30)
@@ -21,7 +22,7 @@ def _panels(
     selected_desde: date = DESDE,
     selected_hasta: date = HOY,
     ver: Sequence[str] = (),
-    capa: str = "publicacion",
+    capa: str = DEFAULT_LAYER,
 ) -> list:
     """`build_product_panels` con el rango de calendario de siempre en estos
     tests (`DESDE`-`HOY`) ya puesto — la mayoría de estos casos no ejercita

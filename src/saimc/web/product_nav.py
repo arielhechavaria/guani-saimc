@@ -32,10 +32,17 @@ WINDOW_CHOICES: tuple[int, ...] = (7, 30, 90)
 #: Capas del mapa (2026-09-11): «publicación» es la de siempre (§9.0,
 #: vinculante); «densidad» es puramente presentacional —sombrea por
 #: `MapProvince.density_ratio`, relativo al máximo actual, sin ningún umbral
-#: de los que §12.6 prohíbe inventar—. La clave viaja en `?capa=`.
-LAYER_CHOICES: tuple[str, ...] = ("publicacion", "densidad")
-DEFAULT_LAYER = "publicacion"
-
+#: de los que §12.6 prohíbe inventar—. «Precio» (2026-09-21, ventana con
+#: pestañas) tiñe cada provincia según la mediana del producto de la pestaña
+#: abierta, relativa a las provincias con dato y sin umbral ni verde/rojo: es
+#: la primera capa que toca el precio (docs/decisions.md, 2026-09-21). La clave
+#: viaja en `?capa=`.
+LAYER_CHOICES: tuple[str, ...] = ("publicacion", "densidad", "precio")
+#: La default es «precio» para que elegir un producto tiñe el mapa sin tocar
+#: nada; sin producto no hay de qué pintar y `effective_layer` la baja a
+#: «publicación». Quien quiera la capa de siempre la pide, y viaja explícita
+#: (`?capa=publicacion`): solo la default se omite de la URL.
+DEFAULT_LAYER = "precio"
 #: Presentación de `/` (2026-09-16): «mapa» es la de siempre —Leaflet, tiles,
 #: compás—; «tablero» son las mismas tarjetas que ya arma `build_cards`,
 #: agrupadas por provincia, sin mapa ni Leaflet. Mismo criterio que `capa`:
@@ -124,6 +131,19 @@ def resolve_layer(raw: str | None) -> str:
     error, cae a la capa por defecto.
     """
     return raw if raw in LAYER_CHOICES else DEFAULT_LAYER
+
+
+def effective_layer(layer: str, active_products: Sequence[str]) -> str:
+    """La capa que el mapa dibuja de verdad: «precio» sin ningún producto
+    activo no tiene qué pintar y cae a «publicación».
+
+    `layer` (la de `resolve_layer`) es la que viaja en los enlaces, así que no
+    se toca: quitar el último producto y volver a agregar uno recupera el
+    tinte. Esta es solo la que se dibuja y la que marca el selector de capas.
+    """
+    if layer == "precio" and not active_products:
+        return "publicacion"
+    return layer
 
 
 def resolve_vista(raw: str | None) -> str:
@@ -692,14 +712,20 @@ def build_layer_nav(
     selected_hasta: date,
     ver: Sequence[str] = (),
 ) -> list[NavChoice]:
-    """Las dos capas del mapa, marcando la activa y preservando todo lo demás.
+    """Las capas del mapa, marcando la activa y preservando todo lo demás.
 
-    `NavChoice.slug` es la clave de `?capa=` (o cadena vacía para la capa por
-    defecto, mismo criterio que «Todos»/«Todas» en los otros ejes).
+    `selected_layer` es la que el mapa dibuja (`effective_layer`). «Precio» solo
+    se ofrece con algún producto activo: sin uno no hay de qué pintar.
+    `NavChoice.slug` es la clave de `?capa=`; la capa por defecto no la lleva
+    en la URL, mismo criterio que «Todos»/«Todas» en los otros ejes.
     """
     active_slugs = [product_slug(n) for n in active_products]
     prov_slug = product_slug(selected_province) if selected_province else ""
-    etiquetas = {"publicacion": "Publicación", "densidad": "Densidad de anuncios"}
+    etiquetas = {
+        "publicacion": "Publicación",
+        "densidad": "Densidad de anuncios",
+        "precio": "Precio",
+    }
     return [
         NavChoice(
             label=etiquetas[layer],
@@ -715,4 +741,5 @@ def build_layer_nav(
             ),
         )
         for layer in LAYER_CHOICES
+        if layer != "precio" or active_products
     ]
