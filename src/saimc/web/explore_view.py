@@ -31,6 +31,7 @@ línea une períodos que no se tocan.
 from __future__ import annotations
 
 import statistics
+import uuid
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -41,8 +42,9 @@ from typing import Literal
 from saimc.cells import RetailObservation
 from saimc.units import unit_noun
 from saimc.web.card_view import format_price
+from saimc.web.cuba_svg import build_cuba_map
 from saimc.web.price_charts import AdRow, _short_day, observation_format_label, split_outliers
-from saimc.web.product_nav import product_slug
+from saimc.web.product_nav import product_slug, products_query
 from saimc.web.province_grid import Sparkline, _n
 from saimc.web.watchlist_view import _alfabeto
 
@@ -493,3 +495,184 @@ def build_explore_products(
         _build_product(name, observations, window_days=window_days, hoy=hoy, provinces=provinces)
         for name in active_products
     )
+
+
+@dataclass(frozen=True)
+class DetailAd:
+    day_text: str
+    price_text: str
+    format_name: str
+    evidence_id: uuid.UUID
+    is_public: bool
+
+
+@dataclass(frozen=True)
+class ExploreDetail:
+    """Lo que cuenta el panel derecho de la provincia elegida."""
+
+    name: str
+    sub: str
+    median_text: str
+    change_text: str
+    count: int
+    #: La mediana semana a semana de las 13 semanas, en un lienzo de 300 × 100.
+    chart: Sparkline | None
+    ymax_text: str
+    ymin_text: str
+    ads: tuple[DetailAd, ...]
+
+
+#: Lienzo del gráfico del detalle, en unidades del `viewBox`.
+DETAIL_W = 300.0
+DETAIL_H = 100.0
+DETAIL_PAD = 8.0
+#: Anuncios que se listan en el detalle; el resto vive en la fila de cada formato.
+DETAIL_ADS = 6
+
+
+def build_explore_detail(
+    product: ExploreProduct, node: ExploreNode, *, limit: int = DETAIL_ADS
+) -> ExploreDetail:
+    """El detalle de una provincia: su cifra, su serie y los anuncios de todos
+    sus formatos, del más reciente al más viejo. Las cifras son las de la fila:
+    el panel no calcula nada que la tabla no diga."""
+    formatos = len(node.children)
+    con_dato = [float(v) for v in node.weekly if v is not None]
+    anuncios = sorted(
+        ((ad, hijo.name) for hijo in node.children for ad in hijo.ads),
+        key=lambda par: -par[0].day.toordinal(),
+    )
+    return ExploreDetail(
+        name=node.name,
+        sub=f"{product.name} · {formatos} formato{'s' if formatos != 1 else ''}",
+        median_text=node.median_text,
+        change_text=node.change_text,
+        count=node.count,
+        chart=sparkline_from_values(node.weekly, width=DETAIL_W, height=DETAIL_H, pad=DETAIL_PAD),
+        ymax_text=format_price(Decimal(str(max(con_dato)))) if con_dato else "",
+        ymin_text=format_price(Decimal(str(min(con_dato)))) if con_dato else "",
+        ads=tuple(
+            DetailAd(ad.day_text, ad.price_text, nombre, ad.evidence_id, ad.evidence_is_public)
+            for ad, nombre in anuncios[:limit]
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class MapCell:
+    slug: str
+    name: str
+    d: str
+    #: 0 (la más barata con dato) a 1 (la más cara); `None` sin anuncios del producto.
+    tint: float | None
+    is_selected: bool
+
+    @property
+    def has_data(self) -> bool:
+        return self.tint is not None
+
+
+@dataclass(frozen=True)
+class ExploreMap:
+    width: float
+    height: float
+    cells: tuple[MapCell, ...]
+
+    @property
+    def viewbox(self) -> str:
+        return f"0 0 {self.width:g} {self.height:g}"
+
+
+#: Ancho del mapa del panel derecho, en unidades del `viewBox`: el SVG escala al
+#: ancho del panel, esto es proporción y no tamaño.
+MAP_W = 340.0
+
+
+def build_explore_map(product: ExploreProduct | None, selected_slug: str | None) -> ExploreMap:
+    """Las 16 provincias con el tinte del producto abierto y la elegida marcada.
+    Sin producto, ninguna tiene dato: el mapa se muestra en blanco, no oculto."""
+    mapa = build_cuba_map(MAP_W)
+    tintes = {n.key: n.tint for n in product.nodes} if product else {}
+    return ExploreMap(
+        width=mapa.width,
+        height=mapa.height,
+        cells=tuple(
+            MapCell(
+                slug=c.slug,
+                name=c.name,
+                d=c.d,
+                tint=tintes.get(c.slug),
+                is_selected=c.slug == selected_slug,
+            )
+            for c in mapa.provinces
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class ExploreLink:
+    """Un producto de la lista de la izquierda o del «+»: marcarlo lo abre y
+    desmarcarlo lo cierra, y el enlace ya lleva esa URL."""
+
+    name: str
+    slug: str
+    count: int
+    is_on: bool
+    query: str
+
+
+@dataclass(frozen=True)
+class ExploreTab:
+    name: str
+    slug: str
+    count: int
+    is_first: bool
+    #: Sin JavaScript cambiar de pestaña es navegar con ese producto primero.
+    query: str
+    close_query: str
+
+
+@dataclass(frozen=True)
+class ExploreNav:
+    products: tuple[ExploreLink, ...]
+    tabs: tuple[ExploreTab, ...]
+    add: tuple[ExploreLink, ...]
+
+
+def build_explore_nav(
+    products: Sequence[ExploreProduct],
+    active: Sequence[str],
+    *,
+    provincia: str,
+    desde: date,
+    hasta: date,
+) -> ExploreNav:
+    """Los enlaces de la vista, en el orden de `products` para la lista y en el
+    orden de apertura para las pestañas. `provincia` es el slug de la elegida
+    (o vacío): viaja en cada enlace para que abrir o cerrar un producto no la
+    suelte."""
+    abiertos = [product_slug(n) for n in active]
+
+    def url(slugs: Sequence[str]) -> str:
+        return products_query(slugs, provincia=provincia, desde=desde, hasta=hasta, vista="explorar")
+
+    def alternar(slug: str) -> str:
+        return url([s for s in abiertos if s != slug] if slug in abiertos else [*abiertos, slug])
+
+    enlaces = tuple(
+        ExploreLink(p.name, p.slug, p.count, p.slug in abiertos, alternar(p.slug)) for p in products
+    )
+    por_slug = {p.slug: p for p in products}
+    tabs = tuple(
+        ExploreTab(
+            name=por_slug[s].name,
+            slug=s,
+            count=por_slug[s].count,
+            is_first=i == 0,
+            query=url([s, *[o for o in abiertos if o != s]]),
+            close_query=url([o for o in abiertos if o != s]),
+        )
+        for i, s in enumerate(abiertos)
+        if s in por_slug
+    )
+    return ExploreNav(products=enlaces, tabs=tabs, add=tuple(e for e in enlaces if not e.is_on))

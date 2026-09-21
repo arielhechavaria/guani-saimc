@@ -31,7 +31,13 @@ from decimal import Decimal
 from typing import ClassVar
 
 from saimc.cells import RetailObservation
-from saimc.web.explore_view import build_explore_products, sparkline_from_values
+from saimc.web.explore_view import (
+    build_explore_detail,
+    build_explore_map,
+    build_explore_nav,
+    build_explore_products,
+    sparkline_from_values,
+)
 from saimc.web.price_charts import build_headlines, build_month_vs_month
 
 HOY = date(2026, 8, 30)
@@ -388,3 +394,129 @@ class TestCoherenciaConElResto:
             )
             assert (hijo.minimum_text, hijo.maximum_text) == (cifra.minimum_text, cifra.maximum_text)
             assert hijo.last_day == cifra.last_day
+
+
+class TestDetalle:
+    """El panel derecho cuenta la provincia elegida: sus cifras, la mediana
+    semana a semana y los anuncios detrás, de todos sus formatos."""
+
+    def _detalle(self, provincia: str = "La Habana"):
+        arroz = _arroz()
+        return build_explore_detail(arroz, _nodo(arroz, provincia))
+
+    def test_el_encabezado_dice_producto_y_cuantos_formatos(self) -> None:
+        assert self._detalle().name == "La Habana"
+        assert self._detalle().sub == "Arroz · 2 formatos"
+        assert self._detalle("Santiago de Cuba").sub == "Arroz · 1 formato"
+
+    def test_las_cifras_son_las_de_la_fila(self) -> None:
+        d = self._detalle()
+
+        assert (d.median_text, d.change_text, d.count) == ("285", "+14%", 6)
+
+    def test_el_grafico_marca_el_maximo_y_el_minimo_de_las_semanas_con_dato(self) -> None:
+        d = self._detalle()
+
+        assert d.chart is not None
+        assert (d.ymax_text, d.ymin_text) == ("300", "250")
+
+    def test_los_anuncios_juntan_los_de_todos_los_formatos_del_mas_reciente_al_mas_viejo(self) -> None:
+        d = self._detalle()
+
+        assert [a.day_text for a in d.ads] == ["27/08", "26/08", "25/08", "18/08", "12/08", "05/08"]
+        assert [a.format_name for a in d.ads] == [
+            "Libra",
+            "Saco de 100 lb",
+            "Libra",
+            "Libra",
+            "Saco de 100 lb",
+            "Libra",
+        ]
+        assert [a.price_text for a in d.ads] == ["300", "240", "320", "290", "250", "280"]
+
+    def test_el_detalle_muestra_como_mucho_seis_anuncios(self) -> None:
+        obs = [_obs("Pollo", "La Habana", 8, 10 + i, str(700 + i)) for i in range(9)]
+        pollo = _productos(["Pollo"], obs)[0]
+
+        assert len(build_explore_detail(pollo, _nodo(pollo, "La Habana")).ads) == 6
+
+
+class TestMapa:
+    def test_trae_las_dieciseis_provincias_en_un_lienzo_fijo(self) -> None:
+        mapa = build_explore_map(_arroz(), "santiago-de-cuba")
+
+        assert len(mapa.cells) == 16
+        assert mapa.width == 340.0
+        assert mapa.viewbox.startswith("0 0 340 ")
+
+    def test_la_elegida_va_marcada_y_con_su_tinte(self) -> None:
+        cells = {c.slug: c for c in build_explore_map(_arroz(), "santiago-de-cuba").cells}
+
+        assert cells["santiago-de-cuba"].is_selected
+        assert cells["santiago-de-cuba"].tint == 1.0
+        assert not cells["la-habana"].is_selected
+        assert cells["la-habana"].tint == 0.0
+
+    def test_una_provincia_sin_anuncios_del_producto_queda_sin_tinte(self) -> None:
+        cells = {c.slug: c for c in build_explore_map(_arroz(), "santiago-de-cuba").cells}
+
+        assert not cells["guantanamo"].has_data
+        assert cells["guantanamo"].tint is None
+        assert cells["camaguey"].tint is None
+
+    def test_sin_producto_ninguna_tiene_dato_y_ninguna_esta_elegida(self) -> None:
+        cells = build_explore_map(None, None).cells
+
+        assert len(cells) == 16
+        assert not any(c.has_data or c.is_selected for c in cells)
+
+
+class TestNavegacion:
+    """Los productos de la izquierda, las pestañas del centro y el «+»: todo
+    son enlaces a la misma vista con otro `?productos=`, así funciona sin
+    JavaScript (P4 lo hace en el cliente)."""
+
+    def _nav(self, activos: list[str]):
+        productos = _productos(["Arroz", "Pollo", "Aceite"])
+        return build_explore_nav(productos, activos, provincia="", desde=date(2026, 7, 31), hasta=HOY)
+
+    def test_la_lista_trae_todos_los_productos_con_su_muestra(self) -> None:
+        nav = self._nav(["Arroz"])
+
+        assert [(p.name, p.count) for p in nav.products] == [("Arroz", 7), ("Pollo", 1), ("Aceite", 0)]
+
+    def test_marcar_agrega_al_final_y_desmarcar_quita_solo_ese(self) -> None:
+        nav = self._nav(["Arroz", "Pollo"])
+        por = {p.name: p for p in nav.products}
+
+        assert por["Arroz"].is_on and por["Pollo"].is_on and not por["Aceite"].is_on
+        assert por["Arroz"].query.startswith("/?productos=pollo&")
+        assert por["Aceite"].query.startswith("/?productos=arroz,pollo,aceite&")
+
+    def test_las_consultas_conservan_el_rango_y_la_vista(self) -> None:
+        por = {p.name: p for p in self._nav(["Arroz"]).products}
+
+        assert (
+            por["Pollo"].query == "/?productos=arroz,pollo&desde=2026-07-31&hasta=2026-08-30&vista=explorar"
+        )
+
+    def test_una_pestania_por_producto_abierto_y_la_primera_es_la_abierta(self) -> None:
+        tabs = self._nav(["Arroz", "Pollo"]).tabs
+
+        assert [(t.name, t.count, t.is_first) for t in tabs] == [("Arroz", 7, True), ("Pollo", 1, False)]
+
+    def test_tocar_una_pestania_la_pone_primera_y_la_x_la_quita(self) -> None:
+        arroz, pollo = self._nav(["Arroz", "Pollo"]).tabs
+
+        assert pollo.query.startswith("/?productos=pollo,arroz&")
+        assert arroz.close_query.startswith("/?productos=pollo&")
+        assert pollo.close_query.startswith("/?productos=arroz&")
+
+    def test_cerrar_la_ultima_deja_la_url_sin_productos(self) -> None:
+        (arroz,) = self._nav(["Arroz"]).tabs
+
+        assert arroz.close_query == "/?desde=2026-07-31&hasta=2026-08-30&vista=explorar"
+
+    def test_el_mas_ofrece_solo_los_que_faltan(self) -> None:
+        assert [p.name for p in self._nav(["Arroz", "Pollo"]).add] == ["Aceite"]
+        assert self._nav(["Arroz", "Pollo", "Aceite"]).add == ()

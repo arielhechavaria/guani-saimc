@@ -22,6 +22,7 @@ import csv
 import io
 import json
 import uuid
+from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import cast
 
@@ -40,6 +41,13 @@ from saimc.web.card_view import (
     province_color_slots,
 )
 from saimc.web.deps import get_db
+from saimc.web.explore_view import (
+    WEEKS,
+    build_explore_detail,
+    build_explore_map,
+    build_explore_nav,
+    build_explore_products,
+)
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import (
     ProductPanel,
@@ -299,6 +307,18 @@ def _render_home(
     # `selected_layer` es la que viaja en los enlaces; `map_layer` la que el
     # mapa dibuja: «precio» sin ningún producto abierto no tiene qué pintar.
     map_layer = effective_layer(selected_layer, active_products)
+    if selected_vista == "explorar":
+        return _render_explore(
+            request,
+            db,
+            pilot=pilot,
+            pilot_names=pilot_names,
+            active_products=active_products,
+            selected_province=selected_province,
+            province_names=all_province_names,
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+        )
     # En el tablero (prototipo E, 2026-09-19) la provincia elegida enfoca solo
     # la lista de «Todos»; el detalle de un producto compara todas las
     # provincias, que es para lo que sirve. El mapa sí filtra por ella.
@@ -667,9 +687,98 @@ def _render_home(
             "card_ads": panel_ads,
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
+            "explorar_href": vista_link("explorar"),
             "watchlist": watchlist,
         },
     )
+
+
+def _render_explore(
+    request: Request,
+    db: Session,
+    *,
+    pilot: frozenset[str],
+    pilot_names: Sequence[str],
+    active_products: list[str],
+    selected_province: str | None,
+    province_names: list[str],
+    desde: date,
+    hasta: date,
+) -> HTMLResponse:
+    """Vista «Explorar» (2026-09-21, prototipo C aprobado por el operador).
+
+    Panel izquierdo con los productos, pestañas por producto abierto con su
+    tabla en el centro y el detalle de la provincia elegida a la derecha. Todo
+    sale de `explore_view`: acá solo se traen las observaciones y se pasan las
+    estructuras a la plantilla.
+
+    Las observaciones cubren lo más largo de tres cosas —la ventana, el período
+    anterior del mismo largo y las 13 semanas de la tendencia— y son de TODAS
+    las provincias y de todos los piloto: la lista de la izquierda necesita la
+    muestra de cada producto aunque no esté abierto. Con muchos productos
+    conviene pedir cada uno al abrirlo (P4).
+    """
+    window = (hasta - desde).days
+    cubre = max(2 * window, WEEKS * 7)
+    obs = _visible_observations(
+        db,
+        pilot=pilot,
+        products=None,
+        province=None,
+        desde=hasta - timedelta(days=cubre),
+        hasta=hasta,
+    )
+    productos = build_explore_products(
+        pilot_names, obs, window_days=window, hoy=hasta, provinces=province_names
+    )
+    por_nombre = {p.name: p for p in productos}
+    activo = por_nombre[active_products[0]] if active_products else None
+    prov_slug = product_slug(selected_province) if selected_province else ""
+    active_slugs = [product_slug(name) for name in active_products]
+
+    elegido = None
+    if activo is not None and activo.nodes:
+        elegido = next(
+            (n for n in activo.nodes if selected_province and n.name == selected_province),
+            activo.nodes[0],
+        )
+
+    def vista_link(destino: str) -> str:
+        return products_query(active_slugs, provincia=prov_slug, desde=desde, hasta=hasta, vista=destino)
+
+    def province_link(slug: str) -> str:
+        return products_query(active_slugs, provincia=slug, desde=desde, hasta=hasta, vista="explorar")
+
+    csv_href = download_href(
+        producto=active_slugs[0] if len(active_slugs) == 1 else "",
+        productos=active_slugs if len(active_slugs) > 1 else (),
+        provincia=prov_slug,
+        desde=desde,
+        hasta=hasta,
+    )
+    respuesta: HTMLResponse = request.app.state.templates.TemplateResponse(
+        request,
+        "public_explore.html",
+        {
+            "vista": "explorar",
+            "ex_nav": build_explore_nav(
+                productos, active_products, provincia=prov_slug, desde=desde, hasta=hasta
+            ),
+            "ex_active": activo,
+            "ex_detail": build_explore_detail(activo, elegido) if activo and elegido else None,
+            "ex_map": build_explore_map(activo, elegido.key if elegido else None),
+            "ex_selected_key": elegido.key if elegido else "",
+            "window_days": window,
+            "selected_desde": desde,
+            "selected_hasta": hasta,
+            "csv_href": csv_href,
+            "mapa_href": vista_link("mapa"),
+            "tablero_href": vista_link("tablero"),
+            "explorar_href": vista_link("explorar"),
+            "province_link": province_link,
+        },
+    )
+    return respuesta
 
 
 @router.get("/", response_class=HTMLResponse)

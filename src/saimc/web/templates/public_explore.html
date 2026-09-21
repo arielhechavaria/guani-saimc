@@ -1,0 +1,406 @@
+{% extends "_public_shell.html" %}
+
+{# Vista «Explorar» (2026-09-21): el prototipo C aprobado por el operador —una
+   tabla densa con filtros y árbol, en tres columnas—, servida por el servidor
+   y legible sin JavaScript. Las cifras las arma `explore_view.py` y el mapa
+   `cuba_svg.py`; acá solo se recorren. Este archivo es la parte 2 de 8 del plan
+   (docs/decisions.md, 2026-09-21): estructura, pestañas, tabla de provincias y
+   panel derecho. El árbol (formatos y anuncios), los filtros y la interacción
+   del cliente llegan en P3–P6. #}
+{% block title %}Explorar precios{% endblock %}
+{% block og_description %}Precios del mercado informal cubano por producto, provincia y formato, verificados anuncio por anuncio.{% endblock %}
+{% block heading %}{% endblock %}
+{% block subtitle %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block head %}
+<style>
+  /* Colores, tipografías y radios salen de los tokens de `design_tokens.css`
+     —claro y oscuro— y no de hex propios: el prototipo se dibujó en claro con
+     los mismos valores. La página es la app: sin el encabezado ni el pie del
+     shell. */
+  .m3-public-top, .m3-public-foot { display: none; }
+  .m3-public { max-width: none; margin: 0; padding: 0; }
+  .m3-public-main { margin: 0; padding: 0; }
+
+  .ph-ex {
+    display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px;
+    height: 100vh; height: 100dvh; overflow: hidden;
+    background: var(--m3-surface); color: var(--m3-on-surface); font-family: var(--m3-font);
+  }
+  :where(.ph-ex) a { color: inherit; text-decoration: none; }
+  :where(.ph-ex) button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+  .ph-ex svg { display: block; }
+  .ph-ex-left, .ph-ex-right { display: flex; flex-direction: column; min-height: 0; background: var(--m3-surface); }
+  .ph-ex-left { border-right: 1px solid var(--m3-outline-variant); }
+  .ph-ex-right { border-left: 1px solid var(--m3-outline-variant); }
+  .ph-ex-center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--m3-surface); }
+
+  /* ── Panel izquierdo ───────────────────────────────────────────────── */
+  .ph-ex-brand { display: flex; align-items: center; gap: 10px; padding: 12px 16px; flex: none;
+                 border-bottom: 1px solid var(--m3-divider); }
+  .ph-ex-brand .ph-brand-avatar { width: 38px; height: 38px; flex: none; }
+  .ph-ex-brand-t { flex: 1; min-width: 0; }
+  .ph-ex-kicker { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ph-accent); }
+  .ph-ex-title { font-family: var(--ph-font-heading); font-size: 19px; line-height: 1.1; }
+  .ph-ex-theme { width: 36px; height: 36px; border-radius: 10px; display: inline-flex; align-items: center;
+                 justify-content: center; color: var(--m3-on-surface-variant); }
+  .ph-ex-theme:hover { background: var(--ph-accent-wash); color: var(--ph-accent); }
+  .ph-ex-views { display: flex; gap: 2px; margin: 10px 16px 0; padding: 3px; border-radius: 100px; flex: none;
+                 background: var(--m3-surface-container); }
+  .ph-ex-views a { flex: 1; min-height: 34px; display: inline-flex; align-items: center; justify-content: center;
+                   border-radius: 100px; font-size: 13px; font-weight: 500; color: var(--m3-on-surface-variant); }
+  .ph-ex-views a.is-on { background: var(--m3-surface); box-shadow: var(--m3-elev-1); color: var(--m3-primary); font-weight: 700; }
+  .ph-ex-ltabs { display: flex; padding: 0 8px; margin-top: 10px; flex: none; border-bottom: 1px solid var(--m3-outline-variant); }
+  .ph-ex-ltab { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; background: none; border: 0; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 500; color: var(--m3-on-surface-variant);
+                border-bottom: 3px solid transparent; margin-bottom: -1px; }
+  .ph-ex-ltab.is-on { color: var(--m3-on-surface); font-weight: 700; border-bottom-color: var(--ph-accent); }
+  .ph-ex-lbody { flex: 1; min-height: 0; overflow: auto; }
+  .ph-ex-lbody[hidden] { display: none; }
+  .ph-ex-block { padding: 12px 16px; border-bottom: 1px solid var(--m3-divider); }
+  .ph-ex-block h5 { margin: 0 0 8px; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+                    font-weight: 500; color: var(--m3-outline); }
+  .ph-ex-hint { margin: 0 0 6px; font-size: 11.5px; line-height: 1.4; color: var(--m3-outline); }
+  .ph-ex-opt { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 0 8px; border-radius: 8px;
+               font-size: 13px; cursor: pointer; }
+  .ph-ex-opt:hover { background: var(--ph-accent-wash); }
+  .ph-ex-opt i { flex: 1; font-style: normal; text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-ex-opt > span:last-child { margin-left: auto; font-size: 11px; color: var(--m3-outline); font-variant-numeric: tabular-nums; }
+  .ph-ex-opt input { width: 16px; height: 16px; margin: 0; accent-color: var(--ph-accent); }
+  .ph-ex-box { position: relative; width: 16px; height: 16px; flex: none; border: 2px solid var(--m3-outline); border-radius: 4px; }
+  .ph-ex-opt.is-on .ph-ex-box { background: var(--ph-accent); border-color: var(--ph-accent); }
+  .ph-ex-opt.is-on .ph-ex-box::after { content: ""; position: absolute; left: 3px; top: 0; width: 4px; height: 8px;
+                                       border: solid var(--ph-on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .ph-ex-step { display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 32px; padding: 0 8px;
+                border-radius: 8px; border: 1px solid var(--m3-outline-variant); font-size: 13px; color: var(--m3-on-surface-variant); }
+  .ph-ex-step + .ph-ex-step { margin-top: 8px; }
+  .ph-ex-step span:last-child { display: inline-flex; align-items: center; gap: 4px; }
+  .ph-ex-step button { width: 24px; height: 24px; border-radius: 6px; font-size: 15px; background: var(--m3-surface-container); }
+  .ph-ex-step output { min-width: 34px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+                       border: 1px solid var(--m3-outline-variant); border-radius: 6px; color: var(--m3-on-surface); }
+  .ph-ex-lfoot { flex: none; padding: 10px 16px; border-top: 1px solid var(--m3-divider); font-size: 12.5px; }
+  .ph-ex-lfoot a { display: inline-flex; align-items: center; gap: 6px; color: var(--ph-accent); font-weight: 500; }
+  .ph-ex-lfoot .m3-icon { font-size: 18px; }
+
+  /* ── Centro: pestañas por producto ───────────────────────────────────── */
+  .ph-ex-tabs { display: flex; align-items: flex-end; gap: 3px; padding: 10px 16px 0; flex: none; position: relative;
+                border-bottom: 1px solid var(--m3-outline-variant); background: var(--m3-surface-container); }
+  .ph-ex-tab { display: inline-flex; align-items: center; height: 36px; border: 1px solid var(--m3-outline-variant);
+               border-bottom: 0; border-radius: 10px 10px 0 0; background: var(--m3-surface-container-high);
+               color: var(--m3-on-surface-variant); font-size: 13.5px; font-weight: 500; }
+  .ph-ex-tab.is-on { background: var(--m3-surface); color: var(--m3-on-surface); font-weight: 700; height: 38px; margin-bottom: -1px; }
+  .ph-ex-tab-btn { display: inline-flex; align-items: center; gap: 8px; height: 100%; padding: 0 4px 0 14px; }
+  .ph-ex-tab-btn small { font-size: 11px; font-weight: 500; color: var(--m3-outline); border-radius: 999px; padding: 1px 7px;
+                         background: color-mix(in srgb, var(--m3-surface) 70%, transparent); }
+  .ph-ex-tab-x { width: 26px; height: 26px; margin-right: 6px; border-radius: 7px; color: var(--m3-outline); font-size: 16px;
+                 line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+  .ph-ex-tab-x:hover { background: var(--ph-accent-wash); color: var(--ph-accent); }
+  .ph-ex-add { position: relative; margin-bottom: 1px; }
+  .ph-ex-add > summary { list-style: none; width: 34px; height: 34px; border-radius: 9px; cursor: pointer; color: var(--ph-accent);
+                         font-size: 20px; line-height: 1; border: 1px dashed var(--m3-outline-variant);
+                         display: inline-flex; align-items: center; justify-content: center; }
+  .ph-ex-add > summary::-webkit-details-marker { display: none; }
+  .ph-ex-add > summary:hover, .ph-ex-add[open] > summary { background: var(--ph-accent-wash); border-color: var(--ph-accent); }
+  .ph-ex-pop { position: absolute; top: 38px; left: 0; z-index: 30; min-width: 230px; max-height: 300px; overflow: auto; padding: 6px;
+               background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: 12px; box-shadow: var(--ph-elev); }
+  .ph-ex-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 20px 8px; flex: none; }
+  .ph-ex-crumb { margin: 0; font-size: 12px; color: var(--m3-outline); }
+  .ph-ex-h2 { margin: 2px 0 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 24px; line-height: 1.15; }
+  .ph-ex-search { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 8px; flex: none;
+                  border: 1px solid var(--m3-outline-variant); background: var(--m3-surface); color: var(--m3-outline); }
+  .ph-ex-search input { font: inherit; font-size: 13px; color: var(--m3-on-surface); border: 0; outline: 0; background: transparent; width: 170px; }
+  .ph-ex-scroll { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--m3-outline-variant); }
+  .ph-ex-grid { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+  .ph-ex-grid th, .ph-ex-grid td { padding: 0 8px; height: 34px; text-align: left; font-weight: 400;
+                                   border-bottom: 1px solid var(--m3-divider); white-space: nowrap; }
+  .ph-ex-grid thead th { position: sticky; top: 0; z-index: 2; background: var(--m3-surface-container); font-size: 10.5px;
+                         letter-spacing: .08em; text-transform: uppercase; font-weight: 500; color: var(--m3-outline);
+                         border-bottom: 1px solid var(--m3-outline-variant); }
+  .ph-ex-grid thead th.num { direction: rtl; }
+  .ph-ex-grid thead th .hd { display: inline-block; direction: ltr; unicode-bidi: isolate; }
+  .ph-ex-grid thead th[aria-sort="descending"] .hd::after { content: " \2193"; color: var(--ph-accent); }
+  .ph-ex-grid thead th[aria-sort="ascending"] .hd::after { content: " \2191"; color: var(--ph-accent); }
+  .ph-ex-grid thead th[aria-sort] { color: var(--m3-on-surface); }
+  .ph-ex-grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ph-ex-row { background: var(--m3-surface); }
+  .ph-ex-row.is-sel, .ph-ex-row:hover { background: var(--ph-accent-wash); }
+  .ph-ex-row th { padding-left: 30px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+  .ph-ex-row td.ph-ex-chg, .ph-ex-row td.ph-ex-last { color: var(--m3-on-surface-variant); }
+  .ph-ex-med b { font-weight: 700; }
+  .ph-ex-spark { width: 92px; height: 24px; overflow: visible; }
+  .ph-ex-spark .a { fill: var(--ph-accent); fill-opacity: .12; stroke: none; }
+  .ph-ex-spark .l { fill: none; stroke: var(--ph-accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .ph-ex-spark circle { fill: var(--ph-accent); }
+  .ph-ex-sin { margin: 0; padding: 12px 20px; font-size: 12px; line-height: 1.5; color: var(--m3-on-surface-variant); }
+  .ph-ex-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+                 padding: 40px; text-align: center; }
+  .ph-ex-empty h2 { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 26px; }
+  .ph-ex-empty p { margin: 0; max-width: 380px; font-size: 14px; line-height: 1.5; color: var(--m3-outline); }
+  .ph-ex-pills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .ph-ex-pill { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px;
+                border: 1px solid var(--m3-outline-variant); background: var(--m3-surface); font-size: 13px; font-weight: 500; }
+  .ph-ex-pill:hover { border-color: var(--ph-accent); color: var(--ph-accent); }
+  .ph-ex-pill small { font-size: 11px; color: var(--m3-outline); }
+  .ph-ex-foot { flex: none; padding: 8px 20px; font-size: 11.5px; line-height: 1.4; color: var(--m3-outline);
+                border-top: 1px solid var(--m3-outline-variant); background: var(--m3-surface); }
+
+  /* ── Panel derecho: mapa y detalle ────────────────────────────────────── */
+  .ph-ex-rblock { padding: 12px 16px; border-bottom: 1px solid var(--m3-divider); }
+  .ph-ex-rblock h5 { margin: 0 0 8px; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; font-weight: 500;
+                     color: var(--m3-outline); }
+  .ph-ex-dlabel { margin: 0; font-size: 12px; color: var(--m3-outline); }
+  .ph-ex-dname { margin-top: 2px; font-family: var(--ph-font-heading); font-size: 26px; line-height: 1.15; }
+  .ph-ex-map { width: 100%; height: auto; }
+  .ph-ex-prov { fill: color-mix(in srgb, var(--ph-price-high) calc((0.15 + 0.85 * var(--t, 0)) * 100%), var(--ph-price-low));
+                stroke: var(--m3-surface); stroke-width: 1; stroke-linejoin: round; }
+  .ph-ex-prov.is-nodata { fill: url(#ph-ex-hatch); }
+  .ph-ex-prov.is-selected { stroke: var(--ph-accent); stroke-width: 2; }
+  .ph-ex-kpis { display: flex; gap: 24px; }
+  .ph-ex-kpi { font-size: 12px; color: var(--m3-outline); }
+  .ph-ex-kpi b { display: block; font-family: var(--ph-font-heading); font-weight: 400; font-size: 22px; line-height: 1.1;
+                 color: var(--m3-on-surface); font-variant-numeric: tabular-nums; }
+  .ph-ex-chartwrap { position: relative; padding-left: 34px; }
+  .ph-ex-chartwrap .y { position: absolute; left: 0; font-size: 10px; color: var(--m3-outline); }
+  .ph-ex-chart { width: 100%; height: auto; }
+  .ph-ex-chart .a { fill: var(--ph-accent); fill-opacity: .12; }
+  .ph-ex-chart .l { fill: none; stroke: var(--ph-accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ph-ex-chart circle { fill: var(--ph-accent); }
+  .ph-ex-ads { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; }
+  .ph-ex-ad { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: center; min-height: 34px; font-size: 12.5px;
+              border-bottom: 1px solid var(--m3-divider); }
+  .ph-ex-ad .d { color: var(--m3-outline); }
+  .ph-ex-ad small { color: var(--m3-outline); font-size: 11px; }
+  .ph-ex-ad .off { color: var(--m3-outline); }
+  .ph-ex-ad a { color: var(--ph-accent); text-decoration: underline; }
+
+  /* ── Angosto: interino hasta P7 (móvil) ───────────────────────────────── */
+  @media (max-width: 720px) {
+    .ph-ex { display: block; height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; }
+    .ph-ex-left { border-right: 0; border-bottom: 1px solid var(--m3-outline-variant); }
+    .ph-ex-ltabs, .ph-ex-lbody, .ph-ex-lfoot { display: none; }
+    .ph-ex-right { display: none; }
+    .ph-ex-views { margin-bottom: 10px; }
+    .ph-ex-views a { min-height: 44px; }
+    .ph-ex-tabs { overflow-x: auto; }
+    .ph-ex-head { flex-direction: column; align-items: stretch; }
+    .ph-ex-scroll { overflow-x: auto; }
+    .ph-ex-grid { min-width: 560px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set activo = ex_active %}
+<div class="ph-ex">
+
+  {# ── Izquierda: vistas, productos y filtros del producto abierto ─────── #}
+  <aside class="ph-ex-left" aria-label="Productos y filtros">
+    <div class="ph-ex-brand">
+      {% include "_guani_avatar.html" %}
+      <div class="ph-ex-brand-t">
+        <div class="ph-ex-kicker">Guani · SAIMC</div>
+        <div class="ph-ex-title">Explorar datos</div>
+      </div>
+      <button type="button" class="ph-ex-theme theme-toggle" aria-pressed="false" aria-label="Cambiar a modo oscuro">
+        <span class="m3-icon theme-toggle-icon-dark" aria-hidden="true">dark_mode</span>
+        <span class="m3-icon theme-toggle-icon-light" aria-hidden="true">light_mode</span>
+      </button>
+    </div>
+    {# Las tres presentaciones de `/`. El prototipo no traía navegación: se agrega
+       porque sin ella esta vista no tendría cómo volver al mapa. #}
+    <nav class="ph-ex-views" aria-label="Presentación">
+      <a class="js-vista-link" data-vista="mapa" href="{{ mapa_href }}">Mapa</a>
+      <a class="js-vista-link" data-vista="tablero" href="{{ tablero_href }}">Tablero</a>
+      <a class="js-vista-link is-on" data-vista="explorar" href="{{ explorar_href }}" aria-current="true">Explorar</a>
+    </nav>
+    <div class="ph-ex-ltabs" role="tablist" aria-label="Panel izquierdo">
+      <button type="button" class="ph-ex-ltab is-on" role="tab" id="ph-ex-ltab-filtros" aria-selected="true" aria-controls="ph-ex-l-filtros">Filtros</button>
+      <button type="button" class="ph-ex-ltab" role="tab" id="ph-ex-ltab-cols" aria-selected="false" aria-controls="ph-ex-l-cols">Columnas</button>
+    </div>
+
+    <div class="ph-ex-lbody" id="ph-ex-l-filtros" role="tabpanel" aria-labelledby="ph-ex-ltab-filtros">
+      <section class="ph-ex-block">
+        <h5>Productos</h5>
+        <p class="ph-ex-hint">Cada producto marcado abre una pestaña en el panel central.</p>
+        {% for it in ex_nav.products %}
+        <a class="ph-ex-opt{% if it.is_on %} is-on{% endif %}" href="{{ it.query }}" aria-pressed="{{ 'true' if it.is_on else 'false' }}"><span class="ph-ex-box" aria-hidden="true"></span><i>{{ it.name }}</i><span>{{ it.count }}</span></a>
+        {% endfor %}
+      </section>
+      {% if activo and activo.has_data %}
+      {# Los controles de abajo están dibujados con los datos reales y todavía no
+         filtran nada: el cliente los conecta en P5. #}
+      <section class="ph-ex-block">
+        <h5>Filtros de {{ activo.name }} · provincia</h5>
+        {% for n in activo.nodes | sort(attribute="name") %}
+        <label class="ph-ex-opt"><input type="checkbox" name="provincia" value="{{ n.key }}"><i>{{ n.name }}</i><span>{{ n.count }}</span></label>
+        {% endfor %}
+      </section>
+      <section class="ph-ex-block">
+        <h5>Formato</h5>
+        {% set formatos = {} %}
+        {% for n in activo.nodes %}{% for h in n.children %}{% if formatos.update({h.name: (formatos.get(h.name, 0) + h.count)}) %}{% endif %}{% endfor %}{% endfor %}
+        {% for nombre, cuantos in formatos.items() | sort %}
+        <label class="ph-ex-opt"><input type="checkbox" name="formato" value="{{ nombre }}"><i>{{ nombre }}</i><span>{{ cuantos }}</span></label>
+        {% endfor %}
+      </section>
+      <section class="ph-ex-block">
+        <h5>Muestra y cambio</h5>
+        <div class="ph-ex-step"><span>Anuncios ≥</span><span><button type="button" aria-label="Menos">−</button><output>0</output><button type="button" aria-label="Más">+</button></span></div>
+        <div class="ph-ex-step"><span>|Cambio| ≥ (%)</span><span><button type="button" aria-label="Menos">−</button><output>0</output><button type="button" aria-label="Más">+</button></span></div>
+      </section>
+      {% endif %}
+    </div>
+
+    <div class="ph-ex-lbody" id="ph-ex-l-cols" role="tabpanel" aria-labelledby="ph-ex-ltab-cols" hidden>
+      <section class="ph-ex-block">
+        <h5>Columnas visibles</h5>
+        {% for col, marcada in (("Mediana", true), ("Cambio", true), ("Rango", false), ("Tendencia (13 semanas)", true), ("Mediana por semana", false), ("Anuncios", true), ("Último", true)) %}
+        <label class="ph-ex-opt"><input type="checkbox"{% if marcada %} checked{% endif %}><i>{{ col }}</i></label>
+        {% endfor %}
+      </section>
+    </div>
+
+    <div class="ph-ex-lfoot"><a href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span>Descargar CSV</a></div>
+  </aside>
+
+  {# ── Centro: una pestaña por producto abierto ────────────────────────── #}
+  <section class="ph-ex-center" aria-label="Precios por producto">
+    <div class="ph-ex-tabs" role="tablist" aria-label="Productos abiertos">
+      {% for t in ex_nav.tabs %}
+      <div class="ph-ex-tab{% if t.is_first %} is-on{% endif %}"><a class="ph-ex-tab-btn" role="tab" id="ph-ex-tab-{{ t.slug }}" aria-selected="{{ 'true' if t.is_first else 'false' }}" aria-controls="ph-ex-pane-{{ t.slug }}" href="{{ t.query }}">{{ t.name }}<small>{{ t.count }}</small></a><a class="ph-ex-tab-x" href="{{ t.close_query }}" aria-label="Cerrar {{ t.name }}">×</a></div>
+      {% endfor %}
+      {% if ex_nav.add %}
+      <details class="ph-ex-add">
+        <summary aria-label="Agregar producto">+</summary>
+        <div class="ph-ex-pop">
+          {% for it in ex_nav.add %}
+          <a class="ph-ex-opt" href="{{ it.query }}"><i>{{ it.name }}</i><span>{{ it.count }} anuncios</span></a>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    </div>
+
+    {% if activo %}
+    <div class="ph-ex-pane" role="tabpanel" id="ph-ex-pane-{{ activo.slug }}" aria-labelledby="ph-ex-tab-{{ activo.slug }}" style="display:flex;flex-direction:column;flex:1;min-height:0">
+      {% if activo.has_data %}
+      <div class="ph-ex-head">
+        <div>
+          <p class="ph-ex-crumb">{{ activo.name }} · {{ activo.currency }} por {{ activo.unit_noun }} · últimos {{ window_days }} días</p>
+          <h2 class="ph-ex-h2">{{ activo.province_count }} provincia{{ "s" if activo.province_count != 1 }} · {{ activo.count }} anuncio{{ "s" if activo.count != 1 }}</h2>
+        </div>
+        <label class="ph-ex-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" placeholder="Buscar" aria-label="Buscar provincia o formato"></label>
+      </div>
+      <div class="ph-ex-scroll">
+        <table class="ph-ex-grid">
+          <colgroup><col><col style="width:92px"><col style="width:62px"><col style="width:104px"><col style="width:54px"><col style="width:78px"></colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Provincia / formato</th>
+              <th scope="col" class="num" aria-sort="descending"><span class="hd">Mediana</span></th>
+              <th scope="col" class="num"><span class="hd">Cambio</span></th>
+              <th scope="col">Tendencia</th>
+              <th scope="col" class="num"><span class="hd">Anuncios</span></th>
+              <th scope="col" class="num"><span class="hd">Último</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for n in activo.nodes %}
+            <tr class="ph-ex-row{% if n.key == ex_selected_key %} is-sel{% endif %}" data-slug="{{ n.key }}" data-med="{{ n.median }}" data-chg="{{ n.change if n.change is not none }}" data-n="{{ n.count }}" data-last="{{ n.last_days }}">
+              <th scope="row"><a href="{{ province_link(n.key) }}">{{ n.name }}</a></th>
+              <td class="num ph-ex-med"><b>{{ n.median_text }}</b></td>
+              <td class="num ph-ex-chg">{{ n.change_text }}</td>
+              <td>{% if n.spark %}<svg class="ph-ex-spark" viewBox="0 0 92 24" aria-hidden="true" focusable="false"><path class="a" d="{{ n.spark.area }}"/><path class="l" d="{{ n.spark.line }}"/><circle cx="{{ n.spark.end[0] }}" cy="{{ n.spark.end[1] }}" r="2.4"/></svg>{% endif %}</td>
+              <td class="num">{{ n.count }}</td>
+              <td class="num ph-ex-last">{{ n.last_text }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if activo.sin_datos %}<p class="ph-ex-sin">Sin anuncios en la ventana: {{ activo.sin_datos | join(", ") }}.</p>{% endif %}
+      </div>
+      <div class="ph-ex-foot">Mediana de los anuncios verificados de los últimos {{ window_days }} días. El cambio es contra los {{ window_days }} días anteriores y va sin flecha ni color: una baja es buena noticia para quien compra y mala para quien vende.</div>
+      {% else %}
+      <div class="ph-ex-empty">
+        <h2>Ningún anuncio de {{ activo.name }}</h2>
+        <p>Ningún anuncio de {{ activo.name }} en los últimos {{ window_days }} días.</p>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="ph-ex-empty">
+      <h2>Elegí un producto para empezar</h2>
+      <p>Cada producto se abre en su propia pestaña, con sus filtros, su árbol y su detalle. Marcalo en el panel de la izquierda o tocá uno de acá.</p>
+      <div class="ph-ex-pills">
+        {% for it in ex_nav.products %}
+        <a class="ph-ex-pill" href="{{ it.query }}">{{ it.name }}<small>{{ it.count }}</small></a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ── Derecha: el mapa teñido por precio y el detalle de la provincia ──── #}
+  <aside class="ph-ex-right" aria-label="Detalle">
+    {% set d = ex_detail %}
+    <div class="ph-ex-rblock">
+      <p class="ph-ex-dlabel">Detalle</p>
+      <div class="ph-ex-dname">{% if d %}{{ d.name }}{% endif %}</div>
+      <p class="ph-ex-dlabel">{% if d %}{{ d.sub }}{% endif %}</p>
+    </div>
+    <div class="ph-ex-rblock" style="padding-top:8px;padding-bottom:8px">
+      <svg class="ph-ex-map" viewBox="{{ ex_map.viewbox }}" role="img" aria-label="Mapa de Cuba: precio por provincia">
+        <defs><pattern id="ph-ex-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--m3-surface-container)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--m3-outline-variant);stroke-width:1.4"/></pattern></defs>
+        {% for c in ex_map.cells | sort(attribute="is_selected") %}
+        <path class="ph-ex-prov{% if c.is_selected %} is-selected{% endif %}{% if not c.has_data %} is-nodata{% endif %}" d="{{ c.d }}" data-slug="{{ c.slug }}"{% if c.has_data %} style="--t: {{ '%.1f' | format(c.tint) if c.tint in (0, 1) else c.tint }}"{% endif %}><title>{{ c.name }}</title></path>
+        {% endfor %}
+      </svg>
+    </div>
+    <div class="ph-ex-rblock">
+      <div class="ph-ex-kpis">
+        <div class="ph-ex-kpi">Mediana<b>{% if d %}{{ d.median_text }}{% endif %}</b>{% if activo %}CUP/{{ activo.unit_noun }}{% else %}CUP/{% endif %}</div>
+        <div class="ph-ex-kpi">Cambio<b>{% if d %}{{ d.change_text or "—" }}{% endif %}</b>vs {{ window_days }} días</div>
+        <div class="ph-ex-kpi">Anuncios<b>{% if d %}{{ d.count }}{% endif %}</b>&nbsp;</div>
+      </div>
+    </div>
+    <div class="ph-ex-rblock">
+      <h5>Mediana por semana · 13 semanas</h5>
+      <div class="ph-ex-chartwrap">
+        {% if d and d.chart %}
+        <span class="y" style="top:4px">{{ d.ymax_text }}</span><span class="y" style="bottom:14px">{{ d.ymin_text }}</span>
+        <svg class="ph-ex-chart" viewBox="0 0 300 100" role="img" aria-label="Mediana semanal de las últimas 13 semanas"><path class="a" d="{{ d.chart.area }}"/><path class="l" d="{{ d.chart.line }}"/><circle cx="{{ d.chart.end[0] }}" cy="{{ d.chart.end[1] }}" r="3"/></svg>
+        {% else %}
+        <svg class="ph-ex-chart" viewBox="0 0 300 100" aria-hidden="true"></svg>
+        {% endif %}
+      </div>
+    </div>
+    <div class="ph-ex-ads">
+      <h5 style="margin:0 0 8px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:500;color:var(--m3-outline)">Anuncios detrás de la cifra</h5>
+      {% if d %}{% for a in d.ads %}
+      <div class="ph-ex-ad"><span class="d">{{ a.day_text }}</span><span><b>{{ a.price_text }}</b> <small>CUP · {{ a.format_name }}</small></span>{% if a.is_public %}<a href="/anuncio/{{ a.evidence_id }}">ver anuncio</a>{% else %}<span class="off" title="Captura: la imagen no se publica">captura</span>{% endif %}</div>
+      {% endfor %}{% endif %}
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  /* Pestañas del panel izquierdo (Filtros / Columnas). Lo único de esta parte que
+     necesita JavaScript; sin él se ve «Filtros» y «Columnas» queda oculta. */
+  (function () {
+    var pestanas = document.querySelectorAll(".ph-ex-ltab");
+    Array.prototype.forEach.call(pestanas, function (pestana) {
+      pestana.addEventListener("click", function () {
+        Array.prototype.forEach.call(pestanas, function (otra) {
+          var abierta = otra === pestana;
+          otra.setAttribute("aria-selected", abierta ? "true" : "false");
+          otra.classList[abierta ? "add" : "remove"]("is-on");
+          var panel = document.getElementById(otra.getAttribute("aria-controls"));
+          if (panel) panel.hidden = !abierta;
+        });
+      });
+    });
+  })();
+</script>
+{% endblock %}

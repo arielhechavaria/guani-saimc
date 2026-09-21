@@ -48,7 +48,7 @@ DEFAULT_LAYER = "precio"
 #: agrupadas por provincia, sin mapa ni Leaflet. Mismo criterio que `capa`:
 #: la clave viaja en `?vista=` y se omite de la URL cuando es la default, para
 #: no ensuciar el enlace que ya comparte todo el mundo.
-VISTA_CHOICES: tuple[str, ...] = ("mapa", "tablero")
+VISTA_CHOICES: tuple[str, ...] = ("mapa", "tablero", "explorar")
 DEFAULT_VISTA = "mapa"
 
 def product_slug(name: str) -> str:

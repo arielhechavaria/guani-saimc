@@ -389,6 +389,7 @@
     <div class="ph-vista-wrap"><div class="ph-vista-toggle" role="group" aria-label="Presentación">
       <a class="js-vista-link ph-tap-44{% if vista == "mapa" %} is-selected{% endif %}" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}>Mapa</a>
       <a class="js-vista-link ph-tap-44{% if vista == "tablero" %} is-selected{% endif %}" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}>Tablero</a>
+      <a class="js-vista-link ph-tap-44" data-vista="explorar" href="{{ explorar_href }}">Explorar</a>
     </div></div>
     <a class="ph-top-csv" href="{{ csv_href }}" aria-label="Descargar CSV"><span class="m3-icon" aria-hidden="true">download</span><span class="ph-top-csv-label">CSV</span></a>
     <button type="button" class="ph-dash-action ph-tap-44 theme-toggle" aria-pressed="false" aria-label="Cambiar a modo oscuro">
