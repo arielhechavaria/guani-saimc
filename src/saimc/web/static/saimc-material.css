@@ -589,6 +589,15 @@ code, .m3-num { font-family: var(--m3-mono); }
 .m3-field-on-container > .m3-field-label { background: var(--m3-surface-container); }
 .m3-field.is-filled > label { color: var(--m3-primary); }
 
+/* Pregunta larga: el label flotante ocupa dos líneas a 390 px y la segunda cae
+   sobre el valor del select, justo lo que el operador tiene que verificar.
+   Este modificador lo pasa a una línea propia, encima del campo. */
+.m3-field.m3-field-stacked > .m3-field-label {
+  position: static; display: block; padding: 0 var(--m3-space-1);
+  margin: 0 0 var(--m3-space-2); background: none;
+  font-size: 13px; line-height: 1.35;
+}
+
 .m3-input, .m3-select, .m3-textarea {
   width: 100%; padding: 14px var(--m3-space-4);
   font: 400 15px var(--m3-font); color: var(--m3-on-surface);
