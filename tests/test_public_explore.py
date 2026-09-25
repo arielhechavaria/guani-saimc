@@ -28,6 +28,7 @@ from saimc.models import (
     Currency,
     PriceHistory,
     Product,
+    ProductFormat,
     Province,
     RawIngestion,
     SaleFormat,
@@ -96,6 +97,35 @@ def datos(session: Session) -> None:
     session.commit()
 
 
+@pytest.fixture
+def arbol(session: Session, datos: None) -> None:
+    """`datos` más un formato: en La Habana, Arroz en «Saco de 100 lb» con seis
+    anuncios (hace 1 a 6 días) al lado de los dos de la libra. Son más de los
+    cuatro que la tabla enseña por formato."""
+    arroz = session.query(Product).filter_by(name="Arroz").one()
+    habana = session.query(Province).filter_by(code="hab").one()
+    origen = session.query(RawIngestion).one()
+    saco = ProductFormat(product_id=arroz.id, packaging="saco", quantity=Decimal("100"), unit="lb")
+    session.add(saco)
+    session.flush()
+    for hace in range(1, 7):
+        session.add(
+            PriceHistory(
+                product_id=arroz.id,
+                province_id=habana.id,
+                price=Decimal("3000"),
+                currency=Currency.CUP.value,
+                source_id=origen.id,
+                unit="lb",
+                sale_format=SaleFormat.RETAIL.value,
+                quantity=Decimal("1"),
+                format_id=saco.id,
+                published_date=date.today() - timedelta(days=hace),
+            )
+        )
+    session.commit()
+
+
 def _html(client: TestClient, query: str) -> str:
     return str(client.get("/?vista=explorar" + query).text)
 
@@ -111,6 +141,16 @@ def _izquierda(texto: str) -> str:
 
 def _centro(texto: str) -> str:
     return _bloque(texto, 'class="ph-ex-center"', 'class="ph-ex-right"')
+
+
+def _grupo(texto: str, clave: str) -> str:
+    """El grupo de una provincia: su fila, las de sus formatos y las de los
+    anuncios, hasta el cierre de su `<tbody>`."""
+    return _bloque(texto, f'<tbody class="ph-ex-grp" data-key="{clave}"', "</tbody>")
+
+
+def _filas(grupo: str) -> list[str]:
+    return re.findall(r"<tr [^>]*>", grupo)
 
 
 def _derecha(texto: str) -> str:
@@ -261,9 +301,9 @@ class TestTabla:
     def test_las_provincias_con_dato_van_de_mayor_a_menor_mediana(
         self, client: TestClient, datos: None
     ) -> None:
-        tabla = _bloque(_centro(_html(client, "&productos=arroz")), "<tbody", "</tbody>")
+        centro = _centro(_html(client, "&productos=arroz"))
 
-        assert re.findall(r'<tr class="ph-ex-row[^"]*"[^>]*data-slug="([^"]+)"', tabla) == [
+        assert re.findall(r'<tbody class="ph-ex-grp" data-key="([^"]+)"', centro) == [
             "santiago-de-cuba",
             "la-habana",
         ]
@@ -271,7 +311,7 @@ class TestTabla:
     def test_cada_fila_trae_mediana_cambio_tendencia_muestra_y_ultimo(
         self, client: TestClient, datos: None
     ) -> None:
-        fila = _bloque(_centro(_html(client, "&productos=arroz")), 'data-slug="la-habana"', "</tr>")
+        fila = _grupo(_centro(_html(client, "&productos=arroz")), "la-habana").split("</tr>")[0]
 
         assert ">300<" in fila
         assert 'class="ph-ex-spark"' in fila
@@ -318,6 +358,151 @@ class TestTabla:
         assert "sin flecha ni color" in centro
 
 
+class TestArbol:
+    """P3: cada provincia es un grupo que se abre en sus formatos y estos en
+    sus anuncios (prototipo C: filas lv0 / lv1 / lv2)."""
+
+    def test_una_provincia_es_un_grupo_con_su_fila_y_las_de_sus_formatos(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        habana = _filas(_grupo(_centro(_html(client, "&productos=arroz")), "la-habana"))
+
+        assert sum('class="ph-ex-row lv0' in f for f in habana) == 1
+        assert sum('class="ph-ex-row lv1' in f for f in habana) == 2
+        assert [re.search(r'data-fmt="([^"]+)"', f).group(1) for f in habana if "lv1" in f] == [  # type: ignore[union-attr]
+            "la-habana|saco-de-100-lb",
+            "la-habana|libra",
+        ]
+
+    def test_la_provincia_con_mas_anuncios_llega_elegida_y_abierta(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+        habana = _grupo(centro, "la-habana")
+        santiago = _grupo(centro, "santiago-de-cuba")
+
+        assert "is-sel" in _filas(habana)[0]
+        assert re.search(r'ph-ex-chev"[^>]*aria-expanded="true"', habana)
+        assert not any("hidden" in f for f in _filas(habana) if "lv1" in f)
+        assert "is-sel" not in _filas(santiago)[0]
+        assert re.search(r'ph-ex-chev"[^>]*aria-expanded="false"', santiago)
+        assert all("hidden" in f for f in _filas(santiago) if "lv1" in f)
+        assert ">La Habana<" in _derecha(_html(client, "&productos=arroz"))
+
+    def test_los_formatos_llegan_cerrados_con_sus_anuncios_ocultos(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        habana = _grupo(_centro(_html(client, "&productos=arroz")), "la-habana")
+
+        formatos = [f for f in _filas(habana) if "lv1" in f]
+        anuncios = [f for f in _filas(habana) if "lv2" in f]
+        assert len(formatos) == 2
+        assert re.findall(r'ph-ex-chev"[^>]*aria-expanded="(\w+)"', habana) == ["true", "false", "false"]
+        assert len(anuncios) == 6 + 1 + 2
+        assert all("hidden" in f for f in anuncios)
+
+    def test_cada_formato_enseña_cuatro_anuncios_y_el_resto_queda_tras_ver_los_n(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        habana = _grupo(_centro(_html(client, "&productos=arroz")), "la-habana")
+        saco = [f for f in _filas(habana) if 'data-of="la-habana|saco-de-100-lb"' in f]
+        libra = [f for f in _filas(habana) if 'data-of="la-habana|libra"' in f]
+
+        assert len(saco) == 6 + 1
+        assert sum("data-extra" in f for f in saco) == 2
+        assert sum("more" in f for f in saco) == 1
+        assert "ver los 6 anuncios →" in habana
+        assert len(libra) == 2
+        assert not any("more" in f or "data-extra" in f for f in libra)
+        assert "ver los 2 anuncios" not in habana
+
+    def test_cada_anuncio_lleva_fecha_precio_y_enlace_a_su_evidencia(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        habana = _grupo(_centro(_html(client, "&productos=arroz")), "la-habana")
+        dia = (date.today() - timedelta(days=5)).strftime("%d/%m")
+        fila = _bloque(habana, 'data-of="la-habana|libra"', "</tr>")
+        libra = habana.split('data-of="la-habana|libra"')[1:]
+
+        assert any(dia in f.split("</tr>")[0] and ">320<" in f.split("</tr>")[0] for f in libra)
+        assert 'href="/anuncio/' in fila
+        assert ">ver anuncio<" in fila
+
+    def test_la_provincia_cuenta_sus_formatos_y_el_formato_va_en_su_pastilla(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+        habana = _grupo(centro, "la-habana")
+
+        assert ">2 formatos<" in habana
+        assert ">1 formato" not in _grupo(centro, "santiago-de-cuba")
+        assert 'class="ph-ex-nmt fmt">Saco de 100 lb<' in habana
+        assert 'class="ph-ex-nmt fmt">Libra<' in habana
+
+    def test_solo_las_cabeceras_que_ordenan_son_botones(self, client: TestClient, datos: None) -> None:
+        cabecera = _bloque(_centro(_html(client, "&productos=arroz")), "<thead", "</thead>")
+
+        assert re.findall(r'data-sort="(\w+)"', cabecera) == ["name", "med", "chg", "n", "last"]
+        assert re.search(r'data-sort="med"[^>]*data-s="desc"', cabecera)
+        for rotulo in ("Rango", "Tendencia", "Mediana por semana"):
+            assert f">{rotulo}</th>" in cabecera
+
+    def test_cada_grupo_lleva_lo_que_el_cliente_necesita_para_ordenar(
+        self, client: TestClient, datos: None
+    ) -> None:
+        habana = re.search(
+            r'<tbody class="ph-ex-grp"[^>]*data-key="la-habana"[^>]*>', _html(client, "&productos=arroz")
+        )
+
+        assert habana is not None
+        for atributo, valor in (("name", "La Habana"), ("med", "300"), ("n", "2"), ("last", "5")):
+            assert f'data-{atributo}="{valor}"' in habana.group(0)
+        assert 'data-chg="' in habana.group(0)
+
+    def test_rango_y_semanas_llegan_dibujados_pero_ocultos(self, client: TestClient, datos: None) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+        fila = _grupo(centro, "la-habana").split("</tr>")[0]
+
+        assert 'data-hide="rango sem"' in centro
+        assert 'class="ph-ex-rng"' in fila
+        assert 'title="280–320 CUP/libra"' in fila
+        assert len(re.findall(r'class="ph-ex-wk', fila)) == 8
+
+    def test_el_calor_semanal_pone_la_mediana_de_cada_semana_con_dato(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """Hace 12 días cae en la penúltima semana (11) y hace 5 en la última
+        (12): de las ocho que se ven, solo esas dos llevan cifra."""
+        fila = _grupo(_centro(_html(client, "&productos=arroz")), "la-habana").split("</tr>")[0]
+
+        assert re.findall(r'class="ph-ex-wk[^"]*"[^>]*>([^<]*)<', fila) == [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "280",
+            "320",
+        ]
+        assert len(re.findall(r"--t: ", fila)) == 2
+
+    def test_el_panel_de_columnas_gobierna_las_siete_de_la_tabla(
+        self, client: TestClient, datos: None
+    ) -> None:
+        cols = _bloque(_izquierda(_html(client, "&productos=arroz")), 'id="ph-ex-l-cols"', "</div>")
+
+        assert re.findall(r'data-col="(\w+)"( checked)?', cols) == [
+            ("med", " checked"),
+            ("chg", " checked"),
+            ("rango", ""),
+            ("tend", " checked"),
+            ("sem", ""),
+            ("n", " checked"),
+            ("last", " checked"),
+        ]
+
+
 class TestPanelDerecho:
     def test_el_mapa_trae_las_dieciseis_provincias(self, client: TestClient, datos: None) -> None:
         der = _derecha(_html(client, "&productos=arroz"))
@@ -333,13 +518,15 @@ class TestPanelDerecho:
         assert re.search(r'data-slug="la-habana"[^>]*style="--t: 0(\.0)?"', der)
         assert re.search(r'ph-ex-prov is-nodata"[^>]*data-slug="guantanamo"', der)
 
-    def test_por_defecto_el_detalle_es_el_de_la_provincia_de_mayor_mediana(
+    def test_por_defecto_el_detalle_es_el_de_la_provincia_con_mas_anuncios(
         self, client: TestClient, datos: None
     ) -> None:
+        """La Habana tiene 2 anuncios y Santiago 1: gana la muestra, no la
+        mediana más alta (así elige el prototipo)."""
         der = _derecha(_html(client, "&productos=arroz"))
 
-        assert ">Santiago de Cuba<" in der
-        assert re.search(r'ph-ex-prov is-selected"[^>]*data-slug="santiago-de-cuba"', der)
+        assert ">La Habana<" in der
+        assert re.search(r'ph-ex-prov is-selected"[^>]*data-slug="la-habana"', der)
 
     def test_la_provincia_de_la_url_manda(self, client: TestClient, datos: None) -> None:
         der = _derecha(_html(client, "&productos=arroz&provincia=la-habana"))

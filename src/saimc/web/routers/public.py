@@ -740,7 +740,7 @@ def _render_explore(
     if activo is not None and activo.nodes:
         elegido = next(
             (n for n in activo.nodes if selected_province and n.name == selected_province),
-            activo.nodes[0],
+            max(activo.nodes, key=lambda n: n.count),
         )
 
     def vista_link(destino: str) -> str:

@@ -111,22 +111,56 @@
   .ph-ex-search input { font: inherit; font-size: 13px; color: var(--m3-on-surface); border: 0; outline: 0; background: transparent; width: 170px; }
   .ph-ex-scroll { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--m3-outline-variant); }
   .ph-ex-grid { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
-  .ph-ex-grid th, .ph-ex-grid td { padding: 0 8px; height: 34px; text-align: left; font-weight: 400;
+  .ph-ex-grid th, .ph-ex-grid td { padding: 0 8px; height: 34px; text-align: left; font-weight: inherit;
                                    border-bottom: 1px solid var(--m3-divider); white-space: nowrap; }
   .ph-ex-grid thead th { position: sticky; top: 0; z-index: 2; background: var(--m3-surface-container); font-size: 10.5px;
                          letter-spacing: .08em; text-transform: uppercase; font-weight: 500; color: var(--m3-outline);
                          border-bottom: 1px solid var(--m3-outline-variant); }
   .ph-ex-grid thead th.num { direction: rtl; }
-  .ph-ex-grid thead th .hd { display: inline-block; direction: ltr; unicode-bidi: isolate; }
-  .ph-ex-grid thead th[aria-sort="descending"] .hd::after { content: " \2193"; color: var(--ph-accent); }
-  .ph-ex-grid thead th[aria-sort="ascending"] .hd::after { content: " \2191"; color: var(--ph-accent); }
-  .ph-ex-grid thead th[aria-sort] { color: var(--m3-on-surface); }
+  .ph-ex-grid thead .hd { display: inline-block; direction: ltr; unicode-bidi: isolate; }
+  .ph-ex-hbtn { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; height: 34px;
+                display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .ph-ex-hbtn[data-s="asc"]::after { content: "\2191"; color: var(--ph-accent); }
+  .ph-ex-hbtn[data-s="desc"]::after { content: "\2193"; color: var(--ph-accent); }
+  .ph-ex-hbtn[data-s] { color: var(--m3-on-surface); }
   .ph-ex-grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ph-ex-grid [hidden] { display: none; }
+  .ph-ex-grid[data-hide~="med"] .c-med, .ph-ex-grid[data-hide~="chg"] .c-chg, .ph-ex-grid[data-hide~="rango"] .c-rango,
+  .ph-ex-grid[data-hide~="tend"] .c-tend, .ph-ex-grid[data-hide~="sem"] .c-sem, .ph-ex-grid[data-hide~="n"] .c-n,
+  .ph-ex-grid[data-hide~="last"] .c-last { display: none; }
   .ph-ex-row { background: var(--m3-surface); }
+  .ph-ex-row.lv0 { font-weight: 500; }
+  .ph-ex-row.lv1 { background: var(--m3-surface-hover); }
+  .ph-ex-row.lv2 { background: var(--m3-surface-container); font-size: 12px; color: var(--m3-on-surface-variant); }
+  .ph-ex-row.lv2 th, .ph-ex-row.lv2 td { height: 28px; }
   .ph-ex-row.is-sel, .ph-ex-row:hover { background: var(--ph-accent-wash); }
-  .ph-ex-row th { padding-left: 30px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
-  .ph-ex-row td.ph-ex-chg, .ph-ex-row td.ph-ex-last { color: var(--m3-on-surface-variant); }
-  .ph-ex-med b { font-weight: 700; }
+  .ph-ex-row th { padding: 0 6px 0 0; overflow: hidden; }
+  .ph-ex-row td.c-chg, .ph-ex-row td.c-last { color: var(--m3-on-surface-variant); }
+  .ph-ex-row b { font-weight: 700; }
+  .ph-ex-nmw { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .ph-ex-nmt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-ex-nmt.fmt { background: var(--m3-surface-container-high); border-radius: 999px; padding: 1px 9px; font-size: 11.5px;
+                   font-weight: 500; color: var(--m3-on-surface-variant); }
+  .ph-ex-sub { font-size: 11px; color: var(--m3-outline); white-space: nowrap; font-weight: 400; }
+  .ph-ex-chev { width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+                flex: none; color: var(--m3-outline); cursor: pointer; }
+  .ph-ex-chev:hover { background: var(--ph-accent-wash); color: var(--ph-accent); }
+  .ph-ex-chev::before { content: ""; width: 6px; height: 6px; border: solid currentColor; border-width: 0 2px 2px 0;
+                        transform: rotate(-45deg); }
+  .ph-ex-chev[aria-expanded="true"]::before { transform: rotate(45deg); }
+  .ph-ex-link { color: var(--ph-accent); font-size: 11.5px; text-decoration: underline; white-space: nowrap; font-weight: 400; }
+  .ph-ex-link.off { color: var(--m3-outline); text-decoration: none; }
+  .ph-ex-more { color: var(--ph-accent); font-weight: 500; cursor: pointer; }
+  .ph-ex-rng { position: relative; height: 8px; background: var(--m3-surface-container-high); border-radius: 4px; }
+  .ph-ex-rng i { position: absolute; top: 0; bottom: 0; border-radius: 4px;
+                 background: color-mix(in srgb, var(--ph-accent) 32%, transparent); }
+  .ph-ex-rng b { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--ph-accent); }
+  .ph-ex-grid td.c-sem { padding: 0; }
+  .ph-ex-weeks { display: flex; }
+  .ph-ex-wk { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 24px; flex: none;
+              font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--m3-on-surface);
+              border-right: 1px solid var(--m3-surface); }
+  .ph-ex-wk[style] { background: color-mix(in srgb, var(--ph-accent) calc((6 + 50 * var(--t)) * 1%), transparent); }
   .ph-ex-spark { width: 92px; height: 24px; overflow: visible; }
   .ph-ex-spark .a { fill: var(--ph-accent); fill-opacity: .12; stroke: none; }
   .ph-ex-spark .l { fill: none; stroke: var(--ph-accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -254,8 +288,8 @@
     <div class="ph-ex-lbody" id="ph-ex-l-cols" role="tabpanel" aria-labelledby="ph-ex-ltab-cols" hidden>
       <section class="ph-ex-block">
         <h5>Columnas visibles</h5>
-        {% for col, marcada in (("Mediana", true), ("Cambio", true), ("Rango", false), ("Tendencia (13 semanas)", true), ("Mediana por semana", false), ("Anuncios", true), ("Último", true)) %}
-        <label class="ph-ex-opt"><input type="checkbox"{% if marcada %} checked{% endif %}><i>{{ col }}</i></label>
+        {% for clave, col, marcada in (("med", "Mediana", true), ("chg", "Cambio", true), ("rango", "Rango", false), ("tend", "Tendencia (13 semanas)", true), ("sem", "Mediana por semana", false), ("n", "Anuncios", true), ("last", "Último", true)) %}
+        <label class="ph-ex-opt"><input type="checkbox" data-col="{{ clave }}"{% if marcada %} checked{% endif %}><i>{{ col }}</i></label>
         {% endfor %}
       </section>
     </div>
@@ -292,30 +326,61 @@
         <label class="ph-ex-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" placeholder="Buscar" aria-label="Buscar provincia o formato"></label>
       </div>
       <div class="ph-ex-scroll">
-        <table class="ph-ex-grid">
-          <colgroup><col><col style="width:92px"><col style="width:62px"><col style="width:104px"><col style="width:54px"><col style="width:78px"></colgroup>
+{% macro metricas(n) -%}
+            <td class="num c-med"><b>{{ n.median_text }}</b></td>
+            <td class="num c-chg">{{ n.change_text }}</td>
+            <td class="c-rango"><div class="ph-ex-rng" title="{{ n.minimum_text }}–{{ n.maximum_text }} {{ activo.currency }}/{{ activo.unit_noun }}"><i style="left: {{ '%.1f' | format(n.range_bar.left) }}%; width: {{ '%.1f' | format(n.range_bar.width) }}%"></i><b style="left: {{ '%.1f' | format(n.range_bar.tick) }}%"></b></div></td>
+            <td class="c-tend">{% if n.spark %}<svg class="ph-ex-spark" viewBox="0 0 92 24" aria-hidden="true" focusable="false"><path class="a" d="{{ n.spark.area }}"/><path class="l" d="{{ n.spark.line }}"/><circle cx="{{ n.spark.end[0] }}" cy="{{ n.spark.end[1] }}" r="2.4"/></svg>{% endif %}</td>
+            <td class="c-sem"><div class="ph-ex-weeks">{% for w in n.weeks %}<span class="ph-ex-wk"{% if w.tint is not none %} style="--t: {{ '%.2f' | format(w.tint) }}"{% endif %}>{{ w.text }}</span>{% endfor %}</div></td>
+            <td class="num c-n">{{ n.count }}</td>
+            <td class="num c-last">{{ n.last_text }}</td>
+{%- endmacro %}
+{% macro vacias() -%}
+            <td class="c-chg"></td><td class="c-rango"></td><td class="c-tend"></td><td class="c-sem"></td><td class="c-n"></td><td class="c-last"></td>
+{%- endmacro %}
+        <table class="ph-ex-grid" data-hide="rango sem" style="min-width: 580px">
+          <colgroup><col class="c-nm"><col class="c-med" style="width:92px"><col class="c-chg" style="width:62px"><col class="c-rango" style="width:122px"><col class="c-tend" style="width:104px"><col class="c-sem" style="width:304px"><col class="c-n" style="width:54px"><col class="c-last" style="width:78px"></colgroup>
           <thead>
             <tr>
-              <th scope="col">Provincia / formato</th>
-              <th scope="col" class="num" aria-sort="descending"><span class="hd">Mediana</span></th>
-              <th scope="col" class="num"><span class="hd">Cambio</span></th>
-              <th scope="col">Tendencia</th>
-              <th scope="col" class="num"><span class="hd">Anuncios</span></th>
-              <th scope="col" class="num"><span class="hd">Último</span></th>
+              <th scope="col" class="c-nm"><button type="button" class="ph-ex-hbtn" data-sort="name">Provincia / formato</button></th>
+              <th scope="col" class="num c-med" aria-sort="descending"><button type="button" class="ph-ex-hbtn hd" data-sort="med" data-s="desc">Mediana</button></th>
+              <th scope="col" class="num c-chg"><button type="button" class="ph-ex-hbtn hd" data-sort="chg">Cambio</button></th>
+              <th scope="col" class="c-rango">Rango</th>
+              <th scope="col" class="c-tend">Tendencia</th>
+              <th scope="col" class="c-sem">Mediana por semana</th>
+              <th scope="col" class="num c-n"><button type="button" class="ph-ex-hbtn hd" data-sort="n">Anuncios</button></th>
+              <th scope="col" class="num c-last"><button type="button" class="ph-ex-hbtn hd" data-sort="last">Último</button></th>
             </tr>
           </thead>
-          <tbody>
-            {% for n in activo.nodes %}
-            <tr class="ph-ex-row{% if n.key == ex_selected_key %} is-sel{% endif %}" data-slug="{{ n.key }}" data-med="{{ n.median }}" data-chg="{{ n.change if n.change is not none }}" data-n="{{ n.count }}" data-last="{{ n.last_days }}">
-              <th scope="row"><a href="{{ province_link(n.key) }}">{{ n.name }}</a></th>
-              <td class="num ph-ex-med"><b>{{ n.median_text }}</b></td>
-              <td class="num ph-ex-chg">{{ n.change_text }}</td>
-              <td>{% if n.spark %}<svg class="ph-ex-spark" viewBox="0 0 92 24" aria-hidden="true" focusable="false"><path class="a" d="{{ n.spark.area }}"/><path class="l" d="{{ n.spark.line }}"/><circle cx="{{ n.spark.end[0] }}" cy="{{ n.spark.end[1] }}" r="2.4"/></svg>{% endif %}</td>
-              <td class="num">{{ n.count }}</td>
-              <td class="num ph-ex-last">{{ n.last_text }}</td>
+          {% for n in activo.nodes %}
+          {% set elegida = n.key == ex_selected_key %}
+          <tbody class="ph-ex-grp" data-key="{{ n.key }}" data-name="{{ n.name }}" data-med="{{ '%.10g' | format(n.median) }}" data-chg="{{ n.change if n.change is not none }}" data-n="{{ n.count }}" data-last="{{ n.last_days }}">
+            <tr class="ph-ex-row lv0{% if elegida %} is-sel{% endif %}">
+              <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 10px"><button type="button" class="ph-ex-chev" aria-expanded="{{ 'true' if elegida else 'false' }}" aria-label="Abrir o cerrar {{ n.name }}"></button><a class="ph-ex-nmt" href="{{ province_link(n.key) }}">{{ n.name }}</a>{% if n.children | length > 1 %}<span class="ph-ex-sub">{{ n.children | length }} formatos</span>{% endif %}</div></th>
+              {{ metricas(n) }}
+            </tr>
+            {% for h in n.children %}
+            <tr class="ph-ex-row lv1{% if elegida %} is-sel{% endif %}" data-fmt="{{ h.key }}"{% if not elegida %} hidden{% endif %}>
+              <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 30px"><button type="button" class="ph-ex-chev" aria-expanded="false" aria-label="Abrir o cerrar los anuncios de {{ h.name }}"></button><span class="ph-ex-nmt fmt">{{ h.name }}</span></div></th>
+              {{ metricas(h) }}
+            </tr>
+            {% for a in h.ads %}
+            <tr class="ph-ex-row lv2" data-of="{{ h.key }}"{% if loop.index > 4 %} data-extra{% endif %} hidden>
+              <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 50px"><span class="ph-ex-nmt">{{ a.day_text }}</span>{% if a.evidence_is_public %}<a class="ph-ex-link" href="/anuncio/{{ a.evidence_id }}">ver anuncio</a>{% else %}<span class="ph-ex-link off">captura</span>{% endif %}</div></th>
+              <td class="num c-med"><b>{{ a.price_text }}</b></td>
+              {{ vacias() }}
             </tr>
             {% endfor %}
+            {% if h.ads | length > 4 %}
+            <tr class="ph-ex-row lv2 more" data-of="{{ h.key }}" hidden>
+              <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 50px"><button type="button" class="ph-ex-more">ver los {{ h.ads | length }} anuncios →</button></div></th>
+              <td class="c-med"></td>
+              {{ vacias() }}
+            </tr>
+            {% endif %}
+            {% endfor %}
           </tbody>
+          {% endfor %}
         </table>
         {% if activo.sin_datos %}<p class="ph-ex-sin">Sin anuncios en la ventana: {{ activo.sin_datos | join(", ") }}.</p>{% endif %}
       </div>
@@ -401,6 +466,97 @@
         });
       });
     });
+  })();
+</script>
+
+<script>
+  /* El árbol de la tabla: abrir y cerrar provincias, formatos y anuncios, ordenar por
+     cabecera y elegir columnas. Todo el contenido ya viene dibujado por el servidor;
+     acá solo se muestra, se oculta y se reordena. Sin JavaScript se ven las provincias. */
+  (function () {
+    var tabla = document.querySelector(".ph-ex-grid");
+    if (!tabla) return;
+    var ANCHOS = { med: 92, chg: 62, rango: 122, tend: 104, sem: 304, n: 54, last: 78 };
+    var ANCHO_NOMBRE = 190;
+    var orden = { clave: "med", dir: -1 };
+
+    function abierto(boton) { return boton.getAttribute("aria-expanded") === "true"; }
+
+    function pintar(grupo) {
+      var provincia = abierto(grupo.querySelector("tr.lv0 .ph-ex-chev"));
+      var formatos = {};
+      Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv1"), function (fila) {
+        fila.hidden = !provincia;
+        formatos[fila.dataset.fmt] = {
+          abierto: abierto(fila.querySelector(".ph-ex-chev")),
+          todos: fila.dataset.all === "1"
+        };
+      });
+      Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv2"), function (fila) {
+        var f = formatos[fila.dataset.of];
+        var visible = provincia && !!f && f.abierto;
+        if (visible && fila.hasAttribute("data-extra")) visible = f.todos;
+        if (visible && fila.classList.contains("more")) visible = !f.todos;
+        fila.hidden = !visible;
+      });
+    }
+
+    function valor(grupo, clave) {
+      if (clave === "name") return grupo.dataset.name;
+      var v = grupo.dataset[clave];
+      if (v === "") return null;
+      return clave === "last" ? -Number(v) : Number(v);
+    }
+
+    function ordenar(clave) {
+      orden = { clave: clave, dir: orden.clave === clave ? -orden.dir : (clave === "name" ? 1 : -1) };
+      var grupos = Array.prototype.slice.call(tabla.tBodies).map(function (g, i) { return { g: g, i: i }; });
+      grupos.sort(function (a, b) {
+        var x = valor(a.g, clave), y = valor(b.g, clave);
+        if (x === null || y === null) return x === y ? a.i - b.i : (x === null ? 1 : -1);
+        var c = clave === "name" ? x.localeCompare(y, "es") : x - y;
+        return orden.dir * c || a.i - b.i;
+      });
+      grupos.forEach(function (e) { tabla.appendChild(e.g); });
+      Array.prototype.forEach.call(tabla.querySelectorAll("thead th"), function (th) {
+        var boton = th.querySelector("[data-sort]");
+        var activa = !!boton && boton.dataset.sort === clave;
+        if (boton) { if (activa) boton.dataset.s = orden.dir < 0 ? "desc" : "asc"; else delete boton.dataset.s; }
+        if (activa) th.setAttribute("aria-sort", orden.dir < 0 ? "descending" : "ascending");
+        else th.removeAttribute("aria-sort");
+      });
+    }
+
+    tabla.addEventListener("click", function (e) {
+      var chevron = e.target.closest(".ph-ex-chev");
+      var mas = e.target.closest(".ph-ex-more");
+      var cabecera = e.target.closest("[data-sort]");
+      if (chevron) {
+        chevron.setAttribute("aria-expanded", abierto(chevron) ? "false" : "true");
+        pintar(chevron.closest("tbody"));
+      } else if (mas) {
+        var fila = mas.closest("tr");
+        var grupo = mas.closest("tbody");
+        Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv1"), function (f) {
+          if (f.dataset.fmt === fila.dataset.of) f.dataset.all = "1";
+        });
+        pintar(grupo);
+      } else if (cabecera) {
+        ordenar(cabecera.dataset.sort);
+      }
+    });
+
+    var cajas = document.querySelectorAll("input[data-col]");
+    function columnas() {
+      var ocultas = [], ancho = ANCHO_NOMBRE;
+      Array.prototype.forEach.call(cajas, function (caja) {
+        if (caja.checked) ancho += ANCHOS[caja.dataset.col]; else ocultas.push(caja.dataset.col);
+      });
+      tabla.setAttribute("data-hide", ocultas.join(" "));
+      tabla.style.minWidth = ancho + "px";
+    }
+    Array.prototype.forEach.call(cajas, function (caja) { caja.addEventListener("change", columnas); });
+    columnas();
   })();
 </script>
 {% endblock %}
