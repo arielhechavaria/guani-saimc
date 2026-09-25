@@ -58,6 +58,7 @@ from saimc.ingestion import origin
 from saimc.models import (
     ContentType,
     DiscardReason,
+    LlmReview,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -390,6 +391,25 @@ def row_correctness(
     )
 
 
+def assisted_ingestion_ids(session: Session, assist_log_path: Path | None) -> set[str]:
+    """Las ingestas que H0 deja fuera: las del registro del operador o las que
+    tienen una revisión capturada en `llm_reviews` (slice 3a).
+
+    La usan `compute_h0_report` y el backtest (`llm_backtest.assisted_ids`)
+    para que los dos excluyan exactamente el mismo conjunto.
+    """
+    del_registro = (
+        llm_assist.assisted_ingestion_ids(assist_log_path)
+        if assist_log_path is not None
+        else set()
+    )
+    revisados = {
+        str(ingestion_id)
+        for ingestion_id in session.execute(select(LlmReview.ingestion_id)).scalars()
+    }
+    return del_registro | revisados
+
+
 def compute_h0_report(
     session: Session,
     transcribe: Transcriber = ocr.transcribe,
@@ -457,11 +477,12 @@ def compute_h0_report(
     # Con el registro vacío —o ausente— este conjunto es vacío y los números
     # son exactamente los de siempre: introducir el corte no mueve nada por sí
     # solo.
-    assisted_ids = (
-        llm_assist.assisted_ingestion_ids(assist_log_path)
-        if assist_log_path is not None
-        else set()
-    )
+    #
+    # Desde el slice 3a también cuenta como asistido lo que tiene una fila en
+    # `llm_reviews` (el operador lo curó con la propuesta a la vista). En 3b la
+    # propuesta se precalcula sin pasar por el registro, así que el registro
+    # solo deja de alcanzar (`docs/spec-slice-3a.md`).
+    assisted_ids = assisted_ingestion_ids(session, assist_log_path)
 
     for ingestion in ingestions:
         confirmed_rows = history_by_source.get(ingestion.id, [])

@@ -117,8 +117,16 @@ class WorkItem:
 # --- selección del corpus ---------------------------------------------------
 
 
-def assisted_ids(path: Path) -> set[str]:
-    return llm_assist.assisted_ingestion_ids(path)
+def assisted_ids(path: Path, session: Session | None = None) -> set[str]:
+    """Lo que el oro deja fuera: el mismo conjunto que excluye H0.
+
+    Con `session`, suma lo revisado con propuesta a la vista (`llm_reviews`,
+    slice 3a): su verdad pudo absorber un valor del modelo, así que tampoco
+    sirve de oro para medirlo.
+    """
+    if session is None:
+        return llm_assist.assisted_ingestion_ids(path)
+    return measure.assisted_ingestion_ids(session, path)
 
 
 def select_gold(session: Session, assisted: set[str]) -> list[RawIngestion]:
@@ -979,7 +987,7 @@ def execute(
     assist_log = args.assist_log or settings.llm_assist_log_path
     items = build_workset(
         session,
-        assisted_ids(assist_log),
+        assisted_ids(assist_log, session),
         sample_n=args.sample,
         seed=args.seed,
         limit=args.limit,

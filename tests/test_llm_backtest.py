@@ -18,6 +18,8 @@ from saimc.config import Settings
 from saimc.extraction import llm_backtest, llm_propose_ad
 from saimc.models import (
     ContentType,
+    LlmProposal,
+    LlmReview,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -289,6 +291,38 @@ def test_el_oro_excluye_los_asistidos_y_lo_no_curado(
     log.write_text(json.dumps({"ingestion_id": str(asistido.id)}) + "\n")
 
     oro = llm_backtest.select_gold(session, llm_backtest.assisted_ids(log))
+
+    assert [i.id for i in oro] == [limpio.id]
+
+
+def test_el_oro_excluye_tambien_lo_revisado_con_propuesta(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    """Slice 3a: mismo conjunto que excluye H0 — el registro o `llm_reviews`."""
+    fila = [_confirmada(catalogo.arroz, "1", "CUP", "1", "lb", catalogo.lh)]
+    limpio = _ingesta(session, filas=fila)
+    revisado = _ingesta(session, filas=fila)
+    propuesta = LlmProposal(
+        ingestion_id=revisado.id,
+        model="m",
+        prompt_version="v",
+        status="ok",
+        rows=[],
+        input_tokens=0,
+        output_tokens=0,
+    )
+    session.add(propuesta)
+    session.flush()
+    session.add(
+        LlmReview(
+            ingestion_id=revisado.id, proposal_id=propuesta.id, outcome="curated", rows=[]
+        )
+    )
+    session.commit()
+
+    oro = llm_backtest.select_gold(
+        session, llm_backtest.assisted_ids(tmp_path / "no-existe.jsonl", session)
+    )
 
     assert [i.id for i in oro] == [limpio.id]
 
