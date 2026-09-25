@@ -422,7 +422,7 @@
       <details class="ph-ex-msheet ph-ex-msheet-prod">
         <summary class="ph-ex-madd" aria-label="Productos">+</summary>
         <div class="ph-ex-scrim"></div>
-        <div class="ph-ex-sheetpanel" role="dialog" aria-label="Productos">
+        <div class="ph-ex-sheetpanel" role="dialog" aria-modal="true" aria-label="Productos" tabindex="-1">
           <div class="ph-ex-sheethead"><b>Productos</b><p class="ph-ex-hint">Cada producto marcado abre una pestaña.</p></div>
           <div class="ph-ex-sheetbody">{{ lista_productos(ex_nav) }}</div>
           <div class="ph-ex-sheetfoot"><button type="button" class="ph-ex-sheetdone" data-close-sheet>Listo</button></div>
@@ -453,7 +453,7 @@
           <details class="ph-ex-msheet ph-ex-msheet-filt">
             <summary class="ph-ex-mfbtn"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 3h10L8 7.5V12l-2-1V7.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Filtros</summary>
             <div class="ph-ex-scrim"></div>
-            <div class="ph-ex-sheetpanel" role="dialog" aria-label="Filtros">
+            <div class="ph-ex-sheetpanel" role="dialog" aria-modal="true" aria-label="Filtros" tabindex="-1">
               <div class="ph-ex-sheethead"><b>Filtros de {{ activo.name }}</b><button type="button" class="ph-ex-clear" data-clear-all>Limpiar todo</button></div>
               <div class="ph-ex-sheetbody">{{ filtros_de_producto(activo) }}</div>
               <div class="ph-ex-sheetfoot"><button type="button" class="ph-ex-sheetdone" data-close-sheet>Ver <span id="ph-ex-sheetcount">{{ activo.province_count }}</span> provincias</button></div>
@@ -807,24 +807,47 @@
     if (e.target.closest("[data-clear-all]")) limpiarTodo();
   });
 
-  /* Hojas del angosto (P7, fiel a M2): abrir una cierra la otra —sin esto,
-     tocar «+» con «Filtros» ya abierta dejaría las dos superpuestas—, y
-     tocar el fondo oscuro o «Listo»/«Ver N provincias» cierra la que
-     corresponda. `<details>` no necesita más que sacarle el `open`. */
+  /* Hojas del angosto (P7/P8, fiel a M2): tocar el fondo oscuro o
+     «Listo»/«Ver N provincias» cierra la hoja correspondiente. */
   document.addEventListener("click", function (e) {
-    var resumen = e.target.closest(".ph-ex-msheet > summary");
-    if (resumen) {
-      var esta = resumen.closest(".ph-ex-msheet");
-      Array.prototype.forEach.call(document.querySelectorAll(".ph-ex-msheet[open]"), function (otra) {
-        if (otra !== esta) otra.open = false;
-      });
-      return;
-    }
     var cierre = e.target.closest(".ph-ex-scrim, [data-close-sheet]");
     if (cierre) {
       var hoja = cierre.closest("details.ph-ex-msheet");
       if (hoja) hoja.open = false;
     }
+  });
+
+  /* P8: accesibilidad de las hojas. `toggle` —a diferencia de `click`— capta
+     abrir con el teclado (Enter/Espacio en el `<summary>` con foco), no solo
+     con el mouse; no burbujea, así que hace falta escucharlo en captura. Al
+     abrir: se cierra cualquier otra hoja (dos abiertas a la vez se
+     superponen) y el foco entra al panel, que por eso lleva `tabindex="-1"`
+     —nada adentro se marca como «el primero», así que entra el panel mismo,
+     no un control—. Al cerrar —por el fondo, «Listo», Esc o del teclado—
+     el foco vuelve al botón que la abrió, para no perderlo en el `<body>`. */
+  document.addEventListener(
+    "toggle",
+    function (e) {
+      var hoja = e.target;
+      if (!hoja.matches || !hoja.matches(".ph-ex-msheet")) return;
+      if (hoja.open) {
+        Array.prototype.forEach.call(document.querySelectorAll(".ph-ex-msheet[open]"), function (otra) {
+          if (otra !== hoja) otra.open = false;
+        });
+        var panel = hoja.querySelector(".ph-ex-sheetpanel");
+        if (panel) panel.focus();
+      } else {
+        var resumen = hoja.querySelector(":scope > summary");
+        if (resumen) resumen.focus();
+      }
+    },
+    true
+  );
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    var abierta = document.querySelector(".ph-ex-msheet[open]");
+    if (abierta) abierta.open = false;
   });
 
   document.addEventListener("input", function (e) {
