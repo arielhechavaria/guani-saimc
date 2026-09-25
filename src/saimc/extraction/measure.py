@@ -354,6 +354,42 @@ def _quantity_unit_correct(
     return quantity_matches and unit_matches
 
 
+@dataclass(frozen=True)
+class RowCorrectness:
+    """Qué campos de una fila confirmada acertó una propuesta.
+
+    Es LA definición de «correcto» de H0: la usan `compute_h0_report` y el
+    backtest del LLM (`llm_backtest`) para que sus números sean comparables.
+    """
+
+    product: bool
+    price: bool
+    province: bool
+    quantity_unit: bool
+
+    @property
+    def complete(self) -> bool:
+        return self.product and self.price and self.province and self.quantity_unit
+
+
+def row_correctness(
+    confirmed: PriceHistory, proposal: ExtractionProposal
+) -> RowCorrectness:
+    """Compara una propuesta contra la fila que el operador confirmó."""
+    proposed_province_id = proposal.province.id if proposal.province is not None else None
+    return RowCorrectness(
+        product=(
+            proposal.product is not None and proposal.product.id == confirmed.product_id
+        ),
+        # Valor Y moneda.
+        price=proposal.price == confirmed.price and proposal.currency == confirmed.currency,
+        province=proposed_province_id == confirmed.province_id,
+        quantity_unit=_quantity_unit_correct(
+            proposal.quantity, proposal.unit, confirmed.quantity, confirmed.unit
+        ),
+    )
+
+
 def compute_h0_report(
     session: Session,
     transcribe: Transcriber = ocr.transcribe,
@@ -461,20 +497,11 @@ def compute_h0_report(
         ):
             evaluated_rows_count += 1
 
-            is_product_ok = (
-                proposal.product is not None
-                and proposal.product.id == confirmed.product_id
-            )
-            is_price_ok = (
-                proposal.price == confirmed.price and proposal.currency == confirmed.currency
-            )
-            proposed_province_id = (
-                proposal.province.id if proposal.province is not None else None
-            )
-            is_province_ok = proposed_province_id == confirmed.province_id
-            is_quantity_unit_ok = _quantity_unit_correct(
-                proposal.quantity, proposal.unit, confirmed.quantity, confirmed.unit
-            )
+            ok = row_correctness(confirmed, proposal)
+            is_product_ok = ok.product
+            is_price_ok = ok.price
+            is_province_ok = ok.province
+            is_quantity_unit_ok = ok.quantity_unit
 
             if is_product_ok:
                 product_correct += 1

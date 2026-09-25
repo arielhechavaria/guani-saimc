@@ -5,6 +5,7 @@ inyectar la misma fixture `session` (SQLite en memoria) de `tests/conftest.py`,
 sin abrir una conexión real ni tocar `conftest.py`.
 """
 
+import json
 import re
 import uuid
 from collections.abc import Iterator
@@ -19,6 +20,9 @@ from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.extraction import llm_assist, ocr
+from saimc.extraction.engine import ExtractionProposal
+from saimc.extraction.llm_checks import RowMeta
+from saimc.extraction.llm_propose_ad import AdProposal
 from saimc.models import (
     Channel,
     ContentType,
@@ -4674,166 +4678,714 @@ class TestUltimaCaptura:
 
 
 class TestAsistenteLLM:
-    """El botón y el endpoint de asistencia (`design.md`, D4 y D10).
+    """El botón «Completar con IA» y su endpoint (`docs/plan-asistente-llm-cola-completa.md`,
+    slice 2b; antes `design.md`, D4 y D10).
 
     Lo que se prueba acá es el contrato de la interfaz: cuándo se ofrece,
-    cuándo NO se llama, que solo llene huecos y que una falla no deje al
-    operador peor que antes. La calidad de lo que responda el modelo no se
-    prueba acá — se mide contra la cola real.
+    cuándo NO se llama, de dónde sale cada campo, qué marcas lleva y que una
+    falla no deje al operador peor que antes. La calidad de lo que responda el
+    modelo no se prueba acá — se mide contra el corpus curado. El modelo se
+    reemplaza por un doble de `curation.propose_ad`: nunca hay red.
     """
 
-    def _pendiente_con_hueco(self, session: Session) -> RawIngestion:
-        """Texto donde las reglas resuelven el producto y dejan la cantidad
-        sin resolver: el caso que el asistente existe para atacar."""
+    TEXTO = "pollo congelado a 500"
+
+    @pytest.fixture(autouse=True)
+    def _registro_aislado(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Ningún test escribe el registro real del operador."""
+        monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(tmp_path / "assist-log.jsonl"))
+        get_settings.cache_clear()
+
+    @pytest.fixture
+    def con_clave(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+
+    def _pendiente(self, session: Session, texto: str | None = None) -> RawIngestion:
         _crear_producto(session, name="Pollo", aliases=["pollo congelado"])
         return _crear_raw_ingestion(
-            session,
-            hash_="hash-asistente-hueco",
-            original_text="pollo congelado a 500",
+            session, hash_="hash-asistente", original_text=texto or self.TEXTO
         )
+
+    def _modelo(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        session: Session,
+        *,
+        filas: list[dict] | None = None,
+        evidencia: str | None = None,
+        discard: bool = False,
+        discard_reason: str | None = None,
+        degraded: bool = False,
+        failure: str = "",
+        input_tokens: int = 1000,
+        output_tokens: int = 200,
+        dropped: int = 0,
+    ) -> list[dict]:
+        """Instala un `propose_ad` falso y devuelve la lista donde anota cada llamada."""
+        llamadas: list[dict] = []
+        producto = session.execute(select(Product)).scalars().first()
+        rows = [
+            ExtractionProposal(
+                product=producto,
+                price=fila.get("price"),
+                currency=fila.get("currency", "CUP"),
+                quantity=fila.get("quantity"),
+                unit=fila.get("unit"),
+                province=fila.get("province"),
+            )
+            for fila in (filas or [])
+        ]
+        resultado = AdProposal(
+            rows=rows,
+            row_meta=[
+                RowMeta(evidence=evidencia, currency_explicit=True, evidence_found=True)
+                for _ in rows
+            ],
+            discard=None if degraded else discard,
+            discard_reason=discard_reason,
+            degraded=degraded,
+            failure=failure,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            dropped=dropped,
+        )
+
+        def falso(text, products, provinces, **kwargs):
+            llamadas.append({"text": text, **kwargs})
+            return resultado
+
+        monkeypatch.setattr(curation, "propose_ad", falso)
+        return llamadas
+
+    @staticmethod
+    def _mapa_asistido(html: str) -> dict[str, list[str]]:
+        """El JSON que la plantilla le pasa al script de marcas."""
+        coincidencia = re.search(r"var filas = (\{.*?\});", html, re.S)
+        assert coincidencia is not None
+        return json.loads(coincidencia.group(1))
+
+    # --- el botón ---------------------------------------------------------
 
     def test_sin_clave_configurada_no_se_ofrece_el_boton(
         self, client: TestClient, session: Session
     ) -> None:
         """Sin clave el asistente no puede hacer nada: ofrecerlo sería
         prometer algo que no va a pasar."""
-        self._pendiente_con_hueco(session)
+        self._pendiente(session)
 
         assert "/assist" not in client.get("/curation").text
 
-    def test_con_clave_y_huecos_se_ofrece(
+    def test_con_clave_y_texto_se_ofrece_con_la_etiqueta_nueva(
+        self, client: TestClient, session: Session, con_clave: None
+    ) -> None:
+        self._pendiente(session)
+
+        html = client.get("/curation").text
+
+        assert "/assist" in html
+        assert "Completar con IA" in html
+        assert "Completar huecos con IA" not in html
+
+    def test_se_ofrece_aunque_las_reglas_no_dejen_huecos(
+        self, client: TestClient, session: Session, con_clave: None
+    ) -> None:
+        """Nuevo (2026-09-25): el modelo propone TODO y las reglas son segunda
+        opinión, así que el botón ya no depende de que falte algo. Acá las
+        reglas resuelven producto, precio, moneda, cantidad y unidad."""
+        self._pendiente(session, "pollo congelado 40 lb a 24800 cup")
+
+        assert "/assist" in client.get("/curation").text
+
+    def test_una_imagen_sin_texto_reconocido_no_ofrece_el_boton(
         self,
         client: TestClient,
         session: Session,
+        con_clave: None,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        self._pendiente_con_hueco(session)
-        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
-        get_settings.cache_clear()
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="hash-img-vacia", content_type=ContentType.IMAGE)
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
 
-        assert "/assist" in client.get("/curation").text
+        assert "/assist" not in client.get("/curation").text
 
     def test_abrir_la_cola_no_llama_a_la_api(
         self,
         client: TestClient,
         session: Session,
+        con_clave: None,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """La garantía de costo: cargar la página no gasta un peso."""
-        self._pendiente_con_hueco(session)
-        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
-        get_settings.cache_clear()
-        llamadas: list[object] = []
-        monkeypatch.setattr(
-            curation,
-            "propose_missing",
-            lambda *a, **k: llamadas.append(1) or llm_assist.AssistedFields(),
-        )
+        self._pendiente(session)
+        llamadas = self._modelo(monkeypatch, session)
 
         client.get("/curation")
 
         assert llamadas == []
 
-    def test_el_asistente_llena_el_hueco(
-        self,
-        client: TestClient,
-        session: Session,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        ingestion = self._pendiente_con_hueco(session)
-        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
-        get_settings.cache_clear()
-        monkeypatch.setattr(
-            curation,
-            "propose_missing",
-            lambda *a, **k: llm_assist.AssistedFields(quantity=Decimal("40"), unit="lb"),
-        )
-
-        texto = client.post(f"/curation/{ingestion.id}/assist").text
-
-        assert 'value="40"' in texto
-
-    def test_no_pisa_lo_que_las_reglas_ya_resolvieron(
-        self,
-        client: TestClient,
-        session: Session,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """La garantía de D1: el modelo no puede degradar un campo que ya
-        estaba bien. Acá responde un precio distinto y se ignora."""
-        ingestion = self._pendiente_con_hueco(session)
-        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
-        get_settings.cache_clear()
-        monkeypatch.setattr(
-            curation,
-            "propose_missing",
-            lambda *a, **k: llm_assist.AssistedFields(price=Decimal("999")),
-        )
-
-        texto = client.post(f"/curation/{ingestion.id}/assist").text
-
-        assert 'value="500"' in texto
-        assert 'value="999"' not in texto
-
-    def test_una_asistencia_fallida_deja_el_formulario_usable(
-        self,
-        client: TestClient,
-        session: Session,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        ingestion = self._pendiente_con_hueco(session)
-        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
-        get_settings.cache_clear()
-        monkeypatch.setattr(
-            curation, "propose_missing", lambda *a, **k: llm_assist.AssistedFields()
-        )
-
-        response = client.post(f"/curation/{ingestion.id}/assist")
-
-        assert response.status_code == 200
-        assert 'value="500"' in response.text
-
-    def test_los_campos_asistidos_quedan_marcados(
-        self,
-        client: TestClient,
-        session: Session,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """D10: el riesgo no es que el modelo se equivoque, es que se
-        equivoque de forma convincente sobre un formulario que se recorre
-        rápido. La marca es lo que sostiene la revisión."""
-        ingestion = self._pendiente_con_hueco(session)
-        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
-        get_settings.cache_clear()
-        monkeypatch.setattr(
-            curation,
-            "propose_missing",
-            lambda *a, **k: llm_assist.AssistedFields(quantity=Decimal("40")),
-        )
-
-        texto = client.post(f"/curation/{ingestion.id}/assist").text
-
-        assert "data-assisted" in texto
-
     def test_sin_clave_el_endpoint_no_llama_pero_responde(
-        self,
-        client: TestClient,
-        session: Session,
-        monkeypatch: pytest.MonkeyPatch,
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Aunque alguien llegue al endpoint a mano, sin clave no se gasta."""
-        ingestion = self._pendiente_con_hueco(session)
-        llamadas: list[object] = []
-        monkeypatch.setattr(
-            curation,
-            "propose_missing",
-            lambda *a, **k: llamadas.append(1) or llm_assist.AssistedFields(),
-        )
+        ingestion = self._pendiente(session)
+        llamadas = self._modelo(monkeypatch, session)
 
         response = client.post(f"/curation/{ingestion.id}/assist")
 
         assert response.status_code == 200
         assert llamadas == []
+
+    def test_el_endpoint_hace_una_sola_llamada_con_el_texto_del_anuncio(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        llamadas = self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
+
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        assert len(llamadas) == 1
+        assert llamadas[0]["text"] == self.TEXTO
+        assert llamadas[0]["ingestion_id"] == str(ingestion.id)
+        assert llamadas[0]["api_key"] == "clave-de-prueba"
+
+    # --- de dónde sale cada campo ------------------------------------------
+
+    def test_el_formulario_sale_de_las_filas_del_modelo_y_las_marca(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("500"), "quantity": Decimal("40"), "unit": "lb"}],
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'id="price_0" value="500"' in html
+        assert 'id="quantity_0" value="40"' in html
+        # Cada campo que el modelo llenó lleva la marca de contorno.
+        assert self._mapa_asistido(html) == {
+            "0": ["product", "price", "currency", "quantity", "unit"]
+        }
+
+    def test_el_modelo_manda_sobre_las_reglas_y_la_diferencia_se_ve(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Semántica nueva (reemplaza «no pisa lo que las reglas ya resolvieron»):
+        las reglas dicen 500, el modelo dice 999. La fila muestra 999 y el
+        campo queda señalado con lo que decían las reglas."""
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("999")}])
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'id="price_0" value="999"' in html
+        assert 'id="price_0" value="500"' not in html
+        assert 'data-differs-for="price_0"' in html
+        assert "Reglas: 500" in html
+
+    def test_lo_que_coincide_con_las_reglas_no_lleva_segundo_indicador(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'data-differs-for="' not in html
+        assert "Reglas:" not in html
+
+    def test_donde_las_reglas_no_dicen_nada_no_hay_segundo_indicador(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Las reglas no leen cantidad ni unidad de este texto: `sin_regla`."""
+        ingestion = self._pendiente(session)
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("500"), "quantity": Decimal("40"), "unit": "lb"}],
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'data-differs-for="quantity_0"' not in html
+        assert 'data-differs-for="unit_0"' not in html
+
+    def test_los_campos_que_el_modelo_no_propone_vienen_de_las_reglas(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """El anuncio escalonado (mismo texto real que arriba en este archivo):
+        las reglas producen dos filas y la segunda trae `min_purchase` 4000. El
+        modelo devuelve UNA fila con esa oferta; la compra mínima, que él no
+        propone, se hereda de la fila de las reglas que le corresponde."""
+        _crear_producto(session, name="Alitas de pollo")
+        ingestion = _crear_raw_ingestion(
+            session,
+            hash_="hash-alitas-asistida",
+            original_text=(
+                "ALITAS DE POLLO\nCAJA DE 40 lb\nLa caja 28,5 usd o 25650 cup.\n"
+                "Más de 10 cajas 28\nMás de 100 cajas 27,5.\n"
+            ),
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Canal mayorista",
+        )
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[
+                {
+                    "price": Decimal("27.5"),
+                    "currency": "USD",
+                    "quantity": Decimal("40"),
+                    "unit": "lb",
+                }
+            ],
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'id="price_0" value="27.5"' in html
+        assert 'id="min_purchase_0" value="4000"' in html
+        # Las filas salen del modelo: una sola fila propuesta, la siguiente en blanco.
+        assert 'id="price_1" value=""' in html
+
+    def test_la_provincia_del_canal_manda_sobre_la_del_modelo(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Misma regla que la cola ya aplica a las reglas (`_channel_province_id`,
+        docs/decisions.md 2026-08-17), y no se marca como propuesta del modelo."""
+        habana = _crear_provincia(session, code="hab", name="La Habana")
+        santiago = _crear_provincia(session, code="scu", name="Santiago de Cuba")
+        canal = Channel(
+            name="Canal habanero",
+            platform=Platform.WHATSAPP_CHANNEL,
+            external_id="9@newsletter",
+            province_id=habana.id,
+            is_active=True,
+        )
+        session.add(canal)
+        session.commit()
+        _crear_producto(session, name="Pollo", aliases=["pollo congelado"])
+        ingestion = _crear_raw_ingestion(
+            session,
+            hash_="hash-canal-asistido",
+            original_text=self.TEXTO,
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Canal habanero",
+            channel_id=canal.id,
+        )
+        self._modelo(
+            monkeypatch, session, filas=[{"price": Decimal("500"), "province": santiago}]
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert f'value="{habana.id}" selected' in html
+        assert f'value="{santiago.id}" selected' not in html
+        assert "province" not in self._mapa_asistido(html)["0"]
+
+    def test_la_provincia_del_modelo_rige_sin_canal_y_queda_marcada(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        santiago = _crear_provincia(session, code="scu", name="Santiago de Cuba")
+        ingestion = self._pendiente(session)
+        self._modelo(
+            monkeypatch, session, filas=[{"price": Decimal("500"), "province": santiago}]
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert f'value="{santiago.id}" selected' in html
+        assert "province" in self._mapa_asistido(html)["0"]
+
+    # --- la cita -------------------------------------------------------------
+
+    def test_ver_cita_muestra_el_fragmento_y_lo_resalta_en_el_texto(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session, "Hola\npollo congelado a 500\nsaludos")
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("500")}],
+            evidencia="pollo congelado a 500",
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert "Ver cita" in html
+        assert "<blockquote" in html
+        assert "<mark>pollo congelado a 500</mark>" in html
+        assert "<pre>Hola\n<mark>" in html
+
+    def test_la_cita_y_el_resaltado_escapan_el_html_del_anuncio(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(
+            session, "<script>alert(1)</script> pollo <b>congelado</b> a 500"
+        )
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("500")}],
+            evidencia="pollo <b>congelado</b> a 500",
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert "<script>alert(1)" not in html
+        assert "<b>congelado" not in html
+        assert "<mark>pollo &lt;b&gt;congelado&lt;/b&gt; a 500</mark>" in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+    def test_una_cita_que_no_esta_literal_no_resalta_ni_rompe(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("500")}],
+            evidencia="POLLO CONGELADO A 500",
+        )
+
+        response = client.post(f"/curation/{ingestion.id}/assist")
+
+        assert response.status_code == 200
+        assert "<mark>" not in response.text
+        # La cita sigue disponible para el operador.
+        assert "Ver cita" in response.text
+
+    def test_sin_evidencia_no_hay_ver_cita(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}], evidencia=None)
+
+        assert "Ver cita" not in client.post(f"/curation/{ingestion.id}/assist").text
+
+    def test_en_una_imagen_la_cita_no_se_resalta_en_el_ocr_editable(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _crear_producto(session, name="Pollo", aliases=["pollo congelado"])
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-imagen-asistida", content_type=ContentType.IMAGE
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": self.TEXTO)
+        llamadas = self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("500")}],
+            evidencia="pollo congelado a 500",
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        # El texto que se le manda al modelo es el del OCR.
+        assert llamadas[0]["text"] == self.TEXTO
+        assert "Ver cita" in html
+        assert "<mark>" not in html
+        assert "pollo congelado a 500</textarea>" in html
+
+    # --- el veredicto de descarte ------------------------------------------
+
+    def test_descartar_sugerido_muestra_el_motivo_y_un_boton_principal(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, discard=True, discard_reason="off_focus")
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert "El asistente sugiere descartar: fuera de foco." in html
+        grupo = re.search(
+            rf'action="/curation/{ingestion.id}/discard" class="m3-discard-group">(.*?)</form>',
+            html,
+            re.S,
+        )
+        assert grupo is not None
+        botones = re.findall(
+            r'<button type="submit" name="reason" value="(\w+)" class="([^"]*)"', grupo.group(1)
+        )
+        # El motivo del modelo va primero y como acción principal; el otro, secundario.
+        assert botones == [
+            ("off_focus", "m3-btn m3-btn-filled"),
+            ("no_data", "m3-btn"),
+        ]
+
+    def test_el_motivo_sin_dato_util_se_preselecciona(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, discard=True, discard_reason="no_data")
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert "El asistente sugiere descartar: sin dato útil." in html
+        assert 'name="reason" value="no_data" class="m3-btn m3-btn-filled"' in html
+        assert 'name="reason" value="off_focus" class="m3-btn"' in html
+
+    def test_sin_sugerencia_de_descarte_no_hay_banner_del_modelo(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}], discard=False)
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert "El asistente sugiere descartar" not in html
+
+    def test_el_hint_de_las_reglas_sigue_igual_cuando_el_asistente_no_corrio(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="hash-hint-intacto", content_type=ContentType.IMAGE)
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "buenos días a todos")
+
+        html = client.get("/curation").text
+
+        assert "No se reconoció producto ni precio en este anuncio" in html
+        assert "El asistente" not in html
+
+    def test_con_respuesta_del_modelo_el_aviso_de_las_reglas_no_lo_contradice(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Las reglas no vieron nada («buenos días a todos») pero el modelo sí
+        encontró una oferta: el banner «no se reconoció producto ni precio» se
+        contradiría con la fila que acaba de aparecer."""
+        _crear_producto(session, name="Pollo")
+        ingestion = _crear_raw_ingestion(
+            session, hash_="hash-contradiccion", content_type=ContentType.IMAGE
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "buenos días a todos")
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'id="price_0" value="500"' in html
+        assert "No se reconoció producto ni precio en este anuncio" not in html
+
+    # --- fallas ------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        ("failure", "legible"),
+        [
+            ("credit", "sin saldo en la cuenta de la API"),
+            ("timeout", "tardó demasiado en responder"),
+            ("network", "no hay conexión con el servicio"),
+            ("auth", "la clave de la API fue rechazada"),
+            ("other", "error inesperado"),
+        ],
+    )
+    def test_una_falla_deja_el_formulario_de_las_reglas_y_dice_por_que(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+        failure: str,
+        legible: str,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, degraded=True, failure=failure)
+
+        response = client.post(f"/curation/{ingestion.id}/assist")
+
+        assert response.status_code == 200
+        # El formulario queda exactamente como lo armaron las reglas, sin marcas.
+        assert 'id="price_0" value="500"' in response.text
+        assert self._mapa_asistido(response.text) == {}
+        assert 'data-differs-for="' not in response.text
+        assert f"El asistente no pudo responder ({legible}). Completá a mano." in response.text
+
+    # --- registro del operador (H0 y /control) ---------------------------------
+
+    def test_una_asistencia_exitosa_queda_en_el_registro_del_operador(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("500")}],
+            input_tokens=1000,
+            output_tokens=200,
+        )
+
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        registro = tmp_path / "assist-log.jsonl"
+        # Lo que lee H0 para dejar fuera del conjunto no asistido:
+        assert llm_assist.assisted_ingestion_ids(registro) == {str(ingestion.id)}
+        # Lo que lee el resumen de /control:
+        resumen = llm_assist.consumption_summary(registro)
+        assert resumen.calls == 1
+        assert resumen.input_tokens == 1000
+        assert resumen.output_tokens == 200
+        assert resumen.failures == {}
+        assert resumen.out_of_credit is False
+        (linea,) = llm_assist.read_assist_runs(registro)
+        assert linea.model == "claude-sonnet-5"
+        assert linea.degraded is False
+
+    def test_una_falla_tambien_queda_registrada_con_su_tipo(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(
+            monkeypatch, session, degraded=True, failure="credit", input_tokens=0, output_tokens=0
+        )
+
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        registro = tmp_path / "assist-log.jsonl"
+        assert llm_assist.assisted_ingestion_ids(registro) == {str(ingestion.id)}
+        resumen = llm_assist.consumption_summary(registro)
+        assert resumen.calls == 1
+        assert resumen.failures == {"credit": 1}
+        assert resumen.out_of_credit is True
+
+    def test_filas_perdidas_del_modelo_no_rompen_los_lectores_del_registro(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """`AdProposal.dropped` es un entero y `read_assist_runs` espera una
+        lista en ese campo: copiarlo tal cual al registro tumbaría `/control`."""
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}], dropped=3)
+
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        registro = tmp_path / "assist-log.jsonl"
+        assert len(llm_assist.read_assist_runs(registro)) == 1
+        assert llm_assist.consumption_summary(registro).calls == 1
+
+    def test_sin_intento_real_no_se_registra_nada(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """`no_key` y `empty_text` no son invocaciones: el registro cuenta
+        intentos reales (mismo criterio que `propose_ad`)."""
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, degraded=True, failure="empty_text")
+
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        assert not (tmp_path / "assist-log.jsonl").exists()
+
+    def test_el_endpoint_asiste_el_anuncio_pedido_aunque_no_sea_el_primero_de_la_cola(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Se abre con `?id=` un pendiente que no es el primero de la cola: el
+        POST tiene que asistir ESE anuncio y no ignorarlo en silencio."""
+        _crear_producto(session, name="Pollo", aliases=["pollo congelado"])
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-primero",
+            original_text="pollo congelado a 100",
+            captured_at=datetime.now(UTC) - timedelta(hours=2),
+        )
+        segundo = _crear_raw_ingestion(
+            session, hash_="hash-segundo", original_text="pollo congelado a 700"
+        )
+        llamadas = self._modelo(monkeypatch, session, filas=[{"price": Decimal("700")}])
+
+        client.post(f"/curation/{segundo.id}/assist")
+
+        assert [c["ingestion_id"] for c in llamadas] == [str(segundo.id)]
 
 
 class TestHistorialFiltraPorFormato:

@@ -195,6 +195,92 @@ cuánto resuelven las reglas solas.
 
 ---
 
+## Backtest
+
+Mide el modelo contra lo que curaste a mano, separado por texto e imagen, y lo
+compara con las reglas sobre los mismos anuncios. Es la línea base para decidir
+si confiar en el modelo con toda la cola. **No da veredicto ni umbral**: el
+umbral lo ponés vos al ver los números (`spec.md` §12.6).
+
+Corré todo desde la raíz del proyecto (usa la base y `data/` de ahí).
+
+1. **En seco** (por defecto): no llama a nada, no necesita clave. Imprime
+   cuántos anuncios entran por tipo y el costo estimado por modelo.
+
+   ```
+   .venv/bin/python -m saimc.extraction.llm_backtest
+   ```
+
+2. **Piloto** con 10 anuncios (gasta centavos; sirve para ver que todo anda):
+
+   ```
+   .venv/bin/python -m saimc.extraction.llm_backtest --execute --limit 10
+   ```
+
+3. **Corrida completa** (mismo comando sin `--limit`). Es reanudable: si se
+   corta, volvé a lanzarlo y salta lo ya hecho; los anuncios degradados se
+   reintentan.
+
+   ```
+   .venv/bin/python -m saimc.extraction.llm_backtest --execute
+   ```
+
+`--execute` exige `SAIMC_ANTHROPIC_API_KEY` y se niega sin ella. No cambies
+`--seed` ni `--sample` entre el piloto y la corrida completa (mezclarías
+muestras distintas en el mismo archivo). Para cambiar de modelo: `--model`.
+
+**Re-correr con un prompt nuevo (v2 en adelante).** Los archivos por defecto
+son la línea base v1: no los pises. Usá rutas aparte para que las dos corridas
+queden comparables:
+
+```
+.venv/bin/python -m saimc.extraction.llm_backtest --execute \
+  --results data/llm-backtest-results-v2.jsonl \
+  --calls-log data/llm-backtest-calls-v2.jsonl \
+  --report data/llm-backtest-report-v2.md
+```
+
+Con la misma `--seed` (42 por defecto) y el mismo `--limit`, la lista de
+anuncios es la misma (el oro se ordena y el muestreo es determinista), así que
+una corrida con `--limit 100` cubre los mismos 100 anuncios que la v1 mientras
+no cambien los curados ni el registro del asistente. Cada resultado y cada
+llamada registran `prompt_version` (`llm_propose_ad.PROMPT_VERSION`); los de la
+v1 no lo tienen y el reporte los rotula «v1 (sin registro)». El reporte incluye
+las «filas de más» (lo que el modelo propone y el operador no dejó): no son
+error de H0, pero cuestan borrados, y el oro puede estar incompleto.
+
+**Prompt v3 y «Calidad de las señales».** La v3 (`2026-09-25.3`) pide por fila
+la evidencia (fragmento literal del anuncio) y `currency_explicit`, y explicita la
+regla del precio en dos monedas. El reporte suma la sección «Calidad de las
+señales» (por tipo y total, cada porcentaje con su n): si la evidencia se halla
+en el texto, si el precio está en ella, y el acierto de las filas cortado por
+evidencia hallada / no hallada, moneda explícita / asumida y acuerdo con las
+reglas (coincide / difiere), más los tokens de salida por llamada (v2: 17958
+para 100 anuncios). Los resultados de la v2 no traen esas señales y salen n/d.
+Re-corrida (cuesta plata; decisión del operador):
+
+```
+.venv/bin/python -m saimc.extraction.llm_backtest --execute --limit 100 \
+  --results data/llm-backtest-results-v3.jsonl \
+  --calls-log data/llm-backtest-calls-v3.jsonl \
+  --report data/llm-backtest-report-v3.md
+```
+
+Dónde queda todo (bajo `data/`, que el repositorio no versiona):
+
+- `data/llm-backtest-results.jsonl`: un resultado por anuncio (propuesta del
+  modelo, de las reglas, tokens, OCR de las imágenes).
+- `data/llm-backtest-report.md`: el reporte en español. Se regenera sin llamar
+  a nada con `--report-only`.
+- `data/llm-backtest-calls.jsonl`: registro de llamadas. Es un archivo aparte
+  del del asistente: el backtest **no** saca anuncios de la medición de H0.
+
+El oro son los curados que nunca pasaron por el asistente. La muestra de
+descartados (por defecto, tantos como oro por tipo) solo mide el veredicto de
+descarte.
+
+---
+
 ## Qué NO hacer
 
 - No enciendas auto-reload en la consola sin decidirlo a conciencia.
