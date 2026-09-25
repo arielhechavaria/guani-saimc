@@ -138,6 +138,40 @@ orden de la cola.
 - `/curation` lee la propuesta guardada en vez de llamar al abrir.
 - Al cargar el backlog inicial (~267) se informa el costo estimado antes de correr.
 - Idempotente: reanudable si se corta, sin repetir lo ya procesado.
+- **Nota del operador y glosario (pedido del operador, 2026-09-25).** Al revisar,
+  el operador puede dejar una nota libre sobre lo que el modelo no pudo saber
+  (ejemplo real: «Pollo Muslo 4x10» = 4 paquetes de 10 lb, la caja pesa 40 lb).
+  La nota se guarda con la captura de la revisión. Si vale para todos los
+  anuncios, el operador la **promueve al glosario**: reglas cortas, legibles y
+  editables que se inyectan en el prompt de todas las llamadas. No es
+  entrenamiento: es contexto curado a mano. Condiciones:
+  - Cada cambio del glosario cambia `PROMPT_VERSION`, para que el backtest compare
+    antes y después.
+  - Glosario corto: cada regla cuesta tokens en todas las llamadas, y reglas
+    contradictorias empeoran al modelo.
+  - Un patrón muy regular (como `NxM`) se evalúa primero como regla determinista
+    del extractor, que es gratis y no falla.
+  - Esto reabre en parte «Aprendizaje» (abajo), en su forma más controlada: el
+    operador decide cada regla.
+- **Recorte del texto antes de enviarlo (pedido del operador, 2026-09-25).** En
+  listas largas (supermercados de WhatsApp con 40 productos) se envía al modelo solo
+  lo pertinente:
+  - las líneas que el emparejado por sinónimos del catálogo reconoce como producto
+    foco, más la línea siguiente (precios por volumen como «Más de 50 cajas»);
+  - el encabezado que declara moneda o unidad («Precios en CUP»);
+  - si no se reconoce ninguna línea, el texto entero (el descarte lo sigue
+    decidiendo el modelo).
+  Riesgos y cómo se miden:
+  - Un producto foco escrito de forma que los sinónimos no reconocen nunca llega
+    al modelo. El backtest se corre con y sin recorte sobre el mismo oro, y el
+    recorte entra solo si no pierde filas.
+  - La evidencia y el resaltado se verifican contra el texto recortado.
+  - Ganancia extra: sale menos texto a un tercero (privacidad, `spec.md` §10.6).
+  - **Ojo con el ahorro.** En el anuncio medido (4 filas, $0,033) la entrada
+    costó $0,007 y la salida $0,026. El recorte ataca la entrada; el grueso fue
+    la salida (2629 tokens para 4 filas, sin razonamiento extendido). Antes de
+    recortar hay que guardar la respuesta cruda de algunas llamadas largas y ver
+    en qué se van esos tokens.
 
 ### Slice 4 — Interfaz de revisión
 
