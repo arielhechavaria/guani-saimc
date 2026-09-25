@@ -5577,6 +5577,63 @@ class TestAsistenteLLM:
         # El botón sigue ofrecido para pedir otra.
         assert f"/curation/{ingestion.id}/assist" in html
 
+    def test_un_anuncio_precalculado_abre_con_la_propuesta_sin_llamar(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Slice 3b: lo que guardó `python -m saimc.extraction.prefill` se ve
+        al abrir el anuncio, igual que lo guardado por «Completar con IA»."""
+        from types import SimpleNamespace
+
+        from saimc.extraction import prefill
+
+        ingestion = self._pendiente(session)
+        cuerpo = {
+            "discard": False,
+            "discard_reason": None,
+            "rows": [
+                {
+                    "product": "Pollo",
+                    "price": 999,
+                    "currency": "CUP",
+                    "quantity": None,
+                    "unit": None,
+                    "province": None,
+                    "evidence": None,
+                    "currency_explicit": False,
+                }
+            ],
+        }
+        cliente = SimpleNamespace(
+            messages=SimpleNamespace(
+                create=lambda **kw: SimpleNamespace(
+                    content=[SimpleNamespace(type="text", text=json.dumps(cuerpo))],
+                    usage=SimpleNamespace(input_tokens=1000, output_tokens=200),
+                )
+            )
+        )
+        prefill.execute(
+            prefill.parse_args(["--execute"]),
+            session,
+            get_settings(),
+            client=cliente,
+            out=lambda _linea: None,
+        )
+        (propuesta,) = self._propuestas(session, ingestion)
+
+        def _prohibido(*a, **k):
+            raise AssertionError("abrir un anuncio precalculado no llama al modelo")
+
+        monkeypatch.setattr(curation, "propose_ad", _prohibido)
+        html = client.get(f"/curation?id={ingestion.id}").text
+
+        assert 'id="price_0" value="999"' in html
+        assert "Reglas: 500" in html
+        assert f'name="proposal_id" value="{propuesta.id}"' in html
+
     def test_una_propuesta_degradada_guardada_no_se_muestra_al_abrir(
         self,
         client: TestClient,

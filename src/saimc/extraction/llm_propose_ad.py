@@ -30,7 +30,7 @@ puntúe con las mismas funciones que a las reglas.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -47,7 +47,14 @@ from saimc.extraction.llm_assist import (
     classify_failure,
 )
 from saimc.extraction.llm_checks import RowMeta, verify_evidence
-from saimc.models import Currency, DiscardReason, Product, Province
+from saimc.models import (
+    ContentType,
+    Currency,
+    DiscardReason,
+    Product,
+    Province,
+    RawIngestion,
+)
 from saimc.units import UNITS, canonical_unit
 
 # Varias filas por respuesta: 1024 truncó una respuesta en el asistente por fila.
@@ -394,4 +401,103 @@ def propose_ad(
             dropped=parsed.dropped,
             raw_response=raw or None,
         )
+    )
+
+
+# --- compartido por «Completar con IA» y el pre-cálculo (slice 3b) ----------
+#
+# Vivían en `web/routers/curation.py`. El pre-cálculo tiene que mandar
+# EXACTAMENTE el mismo texto y escribir EXACTAMENTE la misma línea de registro
+# que el botón, así que se mudaron acá en vez de copiarse.
+
+# Los campos que el modelo propone por fila.
+ASSIST_FIELDS = ("product", "price", "currency", "quantity", "unit", "province")
+
+
+def ad_text(
+    ingestion: RawIngestion,
+    raw_store_dir: Path,
+    transcribe: Callable[[Path], str] | None = None,
+) -> str:
+    """El texto del anuncio que se le da al modelo.
+
+    El original si es de texto; lo que sale del OCR si es una imagen sin texto
+    cargado. Vacío si no hay nada que mandar. `transcribe` es el seam de test;
+    por defecto `ocr.transcribe`, resuelto al llamar para que un
+    `monkeypatch` del módulo `ocr` lo alcance.
+    """
+    if ingestion.content_type == ContentType.TEXT:
+        return ingestion.original_text or ""
+    if ingestion.original_text is not None:
+        return ""
+    if transcribe is None:
+        from saimc.extraction import ocr
+
+        transcribe = ocr.transcribe
+    return transcribe(raw_store_dir / ingestion.file_path) or ""
+
+
+def filled_fields(row: ExtractionProposal) -> list[str]:
+    """Qué campos llenó el modelo en esta fila (los que trajo con valor).
+
+    La moneda cuenta solo con precio: sin él el `CUP` es el default de las
+    reglas y no una respuesta del modelo.
+    """
+    campos = ["product"]
+    if row.price is not None:
+        campos += ["price", "currency"]
+    if row.quantity is not None:
+        campos.append("quantity")
+    if row.unit:
+        campos.append("unit")
+    if row.province is not None:
+        campos.append("province")
+    return campos
+
+
+def record_operator_run(
+    result: AdProposal,
+    *,
+    ingestion_id: str,
+    model: str,
+    log_path: Path,
+    source: str,
+) -> None:
+    """Anota la invocación en el registro del operador (`llm_assist_log_path`).
+
+    Es el registro que lee `llm_assist.consumption_summary` (`/control`) y
+    `llm_assist.assisted_ingestion_ids` (H0 deja fuera lo asistido, salvo las
+    líneas con `source` = `llm_assist.PREFILL_SOURCE`). Su forma es la de
+    `llm_assist.AssistRun`: `requested`/`answered`/`dropped` son LISTAS. El
+    `dropped` de `AdProposal` es un entero y copiarlo tal cual haría que
+    `read_assist_runs` fallara en `/control`, así que va aparte como
+    `dropped_count`. Por eso no sirve el `log_path` de `propose_ad`, que es el
+    registro aparte del backtest, con otra forma.
+
+    No se registra lo que no fue una invocación (`no_key`, `empty_text`), igual
+    que `propose_ad`: el registro cuenta intentos reales.
+    """
+    if result.failure in ("no_key", "empty_text"):
+        return
+    respondidos = sorted({campo for row in result.rows for campo in filled_fields(row)})
+    append_assist_run(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "ingestion_id": ingestion_id,
+            "model": model,
+            "kind": "ad",
+            "source": source,
+            "prompt_version": PROMPT_VERSION,
+            "requested": list(ASSIST_FIELDS),
+            "answered": respondidos,
+            "dropped": [],
+            "dropped_count": result.dropped,
+            "rows": len(result.rows),
+            "discard": result.discard,
+            "degraded": result.degraded,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "failure": result.failure,
+        },
+        log_path,
     )
