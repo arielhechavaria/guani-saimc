@@ -67,6 +67,8 @@ def _fila(**campos) -> dict:
         "quantity": None,
         "unit": None,
         "province": None,
+        "evidence": None,
+        "currency_explicit": False,
     }
     base.update(campos)
     return base
@@ -299,8 +301,8 @@ def test_cada_linea_del_registro_lleva_la_version_del_prompt(
     _proponer(roto, "b", products, provinces, ingestion_id="id-2", log_path=log)
 
     lineas = [json.loads(x) for x in log.read_text().splitlines()]
-    assert [x["prompt_version"] for x in lineas] == ["2026-09-25.2"] * 2
-    assert llm_propose_ad.PROMPT_VERSION == "2026-09-25.2"
+    assert [x["prompt_version"] for x in lineas] == ["2026-09-25.3"] * 2
+    assert llm_propose_ad.PROMPT_VERSION == "2026-09-25.3"
 
 
 def test_el_prompt_pide_una_fila_por_oferta_y_el_lado_cup() -> None:
@@ -400,3 +402,81 @@ def test_smoke_real_respeta_el_contrato(products, provinces) -> None:
     assert isinstance(r, llm_propose_ad.AdProposal)
     for fila in r.rows:
         assert fila.product in products
+
+
+# --- v3: evidencia, moneda explícita y regla de doble precio ---------------
+
+
+def test_el_prompt_v3_trae_los_dos_ejemplos_de_doble_precio() -> None:
+    """Prueba débil y honesta: verifica que los ejemplos ESTÁN escritos.
+
+    Que el modelo elija USD 42 en «42 usd o 28560» y CUP 27400 en «40 o 27400» se
+    mide re-corriendo el backtest (`docs/runbook-asistente-llm.md`, «Backtest»),
+    no acá.
+    """
+    prompt = llm_propose_ad._SYSTEM_PROMPT
+
+    assert "42 usd o 28560" in prompt
+    assert "40 o 27400" in prompt
+
+
+def test_el_esquema_pide_evidencia_y_moneda_explicita_por_fila() -> None:
+    fila = llm_propose_ad.response_schema()["properties"]["rows"]["items"]
+
+    assert "evidence" in fila["required"] and "currency_explicit" in fila["required"]
+    assert fila["properties"]["currency_explicit"] == {"type": "boolean"}
+    # Nulabilidad con anyOf: la API rechaza enum junto a un tipo en lista.
+    assert fila["properties"]["evidence"] == {
+        "anyOf": [{"type": "string"}, {"type": "null"}]
+    }
+
+
+def test_row_meta_lleva_evidencia_moneda_y_verificacion(products, provinces) -> None:
+    texto = "Arroz 25 lb a 30.885 cup"
+    cuerpo = {
+        "discard": False,
+        "discard_reason": None,
+        "rows": [
+            _fila(
+                product="Arroz", price=30885, currency="CUP", quantity=25, unit="lb",
+                evidence="arroz 25 lb a 30.885 cup", currency_explicit=True,
+            ),
+            _fila(
+                product="Pollo", price=500, currency="CUP",
+                evidence="pollo 500 fresco", currency_explicit=False,
+            ),
+        ],
+    }
+
+    r = _proponer(ClienteFalso(_respuesta(cuerpo)), texto, products, provinces)
+
+    assert len(r.row_meta) == len(r.rows) == 2
+    arroz, pollo = r.row_meta
+    assert (arroz.evidence, arroz.currency_explicit) == ("arroz 25 lb a 30.885 cup", True)
+    assert (arroz.evidence_found, arroz.price_in_evidence) == (True, True)
+    # El fragmento del pollo no está en el anuncio: fila sospechosa.
+    assert (pollo.currency_explicit, pollo.evidence_found) == (False, False)
+    # `price_in_evidence` mira el fragmento citado, no el anuncio: 500 sí está en él.
+    assert pollo.price_in_evidence is True
+
+
+def test_meta_malformada_degrada_a_none_y_false_sin_levantar(products, provinces) -> None:
+    sin_claves = _fila(product="Pollo", price=200)
+    sin_claves.pop("evidence")
+    sin_claves.pop("currency_explicit")
+    cuerpo = {
+        "discard": False,
+        "discard_reason": None,
+        "rows": [
+            _fila(product="Arroz", price=100, evidence=123, currency_explicit="si"),
+            sin_claves,
+        ],
+    }
+
+    r = _proponer(ClienteFalso(_respuesta(cuerpo)), "Arroz 100 Pollo 200", products, provinces)
+
+    assert r.degraded is False and len(r.rows) == 2
+    for meta in r.row_meta:
+        assert meta.evidence is None
+        assert meta.currency_explicit is False
+        assert meta.evidence_found is False

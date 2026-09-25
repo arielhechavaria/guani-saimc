@@ -249,6 +249,23 @@ v1 no lo tienen y el reporte los rotula «v1 (sin registro)». El reporte incluy
 las «filas de más» (lo que el modelo propone y el operador no dejó): no son
 error de H0, pero cuestan borrados, y el oro puede estar incompleto.
 
+**Prompt v3 y «Calidad de las señales».** La v3 (`2026-09-25.3`) pide por fila
+la evidencia (fragmento literal del anuncio) y `currency_explicit`, y explicita la
+regla del precio en dos monedas. El reporte suma la sección «Calidad de las
+señales» (por tipo y total, cada porcentaje con su n): si la evidencia se halla
+en el texto, si el precio está en ella, y el acierto de las filas cortado por
+evidencia hallada / no hallada, moneda explícita / asumida y acuerdo con las
+reglas (coincide / difiere), más los tokens de salida por llamada (v2: 17958
+para 100 anuncios). Los resultados de la v2 no traen esas señales y salen n/d.
+Re-corrida (cuesta plata; decisión del operador):
+
+```
+.venv/bin/python -m saimc.extraction.llm_backtest --execute --limit 100 \
+  --results data/llm-backtest-results-v3.jsonl \
+  --calls-log data/llm-backtest-calls-v3.jsonl \
+  --report data/llm-backtest-report-v3.md
+```
+
 Dónde queda todo (bajo `data/`, que el repositorio no versiona):
 
 - `data/llm-backtest-results.jsonl`: un resultado por anuncio (propuesta del

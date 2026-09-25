@@ -55,7 +55,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
-from saimc.extraction import llm_assist, llm_propose_ad, measure, ocr
+from saimc.extraction import llm_assist, llm_checks, llm_propose_ad, measure, ocr
 from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.ingestion import origin
 from saimc.models import (
@@ -88,6 +88,21 @@ _IMAGE_FALLBACK_CHARS = 1000
 _ABORT_FAILURES = frozenset({"credit", "auth"})
 
 _GROUPS = ("texto", "imagen", "total")
+
+# Señales de calidad (v3): cada clave guarda `[aciertos, n]`. Se crean todas
+# aunque no haya datos, para que un resultado viejo (sin `row_meta`) se imprima
+# como `0/0 (n/d)` y no como una clave ausente.
+_SIGNAL_KEYS = (
+    "found",  # filas con la evidencia hallada en el texto
+    "price_in",  # filas con el precio dentro de la evidencia
+    "complete|found=True",  # extracción completa correcta, según evidencia
+    "complete|found=False",
+    "currency|explicit=True",  # moneda correcta, según moneda explícita o asumida
+    "currency|explicit=False",
+    "complete|agreement=coincide",  # extracción completa correcta, según acuerdo
+    "complete|agreement=difiere",
+    "complete|agreement=sin_regla",
+)
 
 
 @dataclass(frozen=True)
@@ -421,6 +436,15 @@ def run_backtest(
             dataclasses.replace(r, province=channel) if channel is not None else r
             for r in result.rows
         ]
+        agreements = llm_checks.compare_with_rules(rows, rules)
+        row_meta = [
+            {
+                **dataclasses.asdict(meta),
+                "agreement": a.status,
+                "agreement_fields": a.fields(),
+            }
+            for meta, a in zip(result.row_meta, agreements, strict=True)
+        ]
         record.update(
             ingestion_id=item.ingestion_id,
             content_type=item.content_type,
@@ -434,6 +458,8 @@ def run_backtest(
                 "discard": result.discard,
                 "discard_reason": result.discard_reason,
                 "rows": rows_to_dicts(rows),
+                # Paralela a `rows`. Los resultados de la v2 no la traen.
+                "row_meta": row_meta,
                 "dropped": result.dropped,
             },
             rules_proposal=rows_to_dicts(rules),
@@ -520,6 +546,15 @@ class GroupMetrics:
     extra_dup_currency: int = 0  # misma oferta en otra moneda
     extra_other: int = 0
     ads_with_extra: int = 0
+    # Llamadas que consumieron tokens (para el promedio de salida por llamada).
+    calls: int = 0
+    signals: dict[str, list[int]] = field(
+        default_factory=lambda: {k: [0, 0] for k in _SIGNAL_KEYS}
+    )
+
+    def tally(self, key: str, ok: bool) -> None:
+        self.signals[key][0] += bool(ok)
+        self.signals[key][1] += 1
 
     @property
     def discard_precision(self) -> tuple[int, int]:
@@ -584,6 +619,7 @@ def compute_metrics(
         for g in targets:
             g.input_tokens += tokens_in
             g.output_tokens += tokens_out
+            g.calls += bool(tokens_in or tokens_out)
             g.dropped += _count(proposal.get("dropped"))
             if model in llm_assist._RATES_USD_PER_MTOK:
                 g.cost_usd += _cost(tokens_in, tokens_out, model)
@@ -628,9 +664,23 @@ def compute_metrics(
             g.extra_other += other
             g.extra_rows += duplicated + other
             g.ads_with_extra += (duplicated + other) > 0
+        # `row_meta` va en paralelo a las filas; los resultados viejos no lo traen.
+        raw_meta = proposal.get("row_meta")
+        meta_by_row = (
+            {id(c): m for c, m in zip(llm_candidates, raw_meta, strict=True)}
+            if isinstance(raw_meta, list) and len(raw_meta) == len(llm_candidates)
+            else {}
+        )
+        for meta in meta_by_row.values():
+            for g in targets:
+                _tally_shares(g, meta)
         for (row, llm_row), (_, rule_row) in zip(llm_pairs, rule_pairs, strict=True):
             llm_ok = measure.row_correctness(row, llm_row)
             rule_ok = measure.row_correctness(row, rule_row)
+            meta = meta_by_row.get(id(llm_row))
+            if isinstance(meta, dict):
+                for g in targets:
+                    _tally_splits(g, meta, row, llm_row, llm_ok.complete)
             for g in targets:
                 g.llm.add(llm_ok)
                 g.rules.add(rule_ok)
@@ -644,6 +694,43 @@ def compute_metrics(
                 else:
                     g.neither += 1
     return groups
+
+
+def _tally_shares(g: GroupMetrics, meta: object) -> None:
+    """Cuántas filas del modelo tienen la evidencia hallada / el precio en ella."""
+    if not isinstance(meta, dict):
+        return
+    found = meta.get("evidence_found")
+    if isinstance(found, bool):
+        g.signals["found"][0] += found
+        g.signals["found"][1] += 1
+    price_in = meta.get("price_in_evidence")
+    if isinstance(price_in, bool):
+        g.signals["price_in"][0] += price_in
+        g.signals["price_in"][1] += 1
+
+
+def _tally_splits(
+    g: GroupMetrics,
+    meta: dict[str, Any],
+    confirmed: PriceHistory,
+    proposed: ExtractionProposal,
+    complete: bool,
+) -> None:
+    """Acierto de una fila emparejada, cortado por cada señal.
+
+    Es lo que responde la pregunta de fondo: ¿una evidencia que no aparece, una
+    moneda asumida o un desacuerdo con las reglas anticipan una fila mal?
+    """
+    found = meta.get("evidence_found")
+    if isinstance(found, bool):
+        g.tally(f"complete|found={found}", complete)
+    explicit = meta.get("currency_explicit")
+    if isinstance(explicit, bool):
+        g.tally(f"currency|explicit={explicit}", proposed.currency == confirmed.currency)
+    agreement = meta.get("agreement")
+    if agreement in (llm_checks.COINCIDE, llm_checks.DIFIERE, llm_checks.SIN_REGLA):
+        g.tally(f"complete|agreement={agreement}", complete)
 
 
 def _count(value: object) -> int:
@@ -771,6 +858,45 @@ def render_report(
                 if g.untariffed_calls
                 else ""
             ),
+            "",
+            "### (g) Calidad de las señales",
+            "",
+            "Señales que acompañan a cada fila del modelo, medidas contra lo que "
+            "el operador confirmó (mismas definiciones de H0). No fijan umbral ni "
+            "dicen si conviene fiarse de ellas: solo muestran si anticipan un "
+            "error. Con resultados de un prompt anterior a la v3 salen como n/d.",
+            "",
+        ]
+        def line(label: str, key: str, g: GroupMetrics = g) -> str:
+            return f"- {label}: {_frac(*g.signals[key])}"
+
+        avg = f"{g.output_tokens / g.calls:.1f}" if g.calls else "n/d"
+        lines += [
+            line("Filas con evidencia hallada en el anuncio", "found"),
+            line("Filas con el precio dentro de la evidencia", "price_in"),
+            line(
+                "Extracción completa correcta con evidencia hallada",
+                "complete|found=True",
+            ),
+            line(
+                "Extracción completa correcta con evidencia NO hallada",
+                "complete|found=False",
+            ),
+            line("Moneda correcta con moneda explícita", "currency|explicit=True"),
+            line("Moneda correcta con moneda asumida", "currency|explicit=False"),
+            line(
+                "Extracción completa correcta si coincide con las reglas",
+                "complete|agreement=coincide",
+            ),
+            line(
+                "Extracción completa correcta si difiere de las reglas",
+                "complete|agreement=difiere",
+            ),
+            line(
+                "Extracción completa correcta si las reglas no dicen",
+                "complete|agreement=sin_regla",
+            ),
+            f"- Tokens de salida por llamada: {avg} ({g.calls} llamadas)",
         ]
     return "\n".join(lines) + "\n"
 

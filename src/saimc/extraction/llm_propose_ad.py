@@ -46,6 +46,7 @@ from saimc.extraction.llm_assist import (
     append_assist_run,
     classify_failure,
 )
+from saimc.extraction.llm_checks import RowMeta, verify_evidence
 from saimc.models import Currency, DiscardReason, Product, Province
 from saimc.units import UNITS, canonical_unit
 
@@ -55,7 +56,7 @@ MAX_TOKENS = 4096
 # Versión del prompt de sistema: cada línea del registro de llamadas y cada
 # resultado del backtest la lleva, para atribuir una corrida a su prompt. La v1
 # (el prompt original, sin esta constante) no la registró.
-PROMPT_VERSION = "2026-09-25.2"
+PROMPT_VERSION = "2026-09-25.3"
 
 _CURRENCIES: tuple[str, ...] = tuple(c.value for c in Currency)
 _DISCARD_REASONS: tuple[str, ...] = tuple(r.value for r in DiscardReason)
@@ -66,6 +67,10 @@ class AdProposal:
     """Lo que el modelo propuso para un anuncio, ya validado."""
 
     rows: list[ExtractionProposal] = field(default_factory=list)
+    # Paralela a `rows` (mismo índice): evidencia citada, moneda explícita o
+    # asumida y su verificación contra el texto. Va aparte para no romper a quien
+    # ya consume `rows` como `ExtractionProposal` (el backtest).
+    row_meta: list[RowMeta] = field(default_factory=list)
     # `None` = sin veredicto (llamada degradada).
     discard: bool | None = None
     discard_reason: str | None = None
@@ -105,8 +110,22 @@ def response_schema() -> dict[str, Any]:
             "quantity": {"type": ["number", "null"]},
             "unit": _enum_o_null(UNITS),
             "province": {"type": ["string", "null"]},
+            # UN fragmento de evidencia por fila y no uno por campo (el plan dice
+            # «por campo»): cuesta menos tokens de salida. Simplificación
+            # deliberada, a revisar si la medición del backtest lo pide.
+            "evidence": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "currency_explicit": {"type": "boolean"},
         },
-        "required": ["product", "price", "currency", "quantity", "unit", "province"],
+        "required": [
+            "product",
+            "price",
+            "currency",
+            "quantity",
+            "unit",
+            "province",
+            "evidence",
+            "currency_explicit",
+        ],
         "additionalProperties": False,
     }
     return {
@@ -138,11 +157,12 @@ _SYSTEM_PROMPT = (
     "- El precio es el de la oferta, no una tarifa derivada que el anuncio "
     "calcule aparte (por ejemplo «sale a X la libra»).\n"
     "- UNA fila por oferta. Si una misma oferta está publicada en dos monedas "
-    "(«43.5 o 30885», «25 USD o 17175»), es una sola fila, no una por moneda: "
-    "tomá el precio en CUP, que es el mayor de los dos números (la brecha "
-    "USD:CUP ronda 700:1), con moneda CUP. Excepción: si la línea trae una "
-    "marca de moneda explícita («USD», «CUP», «MLC», «EUR»), tomá el precio marcado "
-    "con esa moneda.\n"
+    "(«43.5 o 30885», «25 USD o 17175»), es una sola fila, no una por moneda.\n"
+    "- Precio en dos monedas: si la línea trae una marca de moneda explícita "
+    "(«USD», «CUP», «MLC», «EUR»), tomá el precio marcado con esa moneda: en "
+    "«42 usd o 28560» la fila es 42 con moneda USD. Si NO hay ninguna marca de "
+    "moneda, tomá el mayor de los dos números con moneda CUP (la brecha USD:CUP ronda "
+    "700:1): en «40 o 27400» la fila es 27400 con moneda CUP.\n"
     "- La cantidad y la unidad son las del lote que ese precio compra.\n"
     "- Si el lote se describe por su envase (caja, paquete, saco...) y el "
     "anuncio dice cuánto pesa o cuánto contiene, cantidad y unidad van en esa "
@@ -150,6 +170,11 @@ _SYSTEM_PROMPT = (
     "unidad lb), no 1 caja. Si el peso o volumen no está dicho, cantidad y "
     "unidad quedan en null.\n"
     "- La provincia es una de la lista o null.\n"
+    "- evidence: el fragmento del anuncio que respalda esa oferta (producto, "
+    "precio y cantidad), copiado LITERALMENTE del texto, sin parafrasear ni "
+    "corregir, y lo más corto posible. null si no hay fragmento que la respalde.\n"
+    "- currency_explicit: true solo si el texto del anuncio dice la moneda de "
+    "ese precio; false si asumiste CUP por defecto.\n"
     "- Marcá discard=true cuando un operador descartaría el anuncio: no ofrece "
     "ningún producto del catálogo, no tiene un precio utilizable, está "
     "agotado o es spam. Con discard=true, discard_reason es «off_focus» si "
@@ -196,6 +221,7 @@ def parse_response(
 
     dropped = 0
     rows: list[ExtractionProposal] = []
+    metas: list[RowMeta] = []
     raw_rows = raw.get("rows")
     for item in raw_rows if isinstance(raw_rows, list) else []:
         if not isinstance(item, dict):
@@ -242,12 +268,22 @@ def parse_response(
                 province=province,
             )
         )
+        # Lo que falta o viene mal degrada a None/False: nunca levanta.
+        evidence = item.get("evidence")
+        metas.append(
+            RowMeta(
+                evidence=evidence if isinstance(evidence, str) else None,
+                currency_explicit=item.get("currency_explicit") is True,
+            )
+        )
 
     discard = raw.get("discard")
     discard = discard if isinstance(discard, bool) else None
     reason = raw.get("discard_reason")
     reason = reason if discard and reason in _DISCARD_REASONS else None
-    return AdProposal(rows=rows, discard=discard, discard_reason=reason, dropped=dropped)
+    return AdProposal(
+        rows=rows, row_meta=metas, discard=discard, discard_reason=reason, dropped=dropped
+    )
 
 
 def propose_ad(
@@ -344,6 +380,8 @@ def propose_ad(
     return _registrar(
         AdProposal(
             rows=parsed.rows,
+            # Se verifica contra el texto que vio el modelo (ya redactado).
+            row_meta=verify_evidence(redacted, parsed.rows, parsed.row_meta),
             discard=parsed.discard,
             discard_reason=parsed.discard_reason,
             input_tokens=entrada,

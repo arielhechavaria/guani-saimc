@@ -102,13 +102,17 @@ def _registro(
     degraded=False,
     tokens=(1000, 100),
     canal=None,
+    meta=None,
 ) -> dict:
+    proposal = {"discard": discard, "discard_reason": None, "rows": llm_rows}
+    if meta is not None:
+        proposal["row_meta"] = meta
     return {
         "ingestion_id": str(ingesta.id),
         "content_type": ingesta.content_type,
         "expected": esperado,
         "model": "claude-sonnet-5",
-        "proposal": {"discard": discard, "discard_reason": None, "rows": llm_rows},
+        "proposal": proposal,
         "rules_proposal": reglas,
         "channel_province_id": str(canal.id) if canal else None,
         "input_tokens": 0 if degraded else tokens[0],
@@ -594,8 +598,8 @@ def test_cada_linea_nueva_lleva_prompt_version_y_las_filas_del_operador(
     )
 
     kept, descartado = [json.loads(x) for x in resultados.read_text().splitlines()]
-    assert kept["prompt_version"] == "2026-09-25.2"
-    assert descartado["prompt_version"] == "2026-09-25.2"
+    assert kept["prompt_version"] == "2026-09-25.3"
+    assert descartado["prompt_version"] == "2026-09-25.3"
     (fila,) = kept["expected_rows"]
     assert fila["product"] == "Arroz" and fila["currency"] == "CUP" and fila["unit"] == "lb"
     assert Decimal(fila["price"]) == 100 and Decimal(fila["quantity"]) == 1
@@ -686,3 +690,156 @@ def test_un_registro_viejo_sin_las_filas_del_operador_igual_se_mide(
     assert all("expected_rows" not in r for r in registros)  # formato v1
 
     assert llm_backtest.compute_metrics(session, registros)["total"].extra_rows == 2
+
+
+# --- calidad de las señales (v3) ---------------------------------------------
+
+
+def _m(found, price_in, explicit, acuerdo) -> dict:
+    return {
+        "evidence": "x",
+        "currency_explicit": explicit,
+        "evidence_found": found,
+        "price_in_evidence": price_in,
+        "agreement": acuerdo,
+    }
+
+
+def _armar_corpus_senales(session: Session, c: SimpleNamespace) -> list[dict]:
+    """Seis anuncios de texto del oro, todos en La Habana. Verdad → modelo:
+
+    G1 Arroz 100 CUP 1 lb   exacto        found T, precio T, moneda explícita, coincide
+    G2 Pollo 200 CUP 1 lb   exacto        found T, precio T, asumida,          coincide
+    G3 Arroz  50 CUP 1 lb   precio 55     found F, precio F, asumida,          difiere
+    G4 Pollo 300 USD 2 lb   CUP en vez    found T, precio T, asumida,          difiere
+    G5 Arroz  10 CUP 1 lb   exacto        found F, precio F, asumida,          sin_regla
+    G6 Pollo  20 CUP 1 lb   exacto        registro viejo: sin row_meta (no entra a las señales)
+    Cada llamada: 1000 entrada / 100 salida.
+    """
+    def gold(p, precio, moneda, cant, uni):
+        return _ingesta(
+            session, filas=[_confirmada(p, precio, moneda, cant, uni, c.lh)]
+        )
+
+    g = [
+        gold(c.arroz, "100", "CUP", "1", "lb"),
+        gold(c.pollo, "200", "CUP", "1", "lb"),
+        gold(c.arroz, "50", "CUP", "1", "lb"),
+        gold(c.pollo, "300", "USD", "2", "lb"),
+        gold(c.arroz, "10", "CUP", "1", "lb"),
+        gold(c.pollo, "20", "CUP", "1", "lb"),
+    ]
+    filas = [
+        _fila(c.arroz, "100", "CUP", "1", "lb", c.lh),
+        _fila(c.pollo, "200", "CUP", "1", "lb", c.lh),
+        _fila(c.arroz, "55", "CUP", "1", "lb", c.lh),
+        _fila(c.pollo, "300", "CUP", "2", "lb", c.lh),
+        _fila(c.arroz, "10", "CUP", "1", "lb", c.lh),
+        _fila(c.pollo, "20", "CUP", "1", "lb", c.lh),
+    ]
+    metas = [
+        [_m(True, True, True, "coincide")],
+        [_m(True, True, False, "coincide")],
+        [_m(False, False, False, "difiere")],
+        [_m(True, True, False, "difiere")],
+        [_m(False, False, False, "sin_regla")],
+        None,
+    ]
+    return [
+        _registro(g[i], "kept", llm_rows=[filas[i]], reglas=[], meta=metas[i])
+        for i in range(6)
+    ]
+
+
+def test_calidad_de_las_senales_del_corpus_armado_a_mano(session: Session, catalogo) -> None:
+    m = llm_backtest.compute_metrics(session, _armar_corpus_senales(session, catalogo))
+    s = m["total"].signals
+
+    # [aciertos, n]. Filas con señales: G1..G5 = 5.
+    assert s["found"] == [3, 5]  # G1 G2 G4
+    assert s["price_in"] == [3, 5]
+    # Extracción completa correcta (G1 G2 G5 sí; G3 G4 no).
+    assert s["complete|found=True"] == [2, 3]  # G1 G2 bien, G4 mal
+    assert s["complete|found=False"] == [1, 2]  # G5 bien, G3 mal
+    # Moneda correcta: G4 es el único con moneda mal.
+    assert s["currency|explicit=True"] == [1, 1]  # G1
+    assert s["currency|explicit=False"] == [3, 4]  # G2 G3 G5 bien, G4 mal
+    assert s["complete|agreement=coincide"] == [2, 2]  # G1 G2
+    assert s["complete|agreement=difiere"] == [0, 2]  # G3 G4
+    assert s["complete|agreement=sin_regla"] == [1, 1]  # G5
+    # Seis llamadas de 100 tokens de salida.
+    assert (m["total"].calls, m["total"].output_tokens) == (6, 600)
+    assert m["texto"].signals == s
+
+
+def test_el_reporte_imprime_la_calidad_de_las_senales_con_su_n(
+    session: Session, catalogo
+) -> None:
+    m = llm_backtest.compute_metrics(session, _armar_corpus_senales(session, catalogo))
+
+    reporte = llm_backtest.render_report(m)
+
+    assert "Calidad de las señales" in reporte
+    assert "- Filas con evidencia hallada en el anuncio: 3/5 (60.0%)" in reporte
+    assert "- Filas con el precio dentro de la evidencia: 3/5 (60.0%)" in reporte
+    assert "- Extracción completa correcta con evidencia hallada: 2/3 (66.7%)" in reporte
+    assert "- Extracción completa correcta con evidencia NO hallada: 1/2 (50.0%)" in reporte
+    assert "- Moneda correcta con moneda explícita: 1/1 (100.0%)" in reporte
+    assert "- Moneda correcta con moneda asumida: 3/4 (75.0%)" in reporte
+    assert "- Extracción completa correcta si coincide con las reglas: 2/2 (100.0%)" in reporte
+    assert "- Extracción completa correcta si difiere de las reglas: 0/2 (0.0%)" in reporte
+    assert "- Extracción completa correcta si las reglas no dicen: 1/1 (100.0%)" in reporte
+    assert "- Tokens de salida por llamada: 100.0 (6 llamadas)" in reporte
+
+
+def test_los_resultados_viejos_sin_row_meta_degradan_a_nd(session: Session, catalogo) -> None:
+    registros = [dict(r, proposal={**r["proposal"]}) for r in
+                 _armar_corpus_senales(session, catalogo)]
+    for r in registros:
+        r["proposal"].pop("row_meta", None)
+
+    m = llm_backtest.compute_metrics(session, registros)
+    reporte = llm_backtest.render_report(m)
+
+    assert m["total"].signals["found"] == [0, 0]
+    assert "Calidad de las señales" in reporte
+    assert "- Filas con evidencia hallada en el anuncio: 0/0 (n/d)" in reporte
+    # Los tokens sí se pueden calcular sin las señales nuevas.
+    assert "- Tokens de salida por llamada: 100.0 (6 llamadas)" in reporte
+
+
+def test_run_registra_evidencia_y_acuerdo_por_fila(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    txt = _ingesta(
+        session,
+        texto="Arroz 25 lb 100 cup La Habana",
+        filas=[_confirmada(catalogo.arroz, "100", "CUP", "25", "lb", catalogo.lh)],
+    )
+    cuerpo = {
+        "discard": False,
+        "discard_reason": None,
+        "rows": [
+            {"product": "Arroz", "price": 100, "currency": "CUP", "quantity": 25,
+             "unit": "lb", "province": "La Habana",
+             "evidence": "arroz 25 lb 100 cup", "currency_explicit": True}
+        ],
+    }
+    resultados = tmp_path / "r.jsonl"
+
+    llm_backtest.run_backtest(
+        session, [llm_backtest.WorkItem(str(txt.id), "text", "kept")],
+        results_path=resultados, calls_log_path=tmp_path / "c.jsonl",
+        api_key="k", client=ClienteFalso(cuerpo), model="claude-sonnet-5",
+        timeout=5.0, out=lambda *_: None,
+    )
+
+    (linea,) = [json.loads(x) for x in resultados.read_text().splitlines()]
+    (meta,) = linea["proposal"]["row_meta"]
+    assert meta["evidence"] == "arroz 25 lb 100 cup"
+    assert meta["currency_explicit"] is True
+    assert meta["evidence_found"] is True
+    assert meta["price_in_evidence"] is True
+    # Las reglas leen el mismo renglón: Arroz, 100, CUP, 25 lb.
+    assert meta["agreement"] == "coincide"
+    assert set(meta["agreement_fields"]) == {"product", "price", "currency", "quantity", "unit"}
