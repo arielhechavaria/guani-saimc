@@ -4692,8 +4692,15 @@ class TestAsistenteLLM:
 
     @pytest.fixture(autouse=True)
     def _registro_aislado(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """Ningún test escribe el registro real del operador."""
+        """Ningún test escribe el registro real del operador ni hereda su clave.
+
+        La clave arranca vacía: el entorno y el `.env` del operador pueden traer
+        una real, y los tests de «sin clave» (y el volcado de un fallo, que
+        imprimiría el valor) no tienen que depender de eso. `con_clave` la
+        sobrescribe cuando el test necesita una.
+        """
         monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(tmp_path / "assist-log.jsonl"))
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "")
         get_settings.cache_clear()
 
     @pytest.fixture
