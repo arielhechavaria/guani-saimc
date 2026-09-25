@@ -123,6 +123,30 @@ orden de la cola.
 
 ### Slice 3 — Pre-cálculo por lotes (toca esquema → flujo completo de especificación)
 
+**Partido en sub-slices (2026-09-25, aprobado por el operador).** Cada uno se
+cierra antes de abrir el siguiente:
+
+- **3a — Guardar la propuesta y capturar la revisión.** Construido; especificación
+  en `docs/spec-slice-3a.md`. Pendiente de verificación del operador.
+- **3b — Pre-cálculo por lotes** (`prefill`, `/curation` lee lo guardado, H0 por
+  `llm_reviews`).
+- **3d — El modelo propone también formato de venta, base del precio y envase**
+  (pedido del operador, 2026-09-25; va antes que 3c). Hoy el modelo propone seis
+  campos (producto, precio, moneda, cantidad, unidad, provincia). Minorista o
+  mayorista (`sale_format`), precio por unidad o total del lote (`price_basis`),
+  formato del catálogo y envase los rellenan las reglas cuando pueden, y si no,
+  quedan «sin responder». `price_basis` es el más caro: sin responder, la fila
+  queda fuera del rango público. Ejemplo: «Pollo Muslo 4x10: 27300» → envase caja,
+  40 lb, total del lote, minorista.
+  - Sin cambio de esquema: las columnas ya existen en `prices_history`. Cambian el
+    prompt (vocabularios cerrados), la validación y el formulario.
+  - Se mide con backtest contra el oro, que ya tiene esos valores curados a mano,
+    antes de mostrarlo.
+  - La variante (tipo, marca, origen) queda fuera: es texto libre y crea registros
+    nuevos en el catálogo.
+- **3c — Glosario y recorte del texto** (los dos puntos de abajo). Antes del recorte
+  se mira en qué se van los tokens de salida con la respuesta cruda que guarda 3a.
+
 - Comando `python -m saimc.extraction.prefill`: recorre los pendientes, hace OCR y
   llamada al modelo, y guarda la propuesta. Una a la vez (VPS de 2 vCPU).
 - Tabla nueva para las propuestas (ingestion, payload, modelo y su versión, estado,
