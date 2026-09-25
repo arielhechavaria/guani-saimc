@@ -70,7 +70,19 @@ con el valor final del operador.
   medición de `CLAUDE.md`).
 - **Umbral para seguir:** lo fija el operador al ver los números. No se inventa
   (`spec.md` §12.6).
-- Costo: una llamada por anuncio curado; se informa el gasto antes de correr.
+- Costo: una llamada por anuncio; se informa el gasto antes de correr.
+- **Estado (2026-09-25):** construido en `llm_propose_ad.py` y `llm_backtest.py`
+  (commits `693c7e2`, `41fc34e`). Piloto de 10 anuncios corrido: sin conclusiones
+  por el tamaño; costo real ~$0,0065 por anuncio con Sonnet 5.
+- **Cómo se mide:** cada anuncio se manda (ya redactado) al modelo en una llamada y
+  también al motor de reglas; ambas propuestas se comparan con lo que el operador
+  confirmó a mano, con las mismas funciones que H0. Se reportan por texto e imagen:
+  veredicto de descarte (matriz de confusión), acierto por campo y completo del
+  modelo frente a las reglas, abstención, quién acierta cuando difieren y consumo.
+  Sin umbrales: la vara la fija el operador.
+- **Hallazgo de la implementación:** la API rechaza un `enum` combinado con un tipo
+  en lista (`["string","null"]`); la nulabilidad va con `anyOf`. Los tests con
+  cliente falso no lo detectan: por eso el smoke real existe.
 
 ### Slice 2 — Propuesta completa y veredicto de descarte
 
@@ -81,13 +93,29 @@ con el valor final del operador.
   principal contra el rubber-stamping.
 - Anuncios con varias filas (listas de precios): una fila por producto del foco,
   igual que hoy.
+- **Evidencia por campo, verificada por código.** El modelo cita el fragmento
+  literal del anuncio que sustenta cada valor. Nosotros comprobamos (texto
+  normalizado) que ese fragmento existe; si no aparece, la fila se marca como
+  sospechosa. La interfaz (slice 4) resalta el fragmento en el anuncio, lo que
+  acelera la verificación y ataca el rubber-stamping. Cuesta más tokens de salida:
+  se mide en este slice antes de fijarlo.
+- **Moneda inferida.** El modelo indica si la moneda venía explícita en el anuncio
+  o la asumió por defecto (CUP). La interfaz resalta la moneda asumida: es el campo
+  más frágil, porque un error de moneda mueve el precio unas 700 veces.
+- **Contexto del mercado cubano en el prompt** (abreviaturas de provincia y de
+  unidad, quintal, separadores de miles). Se arma con los alias que ya tiene el
+  repo y con anuncios reales curados, nunca con una lista inventada, y solo si el
+  backtest muestra que los errores están ahí.
+- **Señal de calidad:** el acuerdo con las reglas (coincide/difiere). Se descarta la
+  «confianza 0–100» autodeclarada del modelo, que suele estar mal calibrada.
 - Se anexan las entradas de `decisions.md` de la tabla de arriba.
 
 ### Slice 3 — Pre-cálculo por lotes (toca esquema → flujo completo de especificación)
 
 - Comando `python -m saimc.extraction.prefill`: recorre los pendientes, hace OCR y
   llamada al modelo, y guarda la propuesta. Una a la vez (VPS de 2 vCPU).
-- Tabla nueva para las propuestas (ingestion, payload, modelo, estado, fecha).
+- Tabla nueva para las propuestas (ingestion, payload, modelo y su versión, estado,
+  fecha).
   Migración con Alembic.
 - **Requisito transversal: captura de la revisión.** Por cada fila revisada se
   guarda la propuesta del modelo, el valor final que confirmó el operador y si lo
@@ -116,9 +144,23 @@ con el valor final del operador.
 
 ## Costo
 
-Con ~$0,0031 por llamada (`docs/costos.md`): ~1200 llamadas al mes ≈ $4; el backlog
-inicial de ~267 ≈ menos de $1. Adicional al plan Pro; la API se factura aparte y con
-auto-reload apagado. Rehacer la cuenta con el volumen real de WAHA al ejecutar.
+**Corregido con el piloto (2026-09-25):** medido ~$0,0065 por anuncio con Sonnet 5
+(~2100 tokens de entrada: catálogos más el texto, que en las listas de WhatsApp es
+largo). Los ~$0,0031 de `docs/costos.md` eran del prompt viejo de solo huecos.
+Entonces: ~1200 anuncios al mes ≈ $8; el backlog de ~371 pendientes ≈ $2,4. Haiku
+4.5 costaría aproximadamente la mitad: el backtest dirá si alcanza. Adicional al
+plan Pro; la API se factura aparte y con auto-reload apagado. Actualizar
+`docs/costos.md` al cerrar el slice 1.
+
+## Del análisis externo (2026-09-25): qué se toma y qué no
+
+Se revisó un análisis de terceros sobre el mismo tema. Se toma: evidencia por campo
+verificada por código, moneda inferida marcada y contexto del mercado cubano
+(arriba, en el slice 2), y `model_version` (slice 3). No se toma: modelos
+multimodales (privacidad, decisión del 2026-09-01), tool use (ya se usa salida
+estructurada con esquema), ejemplos few-shot inventados (se usarán curados reales,
+ver «Aprendizaje»), la confianza autodeclarada, ni medir H0 con el historial de
+correcciones (contradice `CLAUDE.md`).
 
 ## Fuera de alcance
 
