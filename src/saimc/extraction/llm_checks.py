@@ -154,7 +154,15 @@ def _agreement(model: ExtractionProposal, rule: ExtractionProposal | None) -> Ro
         status = COINCIDE
     else:
         status = SIN_REGLA
-    return RowAgreement(*fields, status=status)
+    producto, precio, moneda, cantidad, unidad = fields
+    return RowAgreement(
+        product=producto,
+        price=precio,
+        currency=moneda,
+        quantity=cantidad,
+        unit=unidad,
+        status=status,
+    )
 
 
 def match_rule_rows(

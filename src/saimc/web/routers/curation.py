@@ -1109,7 +1109,12 @@ def _curation_view(
             ingestion_id=str(ingestion.id),
             settings=settings,
         )
-    assist_ok = assist_result is not None and not assist_result.degraded
+    # `assist_good` es la propuesta solo si el modelo respondió; separar la
+    # variable del booleano deja a mypy ver que no es `None` donde se usa.
+    assist_good = (
+        assist_result if assist_result is not None and not assist_result.degraded else None
+    )
+    assist_ok = assist_good is not None
 
     # Solo llegan al formulario las propuestas que cayeron en un producto del
     # foco. Una lista de precios de 25 renglones produce 25 candidatos, de los
@@ -1121,8 +1126,8 @@ def _curation_view(
     # Con el asistente, las filas salen de las del modelo (ya solo del foco) y
     # las reglas quedan de segunda opinión y de fuente de lo que él no propone.
     assisted_by_row: dict[int, list[str]] = {}
-    if assist_ok:
-        rows, assisted_by_row = _rows_from_model(assist_result, proposals)
+    if assist_good is not None:
+        rows, assisted_by_row = _rows_from_model(assist_good, proposals)
     else:
         rows = [_values_from_proposal(p) for p in proposals if p.product is not None]
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
@@ -1201,10 +1206,12 @@ def _curation_view(
             if assist_result is not None and assist_result.degraded
             else None
         ),
-        assist_discard=_assist_discard(assist_result) if assist_ok else None,
+        assist_discard=_assist_discard(assist_good) if assist_good is not None else None,
         evidence_segments=(
-            _evidence_segments(ingestion.original_text, assist_result)
-            if assist_ok and ingestion.content_type == ContentType.TEXT
+            _evidence_segments(ingestion.original_text, assist_good)
+            if assist_good is not None
+            and ingestion is not None
+            and ingestion.content_type == ContentType.TEXT
             else None
         ),
     )
