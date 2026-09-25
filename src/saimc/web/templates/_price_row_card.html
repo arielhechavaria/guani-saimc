@@ -227,6 +227,7 @@
         con <code>cantidad=340</code> — sin responder acá el precio se guarda sin dividir y queda
         fuera del rango público hasta que se resuelva.
       </span>
+      {% if row.hint_price_basis %}<span class="m3-rules-hint" data-differs-for="price_basis_{{ index0 }}">Reglas: {{ row.hint_price_basis }}</span>{% endif %}
     </label>
   </div>
 

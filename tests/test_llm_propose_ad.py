@@ -317,8 +317,8 @@ def test_cada_linea_del_registro_lleva_la_version_del_prompt(
     _proponer(roto, "b", products, provinces, ingestion_id="id-2", log_path=log)
 
     lineas = [json.loads(x) for x in log.read_text().splitlines()]
-    assert [x["prompt_version"] for x in lineas] == ["2026-09-25.3"] * 2
-    assert llm_propose_ad.PROMPT_VERSION == "2026-09-25.3"
+    assert [x["prompt_version"] for x in lineas] == ["2026-09-25.4"] * 2
+    assert llm_propose_ad.PROMPT_VERSION == "2026-09-25.4"
 
 
 def test_el_prompt_pide_una_fila_por_oferta_y_el_lado_cup() -> None:
@@ -496,3 +496,149 @@ def test_meta_malformada_degrada_a_none_y_false_sin_levantar(products, provinces
         assert meta.evidence is None
         assert meta.currency_explicit is False
         assert meta.evidence_found is False
+
+
+# --- slice 3d: formato de venta, base del precio y envase ------------------
+#
+# Casos escritos antes del código. La respuesta del cliente falso es la que un
+# operador daría para el anuncio real «Pollo Muslo 4x10: 27300 O 39»: 4
+# paquetes de 10 lb, la caja pesa 40 lb, 27300 es el precio de la caja entera
+# y un hogar la compra (minorista). No se pregunta qué contestaría un modelo
+# real: eso se mide con el backtest.
+
+
+def test_esquema_pide_formato_base_y_envase_nulables_con_anyof() -> None:
+    fila = llm_propose_ad.response_schema()["properties"]["rows"]["items"]
+
+    for campo in ("sale_format", "price_basis", "packaging"):
+        assert campo in fila["required"], campo
+    assert fila["properties"]["sale_format"] == {
+        "anyOf": [{"type": "string", "enum": ["retail", "wholesale"]}, {"type": "null"}]
+    }
+    assert fila["properties"]["price_basis"] == {
+        "anyOf": [{"type": "string", "enum": ["unit", "total"]}, {"type": "null"}]
+    }
+    assert fila["properties"]["packaging"] == {
+        "anyOf": [
+            {
+                "type": "string",
+                "enum": ["paquete", "saco", "caja", "botella", "pomo", "a granel"],
+            },
+            {"type": "null"},
+        ]
+    }
+
+
+def test_todo_enum_del_esquema_admite_null_solo_por_anyof() -> None:
+    """Invariante: cada `enum` de fila vive dentro de un `anyOf` con `null`.
+
+    Los enums de fila son todos nulables (abstenerse es válido), y el único
+    camino que la API acepta para eso es `anyOf` (`_enum_o_null`).
+    """
+    fila = llm_propose_ad.response_schema()["properties"]["rows"]["items"]
+
+    for nombre, propiedad in fila["properties"].items():
+        if not _propiedades_con_enum(propiedad):
+            continue
+        assert set(propiedad) == {"anyOf"}, nombre
+        assert {"type": "null"} in propiedad["anyOf"], nombre
+
+
+def test_version_del_prompt_3d() -> None:
+    assert llm_propose_ad.PROMPT_VERSION == "2026-09-25.4"
+
+
+def test_pollo_muslo_4x10_trae_caja_total_y_minorista(products, provinces) -> None:
+    texto = "Pollo Muslo 4x10: 27300 O 39"
+    cuerpo = {
+        "discard": False,
+        "discard_reason": None,
+        "rows": [
+            _fila(
+                product="Pollo", price=27300, currency="CUP", quantity=40, unit="lb",
+                evidence="Pollo Muslo 4x10: 27300", currency_explicit=False,
+                sale_format="retail", price_basis="total", packaging="caja",
+            )
+        ],
+    }
+
+    r = _proponer(ClienteFalso(_respuesta(cuerpo)), texto, products, provinces)
+
+    (fila,) = r.rows
+    assert (fila.price, fila.quantity, fila.unit) == (Decimal("27300"), Decimal("40"), "lb")
+    assert fila.sale_format == "retail"
+    assert fila.price_basis == "total"
+    assert fila.packaging == "caja"
+    assert r.dropped == 0
+
+
+def test_valores_fuera_de_vocabulario_caen_a_none_y_cuentan_como_perdidos(
+    products, provinces
+) -> None:
+    cuerpo = {
+        "discard": False,
+        "discard_reason": None,
+        "rows": [
+            _fila(
+                product="Arroz", price=100,
+                sale_format="mayorista", price_basis="por_lote", packaging="jaba",
+            ),
+            # Abstenerse (null) no es perder.
+            _fila(product="Pollo", price=200, sale_format=None, price_basis=None, packaging=None),
+        ],
+    }
+
+    r = _proponer(ClienteFalso(_respuesta(cuerpo)), "Arroz 100 Pollo 200", products, provinces)
+
+    assert r.degraded is False and len(r.rows) == 2
+    for fila in r.rows:
+        assert (fila.sale_format, fila.price_basis, fila.packaging) == (None, None, None)
+    assert r.dropped == 3
+
+
+def test_envase_se_canoniza_y_tipos_raros_no_levantan(products, provinces) -> None:
+    cuerpo = {
+        "discard": False,
+        "discard_reason": None,
+        "rows": [
+            _fila(product="Arroz", price=100, packaging=" Saco ", sale_format=1, price_basis=[]),
+            _fila(product="Pollo", price=200),  # respuesta vieja, sin los tres campos
+        ],
+    }
+
+    r = _proponer(ClienteFalso(_respuesta(cuerpo)), "Arroz 100 Pollo 200", products, provinces)
+
+    arroz, pollo = r.rows
+    assert arroz.packaging == "saco"
+    assert (arroz.sale_format, arroz.price_basis) == (None, None)
+    assert (pollo.sale_format, pollo.price_basis, pollo.packaging) == (None, None, None)
+
+
+def test_el_prompt_define_mayorista_base_y_envase_como_el_formulario() -> None:
+    """Prueba débil y honesta: las definiciones del operador ESTÁN escritas.
+
+    La copia sale del texto de ayuda de `_price_row_card.html`; que el modelo
+    las aplique se mide con el backtest.
+    """
+    prompt = llm_propose_ad._SYSTEM_PROMPT
+
+    assert "Mayorista es escala de contenedor, no vender un saco o paquete individual" in prompt
+    assert "eso lo ofrece cualquier minorista desde su casa" in prompt
+    assert "Pollo Muslo 4x10: 27300" in prompt
+    assert "price_basis" in prompt and "packaging" in prompt and "sale_format" in prompt
+
+
+def test_filled_fields_cuenta_los_tres_campos_nuevos(products) -> None:
+    from saimc.extraction.engine import ExtractionProposal
+
+    fila = ExtractionProposal(
+        product=products[1], price=Decimal("27300"), quantity=Decimal("40"), unit="lb",
+        sale_format="retail", price_basis="total", packaging="caja",
+    )
+    sin_nada = ExtractionProposal(product=products[1])
+
+    assert {"sale_format", "price_basis", "packaging"} <= set(
+        llm_propose_ad.filled_fields(fila)
+    )
+    assert llm_propose_ad.filled_fields(sin_nada) == ["product"]
+    assert {"sale_format", "price_basis", "packaging"} <= set(llm_propose_ad.ASSIST_FIELDS)

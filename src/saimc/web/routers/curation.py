@@ -184,12 +184,13 @@ def _values_from_proposal(proposal: ExtractionProposal | None) -> dict[str, str]
         "currency": proposal.currency,
         "quantity": str(proposal.quantity) if proposal.quantity is not None else "",
         "unit": canonical_unit(proposal.unit) or "",
-        # Nunca se prellena: es un juicio del operador, no algo que el motor
-        # de extracción pueda inferir (design.md, D4 y "Data Flow").
-        "sale_format": "",
-        # El motor no propone envase; el operador lo elige y con
+        # Las reglas nunca lo proponen: es juicio del operador (design.md, D4 y
+        # "Data Flow"). Desde el slice 3d lo propone el modelo, y llega acá
+        # solo por `_rows_from_model` (docs/decisions.md, 2026-09-25).
+        "sale_format": proposal.sale_format or "",
+        # Mismo caso: las reglas no proponen envase, el modelo sí (3d). Con
         # `quantity`+`unit` de la fila resuelve el formato al confirmar.
-        "packaging": "",
+        "packaging": proposal.packaging or "",
         # La extracción no propone variante — decisión cerrada
         # (product-variants): declararla es siempre un acto manual.
         "variant_kind": "",
@@ -1262,9 +1263,8 @@ def _curation_view(
 # que si esas quedaran primero, un POST a `/curation/sin-foco/discard` caería
 # ahí con `ingestion_id="sin-foco"` y el 422 de validación de UUID lo tumbaría
 # antes de llegar acá.
-# Los seis campos que el modelo propone por fila. `requested` en el registro.
-# Los que se comparan contra las reglas (`llm_checks.RowAgreement.fields`).
-_RULES_HINT_FIELDS = ("product", "price", "currency", "quantity", "unit")
+# La base del precio en palabras del «Reglas: …» (slice 3d).
+_PRICE_BASIS_LABELS = {"unit": "por unidad", "total": "total del lote"}
 
 # Por qué no respondió el asistente, en palabras del operador. Las cuatro
 # primeras son `llm_assist.classify_failure`; las dos últimas, los cortes de
@@ -1296,6 +1296,8 @@ def _rules_value_text(field: str, rule: ExtractionProposal) -> str:
         return rule.currency
     if field == "quantity":
         return str(rule.quantity) if rule.quantity is not None else ""
+    if field == "price_basis":
+        return _PRICE_BASIS_LABELS.get(rule.price_basis or "", "")
     return canonical_unit(rule.unit) or ""
 
 
@@ -1307,12 +1309,12 @@ def _rows_from_model(
     """Las filas del formulario a partir de las del modelo.
 
     Cada tarjeta parte de la fila de las reglas que le corresponde (mismo
-    emparejado que H0) para lo que el modelo NO propone —`price_basis`, compra
-    mínima, envase, variante…— y de los valores por defecto si no hay
-    ninguna. Encima van los campos del modelo. La provincia cae a la de las
-    reglas si el modelo se abstuvo: abstenerse no es dato, y ese campo no se
-    compara. Donde modelo y reglas difieren, la fila lleva `hint_<campo>` con
-    lo que decían las reglas y la plantilla lo muestra. Devuelve también,
+    emparejado que H0) para lo que el modelo NO propone —compra mínima,
+    variante…— y de los valores por defecto si no hay ninguna. Encima van los
+    campos del modelo. La provincia, la base del precio, el formato de venta y
+    el envase caen a lo de las reglas si el modelo se abstuvo: abstenerse no es
+    dato, y ahí no se marca diferencia. Donde modelo y reglas difieren, la fila
+    lleva `hint_<campo>` con lo que decían las reglas y la plantilla lo muestra. Devuelve también,
     por índice de fila, los campos que llenó el modelo (la marca de contorno).
 
     Cada fila lleva `proposal_row`: su índice en la propuesta guardada (el de
@@ -1334,8 +1336,16 @@ def _rows_from_model(
         valores["unit"] = canonical_unit(row.unit) or ""
         if row.province is not None:
             valores["province_id"] = str(row.province.id)
+        # Slice 3d: el modelo manda también acá, pero solo cuando contestó.
+        abstenidos = set()
+        for campo in ("sale_format", "price_basis", "packaging"):
+            valor = getattr(row, campo)
+            if valor is not None:
+                valores[campo] = valor
+            else:
+                abstenidos.add(campo)
         for campo, estado in acuerdo.fields().items():
-            if estado == DIFIERE and regla is not None:
+            if estado == DIFIERE and regla is not None and campo not in abstenidos:
                 valores[f"hint_{campo}"] = _rules_value_text(campo, regla)
         valores["evidence"] = meta.evidence or ""
         valores["proposal_row"] = str(indices[i] if indices is not None else i)

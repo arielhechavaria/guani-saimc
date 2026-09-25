@@ -64,6 +64,7 @@ from saimc.models import (
     PriceHistory,
     ProcessingStatus,
     Product,
+    ProductFormat,
     Province,
     RawIngestion,
 )
@@ -103,6 +104,18 @@ _SIGNAL_KEYS = (
     "complete|agreement=difiere",
     "complete|agreement=sin_regla",
 )
+
+# Slice 3d: juicio que antes era solo del operador. Se mide aparte de H0 (la
+# «extracción completa» no los incluye y no cambia) y con el oro NULL separado:
+# que el operador no haya respondido no dice cuál era la respuesta correcta.
+_JUDGMENT_FIELDS = ("sale_format", "price_basis", "packaging")
+
+
+def _judgment_counters() -> dict[str, dict[str, int]]:
+    return {
+        campo: {"n": 0, "llm": 0, "rules": 0, "null_n": 0, "null_llm_proposed": 0}
+        for campo in _JUDGMENT_FIELDS
+    }
 
 
 @dataclass(frozen=True)
@@ -205,6 +218,9 @@ def rows_to_dicts(rows: Sequence[ExtractionProposal]) -> list[dict[str, Any]]:
             "quantity": str(r.quantity) if r.quantity is not None else None,
             "unit": r.unit,
             "province_id": str(r.province.id) if r.province is not None else None,
+            "sale_format": r.sale_format,
+            "price_basis": r.price_basis,
+            "packaging": r.packaging,
         }
         for r in rows
     ]
@@ -227,6 +243,10 @@ def rows_from_dicts(
             quantity=_dec(r.get("quantity")),
             unit=r.get("unit"),
             province=provinces.get(str(r.get("province_id"))),
+            # Los resultados anteriores al 3d no los traen: `None`.
+            sale_format=r.get("sale_format"),
+            price_basis=r.get("price_basis"),
+            packaging=r.get("packaging"),
         )
         for r in rows
     ]
@@ -469,6 +489,10 @@ def run_backtest(
                 # Paralela a `rows`. Los resultados de la v2 no la traen.
                 "row_meta": row_meta,
                 "dropped": result.dropped,
+                # Qué campos se le pidieron al modelo. Sin esta clave (antes
+                # del 3d) no se le preguntó formato, base ni envase, y esos
+                # resultados quedan fuera de la sección (h) del reporte.
+                "asked": list(llm_propose_ad.ASSIST_FIELDS),
             },
             rules_proposal=rows_to_dicts(rules),
             channel_province_id=str(channel.id) if channel is not None else None,
@@ -559,6 +583,9 @@ class GroupMetrics:
     signals: dict[str, list[int]] = field(
         default_factory=lambda: {k: [0, 0] for k in _SIGNAL_KEYS}
     )
+    # Slice 3d, por campo: `n` filas del oro con valor y cuántas acertó cada
+    # uno; `null_n` filas del oro sin valor y en cuántas el modelo propuso algo.
+    judgment: dict[str, dict[str, int]] = field(default_factory=_judgment_counters)
 
     def tally(self, key: str, ok: bool) -> None:
         self.signals[key][0] += bool(ok)
@@ -614,6 +641,9 @@ def compute_metrics(
     products = {str(p.id): p for p in session.execute(select(Product)).scalars()}
     provinces = {str(p.id): p for p in session.execute(select(Province)).scalars()}
     history = measure._price_history_by_source(session)
+    packaging_by_format = {
+        f.id: f.packaging for f in session.execute(select(ProductFormat)).scalars()
+    }
     groups = {name: GroupMetrics(name) for name in _GROUPS}
 
     for record in latest_records(records).values():
@@ -682,6 +712,7 @@ def compute_metrics(
         for meta in meta_by_row.values():
             for g in targets:
                 _tally_shares(g, meta)
+        asked = set(proposal.get("asked") or [])
         for (row, llm_row), (_, rule_row) in zip(llm_pairs, rule_pairs, strict=True):
             llm_ok = measure.row_correctness(row, llm_row)
             rule_ok = measure.row_correctness(row, rule_row)
@@ -689,6 +720,22 @@ def compute_metrics(
             if isinstance(meta, dict):
                 for g in targets:
                     _tally_splits(g, meta, row, llm_row, llm_ok.complete)
+            gold = {
+                "sale_format": row.sale_format,
+                "price_basis": row.price_basis,
+                "packaging": (
+                    packaging_by_format.get(row.format_id) if row.format_id else None
+                ),
+            }
+            for campo in _JUDGMENT_FIELDS:
+                if campo in asked:
+                    for g in targets:
+                        _tally_judgment(
+                            g.judgment[campo],
+                            gold[campo],
+                            getattr(llm_row, campo),
+                            getattr(rule_row, campo),
+                        )
             for g in targets:
                 g.llm.add(llm_ok)
                 g.rules.add(rule_ok)
@@ -739,6 +786,20 @@ def _tally_splits(
     agreement = meta.get("agreement")
     if agreement in (llm_checks.COINCIDE, llm_checks.DIFIERE, llm_checks.SIN_REGLA):
         g.tally(f"complete|agreement={agreement}", complete)
+
+
+def _tally_judgment(
+    counter: dict[str, int], gold: str | None, llm: str | None, rules: str | None
+) -> None:
+    """Un campo del 3d en una fila emparejada. Oro NULL va aparte: no se sabe
+    cuál era la respuesta correcta, solo si el modelo propuso algo igual."""
+    if gold is None:
+        counter["null_n"] += 1
+        counter["null_llm_proposed"] += llm is not None
+        return
+    counter["n"] += 1
+    counter["llm"] += llm == gold
+    counter["rules"] += rules == gold
 
 
 def _count(value: object) -> int:
@@ -906,7 +967,54 @@ def render_report(
             ),
             f"- Tokens de salida por llamada: {avg} ({g.calls} llamadas)",
         ]
+        lines += _judgment_section(g)
     return "\n".join(lines) + "\n"
+
+
+_JUDGMENT_LABELS = {
+    "sale_format": "Formato de venta",
+    "price_basis": "Base del precio",
+    "packaging": "Envase",
+}
+
+
+def _judgment_section(g: GroupMetrics) -> list[str]:
+    """Sección (h): los tres campos del slice 3d contra el oro."""
+    lines = [
+        "",
+        "### (h) Formato de venta, base del precio y envase (slice 3d)",
+        "",
+        "Acierto sobre las filas emparejadas del oro que tienen el valor "
+        "confirmado por el operador. No entra en «Extracción completa» (H0 no "
+        "cambia). Las reglas nunca proponen formato de venta ni envase, y la "
+        "lectura por renglón que usa la cola (`propose_all`) tampoco propone la "
+        "base, así que su columna es la referencia de «sin asistente». Solo "
+        "cuentan resultados de un prompt que preguntó estos campos (2026-09-25.4 "
+        "en adelante).",
+        "",
+        "| Campo | Modelo | Reglas |",
+        "|---|---|---|",
+    ]
+    for campo in _JUDGMENT_FIELDS:
+        c = g.judgment[campo]
+        lines.append(
+            f"| {_JUDGMENT_LABELS[campo]} | {_frac(c['llm'], c['n'])} "
+            f"| {_frac(c['rules'], c['n'])} |"
+        )
+    lines += [
+        "",
+        "Filas del oro donde el operador dejó el campo sin responder (NULL): no "
+        "cuentan como acierto ni error; se muestra cuántas veces el modelo "
+        "propuso algo igual.",
+        "",
+    ]
+    for campo in _JUDGMENT_FIELDS:
+        c = g.judgment[campo]
+        lines.append(
+            f"- {_JUDGMENT_LABELS[campo]}: {c['null_n']} filas del oro sin valor; "
+            f"el modelo propuso algo en {_frac(c['null_llm_proposed'], c['null_n'])}"
+        )
+    return lines
 
 
 # --- CLI --------------------------------------------------------------------

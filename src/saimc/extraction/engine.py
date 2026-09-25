@@ -529,6 +529,14 @@ class ExtractionProposal:
     # Sigue siendo una propuesta — la cola la muestra preseleccionada y el
     # operador confirma o corrige, igual que con todo lo demás (§6.1).
     price_basis: str | None = None
+    # `"retail"` / `"wholesale"` y un envase de `saimc.units.PACKAGING`. Las
+    # reglas NUNCA los llenan (ver `_tiered_proposals`): solo los propone el
+    # modelo (`llm_propose_ad`, slice 3d, docs/decisions.md 2026-09-25). Viven
+    # acá y no en `RowMeta` porque son valores de la fila, igual que el resto,
+    # y el formulario, el guardado de la propuesta y el backtest ya consumen
+    # la fila como `ExtractionProposal`.
+    sale_format: str | None = None
+    packaging: str | None = None
 
 
 #: Pistas del tipo «Sale 515 Cup Lb» / «Sale $281.82 Lb» / «Sale $1080 Unidad»:
@@ -1033,7 +1041,9 @@ def _tiered_proposals(
 
     Lo que NO se prellena es tan deliberado como lo que sí: `sale_format` y
     `packaging` son juicio explícito del operador (design.md D4), y nada acá
-    los deriva de texto suelto.
+    los deriva de texto suelto. Desde el slice 3d el modelo sí los propone
+    (`llm_propose_ad`), siempre como propuesta que el operador confirma; las
+    reglas siguen sin tocarlos (docs/decisions.md, 2026-09-25).
     """
     lines = [stripped for raw in text.splitlines() if (stripped := raw.strip())]
 

@@ -266,6 +266,24 @@ Re-corrida (cuesta plata; decisión del operador):
   --report data/llm-backtest-report-v3.md
 ```
 
+**Prompt v4 (slice 3d): formato de venta, base del precio y envase.** La v4
+(`2026-09-25.4`) pide además, por fila, `sale_format`, `price_basis` y
+`packaging` (vocabularios cerrados, `null` si no se puede saber). El reporte
+suma la sección (h): acierto de cada campo, modelo contra reglas, sobre las
+filas del oro que el operador respondió; las filas del oro con el campo en NULL
+van aparte (cuántas son y en cuántas el modelo propuso algo igual). La
+«extracción completa» de H0 no cambia. Los resultados de prompts anteriores no
+preguntaron esos campos y salen n/d en (h). Re-corrida (cuesta plata; decisión
+del operador; el dry-run del 2026-09-25 estimó ~$0.41 con Sonnet 5 para 100
+anuncios, y la salida real será algo mayor por los tres campos nuevos):
+
+```
+.venv/bin/python -m saimc.extraction.llm_backtest --execute --limit 100 \
+  --results data/llm-backtest-results-v4.jsonl \
+  --calls-log data/llm-backtest-calls-v4.jsonl \
+  --report data/llm-backtest-report-v4.md
+```
+
 Dónde queda todo (bajo `data/`, que el repositorio no versiona):
 
 - `data/llm-backtest-results.jsonl`: un resultado por anuncio (propuesta del

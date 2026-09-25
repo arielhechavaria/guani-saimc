@@ -632,8 +632,8 @@ def test_cada_linea_nueva_lleva_prompt_version_y_las_filas_del_operador(
     )
 
     kept, descartado = [json.loads(x) for x in resultados.read_text().splitlines()]
-    assert kept["prompt_version"] == "2026-09-25.3"
-    assert descartado["prompt_version"] == "2026-09-25.3"
+    assert kept["prompt_version"] == "2026-09-25.4"
+    assert descartado["prompt_version"] == "2026-09-25.4"
     (fila,) = kept["expected_rows"]
     assert fila["product"] == "Arroz" and fila["currency"] == "CUP" and fila["unit"] == "lb"
     assert Decimal(fila["price"]) == 100 and Decimal(fila["quantity"]) == 1
@@ -876,4 +876,174 @@ def test_run_registra_evidencia_y_acuerdo_por_fila(
     assert meta["price_in_evidence"] is True
     # Las reglas leen el mismo renglón: Arroz, 100, CUP, 25 lb.
     assert meta["agreement"] == "coincide"
-    assert set(meta["agreement_fields"]) == {"product", "price", "currency", "quantity", "unit"}
+    assert set(meta["agreement_fields"]) == {
+        "product", "price", "currency", "quantity", "unit",
+        "price_basis", "sale_format", "packaging",
+    }
+
+
+# --- slice 3d: formato de venta, base del precio y envase ------------------
+
+
+def _con_formato(session: Session, producto, envase, cantidad, unidad):
+    from saimc.models import ProductFormat
+
+    formato = ProductFormat(
+        product_id=producto.id, packaging=envase, quantity=Decimal(cantidad), unit=unidad
+    )
+    session.add(formato)
+    session.commit()
+    return formato.id
+
+
+def _fila_3d(producto, precio, cantidad, unidad, provincia, *, venta, base, envase) -> dict:
+    return {
+        **_fila(producto, precio, "CUP", cantidad, unidad, provincia),
+        "sale_format": venta,
+        "price_basis": base,
+        "packaging": envase,
+    }
+
+
+def _registro_3d(ingesta, *, llm_rows, reglas) -> dict:
+    registro = _registro(ingesta, "kept", llm_rows=llm_rows, reglas=reglas)
+    registro["prompt_version"] = "2026-09-25.4"
+    registro["proposal"]["asked"] = list(llm_propose_ad.ASSIST_FIELDS)
+    return registro
+
+
+def _armar_corpus_3d(session: Session, c: SimpleNamespace) -> list[dict]:
+    """Corpus a mano. Verdad del operador y lo que dijo cada uno:
+
+    G1 Pollo 27300 40 lb  oro: retail / total / caja    LLM: retail / total / caja
+                                                        reglas: base null
+    G2 Arroz 100 1 lb     oro: retail / NULL / sin fmt  LLM: wholesale / unit / null
+                                                        reglas: base null
+    G3 Arroz 5000 25 lb   oro: NULL / total / saco      LLM: null / unit / saco
+                                                        reglas: base total
+    G4 Pollo 200 1 lb     oro: retail / NULL / sin fmt  registro de un prompt viejo:
+                                                        no se le preguntó; fuera del 3d
+
+    Esperado (acierto sobre oro con valor; oro NULL aparte):
+      sale_format: n=2 (G1, G2)  LLM 1/2  reglas 0/2 | NULL n=1 (G3), LLM propuso 0/1
+      price_basis: n=2 (G1, G3)  LLM 1/2  reglas 1/2 | NULL n=1 (G2), LLM propuso 1/1
+      packaging:   n=2 (G1, G3)  LLM 2/2  reglas 0/2 | NULL n=1 (G2), LLM propuso 0/1
+    """
+    caja = _con_formato(session, c.pollo, "caja", "40", "lb")
+    saco = _con_formato(session, c.arroz, "saco", "25", "lb")
+    g1 = _ingesta(session, filas=[{
+        **_confirmada(c.pollo, "27300", "CUP", "40", "lb", c.lh),
+        "sale_format": "retail", "price_basis": "total", "format_id": caja,
+    }])
+    g2 = _ingesta(session, filas=[{
+        **_confirmada(c.arroz, "100", "CUP", "1", "lb", c.lh), "sale_format": "retail",
+    }])
+    g3 = _ingesta(session, filas=[{
+        **_confirmada(c.arroz, "5000", "CUP", "25", "lb", c.lh),
+        "price_basis": "total", "format_id": saco,
+    }])
+    g4 = _ingesta(session, filas=[{
+        **_confirmada(c.pollo, "200", "CUP", "1", "lb", c.lh), "sale_format": "retail",
+    }])
+    return [
+        _registro_3d(
+            g1,
+            llm_rows=[_fila_3d(c.pollo, 27300, 40, "lb", c.lh,
+                               venta="retail", base="total", envase="caja")],
+            reglas=[_fila(c.pollo, 27300, "CUP", 40, "lb", c.lh)],
+        ),
+        _registro_3d(
+            g2,
+            llm_rows=[_fila_3d(c.arroz, 100, 1, "lb", c.lh,
+                               venta="wholesale", base="unit", envase=None)],
+            reglas=[_fila(c.arroz, 100, "CUP", 1, "lb", c.lh)],
+        ),
+        _registro_3d(
+            g3,
+            llm_rows=[_fila_3d(c.arroz, 5000, 25, "lb", c.lh,
+                               venta=None, base="unit", envase="saco")],
+            reglas=[{**_fila(c.arroz, 5000, "CUP", 25, "lb", c.lh), "price_basis": "total"}],
+        ),
+        _registro(
+            g4, "kept",
+            llm_rows=[_fila(c.pollo, 200, "CUP", 1, "lb", c.lh)],
+            reglas=[_fila(c.pollo, 200, "CUP", 1, "lb", c.lh)],
+        ),
+    ]
+
+
+def test_3d_acierto_por_campo_contra_el_oro_y_el_null_aparte(
+    session: Session, catalogo
+) -> None:
+    m = llm_backtest.compute_metrics(session, _armar_corpus_3d(session, catalogo))
+    t = m["total"]
+
+    assert t.judgment["sale_format"] == {
+        "n": 2, "llm": 1, "rules": 0, "null_n": 1, "null_llm_proposed": 0,
+    }
+    assert t.judgment["price_basis"] == {
+        "n": 2, "llm": 1, "rules": 1, "null_n": 1, "null_llm_proposed": 1,
+    }
+    assert t.judgment["packaging"] == {
+        "n": 2, "llm": 2, "rules": 0, "null_n": 1, "null_llm_proposed": 0,
+    }
+    # H0 no cambia: las cuatro filas (G4 incluida) puntúan igual que siempre.
+    assert (t.llm.rows, t.llm.complete) == (4, 4)
+    assert m["imagen"].judgment["price_basis"]["n"] == 0
+
+
+def test_3d_el_reporte_muestra_los_tres_campos_con_n_y_el_null_aparte(
+    session: Session, catalogo
+) -> None:
+    m = llm_backtest.compute_metrics(session, _armar_corpus_3d(session, catalogo))
+
+    reporte = llm_backtest.render_report(m)
+
+    assert "| Formato de venta | 1/2 (50.0%) | 0/2 (0.0%) |" in reporte
+    assert "| Base del precio | 1/2 (50.0%) | 1/2 (50.0%) |" in reporte
+    assert "| Envase | 2/2 (100.0%) | 0/2 (0.0%) |" in reporte
+    assert "- Base del precio: 1 filas del oro sin valor; el modelo propuso algo en 1/1 (100.0%)" in reporte
+    # Imagen no tiene datos: n/d, sin dividir por cero.
+    assert "| Formato de venta | 0/0 (n/d) | 0/0 (n/d) |" in reporte
+
+
+def test_3d_run_registra_los_tres_campos_y_lo_que_se_pregunto(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    txt = _ingesta(
+        session,
+        texto="Pollo Muslo 4x10: 27300 O 39",
+        filas=[_confirmada(catalogo.pollo, "27300", "CUP", "40", "lb", catalogo.lh)],
+    )
+    cuerpo = {
+        "discard": False,
+        "discard_reason": None,
+        "rows": [
+            {"product": "Pollo", "price": 27300, "currency": "CUP", "quantity": 40,
+             "unit": "lb", "province": None, "evidence": "Pollo Muslo 4x10: 27300",
+             "currency_explicit": False, "sale_format": "retail",
+             "price_basis": "total", "packaging": "caja"}
+        ],
+    }
+    resultados = tmp_path / "r.jsonl"
+
+    llm_backtest.run_backtest(
+        session, [llm_backtest.WorkItem(str(txt.id), "text", "kept")],
+        results_path=resultados, calls_log_path=tmp_path / "c.jsonl",
+        api_key="k", client=ClienteFalso(cuerpo), model="claude-sonnet-5",
+        timeout=5.0, out=lambda *_: None,
+    )
+
+    (linea,) = [json.loads(x) for x in resultados.read_text().splitlines()]
+    (fila,) = linea["proposal"]["rows"]
+    assert (fila["sale_format"], fila["price_basis"], fila["packaging"]) == (
+        "retail", "total", "caja",
+    )
+    assert {"sale_format", "price_basis", "packaging"} <= set(linea["proposal"]["asked"])
+    # Y el registro se relee con los tres campos.
+    (releida,) = llm_backtest.rows_from_dicts(
+        linea["proposal"]["rows"], {str(catalogo.pollo.id): catalogo.pollo}, {}
+    )
+    assert (releida.sale_format, releida.price_basis, releida.packaging) == (
+        "retail", "total", "caja",
+    )

@@ -54,8 +54,9 @@ from saimc.models import (
     Product,
     Province,
     RawIngestion,
+    SaleFormat,
 )
-from saimc.units import UNITS, canonical_unit
+from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
 
 # Varias filas por respuesta: 1024 truncó una respuesta en el asistente por fila.
 MAX_TOKENS = 4096
@@ -63,10 +64,13 @@ MAX_TOKENS = 4096
 # Versión del prompt de sistema: cada línea del registro de llamadas y cada
 # resultado del backtest la lleva, para atribuir una corrida a su prompt. La v1
 # (el prompt original, sin esta constante) no la registró.
-PROMPT_VERSION = "2026-09-25.3"
+PROMPT_VERSION = "2026-09-25.4"
 
 _CURRENCIES: tuple[str, ...] = tuple(c.value for c in Currency)
 _DISCARD_REASONS: tuple[str, ...] = tuple(r.value for r in DiscardReason)
+_SALE_FORMATS: tuple[str, ...] = tuple(f.value for f in SaleFormat)
+# Mismo vocabulario que la CHECK `ck_prices_history_price_basis`.
+_PRICE_BASES: tuple[str, ...] = ("unit", "total")
 
 
 @dataclass(frozen=True)
@@ -126,6 +130,11 @@ def response_schema() -> dict[str, Any]:
             # deliberada, a revisar si la medición del backtest lo pide.
             "evidence": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "currency_explicit": {"type": "boolean"},
+            # Slice 3d: juicio que antes solo hacía el operador. Nulables:
+            # sin dato en el anuncio, el modelo se abstiene.
+            "sale_format": _enum_o_null(_SALE_FORMATS),
+            "price_basis": _enum_o_null(_PRICE_BASES),
+            "packaging": _enum_o_null(PACKAGING),
         },
         "required": [
             "product",
@@ -136,6 +145,9 @@ def response_schema() -> dict[str, Any]:
             "province",
             "evidence",
             "currency_explicit",
+            "sale_format",
+            "price_basis",
+            "packaging",
         ],
         "additionalProperties": False,
     }
@@ -181,6 +193,19 @@ _SYSTEM_PROMPT = (
     "unidad lb), no 1 caja. Si el peso o volumen no está dicho, cantidad y "
     "unidad quedan en null.\n"
     "- La provincia es una de la lista o null.\n"
+    "- sale_format: «retail» (minorista) o «wholesale» (mayorista). Mayorista "
+    "es escala de contenedor, no vender un saco o paquete individual — eso lo "
+    "ofrece cualquier minorista desde su casa. Vender por saco, por caja o por "
+    "paquete entero sigue siendo «retail». null si el anuncio no deja "
+    "determinarlo.\n"
+    "- price_basis: «unit» si el precio es por cada unidad de `unit` (por "
+    "libra, por kg...); «total» si el precio es por el lote entero que "
+    "describen cantidad y unidad. Ejemplo: «Pollo Muslo 4x10: 27300» son 4 "
+    "paquetes de 10 lb en una caja: cantidad 40, unidad lb, packaging «caja», "
+    "price_basis «total» y sale_format «retail». Solo importa si la cantidad "
+    "no es 1; null si no está claro.\n"
+    "- packaging: el envase en que se vende, uno de «paquete», «saco», «caja», "
+    "«botella», «pomo» o «a granel». null si el anuncio no lo dice.\n"
     "- evidence: el fragmento del anuncio que respalda esa oferta (producto, "
     "precio y cantidad), copiado LITERALMENTE del texto, sin parafrasear ni "
     "corregir, y lo más corto posible. null si no hay fragmento que la respalde.\n"
@@ -205,7 +230,8 @@ def build_prompt(
         f"Productos del catálogo: {nombres_producto}\n"
         f"Provincias: {nombres_provincia}\n"
         f"Unidades válidas: {', '.join(UNITS)}\n"
-        f"Monedas válidas: {', '.join(_CURRENCIES)}\n\n"
+        f"Monedas válidas: {', '.join(_CURRENCIES)}\n"
+        f"Envases válidos: {', '.join(PACKAGING)}\n\n"
         f"Anuncio:\n{text}"
     )
 
@@ -217,6 +243,11 @@ def _perdido(crudo: object, resuelto: object) -> int:
     (misma distinción que `llm_assist.AssistedFields.dropped`).
     """
     return int(crudo is not None and resuelto is None)
+
+
+def _en_vocabulario(crudo: object, valores: Sequence[str]) -> str | None:
+    """El valor si es exactamente uno del vocabulario cerrado; si no, `None`."""
+    return crudo if isinstance(crudo, str) and crudo in valores else None
 
 
 def parse_response(
@@ -258,7 +289,16 @@ def parse_response(
             if isinstance(currency_raw, str) and currency_raw.upper() in _CURRENCIES
             else None
         )
+        sale_format = _en_vocabulario(item.get("sale_format"), _SALE_FORMATS)
+        price_basis = _en_vocabulario(item.get("price_basis"), _PRICE_BASES)
+        packaging_raw = item.get("packaging")
+        packaging = (
+            canonical_packaging(packaging_raw) if isinstance(packaging_raw, str) else None
+        )
         for nombre, resuelto in (
+            ("sale_format", sale_format),
+            ("price_basis", price_basis),
+            ("packaging", packaging),
             ("price", price),
             ("quantity", quantity),
             ("unit", unit),
@@ -277,6 +317,9 @@ def parse_response(
                 quantity=quantity if isinstance(quantity, Decimal) else None,
                 unit=unit,
                 province=province,
+                price_basis=price_basis,
+                sale_format=sale_format,
+                packaging=packaging,
             )
         )
         # Lo que falta o viene mal degrada a None/False: nunca levanta.
@@ -410,8 +453,18 @@ def propose_ad(
 # EXACTAMENTE el mismo texto y escribir EXACTAMENTE la misma línea de registro
 # que el botón, así que se mudaron acá en vez de copiarse.
 
-# Los campos que el modelo propone por fila.
-ASSIST_FIELDS = ("product", "price", "currency", "quantity", "unit", "province")
+# Los campos que el modelo propone por fila (los tres últimos, desde el 3d).
+ASSIST_FIELDS = (
+    "product",
+    "price",
+    "currency",
+    "quantity",
+    "unit",
+    "province",
+    "sale_format",
+    "price_basis",
+    "packaging",
+)
 
 
 def ad_text(
@@ -452,6 +505,11 @@ def filled_fields(row: ExtractionProposal) -> list[str]:
         campos.append("unit")
     if row.province is not None:
         campos.append("province")
+    campos += [
+        campo
+        for campo in ("sale_format", "price_basis", "packaging")
+        if getattr(row, campo) is not None
+    ]
     return campos
 
 
