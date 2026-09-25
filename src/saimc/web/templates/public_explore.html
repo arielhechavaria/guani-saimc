@@ -133,6 +133,10 @@
   .ph-ex-row.lv1 { background: var(--m3-surface-hover); }
   .ph-ex-row.lv2 { background: var(--m3-surface-container); font-size: 12px; color: var(--m3-on-surface-variant); }
   .ph-ex-row.lv2 th, .ph-ex-row.lv2 td { height: 28px; }
+  /* Marca un formato que el filtro de la izquierda descarta (P5); el JS ya lo
+     oculta con `hidden`, esta regla es la segunda línea de defensa si algo
+     lo pinta antes de que `pintarGrupo` corra. */
+  .ph-ex-fuera { display: none; }
   .ph-ex-row.is-sel, .ph-ex-row:hover { background: var(--ph-accent-wash); }
   .ph-ex-row th { padding: 0 6px 0 0; overflow: hidden; }
   .ph-ex-row td.c-chg, .ph-ex-row td.c-last { color: var(--m3-on-surface-variant); }
@@ -166,6 +170,14 @@
   .ph-ex-spark .l { fill: none; stroke: var(--ph-accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .ph-ex-spark circle { fill: var(--ph-accent); }
   .ph-ex-sin { margin: 0; padding: 12px 20px; font-size: 12px; line-height: 1.5; color: var(--m3-on-surface-variant); }
+  .ph-ex-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 20px 10px; }
+  .ph-ex-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 10px; border-radius: 999px;
+                background: var(--ph-accent-wash); color: var(--ph-accent); font-size: 12px; font-weight: 600; }
+  .ph-ex-chip button { width: 18px; height: 18px; border-radius: 50%; font-size: 13px; line-height: 1; color: var(--ph-accent); }
+  .ph-ex-chip button:hover { background: var(--m3-surface); }
+  .ph-ex-clear { font-size: 12px; color: var(--m3-outline); text-decoration: underline; }
+  .ph-ex-nomatch { margin: 0; padding: 24px 20px; font-size: 13px; color: var(--m3-on-surface-variant); }
+  .ph-ex-nomatch[hidden] { display: none; }
   .ph-ex-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
                  padding: 40px; text-align: center; }
   .ph-ex-empty h2 { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 26px; }
@@ -265,8 +277,9 @@
         {% endfor %}
       </section>
       {% if activo and activo.has_data %}
-      {# Los controles de abajo están dibujados con los datos reales y todavía no
-         filtran nada: el cliente los conecta en P5. #}
+      {# Los controles de abajo filtran las filas ya dibujadas por el servidor,
+         del lado del cliente (P5): no hay ida y vuelta, ni estado en la URL —
+         cambiar de pestaña los reinicia, como en el resto de «Explorar». #}
       <section class="ph-ex-block">
         <h5>Filtros de {{ activo.name }} · provincia</h5>
         {% for n in activo.nodes | sort(attribute="name") %}
@@ -278,13 +291,13 @@
         {% set formatos = {} %}
         {% for n in activo.nodes %}{% for h in n.children %}{% if formatos.update({h.name: (formatos.get(h.name, 0) + h.count)}) %}{% endif %}{% endfor %}{% endfor %}
         {% for nombre, cuantos in formatos.items() | sort %}
-        <label class="ph-ex-opt"><input type="checkbox" name="formato" value="{{ nombre }}"><i>{{ nombre }}</i><span>{{ cuantos }}</span></label>
+        <label class="ph-ex-opt"><input type="checkbox" name="formato" value="{{ nombre }}" data-count="{{ cuantos }}"><i>{{ nombre }}</i><span>{{ cuantos }}</span></label>
         {% endfor %}
       </section>
       <section class="ph-ex-block">
         <h5>Muestra y cambio</h5>
-        <div class="ph-ex-step"><span>Anuncios ≥</span><span><button type="button" aria-label="Menos">−</button><output>0</output><button type="button" aria-label="Más">+</button></span></div>
-        <div class="ph-ex-step"><span>|Cambio| ≥ (%)</span><span><button type="button" aria-label="Menos">−</button><output>0</output><button type="button" aria-label="Más">+</button></span></div>
+        <div class="ph-ex-step" data-stepper="nmin" data-max="60" data-paso="2"><span>Anuncios ≥</span><span><button type="button" data-dir="-1" aria-label="Menos">−</button><output>0</output><button type="button" data-dir="1" aria-label="Más">+</button></span></div>
+        <div class="ph-ex-step" data-stepper="dmin" data-max="30" data-paso="1"><span>|Cambio| ≥ (%)</span><span><button type="button" data-dir="-1" aria-label="Menos">−</button><output>0</output><button type="button" data-dir="1" aria-label="Más">+</button></span></div>
       </section>
       {% endif %}
     </div>
@@ -327,8 +340,9 @@
           <p class="ph-ex-crumb">{{ activo.name }} · {{ activo.currency }} por {{ activo.unit_noun }} · últimos {{ window_days }} días</p>
           <h2 class="ph-ex-h2">{{ activo.province_count }} provincia{{ "s" if activo.province_count != 1 }} · {{ activo.count }} anuncio{{ "s" if activo.count != 1 }}</h2>
         </div>
-        <label class="ph-ex-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" placeholder="Buscar" aria-label="Buscar provincia o formato"></label>
+        <label class="ph-ex-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" class="ph-ex-q" placeholder="Buscar" aria-label="Buscar provincia o formato"></label>
       </div>
+      <div class="ph-ex-chips" id="ph-ex-chips" hidden></div>
       <div class="ph-ex-scroll">
 {% macro metricas(n) -%}
             <td class="num c-med"><b>{{ n.median_text }}</b></td>
@@ -364,7 +378,7 @@
               {{ metricas(n) }}
             </tr>
             {% for h in n.children %}
-            <tr class="ph-ex-row lv1{% if elegida %} is-sel{% endif %}" data-fmt="{{ h.key }}"{% if not elegida %} hidden{% endif %}>
+            <tr class="ph-ex-row lv1{% if elegida %} is-sel{% endif %}" data-fmt="{{ h.key }}" data-fname="{{ h.name }}"{% if not elegida %} hidden{% endif %}>
               <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 30px"><button type="button" class="ph-ex-chev" aria-expanded="false" aria-label="Abrir o cerrar los anuncios de {{ h.name }}"></button><span class="ph-ex-nmt fmt">{{ h.name }}</span></div></th>
               {{ metricas(h) }}
             </tr>
@@ -387,6 +401,7 @@
           {% endfor %}
         </table>
         {% if activo.sin_datos %}<p class="ph-ex-sin">Sin anuncios en la ventana: {{ activo.sin_datos | join(", ") }}.</p>{% endif %}
+        <p class="ph-ex-nomatch" id="ph-ex-nomatch" hidden>Ninguna provincia cumple los filtros. <button type="button" class="ph-ex-more" data-clear-all>Limpiar filtros</button></p>
       </div>
       <div class="ph-ex-foot">Mediana de los anuncios verificados de los últimos {{ window_days }} días. El cambio es contra los {{ window_days }} días anteriores y va sin flecha ni color: una baja es buena noticia para quien compra y mala para quien vende.</div>
       {% else %}
@@ -488,20 +503,186 @@
     var provincia = abierto(grupo.querySelector("tr.lv0 .ph-ex-chev"));
     var formatos = {};
     Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv1"), function (fila) {
-      fila.hidden = !provincia;
+      var visible = provincia && !fila.classList.contains("ph-ex-fuera");
+      fila.hidden = !visible;
       formatos[fila.dataset.fmt] = {
+        visible: visible,
         abierto: abierto(fila.querySelector(".ph-ex-chev")),
         todos: fila.dataset.all === "1"
       };
     });
     Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv2"), function (fila) {
       var f = formatos[fila.dataset.of];
-      var visible = provincia && !!f && f.abierto;
+      var visible = !!f && f.visible && f.abierto;
       if (visible && fila.hasAttribute("data-extra")) visible = f.todos;
       if (visible && fila.classList.contains("more")) visible = !f.todos;
       fila.hidden = !visible;
     });
   }
+
+  /* Filtros del panel izquierdo (P5, 2026-09-25): provincia, formato, texto
+     libre, «anuncios ≥» y «|cambio| ≥ %», todos sobre las filas que ya trajo
+     el servidor y sin tocar cuál está expandida —por eso `pintarGrupo` vuelve
+     a correr al final de `aplicarFiltros`: una provincia que se filtra afuera
+     y adentro de nuevo no debe perder si estaba abierta o cerrada. Estado
+     puramente del cliente, como el resto de la interacción de esta vista:
+     cambiar de pestaña lo reinicia. */
+  var LIMITES = { nmin: 60, dmin: 30 };
+
+  function normalizar(texto) {
+    return texto.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+  }
+
+  function marcados(nombre) {
+    return Array.prototype.map.call(
+      document.querySelectorAll('input[name="' + nombre + '"]:checked'),
+      function (caja) { return caja.value; }
+    );
+  }
+
+  function numeroDeStepper(clave) {
+    var salida = document.querySelector('[data-stepper="' + clave + '"] output');
+    return salida ? Number(salida.textContent || "0") : 0;
+  }
+
+  function estadoFiltro() {
+    var caja = document.querySelector(".ph-ex-q");
+    return {
+      provs: marcados("provincia"),
+      fmts: marcados("formato"),
+      qCrudo: caja ? caja.value : "",
+      q: normalizar(caja ? caja.value : ""),
+      nmin: numeroDeStepper("nmin"),
+      dmin: numeroDeStepper("dmin")
+    };
+  }
+
+  function aplicarFiltros() {
+    var tabla = document.querySelector(".ph-ex-grid");
+    if (!tabla) return;
+    var f = estadoFiltro();
+    var algunaVisible = false;
+    Array.prototype.forEach.call(tabla.querySelectorAll("tbody.ph-ex-grp"), function (grupo) {
+      var formatos = Array.prototype.slice.call(grupo.querySelectorAll("tr.lv1"));
+      formatos.forEach(function (fila) {
+        var pasaFormato = f.fmts.length === 0 || f.fmts.indexOf(fila.dataset.fname) !== -1;
+        fila.classList.toggle("ph-ex-fuera", !pasaFormato);
+      });
+      var algunFormatoPasa = formatos.length === 0 || formatos.some(function (fila) {
+        return !fila.classList.contains("ph-ex-fuera");
+      });
+      var pasaProvincia = f.provs.length === 0 || f.provs.indexOf(grupo.dataset.key) !== -1;
+      var nombre = normalizar(grupo.dataset.name);
+      var pasaTexto = !f.q || nombre.indexOf(f.q) !== -1 || formatos.some(function (fila) {
+        return normalizar(fila.dataset.fname).indexOf(f.q) !== -1;
+      });
+      var pasaAnuncios = Number(grupo.dataset.n || "0") >= f.nmin;
+      var cambio = grupo.dataset.chg === "" ? null : Number(grupo.dataset.chg);
+      var pasaCambio = f.dmin === 0 || (cambio !== null && Math.abs(cambio) >= f.dmin);
+      var visible = pasaProvincia && algunFormatoPasa && pasaTexto && pasaAnuncios && pasaCambio;
+      grupo.hidden = !visible;
+      if (visible) algunaVisible = true;
+      pintarGrupo(grupo);
+    });
+    var vacio = document.getElementById("ph-ex-nomatch");
+    if (vacio) vacio.hidden = algunaVisible;
+    pintarChips(f);
+  }
+
+  function nombreDeOpcion(nombre, valor) {
+    var caja = document.querySelector('input[name="' + nombre + '"][value="' + CSS.escape(valor) + '"]');
+    var i = caja && caja.closest("label").querySelector("i");
+    return i ? i.textContent : valor;
+  }
+
+  function pintarChips(f) {
+    var cont = document.getElementById("ph-ex-chips");
+    if (!cont) return;
+    var piezas = [];
+    if (f.provs.length) {
+      piezas.push({
+        texto: "Provincia: " + (f.provs.length === 1 ? nombreDeOpcion("provincia", f.provs[0]) : f.provs.length),
+        limpiar: function () { marcarNinguno("provincia"); }
+      });
+    }
+    if (f.fmts.length) {
+      piezas.push({
+        texto: "Formato: " + (f.fmts.length === 1 ? f.fmts[0] : f.fmts.length),
+        limpiar: function () { marcarNinguno("formato"); }
+      });
+    }
+    if (f.nmin > 0) piezas.push({ texto: "Anuncios ≥ " + f.nmin, limpiar: function () { ponerStepper("nmin", 0); } });
+    if (f.dmin > 0) piezas.push({ texto: "|Cambio| ≥ " + f.dmin + "%", limpiar: function () { ponerStepper("dmin", 0); } });
+    if (f.qCrudo) {
+      piezas.push({
+        texto: "«" + f.qCrudo + "»",
+        limpiar: function () { var caja = document.querySelector(".ph-ex-q"); if (caja) caja.value = ""; }
+      });
+    }
+    cont.hidden = piezas.length === 0;
+    cont.innerHTML = "";
+    piezas.forEach(function (pieza) {
+      var chip = document.createElement("span");
+      chip.className = "ph-ex-chip";
+      chip.appendChild(document.createTextNode(pieza.texto));
+      var boton = document.createElement("button");
+      boton.type = "button";
+      boton.setAttribute("aria-label", "Quitar filtro");
+      boton.textContent = "×";
+      boton.addEventListener("click", function () { pieza.limpiar(); aplicarFiltros(); });
+      chip.appendChild(boton);
+      cont.appendChild(chip);
+    });
+    if (piezas.length) {
+      var limpiar = document.createElement("button");
+      limpiar.type = "button";
+      limpiar.className = "ph-ex-clear";
+      limpiar.textContent = "Limpiar todo";
+      limpiar.addEventListener("click", limpiarTodo);
+      cont.appendChild(limpiar);
+    }
+  }
+
+  function marcarNinguno(nombre) {
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="' + nombre + '"]:checked'), function (caja) {
+      caja.checked = false;
+    });
+  }
+
+  function ponerStepper(clave, valor) {
+    var salida = document.querySelector('[data-stepper="' + clave + '"] output');
+    if (salida) salida.textContent = String(valor);
+  }
+
+  function limpiarTodo() {
+    marcarNinguno("provincia");
+    marcarNinguno("formato");
+    ponerStepper("nmin", 0);
+    ponerStepper("dmin", 0);
+    var caja = document.querySelector(".ph-ex-q");
+    if (caja) caja.value = "";
+    aplicarFiltros();
+  }
+
+  document.addEventListener("click", function (e) {
+    var pasoBoton = e.target.closest(".ph-ex-step button");
+    if (pasoBoton) {
+      var contenedor = pasoBoton.closest("[data-stepper]");
+      var clave = contenedor.dataset.stepper;
+      var salida = contenedor.querySelector("output");
+      var actual = Number(salida.textContent || "0");
+      var paso = Number(contenedor.dataset.paso);
+      var nuevo = Math.max(0, Math.min(LIMITES[clave], actual + Number(pasoBoton.dataset.dir) * paso));
+      salida.textContent = String(nuevo);
+      aplicarFiltros();
+      return;
+    }
+    if (e.target.closest("[data-clear-all]")) limpiarTodo();
+  });
+
+  document.addEventListener("input", function (e) {
+    if (e.target.classList.contains("ph-ex-q")) aplicarFiltros();
+  });
 
   function valorDeOrden(grupo, clave) {
     if (clave === "name") return grupo.dataset.name;
@@ -568,6 +749,10 @@
   var ANCHO_NOMBRE = 190;
 
   document.addEventListener("change", function (e) {
+    if (e.target.matches('input[name="provincia"], input[name="formato"]')) {
+      aplicarFiltros();
+      return;
+    }
     var caja = e.target.closest("input[data-col]");
     if (!caja) return;
     var tabla = document.querySelector(".ph-ex-grid");

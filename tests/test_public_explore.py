@@ -588,6 +588,73 @@ class TestArbol:
         ]
 
 
+class TestFiltros:
+    """P5 (2026-09-25): filtrar es enteramente del cliente, sobre las filas
+    que ya trajo el servidor — acá se verifica el contrato del que depende
+    ese JavaScript (atributos, nombres, topes), no la interacción en sí, que
+    pytest no ejecuta (se comprueba a mano en Chromium, como el resto de la
+    vista)."""
+
+    def test_cada_formato_lleva_su_nombre_suelto_para_filtrar_y_buscar(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        habana = _grupo(_centro(_html(client, "&productos=arroz")), "la-habana")
+
+        assert 'data-fname="Saco de 100 lb"' in habana
+        assert 'data-fname="Libra"' in habana
+
+    def test_las_casillas_de_formato_llevan_su_nombre_como_valor(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        izq = _izquierda(_html(client, "&productos=arroz"))
+        formatos = _bloque(izq, "<h5>Formato</h5>", "</section>")
+
+        assert 'name="formato" value="Saco de 100 lb"' in formatos
+        assert 'name="formato" value="Libra"' in formatos
+
+    def test_las_casillas_de_provincia_llevan_el_slug_como_valor(
+        self, client: TestClient, datos: None
+    ) -> None:
+        izq = _izquierda(_html(client, "&productos=arroz"))
+        provincias = _bloque(izq, "· provincia</h5>", "</section>")
+
+        assert 'name="provincia" value="la-habana"' in provincias
+        assert 'name="provincia" value="santiago-de-cuba"' in provincias
+
+    def test_los_steppers_llevan_paso_y_tope_del_prototipo(self, client: TestClient, datos: None) -> None:
+        izq = _izquierda(_html(client, "&productos=arroz"))
+
+        anuncios = re.search(r'<div class="ph-ex-step"[^>]*data-stepper="nmin"[^>]*>', izq)
+        cambio = re.search(r'<div class="ph-ex-step"[^>]*data-stepper="dmin"[^>]*>', izq)
+        assert anuncios and 'data-max="60"' in anuncios.group(0) and 'data-paso="2"' in anuncios.group(0)
+        assert cambio and 'data-max="30"' in cambio.group(0) and 'data-paso="1"' in cambio.group(0)
+        assert izq.count('data-dir="-1"') == 2
+        assert izq.count('data-dir="1"') == 2
+
+    def test_la_busqueda_tiene_la_clase_que_el_js_engancha(self, client: TestClient, datos: None) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+
+        assert '<input type="search" class="ph-ex-q"' in centro
+
+    def test_los_contenedores_de_chips_y_sin_resultados_arrancan_vacios_y_ocultos(
+        self, client: TestClient, datos: None
+    ) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+
+        assert re.search(r'<div class="ph-ex-chips" id="ph-ex-chips" hidden></div>', centro)
+        assert re.search(r'<p class="ph-ex-nomatch" id="ph-ex-nomatch" hidden>', centro)
+        assert "Limpiar filtros" in centro
+
+    def test_incluso_sin_formato_explicito_el_producto_tiene_una_casilla(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """La fixture base no crea un `ProductFormat`; el anuncio sin
+        formato todavía muestra su presentación por defecto (`Libra`)."""
+        formatos = _bloque(_izquierda(_html(client, "&productos=arroz")), "<h5>Formato</h5>", "</section>")
+
+        assert 'name="formato" value="Libra"' in formatos
+
+
 class TestPanelDerecho:
     def test_el_mapa_trae_las_dieciseis_provincias(self, client: TestClient, datos: None) -> None:
         der = _derecha(_html(client, "&productos=arroz"))
