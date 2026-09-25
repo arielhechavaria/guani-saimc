@@ -281,6 +281,67 @@ descarte.
 
 ---
 
+## Pre-cálculo de la cola (`prefill`)
+
+Calcula de antemano la propuesta del modelo para los pendientes, así al abrir
+un anuncio en `/curation` la propuesta ya está y no esperás la llamada. Hace
+exactamente lo mismo que «Completar con IA» (mismo texto, OCR incluido, misma
+fila en `llm_proposals`), un anuncio a la vez, del más viejo al más nuevo.
+Saltea los que ya tienen una propuesta que anduvo.
+
+**Se corre a mano, antes de una sesión de curaduría.** No hay cron ni cola de
+trabajos (decisión cerrada 3): lo lanzás vos cuando vas a curar. Uno a la vez a
+propósito: el VPS tiene 2 vCPU y el OCR de las imágenes es lo pesado.
+
+Corré todo desde la raíz del proyecto.
+
+1. **En seco** (por defecto): no llama a nada, no necesita clave. Dice cuántos
+   pendientes quedan sin propuesta (texto e imagen) y cuánto costaría. El
+   promedio por anuncio sale de las propuestas ya guardadas en la base
+   («medido») o, si todavía no hay, del número de `docs/costos.md`
+   («documentado», $0,0073 por anuncio con Sonnet 5). La salida dice cuál usó.
+
+   ```
+   .venv/bin/python -m saimc.extraction.prefill
+   ```
+
+2. **Piloto** con pocos anuncios, para ver que anda:
+
+   ```
+   .venv/bin/python -m saimc.extraction.prefill --execute --limit 5
+   ```
+
+3. **El backlog, con tope de gasto** (recomendado la primera vez). `--max-cost`
+   frena antes de pasar ese monto en USD, según lo gastado de verdad en la
+   corrida:
+
+   ```
+   .venv/bin/python -m saimc.extraction.prefill --execute --max-cost 3
+   ```
+
+Imprime una línea por anuncio: id corto, tipo, filas propuestas (o la falla),
+tokens y costo acumulado.
+
+**Reanudar.** Hace commit después de cada anuncio. Si se corta (Ctrl+C, se cae
+la conexión), volvé a lanzar el mismo comando: saltea lo que ya tiene propuesta
+y reintenta los degradados.
+
+**Cuándo se detiene solo.** Si la API dice que no hay saldo o rechaza la clave,
+la corrida frena en el acto (sale con código 1) y lo dice: seguir solo gastaría
+pedidos que van a fallar igual. Cargá saldo o corregí la clave y relanzalo.
+Cualquier otra falla (timeout, red) queda guardada como degradada y la corrida
+sigue. Una imagen sin texto reconocido no se manda (no hay nada que preguntar).
+
+**Consumo y H0.** Cada llamada queda en el registro del operador con la marca
+`"source": "prefill"`: suma en «Consumo del asistente» de `/control`, pero **no**
+saca el anuncio de la medición de H0. Lo que lo saca es curarlo con la
+propuesta a la vista (queda en `llm_reviews`).
+
+`--execute` exige `SAIMC_ANTHROPIC_API_KEY` y se niega sin ella. Otro modelo:
+`--model`. Timeout por llamada: `--timeout` (120 s por defecto).
+
+---
+
 ## Qué NO hacer
 
 - No enciendas auto-reload en la consola sin decidirlo a conciencia.

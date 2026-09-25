@@ -263,6 +263,16 @@ class AssistRun:
     # perder la red eran indistinguibles — que es justo lo que el operador
     # necesitaba saber.
     failure: str
+    # Quién hizo la llamada: vacío (líneas viejas) o "curation" para el botón
+    # del operador, `PREFILL_SOURCE` para el pre-cálculo por lotes (slice 3b).
+    source: str = ""
+
+
+# El pre-cálculo por lotes (`python -m saimc.extraction.prefill`) anota sus
+# llamadas con esta marca: cuentan como consumo en `/control`, pero NO como
+# «asistido» para H0 — que el modelo haya propuesto no significa que el
+# operador haya curado con la propuesta a la vista; eso lo dice `llm_reviews`.
+PREFILL_SOURCE = "prefill"
 
 
 def append_assist_run(record: dict[str, Any], path: Path) -> None:
@@ -319,6 +329,7 @@ def read_assist_runs(path: Path) -> list[AssistRun]:
                 input_tokens=_as_count(record.get("input_tokens")),
                 output_tokens=_as_count(record.get("output_tokens")),
                 failure=str(record.get("failure", "")),
+                source=str(record.get("source", "") or ""),
             )
         )
     return runs
@@ -329,8 +340,17 @@ def assisted_ingestion_ids(path: Path) -> set[str]:
 
     Es lo que `measure.py` necesita para separar el conjunto no asistido, que
     es el que sigue siendo comparable con las corridas anteriores.
+
+    Las líneas del pre-cálculo (`PREFILL_SOURCE`) no cuentan: desde el slice
+    3b la exclusión por curar con propuesta a la vista descansa en
+    `llm_reviews` (`measure.assisted_ingestion_ids`). Una línea sin `source`
+    (anterior a 3b) sigue contando.
     """
-    return {run.ingestion_id for run in read_assist_runs(path)}
+    return {
+        run.ingestion_id
+        for run in read_assist_runs(path)
+        if run.source != PREFILL_SOURCE
+    }
 
 
 # --- consumo y fallas ------------------------------------------------------

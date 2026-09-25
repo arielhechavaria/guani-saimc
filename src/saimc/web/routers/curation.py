@@ -46,7 +46,7 @@ from starlette.datastructures import FormData
 from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, apply_resolution
-from saimc.extraction import llm_store, ocr
+from saimc.extraction import llm_store
 from saimc.extraction.engine import (
     ExtractionProposal,
     guess_published_date,
@@ -55,14 +55,19 @@ from saimc.extraction.engine import (
     probable_discard_reasons,
     propose_all,
 )
-from saimc.extraction.llm_assist import append_assist_run
 from saimc.extraction.llm_checks import (
     DIFIERE,
     compare_with_rules,
     highlight_segments,
     match_rule_rows,
 )
-from saimc.extraction.llm_propose_ad import PROMPT_VERSION, AdProposal, propose_ad
+from saimc.extraction.llm_propose_ad import (
+    AdProposal,
+    ad_text,
+    filled_fields,
+    propose_ad,
+    record_operator_run,
+)
 from saimc.formats import format_label, format_quantity, get_or_create_format
 from saimc.ingestion import origin
 from saimc.ingestion.inbox import ingest_inbox
@@ -1076,7 +1081,9 @@ def _curation_view(
     elif ingestion is not None and ingestion.original_text is None:
         # content_type == IMAGE acá (el único otro valor posible).
         settings = get_settings()
-        recognized_text = ocr.transcribe(settings.raw_store_dir / ingestion.file_path)
+        # Mismo helper que el pre-cálculo (`prefill.py`): el texto que ve el
+        # modelo no puede depender de quién lo pidió.
+        recognized_text = ad_text(ingestion, settings.raw_store_dir)
         if recognized_text:
             proposals = propose_all(recognized_text, products, provinces)
             source_reference_guess = (
@@ -1256,8 +1263,6 @@ def _curation_view(
 # ahí con `ingestion_id="sin-foco"` y el 422 de validación de UUID lo tumbaría
 # antes de llegar acá.
 # Los seis campos que el modelo propone por fila. `requested` en el registro.
-_ASSIST_FIELDS = ("product", "price", "currency", "quantity", "unit", "province")
-
 # Los que se comparan contra las reglas (`llm_checks.RowAgreement.fields`).
 _RULES_HINT_FIELDS = ("product", "price", "currency", "quantity", "unit")
 
@@ -1279,24 +1284,6 @@ _DISCARD_LABELS = {"off_focus": "fuera de foco", "no_data": "sin dato útil"}
 
 def _assist_failure_label(failure: str) -> str:
     return _ASSIST_FAILURE_LABELS.get(failure, _ASSIST_FAILURE_LABELS["other"])
-
-
-def _filled_fields(row: ExtractionProposal) -> list[str]:
-    """Qué campos llenó el modelo en esta fila (los que trajo con valor).
-
-    La moneda cuenta solo con precio: sin él el `CUP` es el default de las
-    reglas y no una respuesta del modelo.
-    """
-    campos = ["product"]
-    if row.price is not None:
-        campos += ["price", "currency"]
-    if row.quantity is not None:
-        campos.append("quantity")
-    if row.unit:
-        campos.append("unit")
-    if row.province is not None:
-        campos.append("province")
-    return campos
 
 
 def _rules_value_text(field: str, rule: ExtractionProposal) -> str:
@@ -1353,7 +1340,7 @@ def _rows_from_model(
         valores["evidence"] = meta.evidence or ""
         valores["proposal_row"] = str(indices[i] if indices is not None else i)
         filas.append(valores)
-        asistidos[i] = _filled_fields(row)
+        asistidos[i] = filled_fields(row)
     return filas, asistidos
 
 
@@ -1395,44 +1382,6 @@ def _evidence_segments(
     return segmentos if any(hit for _, hit in segmentos) else None
 
 
-def _record_assist(result: AdProposal, *, ingestion_id: str, settings) -> None:
-    """Anota la invocación en el registro del operador.
-
-    Es el registro que lee `llm_assist.assisted_ingestion_ids` (H0 deja fuera
-    lo asistido) y `consumption_summary` (`/control`). Su forma es la de
-    `llm_assist.AssistRun`: `requested`/`answered`/`dropped` son LISTAS. El
-    `dropped` de `AdProposal` es un entero y copiarlo tal cual haría que
-    `read_assist_runs` fallara en `/control`, así que va aparte como
-    `dropped_count`.
-
-    No se registra lo que no fue una invocación (`no_key`, `empty_text`), igual
-    que `propose_ad`: el registro cuenta intentos reales.
-    """
-    if result.failure in ("no_key", "empty_text"):
-        return
-    respondidos = sorted({campo for row in result.rows for campo in _filled_fields(row)})
-    append_assist_run(
-        {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "ingestion_id": ingestion_id,
-            "model": settings.llm_assist_model,
-            "kind": "ad",
-            "prompt_version": PROMPT_VERSION,
-            "requested": list(_ASSIST_FIELDS),
-            "answered": respondidos,
-            "dropped": [],
-            "dropped_count": result.dropped,
-            "rows": len(result.rows),
-            "discard": result.discard,
-            "degraded": result.degraded,
-            "input_tokens": result.input_tokens,
-            "output_tokens": result.output_tokens,
-            "failure": result.failure,
-        },
-        settings.llm_assist_log_path,
-    )
-
-
 def _run_assist(
     text: str,
     *,
@@ -1446,7 +1395,8 @@ def _run_assist(
     `propose_ad` nunca levanta: si degrada, el resultado lo dice y quien llama
     deja el formulario como lo armaron las reglas. El registro de llamadas
     propio de `propose_ad` queda apagado (`log_path=None`): el del operador se
-    escribe acá, en la forma que leen H0 y `/control`.
+    escribe acá, en la forma que leen H0 y `/control` (`record_operator_run`,
+    compartido con el pre-cálculo).
     """
     resultado = propose_ad(
         text,
@@ -1458,7 +1408,13 @@ def _run_assist(
         ingestion_id=ingestion_id,
         log_path=None,
     )
-    _record_assist(resultado, ingestion_id=ingestion_id, settings=settings)
+    record_operator_run(
+        resultado,
+        ingestion_id=ingestion_id,
+        model=settings.llm_assist_model,
+        log_path=settings.llm_assist_log_path,
+        source="curation",
+    )
     return resultado
 
 
