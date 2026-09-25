@@ -200,7 +200,12 @@
   .ph-ex-prov { fill: color-mix(in srgb, var(--ph-price-high) calc((0.15 + 0.85 * var(--t, 0)) * 100%), var(--ph-price-low));
                 stroke: var(--m3-surface); stroke-width: 1; stroke-linejoin: round; }
   .ph-ex-prov.is-nodata { fill: url(#ph-ex-hatch); }
-  .ph-ex-prov.is-selected { stroke: var(--ph-accent); stroke-width: 2; }
+  .ph-ex-prov.is-selected { stroke: var(--ph-accent); stroke-width: 2.5; }
+  /* Clic/hover del mapa (P6, 2026-09-25): cada provincia con dato va envuelta
+     en un `<a>` (SVG inline lo admite) con el mismo `province_link` que ya usa
+     la fila de la tabla; hover es puro CSS, sin estado en JS. */
+  a.ph-ex-provlink { cursor: pointer; }
+  a.ph-ex-provlink:hover .ph-ex-prov, a.ph-ex-provlink:focus-visible .ph-ex-prov { stroke: var(--ph-accent); stroke-width: 1.6; }
   .ph-ex-kpis { display: flex; gap: 24px; }
   .ph-ex-kpi { font-size: 12px; color: var(--m3-outline); }
   .ph-ex-kpi b { display: block; font-family: var(--ph-font-heading); font-weight: 400; font-size: 22px; line-height: 1.1;
@@ -374,7 +379,7 @@
           {% set elegida = n.key == ex_selected_key %}
           <tbody class="ph-ex-grp" data-key="{{ n.key }}" data-name="{{ n.name }}" data-med="{{ '%.10g' | format(n.median) }}" data-chg="{{ n.change if n.change is not none }}" data-n="{{ n.count }}" data-last="{{ n.last_days }}">
             <tr class="ph-ex-row lv0{% if elegida %} is-sel{% endif %}">
-              <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 10px"><button type="button" class="ph-ex-chev" aria-expanded="{{ 'true' if elegida else 'false' }}" aria-label="Abrir o cerrar {{ n.name }}"></button><a class="ph-ex-nmt" href="{{ province_link(n.key) }}">{{ n.name }}</a>{% if n.children | length > 1 %}<span class="ph-ex-sub">{{ n.children | length }} formatos</span>{% endif %}</div></th>
+              <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 10px"><button type="button" class="ph-ex-chev" aria-expanded="{{ 'true' if elegida else 'false' }}" aria-label="Abrir o cerrar {{ n.name }}"></button><a class="ph-ex-nmt" href="{{ province_link(n.key) }}" hx-get="{{ province_link(n.key) }}">{{ n.name }}</a>{% if n.children | length > 1 %}<span class="ph-ex-sub">{{ n.children | length }} formatos</span>{% endif %}</div></th>
               {{ metricas(n) }}
             </tr>
             {% for h in n.children %}
@@ -436,7 +441,8 @@
       <svg class="ph-ex-map" viewBox="{{ ex_map.viewbox }}" role="img" aria-label="Mapa de Cuba: precio por provincia">
         <defs><pattern id="ph-ex-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--m3-surface-container)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--m3-outline-variant);stroke-width:1.4"/></pattern></defs>
         {% for c in ex_map.cells | sort(attribute="is_selected") %}
-        <path class="ph-ex-prov{% if c.is_selected %} is-selected{% endif %}{% if not c.has_data %} is-nodata{% endif %}" d="{{ c.d }}" data-slug="{{ c.slug }}"{% if c.has_data %} style="--t: {{ '%.1f' | format(c.tint) if c.tint in (0, 1) else c.tint }}"{% endif %}><title>{{ c.name }}</title></path>
+        {% set trazo %}<path class="ph-ex-prov{% if c.is_selected %} is-selected{% endif %}{% if not c.has_data %} is-nodata{% endif %}" d="{{ c.d }}" data-slug="{{ c.slug }}"{% if c.has_data %} style="--t: {{ '%.1f' | format(c.tint) if c.tint in (0, 1) else c.tint }}"{% endif %}><title>{{ c.name }}</title></path>{% endset %}
+        {% if c.has_data %}<a class="ph-ex-provlink" href="{{ province_link(c.slug) }}" hx-get="{{ province_link(c.slug) }}" aria-label="Ver {{ c.name }}">{{ trazo }}</a>{% else %}{{ trazo }}{% endif %}
         {% endfor %}
       </svg>
     </div>

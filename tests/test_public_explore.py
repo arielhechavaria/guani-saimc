@@ -371,15 +371,20 @@ class TestHTMX:
 
         assert re.search(r'class="ph-ex-pill" href="([^"]+)" hx-get="\1"', vacio)
 
-    def test_la_provincia_y_el_cambio_de_vista_no_llevan_hx_get(
+    def test_el_cambio_de_vista_no_lleva_hx_get(self, client: TestClient, datos: None) -> None:
+        """Fuera de alcance: el selector Mapa/Tablero/Explorar queda como
+        estaba en P2, con navegación completa."""
+        assert not re.search(r"js-vista-link[^>]*hx-get", _html(client, "&productos=arroz"))
+
+    def test_la_fila_de_provincia_y_el_mapa_llevan_hx_get_igual_al_href(
         self, client: TestClient, datos: None
     ) -> None:
-        """Fuera de alcance de P4: la fila de provincia sigue siendo P6 y el
-        selector Mapa/Tablero/Explorar queda como estaba en P2."""
+        """P6: elegir una provincia, desde la fila o desde el mapa, ya no
+        recarga la página entera."""
         texto = _html(client, "&productos=arroz")
 
-        assert not re.search(r'class="ph-ex-nmt" href="[^"]+" hx-get', texto)
-        assert not re.search(r"js-vista-link[^>]*hx-get", texto)
+        assert re.search(r'class="ph-ex-nmt" href="([^"]+)" hx-get="\1"', texto)
+        assert re.search(r'class="ph-ex-provlink" href="([^"]+)" hx-get="\1"', texto)
 
 
 class TestTabla:
@@ -685,6 +690,23 @@ class TestPanelDerecho:
 
         assert re.search(r'ph-ex-prov is-selected"[^>]*data-slug="la-habana"', der)
         assert ">La Habana<" in der
+
+    def test_las_provincias_con_dato_van_envueltas_en_un_enlace_por_htmx(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """P6: elegir una provincia desde el mapa no recarga la página."""
+        der = _derecha(_html(client, "&productos=arroz"))
+
+        envueltas = re.findall(r'<a class="ph-ex-provlink" href="([^"]+)" hx-get="([^"]+)"[^>]*>', der)
+        assert len(envueltas) == 2  # La Habana y Santiago de Cuba, las únicas con dato
+        assert all(href == hx for href, hx in envueltas)
+
+    def test_las_provincias_sin_dato_no_llevan_enlace(self, client: TestClient, datos: None) -> None:
+        der = _derecha(_html(client, "&productos=arroz"))
+
+        guantanamo = re.search(r'.{80}data-slug="guantanamo"', der)
+        assert guantanamo is not None
+        assert "ph-ex-provlink" not in guantanamo.group(0)
 
     def test_el_detalle_dice_mediana_cambio_y_anuncios(self, client: TestClient, datos: None) -> None:
         der = _derecha(_html(client, "&productos=arroz&provincia=la-habana"))
