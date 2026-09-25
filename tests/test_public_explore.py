@@ -660,6 +660,73 @@ class TestFiltros:
         assert 'name="formato" value="Libra"' in formatos
 
 
+class TestMovil:
+    """P7 (2026-09-25, fiel a M2): sin panel izquierdo, «+» y «Filtros» abren
+    una hoja inferior y las columnas se eligen con tres presets en vez de
+    siete casillas. Los controles se repiten (mismos macros que el panel de
+    escritorio) para que también funcionen con CSS deshabilitado; el CSS que
+    decide cuál se ve en cada ancho no lo ejecuta pytest, se comprobó a mano
+    en Chromium a 390 px."""
+
+    def test_la_hoja_de_productos_trae_todos_con_su_estado(self, client: TestClient, datos: None) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+        hoja = _bloque(centro, 'class="ph-ex-msheet ph-ex-msheet-prod"', "</details>")
+
+        assert hoja.count("ph-ex-opt") >= 3
+        assert 'is-on" href' in hoja  # Arroz, ya abierto
+
+    def test_la_hoja_de_filtros_trae_provincia_formato_y_steppers(
+        self, client: TestClient, datos: None
+    ) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+        hoja = _bloque(centro, 'class="ph-ex-msheet ph-ex-msheet-filt"', "</details>")
+
+        assert 'name="provincia"' in hoja
+        assert 'name="formato"' in hoja
+        assert 'data-stepper="nmin"' in hoja
+        assert 'data-stepper="dmin"' in hoja
+        assert "data-clear-all" in hoja
+        assert "data-close-sheet" in hoja
+
+    def test_los_steppers_del_escritorio_y_la_hoja_comparten_clave(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """Dos copias, la misma clave: el JS las mantiene sincronizadas
+        (`ponerStepper` escribe en las dos)."""
+        texto = _html(client, "&productos=arroz")
+
+        assert texto.count('data-stepper="nmin"') == 2
+        assert texto.count('data-stepper="dmin"') == 2
+
+    def test_los_tres_presets_de_columnas_estan_y_precio_es_el_activo(
+        self, client: TestClient, datos: None
+    ) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+        patron = r'<button type="button" class="ph-ex-preset( is-on)?" data-preset="(\w+)">'
+        presets = re.findall(patron, centro)
+
+        assert [(clave, bool(on)) for on, clave in presets] == [
+            ("precio", True),
+            ("semanas", False),
+            ("todo", False),
+        ]
+
+    def test_la_cuenta_de_la_hoja_de_filtros_arranca_con_las_provincias_con_dato(
+        self, client: TestClient, datos: None
+    ) -> None:
+        centro = _centro(_html(client, "&productos=arroz"))
+
+        assert '<span id="ph-ex-sheetcount">2</span>' in centro  # La Habana y Santiago
+
+    def test_sin_pestanias_abiertas_no_hay_hoja_de_filtros_ni_presets(
+        self, client: TestClient, datos: None
+    ) -> None:
+        centro = _centro(_html(client, ""))
+
+        assert "ph-ex-msheet-filt" not in centro
+        assert "ph-ex-colpreset" not in centro
+
+
 class TestPanelDerecho:
     def test_el_mapa_trae_las_dieciseis_provincias(self, client: TestClient, datos: None) -> None:
         der = _derecha(_html(client, "&productos=arroz"))

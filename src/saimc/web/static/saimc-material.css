@@ -103,6 +103,8 @@
   --ph-price-low: #e8f1f6;
   --ph-price-high: #05668d;
   --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
+  --ph-scrim: rgba(5, 32, 48, .35);
+  --ph-sheet-shadow: 0 -8px 30px rgba(5, 32, 48, .18);
   --ph-radius-lg: 24px;
   --ph-radius-sm: 14px;
   --ph-side-w: clamp(30rem, 32vw, 36rem);

@@ -228,6 +228,8 @@
   .ph-ex-loading { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 50; background: var(--ph-accent); }
 
   /* ── Angosto: interino hasta P7 (móvil) ───────────────────────────────── */
+  .ph-ex-msheet, .ph-ex-mtoolbar { display: none; }
+
   @media (max-width: 720px) {
     .ph-ex { display: block; height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; }
     .ph-ex-left { border-right: 0; border-bottom: 1px solid var(--m3-outline-variant); }
@@ -236,14 +238,110 @@
     .ph-ex-views { margin-bottom: 10px; }
     .ph-ex-views a { min-height: 44px; }
     .ph-ex-tabs { overflow-x: auto; }
-    .ph-ex-head { flex-direction: column; align-items: stretch; }
+    .ph-ex-head { display: none; }
     .ph-ex-scroll { overflow-x: auto; }
     .ph-ex-grid { min-width: 560px; }
+    .ph-ex-sub { display: none; }
+    .ph-ex-chev, .ph-ex-tab-x { width: 32px; height: 32px; }
+
+    /* Angosto, fiel a M2 (P7): sin panel izquierdo, «+» y «Filtros» abren una
+       hoja inferior en vez de vivir en una columna que acá no cabe. */
+    .ph-ex-add { display: none; }
+    .ph-ex-msheet { display: block; }
+    .ph-ex-madd, .ph-ex-mfbtn { list-style: none; cursor: pointer; }
+    .ph-ex-madd::-webkit-details-marker, .ph-ex-mfbtn::-webkit-details-marker { display: none; }
+    .ph-ex-madd { width: 40px; height: 40px; flex: none; border-radius: 10px; border: 1px dashed var(--m3-outline-variant);
+                  color: var(--ph-accent); font-size: 20px; line-height: 1;
+                  display: inline-flex; align-items: center; justify-content: center; }
+    .ph-ex-msheet-prod[open] .ph-ex-madd { background: var(--ph-accent-wash); border-color: var(--ph-accent); }
+    .ph-ex-mfbtn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px;
+                   border: 1px solid var(--m3-outline-variant); background: var(--m3-surface); font-size: 13px; font-weight: 500;
+                   color: var(--m3-on-surface-variant); white-space: nowrap; flex: none; }
+    .ph-ex-msheet-filt[open] .ph-ex-mfbtn { background: var(--ph-accent-wash); border-color: var(--ph-accent); color: var(--ph-accent); }
+    .ph-ex-scrim { display: none; }
+    .ph-ex-msheet[open] .ph-ex-scrim { display: block; position: fixed; inset: 0; background: var(--ph-scrim); z-index: 39; }
+    .ph-ex-sheetpanel { display: none; }
+    .ph-ex-msheet[open] .ph-ex-sheetpanel {
+      display: flex; flex-direction: column; position: fixed; left: 0; right: 0; bottom: 0; max-height: 72vh;
+      background: var(--m3-surface); border-radius: 22px 22px 0 0; border: 1px solid var(--m3-outline-variant);
+      border-bottom: 0; box-shadow: var(--ph-sheet-shadow); z-index: 40;
+    }
+    .ph-ex-sheethead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px 4px; flex: none; }
+    .ph-ex-sheethead b { font-size: 16px; }
+    .ph-ex-sheetbody { overflow: auto; padding: 0 10px; }
+    .ph-ex-sheetfoot { padding: 12px 18px 18px; flex: none; }
+    .ph-ex-sheetdone { width: 100%; height: 48px; border-radius: 12px; background: var(--ph-accent); color: var(--ph-on-accent);
+                        font-weight: 700; font-size: 15px; }
+
+    /* Presets de columnas (reemplazan las siete casillas de Columnas, que en
+       el angosto no tienen dónde vivir) y «Filtros» + chips, en la misma fila
+       que trae el prototipo. */
+    .ph-ex-mtoolbar { display: flex; flex-direction: column; gap: 8px; padding: 10px 16px; flex: none; }
+    .ph-ex-colpreset { display: inline-flex; align-self: flex-start; background: var(--m3-surface-container);
+                        border-radius: 10px; padding: 3px; gap: 2px; }
+    .ph-ex-preset { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--m3-on-surface-variant); }
+    .ph-ex-preset.is-on { background: var(--m3-surface); color: var(--m3-on-surface); font-weight: 700; box-shadow: var(--ph-elev); }
+    .ph-ex-mfilt { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; align-items: center; }
+    .ph-ex-mfilt::-webkit-scrollbar { display: none; }
+    .ph-ex-mfilt .ph-ex-chips { padding: 0; }
+
+    /* Columna fija (P7, fiel a M2): al desplazar horizontal, la provincia o
+       el formato quedan a la vista. `border-collapse: collapse` (la base de
+       la tabla) rompe el `position: sticky` de una celda —Chromium pinta las
+       columnas de atrás por encima en vez de taparlas—; `separate` con
+       `border-spacing: 0` se ve idéntico y no tiene el bug. */
+    .ph-ex-grid { border-collapse: separate; border-spacing: 0; }
+    .ph-ex-grid th.c-nm { position: sticky; left: 0; z-index: 2; background: var(--m3-surface); box-shadow: 1px 0 0 var(--m3-outline-variant); }
+    .ph-ex-row.lv1 th.c-nm { background: var(--m3-surface-hover); }
+    .ph-ex-row.lv2 th.c-nm { background: var(--m3-surface-container); }
+    /* `--ph-accent-wash` es semitransparente a propósito en todo el resto de
+       la vista; acá, sola, dejaría pasar el texto de las columnas que quedan
+       debajo al desplazar. `linear-gradient` la vuelve una capa opaca sobre
+       `--m3-surface`, mismo tinte visible, ya sin fuga. */
+    .ph-ex-row.is-sel th.c-nm, .ph-ex-row:hover th.c-nm {
+      background: linear-gradient(var(--ph-accent-wash), var(--ph-accent-wash)), var(--m3-surface);
+    }
+    .ph-ex-grid thead th.c-nm { z-index: 4; background: var(--m3-surface-container); }
+
+    /* Filas más altas: dedo en vez de mouse. */
+    .ph-ex-grid th, .ph-ex-grid td, .ph-ex-row.lv2 th, .ph-ex-row.lv2 td { height: 46px; }
+
+    /* El pie de M2 es más corto que el del escritorio —sin la explicación de
+       §12.6—; se conserva completo (es la única vez que se dice «sin flecha
+       ni color» en esta vista) y el aviso de M2 se agrega aparte, sin
+       duplicar el párrafo. */
+    .ph-ex-foot::after { content: " Desliza para ver más columnas."; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
+{% macro lista_productos(nav) -%}
+    {% for it in nav.products %}
+    <a class="ph-ex-opt{% if it.is_on %} is-on{% endif %}" href="{{ it.query }}" hx-get="{{ it.query }}" aria-pressed="{{ 'true' if it.is_on else 'false' }}"><span class="ph-ex-box" aria-hidden="true"></span><i>{{ it.name }}</i><span>{{ it.count }}</span></a>
+    {% endfor %}
+{%- endmacro %}
+{% macro filtros_de_producto(activo) -%}
+    <section class="ph-ex-block">
+      <h5>Filtros de {{ activo.name }} · provincia</h5>
+      {% for n in activo.nodes | sort(attribute="name") %}
+      <label class="ph-ex-opt"><input type="checkbox" name="provincia" value="{{ n.key }}"><i>{{ n.name }}</i><span>{{ n.count }}</span></label>
+      {% endfor %}
+    </section>
+    <section class="ph-ex-block">
+      <h5>Formato</h5>
+      {% set formatos = {} %}
+      {% for n in activo.nodes %}{% for h in n.children %}{% if formatos.update({h.name: (formatos.get(h.name, 0) + h.count)}) %}{% endif %}{% endfor %}{% endfor %}
+      {% for nombre, cuantos in formatos.items() | sort %}
+      <label class="ph-ex-opt"><input type="checkbox" name="formato" value="{{ nombre }}" data-count="{{ cuantos }}"><i>{{ nombre }}</i><span>{{ cuantos }}</span></label>
+      {% endfor %}
+    </section>
+    <section class="ph-ex-block">
+      <h5>Muestra y cambio</h5>
+      <div class="ph-ex-step" data-stepper="nmin" data-max="60" data-paso="2"><span>Anuncios ≥</span><span><button type="button" data-dir="-1" aria-label="Menos">−</button><output>0</output><button type="button" data-dir="1" aria-label="Más">+</button></span></div>
+      <div class="ph-ex-step" data-stepper="dmin" data-max="30" data-paso="1"><span>|Cambio| ≥ (%)</span><span><button type="button" data-dir="-1" aria-label="Menos">−</button><output>0</output><button type="button" data-dir="1" aria-label="Más">+</button></span></div>
+    </section>
+{%- endmacro %}
 {% set activo = ex_active %}
 <div id="ph-loading" class="ph-ex-loading htmx-indicator" aria-hidden="true"></div>
 <div class="ph-ex" id="ph-live" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#ph-loading">
@@ -277,33 +375,15 @@
       <section class="ph-ex-block">
         <h5>Productos</h5>
         <p class="ph-ex-hint">Cada producto marcado abre una pestaña en el panel central.</p>
-        {% for it in ex_nav.products %}
-        <a class="ph-ex-opt{% if it.is_on %} is-on{% endif %}" href="{{ it.query }}" hx-get="{{ it.query }}" aria-pressed="{{ 'true' if it.is_on else 'false' }}"><span class="ph-ex-box" aria-hidden="true"></span><i>{{ it.name }}</i><span>{{ it.count }}</span></a>
-        {% endfor %}
+        {{ lista_productos(ex_nav) }}
       </section>
       {% if activo and activo.has_data %}
       {# Los controles de abajo filtran las filas ya dibujadas por el servidor,
          del lado del cliente (P5): no hay ida y vuelta, ni estado en la URL —
-         cambiar de pestaña los reinicia, como en el resto de «Explorar». #}
-      <section class="ph-ex-block">
-        <h5>Filtros de {{ activo.name }} · provincia</h5>
-        {% for n in activo.nodes | sort(attribute="name") %}
-        <label class="ph-ex-opt"><input type="checkbox" name="provincia" value="{{ n.key }}"><i>{{ n.name }}</i><span>{{ n.count }}</span></label>
-        {% endfor %}
-      </section>
-      <section class="ph-ex-block">
-        <h5>Formato</h5>
-        {% set formatos = {} %}
-        {% for n in activo.nodes %}{% for h in n.children %}{% if formatos.update({h.name: (formatos.get(h.name, 0) + h.count)}) %}{% endif %}{% endfor %}{% endfor %}
-        {% for nombre, cuantos in formatos.items() | sort %}
-        <label class="ph-ex-opt"><input type="checkbox" name="formato" value="{{ nombre }}" data-count="{{ cuantos }}"><i>{{ nombre }}</i><span>{{ cuantos }}</span></label>
-        {% endfor %}
-      </section>
-      <section class="ph-ex-block">
-        <h5>Muestra y cambio</h5>
-        <div class="ph-ex-step" data-stepper="nmin" data-max="60" data-paso="2"><span>Anuncios ≥</span><span><button type="button" data-dir="-1" aria-label="Menos">−</button><output>0</output><button type="button" data-dir="1" aria-label="Más">+</button></span></div>
-        <div class="ph-ex-step" data-stepper="dmin" data-max="30" data-paso="1"><span>|Cambio| ≥ (%)</span><span><button type="button" data-dir="-1" aria-label="Menos">−</button><output>0</output><button type="button" data-dir="1" aria-label="Más">+</button></span></div>
-      </section>
+         cambiar de pestaña los reinicia, como en el resto de «Explorar». La
+         misma sección se repite en las hojas de abajo para el angosto (P7):
+         `filtros_de_producto` es una sola fuente para las dos. #}
+      {{ filtros_de_producto(activo) }}
       {% endif %}
     </div>
 
@@ -335,6 +415,19 @@
         </div>
       </details>
       {% endif %}
+      {# Hoja de productos del angosto (P7, fiel a M2): a diferencia del «+» de
+         arriba —que solo agrega—, acá van TODOS los productos, marcados los
+         que ya están abiertos, porque en el angosto no hay panel izquierdo
+         desde donde desmarcar uno. #}
+      <details class="ph-ex-msheet ph-ex-msheet-prod">
+        <summary class="ph-ex-madd" aria-label="Productos">+</summary>
+        <div class="ph-ex-scrim"></div>
+        <div class="ph-ex-sheetpanel" role="dialog" aria-label="Productos">
+          <div class="ph-ex-sheethead"><b>Productos</b><p class="ph-ex-hint">Cada producto marcado abre una pestaña.</p></div>
+          <div class="ph-ex-sheetbody">{{ lista_productos(ex_nav) }}</div>
+          <div class="ph-ex-sheetfoot"><button type="button" class="ph-ex-sheetdone" data-close-sheet>Listo</button></div>
+        </div>
+      </details>
     </div>
 
     {% if activo %}
@@ -347,7 +440,28 @@
         </div>
         <label class="ph-ex-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" class="ph-ex-q" placeholder="Buscar" aria-label="Buscar provincia o formato"></label>
       </div>
-      <div class="ph-ex-chips" id="ph-ex-chips" hidden></div>
+      {# Barra del angosto (P7, fiel a M2): presets de columnas en vez de las
+         siete casillas de escritorio, y «Filtros» abre una hoja en vez del
+         panel de la izquierda —que en el angosto no existe—. #}
+      <div class="ph-ex-mtoolbar">
+        <div class="ph-ex-colpreset" role="group" aria-label="Columnas">
+          <button type="button" class="ph-ex-preset is-on" data-preset="precio">Precio</button>
+          <button type="button" class="ph-ex-preset" data-preset="semanas">Semanas</button>
+          <button type="button" class="ph-ex-preset" data-preset="todo">Todo</button>
+        </div>
+        <div class="ph-ex-mfilt">
+          <details class="ph-ex-msheet ph-ex-msheet-filt">
+            <summary class="ph-ex-mfbtn"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 3h10L8 7.5V12l-2-1V7.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Filtros</summary>
+            <div class="ph-ex-scrim"></div>
+            <div class="ph-ex-sheetpanel" role="dialog" aria-label="Filtros">
+              <div class="ph-ex-sheethead"><b>Filtros de {{ activo.name }}</b><button type="button" class="ph-ex-clear" data-clear-all>Limpiar todo</button></div>
+              <div class="ph-ex-sheetbody">{{ filtros_de_producto(activo) }}</div>
+              <div class="ph-ex-sheetfoot"><button type="button" class="ph-ex-sheetdone" data-close-sheet>Ver <span id="ph-ex-sheetcount">{{ activo.province_count }}</span> provincias</button></div>
+            </div>
+          </details>
+          <div class="ph-ex-chips" id="ph-ex-chips" hidden></div>
+        </div>
+      </div>
       <div class="ph-ex-scroll">
 {% macro metricas(n) -%}
             <td class="num c-med"><b>{{ n.median_text }}</b></td>
@@ -568,6 +682,7 @@
     if (!tabla) return;
     var f = estadoFiltro();
     var algunaVisible = false;
+    var visibles = 0;
     Array.prototype.forEach.call(tabla.querySelectorAll("tbody.ph-ex-grp"), function (grupo) {
       var formatos = Array.prototype.slice.call(grupo.querySelectorAll("tr.lv1"));
       formatos.forEach(function (fila) {
@@ -587,11 +702,13 @@
       var pasaCambio = f.dmin === 0 || (cambio !== null && Math.abs(cambio) >= f.dmin);
       var visible = pasaProvincia && algunFormatoPasa && pasaTexto && pasaAnuncios && pasaCambio;
       grupo.hidden = !visible;
-      if (visible) algunaVisible = true;
+      if (visible) { algunaVisible = true; visibles += 1; }
       pintarGrupo(grupo);
     });
     var vacio = document.getElementById("ph-ex-nomatch");
     if (vacio) vacio.hidden = algunaVisible;
+    var contador = document.getElementById("ph-ex-sheetcount");
+    if (contador) contador.textContent = String(visibles);
     pintarChips(f);
   }
 
@@ -655,9 +772,14 @@
     });
   }
 
+  /* El panel de escritorio y la hoja del angosto (P7) repiten los mismos
+     steppers —misma clave `data-stepper`—; escribir los dos a la vez es lo
+     que evita que `numeroDeStepper` (que solo mira el primero) lea uno
+     desactualizado si el operador tocó el otro. */
   function ponerStepper(clave, valor) {
-    var salida = document.querySelector('[data-stepper="' + clave + '"] output');
-    if (salida) salida.textContent = String(valor);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-stepper="' + clave + '"] output'), function (salida) {
+      salida.textContent = String(valor);
+    });
   }
 
   function limpiarTodo() {
@@ -675,15 +797,34 @@
     if (pasoBoton) {
       var contenedor = pasoBoton.closest("[data-stepper]");
       var clave = contenedor.dataset.stepper;
-      var salida = contenedor.querySelector("output");
-      var actual = Number(salida.textContent || "0");
+      var actual = Number(contenedor.querySelector("output").textContent || "0");
       var paso = Number(contenedor.dataset.paso);
       var nuevo = Math.max(0, Math.min(LIMITES[clave], actual + Number(pasoBoton.dataset.dir) * paso));
-      salida.textContent = String(nuevo);
+      ponerStepper(clave, nuevo);
       aplicarFiltros();
       return;
     }
     if (e.target.closest("[data-clear-all]")) limpiarTodo();
+  });
+
+  /* Hojas del angosto (P7, fiel a M2): abrir una cierra la otra —sin esto,
+     tocar «+» con «Filtros» ya abierta dejaría las dos superpuestas—, y
+     tocar el fondo oscuro o «Listo»/«Ver N provincias» cierra la que
+     corresponda. `<details>` no necesita más que sacarle el `open`. */
+  document.addEventListener("click", function (e) {
+    var resumen = e.target.closest(".ph-ex-msheet > summary");
+    if (resumen) {
+      var esta = resumen.closest(".ph-ex-msheet");
+      Array.prototype.forEach.call(document.querySelectorAll(".ph-ex-msheet[open]"), function (otra) {
+        if (otra !== esta) otra.open = false;
+      });
+      return;
+    }
+    var cierre = e.target.closest(".ph-ex-scrim, [data-close-sheet]");
+    if (cierre) {
+      var hoja = cierre.closest("details.ph-ex-msheet");
+      if (hoja) hoja.open = false;
+    }
   });
 
   document.addEventListener("input", function (e) {
@@ -754,13 +895,7 @@
   var ANCHOS_COLUMNA = { med: 92, chg: 62, rango: 122, tend: 104, sem: 304, n: 54, last: 78 };
   var ANCHO_NOMBRE = 190;
 
-  document.addEventListener("change", function (e) {
-    if (e.target.matches('input[name="provincia"], input[name="formato"]')) {
-      aplicarFiltros();
-      return;
-    }
-    var caja = e.target.closest("input[data-col]");
-    if (!caja) return;
+  function recalcularColumnas() {
     var tabla = document.querySelector(".ph-ex-grid");
     if (!tabla) return;
     var cajas = document.querySelectorAll("input[data-col]");
@@ -770,6 +905,41 @@
     });
     tabla.setAttribute("data-hide", ocultas.join(" "));
     tabla.style.minWidth = ancho + "px";
+  }
+
+  document.addEventListener("change", function (e) {
+    if (e.target.matches('input[name="provincia"], input[name="formato"]')) {
+      aplicarFiltros();
+      return;
+    }
+    if (e.target.closest("input[data-col]")) recalcularColumnas();
+  });
+
+  /* Presets de columnas del angosto (P7, fiel a M2): tocar uno marca o
+     desmarca las mismas casillas de «Columnas visibles» del escritorio —no
+     hay un estado aparte que sincronizar— y deja marcado cuál está activo.
+     «Precio» coincide con lo que ya trae el servidor por defecto (P3): acá
+     no se repite el mapa de columnas del prototipo, que en el angosto arranca
+     con Rango a la vista; usar el mismo default que el escritorio evita
+     tener que reaplicar nada después de cada swap de htmx. */
+  var PRESETS_COLUMNA = {
+    precio: { med: true, chg: true, rango: false, tend: true, sem: false, n: true, last: true },
+    semanas: { med: true, chg: true, rango: false, tend: false, sem: true, n: false, last: false },
+    todo: { med: true, chg: true, rango: true, tend: true, sem: true, n: true, last: true }
+  };
+
+  document.addEventListener("click", function (e) {
+    var boton = e.target.closest(".ph-ex-preset");
+    if (!boton) return;
+    var preset = PRESETS_COLUMNA[boton.dataset.preset];
+    if (!preset) return;
+    Array.prototype.forEach.call(document.querySelectorAll("input[data-col]"), function (caja) {
+      caja.checked = !!preset[caja.dataset.col];
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".ph-ex-preset"), function (otro) {
+      otro.classList.toggle("is-on", otro === boton);
+    });
+    recalcularColumnas();
   });
 </script>
 {% endblock %}

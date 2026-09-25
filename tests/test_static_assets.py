@@ -546,6 +546,8 @@ class TestModoOscuro:
         "--ph-radius-lg",
         "--ph-radius-sm",
         "--ph-elev",
+        "--ph-scrim",
+        "--ph-sheet-shadow",
         # Medidas del panel lateral de `/`, no colores: el ancho de la columna
         # y el alto de la barra de filtros en angosto.
         "--ph-side-w",
