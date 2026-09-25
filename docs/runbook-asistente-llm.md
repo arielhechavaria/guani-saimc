@@ -195,6 +195,55 @@ cuánto resuelven las reglas solas.
 
 ---
 
+## Backtest
+
+Mide el modelo contra lo que curaste a mano, separado por texto e imagen, y lo
+compara con las reglas sobre los mismos anuncios. Es la línea base para decidir
+si confiar en el modelo con toda la cola. **No da veredicto ni umbral**: el
+umbral lo ponés vos al ver los números (`spec.md` §12.6).
+
+Corré todo desde la raíz del proyecto (usa la base y `data/` de ahí).
+
+1. **En seco** (por defecto): no llama a nada, no necesita clave. Imprime
+   cuántos anuncios entran por tipo y el costo estimado por modelo.
+
+   ```
+   .venv/bin/python -m saimc.extraction.llm_backtest
+   ```
+
+2. **Piloto** con 10 anuncios (gasta centavos; sirve para ver que todo anda):
+
+   ```
+   .venv/bin/python -m saimc.extraction.llm_backtest --execute --limit 10
+   ```
+
+3. **Corrida completa** (mismo comando sin `--limit`). Es reanudable: si se
+   corta, volvé a lanzarlo y salta lo ya hecho; los anuncios degradados se
+   reintentan.
+
+   ```
+   .venv/bin/python -m saimc.extraction.llm_backtest --execute
+   ```
+
+`--execute` exige `SAIMC_ANTHROPIC_API_KEY` y se niega sin ella. No cambies
+`--seed` ni `--sample` entre el piloto y la corrida completa (mezclarías
+muestras distintas en el mismo archivo). Para cambiar de modelo: `--model`.
+
+Dónde queda todo (bajo `data/`, que el repositorio no versiona):
+
+- `data/llm-backtest-results.jsonl`: un resultado por anuncio (propuesta del
+  modelo, de las reglas, tokens, OCR de las imágenes).
+- `data/llm-backtest-report.md`: el reporte en español. Se regenera sin llamar
+  a nada con `--report-only`.
+- `data/llm-backtest-calls.jsonl`: registro de llamadas. Es un archivo aparte
+  del del asistente: el backtest **no** saca anuncios de la medición de H0.
+
+El oro son los curados que nunca pasaron por el asistente. La muestra de
+descartados (por defecto, tantos como oro por tipo) solo mide el veredicto de
+descarte.
+
+---
+
 ## Qué NO hacer
 
 - No enciendas auto-reload en la consola sin decidirlo a conciencia.
