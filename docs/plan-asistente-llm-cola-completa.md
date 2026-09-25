@@ -71,9 +71,13 @@ con el valor final del operador.
 - **Umbral para seguir:** lo fija el operador al ver los números. No se inventa
   (`spec.md` §12.6).
 - Costo: una llamada por anuncio; se informa el gasto antes de correr.
-- **Estado (2026-09-25):** construido en `llm_propose_ad.py` y `llm_backtest.py`
-  (commits `693c7e2`, `41fc34e`). Piloto de 10 anuncios corrido: sin conclusiones
-  por el tamaño; costo real ~$0,0065 por anuncio con Sonnet 5.
+- **Estado: CERRADO (2026-09-25).** Construido en `llm_propose_ad.py` y
+  `llm_backtest.py`; corrido sobre 100 anuncios con dos versiones de prompt.
+  Resultados y lecciones en `docs/decisions.md` (entrada del 2026-09-25, «Backtest
+  del asistente LLM»); costo real ~$0,006 por anuncio, en `docs/costos.md`. Línea
+  base v2 (70 filas): completa 60,0% frente a 40,0% de las reglas; descarte sin
+  falsos descartes en 50. Los ajustes de prompt que quedaron (ejemplo de moneda
+  marcada) pasan al slice 2.
 - **Cómo se mide:** cada anuncio se manda (ya redactado) al modelo en una llamada y
   también al motor de reglas; ambas propuestas se comparan con lo que el operador
   confirmó a mano, con las mismas funciones que H0. Se reportan por texto e imagen:

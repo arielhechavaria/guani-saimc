@@ -77,6 +77,28 @@ Precios oficiales de la API de Anthropic, por millón de tokens:
 La cuenta, para que la puedas rehacer: `(0,48 × precio_entrada) + (0,09 ×
 precio_salida)`.
 
+### Medido con el backtest (2026-09-25) — reemplaza los supuestos de arriba
+
+Cuando el asistente cura **toda la cola** (una llamada por anuncio con todas las
+filas, `saimc/extraction/llm_propose_ad.py`), el supuesto de ~800 tokens de
+entrada por llamada deja de valer: los catálogos suman ~730 tokens fijos y las
+listas de WhatsApp son largas. Medido sobre 100 anuncios reales con Sonnet 5:
+**~2.115 tokens de entrada y ~180 de salida por anuncio, $0,0060 por anuncio**
+(100 anuncios costaron $0,6026).
+
+| Modelo | Por anuncio | 1.200 anuncios al mes | Backlog de 371 |
+| --- | --- | --- | --- |
+| Claude Haiku 4.5 | ~$0,0030 | ~$3,6 | ~$1,1 |
+| **Claude Sonnet 5** | **$0,0060** | **~$7,2** | **~$2,2** |
+| Claude Opus 5 | ~$0,0151 | ~$18,1 | ~$5,6 |
+
+Sonnet 5 sale de la medición; Haiku y Opus son la misma cuenta con sus tarifas, no
+están medidos. La cuenta: `(tokens_entrada × precio_entrada + tokens_salida ×
+precio_salida) / 1.000.000`. Si Haiku alcanza en calidad, ahorra ~$3,6 al mes: eso
+se decide midiéndolo (`llm_backtest --model`), no antes. Volumen de referencia: el
+ritmo real de WAHA, a confirmar al ejecutar el plan
+(`docs/plan-asistente-llm-cola-completa.md`).
+
 ### Por qué Sonnet 5 y no el más barato
 
 Los casos que llegan a esta capa son, por construcción, los que las reglas ya no
