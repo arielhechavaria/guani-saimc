@@ -129,8 +129,7 @@ cierra antes de abrir el siguiente:
 - **3a — Guardar la propuesta y capturar la revisión.** **CERRADO (2026-09-25)**,
   verificado por el operador; especificación en `docs/spec-slice-3a.md`.
 - **3b — Pre-cálculo por lotes** (`prefill`, `/curation` lee lo guardado, H0 por
-  `llm_reviews`). **Construido (2026-09-25), pendiente de verificación del
-  operador.** Sin cambio de esquema. Comando manual, uno a la vez, en seco por
+  `llm_reviews`). **CERRADO (2026-09-25)**, verificado por el operador. Sin cambio de esquema. Comando manual, uno a la vez, en seco por
   defecto; sus líneas en el registro llevan `"source": "prefill"` (suman
   consumo, no excluyen de H0). Uso en `docs/runbook-asistente-llm.md`, motivo
   en `docs/decisions.md` (2026-09-25, slice 3b).
