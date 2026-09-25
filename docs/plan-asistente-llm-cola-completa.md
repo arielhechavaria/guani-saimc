@@ -134,6 +134,10 @@ cierra antes de abrir el siguiente:
   consumo, no excluyen de H0). Uso en `docs/runbook-asistente-llm.md`, motivo
   en `docs/decisions.md` (2026-09-25, slice 3b).
 - **3d — El modelo propone también formato de venta, base del precio y envase**
+  **Construido (2026-09-25), pendiente de backtest y verificación del
+  operador.** Prompt `2026-09-25.4`; comando del backtest en
+  `docs/runbook-asistente-llm.md` («Prompt v4»); apartamientos en
+  `docs/decisions.md` (2026-09-25, slice 3d).
   (pedido del operador, 2026-09-25; va antes que 3c). Hoy el modelo propone seis
   campos (producto, precio, moneda, cantidad, unidad, provincia). Minorista o
   mayorista (`sale_format`), precio por unidad o total del lote (`price_basis`),
