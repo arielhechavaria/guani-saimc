@@ -104,9 +104,15 @@ class RowAgreement:
     """Acuerdo de una fila del modelo con la fila de las reglas que le toca.
 
     Cada campo es `coincide`, `difiere` o `sin_regla` (las reglas no produjeron
-    valor, o ninguna fila de las reglas le corresponde). `status` es el resumen:
-    `difiere` si algún campo comparado difiere; `coincide` si hay al menos uno
-    comparado y todos coinciden; `sin_regla` si no hubo nada con qué comparar.
+    valor, o ninguna fila de las reglas le corresponde). `status` es el resumen
+    de los cinco campos de H0: `difiere` si alguno difiere; `coincide` si hay
+    al menos uno comparado y todos coinciden; `sin_regla` si no hubo nada con
+    qué comparar.
+
+    Los tres del slice 3d van por campo y NO entran en `status`: es la señal que
+    el slice 2 midió contra la extracción completa de H0, que no los incluye, y
+    sumarlos cambiaría lo medido. `sale_format` y `packaging` son siempre
+    `sin_regla`: las reglas nunca los proponen.
     """
 
     product: str
@@ -115,6 +121,9 @@ class RowAgreement:
     quantity: str
     unit: str
     status: str
+    price_basis: str = SIN_REGLA
+    sale_format: str = SIN_REGLA
+    packaging: str = SIN_REGLA
 
     def fields(self) -> dict[str, str]:
         return {
@@ -123,6 +132,9 @@ class RowAgreement:
             "currency": self.currency,
             "quantity": self.quantity,
             "unit": self.unit,
+            "price_basis": self.price_basis,
+            "sale_format": self.sale_format,
+            "packaging": self.packaging,
         }
 
 
@@ -162,6 +174,8 @@ def _agreement(model: ExtractionProposal, rule: ExtractionProposal | None) -> Ro
         quantity=cantidad,
         unit=unidad,
         status=status,
+        # Las reglas solo proponen la base cuando el anuncio la declara.
+        price_basis=_compare(model.price_basis, rule.price_basis if rule else None),
     )
 
 

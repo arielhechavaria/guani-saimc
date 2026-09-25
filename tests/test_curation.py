@@ -9,6 +9,7 @@ import json
 import re
 import uuid
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -4743,6 +4744,9 @@ class TestAsistenteLLM:
                 quantity=fila.get("quantity"),
                 unit=fila.get("unit"),
                 province=fila.get("province"),
+                sale_format=fila.get("sale_format"),
+                price_basis=fila.get("price_basis"),
+                packaging=fila.get("packaging"),
             )
             for fila in (filas or [])
         ]
@@ -5444,6 +5448,9 @@ class TestAsistenteLLM:
             datos[f"quantity_{i}"] = fila.get("quantity", "")
             datos[f"unit_{i}"] = fila.get("unit", "")
             datos[f"province_id_{i}"] = fila.get("province_id", "")
+            for campo in ("sale_format", "price_basis", "packaging"):
+                if campo in fila:
+                    datos[f"{campo}_{i}"] = fila[campo]
             if "proposal_row" in fila:
                 datos[f"proposal_row_{i}"] = fila["proposal_row"]
         return datos
@@ -5505,6 +5512,9 @@ class TestAsistenteLLM:
                 "quantity": None,
                 "unit": None,
                 "province_id": None,
+                "sale_format": None,
+                "price_basis": None,
+                "packaging": None,
                 "evidence": "pollo congelado a 500",
                 "currency_explicit": True,
                 "evidence_found": True,
@@ -5703,6 +5713,7 @@ class TestAsistenteLLM:
         assert response.status_code == 303
         (precio,) = session.execute(select(PriceHistory)).scalars()
         (revision,) = self._revisiones(session)
+        # Los seis del slice 3a y los tres del 3d.
         seis = {
             "product_id": str(producto.id),
             "price": "500",
@@ -5710,6 +5721,9 @@ class TestAsistenteLLM:
             "quantity": None,
             "unit": None,
             "province_id": None,
+            "sale_format": None,
+            "price_basis": None,
+            "packaging": None,
         }
         assert revision.ingestion_id == ingestion.id
         assert revision.proposal_id == propuesta.id
@@ -6025,6 +6039,270 @@ class TestAsistenteLLM:
         assert 'name="proposal_row_0" value="0"' in response.text
         assert "4x10 = cuatro paquetes" in response.text
         assert self._revisiones(session) == []
+
+    # --- slice 3d: formato de venta, base del precio y envase -----------------
+    #
+    # Casos escritos antes del código. «caja de pollo congelado de 40 lb a
+    # 24800»: `propose()` leería la caja y propondría `total`
+    # (`_packaging_price_basis`), pero la cola usa `propose_all`, que hoy no
+    # aplica las reglas de la base. Para probar la comparación con las reglas,
+    # `_reglas_con_base` inyecta esa base en la salida de las reglas. Las
+    # reglas nunca proponen formato de venta ni envase.
+
+    TEXTO_CAJA = "caja de pollo congelado de 40 lb a 24800"
+
+    @staticmethod
+    def _reglas_con_base(monkeypatch: pytest.MonkeyPatch, base: str) -> None:
+        real = curation.propose_all
+
+        def con_base(*args, **kwargs):
+            return [replace(p, price_basis=base) for p in real(*args, **kwargs)]
+
+        monkeypatch.setattr(curation, "propose_all", con_base)
+
+    @staticmethod
+    def _seleccionado(html: str, nombre: str) -> str | None:
+        """El `value` de la opción seleccionada del `<select name=nombre>`."""
+        bloque = re.search(rf'<select name="{re.escape(nombre)}".*?</select>', html, re.S)
+        assert bloque is not None, nombre
+        opcion = re.search(r'<option value="([^"]*)"\s*selected', bloque.group(0))
+        return opcion.group(1) if opcion else None
+
+    def test_3d_el_modelo_prellena_formato_base_y_envase_y_los_marca(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._reglas_con_base(monkeypatch, "total")
+        ingestion = self._pendiente(session, self.TEXTO_CAJA)
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[
+                {
+                    "price": Decimal("24800"),
+                    "quantity": Decimal("40"),
+                    "unit": "lb",
+                    "sale_format": "retail",
+                    "price_basis": "total",
+                    "packaging": "caja",
+                }
+            ],
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert self._seleccionado(html, "sale_format_0") == "retail"
+        assert self._seleccionado(html, "price_basis_0") == "total"
+        assert self._seleccionado(html, "packaging_0") == "caja"
+        assert {"sale_format", "price_basis", "packaging"} <= set(
+            self._mapa_asistido(html)["0"]
+        )
+        # Coincide con la base de las reglas: sin segundo indicador.
+        assert 'data-differs-for="price_basis_0"' not in html
+        # La fila en blanco de más no hereda nada.
+        assert self._seleccionado(html, "sale_format_1") == ""
+
+    def test_3d_la_base_que_difiere_de_las_reglas_muestra_lo_que_decian(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Mismo criterio que slice 2: manda el modelo, y la diferencia se ve."""
+        self._reglas_con_base(monkeypatch, "total")
+        ingestion = self._pendiente(session, self.TEXTO_CAJA)
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[
+                {
+                    "price": Decimal("24800"),
+                    "quantity": Decimal("40"),
+                    "unit": "lb",
+                    "price_basis": "unit",
+                }
+            ],
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert self._seleccionado(html, "price_basis_0") == "unit"
+        assert 'data-differs-for="price_basis_0"' in html
+        assert "Reglas: total del lote" in html
+
+    def test_3d_si_el_modelo_se_abstiene_queda_lo_de_las_reglas(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._reglas_con_base(monkeypatch, "total")
+        ingestion = self._pendiente(session, self.TEXTO_CAJA)
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("24800"), "quantity": Decimal("40"), "unit": "lb"}],
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert self._seleccionado(html, "price_basis_0") == "total"
+        assert self._seleccionado(html, "sale_format_0") == ""
+        assert self._seleccionado(html, "packaging_0") == ""
+        assert 'data-differs-for="price_basis_0"' not in html
+        marcados = set(self._mapa_asistido(html)["0"])
+        assert not marcados & {"sale_format", "price_basis", "packaging"}
+
+    def _propuesta_vieja(
+        self, session: Session, ingestion: RawIngestion, producto: Product
+    ) -> LlmProposal:
+        """Una propuesta guardada antes del 3d: sus filas no traen los tres campos."""
+        propuesta = LlmProposal(
+            ingestion_id=ingestion.id,
+            model="claude-sonnet-5",
+            prompt_version="2026-09-25.3",
+            status="ok",
+            discard=False,
+            rows=[
+                {
+                    "product_id": str(producto.id),
+                    "price": "24800",
+                    "currency": "CUP",
+                    "quantity": "40",
+                    "unit": "lb",
+                    "province_id": None,
+                    "evidence": None,
+                    "currency_explicit": False,
+                    "evidence_found": False,
+                    "price_in_evidence": None,
+                }
+            ],
+            input_tokens=1000,
+            output_tokens=200,
+        )
+        session.add(propuesta)
+        session.commit()
+        return propuesta
+
+    def test_3d_una_propuesta_vieja_sin_los_campos_se_muestra_igual(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._reglas_con_base(monkeypatch, "total")
+        ingestion = self._pendiente(session, self.TEXTO_CAJA)
+        producto = session.execute(select(Product)).scalars().one()
+        propuesta = self._propuesta_vieja(session, ingestion, producto)
+
+        response = client.get(f"/curation?id={ingestion.id}")
+
+        assert response.status_code == 200
+        html = response.text
+        assert f'name="proposal_id" value="{propuesta.id}"' in html
+        assert 'id="price_0" value="24800"' in html
+        # Faltante = null: la base queda la de las reglas, lo demás sin responder.
+        assert self._seleccionado(html, "price_basis_0") == "total"
+        assert self._seleccionado(html, "sale_format_0") == ""
+        assert 'data-differs-for="price_basis_0"' not in html
+
+    def test_3d_guardar_captura_los_tres_campos_y_marca_el_formato_editado(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session, self.TEXTO_CAJA)
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[
+                {
+                    "price": Decimal("24800"),
+                    "quantity": Decimal("40"),
+                    "unit": "lb",
+                    "sale_format": "retail",
+                    "price_basis": "total",
+                    "packaging": "caja",
+                }
+            ],
+        )
+        client.post(f"/curation/{ingestion.id}/assist")
+        (propuesta,) = self._propuestas(session, ingestion)
+        producto = session.execute(select(Product)).scalars().one()
+        assert propuesta.rows[0]["sale_format"] == "retail"
+        assert propuesta.rows[0]["price_basis"] == "total"
+        assert propuesta.rows[0]["packaging"] == "caja"
+        datos = self._formulario(
+            ingestion,
+            {
+                0: {
+                    "product_id": str(producto.id),
+                    "price": "24800",
+                    "quantity": "40",
+                    "unit": "lb",
+                    "sale_format": "wholesale",
+                    "price_basis": "total",
+                    "packaging": "caja",
+                    "proposal_row": "0",
+                }
+            },
+            proposal_id=str(propuesta.id),
+        )
+
+        response = client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        assert response.status_code == 303
+        (revision,) = self._revisiones(session)
+        (fila,) = revision.rows
+        assert fila["edited"] == ["sale_format"]
+        assert fila["proposed"]["sale_format"] == "retail"
+        assert fila["final"]["sale_format"] == "wholesale"
+        assert fila["final"]["price_basis"] == "total"
+        # El envase final es el del formato que se guardó con la fila.
+        assert fila["final"]["packaging"] == "caja"
+
+    def test_3d_la_revision_de_una_propuesta_vieja_no_inventa_ediciones(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+    ) -> None:
+        """El modelo no propuso esos campos: el operador llenándolos no es
+        «corregir» al modelo. `edited` compara solo lo que se propuso."""
+        ingestion = self._pendiente(session, self.TEXTO_CAJA)
+        producto = session.execute(select(Product)).scalars().one()
+        propuesta = self._propuesta_vieja(session, ingestion, producto)
+        datos = self._formulario(
+            ingestion,
+            {
+                0: {
+                    "product_id": str(producto.id),
+                    "price": "24800",
+                    "quantity": "40",
+                    "unit": "lb",
+                    "sale_format": "retail",
+                    "price_basis": "total",
+                    "proposal_row": "0",
+                }
+            },
+            proposal_id=str(propuesta.id),
+        )
+
+        client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        (revision,) = self._revisiones(session)
+        (fila,) = revision.rows
+        assert fila["edited"] == []
+        assert "sale_format" not in fila["proposed"]
+        assert fila["final"]["sale_format"] == "retail"
 
 
 class TestHistorialFiltraPorFormato:

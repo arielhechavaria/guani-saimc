@@ -189,6 +189,67 @@ def test_usa_el_mismo_emparejado_por_mejor_ajuste_que_h0() -> None:
     assert b.status == "coincide"
 
 
+# --- slice 3d: base del precio, formato de venta y envase ------------------
+
+
+def _con(fila: ExtractionProposal, **campos) -> ExtractionProposal:
+    from dataclasses import replace
+
+    return replace(fila, **campos)
+
+
+def test_base_del_precio_se_compara_con_la_de_las_reglas() -> None:
+    # Las reglas leyeron «Sale 515 Cup Lb» y dicen `unit`; el modelo dice `total`.
+    modelo = [_con(_fila(POLLO, "25750", "CUP", "50", "lb"), price_basis="total")]
+    reglas = [_con(_fila(POLLO, "25750", "CUP", "50", "lb"), price_basis="unit")]
+    igual = [_con(_fila(POLLO, "25750", "CUP", "50", "lb"), price_basis="total")]
+
+    (difiere,) = llm_checks.compare_with_rules(modelo, reglas)
+    (coincide,) = llm_checks.compare_with_rules(modelo, igual)
+
+    assert difiere.price_basis == "difiere"
+    assert coincide.price_basis == "coincide"
+    assert difiere.fields()["price_basis"] == "difiere"
+
+
+def test_base_sin_respuesta_de_las_reglas_es_sin_regla() -> None:
+    modelo = [_con(_fila(POLLO, "27300", "CUP", "40", "lb"), price_basis="total")]
+    reglas = [_fila(POLLO, "27300", "CUP", "40", "lb")]
+
+    (a,) = llm_checks.compare_with_rules(modelo, reglas)
+
+    assert a.price_basis == "sin_regla"
+
+
+def test_formato_y_envase_no_tienen_contraparte_en_las_reglas() -> None:
+    modelo = [
+        _con(
+            _fila(POLLO, "27300", "CUP", "40", "lb"),
+            sale_format="retail", packaging="caja",
+        )
+    ]
+    reglas = [_fila(POLLO, "27300", "CUP", "40", "lb")]
+
+    (a,) = llm_checks.compare_with_rules(modelo, reglas)
+
+    assert (a.sale_format, a.packaging) == ("sin_regla", "sin_regla")
+    assert {"sale_format", "packaging", "price_basis"} <= set(a.fields())
+
+
+def test_status_resume_solo_los_campos_de_h0() -> None:
+    """La base que difiere no cambia `status`: el resumen es la señal medida
+    en el slice 2 contra la extracción completa de H0, que no incluye la base.
+    La base se marca por campo.
+    """
+    modelo = [_con(_fila(ARROZ, "100", "CUP", "1", "lb"), price_basis="total")]
+    reglas = [_con(_fila(ARROZ, "100", "CUP", "1", "lb"), price_basis="unit")]
+
+    (a,) = llm_checks.compare_with_rules(modelo, reglas)
+
+    assert a.price_basis == "difiere"
+    assert a.status == "coincide"
+
+
 # --- match_rule_rows --------------------------------------------------------
 
 

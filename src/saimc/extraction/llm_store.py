@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_checks import RowMeta
@@ -26,14 +26,25 @@ from saimc.models import (
     LlmReview,
     PriceHistory,
     Product,
+    ProductFormat,
     ProposalStatus,
     Province,
 )
 from saimc.privacy import redact_personal_data
 from saimc.units import canonical_unit
 
-# Los seis campos que el modelo propone por fila y que la revisión compara.
-REVIEW_FIELDS = ("product_id", "price", "currency", "quantity", "unit", "province_id")
+# Los campos que el modelo propone por fila y que la revisión compara: los
+# seis del slice 3a y los tres del 3d.
+_FIELDS_3D = ("sale_format", "price_basis", "packaging")
+REVIEW_FIELDS = (
+    "product_id",
+    "price",
+    "currency",
+    "quantity",
+    "unit",
+    "province_id",
+    *_FIELDS_3D,
+)
 
 # Las dos que se comparan como número: «500» y «500.00» son el mismo precio.
 _DECIMAL_FIELDS = frozenset({"price", "quantity"})
@@ -64,6 +75,9 @@ def save_proposal(
             "quantity": _text(row.quantity),
             "unit": canonical_unit(row.unit),
             "province_id": _text(row.province.id) if row.province is not None else None,
+            "sale_format": row.sale_format,
+            "price_basis": row.price_basis,
+            "packaging": row.packaging,
             "evidence": meta.evidence,
             "currency_explicit": meta.currency_explicit,
             "evidence_found": meta.evidence_found,
@@ -119,6 +133,10 @@ def _as_decimal(raw: object) -> Decimal | None:
         return None
 
 
+def _str_or_none(raw: object) -> str | None:
+    return raw if isinstance(raw, str) and raw else None
+
+
 def to_ad_proposal(db: Session, proposal: LlmProposal) -> tuple[AdProposal, list[int]]:
     """Reconstruye el `AdProposal` de una propuesta guardada, sin llamar a nada.
 
@@ -144,6 +162,10 @@ def to_ad_proposal(db: Session, proposal: LlmProposal) -> tuple[AdProposal, list
                 quantity=_as_decimal(item.get("quantity")),
                 unit=item.get("unit"),
                 province=province,
+                # Una propuesta guardada antes del 3d no los trae: `None`.
+                sale_format=_str_or_none(item.get("sale_format")),
+                price_basis=_str_or_none(item.get("price_basis")),
+                packaging=_str_or_none(item.get("packaging")),
             )
         )
         metas.append(
@@ -185,11 +207,31 @@ def resolve_proposal(
 
 
 def _proposed_fields(item: dict[str, Any]) -> dict[str, str | None]:
-    return {campo: item.get(campo) for campo in REVIEW_FIELDS}
+    """Lo que propuso el modelo. Los tres campos del 3d, solo si la propuesta
+    los trae: una guardada antes no se los preguntó al modelo, y el operador
+    llenándolos no es corregirlo (`_edited` compara solo lo propuesto)."""
+    return {
+        campo: item.get(campo)
+        for campo in REVIEW_FIELDS
+        if campo not in _FIELDS_3D or campo in item
+    }
+
+
+def _final_packaging(entry: PriceHistory) -> str | None:
+    """El envase del formato que quedó guardado con la fila, o `None`.
+
+    El envase no es columna de `prices_history`: vive en `ProductFormat`. Sin
+    formato (triple incompleto) no quedó ningún envase guardado.
+    """
+    if entry.format_id is None:
+        return None
+    db = object_session(entry)
+    fmt = db.get(ProductFormat, entry.format_id) if db is not None else None
+    return fmt.packaging if fmt is not None else None
 
 
 def final_fields(entry: PriceHistory) -> dict[str, str | None]:
-    """Los seis campos tal como el operador los confirmó al guardar."""
+    """Los campos tal como el operador los confirmó al guardar."""
     return {
         "product_id": _text(entry.product_id),
         "price": _text(entry.price),
@@ -197,6 +239,9 @@ def final_fields(entry: PriceHistory) -> dict[str, str | None]:
         "quantity": _text(entry.quantity),
         "unit": entry.unit,
         "province_id": _text(entry.province_id),
+        "sale_format": entry.sale_format,
+        "price_basis": entry.price_basis,
+        "packaging": _final_packaging(entry),
     }
 
 
@@ -212,11 +257,14 @@ def _edited(
     """Campos donde propuesta y valor final difieren.
 
     Vacío si falta uno de los dos lados: una fila borrada o agregada a mano ya
-    lo dice con su `null`, y listar los seis campos solo agregaría ruido.
+    lo dice con su `null`, y listar todos los campos solo agregaría ruido.
+    Solo se comparan los campos que la propuesta trae (ver `_proposed_fields`).
     """
     if proposed is None or final is None:
         return []
-    return [c for c in REVIEW_FIELDS if not _same(c, proposed[c], final[c])]
+    return [
+        c for c in REVIEW_FIELDS if c in proposed and not _same(c, proposed[c], final[c])
+    ]
 
 
 def _entry(
