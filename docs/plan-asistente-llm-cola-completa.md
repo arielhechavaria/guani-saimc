@@ -90,6 +90,15 @@ con el valor final del operador.
 
 ### Slice 2 — Propuesta completa y veredicto de descarte
 
+**Estado (2026-09-25): construido, pendiente de verificación del operador en pantalla.**
+Datos y lógica en `llm_propose_ad.py` y `llm_checks.py` (commit `1613f7e`); conexión a
+`/curation` en `fe5a7dd`. Decisiones y apartamientos en `docs/decisions.md` (entrada
+«Completar con IA propone el anuncio entero»). Lo medido cambió el diseño: la
+«moneda asumida» y la evidencia hallada no predicen el error y no se muestran como
+marca; el acuerdo con las reglas sí. Del slice 4 ya quedó hecho el descarte sugerido
+con confirmación en un clic; quedan el botón **Aceptar**, el atajo de teclado y el
+orden de la cola.
+
 - El modelo propone **todas** las filas (no solo huecos) y `descartar` con motivo
   corto.
 - Las reglas pasan a ser segunda opinión: cada campo queda marcado como
