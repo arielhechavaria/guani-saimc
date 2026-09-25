@@ -89,6 +89,11 @@ con el valor final del operador.
   llamada al modelo, y guarda la propuesta. Una a la vez (VPS de 2 vCPU).
 - Tabla nueva para las propuestas (ingestion, payload, modelo, estado, fecha).
   Migración con Alembic.
+- **Requisito transversal: captura de la revisión.** Por cada fila revisada se
+  guarda la propuesta del modelo, el valor final que confirmó el operador y si lo
+  **editó** (por campo). Sin esto no hay señal para el slice 5, para redefinir H0 ni
+  para decidir después si conviene algún tipo de aprendizaje (ver «Aprendizaje»). El
+  registro de la propuesta es inmutable: no se sobrescribe al corregir.
 - `/curation` lee la propuesta guardada en vez de llamar al abrir.
 - Al cargar el backlog inicial (~267) se informa el costo estimado antes de correr.
 - Idempotente: reanudable si se corta, sin repetir lo ya procesado.
@@ -106,7 +111,7 @@ con el valor final del operador.
 - Tasa de aceptación sin edición, por campo.
 - Tiempo por decisión.
 - Correcciones del operador sobre propuestas del modelo (lo que hoy da la señal de
-  calidad).
+  calidad), leídas de la captura de la revisión del slice 3.
 - Aviso si la aceptación sin edición sube y el tiempo por decisión baja a la vez.
 
 ## Costo
@@ -120,6 +125,40 @@ auto-reload apagado. Rehacer la cuenta con el volumen real de WAHA al ejecutar.
 - Aceptar sin revisión del operador (auto-aceptar por confianza).
 - Modelo de visión sobre la imagen cruda.
 - Worker, cron o cola de trabajos.
+- Red neuronal propia, fine-tuning o agente: con ~195 curados a mano, sin GPU y en
+  2 vCPU rinden peor que las alternativas de abajo.
+
+## Aprendizaje: decisión diferida (2026-09-25)
+
+Se evaluó que el sistema «aprenda» de las correcciones del operador y **no entra en
+este plan**. Motivos:
+
+- Sin backtest no se sabe dónde falla el modelo; el aprendizaje optimizaría a ciegas.
+- Un clasificador de descarte propio ahorraría centavos (todo el asistente cuesta
+  ~$4/mes) y el LLM ya da veredicto de descarte: es sobreingeniería.
+- Un sistema que cambia con el uso mueve la vara de medir, con H0 ya sin definir.
+- Aprender de lo *aceptado* refuerza errores si se acepta con prisa; solo las
+  *correcciones* son señal limpia.
+
+Lo único que se hace ahora es la **captura de la revisión** (slice 3), que deja la
+opción abierta sin construir nada.
+
+**Cuándo reabrirlo:** después del slice 1 y de algunas semanas de curaduría asistida,
+con los números en la mano:
+
+- Si los errores se concentran por canal o formato → primer paso: **ejemplos
+  recuperados en el prompt** (los curados más parecidos como contexto, sin
+  entrenamiento). Se compara contra el conjunto de referencia fijo.
+- Si hay correcciones recurrentes del mismo patrón → **proponer una regla
+  determinista** que el operador aprueba (mejora el motor de reglas, que es la
+  segunda opinión del slice 2).
+- Si los errores son dispersos → no hace falta nada.
+- El clasificador de descarte solo si el backtest muestra que el veredicto del LLM
+  es malo.
+
+**Regla fija:** los ~195 anuncios curados a mano antes del asistente quedan como
+**conjunto de referencia congelado**, fuera de cualquier aprendizaje. Es lo que
+permite saber si el sistema mejora de verdad.
 
 ---
 
