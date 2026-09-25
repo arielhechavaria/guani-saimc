@@ -126,8 +126,8 @@ orden de la cola.
 **Partido en sub-slices (2026-09-25, aprobado por el operador).** Cada uno se
 cierra antes de abrir el siguiente:
 
-- **3a — Guardar la propuesta y capturar la revisión.** Construido; especificación
-  en `docs/spec-slice-3a.md`. Pendiente de verificación del operador.
+- **3a — Guardar la propuesta y capturar la revisión.** **CERRADO (2026-09-25)**,
+  verificado por el operador; especificación en `docs/spec-slice-3a.md`.
 - **3b — Pre-cálculo por lotes** (`prefill`, `/curation` lee lo guardado, H0 por
   `llm_reviews`).
 - **3d — El modelo propone también formato de venta, base del precio y envase**
