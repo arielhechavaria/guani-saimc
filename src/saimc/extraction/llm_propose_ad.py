@@ -82,6 +82,10 @@ class AdProposal:
     output_tokens: int = 0
     # Filas o campos que el modelo contestó y no resolvieron contra el catálogo.
     dropped: int = 0
+    # La respuesta del modelo tal cual, también si no parseó (slice 3a: ver en
+    # qué se van los tokens de salida). `None` si no hubo respuesta. El modelo
+    # solo ve texto redactado, así que no trae teléfonos.
+    raw_response: str | None = None
 
 
 def _enum_o_null(valores: Sequence[str]) -> dict[str, Any]:
@@ -375,6 +379,7 @@ def propose_ad(
                 failure="other",
                 input_tokens=entrada,
                 output_tokens=salida,
+                raw_response=raw or None,
             )
         )
     return _registrar(
@@ -387,5 +392,6 @@ def propose_ad(
             input_tokens=entrada,
             output_tokens=salida,
             dropped=parsed.dropped,
+            raw_response=raw or None,
         )
     )

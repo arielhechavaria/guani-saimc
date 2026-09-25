@@ -121,6 +121,22 @@ def test_respuesta_multifila_valida_devuelve_una_propuesta_por_fila(
     assert cliente.llamadas[0]["max_tokens"] >= 4096
 
 
+def test_conserva_la_respuesta_cruda_del_modelo(products, provinces) -> None:
+    """Slice 3a: la respuesta tal cual se guarda para ver en qué se van los
+    tokens de salida. También cuando no parsea: es justo cuando más sirve."""
+    texto = json.dumps({"discard": True, "discard_reason": "no_data", "rows": []})
+    ok = _proponer(ClienteFalso(_respuesta(texto)), "anuncio", products, provinces)
+    roto = _proponer(ClienteFalso(_respuesta("no es json")), "anuncio", products, provinces)
+    fallo = _proponer(
+        ClienteFalso(error=TimeoutError("x")), "anuncio", products, provinces
+    )
+
+    assert ok.raw_response == texto
+    assert roto.degraded is True
+    assert roto.raw_response == "no es json"
+    assert fallo.raw_response is None
+
+
 def test_producto_irresoluble_descarta_la_fila_y_provincia_o_unidad_solo_el_campo(
     products, provinces
 ) -> None:

@@ -1580,3 +1580,54 @@ class TestModeloYMigracionesNoDivergen:
             f"solo en el modelo: {sorted(declaradas - migradas)}"
         )
         engine.dispose()
+
+
+class TestLlmProposalsReviewsMigration:
+    """`0021_llm_proposals_reviews.py` — las dos tablas del slice 3a
+    (`docs/spec-slice-3a.md`): la propuesta del modelo y la captura de la
+    revisión. Aditiva: no toca ninguna tabla existente."""
+
+    def _base(self) -> sa.engine.Engine:
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "raw_ingestions",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        metadata.create_all(engine)
+        return engine
+
+    def test_upgrade_crea_las_dos_tablas_y_downgrade_las_elimina(self) -> None:
+        from saimc.models import LlmProposal, LlmReview
+
+        modulo = _cargar_modulo_migracion("0021_llm_proposals_reviews.py")
+        engine = self._base()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            tablas = inspect(connection).get_table_names()
+            assert {"llm_proposals", "llm_reviews"} <= set(tablas)
+            # Mismas columnas que el modelo: `conftest` arma el esquema con el
+            # modelo, así que una divergencia no la vería ningún otro test.
+            for tabla, modelo in (("llm_proposals", LlmProposal), ("llm_reviews", LlmReview)):
+                migradas = {c["name"] for c in inspect(connection).get_columns(tabla)}
+                declaradas = {c.name for c in modelo.__table__.columns}
+                assert migradas == declaradas, tabla
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+
+            tablas = inspect(connection).get_table_names()
+            assert "llm_proposals" not in tablas
+            assert "llm_reviews" not in tablas
+            assert "raw_ingestions" in tablas
+
+        engine.dispose()

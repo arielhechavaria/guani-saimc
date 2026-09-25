@@ -25,6 +25,7 @@ descartados), sin distinguir texto de imagen.
 """
 
 import json
+import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -45,6 +46,8 @@ from saimc.models import (
     Channel,
     ContentType,
     Currency,
+    LlmProposal,
+    LlmReview,
     Platform,
     PriceHistory,
     ProcessingStatus,
@@ -1587,6 +1590,45 @@ class TestH0CorteAsistido:
         assert report.evaluated_rows_count == 0
         assert report.complete_accuracy is None
         assert report.assisted_ads_count == 6
+
+    def test_una_revision_con_propuesta_excluye_aunque_no_este_en_el_registro(
+        self, session: Session, dataset: None, tmp_path
+    ) -> None:
+        """Slice 3a: la tabla `llm_reviews` también marca un anuncio como
+        asistido. En 3b la propuesta se precalcula sin pasar por el registro
+        del operador, así que el registro solo deja de alcanzar."""
+        ingestion_id = uuid.UUID(self._id_de(session, "caso-1"))
+        propuesta = LlmProposal(
+            ingestion_id=ingestion_id,
+            model="m",
+            prompt_version="v",
+            status="ok",
+            rows=[],
+            input_tokens=0,
+            output_tokens=0,
+        )
+        session.add(propuesta)
+        session.flush()
+        session.add(
+            LlmReview(
+                ingestion_id=ingestion_id,
+                proposal_id=propuesta.id,
+                outcome="curated",
+                rows=[],
+            )
+        )
+        session.commit()
+
+        report = compute_h0_report(
+            session,
+            transcribe=_transcribe_falso,
+            assist_log_path=tmp_path / "no-existe.jsonl",
+        )
+        sin_registro = compute_h0_report(session, transcribe=_transcribe_falso)
+
+        assert report.evaluated_ads_count == 5
+        assert report.assisted_ads_count == 1
+        assert sin_registro.assisted_ads_count == 1
 
     def test_una_ingesta_asistida_dos_veces_cuenta_una(
         self, session: Session, dataset: None, tmp_path
