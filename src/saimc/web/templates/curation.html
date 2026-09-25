@@ -114,7 +114,26 @@
   </div>
   {% else %}
 
-  {% if no_candidates %}
+  {% if assist_discard %}
+  {#
+    Veredicto de descarte del asistente (plan LLM, slice 2b). Reemplaza a los
+    avisos de las reglas de abajo mientras hay respuesta del modelo. El motivo
+    que propone va como acción principal y el otro como secundaria; los dos
+    valores son exactamente los que admite la CHECK de `discard_reason`. El
+    formulario completo sigue disponible debajo.
+  #}
+  <div class="m3-banner m3-banner-warn m3-assist-banner">
+    <span class="m3-icon">auto_awesome</span>
+    <span class="m3-spacer">
+      El asistente sugiere descartar{% if assist_discard.label %}: {{ assist_discard.label }}{% endif %}.
+    </span>
+    <form method="post" action="/curation/{{ ingestion.id }}/discard" class="m3-discard-group">
+      {% for boton in assist_discard.buttons %}
+      <button type="submit" name="reason" value="{{ boton.value }}" class="m3-btn{% if boton.primary %} m3-btn-filled{% endif %}">{{ boton.label }}</button>
+      {% endfor %}
+    </form>
+  </div>
+  {% elif no_candidates %}
   <!--
     Atajo de un clic (docs/decisions.md, 2026-08-17): no reemplaza el formulario
     completo, que sigue disponible por si el operador mira la evidencia y de
@@ -164,7 +183,13 @@
         {% if ingestion.content_type == "image" %}
         <img src="/evidence/{{ ingestion.id }}" alt="Evidencia capturada" style="max-height: 480px;" />
         {% elif ingestion.original_text %}
-        <pre>{{ ingestion.original_text }}</pre>
+        {#
+          Con citas del asistente, el texto llega en tramos ya partidos por el
+          servidor (`llm_checks.highlight_segments`): todo va escapado por
+          Jinja, sin `|safe`. Todo en una línea: dentro de `<pre>` los
+          espacios y saltos del marcado se ven.
+        #}
+        <pre>{% if evidence_segments %}{% for tramo, cita in evidence_segments %}{% if cita %}<mark>{{ tramo }}</mark>{% else %}{{ tramo }}{% endif %}{% endfor %}{% else %}{{ ingestion.original_text }}{% endif %}</pre>
         {% else %}
         <p class="m3-muted" style="font-style:italic; margin:0">Sin texto original.</p>
         {% endif %}
@@ -252,8 +277,8 @@
 
       <div class="m3-stack" style="gap:16px">
         {#
-          Asistencia del modelo, SOLO cuando hay huecos y hay clave. Va en su
-          propio formulario porque es un POST distinto al de curar, y es POST
+          Asistencia del modelo: solo con clave y con texto que mandar. Va en
+          su propio formulario porque es un POST distinto al de curar, y es POST
           y no enlace porque gasta plata: una recarga del navegador no puede
           dispararlo (design.md, D4).
         #}
@@ -261,13 +286,20 @@
         <form method="post" action="/curation/{{ ingestion.id }}/assist">
           <button type="submit" class="m3-btn m3-btn-tonal">
             <span class="m3-icon m3-icon-sm">auto_awesome</span>
-            Completar huecos con IA
+            Completar con IA
           </button>
           <span class="m3-help">
-            Consulta al modelo solo los campos que las reglas no resolvieron.
-            Lo que devuelva llega marcado y hay que revisarlo.
+            Consulta al modelo el anuncio entero: propone todas las filas y si
+            conviene descartarlo. Lo que devuelva llega marcado y hay que revisarlo.
           </span>
         </form>
+        {% endif %}
+
+        {% if assist_error %}
+        <div class="m3-banner m3-banner-warn" role="status">
+          <span class="m3-icon">info</span>
+          <span>El asistente no pudo responder ({{ assist_error }}). Completá a mano.</span>
+        </div>
         {% endif %}
 
         <form method="post" action="/curation/{{ ingestion.id }}" id="curation-form">
@@ -400,8 +432,38 @@
     });
   })();
 </script>
+{#
+  Segundo indicador (plan LLM, slice 2b): el campo donde el modelo y las reglas
+  DIFIEREN. La plantilla pone, bajo el campo, el texto «Reglas: <valor>»
+  (`data-differs-for`); acá se marca el campo y, igual que la marca de contorno,
+  editarlo la borra —junto con el texto—: ya lo decidió el operador.
+#}
+<script>
+  (function () {
+    document.querySelectorAll('[data-differs-for]').forEach(function (hint) {
+      var el = document.getElementById(hint.dataset.differsFor);
+      if (!el) return;
+      el.dataset.differs = "1";
+      var limpiar = function () { delete el.dataset.differs; hint.hidden = true; };
+      el.addEventListener("input", limpiar, { once: true });
+      el.addEventListener("change", limpiar, { once: true });
+    });
+  })();
+</script>
 <style>
   [data-assisted] { outline: 2px solid var(--m3-tertiary); outline-offset: 1px; }
+  /* Difiere de las reglas: halo ámbar y fondo suave, para que se distinga de
+     un vistazo del contorno azul de arriba y pueda convivir con él. */
+  [data-differs] { box-shadow: 0 0 0 5px var(--m3-warn-container); background-color: var(--m3-warn-wash); }
+  .m3-rules-hint { display: block; padding: 4px var(--m3-space-4) 0; font-size: 12px; font-weight: 500; color: var(--m3-warn-strong); overflow-wrap: anywhere; }
+  .m3-rules-hint[hidden] { display: none; }
+  /* La cita del asistente: colapsada bajo la tarjeta, sin desbordarla en móvil. */
+  /* Sugerencia de descarte: en móvil el texto y los botones se apilan. */
+  .m3-assist-banner { flex-wrap: wrap; }
+  .m3-assist-banner .m3-spacer { flex: 1 1 200px; }
+  .m3-assist-banner form { display: flex; flex-wrap: wrap; gap: 8px; }
+  .m3-quote { margin: 8px 0 0; padding: 8px 12px; border-left: 3px solid var(--m3-tertiary); background: var(--m3-surface-container); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .m3-evidence pre mark { background: var(--m3-warn-container); color: var(--m3-on-warn-container); border-radius: 2px; padding: 0 2px; }
 </style>
 <script>
   // El form manda `row_count` filas indexadas (`product_id_0`, `price_0`, …) y

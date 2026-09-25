@@ -55,7 +55,14 @@ from saimc.extraction.engine import (
     probable_discard_reasons,
     propose_all,
 )
-from saimc.extraction.llm_assist import missing_fields, propose_missing
+from saimc.extraction.llm_assist import append_assist_run
+from saimc.extraction.llm_checks import (
+    DIFIERE,
+    compare_with_rules,
+    highlight_segments,
+    match_rule_rows,
+)
+from saimc.extraction.llm_propose_ad import PROMPT_VERSION, AdProposal, propose_ad
 from saimc.formats import format_label, format_quantity, get_or_create_format
 from saimc.ingestion import origin
 from saimc.ingestion.inbox import ingest_inbox
@@ -731,6 +738,9 @@ def _render_queue(
     last_capture_notice: str | None = None,
     assist_available: bool = False,
     assisted_map: dict[str, list[str]] | None = None,
+    assist_error: str | None = None,
+    assist_discard: dict | None = None,
+    evidence_segments: list[tuple[str, bool]] | None = None,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -744,6 +754,13 @@ def _render_queue(
             "row_count": row_count,
             "assist_available": assist_available,
             "assisted_map": assisted_map or {},
+            # Motivo legible de que el asistente no respondió (o `None`).
+            "assist_error": assist_error,
+            # Sugerencia de descarte del modelo: motivo y botones (o `None`).
+            "assist_discard": assist_discard,
+            # El texto del anuncio en tramos, con las citas del modelo
+            # marcadas; `None` = mostrarlo tal cual.
+            "evidence_segments": evidence_segments,
             # Molde para las filas que el operador agregue a mano desde el
             # botón "Agregar fila": el JS del cliente clona este `<template>`
             # y le renumera los índices. Mismo dict vacío que las filas en
@@ -996,8 +1013,8 @@ def _curation_view(
     focus_id: uuid.UUID | None = None,
 ) -> HTMLResponse:
     """Arma la vista de la cola. Compartida por el GET y por el endpoint de
-    asistencia, que es el mismo render con los huecos ya consultados al
-    modelo — así el botón no puede divergir de lo que la página muestra.
+    asistencia, que es el mismo render con la propuesta del modelo ya
+    consultada — así el botón no puede divergir de lo que la página muestra.
 
     `focus_id` fija cuál pendiente se muestra; sin él, el primero en foco.
     """
@@ -1060,23 +1077,39 @@ def _curation_view(
             guessed = guess_published_date(recognized_text, ingestion.captured_at)
             published_date_guess = guessed.isoformat() if guessed else ""
 
-    # La asistencia corre acá, con las propuestas de las reglas ya calculadas:
-    # lo que se le pide al modelo son exactamente los huecos que quedaron
-    # (design.md, D1). Nunca en el GET — solo cuando el operador lo pidió.
-    assisted_by_row: dict[int, list[str]] = {}
+    # Texto que ve el operador y que se le da al modelo: el original si es un
+    # ítem de texto, lo que salió del OCR si es una imagen. Vacío para una
+    # imagen sin texto reconocido: ahí no hay nada que preguntar ni señal que
+    # calcular.
+    text_for_hints = (
+        (
+            ingestion.original_text
+            if ingestion.content_type == ContentType.TEXT
+            else recognized_text
+        )
+        if ingestion is not None
+        else None
+    )
+
+    # La asistencia corre acá, con las propuestas de las reglas ya calculadas
+    # (son la segunda opinión). Una sola llamada por anuncio y nunca en el GET:
+    # solo cuando el operador la pidió.
+    assist_result: AdProposal | None = None
     if (
         assist_ingestion_id is not None
         and ingestion is not None
         and ingestion.id == assist_ingestion_id
+        and text_for_hints
+        and settings.anthropic_api_key
     ):
-        assisted_by_row = _run_assist(
-            proposals,
-            text=(ingestion.original_text or "") if ingestion.content_type == ContentType.TEXT else recognized_text,
+        assist_result = _run_assist(
+            text_for_hints,
             products=products,
             provinces=provinces,
             ingestion_id=str(ingestion.id),
             settings=settings,
         )
+    assist_ok = assist_result is not None and not assist_result.degraded
 
     # Solo llegan al formulario las propuestas que cayeron en un producto del
     # foco. Una lista de precios de 25 renglones produce 25 candidatos, de los
@@ -1084,12 +1117,14 @@ def _curation_view(
     # operador a descartarlos de a uno, que es justamente el trabajo que esta
     # decisión elimina (`docs/decisions.md`, 2026-08-15). Lo descartado no se
     # pierde: el registro crudo es inmutable y conserva el anuncio entero.
-    en_foco_idx = [i for i, p in enumerate(proposals) if p.product is not None]
-    rows = [_values_from_proposal(proposals[i]) for i in en_foco_idx]
-    # La marca viaja con la fila: el template la usa para que el operador vea
-    # qué campo salió del modelo y cuál de las reglas (design.md, D10).
-    for fila, original in zip(rows, en_foco_idx, strict=True):
-        fila["assisted"] = " ".join(assisted_by_row.get(original, []))
+    #
+    # Con el asistente, las filas salen de las del modelo (ya solo del foco) y
+    # las reglas quedan de segunda opinión y de fuente de lo que él no propone.
+    assisted_by_row: dict[int, list[str]] = {}
+    if assist_ok:
+        rows, assisted_by_row = _rows_from_model(assist_result, proposals)
+    else:
+        rows = [_values_from_proposal(p) for p in proposals if p.product is not None]
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
 
     # "El canal siempre manda" (docs/decisions.md, 2026-08-17): pisa lo que
@@ -1106,6 +1141,10 @@ def _curation_view(
     if channel_province_id is not None:
         for row in rows:
             row["province_id"] = channel_province_id
+        # La provincia ya no es propuesta del modelo: la fija el canal.
+        for campos in assisted_by_row.values():
+            if "province" in campos:
+                campos.remove("province")
         # Una fila agregada a mano también arranca con la provincia del canal:
         # el operador ya la conoce, elegirla de nuevo sería trabajo de más.
         blank_row["province_id"] = channel_province_id
@@ -1116,14 +1155,13 @@ def _curation_view(
         "published_date": published_date_guess,
     }
 
-    # Mismo texto que ya se usó para `propose_all` arriba: el original si es
-    # un ítem de texto, lo que salió del OCR si es una imagen. Vacío para
-    # imágenes sin texto reconocido — ahí no hay señal que calcular.
-    text_for_hints = (
-        ingestion.original_text if ingestion.content_type == ContentType.TEXT else recognized_text
-    ) if ingestion is not None else None
+    # Las razones de descarte de las reglas se calculan sobre el mismo texto.
+    # Con respuesta del modelo se apagan: su veredicto las reemplaza y un
+    # «no se reconoció nada» contradiría las filas que él acaba de proponer.
     discard_hints = (
-        probable_discard_reasons(text_for_hints, products) if text_for_hints else []
+        probable_discard_reasons(text_for_hints, products)
+        if text_for_hints and not assist_ok
+        else []
     )
 
     return _render_queue(
@@ -1147,19 +1185,28 @@ def _curation_view(
         # 2026-08-17) — un saludo del canal con solo contacto, por ejemplo.
         # Distinto de "no matcheó ningún piloto": eso sí puede traer un
         # precio real de un producto fuera del foco, que vale la pena mirar.
-        no_candidates=ingestion is not None and not proposals,
+        no_candidates=ingestion is not None and not proposals and not assist_ok,
         burst=_burst_context(db, ingestion) if ingestion is not None else (),
         discard_hints=discard_hints,
         channel_discard_stats=(
             _channel_discard_stats(db, ingestion) if ingestion is not None else None
         ),
         last_capture_notice=_last_capture_notice(db),
-        # El botón solo se ofrece con clave configurada Y con al menos un
-        # hueco: ofrecerlo sobre un anuncio completo invitaría a gastar sin
-        # nada que ganar (spec del cambio, capacidad `curation-observation-capture`).
-        assist_available=bool(settings.anthropic_api_key)
-        and any(missing_fields(p) for p in proposals),
+        # El botón se ofrece con clave configurada y texto que mandar. Ya no
+        # depende de que las reglas dejen huecos: el modelo propone todo.
+        assist_available=bool(settings.anthropic_api_key and text_for_hints),
         assisted_map={str(i): campos for i, campos in assisted_by_row.items()},
+        assist_error=(
+            _assist_failure_label(assist_result.failure)
+            if assist_result is not None and assist_result.degraded
+            else None
+        ),
+        assist_discard=_assist_discard(assist_result) if assist_ok else None,
+        evidence_segments=(
+            _evidence_segments(ingestion.original_text, assist_result)
+            if assist_ok and ingestion.content_type == ContentType.TEXT
+            else None
+        ),
     )
 
 
@@ -1170,67 +1217,220 @@ def _curation_view(
 # que si esas quedaran primero, un POST a `/curation/sin-foco/discard` caería
 # ahí con `ingestion_id="sin-foco"` y el 422 de validación de UUID lo tumbaría
 # antes de llegar acá.
+# Los seis campos que el modelo propone por fila. `requested` en el registro.
+_ASSIST_FIELDS = ("product", "price", "currency", "quantity", "unit", "province")
+
+# Los que se comparan contra las reglas (`llm_checks.RowAgreement.fields`).
+_RULES_HINT_FIELDS = ("product", "price", "currency", "quantity", "unit")
+
+# Por qué no respondió el asistente, en palabras del operador. Las cuatro
+# primeras son `llm_assist.classify_failure`; las dos últimas, los cortes de
+# `propose_ad` antes de llamar (el botón no se ofrece en esos casos).
+_ASSIST_FAILURE_LABELS = {
+    "credit": "sin saldo en la cuenta de la API",
+    "timeout": "tardó demasiado en responder",
+    "network": "no hay conexión con el servicio",
+    "auth": "la clave de la API fue rechazada",
+    "other": "error inesperado",
+    "no_key": "no hay clave configurada",
+    "empty_text": "el anuncio no tiene texto",
+}
+
+_DISCARD_LABELS = {"off_focus": "fuera de foco", "no_data": "sin dato útil"}
+
+
+def _assist_failure_label(failure: str) -> str:
+    return _ASSIST_FAILURE_LABELS.get(failure, _ASSIST_FAILURE_LABELS["other"])
+
+
+def _filled_fields(row: ExtractionProposal) -> list[str]:
+    """Qué campos llenó el modelo en esta fila (los que trajo con valor).
+
+    La moneda cuenta solo con precio: sin él el `CUP` es el default de las
+    reglas y no una respuesta del modelo.
+    """
+    campos = ["product"]
+    if row.price is not None:
+        campos += ["price", "currency"]
+    if row.quantity is not None:
+        campos.append("quantity")
+    if row.unit:
+        campos.append("unit")
+    if row.province is not None:
+        campos.append("province")
+    return campos
+
+
+def _rules_value_text(field: str, rule: ExtractionProposal) -> str:
+    """Lo que decían las reglas en `field`, como texto para el «Reglas: …»."""
+    if field == "product":
+        return rule.product.name if rule.product else ""
+    if field == "price":
+        return str(rule.price) if rule.price is not None else ""
+    if field == "currency":
+        return rule.currency
+    if field == "quantity":
+        return str(rule.quantity) if rule.quantity is not None else ""
+    return canonical_unit(rule.unit) or ""
+
+
+def _rows_from_model(
+    result: AdProposal, rules: list[ExtractionProposal]
+) -> tuple[list[dict[str, str]], dict[int, list[str]]]:
+    """Las filas del formulario a partir de las del modelo.
+
+    Cada tarjeta parte de la fila de las reglas que le corresponde (mismo
+    emparejado que H0) para lo que el modelo NO propone —`price_basis`, compra
+    mínima, envase, variante…— y de los valores por defecto si no hay
+    ninguna. Encima van los campos del modelo. La provincia cae a la de las
+    reglas si el modelo se abstuvo: abstenerse no es dato, y ese campo no se
+    compara. Donde modelo y reglas difieren, la fila lleva `hint_<campo>` con
+    lo que decían las reglas y la plantilla lo muestra. Devuelve también,
+    por índice de fila, los campos que llenó el modelo (la marca de contorno).
+    """
+    reglas_por_fila = match_rule_rows(result.rows, rules)
+    acuerdos = compare_with_rules(result.rows, rules)
+    filas: list[dict[str, str]] = []
+    asistidos: dict[int, list[str]] = {}
+    for i, (row, regla, acuerdo, meta) in enumerate(
+        zip(result.rows, reglas_por_fila, acuerdos, result.row_meta, strict=True)
+    ):
+        valores = _values_from_proposal(regla)
+        valores["product_id"] = str(row.product.id) if row.product else ""
+        valores["price"] = str(row.price) if row.price is not None else ""
+        valores["currency"] = row.currency
+        valores["quantity"] = str(row.quantity) if row.quantity is not None else ""
+        valores["unit"] = canonical_unit(row.unit) or ""
+        if row.province is not None:
+            valores["province_id"] = str(row.province.id)
+        for campo, estado in acuerdo.fields().items():
+            if estado == DIFIERE and regla is not None:
+                valores[f"hint_{campo}"] = _rules_value_text(campo, regla)
+        valores["evidence"] = meta.evidence or ""
+        filas.append(valores)
+        asistidos[i] = _filled_fields(row)
+    return filas, asistidos
+
+
+def _assist_discard(result: AdProposal) -> dict | None:
+    """La sugerencia de descarte del modelo, con sus botones, o `None`.
+
+    El motivo del modelo va primero y como acción principal; el otro motivo,
+    como control secundario. Solo salen los dos valores que la CHECK de la base
+    admite (`DiscardReason`).
+    """
+    if not result.discard:
+        return None
+    sugerido = result.discard_reason if result.discard_reason in _DISCARD_LABELS else None
+    return {
+        "label": _DISCARD_LABELS.get(sugerido or "", ""),
+        "buttons": [
+            {
+                "value": motivo,
+                "label": f"Descartar: {_DISCARD_LABELS[motivo]}",
+                "primary": motivo == sugerido,
+            }
+            for motivo in sorted(_DISCARD_LABELS, key=lambda m: m != sugerido)
+        ],
+    }
+
+
+def _evidence_segments(
+    text: str | None, result: AdProposal
+) -> list[tuple[str, bool]] | None:
+    """El texto del anuncio en tramos, con las citas del modelo resaltadas.
+
+    `None` si ninguna cita aparece literal (se muestra el texto tal cual).
+    """
+    if not text:
+        return None
+    segmentos = highlight_segments(
+        text, [m.evidence for m in result.row_meta if m.evidence]
+    )
+    return segmentos if any(hit for _, hit in segmentos) else None
+
+
+def _record_assist(result: AdProposal, *, ingestion_id: str, settings) -> None:
+    """Anota la invocación en el registro del operador.
+
+    Es el registro que lee `llm_assist.assisted_ingestion_ids` (H0 deja fuera
+    lo asistido) y `consumption_summary` (`/control`). Su forma es la de
+    `llm_assist.AssistRun`: `requested`/`answered`/`dropped` son LISTAS. El
+    `dropped` de `AdProposal` es un entero y copiarlo tal cual haría que
+    `read_assist_runs` fallara en `/control`, así que va aparte como
+    `dropped_count`.
+
+    No se registra lo que no fue una invocación (`no_key`, `empty_text`), igual
+    que `propose_ad`: el registro cuenta intentos reales.
+    """
+    if result.failure in ("no_key", "empty_text"):
+        return
+    respondidos = sorted({campo for row in result.rows for campo in _filled_fields(row)})
+    append_assist_run(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "ingestion_id": ingestion_id,
+            "model": settings.llm_assist_model,
+            "kind": "ad",
+            "prompt_version": PROMPT_VERSION,
+            "requested": list(_ASSIST_FIELDS),
+            "answered": respondidos,
+            "dropped": [],
+            "dropped_count": result.dropped,
+            "rows": len(result.rows),
+            "discard": result.discard,
+            "degraded": result.degraded,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "failure": result.failure,
+        },
+        settings.llm_assist_log_path,
+    )
+
+
 def _run_assist(
-    proposals: list[ExtractionProposal],
-    *,
     text: str,
+    *,
     products: Sequence[Product],
     provinces: Sequence[Province],
     ingestion_id: str,
     settings,
-) -> dict[int, list[str]]:
-    """Consulta al modelo los huecos de cada propuesta y los llena en el lugar.
+) -> AdProposal:
+    """Una llamada al modelo por anuncio y su registro.
 
-    Devuelve, por índice de propuesta, qué campos terminaron viniendo del
-    asistente. Solo se tocan campos que estaban en `None`: un valor que las
-    reglas resolvieron no se pisa nunca (design.md, D1).
-
-    Sin texto no hay nada que preguntar, y sin clave `propose_missing` ya
-    degrada por su cuenta sin llamar ni cobrar.
+    `propose_ad` nunca levanta: si degrada, el resultado lo dice y quien llama
+    deja el formulario como lo armaron las reglas. El registro de llamadas
+    propio de `propose_ad` queda apagado (`log_path=None`): el del operador se
+    escribe acá, en la forma que leen H0 y `/control`.
     """
-    # Sin clave no se llama: `propose_missing` ya degradaría, pero cortar acá
-    # deja explícito que la ausencia de clave significa "no se intenta", y
-    # evita recorrer las propuestas para nada.
-    if not text or not settings.anthropic_api_key:
-        return {}
-
-    asistidos: dict[int, list[str]] = {}
-    for indice, proposal in enumerate(proposals):
-        huecos = missing_fields(proposal)
-        if not huecos:
-            continue
-        resultado = propose_missing(
-            text,
-            huecos,
-            products,
-            provinces,
-            api_key=settings.anthropic_api_key,
-            model=settings.llm_assist_model,
-            timeout=settings.llm_assist_timeout,
-            ingestion_id=ingestion_id,
-            log_path=settings.llm_assist_log_path,
-        )
-        llenados = []
-        for campo in sorted(resultado.answered):
-            if getattr(proposal, campo) is None:
-                setattr(proposal, campo, getattr(resultado, campo))
-                llenados.append(campo)
-        if llenados:
-            asistidos[indice] = llenados
-    return asistidos
+    resultado = propose_ad(
+        text,
+        products,
+        provinces,
+        api_key=settings.anthropic_api_key,
+        model=settings.llm_assist_model,
+        timeout=settings.llm_assist_timeout,
+        ingestion_id=ingestion_id,
+        log_path=None,
+    )
+    _record_assist(resultado, ingestion_id=ingestion_id, settings=settings)
+    return resultado
 
 
 @router.post("/curation/{ingestion_id}/assist", response_class=HTMLResponse)
 def assist_curation(
     ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
-    """Pide al modelo los campos que las reglas no resolvieron.
+    """Pide al modelo la propuesta completa de este anuncio («Completar con IA»).
 
     POST y no GET a propósito: gasta plata, así que no puede dispararse por
-    una recarga del navegador ni por un prefetch. Vuelve a renderizar la misma
-    cola con los huecos ya llenos y marcados.
+    una recarga del navegador ni por un prefetch. Vuelve a renderizar el mismo
+    anuncio (`focus_id`: también si se abrió con `?id=` y no es el primero de
+    la cola) con las filas del modelo, sus marcas y su veredicto de descarte.
     """
-    return _curation_view(request, db, assist_ingestion_id=ingestion_id)
+    return _curation_view(
+        request, db, assist_ingestion_id=ingestion_id, focus_id=ingestion_id
+    )
 
 
 @router.get("/curation/sin-foco", response_class=HTMLResponse)

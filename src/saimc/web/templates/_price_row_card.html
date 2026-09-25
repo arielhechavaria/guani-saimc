@@ -75,6 +75,7 @@
         solo lista pilotos.
       -->
       <span class="m3-help">Solo productos piloto. <a href="/catalog">Administrar el foco</a>.</span>
+      {% if row.hint_product %}<span class="m3-rules-hint" data-differs-for="product_id_{{ index0 }}">Reglas: {{ row.hint_product }}</span>{% endif %}
     </label>
 
     {# Datalists de variante por producto: uno por eje y por producto piloto,
@@ -102,6 +103,7 @@
     <label class="m3-field">
       <span class="m3-field-label" for="price_{{ index0 }}">Precio</span>
       <input type="text" name="price_{{ index0 }}" id="price_{{ index0 }}" value="{{ row.price }}" class="m3-input m3-input-num" />
+      {% if row.hint_price %}<span class="m3-rules-hint" data-differs-for="price_{{ index0 }}">Reglas: {{ row.hint_price }}</span>{% endif %}
     </label>
 
     <label class="m3-field">
@@ -111,6 +113,7 @@
         <option value="{{ currency }}" {% if row.currency == currency %}selected{% endif %}>{{ currency }}</option>
         {% endfor %}
       </select>
+      {% if row.hint_currency %}<span class="m3-rules-hint" data-differs-for="currency_{{ index0 }}">Reglas: {{ row.hint_currency }}</span>{% endif %}
     </label>
 
     <label class="m3-field">
@@ -119,6 +122,7 @@
       <span class="m3-help">
         En la unidad de esta fila{% if row.unit %} ({{ unit_words.get(row.unit, row.unit) }}){% endif %}.
       </span>
+      {% if row.hint_quantity %}<span class="m3-rules-hint" data-differs-for="quantity_{{ index0 }}">Reglas: {{ row.hint_quantity }}</span>{% endif %}
     </label>
 
     <label class="m3-field">
@@ -129,6 +133,7 @@
         <option value="{{ unit }}" data-basis-label="{{ unit_words.get(unit, unit) }}" data-basis-label-plural="{{ unit_words_plural.get(unit, unit) }}" {% if row.unit == unit %}selected{% endif %}>{{ unit }}</option>
         {% endfor %}
       </select>
+      {% if row.hint_unit %}<span class="m3-rules-hint" data-differs-for="unit_{{ index0 }}">Reglas: {{ row.hint_unit }}</span>{% endif %}
     </label>
 
     <label class="m3-field">
@@ -323,5 +328,16 @@
       </label>
     </div>
   </details>
+
+  {# Cita del asistente (plan LLM, slice 2b): el fragmento del anuncio que
+     respalda esta fila, colapsado. Solo texto escapado por Jinja. #}
+  {% if row.evidence %}
+  <details style="margin-top:12px">
+    <summary class="m3-summary m3-btn m3-btn-text" style="padding:6px 10px">
+      <span class="m3-icon m3-icon-sm">fact_check</span>Ver cita
+    </summary>
+    <blockquote class="m3-quote">{{ row.evidence }}</blockquote>
+  </details>
+  {% endif %}
 </div>
 {% endmacro %}

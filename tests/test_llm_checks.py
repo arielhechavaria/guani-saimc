@@ -187,3 +187,65 @@ def test_usa_el_mismo_emparejado_por_mejor_ajuste_que_h0() -> None:
 
     assert a.status == "coincide"
     assert b.status == "coincide"
+
+
+# --- match_rule_rows --------------------------------------------------------
+
+
+def test_match_rule_rows_devuelve_la_fila_de_las_reglas_que_le_toca() -> None:
+    regla_arroz = _fila(ARROZ, "500", cantidad="25", unidad="lb")
+    regla_pollo = _fila(POLLO, "800", cantidad="10", unidad="lb")
+    modelo = [_fila(POLLO, "800"), _fila(ARROZ, "500")]
+
+    emparejadas = llm_checks.match_rule_rows(modelo, [regla_arroz, regla_pollo])
+
+    # Mismo orden que `modelo`: la primera fila es Pollo, la segunda Arroz.
+    assert emparejadas == [regla_pollo, regla_arroz]
+
+
+def test_match_rule_rows_da_none_cuando_las_reglas_no_tienen_esa_fila() -> None:
+    modelo = [_fila(POLLO, "800")]
+
+    assert llm_checks.match_rule_rows(modelo, []) == [None]
+
+
+# --- highlight_segments -----------------------------------------------------
+
+
+def test_highlight_marca_el_fragmento_exacto() -> None:
+    segmentos = llm_checks.highlight_segments("Vendo Arroz 25 lb a 500\nLlamar", ["Arroz 25 lb a 500"])
+
+    assert segmentos == [("Vendo ", False), ("Arroz 25 lb a 500", True), ("\nLlamar", False)]
+
+
+def test_highlight_sin_fragmentos_devuelve_el_texto_entero() -> None:
+    assert llm_checks.highlight_segments("Vendo arroz", []) == [("Vendo arroz", False)]
+
+
+def test_highlight_omite_en_silencio_lo_que_no_esta_literal() -> None:
+    # Distinta capitalización: la coincidencia es EXACTA, no normalizada.
+    segmentos = llm_checks.highlight_segments("Vendo Arroz 25 lb", ["arroz 25 lb", "Pollo"])
+
+    assert segmentos == [("Vendo Arroz 25 lb", False)]
+
+
+def test_highlight_une_fragmentos_que_se_solapan_y_ordena_los_separados() -> None:
+    texto = "AAA BBB CCC DDD"
+
+    segmentos = llm_checks.highlight_segments(texto, ["CCC DDD", "AAA BBB", "BBB CCC"])
+
+    # Los tres se encadenan por solapamiento: todo el texto queda marcado.
+    assert segmentos == [("AAA BBB CCC DDD", True)]
+
+
+def test_highlight_no_pierde_ni_duplica_texto() -> None:
+    texto = "uno dos tres cuatro"
+
+    segmentos = llm_checks.highlight_segments(texto, ["tres", "uno"])
+
+    assert segmentos == [("uno", True), (" dos ", False), ("tres", True), (" cuatro", False)]
+    assert "".join(s for s, _ in segmentos) == texto
+
+
+def test_highlight_ignora_fragmentos_vacios() -> None:
+    assert llm_checks.highlight_segments("abc", ["", "  "]) == [("abc", False)]

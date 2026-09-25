@@ -157,17 +157,17 @@ def _agreement(model: ExtractionProposal, rule: ExtractionProposal | None) -> Ro
     return RowAgreement(*fields, status=status)
 
 
-def compare_with_rules(
+def match_rule_rows(
     model_rows: Sequence[ExtractionProposal],
     rule_proposals: Sequence[ExtractionProposal],
-) -> list[RowAgreement]:
-    """Compara cada fila del modelo con su fila de las reglas, campo a campo.
+) -> list[ExtractionProposal | None]:
+    """La fila de las reglas que le toca a cada fila del modelo (o `None`).
 
     El emparejado es el de H0 (`measure._match_rows_to_candidates`): las filas
     del modelo hacen de «confirmadas» y las de las reglas de «candidatas», así
     que se aplican las mismas reglas de producto, mejor ajuste y líneas libres.
     Lo que H0 devuelve como propuesta pelada (no hay línea de las reglas que le
-    toque) es `sin_regla`.
+    toque) es `None`. Misma longitud y orden que `model_rows`.
     """
     # `_match_rows_to_candidates` solo lee estos atributos de la fila «confirmada».
     stand_ins = [
@@ -186,7 +186,58 @@ def compare_with_rules(
         list(rule_proposals),
     )
     real = {id(r) for r in rule_proposals}
+    return [matched if id(matched) in real else None for _, matched in pairs]
+
+
+def compare_with_rules(
+    model_rows: Sequence[ExtractionProposal],
+    rule_proposals: Sequence[ExtractionProposal],
+) -> list[RowAgreement]:
+    """Compara cada fila del modelo con su fila de las reglas, campo a campo.
+
+    El emparejado es `match_rule_rows`; lo que no tiene fila de las reglas es
+    `sin_regla`.
+    """
     return [
-        _agreement(model, matched if id(matched) in real else None)
-        for model, (_, matched) in zip(model_rows, pairs, strict=True)
+        _agreement(model, matched)
+        for model, matched in zip(
+            model_rows, match_rule_rows(model_rows, rule_proposals), strict=True
+        )
     ]
+
+
+def highlight_segments(text: str, fragments: Sequence[str]) -> list[tuple[str, bool]]:
+    """Parte `text` en tramos `(texto, resaltado)` para pintar las citas.
+
+    Cada fragmento se busca como subcadena EXACTA del texto mostrado (la
+    primera aparición): el que no aparece literal se omite en silencio, porque
+    resaltar de menos es inofensivo y resaltar de más miente. Los tramos que se
+    solapan o se tocan se unen. Concatenados, los tramos reconstruyen `text`
+    sin perder ni duplicar nada; el escapado HTML es de quien los renderiza.
+    """
+    spans: list[tuple[int, int]] = []
+    for fragment in fragments:
+        if not fragment.strip():
+            continue
+        start = text.find(fragment)
+        if start >= 0:
+            spans.append((start, start + len(fragment)))
+    spans.sort()
+
+    merged: list[list[int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+
+    segments: list[tuple[str, bool]] = []
+    cursor = 0
+    for start, end in merged:
+        if start > cursor:
+            segments.append((text[cursor:start], False))
+        segments.append((text[start:end], True))
+        cursor = end
+    if cursor < len(text) or not segments:
+        segments.append((text[cursor:], False))
+    return segments
