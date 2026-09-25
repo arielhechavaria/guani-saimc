@@ -1,8 +1,6 @@
 # Plan — Curaduría de toda la cola con el asistente LLM
 
-**Estado: plan aprobado, sin ejecutar.** Se ejecuta cuando el operador encienda el
-asistente (clave de API configurada, ver `docs/runbook-asistente-llm.md`) y avise.
-Hasta entonces no se toca código.
+**Estado: en ejecución.** Slices 1 y 2 cerrados; slice 3 abierto (2026-09-25).
 
 Fecha del plan: 2026-09-25.
 
@@ -90,7 +88,7 @@ con el valor final del operador.
 
 ### Slice 2 — Propuesta completa y veredicto de descarte
 
-**Estado (2026-09-25): construido, pendiente de verificación del operador en pantalla.**
+**Estado: CERRADO (2026-09-25).** Verificado por el operador en pantalla.
 Datos y lógica en `llm_propose_ad.py` y `llm_checks.py` (commit `1613f7e`); conexión a
 `/curation` en `fe5a7dd`. Decisiones y apartamientos en `docs/decisions.md` (entrada
 «Completar con IA propone el anuncio entero»). Lo medido cambió el diseño: la
