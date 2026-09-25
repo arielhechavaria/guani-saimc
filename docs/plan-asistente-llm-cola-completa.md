@@ -20,13 +20,26 @@ del operador) antes de abrir el siguiente.
 
 ### Próximos pasos, en orden
 
-1. **3d — backtest pagado** del prompt v4 (100 anuncios, ~$0,75–1; comando en
-   `docs/runbook-asistente-llm.md`, «Prompt v4»). Pide autorización del operador.
-   Mide formato de venta, base del precio y envase, y que los seis campos
-   anteriores no empeoren.
-2. **3d — arreglar las etiquetas a 390 px.** Las etiquetas largas de «formato de
-   venta» y «base del precio» se montan sobre el `<select>` y tapan el valor
-   elegido: justo lo que propone el modelo. Ya pasaba antes del 3d.
+1. **3d — backtest pagado** del prompt v4. **A medias (2026-09-25):** se cortó en
+   el anuncio 81 de 100 por falta de saldo en la API (gastados $0,81). Al
+   recargar, correr **el mismo comando, sin mover archivos**: reanuda los 19 que
+   faltan (~$0,2). Parcial sobre 80 anuncios (57 filas del oro): los seis campos
+   anteriores no empeoraron; formato de venta 75,4%, base del precio 93,6%,
+   envase 64,3%. Desglose de errores (sin costo, sobre lo ya guardado):
+   - **Envase:** de 20 errores, 18 son abstenciones (`null`); solo 2 son un valor
+     equivocado (botella→caja, aceite). El «64%» es sobre todo «sin propuesta».
+   - **Formato de venta:** 9 equivocados. 7 son la misma lista diaria de un vendedor
+     de Santiago («Sacos Arroz 25Kg… Venta mínima: 1 Saco»), que el operador marcó
+     mayorista y el modelo minorista, como pide el prompt. Otros 2, arroz «por
+     mayor» a 50 kg, el operador los marcó minorista y el modelo mayorista. Es una
+     cuestión de criterio a decidir con el operador, no un fallo del modelo.
+   - **Base del precio:** 3 fallos de 47 (2 abstenciones y 1 equivocado).
+   - Ojo con la muestra: esa misma lista aparece 33 veces en la base con distintas
+     fechas; pesa mucho en cualquier medición por fila.
+2. **3d — etiquetas a 390 px: HECHO** (commit `55eb0ab`). Las preguntas de
+   «formato de venta» y «base del precio» pasan a una línea propia encima del
+   `<select>` (`m3-field-stacked`). Sin captura: el Chromium de esta máquina no
+   arranca (falta `libnspr4`); lo verifica el operador.
 3. **3d — verificación del operador en pantalla** y cierre.
 4. **3c.** Antes del recorte: mirar en `llm_proposals.raw_response` en qué se van
    los tokens de salida (un anuncio de 4 filas gastó 2629).
