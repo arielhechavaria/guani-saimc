@@ -272,6 +272,7 @@ def _render_home(
     ver: str | None = None,
     capa: str | None = None,
     vista: str | None = None,
+    pestana: str | None = None,
 ) -> HTMLResponse:
     # Solo productos bandera, mismo criterio que `/control`: son los 5 que la
     # Fase 0 se comprometió a medir (§9), y la cola larga son 59 filas en 53
@@ -318,6 +319,7 @@ def _render_home(
             province_names=all_province_names,
             desde=ventana_desde,
             hasta=ventana_hasta,
+            pestana=pestana,
         )
     # En el tablero (prototipo E, 2026-09-19) la provincia elegida enfoca solo
     # la lista de «Todos»; el detalle de un producto compara todas las
@@ -704,19 +706,22 @@ def _render_explore(
     province_names: list[str],
     desde: date,
     hasta: date,
+    pestana: str | None,
 ) -> HTMLResponse:
-    """Vista «Explorar» (2026-09-21, prototipo C aprobado por el operador).
-
-    Panel izquierdo con los productos, pestañas por producto abierto con su
-    tabla en el centro y el detalle de la provincia elegida a la derecha. Todo
-    sale de `explore_view`: acá solo se traen las observaciones y se pasan las
-    estructuras a la plantilla.
+    """Vista «Explorar» (P4, 2026-09-25: pestañas con orden estable — ver
+    `docs/decisions.md`). Panel izquierdo con los productos, pestañas por
+    producto abierto con su tabla en el centro y el detalle de la provincia
+    elegida a la derecha. Todo sale de `explore_view`: acá solo se traen las
+    observaciones y se pasan las estructuras a la plantilla.
 
     Las observaciones cubren lo más largo de tres cosas —la ventana, el período
     anterior del mismo largo y las 13 semanas de la tendencia— y son de TODAS
     las provincias y de todos los piloto: la lista de la izquierda necesita la
-    muestra de cada producto aunque no esté abierto. Con muchos productos
-    conviene pedir cada uno al abrirlo (P4).
+    muestra de cada producto aunque no esté abierto.
+
+    `pestana` es el slug del producto que se muestra (`?pestana=`); si no
+    resuelve contra `active_products` (vacío, viejo o manipulado a mano) cae
+    al primero de la lista, igual que antes de P4.
     """
     window = (hasta - desde).days
     cubre = max(2 * window, WEEKS * 7)
@@ -732,7 +737,11 @@ def _render_explore(
         pilot_names, obs, window_days=window, hoy=hasta, provinces=province_names
     )
     por_nombre = {p.name: p for p in productos}
-    activo = por_nombre[active_products[0]] if active_products else None
+    activo_nombre = resolve_province(active_products, pestana) or (
+        active_products[0] if active_products else None
+    )
+    activo = por_nombre[activo_nombre] if activo_nombre else None
+    active_slug = product_slug(activo_nombre) if activo_nombre else ""
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_products]
 
@@ -744,10 +753,14 @@ def _render_explore(
         )
 
     def vista_link(destino: str) -> str:
-        return products_query(active_slugs, provincia=prov_slug, desde=desde, hasta=hasta, vista=destino)
+        return products_query(
+            active_slugs, pestana=active_slug, provincia=prov_slug, desde=desde, hasta=hasta, vista=destino
+        )
 
     def province_link(slug: str) -> str:
-        return products_query(active_slugs, provincia=slug, desde=desde, hasta=hasta, vista="explorar")
+        return products_query(
+            active_slugs, pestana=active_slug, provincia=slug, desde=desde, hasta=hasta, vista="explorar"
+        )
 
     csv_href = download_href(
         producto=active_slugs[0] if len(active_slugs) == 1 else "",
@@ -762,7 +775,7 @@ def _render_explore(
         {
             "vista": "explorar",
             "ex_nav": build_explore_nav(
-                productos, active_products, provincia=prov_slug, desde=desde, hasta=hasta
+                productos, active_products, active_slug, provincia=prov_slug, desde=desde, hasta=hasta
             ),
             "ex_active": activo,
             "ex_detail": build_explore_detail(activo, elegido) if activo and elegido else None,
@@ -793,14 +806,16 @@ def public_home(
     ver: str | None = None,
     capa: str | None = None,
     vista: str | None = None,
+    pestana: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Home pública. `productos` (multi-selección de chips), `producto` (alias de
     uno), `provincia`, `desde`/`hasta` (rango de calendario del date picker,
     2026-09-14; `dias` sigue aceptándose como alias de compatibilidad —ver
     `resolve_window`—), `ver` (ventanas flotantes abiertas), `capa`
-    (capa del mapa) y `vista` (mapa/tablero, 2026-09-16) son query string
-    opcional; un valor raro no da 404, se muestra todo.
+    (capa del mapa), `vista` (mapa/tablero/explorar, 2026-09-16) y `pestana`
+    (qué producto se ve en «Explorar», P4 2026-09-25; sin efecto en las otras
+    vistas) son query string opcional; un valor raro no da 404, se muestra todo.
 
     `?vista=` explícito manda siempre —un link compartido con `?vista=tablero`
     tiene que abrir en tablero pase lo que pase—; sin él, cae a la cookie
@@ -832,6 +847,7 @@ def public_home(
         ver=ver,
         capa=capa,
         vista=vista_efectiva,
+        pestana=pestana,
     )
 
 

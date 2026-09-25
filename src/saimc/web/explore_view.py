@@ -626,8 +626,12 @@ class ExploreTab:
     name: str
     slug: str
     count: int
-    is_first: bool
-    #: Sin JavaScript cambiar de pestaña es navegar con ese producto primero.
+    #: La pestaña que se muestra ahora mismo (`?pestana=`), no la primera de
+    #: la lista: el orden de apertura es estable (P4, 2026-09-25) y activar
+    #: una pestaña ya abierta no reordena las demás.
+    is_on: bool
+    #: Sin JavaScript, tocar la pestaña es navegar con `?pestana=` en ese
+    #: producto; el `?productos=` no cambia.
     query: str
     close_query: str
 
@@ -642,22 +646,36 @@ class ExploreNav:
 def build_explore_nav(
     products: Sequence[ExploreProduct],
     active: Sequence[str],
+    active_slug: str,
     *,
     provincia: str,
     desde: date,
     hasta: date,
 ) -> ExploreNav:
-    """Los enlaces de la vista, en el orden de `products` para la lista y en el
-    orden de apertura para las pestañas. `provincia` es el slug de la elegida
-    (o vacío): viaja en cada enlace para que abrir o cerrar un producto no la
-    suelte."""
+    """Los enlaces de la vista: la lista de la izquierda en el orden de
+    `products`, las pestañas en el orden de apertura (`active`, ESTABLE —
+    activar una ya abierta no las reordena, P4 2026-09-25) y `active_slug` es
+    la que se ve ahora (`?pestana=`). `provincia` es el slug de la elegida
+    (o vacío): viaja en cada enlace para que abrir, cerrar o activar un
+    producto no la suelte.
+
+    Abrir uno nuevo lo agrega al final y lo activa. Cerrar el que está activo
+    activa su vecino —el que ocupaba su lugar, o el anterior si era el
+    último—; cerrar cualquier otro no mueve la aguja."""
     abiertos = [product_slug(n) for n in active]
 
-    def url(slugs: Sequence[str]) -> str:
-        return products_query(slugs, provincia=provincia, desde=desde, hasta=hasta, vista="explorar")
+    def url(slugs: Sequence[str], pestana: str) -> str:
+        return products_query(
+            slugs, provincia=provincia, desde=desde, hasta=hasta, vista="explorar", pestana=pestana
+        )
 
     def alternar(slug: str) -> str:
-        return url([s for s in abiertos if s != slug] if slug in abiertos else [*abiertos, slug])
+        if slug not in abiertos:
+            return url([*abiertos, slug], slug)
+        resto = [s for s in abiertos if s != slug]
+        si_estaba_activa = resto[min(abiertos.index(slug), len(resto) - 1)] if resto else ""
+        nueva_activa = si_estaba_activa if slug == active_slug else active_slug
+        return url(resto, nueva_activa)
 
     enlaces = tuple(
         ExploreLink(p.name, p.slug, p.count, p.slug in abiertos, alternar(p.slug)) for p in products
@@ -668,11 +686,11 @@ def build_explore_nav(
             name=por_slug[s].name,
             slug=s,
             count=por_slug[s].count,
-            is_first=i == 0,
-            query=url([s, *[o for o in abiertos if o != s]]),
-            close_query=url([o for o in abiertos if o != s]),
+            is_on=s == active_slug,
+            query=url(abiertos, s),
+            close_query=alternar(s),
         )
-        for i, s in enumerate(abiertos)
+        for s in abiertos
         if s in por_slug
     )
     return ExploreNav(products=enlaces, tabs=tabs, add=tuple(e for e in enlaces if not e.is_on))

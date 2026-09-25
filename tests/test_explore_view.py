@@ -473,50 +473,82 @@ class TestMapa:
 
 class TestNavegacion:
     """Los productos de la izquierda, las pestañas del centro y el «+»: todo
-    son enlaces a la misma vista con otro `?productos=`, así funciona sin
-    JavaScript (P4 lo hace en el cliente)."""
+    son enlaces a la misma vista con otro `?productos=` y `?pestana=`, así
+    funciona sin JavaScript (P4 lo hace en el cliente, sin ida y vuelta al
+    server salvo para abrir un producto que no estaba)."""
 
-    def _nav(self, activos: list[str]):
+    def _nav(self, activos: list[str], activa: str = ""):
         productos = _productos(["Arroz", "Pollo", "Aceite"])
-        return build_explore_nav(productos, activos, provincia="", desde=date(2026, 7, 31), hasta=HOY)
+        return build_explore_nav(productos, activos, activa, provincia="", desde=date(2026, 7, 31), hasta=HOY)
 
     def test_la_lista_trae_todos_los_productos_con_su_muestra(self) -> None:
-        nav = self._nav(["Arroz"])
+        nav = self._nav(["Arroz"], "arroz")
 
         assert [(p.name, p.count) for p in nav.products] == [("Arroz", 7), ("Pollo", 1), ("Aceite", 0)]
 
-    def test_marcar_agrega_al_final_y_desmarcar_quita_solo_ese(self) -> None:
-        nav = self._nav(["Arroz", "Pollo"])
+    def test_marcar_uno_nuevo_lo_agrega_al_final_y_lo_activa(self) -> None:
+        nav = self._nav(["Arroz", "Pollo"], "arroz")
         por = {p.name: p for p in nav.products}
 
         assert por["Arroz"].is_on and por["Pollo"].is_on and not por["Aceite"].is_on
-        assert por["Arroz"].query.startswith("/?productos=pollo&")
-        assert por["Aceite"].query.startswith("/?productos=arroz,pollo,aceite&")
+        assert por["Aceite"].query.startswith("/?productos=arroz,pollo,aceite&pestana=aceite&")
+
+    def test_desmarcar_la_activa_activa_a_su_vecina(self) -> None:
+        """Arroz está activa; al desmarcarla, Pollo —que ocupaba el lugar
+        siguiente— pasa a activa."""
+        por = {p.name: p for p in self._nav(["Arroz", "Pollo"], "arroz").products}
+
+        assert por["Arroz"].query.startswith("/?productos=pollo&pestana=pollo&")
+
+    def test_desmarcar_una_que_no_esta_activa_no_cambia_cual_lo_esta(self) -> None:
+        por = {p.name: p for p in self._nav(["Arroz", "Pollo"], "arroz").products}
+
+        assert por["Pollo"].query.startswith("/?productos=arroz&pestana=arroz&")
 
     def test_las_consultas_conservan_el_rango_y_la_vista(self) -> None:
-        por = {p.name: p for p in self._nav(["Arroz"]).products}
+        por = {p.name: p for p in self._nav(["Arroz"], "arroz").products}
 
-        assert (
-            por["Pollo"].query == "/?productos=arroz,pollo&desde=2026-07-31&hasta=2026-08-30&vista=explorar"
+        assert por["Pollo"].query == (
+            "/?productos=arroz,pollo&pestana=pollo&desde=2026-07-31&hasta=2026-08-30&vista=explorar"
         )
 
-    def test_una_pestania_por_producto_abierto_y_la_primera_es_la_abierta(self) -> None:
-        tabs = self._nav(["Arroz", "Pollo"]).tabs
+    def test_una_pestania_por_producto_abierto_en_orden_de_apertura(self) -> None:
+        tabs = self._nav(["Arroz", "Pollo"], "arroz").tabs
 
-        assert [(t.name, t.count, t.is_first) for t in tabs] == [("Arroz", 7, True), ("Pollo", 1, False)]
+        assert [(t.name, t.count, t.is_on) for t in tabs] == [("Arroz", 7, True), ("Pollo", 1, False)]
 
-    def test_tocar_una_pestania_la_pone_primera_y_la_x_la_quita(self) -> None:
-        arroz, pollo = self._nav(["Arroz", "Pollo"]).tabs
+    def test_activar_otra_pestania_no_reordena_la_lista_solo_cambia_cual_esta_on(
+        self,
+    ) -> None:
+        """P4: antes, tocar una pestaña la ponía primera (P2/P3); el
+        prototipo la deja en su lugar y solo mueve cuál se ve."""
+        tabs = self._nav(["Arroz", "Pollo"], "pollo").tabs
 
-        assert pollo.query.startswith("/?productos=pollo,arroz&")
-        assert arroz.close_query.startswith("/?productos=pollo&")
-        assert pollo.close_query.startswith("/?productos=arroz&")
+        assert [t.name for t in tabs] == ["Arroz", "Pollo"]
+        assert [t.is_on for t in tabs] == [False, True]
 
-    def test_cerrar_la_ultima_deja_la_url_sin_productos(self) -> None:
-        (arroz,) = self._nav(["Arroz"]).tabs
+    def test_tocar_una_pestania_conserva_la_lista_y_solo_cambia_la_pestana(self) -> None:
+        _, pollo = self._nav(["Arroz", "Pollo"], "arroz").tabs
+
+        assert pollo.query == (
+            "/?productos=arroz,pollo&pestana=pollo&desde=2026-07-31&hasta=2026-08-30&vista=explorar"
+        )
+
+    def test_la_x_de_la_activa_quita_esa_y_activa_a_su_vecina(self) -> None:
+        arroz, _ = self._nav(["Arroz", "Pollo"], "arroz").tabs
+
+        assert arroz.close_query.startswith("/?productos=pollo&pestana=pollo&")
+
+    def test_la_x_de_otra_no_cambia_cual_esta_activa(self) -> None:
+        _, pollo = self._nav(["Arroz", "Pollo"], "arroz").tabs
+
+        assert pollo.close_query.startswith("/?productos=arroz&pestana=arroz&")
+
+    def test_cerrar_la_ultima_deja_la_url_sin_productos_ni_pestana(self) -> None:
+        (arroz,) = self._nav(["Arroz"], "arroz").tabs
 
         assert arroz.close_query == "/?desde=2026-07-31&hasta=2026-08-30&vista=explorar"
 
     def test_el_mas_ofrece_solo_los_que_faltan(self) -> None:
-        assert [p.name for p in self._nav(["Arroz", "Pollo"]).add] == ["Aceite"]
-        assert self._nav(["Arroz", "Pollo", "Aceite"]).add == ()
+        assert [p.name for p in self._nav(["Arroz", "Pollo"], "arroz").add] == ["Aceite"]
+        assert self._nav(["Arroz", "Pollo", "Aceite"], "arroz").add == ()

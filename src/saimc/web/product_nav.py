@@ -198,6 +198,7 @@ def _query(
     *,
     producto: str = "",
     productos: Sequence[str] = (),
+    pestana: str = "",
     provincia: str = "",
     desde: date,
     hasta: date,
@@ -207,15 +208,16 @@ def _query(
     path: str = "/",
 ) -> str:
     """Compone la URL con los ejes activos, en orden fijo
-    producto/provincia/desde/hasta/ver/capa/vista.
+    producto/pestana/provincia/desde/hasta/ver/capa/vista.
 
     `productos` (lista de slugs, multi-selección) gana sobre `producto` (slug
-    único, alias histórico) cuando trae algo: se emite `productos=a,b`. `ver`
-    son las ventanas flotantes abiertas desde el menú del header. `capa` es la
-    capa del mapa (§ mapa, 2026-09-11). `vista` es mapa/tablero
-    (2026-09-16) — se preserva igual que `capa` para que cambiar de
-    producto, provincia o ventana de días no expulse de vuelta al mapa a
-    quien eligió el tablero.
+    único, alias histórico) cuando trae algo: se emite `productos=a,b`.
+    `pestana` (P4, 2026-09-25) es cuál de esos productos se ve en «Explorar»;
+    se omite si está vacía, igual que `capa`/`vista`. `ver` son las ventanas
+    flotantes abiertas desde el menú del header. `capa` es la capa del mapa
+    (§ mapa, 2026-09-11). `vista` es mapa/tablero/explorar (2026-09-16) — se
+    preserva igual que `capa` para que cambiar de producto, provincia o
+    ventana de días no expulse de vuelta al mapa a quien eligió otra vista.
 
     `desde`/`hasta` van SIEMPRE explícitos (2026-09-14) —a diferencia de
     `capa`/`vista`, que se omiten si son el default—: son la respuesta
@@ -228,6 +230,8 @@ def _query(
         params.append("productos=" + ",".join(productos))
     elif producto:
         params.append(f"producto={producto}")
+    if pestana:
+        params.append(f"pestana={pestana}")
     if provincia:
         params.append(f"provincia={provincia}")
     params.append(f"desde={desde.isoformat()}")
@@ -244,6 +248,7 @@ def _query(
 def products_query(
     product_slugs: Sequence[str],
     *,
+    pestana: str = "",
     provincia: str = "",
     desde: date,
     hasta: date,
@@ -253,11 +258,13 @@ def products_query(
     path: str = "/",
 ) -> str:
     """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
-    preservando provincia, rango de calendario, ventanas abiertas, capa del
-    mapa y vista (mapa/tablero). La usan el riel de chips, los paneles
-    flotantes, el mapa y la hoja de provincia."""
+    preservando la pestaña activa de «Explorar» (`pestana`, P4), provincia,
+    rango de calendario, ventanas abiertas, capa del mapa y vista
+    (mapa/tablero/explorar). La usan el riel de chips, los paneles
+    flotantes, el mapa, la hoja de provincia y la vista «Explorar»."""
     return _query(
         productos=list(product_slugs),
+        pestana=pestana,
         provincia=provincia,
         desde=desde,
         hasta=hasta,

@@ -207,6 +207,9 @@
   .ph-ex-ad .off { color: var(--m3-outline); }
   .ph-ex-ad a { color: var(--ph-accent); text-decoration: underline; }
 
+  /* Indicador de carga (P4, 2026-09-25): convención htmx —`htmx-indicator` arranca invisible, `hx-indicator="#ph-loading"` en `#ph-live` le agrega `htmx-request` durante cualquier `hx-get` de adentro—; acá solo el color y la posición, la opacidad la pone htmx. */
+  .ph-ex-loading { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 50; background: var(--ph-accent); }
+
   /* ── Angosto: interino hasta P7 (móvil) ───────────────────────────────── */
   @media (max-width: 720px) {
     .ph-ex { display: block; height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; }
@@ -225,7 +228,8 @@
 
 {% block content %}
 {% set activo = ex_active %}
-<div class="ph-ex">
+<div id="ph-loading" class="ph-ex-loading htmx-indicator" aria-hidden="true"></div>
+<div class="ph-ex" id="ph-live" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#ph-loading">
 
   {# ── Izquierda: vistas, productos y filtros del producto abierto ─────── #}
   <aside class="ph-ex-left" aria-label="Productos y filtros">
@@ -257,7 +261,7 @@
         <h5>Productos</h5>
         <p class="ph-ex-hint">Cada producto marcado abre una pestaña en el panel central.</p>
         {% for it in ex_nav.products %}
-        <a class="ph-ex-opt{% if it.is_on %} is-on{% endif %}" href="{{ it.query }}" aria-pressed="{{ 'true' if it.is_on else 'false' }}"><span class="ph-ex-box" aria-hidden="true"></span><i>{{ it.name }}</i><span>{{ it.count }}</span></a>
+        <a class="ph-ex-opt{% if it.is_on %} is-on{% endif %}" href="{{ it.query }}" hx-get="{{ it.query }}" aria-pressed="{{ 'true' if it.is_on else 'false' }}"><span class="ph-ex-box" aria-hidden="true"></span><i>{{ it.name }}</i><span>{{ it.count }}</span></a>
         {% endfor %}
       </section>
       {% if activo and activo.has_data %}
@@ -301,14 +305,14 @@
   <section class="ph-ex-center" aria-label="Precios por producto">
     <div class="ph-ex-tabs" role="tablist" aria-label="Productos abiertos">
       {% for t in ex_nav.tabs %}
-      <div class="ph-ex-tab{% if t.is_first %} is-on{% endif %}"><a class="ph-ex-tab-btn" role="tab" id="ph-ex-tab-{{ t.slug }}" aria-selected="{{ 'true' if t.is_first else 'false' }}" aria-controls="ph-ex-pane-{{ t.slug }}" href="{{ t.query }}">{{ t.name }}<small>{{ t.count }}</small></a><a class="ph-ex-tab-x" href="{{ t.close_query }}" aria-label="Cerrar {{ t.name }}">×</a></div>
+      <div class="ph-ex-tab{% if t.is_on %} is-on{% endif %}"><a class="ph-ex-tab-btn" role="tab" id="ph-ex-tab-{{ t.slug }}" aria-selected="{{ 'true' if t.is_on else 'false' }}" aria-controls="ph-ex-pane-{{ t.slug }}" href="{{ t.query }}" hx-get="{{ t.query }}">{{ t.name }}<small>{{ t.count }}</small></a><a class="ph-ex-tab-x" href="{{ t.close_query }}" hx-get="{{ t.close_query }}" aria-label="Cerrar {{ t.name }}">×</a></div>
       {% endfor %}
       {% if ex_nav.add %}
       <details class="ph-ex-add">
         <summary aria-label="Agregar producto">+</summary>
         <div class="ph-ex-pop">
           {% for it in ex_nav.add %}
-          <a class="ph-ex-opt" href="{{ it.query }}"><i>{{ it.name }}</i><span>{{ it.count }} anuncios</span></a>
+          <a class="ph-ex-opt" href="{{ it.query }}" hx-get="{{ it.query }}"><i>{{ it.name }}</i><span>{{ it.count }} anuncios</span></a>
           {% endfor %}
         </div>
       </details>
@@ -398,7 +402,7 @@
       <p>Cada producto se abre en su propia pestaña, con sus filtros, su árbol y su detalle. Marcalo en el panel de la izquierda o tocá uno de acá.</p>
       <div class="ph-ex-pills">
         {% for it in ex_nav.products %}
-        <a class="ph-ex-pill" href="{{ it.query }}">{{ it.name }}<small>{{ it.count }}</small></a>
+        <a class="ph-ex-pill" href="{{ it.query }}" hx-get="{{ it.query }}">{{ it.name }}<small>{{ it.count }}</small></a>
         {% endfor %}
       </div>
     </div>
@@ -450,113 +454,131 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
 <script>
-  /* Pestañas del panel izquierdo (Filtros / Columnas). Lo único de esta parte que
-     necesita JavaScript; sin él se ve «Filtros» y «Columnas» queda oculta. */
-  (function () {
-    var pestanas = document.querySelectorAll(".ph-ex-ltab");
-    Array.prototype.forEach.call(pestanas, function (pestana) {
-      pestana.addEventListener("click", function () {
-        Array.prototype.forEach.call(pestanas, function (otra) {
-          var abierta = otra === pestana;
-          otra.setAttribute("aria-selected", abierta ? "true" : "false");
-          otra.classList[abierta ? "add" : "remove"]("is-on");
-          var panel = document.getElementById(otra.getAttribute("aria-controls"));
-          if (panel) panel.hidden = !abierta;
-        });
-      });
-    });
-  })();
-</script>
+  /* Toda la interacción de «Explorar» delegada en `document`, registrada UNA
+     sola vez: abrir un producto o tocar una pestaña dispara un `hx-get` que
+     htmx cambia por `#ph-live` entero (mismo patrón que `public_home.html`,
+     P4 2026-09-25) — así que el árbol, el orden y las columnas viejos
+     desaparecen con el swap y hace falta releerlos del DOM nuevo en cada
+     click, nunca guardarlos en una variable que sobreviva al swap. Sin
+     JavaScript los enlaces siguen siendo `href` de toda la vida. */
 
-<script>
-  /* El árbol de la tabla: abrir y cerrar provincias, formatos y anuncios, ordenar por
-     cabecera y elegir columnas. Todo el contenido ya viene dibujado por el servidor;
-     acá solo se muestra, se oculta y se reordena. Sin JavaScript se ven las provincias. */
-  (function () {
+  /* Pestañas del panel izquierdo (Filtros / Columnas). */
+  document.addEventListener("click", function (e) {
+    var pestana = e.target.closest(".ph-ex-ltab");
+    if (!pestana) return;
+    var grupo = pestana.closest(".ph-ex-ltabs");
+    if (!grupo) return;
+    Array.prototype.forEach.call(grupo.querySelectorAll(".ph-ex-ltab"), function (otra) {
+      var abierta = otra === pestana;
+      otra.setAttribute("aria-selected", abierta ? "true" : "false");
+      otra.classList[abierta ? "add" : "remove"]("is-on");
+      var panel = document.getElementById(otra.getAttribute("aria-controls"));
+      if (panel) panel.hidden = !abierta;
+    });
+  });
+
+  /* El árbol de la tabla: abrir y cerrar provincias, formatos y anuncios, y
+     ordenar por cabecera. Todo el contenido ya viene dibujado por el
+     servidor; acá solo se muestra, se oculta y se reordena. */
+  function abierto(boton) { return boton.getAttribute("aria-expanded") === "true"; }
+
+  function pintarGrupo(grupo) {
+    var provincia = abierto(grupo.querySelector("tr.lv0 .ph-ex-chev"));
+    var formatos = {};
+    Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv1"), function (fila) {
+      fila.hidden = !provincia;
+      formatos[fila.dataset.fmt] = {
+        abierto: abierto(fila.querySelector(".ph-ex-chev")),
+        todos: fila.dataset.all === "1"
+      };
+    });
+    Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv2"), function (fila) {
+      var f = formatos[fila.dataset.of];
+      var visible = provincia && !!f && f.abierto;
+      if (visible && fila.hasAttribute("data-extra")) visible = f.todos;
+      if (visible && fila.classList.contains("more")) visible = !f.todos;
+      fila.hidden = !visible;
+    });
+  }
+
+  function valorDeOrden(grupo, clave) {
+    if (clave === "name") return grupo.dataset.name;
+    var v = grupo.dataset[clave];
+    if (v === "") return null;
+    return clave === "last" ? -Number(v) : Number(v);
+  }
+
+  /* El sentido de orden vivía en una variable que sobrevivía entre clics;
+     con el swap de htmx la tabla es otra en cada uno, así que se lee del
+     propio encabezado —`data-s`, que el servidor ya deja en «desc» por
+     mediana— y no hace falta guardar nada aparte. */
+  function ordenActual(tabla) {
+    var activo = tabla.querySelector("thead [data-sort][data-s]");
+    return activo
+      ? { clave: activo.dataset.sort, dir: activo.dataset.s === "desc" ? -1 : 1 }
+      : { clave: "", dir: -1 };
+  }
+
+  function ordenar(tabla, clave) {
+    var actual = ordenActual(tabla);
+    var dir = actual.clave === clave ? -actual.dir : (clave === "name" ? 1 : -1);
+    var grupos = Array.prototype.slice.call(tabla.tBodies).map(function (g, i) { return { g: g, i: i }; });
+    grupos.sort(function (a, b) {
+      var x = valorDeOrden(a.g, clave), y = valorDeOrden(b.g, clave);
+      if (x === null || y === null) return x === y ? a.i - b.i : (x === null ? 1 : -1);
+      var c = clave === "name" ? x.localeCompare(y, "es") : x - y;
+      return dir * c || a.i - b.i;
+    });
+    grupos.forEach(function (e) { tabla.appendChild(e.g); });
+    Array.prototype.forEach.call(tabla.querySelectorAll("thead th"), function (th) {
+      var boton = th.querySelector("[data-sort]");
+      var activa = !!boton && boton.dataset.sort === clave;
+      if (boton) { if (activa) boton.dataset.s = dir < 0 ? "desc" : "asc"; else delete boton.dataset.s; }
+      if (activa) th.setAttribute("aria-sort", dir < 0 ? "descending" : "ascending");
+      else th.removeAttribute("aria-sort");
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    var tabla = e.target.closest(".ph-ex-grid");
+    if (!tabla) return;
+    var chevron = e.target.closest(".ph-ex-chev");
+    var mas = e.target.closest(".ph-ex-more");
+    var cabecera = e.target.closest("[data-sort]");
+    if (chevron) {
+      chevron.setAttribute("aria-expanded", abierto(chevron) ? "false" : "true");
+      pintarGrupo(chevron.closest("tbody"));
+    } else if (mas) {
+      var fila = mas.closest("tr");
+      var grupo = mas.closest("tbody");
+      Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv1"), function (f) {
+        if (f.dataset.fmt === fila.dataset.of) f.dataset.all = "1";
+      });
+      pintarGrupo(grupo);
+    } else if (cabecera) {
+      ordenar(tabla, cabecera.dataset.sort);
+    }
+  });
+
+  /* Columnas visibles: el ancho de cada una es fijo (mismo mapa que el
+     prototipo), así que no hace falta guardarlo tampoco. */
+  var ANCHOS_COLUMNA = { med: 92, chg: 62, rango: 122, tend: 104, sem: 304, n: 54, last: 78 };
+  var ANCHO_NOMBRE = 190;
+
+  document.addEventListener("change", function (e) {
+    var caja = e.target.closest("input[data-col]");
+    if (!caja) return;
     var tabla = document.querySelector(".ph-ex-grid");
     if (!tabla) return;
-    var ANCHOS = { med: 92, chg: 62, rango: 122, tend: 104, sem: 304, n: 54, last: 78 };
-    var ANCHO_NOMBRE = 190;
-    var orden = { clave: "med", dir: -1 };
-
-    function abierto(boton) { return boton.getAttribute("aria-expanded") === "true"; }
-
-    function pintar(grupo) {
-      var provincia = abierto(grupo.querySelector("tr.lv0 .ph-ex-chev"));
-      var formatos = {};
-      Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv1"), function (fila) {
-        fila.hidden = !provincia;
-        formatos[fila.dataset.fmt] = {
-          abierto: abierto(fila.querySelector(".ph-ex-chev")),
-          todos: fila.dataset.all === "1"
-        };
-      });
-      Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv2"), function (fila) {
-        var f = formatos[fila.dataset.of];
-        var visible = provincia && !!f && f.abierto;
-        if (visible && fila.hasAttribute("data-extra")) visible = f.todos;
-        if (visible && fila.classList.contains("more")) visible = !f.todos;
-        fila.hidden = !visible;
-      });
-    }
-
-    function valor(grupo, clave) {
-      if (clave === "name") return grupo.dataset.name;
-      var v = grupo.dataset[clave];
-      if (v === "") return null;
-      return clave === "last" ? -Number(v) : Number(v);
-    }
-
-    function ordenar(clave) {
-      orden = { clave: clave, dir: orden.clave === clave ? -orden.dir : (clave === "name" ? 1 : -1) };
-      var grupos = Array.prototype.slice.call(tabla.tBodies).map(function (g, i) { return { g: g, i: i }; });
-      grupos.sort(function (a, b) {
-        var x = valor(a.g, clave), y = valor(b.g, clave);
-        if (x === null || y === null) return x === y ? a.i - b.i : (x === null ? 1 : -1);
-        var c = clave === "name" ? x.localeCompare(y, "es") : x - y;
-        return orden.dir * c || a.i - b.i;
-      });
-      grupos.forEach(function (e) { tabla.appendChild(e.g); });
-      Array.prototype.forEach.call(tabla.querySelectorAll("thead th"), function (th) {
-        var boton = th.querySelector("[data-sort]");
-        var activa = !!boton && boton.dataset.sort === clave;
-        if (boton) { if (activa) boton.dataset.s = orden.dir < 0 ? "desc" : "asc"; else delete boton.dataset.s; }
-        if (activa) th.setAttribute("aria-sort", orden.dir < 0 ? "descending" : "ascending");
-        else th.removeAttribute("aria-sort");
-      });
-    }
-
-    tabla.addEventListener("click", function (e) {
-      var chevron = e.target.closest(".ph-ex-chev");
-      var mas = e.target.closest(".ph-ex-more");
-      var cabecera = e.target.closest("[data-sort]");
-      if (chevron) {
-        chevron.setAttribute("aria-expanded", abierto(chevron) ? "false" : "true");
-        pintar(chevron.closest("tbody"));
-      } else if (mas) {
-        var fila = mas.closest("tr");
-        var grupo = mas.closest("tbody");
-        Array.prototype.forEach.call(grupo.querySelectorAll("tr.lv1"), function (f) {
-          if (f.dataset.fmt === fila.dataset.of) f.dataset.all = "1";
-        });
-        pintar(grupo);
-      } else if (cabecera) {
-        ordenar(cabecera.dataset.sort);
-      }
-    });
-
     var cajas = document.querySelectorAll("input[data-col]");
-    function columnas() {
-      var ocultas = [], ancho = ANCHO_NOMBRE;
-      Array.prototype.forEach.call(cajas, function (caja) {
-        if (caja.checked) ancho += ANCHOS[caja.dataset.col]; else ocultas.push(caja.dataset.col);
-      });
-      tabla.setAttribute("data-hide", ocultas.join(" "));
-      tabla.style.minWidth = ancho + "px";
-    }
-    Array.prototype.forEach.call(cajas, function (caja) { caja.addEventListener("change", columnas); });
-    columnas();
-  })();
+    var ocultas = [], ancho = ANCHO_NOMBRE;
+    Array.prototype.forEach.call(cajas, function (c) {
+      if (c.checked) ancho += ANCHOS_COLUMNA[c.dataset.col]; else ocultas.push(c.dataset.col);
+    });
+    tabla.setAttribute("data-hide", ocultas.join(" "));
+    tabla.style.minWidth = ancho + "px";
+  });
 </script>
 {% endblock %}

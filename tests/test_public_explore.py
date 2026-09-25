@@ -274,17 +274,42 @@ class TestPestanias:
         assert abierta.split(">", 1)[1].startswith("Arroz")
         assert "ph-ex-pane" in centro
 
-    def test_tocar_otra_pestania_la_pone_primera(self, client: TestClient, datos: None) -> None:
-        """Sin JavaScript, cambiar de pestaña es navegar con ese producto
-        primero; P4 lo hace en el cliente."""
+    def test_tocar_otra_pestania_no_reordena_solo_cambia_la_activa(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """P4: la lista de pestañas queda en el orden en que se abrieron; sin
+        JavaScript, tocar una navega con `?pestana=` y `?productos=` intacto."""
         centro = _centro(_html(client, "&productos=arroz,pollo"))
 
-        assert re.search(r'href="/\?productos=pollo,arroz&amp;[^"]*vista=explorar"[^>]*>Pollo', centro)
+        assert re.search(r'href="/\?productos=arroz,pollo&amp;pestana=pollo&amp;[^"]*"[^>]*>Pollo', centro)
+        assert "productos=pollo,arroz" not in centro
+
+    def test_elegir_pestana_explicita_marca_esa_como_activa(self, client: TestClient, datos: None) -> None:
+        centro = _centro(_html(client, "&productos=arroz,pollo&pestana=pollo"))
+
+        assert centro.count('aria-selected="true"') == 1
+        abierta = next(a for a in re.findall(r"<a [^>]*aria-selected=\"true\"[^>]*>.*?</a>", centro))
+        assert abierta.split(">", 1)[1].startswith("Pollo")
 
     def test_la_x_quita_solo_ese_producto(self, client: TestClient, datos: None) -> None:
         centro = _centro(_html(client, "&productos=arroz,pollo"))
 
         assert re.search(r'href="/\?productos=pollo&amp;[^"]*"[^>]*aria-label="Cerrar Arroz"', centro)
+
+    def test_cerrar_la_activa_activa_a_su_vecina_de_verdad_no_solo_en_la_url(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """Sigue el enlace de cerrar Arroz (la activa por defecto) y confirma
+        que el servidor responde con Pollo ya activa."""
+        centro = _centro(_html(client, "&productos=arroz,pollo"))
+        cerrar = re.search(r'href="([^"]+)"[^>]*aria-label="Cerrar Arroz"', centro)
+        assert cerrar is not None
+
+        despues = _centro(client.get(cerrar.group(1).replace("&amp;", "&")).text)
+
+        assert "productos=pollo" in despues
+        (abierta,) = re.findall(r"<a [^>]*aria-selected=\"true\"[^>]*>.*?</a>", despues)
+        assert abierta.split(">", 1)[1].startswith("Pollo")
 
     def test_el_mas_ofrece_los_productos_que_faltan(self, client: TestClient, datos: None) -> None:
         centro = _centro(_html(client, "&productos=arroz,pollo"))
@@ -295,6 +320,66 @@ class TestPestanias:
 
     def test_con_todos_abiertos_no_hay_mas(self, client: TestClient, datos: None) -> None:
         assert "ph-ex-add" not in _centro(_html(client, "&productos=arroz,pollo,aceite"))
+
+
+class TestHTMX:
+    """P4 (2026-09-25): abrir, cerrar y cambiar de pestaña navegan por htmx,
+    reusando `#ph-live` —el mismo mecanismo que ya usa `public_home.html`—
+    en vez de una recarga completa. Sin JavaScript siguen siendo el `href`
+    de toda la vida; acá solo se verifica que el cableado esté."""
+
+    def test_el_contenedor_raiz_es_la_zona_viva_de_htmx(self, client: TestClient, datos: None) -> None:
+        texto = _html(client, "&productos=arroz")
+
+        assert 'id="ph-live"' in texto
+        assert 'hx-target="#ph-live"' in texto
+        assert 'hx-select="#ph-live"' in texto
+        assert 'hx-swap="outerHTML"' in texto
+        assert 'hx-push-url="true"' in texto
+        assert 'hx-indicator="#ph-loading"' in texto
+        assert 'id="ph-loading"' in texto
+
+    def test_carga_htmx(self, client: TestClient, datos: None) -> None:
+        assert "/static/htmx.min.js" in _html(client, "")
+
+    def test_marcar_un_producto_lleva_hx_get_igual_al_href(self, client: TestClient, datos: None) -> None:
+        izq = _izquierda(_html(client, "&productos=arroz"))
+        opt = re.search(
+            r'<a class="ph-ex-opt[^"]*" href="([^"]+)" hx-get="([^"]+)"[^>]*><span class="ph-ex-box"'
+            r"[^>]*></span><i>Pollo</i>",
+            izq,
+        )
+
+        assert opt is not None
+        assert opt.group(1) == opt.group(2)
+
+    def test_las_pestanias_y_su_x_llevan_hx_get_igual_al_href(self, client: TestClient, datos: None) -> None:
+        centro = _centro(_html(client, "&productos=arroz,pollo"))
+
+        assert re.search(r'class="ph-ex-tab-btn"[^>]*href="([^"]+)" hx-get="\1"', centro)
+        assert re.search(r'class="ph-ex-tab-x" href="([^"]+)" hx-get="\1"', centro)
+
+    def test_el_mas_lleva_hx_get(self, client: TestClient, datos: None) -> None:
+        mas = _bloque(
+            _centro(_html(client, "&productos=arroz,pollo")), '<details class="ph-ex-add"', "</details>"
+        )
+
+        assert re.search(r'class="ph-ex-opt" href="([^"]+)" hx-get="\1"', mas)
+
+    def test_las_pastillas_del_estado_vacio_llevan_hx_get(self, client: TestClient, datos: None) -> None:
+        vacio = _centro(_html(client, ""))
+
+        assert re.search(r'class="ph-ex-pill" href="([^"]+)" hx-get="\1"', vacio)
+
+    def test_la_provincia_y_el_cambio_de_vista_no_llevan_hx_get(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """Fuera de alcance de P4: la fila de provincia sigue siendo P6 y el
+        selector Mapa/Tablero/Explorar queda como estaba en P2."""
+        texto = _html(client, "&productos=arroz")
+
+        assert not re.search(r'class="ph-ex-nmt" href="[^"]+" hx-get', texto)
+        assert not re.search(r"js-vista-link[^>]*hx-get", texto)
 
 
 class TestTabla:
