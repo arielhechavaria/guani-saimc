@@ -311,6 +311,36 @@ def test_texto_vacio_no_llama(products, provinces) -> None:
     assert cliente.llamadas == []
 
 
+def _propiedades_con_enum(nodo: object) -> list[dict]:
+    """Todos los nodos del esquema que declaran `enum`, a cualquier profundidad."""
+    encontrados: list[dict] = []
+    if isinstance(nodo, dict):
+        if "enum" in nodo:
+            encontrados.append(nodo)
+        for valor in nodo.values():
+            encontrados.extend(_propiedades_con_enum(valor))
+    elif isinstance(nodo, list):
+        for valor in nodo:
+            encontrados.extend(_propiedades_con_enum(valor))
+    return encontrados
+
+
+def test_esquema_no_combina_enum_con_tipo_en_lista() -> None:
+    """La API rechaza `{"type": ["string", "null"], "enum": [...]}`.
+
+    Medido contra la API real el 2026-09-25 (HTTP 400: «Enum value 'off_focus'
+    does not match declared type '['string', 'null']'»). Un cliente falso no
+    puede ver esto, así que la restricción queda escrita como invariante del
+    esquema: un `enum` se declara con un único tipo, y la nulabilidad va aparte
+    con `anyOf`.
+    """
+    nodos = _propiedades_con_enum(llm_propose_ad.response_schema())
+
+    assert nodos, "el esquema debería declarar al menos un enum"
+    for nodo in nodos:
+        assert not isinstance(nodo.get("type"), list), nodo
+
+
 @pytest.mark.skipif(
     os.environ.get("SAIMC_LLM_SMOKE") != "1"
     or not os.environ.get("SAIMC_ANTHROPIC_API_KEY"),

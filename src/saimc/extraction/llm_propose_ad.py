@@ -74,6 +74,16 @@ class AdProposal:
     dropped: int = 0
 
 
+def _enum_o_null(valores: Sequence[str]) -> dict[str, Any]:
+    """Un `enum` de strings que además admite `null`.
+
+    La API rechaza `{"type": ["string", "null"], "enum": [...]}` (HTTP 400,
+    medido el 2026-09-25): el `enum` va con un único tipo y la nulabilidad con
+    `anyOf`.
+    """
+    return {"anyOf": [{"type": "string", "enum": list(valores)}, {"type": "null"}]}
+
+
 def response_schema() -> dict[str, Any]:
     """Esquema JSON de la respuesta.
 
@@ -86,9 +96,9 @@ def response_schema() -> dict[str, Any]:
         "properties": {
             "product": {"type": ["string", "null"]},
             "price": {"type": ["number", "null"]},
-            "currency": {"type": ["string", "null"], "enum": [*_CURRENCIES, None]},
+            "currency": _enum_o_null(_CURRENCIES),
             "quantity": {"type": ["number", "null"]},
-            "unit": {"type": ["string", "null"], "enum": [*UNITS, None]},
+            "unit": _enum_o_null(UNITS),
             "province": {"type": ["string", "null"]},
         },
         "required": ["product", "price", "currency", "quantity", "unit", "province"],
@@ -98,10 +108,7 @@ def response_schema() -> dict[str, Any]:
         "type": "object",
         "properties": {
             "discard": {"type": "boolean"},
-            "discard_reason": {
-                "type": ["string", "null"],
-                "enum": [*_DISCARD_REASONS, None],
-            },
+            "discard_reason": _enum_o_null(_DISCARD_REASONS),
             "rows": {"type": "array", "items": fila},
         },
         "required": ["discard", "discard_reason", "rows"],
