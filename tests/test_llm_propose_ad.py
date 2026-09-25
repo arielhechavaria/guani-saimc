@@ -286,6 +286,49 @@ def test_registra_cada_invocacion_en_su_propio_archivo(
     assert lineas[1]["failure"] == "timeout"
 
 
+def test_cada_linea_del_registro_lleva_la_version_del_prompt(
+    products, provinces, tmp_path: Path
+) -> None:
+    log = tmp_path / "calls.jsonl"
+    ok = ClienteFalso(
+        _respuesta({"discard": True, "discard_reason": "no_data", "rows": []})
+    )
+    roto = ClienteFalso(error=TimeoutError("timed out"))
+
+    _proponer(ok, "a", products, provinces, ingestion_id="id-1", log_path=log)
+    _proponer(roto, "b", products, provinces, ingestion_id="id-2", log_path=log)
+
+    lineas = [json.loads(x) for x in log.read_text().splitlines()]
+    assert [x["prompt_version"] for x in lineas] == ["2026-09-25.2"] * 2
+    assert llm_propose_ad.PROMPT_VERSION == "2026-09-25.2"
+
+
+def test_el_prompt_pide_una_fila_por_oferta_y_el_lado_cup() -> None:
+    """Prueba débil y honesta: solo verifica que las reglas ESTÁN escritas.
+
+    Que el modelo las obedezca se mide re-corriendo el backtest
+    (`docs/runbook-asistente-llm.md`, «Backtest»), no acá.
+    """
+    prompt = llm_propose_ad._SYSTEM_PROMPT
+
+    assert "dos monedas" in prompt  # una oferta en dos monedas = UNA fila
+    assert "el mayor" in prompt  # el lado CUP es el número mayor
+    assert "marca de moneda explícita" in prompt  # con marca, gana la marcada
+
+
+def test_el_prompt_pide_el_peso_del_envase_solo_con_unidades_validas() -> None:
+    """Prueba débil y honesta: verifica el texto de la regla, no la conducta.
+
+    El efecto real (40 lb en vez de 1 caja) se mide re-corriendo el backtest.
+    """
+    prompt = llm_propose_ad._SYSTEM_PROMPT
+
+    assert "envase" in prompt and "caja" in prompt
+    assert "peso" in prompt and "null" in prompt  # sin peso declarado, se abstiene
+    assert "40 lb" in prompt  # el ejemplo usa una unidad del vocabulario cerrado
+    assert llm_propose_ad.canonical_unit("lb") == "lb"
+
+
 def test_su_registro_no_contamina_los_asistidos_del_operador(
     products, provinces, tmp_path: Path
 ) -> None:

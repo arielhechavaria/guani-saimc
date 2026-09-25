@@ -61,11 +61,13 @@ from saimc.ingestion import origin
 from saimc.models import (
     ContentType,
     Currency,
+    PriceHistory,
     ProcessingStatus,
     Product,
     Province,
     RawIngestion,
 )
+from saimc.units import canonical_unit
 
 DEFAULT_RESULTS = Path("data/llm-backtest-results.jsonl")
 DEFAULT_CALLS_LOG = Path("data/llm-backtest-calls.jsonl")
@@ -204,6 +206,27 @@ def rows_from_dicts(
             province=provinces.get(str(r.get("province_id"))),
         )
         for r in rows
+    ]
+
+
+def expected_rows_to_dicts(
+    confirmed: Sequence[PriceHistory], names: dict[Any, str]
+) -> list[dict[str, Any]]:
+    """Las filas que el operador dejó para un anuncio, legibles sin la base.
+
+    `names` mapea `product_id -> nombre`. Es un registro para el análisis: las
+    métricas siguen leyendo la verdad de la base (los resultados viejos no la
+    traen).
+    """
+    return [
+        {
+            "product": names.get(r.product_id),
+            "price": str(r.price) if r.price is not None else None,
+            "currency": r.currency,
+            "quantity": str(r.quantity) if r.quantity is not None else None,
+            "unit": r.unit,
+        }
+        for r in confirmed
     ]
 
 
@@ -352,6 +375,8 @@ def run_backtest(
 
     products = measure._focus_products(session)
     provinces = measure._all_provinces(session)
+    names = {p.id: p.name for p in session.execute(select(Product)).scalars()}
+    history = measure._price_history_by_source(session)
     previous = latest_records(read_records(results_path))
     pending = [
         i for i in items if i.ingestion_id not in previous
@@ -401,6 +426,10 @@ def run_backtest(
             content_type=item.content_type,
             expected=item.expected,
             model=model,
+            prompt_version=llm_propose_ad.PROMPT_VERSION,
+            expected_rows=expected_rows_to_dicts(
+                history.get(ingestion.id, []) if item.expected == "kept" else [], names
+            ),
             proposal={
                 "discard": result.discard,
                 "discard_reason": result.discard_reason,
@@ -486,6 +515,11 @@ class GroupMetrics:
     cost_usd: float = 0.0
     untariffed_calls: int = 0
     dropped: int = 0
+    # Filas del modelo que no corresponden a ninguna fila del operador.
+    extra_rows: int = 0
+    extra_dup_currency: int = 0  # misma oferta en otra moneda
+    extra_other: int = 0
+    ads_with_extra: int = 0
 
     @property
     def discard_precision(self) -> tuple[int, int]:
@@ -494,6 +528,35 @@ class GroupMetrics:
     @property
     def discard_recall(self) -> tuple[int, int]:
         return (self.tp, self.tp + self.fn)
+
+
+def extra_rows(
+    confirmed: Sequence[PriceHistory],
+    candidates: Sequence[ExtractionProposal],
+    pairs: Sequence[tuple[PriceHistory, ExtractionProposal]],
+) -> tuple[int, int]:
+    """Filas del modelo sin fila del operador: `(moneda duplicada, otras)`.
+
+    «Sin fila del operador» es lo que `_match_rows_to_candidates` no consumió,
+    el mismo emparejado con el que se puntúa H0. «Moneda duplicada»: mismo
+    producto, misma cantidad y misma unidad que alguna fila del operador pero
+    otra moneda (la oferta en dos monedas que el operador carga una vez).
+    """
+    used = {id(p) for _, p in pairs}
+    duplicated = other = 0
+    for candidate in candidates:
+        if id(candidate) in used:
+            continue
+        is_dup = candidate.product is not None and any(
+            row.product_id == candidate.product.id
+            and row.currency != candidate.currency
+            and candidate.quantity == row.quantity
+            and canonical_unit(candidate.unit) == canonical_unit(row.unit)
+            for row in confirmed
+        )
+        duplicated += is_dup
+        other += not is_dup
+    return duplicated, other
 
 
 def compute_metrics(
@@ -556,10 +619,15 @@ def compute_metrics(
         llm_pairs = measure._match_rows_to_candidates(confirmed, llm_candidates, channel)
         rule_pairs = measure._match_rows_to_candidates(confirmed, rule_candidates, channel)
 
+        duplicated, other = extra_rows(confirmed, llm_candidates, llm_pairs)
         for g in targets:
             g.gold_ads += 1
             g.gold_rows += len(confirmed)
             g.zero_row_ads += not llm_candidates
+            g.extra_dup_currency += duplicated
+            g.extra_other += other
+            g.extra_rows += duplicated + other
+            g.ads_with_extra += (duplicated + other) > 0
         for (row, llm_row), (_, rule_row) in zip(llm_pairs, rule_pairs, strict=True):
             llm_ok = measure.row_correctness(row, llm_row)
             rule_ok = measure.row_correctness(row, rule_row)
@@ -590,7 +658,11 @@ def _frac(k: int, n: int) -> str:
     return f"{k}/{n} ({100 * k / n:.1f}%)" if n else f"{k}/{n} (n/d)"
 
 
-def render_report(metrics: dict[str, GroupMetrics], models: Sequence[str] = ()) -> str:
+def render_report(
+    metrics: dict[str, GroupMetrics],
+    models: Sequence[str] = (),
+    prompt_versions: Sequence[str] = (),
+) -> str:
     lines = [
         "# Backtest del asistente LLM",
         "",
@@ -598,6 +670,8 @@ def render_report(metrics: dict[str, GroupMetrics], models: Sequence[str] = ()) 
     ]
     if models:
         lines.append(f"Modelo(s) en los resultados: {', '.join(sorted(set(models)))}")
+    if prompt_versions:
+        lines.append(f"Versión(es) de prompt en los resultados: {', '.join(sorted(set(prompt_versions)))}")
     lines += [
         "",
         "Cómo leerlo:",
@@ -670,7 +744,25 @@ def render_report(metrics: dict[str, GroupMetrics], models: Sequence[str] = ()) 
             f"- Solo aciertan las reglas: {g.only_rules}",
             f"- Ninguno acierta: {g.neither}",
             "",
-            "### (e) Consumo",
+            "### (e) Filas de más",
+            "",
+            "Filas que el modelo propuso y no corresponden a ninguna fila que el "
+            "operador dejó (mismo emparejado que H0). Estas filas **no son errores** "
+            "en la definición de H0 —la precisión por fila no las cuenta—, pero le "
+            "cuestan al operador un borrado cada una. Ojo: el oro puede estar "
+            "incompleto (el operador no siempre carga todas las filas de una "
+            "lista diaria repetida), así que «otras» no es necesariamente error "
+            "del modelo.",
+            "",
+            f"- Filas de más: {g.extra_rows} en {g.gold_ads} anuncios "
+            f"(promedio {g.extra_rows / g.gold_ads if g.gold_ads else 0:.2f} "
+            "por anuncio)",
+            f"- Anuncios con al menos una fila de más: "
+            f"{_frac(g.ads_with_extra, g.gold_ads)}",
+            f"- Moneda duplicada (misma oferta en otra moneda): {g.extra_dup_currency}",
+            f"- Otras: {g.extra_other}",
+            "",
+            "### (f) Consumo",
             "",
             f"- Tokens reales: {g.input_tokens:,} de entrada, {g.output_tokens:,} de salida",
             f"- Costo real: ${g.cost_usd:.4f}"
@@ -733,7 +825,12 @@ def _write_report(
 ) -> None:
     records = read_records(args.results)
     models = [str(r.get("model", "")) for r in latest_records(records).values()]
-    text = render_report(compute_metrics(session, records), models)
+    # Los resultados de la v1 no registraron la versión del prompt.
+    versions = [
+        str(r.get("prompt_version", "v1 (sin registro)"))
+        for r in latest_records(records).values()
+    ]
+    text = render_report(compute_metrics(session, records), models, versions)
     out(text)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(text, encoding="utf-8")

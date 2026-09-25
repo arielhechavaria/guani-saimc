@@ -229,6 +229,26 @@ Corré todo desde la raíz del proyecto (usa la base y `data/` de ahí).
 `--seed` ni `--sample` entre el piloto y la corrida completa (mezclarías
 muestras distintas en el mismo archivo). Para cambiar de modelo: `--model`.
 
+**Re-correr con un prompt nuevo (v2 en adelante).** Los archivos por defecto
+son la línea base v1: no los pises. Usá rutas aparte para que las dos corridas
+queden comparables:
+
+```
+.venv/bin/python -m saimc.extraction.llm_backtest --execute \
+  --results data/llm-backtest-results-v2.jsonl \
+  --calls-log data/llm-backtest-calls-v2.jsonl \
+  --report data/llm-backtest-report-v2.md
+```
+
+Con la misma `--seed` (42 por defecto) y el mismo `--limit`, la lista de
+anuncios es la misma (el oro se ordena y el muestreo es determinista), así que
+una corrida con `--limit 100` cubre los mismos 100 anuncios que la v1 mientras
+no cambien los curados ni el registro del asistente. Cada resultado y cada
+llamada registran `prompt_version` (`llm_propose_ad.PROMPT_VERSION`); los de la
+v1 no lo tienen y el reporte los rotula «v1 (sin registro)». El reporte incluye
+las «filas de más» (lo que el modelo propone y el operador no dejó): no son
+error de H0, pero cuestan borrados, y el oro puede estar incompleto.
+
 Dónde queda todo (bajo `data/`, que el repositorio no versiona):
 
 - `data/llm-backtest-results.jsonl`: un resultado por anuncio (propuesta del

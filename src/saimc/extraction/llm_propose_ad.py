@@ -52,6 +52,11 @@ from saimc.units import UNITS, canonical_unit
 # Varias filas por respuesta: 1024 truncó una respuesta en el asistente por fila.
 MAX_TOKENS = 4096
 
+# Versión del prompt de sistema: cada línea del registro de llamadas y cada
+# resultado del backtest la lleva, para atribuir una corrida a su prompt. La v1
+# (el prompt original, sin esta constante) no la registró.
+PROMPT_VERSION = "2026-09-25.2"
+
 _CURRENCIES: tuple[str, ...] = tuple(c.value for c in Currency)
 _DISCARD_REASONS: tuple[str, ...] = tuple(r.value for r in DiscardReason)
 
@@ -132,7 +137,18 @@ _SYSTEM_PROMPT = (
     "Abstenerse es una respuesta correcta y preferible a adivinar.\n"
     "- El precio es el de la oferta, no una tarifa derivada que el anuncio "
     "calcule aparte (por ejemplo «sale a X la libra»).\n"
+    "- UNA fila por oferta. Si una misma oferta está publicada en dos monedas "
+    "(«43.5 o 30885», «25 USD o 17175»), es una sola fila, no una por moneda: "
+    "tomá el precio en CUP, que es el mayor de los dos números (la brecha "
+    "USD:CUP ronda 700:1), con moneda CUP. Excepción: si la línea trae una "
+    "marca de moneda explícita («USD», «CUP», «MLC», «EUR»), tomá el precio marcado "
+    "con esa moneda.\n"
     "- La cantidad y la unidad son las del lote que ese precio compra.\n"
+    "- Si el lote se describe por su envase (caja, paquete, saco...) y el "
+    "anuncio dice cuánto pesa o cuánto contiene, cantidad y unidad van en esa "
+    "unidad de peso o volumen (por ejemplo «cajas de 40 lb» es cantidad 40, "
+    "unidad lb), no 1 caja. Si el peso o volumen no está dicho, cantidad y "
+    "unidad quedan en null.\n"
     "- La provincia es una de la lista o null.\n"
     "- Marcá discard=true cuando un operador descartaría el anuncio: no ofrece "
     "ningún producto del catálogo, no tiene un precio utilizable, está "
@@ -270,6 +286,7 @@ def propose_ad(
                     "timestamp": datetime.now(UTC).isoformat(),
                     "ingestion_id": ingestion_id,
                     "model": model,
+                    "prompt_version": PROMPT_VERSION,
                     "rows": len(result.rows),
                     "discard": result.discard,
                     "dropped": result.dropped,

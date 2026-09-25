@@ -565,3 +565,124 @@ def test_limit_acota_los_anuncios_y_mezcla_tipos(session: Session, catalogo) -> 
 
     assert len(items) == 4
     assert items == llm_backtest.build_workset(session, set(), sample_n=None, seed=3, limit=4)
+
+
+# --- prompt_version y expected_rows en cada línea nueva ----------------------
+
+
+def test_cada_linea_nueva_lleva_prompt_version_y_las_filas_del_operador(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    txt = _ingesta(
+        session,
+        texto="Arroz 100 cup La Habana",
+        filas=[_confirmada(catalogo.arroz, "100", "CUP", "1", "lb", catalogo.lh)],
+    )
+    desc = _ingesta(session, estado=ProcessingStatus.DISCARDED)
+    items = [
+        llm_backtest.WorkItem(str(txt.id), "text", "kept"),
+        llm_backtest.WorkItem(str(desc.id), "text", "discarded"),
+    ]
+    resultados = tmp_path / "r.jsonl"
+
+    llm_backtest.run_backtest(
+        session, items,
+        results_path=resultados, calls_log_path=tmp_path / "c.jsonl",
+        api_key="k",
+        client=ClienteFalso({"discard": True, "discard_reason": "no_data", "rows": []}),
+        model="claude-sonnet-5", timeout=5.0, out=lambda *_: None,
+    )
+
+    kept, descartado = [json.loads(x) for x in resultados.read_text().splitlines()]
+    assert kept["prompt_version"] == "2026-09-25.2"
+    assert descartado["prompt_version"] == "2026-09-25.2"
+    (fila,) = kept["expected_rows"]
+    assert fila["product"] == "Arroz" and fila["currency"] == "CUP" and fila["unit"] == "lb"
+    assert Decimal(fila["price"]) == 100 and Decimal(fila["quantity"]) == 1
+    assert descartado["expected_rows"] == []
+
+
+# --- filas de más -----------------------------------------------------------
+
+
+def _armar_corpus_extras(session: Session, c: SimpleNamespace) -> list[dict]:
+    """Corpus a mano para «filas de más». Verdad y propuesta del modelo:
+
+    E1 texto  operador: Arroz 100 CUP 1 lb.
+              modelo:   Arroz 100 CUP 1 lb + Arroz 0.14 USD 1 lb  -> 1 extra, moneda duplicada
+    E2 texto  operador: Pollo 200 CUP 1 lb.
+              modelo:   Pollo 200 CUP 1 lb + Arroz 50 CUP 1 lb    -> 1 extra, otra
+    E3 imagen operador: Arroz 50 CUP 1 lb.
+              modelo:   exacto                                    -> 0 extras
+    E4 texto  degradado: fuera de todo.
+    """
+    e1 = _ingesta(session, filas=[_confirmada(c.arroz, "100", "CUP", "1", "lb", c.lh)])
+    e2 = _ingesta(session, filas=[_confirmada(c.pollo, "200", "CUP", "1", "lb", c.lh)])
+    e3 = _ingesta(
+        session, tipo=ContentType.IMAGE,
+        filas=[_confirmada(c.arroz, "50", "CUP", "1", "lb", c.lh)],
+    )
+    e4 = _ingesta(session, filas=[_confirmada(c.arroz, "9", "CUP", "1", "lb", c.lh)])
+    K = "kept"
+    return [
+        _registro(
+            e1, K,
+            llm_rows=[
+                _fila(c.arroz, 100, "CUP", 1, "lb", c.lh),
+                _fila(c.arroz, "0.14", "USD", 1, "lb", c.lh),
+            ],
+            reglas=[],
+        ),
+        _registro(
+            e2, K,
+            llm_rows=[
+                _fila(c.pollo, 200, "CUP", 1, "lb", c.lh),
+                _fila(c.arroz, 50, "CUP", 1, "lb", c.lh),
+            ],
+            reglas=[],
+        ),
+        _registro(e3, K, llm_rows=[_fila(c.arroz, 50, "CUP", 1, "lb", c.lh)], reglas=[]),
+        _registro(
+            e4, K, llm_rows=[_fila(c.arroz, 9, "USD", 1, "lb", c.lh)], reglas=[], degraded=True
+        ),
+    ]
+
+
+def test_filas_de_mas_por_tipo_y_total_con_su_reparto(session: Session, catalogo) -> None:
+    m = llm_backtest.compute_metrics(session, _armar_corpus_extras(session, catalogo))
+
+    texto, imagen, total = m["texto"], m["imagen"], m["total"]
+    # Texto: 2 anuncios del oro, 2 filas de más (1 moneda duplicada, 1 otra),
+    # y los dos anuncios tienen al menos una.
+    assert (texto.gold_ads, texto.extra_rows) == (2, 2)
+    assert (texto.extra_dup_currency, texto.extra_other, texto.ads_with_extra) == (1, 1, 2)
+    # Imagen: 1 anuncio, exacto.
+    assert (imagen.gold_ads, imagen.extra_rows, imagen.ads_with_extra) == (1, 0, 0)
+    # Total: 3 anuncios, 2 extras, 2 anuncios con extras.
+    assert (total.gold_ads, total.extra_rows, total.ads_with_extra) == (3, 2, 2)
+    assert (total.extra_dup_currency, total.extra_other) == (1, 1)
+
+
+def test_el_reporte_muestra_las_filas_de_mas_y_aclara_que_no_son_error_de_h0(
+    session: Session, catalogo
+) -> None:
+    m = llm_backtest.compute_metrics(session, _armar_corpus_extras(session, catalogo))
+
+    reporte = llm_backtest.render_report(m)
+
+    assert "Filas de más" in reporte
+    assert "2/2 (100.0%)" in reporte  # texto: anuncios con al menos una
+    assert "2/3 (66.7%)" in reporte  # total: anuncios con al menos una
+    assert "promedio 1.00" in reporte  # texto: 2 extras / 2 anuncios
+    assert "promedio 0.67" in reporte  # total: 2 / 3
+    assert "no son errores" in reporte  # aclaración explícita
+    assert "incompleto" in reporte  # el oro puede estar incompleto
+
+
+def test_un_registro_viejo_sin_las_filas_del_operador_igual_se_mide(
+    session: Session, catalogo
+) -> None:
+    registros = _armar_corpus_extras(session, catalogo)
+    assert all("expected_rows" not in r for r in registros)  # formato v1
+
+    assert llm_backtest.compute_metrics(session, registros)["total"].extra_rows == 2
