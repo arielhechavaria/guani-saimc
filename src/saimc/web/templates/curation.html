@@ -128,8 +128,14 @@
       El asistente sugiere descartar{% if assist_discard.label %}: {{ assist_discard.label }}{% endif %}.
     </span>
     <form method="post" action="/curation/{{ ingestion.id }}/discard" class="m3-discard-group">
+      {#
+        Con propuesta a la vista, el botón manda el formulario de curar entero
+        a `/discard` (`form` + `formaction`): así viajan `proposal_id` y la
+        nota y el descarte queda capturado (slice 3a). `formnovalidate` porque
+        la fecha obligatoria no aplica al descartar.
+      #}
       {% for boton in assist_discard.buttons %}
-      <button type="submit" name="reason" value="{{ boton.value }}" class="m3-btn{% if boton.primary %} m3-btn-filled{% endif %}">{{ boton.label }}</button>
+      <button type="submit" name="reason" value="{{ boton.value }}" class="m3-btn{% if boton.primary %} m3-btn-filled{% endif %}"{% if proposal_id %} form="curation-form" formaction="/curation/{{ ingestion.id }}/discard" formnovalidate{% endif %}>{{ boton.label }}</button>
       {% endfor %}
     </form>
   </div>
@@ -370,6 +376,27 @@
             </button>
           </div>
 
+          {#
+            Slice 3a: la propuesta del modelo a la vista y una nota sobre lo
+            que el modelo no podía saber («4x10» = 4 paquetes de 10 lb). Solo
+            con propuesta; plegada porque es opcional. Se guarda con los
+            teléfonos redactados.
+          #}
+          {% if proposal_id %}
+          <input type="hidden" name="proposal_id" value="{{ proposal_id }}" />
+          <details class="m3-card m3-card-pad m3-assist-note"{% if note %} open{% endif %}>
+            <summary class="m3-summary m3-row" style="gap:8px">
+              <span class="m3-icon m3-icon-sm m3-dim">edit_note</span>
+              <span>Nota para el asistente</span>
+            </summary>
+            <label class="m3-field" style="margin-top:12px">
+              <span class="m3-field-label" for="note">Qué no podía saber el modelo</span>
+              <textarea name="note" id="note" class="m3-textarea" rows="3">{{ note }}</textarea>
+              <span class="m3-help">Opcional. Por ejemplo: «4x10» son 4 paquetes de 10 lb.</span>
+            </label>
+          </details>
+          {% endif %}
+
           <input type="hidden" name="row_count" value="{{ row_count }}" />
         </form>
 
@@ -383,10 +410,13 @@
     <span class="m3-sm m3-muted m3-spacer">
       Curar guarda las filas en <code>prices_history</code> y pasa al siguiente.
     </span>
-    <button type="submit" form="discard-form" name="reason" value="off_focus" class="m3-btn">
+    {# Con propuesta a la vista, descartar manda el formulario de curar entero
+       (ver el banner del asistente, arriba). #}
+    {% set discard_target %}{% if proposal_id %}form="curation-form" formaction="/curation/{{ ingestion.id }}/discard" formnovalidate{% else %}form="discard-form"{% endif %}{% endset %}
+    <button type="submit" {{ discard_target }} name="reason" value="off_focus" class="m3-btn">
       <span class="m3-icon">visibility_off</span>Fuera de foco
     </button>
-    <button type="submit" form="discard-form" name="reason" value="no_data" class="m3-btn m3-btn-danger">
+    <button type="submit" {{ discard_target }} name="reason" value="no_data" class="m3-btn m3-btn-danger">
       <span class="m3-icon">block</span>Sin dato útil
     </button>
     <button type="submit" form="curation-form" class="m3-btn m3-btn-filled m3-btn-lg">

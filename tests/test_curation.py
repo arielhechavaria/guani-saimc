@@ -22,12 +22,14 @@ from saimc.config import get_settings
 from saimc.extraction import llm_assist, ocr
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_checks import RowMeta
-from saimc.extraction.llm_propose_ad import AdProposal
+from saimc.extraction.llm_propose_ad import PROMPT_VERSION, AdProposal
 from saimc.models import (
     Channel,
     ContentType,
     Currency,
     DiscardReason,
+    LlmProposal,
+    LlmReview,
     Platform,
     PriceHistory,
     ProcessingStatus,
@@ -4728,6 +4730,7 @@ class TestAsistenteLLM:
         input_tokens: int = 1000,
         output_tokens: int = 200,
         dropped: int = 0,
+        raw_response: str | None = None,
     ) -> list[dict]:
         """Instala un `propose_ad` falso y devuelve la lista donde anota cada llamada."""
         llamadas: list[dict] = []
@@ -4756,6 +4759,7 @@ class TestAsistenteLLM:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             dropped=dropped,
+            raw_response=raw_response,
         )
 
         def falso(text, products, provinces, **kwargs):
@@ -5393,6 +5397,577 @@ class TestAsistenteLLM:
         client.post(f"/curation/{segundo.id}/assist")
 
         assert [c["ingestion_id"] for c in llamadas] == [str(segundo.id)]
+
+    # --- slice 3a: la propuesta se guarda y la revisión se captura --------------
+    #
+    # `docs/spec-slice-3a.md`, casos 1 a 11. Los valores esperados están
+    # escritos a mano desde la especificación, antes que el código.
+
+    @staticmethod
+    def _propuestas(session: Session, ingestion: RawIngestion) -> list[LlmProposal]:
+        session.expire_all()
+        return list(
+            session.execute(
+                select(LlmProposal).where(LlmProposal.ingestion_id == ingestion.id)
+            ).scalars()
+        )
+
+    @staticmethod
+    def _revisiones(session: Session) -> list[LlmReview]:
+        session.expire_all()
+        return list(session.execute(select(LlmReview)).scalars())
+
+    @staticmethod
+    def _formulario(
+        ingestion: RawIngestion,
+        filas: dict[int, dict[str, str]],
+        *,
+        row_count: int | None = None,
+        proposal_id: str | None = None,
+        note: str | None = None,
+    ) -> dict[str, str]:
+        """El POST de curar, armado a mano. `filas` va por índice: un índice que
+        falta es una tarjeta que el operador eliminó del lado del cliente."""
+        datos = {
+            "source_reference": "",
+            "published_date": _fecha_pub(ingestion),
+            "row_count": str(row_count if row_count is not None else len(filas)),
+        }
+        if proposal_id is not None:
+            datos["proposal_id"] = proposal_id
+        if note is not None:
+            datos["note"] = note
+        for i, fila in filas.items():
+            datos[f"product_id_{i}"] = fila.get("product_id", "")
+            datos[f"price_{i}"] = fila.get("price", "")
+            datos[f"currency_{i}"] = fila.get("currency", "CUP")
+            datos[f"quantity_{i}"] = fila.get("quantity", "")
+            datos[f"unit_{i}"] = fila.get("unit", "")
+            datos[f"province_id_{i}"] = fila.get("province_id", "")
+            if "proposal_row" in fila:
+                datos[f"proposal_row_{i}"] = fila["proposal_row"]
+        return datos
+
+    def _asistido(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+        precios: list[str],
+    ) -> tuple[RawIngestion, Product, LlmProposal]:
+        """Un anuncio pendiente con la propuesta del modelo ya pedida y guardada."""
+        ingestion = self._pendiente(session)
+        self._modelo(
+            monkeypatch, session, filas=[{"price": Decimal(p)} for p in precios]
+        )
+        client.post(f"/curation/{ingestion.id}/assist")
+        (propuesta,) = self._propuestas(session, ingestion)
+        producto = session.execute(select(Product)).scalars().one()
+        return ingestion, producto, propuesta
+
+    def test_caso1_completar_con_ia_guarda_la_propuesta_ok(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        crudo = '{"discard": false, "discard_reason": null, "rows": [{"price": 500}]}'
+        self._modelo(
+            monkeypatch,
+            session,
+            filas=[{"price": Decimal("500")}],
+            evidencia="pollo congelado a 500",
+            input_tokens=1000,
+            output_tokens=200,
+            raw_response=crudo,
+        )
+
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        (propuesta,) = self._propuestas(session, ingestion)
+        producto = session.execute(select(Product)).scalars().one()
+        assert propuesta.status == "ok"
+        assert propuesta.failure is None
+        assert propuesta.discard is False
+        assert propuesta.discard_reason is None
+        assert propuesta.model == "claude-sonnet-5"
+        assert propuesta.prompt_version == PROMPT_VERSION
+        assert propuesta.input_tokens == 1000
+        assert propuesta.output_tokens == 200
+        assert propuesta.raw_response == crudo
+        assert propuesta.rows == [
+            {
+                "product_id": str(producto.id),
+                "price": "500",
+                "currency": "CUP",
+                "quantity": None,
+                "unit": None,
+                "province_id": None,
+                "evidence": "pollo congelado a 500",
+                "currency_explicit": True,
+                "evidence_found": True,
+                "price_in_evidence": None,
+            }
+        ]
+        assert propuesta.created_at is not None
+
+    def test_caso2_una_falla_guarda_una_propuesta_degradada(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(
+            monkeypatch, session, degraded=True, failure="timeout", input_tokens=0, output_tokens=0
+        )
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        (propuesta,) = self._propuestas(session, ingestion)
+        assert propuesta.status == "degraded"
+        assert propuesta.failure == "timeout"
+        assert propuesta.rows == []
+        assert propuesta.discard is None
+        # El formulario queda como lo armaron las reglas, sin propuesta a la vista.
+        assert 'id="price_0" value="500"' in html
+        assert 'name="proposal_id"' not in html
+        assert 'name="proposal_row_' not in html
+        assert "Nota para el asistente" not in html
+
+    def test_sin_intento_real_no_se_guarda_propuesta(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Mismo criterio que el registro: `empty_text` no fue una llamada."""
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, degraded=True, failure="empty_text")
+
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        assert self._propuestas(session, ingestion) == []
+
+    def test_caso3_abrir_con_propuesta_guardada_no_llama_y_la_muestra(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        # Las reglas dicen 500; el modelo, 999: solo la propuesta guardada
+        # puede poner 999 en el formulario.
+        llamadas = self._modelo(monkeypatch, session, filas=[{"price": Decimal("999")}])
+        client.post(f"/curation/{ingestion.id}/assist")
+        (propuesta,) = self._propuestas(session, ingestion)
+
+        html = client.get(f"/curation?id={ingestion.id}").text
+
+        assert len(llamadas) == 1  # la del POST; el GET no llamó
+        assert 'id="price_0" value="999"' in html
+        assert "Reglas: 500" in html
+        assert self._mapa_asistido(html) == {"0": ["product", "price", "currency"]}
+        assert f'name="proposal_id" value="{propuesta.id}"' in html
+        # El botón sigue ofrecido para pedir otra.
+        assert f"/curation/{ingestion.id}/assist" in html
+
+    def test_una_propuesta_degradada_guardada_no_se_muestra_al_abrir(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, degraded=True, failure="timeout")
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        html = client.get(f"/curation?id={ingestion.id}").text
+
+        assert 'name="proposal_id"' not in html
+        assert "El asistente no pudo responder" not in html
+
+    def test_con_propuesta_el_formulario_lleva_los_ocultos_y_la_nota(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        (propuesta,) = self._propuestas(session, ingestion)
+        assert f'name="proposal_id" value="{propuesta.id}"' in html
+        # Solo la fila del modelo: ni las filas en blanco ni el molde de
+        # «Agregar fila» (que JS clona) llevan `proposal_row_N`.
+        assert html.count('name="proposal_row_') == 1
+        assert 'name="proposal_row_0" value="0"' in html
+        assert "Nota para el asistente" in html
+        assert 'name="note"' in html
+
+    def test_sin_propuesta_no_hay_nota_ni_ocultos(
+        self, client: TestClient, session: Session, con_clave: None
+    ) -> None:
+        self._pendiente(session)
+
+        html = client.get("/curation").text
+
+        assert "Nota para el asistente" not in html
+        assert 'name="proposal_id"' not in html
+        assert 'name="proposal_row_' not in html
+
+    def test_caso4_guardar_sin_tocar_nada(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, producto, propuesta = self._asistido(
+            client, session, monkeypatch, ["500"]
+        )
+        datos = self._formulario(
+            ingestion,
+            {0: {"product_id": str(producto.id), "price": "500", "proposal_row": "0"}},
+            proposal_id=str(propuesta.id),
+        )
+
+        response = client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        assert response.status_code == 303
+        (precio,) = session.execute(select(PriceHistory)).scalars()
+        (revision,) = self._revisiones(session)
+        seis = {
+            "product_id": str(producto.id),
+            "price": "500",
+            "currency": "CUP",
+            "quantity": None,
+            "unit": None,
+            "province_id": None,
+        }
+        assert revision.ingestion_id == ingestion.id
+        assert revision.proposal_id == propuesta.id
+        assert revision.outcome == "curated"
+        assert revision.discard_reason is None
+        assert revision.note is None
+        assert revision.rows == [
+            {
+                "proposal_index": 0,
+                "price_history_id": str(precio.id),
+                "proposed": seis,
+                "final": seis,
+                "edited": [],
+            }
+        ]
+
+    def test_caso5_editar_el_precio_de_una_fila(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, producto, propuesta = self._asistido(
+            client, session, monkeypatch, ["500", "600"]
+        )
+        pid = str(producto.id)
+        datos = self._formulario(
+            ingestion,
+            {
+                0: {"product_id": pid, "price": "500", "proposal_row": "0"},
+                1: {"product_id": pid, "price": "650", "proposal_row": "1"},
+            },
+            proposal_id=str(propuesta.id),
+        )
+
+        client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        (revision,) = self._revisiones(session)
+        primera, segunda = revision.rows
+        assert primera["edited"] == []
+        assert segunda["edited"] == ["price"]
+        assert segunda["proposed"]["price"] == "600"
+        assert segunda["final"]["price"] == "650"
+
+    def test_caso6_borrar_una_fila_propuesta(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, producto, propuesta = self._asistido(
+            client, session, monkeypatch, ["500", "600"]
+        )
+        # La tarjeta 1 se eliminó en el cliente: sus campos no viajan, pero
+        # `row_count` sigue cubriendo su índice.
+        datos = self._formulario(
+            ingestion,
+            {0: {"product_id": str(producto.id), "price": "500", "proposal_row": "0"}},
+            row_count=2,
+            proposal_id=str(propuesta.id),
+        )
+
+        client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 1
+        (revision,) = self._revisiones(session)
+        assert len(revision.rows) == 2
+        borrada = revision.rows[1]
+        assert borrada["proposal_index"] == 1
+        assert borrada["proposed"]["price"] == "600"
+        assert borrada["final"] is None
+        assert borrada["price_history_id"] is None
+
+    def test_caso7_agregar_una_fila_a_mano(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, producto, propuesta = self._asistido(
+            client, session, monkeypatch, ["500"]
+        )
+        pid = str(producto.id)
+        datos = self._formulario(
+            ingestion,
+            {
+                0: {"product_id": pid, "price": "500", "proposal_row": "0"},
+                1: {"product_id": pid, "price": "700"},
+            },
+            proposal_id=str(propuesta.id),
+        )
+
+        client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        (revision,) = self._revisiones(session)
+        agregada = next(r for r in revision.rows if r["proposal_index"] is None)
+        precio = session.execute(
+            select(PriceHistory).where(PriceHistory.price == Decimal("700"))
+        ).scalar_one()
+        assert len(revision.rows) == 2
+        assert agregada["proposed"] is None
+        assert agregada["final"]["price"] == "700"
+        assert agregada["price_history_id"] == str(precio.id)
+
+    def test_un_indice_de_propuesta_invalido_cuenta_como_fila_a_mano(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """El índice viaja en el formulario: uno que no existe en la propuesta
+        no puede inventar una fila propuesta."""
+        ingestion, producto, propuesta = self._asistido(
+            client, session, monkeypatch, ["500"]
+        )
+        datos = self._formulario(
+            ingestion,
+            {0: {"product_id": str(producto.id), "price": "500", "proposal_row": "7"}},
+            proposal_id=str(propuesta.id),
+        )
+
+        client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        (revision,) = self._revisiones(session)
+        indices = sorted(
+            (r["proposal_index"] for r in revision.rows), key=lambda i: (i is None, i)
+        )
+        assert indices == [0, None]
+
+    def test_caso8_descartar_con_propuesta_a_la_vista(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, _, propuesta = self._asistido(client, session, monkeypatch, ["500"])
+
+        response = client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "off_focus", "proposal_id": str(propuesta.id)},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        (revision,) = self._revisiones(session)
+        assert revision.outcome == "discarded"
+        assert revision.discard_reason == "off_focus"
+        assert revision.proposal_id == propuesta.id
+        assert [r["proposal_index"] for r in revision.rows] == [0]
+        assert revision.rows[0]["final"] is None
+        assert revision.rows[0]["price_history_id"] is None
+
+    def test_con_propuesta_los_botones_de_descarte_mandan_el_formulario_entero(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """El descarte tiene que llevar `proposal_id` y la nota: con propuesta a
+        la vista, los botones envían el formulario de curar a `/discard`."""
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert f'formaction="/curation/{ingestion.id}/discard"' in html
+
+    def test_caso9_la_nota_se_guarda_con_los_telefonos_redactados(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, producto, propuesta = self._asistido(
+            client, session, monkeypatch, ["500"]
+        )
+        datos = self._formulario(
+            ingestion,
+            {0: {"product_id": str(producto.id), "price": "500", "proposal_row": "0"}},
+            proposal_id=str(propuesta.id),
+            note="4x10 son 4 paquetes de 10 lb, llamar al 55512345",
+        )
+
+        client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        (revision,) = self._revisiones(session)
+        assert revision.note == "4x10 son 4 paquetes de 10 lb, llamar al [teléfono removido]"
+
+    def test_la_nota_del_descarte_tambien_se_redacta(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, _, propuesta = self._asistido(client, session, monkeypatch, ["500"])
+
+        client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={
+                "reason": "no_data",
+                "proposal_id": str(propuesta.id),
+                "note": "agotado, ver 55512345",
+            },
+            follow_redirects=False,
+        )
+
+        (revision,) = self._revisiones(session)
+        assert revision.note == "agotado, ver [teléfono removido]"
+
+    def test_caso10_sin_proposal_id_no_se_escribe_la_revision(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, producto, _ = self._asistido(client, session, monkeypatch, ["500"])
+        datos = self._formulario(
+            ingestion, {0: {"product_id": str(producto.id), "price": "500"}}
+        )
+
+        response = client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert self._revisiones(session) == []
+
+    def test_caso10_descartar_sin_proposal_id_no_escribe_la_revision(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = self._pendiente(session)
+
+        client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "no_data"},
+            follow_redirects=False,
+        )
+
+        assert self._revisiones(session) == []
+
+    @pytest.mark.parametrize("ajeno", ["otro_anuncio", "basura", "inexistente"])
+    def test_caso11_un_proposal_id_ajeno_se_ignora_y_la_curaduria_se_guarda(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+        ajeno: str,
+    ) -> None:
+        otro = _crear_raw_ingestion(session, hash_="hash-otro", original_text="otro")
+        ingestion, producto, _ = self._asistido(client, session, monkeypatch, ["500"])
+        propuesta_ajena = LlmProposal(
+            ingestion_id=otro.id,
+            model="m",
+            prompt_version="v",
+            status="ok",
+            rows=[],
+            input_tokens=0,
+            output_tokens=0,
+        )
+        session.add(propuesta_ajena)
+        session.commit()
+        valor = {
+            "otro_anuncio": str(propuesta_ajena.id),
+            "basura": "no-es-un-uuid",
+            "inexistente": str(uuid.uuid4()),
+        }[ajeno]
+        datos = self._formulario(
+            ingestion,
+            {0: {"product_id": str(producto.id), "price": "500", "proposal_row": "0"}},
+            proposal_id=valor,
+        )
+
+        response = client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert self._revisiones(session) == []
+        session.refresh(ingestion)
+        assert ingestion.processing_status == "curated"
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 1
+
+    def test_un_error_de_validacion_conserva_la_propuesta_y_la_nota(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """El 422 re-renderiza lo que el operador escribió: sin los ocultos, el
+        segundo intento se guardaría sin captura."""
+        ingestion, producto, propuesta = self._asistido(
+            client, session, monkeypatch, ["500"]
+        )
+        datos = self._formulario(
+            ingestion,
+            {0: {"product_id": str(producto.id), "price": "500", "proposal_row": "0"}},
+            proposal_id=str(propuesta.id),
+            note="4x10 = cuatro paquetes",
+        )
+        datos["published_date"] = ""
+
+        response = client.post(f"/curation/{ingestion.id}", data=datos)
+
+        assert response.status_code == 422
+        assert f'name="proposal_id" value="{propuesta.id}"' in response.text
+        assert 'name="proposal_row_0" value="0"' in response.text
+        assert "4x10 = cuatro paquetes" in response.text
+        assert self._revisiones(session) == []
 
 
 class TestHistorialFiltraPorFormato:

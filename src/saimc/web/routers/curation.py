@@ -46,7 +46,7 @@ from starlette.datastructures import FormData
 from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, apply_resolution
-from saimc.extraction import ocr
+from saimc.extraction import llm_store, ocr
 from saimc.extraction.engine import (
     ExtractionProposal,
     guess_published_date,
@@ -70,6 +70,7 @@ from saimc.models import (
     ContentType,
     Currency,
     DiscardReason,
+    LlmProposal,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -77,6 +78,7 @@ from saimc.models import (
     ProductVariant,
     Province,
     RawIngestion,
+    ReviewOutcome,
     SaleFormat,
     SourceType,
 )
@@ -741,6 +743,8 @@ def _render_queue(
     assist_error: str | None = None,
     assist_discard: dict | None = None,
     evidence_segments: list[tuple[str, bool]] | None = None,
+    proposal_id: str | None = None,
+    note: str = "",
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -761,6 +765,10 @@ def _render_queue(
             # El texto del anuncio en tramos, con las citas del modelo
             # marcadas; `None` = mostrarlo tal cual.
             "evidence_segments": evidence_segments,
+            # La propuesta guardada a la vista (slice 3a) y la nota del
+            # operador. Sin propuesta no hay oculto ni campo de nota.
+            "proposal_id": proposal_id,
+            "note": note,
             # Molde para las filas que el operador agregue a mano desde el
             # botón "Agregar fila": el JS del cliente clona este `<template>`
             # y le renumera los índices. Mismo dict vacío que las filas en
@@ -1095,6 +1103,10 @@ def _curation_view(
     # (son la segunda opinión). Una sola llamada por anuncio y nunca en el GET:
     # solo cuando el operador la pidió.
     assist_result: AdProposal | None = None
+    # La propuesta guardada que el formulario lleva a la vista (slice 3a): su
+    # id viaja oculto y el guardado captura contra ella qué se tocó.
+    shown_proposal: LlmProposal | None = None
+    proposal_indices: list[int] | None = None
     if (
         assist_ingestion_id is not None
         and ingestion is not None
@@ -1109,6 +1121,22 @@ def _curation_view(
             ingestion_id=str(ingestion.id),
             settings=settings,
         )
+        # Se guarda también si degradó: registra la falla.
+        saved = llm_store.save_proposal(
+            db,
+            ingestion_id=ingestion.id,
+            result=assist_result,
+            model=settings.llm_assist_model,
+        )
+        db.commit()
+        if saved is not None and not assist_result.degraded:
+            shown_proposal = saved
+    elif ingestion is not None:
+        # Abrir el anuncio con una propuesta que ya anduvo la muestra sin
+        # llamar a la API: recargar no vuelve a pagar la llamada.
+        shown_proposal = llm_store.latest_ok_proposal(db, ingestion.id)
+        if shown_proposal is not None:
+            assist_result, proposal_indices = llm_store.to_ad_proposal(db, shown_proposal)
     # `assist_good` es la propuesta solo si el modelo respondió; separar la
     # variable del booleano deja a mypy ver que no es `None` donde se usa.
     assist_good = (
@@ -1127,7 +1155,7 @@ def _curation_view(
     # las reglas quedan de segunda opinión y de fuente de lo que él no propone.
     assisted_by_row: dict[int, list[str]] = {}
     if assist_good is not None:
-        rows, assisted_by_row = _rows_from_model(assist_good, proposals)
+        rows, assisted_by_row = _rows_from_model(assist_good, proposals, proposal_indices)
     else:
         rows = [_values_from_proposal(p) for p in proposals if p.product is not None]
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
@@ -1214,6 +1242,9 @@ def _curation_view(
             and ingestion.content_type == ContentType.TEXT
             else None
         ),
+        proposal_id=(
+            str(shown_proposal.id) if shown_proposal is not None and assist_ok else None
+        ),
     )
 
 
@@ -1282,7 +1313,9 @@ def _rules_value_text(field: str, rule: ExtractionProposal) -> str:
 
 
 def _rows_from_model(
-    result: AdProposal, rules: list[ExtractionProposal]
+    result: AdProposal,
+    rules: list[ExtractionProposal],
+    indices: list[int] | None = None,
 ) -> tuple[list[dict[str, str]], dict[int, list[str]]]:
     """Las filas del formulario a partir de las del modelo.
 
@@ -1294,6 +1327,10 @@ def _rows_from_model(
     compara. Donde modelo y reglas difieren, la fila lleva `hint_<campo>` con
     lo que decían las reglas y la plantilla lo muestra. Devuelve también,
     por índice de fila, los campos que llenó el modelo (la marca de contorno).
+
+    Cada fila lleva `proposal_row`: su índice en la propuesta guardada (el de
+    `indices` si la propuesta se reconstruyó omitiendo alguna fila). Es el
+    oculto con el que el guardado sabe qué fila vino del modelo (slice 3a).
     """
     reglas_por_fila = match_rule_rows(result.rows, rules)
     acuerdos = compare_with_rules(result.rows, rules)
@@ -1314,6 +1351,7 @@ def _rows_from_model(
             if estado == DIFIERE and regla is not None:
                 valores[f"hint_{campo}"] = _rules_value_text(campo, regla)
         valores["evidence"] = meta.evidence or ""
+        valores["proposal_row"] = str(indices[i] if indices is not None else i)
         filas.append(valores)
         asistidos[i] = _filled_fields(row)
     return filas, asistidos
@@ -1714,6 +1752,9 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
         "min_purchase": str(form.get(f"min_purchase_{index}", "")).strip(),
         "province_id": str(form.get(f"province_id_{index}", "")).strip(),
         "price_basis": str(form.get(f"price_basis_{index}", "")).strip(),
+        # Índice de la fila en la propuesta del modelo (slice 3a); vacío en
+        # una fila agregada a mano y en la corrección, que no lo usa.
+        "proposal_row": str(form.get(f"proposal_row_{index}", "")).strip(),
     }
 
 
@@ -1763,6 +1804,9 @@ async def submit_curation(
         row_count = int(str(form.get("row_count", "0")))
     except ValueError:
         row_count = 0
+    # Slice 3a: la propuesta que el operador tenía a la vista y su nota.
+    proposal_id_raw = str(form.get("proposal_id", "")).strip()
+    note = str(form.get("note", ""))
 
     # Catálogo existente + altas de esta misma request: dos filas con el mismo
     # producto nuevo (mismo submit) deben reusar el Product, no duplicarlo.
@@ -1773,6 +1817,8 @@ async def submit_curation(
         errors.append(published_date_error)
     typed_rows: list[dict[str, str]] = []
     entries_to_create: list[PriceHistory] = []
+    # `proposal_row` de cada fila que se guarda, en el mismo orden.
+    proposal_rows: list[str] = []
 
     for i in range(row_count):
         row = _row_from_form(form, i)
@@ -1835,6 +1881,7 @@ async def submit_curation(
                 source_id=ingestion.id,
             )
         )
+        proposal_rows.append(row["proposal_row"])
 
     if not errors and not entries_to_create:
         errors.append("Cargá al menos un producto con precio.")
@@ -1860,6 +1907,9 @@ async def submit_curation(
             variant_options=_variant_options(db),
             format_options=_format_options(db),
             status_code=422,
+            # Sin los ocultos, el segundo intento se guardaría sin captura.
+            proposal_id=proposal_id_raw or None,
+            note=note,
         )
 
     # Resolución de tasa DESPUÉS de la rama todo-o-nada (design.md D4): un
@@ -1877,6 +1927,22 @@ async def submit_curation(
 
     for entry in entries_to_create:
         db.add(entry)
+
+    # Captura de la revisión (slice 3a), en la misma transacción. Un
+    # `proposal_id` que no es de este anuncio se ignora: no se captura nada y
+    # la curaduría se guarda igual. El `flush` asigna los ids de las filas.
+    proposal = llm_store.resolve_proposal(db, proposal_id_raw, ingestion.id)
+    if proposal is not None:
+        db.flush()
+        llm_store.save_review(
+            db,
+            proposal=proposal,
+            outcome=ReviewOutcome.CURATED,
+            rows=llm_store.review_rows(
+                proposal, list(zip(proposal_rows, entries_to_create, strict=True))
+            ),
+            note=note,
+        )
 
     # Todo texto capturado que se persiste durante la curaduría pasa por
     # `redact_personal_data` antes de tocar la base — regla de `CLAUDE.md`
@@ -1909,15 +1975,32 @@ async def submit_curation(
 def discard_curation(
     ingestion_id: uuid.UUID,
     reason: DiscardReason = Form(...),
+    proposal_id: str = Form(""),
+    note: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     """El motivo es obligatorio (`spec.md` §12.5): «sin dato útil» (sin precio,
     ilegible, agotado, spam) es lo que la tasa de descarte mide; «fuera de
     foco» (tiene precio pero no es piloto/es mayorista puro) no, y se reporta
-    aparte. Los dos botones de la cola mandan uno u otro."""
+    aparte. Los dos botones de la cola mandan uno u otro.
+
+    Con una propuesta del modelo a la vista, los botones mandan el formulario
+    de curar entero (`formaction`) y acá se captura la revisión (slice 3a):
+    cada fila propuesta queda sin valor final, porque no se guardó ninguna.
+    """
     ingestion = _require_pending(db, ingestion_id)
     ingestion.processing_status = ProcessingStatus.DISCARDED
     ingestion.discard_reason = reason.value
+    proposal = llm_store.resolve_proposal(db, proposal_id.strip(), ingestion.id)
+    if proposal is not None:
+        llm_store.save_review(
+            db,
+            proposal=proposal,
+            outcome=ReviewOutcome.DISCARDED,
+            discard_reason=reason.value,
+            rows=llm_store.review_rows(proposal, []),
+            note=note,
+        )
     db.commit()
     return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
 

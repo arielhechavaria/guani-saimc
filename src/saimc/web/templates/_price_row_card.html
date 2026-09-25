@@ -56,6 +56,12 @@
   {% endif %}
 
   <input type="hidden" name="price_id_{{ index0 }}" value="{{ row.price_id }}" />
+  {# Solo en las filas que vinieron del modelo (slice 3a): su índice en la
+     propuesta guardada. Ni las filas en blanco ni el molde de «Agregar fila»
+     lo traen, y eliminar la tarjeta se lo lleva con ella. #}
+  {% if row.proposal_row %}
+  <input type="hidden" name="proposal_row_{{ index0 }}" value="{{ row.proposal_row }}" />
+  {% endif %}
 
   <div class="m3-grid-fields" style="grid-template-columns:repeat(auto-fit, minmax(150px, 1fr))">
     <label class="m3-field m3-span-2{% if row.product_id %} is-filled{% endif %}">
