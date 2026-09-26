@@ -871,3 +871,40 @@ class TestCintilloEnLasTresVistas:
     def test_sin_datos_no_hay_cintillo(self, client: TestClient) -> None:
         for vista in ("tablero", "mapa", "explorar"):
             assert 'class="ph-cintillo"' not in client.get(f"/?vista={vista}").text, vista
+
+
+class TestBarraDeVistasMovil:
+    """Barra inferior de vistas (prototipo móvil aprobado, 2026-09-26): en el
+    teléfono el selector Mapa / Tablero / Explorar pasa abajo, al alcance del
+    pulgar. Es el mismo en las tres vistas; el CSS la muestra solo en ≤720 px."""
+
+    def _barra(self, texto: str) -> str:
+        inicio = texto.index('<nav class="ph-barra-vistas"')
+        return texto[inicio : texto.index("</nav>", inicio)]
+
+    @pytest.mark.parametrize("vista", ["tablero", "mapa", "explorar"])
+    def test_las_tres_vistas_traen_la_barra_con_las_tres_entradas(
+        self, client: TestClient, datos: None, vista: str
+    ) -> None:
+        barra = self._barra(client.get(f"/?vista={vista}").text)
+
+        for destino in ("mapa", "tablero", "explorar"):
+            assert re.search(
+                rf'<a class="ph-barra-item js-vista-link" data-vista="{destino}" href="[^"]*vista={destino}"',
+                barra,
+            ), destino
+
+    @pytest.mark.parametrize("vista", ["tablero", "mapa", "explorar"])
+    def test_solo_la_vista_actual_esta_marcada(
+        self, client: TestClient, datos: None, vista: str
+    ) -> None:
+        barra = self._barra(client.get(f"/?vista={vista}").text)
+
+        assert barra.count('aria-current="true"') == 1
+        assert re.search(rf'data-vista="{vista}"[^>]*aria-current="true"', barra)
+
+    def test_la_barra_se_ve_aun_sin_datos(self, client: TestClient) -> None:
+        """A diferencia del cintillo, la barra es navegación: sin datos también
+        hace falta poder cambiar de vista."""
+        for vista in ("tablero", "mapa", "explorar"):
+            assert '<nav class="ph-barra-vistas"' in client.get(f"/?vista={vista}").text, vista

@@ -109,6 +109,7 @@
   --ph-radius-sm: 14px;
   --ph-side-w: clamp(30rem, 32vw, 36rem);
   --ph-bar-h: 9rem;
+  --ph-barra-h: calc(4.25rem + env(safe-area-inset-bottom, 0px));
 }
 
 :root[data-theme="dark"] {

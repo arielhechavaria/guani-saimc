@@ -127,6 +127,14 @@
   .ph-cintillo + #ph-live .ph-canvas {
     height: calc(100vh - 2.75rem); height: calc(100dvh - 2.75rem);
   }
+  /* En el teléfono la barra inferior de vistas también le resta alto
+     (`--ph-barra-h`, definido en `saimc-public.css`). */
+  @media (max-width: 720px) {
+    .ph-canvas { height: calc(100vh - var(--ph-barra-h)); height: calc(100dvh - var(--ph-barra-h)); }
+    .ph-cintillo + #ph-live .ph-canvas {
+      height: calc(100vh - 2.75rem - var(--ph-barra-h)); height: calc(100dvh - 2.75rem - var(--ph-barra-h));
+    }
+  }
 
   /* ── Brújula (2026-09-13) ───────────────────────────────────────────────
      El avatar ES el control, anclado a la esquina como el layers/zoom de un
@@ -2061,6 +2069,9 @@
   {% include "_guani_avatar.html" %}
   <div class="ph-loading-dots"><span></span><span></span><span></span></div>
 </div>
+
+{# Barra inferior de vistas: solo en el teléfono (`saimc-public.css`). #}
+{% include "_barra_vistas.html" %}
 {% endblock %}
 
 {% block scripts %}

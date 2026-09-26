@@ -235,6 +235,8 @@
   @media (max-width: 720px) {
     .ph-ex { display: block; height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; }
     .ph-cintillo + .ph-ex { height: auto; min-height: calc(100vh - 2.75rem); min-height: calc(100dvh - 2.75rem); }
+    /* La barra inferior de vistas es fija: el contenido reserva su alto al final. */
+    .ph-ex { padding-bottom: var(--ph-barra-h); box-sizing: border-box; }
     .ph-ex-left { border-right: 0; border-bottom: 1px solid var(--m3-outline-variant); }
     .ph-ex-ltabs, .ph-ex-lbody, .ph-ex-lfoot { display: none; }
     .ph-ex-right { display: none; }
@@ -591,6 +593,9 @@
     </div>
   </aside>
 </div>
+
+{# Barra inferior de vistas: solo en el teléfono (`saimc-public.css`). #}
+{% include "_barra_vistas.html" %}
 {% endblock %}
 
 {% block scripts %}

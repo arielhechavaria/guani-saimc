@@ -552,6 +552,8 @@ class TestModoOscuro:
         # y el alto de la barra de filtros en angosto.
         "--ph-side-w",
         "--ph-bar-h",
+        # Alto de la barra inferior de vistas del teléfono: una medida, no un color.
+        "--ph-barra-h",
     }
 
     def _bloques(self, texto: str) -> tuple[dict[str, str], dict[str, str]]:
@@ -1286,13 +1288,38 @@ class TestListaCompactaDelTablero:
         assert columnas in desde_48
         assert columnas not in hasta_48
 
-    def test_la_cifra_queda_pegada_al_borde_derecho(self) -> None:
-        """Alinear las cifras a la derecha sirve para comparar hacia abajo, y
-        solo si la cifra está SIEMPRE en el borde: la pastilla «más barata» va
-        a su izquierda (`row-reverse`, con la cifra primera en el HTML) y no le
-        quita el lugar. Sin esto, 298 con pastilla queda corrida contra 685."""
-        assert self._valor(".ph-cel", "align-items") == "flex-end"
-        assert self._valor(".ph-cel-cifra", "flex-direction") == "row-reverse"
+    def test_en_el_telefono_la_celda_es_una_caja_con_la_cifra_a_la_izquierda(self) -> None:
+        """Prototipo móvil aprobado (2026-09-26): cada provincia es una caja
+        teñida dentro de la tarjeta del producto, con la cifra a la izquierda y
+        su pastilla a la derecha. Reemplaza la alineación a la derecha de las
+        cifras, que servía para comparar hacia abajo en una tabla y ya no hay
+        tabla en el teléfono: hay una tarjeta por producto."""
+        assert self._valor(".ph-cel", "align-items") == "flex-start"
+        assert self._valor(".ph-cel-cifra", "flex-direction") == "row"
+
+    @pytest.mark.parametrize("slot", ["0", "1", "2", "9"])
+    def test_en_el_telefono_cada_caja_lleva_el_tinte_de_su_provincia(self, slot: str) -> None:
+        css = self._css()
+        movil = css[css.index("@media (max-width: 47.99rem)") :]
+        movil = movil[: movil.index("\n  }")]
+
+        assert re.search(
+            rf"\.ph-cel\.ph-prov-{slot} \{{[^}}]*background: var\(--m3-prov-{slot}-soft\)", movil
+        )
+
+    def test_la_etiqueta_de_provincia_de_la_celda_solo_se_ve_en_el_telefono(self) -> None:
+        """En el teléfono no hay cabecera de columnas (la lista es de tarjetas),
+        así que cada caja dice de qué provincia es. Desde la tableta la dice la
+        cabecera y la etiqueta se esconde; el lector de pantalla la oye siempre
+        por el `visually-hidden` de la celda."""
+        assert self._valor(".ph-cel-prov", "display") == "flex"
+        assert re.search(r"\.ph-cel-prov \{ display: none; \}", self._desde_la_tableta())
+
+    def test_la_cabecera_de_columnas_no_se_dibuja_en_el_telefono(self) -> None:
+        css = self._css()
+        movil = css[css.index("@media (max-width: 47.99rem)") :]
+
+        assert re.search(r"\.ph-lista-cab \{ display: none; \}", movil[: movil.index("\n  }")])
 
     def _desde_la_tableta(self) -> str:
         """El CSS a partir del corte de la lista a 48rem: lo que solo vale
@@ -1468,6 +1495,36 @@ class TestCintillo:
         trozo = trozo[: trozo.index("@media (prefers-reduced-motion: reduce)")]
 
         assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", trozo)
+
+
+class TestBarraDeVistas:
+    """CSS de la barra inferior de vistas (prototipo móvil aprobado el
+    2026-09-26). Vive en `saimc-public.css`: la cargan las tres vistas."""
+
+    def _hoja(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        fuente = (raiz / "src" / "saimc" / "web" / "static" / "saimc-public.css").read_text(
+            encoding="utf-8"
+        )
+        return re.sub(r"/\*.*?\*/", "", fuente, flags=re.S)
+
+    def test_no_se_ve_fuera_del_telefono(self) -> None:
+        hoja = self._hoja()
+
+        assert re.search(r"\.ph-barra-vistas \{ display: none; \}", hoja)
+        movil = hoja[hoja.index(".ph-barra-vistas { display: none; }") :]
+        patron = r"@media \(max-width: 720px\) \{.*?\.ph-barra-vistas \{[^}]*display: grid"
+        assert re.search(patron, movil, re.S)
+
+    def test_cada_entrada_mide_44px_o_mas(self) -> None:
+        hoja = self._hoja()
+        m = re.search(r"\.ph-barra-item \{[^}]*min-height:\s*([\d.]+)rem", hoja)
+
+        assert m, "falta el `min-height` de `.ph-barra-item`"
+        assert float(m.group(1)) * 16 >= 44
+
+    def test_respeta_el_area_segura_de_iphone(self) -> None:
+        assert "env(safe-area-inset-bottom" in self._hoja()
 
 
 class TestFuenteYFilaDeEvidencia:

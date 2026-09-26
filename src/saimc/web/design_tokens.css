@@ -182,6 +182,9 @@
      pone en el lienzo; este es el valor de respaldo (tres filas). */
   --ph-side-w: clamp(30rem, 32vw, 36rem);
   --ph-bar-h: 9rem;
+  /* Barra inferior de vistas del teléfono (2026-09-26): las pantallas
+     completas le restan este alto y el Tablero lo reserva al final. */
+  --ph-barra-h: calc(4.25rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── Modo oscuro ────────────────────────────────────────────────────────

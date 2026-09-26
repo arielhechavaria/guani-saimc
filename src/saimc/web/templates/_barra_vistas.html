@@ -1,0 +1,19 @@
+{#
+  Barra inferior de vistas (prototipo móvil aprobado, 2026-09-26).
+
+  En el teléfono el selector Mapa / Tablero / Explorar pasa abajo, al alcance
+  del pulgar. Es el mismo en las tres vistas; el CSS la muestra solo en ≤720 px
+  (en el resto de los anchos cada vista conserva su selector de siempre, y en el
+  Tablero el de la cabecera se esconde en el teléfono). Siempre se dibuja, haya
+  o no datos: es navegación, no un adorno.
+
+  Los enlaces son `.js-vista-link`, así que `_vista_cookie_script.html` recuerda
+  la vista elegida igual que con los del Tablero. Los `href` (`mapa_href`,
+  `tablero_href`, `explorar_href`) los arma cada vista con `vista=` explícita.
+  Va al final del contenido: es `position: fixed`, el orden no importa.
+#}
+<nav class="ph-barra-vistas" aria-label="Presentación">
+  <a class="ph-barra-item js-vista-link" data-vista="mapa" href="{{ mapa_href }}"{% if vista == "mapa" %} aria-current="true"{% endif %}><span class="ph-barra-icono"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg></span>Mapa</a>
+  <a class="ph-barra-item js-vista-link" data-vista="tablero" href="{{ tablero_href }}"{% if vista == "tablero" %} aria-current="true"{% endif %}><span class="ph-barra-icono"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></span>Tablero</a>
+  <a class="ph-barra-item js-vista-link" data-vista="explorar" href="{{ explorar_href }}"{% if vista == "explorar" %} aria-current="true"{% endif %}><span class="ph-barra-icono"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>Explorar</a>
+</nav>

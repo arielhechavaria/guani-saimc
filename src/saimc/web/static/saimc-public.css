@@ -106,6 +106,7 @@
   --ph-radius-sm: 14px;
   --ph-side-w: clamp(30rem, 32vw, 36rem);
   --ph-bar-h: 9rem;
+  --ph-barra-h: calc(4.25rem + env(safe-area-inset-bottom, 0px));
 }
 
 :root[data-theme="dark"] {
@@ -641,4 +642,36 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
   .ph-cintillo-punto { animation: none; }
   .ph-cintillo-pista { overflow-x: auto; -webkit-mask-image: none; mask-image: none; }
   .ph-cintillo-grupo[aria-hidden="true"] { display: none; }
+}
+
+/* ── Barra inferior de vistas (prototipo móvil aprobado el 2026-09-26) ────
+   En el teléfono el selector Mapa / Tablero / Explorar va abajo, al alcance
+   del pulgar. Fuera del teléfono no existe: cada vista conserva el suyo.
+   `--ph-barra-h` es lo que las pantallas completas (el mapa y Explorar) le
+   restan a su alto y lo que el Tablero reserva al final para no taparse. */
+.ph-barra-vistas { display: none; }
+@media (max-width: 720px) {
+  .ph-barra-vistas {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1400; height: var(--ph-barra-h);
+    padding: 0 var(--m3-space-2) env(safe-area-inset-bottom, 0px); box-sizing: border-box;
+    background: var(--m3-surface); border-top: 1px solid var(--m3-divider);
+  }
+  .ph-barra-item {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-height: 3.5rem; font-size: .75rem; color: var(--m3-on-surface-variant); text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ph-barra-item:hover { text-decoration: none; }
+  .ph-barra-icono {
+    display: flex; align-items: center; justify-content: center; width: 3.5rem; height: 1.875rem;
+    border-radius: 15px; transition: background .2s, transform .12s;
+  }
+  .ph-barra-item:active .ph-barra-icono { transform: scale(.92); }
+  .ph-barra-item[aria-current="true"] { color: var(--m3-on-surface); font-weight: 500; }
+  .ph-barra-item[aria-current="true"] .ph-barra-icono { background: var(--m3-primary-container); color: var(--m3-on-primary-container); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ph-barra-icono { transition: none; }
+  .ph-barra-item:active .ph-barra-icono { transform: none; }
 }
