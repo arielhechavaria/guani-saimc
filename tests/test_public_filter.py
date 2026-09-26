@@ -3290,7 +3290,7 @@ class TestBuscadorYListaCompacta:
 
         texto = self._todos(client)
         enlaces = re.findall(
-            r'<a class="ph-fila" href="([^"]+)" data-busqueda="([^"]*)">', texto
+            r'<a class="ph-fila" href="([^"]+)" data-busqueda="([^"]*)" style="--i: \d+">', texto
         )
         por_nombre = {busqueda: href for href, busqueda in enlaces}
 
@@ -3299,6 +3299,22 @@ class TestBuscadorYListaCompacta:
         assert "productos=name&amp;" in por_nombre["name"]
         assert "productos=arroz&amp;" in por_nombre["arroz"]
         assert all("vista=tablero" in href for href in por_nombre.values())
+
+    def test_la_lista_entra_una_vez_y_cada_fila_lleva_su_turno(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """La entrada escalonada usa `--i` (0, 1, 2…) como turno de cada fila y
+        `data-entra` en la lista, que el script quita al terminar: mostrar una
+        fila escondida por el buscador no puede repetir la animación."""
+        self._seed(session)
+
+        texto = self._todos(client)
+        turnos = re.findall(
+            r'<a class="ph-fila" href="[^"]+" data-busqueda="[^"]*" style="--i: (\d+)"', texto
+        )
+
+        assert re.search(r'class="ph-panel ph-lista" style="--n: \d+" data-entra', texto)
+        assert turnos == ["0", "1", "2"]
 
 
 class TestSobreLosDatosEnElTablero:
@@ -3476,6 +3492,25 @@ class TestSobreLosDatosEnElTablero:
         texto = client.get("/?vista=tablero").text
 
         assert 'class="ph-fresh" data-nivel="atrasado"' in texto
+
+    def test_el_script_de_movimiento_respeta_reducir_movimiento(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert ".ph-lista[data-entra]" in texto
+        assert 'matchMedia("(prefers-reduced-motion: reduce)")' in texto
+
+    def test_el_detalle_no_trae_el_movimiento_de_la_lista(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=arroz").text
+
+        assert " data-entra" not in texto
 
     def test_un_dato_de_hoy_no_se_marca_atrasado(
         self, client: TestClient, session: Session

@@ -156,7 +156,7 @@
   .ph-dot-lg { width: 10px; height: 10px; }
 
   /* ── Lista compacta de productos (prototipo D) ───────────────────────── */
-  .ph-chev { flex: none; color: var(--m3-on-surface-variant); transition: transform .15s; }
+  .ph-chev { flex: none; color: var(--m3-on-surface-variant); transition: transform .22s cubic-bezier(.2, .7, .2, 1); }
   .ph-lista { padding: 12px 6px 6px; gap: 8px; }
   .ph-lista .ph-panel-title, .ph-lista .ph-panel-sub { padding: 0 8px; }
   .ph-lista-cab, .ph-fila { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--n, 2), minmax(0, 1fr));
@@ -242,6 +242,40 @@
   .ph-buscar-caja:focus-within { outline: 2px solid var(--m3-primary); outline-offset: 2px; }
   .ph-buscar-input { flex: 1; min-width: 0; min-height: 44px; border: 0; outline: none; background: transparent;
                      font: 400 16px var(--m3-font); color: var(--m3-on-surface); }
+
+  /* ── Movimiento (prototipo aprobado el 2026-09-26) ────────────────────────
+     Entra, se cuenta, se traza. Solo `opacity`, `transform` y el trazo del
+     SVG: nada que dispare layout, para que corra fluido en un celular de gama
+     baja. Todo sucede una vez al cargar: `data-entra`, en la lista, lo quita el
+     script al terminar, para que mostrar una fila que el buscador había
+     escondido no repita la entrada. Sin script no hay buscador ni filas que
+     reaparezcan, y la entrada corre igual, una vez. */
+  @keyframes ph-sube { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes ph-trazo { to { stroke-dashoffset: 0; } }
+  @keyframes ph-punto { from { opacity: 0; transform: scale(.3); } to { opacity: 1; transform: scale(1); } }
+  .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-datos { animation: ph-sube .55s cubic-bezier(.2, .7, .2, 1) both; }
+  .ph-intro { animation-delay: .05s; }
+  .ph-mi-prov { animation-delay: .1s; }
+  .ph-buscar { animation-delay: .14s; }
+  .ph-lista { animation-delay: .18s; }
+  .ph-datos { animation-delay: .26s; }
+  .ph-lista[data-entra] .ph-fila { animation: ph-sube .55s cubic-bezier(.2, .7, .2, 1) both;
+                                   animation-delay: calc(.22s + var(--i, 0) * .07s); }
+  .ph-lista[data-entra] .ph-cel-spark path { stroke-dasharray: 1; stroke-dashoffset: 1;
+                                             animation: ph-trazo .9s cubic-bezier(.4, 0, .2, 1) forwards;
+                                             animation-delay: calc(.3s + var(--i, 0) * .07s); }
+  .ph-lista[data-entra] .ph-cel-spark circle { transform-box: fill-box; transform-origin: center;
+                                               animation: ph-punto .45s cubic-bezier(.2, .9, .3, 1.3) both;
+                                               animation-delay: calc(1s + var(--i, 0) * .07s); }
+  .ph-fila:hover .ph-chev { transform: translateX(4px); }
+  .ph-dash-chip { transition: background .2s, border-color .2s, transform .12s; }
+  .ph-dash-chip:active { transform: scale(.96); }
+  @media (prefers-reduced-motion: reduce) {
+    .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-datos,
+    .ph-lista[data-entra] .ph-fila, .ph-lista[data-entra] .ph-cel-spark circle { animation: none; }
+    .ph-lista[data-entra] .ph-cel-spark path { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+    .ph-chev, .ph-dash-chip, .ph-fila:hover .ph-chev { transition: none; transform: none; }
+  }
 
   /* Sólo lo que el detalle sigue usando de la tarjeta: el resumen. */
   .ph-cols { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 16px; }
@@ -477,7 +511,7 @@
     <p class="visually-hidden" id="buscar-estado" role="status" aria-live="polite"></p>
   </div>
 
-  <section class="ph-panel ph-lista" style="--n: {{ watchlist.provinces | length }}" aria-labelledby="lista-titulo">
+  <section class="ph-panel ph-lista" style="--n: {{ watchlist.provinces | length }}" data-entra aria-labelledby="lista-titulo">
     <h2 class="ph-panel-title" id="lista-titulo">Productos</h2>
     <p class="ph-panel-sub">Mediana de {{ window_days }} días · cambio contra el período anterior</p>
     <div class="ph-lista-cab" aria-hidden="true">
@@ -488,7 +522,7 @@
     <div class="ph-filas">
       {% for row in watchlist.rows %}
       {% set unidad = (row.currency ~ "/" ~ row.unit) if row.unit else row.currency %}
-      <a class="ph-fila" href="{{ row.query }}" data-busqueda="{{ row.busqueda }}">
+      <a class="ph-fila" href="{{ row.query }}" data-busqueda="{{ row.busqueda }}" style="--i: {{ loop.index0 }}">
         <span class="ph-fila-titulo"><span class="ph-fila-nombre">{{ row.product_name }}</span>{% if unidad %}<span class="ph-fila-unidad">{{ unidad }}</span>{% endif %}</span>
         {% for cell in row.cells %}{{ celda(watchlist.provinces[loop.index0], cell) }}{% endfor %}
         {{ chev("ph-fila-chev") }}
@@ -681,4 +715,4 @@
 
 {# El buscador filtra la lista de «Todos»; el detalle no tiene lista, así que
    no se le manda el script. #}
-{% block scripts %}{{ super() }}{% if not selected_product and watchlist.rows %}{% include "_buscador_lista_script.html" %}{% endif %}{% endblock %}
+{% block scripts %}{{ super() }}{% if not selected_product and watchlist.rows %}{% include "_buscador_lista_script.html" %}{% include "_tablero_movimiento_script.html" %}{% endif %}{% endblock %}

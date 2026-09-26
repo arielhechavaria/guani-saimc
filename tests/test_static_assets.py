@@ -1325,6 +1325,42 @@ class TestListaCompactaDelTablero:
         assert self._valor('.ph-fresh[data-nivel="atrasado"]', "background") == "var(--m3-warn-wash)"
         assert self._valor('.ph-fresh[data-nivel="atrasado"]', "color") == "var(--m3-warn-strong)"
 
+    def _keyframes(self) -> dict[str, str]:
+        """Cuerpo de cada `@keyframes ph-*`, contando llaves: los cuerpos
+        anidan `from { … } to { … }` y una regex simple los parte mal."""
+        css = self._css()
+        salida: dict[str, str] = {}
+        for m in re.finditer(r"@keyframes (ph-[\w-]+)\s*\{", css):
+            nivel, i = 1, m.end()
+            while nivel and i < len(css):
+                nivel += {"{": 1, "}": -1}.get(css[i], 0)
+                i += 1
+            salida[m.group(1)] = css[m.end() : i - 1]
+        return salida
+
+    def test_el_movimiento_existe_y_solo_anima_propiedades_baratas(self) -> None:
+        """Prototipo del tablero (2026-09-26): entrada, trazo y punto. Solo
+        `opacity`, `transform` y el trazo del SVG: nada que dispare layout, para
+        que corra fluido en un celular de gama baja y con conexión lenta."""
+        cuadros = self._keyframes()
+
+        assert {"ph-sube", "ph-trazo", "ph-punto"} <= set(cuadros)
+        for nombre, cuerpo in cuadros.items():
+            props = set(re.findall(r"([\w-]+)\s*:", cuerpo))
+            assert props <= {"opacity", "transform", "stroke-dashoffset"}, (nombre, props)
+
+    def test_el_movimiento_se_apaga_con_reducir_movimiento(self) -> None:
+        """Quien pide «reducir movimiento» al sistema ve todo de golpe: sin
+        entrada, sin trazo dibujándose, sin desplazamientos."""
+        css = self._css()
+        inicio = css.index("@media (prefers-reduced-motion: reduce)")
+        bloque = css[inicio : css.index("}\n  }", inicio)]
+
+        assert ".ph-lista[data-entra] .ph-fila" in bloque
+        assert ".ph-lista[data-entra] .ph-cel-spark path" in bloque
+        assert "animation: none" in bloque
+        assert "stroke-dashoffset: 0" in bloque
+
     def test_el_bloque_scripts_conserva_lo_del_padre(self) -> None:
         """Un `{% block %}` que redefine el del padre lo pisa entero. Hoy el
         `scripts` del padre está vacío, pero la vista que agrega HTMX o cualquier

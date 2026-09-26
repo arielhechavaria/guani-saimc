@@ -1,0 +1,69 @@
+{#
+  Movimiento de la lista del tablero (prototipo aprobado el 2026-09-26).
+
+  Hace dos cosas, una vez, al cargar: cuenta cada mediana del cero a su cifra
+  (900 ms, salida suave, en el turno de su fila) y, al terminar todo, quita
+  `data-entra` de la lista. Ese atributo es el que enciende la entrada
+  escalonada y el trazo en el CSS; quitarlo evita que el buscador, al volver a
+  mostrar una fila escondida, la haga entrar otra vez.
+
+  Con «reducir movimiento» del sistema no cuenta nada: quita el atributo y deja
+  las cifras como llegaron. Sin script tampoco cuenta y las cifras ya están
+  escritas: el conteo es un adorno, la cifra es del servidor.
+
+  Las cifras vienen con el formato de `format_price`: enteros con punto de miles
+  («3.538») o, por debajo de 100, con dos decimales y coma («12,50»). Lo que no
+  encaje en ese formato se deja quieto.
+#}
+<script>
+  (function () {
+    var lista = document.querySelector(".ph-lista[data-entra]");
+    if (!lista) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      lista.removeAttribute("data-entra");
+      return;
+    }
+
+    var BASE = 220, PASO = 70, DURACION = 900;
+    var FORMA = /^(\d{1,3}(?:\.\d{3})*)(?:,(\d+))?$/;
+    var celdas = lista.querySelectorAll(".ph-cel-mediana");
+    var cifras = [];
+
+    function pintar(v, decimales, agrupa) {
+      var partes = v.toFixed(decimales).split(".");
+      var entero = agrupa ? partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") : partes[0];
+      return decimales ? entero + "," + partes[1] : entero;
+    }
+
+    Array.prototype.forEach.call(celdas, function (el) {
+      var texto = el.textContent.trim();
+      var m = FORMA.exec(texto);
+      if (!m) return;
+      var decimales = m[2] ? m[2].length : 0;
+      var valor = parseFloat(m[1].replace(/\./g, "") + (decimales ? "." + m[2] : ""));
+      var agrupa = m[1].indexOf(".") !== -1;
+      var fila = el.closest(".ph-fila");
+      var turno = fila ? Number(fila.style.getPropertyValue("--i")) || 0 : 0;
+      var inicio = performance.now() + BASE + turno * PASO;
+      cifras.push({ el: el, texto: texto });
+      el.textContent = pintar(0, decimales, agrupa);
+
+      function paso(ahora) {
+        var t = (ahora - inicio) / DURACION;
+        if (t < 0) { requestAnimationFrame(paso); return; }
+        if (t >= 1) { el.textContent = texto; return; }
+        el.textContent = pintar(valor * (1 - Math.pow(1 - t, 3)), decimales, agrupa);
+        requestAnimationFrame(paso);
+      }
+      requestAnimationFrame(paso);
+    });
+
+    /* Red de seguridad: si la pestaña estuvo en segundo plano y el navegador
+       pausó los cuadros, las cifras terminan igual como las mandó el servidor. */
+    var filas = lista.querySelectorAll(".ph-fila").length;
+    setTimeout(function () {
+      cifras.forEach(function (c) { c.el.textContent = c.texto; });
+      lista.removeAttribute("data-entra");
+    }, BASE + filas * PASO + DURACION + 500);
+  })();
+</script>
