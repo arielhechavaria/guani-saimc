@@ -1317,7 +1317,44 @@ class TestListaCompactaDelTablero:
         css = self._css()
 
         assert 'grid-template-areas: "main fresh" "main datos" "main ."' not in css
-        assert re.search(r"\.ph-layout\.has-nav \{[^}]*grid-template-columns: minmax\(0, 1fr\) 340px", css)
+        assert re.search(r"\.ph-layout\.has-nav \{[^}]*grid-template-columns: 220px minmax\(0, 1fr\)", css)
+
+    def test_el_detalle_lleva_la_navegacion_a_la_izquierda(self) -> None:
+        """Prototipo aprobado (2026-09-26): en el detalle la lista de productos
+        va a la izquierda, con la frescura arriba y «Sobre los datos» abajo a
+        todo el ancho. Antes iba a la derecha, apilada con la frescura."""
+        css = self._css()
+
+        assert 'grid-template-areas: "fresh fresh" "nav main" "datos datos"' in css
+
+    @pytest.mark.parametrize("slot", ["0", "1", "2", "9"])
+    def test_cada_provincia_del_resumen_lleva_su_tinte(self, slot: str) -> None:
+        """Cada columna del resumen se tiñe con el tono suave de su provincia
+        (`--m3-prov-N-soft`, con versión oscura en los tokens)."""
+        assert (
+            self._valor(f".ph-resumen .ph-prov-{slot}", "background") == f"var(--m3-prov-{slot}-soft)"
+        )
+
+    def test_la_cifra_grande_del_resumen_va_en_la_fuente_de_titulos(self) -> None:
+        assert self._valor(".ph-resumen .ph-fig", "font-family") == "var(--ph-font-heading)"
+
+    def test_los_graficos_del_detalle_se_animan_y_se_apagan(self) -> None:
+        """La línea se traza, la caja de la mitad central crece y los puntos
+        rebotan; todo con `transform`/trazo y apagado con «reducir movimiento».
+        Acotado a `.ph-graficos`: los mismos gráficos en las ventanas del mapa
+        no se animan."""
+        css = self._css()
+        inicio = css.index("@media (prefers-reduced-motion: reduce)")
+        apagado = css[inicio : css.index("}\n  }", inicio)]
+
+        for selector in (
+            ".ph-graficos .ph-pasos-linea",
+            ".ph-graficos .ph-pasos-punto",
+            ".ph-graficos .ph-compara-caja",
+        ):
+            assert selector in css, selector
+            assert selector in apagado, f"{selector}: sigue animándose con reducir movimiento"
+        assert "ph-crece" in self._keyframes()
 
     def test_la_frescura_atrasada_usa_el_tono_de_aviso(self) -> None:
         """Informa, no asusta: un dato con días de atraso pasa al fondo de

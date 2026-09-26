@@ -112,12 +112,15 @@
      navegación de productos. */
   @media (min-width: 64rem) {
     .ph-layout { padding-top: 36px; gap: var(--m3-space-5); }
-    .ph-layout.has-nav { grid-template-rows: auto auto auto 1fr;
-                         grid-template-columns: minmax(0, 1fr) 340px; column-gap: 40px; align-items: start;
-                         grid-template-areas: "main fresh" "main nav" "main datos" "main ."; }
+    /* Detalle (prototipo aprobado el 2026-09-26): la lista de productos a la
+       izquierda, pegada mientras se baja; la frescura arriba y «Sobre los
+       datos» abajo, a todo el ancho. */
+    .ph-layout.has-nav { grid-template-rows: auto auto auto;
+                         grid-template-columns: 220px minmax(0, 1fr); column-gap: 24px; align-items: start;
+                         grid-template-areas: "fresh fresh" "nav main" "datos datos"; }
     .ph-layout.has-nav .ph-fresh { grid-area: fresh; }
     .ph-layout.has-nav .ph-main { grid-area: main; }
-    .ph-layout.has-nav .ph-nav.ph-panel { grid-area: nav; }
+    .ph-layout.has-nav .ph-nav.ph-panel { grid-area: nav; position: sticky; top: 16px; padding: 16px 10px; }
     .ph-layout.has-nav .ph-datos { grid-area: datos; }
   }
 
@@ -270,10 +273,30 @@
   .ph-fila:hover .ph-chev { transform: translateX(4px); }
   .ph-dash-chip { transition: background .2s, border-color .2s, transform .12s; }
   .ph-dash-chip:active { transform: scale(.96); }
+  /* El detalle: los bloques suben con su turno y los gráficos se dibujan. Los
+     mismos gráficos en las ventanas del mapa no se animan: todo va acotado a
+     `.ph-graficos`, que solo existe acá. */
+  @keyframes ph-crece { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .ph-back, .ph-titulo, .ph-resumen, .ph-graficos > .ph-panel, .ph-envases, .ph-anuncios {
+    animation: ph-sube .55s cubic-bezier(.2, .7, .2, 1) both; }
+  .ph-titulo { animation-delay: .05s; }
+  .ph-resumen { animation-delay: .1s; }
+  .ph-graficos > .ph-panel:nth-child(1) { animation-delay: .14s; }
+  .ph-graficos > .ph-panel:nth-child(2) { animation-delay: .18s; }
+  .ph-envases { animation-delay: .22s; }
+  .ph-anuncios { animation-delay: .26s; }
+  .ph-graficos .ph-pasos-linea { stroke-dasharray: 1; stroke-dashoffset: 1;
+                                 animation: ph-trazo .9s cubic-bezier(.4, 0, .2, 1) .3s forwards; }
+  .ph-graficos .ph-pasos-punto, .ph-graficos .ph-compara-mediana { transform-box: fill-box; transform-origin: center;
+                                 animation: ph-punto .5s cubic-bezier(.2, .9, .3, 1.3) .8s both; }
+  .ph-graficos .ph-compara-caja { transform-box: fill-box; transform-origin: left center;
+                                  animation: ph-crece .8s cubic-bezier(.2, .7, .2, 1) .3s both; }
   @media (prefers-reduced-motion: reduce) {
     .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-datos,
+    .ph-back, .ph-titulo, .ph-resumen, .ph-graficos > .ph-panel, .ph-envases, .ph-anuncios,
+    .ph-graficos .ph-pasos-punto, .ph-graficos .ph-compara-mediana, .ph-graficos .ph-compara-caja,
     .ph-lista[data-entra] .ph-fila, .ph-lista[data-entra] .ph-cel-spark circle { animation: none; }
-    .ph-lista[data-entra] .ph-cel-spark path { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+    .ph-lista[data-entra] .ph-cel-spark path, .ph-graficos .ph-pasos-linea { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
     .ph-chev, .ph-dash-chip, .ph-fila:hover .ph-chev { transition: none; transform: none; }
   }
 
@@ -292,9 +315,19 @@
   .ph-back:hover { text-decoration: underline; }
   .ph-titulo { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .ph-titulo .ph-h1 { font-size: 34px; }
+  @media (min-width: 48rem) { .ph-titulo .ph-h1 { font-size: 44px; line-height: 1.05; } }
   .ph-titulo-meta { font-size: 13px; color: var(--m3-outline); }
-  .ph-resumen .ph-fig { font-size: 30px; }
-  @media (min-width: 40rem) { .ph-resumen .ph-fig { font-size: 36px; } }
+  /* El resumen del detalle (prototipo aprobado el 2026-09-26): una caja teñida
+     por provincia y la cifra en la fuente de los títulos, grande. El tinte es el
+     tono suave de cada provincia; los tokens traen su versión oscura. */
+  .ph-resumen .ph-col { padding: 16px 18px; border-radius: 12px; }
+  .ph-resumen .ph-prov-0 { background: var(--m3-prov-0-soft); }
+  .ph-resumen .ph-prov-1 { background: var(--m3-prov-1-soft); }
+  .ph-resumen .ph-prov-2 { background: var(--m3-prov-2-soft); }
+  .ph-resumen .ph-prov-9 { background: var(--m3-prov-9-soft); }
+  .ph-resumen .ph-fig { font-family: var(--ph-font-heading); font-size: 44px; font-weight: 400; line-height: 1; }
+  @media (min-width: 40rem) { .ph-resumen .ph-fig { font-size: 56px; } }
+  .ph-resumen .ph-col-name { font-size: 14px; font-weight: 500; color: var(--m3-on-surface); }
   .ph-resumen-frase { margin: 0; padding-top: 12px; border-top: 1px solid var(--m3-surface-container-high);
                       font-size: 14px; line-height: 1.5; color: var(--m3-on-surface); }
   .ph-graficos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
@@ -547,7 +580,7 @@
     </div>
   </div>
 
-  <section class="ph-panel ph-resumen" aria-label="Resumen de {{ selected_product }}">
+  <section class="ph-panel ph-resumen" aria-label="Resumen de {{ selected_product }}" data-cuenta>
     <div class="ph-cols" style="--n: {{ watchlist.all_provinces | length }}">
       {% for cell in fila.todas %}{{ columna(watchlist.all_provinces[loop.index0], cell, unidad) }}{% endfor %}
     </div>
@@ -717,4 +750,4 @@
 
 {# El buscador filtra la lista de «Todos»; el detalle no tiene lista, así que
    no se le manda el script. #}
-{% block scripts %}{{ super() }}{% if not selected_product and watchlist.rows %}{% include "_buscador_lista_script.html" %}{% include "_tablero_movimiento_script.html" %}{% endif %}{% endblock %}
+{% block scripts %}{{ super() }}{% if not selected_product and watchlist.rows %}{% include "_buscador_lista_script.html" %}{% include "_tablero_movimiento_script.html" %}{% elif selected_product %}{% include "_tablero_movimiento_script.html" %}{% endif %}{% endblock %}

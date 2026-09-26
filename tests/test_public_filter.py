@@ -3503,6 +3503,18 @@ class TestSobreLosDatosEnElTablero:
         assert ".ph-lista[data-entra]" in texto
         assert 'matchMedia("(prefers-reduced-motion: reduce)")' in texto
 
+    def test_el_detalle_cuenta_las_cifras_del_resumen(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El resumen del detalle marca `data-cuenta` y trae el script que
+        cuenta su cifra."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero&productos=arroz").text
+
+        assert re.search(r'class="ph-panel ph-resumen"[^>]* data-cuenta', texto)
+        assert ".ph-resumen[data-cuenta]" in texto
+
     def test_el_detalle_no_trae_el_movimiento_de_la_lista(
         self, client: TestClient, session: Session
     ) -> None:
@@ -3582,6 +3594,8 @@ class TestDetalleDeProductoEnElTablero:
         detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
 
         assert 'class="ph-pasos"' in detalle  # «Cómo se movió»
+        # `pathLength` deja dibujar la línea con `stroke-dasharray` (2026-09-26).
+        assert 'class="ph-pasos-linea" pathLength="1"' in detalle
         assert 'class="ph-compara"' in detalle  # «Cuánto varía»
         assert ">Cómo se movió</h2>" in detalle and ">Cuánto varía</h2>" in detalle
         # El prototipo E no trae estos dos: el cambio ya está en el resumen.

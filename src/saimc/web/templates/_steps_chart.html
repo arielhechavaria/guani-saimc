@@ -20,7 +20,10 @@
   {% endfor %}
   {% for l in steps.lines %}
   <g class="ph-prov-{{ l.slot % 2 }}">
-    <path class="ph-pasos-linea" d="{{ l.path }}" />
+    {# `pathLength` normaliza el largo del trazo a 1: es lo que deja dibujarlo con
+       `stroke-dasharray` en el detalle del tablero, sin medir cada línea. No
+       cambia nada donde no se anima. #}
+    <path class="ph-pasos-linea" pathLength="1" d="{{ l.path }}" />
     {% for p in l.points %}
     <circle class="ph-pasos-punto" cx="{{ p.x }}" cy="{{ p.y }}" r="{{ p.radius }}">
       <title>{{ l.province_name }}, {{ steps.period_name }} del {{ p.start_text }}: mediana {{ p.median_text }} {{ steps.currency }}/{{ steps.unit }} · {{ p.count }} anuncio{{ "s" if p.count != 1 }}</title>
