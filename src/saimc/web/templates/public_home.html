@@ -1360,6 +1360,9 @@
   <form class="ph-province-form" action="/" method="get"
         hx-get="/" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true"
         onchange="this.requestSubmit ? this.requestSubmit() : this.submit()">
+    {# `vista` explícita: sin ella decide la cookie o la default de la ruta (el tablero), y
+       quien llegó al mapa por un enlace directo caía en el tablero (2026-09-26). #}
+    <input type="hidden" name="vista" value="mapa">
     {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
     <input type="hidden" name="desde" value="{{ selected_desde.isoformat() }}">
     <input type="hidden" name="hasta" value="{{ selected_hasta.isoformat() }}">
@@ -1411,6 +1414,7 @@
     <div class="ph-filter-popover">
       <form class="ph-window-form" action="/" method="get"
             hx-get="/" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true">
+        <input type="hidden" name="vista" value="mapa">
         {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
         {% if selected_province_slug %}<input type="hidden" name="provincia" value="{{ selected_province_slug }}">{% endif %}
         {% if open_views %}<input type="hidden" name="ver" value="{{ open_views | join(',') }}">{% endif %}

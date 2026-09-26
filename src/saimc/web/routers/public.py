@@ -792,6 +792,14 @@ def _render_explore(
         )
 
     def vista_link(destino: str) -> str:
+        # El producto en foco viaja al tablero (2026-09-26): ahí el detalle es de UN
+        # producto, y con todos los abiertos llegaba la lista completa y el foco se
+        # perdía. Sin pestaña (el tablero no la usa). El mapa admite varios y
+        # conserva los abiertos.
+        if destino == "tablero" and active_slug:
+            return products_query(
+                [active_slug], provincia=prov_slug, desde=desde, hasta=hasta, vista=destino
+            )
         return products_query(
             active_slugs,
             pestana=active_slug,

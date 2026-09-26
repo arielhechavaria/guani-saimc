@@ -4332,3 +4332,39 @@ class TestPorEnvaseEnElDetalle:
 
         for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
             assert "muestra en formación" not in client.get(url).text, url
+
+
+class TestFormulariosDelMapaConservanLaVista:
+    """Los dos formularios del mapa (provincia y rango de fechas) mandan un GET a
+    `/`. Sin `vista` en lo que envían, decide la cookie o, sin cookie, la default
+    de la ruta. Desde que la default es el tablero (2026-09-26), quien llegaba al
+    mapa por un enlace directo `?vista=mapa` y cambiaba de provincia o de fechas
+    terminaba en el tablero (y con htmx, en un intercambio que no encuentra
+    `#ph-live`). Encontrado auditando el estado que viaja entre vistas."""
+
+    def _formulario(self, texto: str, clase: str) -> str:
+        return texto.split(f'<form class="{clase}"')[1].split("</form>")[0]
+
+    @pytest.mark.parametrize("clase", ["ph-province-form", "ph-window-form"])
+    def test_lleva_vista_mapa_como_campo_oculto(
+        self, client: TestClient, session: Session, clase: str
+    ) -> None:
+        _seed_dos_productos(session)
+
+        texto = client.get("/?vista=mapa").text
+
+        assert '<input type="hidden" name="vista" value="mapa">' in self._formulario(texto, clase)
+
+    def test_lo_que_manda_el_formulario_de_fechas_abre_el_mapa_sin_cookie(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Ida y vuelta sin la cookie que fija el fixture: los campos del
+        formulario, tal cual, abren el mapa y no el tablero."""
+        _seed_dos_productos(session)
+        client.cookies.delete("vista")
+
+        texto = client.get(
+            "/?vista=mapa&desde=2026-09-01&hasta=2026-09-10&capa=precio"
+        ).text
+
+        assert 'id="ph-leaflet-map"' in texto

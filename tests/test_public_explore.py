@@ -192,14 +192,21 @@ class TestSelectorDeVistas:
         assert re.search(r'data-vista="explorar"[^>]*aria-current="true"', nav)
 
     def test_cambiar_de_vista_conserva_los_productos_elegidos(self, client: TestClient, datos: None) -> None:
+        """El mapa admite varios productos y recibe todos los abiertos. El tablero
+        tiene detalle de UNO solo (2026-09-26, estado compartido): recibe el de la
+        pestaña activa —sin `?pestana=`, el primero— y no la lista completa. Ver
+        `TestElProductoEnFocoViajaAlTablero`."""
         nav = _bloque(
             _izquierda(_html(client, "&productos=arroz,pollo")), '<nav class="ph-ex-views"', "</nav>"
         )
 
         enlaces = re.findall(r"<a [^>]*>", nav)
+        mapa = next(a for a in enlaces if 'data-vista="mapa"' in a)
         tablero = next(a for a in enlaces if 'data-vista="tablero"' in a)
 
-        assert "productos=arroz,pollo" in tablero
+        assert "productos=arroz,pollo" in mapa
+        assert "productos=arroz&" in tablero.replace("&amp;", "&")
+        assert "pollo" not in tablero
 
     def test_el_mapa_ofrece_ir_a_explorar(self, client: TestClient, datos: None) -> None:
         assert 'data-vista="explorar"' in client.get("/?productos=arroz").text
@@ -1114,3 +1121,45 @@ class TestSelectorDePeriodoEnExplorar:
             ("provincia", "la-habana"),
         ):
             assert f'<input type="hidden" name="{nombre}" value="{valor}">' in bloque, nombre
+
+
+class TestElProductoEnFocoViajaAlTablero:
+    """Estado compartido entre vistas (2026-09-26): en Explorar el producto en foco
+    es el de la pestaña activa (`?pestana=`). Al pasar al tablero, que solo tiene
+    detalle con UN producto, tiene que llegar ese; con todos los abiertos el
+    tablero mostraba la lista completa y el foco se perdía. El mapa, en cambio,
+    admite varios productos y conserva todos los abiertos."""
+
+    URL = "/?vista=explorar&productos=arroz,pollo&pestana=pollo"
+
+    def _enlace(self, texto: str, destino: str) -> str:
+        m = re.search(rf'<a class="js-vista-link[^"]*" data-vista="{destino}" href="([^"]+)"', texto)
+        assert m, destino
+        return m.group(1).replace("&amp;", "&")
+
+    def test_el_tablero_recibe_solo_el_producto_de_la_pestana_activa(
+        self, client: TestClient, datos: None
+    ) -> None:
+        href = self._enlace(client.get(self.URL).text, "tablero")
+
+        assert "productos=pollo" in href
+        assert "arroz" not in href
+
+    def test_el_enlace_al_tablero_no_arrastra_la_pestana(self, client: TestClient, datos: None) -> None:
+        assert "pestana" not in self._enlace(client.get(self.URL).text, "tablero")
+
+    def test_el_mapa_conserva_todos_los_productos_abiertos(
+        self, client: TestClient, datos: None
+    ) -> None:
+        href = self._enlace(client.get(self.URL).text, "mapa")
+
+        assert "productos=arroz,pollo" in href
+
+    def test_y_al_abrirlo_el_tablero_muestra_el_detalle_de_ese_producto(
+        self, client: TestClient, datos: None
+    ) -> None:
+        href = self._enlace(client.get(self.URL).text, "tablero")
+
+        texto = client.get(href).text
+
+        assert '<h1 class="ph-h1">Pollo</h1>' in texto
