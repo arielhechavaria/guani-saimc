@@ -77,7 +77,8 @@
     .ph-top-brand { padding-top: 0; }
     .ph-wordmark { font-size: 22px; }
     .ph-top-tag { display: inline; }
-    .ph-vista-wrap { order: 0; flex: 0 0 auto; padding-top: 0; }
+    .ph-vista-wrap { order: 0; flex: 0 0 auto; padding-top: 0; margin-inline: auto; }
+    .ph-top-brand { flex: 0 1 auto; }
     .ph-top-csv-label { display: inline; }
     .ph-top-csv { padding: 0 var(--m3-space-2); }
     .ph-dash-action.theme-toggle { border: 1px solid var(--m3-outline-variant); background: var(--m3-surface); }
@@ -105,43 +106,52 @@
   .ph-main { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
   .ph-nav.ph-panel { display: none; }
   @media (min-width: 48rem) { .ph-nav.ph-panel { display: flex; } }
+  /* Sin producto elegido la página es de UNA columna (prototipo aprobado el
+     2026-09-26): frescura arriba, la lista, «Sobre los datos» abajo. Las dos
+     columnas con barra lateral quedan para el detalle, que es el que tiene
+     navegación de productos. */
   @media (min-width: 64rem) {
-    .ph-layout { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 40px; align-items: start;
-                 grid-template-rows: auto auto 1fr; padding-top: 36px;
-                 grid-template-areas: "main fresh" "main datos" "main ."; }
+    .ph-layout { padding-top: 36px; gap: var(--m3-space-5); }
     .ph-layout.has-nav { grid-template-rows: auto auto auto 1fr;
+                         grid-template-columns: minmax(0, 1fr) 340px; column-gap: 40px; align-items: start;
                          grid-template-areas: "main fresh" "main nav" "main datos" "main ."; }
-    .ph-fresh { grid-area: fresh; }
-    .ph-main { grid-area: main; }
-    .ph-nav.ph-panel { grid-area: nav; }
-    .ph-datos { grid-area: datos; }
+    .ph-layout.has-nav .ph-fresh { grid-area: fresh; }
+    .ph-layout.has-nav .ph-main { grid-area: main; }
+    .ph-layout.has-nav .ph-nav.ph-panel { grid-area: nav; }
+    .ph-layout.has-nav .ph-datos { grid-area: datos; }
   }
 
   .ph-fresh { display: flex; align-items: center; gap: 10px; background: var(--m3-surface);
               border: 1px solid var(--m3-outline-variant); border-radius: 12px; padding: 10px 14px;
               font-size: 13px; color: var(--m3-on-surface); }
   .ph-fresh .m3-icon { font-size: 18px; color: var(--m3-primary); flex: none; }
+  .ph-fresh[data-nivel="hoy"] { background: var(--m3-surface-container); border-color: transparent; }
+  .ph-fresh[data-nivel="atrasado"] { background: var(--m3-warn-wash); color: var(--m3-warn-strong); border-color: transparent; }
+  .ph-fresh[data-nivel="atrasado"] .m3-icon { color: var(--m3-warn-strong); }
 
   /* ── Superficies ──────────────────────────────────────────────────────── */
   .ph-panel { background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: 16px;
               padding: 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .ph-panel-title { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 19px; color: var(--m3-on-surface); }
   .ph-panel-sub { margin: -6px 0 0; font-size: 12px; color: var(--m3-outline); line-height: 1.5; }
-  .ph-eyebrow { font-size: 12px; color: var(--m3-outline); letter-spacing: .04em; }
+  .ph-eyebrow { font-size: 12px; font-weight: 500; color: var(--m3-primary); letter-spacing: .14em; }
   .ph-h1 { margin: 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 30px; line-height: 1.15; color: var(--m3-on-surface); }
   .ph-intro { display: flex; flex-direction: column; gap: 4px; }
   .ph-sub { margin: 2px 0 0; font-size: 14px; color: var(--m3-on-surface-variant); line-height: 1.5; }
   @media (min-width: 40rem) { .ph-h1 { font-size: 36px; } }
+  @media (min-width: 48rem) { .ph-intro .ph-h1 { font-size: 44px; line-height: 1.05; } }
 
   /* ── «¿En qué provincia estás?» ───────────────────────────────────────── */
   .ph-mi-prov { display: flex; flex-direction: column; gap: 6px; }
+  @media (min-width: 48rem) { .ph-mi-prov { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 14px; } }
   .ph-mi-prov-label { font-size: 12px; color: var(--m3-outline); }
   .ph-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .ph-dash-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; box-sizing: border-box;
                   border-radius: 22px; border: 1px solid var(--m3-outline-variant); background: var(--m3-surface);
                   color: var(--m3-on-surface); font: 400 14px var(--m3-font); text-decoration: none; white-space: nowrap; }
   .ph-dash-chip:hover { text-decoration: none; border-color: var(--m3-outline); }
-  .ph-dash-chip.is-active { background: var(--m3-on-surface); border-color: var(--m3-on-surface); color: var(--m3-surface); }
+  .ph-dash-chip.is-active { background: var(--m3-primary-container); border-color: var(--m3-primary);
+                            color: var(--m3-on-primary-container); font-weight: 500; }
   .ph-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--prov, var(--m3-prov-9)); }
   .ph-dot-lg { width: 10px; height: 10px; }
 
@@ -194,15 +204,26 @@
   .ph-vacio { margin: 0; padding: 12px 10px; font-size: 14px; color: var(--m3-on-surface-variant); }
   .ph-vacio button { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--m3-primary);
                      font: inherit; text-decoration: underline; cursor: pointer; }
+  /* Desde la tableta la celda se lee de izquierda a derecha (prototipo del
+     2026-09-26): la cifra grande con su pastilla, y debajo el trazo junto al
+     cambio y los anuncios. Arriba, en el teléfono, sigue la cifra pegada a la
+     derecha: ahí cada píxel es de una cifra. */
   @media (min-width: 48rem) {
-    .ph-lista { padding: 16px 12px 8px; }
-    .ph-lista .ph-panel-title, .ph-lista .ph-panel-sub { padding: 0 10px; }
-    .ph-lista-cab, .ph-fila { grid-template-columns: 190px repeat(var(--n, 2), minmax(0, 220px)) minmax(16px, 1fr); column-gap: 16px; padding-inline: 10px; }
-    .ph-fila { padding-block: 10px; }
+    .ph-lista { padding: 20px 20px 8px; }
+    .ph-lista .ph-panel-title, .ph-lista .ph-panel-sub { padding: 0; }
+    .ph-lista-cab, .ph-fila { grid-template-columns: minmax(160px, 1fr) repeat(var(--n, 2), minmax(0, 1.2fr)) 28px; column-gap: 16px; padding-inline: 8px; }
+    .ph-lista-cab > span + span { justify-content: flex-start; }
+    .ph-fila { padding-block: 16px; border-radius: 8px; }
     .ph-fila-chev, .ph-lista-cab-chev { display: block; justify-self: end; }
-    .ph-fila-nombre { font-size: 15px; }
-    .ph-cel-meta { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 0 8px; }
-    .ph-cel-n::before { content: "·"; margin-right: 8px; }
+    .ph-fila-nombre { font-size: 17px; }
+    .ph-cel { display: grid; grid-template-columns: auto 1fr; align-items: flex-start; column-gap: 12px; row-gap: 5px; text-align: left; }
+    .ph-cel-cifra { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; align-items: center; gap: 10px; }
+    .ph-cel-mediana { font-size: 24px; line-height: 1.1; }
+    .ph-cel .ph-pill { font-size: 11px; padding: 2px 10px; border-radius: 100px; }
+    .ph-cel-spark { grid-column: 1; width: 96px; margin-top: 0; }
+    .ph-cel-meta { grid-column: 1 / -1; flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 0; }
+    .ph-cel-spark + .ph-cel-meta { grid-column: 2; }
+    .ph-cel-nada { font-style: italic; }
   }
 
   /* Cuántas cifras trae cada provincia cuando hay una elegida: las otras van
@@ -214,9 +235,10 @@
 
   /* Buscador: sólo se ve si hay script que lo haga andar (ver el bloque
      `scripts`). 16 px de letra para que iOS no haga zoom al enfocarlo. */
-  .ph-buscar-caja { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; box-sizing: border-box;
-                    border: 1px solid var(--m3-outline-variant); border-radius: 22px; background: var(--m3-surface);
+  .ph-buscar-caja { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 16px; box-sizing: border-box;
+                    border: 1px solid var(--m3-outline-variant); border-radius: 24px; background: var(--m3-surface);
                     color: var(--m3-on-surface-variant); }
+  @media (min-width: 48rem) { .ph-buscar { max-width: 420px; } }
   .ph-buscar-caja:focus-within { outline: 2px solid var(--m3-primary); outline-offset: 2px; }
   .ph-buscar-input { flex: 1; min-width: 0; min-height: 44px; border: 0; outline: none; background: transparent;
                      font: 400 16px var(--m3-font); color: var(--m3-on-surface); }
@@ -412,7 +434,10 @@
 <div class="ph-layout{% if selected_product %} has-nav{% endif %}">
 
 {% if data_freshness_day %}
-<div class="ph-fresh"><span class="m3-icon" aria-hidden="true">info</span><span>Datos verificados hasta el <strong>{{ data_freshness_day.strftime('%d/%m') }}</strong>{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} · hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}{% endif %}</span></div>
+{# `data-nivel` deja que el CSS tiña el aviso: informa, no asusta (§12.6). Dos
+   niveles por ahora —al día o con días de atraso—; el prototipo suma un tercero
+   (más de un mes) que llega con los estados. #}
+<div class="ph-fresh" data-nivel="{{ 'atrasado' if data_freshness_days_ago and data_freshness_days_ago > 0 else 'hoy' }}"><span class="m3-icon" aria-hidden="true">info</span><span>Datos verificados hasta el <strong>{{ data_freshness_day.strftime('%d/%m') }}</strong>{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} · hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}{% endif %}</span></div>
 {% endif %}
 
 <main class="ph-main">

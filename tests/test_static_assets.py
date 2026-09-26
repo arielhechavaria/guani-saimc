@@ -1276,7 +1276,9 @@ class TestListaCompactaDelTablero:
         columna. Desde 48rem vuelven, y con ellos la última columna, que lo
         empuja al borde derecho."""
         corte = "@media (min-width: 48rem) {\n    .ph-lista"
-        columnas = "repeat(var(--n, 2), minmax(0, 220px)) minmax(16px, 1fr)"
+        # Prototipo aprobado el 2026-09-26: la última columna es la del
+        # chevrón, de ancho fijo pegado a la derecha de la fila.
+        columnas = "repeat(var(--n, 2), minmax(0, 1.2fr)) 28px"
         css = self._css()
         hasta_48, desde_48 = css[: css.index(corte)], css[css.index(corte) :]
 
@@ -1291,6 +1293,37 @@ class TestListaCompactaDelTablero:
         quita el lugar. Sin esto, 298 con pastilla queda corrida contra 685."""
         assert self._valor(".ph-cel", "align-items") == "flex-end"
         assert self._valor(".ph-cel-cifra", "flex-direction") == "row-reverse"
+
+    def _desde_la_tableta(self) -> str:
+        """El CSS a partir del corte de la lista a 48rem: lo que solo vale
+        desde la tableta."""
+        css = self._css()
+        return css[css.index("@media (min-width: 48rem) {\n    .ph-lista") :]
+
+    def test_desde_la_tableta_la_celda_se_lee_de_izquierda_a_derecha(self) -> None:
+        """Prototipo del tablero (2026-09-26): con espacio de sobra, la cifra
+        va primero y a la izquierda, con la pastilla a su derecha y debajo el
+        trazo junto al cambio. El teléfono sigue con la cifra pegada a la
+        derecha (arriba): ahí cada píxel es de una cifra."""
+        tableta = self._desde_la_tableta()
+
+        assert re.search(r"\.ph-cel \{[^}]*align-items: flex-start", tableta)
+        assert re.search(r"\.ph-cel-cifra \{[^}]*flex-direction: row;", tableta)
+
+    def test_sin_producto_elegido_la_pagina_es_de_una_columna(self) -> None:
+        """El prototipo aprobado pone la frescura arriba y «Sobre los datos»
+        abajo, en una sola columna. La barra lateral de dos columnas queda
+        solo para el detalle (`.has-nav`)."""
+        css = self._css()
+
+        assert 'grid-template-areas: "main fresh" "main datos" "main ."' not in css
+        assert re.search(r"\.ph-layout\.has-nav \{[^}]*grid-template-columns: minmax\(0, 1fr\) 340px", css)
+
+    def test_la_frescura_atrasada_usa_el_tono_de_aviso(self) -> None:
+        """Informa, no asusta: un dato con días de atraso pasa al fondo de
+        aviso del sistema (`--m3-warn-wash`), sin rojo."""
+        assert self._valor('.ph-fresh[data-nivel="atrasado"]', "background") == "var(--m3-warn-wash)"
+        assert self._valor('.ph-fresh[data-nivel="atrasado"]', "color") == "var(--m3-warn-strong)"
 
     def test_el_bloque_scripts_conserva_lo_del_padre(self) -> None:
         """Un `{% block %}` que redefine el del padre lo pisa entero. Hoy el

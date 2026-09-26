@@ -3466,6 +3466,32 @@ class TestSobreLosDatosEnElTablero:
         assert 'class="ph-fresh"' in texto
         assert "no entran anuncios nuevos" in self._bloque(texto)
 
+    def test_el_aviso_dice_su_nivel_para_el_estilo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """2026-09-26: el aviso de frescura lleva `data-nivel` y el CSS lo
+        tiñe. `_seed` deja precios de hace días, o sea atrasado."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'class="ph-fresh" data-nivel="atrasado"' in texto
+
+    def test_un_dato_de_hoy_no_se_marca_atrasado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-hoy")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(0))
+        session.commit()
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'class="ph-fresh" data-nivel="hoy"' in texto
+
     def test_el_mapa_no_cambia(self, client: TestClient, session: Session) -> None:
         self._seed(session)
 
