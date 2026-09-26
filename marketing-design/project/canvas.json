@@ -2,6 +2,13 @@
   "v": 3,
   "attachments": {},
   "boards": {
+    "ComoFunciona.dc.html": {
+      "h": 1350,
+      "title": "8 · De los grupos a la cifra",
+      "w": 1080,
+      "x": 4640,
+      "y": 0
+    },
     "CarruselConsejo.dc.html": {
       "h": 1350,
       "title": "4 · Carrusel: cómo leer los precios",
@@ -84,7 +91,8 @@
     "CarruselConsejo.dc.html",
     "Story.dc.html",
     "PortadaFacebook.dc.html",
-    "Identidad.dc.html"
+    "Identidad.dc.html",
+    "ComoFunciona.dc.html"
   ],
   "pages": [],
   "title": "Guani — Tarjetas para redes"
