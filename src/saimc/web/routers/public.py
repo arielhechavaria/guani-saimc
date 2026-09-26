@@ -84,6 +84,7 @@ from saimc.web.product_nav import (
 )
 from saimc.web.province_grid import build_product_grids, group_detail, price_layer
 from saimc.web.series_view import build_series
+from saimc.web.ticker_view import build_ticker
 from saimc.web.watchlist_view import build_watchlist
 
 router = APIRouter()
@@ -619,6 +620,19 @@ def _render_home(
         if selected_vista == "tablero"
         else None
     )
+    # Cintillo de precios (2026-09-26): de las mismas `slopes` que la lista, con
+    # cada enlace hacia la vista en la que se está.
+    ticker = build_ticker(
+        pilot_names,
+        slopes,
+        href=lambda slug: products_query(
+            [slug],
+            provincia=prov_slug,
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+            vista=selected_vista,
+        ),
+    )
     template_name = "public_dashboard.html" if selected_vista == "tablero" else "public_home.html"
     return request.app.state.templates.TemplateResponse(
         request,
@@ -694,6 +708,7 @@ def _render_home(
             "selected_province_slug": prov_slug,
             "selected_province": selected_province,
             "vista": selected_vista,
+            "ticker": ticker,
             "cards_by_province": cards_by_province,
             "province_slots": province_slots,
             # Recorrido hacia atrás hasta el anuncio (§6.5), por celda —mismo
@@ -789,11 +804,24 @@ def _render_explore(
         desde=desde,
         hasta=hasta,
     )
+    # Cintillo de precios (2026-09-26): mismas ventanas que el tablero, cortadas de
+    # la muestra que ya se trajo (cubre al menos dos ventanas). Cada enlace abre
+    # la pestaña de su producto.
+    ventana_actual = [o for o in obs if o.day >= desde]
+    ventana_previa = [o for o in obs if desde - timedelta(days=window) <= o.day < desde]
+    ticker = build_ticker(
+        pilot_names,
+        build_month_vs_month(ventana_actual, ventana_previa, window_days=window, hoy=hasta),
+        href=lambda slug: products_query(
+            [slug], pestana=slug, provincia=prov_slug, desde=desde, hasta=hasta, vista="explorar"
+        ),
+    )
     respuesta: HTMLResponse = request.app.state.templates.TemplateResponse(
         request,
         "public_explore.html",
         {
             "vista": "explorar",
+            "ticker": ticker,
             "ex_nav": build_explore_nav(
                 productos, active_products, active_slug, provincia=prov_slug, desde=desde, hasta=hasta
             ),

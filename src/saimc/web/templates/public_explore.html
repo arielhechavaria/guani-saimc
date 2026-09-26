@@ -28,6 +28,8 @@
     height: 100vh; height: 100dvh; overflow: hidden;
     background: var(--m3-surface); color: var(--m3-on-surface); font-family: var(--m3-font);
   }
+  /* Con el cintillo de precios arriba, la app mide lo que queda. */
+  .ph-cintillo + .ph-ex { height: calc(100vh - 2.75rem); height: calc(100dvh - 2.75rem); }
   :where(.ph-ex) a { color: inherit; text-decoration: none; }
   :where(.ph-ex) button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
   .ph-ex svg { display: block; }
@@ -232,6 +234,7 @@
 
   @media (max-width: 720px) {
     .ph-ex { display: block; height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; }
+    .ph-cintillo + .ph-ex { height: auto; min-height: calc(100vh - 2.75rem); min-height: calc(100dvh - 2.75rem); }
     .ph-ex-left { border-right: 0; border-bottom: 1px solid var(--m3-outline-variant); }
     .ph-ex-ltabs, .ph-ex-lbody, .ph-ex-lfoot { display: none; }
     .ph-ex-right { display: none; }
@@ -344,6 +347,8 @@
 {%- endmacro %}
 {% set activo = ex_active %}
 <div id="ph-loading" class="ph-ex-loading htmx-indicator" aria-hidden="true"></div>
+{# Cintillo de precios: fuera de `#ph-live` para que htmx no lo reinicie. #}
+{% include "_cintillo.html" %}
 <div class="ph-ex" id="ph-live" hx-target="#ph-live" hx-select="#ph-live" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#ph-loading">
 
   {# ── Izquierda: vistas, productos y filtros del producto abierto ─────── #}

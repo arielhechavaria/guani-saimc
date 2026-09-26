@@ -587,3 +587,58 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
   color: var(--m3-on-surface-variant);
 }
 
+
+/* ── Cintillo de precios (prototipo aprobado el 2026-09-26) ───────────────
+   La misma franja bajo la cabecera de las tres vistas: la mediana entre las
+   provincias con dato de cada producto, con su cambio (sin flecha ni color,
+   §12.6). Se desplaza despacio y sin parar; se detiene al pasar el cursor o al
+   enfocar un enlace, y con «reducir movimiento» queda quieto y se recorre a
+   mano. Mide 2.75rem y no los 40 px del prototipo: los enlaces son tocables y
+   el sitio pide 44 px. El Mapa y Explorar, que ocupan la pantalla entera, le
+   ceden ese alto con `.ph-cintillo + …` en sus propias hojas. */
+.ph-cintillo {
+  display: flex; align-items: stretch; height: 2.75rem; overflow: hidden;
+  background: var(--m3-surface-container); border-bottom: 1px solid var(--m3-divider);
+  font-family: var(--m3-font); color: var(--m3-on-surface);
+}
+.ph-cintillo-rotulo {
+  position: relative; z-index: 1; flex: none; display: flex; align-items: center; gap: var(--m3-space-2);
+  padding: 0 var(--m3-space-4); white-space: nowrap; font-size: .6875rem; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--m3-on-surface-variant);
+  background: var(--m3-surface-container); border-right: 1px solid var(--m3-divider);
+}
+.ph-cintillo-punto { width: 7px; height: 7px; border-radius: 50%; background: var(--m3-primary); animation: ph-late 2s ease-in-out infinite; }
+.ph-cintillo-pista {
+  flex: 1; min-width: 0; overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 4%, black 96%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 4%, black 96%, transparent);
+}
+.ph-cintillo-cinta { display: flex; width: max-content; height: 100%; animation: ph-cinta 46s linear infinite; }
+.ph-cintillo-grupo { display: flex; align-items: stretch; gap: var(--m3-space-8); margin: 0; padding: 0 var(--m3-space-8) 0 0; list-style: none; }
+.ph-cintillo-grupo li { display: flex; }
+.ph-cintillo-item {
+  display: flex; align-items: center; gap: .5rem; white-space: nowrap; font-size: .8125rem;
+  color: var(--m3-on-surface); text-decoration: none;
+}
+.ph-cintillo-item:hover { text-decoration: none; color: var(--m3-primary); }
+.ph-cintillo-nombre { color: var(--m3-on-surface-variant); }
+.ph-cintillo-cifra { font-family: var(--m3-mono); font-weight: 500; }
+.ph-cintillo-unidad { font-size: .6875rem; color: var(--m3-on-surface-variant); }
+.ph-cintillo-cambio { font-family: var(--m3-mono); font-size: .75rem; color: var(--m3-on-surface-variant); }
+.ph-cintillo-pista:hover .ph-cintillo-cinta,
+.ph-cintillo-pista:focus-within .ph-cintillo-cinta { animation-play-state: paused; }
+@keyframes ph-cinta { to { transform: translateX(-50%); } }
+@keyframes ph-late { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+/* En el teléfono el rótulo se queda solo en el punto que late (como en el
+   prototipo móvil): cada píxel es de la cinta. El `aria-label` de la región ya
+   dice qué es. */
+@media (max-width: 720px) {
+  .ph-cintillo-rotulo { padding: 0 var(--m3-space-3); }
+  .ph-cintillo-texto { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ph-cintillo-cinta { animation: none; }
+  .ph-cintillo-punto { animation: none; }
+  .ph-cintillo-pista { overflow-x: auto; -webkit-mask-image: none; mask-image: none; }
+  .ph-cintillo-grupo[aria-hidden="true"] { display: none; }
+}

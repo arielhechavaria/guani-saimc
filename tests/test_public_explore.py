@@ -803,3 +803,71 @@ class TestPanelDerecho:
         assert "Detalle" in der
         assert len(re.findall(r'<path class="ph-ex-prov', der)) == 16
         assert "ph-ex-prov is-selected" not in der
+
+
+class TestCintilloEnLasTresVistas:
+    """Cintillo de precios del prototipo aprobado (2026-09-26): la misma franja
+    bajo la cabecera de las tres vistas, con la mediana entre las provincias
+    con dato. Cada enlace lleva a la vista en la que se está, para que tocar un
+    producto no cambie de presentación."""
+
+    def _cinta(self, texto: str) -> str:
+        inicio = texto.index('class="ph-cintillo"')
+        return texto[inicio : texto.index("<!-- /ph-cintillo -->", inicio)]
+
+    @pytest.mark.parametrize("vista", ["tablero", "mapa", "explorar"])
+    def test_las_tres_vistas_traen_el_cintillo(
+        self, client: TestClient, datos: None, vista: str
+    ) -> None:
+        texto = client.get(f"/?vista={vista}").text
+
+        assert 'class="ph-cintillo"' in texto
+        assert "Mediana · provincias con dato" in texto
+
+    @pytest.mark.parametrize(
+        ("vista", "fragmento"),
+        [
+            ("tablero", "vista=tablero"),
+            ("mapa", "vista=mapa"),
+            ("explorar", "vista=explorar"),
+        ],
+    )
+    def test_cada_enlace_se_queda_en_su_vista(
+        self, client: TestClient, datos: None, vista: str, fragmento: str
+    ) -> None:
+        cinta = self._cinta(client.get(f"/?vista={vista}").text)
+        enlaces = re.findall(r'class="ph-cintillo-item" href="([^"]+)"', cinta)
+
+        # Arroz y Pollo (Aceite no tiene anuncios), cada uno en el grupo y en su copia.
+        assert len(enlaces) == 4
+        assert all(fragmento in href.replace("&amp;", "&") for href in enlaces)
+        assert any("productos=arroz" in href for href in enlaces)
+
+    def test_en_explorar_el_enlace_abre_la_pestana_del_producto(
+        self, client: TestClient, datos: None
+    ) -> None:
+        cinta = self._cinta(client.get("/?vista=explorar").text)
+
+        assert "pestana=arroz" in cinta
+
+    def test_la_cinta_lleva_una_copia_oculta_para_el_bucle(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """El desplazamiento continuo necesita dos grupos iguales. La copia es
+        decorativa: `aria-hidden` y sus enlaces fuera del orden de tabulación,
+        para que un lector de pantalla no lea cada producto dos veces."""
+        cinta = self._cinta(client.get("/?vista=tablero").text)
+
+        assert cinta.count('<ul class="ph-cintillo-grupo">') == 1
+        assert cinta.count('<ul class="ph-cintillo-grupo" aria-hidden="true">') == 1
+        assert cinta.count('tabindex="-1"') == 2
+
+    def test_muestra_la_mediana_y_el_cambio_sin_flecha(self, client: TestClient, datos: None) -> None:
+        cinta = self._cinta(client.get("/?vista=tablero").text)
+
+        assert '<span class="ph-cintillo-cifra">350</span>' in cinta  # (300 + 400) / 2
+        assert "▲" not in cinta and "▼" not in cinta
+
+    def test_sin_datos_no_hay_cintillo(self, client: TestClient) -> None:
+        for vista in ("tablero", "mapa", "explorar"):
+            assert 'class="ph-cintillo"' not in client.get(f"/?vista={vista}").text, vista

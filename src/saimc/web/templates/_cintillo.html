@@ -1,0 +1,35 @@
+{#
+  Cintillo de precios de las tres vistas (prototipo aprobado, 2026-09-26).
+
+  Una franja bajo la cabecera con la mediana de cada producto entre las
+  provincias que tienen dato, y su cambio. El rótulo dice «provincias con dato»
+  y no «nacional»: con pocas provincias, «nacional» sería una exageración. El
+  cambio va sin flecha ni color (§12.6).
+
+  Cada vista arma `ticker` con `ticker_view.build_ticker` y le pasa el enlace
+  hacia sí misma, así que tocar un producto no cambia de presentación. Sin
+  dato en ningún producto no se dibuja nada: una franja vacía sería ruido.
+
+  La cinta lleva el grupo dos veces para que el desplazamiento continuo no
+  tenga costura (el CSS la mueve exactamente un grupo). La copia es decorativa:
+  `aria-hidden` y sus enlaces fuera del orden de tabulación.
+
+  Va FUERA de `#ph-live` en el mapa y en Explorar: el resto de la página se
+  reemplaza con htmx y la cinta no tiene por qué reiniciarse.
+#}
+{% if ticker %}
+<div class="ph-cintillo" role="region" aria-label="Mediana de precios por producto">
+  <div class="ph-cintillo-rotulo"><span class="ph-cintillo-punto" aria-hidden="true"></span><span class="ph-cintillo-texto">Mediana · provincias con dato</span></div>
+  <div class="ph-cintillo-pista">
+    <div class="ph-cintillo-cinta">
+      {% for copia in (false, true) %}
+      <ul class="ph-cintillo-grupo"{% if copia %} aria-hidden="true"{% endif %}>
+        {% for item in ticker %}
+        <li><a class="ph-cintillo-item" href="{{ item.href }}"{% if copia %} tabindex="-1"{% endif %}><span class="ph-cintillo-nombre">{{ item.product_name }}</span><span class="ph-cintillo-cifra">{{ item.median_text }}</span><span class="ph-cintillo-unidad">{{ item.unit }}</span>{% if item.change_text %}<span class="ph-cintillo-cambio">{{ item.change_text }}</span>{% endif %}</a></li>
+        {% endfor %}
+      </ul>
+      {% endfor %}
+    </div>
+  </div>
+</div><!-- /ph-cintillo -->
+{% endif %}

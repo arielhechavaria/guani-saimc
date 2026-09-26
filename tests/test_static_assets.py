@@ -1378,6 +1378,61 @@ class TestListaCompactaDelTablero:
         assert ".ph-tarjeta" not in self._css()
 
 
+class TestCintillo:
+    """CSS del cintillo de precios compartido por las tres vistas (prototipo
+    aprobado el 2026-09-26). Vive en `saimc-public.css`: lo cargan todas."""
+
+    def _hoja(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        fuente = (raiz / "src" / "saimc" / "web" / "static" / "saimc-public.css").read_text(
+            encoding="utf-8"
+        )
+        return re.sub(r"/\*.*?\*/", "", fuente, flags=re.S)
+
+    def _regla(self, selector: str) -> str:
+        m = re.search(rf"(?:^|\}}|\n)\s*{re.escape(selector)}\s*\{{([^{{}}]*)\}}", self._hoja())
+        assert m, f"no hay una regla para {selector}"
+        return m.group(1)
+
+    def test_el_cintillo_mide_44px_como_todo_lo_tocable(self) -> None:
+        """El prototipo lo dibujó de 40 px; los enlaces del cintillo son
+        tocables y la regla del sitio es 44 px o más."""
+        assert re.search(r"height:\s*2\.75rem", self._regla(".ph-cintillo"))
+
+    def test_la_cinta_solo_anima_transform(self) -> None:
+        """Un grupo entero hacia la izquierda y vuelta a empezar: la copia queda
+        exactamente donde estaba el original. Nada que dispare layout."""
+        m = re.search(r"@keyframes ph-cinta\s*\{\s*to\s*\{([^}]*)\}\s*\}", self._hoja())
+
+        assert m, "falta @keyframes ph-cinta"
+        assert re.findall(r"([\w-]+)\s*:", m.group(1)) == ["transform"]
+        assert "translateX(-50%)" in m.group(1)
+
+    def test_se_detiene_al_pasar_el_cursor_o_enfocar(self) -> None:
+        hoja = self._hoja()
+
+        assert ".ph-cintillo-pista:hover .ph-cintillo-cinta" in hoja
+        assert ".ph-cintillo-pista:focus-within .ph-cintillo-cinta" in hoja
+        assert "animation-play-state: paused" in hoja
+
+    def test_con_reducir_movimiento_la_cinta_queda_quieta_y_sin_copia(self) -> None:
+        hoja = self._hoja()
+        inicio = hoja.index("@media (prefers-reduced-motion: reduce)", hoja.index(".ph-cintillo"))
+        bloque = hoja[inicio : hoja.index("\n}", inicio)]
+
+        assert ".ph-cintillo-cinta" in bloque and "animation: none" in bloque
+        assert '.ph-cintillo-grupo[aria-hidden="true"]' in bloque and "display: none" in bloque
+
+    def test_sin_colores_a_mano(self) -> None:
+        """Todo sale de tokens: claro y oscuro salen solos. La máscara del
+        borde usa `black` solo por su canal alfa."""
+        trozo = self._hoja()
+        trozo = trozo[trozo.index(".ph-cintillo") :]
+        trozo = trozo[: trozo.index("@media (prefers-reduced-motion: reduce)")]
+
+        assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", trozo)
+
+
 class TestFuenteYFilaDeEvidencia:
     """Dos hallazgos más de la auditoría mobile-first del 2026-09-17: la
     fuente más chica del sitio (10px, en el cartelito del mapa) y la fila

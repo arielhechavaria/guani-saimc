@@ -122,6 +122,11 @@
     background: radial-gradient(ellipse at 50% 45%,
       var(--m3-surface-hover) 0%, var(--m3-bg) 60%, var(--m3-surface-container-high) 100%);
   }
+  /* Con el cintillo de precios arriba, el lienzo mide lo que queda: todo lo
+     demás es `position: absolute` DENTRO de él y se acomoda solo. */
+  .ph-cintillo + #ph-live .ph-canvas {
+    height: calc(100vh - 2.75rem); height: calc(100dvh - 2.75rem);
+  }
 
   /* ── Brújula (2026-09-13) ───────────────────────────────────────────────
      El avatar ES el control, anclado a la esquina como el layers/zoom de un
@@ -1172,6 +1177,10 @@
 {% block content %}
 
 {% from "_chart_help.html" import chart_help %}
+
+{# Cintillo de precios: fuera de `#ph-live` para que htmx no lo reinicie. Le cede su
+   alto al lienzo (`.ph-cintillo + #ph-live .ph-canvas`, en el `<style>`). #}
+{% include "_cintillo.html" %}
 
 {# `#ph-live` envuelve todo lo que depende del estado de la URL (productos,
    provincia, días, ventanas abiertas). Un chip, un ítem del menú, una
