@@ -162,8 +162,8 @@ class TestVista:
         assert VISTA_CHOICES == ("mapa", "tablero", "explorar")
         assert resolve_vista("explorar") == "explorar"
 
-    def test_una_vista_rara_sigue_cayendo_al_mapa(self) -> None:
-        assert resolve_vista("dashboard") == "mapa"
+    def test_una_vista_rara_cae_al_tablero(self) -> None:
+        assert resolve_vista("dashboard") == "tablero"
 
     def test_la_ruta_responde_sin_credenciales(self, client: TestClient, datos: None) -> None:
         assert client.get("/?vista=explorar").status_code == 200

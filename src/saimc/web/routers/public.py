@@ -754,7 +754,12 @@ def _render_explore(
 
     def vista_link(destino: str) -> str:
         return products_query(
-            active_slugs, pestana=active_slug, provincia=prov_slug, desde=desde, hasta=hasta, vista=destino
+            active_slugs,
+            pestana=active_slug,
+            provincia=prov_slug,
+            desde=desde,
+            hasta=hasta,
+            vista=destino,
         )
 
     def province_link(slug: str) -> str:
@@ -833,7 +838,9 @@ def public_home(
     encuadre no cambia por una preferencia que nadie le pidió—, y un valor
     de cookie que no sea provincia se ignora en `resolve_province`."""
     vista_efectiva = vista if vista is not None else request.cookies.get("vista")
-    if provincia is None and vista_efectiva == "tablero":
+    # `resolve_vista` y no la cruda: sin query ni cookie la vista es la
+    # default (tablero, 2026-09-26) y también tiene que leer la provincia.
+    if provincia is None and resolve_vista(vista_efectiva) == "tablero":
         provincia = request.cookies.get("provincia")
     return _render_home(
         request,

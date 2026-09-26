@@ -68,6 +68,9 @@ def client(session: Session) -> Iterator[TestClient]:
 
     app.dependency_overrides[get_db] = _get_db_override
     with TestClient(app) as test_client:
+        # La mayoría de estos tests miran el mapa; `/` abre el tablero desde
+        # 2026-09-26. Los que prueban la default limpian la cookie.
+        test_client.cookies.set("vista", "mapa")
         yield test_client
     app.dependency_overrides.clear()
 
@@ -323,7 +326,8 @@ class TestBuildProductChips:
 
         # Prender Aceite → productos=arroz,aceite (orden de activación).
         assert por_label["Aceite"].query == (
-            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
     def test_un_chip_prendido_no_se_apaga_al_clickearlo(self) -> None:
@@ -334,11 +338,13 @@ class TestBuildProductChips:
         por_label = {c.label: c for c in chips}
 
         assert por_label["Arroz"].query == (
-            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
         chips_uno = self._chips(["Arroz"])
         assert {c.label: c for c in chips_uno}["Arroz"].query == (
-            f"/?productos=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+            f"/?productos=arroz&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
     def test_con_toggle_true_un_chip_prendido_si_se_apaga(self) -> None:
@@ -348,7 +354,8 @@ class TestBuildProductChips:
         por_label = {c.label: c for c in chips}
 
         assert por_label["Arroz"].query == (
-            f"/?productos=aceite&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+            f"/?productos=aceite&desde={self.DESDE.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
     def test_preserva_provincia_y_rango_en_el_toggle(self) -> None:
@@ -357,7 +364,7 @@ class TestBuildProductChips:
 
         assert por_label["Aceite"].query == (
             f"/?productos=arroz,aceite&provincia=la-habana&desde={self.DESDE.isoformat()}"
-            f"&hasta={self.HASTA.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
     def test_el_chip_trae_el_icono_del_producto_o_ninguno(self) -> None:
@@ -405,8 +412,9 @@ class TestChipsMultiSeleccionEnLaRuta:
 
         assert (
             f'<a class="ph-chip-toggle is-icon" href="/?productos=arroz&amp;desde={desde.isoformat()}'
-            f'&amp;hasta={hasta.isoformat()}" hx-get="/?productos=arroz&amp;desde={desde.isoformat()}'
-            f'&amp;hasta={hasta.isoformat()}" data-product="arroz" aria-pressed="false">'
+            f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" '
+            f'hx-get="/?productos=arroz&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" data-product="arroz" aria-pressed="false">'
         ) in texto
 
     def test_el_panel_flotante_enlaza_a_la_vista_simple_sin_hx_get(
@@ -841,7 +849,7 @@ class TestPanelesFlotantes:
             assert f'role="tabpanel" id="ph-panel-{slug}" data-product="{slug}"' in texto
             assert (
                 f'hx-get="/?productos=arroz,aceite&amp;desde={desde.isoformat()}'
-                f'&amp;hasta={hasta.isoformat()}" data-product="{slug}"'
+                f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" data-product="{slug}"'
             ) in texto
 
     def test_el_boton_de_cerrar_quita_ese_producto(
@@ -855,8 +863,10 @@ class TestPanelesFlotantes:
         # El × de Arroz apunta a la vista sin Arroz (queda Aceite), por `href`
         # (fallback) y por `hx-get` (swap parcial).
         assert (
-            f'href="/?productos=aceite&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}" '
-            f'hx-get="/?productos=aceite&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}"'
+            f'href="/?productos=aceite&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" '
+            f'hx-get="/?productos=aceite&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa"'
         ) in texto
 
     def test_carga_htmx_y_arma_el_bloque_vivo(
@@ -871,7 +881,8 @@ class TestPanelesFlotantes:
         assert 'id="ph-live"' in texto
         # Los chips hacen `hx-get` además del `href` de fallback.
         assert (
-            f'hx-get="/?productos=arroz,aceite&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}"'
+            f'hx-get="/?productos=arroz,aceite&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa"'
         ) in texto
 
     def test_anuncio_no_carga_htmx(
@@ -935,8 +946,10 @@ class TestEnlacesDeProvinciaEnElMapa:
         texto = client.get("/").text
 
         assert (
-            f'href="/?provincia=la-habana&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}" '
-            f'hx-get="/?provincia=la-habana&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}"'
+            f'href="/?provincia=la-habana&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" '
+            f'hx-get="/?provincia=la-habana&amp;desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa"'
         ) in texto
 
     def test_elegir_provincia_ya_no_abre_ninguna_hoja(
@@ -1130,9 +1143,12 @@ class TestBuildViewMenu:
         }
 
         assert por_key["precios"].is_open
-        assert por_key["precios"].query == f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        assert por_key["precios"].query == (
+            f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}&vista=mapa"
+        )
         assert por_key["cobertura"].query == (
-            f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}&ver=precios,cobertura"
+            f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+            "&ver=precios,cobertura&vista=mapa"
         )
 
     def test_preserva_productos_provincia_y_rango(self) -> None:
@@ -1146,7 +1162,7 @@ class TestBuildViewMenu:
 
         assert menu[1].query == (
             f"/?productos=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
-            f"&hasta={self.HASTA.isoformat()}&ver=precios"
+            f"&hasta={self.HASTA.isoformat()}&ver=precios&vista=mapa"
         )
 
 
@@ -1184,8 +1200,10 @@ class TestVentanasDelMenu:
         texto = client.get("/?ver=precios").text
 
         assert (
-            f'class="ph-menu-item is-open" href="/?desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}" '
-            f'hx-get="/?desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}" aria-pressed="true"'
+            f'class="ph-menu-item is-open" href="/?desde={desde.isoformat()}'
+            f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" '
+            f'hx-get="/?desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
+            f'&amp;vista=mapa" aria-pressed="true"'
         ) in texto
 
     def test_prender_un_chip_no_cierra_las_ventanas(
@@ -1198,7 +1216,7 @@ class TestVentanasDelMenu:
 
         assert (
             f'hx-get="/?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
-            f'&amp;ver=precios"'
+            f'&amp;ver=precios&amp;vista=mapa"'
         ) in texto
 
     def test_elegir_provincia_no_cierra_las_ventanas(
@@ -1211,7 +1229,7 @@ class TestVentanasDelMenu:
 
         assert (
             f'hx-get="/?provincia=la-habana&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
-            f'&amp;ver=cobertura"'
+            f'&amp;ver=cobertura&amp;vista=mapa"'
         ) in texto
 
     def test_el_filtro_de_provincia_preserva_chips_y_ventanas(
@@ -1224,7 +1242,7 @@ class TestVentanasDelMenu:
 
         assert (
             f'hx-get="/?productos=arroz,aceite&amp;provincia=la-habana&amp;desde={desde.isoformat()}'
-            f'&amp;hasta={hasta.isoformat()}&amp;ver=precios"'
+            f'&amp;hasta={hasta.isoformat()}&amp;ver=precios&amp;vista=mapa"'
             in texto
         )
 
@@ -1238,7 +1256,7 @@ class TestVentanasDelMenu:
 
         assert (
             f'class="ph-fpanel-detail" href="/?productos=arroz&amp;desde={desde.isoformat()}'
-            f'&amp;hasta={hasta.isoformat()}&amp;ver=cobertura,precios"'
+            f'&amp;hasta={hasta.isoformat()}&amp;ver=cobertura,precios&amp;vista=mapa"'
             in texto
         )
 
@@ -1357,11 +1375,11 @@ class TestBuildProvinceNav:
         por_label = {c.label: c for c in nav}
 
         assert por_label["Todas"].query == (
-            f"/?producto=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+            f"/?producto=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
         assert por_label["La Habana"].query == (
             f"/?producto=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
-            f"&hasta={self.HASTA.isoformat()}"
+            f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
 
@@ -1456,12 +1474,13 @@ class TestBuildLayerNav:
             f"&hasta={self.HASTA.isoformat()}&ver=cobertura"
         )
 
-        assert por_slug["densidad"].query == f"{base}&capa=densidad"
+        assert por_slug["densidad"].query == f"{base}&capa=densidad&vista=mapa"
         # La capa por defecto es la única que no ensucia la URL: la de siempre
         # (publicación) ahora viaja explícita, porque sin ella el mapa se tiñe
         # por precio.
-        assert por_slug["publicacion"].query == f"{base}&capa=publicacion"
+        assert por_slug["publicacion"].query == f"{base}&capa=publicacion&vista=mapa"
         assert "capa=" not in por_slug["precio"].query
+        assert por_slug["precio"].query.endswith("&vista=mapa")
 
 
 class TestBuildWindowNav:
@@ -1493,11 +1512,11 @@ class TestBuildWindowNav:
         por_dias = {c.days: c for c in nav}
 
         assert por_dias[30].query == (
-            f"/?producto=arroz&desde={desde_30.isoformat()}&hasta={self.HOY.isoformat()}"
+            f"/?producto=arroz&desde={desde_30.isoformat()}&hasta={self.HOY.isoformat()}&vista=mapa"
         )
         desde_7 = self.HOY - timedelta(days=7)
         assert por_dias[7].query == (
-            f"/?producto=arroz&desde={desde_7.isoformat()}&hasta={self.HOY.isoformat()}"
+            f"/?producto=arroz&desde={desde_7.isoformat()}&hasta={self.HOY.isoformat()}&vista=mapa"
         )
 
     def test_preserva_la_vista_tablero_en_el_query(self) -> None:
@@ -2360,7 +2379,8 @@ class TestRutaProductoLimpia:
         texto = client.get("/producto/arroz").text
 
         assert (
-            f'href="/?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}"'
+            f'href="/?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
+            f'&amp;vista=mapa"'
         ) in texto
         assert "Ver Arroz en el mapa interactivo" in texto
 
@@ -2593,7 +2613,7 @@ class TestVistaTableroEnLaRuta:
 
         assert 'id="ph-leaflet-map"' in texto
 
-    def test_una_cookie_invalida_cae_al_mapa(
+    def test_una_cookie_invalida_cae_al_tablero(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
@@ -2601,7 +2621,48 @@ class TestVistaTableroEnLaRuta:
 
         texto = client.get("/").text
 
-        assert 'id="ph-leaflet-map"' in texto
+        assert 'id="ph-leaflet-map"' not in texto
+        assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in texto
+
+    def test_sin_query_ni_cookie_abre_el_tablero(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """2026-09-26: el tablero es la portada del lanzamiento — con dato en
+        pocas provincias, un mapa mayormente gris comunica vacío."""
+        self._seed(session)
+        client.cookies.delete("vista")
+
+        texto = client.get("/").text
+
+        assert 'id="ph-leaflet-map"' not in texto
+        assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in texto
+
+    def test_un_enlace_interno_del_tablero_no_cae_en_el_mapa_con_cookie_vieja(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Con `vista=mapa` guardada un año, tocar una fila del tablero no
+        puede llevar al mapa: los enlaces internos llevan `vista=tablero`."""
+        self._seed(session)
+        client.cookies.set("vista", "mapa")
+
+        texto = client.get("/?vista=tablero").text
+        enlaces = re.findall(r'<a class="ph-fila" href="([^"]+)"', texto)
+
+        assert enlaces
+        assert all("vista=tablero" in href for href in enlaces)
+
+    def test_el_enlace_al_mapa_lleva_la_vista_explicita(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`vista` se omite de la URL cuando es la default, así que el enlace
+        al mapa tiene que llevar `vista=mapa`: sin él aterrizaría en el
+        tablero."""
+        self._seed(session)
+        client.cookies.delete("vista")
+
+        texto = client.get("/").text
+
+        assert re.search(r'data-vista="mapa" href="[^"]*vista=mapa', texto)
 
     def test_los_enlaces_del_toggle_llevan_la_clase_y_el_dato_para_la_cookie(
         self, client: TestClient, session: Session
@@ -2633,13 +2694,14 @@ class TestVistaTableroEnLaRuta:
         assert panel.count('class="ph-envases-prov ph-prov') == 2  # La Habana y Santiago
         assert "Aceite" not in panel
 
-    def test_una_vista_invalida_cae_al_mapa(self, client: TestClient, session: Session) -> None:
+    def test_una_vista_invalida_cae_al_tablero(self, client: TestClient, session: Session) -> None:
         self._seed(session)
 
         respuesta = client.get("/?vista=satelite")
 
         assert respuesta.status_code == 200
-        assert 'id="ph-leaflet-map"' in respuesta.text
+        assert 'id="ph-leaflet-map"' not in respuesta.text
+        assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in respuesta.text
 
     def test_el_toggle_preserva_filtro_y_ventana_en_los_dos_sentidos(
         self, client: TestClient, session: Session
@@ -2648,15 +2710,12 @@ class TestVistaTableroEnLaRuta:
 
         texto = client.get("/?vista=tablero&productos=arroz&provincia=la-habana").text
 
-        # El toggle Mapa/Tablero no ensucia su propio enlace con el default
-        # (mismo criterio que `capa`). El enlace a «Cómo se movió» sí escribe
-        # `vista=mapa` a propósito —para no caer en la
-        # cookie que recuerda «tablero», ver `TestAccionesYCoberturaEnElTablero`—
-        # así que la comparación se acota al enlace del toggle, no a toda la
-        # página.
+        # Los enlaces del selector de vistas llevan SIEMPRE `vista=` explícita
+        # (2026-09-26): sin ella manda la cookie, y una cookie vieja abriría
+        # otra vista que la del enlace.
         toggle = re.search(r'<a class="js-vista-link[^>]*data-vista="mapa"[^>]*href="([^"]+)"', texto)
         assert toggle is not None
-        assert "vista=mapa" not in toggle.group(1)
+        assert "vista=mapa" in toggle.group(1)
         assert 'href="/?productos=arroz&amp;provincia=la-habana' in texto
         assert 'aria-current="true">Tablero</a>' in texto
 
@@ -2994,6 +3053,18 @@ class TestMiProvinciaEnElTablero:
 
         assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]
         assert "ph-otras" in lista
+
+    def test_la_cookie_de_provincia_vale_en_la_portada_sin_vista(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Con el tablero como default, `/` pelado también la lee."""
+        self._seed(session)
+        client.cookies.delete("vista")
+        client.cookies.set("provincia", "santiago-de-cuba")
+
+        lista = self._lista(client.get("/").text)
+
+        assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]
 
     def test_el_query_string_explicito_gana_a_la_cookie(
         self, client: TestClient, session: Session

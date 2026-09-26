@@ -44,6 +44,8 @@ def client(session: Session) -> Iterator[TestClient]:
 
     app.dependency_overrides[get_db] = _get_db_override
     with TestClient(app) as test_client:
+        # Estos tests son del mapa; `/` abre el tablero desde 2026-09-26.
+        test_client.cookies.set("vista", "mapa")
         yield test_client
     app.dependency_overrides.clear()
 

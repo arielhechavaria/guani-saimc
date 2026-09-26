@@ -45,11 +45,13 @@ LAYER_CHOICES: tuple[str, ...] = ("publicacion", "densidad", "precio")
 DEFAULT_LAYER = "precio"
 #: Presentación de `/` (2026-09-16): «mapa» es la de siempre —Leaflet, tiles,
 #: compás—; «tablero» son las mismas tarjetas que ya arma `build_cards`,
-#: agrupadas por provincia, sin mapa ni Leaflet. Mismo criterio que `capa`:
-#: la clave viaja en `?vista=` y se omite de la URL cuando es la default, para
-#: no ensuciar el enlace que ya comparte todo el mundo.
+#: agrupadas por provincia, sin mapa ni Leaflet. La clave viaja en `?vista=`
+#: y `_query` la emite siempre (ver ahí por qué).
+#: Desde el 2026-09-26 la default es «tablero»: es la portada del lanzamiento
+#: (docs/decisions.md, misma fecha). El mapa vuelve a serlo con dato en 6+
+#: provincias.
 VISTA_CHOICES: tuple[str, ...] = ("mapa", "tablero", "explorar")
-DEFAULT_VISTA = "mapa"
+DEFAULT_VISTA = "tablero"
 
 def product_slug(name: str) -> str:
     """Nombre → segmento de URL estable. Sirve para producto y para provincia.
@@ -150,7 +152,7 @@ def resolve_vista(raw: str | None) -> str:
     """Query string → una de `VISTA_CHOICES`, o el default ante cualquier cosa.
 
     Mismo criterio que `resolve_layer`: un `?vista=` inválido no da 404 ni
-    error, cae al mapa."""
+    error, cae a la default (el tablero)."""
     return raw if raw in VISTA_CHOICES else DEFAULT_VISTA
 
 
@@ -204,7 +206,7 @@ def _query(
     hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
-    vista: str = DEFAULT_VISTA,
+    vista: str = "",
     path: str = "/",
 ) -> str:
     """Compone la URL con los ejes activos, en orden fijo
@@ -240,7 +242,11 @@ def _query(
         params.append("ver=" + ",".join(ver))
     if capa != DEFAULT_LAYER:
         params.append(f"capa={capa}")
-    if vista != DEFAULT_VISTA:
+    # Vacía = «sin vista» (CSV, vista liviana): no se emite. Con vista, va
+    # SIEMPRE, también la default: sin `?vista=` manda la cookie (dura un año),
+    # y un enlace interno del tablero sin el parámetro caía en el mapa a quien
+    # tuviera `vista=mapa` guardada (2026-09-26).
+    if vista:
         params.append(f"vista={vista}")
     return f"{path}?" + "&".join(params)
 
@@ -254,7 +260,7 @@ def products_query(
     hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
-    vista: str = DEFAULT_VISTA,
+    vista: str = "mapa",
     path: str = "/",
 ) -> str:
     """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
@@ -387,7 +393,7 @@ def build_province_nav(
     active_products: Sequence[str] = (),
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
-    vista: str = DEFAULT_VISTA,
+    vista: str = "mapa",
 ) -> list[NavChoice]:
     """«Todas» + un ítem por provincia con dato piloto, marcando la activa.
 
@@ -524,7 +530,7 @@ def build_product_chips(
     selected_hasta: date,
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
-    vista: str = DEFAULT_VISTA,
+    vista: str = "mapa",
     toggle: bool = False,
 ) -> list[ProductChip]:
     """Un chip por producto piloto, en el orden del catálogo.
@@ -580,7 +586,7 @@ def build_window_nav(
     active_products: Sequence[str] = (),
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
-    vista: str = DEFAULT_VISTA,
+    vista: str = "mapa",
     hoy: date | None = None,
 ) -> list[WindowChoice]:
     """Atajos rápidos del date picker (2026-09-14): «7/30/90 días» siguen
