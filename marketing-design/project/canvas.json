@@ -1,0 +1,20 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-09-26T12:00:00Z" },
+  "title": "Guani — Tarjetas para redes",
+  "launch": { "view": "canvas" },
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1080, "h": 1350, "title": "1 · Dato del día (Instagram 4:5)" },
+    "Subio.dc.html": { "x": 1160, "y": 0, "w": 1080, "h": 1350, "title": "2 · Subió / bajó (Instagram 4:5)" },
+    "CarruselPortada.dc.html": { "x": 2320, "y": 0, "w": 1080, "h": 1350, "title": "3 · Carrusel: portada" },
+    "CarruselConsejo.dc.html": { "x": 3480, "y": 0, "w": 1080, "h": 1350, "title": "4 · Carrusel: consejo" },
+    "Story.dc.html": { "x": 0, "y": 1470, "w": 1080, "h": 1920, "title": "5 · Story de precalentamiento (9:16)" },
+    "PortadaFacebook.dc.html": { "x": 1160, "y": 1470, "w": 1640, "h": 624, "title": "6 · Portada de Facebook" }
+  },
+  "order": ["Main.dc.html", "Subio.dc.html", "CarruselPortada.dc.html", "CarruselConsejo.dc.html", "Story.dc.html", "PortadaFacebook.dc.html"],
+  "notes": {
+    "titulo": { "x": 0, "y": -300, "text": "Guani — piezas de precalentamiento", "kind": "title1", "maxW": 4560 },
+    "nota-cifras": { "x": 1160, "y": 2200, "w": 520, "text": "Todas las cifras (000) y fechas son de plantilla. Los números reales salen del sitio cuando se generen las piezas.", "fill": "teal" }
+  },
+  "designSystems": []
+}
