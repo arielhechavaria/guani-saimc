@@ -40,6 +40,7 @@ from saimc.web.card_view import (
     group_cards_by_province,
     province_color_slots,
 )
+from saimc.web.coverage_view import build_coverage
 from saimc.web.deps import get_db
 from saimc.web.explore_view import (
     WEEKS,
@@ -709,6 +710,7 @@ def _render_home(
             "selected_province": selected_province,
             "vista": selected_vista,
             "ticker": ticker,
+            "coverage": build_coverage(map_view.provinces, province_slots),
             "cards_by_province": cards_by_province,
             "province_slots": province_slots,
             # Recorrido hacia atrás hasta el anuncio (§6.5), por celda —mismo

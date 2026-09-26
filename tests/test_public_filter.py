@@ -3524,6 +3524,35 @@ class TestSobreLosDatosEnElTablero:
 
         assert " data-entra" not in texto
 
+    def test_un_dato_de_mas_de_un_mes_avisa_que_puede_estar_desactualizado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Tercer nivel de frescura (prototipo aprobado, 2026-09-26): pasada la
+        ventana de 30 días las cifras pueden no valer. Informa, no asusta: el
+        mismo aviso de siempre con una frase más, sin alarma."""
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        habana = Province(code="hab", name="La Habana")
+        session.add_all([arroz, habana])
+        session.commit()
+        fuente = _ingestion(session, hash_="h-viejo")
+        _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(45))
+        session.commit()
+
+        texto = client.get("/?vista=tablero").text
+
+        assert 'class="ph-fresh" data-nivel="viejo"' in texto
+        assert "las cifras pueden estar desactualizadas" in texto
+        assert texto.count("Datos verificados hasta el") == 1
+
+    def test_un_dato_de_hace_pocos_dias_no_dice_desactualizado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert "desactualizadas" not in texto
+
     def test_un_dato_de_hoy_no_se_marca_atrasado(
         self, client: TestClient, session: Session
     ) -> None:

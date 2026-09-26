@@ -1248,7 +1248,13 @@ class TestListaCompactaDelTablero:
 
     @pytest.mark.parametrize(
         "selector",
-        [".ph-fila", ".ph-buscar-caja", ".ph-buscar-input", ".ph-vacio button"],
+        [
+            ".ph-fila",
+            ".ph-buscar-caja",
+            ".ph-buscar-input",
+            ".ph-vacio button",
+            ".ph-cobertura-mapa",
+        ],
     )
     def test_los_controles_de_la_lista_miden_44px_o_mas(self, selector: str) -> None:
         alto = self._valor(selector, "min-height")
@@ -1424,6 +1430,23 @@ class TestListaCompactaDelTablero:
         assert ".ph-lista[data-entra] .ph-cel-spark path" in bloque
         assert "animation: none" in bloque
         assert "stroke-dashoffset: 0" in bloque
+
+    def test_la_frescura_vieja_marca_su_borde_sin_alarma(self) -> None:
+        """Pasado un mes el aviso suma un borde del tono de aviso; nunca rojo:
+        informa la antigüedad, no da un veredicto (§12.6)."""
+        assert self._valor('.ph-fresh[data-nivel="viejo"]', "background") == "var(--m3-warn-wash)"
+        assert self._valor('.ph-fresh[data-nivel="viejo"]', "border-color") == "var(--m3-warn-strong)"
+
+    def test_el_mosaico_de_cobertura_se_pinta_con_tokens_y_se_apaga(self) -> None:
+        css = self._css()
+        inicio = css.index("@media (prefers-reduced-motion: reduce)")
+        apagado = css[inicio : css.index("}\n  }", inicio)]
+
+        assert self._valor('.ph-tesela[data-estado="sin-datos"]', "border") == (
+            "1.5px dashed var(--m3-outline-variant)"
+        )
+        assert self._valor('.ph-tesela[data-estado="en-ingesta"]', "background") == "var(--prov)"
+        assert ".ph-tesela" in apagado and ".ph-cobertura" in apagado
 
     def test_el_bloque_scripts_conserva_lo_del_padre(self) -> None:
         """Un `{% block %}` que redefine el del padre lo pisa entero. Hoy el

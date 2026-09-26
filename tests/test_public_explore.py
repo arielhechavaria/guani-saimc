@@ -908,3 +908,60 @@ class TestBarraDeVistasMovil:
         hace falta poder cambiar de vista."""
         for vista in ("tablero", "mapa", "explorar"):
             assert '<nav class="ph-barra-vistas"' in client.get(f"/?vista={vista}").text, vista
+
+
+class TestCoberturaEnElTablero:
+    """Mosaico de cobertura (prototipo aprobado, 2026-09-26): las 16 provincias
+    como casillas, llenas las que tienen dato y punteadas el resto, con un
+    enlace al mapa. Solo en «Todos»: el detalle habla de un producto."""
+
+    def _panel(self, texto: str) -> str:
+        inicio = texto.index('class="ph-panel ph-cobertura"')
+        return texto[inicio : texto.index("</section>", inicio)]
+
+    def test_dibuja_una_casilla_por_provincia_del_catalogo(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """El fixture trae tres provincias (La Habana, Santiago y Guantánamo);
+        el catálogo real trae las 16. Una casilla por cada una que exista."""
+        panel = self._panel(client.get("/?vista=tablero").text)
+
+        assert panel.count('class="ph-tesela ') == 3
+
+    def test_las_provincias_con_dato_van_llenas_y_las_demas_punteadas(
+        self, client: TestClient, datos: None
+    ) -> None:
+        panel = self._panel(client.get("/?vista=tablero").text)
+
+        assert re.search(r'data-estado="en-ingesta"[^>]*title="La Habana: ', panel)
+        assert re.search(r'data-estado="en-ingesta"[^>]*title="Santiago de Cuba: ', panel)
+        assert re.search(r'data-estado="sin-datos"[^>]*title="Guantánamo: Sin datos todavía"', panel)
+        assert panel.count('data-estado="en-ingesta"') == 2
+
+    def test_cada_casilla_lleva_su_lugar_en_la_rejilla(
+        self, client: TestClient, datos: None
+    ) -> None:
+        panel = self._panel(client.get("/?vista=tablero").text)
+
+        # La Habana: columna 3, fila 1; Santiago de Cuba: columna 11, fila 2.
+        assert re.search(r'style="grid-column: 3; grid-row: 1;[^"]*" title="La Habana', panel)
+        assert re.search(r'style="grid-column: 11; grid-row: 2;[^"]*" title="Santiago de Cuba', panel)
+
+    def test_ofrece_el_puente_al_mapa(self, client: TestClient, datos: None) -> None:
+        panel = self._panel(client.get("/?vista=tablero").text)
+
+        assert re.search(r'<a class="ph-cobertura-mapa ph-tap-44" href="[^"]*vista=mapa"', panel)
+
+    def test_no_repite_la_cuenta_que_ya_da_sobre_los_datos(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """La viñeta «N de 16 provincias tienen datos» es de «Sobre los datos»
+        (§9.0); el mosaico la dibuja, no la vuelve a escribir."""
+        texto = client.get("/?vista=tablero").text
+
+        assert texto.count("tienen datos") == 1
+
+    def test_el_detalle_no_lleva_el_mosaico(self, client: TestClient, datos: None) -> None:
+        texto = client.get("/?vista=tablero&productos=arroz").text
+
+        assert 'class="ph-panel ph-cobertura"' not in texto

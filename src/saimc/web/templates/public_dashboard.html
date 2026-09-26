@@ -142,6 +142,30 @@
   .ph-fresh[data-nivel="hoy"] { background: var(--m3-surface-container); border-color: transparent; }
   .ph-fresh[data-nivel="atrasado"] { background: var(--m3-warn-wash); color: var(--m3-warn-strong); border-color: transparent; }
   .ph-fresh[data-nivel="atrasado"] .m3-icon { color: var(--m3-warn-strong); }
+  /* Pasado un mes (más que la ventana): el mismo tono de aviso con borde, para
+     que se note sin gritar. Nunca rojo: informa la antigüedad, no da veredicto. */
+  .ph-fresh[data-nivel="viejo"] { background: var(--m3-warn-wash); color: var(--m3-warn-strong); border-color: var(--m3-warn-strong); }
+  .ph-fresh[data-nivel="viejo"] .m3-icon { color: var(--m3-warn-strong); }
+
+  /* ── Cobertura: el cartograma de las 16 provincias ───────────────────────
+     Una rejilla de 12 columnas y dos filas (una tercera si el catálogo trae un
+     nombre que no conocemos). Llena la que tiene dato, con el tono de su
+     provincia; punteada la que sigue en recolección. */
+  .ph-mosaico { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 2.5rem; gap: 6px;
+                margin: 0; padding: 0; list-style: none; }
+  /* En el teléfono la casilla mide ~21 px: la abreviatura baja a 8 px y sin
+     espaciado para que quepa entera (medido: con 9 px cuatro rozaban el borde). */
+  .ph-tesela { display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 8px;
+               font-weight: 700; letter-spacing: 0; overflow: hidden; }
+  .ph-tesela[data-estado="sin-datos"] { border: 1.5px dashed var(--m3-outline-variant); background: transparent;
+                                        color: var(--m3-on-surface-variant); font-weight: 400; }
+  .ph-tesela[data-estado="en-ingesta"] { background: var(--prov); color: var(--m3-surface); }
+  .ph-tesela[data-estado="publicada"] { background: var(--prov); color: var(--m3-surface);
+                                        box-shadow: 0 0 0 2px var(--m3-surface), 0 0 0 4px var(--prov); }
+  .ph-cobertura-mapa { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; font-size: 14px;
+                       color: var(--m3-primary); text-decoration: none; }
+  .ph-cobertura-mapa:hover { text-decoration: underline; }
+  @media (min-width: 40rem) { .ph-mosaico { grid-auto-rows: 3.75rem; gap: 8px; } .ph-tesela { font-size: 11px; letter-spacing: .04em; } }
 
   /* ── Superficies ──────────────────────────────────────────────────────── */
   .ph-panel { background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: 16px;
@@ -292,12 +316,16 @@
   @keyframes ph-sube { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
   @keyframes ph-trazo { to { stroke-dashoffset: 0; } }
   @keyframes ph-punto { from { opacity: 0; transform: scale(.3); } to { opacity: 1; transform: scale(1); } }
-  .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-datos { animation: ph-sube .55s cubic-bezier(.2, .7, .2, 1) both; }
+  .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-cobertura, .ph-datos { animation: ph-sube .55s cubic-bezier(.2, .7, .2, 1) both; }
   .ph-intro { animation-delay: .05s; }
   .ph-mi-prov { animation-delay: .1s; }
   .ph-buscar { animation-delay: .14s; }
   .ph-lista { animation-delay: .18s; }
+  .ph-cobertura { animation-delay: .22s; }
   .ph-datos { animation-delay: .26s; }
+  /* Las casillas rebotan una tras otra al entrar, de oeste a este. */
+  .ph-cobertura .ph-tesela { animation: ph-punto .45s cubic-bezier(.2, .9, .3, 1.3) both;
+                             animation-delay: calc(.4s + var(--i, 0) * .04s); }
   .ph-lista[data-entra] .ph-fila { animation: ph-sube .55s cubic-bezier(.2, .7, .2, 1) both;
                                    animation-delay: calc(.22s + var(--i, 0) * .07s); }
   .ph-lista[data-entra] .ph-cel-spark path { stroke-dasharray: 1; stroke-dashoffset: 1;
@@ -328,8 +356,8 @@
   .ph-graficos .ph-compara-caja { transform-box: fill-box; transform-origin: left center;
                                   animation: ph-crece .8s cubic-bezier(.2, .7, .2, 1) .3s both; }
   @media (prefers-reduced-motion: reduce) {
-    .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-datos,
-    .ph-back, .ph-titulo, .ph-resumen, .ph-graficos > .ph-panel, .ph-envases, .ph-anuncios,
+    .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-cobertura, .ph-datos,
+    .ph-cobertura .ph-tesela, .ph-back, .ph-titulo, .ph-resumen, .ph-graficos > .ph-panel, .ph-envases, .ph-anuncios,
     .ph-graficos .ph-pasos-punto, .ph-graficos .ph-compara-mediana, .ph-graficos .ph-compara-caja,
     .ph-lista[data-entra] .ph-fila, .ph-lista[data-entra] .ph-cel-spark circle { animation: none; }
     .ph-lista[data-entra] .ph-cel-spark path, .ph-graficos .ph-pasos-linea { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
@@ -542,10 +570,11 @@
 <div class="ph-layout{% if selected_product %} has-nav{% endif %}">
 
 {% if data_freshness_day %}
-{# `data-nivel` deja que el CSS tiña el aviso: informa, no asusta (§12.6). Dos
-   niveles por ahora —al día o con días de atraso—; el prototipo suma un tercero
-   (más de un mes) que llega con los estados. #}
-<div class="ph-fresh" data-nivel="{{ 'atrasado' if data_freshness_days_ago and data_freshness_days_ago > 0 else 'hoy' }}"><span class="m3-icon" aria-hidden="true">info</span><span>Datos verificados hasta el <strong>{{ data_freshness_day.strftime('%d/%m') }}</strong>{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} · hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}{% endif %}</span></div>
+{# `data-nivel` deja que el CSS tiña el aviso: informa, no asusta (§12.6). Tres
+   niveles: «hoy», «atrasado» (días de atraso) y «viejo» (más de 30 días, o sea
+   pasada la ventana: las cifras pueden no valer y el aviso lo dice). #}
+{% set nivel_fresco = 'viejo' if data_freshness_days_ago and data_freshness_days_ago > 30 else ('atrasado' if data_freshness_days_ago and data_freshness_days_ago > 0 else 'hoy') %}
+<div class="ph-fresh" data-nivel="{{ nivel_fresco }}"><span class="m3-icon" aria-hidden="true">info</span><span>Datos verificados hasta el <strong>{{ data_freshness_day.strftime('%d/%m') }}</strong>{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} · hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}{% endif %}{% if nivel_fresco == 'viejo' %} · las cifras pueden estar desactualizadas{% endif %}</span></div>
 {% endif %}
 
 <main class="ph-main">
@@ -605,6 +634,24 @@
       {% endfor %}
     </div>
     <p class="ph-vacio" id="sin-resultados" hidden>Ningún producto coincide con la búsqueda. <button type="button" id="limpiar-busqueda">Borrarla</button> para ver todos.</p>
+  </section>
+  {% endif %}
+
+  {# Cobertura (prototipo aprobado, 2026-09-26): las 16 provincias como casillas de
+     un cartograma. El día del lanzamiento la noticia es «2 de 16», y acá se ve en
+     vez de quedar escondida en «Sobre los datos». El estado de cada casilla es el
+     del mapa (`MapProvince.state`); no se repite la cuenta escrita, que es de
+     «Sobre los datos» (§9.0). Es además el puente natural hacia el mapa. #}
+  {% if coverage %}
+  <section class="ph-panel ph-cobertura" aria-labelledby="mosaico-titulo">
+    <h2 class="ph-panel-title" id="mosaico-titulo">Cobertura</h2>
+    <p class="ph-panel-sub">Cada casilla es una provincia: llena si ya tiene datos, punteada si sigue en recolección.</p>
+    <ol class="ph-mosaico">
+      {% for t in coverage %}
+      <li class="ph-tesela ph-prov-{{ t.slot }}" data-estado="{{ t.state }}" style="grid-column: {{ t.col + 1 }}; grid-row: {{ t.row + 1 }}; --i: {{ loop.index0 }}" title="{{ t.label }}"><span aria-hidden="true">{{ t.abbr }}</span><span class="visually-hidden">{{ t.label }}</span></li>
+      {% endfor %}
+    </ol>
+    <a class="ph-cobertura-mapa ph-tap-44" href="{{ mapa_href }}">Ver en el mapa ›</a>
   </section>
   {% endif %}
 
