@@ -178,6 +178,12 @@
   .ph-cel-cifra { display: flex; flex-direction: row-reverse; flex-wrap: wrap; justify-content: flex-start;
                   align-items: baseline; gap: 2px 6px; }
   .ph-cel-mediana { font-family: var(--m3-mono); font-size: 16px; font-weight: 500; line-height: 1.2; }
+  /* El color lo pone la provincia (`--prov`, `.ph-prov-N`): la misma tinta que su
+     punto de la cabecera. Sin ancho fijo: en el teléfono la celda es angosta. */
+  .ph-cel-spark { display: block; width: 100%; max-width: 96px; height: auto; aspect-ratio: 96 / 26; overflow: visible;
+                  margin-top: 2px; color: var(--prov, var(--m3-primary)); }
+  .ph-cel-spark path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .ph-cel-spark circle { fill: currentColor; }
   .ph-cel-meta { display: flex; flex-direction: column; align-items: flex-end; }
   .ph-cel-cambio { font-size: 12px; line-height: 1.3; color: var(--m3-on-surface-variant); }
   .ph-cel-n { font-size: 11px; line-height: 1.3; color: var(--m3-outline); }
@@ -370,6 +376,10 @@
   <span class="visually-hidden">{{ nombre }}: </span>
   {% if cell -%}
   <span class="ph-cel-cifra"><span class="ph-cel-mediana">{{ cell.median_text }}</span>{% if cell.is_cheapest %}<span class="ph-pill">más barata</span>{% endif %}</span>
+  {# Forma de las últimas 13 semanas: acompaña a la cifra, no la reemplaza. Decorativa
+     para el lector de pantalla (la cifra y su cambio ya lo dicen). El punto marca
+     «hoy» y es lo único que se ve cuando hay una sola semana con dato. #}
+  {% if cell.spark %}<svg class="ph-cel-spark" viewBox="0 0 96 26" aria-hidden="true" focusable="false"><path d="{{ cell.spark.line }}" pathLength="1"/><circle cx="{{ cell.spark.end[0] }}" cy="{{ cell.spark.end[1] }}" r="2.4"/></svg>{% endif %}
   <span class="ph-cel-meta"><span class="ph-cel-cambio">{% if cell.change_text %}{{ cell.change_text }} (base {{ cell.previous_count }}){% else %}sin mes anterior{% endif %}</span><span class="ph-cel-n">{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}</span></span>
   {%- else -%}
   <span class="ph-cel-nada">sin datos todavía</span>

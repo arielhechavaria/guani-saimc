@@ -16,13 +16,20 @@ noticia para quien compra y mala para quien vende.
 from __future__ import annotations
 
 import unicodedata
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
+from saimc.cells import RetailObservation
 from saimc.units import unit_noun
 from saimc.web.price_charts import SlopeChart, SlopeLine
 from saimc.web.product_nav import product_icon, product_slug, products_query
+from saimc.web.weekly import Sparkline, sparkline_from_values, weekly_medians
+
+#: Lienzo de la sparkline de la celda, en unidades del `viewBox`.
+SPARK_W = 96.0
+SPARK_H = 26.0
 
 
 @dataclass(frozen=True)
@@ -40,6 +47,10 @@ class WatchCell:
     #: hay una si se puede comparar (dos o más provincias) y sin empate. Es lo
     #: que antes contestaba la tira «dónde está más barato».
     is_cheapest: bool = False
+    #: La forma de las últimas 13 semanas (`weekly.py`). `None` si el llamador
+    #: no pasó observaciones semanales o la celda no tiene ninguna en ese
+    #: horizonte: la cifra manda, el trazo solo acompaña.
+    spark: Sparkline | None = None
 
 
 @dataclass(frozen=True)
@@ -173,9 +184,15 @@ def build_watchlist(
     selected_province: str,
     desde: date,
     hasta: date,
+    weekly_obs: Sequence[RetailObservation] = (),
 ) -> Watchlist:
     """Arma la lista de más a menos anuncios, con una columna por cada
     provincia de `provinces`.
+
+    `weekly_obs` son las observaciones de las últimas 13 semanas hasta `hasta`
+    (todas las provincias y productos): de ahí sale la sparkline de cada celda.
+    Sin ellas las celdas quedan sin trazo, que es lo que hacen los llamadores
+    que no lo dibujan.
 
     El orden sale de la muestra del producto entero —todas las provincias,
     aunque haya una enfocada (prototipo E)—: la lista contesta «qué cuesta
@@ -201,6 +218,10 @@ def build_watchlist(
             slugs, provincia=selected_province, desde=desde, hasta=hasta, vista="tablero"
         )
 
+    por_celda: dict[tuple[str, str | None], list[RetailObservation]] = defaultdict(list)
+    for o in weekly_obs:
+        por_celda[(o.product_name, o.province_name)].append(o)
+
     rows = []
     total_ads = 0
     for name in pilot_names:
@@ -210,6 +231,13 @@ def build_watchlist(
             con_dato = [line for line in chart.lines if line.now_median is not None]
             barata = _mas_barata(con_dato)
             for line in con_dato:
+                # Solo las observaciones de la moneda y unidad del gráfico: la
+                # forma no puede mezclar dos unidades del mismo producto.
+                propias = [
+                    o
+                    for o in por_celda.get((name, line.province_name), ())
+                    if o.currency == chart.currency and o.unit == chart.unit
+                ]
                 por_provincia[line.province_name] = WatchCell(
                     province_name=line.province_name,
                     median_text=line.now_text,
@@ -217,6 +245,13 @@ def build_watchlist(
                     change_text=line.change_text,
                     previous_count=line.before_count,
                     is_cheapest=line.province_name == barata,
+                    spark=(
+                        sparkline_from_values(
+                            weekly_medians(propias, hasta), width=SPARK_W, height=SPARK_H
+                        )
+                        if propias
+                        else None
+                    ),
                 )
         total_ads += sum(c.count for c in por_provincia.values())
         mas_barata = next((c for c in por_provincia.values() if c.is_cheapest), None)

@@ -456,3 +456,57 @@ class TestBusquedaDeLaFila:
         assert [r.busqueda for r in lista.rows] == ["aji", "ajo"]
         assert [r.product_name for r in lista.rows] == ["Ají", "Ajo"]
 
+
+
+class TestSparklineDeLaCelda:
+    """Cada celda lleva la forma de las últimas 13 semanas (2026-09-26,
+    prototipo del tablero aprobado). Valores calculados a mano, antes de
+    escribir el código: HOY es la semana 12; `antes = días // 7`, casilla =
+    12 − antes.
+
+    - Arroz, La Habana: 20/08 (10 días → antes 1 → casilla 11) 300; 25/08
+      (casilla 12) 320; 10/07 y 12/07 (49–51 días → antes 7 → casilla 5) 300.
+      El último punto es el más alto: x = 96 − 3 = 93, y = 3 (el borde).
+    - Arroz, Santiago: solo 22/08 (casilla 11) 400. Un solo dato queda a media
+      altura: x = 3 + 90 · 11/12 = 85,5; y = 3 + 20 · ½ = 13.
+    - Pollo, La Habana: 10/07 (casilla 5) 750 y 18/08 (casilla 11) 700. El
+      último es el más bajo: x = 85,5; y = 3 + 20 = 23.
+    """
+
+    def _con_serie(self):
+        slopes = build_month_vs_month(ACTUAL, ANTERIOR, window_days=30, hoy=HOY)
+        return build_watchlist(
+            PILOTO,
+            [],
+            slopes,
+            provinces=PROVINCIAS,
+            selected_province="",
+            desde=DESDE,
+            hasta=HOY,
+            weekly_obs=ACTUAL + ANTERIOR,
+        )
+
+    def test_el_ultimo_punto_va_donde_dice_la_serie(self) -> None:
+        arroz = _fila(self._con_serie(), "Arroz")
+
+        assert arroz.cells[0].spark.end == (93.0, 3.0)
+
+    def test_un_solo_dato_queda_a_media_altura(self) -> None:
+        arroz = _fila(self._con_serie(), "Arroz")
+
+        assert arroz.cells[1].spark.end == (85.5, 13.0)
+
+    def test_una_baja_termina_abajo(self) -> None:
+        pollo = _fila(self._con_serie(), "Pollo")
+
+        assert pollo.cells[0].spark.end == (85.5, 23.0)
+
+    def test_sin_observaciones_semanales_la_celda_no_lleva_trazo(self) -> None:
+        arroz = _fila(_lista([]), "Arroz")
+
+        assert arroz.cells[0].spark is None
+
+    def test_una_celda_sin_dato_sigue_vacia(self) -> None:
+        pollo = _fila(self._con_serie(), "Pollo")
+
+        assert pollo.cells[1] is None

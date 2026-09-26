@@ -2588,6 +2588,20 @@ class TestVistaTableroEnLaRuta:
         assert "<table" not in texto
         assert texto.index("La Habana") < texto.index("Santiago de Cuba")
 
+    def test_cada_celda_con_dato_dibuja_su_tendencia_de_13_semanas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Prototipo aprobado (2026-09-26): la celda lleva la forma de las
+        últimas semanas junto a la cifra. Arroz tiene 2 celdas con dato (La
+        Habana y Santiago) y Aceite 1; Aceite en Santiago no tiene dato y no
+        dibuja nada."""
+        self._seed(session)
+
+        texto = client.get("/?vista=tablero").text
+
+        assert texto.count('class="ph-cel-spark"') == 3
+        assert 'aria-hidden="true"' in texto.split('class="ph-cel-spark"')[1][:120]
+
     def test_la_cookie_vista_decide_sin_query_string(
         self, client: TestClient, session: Session
     ) -> None:

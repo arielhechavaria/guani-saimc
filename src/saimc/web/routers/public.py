@@ -591,6 +591,20 @@ def _render_home(
     # «Cómo se movió» —`build_month_vs_month` sobre las 16 provincias, sin
     # filtro de producto: la lista tiene que mostrarlos a todos para poder
     # elegir—. Solo en el tablero; el mapa no la usa.
+    # Las 13 semanas hasta `ventana_hasta` alimentan la sparkline de cada
+    # celda (2026-09-26). Una consulta más, solo en el tablero.
+    weekly_obs = (
+        _visible_observations(
+            db,
+            pilot=pilot,
+            products=None,
+            province=None,
+            desde=ventana_hasta - timedelta(days=WEEKS * 7),
+            hasta=ventana_hasta,
+        )
+        if selected_vista == "tablero"
+        else []
+    )
     watchlist = (
         build_watchlist(
             pilot_names,
@@ -600,6 +614,7 @@ def _render_home(
             selected_province=prov_slug,
             desde=ventana_desde,
             hasta=ventana_hasta,
+            weekly_obs=weekly_obs,
         )
         if selected_vista == "tablero"
         else None

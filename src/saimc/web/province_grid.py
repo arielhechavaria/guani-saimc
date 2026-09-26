@@ -39,6 +39,7 @@ from saimc.web.price_charts import (
 )
 from saimc.web.product_nav import product_slug
 from saimc.web.watchlist_view import _alfabeto, _chart_for
+from saimc.web.weekly import Sparkline, _n
 
 #: Lienzo de la sparkline, en unidades del `viewBox`. Es el mismo en la tabla de
 #: escritorio y en la de angosto: el CSS lo escala.
@@ -48,18 +49,6 @@ SPARK_PAD = 3.0
 #: Ancho de la barra como fracción de su casilla, para que dos barras seguidas
 #: no se toquen.
 _BAR_FILL = 0.68
-
-
-@dataclass(frozen=True)
-class Sparkline:
-    """Tres dibujos de la misma serie; la plantilla los lleva todos y el CSS
-    muestra el que el visitante eligió (línea, área o barras)."""
-
-    line: str
-    area: str
-    cols: str
-    #: Extremo derecho de la serie, donde va el punto que marca «hoy».
-    end: tuple[float, float]
 
 
 @dataclass(frozen=True)
@@ -125,12 +114,6 @@ class ProductGrid:
     @property
     def province_count(self) -> int:
         return len(self.rows)
-
-
-def _n(value: float) -> str:
-    """Un decimal como mucho y sin el «.0» de los enteros: el trazo viaja en
-    el HTML de cada carga y cada byte cuenta."""
-    return f"{round(value, 1):g}"
 
 
 def _runs(indices: Sequence[int]) -> list[list[int]]:
