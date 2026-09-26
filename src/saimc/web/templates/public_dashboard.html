@@ -183,28 +183,6 @@
   .ph-mi-prov { display: flex; flex-direction: column; gap: 6px; }
   @media (min-width: 48rem) { .ph-mi-prov { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 14px; } }
   .ph-mi-prov-label { font-size: 12px; color: var(--m3-outline); }
-
-  /* ── Período: los mismos chips de siempre y, al final, «Fechas» ────────────
-     `<details>` con el par Desde/Hasta y «Ver». El resumen es un chip más; abierto,
-     el formulario flota debajo sin empujar la página. Los campos de 16 px para que
-     iOS no haga zoom al enfocarlos. */
-  /* La fila entera es una capa más alta que sus vecinas (los bloques de la página
-     entran con una animación y cada uno es una capa propia: sin esto el buscador
-     y «Productos» se dibujan encima del formulario) y es a ella, no al botón, que
-     se ancla el formulario: así arranca en su borde izquierdo y cabe en el teléfono. */
-  .ph-periodo { position: relative; z-index: 5; }
-  .ph-periodo-custom > summary { list-style: none; cursor: pointer; min-height: 44px; }
-  .ph-periodo-custom > summary::-webkit-details-marker { display: none; }
-  .ph-periodo-custom > summary .m3-icon { font-size: 18px; }
-  .ph-periodo-form { position: absolute; z-index: 20; top: calc(100% + 8px); left: 0; width: min(19rem, 100%); box-sizing: border-box;
-                     display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px;
-                     background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); box-shadow: var(--m3-elev-2); }
-  .ph-periodo-campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--m3-on-surface-variant); }
-  .ph-periodo-form input { min-height: 44px; padding: 0 12px; box-sizing: border-box; border: 1px solid var(--m3-outline-variant);
-                           border-radius: 12px; background: var(--m3-surface); color: var(--m3-on-surface); font: 400 16px var(--m3-font); }
-  .ph-periodo-form input:focus-visible { outline: 2px solid var(--m3-primary); outline-offset: 2px; }
-  .ph-periodo-enviar { min-height: 44px; border: 0; border-radius: 22px; background: var(--m3-primary); color: var(--m3-on-primary);
-                       font: 500 14px var(--m3-font); cursor: pointer; }
   .ph-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .ph-dash-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; box-sizing: border-box;
                   border-radius: 22px; border: 1px solid var(--m3-outline-variant); background: var(--m3-surface);
@@ -338,9 +316,10 @@
   @keyframes ph-sube { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
   @keyframes ph-trazo { to { stroke-dashoffset: 0; } }
   @keyframes ph-punto { from { opacity: 0; transform: scale(.3); } to { opacity: 1; transform: scale(1); } }
-  .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-cobertura, .ph-datos { animation: ph-sube .55s cubic-bezier(.2, .7, .2, 1) both; }
+  .ph-fresh, .ph-intro, .ph-mi-prov, .ph-periodo, .ph-buscar, .ph-lista, .ph-cobertura, .ph-datos { animation: ph-sube .55s cubic-bezier(.2, .7, .2, 1) both; }
   .ph-intro { animation-delay: .05s; }
   .ph-mi-prov { animation-delay: .1s; }
+  .ph-periodo { animation-delay: .12s; }
   .ph-buscar { animation-delay: .14s; }
   .ph-lista { animation-delay: .18s; }
   .ph-cobertura { animation-delay: .22s; }
@@ -378,7 +357,7 @@
   .ph-graficos .ph-compara-caja { transform-box: fill-box; transform-origin: left center;
                                   animation: ph-crece .8s cubic-bezier(.2, .7, .2, 1) .3s both; }
   @media (prefers-reduced-motion: reduce) {
-    .ph-fresh, .ph-intro, .ph-mi-prov, .ph-buscar, .ph-lista, .ph-cobertura, .ph-datos,
+    .ph-fresh, .ph-intro, .ph-mi-prov, .ph-periodo, .ph-buscar, .ph-lista, .ph-cobertura, .ph-datos,
     .ph-cobertura .ph-tesela, .ph-back, .ph-titulo, .ph-resumen, .ph-graficos > .ph-panel, .ph-envases, .ph-anuncios,
     .ph-graficos .ph-pasos-punto, .ph-graficos .ph-compara-mediana, .ph-graficos .ph-compara-caja,
     .ph-lista[data-entra] .ph-fila, .ph-lista[data-entra] .ph-cel-spark circle { animation: none; }

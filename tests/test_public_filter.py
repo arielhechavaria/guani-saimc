@@ -1498,6 +1498,26 @@ class TestBuildWindowNav:
         assert por_dias[7].is_selected
         assert not por_dias[30].is_selected
 
+    def test_preserva_la_pestana_de_explorar(self) -> None:
+        """Explorar (2026-09-26) tiene un selector de período: cada atajo tiene
+        que volver a la misma pestaña de producto, no a la primera."""
+        nav = build_window_nav(
+            self.HOY - timedelta(days=30),
+            self.HOY,
+            active_products=["Arroz", "Pollo"],
+            vista="explorar",
+            pestana="pollo",
+            hoy=self.HOY,
+        )
+
+        assert all("pestana=pollo" in c.query for c in nav)
+        assert all("productos=arroz,pollo" in c.query for c in nav)
+
+    def test_sin_pestana_los_enlaces_no_la_llevan(self) -> None:
+        nav = build_window_nav(self.HOY - timedelta(days=30), self.HOY, hoy=self.HOY)
+
+        assert not any("pestana" in c.query for c in nav)
+
     def test_un_rango_personalizado_no_marca_ningun_atajo(self) -> None:
         """Un rango que no coincide EXACTO con ninguno de los tres presets
         —ni en largo ni en que `hasta` sea hoy— no marca ninguno: es la

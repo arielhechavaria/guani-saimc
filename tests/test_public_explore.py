@@ -974,17 +974,17 @@ class TestSelectorDePeriodoEnElTablero:
     detalle; el mapa conserva el suyo."""
 
     def _periodo(self, texto: str) -> str:
-        inicio = texto.index('class="ph-mi-prov ph-periodo"')
+        inicio = texto.index('class="ph-periodo"')
         return texto[inicio : texto.index("<!-- /ph-periodo -->", inicio)]
 
     @pytest.mark.parametrize("url", ["/?vista=tablero", "/?vista=tablero&productos=arroz"])
     def test_esta_en_todos_y_en_el_detalle(self, client: TestClient, datos: None, url: str) -> None:
-        assert 'class="ph-mi-prov ph-periodo"' in client.get(url).text
+        assert 'class="ph-periodo"' in client.get(url).text
 
     def test_ofrece_los_tres_atajos_en_su_vista(self, client: TestClient, datos: None) -> None:
         periodo = self._periodo(client.get("/?vista=tablero").text)
         atajos = re.findall(
-            r'<a class="ph-dash-chip ph-tap-44[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', periodo
+            r'<a class="ph-periodo-chip[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', periodo
         )
 
         assert [dias for _, dias in atajos] == ["7 días", "30 días", "90 días"]
@@ -1003,7 +1003,7 @@ class TestSelectorDePeriodoEnElTablero:
         periodo = self._periodo(client.get("/?vista=tablero&desde=2026-09-01&hasta=2026-09-10").text)
 
         assert 'aria-current="true"' not in periodo
-        assert re.search(r'<summary class="ph-dash-chip ph-tap-44 is-active"', periodo)
+        assert re.search(r'<summary class="ph-periodo-chip is-active"', periodo)
         assert 'name="desde" value="2026-09-01"' in periodo
         assert 'name="hasta" value="2026-09-10"' in periodo
 
@@ -1019,7 +1019,7 @@ class TestSelectorDePeriodoEnElTablero:
         assert '<input type="hidden" name="productos" value="arroz">' in periodo
 
     def test_el_mapa_no_lo_estrena(self, client: TestClient, datos: None) -> None:
-        assert 'class="ph-mi-prov ph-periodo"' not in client.get("/?vista=mapa").text
+        assert 'class="ph-periodo"' not in client.get("/?vista=mapa").text
 
     def test_elegir_un_rango_desde_el_formulario_abre_el_tablero_con_ese_rango(
         self, client: TestClient, datos: None
@@ -1029,3 +1029,88 @@ class TestSelectorDePeriodoEnElTablero:
         texto = client.get("/?vista=tablero&desde=2026-09-01&hasta=2026-09-10").text
 
         assert "Mediana de los últimos 9 días" in texto
+
+
+class TestSelectorDePeriodoEnExplorar:
+    """Selector de período de Explorar (2026-09-26): el mismo del tablero y del
+    mapa, en una fila bajo las pestañas de producto. Cambiar el
+    período es una navegación normal y NO htmx: el cintillo de precios vive fuera
+    de `#ph-live` y se recalcula con el período, así que un intercambio parcial
+    lo dejaría desactualizado."""
+
+    URL = "/?vista=explorar&productos=arroz"
+
+    def _bloques(self, texto: str) -> list[str]:
+        salida = []
+        inicio = 0
+        while (i := texto.find('class="ph-periodo"', inicio)) != -1:
+            fin = texto.index("<!-- /ph-periodo -->", i)
+            salida.append(texto[i:fin])
+            inicio = fin
+        return salida
+
+    def test_esta_una_vez_bajo_las_pestanas(self, client: TestClient, datos: None) -> None:
+        """Una sola vez, en su propia fila bajo las pestañas: sirve igual en
+        escritorio y en el teléfono, sin duplicar el formulario."""
+        assert len(self._bloques(client.get(self.URL).text)) == 1
+
+    def test_sigue_ahi_cuando_la_ventana_no_tiene_datos(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """Trampa: la cabecera de Explorar solo existe si el producto tiene datos
+        en la ventana. Con «7 días» sin anuncios el selector no puede
+        desaparecer, o no habría cómo volver a un período con datos."""
+        texto = client.get(f"{self.URL}&desde=2020-01-01&hasta=2020-01-07").text
+
+        assert len(self._bloques(texto)) == 1
+        assert 'name="desde" value="2020-01-01"' in texto
+
+    def test_sin_producto_abierto_no_hay_donde_ponerlo(self, client: TestClient, datos: None) -> None:
+        """Sin pestaña activa no hay cabecera ni hoja de filtros: el estado vacío
+        solo invita a elegir un producto."""
+        assert 'class="ph-periodo"' not in client.get("/?vista=explorar").text
+
+    def test_los_atajos_vuelven_a_la_misma_pestana(self, client: TestClient, datos: None) -> None:
+        bloque = self._bloques(client.get(self.URL).text)[0]
+        atajos = re.findall(
+            r'<a class="ph-periodo-chip[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', bloque
+        )
+
+        assert [dias for _, dias in atajos] == ["7 días", "30 días", "90 días"]
+        for href, _ in atajos:
+            href = href.replace("&amp;", "&")
+            assert "vista=explorar" in href and "pestana=arroz" in href and "productos=arroz" in href
+            assert "desde=" in href and "hasta=" in href
+
+    def test_no_usa_htmx(self, client: TestClient, datos: None) -> None:
+        for bloque in self._bloques(client.get(self.URL).text):
+            assert "hx-get" not in bloque
+
+    def test_esta_marcado_el_de_30_dias_por_defecto(self, client: TestClient, datos: None) -> None:
+        bloque = self._bloques(client.get(self.URL).text)[0]
+
+        assert re.findall(r'aria-current="true">(\d+ días)</a>', bloque) == ["30 días"]
+
+    def test_un_rango_propio_enciende_fechas_y_no_marca_atajos(
+        self, client: TestClient, datos: None
+    ) -> None:
+        texto = client.get(f"{self.URL}&desde=2026-09-01&hasta=2026-09-10").text
+        bloque = self._bloques(texto)[0]
+
+        assert 'aria-current="true"' not in bloque
+        assert '<summary class="ph-periodo-chip is-active"' in bloque
+        assert 'name="desde" value="2026-09-01"' in bloque
+        assert "últimos 9 días" in texto
+
+    def test_el_formulario_conserva_vista_producto_pestana_y_provincia(
+        self, client: TestClient, datos: None
+    ) -> None:
+        bloque = self._bloques(client.get(f"{self.URL}&provincia=la-habana").text)[0]
+
+        for nombre, valor in (
+            ("vista", "explorar"),
+            ("productos", "arroz"),
+            ("pestana", "arroz"),
+            ("provincia", "la-habana"),
+        ):
+            assert f'<input type="hidden" name="{nombre}" value="{valor}">' in bloque, nombre

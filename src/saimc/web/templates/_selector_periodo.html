@@ -1,32 +1,37 @@
 {#
-  Selector de período del tablero (2026-09-26).
+  Selector de período del tablero y de Explorar (2026-09-26).
 
-  El mapa deja elegir 7 / 30 / 90 días o un rango de fechas; el tablero solo
-  heredaba `desde`/`hasta` de la URL y no había cómo cambiarlos. Mismos atajos y
-  mismo rango de calendario que el mapa (`window_nav`, de `build_window_nav`), con
-  `vista=tablero` en cada enlace. Sin htmx: el tablero navega con páginas
-  completas, así que el formulario es un GET de siempre, sin JS.
+  El mapa deja elegir 7 / 30 / 90 días o un rango de fechas; el tablero y Explorar
+  solo heredaban `desde`/`hasta` de la URL y no había cómo cambiarlos. Mismos
+  atajos y mismo rango de calendario que el mapa (`window_nav`, de
+  `build_window_nav`), con la vista y la pestaña en cada enlace. Sin JS: el
+  formulario es un GET de siempre.
+
+  Y SIN htmx, a propósito: el cintillo de precios vive fuera de `#ph-live` y se
+  recalcula con el período, así que un intercambio parcial lo dejaría con las
+  cifras de la ventana anterior. Cambiar el período es una navegación completa.
 
   «Fechas» abre un `<details>` con el par Desde/Hasta y un botón «Ver» explícito:
   sin auto-envío, porque son dos campos y enviar al cambiar el primero mandaría la
   fecha vieja del segundo. Si el rango no es ninguno de los tres atajos, «Fechas»
   se enciende y dice el rango: es la señal de que se está mirando otro período.
 
-  Conserva la provincia y los productos elegidos con campos ocultos.
+  Espera `window_nav`, `selected_desde`, `selected_hasta` y `period_hidden` (pares
+  nombre/valor que conservan vista, producto(s), pestaña y provincia; los vacíos
+  no se escriben). Puede incluirse más de una vez en la página (la cabecera de
+  escritorio de Explorar y su hoja del teléfono), por eso no lleva `id`.
 #}
 {% set es_personalizado = not (window_nav | selectattr('is_selected') | list) %}
-<div class="ph-mi-prov ph-periodo">
-  <span class="ph-mi-prov-label" id="periodo-etiqueta">Período</span>
-  <div class="ph-chips" role="group" aria-labelledby="periodo-etiqueta">
+<div class="ph-periodo">
+  <span class="ph-periodo-etiqueta" aria-hidden="true">Período</span>
+  <div class="ph-periodo-chips" role="group" aria-label="Período">
     {% for choice in window_nav %}
-    <a class="ph-dash-chip ph-tap-44{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
+    <a class="ph-periodo-chip{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
     {% endfor %}
     <details class="ph-periodo-custom">
-      <summary class="ph-dash-chip ph-tap-44{% if es_personalizado %} is-active{% endif %}" aria-label="Elegir fechas{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}"><span class="m3-icon" aria-hidden="true">calendar_month</span>{% if es_personalizado %}{{ selected_desde.strftime('%d/%m') }} – {{ selected_hasta.strftime('%d/%m') }}{% else %}Fechas{% endif %}</summary>
+      <summary class="ph-periodo-chip{% if es_personalizado %} is-active{% endif %}" aria-label="Elegir fechas{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}"><span class="m3-icon" aria-hidden="true">calendar_month</span>{% if es_personalizado %}{{ selected_desde.strftime('%d/%m') }} – {{ selected_hasta.strftime('%d/%m') }}{% else %}Fechas{% endif %}</summary>
       <form class="ph-periodo-form" action="/" method="get">
-        <input type="hidden" name="vista" value="tablero">
-        {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
-        {% if selected_province_slug %}<input type="hidden" name="provincia" value="{{ selected_province_slug }}">{% endif %}
+        {% for nombre, valor in period_hidden %}{% if valor %}<input type="hidden" name="{{ nombre }}" value="{{ valor }}">{% endif %}{% endfor %}
         <label class="ph-periodo-campo"><span>Desde</span><input type="date" name="desde" value="{{ selected_desde.isoformat() }}"></label>
         <label class="ph-periodo-campo"><span>Hasta</span><input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}"></label>
         <button type="submit" class="ph-periodo-enviar">Ver</button>

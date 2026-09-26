@@ -587,6 +587,7 @@ def build_window_nav(
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     vista: str = "mapa",
+    pestana: str = "",
     hoy: date | None = None,
 ) -> list[WindowChoice]:
     """Atajos rápidos del date picker (2026-09-14): «7/30/90 días» siguen
@@ -610,6 +611,7 @@ def build_window_nav(
             query=_query(
                 producto=prod_slug,
                 productos=active_slugs,
+                pestana=pestana,
                 provincia=prov_slug,
                 desde=hoy - timedelta(days=days),
                 hasta=hoy,

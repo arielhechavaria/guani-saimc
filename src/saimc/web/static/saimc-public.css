@@ -675,3 +675,50 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
   .ph-barra-icono { transition: none; }
   .ph-barra-item:active .ph-barra-icono { transform: none; }
 }
+
+/* ── Selector de período: 7 / 30 / 90 días o un rango de fechas ───────────
+   Lo comparten el tablero y Explorar (2026-09-26); el mapa tiene el suyo. Es
+   un `<details>` con el par Desde/Hasta y un «Ver» explícito: sin auto-envío,
+   porque son dos campos.
+
+   La fila entera es una capa más alta que sus vecinas: los bloques de la página
+   entran con una animación de `opacity`/`transform` y cada uno queda como capa
+   propia, así que un `z-index` DENTRO de la fila no alcanza —medido: el buscador
+   y el panel siguiente se dibujaban encima del formulario—. Y es a la fila, no al
+   botón, que se ancla el formulario: arranca en su borde izquierdo y cabe en el
+   teléfono (anclado al botón, que queda a la derecha de los chips, se salía). */
+.ph-periodo { position: relative; z-index: 5; display: flex; flex-direction: column; gap: var(--m3-space-2); }
+@media (min-width: 48rem) {
+  .ph-periodo { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: var(--m3-space-3); }
+}
+.ph-periodo-etiqueta { font-size: .75rem; color: var(--m3-outline); }
+.ph-periodo-chips { display: flex; flex-wrap: wrap; gap: var(--m3-space-2); }
+.ph-periodo-chip {
+  display: inline-flex; align-items: center; gap: var(--m3-space-2); min-height: 44px; padding: 0 var(--m3-space-3);
+  box-sizing: border-box; border-radius: 22px; border: 1px solid var(--m3-outline-variant);
+  background: var(--m3-surface); color: var(--m3-on-surface); font: 400 14px var(--m3-font);
+  text-decoration: none; white-space: nowrap; cursor: pointer; list-style: none;
+}
+.ph-periodo-chip:hover { text-decoration: none; border-color: var(--m3-outline); }
+.ph-periodo-chip.is-active {
+  background: var(--m3-primary-container); border-color: var(--m3-primary);
+  color: var(--m3-on-primary-container); font-weight: 500;
+}
+.ph-periodo-chip .m3-icon { font-size: 18px; }
+.ph-periodo-custom > summary { min-height: 44px; }
+.ph-periodo-custom > summary::-webkit-details-marker { display: none; }
+.ph-periodo-form {
+  position: absolute; z-index: 20; top: calc(100% + 8px); left: 0; width: min(19rem, 100%); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: var(--m3-space-3); padding: var(--m3-space-4); border-radius: 16px;
+  background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); box-shadow: var(--m3-elev-2);
+}
+.ph-periodo-campo { display: flex; flex-direction: column; gap: var(--m3-space-1); font-size: .75rem; color: var(--m3-on-surface-variant); }
+.ph-periodo-form input {
+  min-height: 44px; padding: 0 var(--m3-space-3); box-sizing: border-box; border: 1px solid var(--m3-outline-variant);
+  border-radius: 12px; background: var(--m3-surface); color: var(--m3-on-surface); font: 400 16px var(--m3-font);
+}
+.ph-periodo-form input:focus-visible { outline: 2px solid var(--m3-primary); outline-offset: 2px; }
+.ph-periodo-enviar {
+  min-height: 44px; border: 0; border-radius: 22px; background: var(--m3-primary); color: var(--m3-on-primary);
+  font: 500 14px var(--m3-font); cursor: pointer;
+}

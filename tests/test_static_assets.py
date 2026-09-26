@@ -1254,8 +1254,6 @@ class TestListaCompactaDelTablero:
             ".ph-buscar-input",
             ".ph-vacio button",
             ".ph-cobertura-mapa",
-            ".ph-periodo-enviar",
-            ".ph-periodo-custom > summary",
         ],
     )
     def test_los_controles_de_la_lista_miden_44px_o_mas(self, selector: str) -> None:
@@ -1264,32 +1262,8 @@ class TestListaCompactaDelTablero:
         assert alto is not None, f"{selector} perdió su `min-height`"
         assert int(alto.removesuffix("px")) >= 44, f"{selector}: {alto}"
 
-    def test_el_formulario_de_fechas_flota_sobre_los_paneles_siguientes(self) -> None:
-        """Medido en navegador (2026-09-26): con «Fechas» abierto, el buscador y
-        el panel «Productos» se dibujaban ENCIMA del formulario y no se podía
-        pulsar «Ver». Los bloques de la página entran con una animación de
-        `opacity`/`transform`, y cada uno queda como una capa propia: un
-        `z-index` dentro de la fila no alcanza. La fila entera tiene que ser una
-        capa más alta que sus vecinas."""
-        assert self._valor(".ph-periodo", "position") == "relative"
-        assert int(self._valor(".ph-periodo", "z-index") or 0) >= 2
 
-    def test_el_formulario_se_ancla_a_la_fila_y_no_al_boton(self) -> None:
-        """Anclado al `<details>` (que queda a la derecha de los chips), el
-        formulario de 19rem se salía del teléfono: medido, right = 562 con un
-        viewport de 390. Anclado a la fila entera, arranca en su borde
-        izquierdo y cabe."""
-        assert self._valor(".ph-periodo-custom", "position") in (None, "static")
 
-    def test_los_campos_de_fecha_no_provocan_zoom_en_ios(self) -> None:
-        """Igual que el buscador: menos de 16px en un campo hace zoom en iOS."""
-        letra = self._valor(".ph-periodo-form input", "font")
-
-        assert letra is not None
-        tamano = re.search(r"(\d+)px", letra)
-
-        assert tamano is not None, letra
-        assert int(tamano.group(1)) >= 16, letra
 
     def test_el_campo_no_provoca_zoom_en_ios(self) -> None:
         """Safari en iOS hace zoom al enfocar un campo de menos de 16px, y en el
@@ -1492,6 +1466,63 @@ class TestListaCompactaDelTablero:
         """La tarjeta salió de la lista; su CSS suelto sería peso muerto que
         nadie borra porque nadie sabe si algo lo usa."""
         assert ".ph-tarjeta" not in self._css()
+
+
+class TestSelectorDePeriodo:
+    """CSS del selector de período compartido por el tablero y Explorar
+    (2026-09-26). Vive en `saimc-public.css`: lo cargan las dos vistas."""
+
+    def _hoja(self) -> str:
+        raiz = Path(__file__).resolve().parents[1]
+        fuente = (raiz / "src" / "saimc" / "web" / "static" / "saimc-public.css").read_text(
+            encoding="utf-8"
+        )
+        return re.sub(r"/\*.*?\*/", "", fuente, flags=re.S)
+
+    def _valor(self, selector: str, propiedad: str) -> str | None:
+        for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", self._hoja()):
+            if selector in [x.strip() for x in m.group(1).split(",")]:
+                v = re.search(rf"(?:^|;)\s*{re.escape(propiedad)}\s*:\s*([^;]+)", m.group(2))
+                if v:
+                    return v.group(1).strip()
+        return None
+
+    @pytest.mark.parametrize(
+        "selector",
+        [".ph-periodo-chip", ".ph-periodo-enviar", ".ph-periodo-custom > summary", ".ph-periodo-form input"],
+    )
+    def test_los_controles_miden_44px_o_mas(self, selector: str) -> None:
+        alto = self._valor(selector, "min-height")
+
+        assert alto is not None, f"{selector} perdió su `min-height`"
+        assert int(alto.removesuffix("px")) >= 44, f"{selector}: {alto}"
+
+    def test_los_campos_de_fecha_no_provocan_zoom_en_ios(self) -> None:
+        """Igual que el buscador: menos de 16px en un campo hace zoom en iOS."""
+        letra = self._valor(".ph-periodo-form input", "font")
+
+        assert letra is not None
+        tamano = re.search(r"(\d+)px", letra)
+
+        assert tamano is not None, letra
+        assert int(tamano.group(1)) >= 16, letra
+
+    def test_la_fila_flota_sobre_los_paneles_siguientes(self) -> None:
+        """Medido en navegador (2026-09-26): con «Fechas» abierto, el buscador y
+        el panel «Productos» se dibujaban ENCIMA del formulario y no se podía
+        pulsar «Ver». Los bloques de la página entran con una animación de
+        `opacity`/`transform` y cada uno queda como una capa propia: un `z-index`
+        dentro de la fila no alcanza. La fila entera tiene que ser una capa más
+        alta que sus vecinas."""
+        assert self._valor(".ph-periodo", "position") == "relative"
+        assert int(self._valor(".ph-periodo", "z-index") or 0) >= 2
+
+    def test_el_formulario_se_ancla_a_la_fila_y_no_al_boton(self) -> None:
+        """Anclado al `<details>` (a la derecha de los chips), el formulario de
+        19rem se salía del teléfono: medido, right = 562 con un viewport de 390.
+        Anclado a la fila entera arranca en su borde izquierdo y cabe."""
+        assert self._valor(".ph-periodo-custom", "position") in (None, "static")
+        assert self._valor(".ph-periodo-form", "position") == "absolute"
 
 
 class TestCintillo:

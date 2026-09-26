@@ -106,6 +106,11 @@
   .ph-ex-pop { position: absolute; top: 38px; left: 0; z-index: 30; min-width: 230px; max-height: 300px; overflow: auto; padding: 6px;
                background: var(--m3-surface); border: 1px solid var(--m3-outline-variant); border-radius: 12px; box-shadow: var(--ph-elev); }
   .ph-ex-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 20px 8px; flex: none; }
+  /* Fila del selector de período: en escritorio, con chips compactos como el
+     resto de los controles de esta vista; en el teléfono vuelven a 44 px. */
+  .ph-ex-periodo { flex: none; padding: 10px 20px 0; }
+  .ph-ex-periodo .ph-periodo { flex-direction: row; align-items: center; column-gap: 12px; }
+  .ph-ex-periodo .ph-periodo-chip, .ph-ex-periodo .ph-periodo-custom > summary { min-height: 32px; font-size: 13px; }
   .ph-ex-crumb { margin: 0; font-size: 12px; color: var(--m3-outline); }
   .ph-ex-h2 { margin: 2px 0 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 24px; line-height: 1.15; }
   .ph-ex-search { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 8px; flex: none;
@@ -244,6 +249,9 @@
     .ph-ex-views a { min-height: 44px; }
     .ph-ex-tabs { overflow-x: auto; }
     .ph-ex-head { display: none; }
+    .ph-ex-periodo { padding: 8px 16px 0; }
+    .ph-ex-periodo .ph-periodo-chip, .ph-ex-periodo .ph-periodo-custom > summary { min-height: 44px; font-size: 14px; }
+    .ph-ex-periodo .ph-periodo-etiqueta { display: none; }
     .ph-ex-scroll { overflow-x: auto; }
     .ph-ex-grid { min-width: 560px; }
     .ph-ex-sub { display: none; }
@@ -439,6 +447,10 @@
 
     {% if activo %}
     <div class="ph-ex-pane" role="tabpanel" id="ph-ex-pane-{{ activo.slug }}" aria-labelledby="ph-ex-tab-{{ activo.slug }}" style="display:flex;flex-direction:column;flex:1;min-height:0">
+      {# Selector de período (2026-09-26). Fuera de `has_data` a propósito: con una
+         ventana sin anuncios de este producto tiene que seguir ahí, o no habría
+         cómo volver a un período con datos. #}
+      <div class="ph-ex-periodo">{% include "_selector_periodo.html" %}</div>
       {% if activo.has_data %}
       <div class="ph-ex-head">
         <div>

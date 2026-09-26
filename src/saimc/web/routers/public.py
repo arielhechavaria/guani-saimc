@@ -710,6 +710,13 @@ def _render_home(
             "selected_province": selected_province,
             "vista": selected_vista,
             "ticker": ticker,
+            # Lo que el formulario de fechas (`_selector_periodo.html`) tiene que
+            # conservar al enviar: la vista, los productos y la provincia.
+            "period_hidden": [
+                ("vista", selected_vista),
+                ("productos", ",".join(product_slug(n) for n in active_products)),
+                ("provincia", prov_slug),
+            ],
             "coverage": build_coverage(map_view.provinces, province_slots),
             "cards_by_province": cards_by_province,
             "province_slots": province_slots,
@@ -824,6 +831,25 @@ def _render_explore(
         {
             "vista": "explorar",
             "ticker": ticker,
+            # Selector de período (2026-09-26): mismos atajos que el mapa, cada
+            # uno de vuelta a la misma pestaña; el formulario conserva vista,
+            # productos, pestaña y provincia.
+            "window_nav": build_window_nav(
+                desde,
+                hasta,
+                None,
+                selected_province=selected_province or "",
+                active_products=active_products,
+                vista="explorar",
+                pestana=active_slug,
+                hoy=date.today(),
+            ),
+            "period_hidden": [
+                ("vista", "explorar"),
+                ("productos", ",".join(active_slugs)),
+                ("pestana", active_slug),
+                ("provincia", prov_slug),
+            ],
             "ex_nav": build_explore_nav(
                 productos, active_products, active_slug, provincia=prov_slug, desde=desde, hasta=hasta
             ),
