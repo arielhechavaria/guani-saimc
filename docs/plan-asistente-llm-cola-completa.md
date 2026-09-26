@@ -1,6 +1,6 @@
 # Plan — Curaduría de toda la cola con el asistente LLM
 
-Fecha del plan: 2026-09-25. Última actualización: 2026-09-25.
+Fecha del plan: 2026-09-25. Última actualización: 2026-09-26.
 
 ## Tablero (empezá por acá)
 
@@ -10,7 +10,7 @@ Fecha del plan: 2026-09-25. Última actualización: 2026-09-25.
 | 2 | «Completar con IA» propone el anuncio entero, con cita, «difiere» y descarte sugerido | CERRADO |
 | 3a | Guardar la propuesta y capturar la revisión (tablas `llm_proposals`, `llm_reviews`) | CERRADO |
 | 3b | Pre-cálculo por lotes (`python -m saimc.extraction.prefill`) | CERRADO |
-| 3d | El modelo propone también formato de venta, base del precio y envase | **ABIERTO**: construido, falta medir y verificar |
+| 3d | El modelo propone también formato de venta, base del precio y envase | **ABIERTO**: medido (2026-09-26); falta la verificación del operador en pantalla |
 | 3c | Glosario y recorte del texto | Pendiente |
 | 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | Pendiente |
 | 5 | Vigilancia del rubber-stamping en `/control` | Pendiente |
@@ -20,26 +20,23 @@ del operador) antes de abrir el siguiente.
 
 ### Próximos pasos, en orden
 
-1. **3d — backtest pagado** del prompt v4. **A medias (2026-09-25):** se cortó en
-   el anuncio 81 de 100 por falta de saldo en la API (gastados $0,81). Al
-   recargar, correr **el mismo comando, sin mover archivos**: reanuda los 19 que
-   faltan (~$0,2). Parcial sobre 80 anuncios (57 filas del oro): los seis campos
-   anteriores no empeoraron; formato de venta 75,4%, base del precio 93,6%,
-   envase 64,3%. Desglose de errores (sin costo, sobre lo ya guardado):
-   - **Envase:** de 20 errores, 18 son abstenciones (`null`); solo 2 son un valor
-     equivocado (botella→caja, aceite). El «64%» es sobre todo «sin propuesta».
-   - **Formato de venta:** 9 equivocados. 7 son la misma lista diaria de un vendedor
-     de Santiago («Sacos Arroz 25Kg… Venta mínima: 1 Saco»), que el operador marcó
-     mayorista y el modelo minorista. **Aclarado por el operador (2026-09-26): un
-     saco individual es minorista**, así que el modelo acertó y esas 7 filas del
-     oro están mal etiquetadas (el criterio del formulario y del prompt no cambia).
-     **Corregidas el 2026-09-26** (9 filas de esa lista pasadas a `retail` en
-     `prices_history`, con backup previo), el acierto medido es 87,7% (50/57). Los otros 2, arroz
-     «por mayor» a 50 kg, sí son error del modelo: dejó que la palabra «mayor» del
-     anuncio decidiera. Pendiente: corregir el oro (decide el operador) y, si se
-     quiere, una línea en el prompt («que el anuncio diga “por mayor” no basta»)
-     con nuevo `PROMPT_VERSION` y re-medición.
-   - **Base del precio:** 3 fallos de 47 (2 abstenciones y 1 equivocado).
+1. **3d — backtest pagado del prompt v4: HECHO (2026-09-26).** Los 100 anuncios,
+   $0,91 en total. Sobre 70 filas del oro (reglas entre paréntesis): producto 98,6%
+   (94,3), precio y moneda 84,3% (55,7), cantidad y unidad 85,7% (60,0), provincia
+   95,7% (94,3), **extracción completa 71,4% (40,0)**, contra 67,1% de la v3. Campos
+   nuevos: formato de venta 90,0% (63/70), base del precio 94,4% (51/54), envase
+   66,2% (45/68). Descarte sin falsos descartes. Detalle en
+   `data/llm-backtest-report-v4.md`.
+   - **Envase:** el 66% es sobre todo «sin propuesta»: en el parcial de 80, de 20
+     errores, 18 eran abstenciones (`null`) y solo 2 un valor equivocado.
+   - **Formato de venta:** las 7 filas de la lista diaria de Santiago («Sacos Arroz
+     25Kg… Venta mínima: 1 Saco») estaban mal etiquetadas en el oro (un saco
+     individual es minorista, aclarado por el operador el 2026-09-26) y se
+     corrigieron con backup previo. Quedan 2 filas de arroz «por mayor» a 50 kg que
+     sí son error del modelo: dejó que la palabra «mayor» decidiera. Opcional: una
+     línea en el prompt («que el anuncio diga “por mayor” no basta») con nuevo
+     `PROMPT_VERSION` y re-medición.
+   - **Base del precio:** 3 fallos de 54.
    - Ojo con la muestra: esa misma lista aparece 33 veces en la base con distintas
      fechas; pesa mucho en cualquier medición por fila.
 2. **3d — etiquetas a 390 px: HECHO** (commit `55eb0ab`). Las preguntas de
@@ -53,13 +50,11 @@ del operador) antes de abrir el siguiente.
 
 ### Pendientes sueltos (no son de un slice; se atienden cuando toquen)
 
-- **Prompt caching del prefijo fijo: CONSTRUIDO (2026-09-26), falta verificarlo con
-  la API real** (entrada en `docs/decisions.md`). Ahorro esperado ~26% por llamada.
-  Verificación con centavos: correr 3 anuncios y mirar en el registro que
-  `cache_read_tokens` sea mayor que cero desde la segunda llamada, p. ej.
-  `python -m saimc.extraction.prefill --execute --limit 3` y luego
-  `tail -3 data/llm-assist-log.jsonl`. Si da 0, el caching no se activó y hay que
-  revisar (mínimo 1.024 tokens en Sonnet 5; cualquier byte variable antes del anuncio).
+- **Prompt caching del prefijo fijo: VERIFICADO (2026-09-26)** con la API real
+  (`prefill --execute --limit 3`): `cache_read_tokens` = 2733 en las tres llamadas.
+- **Respuesta truncada en `max_tokens`:** en esa misma prueba un anuncio salió
+  `DEGRADADO (other)` con 4096 tokens de salida (`62cd0e01`, sin filas). Es el
+  primer dato para 3c: mirar su `raw_response` y ver en qué se fueron los tokens.
 
 - **Las reglas de la base del precio no llegan a la cola.** `propose_all` (que usan
   `/curation` y el backtest) no aplica `_declared_price_basis` ni
