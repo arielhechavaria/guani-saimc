@@ -33,7 +33,8 @@ del operador) antes de abrir el siguiente.
      mayorista y el modelo minorista. **Aclarado por el operador (2026-09-26): un
      saco individual es minorista**, así que el modelo acertó y esas 7 filas del
      oro están mal etiquetadas (el criterio del formulario y del prompt no cambia).
-     Corregidas a mano esas 7, el acierto sería ~87,7% (50/57). Los otros 2, arroz
+     **Corregidas el 2026-09-26** (9 filas de esa lista pasadas a `retail` en
+     `prices_history`, con backup previo), el acierto medido es 87,7% (50/57). Los otros 2, arroz
      «por mayor» a 50 kg, sí son error del modelo: dejó que la palabra «mayor» del
      anuncio decidiera. Pendiente: corregir el oro (decide el operador) y, si se
      quiere, una línea en el prompt («que el anuncio diga “por mayor” no basta»)
