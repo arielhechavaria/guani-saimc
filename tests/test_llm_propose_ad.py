@@ -740,3 +740,26 @@ def test_sin_campos_de_cache_en_la_respuesta_los_tokens_no_cambian(
 
     assert (propuesta.input_tokens, propuesta.output_tokens) == (100, 40)
     assert (propuesta.cache_read_tokens, propuesta.cache_write_tokens) == (0, 0)
+
+
+def test_el_registro_del_operador_lleva_los_tokens_de_cache(tmp_path: Path) -> None:
+    # Es el registro que se mira para comprobar que el caching funciona en el
+    # pre-cálculo: lectura mayor que cero desde la segunda llamada.
+    log = tmp_path / "assist.jsonl"
+    resultado = llm_propose_ad.AdProposal(
+        discard=True,
+        input_tokens=650,
+        output_tokens=40,
+        cache_read_tokens=1000,
+        cache_write_tokens=200,
+    )
+
+    llm_propose_ad.record_operator_run(
+        resultado, ingestion_id="id-1", model="claude-sonnet-5", log_path=log, source="prefill"
+    )
+
+    linea = json.loads(log.read_text().splitlines()[0])
+    assert (linea["cache_read_tokens"], linea["cache_write_tokens"]) == (1000, 200)
+    assert linea["input_tokens"] == 650
+    # `/control` sigue pudiendo leer la línea.
+    assert len(llm_assist.read_assist_runs(log)) == 1

@@ -53,6 +53,14 @@ del operador) antes de abrir el siguiente.
 
 ### Pendientes sueltos (no son de un slice; se atienden cuando toquen)
 
+- **Prompt caching del prefijo fijo: CONSTRUIDO (2026-09-26), falta verificarlo con
+  la API real** (entrada en `docs/decisions.md`). Ahorro esperado ~26% por llamada.
+  Verificación con centavos: correr 3 anuncios y mirar en el registro que
+  `cache_read_tokens` sea mayor que cero desde la segunda llamada, p. ej.
+  `python -m saimc.extraction.prefill --execute --limit 3` y luego
+  `tail -3 data/llm-assist-log.jsonl`. Si da 0, el caching no se activó y hay que
+  revisar (mínimo 1.024 tokens en Sonnet 5; cualquier byte variable antes del anuncio).
+
 - **Las reglas de la base del precio no llegan a la cola.** `propose_all` (que usan
   `/curation` y el backtest) no aplica `_declared_price_basis` ni
   `_packaging_price_basis`; solo `propose()` lo hace. Por eso la marca
