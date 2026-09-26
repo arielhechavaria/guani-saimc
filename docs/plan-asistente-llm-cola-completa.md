@@ -30,9 +30,14 @@ del operador) antes de abrir el siguiente.
      equivocado (botella→caja, aceite). El «64%» es sobre todo «sin propuesta».
    - **Formato de venta:** 9 equivocados. 7 son la misma lista diaria de un vendedor
      de Santiago («Sacos Arroz 25Kg… Venta mínima: 1 Saco»), que el operador marcó
-     mayorista y el modelo minorista, como pide el prompt. Otros 2, arroz «por
-     mayor» a 50 kg, el operador los marcó minorista y el modelo mayorista. Es una
-     cuestión de criterio a decidir con el operador, no un fallo del modelo.
+     mayorista y el modelo minorista. **Aclarado por el operador (2026-09-26): un
+     saco individual es minorista**, así que el modelo acertó y esas 7 filas del
+     oro están mal etiquetadas (el criterio del formulario y del prompt no cambia).
+     Corregidas a mano esas 7, el acierto sería ~87,7% (50/57). Los otros 2, arroz
+     «por mayor» a 50 kg, sí son error del modelo: dejó que la palabra «mayor» del
+     anuncio decidiera. Pendiente: corregir el oro (decide el operador) y, si se
+     quiere, una línea en el prompt («que el anuncio diga “por mayor” no basta»)
+     con nuevo `PROMPT_VERSION` y re-medición.
    - **Base del precio:** 3 fallos de 47 (2 abstenciones y 1 equivocado).
    - Ojo con la muestra: esa misma lista aparece 33 veces en la base con distintas
      fechas; pesa mucho en cualquier medición por fila.
