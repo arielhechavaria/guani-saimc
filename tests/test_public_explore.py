@@ -983,7 +983,9 @@ class TestSelectorDePeriodoEnElTablero:
 
     def test_ofrece_los_tres_atajos_en_su_vista(self, client: TestClient, datos: None) -> None:
         periodo = self._periodo(client.get("/?vista=tablero").text)
-        atajos = re.findall(r'<a class="ph-dash-chip ph-tap-44[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', periodo)
+        atajos = re.findall(
+            r'<a class="ph-dash-chip ph-tap-44[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', periodo
+        )
 
         assert [dias for _, dias in atajos] == ["7 días", "30 días", "90 días"]
         assert all("vista=tablero" in href and "desde=" in href and "hasta=" in href for href, _ in atajos)
