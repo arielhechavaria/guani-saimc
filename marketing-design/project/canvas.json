@@ -2,6 +2,13 @@
   "v": 3,
   "attachments": {},
   "boards": {
+    "CarruselAnuncios.dc.html": {
+      "h": 1350,
+      "title": "3b · Carrusel: de dónde sale este precio",
+      "w": 1080,
+      "x": 4640,
+      "y": 0
+    },
     "CarruselCierre.dc.html": {
       "h": 1350,
       "title": "9 · Carrusel: cierre",
@@ -13,7 +20,7 @@
       "h": 1350,
       "title": "8 · De los grupos a la cifra",
       "w": 1080,
-      "x": 4640,
+      "x": 6960,
       "y": 0
     },
     "CarruselConsejo.dc.html": {
@@ -100,7 +107,8 @@
     "PortadaFacebook.dc.html",
     "Identidad.dc.html",
     "ComoFunciona.dc.html",
-    "CarruselCierre.dc.html"
+    "CarruselCierre.dc.html",
+    "CarruselAnuncios.dc.html"
   ],
   "pages": [],
   "title": "Guani — Tarjetas para redes"
