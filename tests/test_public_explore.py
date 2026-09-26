@@ -965,3 +965,65 @@ class TestCoberturaEnElTablero:
         texto = client.get("/?vista=tablero&productos=arroz").text
 
         assert 'class="ph-panel ph-cobertura"' not in texto
+
+
+class TestSelectorDePeriodoEnElTablero:
+    """Selector de período del tablero (2026-09-26): el Mapa deja elegir 7 / 30 /
+    90 días o un rango de fechas, y el tablero no. Mismos atajos y mismo rango
+    de calendario, con `vista=tablero` en cada enlace. Está en «Todos» y en el
+    detalle; el mapa conserva el suyo."""
+
+    def _periodo(self, texto: str) -> str:
+        inicio = texto.index('class="ph-mi-prov ph-periodo"')
+        return texto[inicio : texto.index("<!-- /ph-periodo -->", inicio)]
+
+    @pytest.mark.parametrize("url", ["/?vista=tablero", "/?vista=tablero&productos=arroz"])
+    def test_esta_en_todos_y_en_el_detalle(self, client: TestClient, datos: None, url: str) -> None:
+        assert 'class="ph-mi-prov ph-periodo"' in client.get(url).text
+
+    def test_ofrece_los_tres_atajos_en_su_vista(self, client: TestClient, datos: None) -> None:
+        periodo = self._periodo(client.get("/?vista=tablero").text)
+        atajos = re.findall(r'<a class="ph-dash-chip ph-tap-44[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', periodo)
+
+        assert [dias for _, dias in atajos] == ["7 días", "30 días", "90 días"]
+        assert all("vista=tablero" in href and "desde=" in href and "hasta=" in href for href, _ in atajos)
+
+    def test_sin_elegir_nada_esta_marcado_el_de_30_dias(self, client: TestClient, datos: None) -> None:
+        periodo = self._periodo(client.get("/?vista=tablero").text)
+
+        marcados = re.findall(r'aria-current="true">(\d+ días)</a>', periodo)
+
+        assert marcados == ["30 días"]
+
+    def test_un_rango_propio_no_marca_ningun_atajo_y_enciende_las_fechas(
+        self, client: TestClient, datos: None
+    ) -> None:
+        periodo = self._periodo(client.get("/?vista=tablero&desde=2026-09-01&hasta=2026-09-10").text)
+
+        assert 'aria-current="true"' not in periodo
+        assert re.search(r'<summary class="ph-dash-chip ph-tap-44 is-active"', periodo)
+        assert 'name="desde" value="2026-09-01"' in periodo
+        assert 'name="hasta" value="2026-09-10"' in periodo
+
+    def test_el_formulario_conserva_vista_provincia_y_producto(
+        self, client: TestClient, datos: None
+    ) -> None:
+        periodo = self._periodo(
+            client.get("/?vista=tablero&productos=arroz&provincia=la-habana").text
+        )
+
+        assert '<input type="hidden" name="vista" value="tablero">' in periodo
+        assert '<input type="hidden" name="provincia" value="la-habana">' in periodo
+        assert '<input type="hidden" name="productos" value="arroz">' in periodo
+
+    def test_el_mapa_no_lo_estrena(self, client: TestClient, datos: None) -> None:
+        assert 'class="ph-mi-prov ph-periodo"' not in client.get("/?vista=mapa").text
+
+    def test_elegir_un_rango_desde_el_formulario_abre_el_tablero_con_ese_rango(
+        self, client: TestClient, datos: None
+    ) -> None:
+        """Ida y vuelta: lo que manda el formulario (GET con `vista=tablero`) es
+        lo que el servidor devuelve en el aviso y en los campos."""
+        texto = client.get("/?vista=tablero&desde=2026-09-01&hasta=2026-09-10").text
+
+        assert "Mediana de los últimos 9 días" in texto

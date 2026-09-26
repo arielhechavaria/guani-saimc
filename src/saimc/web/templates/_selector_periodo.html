@@ -1,0 +1,36 @@
+{#
+  Selector de período del tablero (2026-09-26).
+
+  El mapa deja elegir 7 / 30 / 90 días o un rango de fechas; el tablero solo
+  heredaba `desde`/`hasta` de la URL y no había cómo cambiarlos. Mismos atajos y
+  mismo rango de calendario que el mapa (`window_nav`, de `build_window_nav`), con
+  `vista=tablero` en cada enlace. Sin htmx: el tablero navega con páginas
+  completas, así que el formulario es un GET de siempre, sin JS.
+
+  «Fechas» abre un `<details>` con el par Desde/Hasta y un botón «Ver» explícito:
+  sin auto-envío, porque son dos campos y enviar al cambiar el primero mandaría la
+  fecha vieja del segundo. Si el rango no es ninguno de los tres atajos, «Fechas»
+  se enciende y dice el rango: es la señal de que se está mirando otro período.
+
+  Conserva la provincia y los productos elegidos con campos ocultos.
+#}
+{% set es_personalizado = not (window_nav | selectattr('is_selected') | list) %}
+<div class="ph-mi-prov ph-periodo">
+  <span class="ph-mi-prov-label" id="periodo-etiqueta">Período</span>
+  <div class="ph-chips" role="group" aria-labelledby="periodo-etiqueta">
+    {% for choice in window_nav %}
+    <a class="ph-dash-chip ph-tap-44{% if choice.is_selected %} is-active{% endif %}" href="{{ choice.query }}"{% if choice.is_selected %} aria-current="true"{% endif %}>{{ choice.label }}</a>
+    {% endfor %}
+    <details class="ph-periodo-custom">
+      <summary class="ph-dash-chip ph-tap-44{% if es_personalizado %} is-active{% endif %}" aria-label="Elegir fechas{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}"><span class="m3-icon" aria-hidden="true">calendar_month</span>{% if es_personalizado %}{{ selected_desde.strftime('%d/%m') }} – {{ selected_hasta.strftime('%d/%m') }}{% else %}Fechas{% endif %}</summary>
+      <form class="ph-periodo-form" action="/" method="get">
+        <input type="hidden" name="vista" value="tablero">
+        {% if active_products %}<input type="hidden" name="productos" value="{{ product_chips | selectattr('is_active') | map(attribute='slug') | join(',') }}">{% endif %}
+        {% if selected_province_slug %}<input type="hidden" name="provincia" value="{{ selected_province_slug }}">{% endif %}
+        <label class="ph-periodo-campo"><span>Desde</span><input type="date" name="desde" value="{{ selected_desde.isoformat() }}"></label>
+        <label class="ph-periodo-campo"><span>Hasta</span><input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}"></label>
+        <button type="submit" class="ph-periodo-enviar">Ver</button>
+      </form>
+    </details>
+  </div>
+</div><!-- /ph-periodo -->
