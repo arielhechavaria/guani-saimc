@@ -69,7 +69,7 @@ class ClienteFalso:
         )
 
     def textos(self) -> list[str]:
-        return [kw["messages"][0]["content"] for kw in self.llamadas]
+        return ["".join(b["text"] for b in kw["messages"][0]["content"]) for kw in self.llamadas]
 
 
 @pytest.fixture

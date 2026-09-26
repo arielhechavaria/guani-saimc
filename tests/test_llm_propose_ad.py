@@ -274,7 +274,7 @@ def test_el_prompt_explica_la_tarea_y_lleva_los_catalogos(
 
     llamada = cliente.llamadas[0]
     system = llamada["system"].lower()
-    usuario = llamada["messages"][0]["content"]
+    usuario = "".join(b["text"] for b in llamada["messages"][0]["content"])
     assert "null" in system  # abstenerse
     assert "oferta" in system  # precio de la oferta, no derivado
     assert "Arroz" in usuario and "Pollo" in usuario
@@ -642,3 +642,101 @@ def test_filled_fields_cuenta_los_tres_campos_nuevos(products) -> None:
     )
     assert llm_propose_ad.filled_fields(sin_nada) == ["product"]
     assert {"sale_format", "price_basis", "packaging"} <= set(llm_propose_ad.ASSIST_FIELDS)
+
+
+# --- prompt caching del prefijo fijo -------------------------------------------
+#
+# El sistema y los catálogos (~1.500 tokens) van iguales en cada llamada; el
+# anuncio, al final, es lo único que cambia. Las cifras esperadas de tokens están
+# escritas a mano desde la regla de tarifas de la API (lectura 0,1x, escritura
+# de 5 min 1,25x), no derivadas de lo que devuelve el código.
+
+
+def _respuesta_con_cache(entrada: int, lectura: int, escritura: int, salida: int = 40):
+    return SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="text",
+                text=json.dumps({"discard": True, "discard_reason": "no_data", "rows": []}),
+            )
+        ],
+        usage=SimpleNamespace(
+            input_tokens=entrada,
+            output_tokens=salida,
+            cache_read_input_tokens=lectura,
+            cache_creation_input_tokens=escritura,
+        ),
+    )
+
+
+def test_el_mensaje_va_en_dos_bloques_y_solo_el_prefijo_fijo_se_cachea(
+    products, provinces
+) -> None:
+    cliente = ClienteFalso(_respuesta_con_cache(10, 0, 0))
+
+    _proponer(cliente, "Arroz a 500", products, provinces)
+
+    bloques = cliente.llamadas[0]["messages"][0]["content"]
+    assert len(bloques) == 2
+    catalogo, anuncio = bloques
+    assert catalogo["cache_control"] == {"type": "ephemeral"}
+    assert "Arroz" in catalogo["text"] and "Santiago de Cuba" in catalogo["text"]
+    assert "Arroz a 500" not in catalogo["text"]
+    assert "cache_control" not in anuncio
+    assert "Arroz a 500" in anuncio["text"]
+
+
+def test_el_prefijo_cacheado_es_identico_entre_anuncios_distintos(
+    products, provinces
+) -> None:
+    cliente = ClienteFalso(_respuesta_con_cache(10, 0, 0))
+
+    _proponer(cliente, "Arroz a 500", products, provinces)
+    _proponer(cliente, "Pollo a 800 en Santiago", products, provinces)
+
+    primero, segundo = (c["messages"][0]["content"][0] for c in cliente.llamadas)
+    assert primero == segundo
+    assert cliente.llamadas[0]["system"] == cliente.llamadas[1]["system"]
+
+
+def test_el_texto_del_mensaje_no_cambia_con_el_caching(products, provinces) -> None:
+    # Partir el mensaje en bloques no puede cambiar lo que ve el modelo: si no,
+    # habría que subir PROMPT_VERSION y volver a medir.
+    cliente = ClienteFalso(_respuesta_con_cache(10, 0, 0))
+
+    _proponer(cliente, "Arroz a 500", products, provinces)
+
+    bloques = cliente.llamadas[0]["messages"][0]["content"]
+    assert "".join(b["text"] for b in bloques) == llm_propose_ad.build_prompt(
+        "Arroz a 500", products, provinces
+    )
+
+
+def test_los_tokens_de_entrada_se_ponderan_por_lo_que_cuestan_en_cache(
+    products, provinces, tmp_path: Path
+) -> None:
+    log = tmp_path / "calls.jsonl"
+    # 300 normales + 1000 leídos de caché (x0,1 = 100) + 200 escritos (x1,25 = 250).
+    cliente = ClienteFalso(_respuesta_con_cache(300, 1000, 200, salida=40))
+
+    propuesta = _proponer(cliente, "Arroz a 500", products, provinces, log_path=log)
+
+    assert propuesta.input_tokens == 650
+    assert propuesta.output_tokens == 40
+    assert (propuesta.cache_read_tokens, propuesta.cache_write_tokens) == (1000, 200)
+    linea = json.loads(log.read_text().splitlines()[0])
+    assert linea["input_tokens"] == 650
+    assert (linea["cache_read_tokens"], linea["cache_write_tokens"]) == (1000, 200)
+
+
+def test_sin_campos_de_cache_en_la_respuesta_los_tokens_no_cambian(
+    products, provinces
+) -> None:
+    cliente = ClienteFalso(
+        _respuesta({"discard": True, "discard_reason": "no_data", "rows": []}, 100, 40)
+    )
+
+    propuesta = _proponer(cliente, "Arroz a 500", products, provinces)
+
+    assert (propuesta.input_tokens, propuesta.output_tokens) == (100, 40)
+    assert (propuesta.cache_read_tokens, propuesta.cache_write_tokens) == (0, 0)

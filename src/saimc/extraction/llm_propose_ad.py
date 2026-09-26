@@ -39,10 +39,10 @@ from typing import Any
 
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_assist import (
+    _as_count,
     _as_positive_decimal,
     _match_catalog_name,
     _response_text,
-    _usage_of,
     append_assist_run,
     classify_failure,
 )
@@ -89,8 +89,15 @@ class AdProposal:
     # "credit" / "timeout" / "network" / "auth" / "other" / "no_key" /
     # "empty_text". Vacío si la llamada anduvo.
     failure: str = ""
+    # Entrada «equivalente»: los tokens normales más los de caché ponderados por
+    # lo que cuestan (ver `_usage_with_cache`), para que todo el que multiplica
+    # `input_tokens` por la tarifa siga acertando el costo sin enterarse.
     input_tokens: int = 0
     output_tokens: int = 0
+    # Los tokens de caché tal cual los informó la API. Solo para verificar que
+    # el caching funciona (lectura > 0 desde la segunda llamada).
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     # Filas o campos que el modelo contestó y no resolvieron contra el catálogo.
     dropped: int = 0
     # La respuesta del modelo tal cual, también si no parseó (slice 3a: ver en
@@ -220,20 +227,64 @@ _SYSTEM_PROMPT = (
 )
 
 
-def build_prompt(
+def build_prompt_blocks(
     text: str, products: Sequence[Product], provinces: Sequence[Province]
-) -> str:
-    """El mensaje de usuario: catálogos cerrados y el texto ya redactado."""
+) -> list[dict[str, Any]]:
+    """El mensaje de usuario en dos bloques: catálogos (fijos) y anuncio.
+
+    Los catálogos van iguales en cada llamada, así que su bloque es el que se
+    cachea (junto con el `system`, que lo precede): el prefijo fijo pasa de
+    ~1.500 tokens a leerse al 10% desde la segunda llamada. El anuncio va al
+    final y sin marca: es lo único que cambia. Cualquier byte que varíe antes
+    del anuncio invalida la caché entera.
+    """
     nombres_producto = ", ".join(sorted(p.name for p in products))
     nombres_provincia = ", ".join(sorted(p.name for p in provinces))
-    return (
+    catalogos = (
         f"Productos del catálogo: {nombres_producto}\n"
         f"Provincias: {nombres_provincia}\n"
         f"Unidades válidas: {', '.join(UNITS)}\n"
         f"Monedas válidas: {', '.join(_CURRENCIES)}\n"
         f"Envases válidos: {', '.join(PACKAGING)}\n\n"
-        f"Anuncio:\n{text}"
     )
+    return [
+        {"type": "text", "text": catalogos, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": f"Anuncio:\n{text}"},
+    ]
+
+
+def build_prompt(
+    text: str, products: Sequence[Product], provinces: Sequence[Province]
+) -> str:
+    """El mismo mensaje como un solo texto (estimaciones y pruebas)."""
+    return "".join(b["text"] for b in build_prompt_blocks(text, products, provinces))
+
+
+# Lo que cuesta cada tipo de token de entrada respecto de uno normal, con la
+# caché de 5 minutos (la que se usa: el pre-cálculo llama seguido). Tarifas de
+# la API, no medidas acá.
+_CACHE_READ_FACTOR = 0.1
+_CACHE_WRITE_FACTOR = 1.25
+
+
+def _usage_with_cache(response: object) -> tuple[int, int, int, int]:
+    """`(entrada equivalente, salida, leídos de caché, escritos en caché)`.
+
+    Con caché, `usage.input_tokens` cuenta solo lo que viene DESPUÉS del último
+    bloque cacheado: lo demás llega en `cache_read_input_tokens` y
+    `cache_creation_input_tokens`. Sumar solo el primero subestimaría el gasto.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return (0, 0, 0, 0)
+    normales = _as_count(getattr(usage, "input_tokens", 0))
+    salida = _as_count(getattr(usage, "output_tokens", 0))
+    leidos = _as_count(getattr(usage, "cache_read_input_tokens", 0))
+    escritos = _as_count(getattr(usage, "cache_creation_input_tokens", 0))
+    equivalente = round(
+        normales + leidos * _CACHE_READ_FACTOR + escritos * _CACHE_WRITE_FACTOR
+    )
+    return (equivalente, salida, leidos, escritos)
 
 
 def _perdido(crudo: object, resuelto: object) -> int:
@@ -383,6 +434,8 @@ def propose_ad(
                     "degraded": result.degraded,
                     "input_tokens": result.input_tokens,
                     "output_tokens": result.output_tokens,
+                    "cache_read_tokens": result.cache_read_tokens,
+                    "cache_write_tokens": result.cache_write_tokens,
                     "failure": result.failure,
                 },
                 log_path,
@@ -405,14 +458,17 @@ def propose_ad(
             max_tokens=MAX_TOKENS,
             system=_SYSTEM_PROMPT,
             messages=[
-                {"role": "user", "content": build_prompt(redacted, products, provinces)}
+                {
+                    "role": "user",
+                    "content": build_prompt_blocks(redacted, products, provinces),
+                }
             ],
             output_config={"format": {"type": "json_schema", "schema": response_schema()}},
         )
     except Exception as error:
         return _registrar(AdProposal(degraded=True, failure=classify_failure(error)))
 
-    entrada, salida = _usage_of(response)
+    entrada, salida, leidos, escritos = _usage_with_cache(response)
     raw = _response_text(response)
     body: object = None
     if raw:
@@ -429,6 +485,8 @@ def propose_ad(
                 failure="other",
                 input_tokens=entrada,
                 output_tokens=salida,
+                cache_read_tokens=leidos,
+                cache_write_tokens=escritos,
                 raw_response=raw or None,
             )
         )
@@ -441,6 +499,8 @@ def propose_ad(
             discard_reason=parsed.discard_reason,
             input_tokens=entrada,
             output_tokens=salida,
+            cache_read_tokens=leidos,
+            cache_write_tokens=escritos,
             dropped=parsed.dropped,
             raw_response=raw or None,
         )
