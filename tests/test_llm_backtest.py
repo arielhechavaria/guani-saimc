@@ -632,8 +632,8 @@ def test_cada_linea_nueva_lleva_prompt_version_y_las_filas_del_operador(
     )
 
     kept, descartado = [json.loads(x) for x in resultados.read_text().splitlines()]
-    assert kept["prompt_version"] == "2026-09-25.4"
-    assert descartado["prompt_version"] == "2026-09-25.4"
+    assert kept["prompt_version"] == "2026-09-27.1"
+    assert descartado["prompt_version"] == "2026-09-27.1"
     (fila,) = kept["expected_rows"]
     assert fila["product"] == "Arroz" and fila["currency"] == "CUP" and fila["unit"] == "lb"
     assert Decimal(fila["price"]) == 100 and Decimal(fila["quantity"]) == 1

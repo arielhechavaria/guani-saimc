@@ -64,7 +64,7 @@ MAX_TOKENS = 4096
 # Versión del prompt de sistema: cada línea del registro de llamadas y cada
 # resultado del backtest la lleva, para atribuir una corrida a su prompt. La v1
 # (el prompt original, sin esta constante) no la registró.
-PROMPT_VERSION = "2026-09-25.4"
+PROMPT_VERSION = "2026-09-27.1"
 
 _CURRENCIES: tuple[str, ...] = tuple(c.value for c in Currency)
 _DISCARD_REASONS: tuple[str, ...] = tuple(r.value for r in DiscardReason)
@@ -203,8 +203,16 @@ _SYSTEM_PROMPT = (
     "- sale_format: «retail» (minorista) o «wholesale» (mayorista). Mayorista "
     "es escala de contenedor, no vender un saco o paquete individual — eso lo "
     "ofrece cualquier minorista desde su casa. Vender por saco, por caja o por "
-    "paquete entero sigue siendo «retail». null si el anuncio no deja "
-    "determinarlo.\n"
+    "paquete entero sigue siendo «retail», aunque el título del anuncio diga "
+    "«por mayor» o «mayorista» — un vendedor mayorista puede listar el precio "
+    "de UN saco sin que esa fila deje de ser minorista. Ejemplo: un anuncio "
+    "titulado «OFERTA ESPECIAL — POR MAYOR» que ofrece «el saco de 50 kg a "
+    "$44» y también menciona que tiene «contenedores de 600 sacos» "
+    "disponibles: la fila que describe es «el saco de 50 kg», así que "
+    "sale_format es «retail» para esa fila (sería «wholesale» solo si la "
+    "fila describiera el contenedor completo). Decidí SIEMPRE por la unidad "
+    "que la fila vende, nunca por el título del anuncio. null si el anuncio "
+    "no deja determinarlo.\n"
     "- price_basis: «unit» si el precio es por cada unidad de `unit` (por "
     "libra, por kg...); «total» si el precio es por el lote entero que "
     "describen cantidad y unidad. Ejemplo: «Pollo Muslo 4x10: 27300» son 4 "

@@ -337,8 +337,8 @@ def test_cada_linea_del_registro_lleva_la_version_del_prompt(
     _proponer(roto, "b", products, provinces, ingestion_id="id-2", log_path=log)
 
     lineas = [json.loads(x) for x in log.read_text().splitlines()]
-    assert [x["prompt_version"] for x in lineas] == ["2026-09-25.4"] * 2
-    assert llm_propose_ad.PROMPT_VERSION == "2026-09-25.4"
+    assert [x["prompt_version"] for x in lineas] == ["2026-09-27.1"] * 2
+    assert llm_propose_ad.PROMPT_VERSION == "2026-09-27.1"
 
 
 def test_el_prompt_pide_una_fila_por_oferta_y_el_lado_cup() -> None:
@@ -564,8 +564,11 @@ def test_todo_enum_del_esquema_admite_null_solo_por_anyof() -> None:
         assert {"type": "null"} in propiedad["anyOf"], nombre
 
 
-def test_version_del_prompt_3d() -> None:
-    assert llm_propose_ad.PROMPT_VERSION == "2026-09-25.4"
+def test_version_del_prompt_por_mayor() -> None:
+    """Pin del `PROMPT_VERSION`: cualquier cambio de texto del prompt tiene
+    que subir esta constante a propósito, no de paso (tarea 8 del backlog:
+    aclaración de que «por mayor» en el título no alcanza para `wholesale`)."""
+    assert llm_propose_ad.PROMPT_VERSION == "2026-09-27.1"
 
 
 def test_pollo_muslo_4x10_trae_caja_total_y_minorista(products, provinces) -> None:
@@ -644,6 +647,10 @@ def test_el_prompt_define_mayorista_base_y_envase_como_el_formulario() -> None:
 
     assert "Mayorista es escala de contenedor, no vender un saco o paquete individual" in prompt
     assert "eso lo ofrece cualquier minorista desde su casa" in prompt
+    assert "aunque el título del anuncio diga" in prompt
+    assert "«por mayor» o «mayorista»" in prompt
+    assert "OFERTA ESPECIAL — POR MAYOR" in prompt
+    assert "contenedores de 600 sacos" in prompt
     assert "Pollo Muslo 4x10: 27300" in prompt
     assert "price_basis" in prompt and "packaging" in prompt and "sale_format" in prompt
 
