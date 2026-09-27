@@ -393,6 +393,13 @@ class TestEsquemaDeRespuesta:
         assert set(esquema["required"]) == {"product", "price"}
 
 
+def _error_con_status(mensaje: str, status_code: int) -> Exception:
+    """Imita un error del SDK con `.status_code`, como lo expone `anthropic`."""
+    error = RuntimeError(mensaje)
+    error.status_code = status_code  # type: ignore[attr-defined]
+    return error
+
+
 class _ClienteFalso:
     """Imita lo único que este módulo le pide al SDK: `messages.create(...)`
     devolviendo algo con `.content` de bloques con `.type` y `.text`."""
@@ -859,6 +866,18 @@ class TestConsumoYFallas:
             (TimeoutError("expiró"), "timeout"),
             (ConnectionError("sin red"), "network"),
             (RuntimeError("boom"), "other"),
+            (_error_con_status("invalid x-api-key", 401), "auth"),
+            # Clave sin workspace: la API devuelve 400, no 401/403, pero el
+            # mensaje contiene «API key» igual que un error de auth real.
+            # `classify_failure` no puede fiarse del texto cuando ya tiene un
+            # status_code que dice lo contrario (docs/decisions.md 2026-09-25,
+            # backtest del asistente).
+            (
+                _error_con_status(
+                    "This API key is not scoped to a workspace.", 400
+                ),
+                "other",
+            ),
         ],
     )
     def test_clasifica_el_tipo_de_falla(

@@ -389,7 +389,15 @@ def classify_failure(error: BaseException) -> str:
         return "credit"
     if isinstance(error, TimeoutError) or "timeout" in mensaje or "timed out" in mensaje:
         return "timeout"
-    if status in (401, 403) or "authentication" in mensaje or "api key" in mensaje:
+    # El texto («api key», «authentication») solo decide cuando no hay
+    # status_code: si lo hay, manda el status. Una clave sin workspace da 400
+    # con «This API key is not scoped to a workspace» — contiene "api key"
+    # pero no es un problema de autenticación, y dejar que el texto pise un
+    # status 400 la etiquetaba "auth" (docs/decisions.md 2026-09-25).
+    if status is not None:
+        if status in (401, 403):
+            return "auth"
+    elif "authentication" in mensaje or "api key" in mensaje:
         return "auth"
     if isinstance(error, ConnectionError) or "connection" in mensaje:
         return "network"
