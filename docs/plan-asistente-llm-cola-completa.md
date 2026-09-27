@@ -13,7 +13,7 @@ Fecha del plan: 2026-09-25. Última actualización: 2026-09-27.
 | 3d | El modelo propone también formato de venta, base del precio y envase | CERRADO (2026-09-27) |
 | 3c | Glosario CERRADO (2026-09-27, verificado y en prod); recorte del texto sigue Pendiente | EN PROGRESO |
 | 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | CERRADO (2026-09-27) |
-| 5 | Vigilancia del rubber-stamping en `/control` | Código en prod desde el 2026-09-27 (commit `64907a1`, antes de que este tablero se pusiera al día) — falta que el operador confirme haber revisado `/control` para darlo por CERRADO |
+| 5 | Vigilancia del rubber-stamping en `/control` | CERRADO (2026-09-27, verificado por el operador) |
 
 Regla: un slice se cierra (tests, `decisions.md`, checklist, commit y verificación
 del operador) antes de abrir el siguiente.
@@ -51,9 +51,7 @@ del operador) antes de abrir el siguiente.
 5. **3c — glosario: HECHO y verificado por el operador. CERRADO (2026-09-27).**
    Ver detalle en la sección del slice más abajo. El recorte del texto (la
    otra mitad de 3c) sigue pendiente, para otra sesión.
-6. **Slice 5 — código ya en prod (commit `64907a1`, del mismo 2026-09-27, antes
-   de que este tablero se pusiera al día).** Falta que el operador confirme
-   haber revisado la sección nueva de `/control` para darlo por CERRADO.
+6. **Slice 5 — HECHO y verificado por el operador. CERRADO (2026-09-27).**
 
 ### Pendientes sueltos (no son de un slice; se atienden cuando toquen)
 
@@ -240,19 +238,22 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
   (2026-09-27). No hay prototipo aprobado de este slice (no lo hay en
   `docs/decisions.md`); la vara fue el plan, no un diseño visual previo.
 
-### Slice 5 — Vigilancia del rubber-stamping en `/control` — código en prod, falta verificación
+### Slice 5 — Vigilancia del rubber-stamping en `/control` — CERRADO (2026-09-27)
 
-Implementado en el commit `64907a1` (2026-09-27), antes de que este tablero se
-pusiera al día — quedó marcado «Pendiente» por descuido, no porque falte
-código:
+Implementado en el commit `64907a1` (2026-09-27); quedó marcado «Pendiente»
+por descuido cuando este tablero se puso al día, no porque faltara código.
 
 - Tasa de aceptación sin edición, por campo (de `llm_reviews`).
 - Tiempo por decisión.
 - Aviso si la aceptación sin edición sube y el tiempo por decisión baja a la vez.
 
 Detalle completo en `docs/decisions.md`, entrada «Slice 5: vigilancia del
-rubber-stamping en `/control`» (2026-09-27). Falta que el operador entre a
-`/control` y confirme que la sección se ve bien para darlo por CERRADO.
+rubber-stamping en `/control`» (2026-09-27). **Verificación en pantalla:
+HECHA** — el operador confirmó la sección «Aceptación sin revisar» (tasa 80%,
+132 decisiones medidas, mediana 81s con `n=5`, tabla por campo), sin banner de
+alerta visible — esperable, no es un bug: la alerta solo dispara si sube la
+tasa sin editar Y baja el tiempo por decisión a la vez contra la semana
+anterior, y `n=5` es chico para esa comparación todavía.
 
 ---
 
