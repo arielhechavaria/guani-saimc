@@ -39,10 +39,12 @@ from sqlalchemy.orm import Session
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
 from saimc.extraction import llm_assist, llm_propose_ad, llm_store
+from saimc.extraction.engine import mentions_any_product
 from saimc.models import (
     ContentType,
     LlmProposal,
     ProcessingStatus,
+    Product,
     ProposalStatus,
     Province,
     RawIngestion,
@@ -64,11 +66,24 @@ _TYPE_LABELS = {ContentType.TEXT.value: "texto", ContentType.IMAGE.value: "image
 # --- selección --------------------------------------------------------------
 
 
-def select_candidates(session: Session, limit: int | None = None) -> list[RawIngestion]:
-    """Pendientes sin propuesta `ok` guardada, más viejo primero.
+def select_candidates(
+    session: Session, products: Sequence[Product], limit: int | None = None
+) -> list[RawIngestion]:
+    """Pendientes sin propuesta `ok` guardada, más viejo primero, EN FOCO.
 
     Mismo orden que la cola (`captured_at` ascendente, `_pending_all` en
-    `curation.py`).
+    `curation.py`) y el mismo criterio de foco que `_pending_in_focus`: un
+    texto que no menciona ningún producto del foco se descarta en lote
+    (`discard_out_of_focus`) sin pasar nunca por curaduría, así que pagarle
+    una propuesta acá es tirar la plata (docs/plan-asistente-llm-cola-
+    completa.md, pendiente suelto). Una imagen sin transcribir
+    (`original_text` nulo) sigue entrando — su foco no se sabe sin pagar el
+    OCR, que esta misma corrida ya paga al pedir el texto.
+
+    El filtro corre en Python, después de traer todos los pendientes: el
+    `limit` tiene que contar candidatos YA filtrados, no filas de la tabla —
+    aplicarlo en SQL antes de filtrar podría devolver menos de `limit` aunque
+    sobren pendientes en foco más nuevos.
     """
     has_ok = exists().where(
         LlmProposal.ingestion_id == RawIngestion.id,
@@ -79,9 +94,14 @@ def select_candidates(session: Session, limit: int | None = None) -> list[RawIng
         .where(RawIngestion.processing_status == ProcessingStatus.PENDING, ~has_ok)
         .order_by(RawIngestion.captured_at.asc())
     )
-    if limit is not None:
-        stmt = stmt.limit(limit)
-    return list(session.execute(stmt).scalars().all())
+    pending = list(session.execute(stmt).scalars().all())
+    en_foco = [
+        ingestion
+        for ingestion in pending
+        if ingestion.original_text is None
+        or mentions_any_product(ingestion.original_text, products)
+    ]
+    return en_foco if limit is None else en_foco[:limit]
 
 
 # --- estimación (dry-run) ---------------------------------------------------
@@ -310,7 +330,8 @@ def execute(
 ) -> int:
     """Corre el modo pedido. Devuelve el código de salida."""
     model = args.model or settings.llm_assist_model
-    candidates = select_candidates(session, args.limit)
+    products = pilot_products(session)
+    candidates = select_candidates(session, products, args.limit)
     est = estimate(session, candidates, model)
 
     if not args.execute:

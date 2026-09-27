@@ -303,6 +303,25 @@ def test_solo_procesa_pendientes(session: Session, catalogo, tmp_path: Path) -> 
     assert "arroz pendiente" in cliente.textos()[0]
 
 
+def test_no_procesa_pendientes_fuera_de_foco(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    """El bug reportado: `select_candidates` pagaba también los pendientes
+    fuera de foco, que después se descartan en lote sin pasar nunca por
+    curaduría (`discard_out_of_focus` en `web/routers/curation.py`) — mismo
+    criterio de foco que ya usa `_pending_in_focus` para la cola interactiva.
+    """
+    _ingesta(session, texto="arroz en foco", minutos=0)
+    _ingesta(session, texto="gasolina fuera de foco", minutos=10)
+    cliente = ClienteFalso()
+
+    _correr(session, tmp_path, ["--execute"], cliente=cliente)
+
+    assert len(cliente.llamadas) == 1
+    assert "arroz en foco" in cliente.textos()[0]
+    assert len(_propuestas(session)) == 1
+
+
 def test_limit_toma_los_mas_viejos_primero(
     session: Session, catalogo, tmp_path: Path
 ) -> None:

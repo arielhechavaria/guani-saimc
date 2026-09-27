@@ -64,8 +64,10 @@ del operador) antes de abrir el siguiente.
   `propose_all` aplica ahora `_declared_price_basis` y `_packaging_price_basis`
   línea por línea (antes solo `propose()` lo hacía). Detalle en
   `docs/decisions.md`.
-- **El pre-cálculo no filtra por foco:** paga también los pendientes fuera de foco
-  que después se descartan en lote.
+- **El pre-cálculo no filtra por foco: RESUELTO (2026-09-27).** `select_candidates`
+  descarta los pendientes de texto fuera de foco (mismo criterio que
+  `_pending_in_focus`); una imagen sin transcribir sigue entrando. Detalle en
+  `docs/decisions.md`.
 - **Costo real por anuncio sin medir en la cola: RESUELTO (2026-09-27).**
   Recalculado con `llm_proposals`: mediana $0,0128/anuncio con Sonnet 5 (contra
   $0,0073 del backtest). `docs/costos.md` actualizado.
