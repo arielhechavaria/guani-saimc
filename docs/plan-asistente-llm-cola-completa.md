@@ -1,6 +1,6 @@
 # Plan — Curaduría de toda la cola con el asistente LLM
 
-Fecha del plan: 2026-09-25. Última actualización: 2026-09-26.
+Fecha del plan: 2026-09-25. Última actualización: 2026-09-27.
 
 ## Tablero (empezá por acá)
 
@@ -10,9 +10,9 @@ Fecha del plan: 2026-09-25. Última actualización: 2026-09-26.
 | 2 | «Completar con IA» propone el anuncio entero, con cita, «difiere» y descarte sugerido | CERRADO |
 | 3a | Guardar la propuesta y capturar la revisión (tablas `llm_proposals`, `llm_reviews`) | CERRADO |
 | 3b | Pre-cálculo por lotes (`python -m saimc.extraction.prefill`) | CERRADO |
-| 3d | El modelo propone también formato de venta, base del precio y envase | **ABIERTO**: medido (2026-09-26); falta la verificación del operador en pantalla |
+| 3d | El modelo propone también formato de venta, base del precio y envase | CERRADO (2026-09-27) |
 | 3c | Glosario y recorte del texto | Pendiente |
-| 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | **ABIERTO**: construido y con tests; falta la verificación del operador en pantalla |
+| 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | CERRADO (2026-09-27) |
 | 5 | Vigilancia del rubber-stamping en `/control` | Pendiente |
 
 Regla: un slice se cierra (tests, `decisions.md`, checklist, commit y verificación
@@ -43,10 +43,14 @@ del operador) antes de abrir el siguiente.
    «formato de venta» y «base del precio» pasan a una línea propia encima del
    `<select>` (`m3-field-stacked`). Sin captura: el Chromium de esta máquina no
    arranca (falta `libnspr4`); lo verifica el operador.
-3. **3d — verificación del operador en pantalla** y cierre.
-4. **3c.** Antes del recorte: mirar en `llm_proposals.raw_response` en qué se van
-   los tokens de salida (un anuncio de 4 filas gastó 2629).
-5. **Slice 4**, después **slice 5**.
+3. **3d — verificación del operador en pantalla: HECHA. Slice CERRADO
+   (2026-09-27).**
+4. **Slice 4 — Aceptar, atajo y orden de la cola: HECHO y verificado.
+   CERRADO (2026-09-27).**
+5. **3c.** Antes del recorte: mirar en `llm_proposals.raw_response` en qué se van
+   los tokens de salida (un anuncio de 4 filas gastó 2629; y el degradado por
+   truncamiento de la verificación del caching, más abajo).
+6. **Slice 5.**
 
 ### Pendientes sueltos (no son de un slice; se atienden cuando toquen)
 
@@ -198,7 +202,7 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
   - **ojo con el ahorro:** en el anuncio medido (4 filas, $0,033) la entrada costó
     $0,007 y la salida $0,026. Primero mirar la respuesta cruda.
 
-### Slice 4 — Interfaz de revisión — ABIERTO (2026-09-27)
+### Slice 4 — Interfaz de revisión — CERRADO (2026-09-27)
 
 - **Aceptar: HECHO.** Con una propuesta del modelo a la vista el botón
   principal dice «Aceptar» (antes «Curar anuncio», mismo endpoint) y responde
@@ -215,9 +219,10 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
   (decisión del operador, 2026-09-26). **`/curation/cola` (el listado
   completo) NO se tocó** — sigue por `captured_at` dentro de cada foco; no
   estaba pedido y reordenarlo ahí es un cambio más grande.
-- **Verificación contra el diseño: PENDIENTE.** No hay prototipo aprobado del
-  slice 4 (se buscó en `docs/decisions.md` y no hay); lo que sigue pendiente
-  es que el operador lo pruebe en pantalla, 390 px y escritorio (pasos abajo).
+- **Verificación en pantalla: HECHA.** El operador revisó el botón, el atajo
+  y el orden (390 px y escritorio) y confirmó que anda según lo planificado
+  (2026-09-27). No hay prototipo aprobado de este slice (no lo hay en
+  `docs/decisions.md`); la vara fue el plan, no un diseño visual previo.
 
 ### Slice 5 — Vigilancia del rubber-stamping en `/control` — Pendiente
 
