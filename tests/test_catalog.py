@@ -34,6 +34,7 @@ from saimc.models import (
     Channel,
     ContentType,
     Currency,
+    GlossaryEntry,
     Platform,
     PriceHistory,
     ProcessingStatus,
@@ -1852,3 +1853,121 @@ class TestRawIngestionsChannelIdMigration:
             connection.commit()
 
         engine.dispose()
+
+
+class TestCatalogoGlosario:
+    """CRUD del glosario del operador (slice 3c, `docs/spec-slice-3c.md`).
+
+    Mismo patrón que `TestCatalogoFormatos`: alta, edición y borrado detrás
+    de `require_operator`, redirect 303 con flash por querystring.
+    """
+
+    def test_la_pagina_muestra_la_entrada_activa_e_inactiva(
+        self, client: TestClient, session: Session
+    ) -> None:
+        session.add(GlossaryEntry(term="4x10", definition="4 de 10 lb"))
+        session.add(
+            GlossaryEntry(term="6x5", definition="6 de 5 lb", active=False)
+        )
+        session.commit()
+
+        response = client.get("/catalog")
+
+        assert response.status_code == 200
+        assert "4x10" in response.text
+        assert "6x5" in response.text
+        assert "desactivada" in response.text
+
+    def test_alta_crea_una_entrada_activa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        response = client.post(
+            "/catalog/glossary",
+            data={"term": "4x10", "definition": "4 paquetes de 10 lb"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        entrada = session.execute(select(GlossaryEntry)).scalars().one()
+        assert (entrada.term, entrada.definition, entrada.active) == (
+            "4x10",
+            "4 paquetes de 10 lb",
+            True,
+        )
+
+    def test_alta_con_termino_vacio_se_rechaza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        response = client.post(
+            "/catalog/glossary",
+            data={"term": "   ", "definition": "4 paquetes de 10 lb"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        assert session.execute(select(GlossaryEntry)).scalars().first() is None
+
+    def test_alta_con_definicion_vacia_se_rechaza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        response = client.post(
+            "/catalog/glossary",
+            data={"term": "4x10", "definition": ""},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        assert session.execute(select(GlossaryEntry)).scalars().first() is None
+
+    def test_editar_una_entrada_la_corrige_en_el_lugar(
+        self, client: TestClient, session: Session
+    ) -> None:
+        entrada = GlossaryEntry(term="4x10", definition="4 de 10 lb")
+        session.add(entrada)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/glossary/{entrada.id}/edit",
+            data={"term": "4x10", "definition": "4 paquetes de 10 lb, caja 40 lb"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "error=" not in response.headers["location"]
+        session.expire_all()
+        assert len(list(session.execute(select(GlossaryEntry)).scalars())) == 1
+        assert (
+            session.get(GlossaryEntry, entrada.id).definition
+            == "4 paquetes de 10 lb, caja 40 lb"
+        )
+
+    def test_desactivar_una_entrada_no_la_borra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        entrada = GlossaryEntry(term="4x10", definition="4 de 10 lb")
+        session.add(entrada)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/glossary/{entrada.id}/toggle", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(GlossaryEntry, entrada.id).active is False
+
+    def test_borrar_una_entrada_la_elimina(
+        self, client: TestClient, session: Session
+    ) -> None:
+        entrada = GlossaryEntry(term="4x10", definition="4 de 10 lb")
+        session.add(entrada)
+        session.commit()
+
+        response = client.post(
+            f"/catalog/glossary/{entrada.id}/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert session.execute(select(GlossaryEntry)).scalars().first() is None

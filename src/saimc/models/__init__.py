@@ -3,6 +3,7 @@
 from saimc.models.base import Base
 from saimc.models.channel import Channel, Platform
 from saimc.models.exchange_rate_cache import ExchangeRateCache
+from saimc.models.glossary import GlossaryEntry
 from saimc.models.llm_review import LlmProposal, LlmReview, ProposalStatus, ReviewOutcome
 from saimc.models.price_history import (
     PACKAGING_MAX_LENGTH,
@@ -30,6 +31,7 @@ __all__ = [
     "Currency",
     "DiscardReason",
     "ExchangeRateCache",
+    "GlossaryEntry",
     "LlmProposal",
     "LlmReview",
     "Platform",

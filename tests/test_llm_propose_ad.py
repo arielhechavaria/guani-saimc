@@ -696,6 +696,87 @@ def _respuesta_con_cache(entrada: int, lectura: int, escritura: int, salida: int
     )
 
 
+def test_build_prompt_blocks_sin_glosario_no_agrega_seccion(products, provinces) -> None:
+    catalogo, _anuncio = llm_propose_ad.build_prompt_blocks("Arroz a 500", products, provinces)
+
+    assert "Glosario" not in catalogo["text"]
+
+
+def test_build_prompt_blocks_con_glosario_activo_va_en_el_bloque_cacheado(
+    products, provinces
+) -> None:
+    from saimc.models import GlossaryEntry
+
+    entrada = GlossaryEntry(term="4x10", definition="4 paquetes de 10 lb", active=True)
+
+    catalogo, anuncio = llm_propose_ad.build_prompt_blocks(
+        "Arroz a 500", products, provinces, glossary=[entrada]
+    )
+
+    assert "4x10" in catalogo["text"]
+    assert "4 paquetes de 10 lb" in catalogo["text"]
+    assert catalogo["cache_control"] == {"type": "ephemeral"}
+    assert "4x10" not in anuncio["text"]
+
+
+def test_build_prompt_blocks_entrada_inactiva_no_se_incluye(products, provinces) -> None:
+    from saimc.models import GlossaryEntry
+
+    entrada = GlossaryEntry(term="4x10", definition="4 paquetes de 10 lb", active=False)
+
+    catalogo, _anuncio = llm_propose_ad.build_prompt_blocks(
+        "Arroz a 500", products, provinces, glossary=[entrada]
+    )
+
+    assert "4x10" not in catalogo["text"]
+
+
+def test_propose_ad_con_glosario_activo_guarda_la_version_efectiva(
+    products, provinces, tmp_path: Path
+) -> None:
+    from saimc.models import GlossaryEntry
+
+    log = tmp_path / "calls.jsonl"
+    entrada = GlossaryEntry(term="4x10", definition="4 paquetes de 10 lb", active=True)
+    cliente = ClienteFalso(
+        _respuesta({"discard": True, "discard_reason": "no_data", "rows": []})
+    )
+
+    propuesta = _proponer(
+        cliente, "Arroz a 500", products, provinces, glossary=[entrada], log_path=log
+    )
+
+    assert propuesta.prompt_version != llm_propose_ad.PROMPT_VERSION
+    assert propuesta.prompt_version.startswith(f"{llm_propose_ad.PROMPT_VERSION}+glossary:")
+    linea = json.loads(log.read_text().splitlines()[0])
+    assert linea["prompt_version"] == propuesta.prompt_version
+
+
+def test_propose_ad_sin_glosario_guarda_la_version_base(products, provinces) -> None:
+    cliente = ClienteFalso(
+        _respuesta({"discard": True, "discard_reason": "no_data", "rows": []})
+    )
+
+    propuesta = _proponer(cliente, "Arroz a 500", products, provinces)
+
+    assert propuesta.prompt_version == llm_propose_ad.PROMPT_VERSION
+
+
+def test_propose_ad_degradado_por_falta_de_clave_guarda_la_version_base(
+    products, provinces
+) -> None:
+    from saimc.models import GlossaryEntry
+
+    entrada = GlossaryEntry(term="4x10", definition="4 paquetes de 10 lb", active=True)
+
+    propuesta = llm_propose_ad.propose_ad(
+        "Arroz a 500", products, provinces, api_key=None, glossary=[entrada]
+    )
+
+    assert propuesta.degraded is True
+    assert propuesta.prompt_version == llm_propose_ad.PROMPT_VERSION
+
+
 def test_el_mensaje_va_en_dos_bloques_y_solo_el_prefijo_fijo_se_cachea(
     products, provinces
 ) -> None:

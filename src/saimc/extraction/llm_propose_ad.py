@@ -47,10 +47,12 @@ from saimc.extraction.llm_assist import (
     classify_failure,
 )
 from saimc.extraction.llm_checks import RowMeta, verify_evidence
+from saimc.glossary import effective_prompt_version, glossary_prompt_section
 from saimc.models import (
     ContentType,
     Currency,
     DiscardReason,
+    GlossaryEntry,
     Product,
     Province,
     RawIngestion,
@@ -104,6 +106,11 @@ class AdProposal:
     # qué se van los tokens de salida). `None` si no hubo respuesta. El modelo
     # solo ve texto redactado, así que no trae teléfonos.
     raw_response: str | None = None
+    # `PROMPT_VERSION`, o esa más el hash del glosario activo si se usó
+    # alguno (slice 3c, `saimc.glossary.effective_prompt_version`). Sin
+    # llamada real (`no_key`/`empty_text`) queda en la base: no hubo glosario
+    # que aplicar.
+    prompt_version: str = PROMPT_VERSION
 
 
 def _enum_o_null(valores: Sequence[str]) -> dict[str, Any]:
@@ -236,15 +243,22 @@ _SYSTEM_PROMPT = (
 
 
 def build_prompt_blocks(
-    text: str, products: Sequence[Product], provinces: Sequence[Province]
+    text: str,
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+    glossary: Sequence[GlossaryEntry] = (),
 ) -> list[dict[str, Any]]:
-    """El mensaje de usuario en dos bloques: catálogos (fijos) y anuncio.
+    """El mensaje de usuario en dos bloques: catálogos + glosario (fijos) y anuncio.
 
     Los catálogos van iguales en cada llamada, así que su bloque es el que se
     cachea (junto con el `system`, que lo precede): el prefijo fijo pasa de
     ~1.500 tokens a leerse al 10% desde la segunda llamada. El anuncio va al
     final y sin marca: es lo único que cambia. Cualquier byte que varíe antes
     del anuncio invalida la caché entera.
+
+    El glosario (slice 3c) cambia con la misma frecuencia que el catálogo, no
+    con cada anuncio, así que va en el mismo bloque cacheado. Sin entradas
+    activas no agrega texto.
     """
     nombres_producto = ", ".join(sorted(p.name for p in products))
     nombres_provincia = ", ".join(sorted(p.name for p in provinces))
@@ -254,6 +268,7 @@ def build_prompt_blocks(
         f"Unidades válidas: {', '.join(UNITS)}\n"
         f"Monedas válidas: {', '.join(_CURRENCIES)}\n"
         f"Envases válidos: {', '.join(PACKAGING)}\n\n"
+        f"{glossary_prompt_section(glossary)}"
     )
     return [
         {"type": "text", "text": catalogos, "cache_control": {"type": "ephemeral"}},
@@ -262,10 +277,14 @@ def build_prompt_blocks(
 
 
 def build_prompt(
-    text: str, products: Sequence[Product], provinces: Sequence[Province]
+    text: str,
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+    glossary: Sequence[GlossaryEntry] = (),
 ) -> str:
     """El mismo mensaje como un solo texto (estimaciones y pruebas)."""
-    return "".join(b["text"] for b in build_prompt_blocks(text, products, provinces))
+    bloques = build_prompt_blocks(text, products, provinces, glossary)
+    return "".join(b["text"] for b in bloques)
 
 
 # Lo que cuesta cada tipo de token de entrada respecto de uno normal, con la
@@ -410,12 +429,14 @@ def propose_ad(
     timeout: float = 120.0,
     ingestion_id: str = "",
     log_path: Path | None = None,
+    glossary: Sequence[GlossaryEntry] = (),
 ) -> AdProposal:
     """Una llamada por anuncio: todas las filas del foco y el veredicto.
 
     Nunca levanta (ver el docstring de módulo). `client` es el seam de test.
     Sin clave o con texto vacío no hay invocación y no se registra: el
-    registro cuenta intentos reales.
+    registro cuenta intentos reales — tampoco se aplica el glosario, porque
+    no hubo llamada que lo use.
     """
     if not api_key:
         return AdProposal(degraded=True, failure="no_key")
@@ -427,6 +448,11 @@ def propose_ad(
     if not redacted.strip():
         return AdProposal(degraded=True, failure="empty_text")
 
+    # Slice 3c: la versión efectiva ya incluye el glosario que se manda en
+    # esta llamada, así que se calcula acá y viaja tanto en el registro como
+    # en el resultado — sea cual sea el desenlace de la llamada.
+    version = effective_prompt_version(PROMPT_VERSION, glossary)
+
     def _registrar(result: AdProposal) -> AdProposal:
         """Todo camino de salida con invocación pasa por acá."""
         if log_path is not None:
@@ -435,7 +461,7 @@ def propose_ad(
                     "timestamp": datetime.now(UTC).isoformat(),
                     "ingestion_id": ingestion_id,
                     "model": model,
-                    "prompt_version": PROMPT_VERSION,
+                    "prompt_version": result.prompt_version,
                     "rows": len(result.rows),
                     "discard": result.discard,
                     "dropped": result.dropped,
@@ -457,7 +483,9 @@ def propose_ad(
             client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
         except Exception as error:
             return _registrar(
-                AdProposal(degraded=True, failure=classify_failure(error))
+                AdProposal(
+                    degraded=True, failure=classify_failure(error), prompt_version=version
+                )
             )
 
     try:
@@ -468,7 +496,7 @@ def propose_ad(
             messages=[
                 {
                     "role": "user",
-                    "content": build_prompt_blocks(redacted, products, provinces),
+                    "content": build_prompt_blocks(redacted, products, provinces, glossary),
                 }
             ],
             output_config={"format": {"type": "json_schema", "schema": response_schema()}},
@@ -486,7 +514,9 @@ def propose_ad(
             thinking={"type": "disabled"},
         )
     except Exception as error:
-        return _registrar(AdProposal(degraded=True, failure=classify_failure(error)))
+        return _registrar(
+            AdProposal(degraded=True, failure=classify_failure(error), prompt_version=version)
+        )
 
     entrada, salida, leidos, escritos = _usage_with_cache(response)
     raw = _response_text(response)
@@ -508,6 +538,7 @@ def propose_ad(
                 cache_read_tokens=leidos,
                 cache_write_tokens=escritos,
                 raw_response=raw or None,
+                prompt_version=version,
             )
         )
     return _registrar(
@@ -523,6 +554,7 @@ def propose_ad(
             cache_write_tokens=escritos,
             dropped=parsed.dropped,
             raw_response=raw or None,
+            prompt_version=version,
         )
     )
 

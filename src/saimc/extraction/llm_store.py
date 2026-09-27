@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, object_session
 
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_checks import RowMeta
-from saimc.extraction.llm_propose_ad import PROMPT_VERSION, AdProposal
+from saimc.extraction.llm_propose_ad import AdProposal
 from saimc.models import (
     LlmProposal,
     LlmReview,
@@ -89,7 +89,7 @@ def save_proposal(
     proposal = LlmProposal(
         ingestion_id=ingestion_id,
         model=model,
-        prompt_version=PROMPT_VERSION,
+        prompt_version=result.prompt_version,
         status=ProposalStatus.DEGRADED if result.degraded else ProposalStatus.OK,
         failure=result.failure or None,
         discard=result.discard,

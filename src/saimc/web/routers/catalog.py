@@ -35,6 +35,7 @@ from saimc.ingestion.inbox import ingest_inbox
 from saimc.ingestion.whatsapp_backfill import fetch_channel_history
 from saimc.models import (
     Channel,
+    GlossaryEntry,
     Platform,
     PriceHistory,
     Product,
@@ -145,6 +146,14 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
 
     provinces = list(db.execute(select(Province).order_by(Province.name)).scalars())
 
+    # Todas las entradas, activas primero: a diferencia de `active_glossary_entries`
+    # (lo que ve el prompt), acá también se administran las desactivadas.
+    glossary_entries = list(
+        db.execute(
+            select(GlossaryEntry).order_by(GlossaryEntry.active.desc(), GlossaryEntry.term)
+        ).scalars()
+    )
+
     return request.app.state.templates.TemplateResponse(
         request,
         "catalog.html",
@@ -157,6 +166,7 @@ def catalog(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
             "provinces": provinces,
             "platforms": list(Platform),
             "pilot_count": pilot_count,
+            "glossary_entries": glossary_entries,
             "q_canal": q_canal,
             "platform_filter": platform_filter,
             "q_producto": q_producto,
@@ -394,6 +404,88 @@ def delete_format(format_id: uuid.UUID, db: Session = Depends(get_db)) -> Redire
             )
         )
     return _back(message=f"Formato «{etiqueta}» eliminado.")
+
+
+@router.post("/catalog/glossary")
+async def create_glossary_entry(
+    request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Alta de una entrada del glosario (slice 3c, `docs/spec-slice-3c.md`).
+
+    Arranca activa: se inyecta en el prompt de la próxima llamada apenas se
+    guarda, sin desplegar nada — la versión efectiva del prompt se deriva
+    sola (`saimc.glossary.effective_prompt_version`).
+    """
+    form = await request.form()
+    term = str(form.get("term", "")).strip()
+    definition = str(form.get("definition", "")).strip()
+    if not term:
+        return _back(error="El término no puede estar vacío.")
+    if not definition:
+        return _back(error="La definición no puede estar vacía.")
+
+    db.add(GlossaryEntry(term=term, definition=definition))
+    db.flush()
+    return _back(message=f"«{term}» agregado al glosario.")
+
+
+@router.post("/catalog/glossary/{entry_id}/edit")
+async def edit_glossary_entry(
+    entry_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Corrige el término o la definición de una entrada existente.
+
+    A diferencia de `ProductFormat`, editar es siempre seguro: el glosario no
+    tiene nada denormalizado colgando de una entrada (no es la identidad de
+    ninguna serie de precios).
+    """
+    entrada = db.get(GlossaryEntry, entry_id)
+    if entrada is None:
+        return _back()
+
+    form = await request.form()
+    term = str(form.get("term", "")).strip()
+    definition = str(form.get("definition", "")).strip()
+    if not term:
+        return _back(error="El término no puede estar vacío.")
+    if not definition:
+        return _back(error="La definición no puede estar vacía.")
+
+    entrada.term = term
+    entrada.definition = definition
+    db.flush()
+    return _back(message=f"«{term}» corregido.")
+
+
+@router.post("/catalog/glossary/{entry_id}/toggle")
+def toggle_glossary_entry(entry_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
+    """Activa o desactiva una entrada sin borrarla.
+
+    Una entrada desactivada sale del prompt de la próxima llamada pero queda
+    a mano para reactivarla — a diferencia de borrarla, que no tiene vuelta.
+    """
+    entrada = db.get(GlossaryEntry, entry_id)
+    if entrada is None:
+        return _back()
+
+    entrada.active = not entrada.active
+    db.flush()
+    estado = "activado" if entrada.active else "desactivado"
+    return _back(message=f"«{entrada.term}» {estado}.")
+
+
+@router.post("/catalog/glossary/{entry_id}/delete")
+def delete_glossary_entry(entry_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
+    """Borra una entrada. Sin historial que huerfanar: a diferencia de un
+    formato, ninguna fila de precio referencia una entrada del glosario."""
+    entrada = db.get(GlossaryEntry, entry_id)
+    if entrada is None:
+        return _back()
+
+    termino = entrada.term
+    db.delete(entrada)
+    db.flush()
+    return _back(message=f"«{termino}» eliminado del glosario.")
 
 
 @router.post("/catalog/channels")

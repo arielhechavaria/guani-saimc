@@ -11,7 +11,7 @@ Fecha del plan: 2026-09-25. Última actualización: 2026-09-27.
 | 3a | Guardar la propuesta y capturar la revisión (tablas `llm_proposals`, `llm_reviews`) | CERRADO |
 | 3b | Pre-cálculo por lotes (`python -m saimc.extraction.prefill`) | CERRADO |
 | 3d | El modelo propone también formato de venta, base del precio y envase | CERRADO (2026-09-27) |
-| 3c | Glosario y recorte del texto | Pendiente |
+| 3c | Glosario (hecho, pendiente de verificación del operador) y recorte del texto (pendiente) | EN PROGRESO (2026-09-27) |
 | 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | CERRADO (2026-09-27) |
 | 5 | Vigilancia del rubber-stamping en `/control` | Pendiente |
 
@@ -48,9 +48,9 @@ del operador) antes de abrir el siguiente.
    (2026-09-27).**
 4. **Slice 4 — Aceptar, atajo y orden de la cola: HECHO y verificado.
    CERRADO (2026-09-27).**
-5. **3c.** Antes del recorte: mirar en `llm_proposals.raw_response` en qué se van
-   los tokens de salida (un anuncio de 4 filas gastó 2629; y el degradado por
-   truncamiento de la verificación del caching, más abajo).
+5. **3c — glosario: HECHO (2026-09-27), pendiente de verificación del operador
+   en pantalla.** Ver detalle en la sección del slice más abajo. El recorte
+   del texto (la otra mitad de 3c) sigue pendiente.
 6. **Slice 5.**
 
 ### Pendientes sueltos (no son de un slice; se atienden cuando toquen)
@@ -179,7 +179,7 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
 - Falta: backtest pagado, arreglo de etiquetas a 390 px y verificación del
   operador (ver «Próximos pasos»).
 
-### Slice 3c — Glosario y recorte del texto — Pendiente
+### Slice 3c — Glosario y recorte del texto — EN PROGRESO (glosario hecho, 2026-09-27)
 
 - **Investigación previa («en qué se van los tokens de salida»): RESUELTA
   (2026-09-27), y desvió el diagnóstico.** No era el texto de entrada: `propose_ad`
@@ -191,16 +191,16 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
   corregido en `propose_ad` (`docs/decisions.md`). El glosario y el recorte de
   abajo siguen pendientes — apuntan a la entrada, que no era el problema
   medido — y se retoman con la vara de costo ya más baja por este fix.
-- **Nota del operador y glosario.** La nota ya se guarda (3a). Falta poder
-  **promoverla al glosario**: reglas cortas, legibles y editables que se inyectan
-  en el prompt de todas las llamadas (ejemplo: «4x10» = 4 paquetes de 10 lb, la
-  caja pesa 40 lb). Condiciones:
-  - cada cambio del glosario cambia la versión del prompt, para que el backtest
-    compare antes y después;
-  - glosario corto: cada regla cuesta tokens en todas las llamadas, y reglas
-    contradictorias empeoran al modelo;
-  - un patrón muy regular (como `NxM`) se evalúa primero como regla determinista
-    del extractor, que es gratis y no falla.
+- **Nota del operador y glosario: HECHO (2026-09-27), pendiente de verificación
+  del operador en pantalla.** Tabla `glossary_entries` (migración `0023`),
+  CRUD en `/catalog#glosario` (alta, edición, activar/desactivar, borrar), y
+  las entradas activas se inyectan en el bloque cacheado de `propose_ad`. La
+  versión del prompt se deriva sola por hash del contenido activo
+  (`saimc.glossary.effective_prompt_version`) en vez de exigir que el operador
+  suba `PROMPT_VERSION` a mano. Detalle y lo descartado (no se migró el
+  ejemplo ya backteado de «Pollo Muslo 4x10») en `docs/decisions.md` y
+  `docs/spec-slice-3c.md`.
+- **Recorte del texto: sigue pendiente**, sin bloqueo — se retoma aparte.
 - **Recorte del texto antes de enviarlo.** En listas largas se envía solo lo
   pertinente:
   - las líneas que el motor de reglas reconoce como producto foco

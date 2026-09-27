@@ -70,12 +70,14 @@ from saimc.extraction.llm_propose_ad import (
     record_operator_run,
 )
 from saimc.formats import format_label, format_quantity, get_or_create_format
+from saimc.glossary import active_glossary_entries
 from saimc.ingestion import origin
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.models import (
     ContentType,
     Currency,
     DiscardReason,
+    GlossaryEntry,
     LlmProposal,
     PriceHistory,
     ProcessingStatus,
@@ -761,6 +763,10 @@ def _all_provinces(db: Session) -> list[Province]:
     return list(db.execute(select(Province).order_by(Province.name)).scalars().all())
 
 
+def _active_glossary(db: Session) -> list[GlossaryEntry]:
+    return active_glossary_entries(db)
+
+
 def _status_counts(db: Session, products: Sequence[Product]) -> dict[str, int]:
     """Cuántos elementos hay por estado — para que el operador sepa cuánto
     le queda de la cola mientras cura, sin tener que consultar la base a mano.
@@ -1239,6 +1245,7 @@ def _curation_view(
             text_for_hints,
             products=products,
             provinces=provinces,
+            glossary=_active_glossary(db),
             ingestion_id=str(ingestion.id),
             settings=settings,
         )
@@ -1518,6 +1525,7 @@ def _run_assist(
     *,
     products: Sequence[Product],
     provinces: Sequence[Province],
+    glossary: Sequence[GlossaryEntry],
     ingestion_id: str,
     settings,
 ) -> AdProposal:
@@ -1538,6 +1546,7 @@ def _run_assist(
         timeout=settings.llm_assist_timeout,
         ingestion_id=ingestion_id,
         log_path=None,
+        glossary=glossary,
     )
     record_operator_run(
         resultado,

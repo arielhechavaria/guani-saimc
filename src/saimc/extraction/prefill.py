@@ -40,6 +40,7 @@ from saimc.config import Settings, get_settings
 from saimc.db import session_scope
 from saimc.extraction import llm_assist, llm_propose_ad, llm_store
 from saimc.extraction.engine import mentions_any_product
+from saimc.glossary import active_glossary_entries
 from saimc.models import (
     ContentType,
     LlmProposal,
@@ -214,6 +215,7 @@ def run_prefill(
     """
     products = pilot_products(session)
     provinces = list(session.execute(select(Province).order_by(Province.name)).scalars())
+    glossary = active_glossary_entries(session)
     result = RunResult()
     total = len(candidates)
     for n, ingestion in enumerate(candidates, start=1):
@@ -245,6 +247,7 @@ def run_prefill(
             timeout=timeout,
             ingestion_id=str(ingestion.id),
             log_path=None,
+            glossary=glossary,
         )
         llm_store.save_proposal(
             session, ingestion_id=ingestion.id, result=proposal, model=model

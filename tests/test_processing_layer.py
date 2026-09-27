@@ -1689,3 +1689,38 @@ class TestLlmReviewsShownAtMigration:
             assert "id" in columnas
 
         engine.dispose()
+
+
+class TestGlossaryEntriesMigration:
+    """`0023_glossary_entries.py` — tabla del glosario (slice 3c,
+    `docs/spec-slice-3c.md`). Puramente aditiva, sin FK: no necesita ninguna
+    tabla previa."""
+
+    def test_upgrade_crea_la_tabla_igual_al_modelo_y_downgrade_la_elimina(
+        self,
+    ) -> None:
+        from saimc.models import GlossaryEntry
+
+        modulo = _cargar_modulo_migracion("0023_glossary_entries.py")
+        engine = create_engine("sqlite://")
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            tablas = inspect(connection).get_table_names()
+            assert "glossary_entries" in tablas
+            migradas = {c["name"] for c in inspect(connection).get_columns("glossary_entries")}
+            declaradas = {c.name for c in GlossaryEntry.__table__.columns}
+            assert migradas == declaradas
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            assert "glossary_entries" not in inspect(connection).get_table_names()
+
+        engine.dispose()

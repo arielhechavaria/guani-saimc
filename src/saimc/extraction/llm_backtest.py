@@ -57,6 +57,7 @@ from saimc.config import Settings, get_settings
 from saimc.db import session_scope
 from saimc.extraction import llm_assist, llm_checks, llm_propose_ad, measure, ocr
 from saimc.extraction.engine import ExtractionProposal, propose_all
+from saimc.glossary import active_glossary_entries
 from saimc.ingestion import origin
 from saimc.models import (
     ContentType,
@@ -418,6 +419,7 @@ def run_backtest(
 
     products = measure._focus_products(session)
     provinces = measure._all_provinces(session)
+    glossary = active_glossary_entries(session)
     names = {p.id: p.name for p in session.execute(select(Product)).scalars()}
     history = measure._price_history_by_source(session)
     previous = latest_records(read_records(results_path))
@@ -458,6 +460,7 @@ def run_backtest(
             timeout=timeout,
             ingestion_id=item.ingestion_id,
             log_path=calls_log_path,
+            glossary=glossary,
         )
         # El canal manda también sobre lo que propuso el modelo (ver módulo).
         rows = [

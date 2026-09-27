@@ -467,6 +467,76 @@
       </table>
     </div>
   </section>
+
+  <!-- Glosario ----------------------------------------------------------- -->
+  <section id="glosario" class="m3-card">
+    <div class="m3-card-head">
+      <div class="m3-topbar-main">
+        <h2 class="m3-h2">Glosario del asistente</h2>
+        <p class="m3-note" style="margin-bottom:0">
+          Reglas cortas que se agregan al pedido que recibe el modelo en «Completar con
+          IA» y el pre-cálculo — para notas que no salen del catálogo (ejemplo: «4x10» =
+          4 paquetes de 10 lb, la caja pesa 40 lb). Una entrada desactivada sale del
+          próximo pedido sin borrarse.
+        </p>
+      </div>
+    </div>
+
+    <details id="alta-glosario">
+      <summary class="m3-summary m3-btn m3-btn-filled" style="margin:0 24px 16px">
+        <span class="m3-icon">add</span>Agregar entrada
+      </summary>
+      <form method="post" action="/catalog/glossary" class="m3-form-block m3-grid-fields">
+        <label class="m3-field m3-field-on-container is-filled">
+          <span class="m3-field-label" for="glossary_term">Término</span>
+          <input type="text" name="term" id="glossary_term" required class="m3-input" />
+        </label>
+        <label class="m3-field m3-field-on-container is-filled m3-span-2">
+          <span class="m3-field-label" for="glossary_definition">Definición</span>
+          <input type="text" name="definition" id="glossary_definition" required class="m3-input" />
+        </label>
+        <div class="m3-row" style="align-self:end">
+          <button type="submit" class="m3-btn m3-btn-filled">Guardar</button>
+        </div>
+      </form>
+    </details>
+
+    <div style="padding:0 24px 24px">
+      {% if glossary_entries %}
+      {% for entry in glossary_entries %}
+      <div class="m3-row" style="gap:8px; align-items:center; padding:6px 0; flex-wrap:wrap; {% if not entry.active %}opacity:.55{% endif %}">
+        <span class="m3-strong" style="min-width:120px">«{{ entry.term }}»</span>
+        <span class="m3-sm" style="flex:1">{{ entry.definition }}</span>
+        {% if not entry.active %}<span class="m3-sm m3-muted">desactivada</span>{% endif %}
+        <details class="m3-inline-form">
+          <summary class="m3-icon-btn m3-summary" title="Editar entrada" style="padding:2px 6px">
+            <span class="m3-icon m3-icon-sm">edit</span>
+          </summary>
+          <form method="post" action="/catalog/glossary/{{ entry.id }}/edit"
+                class="m3-card m3-card-pad m3-row" style="gap:6px; margin-top:6px; flex-wrap:wrap; text-align:left">
+            <input type="text" name="term" value="{{ entry.term }}" required
+                   class="m3-input" style="font-size:12px; padding:4px 8px" />
+            <input type="text" name="definition" value="{{ entry.definition }}" required
+                   class="m3-input" style="font-size:12px; padding:4px 8px; flex:1; min-width:200px" />
+            <button type="submit" class="m3-btn m3-btn-tonal" style="padding:4px 12px; font-size:12px">Guardar</button>
+          </form>
+        </details>
+        <form method="post" action="/catalog/glossary/{{ entry.id }}/toggle" class="m3-inline-form">
+          <button type="submit" class="m3-btn m3-btn-text" style="padding:2px 6px; font-size:12px">
+            {{ "Activar" if not entry.active else "Desactivar" }}
+          </button>
+        </form>
+        <form method="post" action="/catalog/glossary/{{ entry.id }}/delete" class="m3-inline-form"
+              onsubmit="return confirm({{ ('¿Eliminar «' ~ entry.term ~ '» del glosario?') | tojson }});">
+          <button type="submit" class="m3-btn m3-btn-text" style="padding:2px 6px; font-size:12px">Borrar</button>
+        </form>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p class="m3-xs m3-muted" style="margin:0">Sin entradas todavía.</p>
+      {% endif %}
+    </div>
+  </section>
 </div>
 {% endblock %}
 
