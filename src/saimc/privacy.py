@@ -25,8 +25,10 @@ PHONE_PLACEHOLDER = "[teléfono removido]"
 # Móvil cubano: 8 dígitos que empiezan en 5. Dos formas, por orden de confianza.
 #
 # 1. Con prefijo de país explícito, que es como el OCR transcribe el encabezado
-#    de un chat de WhatsApp ("+53 5 5550101"). Se toleran separadores internos
-#    porque el prefijo ya hace el match inequívoco.
+#    de un chat de WhatsApp ("+53 5 5550101", o agrupado "+53 5 234 5678"). Se
+#    tolera separador delante de cada uno de los 7 dígitos que siguen al "5"
+#    inicial, no solo entre "53" y "5", porque el prefijo ya hace el match
+#    inequívoco sea cual sea el agrupamiento.
 # 2. Suelto, sin prefijo. Acá NO se toleran separadores: un run de 8 dígitos
 #    partido por espacios es indistinguible de dos precios seguidos en una
 #    lista ("... 500 g 1760.00 ..."), y comerse un precio es peor que dejar un
@@ -36,7 +38,7 @@ PHONE_PLACEHOLDER = "[teléfono removido]"
 # aparece pegado a un hashtag ("#llame_escriba_55550303"), donde el guión bajo
 # es carácter de palabra y `\b` no encuentra frontera.
 _PHONE_RES = (
-    re.compile(r"(?<!\d)\+?53[\s.·-]?5[\s.·-]?\d{7}(?!\d)"),
+    re.compile(r"(?<!\d)\+?53[\s.·-]?5(?:[\s.·-]?\d){7}(?!\d)"),
     re.compile(r"(?<!\d)5\d{7}(?!\d)"),
 )
 

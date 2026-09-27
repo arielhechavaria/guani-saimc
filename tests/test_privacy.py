@@ -31,6 +31,9 @@ class TestRedactaTelefonos:
             # Pegado a un hashtag: no hay frontera de palabra antes del 5,
             # por eso el patrón usa lookbehind de dígito y no `\\b`.
             "#Santiago_de_Cuba #llame_escriba_55550303 #Sigue_nuestra_pagina",
+            # Con prefijo de país, agrupado en bloques de 3-4 en vez de
+            # separadores solo tras el "53" y el primer "5" (spec §10.6).
+            "disponible al +53 5 234 5678 por watsap",
         ],
     )
     def test_el_numero_desaparece_y_deja_marca(self, texto: str) -> None:
