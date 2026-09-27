@@ -62,6 +62,7 @@ from saimc.requisitos_status import read_module_status
 from saimc.web.deps import get_db
 from saimc.web.health_strip import build_strip, worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
+from saimc.web.rubber_stamp_metrics import rubber_stamp_alert
 
 router = APIRouter()
 
@@ -134,6 +135,9 @@ def control_panel(
     intake = compute_intake_health(db)
     rate_statuses = compute_rate_status(db)
     assist = consumption_summary(settings.llm_assist_log_path)
+    # Vigilancia del rubber-stamping (slice 5): semana actual vs. anterior de
+    # `llm_reviews`. Puramente aditivo sobre la base — no golpea la API.
+    rubber_stamp = rubber_stamp_alert(db)
     strip = build_strip(
         waha=waha,
         last_capture=ultima_captura,
@@ -209,6 +213,7 @@ def control_panel(
             # una API de facturación: es el gasto de SAIMC medido sobre lo que
             # la propia API reportó consumir, no el total de la cuenta.
             "assist": assist,
+            "rubber_stamp": rubber_stamp,
             "activity": activity,
             "activity_days": _ACTIVITY_DAYS,
             # El máximo de la ventana escala las barras del gráfico. Va acá y

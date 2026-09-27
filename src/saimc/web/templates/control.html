@@ -229,6 +229,96 @@
   </section>
   {% endif %}
 
+  {% if rubber_stamp.current.no_edit_n or rubber_stamp.current.decision_time.n %}
+  <!-- ---------- 2ter. Vigilancia del rubber-stamping (slice 5) ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="rubber-stamp">Aceptación sin revisar</h2>
+      <span class="m3-sm m3-muted">
+        últimos 7 días. Cuánto queda tal cual lo propuso el modelo y cuánto
+        tarda el operador en decidir — no es un veredicto, es una señal para
+        mirar la cola con más atención si se mueve junto.
+      </span>
+    </div>
+
+    {% if rubber_stamp.alert %}
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">warning</span>
+      <span>
+        Posible aceptación sin revisar: la tasa sin editar subió de
+        {{ "%.0f"|format((rubber_stamp.previous.no_edit_rate or 0) * 100) }}%
+        a {{ "%.0f"|format((rubber_stamp.current.no_edit_rate or 0) * 100) }}%
+        y el tiempo por decisión bajó de
+        {{ "%.0f"|format(rubber_stamp.previous.decision_time.median or 0) }}s
+        a {{ "%.0f"|format(rubber_stamp.current.decision_time.median or 0) }}s
+        (semana actual vs. anterior).
+      </span>
+    </div>
+    {% endif %}
+
+    <div class="m3-stats">
+      <div class="m3-stat">
+        <div class="m3-stat-label">Tasa sin editar (agregada)</div>
+        <div class="m3-stat-value">
+          {% if rubber_stamp.current.no_edit_rate is not none %}
+          {{ "%.0f"|format(rubber_stamp.current.no_edit_rate * 100) }}%
+          {% else %}—{% endif %}
+        </div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Decisiones medidas</div>
+        <div class="m3-stat-value">{{ rubber_stamp.current.no_edit_n }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Mediana tiempo por decisión</div>
+        <div class="m3-stat-value">
+          {% if rubber_stamp.current.decision_time.median is not none %}
+          {{ "%.0f"|format(rubber_stamp.current.decision_time.median) }}s
+          {% else %}—{% endif %}
+        </div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">n (tiempo por decisión)</div>
+        <div class="m3-stat-value">{{ rubber_stamp.current.decision_time.n }}</div>
+      </div>
+    </div>
+
+    {% if rubber_stamp.current.no_edit_rate_by_field %}
+    {% set etiquetas = {
+      "product_id": "Producto",
+      "price": "Precio",
+      "currency": "Moneda",
+      "quantity": "Cantidad",
+      "unit": "Unidad",
+      "province_id": "Provincia",
+      "sale_format": "Formato de venta",
+      "price_basis": "Base del precio",
+      "packaging": "Envase",
+    } %}
+    <table class="m3-table m3-mt">
+      <thead>
+        <tr><th>Campo</th><th>Sin editar</th></tr>
+      </thead>
+      <tbody>
+        {% for campo, valores in rubber_stamp.current.no_edit_rate_by_field.items() %}
+        {% set num, den = valores %}
+        <tr>
+          <td>{{ etiquetas.get(campo, campo) }}</td>
+          <td>
+            {% if den %}
+            {{ "%.0f"|format((num / den) * 100) }}% <span class="m3-sm m3-muted">({{ num }}/{{ den }})</span>
+            {% else %}
+            <span class="m3-sm m3-muted">sin datos</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <!-- ---------- 2. Historial de H0 (spec.md §12.5) ---------- -->
   {% macro h0pct(value) %}{% if value is not none %}{{ "%.1f"|format(value * 100) }}%{% else %}—{% endif %}{% endmacro %}
   <section>

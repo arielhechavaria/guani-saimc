@@ -131,3 +131,9 @@ class LlmReview(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
+    # Cuándo se le mostró la fila al operador (slice 5, vigilancia del
+    # rubber-stamping). Nulo a propósito: no hay backfill, así que una fila
+    # guardada antes de este slice queda sin dato en vez de con una hora
+    # inventada. `created_at - shown_at` es el tiempo que el operador tardó en
+    # decidir.
+    shown_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

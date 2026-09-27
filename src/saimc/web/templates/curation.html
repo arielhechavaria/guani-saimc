@@ -398,6 +398,9 @@
           {% endif %}
 
           <input type="hidden" name="row_count" value="{{ row_count }}" />
+          {# Slice 5 (vigilancia del rubber-stamping): cuándo se mostró esta
+             fila, para medir tiempo por decisión al guardar. #}
+          <input type="hidden" name="shown_at" value="{{ shown_at }}" />
         </form>
 
         <form method="post" action="/curation/{{ ingestion.id }}/discard" id="discard-form"></form>

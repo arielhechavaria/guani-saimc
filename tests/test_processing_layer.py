@@ -1602,12 +1602,17 @@ class TestLlmProposalsReviewsMigration:
         from saimc.models import LlmProposal, LlmReview
 
         modulo = _cargar_modulo_migracion("0021_llm_proposals_reviews.py")
+        # `0022` agrega `shown_at` a `llm_reviews` (slice 5): se aplica acá
+        # también para que la comparación de columnas contra el modelo siga
+        # siendo fiel al esquema completo, no solo al de esta migración.
+        modulo_shown_at = _cargar_modulo_migracion("0022_llm_reviews_shown_at.py")
         engine = self._base()
 
         with engine.connect() as connection:
             context = MigrationContext.configure(connection)
             with Operations.context(context):
                 modulo.upgrade()
+                modulo_shown_at.upgrade()
             connection.commit()
 
             tablas = inspect(connection).get_table_names()
@@ -1622,6 +1627,7 @@ class TestLlmProposalsReviewsMigration:
         with engine.connect() as connection:
             context = MigrationContext.configure(connection)
             with Operations.context(context):
+                modulo_shown_at.downgrade()
                 modulo.downgrade()
             connection.commit()
 
@@ -1629,5 +1635,57 @@ class TestLlmProposalsReviewsMigration:
             assert "llm_proposals" not in tablas
             assert "llm_reviews" not in tablas
             assert "raw_ingestions" in tablas
+
+        engine.dispose()
+
+
+class TestLlmReviewsShownAtMigration:
+    """`0022_llm_reviews_shown_at.py` — columna nueva y nullable (slice 5,
+    vigilancia del rubber-stamping). Sin backfill a propósito: una fila
+    guardada antes de esta migración queda en NULL."""
+
+    def test_upgrade_agrega_la_columna_nullable_sin_backfill_downgrade_la_elimina(
+        self,
+    ) -> None:
+        modulo = _cargar_modulo_migracion("0022_llm_reviews_shown_at.py")
+
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "llm_reviews",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        metadata.create_all(engine)
+
+        # Fila «vieja», anterior a la migración: tiene que sobrevivir con
+        # `shown_at` en NULL, no con una hora inventada.
+        with engine.connect() as connection:
+            connection.execute(
+                sa.insert(metadata.tables["llm_reviews"]).values(id=uuid.uuid4())
+            )
+            connection.commit()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("llm_reviews")}
+            assert "shown_at" in columnas
+
+            valor = connection.execute(
+                sa.text("select shown_at from llm_reviews")
+            ).scalar_one()
+            assert valor is None
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            columnas = {c["name"] for c in inspect(connection).get_columns("llm_reviews")}
+            assert "shown_at" not in columnas
+            assert "id" in columnas
 
         engine.dispose()

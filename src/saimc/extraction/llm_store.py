@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -318,10 +319,13 @@ def save_review(
     rows: list[dict[str, Any]],
     note: str = "",
     discard_reason: str | None = None,
+    shown_at: datetime | None = None,
 ) -> LlmReview:
     """Da de alta la revisión. La nota se guarda con los teléfonos redactados.
 
     No hace commit: va en la misma transacción que la curaduría o el descarte.
+    `shown_at` es cuándo se le mostró la fila al operador (slice 5); `None`
+    cuando no viajó o no se pudo interpretar — no bloquea el guardado.
     """
     review = LlmReview(
         ingestion_id=proposal.ingestion_id,
@@ -330,6 +334,7 @@ def save_review(
         discard_reason=discard_reason,
         note=redact_personal_data(note.strip()) or None,
         rows=rows,
+        shown_at=shown_at,
     )
     db.add(review)
     return review

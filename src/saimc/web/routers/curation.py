@@ -854,6 +854,7 @@ def _render_queue(
     proposal_id: str | None = None,
     note: str = "",
     accept_ready: bool = False,
+    shown_at: str | None = None,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -881,6 +882,10 @@ def _render_queue(
             # operador. Sin propuesta no hay oculto ni campo de nota.
             "proposal_id": proposal_id,
             "note": note,
+            # Cuándo se le mostró esta fila al operador (slice 5). `None` en
+            # el reintento con error de validación: ese caso no vuelve a
+            # calcular "ahora", conserva lo que ya venía (ver más abajo).
+            "shown_at": shown_at,
             # Molde para las filas que el operador agregue a mano desde el
             # botón "Agregar fila": el JS del cliente clona este `<template>`
             # y le renumera los índices. Mismo dict vacío que las filas en
@@ -1364,6 +1369,11 @@ def _curation_view(
         # El botón dice «Aceptar» (y responde al atajo) solo cuando hay una
         # propuesta del modelo a la vista para confirmar (slice 4).
         accept_ready=assist_ok,
+        # Cuándo se le mostró esta fila al operador (slice 5): viaja oculto en
+        # el form y vuelve en el POST para medir tiempo por decisión. Se fija
+        # acá, al armar la vista, no en el POST — ahí ya pasó el tiempo que se
+        # quiere medir.
+        shown_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -1884,6 +1894,14 @@ async def submit_curation(
     # Slice 3a: la propuesta que el operador tenía a la vista y su nota.
     proposal_id_raw = str(form.get("proposal_id", "")).strip()
     note = str(form.get("note", ""))
+    # Slice 5: cuándo se le mostró la fila (viaja oculto, ver `_curation_view`).
+    # Un valor vacío o mal formado no bloquea el guardado — se guarda `None` y
+    # esa fila queda afuera de la métrica de tiempo por decisión.
+    shown_at_raw = str(form.get("shown_at", "")).strip()
+    try:
+        shown_at = datetime.fromisoformat(shown_at_raw) if shown_at_raw else None
+    except ValueError:
+        shown_at = None
 
     # Catálogo existente + altas de esta misma request: dos filas con el mismo
     # producto nuevo (mismo submit) deben reusar el Product, no duplicarlo.
@@ -1987,6 +2005,10 @@ async def submit_curation(
             # Sin los ocultos, el segundo intento se guardaría sin captura.
             proposal_id=proposal_id_raw or None,
             note=note,
+            # Conserva el momento en que se mostró la fila la primera vez, no
+            # el de este reintento: el operador ya venía decidiendo desde
+            # antes de este submit fallido.
+            shown_at=shown_at_raw or None,
         )
 
     # Resolución de tasa DESPUÉS de la rama todo-o-nada (design.md D4): un
@@ -2019,6 +2041,7 @@ async def submit_curation(
                 proposal, list(zip(proposal_rows, entries_to_create, strict=True))
             ),
             note=note,
+            shown_at=shown_at,
         )
 
     # Todo texto capturado que se persiste durante la curaduría pasa por

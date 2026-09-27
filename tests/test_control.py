@@ -21,6 +21,8 @@ from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.models import (
     Channel,
     Currency,
+    LlmProposal,
+    LlmReview,
     Platform,
     PriceHistory,
     Product,
@@ -1857,3 +1859,72 @@ class TestLintDrift:
         assert response.status_code == 200
         assert "No se pudo interpretar la salida" in response.text
         assert "algo explotó" in response.text
+
+
+class TestVigilanciaDelRubberStamping:
+    """`rubber_stamp_metrics` ya se prueba a fondo aparte
+    (`tests/test_rubber_stamp_metrics.py`, agregación pura). Acá solo se
+    verifica que `/control` la conecta sin romper, con y sin datos."""
+
+    def _review(
+        self,
+        session: Session,
+        *,
+        rows: list[dict],
+        sufijo: str,
+        edited: list[str] | None = None,
+    ) -> None:
+        ingestion = RawIngestion(
+            source_type="inbox_text",
+            file_path=f"raw/{sufijo}.txt",
+            content_hash=f"hash-{sufijo}",
+            content_type="text",
+            processing_status="curated",
+            captured_at=datetime(2026, 9, 1, tzinfo=UTC),
+        )
+        session.add(ingestion)
+        session.flush()
+        proposal = LlmProposal(
+            ingestion_id=ingestion.id,
+            model="m",
+            prompt_version="v",
+            status="ok",
+            rows=[],
+            input_tokens=0,
+            output_tokens=0,
+        )
+        session.add(proposal)
+        session.flush()
+        session.add(
+            LlmReview(
+                ingestion_id=ingestion.id,
+                proposal_id=proposal.id,
+                outcome="curated",
+                rows=rows,
+                shown_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+    def test_sin_llm_reviews_no_rompe(self, client: TestClient) -> None:
+        response = client.get("/control")
+
+        assert response.status_code == 200
+
+    def test_con_datos_muestra_la_tasa_agregada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        fila = {
+            "proposal_index": 0,
+            "price_history_id": "x",
+            "proposed": {"product_id": "p", "price": "100"},
+            "final": {},
+            "edited": [],
+        }
+        self._review(session, rows=[fila], sufijo="ok")
+
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        assert "Aceptación sin revisar" in response.text
+        assert "100%" in response.text
