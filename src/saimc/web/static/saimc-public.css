@@ -66,6 +66,11 @@
   --m3-prov-2: #0b7285;  --m3-prov-2-soft: #c5f6fa;  --m3-prov-2-wash: #f0fbfc;
   --m3-prov-9: #6f7979;  --m3-prov-9-soft: #e3e9ea;  --m3-prov-9-wash: #f7fafa;
 
+  --m3-acento-0: #b7791f;
+  --m3-acento-1: #55672f;
+  --m3-acento-2: #a8432b;
+  --m3-acento-3: #7a4a52;
+
   --m3-space-1: 4px;
   --m3-space-2: 8px;
   --m3-space-3: 12px;
@@ -148,6 +153,11 @@
   --m3-prov-1: #bda3ff;  --m3-prov-1-soft: #2d2154;  --m3-prov-1-wash: #191428;
   --m3-prov-2: #6ad7e6;  --m3-prov-2-soft: #103439;  --m3-prov-2-wash: #0d1f22;
   --m3-prov-9: #a3adad;  --m3-prov-9-soft: #2a3434;  --m3-prov-9-wash: #1a2222;
+
+  --m3-acento-0: #d9a54c;
+  --m3-acento-1: #8ba15c;
+  --m3-acento-2: #d97a63;
+  --m3-acento-3: #b97e88;
 
   --ph-accent: #7ec8ea;
   --ph-on-accent: #00344a;
@@ -598,15 +608,16 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
    el sitio pide 44 px. El Mapa y Explorar, que ocupan la pantalla entera, le
    ceden ese alto con `.ph-cintillo + …` en sus propias hojas. */
 .ph-cintillo {
-  display: flex; align-items: stretch; height: 2.75rem; overflow: hidden;
-  background: var(--m3-surface-container); border-bottom: 1px solid var(--m3-divider);
+  box-sizing: border-box; display: flex; align-items: stretch; height: 2.75rem; overflow: hidden;
+  background: var(--m3-surface-container);
+  border-top: 3px solid var(--m3-primary); border-bottom: 1px solid var(--m3-divider);
   font-family: var(--m3-font); color: var(--m3-on-surface);
 }
 .ph-cintillo-rotulo {
   position: relative; z-index: 1; flex: none; display: flex; align-items: center; gap: var(--m3-space-2);
   padding: 0 var(--m3-space-4); white-space: nowrap; font-size: .6875rem; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--m3-on-surface-variant);
-  background: var(--m3-surface-container); border-right: 1px solid var(--m3-divider);
+  text-transform: uppercase; color: var(--m3-on-primary-container);
+  background: var(--m3-primary-container); border-right: 1px solid var(--m3-divider);
 }
 .ph-cintillo-punto { width: 7px; height: 7px; border-radius: 50%; background: var(--m3-primary); animation: ph-late 2s ease-in-out infinite; }
 .ph-cintillo-pista {
@@ -622,8 +633,13 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
   color: var(--m3-on-surface); text-decoration: none;
 }
 .ph-cintillo-item:hover { text-decoration: none; color: var(--m3-primary); }
+.ph-cintillo-acento { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.ph-acento-0 { background: var(--m3-acento-0); }
+.ph-acento-1 { background: var(--m3-acento-1); }
+.ph-acento-2 { background: var(--m3-acento-2); }
+.ph-acento-3 { background: var(--m3-acento-3); }
 .ph-cintillo-nombre { color: var(--m3-on-surface-variant); }
-.ph-cintillo-cifra { font-family: var(--m3-mono); font-weight: 500; }
+.ph-cintillo-cifra { font-family: var(--m3-mono); font-weight: 700; }
 .ph-cintillo-unidad { font-size: .6875rem; color: var(--m3-on-surface-variant); }
 .ph-cintillo-cambio { font-family: var(--m3-mono); font-size: .75rem; color: var(--m3-on-surface-variant); }
 .ph-cintillo-pista:hover .ph-cintillo-cinta,

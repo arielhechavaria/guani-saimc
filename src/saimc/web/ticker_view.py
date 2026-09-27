@@ -19,8 +19,9 @@ Dos decisiones de honestidad, ambas visibles en el rótulo del cintillo:
 from __future__ import annotations
 
 import statistics
+import zlib
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from saimc.web.card_view import format_price
@@ -39,10 +40,21 @@ class TickerItem:
     #: «+3%», «−7%», «0%», o vacío si ninguna provincia tiene los dos períodos.
     change_text: str
     href: str
+    #: 0–3, derivado del nombre del producto (`_slot_de`). Solo varía el
+    #: acento de color en la vista; el catálogo no tiene categoría de
+    #: producto poblada. Estable por producto: no depende del orden del
+    #: cintillo, que cambia con el volumen de anuncios de la ventana.
+    slot: int = 0
 
 
 def _change_text(pct: int) -> str:
     return f"+{pct}%" if pct > 0 else (f"−{abs(pct)}%" if pct < 0 else "0%")
+
+
+def _slot_de(product_name: str) -> int:
+    """CRC32 y no `hash()`: `hash()` de `str` varía entre procesos
+    (`PYTHONHASHSEED`), y el slot tiene que ser el mismo en cada worker."""
+    return zlib.crc32(product_name.encode("utf-8")) % 4
 
 
 def build_ticker(
@@ -80,4 +92,4 @@ def build_ticker(
         )
         armados.append((sum(line.now_count for line in con_dato), name, item))
     armados.sort(key=lambda t: (-t[0], _alfabeto(t[1])))
-    return tuple(item for _, _, item in armados)
+    return tuple(replace(item, slot=_slot_de(name)) for _, name, item in armados)

@@ -25,7 +25,7 @@
       {% for copia in (false, true) %}
       <ul class="ph-cintillo-grupo"{% if copia %} aria-hidden="true"{% endif %}>
         {% for item in ticker %}
-        <li><a class="ph-cintillo-item" href="{{ item.href }}"{% if copia %} tabindex="-1"{% endif %}><span class="ph-cintillo-nombre">{{ item.product_name }}</span><span class="ph-cintillo-cifra">{{ item.median_text }}</span><span class="ph-cintillo-unidad">{{ item.unit }}</span>{% if item.change_text %}<span class="ph-cintillo-cambio">{{ item.change_text }}</span>{% endif %}</a></li>
+        <li><a class="ph-cintillo-item" href="{{ item.href }}"{% if copia %} tabindex="-1"{% endif %}><span class="ph-cintillo-acento ph-acento-{{ item.slot }}" aria-hidden="true"></span><span class="ph-cintillo-nombre">{{ item.product_name }}</span><span class="ph-cintillo-cifra">{{ item.median_text }}</span><span class="ph-cintillo-unidad">{{ item.unit }}</span>{% if item.change_text %}<span class="ph-cintillo-cambio">{{ item.change_text }}</span>{% endif %}</a></li>
         {% endfor %}
       </ul>
       {% endfor %}
