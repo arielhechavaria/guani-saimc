@@ -11,9 +11,9 @@ Fecha del plan: 2026-09-25. Última actualización: 2026-09-27.
 | 3a | Guardar la propuesta y capturar la revisión (tablas `llm_proposals`, `llm_reviews`) | CERRADO |
 | 3b | Pre-cálculo por lotes (`python -m saimc.extraction.prefill`) | CERRADO |
 | 3d | El modelo propone también formato de venta, base del precio y envase | CERRADO (2026-09-27) |
-| 3c | Glosario (hecho, pendiente de verificación del operador) y recorte del texto (pendiente) | EN PROGRESO (2026-09-27) |
+| 3c | Glosario CERRADO (2026-09-27, verificado y en prod); recorte del texto sigue Pendiente | EN PROGRESO |
 | 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | CERRADO (2026-09-27) |
-| 5 | Vigilancia del rubber-stamping en `/control` | Pendiente |
+| 5 | Vigilancia del rubber-stamping en `/control` | Código en prod desde el 2026-09-27 (commit `64907a1`, antes de que este tablero se pusiera al día) — falta que el operador confirme haber revisado `/control` para darlo por CERRADO |
 
 Regla: un slice se cierra (tests, `decisions.md`, checklist, commit y verificación
 del operador) antes de abrir el siguiente.
@@ -48,10 +48,12 @@ del operador) antes de abrir el siguiente.
    (2026-09-27).**
 4. **Slice 4 — Aceptar, atajo y orden de la cola: HECHO y verificado.
    CERRADO (2026-09-27).**
-5. **3c — glosario: HECHO (2026-09-27), pendiente de verificación del operador
-   en pantalla.** Ver detalle en la sección del slice más abajo. El recorte
-   del texto (la otra mitad de 3c) sigue pendiente.
-6. **Slice 5.**
+5. **3c — glosario: HECHO y verificado por el operador. CERRADO (2026-09-27).**
+   Ver detalle en la sección del slice más abajo. El recorte del texto (la
+   otra mitad de 3c) sigue pendiente, para otra sesión.
+6. **Slice 5 — código ya en prod (commit `64907a1`, del mismo 2026-09-27, antes
+   de que este tablero se pusiera al día).** Falta que el operador confirme
+   haber revisado la sección nueva de `/control` para darlo por CERRADO.
 
 ### Pendientes sueltos (no son de un slice; se atienden cuando toquen)
 
@@ -179,7 +181,7 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
 - Falta: backtest pagado, arreglo de etiquetas a 390 px y verificación del
   operador (ver «Próximos pasos»).
 
-### Slice 3c — Glosario y recorte del texto — EN PROGRESO (glosario hecho, 2026-09-27)
+### Slice 3c — Glosario y recorte del texto — glosario CERRADO (2026-09-27), recorte Pendiente
 
 - **Investigación previa («en qué se van los tokens de salida»): RESUELTA
   (2026-09-27), y desvió el diagnóstico.** No era el texto de entrada: `propose_ad`
@@ -191,8 +193,8 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
   corregido en `propose_ad` (`docs/decisions.md`). El glosario y el recorte de
   abajo siguen pendientes — apuntan a la entrada, que no era el problema
   medido — y se retoman con la vara de costo ya más baja por este fix.
-- **Nota del operador y glosario: HECHO (2026-09-27), pendiente de verificación
-  del operador en pantalla.** Tabla `glossary_entries` (migración `0023`),
+- **Nota del operador y glosario: HECHO y verificado por el operador. CERRADO
+  (2026-09-27).** Tabla `glossary_entries` (migración `0023`),
   CRUD en `/catalog#glosario` (alta, edición, activar/desactivar, borrar), y
   las entradas activas se inyectan en el bloque cacheado de `propose_ad`. La
   versión del prompt se deriva sola por hash del contenido activo
@@ -238,11 +240,19 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
   (2026-09-27). No hay prototipo aprobado de este slice (no lo hay en
   `docs/decisions.md`); la vara fue el plan, no un diseño visual previo.
 
-### Slice 5 — Vigilancia del rubber-stamping en `/control` — Pendiente
+### Slice 5 — Vigilancia del rubber-stamping en `/control` — código en prod, falta verificación
+
+Implementado en el commit `64907a1` (2026-09-27), antes de que este tablero se
+pusiera al día — quedó marcado «Pendiente» por descuido, no porque falte
+código:
 
 - Tasa de aceptación sin edición, por campo (de `llm_reviews`).
 - Tiempo por decisión.
 - Aviso si la aceptación sin edición sube y el tiempo por decisión baja a la vez.
+
+Detalle completo en `docs/decisions.md`, entrada «Slice 5: vigilancia del
+rubber-stamping en `/control`» (2026-09-27). Falta que el operador entre a
+`/control` y confirme que la sección se ve bien para darlo por CERRADO.
 
 ---
 
