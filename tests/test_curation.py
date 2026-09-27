@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
-from saimc.extraction import llm_assist, ocr
+from saimc.extraction import llm_assist, llm_store, ocr
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_checks import RowMeta
 from saimc.extraction.llm_propose_ad import PROMPT_VERSION, AdProposal
@@ -6680,3 +6680,181 @@ class TestVistaCola:
         assert '🖼️ Sin transcribir <span class="m3-tab-count">1</span>' in html
         assert '🚫 Fuera de foco <span class="m3-tab-count">1</span>' in html
         assert 'Todos <span class="m3-tab-count">3</span>' in html
+
+
+class TestOrdenPorAcuerdoYBotonAceptar:
+    """Slice 4 (docs/plan-asistente-llm-cola-completa.md, 2026-09-27): dentro
+    de un mismo nivel de foco, la cola se reordena por acuerdo con las
+    reglas (primero lo coincidente, al final lo dudoso o en desacuerdo), y el
+    botón principal pasa a «Aceptar» con atajo Ctrl+Enter cuando hay una
+    propuesta del modelo a la vista.
+    """
+
+    def test_via_endpoint_lo_que_coincide_se_muestra_primero(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Igual que el test de abajo, pero a través de `GET /curation`: si
+        alguien desconecta `_order_by_agreement` de `_curation_view` y deja
+        solo la función suelta, este test (no el de abajo) lo nota."""
+        from saimc.extraction.engine import propose_all
+
+        producto = _crear_producto(session, name="Pollo", aliases=[])
+        _crear_raw_ingestion(
+            session,
+            hash_="agree-endpoint-viejo-sin-propuesta",
+            original_text="Pollo a 700 la libra",
+            captured_at=datetime(2026, 9, 1, tzinfo=UTC),
+        )
+        nuevo_coincide = _crear_raw_ingestion(
+            session,
+            hash_="agree-endpoint-nuevo-coincide",
+            original_text="Pollo a 600 la libra",
+            captured_at=datetime(2026, 9, 20, tzinfo=UTC),
+        )
+        filas = propose_all(nuevo_coincide.original_text, [producto], [])
+        assert filas
+        llm_store.save_proposal(
+            session,
+            ingestion_id=nuevo_coincide.id,
+            result=AdProposal(rows=filas, row_meta=[RowMeta() for _ in filas]),
+            model="test",
+        )
+        session.commit()
+
+        html = client.get("/curation").text
+
+        assert f'action="/curation/{nuevo_coincide.id}"' in html
+
+    def test_texto_coincide_antes_que_sin_propuesta_y_que_difiere(
+        self, session: Session
+    ) -> None:
+        """Reordena aunque vaya contra la antigüedad: lo más viejo difiere,
+        lo del medio no tiene propuesta guardada, y lo más nuevo coincide.
+        Sin este slice, `_pending_in_focus` solo mira `captured_at` y el orden
+        sería exactamente el inverso."""
+        from saimc.extraction.engine import propose_all
+
+        producto = _crear_producto(session, name="Pollo", aliases=[])
+        difiere = _crear_raw_ingestion(
+            session,
+            hash_="agree-difiere",
+            original_text="Pollo a 800 la libra",
+            captured_at=datetime(2026, 9, 1, tzinfo=UTC),
+        )
+        neutral = _crear_raw_ingestion(
+            session,
+            hash_="agree-neutral",
+            original_text="Pollo a 700 la libra",
+            captured_at=datetime(2026, 9, 10, tzinfo=UTC),
+        )
+        coincide = _crear_raw_ingestion(
+            session,
+            hash_="agree-coincide",
+            original_text="Pollo a 600 la libra",
+            captured_at=datetime(2026, 9, 20, tzinfo=UTC),
+        )
+
+        # `coincide`: la propuesta guardada es EXACTAMENTE lo que dicen las
+        # reglas para su propio texto.
+        filas_coincide = propose_all(coincide.original_text, [producto], [])
+        assert filas_coincide, "las reglas tienen que resolver algo sobre este texto"
+        llm_store.save_proposal(
+            session,
+            ingestion_id=coincide.id,
+            result=AdProposal(rows=filas_coincide, row_meta=[RowMeta() for _ in filas_coincide]),
+            model="test",
+        )
+        # `difiere`: mismo producto, precio distinto del que dan las reglas
+        # para ESE texto.
+        filas_difiere = propose_all(difiere.original_text, [producto], [])
+        fila_equivocada = replace(filas_difiere[0], price=Decimal("1"))
+        llm_store.save_proposal(
+            session,
+            ingestion_id=difiere.id,
+            result=AdProposal(rows=[fila_equivocada], row_meta=[RowMeta()]),
+            model="test",
+        )
+        # `neutral`: sin propuesta guardada.
+        session.commit()
+
+        pendientes = curation._pending_in_focus(session, [producto])
+        assert {i.id for i in pendientes} == {difiere.id, neutral.id, coincide.id}
+        orden = curation._order_by_agreement(session, pendientes, [producto], [])
+
+        assert [i.id for i in orden] == [coincide.id, neutral.id, difiere.id]
+
+    def test_imagen_con_filas_antes_que_sugiere_descartar_y_que_sin_propuesta(
+        self, session: Session
+    ) -> None:
+        """Una imagen no se ordena por acuerdo con las reglas (exigiría OCR
+        acá mismo): se ordena solo por el estado de su propuesta guardada."""
+        producto = _crear_producto(session, name="Pollo", aliases=[])
+        sin_propuesta = _crear_raw_ingestion(
+            session, hash_="agree-img-sin", content_type=ContentType.IMAGE
+        )
+        sugiere_descartar = _crear_raw_ingestion(
+            session, hash_="agree-img-descarta", content_type=ContentType.IMAGE
+        )
+        con_filas = _crear_raw_ingestion(
+            session, hash_="agree-img-filas", content_type=ContentType.IMAGE
+        )
+        fila = ExtractionProposal(product=producto, price=Decimal("500"), currency="CUP")
+        llm_store.save_proposal(
+            session,
+            ingestion_id=con_filas.id,
+            result=AdProposal(rows=[fila], row_meta=[RowMeta()]),
+            model="test",
+        )
+        llm_store.save_proposal(
+            session,
+            ingestion_id=sugiere_descartar.id,
+            result=AdProposal(rows=[], row_meta=[], discard=True, discard_reason="off_focus"),
+            model="test",
+        )
+        session.commit()
+
+        pendientes = curation._pending_in_focus(session, [producto])
+        orden = curation._order_by_agreement(session, pendientes, [producto], [])
+
+        assert [i.id for i in orden] == [con_filas.id, sugiere_descartar.id, sin_propuesta.id]
+
+    def test_con_propuesta_a_la_vista_el_boton_dice_aceptar_y_tiene_atajo(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(tmp_path / "assist-log.jsonl"))
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+        producto = _crear_producto(session, name="Pollo", aliases=["pollo congelado"])
+        ingestion = _crear_raw_ingestion(
+            session, hash_="agree-btn-aceptar", original_text="pollo congelado a 500"
+        )
+        resultado = AdProposal(
+            rows=[ExtractionProposal(product=producto, price=Decimal("500"), currency="CUP")],
+            row_meta=[RowMeta()],
+        )
+        monkeypatch.setattr(curation, "propose_ad", lambda text, products, provinces, **kw: resultado)
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert "check</span>Aceptar" in html
+        assert "Curar anuncio" not in html
+        assert "Ctrl+Enter" in html
+        assert "requestSubmit" in html
+
+    def test_sin_propuesta_a_la_vista_el_boton_sigue_diciendo_curar_anuncio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo", aliases=["pollo congelado"])
+        _crear_raw_ingestion(
+            session, hash_="agree-btn-curar", original_text="pollo congelado a 500"
+        )
+
+        html = client.get("/curation").text
+
+        assert "check</span>Curar anuncio" in html
+        assert "check</span>Aceptar" not in html
+        assert "requestSubmit" not in html

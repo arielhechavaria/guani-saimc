@@ -419,8 +419,16 @@
     <button type="submit" {{ discard_target }} name="reason" value="no_data" class="m3-btn m3-btn-danger">
       <span class="m3-icon">block</span>Sin dato útil
     </button>
-    <button type="submit" form="curation-form" class="m3-btn m3-btn-filled m3-btn-lg">
-      <span class="m3-icon">check</span>Curar anuncio
+    {#
+      «Aceptar» (slice 4): con una propuesta del modelo a la vista, el
+      formulario ya no se completa a mano — se verifica y se confirma. El
+      atajo Ctrl+Enter (o Cmd+Enter en Mac) hace lo mismo que el clic; solo se
+      activa con `accept_ready`, para no disparar un guardado desde un campo
+      cuando no hay nada que aceptar.
+    #}
+    <button type="submit" form="curation-form" id="btn-curar" class="m3-btn m3-btn-filled m3-btn-lg"
+            {% if accept_ready %}title="Atajo: Ctrl+Enter"{% endif %}>
+      <span class="m3-icon">check</span>{% if accept_ready %}Aceptar{% else %}Curar anuncio{% endif %}
     </button>
   </div>
 
@@ -439,6 +447,26 @@
 
 {% block scripts %}
 {% include "_price_row_scripts.html" %}
+
+{% if accept_ready %}
+{#
+  Atajo de teclado de «Aceptar» (slice 4): Ctrl+Enter en cualquier campo del
+  formulario dispara el mismo submit que el clic. `requestSubmit` (no
+  `.click()`) para que el botón real reciba el envío y el navegador valide el
+  formulario igual que con el clic.
+#}
+<script>
+  (function () {
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter" || !(ev.ctrlKey || ev.metaKey)) return;
+      var boton = document.getElementById("btn-curar");
+      if (!boton) return;
+      ev.preventDefault();
+      boton.form.requestSubmit(boton);
+    });
+  })();
+</script>
+{% endif %}
 
 {#
   Marca visual de los campos que vinieron del asistente (design.md, D10). El

@@ -12,7 +12,7 @@ Fecha del plan: 2026-09-25. Última actualización: 2026-09-26.
 | 3b | Pre-cálculo por lotes (`python -m saimc.extraction.prefill`) | CERRADO |
 | 3d | El modelo propone también formato de venta, base del precio y envase | **ABIERTO**: medido (2026-09-26); falta la verificación del operador en pantalla |
 | 3c | Glosario y recorte del texto | Pendiente |
-| 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | Pendiente |
+| 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | **ABIERTO**: construido y con tests; falta la verificación del operador en pantalla |
 | 5 | Vigilancia del rubber-stamping en `/control` | Pendiente |
 
 Regla: un slice se cierra (tests, `decisions.md`, checklist, commit y verificación
@@ -198,12 +198,26 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
   - **ojo con el ahorro:** en el anuncio medido (4 filas, $0,033) la entrada costó
     $0,007 y la salida $0,026. Primero mirar la respuesta cruda.
 
-### Slice 4 — Interfaz de revisión — Pendiente
+### Slice 4 — Interfaz de revisión — ABIERTO (2026-09-27)
 
-- **Aceptar** con un clic y atajo de teclado; el formulario sigue editable. (El
-  descarte sugerido en un clic ya quedó hecho en el slice 2.)
-- Cola ordenada: primero lo coincidente, al final lo dudoso o en desacuerdo.
-- Verificación contra el diseño: página real a 390 px y a escritorio.
+- **Aceptar: HECHO.** Con una propuesta del modelo a la vista el botón
+  principal dice «Aceptar» (antes «Curar anuncio», mismo endpoint) y responde
+  al atajo `Ctrl+Enter` / `Cmd+Enter` en cualquier campo del formulario, que
+  sigue editable. Sin propuesta el botón vuelve a decir «Curar anuncio» y el
+  atajo no se activa. El descarte sugerido en un clic ya estaba del slice 2.
+- **Orden por acuerdo: HECHO, solo en `/curation` (vista de un anuncio).**
+  Dentro de cada nivel de foco (`_focus_rank`), se reordena por acuerdo con
+  las reglas: coincide → sin propuesta/sin regla → difiere
+  (`_order_by_agreement`, `curation.py`). Las imágenes (`_FOCUS_UNKNOWN`) se
+  ordenan solo por el ESTADO de su propuesta guardada —con filas, sugiere
+  descartar, ninguna de las dos—, nunca por acuerdo con las reglas: eso
+  exigiría OCR ahí mismo, que es justo lo que la cola evita a propósito
+  (decisión del operador, 2026-09-26). **`/curation/cola` (el listado
+  completo) NO se tocó** — sigue por `captured_at` dentro de cada foco; no
+  estaba pedido y reordenarlo ahí es un cambio más grande.
+- **Verificación contra el diseño: PENDIENTE.** No hay prototipo aprobado del
+  slice 4 (se buscó en `docs/decisions.md` y no hay); lo que sigue pendiente
+  es que el operador lo pruebe en pantalla, 390 px y escritorio (pasos abajo).
 
 ### Slice 5 — Vigilancia del rubber-stamping en `/control` — Pendiente
 

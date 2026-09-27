@@ -56,6 +56,7 @@ from saimc.extraction.engine import (
     propose_all,
 )
 from saimc.extraction.llm_checks import (
+    COINCIDE,
     DIFIERE,
     compare_with_rules,
     highlight_segments,
@@ -81,6 +82,7 @@ from saimc.models import (
     Product,
     ProductFormat,
     ProductVariant,
+    ProposalStatus,
     Province,
     RawIngestion,
     ReviewOutcome,
@@ -483,6 +485,106 @@ def _pending_in_focus(db: Session, products: Sequence[Product]) -> list[RawInges
     ]
 
 
+# Orden secundario dentro de cada nivel de foco (slice 4,
+# docs/plan-asistente-llm-cola-completa.md, 2026-09-27): primero lo
+# coincidente, al final lo dudoso o en desacuerdo.
+_AGREEMENT_MATCH = 0
+_AGREEMENT_NEUTRAL = 1
+_AGREEMENT_DIFFERS = 2
+
+
+def _latest_ok_proposals(
+    db: Session, ingestion_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, LlmProposal]:
+    """La última propuesta OK de cada id, en una sola consulta.
+
+    Mismo criterio que `llm_store.latest_ok_proposal`, pero para toda la cola
+    de una vez: llamarla pendiente por pendiente pagaría una consulta por fila.
+    """
+    if not ingestion_ids:
+        return {}
+    stmt = (
+        select(LlmProposal)
+        .where(
+            LlmProposal.ingestion_id.in_(ingestion_ids),
+            LlmProposal.status == ProposalStatus.OK,
+        )
+        .order_by(LlmProposal.created_at.asc())
+    )
+    latest: dict[uuid.UUID, LlmProposal] = {}
+    for proposal in db.execute(stmt).scalars():
+        latest[proposal.ingestion_id] = proposal  # el último pisa: ya viene ASC
+    return latest
+
+
+def _agreement_rank(
+    db: Session,
+    ingestion: RawIngestion,
+    focus: int,
+    proposal: LlmProposal | None,
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+) -> int:
+    """Dónde cae este pendiente en el orden por acuerdo (0 mejor, 2 peor).
+
+    Una imagen (`_FOCUS_UNKNOWN`) se ordena solo por el ESTADO de su propuesta
+    guardada —con filas, sugiere descartar, o ninguna de las dos—, nunca por
+    acuerdo con las reglas: calcularlo exigiría transcribirla acá mismo, que es
+    justo lo que `_queue_entry` y `_focus_rank` evitan a propósito. El texto sí
+    compara contra las reglas, con el mismo `propose_all` + `compare_with_rules`
+    que ya usa el formulario.
+    """
+    if focus == _FOCUS_UNKNOWN:
+        if proposal is None:
+            return _AGREEMENT_DIFFERS
+        if proposal.discard or not proposal.rows:
+            return _AGREEMENT_NEUTRAL
+        return _AGREEMENT_MATCH
+
+    if proposal is None:
+        return _AGREEMENT_NEUTRAL
+    ad_proposal, _ = llm_store.to_ad_proposal(db, proposal)
+    if ad_proposal.discard or not ad_proposal.rows:
+        return _AGREEMENT_NEUTRAL
+    rule_rows = propose_all(ingestion.original_text or "", products, provinces)
+    statuses = {a.status for a in compare_with_rules(ad_proposal.rows, rule_rows)}
+    if DIFIERE in statuses:
+        return _AGREEMENT_DIFFERS
+    if COINCIDE in statuses:
+        return _AGREEMENT_MATCH
+    return _AGREEMENT_NEUTRAL
+
+
+def _order_by_agreement(
+    db: Session,
+    pending: Sequence[RawIngestion],
+    products: Sequence[Product],
+    provinces: Sequence[Province],
+) -> list[RawIngestion]:
+    """Reordena `pending` (ya agrupado por foco) por acuerdo con las reglas.
+
+    Solo reordena DENTRO de cada nivel de foco: `sorted` es estable y el nivel
+    de foco de cada ingesta no cambia, así que el orden por antigüedad de
+    `_pending_in_focus` se conserva como desempate.
+    """
+    focus_by_id = {ingestion.id: _focus_rank(ingestion, products) for ingestion in pending}
+    proposals = _latest_ok_proposals(db, list(focus_by_id))
+    return sorted(
+        pending,
+        key=lambda ingestion: (
+            focus_by_id[ingestion.id],
+            _agreement_rank(
+                db,
+                ingestion,
+                focus_by_id[ingestion.id],
+                proposals.get(ingestion.id),
+                products,
+                provinces,
+            ),
+        ),
+    )
+
+
 def _pending_out_of_focus(db: Session, products: Sequence[Product]) -> list[RawIngestion]:
     """Los pendientes SIN ningún producto del foco — la contracara exacta de
     `_pending_in_focus`, acotada al descarte en lote (`docs/decisions.md`,
@@ -751,6 +853,7 @@ def _render_queue(
     evidence_segments: list[tuple[str, bool]] | None = None,
     proposal_id: str | None = None,
     note: str = "",
+    accept_ready: bool = False,
 ) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -764,6 +867,9 @@ def _render_queue(
             "row_count": row_count,
             "assist_available": assist_available,
             "assisted_map": assisted_map or {},
+            # «Aceptar» en vez de «Curar anuncio», con atajo Ctrl+Enter: solo
+            # cuando hay una propuesta del modelo a la vista (slice 4).
+            "accept_ready": accept_ready,
             # Motivo legible de que el asistente no respondió (o `None`).
             "assist_error": assist_error,
             # Sugerencia de descarte del modelo: motivo y botones (o `None`).
@@ -1038,9 +1144,11 @@ def _curation_view(
     # El catálogo del foco se lee antes que la cola: `_pending_in_focus` lo
     # necesita para decidir cuál de los pendientes aporta a una celda.
     products = _pilot_products(db)
-    en_foco = _pending_in_focus(db, products)
-    ingestion = _requested_pending(db, focus_id) or (en_foco[0] if en_foco else None)
     provinces = _all_provinces(db)
+    # Dentro de cada nivel de foco, primero lo que coincide con las reglas y al
+    # final lo dudoso o en desacuerdo (slice 4).
+    en_foco = _order_by_agreement(db, _pending_in_focus(db, products), products, provinces)
+    ingestion = _requested_pending(db, focus_id) or (en_foco[0] if en_foco else None)
 
     proposals: list[ExtractionProposal] = []
     recognized_text = ""
@@ -1253,6 +1361,9 @@ def _curation_view(
         proposal_id=(
             str(shown_proposal.id) if shown_proposal is not None and assist_ok else None
         ),
+        # El botón dice «Aceptar» (y responde al atajo) solo cuando hay una
+        # propuesta del modelo a la vista para confirmar (slice 4).
+        accept_ready=assist_ok,
     )
 
 
