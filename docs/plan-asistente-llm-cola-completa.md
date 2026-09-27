@@ -32,10 +32,11 @@ del operador) antes de abrir el siguiente.
    - **Formato de venta:** las 7 filas de la lista diaria de Santiago («Sacos Arroz
      25Kg… Venta mínima: 1 Saco») estaban mal etiquetadas en el oro (un saco
      individual es minorista, aclarado por el operador el 2026-09-26) y se
-     corrigieron con backup previo. Quedan 2 filas de arroz «por mayor» a 50 kg que
-     sí son error del modelo: dejó que la palabra «mayor» decidiera. Opcional: una
-     línea en el prompt («que el anuncio diga “por mayor” no basta») con nuevo
-     `PROMPT_VERSION` y re-medición.
+     corrigieron con backup previo. Las 2 filas de arroz «por mayor» a 50 kg que sí
+     eran error del modelo: **RESUELTO (2026-09-27).** Ejemplo agregado a la regla
+     de `sale_format` (`PROMPT_VERSION` `2026-09-27.1`), re-medido en
+     `data/llm-backtest-report-v5.md`: 97,1% (68/70) contra 90,0% (63/70). Detalle
+     en `docs/decisions.md`.
    - **Base del precio:** 3 fallos de 54.
    - Ojo con la muestra: esa misma lista aparece 33 veces en la base con distintas
      fechas; pesa mucho en cualquier medición por fila.
