@@ -408,12 +408,16 @@ def run_backtest(
     timeout: float,
     transcribe: measure.Transcriber = ocr.transcribe,
     out: Callable[[str], None] = print,
+    trim: bool = False,
 ) -> dict[str, Any]:
     """Una llamada por anuncio, en serie, anexando un resultado por línea.
 
     Reanudable: se saltea lo que ya tiene un resultado no degradado. Un
     resultado degradado se reintenta y, si ya tenía el OCR, no se lo repite.
     Se detiene si la falla es de saldo o de clave.
+
+    `trim` (slice 3c): pasa igual a `propose_ad`. El texto que ve `propose_all`
+    (las reglas, la comparación) nunca se recorta — solo lo que ve el modelo.
     """
     from saimc.privacy import redact_personal_data
 
@@ -461,6 +465,7 @@ def run_backtest(
             ingestion_id=item.ingestion_id,
             log_path=calls_log_path,
             glossary=glossary,
+            trim=trim,
         )
         # El canal manda también sobre lo que propuso el modelo (ver módulo).
         rows = [
@@ -1062,6 +1067,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Registro del asistente del operador (por defecto, el de la configuración).",
     )
+    parser.add_argument(
+        "--trim",
+        action="store_true",
+        help=(
+            "Recorta el texto del anuncio antes de mandarlo al modelo "
+            "(slice 3c, apagado por defecto en producción). Corré esto una "
+            "vez para comparar contra una corrida sin --trim sobre el mismo "
+            "oro antes de prenderlo en /curation o prefill."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1137,6 +1152,7 @@ def execute(
         model=model,
         timeout=args.timeout,
         out=out,
+        trim=args.trim,
     )
     _write_report(session, args, out)
     return 0

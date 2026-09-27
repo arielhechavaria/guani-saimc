@@ -536,6 +536,52 @@ def test_run_escribe_un_registro_por_anuncio_con_ocr_redactado(
     assert "52345678" not in json.dumps(cliente.llamadas[1])
 
 
+def test_trim_apagado_por_defecto_manda_el_texto_completo(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    txt = _ingesta(session, texto="Ruido sin producto\nArroz 100 cup La Habana", filas=[])
+    cuerpo = {"discard": True, "discard_reason": "no_data", "rows": []}
+    cliente = ClienteFalso(cuerpo)
+
+    llm_backtest.run_backtest(
+        session, [llm_backtest.WorkItem(str(txt.id), "text", "kept")],
+        results_path=tmp_path / "r.jsonl", calls_log_path=tmp_path / "c.jsonl",
+        api_key="k", client=cliente, model="claude-sonnet-5", timeout=5.0,
+        out=lambda *_: None,
+    )
+
+    anuncio = cliente.llamadas[0]["messages"][0]["content"][1]["text"]
+    assert "Ruido sin producto" in anuncio
+
+
+def test_trim_prendido_recorta_lo_que_ve_el_modelo_no_las_reglas(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    txt = _ingesta(session, texto="Ruido sin producto\nArroz 100 cup La Habana", filas=[])
+    cuerpo = {"discard": True, "discard_reason": "no_data", "rows": []}
+    cliente = ClienteFalso(cuerpo)
+
+    llm_backtest.run_backtest(
+        session, [llm_backtest.WorkItem(str(txt.id), "text", "kept")],
+        results_path=tmp_path / "r.jsonl", calls_log_path=tmp_path / "c.jsonl",
+        api_key="k", client=cliente, model="claude-sonnet-5", timeout=5.0,
+        out=lambda *_: None, trim=True,
+    )
+
+    anuncio = cliente.llamadas[0]["messages"][0]["content"][1]["text"]
+    assert "Ruido sin producto" not in anuncio
+    assert "Arroz 100 cup La Habana" in anuncio
+
+    lineas = [json.loads(x) for x in (tmp_path / "r.jsonl").read_text().splitlines()]
+    (fila,) = lineas
+    assert fila["rules_proposal"], "las reglas siguen viendo el texto completo, sin recortar"
+
+
+def test_flag_trim_se_parsea_y_llega_apagado_por_defecto() -> None:
+    assert llm_backtest.parse_args([]).trim is False
+    assert llm_backtest.parse_args(["--trim"]).trim is True
+
+
 def test_reanudar_salta_lo_hecho_reintenta_lo_degradado_y_no_repite_ocr(
     session: Session, catalogo, tmp_path: Path
 ) -> None:

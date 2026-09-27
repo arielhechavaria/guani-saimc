@@ -696,6 +696,88 @@ def _respuesta_con_cache(entrada: int, lectura: int, escritura: int, salida: int
     )
 
 
+class TestTrimTextForModel:
+    """`trim_text_for_model` (slice 3c, recorte del texto de entrada).
+
+    Casos sintéticos, escritos antes que el código: el recorte solo entra en
+    producción si un backtest aparte confirma que no pierde filas contra el
+    oro (`docs/plan-asistente-llm-cola-completa.md`, slice 3c).
+    """
+
+    def test_anuncio_de_una_linea_no_pierde_nada(self, products, provinces) -> None:
+        texto = "Arroz a 500"
+
+        assert llm_propose_ad.trim_text_for_model(texto, products) == texto
+
+    def test_lista_larga_conserva_producto_y_su_linea_siguiente_descarta_ruido(
+        self, products, provinces
+    ) -> None:
+        texto = (
+            "Bienvenidos a la tienda, entregas a domicilio\n"
+            "Arroz\n"
+            "500 CUP el paquete\n"
+            "Visitanos en Instagram @tienda\n"
+            "Pollo\n"
+            "800 CUP la libra\n"
+            "Gracias por su preferencia"
+        )
+
+        recortado = llm_propose_ad.trim_text_for_model(texto, products)
+
+        assert recortado == (
+            "Arroz\n500 CUP el paquete\nPollo\n800 CUP la libra"
+        )
+
+    def test_encabezado_de_moneda_se_conserva_aunque_no_matchee_producto(
+        self, products, provinces
+    ) -> None:
+        texto = "Precios en CUP\nArroz 500\nPollo 800"
+
+        recortado = llm_propose_ad.trim_text_for_model(texto, products)
+
+        assert recortado.splitlines()[0] == "Precios en CUP"
+        assert "Arroz 500" in recortado
+        assert "Pollo 800" in recortado
+
+    def test_encabezado_de_unidad_se_conserva(self, products, provinces) -> None:
+        texto = "Todo por libra\nArroz 500\nRuido sin producto"
+
+        recortado = llm_propose_ad.trim_text_for_model(texto, products)
+
+        assert "Todo por libra" in recortado
+        assert "Ruido sin producto" not in recortado
+
+    def test_sin_ningun_producto_reconocido_manda_el_texto_entero(
+        self, products, provinces
+    ) -> None:
+        texto = "Vendo casa en Centro Habana\nLlamar al interesado"
+
+        assert llm_propose_ad.trim_text_for_model(texto, products) == texto
+
+    def test_producto_en_la_ultima_linea_no_revienta(self, products, provinces) -> None:
+        texto = "Ruido inicial\nArroz 500"
+
+        recortado = llm_propose_ad.trim_text_for_model(texto, products)
+
+        assert recortado == "Arroz 500"
+
+    def test_dos_productos_seguidos_no_se_duplican_ni_se_pierden(
+        self, products, provinces
+    ) -> None:
+        texto = "Arroz 500\nPollo 800\nGracias"
+
+        recortado = llm_propose_ad.trim_text_for_model(texto, products)
+
+        assert recortado == "Arroz 500\nPollo 800"
+
+    def test_lineas_vacias_no_rompen_el_recorte(self, products, provinces) -> None:
+        texto = "Ruido\n\nArroz 500\n\nMas ruido"
+
+        recortado = llm_propose_ad.trim_text_for_model(texto, products)
+
+        assert recortado == "Arroz 500"
+
+
 def test_build_prompt_blocks_sin_glosario_no_agrega_seccion(products, provinces) -> None:
     catalogo, _anuncio = llm_propose_ad.build_prompt_blocks("Arroz a 500", products, provinces)
 
@@ -750,6 +832,50 @@ def test_propose_ad_con_glosario_activo_guarda_la_version_efectiva(
     assert propuesta.prompt_version.startswith(f"{llm_propose_ad.PROMPT_VERSION}+glossary:")
     linea = json.loads(log.read_text().splitlines()[0])
     assert linea["prompt_version"] == propuesta.prompt_version
+
+
+def test_propose_ad_sin_trim_manda_el_texto_completo_por_defecto(products, provinces) -> None:
+    texto = "Ruido inicial sin producto\nArroz 500"
+    cliente = ClienteFalso(
+        _respuesta({"discard": True, "discard_reason": "no_data", "rows": []})
+    )
+
+    _proponer(cliente, texto, products, provinces)
+
+    anuncio = cliente.llamadas[0]["messages"][0]["content"][1]["text"]
+    assert "Ruido inicial sin producto" in anuncio
+
+
+def test_propose_ad_con_trim_manda_solo_lo_pertinente(products, provinces) -> None:
+    texto = "Ruido inicial sin producto\nArroz 500"
+    cliente = ClienteFalso(
+        _respuesta({"discard": True, "discard_reason": "no_data", "rows": []})
+    )
+
+    _proponer(cliente, texto, products, provinces, trim=True)
+
+    anuncio = cliente.llamadas[0]["messages"][0]["content"][1]["text"]
+    assert "Ruido inicial sin producto" not in anuncio
+    assert "Arroz 500" in anuncio
+
+
+def test_propose_ad_con_trim_verifica_evidencia_contra_el_texto_completo(
+    products, provinces
+) -> None:
+    # La cita real del modelo sale de lo que vio (el recortado), que es un
+    # subconjunto literal de líneas del texto completo: verificar contra el
+    # completo (`redacted`) sigue encontrándola igual.
+    texto = "Ruido inicial sin producto\nArroz 500"
+    cuerpo = {
+        "discard": False,
+        "discard_reason": None,
+        "rows": [_fila(product="Arroz", price=500, evidence="Arroz 500", currency_explicit=False)],
+    }
+
+    r = _proponer(ClienteFalso(_respuesta(cuerpo)), texto, products, provinces, trim=True)
+
+    (meta,) = r.row_meta
+    assert meta.evidence_found is True
 
 
 def test_propose_ad_sin_glosario_guarda_la_version_base(products, provinces) -> None:

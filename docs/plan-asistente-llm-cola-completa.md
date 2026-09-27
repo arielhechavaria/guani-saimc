@@ -11,7 +11,7 @@ Fecha del plan: 2026-09-25. Última actualización: 2026-09-27.
 | 3a | Guardar la propuesta y capturar la revisión (tablas `llm_proposals`, `llm_reviews`) | CERRADO |
 | 3b | Pre-cálculo por lotes (`python -m saimc.extraction.prefill`) | CERRADO |
 | 3d | El modelo propone también formato de venta, base del precio y envase | CERRADO (2026-09-27) |
-| 3c | Glosario CERRADO (2026-09-27, verificado y en prod); recorte del texto sigue Pendiente | EN PROGRESO |
+| 3c | Glosario CERRADO (2026-09-27, verificado y en prod); recorte del texto INTENTADO Y RECHAZADO (2026-09-27, medido: pierde filas) | CERRADO |
 | 4 | Interfaz de revisión: Aceptar, atajo, orden de la cola | CERRADO (2026-09-27) |
 | 5 | Vigilancia del rubber-stamping en `/control` | CERRADO (2026-09-27, verificado por el operador) |
 
@@ -48,9 +48,11 @@ del operador) antes de abrir el siguiente.
    (2026-09-27).**
 4. **Slice 4 — Aceptar, atajo y orden de la cola: HECHO y verificado.
    CERRADO (2026-09-27).**
-5. **3c — glosario: HECHO y verificado por el operador. CERRADO (2026-09-27).**
-   Ver detalle en la sección del slice más abajo. El recorte del texto (la
-   otra mitad de 3c) sigue pendiente, para otra sesión.
+5. **3c — CERRADO (2026-09-27).** Glosario hecho y verificado. Recorte del
+   texto implementado, medido contra el oro (backtest v6 con `--trim`) y
+   **rechazado**: pierde filas (extracción completa 71,2% contra 76,9% sin
+   recortar). Detalle en la sección del slice más abajo y en
+   `docs/decisions.md`.
 6. **Slice 5 — HECHO y verificado por el operador. CERRADO (2026-09-27).**
 
 ### Pendientes sueltos (no son de un slice; se atienden cuando toquen)
@@ -179,7 +181,7 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
 - Falta: backtest pagado, arreglo de etiquetas a 390 px y verificación del
   operador (ver «Próximos pasos»).
 
-### Slice 3c — Glosario y recorte del texto — glosario CERRADO (2026-09-27), recorte Pendiente
+### Slice 3c — Glosario y recorte del texto — CERRADO (2026-09-27)
 
 - **Investigación previa («en qué se van los tokens de salida»): RESUELTA
   (2026-09-27), y desvió el diagnóstico.** No era el texto de entrada: `propose_ad`
@@ -200,21 +202,20 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
   suba `PROMPT_VERSION` a mano. Detalle y lo descartado (no se migró el
   ejemplo ya backteado de «Pollo Muslo 4x10») en `docs/decisions.md` y
   `docs/spec-slice-3c.md`.
-- **Recorte del texto: sigue pendiente**, sin bloqueo — se retoma aparte.
-- **Recorte del texto antes de enviarlo.** En listas largas se envía solo lo
-  pertinente:
-  - las líneas que el motor de reglas reconoce como producto foco
-    (`engine._match_product`), más la línea siguiente (precios por volumen);
-  - el encabezado que declara moneda o unidad («Precios en CUP»);
-  - si no se reconoce ninguna línea, el texto entero.
-  Riesgos y medición:
-  - un producto foco que los sinónimos no reconocen nunca llega al modelo: el
-    backtest se corre con y sin recorte sobre el mismo oro, y el recorte entra solo
-    si no pierde filas;
-  - la evidencia y el resaltado se verifican contra el texto recortado;
-  - sale menos texto a un tercero (privacidad, `spec.md` §10.6);
-  - **ojo con el ahorro:** en el anuncio medido (4 filas, $0,033) la entrada costó
-    $0,007 y la salida $0,026. Primero mirar la respuesta cruda.
+- **Recorte del texto antes de enviarlo: IMPLEMENTADO, MEDIDO Y RECHAZADO
+  (2026-09-27).** `trim_text_for_model` (`llm_propose_ad.py`) hace exactamente
+  lo que este plan pedía: conserva la línea que matchea un producto foco
+  (`engine._match_product`) más la línea siguiente si trae precio, más los
+  encabezados de moneda/unidad; sin ningún producto reconocido manda el texto
+  entero. Backtest v6 (`--trim`, 66 anuncios de texto, mismo oro y semilla que
+  v5, $0,15) contra v5 (sin recorte): **extracción completa 71,2% (37/52)
+  contra 76,9% (40/52) — pierde 3 filas**, justo la condición que este plan
+  ponía como bloqueante. Causa: la regla de "línea siguiente" no cubre el
+  patrón real (campo, línea en blanco, campo siguiente) de estos anuncios.
+  Queda en el código detrás de `trim=False` por defecto (cero efecto en
+  producción); si se retoma, el próximo intento es agrupar por párrafo
+  separado por líneas en blanco, no ampliar el rango de líneas. Detalle
+  completo en `docs/decisions.md`.
 
 ### Slice 4 — Interfaz de revisión — CERRADO (2026-09-27)
 

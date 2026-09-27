@@ -30,6 +30,7 @@ puntúe con las mismas funciones que a las reglas.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -37,7 +38,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from saimc.extraction.engine import ExtractionProposal
+from saimc.extraction.engine import (
+    ExtractionProposal,
+    _extract_currency_explicit,
+    _extract_price,
+    _match_product,
+    _strip_accents,
+)
 from saimc.extraction.llm_assist import (
     _as_count,
     _as_positive_decimal,
@@ -58,7 +65,7 @@ from saimc.models import (
     RawIngestion,
     SaleFormat,
 )
-from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
+from saimc.units import PACKAGING, UNIT_NOUNS, UNITS, canonical_packaging, canonical_unit
 
 # Varias filas por respuesta: 1024 truncó una respuesta en el asistente por fila.
 MAX_TOKENS = 4096
@@ -240,6 +247,60 @@ _SYSTEM_PROMPT = (
     "o «no_data» si no trae precio, es ilegible, está agotado o es spam. "
     "Con discard=false, discard_reason es null y rows trae las ofertas."
 )
+
+
+# Encabezado que declara moneda o unidad para TODO el anuncio, sin ofrecer un
+# producto puntual («Precios en CUP», «Todo por libra»). No se deriva de
+# `_CURRENCY_RE` (privado del módulo) para no acoplarse a un detalle interno
+# de `engine`; alcanza con los sustantivos ya públicos de `saimc.units`.
+_UNIT_NOUN_RE = re.compile(
+    r"\b(" + "|".join(re.escape(n) for n in UNIT_NOUNS.values()) + r")\b"
+)
+
+
+def _is_header_line(line: str) -> bool:
+    if _extract_currency_explicit(line) is not None:
+        return True
+    return _UNIT_NOUN_RE.search(_strip_accents(line.lower())) is not None
+
+
+def trim_text_for_model(text: str, products: Sequence[Product]) -> str:
+    """Recorta el texto a lo pertinente antes de mandarlo al modelo (slice 3c).
+
+    En una lista larga, manda solo: las líneas que el motor de reglas
+    reconoce como un producto del foco (`engine._match_product`); la línea
+    siguiente a cada una SI trae un precio (los escalones de precio por
+    volumen no repiten el nombre del producto); y los encabezados que
+    declaran moneda o unidad para todo el anuncio. Sin ninguna línea
+    reconocida, se manda el texto entero — no hay nada que recortar con
+    seguridad: cortar a ciegas arriesgaría perder la única oferta que trae.
+
+    Solo entra en producción si un backtest aparte confirma que no pierde
+    filas contra el oro, con este mismo prompt (`docs/decisions.md`, slice
+    3c). La evidencia (`verify_evidence`) se sigue verificando contra el
+    texto SIN recortar: como el recortado es un subconjunto literal de sus
+    líneas, cualquier cita real del modelo sigue apareciendo ahí.
+    """
+    lines = text.splitlines()
+    keep = [False] * len(lines)
+    matched_any = False
+    for i, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _match_product(line, products) is not None:
+            matched_any = True
+            keep[i] = True
+            if i + 1 < len(lines):
+                siguiente = lines[i + 1].strip()
+                if siguiente and _extract_price(siguiente) is not None:
+                    keep[i + 1] = True
+        elif _is_header_line(line):
+            keep[i] = True
+
+    if not matched_any:
+        return text
+    return "\n".join(line for line, k in zip(lines, keep, strict=True) if k)
 
 
 def build_prompt_blocks(
@@ -430,6 +491,7 @@ def propose_ad(
     ingestion_id: str = "",
     log_path: Path | None = None,
     glossary: Sequence[GlossaryEntry] = (),
+    trim: bool = False,
 ) -> AdProposal:
     """Una llamada por anuncio: todas las filas del foco y el veredicto.
 
@@ -437,6 +499,14 @@ def propose_ad(
     Sin clave o con texto vacío no hay invocación y no se registra: el
     registro cuenta intentos reales — tampoco se aplica el glosario, porque
     no hubo llamada que lo use.
+
+    `trim` (slice 3c, apagado por defecto): si está prendido, lo que ve el
+    modelo pasa por `trim_text_for_model` antes de armar el prompt. Apagado
+    en los tres llamadores de producción (`/curation`, `prefill`, y el
+    backtest por defecto) hasta que un backtest aparte con `trim=True`
+    confirme que no pierde filas contra el oro. La evidencia se sigue
+    verificando contra el texto SIN recortar (`redacted`, más abajo), nunca
+    contra el recortado.
     """
     if not api_key:
         return AdProposal(degraded=True, failure="no_key")
@@ -447,6 +517,8 @@ def propose_ad(
     redacted = redact_personal_data(text) or ""
     if not redacted.strip():
         return AdProposal(degraded=True, failure="empty_text")
+
+    texto_para_modelo = trim_text_for_model(redacted, products) if trim else redacted
 
     # Slice 3c: la versión efectiva ya incluye el glosario que se manda en
     # esta llamada, así que se calcula acá y viaja tanto en el registro como
@@ -496,7 +568,9 @@ def propose_ad(
             messages=[
                 {
                     "role": "user",
-                    "content": build_prompt_blocks(redacted, products, provinces, glossary),
+                    "content": build_prompt_blocks(
+                        texto_para_modelo, products, provinces, glossary
+                    ),
                 }
             ],
             output_config={"format": {"type": "json_schema", "schema": response_schema()}},
