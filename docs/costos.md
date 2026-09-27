@@ -100,23 +100,60 @@ se decide midiéndolo (`llm_backtest --model`), no antes. Volumen de referencia:
 ritmo real de WAHA, a confirmar al ejecutar el plan
 (`docs/plan-asistente-llm-cola-completa.md`).
 
+### Medido en producción real (`llm_proposals`, 2026-09-27) — reemplaza la proyección del backtest
+
+El backtest de arriba corrió sobre una muestra armada (100 anuncios ya curados a
+mano). Desde que «Completar con IA» está en uso real, cada llamada queda en
+`llm_proposals` con sus tokens — ya no hace falta asumir nada, se lee directo.
+Al 2026-09-27: **26 llamadas sobre 25 anuncios distintos** (2026-09-25 y
+2026-09-26; ventana corta, muestra chica igual que el backtest, a re-medir con
+más volumen acumulado).
+
+| | Entrada | Salida |
+| --- | --- | --- |
+| Promedio por llamada | 2.858 | 1.098 |
+| Mediana | 2.970 | 681 |
+
+El promedio de salida está inflado por dos casos reales: un anuncio con muchas
+filas (3.582 tokens de salida — la cita de cada fila pesa) y un caso que llegó
+al tope de `max_tokens` (4.096 tokens de salida, **truncado**, no es una falla
+de la API) — es el anuncio `62cd0e01` que ya motivó el slice 3c (glosario y
+recorte del texto antes de enviarlo, tarea #7 del backlog), todavía sin
+implementar. La mediana representa mejor el caso típico.
+
+Costo real gastado hasta ahora: **$0,4341** (26 llamadas, Sonnet 5, tarifas de
+la tabla de arriba). Por llamada: **$0,0167 de promedio / $0,0128 de mediana**
+— contra los $0,0073 del backtest: la cola real, con listas completas de
+WhatsApp, cuesta más que la muestra de 100 anuncios ya resueltos.
+
+| Modelo | Por anuncio (mediana) | 1.200 anuncios al mes | Backlog de 371 |
+| --- | --- | --- | --- |
+| Claude Haiku 4.5 | ~$0,0064 | ~$7,7 | ~$2,4 |
+| **Claude Sonnet 5** | **$0,0128** | **~$15,3** | **~$4,7** |
+| Claude Opus 5 | ~$0,0319 | ~$38,3 | ~$11,8 |
+
+La cuenta, igual que arriba: `(tokens_entrada × precio_entrada + tokens_salida
+× precio_salida) / 1.000.000`, con la mediana de tokens de esta sección. Solo
+Sonnet 5 tiene dato real; Haiku y Opus son la misma cuenta con sus tarifas.
+
 ### Por qué Sonnet 5 y no el más barato
 
 Los casos que llegan a esta capa son, por construcción, los que las reglas ya no
 pudieron resolver — o sea los ambiguos. Ahí conviene criterio, y la diferencia
-contra Haiku es **menos de un dólar al mes**. A este volumen el precio no es una
-restricción real: la elección la debería gobernar la calidad.
+contra Haiku es de **~$7,7 al mes** (mediana de producción real, tabla de
+arriba). A este volumen el precio no es una restricción real: la elección la
+debería gobernar la calidad.
 
 Si la medición contra la cola real muestra que Sonnet no alcanza, subir a Opus
-cuesta **$2,79 más por mes**. Eso se decide con el número de la medición en la
+cuesta **~$23 más por mes**. Eso se decide con el número de la medición en la
 mano, no antes.
 
 ### Palanca disponible si el volumen crece
 
 Los catálogos cerrados y el esquema son un prefijo estable en cada llamada: con
 *prompt caching* ese tramo se cobra a una fracción. Hoy no hace falta —el total
-es de dos dólares—, pero si el volumen se multiplica, ahí está el ahorro y
-conviene medirlo antes de cambiar de modelo por costo.
+proyectado con Sonnet 5 son ~$15 al mes—, pero si el volumen se multiplica, ahí
+está el ahorro y conviene medirlo antes de cambiar de modelo por costo.
 
 ---
 
