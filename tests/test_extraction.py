@@ -1798,3 +1798,33 @@ class TestPriceBasisPorMarcadorDeEnvase:
 
         assert propuesta.quantity == Decimal("1")
         assert propuesta.price_basis is None
+
+
+class TestPriceBasisEnProposeAll:
+    """Las mismas dos reglas de `price_basis` tienen que aplicar línea por
+    línea en `propose_all` (la cola diaria de varios productos), no solo en
+    `propose()`. Hasta ahora no llegaban acá y la marca «Reglas: …» de este
+    campo casi nunca aparecía en un anuncio real de varios productos
+    (`docs/plan-asistente-llm-cola-completa.md`, pendiente suelto)."""
+
+    def test_la_regla_aritmetica_aplica_a_la_linea_que_la_declara(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = "pollo entero 40lb a 3000. Sale 75 Cup Lb\narroz blanco 5 lb a 300\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert resultados[0].price_basis == "total"
+        # La declaración de la primera línea no se filtra a la segunda, que
+        # no trae ninguna pista propia.
+        assert resultados[1].price_basis is None
+
+    def test_el_marcador_de_envase_aplica_a_la_linea_que_lo_trae(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = "🐔 pollo congelado cajas de 40lb a 12000\narroz blanco 5 lb a 300\n"
+
+        resultados = propose_all(texto, products, provinces)
+
+        assert resultados[0].price_basis == "total"
+        assert resultados[1].price_basis is None

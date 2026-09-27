@@ -60,18 +60,19 @@ del operador) antes de abrir el siguiente.
   `DEGRADADO (other)` con 4096 tokens de salida (`62cd0e01`, sin filas). Es el
   primer dato para 3c: mirar su `raw_response` y ver en qué se fueron los tokens.
 
-- **Las reglas de la base del precio no llegan a la cola.** `propose_all` (que usan
-  `/curation` y el backtest) no aplica `_declared_price_basis` ni
-  `_packaging_price_basis`; solo `propose()` lo hace. Por eso la marca
-  «Reglas: …» de ese campo casi nunca aparece. Slice propio.
+- **Las reglas de la base del precio no llegan a la cola: RESUELTO (2026-09-27).**
+  `propose_all` aplica ahora `_declared_price_basis` y `_packaging_price_basis`
+  línea por línea (antes solo `propose()` lo hacía). Detalle en
+  `docs/decisions.md`.
 - **El pre-cálculo no filtra por foco:** paga también los pendientes fuera de foco
   que después se descartan en lote.
-- **Costo real por anuncio sin medir en la cola:** el backtest dio ~$0,0073; las
-  primeras propuestas reales, ~$0,02. Recalcular con lo que ya hay en
-  `llm_proposals` y actualizar `docs/costos.md`.
-- **Redacción de teléfonos** no cubre formatos como «+53 5 234 5678». Importa más
-  ahora que todo el texto sale a un tercero.
-- **`classify_failure`** etiqueta como `auth` el 400 de «clave sin workspace».
+- **Costo real por anuncio sin medir en la cola: RESUELTO (2026-09-27).**
+  Recalculado con `llm_proposals`: mediana $0,0128/anuncio con Sonnet 5 (contra
+  $0,0073 del backtest). `docs/costos.md` actualizado.
+- **Redacción de teléfonos: RESUELTO (2026-09-27).** No cubría formatos como
+  «+53 5 234 5678»; corregido en `src/saimc/privacy.py`.
+- **`classify_failure`: RESUELTO (2026-09-27).** Ya no etiqueta `auth` el 400
+  de «clave sin workspace»; el status manda sobre el texto.
 - **Qué significa H0 ahora** (ver la sección al final).
 
 ---

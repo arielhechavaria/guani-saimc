@@ -1248,6 +1248,16 @@ def propose_all(
         province = (
             channel_province or _match_province(line, provinces) or whole_text_province
         )
+        # Mismas dos reglas que `propose()`, pero acotadas a ESTA línea: cada
+        # renglón es una oferta propia, con su propio precio y su propia
+        # declaración si la trae. Buscar contra el texto completo del anuncio
+        # arriesgaría que la «Sale X unidad» de una línea confirme por
+        # casualidad la aritmética de otra (docs/plan-asistente-llm-cola-
+        # completa.md, pendiente suelto: "las reglas de la base del precio no
+        # llegan a la cola").
+        basis = _declared_price_basis(
+            line, price=price, quantity=quantity, unit=unit
+        ) or _packaging_price_basis(line, price=price, quantity=quantity)
 
         proposals.append(
             ExtractionProposal(
@@ -1258,6 +1268,7 @@ def propose_all(
                 quantity=quantity,
                 unit=unit,
                 province=province,
+                price_basis=basis,
             )
         )
     return proposals
