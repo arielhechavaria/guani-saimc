@@ -102,6 +102,14 @@ ritmo real de WAHA, a confirmar al ejecutar el plan
 
 ### Medido en producción real (`llm_proposals`, 2026-09-27) — reemplaza la proyección del backtest
 
+**Desactualizado por un fix del mismo día: ver la nota al final de esta
+sección.** Lo de abajo se midió con `propose_ad` corriendo `thinking` en su
+valor por defecto (adaptive, sin pedirlo desactivado); ese mismo día se
+descubrió que ese razonamiento invisible se facturaba como `output_tokens`
+sin aparecer en `raw_response`, y se corrigió (`docs/decisions.md`). El costo
+real debería bajar de acá en más — falta re-medir con volumen posterior al
+fix.
+
 El backtest de arriba corrió sobre una muestra armada (100 anuncios ya curados a
 mano). Desde que «Completar con IA» está en uso real, cada llamada queda en
 `llm_proposals` con sus tokens — ya no hace falta asumir nada, se lee directo.

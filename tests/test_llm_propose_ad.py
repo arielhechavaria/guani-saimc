@@ -284,6 +284,26 @@ def test_el_prompt_explica_la_tarea_y_lleva_los_catalogos(
     assert llamada["output_config"]["format"]["type"] == "json_schema"
 
 
+def test_pide_thinking_desactivado(products, provinces) -> None:
+    """Sonnet 5 corre *adaptive thinking* por defecto si no se lo pide
+
+    explícitamente desactivado, y ese razonamiento se factura como
+    `output_tokens` sin aparecer en `raw_response` (solo se guarda el primer
+    bloque `type: text`). Medido contra 3 anuncios reales (tarea 7 del
+    backlog): con thinking por defecto, dos de tres agotaban `max_tokens`
+    (4096) antes de terminar el JSON y degradaban; con `thinking: disabled`
+    los tres bajaron a 450-550 tokens de salida (7-8x menos) y el JSON salió
+    completo y válido en los tres. Ver `docs/decisions.md`.
+    """
+    cliente = ClienteFalso(
+        _respuesta({"discard": True, "discard_reason": "no_data", "rows": []})
+    )
+
+    _proponer(cliente, "Arroz a 500", products, provinces)
+
+    assert cliente.llamadas[0]["thinking"] == {"type": "disabled"}
+
+
 def test_registra_cada_invocacion_en_su_propio_archivo(
     products, provinces, tmp_path: Path
 ) -> None:

@@ -464,6 +464,18 @@ def propose_ad(
                 }
             ],
             output_config={"format": {"type": "json_schema", "schema": response_schema()}},
+            # Sonnet 5 corre *adaptive thinking* por defecto si no se lo pide
+            # explícitamente desactivado, y ese razonamiento se factura como
+            # output_tokens sin aparecer en `raw_response` (que solo guarda
+            # el primer bloque `type: text`). Medido contra anuncios reales
+            # (tarea 7 del backlog): con el default, la extracción de un
+            # anuncio con varias filas agotaba `max_tokens` (4096) antes de
+            # terminar el JSON y degradaba (docs/decisions.md, hallazgo del
+            # 2026-09-26 sobre `62cd0e01`); desactivado, el mismo anuncio usó
+            # 7-8x menos tokens de salida y el JSON salió completo. La tarea
+            # es extracción con esquema cerrado, no razonamiento abierto: no
+            # hay nada que "pensar" que el esquema no fuerce ya.
+            thinking={"type": "disabled"},
         )
     except Exception as error:
         return _registrar(AdProposal(degraded=True, failure=classify_failure(error)))

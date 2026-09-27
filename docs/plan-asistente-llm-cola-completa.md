@@ -180,6 +180,16 @@ Prompt `2026-09-25.4`. El modelo propone también minorista o mayorista
 
 ### Slice 3c — Glosario y recorte del texto — Pendiente
 
+- **Investigación previa («en qué se van los tokens de salida»): RESUELTA
+  (2026-09-27), y desvió el diagnóstico.** No era el texto de entrada: `propose_ad`
+  no desactivaba `thinking`, y Sonnet 5 corre *adaptive thinking* por defecto —
+  facturado como `output_tokens`, invisible en `raw_response`. Medido contra 3
+  anuncios reales: con el default, 2 de 3 agotaban `max_tokens` (4096) antes de
+  terminar el JSON y degradaban (mismo caso que `62cd0e01`); con `thinking:
+  disabled`, 7-8x menos tokens de salida y JSON completo en los tres. Ya
+  corregido en `propose_ad` (`docs/decisions.md`). El glosario y el recorte de
+  abajo siguen pendientes — apuntan a la entrada, que no era el problema
+  medido — y se retoman con la vara de costo ya más baja por este fix.
 - **Nota del operador y glosario.** La nota ya se guarda (3a). Falta poder
   **promoverla al glosario**: reglas cortas, legibles y editables que se inyectan
   en el prompt de todas las llamadas (ejemplo: «4x10» = 4 paquetes de 10 lb, la
