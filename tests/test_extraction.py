@@ -118,6 +118,11 @@ class TestPrecio:
             ("Aceite 1,986.36 cup", Decimal("1986.36")),
             ("Aceite a 12.500,50", Decimal("12500.50")),
             ("Camion de arena a 1,250,000.50 cup", Decimal("1250000.50")),
+            # «N o M» seguido de una palabra es una alternativa de cantidad,
+            # no un precio en dos monedas: el precio es el de la «a».
+            ("Pollo 3 o 4 lb a 5000", Decimal("5000")),
+            ("Combo para 2 o 3 personas a 4500", Decimal("4500")),
+            ("Combo para 2 o 30 personas a 4500", Decimal("4500")),
         ],
     )
     def test_casos(
@@ -644,6 +649,56 @@ class TestAliasVacioONulo:
         arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[None, "arroz blanco"])
         assert propose("arroz a 200", [arroz], provinces).product is arroz
         assert propose("pollo a 200", [arroz], provinces).product is None
+
+
+class TestNombreCandidatoConPrecioSinMarcaDelantera:
+    """Sin match de catálogo, el nombre candidato es el texto antes del
+    precio. Tiene que reconocer las mismas marcas explícitas de precio que
+    `_extract_price`: con «850$» o «1.20 o 850» la línea quedaba con precio
+    pero sin nombre, y `propose_all` la descartaba (revisión de engine.py,
+    2026-09-28). El número suelto queda afuera a propósito: ver
+    `test_numero_suelto_sin_producto_sigue_descartado`."""
+
+    @pytest.mark.parametrize(
+        ("texto", "nombre", "precio"),
+        [
+            ("Refresco de lata 850$", "Refresco de lata", Decimal("850")),
+            ("Galletas Maria 1.20 o 850", "Galletas Maria", Decimal("850")),
+        ],
+    )
+    def test_propose_all_conserva_la_linea(
+        self,
+        texto: str,
+        nombre: str,
+        precio: Decimal,
+        products: list[Product],
+        provinces: list[Province],
+    ) -> None:
+        filas = propose_all(texto, products, provinces)
+        assert len(filas) == 1
+        assert filas[0].product is None
+        assert filas[0].product_name_guess == nombre
+        assert filas[0].price == precio
+
+    def test_propose_tambien_lo_nombra(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        assert propose("Refresco de lata 850$", products, provinces).product_name_guess == (
+            "Refresco de lata"
+        )
+
+    def test_precio_sin_nada_antes_sigue_sin_nombre(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        assert propose_all("850$", products, provinces) == []
+
+    def test_numero_suelto_sin_producto_sigue_descartado(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Sin marca de precio ni producto de catálogo, un número suelto no
+        alcanza para proponer una fila: es el mismo camino por el que una
+        dirección («Km 34») se leería como oferta."""
+        assert propose_all("Papas prefritas 2500", products, provinces) == []
 
 
 class TestModificadoresQueDesambiguanProducto:

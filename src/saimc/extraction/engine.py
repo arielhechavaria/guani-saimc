@@ -151,8 +151,14 @@ _PRICE_DOLLAR_SUFFIX_RE = re.compile(r"(" + _PRICE_NUMBER + r")\s*\$")
 # distingue USD de CUP en este mercado). El separador "o"/"O" tolera el
 # punto suelto que a veces queda pegado al número de la izquierda ("0,40. O
 # 280") porque `_normalize_number` ya sabe recortarlo (`rstrip(".,")`).
+#
+# El segundo número no puede ir seguido de una palabra: «3 o 4 lb», «2 o 3
+# personas» son alternativas de cantidad, no un precio doble. `(?![\d.,])`
+# impide que el backtracking recorte «30 personas» a «3». Solo espacio
+# horizontal: un salto de línea separa renglones, no califica al número.
 _DUAL_PRICE_TWO_CURRENCIES_RE = re.compile(
     r"(" + _PRICE_NUMBER + r")\s*[oO]\s*(" + _PRICE_NUMBER + r")"
+    r"(?![\d.,]|[ \t ]*[^\W\d_])"
 )
 
 # Unidades conocidas para cantidad: sólo las que `units.canonical_unit()` sabe
@@ -826,12 +832,19 @@ def _guess_product_phrase(line: str) -> str | None:
     nuevo cuando no hay match de catálogo, no para decidir nada por su
     cuenta. El operador la revisa y corrige en la cola de curaduría.
     """
+    # Las mismas pistas de precio EXPLÍCITAS que `_extract_price`: una que
+    # falte acá deja una línea con precio y sin nombre, y `propose_all` la
+    # descarta. El número suelto queda afuera a propósito: sin nombre, esa
+    # línea sin producto se descarta, y es lo que frena a la dirección («Km
+    # 34») y a la URL de ser ofertas (docs/decisions.md, 2026-09-28).
     markers = [
         match.start()
         for match in (
             _PRICE_AFTER_A_RE.search(line),
             _PRICE_BEFORE_CURRENCY_RE.search(line),
             _PRICE_DOLLAR_RE.search(line),
+            _PRICE_DOLLAR_SUFFIX_RE.search(line),
+            _DUAL_PRICE_TWO_CURRENCIES_RE.search(line),
             _QUANTITY_RE.search(line),
         )
         if match is not None
