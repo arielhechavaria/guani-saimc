@@ -96,6 +96,17 @@ class TestCintillo:
     def test_el_orden_es_por_anuncios_de_mas_a_menos(self) -> None:
         assert [i.product_name for i in _cintillo()] == ["Arroz", "Pollo"]
 
+    def test_el_acento_es_estable_por_producto_no_por_posicion(self) -> None:
+        """El slot sale de un CRC32 del nombre (0–3), no del orden del
+        cintillo: si mañana Pollo tiene más anuncios que Arroz y pasa a
+        primero, su color no debe cambiar."""
+        cintillo = _cintillo()
+        assert _item(cintillo, "Arroz").slot == 3
+        assert _item(cintillo, "Pollo").slot == 1
+
+        con_mas_pollo = [*ACTUAL, _obs("Pollo", "La Habana", 8, 19, "710")]
+        assert _item(_cintillo(actual=con_mas_pollo), "Pollo").slot == 1
+
     def test_el_enlace_lo_arma_quien_llama_con_el_slug(self) -> None:
         assert _item(_cintillo(), "Arroz").href == "/?productos=arroz"
 
