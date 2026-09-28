@@ -1,4 +1,4 @@
-"""`/marketing` — tarjeta «Dato del día» con datos reales.
+"""`/marketing` — las 9 tarjetas de la campaña, con datos reales.
 
 Sin Chromium instalado en este entorno de test (igual que en el VPS antes de
 correr `playwright install-deps`), así que `card.png` se prueba por el
@@ -41,8 +41,8 @@ def client(session: Session) -> Iterator[TestClient]:
 
 @pytest.fixture
 def datos(session: Session) -> None:
-    """Arroz piloto en La Habana (barata, mucha muestra) y Santiago (cara,
-    poca muestra); Pollo fuera del foco."""
+    """Arroz piloto en La Habana (subió de una semana a la otra, mucha
+    muestra) y Santiago (una sola observación reciente); Pollo fuera del foco."""
     arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
     pollo = Product(name="Pollo", category="carnes", unit="lb", aliases=[], is_pilot=False)
     habana = Province(code="hab", name="La Habana")
@@ -76,11 +76,16 @@ def datos(session: Session) -> None:
             )
         )
 
+    # Semana actual (0-6 días atrás).
     precio(arroz, habana, 3, "300")
     precio(arroz, habana, 2, "320")
     precio(arroz, habana, 1, "350")
     precio(arroz, santiago, 2, "400")
     precio(pollo, habana, 1, "700")
+    # Semana anterior (7-13 días atrás): Arroz en La Habana más barato, para
+    # que "Cómo se movió" tenga con qué comparar.
+    precio(arroz, habana, 10, "250")
+    precio(arroz, habana, 9, "260")
     session.commit()
 
 
@@ -97,26 +102,36 @@ class TestPaginaMarketing:
     def test_con_producto_elegido_muestra_la_vista_previa_y_el_boton_de_descarga(
         self, client: TestClient, datos: None
     ) -> None:
-        respuesta = client.get("/marketing", params={"product": "Arroz"})
+        respuesta = client.get("/marketing", params={"kind": "dato-del-dia", "product": "Arroz"})
 
         assert respuesta.status_code == 200
-        assert "/marketing/preview?product=Arroz" in respuesta.text
-        assert "/marketing/card.png?product=Arroz" in respuesta.text
+        assert "/marketing/preview/dato-del-dia?" in respuesta.text
+        assert "/marketing/card/dato-del-dia.png?" in respuesta.text
 
     def test_producto_fuera_de_foco_no_arma_tarjeta(
         self, client: TestClient, datos: None
     ) -> None:
-        respuesta = client.get("/marketing", params={"product": "Pollo"})
+        respuesta = client.get("/marketing", params={"kind": "dato-del-dia", "product": "Pollo"})
 
         assert respuesta.status_code == 200
         assert "no está en el foco" in respuesta.text
 
+    def test_una_tarjeta_sin_producto_no_pide_seleccion_de_producto(
+        self, client: TestClient, datos: None
+    ) -> None:
+        respuesta = client.get("/marketing", params={"kind": "carrusel-cierre"})
 
-class TestVistaPreviaHTML:
+        assert respuesta.status_code == 200
+        assert "/marketing/preview/carrusel-cierre?" in respuesta.text
+
+
+class TestVistaPreviaDatoDelDia:
     def test_trae_las_cifras_reales_de_las_dos_provincias(
         self, client: TestClient, datos: None
     ) -> None:
-        respuesta = client.get("/marketing/preview", params={"product": "Arroz"})
+        respuesta = client.get(
+            "/marketing/preview/dato-del-dia", params={"product": "Arroz"}
+        )
 
         assert respuesta.status_code == 200
         assert "Arroz" in respuesta.text
@@ -124,27 +139,103 @@ class TestVistaPreviaHTML:
         assert "Santiago de Cuba" in respuesta.text
         assert "300" in respuesta.text and "350" in respuesta.text
         assert "CUP/lb" in respuesta.text
-        assert "3 anuncios" in respuesta.text  # La Habana, n=3
-        assert "1 anuncio<" in respuesta.text  # Santiago, n=1, sin "s"
-
-    def test_la_habana_queda_marcada_como_mas_barata(
-        self, client: TestClient, datos: None
-    ) -> None:
-        respuesta = client.get("/marketing/preview", params={"product": "Arroz"})
-
-        assert "más barata" in respuesta.text
 
     def test_producto_inexistente_da_404(self, client: TestClient, datos: None) -> None:
-        respuesta = client.get("/marketing/preview", params={"product": "Aguacate"})
+        respuesta = client.get(
+            "/marketing/preview/dato-del-dia", params={"product": "Aguacate"}
+        )
 
         assert respuesta.status_code == 404
+
+    def test_tarjeta_desconocida_da_404(self, client: TestClient, datos: None) -> None:
+        respuesta = client.get(
+            "/marketing/preview/no-existe", params={"product": "Arroz"}
+        )
+
+        assert respuesta.status_code == 404
+
+
+class TestVistaPreviaComoSeMovio:
+    def test_trae_el_cambio_de_la_habana(self, client: TestClient, datos: None) -> None:
+        respuesta = client.get(
+            "/marketing/preview/como-se-movio", params={"product": "Arroz"}
+        )
+
+        assert respuesta.status_code == 200
+        assert "Arroz" in respuesta.text
+        assert "La Habana" in respuesta.text
+
+    def test_producto_fuera_de_foco_da_404(self, client: TestClient, datos: None) -> None:
+        respuesta = client.get(
+            "/marketing/preview/como-se-movio", params={"product": "Pollo"}
+        )
+
+        assert respuesta.status_code == 404
+
+
+class TestVistaPreviaDeDondeSale:
+    def test_trae_los_anuncios_recientes_de_la_provincia_elegida(
+        self, client: TestClient, datos: None
+    ) -> None:
+        respuesta = client.get(
+            "/marketing/preview/de-donde-sale",
+            params={"product": "Arroz", "province": "La Habana"},
+        )
+
+        assert respuesta.status_code == 200
+        assert "Arroz" in respuesta.text
+        assert "La Habana" in respuesta.text
+        assert "captura" in respuesta.text
+        assert "ver anuncio" not in respuesta.text
+
+    def test_provincia_fuera_del_foco_da_404(self, client: TestClient, datos: None) -> None:
+        respuesta = client.get(
+            "/marketing/preview/de-donde-sale",
+            params={"product": "Arroz", "province": "Camagüey"},
+        )
+
+        assert respuesta.status_code == 404
+
+
+class TestTarjetasEstaticas:
+    """Portada, consejo, story, portada de Facebook, cómo funciona y
+    cierre: sin producto ni provincia, siempre disponibles."""
+
+    @pytest.mark.parametrize(
+        ("slug", "marca"),
+        [
+            ("carrusel-portada", "Guani"),
+            ("carrusel-consejo", "Guani"),
+            ("story-precalentamiento", "Próximamente"),
+            ("portada-facebook", "Cada precio, con sus anuncios detrás"),
+            ("como-funciona", "De los grupos de WhatsApp a la cifra"),
+            ("carrusel-cierre", "Guani"),
+        ],
+    )
+    def test_vista_previa_200_con_su_texto_fijo(
+        self, client: TestClient, datos: None, slug: str, marca: str
+    ) -> None:
+        respuesta = client.get(f"/marketing/preview/{slug}")
+
+        assert respuesta.status_code == 200
+        assert marca in respuesta.text
+
+    def test_story_y_portada_facebook_listan_los_productos_del_foco(
+        self, client: TestClient, datos: None
+    ) -> None:
+        for slug in ("story-precalentamiento", "portada-facebook"):
+            respuesta = client.get(f"/marketing/preview/{slug}")
+            assert "Arroz" in respuesta.text
+            assert "Pollo" not in respuesta.text
 
 
 class TestDescargaPNG:
     def test_sin_chromium_instalado_degrada_a_503_explicando_como_instalarlo(
         self, client: TestClient, datos: None
     ) -> None:
-        respuesta = client.get("/marketing/card.png", params={"product": "Arroz"})
+        respuesta = client.get(
+            "/marketing/card/dato-del-dia.png", params={"product": "Arroz"}
+        )
 
         assert respuesta.status_code == 503
         assert "playwright" in respuesta.text.lower()
@@ -152,6 +243,15 @@ class TestDescargaPNG:
     def test_producto_fuera_de_foco_da_404_antes_de_intentar_renderizar(
         self, client: TestClient, datos: None
     ) -> None:
-        respuesta = client.get("/marketing/card.png", params={"product": "Pollo"})
+        respuesta = client.get(
+            "/marketing/card/dato-del-dia.png", params={"product": "Pollo"}
+        )
 
         assert respuesta.status_code == 404
+
+    def test_una_tarjeta_estatica_tambien_degrada_a_503_sin_chromium(
+        self, client: TestClient, datos: None
+    ) -> None:
+        respuesta = client.get("/marketing/card/carrusel-cierre.png")
+
+        assert respuesta.status_code == 503

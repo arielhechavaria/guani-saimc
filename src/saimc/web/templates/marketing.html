@@ -2,44 +2,67 @@
 
 {% block title %}Marketing{% endblock %}
 {% block heading %}Tarjetas para redes{% endblock %}
-{% block subtitle %}Dato del día, con las cifras reales del sitio — nada que copiar a mano.{% endblock %}
+{% block subtitle %}Las 9 piezas del calendario de campaña, con las cifras reales del sitio — nada que copiar a mano.{% endblock %}
 
 {% block content %}
 <div class="m3-stack">
   <section class="m3-card">
     <div class="m3-card-head">
       <div class="m3-topbar-main">
-        <h2 class="m3-h2">Dato del día</h2>
+        <h2 class="m3-h2">{{ kind.label }}</h2>
         <p class="m3-note" style="margin-bottom:0">
-          Rango, mediana y número de anuncios por provincia — el mismo cómputo que usa
-          el tablero público, no un promedio nuevo. Solo se muestran los productos del foco.
+          El mismo cómputo que usa el tablero público, no un promedio nuevo. Solo se
+          arman con productos y provincias del foco.
         </p>
       </div>
     </div>
 
     <form method="get" action="/marketing" class="m3-row" style="gap:12px; margin:0 24px 24px; flex-wrap:wrap; align-items:end">
       <label class="m3-field m3-field-on-container">
-        <span class="m3-field-label" for="product">Producto</span>
-        <select name="product" id="product" class="m3-select" onchange="this.form.submit()">
-          {% for p in products %}
-          <option value="{{ p }}"{% if p == selected %} selected{% endif %}>{{ p }}</option>
+        <span class="m3-field-label" for="kind">Tarjeta</span>
+        <select name="kind" id="kind" class="m3-select" onchange="this.form.submit()">
+          {% for t in card_types %}
+          <option value="{{ t.slug }}"{% if t.slug == kind.slug %} selected{% endif %}>{{ t.label }}</option>
           {% endfor %}
         </select>
       </label>
+      {% if kind.needs_product %}
+      <label class="m3-field m3-field-on-container">
+        <span class="m3-field-label" for="product">Producto</span>
+        <select name="product" id="product" class="m3-select" onchange="this.form.submit()">
+          {% for p in products %}
+          <option value="{{ p }}"{% if p == selected_product %} selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      {% if kind.needs_province %}
+      <label class="m3-field m3-field-on-container">
+        <span class="m3-field-label" for="province">Provincia</span>
+        <select name="province" id="province" class="m3-select" onchange="this.form.submit()">
+          {% for prov in provinces %}
+          <option value="{{ prov }}"{% if prov == selected_province %} selected{% endif %}>{{ prov }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
       <noscript><button type="submit" class="m3-btn m3-btn-tonal">Ver</button></noscript>
     </form>
 
-    {% if card %}
+    {% if ready %}
+    {% set qs = "kind=" ~ (kind.slug | urlencode) %}
+    {% if kind.needs_product %}{% set qs = qs ~ "&product=" ~ (selected_product | urlencode) %}{% endif %}
+    {% if kind.needs_province %}{% set qs = qs ~ "&province=" ~ (selected_province | urlencode) %}{% endif %}
     <div style="padding:0 24px 24px">
-      <div style="width:100%; max-width:540px; aspect-ratio:1080/1350; border-radius:16px; overflow:hidden; box-shadow:0 2px 8px rgba(5,32,48,0.15)">
+      <div style="width:100%; max-width:{{ 540 if kind.width <= kind.height else 720 }}px; aspect-ratio:{{ kind.width }}/{{ kind.height }}; border-radius:16px; overflow:hidden; box-shadow:0 2px 8px rgba(5,32,48,0.15)">
         <iframe
-          src="/marketing/preview?product={{ selected | urlencode }}&days={{ days }}"
-          style="width:1080px; height:1350px; border:0; transform:scale(0.5); transform-origin:top left"
+          src="/marketing/preview/{{ kind.slug }}?{{ qs }}"
+          style="width:{{ kind.width }}px; height:{{ kind.height }}px; border:0; transform:scale({{ '0.5' if kind.width <= kind.height else '0.44' }}); transform-origin:top left"
           title="Vista previa de la tarjeta"
         ></iframe>
       </div>
       <div class="m3-row" style="margin-top:16px; gap:12px">
-        <a class="m3-btn m3-btn-filled" href="/marketing/card.png?product={{ selected | urlencode }}&days={{ days }}">
+        <a class="m3-btn m3-btn-filled" href="/marketing/card/{{ kind.slug }}.png?{{ qs }}">
           <span class="m3-icon">download</span>Descargar PNG
         </a>
       </div>
@@ -49,10 +72,8 @@
         sigue andando igual.
       </p>
     </div>
-    {% elif selected %}
-    <p class="m3-xs m3-muted" style="margin:0 24px 24px">«{{ selected }}» no está en el foco todavía.</p>
     {% else %}
-    <p class="m3-xs m3-muted" style="margin:0 24px 24px">Sin productos en el foco. Agregalos desde /catalog.</p>
+    <p class="m3-xs m3-muted" style="margin:0 24px 24px">«{{ selected_product }}» no está en el foco todavía.</p>
     {% endif %}
   </section>
 </div>

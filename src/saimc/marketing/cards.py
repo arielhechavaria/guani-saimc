@@ -1,9 +1,8 @@
-"""Contexto de la tarjeta «Dato del día» (slice de marketing, 2026-09-28).
+"""Contexto de las tarjetas para redes (slice de marketing, 2026-09-28/29).
 
-Puro: recibe las `ProductCard` que ya arma `card_view.build_cards` (el mismo
-cómputo que usa la vista pública) y devuelve lo que la plantilla necesita
-pintar. No consulta la base ni convierte monedas — eso ya pasó antes, en
-`cells.compute_retail_ranges`.
+Puro: recibe lo que ya calculan `cells.py`/`card_view.py`/`price_charts.py`
+para la vista pública y arma lo que cada plantilla necesita pintar. Ninguna
+función de este módulo consulta la base ni inventa un cómputo nuevo.
 """
 
 from __future__ import annotations
@@ -12,8 +11,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
+from saimc.cells import RetailObservation
 from saimc.units import unit_noun
-from saimc.web.card_view import ProductCard, province_color_slots
+from saimc.web.card_view import ProductCard, format_price, province_color_slots
+from saimc.web.price_charts import SlopeChart
 
 #: Mismos valores que `--m3-prov-0/-1/-2` en `design_tokens.css` (modo claro):
 #: la tarjeta es una imagen estática, no puede leer variables CSS del sitio.
@@ -139,4 +140,185 @@ def build_dato_del_dia(
         week_from=f"{week_from.day:02d}/{week_from.month:02d}",
         week_to=f"{week_to.day:02d}/{week_to.month:02d}",
         rows=rows,
+    )
+
+
+# --- «Cómo se movió»: mediana de ahora contra la del período anterior ------
+
+#: Coordenadas del gráfico de líneas dentro del SVG 872×380 de
+#: `marketing-design/project/Subio.dc.html`. Propias de esta tarjeta —no las
+#: mismas que `price_charts.SLOPE_*`, pensadas para el gráfico chico del
+#: panel flotante (360×176)— porque una imagen para redes no necesita
+#: coincidir en tamaño con eso, solo en el dato.
+_CHART_X_BEFORE = 150.0
+_CHART_X_NOW = 722.0
+_CHART_TOP_Y = 60.0
+_CHART_BOTTOM_Y = 350.0
+
+
+@dataclass(frozen=True)
+class ProvinceSlope:
+    name: str
+    color: str
+    has_line: bool
+    change_text: str = ""
+    before_text: str = ""
+    now_text: str = ""
+    before_count: int = 0
+    now_count: int = 0
+    y_before: float = 0.0
+    y_now: float = 0.0
+
+
+@dataclass(frozen=True)
+class ComoSeMovioCard:
+    product_name: str
+    unit: str
+    unit_noun: str
+    currency: str
+    before_label: str
+    now_label: str
+    rows: list[ProvinceSlope]
+    x_before: float = _CHART_X_BEFORE
+    x_now: float = _CHART_X_NOW
+
+
+def _chart_y(value: float, lo: float, hi: float) -> float:
+    if hi <= lo:
+        return (_CHART_TOP_Y + _CHART_BOTTOM_Y) / 2
+    frac = (value - lo) / (hi - lo)
+    return _CHART_BOTTOM_Y - frac * (_CHART_BOTTOM_Y - _CHART_TOP_Y)
+
+
+def build_como_se_movio(
+    slopes: Sequence[SlopeChart], *, product_name: str, province_names: Sequence[str]
+) -> ComoSeMovioCard | None:
+    """Arma «Cómo se movió» a partir de los `SlopeChart` que ya calcula
+    `price_charts.build_month_vs_month` — el mismo «¿subió o bajó?» que
+    muestran la tarjeta simple y el panel flotante del tablero.
+
+    `None` si no hay ningún `SlopeChart` para este producto: sin una sola
+    provincia con dato en alguno de los dos períodos no hay nada que dibujar,
+    y una tarjeta vacía sería peor que no ofrecerla.
+    """
+    chart = next((s for s in slopes if s.product_name == product_name), None)
+    if chart is None:
+        return None
+
+    por_provincia = {line.province_name: line for line in chart.lines}
+    con_linea = [
+        por_provincia[n] for n in province_names
+        if por_provincia.get(n) and por_provincia[n].has_line
+    ]
+    valores = [
+        float(v)
+        for line in con_linea
+        for v in (line.before_median, line.now_median)
+        if v is not None
+    ]
+    lo, hi = (min(valores), max(valores)) if valores else (0.0, 1.0)
+    # Un 10% de margen para que un punto extremo no quede pegado al borde.
+    margen = (hi - lo) * 0.1 if hi > lo else 1.0
+    lo, hi = lo - margen, hi + margen
+
+    slots = province_color_slots(province_names)
+    rows = []
+    for name in province_names:
+        color = _PROVINCE_COLORS.get(slots.get(name, 9), _OTHER_COLOR)
+        line = por_provincia.get(name)
+        if line is None or line.before_median is None or line.now_median is None:
+            rows.append(ProvinceSlope(name=name, color=color, has_line=False))
+            continue
+        rows.append(
+            ProvinceSlope(
+                name=name,
+                color=color,
+                has_line=True,
+                change_text=line.change_text,
+                before_text=line.before_text,
+                now_text=line.now_text,
+                before_count=line.before_count,
+                now_count=line.now_count,
+                y_before=_chart_y(float(line.before_median), lo, hi),
+                y_now=_chart_y(float(line.now_median), lo, hi),
+            )
+        )
+
+    return ComoSeMovioCard(
+        product_name=product_name,
+        unit=chart.unit,
+        unit_noun=unit_noun(chart.unit) or "",
+        currency=chart.currency,
+        before_label=chart.before_label,
+        now_label=chart.now_label,
+        rows=rows,
+    )
+
+
+# --- «De dónde sale este precio»: anuncios reales detrás de una cifra ------
+
+
+@dataclass(frozen=True)
+class AnuncioRow:
+    day_text: str
+    price_text: str
+
+
+@dataclass(frozen=True)
+class DeDondeSaleCard:
+    product_name: str
+    province_name: str
+    unit: str
+    currency: str
+    range_text: str
+    count: int
+    rows: list[AnuncioRow]
+
+
+def build_de_donde_sale(
+    observations: Sequence[RetailObservation],
+    *,
+    product_name: str,
+    province_name: str,
+    max_rows: int = 4,
+) -> DeDondeSaleCard | None:
+    """Arma «De dónde sale este precio»: el rango y los anuncios más
+    recientes detrás de un producto en una provincia.
+
+    Cruza formatos y variantes a propósito —a diferencia de «Dato del día»,
+    que se queda con el de más muestra—: esta tarjeta explica el método
+    («varios anuncios, un rango»), no compara un formato puntual, así que
+    mostrar más anuncios reales sirve mejor a esa explicación.
+
+    El enlace de cada fila queda siempre en «captura», nunca un link real al
+    anuncio: decidir si conviene exponer ese enlace en una pieza pública es
+    una decisión aparte, sin tomar todavía (`docs/decisions.md`).
+    """
+    filtradas = [
+        o for o in observations
+        if o.product_name == product_name and o.province_name == province_name
+    ]
+    if not filtradas:
+        return None
+
+    precios = [o.unit_price for o in filtradas]
+    minimo, maximo = min(precios), max(precios)
+    range_text = (
+        format_price(minimo)
+        if minimo == maximo
+        else f"{format_price(minimo)} – {format_price(maximo)}"
+    )
+    recientes = sorted(filtradas, key=lambda o: o.day, reverse=True)[:max_rows]
+
+    return DeDondeSaleCard(
+        product_name=product_name,
+        province_name=province_name,
+        unit=filtradas[0].unit,
+        currency=filtradas[0].currency,
+        range_text=range_text,
+        count=len(filtradas),
+        rows=[
+            AnuncioRow(day_text=f"{o.day.day:02d}/{o.day.month:02d}", price_text=format_price(o.unit_price))
+            for o in recientes
+        ],
     )

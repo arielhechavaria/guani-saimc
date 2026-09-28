@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Portada de Facebook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Alice&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>body{margin:0;font-family:'Roboto',sans-serif}</style>
+</head>
+<body>
+{# Adaptado de marketing-design/project/PortadaFacebook.dc.html («6 · Portada de Facebook», 1640×624). Chips de producto = pilot_product_names real. #}
+<div style="width: 1640px; height: 624px; box-sizing: border-box; padding: 72px 96px 72px 460px; background: #05668d; color: #ffffff; display: flex; flex-direction: column; justify-content: center; font-family: 'Roboto', sans-serif">
+  <div style="font-family: 'Alice', Georgia, serif; font-size: 96px; line-height: 1.05">Cada precio, con sus anuncios detrás.</div>
+  <div style="margin-top: 28px; font-size: 38px; line-height: 1.35; max-width: 900px">Precios por provincia, sacados de los canales de WhatsApp de emprendedores cubanos.</div>
+  <div style="margin-top: 36px; display: flex; gap: 14px; flex-wrap: wrap">
+    {% for producto in products %}
+    <div style="padding: 10px 24px; border: 2px solid #ffffff; border-radius: 100px; font-size: 28px">{{ producto }}</div>
+    {% endfor %}
+  </div>
+</div>
+</body>
+</html>
