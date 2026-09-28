@@ -111,6 +111,13 @@ class TestPrecio:
             # viejo — precio y moneda quedan consistentes entre sí (25 USD),
             # en vez de forzar el lado CUP sin forzar también la moneda.
             ("Cemento - 25 Usd o 17175", Decimal("25")),
+            # Miles y decimales en el mismo número: el separador de más a la
+            # derecha es el decimal y el otro es de miles. Antes daban None
+            # (revisión de engine.py, 2026-09-28).
+            ("Picadillo 50Lb $25,750.00", Decimal("25750.00")),
+            ("Aceite 1,986.36 cup", Decimal("1986.36")),
+            ("Aceite a 12.500,50", Decimal("12500.50")),
+            ("Camion de arena a 1,250,000.50 cup", Decimal("1250000.50")),
         ],
     )
     def test_casos(
@@ -604,6 +611,41 @@ class TestProducto:
         assert propuesta.product is azucar
 
 
+class TestAliasVacioONulo:
+    """`Product.aliases` es una lista JSON sin validar y se edita a mano en
+    producción. Un alias vacío o en blanco no nombra nada y no puede
+    matchear; uno nulo no puede tirar abajo la extracción. Revisión de
+    engine.py, 2026-09-28."""
+
+    @pytest.fixture
+    def con_alias_roto(self) -> list[Product]:
+        return [
+            Product(name="Arroz", category="granos", unit="lb", aliases=["", "  ", "arroz blanco"]),
+            Product(name="Pollo", category="carnes", unit="lb", aliases=["pollo entero"]),
+        ]
+
+    def test_alias_vacio_no_matchea_cualquier_linea(
+        self, con_alias_roto: list[Product], provinces: list[Province]
+    ) -> None:
+        assert propose("pollo entero a 100", con_alias_roto, provinces).product is con_alias_roto[1]
+
+    def test_alias_vacio_no_inventa_producto(
+        self, con_alias_roto: list[Product], provinces: list[Province]
+    ) -> None:
+        assert propose("algo fuera del catalogo a 100", con_alias_roto, provinces).product is None
+        assert mentions_any_product("algo fuera del catalogo a 100", con_alias_roto) is False
+
+    def test_alias_valido_sigue_funcionando(
+        self, con_alias_roto: list[Product], provinces: list[Province]
+    ) -> None:
+        assert propose("arroz blanco a 200", con_alias_roto, provinces).product is con_alias_roto[0]
+
+    def test_alias_nulo_no_rompe(self, provinces: list[Province]) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[None, "arroz blanco"])
+        assert propose("arroz a 200", [arroz], provinces).product is arroz
+        assert propose("pollo a 200", [arroz], provinces).product is None
+
+
 class TestModificadoresQueDesambiguanProducto:
     """Un corte o parte específica no es el mismo producto que el genérico,
     aunque comparta la palabra: "hígado de pollo" no es "Pollo". Detectar
@@ -836,6 +878,26 @@ class TestFechaPublicacion:
         captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
         texto = "Juan - 31 de febrero a las 10:00\npollo a 100"
         assert guess_published_date(texto, captured_at) is None
+
+    def test_29_de_febrero_futuro_sin_bisiesto_previo_da_none(self) -> None:
+        """El 29/02/2028 cae después de la captura y 2027 no es bisiesto:
+        no hay fecha que adivinar. Antes lanzaba ValueError y tumbaba la
+        vista de curaduría (revisión de engine.py, 2026-09-28)."""
+        captured_at = datetime(2028, 2, 10, 15, 0, tzinfo=UTC)
+        texto = "Juan - 29 de febrero a las 10:00\npollo a 100"
+        assert guess_published_date(texto, captured_at) is None
+
+    def test_29_de_febrero_del_anio_anterior(self) -> None:
+        """Capturado en enero de 2029 (no bisiesto): el 29 de febrero más
+        reciente sin pasar la captura es el de 2028."""
+        captured_at = datetime(2029, 1, 15, 15, 0, tzinfo=UTC)
+        texto = "Juan - 29 de febrero a las 10:00\npollo a 100"
+        assert guess_published_date(texto, captured_at) == date(2028, 2, 29)
+
+    def test_29_de_febrero_en_anio_bisiesto(self) -> None:
+        captured_at = datetime(2028, 3, 5, 15, 0, tzinfo=UTC)
+        texto = "Juan - 29 de febrero a las 10:00\npollo a 100"
+        assert guess_published_date(texto, captured_at) == date(2028, 2, 29)
 
     def test_sin_patron_da_none(self) -> None:
         captured_at = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)

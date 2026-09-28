@@ -484,17 +484,19 @@ def guess_published_date(text: str, captured_at: datetime) -> date | None:
     month = _MONTHS.get(_strip_accents(day_month.group(2).lower()))
     if month is None:
         return None
-    try:
-        resolved = date(captured_date.year, month, int(day_month.group(1)))
-    except ValueError:
-        # Día inválido para ese mes ("31 de febrero"): no hay fecha que adivinar.
-        return None
-
-    if resolved > captured_date:
-        # Post de diciembre capturado en enero: con el año de `captured_at`
-        # la fecha cae en el futuro — es del año anterior.
-        resolved = resolved.replace(year=resolved.year - 1)
-    return resolved
+    # El año de la captura y, si ahí cae en el futuro (post de diciembre
+    # capturado en enero), el anterior. Un año donde la fecha no existe se
+    # salta: "29 de febrero" puede existir en uno y no en el otro, y "31 de
+    # febrero" en ninguno.
+    day = int(day_month.group(1))
+    for year in (captured_date.year, captured_date.year - 1):
+        try:
+            resolved = date(year, month, day)
+        except ValueError:
+            continue
+        if resolved <= captured_date:
+            return resolved
+    return None
 
 
 @dataclass
@@ -608,6 +610,11 @@ def _normalize_number(raw: str) -> Decimal | None:
         cleaned = cleaned.replace(".", "")
     elif re.fullmatch(r"\d{1,3}(,\d{3})+", cleaned):
         cleaned = cleaned.replace(",", "")
+    elif re.fullmatch(r"\d{1,3}(,\d{3})+\.\d+", cleaned):
+        # Los dos separadores ("25,750.00"): el de la derecha es el decimal.
+        cleaned = cleaned.replace(",", "")
+    elif re.fullmatch(r"\d{1,3}(\.\d{3})+,\d+", cleaned):
+        cleaned = cleaned.replace(".", "").replace(",", ".")
     else:
         cleaned = cleaned.replace(",", ".")
     try:
@@ -738,6 +745,10 @@ def _match_product(text: str, products: Sequence[Product]) -> Product | None:
     has_modifier = bool(_DISQUALIFYING_MODIFIER_RE.search(text_normalized))
     for product in products:
         for name in (product.name, *product.aliases):
+            # Los alias son JSON sin validar editado a mano: uno vacío compila
+            # a `\b\b` y matchea cualquier línea, uno nulo no tiene `.lower()`.
+            if not isinstance(name, str) or not name.strip():
+                continue
             name_normalized = _strip_accents(name.lower())
             if not _name_pattern(name_normalized).search(text_normalized):
                 continue
