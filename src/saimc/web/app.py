@@ -22,6 +22,7 @@ from saimc.web.routers import (
     control,
     curation,
     docs,
+    marketing,
     public,
     whatsapp_webhook,
 )
@@ -230,5 +231,6 @@ app.include_router(public.router)
 app.include_router(curation.router)
 app.include_router(control.router)
 app.include_router(catalog.router)
+app.include_router(marketing.router)
 app.include_router(docs.router)
 app.include_router(whatsapp_webhook.router)

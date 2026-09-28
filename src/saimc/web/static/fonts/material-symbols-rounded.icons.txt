@@ -3,6 +3,7 @@ auto_awesome
 block
 bolt
 calendar_month
+campaign
 center_focus_strong
 check
 check_circle

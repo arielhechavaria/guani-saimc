@@ -43,6 +43,14 @@ ocr = [
 llm = [
     "anthropic>=1.0",
 ]
+# Generador de tarjetas para redes (`saimc.marketing`). Opcional por el mismo
+# motivo que `llm`/`ocr`: sin el paquete, `/marketing` degrada a mostrar la
+# vista previa en HTML pero no puede exportar el PNG. Playwright baja un
+# Chromium propio (`playwright install chromium`) y necesita las librerías
+# de sistema del navegador (`playwright install-deps chromium`, con sudo).
+marketing = [
+    "playwright>=1.40",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -131,4 +139,10 @@ ignore_missing_imports = true
 # clave— el asistente degrada solo (docs/costos.md). Un entorno `.[dev]` sin
 # `.[llm]` no debería ver esto como un error del código.
 module = "anthropic"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Extra opcional `marketing` (pyproject.toml): sin Chromium instalado,
+# `/marketing` degrada a la vista previa en HTML (`saimc.marketing.render`).
+module = "playwright.*"
 ignore_missing_imports = true
