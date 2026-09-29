@@ -30,7 +30,8 @@ está medido.*
 - **El camino tiene dos mitades.**
   - La **fase A** no rompe ninguna decisión cerrada y ataca un 35–45% del tiempo
     actual: descarte de imágenes en lote, instrumentación, glosario, política por
-    canal y modo sombra.
+    canal y modo sombra, más una prueba fuera de línea de Jev, un clasificador
+    con confianza calibrada que entraría como pieza desconectable.
   - La **fase B**, aceptación automática con auditoría, sí se aparta de la decisión
     cerrada 2 y de §6.1 y §10.7, que son vinculantes. Se decide con los datos del
     modo sombra y se registra antes de encenderla.
@@ -199,6 +200,41 @@ NuExtract, destilación) o usar supervisión débil (Snorkel) baja el costo por 
 y la dependencia de un proveedor [21][22][23][24][25]. Pero no baja horas humanas, y
 le suma a un solo desarrollador infraestructura, deriva y mantenimiento.
 
+**8. Clasificadores con confianza calibrada: Jev.** Jev (TypeSafe AI, lanzado el
+2026-09-15) no genera texto. Recibe texto y un esquema de preguntas cerradas —sí/no,
+una opción de una lista, un puntaje— y devuelve la respuesta tipada junto con una
+probabilidad que TypeSafe dice calibrada. Cobra $0,042 por millón de tokens de
+entrada, la salida es gratis y responde en 70–500 ms [28][29].
+
+Es justo la forma de la señal que le falta al enrutamiento (punto 2): una
+probabilidad confiable por decisión.
+- **Dónde cabe:** en las decisiones cerradas. Es el triage del carril 0 y, como
+  segunda opinión en el carril 1, producto contra el catálogo, moneda, provincia y
+  formato de venta.
+- **Dónde no cabe:** no extrae números ni fragmentos, así que no reemplaza al
+  extractor de precio, cantidad y unidad.
+
+Límites a hoy [28][29]:
+- acceso anticipado con lista de espera, y un precio de lanzamiento sin garantía de
+  que se sostenga;
+- solo API alojada (Cloudflare Workers AI, DigitalOcean): no hay pesos para correrlo
+  en el VPS;
+- solo texto, con un contexto de 32k tokens y el español sin documentar;
+- ninguna evidencia independiente de que la calibración se sostenga.
+
+**Es un costo más.** En dinero es chico: del orden de $0,0001 por anuncio con cinco
+preguntas (estimado), contra $0,0015–0,0029 de Claude. En dependencia es grande: un
+proveedor nuevo y en acceso anticipado. Por eso, si entra, entra como pieza
+desconectable (sección 4).
+
+Ya se había descartado dos veces, el 2026-09-21:
+- como reemplazo del asistente LLM, un papel que no puede cumplir;
+- por ser solo API alojada y sin español verificado.
+
+Los dos descartes están registrados en `decisions.md`, con fecha 2026-09-29. Este
+estudio le abre otro papel, el de señal de confianza independiente, y ese papel se
+decide con una prueba barata sobre datos propios (A6).
+
 ---
 
 ## 4. Propuesta: tres carriles, auditoría y aprendizaje por patrón
@@ -223,6 +259,23 @@ correcciones con patrón → glosario · catálogo · política por canal
 Cada fila guarda su procedencia (humana, automática o auditada), su
 `validation_status` y su `confidence_score`, los campos que §6.2 ya define. Con eso
 la capa pública puede responder la pregunta de §6.5.
+
+### Señales externas: siempre desconectables
+
+Toda señal que dependa de un proveedor externo suma; nunca es un requisito.
+- **Calibración base sin señales opcionales.** El enrutamiento base se calibra y se
+  certifica sin ellas. Si una señal aporta (Jev, por ejemplo), la configuración que
+  la usa se calibra aparte.
+- **Si la señal falta, rige la base.** Da igual si el proveedor falla, cierra o se
+  deja de pagar: rige la calibración base, sin error y sin frenar la ingesta ni la
+  cola.
+- **Aislada y con tope.** Cada señal vive detrás de una interfaz propia, se apaga
+  por configuración y tiene un tope de gasto, como hoy el pre-cálculo con
+  `--max-cost`.
+
+Con Claude ya es así hoy. Si falta, los anuncios caen al carril 2 y el sistema
+funciona como ahora, con más carga humana. La diferencia es de grado: sin Claude se
+pierde la automatización; sin Jev se pierde una señal.
 
 El aprendizaje ocurre por patrón, no por anuncio:
 - una convención nueva («4x10») se escribe una vez en el glosario, y el modelo deja
@@ -284,6 +337,7 @@ confirme en lote. Hay precedente: el descarte en lote de textos sin foco ya reso
 | A3 | Poblar el glosario con las convenciones del operador | la primera causa de edición son abstenciones de cantidad y unidad |
 | A4 | Fijar una política por canal, decidida una sola vez; empezar por el grupo de 170 imágenes pendientes que rinde 3% | es curar fuentes, no anuncios |
 | A5 | Correr el carril 1 en modo sombra | produce con evidencia los umbrales y el error esperado |
+| A6 | Prueba de Jev fuera de línea, si se consigue acceso. Se corre contra las decisiones de triage ya tomadas sobre texto: 1.235 anuncios, 156 curados y 1.079 descartados (las imágenes piden volver a correr el OCR local). Mide si su probabilidad está calibrada sobre anuncios cubanos (¿el 0,9 acierta el 90%?) y cuánto coincide con Claude. Solo va texto redactado con `redact_personal_data()`, igual que hoy hacia Anthropic, y cuesta menos de $0,20 | decide en firme si Jev entra como señal desconectable o queda descartado |
 
 A1 depende de que el pre-cálculo del modelo haya corrido sobre las imágenes, y hoy
 se lanza a mano. Correrlo con un temporizador no es Redis ni Celery, pero choca con
@@ -332,6 +386,7 @@ flujo de especificación completo.
 | Decisión cerrada 3 | sin cola de trabajos | un temporizador para el pre-cálculo o los lotes: no es una cola, pero cambia el motivo de la decisión | A / C |
 | Privacidad, §10.6 | no se guardan teléfonos; la imagen no sale del VPS | guardar el emisor; el modelo de visión directo | B5 / C |
 | H0 | se mide sobre el conjunto etiquetado a mano | la auditoría continua pasa a ser la medición, con calibración y evaluación separadas | B |
+| Descarte de Jev (2026-09-21) | no reabrir salvo pesos autoalojables o español verificado | A6 lo prueba en otro papel, sin integrarlo | A |
 
 Ninguna se toca sin una entrada en `decisions.md` que diga a cuál reemplaza.
 
@@ -359,6 +414,9 @@ Ninguna se toca sin una entrada en `decisions.md` que diga a cuál reemplaza.
   propias salidas al evaluarlas [8][26].
 - **Redis o Celery:** alcanza con un temporizador.
 - **Capturas sin redactar a un proveedor externo:** no se mandan.
+- **Jev en producción antes de pasar la prueba A6:** sería un proveedor nuevo, en
+  acceso anticipado, recibiendo datos que salen del VPS y con una calibración sin
+  verificar.
 
 ---
 
@@ -409,8 +467,8 @@ auditoría de tamaño fijo.
 ## Fuentes
 
 Para este estudio verifiqué directamente [8] (el resumen), [14] (a través del
-buscador, porque el sitio bloquea la descarga) y [18]–[20]. El resto sale del
-relevamiento bibliográfico y no lo releí.
+buscador, porque el sitio bloquea la descarga), [18]–[20], [28] y [29]. El resto
+sale del relevamiento bibliográfico y no lo releí.
 
 1. NPR Planet Money (2025), la paradoja de Jevons: https://www.npr.org/sections/planet-money/2025/02/04/g-s1-46018/ai-deepseek-economics-jevons-paradox
 2. AWS, condiciones de activación de A2I con Textract: https://docs.aws.amazon.com/sagemaker/latest/dg/a2i-json-humantaskactivationconditions-textract-example.html
@@ -439,3 +497,5 @@ relevamiento bibliográfico y no lo releí.
 25. Ratner et al., Snorkel (VLDB 2018): https://www.vldb.org/pvldb/vol11/p269-ratner.pdf
 26. Panickssery, Bowman y Feng (NeurIPS 2024), autopreferencia de los evaluadores LLM: https://arxiv.org/abs/2404.13076
 27. ONS (2020), clasificación automática de ropa obtenida por web scraping: https://www.ons.gov.uk/economy/inflationandpriceindices/articles/automatedclassificationofwebscrapedclothingdatainconsumerpricestatistics/2020-09-01
+28. eesel (2026), *TypeSafe Jev review*: https://www.eesel.ai/blog/typesafe-jev-review
+29. DigitalOcean (2026), *What is Jev*: https://www.digitalocean.com/resources/articles/what-is-jev
