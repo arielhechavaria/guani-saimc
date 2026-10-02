@@ -126,6 +126,35 @@ Paraste a la hora aunque haya cola. Lo que quedó, sigue mañana.
 
 ---
 
+## Una vez por semana — Informe del modo sombra (en el VPS, 1 minuto)
+
+Dice cuánto podría resolver solo el motor de validación y con qué error, sobre
+lo que ya decidiste a mano. No gasta API, no escribe en la base y no enciende
+nada: el motor sigue sin tocar la cola.
+
+Desde la raíz del proyecto, el mismo día de cada semana:
+
+```
+.venv/bin/python -m saimc.validation.shadow --gold data/llm-backtest-results-v6.jsonl --grid --execute
+```
+
+- `--grid` prueba la grilla de parámetros declarada en el módulo. Los
+  parámetros no tienen valor por defecto: para una sola combinación, en vez de
+  `--grid` pasá `--min-cell-n`, `--channel-min-history` y
+  `--channel-max-edit-rate`.
+- `--execute` agrega una línea a `docs/shadow-runs.jsonl` (commiteala: es el
+  registro semana a semana). Sin `--execute` corre en seco y no escribe nada.
+- Leé tres cosas, cada una con su n y su cota al 95%: la **tasa de
+  automatización**, los **falsos descartes del carril 0** (texto e imagen por
+  separado) y el **error del carril 1**. Un 0% sobre un n chico no dice nada:
+  mirá la cota, no el porcentaje.
+- La parte de **Evaluación** crece sola con cada anuncio que curás o descartás
+  de a uno con la propuesta a la vista. Los descartes en lote no cuentan.
+
+Se corre cada semana hasta que el n alcance para decidir G1a y G1b
+(`docs/plan-factor-humano.md`). Contrato del informe:
+`docs/spec-motor-validacion.md`, «Protocolo del modo sombra».
+
 ## Cómo saber si la rutina funciona
 
 Al cabo de una semana:

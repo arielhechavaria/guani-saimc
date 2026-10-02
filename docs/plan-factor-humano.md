@@ -3,7 +3,7 @@
 Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (vía rápida al MVP con
 la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
 sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
-tarea a futuro).
+tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -61,7 +61,7 @@ misma sesión. El candidato más probable es A1b.
 | A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | CERRADO (2026-10-02) |
 | A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | CERRADO (2026-10-02) |
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | CERRADO (2026-10-02) |
-| A5c | Informe del modo sombra | M | A5b | Opus | PENDIENTE |
+| A5c | Informe del modo sombra | M | A5b | Opus | CERRADO (2026-10-02) |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | PENDIENTE |
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE |
 | A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | PENDIENTE |
@@ -72,9 +72,9 @@ misma sesión. El candidato más probable es A1b.
 | K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | PENDIENTE |
 | B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | PENDIENTE |
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
-| **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5b, B1 | Opus | PENDIENTE |
+| **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | PENDIENTE |
 | **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
-| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a, B1 | Opus | PENDIENTE |
+| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | PENDIENTE |
 | B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | PENDIENTE |
 | B2c | Freno automático del carril 1 | M | B2b | Opus | PENDIENTE |
 | B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
@@ -135,8 +135,10 @@ desde A2d es este. Motivo completo en `docs/decisions.md` (2026-10-02, «Vía r�
   falsos descartes con su cota al 95%, sin esperar la acumulación del modo
   sombra. Las revisiones de `llm_reviews` casi no aportan: 406 de 418 son
   descartes de lote (A5a). Hoy el oro da 1 error en 49, cota de 9,3%.
-- **B1 sube antes de A5c.** Sin procedencia no se puede auditar ni deshacer lo que
-  resolvió el sistema.
+- **B1 es requisito del carril 1, no del carril 0** (corregido el 2026-10-02 al
+  cerrar A5c). Un descarte no crea ninguna fila de precio: su rastro es el evento
+  de la bitácora. El número de G1a lo da el informe de sombra, así que A5c va
+  antes de G1a y B1 pasa después de los canales.
 - **B2b y B2c se entregan juntas.** El carril 1 no se enciende sin su freno.
 - **Los canales nuevos (3 a 5 por día, con su histórico) entran después de B2a**,
   para que el volumen lo absorba el descarte automático y no la hora diaria. No es
@@ -154,11 +156,11 @@ desde A2d es este. Motivo completo en `docs/decisions.md` (2026-10-02, «Vía r�
 | 1 | A2d | La tabla semanal donde se ve el efecto de todo lo demás |
 | 2 | A5a | Especificación del motor, con el criterio de G1a y el protocolo de auditoría |
 | 3 | A5b | Motor en código puro |
-| 4 | B1 | Estado, puntaje y procedencia persistidos |
-| 5 | G1a | Decisión del carril 0 sobre las revisiones existentes |
+| 4 | A5c | Informe de sombra: el número de G1a y, cada semana, el del carril 1 |
+| 5 | G1a | Decisión del carril 0 sobre el oro del backtest |
 | 6 | B2a | Descarte automático con muestra auditada por semana |
 | 7 | Canales nuevos | Volumen en foco |
-| 8 | A5c | Informe semanal de sombra del carril 1 |
+| 8 | B1 (con K6) | Estado, puntaje y procedencia persistidos |
 | 9 | K1, A3c, A1c, K3, K4, A6, B5 → C3, C1 | Desarrollo que no espera volumen, mientras el modo sombra acumula |
 | 10 | G1b → B2b + B2c | Aceptación automática con freno |
 | 11 | B3, B4, C2, A6b | Lo que cuelga del carril 1 |
@@ -175,7 +177,7 @@ desarrollo y se hace sin esperar.
 
 | Tarea | ¿Espera volumen? | Cuándo entra |
 | --- | --- | --- |
-| K6 | No | Con la migración de B1 (paso 4) |
+| K6 | No | Con la migración de B1 (paso 8) |
 | K1 | No | Paso 9, primero: B2b lo usa para el historial de lo auditado |
 | A3c, A1c | No | Paso 9: mejoras de la cola |
 | K3, K4 | No | Paso 9 |
@@ -789,7 +791,7 @@ especificación.
 
 ---
 
-### A5c — Informe del modo sombra — PENDIENTE
+### A5c — Informe del modo sombra — CERRADO (2026-10-02)
 
 **Objetivo.** Saber cuánto se podría automatizar y con qué error. Es el hito I2.
 
@@ -1039,12 +1041,14 @@ historial.
 
 ### G1a — Compuerta del carril 0: ¿se descarta solo? — PENDIENTE
 
-Agregada el 2026-10-02 (vía rápida). Va después de A5b y B1, antes de B2a.
+Agregada el 2026-10-02 (vía rápida). Va después de A5c, antes de B2a.
 
 **Qué se lleva.** La tasa de falsos descartes del carril 0 sobre el oro del
 backtest y las decisiones individuales, por texto e imagen, con la cota superior
 de Clopper-Pearson al 95% y el n (`docs/spec-motor-validacion.md`, «Protocolo del
-modo sombra»). Al 2026-10-02 el oro da 1 error en 49: cota de 9,3%.
+modo sombra»). Primera corrida de A5c (2026-10-02, oro v6): el carril 0 toma 45 de
+100 anuncios con 0 falsos descartes; cota de 9,2% en texto (0/31) y 19,3% en
+imagen (0/14).
 
 **Ojo con la evidencia del lote.** Los descartes del lote de imágenes
 (`mode = batch_model`) se aceptaron con las miniaturas marcadas por defecto (A1a):
