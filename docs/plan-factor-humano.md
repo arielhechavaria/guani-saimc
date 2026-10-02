@@ -58,7 +58,7 @@ misma sesión. El candidato más probable es A1b.
 | A4b | Decidir la política de cada canal | S | A4a | Sonnet | CERRADO (2026-10-02) |
 | A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | NO HACE FALTA (2026-10-02) |
 | A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | CERRADO (2026-10-02) |
-| A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | ABIERTO |
+| A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | CERRADO (2026-10-02) |
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | PENDIENTE |
 | A5c | Informe del modo sombra | M | A5b | Opus | PENDIENTE |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | PENDIENTE |
@@ -129,9 +129,10 @@ desde A2d es este. Motivo completo en `docs/decisions.md` (2026-10-02, «Vía r�
   esperar lo mismo.
   Donde el resto del documento dice «G1», se lee G1a para el carril 0 y G1b
   para el carril 1.
-- **G1a se decide con datos que ya existen:** las revisiones de `llm_reviews` y el
-  oro del backtest dan la tasa de falsos descartes con su cota al 95%, sin
-  esperar la acumulación del modo sombra.
+- **G1a se decide con datos que ya existen:** el oro del backtest da la tasa de
+  falsos descartes con su cota al 95%, sin esperar la acumulación del modo
+  sombra. Las revisiones de `llm_reviews` casi no aportan: 406 de 418 son
+  descartes de lote (A5a). Hoy el oro da 1 error en 49, cota de 9,3%.
 - **B1 sube antes de A5c.** Sin procedencia no se puede auditar ni deshacer lo que
   resolvió el sistema.
 - **B2b y B2c se entregan juntas.** El carril 1 no se enciende sin su freno.
@@ -705,7 +706,10 @@ coherentes con lo que hizo esa semana.
 
 ---
 
-### A5a — Motor de validación §6.2 y carriles: especificación — ABIERTO
+### A5a — Motor de validación §6.2 y carriles: especificación — CERRADO (2026-10-02)
+
+*Nota (2026-10-02):* aprobada como `docs/spec-motor-validacion.md`. Lo que sigue es
+el encargo original; donde difieran, manda la especificación.
 
 **Objetivo.** Especificar una sola vez el motor que usan el modo sombra (A5), la
 persistencia (B1) y la automatización (B2). Toca el motor de validación, así que
@@ -1034,9 +1038,10 @@ historial.
 
 Agregada el 2026-10-02 (vía rápida). Va después de A5b y B1, antes de B2a.
 
-**Qué se lleva.** La tasa de falsos descartes del carril 0 sobre lo ya revisado:
-las revisiones de `llm_reviews` y el oro del backtest, con la cota superior de
-Clopper-Pearson al 95% y el n. El criterio exacto lo fija A5a.
+**Qué se lleva.** La tasa de falsos descartes del carril 0 sobre el oro del
+backtest y las decisiones individuales, por texto e imagen, con la cota superior
+de Clopper-Pearson al 95% y el n (`docs/spec-motor-validacion.md`, «Protocolo del
+modo sombra»). Al 2026-10-02 el oro da 1 error en 49: cota de 9,3%.
 
 **Ojo con la evidencia del lote.** Los descartes del lote de imágenes
 (`mode = batch_model`) se aceptaron con las miniaturas marcadas por defecto (A1a):

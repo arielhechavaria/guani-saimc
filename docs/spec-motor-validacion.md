@@ -4,8 +4,8 @@ Parte del plan `docs/plan-factor-humano.md` (A5a especifica; A5b lo programa en
 código puro; A5c lo corre en sombra; B1 lo persiste; B2 lo enciende).
 Toca el motor de validación: esta especificación se aprueba antes de programar.
 
-**Estado: borrador, pendiente de aprobación del operador** (ver «Preguntas al
-operador»).
+**Estado: aprobada por el operador el 2026-10-02**, con las seis respuestas por
+defecto de «Preguntas al operador».
 
 ## Problema
 
@@ -289,9 +289,9 @@ con referencias de 400 a 460 CUP.
 | 22 | El caso 6 con una señal externa de acuerdo | 2 | `unverified` | una señal nunca mete en un carril |
 | 23 | El caso 1 sin configuración de parámetros | 2 | `unverified` | sin configuración no se automatiza |
 
-## Preguntas al operador
+## Preguntas al operador — resueltas el 2026-10-02
 
-Cada una trae su respuesta por defecto. Aprobar el documento es aceptarlas.
+El operador aceptó las seis respuestas por defecto. A5b las implementa tal cual.
 
 1. **¿Regla 2 con banda robusta o con la fórmula 70/30?** Defecto: banda
    robusta, registrado como apartamiento.
@@ -308,6 +308,6 @@ Cada una trae su respuesta por defecto. Aprobar el documento es aceptarlas.
 
 ## Registro
 
-Entrada en `docs/decisions.md` al aprobarse: los cinco apartamientos de
+Entrada en `docs/decisions.md` (2026-10-02, «A5a»): los cinco apartamientos de
 «Contraste», el carril por predicados y no por puntaje, y la evidencia de G1a
 acotada al oro.
