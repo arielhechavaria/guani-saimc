@@ -7461,3 +7461,407 @@ class TestBitacoraDeCuraduria:
 
         assert respuesta.status_code == 422
         assert f'name="shown_at" value="{original}"' in respuesta.text
+
+
+# --- A1b: lote de imágenes con el veredicto del modelo ------------------------
+
+
+def _imagen(
+    session: Session, hash_: str, *, source_reference: str | None = "Mercado Habana"
+) -> RawIngestion:
+    return _crear_raw_ingestion(
+        session,
+        hash_=hash_,
+        content_type=ContentType.IMAGE,
+        file_path=f"raw/{hash_}.png",
+        source_reference=source_reference,
+    )
+
+
+def _propuesta_de_imagen(
+    session: Session,
+    ingestion: RawIngestion,
+    *,
+    status: str = "ok",
+    discard: bool | None = True,
+    discard_reason: str | None = "off_focus",
+) -> LlmProposal:
+    propuesta = LlmProposal(
+        ingestion_id=ingestion.id,
+        model="claude-sonnet-5",
+        prompt_version=PROMPT_VERSION,
+        status=status,
+        discard=discard,
+        discard_reason=discard_reason,
+        rows=[],
+        input_tokens=100,
+        output_tokens=20,
+    )
+    session.add(propuesta)
+    session.commit()
+    return propuesta
+
+
+def _recargar(session: Session, ingestion: RawIngestion) -> RawIngestion:
+    """La fila tal como quedó en la base (típica para asertar con tipos)."""
+    session.expire_all()
+    actual = session.get(RawIngestion, ingestion.id)
+    assert actual is not None
+    return actual
+
+
+URL_LOTE_IMAGENES = "/curation/sin-foco/imagenes"
+URL_DESCARTE_IMAGENES = "/curation/sin-foco/imagenes/discard"
+
+
+class TestLoteImagenesGet:
+    def test_lista_miniaturas_con_motivo_legible_y_canal(
+        self, client: TestClient, session: Session
+    ) -> None:
+        fuera = _imagen(session, "hash-a1b-g1", source_reference="Mercado Habana")
+        sin_datos = _imagen(session, "hash-a1b-g2", source_reference="Ventas Playa")
+        _propuesta_de_imagen(session, fuera, discard_reason="off_focus")
+        _propuesta_de_imagen(session, sin_datos, discard_reason="no_data")
+
+        response = client.get(URL_LOTE_IMAGENES)
+
+        assert response.status_code == 200
+        html = response.text
+        assert f"/evidence/{fuera.id}" in html
+        assert f"/evidence/{sin_datos.id}" in html
+        assert "Fuera de foco" in html
+        assert "Sin datos de precio" in html
+        assert "Mercado Habana" in html
+        assert "Ventas Playa" in html
+        # Marcadas por defecto: una casilla `checked` por imagen.
+        casillas = re.findall(r'<input type="checkbox" name="ingestion_id"[^>]*>', html)
+        assert len(casillas) == 2
+        assert all("checked" in c for c in casillas)
+        assert 'id="btn-n">2<' in html
+        # Sin icono `undo`: no está en el subset de la fuente.
+        assert ">undo<" not in html
+
+    def test_no_lista_lo_que_no_es_elegible(
+        self, client: TestClient, session: Session
+    ) -> None:
+        texto = _crear_raw_ingestion(session, hash_="hash-a1b-g3", original_text="cemento")
+        _propuesta_de_imagen(session, texto)  # un texto con propuesta que descarta
+        sin_propuesta = _imagen(session, "hash-a1b-g4")
+        degradada = _imagen(session, "hash-a1b-g5")
+        _propuesta_de_imagen(session, degradada, status="degraded", discard=None)
+        no_descarta = _imagen(session, "hash-a1b-g6")
+        _propuesta_de_imagen(session, no_descarta, discard=False, discard_reason=None)
+        ya_descartada = _imagen(session, "hash-a1b-g7")
+        _propuesta_de_imagen(session, ya_descartada)
+        ya_descartada.processing_status = ProcessingStatus.DISCARDED
+        session.commit()
+
+        html = client.get(URL_LOTE_IMAGENES).text
+
+        for ajeno in (texto, sin_propuesta, degradada, no_descarta, ya_descartada):
+            assert str(ajeno.id) not in html
+
+    def test_usa_la_ultima_propuesta_ok(self, client: TestClient, session: Session) -> None:
+        """Si la última propuesta ok ya no descarta, la imagen no entra aunque
+        una anterior sí lo dijera."""
+        imagen = _imagen(session, "hash-a1b-g8")
+        vieja = _propuesta_de_imagen(session, imagen, discard=True)
+        vieja.created_at = datetime(2026, 9, 1, tzinfo=UTC)
+        nueva = _propuesta_de_imagen(session, imagen, discard=False, discard_reason=None)
+        nueva.created_at = datetime(2026, 9, 2, tzinfo=UTC)
+        session.commit()
+
+        html = client.get(URL_LOTE_IMAGENES).text
+
+        assert str(imagen.id) not in html
+
+    def test_avisa_cuantas_imagenes_no_tienen_propuesta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        elegible = _imagen(session, "hash-a1b-g9")
+        _propuesta_de_imagen(session, elegible)
+        _imagen(session, "hash-a1b-g10")
+        _imagen(session, "hash-a1b-g11")
+        degradada = _imagen(session, "hash-a1b-g12")  # degradada = sigue sin propuesta ok
+        _propuesta_de_imagen(session, degradada, status="degraded", discard=None)
+
+        html = client.get(URL_LOTE_IMAGENES).text
+
+        assert "3 imágenes sin propuesta" in html
+        assert "saimc.extraction.prefill" in html
+
+    def test_sin_imagenes_sin_propuesta_no_hay_aviso(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _propuesta_de_imagen(session, _imagen(session, "hash-a1b-g13"))
+
+        html = client.get(URL_LOTE_IMAGENES).text
+
+        assert "sin propuesta" not in html
+
+    def test_estado_vacio(self, client: TestClient, session: Session) -> None:
+        response = client.get(URL_LOTE_IMAGENES)
+
+        assert response.status_code == 200
+        assert "No hay imágenes para descartar." in response.text
+        assert "Descartar las" not in response.text
+
+    def test_segmento_en_ambas_vistas_con_el_chip_activo_correcto(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz")
+        _crear_raw_ingestion(session, hash_="hash-a1b-g14", original_text="cemento a 500")
+        _propuesta_de_imagen(session, _imagen(session, "hash-a1b-g15"))
+
+        textos = client.get("/curation/sin-foco").text
+        imagenes = client.get(URL_LOTE_IMAGENES).text
+
+        def chips(html: str) -> list[str]:
+            return re.findall(r'<a class="m3-chip m3-chip-btn[^"]*"[^>]*>', html)
+
+        chips_textos, chips_imagenes = chips(textos), chips(imagenes)
+        assert len(chips_textos) == len(chips_imagenes) == 2
+        assert 'href="/curation/sin-foco"' in chips_textos[0]
+        assert 'href="/curation/sin-foco/imagenes"' in chips_textos[1]
+        assert "is-selected" in chips_textos[0] and "is-selected" not in chips_textos[1]
+        assert "is-selected" in chips_imagenes[1] and "is-selected" not in chips_imagenes[0]
+        # Una sola vista visible a la vez: cada una oculta a la otra.
+        assert "<table" in textos and "a1-grid" not in textos
+        assert "a1-grid" in imagenes and "<table" not in imagenes
+
+    def test_la_pestana_sin_foco_sigue_activa_en_la_ruta_nueva(
+        self, client: TestClient, session: Session
+    ) -> None:
+        html = client.get(URL_LOTE_IMAGENES).text
+
+        activa = re.findall(r'<a class="m3-tab is-active"[^>]*>([^<]*)</a>', html)
+        assert activa == ["Sin foco"]
+
+
+class TestLoteImagenesDiscard:
+    def test_descarta_solo_los_enviados_y_los_rescatados_quedan_pendientes(
+        self, client: TestClient, session: Session
+    ) -> None:
+        marcada_1 = _imagen(session, "hash-a1b-d1")
+        marcada_2 = _imagen(session, "hash-a1b-d2")
+        rescatada = _imagen(session, "hash-a1b-d3")
+        _propuesta_de_imagen(session, marcada_1, discard_reason="off_focus")
+        _propuesta_de_imagen(session, marcada_2, discard_reason="no_data")
+        _propuesta_de_imagen(session, rescatada, discard_reason="off_focus")
+
+        response = client.post(
+            URL_DESCARTE_IMAGENES,
+            data={"ingestion_id": [str(marcada_1.id), str(marcada_2.id)]},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == URL_LOTE_IMAGENES
+        session.expire_all()
+        uno = _recargar(session, marcada_1)
+        dos = _recargar(session, marcada_2)
+        tres = _recargar(session, rescatada)
+        assert uno.processing_status == ProcessingStatus.DISCARDED
+        assert uno.discard_reason == "off_focus"
+        assert dos.processing_status == ProcessingStatus.DISCARDED
+        assert dos.discard_reason == "no_data"
+        assert tres.processing_status == ProcessingStatus.PENDING
+        assert tres.discard_reason is None
+
+    @pytest.mark.parametrize(
+        "armar",
+        ["texto", "sin_propuesta", "degradada", "no_descarta", "ya_descartada"],
+    )
+    def test_un_id_no_elegible_se_ignora_sin_error(
+        self, client: TestClient, session: Session, armar: str
+    ) -> None:
+        elegible = _imagen(session, "hash-a1b-d4")
+        _propuesta_de_imagen(session, elegible)
+        if armar == "texto":
+            ajeno = _crear_raw_ingestion(session, hash_="hash-a1b-d5", original_text="x")
+            _propuesta_de_imagen(session, ajeno)
+        elif armar == "sin_propuesta":
+            ajeno = _imagen(session, "hash-a1b-d5")
+        elif armar == "degradada":
+            ajeno = _imagen(session, "hash-a1b-d5")
+            _propuesta_de_imagen(session, ajeno, status="degraded", discard=None)
+        elif armar == "no_descarta":
+            ajeno = _imagen(session, "hash-a1b-d5")
+            _propuesta_de_imagen(session, ajeno, discard=False, discard_reason=None)
+        else:
+            ajeno = _imagen(session, "hash-a1b-d5")
+            _propuesta_de_imagen(session, ajeno)
+            ajeno.processing_status = ProcessingStatus.DISCARDED
+            session.commit()
+        estado_previo = ajeno.processing_status
+
+        response = client.post(
+            URL_DESCARTE_IMAGENES,
+            data={"ingestion_id": [str(elegible.id), str(ajeno.id)]},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert _recargar(session, elegible).processing_status == (
+            ProcessingStatus.DISCARDED
+        )
+        assert _recargar(session, ajeno).processing_status == estado_previo
+        assert {e.ingestion_id for e in _eventos(session)} == {elegible.id}
+        reviews = list(session.execute(select(LlmReview)).scalars())
+        assert {r.ingestion_id for r in reviews} == {elegible.id}
+
+    def test_ids_basura_o_inexistentes_se_ignoran(
+        self, client: TestClient, session: Session
+    ) -> None:
+        response = client.post(
+            URL_DESCARTE_IMAGENES,
+            data={"ingestion_id": ["no-es-uuid", str(uuid.uuid4()), ""]},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert _eventos(session) == []
+
+    def test_escribe_la_revision_asistida_y_el_evento_batch_model(
+        self, client: TestClient, session: Session
+    ) -> None:
+        uno = _imagen(session, "hash-a1b-d6")
+        dos = _imagen(session, "hash-a1b-d7")
+        propuesta_uno = _propuesta_de_imagen(session, uno, discard_reason="off_focus")
+        propuesta_dos = _propuesta_de_imagen(session, dos, discard_reason="no_data")
+
+        client.post(
+            URL_DESCARTE_IMAGENES,
+            data={
+                "ingestion_id": [str(uno.id), str(dos.id)],
+                "shown_at": "2026-10-02T10:00:00+00:00",
+            },
+            follow_redirects=False,
+        )
+
+        session.expire_all()
+        reviews = {r.ingestion_id: r for r in session.execute(select(LlmReview)).scalars()}
+        assert reviews[uno.id].outcome == "discarded"
+        assert reviews[uno.id].proposal_id == propuesta_uno.id
+        assert reviews[uno.id].discard_reason == "off_focus"
+        assert reviews[uno.id].rows == []
+        assert reviews[dos.id].proposal_id == propuesta_dos.id
+        assert reviews[dos.id].discard_reason == "no_data"
+
+        eventos = {e.ingestion_id: e for e in _eventos(session)}
+        assert set(eventos) == {uno.id, dos.id}
+        for ingestion_id, evento in eventos.items():
+            assert evento.action == "discarded"
+            assert evento.mode == "batch_model"
+            assert evento.proposal_id == reviews[ingestion_id].proposal_id
+            assert evento.discard_reason == reviews[ingestion_id].discard_reason
+            assert evento.detail == {"batch_size": 2}
+            assert evento.shown_at is not None
+        assert len({e.shown_at for e in eventos.values()}) == 1
+        assert len({e.decided_at for e in eventos.values()}) == 1
+
+    def test_la_revision_comparte_shown_at_con_el_lote(
+        self, client: TestClient, session: Session
+    ) -> None:
+        imagen = _imagen(session, "hash-a1b-d8")
+        _propuesta_de_imagen(session, imagen)
+
+        client.post(
+            URL_DESCARTE_IMAGENES,
+            data={"ingestion_id": [str(imagen.id)], "shown_at": "2026-10-02T10:00:00"},
+            follow_redirects=False,
+        )
+
+        session.expire_all()
+        (review,) = session.execute(select(LlmReview)).scalars()
+        assert review.shown_at is not None
+        assert review.shown_at.replace(tzinfo=None) == datetime(2026, 10, 2, 10)
+
+    def test_la_propuesta_usada_es_la_ultima_ok(
+        self, client: TestClient, session: Session
+    ) -> None:
+        imagen = _imagen(session, "hash-a1b-d9")
+        vieja = _propuesta_de_imagen(session, imagen, discard_reason="no_data")
+        vieja.created_at = datetime(2026, 9, 1, tzinfo=UTC)
+        nueva = _propuesta_de_imagen(session, imagen, discard_reason="off_focus")
+        nueva.created_at = datetime(2026, 9, 2, tzinfo=UTC)
+        session.commit()
+
+        client.post(
+            URL_DESCARTE_IMAGENES, data={"ingestion_id": [str(imagen.id)]}, follow_redirects=False
+        )
+
+        session.expire_all()
+        (review,) = session.execute(select(LlmReview)).scalars()
+        assert review.proposal_id == nueva.id
+        assert _recargar(session, imagen).discard_reason == "off_focus"
+
+    def test_el_mismo_id_repetido_se_descarta_una_sola_vez(
+        self, client: TestClient, session: Session
+    ) -> None:
+        imagen = _imagen(session, "hash-a1b-d10")
+        _propuesta_de_imagen(session, imagen)
+
+        client.post(
+            URL_DESCARTE_IMAGENES,
+            data={"ingestion_id": [str(imagen.id), str(imagen.id)]},
+            follow_redirects=False,
+        )
+
+        assert len(_eventos(session)) == 1
+        assert len(list(session.execute(select(LlmReview)).scalars())) == 1
+
+    def test_si_falla_a_mitad_no_queda_nada_a_medias(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Una sola transacción: el segundo evento lo rechaza la base (CHECK) y
+        se lleva consigo el estado, la revisión y el primer evento."""
+        from sqlalchemy.exc import IntegrityError
+
+        from saimc import curation_events
+
+        real = curation_events.record_curation_event
+        llamadas: list[int] = []
+
+        def segundo_invalido(db, **kwargs):
+            llamadas.append(1)
+            if len(llamadas) == 2:
+                kwargs = {**kwargs, "action": "no-existe"}
+            return real(db, **kwargs)
+
+        monkeypatch.setattr(curation, "record_curation_event", segundo_invalido)
+        uno = _imagen(session, "hash-a1b-d11")
+        dos = _imagen(session, "hash-a1b-d12")
+        _propuesta_de_imagen(session, uno)
+        _propuesta_de_imagen(session, dos)
+
+        with pytest.raises(IntegrityError):
+            client.post(
+                URL_DESCARTE_IMAGENES,
+                data={"ingestion_id": [str(uno.id), str(dos.id)]},
+                follow_redirects=False,
+            )
+
+        session.rollback()
+        session.expire_all()
+        assert _recargar(session, uno).processing_status == ProcessingStatus.PENDING
+        assert _recargar(session, dos).processing_status == ProcessingStatus.PENDING
+        assert list(session.execute(select(LlmReview)).scalars()) == []
+        assert _eventos(session) == []
+
+    def test_el_formulario_envia_solo_las_casillas_y_lleva_shown_at(
+        self, client: TestClient, session: Session
+    ) -> None:
+        imagen = _imagen(session, "hash-a1b-d13")
+        _propuesta_de_imagen(session, imagen)
+
+        html = client.get(URL_LOTE_IMAGENES).text
+
+        formulario = re.search(
+            r'<form[^>]*action="/curation/sin-foco/imagenes/discard".*?</form>', html, re.S
+        )
+        assert formulario is not None
+        assert re.search(r'name="shown_at" value="[^"]+"', formulario.group(0))
+        # Los ids viajan en las casillas, no como ocultos: lo desmarcado no viaja.
+        assert 'type="hidden" name="ingestion_id"' not in formulario.group(0)

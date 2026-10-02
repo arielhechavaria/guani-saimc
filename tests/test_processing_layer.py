@@ -1802,3 +1802,53 @@ class TestCurationEventsMigration:
                 with pytest.raises(IntegrityError):
                     insertar(**malo)
         engine.dispose()
+
+
+class TestCurationEventsBatchModelMigration:
+    """`0025_curation_events_batch_model.py` — A1b amplía el CHECK de `mode`
+    con `batch_model` (el spec de A2 lo dejó para su propia migración)."""
+
+    def _migrar(self, connection: sa.engine.Connection, nombre: str, paso: str) -> None:
+        modulo = _cargar_modulo_migracion(nombre)
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            getattr(modulo, paso)()
+        connection.commit()
+
+    def _insertar(self, connection: sa.engine.Connection, mode: str) -> None:
+        connection.execute(
+            sa.text(
+                "insert into curation_events (id, ingestion_id, action, mode, decided_at) "
+                "values (:id, :ing, 'discarded', :mode, '2026-10-02 10:00:00')"
+            ),
+            {"id": uuid.uuid4().hex, "ing": uuid.uuid4().hex, "mode": mode},
+        )
+
+    def test_upgrade_admite_batch_model_y_sigue_rechazando_otros(self) -> None:
+        engine = TestCurationEventsMigration()._base()
+        with engine.connect() as connection:
+            self._migrar(connection, "0024_curation_events.py", "upgrade")
+            with pytest.raises(IntegrityError):
+                self._insertar(connection, "batch_model")
+            connection.rollback()
+
+            self._migrar(connection, "0025_curation_events_batch_model.py", "upgrade")
+            for permitido in ("individual", "batch_out_of_focus", "batch_model"):
+                self._insertar(connection, permitido)
+            with pytest.raises(IntegrityError):
+                self._insertar(connection, "otro")
+            connection.rollback()
+        engine.dispose()
+
+    def test_downgrade_vuelve_al_vocabulario_anterior(self) -> None:
+        engine = TestCurationEventsMigration()._base()
+        with engine.connect() as connection:
+            self._migrar(connection, "0024_curation_events.py", "upgrade")
+            self._migrar(connection, "0025_curation_events_batch_model.py", "upgrade")
+            self._migrar(connection, "0025_curation_events_batch_model.py", "downgrade")
+            with pytest.raises(IntegrityError):
+                self._insertar(connection, "batch_model")
+            connection.rollback()
+            self._insertar(connection, "individual")
+            connection.commit()
+        engine.dispose()

@@ -1625,7 +1625,12 @@ def curation_out_of_focus(request: Request, db: Session = Depends(get_db)) -> HT
         request,
         "curation_sin_foco.html",
         # Cuándo se mostró la lista: viaja oculto y vuelve en el POST del lote.
-        {"items": items, "shown_at": datetime.now(UTC).isoformat()},
+        {
+            "items": items,
+            "shown_at": datetime.now(UTC).isoformat(),
+            # El chip «Imágenes» del segmento muestra cuántas hay en el lote.
+            "n_imagenes": len(_image_batch(db)[0]),
+        },
     )
 
 
@@ -1686,6 +1691,143 @@ async def discard_out_of_focus(request: Request, db: Session = Depends(get_db)) 
 
     db.commit()
     return RedirectResponse(url="/curation/sin-foco", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@dataclass(frozen=True)
+class ImageBatchItem:
+    """Una imagen del lote con la propuesta del modelo que la sugiere descartar."""
+
+    ingestion: RawIngestion
+    proposal: LlmProposal
+    # `off_focus` o `no_data`: el del modelo; si no dio uno válido, el genérico.
+    reason: str
+
+
+# Motivo del modelo → texto del operador (A1a).
+_IMAGE_REASON_LABELS = {
+    DiscardReason.OFF_FOCUS.value: "Fuera de foco",
+    DiscardReason.NO_DATA.value: "Sin datos de precio",
+}
+
+
+def _image_batch(db: Session) -> tuple[list[ImageBatchItem], int]:
+    """La selección del lote de imágenes (A1b) y cuántas imágenes no tienen
+    propuesta.
+
+    Una imagen entra si está `PENDING` y su ÚLTIMA propuesta `ok` dice
+    `discard = True`. Sin propuesta, con la propuesta degradada o con una que
+    no descarta, queda en la cola normal: este lote nunca decide por el modelo
+    donde el modelo no habló. El GET y el POST salen de esta misma función, así
+    que lo que el POST revalida es exactamente lo que el GET pudo mostrar.
+
+    El segundo valor es el aviso «X imágenes sin propuesta»: pendientes sin
+    ninguna propuesta `ok` (las degradadas cuentan, porque tampoco hay veredicto).
+    """
+    stmt = (
+        select(RawIngestion)
+        .where(
+            RawIngestion.processing_status == ProcessingStatus.PENDING,
+            RawIngestion.content_type == ContentType.IMAGE,
+        )
+        .order_by(RawIngestion.captured_at.asc())
+    )
+    images = list(db.execute(stmt).scalars().all())
+    proposals = _latest_ok_proposals(db, [image.id for image in images])
+    items: list[ImageBatchItem] = []
+    for image in images:
+        proposal = proposals.get(image.id)
+        if proposal is None or proposal.discard is not True:
+            continue
+        reason = (
+            proposal.discard_reason
+            if proposal.discard_reason in _IMAGE_REASON_LABELS
+            else DiscardReason.NO_DATA.value
+        )
+        items.append(ImageBatchItem(ingestion=image, proposal=proposal, reason=reason))
+    return items, len(images) - len(proposals)
+
+
+@router.get("/curation/sin-foco/imagenes", response_class=HTMLResponse)
+def curation_image_batch(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    """Lote de imágenes que el modelo propone descartar (A1b), segmento
+    «Imágenes» de `/curation/sin-foco`.
+
+    Mismo contrato que el lote de textos (spec.md §6.1): el sistema propone y
+    el operador confirma. Van marcadas por defecto y «Rescatar» las desmarca;
+    lo desmarcado no viaja en el POST (`discard_images_batch`).
+    """
+    items, without_proposal = _image_batch(db)
+    # Variable tipada y no `return` directo: `state.templates` es `Any` y mypy
+    # lo marca como `no-any-return` (el baseline de lint no debe crecer).
+    response: HTMLResponse = request.app.state.templates.TemplateResponse(
+        request,
+        "curation_sin_foco_imagenes.html",
+        {
+            "items": items,
+            "without_proposal": without_proposal,
+            "reason_labels": _IMAGE_REASON_LABELS,
+            "n_textos": len(_pending_out_of_focus(db, _pilot_products(db))),
+            "shown_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    return response
+
+
+@router.post("/curation/sin-foco/imagenes/discard")
+async def discard_images_batch(
+    request: Request, db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """Descarta las imágenes que el operador dejó marcadas (A1b).
+
+    Los ids viajan en las casillas: lo rescatado no se envía y queda `PENDING`.
+    Cada id se revalida contra `_image_batch` —puede haberse curado en otra
+    pestaña, o el modelo pudo dar otra propuesta—; un id no elegible o ajeno se
+    ignora en silencio, sin romper el resto.
+
+    Todo en una transacción por anuncio: el estado `DISCARDED` con el motivo del
+    modelo, la revisión (`llm_reviews`, para que siga fuera de H0 como
+    asistido) y el evento de bitácora `batch_model`. Un solo `commit`: o queda
+    todo o no queda nada.
+    """
+    form = await request.form()
+    eligible = {item.ingestion.id: item for item in _image_batch(db)[0]}
+    shown_at = parse_shown_at(str(form.get("shown_at", "")))
+    decided_at = utc_now()
+
+    chosen: list[ImageBatchItem] = []
+    for raw_id in form.getlist("ingestion_id"):
+        ingestion_id = _parse_uuid(str(raw_id))
+        item = eligible.pop(ingestion_id, None) if ingestion_id is not None else None
+        if item is not None:  # `pop`: un id repetido se descarta una sola vez
+            chosen.append(item)
+
+    for item in chosen:
+        item.ingestion.processing_status = ProcessingStatus.DISCARDED
+        item.ingestion.discard_reason = item.reason
+        llm_store.save_review(
+            db,
+            proposal=item.proposal,
+            outcome=ReviewOutcome.DISCARDED,
+            discard_reason=item.reason,
+            rows=llm_store.review_rows(item.proposal, []),
+            shown_at=shown_at,
+        )
+        record_curation_event(
+            db,
+            ingestion_id=item.ingestion.id,
+            action=CurationAction.DISCARDED,
+            mode=CurationMode.BATCH_MODEL,
+            discard_reason=item.reason,
+            proposal_id=item.proposal.id,
+            shown_at=shown_at,
+            decided_at=decided_at,
+            detail={"batch_size": len(chosen)},
+        )
+
+    db.commit()
+    return RedirectResponse(
+        url="/curation/sin-foco/imagenes", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.get("/evidence/{ingestion_id}")

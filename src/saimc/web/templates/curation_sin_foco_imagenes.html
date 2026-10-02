@@ -1,0 +1,199 @@
+{#
+  Lote de imágenes con el veredicto del modelo (slice A1b; prototipo aprobado:
+  docs/prototipos/a1a-lote-imagenes.html). Segmento «Imágenes» de
+  /curation/sin-foco. Van marcadas por defecto; el freno es «Rescatar», que
+  desmarca. Lo desmarcado no viaja en el POST, así que el servidor solo ve lo
+  que el operador dejó marcado (y lo revalida, ver `discard_images_batch`).
+#}
+{% extends "_shell.html" %}
+
+{% block title %}Sin foco · Imágenes{% endblock %}
+{% block heading %}Descarte en lote — sin foco{% endblock %}
+{% block subtitle %}{% if items %}Imágenes que el modelo propone descartar. Dejá marcadas las que se van y rescatá las que no.{% else %}Imágenes que el modelo propone descartar.{% endif %}{% endblock %}
+
+{% block stats %}
+  <div class="m3-stat">
+    <div class="m3-stat-label">Imágenes</div>
+    <div class="m3-stat-value is-accent">{{ items|length }}</div>
+  </div>
+{% endblock %}
+
+{% block tabs %}{% include "_curation_tabs.html" %}{% endblock %}
+
+{% block head %}
+  <style>
+    .a1-aviso { display: flex; gap: var(--m3-space-3); align-items: flex-start; }
+
+    /* 2 columnas a 390 px (miniatura ~170 px). Desde el único corte del
+       proyecto (720 px, ver test_static_assets) pasa a columnas de ≥170 px: más
+       columnas a mayor ancho sin sumar cortes propios. */
+    .a1-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--m3-space-3); }
+    @media (min-width: 720px) { .a1-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); } }
+
+    .a1-card { overflow: hidden; display: flex; flex-direction: column; transition: opacity .15s; }
+    .a1-card.is-rescued { opacity: .6; outline: 2px solid var(--m3-primary); }
+
+    .a1-thumb {
+      position: relative; display: block; width: 100%; padding: 0; border: 0;
+      aspect-ratio: 4 / 5; cursor: zoom-in; background: var(--m3-surface-container-high);
+    }
+    .a1-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+    /* Casilla: el área táctil es todo el rincón (44 px), el dibujo es más chico. */
+    .a1-check {
+      position: absolute; top: 0; left: 0; width: 44px; height: 44px;
+      display: grid; place-items: center; cursor: pointer;
+    }
+    .a1-check input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+    .a1-box {
+      width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center;
+      background: var(--m3-surface); border: 2px solid var(--m3-outline); color: transparent;
+      box-shadow: var(--m3-elev-1);
+    }
+    .a1-check input:checked + .a1-box { background: var(--m3-error); border-color: var(--m3-error); color: var(--m3-surface); }
+    .a1-check input:focus-visible + .a1-box { outline: 3px solid var(--m3-primary); outline-offset: 2px; }
+    .a1-box .m3-icon { font-size: 18px; }
+
+    .a1-body { padding: var(--m3-space-2) var(--m3-space-3) 0; display: flex; flex-direction: column; gap: 4px; }
+    /* Canal y fecha apilados: a 390 px una fila los trunca a los dos. */
+    .a1-meta { display: flex; flex-direction: column; color: var(--m3-on-surface-variant); font-size: 12px; line-height: 1.35; }
+    .a1-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (min-width: 720px) { .a1-meta { flex-direction: row; justify-content: space-between; gap: 6px; } }
+    .a1-rescatar { margin: var(--m3-space-2); min-height: 44px; justify-content: center; }
+
+    /* Ampliación: <dialog> nativo, sin librería. */
+    .a1-dialog { border: 0; border-radius: var(--m3-radius-lg); padding: 0; width: min(94vw, 560px);
+      max-height: 92vh; background: var(--m3-surface); color: var(--m3-on-surface); }
+    /* Color de sistema y no un token: `::backdrop` no hereda las variables en
+       navegadores viejos. */
+    .a1-dialog::backdrop { background: CanvasText; opacity: .6; }
+    .a1-dialog-img { display: block; width: 100%; max-height: 62vh; object-fit: contain;
+      background: var(--m3-surface-container-high); }
+    .a1-dialog-foot { padding: var(--m3-space-4); display: flex; flex-wrap: wrap; gap: var(--m3-space-3); align-items: center; }
+
+    .a1-actionbar-count { flex: 1 1 140px; }
+    .a1-actionbar .m3-btn { min-height: 48px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="m3-stack" style="gap:16px">
+
+  {% set segmento = 'imagenes' %}
+  {% set n_imagenes = items|length %}
+  {% include "_sin_foco_segmento.html" %}
+
+  {% if without_proposal %}
+  <div class="m3-card m3-card-pad a1-aviso" role="status">
+    <span class="m3-icon" style="color:var(--m3-warn)">warning</span>
+    <div class="m3-sm">
+      <strong>{{ without_proposal }} {{ 'imagen' if without_proposal == 1 else 'imágenes' }} sin propuesta.</strong> No aparecen acá hasta que el modelo las vea.
+      Corré el pre-cálculo: <code>python -m saimc.extraction.prefill</code>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not items %}
+  <div class="m3-card">
+    <div class="m3-empty">
+      <span class="m3-icon">check_circle</span>
+      <p style="margin:12px 0 0">No hay imágenes para descartar.</p>
+      <p class="m3-sm m3-muted" style="margin:4px 0 0">Lo que el modelo no marcó sigue en la cola.</p>
+    </div>
+  </div>
+  {% else %}
+
+  <form id="lote" method="post" action="/curation/sin-foco/imagenes/discard">
+    {# Hora en que se mostró el lote, para medir su tiempo (A2). #}
+    <input type="hidden" name="shown_at" value="{{ shown_at or '' }}" />
+    <div class="a1-grid" id="grid">
+      {% for item in items %}
+      {% set motivo = reason_labels[item.reason] %}
+      {% set canal = item.ingestion.source_reference or "—" %}
+      {% set fecha = item.ingestion.captured_at | havana %}
+      <div class="m3-card m3-card-outlined a1-card" id="c{{ item.ingestion.id }}">
+        <div style="position:relative">
+          <button type="button" class="a1-thumb" aria-label="Ampliar imagen"
+                  data-open="{{ item.ingestion.id }}" data-motivo="{{ motivo }}" data-meta="{{ canal }} · {{ fecha }}">
+            <img src="/evidence/{{ item.ingestion.id }}" alt="" loading="lazy" />
+          </button>
+          <label class="a1-check" title="Descartar esta imagen">
+            <input type="checkbox" name="ingestion_id" value="{{ item.ingestion.id }}" checked aria-label="Descartar esta imagen" />
+            <span class="a1-box"><span class="m3-icon">check</span></span>
+          </label>
+        </div>
+        <div class="a1-body">
+          <span class="m3-chip m3-chip-sm {{ 'm3-chip-neutral' if item.reason == 'off_focus' else 'm3-chip-warn' }}" style="align-self:flex-start">{{ motivo }}</span>
+          <div class="a1-meta"><span>{{ canal }}</span><span class="m3-nowrap">{{ fecha }}</span></div>
+        </div>
+        <button type="button" class="m3-btn a1-rescatar" data-rescatar="{{ item.ingestion.id }}">Rescatar</button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="m3-actionbar a1-actionbar" style="margin-top:16px">
+      <span class="m3-sm a1-actionbar-count" aria-live="polite">
+        <strong id="n-marcadas">{{ items|length }}</strong> marcadas · <span id="n-rescatadas">0</span> rescatadas.
+        <span class="m3-muted">Quedan <code>discarded</code>, nunca se borran.</span>
+      </span>
+      <button type="submit" id="btn-descartar" class="m3-btn m3-btn-danger m3-btn-lg">
+        <span class="m3-icon">block</span><span>Descartar las <span id="btn-n">{{ items|length }}</span> marcadas</span>
+      </button>
+    </div>
+  </form>
+
+  <dialog class="a1-dialog" id="dlg">
+    <img class="a1-dialog-img" id="dlg-img" alt="Imagen ampliada" />
+    <div class="a1-dialog-foot">
+      <div style="flex:1 1 160px" class="m3-sm">
+        <div><strong id="dlg-motivo"></strong></div>
+        <div class="m3-muted" id="dlg-meta"></div>
+      </div>
+      <button type="button" class="m3-btn" id="dlg-rescatar" style="min-height:44px">Rescatar</button>
+      <button type="button" class="m3-btn" id="dlg-cerrar" style="min-height:44px">Cerrar</button>
+    </div>
+  </dialog>
+
+  <script>
+    (function () {
+      var grid = document.getElementById('grid');
+      var boxes = grid.querySelectorAll('input[type=checkbox]');
+      var dlg = document.getElementById('dlg'), dlgId = null;
+
+      function box(id) { return document.querySelector('#c' + id + ' input[type=checkbox]'); }
+      function render() {
+        var marcadas = 0;
+        boxes.forEach(function (cb) {
+          if (cb.checked) marcadas++;
+          cb.closest('.a1-card').classList.toggle('is-rescued', !cb.checked);
+        });
+        document.getElementById('n-marcadas').textContent = marcadas;
+        document.getElementById('n-rescatadas').textContent = boxes.length - marcadas;
+        document.getElementById('btn-n').textContent = marcadas;
+        document.getElementById('btn-descartar').disabled = marcadas === 0;
+      }
+      function rescatar(id) { box(id).checked = false; render(); }
+
+      grid.addEventListener('change', render);
+      grid.addEventListener('click', function (e) {
+        var r = e.target.closest('[data-rescatar]');
+        if (r) { rescatar(r.dataset.rescatar); return; }
+        var o = e.target.closest('[data-open]');
+        if (o) {
+          dlgId = o.dataset.open;
+          document.getElementById('dlg-img').src = '/evidence/' + dlgId;
+          document.getElementById('dlg-motivo').textContent = o.dataset.motivo;
+          document.getElementById('dlg-meta').textContent = o.dataset.meta;
+          dlg.showModal();
+        }
+      });
+      document.getElementById('dlg-rescatar').onclick = function () { rescatar(dlgId); dlg.close(); };
+      document.getElementById('dlg-cerrar').onclick = function () { dlg.close(); };
+      dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+      render();
+    })();
+  </script>
+  {% endif %}
+
+</div>
+{% endblock %}

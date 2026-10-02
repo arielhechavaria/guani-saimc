@@ -1,0 +1,17 @@
+{#
+  Segmento «Textos | Imágenes» de /curation/sin-foco (A1b). Una sola vista
+  visible a la vez: el chip activo es la vista que se está mirando, el otro
+  lleva a la hermana. Las dos plantillas lo incluyen con `segmento` en
+  «textos» o «imagenes», y con los dos conteos que muestra cada chip.
+#}
+<style>
+  /* Dos chips de 44 px de alto (área táctil); el activo reemplaza la vista. */
+  .a1-seg { display: flex; gap: var(--m3-space-2); flex-wrap: wrap; }
+  .a1-seg .m3-chip { min-height: 44px; padding-inline: 16px; font-size: 14px; }
+</style>
+<div class="a1-seg" role="group" aria-label="Qué se descarta">
+  <a class="m3-chip m3-chip-btn{% if segmento == 'textos' %} is-selected{% endif %}"
+     href="/curation/sin-foco"{% if segmento == 'textos' %} aria-current="page"{% endif %}>Textos <span class="m3-num">&nbsp;{{ n_textos }}</span></a>
+  <a class="m3-chip m3-chip-btn{% if segmento == 'imagenes' %} is-selected{% endif %}"
+     href="/curation/sin-foco/imagenes"{% if segmento == 'imagenes' %} aria-current="page"{% endif %}>Imágenes <span class="m3-num">&nbsp;{{ n_imagenes }}</span></a>
+</div>

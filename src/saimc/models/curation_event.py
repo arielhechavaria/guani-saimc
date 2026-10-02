@@ -30,6 +30,8 @@ class CurationAction(StrEnum):
 class CurationMode(StrEnum):
     INDIVIDUAL = "individual"
     BATCH_OUT_OF_FOCUS = "batch_out_of_focus"
+    # A1b: lote de imágenes con el veredicto del modelo (`discard_images_batch`).
+    BATCH_MODEL = "batch_model"
 
 
 class CurationEvent(Base):
@@ -41,7 +43,8 @@ class CurationEvent(Base):
             name="ck_curation_events_action",
         ),
         CheckConstraint(
-            "mode IN ('individual', 'batch_out_of_focus')", name="ck_curation_events_mode"
+            "mode IN ('individual', 'batch_out_of_focus', 'batch_model')",
+            name="ck_curation_events_mode",
         ),
         CheckConstraint(
             "discard_reason IS NULL OR discard_reason IN ('off_focus', 'no_data')",

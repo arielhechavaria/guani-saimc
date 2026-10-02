@@ -16,6 +16,9 @@
      href="/curation/cola"{% if cur == '/curation/cola' %} aria-current="page"{% endif %}>Cola</a>
   <a class="m3-tab{% if cur == '/curation/history' %} is-active{% endif %}"
      href="/curation/history"{% if cur == '/curation/history' %} aria-current="page"{% endif %}>Historial</a>
-  <a class="m3-tab{% if cur == '/curation/sin-foco' %} is-active{% endif %}"
-     href="/curation/sin-foco"{% if cur == '/curation/sin-foco' %} aria-current="page"{% endif %}>Sin foco</a>
+  {# Prefijo y no igualdad: el segmento de imágenes (/curation/sin-foco/imagenes)
+     vive dentro de esta misma pestaña. #}
+  {% set sin_foco = cur.startswith('/curation/sin-foco') %}
+  <a class="m3-tab{% if sin_foco %} is-active{% endif %}"
+     href="/curation/sin-foco"{% if sin_foco %} aria-current="page"{% endif %}>Sin foco</a>
 </nav>
