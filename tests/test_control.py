@@ -1918,7 +1918,7 @@ class TestVigilanciaDelRubberStamping:
             "proposal_index": 0,
             "price_history_id": "x",
             "proposed": {"product_id": "p", "price": "100"},
-            "final": {},
+            "final": {"product_id": "p", "price": "100"},
             "edited": [],
         }
         self._review(session, rows=[fila], sufijo="ok")
@@ -1928,3 +1928,26 @@ class TestVigilanciaDelRubberStamping:
         assert response.status_code == 200
         assert "Aceptación sin revisar" in response.text
         assert "100%" in response.text
+
+    def test_muestra_el_desglose_y_no_cuenta_las_borradas_como_aceptadas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        propuesta = {"product_id": "p", "price": "100"}
+        aceptada = {
+            "proposal_index": 0, "price_history_id": "x", "proposed": propuesta,
+            "final": {"product_id": "p", "price": "100"}, "edited": [],
+        }
+        borrada = {
+            "proposal_index": 0, "price_history_id": None, "proposed": propuesta,
+            "final": None, "edited": [],
+        }
+        self._review(session, rows=[aceptada], sufijo="a")
+        self._review(session, rows=[borrada], sufijo="b")
+
+        response = client.get("/control")
+
+        # 2 de 4 celdas sin cambios: 50 %, no 100 %.
+        assert "50%" in response.text
+        assert "Borró la fila" in response.text
+        assert "Corrigió un valor" in response.text
+        assert "Completó un vacío" in response.text

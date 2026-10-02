@@ -246,7 +246,7 @@ def final_fields(entry: PriceHistory) -> dict[str, str | None]:
     }
 
 
-def _same(field: str, a: str | None, b: str | None) -> bool:
+def same_value(field: str, a: str | None, b: str | None) -> bool:
     if field in _DECIMAL_FIELDS:
         return _as_decimal(a) == _as_decimal(b)
     return a == b
@@ -264,7 +264,7 @@ def _edited(
     if proposed is None or final is None:
         return []
     return [
-        c for c in REVIEW_FIELDS if c in proposed and not _same(c, proposed[c], final[c])
+        c for c in REVIEW_FIELDS if c in proposed and not same_value(c, proposed[c], final[c])
     ]
 
 

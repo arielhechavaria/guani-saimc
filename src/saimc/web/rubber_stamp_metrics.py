@@ -6,9 +6,10 @@ nada. Este módulo mide dos señales sobre `LlmReview` (inmutable, una fila por
 anuncio curado o descartado) para que esa deriva sea visible en vez de
 silenciosa:
 
-- **Tasa de "no editado" por campo**: de las filas que el modelo propuso para
-  un campo, cuántas quedaron exactamente como las propuso (`LlmReview.rows[].
-  edited`, que ya calcula `llm_store._edited` al guardar).
+- **Tasa de "no editado" por campo**: de los campos que el modelo propuso,
+  cuántos quedaron exactamente como los propuso, recalculado de `proposed` y
+  `final` (A2c) con cuatro categorías: sin cambios, completó un vacío,
+  corrigió un valor, borró la fila.
 - **Tiempo por decisión**: `created_at - shown_at` de cada revisión, en
   segundos. `shown_at` es nuevo (slice 5, columna nullable sin backfill) —
   una fila vieja simplemente no entra en la muestra.
@@ -29,8 +30,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.extraction.llm_store import REVIEW_FIELDS
-from saimc.models import LlmReview, ReviewOutcome
+from saimc.extraction.llm_store import REVIEW_FIELDS, same_value
+from saimc.ingestion.origin import channel_province
+from saimc.models import LlmReview, RawIngestion, ReviewOutcome
+
+# Qué hizo el operador con un campo que el modelo propuso. Ver `_classify`.
+CATEGORIES = ("unchanged", "filled", "corrected", "deleted")
 
 # La ventana de comparación: una semana. Mismo criterio que el resto de
 # `/control` (`_ACTIVITY_DAYS`, rango minorista): ancho de lectura, no umbral.
@@ -45,18 +50,53 @@ def _aware(moment: datetime) -> datetime:
     return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
 
 
-def no_edit_rate_by_field(
-    db: Session, since: datetime, until: datetime
-) -> dict[str, tuple[int, int]]:
-    """Por campo: (filas no editadas, filas con propuesta del modelo).
+def _classify(field: str, proposed: str | None, final: dict[str, str | None] | None) -> str:
+    """En cuál de las cuatro categorías cae un campo que el modelo propuso.
 
-    Recorre las revisiones CURADAS de la ventana `[since, until)` y, dentro de
-    cada una, sus filas. Una fila cuenta para un campo solo si el modelo
-    propuso algo para ese campo (`proposed` lo trae) — una fila agregada a
-    mano por el operador (`proposed` es `None`) no tiene con qué comparar y
-    queda afuera del denominador.
+    - `deleted`: el operador borró la fila entera (`final` es `None`).
+    - `filled`: el modelo se abstuvo (`None` o vacío) y el operador lo llenó.
+      Completar un vacío no es corregir al modelo.
+    - `corrected`: el modelo propuso un valor y el final es otro.
+    - `unchanged`: quedó como estaba (también una abstención que siguió vacía).
     """
-    counters: dict[str, list[int]] = {field: [0, 0] for field in REVIEW_FIELDS}
+    if final is None:
+        return "deleted"
+    final_value = final.get(field)
+    if not proposed:
+        return "filled" if final_value else "unchanged"
+    return "unchanged" if same_value(field, proposed, final_value) else "corrected"
+
+
+def _channel_fixes_province(db: Session, review: LlmReview) -> bool:
+    """¿La provincia de esta revisión la fijó el canal y no el operador?
+
+    "El canal siempre manda" (docs/decisions.md, 2026-08-17): el formulario
+    pisa la provincia propuesta con la del canal, así que una diferencia ahí
+    es un artefacto, no una edición. Se resuelve con el canal de HOY: si el
+    operador cambió la provincia del canal después, una revisión vieja se
+    clasifica con la regla nueva (el error es chico y no hay dato guardado
+    para hacerlo mejor).
+    """
+    ingestion = db.get(RawIngestion, review.ingestion_id)
+    return ingestion is not None and channel_province(db, ingestion) is not None
+
+
+def outcome_breakdown(db: Session, since: datetime, until: datetime) -> dict[str, Any]:
+    """Desglose en cuatro categorías de lo que el operador hizo con cada campo.
+
+    Recorre las revisiones CURADAS de la ventana `[since, until)`. La unidad es
+    la celda: una fila propuesta por el modelo × un campo que el modelo
+    propuso. Una fila agregada a mano (`proposed` es `None`) no tiene con qué
+    comparar y queda afuera. La provincia se excluye de las revisiones cuyo
+    canal la fija.
+
+    Se recalcula de `proposed` y `final`, que son lo guardado y no cambia: el
+    `edited` guardado no se lee (trataba la fila borrada como «sin editar»).
+    Corrige también el pasado, sin tocar filas inmutables.
+
+    Devuelve `{"total": {categoría: n}, "by_field": {campo: {categoría: n}}}`.
+    """
+    by_field = {field: dict.fromkeys(CATEGORIES, 0) for field in REVIEW_FIELDS}
 
     stmt = select(LlmReview).where(
         LlmReview.outcome == ReviewOutcome.CURATED,
@@ -64,19 +104,36 @@ def no_edit_rate_by_field(
         LlmReview.created_at < until,
     )
     for review in db.execute(stmt).scalars():
+        province_is_artifact = _channel_fixes_province(db, review)
         for entry in review.rows:
             proposed = entry.get("proposed")
             if not proposed:
                 continue
-            edited = set(entry.get("edited") or [])
+            final = entry.get("final")
             for field in REVIEW_FIELDS:
                 if field not in proposed:
                     continue
-                counters[field][1] += 1
-                if field not in edited:
-                    counters[field][0] += 1
+                if field == "province_id" and province_is_artifact:
+                    continue
+                by_field[field][_classify(field, proposed[field], final)] += 1
 
-    return {field: (num, den) for field, (num, den) in counters.items()}
+    total = {c: sum(counts[c] for counts in by_field.values()) for c in CATEGORIES}
+    return {"total": total, "by_field": by_field}
+
+
+def no_edit_rate_by_field(
+    db: Session, since: datetime, until: datetime
+) -> dict[str, tuple[int, int]]:
+    """Por campo: (celdas sin cambios, celdas con propuesta del modelo).
+
+    El denominador incluye lo corregido, lo completado y lo borrado: una fila
+    borrada NO es una fila aceptada.
+    """
+    by_field = outcome_breakdown(db, since, until)["by_field"]
+    return {
+        field: (counts["unchanged"], sum(counts.values()))
+        for field, counts in by_field.items()
+    }
 
 
 def _aggregate_rate(by_field: dict[str, tuple[int, int]]) -> tuple[int, int]:
@@ -117,9 +174,14 @@ def decision_time_stats(db: Session, since: datetime, until: datetime) -> dict[s
 
 
 def _window_summary(db: Session, since: datetime, until: datetime) -> dict[str, Any]:
-    by_field = no_edit_rate_by_field(db, since, until)
+    breakdown = outcome_breakdown(db, since, until)
+    by_field = {
+        field: (counts["unchanged"], sum(counts.values()))
+        for field, counts in breakdown["by_field"].items()
+    }
     numerator, denominator = _aggregate_rate(by_field)
     return {
+        "breakdown": breakdown,
         "no_edit_rate_by_field": by_field,
         "no_edit_rate": (numerator / denominator) if denominator else None,
         "no_edit_n": denominator,

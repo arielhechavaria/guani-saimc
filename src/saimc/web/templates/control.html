@@ -266,7 +266,7 @@
         </div>
       </div>
       <div class="m3-stat">
-        <div class="m3-stat-label">Decisiones medidas</div>
+        <div class="m3-stat-label">Campos medidos</div>
         <div class="m3-stat-value">{{ rubber_stamp.current.no_edit_n }}</div>
       </div>
       <div class="m3-stat">
@@ -282,6 +282,23 @@
         <div class="m3-stat-value">{{ rubber_stamp.current.decision_time.n }}</div>
       </div>
     </div>
+
+    {% set desglose = rubber_stamp.current.breakdown.total %}
+    <table class="m3-table m3-mt">
+      <thead>
+        <tr><th>Qué hizo el operador con lo propuesto</th><th>Campos</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Sin cambios</td><td>{{ desglose.unchanged }}</td></tr>
+        <tr><td>Completó un vacío</td><td>{{ desglose.filled }}</td></tr>
+        <tr><td>Corrigió un valor</td><td>{{ desglose.corrected }}</td></tr>
+        <tr><td>Borró la fila</td><td>{{ desglose.deleted }}</td></tr>
+      </tbody>
+    </table>
+    <p class="m3-sm m3-muted">
+      La provincia fija del canal no entra en la cuenta: la pone el sistema, no
+      el operador.
+    </p>
 
     {% if rubber_stamp.current.no_edit_rate_by_field %}
     {% set etiquetas = {

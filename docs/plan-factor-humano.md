@@ -49,7 +49,7 @@ misma sesión. El candidato más probable es A1b.
 | A0 | Base confiable: suite verde y cifras de costo al día | S | — | Sonnet | CERRADO (2026-10-02) |
 | A2a | Bitácora de curaduría: especificación | M | A0 | Opus | CERRADO (2026-10-02) |
 | A2b | Bitácora de curaduría: migración y escritura | M | A2a | Sonnet | CERRADO (2026-10-02) |
-| A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | PENDIENTE |
+| A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | CERRADO (2026-10-02) |
 | A1a | Lote de imágenes: prototipo a 390 px | S | — | Sonnet | PENDIENTE |
 | A1b | Lote de imágenes con el veredicto del modelo | M–L | A1a, A2b | Sonnet | PENDIENTE |
 | A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | Sonnet | PENDIENTE |
@@ -335,7 +335,7 @@ abiertas.
 
 ---
 
-### A2c — Métrica «Aceptación sin revisar» corregida — PENDIENTE
+### A2c — Métrica «Aceptación sin revisar» corregida — CERRADO (2026-10-02)
 
 **Objetivo.** Que la métrica que vigila el sello automático diga la verdad.
 
