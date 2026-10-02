@@ -2,7 +2,8 @@
 
 Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (vía rápida al MVP con
 la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
-sesgo del lote en la evidencia de G1a, I1 sin línea de base).
+sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
+tarea a futuro).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -82,6 +83,7 @@ misma sesión. El candidato más probable es A1b.
 | C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | PENDIENTE |
 | C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | PENDIENTE |
 | C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | PENDIENTE |
+| C5 | (a futuro) Mapa de grupos por provincia exportable y varias fuentes de ingesta | sin estimar | C4 | Opus | PENDIENTE |
 
 ### Próximos pasos, en orden
 
@@ -161,6 +163,7 @@ desde A2d es este. Motivo completo en `docs/decisions.md` (2026-10-02, «Vía r�
 | 10 | G1b → B2b + B2c | Aceptación automática con freno |
 | 11 | B3, B4, C2, A6b | Lo que cuelga del carril 1 |
 | 12 | C4 | Expansión en serio: provincias, productos y canales por tanda |
+| 13 | C5 | A futuro: el mapa de grupos por provincia y más de una fuente de ingesta |
 
 Estimación: a un slice por día hábil, el carril 0 queda encendido en unas dos
 semanas. A5a, A5b y B1 son slices grandes; es una estimación.
@@ -1167,6 +1170,11 @@ acumulando o se estrecha el carril.
 - **C4 — Expansión.** Provincias (§9.0: tiene que ser configuración, no desarrollo),
   productos y canales, de a una tanda por vez y mirando las horas por 1.000 anuncios
   y el error auditado.
+- **C5 — Mapa de grupos por provincia y varias fuentes (a futuro).** Idea del
+  operador (2026-10-02). Dos cosas: poder exportar el mapa de grupos de WhatsApp
+  por provincia que se está armando, y que más de una fuente (otro número de
+  teléfono, otra instancia de WAHA) envíe al sistema. Es una dirección, no un
+  encargo: no tiene alcance ni fecha, y se especifica cuando se abra.
 - **Modelos propios.** Solo si el costo de la API o la dependencia del proveedor lo
   justifican (estudio §8). Sin disparador, no se abre.
 
