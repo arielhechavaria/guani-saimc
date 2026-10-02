@@ -1,7 +1,8 @@
 # Plan — Sacar al operador del camino de cada registro
 
 Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (A6 desbloqueada y
-ampliada a los campos cerrados; A6b agregada; contrato de la señal externa en A5a).
+ampliada a los campos cerrados; A6b agregada; contrato de la señal externa en A5a;
+columna «Modelo» en el tablero).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -28,44 +29,51 @@ siguiente slice no se abre hasta que el operador confirme.
 **Tamaño:** S es una sesión corta, M una sesión completa, L dos sesiones o más
 (se parte si crece).
 
-| Slice | Qué | Tamaño | Depende de | Estado |
-| --- | --- | --- | --- | --- |
-| A0 | Base confiable: suite verde y cifras de costo al día | S | — | PENDIENTE |
-| A2a | Bitácora de curaduría: especificación | M | A0 | PENDIENTE |
-| A2b | Bitácora de curaduría: migración y escritura | M | A2a | PENDIENTE |
-| A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | PENDIENTE |
-| A1a | Lote de imágenes: prototipo a 390 px | S | — | PENDIENTE |
-| A1b | Lote de imágenes con el veredicto del modelo | M–L | A1a, A2b | PENDIENTE |
-| A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | PENDIENTE |
-| A3a | Glosario: cargar las convenciones del operador | S | — | PENDIENTE |
-| A3b | Glosario: medir su efecto con el backtest | S | A3a | PENDIENTE |
-| A4a | Panel por canal que sirva para decidir | M | A2b | PENDIENTE |
-| A4b | Decidir la política de cada canal | S | A4a | PENDIENTE |
-| A4c | (condicional) Canal «solo texto» | M | A4b | PENDIENTE |
-| A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | PENDIENTE |
-| A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | PENDIENTE |
-| A5b | Motor de validación en código puro, sin esquema | L | A5a | PENDIENTE |
-| A5c | Informe del modo sombra | M | A5b | PENDIENTE |
-| A3c | «Guardar como regla» desde la cola | M | A3b | PENDIENTE |
-| A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | PENDIENTE |
-| A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | PENDIENTE |
-| A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | PENDIENTE |
-| K1 | `/edit` con historial | M | A2b | PENDIENTE |
-| K3 | Guardar la transcripción del OCR | M | — | PENDIENTE |
-| K4 | Aviso de hueco de ingesta por canal | M | — | PENDIENTE |
-| K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | PENDIENTE |
-| B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | PENDIENTE |
-| B5 | Emisor de grupo como hash con clave | M | — | PENDIENTE |
-| **G1** | **Compuerta: ¿se automatiza?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | PENDIENTE |
-| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1, B1 | PENDIENTE |
-| B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1, B1 | PENDIENTE |
-| B2c | Freno automático del carril 1 | M | B2b | PENDIENTE |
-| B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1 | PENDIENTE |
-| B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | PENDIENTE |
-| C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | PENDIENTE |
-| C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1 | PENDIENTE |
-| C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | PENDIENTE |
-| C4 | Expansión: provincias, productos y canales | por tanda | C3 | PENDIENTE |
+**Modelo:** con cuál se abre la sesión (`/model`). Opus donde un error se paga en
+migraciones, datos reprocesados o una conclusión estadística equivocada:
+especificaciones, motor de validación, esquema, calibración, privacidad y carriles
+automáticos. Sonnet donde la decisión ya está tomada y queda implementar. Es un
+criterio, no una medición: si un slice de Sonnet se traba, se pasa a Opus en la
+misma sesión. El candidato más probable es A1b.
+
+| Slice | Qué | Tamaño | Depende de | Modelo | Estado |
+| --- | --- | --- | --- | --- | --- |
+| A0 | Base confiable: suite verde y cifras de costo al día | S | — | Sonnet | PENDIENTE |
+| A2a | Bitácora de curaduría: especificación | M | A0 | Opus | PENDIENTE |
+| A2b | Bitácora de curaduría: migración y escritura | M | A2a | Sonnet | PENDIENTE |
+| A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | PENDIENTE |
+| A1a | Lote de imágenes: prototipo a 390 px | S | — | Sonnet | PENDIENTE |
+| A1b | Lote de imágenes con el veredicto del modelo | M–L | A1a, A2b | Sonnet | PENDIENTE |
+| A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | Sonnet | PENDIENTE |
+| A3a | Glosario: cargar las convenciones del operador | S | — | Sonnet | PENDIENTE |
+| A3b | Glosario: medir su efecto con el backtest | S | A3a | Sonnet | PENDIENTE |
+| A4a | Panel por canal que sirva para decidir | M | A2b | Sonnet | PENDIENTE |
+| A4b | Decidir la política de cada canal | S | A4a | Sonnet | PENDIENTE |
+| A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | PENDIENTE |
+| A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | PENDIENTE |
+| A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | PENDIENTE |
+| A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | PENDIENTE |
+| A5c | Informe del modo sombra | M | A5b | Opus | PENDIENTE |
+| A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | PENDIENTE |
+| A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE |
+| A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | PENDIENTE |
+| A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | PENDIENTE |
+| K1 | `/edit` con historial | M | A2b | Sonnet | PENDIENTE |
+| K3 | Guardar la transcripción del OCR | M | — | Sonnet | PENDIENTE |
+| K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | PENDIENTE |
+| K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | PENDIENTE |
+| B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | PENDIENTE |
+| B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
+| **G1** | **Compuerta: ¿se automatiza?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
+| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1, B1 | Opus | PENDIENTE |
+| B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1, B1 | Opus | PENDIENTE |
+| B2c | Freno automático del carril 1 | M | B2b | Opus | PENDIENTE |
+| B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1 | Opus | PENDIENTE |
+| B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | PENDIENTE |
+| C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | Sonnet | PENDIENTE |
+| C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1 | Opus | PENDIENTE |
+| C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | PENDIENTE |
+| C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | PENDIENTE |
 
 ### Próximos pasos, en orden
 
@@ -116,6 +124,8 @@ favorable; tampoco bloquea nada, y G1 se puede decidir sin ella.
 **Al empezar:**
 1. `mem_context`, como pide `CLAUDE.md`.
 2. Abrir este plan, ir al Tablero y tomar el primer `PENDIENTE` de «Próximos pasos».
+   Si el modelo de la sesión no es el de la columna «Modelo», avisarlo antes de
+   empezar.
 3. Confirmar que el slice anterior está `CERRADO` y verificado por el operador, y que
    `git status` está limpio.
 4. Si el slice toca el esquema o el motor de validación, la sesión arranca por la
