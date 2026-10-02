@@ -8,7 +8,8 @@
 # Qué borra: un worktree y su rama solo si la punta de la rama es ancestro de
 # master (`git merge-base --is-ancestor`), o sea, si no hay nada que perder.
 # Qué conserva, y lo dice: ramas sin mergear, worktrees con cambios sin
-# commitear o archivos sin seguimiento, y el worktree donde estás parado.
+# commitear o archivos sin seguimiento (salvo un `uv.lock` suelto, que `uv`
+# regenera y se descarta junto con el worktree), y el worktree donde estás.
 # Tampoco toca el checkout principal ni la rama master.
 #
 # Limitación: un merge con squash o rebase no deja la rama como ancestro de
@@ -54,11 +55,15 @@ process() {
   if ! git -C "$MAIN" merge-base --is-ancestor "$branch" "$BASE"; then
     say "conserva" "$branch (sin mergear en $BASE)"; kept=$((kept + 1)); return
   fi
-  if [ -n "$(git -C "$path" status --porcelain)" ]; then
+  # `uv` regenera uv.lock en cada worktree: un `?? uv.lock` suelto no es trabajo
+  # en riesgo. Cualquier otra cosa (incluido un uv.lock modificado) sí bloquea.
+  if [ -n "$(git -C "$path" status --porcelain | grep -vxF '?? uv.lock' || true)" ]; then
     say "conserva" "$branch (cambios sin commitear o archivos sin seguimiento)"
     kept=$((kept + 1)); return
   fi
   if [ "$APPLY" -eq 1 ]; then
+    # `worktree remove` rechaza un worktree con archivos sin seguimiento.
+    rm -f "$path/uv.lock"
     git -C "$MAIN" worktree remove "$path"
     git -C "$MAIN" branch -d "$branch" >/dev/null
     say "borrado" "$branch  ($path)"
