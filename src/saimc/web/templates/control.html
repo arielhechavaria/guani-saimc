@@ -628,7 +628,7 @@
       decidido, <em>sin contar los fuera de foco</em>, que sí traían precio. <strong>Filas por
       anuncio</strong> es lo que el canal rinde de verdad: filas de precio sobre anuncios
       resueltos. Los <strong>minutos</strong> y las <strong>filas por hora</strong> salen de la
-      bitácora y solo cuentan decisiones de menos de 15 minutos; sin bitácora aparece «—».
+      bitácora y solo cuentan decisiones de menos de 15 minutos por anuncio; sin bitácora aparece «—».
     </p>
     <div class="m3-card m3-table-scroll">
       <table class="m3-table">
@@ -692,6 +692,93 @@
       </table>
     </div>
     {% endif %}
+  </section>
+
+  <!-- ---------- 6b. Horas y automatización (A2d) ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="horas">Horas y automatización</h2>
+      <span class="m3-sm m3-muted">
+        semana a semana (de lunes a domingo), más reciente arriba — medición cruda, sin veredicto
+      </span>
+    </div>
+
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(170px, 1fr))">
+      <div class="m3-metric">
+        <div class="m3-metric-label">Pendiente más viejo</div>
+        <div class="m3-metric-value-sm">
+          {% if oldest_pending_days is none %}<span class="m3-dim">—</span>
+          {%- else %}{{ oldest_pending_days }} {{ "día" if oldest_pending_days == 1 else "días" }}{% endif %}
+        </div>
+        <div class="m3-metric-hint">
+          {% if oldest_pending_days is none %}No hay nada en cola
+          {%- else %}Desde que entró al sistema el anuncio más antiguo de la cola{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <p class="m3-sm m3-muted m3-mt">
+      Las <strong>horas</strong> excluyen las pausas de más de 15 minutos por anuncio y solo cuentan
+      decisiones con hora de vista: al lado va cuántos de los resueltos se pudieron medir. La
+      bitácora existe desde el 2026-10-02, así que las semanas anteriores no tienen horas ni
+      automatización. <strong>Automatización</strong> es lo resuelto sin tocarlo uno por uno
+      (lotes). <strong>Frescura</strong> es la mediana de días entre la publicación y el alta
+      de la fila. El <strong>costo</strong> es el del modelo por anuncio con propuesta; el OCR
+      es local y no cuenta.
+    </p>
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Semana del</th>
+            <th scope="col" style="text-align:right">Resueltos</th>
+            <th scope="col" style="text-align:right">Horas por 1.000</th>
+            <th scope="col" style="text-align:right">Automatización</th>
+            <th scope="col" style="text-align:right">Frescura (días)</th>
+            <th scope="col" style="text-align:right">Costo por anuncio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for semana in weekly_automation | reverse %}
+          <tr>
+            <td class="m3-cell-strong">{{ semana.week_start.strftime("%Y-%m-%d") }}</td>
+            <td class="is-num">
+              {% if semana.resolved %}{{ semana.resolved }}
+              {%- else %}<span class="is-zero">0</span>{% endif %}
+            </td>
+            <td class="is-num">
+              {% if semana.hours_per_thousand is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.1f"|format(semana.hours_per_thousand) }}{% endif %}
+              {% if semana.resolved %}
+              <div class="m3-sm m3-dim">
+                {{ "%.2f"|format(semana.human_hours) }} h ·
+                {{ semana.timed_resolved }} de {{ semana.resolved }} medidos
+              </div>
+              {% endif %}
+            </td>
+            <td class="is-num">
+              {% if semana.automation_rate is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.0f"|format(semana.automation_rate * 100) }}%{% endif %}
+            </td>
+            <td class="is-num">
+              {% if semana.freshness_days is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.1f"|format(semana.freshness_days) }}{% endif %}
+            </td>
+            <td class="is-num">
+              {% if semana.cost_per_ad is none %}<span class="m3-dim">—</span>
+              {%- else %}${{ "%.4f"|format(semana.cost_per_ad) }}{% endif %}
+              {% if semana.proposal_ads %}
+              <div class="m3-sm m3-dim">
+                {{ semana.proposal_ads }} {{ "anuncio" if semana.proposal_ads == 1 else "anuncios" }}
+                {%- if semana.unpriced_proposals %} · {{ semana.unpriced_proposals }} sin tarifa{% endif %}
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <!-- ---------- 7. Tasa de cambio ---------- -->

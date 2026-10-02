@@ -21,6 +21,7 @@ from saimc.models import (
     Channel,
     CurationEvent,
     Currency,
+    LlmProposal,
     PriceHistory,
     Product,
     Province,
@@ -45,7 +46,9 @@ from saimc.progress import (
     compute_open_gaps,
     compute_pace,
     compute_phase0_progress,
+    compute_weekly_automation,
     decision_seconds,
+    oldest_pending_age_days,
 )
 
 
@@ -81,6 +84,7 @@ def _precio(
     currency: str = Currency.CUP.value,
     price_cup: str | None = None,
     created_at: datetime | None = None,
+    published_date: date | None = None,
 ) -> None:
     session.add(
         PriceHistory(
@@ -93,6 +97,7 @@ def _precio(
             sale_format=sale_format,
             price_cup=Decimal(price_cup) if price_cup is not None else None,
             created_at=created_at or datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+            published_date=published_date,
         )
     )
 
@@ -801,6 +806,21 @@ class TestDuracionDeUnaDecision:
         assert decision_seconds(decidido - tope, decidido) == PAUSE_CAP_SECONDS
         assert decision_seconds(decidido - tope - timedelta(seconds=1), decidido) is None
 
+    def test_el_tope_de_pausa_se_mide_por_anuncio_no_por_lote(self) -> None:
+        # Un lote de 161 imágenes revisado en 2.018 s (caso real del
+        # 2026-10-02) pasa los 15 minutos en total, pero es trabajo, no pausa:
+        # cada anuncio costó 2018 / 161 s.
+        mostrado = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+        decidido = mostrado + timedelta(seconds=2018)
+
+        assert decision_seconds(mostrado, decidido, batch_size=161) == 2018 / 161
+
+    def test_un_lote_con_mas_de_quince_minutos_por_anuncio_es_pausa(self) -> None:
+        mostrado = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+        decidido = mostrado + timedelta(seconds=2 * PAUSE_CAP_SECONDS + 2)
+
+        assert decision_seconds(mostrado, decidido, batch_size=2) is None
+
     def test_el_lote_reparte_su_tiempo_entre_sus_anuncios(self) -> None:
         mostrado = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
         decidido = mostrado + timedelta(seconds=120)
@@ -1009,3 +1029,363 @@ class TestPanelPorCanalA4a:
 
         assert sin.human_minutes is None
         assert sin.rows_per_hour is None
+
+
+# --- A2d: horas y automatización, semana a semana --------------------------------
+
+# Viernes. Su semana ISO arranca el lunes 2026-09-28; la anterior, el 2026-09-21
+# (y termina el domingo 2026-09-27); la anterior a esa, el 2026-09-14.
+_HOY_A2D = date(2026, 10, 2)
+_LUNES_ACTUAL = date(2026, 9, 28)
+_LUNES_ANTERIOR = date(2026, 9, 21)
+_LUNES_VACIO = date(2026, 9, 14)
+_MARTES = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+
+
+def _evento_en(
+    session: Session,
+    ingestion: RawIngestion,
+    decidido: datetime,
+    *,
+    action: str = "curated",
+    mode: str = "individual",
+    segundos: float | None = 60.0,
+    detail: dict | None = None,
+) -> None:
+    """Como `_evento`, pero con la hora de la decisión a elección: acá lo que
+    se prueba es en qué semana cae cada una."""
+    session.add(
+        CurationEvent(
+            ingestion_id=ingestion.id,
+            action=action,
+            mode=mode,
+            decided_at=decidido,
+            shown_at=None if segundos is None else decidido - timedelta(seconds=segundos),
+            detail=detail,
+        )
+    )
+
+
+def _pendiente(session: Session, hash_: str, ingresado: datetime) -> RawIngestion:
+    row = RawIngestion(
+        source_type=SourceType.INBOX_TEXT,
+        file_path=f"raw/{hash_}.txt",
+        content_hash=hash_,
+        content_type=ContentType.TEXT,
+        processing_status=ProcessingStatus.PENDING,
+        captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        created_at=ingresado,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _propuesta(
+    session: Session,
+    ingestion: RawIngestion,
+    *,
+    model: str = "claude-haiku-4-5",
+    input_tokens: int,
+    output_tokens: int,
+    creada: datetime = _MARTES,
+) -> None:
+    session.add(
+        LlmProposal(
+            ingestion_id=ingestion.id,
+            model=model,
+            prompt_version="test",
+            status="ok",
+            rows=[],
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            created_at=creada,
+        )
+    )
+
+
+def _semanas(session: Session, weeks: int = 3) -> dict:
+    serie = compute_weekly_automation(session, weeks=weeks, hoy=_HOY_A2D)
+    return {semana.week_start: semana for semana in serie}
+
+
+class TestHorasYAutomatizacionA2d:
+    """Las métricas del estudio §9, semana a semana (lunes a domingo).
+
+    Los esperados están calculados a mano en cada test.
+    """
+
+    def test_devuelve_una_entrada_por_semana_de_la_mas_vieja_a_la_mas_nueva(
+        self, session: Session
+    ) -> None:
+        serie = compute_weekly_automation(session, weeks=3, hoy=_HOY_A2D)
+
+        assert [s.week_start for s in serie] == [_LUNES_VACIO, _LUNES_ANTERIOR, _LUNES_ACTUAL]
+
+    def test_la_semana_vacia_es_explicita_y_no_afirma_nada(self, session: Session) -> None:
+        anuncio = _ingestion(session, "a2d-v-1")
+        _evento_en(session, anuncio, _MARTES)
+        session.commit()
+
+        vacia = _semanas(session)[_LUNES_VACIO]
+
+        assert vacia.resolved == 0
+        assert vacia.timed_resolved == 0
+        assert vacia.human_hours == 0.0
+        assert vacia.hours_per_thousand is None
+        assert vacia.automation_rate is None
+        assert vacia.freshness_days is None
+        assert vacia.cost_per_ad is None
+
+    def test_las_horas_por_mil_salen_del_promedio_por_decision(self, session: Session) -> None:
+        uno = _ingestion(session, "a2d-h-1")
+        dos = _ingestion(session, "a2d-h-2", ProcessingStatus.DISCARDED)
+        _evento_en(session, uno, _MARTES, segundos=90)
+        _evento_en(session, dos, _MARTES, action="discarded", segundos=30)
+        session.commit()
+
+        actual = _semanas(session)[_LUNES_ACTUAL]
+
+        assert actual.resolved == 2
+        assert actual.timed_resolved == 2
+        # 120 s en total = 1/30 de hora.
+        assert actual.human_hours == pytest.approx(120 / 3600)
+        # 60 s por anuncio → 60.000 s por mil → 16,67 h.
+        assert actual.hours_per_thousand == pytest.approx(60_000 / 3600)
+
+    def test_una_pausa_larga_no_infla_las_horas_pero_cuenta_como_resuelto(
+        self, session: Session
+    ) -> None:
+        uno = _ingestion(session, "a2d-p-1")
+        dos = _ingestion(session, "a2d-p-2", ProcessingStatus.DISCARDED)
+        _evento_en(session, uno, _MARTES, segundos=90)
+        _evento_en(
+            session,
+            dos,
+            _MARTES,
+            action="discarded",
+            mode="batch_out_of_focus",
+            segundos=PAUSE_CAP_SECONDS + 600,
+        )
+        session.commit()
+
+        actual = _semanas(session)[_LUNES_ACTUAL]
+
+        assert actual.resolved == 2
+        assert actual.timed_resolved == 1
+        # Solo los 90 s medibles, sobre la única decisión medible: 25 h por mil.
+        assert actual.human_hours == pytest.approx(90 / 3600)
+        assert actual.hours_per_thousand == pytest.approx(25.0)
+        # La pausa no tiene tiempo, pero la decisión existió y fue por lote.
+        assert actual.automation_rate == 0.5
+
+    def test_una_decision_sin_hora_de_vista_cuenta_sin_tiempo(self, session: Session) -> None:
+        anuncio = _ingestion(session, "a2d-s-1")
+        _evento_en(session, anuncio, _MARTES, segundos=None)
+        session.commit()
+
+        actual = _semanas(session)[_LUNES_ACTUAL]
+
+        assert actual.resolved == 1
+        assert actual.timed_resolved == 0
+        assert actual.hours_per_thousand is None
+        assert actual.automation_rate == 0.0
+
+    def test_el_lote_suma_su_tiempo_una_sola_vez(self, session: Session) -> None:
+        lote = [
+            _ingestion(session, f"a2d-l-{i}", ProcessingStatus.DISCARDED) for i in range(4)
+        ]
+        for anuncio in lote:
+            _evento_en(
+                session,
+                anuncio,
+                _MARTES,
+                action="discarded",
+                mode="batch_model",
+                segundos=120,
+                detail={"batch_size": 4},
+            )
+        suelto = _ingestion(session, "a2d-l-suelto")
+        _evento_en(session, suelto, _MARTES, segundos=60)
+        session.commit()
+
+        actual = _semanas(session)[_LUNES_ACTUAL]
+
+        assert actual.resolved == 5
+        assert actual.timed_resolved == 5
+        # 120 s del lote (una vez) + 60 s del suelto = 180 s = 0,05 h.
+        assert actual.human_hours == pytest.approx(0.05)
+        # 36 s por anuncio → 10 h por mil.
+        assert actual.hours_per_thousand == pytest.approx(10.0)
+        # 4 de 5 no se tocaron uno por uno.
+        assert actual.automation_rate == 0.8
+
+    def test_editar_o_borrar_no_son_resueltos(self, session: Session) -> None:
+        anuncio = _ingestion(session, "a2d-e-1")
+        _evento_en(session, anuncio, _MARTES, segundos=40)
+        _evento_en(session, anuncio, _MARTES, action="edited", segundos=200)
+        _evento_en(session, anuncio, _MARTES, action="deleted", segundos=None)
+        session.commit()
+
+        actual = _semanas(session)[_LUNES_ACTUAL]
+
+        assert actual.resolved == 1
+        assert actual.human_hours == pytest.approx(40 / 3600)
+
+    def test_el_domingo_y_el_lunes_caen_en_semanas_distintas(self, session: Session) -> None:
+        domingo = _ingestion(session, "a2d-d-1")
+        lunes = _ingestion(session, "a2d-d-2")
+        otro_lunes = _ingestion(session, "a2d-d-3", ProcessingStatus.DISCARDED)
+        _evento_en(session, domingo, datetime(2026, 9, 27, 22, 0, tzinfo=UTC), segundos=30)
+        _evento_en(session, lunes, datetime(2026, 9, 28, 1, 0, tzinfo=UTC), segundos=50)
+        _evento_en(
+            session,
+            otro_lunes,
+            datetime(2026, 9, 28, 1, 5, tzinfo=UTC),
+            action="discarded",
+            mode="batch_model",
+            segundos=70,
+        )
+        session.commit()
+
+        semanas = _semanas(session)
+
+        assert semanas[_LUNES_ANTERIOR].resolved == 1
+        assert semanas[_LUNES_ANTERIOR].human_hours == pytest.approx(30 / 3600)
+        assert semanas[_LUNES_ANTERIOR].automation_rate == 0.0
+        assert semanas[_LUNES_ACTUAL].resolved == 2
+        assert semanas[_LUNES_ACTUAL].human_hours == pytest.approx(120 / 3600)
+        assert semanas[_LUNES_ACTUAL].automation_rate == 0.5
+
+    def test_lo_anterior_a_la_ventana_queda_fuera(self, session: Session) -> None:
+        viejo = _ingestion(session, "a2d-w-1")
+        _evento_en(session, viejo, datetime(2026, 9, 13, 12, 0, tzinfo=UTC))
+        session.commit()
+
+        serie = compute_weekly_automation(session, weeks=3, hoy=_HOY_A2D)
+
+        assert sum(s.resolved for s in serie) == 0
+
+    def test_la_frescura_es_la_mediana_de_dias_entre_publicacion_y_alta(
+        self, session: Session
+    ) -> None:
+        arroz = _producto(session, "Arroz")
+        habana = _provincia(session, "La Habana")
+        origen = _ingestion(session, "a2d-f-1")
+        # Altas del martes 29: publicadas el 28 (1 día), el 26 (3) y el 19 (10).
+        for publicado in (date(2026, 9, 28), date(2026, 9, 26), date(2026, 9, 19)):
+            _precio(
+                session,
+                product=arroz,
+                province=habana,
+                source=origen,
+                created_at=_MARTES,
+                published_date=publicado,
+            )
+        # Sin fecha de publicación: no hay qué medir, se ignora.
+        _precio(session, product=arroz, province=habana, source=origen, created_at=_MARTES)
+        # Semana anterior, dos filas: 1 y 4 días → mediana 2,5.
+        for publicado in (date(2026, 9, 22), date(2026, 9, 19)):
+            _precio(
+                session,
+                product=arroz,
+                province=habana,
+                source=origen,
+                created_at=datetime(2026, 9, 23, 9, 0, tzinfo=UTC),
+                published_date=publicado,
+            )
+        session.commit()
+
+        semanas = _semanas(session)
+
+        assert semanas[_LUNES_ACTUAL].freshness_days == 3
+        assert semanas[_LUNES_ANTERIOR].freshness_days == 2.5
+        assert semanas[_LUNES_VACIO].freshness_days is None
+
+    def test_sin_fechas_de_publicacion_no_hay_frescura(self, session: Session) -> None:
+        arroz = _producto(session, "Arroz")
+        origen = _ingestion(session, "a2d-f-2")
+        _precio(session, product=arroz, province=None, source=origen, created_at=_MARTES)
+        session.commit()
+
+        assert _semanas(session)[_LUNES_ACTUAL].freshness_days is None
+
+    def test_el_costo_se_divide_por_anuncios_distintos_no_por_propuestas(
+        self, session: Session
+    ) -> None:
+        anuncio = _ingestion(session, "a2d-c-1")
+        # Haiku 4.5: 1 USD por millón de entrada, 5 por millón de salida.
+        # 1.000.000 de entrada + 200.000 de salida = 1 + 1 = 2 USD.
+        _propuesta(session, anuncio, input_tokens=1_000_000, output_tokens=200_000)
+        # 500.000 de entrada = 0,5 USD. Mismo anuncio.
+        _propuesta(session, anuncio, input_tokens=500_000, output_tokens=0)
+        session.commit()
+
+        actual = _semanas(session)[_LUNES_ACTUAL]
+
+        assert actual.proposal_ads == 1
+        assert actual.cost_usd == pytest.approx(2.5)
+        assert actual.cost_per_ad == pytest.approx(2.5)
+
+    def test_un_modelo_sin_tarifa_no_suma_costo(self, session: Session) -> None:
+        con_tarifa = _ingestion(session, "a2d-c-2")
+        sin_tarifa = _ingestion(session, "a2d-c-3")
+        _propuesta(session, con_tarifa, input_tokens=1_000_000, output_tokens=0)
+        _propuesta(
+            session,
+            sin_tarifa,
+            model="modelo-desconocido",
+            input_tokens=9_000_000,
+            output_tokens=9_000_000,
+        )
+        session.commit()
+
+        actual = _semanas(session)[_LUNES_ACTUAL]
+
+        # 1 USD sobre dos anuncios con propuesta.
+        assert actual.cost_usd == pytest.approx(1.0)
+        assert actual.proposal_ads == 2
+        assert actual.unpriced_proposals == 1
+        assert actual.cost_per_ad == pytest.approx(0.5)
+
+    def test_el_costo_va_a_la_semana_de_la_propuesta(self, session: Session) -> None:
+        anuncio = _ingestion(session, "a2d-c-4")
+        _propuesta(
+            session,
+            anuncio,
+            input_tokens=2_000_000,
+            output_tokens=0,
+            creada=datetime(2026, 9, 27, 23, 0, tzinfo=UTC),
+        )
+        session.commit()
+
+        semanas = _semanas(session)
+
+        assert semanas[_LUNES_ANTERIOR].cost_per_ad == pytest.approx(2.0)
+        assert semanas[_LUNES_ACTUAL].cost_per_ad is None
+
+
+class TestPendienteMasViejoA2d:
+    def test_cuenta_los_dias_desde_el_ingreso_del_pendiente_mas_antiguo(
+        self, session: Session
+    ) -> None:
+        _pendiente(session, "a2d-o-1", datetime(2026, 9, 30, 8, 0, tzinfo=UTC))
+        _pendiente(session, "a2d-o-2", datetime(2026, 9, 20, 23, 0, tzinfo=UTC))
+        session.commit()
+
+        # Del 20 de septiembre al 2 de octubre: 12 días.
+        assert oldest_pending_age_days(session, hoy=_HOY_A2D) == 12
+
+    def test_lo_ya_decidido_no_cuenta_aunque_sea_mas_viejo(self, session: Session) -> None:
+        curado = _ingestion(session, "a2d-o-3")
+        assert curado.processing_status == ProcessingStatus.CURATED
+        _pendiente(session, "a2d-o-4", datetime(2026, 10, 1, 8, 0, tzinfo=UTC))
+        session.commit()
+
+        assert oldest_pending_age_days(session, hoy=_HOY_A2D) == 1
+
+    def test_sin_pendientes_no_hay_antiguedad(self, session: Session) -> None:
+        _ingestion(session, "a2d-o-5")
+        session.commit()
+
+        assert oldest_pending_age_days(session, hoy=_HOY_A2D) is None

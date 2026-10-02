@@ -24,17 +24,21 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from statistics import median
 from typing import Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from saimc.extraction.llm_assist import usage_cost_usd
 from saimc.models import (
     Channel,
     ContentType,
     CurationEvent,
+    CurationMode,
     Currency,
     DiscardReason,
+    LlmProposal,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -270,13 +274,18 @@ def decision_seconds(
     lote guarda el mismo `shown_at` y `decided_at` en cada uno de sus anuncios
     (`spec-slice-A2.md`): su tiempo se reparte entre `batch_size` para que el
     lote se sume una sola vez.
+
+    El tope se compara contra el tiempo por anuncio, no contra el del lote
+    entero (A2d): revisar 161 imágenes lleva más de 15 minutos sin que nadie
+    se haya levantado. Deja pasar una pausa dentro de un lote grande; el error
+    va hacia contar horas de más, que es el lado conservador de la métrica.
     """
     if shown_at is None:
         return None
-    seconds = (decided_at - shown_at).total_seconds()
+    seconds = (decided_at - shown_at).total_seconds() / max(batch_size, 1)
     if seconds < 0 or seconds > PAUSE_CAP_SECONDS:
         return None
-    return seconds / max(batch_size, 1)
+    return seconds
 
 
 @dataclass(frozen=True)
@@ -488,6 +497,179 @@ def compute_channel_intake(session: Session) -> list[ChannelIntake]:
         )
     intake.sort(key=lambda c: c.discarded, reverse=True)
     return intake
+
+
+# --- Horas y automatización (A2d) ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class WeekAutomation:
+    """Una semana (lunes a domingo) de las métricas del estudio §9.
+
+    Cuatro lecturas, cada una con su propio eje de tiempo: las decisiones de
+    la bitácora por `decided_at`, las filas de precio por `created_at` y las
+    propuestas del modelo por `created_at`. Todo es medición cruda, sin
+    veredicto (§12.6): ningún número de acá se compara contra un umbral.
+
+    «Resuelto» es una decisión de curar o descartar; `edited` y `deleted` no
+    cuentan, igual que en `ChannelIntake`. `timed_resolved` son los resueltos
+    con tiempo medible (`decision_seconds`): la cobertura de las horas.
+    """
+
+    week_start: date
+    resolved: int = 0
+    # Resueltos sin tocarlos uno por uno: cualquier modo que no sea individual.
+    automated: int = 0
+    timed_resolved: int = 0
+    timed_seconds: float = 0.0
+    # Mediana de días entre `published_date` y el alta de la fila.
+    freshness_days: float | None = None
+    cost_usd: float = 0.0
+    # Anuncios distintos con al menos una propuesta en la semana.
+    proposal_ads: int = 0
+    # Propuestas de un modelo sin tarifa: no suman costo y se declaran aparte.
+    unpriced_proposals: int = 0
+
+    @property
+    def human_hours(self) -> float:
+        """Horas humanas medidas en la semana (pausas fuera)."""
+        return self.timed_seconds / 3600
+
+    @property
+    def hours_per_thousand(self) -> float | None:
+        """Horas humanas por 1.000 anuncios: el promedio por decisión medible,
+        llevado a mil. `None` sin ninguna decisión medible."""
+        if self.timed_resolved == 0:
+            return None
+        return self.timed_seconds / self.timed_resolved * 1000 / 3600
+
+    @property
+    def automation_rate(self) -> float | None:
+        """Fracción de lo resuelto que no pasó por el formulario individual."""
+        if self.resolved == 0:
+            return None
+        return self.automated / self.resolved
+
+    @property
+    def cost_per_ad(self) -> float | None:
+        """USD de cómputo por anuncio con propuesta. El OCR es local: no entra."""
+        if self.proposal_ads == 0:
+            return None
+        return self.cost_usd / self.proposal_ads
+
+
+def _week_start(day: date) -> date:
+    """El lunes de la semana ISO a la que pertenece `day`."""
+    return day - timedelta(days=day.weekday())
+
+
+def compute_weekly_automation(
+    session: Session, *, weeks: int = 8, hoy: date | None = None
+) -> list[WeekAutomation]:
+    """Las últimas `weeks` semanas, de la más vieja a la más nueva, con las
+    vacías explícitas.
+
+    La agrupación por semana se hace en Python y no en SQL, mismo criterio que
+    `compute_daily_activity`: `date_trunc` es de PostgreSQL y los tests corren
+    sobre SQLite. El recorte de pausas es el de `decision_seconds`
+    (`PAUSE_CAP_SECONDS`), el mismo del panel por canal.
+    """
+    current = _week_start(hoy or date.today())
+    starts = [current - timedelta(weeks=weeks - 1 - i) for i in range(weeks)]
+    window = set(starts)
+
+    resolved: dict[date, int] = {}
+    automated: dict[date, int] = {}
+    timed_resolved: dict[date, int] = {}
+    timed_seconds: dict[date, float] = {}
+    events = session.execute(
+        select(
+            CurationEvent.mode,
+            CurationEvent.shown_at,
+            CurationEvent.decided_at,
+            CurationEvent.detail,
+        ).where(CurationEvent.action.in_(("curated", "discarded")))
+    ).all()
+    for mode, shown_at, decided_at, detail in events:
+        week = _week_start(decided_at.date())
+        if week not in window:
+            continue
+        resolved[week] = resolved.get(week, 0) + 1
+        if mode != CurationMode.INDIVIDUAL.value:
+            automated[week] = automated.get(week, 0) + 1
+        seconds = decision_seconds(
+            shown_at, decided_at, batch_size=int((detail or {}).get("batch_size") or 1)
+        )
+        if seconds is None:
+            continue
+        timed_resolved[week] = timed_resolved.get(week, 0) + 1
+        timed_seconds[week] = timed_seconds.get(week, 0.0) + seconds
+
+    lags: dict[date, list[int]] = {}
+    rows = session.execute(
+        select(PriceHistory.published_date, PriceHistory.created_at).where(
+            PriceHistory.published_date.is_not(None)
+        )
+    ).all()
+    for published_date, created_at in rows:
+        week = _week_start(created_at.date())
+        # El `is not None` repite el filtro de la consulta: es para el tipado.
+        if week in window and published_date is not None:
+            lags.setdefault(week, []).append((created_at.date() - published_date).days)
+
+    cost: dict[date, float] = {}
+    unpriced: dict[date, int] = {}
+    ads: dict[date, set[uuid.UUID]] = {}
+    proposals = session.execute(
+        select(
+            LlmProposal.ingestion_id,
+            LlmProposal.model,
+            LlmProposal.input_tokens,
+            LlmProposal.output_tokens,
+            LlmProposal.created_at,
+        )
+    ).all()
+    for ingestion_id, model, input_tokens, output_tokens, created_at in proposals:
+        week = _week_start(created_at.date())
+        if week not in window:
+            continue
+        ads.setdefault(week, set()).add(ingestion_id)
+        usd = usage_cost_usd(input_tokens, output_tokens, model)
+        if usd is None:
+            unpriced[week] = unpriced.get(week, 0) + 1
+        else:
+            cost[week] = cost.get(week, 0.0) + usd
+
+    return [
+        WeekAutomation(
+            week_start=week,
+            resolved=resolved.get(week, 0),
+            automated=automated.get(week, 0),
+            timed_resolved=timed_resolved.get(week, 0),
+            timed_seconds=timed_seconds.get(week, 0.0),
+            freshness_days=median(lags[week]) if week in lags else None,
+            cost_usd=cost.get(week, 0.0),
+            proposal_ads=len(ads.get(week, ())),
+            unpriced_proposals=unpriced.get(week, 0),
+        )
+        for week in starts
+    ]
+
+
+def oldest_pending_age_days(session: Session, *, hoy: date | None = None) -> int | None:
+    """Días desde que entró al sistema el pendiente más viejo de la cola.
+
+    Va fuera de la serie semanal porque no es de ninguna semana: es el estado
+    de la cola hoy. `None` si no hay pendientes.
+    """
+    oldest = session.execute(
+        select(func.min(RawIngestion.created_at)).where(
+            RawIngestion.processing_status == ProcessingStatus.PENDING
+        )
+    ).scalar_one()
+    if oldest is None:
+        return None
+    return ((hoy or date.today()) - oldest.date()).days
 
 
 # --- Ritmo ---------------------------------------------------------------------

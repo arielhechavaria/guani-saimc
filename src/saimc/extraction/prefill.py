@@ -127,10 +127,7 @@ class Estimate:
 
 
 def _cost(input_tokens: int, output_tokens: int, model: str) -> float | None:
-    rates = llm_assist._RATES_USD_PER_MTOK.get(model)
-    if rates is None:
-        return None
-    return input_tokens / 1e6 * rates[0] + output_tokens / 1e6 * rates[1]
+    return llm_assist.usage_cost_usd(input_tokens, output_tokens, model)
 
 
 def estimate(session: Session, candidates: Sequence[RawIngestion], model: str) -> Estimate:

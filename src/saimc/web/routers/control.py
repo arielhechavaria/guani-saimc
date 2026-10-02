@@ -56,6 +56,8 @@ from saimc.progress import (
     compute_open_gaps,
     compute_pace,
     compute_phase0_progress,
+    compute_weekly_automation,
+    oldest_pending_age_days,
     pilot_product_names,
 )
 from saimc.requisitos_status import read_module_status
@@ -230,6 +232,11 @@ def control_panel(
             "strip": strip,
             "strip_level": worst_level(strip),
             "channel_intake": compute_channel_intake(db),
+            # Horas y automatización (A2d): la serie semanal sale de la
+            # bitácora, de `prices_history` y de `llm_proposals`; el pendiente
+            # más viejo es el estado de la cola hoy, fuera de la serie.
+            "weekly_automation": compute_weekly_automation(db),
+            "oldest_pending_days": oldest_pending_age_days(db),
             # Estado de la tasa de cambio. Ambas salen de la base: cargar
             # `/control` no golpea la API de elTOQUE (ver status.py).
             "rate_status": rate_statuses,

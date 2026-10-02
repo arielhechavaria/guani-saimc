@@ -365,6 +365,19 @@ _RATES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-opus-5": (5.0, 25.0),
 }
 
+
+def usage_cost_usd(input_tokens: int, output_tokens: int, model: str) -> float | None:
+    """Costo en USD de un consumo de tokens, o `None` si el modelo no tiene tarifa.
+
+    La puerta pública de la tabla de arriba: la usan el pre-cálculo
+    (`prefill`) y el panel «Horas y automatización» (`progress`), para que las
+    tarifas no se copien en ningún otro lado.
+    """
+    rates = _RATES_USD_PER_MTOK.get(model)
+    if rates is None:
+        return None
+    return input_tokens / 1e6 * rates[0] + output_tokens / 1e6 * rates[1]
+
 # Señales para reconocer que se agotó el saldo. Es una **calibración
 # razonada, no una certeza**: no se pudo verificar contra un error real de la
 # API (hace falta una cuenta sin créditos para producirlo). El primer caso

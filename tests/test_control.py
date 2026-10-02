@@ -1951,3 +1951,49 @@ class TestVigilanciaDelRubberStamping:
         assert "Borró la fila" in response.text
         assert "Corrigió un valor" in response.text
         assert "Completó un vacío" in response.text
+
+
+class TestHorasYAutomatizacion:
+    """La sección de A2d: métricas semana a semana desde la bitácora."""
+
+    def test_muestra_la_seccion_aunque_no_haya_bitacora(
+        self, client: TestClient, session: Session
+    ) -> None:
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        assert 'id="horas"' in response.text
+        assert "Horas y automatización" in response.text
+        assert "Pendiente más viejo" in response.text
+        assert "pausas de más de 15 minutos" in response.text
+
+    def test_muestra_los_numeros_de_la_semana_en_curso(
+        self, client: TestClient, session: Session
+    ) -> None:
+        from datetime import timedelta
+
+        from saimc.models import CurationEvent
+
+        _cargar(session, precios=["420"])
+        origen = session.execute(select(RawIngestion)).scalar_one()
+        # Ahora mismo: cae en la semana en curso sea cual sea el día del test.
+        decidido = datetime.now()
+        for modo, accion in (("individual", "curated"), ("batch_model", "discarded")):
+            session.add(
+                CurationEvent(
+                    ingestion_id=origen.id,
+                    action=accion,
+                    mode=modo,
+                    decided_at=decidido,
+                    shown_at=decidido - timedelta(seconds=36),
+                )
+            )
+        session.commit()
+
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        # 36 s por anuncio = 10 h por mil; 1 de 2 resueltos fue por lote.
+        assert "10.0" in response.text
+        assert "2 de 2 medidos" in response.text
+        assert "50%" in response.text

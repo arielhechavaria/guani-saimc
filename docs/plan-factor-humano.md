@@ -58,7 +58,7 @@ misma sesión. El candidato más probable es A1b.
 | A4a | Panel por canal que sirva para decidir | M | A2b | Sonnet | CERRADO (2026-10-02) |
 | A4b | Decidir la política de cada canal | S | A4a | Sonnet | CERRADO (2026-10-02) |
 | A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | NO HACE FALTA (2026-10-02) |
-| A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | PENDIENTE |
+| A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | CERRADO (2026-10-02) |
 | A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | PENDIENTE |
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | PENDIENTE |
 | A5c | Informe del modo sombra | M | A5b | Opus | PENDIENTE |
@@ -645,7 +645,14 @@ especificación corta.
 
 ---
 
-### A2d — Panel «Horas y automatización» en `/control` — PENDIENTE
+### A2d — Panel «Horas y automatización» en `/control` — CERRADO (2026-10-02)
+
+*Nota (2026-10-02):* el operador decidió abrir A2d sin esperar la semana de datos.
+El panel está construido, pero la bitácora tiene un solo día y A1b y A7 se cerraron
+ese mismo día: no hay línea de base previa a A1b, así que el antes/después del hito
+I1 no se puede leer todavía. I1 queda pendiente de acumular semanas en esta tabla.
+El recorte de pausas son los 15 minutos de A4a, ahora medidos por anuncio y no por
+lote entero; se revisa cuando haya semanas de uso (`docs/decisions.md`).
 
 **Objetivo.** Las métricas del estudio §9, medidas semana a semana. Es el hito I1.
 
