@@ -152,14 +152,35 @@ desde A2d es este. Motivo completo en `docs/decisions.md` (2026-10-02, «Vía r�
 | 6 | B2a | Descarte automático con muestra auditada por semana |
 | 7 | Canales nuevos | Volumen en foco |
 | 8 | A5c | Informe semanal de sombra del carril 1 |
-| 9 | G1b → B2b + B2c | Aceptación automática con freno |
+| 9 | K1, A3c, A1c, K3, K4, A6, B5, C1 | Desarrollo que no espera volumen, mientras el modo sombra acumula |
+| 10 | G1b → B2b + B2c | Aceptación automática con freno |
+| 11 | B3, B4, C2, A6b | Lo que cuelga del carril 1 |
+| 12 | C3 → C4 | Controles de §10.7 y expansión en serio |
 
 Estimación: a un slice por día hábil, el carril 0 queda encendido en unas dos
 semanas. A5a, A5b y B1 son slices grandes; es una estimación.
 
-**Qué se posterga.** A3c, A1c, A6 y A6b, K1, K3, K4, B3, B4 y la fase C salvo los
-canales. Ninguno bloquea el carril 0. K1 vuelve antes de B2b, que lo usa para el
-historial de lo auditado.
+**Nada se saca del plan** (corregido el 2026-10-02: la primera versión de esta
+sección postergaba tareas que no dependen de volumen). Lo único que espera semanas
+es el n del modo sombra, o sea G1b y lo que cuelga de ella. Todo lo demás es
+desarrollo y se hace sin esperar.
+
+| Tarea | ¿Espera volumen? | Cuándo entra |
+| --- | --- | --- |
+| K6 | No | Con la migración de B1 (paso 4) |
+| K1 | No | Paso 9, primero: B2b lo usa para el historial de lo auditado |
+| A3c, A1c | No | Paso 9: mejoras de la cola |
+| K3, K4 | No | Paso 9 |
+| A6 | No | Paso 9. A5a especifica el contrato de la señal externa sin suponer a Jev |
+| B5 | No | Paso 9; C3 lo necesita |
+| C1 | No | Paso 9, después de B2a |
+| B3, C2 | Sí, por G1b | Paso 11 |
+| B4 | Sí, por B2b | Paso 11 |
+| A6b | No, pero necesita A6 favorable, A5b y B1 | Paso 11, o antes si A6 ya cerró |
+| C3, C4 | No | Paso 12; los canales del paso 7 son un adelanto registrado |
+
+El paso 9 no tiene orden fijo salvo K1 primero: cada sesión toma el que convenga.
+Si el modo sombra llega al n antes de terminar el paso 9, G1b pasa adelante.
 
 **Adelantar G1b.** El carril 1 se puede encender antes de llegar al n de la
 especificación solo si están las tres cosas: procedencia en cada fila (B1),
