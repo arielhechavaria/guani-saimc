@@ -2,7 +2,7 @@
 
 Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (A6 desbloqueada y
 ampliada a los campos cerrados; A6b agregada; contrato de la señal externa en A5a;
-columna «Modelo» en el tablero).
+columna «Modelo» en el tablero; A2a cerrada).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -39,7 +39,7 @@ misma sesión. El candidato más probable es A1b.
 | Slice | Qué | Tamaño | Depende de | Modelo | Estado |
 | --- | --- | --- | --- | --- | --- |
 | A0 | Base confiable: suite verde y cifras de costo al día | S | — | Sonnet | HECHO |
-| A2a | Bitácora de curaduría: especificación | M | A0 | Opus | PENDIENTE |
+| A2a | Bitácora de curaduría: especificación | M | A0 | Opus | CERRADO (2026-10-02) |
 | A2b | Bitácora de curaduría: migración y escritura | M | A2a | Sonnet | PENDIENTE |
 | A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | PENDIENTE |
 | A1a | Lote de imágenes: prototipo a 390 px | S | — | Sonnet | PENDIENTE |
@@ -115,7 +115,14 @@ favorable; tampoco bloquea nada, y G1 se puede decidir sin ella.
 
 ### Pendientes sueltos
 
-(Vacío. Lo que aparezca fuera del slice en curso se anota acá, no se hace.)
+Lo que aparezca fuera del slice en curso se anota acá, no se hace.
+
+- `catalog.delete_format` pone `format_id` en nulo en bloque sobre `prices_history`
+  sin dejar rastro. Los backfills por línea de comandos tampoco (el de tasas no
+  tiene log). Fuera de la bitácora de A2 (visto en A2a, 2026-10-02).
+- Después de editar o eliminar un curado, `llm_reviews.rows` queda desfasado
+  (`price_history_id` puede apuntar a una fila borrada). Es por diseño desde el
+  slice 3a; revisar si K1 o A2c lo necesitan (visto en A2a, 2026-10-02).
 
 ---
 
@@ -241,7 +248,10 @@ tests.
 
 ---
 
-### A2a — Bitácora de curaduría: especificación — PENDIENTE
+### A2a — Bitácora de curaduría: especificación — CERRADO (2026-10-02)
+
+La especificación es `docs/spec-slice-A2.md`. Corrige dos de los hechos de partida
+de abajo y trae tres preguntas abiertas con respuesta por defecto.
 
 **Objetivo.** Definir una tabla de solo altas que registre cada decisión del
 operador con su hora y su duración. Es la base de tres cosas: las horas por 1.000
@@ -290,6 +300,9 @@ abiertas.
 **Qué entra.**
 - La migración `0024_…` y el modelo.
 - Un ayudante único para escribir el evento, llamado desde los cinco caminos de A2a.
+- Todo según `docs/spec-slice-A2.md`, incluidos sus 17 casos de prueba. El campo
+  oculto `shown_at` se suma a los tres formularios de descarte que hoy no lo llevan
+  y a `/edit`; «Completar con IA» conserva el reloj.
 - `discard_curation` pasa a aceptar `shown_at`.
 - `/curation/sin-foco` manda la hora en que se mostró la lista.
 
