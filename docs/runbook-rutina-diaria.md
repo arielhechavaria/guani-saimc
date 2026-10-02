@@ -67,6 +67,23 @@ Casi siempre va a estar vacía o casi vacía. Si aparece algo que sí te
 interesa, no lo descartes: significa que falta un producto o un alias en
 `/catalog`.
 
+## Paso 2b — Descartar imágenes en lote (3 minutos, después del pre-cálculo)
+
+Es la otra mitad de **`/curation/sin-foco`**: tocá el chip **Imágenes** (o abrí
+**`/curation/sin-foco/imagenes`**). Muestra las imágenes pendientes que el modelo
+propone descartar, con su motivo («Fuera de foco» o «Sin datos de precio»), el
+canal y la fecha. Tocá una miniatura para ampliarla.
+
+- **Vienen todas marcadas.** Mirá la grilla de arriba abajo; la que no debería
+  irse, la **Rescatás** (se desmarca y queda pendiente en la cola).
+- Confirmá con **Descartar las N marcadas**. Quedan `discarded`, nunca se borran.
+- Las imágenes **sin propuesta no aparecen**: el aviso de arriba dice cuántas son.
+  Si el número es alto, corré el pre-cálculo (paso 1) y recargá.
+
+No es un sello: el freno es mirar la grilla antes de confirmar. Cada lote
+queda en la bitácora (`curation_events`, modo `batch_model`) con la hora en que
+se mostró y la hora en que se confirmó.
+
 ## Paso 3 — Curar lo que está en foco (el grueso de la hora)
 
 Abrí **`/curation`**. Te muestra de a un pendiente, en este orden:
@@ -92,7 +109,8 @@ Abrí **`/curation/cola?foco=imagen`**. Las que ya pasaron por el paso 1 tienen
 propuesta. Abrí cada una con el enlace de la fila:
 
 - **El asistente sugiere descartar** (anuncio de otro producto, saludo, foto
-  sin precio): descartá con un clic.
+  sin precio): normalmente ya se fue en el lote del paso 2b; si quedó alguna
+  (por ejemplo, la que rescataste), descartá con un clic.
 - **Propone filas:** es un anuncio en foco; curalo como en el paso 3.
 - **Sin propuesta:** el pre-cálculo todavía no llegó a ella, o el OCR no leyó
   texto. Abrirla transcribe en el momento, pero es lento. Dejala para cuando
@@ -124,8 +142,8 @@ del foco) o hacer que el descarte de imágenes necesite menos clics.
 
 ## Lo que esta rutina no resuelve
 
-- **Descartar imágenes en lote.** Hoy cada imagen que el asistente sugiere
-  descartar sigue costando abrirla y hacer un clic. Es el candidato técnico
-  más claro para bajar la carga, pero no está hecho.
+- **Descartar imágenes sin propuesta.** El lote del paso 2b solo cubre las que
+  el modelo ya vio y propuso descartar. Lo demás sigue entrando por la cola
+  (paso 4).
 - **Qué mide H0 ahora que todo pasa por el asistente.** Sigue abierto (ver
   `docs/plan-asistente-llm-cola-completa.md`, sección final).
