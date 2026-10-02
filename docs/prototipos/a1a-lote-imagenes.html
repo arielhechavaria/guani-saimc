@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="es">
+<!--
+  A1a — Prototipo del lote de imágenes (plan-factor-humano.md, A1a).
+  Estático, sin backend: miniaturas de relleno, datos inventados. Usa la hoja
+  real (`saimc-material.css`) para que lo aprobado sea lo que se programa en A1b.
+  Estados: ?estado=vacio (sin imágenes) · ?aviso=0 (sin aviso de pre-cálculo).
+  Decisiones del operador (2026-10-02): van marcadas por defecto; es una pestaña
+  dentro de /curation/sin-foco, no una pantalla propia.
+-->
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — Sin foco · Imágenes (prototipo A1a)</title>
+  <link href="/static/saimc-material.css" rel="stylesheet" />
+  <style>
+    /* Segmentos Textos | Imágenes: dos chips, el activo reemplaza la vista. */
+    .a1-seg { display: flex; gap: var(--m3-space-2); flex-wrap: wrap; }
+    .a1-seg .m3-chip { min-height: 44px; padding-inline: 16px; font-size: 14px; }
+
+    .a1-aviso { display: flex; gap: var(--m3-space-3); align-items: flex-start; }
+
+    /* 2 columnas a 390 px (miniatura ~170 px), más a mayor ancho. */
+    .a1-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--m3-space-3); }
+    @media (min-width: 640px)  { .a1-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (min-width: 960px)  { .a1-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    @media (min-width: 1280px) { .a1-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+
+    .a1-card { overflow: hidden; display: flex; flex-direction: column; transition: opacity .15s; }
+    .a1-card.is-rescued { opacity: .6; outline: 2px solid var(--m3-primary); }
+
+    .a1-thumb {
+      position: relative; display: block; width: 100%; padding: 0; border: 0;
+      aspect-ratio: 4 / 5; cursor: zoom-in; background: var(--m3-surface-container-high);
+    }
+    .a1-thumb .a1-ph { position: absolute; inset: 0; display: grid; place-items: center;
+      color: rgba(255,255,255,.85); font-size: 13px; text-align: center; padding: 8px; }
+
+    /* Casilla: el área táctil es todo el rincón (44 px), el dibujo es más chico. */
+    .a1-check {
+      position: absolute; top: 0; left: 0; width: 44px; height: 44px;
+      display: grid; place-items: center; cursor: pointer;
+    }
+    .a1-check input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+    .a1-box {
+      width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center;
+      background: rgba(255,255,255,.92); border: 2px solid var(--m3-outline); color: transparent;
+      box-shadow: 0 1px 3px rgba(0,0,0,.3);
+    }
+    .a1-check input:checked + .a1-box { background: var(--m3-error); border-color: var(--m3-error); color: #fff; }
+    .a1-check input:focus-visible + .a1-box { outline: 3px solid var(--m3-primary); outline-offset: 2px; }
+    .a1-box .m3-icon { font-size: 18px; }
+
+    .a1-body { padding: var(--m3-space-2) var(--m3-space-3) 0; display: flex; flex-direction: column; gap: 4px; }
+    /* Canal y fecha apilados: a 390 px una fila los trunca a los dos. */
+    .a1-meta { display: flex; flex-direction: column; color: var(--m3-on-surface-variant); font-size: 12px; line-height: 1.35; }
+    .a1-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (min-width: 640px) { .a1-meta { flex-direction: row; justify-content: space-between; gap: 6px; } }
+    .a1-rescatar { margin: var(--m3-space-2); min-height: 44px; justify-content: center; }
+
+    /* Ampliación: <dialog> nativo, sin librería. */
+    .a1-dialog { border: 0; border-radius: var(--m3-radius-lg); padding: 0; width: min(94vw, 560px);
+      max-height: 92vh; background: var(--m3-surface); color: var(--m3-on-surface); }
+    .a1-dialog::backdrop { background: rgba(0,0,0,.6); }
+    .a1-dialog-img { aspect-ratio: 4 / 5; max-height: 62vh; width: 100%; display: grid; place-items: center;
+      color: rgba(255,255,255,.85); }
+    .a1-dialog-foot { padding: var(--m3-space-4); display: flex; flex-wrap: wrap; gap: var(--m3-space-3); align-items: center; }
+
+    .a1-actionbar-count { flex: 1 1 140px; }
+    .a1-actionbar .m3-btn { min-height: 48px; }
+  </style>
+</head>
+<body>
+<div class="m3-shell">
+
+  <nav class="m3-topnav" aria-label="Secciones">
+    <span class="m3-topnav-brand">SA</span>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">inventory_2</span><span>Catálogo</span></a>
+    <a class="m3-topnav-item is-active" href="#" aria-current="page"><span class="m3-icon">fact_check</span><span>Curaduría</span></a>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">monitoring</span><span>Control</span></a>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">campaign</span><span>Marketing</span></a>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">menu_book</span><span>Documentos</span></a>
+  </nav>
+
+  <main class="m3-main">
+    <header class="m3-topbar">
+      <div class="m3-topbar-row">
+        <div class="m3-topbar-main">
+          <div class="m3-kicker">SAIMC · Fase 0</div>
+          <h1 class="m3-title">Descarte en lote — sin foco</h1>
+          <p class="m3-subtitle" id="subtitulo">Imágenes que el modelo propone descartar. Dejá marcadas las que se van y rescatá las que no.</p>
+        </div>
+        <div class="m3-stats">
+          <div class="m3-stat">
+            <div class="m3-stat-label">Imágenes</div>
+            <div class="m3-stat-value is-accent" id="stat-total">12</div>
+          </div>
+        </div>
+      </div>
+      <nav class="m3-tabs" aria-label="Vistas de curaduría">
+        <a class="m3-tab" href="#">Curar</a>
+        <a class="m3-tab" href="#">Cola</a>
+        <a class="m3-tab" href="#">Historial</a>
+        <a class="m3-tab is-active" href="#" aria-current="page">Sin foco</a>
+      </nav>
+    </header>
+
+    <div class="m3-content">
+      <div class="m3-stack" style="gap:16px">
+
+        <div class="a1-seg" role="group" aria-label="Qué se descarta">
+          <a class="m3-chip m3-chip-btn" href="#">Textos <span class="m3-num">&nbsp;112</span></a>
+          <a class="m3-chip m3-chip-btn is-selected" href="#" aria-current="page">Imágenes <span class="m3-num" id="seg-total">&nbsp;12</span></a>
+        </div>
+
+        <div class="m3-card m3-card-pad a1-aviso" id="aviso" role="status">
+          <span class="m3-icon" style="color:var(--m3-warn)">warning</span>
+          <div class="m3-sm">
+            <strong>7 imágenes sin propuesta.</strong> No aparecen acá hasta que el modelo las vea.
+            Corré el pre-cálculo: <code>python -m saimc.extraction.prefill</code>
+          </div>
+        </div>
+
+        <div class="m3-card" id="vacio" hidden>
+          <div class="m3-empty">
+            <span class="m3-icon">check_circle</span>
+            <p style="margin:12px 0 0">No hay imágenes para descartar.</p>
+            <p class="m3-sm m3-muted" style="margin:4px 0 0">Lo que el modelo no marcó sigue en la cola.</p>
+          </div>
+        </div>
+
+        <form id="lote" method="post" action="#" onsubmit="return false;">
+          <div class="a1-grid" id="grid"></div>
+
+          <div class="m3-actionbar a1-actionbar" style="margin-top:16px">
+            <span class="m3-sm a1-actionbar-count" aria-live="polite">
+              <strong id="n-marcadas">12</strong> marcadas · <span id="n-rescatadas">0</span> rescatadas.
+              <span class="m3-muted">Quedan <code>discarded</code>, nunca se borran.</span>
+            </span>
+            <button type="submit" id="btn-descartar" class="m3-btn m3-btn-danger m3-btn-lg">
+              <span class="m3-icon">block</span><span>Descartar las <span id="btn-n">12</span> marcadas</span>
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<dialog class="a1-dialog" id="dlg">
+  <div class="a1-dialog-img" id="dlg-img">imagen ampliada</div>
+  <div class="a1-dialog-foot">
+    <div style="flex:1 1 160px" class="m3-sm">
+      <div><strong id="dlg-motivo"></strong></div>
+      <div class="m3-muted" id="dlg-meta"></div>
+    </div>
+    <button type="button" class="m3-btn" id="dlg-rescatar" style="min-height:44px">Rescatar</button>
+    <button type="button" class="m3-btn" id="dlg-cerrar" style="min-height:44px">Cerrar</button>
+  </div>
+</dialog>
+
+<script>
+  var Q = new URLSearchParams(location.search);
+  var MOTIVOS = { off_focus: 'Fuera de foco', no_data: 'Sin datos de precio' };
+  var HUES = [200, 28, 150, 330, 55, 260, 10, 180, 95, 300, 40, 220];
+  var CANALES = ['Mercado Habana', 'Compro-Vendo Cuba', 'Ventas Playa', 'Mercadito Vedado', 'Santiago Vende', 'Camagüey Ofertas'];
+  var FECHAS = ['hoy 09:12', 'hoy 08:40', 'ayer 21:05', 'ayer 18:30', 'ayer 11:02', '30 sep 19:44',
+                '30 sep 16:10', '30 sep 12:27', '29 sep 20:15', '29 sep 14:03', '29 sep 09:50', '28 sep 22:31'];
+  var items = HUES.map(function (h, i) {
+    return { id: 9100 + i, hue: h, motivo: (i % 4 === 3) ? 'no_data' : 'off_focus',
+             canal: CANALES[i % CANALES.length], fecha: FECHAS[i], marcada: true };
+  });
+  if (Q.get('estado') === 'vacio') items = [];
+  if (Q.get('aviso') === '0') document.getElementById('aviso').hidden = true;
+
+  var grid = document.getElementById('grid');
+  function bg(h) { return 'linear-gradient(160deg,hsl(' + h + ' 45% 42%),hsl(' + ((h + 40) % 360) + ' 40% 28%))'; }
+
+  items.forEach(function (it) {
+    var card = document.createElement('div');
+    card.className = 'm3-card m3-card-outlined a1-card';
+    card.id = 'c' + it.id;
+    card.innerHTML =
+      '<div style="position:relative">' +
+        '<button type="button" class="a1-thumb" aria-label="Ampliar imagen ' + it.id + '" data-open="' + it.id + '">' +
+          '<span class="a1-ph" style="background:' + bg(it.hue) + '">/evidence/' + it.id + '</span>' +
+        '</button>' +
+        '<label class="a1-check" title="Descartar esta imagen">' +
+          '<input type="checkbox" name="ingestion_id" value="' + it.id + '" checked aria-label="Descartar imagen ' + it.id + '" />' +
+          '<span class="a1-box"><span class="m3-icon">check</span></span>' +
+        '</label>' +
+      '</div>' +
+      '<div class="a1-body">' +
+        '<span class="m3-chip m3-chip-sm ' + (it.motivo === 'off_focus' ? 'm3-chip-neutral' : 'm3-chip-warn') + '" style="align-self:flex-start">' + MOTIVOS[it.motivo] + '</span>' +
+        '<div class="a1-meta"><span>' + it.canal + '</span><span class="m3-nowrap">' + it.fecha + '</span></div>' +
+      '</div>' +
+      '<button type="button" class="m3-btn a1-rescatar" data-rescatar="' + it.id + '">Rescatar</button>';
+    grid.appendChild(card);
+  });
+
+  function box(id) { return document.querySelector('#c' + id + ' input[type=checkbox]'); }
+  function render() {
+    var marcadas = 0, rescatadas = 0;
+    items.forEach(function (it) {
+      var cb = box(it.id); it.marcada = cb.checked;
+      if (cb.checked) marcadas++; else rescatadas++;
+      document.getElementById('c' + it.id).classList.toggle('is-rescued', !cb.checked);
+    });
+    document.getElementById('n-marcadas').textContent = marcadas;
+    document.getElementById('n-rescatadas').textContent = rescatadas;
+    document.getElementById('btn-n').textContent = marcadas;
+    document.getElementById('btn-descartar').disabled = marcadas === 0;
+    document.getElementById('stat-total').textContent = items.length;
+    document.getElementById('seg-total').innerHTML = '&nbsp;' + items.length;
+  }
+  function rescatar(id) { box(id).checked = false; render(); }
+
+  var dlg = document.getElementById('dlg'), dlgId = null;
+  grid.addEventListener('change', render);
+  grid.addEventListener('click', function (e) {
+    var r = e.target.closest('[data-rescatar]'); if (r) { rescatar(r.dataset.rescatar); return; }
+    var o = e.target.closest('[data-open]');
+    if (o) {
+      var it = items.filter(function (x) { return String(x.id) === o.dataset.open; })[0];
+      dlgId = it.id;
+      document.getElementById('dlg-img').style.background = bg(it.hue);
+      document.getElementById('dlg-img').textContent = '/evidence/' + it.id;
+      document.getElementById('dlg-motivo').textContent = MOTIVOS[it.motivo];
+      document.getElementById('dlg-meta').textContent = it.canal + ' · ' + it.fecha;
+      dlg.showModal();
+    }
+  });
+  document.getElementById('dlg-rescatar').onclick = function () { rescatar(dlgId); dlg.close(); };
+  document.getElementById('dlg-cerrar').onclick = function () { dlg.close(); };
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+
+  if (items.length === 0) {
+    document.getElementById('vacio').hidden = false;
+    document.getElementById('lote').hidden = true;
+    document.getElementById('subtitulo').textContent = 'Imágenes que el modelo propone descartar.';
+  }
+  render();
+</script>
+</body>
+</html>

@@ -50,7 +50,7 @@ misma sesión. El candidato más probable es A1b.
 | A2a | Bitácora de curaduría: especificación | M | A0 | Opus | CERRADO (2026-10-02) |
 | A2b | Bitácora de curaduría: migración y escritura | M | A2a | Sonnet | CERRADO (2026-10-02) |
 | A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | CERRADO (2026-10-02) |
-| A1a | Lote de imágenes: prototipo a 390 px | S | — | Sonnet | PENDIENTE |
+| A1a | Lote de imágenes: prototipo a 390 px | S | — | Sonnet | CERRADO (2026-10-02) |
 | A1b | Lote de imágenes con el veredicto del modelo | M–L | A1a, A2b | Sonnet | PENDIENTE |
 | A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | Sonnet | PENDIENTE |
 | A3a | Glosario: cargar las convenciones del operador | S | — | Sonnet | PENDIENTE |
@@ -368,7 +368,7 @@ desglose y el total ya no cuenta las filas borradas como aceptadas.
 
 ---
 
-### A1a — Lote de imágenes: prototipo a 390 px — PENDIENTE
+### A1a — Lote de imágenes: prototipo a 390 px — CERRADO (2026-10-02)
 
 **Objetivo.** Acordar cómo se ve y cómo se usa antes de programar (mobile first, y
 verificar contra el diseño aprobado).
@@ -390,6 +390,14 @@ verificar contra el diseño aprobado).
 
 **Verificación del operador.** Abrir el prototipo en el teléfono y en escritorio, y
 aprobarlo.
+
+**Resultado (2026-10-02).** Aprobado: `docs/prototipos/a1a-lote-imagenes.html`.
+- Van **marcadas por defecto**. El freno es «Rescatar» visible; la auditoría por
+  muestra recién existe desde B2, no en A1b.
+- Es un segmento «Textos | Imágenes» dentro de `/curation/sin-foco`, no una pantalla
+  propia.
+- Para A1b: el subset de iconos no trae `undo`; «Rescatar» va solo con texto, o se
+  suma el icono al subset.
 
 **`decisions.md`.** No; va con A1b.
 
