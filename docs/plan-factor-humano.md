@@ -54,7 +54,7 @@ misma sesión. El candidato más probable es A1b.
 | A1b | Lote de imágenes con el veredicto del modelo | M–L | A1a, A2b | Sonnet | CERRADO (2026-10-02) |
 | A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | Sonnet | CERRADO (2026-10-02) |
 | A3a | Glosario: cargar las convenciones del operador | S | — | Sonnet | CERRADO (2026-10-02) |
-| A3b | Glosario: medir su efecto con el backtest | S | A3a | Sonnet | PENDIENTE |
+| A3b | Glosario: medir su efecto con el backtest | S | A3a | Sonnet | CERRADO (2026-10-02) |
 | A4a | Panel por canal que sirva para decidir | M | A2b | Sonnet | PENDIENTE |
 | A4b | Decidir la política de cada canal | S | A4a | Sonnet | PENDIENTE |
 | A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | PENDIENTE |
@@ -498,7 +498,7 @@ bloqueo.
 
 ---
 
-### A3b — Glosario: medir su efecto con el backtest — PENDIENTE
+### A3b — Glosario: medir su efecto con el backtest — CERRADO (2026-10-02)
 
 **Objetivo.** Saber, con números, cuánto bajan las abstenciones.
 
