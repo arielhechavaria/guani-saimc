@@ -206,10 +206,9 @@ el downgrade los elimina. Sin backfill: el pasado no tiene hora.
     el del re-render.
 17. La migración 0024 crea y elimina la tabla (upgrade y downgrade).
 
-## Preguntas abiertas para el operador
+## Preguntas al operador — resueltas el 2026-10-02
 
-Cada una trae una respuesta por defecto. Si no se contesta otra cosa, A2b
-implementa el defecto.
+El operador aceptó las tres respuestas por defecto. A2b las implementa tal cual.
 
 1. **¿«Completar con IA» conserva el reloj o lo reinicia?** Defecto: lo
    conserva. Consecuencia: los tiempos de `llm_reviews` posteriores a A2b dejan

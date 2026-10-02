@@ -2,7 +2,8 @@
 
 Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (A6 desbloqueada y
 ampliada a los campos cerrados; A6b agregada; contrato de la señal externa en A5a;
-columna «Modelo» en el tablero; A2a cerrada).
+columna «Modelo» en el tablero; A2a cerrada; regla de actualizar el estado al
+terminar cada tarea).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -13,12 +14,19 @@ remite a una sección de ese documento. «§6.2» a secas remite a `docs/spec.md
 ## Tablero (empezá por acá)
 
 **Regla de cierre**, la de `CLAUDE.md`. Un slice está cerrado cuando se cumplen
-cinco cosas:
+seis cosas:
 1. los tests pasan;
 2. está la entrada en `docs/decisions.md`, si corresponde;
 3. pasó `docs/checklist-pr.md`;
-4. el commit local está hecho;
-5. se entregaron los pasos de verificación.
+4. **el estado del slice está actualizado en este plan**, en la fila del Tablero y
+   en el título de su sección, dentro del mismo commit;
+5. el commit local está hecho;
+6. se entregaron los pasos de verificación.
+
+**El plan se actualiza al terminar cada tarea, sin excepción.** Un slice terminado
+que sigue figurando `PENDIENTE` no está cerrado. Al abrirlo pasa a `ABIERTO`; al
+terminarlo, a `CERRADO (fecha)`. Si se bloquea o se descarta, se anota el motivo
+en el mismo momento.
 
 El push, la migración en el VPS y la verificación los hace el operador. El
 siguiente slice no se abre hasta que el operador confirme.
@@ -38,7 +46,7 @@ misma sesión. El candidato más probable es A1b.
 
 | Slice | Qué | Tamaño | Depende de | Modelo | Estado |
 | --- | --- | --- | --- | --- | --- |
-| A0 | Base confiable: suite verde y cifras de costo al día | S | — | Sonnet | HECHO |
+| A0 | Base confiable: suite verde y cifras de costo al día | S | — | Sonnet | CERRADO (2026-10-02) |
 | A2a | Bitácora de curaduría: especificación | M | A0 | Opus | CERRADO (2026-10-02) |
 | A2b | Bitácora de curaduría: migración y escritura | M | A2a | Sonnet | PENDIENTE |
 | A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | PENDIENTE |
@@ -151,7 +159,8 @@ Lo que aparezca fuera del slice en curso se anota acá, no se hace.
    verde.
 2. La entrada en `docs/decisions.md`, si corresponde.
 3. `docs/checklist-pr.md`.
-4. Un commit local que incluye la actualización del Tablero de este plan.
+4. Actualizar el estado del slice en este plan (fila del Tablero y título de la
+   sección) y commitearlo junto con el trabajo. Es obligatorio en cada cierre.
 5. Los pasos de verificación: URL, qué mirar, qué tiene que pasar y qué no. Si hay
    migración, primero `pg_dump` y después `alembic upgrade head`.
 
@@ -212,7 +221,7 @@ Ninguno se toma en este plan. Cada uno se decide en su slice y se registra ahí.
 
 ## Fase A — sin apartarse de nada
 
-### A0 — Base confiable: suite verde y cifras de costo al día — HECHO (2026-10-02)
+### A0 — Base confiable: suite verde y cifras de costo al día — CERRADO (2026-10-02)
 
 **Objetivo.** Que «los tests pasan» signifique algo en cada cierre, y que los
 documentos de la rutina no citen un costo viejo.
