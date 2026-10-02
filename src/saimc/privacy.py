@@ -37,9 +37,27 @@ PHONE_PLACEHOLDER = "[teléfono removido]"
 # Se usa `(?<!\d)` en vez de `\b` a propósito: en el corpus real el número
 # aparece pegado a un hashtag ("#llame_escriba_55550303"), donde el guión bajo
 # es carácter de palabra y `\b` no encuentra frontera.
+#
+# 3. Agrupado, sin prefijo, pero anunciado con una palabra de contacto («Tel:»,
+#    «llame al», «whatsapp»…) a lo sumo 15 caracteres no numéricos antes: la
+#    palabra desambigua contra los precios, así que acá sí se toleran
+#    separadores. Solo se reemplaza el número, la palabra queda. Agregado el
+#    2026-10-02 (docs/decisions.md): todo el texto sale hoy a un tercero (el
+#    modelo) y el redactor anterior dejó escapar «llamar al» + 52 34 56 78.
+#
+# Lo que sigue sin cubrirse, a propósito: un número agrupado sin prefijo ni
+# palabra de contacto, porque es indistinguible de dos precios seguidos.
 _PHONE_RES = (
     re.compile(r"(?<!\d)\+?53[\s.·-]?5(?:[\s.·-]?\d){7}(?!\d)"),
     re.compile(r"(?<!\d)5\d{7}(?!\d)"),
+)
+
+_CONTACT_PHONE_RE = re.compile(
+    r"(?<![^\W\d_])"  # no en medio de una palabra («hotel»)
+    r"(?P<lead>(?:tel(?:[eé]fonos?)?|tlf|cel(?:ular)?|m[oó]vil|wh?atsapp|watsap|wasap|wsp"
+    r"|contacto|llam[ae]\w*)\b[^\d\n]{0,15})"
+    r"5(?:[\s.·-]?\d){7}(?!\d)",
+    re.IGNORECASE,
 )
 
 
@@ -56,4 +74,4 @@ def redact_personal_data(text: str | None) -> str | None:
         return text
     for pattern in _PHONE_RES:
         text = pattern.sub(PHONE_PLACEHOLDER, text)
-    return text
+    return _CONTACT_PHONE_RE.sub(lambda m: m.group("lead") + PHONE_PLACEHOLDER, text)

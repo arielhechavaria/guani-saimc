@@ -55,6 +55,65 @@ class TestRedactaTelefonos:
         assert resultado.count(PHONE_PLACEHOLDER) == 2
 
 
+class TestRedactaTelefonoAgrupadoConPalabraDeContacto:
+    """Sin prefijo, un número agrupado en ocho dígitos desde 5 es indistinguible
+    de dos precios seguidos; la palabra de contacto que lo antecede lo
+    desambigua. Solo se reemplaza el número: la palabra queda."""
+
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            "Tel: 5 234 5678",
+            "Telefono 5234 5678",
+            "whatsapp 5234-5678",
+            "Llame al 5234 5678",
+            "Cel. 5 234 5678",
+            # El caso real escapado del corpus: «llamar al» + ocho dígitos en
+            # cuatro pares.
+            "llamar al 52 34 56 78",
+        ],
+    )
+    def test_el_numero_agrupado_desaparece(self, texto: str) -> None:
+        resultado = redact_personal_data(texto)
+        assert PHONE_PLACEHOLDER in resultado
+        assert not any(c.isdigit() for c in resultado.replace(PHONE_PLACEHOLDER, ""))
+
+    def test_conserva_lo_que_rodea_al_numero(self) -> None:
+        resultado = redact_personal_data("Pollo a 420 cup. Tel: 5 234 5678 Santiago")
+        assert "Pollo a 420 cup" in resultado
+        assert "Tel:" in resultado
+        assert "Santiago" in resultado
+        assert "234" not in resultado
+
+    def test_es_idempotente(self) -> None:
+        una = redact_personal_data("+53 5 234 5678 y Tel: 5234 5678")
+        assert redact_personal_data(una) == una
+
+
+class TestNoTocaPreciosParecidosAUnTelefono:
+    """Una lista de números seguidos se parece a un teléfono agrupado. Sin
+    prefijo ni palabra de contacto se deja pasar el número antes que comerse un
+    precio (decisión ya documentada en `privacy.py` para el caso suelto)."""
+
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            # Cantidad «53» seguida de precios: no es el prefijo del país.
+            "Arroz 53 500 1000 20",
+            # Rangos y series de precios.
+            "Pollo de 5000 a 5500 cup",
+            "Precios 5 300 1500",
+            # La palabra de contacto sin ocho dígitos no redacta nada.
+            "Cel 5 kg de arroz",
+            "Contacto para pedidos, arroz a 500",
+            # Palabra dentro de otra («hotel»): no es palabra de contacto.
+            "hotel 5234 5678",
+        ],
+    )
+    def test_queda_intacto(self, texto: str) -> None:
+        assert redact_personal_data(texto) == texto
+
+
 class TestNoTocaLosPrecios:
     """Un falso positivo acá corrompe el dato que sostiene todo el proyecto."""
 
