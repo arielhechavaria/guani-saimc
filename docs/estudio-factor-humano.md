@@ -4,6 +4,9 @@
 del 2026-09-29), salvo donde se indica. Lo marcado «(estimado)» o «(supuesto)» no
 está medido.*
 
+*Actualización del 2026-10-02: el operador ya tiene clave de Jev. Cambian el límite
+de acceso (sección 3, punto 8) y la fila A6 (sección 5). El resto sigue como estaba.*
+
 ## Resumen
 
 - **El inversor tiene razón en la forma.** Hoy cada anuncio pasa por las manos del
@@ -215,8 +218,9 @@ probabilidad confiable por decisión.
   extractor de precio, cantidad y unidad.
 
 Límites a hoy [28][29]:
-- acceso anticipado con lista de espera, y un precio de lanzamiento sin garantía de
-  que se sostenga;
+- acceso anticipado (el operador tiene clave desde el 2026-10-02, así que la lista
+  de espera ya no frena la prueba), y un precio de lanzamiento sin garantía de que se
+  sostenga;
 - solo API alojada (Cloudflare Workers AI, DigitalOcean): no hay pesos para correrlo
   en el VPS;
 - solo texto, con un contexto de 32k tokens y el español sin documentar;
@@ -233,7 +237,9 @@ Ya se había descartado dos veces, el 2026-09-21:
 
 Los dos descartes están registrados en `decisions.md`, con fecha 2026-09-29. Este
 estudio le abre otro papel, el de señal de confianza independiente, y ese papel se
-decide con una prueba barata sobre datos propios (A6).
+decide con una prueba barata sobre datos propios (A6). Tener la clave no cambia eso:
+habilita la prueba, no la integración. Si A6 sale favorable, Jev entra como una señal
+más del motor en modo sombra (slice A6b de `docs/plan-factor-humano.md`).
 
 ---
 
@@ -337,7 +343,7 @@ confirme en lote. Hay precedente: el descarte en lote de textos sin foco ya reso
 | A3 | Poblar el glosario con las convenciones del operador | la primera causa de edición son abstenciones de cantidad y unidad |
 | A4 | Fijar una política por canal, decidida una sola vez; empezar por el grupo de 170 imágenes pendientes que rinde 3% | es curar fuentes, no anuncios |
 | A5 | Correr el carril 1 en modo sombra | produce con evidencia los umbrales y el error esperado |
-| A6 | Prueba de Jev fuera de línea, si se consigue acceso. Se corre contra las decisiones de triage ya tomadas sobre texto: 1.235 anuncios, 156 curados y 1.079 descartados (las imágenes piden volver a correr el OCR local). Mide si su probabilidad está calibrada sobre anuncios cubanos (¿el 0,9 acierta el 90%?) y cuánto coincide con Claude. Solo va texto redactado con `redact_personal_data()`, igual que hoy hacia Anthropic, y cuesta menos de $0,20 | decide en firme si Jev entra como señal desconectable o queda descartado |
+| A6 | Prueba de Jev fuera de línea (hay acceso desde el 2026-10-02). Se corre contra las decisiones de triage ya tomadas sobre texto: 1.235 anuncios, 156 curados y 1.079 descartados (las imágenes piden volver a correr el OCR local). Desde el 2026-10-02 suma preguntas por campo cerrado (producto, moneda, provincia, formato de venta) contra las filas curadas. Mide si su probabilidad está calibrada sobre anuncios cubanos (¿el 0,9 acierta el 90%?) y cuánto coincide con Claude. Solo va texto redactado con `redact_personal_data()`, igual que hoy hacia Anthropic, y cuesta menos de $0,20 | decide en firme si Jev entra como señal desconectable o queda descartado |
 
 A1 depende de que el pre-cálculo del modelo haya corrido sobre las imágenes, y hoy
 se lanza a mano. Correrlo con un temporizador no es Redis ni Celery, pero choca con
