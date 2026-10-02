@@ -107,8 +107,8 @@ sección.** Lo de abajo se midió con `propose_ad` corriendo `thinking` en su
 valor por defecto (adaptive, sin pedirlo desactivado); ese mismo día se
 descubrió que ese razonamiento invisible se facturaba como `output_tokens`
 sin aparecer en `raw_response`, y se corrigió (`docs/decisions.md`). El costo
-real debería bajar de acá en más — falta re-medir con volumen posterior al
-fix.
+real bajó: la re-medición posterior al fix está en la sección siguiente,
+y es la que vale.
 
 El backtest de arriba corrió sobre una muestra armada (100 anuncios ya curados a
 mano). Desde que «Completar con IA» está en uso real, cada llamada queda en
@@ -144,23 +144,51 @@ La cuenta, igual que arriba: `(tokens_entrada × precio_entrada + tokens_salida
 × precio_salida) / 1.000.000`, con la mediana de tokens de esta sección. Solo
 Sonnet 5 tiene dato real; Haiku y Opus son la misma cuenta con sus tarifas.
 
+### Re-medido tras apagar `thinking` (`llm_proposals`, 2026-10-02) — la cifra vigente
+
+Solo cuentan las llamadas con prompt `2026-09-27.1` (el primero con `thinking`
+apagado), `status = 'ok'`, 2026-09-27 al 09-28. Sonnet 5, tarifas de arriba.
+
+| Tipo de anuncio | Llamadas | Entrada (mediana) | Salida (mediana) | Costo total | **Por anuncio (promedio)** |
+| --- | --- | --- | --- | --- | --- |
+| Texto | 46 | 452 | 144 | $0,2029 | **$0,0044** |
+| Imagen | 55 | 607 | 27 | $0,0872 | **$0,0016** |
+| Ambos | 101 | — | — | $0,2901 | **$0,0029** |
+
+Contra los $0,0128 de la medición anterior, es entre 3 y 8 veces menos: el
+razonamiento invisible ya no se factura. Se usa el **promedio** (no la mediana)
+porque el tope de `--max-cost` corta por suma, y el promedio de texto está por
+encima de su mediana ($0,0023) por los anuncios largos.
+
+| Modelo | Por anuncio (promedio, ambos) | 1.200 anuncios al mes | Backlog de ~400 |
+| --- | --- | --- | --- |
+| Claude Haiku 4.5 | ~$0,0014 | ~$1,7 | ~$0,6 |
+| **Claude Sonnet 5** | **$0,0029** | **~$3,4** | **~$1,2** |
+| Claude Opus 5 | ~$0,0072 | ~$8,6 | ~$2,9 |
+
+Solo Sonnet 5 tiene dato real; Haiku y Opus son la misma cuenta con sus
+tarifas. **Muestra chica y ventana de dos días** (101 llamadas): a re-medir
+cuando haya más volumen. La consulta para rehacerla: `llm_proposals` unida a
+`raw_ingestions.content_type`, filtrada por `prompt_version` y `status = 'ok'`,
+sumando `input_tokens` y `output_tokens`.
+
 ### Por qué Sonnet 5 y no el más barato
 
 Los casos que llegan a esta capa son, por construcción, los que las reglas ya no
 pudieron resolver — o sea los ambiguos. Ahí conviene criterio, y la diferencia
-contra Haiku es de **~$7,7 al mes** (mediana de producción real, tabla de
-arriba). A este volumen el precio no es una restricción real: la elección la
+contra Haiku es de **~$1,7 al mes** (promedio de producción real, sección
+re-medida). A este volumen el precio no es una restricción real: la elección la
 debería gobernar la calidad.
 
 Si la medición contra la cola real muestra que Sonnet no alcanza, subir a Opus
-cuesta **~$23 más por mes**. Eso se decide con el número de la medición en la
+cuesta **~$5 más por mes**. Eso se decide con el número de la medición en la
 mano, no antes.
 
 ### Palanca disponible si el volumen crece
 
 Los catálogos cerrados y el esquema son un prefijo estable en cada llamada: con
 *prompt caching* ese tramo se cobra a una fracción. Hoy no hace falta —el total
-proyectado con Sonnet 5 son ~$15 al mes—, pero si el volumen se multiplica, ahí
+proyectado con Sonnet 5 son ~$3,4 al mes—, pero si el volumen se multiplica, ahí
 está el ahorro y conviene medirlo antes de cambiar de modelo por costo.
 
 ---

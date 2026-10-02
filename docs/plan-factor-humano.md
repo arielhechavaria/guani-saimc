@@ -38,7 +38,7 @@ misma sesión. El candidato más probable es A1b.
 
 | Slice | Qué | Tamaño | Depende de | Modelo | Estado |
 | --- | --- | --- | --- | --- | --- |
-| A0 | Base confiable: suite verde y cifras de costo al día | S | — | Sonnet | PENDIENTE |
+| A0 | Base confiable: suite verde y cifras de costo al día | S | — | Sonnet | HECHO |
 | A2a | Bitácora de curaduría: especificación | M | A0 | Opus | PENDIENTE |
 | A2b | Bitácora de curaduría: migración y escritura | M | A2a | Sonnet | PENDIENTE |
 | A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | PENDIENTE |
@@ -205,7 +205,7 @@ Ninguno se toma en este plan. Cada uno se decide en su slice y se registra ahí.
 
 ## Fase A — sin apartarse de nada
 
-### A0 — Base confiable: suite verde y cifras de costo al día — PENDIENTE
+### A0 — Base confiable: suite verde y cifras de costo al día — HECHO (2026-10-02)
 
 **Objetivo.** Que «los tests pasan» signifique algo en cada cierre, y que los
 documentos de la rutina no citen un costo viejo.

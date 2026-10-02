@@ -1,10 +1,12 @@
 """`/marketing` — las 9 tarjetas de la campaña, con datos reales.
 
-Sin Chromium instalado en este entorno de test (igual que en el VPS antes de
-correr `playwright install-deps`), así que `card.png` se prueba por el
-camino degradado: 503 explicando cómo instalarlo, nunca una pila cruda.
+`card.png` se prueba por el camino degradado (503 explicando cómo instalarlo,
+nunca una pila cruda) simulando un Chromium que no arranca: el resultado no
+depende de si la máquina que corre los tests tiene Chromium o no.
 """
 
+import sys
+import types
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -229,9 +231,32 @@ class TestTarjetasEstaticas:
             assert "Pollo" not in respuesta.text
 
 
+@pytest.fixture
+def sin_chromium(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Simula un Chromium que no arranca, tenga o no la máquina uno instalado."""
+
+    class _Chromium:
+        def launch(self) -> None:
+            raise RuntimeError("Executable doesn't exist")
+
+    class _Playwright:
+        chromium = _Chromium()
+
+        def __enter__(self) -> "_Playwright":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    fake = types.ModuleType("playwright.sync_api")
+    fake.sync_playwright = _Playwright  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "playwright", types.ModuleType("playwright"))
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake)
+
+
 class TestDescargaPNG:
     def test_sin_chromium_instalado_degrada_a_503_explicando_como_instalarlo(
-        self, client: TestClient, datos: None
+        self, client: TestClient, datos: None, sin_chromium: None
     ) -> None:
         respuesta = client.get(
             "/marketing/card/dato-del-dia.png", params={"product": "Arroz"}
@@ -250,7 +275,7 @@ class TestDescargaPNG:
         assert respuesta.status_code == 404
 
     def test_una_tarjeta_estatica_tambien_degrada_a_503_sin_chromium(
-        self, client: TestClient, datos: None
+        self, client: TestClient, datos: None, sin_chromium: None
     ) -> None:
         respuesta = client.get("/marketing/card/carrusel-cierre.png")
 

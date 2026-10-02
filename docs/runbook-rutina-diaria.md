@@ -47,11 +47,11 @@ tienen propuesta y cuánto costaría. Si la cifra tiene sentido:
 .venv/bin/python -m saimc.extraction.prefill --execute --max-cost 1
 ```
 
-- `--max-cost 1` corta antes de gastar 1 USD. A $0,0128 por anuncio (mediana
-  medida, `docs/costos.md`), alcanza para unos 75 anuncios, más o menos lo que
+- `--max-cost 1` corta antes de gastar 1 USD. A $0,0029 por anuncio (promedio
+  medido, `docs/costos.md`), alcanza para unos 340 anuncios: más que lo que
   entra en foco en un día.
-- **La primera vez**, con el backlog acumulado, usá `--max-cost 5`
-  (≈400 anuncios).
+- **La primera vez**, con el backlog acumulado (~400), alcanza con
+  `--max-cost 2` (≈$1,2 esperado, con margen).
 - Salí de `tmux` sin cortarlo con `Ctrl+b` y después `d`. Para volver:
   `tmux attach -t prefill`.
 - Si se corta, relanzá el mismo comando: salta lo que ya tiene propuesta.
