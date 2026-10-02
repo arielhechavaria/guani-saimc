@@ -1,9 +1,8 @@
 # Plan — Sacar al operador del camino de cada registro
 
-Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (A6 desbloqueada y
-ampliada a los campos cerrados; A6b agregada; contrato de la señal externa en A5a;
-columna «Modelo» en el tablero; A2a y A2b cerradas; regla de actualizar el estado al
-terminar cada tarea).
+Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (vía rápida al MVP con
+la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
+sesgo del lote en la evidencia de G1a, I1 sin línea de base).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -32,7 +31,7 @@ El push, la migración en el VPS y la verificación los hace el operador. El
 siguiente slice no se abre hasta que el operador confirme.
 
 **Estados:** `PENDIENTE`, `ABIERTO`, `CERRADO (fecha)`, `BLOQUEADO (motivo)`,
-`DESCARTADO (motivo)`.
+`DESCARTADO (motivo)`, `NO HACE FALTA (fecha)`.
 
 **Tamaño:** S es una sesión corta, M una sesión completa, L dos sesiones o más
 (se parte si crece).
@@ -75,7 +74,7 @@ misma sesión. El candidato más probable es A1b.
 | **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5b, B1 | Opus | PENDIENTE |
 | **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
 | B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a, B1 | Opus | PENDIENTE |
-| B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1; se entrega junto con B2c | Opus | PENDIENTE |
+| B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | PENDIENTE |
 | B2c | Freno automático del carril 1 | M | B2b | Opus | PENDIENTE |
 | B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
 | B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | PENDIENTE |
@@ -137,8 +136,13 @@ desde A2d es este. Motivo completo en `docs/decisions.md` (2026-10-02, «Vía r�
   resolvió el sistema.
 - **B2b y B2c se entregan juntas.** El carril 1 no se enciende sin su freno.
 - **Los canales nuevos (3 a 5 por día, con su histórico) entran después de B2a**,
-  para que el volumen lo absorba el descarte automático y no la hora diaria. Es
-  adelantar C4 sin C3: apartamiento registrado.
+  para que el volumen lo absorba el descarte automático y no la hora diaria. No es
+  un apartamiento de la spec: §10.7 declara C3 y C4 «no aplicables» en la Fase 0–1,
+  porque la barrera contra el dato falso es el operador que revisa cada fila. Es un
+  cambio de orden del plan.
+- **C3 va antes del carril 1** (revisión del 2026-10-02). El carril 1 saca al
+  operador de esa barrera: los controles de §10.7 tienen que estar operativos
+  antes de que una fila se publique sin revisión.
 
 **Orden.**
 
@@ -152,10 +156,10 @@ desde A2d es este. Motivo completo en `docs/decisions.md` (2026-10-02, «Vía r�
 | 6 | B2a | Descarte automático con muestra auditada por semana |
 | 7 | Canales nuevos | Volumen en foco |
 | 8 | A5c | Informe semanal de sombra del carril 1 |
-| 9 | K1, A3c, A1c, K3, K4, A6, B5, C1 | Desarrollo que no espera volumen, mientras el modo sombra acumula |
+| 9 | K1, A3c, A1c, K3, K4, A6, B5 → C3, C1 | Desarrollo que no espera volumen, mientras el modo sombra acumula |
 | 10 | G1b → B2b + B2c | Aceptación automática con freno |
 | 11 | B3, B4, C2, A6b | Lo que cuelga del carril 1 |
-| 12 | C3 → C4 | Controles de §10.7 y expansión en serio |
+| 12 | C4 | Expansión en serio: provincias, productos y canales por tanda |
 
 Estimación: a un slice por día hábil, el carril 0 queda encendido en unas dos
 semanas. A5a, A5b y B1 son slices grandes; es una estimación.
@@ -173,18 +177,21 @@ desarrollo y se hace sin esperar.
 | K3, K4 | No | Paso 9 |
 | A6 | No | Paso 9. A5a especifica el contrato de la señal externa sin suponer a Jev |
 | B5 | No | Paso 9; C3 lo necesita |
+| C3 | No | Paso 9, después de B5. Bloquea B2b |
 | C1 | No | Paso 9, después de B2a |
 | B3, C2 | Sí, por G1b | Paso 11 |
 | B4 | Sí, por B2b | Paso 11 |
 | A6b | No, pero necesita A6 favorable, A5b y B1 | Paso 11, o antes si A6 ya cerró |
-| C3, C4 | No | Paso 12; los canales del paso 7 son un adelanto registrado |
+| C4 | No | Paso 12; los canales del paso 7 son un adelanto |
 
-El paso 9 no tiene orden fijo salvo K1 primero: cada sesión toma el que convenga.
+El paso 9 no tiene orden fijo salvo K1 primero y C3 después de B5: cada sesión toma
+el que convenga.
 Si el modo sombra llega al n antes de terminar el paso 9, G1b pasa adelante.
 
 **Adelantar G1b.** El carril 1 se puede encender antes de llegar al n de la
 especificación solo si están las tres cosas: procedencia en cada fila (B1),
-auditoría semanal con su cota (B2b) y freno automático (B2c). Así el error se mide
+auditoría semanal con su cota (B2b) y freno automático (B2c), más C3 operativo.
+Así el error se mide
 andando en vez de antes. Es decisión del operador, se registra como apartamiento,
 y el número que se le muestra a un tercero es el auditado, nunca uno estimado.
 
@@ -213,7 +220,7 @@ las métricas de `/control`, los paneles y toda la interfaz.
 
 | Hito | Cuándo | Qué se muestra |
 | --- | --- | --- |
-| I1 | después de A2d | Horas humanas por 1.000 anuncios, medidas antes y después del lote de imágenes |
+| I1 | desde A2d, con semanas acumuladas | Horas humanas por 1.000 anuncios semana a semana desde el 2026-10-02. Sin «antes» medido: la bitácora empezó el mismo día que el lote de imágenes |
 | I2 | después de A5c con n suficiente | «El sistema podría resolver solo el X%, con un error de a lo sumo Y% (cota al 95%)», medido y no prometido |
 | I3a | cuatro semanas después de B2a | Descarte automático real, con los falsos descartes auditados semana a semana (vía rápida) |
 | I3 | cuatro semanas después de B2b | Automatización real, con el error auditado semana a semana |
@@ -235,7 +242,8 @@ Lo que aparezca fuera del slice en curso se anota acá, no se hace.
 
 **Al empezar:**
 1. `mem_context`, como pide `CLAUDE.md`.
-2. Abrir este plan, ir al Tablero y tomar el primer `PENDIENTE` de «Próximos pasos».
+2. Abrir este plan, ir al Tablero y tomar el primer `PENDIENTE` del orden de la
+   «Vía rápida al MVP».
    Si el modelo de la sesión no es el de la columna «Modelo», avisarlo antes de
    empezar.
 3. Confirmar que el slice anterior está `CERRADO` y verificado por el operador, y que
@@ -298,8 +306,9 @@ resuelve sin revisión individual, con auditoría.
 - **2026-10-02.** Hay clave de Jev. A6 no se reemplaza: es la medición de la que
   dependen los umbrales. Si sale favorable, Jev entra por A6b como una señal más del
   motor, en modo sombra. No decide ni escribe `origin = auto`: eso sigue siendo de
-  B2b, después de G1.
-- La automatización (carriles 0 y 1) no se enciende sin la compuerta G1.
+  B2b, después de G1b.
+- La automatización no se enciende sin su compuerta: G1a para el carril 0 y G1b
+  para el carril 1.
 
 ## Apartamientos que este plan va a pedir
 
@@ -307,7 +316,8 @@ Ninguno se toma en este plan. Cada uno se decide en su slice y se registra ahí.
 
 | Qué | De qué | Dónde se decide |
 | --- | --- | --- |
-| Carriles 0 y 1 encendidos | decisión cerrada 2; §6.1 («no etapas autónomas»); §10.7 (un humano por registro en la Fase 0–1) | G1 |
+| Carril 0 encendido | decisión cerrada 2; §6.1 («no etapas autónomas») | G1a |
+| Carril 1 encendido | decisión cerrada 2; §6.1; §10.7 (un humano por registro en la Fase 0–1) | G1b |
 | Usar `robust_fence` para validar | su docstring la declara «de dibujo, no de publicación» | A5a |
 | Banda robusta en lugar de la fórmula 70/30 de la regla 2, si se elige así | §6.2 regla 2 | A5a |
 | Métrica de la Fase 0 | §12.5 y §3, y la entrada del 2026-08-12 | B3 |
@@ -1028,6 +1038,12 @@ Agregada el 2026-10-02 (vía rápida). Va después de A5b y B1, antes de B2a.
 las revisiones de `llm_reviews` y el oro del backtest, con la cota superior de
 Clopper-Pearson al 95% y el n. El criterio exacto lo fija A5a.
 
+**Ojo con la evidencia del lote.** Los descartes del lote de imágenes
+(`mode = batch_model`) se aceptaron con las miniaturas marcadas por defecto (A1a):
+que el operador no desmarcara una no prueba que la miró. Contarlos como acuerdo
+humano infla la tasa de acierto del carril 0. A5a decide qué cuenta como evidencia;
+la sugerencia es solo decisiones individuales y lo rescatado del lote.
+
 **Qué decide el operador.** Si se enciende el carril 0, con qué meta de falsos
 descartes y de qué tamaño es la muestra semanal de auditoría.
 
@@ -1038,19 +1054,17 @@ se estrecha el carril o no se enciende: la compuerta se adelanta, no se saltea.
 
 ### G1b — Compuerta del carril 1: ¿se acepta solo? — PENDIENTE
 
-Era G1. La pregunta 1 de abajo pasó a G1a.
+Era G1. La decisión del carril 0 pasó a G1a.
 
 
-**Qué se lleva.** A2d (horas antes y después), A5c con el n de la especificación y,
+**Qué se lleva.** A2d (horas semana a semana), A5c con el n de la especificación y,
 si hubo, A6 y el informe de sombra con Jev de A6b. Si Jev entra en algún carril, sus
 umbrales se fijan acá con su n.
 
 **Qué decide el operador.**
-1. ¿Se enciende el carril 0 (descarte automático)? El riesgo es perder datos, no
-   corromperlos.
-2. ¿Se enciende el carril 1 (aceptación automática)? ¿Con qué meta de error? La meta
+1. ¿Se enciende el carril 1 (aceptación automática)? ¿Con qué meta de error? La meta
    la elige el operador; el umbral lo da el dato.
-3. ¿De qué tamaño es la auditoría semanal?
+2. ¿De qué tamaño es la auditoría semanal del carril 1?
 
 **Qué se escribe si la respuesta es sí.**
 - Las entradas en `decisions.md` que reemplazan en parte a la decisión cerrada 2.
@@ -1177,7 +1191,8 @@ Todo gasto se aprueba antes con el monto estimado.
 
 | Riesgo | Qué se hace |
 | --- | --- |
-| El modo sombra no llega al n porque se cura poco | La rutina diaria sigue. El oro sirve de calibración desde el día uno. Si en seis semanas no se llega, se revisa en G1 con lo que haya y la cota que dé |
+| El modo sombra no llega al n porque se cura poco | La rutina diaria sigue. El oro sirve de calibración desde el día uno. Si en seis semanas no se llega, se revisa en G1b con lo que haya y la cota que dé |
 | Las migraciones en producción | `pg_dump` antes de cada `alembic upgrade head`, en los pasos de verificación |
-| El sello automático aumenta con los lotes | A2c corregida, «Rescatar» visible y, después de G1, la auditoría |
+| El sello automático aumenta con los lotes | A2c corregida, «Rescatar» visible y, después de G1a, la auditoría |
+| G1a se calibra con descartes de lote aceptados sin mirar | A5a fija qué cuenta como evidencia; la sugerencia es solo decisiones individuales y lo rescatado |
 | El plan crece | Lo nuevo va a «Pendientes sueltos». Los cambios de orden se anotan en la línea «Última actualización» |
