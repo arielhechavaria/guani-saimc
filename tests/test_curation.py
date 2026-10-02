@@ -369,6 +369,86 @@ class TestCurationQueueGet:
         assert response.status_code == 200
         assert 'id="published_date" value="2026-08-16"' in response.text
 
+    def test_imagen_de_whatsapp_sin_fecha_en_el_ocr_toma_captured_at(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A7: el webhook guarda en `captured_at` la hora del mensaje, también
+        para las fotos; sin fecha en el OCR, esa es la de publicación."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-a7-whatsapp-sin-fecha",
+            content_type=ContentType.IMAGE,
+            captured_at=datetime(2026, 9, 20, 15, 30, tzinfo=UTC),
+            source_type=SourceType.WHATSAPP_CHANNEL,
+            source_reference="Groupej Morales Surl",
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "pollo a 500 habana")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="published_date" value="2026-09-20"' in response.text
+
+    def test_imagen_de_whatsapp_con_fecha_en_el_ocr_gana_la_del_ocr(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-a7-whatsapp-con-fecha",
+            content_type=ContentType.IMAGE,
+            captured_at=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+            source_type=SourceType.WHATSAPP_CHANNEL,
+        )
+        monkeypatch.setattr(
+            ocr,
+            "transcribe",
+            lambda path, lang="spa": "Juan Pérez - Ayer a las 14:35\npollo a 500 habana",
+        )
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="published_date" value="2026-08-09"' in response.text
+
+    def test_imagen_de_whatsapp_sin_texto_de_ocr_igual_toma_captured_at(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-a7-whatsapp-ocr-vacio",
+            content_type=ContentType.IMAGE,
+            captured_at=datetime(2026, 9, 21, 9, 0, tzinfo=UTC),
+            source_type=SourceType.WHATSAPP_CHANNEL,
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="published_date" value="2026-09-21"' in response.text
+
+    def test_imagen_de_bandeja_sin_fecha_en_el_ocr_queda_vacia(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fuera de WhatsApp `captured_at` es el mtime del archivo, no una fecha
+        confiable: la fecha sigue vacía, como antes de A7."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session,
+            hash_="hash-a7-bandeja",
+            content_type=ContentType.IMAGE,
+            captured_at=datetime(2026, 9, 20, 15, 30, tzinfo=UTC),
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "pollo a 500 habana")
+
+        response = client.get("/curation")
+
+        assert response.status_code == 200
+        assert 'id="published_date" value=""' in response.text
+
     def test_formulario_vacio_si_el_ocr_no_reconoce_nada(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:

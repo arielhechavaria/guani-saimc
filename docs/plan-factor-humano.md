@@ -52,7 +52,7 @@ misma sesión. El candidato más probable es A1b.
 | A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | CERRADO (2026-10-02) |
 | A1a | Lote de imágenes: prototipo a 390 px | S | — | Sonnet | CERRADO (2026-10-02) |
 | A1b | Lote de imágenes con el veredicto del modelo | M–L | A1a, A2b | Sonnet | CERRADO (2026-10-02) |
-| A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | Sonnet | PENDIENTE |
+| A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | Sonnet | CERRADO (2026-10-02) |
 | A3a | Glosario: cargar las convenciones del operador | S | — | Sonnet | PENDIENTE |
 | A3b | Glosario: medir su efecto con el backtest | S | A3a | Sonnet | PENDIENTE |
 | A4a | Panel por canal que sirva para decidir | M | A2b | Sonnet | PENDIENTE |
@@ -447,7 +447,7 @@ aparta de §6.1.
 
 ---
 
-### A7 — Fecha de las fotos de WhatsApp prellenada — PENDIENTE
+### A7 — Fecha de las fotos de WhatsApp prellenada — CERRADO (2026-10-02)
 
 **Objetivo.** Sacar una fricción fija de cada imagen.
 

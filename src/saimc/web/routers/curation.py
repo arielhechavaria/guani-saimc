@@ -1143,6 +1143,29 @@ def curation_queue(
     )
 
 
+def _guess_published_date(ingestion: RawIngestion, text: str) -> date | None:
+    """Fecha de publicación que se le prellena al operador.
+
+    Para un mensaje de WhatsApp automatizado, `captured_at` YA es la fecha de
+    publicación real — el timestamp que WAHA reporta del envío, no la hora en
+    que alguien lo capturó a mano días después (la ambigüedad por la que
+    `published_date` es un campo separado, 2026-08-10). Vale igual para la foto
+    que para el texto (A7). La heurística de texto (`guess_published_date`,
+    patrón "Nombre - fecha") sigue siendo lo mejor que hay para el resto de
+    las fuentes: ahí `captured_at` es el mtime del archivo, no una fecha
+    confiable.
+
+    En una imagen, si el OCR trae una fecha explícita manda esa sobre
+    `captured_at`: es la del anuncio, no la del reenvío.
+    """
+    if ingestion.source_type != SourceType.WHATSAPP_CHANNEL:
+        return guess_published_date(text, ingestion.captured_at) if text else None
+    if ingestion.content_type == ContentType.IMAGE and text:
+        # El OCR puede traer la fecha del anuncio; si no, vale la del mensaje.
+        return guess_published_date(text, ingestion.captured_at) or ingestion.captured_at.date()
+    return ingestion.captured_at.date()
+
+
 def _curation_view(
     request: Request,
     db: Session,
@@ -1192,24 +1215,7 @@ def _curation_view(
             source_reference_guess = (
                 ingestion.source_reference or guess_source_reference(ingestion.original_text) or ""
             )
-            # Mismo criterio que el canal origen, de arriba: para un mensaje
-            # de WhatsApp automatizado, `captured_at` YA es la fecha de
-            # publicación real — es el timestamp que WAHA reporta del envío
-            # del mensaje, no la hora en que alguien lo capturó a mano horas
-            # o días después (que es justo la ambigüedad por la que
-            # `published_date` existe como campo separado, 2026-08-10). La
-            # heurística de texto (`guess_published_date`, mismo patrón
-            # "Nombre - fecha" que `guess_source_reference`) sigue siendo lo
-            # mejor que hay para el resto de las fuentes: ahí `captured_at`
-            # es el mtime del archivo, no una fecha confiable.
-            known_date = (
-                ingestion.captured_at.date()
-                if ingestion.source_type == SourceType.WHATSAPP_CHANNEL
-                else None
-            )
-            guessed = known_date or guess_published_date(
-                ingestion.original_text, ingestion.captured_at
-            )
+            guessed = _guess_published_date(ingestion, ingestion.original_text)
             published_date_guess = guessed.isoformat() if guessed else ""
     elif ingestion is not None and ingestion.original_text is None:
         # content_type == IMAGE acá (el único otro valor posible).
@@ -1222,8 +1228,10 @@ def _curation_view(
             source_reference_guess = (
                 ingestion.source_reference or guess_source_reference(recognized_text) or ""
             )
-            guessed = guess_published_date(recognized_text, ingestion.captured_at)
-            published_date_guess = guessed.isoformat() if guessed else ""
+        # Fuera del `if`: una foto de WhatsApp sin texto reconocido igual trae
+        # la hora del mensaje en `captured_at` (A7).
+        guessed = _guess_published_date(ingestion, recognized_text)
+        published_date_guess = guessed.isoformat() if guessed else ""
 
     # Texto que ve el operador y que se le da al modelo: el original si es un
     # ítem de texto, lo que salió del OCR si es una imagen. Vacío para una
