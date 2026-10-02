@@ -1,6 +1,7 @@
 # Plan — Sacar al operador del camino de cada registro
 
-Fecha del plan: 2026-09-29. Última actualización: 2026-09-29.
+Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (A6 desbloqueada y
+ampliada a los campos cerrados; A6b agregada; contrato de la señal externa en A5a).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -47,14 +48,15 @@ siguiente slice no se abre hasta que el operador confirme.
 | A5c | Informe del modo sombra | M | A5b | PENDIENTE |
 | A3c | «Guardar como regla» desde la cola | M | A3b | PENDIENTE |
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | PENDIENTE |
-| A6 | Prueba de Jev fuera de línea | M | acceso a Jev | BLOQUEADO (lista de espera) |
+| A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | PENDIENTE |
+| A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | PENDIENTE |
 | K1 | `/edit` con historial | M | A2b | PENDIENTE |
 | K3 | Guardar la transcripción del OCR | M | — | PENDIENTE |
 | K4 | Aviso de hueco de ingesta por canal | M | — | PENDIENTE |
 | K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | PENDIENTE |
 | B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | PENDIENTE |
 | B5 | Emisor de grupo como hash con clave | M | — | PENDIENTE |
-| **G1** | **Compuerta: ¿se automatiza?** | S | A2d, A5c con n suficiente | PENDIENTE |
+| **G1** | **Compuerta: ¿se automatiza?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | PENDIENTE |
 | B2a | Carril 0 encendido: descarte automático con auditoría | M | G1, B1 | PENDIENTE |
 | B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1, B1 | PENDIENTE |
 | B2c | Freno automático del carril 1 | M | B2b | PENDIENTE |
@@ -90,7 +92,10 @@ B1 y B5. La compuerta cae entre la semana 6 y la 8. Son estimaciones.
 12. **G1** — la decisión.
 13. **B2a → B2b → B2c → B3 → B4**, y después la fase C.
 
-A6 entra donde caiga en cuanto haya acceso a Jev. No bloquea nada.
+A6 ya tiene acceso a Jev (2026-10-02) y entra donde caiga. No bloquea nada, pero
+conviene cerrarla antes de A5a: su resultado dice si el contrato de la señal externa
+se especifica con Jev en mente o sin él. A6b va después de B1 y solo si A6 salió
+favorable; tampoco bloquea nada, y G1 se puede decidir sin ella.
 
 ### Hitos para el inversor
 
@@ -167,6 +172,10 @@ resuelve sin revisión individual, con auditoría.
   el sistema sigue funcionando con su calibración base. Vale para Jev y para
   cualquier otro. Registrado en `decisions.md` el 2026-09-29.
 - Jev solo como prueba fuera de línea (A6). No entra en producción antes de pasarla.
+- **2026-10-02.** Hay clave de Jev. A6 no se reemplaza: es la medición de la que
+  dependen los umbrales. Si sale favorable, Jev entra por A6b como una señal más del
+  motor, en modo sombra. No decide ni escribe `origin = auto`: eso sigue siendo de
+  B2b, después de G1.
 - La automatización (carriles 0 y 1) no se enciende sin la compuerta G1.
 
 ## Apartamientos que este plan va a pedir
@@ -573,7 +582,15 @@ lleva el flujo completo.
 - **Carriles 0, 1 y 2:** los predicados exactos (estudio §4), incluido cómo entra la
   provincia.
 - **Señales externas:** aditivas y desconectables. Hay una calibración base sin
-  ellas.
+  ellas. La especificación fija su contrato, que es el que después implementa A6b:
+  - la señal responde solo preguntas cerradas cuyas opciones salen de los catálogos
+    del sistema (producto piloto, moneda, provincia, formato de venta);
+  - el motor la lee como acuerdo o desacuerdo con el valor extraído, más la
+    probabilidad. Un desacuerdo con probabilidad alta manda a revisión; nunca acepta;
+  - sin puntaje global de confianza y sin preguntas de coherencia del precio: eso es
+    la regla 2 y `verify_evidence`;
+  - una respuesta ausente, tardía o de tipo inesperado equivale a «sin señal»;
+  - el motor es el único que decide el carril. No hay un orquestador aparte.
 - **Protocolo del modo sombra:**
   - calibración sobre el oro del backtest y evaluación sobre las revisiones nuevas,
     sin mezclarlas;
@@ -668,27 +685,94 @@ del 5% del tiempo según el estudio §1.
 
 ---
 
-### A6 — Prueba de Jev fuera de línea — BLOQUEADO (lista de espera)
+### A6 — Prueba de Jev fuera de línea: triage y campos cerrados — PENDIENTE
+
+**Objetivo.** Saber si la probabilidad de Jev está calibrada sobre anuncios cubanos
+en español, por pregunta. Sin ese número no hay umbral que fijar.
 
 **Qué entra.**
 - Un script fuera del camino crítico (por ejemplo, `scripts/jev_eval.py`) que nada
   del sistema importa.
 - Clave propia en `.env` y tope de gasto.
 - Solo texto redactado con `redact_personal_data()`.
-- Las preguntas: un sí/no («¿ofrece un producto piloto con precio?») y una elección
-  de producto.
-- Los datos: las 1.235 decisiones sobre texto (156 curados y 1.079 descartados). Las
-  imágenes necesitan K3.
-- Las salidas: el diagrama de confiabilidad por tramos, el Brier y el acuerdo con
-  `llm_proposals.discard`.
+- **Pregunta de triage:** un sí/no («¿ofrece un producto piloto con precio?»), contra
+  las 1.235 decisiones sobre texto (156 curados y 1.079 descartados). Las imágenes
+  necesitan K3.
+- **Preguntas por campo cerrado** (ampliación del 2026-10-02): producto, moneda,
+  provincia y formato de venta, cada una como elección con las opciones de los
+  catálogos del sistema. Se comparan contra lo que el operador guardó en los anuncios
+  curados. La verdad es la fila curada, nunca la propuesta del extractor.
+- **Lo que no se pregunta:** coherencia del precio ni un puntaje global de confianza.
+- Las salidas, por pregunta: el diagrama de confiabilidad por tramos, el Brier, el n,
+  y el acuerdo con `llm_proposals` (con `discard` para el triage).
 
-**Gasto.** Menos de $0,20, que se aprueba antes.
+**Gasto.** Menos de $0,20, que se aprueba antes. La salida de Jev no se cobra, así
+que sumar preguntas casi no lo mueve.
 
-**Paso previo del operador.** Pedir acceso en Cloudflare Workers AI (`typesafe/jev`)
-o en DigitalOcean.
+**Paso previo del operador.** Hecho: hay clave (2026-10-02).
 
-**`decisions.md`.** Sí: Jev entra como señal desconectable en un slice futuro, o se
-descarta en firme.
+**Límite conocido.** Los curados son pocos (156 anuncios). Las preguntas por campo
+van a tener cotas anchas; el reporte las muestra con su n y no fija umbrales.
+
+**`decisions.md`.** Sí: Jev entra como señal desconectable por A6b, o se descarta en
+firme. Puede ser un resultado distinto por pregunta.
+
+---
+
+### A6b — Jev como señal desconectable del motor, en modo sombra — PENDIENTE
+
+**Depende de:** A6 con resultado favorable, A5b (el motor) y B1 (los campos
+persistidos). Si A6 sale desfavorable, pasa a `DESCARTADO`.
+
+Toca el motor de validación, así que lleva el flujo completo. El contrato ya está en
+la especificación de A5a («Señales externas»); este slice lo implementa.
+
+**Objetivo.** Que el motor reciba la respuesta de Jev como una señal más, con su
+procedencia, y que el modo sombra mida cuánto aporta.
+
+**Qué entra.**
+- Un adaptador `saimc/validation/jev_signal.py` detrás de la interfaz de señales
+  externas. Apagado por configuración, o sin clave, el motor da exactamente el mismo
+  resultado que antes.
+- Solo las preguntas que A6 dejó en pie, con las opciones de los catálogos.
+- Solo texto redactado con `redact_personal_data()`. Las imágenes son C2.
+- Tiempo límite por llamada y tope de gasto por corrida.
+- `validation_detail` suma la entrada `jev`: pregunta, respuesta, probabilidad y si
+  coincide con el valor extraído.
+- A5c informa el modo sombra con Jev y sin Jev, lado a lado.
+- La especificación del slice decide dónde corre la llamada (en el pre-cálculo o al
+  curar) y si eso pide guardar la respuesta en otra tabla.
+
+**Qué no entra.**
+- Cambiar `validation_status`, el carril u `origin` por lo que diga Jev. En sombra
+  solo se anota.
+- `origin = auto` y el descarte automático: B2a y B2b, después de G1.
+- Umbrales fijados a ojo. Salen de A6 y del informe de A5c con Jev, con su n.
+- Un segundo extractor de respaldo, o un orquestador fuera del motor.
+
+**Tests primero.**
+1. Jev apagado: el motor da lo mismo que sin el adaptador.
+2. Jev coincide con probabilidad alta: se anota en `validation_detail`; estado,
+   carril y `origin` no cambian.
+3. Jev discrepa con probabilidad alta: se anota como desacuerdo; nada más cambia.
+4. Jev devuelve un tipo inesperado o una opción fuera del catálogo: se registra el
+   evento y la fila queda «sin señal».
+5. Jev falla por red, por clave o por tiempo: el motor termina igual.
+6. Se alcanza el tope de gasto: se dejan de hacer llamadas y el resto de la corrida
+   sigue sin señal.
+
+**Verificación del operador.**
+1. `pg_dump`, push, `alembic upgrade head` si hubo migración, reinicio de
+   `saimc.service`.
+2. Curar un anuncio de texto y abrir su detalle de validación: aparece la entrada
+   `jev` con sus preguntas y probabilidades.
+3. Apagar Jev en `.env`, reiniciar y curar otro: no aparece la entrada y nada falla.
+4. `/control`: el gasto de Jev y cuántas filas tienen señal.
+5. **Lo que no tiene que pasar:** una fila con `origin = auto`, un estado distinto
+   por culpa de Jev, o una curaduría que falle porque Jev no respondió.
+
+**`decisions.md`.** Sí: Jev entra como señal desconectable del motor, en sombra, con
+las preguntas que quedaron. Los umbrales se registran en G1, no acá.
 
 ---
 
@@ -794,8 +878,9 @@ historial.
 
 ### G1 — Compuerta: ¿se automatiza? — PENDIENTE
 
-**Qué se lleva.** A2d (horas antes y después), A5c con el n de la especificación y
-A6, si hubo.
+**Qué se lleva.** A2d (horas antes y después), A5c con el n de la especificación y,
+si hubo, A6 y el informe de sombra con Jev de A6b. Si Jev entra en algún carril, sus
+umbrales se fijan acá con su n.
 
 **Qué decide el operador.**
 1. ¿Se enciende el carril 0 (descarte automático)? El riesgo es perder datos, no
@@ -911,7 +996,8 @@ acumulando o se estrecha el carril.
 | --- | --- | --- |
 | Rutina diaria de pre-cálculo | $0,0015–0,0029 por anuncio, alrededor de $1 por semana al volumen actual (estimado) | siempre |
 | A3b, backtest con glosario | $0,30–0,90 | una vez |
-| A6, prueba de Jev | menos de $0,20 | una vez, con acceso |
+| A6, prueba de Jev | menos de $0,20 | una vez |
+| A6b, Jev en sombra | del orden de $0,0001 por anuncio (estimado), con tope por corrida | mientras esté encendido |
 | C2b, backtest de imágenes con visión | alrededor de $1 cada 100 imágenes | una vez |
 
 Todo gasto se aprueba antes con el monto estimado.
