@@ -53,7 +53,7 @@ misma sesión. El candidato más probable es A1b.
 | A1a | Lote de imágenes: prototipo a 390 px | S | — | Sonnet | CERRADO (2026-10-02) |
 | A1b | Lote de imágenes con el veredicto del modelo | M–L | A1a, A2b | Sonnet | CERRADO (2026-10-02) |
 | A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | Sonnet | CERRADO (2026-10-02) |
-| A3a | Glosario: cargar las convenciones del operador | S | — | Sonnet | PENDIENTE |
+| A3a | Glosario: cargar las convenciones del operador | S | — | Sonnet | CERRADO (2026-10-02) |
 | A3b | Glosario: medir su efecto con el backtest | S | A3a | Sonnet | PENDIENTE |
 | A4a | Panel por canal que sirva para decidir | M | A2b | Sonnet | PENDIENTE |
 | A4b | Decidir la política de cada canal | S | A4a | Sonnet | PENDIENTE |
@@ -474,7 +474,7 @@ publicación aparece llena con el día del mensaje.
 
 ---
 
-### A3a — Glosario: cargar las convenciones del operador — PENDIENTE
+### A3a — Glosario: cargar las convenciones del operador — CERRADO (2026-10-02)
 
 **Objetivo.** Que el modelo deje de abstenerse donde el operador ya sabe la respuesta.
 Hoy el glosario tiene 0 entradas en producción.
