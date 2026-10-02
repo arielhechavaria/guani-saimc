@@ -56,8 +56,8 @@ misma sesión. El candidato más probable es A1b.
 | A3a | Glosario: cargar las convenciones del operador | S | — | Sonnet | CERRADO (2026-10-02) |
 | A3b | Glosario: medir su efecto con el backtest | S | A3a | Sonnet | CERRADO (2026-10-02) |
 | A4a | Panel por canal que sirva para decidir | M | A2b | Sonnet | CERRADO (2026-10-02) |
-| A4b | Decidir la política de cada canal | S | A4a | Sonnet | PENDIENTE |
-| A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | PENDIENTE |
+| A4b | Decidir la política de cada canal | S | A4a | Sonnet | CERRADO (2026-10-02) |
+| A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | NO HACE FALTA (2026-10-02) |
 | A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | PENDIENTE |
 | A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | PENDIENTE |
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | PENDIENTE |
@@ -542,7 +542,7 @@ imágenes pendientes aparece con su rendimiento y su costo en minutos.
 
 ---
 
-### A4b — Decidir la política de cada canal — PENDIENTE
+### A4b — Decidir la política de cada canal — CERRADO (2026-10-02)
 
 **Qué entra.** Una sesión de decisión con el panel de A4a. Por canal, una de tres:
 - **mantener;**
@@ -558,7 +558,7 @@ sigue en la cola y lo resuelve el lote de A1b.
 
 ---
 
-### A4c — (condicional) Canal «solo texto» — PENDIENTE
+### A4c — (condicional) Canal «solo texto» — NO HACE FALTA (2026-10-02)
 
 Solo si A4b lo elige para algún canal. Toca el esquema, así que lleva una
 especificación corta.
