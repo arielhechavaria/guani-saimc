@@ -12168,3 +12168,9 @@ Decisión: no se toca el código ni el prompt. Cifras v5 → v6 (n = 70 filas de
 La sobreaplicación: un anuncio de imagen dice «Azúcar blanca (460 Ib)» y «Arroz Guyanez (350 Ib)», precios por libra; con el glosario el modelo propuso 100 lb por fila (en v5 había acertado 1 lb). La entrada dice «sin cantidad ni peso», y el «(460 Ib)» no se lee como peso sino como precio por libra.
 Descartado: concluir «el glosario empeoró» por el −7 puntos agregado, y también «no hizo nada»: el efecto atribuible es +2 filas llenas y −1 por sobreaplicación, dentro del ruido.
 Consecuencia: la entrada 2 necesita una cláusula que excluya el precio por libra; es decisión del operador y se carga a mano en `/catalog`. Los registros de `data/llm-backtest-results-v6.jsonl` guardan el `prompt_version` base sin el sufijo del glosario (solo el registro de llamadas lo trae): una corrida con glosario distinto no se distingue en los resultados. Para medir de verdad el efecto hace falta una comparación pareada con más filas, no una nueva corrida de 100.
+
+## 2026-10-02 — A3b: cláusula de precio por libra en la entrada «Arroz o azúcar sin cantidad»
+Contexto: el backtest v6 mostró que la entrada se sobreaplicaba a anuncios con «(460 Ib)», precio por libra (entrada anterior de A3b).
+Decisión: se agrega al final de la definición: «Si el precio viene como «(460 lb)» o «/lb», es precio por libra: cantidad 1 lb.» Aplicada en la base local; en producción el operador la edita a mano en `/catalog` → Glosario.
+Descartado: re-correr el backtest ahora. Con n = 70 una fila no se distingue del ruido entre corridas; el efecto de la cláusula se mira en la cola real o en una comparación pareada con más filas.
+Consecuencia: el prompt efectivo cambia de versión (`effective_prompt_version`); las propuestas anteriores quedan con la versión vieja.
