@@ -2,6 +2,7 @@
 
 from saimc.models.base import Base
 from saimc.models.channel import Channel, Platform
+from saimc.models.curation_event import CurationAction, CurationEvent, CurationMode
 from saimc.models.exchange_rate_cache import ExchangeRateCache
 from saimc.models.glossary import GlossaryEntry
 from saimc.models.llm_review import LlmProposal, LlmReview, ProposalStatus, ReviewOutcome
@@ -28,6 +29,9 @@ __all__ = [
     "Base",
     "Channel",
     "ContentType",
+    "CurationAction",
+    "CurationEvent",
+    "CurationMode",
     "Currency",
     "DiscardReason",
     "ExchangeRateCache",

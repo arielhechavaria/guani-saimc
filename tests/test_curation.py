@@ -27,6 +27,7 @@ from saimc.extraction.llm_propose_ad import PROMPT_VERSION, AdProposal
 from saimc.models import (
     Channel,
     ContentType,
+    CurationEvent,
     Currency,
     DiscardReason,
     LlmProposal,
@@ -6305,6 +6306,108 @@ class TestAsistenteLLM:
         assert fila["final"]["sale_format"] == "retail"
 
 
+    # --- slice A2b: la bitácora con propuesta a la vista -------------------------
+    #
+    # `docs/spec-slice-A2.md`, casos 2, 5 y 16.
+
+    def test_a2b_caso2_curar_con_propuesta_a_la_vista_la_lleva_en_el_evento(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, producto, propuesta = self._asistido(
+            client, session, monkeypatch, ["500"]
+        )
+        datos = self._formulario(
+            ingestion,
+            {0: {"product_id": str(producto.id), "price": "500", "proposal_row": "0"}},
+            proposal_id=str(propuesta.id),
+        )
+
+        client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        session.expire_all()
+        (evento,) = session.execute(select(CurationEvent)).scalars()
+        assert evento.action == "curated"
+        assert evento.proposal_id == propuesta.id
+
+    def test_a2b_caso5_descartar_con_propuesta_la_lleva_en_el_evento(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion, _, propuesta = self._asistido(client, session, monkeypatch, ["500"])
+
+        client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={
+                "reason": "off_focus",
+                "proposal_id": str(propuesta.id),
+                "shown_at": "2026-10-02T10:00:00+00:00",
+            },
+            follow_redirects=False,
+        )
+
+        session.expire_all()
+        (evento,) = session.execute(select(CurationEvent)).scalars()
+        assert evento.action == "discarded"
+        assert evento.mode == "individual"
+        assert evento.discard_reason == "off_focus"
+        assert evento.proposal_id == propuesta.id
+        assert evento.shown_at is not None
+
+    def test_a2b_caso16_completar_con_ia_conserva_el_shown_at_original(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
+        primera_vista = "2026-10-02T09:00:00+00:00"
+
+        # El botón manda el reloj de la primera vista (campo oculto de su form).
+        html = client.get("/curation").text
+        formulario_assist = re.search(
+            rf'<form method="post" action="/curation/{ingestion.id}/assist">.*?</form>',
+            html,
+            re.S,
+        )
+        assert formulario_assist is not None
+        assert 'name="shown_at"' in formulario_assist.group(0)
+
+        html = client.post(
+            f"/curation/{ingestion.id}/assist", data={"shown_at": primera_vista}
+        ).text
+
+        # El re-render conserva ese reloj en vez de reiniciarlo.
+        assert f'name="shown_at" value="{primera_vista}"' in html
+        (propuesta,) = self._propuestas(session, ingestion)
+        producto = session.execute(select(Product)).scalars().one()
+        datos = self._formulario(
+            ingestion,
+            {0: {"product_id": str(producto.id), "price": "500", "proposal_row": "0"}},
+            proposal_id=str(propuesta.id),
+        )
+        datos["shown_at"] = primera_vista
+
+        client.post(f"/curation/{ingestion.id}", data=datos, follow_redirects=False)
+
+        session.expire_all()
+        (evento,) = session.execute(select(CurationEvent)).scalars()
+        assert evento.shown_at is not None
+        assert evento.shown_at.replace(tzinfo=None) == datetime(2026, 10, 2, 9, 0)
+        # También lo que recibe `llm_reviews.shown_at`.
+        (revision,) = self._revisiones(session)
+        assert revision.shown_at is not None
+        assert revision.shown_at.replace(tzinfo=None) == datetime(2026, 10, 2, 9, 0)
+
+
 class TestHistorialFiltraPorFormato:
     """El enlace «n =» de una celda de la Matriz tiene que aislar las filas de
     ESE formato. Sin el filtro, una celda de «caja de 40 lb» abriría también
@@ -6858,3 +6961,503 @@ class TestOrdenPorAcuerdoYBotonAceptar:
         assert "check</span>Curar anuncio" in html
         assert "check</span>Aceptar" not in html
         assert "requestSubmit" not in html
+
+
+# --- slice A2b: bitácora de curaduría (`docs/spec-slice-A2.md`) -------------------
+#
+# Los valores esperados salen de la especificación, no del código.
+
+
+def _eventos(session: Session) -> list[CurationEvent]:
+    session.expire_all()
+    return list(session.execute(select(CurationEvent)).scalars())
+
+
+def _form_curar(
+    ingestion: RawIngestion, producto: Product, *, filas: int = 1, **extra: str
+) -> dict[str, str]:
+    datos = {
+        "published_date": _fecha_pub(ingestion),
+        "row_count": str(filas),
+        "source_reference": "",
+    }
+    for i in range(filas):
+        datos[f"product_id_{i}"] = str(producto.id)
+        datos[f"price_{i}"] = str(100 * (i + 1))
+        datos[f"currency_{i}"] = "CUP"
+    datos.update(extra)
+    return datos
+
+
+def _campos_fila(precio: PriceHistory, i: int, **cambios: str) -> dict[str, str]:
+    datos = {
+        f"product_id_{i}": str(precio.product_id),
+        f"price_{i}": str(precio.price),
+        f"currency_{i}": Currency.CUP.value,
+        f"price_id_{i}": str(precio.id),
+    }
+    for campo, valor in cambios.items():
+        datos[f"{campo}_{i}"] = valor
+    return datos
+
+
+def _curado_de_dos_filas(
+    session: Session,
+) -> tuple[RawIngestion, PriceHistory, PriceHistory]:
+    pollo = _crear_producto(session, name="Pollo")
+    curado = _crear_raw_ingestion(session, hash_="hash-bitacora-curado")
+    curado.processing_status = ProcessingStatus.CURATED
+    session.commit()
+    fecha = curado.captured_at.date() - timedelta(days=1)
+    a = _crear_precio_curado(session, ingestion=curado, product=pollo, price="100")
+    b = _crear_precio_curado(session, ingestion=curado, product=pollo, price="200")
+    # La edición siempre manda la fecha de publicación: se parte de la misma
+    # para que «sin cambios» sea de verdad sin cambios.
+    a.published_date = fecha
+    b.published_date = fecha
+    session.commit()
+    return curado, a, b
+
+
+def _post_edicion(
+    client: TestClient, curado: RawIngestion, filas: list[dict[str, str]], **extra: str
+):
+    datos = {
+        "source_reference": "",
+        "published_date": _fecha_pub(curado),
+        "row_count": str(len(filas)),
+    }
+    for campos in filas:
+        datos.update(campos)
+    datos.update(extra)
+    return client.post(f"/curation/{curado.id}/edit", data=datos, follow_redirects=False)
+
+
+class TestBitacoraDeCuraduria:
+    def test_caso1_curar_dos_filas_escribe_un_evento_curated(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-bit-1")
+
+        response = client.post(
+            f"/curation/{ingestion.id}",
+            data=_form_curar(
+                ingestion, producto, filas=2, shown_at="2026-10-02T10:00:00+00:00"
+            ),
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        (evento,) = _eventos(session)
+        assert evento.ingestion_id == ingestion.id
+        assert evento.action == "curated"
+        assert evento.mode == "individual"
+        assert evento.discard_reason is None
+        assert evento.proposal_id is None
+        assert evento.detail == {"row_count": 2}
+        assert evento.shown_at is not None
+        assert evento.decided_at is not None
+
+    def test_caso3_un_proposal_id_ajeno_deja_el_evento_con_proposal_nulo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-bit-3")
+        otro = _crear_raw_ingestion(session, hash_="hash-bit-3-otro")
+        ajena = LlmProposal(
+            ingestion_id=otro.id,
+            model="m",
+            prompt_version="v",
+            status="ok",
+            rows=[],
+            input_tokens=0,
+            output_tokens=0,
+        )
+        session.add(ajena)
+        session.commit()
+
+        client.post(
+            f"/curation/{ingestion.id}",
+            data=_form_curar(ingestion, producto, proposal_id=str(ajena.id)),
+            follow_redirects=False,
+        )
+
+        (evento,) = _eventos(session)
+        assert evento.action == "curated"
+        assert evento.proposal_id is None
+
+    @pytest.mark.parametrize("motivo", ["no_data", "off_focus"])
+    def test_caso4_descartar_sin_propuesta(
+        self, client: TestClient, session: Session, motivo: str
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_=f"hash-bit-4-{motivo}")
+
+        client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": motivo, "shown_at": "2026-10-02T10:00:00+00:00"},
+            follow_redirects=False,
+        )
+
+        (evento,) = _eventos(session)
+        assert evento.ingestion_id == ingestion.id
+        assert evento.action == "discarded"
+        assert evento.mode == "individual"
+        assert evento.discard_reason == motivo
+        assert evento.proposal_id is None
+        assert evento.shown_at is not None
+        assert evento.detail is None
+
+    @pytest.mark.parametrize("valor", ["", "no-es-una-hora", "2026-13-45T99:00"])
+    def test_caso6_un_shown_at_vacio_o_malformado_queda_nulo_y_la_accion_se_guarda(
+        self, client: TestClient, session: Session, valor: str
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-bit-6")
+
+        response = client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "no_data", "shown_at": valor},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        (evento,) = _eventos(session)
+        assert evento.shown_at is None
+        session.refresh(ingestion)
+        assert ingestion.processing_status == ProcessingStatus.DISCARDED
+
+    def test_caso6_sin_el_campo_shown_at_tambien_queda_nulo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-bit-6b")
+
+        client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "no_data"},
+            follow_redirects=False,
+        )
+
+        (evento,) = _eventos(session)
+        assert evento.shown_at is None
+
+    def test_caso7_un_shown_at_sin_zona_se_toma_como_utc(self) -> None:
+        from saimc.curation_events import parse_shown_at
+
+        assert parse_shown_at("2026-10-02T10:00:00") == datetime(2026, 10, 2, 10, tzinfo=UTC)
+        assert parse_shown_at("2026-10-02T10:00:00+00:00") == datetime(
+            2026, 10, 2, 10, tzinfo=UTC
+        )
+        assert parse_shown_at("  ") is None
+        assert parse_shown_at("basura") is None
+
+    def test_caso7_un_shown_at_sin_zona_se_guarda_a_la_hora_dada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion = _crear_raw_ingestion(session, hash_="hash-bit-7")
+
+        client.post(
+            f"/curation/{ingestion.id}/discard",
+            data={"reason": "no_data", "shown_at": "2026-10-02T10:00:00"},
+            follow_redirects=False,
+        )
+
+        (evento,) = _eventos(session)
+        assert evento.shown_at is not None
+        assert evento.shown_at.replace(tzinfo=None) == datetime(2026, 10, 2, 10)
+
+    def test_caso8_lote_sin_foco_un_evento_por_anuncio_descartado(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
+        sin_foco_1 = _crear_raw_ingestion(
+            session, hash_="hash-bit-8a", original_text="cemento a 500 el saco"
+        )
+        sin_foco_2 = _crear_raw_ingestion(
+            session, hash_="hash-bit-8b", original_text="cabilla de media a 1200"
+        )
+        ya_no_califica = _crear_raw_ingestion(
+            session, hash_="hash-bit-8c", original_text="arroz blanco a 500 el saco"
+        )
+
+        response = client.post(
+            "/curation/sin-foco/discard",
+            data={
+                "ingestion_id": [
+                    str(sin_foco_1.id),
+                    str(sin_foco_2.id),
+                    str(ya_no_califica.id),
+                ],
+                "shown_at": "2026-10-02T10:00:00+00:00",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        eventos = _eventos(session)
+        assert {e.ingestion_id for e in eventos} == {sin_foco_1.id, sin_foco_2.id}
+        assert all(e.action == "discarded" for e in eventos)
+        assert all(e.mode == "batch_out_of_focus" for e in eventos)
+        assert all(e.discard_reason == "off_focus" for e in eventos)
+        assert all(e.proposal_id is None for e in eventos)
+        assert all(e.detail == {"batch_size": 2} for e in eventos)
+        assert len({e.shown_at for e in eventos}) == 1
+        assert eventos[0].shown_at is not None
+        assert len({e.decided_at for e in eventos}) == 1
+
+    def test_caso8_lote_sin_nada_que_descartar_no_escribe_eventos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        client.post(
+            "/curation/sin-foco/discard",
+            data={"ingestion_id": [str(uuid.uuid4())]},
+            follow_redirects=False,
+        )
+
+        assert _eventos(session) == []
+
+    def test_caso9_eliminar_un_curado_de_dos_filas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        id_a, id_b = str(a.id), str(b.id)
+        producto_a = str(a.product_id)
+
+        client.post(f"/curation/{curado.id}/delete", follow_redirects=False)
+
+        (evento,) = _eventos(session)
+        assert evento.ingestion_id == curado.id
+        assert evento.action == "deleted"
+        assert evento.mode == "individual"
+        assert evento.shown_at is None
+        assert evento.proposal_id is None
+        filas = {fila["price_history_id"]: fila["before"] for fila in evento.detail["rows"]}
+        assert set(filas) == {id_a, id_b}
+        assert Decimal(filas[id_a]["price"]) == Decimal("100")
+        assert Decimal(filas[id_b]["price"]) == Decimal("200")
+        assert filas[id_a]["currency"] == "CUP"
+        assert filas[id_a]["product_id"] == producto_a
+        assert filas[id_a]["province_id"] is None
+        # Solo campos de fila: nada de texto del anuncio ni notas.
+        assert "original_text" not in filas[id_a]
+
+    def test_caso10_editar_el_precio_de_una_fila_de_dos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        id_a = str(a.id)
+
+        response = _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0, price="900.00"), _campos_fila(b, 1)],
+            shown_at="2026-10-02T10:00:00+00:00",
+        )
+
+        assert response.status_code == 303
+        (evento,) = _eventos(session)
+        assert evento.action == "edited"
+        assert evento.mode == "individual"
+        assert evento.shown_at is not None
+        (entrada,) = evento.detail["rows"]
+        assert entrada["price_history_id"] == id_a
+        assert entrada["op"] == "updated"
+        assert set(entrada["before"]) == {"price"}
+        assert set(entrada["after"]) == {"price"}
+        assert Decimal(entrada["before"]["price"]) == Decimal("100")
+        assert Decimal(entrada["after"]["price"]) == Decimal("900.00")
+        assert "source_reference" not in evento.detail
+
+    def test_caso11_editar_borrando_una_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        id_a = str(a.id)
+
+        _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0, delete="on"), _campos_fila(b, 1)],
+        )
+
+        (evento,) = _eventos(session)
+        (entrada,) = evento.detail["rows"]
+        assert entrada["op"] == "deleted"
+        assert entrada["price_history_id"] == id_a
+        assert Decimal(entrada["before"]["price"]) == Decimal("100")
+        assert entrada["before"]["currency"] == "CUP"
+        assert "after" not in entrada
+
+    def test_caso12_editar_sin_cambiar_nada_escribe_el_evento_con_rows_vacio(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+
+        response = _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1)],
+            shown_at="2026-10-02T10:00:00+00:00",
+        )
+
+        assert response.status_code == 303
+        (evento,) = _eventos(session)
+        assert evento.action == "edited"
+        assert evento.detail["rows"] == []
+
+    def test_caso13_cambiar_source_reference_aparece_con_antes_y_despues(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        curado.source_reference = "grupo viejo"
+        session.commit()
+
+        _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1)],
+            source_reference="grupo nuevo",
+        )
+
+        (evento,) = _eventos(session)
+        assert evento.detail["rows"] == []
+        assert evento.detail["source_reference"] == {
+            "before": "grupo viejo",
+            "after": "grupo nuevo",
+        }
+
+    def test_caso14_un_422_al_curar_no_escribe_evento(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-bit-14a")
+        datos = _form_curar(ingestion, producto)
+        datos["price_0"] = ""  # producto sin precio: error explícito
+
+        response = client.post(f"/curation/{ingestion.id}", data=datos)
+
+        assert response.status_code == 422
+        assert _eventos(session) == []
+
+    def test_caso14_un_422_al_editar_no_escribe_evento(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+
+        response = _post_edicion(
+            client, curado, [_campos_fila(a, 0, price=""), _campos_fila(b, 1)]
+        )
+
+        assert response.status_code == 422
+        assert _eventos(session) == []
+
+    def test_caso15_si_falla_el_evento_no_queda_el_cambio(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Mismo commit: un evento que la base rechaza (CHECK de `action`) se
+        lleva consigo el cambio de estado y las filas de precio."""
+        from sqlalchemy.exc import IntegrityError
+
+        from saimc import curation_events
+
+        real = curation_events.record_curation_event
+
+        def evento_invalido(db, **kwargs):
+            return real(db, **{**kwargs, "action": "no-existe"})
+
+        monkeypatch.setattr(curation, "record_curation_event", evento_invalido)
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-bit-15")
+
+        with pytest.raises(IntegrityError):
+            client.post(
+                f"/curation/{ingestion.id}",
+                data=_form_curar(ingestion, producto, filas=2),
+                follow_redirects=False,
+            )
+
+        session.rollback()
+        session.expire_all()
+        assert session.get(RawIngestion, ingestion.id).processing_status == (
+            ProcessingStatus.PENDING
+        )
+        assert list(session.execute(select(PriceHistory)).scalars()) == []
+        assert _eventos(session) == []
+
+    # --- el campo oculto shown_at en las plantillas ---------------------------
+
+    def test_los_formularios_de_descarte_llevan_shown_at(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        # Sin candidatos: el atajo «sin candidatos» y el formulario `discard-form`.
+        _crear_raw_ingestion(
+            session, hash_="hash-bit-tpl-1", content_type=ContentType.IMAGE
+        )
+        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "Buenos días, familia")
+
+        html = client.get("/curation").text
+
+        atajo = re.search(
+            r'<form method="post" action="/curation/[^"]+/discard" class="m3-discard-group">.*?</form>',
+            html,
+            re.S,
+        )
+        assert atajo is not None
+        assert 'name="shown_at"' in atajo.group(0)
+        discard_form = re.search(r'<form[^>]*id="discard-form">.*?</form>', html, re.S)
+        assert discard_form is not None
+        assert 'name="shown_at"' in discard_form.group(0)
+
+    def test_probable_descarte_lleva_shown_at(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(
+            session, hash_="hash-bit-tpl-2", original_text="pollo a 500 agotado"
+        )
+
+        html = client.get("/curation").text
+
+        assert "Probable descarte" in html
+        banner = html.split("Probable descarte")[1]
+        formulario = re.search(r"<form.*?</form>", banner, re.S)
+        assert formulario is not None
+        assert 'name="shown_at"' in formulario.group(0)
+
+    def test_sin_foco_lleva_shown_at_en_el_formulario_de_confirmacion(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session, name="Arroz")
+        _crear_raw_ingestion(
+            session, hash_="hash-bit-tpl-3", original_text="cemento a 500 el saco"
+        )
+
+        html = client.get("/curation/sin-foco").text
+
+        formulario = re.search(
+            r'<form method="post" action="/curation/sin-foco/discard".*?</form>', html, re.S
+        )
+        assert formulario is not None
+        assert re.search(r'name="shown_at" value="[^"]+"', formulario.group(0))
+
+    def test_editar_lleva_shown_at_y_el_422_lo_conserva(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+
+        html = client.get(f"/curation/{curado.id}/edit").text
+        assert re.search(r'name="shown_at" value="[^"]+"', html)
+
+        original = "2026-10-02T09:00:00+00:00"
+        respuesta = _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0, price=""), _campos_fila(b, 1)],
+            shown_at=original,
+        )
+
+        assert respuesta.status_code == 422
+        assert f'name="shown_at" value="{original}"' in respuesta.text

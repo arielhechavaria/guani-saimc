@@ -128,6 +128,7 @@
       El asistente sugiere descartar{% if assist_discard.label %}: {{ assist_discard.label }}{% endif %}.
     </span>
     <form method="post" action="/curation/{{ ingestion.id }}/discard" class="m3-discard-group">
+      <input type="hidden" name="shown_at" value="{{ shown_at or '' }}" />
       {#
         Con propuesta a la vista, el botón manda el formulario de curar entero
         a `/discard` (`form` + `formaction`): así viajan `proposal_id` y la
@@ -152,6 +153,7 @@
       No se reconoció producto ni precio en este anuncio — mirá la evidencia antes de descartar.
     </span>
     <form method="post" action="/curation/{{ ingestion.id }}/discard" class="m3-discard-group">
+      <input type="hidden" name="shown_at" value="{{ shown_at or '' }}" />
       <button type="submit" name="reason" value="no_data" class="m3-btn m3-btn-danger">Sin dato útil</button>
       <button type="submit" name="reason" value="off_focus" class="m3-btn">Fuera de foco</button>
     </form>
@@ -170,6 +172,7 @@
       Probable descarte: {{ discard_hints | join(", ") }}.
     </span>
     <form method="post" action="/curation/{{ ingestion.id }}/discard" class="m3-discard-group">
+      <input type="hidden" name="shown_at" value="{{ shown_at or '' }}" />
       <button type="submit" name="reason" value="no_data" class="m3-btn m3-btn-danger">Sin dato útil</button>
       <button type="submit" name="reason" value="off_focus" class="m3-btn">Fuera de foco</button>
     </form>
@@ -290,6 +293,8 @@
         #}
         {% if assist_available %}
         <form method="post" action="/curation/{{ ingestion.id }}/assist">
+          {# A2b: el reloj de la primera vista sobrevive a «Completar con IA». #}
+          <input type="hidden" name="shown_at" value="{{ shown_at or '' }}" />
           <button type="submit" class="m3-btn m3-btn-tonal">
             <span class="m3-icon m3-icon-sm">auto_awesome</span>
             Completar con IA
@@ -403,7 +408,9 @@
           <input type="hidden" name="shown_at" value="{{ shown_at }}" />
         </form>
 
-        <form method="post" action="/curation/{{ ingestion.id }}/discard" id="discard-form"></form>
+        <form method="post" action="/curation/{{ ingestion.id }}/discard" id="discard-form">
+          <input type="hidden" name="shown_at" value="{{ shown_at or '' }}" />
+        </form>
       </div>
     </details>
   </div>

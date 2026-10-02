@@ -54,6 +54,8 @@
 
   <form method="post" action="/curation/sin-foco/discard"
         onsubmit="return confirm('¿Descartar estos {{ items|length }} pendientes? Quedan marcados como descartados, no se borran.');">
+    {# A2b: hora en que se mostró la lista, para el tiempo del lote. #}
+    <input type="hidden" name="shown_at" value="{{ shown_at or '' }}" />
     {% for item in items %}
     <input type="hidden" name="ingestion_id" value="{{ item.id }}" />
     {% endfor %}

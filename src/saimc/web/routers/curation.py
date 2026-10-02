@@ -45,6 +45,12 @@ from starlette.datastructures import FormData
 
 from saimc.cells import resolve_row
 from saimc.config import get_settings
+from saimc.curation_events import (
+    parse_shown_at,
+    record_curation_event,
+    row_text,
+    row_values,
+)
 from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, apply_resolution
 from saimc.extraction import llm_store
 from saimc.extraction.engine import (
@@ -75,6 +81,8 @@ from saimc.ingestion import origin
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.models import (
     ContentType,
+    CurationAction,
+    CurationMode,
     Currency,
     DiscardReason,
     GlossaryEntry,
@@ -91,6 +99,7 @@ from saimc.models import (
     SaleFormat,
     SourceType,
 )
+from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
@@ -1142,12 +1151,16 @@ def _curation_view(
     pasted: int = 0,
     assist_ingestion_id: uuid.UUID | None = None,
     focus_id: uuid.UUID | None = None,
+    shown_at: str | None = None,
 ) -> HTMLResponse:
     """Arma la vista de la cola. Compartida por el GET y por el endpoint de
     asistencia, que es el mismo render con la propuesta del modelo ya
     consultada — así el botón no puede divergir de lo que la página muestra.
 
     `focus_id` fija cuál pendiente se muestra; sin él, el primero en foco.
+    `shown_at` es el reloj de la primera vista cuando «Completar con IA»
+    vuelve a renderizar: se conserva en vez de reiniciarse, porque la espera
+    del modelo es tiempo del operador frente al anuncio (A2a).
     """
     settings = get_settings()
     ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir)
@@ -1380,7 +1393,11 @@ def _curation_view(
         # el form y vuelve en el POST para medir tiempo por decisión. Se fija
         # acá, al armar la vista, no en el POST — ahí ya pasó el tiempo que se
         # quiere medir.
-        shown_at=datetime.now(UTC).isoformat(),
+        shown_at=(
+            shown_at
+            if parse_shown_at(shown_at) is not None
+            else datetime.now(UTC).isoformat()
+        ),
     )
 
 
@@ -1560,7 +1577,10 @@ def _run_assist(
 
 @router.post("/curation/{ingestion_id}/assist", response_class=HTMLResponse)
 def assist_curation(
-    ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
+    ingestion_id: uuid.UUID,
+    request: Request,
+    shown_at: str = Form(""),
+    db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Pide al modelo la propuesta completa de este anuncio («Completar con IA»).
 
@@ -1570,7 +1590,11 @@ def assist_curation(
     la cola) con las filas del modelo, sus marcas y su veredicto de descarte.
     """
     return _curation_view(
-        request, db, assist_ingestion_id=ingestion_id, focus_id=ingestion_id
+        request,
+        db,
+        assist_ingestion_id=ingestion_id,
+        focus_id=ingestion_id,
+        shown_at=shown_at,
     )
 
 
@@ -1600,7 +1624,8 @@ def curation_out_of_focus(request: Request, db: Session = Depends(get_db)) -> HT
     return request.app.state.templates.TemplateResponse(
         request,
         "curation_sin_foco.html",
-        {"items": items},
+        # Cuándo se mostró la lista: viaja oculto y vuelve en el POST del lote.
+        {"items": items, "shown_at": datetime.now(UTC).isoformat()},
     )
 
 
@@ -1625,6 +1650,11 @@ async def discard_out_of_focus(request: Request, db: Session = Depends(get_db)) 
     """
     form = await request.form()
     products = _pilot_products(db)
+    # Hora de la lista y hora de la decisión: una sola vez para todo el lote,
+    # así `(mode, decided_at)` lo identifica (spec A2, «Lote sin foco»).
+    shown_at = parse_shown_at(str(form.get("shown_at", "")))
+    decided_at = utc_now()
+    discarded: list[RawIngestion] = []
 
     for raw_id in form.getlist("ingestion_id"):
         ingestion_id = _parse_uuid(str(raw_id))
@@ -1639,6 +1669,20 @@ async def discard_out_of_focus(request: Request, db: Session = Depends(get_db)) 
         # Todo lo que se descarta por esta ruta es, por construcción, «fuera de
         # foco»: la lista es exactamente los pendientes sin ningún piloto.
         ingestion.discard_reason = DiscardReason.OFF_FOCUS.value
+        discarded.append(ingestion)
+
+    # Un evento por anuncio efectivamente descartado, en la misma transacción.
+    for ingestion in discarded:
+        record_curation_event(
+            db,
+            ingestion_id=ingestion.id,
+            action=CurationAction.DISCARDED,
+            mode=CurationMode.BATCH_OUT_OF_FOCUS,
+            discard_reason=DiscardReason.OFF_FOCUS.value,
+            shown_at=shown_at,
+            decided_at=decided_at,
+            detail={"batch_size": len(discarded)},
+        )
 
     db.commit()
     return RedirectResponse(url="/curation/sin-foco", status_code=status.HTTP_303_SEE_OTHER)
@@ -1907,10 +1951,7 @@ async def submit_curation(
     # Un valor vacío o mal formado no bloquea el guardado — se guarda `None` y
     # esa fila queda afuera de la métrica de tiempo por decisión.
     shown_at_raw = str(form.get("shown_at", "")).strip()
-    try:
-        shown_at = datetime.fromisoformat(shown_at_raw) if shown_at_raw else None
-    except ValueError:
-        shown_at = None
+    shown_at = parse_shown_at(shown_at_raw)
 
     # Catálogo existente + altas de esta misma request: dos filas con el mismo
     # producto nuevo (mismo submit) deben reusar el Product, no duplicarlo.
@@ -2074,6 +2115,15 @@ async def submit_curation(
         ingestion.original_text = redact_personal_data(original_text)
 
     ingestion.processing_status = ProcessingStatus.CURATED
+    record_curation_event(
+        db,
+        ingestion_id=ingestion.id,
+        action=CurationAction.CURATED,
+        mode=CurationMode.INDIVIDUAL,
+        shown_at=shown_at,
+        proposal_id=proposal.id if proposal is not None else None,
+        detail={"row_count": len(entries_to_create)},
+    )
     db.commit()
 
     redirect_url = f"/curation?unconverted={unconverted}" if unconverted else "/curation"
@@ -2086,6 +2136,7 @@ def discard_curation(
     reason: DiscardReason = Form(...),
     proposal_id: str = Form(""),
     note: str = Form(""),
+    shown_at: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     """El motivo es obligatorio (`spec.md` §12.5): «sin dato útil» (sin precio,
@@ -2110,6 +2161,15 @@ def discard_curation(
             rows=llm_store.review_rows(proposal, []),
             note=note,
         )
+    record_curation_event(
+        db,
+        ingestion_id=ingestion.id,
+        action=CurationAction.DISCARDED,
+        mode=CurationMode.INDIVIDUAL,
+        discard_reason=reason.value,
+        shown_at=parse_shown_at(shown_at),
+        proposal_id=proposal.id if proposal is not None else None,
+    )
     db.commit()
     return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -2277,9 +2337,22 @@ def delete_curated(
     estado del anuncio, por claridad de lectura.
     """
     ingestion = _require_curated(db, ingestion_id)
+    deleted_rows = []
     for price in _curated_rows(db, ingestion_id):
+        deleted_rows.append(
+            {"price_history_id": str(price.id), "before": row_text(row_values(price))}
+        )
         db.delete(price)
     ingestion.processing_status = ProcessingStatus.DISCARDED
+    # Sin `shown_at`: se dispara desde el historial, donde no hay un «momento
+    # en que se mostró» que signifique algo (spec A2).
+    record_curation_event(
+        db,
+        ingestion_id=ingestion.id,
+        action=CurationAction.DELETED,
+        mode=CurationMode.INDIVIDUAL,
+        detail={"rows": deleted_rows},
+    )
     db.commit()
     return RedirectResponse(url="/curation/history", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -2327,6 +2400,8 @@ def edit_curated(
                 ),
             },
             "error": None,
+            # Cuándo se mostró la corrección: viaja oculto y vuelve al guardar.
+            "shown_at": datetime.now(UTC).isoformat(),
             "currencies": [c.value for c in Currency],
             "units": UNITS,
             "packaging": PACKAGING,
@@ -2374,6 +2449,7 @@ async def submit_edit(
         row_count = int(str(form.get("row_count", "0")))
     except ValueError:
         row_count = 0
+    shown_at_raw = str(form.get("shown_at", "")).strip()
 
     existing_by_id = {price.id: price for price in _curated_rows(db, ingestion_id)}
     products_by_name = {p.name.lower(): p for p in _pilot_products(db)}
@@ -2452,6 +2528,8 @@ async def submit_edit(
                     "published_date": published_date_raw,
                 },
                 "error": " ".join(errors),
+                # El reloj de la primera vista sobrevive al reintento.
+                "shown_at": shown_at_raw or None,
                 "currencies": [c.value for c in Currency],
                 "units": UNITS,
                 "packaging": PACKAGING,
@@ -2463,6 +2541,13 @@ async def submit_edit(
 
     resolver = RateResolver(db, rate_fetcher)
     unconverted = 0
+    # Lo que había antes de tocar nada, para el `detail` del evento.
+    before_values = {existing.id: row_values(existing) for existing, *_ in updates}
+    deleted_entries = [
+        {"price_history_id": str(price.id), "op": "deleted", "before": row_text(row_values(price))}
+        for price in to_delete
+    ]
+    source_reference_before = ingestion.source_reference
     for existing, product, price_value, province, row in updates:
         # `changed` se calcula ANTES de mutar `existing` (design.md D6): una
         # comparación posterior siempre daría `False`, porque ya se habría
@@ -2521,6 +2606,38 @@ async def submit_edit(
     if source_reference:
         ingestion.source_reference = redact_personal_data(source_reference)
 
+    # Solo los campos que cambiaron (comparados por valor, así «10.00» y «10»
+    # no cuentan); una fila sin cambios no aparece.
+    detail_rows: list[dict] = []
+    for existing, *_ in updates:
+        before = before_values[existing.id]
+        after = row_values(existing)
+        changed = [field for field in before if before[field] != after[field]]
+        if changed:
+            detail_rows.append(
+                {
+                    "price_history_id": str(existing.id),
+                    "op": "updated",
+                    "before": row_text({field: before[field] for field in changed}),
+                    "after": row_text({field: after[field] for field in changed}),
+                }
+            )
+    detail: dict = {"rows": detail_rows + deleted_entries}
+    if ingestion.source_reference != source_reference_before:
+        detail["source_reference"] = {
+            "before": source_reference_before,
+            "after": ingestion.source_reference,
+        }
+    # Una edición sin cambios escribe igual su evento: el operador abrió, miró
+    # y confirmó, y ese tiempo cuenta (spec A2, pregunta 2).
+    record_curation_event(
+        db,
+        ingestion_id=ingestion.id,
+        action=CurationAction.EDITED,
+        mode=CurationMode.INDIVIDUAL,
+        shown_at=parse_shown_at(shown_at_raw),
+        detail=detail,
+    )
     db.commit()
 
     redirect_url = (

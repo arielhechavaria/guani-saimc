@@ -1724,3 +1724,81 @@ class TestGlossaryEntriesMigration:
             assert "glossary_entries" not in inspect(connection).get_table_names()
 
         engine.dispose()
+
+
+class TestCurationEventsMigration:
+    """`0024_curation_events.py` — la bitácora de curaduría (slice A2b,
+    `docs/spec-slice-A2.md`, caso 17). Aditiva: sin backfill."""
+
+    def _base(self) -> sa.engine.Engine:
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        for tabla in ("raw_ingestions", "llm_proposals"):
+            sa.Table(tabla, metadata, sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True))
+        metadata.create_all(engine)
+        return engine
+
+    def test_upgrade_crea_la_tabla_y_su_indice_y_downgrade_los_elimina(self) -> None:
+        from saimc.models import CurationEvent
+
+        modulo = _cargar_modulo_migracion("0024_curation_events.py")
+        engine = self._base()
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            inspector = inspect(connection)
+            assert "curation_events" in inspector.get_table_names()
+            migradas = {c["name"] for c in inspector.get_columns("curation_events")}
+            declaradas = {c.name for c in CurationEvent.__table__.columns}
+            assert migradas == declaradas
+            indices = {i["name"] for i in inspector.get_indexes("curation_events")}
+            assert "idx_curation_events_ingestion_id" in indices
+
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.downgrade()
+            connection.commit()
+            assert "curation_events" not in inspect(connection).get_table_names()
+            assert "raw_ingestions" in inspect(connection).get_table_names()
+
+        engine.dispose()
+
+    def test_los_check_de_la_migracion_rechazan_valores_fuera_de_vocabulario(self) -> None:
+        modulo = _cargar_modulo_migracion("0024_curation_events.py")
+        engine = self._base()
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context):
+                modulo.upgrade()
+            connection.commit()
+
+            def insertar(**valores: object) -> None:
+                base = {
+                    "id": uuid.uuid4().hex,
+                    "ingestion_id": uuid.uuid4().hex,
+                    "action": "curated",
+                    "mode": "individual",
+                    "decided_at": "2026-10-02 10:00:00",
+                }
+                base.update(valores)
+                columnas = ", ".join(base)
+                marcas = ", ".join(f":{c}" for c in base)
+                connection.execute(
+                    sa.text(f"insert into curation_events ({columnas}) values ({marcas})"),  # noqa: S608 — columnas fijas del test
+                    base,
+                )
+
+            insertar()  # el caso válido entra
+            for malo in (
+                {"action": "otra"},
+                {"mode": "otro"},
+                {"discard_reason": "otro"},
+            ):
+                with pytest.raises(IntegrityError):
+                    insertar(**malo)
+        engine.dispose()

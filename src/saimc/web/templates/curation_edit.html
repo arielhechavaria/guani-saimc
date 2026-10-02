@@ -50,6 +50,8 @@
 
   <div>
     <form method="post" action="/curation/{{ ingestion.id }}/edit" id="edit-form">
+      {# A2b: cuándo se mostró la corrección, para medir el tiempo. #}
+      <input type="hidden" name="shown_at" value="{{ shown_at or '' }}" />
       {% from "_price_row_card.html" import price_row_card %}
 
       <section class="m3-card m3-card-pad" style="margin-bottom:16px">

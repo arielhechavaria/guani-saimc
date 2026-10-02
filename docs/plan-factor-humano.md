@@ -2,7 +2,7 @@
 
 Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (A6 desbloqueada y
 ampliada a los campos cerrados; A6b agregada; contrato de la señal externa en A5a;
-columna «Modelo» en el tablero; A2a cerrada; regla de actualizar el estado al
+columna «Modelo» en el tablero; A2a y A2b cerradas; regla de actualizar el estado al
 terminar cada tarea).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
@@ -48,7 +48,7 @@ misma sesión. El candidato más probable es A1b.
 | --- | --- | --- | --- | --- | --- |
 | A0 | Base confiable: suite verde y cifras de costo al día | S | — | Sonnet | CERRADO (2026-10-02) |
 | A2a | Bitácora de curaduría: especificación | M | A0 | Opus | CERRADO (2026-10-02) |
-| A2b | Bitácora de curaduría: migración y escritura | M | A2a | Sonnet | PENDIENTE |
+| A2b | Bitácora de curaduría: migración y escritura | M | A2a | Sonnet | CERRADO (2026-10-02) |
 | A2c | Métrica «Aceptación sin revisar» corregida | M | A0 | Sonnet | PENDIENTE |
 | A1a | Lote de imágenes: prototipo a 390 px | S | — | Sonnet | PENDIENTE |
 | A1b | Lote de imágenes con el veredicto del modelo | M–L | A1a, A2b | Sonnet | PENDIENTE |
@@ -302,7 +302,7 @@ abiertas.
 
 ---
 
-### A2b — Bitácora de curaduría: migración y escritura — PENDIENTE
+### A2b — Bitácora de curaduría: migración y escritura — CERRADO (2026-10-02)
 
 **Objetivo.** Que desde este slice cada acción del operador quede registrada.
 
@@ -326,7 +326,7 @@ abiertas.
 1. `pg_dump`, push, `alembic upgrade head` y reinicio.
 2. En `/curation`, descartar un anuncio y curar otro.
 3. `psql … -c "select action, mode, decided_at - shown_at from curation_events order
-   by id desc limit 5"` muestra 2 filas con duración.
+   by decided_at desc limit 5"` muestra 2 filas con duración.
 4. Descartar en lote desde `/curation/sin-foco`: aparece un evento por anuncio, con
    `mode = batch_out_of_focus`.
 5. Lo que no tiene que pasar: que curar o descartar se vuelva más lento o falle.
