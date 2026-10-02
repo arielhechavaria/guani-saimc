@@ -58,7 +58,7 @@ misma sesión. El candidato más probable es A1b.
 | A4b | Decidir la política de cada canal | S | A4a | Sonnet | CERRADO (2026-10-02) |
 | A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | NO HACE FALTA (2026-10-02) |
 | A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | CERRADO (2026-10-02) |
-| A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | PENDIENTE |
+| A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | ABIERTO |
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | PENDIENTE |
 | A5c | Informe del modo sombra | M | A5b | Opus | PENDIENTE |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | PENDIENTE |
@@ -705,7 +705,7 @@ coherentes con lo que hizo esa semana.
 
 ---
 
-### A5a — Motor de validación §6.2 y carriles: especificación — PENDIENTE
+### A5a — Motor de validación §6.2 y carriles: especificación — ABIERTO
 
 **Objetivo.** Especificar una sola vez el motor que usan el modo sombra (A5), la
 persistencia (B1) y la automatización (B2). Toca el motor de validación, así que
