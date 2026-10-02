@@ -122,16 +122,17 @@ acá.
 
 | Estado | Cuándo |
 | --- | --- |
-| `approved` | las seis reglas en `pass` |
+| `approved` | las seis reglas en `pass` y la fila verificada (condiciones 1 a 3 del carril 1) |
 | `incomplete` | falla la regla 1 |
 | `anomaly` | falla la regla 2 |
 | `inconsistent` | falla la regla 6 |
 | `possible_duplicate` | falla la regla 5 |
 | `untrusted_source` | falla la regla 3 o la 4 |
-| `unverified` | ninguna falla, pero alguna quedó en `unknown` |
+| `unverified` | ninguna falla, pero alguna quedó en `unknown` o la fila no está verificada |
 
 Si falla más de una, gana la primera en el orden de la tabla; el detalle guarda
-todas.
+todas. Si falla la regla 6, la regla 2 queda en `unknown`: con la base del precio
+desmentida no se sabe cuál es el precio por unidad.
 
 `confidence_score` (0–100): reglas en `pass` sobre seis, por cien. Es
 **descriptivo**. Ningún carril lo usa y no se compara contra ningún umbral: la
@@ -155,11 +156,14 @@ El motor es el único que decide el carril. Un anuncio sin propuesta del modelo
 `ok`, no descarta, no tiene filas caídas (`dropped`) y **todas** sus filas
 cumplen:
 1. cita verificada: `evidence_found` y `price_in_evidence`;
-2. reglas y modelo coinciden en producto, precio, moneda y provincia;
+2. reglas y modelo coinciden en producto, precio, moneda y provincia. La moneda
+   solo cuenta como acuerdo si el texto la dice (`currency_explicit`): las reglas
+   siempre suponen CUP;
 3. ninguna abstención en cantidad, unidad ni `price_basis`;
 4. las seis reglas en `pass`.
 
-Una sola fila que no cumple manda el anuncio entero al carril 2.
+Una sola fila que no cumple manda el anuncio entero al carril 2. Sin
+configuración de parámetros no hay carril 0 ni carril 1.
 
 **Carril 2 — revisión humana.** Todo lo demás.
 
@@ -305,6 +309,15 @@ El operador aceptó las seis respuestas por defecto. A5b las implementa tal cual
    evidencia de G1a queda en el oro (n = 49 hoy).
 6. **¿Auditoría total al arranque si el carril 1 se adelanta?** Defecto: sí,
    hasta un `n0` que elegís en G1b.
+
+## Precisiones de A5b (2026-10-02)
+
+Al programar el motor, tres casos de la tabla (6, 8 y 22; 14) contradecían la
+tabla de estados tal como estaba escrita. Mandó la tabla de casos y se precisó
+el texto de arriba: `approved` exige la fila verificada, la regla 6 fallida deja
+a la regla 2 en `unknown`, y el acuerdo en moneda exige moneda escrita. La celda
+usa la provincia propia si junta `min_cell_n` referencias y, si no, todas las
+provincias. Detalle en `docs/decisions.md` (2026-10-02, «A5b»).
 
 ## Registro
 

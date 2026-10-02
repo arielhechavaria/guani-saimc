@@ -107,6 +107,7 @@ from __future__ import annotations
 
 import statistics
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -1192,6 +1193,78 @@ class BasisSuspect:
         return self.as_unit / self.reference
 
 
+def cell_sample(
+    own_province: Sequence[Decimal],
+    all_provinces: Sequence[Decimal],
+    *,
+    min_references: int,
+) -> tuple[Sequence[Decimal], bool] | None:
+    """La muestra de referencia de una celda, con repliegue. Código puro.
+
+    Manda la provincia propia si junta `min_references`; si no, se repliega a
+    todas las provincias juntas (mismo criterio del 2026-09-05, ver
+    `detect_basis_suspects`); si tampoco alcanzan, `None`: no hay con qué
+    opinar. El segundo valor dice si la muestra salió del repliegue.
+    """
+    if len(own_province) >= min_references:
+        return own_province, False
+    if len(all_provinces) >= min_references:
+        return all_provinces, True
+    return None
+
+
+@dataclass(frozen=True)
+class BasisReading:
+    """Las dos lecturas de un mismo precio, contrastadas con su celda."""
+
+    #: Mediana de la muestra de referencia.
+    reference: Decimal
+    reference_from_all_provinces: bool
+    #: `True` si la lectura que la fila NO declara queda estrictamente más
+    #: cerca, en proporción, de la referencia. Un empate no desmiente a la fila.
+    other_fits_better: bool
+
+
+def evaluate_basis(
+    *,
+    declared: Decimal,
+    other: Decimal,
+    own_province: Sequence[Decimal],
+    all_provinces: Sequence[Decimal],
+    min_references: int,
+) -> BasisReading | None:
+    """Evalúa UNA fila contra la referencia de su celda. Código puro.
+
+    `declared` es el precio por unidad canónica leído como la fila dice
+    (`price_basis`), `other` el mismo número leído de la otra forma. Las dos
+    muestras son los precios de referencia de la celda (la provincia propia y
+    todas juntas), ya normalizados igual. Devuelve `None` cuando no hay
+    veredicto: menos de `min_references` referencias, o mediana no positiva.
+
+    Es el cálculo que `detect_basis_suspects` hacía en línea; se sacó acá en
+    A5b para que el motor de validación (regla 6) evalúe filas en memoria sin
+    tocar la base. No hay umbral: solo cuál de las dos lecturas queda más cerca
+    (ver el docstring de `detect_basis_suspects`).
+    """
+    picked = cell_sample(own_province, all_provinces, min_references=min_references)
+    if picked is None:
+        return None
+    sample, from_all_provinces = picked
+    if not sample:
+        return None
+    reference = statistics.median(sample)
+    if reference <= 0:
+        return None
+    # Distancia proporcional, simétrica: para un valor y su referencia da lo
+    # mismo estar 10 veces por encima que 10 veces por debajo.
+    return BasisReading(
+        reference=reference,
+        reference_from_all_provinces=from_all_provinces,
+        other_fits_better=_proportional_distance(other, reference)
+        < _proportional_distance(declared, reference),
+    )
+
+
 def detect_basis_suspects(
     session: Session, *, days: int = 30, hoy: date | None = None
 ) -> list[BasisSuspect]:
@@ -1351,27 +1424,23 @@ def detect_basis_suspects(
 
     suspects = []
     for key, row in candidates:
-        sample = unambiguous.get(key)
-        from_all_provinces = not sample
-        if not sample:
-            sample = unambiguous_anywhere.get((key[0], key[2]))
-        if not sample:
+        # `/control` opina con una sola referencia (`min_references=1`): es el
+        # comportamiento de siempre. El motor de validación llama a la misma
+        # función con su `min_cell_n`.
+        reading = evaluate_basis(
+            declared=row["as_unit"],  # type: ignore[arg-type]
+            other=row["as_total"],  # type: ignore[arg-type]
+            own_province=unambiguous.get(key, ()),
+            all_provinces=unambiguous_anywhere.get((key[0], key[2]), ()),
+            min_references=1,
+        )
+        if reading is None:
             continue  # sin referencia en ninguna provincia no hay veredicto
-        reference = statistics.median(sample)
-        if reference <= 0:
-            continue
-
-        as_unit: Decimal = row["as_unit"]  # type: ignore[assignment]
-        as_total: Decimal = row["as_total"]  # type: ignore[assignment]
-        # Distancia proporcional, simétrica: para un valor y su referencia da lo
-        # mismo estar 10 veces por encima que 10 veces por debajo.
-        if _proportional_distance(as_total, reference) < _proportional_distance(
-            as_unit, reference
-        ):
+        if reading.other_fits_better:
             suspects.append(
                 BasisSuspect(
-                    reference=reference,
-                    reference_from_all_provinces=from_all_provinces,
+                    reference=reading.reference,
+                    reference_from_all_provinces=reading.reference_from_all_provinces,
                     **row,  # type: ignore[arg-type]
                 )
             )

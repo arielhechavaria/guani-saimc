@@ -59,7 +59,7 @@ misma sesión. El candidato más probable es A1b.
 | A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | NO HACE FALTA (2026-10-02) |
 | A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | CERRADO (2026-10-02) |
 | A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | CERRADO (2026-10-02) |
-| A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | PENDIENTE |
+| A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | CERRADO (2026-10-02) |
 | A5c | Informe del modo sombra | M | A5b | Opus | PENDIENTE |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | PENDIENTE |
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE |
@@ -766,7 +766,7 @@ aplican.
 
 ---
 
-### A5b — Motor de validación en código puro, sin esquema — PENDIENTE
+### A5b — Motor de validación en código puro, sin esquema — CERRADO (2026-10-02)
 
 **Objetivo.** El motor funcionando sin escribir nada en la base.
 

@@ -14,8 +14,10 @@ Dos reglas atraviesan el módulo:
   libra— queda a ×40 o ×700 de su celda y aplasta cualquier eje lineal. Cada
   serie se escala con los precios que caen dentro de un cerco robusto en escala
   logarítmica; los de afuera no se borran ni se promedian: se cuentan y se
-  marcan en el borde. No es un umbral de publicación de los que §12.6 prohíbe:
-  no decide qué se publica ni qué es válido, solo qué entra en el eje.
+  marcan en el borde. Acá el cerco solo decide qué entra en el eje. El cálculo
+  vive en `saimc.validation.fence` porque desde A5b lo usa también la regla 2
+  del motor de validación, donde sí decide qué precio va a revisión humana
+  (`docs/decisions.md`, 2026-10-02, «A5a»).
 - **Nada que nadie observó.** Rangos y medianas por período, con los períodos
   sin anuncios a la vista; ninguna línea entre ellos (mismo criterio que
   `series_view`).
@@ -33,16 +35,12 @@ from decimal import Decimal
 
 from saimc.cells import RetailObservation
 from saimc.formats import format_label as _etiqueta_de_formato
-from saimc.web.card_view import format_price
 
-#: Cerco robusto: un precio queda fuera de escala si se aleja de la mitad
-#: central de su celda más de `FENCE_IQR` anchos de caja, medidos en escala
-#: logarítmica porque el error de carga es multiplicativo (×40, ×99, ×700), y
-#: nunca con un margen menor a ×`FENCE_MIN_FACTOR`: con precios casi iguales la
-#: caja no tiene ancho y sin ese piso cualquier variación normal saldría del eje.
-#: Es de dibujo, no de publicación (ver docstring del módulo).
-FENCE_IQR = 3
-FENCE_MIN_FACTOR = 2
+# El cerco se mudó a `validation.fence` (A5b): ahora lo usa también el motor de
+# validación. Quien importaba `robust_fence` de acá sigue funcionando.
+from saimc.validation.fence import quantile as _quantile
+from saimc.validation.fence import robust_fence
+from saimc.web.card_view import format_price
 
 #: Lienzo del mini gráfico de rango del panel, en unidades de `viewBox`. El SVG
 #: escala al ancho del panel: esto es proporción, no tamaño.
@@ -52,23 +50,6 @@ PAD_LEFT = 42.0
 PAD_RIGHT = 8.0
 PAD_TOP = 10.0
 PAD_BOTTOM = 22.0
-
-
-def _quantile(ordered: Sequence[float], q: float) -> float:
-    """Cuantil con interpolación lineal (el método por defecto de numpy)."""
-    i = (len(ordered) - 1) * q
-    lo, hi = math.floor(i), math.ceil(i)
-    return ordered[lo] + (ordered[hi] - ordered[lo]) * (i - lo)
-
-
-def robust_fence(prices: Iterable[Decimal]) -> tuple[float, float]:
-    """Límites inferior y superior del cerco robusto de un conjunto de precios."""
-    logs = sorted(math.log(float(p)) for p in prices if p > 0)
-    if not logs:
-        return 0.0, math.inf
-    q1, q3 = _quantile(logs, 0.25), _quantile(logs, 0.75)
-    margin = max(FENCE_IQR * (q3 - q1), math.log(FENCE_MIN_FACTOR))
-    return math.exp(q1 - margin), math.exp(q3 + margin)
 
 
 def split_outliers(
