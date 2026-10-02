@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from saimc.models import (
     Channel,
+    CurationEvent,
     Currency,
     PriceHistory,
     Product,
@@ -35,6 +36,7 @@ from saimc.models.raw_ingestion import (
 )
 from saimc.progress import (
     DISCARD_RATE_OBJECTIVE,
+    PAUSE_CAP_SECONDS,
     PHASE0_TARGET_ROWS,
     compute_channel_intake,
     compute_coverage,
@@ -43,6 +45,7 @@ from saimc.progress import (
     compute_open_gaps,
     compute_pace,
     compute_phase0_progress,
+    decision_seconds,
 )
 
 
@@ -716,3 +719,293 @@ class TestDescartePorCanal:
         assert sum(c.curated for c in intake) == global_.curated
         assert sum(c.discarded for c in intake) == global_.discarded
         assert sum(c.pending for c in intake) == global_.pending
+
+
+# --- A4a: panel por canal que sirve para decidir ---------------------------------
+
+
+def _ingestion_a4a(
+    session: Session,
+    hash_: str,
+    status: ProcessingStatus,
+    channel: Channel | None,
+    *,
+    content_type: str = ContentType.TEXT,
+    discard_reason: str | None = None,
+) -> RawIngestion:
+    row = RawIngestion(
+        source_type=SourceType.INBOX_TEXT,
+        file_path=f"raw/{hash_}.txt",
+        content_hash=hash_,
+        content_type=content_type,
+        processing_status=status,
+        discard_reason=discard_reason,
+        channel_id=channel.id if channel is not None else None,
+        captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _evento(
+    session: Session,
+    ingestion: RawIngestion,
+    *,
+    action: str = "curated",
+    mode: str = "individual",
+    segundos: float | None = 60.0,
+    detail: dict | None = None,
+) -> None:
+    decidido = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+    session.add(
+        CurationEvent(
+            ingestion_id=ingestion.id,
+            action=action,
+            mode=mode,
+            decided_at=decidido,
+            shown_at=None if segundos is None else decidido - timedelta(seconds=segundos),
+            detail=detail,
+        )
+    )
+
+
+class TestDuracionDeUnaDecision:
+    """El tiempo humano que le cuesta una decisión, con las pausas fuera.
+
+    Una pausa absurda (el operador se levantó a mitad de un anuncio) no es
+    tiempo de curaduría: se excluye de la suma en vez de inflarla (A2a dejó
+    el recorte para el momento de medir).
+    """
+
+    def test_devuelve_la_diferencia_entre_mostrado_y_decidido(self) -> None:
+        mostrado = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+        decidido = mostrado + timedelta(seconds=90)
+
+        assert decision_seconds(mostrado, decidido) == 90.0
+
+    def test_sin_hora_de_vista_no_hay_duracion(self) -> None:
+        decidido = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+
+        assert decision_seconds(None, decidido) is None
+
+    def test_una_vista_posterior_a_la_decision_no_hay_duracion(self) -> None:
+        decidido = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+
+        assert decision_seconds(decidido + timedelta(seconds=5), decidido) is None
+
+    def test_la_pausa_absurda_se_excluye_pero_el_tope_exacto_cuenta(self) -> None:
+        decidido = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+
+        tope = timedelta(seconds=PAUSE_CAP_SECONDS)
+        assert decision_seconds(decidido - tope, decidido) == PAUSE_CAP_SECONDS
+        assert decision_seconds(decidido - tope - timedelta(seconds=1), decidido) is None
+
+    def test_el_lote_reparte_su_tiempo_entre_sus_anuncios(self) -> None:
+        mostrado = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+        decidido = mostrado + timedelta(seconds=120)
+
+        assert decision_seconds(mostrado, decidido, batch_size=4) == 30.0
+
+
+class TestPanelPorCanalA4a:
+    def test_dos_canales_homonimos_no_se_funden(self, session: Session) -> None:
+        uno = _canal(session, "Ofertas")
+        otro = _canal(session, "Ofertas")
+        _ingestion_a4a(session, "a4-h-1", ProcessingStatus.CURATED, uno)
+        _ingestion_a4a(session, "a4-h-2", ProcessingStatus.DISCARDED, otro)
+        session.commit()
+
+        intake = compute_channel_intake(session)
+
+        assert len(intake) == 2
+        assert {c.channel_id for c in intake} == {uno.id, otro.id}
+
+    def test_desglosa_texto_e_imagen(self, session: Session) -> None:
+        canal = _canal(session, "Mixto")
+        _ingestion_a4a(session, "a4-t-1", ProcessingStatus.CURATED, canal)
+        _ingestion_a4a(
+            session, "a4-i-1", ProcessingStatus.PENDING, canal, content_type=ContentType.IMAGE
+        )
+        _ingestion_a4a(
+            session, "a4-i-2", ProcessingStatus.PENDING, canal, content_type=ContentType.IMAGE
+        )
+        _ingestion_a4a(
+            session, "a4-i-3", ProcessingStatus.DISCARDED, canal, content_type=ContentType.IMAGE
+        )
+        session.commit()
+
+        (mixto,) = compute_channel_intake(session)
+
+        assert (mixto.text.pending, mixto.text.curated, mixto.text.discarded) == (0, 1, 0)
+        assert (mixto.image.pending, mixto.image.curated, mixto.image.discarded) == (2, 0, 1)
+        assert (mixto.pending, mixto.curated, mixto.discarded) == (2, 1, 1)
+
+    def test_desglosa_los_descartes_por_motivo(self, session: Session) -> None:
+        canal = _canal(session, "Motivos")
+        for i in range(2):
+            _ingestion_a4a(
+                session,
+                f"a4-m-of-{i}",
+                ProcessingStatus.DISCARDED,
+                canal,
+                discard_reason=DiscardReason.OFF_FOCUS.value,
+            )
+        _ingestion_a4a(
+            session,
+            "a4-m-nd",
+            ProcessingStatus.DISCARDED,
+            canal,
+            discard_reason=DiscardReason.NO_DATA.value,
+        )
+        _ingestion_a4a(session, "a4-m-sin", ProcessingStatus.DISCARDED, canal)
+        session.commit()
+
+        (motivos,) = compute_channel_intake(session)
+
+        assert motivos.discarded_off_focus == 2
+        assert motivos.discarded_no_data == 1
+        assert motivos.discarded_unrecorded == 1
+
+    def test_la_tasa_no_cuenta_los_fuera_de_foco_como_el_spec(self, session: Session) -> None:
+        """§12.5 mide «anuncios sin información económica extraíble»: un fuera
+        de foco sí la tenía. Sale de numerador y de denominador, como en
+        `IntakeHealth.discard_rate`."""
+        canal = _canal(session, "Neta")
+        for i in range(2):
+            _ingestion_a4a(
+                session,
+                f"a4-n-of-{i}",
+                ProcessingStatus.DISCARDED,
+                canal,
+                discard_reason=DiscardReason.OFF_FOCUS.value,
+            )
+        _ingestion_a4a(
+            session,
+            "a4-n-nd",
+            ProcessingStatus.DISCARDED,
+            canal,
+            discard_reason=DiscardReason.NO_DATA.value,
+        )
+        _ingestion_a4a(session, "a4-n-cur", ProcessingStatus.CURATED, canal)
+        session.commit()
+
+        (neta,) = compute_channel_intake(session)
+
+        assert neta.discard_rate == 0.5  # 1 de 2, sin los 2 fuera de foco
+        assert neta.off_focus_rate == 0.5  # 2 de 4 decididos
+        assert neta.above_objective is True
+
+    def test_un_canal_solo_de_fuera_de_foco_no_tiene_tasa(self, session: Session) -> None:
+        canal = _canal(session, "Otro rubro")
+        _ingestion_a4a(
+            session,
+            "a4-f-1",
+            ProcessingStatus.DISCARDED,
+            canal,
+            discard_reason=DiscardReason.OFF_FOCUS.value,
+        )
+        session.commit()
+
+        (otro,) = compute_channel_intake(session)
+
+        assert otro.discard_rate is None
+        assert otro.above_objective is False
+
+    def test_el_rendimiento_es_filas_sobre_anuncios_resueltos(self, session: Session) -> None:
+        canal = _canal(session, "Rinde")
+        producto = _producto(session, "Pollo")
+        provincia = _provincia(session, "La Habana")
+        cur_1 = _ingestion_a4a(session, "a4-r-c1", ProcessingStatus.CURATED, canal)
+        cur_2 = _ingestion_a4a(session, "a4-r-c2", ProcessingStatus.CURATED, canal)
+        _ingestion_a4a(session, "a4-r-d1", ProcessingStatus.DISCARDED, canal)
+        _ingestion_a4a(session, "a4-r-p1", ProcessingStatus.PENDING, canal)
+        for fuente in (cur_1, cur_1, cur_2):
+            _precio(session, product=producto, province=provincia, source=fuente)
+        session.commit()
+
+        (rinde,) = compute_channel_intake(session)
+
+        assert rinde.rows == 3
+        assert rinde.decided == 3
+        assert rinde.rows_per_decided == 1.0
+
+    def test_sin_decididos_no_hay_rendimiento(self, session: Session) -> None:
+        canal = _canal(session, "Nuevo")
+        _ingestion_a4a(session, "a4-s-p1", ProcessingStatus.PENDING, canal)
+        session.commit()
+
+        (nuevo,) = compute_channel_intake(session)
+
+        assert nuevo.rows_per_decided is None
+
+    def test_suma_los_minutos_humanos_y_calcula_filas_por_hora(self, session: Session) -> None:
+        canal = _canal(session, "Con tiempo")
+        cur = _ingestion_a4a(session, "a4-e-c1", ProcessingStatus.CURATED, canal)
+        des = _ingestion_a4a(session, "a4-e-d1", ProcessingStatus.DISCARDED, canal)
+        _evento(session, cur, action="curated", segundos=300, detail={"row_count": 2})
+        _evento(session, des, action="discarded", segundos=60)
+        session.commit()
+
+        (con_tiempo,) = compute_channel_intake(session)
+
+        assert con_tiempo.human_minutes == 6.0
+        # 2 filas en 6 minutos = 20 filas por hora.
+        assert con_tiempo.rows_per_hour == 20.0
+
+    def test_una_pausa_absurda_no_infla_los_minutos(self, session: Session) -> None:
+        canal = _canal(session, "Pausa")
+        cur = _ingestion_a4a(session, "a4-p-c1", ProcessingStatus.CURATED, canal)
+        otro = _ingestion_a4a(session, "a4-p-c2", ProcessingStatus.CURATED, canal)
+        _evento(session, cur, segundos=120, detail={"row_count": 1})
+        _evento(session, otro, segundos=PAUSE_CAP_SECONDS + 600, detail={"row_count": 5})
+        session.commit()
+
+        (pausa,) = compute_channel_intake(session)
+
+        assert pausa.human_minutes == 2.0
+        # Las 5 filas de la decisión sin tiempo medible tampoco entran al
+        # cociente: filas y tiempo se miden sobre las mismas decisiones.
+        assert pausa.rows_per_hour == 30.0
+
+    def test_el_lote_suma_su_tiempo_una_sola_vez(self, session: Session) -> None:
+        canal = _canal(session, "Lote")
+        anuncios = [
+            _ingestion_a4a(session, f"a4-l-{i}", ProcessingStatus.DISCARDED, canal)
+            for i in range(4)
+        ]
+        for anuncio in anuncios:
+            _evento(
+                session,
+                anuncio,
+                action="discarded",
+                mode="batch_model",
+                segundos=120,
+                detail={"batch_size": 4},
+            )
+        session.commit()
+
+        (lote,) = compute_channel_intake(session)
+
+        assert lote.human_minutes == 2.0
+
+    def test_editar_o_borrar_no_cuentan_como_tiempo_de_curar(self, session: Session) -> None:
+        canal = _canal(session, "Retoques")
+        cur = _ingestion_a4a(session, "a4-x-c1", ProcessingStatus.CURATED, canal)
+        _evento(session, cur, action="edited", segundos=200)
+        _evento(session, cur, action="deleted", segundos=None)
+        session.commit()
+
+        (retoques,) = compute_channel_intake(session)
+
+        assert retoques.human_minutes is None
+
+    def test_sin_eventos_no_hay_minutos_ni_filas_por_hora(self, session: Session) -> None:
+        canal = _canal(session, "Sin bitácora")
+        _ingestion_a4a(session, "a4-z-c1", ProcessingStatus.CURATED, canal)
+        session.commit()
+
+        (sin,) = compute_channel_intake(session)
+
+        assert sin.human_minutes is None
+        assert sin.rows_per_hour is None

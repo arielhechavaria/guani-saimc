@@ -623,15 +623,25 @@
       <strong>Captura manual</strong> agrupa los anuncios sin canal — la otra mitad del trabajo
       del operador.
     </p>
+    <p class="m3-sm m3-muted">
+      La <strong>tasa</strong> es la de §12.5 (<code>&lt;30%</code>): descartes sin dato sobre lo
+      decidido, <em>sin contar los fuera de foco</em>, que sí traían precio. <strong>Filas por
+      anuncio</strong> es lo que el canal rinde de verdad: filas de precio sobre anuncios
+      resueltos. Los <strong>minutos</strong> y las <strong>filas por hora</strong> salen de la
+      bitácora y solo cuentan decisiones de menos de 15 minutos; sin bitácora aparece «—».
+    </p>
     <div class="m3-card m3-table-scroll">
       <table class="m3-table">
         <thead>
           <tr>
             <th scope="col">Canal</th>
+            <th scope="col" style="text-align:right">En cola (texto / imagen)</th>
             <th scope="col" style="text-align:right">Curados</th>
             <th scope="col" style="text-align:right">Descartados</th>
-            <th scope="col" style="text-align:right">En cola</th>
             <th scope="col" style="text-align:right">Tasa</th>
+            <th scope="col" style="text-align:right">Filas por anuncio</th>
+            <th scope="col" style="text-align:right">Minutos</th>
+            <th scope="col" style="text-align:right">Filas por hora</th>
           </tr>
         </thead>
         <tbody>
@@ -641,11 +651,20 @@
               {{ canal.channel_name or "Captura manual" }}
               {% if canal.is_active == false %}<span class="m3-dim">(inactivo)</span>{% endif %}
             </td>
-            <td class="is-num">{{ canal.curated }}</td>
-            <td class="is-num">{{ canal.discarded }}</td>
             <td class="is-num">
-              {% if canal.pending %}<span class="m3-dim">{{ canal.pending }}</span>
+              {% if canal.pending %}<span class="m3-dim">{{ canal.text.pending }} / {{ canal.image.pending }}</span>
               {%- else %}<span class="is-zero">—</span>{% endif %}
+            </td>
+            <td class="is-num">{{ canal.curated }}</td>
+            <td class="is-num">
+              {{ canal.discarded }}
+              {% if canal.discarded %}
+              <div class="m3-sm m3-dim">
+                {{ canal.discarded_off_focus }} fuera de foco ·
+                {{ canal.discarded_no_data }} sin dato ·
+                {{ canal.discarded_unrecorded }} sin motivo
+              </div>
+              {% endif %}
             </td>
             <td class="is-num">
               {% if canal.discard_rate is none %}<span class="m3-dim">—</span>
@@ -654,6 +673,18 @@
                 {{ "%.0f"|format(canal.discard_rate * 100) }}%
               </span>
               {%- endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.rows_per_decided is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.2f"|format(canal.rows_per_decided) }}{% endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.human_minutes is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.1f"|format(canal.human_minutes) }}{% endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.rows_per_hour is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.0f"|format(canal.rows_per_hour) }}{% endif %}
             </td>
           </tr>
           {% endfor %}

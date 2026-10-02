@@ -55,7 +55,7 @@ misma sesión. El candidato más probable es A1b.
 | A7 | Fecha de las fotos de WhatsApp prellenada | S | A1b | Sonnet | CERRADO (2026-10-02) |
 | A3a | Glosario: cargar las convenciones del operador | S | — | Sonnet | CERRADO (2026-10-02) |
 | A3b | Glosario: medir su efecto con el backtest | S | A3a | Sonnet | CERRADO (2026-10-02) |
-| A4a | Panel por canal que sirva para decidir | M | A2b | Sonnet | PENDIENTE |
+| A4a | Panel por canal que sirva para decidir | M | A2b | Sonnet | CERRADO (2026-10-02) |
 | A4b | Decidir la política de cada canal | S | A4a | Sonnet | PENDIENTE |
 | A4c | (condicional) Canal «solo texto» | M | A4b | Sonnet | PENDIENTE |
 | A2d | Panel «Horas y automatización» en `/control` | M | A2b y una semana de datos | Sonnet | PENDIENTE |
@@ -517,7 +517,7 @@ $0,15–0,91 por corrida.
 
 ---
 
-### A4a — Panel por canal que sirva para decidir — PENDIENTE
+### A4a — Panel por canal que sirva para decidir — CERRADO (2026-10-02)
 
 **Hechos de partida.** `progress.compute_channel_intake`, que alimenta la sección
 «Descarte por canal» de `/control`, tiene cuatro problemas:

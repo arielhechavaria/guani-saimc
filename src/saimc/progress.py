@@ -21,8 +21,9 @@ la capa predictiva es Fase 2 y depende de H0, que todavía no se midió.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy import func, select
@@ -30,6 +31,8 @@ from sqlalchemy.orm import Session
 
 from saimc.models import (
     Channel,
+    ContentType,
+    CurationEvent,
     Currency,
     DiscardReason,
     PriceHistory,
@@ -248,30 +251,93 @@ def compute_intake_health(session: Session) -> IntakeHealth:
     )
 
 
-# --- Descarte por canal ---------------------------------------------------------
+# --- Panel por canal ------------------------------------------------------------
+
+# Una decisión que tardó más que esto no es tiempo de curaduría sino una
+# pausa (el operador se levantó a mitad de un anuncio): se excluye de la suma
+# en vez de inflarla. 15 minutos es una elección de medición, no del spec;
+# A2d la reusa para que `/control` y este panel cuenten igual.
+PAUSE_CAP_SECONDS = 15 * 60
+
+
+def decision_seconds(
+    shown_at: datetime | None, decided_at: datetime, *, batch_size: int = 1
+) -> float | None:
+    """Segundos de atención humana que costó una decisión de la bitácora.
+
+    `None` cuando no se puede medir: sin `shown_at`, con la vista posterior a
+    la decisión, o con una pausa absurda (más de `PAUSE_CAP_SECONDS`). Un
+    lote guarda el mismo `shown_at` y `decided_at` en cada uno de sus anuncios
+    (`spec-slice-A2.md`): su tiempo se reparte entre `batch_size` para que el
+    lote se sume una sola vez.
+    """
+    if shown_at is None:
+        return None
+    seconds = (decided_at - shown_at).total_seconds()
+    if seconds < 0 or seconds > PAUSE_CAP_SECONDS:
+        return None
+    return seconds / max(batch_size, 1)
+
+
+@dataclass(frozen=True)
+class StatusCounts:
+    """Cuántos anuncios de un tipo de contenido hay en cada estado."""
+
+    pending: int = 0
+    curated: int = 0
+    discarded: int = 0
 
 
 @dataclass(frozen=True)
 class ChannelIntake:
-    """La misma `IntakeHealth`, pero de un canal en particular.
+    """La vista de un canal para decidir qué hacer con él (A4a).
 
     `/control` ya mostraba la tasa de descarte global y decía «vale mirar de
-    qué canales viene lo que se descarta antes de tocar nada» — sin ese
-    desglose. Esta es la vista que lo responde: dónde poner (o sacar) la hora
-    diaria de curaduría, no solo cuánto rindió.
+    qué canales viene lo que se descarta antes de tocar nada». Esta es la vista
+    que lo responde: dónde poner (o sacar) la hora diaria de curaduría.
 
-    `channel_name is None` agrupa la captura manual (`channel_id` nulo) — la
-    otra mitad del trabajo del operador, y la única fila del desglose que él
-    controla de forma directa. `platform`/`is_active` quedan `None` en esa fila
-    porque no hay canal que describir.
+    Se agrupa por `channel_id`, no por nombre: dos canales homónimos son dos
+    canales. `channel_id is None` agrupa la captura manual — la otra mitad del
+    trabajo del operador; `channel_name`, `platform` e `is_active` quedan
+    `None` ahí porque no hay canal que describir.
+
+    La tasa de descarte sigue el criterio de `IntakeHealth` (§12.5): los
+    descartes por fuera de foco salen de numerador y denominador. Un descarte
+    sin motivo registrado cuenta como «sin dato» — lo conservador.
+
+    `human_minutes` y `rows_per_hour` salen de la bitácora (`curation_events`):
+    solo suman decisiones de curar o descartar con tiempo medible. Son `None`
+    mientras el canal no tenga ninguna.
     """
 
+    channel_id: uuid.UUID | None
     channel_name: str | None
     platform: str | None
     is_active: bool | None
-    pending: int
-    curated: int
-    discarded: int
+    text: StatusCounts
+    image: StatusCounts
+    discarded_off_focus: int = 0
+    discarded_no_data: int = 0
+    rows: int = 0
+    timed_seconds: float | None = None
+    timed_rows: int = 0
+
+    @property
+    def pending(self) -> int:
+        return self.text.pending + self.image.pending
+
+    @property
+    def curated(self) -> int:
+        return self.text.curated + self.image.curated
+
+    @property
+    def discarded(self) -> int:
+        return self.text.discarded + self.image.discarded
+
+    @property
+    def discarded_unrecorded(self) -> int:
+        """Descartes sin motivo registrado (los previos al 2026-09-03)."""
+        return self.discarded - self.discarded_off_focus - self.discarded_no_data
 
     @property
     def decided(self) -> int:
@@ -279,17 +345,46 @@ class ChannelIntake:
 
     @property
     def discard_rate(self) -> float | None:
-        """Mismo criterio que `IntakeHealth.discard_rate`: sin decididos, no
-        hay tasa que mostrar."""
+        """Descartes «sin dato» sobre lo decidido, sin los fuera de foco. `None`
+        cuando, quitados esos, no queda nada decidido."""
+        base = self.decided - self.discarded_off_focus
+        if base == 0:
+            return None
+        return (self.discarded - self.discarded_off_focus) / base
+
+    @property
+    def off_focus_rate(self) -> float | None:
+        """Qué fracción de lo decidido se tiró por estar fuera de foco. Es
+        contexto, no la métrica del spec."""
         if self.decided == 0:
             return None
-        return self.discarded / self.decided
+        return self.discarded_off_focus / self.decided
 
     @property
     def above_objective(self) -> bool:
-        """Reusa el único umbral con veredicto del módulo (§12.5, «<30%»). No
-        se inventa un objetivo propio por canal."""
+        """El único umbral con veredicto (§12.5, «<30%»), sobre la tasa neta."""
         return _above_objective(self.discard_rate)
+
+    @property
+    def rows_per_decided(self) -> float | None:
+        """Filas de precio producidas por anuncio resuelto (curado o descartado):
+        lo que el canal rinde de verdad, no cuántos anuncios sobreviven."""
+        if self.decided == 0:
+            return None
+        return self.rows / self.decided
+
+    @property
+    def human_minutes(self) -> float | None:
+        if self.timed_seconds is None:
+            return None
+        return self.timed_seconds / 60
+
+    @property
+    def rows_per_hour(self) -> float | None:
+        """Filas por hora humana, sobre las mismas decisiones que dan el tiempo."""
+        if not self.timed_seconds:
+            return None
+        return self.timed_rows / (self.timed_seconds / 3600)
 
 
 def compute_channel_intake(session: Session) -> list[ChannelIntake]:
@@ -297,35 +392,30 @@ def compute_channel_intake(session: Session) -> list[ChannelIntake]:
 
     Ordenado por descartes absolutos, no por tasa: un canal con 100% de
     descarte sobre dos anuncios cuesta minutos; uno con 40% sobre cincuenta
-    cuesta una tarde. Lo que importa priorizar es el trabajo perdido, no el
-    porcentaje. Un canal sin ninguna fila (recién dado de alta en /catalog) no
-    aparece — no hay nada medido que mostrar.
+    cuesta una tarde. Un canal sin ninguna fila (recién dado de
+    alta en /catalog) no aparece — no hay nada medido que mostrar.
     """
-    stmt = (
+    counts = session.execute(
         select(
-            Channel.name,
-            Channel.platform,
-            Channel.is_active,
-            RawIngestion.processing_status,
-            func.count(),
-        )
-        .select_from(RawIngestion)
-        .outerjoin(Channel, RawIngestion.channel_id == Channel.id)
-        .group_by(
             RawIngestion.channel_id,
-            Channel.name,
-            Channel.platform,
-            Channel.is_active,
+            RawIngestion.content_type,
             RawIngestion.processing_status,
+            RawIngestion.discard_reason,
+            func.count(),
+        ).group_by(
+            RawIngestion.channel_id,
+            RawIngestion.content_type,
+            RawIngestion.processing_status,
+            RawIngestion.discard_reason,
         )
-    )
-    rows = session.execute(stmt).all()
+    ).all()
 
-    by_channel: dict[str | None, dict[str, object]] = {}
-    for name, platform, is_active, status, count in rows:
-        bucket = by_channel.setdefault(
-            name,
-            {"platform": platform, "is_active": is_active, "pending": 0, "curated": 0, "discarded": 0},
+    status_by_type: dict[uuid.UUID | None, dict[str, dict[str, int]]] = {}
+    off_focus: dict[uuid.UUID | None, int] = {}
+    no_data: dict[uuid.UUID | None, int] = {}
+    for channel_id, content_type, status, reason, count in counts:
+        bucket = status_by_type.setdefault(channel_id, {}).setdefault(
+            content_type, {"pending": 0, "curated": 0, "discarded": 0}
         )
         if status == ProcessingStatus.PENDING:
             bucket["pending"] += count
@@ -333,18 +423,69 @@ def compute_channel_intake(session: Session) -> list[ChannelIntake]:
             bucket["curated"] += count
         elif status == ProcessingStatus.DISCARDED:
             bucket["discarded"] += count
+            if reason == DiscardReason.OFF_FOCUS.value:
+                off_focus[channel_id] = off_focus.get(channel_id, 0) + count
+            elif reason == DiscardReason.NO_DATA.value:
+                no_data[channel_id] = no_data.get(channel_id, 0) + count
 
-    intake = [
-        ChannelIntake(
-            channel_name=name,
-            platform=data["platform"],
-            is_active=data["is_active"],
-            pending=data["pending"],
-            curated=data["curated"],
-            discarded=data["discarded"],
+    channels = {
+        c.id: c
+        for c in session.execute(select(Channel)).scalars().all()
+    }
+
+    rows_by_channel = dict(
+        session.execute(
+            select(RawIngestion.channel_id, func.count(PriceHistory.id))
+            .select_from(PriceHistory)
+            .join(RawIngestion, PriceHistory.source_id == RawIngestion.id)
+            .group_by(RawIngestion.channel_id)
+        ).all()
+    )
+
+    timed_seconds: dict[uuid.UUID | None, float] = {}
+    timed_rows: dict[uuid.UUID | None, int] = {}
+    events = session.execute(
+        select(
+            RawIngestion.channel_id,
+            CurationEvent.action,
+            CurationEvent.shown_at,
+            CurationEvent.decided_at,
+            CurationEvent.detail,
         )
-        for name, data in by_channel.items()
-    ]
+        .join(RawIngestion, CurationEvent.ingestion_id == RawIngestion.id)
+        .where(CurationEvent.action.in_(("curated", "discarded")))
+    ).all()
+    for channel_id, action, shown_at, decided_at, detail in events:
+        detail = detail or {}
+        seconds = decision_seconds(
+            shown_at, decided_at, batch_size=int(detail.get("batch_size") or 1)
+        )
+        if seconds is None:
+            continue
+        timed_seconds[channel_id] = timed_seconds.get(channel_id, 0.0) + seconds
+        if action == "curated":
+            timed_rows[channel_id] = timed_rows.get(channel_id, 0) + int(
+                detail.get("row_count") or 0
+            )
+
+    intake: list[ChannelIntake] = []
+    for channel_id, by_type in status_by_type.items():
+        channel = channels.get(channel_id) if channel_id is not None else None
+        intake.append(
+            ChannelIntake(
+                channel_id=channel_id,
+                channel_name=channel.name if channel else None,
+                platform=channel.platform if channel else None,
+                is_active=channel.is_active if channel else None,
+                text=StatusCounts(**by_type.get(ContentType.TEXT.value, {})),
+                image=StatusCounts(**by_type.get(ContentType.IMAGE.value, {})),
+                discarded_off_focus=off_focus.get(channel_id, 0),
+                discarded_no_data=no_data.get(channel_id, 0),
+                rows=rows_by_channel.get(channel_id, 0),
+                timed_seconds=timed_seconds.get(channel_id),
+                timed_rows=timed_rows.get(channel_id, 0),
+            )
+        )
     intake.sort(key=lambda c: c.discarded, reverse=True)
     return intake
 
