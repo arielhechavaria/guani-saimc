@@ -97,6 +97,9 @@ B1 y B5. La compuerta cae entre la semana 6 y la 8. Son estimaciones.
 4. **A1a → A1b** — el bloque más grande del tiempo (estudio §1: 32–41%). Entre A2b y
    A1b pasan unos días de línea de base con la rutina vieja.
 5. **A7** — va después de A1b para no mezclar dos cambios en la misma medición.
+   *Nota (2026-10-02):* el operador decidió abrir A7 el mismo día en que cerró A1b,
+   sin esperar días de línea de base. La medición de las semanas siguientes mezcla
+   el efecto de A1b y el de A7; no se puede atribuir cada uno por separado.
 6. **A3a → A3b** — el glosario ataca la primera causa de edición.
 7. **A4a → A4b (→ A4c)** — política por canal.
 8. **A2d** — para entonces ya hay una semana larga con datos antes y después de A1b.
