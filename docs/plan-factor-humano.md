@@ -72,14 +72,15 @@ misma sesión. El candidato más probable es A1b.
 | K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | PENDIENTE |
 | B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | PENDIENTE |
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
-| **G1** | **Compuerta: ¿se automatiza?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
-| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1, B1 | Opus | PENDIENTE |
-| B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1, B1 | Opus | PENDIENTE |
+| **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5b, B1 | Opus | PENDIENTE |
+| **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
+| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a, B1 | Opus | PENDIENTE |
+| B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1; se entrega junto con B2c | Opus | PENDIENTE |
 | B2c | Freno automático del carril 1 | M | B2b | Opus | PENDIENTE |
-| B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1 | Opus | PENDIENTE |
+| B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
 | B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | PENDIENTE |
 | C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | Sonnet | PENDIENTE |
-| C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1 | Opus | PENDIENTE |
+| C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | PENDIENTE |
 | C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | PENDIENTE |
 | C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | PENDIENTE |
 
@@ -116,12 +117,84 @@ conviene cerrarla antes de A5a: su resultado dice si el contrato de la señal ex
 se especifica con Jev en mente o sin él. A6b va después de B1 y solo si A6 salió
 favorable; tampoco bloquea nada, y G1 se puede decidir sin ella.
 
+### Vía rápida al MVP (2026-10-02) — reemplaza el orden de arriba desde el paso 9
+
+El operador decidió apurar el desarrollo al límite: es un MVP y no puede llevar
+meses. El orden de arriba queda como referencia de dependencias; el que se sigue
+desde A2d es este. Motivo completo en `docs/decisions.md` (2026-10-02, «Vía rápida»).
+
+**Qué cambia.**
+- **G1 se parte en dos compuertas.** G1a decide el carril 0 (descarte automático)
+  y G1b el carril 1 (aceptación automática). Un descarte equivocado pierde un
+  dato; una aceptación equivocada publica un precio falso. No tienen por qué
+  esperar lo mismo.
+  Donde el resto del documento dice «G1», se lee G1a para el carril 0 y G1b
+  para el carril 1.
+- **G1a se decide con datos que ya existen:** las revisiones de `llm_reviews` y el
+  oro del backtest dan la tasa de falsos descartes con su cota al 95%, sin
+  esperar la acumulación del modo sombra.
+- **B1 sube antes de A5c.** Sin procedencia no se puede auditar ni deshacer lo que
+  resolvió el sistema.
+- **B2b y B2c se entregan juntas.** El carril 1 no se enciende sin su freno.
+- **Los canales nuevos (3 a 5 por día, con su histórico) entran después de B2a**,
+  para que el volumen lo absorba el descarte automático y no la hora diaria. Es
+  adelantar C4 sin C3: apartamiento registrado.
+
+**Orden.**
+
+| Paso | Slice | Qué deja |
+| --- | --- | --- |
+| 1 | A2d | La tabla semanal donde se ve el efecto de todo lo demás |
+| 2 | A5a | Especificación del motor, con el criterio de G1a y el protocolo de auditoría |
+| 3 | A5b | Motor en código puro |
+| 4 | B1 | Estado, puntaje y procedencia persistidos |
+| 5 | G1a | Decisión del carril 0 sobre las revisiones existentes |
+| 6 | B2a | Descarte automático con muestra auditada por semana |
+| 7 | Canales nuevos | Volumen en foco |
+| 8 | A5c | Informe semanal de sombra del carril 1 |
+| 9 | G1b → B2b + B2c | Aceptación automática con freno |
+
+Estimación: a un slice por día hábil, el carril 0 queda encendido en unas dos
+semanas. A5a, A5b y B1 son slices grandes; es una estimación.
+
+**Qué se posterga.** A3c, A1c, A6 y A6b, K1, K3, K4, B3, B4 y la fase C salvo los
+canales. Ninguno bloquea el carril 0. K1 vuelve antes de B2b, que lo usa para el
+historial de lo auditado.
+
+**Adelantar G1b.** El carril 1 se puede encender antes de llegar al n de la
+especificación solo si están las tres cosas: procedencia en cada fila (B1),
+auditoría semanal con su cota (B2b) y freno automático (B2c). Así el error se mide
+andando en vez de antes. Es decisión del operador, se registra como apartamiento,
+y el número que se le muestra a un tercero es el auditado, nunca uno estimado.
+
+#### Lo que no se mueve por apurar
+
+Son las piezas que permiten corregir después. Todo lo demás se puede lanzar
+imperfecto y ajustar con el uso.
+
+- **`raw_ingestions` inmutable y toda fila con referencia a su crudo.** Es lo que
+  permite reprocesar todo cuando una regla o un modelo mejoran.
+- **Procedencia en cada fila (B1):** humano o automático, y con qué versión del
+  motor. Sin esto no se sabe qué filas rehacer ni cuáles retirar.
+- **La bitácora y la auditoría, de solo altas.** Son la medición; si se editan,
+  no hay número que mostrar.
+- **Cada carril con su interruptor, apagado por defecto, y el freno del carril 1.**
+- **Proveedores externos desconectables.**
+- **Nada de datos personales, y el emisor nunca en la capa pública** (§10.6). Una
+  fuga no se deshace con un commit.
+- **Migraciones con Alembic.**
+
+Lo que sí se mueve: los umbrales y predicados de los carriles, el tamaño de la
+auditoría, el prompt y el glosario, la política de canales, las definiciones de
+las métricas de `/control`, los paneles y toda la interfaz.
+
 ### Hitos para el inversor
 
 | Hito | Cuándo | Qué se muestra |
 | --- | --- | --- |
 | I1 | después de A2d | Horas humanas por 1.000 anuncios, medidas antes y después del lote de imágenes |
 | I2 | después de A5c con n suficiente | «El sistema podría resolver solo el X%, con un error de a lo sumo Y% (cota al 95%)», medido y no prometido |
+| I3a | cuatro semanas después de B2a | Descarte automático real, con los falsos descartes auditados semana a semana (vía rápida) |
 | I3 | cuatro semanas después de B2b | Automatización real, con el error auditado semana a semana |
 
 ### Pendientes sueltos
@@ -919,7 +992,26 @@ suele ser el número de teléfono.
 **`decisions.md`.** Sí, incluido que rotar la clave corta la continuidad del
 historial.
 
-### G1 — Compuerta: ¿se automatiza? — PENDIENTE
+### G1a — Compuerta del carril 0: ¿se descarta solo? — PENDIENTE
+
+Agregada el 2026-10-02 (vía rápida). Va después de A5b y B1, antes de B2a.
+
+**Qué se lleva.** La tasa de falsos descartes del carril 0 sobre lo ya revisado:
+las revisiones de `llm_reviews` y el oro del backtest, con la cota superior de
+Clopper-Pearson al 95% y el n. El criterio exacto lo fija A5a.
+
+**Qué decide el operador.** Si se enciende el carril 0, con qué meta de falsos
+descartes y de qué tamaño es la muestra semanal de auditoría.
+
+**Criterio mínimo sugerido.** La cota superior queda por debajo de la meta. Si no,
+se estrecha el carril o no se enciende: la compuerta se adelanta, no se saltea.
+
+**Qué se escribe si la respuesta es sí.** Lo mismo que en G1b, acotado al descarte.
+
+### G1b — Compuerta del carril 1: ¿se acepta solo? — PENDIENTE
+
+Era G1. La pregunta 1 de abajo pasó a G1a.
+
 
 **Qué se lleva.** A2d (horas antes y después), A5c con el n de la especificación y,
 si hubo, A6 y el informe de sombra con Jev de A6b. Si Jev entra en algún carril, sus
