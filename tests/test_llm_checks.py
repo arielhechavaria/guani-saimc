@@ -14,7 +14,7 @@ import pytest
 from saimc.extraction import llm_checks
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_checks import RowMeta
-from saimc.models import Product
+from saimc.models import Product, Province
 
 ARROZ = Product(id=uuid.uuid4(), name="Arroz", category="granos", unit="lb", aliases=[])
 POLLO = Product(id=uuid.uuid4(), name="Pollo", category="carnes", unit="lb", aliases=[])
@@ -310,3 +310,39 @@ def test_highlight_no_pierde_ni_duplica_texto() -> None:
 
 def test_highlight_ignora_fragmentos_vacios() -> None:
     assert llm_checks.highlight_segments("abc", ["", "  "]) == [("abc", False)]
+
+
+# --- provincia (A5b): campo aparte, fuera de `status` y de `fields()` --------
+
+HABANA = Province(id=uuid.uuid4(), code="la-habana", name="La Habana")
+SANTIAGO = Province(id=uuid.uuid4(), code="santiago-de-cuba", name="Santiago de Cuba")
+
+
+def _con_provincia(provincia: Province | None) -> ExtractionProposal:
+    fila = _fila(ARROZ, "320", cantidad="1", unidad="lb")
+    fila.province = provincia
+    return fila
+
+
+def test_provincia_igual_coincide() -> None:
+    (a,) = llm_checks.compare_with_rules([_con_provincia(HABANA)], [_con_provincia(HABANA)])
+    assert a.province == llm_checks.COINCIDE
+
+
+def test_provincia_distinta_difiere_sin_tocar_el_status() -> None:
+    """El resumen sigue siendo el de los cinco campos de H0: la cola y el
+    backtest no cambian por sumar la provincia."""
+    (a,) = llm_checks.compare_with_rules([_con_provincia(HABANA)], [_con_provincia(SANTIAGO)])
+    assert a.province == llm_checks.DIFIERE
+    assert a.status == llm_checks.COINCIDE
+    assert "province" not in a.fields()
+
+
+def test_provincia_sin_valor_de_las_reglas_es_sin_regla() -> None:
+    (a,) = llm_checks.compare_with_rules([_con_provincia(HABANA)], [_con_provincia(None)])
+    assert a.province == llm_checks.SIN_REGLA
+
+
+def test_provincia_sin_fila_de_las_reglas_es_sin_regla() -> None:
+    (a,) = llm_checks.compare_with_rules([_con_provincia(HABANA)], [])
+    assert a.province == llm_checks.SIN_REGLA

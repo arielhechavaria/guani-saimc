@@ -113,6 +113,11 @@ class RowAgreement:
     el slice 2 midió contra la extracción completa de H0, que no los incluye, y
     sumarlos cambiaría lo medido. `sale_format` y `packaging` son siempre
     `sin_regla`: las reglas nunca los proponen.
+
+    `province` (A5b) también va aparte, y ni siquiera entra en `fields()`: la
+    lee solo el motor de validación (`saimc.validation`, carril 1). Meterla en
+    `status` o en `fields()` cambiaría el orden de la cola, las pistas del
+    formulario y lo que escribe el backtest, y nada de eso debía moverse.
     """
 
     product: str
@@ -124,6 +129,7 @@ class RowAgreement:
     price_basis: str = SIN_REGLA
     sale_format: str = SIN_REGLA
     packaging: str = SIN_REGLA
+    province: str = SIN_REGLA
 
     def fields(self) -> dict[str, str]:
         return {
@@ -176,6 +182,11 @@ def _agreement(model: ExtractionProposal, rule: ExtractionProposal | None) -> Ro
         status=status,
         # Las reglas solo proponen la base cuando el anuncio la declara.
         price_basis=_compare(model.price_basis, rule.price_basis if rule else None),
+        # Sin fila de las reglas, o sin provincia en ella, no hay con qué comparar.
+        province=_compare(
+            None if model.province is None else model.province.id,
+            None if rule is None or rule.province is None else rule.province.id,
+        ),
     )
 
 
