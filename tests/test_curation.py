@@ -7554,11 +7554,21 @@ class TestLoteImagenesGet:
         ya_descartada = _imagen(session, "hash-a1b-g7")
         _propuesta_de_imagen(session, ya_descartada)
         ya_descartada.processing_status = ProcessingStatus.DISCARDED
+        # Descarta pero sin motivo: el lote no lo inventa.
+        sin_motivo = _imagen(session, "hash-a1b-g7b")
+        _propuesta_de_imagen(session, sin_motivo, discard_reason=None)
         session.commit()
 
         html = client.get(URL_LOTE_IMAGENES).text
 
-        for ajeno in (texto, sin_propuesta, degradada, no_descarta, ya_descartada):
+        for ajeno in (
+            texto,
+            sin_propuesta,
+            degradada,
+            no_descarta,
+            ya_descartada,
+            sin_motivo,
+        ):
             assert str(ajeno.id) not in html
 
     def test_usa_la_ultima_propuesta_ok(self, client: TestClient, session: Session) -> None:
@@ -7670,7 +7680,14 @@ class TestLoteImagenesDiscard:
 
     @pytest.mark.parametrize(
         "armar",
-        ["texto", "sin_propuesta", "degradada", "no_descarta", "ya_descartada"],
+        [
+            "texto",
+            "sin_propuesta",
+            "degradada",
+            "no_descarta",
+            "sin_motivo",
+            "ya_descartada",
+        ],
     )
     def test_un_id_no_elegible_se_ignora_sin_error(
         self, client: TestClient, session: Session, armar: str
@@ -7688,6 +7705,9 @@ class TestLoteImagenesDiscard:
         elif armar == "no_descarta":
             ajeno = _imagen(session, "hash-a1b-d5")
             _propuesta_de_imagen(session, ajeno, discard=False, discard_reason=None)
+        elif armar == "sin_motivo":
+            ajeno = _imagen(session, "hash-a1b-d5")
+            _propuesta_de_imagen(session, ajeno, discard_reason=None)
         else:
             ajeno = _imagen(session, "hash-a1b-d5")
             _propuesta_de_imagen(session, ajeno)

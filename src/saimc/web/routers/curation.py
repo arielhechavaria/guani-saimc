@@ -1699,7 +1699,7 @@ class ImageBatchItem:
 
     ingestion: RawIngestion
     proposal: LlmProposal
-    # `off_focus` o `no_data`: el del modelo; si no dio uno válido, el genérico.
+    # `off_focus` o `no_data`: siempre el que dio el modelo, nunca uno inventado.
     reason: str
 
 
@@ -1715,9 +1715,10 @@ def _image_batch(db: Session) -> tuple[list[ImageBatchItem], int]:
     propuesta.
 
     Una imagen entra si está `PENDING` y su ÚLTIMA propuesta `ok` dice
-    `discard = True`. Sin propuesta, con la propuesta degradada o con una que
-    no descarta, queda en la cola normal: este lote nunca decide por el modelo
-    donde el modelo no habló. El GET y el POST salen de esta misma función, así
+    `discard = True` Y un motivo (`off_focus` o `no_data`).
+    Sin propuesta, con la propuesta degradada, con una que no descarta o que
+    descarta sin motivo válido, queda en la cola normal: este lote nunca decide
+    por el modelo donde el modelo no habló ni inventa un motivo por él. El GET y el POST salen de esta misma función, así
     que lo que el POST revalida es exactamente lo que el GET pudo mostrar.
 
     El segundo valor es el aviso «X imágenes sin propuesta»: pendientes sin
@@ -1738,11 +1739,9 @@ def _image_batch(db: Session) -> tuple[list[ImageBatchItem], int]:
         proposal = proposals.get(image.id)
         if proposal is None or proposal.discard is not True:
             continue
-        reason = (
-            proposal.discard_reason
-            if proposal.discard_reason in _IMAGE_REASON_LABELS
-            else DiscardReason.NO_DATA.value
-        )
+        reason = proposal.discard_reason
+        if reason not in _IMAGE_REASON_LABELS:
+            continue
         items.append(ImageBatchItem(ingestion=image, proposal=proposal, reason=reason))
     return items, len(images) - len(proposals)
 
