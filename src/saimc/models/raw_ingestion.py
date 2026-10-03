@@ -75,6 +75,7 @@ class RawIngestion(Base):
     # documento se puedan comparar sin traducción.
     __table_args__ = (
         Index("idx_raw_ingestions_hash", "content_hash", unique=True),
+        Index("idx_raw_ingestions_sender_hash", "sender_hash"),
         # Vocabulario cerrado, mismo patrón que `ck_prices_history_price_basis`:
         # el dominio son exactamente dos valores más el nulo, y un tercero
         # sería una pregunta distinta, no una palabra más.
@@ -107,6 +108,17 @@ class RawIngestion(Base):
         ForeignKey("channels.id", ondelete="RESTRICT", name="fk_raw_ingestions_channel_id"),
         nullable=True,
     )
+
+    # Emisor de un mensaje de grupo, como HMAC-SHA256 con clave del JID
+    # normalizado, en hexadecimal (slice B5, `docs/spec-slice-B5.md`). El JID
+    # en claro suele ser el teléfono y no se guarda en ningún lado (spec.md
+    # §10.6). La escribe la ingesta, una sola vez, cuando el mensaje viene de
+    # un grupo y hay clave (`SAIMC_SENDER_HASH_KEY`). Nullable y NUNCA se
+    # retropobla, mismo precedente que `channel_id`: nulo en las filas
+    # anteriores, en los canales de difusión, en la bandeja y en el texto
+    # pegado. No se expone: ninguna plantilla, respuesta JSON ni exportación
+    # lo incluye, y `__repr__` tampoco.
+    sender_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Ruta a la evidencia preservada, relativa al directorio del almacén.
     file_path: Mapped[str] = mapped_column(Text, nullable=False)

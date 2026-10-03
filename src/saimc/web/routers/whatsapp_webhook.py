@@ -48,6 +48,9 @@ def _contexto(*, jid: str | None = None, mensaje: ParsedMessage | None = None) -
     el proyecto no almacena datos de contacto (spec.md §10.6). Con el JID y la
     marca de tiempo alcanza para cruzar contra WAHA y encontrar el mensaje
     exacto, que es para lo que sirve este rastro.
+
+    El JID es el del CHAT (canal o grupo). El emisor de un mensaje de grupo no
+    entra acá, ni en claro ni como hash (`docs/spec-slice-B5.md`).
     """
     partes = [f"jid={jid or (mensaje.chat_id if mensaje else '?')}"]
     if mensaje is not None:
@@ -126,7 +129,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
         logger.warning("webhook.descartado motivo=json_invalido")
         return JSONResponse({"ingested": 0, "reason": "json inválido"})
 
-    mensaje = parse_message(body)
+    mensaje = parse_message(body, settings.sender_hash_key)
     if mensaje is None:
         # Acá muere la foto que WAHA anunció con `hasMedia` pero sin `media.url`,
         # y también el sticker webp. Los dos son pérdidas reales de captura.
@@ -174,6 +177,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
             source_reference=channel.name,
             captured_at=mensaje.timestamp,
             channel_id=channel.id,
+            sender_hash=mensaje.sender_hash,
         )
     finally:
         temporal.unlink(missing_ok=True)

@@ -30,12 +30,11 @@ from typing import Any
 
 import httpx
 
-from saimc.ingestion.whatsapp_webhook import ParsedMessage, parse_message
+from saimc.ingestion.whatsapp_webhook import GROUP_JID_SUFFIX, ParsedMessage, parse_message
 
-# Sufijo del JID de un grupo de WhatsApp. Un canal termina en "@newsletter" y
-# un chat directo en "@c.us", pero acá solo interesa distinguir grupo del
-# resto: todo lo que no es grupo ya funciona contra el endpoint de canales.
-_GROUP_JID_SUFFIX = "@g.us"
+# Acá solo interesa distinguir grupo del resto: todo lo que no es grupo ya
+# funciona contra el endpoint de canales.
+_GROUP_JID_SUFFIX = GROUP_JID_SUFFIX
 
 # WAHA ignora en silencio `startCursor`/`endCursor`/`offset`, así que este
 # número es la única palanca que hay para mirar más atrás: no se pagina, se
@@ -64,7 +63,7 @@ _GROUP_JID_SUFFIX = "@g.us"
 _HISTORY_LIMIT = 250
 
 
-def _parse_preview_entry(entry: Any) -> ParsedMessage | None:
+def _parse_preview_entry(entry: Any, sender_key: str | None = None) -> ParsedMessage | None:
     """Desenvuelve una entrada de `.../messages/preview` y reusa `parse_message`.
 
     El endpoint envuelve cada mensaje en `{"message": {...}, "reactions":
@@ -76,7 +75,7 @@ def _parse_preview_entry(entry: Any) -> ParsedMessage | None:
     """
     if not isinstance(entry, dict):
         return None
-    return parse_message(entry.get("message"))
+    return parse_message(entry.get("message"), sender_key)
 
 
 def _with_text(parsed: Any) -> list[ParsedMessage]:
@@ -96,16 +95,18 @@ def _with_text(parsed: Any) -> list[ParsedMessage]:
     return [message for message in parsed if message is not None and message.text]
 
 
-def parse_history(entries: list[Any]) -> list[ParsedMessage]:
+def parse_history(entries: list[Any], sender_key: str | None = None) -> list[ParsedMessage]:
     """Filtra y parsea entradas ya decodificadas de `.../messages/preview`.
 
     Puro, sin red — mismo criterio que `eltoque.parse_rate`: una entrada sin
     la forma esperada se descarta, nunca rompe el resto del lote.
     """
-    return _with_text(_parse_preview_entry(entry) for entry in entries)
+    return _with_text(_parse_preview_entry(entry, sender_key) for entry in entries)
 
 
-def parse_group_history(entries: list[Any]) -> list[ParsedMessage]:
+def parse_group_history(
+    entries: list[Any], sender_key: str | None = None
+) -> list[ParsedMessage]:
     """Filtra y parsea entradas ya decodificadas de `/chats/{id}/messages`.
 
     A diferencia del endpoint de canales, acá cada entrada YA es el objeto de
@@ -116,10 +117,10 @@ def parse_group_history(entries: list[Any]) -> list[ParsedMessage]:
 
     En un grupo, `from` es el JID del GRUPO —no el del emisor—, que es
     justamente lo que el webhook matchea contra `Channel.external_id`. El
-    emisor individual viaja aparte en `participant` y hoy se descarta: usarlo
-    exige una columna nueva en `raw_ingestions` (identidad del vendedor para
-    reputación, `spec.md` §6.1), que es un cambio de esquema y va en su
-    propio slice.
+    emisor individual viaja aparte en `participant`. Desde el slice B5
+    (`docs/spec-slice-B5.md`) `parse_message` lo convierte en un hash con
+    clave (`sender_key`) y es lo único que sale de acá: el JID en claro se
+    sigue descartando, porque suele ser el teléfono (`spec.md` §10.6).
 
     Dos descartes pesan mucho más acá que en un canal, medidos el 2026-08-18:
     los mensajes propios del operador (la mitad del lote en un grupo donde él
@@ -129,7 +130,7 @@ def parse_group_history(entries: list[Any]) -> list[ParsedMessage]:
     aceptar la foto para que el WEBHOOK pueda ingerirla — ese camino sí baja
     el archivo, este no.
     """
-    return _with_text(parse_message(entry) for entry in entries)
+    return _with_text(parse_message(entry, sender_key) for entry in entries)
 
 
 def fetch_channel_history(
@@ -140,6 +141,7 @@ def fetch_channel_history(
     *,
     timeout: float,
     transport: httpx.BaseTransport | None = None,
+    sender_key: str | None = None,
 ) -> list[ParsedMessage] | None:
     """Trae y parsea el histórico disponible de un canal o grupo.
 
@@ -155,6 +157,9 @@ def fetch_channel_history(
 
     `transport` es el seam de test (mismo patrón que `eltoque.fetch_rate`):
     en producción se deja en `None` y `httpx.Client` arma el transporte real.
+
+    `sender_key` es `SAIMC_SENDER_HASH_KEY` y baja tal cual hasta
+    `parse_message` (slice B5).
     """
     base = base_url.rstrip("/")
     if external_id.endswith(_GROUP_JID_SUFFIX):
@@ -185,4 +190,4 @@ def fetch_channel_history(
     if not isinstance(payload, list):
         return None
 
-    return parse(payload)
+    return parse(payload, sender_key)

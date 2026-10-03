@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     # criterio de "cierra en falso" que `curation_password`.
     whatsapp_webhook_hmac_key: str | None = None
 
+    # Clave del hash del emisor de los mensajes de grupo (slice B5,
+    # `docs/spec-slice-B5.md`): `raw_ingestions.sender_hash` es
+    # HMAC-SHA256(esta clave, JID del emisor). Al menos 32 caracteres; más
+    # corta se trata como ausente y se avisa al arrancar. Sin clave el hash
+    # queda nulo y la ingesta sigue igual: es un estado soportado. Rotarla o
+    # perderla corta el historial por vendedor, así que va en el respaldo de
+    # `.env`. No tiene nada que ver con `whatsapp_webhook_hmac_key`, que
+    # autentica a WAHA.
+    sender_hash_key: str | None = None
+
     # Datos para que SAIMC llame DE VUELTA a la API de WAHA (backfill de
     # histórico desde /catalog, docs/decisions.md, 2026-08-17) — dirección
     # opuesta al webhook, que es WAHA llamando a SAIMC. Sin `waha_base_url` o

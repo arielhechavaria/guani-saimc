@@ -8,7 +8,8 @@ G1a cerrada el 2026-10-03: carril 0 para texto e imagen, metas 10% y 20%; B2a ce
 el 2026-10-03, con dos interruptores por tipo y los textos sin foco pasando por el modelo;
 B1 y K6 cerradas el 2026-10-03: la validación se guarda en cada fila, con `min_cell_n = 5`
 y la regla 4 sin parámetros; K3 cerrada el 2026-10-03: la transcripción del OCR se guarda
-redactada, con cajas y versión; A1c postergada).
+redactada, con cajas y versión; B5 cerrada el 2026-10-03: el emisor de grupo se guarda
+como hash con clave, nulo sin clave; A1c postergada).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -76,7 +77,7 @@ misma sesión. El candidato más probable es A1b.
 | K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | PENDIENTE |
 | K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | CERRADO (2026-10-03) |
 | B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | CERRADO (2026-10-03) |
-| B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
+| B5 | Emisor de grupo como hash con clave | M | — | Opus | CERRADO (2026-10-03) |
 | **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | CERRADO (2026-10-03) |
 | **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
 | B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | CERRADO (2026-10-03) |
@@ -267,6 +268,17 @@ Lo que aparezca fuera del slice en curso se anota acá, no se hace.
   emisor de B5. Hay que resolverlo antes de G1b: tal como está, esas filas irían
   siempre a revisión y el carril 1 perdería un cuarto del volumen. Además, en
   `/control` el estado tapa a `unverified` (visto al revalidar B1, 2026-10-03).
+- `docs/requisitos.md` (nota bajo PRI-02) y `docs/estudio-factor-humano.md` (tabla de
+  §6.2 regla 4) siguen diciendo que el `participant` se descarta o queda fuera de
+  alcance. Desde B5 se guarda como hash; actualizar esas dos menciones (visto en B5,
+  2026-10-03).
+- El histórico de grupos medido el 2026-08-18 traía el emisor como `…@lid`, no como
+  número. Si el webhook lo manda como `…@c.us`, el mismo vendedor queda con dos hashes
+  (límite conocido de `docs/spec-slice-B5.md`). Medir qué forma llega por cada camino
+  antes de usar el emisor en la regla 5 o en la 4 (visto en B5, 2026-10-03).
+- `docs/lint-baseline.json` está desfasado: `scripts/lint_drift.py --no-autofix` da
+  ruff 70 contra un piso de 65 y mypy 155 contra 142, con hallazgos «nuevos» que no
+  son de ningún slice en curso. Regenerar el piso (visto en B5, 2026-10-03).
 
 ---
 
@@ -1068,7 +1080,7 @@ hasta G1b. Curar uno con un precio absurdo, en una celda con cinco o más precio
 anteriores: queda `anomaly` («anomalía»). Los dos se ven en el conteo de la sección
 «Validación» de `/control`. El operador sigue decidiendo igual que antes.
 
-### B5 — Emisor de grupo como hash con clave — PENDIENTE
+### B5 — Emisor de grupo como hash con clave — CERRADO (2026-10-03)
 
 **Hecho.** El `participant` de los grupos se descarta
 (`ingestion/whatsapp_backfill.py`). Guardarlo en claro violaría §10.6, porque el JID
@@ -1090,6 +1102,14 @@ suele ser el número de teléfono.
 
 **`decisions.md`.** Sí, incluido que rotar la clave corta la continuidad del
 historial.
+
+**Cierre.** Especificación en `docs/spec-slice-B5.md`. Migración 0029
+(`raw_ingestions.sender_hash`, nula y con índice). `saimc.ingestion.sender` calcula el
+HMAC-SHA256 con `SAIMC_SENDER_HASH_KEY`; `parse_message` lo llama y el JID no sale del
+parser. Lo escriben el webhook y el backfill de grupos. Sin clave, o con una de menos
+de 32 caracteres, queda nulo y la ingesta sigue igual; la clave corta se avisa al
+arrancar. Sin backfill. Falta confirmar contra la instancia que el webhook manda el
+emisor en `participant` (paso 3 de la verificación del operador).
 
 ### G1a — Compuerta del carril 0: ¿se descarta solo? — CERRADO (2026-10-03)
 

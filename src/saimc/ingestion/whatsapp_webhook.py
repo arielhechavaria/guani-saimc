@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+
+from saimc.ingestion.sender import sender_hash
 
 
 def verify_hmac(secret: bytes, raw_body: bytes, provided_hex: str) -> bool:
@@ -61,6 +63,19 @@ class ParsedMessage:
     has_media: bool
     media_url: str | None = None
     media_suffix: str | None = None
+    # Hash con clave del emisor de un mensaje de grupo (slice B5,
+    # `docs/spec-slice-B5.md`). Es lo ÚNICO del emisor que sale del parser: el
+    # JID en claro suele ser el teléfono y no llega a este objeto, así que no
+    # puede terminar en un log, en la bandeja ni en la base (spec.md §10.6).
+    # `repr=False` para que tampoco el hash aparezca si alguien registra el
+    # mensaje entero.
+    sender_hash: str | None = field(default=None, repr=False)
+
+
+# Sufijo del JID de un grupo de WhatsApp. Solo ahí `from` es el grupo y el
+# emisor viaja aparte, en `participant`. Un canal termina en "@newsletter" y un
+# chat directo en "@c.us".
+GROUP_JID_SUFFIX = "@g.us"
 
 
 def _parse_media(payload: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -90,7 +105,7 @@ def _parse_media(payload: dict[str, Any]) -> tuple[str | None, str | None]:
     return url, suffix
 
 
-def parse_message(body: Any) -> ParsedMessage | None:
+def parse_message(body: Any, sender_key: str | None = None) -> ParsedMessage | None:
     """Extrae un mensaje utilizable del payload de WAHA, o `None` si no aplica.
 
     Devuelve `None` —en vez de levantar una excepción— para los casos que el
@@ -114,11 +129,19 @@ def parse_message(body: Any) -> ParsedMessage | None:
     instancia real hasta probarla: el objeto de mensaje directo (como lo
     muestra la documentación) o envuelto en `{"event", "session", "payload"}`
     (la convención general de WAHA para otros webhooks).
+
+    `sender_key` es `SAIMC_SENDER_HASH_KEY` (slice B5). El emisor se lee de
+    `participant`, solo cuando `from` es un grupo, y se convierte en hash acá
+    mismo: el JID no sale de esta función. Sin clave, o sin emisor,
+    `sender_hash` queda nulo y el mensaje se parsea igual. El nombre del campo
+    está verificado para el histórico (2026-08-18); para el webhook lo confirma
+    la verificación del operador de `docs/spec-slice-B5.md`.
     """
     if not isinstance(body, dict):
         return None
 
-    payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+    wrapped = body.get("payload")
+    payload: dict[str, Any] = wrapped if isinstance(wrapped, dict) else body
 
     if payload.get("fromMe"):
         return None
@@ -148,4 +171,9 @@ def parse_message(body: Any) -> ParsedMessage | None:
         has_media=bool(payload.get("hasMedia", False)),
         media_url=media_url,
         media_suffix=media_suffix,
+        sender_hash=(
+            sender_hash(payload.get("participant"), sender_key)
+            if chat_id.endswith(GROUP_JID_SUFFIX)
+            else None
+        ),
     )

@@ -694,6 +694,7 @@ def backfill_channel(channel_id: uuid.UUID, db: Session = Depends(get_db)) -> Re
         settings.waha_session,
         channel.external_id,
         timeout=settings.waha_timeout,
+        sender_key=settings.sender_hash_key,
     )
     if messages is None:
         return _back(error=f"No se pudo consultar WAHA para «{channel.name}».")
@@ -725,6 +726,7 @@ def backfill_channel(channel_id: uuid.UUID, db: Session = Depends(get_db)) -> Re
                 # `channel.id`, no la variable local `channel_id`: acá ese
                 # nombre ya está atado al parámetro de la ruta.
                 channel_id=channel.id,
+                sender_hash=parsed.sender_hash,
             )
         finally:
             temp_path.unlink(missing_ok=True)

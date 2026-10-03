@@ -131,6 +131,7 @@ def ingest_file(
     source_reference: str | None = None,
     captured_at: datetime | None = None,
     channel_id: uuid.UUID | None = None,
+    sender_hash: str | None = None,
 ) -> RawIngestion:
     """Ingiere un archivo ya clasificado y lo mueve al almacén.
 
@@ -147,6 +148,8 @@ def ingest_file(
     recién escrito puede decir. `channel_id` (2026-08-19) es la identidad real
     del canal de origen, resuelta por `external_id` en el momento de la
     captura; sin ella, el origen solo se puede reconstruir por nombre.
+    `sender_hash` (slice B5) es el hash con clave del emisor de un mensaje de
+    grupo, ya calculado por `parse_message`: acá nunca llega el JID en claro.
     """
     content_type = classify(path)
     if content_type is None:
@@ -182,6 +185,7 @@ def ingest_file(
             processing_status=ProcessingStatus.PENDING,
             captured_at=resolved_captured_at,
             channel_id=channel_id,
+            sender_hash=sender_hash,
         )
         session.add(ingestion)
         session.flush()
@@ -203,6 +207,7 @@ def ingest_inbox(
     source_reference: str | None = None,
     captured_at: datetime | None = None,
     channel_id: uuid.UUID | None = None,
+    sender_hash: str | None = None,
 ) -> IngestReport:
     """Procesa la bandeja completa y devuelve el detalle de lo que pasó.
 
@@ -232,6 +237,7 @@ def ingest_inbox(
             source_reference=source_reference,
             captured_at=captured_at,
             channel_id=channel_id,
+            sender_hash=sender_hash,
         )
         session.commit()
         report.ingested.append(path.name)

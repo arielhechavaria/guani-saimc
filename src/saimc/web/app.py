@@ -6,6 +6,8 @@ más de una vez.
 """
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -16,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from saimc.config import get_settings
+from saimc.ingestion.sender import warn_if_key_too_short
 from saimc.web.analytics import registrar_visitas_publicas
 from saimc.web.routers import (
     catalog,
@@ -57,8 +61,23 @@ logging.basicConfig(
 # Nada del proyecto los consume: un solo operador, sin clientes de API, y
 # Angular está diferido a la Fase 2 (§13.1). Si algún día hace falta la consola,
 # vuelve detrás de `require_operator` y en otra ruta.
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Avisos de configuración al arrancar el servidor.
+
+    Hoy uno solo: una `SAIMC_SENDER_HASH_KEY` demasiado corta se trata como
+    ausente (`docs/spec-slice-B5.md`), y sin este aviso el operador creería que
+    el emisor de los grupos se está guardando. El aviso no incluye la clave.
+    """
+    warn_if_key_too_short(get_settings().sender_hash_key)
+    yield
+
+
 app = FastAPI(
     title="SAIMC — Cola de curaduría",
+    lifespan=_lifespan,
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
