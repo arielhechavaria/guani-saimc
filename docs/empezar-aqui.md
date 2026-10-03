@@ -16,5 +16,7 @@ código o proponer nada.
 5. **[Checklist de revisión de slice](/docs/checklist-pr)** — lo que se
    revisa antes de dar por cerrado cualquier cambio.
 
+¿Te olvidaste qué hacía un comando del VPS? Está en el [catálogo de comandos](/docs/comandos).
+
 Con estos cinco alcanza para orientarse. El resto del catálogo —requisitos,
 ADR, runbooks, costos— se consulta por tema, cuando haga falta.

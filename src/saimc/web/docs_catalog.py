@@ -148,6 +148,16 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="rige",
     ),
     DocEntry(
+        slug="comandos",
+        title="Catálogo de comandos del operador",
+        summary=(
+            "Todos los comandos que el operador corre a mano, cada uno con para "
+            "qué sirve, cuándo correrlo y si cambia algo o gasta plata."
+        ),
+        relative_path="docs/comandos.md",
+        standing="rige",
+    ),
+    DocEntry(
         slug="runbook-h0",
         title="Runbook — Medir H0",
         summary=(

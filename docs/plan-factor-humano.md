@@ -1,6 +1,6 @@
 # Plan — Sacar al operador del camino de cada registro
 
-Fecha del plan: 2026-09-29. Última actualización: 2026-10-03 (K4 cerrada: aviso por canal con piso de 24 h y 2 × p95; vía rápida al MVP con
+Fecha del plan: 2026-09-29. Última actualización: 2026-10-03 (catálogo de comandos del operador en `docs/comandos.md`; K4 cerrada: aviso por canal con piso de 24 h y 2 × p95; vía rápida al MVP con
 la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
 sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
 tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1;
@@ -244,6 +244,7 @@ las métricas de `/control`, los paneles y toda la interfaz.
 
 Lo que aparezca fuera del slice en curso se anota acá, no se hace.
 
+- Botones en una pantalla del operador para los comandos de solo lectura del catálogo (`measure_n`, pre-cálculo en seco, `revalidate` en seco, estado de los temporizadores): lista cerrada, sin argumentos libres, detrás del acceso del operador. No van en botón: `alembic`, `pg_dump`, `git pull`, reinicios, nada con `sudo`, ni los `--execute` (acordado con el operador, 2026-10-03).
 - El aviso de K4 solo se ve al abrir `/curation` o `/control`: no hay mail ni Telegram.
   Un corte que ocurra mientras el operador no abre ninguna de las dos sigue pasando
   desapercibido hasta que la abra (visto en K4, 2026-10-03).

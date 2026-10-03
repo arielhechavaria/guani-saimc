@@ -471,3 +471,43 @@ class TestAgrupadoYReciente:
         texto = client.get("/docs").text
 
         assert texto.index(primero.entry.title) < texto.index(ultimo.entry.title)
+
+
+class TestCatalogoDeComandos:
+    """`docs/comandos.md` no se pudre: todo lo que nombra tiene que existir.
+
+    No ejecuta ningún comando. Solo comprueba que cada `python -m saimc.<mod>`
+    resuelve a un módulo importable con un `main` invocable, y que cada ruta
+    `systemd/…` o `scripts/…` está en el repo.
+    """
+
+    _RAIZ = Path(__file__).resolve().parents[1]
+
+    def _texto(self) -> str:
+        return (self._RAIZ / "docs" / "comandos.md").read_text(encoding="utf-8")
+
+    def test_cada_modulo_nombrado_tiene_un_main(self) -> None:
+        import importlib
+        import importlib.util
+
+        modulos = set(re.findall(r"python -m (saimc(?:\.\w+)+)", self._texto()))
+        assert modulos, "el catálogo no nombra ningún `python -m saimc.…`"
+        for nombre in sorted(modulos):
+            # Un paquete (`saimc.ingestion`) se ejecuta por su `__main__`.
+            spec = importlib.util.find_spec(nombre)
+            assert spec is not None, f"{nombre} no existe"
+            if spec.submodule_search_locations is not None:
+                nombre = f"{nombre}.__main__"
+                assert importlib.util.find_spec(nombre) is not None, f"{nombre} no existe"
+            assert callable(getattr(importlib.import_module(nombre), "main", None)), (
+                f"{nombre} no tiene main()"
+            )
+
+    def test_cada_ruta_nombrada_existe(self) -> None:
+        rutas = set(re.findall(r"\b((?:systemd|scripts)/[\w.\-]+\.\w+)", self._texto()))
+        assert rutas, "el catálogo no nombra ninguna ruta de systemd/ o scripts/"
+        faltan = sorted(r for r in rutas if not (self._RAIZ / r).is_file())
+        assert not faltan, f"rutas que no existen: {faltan}"
+
+    def test_el_catalogo_esta_registrado_en_el_gestor(self) -> None:
+        assert docs_catalog.BY_SLUG["comandos"].relative_path == "docs/comandos.md"

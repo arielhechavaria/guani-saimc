@@ -42,6 +42,8 @@ vos, aplicar el `--fix` seguro y avisar si aparece un hallazgo nuevo contra
   paso" es scope creep: se saca del diff o se declara como slice aparte.
 - [ ] Si hubo una decisión no obvia, está en `docs/decisions.md` con su
   contexto, descartado y consecuencia — no alcanza con que esté en el commit.
+- [ ] Si el slice le deja al operador un comando nuevo para correr, su entrada
+  está en `docs/comandos.md` en el mismo commit.
 
 ### 2. Calidad del test — el punto crítico contra código de IA
 

@@ -1,5 +1,7 @@
 # Runbook — Rutina diaria de curaduría
 
+Todos los comandos del operador, con su porqué, están en [`comandos.md`](comandos.md).
+
 Una hora por día, siempre en el mismo orden. Lo que no entra en la hora queda
 para mañana: la cola no se vacía a fuerza de jornadas enteras.
 
