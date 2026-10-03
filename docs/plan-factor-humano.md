@@ -3,7 +3,8 @@
 Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (vía rápida al MVP con
 la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
 sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
-tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1).
+tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1;
+G1a cerrada el 2026-10-03: carril 0 para texto e imagen, metas 10% y 20%).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -72,7 +73,7 @@ misma sesión. El candidato más probable es A1b.
 | K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | PENDIENTE |
 | B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | PENDIENTE |
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
-| **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | PENDIENTE |
+| **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | CERRADO (2026-10-03) |
 | **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
 | B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | PENDIENTE |
 | B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | PENDIENTE |
@@ -1039,7 +1040,7 @@ suele ser el número de teléfono.
 **`decisions.md`.** Sí, incluido que rotar la clave corta la continuidad del
 historial.
 
-### G1a — Compuerta del carril 0: ¿se descarta solo? — PENDIENTE
+### G1a — Compuerta del carril 0: ¿se descarta solo? — CERRADO (2026-10-03)
 
 Agregada el 2026-10-02 (vía rápida). Va después de A5c, antes de B2a.
 
@@ -1063,6 +1064,13 @@ descartes y de qué tamaño es la muestra semanal de auditoría.
 se estrecha el carril o no se enciende: la compuerta se adelanta, no se saltea.
 
 **Qué se escribe si la respuesta es sí.** Lo mismo que en G1b, acotado al descarte.
+
+**Resultado (2026-10-03).** Sí, para los dos tipos. Meta de falsos descartes: 10% en
+texto y 20% en imagen; las cotas del oro (9,2% y 19,3%) quedan por debajo. Auditoría
+semanal: 30 textos y 15 imágenes, o todos si hay menos. Escrito en `decisions.md`
+(2026-10-03), en la tabla de apartamientos de `spec-map.md` y como excepción de la
+decisión 2 en `CLAUDE.md`. Ojo: la cota de imagen queda a 0,7 puntos de su meta, y un
+solo falso descarte auditado la cruza.
 
 ### G1b — Compuerta del carril 1: ¿se acepta solo? — PENDIENTE
 
@@ -1092,9 +1100,13 @@ acumulando o se estrecha el carril.
 
 **Qué entra.**
 - Con `SAIMC_LANE0_ENABLED` (apagado por defecto), el pre-cálculo aplica el carril 0
-  al terminar cada propuesta, y el evento queda con `mode = auto`.
+  al terminar cada propuesta, y el evento queda con `mode = auto`. El interruptor es
+  por tipo (texto, imagen): G1a fijó una meta distinta para cada uno.
 - `/curation/auditoria` muestra una muestra aleatoria semanal de los descartes
-  automáticos, reproducible con una semilla por semana.
+  automáticos, reproducible con una semilla por semana: 30 textos y 15 imágenes, o
+  todos si hay menos (G1a).
+- Por tipo, la cota superior al 95% de lo auditado acumulado contra su meta (10% en
+  texto, 20% en imagen). Si la supera, el tipo se apaga o se estrecha.
 - Rescatar un anuncio lo devuelve a `PENDING` y deja un evento.
 
 **Tests primero.**
