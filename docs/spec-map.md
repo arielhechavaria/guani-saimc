@@ -149,6 +149,8 @@ Lo implementado que no coincide con el documento, con su entrada en `decisions.m
 | Resultado de validación | §6.2, «Resultado de validación»: un solo JSON con `validation_status`, `confidence_score` y `rules` | El estado y el puntaje son columnas; el JSON (`validation_detail`) guarda las reglas, los motivos, la versión del motor, los parámetros y la fecha | 2026-10-03 (B1) |
 | Referencias mínimas por celda | §12.6: ningún umbral se inventa, se mide | `min_cell_n = 5` para persistir la validación: decisión del operador, sin medición que lo elija y sin efecto sobre ningún carril | 2026-10-03 (B1) |
 | Descarte automático (carril 0) | §6.1: OCR y extracción como asistentes de la cola, «no como etapas autónomas del pipeline» | El motor descarta solo, sin pasar por la cola, lo que entra al carril 0 (texto e imagen), con auditoría semanal por muestra. **Decidido en G1a, se construye en B2a** | 2026-10-03 |
+| Estadístico robusto contra atípicos | §10.7 C2: mediana y MAD | Mediana en los agregados y, para el atípico, cerco de IQR sobre el logaritmo (`validation/fence.py`): el de la regla 2 y el de la cifra pública. MAD no se usa | 2026-10-03 (C3) |
+| Índice de control y señales de coordinación | §10.7 C3: fuentes de alta confianza elegidas por emisor (historial, consistencia, antigüedad). C3 y C4 «no aplicables» en la Fase 0–1 | La fuente de alta confianza es la fila que verificó una persona (`provenance` `human` o `audited`). El plan adelanta C3 y C4 a antes del carril 1: C3 con el cerco existente, C4 como medición sin umbrales | 2026-10-03 (C3) |
 
 El último está razonado en `docs/decisions/001-stack-python-unico.md`, que es
 además el ADR que §13.1 (línea 1636) pide por nombre.

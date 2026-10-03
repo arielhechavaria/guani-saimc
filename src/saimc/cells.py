@@ -773,44 +773,10 @@ def compute_retail_ranges(
     """
     report = compute_retail_observations(session, days=days, hoy=hoy, hasta=hasta)
 
-    # `format_id` entra a la clave: el rango es por formato, no por producto
-    # (supersede 2026-08-12). `unconverted` sigue separando el grupo fundido
-    # del que quedó sin tasa, mismo criterio que `compute_cells`. `variant_id`
-    # entra por el mismo motivo que en `compute_cells`: segundo eje de
-    # identidad, libre y cruzable con el formato (product-variants).
-    RangeKey = tuple[
-        str,
-        str | None,
-        str,
-        str,
-        bool,
-        uuid.UUID | None,
-        str | None,
-        Decimal | None,
-        str | None,
-        uuid.UUID | None,
-        str | None,
-        str | None,
-        str | None,
-    ]
-    grouped: dict[RangeKey, list[Decimal]] = {}
+    # La clave de la celda vive en `retail_cell_key`, con su motivo.
+    grouped: dict[RetailCellKey, list[Decimal]] = {}
     for observation in report.observations:
-        key: RangeKey = (
-            observation.product_name,
-            observation.province_name,
-            observation.currency,
-            observation.unit,
-            observation.unconverted,
-            observation.format_id,
-            observation.format_packaging,
-            observation.format_quantity,
-            observation.format_unit,
-            observation.variant_id,
-            observation.variant_kind,
-            observation.variant_brand,
-            observation.variant_origin,
-        )
-        grouped.setdefault(key, []).append(observation.unit_price)
+        grouped.setdefault(retail_cell_key(observation), []).append(observation.unit_price)
 
     ranges = [
         RetailRange(
@@ -904,6 +870,58 @@ class RetailObservation:
     variant_kind: str | None = None
     variant_brand: str | None = None
     variant_origin: str | None = None
+    #: Quién hizo la fila (`prices_history.provenance`). Lo leen los controles
+    #: de §10.7 (`validation.control_cells`, slice C3) para separar las filas
+    #: que verificó una persona; ninguna vista pública lo usa.
+    provenance: str | None = None
+
+
+#: Identidad de una celda minorista: la clave por la que `compute_retail_ranges`
+#: agrupa las observaciones. Es la celda que ve el público.
+RetailCellKey = tuple[
+    str,
+    str | None,
+    str,
+    str,
+    bool,
+    uuid.UUID | None,
+    str | None,
+    Decimal | None,
+    str | None,
+    uuid.UUID | None,
+    str | None,
+    str | None,
+    str | None,
+]
+
+
+def retail_cell_key(observation: RetailObservation) -> RetailCellKey:
+    """La celda minorista de una observación.
+
+    `format_id` entra a la clave: el rango es por formato, no por producto
+    (supersede 2026-08-12). `unconverted` sigue separando el grupo fundido del
+    que quedó sin tasa, mismo criterio que `compute_cells`. `variant_id` entra
+    por el mismo motivo que en `compute_cells`: segundo eje de identidad, libre
+    y cruzable con el formato (product-variants).
+
+    Es función aparte desde el slice C3: los controles de §10.7 agrupan por
+    esta misma clave, y dos copias se desincronizarían.
+    """
+    return (
+        observation.product_name,
+        observation.province_name,
+        observation.currency,
+        observation.unit,
+        observation.unconverted,
+        observation.format_id,
+        observation.format_packaging,
+        observation.format_quantity,
+        observation.format_unit,
+        observation.variant_id,
+        observation.variant_kind,
+        observation.variant_brand,
+        observation.variant_origin,
+    )
 
 
 @dataclass(frozen=True)
@@ -960,6 +978,7 @@ def compute_retail_observations(
             ProductVariant.kind,
             ProductVariant.brand,
             ProductVariant.origin,
+            PriceHistory.provenance,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
@@ -998,6 +1017,7 @@ def compute_retail_observations(
         variant_kind,
         variant_brand,
         variant_origin,
+        provenance,
     ) in session.execute(stmt):
         if quantity == 0:
             continue
@@ -1068,6 +1088,7 @@ def compute_retail_observations(
                 variant_kind=variant_kind,
                 variant_brand=variant_brand,
                 variant_origin=variant_origin,
+                provenance=provenance,
             )
         )
 

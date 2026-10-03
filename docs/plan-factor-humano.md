@@ -9,7 +9,8 @@ el 2026-10-03, con dos interruptores por tipo y los textos sin foco pasando por 
 B1 y K6 cerradas el 2026-10-03: la validación se guarda en cada fila, con `min_cell_n = 5`
 y la regla 4 sin parámetros; K3 cerrada el 2026-10-03: la transcripción del OCR se guarda
 redactada, con cajas y versión; B5 cerrada el 2026-10-03: el emisor de grupo se guarda
-como hash con clave, nulo sin clave; A1c postergada).
+como hash con clave, nulo sin clave; C3 cerrada el 2026-10-03: los controles de §10.7
+entran como medición, con índice de control y `measure_n`, sin umbrales; A1c postergada).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -87,7 +88,7 @@ misma sesión. El candidato más probable es A1b.
 | B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | PENDIENTE |
 | C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | Sonnet | PENDIENTE |
 | C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | PENDIENTE |
-| C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | PENDIENTE |
+| C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | CERRADO (2026-10-03) |
 | C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | PENDIENTE |
 | C5 | (a futuro) Mapa de grupos por provincia exportable y varias fuentes de ingesta | sin estimar | C4 | Opus | PENDIENTE |
 
@@ -276,6 +277,16 @@ Lo que aparezca fuera del slice en curso se anota acá, no se hace.
   número. Si el webhook lo manda como `…@c.us`, el mismo vendedor queda con dos hashes
   (límite conocido de `docs/spec-slice-B5.md`). Medir qué forma llega por cada camino
   antes de usar el emisor en la regla 5 o en la 4 (visto en B5, 2026-10-03).
+- `validation/control_cells.py` y `validation/measure_n.py` importan
+  `DEFAULT_WINDOW_DAYS` de `web/product_nav.py`: la ventana pública es un dato del
+  dominio que vive en la capa web. Moverla (por ejemplo a `cells.py`) es un cambio
+  aparte (visto en C3, 2026-10-03).
+- La sección de controles no mira `provinces.is_published`: mide toda celda minorista
+  de un piloto en la ventana, también la de una provincia que la capa pública todavía
+  no muestra. Decidir si B2c debe mirar solo las publicadas (visto en C3, 2026-10-03).
+- En un render sin servidor de `/control` a 390 px, la barra de navegación de arriba
+  desborda el ancho de la página. Puede ser un artefacto de la fuente de íconos, que
+  no cargó en esa prueba; confirmarlo en un teléfono (visto en C3, 2026-10-03).
 - `docs/lint-baseline.json` está desfasado: `scripts/lint_drift.py --no-autofix` da
   ruff 70 contra un piso de 65 y mypy 155 contra 142, con hallazgos «nuevos» que no
   son de ningún slice en curso. Regenerar el piso (visto en B5, 2026-10-03).
@@ -1254,8 +1265,17 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
   - C2b: backtest de imágenes, visión contra OCR más texto, sobre el oro (hoy 55,6%);
     cuesta alrededor de $1 cada 100 imágenes y se aprueba antes;
   - C2c: el apartamiento de privacidad registrado, y la integración desconectable.
-- **C3 — Controles de §10.7.** C1 a C4, antes de sumar fuentes nuevas o abiertas. El
-  N mínimo por celda se mide (§12.6).
+- **C3 — Controles de §10.7 — CERRADO (2026-10-03).** C1 a C4, antes de sumar
+  fuentes nuevas o abiertas. El N mínimo por celda se mide (§12.6).
+
+  **Cierre.** Especificación en `docs/spec-slice-C3.md`. Solo lectura: sin migración
+  y sin tocar el motor. `validation.controls.cell_controls` da por celda pública el
+  índice de control (la mediana de las filas `human` o `audited`), si diverge o queda
+  sin ancla, y las cuatro señales de C4; `/control` lo muestra en «Controles de
+  manipulación (§10.7)». `python -m saimc.validation.measure_n` mide la estabilidad
+  de la mediana frente al tamaño de muestra. Lo que **no** hizo: no fija ningún
+  umbral; frenar el carril 1 cuando una celda diverge es de B2c; el N se decide en
+  G1b con la salida de `measure_n`.
 - **C4 — Expansión.** Provincias (§9.0: tiene que ser configuración, no desarrollo),
   productos y canales, de a una tanda por vez y mirando las horas por 1.000 anuncios
   y el error auditado.

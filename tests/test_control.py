@@ -2012,3 +2012,98 @@ class TestHorasYAutomatizacion:
         assert "10.0" in response.text
         assert "2 de 2 medidos" in response.text
         assert "50%" in response.text
+
+
+class TestControlesDeManipulacion:
+    """Sección «Controles de manipulación (§10.7)» (slice C3, caso 11 de
+    `docs/spec-slice-C3.md`): se ve, y no muestra ningún emisor."""
+
+    HASH_A = "a1" * 32
+    HASH_B = "b2" * 32
+    JID = "120363000000000001@g.us"
+
+    def _cargar(
+        self,
+        session: Session,
+        *,
+        humanas: list[str],
+        automaticas: list[str] | None = None,
+    ) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        grupo = Channel(
+            name="Ventas Santiago", platform=Platform.WHATSAPP_GROUP, external_id=self.JID
+        )
+        session.add_all([arroz, scu, grupo])
+        session.flush()
+        filas = [(p, "human") for p in humanas] + [(p, "auto") for p in automaticas or []]
+        for i, (precio, provenance) in enumerate(filas):
+            origen = RawIngestion(
+                source_type=SourceType.INBOX_TEXT,
+                file_path=f"raw/c3-{i}.txt",
+                content_hash=f"hash-c3-{i}",
+                content_type=ContentType.TEXT,
+                processing_status=ProcessingStatus.CURATED,
+                captured_at=datetime(2026, 10, 1, 12, i, tzinfo=UTC),
+                channel_id=grupo.id,
+                sender_hash=self.HASH_A if i % 2 else self.HASH_B,
+                original_text=f"Arroz a {precio}",
+            )
+            session.add(origen)
+            session.flush()
+            session.add(
+                PriceHistory(
+                    provenance=provenance,
+                    product_id=arroz.id,
+                    province_id=scu.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    unit="lb",
+                    quantity=Decimal("1"),
+                    sale_format=SaleFormat.RETAIL.value,
+                    published_date=date.today(),
+                    source_id=origen.id,
+                )
+            )
+        session.commit()
+
+    def test_sin_datos_la_seccion_aparece_igual(self, client: TestClient) -> None:
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        assert "Controles de manipulación (§10.7)" in response.text
+        assert "0 celdas divergen" in response.text
+
+    def test_muestra_la_seccion_sin_ningun_emisor(
+        self, client: TestClient, session: Session
+    ) -> None:
+        # 4 filas humanas: menos que MIN_CELL_N (5), la celda queda sin ancla.
+        self._cargar(session, humanas=["100", "100", "100", "100"])
+
+        response = client.get("/control")
+
+        assert response.status_code == 200
+        assert "Controles de manipulación (§10.7)" in response.text
+        assert "0 celdas divergen" in response.text
+        assert "1 sin ancla" in response.text
+        # 2 emisores con 2 filas cada uno: el que más aporta, la mitad.
+        assert "emisor 50%" in response.text
+        assert "canal 100%" in response.text
+        # El emisor nunca se muestra, ni su hash ni el JID del grupo.
+        assert self.HASH_A not in response.text
+        assert self.HASH_B not in response.text
+        assert self.JID not in response.text
+
+    def test_una_celda_que_diverge_va_arriba_y_se_cuenta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        # 5 humanas en 100 y 6 automáticas en 300: la mediana principal (la
+        # sexta de 11) es 300, y el cerco de cinco valores iguales a 100 va de
+        # 50 a 200 (sin ancho de caja manda el piso ×2). Diverge.
+        self._cargar(session, humanas=["100"] * 5, automaticas=["300"] * 6)
+
+        response = client.get("/control")
+
+        assert "1 celda diverge" in response.text
+        assert "0 sin ancla" in response.text
+        assert 'data-control="diverges"' in response.text

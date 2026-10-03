@@ -13,6 +13,9 @@ del formulario, no parte de la regla.
 
 from __future__ import annotations
 
+import uuid
+from collections.abc import Callable
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -54,6 +57,33 @@ def resolve_origin(db: Session, ingestion: RawIngestion) -> Channel | None:
     if len(coincidencias) == 1:
         return coincidencias[0]
     return None
+
+
+def origin_resolver(db: Session) -> Callable[[uuid.UUID | None, str | None], uuid.UUID | None]:
+    """La misma regla de `resolve_origin`, para resolver muchas ingestas de una vez.
+
+    Lee los canales una sola vez y devuelve una función que recibe el
+    `channel_id` y el `source_reference` de una ingesta y da el id de su canal,
+    o `None`. Existe para quien recorre cientos de ingestas (los controles de
+    §10.7, slice C3): `resolve_origin` consulta la base por cada una.
+
+    La regla es la de arriba y no otra: el `channel_id` manda; sin él, el
+    nombre resuelve solo si coincide con exactamente un canal. Un test compara
+    las dos funciones caso por caso para que no se separen.
+    """
+    by_name: dict[str, list[uuid.UUID]] = {}
+    for channel_id, name in db.execute(select(Channel.id, Channel.name)):
+        by_name.setdefault(name, []).append(channel_id)
+
+    def resolve(channel_id: uuid.UUID | None, source_reference: str | None) -> uuid.UUID | None:
+        if channel_id is not None:
+            return channel_id
+        if not source_reference:
+            return None
+        matches = by_name.get(source_reference, [])
+        return matches[0] if len(matches) == 1 else None
+
+    return resolve
 
 
 def channel_province(db: Session, ingestion: RawIngestion) -> Province | None:

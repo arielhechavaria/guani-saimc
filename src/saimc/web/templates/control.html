@@ -844,6 +844,82 @@
     </div>
   </section>
 
+  <!-- ---------- 6d. Controles de manipulación (C3) ---------- -->
+  {# Mediciones por celda pública. Esta vista es pública: acá van conteos,
+     medianas y porcentajes, nunca un canal, un emisor ni su hash. No es una
+     tabla a propósito: a 390 px nueve columnas no entran, así que cada celda
+     es un bloque de texto que se parte en renglones, como las series de la
+     matriz de los pilotos. #}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="controles">Controles de manipulación (§10.7)</h2>
+      <span class="m3-sm m3-muted">{{ controls.headline }}</span>
+    </div>
+
+    <div class="m3-notes-grid">
+      <div>
+        <strong>Control</strong> es la misma celda calculada solo con las filas que verificó
+        una persona. Una celda <strong>diverge</strong> cuando su mediana cae fuera de la banda
+        de esas filas, la misma banda que usa la validación. Con menos de
+        {{ controls.min_control_n }} filas de control queda <strong>sin ancla</strong>: no hay
+        contra qué comparar.
+      </div>
+      <div>
+        <strong>Canal</strong> y <strong>emisor</strong>: qué parte de las filas aporta el que
+        más aporta. <strong>Sincronía</strong>: filas de canales distintos a menos de
+        {{ controls.burst_window_minutes }} minutos una de otra. <strong>Texto idéntico</strong>:
+        filas de canales o emisores distintos con el mismo texto, sin contar números ni
+        espacios.
+      </div>
+      <div>
+        <strong>Son mediciones</strong>: ninguna tiene umbral (§12.6) y ninguna fila se acepta,
+        se descarta ni se oculta por lo que diga esta sección.
+      </div>
+    </div>
+
+    {% if not controls.cells %}
+    <p class="m3-sm m3-dim">— sin celdas minoristas de los pilotos en la ventana —</p>
+    {% else %}
+    <div class="m3-card m3-card-pad">
+      {% for cell in controls.cells %}
+      {% set c = cell.controls %}
+      <div class="m3-serie" data-control="{{ cell.status }}">
+        <div class="m3-row-baseline">
+          <span class="m3-strong" style="font-size:14px">
+            {{ cell.product_name }} · {{ cell.province_name or "sin provincia" }}
+            ·
+            {% if cell.format_label %}{{ cell.format_label }}
+            {%- else %}<span class="m3-muted">sin formato</span> · {{ cell.unit }}{% endif %}
+            {%- if cell.variant_label %} · {{ cell.variant_label }}{% endif %}
+          </span>
+          {% if cell.status == "diverges" %}<span class="m3-badge m3-badge-warn">diverge</span>
+          {%- elif cell.status == "unanchored" %}<span class="m3-badge m3-badge-neutral">sin ancla</span>{% endif %}
+        </div>
+        <div class="m3-sm m3-muted">
+          n = {{ c.count }} · control {{ c.control_count }}
+          · mediana <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(c.median) }}/{{ cell.unit }}</strong>
+          · mediana de control
+          {% if c.control_median is not none %}<span class="m3-num">{{ "%.2f"|format(c.control_median) }}/{{ cell.unit }}</span>
+          {%- else %}<span class="m3-dim">sin filas de control</span>{% endif %}
+        </div>
+        <div class="m3-sm m3-muted">
+          {% if c.channel_share is not none %}canal {{ "%.0f"|format(c.channel_share * 100) }}%
+          {%- else %}<span class="m3-dim">canal sin identificar</span>{% endif %}
+          {%- if c.rows_without_channel and c.channel_share is not none %} <span class="m3-dim">({{ c.rows_without_channel }} sin canal)</span>{% endif %}
+          ·
+          {% if c.sender_share is not none %}emisor {{ "%.0f"|format(c.sender_share * 100) }}%
+          {%- else %}<span class="m3-dim">emisor sin datos</span>{% endif %}
+          {%- if c.rows_without_sender and c.sender_share is not none %} <span class="m3-dim">({{ c.rows_without_sender }} sin emisor)</span>{% endif %}
+          · sincronía {{ c.synchronous_rows }}
+          · texto idéntico {{ c.identical_text_rows }}
+          {%- if c.rows_without_text %} <span class="m3-dim">({{ c.rows_without_text }} sin texto)</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
   <!-- ---------- 7. Tasa de cambio ---------- -->
   <section>
     <div class="m3-section-head"><h2 class="m3-h2" id="tasa">Tasa de cambio</h2></div>

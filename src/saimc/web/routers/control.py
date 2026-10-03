@@ -26,6 +26,7 @@ de esa pregunta para quien programa, no para quien cura.
 import json
 import subprocess
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
@@ -62,9 +63,11 @@ from saimc.progress import (
 )
 from saimc.requisitos_status import read_module_status
 from saimc.validation import ValidationStatus, lane0, persist
+from saimc.validation.control_cells import compute_cell_controls
 from saimc.web.deps import get_db
 from saimc.web.health_strip import build_strip, worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
+from saimc.web.product_nav import DEFAULT_WINDOW_DAYS
 from saimc.web.rubber_stamp_metrics import rubber_stamp_alert
 
 router = APIRouter()
@@ -157,6 +160,31 @@ def _validation_summary(db: Session) -> dict[str, object]:
         ],
         "unvalidated": counts.unvalidated,
         "total": counts.total,
+    }
+
+
+def _manipulation_controls(db: Session, *, burst_window_minutes: int) -> dict[str, object]:
+    """La sección «Controles de manipulación (§10.7)» (slice C3).
+
+    Solo mediciones por celda: conteos, medianas y porcentajes. `/control` es
+    público, así que de acá no sale ningún canal, emisor ni hash.
+    """
+    cells = compute_cell_controls(db, burst_window=timedelta(minutes=burst_window_minutes))
+    diverging = sum(1 for cell in cells if cell.status == "diverges")
+    unanchored = sum(1 for cell in cells if cell.status == "unanchored")
+    # La línea se arma acá y no en Jinja: una cadena construida en la plantilla
+    # no se puede testear (mismo criterio que `Cell.sample_label`).
+    headline = (
+        f"{diverging} {'celda diverge' if diverging == 1 else 'celdas divergen'}"
+        f" · {unanchored} sin ancla"
+        f" · de {len(cells)} {'celda' if len(cells) == 1 else 'celdas'} de los pilotos"
+        f" en los últimos {DEFAULT_WINDOW_DAYS} días"
+    )
+    return {
+        "cells": cells,
+        "headline": headline,
+        "min_control_n": persist.MIN_CELL_N,
+        "burst_window_minutes": burst_window_minutes,
     }
 
 
@@ -306,6 +334,11 @@ def control_panel(
             "lane0_week": lane0.week_counts(db),
             # Validación (B1): cuántas filas hay en cada estado del motor.
             "validation": _validation_summary(db),
+            # Controles de §10.7 (C3): índice de control y señales de
+            # coordinación por celda pública. Se calcula al pedirlo, no se guarda.
+            "controls": _manipulation_controls(
+                db, burst_window_minutes=settings.burst_window_minutes
+            ),
             # Estado de la tasa de cambio. Ambas salen de la base: cargar
             # `/control` no golpea la API de elTOQUE (ver status.py).
             "rate_status": rate_statuses,

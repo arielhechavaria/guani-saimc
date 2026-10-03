@@ -9,8 +9,10 @@ Los módulos que SÍ tocan la base no se importan desde acá, para que el motor
 siga siendo puro: `context` (arma el contexto de un anuncio o de sus filas
 guardadas), `shadow` (`python -m saimc.validation.shadow`, el informe del modo
 sombra), `lane0` (el carril 0 encendido y su auditoría, B2a), `persist` (escribe
-la validación en las filas, B1) y `revalidate`
-(`python -m saimc.validation.revalidate`, B1).
+la validación en las filas, B1), `revalidate`
+(`python -m saimc.validation.revalidate`, B1), `control_cells` (lee las celdas
+públicas para los controles de §10.7, C3) y `measure_n`
+(`python -m saimc.validation.measure_n`, C3).
 
 - `types`: la entrada (`AdContext`), los parámetros (`ValidationConfig`) y la
   salida (`AdValidation`, `RowValidation`).
@@ -21,6 +23,8 @@ la validación en las filas, B1) y `revalidate`
   (B1); y `ENGINE_VERSION`.
 - `stats`: las cotas de Clopper-Pearson.
 - `fence`: la banda robusta, compartida con los gráficos de la home.
+- `controls`: `cell_controls`, los controles de §10.7 sobre una celda (C3). No
+  es parte del motor: no cambia el estado de ninguna fila.
 """
 
 from saimc.validation.engine import (
