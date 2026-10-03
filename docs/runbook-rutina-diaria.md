@@ -26,11 +26,53 @@ hora) y **🖼️ Sin transcribir** (debería bajar semana a semana).
 
 ---
 
-## Paso 1 — Pre-cálculo del asistente (en el VPS, antes de sentarte)
+## Paso 1 — Pre-cálculo del asistente (corre solo cada 3 horas)
 
 El pre-cálculo transcribe las imágenes y deja lista la propuesta del modelo
-para cada pendiente en foco. Procesa un anuncio a la vez, del más viejo al más
-nuevo, así que lanzalo primero y curá mientras avanza.
+para cada pendiente en foco. Desde C1 lo corre solo un temporizador de systemd
+(`saimc-prefill.timer`): cada 3 horas, uno a la vez, del más viejo al más nuevo,
+con los carriles 0 si están encendidos en el `.env`. Normalmente no hace falta
+lanzar nada: abrí la cola y las propuestas ya están.
+
+**Tope de gasto.** Cada corrida corta antes de gastar USD 0,15
+(`SAIMC_PREFILL_MAX_COST` en `saimc-prefill.service`). Con 8 corridas por día, el
+peor caso es **USD 1,20 por día**. Si cambiás el tope o el horario, ese número
+cambia: recalculalo.
+
+**Cómo ver que anda**
+
+- `/control`, franja «Estado del sistema», tarjeta **Pre-cálculo**: verde
+  («ok, hace N h»), ámbar («sin correr hace N h» si pasaron más de 6 h, o «sin
+  registro» si nunca corrió) o roja («falló (salida N) el DD/MM HH:MM UTC»). Es
+  el aviso: no hay mail ni Telegram.
+- `systemctl list-timers saimc-prefill.timer`: cuándo corrió y cuándo toca.
+- `journalctl -u saimc-prefill.service -n 50`: el log de la última corrida.
+
+**Correrlo ahora.** `sudo systemctl start saimc-prefill.service` (se queda
+esperando hasta que termina; `journalctl -fu saimc-prefill.service` en otra
+terminal para verlo avanzar). Usá esto y no `python -m ...` a mano mientras el
+temporizador esté activo: systemd no arranca el servicio dos veces a la vez, y
+dos corridas juntas gastarían el doble.
+
+**Frenarlo.** `sudo systemctl disable --now saimc-prefill.timer`. Para volver:
+`sudo systemctl enable --now saimc-prefill.timer`.
+
+**Instalarlo en el VPS** (una vez, igual que `saimc-backup`):
+
+```
+sudo cp systemd/saimc-prefill.service systemd/saimc-prefill.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now saimc-prefill.timer
+```
+
+Si cambiás un archivo de `systemd/`, volvé a copiarlo y repetí `daemon-reload`.
+
+**Si frena por saldo o por la clave**, la tarjeta se pone roja. Cargá saldo o
+corregí la clave (ver `docs/runbook-asistente-llm.md`, «Pre-cálculo de la
+cola»); la próxima corrida del temporizador retoma sola, o lanzala con el
+comando de arriba.
+
+### Fallback: a mano, si el temporizador no está
 
 Desde la raíz del proyecto, dentro de una sesión de `tmux` para que no se corte
 si se cae la conexión:
@@ -57,6 +99,9 @@ tienen propuesta y cuánto costaría. Si la cifra tiene sentido:
 - Si se corta, relanzá el mismo comando: salta lo que ya tiene propuesta.
 - Si frena por saldo o por la clave, cargá saldo o corregí la clave y relanzalo
   (ver `docs/runbook-asistente-llm.md`, «Pre-cálculo de la cola»).
+- Con el temporizador activo, una corrida a mano que se solape con la suya
+  duplica el gasto: frená el temporizador antes (`disable --now`) o usá
+  `systemctl start`.
 
 ## Paso 2 — Descartar fuera de foco (2 minutos)
 

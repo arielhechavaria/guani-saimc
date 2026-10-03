@@ -21,10 +21,11 @@ Los niveles, de peor a mejor:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from saimc.exchange_rate.status import RateStatus
 from saimc.extraction.llm_assist import ConsumptionSummary
+from saimc.extraction.prefill_status import PrefillRun
 from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.progress import IntakeHealth
 
@@ -38,6 +39,14 @@ _STALE_INTAKE_DAYS = 2
 # intuición y presentarla como metodología, así que esto NO decide si la tasa
 # sirve. Decide cuándo mostrarla en ámbar.
 _STALE_RATE_DAYS = 2
+
+# Cada cuántas horas corre el temporizador del pre-cálculo. DEBE coincidir con
+# `OnCalendar` en `systemd/saimc-prefill.timer`; si se cambia uno, se cambia el
+# otro. La franja pasa a ámbar cuando la última corrida es más vieja que
+# `_PREFILL_STALE_FACTOR` intervalos: una corrida que se salteó se tolera, dos
+# seguidas (o un proceso que murió sin dejar registro) ya son aviso.
+PREFILL_INTERVAL_HOURS = 3
+_PREFILL_STALE_FACTOR = 2
 
 
 @dataclass(frozen=True)
@@ -195,6 +204,67 @@ def assist_indicator(assist: ConsumptionSummary, *, configured: bool) -> Indicat
     )
 
 
+def prefill_indicator(run: PrefillRun | None, *, now: datetime) -> Indicator:
+    """El temporizador del pre-cálculo: si falló o si dejó de correr.
+
+    Es el aviso de que algo falló sin que nadie mire (slice C1). Falla manda
+    sobre antigüedad: una corrida que falló sigue en rojo hasta que otra salga
+    bien. Sin registro es ámbar y no rojo: el temporizador puede no estar
+    instalado todavía.
+    """
+    if run is None:
+        return Indicator(
+            key="prefill",
+            label="Pre-cálculo",
+            value="sin registro",
+            level="warn",
+            hint=(
+                "Todavía no hay ninguna corrida registrada. Si el temporizador "
+                "está instalado: systemctl status saimc-prefill.timer."
+            ),
+        )
+
+    terminó = run.finished_at
+    if terminó.tzinfo is None:
+        terminó = terminó.replace(tzinfo=UTC)
+
+    if run.exit_code != 0:
+        causa = {
+            "credit": "Se frenó por falta de saldo en la API: cargá créditos.",
+            "auth": "La API rechazó la clave: revisá SAIMC_ANTHROPIC_API_KEY.",
+        }.get(run.aborted_failure, "")
+        return Indicator(
+            key="prefill",
+            label="Pre-cálculo",
+            value=f"falló (salida {run.exit_code}) el {terminó:%d/%m %H:%M} UTC",
+            level="down",
+            hint=(
+                f"{causa} Detalle: journalctl -u saimc-prefill.service."
+            ).strip(),
+        )
+
+    horas = int((now - terminó) / timedelta(hours=1))
+    if now - terminó > timedelta(hours=PREFILL_INTERVAL_HOURS * _PREFILL_STALE_FACTOR):
+        return Indicator(
+            key="prefill",
+            label="Pre-cálculo",
+            value=f"sin correr hace {horas} h",
+            level="warn",
+            hint=(
+                f"Debería correr cada {PREFILL_INTERVAL_HOURS} h. Revisá "
+                "systemctl list-timers saimc-prefill.timer y "
+                "journalctl -u saimc-prefill.service."
+            ),
+        )
+
+    return Indicator(
+        key="prefill",
+        label="Pre-cálculo",
+        value=f"ok, hace {horas} h",
+        level="ok",
+    )
+
+
 def build_strip(
     *,
     waha: SessionHealth,
@@ -203,6 +273,7 @@ def build_strip(
     rate_statuses: list[RateStatus],
     assist: ConsumptionSummary,
     assist_configured: bool,
+    prefill_run: PrefillRun | None,
     now: datetime | None = None,
 ) -> list[Indicator]:
     """La franja completa, con lo más urgente primero.
@@ -218,6 +289,7 @@ def build_strip(
         queue_indicator(health),
         rate_indicator(rate_statuses, now=ahora),
         assist_indicator(assist, configured=assist_configured),
+        prefill_indicator(prefill_run, now=ahora),
     ]
     prioridad = {"down": 0, "warn": 1, "ok": 2, "off": 3}
     return sorted(indicadores, key=lambda i: prioridad.get(i.level, 9))

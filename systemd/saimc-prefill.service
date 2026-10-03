@@ -1,0 +1,29 @@
+[Unit]
+Description=Pre-calculo de la propuesta del asistente para los pendientes de SAIMC
+After=postgresql.service network-online.target
+
+[Service]
+# oneshot: systemd no vuelve a arrancar el servicio mientras sigue activo, asi
+# que el temporizador nunca solapa dos corridas (doble gasto de API). Una
+# corrida a mano tambien debe pasar por aca (`sudo systemctl start
+# saimc-prefill.service`) y no por `python -m ...`, que no comparte ese
+# candado. Se prefirio esto a `flock`: cero archivos de bloqueo que mantener.
+Type=oneshot
+User=ariel
+WorkingDirectory=/home/ariel/guani/guani-saimc
+
+# TOPE DE GASTO POR CORRIDA, en USD. Es el unico numero a editar.
+# Peor caso diario = corridas por dia x tope = 8 x 0,15 = USD 1,20.
+# Si se cambia el tope aca, o el horario en saimc-prefill.timer, ese peor caso
+# cambia: recalcularlo (y PREFILL_INTERVAL_HOURS en web/health_strip.py).
+Environment=SAIMC_PREFILL_MAX_COST=0.15
+
+# El .env (clave de la API, interruptores del carril 0) lo lee la aplicacion
+# desde WorkingDirectory (pydantic-settings, env_file=".env"): no hace falta
+# EnvironmentFile=. Con los interruptores encendidos, el carril 0 actua solo.
+ExecStart=/home/ariel/guani/guani-saimc/.venv/bin/python -m saimc.extraction.prefill --execute --max-cost ${SAIMC_PREFILL_MAX_COST}
+
+# Una corrida colgada (red, OCR) no debe frenar al temporizador para siempre.
+# El OCR cuesta ~1 s por imagen y hay una llamada al modelo por anuncio: 2 h
+# alcanza de sobra para un backlog grande, y el tope de gasto corta antes.
+TimeoutStartSec=2h

@@ -110,6 +110,11 @@ class Settings(BaseSettings):
     # medir H0 sobre el conjunto no asistido (design.md, D6).
     llm_assist_log_path: Path = Path("data/llm-assist-log.jsonl")
 
+    # Cómo terminó la última corrida real del pre-cálculo (slice C1): lo escribe
+    # `extraction/prefill.py` y lo lee la franja de `/control`. Bajo `data/`
+    # por el mismo motivo que `llm_assist_log_path`.
+    prefill_status_path: Path = Path("data/prefill-status.json")
+
     # Carril 0 encendido (slice B2a, `docs/spec-slice-B2a.md`): el pre-cálculo
     # descarta solo lo que el motor manda al carril 0, y la auditoría semanal
     # (`/curation/auditoria`) lo controla. Uno por tipo porque G1a fijó una

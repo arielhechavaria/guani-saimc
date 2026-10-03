@@ -1,0 +1,14 @@
+[Unit]
+Description=Corre el pre-calculo del asistente de SAIMC cada 3 horas
+
+[Timer]
+# Cada 3 h en punto (00, 03, ..., 21 UTC): 8 corridas por dia. Si se cambia,
+# actualizar PREFILL_INTERVAL_HOURS en web/health_strip.py y el peor caso diario
+# (corridas x tope) anotado en saimc-prefill.service.
+OnCalendar=*-*-* 00/3:00:00
+# Si el VPS estuvo apagado a la hora, corre al volver (igual que el backup).
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

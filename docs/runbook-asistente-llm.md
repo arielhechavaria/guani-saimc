@@ -307,9 +307,10 @@ exactamente lo mismo que «Completar con IA» (mismo texto, OCR incluido, misma
 fila en `llm_proposals`), un anuncio a la vez, del más viejo al más nuevo.
 Saltea los que ya tienen una propuesta que anduvo.
 
-**Se corre a mano, antes de una sesión de curaduría.** No hay cron ni cola de
-trabajos (decisión cerrada 3): lo lanzás vos cuando vas a curar. Uno a la vez a
-propósito: el VPS tiene 2 vCPU y el OCR de las imágenes es lo pesado.
+**Corre solo cada 3 horas** con un temporizador de systemd (C1; ver
+`docs/runbook-rutina-diaria.md`, «Paso 1»), y también se puede correr a mano
+antes de una sesión de curaduría. No hay cola de trabajos (decisión cerrada 3):
+es un lote que lee los pendientes de la base. Uno a la vez a propósito: el VPS tiene 2 vCPU y el OCR de las imágenes es lo pesado.
 
 Corré todo desde la raíz del proyecto.
 

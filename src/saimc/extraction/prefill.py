@@ -10,8 +10,9 @@ abrir el anuncio en `/curation` la propuesta ya está y no se paga otra llamada
 (`docs/plan-asistente-llm-cola-completa.md`, slice 3b).
 
 - **Uno a la vez.** El VPS tiene 2 vCPU y el OCR es lo caro: nada de
-  paralelismo. Tampoco cron ni cola de trabajos (decisión cerrada 3): el
-  operador lo corre a mano antes de una sesión de curaduría.
+  paralelismo. Tampoco cola de trabajos (decisión cerrada 3): lo corre el
+  temporizador de systemd cada 3 h (`systemd/saimc-prefill.timer`, slice C1) o
+  el operador a mano antes de una sesión de curaduría.
 - **Reanudable.** Commit después de cada anuncio; volver a correrlo saltea lo
   que ya tiene propuesta `ok` (de cualquier versión de prompt). Una propuesta
   degradada no cuenta como hecha: se reintenta.
@@ -36,6 +37,7 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +46,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
-from saimc.extraction import llm_assist, llm_propose_ad, llm_store, ocr_store
+from saimc.extraction import llm_assist, llm_propose_ad, llm_store, ocr_store, prefill_status
 from saimc.extraction.engine import mentions_any_product
 from saimc.glossary import active_glossary_entries
 from saimc.models import (
@@ -400,6 +402,7 @@ def execute(
             "No hay clave de API: la corrida real necesita SAIMC_ANTHROPIC_API_KEY. "
             "Sin clave no se llama a nada."
         )
+        _record_run(settings, 2, RunResult())
         return 2
     print_estimate(est, out)
     if est.per_ad_usd is None:
@@ -431,7 +434,26 @@ def execute(
         )
         + ("" if lane0_types else " (interruptores apagados)")
     )
-    return 1 if result.aborted_failure else 0
+    code = 1 if result.aborted_failure else 0
+    _record_run(settings, code, result)
+    return code
+
+
+def _record_run(settings: Settings, code: int, result: RunResult) -> None:
+    """Deja anotado cómo terminó la corrida real, para la franja de `/control`."""
+    prefill_status.write_run_status(
+        settings.prefill_status_path,
+        prefill_status.PrefillRun(
+            finished_at=datetime.now(UTC),
+            exit_code=code,
+            done=result.done,
+            degraded=result.degraded,
+            skipped_no_text=result.skipped_no_text,
+            cost_usd=result.cost_usd,
+            stopped_by_max_cost=result.stopped_by_max_cost,
+            aborted_failure=result.aborted_failure,
+        ),
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:

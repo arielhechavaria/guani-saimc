@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.config import Settings
-from saimc.extraction import llm_assist, llm_propose_ad, prefill
+from saimc.extraction import llm_assist, llm_propose_ad, prefill, prefill_status
 from saimc.models import (
     ContentType,
     LlmProposal,
@@ -498,3 +498,74 @@ def test_las_lineas_viejas_sin_source_siguen_contando_como_asistidas(
 
     assert llm_assist.assisted_ingestion_ids(log) == {"viejo", "boton"}
     assert llm_assist.consumption_summary(log).calls == 3
+
+
+# --- registro de la corrida (C1: aviso en /control) ---------------------------
+
+
+def test_una_corrida_real_deja_registro_con_salida_cero(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    ruta = tmp_path / "estado" / "prefill-status.json"
+    ajustes = _ajustes(tmp_path, prefill_status_path=ruta)
+
+    codigo, _ = _correr(
+        session, tmp_path, ["--execute"], cliente=ClienteFalso(), ajustes=ajustes
+    )
+
+    assert codigo == 0
+    registro = prefill_status.read_run_status(ruta)
+    assert registro is not None
+    assert registro.exit_code == 0
+    assert registro.done == 1
+    assert registro.finished_at.tzinfo is not None
+    assert abs(registro.finished_at - datetime.now(UTC)) < timedelta(minutes=1)
+
+
+def test_una_corrida_abortada_deja_la_falla_registrada(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    ruta = tmp_path / "prefill-status.json"
+    ajustes = _ajustes(tmp_path, prefill_status_path=ruta)
+    cliente = ClienteFalso(errores=[Exception("Your credit balance is too low")])
+
+    codigo, _ = _correr(session, tmp_path, ["--execute"], cliente=cliente, ajustes=ajustes)
+
+    registro = prefill_status.read_run_status(ruta)
+    assert codigo == 1
+    assert registro is not None
+    assert registro.exit_code == 1
+    assert registro.aborted_failure == "credit"
+
+
+def test_sin_clave_tambien_queda_registrado_como_falla(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    ruta = tmp_path / "prefill-status.json"
+    ajustes = _ajustes(tmp_path, anthropic_api_key="", prefill_status_path=ruta)
+
+    codigo, _ = _correr(session, tmp_path, ["--execute"], ajustes=ajustes)
+
+    registro = prefill_status.read_run_status(ruta)
+    assert codigo == 2
+    assert registro is not None and registro.exit_code == 2
+
+
+def test_un_dry_run_no_deja_registro(session: Session, catalogo, tmp_path: Path) -> None:
+    _ingesta(session, texto="arroz uno")
+    ruta = tmp_path / "prefill-status.json"
+    ajustes = _ajustes(tmp_path, prefill_status_path=ruta)
+
+    _correr(session, tmp_path, [], ajustes=ajustes)
+
+    assert not ruta.exists()
+
+
+def test_un_registro_ilegible_se_lee_como_ausente(tmp_path: Path) -> None:
+    ruta = tmp_path / "prefill-status.json"
+    ruta.write_text("{esto no es json", encoding="utf-8")
+
+    assert prefill_status.read_run_status(ruta) is None
+    assert prefill_status.read_run_status(tmp_path / "no-existe.json") is None

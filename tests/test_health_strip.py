@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 from saimc.exchange_rate.status import RateStatus
 from saimc.extraction.llm_assist import ConsumptionSummary
+from saimc.extraction.prefill_status import PrefillRun
 from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.progress import IntakeHealth
 from saimc.web import health_strip
@@ -28,6 +29,21 @@ def _assist(**campos: object) -> ConsumptionSummary:
     }
     base.update(campos)
     return ConsumptionSummary(**base)
+
+
+def _corrida(**campos: object) -> PrefillRun:
+    base: dict = {
+        "finished_at": AHORA - timedelta(hours=1),
+        "exit_code": 0,
+        "done": 5,
+        "degraded": 0,
+        "skipped_no_text": 0,
+        "cost_usd": 0.04,
+        "stopped_by_max_cost": False,
+        "aborted_failure": "",
+    }
+    base.update(campos)
+    return PrefillRun(**base)
 
 
 def _health(pending: int = 10) -> IntakeHealth:
@@ -168,6 +184,61 @@ class TestAsistente:
         assert "2.50" in ind.value
 
 
+class TestPrefill:
+    """«Pre-cálculo»: el aviso de que el temporizador falló o dejó de correr."""
+
+    def test_sin_registro_es_ambar_y_no_roja(self) -> None:
+        ind = health_strip.prefill_indicator(None, now=AHORA)
+
+        assert ind.level == "warn"
+        assert ind.value == "sin registro"
+
+    def test_la_ultima_corrida_bien_esta_verde(self) -> None:
+        ind = health_strip.prefill_indicator(_corrida(), now=AHORA)
+
+        assert ind.level == "ok"
+        assert ind.value == "ok, hace 1 h"
+
+    def test_una_corrida_con_codigo_distinto_de_cero_esta_roja_con_la_hora(self) -> None:
+        ind = health_strip.prefill_indicator(
+            _corrida(exit_code=1, aborted_failure="credit"), now=AHORA
+        )
+
+        assert ind.level == "down"
+        assert ind.value == "falló (salida 1) el 01/09 11:00 UTC"
+        assert "saldo" in ind.hint.lower()
+        assert "journalctl -u saimc-prefill.service" in ind.hint
+
+    def test_la_falla_manda_aunque_la_corrida_sea_vieja(self) -> None:
+        ind = health_strip.prefill_indicator(
+            _corrida(exit_code=2, finished_at=AHORA - timedelta(hours=30)), now=AHORA
+        )
+
+        assert ind.level == "down"
+
+    def test_justo_en_el_doble_del_intervalo_todavia_esta_verde(self) -> None:
+        ind = health_strip.prefill_indicator(
+            _corrida(finished_at=AHORA - timedelta(hours=6)), now=AHORA
+        )
+
+        assert ind.level == "ok"
+
+    def test_pasado_el_doble_del_intervalo_esta_ambar_con_las_horas(self) -> None:
+        ind = health_strip.prefill_indicator(
+            _corrida(finished_at=AHORA - timedelta(hours=7, minutes=10)), now=AHORA
+        )
+
+        assert ind.level == "warn"
+        assert ind.value == "sin correr hace 7 h"
+
+    def test_un_registro_sin_zona_horaria_se_lee_como_utc(self) -> None:
+        ind = health_strip.prefill_indicator(
+            _corrida(finished_at=datetime(2026, 9, 1, 11, 0)), now=AHORA
+        )
+
+        assert ind.level == "ok"
+
+
 class TestOrdenYResumen:
     def _strip(self, **overrides: object) -> list[health_strip.Indicator]:
         base: dict = {
@@ -179,6 +250,7 @@ class TestOrdenYResumen:
             ],
             "assist": _assist(),
             "assist_configured": True,
+            "prefill_run": _corrida(),
             "now": AHORA,
         }
         base.update(overrides)
@@ -219,11 +291,12 @@ class TestOrdenYResumen:
 
         assert health_strip.worst_level(franja) == "ok"
 
-    def test_estan_los_cinco_indicadores(self) -> None:
+    def test_estan_los_seis_indicadores(self) -> None:
         assert {i.key for i in self._strip()} == {
             "waha",
             "intake",
             "queue",
             "rate",
             "assist",
+            "prefill",
         }

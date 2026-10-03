@@ -10,7 +10,9 @@ B1 y K6 cerradas el 2026-10-03: la validación se guarda en cada fila, con `min_
 y la regla 4 sin parámetros; K3 cerrada el 2026-10-03: la transcripción del OCR se guarda
 redactada, con cajas y versión; B5 cerrada el 2026-10-03: el emisor de grupo se guarda
 como hash con clave, nulo sin clave; C3 cerrada el 2026-10-03: los controles de §10.7
-entran como medición, con índice de control y `measure_n`, sin umbrales; A1c postergada).
+entran como medición, con índice de control y `measure_n`, sin umbrales; C1 cerrada el
+2026-10-03: temporizador de systemd cada 3 h con tope por corrida y aviso en `/control`;
+A1c postergada).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -86,7 +88,7 @@ misma sesión. El candidato más probable es A1b.
 | B2c | Freno automático del carril 1 | M | B2b | Opus | PENDIENTE |
 | B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
 | B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | PENDIENTE |
-| C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | Sonnet | PENDIENTE |
+| C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | Sonnet | CERRADO (2026-10-03) |
 | C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | PENDIENTE |
 | C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | CERRADO (2026-10-03) |
 | C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | PENDIENTE |
@@ -241,6 +243,11 @@ las métricas de `/control`, los paneles y toda la interfaz.
 ### Pendientes sueltos
 
 Lo que aparezca fuera del slice en curso se anota acá, no se hace.
+
+- `/control` es público y la tarjeta «Pre-cálculo» nombra en su pista el servicio y
+  el comando de `journalctl`. No expone datos, pero sí un detalle operativo; si la
+  capa pública se abre más, mover esa pista a una vista de operador (visto en C1,
+  2026-10-03).
 
 - `catalog.delete_format` pone `format_id` en nulo en bloque sobre `prices_history`
   sin dejar rastro. Los backfills por línea de comandos tampoco (el de tasas no
@@ -1255,10 +1262,21 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
 
 ## Fase C — escala
 
-- **C1 — Temporizador del pre-cálculo.** Un temporizador de systemd corre `prefill
+- **C1 — Temporizador del pre-cálculo — CERRADO (2026-10-03).** Un temporizador de systemd corre `prefill
   --execute --max-cost X`, con los carriles si están encendidos, con log y aviso si
   falla. Se registra el cambio de motivo de la decisión cerrada 3. La API por lotes
   (−50%) se suma cuando el volumen lo justifique.
+
+  **Cierre.** `systemd/saimc-prefill.{service,timer}`: `--execute --max-cost 0.15`
+  cada 3 h (peor caso USD 1,20 por día), sin solapes (`Type=oneshot`), con log en
+  journald. Cada corrida real deja `data/prefill-status.json` y `/control` muestra
+  la tarjeta «Pre-cálculo» (roja si falló, ámbar si no hay registro o pasaron más de
+  6 h): ese es el aviso, no hay notificador. Motivo de la decisión cerrada 3
+  reescrito en `CLAUDE.md`; entrada del 2026-10-03 en `decisions.md`. Lo que **no**
+  hizo: la API por lotes sigue pendiente hasta que el volumen la justifique. El
+  horario y el tope son una propuesta que el operador confirma: se cambian en
+  `systemd/` (y `PREFILL_INTERVAL_HOURS` en `web/health_strip.py` si cambia el
+  horario).
 - **C2 — Imágenes con modelo de visión.** Tres pasos:
   - C2a: cajas del OCR (K3) y máscara de teléfonos y nombres, con tests sobre
     imágenes sintéticas;
