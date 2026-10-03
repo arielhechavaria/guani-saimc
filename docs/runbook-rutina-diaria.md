@@ -20,6 +20,12 @@ habla de un producto del foco sin pasarle OCR, y eso solo pasa cuando la abrís
 o cuando corre el pre-cálculo (paso 1). Mientras no se transcriben, quedan
 mezcladas con el resto sin que nadie sepa si sirven.
 
+**Aviso de corte de ingesta.** Si un canal activo lleva callado más de lo normal para
+él (piso de 24 h), arriba de `/curation` aparece una tarjeta ámbar con el canal y las
+horas; si no entra nada por ningún canal, dice «No entra nada desde hace N h» y lo más
+probable es que WAHA esté caído. Sin tarjeta, todo entra con su ritmo. El mismo aviso
+está en la tarjeta «Última captura» de `/control`.
+
 **El número que se sigue no es «pendientes totales»**, sino dos pestañas de
 `/curation/cola`: **🎯 En foco** (debería quedar cerca de 0 al terminar la
 hora) y **🖼️ Sin transcribir** (debería bajar semana a semana).

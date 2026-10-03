@@ -1,6 +1,6 @@
 # Plan — Sacar al operador del camino de cada registro
 
-Fecha del plan: 2026-09-29. Última actualización: 2026-10-03 (vía rápida al MVP con
+Fecha del plan: 2026-09-29. Última actualización: 2026-10-03 (K4 cerrada: aviso por canal con piso de 24 h y 2 × p95; vía rápida al MVP con
 la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
 sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
 tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1;
@@ -77,7 +77,7 @@ misma sesión. El candidato más probable es A1b.
 | A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | PENDIENTE |
 | K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
 | K3 | Guardar la transcripción del OCR | M | — | Sonnet | CERRADO (2026-10-03) |
-| K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | PENDIENTE |
+| K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | CERRADO (2026-10-03) |
 | K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | CERRADO (2026-10-03) |
 | B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | CERRADO (2026-10-03) |
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | CERRADO (2026-10-03) |
@@ -243,6 +243,10 @@ las métricas de `/control`, los paneles y toda la interfaz.
 ### Pendientes sueltos
 
 Lo que aparezca fuera del slice en curso se anota acá, no se hace.
+
+- El aviso de K4 solo se ve al abrir `/curation` o `/control`: no hay mail ni Telegram.
+  Un corte que ocurra mientras el operador no abre ninguna de las dos sigue pasando
+  desapercibido hasta que la abra (visto en K4, 2026-10-03).
 
 - `/control` es público y la tarjeta «Pre-cálculo» nombra en su pista el servicio y
   el comando de `journalctl`. No expone datos, pero sí un detalle operativo; si la
@@ -1044,7 +1048,7 @@ guardan) y `ocr_store.stored_transcription` como único camino de lectura del pr
 la cola y el contexto del motor. `measure` y el backtest siguen transcribiendo de nuevo.
 Sin backfill.
 
-### K4 — Aviso de hueco de ingesta por canal — PENDIENTE
+### K4 — Aviso de hueco de ingesta por canal — CERRADO (2026-10-03)
 
 **Hecho.** Entre el 2026-09-08 y el 2026-09-20 no entró nada, y nadie se enteró a
 tiempo.
@@ -1055,6 +1059,12 @@ tiempo.
 - Un aviso por canal activo sin mensajes en N horas, en `/curation` y en `/control`.
 - N se fija con los huecos típicos de cada canal, medidos.
 - La entrada en `decisions.md` sobre el hueco de septiembre, que no está registrado.
+
+**Cierre.** Un canal activo avisa cuando su silencio supera `max(24 h, 2 × p95 de sus
+huecos en 30 días)`, calculado en vivo (`ingestion/channel_gaps.py`). Aviso en
+`/curation` y en la tarjeta «Última captura» de `/control`; si callan todos, un solo
+mensaje. Las cifras salen de la medición del 2026-10-03 y son ajustables. Dos entradas
+en `decisions.md`: el hueco de septiembre (la causa no quedó registrada) y la regla.
 
 ### K6 — Ensanchar `llm_proposals.prompt_version` — CERRADO (2026-10-03)
 
@@ -1167,6 +1177,8 @@ Era G1. La decisión del carril 0 pasó a G1a.
 
 
 **Insumo pendiente (2026-10-03):** `measure_n` corrió en producción y no pudo medir N: 36 celdas en la ventana de 30 días y ninguna llega a 20 filas. N sigue sin fijar (§12.6). Se vuelve a correr cuando las celdas más activas tengan volumen.
+
+**Segunda corrida (2026-10-03):** la celda más grande tiene 9 filas y las cinco mayores 9, 8, 8, 8 y 6. Con celdas así, el índice de control de C3 (5 filas verificadas) y las reglas 2 y 6 del motor (5 referencias de días anteriores) no pueden opinar en casi ninguna celda: el cuello para encender el carril 1 con protección es la densidad por celda.
 
 **Qué se lleva.** A2d (horas semana a semana), A5c con el n de la especificación y,
 si hubo, A6 y el informe de sombra con Jev de A6b. Si Jev entra en algún carril, sus

@@ -28,6 +28,27 @@
 </div>
 {% endif %}
 
+{#
+  K4: hueco de ingesta por canal. No se renderiza nada cuando todo entra
+  (`gap_report.silent` vacío). Si callan todos los canales con línea de base,
+  un solo mensaje; si no, la lista con el silencio y el umbral de cada uno.
+#}
+{% if gap_report and gap_report.silent %}
+<div class="m3-banner m3-banner-warn" role="status" style="margin-bottom:20px">
+  <span class="m3-icon">warning</span>
+  {% if gap_report.all_silent %}
+  <span><strong>{{ gap_report.headline }}.</strong> {{ gap_report.hint }}</span>
+  {% else %}
+  <span>
+    <strong>Canales sin mensajes:</strong>
+    {% for c in gap_report.silent %}
+    <span style="display:block">{{ c.name }}: {{ c.silence_hours|int }} h (aviso a las {{ c.threshold_hours|round|int }} h)</span>
+    {% endfor %}
+  </span>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if notice %}
 <div class="m3-banner m3-banner-warn" role="alert" style="margin-bottom:20px">
   <span class="m3-icon">warning</span><span>{{ notice }}</span>

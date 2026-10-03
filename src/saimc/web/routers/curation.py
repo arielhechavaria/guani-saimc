@@ -83,6 +83,7 @@ from saimc.extraction.llm_propose_ad import (
 from saimc.formats import format_label, format_quantity, get_or_create_format
 from saimc.glossary import active_glossary_entries, validate_rule
 from saimc.ingestion import origin
+from saimc.ingestion.channel_gaps import GapReport, load_channel_gap_report
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.models import (
     ContentType,
@@ -874,6 +875,7 @@ def _render_queue(
     discard_hints: Sequence[str] = (),
     channel_discard_stats: tuple[int, int] | None = None,
     last_capture_notice: str | None = None,
+    gap_report: GapReport | None = None,
     assist_available: bool = False,
     assisted_map: dict[str, list[str]] | None = None,
     assist_error: str | None = None,
@@ -933,6 +935,7 @@ def _render_queue(
             "error": error,
             "notice": _unconverted_notice(unconverted),
             "last_capture_notice": last_capture_notice,
+            "gap_report": gap_report,
             "pasted": pasted,
             "currencies": [c.value for c in Currency],
             "units": UNITS,
@@ -1407,6 +1410,7 @@ def _curation_view(
             _channel_discard_stats(db, ingestion) if ingestion is not None else None
         ),
         last_capture_notice=_last_capture_notice(db),
+        gap_report=load_channel_gap_report(db),
         # El botón se ofrece con clave configurada y texto que mandar. Ya no
         # depende de que las reglas dejen huecos: el modelo propone todo.
         assist_available=bool(settings.anthropic_api_key and text_for_hints),

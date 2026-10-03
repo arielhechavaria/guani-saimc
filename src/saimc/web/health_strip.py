@@ -26,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from saimc.exchange_rate.status import RateStatus
 from saimc.extraction.llm_assist import ConsumptionSummary
 from saimc.extraction.prefill_status import PrefillRun
+from saimc.ingestion.channel_gaps import GapReport
 from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.progress import IntakeHealth
 
@@ -97,10 +98,47 @@ def waha_indicator(health: SessionHealth) -> Indicator:
     )
 
 
+def _gap_hint(gaps: GapReport) -> str:
+    """El texto del aviso por canal (K4), para la tarjeta de ingesta."""
+    if gaps.all_silent:
+        return f"{gaps.headline}. {gaps.hint}"
+    detalle = "; ".join(
+        f"{c.name} ({int(c.silence_hours)} h, aviso a las {round(c.threshold_hours)} h)"
+        for c in gaps.silent
+    )
+    return f"Canales sin mensajes: {detalle}."
+
+
 def intake_indicator(
-    last_capture: datetime | None, health: IntakeHealth, *, now: datetime
+    last_capture: datetime | None,
+    health: IntakeHealth,
+    *,
+    now: datetime,
+    gaps: GapReport | None = None,
 ) -> Indicator:
-    """Hace cuánto que no entra nada, y cuánto hay esperando."""
+    """Hace cuánto que no entra nada, y cuánto hay esperando.
+
+    Con `gaps` (K4) el nivel y el aviso salen de la regla por canal, que es la
+    que sabe cuándo un silencio es raro para ese canal: `down` si no entra nada
+    por ningún canal activo, `warn` si calla alguno. Es el mismo hecho que el
+    umbral global de 2 días, así que no hay una segunda tarjeta que pueda
+    contradecirlo; el umbral global queda solo como respaldo cuando la regla
+    no tiene nada que decir (p. ej. entra solo captura manual).
+    """
+    base = _plain_intake_indicator(last_capture, now=now)
+    if gaps is None or not gaps.silent:
+        return base
+    return Indicator(
+        key=base.key,
+        label=base.label,
+        value=base.value,
+        level="down" if gaps.all_silent else "warn",
+        hint=_gap_hint(gaps),
+        anchor=base.anchor,
+    )
+
+
+def _plain_intake_indicator(last_capture: datetime | None, *, now: datetime) -> Indicator:
     dias = _days_since(last_capture, now=now)
 
     if dias is None:
@@ -275,6 +313,7 @@ def build_strip(
     assist_configured: bool,
     prefill_run: PrefillRun | None,
     now: datetime | None = None,
+    channel_gaps: GapReport | None = None,
 ) -> list[Indicator]:
     """La franja completa, con lo más urgente primero.
 
@@ -285,7 +324,7 @@ def build_strip(
     ahora = now or datetime.now(UTC)
     indicadores = [
         waha_indicator(waha),
-        intake_indicator(last_capture, health, now=ahora),
+        intake_indicator(last_capture, health, now=ahora, gaps=channel_gaps),
         queue_indicator(health),
         rate_indicator(rate_statuses, now=ahora),
         assist_indicator(assist, configured=assist_configured),

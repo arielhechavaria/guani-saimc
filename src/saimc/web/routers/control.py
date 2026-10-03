@@ -45,6 +45,7 @@ from saimc.exchange_rate.status import compute_applied_rates, compute_rate_statu
 from saimc.extraction.llm_assist import consumption_summary
 from saimc.extraction.measure import read_h0_runs
 from saimc.extraction.prefill_status import read_run_status
+from saimc.ingestion.channel_gaps import load_channel_gap_report
 from saimc.ingestion.whatsapp_health import session_health
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
@@ -240,6 +241,7 @@ def control_panel(
         assist=assist,
         assist_configured=bool(settings.anthropic_api_key),
         prefill_run=read_run_status(settings.prefill_status_path),
+        channel_gaps=load_channel_gap_report(db),
     )
 
     curated = db.execute(
