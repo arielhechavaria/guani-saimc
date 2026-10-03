@@ -8,7 +8,8 @@ ninguno.
 """
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -94,3 +95,125 @@ def record_curation_event(
     )
     db.add(event)
     return event
+
+
+# --- Lectura: el historial de ediciones (slice K1) ----------------------------
+
+# Cómo se nombra cada campo de fila en pantalla.
+FIELD_LABELS = {
+    "product_id": "Producto",
+    "province_id": "Provincia",
+    "price": "Precio",
+    "currency": "Moneda",
+    "quantity": "Cantidad",
+    "unit": "Unidad",
+    "sale_format": "Formato de venta",
+    "price_basis": "Base del precio",
+    "format_id": "Formato",
+    "variant_id": "Variante",
+    "min_purchase_quantity": "Compra mínima",
+    "published_date": "Fecha de publicación",
+    "price_cup": "Precio en CUP",
+    "exchange_rate": "Tasa de cambio",
+    "exchange_rate_date": "Fecha de la tasa",
+    "exchange_rate_source": "Fuente de la tasa",
+}
+
+# Los campos que guardan un id del catálogo: se muestran como su nombre.
+CATALOG_FIELDS = ("product_id", "province_id", "format_id", "variant_id")
+
+# `{campo: {id: nombre}}`. Lo arma el router en bloque.
+CatalogNames = Mapping[str, Mapping[str, str]]
+
+NULL_TEXT = "—"
+MISSING_CATALOG_TEXT = "(eliminado)"
+SOURCE_REFERENCE_LABEL = "Canal origen"
+
+
+@dataclass(frozen=True)
+class FieldChange:
+    """Un campo para mostrar. En una fila eliminada solo se llena `after`
+    (el valor que tenía); `before` queda vacío."""
+
+    label: str
+    before: str
+    after: str
+
+
+@dataclass(frozen=True)
+class RowEdit:
+    deleted: bool
+    changes: list[FieldChange] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class EditSummary:
+    rows: list[RowEdit]
+    source_reference: FieldChange | None
+
+
+def referenced_catalog_ids(details: Iterable[Mapping[str, Any]]) -> dict[str, set[str]]:
+    """Los ids de catálogo que mencionan los `detail`, por campo, para
+    resolver sus nombres con una consulta por tabla."""
+    ids: dict[str, set[str]] = {}
+    for detail in details:
+        for entry in detail.get("rows") or []:
+            for side in ("before", "after"):
+                for name in CATALOG_FIELDS:
+                    value = (entry.get(side) or {}).get(name)
+                    if value is not None:
+                        ids.setdefault(name, set()).add(str(value))
+    return ids
+
+
+def _display(name: str, value: Any, names: CatalogNames) -> str:
+    if value is None:
+        return NULL_TEXT
+    text = _as_text(value)
+    if name in CATALOG_FIELDS:
+        return names.get(name, {}).get(text, MISSING_CATALOG_TEXT)
+    return text
+
+
+def describe_edit(detail: Mapping[str, Any], names: CatalogNames) -> EditSummary | None:
+    """Convierte el `detail` de un evento `edited` en filas para mostrar.
+
+    Devuelve `None` si la edición no cambió nada (`rows: []` y sin cambio de
+    `source_reference`): es una confirmación, no un cambio. Un `detail` mal
+    formado se trata igual, sin romper la vista.
+    """
+    rows: list[RowEdit] = []
+    for entry in detail.get("rows") or []:
+        before = entry.get("before") or {}
+        after = entry.get("after") or {}
+        if entry.get("op") == "updated":
+            changes = [
+                FieldChange(
+                    FIELD_LABELS.get(name, name),
+                    _display(name, before.get(name), names),
+                    _display(name, after.get(name), names),
+                )
+                for name in before
+            ]
+            rows.append(RowEdit(deleted=False, changes=changes))
+        elif entry.get("op") == "deleted":
+            changes = [
+                FieldChange(FIELD_LABELS.get(name, name), "", _display(name, value, names))
+                for name, value in before.items()
+                if value is not None
+            ]
+            rows.append(RowEdit(deleted=True, changes=changes))
+
+    source = detail.get("source_reference")
+    source_change = (
+        FieldChange(
+            SOURCE_REFERENCE_LABEL,
+            _display("source_reference", source.get("before"), names),
+            _display("source_reference", source.get("after"), names),
+        )
+        if isinstance(source, Mapping)
+        else None
+    )
+    if not rows and source_change is None:
+        return None
+    return EditSummary(rows=rows, source_reference=source_change)

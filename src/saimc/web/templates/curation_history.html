@@ -70,6 +70,35 @@
           {% else %}
           <span class="m3-dim m3-sm">sin filas</span>
           {% endfor %}
+          {% set edits = edits_by_ingestion.get(ingestion.id, []) %}
+          {% if edits %}
+          {# K1: historial colapsado; un anuncio sin ediciones no lleva nada. #}
+          <details style="margin-top:6px">
+            <summary class="m3-sm m3-muted" style="cursor:pointer">
+              Editado {{ edits | length }} {{ "vez" if edits | length == 1 else "veces" }}
+            </summary>
+            {% for decided_at, edit in edits %}
+            <div class="m3-sm" style="margin-top:8px">
+              <div class="m3-muted m3-num">{{ decided_at | havana }}</div>
+              {% if edit.source_reference %}
+              <div>{{ edit.source_reference.label }}:
+                <span class="m3-num">{{ edit.source_reference.before }} → {{ edit.source_reference.after }}</span></div>
+              {% endif %}
+              {% for row in edit.rows %}
+              {% if row.deleted %}
+              <div><span class="m3-strong">Fila eliminada</span>
+                {% for c in row.changes %}<span class="m3-num">· {{ c.label }}: {{ c.after }}</span> {% endfor %}
+              </div>
+              {% else %}
+              <div>
+                {% for c in row.changes %}<span class="m3-nowrap">{{ c.label }}: <span class="m3-num">{{ c.before }} → {{ c.after }}</span></span>{{ "; " if not loop.last }}{% endfor %}
+              </div>
+              {% endif %}
+              {% endfor %}
+            </div>
+            {% endfor %}
+          </details>
+          {% endif %}
         </td>
         <td style="text-align:right" class="m3-nowrap">
           <a class="m3-btn m3-btn-text" href="/curation/{{ ingestion.id }}/edit">

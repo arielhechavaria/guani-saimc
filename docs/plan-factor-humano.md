@@ -70,7 +70,7 @@ misma sesión. El candidato más probable es A1b.
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE |
 | A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | PENDIENTE |
 | A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | PENDIENTE |
-| K1 | `/edit` con historial | M | A2b | Sonnet | PENDIENTE |
+| K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
 | K3 | Guardar la transcripción del OCR | M | — | Sonnet | PENDIENTE |
 | K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | PENDIENTE |
 | K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | CERRADO (2026-10-03) |
@@ -957,7 +957,7 @@ las preguntas que quedaron. Los umbrales se registran en G1, no acá.
 
 ## Colaterales — sin compuerta, durante la acumulación
 
-### K1 — `/edit` con historial — PENDIENTE
+### K1 — `/edit` con historial — CERRADO (2026-10-03)
 
 **Hecho.** `submit_edit` actualiza `prices_history` en el lugar, sin rastro. Eso va
 contra el espíritu de §6.5 y deja cambiar el oro sin que se note.
@@ -967,6 +967,11 @@ después en `detail`, y la vista del historial en `/curation/history`.
 
 **Tests primero.** Al editar queda el antes y el después; al borrar una fila en la
 edición, también.
+
+**Cierre.** La mitad de escritura (el evento `edited` con antes y después) ya venía de
+A2b; este slice agregó la vista: en `/curation/history`, cada anuncio con ediciones
+trae un bloque colapsado «Editado N veces» con los campos cambiados, las filas
+eliminadas y el cambio de canal origen.
 
 ### K3 — Guardar la transcripción del OCR — PENDIENTE
 

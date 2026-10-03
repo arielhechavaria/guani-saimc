@@ -7141,6 +7141,103 @@ def _post_edicion(
     return client.post(f"/curation/{curado.id}/edit", data=datos, follow_redirects=False)
 
 
+class TestHistorialDeEdiciones:
+    """K1: el historial de `/curation/history` muestra el antes y el después
+    de cada edición, colapsado por defecto."""
+
+    def test_anuncio_editado_una_vez_muestra_antes_y_despues(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        _post_edicion(client, curado, [_campos_fila(a, 0, price="900.00"), _campos_fila(b, 1)])
+
+        html = client.get("/curation/history").text
+
+        assert "Editado 1 vez" in html
+        assert "Precio" in html
+        assert "100" in html and "900.00" in html
+        assert "→" in html
+        assert "<details" in html
+        assert "<details open" not in html
+
+    def test_fila_borrada_en_la_edicion_aparece_como_eliminada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        _post_edicion(client, curado, [_campos_fila(a, 0, delete="on"), _campos_fila(b, 1)])
+
+        html = client.get("/curation/history").text
+
+        assert "Editado 1 vez" in html
+        assert "Fila eliminada" in html
+
+    def test_anuncio_sin_ediciones_no_muestra_bloque(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _curado_de_dos_filas(session)
+
+        html = client.get("/curation/history").text
+
+        assert "Editado" not in html
+        assert "<details" not in html
+
+    def test_edicion_sin_cambios_no_se_lista(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        _post_edicion(client, curado, [_campos_fila(a, 0), _campos_fila(b, 1)])
+
+        html = client.get("/curation/history").text
+
+        assert "Editado" not in html
+
+    def test_dos_ediciones_se_cuentan_y_las_vacias_no(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        _post_edicion(client, curado, [_campos_fila(a, 0, price="900.00"), _campos_fila(b, 1)])
+        _post_edicion(client, curado, [_campos_fila(a, 0, price="900.00"), _campos_fila(b, 1)])
+        _post_edicion(
+            client, curado,
+            [_campos_fila(a, 0, price="950.00"), _campos_fila(b, 1)],
+        )
+
+        html = client.get("/curation/history").text
+
+        assert "Editado 2 veces" in html
+
+    def test_un_id_se_muestra_como_nombre_del_catalogo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        _post_edicion(
+            client, curado, [_campos_fila(a, 0, product_id=str(pavo.id)), _campos_fila(b, 1)]
+        )
+
+        html = client.get("/curation/history").text
+
+        assert "Producto" in html
+        assert "Pavo" in html
+        assert str(pavo.id) not in html
+
+    def test_cambio_de_canal_origen(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        curado.source_reference = "grupo viejo"
+        session.commit()
+        _post_edicion(
+            client, curado, [_campos_fila(a, 0), _campos_fila(b, 1)],
+            source_reference="grupo nuevo",
+        )
+
+        html = client.get("/curation/history").text
+
+        assert "Editado 1 vez" in html
+        assert "grupo nuevo" in html
+
+
 class TestBitacoraDeCuraduria:
     def test_caso1_curar_dos_filas_escribe_un_evento_curated(
         self, client: TestClient, session: Session

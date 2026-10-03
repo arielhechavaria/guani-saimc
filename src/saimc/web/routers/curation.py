@@ -46,8 +46,12 @@ from starlette.datastructures import FormData
 from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.curation_events import (
+    CatalogNames,
+    EditSummary,
+    describe_edit,
     parse_shown_at,
     record_curation_event,
+    referenced_catalog_ids,
     row_text,
     row_values,
 )
@@ -82,6 +86,7 @@ from saimc.ingestion.inbox import ingest_inbox
 from saimc.models import (
     ContentType,
     CurationAction,
+    CurationEvent,
     CurationMode,
     Currency,
     DiscardReason,
@@ -2419,6 +2424,72 @@ def discard_curation(
     return RedirectResponse(url="/curation", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _catalog_names(db: Session, ids: dict[str, set[str]]) -> CatalogNames:
+    """Nombre de cada id de catálogo mencionado, una consulta por tabla. Un id
+    que ya no existe simplemente no aparece (la vista pone «(eliminado)»)."""
+
+    def uuids(name: str) -> list[uuid.UUID]:
+        return [uuid.UUID(v) for v in ids.get(name, ())]
+
+    names: dict[str, dict[str, str]] = {name: {} for name in ids}
+    if ids.get("product_id"):
+        for item in db.execute(
+            select(Product.id, Product.name).where(Product.id.in_(uuids("product_id")))
+        ):
+            names["product_id"][str(item[0])] = item[1]
+    if ids.get("province_id"):
+        for item in db.execute(
+            select(Province.id, Province.name).where(Province.id.in_(uuids("province_id")))
+        ):
+            names["province_id"][str(item[0])] = item[1]
+    if ids.get("format_id"):
+        for fmt in db.execute(
+            select(ProductFormat).where(ProductFormat.id.in_(uuids("format_id")))
+        ).scalars():
+            names["format_id"][str(fmt.id)] = format_label(
+                fmt.packaging, fmt.quantity, fmt.unit
+            )
+    if ids.get("variant_id"):
+        for variant in db.execute(
+            select(ProductVariant).where(ProductVariant.id.in_(uuids("variant_id")))
+        ).scalars():
+            # El CHECK del esquema garantiza que al menos un eje no esté vacío.
+            names["variant_id"][str(variant.id)] = " · ".join(
+                p for p in (variant.kind, variant.brand, variant.origin) if p
+            )
+    return names
+
+
+def _edit_history(
+    db: Session, ingestion_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[tuple[datetime, EditSummary]]]:
+    """Las ediciones con cambios de cada anuncio, de la más vieja a la más
+    nueva (K1). Una consulta de eventos y una por tabla de catálogo, sin
+    importar cuántos anuncios se listen. Las ediciones sin cambios (`rows: []`
+    y sin `source_reference`) se omiten."""
+    if not ingestion_ids:
+        return {}
+    events = list(
+        db.execute(
+            select(CurationEvent)
+            .where(
+                CurationEvent.ingestion_id.in_(ingestion_ids),
+                CurationEvent.action == CurationAction.EDITED,
+            )
+            .order_by(CurationEvent.decided_at, CurationEvent.id)
+        ).scalars()
+    )
+    names = _catalog_names(
+        db, referenced_catalog_ids([e.detail for e in events if e.detail])
+    )
+    history: dict[uuid.UUID, list[tuple[datetime, EditSummary]]] = {}
+    for event in events:
+        summary = describe_edit(event.detail or {}, names)
+        if summary is not None:
+            history.setdefault(event.ingestion_id, []).append((event.decided_at, summary))
+    return history
+
+
 @router.get("/curation/history", response_class=HTMLResponse)
 def curation_history(
     request: Request,
@@ -2549,12 +2620,15 @@ def curation_history(
         ingestions.append(ingestion)
         rows_by_ingestion[ingestion.id] = matched
 
+    edits_by_ingestion = _edit_history(db, [i.id for i in ingestions])
+
     return request.app.state.templates.TemplateResponse(
         request,
         "curation_history.html",
         {
             "ingestions": ingestions,
             "rows_by_ingestion": rows_by_ingestion,
+            "edits_by_ingestion": edits_by_ingestion,
             "filtering": filtering,
             "filter_product": product,
             "filter_province": province,
