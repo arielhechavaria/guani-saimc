@@ -726,6 +726,14 @@
       de la fila. El <strong>costo</strong> es el del modelo por anuncio con propuesta; el OCR
       es local y no cuenta.
     </p>
+    {# B2a: el carril 0. Solo conteos: la cota de falsos descartes queda en la
+       auditoría, que pide operador, porque esta vista es pública. #}
+    <p class="m3-sm m3-mt">
+      <strong>Descartes automáticos</strong> (carril 0) esta semana:
+      texto {{ lane0_week.auto.get('text', 0) }}, imagen {{ lane0_week.auto.get('image', 0) }}.
+      Rescatados en la auditoría:
+      texto {{ lane0_week.rescued.get('text', 0) }}, imagen {{ lane0_week.rescued.get('image', 0) }}.
+    </p>
     <div class="m3-card m3-table-scroll">
       <table class="m3-table">
         <thead>

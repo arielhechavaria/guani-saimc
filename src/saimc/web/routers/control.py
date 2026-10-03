@@ -61,6 +61,7 @@ from saimc.progress import (
     pilot_product_names,
 )
 from saimc.requisitos_status import read_module_status
+from saimc.validation import lane0
 from saimc.web.deps import get_db
 from saimc.web.health_strip import build_strip, worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
@@ -237,6 +238,10 @@ def control_panel(
             # más viejo es el estado de la cola hoy, fuera de la serie.
             "weekly_automation": compute_weekly_automation(db),
             "oldest_pending_days": oldest_pending_age_days(db),
+            # Carril 0 (B2a): descartes automáticos y rescatados de la semana,
+            # por tipo. La cota de falsos descartes NO va acá: `/control` es
+            # público y la cota queda en `/curation/auditoria`, que pide operador.
+            "lane0_week": lane0.week_counts(db),
             # Estado de la tasa de cambio. Ambas salen de la base: cargar
             # `/control` no golpea la API de elTOQUE (ver status.py).
             "rate_status": rate_statuses,

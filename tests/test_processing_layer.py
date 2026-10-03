@@ -1852,3 +1852,69 @@ class TestCurationEventsBatchModelMigration:
             self._insertar(connection, "individual")
             connection.commit()
         engine.dispose()
+
+
+class TestCurationEventsLane0Migration:
+    """`0026_curation_events_lane0.py` — B2a suma `mode = auto` y las acciones
+    `rescued` y `audited` de la auditoría del carril 0."""
+
+    _MIGRACIONES = (
+        "0024_curation_events.py",
+        "0025_curation_events_batch_model.py",
+        "0026_curation_events_lane0.py",
+    )
+
+    def _migrar(self, connection: sa.engine.Connection, nombre: str, paso: str) -> None:
+        TestCurationEventsBatchModelMigration()._migrar(connection, nombre, paso)
+
+    def _insertar(self, connection: sa.engine.Connection, action: str, mode: str) -> None:
+        connection.execute(
+            sa.text(
+                "insert into curation_events (id, ingestion_id, action, mode, decided_at) "
+                "values (:id, :ing, :action, :mode, '2026-10-03 10:00:00')"
+            ),
+            {"id": uuid.uuid4().hex, "ing": uuid.uuid4().hex, "action": action, "mode": mode},
+        )
+
+    def test_upgrade_admite_auto_rescued_y_audited_y_rechaza_lo_desconocido(self) -> None:
+        engine = TestCurationEventsMigration()._base()
+        with engine.connect() as connection:
+            for nombre in self._MIGRACIONES[:2]:
+                self._migrar(connection, nombre, "upgrade")
+            with pytest.raises(IntegrityError):
+                self._insertar(connection, "discarded", "auto")
+            connection.rollback()
+
+            self._migrar(connection, self._MIGRACIONES[2], "upgrade")
+            self._insertar(connection, "discarded", "auto")
+            self._insertar(connection, "rescued", "individual")
+            self._insertar(connection, "audited", "individual")
+            for action, mode in (("discarded", "otro"), ("otra", "individual")):
+                with pytest.raises(IntegrityError):
+                    self._insertar(connection, action, mode)
+            connection.rollback()
+        engine.dispose()
+
+    def test_downgrade_vuelve_al_vocabulario_de_la_0025(self) -> None:
+        engine = TestCurationEventsMigration()._base()
+        with engine.connect() as connection:
+            for nombre in self._MIGRACIONES:
+                self._migrar(connection, nombre, "upgrade")
+            self._migrar(connection, self._MIGRACIONES[2], "downgrade")
+            for action, mode in (("discarded", "auto"), ("rescued", "individual")):
+                with pytest.raises(IntegrityError):
+                    self._insertar(connection, action, mode)
+                connection.rollback()
+            self._insertar(connection, "discarded", "batch_model")
+            connection.commit()
+        engine.dispose()
+
+    def test_el_modelo_rechaza_un_mode_desconocido(self, session: Session) -> None:
+        from saimc.models import CurationEvent
+
+        ingesta = _crear_raw_ingestion(session, hash_="hash-l0-mode")
+        session.add(
+            CurationEvent(ingestion_id=ingesta.id, action="discarded", mode="otro")
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()

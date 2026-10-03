@@ -4950,6 +4950,27 @@ class TestAsistenteLLM:
         assert llamadas[0]["ingestion_id"] == str(ingestion.id)
         assert llamadas[0]["api_key"] == "clave-de-prueba"
 
+    def test_completar_con_ia_no_aplica_el_carril_0(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """B2a: con los dos interruptores encendidos, el botón igual no
+        descarta solo — el operador ya está mirando el anuncio."""
+        monkeypatch.setenv("SAIMC_LANE0_TEXT_ENABLED", "true")
+        monkeypatch.setenv("SAIMC_LANE0_IMAGE_ENABLED", "true")
+        get_settings.cache_clear()
+        ingestion = self._pendiente(session, texto="Buenos días grupo")
+        self._modelo(monkeypatch, session, discard=True, discard_reason="off_focus")
+
+        assert client.post(f"/curation/{ingestion.id}/assist").status_code == 200
+
+        session.refresh(ingestion)
+        assert ingestion.processing_status == ProcessingStatus.PENDING
+        assert session.execute(select(CurationEvent)).scalars().all() == []
+
     # --- de dónde sale cada campo ------------------------------------------
 
     def test_el_formulario_sale_de_las_filas_del_modelo_y_las_marca(

@@ -1,7 +1,7 @@
 {#
   Subnavegación de la sección Curaduría. Se incluye desde el `{% block tabs %}`
-  del topbar (ver `_shell.html`) para que las cuatro vistas de curaduría
-  —curar, mapa de la cola, historial y descarte en lote— se alcancen desde el
+  del topbar (ver `_shell.html`) para que las vistas de curaduría
+  —curar, mapa de la cola, historial, descarte en lote y auditoría— se alcancen desde el
   header y no solo desde enlaces sueltos dentro de cada página.
 
   El destino activo se deriva de `request.url.path`, igual que el rail de
@@ -21,4 +21,8 @@
   {% set sin_foco = cur.startswith('/curation/sin-foco') %}
   <a class="m3-tab{% if sin_foco %} is-active{% endif %}"
      href="/curation/sin-foco"{% if sin_foco %} aria-current="page"{% endif %}>Sin foco</a>
+  {# B2a: la auditoría semanal de lo que el carril 0 descartó solo. #}
+  {% set auditoria = cur.startswith('/curation/auditoria') %}
+  <a class="m3-tab{% if auditoria %} is-active{% endif %}"
+     href="/curation/auditoria"{% if auditoria %} aria-current="page"{% endif %}>Auditoría</a>
 </nav>

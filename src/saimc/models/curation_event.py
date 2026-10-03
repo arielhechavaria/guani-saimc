@@ -25,6 +25,10 @@ class CurationAction(StrEnum):
     DISCARDED = "discarded"
     DELETED = "deleted"
     EDITED = "edited"
+    # B2a: la auditoría del carril 0. `rescued` devuelve a la cola un descarte
+    # automático; `audited` confirma que estaba bien descartado.
+    RESCUED = "rescued"
+    AUDITED = "audited"
 
 
 class CurationMode(StrEnum):
@@ -32,6 +36,8 @@ class CurationMode(StrEnum):
     BATCH_OUT_OF_FOCUS = "batch_out_of_focus"
     # A1b: lote de imágenes con el veredicto del modelo (`discard_images_batch`).
     BATCH_MODEL = "batch_model"
+    # B2a: el carril 0 del motor, desde el pre-cálculo. Nadie lo miró.
+    AUTO = "auto"
 
 
 class CurationEvent(Base):
@@ -39,11 +45,11 @@ class CurationEvent(Base):
     __table_args__ = (
         Index("idx_curation_events_ingestion_id", "ingestion_id"),
         CheckConstraint(
-            "action IN ('curated', 'discarded', 'deleted', 'edited')",
+            "action IN ('curated', 'discarded', 'deleted', 'edited', 'rescued', 'audited')",
             name="ck_curation_events_action",
         ),
         CheckConstraint(
-            "mode IN ('individual', 'batch_out_of_focus', 'batch_model')",
+            "mode IN ('individual', 'batch_out_of_focus', 'batch_model', 'auto')",
             name="ck_curation_events_mode",
         ),
         CheckConstraint(

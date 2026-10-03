@@ -4,7 +4,8 @@ Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (vía rápida al 
 la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
 sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
 tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1;
-G1a cerrada el 2026-10-03: carril 0 para texto e imagen, metas 10% y 20%).
+G1a cerrada el 2026-10-03: carril 0 para texto e imagen, metas 10% y 20%; B2a cerrada
+el 2026-10-03, con dos interruptores por tipo y los textos sin foco pasando por el modelo).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -75,7 +76,7 @@ misma sesión. El candidato más probable es A1b.
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
 | **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | CERRADO (2026-10-03) |
 | **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
-| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | ABIERTO |
+| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | CERRADO (2026-10-03) |
 | B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | PENDIENTE |
 | B2c | Freno automático del carril 1 | M | B2b | Opus | PENDIENTE |
 | B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
@@ -1096,7 +1097,7 @@ umbrales se fijan acá con su n.
 por debajo de la meta, con el n de la especificación. Si no se llega, se sigue
 acumulando o se estrecha el carril.
 
-### B2a — Carril 0 encendido: descarte automático con auditoría — ABIERTO
+### B2a — Carril 0 encendido: descarte automático con auditoría — CERRADO (2026-10-03)
 
 Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de programar).
 

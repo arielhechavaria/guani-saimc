@@ -18,6 +18,12 @@ abrir el anuncio en `/curation` la propuesta ya está y no se paga otra llamada
 - **Falla de saldo o de clave detiene la corrida.** Seguir solo gastaría
   pedidos que van a fallar igual. Las demás fallas se guardan como
   `degraded` y la corrida sigue.
+- **Carril 0 (B2a).** Con `SAIMC_LANE0_TEXT_ENABLED` o
+  `SAIMC_LANE0_IMAGE_ENABLED`, después de guardar la propuesta se le pregunta
+  al motor por el carril 0 y, si lo da, el anuncio queda descartado solo, en la
+  misma transacción (`validation.lane0.apply_lane_0`). Con el de texto
+  encendido también entran los textos sin foco: son los únicos que el carril 0
+  puede descartar (`docs/spec-slice-B2a.md`).
 - **Consumo sí, H0 no.** Cada llamada se anota en el registro del operador con
   `source = "prefill"`: suma en `/control`, pero no saca al anuncio de H0. De
   eso se encarga `llm_reviews`, cuando el operador cura con la propuesta a la
@@ -29,7 +35,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +56,10 @@ from saimc.models import (
     Province,
     RawIngestion,
 )
+from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
+from saimc.validation import lane0
+from saimc.validation.context import Catalog
 
 # Consumo medido por anuncio con Sonnet 5 y el prompt `2026-09-25.3` sobre 100
 # anuncios reales (`docs/costos.md`): ~2407 tokens de entrada y ~245 de salida,
@@ -68,7 +77,11 @@ _TYPE_LABELS = {ContentType.TEXT.value: "texto", ContentType.IMAGE.value: "image
 
 
 def select_candidates(
-    session: Session, products: Sequence[Product], limit: int | None = None
+    session: Session,
+    products: Sequence[Product],
+    limit: int | None = None,
+    *,
+    include_off_focus: bool = False,
 ) -> list[RawIngestion]:
     """Pendientes sin propuesta `ok` guardada, más viejo primero, EN FOCO.
 
@@ -85,6 +98,11 @@ def select_candidates(
     `limit` tiene que contar candidatos YA filtrados, no filas de la tabla —
     aplicarlo en SQL antes de filtrar podría devolver menos de `limit` aunque
     sobren pendientes en foco más nuevos.
+
+    Con `include_off_focus` (el carril 0 de texto encendido, B2a) entran
+    también los textos sin foco: el carril 0 exige que las reglas no vean
+    ningún piloto, así que sin pagarles propuesta no se descartaría ninguno.
+    Apagado, no se gasta API en textos que nada va a descartar solo.
     """
     has_ok = exists().where(
         LlmProposal.ingestion_id == RawIngestion.id,
@@ -99,7 +117,8 @@ def select_candidates(
     en_foco = [
         ingestion
         for ingestion in pending
-        if ingestion.original_text is None
+        if include_off_focus
+        or ingestion.original_text is None
         or mentions_any_product(ingestion.original_text, products)
     ]
     return en_foco if limit is None else en_foco[:limit]
@@ -187,6 +206,10 @@ class RunResult:
     cost_usd: float = 0.0
     aborted_failure: str = ""
     stopped_by_max_cost: bool = False
+    #: Tipo -> anuncios que el carril 0 descartó solos en esta corrida.
+    auto_discarded: dict[str, int] = field(
+        default_factory=lambda: dict.fromkeys(_TYPE_LABELS, 0)
+    )
 
 
 def run_prefill(
@@ -202,9 +225,13 @@ def run_prefill(
     transcribe: Callable[[Path], str] | None = None,
     max_cost: float | None = None,
     expected_per_ad: float | None = None,
+    lane0_types: frozenset[str] = frozenset(),
     out: Callable[[str], None] = print,
 ) -> RunResult:
     """Un anuncio a la vez: texto, llamada, alta de la propuesta y commit.
+
+    `lane0_types` son los tipos con el carril 0 encendido
+    (`validation.lane0.enabled_types`); vacío, ningún anuncio se descarta solo.
 
     Con `max_cost`, antes de cada llamada se frena si el acumulado más lo que
     se espera que cueste la siguiente lo pasaría. «Lo que se espera» es el
@@ -213,6 +240,7 @@ def run_prefill(
     products = pilot_products(session)
     provinces = list(session.execute(select(Province).order_by(Province.name)).scalars())
     glossary = active_glossary_entries(session)
+    catalog = Catalog(pilot_products=products, provinces=provinces)
     result = RunResult()
     total = len(candidates)
     for n, ingestion in enumerate(candidates, start=1):
@@ -246,8 +274,27 @@ def run_prefill(
             log_path=None,
             glossary=glossary,
         )
-        llm_store.save_proposal(
+        stored = llm_store.save_proposal(
             session, ingestion_id=ingestion.id, result=proposal, model=model
+        )
+        auto_discarded = (
+            stored is not None
+            and str(ingestion.content_type) in lane0_types
+            and lane0.apply_lane_0(
+                session,
+                ingestion,
+                stored,
+                proposal,
+                # El texto que vio el modelo: el de un texto ya viene redactado
+                # de la ingesta; el OCR de una imagen se redacta acá, igual que
+                # en el borde de `propose_ad`.
+                text=(
+                    text
+                    if ingestion.content_type == ContentType.TEXT
+                    else redact_personal_data(text) or ""
+                ),
+                catalog=catalog,
+            )
         )
         session.commit()
         llm_propose_ad.record_operator_run(
@@ -260,12 +307,16 @@ def run_prefill(
 
         result.done += 1
         result.degraded += proposal.degraded
+        if auto_discarded:
+            tipo = str(ingestion.content_type)
+            result.auto_discarded[tipo] = result.auto_discarded.get(tipo, 0) + 1
         result.cost_usd += _cost(proposal.input_tokens, proposal.output_tokens, model) or 0.0
         estado = (
             f"DEGRADADO ({proposal.failure})"
             if proposal.degraded
             else f"ok, {len(proposal.rows)} filas"
             + (" (sugiere descartar)" if proposal.discard else "")
+            + (" — DESCARTADO SOLO (carril 0)" if auto_discarded else "")
         )
         out(
             f"[{n}/{total}] {short_id} {ingestion.content_type}: {estado} — "
@@ -331,7 +382,10 @@ def execute(
     """Corre el modo pedido. Devuelve el código de salida."""
     model = args.model or settings.llm_assist_model
     products = pilot_products(session)
-    candidates = select_candidates(session, products, args.limit)
+    lane0_types = lane0.enabled_types(settings)
+    candidates = select_candidates(
+        session, products, args.limit, include_off_focus=ContentType.TEXT.value in lane0_types
+    )
     est = estimate(session, candidates, model)
 
     if not args.execute:
@@ -362,11 +416,20 @@ def execute(
         transcribe=transcribe,
         max_cost=args.max_cost,
         expected_per_ad=est.per_ad_usd,
+        lane0_types=lane0_types,
         out=out,
     )
     out(
         f"Hechos: {result.done} ({result.degraded} degradados), "
         f"sin texto: {result.skipped_no_text}, costo real ${result.cost_usd:.4f}."
+    )
+    out(
+        "Descartados solos (carril 0): "
+        + ", ".join(
+            f"{etiqueta} {result.auto_discarded.get(tipo, 0)}"
+            for tipo, etiqueta in _TYPE_LABELS.items()
+        )
+        + ("" if lane0_types else " (interruptores apagados)")
     )
     return 1 if result.aborted_failure else 0
 

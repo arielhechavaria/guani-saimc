@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     # medir H0 sobre el conjunto no asistido (design.md, D6).
     llm_assist_log_path: Path = Path("data/llm-assist-log.jsonl")
 
+    # Carril 0 encendido (slice B2a, `docs/spec-slice-B2a.md`): el pre-cálculo
+    # descarta solo lo que el motor manda al carril 0, y la auditoría semanal
+    # (`/curation/auditoria`) lo controla. Uno por tipo porque G1a fijó una
+    # meta de falsos descartes para cada uno (10% texto, 20% imagen) y cada
+    # tipo se tiene que poder apagar solo. Apagados, el pre-cálculo es el de
+    # siempre. Nada los apaga automáticamente: lo hace el operador.
+    lane0_text_enabled: bool = False
+    lane0_image_enabled: bool = False
+
     # Procedencia del `price_basis` retro-completado por inferencia en las
     # filas anteriores al campo (docs/decisions.md, 2026-09-02). Mismo lugar y
     # mismo motivo que `llm_assist_log_path`: ata ids de la base de producción,

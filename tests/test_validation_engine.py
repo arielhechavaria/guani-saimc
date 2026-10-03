@@ -731,3 +731,43 @@ def test_el_precio_se_normaliza_a_la_unidad_base_del_producto() -> None:
 def test_las_filas_y_sus_contextos_tienen_que_ir_en_paralelo() -> None:
     with pytest.raises(ValueError):
         validate_ad(_caso_1(celdas=()), CONFIG)
+
+
+# --- B2a: el carril 0 solo, sin configuración (docs/spec-slice-B2a.md) --------
+
+
+def test_decide_lane_0_descarta_sin_configuracion_con_los_mismos_predicados() -> None:
+    from saimc.validation import decide_lane_0
+
+    for motivo in ("off_focus", "no_data"):
+        for tipo in ("text", "image"):
+            ctx = _ctx("Vendo iPhone 13, 450 USD", modelo=_descarte(motivo), tipo=tipo)
+            assert decide_lane_0(ctx).lane == 0
+
+
+def test_decide_lane_0_manda_a_revision_todo_lo_demas() -> None:
+    from saimc.validation import decide_lane_0
+
+    casos = [
+        _ctx("Vendo iPhone 13", modelo=None),
+        _ctx("Vendo iPhone 13", modelo=AdProposal(degraded=True, failure="timeout")),
+        _ctx("Vendo iPhone 13", modelo=AdProposal(discard=None)),
+        _ctx("Vendo iPhone 13", modelo=_modelo(_fila())),  # no descarta
+        _ctx("Vendo iPhone 13", modelo=AdProposal(discard=True, discard_reason=None)),
+        _ctx("Arroz 320 la libra", modelo=_descarte("off_focus")),  # nombra un piloto
+        _ctx(
+            "Vendo iPhone 13",
+            modelo=AdProposal(discard=True, discard_reason="off_focus", degraded=True),
+        ),
+    ]
+    for ctx in casos:
+        resultado = decide_lane_0(ctx)
+        assert resultado.lane == 2
+        assert resultado.reasons
+
+
+def test_validate_ad_sigue_sin_carril_0_sin_configuracion() -> None:
+    ctx = _ctx("Vendo iPhone 13, 450 USD", modelo=_descarte("off_focus"))
+
+    assert validate_ad(ctx, None).lane == 2
+    assert validate_ad(ctx, CONFIG).lane == 0

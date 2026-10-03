@@ -32,7 +32,6 @@ import argparse
 import dataclasses
 import itertools
 import json
-import math
 import sys
 import uuid
 from collections import Counter
@@ -66,6 +65,11 @@ from saimc.units import canonical_unit
 from saimc.validation import context
 from saimc.validation.context import Catalog, ProposalDiff, Transcriber
 from saimc.validation.engine import validate_ad
+
+# `x as x`: reexportación explícita (las cotas se importaban de acá).
+from saimc.validation.stats import CONFIDENCE, Rate, format_rate, pct
+from saimc.validation.stats import clopper_pearson_lower as clopper_pearson_lower
+from saimc.validation.stats import clopper_pearson_upper as clopper_pearson_upper
 from saimc.validation.types import (
     LANE_ACCEPT,
     LANE_DISCARD,
@@ -87,10 +91,6 @@ GRID_CHANNEL_MIN_HISTORY = (1, 3, 5, 10)
 #: 1.00 es «sin tope»: no es un valor a elegir, es la referencia que muestra
 #: cuánto volumen deja afuera exigir que el canal esté limpio.
 GRID_CHANNEL_MAX_EDIT_RATE = (0.10, 0.25, 0.50, 1.00)
-
-#: Nivel de la cota: unilateral al 95%, el de la especificación (0 errores en
-#: 60 dan 4,9%).
-CONFIDENCE = 0.95
 
 #: Campos que el oro del backtest permite comparar: `expected_rows` no trae
 #: provincia, formato de venta, base del precio ni envase. El producto se usa
@@ -115,88 +115,10 @@ _TYPE_LABELS = {ContentType.TEXT.value: "texto", ContentType.IMAGE.value: "image
 
 # --- Clopper-Pearson ---------------------------------------------------------
 
-
-def _binomial_cdf(k: int, n: int, p: float) -> float:
-    """P(X ≤ k) con X ~ Binomial(n, p). Se suma en logaritmos (`lgamma`) para
-    que n grandes no desborden."""
-    if p <= 0:
-        return 1.0
-    if p >= 1:
-        return 1.0 if k >= n else 0.0
-    log_p, log_q = math.log(p), math.log1p(-p)
-    total = 0.0
-    for i in range(k + 1):
-        log_comb = math.lgamma(n + 1) - math.lgamma(i + 1) - math.lgamma(n - i + 1)
-        total += math.exp(log_comb + i * log_p + (n - i) * log_q)
-    return min(total, 1.0)
-
-
-def clopper_pearson_upper(k: int, n: int, confidence: float = CONFIDENCE) -> float | None:
-    """Cota superior exacta (Clopper-Pearson, unilateral) de una proporción.
-
-    Es el p más grande todavía compatible con haber visto `k` o menos en `n`:
-    la solución de P(X ≤ k | p) = 1 − confianza, buscada por bisección (la
-    probabilidad baja cuando p sube). `None` sin muestra; 1.0 si k = n.
-    """
-    if n <= 0:
-        return None
-    if k >= n:
-        return 1.0
-    alpha = 1.0 - confidence
-    low, high = k / n, 1.0
-    for _ in range(200):  # 200 mitades: mucho más fino que la precisión de un float
-        mid = (low + high) / 2
-        if _binomial_cdf(k, n, mid) > alpha:
-            low = mid
-        else:
-            high = mid
-    return (low + high) / 2
-
-
-def clopper_pearson_lower(k: int, n: int, confidence: float = CONFIDENCE) -> float | None:
-    """Cota inferior exacta: por simetría, 1 − la cota superior de los fallos."""
-    upper = clopper_pearson_upper(n - k, n, confidence)
-    return None if upper is None else 1.0 - upper
-
-
-@dataclass(frozen=True)
-class Rate:
-    """`k` de `n`. Nunca se muestra el porcentaje sin el n y la cota."""
-
-    k: int = 0
-    n: int = 0
-
-    @property
-    def rate(self) -> float | None:
-        return self.k / self.n if self.n else None
-
-    @property
-    def upper(self) -> float | None:
-        return clopper_pearson_upper(self.k, self.n)
-
-    @property
-    def lower(self) -> float | None:
-        return clopper_pearson_lower(self.k, self.n)
-
-    def as_dict(self) -> dict[str, Any]:
-        return {"k": self.k, "n": self.n, "rate": self.rate, "upper95": self.upper}
-
-
-def _pct(value: float) -> str:
-    """Porcentaje con coma decimal: `9,3 %`."""
-    return f"{100 * value:.1f} %".replace(".", ",")
-
-
-def format_rate(k: int, n: int, *, lower: bool = False) -> str:
-    """`k/n (p %; cota superior al 95 %: c %)`. Con `lower`, suma la inferior."""
-    rate = Rate(k, n)
-    if rate.rate is None or rate.upper is None or rate.lower is None:
-        return f"{k}/{n} (sin muestra)"
-    bounds = f"cota superior al 95 %: {_pct(rate.upper)}"
-    if lower:
-        bounds = f"cota inferior al 95 %: {_pct(rate.lower)}; {bounds}"
-    return f"{k}/{n} ({_pct(rate.rate)}; {bounds})"
-
+# Viven en `validation.stats` desde B2a (la auditoría del carril 0 también las
+# usa y no tiene por qué cargar este módulo); se reexportan con su nombre de
+# siempre para quien ya las importaba de acá.
+_pct = pct
 
 # --- error del carril 1 contra el oro ----------------------------------------
 
@@ -427,6 +349,8 @@ def load_evaluation(
             "Lo rescatado de un lote no se puede identificar: la casilla desmarcada no "
             "deja rastro (el anuncio queda pendiente, sin evento). Si después se curó o "
             "descartó de a uno, ya está contado acá como decisión individual.",
+            "Lo que el carril 0 descartó solo no cuenta; si la auditoría lo rescató y "
+            "después se decidió de a uno, esa decisión sí cuenta como individual.",
             "Historial del canal (regla 4): solo las decisiones anteriores a la de cada "
             "anuncio.",
         ],
@@ -438,7 +362,9 @@ def load_evaluation(
         )
     }
     individual = CurationMode.INDIVIDUAL.value
-    batch = {(i, action) for i, action, mode in events if mode != individual}
+    # Por tramo (`context.BatchDecisions`): lo rescatado y después decidido de
+    # a uno cuenta como individual aunque el anuncio tenga un evento de lote.
+    batch = context.batch_decisions(session)
     logged = {(i, action) for i, action, mode in events if mode == individual}
 
     reviews = list(
@@ -583,13 +509,13 @@ class SetSummary:
         default_factory=lambda: {LANE_DISCARD: 0, LANE_ACCEPT: 0, LANE_REVIEW: 0}
     )
     lane0_by_type: dict[str, int] = field(default_factory=dict)
-    automation: Rate = Rate()
-    false_discards_text: Rate = Rate()
-    false_discards_image: Rate = Rate()
-    lane1_ad_errors: Rate = Rate()
+    automation: Rate = field(default_factory=Rate)
+    false_discards_text: Rate = field(default_factory=Rate)
+    false_discards_image: Rate = field(default_factory=Rate)
+    lane1_ad_errors: Rate = field(default_factory=Rate)
     #: Campo -> filas con ese campo distinto, sobre las filas propuestas del carril 1.
     lane1_field_errors: dict[str, Rate] = field(default_factory=dict)
-    lane1_deleted_rows: Rate = Rate()
+    lane1_deleted_rows: Rate = field(default_factory=Rate)
     lane1_added_rows: int = 0
     #: Motivo -> anuncios del carril 2 que lo tienen.
     reasons: Counter[str] = field(default_factory=Counter)

@@ -1,0 +1,202 @@
+{#
+  Auditoría semanal del carril 0 (slice B2a, docs/spec-slice-B2a.md). Molde:
+  el lote de imágenes (curation_sin_foco_imagenes.html), a 390 px primero.
+
+  Arriba, la cota de falsos descartes por tipo, acumulada entre semanas, contra
+  la meta de G1a. Si la pasa, se marca en rojo y se nombra el interruptor que
+  hay que apagar: la pantalla no apaga nada. Abajo, la muestra de una semana
+  cerrada, cada anuncio con «Bien descartado» y «Rescatar». La cota vive solo
+  acá: /control es público.
+#}
+{% extends "_shell.html" %}
+
+{% block title %}Auditoría del carril 0{% endblock %}
+{% block heading %}Auditoría del carril 0{% endblock %}
+{% block subtitle %}Lo que el pre-cálculo descartó solo. Rescatá lo que no tenía que irse.{% endblock %}
+
+{% block stats %}
+  <div class="m3-stat">
+    <div class="m3-stat-label">En la muestra</div>
+    <div class="m3-stat-value is-accent">{{ sample.items()|length }}</div>
+  </div>
+{% endblock %}
+
+{% block tabs %}{% include "_curation_tabs.html" %}{% endblock %}
+
+{% block head %}
+  <style>
+    /* Cotas: una columna a 390 px, dos desde el único corte (720 px). */
+    .b2-bounds { display: grid; grid-template-columns: 1fr; gap: var(--m3-space-3); }
+    @media (min-width: 720px) { .b2-bounds { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .b2-bound { display: flex; flex-direction: column; gap: 4px; }
+    .b2-bound.is-over-target { border-color: var(--m3-error); background: var(--m3-error-wash); }
+    .b2-bound.is-over-target .b2-bound-value { color: var(--m3-error); }
+    .b2-bound-value { font-size: 22px; font-weight: 600; }
+
+    .b2-week { display: flex; flex-wrap: wrap; gap: var(--m3-space-2); align-items: center; }
+    .b2-week select, .b2-week .m3-btn { min-height: 44px; }
+
+    /* Misma grilla que el lote de imágenes: 2 columnas a 390 px. Los textos
+       van a una columna, porque a 170 px no se leen. */
+    .a1-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--m3-space-3); }
+    @media (min-width: 720px) { .a1-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); } }
+    .b2-texts { display: grid; grid-template-columns: 1fr; gap: var(--m3-space-3); }
+    @media (min-width: 720px) { .b2-texts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+    .a1-card { overflow: hidden; display: flex; flex-direction: column; }
+    .a1-thumb { position: relative; display: block; width: 100%; aspect-ratio: 4 / 5;
+      background: var(--m3-surface-container-high); }
+    .a1-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .b2-text { padding: var(--m3-space-3) var(--m3-space-3) 0; white-space: pre-wrap;
+      overflow-wrap: anywhere; max-height: 9.5em; overflow: hidden; font-size: 14px; }
+    .a1-body { padding: var(--m3-space-2) var(--m3-space-3) 0; display: flex; flex-direction: column; gap: 4px; }
+    .a1-meta { display: flex; flex-direction: column; color: var(--m3-on-surface-variant); font-size: 12px; line-height: 1.35; }
+    .a1-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Las dos acciones, de 44 px de alto, lado a lado aun a 390 px. */
+    .b2-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--m3-space-2); margin: var(--m3-space-2); }
+    .b2-actions form { display: contents; }
+    .b2-actions .m3-btn { min-height: 44px; justify-content: center; }
+    .b2-verdict { margin: var(--m3-space-2) var(--m3-space-3) var(--m3-space-3); }
+  </style>
+{% endblock %}
+
+{% macro verdict_or_actions(item) %}
+  {% if item.verdict == 'rescued' %}
+    <span class="m3-chip m3-chip-sm m3-chip-ok b2-verdict">Rescatado: volvió a la cola</span>
+    {% if item.ingestion.processing_status == 'pending' %}
+    {# Los lotes de descarte no lo muestran, y un texto sin foco tampoco entra
+       en la cola en foco: se cura desde acá, en el formulario individual. #}
+    <div class="b2-actions">
+      <a class="m3-btn m3-btn-tonal" style="grid-column:1 / -1" href="/curation?id={{ item.ingestion.id }}">Curar ahora</a>
+    </div>
+    {% endif %}
+  {% elif item.verdict == 'audited' %}
+    <span class="m3-chip m3-chip-sm m3-chip-neutral b2-verdict">Bien descartado</span>
+  {% elif item.ingestion.processing_status != 'discarded' %}
+    <span class="m3-chip m3-chip-sm m3-chip-neutral b2-verdict">Ya no está descartado</span>
+  {% else %}
+    <div class="b2-actions">
+      <form method="post" action="/curation/auditoria/{{ item.ingestion.id }}/bien">
+        <input type="hidden" name="semana" value="{{ sample.label }}" />
+        <button type="submit" class="m3-btn">Bien descartado</button>
+      </form>
+      <form method="post" action="/curation/auditoria/{{ item.ingestion.id }}/rescatar">
+        <input type="hidden" name="semana" value="{{ sample.label }}" />
+        <button type="submit" class="m3-btn m3-btn-tonal">Rescatar</button>
+      </form>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro meta(item) %}
+  {% set motivo = reason_labels.get(item.event.discard_reason, item.event.discard_reason or '—') %}
+  <div class="a1-body">
+    <span class="m3-chip m3-chip-sm {{ 'm3-chip-neutral' if item.event.discard_reason == 'off_focus' else 'm3-chip-warn' }}" style="align-self:flex-start">{{ motivo }}</span>
+    <div class="a1-meta">
+      <span>{{ item.ingestion.source_reference or "—" }}</span>
+      <span class="m3-nowrap">{{ item.event.decided_at | havana }}</span>
+    </div>
+  </div>
+{% endmacro %}
+
+{% block content %}
+<div class="m3-stack" style="gap:16px">
+
+  <section aria-labelledby="cota">
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="cota">Falsos descartes</h2>
+      <span class="m3-sm m3-muted">lo auditado de todas las semanas, por tipo</span>
+    </div>
+    <div class="b2-bounds">
+      {% for tipo in ['text', 'image'] %}
+      {% set b = bounds[tipo] %}
+      <div class="m3-card m3-card-outlined m3-card-pad b2-bound{% if b.exceeded %} is-over-target{% endif %}">
+        <div class="m3-sm m3-muted">{{ type_labels[tipo] }} · meta {{ "%.0f"|format(b.target * 100) }} %</div>
+        {% if b.upper is none %}
+        <div class="b2-bound-value m3-dim">—</div>
+        <div class="m3-sm">Nada auditado todavía.</div>
+        {% else %}
+        <div class="b2-bound-value">{{ ("%.1f"|format(b.upper * 100)) | replace(".", ",") }} %</div>
+        <div class="m3-sm">
+          Cota superior al 95 % (Clopper-Pearson) con {{ b.k }} rescatados de {{ b.n }} auditados
+          ({{ ("%.1f"|format(b.rate * 100)) | replace(".", ",") }} %).
+        </div>
+        {% endif %}
+        {% if b.exceeded %}
+        <div class="m3-sm" role="alert">
+          <strong>Pasa la meta.</strong> Apagá <code>{{ b.switch }}=false</code> en el <code>.env</code>
+          y reiniciá el servidor. Esta pantalla no apaga nada sola.
+        </div>
+        {% endif %}
+        {% if b.rescued_outside %}
+        <div class="m3-sm m3-muted">
+          Rescatados fuera de la muestra: {{ b.rescued_outside }}. No entran en la cota: no salieron al azar.
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <form class="b2-week" method="get" action="/curation/auditoria">
+    <label class="m3-sm" for="semana">Semana</label>
+    <select id="semana" name="semana">
+      {% for label in weeks %}
+      <option value="{{ label }}"{% if label == sample.label %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+      {% if sample.label not in weeks %}
+      <option value="{{ sample.label }}" selected>{{ sample.label }}</option>
+      {% endif %}
+    </select>
+    <button type="submit" class="m3-btn">Ver</button>
+    <span class="m3-sm m3-muted">
+      del {{ sample.week_start.strftime("%d/%m") }} al {{ week_end.strftime("%d/%m/%Y") }}
+    </span>
+  </form>
+
+  {% if not sample.closed %}
+  <div class="m3-card">
+    <div class="m3-empty">
+      <span class="m3-icon">schedule</span>
+      <p style="margin:12px 0 0">La semana {{ sample.label }} todavía no terminó.</p>
+      <p class="m3-sm m3-muted" style="margin:4px 0 0">La muestra sale cuando cierra, el lunes.</p>
+    </div>
+  </div>
+  {% else %}
+
+  {% for tipo in ['text', 'image'] %}
+  {% set items = sample.by_type(tipo) %}
+  <section aria-labelledby="h-{{ tipo }}">
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="h-{{ tipo }}">{{ type_labels[tipo] }}</h2>
+      <span class="m3-sm m3-muted">
+        {{ items|length }} de {{ sample.population.get(tipo, 0) }} descartados solos
+        (muestra de hasta {{ sample_sizes[tipo] }})
+      </span>
+    </div>
+    {% if not items %}
+    <div class="m3-card"><div class="m3-empty"><p style="margin:0">Ninguno esta semana.</p></div></div>
+    {% else %}
+    <div class="{{ 'b2-texts' if tipo == 'text' else 'a1-grid' }}">
+      {% for item in items %}
+      <div class="m3-card m3-card-outlined a1-card" id="c{{ item.ingestion.id }}">
+        {% if tipo == 'text' %}
+        <div class="b2-text">{{ item.ingestion.original_text or "—" }}</div>
+        {% else %}
+        <a class="a1-thumb" href="/evidence/{{ item.ingestion.id }}" target="_blank" rel="noopener" aria-label="Abrir la imagen">
+          <img src="/evidence/{{ item.ingestion.id }}" alt="" loading="lazy" />
+        </a>
+        {% endif %}
+        {{ meta(item) }}
+        {{ verdict_or_actions(item) }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  {% endif %}
+</div>
+{% endblock %}

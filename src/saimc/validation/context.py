@@ -22,6 +22,7 @@ sombra».
 
 from __future__ import annotations
 
+import bisect
 import dataclasses
 import json
 import uuid
@@ -46,6 +47,7 @@ from saimc.ingestion import origin
 from saimc.models import (
     Channel,
     ContentType,
+    CurationAction,
     CurationEvent,
     CurationMode,
     Currency,
@@ -168,30 +170,78 @@ def diff_review(
 # --- decisiones individuales y de lote ---------------------------------------
 
 
+@dataclass(frozen=True)
+class BatchDecisions:
+    """Qué decisiones de la bitácora se tomaron en lote.
+
+    La bitácora no dice a qué revisión corresponde cada evento, así que se
+    empareja por `(anuncio, acción)`. Un rescate de la auditoría del carril 0
+    (B2a) parte la historia del anuncio en tramos: el descarte automático
+    queda antes del rescate, y lo que el operador decida después de rescatarlo
+    es una decisión nueva, individual (caso 13 de `docs/spec-slice-B2a.md`).
+    Sin el tramo, ese descarte de a uno heredaba el `auto` del primero y no
+    contaba ni en el historial del canal ni en el modo sombra.
+    """
+
+    #: `(anuncio, acción, tramo)` de cada evento con `mode` distinto de
+    #: `individual`. El tramo es cuántos rescates del anuncio hubo antes.
+    batch: frozenset[tuple[uuid.UUID, str, int]]
+    #: Anuncio -> horas de sus rescates, de la más vieja a la más nueva.
+    rescues: Mapping[uuid.UUID, tuple[datetime, ...]]
+
+    def segment(self, ingestion_id: uuid.UUID, at: datetime) -> int:
+        """Cuántos rescates del anuncio son anteriores a `at`."""
+        return bisect.bisect_left(self.rescues.get(ingestion_id, ()), as_utc(at))
+
+    def is_batch(self, review: LlmReview) -> bool:
+        key = (
+            review.ingestion_id,
+            str(review.outcome),
+            self.segment(review.ingestion_id, review.created_at),
+        )
+        return key in self.batch
+
+
 def batch_decisions(
     session: Session, ingestion_ids: Sequence[uuid.UUID] | None = None
-) -> set[tuple[uuid.UUID, str]]:
-    """`(anuncio, acción)` de las decisiones que se tomaron en lote.
+) -> BatchDecisions:
+    """Las decisiones que se tomaron en lote (o solas, en el carril 0).
 
-    Una decisión es de lote si la bitácora tiene para ese anuncio y esa acción
-    un evento con `mode` distinto de `individual`.
+    Una decisión es de lote si la bitácora tiene para ese anuncio, esa acción
+    y ese tramo (ver `BatchDecisions`) un evento con `mode` distinto de
+    `individual`.
     """
-    stmt = select(CurationEvent.ingestion_id, CurationEvent.action).where(
-        CurationEvent.mode != CurationMode.INDIVIDUAL
+    stmt = select(
+        CurationEvent.ingestion_id,
+        CurationEvent.action,
+        CurationEvent.mode,
+        CurationEvent.decided_at,
     )
     if ingestion_ids is not None:
         stmt = stmt.where(CurationEvent.ingestion_id.in_(ingestion_ids))
-    return {(ingestion_id, str(action)) for ingestion_id, action in session.execute(stmt)}
+    events = session.execute(stmt).all()
+    rescues: dict[uuid.UUID, list[datetime]] = {}
+    for ingestion_id, action, _, decided_at in events:
+        if action == CurationAction.RESCUED:
+            rescues.setdefault(ingestion_id, []).append(as_utc(decided_at))
+    ordered = {key: tuple(sorted(times)) for key, times in rescues.items()}
+    result = BatchDecisions(batch=frozenset(), rescues=ordered)
+    batch = frozenset(
+        (ingestion_id, str(action), result.segment(ingestion_id, decided_at))
+        for ingestion_id, action, mode, decided_at in events
+        if mode != CurationMode.INDIVIDUAL
+    )
+    return dataclasses.replace(result, batch=batch)
 
 
-def is_individual(review: LlmReview, batch: set[tuple[uuid.UUID, str]]) -> bool:
+def is_individual(review: LlmReview, batch: BatchDecisions) -> bool:
     """¿La decisión de esta revisión se tomó anuncio por anuncio?
 
     Una revisión sin ningún evento en la bitácora cuenta como individual: es
     anterior a la bitácora (slice A2b), y los dos caminos de lote escriben
     siempre su evento.
     """
-    return (review.ingestion_id, str(review.outcome)) not in batch
+    return not batch.is_batch(review)
 
 
 # --- la propuesta guardada ---------------------------------------------------

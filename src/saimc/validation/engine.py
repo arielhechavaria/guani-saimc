@@ -293,19 +293,37 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
     )
 
 
-def _discard_lane(
-    ctx: AdContext, model: AdProposal, config: ValidationConfig | None
-) -> AdValidation:
-    """Carril 0 si el modelo descarta por `off_focus` o `no_data` Y las reglas
-    no encuentran ningún producto piloto en el texto. No distingue texto de
-    imagen."""
+def decide_lane_0(ctx: AdContext) -> AdValidation:
+    """Decide SOLO el carril 0, sin configuración de parámetros (slice B2a).
+
+    El carril 0 no usa ningún parámetro de `ValidationConfig`, pero
+    `validate_ad` lo niega sin configuración. Esta función aplica los mismos
+    predicados que `validate_ad` (propuesta presente, sin degradar, el modelo
+    descarta por `off_focus` o `no_data`, las reglas no ven ningún piloto) y
+    nada más: devuelve carril 0 o carril 2, nunca el 1. Quien la llama hace de
+    configuración con su interruptor por tipo (`SAIMC_LANE0_*_ENABLED`).
+    """
+    model = ctx.model
+    if model is None:
+        return AdValidation(LANE_REVIEW, ("el anuncio no tiene propuesta del modelo",))
+    if model.degraded or model.failure:
+        return AdValidation(LANE_REVIEW, ("la propuesta del modelo está degradada",))
+    if model.discard is not True:
+        return AdValidation(LANE_REVIEW, ("el modelo no descarta el anuncio",))
+    return _lane_0_verdict(ctx, model, _lane_0_reasons(ctx, model))
+
+
+def _lane_0_reasons(ctx: AdContext, model: AdProposal) -> list[str]:
+    """Por qué un descarte del modelo NO va al carril 0. Vacío si va."""
     reasons: list[str] = []
-    if config is None:
-        reasons.append("no hay configuración de parámetros: no se automatiza")
     if model.discard_reason not in _LANE_0_REASONS:
         reasons.append("el modelo descarta, pero no por fuera de foco ni por falta de datos")
     if mentions_any_product(ctx.text, ctx.pilot_products):
         reasons.append("el modelo descarta, pero las reglas ven un producto piloto en el texto")
+    return reasons
+
+
+def _lane_0_verdict(ctx: AdContext, model: AdProposal, reasons: list[str]) -> AdValidation:
     if reasons:
         return AdValidation(LANE_REVIEW, tuple(reasons))
     return AdValidation(
@@ -315,3 +333,16 @@ def _discard_lane(
             "ningún producto piloto",
         ),
     )
+
+
+def _discard_lane(
+    ctx: AdContext, model: AdProposal, config: ValidationConfig | None
+) -> AdValidation:
+    """Carril 0 si el modelo descarta por `off_focus` o `no_data` Y las reglas
+    no encuentran ningún producto piloto en el texto. No distingue texto de
+    imagen."""
+    reasons: list[str] = []
+    if config is None:
+        reasons.append("no hay configuración de parámetros: no se automatiza")
+    reasons += _lane_0_reasons(ctx, model)
+    return _lane_0_verdict(ctx, model, reasons)

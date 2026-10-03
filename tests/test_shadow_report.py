@@ -674,6 +674,61 @@ def test_una_revision_de_lote_no_cuenta_como_evidencia(
     assert conjunto.notes["individuales sin evento en la bitácora"] == 1
 
 
+def _rescatado_y_descartado_de_a_uno(session: Session, mundo: SimpleNamespace) -> RawIngestion:
+    """Caso 13 de B2a: el carril 0 lo descarta solo, la auditoría lo rescata y
+    después el operador lo descarta de a uno. Quedan dos revisiones: la del
+    carril 0 (no cuenta) y la del operador (cuenta)."""
+    anuncio = _ingesta(session, mundo.canal, estado=ProcessingStatus.DISCARDED)
+    propuesta = _propuesta(session, anuncio, mundo, descarta=True)
+    _revision(
+        session,
+        propuesta,
+        resultado=ReviewOutcome.DISCARDED,
+        modo="auto",
+        cuando=AD_AT + timedelta(days=1),
+    )
+    session.add(
+        CurationEvent(
+            ingestion_id=anuncio.id,
+            action="rescued",
+            mode=CurationMode.INDIVIDUAL,
+            proposal_id=propuesta.id,
+            decided_at=AD_AT + timedelta(days=8),
+        )
+    )
+    _revision(
+        session,
+        propuesta,
+        resultado=ReviewOutcome.DISCARDED,
+        modo=CurationMode.INDIVIDUAL,
+        cuando=AD_AT + timedelta(days=9),
+    )
+    return anuncio
+
+
+def test_rescatado_y_descartado_de_a_uno_cuenta_como_individual_en_el_modo_sombra(
+    session: Session, mundo: SimpleNamespace
+) -> None:
+    anuncio = _rescatado_y_descartado_de_a_uno(session, mundo)
+
+    conjunto = shadow.load_evaluation(session, context.load_catalog(session))
+
+    assert [c.ingestion_id for c in conjunto.cases] == [str(anuncio.id)]
+    assert conjunto.notes["revisiones en total"] == 2
+    assert conjunto.notes["decididas en lote (no cuentan)"] == 1
+
+
+def test_rescatado_y_descartado_de_a_uno_cuenta_en_el_historial_del_canal(
+    session: Session, mundo: SimpleNamespace
+) -> None:
+    _rescatado_y_descartado_de_a_uno(session, mundo)
+    otro = _ingesta(session, mundo.canal, cuando=AD_AT + timedelta(days=20))
+
+    historial = context.channel_history(session, mundo.canal, exclude_ingestion_id=otro.id)
+
+    assert historial.decisions == 1
+
+
 # --- El comando --------------------------------------------------------------
 
 

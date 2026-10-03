@@ -103,6 +103,7 @@ from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
+from saimc.validation import lane0
 from saimc.variants import get_or_create_variant
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
@@ -622,8 +623,13 @@ def _pending_out_of_focus(db: Session, products: Sequence[Product]) -> list[RawI
         .order_by(RawIngestion.captured_at.asc())
     )
     pending = list(db.execute(stmt).scalars().all())
+    # Lo rescatado de la auditoría del carril 0 (B2a) no vuelve al lote: se
+    # cura de a uno («Curar ahora» en /curation/auditoria).
+    rescued = lane0.rescued_ids(db, [ingestion.id for ingestion in pending])
     return [
-        ingestion for ingestion in pending if _focus_rank(ingestion, products) == _FOCUS_NONE
+        ingestion
+        for ingestion in pending
+        if _focus_rank(ingestion, products) == _FOCUS_NONE and ingestion.id not in rescued
     ]
 
 
@@ -1678,6 +1684,8 @@ async def discard_out_of_focus(request: Request, db: Session = Depends(get_db)) 
             continue
         if _focus_rank(ingestion, products) != _FOCUS_NONE:
             continue
+        if lane0.rescued_ids(db, [ingestion.id]):
+            continue  # rescatado de la auditoría (B2a): se cura de a uno
         ingestion.processing_status = ProcessingStatus.DISCARDED
         # Todo lo que se descarta por esta ruta es, por construcción, «fuera de
         # foco»: la lista es exactamente los pendientes sin ningún piloto.
@@ -1742,8 +1750,13 @@ def _image_batch(db: Session) -> tuple[list[ImageBatchItem], int]:
     )
     images = list(db.execute(stmt).scalars().all())
     proposals = _latest_ok_proposals(db, [image.id for image in images])
+    # Lo rescatado de la auditoría del carril 0 (B2a) no vuelve al lote, que
+    # lo marcaría para descartar por defecto.
+    rescued = lane0.rescued_ids(db, [image.id for image in images])
     items: list[ImageBatchItem] = []
     for image in images:
+        if image.id in rescued:
+            continue
         proposal = proposals.get(image.id)
         if proposal is None or proposal.discard is not True:
             continue
@@ -1834,6 +1847,75 @@ async def discard_images_batch(
     db.commit()
     return RedirectResponse(
         url="/curation/sin-foco/imagenes", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+# --- B2a: auditoría del carril 0 ----------------------------------------------
+# Antes de `POST /curation/{ingestion_id}`: con `/curation/auditoria` declarada
+# después, esa ruta la capturaría primero y respondería 405 al GET.
+
+
+def _audit_url(week_label: str, ingestion_id: uuid.UUID | None = None) -> str:
+    anchor = f"#c{ingestion_id}" if ingestion_id is not None else ""
+    return f"/curation/auditoria?semana={week_label}{anchor}"
+
+
+@router.get("/curation/auditoria", response_class=HTMLResponse)
+def curation_audit(
+    request: Request, semana: str = "", db: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Auditoría semanal de los descartes automáticos (B2a).
+
+    Por defecto, la última semana cerrada; `?semana=2026-W39` abre otra. La
+    semana en curso nunca se muestrea. La cota de falsos descartes se acumula
+    entre semanas y solo se muestra acá, que pide operador: `/control` es
+    público.
+    """
+    week = lane0.parse_week(semana) or lane0.last_closed_week()
+    sample = lane0.week_sample(db, week)
+    response: HTMLResponse = request.app.state.templates.TemplateResponse(
+        request,
+        "curation_auditoria.html",
+        {
+            "sample": sample,
+            "weeks": [lane0.week_label(w) for w in lane0.audited_weeks(db)],
+            "bounds": lane0.audit_bounds(db),
+            "sample_sizes": lane0.SAMPLE_SIZES,
+            "reason_labels": _IMAGE_REASON_LABELS,
+            "type_labels": {lane0.TEXT: "Textos", lane0.IMAGE: "Imágenes"},
+            "week_end": week + timedelta(days=6),
+        },
+    )
+    return response
+
+
+@router.post("/curation/auditoria/{ingestion_id}/rescatar")
+def rescue_auto_discard(
+    ingestion_id: uuid.UUID, semana: str = Form(""), db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """«Rescatar»: el descarte automático vuelve a la cola con su propuesta.
+    Fuera de la muestra de esa semana, o si ya no está descartado, no cambia
+    nada (`lane0.rescue`)."""
+    week = lane0.parse_week(semana)
+    if week is not None and lane0.rescue(db, ingestion_id, week):
+        db.commit()
+    label = lane0.week_label(week) if week is not None else ""
+    return RedirectResponse(
+        url=_audit_url(label, ingestion_id), status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/curation/auditoria/{ingestion_id}/bien")
+def confirm_auto_discard(
+    ingestion_id: uuid.UUID, semana: str = Form(""), db: Session = Depends(get_db)
+) -> RedirectResponse:
+    """«Bien descartado»: solo escribe el evento `audited` (`lane0.mark_audited`)."""
+    week = lane0.parse_week(semana)
+    if week is not None and lane0.mark_audited(db, ingestion_id, week):
+        db.commit()
+    label = lane0.week_label(week) if week is not None else ""
+    return RedirectResponse(
+        url=_audit_url(label, ingestion_id), status_code=status.HTTP_303_SEE_OTHER
     )
 
 
