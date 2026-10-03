@@ -1251,8 +1251,9 @@ def _curation_view(
         # Mismo helper que el pre-cálculo (`prefill.py`): el texto que ve el
         # modelo no puede depender de quién lo pidió.
         recognized_text = ad_text(db, ingestion, settings.raw_store_dir)
-        # La transcripción se guarda al leerla (K3): se confirma acá porque esta
-        # ruta es un GET y nadie más hace commit antes de que se cierre la sesión.
+        # La transcripción se guarda al leerla (K3) y se confirma acá mismo: si
+        # lo que sigue falla, `get_db` hace rollback y la imagen se transcribiría
+        # otra vez en la próxima apertura.
         db.commit()
         if recognized_text:
             proposals = propose_all(recognized_text, products, provinces)
