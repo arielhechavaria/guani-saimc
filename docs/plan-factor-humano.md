@@ -71,8 +71,8 @@ misma sesión. El candidato más probable es A1b.
 | K1 | `/edit` con historial | M | A2b | Sonnet | PENDIENTE |
 | K3 | Guardar la transcripción del OCR | M | — | Sonnet | PENDIENTE |
 | K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | PENDIENTE |
-| K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | PENDIENTE |
-| B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | PENDIENTE |
+| K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | ABIERTO (va con B1) |
+| B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | ABIERTO |
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
 | **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | CERRADO (2026-10-03) |
 | **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
@@ -313,7 +313,7 @@ resuelve sin revisión individual, con auditoría.
 - Jev solo como prueba fuera de línea (A6). No entra en producción antes de pasarla.
 - **2026-10-02.** Hay clave de Jev. A6 no se reemplaza: es la medición de la que
   dependen los umbrales. Si sale favorable, Jev entra por A6b como una señal más del
-  motor, en modo sombra. No decide ni escribe `origin = auto`: eso sigue siendo de
+  motor, en modo sombra. No decide ni escribe `provenance = auto`: eso sigue siendo de
   B2b, después de G1b.
 - La automatización no se enciende sin su compuerta: G1a para el carril 0 y G1b
   para el carril 1.
@@ -909,16 +909,16 @@ procedencia, y que el modo sombra mida cuánto aporta.
   curar) y si eso pide guardar la respuesta en otra tabla.
 
 **Qué no entra.**
-- Cambiar `validation_status`, el carril u `origin` por lo que diga Jev. En sombra
+- Cambiar `validation_status`, el carril u `provenance` por lo que diga Jev. En sombra
   solo se anota.
-- `origin = auto` y el descarte automático: B2a y B2b, después de G1.
+- `provenance = auto` y el descarte automático: B2a y B2b, después de G1.
 - Umbrales fijados a ojo. Salen de A6 y del informe de A5c con Jev, con su n.
 - Un segundo extractor de respaldo, o un orquestador fuera del motor.
 
 **Tests primero.**
 1. Jev apagado: el motor da lo mismo que sin el adaptador.
 2. Jev coincide con probabilidad alta: se anota en `validation_detail`; estado,
-   carril y `origin` no cambian.
+   carril y `provenance` no cambian.
 3. Jev discrepa con probabilidad alta: se anota como desacuerdo; nada más cambia.
 4. Jev devuelve un tipo inesperado o una opción fuera del catálogo: se registra el
    evento y la fila queda «sin señal».
@@ -933,7 +933,7 @@ procedencia, y que el modo sombra mida cuánto aporta.
    `jev` con sus preguntas y probabilidades.
 3. Apagar Jev en `.env`, reiniciar y curar otro: no aparece la entrada y nada falla.
 4. `/control`: el gasto de Jev y cuántas filas tienen señal.
-5. **Lo que no tiene que pasar:** una fila con `origin = auto`, un estado distinto
+5. **Lo que no tiene que pasar:** una fila con `provenance = auto`, un estado distinto
    por culpa de Jev, o una curaduría que falle porque Jev no respondió.
 
 **`decisions.md`.** Sí: Jev entra como señal desconectable del motor, en sombra, con
@@ -995,16 +995,16 @@ motivo.
 B1 y B5 implementan lo que la spec ya pide, así que pueden hacerse antes de la
 compuerta. B2, B3 y B4 solo después de G1.
 
-### B1 — Persistir la validación: estado, puntaje y procedencia — PENDIENTE
+### B1 — Persistir la validación: estado, puntaje y procedencia — ABIERTO
 
 Toca el esquema, así que lleva el flujo completo, apoyado en la especificación de
-A5a.
+A5a. Especificación: `docs/spec-slice-B1.md`.
 
 **Qué entra.**
 - **Migración:** `prices_history.validation_status`, `validation_detail` (JSON) y
-  `origin` (procedencia: `human|auto|audited`). `confidence_score` ya existe y pasa a
+  `provenance` (procedencia: `human|auto|audited`). `confidence_score` ya existe y pasa a
   llenarse.
-- **Filas existentes:** la especificación decide si se completa `origin = 'human'`.
+- **Filas existentes:** la especificación decide si se completa `provenance = 'human'`.
   Se sabe con certeza.
 - **Cuándo corre:** el motor corre al curar y al editar, y guarda su resultado.
 - **Dónde se ve:** `/control` muestra la distribución de estados.
@@ -1127,7 +1127,7 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
 
 **Qué entra.**
 - Con su propio flag, el pre-cálculo guarda las filas de los anuncios del carril 1
-  con `origin = auto`. Resuelve la tasa de cambio igual que `submit_curation`, para
+  con `provenance = auto`. Resuelve la tasa de cambio igual que `submit_curation`, para
   lo que se refactoriza el guardado y se comparte.
 - **Auditoría semanal:** aleatoria y estratificada por canal. Lo auditado pasa a
   `audited` o se corrige, con historial (K1).
