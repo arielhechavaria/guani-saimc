@@ -1250,7 +1250,10 @@ def _curation_view(
         settings = get_settings()
         # Mismo helper que el pre-cálculo (`prefill.py`): el texto que ve el
         # modelo no puede depender de quién lo pidió.
-        recognized_text = ad_text(ingestion, settings.raw_store_dir)
+        recognized_text = ad_text(db, ingestion, settings.raw_store_dir)
+        # La transcripción se guarda al leerla (K3): se confirma acá porque esta
+        # ruta es un GET y nadie más hace commit antes de que se cierre la sesión.
+        db.commit()
         if recognized_text:
             proposals = propose_all(recognized_text, products, provinces)
             source_reference_guess = (

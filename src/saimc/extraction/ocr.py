@@ -33,6 +33,7 @@ los mismos modelos.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,30 @@ import pytesseract
 from PIL import Image, UnidentifiedImageError
 
 logger = logging.getLogger(__name__)
+
+# Se sube a mano cuando cambia algo que cambia el resultado del OCR: el orden de
+# la cascada, el `--psm` de abajo o la versión de los modelos de RapidOCR. La
+# transcripción guardada (`ocr_store`) se identifica por esta versión: subirla
+# hace que cada imagen se transcriba de nuevo y deja las filas viejas donde
+# estaban (`docs/spec-slice-K3.md`).
+OCR_VERSION = "k3-1"
+
+ENGINE_RAPIDOCR = "rapidocr"
+ENGINE_TESSERACT = "tesseract"
+
+
+@dataclass(frozen=True)
+class OcrResult:
+    """Lo que leyó el OCR, sin redactar.
+
+    `boxes`: solo con RapidOCR, un dict por renglón y en el orden de `text`:
+    `{"text": str, "box": [[x, y] × 4], "score": float}`. Tesseract no da cajas.
+    Ojo: es texto crudo; quien lo persiste (`ocr_store`) lo redacta antes.
+    """
+
+    text: str
+    engine: str
+    boxes: list[dict[str, Any]] | None = None
 
 
 # La evidencia es una captura de chat, no una página escaneada. El modo por
@@ -95,7 +120,27 @@ def _rapidocr_engine() -> Any:
     return _rapidocr_cache
 
 
-def _transcribe_rapidocr(path: Path) -> str | None:
+def _boxes(resultado: Any, lineas: list[str]) -> list[dict[str, Any]] | None:
+    """Una caja por renglón, con tipos planos de Python (el JSON no sabe de numpy).
+
+    Si el motor no trae cajas y puntajes del largo de los renglones, devuelve
+    `None`: una lista desalineada diría que una caja es de otro renglón.
+    """
+    cajas = getattr(resultado, "boxes", None)
+    puntajes = getattr(resultado, "scores", None)
+    if cajas is None or puntajes is None or len(cajas) != len(lineas) or len(puntajes) != len(lineas):
+        return None
+    return [
+        {
+            "text": texto,
+            "box": [[float(x), float(y)] for x, y in caja],
+            "score": float(puntaje),
+        }
+        for texto, caja, puntaje in zip(lineas, cajas, puntajes, strict=True)
+    ]
+
+
+def _transcribe_rapidocr(path: Path) -> OcrResult | None:
     """Transcribe con RapidOCR, o `None` para que decida el respaldo.
 
     Devuelve `None` en los tres casos que significan "acá no hay respuesta
@@ -119,7 +164,8 @@ def _transcribe_rapidocr(path: Path) -> str | None:
     lineas = getattr(resultado, "txts", None)
     if not lineas:
         return None
-    return "\n".join(lineas)
+    lineas = list(lineas)
+    return OcrResult("\n".join(lineas), ENGINE_RAPIDOCR, _boxes(resultado, lineas))
 
 
 def _transcribe_tesseract(path: Path, lang: str) -> str:
@@ -142,14 +188,20 @@ def _transcribe_tesseract(path: Path, lang: str) -> str:
         return ""
 
 
-def transcribe(path: Path, lang: str = "spa") -> str:
+def transcribe_detailed(path: Path, lang: str = "spa") -> OcrResult:
     """Transcribe el texto de una imagen: RapidOCR, y si no, Tesseract.
 
-    El archivo inexistente y la imagen corrupta terminan en `""` como
+    El archivo inexistente y la imagen corrupta terminan en texto vacío como
     siempre: RapidOCR no los resuelve, devuelve `None`, y el respaldo aplica
-    su degradación de siempre.
+    su degradación de siempre. Es la única que conserva las cajas.
     """
-    texto = _transcribe_rapidocr(path)
-    if texto is not None:
-        return texto
-    return _transcribe_tesseract(path, lang)
+    resultado = _transcribe_rapidocr(path)
+    if resultado is not None:
+        return resultado
+    return OcrResult(_transcribe_tesseract(path, lang), ENGINE_TESSERACT)
+
+
+def transcribe(path: Path, lang: str = "spa") -> str:
+    """Solo el texto de `transcribe_detailed`. Lo usan `measure` y el backtest,
+    que siguen transcribiendo de nuevo en cada corrida (K3)."""
+    return transcribe_detailed(path, lang).text

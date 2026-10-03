@@ -1,13 +1,14 @@
 # Plan — Sacar al operador del camino de cada registro
 
-Fecha del plan: 2026-09-29. Última actualización: 2026-10-02 (vía rápida al MVP con
+Fecha del plan: 2026-09-29. Última actualización: 2026-10-03 (vía rápida al MVP con
 la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
 sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
 tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1;
 G1a cerrada el 2026-10-03: carril 0 para texto e imagen, metas 10% y 20%; B2a cerrada
 el 2026-10-03, con dos interruptores por tipo y los textos sin foco pasando por el modelo;
 B1 y K6 cerradas el 2026-10-03: la validación se guarda en cada fila, con `min_cell_n = 5`
-y la regla 4 sin parámetros).
+y la regla 4 sin parámetros; K3 cerrada el 2026-10-03: la transcripción del OCR se guarda
+redactada, con cajas y versión; A1c postergada).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -67,11 +68,11 @@ misma sesión. El candidato más probable es A1b.
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | CERRADO (2026-10-02) |
 | A5c | Informe del modo sombra | M | A5b | Opus | CERRADO (2026-10-02) |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | CERRADO (2026-10-03) |
-| A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE |
+| A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE (postergada 2026-10-03) |
 | A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | PENDIENTE |
 | A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | PENDIENTE |
 | K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
-| K3 | Guardar la transcripción del OCR | M | — | Sonnet | PENDIENTE |
+| K3 | Guardar la transcripción del OCR | M | — | Sonnet | CERRADO (2026-10-03) |
 | K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | PENDIENTE |
 | K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | CERRADO (2026-10-03) |
 | B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | CERRADO (2026-10-03) |
@@ -252,6 +253,11 @@ Lo que aparezca fuera del slice en curso se anota acá, no se hace.
   entradas y las dos se inyectan en el prompt. A3c no lo cambió; avisarle al
   operador al guardar un término que ya existe sería un slice aparte (visto en A3c,
   2026-10-03).
+- El informe del modo sombra (`validation/shadow.py`) arma el contexto con
+  `context.ad_text`, que desde K3 lee y guarda la transcripción: sobre una imagen sin
+  fila el informe transcribe y escribe en `ocr_transcriptions` si quien lo llama hace
+  commit. No toca nada más; decidir si el informe debería ser de solo lectura (visto
+  en K3, 2026-10-03).
 - **Importante, sin prioridad hoy: la regla 5 (duplicado) es gruesa para grupos.**
   La primera revalidación marcó 92 de 368 filas como `possible_duplicate` (25%).
   La regla compara por canal, no por vendedor, y solo mira producto, provincia y
@@ -874,6 +880,9 @@ del 5% del tiempo según el estudio §1.
 
 **Cuándo.** Solo si A2d muestra que vale la pena.
 
+Postergada (2026-10-03): el operador la dejó sin prioridad; se retoma solo si A2d
+muestra que vale la pena.
+
 ---
 
 ### A6 — Prueba de Jev fuera de línea: triage y campos cerrados — PENDIENTE
@@ -985,7 +994,7 @@ A2b; este slice agregó la vista: en `/curation/history`, cada anuncio con edici
 trae un bloque colapsado «Editado N veces» con los campos cambiados, las filas
 eliminadas y el cambio de canal origen.
 
-### K3 — Guardar la transcripción del OCR — PENDIENTE
+### K3 — Guardar la transcripción del OCR — CERRADO (2026-10-03)
 
 **Hechos.**
 - Hoy el texto del OCR solo queda en `raw_ingestions.original_text`, y solo al curar.
@@ -998,6 +1007,12 @@ las cajas. Toca el esquema, así que lleva una especificación corta.
 
 **Por qué importa.** Acelera la cola y hace posibles A6 con imágenes, la auditoría de
 imágenes y C2.
+
+**Cierre.** Especificación en `docs/spec-slice-K3.md`. Migración 0028 (`ocr_transcriptions`,
+una fila por imagen y por `OCR_VERSION`, texto y cajas ya redactados, las vacías no se
+guardan) y `ocr_store.stored_transcription` como único camino de lectura del pre-cálculo,
+la cola y el contexto del motor. `measure` y el backtest siguen transcribiendo de nuevo.
+Sin backfill.
 
 ### K4 — Aviso de hueco de ingesta por canal — PENDIENTE
 

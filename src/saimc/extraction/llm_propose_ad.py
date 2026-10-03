@@ -31,13 +31,16 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.orm import Session
+
+from saimc.extraction import ocr_store
 from saimc.extraction.engine import (
     ExtractionProposal,
     _extract_currency_explicit,
@@ -654,26 +657,23 @@ ASSIST_FIELDS = (
 
 
 def ad_text(
+    db: Session,
     ingestion: RawIngestion,
     raw_store_dir: Path,
-    transcribe: Callable[[Path], str] | None = None,
+    transcribe: ocr_store.Transcriber | None = None,
 ) -> str:
     """El texto del anuncio que se le da al modelo.
 
     El original si es de texto; lo que sale del OCR si es una imagen sin texto
-    cargado. Vacío si no hay nada que mandar. `transcribe` es el seam de test;
-    por defecto `ocr.transcribe`, resuelto al llamar para que un
-    `monkeypatch` del módulo `ocr` lo alcance.
+    cargado, ya redactado y leído de la transcripción guardada
+    (`ocr_store.stored_transcription`, K3). Vacío si no hay nada que mandar.
+    `transcribe` es el seam de test; por defecto `ocr.transcribe_detailed`.
     """
     if ingestion.content_type == ContentType.TEXT:
         return ingestion.original_text or ""
     if ingestion.original_text is not None:
         return ""
-    if transcribe is None:
-        from saimc.extraction import ocr
-
-        transcribe = ocr.transcribe
-    return transcribe(raw_store_dir / ingestion.file_path) or ""
+    return ocr_store.stored_transcription(db, ingestion, raw_store_dir, transcribe)
 
 
 def filled_fields(row: ExtractionProposal) -> list[str]:

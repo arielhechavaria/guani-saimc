@@ -27,7 +27,7 @@ import bisect
 import dataclasses
 import json
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -41,7 +41,7 @@ from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.exchange_rate import cache as rate_cache
 from saimc.exchange_rate.service import anchor_date
-from saimc.extraction import llm_propose_ad, llm_store
+from saimc.extraction import llm_propose_ad, llm_store, ocr_store
 from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.extraction.llm_propose_ad import AdProposal
 from saimc.ingestion import origin
@@ -60,7 +60,6 @@ from saimc.models import (
     Province,
     RawIngestion,
 )
-from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.validation.rules import DUPLICATE_WINDOW
 from saimc.validation.types import (
@@ -71,7 +70,7 @@ from saimc.validation.types import (
     RowContext,
 )
 
-Transcriber = Callable[[Path], str]
+Transcriber = ocr_store.Transcriber
 
 
 def as_utc(value: datetime) -> datetime:
@@ -289,26 +288,24 @@ def stored_proposal(
 
 
 def ad_text(
+    session: Session,
     ingestion: RawIngestion,
     *,
     raw_store_dir: Path | None = None,
-    transcribe: Transcriber | None = None,
+    transcribe: ocr_store.Transcriber | None = None,
 ) -> str:
     """El texto sobre el que opinan las reglas: el mismo que vio el modelo.
 
-    Texto: el original, ya redactado en la ingesta. Imagen: se vuelve a pasar
-    el OCR por la evidencia guardada (como `measure` y el backtest) y se
-    redacta; si el OCR no da nada, queda la transcripción que confirmó el
-    operador. Vacío si no hay de dónde sacarlo.
+    Texto: el original, ya redactado en la ingesta. Imagen: la transcripción
+    guardada del OCR, ya redactada (`ocr_store.stored_transcription`, K3: la
+    misma que vio el modelo, sin volver a correr el OCR); si el OCR no da
+    nada, queda la transcripción que confirmó el operador. Vacío si no hay de
+    dónde sacarlo.
     """
     if ingestion.content_type == ContentType.TEXT:
         return ingestion.original_text or ""
-    if transcribe is None:
-        from saimc.extraction import ocr  # tardío: un `monkeypatch` de `ocr` lo alcanza
-
-        transcribe = ocr.transcribe
     directory = raw_store_dir if raw_store_dir is not None else get_settings().raw_store_dir
-    text = redact_personal_data(transcribe(directory / ingestion.file_path)) or ""
+    text = ocr_store.stored_transcription(session, ingestion, directory, transcribe)
     return text if text.strip() else (ingestion.original_text or "")
 
 
@@ -537,7 +534,7 @@ def build_ad_context(
     Las señales externas van vacías: no hay ningún proveedor.
     """
     if text is None:
-        text = ad_text(ingestion, raw_store_dir=raw_store_dir, transcribe=transcribe)
+        text = ad_text(session, ingestion, raw_store_dir=raw_store_dir, transcribe=transcribe)
     published_at = as_utc(ingestion.captured_at)
     day = anchor_date(None, published_at)
 

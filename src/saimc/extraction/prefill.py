@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
-from saimc.extraction import llm_assist, llm_propose_ad, llm_store
+from saimc.extraction import llm_assist, llm_propose_ad, llm_store, ocr_store
 from saimc.extraction.engine import mentions_any_product
 from saimc.glossary import active_glossary_entries
 from saimc.models import (
@@ -222,7 +222,7 @@ def run_prefill(
     raw_store_dir: Path,
     log_path: Path,
     client: Any | None = None,
-    transcribe: Callable[[Path], str] | None = None,
+    transcribe: ocr_store.Transcriber | None = None,
     max_cost: float | None = None,
     expected_per_ad: float | None = None,
     lane0_types: frozenset[str] = frozenset(),
@@ -256,7 +256,7 @@ def run_prefill(
                 break
 
         short_id = str(ingestion.id)[:8]
-        text = llm_propose_ad.ad_text(ingestion, raw_store_dir, transcribe)
+        text = llm_propose_ad.ad_text(session, ingestion, raw_store_dir, transcribe)
         if not text.strip():
             result.skipped_no_text += 1
             out(f"[{n}/{total}] {short_id} {ingestion.content_type}: sin texto, no se llama")
@@ -376,7 +376,7 @@ def execute(
     settings: Settings,
     *,
     client: Any | None = None,
-    transcribe: Callable[[Path], str] | None = None,
+    transcribe: ocr_store.Transcriber | None = None,
     out: Callable[[str], None] = print,
 ) -> int:
     """Corre el modo pedido. Devuelve el código de salida."""

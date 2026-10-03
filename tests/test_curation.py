@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
-from saimc.extraction import llm_assist, llm_store, ocr
+from saimc.extraction import llm_assist, llm_store, ocr, prefill
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_checks import RowMeta
 from saimc.extraction.llm_propose_ad import PROMPT_VERSION, AdProposal
@@ -34,6 +34,7 @@ from saimc.models import (
     GlossaryEntry,
     LlmProposal,
     LlmReview,
+    OcrTranscription,
     Platform,
     PriceHistory,
     ProcessingStatus,
@@ -50,6 +51,8 @@ from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
 from saimc.web.routers import curation
 from saimc.web.routers.curation import _EXTRA_BLANK_ROWS, _last_capture_notice
+from tests.ocr_fakes import patch_ocr
+from tests.test_prefill import ClienteFalso
 
 # --- helpers de armado ------------------------------------------------------
 
@@ -386,7 +389,7 @@ class TestCurationQueueGet:
             source_type=SourceType.WHATSAPP_CHANNEL,
             source_reference="Groupej Morales Surl",
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "pollo a 500 habana")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "pollo a 500 habana")
 
         response = client.get("/curation")
 
@@ -404,11 +407,7 @@ class TestCurationQueueGet:
             captured_at=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
             source_type=SourceType.WHATSAPP_CHANNEL,
         )
-        monkeypatch.setattr(
-            ocr,
-            "transcribe",
-            lambda path, lang="spa": "Juan Pérez - Ayer a las 14:35\npollo a 500 habana",
-        )
+        patch_ocr(monkeypatch, lambda path, lang="spa": "Juan Pérez - Ayer a las 14:35\npollo a 500 habana")
 
         response = client.get("/curation")
 
@@ -426,7 +425,7 @@ class TestCurationQueueGet:
             captured_at=datetime(2026, 9, 21, 9, 0, tzinfo=UTC),
             source_type=SourceType.WHATSAPP_CHANNEL,
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "")
 
         response = client.get("/curation")
 
@@ -445,7 +444,7 @@ class TestCurationQueueGet:
             content_type=ContentType.IMAGE,
             captured_at=datetime(2026, 9, 20, 15, 30, tzinfo=UTC),
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "pollo a 500 habana")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "pollo a 500 habana")
 
         response = client.get("/curation")
 
@@ -459,7 +458,7 @@ class TestCurationQueueGet:
         _crear_raw_ingestion(
             session, hash_="hash-imagen-1", content_type=ContentType.IMAGE
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "")
 
         response = client.get("/curation")
 
@@ -475,9 +474,7 @@ class TestCurationQueueGet:
         _crear_raw_ingestion(
             session, hash_="hash-imagen-ocr-1", content_type=ContentType.IMAGE
         )
-        monkeypatch.setattr(
-            ocr, "transcribe", lambda path, lang="spa": "pollo a 500 habana"
-        )
+        patch_ocr(monkeypatch, lambda path, lang="spa": "pollo a 500 habana")
 
         response = client.get("/curation")
 
@@ -618,7 +615,7 @@ class TestCurationQueueGet:
         def _fallar_si_se_llama(path, lang="spa"):
             raise AssertionError("no debería llamarse al OCR para content_type text")
 
-        monkeypatch.setattr(ocr, "transcribe", _fallar_si_se_llama)
+        patch_ocr(monkeypatch, _fallar_si_se_llama)
 
         response = client.get("/curation")
 
@@ -640,9 +637,8 @@ class TestSinCandidatosAtajoDeUnClic:
         ingestion = _crear_raw_ingestion(
             session, hash_="hash-saludo-sin-datos", content_type=ContentType.IMAGE
         )
-        monkeypatch.setattr(
-            ocr,
-            "transcribe",
+        patch_ocr(
+            monkeypatch,
             lambda path, lang="spa": (
                 "¡Buenos tardes, familia! ☀️\nEscribinos a estos números:\n"
                 "[teléfono removido]\n[teléfono removido]"
@@ -724,7 +720,7 @@ class TestSinCandidatosAtajoDeUnClic:
         _crear_raw_ingestion(
             session, hash_="hash-atajo-no-esconde-form", content_type=ContentType.IMAGE
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "buenos días a todos")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "buenos días a todos")
 
         response = client.get("/curation")
 
@@ -824,7 +820,7 @@ class TestSugerenciaAsistidaDeDescarte:
         _crear_producto(session, name="Pollo")
         _crear_provincia(session)
         _crear_raw_ingestion(session, hash_="hash-imagen-ajena", content_type=ContentType.IMAGE)
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "cemento a 500 el saco")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "cemento a 500 el saco")
 
         response = client.get("/curation")
 
@@ -839,7 +835,7 @@ class TestSugerenciaAsistidaDeDescarte:
         diciendo lo mismo con otras palabras es ruido, no ayuda."""
         _crear_producto(session, name="Pollo")
         _crear_raw_ingestion(session, hash_="hash-doble-banner", content_type=ContentType.IMAGE)
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "buenos días a todos")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "buenos días a todos")
 
         response = client.get("/curation")
 
@@ -4380,7 +4376,7 @@ class TestFueraDeFocoNoLlegaALaCola:
             content_type=ContentType.IMAGE,
             captured_at=datetime(2026, 8, 10, tzinfo=UTC),
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "")
 
         response = client.get("/curation")
 
@@ -4448,7 +4444,7 @@ class TestFueraDeFocoNoLlegaALaCola:
             content_type=ContentType.IMAGE,
             captured_at=datetime(2026, 8, 17, tzinfo=UTC),
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "")
 
         response = client.get("/curation")
 
@@ -4473,7 +4469,7 @@ class TestFueraDeFocoNoLlegaALaCola:
             original_text="arroz a 30000",
             captured_at=datetime(2026, 8, 17, tzinfo=UTC),
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "")
 
         response = client.get("/curation")
 
@@ -4911,7 +4907,7 @@ class TestAsistenteLLM:
     ) -> None:
         _crear_producto(session, name="Pollo")
         _crear_raw_ingestion(session, hash_="hash-img-vacia", content_type=ContentType.IMAGE)
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "")
 
         assert "/assist" not in client.get("/curation").text
 
@@ -5252,7 +5248,7 @@ class TestAsistenteLLM:
         ingestion = _crear_raw_ingestion(
             session, hash_="hash-imagen-asistida", content_type=ContentType.IMAGE
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": self.TEXTO)
+        patch_ocr(monkeypatch, lambda path, lang="spa": self.TEXTO)
         llamadas = self._modelo(
             monkeypatch,
             session,
@@ -5333,7 +5329,7 @@ class TestAsistenteLLM:
     ) -> None:
         _crear_producto(session, name="Pollo")
         _crear_raw_ingestion(session, hash_="hash-hint-intacto", content_type=ContentType.IMAGE)
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "buenos días a todos")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "buenos días a todos")
 
         html = client.get("/curation").text
 
@@ -5354,7 +5350,7 @@ class TestAsistenteLLM:
         ingestion = _crear_raw_ingestion(
             session, hash_="hash-contradiccion", content_type=ContentType.IMAGE
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "buenos días a todos")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "buenos días a todos")
         self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
 
         html = client.post(f"/curation/{ingestion.id}/assist").text
@@ -6777,7 +6773,7 @@ class TestVistaCola:
         def _explotar(*args: object, **kwargs: object) -> str:
             raise AssertionError("la vista de cola no debe correr OCR")
 
-        monkeypatch.setattr(ocr, "transcribe", _explotar)
+        patch_ocr(monkeypatch, _explotar)
 
         html = client.get("/curation/cola").text
 
@@ -7621,7 +7617,7 @@ class TestBitacoraDeCuraduria:
         _crear_raw_ingestion(
             session, hash_="hash-bit-tpl-1", content_type=ContentType.IMAGE
         )
-        monkeypatch.setattr(ocr, "transcribe", lambda path, lang="spa": "Buenos días, familia")
+        patch_ocr(monkeypatch, lambda path, lang="spa": "Buenos días, familia")
 
         html = client.get("/curation").text
 
@@ -8264,3 +8260,150 @@ class TestGuardarComoRegla:
 
         assert "Guardar como regla" not in html
         assert 'name="rule_term"' not in html
+
+
+class TestTranscripcionGuardada:
+    """K3 (`docs/spec-slice-K3.md`): el OCR de una imagen se guarda redactado
+    y se lee de ahí. Los casos 1, 2, 3, 4, 6 y 8 de «Tests primero»."""
+
+    def _contador(self, monkeypatch: pytest.MonkeyPatch, texto: str) -> list[Path]:
+        vistos: list[Path] = []
+
+        def _ocr(path: Path, lang: str = "spa") -> str:
+            vistos.append(path)
+            return texto
+
+        patch_ocr(monkeypatch, _ocr)
+        return vistos
+
+    def _filas(self, session: Session) -> list[OcrTranscription]:
+        return list(session.execute(select(OcrTranscription)).scalars())
+
+    def test_abrir_una_imagen_pendiente_guarda_la_transcripcion(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        imagen = _crear_raw_ingestion(session, hash_="k3-abre", content_type=ContentType.IMAGE)
+        self._contador(monkeypatch, "pollo a 500 habana")
+
+        assert client.get("/curation").status_code == 200
+
+        session.expire_all()
+        (fila,) = self._filas(session)
+        assert fila.ingestion_id == imagen.id
+        assert fila.engine == "tesseract"  # el doble devuelve `str`: sin motor declarado
+        assert fila.ocr_version == ocr.OCR_VERSION
+        assert fila.text == "pollo a 500 habana"
+
+    def test_abrirla_otra_vez_no_corre_el_ocr_ni_agrega_fila(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="k3-dos-veces", content_type=ContentType.IMAGE)
+        vistos = self._contador(monkeypatch, "pollo a 500 habana")
+
+        client.get("/curation")
+        html = client.get("/curation").text
+
+        assert len(vistos) == 1
+        assert len(self._filas(session)) == 1
+        assert "pollo a 500 habana" in html
+
+    def test_la_fila_queda_confirmada_aunque_el_get_no_commitee_aparte(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """La cola es un GET: si el commit no se hiciera, la fila se perdería
+        al cerrarse la sesión del request y el OCR correría en cada apertura."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="k3-commit", content_type=ContentType.IMAGE)
+        self._contador(monkeypatch, "pollo a 500 habana")
+
+        client.get("/curation")
+        session.rollback()  # lo que no se commiteó se pierde
+
+        assert len(self._filas(session)) == 1
+
+    def test_un_telefono_del_ocr_no_se_guarda_ni_se_muestra(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="k3-tel", content_type=ContentType.IMAGE)
+        self._contador(monkeypatch, "pollo a 500 habana\nLlame al +53 5 5550101")
+
+        html = client.get("/curation").text
+
+        (fila,) = self._filas(session)
+        assert "5550101" not in fila.text
+        assert "5550101" not in html
+        assert "[teléfono removido]" in html
+
+    def test_una_transcripcion_vacia_no_guarda_y_la_siguiente_apertura_reintenta(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _crear_raw_ingestion(session, hash_="k3-vacia", content_type=ContentType.IMAGE)
+        vistos = self._contador(monkeypatch, "")
+
+        client.get("/curation")
+        client.get("/curation")
+
+        assert self._filas(session) == []
+        assert len(vistos) == 2
+
+    def test_el_precalculo_y_despues_la_cola_transcriben_una_sola_vez(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        _crear_producto(session, name="Pollo")
+        imagen = _crear_raw_ingestion(session, hash_="k3-pre", content_type=ContentType.IMAGE)
+        vistos = self._contador(monkeypatch, "pollo a 500 habana")
+
+        prefill.run_prefill(
+            session,
+            [imagen],
+            api_key="k",
+            model="m",
+            timeout=1.0,
+            raw_store_dir=tmp_path / "raw",
+            log_path=tmp_path / "log.jsonl",
+            client=ClienteFalso(),
+            out=lambda _: None,
+        )
+        html = client.get("/curation").text
+
+        assert len(vistos) == 1
+        assert len(self._filas(session)) == 1
+        assert "pollo a 500 habana" in html
+
+    def test_descartar_una_imagen_despues_del_precalculo_conserva_su_fila(
+        self,
+        client: TestClient,
+        session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        imagen = _crear_raw_ingestion(session, hash_="k3-descarte", content_type=ContentType.IMAGE)
+        self._contador(monkeypatch, "buenos días a todos")
+        prefill.run_prefill(
+            session,
+            [imagen],
+            api_key="k",
+            model="m",
+            timeout=1.0,
+            raw_store_dir=tmp_path / "raw",
+            log_path=tmp_path / "log.jsonl",
+            client=ClienteFalso(),
+            out=lambda _: None,
+        )
+
+        response = client.post(
+            f"/curation/{imagen.id}/discard", data={"reason": "no_data"}, follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert session.get(RawIngestion, imagen.id).processing_status == ProcessingStatus.DISCARDED  # type: ignore[union-attr]
+        (fila,) = self._filas(session)
+        assert fila.text == "buenos días a todos"
