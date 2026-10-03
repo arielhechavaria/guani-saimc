@@ -71,8 +71,10 @@ class LlmProposal(Base):
         nullable=False,
     )
     model: Mapped[str] = mapped_column(String(64), nullable=False)
-    # `llm_propose_ad.PROMPT_VERSION` al momento de la llamada.
-    prompt_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    # `llm_propose_ad.PROMPT_VERSION` al momento de la llamada. 64 y no 32
+    # desde la 0027 (K6): la versión con glosario ya ocupaba 30, y PostgreSQL
+    # no trunca, rechaza el insert.
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     # Etiqueta de `llm_assist.classify_failure` si degradó; nulo si anduvo.
     failure: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -61,7 +61,7 @@ from saimc.progress import (
     pilot_product_names,
 )
 from saimc.requisitos_status import read_module_status
-from saimc.validation import lane0
+from saimc.validation import ValidationStatus, lane0, persist
 from saimc.web.deps import get_db
 from saimc.web.health_strip import build_strip, worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
@@ -96,6 +96,68 @@ _ACTIVITY_DAYS = 14
 # Desde el 2026-08-15 el conjunto sale de `products.is_pilot` en vez de una
 # tupla fija: promover un producto en /catalog tiene que cambiar esta vista
 # también, y con dos listas separadas no lo hacía.
+
+
+# Sección «Validación» (B1): cada estado del motor con su nombre en pantalla y
+# una línea que dice qué significa, en el orden de precedencia de
+# `docs/spec-motor-validacion.md` («Estados y puntaje») y con «sin verificar»
+# al final. Es texto de pantalla, por eso vive acá y no en el motor.
+_VALIDATION_LABELS: tuple[tuple[ValidationStatus, str, str], ...] = (
+    (
+        ValidationStatus.APPROVED,
+        "Aprobada",
+        "Pasó las seis reglas y la revisó una persona.",
+    ),
+    (
+        ValidationStatus.INCOMPLETE,
+        "Incompleta",
+        "Le falta producto piloto, precio, moneda o provincia.",
+    ),
+    (
+        ValidationStatus.ANOMALY,
+        "Anomalía",
+        "El precio cae fuera de la banda de los precios ya cargados de su celda.",
+    ),
+    (
+        ValidationStatus.INCONSISTENT,
+        "Inconsistente",
+        "El precio encaja mejor leído con la otra base: por unidad en vez de por el lote, o al revés.",
+    ),
+    (
+        ValidationStatus.POSSIBLE_DUPLICATE,
+        "Posible duplicado",
+        "El mismo canal ya tenía una fila igual en las 24 horas previas.",
+    ),
+    (
+        ValidationStatus.UNTRUSTED_SOURCE,
+        "Fuente no confiable",
+        "La provincia no es del catálogo, o el canal tiene un historial sucio.",
+    ),
+    (
+        ValidationStatus.UNVERIFIED,
+        "Sin verificar",
+        "Ninguna regla falló, pero al menos una no tuvo con qué opinar.",
+    ),
+)
+
+
+def _validation_summary(db: Session) -> dict[str, object]:
+    """Los conteos de la sección «Validación». Solo conteos: `/control` es
+    público y acá no va ningún canal, emisor ni detalle por fila."""
+    counts = persist.status_counts(db)
+    return {
+        "states": [
+            {
+                "status": status.value,
+                "label": label,
+                "hint": hint,
+                "count": counts.by_status.get(status.value, 0),
+            }
+            for status, label, hint in _VALIDATION_LABELS
+        ],
+        "unvalidated": counts.unvalidated,
+        "total": counts.total,
+    }
 
 
 @router.get("/control", response_class=HTMLResponse)
@@ -242,6 +304,8 @@ def control_panel(
             # por tipo. La cota de falsos descartes NO va acá: `/control` es
             # público y la cota queda en `/curation/auditoria`, que pide operador.
             "lane0_week": lane0.week_counts(db),
+            # Validación (B1): cuántas filas hay en cada estado del motor.
+            "validation": _validation_summary(db),
             # Estado de la tasa de cambio. Ambas salen de la base: cargar
             # `/control` no golpea la API de elTOQUE (ver status.py).
             "rate_status": rate_statuses,

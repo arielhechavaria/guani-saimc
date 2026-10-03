@@ -10,6 +10,7 @@ from saimc.models.price_history import (
     PACKAGING_MAX_LENGTH,
     Currency,
     PriceHistory,
+    Provenance,
     SaleFormat,
 )
 from saimc.models.product import Product
@@ -45,6 +46,7 @@ __all__ = [
     "ProductFormat",
     "ProductVariant",
     "ProposalStatus",
+    "Provenance",
     "Province",
     "RawIngestion",
     "ReviewOutcome",

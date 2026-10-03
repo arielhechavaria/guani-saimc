@@ -388,6 +388,7 @@ class TestCatalogoFormatos:
         session.add(formato)
         session.flush()
         precio = PriceHistory(
+            provenance="human",
             product_id=producto.id,
             price=Decimal("12400"),
             currency=Currency.CUP.value,
@@ -440,6 +441,7 @@ class TestCatalogoFormatos:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=producto.id,
                 price=Decimal("12400"),
                 currency=Currency.CUP.value,
@@ -498,6 +500,7 @@ class TestCatalogoFormatos:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=producto.id,
                 price=Decimal("12400"),
                 currency=Currency.CUP.value,

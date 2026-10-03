@@ -172,6 +172,7 @@ def _crear_precio(producto: Product, fuente: RawIngestion, **overrides: object) 
         "price": Decimal("10.00"),
         "currency": Currency.CUP,
         "source_id": fuente.id,
+        "provenance": "human",
     }
     datos.update(overrides)
     return PriceHistory(**datos)
@@ -217,6 +218,7 @@ class TestPricesHistoryNullability:
         fuente = _crear_raw_ingestion(session)
 
         precio = PriceHistory(
+            provenance="human",
             product_id=None,
             price=Decimal("10.00"),
             currency=Currency.CUP,
@@ -230,6 +232,7 @@ class TestPricesHistoryNullability:
         producto = _crear_producto(session)
 
         precio = PriceHistory(
+            provenance="human",
             product_id=producto.id,
             price=Decimal("10.00"),
             currency=Currency.CUP,
@@ -514,7 +517,10 @@ class TestPricesHistoryExclusiones:
     def test_sin_columnas_fuera_de_alcance(self) -> None:
         nombres_columnas = {c.name for c in PriceHistory.__table__.columns}
 
-        assert not (nombres_columnas & {"validation_status", "rules"})
+        # `validation_status` salió de esta lista en B1, que la agrega
+        # (`docs/spec-slice-B1.md`). Las reglas siguen sin columna propia: van
+        # dentro de `validation_detail`.
+        assert "rules" not in nombres_columnas
 
         palabras_dato_personal = ("phone", "telefono", "contact", "address", "direccion")
         for nombre in nombres_columnas:
@@ -1915,6 +1921,160 @@ class TestCurationEventsLane0Migration:
         ingesta = _crear_raw_ingestion(session, hash_="hash-l0-mode")
         session.add(
             CurationEvent(ingestion_id=ingesta.id, action="discarded", mode="otro")
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+
+
+class TestValidationProvenanceMigration:
+    """`0027_prices_history_validation_provenance.py` — B1 suma a
+    `prices_history` el estado de validación, su detalle y la procedencia, y
+    ensancha `llm_proposals.prompt_version` a 64 (K6). Casos 14 y 15 de
+    `docs/spec-slice-B1.md`."""
+
+    _NOMBRE = "0027_prices_history_validation_provenance.py"
+
+    def _base(self) -> sa.engine.Engine:
+        engine = create_engine("sqlite://")
+        metadata = sa.MetaData()
+        sa.Table(
+            "prices_history",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+        )
+        sa.Table(
+            "llm_proposals",
+            metadata,
+            sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+            sa.Column("prompt_version", sa.String(length=32), nullable=False),
+        )
+        metadata.create_all(engine)
+        return engine
+
+    def _migrar(self, connection: sa.engine.Connection, paso: str) -> None:
+        modulo = _cargar_modulo_migracion(self._NOMBRE)
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            getattr(modulo, paso)()
+        connection.commit()
+
+    def _insertar(
+        self, connection: sa.engine.Connection, *, status: str | None, provenance: str | None
+    ) -> None:
+        connection.execute(
+            sa.text(
+                "insert into prices_history (id, validation_status, provenance) "
+                "values (:id, :status, :provenance)"
+            ),
+            {"id": uuid.uuid4().hex, "status": status, "provenance": provenance},
+        )
+
+    def _largo_de_prompt_version(self, connection: sa.engine.Connection) -> int:
+        columnas = {c["name"]: c for c in inspect(connection).get_columns("llm_proposals")}
+        tipo = columnas["prompt_version"]["type"]
+        assert isinstance(tipo, sa.String)
+        assert tipo.length is not None
+        return tipo.length
+
+    def test_upgrade_deja_las_filas_existentes_en_human_y_sin_estado(self) -> None:
+        engine = self._base()
+        with engine.connect() as connection:
+            connection.execute(sa.text("insert into prices_history (id) values (:id)"), {"id": "a" * 32})
+            connection.execute(sa.text("insert into prices_history (id) values (:id)"), {"id": "b" * 32})
+            connection.commit()
+
+            self._migrar(connection, "upgrade")
+
+            columnas = {c["name"]: c for c in inspect(connection).get_columns("prices_history")}
+            assert {"validation_status", "validation_detail", "provenance"} <= set(columnas)
+            assert columnas["provenance"]["nullable"] is False
+            assert columnas["validation_status"]["nullable"] is True
+            # Sin valor por defecto permanente: quien crea la fila lo dice.
+            assert columnas["provenance"]["default"] is None
+
+            filas = connection.execute(
+                sa.text("select provenance, validation_status, validation_detail from prices_history")
+            ).all()
+            assert [tuple(fila) for fila in filas] == [("human", None, None)] * 2
+        engine.dispose()
+
+    def test_el_check_rechaza_un_estado_y_una_procedencia_desconocidos(self) -> None:
+        engine = self._base()
+        with engine.connect() as connection:
+            self._migrar(connection, "upgrade")
+
+            for estado in (
+                None,
+                "approved",
+                "incomplete",
+                "anomaly",
+                "inconsistent",
+                "possible_duplicate",
+                "untrusted_source",
+                "unverified",
+            ):
+                self._insertar(connection, status=estado, provenance="human")
+            for procedencia in ("auto", "audited"):
+                self._insertar(connection, status=None, provenance=procedencia)
+            connection.commit()
+
+            rechazados: tuple[tuple[str, str | None], ...] = (
+                ("otro", "human"),
+                ("unverified", "otra"),
+                ("unverified", None),  # la procedencia es obligatoria
+            )
+            for malo, de_donde in rechazados:
+                with pytest.raises(IntegrityError):
+                    self._insertar(connection, status=malo, provenance=de_donde)
+                connection.rollback()
+        engine.dispose()
+
+    def test_prompt_version_admite_64_caracteres(self) -> None:
+        """SQLite no hace cumplir el largo: se comprueba inspeccionando la columna."""
+        engine = self._base()
+        with engine.connect() as connection:
+            assert self._largo_de_prompt_version(connection) == 32
+            self._migrar(connection, "upgrade")
+            assert self._largo_de_prompt_version(connection) == 64
+        engine.dispose()
+
+    def test_downgrade_saca_las_columnas_y_vuelve_a_32(self) -> None:
+        engine = self._base()
+        with engine.connect() as connection:
+            connection.execute(sa.text("insert into prices_history (id) values (:id)"), {"id": "a" * 32})
+            connection.commit()
+            self._migrar(connection, "upgrade")
+            self._migrar(connection, "downgrade")
+
+            columnas = {c["name"] for c in inspect(connection).get_columns("prices_history")}
+            assert columnas == {"id"}
+            assert self._largo_de_prompt_version(connection) == 32
+            # La fila sigue ahí: bajar no se lleva datos de otras columnas.
+            assert connection.execute(sa.text("select count(*) from prices_history")).scalar_one() == 1
+        engine.dispose()
+
+    def test_el_modelo_declara_el_mismo_largo_y_los_mismos_checks(self, session: Session) -> None:
+        from saimc.models import LlmProposal
+
+        tipo = LlmProposal.__table__.c.prompt_version.type
+        assert isinstance(tipo, sa.String)
+        assert tipo.length == 64
+
+        for malo in ({"validation_status": "otro"}, {"provenance": "otra"}):
+            producto = _crear_producto(session)
+            fuente = _crear_raw_ingestion(session, hash_="hash-b1-checks")
+            session.add(_crear_precio(producto, fuente, **malo))
+            with pytest.raises(IntegrityError):
+                session.flush()
+            session.rollback()
+
+    def test_el_modelo_no_tiene_procedencia_por_defecto(self, session: Session) -> None:
+        producto = _crear_producto(session)
+        fuente = _crear_raw_ingestion(session, hash_="hash-b1-sin-procedencia")
+        session.add(
+            PriceHistory(
+                product_id=producto.id, price=Decimal("10"), currency="CUP", source_id=fuente.id
+            )
         )
         with pytest.raises(IntegrityError):
             session.flush()

@@ -128,6 +128,7 @@ def _precio(
 ) -> None:
     session.add(
         PriceHistory(
+            provenance="human",
             product_id=product.id,
             province_id=province.id,
             price=Decimal(price),
@@ -2522,6 +2523,7 @@ class TestVarianteEnTarjetaPublica:
         origen = _ingestion(session, hash_="hash-variante-publica")
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=aceite.id,
                 province_id=habana.id,
                 price=Decimal("450"),
@@ -4310,6 +4312,7 @@ class TestPorEnvaseEnElDetalle:
         fuente = _ingestion(session, hash_="h-envases-variante")
         for dia, precio, variante in ((6, "300", None), (4, "350", criollo)):
             session.add(PriceHistory(
+                provenance="human",
                 product_id=arroz.id, province_id=habana.id, price=Decimal(precio),
                 currency=Currency.CUP.value, source_id=fuente.id, unit="lb",
                 sale_format=SaleFormat.RETAIL.value, quantity=Decimal("1"),

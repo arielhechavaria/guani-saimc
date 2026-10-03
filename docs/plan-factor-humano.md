@@ -5,7 +5,9 @@ la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1
 sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
 tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1;
 G1a cerrada el 2026-10-03: carril 0 para texto e imagen, metas 10% y 20%; B2a cerrada
-el 2026-10-03, con dos interruptores por tipo y los textos sin foco pasando por el modelo).
+el 2026-10-03, con dos interruptores por tipo y los textos sin foco pasando por el modelo;
+B1 y K6 cerradas el 2026-10-03: la validación se guarda en cada fila, con `min_cell_n = 5`
+y la regla 4 sin parámetros).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -71,8 +73,8 @@ misma sesión. El candidato más probable es A1b.
 | K1 | `/edit` con historial | M | A2b | Sonnet | PENDIENTE |
 | K3 | Guardar la transcripción del OCR | M | — | Sonnet | PENDIENTE |
 | K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | PENDIENTE |
-| K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | ABIERTO (va con B1) |
-| B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | ABIERTO |
+| K6 | Ensanchar `llm_proposals.prompt_version` | S | próxima migración | Sonnet | CERRADO (2026-10-03) |
+| B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | CERRADO (2026-10-03) |
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
 | **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | CERRADO (2026-10-03) |
 | **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
@@ -243,6 +245,9 @@ Lo que aparezca fuera del slice en curso se anota acá, no se hace.
 - Después de editar o eliminar un curado, `llm_reviews.rows` queda desfasado
   (`price_history_id` puede apuntar a una fila borrada). Es por diseño desde el
   slice 3a; revisar si K1 o A2c lo necesitan (visto en A2a, 2026-10-02).
+- Guardar las filas caídas (`dropped`) de `llm_proposals`: hoy se recalculan contra
+  el catálogo de hoy. A5c se lo había pedido a B1; es una entrada del carril 1, no
+  de la validación de una fila guardada. Para B2b (visto en B1, 2026-10-03).
 
 ---
 
@@ -980,13 +985,15 @@ tiempo.
 - N se fija con los huecos típicos de cada canal, medidos.
 - La entrada en `decisions.md` sobre el hueco de septiembre, que no está registrado.
 
-### K6 — Ensanchar `llm_proposals.prompt_version` — PENDIENTE
+### K6 — Ensanchar `llm_proposals.prompt_version` — CERRADO (2026-10-03)
 
 **Hecho.** La versión con glosario ocupa 30 de los 32 caracteres. Si
 `PROMPT_VERSION` crece, se trunca.
 
 **Qué entra.** Pasarla a 64 caracteres, en la próxima migración que se haga por otro
 motivo.
+
+**Cierre.** Fue en la migración 0027, la de B1.
 
 ---
 
@@ -995,7 +1002,7 @@ motivo.
 B1 y B5 implementan lo que la spec ya pide, así que pueden hacerse antes de la
 compuerta. B2, B3 y B4 solo después de G1.
 
-### B1 — Persistir la validación: estado, puntaje y procedencia — ABIERTO
+### B1 — Persistir la validación: estado, puntaje y procedencia — CERRADO (2026-10-03)
 
 Toca el esquema, así que lleva el flujo completo, apoyado en la especificación de
 A5a. Especificación: `docs/spec-slice-B1.md`.
@@ -1004,8 +1011,8 @@ A5a. Especificación: `docs/spec-slice-B1.md`.
 - **Migración:** `prices_history.validation_status`, `validation_detail` (JSON) y
   `provenance` (procedencia: `human|auto|audited`). `confidence_score` ya existe y pasa a
   llenarse.
-- **Filas existentes:** la especificación decide si se completa `provenance = 'human'`.
-  Se sabe con certeza.
+- **Filas existentes:** la migración les completa `provenance = 'human'`; el estado
+  se les calcula después con `python -m saimc.validation.revalidate --execute`.
 - **Cuándo corre:** el motor corre al curar y al editar, y guarda su resultado.
 - **Dónde se ve:** `/control` muestra la distribución de estados.
 
@@ -1014,9 +1021,11 @@ A5a. Especificación: `docs/spec-slice-B1.md`.
 - Al editar se recalculan.
 - Un precio fuera de la banda queda como anomalía.
 
-**Verificación del operador.** Curar un anuncio con un precio normal (queda validado)
-y uno absurdo (queda como anomalía, visible en `/control`). El operador sigue
-decidiendo igual que antes.
+**Verificación del operador.** Curar un anuncio con un precio normal: queda
+`unverified` («sin verificar»), no «aprobado», porque la regla 4 no tiene parámetros
+hasta G1b. Curar uno con un precio absurdo, en una celda con cinco o más precios
+anteriores: queda `anomaly` («anomalía»). Los dos se ven en el conteo de la sección
+«Validación» de `/control`. El operador sigue decidiendo igual que antes.
 
 ### B5 — Emisor de grupo como hash con clave — PENDIENTE
 

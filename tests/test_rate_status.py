@@ -164,6 +164,7 @@ class TestAppliedRates:
         provincia = session.query(Province).first()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=producto.id,
                 province_id=provincia.id,
                 price=Decimal(price),

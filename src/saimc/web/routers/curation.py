@@ -93,6 +93,7 @@ from saimc.models import (
     ProductFormat,
     ProductVariant,
     ProposalStatus,
+    Provenance,
     Province,
     RawIngestion,
     ReviewOutcome,
@@ -103,7 +104,7 @@ from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
-from saimc.validation import lane0
+from saimc.validation import lane0, persist
 from saimc.variants import get_or_create_variant
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
@@ -2138,8 +2139,12 @@ async def submit_curation(
 ) -> HTMLResponse | RedirectResponse:
     """Confirma la curaduría: crea una fila de `prices_history` por cada renglón completo.
 
-    Sin motor de validación todavía (docs/decisions.md, 2026-08-07): cada fila
-    se crea con `confidence_score` en None. `price_cup`/`exchange_rate*` YA NO
+    Cada fila nace con `provenance = human` y, desde B1, validada: antes del
+    `commit` y en la misma transacción, `validation.persist` le escribe
+    `validation_status`, `confidence_score` y `validation_detail`
+    (`docs/spec-slice-B1.md`). No depende de que haya propuesta del modelo. Si
+    la validación falla el guardado no se cae: esas tres columnas quedan en
+    `NULL` y el error va al log. `price_cup`/`exchange_rate*` YA NO
     quedan fijos en None (2026-08-13): se resuelven sincrónicamente vía
     `RateResolver` para toda fila con `currency != CUP`, con el ancla que
     calcula `anchor_date` (`published_date` si el operador lo cargó, si no
@@ -2255,6 +2260,8 @@ async def submit_curation(
                 price_basis=price_basis,
                 published_date=published_date,
                 source_id=ingestion.id,
+                # La hizo una persona, con el formulario delante (B1).
+                provenance=Provenance.HUMAN.value,
             )
         )
         proposal_rows.append(row["proposal_row"])
@@ -2344,6 +2351,13 @@ async def submit_curation(
     # reemplaza.
     if ingestion.content_type == ContentType.IMAGE and original_text:
         ingestion.original_text = redact_personal_data(original_text)
+
+    # Validación de las filas (B1), con la tasa ya resuelta y el origen del
+    # anuncio ya escrito: el motor mira el `price_cup` que se publica y el
+    # mismo canal que va a ver una revalidación. El `flush` va afuera para que
+    # un error de escritura salga por su camino y no se tome por uno del motor.
+    db.flush()
+    persist.validate_and_store(db, ingestion, entries_to_create)
 
     ingestion.processing_status = ProcessingStatus.CURATED
     record_curation_event(
@@ -2859,6 +2873,14 @@ async def submit_edit(
             "before": source_reference_before,
             "after": ingestion.source_reference,
         }
+    # Revalidación (B1): TODAS las filas que quedan del anuncio, no solo las
+    # tocadas, y después de calcular el `detail` del evento, que solo lleva lo
+    # que cambió el operador. `provenance` no se toca. Las filas borradas ya
+    # salieron con el `flush`.
+    db.flush()
+    remaining = [price for price in existing_by_id.values() if price not in to_delete]
+    persist.validate_and_store(db, ingestion, remaining)
+
     # Una edición sin cambios escribe igual su evento: el operador abrió, miró
     # y confirmó, y ese tiempo cuenta (spec A2, pregunta 2).
     record_curation_event(

@@ -789,6 +789,61 @@
     </div>
   </section>
 
+  <!-- ---------- 6c. Validación (B1) ---------- -->
+  {# Solo conteos por estado: esta vista es pública, así que acá no va ningún
+     canal, emisor ni detalle por fila. #}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="validacion">Validación</h2>
+      <span class="m3-sm m3-muted">
+        en qué estado dejó el motor a cada fila cargada — una foto del día en que se validó
+      </span>
+    </div>
+
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(170px, 1fr))">
+      <div class="m3-metric">
+        <div class="m3-metric-label">Sin validar</div>
+        <div class="m3-metric-value-sm">{{ validation.unvalidated }}</div>
+        <div class="m3-metric-hint">
+          {% if validation.unvalidated %}De {{ validation.total }} filas cargadas, todavía sin estado
+          {%- else %}Las {{ validation.total }} filas cargadas tienen estado{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <p class="m3-sm m3-mt">
+      Ninguna fila figura como aprobada: la reputación de los canales todavía no se mide.
+    </p>
+    <p class="m3-sm m3-muted">
+      El estado describe la fila contra los precios que ya estaban cargados cuando se validó.
+      No decide nada: ninguna fila se acepta ni se descarta por su estado.
+    </p>
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Estado</th>
+            <th scope="col" style="text-align:right">Filas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for estado in validation.states %}
+          <tr data-status="{{ estado.status }}">
+            <td>
+              <span class="m3-cell-strong">{{ estado.label }}</span>
+              <div class="m3-sm m3-dim">{{ estado.hint }}</div>
+            </td>
+            <td class="is-num">
+              {% if estado.count %}{{ estado.count }}
+              {%- else %}<span class="is-zero">0</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <!-- ---------- 7. Tasa de cambio ---------- -->
   <section>
     <div class="m3-section-head"><h2 class="m3-h2" id="tasa">Tasa de cambio</h2></div>

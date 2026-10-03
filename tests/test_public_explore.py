@@ -78,6 +78,7 @@ def datos(session: Session) -> None:
     def precio(producto: Product, provincia: Province, hace: int, valor: str) -> None:
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=producto.id,
                 province_id=provincia.id,
                 price=Decimal(valor),
@@ -111,6 +112,7 @@ def arbol(session: Session, datos: None) -> None:
     for hace in range(1, 7):
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=arroz.id,
                 province_id=habana.id,
                 price=Decimal("3000"),

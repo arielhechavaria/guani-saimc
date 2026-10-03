@@ -1,9 +1,10 @@
 """Armado del `AdContext` desde la base (slice A5c).
 
 El motor (`validation.engine`) es código puro: recibe todo ya leído. Este módulo
-es el que lee. Lo usa el informe de sombra (`validation.shadow`) y lo van a
-reusar el guardado (B1) y el pre-cálculo (B2). Solo hace `SELECT`: no escribe,
-no llama a la API del modelo ni a elTOQUE.
+es el que lee. Lo usan el informe de sombra (`validation.shadow`), el carril 0
+(`validation.lane0`) y, desde B1, el guardado y la revalidación
+(`validation.persist`, con `build_stored_rows_context`, al final del archivo).
+Solo hace `SELECT`: no escribe, no llama a la API del modelo ni a elTOQUE.
 
 Lo que arma, para un anuncio con su propuesta del modelo:
 
@@ -571,4 +572,124 @@ def build_ad_context(
             () if channel is None else _recent_channel_rows(session, ingestion, channel, published_at)
         ),
         signals=(),
+    )
+
+
+# --- el contexto de las filas ya guardadas (B1) --------------------------------
+
+
+@dataclass(frozen=True)
+class StoredRow:
+    """Una fila de `prices_history` con la forma que leen las reglas, y su celda."""
+
+    row: ExtractionProposal
+    context: RowContext
+
+
+@dataclass(frozen=True)
+class StoredRowsContext:
+    """Lo que el motor necesita para validar las filas guardadas de un anuncio."""
+
+    #: Hora del anuncio (`captured_at`), para la ventana de la regla 5.
+    published_at: datetime
+    #: El canal del anuncio, solo con su provincia: el historial no se calcula
+    #: mientras la regla 4 no tenga parámetros (`docs/spec-slice-B1.md`).
+    channel: ChannelContext | None
+    recent_channel_rows: Sequence[RecentRow]
+    #: Una por fila de `prices_history`, en el orden en que se pidieron.
+    rows: Sequence[StoredRow]
+
+
+def _as_proposal(session: Session, row: PriceHistory, catalog: Catalog) -> ExtractionProposal:
+    """La fila guardada con la forma que reciben las `check_*`: la adaptación
+    más chica para reusar las reglas sin duplicarlas."""
+    product = next((p for p in catalog.pilot_products if p.id == row.product_id), None)
+    if product is None:
+        # Un producto que ya no es piloto: la regla 1 falla, pero las demás
+        # igual necesitan su unidad base.
+        product = session.get(Product, row.product_id)
+    return ExtractionProposal(
+        product=product,
+        price=row.price,
+        currency=row.currency,
+        quantity=row.quantity,
+        unit=row.unit,
+        province=next((p for p in catalog.provinces if p.id == row.province_id), None),
+        min_purchase_quantity=row.min_purchase_quantity,
+        price_basis=row.price_basis,
+        sale_format=row.sale_format,
+    )
+
+
+def build_stored_rows_context(
+    session: Session,
+    ingestion: RawIngestion,
+    rows: Sequence[PriceHistory],
+    *,
+    catalog: Catalog,
+) -> StoredRowsContext:
+    """Arma el contexto de las filas YA GUARDADAS de un anuncio (slice B1).
+
+    A diferencia de `build_ad_context` no necesita propuesta del modelo, ni el
+    texto, ni el OCR: las reglas sobre una fila guardada no leen el anuncio.
+
+    - **Celda:** precios de días estrictamente anteriores al día de la fila
+      (`published_date`, o el día de la captura si no la tiene: el mismo
+      criterio con el que `_references_before` fecha cada referencia), sin las
+      filas del propio anuncio. Como no depende de qué otras filas ya se
+      validaron, el resultado no cambia con el orden en que se recorran.
+    - **Filas recientes del canal:** las de las 24 h previas a la captura, sin
+      el propio anuncio.
+    - **Precio en CUP:** el `price_cup` que quedó en la fila, no una segunda
+      consulta a la tasa: el motor mira el mismo número que se publica.
+    - **Catálogo:** el de hoy.
+    """
+    published_at = as_utc(ingestion.captured_at)
+    channel = origin.resolve_origin(session, ingestion)
+
+    # Las filas de un anuncio comparten fecha de publicación, así que esto es
+    # una sola consulta; se agrupa por día para no asumirlo.
+    references: dict[date, dict[uuid.UUID, list[_Reference]]] = {}
+    stored: list[StoredRow] = []
+    for row in rows:
+        proposal = _as_proposal(session, row, catalog)
+        day = anchor_date(row.published_date, published_at)
+        if day not in references:
+            references[day] = _references_before(
+                session, ingestion, {r.product_id for r in rows}, day
+            )
+        unit = _cell_unit(proposal, row.price_cup)
+        same_cell = (
+            []
+            if unit is None
+            else [ref for ref in references[day].get(row.product_id, []) if ref.unit == unit]
+        )
+        stored.append(
+            StoredRow(
+                row=proposal,
+                context=RowContext(
+                    cell=CellReference(
+                        own_province=tuple(
+                            ref.price for ref in same_cell if ref.province_id == row.province_id
+                        ),
+                        all_provinces=tuple(ref.price for ref in same_cell),
+                    ),
+                    price_cup=row.price_cup,
+                ),
+            )
+        )
+
+    return StoredRowsContext(
+        published_at=published_at,
+        channel=(
+            None
+            if channel is None
+            else ChannelContext(
+                province_id=channel.province_id, decisions=0, proposed_rows=0, changed_rows=0
+            )
+        ),
+        recent_channel_rows=(
+            () if channel is None else _recent_channel_rows(session, ingestion, channel, published_at)
+        ),
+        rows=tuple(stored),
     )

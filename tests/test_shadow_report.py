@@ -322,6 +322,7 @@ def _precio(
     provincia: Province | None = None,
 ) -> PriceHistory:
     fila = PriceHistory(
+        provenance="human",
         product_id=mundo.arroz.id,
         province_id=(provincia or mundo.habana).id,
         price=Decimal(precio),
@@ -468,6 +469,7 @@ def test_las_referencias_van_por_unidad_base_del_producto(
     # Un saco de 100 lb a 32000 CUP en total: 320 CUP por libra.
     session.add(
         PriceHistory(
+            provenance="human",
             product_id=mundo.arroz.id,
             province_id=mundo.habana.id,
             price=Decimal("32000"),
@@ -482,6 +484,7 @@ def test_las_referencias_van_por_unidad_base_del_producto(
     # Sin base del precio y con cantidad distinta de 1: no se sabe si dividir.
     session.add(
         PriceHistory(
+            provenance="human",
             product_id=mundo.arroz.id,
             province_id=mundo.habana.id,
             price=Decimal("5000"),

@@ -346,6 +346,7 @@ class TestRateResolver:
 class TestApplyResolution:
     def test_calcula_price_cup_redondeando_half_up(self) -> None:
         entry = PriceHistory(
+            provenance="human",
             price=Decimal("100.00"),
             currency="USD",
             product_id=uuid.uuid4(),
@@ -364,6 +365,7 @@ class TestApplyResolution:
         """Un monto convertido >= 10**10 no entra en `Numeric(12, 2)`: debe
         degradar a `None` en vez de tumbar el insert entero (design D4)."""
         entry = PriceHistory(
+            provenance="human",
             price=Decimal("10000000000"),
             currency="USD",
             product_id=uuid.uuid4(),
@@ -379,6 +381,7 @@ class TestApplyResolution:
 
     def test_sin_tasa_deja_price_cup_en_none(self) -> None:
         entry = PriceHistory(
+            provenance="human",
             price=Decimal("100.00"),
             currency="USD",
             product_id=uuid.uuid4(),
@@ -441,6 +444,7 @@ def _crear_precio_pendiente(
     # nulas cuando `exchange_rate` no es nulo — una fila "ya convertida" en
     # los tests debe traer las tres o el insert la rechaza.
     precio = PriceHistory(
+        provenance="human",
         product_id=producto.id,
         price=Decimal("10.00"),
         currency=currency,

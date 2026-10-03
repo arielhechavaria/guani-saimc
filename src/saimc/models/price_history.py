@@ -2,16 +2,23 @@
 
 Cada fila conserva linaje obligatorio hacia el registro crudo del que salió
 (`source_id`, RESTRICT) y, opcionalmente, la conversión a CUP cuando existe
-tasa de cambio. Este slice es esquema puro: no hay motor de validación ni
-columnas de dato personal (ver exclusiones explícitas del spec).
+tasa de cambio. Sin columnas de dato personal (ver exclusiones explícitas del
+spec).
+
+Desde B1 (`docs/spec-slice-B1.md`) cada fila lleva además el resultado del
+motor de validación (`validation_status`, `confidence_score`,
+`validation_detail`) y su procedencia (`provenance`). Esas columnas no están en
+la lista de §7.2: es un apartamiento anotado en `docs/spec-map.md`.
 """
 
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     Date,
     DateTime,
@@ -37,6 +44,18 @@ class Currency(StrEnum):
 class SaleFormat(StrEnum):
     RETAIL = "retail"
     WHOLESALE = "wholesale"
+
+
+class Provenance(StrEnum):
+    """Quién hizo la fila (`prices_history.provenance`, slice B1).
+
+    `audited` solo se alcanza desde `auto` (B2b), así que no pierde el dato de
+    que la fila nació automática. En B1 nada escribe `auto` ni `audited`.
+    """
+
+    HUMAN = "human"
+    AUTO = "auto"
+    AUDITED = "audited"
 
 
 # Ancho de `prices_history.packaging`. Se exporta porque la redacción corre
@@ -81,6 +100,18 @@ class PriceHistory(Base):
         CheckConstraint(
             "price_basis IS NULL OR price_basis IN ('unit', 'total')",
             name="ck_prices_history_price_basis",
+        ),
+        # Los siete estados de `saimc.validation.ValidationStatus` (B1). El
+        # literal va acá y no importado: el modelo no depende del motor.
+        CheckConstraint(
+            "validation_status IS NULL OR validation_status IN ("
+            "'approved', 'incomplete', 'anomaly', 'inconsistent', "
+            "'possible_duplicate', 'untrusted_source', 'unverified')",
+            name="ck_prices_history_validation_status",
+        ),
+        CheckConstraint(
+            "provenance IN ('human', 'auto', 'audited')",
+            name="ck_prices_history_provenance",
         ),
         Index("idx_prices_history_series", "product_id", "province_id", "created_at"),
     )
@@ -197,8 +228,21 @@ class PriceHistory(Base):
         ),
         nullable=False,
     )
-    # Nullable y sin default: todavía no existe quién lo escriba.
+    # Reglas del motor en `pass` sobre seis, por cien. Lo escribe
+    # `saimc.validation.persist` al curar, al editar y al revalidar (B1). Es
+    # descriptivo: nada lo compara contra un umbral. Nulo = fila sin validar.
     confidence_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # El estado que le dio el motor (`ValidationStatus`). Es una foto: describe
+    # la fila contra el mercado conocido cuando se validó. Nulo = sin validar
+    # (fila anterior a B1 todavía no revalidada, o el motor falló al guardar).
+    validation_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # Las seis reglas, los motivos, la versión del motor, los parámetros y la
+    # fecha de la validación. No repite estado ni puntaje. Solo resultados de
+    # reglas: ni texto del anuncio ni datos del canal o del emisor.
+    validation_detail: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Quién hizo la fila (`Provenance`). Sin valor por defecto, a propósito:
+    # quien crea una fila lo dice explícitamente.
+    provenance: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )

@@ -23,7 +23,7 @@ de programar.
 | `id` | UUID PK | |
 | `ingestion_id` | UUID FK → `raw_ingestions.id`, RESTRICT, índice | |
 | `model` | varchar(64) | `claude-sonnet-5` |
-| `prompt_version` | varchar(32) | `PROMPT_VERSION` al momento de la llamada |
+| `prompt_version` | varchar(64) | `PROMPT_VERSION` al momento de la llamada. Era `varchar(32)`; lo ensanchó la migración 0027 (K6, 2026-10-03) |
 | `status` | varchar(16), CHECK `ok`/`degraded` | |
 | `failure` | varchar(32) null | etiqueta de `classify_failure` si degradó |
 | `discard` | bool null | veredicto del modelo |

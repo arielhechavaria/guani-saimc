@@ -67,6 +67,7 @@ def _cargar(session: Session, *, precios: list[str]) -> None:
     for precio in precios:
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=azucar.id,
                 province_id=scu.id,
                 price=Decimal(precio),
@@ -214,6 +215,7 @@ class TestControlPanel:
         ):
             session.add(
                 PriceHistory(
+                    provenance="human",
                     product_id=producto.id,
                     province_id=provincia.id,
                     price=Decimal(precio),
@@ -303,6 +305,7 @@ class TestControlPanel:
         for producto, provincia, precio in filas:
             session.add(
                 PriceHistory(
+                    provenance="human",
                     product_id=producto.id,
                     province_id=provincia.id,
                     price=Decimal(precio),
@@ -360,6 +363,7 @@ class TestLaBarraDeRangoHablaLaUnidadDelTitular:
         for precio in precios:
             session.add(
                 PriceHistory(
+                    provenance="human",
                     product_id=azucar.id,
                     province_id=scu.id,
                     price=Decimal(precio),
@@ -450,6 +454,7 @@ class TestRangoMinorista:
         for precio in ("700", "800"):
             session.add(
                 PriceHistory(
+                    provenance="human",
                     product_id=arroz.id,
                     province_id=scu.id,
                     price=Decimal(precio),
@@ -526,6 +531,7 @@ class TestDisponibilidad:
         for precio in ("700", "800"):  # ventana actual: sin published_date -> hoy
             session.add(
                 PriceHistory(
+                    provenance="human",
                     product_id=arroz.id, province_id=scu.id, price=Decimal(precio),
                     currency=Currency.CUP.value, unit="lb",
                     sale_format=SaleFormat.RETAIL.value, quantity=Decimal("1"),
@@ -560,6 +566,7 @@ class TestDisponibilidad:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=no_piloto.id, price=Decimal("100"),
                 currency=Currency.CUP.value, unit="lb",
                 sale_format=SaleFormat.RETAIL.value, quantity=Decimal("1"),
@@ -601,6 +608,7 @@ class TestExclusionPorBasisSinResolver:
             [
                 # Fuera por basis sin resolver (quantity != 1, price_basis NULL).
                 PriceHistory(
+                    provenance="human",
                     product_id=arroz.id,
                     price=Decimal("340"),
                     currency=Currency.CUP.value,
@@ -611,6 +619,7 @@ class TestExclusionPorBasisSinResolver:
                 ),
                 # Fuera por compra mínima, motivo distinto.
                 PriceHistory(
+                    provenance="human",
                     product_id=arroz.id,
                     price=Decimal("730"),
                     currency=Currency.CUP.value,
@@ -678,6 +687,7 @@ class TestFiltroDePilotos:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=item.id,
                 province_id=scu.id,
                 price=Decimal("100"),
@@ -760,6 +770,7 @@ class TestColumnaNEnlazaAlHistorial:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=arroz.id,
                 province_id=scu.id,
                 price=Decimal("31000"),
@@ -801,6 +812,7 @@ class TestColumnaNEnlazaAlHistorial:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=arroz.id,
                 province_id=scu.id,
                 price=Decimal("10"),
@@ -862,6 +874,7 @@ class TestLaMatrizMuestraLaComposicionDeLaMuestra:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=producto.id,
                 province_id=provincia.id,
                 price=Decimal("300"),
@@ -967,6 +980,7 @@ class TestDrillDownAislaLaCeldaExacta:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=product.id,
                 province_id=province.id,
                 price=Decimal(price),
@@ -1680,6 +1694,7 @@ class TestLaTablaDeSospechososDeclaraDeDondeSaleLaReferencia:
         def fila(provincia: Province, precio: str, cantidad: str, basis: str | None) -> None:
             session.add(
                 PriceHistory(
+                    provenance="human",
                     product_id=pollo.id,
                     province_id=provincia.id,
                     price=Decimal(precio),

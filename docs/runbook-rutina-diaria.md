@@ -155,6 +155,24 @@ Se corre cada semana hasta que el n alcance para decidir G1a y G1b
 (`docs/plan-factor-humano.md`). Contrato del informe:
 `docs/spec-motor-validacion.md`, «Protocolo del modo sombra».
 
+## Cuando haga falta — Revalidar las filas (en el VPS, 1 minuto)
+
+Desde B1 cada fila de `prices_history` guarda el estado que le dio el motor de
+validación, como una foto del día en que se validó. No es parte de la hora
+diaria: se corre después de un backfill de tasas o de base de precio, cuando
+cambia la versión del motor o `min_cell_n`, y una vez al desplegar B1, para las
+filas anteriores.
+
+```
+.venv/bin/python -m saimc.validation.revalidate
+.venv/bin/python -m saimc.validation.revalidate --execute
+```
+
+- Sin `--execute` corre en seco: dice cuántas filas cambiarían de estado, por
+  estado, y no escribe nada. Con `--execute` guarda estado, puntaje y detalle;
+  no toca la procedencia ni ninguna otra columna.
+- No gasta API. El resultado se ve en la sección «Validación» de `/control`.
+
 ## Cómo saber si la rutina funciona
 
 Al cabo de una semana:

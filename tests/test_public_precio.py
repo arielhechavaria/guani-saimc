@@ -119,6 +119,7 @@ def datos(session: Session) -> None:
     def precio(producto: Product, provincia: Province, hace: int, valor: str) -> None:
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=producto.id,
                 province_id=provincia.id,
                 price=Decimal(valor),

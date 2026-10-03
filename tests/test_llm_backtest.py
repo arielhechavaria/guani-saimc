@@ -66,7 +66,7 @@ def _ingesta(
     session.add(ingesta)
     session.flush()
     for fila in filas or []:
-        session.add(PriceHistory(source_id=ingesta.id, **fila))
+        session.add(PriceHistory(source_id=ingesta.id, provenance="human", **fila))
     session.commit()
     return ingesta
 

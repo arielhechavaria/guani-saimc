@@ -86,6 +86,7 @@ def _precio(
 ) -> None:
     session.add(
         PriceHistory(
+            provenance="human",
             product_id=product.id,
             province_id=province.id if province else None,
             price=Decimal(price),

@@ -490,6 +490,7 @@ class TestEnlaceDeEvidenciaEnLaSerie:
     ) -> None:
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=product.id,
                 province_id=province.id,
                 price=Decimal("300"),

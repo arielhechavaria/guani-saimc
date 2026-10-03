@@ -6,6 +6,9 @@ resultado de las seis reglas, `validation_status` y `confidence_score`, y por
 anuncio el carril con sus motivos. No consulta la base, no llama a ningún
 proveedor y no escribe nada: eso es de quien lo llama (A5c, B1, B2).
 
+`validate_stored_row` (B1) aplica las mismas seis reglas a UNA fila ya guardada
+en `prices_history`, sin propuesta del modelo y sin decidir carril.
+
 Contrato: `docs/spec-motor-validacion.md`. Las precisiones que obligó la
 implementación están en `docs/decisions.md` (2026-10-02, «A5b»).
 
@@ -21,6 +24,8 @@ from __future__ import annotations
 
 import math
 import uuid
+from collections.abc import Sequence
+from datetime import datetime
 
 from saimc.extraction.engine import ExtractionProposal, mentions_any_product
 from saimc.extraction.llm_checks import COINCIDE, RowAgreement, RowMeta, compare_with_rules
@@ -34,13 +39,21 @@ from saimc.validation.types import (
     SIGNAL_FIELDS,
     AdContext,
     AdValidation,
+    ChannelContext,
     ExternalSignal,
     Outcome,
+    RecentRow,
     RowContext,
     RowValidation,
     ValidationConfig,
     ValidationStatus,
 )
+
+#: Versión del motor. Se guarda en cada fila validada
+#: (`prices_history.validation_detail`) para saber con qué reglas se la miró.
+#: Se sube A MANO cuando cambian las reglas, el orden de los estados o el cerco
+#: (`fence.py`); después se corre `python -m saimc.validation.revalidate`.
+ENGINE_VERSION = "2026-10-03.1"
 
 #: Los únicos motivos de descarte del modelo que habilitan el carril 0.
 _LANE_0_REASONS = frozenset({DiscardReason.OFF_FOCUS.value, DiscardReason.NO_DATA.value})
@@ -135,6 +148,64 @@ def _verification_reasons(
     return reasons
 
 
+def _rule_outcomes(
+    row: ExtractionProposal,
+    row_ctx: RowContext,
+    *,
+    published_at: datetime,
+    channel: ChannelContext | None,
+    pilot_ids: frozenset[uuid.UUID],
+    province_ids: frozenset[uuid.UUID],
+    recent_channel_rows: Sequence[RecentRow],
+    min_cell_n: int | None,
+    channel_min_history: int | None,
+    channel_max_edit_rate: float | None,
+) -> dict[str, Outcome]:
+    """Las seis reglas sobre una fila. Lo comparten la fila de una propuesta
+    (`_validate_row`) y la fila ya guardada (`validate_stored_row`)."""
+    quantity_price = rules.check_quantity_price(
+        row, price_cup=row_ctx.price_cup, cell=row_ctx.cell, min_cell_n=min_cell_n
+    )
+    # Un dict conserva el orden de inserción: es el orden de las claves del JSON.
+    return {
+        "structure": rules.check_structure(row, pilot_ids=pilot_ids),
+        "price": rules.check_price(
+            row,
+            price_cup=row_ctx.price_cup,
+            cell=row_ctx.cell,
+            min_cell_n=min_cell_n,
+            quantity_price=quantity_price,
+        ),
+        "location": rules.check_location(row, province_ids=province_ids, channel=channel),
+        "trust": rules.check_trust(
+            channel, min_history=channel_min_history, max_edit_rate=channel_max_edit_rate
+        ),
+        "duplicate": rules.check_duplicate(
+            row, published_at=published_at, recent_rows=recent_channel_rows
+        ),
+        "quantity_price": quantity_price,
+    }
+
+
+def _row_validation(
+    outcomes: dict[str, Outcome], verification_reasons: list[str]
+) -> RowValidation:
+    """Arma el resultado de una fila: estado, puntaje y motivos. La fila está
+    verificada si no trae ningún motivo de verificación."""
+    reasons = verification_reasons + [
+        _RULE_REASONS[name][outcome]
+        for name, outcome in outcomes.items()
+        if outcome is not Outcome.PASS
+    ]
+    passed = sum(1 for o in outcomes.values() if o is Outcome.PASS)
+    return RowValidation(
+        **outcomes,
+        status=_status(outcomes, verified=not verification_reasons),
+        confidence_score=round(100 * passed / len(outcomes)),
+        reasons=tuple(reasons),
+    )
+
+
 def _validate_row(
     row: ExtractionProposal,
     meta: RowMeta,
@@ -144,47 +215,65 @@ def _validate_row(
     config: ValidationConfig | None,
     pilot_ids: frozenset[uuid.UUID],
 ) -> RowValidation:
-    min_cell_n = None if config is None else config.min_cell_n
-    quantity_price = rules.check_quantity_price(
-        row, price_cup=row_ctx.price_cup, cell=row_ctx.cell, min_cell_n=min_cell_n
+    outcomes = _rule_outcomes(
+        row,
+        row_ctx,
+        published_at=ctx.published_at,
+        channel=ctx.channel,
+        pilot_ids=pilot_ids,
+        province_ids=ctx.province_ids,
+        recent_channel_rows=ctx.recent_channel_rows,
+        min_cell_n=None if config is None else config.min_cell_n,
+        channel_min_history=None if config is None else config.channel_min_history,
+        channel_max_edit_rate=None if config is None else config.channel_max_edit_rate,
     )
-    # Un dict conserva el orden de inserción: es el orden de las claves del JSON.
-    outcomes: dict[str, Outcome] = {
-        "structure": rules.check_structure(row, pilot_ids=pilot_ids),
-        "price": rules.check_price(
-            row,
-            price_cup=row_ctx.price_cup,
-            cell=row_ctx.cell,
-            min_cell_n=min_cell_n,
-            quantity_price=quantity_price,
-        ),
-        "location": rules.check_location(
-            row, province_ids=ctx.province_ids, channel=ctx.channel
-        ),
-        "trust": rules.check_trust(
-            ctx.channel,
-            min_history=None if config is None else config.channel_min_history,
-            max_edit_rate=None if config is None else config.channel_max_edit_rate,
-        ),
-        "duplicate": rules.check_duplicate(
-            row, published_at=ctx.published_at, recent_rows=ctx.recent_channel_rows
-        ),
-        "quantity_price": quantity_price,
-    }
-    reasons = _verification_reasons(row, meta, agreement)
-    verified = not reasons
-    reasons += [
-        _RULE_REASONS[name][outcome]
-        for name, outcome in outcomes.items()
-        if outcome is not Outcome.PASS
-    ]
-    passed = sum(1 for o in outcomes.values() if o is Outcome.PASS)
-    return RowValidation(
-        **outcomes,
-        status=_status(outcomes, verified=verified),
-        confidence_score=round(100 * passed / len(outcomes)),
-        reasons=tuple(reasons),
+    return _row_validation(outcomes, _verification_reasons(row, meta, agreement))
+
+
+def validate_stored_row(
+    row: ExtractionProposal,
+    row_ctx: RowContext,
+    *,
+    published_at: datetime,
+    channel: ChannelContext | None,
+    pilot_ids: frozenset[uuid.UUID],
+    province_ids: frozenset[uuid.UUID],
+    recent_channel_rows: Sequence[RecentRow] = (),
+    verified: bool,
+    min_cell_n: int,
+    channel_min_history: int | None = None,
+    channel_max_edit_rate: float | None = None,
+) -> RowValidation:
+    """Valida UNA fila ya guardada en `prices_history` (slice B1).
+
+    `validate_ad` valida la propuesta del modelo; esto valida lo que quedó
+    después de que el operador corrigió, agregó o borró: no necesita propuesta.
+    Aplica las mismas seis reglas y el mismo orden de estados, y **no decide
+    carril**: el carril es del anuncio y de su propuesta.
+
+    - `row`: la fila guardada, con la forma que leen las reglas (quien llama la
+      arma desde `prices_history`; ver `validation.persist`).
+    - `row_ctx`: su celda y su `price_cup` (el que quedó guardado en la fila).
+    - `verified`: si alguien miró la fila. Una fila con `provenance = human`
+      cuenta como verificada; sin eso nunca sale `approved`.
+    - `min_cell_n`: gobierna cuándo opinan las reglas 2 y 6.
+    - `channel_min_history` y `channel_max_edit_rate`: los dos de la regla 4.
+      Si falta alguno la regla queda en `unknown`, y ninguna fila sale
+      `approved`.
+    """
+    outcomes = _rule_outcomes(
+        row,
+        row_ctx,
+        published_at=published_at,
+        channel=channel,
+        pilot_ids=pilot_ids,
+        province_ids=province_ids,
+        recent_channel_rows=recent_channel_rows,
+        min_cell_n=min_cell_n,
+        channel_min_history=channel_min_history,
+        channel_max_edit_rate=channel_max_edit_rate,
     )
+    return _row_validation(outcomes, [] if verified else ["la fila no está verificada"])
 
 
 def _extracted_value(row: ExtractionProposal, field: str) -> object:

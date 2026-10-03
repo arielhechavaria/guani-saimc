@@ -37,7 +37,7 @@ qué orden se pueden integrar. Los dos cortes conviven; ninguno reemplaza al otr
 | 02 | Curaduría | Construido | — |
 | 03 | Extracción | Techo medido (43,5%) | El OCR, no las reglas |
 | 04 | Normalización y comparabilidad | Parcial | `price_basis` histórico |
-| 05 | Validación | **Ausente** | — |
+| 05 | Validación | Parcial | — |
 | 06 | Reputación de fuentes | **Ausente** | Falta el modelo (H-23) |
 | 07 | Antimanipulación C1–C4 | Solo C2 | — |
 | 08 | Conversión monetaria | Construido | — |
@@ -272,11 +272,16 @@ Decisiones que lo modifican:
 
 # Grupo 2 — Calidad y confianza
 
-## 05 · Validación — **ausente**
+## 05 · Validación — parcial
 
-**Hoy:** el motor de §6.2 no existe. La columna `confidence_score` está en el
-esquema con su CHECK 0-100 y poblada en cero filas. Las seis reglas están
-especificadas y ninguna corre. Es ítem Todo del board desde el 2026-08-10.
+**Hoy:** el motor de §6.2 existe (`saimc/validation/`, slices A5a a A5c) y desde
+B1 (2026-10-03) corre al curar y al editar: cada fila de `prices_history` guarda
+`validation_status`, `confidence_score`, el detalle por regla y su procedencia
+(`docs/spec-slice-B1.md`). Corren las seis reglas, con `min_cell_n = 5` para la 2
+y la 6; la 4 no tiene parámetros todavía (G1b), así que da `unknown` y ninguna
+fila sale `approved`. El motor describe, no decide: ningún carril usa lo guardado.
+Lo único automático es el descarte del carril 0 (B2a). Las filas anteriores a B1
+se validan con `python -m saimc.validation.revalidate`.
 
 | Id | Requisito | Fuente | Fase | Fuerza |
 | --- | --- | --- | --- | --- |

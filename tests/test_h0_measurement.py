@@ -126,6 +126,7 @@ def _curar_texto(
     session.flush()
     session.add(
         PriceHistory(
+            provenance="human",
             product_id=product_id,
             province_id=province_id,
             price=Decimal(price),
@@ -166,6 +167,7 @@ def _curar_imagen(
     session.flush()
     session.add(
         PriceHistory(
+            provenance="human",
             product_id=product_id,
             province_id=province_id,
             price=Decimal(price),
@@ -381,6 +383,7 @@ class TestH0UmbralEnAnuncios:
         for precio, cantidad in (("500", "40"), ("300", "20"), ("150", "10")):
             session.add(
                 PriceHistory(
+                    provenance="human",
                     product_id=pollo.id,
                     province_id=habana.id,
                     price=Decimal(precio),
@@ -526,6 +529,7 @@ class TestH0ReportMultiProducto:
         # en las cuatro métricas.
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=pollo.id,
                 province_id=habana.id,
                 price=Decimal("30"),
@@ -540,6 +544,7 @@ class TestH0ReportMultiProducto:
         # Producto correcto, precio incorrecto.
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=picadillo.id,
                 province_id=habana.id,
                 price=Decimal("999"),
@@ -557,6 +562,7 @@ class TestH0ReportMultiProducto:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=arroz.id,
                 province_id=habana.id,
                 price=Decimal("10"),
@@ -639,6 +645,7 @@ class TestH0ProvinciaDelCanal:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=pollo.id,
                 province_id=habana.id,
                 price=Decimal("500"),
@@ -698,6 +705,7 @@ class TestH0ProvinciaDelCanal:
         for price, quantity in (("500", "40"), ("14", "1")):
             session.add(
                 PriceHistory(
+                    provenance="human",
                     product_id=pollo.id,
                     province_id=habana.id,
                     price=Decimal(price),
@@ -1005,6 +1013,7 @@ class TestH0EmparejadoAmbiguo:
         # Fila 1: matchea por producto con la línea 1. Correcta en todo.
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=pollo.id,
                 province_id=habana.id,
                 price=Decimal("500"),
@@ -1020,6 +1029,7 @@ class TestH0EmparejadoAmbiguo:
         # sin que el extractor haya extraído nada para esta fila.
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=frijol.id,
                 province_id=habana.id,
                 price=Decimal("777"),
@@ -1068,6 +1078,7 @@ class TestH0EmparejadoAmbiguo:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=pollo.id,
                 province_id=habana.id,
                 price=Decimal("500"),
@@ -1129,6 +1140,7 @@ class TestH0EmparejadoMismoProductoVariasFilas:
         # 700/kg se compara contra el candidato de 30000/lb y viceversa.
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=arroz.id,
                 province_id=habana.id,
                 price=Decimal("700"),
@@ -1140,6 +1152,7 @@ class TestH0EmparejadoMismoProductoVariasFilas:
         )
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=arroz.id,
                 province_id=habana.id,
                 price=Decimal("30000"),
@@ -1180,6 +1193,7 @@ class TestH0EmparejadoMismoProductoVariasFilas:
         session.flush()
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=arroz.id,
                 province_id=habana.id,
                 price=Decimal("30000"),
@@ -1191,6 +1205,7 @@ class TestH0EmparejadoMismoProductoVariasFilas:
         )
         session.add(
             PriceHistory(
+                provenance="human",
                 product_id=arroz.id,
                 province_id=habana.id,
                 price=Decimal("700"),

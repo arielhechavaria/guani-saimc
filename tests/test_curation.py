@@ -155,6 +155,7 @@ def _crear_precio_curado(
     estado de partida.
     """
     precio = PriceHistory(
+        provenance="human",
         product_id=product.id,
         province_id=province.id if province else None,
         price=Decimal(price),
@@ -1273,7 +1274,13 @@ class TestCurationSubmit:
         assert precio.source_id == ingestion.id
         assert precio.product_id == producto.id
         assert precio.price == Decimal("450")
-        assert precio.confidence_score is None
+        # B1: la fila nace validada y con procedencia humana. Sin provincia
+        # falla la regla 1 (`incomplete`, caso 4 de `docs/spec-slice-B1.md`) y
+        # la 3; sin celda ni canal, la 2, la 4 y la 6 no opinan: solo pasa la
+        # 5 (no hay duplicado), una regla de seis.
+        assert precio.provenance == "human"
+        assert precio.validation_status == "incomplete"
+        assert precio.confidence_score == 17
         assert precio.price_cup is None
 
     def test_no_persiste_telefonos_del_texto_transcrito(
