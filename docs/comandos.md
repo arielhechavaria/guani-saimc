@@ -28,7 +28,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`systemctl` / `journalctl`](#temporizadores-y-servicios) | Estado, logs, frenar temporizadores | solo si frenás | no |
 | [`saimc.validation.revalidate --execute`](#revalidar-escribiendo) | Re-guardar estado de las filas | sí: `prices_history` | no |
 | [`saimc.basis_backfill --apply`](#backfill-de-base-de-precio) | Completar `price_basis` viejo | sí | no |
-| [`saimc.exchange_rate.backfill --apply`](#backfill-de-tasas-de-cambio) | Completar tasas pendientes | sí | no (sin verificar) |
+| [`saimc.exchange_rate.backfill --apply`](#backfill-de-tasas-de-cambio) | Completar tasas pendientes | sí | no; consulta la API de elTOQUE |
 | [`scripts/redact_existing.py --apply`](#redactar-teléfonos-ya-guardados) | Quitar teléfonos del texto guardado | sí: `original_text` | no |
 | [`scripts/add_focus_aliases.py --apply`](#alias-del-foco) | Agregar alias al catálogo del foco | sí: productos | no |
 | [`saimc.extraction.llm_backtest`](#backtest-del-asistente) | Backtest del asistente contra lo curado | `--execute` escribe archivos | `--execute` sí |
@@ -404,8 +404,8 @@ sudo systemctl daemon-reload
 - **Para qué**: completa las tasas de cambio pendientes. Es idempotente.
 - **Cuándo**: cuando haya filas sin tasa. Sin `--apply` solo imprime lo que haría; `--limit N`
   acota cuántas filas procesa. Después, [revalidar](#revalidar-escribiendo).
-- **Cambia algo**: solo con `--apply`. **Gasta**: **sin verificar**: no se leyó si consulta una
-  fuente externa; mirá el código antes de correrlo en masa.
+- **Cambia algo**: solo con `--apply`. **Gasta**: no cuesta plata, pero consulta la API de
+  elTOQUE (una llamada por tasa y día que falte), con el token `SAIMC_EL_TOQUE_API` del `.env`.
 
 ### Redactar teléfonos ya guardados
 
