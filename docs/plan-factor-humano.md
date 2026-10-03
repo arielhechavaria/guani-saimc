@@ -248,6 +248,15 @@ Lo que aparezca fuera del slice en curso se anota acá, no se hace.
 - Guardar las filas caídas (`dropped`) de `llm_proposals`: hoy se recalculan contra
   el catálogo de hoy. A5c se lo había pedido a B1; es una entrada del carril 1, no
   de la validación de una fila guardada. Para B2b (visto en B1, 2026-10-03).
+- **Importante, sin prioridad hoy: la regla 5 (duplicado) es gruesa para grupos.**
+  La primera revalidación marcó 92 de 368 filas como `possible_duplicate` (25%).
+  La regla compara por canal, no por vendedor, y solo mira producto, provincia y
+  precio: no ve cantidad, unidad ni formato. En un grupo, dos vendedores con el
+  precio del día se marcan entre sí. Falta medir cuántos de los 92 son reenvíos
+  del mismo vendedor. Afinarla toca el motor (especificación propia) y necesita el
+  emisor de B5. Hay que resolverlo antes de G1b: tal como está, esas filas irían
+  siempre a revisión y el carril 1 perdería un cuarto del volumen. Además, en
+  `/control` el estado tapa a `unverified` (visto al revalidar B1, 2026-10-03).
 
 ---
 
