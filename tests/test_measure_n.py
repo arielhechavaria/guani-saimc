@@ -82,6 +82,45 @@ class TestPrintReport:
         assert "No fija N" in text
 
 
+class TestTamanoDeLasCeldas:
+    """Con o sin celdas medibles, el informe dice cuán grandes son las mayores."""
+
+    def test_sin_celda_medible_igual_informa_las_cinco_mayores(self) -> None:
+        lines: list[str] = []
+        print_report(
+            [], total_cells=7, cell_sizes=[3, 14, 7, 9, 1, 9, 11], out=lines.append
+        )
+
+        assert lines[1].endswith("Celdas en la ventana: 7.")
+        assert lines[2] == (
+            "La celda más grande tiene 14 filas. Las cinco mayores: 14, 11, 9, 9, 7."
+        )
+        assert "Ninguna celda llega a 20 filas" in lines[3]
+
+    def test_con_celdas_medibles_tambien_lo_informa_antes_del_resto(self) -> None:
+        lines: list[str] = []
+        print_report(
+            measure([VARIED]), total_cells=2, cell_sizes=[20, 4], out=lines.append
+        )
+
+        assert lines[2] == (
+            "La celda más grande tiene 20 filas. Las cinco mayores: 20, 4."
+        )
+        assert lines[3].startswith("Celdas con 20 filas o más: 1.")
+
+    def test_con_una_sola_celda_de_una_fila_usa_el_singular(self) -> None:
+        lines: list[str] = []
+        print_report([], total_cells=1, cell_sizes=[1], out=lines.append)
+
+        assert lines[2] == "La celda más grande tiene 1 fila. Las cinco mayores: 1."
+
+    def test_sin_celdas_no_inventa_un_tamano(self) -> None:
+        lines: list[str] = []
+        print_report([], total_cells=0, cell_sizes=[], out=lines.append)
+
+        assert not any("La celda más grande" in line for line in lines)
+
+
 class TestExecute:
     """El comando contra la base: lee las celdas públicas y no escribe nada."""
 

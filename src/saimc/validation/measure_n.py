@@ -107,10 +107,21 @@ def _pct(value: float) -> str:
 
 
 def print_report(
-    results: Sequence[SizeResult], *, total_cells: int, out: Callable[[str], None]
+    results: Sequence[SizeResult],
+    *,
+    total_cells: int,
+    cell_sizes: Sequence[int] = (),
+    out: Callable[[str], None],
 ) -> None:
     out("Estabilidad de la mediana frente al tamaño de muestra (spec.md §12.6).")
     out(f"Ventana pública: últimos {DEFAULT_WINDOW_DAYS} días. Celdas en la ventana: {total_cells}.")
+    if cell_sizes:
+        mayores = sorted(cell_sizes, reverse=True)[:5]
+        filas = "fila" if mayores[0] == 1 else "filas"
+        out(
+            f"La celda más grande tiene {mayores[0]} {filas}. "
+            f"Las cinco mayores: {', '.join(str(n) for n in mayores)}."
+        )
     if not results:
         out(
             f"Ninguna celda llega a {MIN_CELL_ROWS} filas en la ventana: "
@@ -136,7 +147,12 @@ def print_report(
 def execute(session: Session, *, out: Callable[[str], None] = print) -> int:
     """Corre la medición y la imprime. Devuelve el código de salida."""
     cells = load_cells(session)
-    print_report(measure(cells), total_cells=len(cells), out=out)
+    print_report(
+        measure(cells),
+        total_cells=len(cells),
+        cell_sizes=[len(prices) for prices in cells],
+        out=out,
+    )
     return 0
 
 

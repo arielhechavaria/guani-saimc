@@ -1166,6 +1166,8 @@ solo falso descarte auditado la cruza.
 Era G1. La decisión del carril 0 pasó a G1a.
 
 
+**Insumo pendiente (2026-10-03):** `measure_n` corrió en producción y no pudo medir N: 36 celdas en la ventana de 30 días y ninguna llega a 20 filas. N sigue sin fijar (§12.6). Se vuelve a correr cuando las celdas más activas tengan volumen.
+
 **Qué se lleva.** A2d (horas semana a semana), A5c con el n de la especificación y,
 si hubo, A6 y el informe de sombra con Jev de A6b. Si Jev entra en algún carril, sus
 umbrales se fijan acá con su n.
