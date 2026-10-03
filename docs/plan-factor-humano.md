@@ -75,7 +75,7 @@ misma sesión. El candidato más probable es A1b.
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | PENDIENTE |
 | **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | CERRADO (2026-10-03) |
 | **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
-| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | PENDIENTE |
+| B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | ABIERTO |
 | B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | PENDIENTE |
 | B2c | Freno automático del carril 1 | M | B2b | Opus | PENDIENTE |
 | B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
@@ -1096,7 +1096,9 @@ umbrales se fijan acá con su n.
 por debajo de la meta, con el n de la especificación. Si no se llega, se sigue
 acumulando o se estrecha el carril.
 
-### B2a — Carril 0 encendido: descarte automático con auditoría — PENDIENTE
+### B2a — Carril 0 encendido: descarte automático con auditoría — ABIERTO
+
+Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de programar).
 
 **Qué entra.**
 - Con `SAIMC_LANE0_ENABLED` (apagado por defecto), el pre-cálculo aplica el carril 0
