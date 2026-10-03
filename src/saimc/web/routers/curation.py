@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -80,7 +81,7 @@ from saimc.extraction.llm_propose_ad import (
     record_operator_run,
 )
 from saimc.formats import format_label, format_quantity, get_or_create_format
-from saimc.glossary import active_glossary_entries
+from saimc.glossary import active_glossary_entries, validate_rule
 from saimc.ingestion import origin
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.models import (
@@ -880,6 +881,9 @@ def _render_queue(
     evidence_segments: list[tuple[str, bool]] | None = None,
     proposal_id: str | None = None,
     note: str = "",
+    rule_term: str = "",
+    rule_definition: str = "",
+    rule_added: str = "",
     accept_ready: bool = False,
     shown_at: str | None = None,
 ) -> HTMLResponse:
@@ -909,6 +913,11 @@ def _render_queue(
             # operador. Sin propuesta no hay oculto ni campo de nota.
             "proposal_id": proposal_id,
             "note": note,
+            # A3c: lo que el operador escribió en «Guardar como regla» (se
+            # conserva si el guardado falla) y el término recién agregado.
+            "rule_term": rule_term,
+            "rule_definition": rule_definition,
+            "rule_added": rule_added,
             # Cuándo se le mostró esta fila al operador (slice 5). `None` en
             # el reintento con error de validación: ese caso no vuelve a
             # calcular "ahora", conserva lo que ya venía (ver más abajo).
@@ -1121,6 +1130,7 @@ def curation_queue(
     unconverted: int = 0,
     pasted: int = 0,
     id: str | None = None,
+    rule_added: str = "",
 ) -> HTMLResponse:
     """Muestra el elemento `pending` más antiguo, con propuesta pre-llenada si hay texto.
 
@@ -1151,7 +1161,12 @@ def curation_queue(
     `discard_out_of_focus` cuando un id del lote ya no califica).
     """
     return _curation_view(
-        request, db, unconverted=unconverted, pasted=pasted, focus_id=_parse_uuid(id or "")
+        request,
+        db,
+        unconverted=unconverted,
+        pasted=pasted,
+        focus_id=_parse_uuid(id or ""),
+        rule_added=rule_added,
     )
 
 
@@ -1184,6 +1199,7 @@ def _curation_view(
     *,
     unconverted: int = 0,
     pasted: int = 0,
+    rule_added: str = "",
     assist_ingestion_id: uuid.UUID | None = None,
     focus_id: uuid.UUID | None = None,
     shown_at: str | None = None,
@@ -1373,6 +1389,7 @@ def _curation_view(
         format_options=_format_options(db),
         unconverted=unconverted,
         pasted=pasted,
+        rule_added=rule_added,
         # `proposals` es la salida cruda de `propose_all`, antes del filtro
         # por foco de más arriba: vacía significa que no encontró NI producto
         # NI precio en ningún renglón del anuncio entero (docs/decisions.md,
@@ -2188,6 +2205,11 @@ async def submit_curation(
     # Slice 3a: la propuesta que el operador tenía a la vista y su nota.
     proposal_id_raw = str(form.get("proposal_id", "")).strip()
     note = str(form.get("note", ""))
+    # A3c: una regla del glosario que viaja con el guardado. Con los dos
+    # campos vacíos no pasa nada; con uno solo, es un error de esta request.
+    rule_term_raw = str(form.get("rule_term", ""))
+    rule_definition_raw = str(form.get("rule_definition", ""))
+    rule, rule_error = validate_rule(rule_term_raw, rule_definition_raw)
     # Slice 5: cuándo se le mostró la fila (viaja oculto, ver `_curation_view`).
     # Un valor vacío o mal formado no bloquea el guardado — se guarda `None` y
     # esa fila queda afuera de la métrica de tiempo por decisión.
@@ -2201,6 +2223,8 @@ async def submit_curation(
     errors: list[str] = []
     if published_date_error is not None:
         errors.append(published_date_error)
+    if rule_error is not None:
+        errors.append(rule_error)
     typed_rows: list[dict[str, str]] = []
     entries_to_create: list[PriceHistory] = []
     # `proposal_row` de cada fila que se guarda, en el mismo orden.
@@ -2298,6 +2322,8 @@ async def submit_curation(
             # Sin los ocultos, el segundo intento se guardaría sin captura.
             proposal_id=proposal_id_raw or None,
             note=note,
+            rule_term=rule_term_raw,
+            rule_definition=rule_definition_raw,
             # Conserva el momento en que se mostró la fila la primera vez, no
             # el de este reintento: el operador ya venía decidiendo desde
             # antes de este submit fallido.
@@ -2374,9 +2400,18 @@ async def submit_curation(
         proposal_id=proposal.id if proposal is not None else None,
         detail={"row_count": len(entries_to_create)},
     )
+    # A3c: la regla entra al glosario en la misma transacción. Un término
+    # repetido no se rechaza: `/catalog` tampoco lo hace.
+    if rule is not None:
+        db.add(GlossaryEntry(term=rule[0], definition=rule[1]))
     db.commit()
 
-    redirect_url = f"/curation?unconverted={unconverted}" if unconverted else "/curation"
+    params: dict[str, str] = {}
+    if unconverted:
+        params["unconverted"] = str(unconverted)
+    if rule is not None:
+        params["rule_added"] = rule[0]
+    redirect_url = "/curation" + (f"?{urlencode(params)}" if params else "")
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
 
 

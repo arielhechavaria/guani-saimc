@@ -66,7 +66,7 @@ misma sesión. El candidato más probable es A1b.
 | A5a | Motor de validación §6.2 y carriles: especificación | L | A2c | Opus | CERRADO (2026-10-02) |
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | CERRADO (2026-10-02) |
 | A5c | Informe del modo sombra | M | A5b | Opus | CERRADO (2026-10-02) |
-| A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | PENDIENTE |
+| A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | CERRADO (2026-10-03) |
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE |
 | A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | PENDIENTE |
 | A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | PENDIENTE |
@@ -248,6 +248,10 @@ Lo que aparezca fuera del slice en curso se anota acá, no se hace.
 - Guardar las filas caídas (`dropped`) de `llm_proposals`: hoy se recalculan contra
   el catálogo de hoy. A5c se lo había pedido a B1; es una entrada del carril 1, no
   de la validación de una fila guardada. Para B2b (visto en B1, 2026-10-03).
+- Un término repetido en el glosario (desde `/catalog` o desde la cola) crea dos
+  entradas y las dos se inyectan en el prompt. A3c no lo cambió; avisarle al
+  operador al guardar un término que ya existe sería un slice aparte (visto en A3c,
+  2026-10-03).
 - **Importante, sin prioridad hoy: la regla 5 (duplicado) es gruesa para grupos.**
   La primera revalidación marcó 92 de 368 filas como `possible_duplicate` (25%).
   La regla compara por canal, no por vendedor, y solo mira producto, provincia y
@@ -831,7 +835,7 @@ del carril 0.
 
 ---
 
-### A3c — «Guardar como regla» desde la cola — PENDIENTE
+### A3c — «Guardar como regla» desde la cola — CERRADO (2026-10-03)
 
 **Objetivo.** Que una convención se capture en el momento en que aparece.
 - Hoy el glosario solo se edita en `/catalog`.
@@ -851,6 +855,14 @@ del carril 0.
 `/catalog`.
 
 **`decisions.md`.** Sí.
+
+**Cierre.** Una tarjeta plegada «Guardar como regla» dentro del formulario de curar
+(`/curation`), con «Término» y «Qué significa», también cuando no hay propuesta del
+modelo. Viaja con el «Guardar» del anuncio y crea una entrada activa del glosario en
+la misma transacción, con teléfonos redactados. Con uno solo de los dos campos, el
+guardado se rechaza (422) y la tarjeta vuelve abierta con lo escrito. No está en la
+pantalla de edición ni en el descarte. Un término repetido no se rechaza, igual que
+en `/catalog`.
 
 ---
 

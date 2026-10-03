@@ -13,6 +13,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,6 +31,7 @@ from saimc.models import (
     CurationEvent,
     Currency,
     DiscardReason,
+    GlossaryEntry,
     LlmProposal,
     LlmReview,
     Platform,
@@ -6006,6 +6008,24 @@ class TestAsistenteLLM:
 
         assert f'formaction="/curation/{ingestion.id}/discard"' in html
 
+    def test_con_propuesta_la_tarjeta_de_regla_tambien_esta(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A3c: a diferencia de la nota, la regla no depende de la propuesta."""
+        ingestion = self._pendiente(session)
+        self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
+
+        html = client.post(f"/curation/{ingestion.id}/assist").text
+
+        assert 'name="proposal_id"' in html
+        assert "Guardar como regla" in html
+        assert 'name="rule_term"' in html
+        assert 'name="rule_definition"' in html
+
     def test_caso9_la_nota_se_guarda_con_los_telefonos_redactados(
         self,
         client: TestClient,
@@ -8090,3 +8110,157 @@ class TestLoteImagenesDiscard:
         assert re.search(r'name="shown_at" value="[^"]+"', formulario.group(0))
         # Los ids viajan en las casillas, no como ocultos: lo desmarcado no viaja.
         assert 'type="hidden" name="ingestion_id"' not in formulario.group(0)
+
+
+class TestGuardarComoRegla:
+    """A3c: una regla del glosario viaja con el «Guardar» del anuncio."""
+
+    def _post(
+        self, client: TestClient, session: Session, **extra: str
+    ) -> tuple[RawIngestion, Any]:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_=f"hash-regla-{uuid.uuid4()}")
+        datos = _form_curar(ingestion, producto)
+        datos.update(extra)
+        return ingestion, client.post(
+            f"/curation/{ingestion.id}", data=datos, follow_redirects=False
+        )
+
+    def _entradas(self, session: Session) -> list[GlossaryEntry]:
+        session.expire_all()
+        return list(session.execute(select(GlossaryEntry)).scalars())
+
+    def test_con_los_dos_campos_crea_una_entrada_activa_y_cura(
+        self, client: TestClient, session: Session
+    ) -> None:
+        ingestion, response = self._post(
+            client, session, rule_term="4x10", rule_definition="4 paquetes de 10 lb"
+        )
+
+        assert response.status_code == 303
+        (entrada,) = self._entradas(session)
+        assert entrada.term == "4x10"
+        assert entrada.definition == "4 paquetes de 10 lb"
+        assert entrada.active is True
+        session.expire_all()
+        assert session.get(RawIngestion, ingestion.id).processing_status == (  # type: ignore[union-attr]
+            ProcessingStatus.CURATED
+        )
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 1
+
+    def test_el_aviso_de_exito_nombra_la_regla(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _, response = self._post(
+            client, session, rule_term="4x10", rule_definition="4 paquetes de 10 lb"
+        )
+
+        destino = response.headers["location"]
+        html = client.get(destino).text
+        assert "Anuncio guardado." in html
+        assert "«4x10» agregado al glosario." in html
+
+    def test_sin_regla_el_destino_es_el_de_siempre(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _, response = self._post(client, session)
+
+        assert response.headers["location"] == "/curation"
+
+    def test_la_definicion_se_guarda_sin_telefonos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._post(
+            client,
+            session,
+            rule_term="4x10",
+            rule_definition="4 de 10 lb, llamar al 55512345",
+        )
+
+        (entrada,) = self._entradas(session)
+        assert "55512345" not in entrada.definition
+
+    def test_el_termino_se_guarda_sin_telefonos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._post(
+            client,
+            session,
+            rule_term="4x10 tel 55512345",
+            rule_definition="4 paquetes de 10 lb",
+        )
+
+        (entrada,) = self._entradas(session)
+        assert "55512345" not in entrada.term
+
+    @pytest.mark.parametrize(
+        ("term", "definition", "mensaje"),
+        [
+            ("4x10", "", "Para guardar la regla falta qué significa"),
+            ("", "4 paquetes de 10 lb", "Para guardar la regla falta el término."),
+            ("x" * 121, "algo", "El término no puede pasar de 120 caracteres."),
+        ],
+    )
+    def test_regla_incompleta_rechaza_todo_el_guardado(
+        self,
+        client: TestClient,
+        session: Session,
+        term: str,
+        definition: str,
+        mensaje: str,
+    ) -> None:
+        ingestion, response = self._post(
+            client, session, rule_term=term, rule_definition=definition
+        )
+
+        assert response.status_code == 422
+        assert mensaje in response.text
+        # Lo escrito se conserva y la tarjeta vuelve abierta.
+        assert 'name="rule_term"' in response.text
+        assert re.search(r'<details[^>]*id="regla"[^>]* open', response.text)
+        if term:
+            assert f'value="{term}"' in response.text
+        if definition:
+            assert definition in response.text
+        assert self._entradas(session) == []
+        assert list(session.execute(select(PriceHistory)).scalars()) == []
+        assert _eventos(session) == []
+        session.expire_all()
+        assert session.get(RawIngestion, ingestion.id).processing_status == (  # type: ignore[union-attr]
+            ProcessingStatus.PENDING
+        )
+
+    def test_con_los_dos_vacios_no_se_crea_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _, response = self._post(client, session, rule_term="  ", rule_definition="")
+
+        assert response.status_code == 303
+        assert self._entradas(session) == []
+
+    def test_get_muestra_la_tarjeta_sin_propuesta_y_cerrada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _crear_producto(session)
+        _crear_raw_ingestion(session, hash_="hash-regla-get")
+
+        html = client.get("/curation").text
+
+        assert "Guardar como regla" in html
+        assert 'name="rule_term"' in html
+        assert 'name="rule_definition"' in html
+        assert not re.search(r'<details[^>]*id="regla"[^>]* open', html)
+
+    def test_la_pantalla_de_edicion_no_la_muestra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session)
+        ingestion = _crear_raw_ingestion(session, hash_="hash-regla-edit")
+        ingestion.processing_status = ProcessingStatus.CURATED
+        session.commit()
+        _crear_precio_curado(session, ingestion=ingestion, product=producto)
+
+        html = client.get(f"/curation/{ingestion.id}/edit").text
+
+        assert "Guardar como regla" not in html
+        assert 'name="rule_term"' not in html

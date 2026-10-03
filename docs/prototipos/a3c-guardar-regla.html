@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="es">
+<!--
+  A3c — Prototipo de «Guardar como regla» en la cola (plan-factor-humano.md, A3c).
+  Estático, sin backend: datos inventados. Usa la hoja real (`saimc-material.css`)
+  para que lo aprobado sea lo que se programa.
+  Estados: (sin parámetro) plegada · ?estado=abierta · ?estado=guardada (aviso
+  después de guardar el anuncio con una regla).
+  Propuesta: una tarjeta plegada debajo de «Nota para el asistente», dentro del
+  mismo formulario de curar. Término y definición viajan con «Guardar»; con los
+  dos vacíos no pasa nada. Está también cuando no hay propuesta del modelo.
+-->
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — Curar · Guardar como regla (prototipo A3c)</title>
+  <link href="../../src/saimc/web/static/saimc-material.css" rel="stylesheet" />
+</head>
+<body>
+<div class="m3-shell">
+
+  <nav class="m3-topnav" aria-label="Secciones">
+    <span class="m3-topnav-brand">SA</span>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">inventory_2</span><span>Catálogo</span></a>
+    <a class="m3-topnav-item is-active" href="#" aria-current="page"><span class="m3-icon">fact_check</span><span>Curaduría</span></a>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">monitoring</span><span>Control</span></a>
+  </nav>
+
+  <main class="m3-main">
+    <header class="m3-topbar">
+      <div class="m3-topbar-row">
+        <div class="m3-topbar-main">
+          <div class="m3-kicker">SAIMC · Fase 0</div>
+          <h1 class="m3-title">Curaduría</h1>
+        </div>
+      </div>
+      <nav class="m3-tabs" aria-label="Vistas de curaduría">
+        <a class="m3-tab is-active" href="#" aria-current="page">Curar</a>
+        <a class="m3-tab" href="#">Cola</a>
+        <a class="m3-tab" href="#">Historial</a>
+        <a class="m3-tab" href="#">Sin foco</a>
+      </nav>
+    </header>
+
+    <div class="m3-content">
+      <div class="m3-stack" style="gap:16px">
+
+        <section class="m3-card m3-card-pad">
+          <div class="m3-sm m3-muted">Texto del anuncio</div>
+          <p style="margin:8px 0 0; font-family:var(--m3-mono); font-size:14px">
+            Pollo 4x10 a 11500 la caja. Mensajería en toda Santiago.
+          </p>
+        </section>
+
+        <section class="m3-card m3-card-pad">
+          <div class="m3-row" style="gap:8px">
+            <span class="m3-strong">Fila 1</span>
+            <span class="m3-sm m3-muted">Pollo · Santiago de Cuba · 11 500 CUP · caja de 40 lb</span>
+          </div>
+          <p class="m3-sm m3-muted" style="margin:8px 0 0">(la tarjeta de la fila queda como hoy)</p>
+        </section>
+
+        <!-- Como hoy: solo con propuesta del modelo. -->
+        <details class="m3-card m3-card-pad m3-assist-note">
+          <summary class="m3-summary m3-row" style="gap:8px">
+            <span class="m3-icon m3-icon-sm m3-dim">edit_note</span>
+            <span>Nota para el asistente</span>
+          </summary>
+          <label class="m3-field" style="margin-top:12px">
+            <span class="m3-field-label">Qué no podía saber el modelo</span>
+            <textarea class="m3-textarea" rows="3"></textarea>
+            <span class="m3-help">Opcional. Por ejemplo: «4x10» son 4 paquetes de 10 lb.</span>
+          </label>
+        </details>
+
+        <!-- NUEVO (A3c). Plegada: no compite con las filas ni con «Guardar». -->
+        <details class="m3-card m3-card-pad m3-assist-note" id="regla">
+          <summary class="m3-summary m3-row" style="gap:8px">
+            <span class="m3-icon m3-icon-sm m3-dim">menu_book</span>
+            <span>Guardar como regla</span>
+          </summary>
+          <p class="m3-sm m3-muted" style="margin:12px 0 0">
+            Una convención que el modelo tiene que saber de acá en adelante. Entra al
+            glosario al guardar el anuncio y se usa desde la próxima propuesta.
+          </p>
+          <label class="m3-field" style="margin-top:16px">
+            <span class="m3-field-label">Término</span>
+            <input type="text" class="m3-input" maxlength="120" id="rule_term" />
+            <span class="m3-help">Como aparece en los anuncios. Por ejemplo: 4x10</span>
+          </label>
+          <label class="m3-field" style="margin-top:16px">
+            <span class="m3-field-label">Qué significa</span>
+            <textarea class="m3-textarea" rows="2" id="rule_definition"></textarea>
+            <span class="m3-help">Por ejemplo: 4 paquetes de 10 lb. Sin teléfonos ni nombres: se redactan al guardar.</span>
+          </label>
+        </details>
+
+        <div class="m3-actionbar">
+          <button type="button" class="m3-btn m3-btn-text">Descartar</button>
+          <span class="m3-spacer"></span>
+          <button type="button" class="m3-btn m3-btn-filled m3-btn-lg">Guardar</button>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="m3-snackbar" role="status" id="aviso" hidden>
+  <span>Anuncio guardado. «4x10» agregado al glosario.</span>
+  <a href="?">Cerrar</a>
+</div>
+
+<script>
+  const estado = new URLSearchParams(location.search).get("estado");
+  if (estado === "abierta") {
+    document.getElementById("regla").open = true;
+    document.getElementById("rule_term").value = "4x10";
+    document.getElementById("rule_definition").value = "4 paquetes de 10 lb";
+  }
+  if (estado === "guardada") document.getElementById("aviso").hidden = false;
+</script>
+</body>
+</html>

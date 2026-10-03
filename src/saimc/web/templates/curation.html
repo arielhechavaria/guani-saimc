@@ -402,6 +402,34 @@
           </details>
           {% endif %}
 
+          {#
+            A3c: una convención que el modelo tiene que saber de acá en
+            adelante. Fuera del `if proposal_id`: la regla no depende de que
+            haya propuesta. Viaja con el «Guardar» del anuncio; con los dos
+            campos vacíos no pasa nada. Abierta solo si se vuelve a pintar con
+            lo escrito (un error de validación no esconde lo tipeado).
+          #}
+          <details class="m3-card m3-card-pad m3-assist-note" id="regla"{% if rule_term or rule_definition %} open{% endif %}>
+            <summary class="m3-summary m3-row" style="gap:8px">
+              <span class="m3-icon m3-icon-sm m3-dim">menu_book</span>
+              <span>Guardar como regla</span>
+            </summary>
+            <p class="m3-sm m3-muted" style="margin:12px 0 0">
+              Una convención que el modelo tiene que saber de acá en adelante. Entra al
+              glosario al guardar el anuncio y se usa desde la próxima propuesta.
+            </p>
+            <label class="m3-field" style="margin-top:16px">
+              <span class="m3-field-label">Término</span>
+              <input type="text" name="rule_term" class="m3-input" maxlength="120" value="{{ rule_term }}" />
+              <span class="m3-help">Como aparece en los anuncios. Por ejemplo: 4x10</span>
+            </label>
+            <label class="m3-field" style="margin-top:16px">
+              <span class="m3-field-label">Qué significa</span>
+              <textarea name="rule_definition" class="m3-textarea" rows="2">{{ rule_definition }}</textarea>
+              <span class="m3-help">Por ejemplo: 4 paquetes de 10 lb. Sin teléfonos ni nombres: se redactan al guardar.</span>
+            </label>
+          </details>
+
           <input type="hidden" name="row_count" value="{{ row_count }}" />
           {# Slice 5 (vigilancia del rubber-stamping): cuándo se mostró esta
              fila, para medir tiempo por decisión al guardar. #}
@@ -447,6 +475,12 @@
 {% endblock %}
 
 {% block snackbar %}
+{% if rule_added %}
+<div class="m3-snackbar" role="status">
+  <span>Anuncio guardado. «{{ rule_added }}» agregado al glosario.</span>
+  <a href="/curation">Cerrar</a>
+</div>
+{% endif %}
 {% if pasted %}
 <div class="m3-snackbar" role="status">
   <span>Entraron <strong>{{ pasted }}</strong> anuncio{{ "s" if pasted != 1 else "" }} a la cola.</span>
