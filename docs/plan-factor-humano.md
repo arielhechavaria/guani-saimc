@@ -73,7 +73,7 @@ misma sesión. El candidato más probable es A1b.
 | A5c | Informe del modo sombra | M | A5b | Opus | CERRADO (2026-10-02) |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | CERRADO (2026-10-03) |
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE (postergada 2026-10-03) |
-| A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | PENDIENTE |
+| A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | PENDIENTE (script listo 2026-10-04; falta crédito pago para medir Jev) |
 | A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | PENDIENTE |
 | K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
 | K3 | Guardar la transcripción del OCR | M | — | Sonnet | CERRADO (2026-10-03) |
@@ -921,6 +921,11 @@ muestra que vale la pena.
 ---
 
 ### A6 — Prueba de Jev fuera de línea: triage y campos cerrados — PENDIENTE
+
+**Estado al 2026-10-04.** El script existe (`scripts/jev_eval.py`, en seco por defecto) y la
+medición de Jev no se hizo: el plan gratuito de Vercel AI Gateway no da acceso al modelo (403).
+Falta cargar crédito pago y correr `scripts/jev_eval.py --execute` (estimado: 0,014 USD). El
+detalle está en `decisions.md`, entrada del 2026-10-04. A6b sigue esperando el resultado de Jev.
 
 **Objetivo.** Saber si la probabilidad de Jev está calibrada sobre anuncios cubanos
 en español, por pregunta. Sin ese número no hay umbral que fijar.

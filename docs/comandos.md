@@ -32,9 +32,11 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`scripts/redact_existing.py --apply`](#redactar-teléfonos-ya-guardados) | Quitar teléfonos del texto guardado | sí: `original_text` | no |
 | [`scripts/add_focus_aliases.py --apply`](#alias-del-foco) | Agregar alias al catálogo del foco | sí: productos | no |
 | [`saimc.extraction.llm_backtest`](#backtest-del-asistente) | Backtest del asistente contra lo curado | `--execute` escribe archivos | `--execute` sí |
+| [`scripts/jev_eval.py`](#prueba-de-jev) | Medir la calibración de Jev contra lo ya decidido (A6) | en seco no; `--execute` escribe en `data/jev_eval/` | `--execute` sí, tope 0,20 USD |
 | [`pytest`, `ruff`, `mypy`, `alembic revision`](#desarrollo-local) | Suite, estilo, tipos, migración nueva | no (revision crea un archivo) | no |
 
 > **Atención.** Gastan plata o reescriben datos: `prefill --execute`, `llm_backtest --execute`,
+> `scripts/jev_eval.py --execute` (y su `--check`, una sola llamada),
 > `revalidate --execute`, `alembic upgrade head`, y todo lo que lleva `--apply`. Hacé backup antes
 > de cualquiera que escriba en la base. Una corrida manual del pre-cálculo **no** va por
 > `python -m …`: va por `sudo systemctl start saimc-prefill.service`, porque systemd no arranca el
@@ -210,6 +212,62 @@ sudo systemctl restart saimc.service
   `ruff check --fix` (los arreglos seguros) y puede dejar un commit local; con `--no-autofix` no toca nada.
 - **Cambia algo**: no. **Gasta**: no. Otros flags vistos en `--help`: `--update-baseline`, `--json`.
 - Nota: el plan dice que el baseline estaba desfasado al 2026-10-03; los «nuevos» pueden no serlo.
+
+### Prueba de Jev
+
+Slice A6: mide si la probabilidad que devuelve Jev (TypeSafe AI, vía Vercel AI Gateway) está
+calibrada sobre anuncios cubanos, por pregunta, contra lo que ya decidiste en la cola. Se corre en
+**desarrollo**, contra la base local. `--check` y `--execute` necesitan `SAIMC_LLM_JEV_API_KEY` en
+el `.env`; en seco no hace falta.
+
+```
+.venv/bin/python scripts/jev_eval.py --check
+```
+
+```
+.venv/bin/python scripts/jev_eval.py
+```
+
+```
+.venv/bin/python scripts/jev_eval.py --execute --limit 50
+```
+
+```
+.venv/bin/python scripts/jev_eval.py --execute
+```
+
+- **Para qué**: 1) `--check` hace **una** llamada con un anuncio inventado y dice si la clave anda y
+  si la respuesta trae la forma esperada; 2) sin flags, en seco: cuenta la muestra y estima tokens y
+  costo sin llamar a nada (`--dry-run` es lo mismo, dicho en voz alta); 3) `--execute --limit N`
+  hace a lo sumo N llamadas nuevas; 4) `--execute` solo, la corrida completa.
+- **Cuándo**: en ese orden, una vez, antes de decidir qué se hace con Jev. El gasto de la corrida
+  completa se aprueba antes.
+- **Cambia algo**: no toca la base (solo lee). Con `--execute` escribe
+  `data/jev_eval/responses.jsonl` (el caché) y `data/jev_eval/report.md`; `data/` no va a git.
+  `--check` y el modo en seco no escriben nada.
+- **Gasta**: en seco, no. `--check`, una llamada (estimado: menos de 0,0001 USD; imprime el costo
+  real). `--execute` sí, hasta el tope de `--max-cost` (por defecto **0,20 USD**), que cuenta
+  también lo ya gastado en corridas anteriores con las mismas preguntas. `--limit` y `--max-cost`
+  solo tienen efecto con `--execute`. La estimación en seco usa el precio de referencia de Jev
+  (0,042 USD por millón de tokens); el reporte muestra el costo que informó el gateway.
+- El script no trunca: un anuncio que no entra en el contexto del modelo da error, se anota y
+  sigue.
+- Se puede cortar y volver a correr: lo ya respondido queda en el caché y no se vuelve a pagar. Un
+  anuncio que dio error se reintenta en la corrida siguiente. Con todo respondido, `--execute`
+  solo regenera el reporte.
+- **Cómo leer la salida**: `--execute` imprime el reporte y lo deja en
+  `data/jev_eval/report.md`. Por pregunta da el n, el Brier, el ECE y los tramos de
+  confiabilidad (probabilidad media contra frecuencia observada). En las preguntas de elección hay
+  **dos tablas**, porque la respuesta trae dos señales distintas: la probabilidad de la opción
+  elegida (`probabilities[choice]`) y `confidence`, que no es lo mismo y no se sabe cómo se
+  calcula. Mirá las cotas, no el porcentaje: los curados son pocos. El reporte no
+  decide ni fija umbrales. Al final dice cuántos quedaron sin preguntar si se llegó al tope.
+- Si `--check` dice «la clave no fue aceptada» (401), el problema es la clave, no el script. Si
+  dice «la clave autentica, pero el gateway denegó el acceso» (403), la clave está bien y falta
+  acceso al modelo: al 2026-10-04 el plan gratuito de Vercel AI Gateway no incluye a Jev y hay
+  que cargar crédito pago. El plan gratuito además limita a 5 pedidos por minuto; el script espera
+  lo que pide el gateway y sigue.
+- Más: [plan-factor-humano.md](plan-factor-humano.md), «A6 — Prueba de Jev fuera de línea».
 
 ### Huecos por canal
 
