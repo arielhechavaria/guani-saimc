@@ -203,6 +203,18 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="plan-marca",
+        title="Leira Studio — plan de marca y compendio de contactos",
+        summary=(
+            "Los pasos para presentar Guani bajo la marca Leira Studio: "
+            "identidad, qué se afirma y qué no, el correo a CEMIS, la entidad "
+            "legal en Cuba y a quién más escribir, con su nivel de exposición. "
+            "Material de promoción, no gobierna qué se construye."
+        ),
+        relative_path="docs/plan-marca-leira-studio.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="backlog",
         title="Backlog",
         summary=(

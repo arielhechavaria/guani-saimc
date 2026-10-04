@@ -511,3 +511,18 @@ class TestCatalogoDeComandos:
 
     def test_el_catalogo_esta_registrado_en_el_gestor(self) -> None:
         assert docs_catalog.BY_SLUG["comandos"].relative_path == "docs/comandos.md"
+
+
+class TestPlanDeMarca:
+    """El plan de marca es material de trabajo del operador, no algo que rija."""
+
+    def test_el_plan_de_marca_esta_en_el_catalogo_y_se_lee(self, client: TestClient) -> None:
+        """Va como «interno»: no gobierna qué se construye, y solo se ve detrás
+        de `require_operator`, igual que el resto del gestor."""
+        assert docs_catalog.BY_SLUG["plan-marca"].standing == "interno"
+
+        response = client.get("/docs/plan-marca")
+        crudo = client.get("/docs/plan-marca/raw")
+
+        assert response.status_code == 200
+        assert "Compendio de entidades a contactar" in crudo.text
