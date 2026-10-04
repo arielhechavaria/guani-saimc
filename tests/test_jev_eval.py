@@ -12,6 +12,7 @@ conexión. La clave es siempre una cadena falsa.
 from __future__ import annotations
 
 import json
+import math
 import re
 import uuid
 from collections.abc import Callable
@@ -228,6 +229,15 @@ class TestRequest:
         # 35 caracteres / 3,5 = 10 tokens; 36 caracteres redondea para arriba.
         assert jev_eval.estimate_tokens("x" * 35) == 10
         assert jev_eval.estimate_tokens("x" * 36) == 11
+
+    def test_la_estimacion_del_pedido_lleva_el_factor_medido(self) -> None:
+        # Medido el 2026-10-04 sobre 1.409 pedidos reales a Jev: 751.842 tokens
+        # contra 327.015 de caracteres / 3,5. 751.842 / 327.015 = 2,299 → 2,3.
+        assert jev_eval.REQUEST_OVERHEAD_FACTOR == 2.3
+        # Un pedido de 35 caracteres serializados: 10 tokens × 2,3 = 23.
+        assert jev_eval.request_tokens_from_text("x" * 35) == 23
+        # 36 caracteres: 11 tokens × 2,3 = 25,3 → redondea para arriba a 26.
+        assert jev_eval.request_tokens_from_text("x" * 36) == 26
 
     def test_costo_estimado(self) -> None:
         # 1.000.000 de tokens de entrada a 0,042 USD el millón.
@@ -978,9 +988,13 @@ def test_dry_run_informa_n_por_pregunta_y_estimacion() -> None:
         "sale_format": 1,
     }
     assert estimate.pending == 3
-    # La estimación sale del pedido serializado: caracteres / 3,5.
+    # La estimación sale del pedido serializado: caracteres / 3,5, por el
+    # factor 2,3 que se midió contra los tokens reales de la corrida de Jev.
     expected = sum(
-        jev_eval.estimate_tokens(json.dumps(jev_eval.build_request(ad, CATALOG), ensure_ascii=False))
+        math.ceil(
+            jev_eval.estimate_tokens(json.dumps(jev_eval.build_request(ad, CATALOG), ensure_ascii=False))
+            * 2.3
+        )
         for ad in ads
     )
     assert estimate.tokens == expected
@@ -1054,7 +1068,10 @@ class TestMain:
 # --- Respuesta real y las dos señales de `choice` -----------------------------
 
 # La forma real observada en el gateway el 2026-10-04, con un anuncio sintético:
-# estos son los campos y los valores tal cual llegaron.
+# los campos y los valores de `answers`, `usage` y `provider_metadata` son tal
+# cual llegaron. La respuesta la dio otro modelo de la misma interfaz, probado
+# ese día; el campo `model` se reemplazó por el de Jev, que es el que mide el
+# script. Jev devuelve la misma forma (corrida completa del 2026-10-04).
 REAL_BODY: dict[str, Any] = {
     "model": "typesafe-ai/jev",
     "answers": {

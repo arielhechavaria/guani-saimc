@@ -89,9 +89,13 @@ ENV_KEY = "SAIMC_LLM_JEV_API_KEY"
 #: Precio de referencia de la entrada, en USD por millón de tokens. Solo se usa
 #: para estimar: el costo real de cada llamada lo informa el gateway.
 INPUT_PRICE_PER_MTOK = 0.042
-#: Caracteres por token para la estimación. Es una cota conservadora (el
-#: español suele rendir cerca de 4), no una medida.
+#: Caracteres por token para la estimación (el español suele rendir cerca de 4).
 CHARS_PER_TOKEN = 3.5
+#: Lo que el pedido real pesa por encima de sus caracteres / 3,5. Medido el
+#: 2026-10-04 sobre 1.409 pedidos a Jev: 751.842 tokens cobrados contra 327.015
+#: estimados. El gateway cuenta más que el texto que se le manda; sin este factor
+#: la estimación en seco quedó 2,3 veces corta.
+REQUEST_OVERHEAD_FACTOR = 2.3
 DEFAULT_MAX_COST = 0.20
 
 TIMEOUT_SECONDS = 30.0
@@ -273,8 +277,13 @@ def tokens_cost(input_tokens: int) -> float:
     return input_tokens * INPUT_PRICE_PER_MTOK / 1_000_000
 
 
+def request_tokens_from_text(serialized: str) -> int:
+    """Tokens que se espera que cobre un pedido ya serializado."""
+    return math.ceil(estimate_tokens(serialized) * REQUEST_OVERHEAD_FACTOR)
+
+
 def _request_tokens(payload: Mapping[str, Any]) -> int:
-    return estimate_tokens(json.dumps(payload, ensure_ascii=False))
+    return request_tokens_from_text(json.dumps(payload, ensure_ascii=False))
 
 
 # --- Respuesta ----------------------------------------------------------------
@@ -1391,7 +1400,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(f"Por preguntar:             {estimate.pending}")
         print(
             f"Tokens de entrada estimados: {estimate.tokens} "
-            f"(estimación: caracteres / {_num(CHARS_PER_TOKEN, 1)}, cota conservadora)"
+            f"(estimación: caracteres / {_num(CHARS_PER_TOKEN, 1)} por "
+            f"{_num(REQUEST_OVERHEAD_FACTOR, 1)}, el factor medido el 2026-10-04)"
         )
         print(
             f"Costo estimado: {_usd(estimate.cost)} "

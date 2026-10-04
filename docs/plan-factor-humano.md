@@ -12,6 +12,7 @@ redactada, con cajas y versión; B5 cerrada el 2026-10-03: el emisor de grupo se
 como hash con clave, nulo sin clave; C3 cerrada el 2026-10-03: los controles de §10.7
 entran como medición, con índice de control y `measure_n`, sin umbrales; C1 cerrada el
 2026-10-03: temporizador de systemd cada 3 h con tope por corrida y aviso en `/control`;
+A6 cerrada el 2026-10-04: Jev medido, favorable en triage, producto y moneda;
 A1c postergada).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
@@ -73,7 +74,7 @@ misma sesión. El candidato más probable es A1b.
 | A5c | Informe del modo sombra | M | A5b | Opus | CERRADO (2026-10-02) |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | CERRADO (2026-10-03) |
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE (postergada 2026-10-03) |
-| A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | PENDIENTE (script listo 2026-10-04; falta crédito pago para medir Jev) |
+| A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | CERRADO (2026-10-04) |
 | A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | PENDIENTE |
 | K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
 | K3 | Guardar la transcripción del OCR | M | — | Sonnet | CERRADO (2026-10-03) |
@@ -920,12 +921,14 @@ muestra que vale la pena.
 
 ---
 
-### A6 — Prueba de Jev fuera de línea: triage y campos cerrados — PENDIENTE
+### A6 — Prueba de Jev fuera de línea: triage y campos cerrados — CERRADO (2026-10-04)
 
-**Estado al 2026-10-04.** El script existe (`scripts/jev_eval.py`, en seco por defecto) y la
-medición de Jev no se hizo: el plan gratuito de Vercel AI Gateway no da acceso al modelo (403).
-Falta cargar crédito pago y correr `scripts/jev_eval.py --execute` (estimado: 0,014 USD). El
-detalle está en `decisions.md`, entrada del 2026-10-04. A6b sigue esperando el resultado de Jev.
+**Resultado (2026-10-04).** Jev se midió con crédito pago sobre los 1.409 textos con decisión
+(0,032 USD). Favorable en triage (95,6 %; con umbral 0,2 no pierde ningún curado), producto
+(96,8 %) y moneda (94,3 %): esas tres preguntas entran a A6b. Formato de venta queda por debajo
+de la respuesta trivial y no entra. Provincia no es concluyente: la verdad suele venir del canal,
+no del texto. El detalle y los números están en `decisions.md`, en las dos entradas del
+2026-10-04 sobre A6.
 
 **Objetivo.** Saber si la probabilidad de Jev está calibrada sobre anuncios cubanos
 en español, por pregunta. Sin ese número no hay umbral que fijar.
