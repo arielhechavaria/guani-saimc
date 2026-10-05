@@ -1,0 +1,54 @@
+{#
+  Estilos del pie compartido (`_public_footer.html`). Van aparte porque un
+  `<style>` pertenece al `<head>`: la página que usa el pie incluye este
+  archivo en su `{% block head %}` y el marcado al final de su cuerpo.
+
+  Diseño aprobado: bloque `<footer>` de
+  `docs/prototipos/landing-guani-b.dc.html`. Los colores son los tokens de
+  `design_tokens.css` (`test_static_assets` prohíbe un color a mano en una
+  plantilla); en claro dan los mismos del prototipo. El pie es una superficie
+  invertida —fondo del color del texto, texto del color de la superficie—, así
+  que en modo oscuro queda claro sobre la página oscura, con el mismo contraste.
+
+  Prefijo `pf-`. No depende de ninguna clase de la página que lo incluye.
+#}
+<style>
+  .pf { margin-top: auto; background: var(--m3-on-surface); color: var(--m3-surface);
+        font: 400 16px/1.45 var(--m3-font); }
+  /* El foco del sitio es del color de acento: sobre el pie invertido no se vería. */
+  .pf :focus-visible { outline-color: var(--m3-surface); }
+  .pf-inner { width: 100%; max-width: 1080px; margin: 0 auto; padding: 36px 20px 20px; box-sizing: border-box; }
+  .pf-top { display: flex; flex-wrap: wrap; gap: 28px 56px; }
+  .pf-about { flex: 1 1 260px; min-width: 0; max-width: 360px; }
+  .pf-brand { display: flex; align-items: center; gap: 12px; }
+  .pf-brand .ph-brand-avatar { flex: none; width: 48px; height: 48px; }
+  .pf-wordmark { font: 400 30px/1.2 var(--ph-font-heading); }
+  .pf-tag { margin: 14px 0 0; font-size: 15px; line-height: 1.5; color: var(--m3-outline-variant); }
+  .pf-cta { margin-top: 18px; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 20px;
+            border-radius: 100px; background: var(--m3-surface); color: var(--ph-accent); font-size: 16px; font-weight: 500;
+            text-decoration: none; }
+  .pf a.pf-cta:hover { color: var(--ph-accent); text-decoration: none; }
+  .pf-icon { flex: none; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2;
+             stroke-linecap: round; stroke-linejoin: round; }
+  .pf-cta .pf-icon { font-size: 20px; }
+  /* A 390 px entran dos columnas de 150 px; con ancho de sobra, las cuatro en fila. */
+  .pf-cols { flex: 999 1 320px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+             gap: 24px 20px; }
+  .pf-col { display: flex; flex-direction: column; min-width: 0; }
+  .pf-col-title { margin: 0 0 4px; font-size: 13px; font-weight: 700; line-height: 1.45; letter-spacing: .12em;
+                  text-transform: uppercase; color: var(--m3-primary-container); }
+  /* 44 px de alto por enlace: el dedo no tiene que apuntar. */
+  .pf-link { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 16px; color: var(--m3-surface);
+             text-decoration: none; overflow-wrap: anywhere; }
+  /* `.pf a.…`: la landing apaga el subrayado de sus enlaces al pasar el cursor
+     (`.lp a:hover`) y el pie vive dentro de ella; acá tiene que ganar el del pie. */
+  .pf a.pf-link:hover { color: var(--m3-surface); text-decoration: underline; }
+  .pf-link .pf-icon { font-size: 22px; color: var(--m3-primary-container); }
+  .pf-bar { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--m3-on-surface-variant); display: flex;
+            flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 24px; font-size: 14px;
+            line-height: 1.5; color: var(--m3-outline-variant); }
+  /* `inline-block` con relleno: el crédito es un enlace dentro de una frase y
+     aun así tiene que dar 44 px de alto al dedo. */
+  .pf-bar a { display: inline-block; padding-block: 12px; color: var(--m3-surface); text-decoration: underline; }
+  .pf-bar a:hover { color: var(--m3-surface); text-decoration: underline; }
+</style>

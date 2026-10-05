@@ -16,8 +16,10 @@
     `arrow_forward`, `storefront`) y van como SVG en línea.
   - Ninguna cifra de relleno. La tarjeta de precio y los globos de la portada
     salen de `price` (`landing_view.LandingPrice`); sin él se dibuja la
-    ilustración sin números. Productos, contacto, redes y año llegan del
-    router.
+    ilustración sin números. Los productos llegan del router.
+  - El pie es el compartido con las páginas de texto (`_public_footer.html`),
+    con sus columnas de enlaces; llega armado en `footer`
+    (`site_pages.SiteFooter`).
   - Los colores son los tokens de `design_tokens.css`, no los hex del
     prototipo (que son esos mismos tokens en claro): `test_static_assets`
     prohíbe un color a mano en el CSS de una plantilla. De regalo la página
@@ -62,9 +64,8 @@
   .lp-kicker { margin: 0; font-size: 13px; font-weight: 700; line-height: 1.45; letter-spacing: .12em;
                color: var(--lp-kicker); text-transform: uppercase; }
   /* El foco del sitio es del color de acento: sobre la portada (que es de ese
-     color) y sobre el pie invertido no se vería. */
+     color) no se vería. El pie resuelve el suyo. */
   .lp-hero :focus-visible { outline-color: var(--lp-on-blue); }
-  .lp-foot :focus-visible { outline-color: var(--lp-surface); }
   .lp .m3-icon { vertical-align: 0; }
   .lp-svg-icon { flex: none; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2;
                  stroke-linecap: round; stroke-linejoin: round; }
@@ -186,6 +187,9 @@
   .lp-faq-text { margin: 12px 0 0; font-size: 17px; line-height: 1.5; color: var(--lp-ink-soft); }
   .lp-nots { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px;
              font-size: 17px; line-height: 1.4; color: var(--lp-ink-soft); }
+  .lp-faq-link { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+                 font-size: 16px; font-weight: 500; color: var(--lp-blue); text-decoration: underline; }
+  .lp-faq-link:hover { color: var(--lp-blue); text-decoration: underline; }
   .lp-nots li { display: flex; gap: 10px; }
   .lp-nots .m3-icon { flex: none; font-size: 22px; color: var(--lp-blue); }
 
@@ -208,28 +212,11 @@
   .lp-chip:hover { color: var(--lp-chip-ink); }
   @media (min-width: 720px) { .lp-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
-  /* ── Pie ──────────────────────────────────────────────────────────────
-     Superficie invertida: fondo del color del texto y texto del color de la
-     superficie. En claro es el pie oscuro del prototipo. */
-  .lp-foot { margin-top: auto; background: var(--lp-ink); color: var(--lp-surface); }
-  .lp-foot-inner { padding-top: 28px; padding-bottom: 28px; }
-  .lp-foot-tag { margin: 6px 0 0; max-width: 520px; font-size: 15px; line-height: 1.5; color: var(--lp-line); }
-  .lp-foot-links { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px 24px; }
-  .lp-foot-col { display: flex; flex-direction: column; }
-  .lp-foot-link { display: flex; align-items: center; min-height: 44px; font-size: 16px; color: var(--lp-surface); overflow-wrap: anywhere;
-                  text-decoration: underline; }
-  .lp-foot-link:hover { color: var(--lp-chip); }
-  .lp-foot-note { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--lp-ink-soft); font-size: 14px;
-                  line-height: 1.5; color: var(--lp-line); }
-  /* `inline-block` con relleno: el crédito es un enlace dentro de una frase y
-     aun así tiene que dar 44 px de alto al dedo. */
-  .lp-foot-note a { display: inline-block; padding-block: 12px; color: var(--lp-surface); text-decoration: underline; }
-  .lp-foot-note a:hover { color: var(--lp-chip); text-decoration: underline; }
-
   @media (prefers-reduced-motion: reduce) {
     .lp *, .lp *::before, .lp *::after { animation: none !important; transition: none !important; }
   }
 </style>
+{% include "_public_footer_style.html" %}
 {% endblock %}
 
 {% block body %}
@@ -383,6 +370,7 @@
       <div class="lp-faq-icon"><span class="m3-icon" aria-hidden="true">forum</span></div>
       <h2 class="lp-faq-title">¿De dónde salen los precios?</h2>
       <p class="lp-faq-text">De lo que los emprendedores publican en grupos y canales de WhatsApp. Cada anuncio queda enlazado a la cifra que alimenta.</p>
+      <a class="lp-faq-link" href="/metodologia">Cómo calculamos los precios{{ svg_icon("arrow") }}</a>
     </div>
     <div class="lp-faq-card lp-reveal">
       <div class="lp-faq-icon"><span class="m3-icon" aria-hidden="true">block</span></div>
@@ -413,31 +401,9 @@
 
 </main>
 
-<footer class="lp-foot">
-  <div class="lp-wrap lp-foot-inner">
-    <div class="lp-wordmark">Guani</div>
-    <p class="lp-foot-tag">Precios del mercado informal cubano, con los anuncios detrás.</p>
-    {# Contacto y redes: se dibuja solo lo configurado (`SAIMC_CONTACT_EMAIL`,
-       `SAIMC_LINK_*`). Sin nada, el bloque entero no existe. #}
-    {% if footer_links.any %}
-    <div class="lp-foot-links">
-      {% if footer_links.email %}
-      <div class="lp-foot-col">
-        <a class="lp-foot-link" href="mailto:{{ footer_links.email }}">{{ footer_links.email }}</a>
-      </div>
-      {% endif %}
-      {% if footer_links.social %}
-      <div class="lp-foot-col">
-        {% for link in footer_links.social %}
-        <a class="lp-foot-link" href="{{ link.href }}" rel="noopener">{{ link.label }}</a>
-        {% endfor %}
-      </div>
-      {% endif %}
-    </div>
-    {% endif %}
-    <p class="lp-foot-note">Los precios en moneda extranjera se convierten a CUP con la <a href="https://eltoque.com/">tasa TRMI de elTOQUE</a>. Guani · {{ year }}</p>
-  </div>
-</footer>
+{# El pie es el compartido con las páginas de texto (`_public_footer.html`,
+   `site_pages.SiteFooter`); sus estilos van en el `<head>`. #}
+{% include "_public_footer.html" %}
 
 </div>
 {% endblock %}

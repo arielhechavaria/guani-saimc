@@ -1,0 +1,87 @@
+{#
+  `/metodologia`. Cómo se calculan los precios.
+
+  `spec.md` §6.4.1 («Política de publicación metodológica») es vinculante y
+  manda dos cosas que esta página cumple:
+  - Publicar la metodología: fórmulas de agregación, ventanas de cálculo, tasa
+    de cambio aplicada, categorías de fuente y umbrales con su valor vigente.
+  - Declarar en público la única reserva —los parámetros de la detección de
+    coordinación, C4 de §10.7— junto con su motivo.
+
+  Cada afirmación sale del código, no de la intención:
+  - Fuentes y revisión a mano: `CLAUDE.md` (decisión cerrada 2) y la landing.
+  - Precio por unidad, unidad canónica, solo venta minorista, filas sin
+    resolver fuera: `saimc.cells` (`compute_retail_observations`).
+  - Mediana, rango y número de anuncios: `card_view`, y el panel «Sobre los
+    datos» de `public_dashboard.html`, de donde sale también «(base N)».
+  - Ventanas: `product_nav.DEFAULT_WINDOW_DAYS` y `WINDOW_CHOICES`.
+  - Moneda: `spec.md` §6.3 E y las columnas `exchange_rate*` de
+    `prices_history`.
+  - Cerco de atípicos: `validation.fence` (`FENCE_IQR`, `FENCE_MIN_FACTOR`).
+  - Publicación por provincia: `spec.md` §9.0 y `Province.is_published`; el
+    umbral no tiene valor (§12.6: se mide, no se inventa).
+  - Coordinación: `validation.controls` (C4 son conteos, sin umbral).
+
+  Los números (días de ventana, valores del cerco) llegan en `facts` desde las
+  constantes del código: si alguien las cambia, esta página cambia sola.
+
+  Lo que §6.4.1 manda publicar y esta página todavía no trae está dicho en la
+  última sección, sin promesas de fecha.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Cómo calculamos los precios{% endblock %}
+{% block og_description %}De dónde salen los anuncios, cómo se revisan y con qué cuenta se llega a cada cifra de Guani: mediana, rango, número de anuncios y conversión a CUP.{% endblock %}
+{% block lead %}Todo lo que hay entre un anuncio y la cifra que ves: de dónde sale, quién lo revisa y con qué cuenta se resume.{% endblock %}
+
+{% block content %}
+<h2>De dónde salen los anuncios</h2>
+<p>De dos tipos de fuente: grupos y canales de WhatsApp donde se anuncian productos, y anuncios que una persona del proyecto captura a mano (el texto copiado o una captura de pantalla). No hay otra fuente.</p>
+
+<h2>Cómo se revisa cada anuncio</h2>
+<p>De cada anuncio se saca el producto, el precio, la moneda, la cantidad con su unidad y la provincia. Un programa propone esos datos y aparta los mensajes que no son anuncios de precios; una persona revisa y corrige cada anuncio antes de que cuente. Ningún precio llega al sitio sin esa revisión.</p>
+
+<h2>Qué precio se compara</h2>
+<ul>
+  <li><strong>Precio por unidad.</strong> Si el anuncio da el precio de un paquete o de varias unidades, se divide por la cantidad. Un anuncio sin cantidad o sin unidad no entra en la cuenta: no se le supone ninguna.</li>
+  <li><strong>Una sola unidad por producto.</strong> Cada producto tiene su unidad de referencia (por ejemplo, la libra). Lo anunciado en otra unidad de la misma magnitud se convierte; lo que no se puede convertir queda fuera.</li>
+  <li><strong>Solo venta al por menor.</strong> Las ofertas al por mayor no se mezclan con las de una unidad suelta.</li>
+  <li><strong>Un grupo cerrado de productos.</strong> Solo se muestran los productos que el proyecto sigue hoy.</li>
+</ul>
+
+<h2>Cómo se resume</h2>
+<p>Para cada producto en cada provincia se toman los anuncios del período elegido y se muestran tres cosas:</p>
+<ul>
+  <li><strong>El rango</strong>: del anuncio más barato al más caro.</li>
+  <li><strong>La mediana</strong>: el precio que queda justo en el medio cuando se ordenan todos. Se usa la mediana y no el promedio porque un solo anuncio con un precio disparatado mueve el promedio y a la mediana casi no la toca.</li>
+  <li><strong>Cuántos anuncios hay detrás</strong>. Va siempre a la vista: una mediana de tres anuncios y una de cuarenta no dicen lo mismo.</li>
+</ul>
+<p>El período por defecto son los últimos {{ facts.default_window_days }} días. También puedes elegir {{ facts.window_choices | join(", ") }} días o un rango de fechas. La fecha que cuenta es la de publicación del anuncio; si no se conoce, la del día en que se cargó.</p>
+<p>Cuando el sitio muestra cuánto cambió un precio, lo compara con el período anterior de la misma duración. «(base N)» es el número de anuncios de ese período anterior.</p>
+
+<h2>Moneda</h2>
+<p>Todo se muestra en pesos cubanos (CUP). Un precio anunciado en otra moneda se convierte con la <a href="https://eltoque.com/">Tasa Representativa del Mercado Informal (TRMI) de elTOQUE</a>, y junto a cada precio convertido se guardan la tasa aplicada y su fecha. Si un precio no se pudo convertir, no se muestra.</p>
+
+<h2>Precios fuera de lo común</h2>
+<p>Un precio se considera fuera de lo común cuando se aleja de la mitad central de los precios de su producto y provincia más de {{ facts.fence_iqr }} veces el ancho de esa mitad, medido en escala logarítmica, y nunca con un margen menor a {{ facts.fence_min_factor }} veces. Ese precio no se borra: en los gráficos se marca en el borde, y al revisar un anuncio nuevo sirve de aviso para mirarlo dos veces.</p>
+
+<h2>Cuándo se publica una provincia</h2>
+<p>Una provincia se da por publicada cuando tiene una muestra suficiente y sostenida en el tiempo, no cuando lo dice el calendario. El número que define «suficiente» todavía no está fijado: se va a fijar midiendo los datos, no a ojo. Hasta entonces, marcar una provincia como publicada es una decisión que toma una persona, y las provincias con pocos anuncios se muestran como «en recolección», con su número de anuncios a la vista.</p>
+
+<h2>Lo único que no se publica</h2>
+<p>Guani mide además señales de posible coordinación entre anuncios: cuánto aporta el canal que más aporta, cuántos anuncios de canales distintos caen casi a la vez y cuántos repiten el mismo texto. Hoy son solo conteos y no cambian ninguna cifra. Si llegan a usarse para apartar anuncios y mandarlos a revisión, sus parámetros no se publican: son reglas contra el fraude y dejan de servir cuando se conocen. No intervienen en cómo se calcula un precio. Es la única reserva de esta metodología, y por eso se declara aquí.</p>
+
+<h2>Qué falta en esta página</h2>
+<p>El compromiso de Guani es que su metodología sea pública. Todavía no están publicados aquí las reglas completas con las que se valida cada anuncio ni las medidas de calidad del proceso, como la precisión de la lectura automática. Esta página se amplía a medida que eso esté listo para mostrarse.</p>
+{% endblock %}
+
+{% block next %}
+<nav class="pg-next" aria-label="Sigue leyendo">
+  <p class="pg-next-title">Sigue leyendo</p>
+  <ul class="pg-next-list">
+    <li><a href="/uso-de-datos">Uso de los datos</a></li>
+    <li><a href="/preguntas">Preguntas frecuentes</a></li>
+    <li><a href="/datos.csv">Descargar datos (CSV)</a></li>
+  </ul>
+</nav>
+{% endblock %}

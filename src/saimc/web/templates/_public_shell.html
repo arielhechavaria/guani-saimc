@@ -19,7 +19,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Guani — {% block title %}{% endblock %}</title>
+  {# `page_title` (2026-10-05) deja que una página ponga la marca al final
+     («Quiénes somos — Guani», las páginas de texto de `public_page.html`).
+     Quien no lo toque sigue con «Guani — …». #}
+  <title>{% block page_title %}Guani — {% block title %}{% endblock %}{% endblock %}</title>
   {# Vista previa al compartir (WhatsApp/Telegram, el canal por el que se
      mueve este mercado): sin esto un link pegado no muestra nada. Sin
      og:image — no hay ningún asset de marca en el repo todavía; agregarlo
@@ -27,7 +30,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Guani" />
   <meta property="og:url" content="{{ request.url }}" />
-  <meta property="og:title" content="Guani — {{ self.title() }}" />
+  <meta property="og:title" content="{{ self.page_title() }}" />
   <meta property="og:description" content="{% block og_description %}Precios del mercado informal cubano, verificados anuncio por anuncio, provincia por provincia.{% endblock %}" />
   <meta name="description" content="{{ self.og_description() }}" />
   {% include "_theme_toggle_head.html" %}

@@ -1,0 +1,59 @@
+{#
+  `/uso-de-datos`. Cómo citar y reutilizar el CSV — BORRADOR pendiente de
+  revisión del operador (`docs/decisions.md`, 2026-10-05).
+
+  Fuentes: `routers/public.public_data_csv` y `_CSV_COLUMNS` (qué trae el
+  archivo y con qué filtros), `spec.md` §6.3 E (toda serie derivada de la TRMI
+  la atribuye) y el pie aprobado («Los datos se pueden usar citando la
+  fuente»).
+
+  `spec.md` no fija ninguna licencia de datos (se buscó en el mapa y en el
+  documento): por eso esta página dice «citando la fuente» y NO nombra una
+  licencia. Elegirla es una decisión del operador.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Uso de los datos{% endblock %}
+{% block og_description %}Cómo descargar, citar y reutilizar los datos de precios de Guani: qué trae el archivo CSV, qué significa cada columna y cómo dar el crédito.{% endblock %}
+{% block lead %}Los datos de Guani están abiertos: se pueden descargar y reutilizar citando la fuente.{% endblock %}
+
+{% block content %}
+<h2>Cómo descargarlos</h2>
+<p><a href="/datos.csv">Descarga el archivo CSV</a>. Trae los mismos anuncios que alimentan las cifras del sitio, uno por fila. Si lo descargas desde el botón del tablero, respeta el producto, la provincia y el período que tengas elegidos.</p>
+
+<h2>Qué trae cada columna</h2>
+<ul>
+  <li><code>producto</code>: el nombre del producto.</li>
+  <li><code>provincia</code>: la provincia del anuncio.</li>
+  <li><code>dia</code>: la fecha del anuncio, en formato año-mes-día.</li>
+  <li><code>precio_por_unidad</code>: el precio ya llevado a una unidad del producto.</li>
+  <li><code>moneda</code>: la moneda en que está expresado el precio.</li>
+  <li><code>unidad</code>: la unidad a la que corresponde el precio (por ejemplo, libra).</li>
+  <li><code>anuncio</code>: un identificador del anuncio de origen. No dice quién lo publicó.</li>
+</ul>
+<p>El archivo no trae teléfonos, nombres ni el grupo o canal del que salió cada anuncio.</p>
+
+<h2>Cómo citarlos</h2>
+<p>Puedes usar los datos en un trabajo, un artículo, una aplicación o una publicación en redes citando la fuente. Basta con nombrar a Guani, decir la fecha en que los descargaste y, si publicas en internet, enlazar al sitio. Por ejemplo:</p>
+<p class="pg-note">Fuente: Guani, precios del mercado informal cubano. Datos descargados el (fecha de la descarga).</p>
+<p>Si muestras precios que estaban en otra moneda y fueron convertidos a pesos cubanos, da también el crédito de la tasa: <a href="https://eltoque.com/">TRMI de elTOQUE</a>.</p>
+
+<h2>Qué tener en cuenta al usarlos</h2>
+<ul>
+  <li>Son anuncios, no ventas: dicen a cuánto se ofrece algo, no a cuánto se vendió.</li>
+  <li>Di siempre cuántos anuncios hay detrás de una cifra. Con pocos anuncios, una mediana es una pista y no una medida firme.</li>
+  <li>No compares provincias o períodos con muestras muy distintas sin avisarlo.</li>
+  <li>Los datos pueden corregirse: si un anuncio se revisa de nuevo, el archivo cambia. Por eso conviene anotar la fecha de la descarga.</li>
+</ul>
+<p>Cómo se llega a cada cifra está en <a href="/metodologia">Cómo calculamos los precios</a>.</p>
+{% endblock %}
+
+{% block next %}
+<nav class="pg-next" aria-label="Sigue leyendo">
+  <p class="pg-next-title">Sigue leyendo</p>
+  <ul class="pg-next-list">
+    <li><a href="/metodologia">Cómo calculamos los precios</a></li>
+    <li><a href="/terminos">Términos y condiciones</a></li>
+  </ul>
+</nav>
+{% endblock %}

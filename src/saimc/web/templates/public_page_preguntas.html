@@ -1,0 +1,54 @@
+{#
+  `/preguntas`. Preguntas frecuentes.
+
+  Cada respuesta repite, en corto, algo que ya está respaldado en otra parte:
+  la landing, el panel «Sobre los datos» del tablero, `/metodologia` y
+  `/privacidad` (ver las fuentes en esas plantillas). Sin cifras de datos: esta
+  página no consulta la base.
+
+  «¿Cada cuánto se actualiza?» no promete un horario porque el código no fija
+  ninguno para la publicación: los anuncios cuentan cuando una persona los
+  revisa. Lo que sí existe es la señal de frescura del tablero («Datos hasta
+  el…»), y a eso se remite.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Preguntas frecuentes{% endblock %}
+{% block og_description %}Respuestas cortas sobre Guani: de dónde salen los precios, qué es la mediana, por qué faltan provincias, cómo se convierte la moneda y cómo descargar los datos.{% endblock %}
+{% block lead %}Lo que más se pregunta sobre los precios de Guani, en corto.{% endblock %}
+
+{% block content %}
+<h2>¿De dónde salen los precios?</h2>
+<p>De anuncios reales: lo que se publica en grupos y canales de WhatsApp, y anuncios que una persona del proyecto captura a mano. De cada uno se saca el producto, el precio y la provincia, y una persona lo revisa antes de que cuente. El detalle está en <a href="/metodologia">Cómo calculamos los precios</a>.</p>
+
+<h2>¿Qué es la mediana?</h2>
+<p>Es el precio que queda justo en el medio cuando se ordenan todos los anuncios de un producto en una provincia: la mitad anuncia más barato y la otra mitad más caro. Se usa en vez del promedio porque un solo precio disparatado casi no la mueve.</p>
+
+<h2>¿Por qué al lado de cada precio hay un número de anuncios?</h2>
+<p>Porque de él depende cuánto puedes fiarte de la cifra. Una mediana sacada de tres anuncios es una pista; una sacada de muchos es bastante más firme. Guani nunca muestra un precio sin decir cuántos anuncios hay detrás.</p>
+
+<h2>¿Por qué hay provincias sin datos?</h2>
+<p>Porque de esa provincia todavía no han entrado anuncios de los productos que se siguen, o han entrado muy pocos. Guani prefiere decir «aquí no hay datos» antes que rellenar con una estimación. Una provincia pasa a «publicada» cuando su muestra es suficiente y se sostiene en el tiempo.</p>
+
+<h2>¿Cómo se convierten los precios en dólares, euros o MLC?</h2>
+<p>Se pasan a pesos cubanos (CUP) con la <a href="https://eltoque.com/">tasa TRMI de elTOQUE</a>. Si un precio no se pudo convertir, no se muestra.</p>
+
+<h2>¿Por qué no aparecen los teléfonos de los vendedores?</h2>
+<p>Porque Guani mide precios, no conecta compradores con vendedores. No publica teléfonos, direcciones ni ningún dato de contacto de quien anuncia, y tampoco dice quién publicó cada anuncio. Lo explica la <a href="/privacidad">Política de privacidad</a>.</p>
+
+<h2>¿Cada cuánto se actualizan los precios?</h2>
+<p>No hay un horario fijo. Un anuncio empieza a contar cuando una persona lo revisa, así que los datos avanzan al ritmo de esa revisión. El tablero avisa hasta qué día llegan los datos cuando llevan algún día sin anuncios nuevos.</p>
+
+<h2>¿Puedo descargar los datos?</h2>
+<p>Sí. <a href="/datos.csv">Descarga el archivo CSV</a> con los mismos anuncios que alimentan las cifras del sitio. Puedes usarlo citando la fuente; en <a href="/uso-de-datos">Uso de los datos</a> está qué trae cada columna y cómo citarlo.</p>
+{% endblock %}
+
+{% block next %}
+<nav class="pg-next" aria-label="Sigue leyendo">
+  <p class="pg-next-title">Sigue leyendo</p>
+  <ul class="pg-next-list">
+    <li><a href="/metodologia">Cómo calculamos los precios</a></li>
+    <li><a href="/quienes-somos">Quiénes somos</a></li>
+  </ul>
+</nav>
+{% endblock %}

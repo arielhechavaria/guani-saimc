@@ -1,0 +1,77 @@
+{#
+  Pie compartido de la landing y de las páginas de texto (2026-10-05,
+  `docs/decisions.md`). Espera `footer` (`site_pages.SiteFooter`) en el
+  contexto, y sus estilos (`_public_footer_style.html`) en el `<head>`.
+
+  Diseño aprobado: bloque `<footer>` de
+  `docs/prototipos/landing-guani-b.dc.html`. Marca, frase y botón a la
+  izquierda; a la derecha las columnas Precios, Guani, Legal y Síguenos; abajo
+  el copyright y el crédito a elTOQUE.
+
+  - **Ningún enlace muerto.** Las columnas llegan armadas de `site_pages`, que
+    solo lista páginas que existen. «Contacto» y la columna «Síguenos» se
+    dibujan solo con un correo o una red configurados (`SAIMC_CONTACT_EMAIL`,
+    `SAIMC_LINK_*`).
+  - **NO se incluye en el tablero, el mapa ni explorar**: ahí la ausencia de
+    pie es una decisión registrada (2026-09-21).
+  - Sin JavaScript y sin nada pedido a una red ajena. De los iconos del
+    prototipo (`arrow_forward`, `public`, `forum`, `send`, `mail`) solo
+    `forum` está en el subconjunto local de la fuente: van los cinco como SVG
+    en línea, para que salgan del mismo trazo.
+  - El avatar es el de siempre, con otro `id` de recorte: la landing ya lo
+    dibuja en la portada y un `id` repetido es HTML inválido.
+#}
+{% macro pf_icon(name) -%}
+<svg class="pf-icon" viewBox="0 0 24 24" aria-hidden="true">
+  {%- if name == "arrow" -%}
+  <path d="M5 12h14M13 6l6 6-6 6"/>
+  {%- elif name == "Facebook" -%}
+  <circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/>
+  {%- elif name == "WhatsApp" -%}
+  <path d="M4 5.5h16v10.5H10.5L6 20v-4H4z"/>
+  {%- elif name == "Telegram" -%}
+  <path d="M21 3.5 3 10.6l6.2 2.2L11.4 20z"/><path d="M9.2 12.8 21 3.5"/>
+  {%- elif name == "mail" -%}
+  <rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.5 7 8.5 6.5L20.5 7"/>
+  {%- endif -%}
+</svg>
+{%- endmacro %}
+<footer class="pf">
+  <div class="pf-inner">
+    <div class="pf-top">
+      <div class="pf-about">
+        <div class="pf-brand">
+          {% with avatar_clip_id = "guani-avatar-clip-pie" %}{% include "_guani_avatar.html" %}{% endwith %}
+          <div class="pf-wordmark">Guani</div>
+        </div>
+        <p class="pf-tag">Precios del mercado informal cubano, con los anuncios detrás. Abierto y gratis.</p>
+        <a class="pf-cta" href="{{ footer.home_href }}">Ver los precios de hoy{{ pf_icon("arrow") }}</a>
+      </div>
+      <div class="pf-cols">
+        {% for column in footer.columns %}
+        <nav class="pf-col" aria-label="{{ column.title }}">
+          <h2 class="pf-col-title">{{ column.title }}</h2>
+          {% for link in column.links %}
+          <a class="pf-link" href="{{ link.href }}">{{ link.label }}</a>
+          {% endfor %}
+        </nav>
+        {% endfor %}
+        {% if footer.has_contact %}
+        <nav class="pf-col" aria-label="Redes">
+          <h2 class="pf-col-title">Síguenos</h2>
+          {% for link in footer.contact.social %}
+          <a class="pf-link" href="{{ link.href }}" rel="noopener">{{ pf_icon(link.label) }}<span>{{ link.label }}</span></a>
+          {% endfor %}
+          {% if footer.contact.email %}
+          <a class="pf-link" href="mailto:{{ footer.contact.email }}">{{ pf_icon("mail") }}<span>Escríbenos</span></a>
+          {% endif %}
+        </nav>
+        {% endif %}
+      </div>
+    </div>
+    <div class="pf-bar">
+      <span>© {{ footer.year }} Guani. Los datos se pueden usar citando la fuente.</span>
+      <span>Tasa de cambio: <a href="https://eltoque.com/">TRMI de elTOQUE</a>.</span>
+    </div>
+  </div>
+</footer>

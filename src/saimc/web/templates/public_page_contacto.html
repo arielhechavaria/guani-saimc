@@ -1,0 +1,43 @@
+{#
+  `/contacto`. Solo existe si hay a dónde escribir: el router responde 404 sin
+  un correo (`SAIMC_CONTACT_EMAIL`) ni una red (`SAIMC_LINK_*`) configurados,
+  y con la misma condición el pie deja de enlazarla (`site_pages`).
+
+  No trae formulario: un formulario guardaría datos del visitante y hoy el
+  sitio no guarda ninguno (`/privacidad`). Tampoco promete plazo de respuesta.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Contacto{% endblock %}
+{% block og_description %}Cómo escribirle a Guani: el correo y las redes del proyecto, para avisar de un error en un precio, hacer una pregunta o pedir que se revise un anuncio.{% endblock %}
+{% block lead %}Para avisar de un error en un precio, hacer una pregunta o pedir que se revise un anuncio.{% endblock %}
+
+{% block content %}
+{% if footer.contact.email %}
+<h2>Correo</h2>
+<ul class="pg-contact">
+  <li><a href="mailto:{{ footer.contact.email }}">{{ footer.contact.email }}</a></li>
+</ul>
+{% endif %}
+{% if footer.contact.social %}
+<h2>Redes</h2>
+<ul class="pg-contact">
+  {% for link in footer.contact.social %}
+  <li><a href="{{ link.href }}" rel="noopener">{{ link.label }}</a></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>Antes de escribir</h2>
+<p>Si es por un precio, di qué producto y qué provincia estabas mirando: así se encuentra más rápido. Guani no vende ni pone en contacto con vendedores, así que no puede decirte dónde comprar ni darte el teléfono de quien anuncia.</p>
+{% endblock %}
+
+{% block next %}
+<nav class="pg-next" aria-label="Sigue leyendo">
+  <p class="pg-next-title">Sigue leyendo</p>
+  <ul class="pg-next-list">
+    <li><a href="/preguntas">Preguntas frecuentes</a></li>
+    <li><a href="/privacidad">Política de privacidad</a></li>
+  </ul>
+</nav>
+{% endblock %}

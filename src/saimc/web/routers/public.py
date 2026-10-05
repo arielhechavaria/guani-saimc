@@ -23,7 +23,7 @@ import csv
 import io
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from typing import cast
 
@@ -36,6 +36,7 @@ from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.config import get_settings
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
 from saimc.progress import pilot_product_names
+from saimc.validation.fence import FENCE_IQR, FENCE_MIN_FACTOR
 from saimc.web.card_view import (
     attach_trends,
     build_cards,
@@ -51,7 +52,7 @@ from saimc.web.explore_view import (
     build_explore_nav,
     build_explore_products,
 )
-from saimc.web.landing_view import build_footer_links, build_landing_price
+from saimc.web.landing_view import build_landing_price
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import (
     ProductPanel,
@@ -69,8 +70,10 @@ from saimc.web.price_charts import (
     build_range_series,
 )
 from saimc.web.product_nav import (
+    DEFAULT_WINDOW_DAYS,
     HOME_PATH,
     HOME_QUERY_PARAMS,
+    WINDOW_CHOICES,
     build_layer_nav,
     build_product_chips,
     build_province_nav,
@@ -90,6 +93,14 @@ from saimc.web.product_nav import (
 )
 from saimc.web.province_grid import build_product_grids, group_detail, price_layer
 from saimc.web.series_view import build_series
+from saimc.web.site_pages import (
+    CONTACT_PATH,
+    CONTACT_TEMPLATE,
+    SITE_PAGES,
+    SiteFooter,
+    SitePage,
+    build_site_footer,
+)
 from saimc.web.ticker_view import build_ticker
 from saimc.web.watchlist_view import build_watchlist
 
@@ -938,11 +949,75 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> Response:
                 "products": products,
                 "view_tiles": _LANDING_VIEW_TILES,
                 "window_days": (hasta - desde).days,
-                "footer_links": build_footer_links(get_settings()),
-                "year": date.today().year,
+                "footer": _site_footer(),
             },
         ),
     )
+
+
+def _site_footer() -> SiteFooter:
+    """El pie compartido para la configuración de hoy. `get_settings` se llama
+    en cada pedido (está cacheado) y no al importar, para que un test pueda
+    cambiar la configuración."""
+    return build_site_footer(get_settings(), year=date.today().year)
+
+
+#: Lo que las páginas de texto citan con número y vive en una constante del
+#: código: la página de metodología publica el valor vigente (`spec.md`
+#: §6.4.1) y, si la constante cambia, el texto cambia con ella.
+_PAGE_FACTS = {
+    "default_window_days": DEFAULT_WINDOW_DAYS,
+    "window_choices": WINDOW_CHOICES,
+    "fence_iqr": FENCE_IQR,
+    "fence_min_factor": FENCE_MIN_FACTOR,
+}
+
+
+def _render_site_page(request: Request, template: str) -> HTMLResponse:
+    """Una página de texto (`public_page.html`). No consulta la base: lo único
+    que varía es el pie, que depende de la configuración."""
+    return cast(
+        HTMLResponse,
+        request.app.state.templates.TemplateResponse(
+            request, template, {"footer": _site_footer(), "facts": _PAGE_FACTS}
+        ),
+    )
+
+
+def _site_page_endpoint(page: SitePage) -> Callable[[Request], HTMLResponse]:
+    """El endpoint de una página de `SITE_PAGES`. Es una fábrica y no una
+    lambda dentro del bucle para que cada endpoint se quede con *su* página:
+    una función definida en un bucle ve la variable del bucle, no su valor en
+    esa vuelta."""
+
+    def endpoint(request: Request) -> HTMLResponse:
+        return _render_site_page(request, page.template)
+
+    return endpoint
+
+
+# Una ruta por página de texto (quiénes somos, metodología, preguntas,
+# términos, privacidad, uso de los datos). La lista es la misma de la que el
+# pie saca sus enlaces (`site_pages.SITE_PAGES`): un enlace existe si y solo si
+# su página existe.
+for _page in SITE_PAGES:
+    router.add_api_route(
+        _page.path,
+        _site_page_endpoint(_page),
+        methods=["GET"],
+        response_class=HTMLResponse,
+        name=f"site_page_{_page.path.strip('/').replace('-', '_')}",
+    )
+
+
+@router.get(CONTACT_PATH, response_class=HTMLResponse)
+def public_contact(request: Request) -> HTMLResponse:
+    """Contacto: el correo y las redes configurados (`SAIMC_CONTACT_EMAIL`,
+    `SAIMC_LINK_*`). Sin ninguno la página no existe —404— y el pie no la
+    enlaza: las dos cosas salen de `SiteFooter.has_contact`."""
+    if not _site_footer().has_contact:
+        raise HTTPException(status_code=404, detail="No hay página de contacto")
+    return _render_site_page(request, CONTACT_TEMPLATE)
 
 
 @router.get(HOME_PATH, response_class=HTMLResponse)

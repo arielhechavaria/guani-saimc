@@ -337,7 +337,7 @@ class TestLaLandingEnLaRaiz:
     def test_el_pie_lleva_el_anio_y_el_credito_a_eltoque(self, client: TestClient, datos: None) -> None:
         texto = client.get("/").text
 
-        assert f"Guani · {date.today().year}" in texto
+        assert f"© {date.today().year} Guani" in texto
         assert 'href="https://eltoque.com/"' in texto
 
     def test_lleva_los_metadatos_para_compartir(self, client: TestClient, datos: None) -> None:
@@ -404,7 +404,7 @@ class TestLosEnlacesDeRedesEnLaPagina:
     def test_sin_variables_no_aparece_la_columna(self, client: TestClient) -> None:
         texto = client.get("/").text
 
-        assert 'class="lp-foot-links"' not in texto
+        assert 'aria-label="Redes"' not in texto
         for red in ("Facebook", "WhatsApp", "Telegram"):
             assert f">{red}<" not in texto
 

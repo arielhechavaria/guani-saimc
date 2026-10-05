@@ -1,0 +1,44 @@
+{#
+  `/quienes-somos`. Qué es Guani y para qué existe.
+
+  Fuentes: lo que ya dice la landing (`public_landing.html`), `spec.md` §5
+  (el objeto medido es la matriz producto × provincia y el diferencial es la
+  trazabilidad de cada dato hasta su anuncio), §6.4 (la cadena fuente → dato →
+  validación → resultado es visible) y §10.6 (sin datos de contacto).
+
+  Lo que NO dice, porque el repositorio no lo da: nombres de personas, cargos,
+  ubicación, fecha de inicio, cantidad de usuarios ni ninguna entidad legal.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Quiénes somos{% endblock %}
+{% block og_description %}Guani es un sitio abierto y gratuito que muestra cuánto cuestan las cosas en el mercado informal cubano, por producto y por provincia, a partir de anuncios reales.{% endblock %}
+{% block lead %}Guani es un sitio abierto y gratuito que muestra los precios del mercado informal cubano, producto por producto y provincia por provincia.{% endblock %}
+
+{% block content %}
+<h2>Para qué existe</h2>
+<p>Los precios de la calle no están en ninguna lista: aparecen en anuncios sueltos, repartidos por grupos y canales, y cambian de una provincia a otra. Guani reúne esos anuncios, saca de cada uno el producto, el precio y la provincia, y los resume en una cifra que se puede comparar.</p>
+<p>La idea que lo sostiene es sencilla: una cifra vale lo que vale su respaldo. Por eso al lado de cada precio va siempre cuántos anuncios hay detrás, y cuando el anuncio es de texto lo puedes abrir y leer.</p>
+
+<h2>Qué hace y qué no hace</h2>
+<ul>
+  <li>Muestra el rango y la mediana de lo que se anuncia, no un precio «oficial» ni un precio recomendado.</li>
+  <li>No vende nada, no cobra por entrar y no pone en contacto a compradores con vendedores.</li>
+  <li>No dice si algo está caro o barato, ni aconseja qué comprar.</li>
+  <li>No publica teléfonos ni datos de contacto de quienes anuncian.</li>
+</ul>
+
+<h2>En qué punto está</h2>
+<p>Guani es un proyecto abierto en fase inicial. Hoy sigue un grupo pequeño de productos y solo algunas provincias tienen datos; la cobertura crece a medida que entran anuncios y se revisan. Donde todavía hay pocos anuncios, el sitio lo dice en vez de disimularlo.</p>
+<p>Los precios en moneda extranjera se pasan a pesos cubanos con la tasa TRMI de <a href="https://eltoque.com/">elTOQUE</a>, que es un proyecto independiente de Guani.</p>
+{% endblock %}
+
+{% block next %}
+<nav class="pg-next" aria-label="Sigue leyendo">
+  <p class="pg-next-title">Sigue leyendo</p>
+  <ul class="pg-next-list">
+    <li><a href="/metodologia">Cómo calculamos los precios</a></li>
+    <li><a href="/preguntas">Preguntas frecuentes</a></li>
+  </ul>
+</nav>
+{% endblock %}

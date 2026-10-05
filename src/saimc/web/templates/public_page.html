@@ -1,0 +1,95 @@
+{#
+  Base de las páginas de texto de la capa pública (2026-10-05,
+  `docs/decisions.md`): quiénes somos, metodología, preguntas, contacto,
+  términos, privacidad y uso de los datos. Una sola base para las siete: cada
+  una (`public_page_*.html`) llena `title`, `og_description`, `lead` y
+  `content`, y nada más.
+
+  Qué pone esta base:
+  - El `<head>` del shell público, con el título al revés que el resto
+    («Quiénes somos — Guani»).
+  - Una cabecera simple: la marca vuelve a `/` y un botón lleva a `/precios`.
+  - El contenido en una columna de lectura (unos 70 caracteres por línea).
+  - El pie compartido (`_public_footer.html`).
+
+  Sin JavaScript propio y sin nada pedido a una red ajena. Los colores son los
+  tokens de `design_tokens.css`; la página sigue el tema guardado o el del
+  sistema, igual que la landing. Prefijo de clases `pg-`.
+
+  Los enlaces dentro de un párrafo quedan en línea, como texto que son. La
+  navegación —cabecera, «Sigue leyendo» y pie— sí da 44 px de alto al dedo.
+#}
+{% extends "_public_shell.html" %}
+
+{% block page_title %}{{ self.title() }} — Guani{% endblock %}
+
+{% block head %}
+<style>
+  .pg { display: flex; flex-direction: column; width: 100%; min-height: 100vh; background: var(--m3-bg);
+        color: var(--m3-on-surface); font: 400 17px/1.6 var(--m3-font); overflow-x: clip; }
+  .pg-top { background: var(--m3-surface); border-bottom: 1px solid var(--m3-outline-variant); }
+  .pg-top-inner { display: flex; align-items: center; gap: 12px; width: 100%; max-width: 1080px; margin: 0 auto;
+                  padding: 8px 20px; box-sizing: border-box; }
+  .pg-brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; margin-right: auto;
+              color: var(--m3-on-surface); text-decoration: none; }
+  .pg-brand:hover { color: var(--m3-on-surface); text-decoration: none; }
+  .pg-brand .ph-brand-avatar { flex: none; width: 36px; height: 36px; }
+  .pg-wordmark { font: 400 24px/1.2 var(--ph-font-heading); }
+  .pg-top-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px;
+                 background: var(--ph-accent); color: var(--ph-on-accent); font-size: 15px; font-weight: 500;
+                 text-decoration: none; white-space: nowrap; }
+  .pg-top-link:hover { color: var(--ph-on-accent); text-decoration: none; }
+
+  .pg-main { width: 100%; max-width: 720px; margin: 0 auto; padding: 28px 20px 48px; box-sizing: border-box; }
+  .pg-h1 { margin: 0; font: 400 clamp(32px, 9vw, 40px)/1.1 var(--ph-font-heading); }
+  .pg-lead { margin: 14px 0 0; font-size: 19px; line-height: 1.5; color: var(--m3-on-surface-variant); }
+  .pg-body { margin-top: 8px; overflow-wrap: break-word; }
+  .pg-body h2 { margin: 32px 0 0; font: 400 26px/1.2 var(--ph-font-heading); }
+  .pg-body h3 { margin: 22px 0 0; font-size: 17px; font-weight: 700; line-height: 1.4; }
+  .pg-body p { margin: 12px 0 0; }
+  .pg-body ul, .pg-body ol { margin: 12px 0 0; padding-left: 22px; }
+  .pg-body li { margin-top: 6px; }
+  .pg-body a { color: var(--ph-accent); text-decoration: underline; }
+  .pg-body code { font: 400 15px/1.4 "Roboto Mono", monospace; background: var(--m3-surface-container);
+                  padding: 1px 6px; border-radius: 6px; }
+  .pg-note { margin: 28px 0 0; padding: 14px 16px; border-radius: 16px; background: var(--m3-surface);
+             border: 1px solid var(--m3-outline-variant); font-size: 15px; line-height: 1.5;
+             color: var(--m3-on-surface-variant); }
+  /* «Sigue leyendo»: enlaces de navegación, con alto de dedo. */
+  .pg-next { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--m3-outline-variant); }
+  .pg-next-title { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+                   color: var(--ph-accent-2-line); }
+  .pg-next-list { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 0 24px; }
+  .pg-next-list a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ph-accent);
+                    text-decoration: underline; }
+  /* Enlaces de contacto: uno por renglón, con alto de dedo. */
+  .pg-contact { margin: 12px 0 0; padding: 0; list-style: none; }
+  .pg-contact li { margin: 0; }
+  .pg-contact a { display: inline-flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; }
+</style>
+{% include "_public_footer_style.html" %}
+{% endblock %}
+
+{% block body %}
+<div class="pg">
+
+<header class="pg-top">
+  <div class="pg-top-inner">
+    <a class="pg-brand" href="/">{% include "_guani_avatar.html" %}<span class="pg-wordmark">Guani</span></a>
+    <a class="pg-top-link" href="{{ footer.home_href }}">Ver precios</a>
+  </div>
+</header>
+
+<main class="pg-main">
+  <h1 class="pg-h1">{{ self.title() }}</h1>
+  <p class="pg-lead">{% block lead %}{% endblock %}</p>
+  <div class="pg-body">
+    {% block content %}{% endblock %}
+  </div>
+  {% block next %}{% endblock %}
+</main>
+
+{% include "_public_footer.html" %}
+
+</div>
+{% endblock %}

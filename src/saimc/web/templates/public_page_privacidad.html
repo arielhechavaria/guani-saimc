@@ -1,0 +1,88 @@
+{#
+  `/privacidad`. Qué guarda y qué no guarda el sitio.
+
+  `spec.md` §10.6 es vinculante: el identificador de origen se guarda y no se
+  publica (mitigación 2) y no se capturan ni almacenan teléfonos, direcciones
+  exactas ni datos de contacto (mitigación 3). Esta página dice lo que el
+  código hace hoy, que en un punto es menos que lo que §10.6 pide:
+
+  - Sobre quien anuncia:
+    - `saimc.privacy.redact_personal_data` quita los teléfonos del **texto**
+      antes de guardarlo, con límites conocidos y declarados ahí mismo.
+    - La captura de **imagen** se conserva como llegó (`raw_ingestions` es
+      inmutable) y puede traer un nombre o un teléfono en los píxeles: es la
+      contradicción 1 de `docs/spec-map.md`, todavía abierta. Por eso se
+      afirma «no se publica» y NO «no se guarda».
+    - `routers/public.public_evidence` solo publica anuncios de texto ya
+      revisados; las imágenes dan 404. Ni la página ni el CSV (`_CSV_COLUMNS`)
+      leen el canal, el grupo ni el emisor.
+    - El texto, ya redactado, sale a servicios externos que ayudan a leerlo
+      (`saimc.privacy`, nota del 2026-10-02).
+  - Sobre quien visita:
+    - `web/analytics.py`: una línea de registro por visita con la ruta, el día
+      y un código de 12 caracteres derivado de la IP y el día. Sin tabla, sin
+      cookie, sin script. Solo en `/`, `/precios`, `/producto/…` y
+      `/anuncio/…`.
+    - Cookies `vista` y `provincia`: las escribe `_vista_cookie_script.html`,
+      un año, `samesite=lax`.
+    - `localStorage`: `guani:theme` (`_theme_toggle_script.html`) y
+      `guani:compas-visto` (`public_home.html`).
+    - El mapa pide sus teselas a `tile.openstreetmap.org` (`public_home.html`).
+
+  Lo que NO se afirma porque no se puede leer en el repositorio: qué registra
+  el servidor web o el proveedor de alojamiento por su cuenta, cuánto tiempo se
+  conservan los registros, quién es el responsable legal de los datos y bajo
+  qué ley. Son decisiones y datos del operador.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Política de privacidad{% endblock %}
+{% block og_description %}Qué guarda y qué no guarda Guani sobre quienes anuncian y sobre quienes visitan el sitio: sin cuentas, sin publicidad y sin teléfonos ni contactos publicados.{% endblock %}
+{% block lead %}Qué guarda Guani, qué no guarda y qué queda en tu navegador. Escrito a partir de lo que el sitio hace de verdad.{% endblock %}
+
+{% block content %}
+<h2>Si visitas el sitio</h2>
+<p>Guani no tiene cuentas ni formularios: no te pide nombre, correo ni teléfono. Tampoco carga publicidad ni programas de seguimiento de otras empresas.</p>
+
+<h3>Lo que se anota de cada visita</h3>
+<p>Cuando abres la portada, las páginas de precios o un anuncio, la aplicación anota una línea en su registro con tres cosas: qué página se abrió, el día y un código corto calculado a partir de tu dirección IP y de la fecha. Sirve para contar cuántas visitas distintas hubo en un día. La dirección IP no se escribe en esa línea, y como la fecha entra en el cálculo, el código de un día no coincide con el del día siguiente. No es un cifrado fuerte: su fin es no dejar la dirección escrita, no hacerla imposible de averiguar para quien administra el servidor.</p>
+
+<h3>Lo que queda en tu navegador</h3>
+<p>Guani guarda en tu navegador solo tus preferencias, para no preguntártelas cada vez:</p>
+<ul>
+  <li>La cookie <code>vista</code>: la última vista de precios que abriste (tablero, mapa o explorar). Dura un año.</li>
+  <li>La cookie <code>provincia</code>: la provincia que elegiste, si elegiste alguna. Dura un año y se borra cuando quitas la provincia.</li>
+  <li>En el almacenamiento local del navegador, <code>guani:theme</code> (modo claro u oscuro) y <code>guani:compas-visto</code> (para no repetirte una ayuda del mapa).</li>
+</ul>
+<p>Ninguna te identifica ni se usa para seguirte por otros sitios. Puedes borrarlas desde tu navegador cuando quieras; el sitio sigue funcionando.</p>
+
+<h3>Lo que se pide a otros sitios</h3>
+<p>La vista de mapa pide las imágenes de fondo a OpenStreetMap. Al abrirla, tu navegador se conecta a sus servidores, que reciben tu dirección IP como cualquier sitio que visitas. El resto del sitio no pide nada a terceros. Los enlaces a elTOQUE o a las redes de Guani solo te llevan allí si los tocas.</p>
+
+<h2>Si publicaste un anuncio</h2>
+<p>Guani lee anuncios de productos para medir precios. De cada anuncio usa el producto, el precio, la cantidad y la provincia.</p>
+<ul>
+  <li><strong>No se publica quién anunció.</strong> El grupo, el canal y el emisor de un anuncio se guardan de forma interna para evaluar la calidad de las fuentes, y no aparecen en ninguna página ni en el archivo de datos.</li>
+  <li><strong>No se publican teléfonos, direcciones ni datos de contacto.</strong> Guani no los extrae ni los usa: no sirven para medir un precio.</li>
+  <li><strong>Los teléfonos se quitan del texto antes de guardarlo.</strong> Lo hace un filtro automático, que puede dejar pasar un número escrito de forma poco común.</li>
+  <li><strong>Las capturas de imagen no se publican.</strong> Se conservan tal como llegaron, y por eso mismo nunca se muestran: una captura puede traer un nombre o un número a la vista.</li>
+  <li><strong>El texto de un anuncio puede mostrarse.</strong> Cuando un anuncio es de texto y ya fue revisado, su texto queda visible como respaldo de la cifra, sin decir de dónde salió ni quién lo escribió.</li>
+  <li><strong>Lectura automática.</strong> Para ayudar a leer los anuncios, su texto se envía, ya sin los teléfonos detectados, a servicios externos de procesamiento automático.</li>
+</ul>
+
+<h2>Lo que esta página no cubre</h2>
+<p>Aquí se describe lo que hace la aplicación de Guani. No describe los registros técnicos que pueda llevar por su cuenta el servidor donde está alojada.</p>
+{% if footer.has_contact %}
+<p>Si crees que un anuncio tuyo muestra algo que no debería, escríbenos desde la página de <a href="/contacto">Contacto</a>.</p>
+{% endif %}
+{% endblock %}
+
+{% block next %}
+<nav class="pg-next" aria-label="Sigue leyendo">
+  <p class="pg-next-title">Sigue leyendo</p>
+  <ul class="pg-next-list">
+    <li><a href="/terminos">Términos y condiciones</a></li>
+    <li><a href="/uso-de-datos">Uso de los datos</a></li>
+  </ul>
+</nav>
+{% endblock %}
