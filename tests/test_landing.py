@@ -17,10 +17,12 @@ relativas a hoy, como en `test_public_precio.py`.
 """
 
 import re
+import shutil
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -39,9 +41,10 @@ from saimc.models import (
     SourceType,
 )
 from saimc.models.raw_ingestion import ProcessingStatus
+from saimc.web import landing_view
 from saimc.web.app import app
 from saimc.web.deps import get_db
-from saimc.web.landing_view import build_footer_links, build_landing_price
+from saimc.web.landing_view import build_footer_links, build_landing_flow, build_landing_price
 from saimc.web.routers import public
 
 #: Lo que el prototipo traía de relleno y no puede salir en producción.
@@ -505,3 +508,210 @@ class TestLosEnlacesYaCompartidos:
 
         assert respuesta.status_code == 200
         assert "Hola, soy Guani." in respuesta.text
+
+
+# ── «Así trabajo»: pase de capturas y tarjeta de video (2026-10-06) ──────────
+#
+# Los valores esperados (textos de los pasos, medidas, peso) salen del
+# prototipo aprobado y de los archivos, escritos antes que `build_landing_flow`.
+
+PASOS = (
+    "Un emprendedor publica su oferta en un grupo o canal.",
+    "El anuncio llega a Guani tal cual se escribió.",
+    "Saco el producto, el precio y la provincia.",
+    "Una persona lo revisa y lo corrige si hace falta.",
+    "Lo ves en el tablero como rango, mediana y número de anuncios.",
+)
+CAPTURAS = tuple(f"flujo-{n}.webp" for n in range(1, 6))
+
+
+def _imagenes_del_pase(html: str) -> list[str]:
+    return re.findall(r'<img\b[^>]*class="lp-shot"[^>]*>', html)
+
+
+def _copiar_capturas(destino: Path, *, salvo: str | None = None) -> None:
+    for nombre in CAPTURAS:
+        if nombre != salvo:
+            shutil.copy(landing_view.LANDING_STATIC_DIR / nombre, destino / nombre)
+
+
+@pytest.fixture
+def directorio(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Un directorio de estáticos de mentira, con las cinco capturas reales
+    copiadas: cada caso le quita o le agrega lo que necesita sin tocar el repo."""
+    _copiar_capturas(tmp_path)
+    monkeypatch.setattr(landing_view, "LANDING_STATIC_DIR", tmp_path)
+    return tmp_path
+
+
+class TestElRecorridoArmado:
+    def test_con_las_cinco_capturas_hay_cinco_pasos_en_orden(self) -> None:
+        flujo = build_landing_flow()
+
+        assert [paso.text for paso in flujo.steps] == list(PASOS)
+        assert len(flujo.shots) == 5
+        for numero, captura in enumerate(flujo.shots, start=1):
+            assert captura.src.startswith(f"/static/landing/flujo-{numero}.webp?v=")
+            assert (captura.width, captura.height) == (460, 958)
+            assert len(captura.alt) > 20
+
+    def test_las_medidas_declaradas_son_las_de_los_archivos(self) -> None:
+        """`width`/`height` reservan el hueco antes de que la imagen llegue:
+        si no coinciden con el archivo, la captura sale deformada."""
+        image = pytest.importorskip("PIL.Image")
+
+        for nombre, captura in zip(CAPTURAS, build_landing_flow().shots, strict=True):
+            with image.open(landing_view.LANDING_STATIC_DIR / nombre) as archivo:
+                assert archivo.size == (captura.width, captura.height)
+
+    def test_las_capturas_pesan_poco(self) -> None:
+        """Conexión lenta del visitante: el pase entero cabe en 150 KB."""
+        total = sum((landing_view.LANDING_STATIC_DIR / n).stat().st_size for n in CAPTURAS)
+
+        assert total < 150_000
+
+    def test_si_falta_una_captura_no_hay_pase(self, tmp_path: Path) -> None:
+        _copiar_capturas(tmp_path, salvo="flujo-3.webp")
+
+        flujo = build_landing_flow(tmp_path)
+
+        assert flujo.shots == ()
+        assert [paso.text for paso in flujo.steps] == list(PASOS)
+
+    def test_una_captura_vacia_cuenta_como_faltante(self, tmp_path: Path) -> None:
+        _copiar_capturas(tmp_path, salvo="flujo-2.webp")
+        (tmp_path / "flujo-2.webp").write_bytes(b"")
+
+        assert build_landing_flow(tmp_path).shots == ()
+
+    def test_hoy_no_hay_video(self) -> None:
+        assert build_landing_flow().video is None
+
+    def test_el_video_trae_su_peso_real_y_la_captura_5_de_portada(self, tmp_path: Path) -> None:
+        _copiar_capturas(tmp_path)
+        (tmp_path / "guani-flujo.mp4").write_bytes(b"\0" * 3_400_000)
+
+        video = build_landing_flow(tmp_path).video
+
+        assert video is not None
+        assert video.src.startswith("/static/landing/guani-flujo.mp4?v=")
+        assert video.size_text == "3,4 MB"
+        assert video.poster is not None
+        assert video.poster.startswith("/static/landing/flujo-5.webp?v=")
+
+    def test_la_portada_propia_gana_a_la_captura_5(self, tmp_path: Path) -> None:
+        _copiar_capturas(tmp_path)
+        (tmp_path / "guani-flujo.mp4").write_bytes(b"\0" * 12_960_000)
+        (tmp_path / "guani-flujo-poster.webp").write_bytes(b"RIFF")
+
+        video = build_landing_flow(tmp_path).video
+
+        assert video is not None
+        assert video.size_text == "13,0 MB"
+        assert video.poster is not None
+        assert video.poster.startswith("/static/landing/guani-flujo-poster.webp?v=")
+
+    def test_un_video_chico_no_se_anuncia_como_cero(self, tmp_path: Path) -> None:
+        (tmp_path / "guani-flujo.mp4").write_bytes(b"\0" * 20_000)
+
+        video = build_landing_flow(tmp_path).video
+
+        assert video is not None
+        assert video.size_text == "0,1 MB"
+        assert video.poster is None
+
+    def test_un_video_vacio_no_es_un_video(self, tmp_path: Path) -> None:
+        (tmp_path / "guani-flujo.mp4").write_bytes(b"")
+
+        assert build_landing_flow(tmp_path).video is None
+
+
+class TestAsiTrabajoEnLaPagina:
+    def test_trae_las_cinco_capturas_con_alt_y_medidas(self, client: TestClient) -> None:
+        imagenes = _imagenes_del_pase(client.get("/").text)
+
+        assert len(imagenes) == 5
+        for numero, imagen in enumerate(imagenes, start=1):
+            assert f'src="/static/landing/flujo-{numero}.webp?v=' in imagen
+            assert re.search(r'alt="[^"]{20,}"', imagen)
+            assert 'width="460"' in imagen
+            assert 'height="958"' in imagen
+            assert 'decoding="async"' in imagen
+
+    def test_solo_la_primera_captura_carga_de_entrada(self, client: TestClient) -> None:
+        imagenes = _imagenes_del_pase(client.get("/").text)
+
+        assert 'loading="lazy"' not in imagenes[0]
+        assert all('loading="lazy"' in imagen for imagen in imagenes[1:])
+
+    def test_los_cinco_pasos_van_en_una_lista_ordenada(self, client: TestClient) -> None:
+        listas = re.findall(r'<ol class="lp-flow-steps"[^>]*>.*?</ol>', client.get("/").text, flags=re.S)
+
+        assert len(listas) == 1
+        items = [" ".join(_visible(li).split()) for li in re.findall(r"<li\b.*?</li>", listas[0], flags=re.S)]
+        assert items == [f"{n} {texto}" for n, texto in enumerate(PASOS, start=1)]
+
+    def test_con_el_pase_no_van_las_tarjetas_de_respaldo(self, client: TestClient) -> None:
+        texto = client.get("/").text
+
+        assert 'class="lp-steps"' not in texto
+        assert "Leo los anuncios" not in texto
+
+    def test_cada_captura_se_sirve(self, client: TestClient) -> None:
+        for imagen in _imagenes_del_pase(client.get("/").text):
+            respuesta = client.get(re.search(r'src="([^"]+)"', imagen).group(1))  # type: ignore[union-attr]
+
+            assert respuesta.status_code == 200
+            assert respuesta.headers["content-type"] == "image/webp"
+            assert respuesta.content[:4] == b"RIFF"
+
+    def test_sin_el_mp4_no_hay_video(self, client: TestClient) -> None:
+        texto = client.get("/").text
+
+        assert "<video" not in texto
+        assert "Mira el recorrido completo" not in texto
+
+    def test_sigue_sin_javascript(self, client: TestClient) -> None:
+        assert "<script" not in client.get("/").text.split('<main class="lp-main">')[1]
+
+    def test_si_falta_una_captura_vuelven_las_tarjetas(self, client: TestClient, directorio: Path) -> None:
+        (directorio / "flujo-4.webp").unlink()
+
+        texto = client.get("/").text
+
+        assert _imagenes_del_pase(texto) == []
+        assert "<ol" not in texto
+        assert 'class="lp-steps"' in texto
+        for titulo in ("Leo los anuncios", "Los reviso uno por uno", "Te lo enseño en claro"):
+            assert titulo in texto
+
+    def test_con_el_mp4_hay_video_con_boton_y_sin_autoplay(
+        self, client: TestClient, directorio: Path
+    ) -> None:
+        (directorio / "guani-flujo.mp4").write_bytes(b"\0" * 3_400_000)
+
+        texto = client.get("/").text
+        videos = re.findall(r"<video\b[^>]*>", texto)
+
+        assert len(videos) == 1
+        assert 'preload="none"' in videos[0]
+        assert "controls" in videos[0]
+        assert "playsinline" in videos[0]
+        assert "autoplay" not in videos[0]
+        assert 'poster="/static/landing/flujo-5.webp?v=' in videos[0]
+        assert 'src="/static/landing/guani-flujo.mp4?v=' in videos[0]
+        visible = " ".join(_visible(texto).split())
+        assert "Mira el recorrido completo" in visible
+        assert "3,4 MB, solo se descarga si lo abres." in visible
+
+    def test_el_video_no_depende_del_pase(self, client: TestClient, directorio: Path) -> None:
+        """Faltando una captura vuelven las tarjetas, pero el video que existe
+        se ofrece igual."""
+        (directorio / "flujo-1.webp").unlink()
+        (directorio / "guani-flujo.mp4").write_bytes(b"\0" * 1_000_000)
+
+        texto = client.get("/").text
+
+        assert 'class="lp-steps"' in texto
+        assert len(re.findall(r"<video\b", texto)) == 1
+        assert "1,0 MB" in _visible(texto)

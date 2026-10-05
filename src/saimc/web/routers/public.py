@@ -52,7 +52,7 @@ from saimc.web.explore_view import (
     build_explore_nav,
     build_explore_products,
 )
-from saimc.web.landing_view import build_landing_price
+from saimc.web.landing_view import build_landing_flow, build_landing_price
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import (
     ProductPanel,
@@ -946,6 +946,7 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> Response:
             {
                 "home_href": HOME_PATH,
                 "price": build_landing_price(observations),
+                "flow": build_landing_flow(),
                 "products": products,
                 "view_tiles": _LANDING_VIEW_TILES,
                 "window_days": (hasta - desde).days,

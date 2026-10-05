@@ -34,6 +34,10 @@ a{color:#05668d}a:hover{color:#034a66}
 .g-draw{stroke-dasharray:60;animation:draw 2.4s ease-out infinite alternate}
 .g-tile{transition:transform .18s ease,box-shadow .18s ease}
 .g-tile:hover{transform:translateY(-4px);box-shadow:0 8px 22px rgba(5,32,48,.18)}
+@keyframes shot{0%{opacity:0}3%,20%{opacity:1}23%,100%{opacity:0}}
+@keyframes step{0%,23%,100%{border-color:#c4cfcf;background:#ffffff}3%,20%{border-color:#05668d;background:#e8f1f6}}
+.g-shot{animation:shot 20s linear infinite}
+.g-step{animation:step 20s linear infinite}
 @supports (animation-timeline: view()){
 .g-reveal{animation:rise linear both;animation-timeline:view();animation-range:entry 0% entry 45%}
 .g-fill{transform-origin:left;animation:grow linear both;animation-timeline:view();animation-range:entry 20% cover 40%}
@@ -41,7 +45,7 @@ a{color:#05668d}a:hover{color:#034a66}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
 </helmet>
-<div style="width: 100%; min-height: 4050px; box-sizing: border-box; background: #f2f6f6; color: #191c1c; font-family: 'Roboto', sans-serif; display: flex; flex-direction: column">
+<div style="width: 100%; min-height: 4300px; box-sizing: border-box; background: #f2f6f6; color: #191c1c; font-family: 'Roboto', sans-serif; display: flex; flex-direction: column">
 
 <section style="background: #05668d; color: #ffffff; overflow: hidden">
 <div style="max-width: 1080px; margin: 0 auto; padding: 16px 20px 28px; box-sizing: border-box">
@@ -88,49 +92,40 @@ a{color:#05668d}a:hover{color:#034a66}
 
 <section style="max-width: 1080px; width: 100%; margin: 0 auto; padding: 20px 20px 8px; box-sizing: border-box">
 <h2 style="margin: 0; font-family: 'Alice', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1.1">Así trabajo</h2>
-<div style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px">
+<p style="margin: 10px 0 0; font-size: 17px; line-height: 1.5; color: #3f4949; max-width: 620px">El recorrido de un anuncio, desde que alguien lo publica hasta que lo ves como precio.</p>
+<div style="margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 28px 56px">
 
-<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 16px; box-sizing: border-box">
-<div style="position: relative; border-radius: 16px; background: #e8f1f6; padding: 12px">
-<svg viewBox="0 0 240 110" style="display: block; width: 100%; height: auto" aria-hidden="true">
-<g class="g-pop"><rect x="14" y="10" width="120" height="26" rx="13" fill="#ffffff"/><rect x="26" y="20" width="70" height="6" rx="3" fill="#c4cfcf"/><rect x="102" y="20" width="20" height="6" rx="3" fill="#05668d"/></g>
-<g class="g-pop" style="animation-delay: .7s"><rect x="92" y="44" width="134" height="26" rx="13" fill="#05668d"/><rect x="104" y="54" width="60" height="6" rx="3" fill="#cce8e9"/><rect x="170" y="54" width="44" height="6" rx="3" fill="#ffffff"/></g>
-<g class="g-pop" style="animation-delay: 1.4s"><rect x="14" y="78" width="104" height="26" rx="13" fill="#ffffff"/><rect x="26" y="88" width="50" height="6" rx="3" fill="#c4cfcf"/><rect x="82" y="88" width="24" height="6" rx="3" fill="#05668d"/></g>
-</svg>
+<div style="flex: 1 1 260px; min-width: 0; display: flex; justify-content: center">
+<div style="position: relative; width: 250px; height: 500px; flex: none; border-radius: 36px; background: #191c1c; padding: 10px; box-sizing: border-box; box-shadow: 0 10px 30px rgba(5, 32, 48, 0.22)">
+<div style="position: relative; width: 100%; height: 100%; border-radius: 28px; overflow: hidden; background: #e8f1f6">
+<div class="g-shot" style="position: absolute; inset: 0; opacity: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; box-sizing: border-box; text-align: center; background: #e8f1f6; color: #3f4949"><span class="ms" style="font-size: 44px; color: #05668d" aria-hidden="true">forum</span><span style="font-size: 15px; line-height: 1.4">[CAPTURA 1 · anuncio en un grupo de WhatsApp, sin teléfonos ni nombres]</span></div>
+<div class="g-shot" style="position: absolute; inset: 0; opacity: 0; animation-delay: 4s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; box-sizing: border-box; text-align: center; background: #cce8e9; color: #041f21"><span class="ms" style="font-size: 44px; color: #05668d" aria-hidden="true">layers</span><span style="font-size: 15px; line-height: 1.4">[CAPTURA 2 · el anuncio en la cola de Guani]</span></div>
+<div class="g-shot" style="position: absolute; inset: 0; opacity: 0; animation-delay: 8s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; box-sizing: border-box; text-align: center; background: #e8f1f6; color: #3f4949"><span class="ms" style="font-size: 44px; color: #05668d" aria-hidden="true">tune</span><span style="font-size: 15px; line-height: 1.4">[CAPTURA 3 · producto, precio y provincia extraídos]</span></div>
+<div class="g-shot" style="position: absolute; inset: 0; opacity: 0; animation-delay: 12s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; box-sizing: border-box; text-align: center; background: #cce8e9; color: #041f21"><span class="ms" style="font-size: 44px; color: #05668d" aria-hidden="true">fact_check</span><span style="font-size: 15px; line-height: 1.4">[CAPTURA 4 · la verificación a mano]</span></div>
+<div class="g-shot" style="position: absolute; inset: 0; opacity: 0; animation-delay: 16s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; box-sizing: border-box; text-align: center; background: #e8f1f6; color: #3f4949"><span class="ms" style="font-size: 44px; color: #05668d" aria-hidden="true">sell</span><span style="font-size: 15px; line-height: 1.4">[CAPTURA 5 · el precio en el tablero]</span></div>
 </div>
-<div style="margin-top: 14px; display: flex; align-items: center; gap: 10px"><span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">1</span><span style="font-size: 18px; font-weight: 700">Leo los anuncios</span></div>
-<div style="margin-top: 6px; font-size: 16px; line-height: 1.45; color: #3f4949">Lo que los emprendedores publican en grupos y canales de WhatsApp, tal cual.</div>
 </div>
-
-<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 16px; box-sizing: border-box">
-<div style="border-radius: 16px; background: #e8f1f6; padding: 12px">
-<svg viewBox="0 0 240 110" style="display: block; width: 100%; height: auto" aria-hidden="true">
-<rect x="40" y="12" width="130" height="86" rx="12" fill="#ffffff"/>
-<rect x="54" y="28" width="60" height="7" rx="3.5" fill="#05668d"/>
-<rect x="54" y="46" width="100" height="6" rx="3" fill="#c4cfcf"/>
-<rect x="54" y="60" width="84" height="6" rx="3" fill="#c4cfcf"/>
-<rect x="54" y="74" width="48" height="12" rx="6" fill="#cce8e9"/>
-<circle cx="176" cy="74" r="26" fill="#05668d"/>
-<path class="g-draw" d="M163,75 L172,84 L190,64" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-</div>
-<div style="margin-top: 14px; display: flex; align-items: center; gap: 10px"><span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">2</span><span style="font-size: 18px; font-weight: 700">Los reviso uno por uno</span></div>
-<div style="margin-top: 6px; font-size: 16px; line-height: 1.45; color: #3f4949">De cada anuncio saco producto, precio y provincia, y una persona lo verifica.</div>
 </div>
 
-<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 16px; box-sizing: border-box">
-<div style="border-radius: 16px; background: #e8f1f6; padding: 12px">
-<svg viewBox="0 0 240 110" style="display: block; width: 100%; height: auto" aria-hidden="true">
-<rect x="20" y="96" width="200" height="3" rx="1.5" fill="#c4cfcf"/>
-<rect class="g-bar" x="34" y="56" width="26" height="40" rx="6" fill="#028090"/>
-<rect class="g-bar" x="72" y="34" width="26" height="62" rx="6" fill="#05668d" style="animation-delay: .3s"/>
-<rect class="g-bar" x="110" y="18" width="26" height="78" rx="6" fill="#05668d" style="animation-delay: .6s"/>
-<rect class="g-bar" x="148" y="42" width="26" height="54" rx="6" fill="#05668d" style="animation-delay: .9s"/>
-<rect class="g-bar" x="186" y="66" width="26" height="30" rx="6" fill="#028090" style="animation-delay: 1.2s"/>
-</svg>
+<div style="flex: 1 1 320px; min-width: 0">
+<ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">
+<li class="g-step" style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; border: 1px solid #c4cfcf; background: #ffffff"><span style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">1</span><span style="font-size: 16px; line-height: 1.4">Un emprendedor publica su oferta en un grupo o canal.</span></li>
+<li class="g-step" style="animation-delay: 4s; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; border: 1px solid #c4cfcf; background: #ffffff"><span style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">2</span><span style="font-size: 16px; line-height: 1.4">El anuncio llega a Guani tal cual se escribió.</span></li>
+<li class="g-step" style="animation-delay: 8s; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; border: 1px solid #c4cfcf; background: #ffffff"><span style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">3</span><span style="font-size: 16px; line-height: 1.4">Saco el producto, el precio y la provincia.</span></li>
+<li class="g-step" style="animation-delay: 12s; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; border: 1px solid #c4cfcf; background: #ffffff"><span style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">4</span><span style="font-size: 16px; line-height: 1.4">Una persona lo revisa y lo corrige si hace falta.</span></li>
+<li class="g-step" style="animation-delay: 16s; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; border: 1px solid #c4cfcf; background: #ffffff"><span style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">5</span><span style="font-size: 16px; line-height: 1.4">Lo ves en el tablero como rango, mediana y número de anuncios.</span></li>
+</ol>
+
+<div style="margin-top: 20px; border-radius: 24px; overflow: hidden; background: #ffffff; border: 1px solid #c4cfcf">
+<div style="position: relative; aspect-ratio: 16 / 9; background: #191c1c; display: flex; align-items: center; justify-content: center">
+<span style="position: absolute; left: 14px; top: 12px; font-size: 13px; color: #c4cfcf">[PORTADA DEL VIDEO]</span>
+<button type="button" aria-label="Reproducir el video del recorrido" class="g-tile" style="width: 72px; height: 72px; border-radius: 50%; border: 0; background: #ffffff; color: #05668d; display: flex; align-items: center; justify-content: center; cursor: pointer"><svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></button>
 </div>
-<div style="margin-top: 14px; display: flex; align-items: center; gap: 10px"><span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">3</span><span style="font-size: 18px; font-weight: 700">Te lo enseño en claro</span></div>
-<div style="margin-top: 6px; font-size: 16px; line-height: 1.45; color: #3f4949">Rango, mediana y cuántos anuncios hay detrás de cada cifra.</div>
+<div style="padding: 14px 16px">
+<div style="font-size: 17px; font-weight: 700">Mira el recorrido completo</div>
+<div style="margin-top: 4px; font-size: 14px; line-height: 1.45; color: #3f4949">[DURACIÓN] · con voz y subtítulos · [PESO] MB, solo se descarga si lo abres.</div>
+</div>
+</div>
 </div>
 
 </div>
@@ -272,7 +267,7 @@ a{color:#05668d}a:hover{color:#034a66}
 
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":4050}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":4300}}'>
 class Component extends DCLogic {
   renderVals() { return {}; }
 }
