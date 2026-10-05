@@ -118,6 +118,52 @@ def test_cambio_de_source_reference() -> None:
     )
 
 
+def test_fila_agregada_lleva_sus_valores_y_omite_los_nulos() -> None:
+    detail = {
+        "rows": [
+            {
+                "price_history_id": "x",
+                "op": "added",
+                "after": {
+                    "product_id": PRODUCTO,
+                    "province_id": None,
+                    "price": "450.00",
+                    "currency": "CUP",
+                },
+            }
+        ]
+    }
+
+    resumen = describe_edit(detail, NOMBRES)
+
+    assert resumen is not None
+    (fila,) = resumen.rows
+    assert fila.added is True
+    assert fila.deleted is False
+    valores = {c.label: c.after for c in fila.changes}
+    assert valores == {"Producto": "Pollo", "Precio": "450.00", "Moneda": "CUP"}
+
+
+def test_una_fila_actualizada_o_eliminada_no_figura_como_agregada() -> None:
+    detail = {
+        "rows": [
+            {"op": "updated", "before": {"price": "1"}, "after": {"price": "2"}},
+            {"op": "deleted", "before": {"price": "1"}},
+        ]
+    }
+
+    resumen = describe_edit(detail, NOMBRES)
+
+    assert resumen is not None
+    assert [fila.added for fila in resumen.rows] == [False, False]
+
+
+def test_referenced_catalog_ids_incluye_los_de_una_fila_agregada() -> None:
+    detail = {"rows": [{"op": "added", "after": {"product_id": "a", "variant_id": "v"}}]}
+
+    assert referenced_catalog_ids([detail]) == {"product_id": {"a"}, "variant_id": {"v"}}
+
+
 def test_una_edicion_sin_cambios_no_es_un_cambio() -> None:
     assert describe_edit({"rows": []}, NOMBRES) is None
 

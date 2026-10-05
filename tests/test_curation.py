@@ -3948,7 +3948,10 @@ class TestEditarCuradoGet:
 
         response = client.get(f"/curation/{curado.id}/edit")
 
-        assert "removeProductCard" not in response.text
+        # Las filas ya curadas no llevan el botón de quitar tarjeta (se borran
+        # con la casilla `delete_i`); el molde de «Agregar fila» sí lo trae.
+        filas_curadas = response.text.split('<template id="price-row-template"')[0]
+        assert "removeProductCard" not in filas_curadas
         assert "Detectado" not in response.text
 
 
@@ -7252,6 +7255,719 @@ class TestHistorialDeEdiciones:
 
         assert "Editado 1 vez" in html
         assert "grupo nuevo" in html
+
+
+def _campos_fila_nueva(producto: Product, i: int, **campos: str) -> dict[str, str]:
+    """Una fila agregada en la pantalla de corrección: como las de
+    `_campos_fila`, pero con `price_id` vacío, que es lo que la distingue."""
+    datos = {
+        f"price_id_{i}": "",
+        f"product_id_{i}": str(producto.id),
+        f"price_{i}": "450",
+        f"currency_{i}": Currency.CUP.value,
+    }
+    for campo, valor in campos.items():
+        datos[f"{campo}_{i}"] = valor
+    return datos
+
+
+class TestEditarCuradoAgregarFila:
+    """Al corregir un anuncio, el operador puede agregarle una fila que faltó
+    en la curaduría original. La fila nueva es la que viaja sin `price_id`."""
+
+    def test_el_get_trae_el_molde_y_el_boton(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, _a, _b = _curado_de_dos_filas(session)
+
+        html = client.get(f"/curation/{curado.id}/edit").text
+
+        assert 'onclick="addProductCard()"' in html
+        assert 'name="row_count" value="2"' in html
+        _, _, resto = html.partition('<template id="price-row-template"')
+        molde = resto.split("</template>")[0]
+        # Indexado en `row_count`, la semilla del contador del JS.
+        assert 'data-template-index="2"' in molde
+        assert 'name="price_id_2" value=""' in molde
+        # Una fila nueva se quita del formulario, no se marca para borrar.
+        assert "removeProductCard" in molde
+        assert 'name="delete_2"' not in molde
+        # El JS que clona el molde viaja en la página, una sola vez.
+        assert html.count("function addProductCard()") == 1
+
+    def test_la_cola_sigue_trayendo_el_js_de_agregar_fila(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El JS se mudó de `curation.html` al parcial que comparten las dos
+        pantallas: la cola lo tiene que seguir recibiendo, y una sola vez."""
+        _crear_producto(session, name="Pollo")
+        _crear_raw_ingestion(session, hash_="hash-js-cola", original_text="pollo a 500")
+
+        html = client.get("/curation").text
+
+        assert html.count("function addProductCard()") == 1
+        assert html.count("function removeProductCard(") == 1
+
+    def test_agrega_una_fila_y_conserva_las_existentes(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        habana = _crear_provincia(session)
+        id_a, id_b = a.id, b.id
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(
+                    pavo, 2, price="450", unit="lb", province_id=str(habana.id),
+                    sale_format="retail", min_purchase="5",
+                ),
+            ],
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        filas = {f.id: f for f in session.execute(select(PriceHistory)).scalars()}
+        assert len(filas) == 3
+        assert filas[id_a].price == Decimal("100")
+        assert filas[id_b].price == Decimal("200")
+        (nueva,) = [f for f in filas.values() if f.id not in (id_a, id_b)]
+        assert nueva.source_id == curado.id
+        assert nueva.product_id == pavo.id
+        assert nueva.province_id == habana.id
+        assert nueva.price == Decimal("450")
+        assert nueva.currency == "CUP"
+        assert nueva.unit == "lb"
+        assert nueva.sale_format == SaleFormat.RETAIL.value
+        assert nueva.min_purchase_quantity == Decimal("5")
+        assert nueva.provenance == "human"
+        assert nueva.published_date == filas[id_a].published_date
+        assert nueva.published_date == date.fromisoformat(_fecha_pub(curado))
+        # El anuncio sigue curado.
+        session.refresh(curado)
+        assert curado.processing_status == ProcessingStatus.CURATED
+
+    def test_la_fila_nueva_resuelve_formato_y_variante_como_en_la_cola(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(
+                    pavo, 2, price="24800", quantity="40", unit="lb", packaging="caja",
+                    price_basis="total", variant_brand="Vitalín",
+                ),
+            ],
+        )
+
+        session.expire_all()
+        (nueva,) = session.execute(
+            select(PriceHistory).where(PriceHistory.product_id == pavo.id)
+        ).scalars()
+        assert nueva.price_basis == "total"
+        formato = session.get(ProductFormat, nueva.format_id)
+        assert formato is not None
+        assert (formato.product_id, formato.packaging, formato.quantity, formato.unit) == (
+            pavo.id, "caja", Decimal("40"), "lb",
+        )
+        variante = session.get(ProductVariant, nueva.variant_id)
+        assert variante is not None
+        assert variante.product_id == pavo.id
+
+    def test_la_fila_nueva_en_divisa_se_convierte_con_la_tasa_de_la_fecha(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        fecha = date.fromisoformat(_fecha_pub(curado))
+        fetcher = _FakeRateFetcher({("USD", fecha): Decimal("500")})
+        app.dependency_overrides[get_rate_fetcher] = lambda: fetcher
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pavo, 2, price="2", currency="USD"),
+            ],
+        )
+
+        assert response.headers["location"] == "/curation/history"
+        session.expire_all()
+        (nueva,) = session.execute(
+            select(PriceHistory).where(PriceHistory.currency == "USD")
+        ).scalars()
+        assert nueva.exchange_rate == Decimal("500")
+        assert nueva.exchange_rate_date == fecha
+        assert nueva.price_cup == Decimal("1000")
+
+    def test_la_fila_nueva_en_divisa_sin_tasa_se_guarda_y_avisa(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pavo, 2, price="2", currency="USD"),
+            ],
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/curation/history?unconverted=1"
+        session.expire_all()
+        (nueva,) = session.execute(
+            select(PriceHistory).where(PriceHistory.currency == "USD")
+        ).scalars()
+        assert nueva.price_cup is None
+
+    def test_la_fila_nueva_queda_validada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1), _campos_fila_nueva(pavo, 2)],
+        )
+
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 3
+        assert all(f.validation_status is not None for f in filas)
+
+    def test_price_id_ajeno_sigue_siendo_error_y_no_crea_nada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Una fila CON `price_id` que no es de este anuncio no se toma por
+        una fila nueva: es la protección contra un id viejo o cruzado."""
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0, price="900"),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pavo, 2, price_id=str(uuid.uuid4())),
+            ],
+        )
+
+        assert response.status_code == 422
+        assert "Fila 3: no corresponde a una fila curada de este anuncio" in response.text
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert sorted(f.price for f in filas) == [Decimal("100"), Decimal("200")]
+        assert _eventos(session) == []
+
+    def test_price_id_ilegible_tambien_es_error(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pavo, 2, price_id="no-es-un-uuid"),
+            ],
+        )
+
+        assert response.status_code == 422
+        assert "no corresponde" in response.text
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 2
+
+    @pytest.mark.parametrize(
+        ("campos", "mensaje"),
+        [
+            ({"price": ""}, "Fila 3: falta el precio"),
+            ({"price": "no-es-un-numero"}, "Fila 3: precio inválido"),
+            ({"product_id": ""}, "Fila 3: seleccioná o agregá un producto"),
+            (
+                {"quantity": "40", "unit": "lb"},
+                "Fila 3: declará si el precio es por unidad o por el lote entero",
+            ),
+        ],
+    )
+    def test_una_fila_nueva_invalida_bloquea_todo_el_guardado(
+        self, client: TestClient, session: Session, campos: dict[str, str], mensaje: str
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0, price="900"),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pavo, 2, **campos),
+            ],
+        )
+
+        assert response.status_code == 422
+        assert mensaje in response.text
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        # Nada creado y nada actualizado: la fila `a` conserva su precio.
+        assert sorted(f.price for f in filas) == [Decimal("100"), Decimal("200")]
+        assert _eventos(session) == []
+
+    def test_el_rebote_conserva_la_fila_nueva_tipeada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pavo, 2, price="no-es-un-numero"),
+            ],
+        )
+
+        filas_visibles = response.text.split('<template id="price-row-template"')[0]
+        assert 'name="price_id_2" value=""' in filas_visibles
+        assert 'id="price_2" value="no-es-un-numero"' in filas_visibles
+        assert f'value="{pavo.id}" selected' in filas_visibles
+        # Sigue siendo una fila nueva: se quita, no se marca para borrar.
+        assert 'name="delete_2"' not in filas_visibles
+        assert "removeProductCard" in filas_visibles
+        assert 'name="row_count" value="3"' in response.text
+
+    def test_una_fila_agregada_en_blanco_se_ignora(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Mismo criterio que la cola: sin producto y sin precio no es una
+        fila que el operador quiso cargar."""
+        curado, a, b = _curado_de_dos_filas(session)
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                {"price_id_2": "", "product_id_2": "", "price_2": "", "currency_2": "CUP"},
+            ],
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 2
+        (evento,) = _eventos(session)
+        assert (evento.detail or {})["rows"] == []
+
+    def test_el_hueco_de_una_tarjeta_quitada_no_rompe(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El operador agregó dos tarjetas y quitó la primera: el índice 2 no
+        viaja y `row_count` igual vale 4."""
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        datos = {**_campos_fila(a, 0), **_campos_fila(b, 1), **_campos_fila_nueva(pavo, 3)}
+        response = _post_edicion(client, curado, [datos], row_count="4")
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 3
+
+    def test_el_rebote_no_redibuja_las_filas_nuevas_en_blanco(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Una tarjeta quitada (o dejada en blanco) no reaparece en el rebote,
+        y el número del error es el de la tarjeta que se vuelve a mostrar."""
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        datos = {
+            **_campos_fila(a, 0),
+            **_campos_fila(b, 1),
+            **_campos_fila_nueva(pavo, 3, price=""),
+        }
+        response = _post_edicion(client, curado, [datos], row_count="4")
+
+        assert response.status_code == 422
+        assert "Fila 3: falta el precio" in response.text
+        assert 'name="row_count" value="3"' in response.text
+        filas_visibles = response.text.split('<template id="price-row-template"')[0]
+        assert 'name="product_id_2"' in filas_visibles
+        assert 'name="product_id_3"' not in filas_visibles
+
+    def test_se_puede_reemplazar_la_unica_fila_por_una_nueva(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Borrar todas las filas que había está permitido si se agrega otra:
+        el anuncio no queda sin filas, que es lo único que se rechaza."""
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0, delete="on"),
+                _campos_fila(b, 1, delete="on"),
+                _campos_fila_nueva(pavo, 2),
+            ],
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        (unica,) = session.execute(select(PriceHistory)).scalars()
+        assert unica.product_id == pavo.id
+
+    def test_borrar_todo_y_agregar_solo_una_fila_en_blanco_se_rechaza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0, delete="on"),
+                _campos_fila(b, 1, delete="on"),
+                {"price_id_2": "", "product_id_2": "", "price_2": ""},
+            ],
+        )
+
+        assert response.status_code == 422
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 2
+
+    def test_reenviar_el_mismo_formulario_no_duplica_la_fila_agregada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Guardar, volver atrás y guardar otra vez: el segundo envío trae la
+        misma tarjeta con `price_id` vacío."""
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        filas = [
+            _campos_fila(a, 0),
+            _campos_fila(b, 1),
+            _campos_fila_nueva(pavo, 2, price="450.00", quantity="2", unit="lb", price_basis="unit"),
+        ]
+
+        primero = _post_edicion(client, curado, filas)
+        segundo = _post_edicion(client, curado, filas)
+
+        assert primero.status_code == 303
+        assert segundo.status_code == 422
+        assert "Fila 3: ya hay una fila igual en este anuncio" in segundo.text
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 3
+        assert len(_eventos(session)) == 1
+
+    def test_dos_filas_nuevas_identicas_en_el_mismo_envio_se_rechazan(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                # Mismo valor escrito distinto: se compara ya parseado.
+                _campos_fila_nueva(pavo, 2, price="450"),
+                _campos_fila_nueva(pavo, 3, price="450.00"),
+            ],
+        )
+
+        assert response.status_code == 422
+        assert "Fila 4: ya hay una fila igual en este anuncio" in response.text
+        assert "Fila 3: ya hay" not in response.text
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 2
+        assert _eventos(session) == []
+
+    def test_una_fila_nueva_que_solo_difiere_en_el_precio_se_acepta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pollo = session.get(Product, a.product_id)
+        assert pollo is not None
+
+        response = _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1), _campos_fila_nueva(pollo, 2, price="101")],
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 3
+
+    def test_una_fila_nueva_igual_a_una_ya_guardada_se_rechaza(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pollo = session.get(Product, a.product_id)
+        assert pollo is not None
+
+        response = _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1), _campos_fila_nueva(pollo, 2, price="100")],
+        )
+
+        assert response.status_code == 422
+        assert "Fila 3: ya hay una fila igual en este anuncio" in response.text
+
+    def test_una_fila_nueva_igual_a_una_que_se_borra_en_el_mismo_envio_se_acepta(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pollo = session.get(Product, a.product_id)
+        assert pollo is not None
+        id_a, id_b = a.id, b.id
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0, delete="on"),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pollo, 2, price="100"),
+            ],
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        assert len(filas) == 2
+        assert id_a not in {f.id for f in filas}
+        (nueva,) = [f for f in filas if f.id != id_b]
+        assert nueva.price == Decimal("100")
+
+    def test_una_fila_editada_cuenta_con_sus_valores_nuevos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """`a` pasa de 100 a 900 en este mismo envío: una fila nueva de 100
+        ya no choca con ella, y una de 900 sí."""
+        curado, a, b = _curado_de_dos_filas(session)
+        pollo = session.get(Product, a.product_id)
+        assert pollo is not None
+
+        choca = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0, price="900"),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pollo, 2, price="900"),
+            ],
+        )
+        pasa = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0, price="900"),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pollo, 2, price="100"),
+            ],
+        )
+
+        assert choca.status_code == 422
+        assert "Fila 3: ya hay una fila igual en este anuncio" in choca.text
+        assert pasa.status_code == 303
+
+    @pytest.mark.parametrize(
+        "diferencia",
+        [
+            {"packaging": "saco"},
+            {"variant_brand": "Vitalín"},
+            {"variant_kind": "entero"},
+            {"variant_origin": "importado"},
+            {"min_purchase": "10"},
+            {"sale_format": "wholesale"},
+        ],
+    )
+    def test_una_fila_nueva_que_difiere_en_un_solo_campo_se_acepta(
+        self, client: TestClient, session: Session, diferencia: dict[str, str]
+    ) -> None:
+        """Dos filas legítimamente distintas —otro envase, otra marca, otro
+        mínimo— no son un duplicado aunque coincidan producto y precio."""
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        base = {
+            "price": "450", "quantity": "40", "unit": "lb", "price_basis": "total",
+            "packaging": "caja", "variant_brand": "Magdalena", "variant_kind": "trozado",
+            "variant_origin": "nacional", "min_purchase": "5", "sale_format": "retail",
+        }
+        _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1), _campos_fila_nueva(pavo, 2, **base)],
+        )
+        session.expire_all()
+        filas = list(session.execute(select(PriceHistory).order_by(PriceHistory.created_at)).scalars())
+        assert len(filas) == 3
+
+        # El form siguiente trae las tres filas ya guardadas tal cual, más
+        # una nueva que solo cambia un campo.
+        ya_guardada = {
+            f"{campo}_2": valor for campo, valor in base.items()
+        } | {"price_id_2": str(filas[2].id), "product_id_2": str(pavo.id), "currency_2": "CUP"}
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                ya_guardada,
+                _campos_fila_nueva(pavo, 3, **(base | diferencia)),
+            ],
+        )
+
+        assert response.status_code == 303
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 4
+
+    def test_reenviar_una_fila_con_envase_y_variante_no_la_duplica(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El doble envío sigue frenado con todos los campos cargados, y la
+        variante se compara plegada: «VITALIN» es la misma que «Vitalín»."""
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        campos = {
+            "price": "450", "quantity": "40", "unit": "lb", "price_basis": "total",
+            "packaging": "caja", "variant_brand": "Vitalín", "min_purchase": "5",
+            "sale_format": "retail",
+        }
+        _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1), _campos_fila_nueva(pavo, 2, **campos)],
+        )
+        formatos = len(list(session.execute(select(ProductFormat)).scalars()))
+        variantes = len(list(session.execute(select(ProductVariant)).scalars()))
+
+        # El form viejo, vuelto a enviar: no conoce el id de la fila creada.
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pavo, 2, **(campos | {"variant_brand": "VITALIN"})),
+            ],
+        )
+
+        assert response.status_code == 422
+        assert "Fila 3: ya hay una fila igual en este anuncio" in response.text
+        session.expire_all()
+        assert len(list(session.execute(select(PriceHistory)).scalars())) == 3
+        # La comparación no dejó catálogo nuevo.
+        assert len(list(session.execute(select(ProductFormat)).scalars())) == formatos
+        assert len(list(session.execute(select(ProductVariant)).scalars())) == variantes
+
+    def test_el_rechazo_por_duplicado_no_crea_formato_ni_variante(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        campos = {
+            "price": "450", "quantity": "40", "unit": "lb", "price_basis": "total",
+            "packaging": "caja", "variant_brand": "Vitalín",
+        }
+
+        response = _post_edicion(
+            client,
+            curado,
+            [
+                _campos_fila(a, 0),
+                _campos_fila(b, 1),
+                _campos_fila_nueva(pavo, 2, **campos),
+                _campos_fila_nueva(pavo, 3, **campos),
+            ],
+        )
+
+        assert response.status_code == 422
+        session.expire_all()
+        assert list(session.execute(select(ProductFormat)).scalars()) == []
+        assert list(session.execute(select(ProductVariant)).scalars()) == []
+
+    def test_el_evento_registra_la_fila_agregada_con_sus_valores(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        ids_previos = {a.id, b.id}
+
+        _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1), _campos_fila_nueva(pavo, 2, unit="lb")],
+        )
+
+        (evento,) = _eventos(session)
+        assert evento.action == "edited"
+        (entrada,) = (evento.detail or {})["rows"]
+        (nueva,) = [
+            f for f in session.execute(select(PriceHistory)).scalars() if f.id not in ids_previos
+        ]
+        assert entrada["op"] == "added"
+        assert entrada["price_history_id"] == str(nueva.id)
+        assert "before" not in entrada
+        assert entrada["after"]["product_id"] == str(pavo.id)
+        assert Decimal(entrada["after"]["price"]) == Decimal("450")
+        assert entrada["after"]["currency"] == "CUP"
+        assert entrada["after"]["unit"] == "lb"
+        assert entrada["after"]["published_date"] == _fecha_pub(curado)
+        assert entrada["after"]["province_id"] is None
+
+    def test_el_historial_muestra_la_fila_agregada(
+        self, client: TestClient, session: Session
+    ) -> None:
+        curado, a, b = _curado_de_dos_filas(session)
+        pavo = _crear_producto(session, name="Pavo")
+        _post_edicion(
+            client,
+            curado,
+            [_campos_fila(a, 0), _campos_fila(b, 1), _campos_fila_nueva(pavo, 2, price="777")],
+        )
+
+        html = client.get("/curation/history").text
+
+        assert "Editado 1 vez" in html
+        assert "Fila agregada" in html
+        assert "Fila eliminada" not in html
+        _, _, bloque = html.partition("Fila agregada")
+        bloque = bloque.split("</details>")[0]
+        assert "Producto: Pavo" in bloque
+        assert "777" in bloque
+        assert str(pavo.id) not in bloque
 
 
 class TestBitacoraDeCuraduria:

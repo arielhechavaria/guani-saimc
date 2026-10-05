@@ -3,8 +3,10 @@
   directo: `loop` no viaja a una plantilla incluida, así que el índice se pasa
   explícito. Compartida por curation.html (fila pendiente, editable en su
   totalidad, con badge de detección y botón de eliminar) y curation_edit.html
-  (fila ya curada, corrección acotada: mismos campos, sin agregar ni quitar
-  filas — por eso `edit_mode` esconde el badge y el botón).
+  (corrección de un anuncio ya curado). En `edit_mode` hay dos casos, y los
+  separa `row.price_id`: una fila ya curada trae su id y lleva la casilla
+  «Eliminar esta fila»; una fila que el operador agrega en la corrección viaja
+  con `price_id` vacío y lleva el mismo botón de quitar tarjeta que la cola.
 
   Los nombres indexados (`product_id_N`, `price_N`, `row_count`, …) y los `id`
   no cambian: `submit_curation` y los tests siguen viendo lo mismo.
@@ -24,9 +26,21 @@
                             "unidad": "unidades", "docena": "docenas", "caja": "cajas"} %}
 <div class="m3-card m3-card-pad m3-row-card{% if not row.product_id %} is-review{% endif %}" style="margin-bottom:16px">
 
-  {% if not edit_mode %}
+  {# Fila ya curada: solo en la corrección y solo si trae su id. Todo lo demás
+     —fila de la cola, o fila nueva de la corrección— es una tarjeta que
+     todavía no existe en la base y se quita del formulario. #}
+  {% set curated_row = edit_mode and row.price_id %}
+  {% if not curated_row %}
   <div class="m3-row" style="gap:10px; margin-bottom:18px">
     <span class="m3-row-num">{{ index0 + 1 }}</span>
+    {% if edit_mode %}
+    {# El valor del atributo es la palabra con la que `renumberProductCards`
+       vuelve a numerar la tarjeta: acá las filas se llaman «Fila N». #}
+    <span class="m3-h3 m3-spacer" data-product-label="Fila">Fila {{ index0 + 1 }}</span>
+    <span class="m3-chip m3-chip-warn m3-chip-sm">
+      <span class="m3-icon m3-icon-sm">add</span>Fila nueva
+    </span>
+    {% else %}
     <span class="m3-h3 m3-spacer" data-product-label>Producto {{ index0 + 1 }}</span>
     {% if row.product_id %}
     <span class="m3-chip m3-chip-ok m3-chip-sm">
@@ -36,6 +50,7 @@
     <span class="m3-chip m3-chip-warn m3-chip-sm">
       <span class="m3-icon m3-icon-sm">edit_note</span>Agregar a mano
     </span>
+    {% endif %}
     {% endif %}
     <button type="button" class="m3-icon-btn is-danger" title="Eliminar esta fila"
             onclick="removeProductCard(this)">

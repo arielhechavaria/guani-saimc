@@ -133,7 +133,8 @@ SOURCE_REFERENCE_LABEL = "Canal origen"
 @dataclass(frozen=True)
 class FieldChange:
     """Un campo para mostrar. En una fila eliminada solo se llena `after`
-    (el valor que tenía); `before` queda vacío."""
+    (el valor que tenía) y en una agregada también (el valor con el que
+    nació); `before` queda vacío."""
 
     label: str
     before: str
@@ -144,6 +145,9 @@ class FieldChange:
 class RowEdit:
     deleted: bool
     changes: list[FieldChange] = field(default_factory=list)
+    # La fila la creó esa edición (`op: "added"`). Con valor por defecto para
+    # que quien arma un `RowEdit` de fila actualizada o eliminada no cambie.
+    added: bool = False
 
 
 @dataclass(frozen=True)
@@ -203,6 +207,15 @@ def describe_edit(detail: Mapping[str, Any], names: CatalogNames) -> EditSummary
                 if value is not None
             ]
             rows.append(RowEdit(deleted=True, changes=changes))
+        elif entry.get("op") == "added":
+            # Fila creada en la edición: solo trae `after`, completo. Igual
+            # que la eliminada, se listan los campos que tienen valor.
+            changes = [
+                FieldChange(FIELD_LABELS.get(name, name), "", _display(name, value, names))
+                for name, value in after.items()
+                if value is not None
+            ]
+            rows.append(RowEdit(deleted=False, changes=changes, added=True))
 
     source = detail.get("source_reference")
     source_change = (
