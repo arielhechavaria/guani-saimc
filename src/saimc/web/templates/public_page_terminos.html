@@ -1,0 +1,63 @@
+{#
+  `/terminos`. Términos y condiciones — BORRADOR pendiente de revisión del
+  operador (`docs/decisions.md`, 2026-10-05).
+
+  Dice solo lo que el sitio ya es y hace: un servicio informativo y gratuito,
+  sin cuentas, que resume anuncios y no vende ni intermedia (landing y
+  `/quienes-somos`), con la tasa de un tercero (`spec.md` §6.3 E, fila
+  «Atribución»).
+
+  A propósito NO declara: jurisdicción, ley aplicable, razón social, titular
+  del sitio, edad mínima, limitación de responsabilidad en términos legales ni
+  una licencia con nombre. Nada de eso está decidido en el repositorio, y
+  escribirlo sería inventarlo. `tests/test_site_pages.py` vigila que no se
+  cuele.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Términos y condiciones{% endblock %}
+{% block og_description %}Las condiciones para usar Guani, en lenguaje llano: un servicio informativo y gratuito, sin garantía de exactitud, que no vende ni intermedia.{% endblock %}
+{% block lead %}Las condiciones para usar Guani, en lenguaje llano.{% endblock %}
+
+{% block content %}
+<h2>Qué es este servicio</h2>
+<p>Guani es un servicio informativo y gratuito. Muestra estadísticas de precios sacadas de anuncios del mercado informal cubano. No hace falta registrarse para usarlo.</p>
+
+<h2>Los precios son estadística, no ofertas</h2>
+<ul>
+  <li>Cada cifra resume anuncios que otras personas publicaron. No es una oferta de venta, no es un precio oficial y no es una recomendación de compra.</li>
+  <li>Guani no vende nada, no intermedia entre compradores y vendedores y no cobra comisión por ninguna venta.</li>
+  <li>Que un precio aparezca aquí no significa que el producto esté disponible ni que vayas a encontrarlo a ese precio.</li>
+</ul>
+
+<h2>Sin garantía de exactitud</h2>
+<p>Los anuncios se revisan uno por uno, pero aun así puede haber errores: un anuncio mal leído, un precio que ya cambió o una muestra demasiado pequeña. Por eso cada cifra dice cuántos anuncios tiene detrás. La información se ofrece tal como está, sin garantía de que sea exacta, completa o actual. Las decisiones que tomes con ella son tuyas.</p>
+
+<h2>La tasa de cambio es de un tercero</h2>
+<p>Los precios en moneda extranjera se convierten a pesos cubanos con la <a href="https://eltoque.com/">Tasa Representativa del Mercado Informal (TRMI) de elTOQUE</a>. Esa tasa la calcula y la publica elTOQUE; Guani la usa y la acredita, y no responde por ella.</p>
+
+<h2>Uso de los datos</h2>
+<p>Puedes consultar, descargar y reutilizar los datos de Guani citando la fuente. Los detalles están en <a href="/uso-de-datos">Uso de los datos</a>.</p>
+
+<h2>Lo que te pedimos</h2>
+<ul>
+  <li>No presentes las cifras de Guani como precios oficiales ni como si fueran tuyas.</li>
+  <li>No uses el sitio de un modo que lo deje fuera de servicio para los demás.</li>
+</ul>
+
+<h2>Privacidad</h2>
+<p>Qué se guarda y qué no está en la <a href="/privacidad">Política de privacidad</a>.</p>
+
+<h2>Cambios</h2>
+<p>El sitio y estas condiciones pueden cambiar. La versión que vale es la que está publicada en esta página.</p>
+{% endblock %}
+
+{% block next %}
+<nav class="pg-next" aria-label="Sigue leyendo">
+  <p class="pg-next-title">Sigue leyendo</p>
+  <ul class="pg-next-list">
+    <li><a href="/privacidad">Política de privacidad</a></li>
+    <li><a href="/uso-de-datos">Uso de los datos</a></li>
+  </ul>
+</nav>
+{% endblock %}
