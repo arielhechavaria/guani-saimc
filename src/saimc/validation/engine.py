@@ -10,7 +10,9 @@ proveedor y no escribe nada: eso es de quien lo llama (A5c, B1, B2).
 en `prices_history`, sin propuesta del modelo y sin decidir carril.
 
 Contrato: `docs/spec-motor-validacion.md`. Las precisiones que obligó la
-implementación están en `docs/decisions.md` (2026-10-02, «A5b»).
+implementación están en `docs/decisions.md` (2026-10-02, «A5b»), y el filtro del
+carril 1 (tope de filas, moneda no escrita, posible duplicado) en la entrada del
+2026-10-05, «G1b».
 
 Dos cosas que conviene tener presentes al leerlo:
 
@@ -108,6 +110,10 @@ _RULE_REASONS: dict[str, dict[Outcome, str]] = {
     },
 }
 
+#: El único motivo de una fila que no saca al anuncio del carril 1: un repost no
+#: es un error de extracción. La fila igual queda en `possible_duplicate`.
+_DUPLICATE_REASON = _RULE_REASONS["duplicate"][Outcome.FAIL]
+
 
 def _verification_reasons(
     row: ExtractionProposal, meta: RowMeta, agreement: RowAgreement
@@ -127,11 +133,9 @@ def _verification_reasons(
         )
         if state != COINCIDE
     ]
-    # Las reglas siempre proponen CUP, así que una moneda asumida por los dos
-    # «coincide» sin que nadie la haya leído. Solo cuenta como acuerdo si el
-    # texto la dice (`currency_explicit`): es el caso 6 de la especificación.
-    if "moneda" not in differing and not meta.currency_explicit:
-        differing.append("moneda")
+    # La moneda coincide si reglas y modelo dan la misma, la diga el texto o
+    # no: `meta.currency_explicit` no se mira (G1b, caso 24). Sin moneda de las
+    # reglas (`sin_regla`) no hay acuerdo: es el caso 6.
     if differing:
         reasons.append("reglas y modelo no coinciden en " + ", ".join(differing))
     abstained = [
@@ -368,8 +372,15 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
         reasons.append("la propuesta del modelo tiene filas o campos caídos")
     if not rows:
         reasons.append("la propuesta del modelo no trae ninguna fila")
+    max_rows = None if config is None else config.lane1_max_rows
+    if max_rows is not None and len(rows) > max_rows:
+        # Sin la cantidad de filas: el informe de sombra cuenta anuncios por
+        # motivo, y con ella cada largo sería un motivo distinto.
+        reasons.append(f"la propuesta trae más filas que el tope del carril 1 ({max_rows})")
     for index, row in enumerate(rows, start=1):
-        reasons += [f"fila {index}: {reason}" for reason in row.reasons]
+        reasons += [
+            f"fila {index}: {reason}" for reason in row.reasons if reason != _DUPLICATE_REASON
+        ]
     if config is not None:
         reasons += _signal_reasons(ctx, config)
 
@@ -377,7 +388,10 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
         return AdValidation(LANE_REVIEW, tuple(reasons), rows)
     return AdValidation(
         LANE_ACCEPT,
-        ("anuncio de texto con todas sus filas verificadas y las seis reglas en pass",),
+        (
+            "anuncio de texto con todas sus filas verificadas y las reglas en pass "
+            "(un posible duplicado no frena)",
+        ),
         rows,
     )
 

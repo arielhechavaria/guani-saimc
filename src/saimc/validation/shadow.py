@@ -458,11 +458,9 @@ class CaseResult:
     diff: ProposalDiff | None
     #: Los motivos del motor, tal cual.
     reasons: tuple[str, ...] = ()
-    #: El modelo propuso filas y en alguna la moneda no está escrita.
+    #: El modelo propuso filas y en alguna la moneda no está escrita. Es un
+    #: dato del anuncio: el motor ya no lo mira para decidir el carril (G1b).
     currency_assumed: bool = False
-    #: Quedó fuera del carril 1 SOLO por la moneda no escrita: con
-    #: `currency_explicit` en verdadero en todas sus filas habría entrado.
-    only_currency: bool = False
 
 
 def _lane1_error(kept: bool, diff: ProposalDiff | None) -> bool:
@@ -479,20 +477,6 @@ def evaluate_case(case: Case, config: ValidationConfig) -> CaseResult:
         and model.discard is False
         and any(not meta.currency_explicit for meta in model.row_meta)
     )
-    only_currency = False
-    if assumed and validation.lane == LANE_REVIEW and model is not None:
-        # Contrafáctico: el mismo anuncio con la moneda dada por escrita. Si
-        # así entra al carril 1, lo único que lo dejaba afuera era esa regla.
-        as_explicit = dataclasses.replace(
-            case.ctx,
-            model=dataclasses.replace(
-                model,
-                row_meta=[
-                    dataclasses.replace(meta, currency_explicit=True) for meta in model.row_meta
-                ],
-            ),
-        )
-        only_currency = validate_ad(as_explicit, config).lane == LANE_ACCEPT
     return CaseResult(
         ingestion_id=case.ingestion_id,
         content_type=case.content_type,
@@ -501,7 +485,6 @@ def evaluate_case(case: Case, config: ValidationConfig) -> CaseResult:
         diff=case.diff,
         reasons=validation.reasons,
         currency_assumed=assumed,
-        only_currency=only_currency,
     )
 
 
@@ -551,8 +534,6 @@ class SetSummary:
     reasons: Counter[str] = field(default_factory=Counter)
     #: Anuncios con filas en que alguna moneda no está escrita.
     currency_assumed: int = 0
-    #: De esos, los que quedan fuera del carril 1 SOLO por eso.
-    only_currency: int = 0
     false_discard_ids: list[str] = field(default_factory=list)
     lane1_ids: list[str] = field(default_factory=list)
     lane1_error_ids: list[str] = field(default_factory=list)
@@ -574,7 +555,6 @@ class SetSummary:
             "lane1_added_rows": self.lane1_added_rows,
             "lane2_reasons": dict(sorted(self.reasons.items())),
             "currency_assumed": self.currency_assumed,
-            "only_currency": self.only_currency,
         }
 
 
@@ -592,7 +572,6 @@ def summarize(
         summary.by_type[result.content_type] = summary.by_type.get(result.content_type, 0) + 1
         summary.lanes[result.lane] += 1
         summary.currency_assumed += result.currency_assumed
-        summary.only_currency += result.only_currency
 
         if result.lane == LANE_DISCARD:
             kind = text if result.content_type == text else image
@@ -1099,8 +1078,13 @@ def _params_line(config: ValidationConfig) -> str:
     )
     return (
         f"min_cell_n={config.min_cell_n}  channel_min_history={config.channel_min_history}  "
-        f"channel_max_edit_rate={config.channel_max_edit_rate}  signal_high_probability={signal}"
+        f"channel_max_edit_rate={config.channel_max_edit_rate}  signal_high_probability={signal}  "
+        f"lane1_max_rows={_max_rows_label(config.lane1_max_rows)}"
     )
+
+
+def _max_rows_label(max_rows: int | None) -> str:
+    return "sin tope" if max_rows is None else str(max_rows)
 
 
 def _head_lines(s: SetSummary) -> list[str]:
@@ -1146,8 +1130,9 @@ def _lane1_lines(s: SetSummary) -> list[str]:
 _REASONS_TITLE = (
     "Por qué los anuncios quedan en el carril 2 (anuncios por motivo; uno puede tener varios)"
 )
-_ASSUMED_LABEL = "con alguna fila con la moneda no escrita (`currency_explicit` falso)"
-_ONLY_CURRENCY_LABEL = "fuera del carril 1 SOLO por la moneda no escrita"
+_ASSUMED_LABEL = (
+    "con alguna fila con la moneda no escrita (`currency_explicit` falso; no frena el carril 1)"
+)
 
 
 def _reason_lines(s: SetSummary) -> list[str]:
@@ -1156,12 +1141,7 @@ def _reason_lines(s: SetSummary) -> list[str]:
         f"    {count:>4}  {reason}"
         for reason, count in sorted(s.reasons.items(), key=lambda item: (-item[1], item[0]))
     ] or ["    (ninguno)"]
-    lines += [
-        "  Moneda:",
-        f"    {s.currency_assumed:>4}  anuncios {_ASSUMED_LABEL}",
-        f"    {s.only_currency:>4}  anuncios {_ONLY_CURRENCY_LABEL} "
-        f"(de {s.total}; con la moneda dada por escrita habrían entrado)",
-    ]
+    lines += ["  Moneda:", f"    {s.currency_assumed:>4}  anuncios {_ASSUMED_LABEL}"]
     return lines
 
 
@@ -1209,9 +1189,8 @@ def _render_grid(runs: Sequence[tuple[ValidationConfig, SetSummary]]) -> list[st
     lines += [
         "",
         f"  Una fila por combinación ({len(runs)}). «Res.» agrupa las que dan exactamente "
-        f"el mismo resultado ({len(distinct)} distintos). «Solo moneda»: anuncios fuera "
-        "del carril 1 solo por la moneda no escrita.",
-        "  min_cell_n | min_history | max_edit_rate | C0 | C1 | C2 | Res. | solo moneda "
+        f"el mismo resultado ({len(distinct)} distintos).",
+        "  min_cell_n | min_history | max_edit_rate | C0 | C1 | C2 | Res. "
         "| automatización | error del carril 1 por anuncio",
     ]
     for config, s in runs:
@@ -1219,7 +1198,7 @@ def _render_grid(runs: Sequence[tuple[ValidationConfig, SetSummary]]) -> list[st
             f"  {config.min_cell_n:>10} | {config.channel_min_history:>11} | "
             f"{config.channel_max_edit_rate:>13.2f} | "
             f"{s.lanes[LANE_DISCARD]:>2} | {s.lanes[LANE_ACCEPT]:>2} | "
-            f"{s.lanes[LANE_REVIEW]:>2} | {labels[_signature(s)]:>4} | {s.only_currency:>11} | "
+            f"{s.lanes[LANE_REVIEW]:>2} | {labels[_signature(s)]:>4} | "
             f"{format_rate(s.automation.k, s.automation.n, lower=True)} | "
             f"{format_rate(s.lane1_ad_errors.k, s.lane1_ad_errors.n)}"
         )
@@ -1257,8 +1236,6 @@ def _render_grid(runs: Sequence[tuple[ValidationConfig, SetSummary]]) -> list[st
         "  Moneda:",
         "    " + " ".join(f"{s.currency_assumed:>4}" for s in distinct)
         + f"  anuncios {_ASSUMED_LABEL}",
-        "    " + " ".join(f"{s.only_currency:>4}" for s in distinct)
-        + f"  anuncios {_ONLY_CURRENCY_LABEL}",
     ]
     return lines
 
@@ -1372,6 +1349,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--lane1-max-rows",
+        type=int,
+        default=None,
+        help=(
+            "Tope de filas de una propuesta para entrar al carril 1. Opcional: sin él no "
+            "hay tope. Vale también con --grid, igual para todas las combinaciones."
+        ),
+    )
+    parser.add_argument(
         "--grid",
         action="store_true",
         help="Corre la grilla declarada en el módulo (GRID_*) en vez de una combinación.",
@@ -1392,6 +1378,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "No hay valores por defecto: pasá --min-cell-n, --channel-min-history y "
             "--channel-max-edit-rate, o pedí --grid."
         )
+    if args.lane1_max_rows is not None and args.lane1_max_rows < 1:
+        parser.error("--lane1-max-rows tiene que ser 1 o más (sin el argumento no hay tope).")
     return args
 
 
@@ -1403,6 +1391,7 @@ def configs_from_args(args: argparse.Namespace) -> list[ValidationConfig]:
                 channel_min_history=args.channel_min_history,
                 channel_max_edit_rate=args.channel_max_edit_rate,
                 signal_high_probability=args.signal_high_probability,
+                lane1_max_rows=args.lane1_max_rows,
             )
         ]
     return [
@@ -1411,6 +1400,7 @@ def configs_from_args(args: argparse.Namespace) -> list[ValidationConfig]:
             channel_min_history=history,
             channel_max_edit_rate=edit_rate,
             signal_high_probability=args.signal_high_probability,
+            lane1_max_rows=args.lane1_max_rows,
         )
         # `product` = los tres bucles anidados, en una línea.
         for cell_n, history, edit_rate in itertools.product(
@@ -1466,7 +1456,8 @@ def run(
         out(
             f"Grilla ({len(configs)} combinaciones): min_cell_n ∈ {list(GRID_MIN_CELL_N)}, "
             f"channel_min_history ∈ {list(GRID_CHANNEL_MIN_HISTORY)}, "
-            f"channel_max_edit_rate ∈ {list(GRID_CHANNEL_MAX_EDIT_RATE)}."
+            f"channel_max_edit_rate ∈ {list(GRID_CHANNEL_MAX_EDIT_RATE)}. "
+            f"En todas, lane1_max_rows={_max_rows_label(args.lane1_max_rows)}."
         )
     for dataset in datasets:
         runs = [(config, summaries[dataset.name]) for config, summaries in results]

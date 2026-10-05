@@ -70,6 +70,10 @@ class ValidationConfig:
     #: `None` = sin fijar, y entonces cualquier desacuerdo saca (la lectura
     #: conservadora).
     signal_high_probability: float | None
+    #: Cuántas filas puede traer una propuesta para entrar al carril 1. Lo fija
+    #: G1b con el informe de sombra; `None` = sin tope. Solo decide el carril:
+    #: no cambia el estado de ninguna fila.
+    lane1_max_rows: int | None
 
 
 @dataclass(frozen=True)
@@ -188,8 +192,9 @@ class RowValidation:
     status: ValidationStatus
     #: Reglas en `pass` sobre seis, por cien. Descriptivo: ningún carril lo usa.
     confidence_score: int
-    #: Por qué esta fila, por sí sola, no deja entrar al carril 1. Vacío si
-    #: cumple las cuatro condiciones por fila.
+    #: Lo que la fila no cumple: verificación y reglas que no dieron `pass`.
+    #: Cualquiera saca al anuncio del carril 1, salvo el posible duplicado
+    #: (regla 5 en `fail`), que queda acá pero no frena.
     reasons: tuple[str, ...] = ()
 
     def detail(self) -> dict[str, object]:
