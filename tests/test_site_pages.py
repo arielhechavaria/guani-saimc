@@ -439,7 +439,10 @@ class TestLaColumnaDeRedes:
             redes = _columna(_pie(client.get(ruta).text), "Redes")
             assert redes == [
                 ("Telegram", "https://t.me/guani"),
-                ("hola@guani.example", "mailto:hola@guani.example"),
+                # El rótulo no es la dirección: a 390 px una dirección real no
+                # entra en la columna y se partía a mitad de palabra. La
+                # dirección escrita vive en `/contacto`.
+                ("Escríbenos", "mailto:hola@guani.example"),
             ]
 
 
