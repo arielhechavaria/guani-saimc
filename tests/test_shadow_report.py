@@ -65,6 +65,7 @@ CONFIG = ValidationConfig(
     channel_min_history=1,
     channel_max_edit_rate=0.5,
     signal_high_probability=None,
+    lane1_max_rows=None,
 )
 
 # El anuncio bajo prueba: 10 de septiembre de 2026, mediodía de Cuba.
@@ -224,7 +225,6 @@ def _resultado(
     conservado: bool = True,
     diff: context.ProposalDiff | None = None,
     motivos: tuple[str, ...] = (),
-    solo_moneda: bool = False,
 ) -> shadow.CaseResult:
     return shadow.CaseResult(
         ingestion_id=str(uuid.uuid4()),
@@ -233,7 +233,6 @@ def _resultado(
         kept=conservado,
         diff=diff,
         reasons=motivos,
-        only_currency=solo_moneda,
     )
 
 
@@ -252,13 +251,12 @@ def test_conteos_del_resumen_escritos_a_mano() -> None:
         # Carril 1: 3 anuncios, 6 filas; uno con el precio editado en una fila.
         + [_resultado(LANE_ACCEPT, diff=_SIN_ERROR) for _ in range(2)]
         + [_resultado(LANE_ACCEPT, diff=_CON_ERROR)]
-        # Carril 2: 10 anuncios; 3 solo por la moneda no escrita.
+        # Carril 2: 10 anuncios; 3 solo por la moneda.
         + [
             _resultado(
                 LANE_REVIEW,
                 diff=_SIN_ERROR,
                 motivos=("fila 1: reglas y modelo no coinciden en moneda",),
-                solo_moneda=True,
             )
             for _ in range(3)
         ]
@@ -285,7 +283,6 @@ def test_conteos_del_resumen_escritos_a_mano() -> None:
     assert (resumen.lane1_ad_errors.k, resumen.lane1_ad_errors.n) == (1, 3)
     assert (resumen.lane1_field_errors["price"].k, resumen.lane1_field_errors["price"].n) == (1, 6)
     assert (resumen.lane1_field_errors["unit"].k, resumen.lane1_field_errors["unit"].n) == (0, 6)
-    assert resumen.only_currency == 3
     # Los motivos se cuentan por anuncio, no por fila, y un motivo que nombra
     # varios campos cuenta en cada uno.
     assert resumen.reasons["reglas y modelo no coinciden en moneda"] == 10
@@ -865,6 +862,7 @@ def test_con_execute_agrega_exactamente_una_linea(
         "channel_min_history": 1,
         "channel_max_edit_rate": 0.5,
         "signal_high_probability": None,
+        "lane1_max_rows": None,
     }
     calibracion = unica["sets"]["calibration"]
     assert calibracion["n"] == 2
@@ -886,6 +884,52 @@ def test_sin_parametros_ni_grilla_el_comando_no_corre() -> None:
     with pytest.raises(SystemExit):
         shadow.parse_args(["--gold", "oro.jsonl", "--min-cell-n", "3"])
     assert shadow.parse_args(["--gold", "oro.jsonl", "--grid"]).grid is True
+
+
+def test_el_tope_de_filas_es_opcional_y_va_a_todas_las_combinaciones() -> None:
+    # Sin el argumento no hay tope.
+    (sin_tope,) = shadow.configs_from_args(shadow.parse_args(["--gold", "oro.jsonl", *_PARAMETROS]))
+    assert sin_tope.lane1_max_rows is None
+    assert "lane1_max_rows=sin tope" in shadow._params_line(sin_tope)
+
+    (con_tope,) = shadow.configs_from_args(
+        shadow.parse_args(["--gold", "oro.jsonl", "--lane1-max-rows", "1", *_PARAMETROS])
+    )
+    assert con_tope.lane1_max_rows == 1
+    assert "lane1_max_rows=1" in shadow._params_line(con_tope)
+    assert shadow._params_dict(con_tope)["lane1_max_rows"] == 1
+
+    # No entra a la grilla: la misma cantidad de combinaciones, todas con el tope.
+    grilla = shadow.configs_from_args(
+        shadow.parse_args(["--gold", "oro.jsonl", "--grid", "--lane1-max-rows", "2"])
+    )
+    sin_argumento = shadow.configs_from_args(shadow.parse_args(["--gold", "oro.jsonl", "--grid"]))
+    assert len(grilla) == len(sin_argumento)
+    assert {config.lane1_max_rows for config in grilla} == {2}
+    assert {config.lane1_max_rows for config in sin_argumento} == {None}
+
+    with pytest.raises(SystemExit):
+        shadow.parse_args(["--gold", "oro.jsonl", "--lane1-max-rows", "0", *_PARAMETROS])
+
+
+def test_el_tope_de_filas_saca_del_carril_1_en_el_informe() -> None:
+    # Caso 25 del motor: dos filas sin tocar, con todo en `pass`.
+    caso = shadow.Case(
+        ingestion_id=str(uuid.uuid4()),
+        content_type="text",
+        ctx=motor._dos_filas(),
+        kept=True,
+        diff=context.ProposalDiff(proposed_rows=2),
+    )
+
+    sin_tope = shadow.evaluate_case(caso, motor.CONFIG)
+    con_tope = shadow.evaluate_case(caso, dataclasses.replace(motor.CONFIG, lane1_max_rows=1))
+
+    assert sin_tope.lane == LANE_ACCEPT
+    assert con_tope.lane == LANE_REVIEW
+    assert shadow.summarize([con_tope]).reasons == {
+        "la propuesta trae más filas que el tope del carril 1 (1)": 1
+    }
 
 
 def test_la_grilla_corre_todas_las_combinaciones_declaradas(
@@ -1006,13 +1050,11 @@ def test_un_acuerdo_no_saca_del_carril_1() -> None:
 
 
 def test_caso_28_jev_no_mete_en_el_carril_1() -> None:
-    # El caso 22 del motor (el 6: moneda no escrita) con Jev de acuerdo en todo.
+    # El caso 22 del motor (el 6: las reglas no dan moneda) con Jev de acuerdo en todo.
     ctx = motor._caso_1(
         texto="Arroz 320 la libra",
-        modelo=motor._modelo(
-            motor._fila(base="unit"),
-            metas=(dataclasses.replace(motor.META_OK, currency_explicit=False),),
-        ),
+        modelo=motor._modelo(motor._fila(base="unit"), metas=(motor.MONEDA_NO_ESCRITA,)),
+        reglas=(motor.REGLA_SIN_MONEDA,),
     )
     caso = _caso_jev(ctx, ANSWERS_OK, diff=_UNA_FILA_SIN_TOCAR)
 

@@ -153,17 +153,23 @@ El motor es el único que decide el carril. Un anuncio sin propuesta del modelo
 2. las reglas no encuentran ningún producto piloto en el texto.
 
 **Carril 1 — aceptación automática.** El anuncio es de texto, la propuesta está
-`ok`, no descarta, no tiene filas caídas (`dropped`) y **todas** sus filas
-cumplen:
+`ok`, no descarta, no tiene filas caídas (`dropped`), no trae más filas que
+`lane1_max_rows` (si está fijado) y **todas** sus filas cumplen:
 1. cita verificada: `evidence_found` y `price_in_evidence`;
-2. reglas y modelo coinciden en producto, precio, moneda y provincia. La moneda
-   solo cuenta como acuerdo si el texto la dice (`currency_explicit`): las reglas
-   siempre suponen CUP;
+2. reglas y modelo coinciden en producto, precio, moneda y provincia. En la
+   moneda alcanza con que los dos den la misma, la diga el texto o no
+   (`currency_explicit` no se mira). Si las reglas no dan moneda no hay acuerdo;
 3. ninguna abstención en cantidad, unidad ni `price_basis`;
-4. las seis reglas en `pass`.
+4. las reglas 1, 2, 3, 4 y 6 en `pass`. La regla 5 no frena el carril: si
+   falla, la fila queda en `possible_duplicate` y el anuncio sigue en el
+   carril 1.
 
 Una sola fila que no cumple manda el anuncio entero al carril 2. Sin
 configuración de parámetros no hay carril 0 ni carril 1.
+
+Las condiciones 2 y 4 y el tope de filas son de G1b (2026-10-05) y reemplazan a
+las de A5: ver «Precisiones de G1b». El estado `approved` de una fila no cambió:
+sigue pidiendo las seis reglas en `pass`.
 
 **Carril 2 — revisión humana.** Todo lo demás.
 
@@ -191,6 +197,7 @@ Aditivas y desconectables. La calibración base se hace sin ellas.
 | meta de falsos descartes | carril 0 | G1a, la elige el operador |
 | meta de error | carril 1 | G1b, la elige el operador |
 | probabilidad «alta» de una señal | cuándo un desacuerdo saca del carril 1 | A6b |
+| `lane1_max_rows` | cuántas filas puede traer una propuesta para entrar al carril 1; sin fijar = sin tope | G1b |
 
 Viven en una configuración única. A5b los recibe como argumentos: el motor no
 trae ningún valor por defecto, y sin configuración todo anuncio va al carril 2.
@@ -285,7 +292,7 @@ con referencias de 400 a 460 CUP.
 | 9 | «Arroz 320 CUP lb» en un canal sin historial | 2 | `unverified` | regla 4 en `unknown` |
 | 10 | «Arroz 320 CUP lb» en un canal con historial sucio | 2 | `untrusted_source` | regla 4 falla |
 | 11 | «Arroz 320 CUP lb, Santiago» en el canal de La Habana | 2 | `unverified` | provincia distinta de la del canal |
-| 12 | «Arroz 320 CUP lb» repetido a las 3 h en el mismo canal | 2 | `possible_duplicate` | regla 5 |
+| 12 | «Arroz 320 CUP lb» repetido a las 3 h en el mismo canal | 1 | `possible_duplicate` | la regla 5 falla, pero no frena el carril (G1b) |
 | 13 | El mismo anuncio a las 30 h | 1 | `approved` | fuera de la ventana |
 | 14 | «Saco de arroz 100 lb, 32000 CUP», base `unit` | 2 | `inconsistent` | leído como total queda en la referencia |
 | 15 | «Saco de arroz 100 lb, 32000 CUP», base `total` | 1 | `approved` | 320 por libra |
@@ -297,6 +304,14 @@ con referencias de 400 a 460 CUP.
 | 21 | «Arroz 320 CUP lb», todo en `pass`, y una señal externa en desacuerdo con probabilidad alta sobre el producto | 2 | `approved` | la señal saca del carril 1 |
 | 22 | El caso 6 con una señal externa de acuerdo | 2 | `unverified` | una señal nunca mete en un carril |
 | 23 | El caso 1 sin configuración de parámetros | 2 | `unverified` | sin configuración no se automatiza |
+| 24 | «Arroz 320 la libra» sin moneda; el modelo pone CUP con `currency_explicit = false` y las reglas también dan CUP | 1 | `approved` | coinciden en moneda aunque no esté escrita |
+| 25 | «Arroz 320 CUP lb» y «Pollo 430 CUP lb» en un anuncio, todo en `pass`, con `lane1_max_rows = 1` | 2 | las dos `approved` | la propuesta trae más filas que el tope |
+| 26 | El caso 25 con `lane1_max_rows = 2` | 1 | las dos `approved` | dentro del tope |
+| 27 | El caso 25 con `lane1_max_rows` sin fijar | 1 | las dos `approved` | sin tope |
+| 28 | El caso 12 en un canal sin historial | 2 | `possible_duplicate` | el duplicado no frena, la regla 4 en `unknown` sí |
+
+Los casos 12 y 24 a 28 son de G1b (2026-10-05). En los casos 6 y 22 las reglas
+no dan moneda: con las reglas en CUP son el caso 24.
 
 ## Preguntas al operador — resueltas el 2026-10-02
 
@@ -323,6 +338,61 @@ el texto de arriba: `approved` exige la fila verificada, la regla 6 fallida deja
 a la regla 2 en `unknown`, y el acuerdo en moneda exige moneda escrita. La celda
 usa la provincia propia si junta `min_cell_n` referencias y, si no, todas las
 provincias. Detalle en `docs/decisions.md` (2026-10-02, «A5b»).
+
+## Precisiones de G1b (2026-10-05)
+
+El carril 1 sigue apagado y G1b postergada. Se cambió el filtro para poder
+medirlo en sombra cuando haya volumen, y solo en lo que el volumen no arregla.
+
+**De dónde sale.** Oro v7, 294 textos, 151 con propuesta de filas: 72 que el
+operador dejó sin tocar («buenos») y 79 que tocó («malos»). Con los parámetros
+3 / 1 / 1,00 el filtro de A5 dejaba pasar 9 anuncios con 4 errores y frenaba a
+67 de los 72 buenos. Consulta suelta de solo lectura, sin comando en el repo.
+
+**Qué cambió.**
+
+1. **Tope de filas (`lane1_max_rows`).** Una propuesta con más filas que el tope
+   va al carril 2, con un motivo a nivel anuncio; el estado de las filas no
+   cambia. Sin tocar / tocados por cantidad de filas propuestas: 1 fila 37 / 12;
+   2 filas 26 / 27; 3 filas 6 / 19; 4 o más 3 / 20. El error crece con el
+   largo de la lista. El valor no se fija acá (`spec.md` §12.6): es de G1b.
+2. **La moneda no escrita ya no frena si reglas y modelo coinciden.** Las
+   reglas siempre suponen CUP, así que pedir la moneda escrita frenaba a la
+   mitad de los buenos con cualquier volumen (37 buenos y 25 malos) y no
+   separaba: entre los 45 / 15 de abajo, 27 buenos / 10 malos tienen la moneda
+   no escrita y 18 / 5 la tienen escrita. Reemplaza la precisión de A5b («el acuerdo en moneda exige
+   moneda escrita»). Si la moneda `difiere` o las reglas no la dan
+   (`sin_regla`), sigue sin haber acuerdo: los casos 6 y 22 no cambian. En
+   producción las reglas dan moneda siempre que dan precio, así que «no dan
+   moneda» es una fila del modelo sin precio de las reglas con que compararla.
+3. **El posible duplicado ya no frena el carril.** La fila conserva su estado
+   `possible_duplicate` y su motivo; lo que cambia es que ese motivo no saca al
+   anuncio del carril 1. Un repost no es un error de extracción: 22 de los 72
+   buenos lo son y el operador los aceptó sin tocar (22 buenos / 37 malos con
+   la regla 5 fallada), y la regla es gruesa para grupos (92 de 368 filas en la
+   primera revalidación). Reemplaza la condición 4 de A5 («las seis reglas en
+   `pass`»). Qué se hace con una fila `possible_duplicate` aceptada sola al
+   publicar queda para B2b.
+
+Con los tres cambios más las dos cosas que arregla el volumen (abajo), en los
+anuncios de una fila quedan 24 buenos y 2 malos (7,7 %; cota superior al 95 %
+de 22,3 %); sin el tope, 45 y 15 (25 %).
+
+**Qué no cambió, y por qué.**
+
+- **Canal sin historial** (regla 4 en `unknown`; 29 buenos / 14 malos) y
+  **celda sin referencias** (reglas 2 y 6 en `unknown`): siguen frenando. Las
+  dos se resuelven solas con volumen, y medirlas hoy es fuga: el historial del
+  canal que arma el informe incluye las decisiones sobre los mismos anuncios
+  que se evalúan (con 5 / 3 / 0,50 da 18 / 0, cota 15,3 %, y ese 0 está
+  inflado).
+- **`sin_regla` no cuenta como acuerdo.** Contarlo mete 4 malos más (17 %).
+- **Jev no entra.** No separa: los 15 malos tienen triage ≥ 0,91.
+- **`approved`** sigue pidiendo las seis reglas en `pass`, `validate_stored_row`
+  no decide carril y la grilla del informe (`GRID_*`) no suma el tope, para que
+  las corridas de `docs/shadow-runs.jsonl` sigan siendo comparables.
+
+Detalle en `docs/decisions.md` (2026-10-05, «G1b: el filtro del carril 1»).
 
 ## Registro
 
