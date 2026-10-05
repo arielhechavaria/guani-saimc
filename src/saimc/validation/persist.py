@@ -13,7 +13,13 @@ revalidan filas ajenas; para refrescar está `revalidate`.
 
 Nada de esto automatiza: ningún carril usa lo que se guarda acá.
 
-Contrato: `docs/spec-slice-B1.md`.
+Desde A6b, si Jev está activo y el anuncio tiene señal guardada, el detalle
+suma una clave `jev` con lo que contestó (`validation.jev_signal`). Es una
+anotación al costado: se calcula aparte y no entra a ninguna regla, así que el
+estado, el puntaje y `provenance` salen iguales con y sin ella. Acá no se llama
+a nadie: solo se lee la señal que dejó el pre-cálculo.
+
+Contrato: `docs/spec-slice-B1.md`; la clave `jev`, `docs/spec-slice-A6b.md`.
 """
 
 from __future__ import annotations
@@ -27,8 +33,10 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from saimc.config import Settings, get_settings
 from saimc.models import PriceHistory, Provenance, RawIngestion
 from saimc.models.base import utc_now
+from saimc.validation import jev_signal
 from saimc.validation.context import Catalog, build_stored_rows_context, load_catalog
 from saimc.validation.engine import ENGINE_VERSION, validate_stored_row
 from saimc.validation.types import RowValidation
@@ -83,26 +91,74 @@ def validate_rows(
     ]
 
 
-def validation_detail(validation: RowValidation, validated_at: datetime) -> dict[str, Any]:
+def jev_blocks(
+    session: Session,
+    ingestion: RawIngestion,
+    rows: Sequence[PriceHistory],
+    *,
+    catalog: Catalog | None = None,
+    settings: Settings | None = None,
+) -> list[dict[str, Any] | None]:
+    """El bloque `jev` de cada fila, o `None` donde no corresponde. Nunca lanza.
+
+    `None` en todas si Jev está inactivo o el anuncio no tiene señal de la
+    huella vigente. Si buscar o leer la señal falla, se ataja acá: la fila
+    conserva su validación y queda sin `jev`. No llama a la red: solo lee
+    `jev_signals`.
+    """
+    nothing: list[dict[str, Any] | None] = [None] * len(rows)
+    if not rows or not jev_signal.is_active(settings or get_settings()):
+        return nothing
+    try:
+        # Savepoint, por lo mismo que en `validate_and_store`: en PostgreSQL
+        # una consulta que falla aborta toda la transacción del guardado.
+        with session.begin_nested():
+            pilots = (catalog or load_catalog(session)).pilot_products
+            options = jev_signal.options_from_products(pilots)
+            signal = jev_signal.current_signal(session, ingestion.id, options.questions_hash)
+            if signal is None:
+                return nothing
+            return list(jev_signal.annotate(jev_signal.read_signal(signal), rows))
+    except Exception:
+        # Amplio a propósito: Jev es una señal en sombra y ningún fallo suyo
+        # puede costarle nada al guardado. Solo el id de la ingesta va al log.
+        logger.exception("jev.anotacion_fallo ingestion_id=%s", ingestion.id)
+        return nothing
+
+
+def validation_detail(
+    validation: RowValidation, validated_at: datetime, jev: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     """El JSON de `prices_history.validation_detail`.
 
     No repite el estado ni el puntaje, que tienen columna propia. Los motivos
     nombran todas las reglas que no pasaron, no solo la que decidió el estado.
+
+    `jev` es el bloque de la señal en sombra (A6b). Sin señal la clave **no
+    existe**: no va en `null`.
     """
-    return {
+    detail: dict[str, Any] = {
         "rules": validation.detail()["rules"],
         "reasons": list(validation.reasons),
         "engine_version": ENGINE_VERSION,
         "config": {"min_cell_n": MIN_CELL_N},
         "validated_at": validated_at.isoformat(),
     }
+    if jev is not None:
+        detail["jev"] = dict(jev)
+    return detail
 
 
-def store(row: PriceHistory, validation: RowValidation, validated_at: datetime) -> None:
+def store(
+    row: PriceHistory,
+    validation: RowValidation,
+    validated_at: datetime,
+    jev: Mapping[str, Any] | None = None,
+) -> None:
     """Escribe el resultado en la fila. No toca `provenance` ni otra columna."""
     row.validation_status = validation.status.value
     row.confidence_score = validation.confidence_score
-    row.validation_detail = validation_detail(validation, validated_at)
+    row.validation_detail = validation_detail(validation, validated_at, jev)
 
 
 def _clear(row: PriceHistory) -> None:
@@ -135,6 +191,8 @@ def validate_and_store(
         # ataje la excepción. Con el savepoint solo se deshace este tramo, que
         # no escribe nada (`validate_rows` solo lee).
         with session.begin_nested():
+            # El catálogo se lee una vez y sirve para validar y para Jev.
+            catalog = catalog or load_catalog(session)
             validations = validate_rows(session, ingestion, rows, catalog=catalog)
     except Exception:
         # Amplio a propósito: cualquier fallo del motor o del armado del
@@ -144,8 +202,9 @@ def validate_and_store(
             _clear(row)
         return False
     moment = validated_at or utc_now()
-    for row, validation in zip(rows, validations, strict=True):
-        store(row, validation, moment)
+    blocks = jev_blocks(session, ingestion, rows, catalog=catalog)
+    for row, validation, jev in zip(rows, validations, blocks, strict=True):
+        store(row, validation, moment, jev)
     return True
 
 

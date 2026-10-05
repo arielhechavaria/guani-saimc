@@ -29,18 +29,28 @@ abrir el anuncio en `/curation` la propuesta ya está y no se paga otra llamada
   `source = "prefill"`: suma en `/control`, pero no saca al anuncio de H0. De
   eso se encarga `llm_reviews`, cuando el operador cura con la propuesta a la
   vista (`docs/decisions.md`, slice 3a y 3b).
+- **Jev en sombra (A6b).** Con `SAIMC_LLM_JEV_ENABLED` y su clave, antes del
+  bucle de Claude va una pasada que le hace tres preguntas cerradas a cada
+  texto pendiente y guarda la respuesta (`validation.jev_signal`). Va antes
+  porque el carril 0 descarta en este mismo bucle, y después el anuncio ya no
+  estaría pendiente. No depende de la clave de Anthropic ni mira el foco, tiene
+  su propio tope (`SAIMC_LLM_JEV_MAX_COST`) y un fallo suyo no cambia el código
+  de salida (`docs/spec-slice-A6b.md`).
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
@@ -60,8 +70,10 @@ from saimc.models import (
 )
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
-from saimc.validation import lane0
+from saimc.validation import jev_signal, lane0
 from saimc.validation.context import Catalog
+
+logger = logging.getLogger(__name__)
 
 # Consumo medido por anuncio con Sonnet 5 y el prompt `2026-09-25.3` sobre 100
 # anuncios reales (`docs/costos.md`): ~2407 tokens de entrada y ~245 de salida,
@@ -379,9 +391,19 @@ def execute(
     *,
     client: Any | None = None,
     transcribe: ocr_store.Transcriber | None = None,
+    jev_http: httpx.Client | None = None,
+    jev_sleep: Callable[[float], None] = time.sleep,
     out: Callable[[str], None] = print,
 ) -> int:
-    """Corre el modo pedido. Devuelve el código de salida."""
+    """Corre el modo pedido. Devuelve el código de salida.
+
+    `jev_http` y `jev_sleep` son para los tests de la pasada de Jev: en la
+    corrida real quedan en su valor por defecto.
+    """
+    # La pasada de Jev va primero y aparte: antes del bucle de Claude (que con
+    # el carril 0 encendido descarta), sin depender de su clave y sin tocar el
+    # código de salida.
+    jev = _jev_pass(args, session, settings, client=jev_http, sleep=jev_sleep, out=out)
     model = args.model or settings.llm_assist_model
     products = pilot_products(session)
     lane0_types = lane0.enabled_types(settings)
@@ -402,7 +424,7 @@ def execute(
             "No hay clave de API: la corrida real necesita SAIMC_ANTHROPIC_API_KEY. "
             "Sin clave no se llama a nada."
         )
-        _record_run(settings, 2, RunResult())
+        _record_run(settings, 2, RunResult(), jev)
         return 2
     print_estimate(est, out)
     if est.per_ad_usd is None:
@@ -435,12 +457,52 @@ def execute(
         + ("" if lane0_types else " (interruptores apagados)")
     )
     code = 1 if result.aborted_failure else 0
-    _record_run(settings, code, result)
+    _record_run(settings, code, result, jev)
     return code
 
 
-def _record_run(settings: Settings, code: int, result: RunResult) -> None:
+def _jev_pass(
+    args: argparse.Namespace,
+    session: Session,
+    settings: Settings,
+    *,
+    client: httpx.Client | None,
+    sleep: Callable[[float], None],
+    out: Callable[[str], None],
+) -> jev_signal.PassResult | None:
+    """La pasada de Jev, sin que nada de ella pueda frenar el pre-cálculo.
+
+    `--limit` también la acota: quien prueba con `--limit 1` no espera decenas
+    de llamadas a otro proveedor.
+    """
+    try:
+        return jev_signal.prefill_pass(
+            session,
+            settings,
+            execute=args.execute,
+            limit=args.limit,
+            client=client,
+            sleep=sleep,
+            out=out,
+        )
+    except Exception:
+        # Amplio a propósito: Jev es una señal en sombra y ningún fallo suyo
+        # (ni uno de programación) puede costarle la corrida a Claude. El
+        # `rollback` deja la sesión usable para el bucle que sigue.
+        logger.exception("jev.pasada_fallo")
+        session.rollback()
+        out("Jev: la pasada falló y se salteó (el detalle está en el registro).")
+        return None
+
+
+def _record_run(
+    settings: Settings,
+    code: int,
+    result: RunResult,
+    jev: jev_signal.PassResult | None = None,
+) -> None:
     """Deja anotado cómo terminó la corrida real, para la franja de `/control`."""
+    jev = jev or jev_signal.PassResult()
     prefill_status.write_run_status(
         settings.prefill_status_path,
         prefill_status.PrefillRun(
@@ -452,6 +514,10 @@ def _record_run(settings: Settings, code: int, result: RunResult) -> None:
             cost_usd=result.cost_usd,
             stopped_by_max_cost=result.stopped_by_max_cost,
             aborted_failure=result.aborted_failure,
+            jev_asked=jev.asked,
+            jev_failed=jev.failed,
+            jev_cost_usd=jev.cost_usd,
+            jev_stopped=jev.stopped,
         ),
     )
 

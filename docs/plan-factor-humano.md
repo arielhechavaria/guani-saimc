@@ -13,7 +13,8 @@ como hash con clave, nulo sin clave; C3 cerrada el 2026-10-03: los controles de 
 entran como medición, con índice de control y `measure_n`, sin umbrales; C1 cerrada el
 2026-10-03: temporizador de systemd cada 3 h con tope por corrida y aviso en `/control`;
 A6 cerrada el 2026-10-04: Jev medido, favorable en triage, producto y moneda;
-A1c postergada).
+A6b-1 cerrada el 2026-10-04: la señal de Jev entra en sombra por el pre-cálculo y se
+anota al guardar, apagada por defecto; falta A6b-2; A1c postergada).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -75,7 +76,7 @@ misma sesión. El candidato más probable es A1b.
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | CERRADO (2026-10-03) |
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE (postergada 2026-10-03) |
 | A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | CERRADO (2026-10-04) |
-| A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | PENDIENTE |
+| A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | A6b-1 CERRADO (2026-10-04); A6b-2 PENDIENTE |
 | K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
 | K3 | Guardar la transcripción del OCR | M | — | Sonnet | CERRADO (2026-10-03) |
 | K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | CERRADO (2026-10-03) |
@@ -962,7 +963,16 @@ firme. Puede ser un resultado distinto por pregunta.
 
 ---
 
-### A6b — Jev como señal desconectable del motor, en modo sombra — PENDIENTE
+### A6b — Jev como señal desconectable del motor, en modo sombra — A6b-1 CERRADO (2026-10-04); A6b-2 PENDIENTE
+
+**Partido en dos (2026-10-04).** La especificación aprobada es `docs/spec-slice-A6b.md`.
+**A6b-1** deja la señal entrando: cliente de Jev en `saimc/validation/jev_client.py`, tabla
+`jev_signals` (migración 0030), pasada propia dentro del pre-cálculo, anotación del bloque `jev`
+en `validation_detail` al guardar y sección en `/control`. **A6b-2** agrega el adaptador a
+`ExternalSignal`, el informe de sombra con Jev y sin Jev, y el relleno sobre los textos ya
+decididos. Jev no se llama al guardar: un anuncio decidido antes de que pase el temporizador
+queda sin señal y lo cubre el relleno. Lo de abajo es el contrato original del slice; donde
+difiere, vale la especificación.
 
 **Depende de:** A6 con resultado favorable, A5b (el motor) y B1 (los campos
 persistidos). Si A6 sale desfavorable, pasa a `DESCARTADO`.
@@ -1007,7 +1017,8 @@ procedencia, y que el modo sombra mida cuánto aporta.
 **Verificación del operador.**
 1. `pg_dump`, push, `alembic upgrade head` si hubo migración, reinicio de
    `saimc.service`.
-2. Curar un anuncio de texto y abrir su detalle de validación: aparece la entrada
+2. Curar un anuncio de texto que haya pasado por el pre-cálculo y consultar su
+   `validation_detail` por SQL (no hay pantalla que lo muestre): aparece la entrada
    `jev` con sus preguntas y probabilidades.
 3. Apagar Jev en `.env`, reiniciar y curar otro: no aparece la entrada y nada falla.
 4. `/control`: el gasto de Jev y cuántas filas tienen señal.
@@ -1337,7 +1348,7 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
 | Rutina diaria de pre-cálculo | $0,0015–0,0029 por anuncio, alrededor de $1 por semana al volumen actual (estimado) | siempre |
 | A3b, backtest con glosario | $0,30–0,90 | una vez |
 | A6, prueba de Jev | menos de $0,20 | una vez |
-| A6b, Jev en sombra | del orden de $0,0001 por anuncio (estimado), con tope por corrida | mientras esté encendido |
+| A6b, Jev en sombra | entre $0,00002 y $0,00007 por anuncio (medido en A6 el 2026-10-04), con tope de $0,01 por corrida | mientras esté encendido |
 | C2b, backtest de imágenes con visión | alrededor de $1 cada 100 imágenes | una vez |
 
 Todo gasto se aprueba antes con el monto estimado.

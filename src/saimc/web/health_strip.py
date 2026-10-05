@@ -303,6 +303,44 @@ def prefill_indicator(run: PrefillRun | None, *, now: datetime) -> Indicator:
     )
 
 
+# Cortes de la pasada de Jev que el operador tiene que arreglar a mano, con qué
+# hacer en cada uno. Los valores son los de `validation.jev_signal.STOP_*`. El
+# tope de gasto y los fallos de red no están: se resuelven solos en la corrida
+# siguiente.
+_JEV_STOP_HINTS = {
+    "auth": "El gateway rechazó la clave: revisá SAIMC_LLM_JEV_API_KEY.",
+    "forbidden": (
+        "La clave autentica pero el gateway denegó el acceso (plan o modelo). "
+        "El motivo está en journalctl -u saimc-prefill.service."
+    ),
+    "rate_limit": "Se agotó el cupo de pedidos del gateway. La próxima corrida reintenta.",
+}
+_JEV_STOP_VALUES = {
+    "auth": "clave rechazada",
+    "forbidden": "acceso denegado",
+    "rate_limit": "sin cupo",
+}
+
+
+def jev_indicator(run: PrefillRun | None, *, active: bool) -> Indicator | None:
+    """La señal en sombra de Jev (A6b), solo cuando hay algo que arreglar.
+
+    Devuelve `None` —la tarjeta no existe— salvo que Jev esté activo y la
+    última corrida haya cortado por la clave, el acceso o el cupo. Es ámbar y
+    nunca rojo: Jev solo anota, así que nada dejó de funcionar por esto.
+    """
+    if not active or run is None or run.jev_stopped not in _JEV_STOP_HINTS:
+        return None
+    return Indicator(
+        key="jev",
+        label="Jev (sombra)",
+        value=_JEV_STOP_VALUES[run.jev_stopped],
+        level="warn",
+        hint=_JEV_STOP_HINTS[run.jev_stopped],
+        anchor="#jev",
+    )
+
+
 def build_strip(
     *,
     waha: SessionHealth,
@@ -314,6 +352,7 @@ def build_strip(
     prefill_run: PrefillRun | None,
     now: datetime | None = None,
     channel_gaps: GapReport | None = None,
+    jev_active: bool = False,
 ) -> list[Indicator]:
     """La franja completa, con lo más urgente primero.
 
@@ -330,6 +369,9 @@ def build_strip(
         assist_indicator(assist, configured=assist_configured),
         prefill_indicator(prefill_run, now=ahora),
     ]
+    jev = jev_indicator(prefill_run, active=jev_active)
+    if jev is not None:
+        indicadores.append(jev)
     prioridad = {"down": 0, "warn": 1, "ok": 2, "off": 3}
     return sorted(indicadores, key=lambda i: prioridad.get(i.level, 9))
 

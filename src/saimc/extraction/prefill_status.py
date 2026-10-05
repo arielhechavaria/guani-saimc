@@ -34,6 +34,13 @@ class PrefillRun:
     stopped_by_max_cost: bool
     # `credit` o `auth` si la corrida paró por eso; vacío si no.
     aborted_failure: str
+    # La pasada de Jev de esa corrida (slice A6b). Con valor por defecto para
+    # que un archivo anterior a A6b, que no los trae, se siga leyendo.
+    jev_asked: int = 0
+    jev_failed: int = 0
+    jev_cost_usd: float = 0.0
+    # Por qué cortó la pasada (`validation.jev_signal.STOP_*`); vacío si no cortó.
+    jev_stopped: str = ""
 
 
 def write_run_status(path: Path, run: PrefillRun) -> None:

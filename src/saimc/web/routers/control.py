@@ -40,11 +40,11 @@ from saimc.cells import (
     compute_retail_ranges,
     detect_basis_suspects,
 )
-from saimc.config import get_settings
+from saimc.config import Settings, get_settings
 from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
 from saimc.extraction.llm_assist import consumption_summary
 from saimc.extraction.measure import read_h0_runs
-from saimc.extraction.prefill_status import read_run_status
+from saimc.extraction.prefill_status import PrefillRun, read_run_status
 from saimc.ingestion.channel_gaps import load_channel_gap_report
 from saimc.ingestion.whatsapp_health import session_health
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
@@ -64,7 +64,7 @@ from saimc.progress import (
     pilot_product_names,
 )
 from saimc.requisitos_status import read_module_status
-from saimc.validation import ValidationStatus, lane0, persist
+from saimc.validation import ValidationStatus, jev_signal, lane0, persist
 from saimc.validation.control_cells import compute_cell_controls
 from saimc.web.deps import get_db
 from saimc.web.health_strip import build_strip, worst_level
@@ -165,6 +165,47 @@ def _validation_summary(db: Session) -> dict[str, object]:
     }
 
 
+def _jev_summary(db: Session, settings: Settings, run: PrefillRun | None) -> dict[str, object]:
+    """La sección «Jev (señal en sombra)» (A6b). Solo el estado, conteos y
+    gasto: `/control` es público y acá no va ningún texto, canal ni respuesta
+    (tampoco el motivo que mandó el gateway en un corte: ese queda en el
+    registro del pre-cálculo)."""
+    counts = jev_signal.control_summary(db, settings)
+    # La línea se arma acá y no en Jinja, para poder testearla.
+    if run is None:
+        last_run = "Todavía no hay ninguna corrida registrada del pre-cálculo."
+    else:
+        last_run = (
+            f"Última corrida del pre-cálculo: {run.jev_asked} "
+            f"{'preguntado' if run.jev_asked == 1 else 'preguntados'}, {run.jev_failed} "
+            f"{'fallo' if run.jev_failed == 1 else 'fallos'}"
+        )
+        if run.jev_stopped:
+            last_run += f"; cortó porque {jev_signal.STOP_LABELS.get(run.jev_stopped, run.jev_stopped)}"
+        last_run += "."
+    rows_hint = (
+        "«Textos con señal» cuenta los que tienen respuesta a las preguntas vigentes; "
+        f"«Filas anotadas», las filas de precio con esa respuesta en su detalle. Hay "
+        f"{counts.total_rows} {'fila' if counts.total_rows == 1 else 'filas'} en la tabla en total."
+    )
+    state_hint = {
+        jev_signal.STATE_ON: (
+            "El pre-cálculo le hace tres preguntas a cada texto pendiente y la respuesta "
+            "se anota al curar."
+        ),
+        jev_signal.STATE_NO_KEY: (
+            "El interruptor está encendido pero falta la clave: no se pregunta ni se anota nada."
+        ),
+        jev_signal.STATE_OFF: "No se pregunta ni se anota nada.",
+    }[counts.state]
+    return {
+        "counts": counts,
+        "state_hint": state_hint,
+        "rows_hint": rows_hint,
+        "last_run": last_run,
+    }
+
+
 def _manipulation_controls(db: Session, *, burst_window_minutes: int) -> dict[str, object]:
     """La sección «Controles de manipulación (§10.7)» (slice C3).
 
@@ -233,6 +274,7 @@ def control_panel(
     # Vigilancia del rubber-stamping (slice 5): semana actual vs. anterior de
     # `llm_reviews`. Puramente aditivo sobre la base — no golpea la API.
     rubber_stamp = rubber_stamp_alert(db)
+    prefill_run = read_run_status(settings.prefill_status_path)
     strip = build_strip(
         waha=waha,
         last_capture=ultima_captura,
@@ -240,8 +282,9 @@ def control_panel(
         rate_statuses=rate_statuses,
         assist=assist,
         assist_configured=bool(settings.anthropic_api_key),
-        prefill_run=read_run_status(settings.prefill_status_path),
+        prefill_run=prefill_run,
         channel_gaps=load_channel_gap_report(db),
+        jev_active=jev_signal.is_active(settings),
     )
 
     curated = db.execute(
@@ -338,6 +381,8 @@ def control_panel(
             "lane0_week": lane0.week_counts(db),
             # Validación (B1): cuántas filas hay en cada estado del motor.
             "validation": _validation_summary(db),
+            # Jev en sombra (A6b): estado, conteos y gasto de la señal.
+            "jev": _jev_summary(db, settings, prefill_run),
             # Controles de §10.7 (C3): índice de control y señales de
             # coordinación por celda pública. Se calcula al pedirlo, no se guarda.
             "controls": _manipulation_controls(

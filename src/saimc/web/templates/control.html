@@ -844,6 +844,52 @@
     </div>
   </section>
 
+  <!-- ---------- 6c bis. Jev, señal en sombra (A6b) ---------- -->
+  {# Solo el estado, conteos y gasto: esta vista es pública, así que acá no va
+     ningún texto de anuncio, canal ni respuesta de Jev. Mismas fichas que
+     «Consumo del asistente» (`m3-stats`), que es donde ya se muestra un gasto:
+     se acomodan solas de a dos por renglón a 390 px, sin tabla. Las tarjetas
+     grandes de «Validación» no sirven acá: «encendida» no entra en media
+     pantalla a ese tamaño de letra. #}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="jev">Jev (señal en sombra)</h2>
+      <span class="m3-sm m3-muted">
+        una segunda opinión sobre cada texto, que solo se anota al lado de la validación
+      </span>
+    </div>
+
+    <div class="m3-stats">
+      <div class="m3-stat">
+        <div class="m3-stat-label">Estado</div>
+        <div class="m3-stat-value">{{ jev.counts.state_label }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Textos con señal</div>
+        <div class="m3-stat-value">{{ jev.counts.current_texts }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Filas anotadas</div>
+        <div class="m3-stat-value">{{ jev.counts.annotated_rows }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Gasto acumulado</div>
+        <div class="m3-stat-value">${{ "%.4f"|format(jev.counts.cost_total) }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Últimos 7 días</div>
+        <div class="m3-stat-value">${{ "%.4f"|format(jev.counts.cost_week) }}</div>
+      </div>
+    </div>
+
+    <p class="m3-sm m3-mt">{{ jev.state_hint }}</p>
+    <p class="m3-sm">{{ jev.last_run }}</p>
+    <p class="m3-sm m3-muted">
+      {{ jev.rows_hint }} No decide nada: ninguna fila cambia de estado, de carril ni de
+      procedencia por lo que diga Jev.
+    </p>
+  </section>
+
   <!-- ---------- 6d. Controles de manipulación (C3) ---------- -->
   {# Mediciones por celda pública. Esta vista es pública: acá van conteos,
      medianas y porcentajes, nunca un canal, un emisor ni su hash. No es una

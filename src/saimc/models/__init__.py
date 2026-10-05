@@ -5,6 +5,7 @@ from saimc.models.channel import Channel, Platform
 from saimc.models.curation_event import CurationAction, CurationEvent, CurationMode
 from saimc.models.exchange_rate_cache import ExchangeRateCache
 from saimc.models.glossary import GlossaryEntry
+from saimc.models.jev_signal import JevSignal
 from saimc.models.llm_review import LlmProposal, LlmReview, ProposalStatus, ReviewOutcome
 from saimc.models.ocr_transcription import OcrTranscription
 from saimc.models.price_history import (
@@ -38,6 +39,7 @@ __all__ = [
     "DiscardReason",
     "ExchangeRateCache",
     "GlossaryEntry",
+    "JevSignal",
     "LlmProposal",
     "LlmReview",
     "OcrTranscription",

@@ -20,6 +20,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from saimc.config import get_settings
 from saimc.ingestion.sender import warn_if_key_too_short
+from saimc.validation.jev_signal import warn_if_enabled_without_key
 from saimc.web.analytics import registrar_visitas_publicas
 from saimc.web.routers import (
     catalog,
@@ -67,11 +68,18 @@ logging.basicConfig(
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Avisos de configuración al arrancar el servidor.
 
-    Hoy uno solo: una `SAIMC_SENDER_HASH_KEY` demasiado corta se trata como
-    ausente (`docs/spec-slice-B5.md`), y sin este aviso el operador creería que
-    el emisor de los grupos se está guardando. El aviso no incluye la clave.
+    Dos, y ninguno incluye una clave:
+
+    - una `SAIMC_SENDER_HASH_KEY` demasiado corta se trata como ausente
+      (`docs/spec-slice-B5.md`), y sin este aviso el operador creería que el
+      emisor de los grupos se está guardando;
+    - `SAIMC_LLM_JEV_ENABLED` encendido sin `SAIMC_LLM_JEV_API_KEY`
+      (`docs/spec-slice-A6b.md`): Jev queda inactivo, que es un estado
+      soportado, pero el operador creería que la señal se está juntando.
     """
-    warn_if_key_too_short(get_settings().sender_hash_key)
+    settings = get_settings()
+    warn_if_key_too_short(settings.sender_hash_key)
+    warn_if_enabled_without_key(settings)
     yield
 
 

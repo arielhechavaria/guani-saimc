@@ -300,3 +300,52 @@ class TestOrdenYResumen:
             "assist",
             "prefill",
         }
+
+
+class TestJev:
+    """El indicador de la señal en sombra (A6b-1): aparece solo cuando Jev está
+    activo y la última corrida cortó por algo que el operador tiene que
+    arreglar. Es ámbar y nunca rojo: Jev no decide nada."""
+
+    def test_un_corte_por_la_clave_es_ambar_y_lleva_a_la_seccion(self) -> None:
+        ind = health_strip.jev_indicator(_corrida(jev_stopped="auth"), active=True)
+
+        assert ind is not None
+        assert (ind.key, ind.level, ind.anchor) == ("jev", "warn", "#jev")
+        assert "SAIMC_LLM_JEV_API_KEY" in ind.hint
+
+    def test_acceso_denegado_y_limite_de_pedidos_tambien_avisan(self) -> None:
+        for corte in ("forbidden", "rate_limit"):
+            ind = health_strip.jev_indicator(_corrida(jev_stopped=corte), active=True)
+
+            assert ind is not None and ind.level == "warn"
+
+    def test_el_tope_y_los_fallos_de_red_no_avisan(self) -> None:
+        for corte in ("", "max_cost", "failures"):
+            assert health_strip.jev_indicator(_corrida(jev_stopped=corte), active=True) is None
+
+    def test_con_jev_inactivo_no_hay_indicador(self) -> None:
+        assert health_strip.jev_indicator(_corrida(jev_stopped="auth"), active=False) is None
+
+    def test_sin_registro_no_hay_indicador(self) -> None:
+        assert health_strip.jev_indicator(None, active=True) is None
+
+    def test_la_franja_lo_suma_solo_cuando_corresponde(self) -> None:
+        base: dict = {
+            "waha": SessionHealth(configured=True, status="working"),
+            "last_capture": AHORA,
+            "health": _health(),
+            "rate_statuses": [RateStatus("USD", None, None, None, None, 0, True)],
+            "assist": _assist(),
+            "assist_configured": True,
+            "now": AHORA,
+        }
+
+        sana = health_strip.build_strip(**base, prefill_run=_corrida(), jev_active=True)
+        cortada = health_strip.build_strip(
+            **base, prefill_run=_corrida(jev_stopped="auth"), jev_active=True
+        )
+
+        assert "jev" not in {i.key for i in sana}
+        assert "jev" in {i.key for i in cortada}
+        assert health_strip.worst_level(cortada) == "warn"

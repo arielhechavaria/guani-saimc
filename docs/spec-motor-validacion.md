@@ -195,6 +195,11 @@ Aditivas y desconectables. La calibración base se hace sin ellas.
 Viven en una configuración única. A5b los recibe como argumentos: el motor no
 trae ningún valor por defecto, y sin configuración todo anuncio va al carril 2.
 
+> **Nota (2026-10-04, A6b).** La probabilidad «alta» de una señal no la fija
+> A6b, como dice la tabla: A6b entra en sombra y no fija ningún umbral
+> (`docs/spec-slice-A6b.md`, «Cómo entra al motor sin romper su pureza»). La
+> fija **G1**, con el informe de sombra con Jev a la vista.
+
 ### Protocolo del modo sombra
 
 - **Calibración** sobre el oro del backtest; **evaluación** sobre las revisiones

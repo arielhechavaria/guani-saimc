@@ -16,6 +16,9 @@ Lo que hace y lo que no:
 - **En seco por defecto.** Sin `--execute` calcula todo y no escribe nada: solo
   informa cuántas filas cambiarían de estado.
 - **Solo escribe la validación.** No toca `provenance` ni ninguna otra columna.
+- **Reescribe el detalle entero**, así que también pone al día la clave `jev`
+  (A6b): la anota si Jev está activo y el anuncio tiene señal, y la quita si
+  Jev está inactivo. Es el relleno de las filas anteriores a la señal.
 - **No depende del orden.** Cada fila se valida contra las referencias
   anteriores a SU anuncio, que no miran el estado de ninguna otra fila.
 - **Un anuncio que falla no detiene la corrida.** Sus filas quedan como
@@ -103,11 +106,18 @@ def revalidate(
             logger.exception("validation.revalidate_fallo ingestion_id=%s", ingestion.id)
             summary.failed_rows += len(rows)
             continue
-        for row, validation in zip(rows, validations, strict=True):
+        # El bloque `jev` solo hace falta si se va a escribir; `jev_blocks`
+        # nunca lanza y no cambia el estado de ninguna fila.
+        blocks = (
+            persist.jev_blocks(session, ingestion, rows, catalog=catalog)
+            if execute
+            else [None] * len(rows)
+        )
+        for row, validation, jev in zip(rows, validations, blocks, strict=True):
             if row.validation_status != validation.status.value:
                 summary.transitions[(row.validation_status, validation.status.value)] += 1
             if execute:
-                persist.store(row, validation, moment)
+                persist.store(row, validation, moment, jev)
     return summary
 
 

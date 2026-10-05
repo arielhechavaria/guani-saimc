@@ -7,10 +7,20 @@ llamadas siguientes reciben el mismo. En los tests se limpia con
 `get_settings.cache_clear()`.
 """
 
+import logging
+import math
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+# Valores por defecto de los dos números de Jev. Viven afuera de la clase
+# porque también los usa el validador que los repone cuando el `.env` trae
+# algo que no es un número.
+_JEV_DEFAULTS: dict[str, float] = {"llm_jev_timeout": 10.0, "llm_jev_max_cost": 0.01}
 
 
 class Settings(BaseSettings):
@@ -124,6 +134,30 @@ class Settings(BaseSettings):
     lane0_text_enabled: bool = False
     lane0_image_enabled: bool = False
 
+    # Jev como señal en sombra (slice A6b, `docs/spec-slice-A6b.md`): el
+    # pre-cálculo le hace tres preguntas cerradas a cada texto pendiente y la
+    # respuesta se anota en `validation_detail` al curar. Solo anota: no cambia
+    # el estado, el carril ni la procedencia de ninguna fila.
+    #
+    # «Activo» es interruptor encendido Y clave no vacía
+    # (`validation.jev_signal.is_active`). Apagado, o encendido sin clave, el
+    # sistema se comporta exactamente como antes de A6b: es un estado
+    # soportado, mismo criterio que `anthropic_api_key`.
+    #
+    # La URL y el modelo no están acá a propósito: son constantes de
+    # `validation/jev_client.py`, porque cambiarlos cambia la huella de las
+    # preguntas y pide medir de nuevo.
+    llm_jev_enabled: bool = False
+    llm_jev_api_key: str | None = None
+    # Segundos por llamada. Nadie espera esta respuesta (corre en el
+    # pre-cálculo, no en una request), pero una llamada colgada no puede
+    # frenar la corrida.
+    llm_jev_timeout: float = _JEV_DEFAULTS["llm_jev_timeout"]
+    # Tope en USD por corrida del pre-cálculo, aparte del de Claude: ninguno
+    # se come el presupuesto del otro. En 0 no se llama (y se sigue anotando
+    # lo ya guardado). Una llamada cuesta del orden de 0,00002 a 0,00007 USD.
+    llm_jev_max_cost: float = _JEV_DEFAULTS["llm_jev_max_cost"]
+
     # Procedencia del `price_basis` retro-completado por inferencia en las
     # filas anteriores al campo (docs/decisions.md, 2026-09-02). Mismo lugar y
     # mismo motivo que `llm_assist_log_path`: ata ids de la base de producción,
@@ -131,6 +165,30 @@ class Settings(BaseSettings):
     # lo que mantiene distinguible el basis inferido del que curó el operador
     # sin necesidad de una columna nueva.
     basis_backfill_log_path: Path = Path("data/basis-backfill.jsonl")
+
+    # `mode="before"` corre antes de que pydantic convierta el texto a número:
+    # es el único lugar donde un «abc» todavía se puede atajar. Sin esto, un
+    # `.env` mal escrito levanta al instanciar `Settings` y tumba la aplicación
+    # entera por una señal que solo anota.
+    @field_validator("llm_jev_timeout", "llm_jev_max_cost", mode="before")
+    @classmethod
+    def _jev_number_or_default(cls, value: object, info: ValidationInfo) -> object:
+        name = info.field_name or ""
+        try:
+            number = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            number = math.nan
+        # El tiempo límite tiene que ser positivo; el tope admite 0 («no llamar»).
+        valid = math.isfinite(number) and (number > 0 or (number == 0 and name == "llm_jev_max_cost"))
+        if valid:
+            return number
+        default = _JEV_DEFAULTS[name]
+        # No se registra el valor recibido: es un `.env`, y un renglón corrido
+        # podría dejar ahí una clave.
+        logger.warning(
+            "config.valor_invalido SAIMC_%s no es un número válido; se usa %s", name.upper(), default
+        )
+        return default
 
 
 @lru_cache

@@ -15,7 +15,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 |---|---|---|---|
 | [`psql` con la URL del `.env`](#abrir-psql) | Entrar a la base | no (solo lee) | no |
 | [`saimc.ingestion`](#ingerir-la-bandeja-de-entrada) | Ingerir archivos de la bandeja | sí: filas crudas | no |
-| [`systemctl start saimc-prefill`](#pre-cálculo-ahora-a-mano) | Pre-calcular propuestas ya | sí: propuestas | sí, tope 0,15 USD |
+| [`systemctl start saimc-prefill`](#pre-cálculo-ahora-a-mano) | Pre-calcular propuestas ya (y preguntarle a Jev, si está encendido) | sí: propuestas y señales de Jev | sí, tope 0,15 USD (más 0,01 de Jev) |
 | [Después de un deploy](#después-de-un-deploy-la-secuencia) | Backup, pull, migrar, reiniciar | sí | no |
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra la cola | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
@@ -25,6 +25,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`scripts/lint_drift.py --no-autofix`](#lint-drift) | Hallazgos nuevos de ruff y mypy | no | no |
 | [Huecos por canal (SQL)](#huecos-por-canal) | Cuánto calla cada canal | no | no |
 | [Verificaciones de B5 y K3 (SQL)](#verificaciones-de-b5-y-k3) | Comprobar hash de emisor y OCR | no | no |
+| [Señal de Jev (SQL)](#señal-de-jev) | Ver qué juntó Jev y qué quedó anotado | no | no |
 | [`systemctl` / `journalctl`](#temporizadores-y-servicios) | Estado, logs, frenar temporizadores | solo si frenás | no |
 | [`saimc.validation.revalidate --execute`](#revalidar-escribiendo) | Re-guardar estado de las filas | sí: `prices_history` | no |
 | [`saimc.basis_backfill --apply`](#backfill-de-base-de-precio) | Completar `price_basis` viejo | sí | no |
@@ -88,6 +89,11 @@ sudo systemctl start saimc-prefill.service
   `.env`, descarta solo lo que el carril 0 decide). **Gasta**: sí, **tope de 0,15 USD por corrida**
   (`SAIMC_PREFILL_MAX_COST` en la unidad).
 - Se queda esperando hasta que termina. En otra terminal: `journalctl -fu saimc-prefill.service`.
+- **Jev (A6b)**: con `SAIMC_LLM_JEV_ENABLED=true` y `SAIMC_LLM_JEV_API_KEY` en el `.env`, la corrida
+  empieza con una pasada que le hace tres preguntas a cada texto pendiente y guarda la respuesta en
+  `jev_signals`. Tiene su propio tope, **`SAIMC_LLM_JEV_MAX_COST` (0,01 USD por corrida)**, aparte
+  del de arriba. Un fallo de Jev no frena el resto ni pone en rojo la tarjeta «Pre-cálculo»: queda
+  en `journalctl` (líneas `jev.fallo`) y en `/control#jev`. Ver [Señal de Jev](#señal-de-jev).
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Paso 1».
 
 ---
@@ -195,7 +201,7 @@ sudo systemctl restart saimc.service
 ```
 
 - **Para qué**: estima cuántos anuncios entrarían al pre-cálculo y cuánto costaría, sin llamar al
-  modelo.
+  modelo. Con Jev encendido suma una línea: cuántos textos le preguntaría y el costo estimado.
 - **Cuándo**: antes de una corrida grande, para saber el costo.
 - **Cambia algo**: no (por defecto es `--dry-run`). **Gasta**: no.
 - Más: [runbook-asistente-llm.md](runbook-asistente-llm.md), sección del pre-cálculo.
@@ -268,6 +274,43 @@ el `.env`; en seco no hace falta.
   que cargar crédito pago. El plan gratuito además limita a 5 pedidos por minuto; el script espera
   lo que pide el gateway y sigue.
 - Más: [plan-factor-humano.md](plan-factor-humano.md), «A6 — Prueba de Jev fuera de línea».
+
+### Señal de Jev
+
+Slice A6b-1: Jev en sombra. No tiene comando propio: pregunta dentro del
+[pre-cálculo](#pre-cálculo-ahora-a-mano) y anota al curar. Se gobierna con cuatro variables del
+`.env` (después de cambiarlas, `sudo systemctl restart saimc.service`):
+
+| Variable | Por defecto | Qué gobierna |
+|---|---|---|
+| `SAIMC_LLM_JEV_ENABLED` | `false` | el interruptor |
+| `SAIMC_LLM_JEV_API_KEY` | sin valor | la clave de Vercel AI Gateway; sin ella Jev queda inactivo aunque el interruptor esté encendido |
+| `SAIMC_LLM_JEV_TIMEOUT` | `10` | segundos por llamada |
+| `SAIMC_LLM_JEV_MAX_COST` | `0.01` | USD por corrida del pre-cálculo; en `0` no se llama |
+
+Qué juntó (dentro de [psql](#abrir-psql)):
+
+```
+SELECT source, count(*), sum(cost_usd) FROM jev_signals GROUP BY 1;
+```
+
+Qué quedó anotado en las últimas filas curadas:
+
+```
+SELECT validation_status, provenance, validation_detail->'jev' FROM prices_history ORDER BY created_at DESC LIMIT 3;
+```
+
+- **Para qué**: comprobar que la pasada de Jev guardó respuestas y que al curar se anotan.
+- **Cuándo**: al encender Jev, y cuando `/control#jev` muestre algo raro.
+- **Cambia algo**: no. **Gasta**: no (las consultas; la pasada sí, con su tope).
+- **Cómo leer la salida**: la primera da una fila por origen (`prefill`) con cuántas señales hay y
+  cuánto costaron. La segunda trae `null` en la tercera columna cuando la fila no tiene señal: el
+  anuncio se curó antes de que pasara el temporizador, es una imagen, o Jev está apagado. Cuando
+  la tiene, el bloque trae `triage`, `product` y `currency`, cada uno con su probabilidad; `agrees`
+  dice si lo que eligió Jev coincide con alguna fila del anuncio.
+- Jev solo anota: ninguna fila cambia de estado, de carril ni de `provenance` por lo que diga.
+  Para apagarlo, `SAIMC_LLM_JEV_ENABLED=false` y reiniciar: lo ya guardado queda, deja de anotarse.
+- Más: [spec-slice-A6b.md](spec-slice-A6b.md); costo en [costos.md](costos.md).
 
 ### Huecos por canal
 
@@ -431,6 +474,9 @@ sudo systemctl daemon-reload
 - **Cuándo**: después de un backfill de tasas o de base de precio, al cambiar `min_cell_n` o la
   versión del motor, y una vez al desplegar B1. Antes, el [en seco](#revalidar-en-seco).
 - **Cambia algo**: sí, `prices_history`. **Gasta**: no.
+- Reescribe el detalle entero, así que también pone al día la clave `jev` (A6b): la anota en las
+  filas de anuncios que tienen señal guardada si Jev está activo, y la quita si está apagado. No
+  llama a Jev.
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md); contrato en [spec-slice-B1.md](spec-slice-B1.md).
 
 ### Backfill de base de precio
@@ -573,7 +619,7 @@ Hay cosas que se hacen desde la web y no tienen comando. No las busques en este 
 - **`/curation`**: curar y descartar anuncios (también `/curation/cola` y `/curation/sin-foco`).
 - **`/curation/auditoria`**: la auditoría semanal de los descartes automáticos.
 - **`/catalog`**: el botón de backfill de un canal o grupo de WhatsApp.
-- **`/control`**: el estado del sistema (pre-cálculo, huecos de ingesta, validación).
+- **`/control`**: el estado del sistema (pre-cálculo, huecos de ingesta, validación, señal de Jev).
 - **`/docs`**: este catálogo y el resto de los documentos, con el acceso del operador.
 
 Tampoco está WAHA (corre en Docker, ver `deploy/waha/`): sus comandos no se catalogaron.

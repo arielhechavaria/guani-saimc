@@ -2107,3 +2107,214 @@ class TestControlesDeManipulacion:
         assert "1 celda diverge" in response.text
         assert "0 sin ancla" in response.text
         assert 'data-control="diverges"' in response.text
+
+
+class TestJevEnSombra:
+    """La sección «Jev (señal en sombra)» (A6b-1, caso 23 de la especificación).
+
+    `/control` es público: la sección trae conteos y gasto, nunca un texto de
+    anuncio, un canal ni una respuesta.
+    """
+
+    TEXTO = "Arroz particular de la finca a 320 CUP la libra"
+    CANAL = "Canal Reservado De Prueba"
+
+    @pytest.fixture
+    def entorno(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Path]:
+        """Jev activo y el registro del pre-cálculo en un temporal. Las
+        variables de entorno le ganan al `.env` del checkout."""
+        ruta = tmp_path / "prefill-status.json"
+        monkeypatch.setenv("SAIMC_LLM_JEV_ENABLED", "true")
+        monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "clave-falsa-de-jev-123")
+        monkeypatch.setenv("SAIMC_PREFILL_STATUS_PATH", str(ruta))
+        monkeypatch.setattr(
+            control, "session_health", lambda **kw: SessionHealth(configured=False, status="unknown")
+        )
+        get_settings.cache_clear()
+        yield ruta
+        get_settings.cache_clear()
+
+    @staticmethod
+    def _seccion(html: str) -> str:
+        secciones = [parte for parte in html.split("<section") if 'id="jev"' in parte]
+        assert len(secciones) == 1, "no está la sección de Jev"
+        return secciones[0].split("</section>")[0]
+
+    def test_usa_las_fichas_de_consumo_del_asistente_y_no_una_tabla(
+        self, client: TestClient, entorno: Path
+    ) -> None:
+        """Mobile first: a 390 px las fichas `m3-stats` se acomodan solas; una
+        tabla o las tarjetas grandes obligarían a desplazar de costado."""
+        seccion = self._seccion(client.get("/control").text)
+
+        assert 'class="m3-stats"' in seccion
+        assert "<table" not in seccion
+        assert "m3-metric-value-sm" not in seccion
+
+    @staticmethod
+    def _metrica(seccion: str, etiqueta: str) -> str:
+        encontrado = re.search(
+            rf'{etiqueta}</div>\s*<div class="m3-stat-value">\s*([^<]+?)\s*</div>', seccion
+        )
+        assert encontrado is not None, f"no está la métrica «{etiqueta}»"
+        return encontrado.group(1)
+
+    def _senales(self, session: Session, cuantas: int, *, huella: str | None = None) -> list[RawIngestion]:
+        from saimc.models import JevSignal
+        from saimc.validation import jev_signal
+
+        if session.execute(select(Product)).first() is None:
+            session.add(Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True))
+        canal = session.execute(select(Channel).where(Channel.name == self.CANAL)).scalar_one_or_none()
+        if canal is None:
+            canal = Channel(name=self.CANAL, platform=Platform.WHATSAPP_CHANNEL)
+            session.add(canal)
+        session.commit()
+        opciones = jev_signal.load_options(session)
+        anuncios = []
+        for _ in range(cuantas):
+            n = len(list(session.execute(select(RawIngestion.id)))) + 1
+            anuncio = RawIngestion(
+                source_type=SourceType.WHATSAPP_CHANNEL,
+                source_reference=canal.name,
+                channel_id=canal.id,
+                file_path=f"raw/jev-control-{n}.txt",
+                content_hash=f"hash-jev-control-{n}",
+                content_type=ContentType.TEXT,
+                original_text=self.TEXTO,
+                processing_status=ProcessingStatus.PENDING,
+                captured_at=datetime(2026, 10, 1, tzinfo=UTC),
+            )
+            session.add(anuncio)
+            session.flush()
+            session.add(
+                JevSignal(
+                    ingestion_id=anuncio.id,
+                    model="typesafe-ai/jev",
+                    questions_hash=huella or opciones.questions_hash,
+                    answers={"triage": {"type": "noul", "noul": 0.9}, "nota": "respuesta-privada"},
+                    product_keys=opciones.product_keys,
+                    input_tokens=500,
+                    output_tokens=0,
+                    cost_usd=Decimal("0.00003"),
+                    source="prefill",
+                )
+            )
+            anuncios.append(anuncio)
+        session.commit()
+        return anuncios
+
+    def test_caso_23_apagado_dice_apagada(
+        self, client: TestClient, entorno: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SAIMC_LLM_JEV_ENABLED", "false")
+        get_settings.cache_clear()
+
+        seccion = self._seccion(client.get("/control").text)
+
+        assert "Jev (señal en sombra)" in seccion
+        assert self._metrica(seccion, "Estado") == "apagada"
+
+    def test_encendido_y_sin_clave_dice_sin_clave(
+        self, client: TestClient, entorno: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "")
+        get_settings.cache_clear()
+
+        seccion = self._seccion(client.get("/control").text)
+
+        assert self._metrica(seccion, "Estado") == "sin clave"
+        assert "falta la clave" in seccion
+
+    def test_caso_23_tres_senales_tres_textos_y_el_gasto(
+        self, client: TestClient, session: Session, entorno: Path
+    ) -> None:
+        self._senales(session, 3)
+
+        seccion = self._seccion(client.get("/control").text)
+
+        assert self._metrica(seccion, "Estado") == "encendida"
+        assert self._metrica(seccion, "Textos con señal") == "3"
+        # 3 × 0,00003 = 0,00009, que a cuatro decimales es 0,0001.
+        assert self._metrica(seccion, "Gasto acumulado") == "$0.0001"
+        assert self._metrica(seccion, "Últimos 7 días") == "$0.0001"
+
+    def test_caso_23_la_seccion_no_trae_textos_canales_ni_respuestas(
+        self, client: TestClient, session: Session, entorno: Path
+    ) -> None:
+        anuncios = self._senales(session, 3)
+
+        seccion = self._seccion(client.get("/control").text)
+
+        assert self.TEXTO not in seccion
+        assert "Arroz particular" not in seccion
+        assert self.CANAL not in seccion
+        assert "respuesta-privada" not in seccion
+        assert "clave-falsa-de-jev-123" not in seccion
+        for anuncio in anuncios:
+            assert str(anuncio.id) not in seccion
+
+    def test_una_senal_de_una_huella_vieja_cuenta_en_el_total_y_no_como_vigente(
+        self, client: TestClient, session: Session, entorno: Path
+    ) -> None:
+        self._senales(session, 3)
+        self._senales(session, 1, huella="huella-vieja-000")
+
+        seccion = self._seccion(client.get("/control").text)
+
+        assert self._metrica(seccion, "Textos con señal") == "3"
+        assert "4 filas en la tabla" in seccion
+
+    def test_cuenta_las_filas_de_precio_anotadas(
+        self, client: TestClient, session: Session, entorno: Path
+    ) -> None:
+        _cargar(session, precios=["100", "110", "120"])
+        filas = list(session.execute(select(PriceHistory)).scalars())
+        filas[0].validation_detail = {"rules": {}, "jev": {"signal_id": "x"}}
+        filas[1].validation_detail = {"rules": {}}
+        session.commit()
+
+        seccion = self._seccion(client.get("/control").text)
+
+        assert self._metrica(seccion, "Filas anotadas") == "1"
+
+    def test_muestra_la_ultima_corrida_y_por_que_corto(
+        self, client: TestClient, entorno: Path
+    ) -> None:
+        from saimc.extraction import prefill_status
+
+        prefill_status.write_run_status(
+            entorno,
+            prefill_status.PrefillRun(
+                finished_at=datetime.now(UTC),
+                exit_code=0,
+                done=2,
+                degraded=0,
+                skipped_no_text=0,
+                cost_usd=0.01,
+                stopped_by_max_cost=False,
+                aborted_failure="",
+                jev_asked=5,
+                jev_failed=1,
+                jev_cost_usd=0.00015,
+                jev_stopped="auth",
+            ),
+        )
+
+        html = client.get("/control").text
+        seccion = self._seccion(html)
+
+        assert "5 preguntados" in seccion
+        assert "1 fallo" in seccion
+        assert "la clave fue rechazada" in seccion
+        # En la franja, un indicador ámbar que lleva a la sección. No rojo.
+        assert 'href="#jev"' in html
+        assert "m3-health-banner is-down" not in html
+
+    def test_sin_corte_no_hay_indicador_en_la_franja(
+        self, client: TestClient, entorno: Path
+    ) -> None:
+        html = client.get("/control").text
+
+        assert 'href="#jev"' not in html
+        assert "Todavía no hay ninguna corrida registrada" in self._seccion(html)

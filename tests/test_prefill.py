@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from saimc.config import Settings
 from saimc.extraction import llm_assist, llm_propose_ad, prefill, prefill_status
 from saimc.models import (
     ContentType,
+    JevSignal,
     LlmProposal,
     ProcessingStatus,
     Product,
@@ -27,6 +29,10 @@ from saimc.models import (
     RawIngestion,
     SourceType,
 )
+from saimc.validation import jev_signal
+from tests.jev_fakes import FAKE_KEY
+from tests.jev_fakes import Api as ApiJev
+from tests.jev_fakes import client as jev_client_falso
 
 _RESPUESTA_OK = {
     "discard": False,
@@ -569,3 +575,263 @@ def test_un_registro_ilegible_se_lee_como_ausente(tmp_path: Path) -> None:
 
     assert prefill_status.read_run_status(ruta) is None
     assert prefill_status.read_run_status(tmp_path / "no-existe.json") is None
+
+
+# --- la pasada de Jev (A6b-1) --------------------------------------------------
+#
+# Casos 1, 5 y 6 de «Casos esperados» de `docs/spec-slice-A6b.md`, en lo que toca
+# al pre-cálculo: la pasada va antes del bucle de Claude, no depende de él y no
+# le cambia el código de salida. El detalle de la pasada está en
+# `test_jev_signal.py`.
+
+
+def _ajustes_jev(tmp_path: Path, **kw: Any) -> Settings:
+    base: dict[str, Any] = {
+        "llm_jev_enabled": True,
+        "llm_jev_api_key": FAKE_KEY,
+        "prefill_status_path": tmp_path / "prefill-status.json",
+    }
+    base.update(kw)
+    return _ajustes(tmp_path, **base)
+
+
+def _correr_con_jev(session, tmp_path, argv, api, *, cliente=None, ajustes=None):
+    salida: list[str] = []
+    with jev_client_falso(api) as http:
+        codigo = prefill.execute(
+            prefill.parse_args(argv),
+            session,
+            ajustes or _ajustes_jev(tmp_path),
+            client=cliente,
+            transcribe=lambda path: "",
+            jev_http=http,
+            jev_sleep=lambda _segundos: None,
+            out=salida.append,
+        )
+    return codigo, "\n".join(salida)
+
+
+def _senales(session: Session) -> list[JevSignal]:
+    return list(session.execute(select(JevSignal)).scalars())
+
+
+@pytest.mark.parametrize(
+    "apagado",
+    [{"llm_jev_enabled": False}, {"llm_jev_api_key": None}],
+    ids=["interruptor-apagado", "encendido-sin-clave"],
+)
+def test_a6b_caso_1_inactivo_el_precalculo_no_llama_a_jev(
+    session: Session, catalogo, tmp_path: Path, apagado: dict[str, Any]
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    api = ApiJev()
+    cliente = ClienteFalso()
+    ajustes = _ajustes_jev(tmp_path, **apagado)
+
+    codigo, _ = _correr_con_jev(session, tmp_path, ["--execute"], api, cliente=cliente, ajustes=ajustes)
+
+    assert codigo == 0
+    assert api.requests == []
+    assert _senales(session) == []
+    assert len(cliente.llamadas) == 1
+    registro = prefill_status.read_run_status(tmp_path / "prefill-status.json")
+    assert registro is not None
+    assert (registro.jev_asked, registro.jev_failed, registro.jev_cost_usd, registro.jev_stopped) == (
+        0,
+        0,
+        0.0,
+        "",
+    )
+
+
+def test_a6b_apagado_la_salida_del_precalculo_es_la_de_siempre(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+
+    _, salida = _correr_con_jev(
+        session, tmp_path, [], ApiJev(), ajustes=_ajustes_jev(tmp_path, llm_jev_enabled=False)
+    )
+
+    assert "Jev" not in salida
+
+
+def test_a6b_la_pasada_de_jev_va_antes_del_bucle_de_claude(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    orden: list[str] = []
+    api = ApiJev()
+    cliente = ClienteFalso()
+
+    def gateway(request):
+        orden.append("jev")
+        return api(request)
+
+    crear = cliente.messages.create
+
+    def claude(**kw):
+        orden.append("claude")
+        return crear(**kw)
+
+    cliente.messages = SimpleNamespace(create=claude)
+
+    codigo, salida = _correr_con_jev(session, tmp_path, ["--execute"], gateway, cliente=cliente)
+
+    assert codigo == 0
+    assert orden == ["jev", "claude"]
+    assert len(_senales(session)) == 1
+    assert len(_propuestas(session)) == 1
+    assert "Jev" in salida
+    registro = prefill_status.read_run_status(tmp_path / "prefill-status.json")
+    assert registro is not None
+    assert (registro.exit_code, registro.done) == (0, 1)
+    assert (registro.jev_asked, registro.jev_failed, registro.jev_stopped) == (1, 0, "")
+    assert registro.jev_cost_usd == pytest.approx(0.00003)
+
+
+def test_a6b_jev_no_mira_el_foco(session: Session, catalogo, tmp_path: Path) -> None:
+    # El triage se midió sobre todos los textos: uno que no menciona ningún
+    # piloto se le pregunta a Jev aunque Claude no lo vea.
+    _ingesta(session, texto="vendo zapatos talla 42")
+    api = ApiJev()
+    cliente = ClienteFalso()
+
+    _correr_con_jev(session, tmp_path, ["--execute"], api, cliente=cliente)
+
+    assert len(api.requests) == 1
+    assert cliente.llamadas == []
+
+
+def test_a6b_jev_corre_aunque_falte_la_clave_de_anthropic(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    api = ApiJev()
+    ajustes = _ajustes_jev(tmp_path, anthropic_api_key="")
+
+    codigo, _ = _correr_con_jev(session, tmp_path, ["--execute"], api, ajustes=ajustes)
+
+    # El código de salida es el de siempre para «sin clave de Anthropic».
+    assert codigo == 2
+    assert len(_senales(session)) == 1
+    registro = prefill_status.read_run_status(tmp_path / "prefill-status.json")
+    assert registro is not None and registro.jev_asked == 1
+
+
+@pytest.mark.parametrize(
+    ("respuestas", "corte", "llamadas"),
+    [
+        ([httpx.ConnectError("sin red")] * 2, "", 4),
+        ([httpx.Response(401, json={"message": "clave rechazada"})], "auth", 1),
+        ([httpx.ReadTimeout("tiempo agotado")] * 2, "", 4),
+    ],
+    ids=["a-conexion", "b-clave", "c-tiempo"],
+)
+def test_a6b_caso_5_un_fallo_de_jev_no_frena_a_claude_ni_cambia_la_salida(
+    session: Session,
+    catalogo,
+    tmp_path: Path,
+    respuestas: list[Any],
+    corte: str,
+    llamadas: int,
+) -> None:
+    for minutos in range(3):
+        _ingesta(session, texto=f"arroz {minutos}", minutos=minutos)
+    api = ApiJev(respuestas)
+    cliente = ClienteFalso()
+
+    codigo, _ = _correr_con_jev(session, tmp_path, ["--execute"], api, cliente=cliente)
+
+    assert codigo == 0
+    assert len(api.requests) == llamadas
+    # El bucle de Claude corre para los tres.
+    assert len(cliente.llamadas) == 3
+    registro = prefill_status.read_run_status(tmp_path / "prefill-status.json")
+    assert registro is not None
+    assert registro.exit_code == 0
+    assert registro.jev_stopped == corte
+    assert registro.jev_failed == 1
+
+
+def test_a6b_caso_6_el_tope_de_jev_corta_y_claude_corre(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    for minutos in range(3):
+        _ingesta(session, texto=f"arroz {minutos}", minutos=minutos)
+    api = ApiJev(cost="0.00003")
+    cliente = ClienteFalso()
+    ajustes = _ajustes_jev(tmp_path, llm_jev_max_cost=0.00005)
+
+    codigo, _ = _correr_con_jev(
+        session, tmp_path, ["--execute"], api, cliente=cliente, ajustes=ajustes
+    )
+
+    assert codigo == 0
+    assert len(api.requests) == 1
+    assert len(_senales(session)) == 1
+    assert len(cliente.llamadas) == 3
+    registro = prefill_status.read_run_status(tmp_path / "prefill-status.json")
+    assert registro is not None
+    assert registro.jev_stopped == "max_cost"
+    assert registro.jev_asked == 1
+    # El tope de Jev es aparte: no frena el bucle de Claude.
+    assert registro.stopped_by_max_cost is False
+
+
+def test_a6b_si_la_pasada_de_jev_revienta_el_precalculo_sigue(
+    session: Session, catalogo, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _romper(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("jev roto")
+
+    monkeypatch.setattr(jev_signal, "prefill_pass", _romper)
+    _ingesta(session, texto="arroz uno")
+    cliente = ClienteFalso()
+
+    codigo, _ = _correr_con_jev(session, tmp_path, ["--execute"], ApiJev(), cliente=cliente)
+
+    assert codigo == 0
+    assert len(cliente.llamadas) == 1
+
+
+def test_a6b_en_seco_informa_lo_de_jev_sin_red(session: Session, catalogo, tmp_path: Path) -> None:
+    _ingesta(session, texto="arroz uno")
+    api = ApiJev()
+
+    codigo, salida = _correr_con_jev(session, tmp_path, [], api)
+
+    assert codigo == 0
+    assert api.requests == []
+    assert "Jev" in salida
+    assert "1 texto" in salida
+
+
+def test_a6b_un_registro_anterior_a_jev_se_sigue_leyendo(tmp_path: Path) -> None:
+    ruta = tmp_path / "prefill-status.json"
+    ruta.write_text(
+        json.dumps(
+            {
+                "finished_at": "2026-10-03T12:00:00+00:00",
+                "exit_code": 0,
+                "done": 4,
+                "degraded": 0,
+                "skipped_no_text": 0,
+                "cost_usd": 0.03,
+                "stopped_by_max_cost": False,
+                "aborted_failure": "",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registro = prefill_status.read_run_status(ruta)
+
+    assert registro is not None
+    assert registro.done == 4
+    assert (registro.jev_asked, registro.jev_failed, registro.jev_cost_usd, registro.jev_stopped) == (
+        0,
+        0,
+        0.0,
+        "",
+    )

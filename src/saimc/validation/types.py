@@ -66,8 +66,9 @@ class ValidationConfig:
     #: para que el canal cuente como «limpio» (0..1).
     channel_max_edit_rate: float
     #: Desde qué probabilidad un desacuerdo de una señal externa saca del
-    #: carril 1. Lo fija A6b; `None` = sin fijar, y entonces cualquier
-    #: desacuerdo saca (la lectura conservadora).
+    #: carril 1. Lo fija G1 (A6b entró en sombra y no fijó ningún umbral);
+    #: `None` = sin fijar, y entonces cualquier desacuerdo saca (la lectura
+    #: conservadora).
     signal_high_probability: float | None
 
 

@@ -17,6 +17,12 @@ Está fuera del camino crítico: nada de `src/saimc` lo importa, y no escribe en
 la base. Solo lee, llama a la API y deja dos archivos bajo `data/jev_eval/`
 (`data/` no va a git): el caché de respuestas y el reporte.
 
+Desde A6b el cliente (el pedido, la lectura de la respuesta y la red) vive en
+`saimc.validation.jev_client`, que es el que usa el sistema: este script lo
+importa. Acá queda lo que es de A6: la muestra, su juego de cinco preguntas
+—armado con las piezas compartidas, así la huella del caché no cambia—, el
+caché, la corrida, las métricas y el reporte.
+
 El reporte **no decide**: muestra los números con su n y su cota. Qué se hace
 con Jev (A6b o descartarlo) lo decide el operador y va a `docs/decisions.md`.
 
@@ -41,14 +47,10 @@ Contrato: `docs/plan-factor-humano.md`, «A6 — Prueba de Jev fuera de línea»
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import math
 import os
-import re
 import sys
 import time
-import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -77,44 +79,58 @@ from saimc.models import (
     RawIngestion,
     SaleFormat,
 )
-from saimc.privacy import redact_personal_data
+from saimc.validation import jev_client
+
+# El cliente compartido con el sistema. Se importan los nombres uno por uno
+# —y no solo el módulo— para que el resto del script los siga usando como
+# siempre (`ask(...)`, `JevError`, `parse_answer(...)`).
+#
+# Los que llevan `as` con su mismo nombre no se usan acá abajo: es la forma de
+# decir «esto se reexporta a propósito» (los tests los leen como atributos del
+# script), y evita que el linter los marque como imports sin usar.
+from saimc.validation.jev_client import (
+    API_URL as API_URL,
+)
+from saimc.validation.jev_client import (
+    CHARS_PER_TOKEN,
+    INPUT_PRICE_PER_MTOK,
+    MODEL,
+    OTHER_KEY,
+    REQUEST_OVERHEAD_FACTOR,
+    TRIAGE,
+    JevError,
+    ask,
+    parse_answer,
+    questions_hash,
+    request_tokens_from_text,
+    slugify,
+    tokens_cost,
+)
+from saimc.validation.jev_client import (
+    MAX_RETRY_AFTER_SECONDS as MAX_RETRY_AFTER_SECONDS,
+)
+from saimc.validation.jev_client import (
+    RETRY_BASE_SECONDS as RETRY_BASE_SECONDS,
+)
+from saimc.validation.jev_client import (
+    estimate_tokens as estimate_tokens,
+)
+from saimc.validation.jev_client import (
+    parse_response as parse_response,
+)
 from saimc.validation.stats import Rate, pct
 
-API_URL = "https://ai-gateway.vercel.sh/typesafe/v1/systemone"
-MODEL = "typesafe-ai/jev"
-#: Variable de la clave. El script la lee por su cuenta: no es un campo de
-#: `saimc.config.Settings`, porque agregarla ahí sería tocar el sistema (A6b).
+#: Variable de la clave. El script la lee por su cuenta, del entorno o del
+#: `.env`, sin pasar por `saimc.config.Settings`: corre en desarrollo y no
+#: depende del interruptor del sistema.
 ENV_KEY = "SAIMC_LLM_JEV_API_KEY"
 
-#: Precio de referencia de la entrada, en USD por millón de tokens. Solo se usa
-#: para estimar: el costo real de cada llamada lo informa el gateway.
-INPUT_PRICE_PER_MTOK = 0.042
-#: Caracteres por token para la estimación (el español suele rendir cerca de 4).
-CHARS_PER_TOKEN = 3.5
-#: Lo que el pedido real pesa por encima de sus caracteres / 3,5. Medido el
-#: 2026-10-04 sobre 1.409 pedidos a Jev: 751.842 tokens cobrados contra 327.015
-#: estimados. El gateway cuenta más que el texto que se le manda; sin este factor
-#: la estimación en seco quedó 2,3 veces corta.
-REQUEST_OVERHEAD_FACTOR = 2.3
 DEFAULT_MAX_COST = 0.20
 
 TIMEOUT_SECONDS = 30.0
-#: Reintentos de un 429, un 5xx o un fallo de red: el intento y tres más.
-MAX_RETRIES = 3
-#: Espera antes del primer reintento; se duplica en cada uno (1 s, 2 s, 4 s).
-RETRY_BASE_SECONDS = 1.0
-#: Tope a lo que se le cree a un `Retry-After`. El gateway pide 60 s cuando se
-#: agota el cupo por minuto del plan gratuito (medido el 2026-10-04).
-MAX_RETRY_AFTER_SECONDS = 120.0
-
-TRIAGE = "triage"
 FIELDS: tuple[str, ...] = ("product", "currency", "province", "sale_format")
 #: «No lo dice»: la opción de los campos que la fila curada admite en nulo.
 NONE_KEY = "none"
-#: Producto fuera del foco. La verdad puede caer acá: hay filas curadas de
-#: productos que no son piloto.
-OTHER_KEY = "other"
-
 #: Tramos del diagrama de confiabilidad: diez de 0,1.
 BINS = 10
 
@@ -123,12 +139,6 @@ OUTPUT_DIR = REPO_ROOT / "data" / "jev_eval"
 CACHE_PATH = OUTPUT_DIR / "responses.jsonl"
 REPORT_PATH = OUTPUT_DIR / "report.md"
 
-_CURRENCY_LABELS: dict[str, str] = {
-    Currency.CUP.value: "Peso cubano (CUP); también cuando el anuncio no dice la moneda",
-    Currency.USD.value: "Dólar estadounidense (USD)",
-    Currency.EUR.value: "Euro (EUR)",
-    Currency.MLC.value: "Moneda libremente convertible (MLC)",
-}
 _SALE_FORMAT_LABELS: dict[str, str] = {
     SaleFormat.RETAIL.value: (
         "Minorista: vende por unidad, libra, paquete, saco o caja, aunque diga «por mayor»"
@@ -173,16 +183,6 @@ class Ad:
     claude_fields: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
-def slugify(name: str) -> str:
-    """«Azúcar blanca» → `azucar_blanca`: la clave estable de un producto.
-
-    `products` no tiene código ni slug; el nombre es único (`idx_products_name`).
-    """
-    # NFD separa la letra de su tilde; se descartan las marcas (categoría Mn).
-    plain = "".join(ch for ch in unicodedata.normalize("NFD", name) if unicodedata.category(ch) != "Mn")
-    return re.sub(r"[^a-z0-9]+", "_", plain.lower()).strip("_")
-
-
 def truth_values(values: Iterable[str | None]) -> frozenset[str]:
     """El conjunto de valores de las filas de un anuncio; nulo cuenta como `none`."""
     return frozenset(NONE_KEY if value is None else value for value in values)
@@ -202,36 +202,16 @@ def build_questions(catalog: Catalog, *, curated: bool) -> dict[str, dict[str, A
     El triage pregunta lo mismo que el `discard` del asistente
     (`llm_propose_ad._SYSTEM_PROMPT`), al revés: sí = el operador lo curaría.
     """
-    pilots = ", ".join(catalog.products.values())
+    # El triage, el producto y la moneda son las piezas que comparte con el
+    # sistema; provincia y formato de venta solo se preguntaron en A6.
     questions: dict[str, dict[str, Any]] = {
-        TRIAGE: {
-            "type": "noul",
-            "instructions": (
-                "¿Este anuncio del mercado informal cubano ofrece a la venta, con un precio "
-                f"utilizable, al menos uno de estos productos: {pilots}? Respondé que no si "
-                "no ofrece ninguno de esos productos, si no trae precio, si está agotado o "
-                "si es spam."
-            ),
-        }
+        TRIAGE: jev_client.triage_question(catalog.products.values())
     }
     if not curated:
         return questions
 
-    questions["product"] = {
-        "type": "choice",
-        "instructions": (
-            "¿Qué producto de la lista ofrece el anuncio? Si ofrece más de uno, elegí el principal."
-        ),
-        "criteria": {**catalog.products, OTHER_KEY: "Ningún producto de la lista"},
-    }
-    questions["currency"] = {
-        "type": "choice",
-        "instructions": (
-            "¿En qué moneda está el precio del producto que ofrece el anuncio? Si el anuncio "
-            "no dice la moneda, es peso cubano."
-        ),
-        "criteria": dict(_CURRENCY_LABELS),
-    }
+    questions["product"] = jev_client.product_question(catalog.products)
+    questions["currency"] = jev_client.currency_question()
     questions["province"] = {
         "type": "choice",
         "instructions": "¿En qué provincia de Cuba se vende, según el texto del anuncio?",
@@ -248,220 +228,17 @@ def build_questions(catalog: Catalog, *, curated: bool) -> dict[str, dict[str, A
     return questions
 
 
-def questions_hash(questions: Mapping[str, Any]) -> str:
-    """Huella de las preguntas (y del modelo): la versión de una respuesta.
-
-    Si cambia una instrucción o una opción, cambia la huella y lo cacheado deja
-    de valer. `sort_keys` la vuelve independiente del orden de los diccionarios.
-    """
-    canonical = json.dumps({"model": MODEL, "questions": questions}, sort_keys=True)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
-
-
 def build_request(ad: Ad, catalog: Catalog) -> dict[str, Any]:
-    """El cuerpo del pedido. La redacción de teléfonos va acá, en el borde."""
-    return {
-        "model": MODEL,
-        "state": redact_personal_data(ad.text) or "",
-        "questions": build_questions(catalog, curated=ad.curated),
-    }
-
-
-def estimate_tokens(text: str) -> int:
-    """Estimación de tokens: caracteres / 3,5, redondeado hacia arriba."""
-    return math.ceil(len(text) / CHARS_PER_TOKEN)
-
-
-def tokens_cost(input_tokens: int) -> float:
-    """Costo en USD de esos tokens de entrada al precio de referencia."""
-    return input_tokens * INPUT_PRICE_PER_MTOK / 1_000_000
-
-
-def request_tokens_from_text(serialized: str) -> int:
-    """Tokens que se espera que cobre un pedido ya serializado."""
-    return math.ceil(estimate_tokens(serialized) * REQUEST_OVERHEAD_FACTOR)
+    """El cuerpo del pedido de un anuncio de la muestra. La redacción de
+    teléfonos la hace el cliente, en el borde."""
+    return jev_client.build_request(ad.text, build_questions(catalog, curated=ad.curated))
 
 
 def _request_tokens(payload: Mapping[str, Any]) -> int:
     return request_tokens_from_text(json.dumps(payload, ensure_ascii=False))
 
 
-# --- Respuesta ----------------------------------------------------------------
-
-
-class JevError(Exception):
-    """Un pedido que no dio respuesta usable. `status` es `None` sin respuesta HTTP."""
-
-    def __init__(self, status: int | None, message: str) -> None:
-        super().__init__(message)
-        self.status = status
-
-
-@dataclass(frozen=True)
-class ApiResult:
-    """Una respuesta 200 con forma reconocible. `answers` va tal cual llegó."""
-
-    model: str
-    answers: dict[str, Any]
-    input_tokens: int
-    output_tokens: int
-    cost: float
-
-
-@dataclass(frozen=True)
-class Answer:
-    """Una respuesta ya leída. `invalid` trae el motivo si no se pudo usar."""
-
-    #: `noul`: P(sí). `choice`: `probabilities[choice]`, la probabilidad que el
-    #: modelo le da a la opción que eligió. `None` si no vino `probabilities`.
-    p: float | None = None
-    choice: str | None = None
-    #: Solo `choice`: el campo `confidence`, tal cual. NO es la probabilidad de
-    #: la elegida (respuesta real: 0,1974 contra 0,6558) y el proveedor no
-    #: documenta cómo la calcula. Se mide aparte.
-    confidence: float | None = None
-    invalid: str = ""
-
-
-def _probability(value: object) -> float | None:
-    """Un número entre 0 y 1, o `None`. `bool` queda afuera a propósito: en
-    Python `True` es un `int`, y un `true` de JSON no es una probabilidad."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    return float(value) if 0.0 <= value <= 1.0 else None
-
-
-def _count(value: object) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
-
-
-def parse_response(body: object) -> ApiResult:
-    """Lee el cuerpo de un 200. Levanta `JevError` si no trae `answers`.
-
-    Es tolerante con todo lo demás: sin `usage` cuenta 0 tokens y sin el costo
-    del gateway lo estima con los tokens.
-    """
-    if not isinstance(body, dict):
-        raise JevError(None, "la respuesta no es un objeto JSON")
-    answers = body.get("answers")
-    if not isinstance(answers, dict):
-        detail = body.get("message") or body.get("error_type") or "sin `answers`"
-        raise JevError(None, f"respuesta sin `answers`: {detail}")
-
-    usage = body.get("usage")
-    usage = usage if isinstance(usage, dict) else {}
-    input_tokens = _count(usage.get("input_tokens"))
-
-    metadata = body.get("provider_metadata")
-    gateway = metadata.get("gateway") if isinstance(metadata, dict) else None
-    raw_cost = gateway.get("cost") if isinstance(gateway, dict) else None
-    try:
-        # El gateway manda el costo como texto («0.00001155»).
-        cost = float(raw_cost) if raw_cost is not None else tokens_cost(input_tokens)
-    except (TypeError, ValueError):
-        cost = tokens_cost(input_tokens)
-
-    model = body.get("model")
-    return ApiResult(
-        model=model if isinstance(model, str) else "",
-        answers=answers,
-        input_tokens=input_tokens,
-        output_tokens=_count(usage.get("output_tokens")),
-        cost=cost,
-    )
-
-
-def parse_answer(question: Mapping[str, Any], raw: object) -> Answer:
-    """Lee la respuesta a UNA pregunta. Nunca levanta: lo ilegible es `invalid`."""
-    if not isinstance(raw, dict):
-        return Answer(invalid="sin respuesta")
-
-    if question["type"] == "noul":
-        p = _probability(raw.get("noul"))
-        return Answer(p=p) if p is not None else Answer(invalid="`noul` ausente o fuera de 0–1")
-
-    choice = raw.get("choice")
-    if not isinstance(choice, str) or choice not in question["criteria"]:
-        return Answer(invalid="`choice` ausente o fuera de las opciones")
-    probabilities = raw.get("probabilities")
-    p = _probability(probabilities.get(choice)) if isinstance(probabilities, dict) else None
-    confidence = _probability(raw.get("confidence"))
-    if p is None and confidence is None:
-        return Answer(choice=choice, invalid="sin `confidence` ni `probabilities` de la elegida")
-    # Con una sola de las dos la respuesta vale: cuenta para la exactitud y
-    # para la calibración de la señal que sí trajo.
-    return Answer(p=p, choice=choice, confidence=confidence)
-
-
-# --- Red ----------------------------------------------------------------------
-
-
-def _scrub(message: str, api_key: str) -> str:
-    """Saca la clave de un mensaje, por si el servidor la devuelve en el error."""
-    return message.replace(api_key, "[clave]") if api_key else message
-
-
-def _error_message(response: httpx.Response) -> str:
-    try:
-        body = response.json()
-    except ValueError:
-        body = None
-    if isinstance(body, dict):
-        # TypeSafe manda `message`/`error_type` en la raíz; el gateway de Vercel
-        # anida su propio rechazo bajo `error`, con `type` en vez de `error_type`.
-        nested = body.get("error")
-        if isinstance(nested, dict):
-            body = {"error_type": nested.get("type"), "message": nested.get("message")}
-        parts = [str(body[k]) for k in ("error_type", "message") if body.get(k)]
-        if parts:
-            return f"HTTP {response.status_code}: " + " — ".join(parts)
-    return f"HTTP {response.status_code}"
-
-
-def ask(
-    client: httpx.Client,
-    payload: Mapping[str, Any],
-    api_key: str,
-    *,
-    sleep: Callable[[float], None] = time.sleep,
-) -> ApiResult:
-    """Hace un pedido. Reintenta 429, 5xx y fallos de red con espera creciente.
-
-    `sleep` es un parámetro para que los tests no esperen de verdad. Levanta
-    `JevError`, con la clave ya quitada del mensaje.
-    """
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    error = JevError(None, "sin intentos")
-    for attempt in range(MAX_RETRIES + 1):
-        wait = RETRY_BASE_SECONDS * 2**attempt
-        try:
-            response = client.post(API_URL, headers=headers, json=payload)
-        except httpx.HTTPError as exc:
-            error = JevError(None, _scrub(f"fallo de red: {type(exc).__name__}: {exc}", api_key))
-        else:
-            if response.status_code == 200:
-                try:
-                    return parse_response(response.json())
-                except ValueError as exc:  # el cuerpo no es JSON
-                    raise JevError(200, "respuesta 200 que no es JSON") from exc
-                except JevError as exc:
-                    raise JevError(200, _scrub(str(exc), api_key)) from exc
-            error = JevError(response.status_code, _scrub(_error_message(response), api_key))
-            if response.status_code != 429 and response.status_code < 500:
-                raise error  # un 4xx no mejora reintentando
-            if response.status_code == 429:
-                # El cupo es por minuto: la espera creciente (1, 2, 4 s) se
-                # agotaría antes de que se reponga. Se espera lo que pide el
-                # servidor, acotado por si manda un valor absurdo.
-                try:
-                    asked = float(response.headers.get("retry-after", ""))
-                except ValueError:
-                    pass  # falta o no es un número de segundos: espera creciente
-                else:
-                    wait = min(max(asked, 0.0), MAX_RETRY_AFTER_SECONDS)
-        if attempt < MAX_RETRIES:
-            sleep(wait)
-    raise error
+# --- Clave --------------------------------------------------------------------
 
 
 def load_api_key(env: Mapping[str, str], env_file: Path) -> str | None:
@@ -882,7 +659,9 @@ def evaluate(ads: Sequence[Ad], catalog: Catalog, cache: Mapping[CacheKey, Mappi
             continue
         answered += 1
         cost += float(entry.get("cost_usd") or 0.0)
-        input_tokens += _count(entry.get("input_tokens"))
+        tokens = entry.get("input_tokens")
+        # `bool` queda afuera a propósito: en Python `True` es un `int`.
+        input_tokens += tokens if isinstance(tokens, int) and not isinstance(tokens, bool) else 0
         if entry.get("model"):
             models.add(str(entry["model"]))
         raw = entry.get("answers")

@@ -193,6 +193,28 @@ está el ahorro y conviene medirlo antes de cambiar de modelo por costo.
 
 ---
 
+## Jev, la señal en sombra (A6b)
+
+Segundo proveedor, aparte de Claude: Jev (TypeSafe AI, vía Vercel AI Gateway).
+Con `SAIMC_LLM_JEV_ENABLED=true` y su clave, el pre-cálculo le hace tres
+preguntas cerradas a cada texto pendiente (`docs/spec-slice-A6b.md`). Apagado
+no cuesta nada.
+
+- **Tarifa:** 0,042 USD por millón de tokens de entrada; la salida no se cobra.
+- **Por texto, medido** (A6, 2026-10-04, sobre 1.409 pedidos): una llamada
+  pesa entre 403 y 1.574 tokens, es decir entre **0,000017 y 0,000066 USD**.
+  La cifra «del orden de 0,0001 USD por anuncio» que figura en documentos
+  anteriores era una estimación previa a la medición y quedó alta.
+- **Por día, esperado:** a 35 textos son menos de 0,0025 USD (con el pico de
+  49: 0,0032).
+- **Tope:** `SAIMC_LLM_JEV_MAX_COST`, 0,01 USD por corrida del pre-cálculo.
+  Con 8 corridas por día el peor caso es **0,08 USD diarios**. Es un tope
+  aparte del de Claude (`SAIMC_PREFILL_MAX_COST`): ninguno se come el del otro.
+- **Dónde verlo:** `/control`, sección «Jev (señal en sombra)», que suma el
+  costo que informó el gateway en cada respuesta guardada (`jev_signals.cost_usd`).
+
+---
+
 ## Lo que NO cuesta lo que parecía
 
 Quedan anotados dos descartes, para no volver a discutirlos desde cero:

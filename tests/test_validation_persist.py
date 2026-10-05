@@ -31,6 +31,7 @@ from saimc.config import get_settings
 from saimc.models import (
     Channel,
     ContentType,
+    JevSignal,
     LlmProposal,
     PriceHistory,
     ProcessingStatus,
@@ -40,7 +41,7 @@ from saimc.models import (
     RawIngestion,
     SourceType,
 )
-from saimc.validation import ENGINE_VERSION, persist, revalidate
+from saimc.validation import ENGINE_VERSION, jev_signal, persist, revalidate
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
@@ -700,3 +701,296 @@ def test_control_sin_filas_muestra_la_seccion_en_cero(client: TestClient) -> Non
 
 def test_la_procedencia_tiene_los_tres_valores_de_la_especificacion() -> None:
     assert {p.value for p in Provenance} == {"human", "auto", "audited"}
+
+
+# --- Jev en sombra (A6b-1) ------------------------------------------------------
+#
+# Casos 1, 2, 3, 15, 16 y 17 de «Casos esperados» de `docs/spec-slice-A6b.md`,
+# escritos antes que el código. La fila base es la F: el caso 9 de arriba
+# (`unverified`, 83, `human`). Jev solo agrega la clave `jev` al detalle: el
+# estado, el puntaje y la procedencia tienen que salir iguales con y sin él.
+
+CINCO_CLAVES = {"rules", "reasons", "engine_version", "config", "validated_at"}
+CLAVE_JEV = "clave-falsa-de-jev-123"
+
+
+@pytest.fixture
+def pilotos(session: Session, mundo: SimpleNamespace) -> None:
+    """El fixture común de A6b: arroz, pollo y aceite pilotos; café, no."""
+    session.add_all(
+        [
+            Product(name="Pollo", category="carnes", unit="lb", aliases=[], is_pilot=True),
+            Product(name="Aceite", category="aceites", unit="l", aliases=[], is_pilot=True),
+            Product(name="Café", category="otros", unit="lb", aliases=[], is_pilot=False),
+        ]
+    )
+    session.commit()
+
+
+def _poner_jev(monkeypatch: pytest.MonkeyPatch, *, encendido: bool, clave: str) -> None:
+    # Las variables de entorno le ganan al `.env`: el test no depende de lo que
+    # el operador tenga configurado en su checkout.
+    monkeypatch.setenv("SAIMC_LLM_JEV_ENABLED", "true" if encendido else "false")
+    monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", clave)
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def jev_activo(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    _poner_jev(monkeypatch, encendido=True, clave=CLAVE_JEV)
+    yield
+    get_settings.cache_clear()
+
+
+def _respuestas(producto: tuple[str, float, float] = ("arroz", 0.97, 0.96)) -> dict[str, Any]:
+    clave, probabilidad, confianza = producto
+    return {
+        "triage": {"type": "noul", "noul": 0.98},
+        "product": {
+            "type": "choice",
+            "choice": clave,
+            "probabilities": {clave: probabilidad},
+            "confidence": confianza,
+        },
+        "currency": {
+            "type": "choice",
+            "choice": "CUP",
+            "probabilities": {"CUP": 0.99},
+            "confidence": 0.98,
+        },
+    }
+
+
+def _senal(session: Session, anuncio: RawIngestion, respuestas: dict[str, Any]) -> JevSignal:
+    """Una señal ya guardada para el anuncio, con la huella vigente."""
+    opciones = jev_signal.load_options(session)
+    senal = JevSignal(
+        ingestion_id=anuncio.id,
+        model="typesafe-ai/jev",
+        questions_hash=opciones.questions_hash,
+        answers=respuestas,
+        product_keys=opciones.product_keys,
+        input_tokens=500,
+        output_tokens=0,
+        cost_usd=Decimal("0.00003"),
+        source="prefill",
+    )
+    session.add(senal)
+    session.commit()
+    return senal
+
+
+def _es_la_fila_f(fila: PriceHistory) -> None:
+    assert fila.validation_status == "unverified"
+    assert fila.confidence_score == 83
+    assert fila.provenance == "human"
+    detalle = _detalle(fila)
+    assert detalle["rules"] == {
+        "structure": "pass",
+        "price": "pass",
+        "location": "pass",
+        "trust": "unknown",
+        "duplicate": "pass",
+        "quantity_price": "pass",
+    }
+    assert detalle["reasons"] == ["el canal no tiene historial suficiente"]
+    assert detalle["engine_version"] == ENGINE_VERSION
+    assert detalle["config"] == {"min_cell_n": 5}
+
+
+@pytest.mark.parametrize(
+    ("encendido", "clave"),
+    [(False, CLAVE_JEV), (True, "")],
+    ids=["interruptor-apagado", "encendido-sin-clave"],
+)
+def test_a6b_caso_1_inactivo_la_fila_queda_identica_aunque_haya_senal(
+    client: TestClient,
+    session: Session,
+    mundo: SimpleNamespace,
+    pilotos: None,
+    monkeypatch: pytest.MonkeyPatch,
+    encendido: bool,
+    clave: str,
+) -> None:
+    _poner_jev(monkeypatch, encendido=encendido, clave=clave)
+    _referencias(session, mundo, *CINCO)
+    anuncio = _ingesta(session, mundo.canal)
+    _senal(session, anuncio, _respuestas())
+
+    _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    _es_la_fila_f(fila)
+    assert set(_detalle(fila)) == CINCO_CLAVES
+
+
+def test_a6b_caso_2_coincide_se_anota_y_la_validacion_no_cambia(
+    client: TestClient, session: Session, mundo: SimpleNamespace, pilotos: None, jev_activo: None
+) -> None:
+    _referencias(session, mundo, *CINCO)
+    anuncio = _ingesta(session, mundo.canal)
+    senal = _senal(session, anuncio, _respuestas())
+
+    _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    _es_la_fila_f(fila)
+    detalle = _detalle(fila)
+    assert set(detalle) == CINCO_CLAVES | {"jev"}
+    jev = detalle["jev"]
+    assert jev["signal_id"] == str(senal.id)
+    assert jev["model"] == "typesafe-ai/jev"
+    assert jev["questions_hash"] == senal.questions_hash
+    assert jev["source"] == "prefill"
+    assert datetime.fromisoformat(jev["asked_at"]).tzinfo is not None
+    assert jev["triage"] == {"status": "ok", "probability": 0.98}
+    assert jev["product"]["agrees"] is True
+    assert jev["currency"]["agrees"] is True
+
+
+def test_a6b_caso_3_discrepa_se_anota_y_la_validacion_no_cambia(
+    client: TestClient, session: Session, mundo: SimpleNamespace, pilotos: None, jev_activo: None
+) -> None:
+    _referencias(session, mundo, *CINCO)
+    anuncio = _ingesta(session, mundo.canal)
+    _senal(session, anuncio, _respuestas(("pollo", 0.93, 0.92)))
+
+    _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    _es_la_fila_f(fila)
+    producto = _detalle(fila)["jev"]["product"]
+    assert producto["agrees"] is False
+    assert producto["row_value"] == "arroz"
+    assert producto["answer"] == "pollo"
+    assert (producto["probability"], producto["confidence"]) == (0.93, 0.92)
+
+
+def test_a6b_activo_y_sin_senal_la_clave_jev_no_existe(
+    client: TestClient, session: Session, mundo: SimpleNamespace, pilotos: None, jev_activo: None
+) -> None:
+    """El anuncio que se cura antes de que pase el temporizador: caso 5, al final."""
+    _referencias(session, mundo, *CINCO)
+    anuncio = _ingesta(session, mundo.canal)
+
+    _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    _es_la_fila_f(fila)
+    assert set(_detalle(fila)) == CINCO_CLAVES
+
+
+def test_a6b_una_senal_de_otra_huella_no_se_anota(
+    client: TestClient, session: Session, mundo: SimpleNamespace, pilotos: None, jev_activo: None
+) -> None:
+    _referencias(session, mundo, *CINCO)
+    anuncio = _ingesta(session, mundo.canal)
+    senal = _senal(session, anuncio, _respuestas())
+    senal.questions_hash = "huella-vieja-000"
+    session.commit()
+
+    _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    assert set(_detalle(fila)) == CINCO_CLAVES
+
+
+def test_a6b_caso_15_si_leer_la_senal_falla_la_fila_queda_validada_y_sin_jev(
+    client: TestClient,
+    session: Session,
+    mundo: SimpleNamespace,
+    pilotos: None,
+    jev_activo: None,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def _romper(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("jev_signals no contesta")
+
+    _referencias(session, mundo, *CINCO)
+    anuncio = _ingesta(session, mundo.canal)
+    _senal(session, anuncio, _respuestas())
+    monkeypatch.setattr(jev_signal, "current_signal", _romper)
+
+    with caplog.at_level(logging.ERROR):
+        _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    _es_la_fila_f(fila)
+    assert set(_detalle(fila)) == CINCO_CLAVES
+    session.refresh(anuncio)
+    assert anuncio.processing_status == ProcessingStatus.CURATED
+    assert str(anuncio.id) in caplog.text
+
+
+def test_a6b_caso_16_al_editar_una_fila_quedan_anotadas_las_dos(
+    client: TestClient, session: Session, mundo: SimpleNamespace, pilotos: None, jev_activo: None
+) -> None:
+    _referencias(session, mundo, *CINCO)
+    anuncio = _ingesta(session, mundo.canal, estado=ProcessingStatus.CURATED)
+    tocada = _fila(session, mundo, anuncio, "320", AD_DAY)
+    otra = _fila(session, mundo, anuncio, "330", AD_DAY)
+    _senal(session, anuncio, _respuestas())
+
+    _editar(client, mundo, anuncio, {tocada.id: "325", otra.id: "330"})
+
+    for fila in (_releer(session, tocada), _releer(session, otra)):
+        assert fila.provenance == "human"
+        assert _detalle(fila)["jev"]["product"]["agrees"] is True
+        assert _detalle(fila)["jev"]["product"]["row_value"] == "arroz"
+
+
+def test_a6b_caso_17_revalidate_anota_con_jev_activo_y_quita_la_clave_inactivo(
+    session: Session,
+    mundo: SimpleNamespace,
+    pilotos: None,
+    historico: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anuncio = session.get(RawIngestion, historico.normal.source_id)
+    assert anuncio is not None
+    _senal(session, anuncio, _respuestas())
+    argumentos = revalidate.parse_args(["--execute"])
+
+    # Sin Jev: la referencia contra la que se comparan las otras dos corridas.
+    _poner_jev(monkeypatch, encendido=False, clave=CLAVE_JEV)
+    revalidate.execute(argumentos, session, out=lambda _: None)
+    session.commit()
+    sin_jev = _estados(session)
+    procedencias = {f.id: f.provenance for f in session.execute(select(PriceHistory)).scalars()}
+    assert set(_detalle(_releer(session, historico.normal))) == CINCO_CLAVES
+
+    _poner_jev(monkeypatch, encendido=True, clave=CLAVE_JEV)
+    revalidate.execute(argumentos, session, out=lambda _: None)
+    session.commit()
+    assert _detalle(_releer(session, historico.normal))["jev"]["product"]["agrees"] is True
+    # Las filas de anuncios sin señal no llevan la clave.
+    assert "jev" not in _detalle(_releer(session, historico.absurdo))
+    assert _estados(session) == sin_jev
+
+    _poner_jev(monkeypatch, encendido=False, clave=CLAVE_JEV)
+    revalidate.execute(argumentos, session, out=lambda _: None)
+    session.commit()
+    assert set(_detalle(_releer(session, historico.normal))) == CINCO_CLAVES
+    assert _estados(session) == sin_jev
+    assert procedencias == {
+        f.id: f.provenance for f in session.execute(select(PriceHistory)).scalars()
+    }
+    get_settings.cache_clear()
+
+
+def test_a6b_revalidate_en_seco_no_anota(
+    session: Session,
+    mundo: SimpleNamespace,
+    pilotos: None,
+    historico: SimpleNamespace,
+    jev_activo: None,
+) -> None:
+    anuncio = session.get(RawIngestion, historico.normal.source_id)
+    assert anuncio is not None
+    _senal(session, anuncio, _respuestas())
+
+    revalidate.execute(revalidate.parse_args([]), session, out=lambda _: None)
+    session.commit()
+
+    assert _releer(session, historico.normal).validation_detail is None

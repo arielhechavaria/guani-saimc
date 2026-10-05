@@ -1157,3 +1157,30 @@ class TestTwoSignals:
         assert "0,2000" in report  # Brier por probabilidad
         assert "0,2067" in report  # Brier por confidence
         assert "sin `probabilities`" in report.lower()
+
+
+# --- Mudanza del cliente al sistema (A6b-1, caso 25) --------------------------
+
+
+def test_la_huella_de_las_preguntas_de_a6_no_cambio_con_la_mudanza() -> None:
+    """Fijación de la mudanza, no una verdad de validación: los dos valores se
+    capturaron corriendo el script ANTES de mover el cliente a
+    `saimc.validation.jev_client` (2026-10-04, commit d95a712). Si cambian, el
+    caché de `data/jev_eval/` deja de valer y la corrida de A6 se pagaría de
+    nuevo."""
+    curados = jev_eval.build_questions(CATALOG, curated=True)
+    descartados = jev_eval.build_questions(CATALOG, curated=False)
+
+    assert jev_eval.questions_hash(curados) == "08def85f649eb41c"
+    assert jev_eval.questions_hash(descartados) == "884ee02b10af398b"
+
+
+def test_el_script_usa_el_cliente_del_sistema() -> None:
+    """Hay un solo cliente: el script importa el del sistema, no trae una copia."""
+    from saimc.validation import jev_client
+
+    assert jev_eval.ask is jev_client.ask
+    assert jev_eval.parse_answer is jev_client.parse_answer
+    assert jev_eval.parse_response is jev_client.parse_response
+    assert jev_eval.JevError is jev_client.JevError
+    assert jev_eval.API_URL == jev_client.API_URL
