@@ -1,7 +1,8 @@
 """Motor de validación §6.2 y carriles (`saimc.validation`), slice A5b.
 
-Los 23 casos de «Casos esperados» de `docs/spec-motor-validacion.md`, uno por
-test, con el carril y el estado tal como figuran en esa tabla. Las expectativas
+Los 28 casos de «Casos esperados» de `docs/spec-motor-validacion.md`, uno por
+test, con el carril y el estado tal como figuran en esa tabla (el 12 y los 24 a
+28 son de G1b, 2026-10-05). Las expectativas
 salen de la especificación aprobada, no de correr el motor.
 
 Cada `AdContext` se arma a mano: las filas del modelo, las de las reglas, las
@@ -56,6 +57,7 @@ CONFIG = ValidationConfig(
     channel_min_history=10,
     channel_max_edit_rate=0.2,
     signal_high_probability=0.9,
+    lane1_max_rows=None,
 )
 
 # Canal «Mercado Habana»: provincia La Habana, historial limpio (40 decisiones
@@ -158,7 +160,7 @@ def _estados(resultado: AdValidation) -> list[str]:
     return [fila.status for fila in resultado.rows]
 
 
-# --- Los 23 casos de la especificación ---------------------------------------
+# --- Los 28 casos de la especificación ---------------------------------------
 
 
 def test_caso_01_todo_en_pass_va_al_carril_1() -> None:
@@ -209,19 +211,25 @@ def test_caso_05_precio_fuera_de_la_banda_es_anomaly() -> None:
     assert _estados(resultado) == ["anomaly"]
 
 
-def test_caso_06_moneda_asumida_no_coincide_y_queda_unverified() -> None:
-    # El modelo pone CUP sin que el texto lo diga. `ExtractionProposal` no
-    # puede decir «sin moneda»: la fila de las reglas trae su CUP de relleno,
-    # igual que en producción.
+# Casos 6 y 22: las reglas no dan moneda. En producción las reglas rellenan CUP
+# siempre que dan precio; el `None` aísla el contrato del motor (una moneda
+# `sin_regla` no es acuerdo) sin arrastrar un desacuerdo en el precio.
+REGLA_SIN_MONEDA = replace(_fila(), currency=None)  # type: ignore[arg-type]
+MONEDA_NO_ESCRITA = replace(META_OK, currency_explicit=False)
+
+
+def test_caso_06_sin_moneda_de_las_reglas_no_coincide_y_queda_unverified() -> None:
     ctx = _caso_1(
         texto="Arroz 320 la libra",
-        modelo=_modelo(_fila(base="unit"), metas=(replace(META_OK, currency_explicit=False),)),
+        modelo=_modelo(_fila(base="unit"), metas=(MONEDA_NO_ESCRITA,)),
+        reglas=(REGLA_SIN_MONEDA,),
     )
 
     resultado = validate_ad(ctx, CONFIG)
 
     assert resultado.lane == 2
     assert _estados(resultado) == ["unverified"]
+    assert resultado.reasons == ("fila 1: reglas y modelo no coinciden en moneda",)
 
 
 def test_caso_07_abstencion_en_cantidad_y_unidad_queda_unverified() -> None:
@@ -305,13 +313,16 @@ def _repetido(horas: float) -> RecentRow:
     )
 
 
-def test_caso_12_repetido_a_las_3_horas_es_possible_duplicate() -> None:
+def test_caso_12_repetido_a_las_3_horas_es_possible_duplicate_y_no_frena() -> None:
     ctx = _caso_1(texto="Arroz 320 CUP lb", recientes=(_repetido(3),))
 
     resultado = validate_ad(ctx, CONFIG)
 
-    assert resultado.lane == 2
+    assert resultado.lane == 1
     assert _estados(resultado) == ["possible_duplicate"]
+    # La fila conserva su motivo aunque no saque al anuncio del carril.
+    assert resultado.rows[0].duplicate == Outcome.FAIL
+    assert any("24 h" in motivo for motivo in resultado.rows[0].reasons)
 
 
 def test_caso_13_repetido_a_las_30_horas_va_al_carril_1() -> None:
@@ -417,7 +428,8 @@ def test_caso_22_senal_externa_de_acuerdo_no_mete_en_ningun_carril() -> None:
     senal = ExternalSignal(row_index=0, field="currency", value="CUP", probability=0.99)
     ctx = _caso_1(
         texto="Arroz 320 la libra",
-        modelo=_modelo(_fila(base="unit"), metas=(replace(META_OK, currency_explicit=False),)),
+        modelo=_modelo(_fila(base="unit"), metas=(MONEDA_NO_ESCRITA,)),
+        reglas=(REGLA_SIN_MONEDA,),
         senales=(senal,),
     )
 
@@ -432,6 +444,68 @@ def test_caso_23_sin_configuracion_no_se_automatiza() -> None:
 
     assert resultado.lane == 2
     assert _estados(resultado) == ["unverified"]
+
+
+def test_caso_24_moneda_no_escrita_con_reglas_y_modelo_en_cup_va_al_carril_1() -> None:
+    ctx = _caso_1(
+        texto="Arroz 320 la libra",
+        modelo=_modelo(_fila(base="unit"), metas=(MONEDA_NO_ESCRITA,)),
+    )
+
+    resultado = validate_ad(ctx, CONFIG)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["approved"]
+
+
+def _dos_filas(**cambios: Any) -> AdContext:
+    """«Arroz 320 CUP lb» y «Pollo 430 CUP lb», las dos con todo en `pass`."""
+    return _ctx(
+        "Arroz 320 CUP lb\nPollo 430 CUP lb",
+        modelo=_modelo(_fila(base="unit"), _fila(POLLO, "430", base="unit")),
+        reglas=(_fila(), _fila(POLLO, "430")),
+        celdas=(CELDA_ARROZ, CELDA_POLLO),
+        **cambios,
+    )
+
+
+def test_caso_25_mas_filas_que_el_tope_va_a_revision_sin_cambiar_los_estados() -> None:
+    resultado = validate_ad(_dos_filas(), replace(CONFIG, lane1_max_rows=1))
+
+    assert resultado.lane == 2
+    assert _estados(resultado) == ["approved", "approved"]
+    # Un solo motivo, del anuncio y no de una fila.
+    assert len(resultado.reasons) == 1
+    assert "tope" in resultado.reasons[0]
+    assert not resultado.reasons[0].startswith("fila ")
+
+
+def test_caso_26_tantas_filas_como_el_tope_va_al_carril_1() -> None:
+    resultado = validate_ad(_dos_filas(), replace(CONFIG, lane1_max_rows=2))
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["approved", "approved"]
+
+
+def test_caso_27_sin_tope_fijado_el_largo_no_frena() -> None:
+    resultado = validate_ad(_dos_filas(), replace(CONFIG, lane1_max_rows=None))
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["approved", "approved"]
+
+
+def test_caso_28_duplicado_en_canal_sin_historial_va_a_revision() -> None:
+    sin_historial = ChannelContext(
+        province_id=HABANA.id, decisions=0, proposed_rows=0, changed_rows=0
+    )
+    ctx = _caso_1(texto="Arroz 320 CUP lb", canal=sin_historial, recientes=(_repetido(3),))
+
+    resultado = validate_ad(ctx, CONFIG)
+
+    assert resultado.lane == 2
+    assert _estados(resultado) == ["possible_duplicate"]
+    # Frena el canal, no el duplicado.
+    assert resultado.reasons == ("fila 1: el canal no tiene historial suficiente",)
 
 
 # --- Lo que la tabla no cubre -------------------------------------------------
@@ -580,11 +654,11 @@ def test_con_referencias_propias_suficientes_manda_la_provincia() -> None:
 
 
 def test_ventana_de_24_horas_exactas_cuenta_como_duplicado() -> None:
-    """El borde se lee del lado conservador: a las 24 h justas va a revisión."""
+    """El borde se lee del lado conservador: a las 24 h justas es duplicado."""
     resultado = validate_ad(_caso_1(recientes=(_repetido(24),)), CONFIG)
 
     assert resultado.rows[0].duplicate == Outcome.FAIL
-    assert resultado.lane == 2
+    assert _estados(resultado) == ["possible_duplicate"]
 
 
 def test_un_minuto_despues_de_las_24_horas_ya_no_es_duplicado() -> None:
@@ -612,6 +686,49 @@ def test_el_duplicado_exige_mismo_producto_provincia_y_precio(cambio: dict) -> N
     resultado = validate_ad(_caso_1(recientes=(replace(_repetido(3), **cambio),)), CONFIG)
 
     assert resultado.rows[0].duplicate == Outcome.PASS
+
+
+def test_el_duplicado_de_una_fila_no_tapa_lo_que_frena_en_otra() -> None:
+    """Dos filas: el arroz repetido y el pollo sin cita. Frena solo el pollo."""
+    sin_cita = replace(META_OK, evidence_found=False, price_in_evidence=False)
+    ctx = _dos_filas(recientes=(_repetido(3),))
+    ctx = replace(ctx, model=replace(ctx.model, row_meta=[META_OK, sin_cita]))
+
+    resultado = validate_ad(ctx, CONFIG)
+
+    assert resultado.lane == 2
+    assert _estados(resultado) == ["possible_duplicate", "unverified"]
+    assert resultado.reasons == ("fila 2: la cita del modelo no está verificada en el texto",)
+
+
+def test_el_tope_de_filas_no_abre_el_carril_a_lo_que_otra_cosa_frena() -> None:
+    """Una fila, dentro del tope, en un canal sin historial: sigue en revisión."""
+    sin_historial = ChannelContext(
+        province_id=HABANA.id, decisions=0, proposed_rows=0, changed_rows=0
+    )
+
+    resultado = validate_ad(_caso_1(canal=sin_historial), replace(CONFIG, lane1_max_rows=1))
+
+    assert resultado.lane == 2
+
+
+def test_el_carril_1_no_dice_que_las_seis_reglas_pasaron() -> None:
+    resultado = validate_ad(_caso_1(recientes=(_repetido(3),)), CONFIG)
+
+    assert resultado.lane == 1
+    assert "seis" not in resultado.reasons[0]
+
+
+def test_moneda_distinta_entre_reglas_y_modelo_sigue_frenando() -> None:
+    ctx = _caso_1(
+        texto="Arroz 320 la libra",
+        modelo=_modelo(_fila(moneda="USD", base="unit"), metas=(MONEDA_NO_ESCRITA,)),
+    )
+
+    resultado = validate_ad(ctx, CONFIG)
+
+    assert resultado.lane == 2
+    assert any("no coinciden en moneda" in motivo for motivo in resultado.reasons)
 
 
 def test_filas_caidas_del_modelo_sacan_del_carril_1() -> None:
