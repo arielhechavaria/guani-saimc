@@ -19,15 +19,17 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [Después de un deploy](#después-de-un-deploy-la-secuencia) | Backup, pull, migrar, reiniciar | sí | no |
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra la cola | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
-| [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
+| [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
 | [`saimc.extraction.prefill` en seco](#pre-cálculo-en-seco) | Estimar el costo del pre-cálculo | no | no |
 | [`scripts/lint_drift.py --no-autofix`](#lint-drift) | Hallazgos nuevos de ruff y mypy | no | no |
 | [Huecos por canal (SQL)](#huecos-por-canal) | Cuánto calla cada canal | no | no |
 | [Verificaciones de B5 y K3 (SQL)](#verificaciones-de-b5-y-k3) | Comprobar hash de emisor y OCR | no | no |
 | [Señal de Jev (SQL)](#señal-de-jev) | Ver qué juntó Jev y qué quedó anotado | no | no |
+| [`saimc.validation.jev_signal` en seco](#relleno-de-jev) | Cuántos textos le faltan a Jev y cuánto costaría | no | no |
 | [`systemctl` / `journalctl`](#temporizadores-y-servicios) | Estado, logs, frenar temporizadores | solo si frenás | no |
 | [`saimc.validation.revalidate --execute`](#revalidar-escribiendo) | Re-guardar estado de las filas | sí: `prices_history` | no |
+| [`saimc.validation.jev_signal --decided --execute`](#relleno-de-jev) | Preguntarle a Jev por los textos ya decididos | sí: `jev_signals` | sí, tope `SAIMC_LLM_JEV_MAX_COST` o `--max-cost` |
 | [`saimc.basis_backfill --apply`](#backfill-de-base-de-precio) | Completar `price_basis` viejo | sí | no |
 | [`saimc.exchange_rate.backfill --apply`](#backfill-de-tasas-de-cambio) | Completar tasas pendientes | sí | no; consulta la API de elTOQUE |
 | [`scripts/redact_existing.py --apply`](#redactar-teléfonos-ya-guardados) | Quitar teléfonos del texto guardado | sí: `original_text` | no |
@@ -38,7 +40,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 
 > **Atención.** Gastan plata o reescriben datos: `prefill --execute`, `llm_backtest --execute`,
 > `scripts/jev_eval.py --execute` (y su `--check`, una sola llamada),
-> `revalidate --execute`, `alembic upgrade head`, y todo lo que lleva `--apply`. Hacé backup antes
+> `saimc.validation.jev_signal --execute`, `revalidate --execute`, `alembic upgrade head`, y todo lo que lleva `--apply`. Hacé backup antes
 > de cualquiera que escriba en la base. Una corrida manual del pre-cálculo **no** va por
 > `python -m …`: va por `sudo systemctl start saimc-prefill.service`, porque systemd no arranca el
 > servicio dos veces a la vez y dos corridas juntas gastan el doble (ver
@@ -180,7 +182,23 @@ sudo systemctl restart saimc.service
   `--channel-max-edit-rate`.
 - **Cómo leer la salida**: mirá la cota al 95%, no el porcentaje: un 0% sobre un n chico no dice
   nada.
-- Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Una vez por semana».
+- **El bloque «Jev»** (A6b-2) cierra cada conjunto. Abre con `n = … de … textos`: cuántos textos
+  del conjunto tienen señal de Jev con las preguntas vigentes; solo esos entran. Lee la tabla
+  `jev_signals`: no llama a Jev, no depende de `SAIMC_LLM_JEV_ENABLED` y no escribe en la base. Con
+  `n = 0` no hay nada que medir: primero el [relleno](#relleno-de-jev). Trae tres tablas:
+  1. *Carril 1, con Jev y sin Jev.* «Saca» son los anuncios que estaban en el carril 1 y con la
+     señal pasan al 2; «eran errores» son los que habías editado (Jev los frenó bien) y «estaban
+     bien», automatización perdida. Va para «cualquier desacuerdo» y para 0,5, 0,7 y 0,9, con cada
+     una de las dos probabilidades de Jev. «Entran» tiene que dar siempre 0.
+  2. *Triage al lado del carril 0.* Para P(sí) menor que 0,1, 0,2, 0,3 y 0,5: cuántos descartaría
+     Jev, cuántos de esos habías conservado (falsos descartes), y cuántos descartaría solo el
+     motor, solo Jev o los dos.
+  3. *Campos.* Cuántas veces Jev acierta el producto y la moneda contra las filas curadas.
+
+  Las grillas son para mirar: el informe no elige ningún umbral (eso es de G1). Con `--execute`,
+  la línea de `docs/shadow-runs.jsonl` suma la clave `jev`.
+- Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Una vez por semana»; el bloque
+  «Jev», en [spec-slice-A6b.md](spec-slice-A6b.md), punto 8.
 
 ### Revalidar en seco
 
@@ -277,8 +295,8 @@ el `.env`; en seco no hace falta.
 
 ### Señal de Jev
 
-Slice A6b-1: Jev en sombra. No tiene comando propio: pregunta dentro del
-[pre-cálculo](#pre-cálculo-ahora-a-mano) y anota al curar. Se gobierna con cuatro variables del
+Slice A6b-1: Jev en sombra. Pregunta dentro del [pre-cálculo](#pre-cálculo-ahora-a-mano) y anota
+al curar; para los textos que se decidieron antes está el [relleno](#relleno-de-jev). Se gobierna con cuatro variables del
 `.env` (después de cambiarlas, `sudo systemctl restart saimc.service`):
 
 | Variable | Por defecto | Qué gobierna |
@@ -303,14 +321,55 @@ SELECT validation_status, provenance, validation_detail->'jev' FROM prices_histo
 - **Para qué**: comprobar que la pasada de Jev guardó respuestas y que al curar se anotan.
 - **Cuándo**: al encender Jev, y cuando `/control#jev` muestre algo raro.
 - **Cambia algo**: no. **Gasta**: no (las consultas; la pasada sí, con su tope).
-- **Cómo leer la salida**: la primera da una fila por origen (`prefill`) con cuántas señales hay y
-  cuánto costaron. La segunda trae `null` en la tercera columna cuando la fila no tiene señal: el
+- **Cómo leer la salida**: la primera da una fila por origen (`prefill`, y `backfill` para lo que
+  preguntó el [relleno](#relleno-de-jev) con `--decided`) con cuántas señales hay y cuánto costaron. La segunda trae `null` en la tercera columna cuando la fila no tiene señal: el
   anuncio se curó antes de que pasara el temporizador, es una imagen, o Jev está apagado. Cuando
   la tiene, el bloque trae `triage`, `product` y `currency`, cada uno con su probabilidad; `agrees`
   dice si lo que eligió Jev coincide con alguna fila del anuncio.
 - Jev solo anota: ninguna fila cambia de estado, de carril ni de `provenance` por lo que diga.
   Para apagarlo, `SAIMC_LLM_JEV_ENABLED=false` y reiniciar: lo ya guardado queda, deja de anotarse.
 - Más: [spec-slice-A6b.md](spec-slice-A6b.md); costo en [costos.md](costos.md).
+
+### Relleno de Jev
+
+En seco (no llama a nadie): cuántos textos ya decididos le faltan a Jev y cuánto costaría.
+
+```
+.venv/bin/python -m saimc.validation.jev_signal --decided
+```
+
+Preguntando de verdad, con un tope para esta corrida:
+
+```
+.venv/bin/python -m saimc.validation.jev_signal --decided --execute --max-cost 0.10
+```
+
+Lo mismo sobre los pendientes (lo que hace sola la pasada del pre-cálculo), en seco:
+
+```
+.venv/bin/python -m saimc.validation.jev_signal
+```
+
+- **Para qué**: le pregunta a Jev por los textos que no tienen señal con las preguntas vigentes,
+  para que el bloque «Jev» del [informe del modo sombra](#informe-del-modo-sombra) tenga n desde el
+  primer día. Con `--decided` toma los textos ya curados o descartados y guarda las filas con
+  `source = backfill`; sin él, los pendientes, con `source = prefill`.
+- **Cuándo**: una vez al encender Jev (slice A6b-2), y de nuevo si cambia el catálogo de pilotos
+  (cambian las preguntas y las señales viejas dejan de contar). Siempre el en seco primero.
+- **Cambia algo**: en seco, no. Con `--execute` agrega filas a `jev_signals` y nada más: ninguna
+  fila de precio cambia y `raw_ingestions` no se toca. **Gasta**: solo con `--execute`; unos
+  0,00002 a 0,00007 USD por texto.
+- `--max-cost` es el tope de esta corrida en USD; sin él vale `SAIMC_LLM_JEV_MAX_COST` (0,01), que
+  no alcanza para los ~1.400 textos decididos: el en seco avisa cuando el costo estimado supera el
+  tope. `--limit N` pregunta solo los N más viejos.
+- Con `--execute` hace falta Jev activo (`SAIMC_LLM_JEV_ENABLED=true` y la clave). Si no, dice
+  «No se puede correr», no llama a nadie y sale con código 1. El en seco no necesita la clave.
+- **Cómo leer la salida**: en seco, `N textos sin señal vigente por preguntar, costo estimado …`.
+  Con `--execute`, `N preguntados de M, F fallos, I respuestas ilegibles, costo …`. Si la pasada
+  se corta (tope de gasto, clave rechazada, cupo agotado, tres fallos seguidos) lo dice en la
+  línea siguiente: lo ya preguntado quedó guardado y volver a correrlo sigue por donde quedó. Los
+  fallos van al registro como `jev.fallo`, sin el texto del anuncio.
+- Más: [spec-slice-A6b.md](spec-slice-A6b.md), punto 8; qué juntó, en [Señal de Jev](#señal-de-jev).
 
 ### Huecos por canal
 

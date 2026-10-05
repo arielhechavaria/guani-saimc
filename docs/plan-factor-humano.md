@@ -14,7 +14,9 @@ entran como medición, con índice de control y `measure_n`, sin umbrales; C1 ce
 2026-10-03: temporizador de systemd cada 3 h con tope por corrida y aviso en `/control`;
 A6 cerrada el 2026-10-04: Jev medido, favorable en triage, producto y moneda;
 A6b-1 cerrada el 2026-10-04: la señal de Jev entra en sombra por el pre-cálculo y se
-anota al guardar, apagada por defecto; falta A6b-2; A1c postergada).
+anota al guardar, apagada por defecto; A6b-2 cerrada el 2026-10-05: adaptador a
+`ExternalSignal`, bloque «Jev» en el informe de sombra y relleno sobre los textos ya
+decididos; A1c postergada).
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -76,7 +78,7 @@ misma sesión. El candidato más probable es A1b.
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | CERRADO (2026-10-03) |
 | A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE (postergada 2026-10-03) |
 | A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | CERRADO (2026-10-04) |
-| A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | A6b-1 CERRADO (2026-10-04); A6b-2 PENDIENTE |
+| A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | CERRADO (A6b-1 2026-10-04, A6b-2 2026-10-05) |
 | K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
 | K3 | Guardar la transcripción del OCR | M | — | Sonnet | CERRADO (2026-10-03) |
 | K4 | Aviso de hueco de ingesta por canal | M | — | Sonnet | CERRADO (2026-10-03) |
@@ -963,7 +965,7 @@ firme. Puede ser un resultado distinto por pregunta.
 
 ---
 
-### A6b — Jev como señal desconectable del motor, en modo sombra — A6b-1 CERRADO (2026-10-04); A6b-2 PENDIENTE
+### A6b — Jev como señal desconectable del motor, en modo sombra — CERRADO (A6b-1 2026-10-04, A6b-2 2026-10-05)
 
 **Partido en dos (2026-10-04).** La especificación aprobada es `docs/spec-slice-A6b.md`.
 **A6b-1** deja la señal entrando: cliente de Jev en `saimc/validation/jev_client.py`, tabla

@@ -1,10 +1,14 @@
-"""`saimc.validation.jev_signal` — la señal de Jev en sombra (slice A6b-1).
+"""`saimc.validation.jev_signal` — la señal de Jev en sombra (slices A6b-1 y A6b-2).
 
 Casos 1 (la parte de las llamadas), 2 a 7, 11 a 14 y 18 a 22 de «Casos
 esperados» de `docs/spec-slice-A6b.md`. Lo que pasa al curar, al editar y en
 `revalidate` (casos 1, 2, 3, 15, 16 y 17) está en `test_validation_persist.py`;
 la pasada dentro del pre-cálculo, en `test_prefill.py`; `/control`, en
 `test_control.py`.
+
+De la segunda parte (A6b-2) están acá el adaptador (caso 26) y el relleno
+(caso 32); el bloque «Jev» del informe (casos 27 a 31), en
+`test_shadow_report.py`.
 
 Los valores esperados salen de la especificación, escritos antes que el
 código. Fixture común: pilotos arroz, pollo y aceite; café existe y no es
@@ -914,3 +918,293 @@ def test_al_arrancar_no_avisa_si_esta_apagado_o_activo(
         jev_signal.warn_if_enabled_without_key(_ajustes(**ajustes))
 
     assert caplog.text == ""
+
+
+# --- Caso 26: el adaptador a `ExternalSignal` (código puro) ---------------------
+
+
+def test_caso_26_el_adaptador_da_una_senal_por_pregunta_con_la_probabilidad_pedida(
+    mundo: SimpleNamespace,
+) -> None:
+    lectura = _lectura(mundo, ANSWERS_OK)  # producto `arroz` (0,97 / 0,96)
+
+    senales = jev_signal.to_external_signals(lectura, [_fila(mundo.arroz)])
+
+    por_campo = {senal.field: senal for senal in senales}
+    # Una por pregunta de elección. El triage nunca produce señal.
+    assert set(por_campo) == {"product", "currency"}
+    assert len(senales) == 2
+    producto = por_campo["product"]
+    assert producto.row_index == 0
+    assert producto.value == mundo.arroz.id
+    assert producto.probability == 0.97
+    moneda = por_campo["currency"]
+    assert (moneda.row_index, moneda.value, moneda.probability) == (0, "CUP", 0.99)
+
+
+def test_caso_26_pidiendo_confidence_el_adaptador_usa_la_otra_probabilidad(
+    mundo: SimpleNamespace,
+) -> None:
+    senales = jev_signal.to_external_signals(
+        _lectura(mundo, ANSWERS_OK), [_fila(mundo.arroz)], probability="confidence"
+    )
+
+    assert {senal.field: senal.probability for senal in senales} == {"product": 0.96, "currency": 0.98}
+
+
+def test_caso_26_una_pregunta_invalid_no_produce_senal(mundo: SimpleNamespace) -> None:
+    # `cafe` no es una opción del catálogo y el triage es de tipo inesperado.
+    answers = {**ANSWERS_OK, "triage": {"noul": "alto"}, "product": choice("cafe", 0.9, 0.9)}
+
+    senales = jev_signal.to_external_signals(_lectura(mundo, answers), [_fila(mundo.arroz)])
+
+    assert [senal.field for senal in senales] == ["currency"]
+
+
+def test_el_adaptador_apunta_a_la_primera_fila_que_coincide(mundo: SimpleNamespace) -> None:
+    filas = [_fila(mundo.pollo), _fila(mundo.arroz), _fila(mundo.arroz)]
+
+    senales = jev_signal.to_external_signals(_lectura(mundo, ANSWERS_OK), filas)
+
+    producto = next(senal for senal in senales if senal.field == "product")
+    assert (producto.row_index, producto.value) == (1, mundo.arroz.id)
+
+
+def test_si_ninguna_fila_coincide_el_adaptador_apunta_a_la_fila_0(mundo: SimpleNamespace) -> None:
+    answers = {**ANSWERS_OK, "product": choice("aceite", 0.93, 0.92), "currency": choice("USD", 0.8, 0.7)}
+    filas = [_fila(mundo.pollo), _fila(mundo.arroz)]
+
+    senales = jev_signal.to_external_signals(_lectura(mundo, answers), filas)
+
+    por_campo = {senal.field: senal for senal in senales}
+    assert (por_campo["product"].row_index, por_campo["product"].value) == (0, mundo.aceite.id)
+    assert (por_campo["currency"].row_index, por_campo["currency"].value) == (0, "USD")
+
+
+def test_other_contra_un_piloto_es_un_desacuerdo_bien_formado(mundo: SimpleNamespace) -> None:
+    answers = {**ANSWERS_OK, "product": choice("other", 0.8, 0.7)}
+
+    senales = jev_signal.to_external_signals(_lectura(mundo, answers), [_fila(mundo.arroz)])
+
+    producto = next(senal for senal in senales if senal.field == "product")
+    # El motor compara `value` con el id del producto de la fila: tiene que
+    # venir (sin valor sería «sin señal») y ser distinto del id de arroz.
+    assert producto.row_index == 0
+    assert producto.value is not None
+    assert producto.value != mundo.arroz.id
+
+
+def test_other_contra_un_producto_fuera_del_foco_coincide(mundo: SimpleNamespace) -> None:
+    # Caso 13: un producto que no es piloto vale `other`.
+    answers = {**ANSWERS_OK, "product": choice("other", 0.8, 0.7)}
+
+    senales = jev_signal.to_external_signals(_lectura(mundo, answers), [_fila(mundo.cafe)])
+
+    producto = next(senal for senal in senales if senal.field == "product")
+    assert (producto.row_index, producto.value) == (0, mundo.cafe.id)
+
+
+def test_sin_la_probabilidad_pedida_no_hay_senal(mundo: SimpleNamespace) -> None:
+    # Caso 14: vino `confidence` y no `probabilities`. Una señal sin
+    # probabilidad está mal formada para el motor, o sea «sin señal».
+    answers = {**ANSWERS_OK, "product": {"choice": "arroz", "confidence": 0.96}}
+    lectura = _lectura(mundo, answers)
+
+    con_probabilidad = jev_signal.to_external_signals(lectura, [_fila(mundo.arroz)])
+    con_confidence = jev_signal.to_external_signals(lectura, [_fila(mundo.arroz)], probability="confidence")
+
+    assert [senal.field for senal in con_probabilidad] == ["currency"]
+    assert {senal.field: senal.probability for senal in con_confidence} == {"product": 0.96, "currency": 0.98}
+
+
+def test_sin_filas_el_adaptador_no_da_senales(mundo: SimpleNamespace) -> None:
+    assert jev_signal.to_external_signals(_lectura(mundo, ANSWERS_OK), []) == ()
+
+
+def test_el_adaptador_rechaza_una_probabilidad_que_no_existe(mundo: SimpleNamespace) -> None:
+    with pytest.raises(ValueError, match="probability"):
+        jev_signal.to_external_signals(_lectura(mundo, ANSWERS_OK), [_fila(mundo.arroz)], probability="otra")
+
+
+# --- Caso 32: el relleno (`python -m saimc.validation.jev_signal`) --------------
+
+
+def _relleno(session: Session, api: Api, *opciones: str, ajustes: Settings | None = None) -> tuple[int, str]:
+    """Corre el comando con un gateway falso. Devuelve el código y la salida."""
+    salida: list[str] = []
+    with client(api) as http:
+        codigo = jev_signal.run(
+            jev_signal.parse_args(list(opciones)),
+            session,
+            ajustes or _ajustes(),
+            client=http,
+            sleep=lambda _segundos: None,
+            out=salida.append,
+        )
+    return codigo, "\n".join(salida)
+
+
+def _senal_vigente(session: Session, anuncio: RawIngestion) -> None:
+    opciones = jev_signal.load_options(session)
+    jev_signal.save_signal(
+        session, ingestion_id=anuncio.id, result=jev_client.parse_response(body()), options=opciones
+    )
+    session.commit()
+
+
+@pytest.fixture
+def decididos(session: Session, mundo: SimpleNamespace) -> SimpleNamespace:
+    """Dos decididos sin señal (uno curado y uno descartado) y todo lo que NO entra."""
+    curado = _ingesta(session, texto="texto curado", estado=ProcessingStatus.CURATED, minutos=1)
+    descartado = _ingesta(session, texto="texto descartado", estado=ProcessingStatus.DISCARDED, minutos=2)
+    con_senal = _ingesta(session, texto="curado con señal", estado=ProcessingStatus.CURATED, minutos=3)
+    _senal_vigente(session, con_senal)
+    pendiente = _ingesta(session, texto="texto pendiente", minutos=4)
+    _ingesta(session, texto=None, tipo=ContentType.IMAGE, estado=ProcessingStatus.CURATED, minutos=5)
+    _ingesta(session, texto="  ", estado=ProcessingStatus.DISCARDED, minutos=6)
+    return SimpleNamespace(curado=curado, descartado=descartado, con_senal=con_senal, pendiente=pendiente)
+
+
+def test_caso_32_decided_en_seco_no_llama_a_la_red_e_informa_cuantos_faltan(
+    session: Session, decididos: SimpleNamespace
+) -> None:
+    api = Api()
+
+    codigo, salida = _relleno(session, api, "--decided")
+
+    assert codigo == 0
+    assert api.requests == []
+    assert len(_senales(session)) == 1  # la que ya estaba
+    assert "EN SECO" in salida
+    assert "2 textos" in salida
+    assert "USD" in salida
+
+
+def test_caso_32_decided_con_execute_pregunta_solo_los_decididos_sin_senal_vigente(
+    session: Session, decididos: SimpleNamespace
+) -> None:
+    api = Api()
+
+    codigo, salida = _relleno(session, api, "--decided", "--execute")
+
+    assert codigo == 0
+    # Más viejo primero; ni el pendiente ni el que ya tenía señal.
+    assert [p["state"] for p in api.payloads()] == ["texto curado", "texto descartado"]
+    nuevas = {senal.ingestion_id: senal.source for senal in _senales(session)}
+    assert nuevas == {
+        decididos.con_senal.id: "prefill",
+        decididos.curado.id: "backfill",
+        decididos.descartado.id: "backfill",
+    }
+    assert "2 preguntados" in salida
+
+
+def test_el_relleno_sin_opciones_toma_los_pendientes_igual_que_el_precalculo(
+    session: Session, decididos: SimpleNamespace
+) -> None:
+    api = Api()
+
+    codigo, _ = _relleno(session, api, "--execute")
+
+    assert codigo == 0
+    assert [p["state"] for p in api.payloads()] == ["texto pendiente"]
+    fuentes = {senal.ingestion_id: senal.source for senal in _senales(session)}
+    assert fuentes[decididos.pendiente.id] == "prefill"
+
+
+def test_una_segunda_corrida_del_relleno_no_vuelve_a_preguntar(
+    session: Session, decididos: SimpleNamespace
+) -> None:
+    api = Api()
+
+    _relleno(session, api, "--decided", "--execute")
+    _, salida = _relleno(session, api, "--decided", "--execute")
+
+    assert len(api.requests) == 2
+    assert "0 preguntados" in salida
+
+
+def test_el_relleno_respeta_limit(session: Session, decididos: SimpleNamespace) -> None:
+    api = Api()
+
+    _relleno(session, api, "--decided", "--execute", "--limit", "1")
+
+    assert [p["state"] for p in api.payloads()] == ["texto curado"]
+
+
+def test_el_tope_del_relleno_es_el_de_la_configuracion_y_max_cost_lo_cambia(
+    session: Session, decididos: SimpleNamespace
+) -> None:
+    # Caso 6 con el relleno: el gateway cobra 0,00003 por llamada y el tope es
+    # 0,00005, así que la segunda llamada no se hace.
+    api = Api()
+    _, salida = _relleno(session, api, "--decided", "--execute", ajustes=_ajustes(llm_jev_max_cost=0.00005))
+    assert len(api.requests) == 1
+    assert "tope de gasto" in salida
+
+    # Con `--max-cost` más alto, el que faltaba se pregunta.
+    _relleno(
+        session,
+        api,
+        "--decided",
+        "--execute",
+        "--max-cost",
+        "0.01",
+        ajustes=_ajustes(llm_jev_max_cost=0.00005),
+    )
+    assert len(api.requests) == 2
+
+
+@pytest.mark.parametrize(
+    "ajustes",
+    [{"llm_jev_enabled": False}, {"llm_jev_enabled": True, "llm_jev_api_key": None}],
+    ids=["apagado", "sin clave"],
+)
+def test_el_relleno_con_execute_no_corre_si_jev_no_esta_activo_y_lo_dice(
+    session: Session, decididos: SimpleNamespace, ajustes: dict[str, Any]
+) -> None:
+    api = Api()
+
+    codigo, salida = _relleno(session, api, "--decided", "--execute", ajustes=_ajustes(**ajustes))
+
+    assert codigo == 1
+    assert api.requests == []
+    assert len(_senales(session)) == 1
+    assert "No se puede correr" in salida
+    assert "SAIMC_LLM_JEV_ENABLED" in salida or "SAIMC_LLM_JEV_API_KEY" in salida
+
+
+def test_el_relleno_en_seco_no_necesita_la_clave_pero_avisa(
+    session: Session, decididos: SimpleNamespace
+) -> None:
+    api = Api()
+
+    codigo, salida = _relleno(session, api, "--decided", ajustes=_ajustes(llm_jev_api_key=None))
+
+    assert codigo == 0
+    assert api.requests == []
+    assert "2 textos" in salida
+    assert "SAIMC_LLM_JEV_API_KEY" in salida
+
+
+def test_un_fallo_del_relleno_no_registra_el_texto_y_deja_el_anuncio_para_despues(
+    session: Session, decididos: SimpleNamespace, caplog: pytest.LogCaptureFixture
+) -> None:
+    api = Api([httpx.Response(401, json={"message": "clave inválida"})])
+
+    with caplog.at_level(logging.WARNING):
+        codigo, salida = _relleno(session, api, "--decided", "--execute")
+
+    # Mismo manejo que la pasada del pre-cálculo: un 401 corta con una llamada.
+    assert codigo == 0
+    assert len(api.requests) == 1
+    assert len(_senales(session)) == 1
+    assert "la clave fue rechazada" in salida
+    assert "texto curado" not in caplog.text
+    assert "texto curado" not in salida
+
+
+@pytest.mark.parametrize("opciones", [["--limit", "0"], ["--max-cost", "-1"], ["--max-cost", "nan"]])
+def test_el_relleno_rechaza_un_limite_o_un_tope_sin_sentido(opciones: list[str]) -> None:
+    with pytest.raises(SystemExit):
+        jev_signal.parse_args(opciones)

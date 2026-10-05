@@ -1,4 +1,6 @@
-"""Jev como señal en sombra: preguntar, guardar y anotar (slice A6b-1).
+"""Jev como señal en sombra: preguntar, guardar y anotar (slices A6b-1 y A6b-2).
+
+Corre `python -m saimc.validation.jev_signal` (el relleno; por defecto, en seco).
 
 `validation.jev_client` sabe hablar con Jev y no toca la base. Este módulo es
 el que une a Jev con el sistema:
@@ -10,6 +12,13 @@ el que une a Jev con el sistema:
 - **Anotar** (`annotate`): al curar, al editar y al revalidar, `persist` busca
   la señal vigente del anuncio y suma un bloque `jev` al `validation_detail`
   de cada fila. Es código puro.
+- **Adaptar** (`to_external_signals`, A6b-2): convierte la respuesta en
+  `ExternalSignal` para `AdContext.signals`. Es código puro y solo lo usa el
+  informe de sombra (`validation.shadow`), que corre el motor con y sin Jev y
+  compara; nada de eso se guarda.
+- **Rellenar** (`run`, la línea de comandos, A6b-2): la misma pasada, a mano,
+  sobre los pendientes o sobre los textos ya decididos (`--decided`), para que
+  el informe tenga n desde el primer día.
 
 **Es sombra: solo anota.** Nada de acá cambia `validation_status`, el carril
 ni `provenance`, y el motor (`engine`, `rules`, `types`, `fence`) no importa
@@ -30,8 +39,10 @@ Contrato: `docs/spec-slice-A6b.md`.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import math
+import sys
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -45,7 +56,8 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from saimc.config import Settings
+from saimc.config import Settings, get_settings
+from saimc.db import get_session_factory
 from saimc.models import (
     ContentType,
     Currency,
@@ -58,6 +70,7 @@ from saimc.models import (
 from saimc.progress import pilot_products
 from saimc.validation import jev_client
 from saimc.validation.jev_client import Answer, ApiResult, JevError
+from saimc.validation.types import ExternalSignal
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +188,32 @@ def load_options(session: Session) -> Options:
 # --- Selección y alta ---------------------------------------------------------
 
 
+def _select_texts(
+    session: Session, questions_hash: str, statuses: Sequence[ProcessingStatus], limit: int | None
+) -> list[RawIngestion]:
+    """Textos en alguno de esos estados sin señal de la huella vigente, más
+    viejo primero. Lo comparten la pasada del pre-cálculo y el relleno."""
+    has_current = exists().where(
+        JevSignal.ingestion_id == RawIngestion.id,
+        JevSignal.questions_hash == questions_hash,
+    )
+    stmt = (
+        select(RawIngestion)
+        .where(
+            RawIngestion.processing_status.in_(statuses),
+            RawIngestion.content_type == ContentType.TEXT,
+            ~has_current,
+        )
+        .order_by(RawIngestion.captured_at.asc(), RawIngestion.id)
+    )
+    # El texto vacío se filtra en Python, igual que el foco en el pre-cálculo:
+    # así `limit` cuenta candidatos de verdad y no filas de la tabla.
+    texts = [
+        ingestion for ingestion in session.execute(stmt).scalars() if (ingestion.original_text or "").strip()
+    ]
+    return texts if limit is None else texts[:limit]
+
+
 def select_pending(session: Session, questions_hash: str, limit: int | None = None) -> list[RawIngestion]:
     """Textos pendientes sin señal de la huella vigente, más viejo primero.
 
@@ -183,25 +222,19 @@ def select_pending(session: Session, questions_hash: str, limit: int | None = No
     con señal de una huella vieja SÍ entra: se le pregunta de nuevo y queda con
     dos filas.
     """
-    has_current = exists().where(
-        JevSignal.ingestion_id == RawIngestion.id,
-        JevSignal.questions_hash == questions_hash,
+    return _select_texts(session, questions_hash, (ProcessingStatus.PENDING,), limit)
+
+
+def select_decided(session: Session, questions_hash: str, limit: int | None = None) -> list[RawIngestion]:
+    """Textos ya curados o descartados sin señal de la huella vigente (A6b-2).
+
+    Es lo que pregunta el relleno con `--decided`: los anuncios que el operador
+    decidió antes de que Jev se encendiera, o antes de que pasara el
+    temporizador. Mismas reglas que `select_pending` para todo lo demás.
+    """
+    return _select_texts(
+        session, questions_hash, (ProcessingStatus.CURATED, ProcessingStatus.DISCARDED), limit
     )
-    stmt = (
-        select(RawIngestion)
-        .where(
-            RawIngestion.processing_status == ProcessingStatus.PENDING,
-            RawIngestion.content_type == ContentType.TEXT,
-            ~has_current,
-        )
-        .order_by(RawIngestion.captured_at.asc(), RawIngestion.id)
-    )
-    # El texto vacío se filtra en Python, igual que el foco en el pre-cálculo:
-    # así `limit` cuenta candidatos de verdad y no filas de la tabla.
-    pending = [
-        ingestion for ingestion in session.execute(stmt).scalars() if (ingestion.original_text or "").strip()
-    ]
-    return pending if limit is None else pending[:limit]
 
 
 def _cost(result: ApiResult) -> float:
@@ -345,6 +378,17 @@ def _choice_entry(answer: Answer, row_value: str, ad_values: frozenset[str]) -> 
     }
 
 
+def _row_keys(reading: Reading, rows: Sequence[AnnotatedRow]) -> tuple[list[str], list[str]]:
+    """El valor de cada fila con el vocabulario de Jev: la clave de su producto
+    y su moneda. Lo comparten la anotación y el adaptador, para que «coincide»
+    sea lo mismo en los dos caminos."""
+    by_id = {product_id: key for key, product_id in reading.product_keys.items()}
+    products = [by_id.get(str(row.product_id), jev_client.OTHER_KEY) for row in rows]
+    # Una fila sin moneda es en pesos: es lo mismo que se le pide a Jev.
+    currencies = [str(row.currency or Currency.CUP.value) for row in rows]
+    return products, currencies
+
+
 def annotate(reading: Reading, rows: Sequence[AnnotatedRow]) -> list[dict[str, Any]]:
     """El bloque `jev` de cada fila guardada de un anuncio, en el mismo orden.
 
@@ -355,10 +399,7 @@ def annotate(reading: Reading, rows: Sequence[AnnotatedRow]) -> list[dict[str, A
     El triage no lleva `agrees`: decir sí o no pide un umbral, y los umbrales
     son de G1.
     """
-    by_id = {product_id: key for key, product_id in reading.product_keys.items()}
-    products = [by_id.get(str(row.product_id), jev_client.OTHER_KEY) for row in rows]
-    # Una fila sin moneda es en pesos: es lo mismo que se le pide a Jev.
-    currencies = [str(row.currency or Currency.CUP.value) for row in rows]
+    products, currencies = _row_keys(reading, rows)
     ad_products, ad_currencies = frozenset(products), frozenset(currencies)
 
     triage = (
@@ -380,6 +421,108 @@ def annotate(reading: Reading, rows: Sequence[AnnotatedRow]) -> list[dict[str, A
         }
         for product, currency in zip(products, currencies, strict=True)
     ]
+
+
+# --- Adaptador a `ExternalSignal` (código puro, A6b-2) ------------------------
+
+#: Cuál de las dos probabilidades de una respuesta de elección viaja en la
+#: señal. Se llaman igual que las claves del bloque `jev` de `annotate`.
+USE_PROBABILITY = "probability"  # `probabilities[choice]`
+USE_CONFIDENCE = "confidence"  # el campo `confidence`
+PROBABILITY_SOURCES = (USE_PROBABILITY, USE_CONFIDENCE)
+
+
+def _product_value(reading: Reading, choice: str) -> object:
+    """Lo que el motor compara contra el id del producto de la fila: el id del
+    piloto elegido, o la clave tal cual si es `other` (no tiene id)."""
+    raw = reading.product_keys.get(choice)
+    if raw is None:
+        return choice
+    try:
+        return uuid.UUID(raw)
+    except ValueError:
+        return raw
+
+
+def _choice_signal(
+    field: str,
+    answer: Answer,
+    keys: Sequence[str],
+    values: Sequence[object],
+    disagreement: object,
+    use: str,
+) -> ExternalSignal | None:
+    """La señal de UNA pregunta de elección, o `None` si no hay nada que decir.
+
+    `keys` es el valor de cada fila con el vocabulario de Jev y `values`, el
+    que el motor lee de esa misma fila.
+    """
+    if answer.invalid or answer.choice is None:
+        return None
+    probability = answer.p if use == USE_PROBABILITY else answer.confidence
+    if probability is None:
+        # Vino una sola de las dos (caso 14) y se pidió la otra. Para el motor
+        # una señal sin probabilidad está mal formada: es «sin señal».
+        return None
+    if answer.choice in keys:
+        # Coincide con alguna fila: apunta a la primera, con el valor de ESA
+        # fila, que es contra lo que el motor compara (y por eso da acuerdo).
+        index = keys.index(answer.choice)
+        value = values[index]
+    else:
+        index, value = 0, disagreement
+    if value is None:
+        # Un acuerdo sobre una fila sin valor (sin producto y Jev dijo
+        # `other`). Un acuerdo no suma nada y el motor pide un valor.
+        return None
+    return ExternalSignal(row_index=index, field=field, value=value, probability=probability)
+
+
+def to_external_signals(
+    reading: Reading, rows: Sequence[AnnotatedRow], *, probability: str = USE_PROBABILITY
+) -> tuple[ExternalSignal, ...]:
+    """Convierte la respuesta de Jev en señales para `AdContext.signals`.
+
+    Función pura, y solo para el informe de sombra: lo que se persiste nunca
+    pasa por acá. `rows` van en el orden de las filas del anuncio, porque
+    `row_index` es ese índice.
+
+    El contrato del motor es por fila y Jev contesta por anuncio
+    (`docs/spec-slice-A6b.md`, punto 4), así que:
+
+    - sale **una señal por pregunta** (`product`, `currency`), no una por fila:
+      si la elección coincide con alguna fila apunta a la primera que coincide;
+      si no, a la fila 0;
+    - `probability` dice cuál de las dos probabilidades usar (`USE_*`); el
+      informe corre con las dos;
+    - una respuesta `invalid` no produce señal, y **el triage nunca**: es del
+      anuncio y del carril 0, no de un campo.
+    """
+    if probability not in PROBABILITY_SOURCES:
+        raise ValueError(f"probability tiene que ser una de {PROBABILITY_SOURCES}: {probability!r}")
+    if not rows:
+        return ()
+    products, currencies = _row_keys(reading, rows)
+    product_choice = reading.product.choice or ""
+    signals = (
+        _choice_signal(
+            jev_client.PRODUCT,
+            reading.product,
+            products,
+            [row.product_id for row in rows],
+            _product_value(reading, product_choice),
+            probability,
+        ),
+        _choice_signal(
+            jev_client.CURRENCY,
+            reading.currency,
+            currencies,
+            [row.currency for row in rows],
+            reading.currency.choice,
+            probability,
+        ),
+    )
+    return tuple(signal for signal in signals if signal is not None)
 
 
 # --- La pasada ----------------------------------------------------------------
@@ -523,23 +666,47 @@ def prefill_pass(
     max_cost = settings.llm_jev_max_cost
 
     if not execute:
-        questions = options.questions
-        tokens = sum(
-            jev_client.request_tokens(jev_client.build_request(c.original_text or "", questions))
-            for c in candidates
-        )
         out(
             f"Jev (señal en sombra): {_plural(len(candidates), 'texto', 'textos')} por preguntar, "
-            f"costo estimado {jev_client.tokens_cost(tokens):.6f} USD "
+            f"costo estimado {_estimated_cost(candidates, options):.6f} USD "
             f"(tope por corrida: {max_cost} USD)."
         )
         return None
 
+    result = _ask_all(session, candidates, options, settings, max_cost=max_cost, client=client, sleep=sleep)
+    out(f"Jev (señal en sombra): {_result_summary(result)}")
+    if result.stopped:
+        out(f"{_stop_summary(result)}. El resto del pre-cálculo sigue igual.")
+    return result
+
+
+def _estimated_cost(candidates: Sequence[RawIngestion], options: Options) -> float:
+    """Lo que costaría preguntarlos, estimado por caracteres. Sin red."""
+    questions = options.questions
+    tokens = sum(
+        jev_client.request_tokens(jev_client.build_request(c.original_text or "", questions))
+        for c in candidates
+    )
+    return jev_client.tokens_cost(tokens)
+
+
+def _ask_all(
+    session: Session,
+    candidates: Sequence[RawIngestion],
+    options: Options,
+    settings: Settings,
+    *,
+    max_cost: float,
+    source: str = SOURCE_PREFILL,
+    client: httpx.Client | None,
+    sleep: Callable[[float], None],
+) -> PassResult:
+    """`run_pass` con el cliente HTTP resuelto."""
     # Sin cliente de afuera (el caso real) se abre uno propio y se cierra al
     # terminar, pase lo que pase: para eso el `try/finally`.
     http = client or httpx.Client(timeout=settings.llm_jev_timeout)
     try:
-        result = run_pass(
+        return run_pass(
             session,
             candidates,
             options,
@@ -547,24 +714,28 @@ def prefill_pass(
             api_key=settings.llm_jev_api_key or "",
             timeout=settings.llm_jev_timeout,
             max_cost=max_cost,
+            source=source,
             sleep=sleep,
         )
     finally:
         if client is None:
             http.close()
-    out(
-        f"Jev (señal en sombra): {_plural(result.asked, 'preguntado', 'preguntados')} de "
+
+
+def _result_summary(result: PassResult) -> str:
+    return (
+        f"{_plural(result.asked, 'preguntado', 'preguntados')} de "
         f"{result.pending}, {_plural(result.failed, 'fallo', 'fallos')}, "
         f"{_plural(result.invalid, 'respuesta ilegible', 'respuestas ilegibles')}, "
         f"costo {result.cost_usd:.6f} USD."
     )
-    if result.stopped:
-        out(
-            f"Jev: la pasada se cortó — {STOP_LABELS[result.stopped]}"
-            + (f" ({result.stop_detail})" if result.stop_detail else "")
-            + ". El resto del pre-cálculo sigue igual."
-        )
-    return result
+
+
+def _stop_summary(result: PassResult) -> str:
+    """Por qué se cortó, sin punto final: quien llama dice qué sigue."""
+    return f"Jev: la pasada se cortó — {STOP_LABELS[result.stopped]}" + (
+        f" ({result.stop_detail})" if result.stop_detail else ""
+    )
 
 
 # --- /control -----------------------------------------------------------------
@@ -636,3 +807,145 @@ def control_summary(session: Session, settings: Settings, *, now: datetime | Non
         cost_total=float(cost_total),
         cost_week=float(cost_week),
     )
+
+
+# --- Relleno: `python -m saimc.validation.jev_signal` (A6b-2) -----------------
+
+
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("tiene que ser un entero mayor que cero")
+    return number
+
+
+def _cost_cap(value: str) -> float:
+    number = float(value)
+    # `nan` e `inf` pasan `float()` sin levantar: se rechazan a mano.
+    if not math.isfinite(number) or number < 0:
+        raise argparse.ArgumentTypeError("tiene que ser un número de USD mayor o igual que cero")
+    return number
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="python -m saimc.validation.jev_signal",
+        description=(
+            "Relleno de la señal de Jev (en sombra): le pregunta a Jev por los textos que "
+            "todavía no tienen señal con las preguntas vigentes. Por defecto en seco: dice "
+            "cuántos preguntaría y cuánto costaría, sin llamar a nadie."
+        ),
+    )
+    parser.add_argument(
+        "--decided",
+        action="store_true",
+        help=(
+            "Textos ya curados o descartados, en vez de los pendientes. "
+            "Las filas quedan con source = backfill."
+        ),
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Pregunta de verdad y guarda las respuestas en jev_signals. Sin esto es en seco. Gasta API.",
+    )
+    parser.add_argument("--limit", type=_positive_int, default=None, help="Máximo de textos.")
+    parser.add_argument(
+        "--max-cost",
+        type=_cost_cap,
+        default=None,
+        help="Tope de gasto de esta corrida, en USD. Por defecto, SAIMC_LLM_JEV_MAX_COST.",
+    )
+    return parser.parse_args(argv)
+
+
+def _inactive_reason(settings: Settings) -> str:
+    if not settings.llm_jev_enabled:
+        return "SAIMC_LLM_JEV_ENABLED está apagado"
+    return "el interruptor está encendido pero falta SAIMC_LLM_JEV_API_KEY"
+
+
+def run(
+    args: argparse.Namespace,
+    session: Session,
+    settings: Settings,
+    *,
+    client: httpx.Client | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    out: Callable[[str], None] = print,
+) -> int:
+    """Corre el relleno. Devuelve el código de salida.
+
+    - Sin `--decided`: los pendientes, lo mismo que la pasada del pre-cálculo
+      (`source = prefill`). Con `--decided`: los ya curados o descartados
+      (`source = backfill`).
+    - En seco no hace falta la clave: solo lee la base y estima.
+    - Con `--execute` y Jev inactivo no llama a nadie, lo dice y sale con 1.
+    - Una pasada que se corta (tope, clave rechazada, fallos) sale con 0, igual
+      que en el pre-cálculo: lo ya preguntado quedó guardado y el motivo va en
+      la salida. Correrlo de nuevo sigue por donde quedó.
+    """
+    try:
+        options = load_options(session)
+    except ValueError as exc:
+        out(f"Jev: no se pueden armar las opciones de producto ({exc}).")
+        return 1
+    if not options.products:
+        out("Jev: no hay productos piloto en el catálogo; no hay nada que preguntar.")
+        return 0
+    select_texts = select_decided if args.decided else select_pending
+    candidates = select_texts(session, options.questions_hash, args.limit)
+    max_cost = settings.llm_jev_max_cost if args.max_cost is None else args.max_cost
+    which = "ya decididos (curados o descartados)" if args.decided else "pendientes"
+
+    if not args.execute:
+        estimated = _estimated_cost(candidates, options)
+        out("EN SECO: no se llama a Jev ni se escribe nada (con --execute se pregunta).")
+        out(
+            f"Jev (relleno, textos {which}): {_plural(len(candidates), 'texto', 'textos')} "
+            f"sin señal vigente por preguntar, costo estimado {estimated:.6f} USD "
+            f"(tope de esta corrida: {max_cost} USD)."
+        )
+        if estimated > max_cost:
+            out(
+                "El costo estimado supera el tope: la corrida se cortaría antes de terminar. "
+                "Se puede subir con --max-cost o correr varias veces."
+            )
+        if not is_active(settings):
+            out(f"Aviso: con --execute no correría — {_inactive_reason(settings)}.")
+        return 0
+
+    if not is_active(settings):
+        out(f"No se puede correr: {_inactive_reason(settings)}. No se llamó a Jev ni se escribió nada.")
+        return 1
+    result = _ask_all(
+        session,
+        candidates,
+        options,
+        settings,
+        max_cost=max_cost,
+        source=SOURCE_BACKFILL if args.decided else SOURCE_PREFILL,
+        client=client,
+        sleep=sleep,
+    )
+    out(f"Jev (relleno, textos {which}): {_result_summary(result)}")
+    if result.stopped:
+        out(f"{_stop_summary(result)}. Lo ya preguntado quedó guardado; al correrlo de nuevo sigue.")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+    # Sin `session_scope`: la pasada hace `commit` por anuncio y en seco no hay
+    # nada que guardar. El `rollback` final deja a la vista que no queda nada.
+    session = get_session_factory()()
+    try:
+        code = run(args, session, get_settings())
+    finally:
+        session.rollback()
+        session.close()
+    sys.exit(code)
+
+
+if __name__ == "__main__":
+    main()

@@ -8,10 +8,14 @@ esperado sale de correr el informe.
 
 Los parámetros de `CONFIG` son valores DE PRUEBA: el sistema no trae ninguno
 por defecto.
+
+Al final, el bloque «Jev» del informe (slice A6b-2): casos 27 a 31 de «Casos
+esperados» de `docs/spec-slice-A6b.md`, con los esperados también a mano.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -21,6 +25,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.models import (
@@ -29,6 +34,7 @@ from saimc.models import (
     CurationAction,
     CurationEvent,
     CurationMode,
+    JevSignal,
     LlmProposal,
     LlmReview,
     PriceHistory,
@@ -39,7 +45,20 @@ from saimc.models import (
     ReviewOutcome,
     SourceType,
 )
-from saimc.validation import LANE_ACCEPT, LANE_DISCARD, LANE_REVIEW, ValidationConfig, context, shadow
+from saimc.validation import (
+    LANE_ACCEPT,
+    LANE_DISCARD,
+    LANE_REVIEW,
+    AdContext,
+    ValidationConfig,
+    context,
+    jev_client,
+    jev_signal,
+    shadow,
+)
+from tests import test_validation_engine as motor
+from tests.jev_fakes import ANSWERS_OK, choice, noul
+from tests.test_jev_signal import _lectura
 
 CONFIG = ValidationConfig(
     min_cell_n=3,
@@ -887,3 +906,422 @@ def test_la_grilla_corre_todas_las_combinaciones_declaradas(
     )
     assert corrida["grid"] is True
     assert len(corrida["runs"]) == esperadas
+
+
+# =============================================================================
+# El bloque «Jev» (slice A6b-2)
+# =============================================================================
+
+# Los pilotos del catálogo del motor (`test_validation_engine`), con la forma
+# que pide `_lectura`: las claves de producto de la señal salen de acá.
+_PILOTOS = SimpleNamespace(arroz=motor.ARROZ, pollo=motor.POLLO, aceite=motor.ACEITE)
+
+
+def _caso_jev(
+    ctx: AdContext,
+    respuestas: dict[str, Any] | None,
+    *,
+    conservado: bool = True,
+    diff: context.ProposalDiff | None = None,
+    curadas: tuple[shadow.JevRow, ...] = (),
+    tipo: str = "text",
+) -> shadow.Case:
+    """Un caso del informe con su señal de Jev ya leída (o sin señal)."""
+    return shadow.Case(
+        ingestion_id=str(uuid.uuid4()),
+        content_type=tipo,
+        ctx=ctx,
+        kept=conservado,
+        diff=diff,
+        jev=None if respuestas is None else _lectura(_PILOTOS, respuestas),
+        curated_rows=curadas,
+    )
+
+
+def _fila_jev(tabla: shadow.JevLane1, probabilidad: str, umbral: float | None) -> shadow.JevLane1Row:
+    (fila,) = [f for f in tabla.rows if f.probability == probabilidad and f.threshold == umbral]
+    return fila
+
+
+_UNA_FILA_SIN_TOCAR = context.ProposalDiff(proposed_rows=1)
+_UNA_FILA_EDITADA = context.ProposalDiff(proposed_rows=1, edited_rows=1, field_errors={"product_id": 1})
+
+
+def _caso_21(respuestas: dict[str, Any], diff: context.ProposalDiff) -> shadow.Case:
+    """El caso 21 de `spec-motor-validacion.md`, SIN la señal en el contexto:
+    «Arroz 320 CUP lb», todo en `pass`. La señal la pone el informe."""
+    return _caso_jev(motor._caso_1(texto="Arroz 320 CUP lb"), respuestas, diff=diff)
+
+
+def test_caso_27_jev_saca_del_carril_1_y_el_informe_cuenta_uno() -> None:
+    # Jev dice `pollo`: 0,95 con `probabilities[choice]` y 0,60 con `confidence`.
+    en_desacuerdo = {**ANSWERS_OK, "product": choice("pollo", 0.95, 0.60)}
+    caso = _caso_21(en_desacuerdo, _UNA_FILA_SIN_TOCAR)
+
+    tabla = shadow.jev_lane1([caso], motor.CONFIG)
+
+    # Sin señales: carril 1, sin error.
+    assert (tabla.without.k, tabla.without.n) == (0, 1)
+    # «Cualquier desacuerdo»: lo saca, con cualquiera de las dos probabilidades.
+    for probabilidad in ("probability", "confidence"):
+        fila = _fila_jev(tabla, probabilidad, None)
+        assert fila.lane1.n == 0
+        assert fila.removed == 1
+        # El operador no había tocado nada: es automatización perdida.
+        assert (fila.removed_errors, fila.removed_correct) == (0, 1)
+        assert fila.entered == 0
+    # Con umbral, saca solo si la probabilidad elegida lo alcanza.
+    sacados = {(f.probability, f.threshold): f.removed for f in tabla.rows if f.threshold is not None}
+    assert sacados == {
+        ("probability", 0.5): 1,
+        ("probability", 0.7): 1,
+        ("probability", 0.9): 1,
+        ("confidence", 0.5): 1,
+        ("confidence", 0.7): 0,
+        ("confidence", 0.9): 0,
+    }
+    # El que no se saca sigue en el carril 1.
+    assert _fila_jev(tabla, "confidence", 0.9).lane1.n == 1
+
+
+def test_caso_27_si_el_operador_habia_editado_lo_que_jev_saca_era_un_error() -> None:
+    en_desacuerdo = {**ANSWERS_OK, "product": choice("pollo", 0.95, 0.60)}
+    caso = _caso_21(en_desacuerdo, _UNA_FILA_EDITADA)
+
+    tabla = shadow.jev_lane1([caso], motor.CONFIG)
+
+    # Sin Jev: 1 anuncio en el carril 1, y es un error.
+    assert (tabla.without.k, tabla.without.n) == (1, 1)
+    fila = _fila_jev(tabla, "probability", None)
+    assert (fila.removed, fila.removed_errors, fila.removed_correct) == (1, 1, 0)
+    assert (fila.lane1.k, fila.lane1.n) == (0, 0)
+
+
+def test_un_acuerdo_no_saca_del_carril_1() -> None:
+    caso = _caso_21(ANSWERS_OK, _UNA_FILA_SIN_TOCAR)  # Jev dice `arroz` y `CUP`
+
+    tabla = shadow.jev_lane1([caso], motor.CONFIG)
+
+    assert all(fila.removed == 0 and fila.lane1.n == 1 for fila in tabla.rows)
+
+
+def test_caso_28_jev_no_mete_en_el_carril_1() -> None:
+    # El caso 22 del motor (el 6: moneda no escrita) con Jev de acuerdo en todo.
+    ctx = motor._caso_1(
+        texto="Arroz 320 la libra",
+        modelo=motor._modelo(
+            motor._fila(base="unit"),
+            metas=(dataclasses.replace(motor.META_OK, currency_explicit=False),),
+        ),
+    )
+    caso = _caso_jev(ctx, ANSWERS_OK, diff=_UNA_FILA_SIN_TOCAR)
+
+    tabla = shadow.jev_lane1([caso], motor.CONFIG)
+
+    # Carril 2 con y sin la señal: nada entra, nada sale.
+    assert tabla.without.n == 0
+    assert len(tabla.rows) == 8  # 2 probabilidades × («cualquiera», 0,5, 0,7, 0,9)
+    for fila in tabla.rows:
+        assert (fila.lane1.n, fila.removed, fila.entered) == (0, 0, 0)
+
+
+def _descartado_por_el_motor() -> AdContext:
+    """Caso 3 del motor: el modelo dice `no_data` y las reglas no ven piloto."""
+    return motor._ctx("Buenos días grupo", modelo=motor._descarte("no_data"))
+
+
+def _a_revision() -> AdContext:
+    """Sin propuesta del modelo: carril 2 (caso 19 del motor)."""
+    return motor._ctx("Arroz 320 CUP lb", modelo=None)
+
+
+def _casos_del_triage() -> list[shadow.Case]:
+    """Caso 29: cuatro descartados con P(sí) 0,05, 0,10, 0,15 y 0,60 y dos
+    conservados con 0,22 y 0,95. El motor descartaría solo dos de los
+    descartados: los de 0,05 y 0,60."""
+    descartados = [
+        (0.05, _descartado_por_el_motor()),
+        (0.10, _a_revision()),
+        (0.15, _a_revision()),
+        (0.60, _descartado_por_el_motor()),
+    ]
+    casos = [_caso_jev(ctx, {**ANSWERS_OK, "triage": noul(p)}, conservado=False) for p, ctx in descartados]
+    casos += [
+        _caso_jev(_a_revision(), {**ANSWERS_OK, "triage": noul(p)}, conservado=True) for p in (0.22, 0.95)
+    ]
+    return casos
+
+
+def test_caso_29_tabla_de_triage() -> None:
+    triage = shadow.jev_triage(_casos_del_triage())
+
+    assert (triage.n, triage.invalid) == (6, 0)
+    assert [fila.threshold for fila in triage.rows] == [0.1, 0.2, 0.3, 0.5]
+    por_umbral = {fila.threshold: fila for fila in triage.rows}
+    # `k` = conservados por el operador (falsos descartes), `n` = descartaría.
+    assert (por_umbral[0.2].discards.k, por_umbral[0.2].discards.n) == (0, 3)
+    assert (por_umbral[0.5].discards.k, por_umbral[0.5].discards.n) == (1, 4)
+    # Estrictamente menor: 0,10 no es menor que 0,1.
+    assert (por_umbral[0.1].discards.k, por_umbral[0.1].discards.n) == (0, 1)
+    assert (por_umbral[0.3].discards.k, por_umbral[0.3].discards.n) == (1, 4)
+
+
+def test_caso_29_cruce_del_triage_con_el_carril_0_del_motor() -> None:
+    triage = shadow.jev_triage(_casos_del_triage())
+
+    por_umbral = {fila.threshold: fila for fila in triage.rows}
+    # Con 0,2 Jev descarta {0,05, 0,10, 0,15}; el motor, {0,05, 0,60}.
+    con_02 = por_umbral[0.2]
+    assert (con_02.both.n, con_02.jev_only.n, con_02.engine_only.n) == (1, 2, 1)
+    assert (con_02.both.k, con_02.jev_only.k, con_02.engine_only.k) == (0, 0, 0)
+    # Con 0,5 se suma el conservado de 0,22, que solo Jev descartaría.
+    con_05 = por_umbral[0.5]
+    assert (con_05.both.n, con_05.jev_only.n, con_05.engine_only.n) == (1, 3, 1)
+    assert (con_05.jev_only.k, con_05.jev_only.n) == (1, 3)
+
+
+def test_un_triage_ilegible_queda_fuera_de_la_tabla_y_se_cuenta() -> None:
+    casos = [
+        _caso_jev(_a_revision(), {**ANSWERS_OK, "triage": {"noul": "alto"}}, conservado=False),
+        _caso_jev(_a_revision(), {**ANSWERS_OK, "triage": noul(0.05)}, conservado=False),
+    ]
+
+    triage = shadow.jev_triage(casos)
+
+    assert (triage.n, triage.invalid) == (1, 1)
+    assert all(fila.discards.n == 1 for fila in triage.rows)
+
+
+def test_acierto_de_producto_y_moneda_contra_las_filas_curadas() -> None:
+    cafe = uuid.uuid4()  # existe y no es piloto: vale `other`
+
+    def curada(producto: uuid.UUID, moneda: str | None = "CUP") -> shadow.JevRow:
+        return shadow.JevRow(product_id=producto, currency=moneda)
+
+    ctx = _a_revision()
+    casos = [
+        # Acierta las dos.
+        _caso_jev(ctx, ANSWERS_OK, curadas=(curada(motor.ARROZ.id),)),
+        # Dos filas: el producto acierta (es el de alguna fila); la moneda no.
+        _caso_jev(ctx, ANSWERS_OK, curadas=(curada(motor.POLLO.id, "USD"), curada(motor.ARROZ.id, "USD"))),
+        # Fuera del foco y sin moneda (una fila sin moneda es en pesos).
+        _caso_jev(ctx, {**ANSWERS_OK, "product": choice("other", 0.8, 0.7)}, curadas=(curada(cafe, None),)),
+        # Producto ilegible; la moneda acierta.
+        _caso_jev(
+            ctx, {**ANSWERS_OK, "product": choice("cafe", 0.9, 0.9)}, curadas=(curada(motor.ARROZ.id),)
+        ),
+        # Falla el producto.
+        _caso_jev(ctx, ANSWERS_OK, curadas=(curada(motor.POLLO.id),)),
+        # No cuentan: un descartado, y un conservado sin filas curadas.
+        _caso_jev(ctx, ANSWERS_OK, conservado=False),
+        _caso_jev(ctx, ANSWERS_OK),
+    ]
+
+    campos = shadow.jev_fields(casos)
+
+    assert campos.n == 5
+    producto, moneda = campos.fields["product"], campos.fields["currency"]
+    assert (producto.accuracy.k, producto.accuracy.n, producto.invalid) == (3, 4, 1)
+    assert (moneda.accuracy.k, moneda.accuracy.n, moneda.invalid) == (4, 5, 0)
+
+
+def test_al_bloque_solo_entran_los_textos_con_senal() -> None:
+    ctx = _a_revision()
+    conjunto = shadow.CaseSet(
+        name="evaluation",
+        title="prueba",
+        fields=(),
+        cases=[
+            _caso_jev(ctx, ANSWERS_OK),
+            _caso_jev(ctx, ANSWERS_OK, conservado=False),
+            _caso_jev(ctx, None),  # texto sin señal
+            _caso_jev(ctx, ANSWERS_OK, tipo="image"),  # una imagen no entra
+        ],
+    )
+
+    resumen = shadow.summarize_jev(conjunto, [motor.CONFIG])
+
+    assert (resumen.n, resumen.texts) == (2, 3)
+    assert len(resumen.lane1) == 1
+    texto = "\n".join(shadow.render_jev(resumen, [motor.CONFIG]))
+    assert "n = 2 de 3 textos" in texto
+
+
+def test_el_informe_no_elige_ningun_valor() -> None:
+    conjunto = shadow.CaseSet(name="evaluation", title="prueba", fields=(), cases=_casos_del_triage())
+
+    texto = "\n".join(shadow.render_jev(shadow.summarize_jev(conjunto, [motor.CONFIG]), [motor.CONFIG]))
+
+    # Las tres tablas están, con sus grillas completas, y nada recomienda.
+    assert "Carril 1" in texto
+    assert "Triage" in texto
+    assert "Campos" in texto
+    for umbral in ("0,1", "0,2", "0,3", "0,5", "0,7", "0,9"):
+        assert umbral in texto
+    minusculas = texto.lower()
+    assert "recomend" not in minusculas
+    assert "conviene" not in minusculas
+    assert "no elige" in minusculas
+
+
+# --- El bloque «Jev» sobre SQLite ---------------------------------------------
+
+
+def _senal(
+    session: Session,
+    anuncio_id: uuid.UUID,
+    respuestas: dict[str, Any],
+    *,
+    huella: str | None = None,
+) -> None:
+    """Una fila de `jev_signals`, como la habría dejado el relleno."""
+    opciones = jev_signal.load_options(session)
+    session.add(
+        JevSignal(
+            ingestion_id=anuncio_id,
+            model="typesafe-ai/jev",
+            questions_hash=huella or opciones.questions_hash,
+            answers=respuestas,
+            product_keys=opciones.product_keys,
+            input_tokens=500,
+            output_tokens=0,
+            cost_usd=Decimal("0.00003"),
+            source="backfill",
+        )
+    )
+    session.flush()
+
+
+def _foto(session: Session, modelo: type[PriceHistory] | type[JevSignal]) -> list[tuple[str, ...]]:
+    """Todas las filas de una tabla, columna por columna, para comparar."""
+    session.expire_all()
+    columnas = [columna.name for columna in modelo.__table__.columns]
+    return sorted(
+        tuple(str(getattr(fila, columna)) for columna in columnas)
+        for fila in session.execute(select(modelo)).scalars()
+    )
+
+
+def _ids_del_oro(oro: Path) -> tuple[uuid.UUID, uuid.UUID]:
+    descartado, conservado = (
+        json.loads(linea)["ingestion_id"] for linea in oro.read_text(encoding="utf-8").splitlines()
+    )
+    return uuid.UUID(descartado), uuid.UUID(conservado)
+
+
+def test_caso_30_sin_senales_el_bloque_dice_n_0_y_el_informe_termina_bien(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    oro = _oro(tmp_path, session, mundo)
+    registro = tmp_path / "shadow-runs.jsonl"
+    salida: list[str] = []
+    argumentos = ["--gold", str(oro), "--runs-file", str(registro), "--execute", *_PARAMETROS]
+
+    codigo = shadow.run(shadow.parse_args(argumentos), session, out=salida.append)
+
+    assert codigo == 0
+    lineas_jev = [linea for linea in salida if "Jev" in linea and "n = 0" in linea]
+    # Una por conjunto con casos (la evaluación está vacía y no abre bloque).
+    assert len(lineas_jev) == 1
+    assert "n = 0 de 2 textos" in lineas_jev[0]
+    corrida = json.loads(registro.read_text(encoding="utf-8"))
+    assert corrida["jev"]["calibration"]["n"] == 0
+    assert corrida["jev"]["calibration"]["texts"] == 2
+    assert corrida["jev"]["evaluation"]["n"] == 0
+
+
+def test_una_senal_de_otra_huella_no_entra_al_bloque(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    oro = _oro(tmp_path, session, mundo)
+    _, conservado = _ids_del_oro(oro)
+    _senal(session, conservado, ANSWERS_OK, huella="huella-vieja-000")
+    session.commit()
+    salida: list[str] = []
+
+    shadow.run(shadow.parse_args(["--gold", str(oro), *_PARAMETROS]), session, out=salida.append)
+
+    assert any("Jev" in linea and "n = 0 de 2 textos" in linea for linea in salida)
+
+
+def _oro_con_senales(tmp_path: Path, session: Session, mundo: SimpleNamespace) -> Path:
+    """El oro de dos líneas con una señal vigente por anuncio y la fila curada
+    del conservado. Jev le da 0,05 al saludo y acierta arroz y CUP en el otro."""
+    oro = _oro(tmp_path, session, mundo)
+    descartado, conservado = _ids_del_oro(oro)
+    _senal(session, descartado, {**ANSWERS_OK, "triage": noul(0.05)})
+    _senal(session, conservado, ANSWERS_OK)
+    origen = session.get(RawIngestion, conservado)
+    assert origen is not None
+    _precio(session, mundo, origen, "320", date(2026, 9, 10))
+    session.commit()
+    return oro
+
+
+def test_el_bloque_jev_sale_en_la_terminal_y_en_el_registro(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    oro = _oro_con_senales(tmp_path, session, mundo)
+    registro = tmp_path / "shadow-runs.jsonl"
+    salida: list[str] = []
+    argumentos = ["--gold", str(oro), "--runs-file", str(registro), "--execute", *_PARAMETROS]
+
+    codigo = shadow.run(shadow.parse_args(argumentos), session, out=salida.append)
+
+    assert codigo == 0
+    assert any("Jev" in linea and "n = 2 de 2 textos" in linea for linea in salida)
+    jev = json.loads(registro.read_text(encoding="utf-8"))["jev"]["calibration"]
+    assert (jev["n"], jev["texts"]) == (2, 2)
+    # Una combinación de parámetros: una tabla del carril 1, de ocho filas.
+    assert len(jev["lane1"]) == 1
+    assert jev["lane1"][0]["params"]["min_cell_n"] == 3
+    assert len(jev["lane1"][0]["rows"]) == 8
+    # Triage: con 0,2 descartaría el saludo (0,05), que el oro también descarta
+    # y que el motor manda al carril 0.
+    con_02 = next(fila for fila in jev["triage"]["rows"] if fila["threshold"] == 0.2)
+    assert (con_02["discards"]["k"], con_02["discards"]["n"]) == (0, 1)
+    assert (con_02["both"]["n"], con_02["jev_only"]["n"], con_02["engine_only"]["n"]) == (1, 0, 0)
+    # Campos: un solo conservado con fila curada, y Jev acierta los dos.
+    assert jev["fields"]["n"] == 1
+    assert (jev["fields"]["product"]["k"], jev["fields"]["product"]["n"]) == (1, 1)
+    assert (jev["fields"]["currency"]["k"], jev["fields"]["currency"]["n"]) == (1, 1)
+
+
+def test_caso_31_el_informe_no_escribe_ni_llama_a_nadie(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    oro = _oro_con_senales(tmp_path, session, mundo)
+
+    def _sin_red(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("el informe no puede llamar a Jev")
+
+    monkeypatch.setattr(jev_client, "ask", _sin_red)
+    antes = (_foto(session, PriceHistory), _foto(session, JevSignal))
+    registro = tmp_path / "shadow-runs.jsonl"
+    argumentos = ["--gold", str(oro), "--runs-file", str(registro), "--execute", "--grid"]
+
+    codigo = shadow.run(shadow.parse_args(argumentos), session, out=lambda _linea: None)
+
+    assert codigo == 0
+    # Nada pendiente en la sesión y las dos tablas, idénticas.
+    assert not session.new
+    assert not session.dirty
+    assert not session.deleted
+    assert (_foto(session, PriceHistory), _foto(session, JevSignal)) == antes
+    assert len(antes[0]) == 1
+    assert len(antes[1]) == 2
+
+
+def test_con_la_grilla_el_registro_trae_una_tabla_del_carril_1_por_combinacion(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    oro = _oro_con_senales(tmp_path, session, mundo)
+    registro = tmp_path / "shadow-runs.jsonl"
+    argumentos = ["--gold", str(oro), "--runs-file", str(registro), "--execute", "--grid"]
+    salida: list[str] = []
+
+    shadow.run(shadow.parse_args(argumentos), session, out=salida.append)
+
+    corrida = json.loads(registro.read_text(encoding="utf-8"))
+    assert len(corrida["jev"]["calibration"]["lane1"]) == len(corrida["runs"])
+    assert any("Jev" in linea and "n = 2 de 2 textos" in linea for linea in salida)

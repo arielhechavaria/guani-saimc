@@ -23,6 +23,14 @@ y declarada (`GRID_*`) para elegirlos con el dato a la vista.
 de G1a y G1b. Un porcentaje nunca se imprime sin su n y su cota superior de
 Clopper-Pearson al 95%.
 
+**El bloque «Jev» (slice A6b-2).** Por conjunto, y solo sobre los textos que
+tienen una señal de Jev con la huella de preguntas vigente (`jev_signals`),
+tres tablas: el carril 1 con Jev y sin Jev, el triage al lado del carril 0, y
+el acierto de producto y moneda contra las filas curadas. Lee la tabla: no
+llama a Jev, no depende de `SAIMC_LLM_JEV_ENABLED` y no escribe nada. Las
+grillas son para mirar; ningún umbral se elige acá (es de G1). Contrato:
+`docs/spec-slice-A6b.md`, punto 8.
+
 Con `--execute` agrega una línea a `docs/shadow-runs.jsonl`. Sin él no escribe.
 """
 
@@ -54,17 +62,19 @@ from saimc.models import (
     ContentType,
     CurationEvent,
     CurationMode,
+    JevSignal,
     LlmProposal,
     LlmReview,
+    PriceHistory,
     Product,
     Province,
     RawIngestion,
     ReviewOutcome,
 )
 from saimc.units import canonical_unit
-from saimc.validation import context
+from saimc.validation import context, jev_signal
 from saimc.validation.context import Catalog, ProposalDiff, Transcriber
-from saimc.validation.engine import validate_ad
+from saimc.validation.engine import decide_lane_0, validate_ad
 
 # `x as x`: reexportación explícita (las cotas se importaban de acá).
 from saimc.validation.stats import CONFIDENCE, Rate, format_rate, pct
@@ -191,6 +201,15 @@ def diff_expected(
 
 
 @dataclass(frozen=True)
+class JevRow:
+    """Lo único que Jev mira de una fila: su producto y su moneda. Sirve para
+    las filas curadas (`prices_history`) y para las que propuso el modelo."""
+
+    product_id: uuid.UUID | None
+    currency: str | None
+
+
+@dataclass(frozen=True)
 class Case:
     """Un anuncio ya decidido: el contexto para el motor y la verdad."""
 
@@ -202,6 +221,11 @@ class Case:
     #: Qué habría tenido que cambiar el operador en la propuesta. `None` si el
     #: modelo no propuso filas que comparar (descartó o degradó).
     diff: ProposalDiff | None
+    #: La señal de Jev de la huella vigente, ya leída. `None` = sin señal. La
+    #: pone `attach_jev`; el resto del informe no la mira.
+    jev: jev_signal.Reading | None = None
+    #: Las filas que quedaron curadas en `prices_history` (bloque «Jev», tabla 3).
+    curated_rows: tuple[JevRow, ...] = ()
 
 
 @dataclass
@@ -441,6 +465,12 @@ class CaseResult:
     only_currency: bool = False
 
 
+def _lane1_error(kept: bool, diff: ProposalDiff | None) -> bool:
+    """El error del carril 1, por anuncio: el operador editó o borró algo, o
+    agregó una fila. También lo es si descartó el anuncio entero."""
+    return not kept or (diff or ProposalDiff()).has_error
+
+
 def evaluate_case(case: Case, config: ValidationConfig) -> CaseResult:
     validation = validate_ad(case.ctx, config)
     model = case.ctx.model
@@ -575,8 +605,7 @@ def summarize(
         elif result.lane == LANE_ACCEPT:
             summary.lane1_ids.append(result.ingestion_id)
             diff = result.diff or ProposalDiff()
-            # También es un error si el operador descartó el anuncio entero.
-            if not result.kept or diff.has_error:
+            if _lane1_error(result.kept, result.diff):
                 ad_errors += 1
                 summary.lane1_error_ids.append(result.ingestion_id)
             lane1_rows += diff.proposed_rows
@@ -599,6 +628,456 @@ def summarize(
 
 def run_set(dataset: CaseSet, config: ValidationConfig) -> SetSummary:
     return summarize([evaluate_case(case, config) for case in dataset.cases], dataset.fields)
+
+
+# --- Jev en sombra (slice A6b-2) ---------------------------------------------
+
+#: Las grillas del bloque «Jev». Son para MIRAR: el informe no elige ninguna, y
+#: ningún umbral queda fijado por estar acá (eso es de G1). `None` es «cualquier
+#: desacuerdo», o sea `signal_high_probability` sin fijar.
+JEV_THRESHOLDS: tuple[float | None, ...] = (None, 0.5, 0.7, 0.9)
+JEV_TRIAGE_THRESHOLDS = (0.1, 0.2, 0.3, 0.5)
+#: Las dos preguntas de elección, con su nombre en el reporte y lo que midió A6
+#: (con su juego de cinco preguntas). Es una referencia para comparar, no una meta.
+JEV_FIELDS = {"product": ("producto", "96,8 %"), "currency": ("moneda", "94,3 %")}
+
+_PROBABILITY_LABELS = {
+    jev_signal.USE_PROBABILITY: "probabilities[choice]",
+    jev_signal.USE_CONFIDENCE: "confidence",
+}
+
+
+def _canonical_id(ingestion_id: str) -> str:
+    """El id como lo escribe `str(uuid)`: el oro podría traerlo en mayúsculas."""
+    try:
+        return str(uuid.UUID(ingestion_id))
+    except ValueError:
+        return ingestion_id
+
+
+def attach_jev(session: Session, datasets: Sequence[CaseSet]) -> None:
+    """Le pone a cada caso su señal vigente de Jev y sus filas curadas.
+
+    Solo LEE `jev_signals` y `prices_history`: no llama a Jev y no mira el
+    interruptor (una señal guardada se informa aunque Jev esté apagado hoy).
+    La huella vigente sale del catálogo de pilotos de hoy; una señal de otra
+    huella no entra. Si el catálogo no da una huella (dos pilotos con la misma
+    clave), ningún caso tiene señal y el bloque informa n = 0.
+    """
+    try:
+        current = jev_signal.load_options(session).questions_hash
+    except ValueError:
+        return
+    readings = {
+        str(signal.ingestion_id): jev_signal.read_signal(signal)
+        for signal in session.execute(select(JevSignal).where(JevSignal.questions_hash == current)).scalars()
+    }
+    if not readings:
+        return
+    curated: dict[str, list[JevRow]] = {}
+    rows = session.execute(
+        select(PriceHistory.source_id, PriceHistory.product_id, PriceHistory.currency)
+        .join(JevSignal, JevSignal.ingestion_id == PriceHistory.source_id)
+        .where(JevSignal.questions_hash == current)
+    )
+    for source_id, product_id, currency in rows:
+        curated.setdefault(str(source_id), []).append(
+            JevRow(product_id=product_id, currency=None if currency is None else str(currency))
+        )
+    for dataset in datasets:
+        dataset.cases = [
+            dataclasses.replace(
+                case,
+                jev=readings.get(_canonical_id(case.ingestion_id)),
+                curated_rows=tuple(curated.get(_canonical_id(case.ingestion_id), ())),
+            )
+            for case in dataset.cases
+        ]
+
+
+def _with_signal(cases: Sequence[Case]) -> list[tuple[Case, jev_signal.Reading]]:
+    """Los casos que entran al bloque: textos con señal. Las imágenes no (C2)."""
+    return [
+        (case, case.jev)
+        for case in cases
+        if case.jev is not None and case.content_type == ContentType.TEXT.value
+    ]
+
+
+def _proposed_rows(model: AdProposal | None) -> list[JevRow]:
+    """Las filas de la propuesta, con la forma que lee el adaptador y en el
+    mismo orden: `ExternalSignal.row_index` es el índice en `model.rows`."""
+    if model is None:
+        return []
+    return [
+        JevRow(product_id=None if row.product is None else row.product.id, currency=row.currency)
+        for row in model.rows
+    ]
+
+
+@dataclass(frozen=True)
+class JevLane1Row:
+    """El carril 1 CON Jev, para una probabilidad y un umbral."""
+
+    #: Cuál de las dos probabilidades viaja en la señal (`jev_signal.USE_*`).
+    probability: str
+    #: `signal_high_probability`; `None` = cualquier desacuerdo saca.
+    threshold: float | None
+    #: Errores (`k`) sobre los anuncios que quedan en el carril 1 (`n`).
+    lane1: Rate
+    #: Anuncios que estaban en el carril 1 y con la señal pasan al 2.
+    removed: int
+    #: De esos, los que eran errores (el operador había cambiado algo)…
+    removed_errors: int
+    #: …y los que estaban bien: automatización perdida.
+    removed_correct: int
+    #: Anuncios que entran al carril 1 POR la señal. El motor no lo permite
+    #: (caso 22): tiene que dar 0, y se cuenta para que quede a la vista.
+    entered: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "probability": self.probability,
+            "threshold": self.threshold,
+            "lane1": self.lane1.as_dict(),
+            "removed": self.removed,
+            "removed_errors": self.removed_errors,
+            "removed_correct": self.removed_correct,
+            "entered": self.entered,
+        }
+
+
+@dataclass(frozen=True)
+class JevLane1:
+    """La tabla 1 con UNA combinación de parámetros."""
+
+    config: ValidationConfig
+    #: Sin Jev: errores (`k`) sobre los anuncios en el carril 1 (`n`).
+    without: Rate
+    rows: tuple[JevLane1Row, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "params": _params_dict(self.config),
+            "without_jev": self.without.as_dict(),
+            "rows": [row.as_dict() for row in self.rows],
+        }
+
+
+def jev_lane1(cases: Sequence[Case], config: ValidationConfig) -> JevLane1:
+    """Tabla 1: el carril 1 sin Jev y con Jev, sobre los textos con señal.
+
+    Corre `validate_ad` sin señales y con ellas. El umbral de cada fila pisa
+    el `signal_high_probability` de `config`: acá se recorre la grilla.
+    """
+    signaled = _with_signal(cases)
+    # `signals=()` a propósito: «sin Jev» es sin ninguna señal, traiga lo que
+    # traiga el contexto.
+    bare = [dataclasses.replace(case.ctx, signals=()) for case, _ in signaled]
+    before = [validate_ad(ctx, config).lane == LANE_ACCEPT for ctx in bare]
+    errors = [_lane1_error(case.kept, case.diff) for case, _ in signaled]
+
+    rows: list[JevLane1Row] = []
+    for source in jev_signal.PROBABILITY_SOURCES:
+        signals = [
+            jev_signal.to_external_signals(reading, _proposed_rows(case.ctx.model), probability=source)
+            for case, reading in signaled
+        ]
+        for threshold in JEV_THRESHOLDS:
+            with_jev = dataclasses.replace(config, signal_high_probability=threshold)
+            lane1 = lane1_errors = removed = removed_errors = entered = 0
+            for ctx, was_lane1, is_error, ad_signals in zip(bare, before, errors, signals, strict=True):
+                # Sin señales el motor da lo mismo: no hace falta correrlo.
+                now_lane1 = was_lane1
+                if ad_signals:
+                    signaled_ctx = dataclasses.replace(ctx, signals=ad_signals)
+                    now_lane1 = validate_ad(signaled_ctx, with_jev).lane == LANE_ACCEPT
+                lane1 += now_lane1
+                lane1_errors += now_lane1 and is_error
+                removed += was_lane1 and not now_lane1
+                removed_errors += was_lane1 and not now_lane1 and is_error
+                entered += now_lane1 and not was_lane1
+            rows.append(
+                JevLane1Row(
+                    probability=source,
+                    threshold=threshold,
+                    lane1=Rate(lane1_errors, lane1),
+                    removed=removed,
+                    removed_errors=removed_errors,
+                    removed_correct=removed - removed_errors,
+                    entered=entered,
+                )
+            )
+    in_lane1 = sum(before)
+    in_lane1_errors = sum(
+        1 for was_lane1, is_error in zip(before, errors, strict=True) if was_lane1 and is_error
+    )
+    return JevLane1(config=config, without=Rate(in_lane1_errors, in_lane1), rows=tuple(rows))
+
+
+@dataclass(frozen=True)
+class JevTriageRow:
+    """Qué descartaría Jev con P(sí) menor que `threshold`.
+
+    En los cuatro `Rate`, `n` son los anuncios del grupo y `k` los que el
+    operador (o el oro) conservó: los falsos descartes.
+    """
+
+    threshold: float
+    #: Todo lo que Jev descartaría.
+    discards: Rate
+    #: El cruce con el carril 0 del motor: lo que descartaría solo el motor,
+    #: solo Jev, y los dos.
+    engine_only: Rate
+    jev_only: Rate
+    both: Rate
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "threshold": self.threshold,
+            "discards": self.discards.as_dict(),
+            "engine_only": self.engine_only.as_dict(),
+            "jev_only": self.jev_only.as_dict(),
+            "both": self.both.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class JevTriage:
+    #: Textos con señal y triage legible: los que entran a la tabla.
+    n: int
+    #: Textos con señal cuyo triage no se pudo leer (`invalid`): afuera.
+    invalid: int
+    rows: tuple[JevTriageRow, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"n": self.n, "invalid": self.invalid, "rows": [row.as_dict() for row in self.rows]}
+
+
+def jev_triage(cases: Sequence[Case]) -> JevTriage:
+    """Tabla 2: el triage de Jev al lado del carril 0 del motor.
+
+    El carril 0 es el de `decide_lane_0`, el mismo predicado que usa el
+    descarte automático: no mira ningún parámetro, así que la tabla es una
+    sola por conjunto.
+    """
+    invalid = 0
+    # (P(sí), lo conservó el operador, el motor lo manda al carril 0)
+    valid: list[tuple[float, bool, bool]] = []
+    for case, reading in _with_signal(cases):
+        p_yes = reading.triage.p
+        if reading.triage.invalid or p_yes is None:
+            invalid += 1
+            continue
+        valid.append((p_yes, case.kept, decide_lane_0(case.ctx).lane == LANE_DISCARD))
+
+    def kept_of(group: Sequence[tuple[float, bool, bool]]) -> Rate:
+        return Rate(sum(1 for _, kept, _ in group if kept), len(group))
+
+    rows = [
+        JevTriageRow(
+            threshold=threshold,
+            discards=kept_of([ad for ad in valid if ad[0] < threshold]),
+            engine_only=kept_of([ad for ad in valid if ad[2] and not ad[0] < threshold]),
+            jev_only=kept_of([ad for ad in valid if ad[0] < threshold and not ad[2]]),
+            both=kept_of([ad for ad in valid if ad[0] < threshold and ad[2]]),
+        )
+        for threshold in JEV_TRIAGE_THRESHOLDS
+    ]
+    return JevTriage(n=len(valid), invalid=invalid, rows=tuple(rows))
+
+
+@dataclass(frozen=True)
+class JevField:
+    #: Aciertos (`k`) sobre las respuestas legibles (`n`).
+    accuracy: Rate
+    #: Respuestas que no se pudieron leer: fuera del porcentaje.
+    invalid: int
+
+
+@dataclass(frozen=True)
+class JevFields:
+    #: Conservados con señal y con filas curadas: sobre los que se mide.
+    n: int
+    fields: dict[str, JevField]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "n": self.n,
+            **{
+                name: {**entry.accuracy.as_dict(), "invalid": entry.invalid}
+                for name, entry in self.fields.items()
+            },
+        }
+
+
+def jev_fields(cases: Sequence[Case]) -> JevFields:
+    """Tabla 3: acierto de producto y de moneda contra las filas curadas.
+
+    La definición es la de A6, que es la de `jev_signal.annotate`: Jev acierta
+    si su elección es el valor de ALGUNA fila curada del anuncio; un producto
+    que no es piloto vale `other` y una fila sin moneda es en pesos.
+    """
+    counts = {name: [0, 0, 0] for name in JEV_FIELDS}  # campo -> [aciertos, legibles, ilegibles]
+    n = 0
+    for case, reading in _with_signal(cases):
+        if not case.kept or not case.curated_rows:
+            continue
+        n += 1
+        # `agrees` es por anuncio: da lo mismo en todas las filas.
+        block = jev_signal.annotate(reading, case.curated_rows)[0]
+        for name, count in counts.items():
+            if block[name]["status"] != "ok":
+                count[2] += 1
+                continue
+            count[0] += bool(block[name]["agrees"])
+            count[1] += 1
+    return JevFields(
+        n=n,
+        fields={
+            name: JevField(accuracy=Rate(hits, valid), invalid=unreadable)
+            for name, (hits, valid, unreadable) in counts.items()
+        },
+    )
+
+
+@dataclass(frozen=True)
+class JevSummary:
+    """El bloque «Jev» de un conjunto."""
+
+    #: Textos del conjunto.
+    texts: int
+    #: De esos, los que tienen señal de la huella vigente.
+    n: int
+    #: Tabla 1: una por combinación de parámetros, en el orden de la corrida.
+    lane1: tuple[JevLane1, ...]
+    triage: JevTriage
+    fields: JevFields
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "n": self.n,
+            "texts": self.texts,
+            "lane1": [table.as_dict() for table in self.lane1],
+            "triage": self.triage.as_dict(),
+            "fields": self.fields.as_dict(),
+        }
+
+
+def summarize_jev(dataset: CaseSet, configs: Sequence[ValidationConfig]) -> JevSummary:
+    cases = dataset.cases
+    return JevSummary(
+        texts=sum(1 for case in cases if case.content_type == ContentType.TEXT.value),
+        n=len(_with_signal(cases)),
+        lane1=tuple(jev_lane1(cases, config) for config in configs),
+        triage=jev_triage(cases),
+        fields=jev_fields(cases),
+    )
+
+
+def _decimal(value: float) -> str:
+    """Un umbral con coma decimal: `0,5`."""
+    return f"{value:.1f}".replace(".", ",")
+
+
+def _jev_lane1_lines(tables: Sequence[JevLane1]) -> list[str]:
+    lines = [
+        "  1. Carril 1, con Jev y sin Jev.",
+        "     «Saca»: estaban en el carril 1 y con la señal pasan al 2. De esos, «eran errores» "
+        "si el operador",
+        "     había cambiado algo y «estaban bien» si no (automatización perdida). «Entran» tiene que dar 0:",
+        "     una señal nunca mete un anuncio en un carril. Umbral «cualquiera»: todo desacuerdo saca.",
+    ]
+    # Muchas combinaciones dan exactamente la misma tabla: se imprime una vez.
+    groups: dict[tuple[Rate, tuple[JevLane1Row, ...]], list[ValidationConfig]] = {}
+    for table in tables:
+        groups.setdefault((table.without, table.rows), []).append(table.config)
+    for (without, rows), configs in groups.items():
+        if len(tables) == 1:
+            lines.append(f"     Parámetros: {_params_line(configs[0])}")
+        else:
+            combos = ", ".join(
+                f"{c.min_cell_n}/{c.channel_min_history}/{c.channel_max_edit_rate:.2f}" for c in configs
+            )
+            lines += [
+                f"     --- {len(configs)} de {len(tables)} combinaciones dan esta tabla "
+                "(min_cell_n/min_history/max_edit_rate):",
+                f"         {combos}",
+            ]
+        lines += [
+            f"     Sin Jev: {without.n} en el carril 1; error por anuncio: "
+            + format_rate(without.k, without.n),
+            "     probabilidad          | umbral     | C1 | saca | eran errores | estaban bien "
+            "| entran | error del carril 1 por anuncio",
+        ]
+        for row in rows:
+            threshold = "cualquiera" if row.threshold is None else _decimal(row.threshold)
+            lines.append(
+                f"     {_PROBABILITY_LABELS[row.probability]:<21} | {threshold:<10} | "
+                f"{row.lane1.n:>2} | {row.removed:>4} | {row.removed_errors:>12} | "
+                f"{row.removed_correct:>12} | {row.entered:>6} | " + format_rate(row.lane1.k, row.lane1.n)
+            )
+    return lines
+
+
+def _jev_triage_lines(triage: JevTriage) -> list[str]:
+    lines = [
+        f"  2. Triage al lado del carril 0: n = {triage.n} textos con triage legible "
+        f"({triage.invalid} ilegibles, afuera).",
+        "     Jev descartaría los de P(sí) menor que el umbral. «Falsos descartes»: los que el "
+        "operador conservó.",
+        "     El cruce es con el carril 0 del motor, que no mira ningún parámetro.",
+    ]
+    for row in triage.rows:
+        lines += [
+            f"     P(sí) < {_decimal(row.threshold)}: descartaría {row.discards.n}; falsos descartes: "
+            + format_rate(row.discards.k, row.discards.n),
+            f"       solo el motor: {row.engine_only.n} ({row.engine_only.k} conservados) | "
+            f"solo Jev: {row.jev_only.n} ({row.jev_only.k} conservados) | "
+            f"los dos: {row.both.n} ({row.both.k} conservados)",
+        ]
+    return lines
+
+
+def _jev_field_lines(fields: JevFields) -> list[str]:
+    lines = [
+        f"  3. Campos: acierto contra las filas curadas, n = {fields.n} conservados con señal "
+        "y con filas en prices_history.",
+        "     Definición de A6: acierta si su elección es el valor de alguna fila curada del anuncio.",
+    ]
+    for name, (label, reference) in JEV_FIELDS.items():
+        entry = fields.fields[name]
+        lines.append(
+            f"     {label}: "
+            + format_rate(entry.accuracy.k, entry.accuracy.n, lower=True)
+            + f"; ilegibles: {entry.invalid}. Medido en A6, con otras preguntas: {reference}."
+        )
+    return lines
+
+
+def render_jev(summary: JevSummary, configs: Sequence[ValidationConfig]) -> list[str]:
+    """El bloque «Jev» de un conjunto. `configs` va en paralelo a `summary.lane1`."""
+    if len(configs) != len(summary.lane1):
+        raise ValueError("configs y summary.lane1 tienen que ir en paralelo")
+    lines = [
+        "",
+        f"  Jev (señal en sombra): n = {summary.n} de {summary.texts} textos del conjunto "
+        "tienen señal de la huella vigente.",
+    ]
+    if not summary.n:
+        lines.append(
+            "    Sin señales no hay nada que medir. El relleno es "
+            "`python -m saimc.validation.jev_signal --decided`."
+        )
+        return lines
+    lines += [
+        "    Solo esos textos entran a las tres tablas. Las grillas son para mirar: el informe "
+        "no elige ningún valor.",
+        *_jev_lane1_lines(summary.lane1),
+        *_jev_triage_lines(summary.triage),
+        *_jev_field_lines(summary.fields),
+    ]
+    return lines
 
 
 # --- reporte -----------------------------------------------------------------
@@ -785,8 +1264,11 @@ def _render_grid(runs: Sequence[tuple[ValidationConfig, SetSummary]]) -> list[st
 
 
 def render_set(
-    dataset: CaseSet, runs: Sequence[tuple[ValidationConfig, SetSummary]]
+    dataset: CaseSet,
+    runs: Sequence[tuple[ValidationConfig, SetSummary]],
+    jev: JevSummary | None = None,
 ) -> list[str]:
+    """Un conjunto entero. Con `jev`, cierra con su bloque «Jev» (A6b-2)."""
     lines = ["", "=" * 78, dataset.title, "=" * 78]
     lines += [f"  {key}: {value}" for key, value in dataset.notes.items()]
     lines.append(f"  anuncios que entran al informe: n = {len(dataset.cases)}")
@@ -796,8 +1278,11 @@ def render_set(
         return lines
     if len(runs) == 1:
         lines += ["", f"  Parámetros: {_params_line(runs[0][0])}", *render_summary(runs[0][1])]
-        return lines
-    return lines + _render_grid(runs)
+    else:
+        lines += _render_grid(runs)
+    if jev is not None:
+        lines += render_jev(jev, [config for config, _ in runs])
+    return lines
 
 
 # --- registro de corridas ----------------------------------------------------
@@ -817,9 +1302,13 @@ def run_record(
     commit: str,
     dirty: bool,
     branch: str,
+    jev: Mapping[str, JevSummary] | None = None,
 ) -> dict[str, Any]:
-    """La corrida entera, serializable a UNA línea de `shadow-runs.jsonl`."""
-    return {
+    """La corrida entera, serializable a UNA línea de `shadow-runs.jsonl`.
+
+    Con `jev` (el bloque de cada conjunto, por nombre) suma la clave `jev`.
+    """
+    record: dict[str, Any] = {
         "timestamp": now.astimezone(UTC).isoformat(),
         "git_commit": commit,
         "git_dirty": dirty,
@@ -839,6 +1328,9 @@ def run_record(
             for config, summaries in results
         ],
     }
+    if jev is not None:
+        record["jev"] = {name: summary.as_dict() for name, summary in jev.items()}
+    return record
 
 
 # --- CLI ---------------------------------------------------------------------
@@ -850,7 +1342,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description=(
             "Informe del modo sombra: corre el motor de validación sobre el oro del "
             "backtest y sobre las revisiones individuales. Por defecto en seco; "
-            "--execute registra la corrida. No gasta API ni escribe en la base."
+            "--execute registra la corrida. No gasta API ni escribe en la base. "
+            "Incluye el bloque «Jev» (con y sin la señal) si hay señales guardadas."
         ),
     )
     parser.add_argument(
@@ -873,7 +1366,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--signal-high-probability",
         type=float,
         default=None,
-        help="Probabilidad «alta» de una señal externa. Opcional: hoy no hay señales.",
+        help=(
+            "Probabilidad «alta» de una señal externa. Opcional y sin efecto en los "
+            "números generales (corren sin señales); el bloque «Jev» recorre su propia grilla."
+        ),
     )
     parser.add_argument(
         "--grid",
@@ -944,6 +1440,9 @@ def run(
         load_evaluation(session, catalog, raw_store_dir=raw_store_dir, transcribe=transcribe),
     ]
     configs = configs_from_args(args)
+    # El bloque «Jev»: lee `jev_signals`, no llama a nadie y no escribe.
+    attach_jev(session, datasets)
+    jev = {dataset.name: summarize_jev(dataset, configs) for dataset in datasets}
     results = [
         (config, {dataset.name: run_set(dataset, config) for dataset in datasets})
         for config in configs
@@ -956,8 +1455,8 @@ def run(
         else f"Se registra la corrida en {args.runs_file}."
     )
     out(
-        "Motor: saimc.validation (A5b), sin señales externas. No fija metas ni decide: "
-        "eso es de G1a y G1b."
+        "Motor: saimc.validation (A5b), sin señales externas salvo en el bloque «Jev», que "
+        "lo corre con y sin ellas. No fija metas ni decide: eso es de G1a y G1b."
     )
     out(
         "Los dos conjuntos no se mezclan. Las cotas son de Clopper-Pearson, unilaterales "
@@ -971,7 +1470,7 @@ def run(
         )
     for dataset in datasets:
         runs = [(config, summaries[dataset.name]) for config, summaries in results]
-        for line in render_set(dataset, runs):
+        for line in render_set(dataset, runs, jev[dataset.name]):
             out(line)
 
     if args.execute:
@@ -985,6 +1484,7 @@ def run(
             commit=commit,
             dirty=dirty,
             branch=branch,
+            jev=jev,
         )
         measure.append_h0_run(record, args.runs_file)  # un append de una línea JSON
         out("")
