@@ -470,7 +470,8 @@ def audit_bounds(session: Session, *, today: date | None = None) -> dict[str, Bo
 @dataclass(frozen=True)
 class WeekCounts:
     """Descartes automáticos y rescatados de una semana, por tipo. Es lo único
-    del carril 0 que va a `/control`, que es público: la cota no."""
+    del carril 0 que va a `/control`: la cota no (se decidió cuando `/control`
+    era público; hoy pide operador, y la cota sigue viviendo en la auditoría)."""
 
     week_start: date
     auto: Mapping[str, int]

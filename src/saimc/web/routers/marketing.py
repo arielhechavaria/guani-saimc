@@ -8,9 +8,12 @@ pieza). No inventa ningún cómputo: reusa `cells.py`/`card_view.py`/
 a propósito la trampa ya conocida del promedio simple mezclando
 presentaciones («~1,3 millones» para arroz).
 
-Sin `require_operator`: mismo criterio que `/control` (lectura del dato ya
-público, sin mutar nada), a diferencia de `/catalog`/`/curation` que sí
-cambian qué mide el sistema.
+**Privado.** Todo el router —la página, las vistas previas y los PNG— va
+detrás de `require_operator`, la misma contraseña de `/curation`
+(`docs/decisions.md`, 2026-10-05). Hasta ese día estuvo abierto «con el mismo
+criterio que `/control`», y ese criterio cayó junto con el de `/control`. Lo
+que muestra es dato ya público, pero es una herramienta del operador y cada
+PNG levanta un Chromium en el servidor.
 """
 
 from __future__ import annotations
@@ -30,11 +33,12 @@ from saimc.marketing.cards import (
 )
 from saimc.marketing.render import RendererUnavailable, render_png
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
+from saimc.web.auth import require_operator
 from saimc.web.card_view import build_cards
 from saimc.web.deps import get_db
 from saimc.web.price_charts import build_month_vs_month
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_operator)])
 
 #: Placeholder mientras el dominio final no está decidido (pendiente en el
 #: doc de campaña, 2026-09-26: «¿cuál será la dirección del sitio para poner

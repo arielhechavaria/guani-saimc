@@ -214,7 +214,8 @@ def validate_and_store(
 @dataclass(frozen=True)
 class StatusCounts:
     """Cuántas filas hay en cada estado. Es lo único de la validación que va a
-    `/control`, que es público: solo conteos, sin canal, emisor ni detalle."""
+    `/control`: solo conteos, sin canal, emisor ni detalle (criterio de cuando
+    `/control` era público; hoy pide operador)."""
 
     #: Estado -> filas. Solo trae los estados que tienen alguna.
     by_status: Mapping[str, int]

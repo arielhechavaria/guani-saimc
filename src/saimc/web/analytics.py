@@ -29,7 +29,7 @@ from starlette.responses import Response
 logger = logging.getLogger(__name__)
 
 # Vistas públicas reales que un visitante abre — no assets, no rutas de
-# operador (/control, /curation, /catalog, /docs, webhooks).
+# operador (/control, /curation, /catalog, /docs, /marketing, webhooks).
 _TRACKED_PATH_PREFIXES = ("/producto/", "/anuncio/")
 # `/` es la landing y `/precios` la home de precios (tablero/mapa/explorar)
 # desde el 2026-10-05: las dos son visitas reales y se cuentan por separado.

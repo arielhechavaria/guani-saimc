@@ -44,6 +44,9 @@ def client(session: Session) -> Iterator[TestClient]:
         yield session
 
     app.dependency_overrides[get_db] = _get_db_override
+    # La puerta del operador tiene cobertura propia en
+    # `test_control_marketing_auth.py`; acá se prueba lo que hay detrás.
+    app.dependency_overrides[require_operator] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -2112,7 +2115,7 @@ class TestControlesDeManipulacion:
 class TestJevEnSombra:
     """La sección «Jev (señal en sombra)» (A6b-1, caso 23 de la especificación).
 
-    `/control` es público: la sección trae conteos y gasto, nunca un texto de
+    La sección trae conteos y gasto, nunca un texto de
     anuncio, un canal ni una respuesta.
     """
 

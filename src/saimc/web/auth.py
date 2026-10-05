@@ -1,7 +1,9 @@
-"""HTTP Basic para la cola de curaduría (decisions.md, 2026-08-13).
+"""HTTP Basic para las rutas del operador (decisions.md, 2026-08-13).
 
-Protege únicamente las rutas del operador (`/curation/*`, `/evidence/{id}`).
-`/control`, el dashboard público, no depende de esto y sigue sin auth.
+Protege todo lo que no es la capa pública: `/curation/*`, `/evidence/{id}`,
+`/catalog/*`, `/docs/*` y, desde el 2026-10-05, `/control/*` y `/marketing/*`.
+`tests/test_route_inventory.py` recorre las rutas registradas y falla si una
+que no está listada como pública responde sin credenciales.
 """
 
 import secrets

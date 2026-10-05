@@ -749,8 +749,9 @@ _STATE_LABELS = {STATE_ON: "encendida", STATE_OFF: "apagada", STATE_NO_KEY: "sin
 
 @dataclass(frozen=True)
 class ControlSummary:
-    """Lo único de Jev que va a `/control`, que es público: el estado, conteos
-    y gasto. Ningún texto, canal ni respuesta."""
+    """Lo único de Jev que va a `/control`: el estado, conteos y gasto. Ningún
+    texto, canal ni respuesta (criterio de cuando `/control` era público; hoy
+    pide operador)."""
 
     state: str
     #: Textos con señal de la huella vigente.

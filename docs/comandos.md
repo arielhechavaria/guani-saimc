@@ -682,12 +682,14 @@ Estos se corren en tu máquina, no en el VPS.
 
 ## Qué no está acá
 
-Hay cosas que se hacen desde la web y no tienen comando. No las busques en este archivo:
+Hay cosas que se hacen desde la web y no tienen comando. No las busques en este archivo.
+Todas piden la contraseña de operador (`SAIMC_CURATION_PASSWORD`):
 
 - **`/curation`**: curar y descartar anuncios (también `/curation/cola` y `/curation/sin-foco`).
 - **`/curation/auditoria`**: la auditoría semanal de los descartes automáticos.
 - **`/catalog`**: el botón de backfill de un canal o grupo de WhatsApp.
 - **`/control`**: el estado del sistema (pre-cálculo, huecos de ingesta, validación, señal de Jev).
+- **`/marketing`**: las tarjetas para redes, con vista previa y descarga en PNG.
 - **`/docs`**: este catálogo y el resto de los documentos, con el acceso del operador.
 
 Tampoco está WAHA (corre en Docker, ver `deploy/waha/`): sus comandos no se catalogaron.

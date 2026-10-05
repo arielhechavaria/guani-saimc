@@ -137,9 +137,10 @@ Con la bandeja ya ingerida (paso anterior), levantá el servidor:
 .venv/bin/uvicorn saimc.web.app:app --reload
 ```
 
-`/curation/*` y `/evidence/{id}` piden HTTP Basic (usuario `operador` por
+Todas las rutas del operador —`/curation/*`, `/evidence/{id}`, `/catalog`,
+`/docs`, `/control` y `/marketing`— piden HTTP Basic (usuario `operador` por
 defecto, contraseña en `SAIMC_CURATION_PASSWORD`) — ver «Variables de
-entorno». `/control`, el panel público de solo lectura, no.
+entorno». Sin contraseña quedan solo las páginas públicas.
 
 1. Abrí `http://127.0.0.1:8000/curation`. Muestra el elemento `pending` más
    antiguo, uno por vez, con el contexto de ráfaga (otros mensajes del mismo

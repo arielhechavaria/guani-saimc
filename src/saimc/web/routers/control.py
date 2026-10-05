@@ -21,6 +21,13 @@ mypy, arreglo mecánico + reporte de drift contra `docs/lint-baseline.json`,
 razonado en `docs/decisions.md`). No mide nada de curaduría — vive acá porque
 es la vista que el operador abre para "¿cómo estamos hoy?", y esto es parte
 de esa pregunta para quien programa, no para quien cura.
+
+**Privado.** Todo el router va detrás de `require_operator`, la misma
+contraseña de `/curation`, `/catalog` y `/docs` (`docs/decisions.md`,
+2026-10-05). Estuvo abierto hasta ese día, cuando la premisa de «solo
+conteos» ya no era cierta: los desgloses por canal nombran los canales y
+grupos de origen, y el `POST /control/lint-drift` corre `ruff --fix` sobre el
+código del servidor.
 """
 
 import json
@@ -66,13 +73,14 @@ from saimc.progress import (
 from saimc.requisitos_status import read_module_status
 from saimc.validation import ValidationStatus, jev_signal, lane0, persist
 from saimc.validation.control_cells import compute_cell_controls
+from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
 from saimc.web.health_strip import build_strip, worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
 from saimc.web.product_nav import DEFAULT_WINDOW_DAYS
 from saimc.web.rubber_stamp_metrics import rubber_stamp_alert
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_operator)])
 
 # `control.py` vive en `src/saimc/web/routers/`, cuatro niveles bajo la raíz
 # del repo. Mismo criterio de resolver por `__file__` que `docs_catalog.py` y
@@ -167,7 +175,8 @@ def _validation_summary(db: Session) -> dict[str, object]:
 
 def _jev_summary(db: Session, settings: Settings, run: PrefillRun | None) -> dict[str, object]:
     """La sección «Jev (señal en sombra)» (A6b). Solo el estado, conteos y
-    gasto: `/control` es público y acá no va ningún texto, canal ni respuesta
+    gasto: esta sección nació cuando `/control` era público y sigue igual de
+    acotada, así que acá no va ningún texto, canal ni respuesta
     (tampoco el motivo que mandó el gateway en un corte: ese queda en el
     registro del pre-cálculo)."""
     counts = jev_signal.control_summary(db, settings)

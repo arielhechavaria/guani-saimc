@@ -28,7 +28,7 @@ def _reset_settings_cache() -> Iterator[None]:
 
 @pytest.fixture
 def client(session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
-    # `/control` y el `/curation` autenticado llegan al cuerpo de la ruta, que
+    # El `/curation` autenticado llega al cuerpo de la ruta, que
     # pide `get_db` — sin este override golpearían la Postgres real de `.env`
     # en vez de la SQLite en memoria que usa el resto de la suite.
     def _get_db_override() -> Iterator[Session]:
@@ -111,11 +111,12 @@ class TestRequireOperator:
 
         assert response.status_code == 401
 
-    def test_control_sigue_publico_sin_auth(self, client: TestClient) -> None:
-        """`/control` es el dashboard público — esta protección no lo toca."""
+    def test_control_tambien_queda_protegido(self, client: TestClient) -> None:
+        """`/control` estuvo abierto hasta el 2026-10-05 (`docs/decisions.md`);
+        su cobertura completa vive en `test_control_marketing_auth.py`."""
         response = client.get("/control")
 
-        assert response.status_code == 200
+        assert response.status_code == 401
 
     def test_sin_foco_tambien_queda_protegida(self, client: TestClient) -> None:
         """El descarte en lote cuelga del mismo `router` que el resto de

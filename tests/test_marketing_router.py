@@ -27,6 +27,7 @@ from saimc.models import (
 )
 from saimc.models.raw_ingestion import ProcessingStatus
 from saimc.web.app import app
+from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
 
 
@@ -36,6 +37,9 @@ def client(session: Session) -> Iterator[TestClient]:
         yield session
 
     app.dependency_overrides[get_db] = _get_db_override
+    # La puerta del operador tiene cobertura propia en
+    # `test_control_marketing_auth.py`; acá se prueba lo que hay detrás.
+    app.dependency_overrides[require_operator] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
