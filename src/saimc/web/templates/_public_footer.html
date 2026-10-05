@@ -8,6 +8,13 @@
   izquierda; a la derecha las columnas Precios, Guani, Legal y Síguenos; abajo
   el copyright y el crédito a elTOQUE.
 
+  - **Firma de marca** (2026-10-05, `docs/decisions.md`): «Guani, por Leira
+    Studio». Leira Studio es la marca que hace Guani, no una entidad legal:
+    por eso el «©» sigue junto a Guani y la marca va aparte, como «un
+    producto de». No se le agrega forma jurídica, país ni titularidad.
+  - «De acceso libre» y no «abierto»: lo abierto es la entrada y los datos
+    que se descargan, no el código.
+
   - **Ningún enlace muerto.** Las columnas llegan armadas de `site_pages`, que
     solo lista páginas que existen. «Contacto» y la columna «Síguenos» se
     dibujan solo con un correo o una red configurados (`SAIMC_CONTACT_EMAIL`,
@@ -42,9 +49,12 @@
       <div class="pf-about">
         <div class="pf-brand">
           {% with avatar_clip_id = "guani-avatar-clip-pie" %}{% include "_guani_avatar.html" %}{% endwith %}
-          <div class="pf-wordmark">Guani</div>
+          <div class="pf-names">
+            <div class="pf-wordmark">Guani</div>
+            <div class="pf-by">por Leira Studio</div>
+          </div>
         </div>
-        <p class="pf-tag">Precios del mercado informal cubano, con los anuncios detrás. Abierto y gratis.</p>
+        <p class="pf-tag">Precios del mercado informal cubano, con los anuncios detrás. De acceso libre y gratis.</p>
         <a class="pf-cta" href="{{ footer.home_href }}">Ver los precios de hoy{{ pf_icon("arrow") }}</a>
       </div>
       <div class="pf-cols">
@@ -70,7 +80,7 @@
       </div>
     </div>
     <div class="pf-bar">
-      <span>© {{ footer.year }} Guani. Los datos se pueden usar citando la fuente.</span>
+      <span>© {{ footer.year }} Guani. Un producto de Leira Studio. Los datos se pueden usar citando la fuente.</span>
       <span>Tasa de cambio: <a href="https://eltoque.com/">TRMI de elTOQUE</a>.</span>
     </div>
   </div>

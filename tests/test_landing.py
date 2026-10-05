@@ -44,7 +44,12 @@ from saimc.models.raw_ingestion import ProcessingStatus
 from saimc.web import landing_view
 from saimc.web.app import app
 from saimc.web.deps import get_db
-from saimc.web.landing_view import build_footer_links, build_landing_flow, build_landing_price
+from saimc.web.landing_view import (
+    build_footer_links,
+    build_landing_coverage,
+    build_landing_flow,
+    build_landing_price,
+)
 from saimc.web.routers import public
 
 #: Lo que el prototipo traía de relleno y no puede salir en producción.
@@ -228,6 +233,95 @@ class TestLaTarjetaDePrecio:
         assert (precio.product_name, precio.minimum_text, precio.maximum_text) == ("Pollo", "700", "720")
 
 
+class TestElPrecioDisparatadoNoMueveElRango:
+    """El caso real del 2026-10-05: una sola fila absurda dejaba la portada en
+    «Arroz · La Habana 210 – 178.880 CUP/lb». El resto de la capa pública
+    (tablero, explorar, `/producto`) ya saca la mediana y el rango de lo que
+    cae dentro del cerco de `/metodologia`; la portada tiene que hacer lo mismo.
+
+    Los valores esperados salen de la regla publicada, a mano: con seis
+    precios entre 280 y 320 la mitad central es angosta, el margen es el
+    mínimo (×2) y el cerco llega a unos 640; 178.880 queda fuera por mucho.
+    """
+
+    NORMALES = ("280", "300", "300", "310", "320")
+
+    def test_la_fila_absurda_no_entra_en_el_rango_ni_en_la_mediana(self) -> None:
+        obs = [_obs("Arroz", "La Habana", v) for v in (*self.NORMALES, "178880")]
+
+        precio = build_landing_price(obs)
+
+        assert precio is not None
+        assert (precio.minimum_text, precio.maximum_text) == ("280", "320")
+        assert precio.median_text == "300"
+
+    def test_la_muestra_cuenta_todo_y_dice_cuantos_quedaron_fuera(self) -> None:
+        """Igual que la cifra del tablero: el anuncio no se esconde, se cuenta
+        aparte."""
+        obs = [_obs("Arroz", "La Habana", v) for v in (*self.NORMALES, "178880")]
+
+        precio = build_landing_price(obs)
+
+        assert precio is not None
+        assert (precio.count, precio.outliers) == (6, 1)
+
+    def test_los_puntos_son_solo_los_que_caben_en_la_barra(self) -> None:
+        obs = [_obs("Arroz", "La Habana", v) for v in (*self.NORMALES, "178880")]
+
+        precio = build_landing_price(obs)
+
+        assert precio is not None
+        assert len(precio.dots) == 5
+        assert all(precio.bar_left <= p.left <= precio.bar_left + precio.bar_width for p in precio.dots)
+
+    def test_sin_precios_disparatados_no_hay_ninguno_fuera(self) -> None:
+        precio = build_landing_price([_obs("Arroz", "La Habana", v) for v in self.NORMALES])
+
+        assert precio is not None
+        assert (precio.count, precio.outliers) == (5, 0)
+
+    def test_un_rango_que_solo_existe_por_la_fila_absurda_no_es_un_rango(self) -> None:
+        """Cinco anuncios a 300 y uno a 178.880: dentro del cerco todos valen
+        lo mismo, así que esa celda no sirve de ejemplo y se pasa a la otra."""
+        obs = [
+            *[_obs("Arroz", "La Habana", v) for v in ("300", "300", "300", "300", "300", "178880")],
+            _obs("Pollo", "La Habana", "700"),
+            _obs("Pollo", "La Habana", "720"),
+        ]
+
+        precio = build_landing_price(obs)
+
+        assert precio is not None
+        assert (precio.product_name, precio.minimum_text, precio.maximum_text) == ("Pollo", "700", "720")
+
+
+class TestLaCobertura:
+    """Cuántos productos y provincias tienen dato: sale de las observaciones,
+    nunca del texto."""
+
+    def test_cuenta_productos_y_provincias_distintos(self) -> None:
+        obs = [
+            _obs("Arroz", "La Habana", "280"),
+            _obs("Arroz", "La Habana", "320"),
+            _obs("Arroz", "Santiago de Cuba", "400"),
+            _obs("Pollo", "La Habana", "700"),
+        ]
+
+        cobertura = build_landing_coverage(obs)
+
+        assert cobertura is not None
+        assert (cobertura.products, cobertura.provinces) == (2, 2)
+
+    def test_una_fila_sin_provincia_no_suma(self) -> None:
+        cobertura = build_landing_coverage([_obs("Arroz", None, "280"), _obs("Pollo", "La Habana", "700")])
+
+        assert cobertura is not None
+        assert (cobertura.products, cobertura.provinces) == (1, 1)
+
+    def test_sin_observaciones_no_hay_cobertura(self) -> None:
+        assert build_landing_coverage([]) is None
+
+
 class TestLosEnlacesDelPie:
     def test_sin_nada_configurado_no_hay_enlaces(self) -> None:
         enlaces = build_footer_links(_settings())
@@ -358,6 +452,196 @@ class TestLaLandingEnLaRaiz:
 
         for ruta in ("/curation", "/control", "/catalog", "/docs", "/marketing"):
             assert f'href="{ruta}' not in texto
+
+    def test_una_fila_disparatada_no_mueve_el_rango_de_la_portada(
+        self, client: TestClient, datos: None, session: Session
+    ) -> None:
+        """Arroz en La Habana con 280, 290, 300, 305, 310, 320 y una fila a
+        178.880: la tarjeta y el globo siguen en 280–320, y la tarjeta dice
+        que hay siete anuncios y que uno quedó fuera."""
+        arroz = session.query(Product).filter_by(name="Arroz").one()
+        habana = session.query(Province).filter_by(name="La Habana").one()
+        origen = session.query(RawIngestion).one()
+        for valor in ("290", "305", "310", "178880"):
+            session.add(
+                PriceHistory(
+                    provenance="human",
+                    product_id=arroz.id,
+                    province_id=habana.id,
+                    price=Decimal(valor),
+                    currency=Currency.CUP.value,
+                    source_id=origen.id,
+                    unit="lb",
+                    sale_format=SaleFormat.RETAIL.value,
+                    quantity=Decimal("1"),
+                    published_date=date.today() - timedelta(days=1),
+                )
+            )
+        session.commit()
+
+        texto = client.get("/").text
+        tarjeta = _visible(texto.split('id="lp-price"')[1].split("</section>")[0])
+
+        assert re.search(r"280\s*–\s*320", tarjeta)
+        assert "178" not in tarjeta
+        assert re.search(r"\b7\s+anuncios", tarjeta)
+        assert re.search(r"1\s+fuera de lo común", tarjeta)
+        assert re.search(r"Arroz · 280–320 CUP/lb", _globos(texto))
+
+
+class TestPorQueFiarte:
+    """La sección de fortalezas (2026-10-05, `docs/decisions.md`). Cada tarjeta
+    dice algo que el código hace hoy, con su alcance real."""
+
+    TITULOS = (
+        "Cada cifra enseña sus anuncios",
+        "Provincia por provincia",
+        "Compara lo comparable",
+        "Una persona revisa cada precio",
+        "Un precio disparatado no manda",
+        "Todo en pesos cubanos",
+    )
+
+    def _seccion(self, client: TestClient) -> str:
+        return client.get("/").text.split('id="lp-why"')[1].split("</section>")[0]
+
+    def test_trae_el_titulo_y_las_seis_tarjetas(self, client: TestClient, datos: None) -> None:
+        seccion = self._seccion(client)
+
+        assert "Por qué puedes fiarte de estas cifras" in _visible(seccion)
+        assert re.findall(r'<h3 class="lp-why-title">([^<]+)</h3>', seccion) == list(self.TITULOS)
+        assert seccion.count('class="lp-why-card') == 6
+        # Un icono y una oración por tarjeta.
+        assert seccion.count("<svg") >= 6
+        assert seccion.count('<p class="lp-why-text">') == 6
+
+    def test_va_despues_de_asi_se_lee_un_precio_y_antes_de_las_preguntas(
+        self, client: TestClient, datos: None
+    ) -> None:
+        texto = client.get("/").text
+
+        assert texto.index('id="lp-price"') < texto.index('id="lp-why"') < texto.index("¿Qué es Guani?")
+
+    def test_no_promete_abrir_los_anuncios_que_son_imagen(self, client: TestClient, datos: None) -> None:
+        """`/anuncio/{id}` solo publica anuncios de texto: la tarjeta no puede
+        decir que todo precio enlaza a su anuncio."""
+        seccion = _visible(self._seccion(client))
+
+        assert "de texto" in seccion
+        assert "cada precio enlaza" not in seccion.lower()
+
+    def test_las_monedas_son_las_que_se_convierten(self, client: TestClient, datos: None) -> None:
+        seccion = _visible(self._seccion(client))
+
+        for moneda in ("USD", "EUR", "MLC", "CUP", "elTOQUE"):
+            assert moneda in seccion, moneda
+
+    def test_la_cobertura_sale_de_la_base(self, client: TestClient, datos: None) -> None:
+        """La fixture tiene 2 productos y 2 provincias con anuncios."""
+        seccion = re.sub(r"\s+", " ", _visible(self._seccion(client)))
+
+        assert "2 productos en 2 provincias" in seccion
+
+    def test_sin_datos_no_afirma_ninguna_cifra(self, client: TestClient) -> None:
+        seccion = _visible(self._seccion(client))
+
+        assert "productos en" not in seccion
+        assert not re.search(r"\d", seccion.replace("900 ml", ""))
+
+    def test_enlaza_a_la_metodologia_y_no_carga_scripts(self, client: TestClient, datos: None) -> None:
+        seccion = self._seccion(client)
+
+        assert 'href="/metodologia"' in seccion
+        assert "<script" not in seccion
+
+    def test_no_usa_el_argumento_para_instituciones(self, client: TestClient, datos: None) -> None:
+        seccion = _visible(self._seccion(client)).lower()
+
+        assert "mvp" not in seccion
+        assert "producción" not in seccion
+
+
+def _prohibidas_por_nombre() -> tuple[str, ...]:
+    """Fragmentos del nombre personal del operador y de su usuario de GitHub,
+    armados por partes para que no queden escritos en el repositorio. Se
+    comparan en minúsculas."""
+    apellido = "".join(("hec", "hav", "ar"))
+    nombre = "".join(("ar", "iel"))
+    return (apellido, rf"\b{nombre}\b", "".join(("git", "hub")), "@" + "".join(("gm", "ail")))
+
+
+#: Lo que la capa pública no promete (`docs/decisions.md`, 2026-10-05): el
+#: código no está publicado, y ni la predicción ni la oferta para empresas
+#: existen. Se busca en el texto visible, en minúsculas.
+NO_SE_AFIRMA = (
+    "código abierto",
+    "codigo abierto",
+    "open source",
+    "repositorio",
+    "predicci",
+    "predecir",
+    "pronóstic",
+    "pronostic",
+    "proyecto abierto",
+    "sitio abierto",
+    "todo el país",
+    "toda cuba",
+    "cobertura nacional",
+)
+
+
+class TestLoQueLaCapaPublicaNoDice:
+    @pytest.fixture
+    def rutas(self, session: Session, datos: None, monkeypatch: pytest.MonkeyPatch) -> tuple[str, ...]:
+        monkeypatch.setattr(
+            public,
+            "get_settings",
+            lambda: _settings(contact_email="hola@guani.example", link_telegram="https://t.me/guani"),
+        )
+        anuncio = session.query(RawIngestion).one()
+        return (
+            "/",
+            "/precios?vista=tablero",
+            "/precios?vista=mapa",
+            "/precios?vista=explorar",
+            "/producto/arroz",
+            f"/anuncio/{anuncio.id}",
+            "/quienes-somos",
+            "/metodologia",
+            "/preguntas",
+            "/terminos",
+            "/privacidad",
+            "/uso-de-datos",
+            "/contacto",
+            "/datos.csv",
+        )
+
+    def test_ninguna_respuesta_trae_el_nombre_personal(
+        self, client: TestClient, rutas: tuple[str, ...]
+    ) -> None:
+        for ruta in rutas:
+            respuesta = client.get(ruta)
+            assert respuesta.status_code == 200, ruta
+            cabeceras = " ".join(f"{k}: {v}" for k, v in respuesta.headers.items())
+            todo = (respuesta.text + " " + cabeceras).lower()
+            for patron in _prohibidas_por_nombre():
+                assert not re.search(patron, todo), f"{ruta}: aparece un dato personal"
+
+    def test_ninguna_pagina_promete_lo_que_no_existe(
+        self, client: TestClient, rutas: tuple[str, ...]
+    ) -> None:
+        for ruta in rutas:
+            texto = re.sub(r"\s+", " ", _visible(client.get(ruta).text))
+            for frase in NO_SE_AFIRMA:
+                assert frase not in texto.lower(), f"{ruta}: {frase}"
+            # «API» como oferta: la sigla suelta, en mayúsculas.
+            assert not re.search(r"\bAPI\b", texto), ruta
+
+    def test_los_metadatos_tampoco(self, client: TestClient, rutas: tuple[str, ...]) -> None:
+        for ruta in rutas:
+            metas = " ".join(re.findall(r"<meta[^>]+>", client.get(ruta).text)).lower()
+            for frase in NO_SE_AFIRMA:
+                assert frase not in metas, f"{ruta}: {frase}"
 
 
 class TestLaLandingSinDatos:

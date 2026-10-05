@@ -33,10 +33,24 @@
     las cinco capturas (`flow.shots` vacío) se dibujan las tres tarjetas
     ilustradas de antes, que quedan como respaldo.
 
+  - «Por qué puedes fiarte de estas cifras» (2026-10-05, `docs/decisions.md`):
+    seis tarjetas, una por cosa que el código ya hace. Cada oración dice el
+    alcance real y no más: los anuncios que se pueden abrir son los de texto
+    (`routers/public.public_evidence`); la unidad común es la del producto y
+    solo entre unidades de la misma magnitud (`units.convert_price_per_unit`,
+    antes de agregar, en `cells.compute_retail_observations`); lo que resiste
+    a un precio disparatado es la mediana, y la regla que los marca es la de
+    `/metodologia` (`validation.fence`); las monedas son las que tienen tasa
+    (`exchange_rate/eltoque.py`). La cuenta de productos y provincias llega
+    en `coverage` (`landing_view.LandingCoverage`), nunca escrita a mano.
+    Los seis iconos son SVG en línea, del mismo trazo que los otros tres.
+    No dice nada de código abierto, predicción ni oferta para empresas.
+
   `price`, cuando existe, sigue las reglas de `card_view` (§9.0): el titular es
   el rango, la mediana va adentro, el número de anuncios queda a la vista y la
   tarjeta va rotulada «muestra en formación». Sin colores de alarma ni juicio
-  sobre el precio.
+  sobre el precio. El rango y la mediana son los de dentro del cerco de
+  atípicos; los anuncios que quedaron fuera se cuentan aparte (`price.outliers`).
 #}
 {% extends "_public_shell.html" %}
 
@@ -227,6 +241,20 @@
   .lp-range-demo { left: 22%; width: 48%; }
   .lp-median-demo { left: 44%; }
 
+  /* ── Por qué puedes fiarte ──────────────────────────────────────────
+     Mismo lenguaje que las tarjetas de preguntas: superficie, radio 24 y el
+     icono en su círculo (`lp-faq-icon`). Una columna a 390 px; dos o tres
+     con ancho de sobra. */
+  .lp-why-lead { margin: 10px 0 0; max-width: 620px; font-size: 17px; line-height: 1.5; color: var(--lp-ink-soft); }
+  .lp-why { margin: 16px 0 0; padding: 0; list-style: none; display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; }
+  .lp-why-card { display: flex; align-items: flex-start; gap: 14px; min-width: 0; padding: 18px 16px;
+                 border-radius: 24px; background: var(--lp-surface); }
+  .lp-why-card .lp-faq-icon { flex: none; }
+  .lp-why-body { min-width: 0; }
+  .lp-why-title { margin: 2px 0 0; font-size: 18px; font-weight: 700; line-height: 1.25; }
+  .lp-why-text { margin: 6px 0 0; font-size: 16px; line-height: 1.45; color: var(--lp-ink-soft); overflow-wrap: break-word; }
+
   /* ── Preguntas ──────────────────────────────────────────────────────── */
   .lp-faq { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; }
   .lp-faq-card { background: var(--lp-surface); border-radius: 24px; padding: 22px 20px; }
@@ -279,6 +307,16 @@
   <path d="M5 12h14M13 6l6 6-6 6"/>
   {%- elif name == "pin" -%}
   <path d="M12 21s-6.5-5.7-6.5-10.6a6.5 6.5 0 0 1 13 0C18.5 15.3 12 21 12 21z"/><circle cx="12" cy="10.4" r="2.2"/>
+  {%- elif name == "doc" -%}
+  <path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4M10 12.5h5M10 16.5h5"/>
+  {%- elif name == "scale" -%}
+  <path d="M12 4v16M8 20h8M5 7h14"/><path d="M5 7l-2.6 6.2a2.6 2.6 0 0 0 5.2 0zM19 7l-2.6 6.2a2.6 2.6 0 0 0 5.2 0z"/>
+  {%- elif name == "person" -%}
+  <circle cx="9.5" cy="8" r="3.5"/><path d="M3 20c0-3.6 2.9-6 6.5-6 1.3 0 2.5.3 3.5.8"/><path d="m14.8 17.6 2.3 2.3 4.1-4.6"/>
+  {%- elif name == "shield" -%}
+  <path d="M12 3l7 3v5.5c0 4.4-3 7.8-7 9.5-4-1.7-7-5.1-7-9.5V6z"/><path d="m8.8 12 2.3 2.3 4.2-4.6"/>
+  {%- elif name == "coin" -%}
+  <circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.4c-.5-1-1.5-1.6-2.8-1.6-1.7 0-2.9.9-2.9 2.1 0 3 5.9 1.5 5.9 4.5 0 1.3-1.3 2.2-3 2.2-1.4 0-2.5-.6-3-1.7M12 6v1.800M12 16.6V18"/>
   {%- elif name == "stall" -%}
   <path d="M4 10l1.6-5h12.8L20 10M5.5 12.4V19h13v-6.6M10 19v-4.5h4V19"/><path d="M4 10a2.67 2.67 0 0 0 5.33 0 2.67 2.67 0 0 0 5.34 0A2.67 2.67 0 0 0 20 10"/>
   {%- endif -%}
@@ -332,7 +370,7 @@
 
       <div class="lp-hero-text lp-in">
         <h1 class="lp-h1">Hola, soy Guani.</h1>
-        <p class="lp-lead">Te digo cuánto cuestan las cosas en la calle, con los anuncios reales de cada provincia en la mano.</p>
+        <p class="lp-lead">Te digo cuánto cuestan las cosas en la calle, provincia por provincia y con los anuncios reales en la mano.</p>
         <a class="lp-cta lp-lift" href="{{ home_href }}">Ver los precios de hoy{{ svg_icon("arrow") }}</a>
       </div>
     </div>
@@ -436,7 +474,7 @@
           <div class="lp-range lp-fill" style="left: {{ price.bar_left }}%; width: {{ price.bar_width }}%"></div>
           <div class="lp-median" style="left: {{ price.median_left }}%"></div>
         </div>
-        <p class="lp-legend">Cada punto es un anuncio. La barra es el rango y el círculo, la mediana: <strong>{{ price.median_text }}</strong>. <strong>{{ price.count }}</strong> anuncios · {{ price.state | capitalize }}</p>
+        <p class="lp-legend">Cada punto es un anuncio. La barra es el rango y el círculo, la mediana: <strong>{{ price.median_text }}</strong>. <strong>{{ price.count }}</strong> anuncios{% if price.outliers %} ({{ price.outliers }} fuera de lo común, sin contar en el rango){% endif %} · {{ price.state | capitalize }}</p>
       </div>
       {% else %}
       <div class="lp-price-col">
@@ -454,17 +492,67 @@
   </div>
 </section>
 
+<section class="lp-wrap lp-section" id="lp-why" aria-labelledby="lp-why-title">
+  <h2 class="lp-h2" id="lp-why-title">Por qué puedes fiarte de estas cifras</h2>
+  <p class="lp-why-lead">No te pido que me creas: te enseño de dónde sale cada número y con qué cuenta se saca.</p>
+  <ul class="lp-why" role="list">
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon">{{ svg_icon("doc") }}</div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Cada cifra enseña sus anuncios</h3>
+        <p class="lp-why-text">Al lado de cada precio va cuántos anuncios tiene detrás, y los que son de texto los puedes abrir y leer.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon">{{ svg_icon("pin") }}</div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Provincia por provincia</h3>
+        <p class="lp-why-text">Cada producto se mide en su provincia, no como un promedio del país.{% if coverage %} En los últimos {{ window_days }} días hay anuncios de {{ coverage.products }} producto{{ "s" if coverage.products != 1 }} en {{ coverage.provinces }} provincia{{ "s" if coverage.provinces != 1 }}.{% endif %}</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon">{{ svg_icon("scale") }}</div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Compara lo comparable</h3>
+        <p class="lp-why-text">El litro y los 900 ml, la libra y el kilo: cada precio se lleva a la misma unidad antes de sacar la cuenta.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon">{{ svg_icon("person") }}</div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Una persona revisa cada precio</h3>
+        <p class="lp-why-text">Un programa propone los datos y aparta lo que no es un anuncio de precios; ninguno cuenta hasta que una persona lo revisa.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon">{{ svg_icon("shield") }}</div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Un precio disparatado no manda</h3>
+        <p class="lp-why-text">Se resume con la mediana, que casi no se mueve por un anuncio fuera de lo común, y la regla que señala esos precios está publicada.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon">{{ svg_icon("coin") }}</div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Todo en pesos cubanos</h3>
+        <p class="lp-why-text">Lo anunciado en USD, EUR o MLC se pasa a CUP con la tasa informal de elTOQUE; lo que no se pudo convertir no se muestra.</p>
+      </div>
+    </li>
+  </ul>
+  <a class="lp-faq-link" href="/metodologia">Cómo calculamos los precios{{ svg_icon("arrow") }}</a>
+</section>
+
 <section class="lp-wrap lp-section" aria-label="Preguntas frecuentes">
   <div class="lp-faq">
     <div class="lp-faq-card lp-reveal">
       <div class="lp-faq-icon">{{ svg_icon("stall") }}</div>
       <h2 class="lp-faq-title">¿Qué es Guani?</h2>
-      <p class="lp-faq-text">Un sitio abierto que muestra los precios del mercado informal cubano, producto por producto y provincia por provincia.</p>
+      <p class="lp-faq-text">Un sitio gratis y de acceso libre que muestra los precios del mercado informal cubano, producto por producto y provincia por provincia.</p>
     </div>
     <div class="lp-faq-card lp-reveal">
       <div class="lp-faq-icon"><span class="m3-icon" aria-hidden="true">forum</span></div>
       <h2 class="lp-faq-title">¿De dónde salen los precios?</h2>
-      <p class="lp-faq-text">De lo que los emprendedores publican en grupos y canales de WhatsApp. Cada anuncio queda enlazado a la cifra que alimenta.</p>
+      <p class="lp-faq-text">De lo que los emprendedores publican en grupos y canales de WhatsApp. Cada cifra dice cuántos anuncios tiene detrás.</p>
       <a class="lp-faq-link" href="/metodologia">Cómo calculamos los precios{{ svg_icon("arrow") }}</a>
     </div>
     <div class="lp-faq-card lp-reveal">

@@ -52,7 +52,11 @@ from saimc.web.explore_view import (
     build_explore_nav,
     build_explore_products,
 )
-from saimc.web.landing_view import build_landing_flow, build_landing_price
+from saimc.web.landing_view import (
+    build_landing_coverage,
+    build_landing_flow,
+    build_landing_price,
+)
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import (
     ProductPanel,
@@ -921,9 +925,10 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> Response:
     no un pedido de ir a él. Un parámetro ajeno (`?fbclid=…`, que agregan las
     redes al compartir) tampoco redirige.
 
-    Lo único que sale de la base son los productos piloto y la celda de
-    ejemplo de «Así se lee un precio» (`landing_view`), con las mismas
-    observaciones y la misma ventana por defecto que el tablero. Sin datos la
+    Lo único que sale de la base son los productos piloto, la celda de
+    ejemplo de «Así se lee un precio» y la cuenta de productos y provincias
+    con anuncios (`landing_view`), con las mismas observaciones y la misma
+    ventana por defecto que el tablero. Sin datos la
     página se sirve igual, sin cifras.
     """
     if HOME_QUERY_PARAMS.intersection(request.query_params.keys()):
@@ -946,6 +951,7 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> Response:
             {
                 "home_href": HOME_PATH,
                 "price": build_landing_price(observations),
+                "coverage": build_landing_coverage(observations),
                 "flow": build_landing_flow(),
                 "products": products,
                 "view_tiles": _LANDING_VIEW_TILES,

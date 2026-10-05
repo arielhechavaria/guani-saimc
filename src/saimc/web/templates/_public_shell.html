@@ -33,6 +33,9 @@
   <meta property="og:title" content="{{ self.page_title() }}" />
   <meta property="og:description" content="{% block og_description %}Precios del mercado informal cubano, verificados anuncio por anuncio, provincia por provincia.{% endblock %}" />
   <meta name="description" content="{{ self.og_description() }}" />
+  {# Quien firma la capa pública es la marca (2026-10-05, `docs/decisions.md`):
+     «Guani, por Leira Studio». Nunca el nombre de una persona. #}
+  <meta name="author" content="Leira Studio" />
   {% include "_theme_toggle_head.html" %}
   <link href="/static/saimc-public.css?v={{ public_css_version() }}" rel="stylesheet" />
   {% block head %}{% endblock %}

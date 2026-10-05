@@ -12,6 +12,8 @@ Lo que estos casos protegen:
 - Ningún marcador del prototipo, ningún `href="#"`, ningún voseo y ningún
   enlace a la herramienta del operador llegan al visitante.
 - El tablero, el mapa y explorar siguen sin este pie (decisión del 2026-09-21).
+- La capa pública se firma «Guani, por Leira Studio» (2026-10-05): Leira Studio
+  es la marca que firma, nunca una entidad legal ni la titular del «©».
 
 Los enlaces esperados de cada columna están escritos a mano a partir del
 diseño, antes de que existiera el módulo `site_pages`.
@@ -197,6 +199,78 @@ class TestElPieEnLaLanding:
         cuerpo = client.get("/").text.split("<footer")[0]
 
         assert 'href="/metodologia"' in cuerpo
+
+
+def _plano(html: str) -> str:
+    """El texto visible con los espacios colapsados, para buscar frases."""
+    return re.sub(r"\s+", " ", _visible(html)).strip()
+
+
+class TestLaFirmaDeMarca:
+    """«Guani, por Leira Studio». Leira Studio es una marca, no una sociedad:
+    lo que se escribe la nombra como quien hace Guani y nada más."""
+
+    @pytest.mark.parametrize("ruta", ("/", *RUTAS))
+    def test_el_pie_dice_guani_por_leira_studio(self, client: TestClient, ruta: str) -> None:
+        pie = _pie(client.get(ruta).text)
+        marca = re.search(r'<div class="pf-brand">.*?</svg>(.*?)<p class="pf-tag"', pie, flags=re.S)
+        assert marca is not None
+
+        assert _plano(marca.group(1)) == "Guani por Leira Studio"
+
+    @pytest.mark.parametrize("ruta", ("/", *RUTAS))
+    def test_el_pie_ya_no_dice_abierto_a_secas(self, client: TestClient, ruta: str) -> None:
+        pie = _plano(_pie(client.get(ruta).text))
+
+        assert "Abierto y gratis" not in pie
+        assert "De acceso libre y gratis." in pie
+
+    @pytest.mark.parametrize("ruta", ("/", *RUTAS))
+    def test_el_copyright_no_pone_a_la_marca_como_titular(self, client: TestClient, ruta: str) -> None:
+        barra = _plano(_pie(client.get(ruta).text))
+
+        assert f"© {date.today().year} Guani. Un producto de Leira Studio." in barra
+        assert not re.search(r"©[^.]*Leira", barra)
+
+    @pytest.mark.parametrize("ruta", ("/", *RUTAS, "/precios"))
+    def test_los_metadatos_firman_con_la_marca(self, client: TestClient, ruta: str) -> None:
+        texto = client.get(ruta).text
+
+        assert '<meta property="og:site_name" content="Guani"' in texto
+        assert re.findall(r'<meta name="author" content="([^"]*)"', texto) == ["Leira Studio"]
+
+    def test_quienes_somos_dice_quien_hace_guani(self, client: TestClient) -> None:
+        texto = _plano(client.get("/quienes-somos").text)
+
+        assert "Leira Studio es un estudio de desarrollo de software" in texto
+        assert "sistema de precios del mercado informal cubano" in texto
+
+    @pytest.mark.parametrize("ruta", ("/terminos", "/privacidad", "/uso-de-datos"))
+    def test_los_textos_legales_dicen_de_quien_es_el_producto(self, client: TestClient, ruta: str) -> None:
+        cuerpo = _plano(client.get(ruta).text.split("<footer")[0])
+
+        assert "Guani es un producto de Leira Studio" in cuerpo
+
+    @pytest.mark.parametrize("ruta", ("/", *RUTAS))
+    def test_la_grafia_de_la_marca_es_una_sola(self, client: TestClient, ruta: str) -> None:
+        texto = client.get(ruta).text
+
+        assert set(re.findall(r"leira\s*studio", texto, flags=re.I)) == {"Leira Studio"}
+
+    @pytest.mark.parametrize("ruta", ("/", *RUTAS))
+    def test_no_presenta_a_la_marca_como_entidad_legal(self, client: TestClient, ruta: str) -> None:
+        texto = _plano(client.get(ruta).text).lower()
+
+        for palabra in ("empresa registrada", "sociedad", "s.r.l", "mipyme", "razón social"):
+            assert palabra not in texto, palabra
+        assert not re.search(r"leira studio,? (s\.|inc|ltd|llc)", texto)
+
+    def test_quienes_somos_ya_no_se_presenta_como_proyecto_abierto(self, client: TestClient) -> None:
+        texto = client.get("/quienes-somos").text.lower()
+
+        assert "proyecto abierto" not in texto
+        assert "sitio abierto" not in texto
+        assert "proyecto en fase inicial" in texto
 
 
 class TestNingunEnlaceMuerto:

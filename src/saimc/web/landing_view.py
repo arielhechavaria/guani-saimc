@@ -9,7 +9,11 @@ probarlas sin parsear HTML (mismo reparto que `card_view` y `watchlist_view`):
   adentro y nunca sola, el número de anuncios queda a la vista y la tarjeta va
   rotulada «muestra en formación». Si no hay ninguna celda con rango, no hay
   tarjeta: la plantilla dibuja la ilustración sin cifras, nunca un número de
-  relleno.
+  relleno. El rango y la mediana salen de lo que cae dentro del cerco de
+  atípicos (`price_charts.split_outliers`), igual que la cifra del tablero.
+- **La cobertura** de «Por qué puedes fiarte de estas cifras»: cuántos
+  productos y cuántas provincias tienen anuncios en la ventana. Se cuenta, no
+  se escribe.
 - **Los enlaces de contacto y redes del pie**, que salen de la configuración y
   solo se dibujan si están puestos.
 - **El recorrido de «Así trabajo»** (2026-10-06): cinco capturas del sistema y,
@@ -33,6 +37,7 @@ from pathlib import Path
 from saimc.cells import RetailObservation
 from saimc.config import Settings
 from saimc.web.card_view import SAMPLE_FORMING, format_price
+from saimc.web.price_charts import split_outliers
 
 #: Dónde empieza y cuánto mide la barra del rango dentro de su pista, en
 #: porcentaje. Deja aire a los dos lados para que el punto del mínimo y el del
@@ -64,12 +69,18 @@ class LandingPrice:
     province_name: str
     currency: str
     unit: str
+    #: Todos los anuncios de la celda, también los que quedaron fuera del cerco.
     count: int
     minimum: Decimal
     median: Decimal
     maximum: Decimal
+    #: Un punto por anuncio dentro del cerco. Los de fuera no tienen dónde
+    #: caer en la barra: se cuentan en `outliers`.
     dots: tuple[LandingDot, ...]
     median_left: float
+    #: Cuántos anuncios quedaron fuera del cerco. No se esconden: la tarjeta
+    #: los cuenta aparte, como la cifra del tablero («fuera de escala»).
+    outliers: int = 0
     bar_left: float = BAR_LEFT
     bar_width: float = BAR_WIDTH
 
@@ -112,26 +123,40 @@ def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPri
     sin convertir a CUP. Moneda y unidad entran a la clave para no fundir en un
     rango dos cifras que no son comparables. Los empates se resuelven por
     nombre, para que la tarjeta no cambie de una carga a otra.
+
+    **El rango es el de dentro del cerco** (2026-10-05, `docs/decisions.md`).
+    Hasta ese día salía del mínimo y el máximo crudos, y una sola fila mal
+    cargada dejó la portada en «210 – 178.880 CUP/lb». La cuenta es la de
+    `price_charts.build_headlines`, que es la cifra del tablero: mediana,
+    mínimo y máximo de lo que cae dentro del cerco de la propia celda
+    (`split_outliers`), y la muestra cuenta todos los anuncios. No hay umbral
+    nuevo: es la regla que `/metodologia` ya publica. Una celda cuyo rango
+    solo existe por el precio de fuera deja de servir de ejemplo.
     """
-    cells: dict[tuple[str, str, str, str], list[Decimal]] = defaultdict(list)
+    cells: dict[tuple[str, str, str, str], list[RetailObservation]] = defaultdict(list)
     for o in observations:
         if o.province_name is None or o.unconverted:
             continue
-        cells[(o.product_name, o.currency, o.unit, o.province_name)].append(o.unit_price)
+        cells[(o.product_name, o.currency, o.unit, o.province_name)].append(o)
 
     per_product: dict[tuple[str, str, str], int] = defaultdict(int)
-    for (product, currency, unit, _province), prices in cells.items():
-        per_product[(product, currency, unit)] += len(prices)
+    for (product, currency, unit, _province), rows in cells.items():
+        per_product[(product, currency, unit)] += len(rows)
 
-    with_range = [key for key, prices in cells.items() if min(prices) < max(prices)]
+    inside = {
+        key: sorted(o.unit_price for o in split_outliers(rows)[0]) for key, rows in cells.items()
+    }
+    with_range = [key for key, prices in inside.items() if prices and prices[0] < prices[-1]]
     if not with_range:
         return None
-    product, currency, unit, province = min(
+    chosen = min(
         with_range,
         key=lambda k: (-per_product[k[:3]], k[0], -len(cells[k]), k[3], k[1], k[2]),
     )
+    product, currency, unit, province = chosen
 
-    prices = sorted(cells[(product, currency, unit, province)])
+    prices = inside[chosen]
+    total = len(cells[chosen])
     minimum, maximum = prices[0], prices[-1]
     median = statistics.median(prices)
     return LandingPrice(
@@ -139,7 +164,7 @@ def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPri
         province_name=province,
         currency=currency,
         unit=unit,
-        count=len(prices),
+        count=total,
         minimum=minimum,
         median=median,
         maximum=maximum,
@@ -148,6 +173,32 @@ def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPri
             for index, price in enumerate(prices)
         ),
         median_left=_position(median, minimum, maximum),
+        outliers=total - len(prices),
+    )
+
+
+@dataclass(frozen=True)
+class LandingCoverage:
+    """Cuántos productos y provincias tienen anuncios en la ventana."""
+
+    products: int
+    provinces: int
+
+
+def build_landing_coverage(observations: Sequence[RetailObservation]) -> LandingCoverage | None:
+    """La cobertura real de la ventana, o `None` sin ningún anuncio.
+
+    Cuenta lo mismo que entra a las celdas de la tarjeta: filas con provincia y
+    ya convertidas a CUP. Es una cuenta de lo que hay, no una meta: la landing
+    no dice en ningún lado cuántas provincias «cubre» Guani salvo con este
+    número.
+    """
+    usable = [o for o in observations if o.province_name is not None and not o.unconverted]
+    if not usable:
+        return None
+    return LandingCoverage(
+        products=len({o.product_name for o in usable}),
+        provinces=len({o.province_name for o in usable}),
     )
 
 

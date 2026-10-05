@@ -18,6 +18,15 @@
   - Moneda: `spec.md` §6.3 E y las columnas `exchange_rate*` de
     `prices_history`.
   - Cerco de atípicos: `validation.fence` (`FENCE_IQR`, `FENCE_MIN_FACTOR`).
+    Dónde se aplica (revisado el 2026-10-05): `price_charts.split_outliers`
+    saca del cerco la mediana y el rango de la cifra de resumen
+    (`build_headlines`), de la lista del tablero (`build_month_vs_month`),
+    de explorar (`explore_view._stats`), de la comparación de provincias y
+    de la tarjeta de la landing (`landing_view.build_landing_price`). NO lo
+    aplican el desglose por envase (`cells.compute_retail_ranges` →
+    `card_view`), el encabezado de `/producto/{slug}` (`panel_view`, que
+    toma el mínimo y el máximo de esas mismas tarjetas) ni el CSV. La
+    página dice las dos cosas.
   - Publicación por provincia: `spec.md` §9.0 y `Province.is_published`; el
     umbral no tiene valor (§12.6: se mide, no se inventa).
   - Coordinación: `validation.controls` (C4 son conteos, sin umbral).
@@ -52,7 +61,7 @@
 <h2>Cómo se resume</h2>
 <p>Para cada producto en cada provincia se toman los anuncios del período elegido y se muestran tres cosas:</p>
 <ul>
-  <li><strong>El rango</strong>: del anuncio más barato al más caro.</li>
+  <li><strong>El rango</strong>: del anuncio más barato al más caro. En la cifra de resumen no entran los precios fuera de lo común, que se cuentan aparte (lo explica la sección de más abajo).</li>
   <li><strong>La mediana</strong>: el precio que queda justo en el medio cuando se ordenan todos. Se usa la mediana y no el promedio porque un solo anuncio con un precio disparatado mueve el promedio y a la mediana casi no la toca.</li>
   <li><strong>Cuántos anuncios hay detrás</strong>. Va siempre a la vista: una mediana de tres anuncios y una de cuarenta no dicen lo mismo.</li>
 </ul>
@@ -63,7 +72,8 @@
 <p>Todo se muestra en pesos cubanos (CUP). Un precio anunciado en otra moneda se convierte con la <a href="https://eltoque.com/">Tasa Representativa del Mercado Informal (TRMI) de elTOQUE</a>, y junto a cada precio convertido se guardan la tasa aplicada y su fecha. Si un precio no se pudo convertir, no se muestra.</p>
 
 <h2>Precios fuera de lo común</h2>
-<p>Un precio se considera fuera de lo común cuando se aleja de la mitad central de los precios de su producto y provincia más de {{ facts.fence_iqr }} veces el ancho de esa mitad, medido en escala logarítmica, y nunca con un margen menor a {{ facts.fence_min_factor }} veces. Ese precio no se borra: en los gráficos se marca en el borde, y al revisar un anuncio nuevo sirve de aviso para mirarlo dos veces.</p>
+<p>Un precio se considera fuera de lo común cuando se aleja de la mitad central de los precios de su producto y provincia más de {{ facts.fence_iqr }} veces el ancho de esa mitad, medido en escala logarítmica, y nunca con un margen menor a {{ facts.fence_min_factor }} veces. Con muy pocos anuncios la regla casi no señala nada: hace falta una muestra para saber qué es fuera de lo común.</p>
+<p>Ese precio no se borra. En la cifra de resumen de un producto en una provincia, la mediana y el rango se sacan sin él y al lado se dice cuántos anuncios quedaron fuera; en los gráficos se marca en el borde. En otras partes del sitio —el encabezado de la página de un producto, el desglose por envase, la lista de anuncios y el archivo de datos— sigue apareciendo tal como se anunció. Al revisar un anuncio nuevo, además, sirve de aviso para mirarlo dos veces.</p>
 
 <h2>Cuándo se publica una provincia</h2>
 <p>Una provincia se da por publicada cuando tiene una muestra suficiente y sostenida en el tiempo, no cuando lo dice el calendario. El número que define «suficiente» todavía no está fijado: se va a fijar midiendo los datos, no a ojo. Hasta entonces, marcar una provincia como publicada es una decisión que toma una persona, y las provincias con pocos anuncios se muestran como «en recolección», con su número de anuncios a la vista.</p>
