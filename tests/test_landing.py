@@ -584,8 +584,21 @@ class TestElRecorridoArmado:
 
         assert build_landing_flow(tmp_path).shots == ()
 
-    def test_hoy_no_hay_video(self) -> None:
-        assert build_landing_flow().video is None
+    def test_sin_el_mp4_no_hay_video(self, tmp_path: Path) -> None:
+        _copiar_capturas(tmp_path)
+
+        assert build_landing_flow(tmp_path).video is None
+
+    def test_el_video_del_repo_pesa_menos_de_un_mega_y_trae_su_portada(self) -> None:
+        # El video se sirve a una conexión lenta: el tope es parte del
+        # contrato, no un detalle. Si se vuelve a montar más pesado, este
+        # caso obliga a decidirlo a propósito.
+        video = build_landing_flow().video
+
+        assert video is not None
+        assert (landing_view.LANDING_STATIC_DIR / "guani-flujo.mp4").stat().st_size < 1_000_000
+        assert video.poster is not None
+        assert video.poster.startswith("/static/landing/guani-flujo-poster.webp?v=")
 
     def test_el_video_trae_su_peso_real_y_la_captura_5_de_portada(self, tmp_path: Path) -> None:
         _copiar_capturas(tmp_path)
@@ -665,7 +678,7 @@ class TestAsiTrabajoEnLaPagina:
             assert respuesta.headers["content-type"] == "image/webp"
             assert respuesta.content[:4] == b"RIFF"
 
-    def test_sin_el_mp4_no_hay_video(self, client: TestClient) -> None:
+    def test_sin_el_mp4_no_hay_video(self, client: TestClient, directorio: Path) -> None:
         texto = client.get("/").text
 
         assert "<video" not in texto
