@@ -2,7 +2,7 @@
 
 {% block title %}Corregir anuncio curado{% endblock %}
 {% block heading %}Corregir anuncio curado{% endblock %}
-{% block subtitle %}Corrección acotada: mismos campos, misma evidencia. No agrega ni quita filas.{% endblock %}
+{% block subtitle %}Mismos campos, misma evidencia. Podés corregir, eliminar o agregar filas.{% endblock %}
 
 {% block stats %}
   <div class="m3-stat">
@@ -55,7 +55,7 @@
       {% from "_price_row_card.html" import price_row_card %}
 
       <section class="m3-card m3-card-pad" style="margin-bottom:16px">
-        <h2 class="m3-h3" style="margin-bottom:20px">Filas ya curadas de este anuncio</h2>
+        <h2 class="m3-h3" style="margin-bottom:20px">Filas de este anuncio</h2>
         <div class="m3-grid-fields">
           <label class="m3-field is-filled">
             <span class="m3-field-label" for="published_date">Fecha de publicación *</span>
@@ -77,6 +77,23 @@
       {% for row in rows %}
       {{ price_row_card(row, loop.index0, products, provinces, currencies, units, packaging, variant_options, format_options, edit_mode=True) }}
       {% endfor %}
+
+      {#
+        Agregar una fila que faltó en la curaduría original. Mismo molde y
+        mismo JS que la cola (`_price_row_scripts.html`): la tarjeta nueva
+        viaja con `price_id` vacío, que es lo que le dice a `submit_edit` que
+        hay que crearla y no actualizarla. Sin JS el botón no hace nada y la
+        corrección sigue sirviendo para las filas que ya están.
+      #}
+      <template id="price-row-template" data-template-index="{{ rows|length }}">
+        {{ price_row_card(blank_row, rows|length, products, provinces, currencies, units, packaging, variant_options, format_options, edit_mode=True) }}
+      </template>
+
+      <div class="m3-row" style="margin-bottom:16px">
+        <button type="button" class="m3-btn m3-btn-text" onclick="addProductCard()">
+          <span class="m3-icon m3-icon-sm">add</span>Agregar fila
+        </button>
+      </div>
 
       <input type="hidden" name="row_count" value="{{ rows|length }}" />
     </form>

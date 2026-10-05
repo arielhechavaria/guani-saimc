@@ -112,7 +112,7 @@ from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
 from saimc.validation import lane0, persist
-from saimc.variants import get_or_create_variant
+from saimc.variants import get_or_create_variant, variant_key
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
 
@@ -2138,6 +2138,8 @@ def _row_from_form(form: FormData, index: int) -> dict[str, str]:
     `price_id` viaja vacío en la curaduría normal (`submit_curation` no lo lee)
     y con el id real en la corrección (`submit_edit` lo usa para ubicar la fila
     exacta a actualizar, ver ahí el porqué de no matchear solo por posición).
+    En la corrección, una fila con `price_id` vacío es una fila que el operador
+    agregó: `submit_edit` la crea.
     """
     return {
         "price_id": str(form.get(f"price_id_{index}", "")).strip(),
@@ -2719,16 +2721,100 @@ def delete_curated(
     return RedirectResponse(url="/curation/history", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _edit_blank_row(db: Session, ingestion: RawIngestion) -> dict[str, str]:
+    """Molde de la fila que el operador agrega en la corrección (botón
+    «Agregar fila»). Igual que el de la cola: en blanco, con `price_id` vacío
+    y con la provincia del canal ya puesta si el canal tiene una fija."""
+    blank_row = _values_from_proposal(None)
+    channel_province_id = _channel_province_id(db, ingestion)
+    if channel_province_id is not None:
+        blank_row["province_id"] = channel_province_id
+    return blank_row
+
+
+def _row_identity_from_form(
+    product: Product, price_value: Decimal, province: Province | None, row: dict[str, str]
+) -> tuple[object, ...]:
+    """Lo que hace que dos filas de un mismo anuncio sean «la misma», leído de
+    una fila del formulario. `submit_edit` lo usa para no crear una fila
+    repetida; `_row_identity_stored` arma la misma tupla, en el mismo orden,
+    para una fila ya guardada.
+
+    Entra todo lo que distingue una fila de otra: producto, precio, moneda,
+    cantidad, unidad, provincia, base del precio, formato de venta, compra
+    mínima, envase y los tres ejes de la variante. Cada campo se normaliza
+    igual que al guardar, pero **sin escribir nada**: no se llama a
+    `_resolve_format_id` ni a `_resolve_variant_id`, que crearían un
+    `ProductFormat` o un `ProductVariant` solo para comparar. En su lugar se
+    compara lo mismo que esos helpers usan como clave:
+
+    - El envase solo cuenta si el triple envase/cantidad/unidad está completo,
+      que es la condición de `_resolve_format_id` para ligar un formato; con
+      el triple incompleto la fila queda sin formato y el envase tipeado se
+      pierde, así que acá vale `None`.
+    - Los ejes de la variante van plegados con `variant_key` (sin tildes ni
+      mayúsculas), la misma clave del UNIQUE de `product_variants`.
+    """
+    quantity = _parse_decimal(row["quantity"])
+    unit = canonical_unit(row["unit"])
+    packaging = canonical_packaging(row["packaging"])
+    if quantity is None or unit is None:
+        packaging = None
+    return (
+        product.id,
+        price_value,
+        row["currency"],
+        quantity,
+        unit,
+        province.id if province is not None else None,
+        _price_basis_value(row["price_basis"]),
+        row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None,
+        _parse_min_purchase(row["min_purchase"]),
+        packaging,
+        variant_key(row["variant_kind"]),
+        variant_key(row["variant_brand"]),
+        variant_key(row["variant_origin"]),
+    )
+
+
+def _row_identity_stored(db: Session, price: PriceHistory) -> tuple[object, ...]:
+    """La misma tupla que `_row_identity_from_form`, para una fila guardada.
+    El envase y los ejes salen del `ProductFormat` y el `ProductVariant` que
+    la fila ya tiene ligados; sin ellos valen `None` y `""`, que es lo que da
+    el formulario con esos campos vacíos."""
+    fmt = db.get(ProductFormat, price.format_id) if price.format_id else None
+    variant = db.get(ProductVariant, price.variant_id) if price.variant_id else None
+    return (
+        price.product_id,
+        price.price,
+        price.currency,
+        price.quantity,
+        price.unit,
+        price.province_id,
+        price.price_basis,
+        price.sale_format,
+        price.min_purchase_quantity,
+        fmt.packaging if fmt is not None else None,
+        variant.kind_key if variant is not None else "",
+        variant.brand_key if variant is not None else "",
+        variant.origin_key if variant is not None else "",
+    )
+
+
 @router.get("/curation/{ingestion_id}/edit", response_class=HTMLResponse)
 def edit_curated(
     ingestion_id: uuid.UUID, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
-    """Corrección acotada de un anuncio ya curado.
+    """Corrección de un anuncio ya curado.
 
-    Reabre exactamente las filas de `prices_history` que ese anuncio ya
-    produjo, contra la misma evidencia — no agrega ni quita filas, y no
-    vuelve a correr el motor de extracción. Es la vía para arreglar un error
-    de tipeo sin SQL directo contra producción.
+    Reabre las filas de `prices_history` que ese anuncio ya produjo, contra
+    la misma evidencia, sin volver a correr el motor de extracción. Es la vía
+    para arreglar un error de tipeo sin SQL directo contra producción.
+
+    Además de corregir y eliminar filas, la pantalla deja **agregar** una que
+    faltó en la curaduría original: trae el mismo molde `<template>` y el
+    mismo botón «Agregar fila» que la cola. La tarjeta nueva viaja con
+    `price_id` vacío y la crea `submit_edit`.
     """
     ingestion = _require_curated(db, ingestion_id)
     prices = _curated_rows(db, ingestion_id)
@@ -2749,6 +2835,7 @@ def edit_curated(
             "products": _pilot_products(db),
             "provinces": _all_provinces(db),
             "rows": rows,
+            "blank_row": _edit_blank_row(db, ingestion),
             "edit_mode": True,
             "values": {
                 "source_reference": ingestion.source_reference or "",
@@ -2781,16 +2868,34 @@ async def submit_edit(
     rate_fetcher: Fetcher = Depends(get_rate_fetcher),
 ) -> HTMLResponse | RedirectResponse:
     """Aplica la corrección: actualiza en el lugar las filas que el operador
-    reabrió. No crea filas nuevas; sí puede **borrar** una fila marcada con
-    `delete_i` —una duplicada, o una que no correspondía— siempre que quede
-    al menos una. Vaciar el anuncio entero es un descarte, no una corrección.
+    reabrió. Puede **borrar** una fila marcada con `delete_i` —una duplicada,
+    o una que no correspondía— y puede **crear** las que el operador agregó,
+    siempre que el anuncio quede con al menos una. Vaciarlo entero es un
+    descarte, no una corrección.
 
-    Cada fila viaja con su propio `price_id_i`, a diferencia de la curaduría
-    original: matchear solo por posición confundiría un reordenamiento
-    accidental del formulario con una corrección real. Si el id no
-    corresponde a una fila de este mismo anuncio, es un error explícito —
-    nunca crea una fila nueva por accidente. Mismo contrato todo-o-nada que
-    `submit_curation`: una fila con error bloquea el guardado entero.
+    Cada fila ya curada viaja con su propio `price_id_i`, a diferencia de la
+    curaduría original: matchear solo por posición confundiría un
+    reordenamiento accidental del formulario con una corrección real. Qué se
+    hace con una fila lo decide ese campo, y solo ese:
+
+    - `price_id_i` de una fila de este anuncio: se actualiza (o se borra).
+    - `price_id_i` **vacío**: es una fila agregada con «Agregar fila». Si no
+      trae ni producto ni precio se ignora, igual que una fila en blanco de
+      la cola; si trae algo, se valida con las mismas reglas que una fila de
+      `submit_curation` y se crea.
+    - `price_id_i` con cualquier otro valor —ilegible, o de otro anuncio—: es
+      un error explícito. Un id viejo o cruzado nunca crea una fila nueva por
+      accidente: para crear hace falta que el campo llegue vacío.
+
+    Una fila creada acá nace igual que una de la cola: `provenance = human`,
+    la fecha de publicación del anuncio (la del formulario, que es la misma
+    que se les escribe a las demás filas), formato y variante resueltos con
+    los mismos helpers, y la tasa de cambio resuelta si no es CUP. Una fila
+    nueva igual a otra del anuncio en todos sus campos (ver
+    `_row_identity_from_form`) es un error: es lo que frena el doble envío
+    del mismo formulario. Mismo
+    contrato todo-o-nada que `submit_curation`: una fila con error —nueva o
+    ya curada— bloquea el guardado entero.
 
     La tasa de cambio SOLO se re-resuelve cuando cambia `currency` o `price`
     respecto de lo que la fila ya tenía guardado (design.md D6): editar un
@@ -2821,36 +2926,59 @@ async def submit_edit(
         errors.append(published_date_error)
     typed_rows: list[dict[str, str]] = []
     updates: list[tuple[PriceHistory, Product, Decimal, Province | None, dict[str, str]]] = []
+    # Filas nuevas ya validadas. Acá solo se juntan los datos: el `PriceHistory`
+    # se arma después de la rama de error, porque resolver formato y variante
+    # puede escribir en el catálogo.
+    # El primer elemento es el número de la tarjeta, para el mensaje de error
+    # de fila repetida, que recién se puede calcular al terminar el recorrido.
+    additions: list[tuple[int, Product, Decimal, Province | None, dict[str, str]]] = []
     to_delete: list[PriceHistory] = []
 
     for i in range(row_count):
         row = _row_from_form(form, i)
-        typed_rows.append(row)
-
-        price_uuid = _parse_uuid(row["price_id"])
-        existing = existing_by_id.get(price_uuid) if price_uuid is not None else None
-        if existing is None:
-            errors.append(f"Fila {i + 1}: no corresponde a una fila curada de este anuncio")
-            continue
-
-        # Fila marcada para borrar: se va sin validarse — un precio vacío en
-        # una fila que el operador está sacando no debe bloquear el guardado.
-        if form.get(f"delete_{i}"):
-            to_delete.append(existing)
-            continue
+        is_new = not row["price_id"]
 
         product = _resolve_row_product(db, products_by_name, row)
+        # Fila agregada y dejada en blanco, o el hueco de una tarjeta que el
+        # operador quitó: se ignora sin error, mismo criterio que
+        # `submit_curation`. Tampoco se vuelve a dibujar si el form rebota.
+        if is_new and product is None and not row["price"]:
+            continue
+
+        typed_rows.append(row)
+        # El número del mensaje es el de la tarjeta en pantalla. Coincide con
+        # `i + 1` salvo que antes haya una fila nueva en blanco, que no se
+        # redibuja y correría la cuenta.
+        number = len(typed_rows)
+
+        existing: PriceHistory | None = None
+        if not is_new:
+            price_uuid = _parse_uuid(row["price_id"])
+            existing = existing_by_id.get(price_uuid) if price_uuid is not None else None
+            if existing is None:
+                errors.append(
+                    f"Fila {number}: no corresponde a una fila curada de este anuncio"
+                )
+                continue
+
+            # Fila marcada para borrar: se va sin validarse — un precio vacío
+            # en una fila que el operador está sacando no debe bloquear el
+            # guardado.
+            if form.get(f"delete_{i}"):
+                to_delete.append(existing)
+                continue
+
         if product is None:
-            errors.append(f"Fila {i + 1}: seleccioná o agregá un producto")
+            errors.append(f"Fila {number}: seleccioná o agregá un producto")
             continue
 
         if not row["price"]:
-            errors.append(f"Fila {i + 1}: falta el precio")
+            errors.append(f"Fila {number}: falta el precio")
             continue
 
         price_value = _parse_decimal(row["price"])
         if price_value is None:
-            errors.append(f"Fila {i + 1}: precio inválido")
+            errors.append(f"Fila {number}: precio inválido")
             continue
 
         province_uuid = _parse_uuid(row["province_id"])
@@ -2860,16 +2988,49 @@ async def submit_edit(
         price_basis = _price_basis_value(row["price_basis"])
         if price_basis is None and _price_basis_required(quantity_value):
             errors.append(
-                f"Fila {i + 1}: declará si el precio es por unidad o por el lote entero"
+                f"Fila {number}: declará si el precio es por unidad o por el lote entero"
             )
             continue
 
-        updates.append((existing, product, price_value, province, row))
+        if existing is None:
+            additions.append((number, product, price_value, province, row))
+        else:
+            updates.append((existing, product, price_value, province, row))
+
+    # Una fila nueva igual a otra del anuncio no se crea. Es la defensa contra
+    # el doble envío: guardar, volver atrás en el navegador y guardar otra vez
+    # reenvía la tarjeta con `price_id` vacío, y sin esto la fila se duplica
+    # (la cola no lo necesita: su segundo envío rebota con 409 porque el
+    # anuncio ya no está pendiente). Se compara contra las filas como van a
+    # quedar con ESTE envío: las editadas con sus valores nuevos, las borradas
+    # no cuentan, y las que el form no trajo cuentan con lo que tienen
+    # guardado. Solo si no hay otro error: con una fila inválida todavía no se
+    # sabe cómo queda el anuncio.
+    if not errors:
+        touched = {existing.id for existing, *_ in updates} | {p.id for p in to_delete}
+        # Un `set` de tuplas: `Decimal("10.00")` y `Decimal("10")` son iguales
+        # y tienen el mismo hash, así que los ceros de más no esconden un
+        # duplicado.
+        seen = {
+            _row_identity_from_form(product, price_value, province, row)
+            for _existing, product, price_value, province, row in updates
+        }
+        seen |= {
+            _row_identity_stored(db, p) for p in existing_by_id.values() if p.id not in touched
+        }
+        for number, product, price_value, province, row in additions:
+            identity = _row_identity_from_form(product, price_value, province, row)
+            if identity in seen:
+                errors.append(f"Fila {number}: ya hay una fila igual en este anuncio")
+            # Se agrega igual: dos filas nuevas idénticas en el mismo envío
+            # también chocan entre sí.
+            seen.add(identity)
 
     # Un anuncio sin ninguna fila de precio no es una corrección, es un
     # descarte — y para eso está `POST /curation/{id}/discard`, que además
-    # exige el motivo. Acá se rechaza antes de tocar nada.
-    if not errors and to_delete and not updates:
+    # exige el motivo. Acá se rechaza antes de tocar nada. Borrar todas las
+    # que había y agregar una nueva sí pasa: el anuncio no queda vacío.
+    if not errors and to_delete and not updates and not additions:
         errors.append(
             "No podés dejar el anuncio sin filas: si no sirve, usá «descartar» en su lugar."
         )
@@ -2884,6 +3045,7 @@ async def submit_edit(
                 "products": _pilot_products(db),
                 "provinces": _all_provinces(db),
                 "rows": typed_rows,
+                "blank_row": _edit_blank_row(db, ingestion),
                 "edit_mode": True,
                 "values": {
                     "source_reference": source_reference,
@@ -2963,6 +3125,42 @@ async def submit_edit(
     for price in to_delete:
         db.delete(price)
 
+    # Filas agregadas: nacen igual que en `submit_curation`. Van después de
+    # las actualizaciones a propósito: `_resolve_format_id` y
+    # `_resolve_variant_id` pueden hacer `flush()` de toda la sesión, y para
+    # entonces cada fila ya curada tiene que estar completa (ver el bug del
+    # 2026-09-04, más arriba). La fila nueva todavía no está en la sesión
+    # cuando se resuelven, así que ese `flush` no la toca a medio armar.
+    created: list[PriceHistory] = []
+    for _number, product, price_value, province, row in additions:
+        entry = PriceHistory(
+            product_id=product.id,
+            province_id=province.id if province is not None else None,
+            price=price_value,
+            currency=row["currency"],
+            quantity=_parse_decimal(row["quantity"]),
+            unit=canonical_unit(row["unit"]),
+            sale_format=(
+                row["sale_format"] if row["sale_format"] in _SALE_FORMAT_VALUES else None
+            ),
+            format_id=_resolve_format_id(db, product.id, row),
+            variant_id=_resolve_variant_id(db, product.id, row),
+            min_purchase_quantity=_parse_min_purchase(row["min_purchase"]),
+            price_basis=_price_basis_value(row["price_basis"]),
+            # La misma fecha que se les acaba de escribir a las demás filas.
+            published_date=published_date,
+            source_id=ingestion.id,
+            # La hizo una persona, con el formulario delante (B1).
+            provenance=Provenance.HUMAN.value,
+        )
+        if entry.currency != Currency.CUP.value:
+            anchor = anchor_date(entry.published_date, ingestion.captured_at)
+            apply_resolution(entry, resolver.resolve(entry.currency, anchor))
+            if entry.exchange_rate is None:
+                unconverted += 1
+        db.add(entry)
+        created.append(entry)
+
     # Mismo criterio que `submit_curation`: solo se pisa si llegó algo. Vaciar
     # `source_reference` desde acá no está soportado en este slice.
     if source_reference:
@@ -2984,19 +3182,29 @@ async def submit_edit(
                     "after": row_text({field: after[field] for field in changed}),
                 }
             )
-    detail: dict = {"rows": detail_rows + deleted_entries}
+    # Revalidación (B1): TODAS las filas que quedan del anuncio —las nuevas
+    # incluidas—, no solo las tocadas. El `detail` del evento solo lleva lo que
+    # cambió el operador: `row_values` no mira las columnas de validación, así
+    # que da igual armarlo antes o después. `provenance` de las filas ya
+    # curadas no se toca. Las filas borradas ya salieron con el `flush`.
+    db.flush()
+    # Una fila agregada va con `op: "added"` y todos sus valores en `after`
+    # (no hay `before`: no existía). Se arma después del `flush`, que es el
+    # que le asigna el id. Quien lea un `detail` viejo no ve nunca esta
+    # operación, y quien no la conozca la saltea: `describe_edit` ignora las
+    # que no reconoce.
+    added_entries = [
+        {"price_history_id": str(entry.id), "op": "added", "after": row_text(row_values(entry))}
+        for entry in created
+    ]
+    detail: dict = {"rows": detail_rows + deleted_entries + added_entries}
     if ingestion.source_reference != source_reference_before:
         detail["source_reference"] = {
             "before": source_reference_before,
             "after": ingestion.source_reference,
         }
-    # Revalidación (B1): TODAS las filas que quedan del anuncio, no solo las
-    # tocadas, y después de calcular el `detail` del evento, que solo lleva lo
-    # que cambió el operador. `provenance` no se toca. Las filas borradas ya
-    # salieron con el `flush`.
-    db.flush()
     remaining = [price for price in existing_by_id.values() if price not in to_delete]
-    persist.validate_and_store(db, ingestion, remaining)
+    persist.validate_and_store(db, ingestion, remaining + created)
 
     # Una edición sin cambios escribe igual su evento: el operador abrió, miró
     # y confirmó, y ese tiempo cuenta (spec A2, pregunta 2).

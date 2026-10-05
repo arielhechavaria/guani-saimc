@@ -89,6 +89,10 @@
               <div><span class="m3-strong">Fila eliminada</span>
                 {% for c in row.changes %}<span class="m3-num">· {{ c.label }}: {{ c.after }}</span> {% endfor %}
               </div>
+              {% elif row.added %}
+              <div><span class="m3-strong">Fila agregada</span>
+                {% for c in row.changes %}<span class="m3-num">· {{ c.label }}: {{ c.after }}</span> {% endfor %}
+              </div>
               {% else %}
               <div>
                 {% for c in row.changes %}<span class="m3-nowrap">{{ c.label }}: <span class="m3-num">{{ c.before }} → {{ c.after }}</span></span>{{ "; " if not loop.last }}{% endfor %}
