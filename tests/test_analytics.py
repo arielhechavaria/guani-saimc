@@ -89,7 +89,7 @@ class TestMiddlewareEnLasVistasPublicas:
         self, client: TestClient, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.INFO, logger=_LOGGER):
-            client.get("/")
+            client.get("/precios")
 
         registro = next(r for r in caplog.records if "public.pageview" in r.message)
         assert "path=/" in registro.message
@@ -145,7 +145,7 @@ class TestMiddlewareEnLasVistasPublicas:
         session.commit()
 
         with caplog.at_level(logging.INFO, logger=_LOGGER):
-            client.get("/?productos=arroz", headers={"HX-Request": "true"})
+            client.get("/precios?productos=arroz", headers={"HX-Request": "true"})
 
         assert not any("public.pageview" in r.message for r in caplog.records)
 
@@ -169,7 +169,7 @@ class TestMiddlewareEnLasVistasPublicas:
         self, client: TestClient, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.INFO, logger=_LOGGER):
-            client.get("/")
+            client.get("/precios")
 
         registro = next(r for r in caplog.records if "public.pageview" in r.message)
         # El TestClient pega desde "testclient" (Starlette) — lo que importa

@@ -124,12 +124,12 @@ class TestSeleccion:
         pollo = _fila(_lista(["Arroz"], provincia="la-habana"), "Pollo")
 
         assert pollo.query == (
-            "/?productos=pollo&provincia=la-habana&desde=2026-07-31&hasta=2026-08-30&vista=tablero"
+            "/precios?productos=pollo&provincia=la-habana&desde=2026-07-31&hasta=2026-08-30&vista=tablero"
         )
 
     def test_todos_quita_el_producto_y_preserva_el_resto(self) -> None:
         assert _lista(["Arroz"], provincia="la-habana").all_query == (
-            "/?provincia=la-habana&desde=2026-07-31&hasta=2026-08-30&vista=tablero"
+            "/precios?provincia=la-habana&desde=2026-07-31&hasta=2026-08-30&vista=tablero"
         )
 
     def test_sin_producto_activo_esta_marcado_todos(self) -> None:

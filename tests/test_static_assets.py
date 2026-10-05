@@ -125,7 +125,7 @@ class TestAssetsVendorizados:
         """`/` es la única vista servida por `_public_shell.html`. Si vuelve a
         enlazar `saimc-material.css` (la hoja completa del operador), el split
         que evita arrastrar topnav/curaduría/botones se rompió en silencio."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert '/static/saimc-public.css?v=' in texto
         assert '/static/saimc-material.css?v=' not in texto
@@ -352,7 +352,7 @@ class TestAssetsVendorizados:
     def test_la_home_publica_referencia_el_geojson_versionado(
         self, client: TestClient
     ) -> None:
-        texto = client.get("/?vista=mapa").text
+        texto = client.get("/precios?vista=mapa").text
 
         assert "/static/cuba_provincias.geojson?v=" in texto
 
@@ -367,7 +367,7 @@ class TestAssetsVendorizados:
     def test_la_home_publica_referencia_leaflet_versionado(
         self, client: TestClient
     ) -> None:
-        texto = client.get("/?vista=mapa").text
+        texto = client.get("/precios?vista=mapa").text
 
         assert f"/static/leaflet/leaflet.js?v={LEAFLET_VERSION}" in texto
         assert f"/static/leaflet/leaflet.css?v={LEAFLET_VERSION}" in texto
@@ -378,7 +378,7 @@ class TestAssetsVendorizados:
         """La única referencia a un servicio externo que este archivo no
         prohíbe (ver el docstring del módulo): confirma que sigue ahí y con
         atribución, en vez de asumirlo."""
-        texto = client.get("/?vista=mapa").text
+        texto = client.get("/precios?vista=mapa").text
 
         assert "tile.openstreetmap.org" in texto
         assert "openstreetmap.org/copyright" in texto

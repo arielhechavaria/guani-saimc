@@ -105,11 +105,11 @@ class TestBuildProductPanels:
 
         # Cerrar Arroz deja a Aceite; cerrar el único deja la URL limpia.
         assert por_nombre["Arroz"].close_query == (
-            f"/?productos=aceite&desde={DESDE.isoformat()}&hasta={HOY.isoformat()}&vista=mapa"
+            f"/precios?productos=aceite&desde={DESDE.isoformat()}&hasta={HOY.isoformat()}&vista=mapa"
         )
         (solo,) = _panels(["Arroz"], [_card("Arroz", "La Habana")], [])
         assert solo.close_query == (
-            f"/?desde={DESDE.isoformat()}&hasta={HOY.isoformat()}&vista=mapa"
+            f"/precios?desde={DESDE.isoformat()}&hasta={HOY.isoformat()}&vista=mapa"
         )
 
     def test_producto_piloto_tiene_ilustracion(self) -> None:
@@ -137,7 +137,7 @@ class TestBuildProductPanels:
         por_nombre = {p.name: p for p in panels}
 
         assert por_nombre["Arroz"].close_query == (
-            "/?productos=aceite&provincia=la-habana&desde=2026-08-01&hasta=2026-08-07&vista=mapa"
+            "/precios?productos=aceite&provincia=la-habana&desde=2026-08-01&hasta=2026-08-07&vista=mapa"
         )
 
     def test_light_query_incluye_el_rango_exacto(self) -> None:

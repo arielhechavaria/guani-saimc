@@ -54,6 +54,8 @@
                   padding: 6px clamp(.75rem, 3vw, 2.5rem) 10px 1rem; }
   .ph-top-brand { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; padding-top: 4px; }
   .ph-top-brand .ph-brand-avatar { width: 2.25rem; height: 2.25rem; flex: none; }
+  .ph-top-home { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; text-decoration: none; }
+  .ph-top-home:hover { text-decoration: none; }
   .ph-wordmark { font-family: var(--ph-font-heading); font-size: 19px; color: var(--m3-on-surface); }
   .ph-top-tag { display: none; font-size: 12px; color: var(--m3-outline); }
   .ph-vista-wrap { order: 3; flex: 0 0 100%; padding-top: 2px; }
@@ -549,8 +551,12 @@
 <header class="ph-top">
   <div class="ph-top-inner">
     <div class="ph-top-brand">
-      {% include "_guani_avatar.html" %}
-      <span class="ph-wordmark">Guani</span>
+      {# La marca lleva a la landing (`/`, 2026-10-05): es donde se explica
+         qué es Guani. El enlace con texto está en «Sobre los datos». #}
+      <a class="ph-top-home" href="/" aria-label="Guani: qué es">
+        {% include "_guani_avatar.html" %}
+        <span class="ph-wordmark">Guani</span>
+      </a>
       <span class="ph-top-tag">SAIMC · Fase 0</span>
     </div>
     <div class="ph-vista-wrap"><div class="ph-vista-toggle" role="group" aria-label="Presentación">
@@ -826,6 +832,7 @@
     <li>Los precios en moneda extranjera se convierten a CUP con la <a href="https://eltoque.com/">Tasa Representativa del Mercado Informal (TRMI) de elTOQUE</a>.</li>
   </ul>
   <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span><span>Descargar los datos (CSV)</span></a>
+  <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="/"><span class="m3-icon" aria-hidden="true">info</span><span>Qué es Guani</span></a>
 </section>
 
 </div>{# /.ph-layout #}

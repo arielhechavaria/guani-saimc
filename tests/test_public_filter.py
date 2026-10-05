@@ -231,7 +231,7 @@ class TestBuildProductNav:
 
         assert nav[0].label == "Todos"
         assert nav[0].slug == ""
-        assert nav[0].query == f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        assert nav[0].query == f"/precios?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
         assert nav[0].is_selected
         assert all(not c.is_selected for c in nav[1:])
 
@@ -249,7 +249,7 @@ class TestBuildProductNav:
         """Sin provincia y con el rango por defecto (últimos 30 días hasta
         hoy —`_product_link` compara contra `date.today()` cuando no se le
         pasa `hoy`—), el chip apunta a `/producto/<slug>` en vez de
-        `/?producto=<slug>`: más limpio para compartir. Fecha relativa a
+        `/precios?producto=<slug>`: más limpio para compartir. Fecha relativa a
         hoy y no absoluta, mismo motivo que `_hace`."""
         desde, hasta = _ventana_default()
         nav = build_product_nav(("Arroz", "Aceite"), None, desde, hasta)
@@ -257,7 +257,7 @@ class TestBuildProductNav:
 
         assert por_label["Arroz"].query == "/producto/arroz"
         assert por_label["Aceite"].query == "/producto/aceite"
-        assert por_label["Todos"].query == f"/?desde={desde.isoformat()}&hasta={hasta.isoformat()}"
+        assert por_label["Todos"].query == f"/precios?desde={desde.isoformat()}&hasta={hasta.isoformat()}"
 
     def test_con_provincia_el_chip_vuelve_al_query_string(self) -> None:
         con_provincia = build_product_nav(
@@ -265,7 +265,7 @@ class TestBuildProductNav:
         )
 
         assert con_provincia[1].query == (
-            f"/?producto=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"/precios?producto=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}"
         )
 
@@ -273,9 +273,11 @@ class TestBuildProductNav:
         nav = build_product_nav(("Arroz",), "Arroz", self.DESDE, self.HASTA)
         por_label = {c.label: c for c in nav}
 
-        assert por_label["Todos"].query == f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        assert por_label["Todos"].query == (
+            f"/precios?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+        )
         assert por_label["Arroz"].query == (
-            f"/?producto=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+            f"/precios?producto=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
         )
 
 
@@ -327,7 +329,7 @@ class TestBuildProductChips:
 
         # Prender Aceite → productos=arroz,aceite (orden de activación).
         assert por_label["Aceite"].query == (
-            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}"
+            f"/precios?productos=arroz,aceite&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
@@ -339,12 +341,12 @@ class TestBuildProductChips:
         por_label = {c.label: c for c in chips}
 
         assert por_label["Arroz"].query == (
-            f"/?productos=arroz,aceite&desde={self.DESDE.isoformat()}"
+            f"/precios?productos=arroz,aceite&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
         chips_uno = self._chips(["Arroz"])
         assert {c.label: c for c in chips_uno}["Arroz"].query == (
-            f"/?productos=arroz&desde={self.DESDE.isoformat()}"
+            f"/precios?productos=arroz&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
@@ -355,7 +357,7 @@ class TestBuildProductChips:
         por_label = {c.label: c for c in chips}
 
         assert por_label["Arroz"].query == (
-            f"/?productos=aceite&desde={self.DESDE.isoformat()}"
+            f"/precios?productos=aceite&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
@@ -364,7 +366,7 @@ class TestBuildProductChips:
         por_label = {c.label: c for c in chips}
 
         assert por_label["Aceite"].query == (
-            f"/?productos=arroz,aceite&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"/precios?productos=arroz,aceite&provincia=la-habana&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
@@ -393,7 +395,7 @@ class TestChipsMultiSeleccionEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         # Ligadura de Material Symbols: el texto es el nombre del ícono.
         assert '<span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span>' in texto
@@ -409,12 +411,12 @@ class TestChipsMultiSeleccionEnLaRuta:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert (
-            f'<a class="ph-chip-toggle is-icon" href="/?productos=arroz&amp;desde={desde.isoformat()}'
+            f'<a class="ph-chip-toggle is-icon" href="/precios?productos=arroz&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" '
-            f'hx-get="/?productos=arroz&amp;desde={desde.isoformat()}'
+            f'hx-get="/precios?productos=arroz&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" data-product="arroz" aria-pressed="false">'
         ) in texto
 
@@ -427,7 +429,7 @@ class TestChipsMultiSeleccionEnLaRuta:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?productos=arroz").text
+        texto = client.get("/precios?productos=arroz").text
 
         panel = texto.split('id="ph-panel-arroz"')[1].split("</aside>")[0]
         assert (
@@ -441,7 +443,7 @@ class TestChipsMultiSeleccionEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?productos=arroz,aceite").text
+        texto = client.get("/precios?productos=arroz,aceite").text
 
         # Dos activos → grilla de tarjetas (no la tabla de un solo producto),
         # acotada a esos dos: Azúcar no aparece como tarjeta.
@@ -456,7 +458,7 @@ class TestChipsMultiSeleccionEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?productos=arroz,aceite").text
+        texto = client.get("/precios?productos=arroz,aceite").text
 
         assert 'aria-pressed="true"><span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span><span class="ph-chip-name">Arroz</span></a>' in texto
         assert 'aria-pressed="true"><span class="m3-icon ph-chip-icon" aria-hidden="true">water_drop</span><span class="ph-chip-name">Aceite</span></a>' in texto
@@ -467,7 +469,7 @@ class TestChipsMultiSeleccionEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?productos=arroz").text
+        texto = client.get("/precios?productos=arroz").text
 
         # Exactamente uno → misma vista enfocada que `?producto=arroz`.
         assert "Arroz por formato y provincia" in texto
@@ -478,7 +480,7 @@ class TestChipsMultiSeleccionEnLaRuta:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?productos=arroz,aceite").text
+        texto = client.get("/precios?productos=arroz,aceite").text
 
         assert (
             f'href="/datos.csv?productos=arroz,aceite&amp;desde={desde.isoformat()}'
@@ -517,7 +519,7 @@ class TestOverflowDeChips:
     ) -> None:
         self._seed(session, ["Arroz", "Aceite", "Azúcar", "Pollo", "Picadillo"])
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'class="ph-chip-overflow"' not in texto
 
@@ -531,7 +533,7 @@ class TestOverflowDeChips:
             ["Aceite", "Arroz", "Azúcar", "Boniato", "Calabaza", "Frijol", "Malanga"],
         )
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'class="ph-chip-overflow"' in texto
         assert 'aria-label="Ver 2 productos más"' in texto
@@ -551,7 +553,7 @@ class TestOverflowDeChips:
             session, ["Aceite", "Arroz", "Azúcar", "Boniato", "Calabaza", "Frijol"]
         )
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'aria-label="Ver 1 producto más"' in texto
 
@@ -569,7 +571,7 @@ class TestDatePickerSiempreVisible:
         desde = date(2026, 8, 1)
         hasta = date(2026, 8, 20)
 
-        texto = client.get(f"/?desde={desde.isoformat()}&hasta={hasta.isoformat()}").text
+        texto = client.get(f"/precios?desde={desde.isoformat()}&hasta={hasta.isoformat()}").text
 
         bloque = texto.split('<form class="ph-window-form"')[1].split("</form>")[0]
         assert f'<input type="date" name="desde" value="{desde.isoformat()}">' in bloque
@@ -583,7 +585,7 @@ class TestDatePickerSiempreVisible:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         bloque = texto.split('<form class="ph-window-form"')[1].split("</form>")[0]
         assert f'<input type="date" name="desde" value="{desde.isoformat()}">' in bloque
@@ -594,8 +596,7 @@ class TestDatePickerSiempreVisible:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get(
-            "/?productos=arroz&provincia=la-habana&ver=cobertura&capa=densidad"
+        texto = client.get("/precios?productos=arroz&provincia=la-habana&ver=cobertura&capa=densidad"
         ).text
 
         bloque = texto.split('<form class="ph-window-form"')[1].split("</form>")[0]
@@ -611,7 +612,7 @@ class TestDatePickerSiempreVisible:
         picker, no reemplazados por él."""
         _seed_dos_productos(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'class="ph-window-shortcuts"' in texto
         # Por prefijo y no por el atributo entero: la lista de clases del
@@ -627,7 +628,7 @@ class TestDatePickerSiempreVisible:
         atajo «30 días» —y solo ese— queda marcado."""
         _seed_dos_productos(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         bloque = texto.split('class="ph-window-shortcuts"')[1].split("</div>")[0]
         assert "ph-window-shortcut" in bloque
@@ -654,7 +655,7 @@ class TestTendenciaEnLaTarjeta:
         _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(40), price="300")
         session.commit()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
         tarjeta = texto.split('class="ph-surface ph-card"')[1].split("</li>")[0]
 
         assert '<div class="ph-cifra-cambio ph-card-trend">+10%' in tarjeta
@@ -674,7 +675,7 @@ class TestTendenciaEnLaTarjeta:
         _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5))
         session.commit()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
         tarjeta = texto.split('class="ph-surface ph-card"')[1].split("</li>")[0]
 
         assert "ph-card-trend" not in tarjeta
@@ -702,7 +703,7 @@ class TestFormatoEnElPanel:
         _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(3), format_id=pomo.id)
         session.commit()
 
-        texto = client.get("/?producto=aceite").text
+        texto = client.get("/precios?producto=aceite").text
         panel = _detalle_de_la_fila(texto, "aceite", "la-habana")
 
         assert panel.count('<section class="ph-dt-fmt"') == 2
@@ -730,7 +731,7 @@ class TestFormatoEnElPanel:
         _precio(session, product=aceite, province=habana, source=fuente, dia=_hace(3), format_id=pomo.id)
         session.commit()
 
-        texto = client.get("/?producto=aceite").text
+        texto = client.get("/precios?producto=aceite").text
         panel = _detalle_de_la_fila(texto, "aceite", "la-habana")
 
         assert panel.index("Botella de 1 L") < panel.index("Pomo de 5 L")
@@ -750,7 +751,7 @@ class TestFormatoEnElPanel:
         _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(4))
         session.commit()
 
-        texto = client.get("/?producto=arroz").text
+        texto = client.get("/precios?producto=arroz").text
         panel = _detalle_de_la_fila(texto, "arroz", "la-habana")
 
         assert panel.count('<section class="ph-dt-fmt"') == 1
@@ -774,7 +775,7 @@ class TestAnunciosEnElPanel:
         _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(5))
         session.commit()
 
-        texto = client.get("/?producto=arroz").text
+        texto = client.get("/precios?producto=arroz").text
         panel = texto.split('id="ph-panel-arroz"')[1].split('<a class="ph-fpanel-detail"')[0]
 
         assert "1 anuncio detrás de esta cifra" in panel
@@ -797,7 +798,7 @@ class TestAnunciosEnElPanel:
         _precio(session, product=arroz, province=santiago, source=fuente, dia=_hace(4))
         session.commit()
 
-        texto = client.get("/?producto=arroz").text
+        texto = client.get("/precios?producto=arroz").text
         habana_html = _detalle_de_la_fila(texto, "arroz", "la-habana")
         santiago_html = _detalle_de_la_fila(texto, "arroz", "santiago-de-cuba")
 
@@ -813,7 +814,7 @@ class TestPanelesFlotantes:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?productos=arroz,aceite").text
+        texto = client.get("/precios?productos=arroz,aceite").text
 
         # Una sola ventana con una pestaña por producto (prototipo B,
         # 2026-09-21), no una pila de paneles.
@@ -827,7 +828,7 @@ class TestPanelesFlotantes:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'class="ph-panel-stack"' not in texto
 
@@ -843,13 +844,13 @@ class TestPanelesFlotantes:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?productos=arroz,aceite").text
+        texto = client.get("/precios?productos=arroz,aceite").text
 
         for slug in ("arroz", "aceite"):
             assert f'role="tab" class="ph-tab-btn" id="ph-tab-{slug}" data-product="{slug}"' in texto
             assert f'role="tabpanel" id="ph-panel-{slug}" data-product="{slug}"' in texto
             assert (
-                f'hx-get="/?productos=arroz,aceite&amp;desde={desde.isoformat()}'
+                f'hx-get="/precios?productos=arroz,aceite&amp;desde={desde.isoformat()}'
                 f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" data-product="{slug}"'
             ) in texto
 
@@ -859,14 +860,14 @@ class TestPanelesFlotantes:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?productos=arroz,aceite").text
+        texto = client.get("/precios?productos=arroz,aceite").text
 
         # El × de Arroz apunta a la vista sin Arroz (queda Aceite), por `href`
         # (fallback) y por `hx-get` (swap parcial).
         assert (
-            f'href="/?productos=aceite&amp;desde={desde.isoformat()}'
+            f'href="/precios?productos=aceite&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" '
-            f'hx-get="/?productos=aceite&amp;desde={desde.isoformat()}'
+            f'hx-get="/precios?productos=aceite&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa"'
         ) in texto
 
@@ -876,13 +877,13 @@ class TestPanelesFlotantes:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?productos=arroz").text
+        texto = client.get("/precios?productos=arroz").text
 
         assert '/static/htmx.min.js?v=' in texto
         assert 'id="ph-live"' in texto
         # Los chips hacen `hx-get` además del `href` de fallback.
         assert (
-            f'hx-get="/?productos=arroz,aceite&amp;desde={desde.isoformat()}'
+            f'hx-get="/precios?productos=arroz,aceite&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa"'
         ) in texto
 
@@ -944,12 +945,12 @@ class TestEnlacesDeProvinciaEnElMapa:
         self._seed(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert (
-            f'href="/?provincia=la-habana&amp;desde={desde.isoformat()}'
+            f'href="/precios?provincia=la-habana&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" '
-            f'hx-get="/?provincia=la-habana&amp;desde={desde.isoformat()}'
+            f'hx-get="/precios?provincia=la-habana&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa"'
         ) in texto
 
@@ -961,7 +962,7 @@ class TestEnlacesDeProvinciaEnElMapa:
         elegir la provincia."""
         self._seed(session)
 
-        texto = client.get("/?provincia=la-habana").text
+        texto = client.get("/precios?provincia=la-habana").text
 
         assert "ph-sheet" not in texto
 
@@ -972,7 +973,7 @@ class TestEnlacesDeProvinciaEnElMapa:
         vacío, muestra el nombre como antes."""
         self._seed(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'aria-pressed="false">Malanga</a>' in texto
 
@@ -1005,7 +1006,7 @@ class TestProvinciasLadoALadoEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?ver=precios").text
+        texto = client.get("/precios?ver=precios").text
         precios = texto.split('id="precios"')[1].split("</section>")[0]
 
         assert 'class="ph-compara"' in precios
@@ -1021,7 +1022,7 @@ class TestProvinciasLadoALadoEnLaRuta:
         apuntando a la hoja en vez del gráfico."""
         self._seed(session)
 
-        texto = client.get("/?ver=precios&provincia=la-habana").text
+        texto = client.get("/precios?ver=precios&provincia=la-habana").text
         precios = texto.split('id="precios"')[1].split("</section>")[0]
 
         assert 'class="ph-compara"' in precios
@@ -1041,7 +1042,7 @@ class TestProvinciasLadoALadoEnLaRuta:
         # provincia; repetirlo en Precios era el mismo dato dos veces.
         self._seed(session)
 
-        texto = client.get("/?ver=precios&productos=arroz").text
+        texto = client.get("/precios?ver=precios&productos=arroz").text
         precios = texto.split('id="precios"')[1].split("</section>")[0]
 
         assert 'class="ph-compara"' not in precios
@@ -1081,7 +1082,7 @@ class TestComoSeMovioEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        evo = self._ventana(client.get("/?ver=evolucion&dias=30").text)
+        evo = self._ventana(client.get("/precios?ver=evolucion&dias=30").text)
 
         assert 'class="ph-pendiente"' in evo
         assert 'class="ph-pasos"' in evo
@@ -1095,7 +1096,7 @@ class TestComoSeMovioEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        evo = self._ventana(client.get("/?ver=evolucion&dias=30").text)
+        evo = self._ventana(client.get("/precios?ver=evolucion&dias=30").text)
 
         # La Habana: antes 280 (1 anuncio), ahora mediana de 300 y 340 = 320
         # (2 anuncios) → 320 / 280 = 1,143 → +14%.
@@ -1109,7 +1110,7 @@ class TestComoSeMovioEnLaRuta:
         # mostrando las 16 aunque hubiera una elegida.
         self._seed(session)
 
-        evo = self._ventana(client.get("/?ver=evolucion&dias=30&provincia=la-habana").text)
+        evo = self._ventana(client.get("/precios?ver=evolucion&dias=30&provincia=la-habana").text)
 
         assert "Arroz" in evo
         assert "Santiago de Cuba" not in evo
@@ -1145,10 +1146,10 @@ class TestBuildViewMenu:
 
         assert por_key["precios"].is_open
         assert por_key["precios"].query == (
-            f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}&vista=mapa"
+            f"/precios?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
         assert por_key["cobertura"].query == (
-            f"/?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
+            f"/precios?desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}"
             "&ver=precios,cobertura&vista=mapa"
         )
 
@@ -1162,7 +1163,7 @@ class TestBuildViewMenu:
         )
 
         assert menu[1].query == (
-            f"/?productos=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"/precios?productos=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}&ver=precios&vista=mapa"
         )
 
@@ -1176,7 +1177,7 @@ class TestVentanasDelMenu:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         for key in ("cobertura", "precios", "evolucion"):
             assert f'id="{key}" aria-labelledby="ph-win-{key}-t" hidden>' in texto
@@ -1186,7 +1187,7 @@ class TestVentanasDelMenu:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?ver=precios,evolucion").text
+        texto = client.get("/precios?ver=precios,evolucion").text
 
         assert 'id="precios" aria-labelledby="ph-win-precios-t">' in texto
         assert 'id="evolucion" aria-labelledby="ph-win-evolucion-t">' in texto
@@ -1198,12 +1199,12 @@ class TestVentanasDelMenu:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?ver=precios").text
+        texto = client.get("/precios?ver=precios").text
 
         assert (
-            f'class="ph-menu-item is-open" href="/?desde={desde.isoformat()}'
+            f'class="ph-menu-item is-open" href="/precios?desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;vista=mapa" '
-            f'hx-get="/?desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
+            f'hx-get="/precios?desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
             f'&amp;vista=mapa" aria-pressed="true"'
         ) in texto
 
@@ -1213,10 +1214,10 @@ class TestVentanasDelMenu:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?ver=precios").text
+        texto = client.get("/precios?ver=precios").text
 
         assert (
-            f'hx-get="/?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
+            f'hx-get="/precios?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
             f'&amp;ver=precios&amp;vista=mapa"'
         ) in texto
 
@@ -1226,10 +1227,10 @@ class TestVentanasDelMenu:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?ver=cobertura").text
+        texto = client.get("/precios?ver=cobertura").text
 
         assert (
-            f'hx-get="/?provincia=la-habana&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
+            f'hx-get="/precios?provincia=la-habana&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
             f'&amp;ver=cobertura&amp;vista=mapa"'
         ) in texto
 
@@ -1239,10 +1240,10 @@ class TestVentanasDelMenu:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?productos=arroz,aceite&ver=precios").text
+        texto = client.get("/precios?productos=arroz,aceite&ver=precios").text
 
         assert (
-            f'hx-get="/?productos=arroz,aceite&amp;provincia=la-habana&amp;desde={desde.isoformat()}'
+            f'hx-get="/precios?productos=arroz,aceite&amp;provincia=la-habana&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;ver=precios&amp;vista=mapa"'
             in texto
         )
@@ -1253,10 +1254,10 @@ class TestVentanasDelMenu:
         _seed_dos_productos(session)
         desde, hasta = _ventana_default()
 
-        texto = client.get("/?productos=arroz&ver=cobertura").text
+        texto = client.get("/precios?productos=arroz&ver=cobertura").text
 
         assert (
-            f'class="ph-fpanel-detail" href="/?productos=arroz&amp;desde={desde.isoformat()}'
+            f'class="ph-fpanel-detail" href="/precios?productos=arroz&amp;desde={desde.isoformat()}'
             f'&amp;hasta={hasta.isoformat()}&amp;ver=cobertura,precios&amp;vista=mapa"'
             in texto
         )
@@ -1272,7 +1273,7 @@ class TestVentanasArrastrables:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?productos=arroz,aceite").text
+        texto = client.get("/precios?productos=arroz,aceite").text
 
         # El panel de precios es una columna anclada (2026-09-21): ya no es
         # una ventana del muelle, así que no lleva `data-win`.
@@ -1294,7 +1295,7 @@ class TestVentanasArrastrables:
         coincidiendo."""
         _seed_dos_productos(session)
 
-        texto = client.get("/?ver=cobertura").text
+        texto = client.get("/precios?ver=cobertura").text
 
         assert 'aria-controls="cobertura"' in texto
         assert 'id="cobertura"' in texto
@@ -1304,7 +1305,7 @@ class TestVentanasArrastrables:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?productos=arroz&ver=precios").text
+        texto = client.get("/precios?productos=arroz&ver=precios").text
 
         # Las 3 ventanas del menú; el panel de precios es una columna anclada
         # (2026-09-21) y ya no se arrastra.
@@ -1320,7 +1321,7 @@ class TestVentanasArrastrables:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?productos=arroz&ver=precios").text
+        texto = client.get("/precios?productos=arroz&ver=precios").text
 
         # Las 3 ventanas del menú: borde derecho, inferior y esquina. El panel
         # de precios anclado no se redimensiona.
@@ -1332,7 +1333,7 @@ class TestVentanasArrastrables:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'classList.add("ph-js")' in texto
         # Va en el bloque de scripts, después de htmx y fuera de `#ph-live`:
@@ -1376,10 +1377,10 @@ class TestBuildProvinceNav:
         por_label = {c.label: c for c in nav}
 
         assert por_label["Todas"].query == (
-            f"/?producto=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}&vista=mapa"
+            f"/precios?producto=arroz&desde={self.DESDE.isoformat()}&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
         assert por_label["La Habana"].query == (
-            f"/?producto=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"/precios?producto=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}&vista=mapa"
         )
 
@@ -1471,7 +1472,7 @@ class TestBuildLayerNav:
         )
         por_slug = {c.slug: c for c in elegidas}
         base = (
-            f"/?productos=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
+            f"/precios?productos=arroz&provincia=la-habana&desde={self.DESDE.isoformat()}"
             f"&hasta={self.HASTA.isoformat()}&ver=cobertura"
         )
 
@@ -1533,11 +1534,11 @@ class TestBuildWindowNav:
         por_dias = {c.days: c for c in nav}
 
         assert por_dias[30].query == (
-            f"/?producto=arroz&desde={desde_30.isoformat()}&hasta={self.HOY.isoformat()}&vista=mapa"
+            f"/precios?producto=arroz&desde={desde_30.isoformat()}&hasta={self.HOY.isoformat()}&vista=mapa"
         )
         desde_7 = self.HOY - timedelta(days=7)
         assert por_dias[7].query == (
-            f"/?producto=arroz&desde={desde_7.isoformat()}&hasta={self.HOY.isoformat()}&vista=mapa"
+            f"/precios?producto=arroz&desde={desde_7.isoformat()}&hasta={self.HOY.isoformat()}&vista=mapa"
         )
 
     def test_preserva_la_vista_tablero_en_el_query(self) -> None:
@@ -1558,7 +1559,7 @@ class TestFiltroEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "Arroz" in texto
         assert "Aceite" in texto
@@ -1573,7 +1574,7 @@ class TestFiltroEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?producto=arroz").text
+        texto = client.get("/precios?producto=arroz").text
 
         # Producto enfocado: tabla por provincia (ver TestTablaPorProvincia).
         # La barra de filtro nombra todos los productos; los datos mostrados son
@@ -1587,7 +1588,7 @@ class TestFiltroEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?producto=azucar-blanca").text
+        texto = client.get("/precios?producto=azucar-blanca").text
 
         assert "Azúcar blanca por formato y provincia" in texto
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
@@ -1598,7 +1599,7 @@ class TestFiltroEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        response = client.get("/?producto=leche-en-polvo")
+        response = client.get("/precios?producto=leche-en-polvo")
 
         assert response.status_code == 200
         # Slug raro → ningún producto activo, todos los chips apagados.
@@ -1610,7 +1611,7 @@ class TestFiltroEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?producto=arroz").text
+        texto = client.get("/precios?producto=arroz").text
 
         assert "La Habana" in texto
         assert "Observaciones por provincia" in texto
@@ -1632,7 +1633,7 @@ class TestFiltroEnLaRuta:
         )
         session.commit()
 
-        response = client.get("/?producto=picadillo")
+        response = client.get("/precios?producto=picadillo")
 
         assert response.status_code == 200
         assert "No hay anuncios de Picadillo" in response.text
@@ -1644,7 +1645,7 @@ class TestFiltroEnLaRuta:
     ) -> None:
         _seed_dos_productos(session)
 
-        response = client.get("/?producto=aceite")
+        response = client.get("/precios?producto=aceite")
 
         assert response.status_code == 200
         # Aceite entra en la tabla por provincia (un día basta) y tiene su cifra
@@ -1689,8 +1690,8 @@ class TestVentanaEnLaRuta:
     ) -> None:
         self._seed_lejano_y_cercano(session)
 
-        texto_30 = client.get("/?producto=arroz&dias=30").text
-        texto_7 = client.get("/?producto=arroz&dias=7").text
+        texto_30 = client.get("/precios?producto=arroz&dias=30").text
+        texto_7 = client.get("/precios?producto=arroz&dias=7").text
 
         assert "Ventana de 30 días" in texto_30
         assert "Ventana de 7 días" in texto_7
@@ -1703,7 +1704,7 @@ class TestVentanaEnLaRuta:
     ) -> None:
         self._seed_lejano_y_cercano(session)
 
-        response = client.get("/?dias=999")
+        response = client.get("/precios?dias=999")
 
         assert response.status_code == 200
         assert "Ventana de 30 días" in response.text
@@ -1713,7 +1714,7 @@ class TestVentanaEnLaRuta:
     ) -> None:
         self._seed_lejano_y_cercano(session)
 
-        texto = client.get("/?dias=90&producto=arroz").text
+        texto = client.get("/precios?dias=90&producto=arroz").text
 
         assert "Ventana de 90 días" in texto
         assert 'aria-current="true">90 días<' in texto
@@ -1759,7 +1760,7 @@ class TestTablaPorProvincia:
     ) -> None:
         self._seed_arroz_dos_provincias(session)
 
-        texto = client.get("/?producto=arroz").text
+        texto = client.get("/precios?producto=arroz").text
 
         assert "ph-provinces" in texto
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
@@ -1771,7 +1772,7 @@ class TestTablaPorProvincia:
     ) -> None:
         self._seed_arroz_dos_provincias(session)
 
-        texto = client.get("/?producto=arroz").text
+        texto = client.get("/precios?producto=arroz").text
         tabla = texto.split("ph-provinces")[1].split("</table>")[0]
         fila_santiago = tabla.split("Santiago de Cuba")[1].split("</tr>")[0]
 
@@ -1785,7 +1786,7 @@ class TestTablaPorProvincia:
         self._seed_arroz_dos_provincias(session)
 
         tabla = (
-            client.get("/?producto=arroz")
+            client.get("/precios?producto=arroz")
             .text.split("ph-provinces")[1]
             .split("</table>")[0]
         )
@@ -1797,7 +1798,7 @@ class TestTablaPorProvincia:
     ) -> None:
         self._seed_arroz_dos_provincias(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "ph-provinces" not in texto
         assert 'class="ph-cards"' in texto
@@ -1842,7 +1843,7 @@ class TestFiltroPorProvinciaEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?provincia=santiago-de-cuba").text
+        texto = client.get("/precios?provincia=santiago-de-cuba").text
 
         # Santiago solo tiene Arroz; Aceite (solo Habana) no aparece.
         assert '<span class="ph-card-product">Arroz</span>' in texto
@@ -1854,7 +1855,7 @@ class TestFiltroPorProvinciaEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?provincia=la-habana&producto=arroz").text
+        texto = client.get("/precios?provincia=la-habana&producto=arroz").text
 
         assert 'aria-current="true">La Habana<' in texto
         assert 'aria-pressed="true"><span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span><span class="ph-chip-name">Arroz</span></a>' in texto
@@ -1871,7 +1872,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         a un ícono ilustrado propio en vez del glifo de Material Symbols."""
         self._seed(session)
 
-        texto = client.get("/?provincia=la-habana&producto=arroz").text
+        texto = client.get("/precios?provincia=la-habana&producto=arroz").text
         ventana = texto.split('class="ph-side ph-tabbed"')[1].split("</aside>")[0]
         # La tabla compara todas las provincias (es para lo que sirve) y la
         # elegida llega expandida; las demás se pueden abrir.
@@ -1892,7 +1893,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         `onEachFeature` la clona con `L.divIcon` (2026-09-13)."""
         self._seed(session)
 
-        texto = client.get("/?provincia=la-habana&producto=arroz").text
+        texto = client.get("/precios?provincia=la-habana&producto=arroz").text
 
         assert 'id="ph-map-badge-la-habana"' in texto
         assert "2 anuncios" in self._insignia(texto, "la-habana")
@@ -1907,7 +1908,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         insignia por cada provincia con dato, no ninguna."""
         self._seed(session)
 
-        texto = client.get("/?producto=arroz").text
+        texto = client.get("/precios?producto=arroz").text
 
         assert "2 anuncios" in self._insignia(texto, "la-habana")
         assert "1 anuncio" in self._insignia(texto, "santiago-de-cuba")
@@ -1919,7 +1920,7 @@ class TestFiltroPorProvinciaEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?provincia=la-habana").text
+        texto = client.get("/precios?provincia=la-habana").text
 
         assert 'id="ph-map-badge-' not in texto
 
@@ -1935,7 +1936,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         self._seed(session)
 
         insignia = self._insignia(
-            client.get("/?provincia=la-habana&productos=arroz,aceite").text,
+            client.get("/precios?provincia=la-habana&productos=arroz,aceite").text,
             "la-habana",
         )
 
@@ -1951,7 +1952,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         self._seed(session)
 
         insignia = self._insignia(
-            client.get("/?provincia=la-habana&producto=arroz").text, "la-habana"
+            client.get("/precios?provincia=la-habana&producto=arroz").text, "la-habana"
         )
 
         assert "ph-map-badge-cluster" not in insignia
@@ -1963,7 +1964,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         elegida, Arroz sí apila su insignia pero Aceite no deja una vacía."""
         self._seed(session)
 
-        texto = client.get("/?provincia=santiago-de-cuba&productos=arroz,aceite").text
+        texto = client.get("/precios?provincia=santiago-de-cuba&productos=arroz,aceite").text
 
         assert self._insignia(texto, "santiago-de-cuba").count('class="ph-map-badge"') == 1
 
@@ -1972,7 +1973,7 @@ class TestFiltroPorProvinciaEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        response = client.get("/?provincia=matanzas")
+        response = client.get("/precios?provincia=matanzas")
 
         assert response.status_code == 200
         assert 'aria-current="true">Todas<' in response.text
@@ -1984,7 +1985,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         session.add(Province(code="mat", name="Matanzas"))
         session.commit()
 
-        response = client.get("/?provincia=matanzas")
+        response = client.get("/precios?provincia=matanzas")
 
         # Matanzas existe pero no tiene fila piloto: 200 y aviso.
         assert response.status_code == 200
@@ -1996,7 +1997,7 @@ class TestFiltroPorProvinciaEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'aria-current="true">Todas<' in texto
 
@@ -2007,7 +2008,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         solo adentro de la ventana «Precios» — mismo `province_nav`."""
         self._seed(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert '<select name="provincia" class="ph-province-select"' in texto
         assert '<option value="" selected>Todas</option>' in texto
@@ -2019,7 +2020,7 @@ class TestFiltroPorProvinciaEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?provincia=santiago-de-cuba").text
+        texto = client.get("/precios?provincia=santiago-de-cuba").text
 
         assert '<option value="santiago-de-cuba" selected>Santiago de Cuba</option>' in texto
         assert '<option value="" selected>' not in texto
@@ -2029,8 +2030,8 @@ class TestFiltroPorProvinciaEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        sin_elegir = client.get("/").text
-        con_elegida = client.get("/?provincia=la-habana").text
+        sin_elegir = client.get("/precios").text
+        con_elegida = client.get("/precios?provincia=la-habana").text
 
         assert '<span class="ph-province-chip">' not in sin_elegir
         assert '<span class="ph-province-chip">' in con_elegida
@@ -2047,8 +2048,7 @@ class TestFiltroPorProvinciaEnLaRuta:
         hoy = date.today()
         desde = hoy - timedelta(days=90)
 
-        texto = client.get(
-            "/?producto=arroz&dias=90&ver=cobertura&capa=densidad"
+        texto = client.get("/precios?producto=arroz&dias=90&ver=cobertura&capa=densidad"
         ).text
         bloque = texto.split('<form class="ph-province-form"')[1].split("</form>")[0]
 
@@ -2188,7 +2188,7 @@ class TestDescargaCsv:
         hoy = date.today()
         desde = hoy - timedelta(days=7)
 
-        texto = client.get("/?producto=arroz&dias=7").text
+        texto = client.get("/precios?producto=arroz&dias=7").text
 
         # Jinja escapa el `&` del atributo href.
         assert (
@@ -2225,7 +2225,7 @@ class TestFrescuraDelDato:
         )
         session.commit()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "Datos verificados hasta el 15/08/2026" in texto
 
@@ -2245,14 +2245,14 @@ class TestFrescuraDelDato:
         # Fecha absoluta a propósito, y vieja a propósito: queda fuera de
         # cualquier ventana razonable, y la línea de frescura igual la muestra.
         # Es lo único de este archivo que NO usa `_hace()`.
-        texto = client.get("/?dias=7").text
+        texto = client.get("/precios?dias=7").text
 
         assert "Datos verificados hasta el 15/08/2026" in texto
 
     def test_sin_dato_no_muestra_la_linea(
         self, client: TestClient, session: Session
     ) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "Datos verificados hasta" not in texto
 
@@ -2260,9 +2260,9 @@ class TestFrescuraDelDato:
 class TestRutaProductoLimpia:
     """`GET /producto/<slug>`: URL dedicada por producto.
 
-    Hasta el 2026-09-14 era alias exacto de `/?producto=<slug>`; desde esa
+    Hasta el 2026-09-14 era alias exacto de `/precios?producto=<slug>`; desde esa
     fecha es la vista LIVIANA (reporte de mejoras no consideradas, idea #5)
-    — sin mapa, sin Leaflet, sin compás ni dock. `/?producto=<slug>` sigue
+    — sin mapa, sin Leaflet, sin compás ni dock. `/precios?producto=<slug>` sigue
     siendo la vista completa e interactiva."""
 
     def _seed(self, session: Session) -> None:
@@ -2374,13 +2374,13 @@ class TestRutaProductoLimpia:
         self, client: TestClient, session: Session
     ) -> None:
         """2026-09-14: `/producto/<slug>` deja de ser un alias exacto de
-        `/?producto=<slug>` — pasa a ser la vista liviana (reporte de
+        `/precios?producto=<slug>` — pasa a ser la vista liviana (reporte de
         mejoras no consideradas, idea #5). La ruta con `?producto=` sigue
         cargando el mapa Leaflet completo; la ruta limpia no."""
         self._seed(session)
 
         limpia = client.get("/producto/arroz").text
-        con_mapa = client.get("/?producto=arroz").text
+        con_mapa = client.get("/precios?producto=arroz").text
 
         assert "leaflet.css" not in limpia
         assert 'id="ph-leaflet-map"' not in limpia
@@ -2400,7 +2400,7 @@ class TestRutaProductoLimpia:
         texto = client.get("/producto/arroz").text
 
         assert (
-            f'href="/?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
+            f'href="/precios?productos=arroz&amp;desde={desde.isoformat()}&amp;hasta={hasta.isoformat()}'
             f'&amp;vista=mapa"'
         ) in texto
         assert "Ver Arroz en el mapa interactivo" in texto
@@ -2411,7 +2411,7 @@ class TestRutaProductoLimpia:
         self._seed(session)
 
         enfocado = client.get("/producto/arroz").text
-        home = client.get("/").text
+        home = client.get("/precios").text
 
         assert "<title>Guani — Arroz — precios</title>" in enfocado
         assert "<title>Guani — Precios y cobertura</title>" in home
@@ -2421,7 +2421,7 @@ class TestRutaProductoLimpia:
     ) -> None:
         """Branding (2026-09-11): «Guani» como nombre cercano/avatar, «SAIMC»
         como nombre técnico al lado — ninguno reemplaza al otro."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "Guani · SAIMC · Fase 0" in texto
         assert 'aria-label="Guani"' in texto  # el avatar del header
@@ -2433,7 +2433,7 @@ class TestRutaProductoLimpia:
         `htmx-request` a `#ph-loading` en cada `hx-get` de `#ph-live` — tiene
         que estar FUERA de ese bloque, si no el `outerHTML` swap lo borra a
         mitad de la animación en vez de apagarlo prolijo."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'hx-indicator="#ph-loading"' in texto
         assert 'class="ph-loading htmx-indicator"' in texto
@@ -2458,7 +2458,7 @@ class TestOpenGraph:
     def test_home_sin_producto_usa_la_descripcion_generica(
         self, client: TestClient
     ) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'property="og:title" content="Guani — Precios y cobertura"' in texto
         assert (
@@ -2488,7 +2488,7 @@ class TestAtribucionTRMI:
     a toda la capa pública sin repetirse por vista."""
 
     def test_el_pie_atribuye_la_trmi_a_eltoque(self, client: TestClient) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "Tasa Representativa del Mercado" in texto
         assert 'href="https://eltoque.com/"' in texto
@@ -2538,7 +2538,7 @@ class TestVarianteEnTarjetaPublica:
         )
         session.commit()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "girasol Vitalín importado" in texto
         assert 'class="ph-card-variant"' in texto
@@ -2589,7 +2589,7 @@ class TestVistaTableroEnLaRuta:
     def test_sin_vista_muestra_el_mapa(self, client: TestClient, session: Session) -> None:
         self._seed(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'id="ph-leaflet-map"' in texto
         assert 'class="ph-dash-table"' not in texto
@@ -2601,7 +2601,7 @@ class TestVistaTableroEnLaRuta:
         y sin la tabla por formato, que vive en el detalle de cada producto."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert 'id="ph-leaflet-map"' not in texto
         assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in texto
@@ -2619,7 +2619,7 @@ class TestVistaTableroEnLaRuta:
         dibuja nada."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert texto.count('class="ph-cel-spark"') == 3
         assert 'aria-hidden="true"' in texto.split('class="ph-cel-spark"')[1][:120]
@@ -2632,7 +2632,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
         client.cookies.set("vista", "tablero")
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'id="ph-leaflet-map"' not in texto
         assert 'class="ph-layout"' in texto
@@ -2645,7 +2645,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
         client.cookies.set("vista", "tablero")
 
-        texto = client.get("/?vista=mapa").text
+        texto = client.get("/precios?vista=mapa").text
 
         assert 'id="ph-leaflet-map"' in texto
 
@@ -2655,7 +2655,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
         client.cookies.set("vista", "satelite")
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'id="ph-leaflet-map"' not in texto
         assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in texto
@@ -2668,7 +2668,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
         client.cookies.delete("vista")
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'id="ph-leaflet-map"' not in texto
         assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in texto
@@ -2681,7 +2681,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
         client.cookies.set("vista", "mapa")
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         enlaces = re.findall(r'<a class="ph-fila" href="([^"]+)"', texto)
 
         assert enlaces
@@ -2696,7 +2696,7 @@ class TestVistaTableroEnLaRuta:
         self._seed(session)
         client.cookies.delete("vista")
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert re.search(r'data-vista="mapa" href="[^"]*vista=mapa', texto)
 
@@ -2708,11 +2708,11 @@ class TestVistaTableroEnLaRuta:
         tablero y en el del dock del mapa."""
         self._seed(session)
 
-        tablero = client.get("/?vista=tablero").text
+        tablero = client.get("/precios?vista=tablero").text
         assert re.search(r'class="js-vista-link[^"]*" data-vista="mapa"', tablero)
         assert re.search(r'class="js-vista-link[^"]*" data-vista="tablero"', tablero)
 
-        mapa = client.get("/").text
+        mapa = client.get("/precios").text
         assert re.search(r'class="ph-menu-item js-vista-link" data-vista="tablero"', mapa)
 
     def test_vista_tablero_respeta_el_filtro_de_producto(
@@ -2723,7 +2723,7 @@ class TestVistaTableroEnLaRuta:
         trae solo los envases del producto elegido."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz").text
+        texto = client.get("/precios?vista=tablero&productos=arroz").text
         panel = texto[texto.index('class="ph-panel ph-envases"') :]
         panel = panel[: panel.index("</section>")]
 
@@ -2733,7 +2733,7 @@ class TestVistaTableroEnLaRuta:
     def test_una_vista_invalida_cae_al_tablero(self, client: TestClient, session: Session) -> None:
         self._seed(session)
 
-        respuesta = client.get("/?vista=satelite")
+        respuesta = client.get("/precios?vista=satelite")
 
         assert respuesta.status_code == 200
         assert 'id="ph-leaflet-map"' not in respuesta.text
@@ -2744,7 +2744,7 @@ class TestVistaTableroEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz&provincia=la-habana").text
+        texto = client.get("/precios?vista=tablero&productos=arroz&provincia=la-habana").text
 
         # Los enlaces del selector de vistas llevan SIEMPRE `vista=` explícita
         # (2026-09-26): sin ella manda la cookie, y una cookie vieja abriría
@@ -2752,7 +2752,7 @@ class TestVistaTableroEnLaRuta:
         toggle = re.search(r'<a class="js-vista-link[^>]*data-vista="mapa"[^>]*href="([^"]+)"', texto)
         assert toggle is not None
         assert "vista=mapa" in toggle.group(1)
-        assert 'href="/?productos=arroz&amp;provincia=la-habana' in texto
+        assert 'href="/precios?productos=arroz&amp;provincia=la-habana' in texto
         assert 'aria-current="true">Tablero</a>' in texto
 
     def test_el_enlace_al_tablero_esta_en_el_dock_del_mapa_y_preserva_el_filtro(
@@ -2760,9 +2760,9 @@ class TestVistaTableroEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?productos=arroz").text
+        texto = client.get("/precios?productos=arroz").text
 
-        assert re.search(r'href="/\?productos=arroz[^"]*vista=tablero[^"]*"', texto)
+        assert re.search(r'href="/precios\?productos=arroz[^"]*vista=tablero[^"]*"', texto)
 
     def test_el_color_de_provincia_distingue_las_que_tienen_dato(
         self, client: TestClient, session: Session
@@ -2776,7 +2776,7 @@ class TestVistaTableroEnLaRuta:
         grupos de «Por envase» (antes, cada fila de la tabla)."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz").text
+        texto = client.get("/precios?vista=tablero&productos=arroz").text
 
         assert 'class="ph-envases-prov ph-prov-0"' in texto
         assert 'class="ph-envases-prov ph-prov-1"' in texto
@@ -2790,7 +2790,7 @@ class TestVistaTableroEnLaRuta:
         —no depende del filtro activo— con el elegido marcado."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz").text
+        texto = client.get("/precios?vista=tablero&productos=arroz").text
         nav = texto[texto.index('<nav class="ph-nav') : texto.index("</nav>")]
 
         assert re.search(r'class="ph-nav-item is-active" href="[^"]+" aria-current="true">Arroz', nav)
@@ -2804,7 +2804,7 @@ class TestVistaTableroEnLaRuta:
         los productos» la vacía (lista vacía = parámetro ausente)."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz").text
+        texto = client.get("/precios?vista=tablero&productos=arroz").text
         aceite = re.search(r'<a class="ph-nav-item" href="([^"]+)">Aceite', texto)
         todos = re.search(r'<a class="ph-back" href="([^"]+)"', texto)
 
@@ -2821,7 +2821,7 @@ class TestVistaTableroEnLaRuta:
         hay cambio que mostrar."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         fila = re.search(r'<span class="ph-fila-nombre">Arroz</span>[\s\S]*?</a>', texto)
 
         assert fila is not None
@@ -2837,7 +2837,7 @@ class TestVistaTableroEnLaRuta:
         existe en ningún lado. Un test que no puede fallar no protege nada."""
         self._seed(session)
 
-        assert 'class="ph-fila' not in client.get("/").text
+        assert 'class="ph-fila' not in client.get("/precios").text
 
     def test_el_selector_sigue_visible_aunque_la_provincia_no_tenga_dato(
         self, client: TestClient, session: Session
@@ -2847,7 +2847,7 @@ class TestVistaTableroEnLaRuta:
         fila lo dice y el selector sigue ahí para volver a «Todas»."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
+        texto = client.get("/precios?vista=tablero&provincia=santiago-de-cuba").text
         aceite = re.search(r'<span class="ph-fila-nombre">Aceite</span>[\s\S]*?</a>', texto)
 
         assert aceite is not None and "sin datos todavía" in aceite.group(0)
@@ -2862,7 +2862,7 @@ class TestVistaTableroEnLaRuta:
         con Santiago en «sin datos todavía» y La Habana con su cifra."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
+        texto = client.get("/precios?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
         resumen = texto[texto.index('class="ph-panel ph-resumen"') :]
         resumen = resumen[: resumen.index("</section>")]
 
@@ -2875,7 +2875,7 @@ class TestVistaTableroEnLaRuta:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&provincia=santiago-de-cuba").text
+        texto = client.get("/precios?vista=tablero&provincia=santiago-de-cuba").text
         filtros = texto[texto.index('id="mi-provincia-etiqueta"') :]
 
         assert re.search(
@@ -2890,7 +2890,7 @@ class TestVistaTableroEnLaRuta:
         trayendo el atributo aunque el tablero ya no use tarjetas."""
         self._seed(session)
 
-        texto = client.get("/?ver=precios").text
+        texto = client.get("/precios?ver=precios").text
 
         assert "data-buscar=" in texto
 
@@ -2903,7 +2903,7 @@ class TestVistaTableroEnLaRuta:
         inline; se llega desde ahí a `/producto/<slug>`, que sí lo trae."""
         self._seed(session)
 
-        texto = client.get("/?ver=precios").text
+        texto = client.get("/precios?ver=precios").text
 
         assert "ph-evo-anuncios" in texto
         assert re.search(r'href="/anuncio/[^"]+">ver anuncio</a>', texto)
@@ -2929,7 +2929,7 @@ class TestAccionesYCoberturaEnElTablero:
     def test_el_avatar_sigue_en_la_cabecera(self, client: TestClient, session: Session) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert 'class="ph-top-brand"' in texto
         assert '<span class="ph-wordmark">Guani</span>' in texto
@@ -2944,7 +2944,7 @@ class TestAccionesYCoberturaEnElTablero:
         qué. Es una viñeta de «Sobre los datos», no un panel aparte."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         bloque = texto[texto.index('id="datos-titulo"') :]
 
         assert "ver=cobertura" not in texto
@@ -2960,7 +2960,7 @@ class TestAccionesYCoberturaEnElTablero:
         mapa (`?ver=evolucion&vista=mapa`) se retira."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert "ver=evolucion" not in texto
 
@@ -2969,7 +2969,7 @@ class TestAccionesYCoberturaEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         bloque = texto[texto.index('id="datos-titulo"') :]
 
         assert re.search(r'href="/datos\.csv\?desde=[^"]+"', bloque)
@@ -2979,7 +2979,7 @@ class TestAccionesYCoberturaEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert 'class="ph-dash-action ph-tap-44 theme-toggle"' in texto
 
@@ -2989,7 +2989,7 @@ class TestAccionesYCoberturaEnElTablero:
         """El compás del mapa ya tiene sus propias acciones."""
         self._seed(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "ph-dash-actions" not in texto
 
@@ -3037,7 +3037,7 @@ class TestMiProvinciaEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         desde = texto.index('id="mi-provincia-etiqueta"')
         arriba = texto[desde : texto.index('<section class="ph-panel ph-lista"')]
 
@@ -3051,7 +3051,7 @@ class TestMiProvinciaEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert 'aria-label="Provincia"' not in texto
         assert texto.count('data-provincia="santiago-de-cuba"') == 1
@@ -3061,7 +3061,7 @@ class TestMiProvinciaEnElTablero:
     ) -> None:
         self._seed(session)
 
-        lista = self._lista(client.get("/?vista=tablero&provincia=santiago-de-cuba").text)
+        lista = self._lista(client.get("/precios?vista=tablero&provincia=santiago-de-cuba").text)
 
         assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]  # Aceite, Arroz
         assert self._cabecera(lista) == ["Santiago de Cuba"]  # la cabecera sigue a la elegida
@@ -3073,7 +3073,7 @@ class TestMiProvinciaEnElTablero:
     ) -> None:
         self._seed(session)
 
-        lista = self._lista(client.get("/?vista=tablero").text)
+        lista = self._lista(client.get("/precios?vista=tablero").text)
 
         assert len(self._columnas(lista)) == 4  # dos filas, dos provincias cada una
         assert self._cabecera(lista) == ["La Habana", "Santiago de Cuba"]  # una sola vez
@@ -3085,7 +3085,7 @@ class TestMiProvinciaEnElTablero:
         self._seed(session)
         client.cookies.set("provincia", "santiago-de-cuba")
 
-        lista = self._lista(client.get("/?vista=tablero").text)
+        lista = self._lista(client.get("/precios?vista=tablero").text)
 
         assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]
         assert "ph-otras" in lista
@@ -3098,7 +3098,7 @@ class TestMiProvinciaEnElTablero:
         client.cookies.delete("vista")
         client.cookies.set("provincia", "santiago-de-cuba")
 
-        lista = self._lista(client.get("/").text)
+        lista = self._lista(client.get("/precios").text)
 
         assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]
 
@@ -3108,7 +3108,7 @@ class TestMiProvinciaEnElTablero:
         self._seed(session)
         client.cookies.set("provincia", "santiago-de-cuba")
 
-        lista = self._lista(client.get("/?vista=tablero&provincia=la-habana").text)
+        lista = self._lista(client.get("/precios?vista=tablero&provincia=la-habana").text)
 
         assert self._columnas(lista) == ["La Habana", "La Habana"]
 
@@ -3118,17 +3118,17 @@ class TestMiProvinciaEnElTablero:
         self._seed(session)
         client.cookies.set("provincia", "narnia")
 
-        r = client.get("/?vista=tablero")
+        r = client.get("/precios?vista=tablero")
 
         assert r.status_code == 200
         assert len(self._columnas(self._lista(r.text))) == 4
 
     def test_la_cookie_no_toca_el_mapa(self, client: TestClient, session: Session) -> None:
         self._seed(session)
-        sin_cookie = client.get("/?vista=mapa").text
+        sin_cookie = client.get("/precios?vista=mapa").text
         client.cookies.set("provincia", "santiago-de-cuba")
 
-        con_cookie = client.get("/?vista=mapa").text
+        con_cookie = client.get("/precios?vista=mapa").text
 
         assert con_cookie == sin_cookie
 
@@ -3140,7 +3140,7 @@ class TestMiProvinciaEnElTablero:
         enlace ajeno."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert "a[data-provincia]" in texto
         assert 'document.cookie = "provincia="' in texto
@@ -3178,7 +3178,7 @@ class TestBuscadorYListaCompacta:
         session.commit()
 
     def _todos(self, client: TestClient) -> str:
-        return str(client.get("/?vista=tablero").text)
+        return str(client.get("/precios?vista=tablero").text)
 
     def test_cada_fila_lleva_su_nombre_plegado_para_el_buscador(
         self, client: TestClient, session: Session
@@ -3298,7 +3298,7 @@ class TestBuscadorYListaCompacta:
         al detalle tampoco se le manda el script."""
         self._seed(session)
 
-        for url in ("/?vista=mapa", "/?vista=tablero&productos=arroz"):
+        for url in ("/precios?vista=mapa", "/precios?vista=tablero&productos=arroz"):
             texto = client.get(url).text
             assert 'id="buscar"' not in texto, url
             assert "var caja = document.getElementById" not in texto, url
@@ -3366,7 +3366,7 @@ class TestSobreLosDatosEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         bloque = self._bloque(texto)
 
         assert ">Sobre los datos</h2>" in bloque
@@ -3384,7 +3384,7 @@ class TestSobreLosDatosEnElTablero:
         enlace con texto en «Sobre los datos»."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         inicio = texto.index('<header class="ph-top">')
         cabecera = texto[inicio : texto.index("</header>", inicio)]
 
@@ -3398,7 +3398,7 @@ class TestSobreLosDatosEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert texto.count("«(base N)»") == 1
         assert "«(base N)»" in self._bloque(texto)
@@ -3415,7 +3415,7 @@ class TestSobreLosDatosEnElTablero:
         test cuida: si mañana se cae, §9.0 queda sin cubrir."""
         self._seed(session)
 
-        for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
+        for url in ("/precios?vista=tablero", "/precios?vista=tablero&productos=arroz"):
             texto = client.get(url).text
             datos = self._bloque(texto)
 
@@ -3432,7 +3432,7 @@ class TestSobreLosDatosEnElTablero:
         vez de mentir, y eso lo prueba `tests/test_watchlist_view.py`."""
         self._seed(session)
 
-        for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
+        for url in ("/precios?vista=tablero", "/precios?vista=tablero&productos=arroz"):
             datos = self._bloque(client.get(url).text)
 
             assert "<strong>mediana</strong> en CUP por libra: la única comparable" in datos, url
@@ -3455,7 +3455,7 @@ class TestSobreLosDatosEnElTablero:
         )
         session.commit()
 
-        datos = self._bloque(client.get("/?vista=tablero").text)
+        datos = self._bloque(client.get("/precios?vista=tablero").text)
 
         assert "<strong>mediana</strong> en CUP por libra o por litro: la única" in datos
 
@@ -3471,7 +3471,7 @@ class TestSobreLosDatosEnElTablero:
         el crédito tiene que llegar igual."""
         self._seed(session)
 
-        for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
+        for url in ("/precios?vista=tablero", "/precios?vista=tablero&productos=arroz"):
             texto = client.get(url).text
 
             assert 'class="m3-public-foot"' not in texto, url
@@ -3484,7 +3484,7 @@ class TestSobreLosDatosEnElTablero:
         el pie entero y el rótulo «muestra en formación»."""
         self._seed(session)
 
-        texto = client.get("/?vista=mapa").text
+        texto = client.get("/precios?vista=mapa").text
 
         assert 'class="m3-public-foot"' in texto
         assert "naturalearthdata.com" in texto
@@ -3498,7 +3498,7 @@ class TestSobreLosDatosEnElTablero:
         la viñeta «Datos hasta el…: hace N días no entran anuncios nuevos»."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert texto.count("Datos verificados hasta el") == 1  # el chip
         assert 'class="ph-fresh"' in texto
@@ -3511,7 +3511,7 @@ class TestSobreLosDatosEnElTablero:
         tiñe. `_seed` deja precios de hace días, o sea atrasado."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert 'class="ph-fresh" data-nivel="atrasado"' in texto
 
@@ -3520,7 +3520,7 @@ class TestSobreLosDatosEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert ".ph-lista[data-entra]" in texto
         assert 'matchMedia("(prefers-reduced-motion: reduce)")' in texto
@@ -3532,7 +3532,7 @@ class TestSobreLosDatosEnElTablero:
         cuenta su cifra."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz").text
+        texto = client.get("/precios?vista=tablero&productos=arroz").text
 
         assert re.search(r'class="ph-panel ph-resumen"[^>]* data-cuenta', texto)
         assert ".ph-resumen[data-cuenta]" in texto
@@ -3542,7 +3542,7 @@ class TestSobreLosDatosEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz").text
+        texto = client.get("/precios?vista=tablero&productos=arroz").text
 
         assert " data-entra" not in texto
 
@@ -3560,7 +3560,7 @@ class TestSobreLosDatosEnElTablero:
         _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(45))
         session.commit()
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert 'class="ph-fresh" data-nivel="viejo"' in texto
         assert "las cifras pueden estar desactualizadas" in texto
@@ -3571,7 +3571,7 @@ class TestSobreLosDatosEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert "desactualizadas" not in texto
 
@@ -3586,14 +3586,14 @@ class TestSobreLosDatosEnElTablero:
         _precio(session, product=arroz, province=habana, source=fuente, dia=_hace(0))
         session.commit()
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert 'class="ph-fresh" data-nivel="hoy"' in texto
 
     def test_el_mapa_no_cambia(self, client: TestClient, session: Session) -> None:
         self._seed(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "Sobre los datos" not in texto
         assert 'id="datos-titulo"' not in texto
@@ -3635,14 +3635,14 @@ class TestDetalleDeProductoEnElTablero:
     ) -> None:
         self._seed(session)
 
-        assert 'class="ph-panel ph-resumen"' not in client.get("/?vista=tablero").text
+        assert 'class="ph-panel ph-resumen"' not in client.get("/precios?vista=tablero").text
 
     def test_con_un_producto_elegido_aparecen_como_se_movio_y_cuanto_varia(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
 
         assert 'class="ph-pasos"' in detalle  # «Cómo se movió»
         # `pathLength` deja dibujar la línea con `stroke-dasharray` (2026-09-26).
@@ -3660,7 +3660,7 @@ class TestDetalleDeProductoEnElTablero:
         Habana es la más barata."""
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
         resumen = detalle[detalle.index('class="ph-panel ph-resumen"') :]
         resumen = resumen[: resumen.index("</section>")]
 
@@ -3674,7 +3674,7 @@ class TestDetalleDeProductoEnElTablero:
     ) -> None:
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
 
         assert "Aceite" not in detalle
 
@@ -3687,7 +3687,7 @@ class TestDetalleDeProductoEnElTablero:
         los de hace 40 y 45 son del período anterior y no entran."""
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
 
         assert 'class="ph-panel ph-anuncios"' in detalle
         assert "Los 3 anuncios de la ventana" in detalle
@@ -3699,7 +3699,7 @@ class TestDetalleDeProductoEnElTablero:
         muestra las tarjetas de todos, sin detalle."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz,aceite").text
+        texto = client.get("/precios?vista=tablero&productos=arroz,aceite").text
 
         assert 'class="ph-panel ph-resumen"' not in texto
         assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in texto
@@ -3710,7 +3710,7 @@ class TestDetalleDeProductoEnElTablero:
         self._seed(session)
 
         detalle = self._detalle(
-            client.get("/?vista=tablero&productos=arroz&provincia=santiago-de-cuba").text
+            client.get("/precios?vista=tablero&productos=arroz&provincia=santiago-de-cuba").text
         )
 
         assert "<strong>La Habana</strong> es la más barata" in detalle
@@ -3728,8 +3728,8 @@ class TestDetalleDeProductoEnElTablero:
         vacía que duplica el aire."""
         self._seed(session)
 
-        todos = client.get("/?vista=tablero").text
-        detalle = client.get("/?vista=tablero&productos=arroz").text
+        todos = client.get("/precios?vista=tablero").text
+        detalle = client.get("/precios?vista=tablero&productos=arroz").text
 
         assert '<nav class="ph-nav' not in todos
         assert '<div class="ph-layout">' in todos
@@ -3759,7 +3759,7 @@ class TestGraficosComoElPrototipo:
         último anuncio doce días atrás, prometiendo dato que no existe."""
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
         nota = detalle[detalle.index("La última semana llega hasta el") :]
 
         assert _hace(3).strftime("%d/%m") in nota[:60]
@@ -3772,7 +3772,7 @@ class TestGraficosComoElPrototipo:
         es cada tinta lo dice la leyenda, que por eso deja de ser opcional."""
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
 
         assert "ph-pasos-etq" not in detalle
         assert 'class="ph-leyenda"' in detalle
@@ -3788,7 +3788,7 @@ class TestGraficosComoElPrototipo:
         hace 3 y 4—, que empiezan hace 13 y hace 6 días."""
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
         pasos = detalle[detalle.index('class="ph-pasos"') : detalle.index("</svg>")]
         fechas = re.findall(r'text-anchor="middle">([^<]+)</text>', pasos)
 
@@ -3804,7 +3804,7 @@ class TestGraficosComoElPrototipo:
         anuncios la sostienen sigue en el `title` de la fila."""
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
         compara = detalle[detalle.index('class="ph-compara"') :]
         compara = compara[: compara.index("</svg>")]
 
@@ -3821,7 +3821,7 @@ class TestGraficosComoElPrototipo:
         «Cuánto varía» era todo de un color y la leyenda no explicaba nada."""
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
 
         def tintas(marca: str, clase: str, corte: str) -> dict[str, str]:
             """Provincia → clase de color, leyendo el primer `title` de cada
@@ -3852,7 +3852,7 @@ class TestGraficosComoElPrototipo:
         que la leyenda es un recordatorio del color, no la identificación."""
         self._seed(session)
 
-        detalle = self._detalle(client.get("/?vista=tablero&productos=arroz").text)
+        detalle = self._detalle(client.get("/precios?vista=tablero&productos=arroz").text)
         varia = detalle[detalle.index(">Cuánto varía</h2>") :]
         movio = detalle[detalle.index(">Cómo se movió</h2>") : detalle.index(">Cuánto varía</h2>")]
 
@@ -3898,7 +3898,7 @@ class TestCambioUnicoEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz").text
+        texto = client.get("/precios?vista=tablero&productos=arroz").text
         panel = texto[texto.index('class="ph-panel ph-envases"') :]
         panel = panel[: panel.index("</section>")]
 
@@ -3913,7 +3913,7 @@ class TestCambioUnicoEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         fila = re.search(r'<span class="ph-fila-nombre">Arroz</span>[\s\S]*?</a>', texto)
 
         assert fila is not None
@@ -3926,7 +3926,7 @@ class TestCambioUnicoEnElTablero:
         «Precios» del mapa: el arreglo llega a las dos vistas."""
         self._seed(session)
 
-        texto = client.get("/?ver=precios").text
+        texto = client.get("/precios?ver=precios").text
 
         assert "+10%" in texto
         assert "−9%" not in texto
@@ -3966,7 +3966,7 @@ class TestUnaSolaMedianaEnElTablero:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         fila = re.search(r'<span class="ph-fila-nombre">Arroz</span>[\s\S]*?</a>', texto)
 
         assert fila is not None
@@ -3996,7 +3996,7 @@ class TestListaAbsorbeLaTira:
         session.commit()
 
     def _fila(self, session: Session, client: TestClient) -> str:
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
         fila = re.search(r'<span class="ph-fila-nombre">Arroz</span>[\s\S]*?</a>', texto)
         assert fila is not None
         return str(fila.group(0))
@@ -4066,7 +4066,7 @@ class TestListaAbsorbeLaTira:
         que se vigila acá es que no vuelva el de S5 (`tablero-q`)."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         for resto in ("ph-strips", "ph-strip-cell", "ph-ticker-item", "tablero-q", "<th>Cambio</th>"):
             assert resto not in texto, resto
@@ -4104,7 +4104,7 @@ class TestPorEnvaseEnElDetalle:
         session.commit()
 
     def _por_envase(self, client: TestClient) -> str:
-        texto = str(client.get("/?vista=tablero&productos=arroz").text)
+        texto = str(client.get("/precios?vista=tablero&productos=arroz").text)
         inicio = texto.index('class="ph-panel ph-envases"')
         return texto[inicio : texto.index("</section>", inicio)]
 
@@ -4113,7 +4113,7 @@ class TestPorEnvaseEnElDetalle:
     ) -> None:
         self._seed(session)
 
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert 'class="ph-panel ph-envases"' not in texto
         assert "<table" not in texto
@@ -4158,7 +4158,7 @@ class TestPorEnvaseEnElDetalle:
         compara todas, así que «Por envase» trae los dos grupos."""
         self._seed(session)
 
-        texto = client.get("/?vista=tablero&productos=arroz&provincia=santiago-de-cuba").text
+        texto = client.get("/precios?vista=tablero&productos=arroz&provincia=santiago-de-cuba").text
         panel = texto[texto.index('class="ph-panel ph-envases"') :]
         panel = panel[: panel.index("</section>")]
 
@@ -4333,7 +4333,7 @@ class TestPorEnvaseEnElDetalle:
         del tablero, no de una. En el mapa sigue."""
         self._seed(session)
 
-        for url in ("/?vista=tablero", "/?vista=tablero&productos=arroz"):
+        for url in ("/precios?vista=tablero", "/precios?vista=tablero&productos=arroz"):
             assert "muestra en formación" not in client.get(url).text, url
 
 
@@ -4354,7 +4354,7 @@ class TestFormulariosDelMapaConservanLaVista:
     ) -> None:
         _seed_dos_productos(session)
 
-        texto = client.get("/?vista=mapa").text
+        texto = client.get("/precios?vista=mapa").text
 
         assert '<input type="hidden" name="vista" value="mapa">' in self._formulario(texto, clase)
 
@@ -4366,8 +4366,7 @@ class TestFormulariosDelMapaConservanLaVista:
         _seed_dos_productos(session)
         client.cookies.delete("vista")
 
-        texto = client.get(
-            "/?vista=mapa&desde=2026-09-01&hasta=2026-09-10&capa=precio"
+        texto = client.get("/precios?vista=mapa&desde=2026-09-01&hasta=2026-09-10&capa=precio"
         ).text
 
         assert 'id="ph-leaflet-map"' in texto

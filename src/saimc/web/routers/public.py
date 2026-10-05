@@ -2,7 +2,8 @@
 
 `spec.md` §9 pone «Visualización: Prototipo de mapa de calor simple y tarjetas
 de producto» dentro del alcance de la **Fase 0** (`decisions.md`, 2026-08-22).
-Hoy `GET /` tiene: mapa de cobertura por provincia (§9.0), tarjetas de rango
+Desde el 2026-10-05 `GET /` es la landing (`public_landing`) y la home de
+precios vive en `GET /precios`, que tiene: mapa de cobertura por provincia (§9.0), tarjetas de rango
 minorista con muestra visible, gráfico de evolución, y filtros por producto,
 provincia y ventana de días vía query string (`?producto=`, `?provincia=`,
 `?dias=`, 2026-08-26). El coloreado del **mapa** por precio y los **semáforos**
@@ -27,11 +28,12 @@ from datetime import date, timedelta
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.cells import compute_retail_observations, compute_retail_ranges
+from saimc.config import get_settings
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
 from saimc.progress import pilot_product_names
 from saimc.web.card_view import (
@@ -49,6 +51,7 @@ from saimc.web.explore_view import (
     build_explore_nav,
     build_explore_products,
 )
+from saimc.web.landing_view import build_footer_links, build_landing_price
 from saimc.web.map_view import build_map
 from saimc.web.panel_view import (
     ProductPanel,
@@ -66,6 +69,8 @@ from saimc.web.price_charts import (
     build_range_series,
 )
 from saimc.web.product_nav import (
+    HOME_PATH,
+    HOME_QUERY_PARAMS,
     build_layer_nav,
     build_product_chips,
     build_province_nav,
@@ -878,7 +883,69 @@ def _render_explore(
     return respuesta
 
 
+#: Tiles de «Entra por donde quieras»: una por vista de `/precios`, más la
+#: descarga. `vista` va explícita para que la cookie no decida por el visitante
+#: (mismo motivo que en `product_nav._query`).
+_LANDING_VIEW_TILES: tuple[tuple[str, str, str, str], ...] = (
+    (f"{HOME_PATH}?vista=tablero", "sell", "Precios de hoy", "El tablero completo."),
+    (f"{HOME_PATH}?vista=mapa", "map", "Mapa", "Provincia por provincia."),
+    (f"{HOME_PATH}?vista=explorar", "show_chart", "Explorar", "Cómo se movió cada precio."),
+    ("/datos.csv", "download", "Datos (CSV)", "Abiertos para descargar."),
+)
+
+
 @router.get("/", response_class=HTMLResponse)
+def public_landing(request: Request, db: Session = Depends(get_db)) -> Response:
+    """Landing: qué es Guani, antes de cualquier cifra (2026-10-05,
+    `docs/decisions.md`). La home de precios se mudó a `/precios`.
+
+    **Compatibilidad con lo ya compartido.** Hasta ese día `/` era la home, y
+    hay enlaces dando vueltas por WhatsApp con sus parámetros
+    (`/?vista=mapa&productos=arroz`). Si la petición trae cualquiera de los
+    parámetros que la home entiende (`HOME_QUERY_PARAMS`), se redirige a
+    `/precios` con el query string entero. Es 307 y no 301 a propósito: un
+    navegador guarda un 301 para siempre, y esta regla tiene que poder
+    cambiar. Sin ninguno de esos parámetros se muestra la landing, aunque
+    existan las cookies `vista` o `provincia`: son preferencias del tablero,
+    no un pedido de ir a él. Un parámetro ajeno (`?fbclid=…`, que agregan las
+    redes al compartir) tampoco redirige.
+
+    Lo único que sale de la base son los productos piloto y la celda de
+    ejemplo de «Así se lee un precio» (`landing_view`), con las mismas
+    observaciones y la misma ventana por defecto que el tablero. Sin datos la
+    página se sirve igual, sin cifras.
+    """
+    if HOME_QUERY_PARAMS.intersection(request.query_params.keys()):
+        return RedirectResponse(f"{HOME_PATH}?{request.url.query}", status_code=307)
+
+    pilot_names = pilot_product_names(db)
+    desde, hasta = resolve_window(None, None, None)
+    observations = _visible_observations(
+        db, pilot=frozenset(pilot_names), products=None, province=None, desde=desde, hasta=hasta
+    )
+    products = [
+        (name, products_query([product_slug(name)], desde=desde, hasta=hasta, vista="tablero"))
+        for name in pilot_names
+    ]
+    return cast(
+        HTMLResponse,
+        request.app.state.templates.TemplateResponse(
+            request,
+            "public_landing.html",
+            {
+                "home_href": HOME_PATH,
+                "price": build_landing_price(observations),
+                "products": products,
+                "view_tiles": _LANDING_VIEW_TILES,
+                "window_days": (hasta - desde).days,
+                "footer_links": build_footer_links(get_settings()),
+                "year": date.today().year,
+            },
+        ),
+    )
+
+
+@router.get(HOME_PATH, response_class=HTMLResponse)
 def public_home(
     request: Request,
     producto: str | None = None,
@@ -893,7 +960,9 @@ def public_home(
     pestana: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """Home pública. `productos` (multi-selección de chips), `producto` (alias de
+    """Home de precios (`/precios`; hasta el 2026-10-05 vivía en `/`, que ahora
+    es la landing y redirige acá los enlaces viejos con parámetros).
+    `productos` (multi-selección de chips), `producto` (alias de
     uno), `provincia`, `desde`/`hasta` (rango de calendario del date picker,
     2026-09-14; `dias` sigue aceptándose como alias de compatibilidad —ver
     `resolve_window`—), `ver` (ventanas flotantes abiertas), `capa`
@@ -954,7 +1023,7 @@ def public_product(
     Vista liviana a propósito (2026-09-14, reporte de mejoras no
     consideradas, idea #5): sin mapa, sin Leaflet, sin compás ni dock —
     reemplaza el mapa de 147 KB + tiles en vivo por un enlace hacia él, para
-    quien lo quiera. `/?producto=<slug>` sigue siendo la vista completa e
+    quien lo quiera. `/precios?producto=<slug>` sigue siendo la vista completa e
     interactiva; dejó de ser lo mismo que esta ruta (docs/decisions.md,
     entrada que reemplaza a la del mismo día que la registraba como
     candidato sin implementar).
@@ -1047,7 +1116,7 @@ def public_data_csv(
     db: Session = Depends(get_db),
 ) -> Response:
     """La evidencia detrás de la vista pública, en CSV, con los mismos tres
-    filtros que `GET /`.
+    filtros que `GET /precios`.
 
     Apartamiento anotado de §9 (`docs/decisions.md`, 2026-08-26): la sección
     acota el alcance a «mapa de calor simple y tarjetas de producto», y un

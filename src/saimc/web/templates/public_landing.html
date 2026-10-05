@@ -1,0 +1,443 @@
+{#
+  Landing (`GET /`, 2026-10-05, `docs/decisions.md`). Lo primero que ve quien
+  llega en frío: qué es Guani, cómo trabaja y por dónde entrar a los precios
+  (`/precios`).
+
+  Maqueta aprobada en Claude Design: `docs/prototipos/landing-guani-b.dc.html`.
+  De ese archivo salen el marcado, los colores, las animaciones y el texto. Lo
+  que cambia al traerlo a producción:
+
+  - Los estilos en línea del prototipo son clases con prefijo `lp-`. Queda en
+    línea solo lo que depende del dato: la posición de cada punto y de la
+    mediana en «Así se lee un precio».
+  - Nada se pide a una red ajena. Las fuentes son las vendorizadas de
+    `saimc-public.css` y los iconos, la clase `m3-icon` del subconjunto local.
+    Tres iconos del prototipo no están en ese subconjunto (`location_on`,
+    `arrow_forward`, `storefront`) y van como SVG en línea.
+  - Ninguna cifra de relleno. La tarjeta de precio y los globos de la portada
+    salen de `price` (`landing_view.LandingPrice`); sin él se dibuja la
+    ilustración sin números. Productos, contacto, redes y año llegan del
+    router.
+  - Los colores son los tokens de `design_tokens.css`, no los hex del
+    prototipo (que son esos mismos tokens en claro): `test_static_assets`
+    prohíbe un color a mano en el CSS de una plantilla. De regalo la página
+    sigue el modo oscuro, aunque no trae el botón para cambiarlo. Por eso las
+    ilustraciones se pintan con clases `lp-f-*` y no con `fill="#…"`.
+  - Sin JavaScript: todas las animaciones son CSS, y respetan
+    `prefers-reduced-motion`.
+
+  `price`, cuando existe, sigue las reglas de `card_view` (§9.0): el titular es
+  el rango, la mediana va adentro, el número de anuncios queda a la vista y la
+  tarjeta va rotulada «muestra en formación». Sin colores de alarma ni juicio
+  sobre el precio.
+#}
+{% extends "_public_shell.html" %}
+
+{% block title %}Precios del mercado informal cubano, con los anuncios detrás{% endblock %}
+{% block og_description %}Guani te dice cuánto cuestan las cosas en la calle en Cuba: rango de precios por producto y por provincia, sacado de anuncios reales y verificado a mano.{% endblock %}
+
+{% block head %}
+<style>
+  .lp {
+    /* Alias locales de los tokens: un solo lugar donde se ve qué papel
+       cumple cada uno en esta página. `--ph-price-low` es el azul muy claro
+       del prototipo (fondo de las ilustraciones y de la pista del rango). */
+    --lp-blue: var(--ph-accent); --lp-on-blue: var(--ph-on-accent); --lp-teal: var(--ph-accent-2);
+    --lp-bg: var(--m3-bg); --lp-surface: var(--m3-surface);
+    --lp-ink: var(--m3-on-surface); --lp-ink-soft: var(--m3-on-surface-variant);
+    --lp-line: var(--m3-outline-variant); --lp-muted: var(--m3-outline);
+    --lp-tint: var(--ph-price-low); --lp-chip: var(--m3-primary-container);
+    --lp-chip-ink: var(--m3-on-primary-container); --lp-kicker: var(--ph-accent-2-line);
+    --lp-heading: var(--ph-font-heading);
+    display: flex; flex-direction: column; width: 100%; min-height: 100vh;
+    background: var(--lp-bg); color: var(--lp-ink);
+    font: 400 16px/1.45 var(--m3-font);
+    overflow-x: clip;
+  }
+  .lp a:hover { text-decoration: none; }
+  .lp-wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding-inline: 20px; }
+  .lp-main { display: flex; flex-direction: column; }
+  .lp-section { padding-top: 28px; padding-bottom: 8px; }
+  .lp-h2 { margin: 0; font: 400 30px/1.1 var(--lp-heading); }
+  .lp-kicker { margin: 0; font-size: 13px; font-weight: 700; line-height: 1.45; letter-spacing: .12em;
+               color: var(--lp-kicker); text-transform: uppercase; }
+  /* El foco del sitio es del color de acento: sobre la portada (que es de ese
+     color) y sobre el pie invertido no se vería. */
+  .lp-hero :focus-visible { outline-color: var(--lp-on-blue); }
+  .lp-foot :focus-visible { outline-color: var(--lp-surface); }
+  .lp .m3-icon { vertical-align: 0; }
+  .lp-svg-icon { flex: none; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2;
+                 stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ── Animaciones (las del prototipo, con prefijo) ───────────────────── */
+  @keyframes lp-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  @keyframes lp-drift { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(4px, -10px); } }
+  @keyframes lp-ring { 0% { transform: scale(.7); opacity: .55; } 100% { transform: scale(1.4); opacity: 0; } }
+  @keyframes lp-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+  @keyframes lp-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+  @keyframes lp-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes lp-grow-y { from { transform: scaleY(.2); } to { transform: scaleY(1); } }
+  @keyframes lp-pop { 0%, 10% { transform: scale(0); opacity: 0; } 25%, 85% { transform: scale(1); opacity: 1; }
+                      100% { transform: scale(1); opacity: 0; } }
+  @keyframes lp-draw { from { stroke-dashoffset: 60; } to { stroke-dashoffset: 0; } }
+  .lp-in { animation: lp-rise .7s ease-out both; }
+  .lp-pop { transform-box: fill-box; transform-origin: left bottom; animation: lp-pop 4.5s ease-in-out infinite; }
+  .lp-grow-bar { transform-box: fill-box; transform-origin: bottom; animation: lp-grow-y 2.4s ease-in-out infinite alternate; }
+  .lp-draw { stroke-dasharray: 60; animation: lp-draw 2.4s ease-out infinite alternate; }
+  .lp-lift { transition: transform .18s ease, box-shadow .18s ease; }
+  .lp-lift:hover { transform: translateY(-4px); box-shadow: var(--m3-elev-3); }
+  .lp-delay-3 { animation-delay: .3s; } .lp-delay-6 { animation-delay: .6s; } .lp-delay-7 { animation-delay: .7s; }
+  .lp-delay-9 { animation-delay: .9s; } .lp-delay-12 { animation-delay: 1.2s; } .lp-delay-14 { animation-delay: 1.4s; }
+  @supports (animation-timeline: view()) {
+    .lp-reveal { animation: lp-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 45%; }
+    .lp-fill { transform-origin: left; animation: lp-grow linear both; animation-timeline: view();
+               animation-range: entry 20% cover 40%; }
+  }
+
+  /* ── Portada ────────────────────────────────────────────────────────── */
+  .lp-hero { background: var(--lp-blue); color: var(--lp-on-blue); overflow: hidden; }
+  .lp-hero-inner { padding-top: 16px; padding-bottom: 28px; }
+  .lp-bar { display: flex; align-items: center; gap: 12px; }
+  .lp-wordmark { flex-grow: 1; font: 400 26px/1.2 var(--lp-heading); }
+  .lp-bar-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px;
+                 border: 1px solid var(--lp-on-blue); color: var(--lp-on-blue); font-size: 15px; font-weight: 500; text-decoration: none; }
+  .lp-bar-link:hover { color: var(--lp-on-blue); }
+  .lp-hero-body { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 48px; }
+  .lp-stage { position: relative; flex: 1 1 300px; max-width: 420px; height: 270px; margin: 0 auto; }
+  .lp-ring, .lp-disc, .lp-avatar { position: absolute; left: 50%; top: 50%; border-radius: 50%; }
+  .lp-ring { width: 170px; height: 170px; margin: -85px 0 0 -85px; border: 2px solid var(--lp-on-blue);
+             animation: lp-ring 3.2s ease-out infinite; }
+  .lp-ring-late { animation-delay: 1.6s; }
+  .lp-disc { width: 190px; height: 190px; margin: -95px 0 0 -95px; background: var(--lp-teal); }
+  .lp-avatar { width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 0; animation: lp-bob 4s ease-in-out infinite; }
+  .lp-avatar .ph-brand-avatar { display: block; width: 150px; height: 150px; }
+  .lp-avatar .guani-eye { transform-box: fill-box; transform-origin: center; animation: lp-blink 5s infinite; }
+  .lp-globe { position: absolute; display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 8px 12px;
+              background: var(--lp-surface); color: var(--lp-ink); font-size: 14px; font-weight: 500; line-height: 1.3;
+              box-shadow: var(--m3-elev-3); animation: lp-drift 5s ease-in-out infinite; }
+  .lp-globe > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lp-globe .m3-icon, .lp-globe .lp-svg-icon { font-size: 18px; color: var(--lp-blue); }
+  .lp-globe-1 { left: 0; top: 18px; border-radius: 16px 16px 16px 4px; }
+  .lp-globe-2 { right: 0; top: 84px; border-radius: 16px 16px 4px 16px; background: var(--lp-chip);
+                color: var(--lp-chip-ink); animation-delay: 1.2s; }
+  .lp-globe-2 .m3-icon, .lp-globe-2 .lp-svg-icon { color: inherit; }
+  .lp-globe-3 { left: 8px; bottom: 14px; border-radius: 16px 4px 16px 16px; animation-delay: 2.3s; }
+  .lp-hero-text { flex: 1 1 300px; min-width: 0; }
+  .lp-h1 { margin: 0; font: 400 clamp(36px, 11vw, 44px)/1.05 var(--lp-heading); }
+  .lp-lead { margin: 14px 0 0; max-width: 560px; font-size: 19px; line-height: 1.45; }
+  .lp-cta { margin-top: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            min-height: 52px; padding: 0 24px; border-radius: 100px; background: var(--lp-on-blue); color: var(--lp-blue);
+            font-size: 17px; font-weight: 500; text-decoration: none; }
+  .lp-cta:hover { color: var(--lp-blue); }
+  .lp-cta .lp-svg-icon { font-size: 22px; }
+  .lp-wave { display: block; width: 100%; height: 44px; color: var(--lp-bg); }
+
+  /* ── Así trabajo ──────────────────────────────────────────────────────
+     Las ilustraciones se pintan por clase para que salgan de los tokens. */
+  .lp-f-surface { fill: var(--lp-surface); } .lp-f-line { fill: var(--lp-line); }
+  .lp-f-blue { fill: var(--lp-blue); } .lp-f-teal { fill: var(--lp-teal); }
+  .lp-f-chip { fill: var(--lp-chip); } .lp-f-on-blue { fill: var(--lp-on-blue); }
+  .lp-s-on-blue { stroke: var(--lp-on-blue); }
+  .lp-steps { margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; }
+  .lp-card { background: var(--lp-surface); border-radius: 24px; padding: 16px; }
+  .lp-art { border-radius: 16px; background: var(--lp-tint); padding: 12px; }
+  .lp-art svg { display: block; width: 100%; height: auto; }
+  .lp-step-head { margin-top: 14px; display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
+  .lp-step-num { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px;
+                 border-radius: 50%; background: var(--lp-blue); color: var(--lp-on-blue); font-size: 15px; font-weight: 700; }
+  .lp-step-text { margin: 6px 0 0; font-size: 16px; line-height: 1.45; color: var(--lp-ink-soft); }
+
+  /* ── Así se lee un precio ───────────────────────────────────────────── */
+  .lp-price { background: var(--lp-surface); border: 1px solid var(--lp-line); border-radius: 24px; padding: 22px 20px; }
+  .lp-price-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .lp-badge { padding: 2px 8px; border: 1px dashed var(--lp-muted); border-radius: 6px; font-size: 12px; color: var(--lp-ink-soft); }
+  .lp-price-body { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 32px; }
+  .lp-price-col { flex: 1 1 240px; min-width: 0; }
+  .lp-price-where { font-size: 16px; font-weight: 500; }
+  .lp-price-range { margin-top: 4px; font: 400 clamp(34px, 10vw, 44px)/1.05 var(--lp-heading); }
+  .lp-price-unit { font-size: 20px; white-space: nowrap; }
+  .lp-points { position: relative; height: 26px; }
+  .lp-dot { position: absolute; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--lp-teal);
+            animation: lp-rise .7s ease-out both; animation-delay: .8s; }
+  .lp-dot:nth-child(1) { animation-delay: .1s; } .lp-dot:nth-child(2) { animation-delay: .2s; }
+  .lp-dot:nth-child(3) { animation-delay: .3s; } .lp-dot:nth-child(4) { animation-delay: .4s; }
+  .lp-dot:nth-child(5) { animation-delay: .5s; } .lp-dot:nth-child(6) { animation-delay: .6s; }
+  .lp-dot:nth-child(7) { animation-delay: .7s; }
+  .lp-row-0 { top: 8px; } .lp-row-1 { top: 0; } .lp-row-2 { top: 10px; } .lp-row-3 { top: 2px; }
+  .lp-track { position: relative; height: 14px; border-radius: 100px; background: var(--lp-tint); }
+  .lp-range { position: absolute; top: 0; height: 14px; border-radius: 100px; background: var(--lp-blue); }
+  .lp-median { position: absolute; top: -4px; width: 14px; height: 14px; margin-left: -11px; box-sizing: content-box;
+               border-radius: 50%; background: var(--lp-surface); border: 4px solid var(--lp-blue); }
+  .lp-legend { margin: 12px 0 0; font-size: 15px; line-height: 1.45; color: var(--lp-ink-soft); }
+  .lp-legend strong { color: var(--lp-ink); }
+  /* Sin dato: la ilustración del prototipo, que no afirma ninguna cifra. */
+  .lp-demo-1 { left: 24%; } .lp-demo-2 { left: 31%; } .lp-demo-3 { left: 38%; } .lp-demo-4 { left: 43%; }
+  .lp-demo-5 { left: 47%; } .lp-demo-6 { left: 53%; } .lp-demo-7 { left: 60%; } .lp-demo-8 { left: 66%; }
+  .lp-range-demo { left: 22%; width: 48%; }
+  .lp-median-demo { left: 44%; }
+
+  /* ── Preguntas ──────────────────────────────────────────────────────── */
+  .lp-faq { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; }
+  .lp-faq-card { background: var(--lp-surface); border-radius: 24px; padding: 22px 20px; }
+  .lp-faq-icon { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%;
+                 background: var(--ph-accent-wash); color: var(--lp-blue); font-size: 26px; }
+  .lp-faq-icon .m3-icon { font-size: 26px; }
+  .lp-faq-title { margin: 14px 0 0; font: 400 28px/1.1 var(--lp-heading); }
+  .lp-faq-text { margin: 12px 0 0; font-size: 17px; line-height: 1.5; color: var(--lp-ink-soft); }
+  .lp-nots { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px;
+             font-size: 17px; line-height: 1.4; color: var(--lp-ink-soft); }
+  .lp-nots li { display: flex; gap: 10px; }
+  .lp-nots .m3-icon { flex: none; font-size: 22px; color: var(--lp-blue); }
+
+  /* ── Entradas ───────────────────────────────────────────────────────── */
+  .lp-entries { padding-bottom: 36px; }
+  .lp-tiles { margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .lp-tile { display: flex; flex-direction: column; gap: 10px; min-height: 124px; padding: 18px 16px; border-radius: 24px;
+             background: var(--lp-surface); color: var(--lp-ink); border: 1px solid var(--lp-line); text-decoration: none; }
+  .lp-tile:hover { color: var(--lp-ink); }
+  .lp-tile .m3-icon { font-size: 32px; color: var(--lp-blue); }
+  .lp-tile-title { font-size: 18px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+  .lp-tile-text { font-size: 14px; line-height: 1.35; color: var(--lp-ink-soft); }
+  .lp-tile-main { background: var(--lp-blue); border-color: var(--lp-blue); color: var(--lp-on-blue); }
+  .lp-tile-main:hover { color: var(--lp-on-blue); }
+  .lp-tile-main .m3-icon, .lp-tile-main .lp-tile-text { color: var(--lp-on-blue); }
+  .lp-chips-label { margin-top: 24px; }
+  .lp-chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .lp-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px;
+             background: var(--lp-chip); color: var(--lp-chip-ink); font-size: 16px; font-weight: 500; text-decoration: none; }
+  .lp-chip:hover { color: var(--lp-chip-ink); }
+  @media (min-width: 720px) { .lp-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+  /* ── Pie ──────────────────────────────────────────────────────────────
+     Superficie invertida: fondo del color del texto y texto del color de la
+     superficie. En claro es el pie oscuro del prototipo. */
+  .lp-foot { margin-top: auto; background: var(--lp-ink); color: var(--lp-surface); }
+  .lp-foot-inner { padding-top: 28px; padding-bottom: 28px; }
+  .lp-foot-tag { margin: 6px 0 0; max-width: 520px; font-size: 15px; line-height: 1.5; color: var(--lp-line); }
+  .lp-foot-links { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px 24px; }
+  .lp-foot-col { display: flex; flex-direction: column; }
+  .lp-foot-link { display: flex; align-items: center; min-height: 44px; font-size: 16px; color: var(--lp-surface); overflow-wrap: anywhere;
+                  text-decoration: underline; }
+  .lp-foot-link:hover { color: var(--lp-chip); }
+  .lp-foot-note { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--lp-ink-soft); font-size: 14px;
+                  line-height: 1.5; color: var(--lp-line); }
+  /* `inline-block` con relleno: el crédito es un enlace dentro de una frase y
+     aun así tiene que dar 44 px de alto al dedo. */
+  .lp-foot-note a { display: inline-block; padding-block: 12px; color: var(--lp-surface); text-decoration: underline; }
+  .lp-foot-note a:hover { color: var(--lp-chip); text-decoration: underline; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lp *, .lp *::before, .lp *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+{% macro svg_icon(name) -%}
+<svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true">
+  {%- if name == "arrow" -%}
+  <path d="M5 12h14M13 6l6 6-6 6"/>
+  {%- elif name == "pin" -%}
+  <path d="M12 21s-6.5-5.7-6.5-10.6a6.5 6.5 0 0 1 13 0C18.5 15.3 12 21 12 21z"/><circle cx="12" cy="10.4" r="2.2"/>
+  {%- elif name == "stall" -%}
+  <path d="M4 10l1.6-5h12.8L20 10M5.5 12.4V19h13v-6.6M10 19v-4.5h4V19"/><path d="M4 10a2.67 2.67 0 0 0 5.33 0 2.67 2.67 0 0 0 5.34 0A2.67 2.67 0 0 0 20 10"/>
+  {%- endif -%}
+</svg>
+{%- endmacro %}
+<div class="lp">
+
+<header class="lp-hero">
+  <div class="lp-wrap lp-hero-inner">
+    <div class="lp-bar">
+      <div class="lp-wordmark">Guani</div>
+      <a class="lp-bar-link" href="{{ home_href }}">Ver precios</a>
+    </div>
+    <div class="lp-hero-body">
+
+      <div class="lp-stage" aria-hidden="true">
+        <div class="lp-ring"></div>
+        <div class="lp-ring lp-ring-late"></div>
+        <div class="lp-disc"></div>
+        <div class="lp-avatar">{% include "_guani_avatar.html" %}</div>
+        {# Los globos dicen solo lo que hay: con una celda de ejemplo, su rango,
+           su provincia y su muestra; sin ella, nombres de producto y nada más. #}
+        {% if price %}
+        <div class="lp-globe lp-globe-1"><span class="m3-icon">sell</span><span>{{ price.product_name }} · {{ price.minimum_text }}–{{ price.maximum_text }} {{ price.currency }}/{{ price.unit }}</span></div>
+        <div class="lp-globe lp-globe-2">{{ svg_icon("pin") }}<span>{{ price.province_name }}</span></div>
+        <div class="lp-globe lp-globe-3"><span class="m3-icon">forum</span><span>{{ price.count }} anuncios</span></div>
+        {% else %}
+        {% for name, _href in products[:3] %}
+        <div class="lp-globe lp-globe-{{ loop.index }}"><span class="m3-icon">sell</span><span>{{ name }}</span></div>
+        {% endfor %}
+        {% endif %}
+      </div>
+
+      <div class="lp-hero-text lp-in">
+        <h1 class="lp-h1">Hola, soy Guani.</h1>
+        <p class="lp-lead">Te digo cuánto cuestan las cosas en la calle, con los anuncios reales de cada provincia en la mano.</p>
+        <a class="lp-cta lp-lift" href="{{ home_href }}">Ver los precios de hoy{{ svg_icon("arrow") }}</a>
+      </div>
+    </div>
+  </div>
+  <svg class="lp-wave" viewBox="0 0 1440 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0,30 C240,70 480,0 720,26 C960,52 1200,8 1440,34 L1440,60 L0,60 Z" fill="currentColor"/></svg>
+</header>
+
+<main class="lp-main">
+
+<section class="lp-wrap lp-section" aria-labelledby="lp-work-title">
+  <h2 class="lp-h2" id="lp-work-title">Así trabajo</h2>
+  <div class="lp-steps">
+
+    <div class="lp-card lp-reveal">
+      <div class="lp-art">
+        <svg viewBox="0 0 240 110" aria-hidden="true">
+          <g class="lp-pop"><rect class="lp-f-surface" x="14" y="10" width="120" height="26" rx="13"/><rect class="lp-f-line" x="26" y="20" width="70" height="6" rx="3"/><rect class="lp-f-blue" x="102" y="20" width="20" height="6" rx="3"/></g>
+          <g class="lp-pop lp-delay-7"><rect class="lp-f-blue" x="92" y="44" width="134" height="26" rx="13"/><rect class="lp-f-chip" x="104" y="54" width="60" height="6" rx="3"/><rect class="lp-f-on-blue" x="170" y="54" width="44" height="6" rx="3"/></g>
+          <g class="lp-pop lp-delay-14"><rect class="lp-f-surface" x="14" y="78" width="104" height="26" rx="13"/><rect class="lp-f-line" x="26" y="88" width="50" height="6" rx="3"/><rect class="lp-f-blue" x="82" y="88" width="24" height="6" rx="3"/></g>
+        </svg>
+      </div>
+      <div class="lp-step-head"><span class="lp-step-num">1</span><span>Leo los anuncios</span></div>
+      <p class="lp-step-text">Lo que los emprendedores publican en grupos y canales de WhatsApp, tal cual.</p>
+    </div>
+
+    <div class="lp-card lp-reveal">
+      <div class="lp-art">
+        <svg viewBox="0 0 240 110" aria-hidden="true">
+          <rect class="lp-f-surface" x="40" y="12" width="130" height="86" rx="12"/>
+          <rect class="lp-f-blue" x="54" y="28" width="60" height="7" rx="3.5"/>
+          <rect class="lp-f-line" x="54" y="46" width="100" height="6" rx="3"/>
+          <rect class="lp-f-line" x="54" y="60" width="84" height="6" rx="3"/>
+          <rect class="lp-f-chip" x="54" y="74" width="48" height="12" rx="6"/>
+          <circle class="lp-f-blue" cx="176" cy="74" r="26"/>
+          <path class="lp-draw lp-s-on-blue" d="M163,75 L172,84 L190,64" fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="lp-step-head"><span class="lp-step-num">2</span><span>Los reviso uno por uno</span></div>
+      <p class="lp-step-text">De cada anuncio saco producto, precio y provincia, y una persona lo verifica.</p>
+    </div>
+
+    <div class="lp-card lp-reveal">
+      <div class="lp-art">
+        <svg viewBox="0 0 240 110" aria-hidden="true">
+          <rect class="lp-f-line" x="20" y="96" width="200" height="3" rx="1.5"/>
+          <rect class="lp-f-teal lp-grow-bar" x="34" y="56" width="26" height="40" rx="6"/>
+          <rect class="lp-f-blue lp-grow-bar lp-delay-3" x="72" y="34" width="26" height="62" rx="6"/>
+          <rect class="lp-f-blue lp-grow-bar lp-delay-6" x="110" y="18" width="26" height="78" rx="6"/>
+          <rect class="lp-f-blue lp-grow-bar lp-delay-9" x="148" y="42" width="26" height="54" rx="6"/>
+          <rect class="lp-f-teal lp-grow-bar lp-delay-12" x="186" y="66" width="26" height="30" rx="6"/>
+        </svg>
+      </div>
+      <div class="lp-step-head"><span class="lp-step-num">3</span><span>Te lo enseño en claro</span></div>
+      <p class="lp-step-text">Rango, mediana y cuántos anuncios hay detrás de cada cifra.</p>
+    </div>
+
+  </div>
+</section>
+
+<section class="lp-wrap lp-section" id="lp-price" aria-labelledby="lp-price-title">
+  <div class="lp-price lp-reveal">
+    <div class="lp-price-top">
+      <h2 class="lp-kicker" id="lp-price-title">Así se lee un precio</h2>
+      {% if price %}<div class="lp-badge">Últimos {{ window_days }} días</div>{% endif %}
+    </div>
+    <div class="lp-price-body">
+      {% if price %}
+      <div class="lp-price-col">
+        <div class="lp-price-where">{{ price.product_name }} · {{ price.province_name }}</div>
+        <div class="lp-price-range">{{ price.minimum_text }} – {{ price.maximum_text }} <span class="lp-price-unit">{{ price.currency }}/{{ price.unit }}</span></div>
+      </div>
+      <div class="lp-price-col">
+        <div class="lp-points" aria-hidden="true">
+          {%- for dot in price.dots %}<span class="lp-dot lp-row-{{ dot.row }}" style="left: {{ dot.left }}%"></span>{% endfor -%}
+        </div>
+        <div class="lp-track" aria-hidden="true">
+          <div class="lp-range lp-fill" style="left: {{ price.bar_left }}%; width: {{ price.bar_width }}%"></div>
+          <div class="lp-median" style="left: {{ price.median_left }}%"></div>
+        </div>
+        <p class="lp-legend">Cada punto es un anuncio. La barra es el rango y el círculo, la mediana: <strong>{{ price.median_text }}</strong>. <strong>{{ price.count }}</strong> anuncios · {{ price.state | capitalize }}</p>
+      </div>
+      {% else %}
+      <div class="lp-price-col">
+        <div class="lp-points" aria-hidden="true">
+          {%- for row in ("0", "1", "2", "3", "0", "1", "2", "3") %}<span class="lp-dot lp-row-{{ row }} lp-demo-{{ loop.index }}"></span>{% endfor -%}
+        </div>
+        <div class="lp-track" aria-hidden="true">
+          <div class="lp-range lp-range-demo lp-fill"></div>
+          <div class="lp-median lp-median-demo"></div>
+        </div>
+        <p class="lp-legend">Cada punto es un anuncio. La barra es el rango y el círculo, la mediana. Al lado va siempre cuántos anuncios hay detrás.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="lp-wrap lp-section" aria-label="Preguntas frecuentes">
+  <div class="lp-faq">
+    <div class="lp-faq-card lp-reveal">
+      <div class="lp-faq-icon">{{ svg_icon("stall") }}</div>
+      <h2 class="lp-faq-title">¿Qué es Guani?</h2>
+      <p class="lp-faq-text">Un sitio abierto que muestra los precios del mercado informal cubano, producto por producto y provincia por provincia.</p>
+    </div>
+    <div class="lp-faq-card lp-reveal">
+      <div class="lp-faq-icon"><span class="m3-icon" aria-hidden="true">forum</span></div>
+      <h2 class="lp-faq-title">¿De dónde salen los precios?</h2>
+      <p class="lp-faq-text">De lo que los emprendedores publican en grupos y canales de WhatsApp. Cada anuncio queda enlazado a la cifra que alimenta.</p>
+    </div>
+    <div class="lp-faq-card lp-reveal">
+      <div class="lp-faq-icon"><span class="m3-icon" aria-hidden="true">block</span></div>
+      <h2 class="lp-faq-title">¿Qué no vas a encontrar?</h2>
+      <ul class="lp-nots">
+        <li><span class="m3-icon" aria-hidden="true">close</span>Consejos de compra ni juicios de «caro» o «barato».</li>
+        <li><span class="m3-icon" aria-hidden="true">close</span>Teléfonos ni datos de contacto de los vendedores.</li>
+        <li><span class="m3-icon" aria-hidden="true">close</span>Cifras sin decir cuántos anuncios hay detrás.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="lp-wrap lp-section lp-entries" id="entradas" aria-labelledby="lp-entries-title">
+  <h2 class="lp-h2" id="lp-entries-title">Entra por donde quieras</h2>
+  <div class="lp-tiles">
+    {% for href, icon, title, text in view_tiles %}
+    <a class="lp-tile lp-lift{% if loop.first %} lp-tile-main{% endif %}" href="{{ href }}"><span class="m3-icon" aria-hidden="true">{{ icon }}</span><span class="lp-tile-title">{{ title }}</span><span class="lp-tile-text">{{ text }}</span></a>
+    {% endfor %}
+  </div>
+  {% if products %}
+  <div class="lp-kicker lp-chips-label">O ve directo a un producto</div>
+  <div class="lp-chips">
+    {%- for name, href in products %}<a class="lp-chip lp-lift" href="{{ href }}">{{ name }}</a>{% endfor -%}
+  </div>
+  {% endif %}
+</section>
+
+</main>
+
+<footer class="lp-foot">
+  <div class="lp-wrap lp-foot-inner">
+    <div class="lp-wordmark">Guani</div>
+    <p class="lp-foot-tag">Precios del mercado informal cubano, con los anuncios detrás.</p>
+    {# Contacto y redes: se dibuja solo lo configurado (`SAIMC_CONTACT_EMAIL`,
+       `SAIMC_LINK_*`). Sin nada, el bloque entero no existe. #}
+    {% if footer_links.any %}
+    <div class="lp-foot-links">
+      {% if footer_links.email %}
+      <div class="lp-foot-col">
+        <a class="lp-foot-link" href="mailto:{{ footer_links.email }}">{{ footer_links.email }}</a>
+      </div>
+      {% endif %}
+      {% if footer_links.social %}
+      <div class="lp-foot-col">
+        {% for link in footer_links.social %}
+        <a class="lp-foot-link" href="{{ link.href }}" rel="noopener">{{ link.label }}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    <p class="lp-foot-note">Los precios en moneda extranjera se convierten a CUP con la <a href="https://eltoque.com/">tasa TRMI de elTOQUE</a>. Guani · {{ year }}</p>
+  </div>
+</footer>
+
+</div>
+{% endblock %}

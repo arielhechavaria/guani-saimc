@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 # Vistas públicas reales que un visitante abre — no assets, no rutas de
 # operador (/control, /curation, /catalog, /docs, webhooks).
 _TRACKED_PATH_PREFIXES = ("/producto/", "/anuncio/")
-_TRACKED_EXACT_PATHS = frozenset({"/"})
+# `/` es la landing y `/precios` la home de precios (tablero/mapa/explorar)
+# desde el 2026-10-05: las dos son visitas reales y se cuentan por separado.
+_TRACKED_EXACT_PATHS = frozenset({"/", "/precios"})
 
 
 def es_vista_publica_rastreable(path: str) -> bool:
@@ -48,7 +50,7 @@ async def registrar_visitas_publicas(
 ) -> Response:
     """Middleware ASGI: deja un rastro por cada GET exitoso a una vista
     pública. Excluye los `hx-get` de la propia página (chips, selector de
-    provincia): son la misma visita reabriendo `/`, no una nueva."""
+    provincia): son la misma visita reabriendo `/precios`, no una nueva."""
     response = await call_next(request)
 
     if (

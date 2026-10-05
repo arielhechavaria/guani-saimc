@@ -491,25 +491,25 @@ class TestNavegacion:
         por = {p.name: p for p in nav.products}
 
         assert por["Arroz"].is_on and por["Pollo"].is_on and not por["Aceite"].is_on
-        assert por["Aceite"].query.startswith("/?productos=arroz,pollo,aceite&pestana=aceite&")
+        assert por["Aceite"].query.startswith("/precios?productos=arroz,pollo,aceite&pestana=aceite&")
 
     def test_desmarcar_la_activa_activa_a_su_vecina(self) -> None:
         """Arroz está activa; al desmarcarla, Pollo —que ocupaba el lugar
         siguiente— pasa a activa."""
         por = {p.name: p for p in self._nav(["Arroz", "Pollo"], "arroz").products}
 
-        assert por["Arroz"].query.startswith("/?productos=pollo&pestana=pollo&")
+        assert por["Arroz"].query.startswith("/precios?productos=pollo&pestana=pollo&")
 
     def test_desmarcar_una_que_no_esta_activa_no_cambia_cual_lo_esta(self) -> None:
         por = {p.name: p for p in self._nav(["Arroz", "Pollo"], "arroz").products}
 
-        assert por["Pollo"].query.startswith("/?productos=arroz&pestana=arroz&")
+        assert por["Pollo"].query.startswith("/precios?productos=arroz&pestana=arroz&")
 
     def test_las_consultas_conservan_el_rango_y_la_vista(self) -> None:
         por = {p.name: p for p in self._nav(["Arroz"], "arroz").products}
 
         assert por["Pollo"].query == (
-            "/?productos=arroz,pollo&pestana=pollo&desde=2026-07-31&hasta=2026-08-30&vista=explorar"
+            "/precios?productos=arroz,pollo&pestana=pollo&desde=2026-07-31&hasta=2026-08-30&vista=explorar"
         )
 
     def test_una_pestania_por_producto_abierto_en_orden_de_apertura(self) -> None:
@@ -531,23 +531,23 @@ class TestNavegacion:
         _, pollo = self._nav(["Arroz", "Pollo"], "arroz").tabs
 
         assert pollo.query == (
-            "/?productos=arroz,pollo&pestana=pollo&desde=2026-07-31&hasta=2026-08-30&vista=explorar"
+            "/precios?productos=arroz,pollo&pestana=pollo&desde=2026-07-31&hasta=2026-08-30&vista=explorar"
         )
 
     def test_la_x_de_la_activa_quita_esa_y_activa_a_su_vecina(self) -> None:
         arroz, _ = self._nav(["Arroz", "Pollo"], "arroz").tabs
 
-        assert arroz.close_query.startswith("/?productos=pollo&pestana=pollo&")
+        assert arroz.close_query.startswith("/precios?productos=pollo&pestana=pollo&")
 
     def test_la_x_de_otra_no_cambia_cual_esta_activa(self) -> None:
         _, pollo = self._nav(["Arroz", "Pollo"], "arroz").tabs
 
-        assert pollo.close_query.startswith("/?productos=arroz&pestana=arroz&")
+        assert pollo.close_query.startswith("/precios?productos=arroz&pestana=arroz&")
 
     def test_cerrar_la_ultima_deja_la_url_sin_productos_ni_pestana(self) -> None:
         (arroz,) = self._nav(["Arroz"], "arroz").tabs
 
-        assert arroz.close_query == "/?desde=2026-07-31&hasta=2026-08-30&vista=explorar"
+        assert arroz.close_query == "/precios?desde=2026-07-31&hasta=2026-08-30&vista=explorar"
 
     def test_el_mas_ofrece_solo_los_que_faltan(self) -> None:
         assert [p.name for p in self._nav(["Arroz", "Pollo"], "arroz").add] == ["Aceite"]

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Landing B: Guani te lo cuenta</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Alice&amp;family=Roboto:wght@400;500;700&amp;family=Roboto+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Roboto',sans-serif}
+a{color:#05668d}a:hover{color:#034a66}
+.ms{font-family:'Material Symbols Rounded';font-weight:400;font-style:normal;line-height:1;display:inline-block;letter-spacing:normal;text-transform:none;white-space:nowrap;-webkit-font-feature-settings:'liga';font-feature-settings:'liga'}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(4px,-10px)}}
+@keyframes ring{0%{transform:scale(.7);opacity:.55}100%{transform:scale(1.4);opacity:0}}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+@keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes growY{from{transform:scaleY(.2)}to{transform:scaleY(1)}}
+@keyframes pop{0%,10%{transform:scale(0);opacity:0}25%,85%{transform:scale(1);opacity:1}100%{transform:scale(1);opacity:0}}
+@keyframes draw{from{stroke-dashoffset:60}to{stroke-dashoffset:0}}
+.g-bob{animation:bob 4s ease-in-out infinite}
+.g-drift{animation:drift 5s ease-in-out infinite}
+.g-ring{animation:ring 3.2s ease-out infinite}
+.g-eye{transform-box:fill-box;transform-origin:center;animation:blink 5s infinite}
+.g-in{animation:rise .7s ease-out both}
+.g-pop{transform-box:fill-box;transform-origin:left bottom;animation:pop 4.5s ease-in-out infinite}
+.g-bar{transform-box:fill-box;transform-origin:bottom;animation:growY 2.4s ease-in-out infinite alternate}
+.g-draw{stroke-dasharray:60;animation:draw 2.4s ease-out infinite alternate}
+.g-tile{transition:transform .18s ease,box-shadow .18s ease}
+.g-tile:hover{transform:translateY(-4px);box-shadow:0 8px 22px rgba(5,32,48,.18)}
+@supports (animation-timeline: view()){
+.g-reveal{animation:rise linear both;animation-timeline:view();animation-range:entry 0% entry 45%}
+.g-fill{transform-origin:left;animation:grow linear both;animation-timeline:view();animation-range:entry 20% cover 40%}
+}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 3700px; box-sizing: border-box; background: #f2f6f6; color: #191c1c; font-family: 'Roboto', sans-serif; display: flex; flex-direction: column">
+
+<section style="background: #05668d; color: #ffffff; overflow: hidden">
+<div style="max-width: 1080px; margin: 0 auto; padding: 16px 20px 28px; box-sizing: border-box">
+<div style="display: flex; align-items: center; gap: 12px">
+<div style="font-family: 'Alice', Georgia, serif; font-size: 26px; flex-grow: 1">Guani</div>
+<a href="#entradas" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px; border: 1px solid #ffffff; color: #ffffff; font-size: 15px; font-weight: 500; text-decoration: none">Ver precios</a>
+</div>
+<div style="margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 48px">
+
+<div style="position: relative; flex: 1 1 300px; max-width: 420px; height: 270px; margin: 0 auto" aria-hidden="true">
+<div class="g-ring" style="position: absolute; left: 50%; top: 50%; width: 170px; height: 170px; margin: -85px 0 0 -85px; border-radius: 50%; border: 2px solid #ffffff"></div>
+<div class="g-ring" style="position: absolute; left: 50%; top: 50%; width: 170px; height: 170px; margin: -85px 0 0 -85px; border-radius: 50%; border: 2px solid #ffffff; animation-delay: 1.6s"></div>
+<div style="position: absolute; left: 50%; top: 50%; width: 190px; height: 190px; margin: -95px 0 0 -95px; border-radius: 50%; background: #028090"></div>
+<div class="g-bob" style="position: absolute; left: 50%; top: 50%; width: 150px; height: 150px; margin: -75px 0 0 -75px">
+<svg viewBox="0 0 80 80" width="150" height="150">
+<circle cx="40" cy="40" r="39" fill="#ffffff" stroke="#c4cfcf" stroke-width="2"/>
+<clipPath id="gb"><circle cx="40" cy="40" r="37"/></clipPath>
+<g clip-path="url(#gb)" transform="translate(40,40) scale(.8) translate(-40,-40)">
+<ellipse cx="40" cy="30" rx="34" ry="34" fill="#191c1c"/>
+<circle cx="40" cy="34" r="27" fill="#6f7979"/>
+<rect x="13" y="20" width="54" height="8" rx="4" fill="#191c1c"/>
+<path d="M52,22 L57,3 L62,22 Z" fill="#c4cfcf"/>
+<ellipse class="g-eye" cx="33" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
+<ellipse class="g-eye" cx="47" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
+<path d="M33,48 Q40,52 47,48" stroke="#ffffff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+<ellipse cx="40" cy="72" rx="40" ry="20" fill="#8a9494"/>
+</g>
+</svg>
+</div>
+<div class="g-drift" style="position: absolute; left: 0; top: 18px; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 16px 16px 16px 4px; background: #ffffff; color: #191c1c; font-size: 14px; font-weight: 500; box-shadow: 0 4px 14px rgba(5, 32, 48, 0.25)"><span class="ms" style="font-size: 18px; color: #05668d">sell</span>Arroz · 000 CUP/lb</div>
+<div class="g-drift" style="position: absolute; right: 0; top: 84px; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 16px 16px 4px 16px; background: #cce8e9; color: #041f21; font-size: 14px; font-weight: 500; box-shadow: 0 4px 14px rgba(5, 32, 48, 0.25); animation-delay: 1.2s"><span class="ms" style="font-size: 18px">location_on</span>[PROVINCIA]</div>
+<div class="g-drift" style="position: absolute; left: 8px; bottom: 14px; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 16px 4px 16px 16px; background: #ffffff; color: #191c1c; font-size: 14px; font-weight: 500; box-shadow: 0 4px 14px rgba(5, 32, 48, 0.25); animation-delay: 2.3s"><span class="ms" style="font-size: 18px; color: #05668d">forum</span>00 anuncios</div>
+</div>
+
+<div class="g-in" style="flex: 1 1 300px; min-width: 0">
+<h1 style="margin: 0; font-family: 'Alice', Georgia, serif; font-weight: 400; font-size: 44px; line-height: 1.05">Hola, soy Guani.</h1>
+<p style="margin: 14px 0 0; font-size: 19px; line-height: 1.45; max-width: 560px">Te digo cuánto cuestan las cosas en la calle, con los anuncios reales de cada provincia en la mano.</p>
+<a class="g-tile" href="#entradas" style="margin-top: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 24px; border-radius: 100px; background: #ffffff; color: #05668d; font-size: 17px; font-weight: 500; text-decoration: none">Ver los precios de hoy<span class="ms" style="font-size: 22px" aria-hidden="true">arrow_forward</span></a>
+</div>
+</div>
+</div>
+<svg viewBox="0 0 1440 60" preserveAspectRatio="none" style="display: block; width: 100%; height: 44px" aria-hidden="true"><path d="M0,30 C240,70 480,0 720,26 C960,52 1200,8 1440,34 L1440,60 L0,60 Z" fill="#f2f6f6"/></svg>
+</section>
+
+<section style="max-width: 1080px; width: 100%; margin: 0 auto; padding: 20px 20px 8px; box-sizing: border-box">
+<h2 style="margin: 0; font-family: 'Alice', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1.1">Así trabajo</h2>
+<div style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px">
+
+<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 16px; box-sizing: border-box">
+<div style="position: relative; border-radius: 16px; background: #e8f1f6; padding: 12px">
+<svg viewBox="0 0 240 110" style="display: block; width: 100%; height: auto" aria-hidden="true">
+<g class="g-pop"><rect x="14" y="10" width="120" height="26" rx="13" fill="#ffffff"/><rect x="26" y="20" width="70" height="6" rx="3" fill="#c4cfcf"/><rect x="102" y="20" width="20" height="6" rx="3" fill="#05668d"/></g>
+<g class="g-pop" style="animation-delay: .7s"><rect x="92" y="44" width="134" height="26" rx="13" fill="#05668d"/><rect x="104" y="54" width="60" height="6" rx="3" fill="#cce8e9"/><rect x="170" y="54" width="44" height="6" rx="3" fill="#ffffff"/></g>
+<g class="g-pop" style="animation-delay: 1.4s"><rect x="14" y="78" width="104" height="26" rx="13" fill="#ffffff"/><rect x="26" y="88" width="50" height="6" rx="3" fill="#c4cfcf"/><rect x="82" y="88" width="24" height="6" rx="3" fill="#05668d"/></g>
+</svg>
+</div>
+<div style="margin-top: 14px; display: flex; align-items: center; gap: 10px"><span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">1</span><span style="font-size: 18px; font-weight: 700">Leo los anuncios</span></div>
+<div style="margin-top: 6px; font-size: 16px; line-height: 1.45; color: #3f4949">Lo que los emprendedores publican en grupos y canales de WhatsApp, tal cual.</div>
+</div>
+
+<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 16px; box-sizing: border-box">
+<div style="border-radius: 16px; background: #e8f1f6; padding: 12px">
+<svg viewBox="0 0 240 110" style="display: block; width: 100%; height: auto" aria-hidden="true">
+<rect x="40" y="12" width="130" height="86" rx="12" fill="#ffffff"/>
+<rect x="54" y="28" width="60" height="7" rx="3.5" fill="#05668d"/>
+<rect x="54" y="46" width="100" height="6" rx="3" fill="#c4cfcf"/>
+<rect x="54" y="60" width="84" height="6" rx="3" fill="#c4cfcf"/>
+<rect x="54" y="74" width="48" height="12" rx="6" fill="#cce8e9"/>
+<circle cx="176" cy="74" r="26" fill="#05668d"/>
+<path class="g-draw" d="M163,75 L172,84 L190,64" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+</div>
+<div style="margin-top: 14px; display: flex; align-items: center; gap: 10px"><span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">2</span><span style="font-size: 18px; font-weight: 700">Los reviso uno por uno</span></div>
+<div style="margin-top: 6px; font-size: 16px; line-height: 1.45; color: #3f4949">De cada anuncio saco producto, precio y provincia, y una persona lo verifica.</div>
+</div>
+
+<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 16px; box-sizing: border-box">
+<div style="border-radius: 16px; background: #e8f1f6; padding: 12px">
+<svg viewBox="0 0 240 110" style="display: block; width: 100%; height: auto" aria-hidden="true">
+<rect x="20" y="96" width="200" height="3" rx="1.5" fill="#c4cfcf"/>
+<rect class="g-bar" x="34" y="56" width="26" height="40" rx="6" fill="#028090"/>
+<rect class="g-bar" x="72" y="34" width="26" height="62" rx="6" fill="#05668d" style="animation-delay: .3s"/>
+<rect class="g-bar" x="110" y="18" width="26" height="78" rx="6" fill="#05668d" style="animation-delay: .6s"/>
+<rect class="g-bar" x="148" y="42" width="26" height="54" rx="6" fill="#05668d" style="animation-delay: .9s"/>
+<rect class="g-bar" x="186" y="66" width="26" height="30" rx="6" fill="#028090" style="animation-delay: 1.2s"/>
+</svg>
+</div>
+<div style="margin-top: 14px; display: flex; align-items: center; gap: 10px"><span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: #05668d; color: #ffffff; font-size: 15px; font-weight: 700">3</span><span style="font-size: 18px; font-weight: 700">Te lo enseño en claro</span></div>
+<div style="margin-top: 6px; font-size: 16px; line-height: 1.45; color: #3f4949">Rango, mediana y cuántos anuncios hay detrás de cada cifra.</div>
+</div>
+
+</div>
+</section>
+
+<section style="max-width: 1080px; width: 100%; margin: 0 auto; padding: 28px 20px 8px; box-sizing: border-box">
+<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 22px 20px; box-sizing: border-box; border: 1px solid #c4cfcf">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+<div style="font-size: 13px; font-weight: 700; letter-spacing: 0.12em; color: #015a63">ASÍ SE LEE UN PRECIO</div>
+<div style="padding: 2px 8px; border: 1px dashed #6f7979; border-radius: 6px; font-size: 12px; color: #3f4949">Cifras de ejemplo</div>
+</div>
+<div style="margin-top: 14px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 32px">
+<div style="flex: 1 1 240px; min-width: 0">
+<div style="font-size: 16px; font-weight: 500">Pollo · [PROVINCIA]</div>
+<div style="margin-top: 4px; font-family: 'Alice', Georgia, serif; font-size: 44px; line-height: 1.05">000 – 000 <span style="font-size: 20px">CUP/lb</span></div>
+</div>
+<div style="flex: 1 1 240px; min-width: 0">
+<div style="position: relative; height: 26px" aria-hidden="true">
+<span class="g-in" style="position: absolute; left: 24%; top: 8px; width: 9px; height: 9px; border-radius: 50%; background: #028090; animation-delay: .1s"></span>
+<span class="g-in" style="position: absolute; left: 31%; top: 0; width: 9px; height: 9px; border-radius: 50%; background: #028090; animation-delay: .2s"></span>
+<span class="g-in" style="position: absolute; left: 38%; top: 10px; width: 9px; height: 9px; border-radius: 50%; background: #028090; animation-delay: .3s"></span>
+<span class="g-in" style="position: absolute; left: 43%; top: 2px; width: 9px; height: 9px; border-radius: 50%; background: #028090; animation-delay: .4s"></span>
+<span class="g-in" style="position: absolute; left: 47%; top: 12px; width: 9px; height: 9px; border-radius: 50%; background: #028090; animation-delay: .5s"></span>
+<span class="g-in" style="position: absolute; left: 53%; top: 4px; width: 9px; height: 9px; border-radius: 50%; background: #028090; animation-delay: .6s"></span>
+<span class="g-in" style="position: absolute; left: 60%; top: 10px; width: 9px; height: 9px; border-radius: 50%; background: #028090; animation-delay: .7s"></span>
+<span class="g-in" style="position: absolute; left: 66%; top: 2px; width: 9px; height: 9px; border-radius: 50%; background: #028090; animation-delay: .8s"></span>
+</div>
+<div style="position: relative; height: 14px; border-radius: 100px; background: #e8f1f6">
+<div class="g-fill" style="position: absolute; top: 0; left: 22%; width: 48%; height: 14px; border-radius: 100px; background: #05668d"></div>
+<div style="position: absolute; top: -4px; left: 44%; width: 14px; height: 14px; margin-left: -11px; border-radius: 50%; background: #ffffff; border: 4px solid #05668d"></div>
+</div>
+<div style="margin-top: 12px; font-size: 15px; line-height: 1.45; color: #3f4949">Cada punto es un anuncio. La barra es el rango y el círculo, la mediana. <strong style="color: #191c1c">00</strong> anuncios · Muestra en formación</div>
+</div>
+</div>
+</div>
+</section>
+
+<section style="max-width: 1080px; width: 100%; margin: 0 auto; padding: 28px 20px 8px; box-sizing: border-box">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px">
+<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 22px 20px; box-sizing: border-box">
+<div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(5, 102, 141, 0.1); color: #05668d; display: flex; align-items: center; justify-content: center"><span class="ms" style="font-size: 26px" aria-hidden="true">storefront</span></div>
+<h2 style="margin: 14px 0 0; font-family: 'Alice', Georgia, serif; font-weight: 400; font-size: 28px; line-height: 1.1">¿Qué es Guani?</h2>
+<p style="margin: 12px 0 0; font-size: 17px; line-height: 1.5; color: #3f4949">Un sitio abierto que muestra los precios del mercado informal cubano, producto por producto y provincia por provincia.</p>
+</div>
+<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 22px 20px; box-sizing: border-box">
+<div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(5, 102, 141, 0.1); color: #05668d; display: flex; align-items: center; justify-content: center"><span class="ms" style="font-size: 26px" aria-hidden="true">forum</span></div>
+<h2 style="margin: 14px 0 0; font-family: 'Alice', Georgia, serif; font-weight: 400; font-size: 28px; line-height: 1.1">¿De dónde salen los precios?</h2>
+<p style="margin: 12px 0 0; font-size: 17px; line-height: 1.5; color: #3f4949">De lo que los emprendedores publican en grupos y canales de WhatsApp. Cada anuncio queda enlazado a la cifra que alimenta.</p>
+</div>
+<div class="g-reveal" style="background: #ffffff; border-radius: 24px; padding: 22px 20px; box-sizing: border-box">
+<div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(5, 102, 141, 0.1); color: #05668d; display: flex; align-items: center; justify-content: center"><span class="ms" style="font-size: 26px" aria-hidden="true">block</span></div>
+<h2 style="margin: 14px 0 0; font-family: 'Alice', Georgia, serif; font-weight: 400; font-size: 28px; line-height: 1.1">¿Qué no vas a encontrar?</h2>
+<ul style="margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 17px; line-height: 1.4; color: #3f4949">
+<li style="display: flex; gap: 10px"><span class="ms" style="font-size: 22px; color: #05668d" aria-hidden="true">close</span>Consejos de compra ni juicios de «caro» o «barato».</li>
+<li style="display: flex; gap: 10px"><span class="ms" style="font-size: 22px; color: #05668d" aria-hidden="true">close</span>Teléfonos ni datos de contacto de los vendedores.</li>
+<li style="display: flex; gap: 10px"><span class="ms" style="font-size: 22px; color: #05668d" aria-hidden="true">close</span>Cifras sin decir cuántos anuncios hay detrás.</li>
+</ul>
+</div>
+</div>
+</section>
+
+<section id="entradas" style="max-width: 1080px; width: 100%; margin: 0 auto; padding: 28px 20px 36px; box-sizing: border-box">
+<h2 style="margin: 0; font-family: 'Alice', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1.1">Entra por donde quieras</h2>
+<div style="margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<a class="g-tile" href="#" style="display: flex; flex-direction: column; gap: 10px; min-height: 124px; box-sizing: border-box; background: #05668d; color: #ffffff; border-radius: 24px; padding: 18px 16px; text-decoration: none"><span class="ms" style="font-size: 32px" aria-hidden="true">sell</span><span style="font-size: 18px; font-weight: 700; line-height: 1.2">Precios de hoy</span><span style="font-size: 14px; line-height: 1.35">El tablero completo.</span></a>
+<a class="g-tile" href="#" style="display: flex; flex-direction: column; gap: 10px; min-height: 124px; box-sizing: border-box; background: #ffffff; color: #191c1c; border: 1px solid #c4cfcf; border-radius: 24px; padding: 18px 16px; text-decoration: none"><span class="ms" style="font-size: 32px; color: #05668d" aria-hidden="true">map</span><span style="font-size: 18px; font-weight: 700; line-height: 1.2">Mapa</span><span style="font-size: 14px; line-height: 1.35; color: #3f4949">Provincia por provincia.</span></a>
+<a class="g-tile" href="#" style="display: flex; flex-direction: column; gap: 10px; min-height: 124px; box-sizing: border-box; background: #ffffff; color: #191c1c; border: 1px solid #c4cfcf; border-radius: 24px; padding: 18px 16px; text-decoration: none"><span class="ms" style="font-size: 32px; color: #05668d" aria-hidden="true">show_chart</span><span style="font-size: 18px; font-weight: 700; line-height: 1.2">Explorar</span><span style="font-size: 14px; line-height: 1.35; color: #3f4949">Cómo se movió cada precio.</span></a>
+<a class="g-tile" href="#" style="display: flex; flex-direction: column; gap: 10px; min-height: 124px; box-sizing: border-box; background: #ffffff; color: #191c1c; border: 1px solid #c4cfcf; border-radius: 24px; padding: 18px 16px; text-decoration: none"><span class="ms" style="font-size: 32px; color: #05668d" aria-hidden="true">download</span><span style="font-size: 18px; font-weight: 700; line-height: 1.2">Datos (CSV)</span><span style="font-size: 14px; line-height: 1.35; color: #3f4949">Abiertos para descargar.</span></a>
+</div>
+<div style="margin-top: 24px; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; color: #015a63">O VE DIRECTO A UN PRODUCTO</div>
+<div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px">
+<a class="g-tile" href="#" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px; background: #cce8e9; color: #041f21; font-size: 16px; font-weight: 500; text-decoration: none">Aceite</a>
+<a class="g-tile" href="#" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px; background: #cce8e9; color: #041f21; font-size: 16px; font-weight: 500; text-decoration: none">Arroz</a>
+<a class="g-tile" href="#" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px; background: #cce8e9; color: #041f21; font-size: 16px; font-weight: 500; text-decoration: none">Azúcar blanca</a>
+<a class="g-tile" href="#" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px; background: #cce8e9; color: #041f21; font-size: 16px; font-weight: 500; text-decoration: none">Pollo</a>
+</div>
+</section>
+
+<footer style="margin-top: auto; background: #191c1c; color: #ffffff">
+<div style="max-width: 1080px; margin: 0 auto; padding: 28px 20px; box-sizing: border-box">
+<div style="font-family: 'Alice', Georgia, serif; font-size: 26px">Guani</div>
+<div style="margin-top: 6px; font-size: 15px; line-height: 1.5; color: #c4cfcf; max-width: 520px">Precios del mercado informal cubano, con los anuncios detrás.</div>
+<div style="margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px 24px">
+<div style="display: flex; flex-direction: column">
+<a href="#" style="display: flex; align-items: center; min-height: 44px; font-size: 16px; color: #ffffff">Qué es Guani</a>
+<a href="#" style="display: flex; align-items: center; min-height: 44px; font-size: 16px; color: #ffffff">Cómo se calculan los precios</a>
+<a href="#" style="display: flex; align-items: center; min-height: 44px; font-size: 16px; color: #ffffff">[TU CORREO DE CONTACTO]</a>
+</div>
+<div style="display: flex; flex-direction: column">
+<a href="#" style="display: flex; align-items: center; min-height: 44px; font-size: 16px; color: #ffffff">[TU PÁGINA DE FACEBOOK]</a>
+<a href="#" style="display: flex; align-items: center; min-height: 44px; font-size: 16px; color: #ffffff">[TU CANAL DE WHATSAPP]</a>
+<a href="#" style="display: flex; align-items: center; min-height: 44px; font-size: 16px; color: #ffffff">[TU CANAL DE TELEGRAM]</a>
+</div>
+</div>
+<div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3f4949; font-size: 14px; line-height: 1.5; color: #c4cfcf">Los precios en moneda extranjera se convierten a CUP con la <a href="https://eltoque.com/" style="color: #ffffff">tasa TRMI de elTOQUE</a>. Guani · [AÑO]</div>
+</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":3700}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

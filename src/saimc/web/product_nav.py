@@ -43,8 +43,9 @@ LAYER_CHOICES: tuple[str, ...] = ("publicacion", "densidad", "precio")
 #: «publicación». Quien quiera la capa de siempre la pide, y viaja explícita
 #: (`?capa=publicacion`): solo la default se omite de la URL.
 DEFAULT_LAYER = "precio"
-#: Presentación de `/` (2026-09-16): «mapa» es la de siempre —Leaflet, tiles,
-#: compás—; «tablero» son las mismas tarjetas que ya arma `build_cards`,
+#: Presentación de `/precios` (2026-09-16; hasta el 2026-10-05 vivía en `/`):
+#: «mapa» es la de siempre —Leaflet, tiles, compás—; «tablero» son las mismas
+#: tarjetas que ya arma `build_cards`,
 #: agrupadas por provincia, sin mapa ni Leaflet. La clave viaja en `?vista=`
 #: y `_query` la emite siempre (ver ahí por qué).
 #: Desde el 2026-09-26 la default es «tablero»: es la portada del lanzamiento
@@ -52,6 +53,17 @@ DEFAULT_LAYER = "precio"
 #: provincias.
 VISTA_CHOICES: tuple[str, ...] = ("mapa", "tablero", "explorar")
 DEFAULT_VISTA = "tablero"
+
+#: Ruta de la home de precios (tablero/mapa/explorar). Hasta el 2026-10-05 era
+#: `/`; ese día la raíz pasó a ser la landing y esta vista se mudó acá
+#: (docs/decisions.md). Todo enlace interno a la home sale de esta constante.
+HOME_PATH = "/precios"
+
+#: Los parámetros de query que la home de precios entiende. `GET /` los usa
+#: para reconocer un enlace compartido antes de la mudanza y redirigirlo.
+HOME_QUERY_PARAMS: frozenset[str] = frozenset(
+    {"producto", "productos", "provincia", "desde", "hasta", "dias", "ver", "capa", "vista", "pestana"}
+)
 
 def product_slug(name: str) -> str:
     """Nombre → segmento de URL estable. Sirve para producto y para provincia.
@@ -207,7 +219,7 @@ def _query(
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     vista: str = "",
-    path: str = "/",
+    path: str = HOME_PATH,
 ) -> str:
     """Compone la URL con los ejes activos, en orden fijo
     producto/pestana/provincia/desde/hasta/ver/capa/vista.
@@ -261,7 +273,7 @@ def products_query(
     ver: Sequence[str] = (),
     capa: str = DEFAULT_LAYER,
     vista: str = "mapa",
-    path: str = "/",
+    path: str = HOME_PATH,
 ) -> str:
     """URL con `?productos=<slugs>` (o sin el parámetro si la lista está vacía),
     preservando la pestaña activa de «Explorar» (`pestana`, P4), provincia,

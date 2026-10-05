@@ -254,7 +254,7 @@ class TestEstadoDePublicacion:
 class TestRutaPublica:
     def test_la_raiz_responde_sin_credenciales(self, client: TestClient) -> None:
         """Es la capa pública: un 401 acá sería el bug, no la protección."""
-        response = client.get("/")
+        response = client.get("/precios")
 
         assert response.status_code == 200
 
@@ -267,7 +267,7 @@ class TestRutaPublica:
         emparejar."""
         _seed_provincias(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
         filas = _map_data(texto)
         slugs_geojson = {f["properties"]["slug"] for f in _geojson()["features"]}
 
@@ -281,7 +281,7 @@ class TestRutaPublica:
     ) -> None:
         _seed_provincias(session)
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "0 de 16 provincias" in texto
         assert all(fila["state"] == "sin-datos" for fila in _map_data(texto))
@@ -291,7 +291,7 @@ class TestRutaPublica:
     ) -> None:
         """§9.0: «La ausencia de datos se comunica como decisión metodológica,
         no como falla». La página lo dice, no lo deja implícito."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "Recogiendo datos, todavía sin publicar" in texto
         assert "Todavía <strong>ninguna</strong> cumple" in texto
@@ -302,14 +302,14 @@ class TestRutaPublica:
         """§9.0 pide «su progreso hacia el umbral», pero el denominador N está
         sin calibrar y §12.6 prohíbe inventarlo. El conteo crudo es honesto; un
         porcentaje fabricaría el umbral."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "% del umbral" not in texto
 
     def test_no_expone_la_herramienta_del_operador(self, client: TestClient) -> None:
         """`_public_shell.html` no extiende el shell del operador justamente
         para esto. Si alguien lo 'unifica', esto se pone rojo."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'href="/curation"' not in texto
         assert 'href="/control"' not in texto
@@ -317,7 +317,7 @@ class TestRutaPublica:
 
     def test_el_tamano_de_muestra_es_visible(self, client: TestClient) -> None:
         """§9.0 lo exige desde el día 1, en lugar de un titular de precio."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "Observaciones por provincia" in texto
 
@@ -331,7 +331,7 @@ class TestRutaPublica:
         proyecto —el coloreado real corre en JS y solo conoce `state` y
         `density_ratio`, ninguno de los dos deriva de un precio—, así que
         basta con que la página entera nunca los mencione."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         for clase in ("is-caro", "is-barato", "is-promedio"):
             assert clase not in texto
@@ -348,7 +348,7 @@ class TestCapaDelMapa:
     `#ph-map-data`—, no el color final en pantalla."""
 
     def test_por_defecto_es_la_capa_de_publicacion(self, client: TestClient) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'class="ph-layer-toggle"' in texto
         assert 'data-capa="publicacion"' in texto
@@ -358,7 +358,7 @@ class TestCapaDelMapa:
     ) -> None:
         _seed_provincias(session)
 
-        texto = client.get("/?capa=densidad").text
+        texto = client.get("/precios?capa=densidad").text
 
         assert 'data-capa="densidad"' in texto
         for fila in _map_data(texto):
@@ -367,7 +367,7 @@ class TestCapaDelMapa:
     def test_una_capa_invalida_no_rompe_cae_a_publicacion(
         self, client: TestClient
     ) -> None:
-        r = client.get("/?capa=lo-que-sea")
+        r = client.get("/precios?capa=lo-que-sea")
 
         assert r.status_code == 200
         assert 'data-capa="publicacion"' in r.text
@@ -377,7 +377,7 @@ class TestCapaDelMapa:
     ) -> None:
         _seed_provincias(session)
 
-        texto = client.get("/?capa=densidad").text
+        texto = client.get("/precios?capa=densidad").text
 
         assert "capa=densidad" in texto.split('id="precios"')[0]
         # El `query` de cada fila del mapa —a donde navega el clic sobre el
@@ -392,8 +392,8 @@ class TestCapaDelMapa:
         session.add(Province(code="hab", name="La Habana"))
         session.commit()
 
-        assert 'data-provincia=""' in client.get("/").text
-        assert 'data-provincia="la-habana"' in client.get("/?provincia=la-habana").text
+        assert 'data-provincia=""' in client.get("/precios").text
+        assert 'data-provincia="la-habana"' in client.get("/precios?provincia=la-habana").text
 
     def test_elegir_provincia_no_fuerza_data_capa_a_densidad(
         self, client: TestClient, session: Session
@@ -406,7 +406,7 @@ class TestCapaDelMapa:
         session.add(Province(code="hab", name="La Habana"))
         session.commit()
 
-        texto = client.get("/?provincia=la-habana").text
+        texto = client.get("/precios?provincia=la-habana").text
 
         assert 'data-capa="publicacion"' in texto
         assert 'data-provincia="la-habana"' in texto
@@ -422,7 +422,7 @@ class TestCapaDelMapa:
         datos — las 16 siguen viajando siempre en `#ph-map-data`."""
         _seed_provincias(session)
 
-        filas = _map_data(client.get("/?provincia=la-habana").text)
+        filas = _map_data(client.get("/precios?provincia=la-habana").text)
 
         assert len(filas) == 16
         assert "la-habana" in {fila["slug"] for fila in filas}
@@ -437,7 +437,7 @@ class TestCapaDelMapa:
         session.add(Province(code="hab", name="La Habana"))
         session.commit()
 
-        texto = client.get("/?provincia=la-habana").text
+        texto = client.get("/precios?provincia=la-habana").text
 
         assert "en La Habana</p>" in texto
         assert "en total</p>" not in texto
@@ -516,7 +516,7 @@ class TestEnlaceDeEvidenciaEnLaSerie:
         self._precio(session, product=arroz, province=habana, source=origen, dia=hoy - timedelta(days=1))
         session.commit()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert f'href="/anuncio/{origen.id}"' in texto
 
@@ -533,7 +533,7 @@ class TestEnlaceDeEvidenciaEnLaSerie:
         self._precio(session, product=arroz, province=habana, source=origen, dia=hoy - timedelta(days=1))
         session.commit()
 
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert f'href="/anuncio/{origen.id}"' not in texto
         # La tabla de anuncios de «Cómo se movió» la nombra, sin enlace.
@@ -577,7 +577,7 @@ class TestElMapaEsLaApp:
             Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         )
         _seed_provincias(session)
-        texto = client.get("/?provincia=la-habana").text
+        texto = client.get("/precios?provincia=la-habana").text
 
         pildora = texto.index('class="ph-compass-filters"')
         chips = texto.index('class="ph-chip-rail"')
@@ -601,7 +601,7 @@ class TestElMapaEsLaApp:
         y pidió dejarla SIN fondo, borde, sombra ni `backdrop-filter` — los
         chips y el `<select>` ya traen su propia superficie, y la caja extra
         se sentía como vidrio sobre vidrio."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
         regla = texto[texto.index("  .ph-compass-filters {") :]
         regla = regla[: regla.index("}")]
 
@@ -623,7 +623,7 @@ class TestElMapaEsLaApp:
         `TestOverflowDeChips`) — así que `.ph-compass-filters` ya no
         necesita un `max-width` reactivo, solo uno defensivo contra el
         borde de la ventana."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         isla = texto[texto.index("  .ph-compass-filters {") :]
         isla = isla[: isla.index("}")]
@@ -638,7 +638,7 @@ class TestElMapaEsLaApp:
         que el HTML es idéntico en cada visita) respeta
         `prefers-reduced-motion` y no toca el mecanismo de abrir/cerrar ya
         en producción."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "guani:compas-visto" in texto
         assert 'boton.classList.add("ph-pista")' in texto
@@ -658,7 +658,7 @@ class TestElMapaEsLaApp:
         teclado tabulaba círculo por círculo sin ver ningún texto hasta
         activar uno. Un lector de pantalla ya lo escucha igual (cada ítem
         trae su propio `aria-label`, sin cambios acá)."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         regla = texto[texto.index(".ph-menu-item:hover .ph-menu-label") :]
         regla = regla[: regla.index("}")]
@@ -670,7 +670,7 @@ class TestElMapaEsLaApp:
         """`.ph-stage` sale del flujo y cubre el lienzo; el cromo tiene que
         quedar por encima de las capas internas de Leaflet (que llegan a
         1000), no en el 1..4 de antes de que existiera Leaflet."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
         escenario = texto[texto.index("  .ph-stage {") :]
         escenario = escenario[: escenario.index("}")]
 
@@ -700,7 +700,7 @@ class TestElMapaEsLaApp:
         `.ph-compass-thread`/`.ph-compass-link` son el hilo decorativo que
         conecta las piezas — sin ellos, el compás, el título y el dock
         volverían a leerse como tres cosas sueltas flotando."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'class="ph-compass-thread" aria-hidden="true"' in texto
         assert 'class="ph-compass-link" aria-hidden="true"' in texto
@@ -717,7 +717,7 @@ class TestElMapaEsLaApp:
         defecto — justo donde vive el compás. `zoomControl: false` lo saca;
         `[data-zoom-in]`/`[data-zoom-out]` lo reemplazan, llamando a
         `mapaLeaflet.zoomIn()/zoomOut()` por delegación de evento."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "zoomControl: false" in texto
         assert "data-zoom-in" in texto
@@ -733,7 +733,7 @@ class TestElMapaEsLaApp:
         arrastrada hacia arriba se metía abajo de la barra y no había forma de
         agarrar su título. Ahora es hermano y ocupa el hueco que queda."""
         _seed_provincias(session)
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         mapa = texto.index('id="ph-leaflet-map"')
         capa_del_muelle = texto.index('class="ph-dock-layer"')
@@ -745,7 +745,7 @@ class TestElMapaEsLaApp:
         """Había un `<p class="ph-attrib">` en la esquina inferior derecha y el
         control de atribución de Leaflet en esa misma esquina: dos cajas
         pisándose. Quedó el de Leaflet, con los dos créditos adentro."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "ph-attrib" not in texto
         # Leaflet recibe los dos créditos juntos y los pone una sola vez.
@@ -774,7 +774,7 @@ class TestDockOcultoHastaTocarElAvatar:
     def test_el_compas_es_un_boton_y_el_dock_vive_adentro_del_envoltorio(
         self, client: TestClient
     ) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         envoltorio = texto.index('class="ph-compass-nav"')
         compas = texto.index('<button type="button" class="ph-compass"')
@@ -798,7 +798,7 @@ class TestDockOcultoHastaTocarElAvatar:
         (`abrirCompas`/`programarCierreCompas`, ver el otro test); acá solo
         quedan los dos disparadores que sí son puro CSS: `:focus-within`
         (teclado) y `.is-active` (la clase que ese JS y el toque alternan)."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         # El dock necesita `visibility` (sus enlaces son focales); el hilo,
         # el enlace decorativo y el título NO —van con `opacity` nada más,
@@ -838,7 +838,7 @@ class TestDockOcultoHastaTocarElAvatar:
         ocultar el título así habría dejado a la sección sin nombre la
         mayor parte del tiempo. Por eso el título se oculta con `opacity`
         nada más, nunca `visibility`."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'aria-labelledby="ph-canvas-title"' in texto
         assert 'id="ph-canvas-title"' in texto
@@ -862,7 +862,7 @@ class TestDockOcultoHastaTocarElAvatar:
         salir de veras del envoltorio de pasar a otro hijo suyo. La demora
         (300ms) tolera cruzar el hueco entre avatar y dock sin que el dock se
         cierre a mitad de camino."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "function abrirCompas()" in texto
         assert "function programarCierreCompas()" in texto
@@ -876,7 +876,7 @@ class TestDockOcultoHastaTocarElAvatar:
         para abrir/cerrar el dock con el dedo, delegado en `document` por la
         misma razón que `zoomDelMapa` y `cerrarOptimista` — el compás entero
         vive adentro de `#ph-live` y se reemplaza en cada swap de htmx."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "function alternarCompas(ev)" in texto
         assert 'envoltorio.classList.toggle("is-active")' in texto
@@ -908,7 +908,7 @@ class TestFiltrosEnAngostoVanAlLadoContrarioDelCompas:
     def test_la_pildora_de_filtros_baja_al_fondo_en_angosto(
         self, client: TestClient
     ) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
         regla = self._regla_angosta(texto, "    .ph-compass-filters")
 
         assert "top: auto" in regla
@@ -923,7 +923,7 @@ class TestFiltrosEnAngostoVanAlLadoContrarioDelCompas:
         de chips+provincia, o al revés. `inset` es un atajo (no hay
         `left: 0` literal que buscar, a diferencia de `.ph-compass-filters`),
         así que alcanza con el valor completo, único en el archivo."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "inset: auto 0 4.5rem 0" in texto
 
@@ -935,7 +935,7 @@ class TestFiltrosEnAngostoVanAlLadoContrarioDelCompas:
         el mismo día: «hay que ser creativo… o lo movemos de lugar o lo
         ocultamos y mostramos de alguna forma»). Ver
         `TestLaLeyendaColapsaEnAngosto` para el mecanismo completo."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
         regla = texto[texto.index(".ph-canvas-legend.is-active") :]
         regla = regla[: regla.index("}")]
 
@@ -953,7 +953,7 @@ class TestLaLeyendaColapsaEnAngosto:
     cambia nada: la leyenda sigue siempre abierta, como toda la vida."""
 
     def test_el_boton_esta_oculto_en_escritorio(self, client: TestClient) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
         regla = texto[texto.index("  .ph-legend-toggle { display: none; }") :]
         regla = regla[: regla.index(";")]
 
@@ -962,7 +962,7 @@ class TestLaLeyendaColapsaEnAngosto:
     def test_el_boton_vive_adentro_del_dock_del_compas(
         self, client: TestClient
     ) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         dock = texto.index('<nav class="ph-menu"')
         cierre_dock = texto.index("</nav>", dock)
@@ -973,7 +973,7 @@ class TestLaLeyendaColapsaEnAngosto:
     def test_el_boton_aparece_en_angosto_y_la_leyenda_arranca_oculta(
         self, client: TestClient
     ) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         regla_boton = texto[texto.index(".ph-menu-item.ph-legend-toggle {") :]
         regla_boton = regla_boton[: regla_boton.index("}")]
@@ -994,7 +994,7 @@ class TestLaLeyendaColapsaEnAngosto:
         hace falta distinguir mouse de táctil acá. El botón y la leyenda
         viven en dos puntos distintos del DOM, así que esto apunta a
         `.ph-canvas-legend` directo, no a un envoltorio compartido."""
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert "function alternarLeyenda(ev)" in texto
         assert 'leyenda.classList.toggle("is-active")' in texto
@@ -1004,7 +1004,7 @@ class TestLaLeyendaColapsaEnAngosto:
     def test_el_boton_tiene_su_propio_icono_y_nombre_accesible(
         self, client: TestClient
     ) -> None:
-        texto = client.get("/").text
+        texto = client.get("/precios").text
 
         assert 'class="ph-menu-item ph-legend-toggle" aria-pressed="false" aria-label="Mostrar la leyenda del mapa"' in texto
         assert '<span class="m3-icon">layers</span>' in texto

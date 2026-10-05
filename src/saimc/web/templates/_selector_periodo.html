@@ -30,7 +30,7 @@
     {% endfor %}
     <details class="ph-periodo-custom">
       <summary class="ph-periodo-chip{% if es_personalizado %} is-active{% endif %}" aria-label="Elegir fechas{% if es_personalizado %}: del {{ selected_desde.strftime('%d/%m/%Y') }} al {{ selected_hasta.strftime('%d/%m/%Y') }}{% endif %}"><span class="m3-icon" aria-hidden="true">calendar_month</span>{% if es_personalizado %}{{ selected_desde.strftime('%d/%m') }} – {{ selected_hasta.strftime('%d/%m') }}{% else %}Fechas{% endif %}</summary>
-      <form class="ph-periodo-form" action="/" method="get">
+      <form class="ph-periodo-form" action="/precios" method="get">
         {% for nombre, valor in period_hidden %}{% if valor %}<input type="hidden" name="{{ nombre }}" value="{{ valor }}">{% endif %}{% endfor %}
         <label class="ph-periodo-campo"><span>Desde</span><input type="date" name="desde" value="{{ selected_desde.isoformat() }}"></label>
         <label class="ph-periodo-campo"><span>Hasta</span><input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}"></label>

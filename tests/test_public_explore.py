@@ -129,7 +129,7 @@ def arbol(session: Session, datos: None) -> None:
 
 
 def _html(client: TestClient, query: str) -> str:
-    return str(client.get("/?vista=explorar" + query).text)
+    return str(client.get("/precios?vista=explorar" + query).text)
 
 
 def _bloque(texto: str, inicio: str, fin: str) -> str:
@@ -168,12 +168,12 @@ class TestVista:
         assert resolve_vista("dashboard") == "tablero"
 
     def test_la_ruta_responde_sin_credenciales(self, client: TestClient, datos: None) -> None:
-        assert client.get("/?vista=explorar").status_code == 200
+        assert client.get("/precios?vista=explorar").status_code == 200
 
     def test_la_cookie_de_vista_tambien_abre_explorar(self, client: TestClient, datos: None) -> None:
         client.cookies.set("vista", "explorar")
 
-        assert 'class="ph-ex"' in client.get("/").text
+        assert 'class="ph-ex"' in client.get("/precios").text
 
     def test_no_expone_la_herramienta_del_operador(self, client: TestClient, datos: None) -> None:
         texto = _html(client, "&productos=arroz")
@@ -211,10 +211,10 @@ class TestSelectorDeVistas:
         assert "pollo" not in tablero
 
     def test_el_mapa_ofrece_ir_a_explorar(self, client: TestClient, datos: None) -> None:
-        assert 'data-vista="explorar"' in client.get("/?productos=arroz").text
+        assert 'data-vista="explorar"' in client.get("/precios?productos=arroz").text
 
     def test_el_tablero_ofrece_ir_a_explorar(self, client: TestClient, datos: None) -> None:
-        assert 'data-vista="explorar"' in client.get("/?vista=tablero").text
+        assert 'data-vista="explorar"' in client.get("/precios?vista=tablero").text
 
 
 class TestPanelIzquierdo:
@@ -290,7 +290,9 @@ class TestPestanias:
         JavaScript, tocar una navega con `?pestana=` y `?productos=` intacto."""
         centro = _centro(_html(client, "&productos=arroz,pollo"))
 
-        assert re.search(r'href="/\?productos=arroz,pollo&amp;pestana=pollo&amp;[^"]*"[^>]*>Pollo', centro)
+        assert re.search(
+            r'href="/precios\?productos=arroz,pollo&amp;pestana=pollo&amp;[^"]*"[^>]*>Pollo', centro
+        )
         assert "productos=pollo,arroz" not in centro
 
     def test_elegir_pestana_explicita_marca_esa_como_activa(self, client: TestClient, datos: None) -> None:
@@ -303,7 +305,7 @@ class TestPestanias:
     def test_la_x_quita_solo_ese_producto(self, client: TestClient, datos: None) -> None:
         centro = _centro(_html(client, "&productos=arroz,pollo"))
 
-        assert re.search(r'href="/\?productos=pollo&amp;[^"]*"[^>]*aria-label="Cerrar Arroz"', centro)
+        assert re.search(r'href="/precios\?productos=pollo&amp;[^"]*"[^>]*aria-label="Cerrar Arroz"', centro)
 
     def test_cerrar_la_activa_activa_a_su_vecina_de_verdad_no_solo_en_la_url(
         self, client: TestClient, datos: None
@@ -828,7 +830,7 @@ class TestCintilloEnLasTresVistas:
     def test_las_tres_vistas_traen_el_cintillo(
         self, client: TestClient, datos: None, vista: str
     ) -> None:
-        texto = client.get(f"/?vista={vista}").text
+        texto = client.get(f"/precios?vista={vista}").text
 
         assert 'class="ph-cintillo"' in texto
         assert "Mediana · provincias con dato" in texto
@@ -844,7 +846,7 @@ class TestCintilloEnLasTresVistas:
     def test_cada_enlace_se_queda_en_su_vista(
         self, client: TestClient, datos: None, vista: str, fragmento: str
     ) -> None:
-        cinta = self._cinta(client.get(f"/?vista={vista}").text)
+        cinta = self._cinta(client.get(f"/precios?vista={vista}").text)
         enlaces = re.findall(r'class="ph-cintillo-item" href="([^"]+)"', cinta)
 
         # Arroz y Pollo (Aceite no tiene anuncios), cada uno en el grupo y en su copia.
@@ -855,7 +857,7 @@ class TestCintilloEnLasTresVistas:
     def test_en_explorar_el_enlace_abre_la_pestana_del_producto(
         self, client: TestClient, datos: None
     ) -> None:
-        cinta = self._cinta(client.get("/?vista=explorar").text)
+        cinta = self._cinta(client.get("/precios?vista=explorar").text)
 
         assert "pestana=arroz" in cinta
 
@@ -865,21 +867,21 @@ class TestCintilloEnLasTresVistas:
         """El desplazamiento continuo necesita dos grupos iguales. La copia es
         decorativa: `aria-hidden` y sus enlaces fuera del orden de tabulación,
         para que un lector de pantalla no lea cada producto dos veces."""
-        cinta = self._cinta(client.get("/?vista=tablero").text)
+        cinta = self._cinta(client.get("/precios?vista=tablero").text)
 
         assert cinta.count('<ul class="ph-cintillo-grupo">') == 1
         assert cinta.count('<ul class="ph-cintillo-grupo" aria-hidden="true">') == 1
         assert cinta.count('tabindex="-1"') == 2
 
     def test_muestra_la_mediana_y_el_cambio_sin_flecha(self, client: TestClient, datos: None) -> None:
-        cinta = self._cinta(client.get("/?vista=tablero").text)
+        cinta = self._cinta(client.get("/precios?vista=tablero").text)
 
         assert '<span class="ph-cintillo-cifra">350</span>' in cinta  # (300 + 400) / 2
         assert "▲" not in cinta and "▼" not in cinta
 
     def test_sin_datos_no_hay_cintillo(self, client: TestClient) -> None:
         for vista in ("tablero", "mapa", "explorar"):
-            assert 'class="ph-cintillo"' not in client.get(f"/?vista={vista}").text, vista
+            assert 'class="ph-cintillo"' not in client.get(f"/precios?vista={vista}").text, vista
 
 
 class TestBarraDeVistasMovil:
@@ -895,7 +897,7 @@ class TestBarraDeVistasMovil:
     def test_las_tres_vistas_traen_la_barra_con_las_tres_entradas(
         self, client: TestClient, datos: None, vista: str
     ) -> None:
-        barra = self._barra(client.get(f"/?vista={vista}").text)
+        barra = self._barra(client.get(f"/precios?vista={vista}").text)
 
         for destino in ("mapa", "tablero", "explorar"):
             assert re.search(
@@ -907,7 +909,7 @@ class TestBarraDeVistasMovil:
     def test_solo_la_vista_actual_esta_marcada(
         self, client: TestClient, datos: None, vista: str
     ) -> None:
-        barra = self._barra(client.get(f"/?vista={vista}").text)
+        barra = self._barra(client.get(f"/precios?vista={vista}").text)
 
         assert barra.count('aria-current="true"') == 1
         assert re.search(rf'data-vista="{vista}"[^>]*aria-current="true"', barra)
@@ -916,7 +918,7 @@ class TestBarraDeVistasMovil:
         """A diferencia del cintillo, la barra es navegación: sin datos también
         hace falta poder cambiar de vista."""
         for vista in ("tablero", "mapa", "explorar"):
-            assert '<nav class="ph-barra-vistas"' in client.get(f"/?vista={vista}").text, vista
+            assert '<nav class="ph-barra-vistas"' in client.get(f"/precios?vista={vista}").text, vista
 
 
 class TestCoberturaEnElTablero:
@@ -933,14 +935,14 @@ class TestCoberturaEnElTablero:
     ) -> None:
         """El fixture trae tres provincias (La Habana, Santiago y Guantánamo);
         el catálogo real trae las 16. Una casilla por cada una que exista."""
-        panel = self._panel(client.get("/?vista=tablero").text)
+        panel = self._panel(client.get("/precios?vista=tablero").text)
 
         assert panel.count('class="ph-tesela ') == 3
 
     def test_las_provincias_con_dato_van_llenas_y_las_demas_punteadas(
         self, client: TestClient, datos: None
     ) -> None:
-        panel = self._panel(client.get("/?vista=tablero").text)
+        panel = self._panel(client.get("/precios?vista=tablero").text)
 
         assert re.search(r'data-estado="en-ingesta"[^>]*title="La Habana: ', panel)
         assert re.search(r'data-estado="en-ingesta"[^>]*title="Santiago de Cuba: ', panel)
@@ -950,14 +952,14 @@ class TestCoberturaEnElTablero:
     def test_cada_casilla_lleva_su_lugar_en_la_rejilla(
         self, client: TestClient, datos: None
     ) -> None:
-        panel = self._panel(client.get("/?vista=tablero").text)
+        panel = self._panel(client.get("/precios?vista=tablero").text)
 
         # La Habana: columna 3, fila 1; Santiago de Cuba: columna 11, fila 2.
         assert re.search(r'style="grid-column: 3; grid-row: 1;[^"]*" title="La Habana', panel)
         assert re.search(r'style="grid-column: 11; grid-row: 2;[^"]*" title="Santiago de Cuba', panel)
 
     def test_ofrece_el_puente_al_mapa(self, client: TestClient, datos: None) -> None:
-        panel = self._panel(client.get("/?vista=tablero").text)
+        panel = self._panel(client.get("/precios?vista=tablero").text)
 
         assert re.search(r'<a class="ph-cobertura-mapa ph-tap-44" href="[^"]*vista=mapa"', panel)
 
@@ -966,12 +968,12 @@ class TestCoberturaEnElTablero:
     ) -> None:
         """La viñeta «N de 16 provincias tienen datos» es de «Sobre los datos»
         (§9.0); el mosaico la dibuja, no la vuelve a escribir."""
-        texto = client.get("/?vista=tablero").text
+        texto = client.get("/precios?vista=tablero").text
 
         assert texto.count("tienen datos") == 1
 
     def test_el_detalle_no_lleva_el_mosaico(self, client: TestClient, datos: None) -> None:
-        texto = client.get("/?vista=tablero&productos=arroz").text
+        texto = client.get("/precios?vista=tablero&productos=arroz").text
 
         assert 'class="ph-panel ph-cobertura"' not in texto
 
@@ -986,12 +988,12 @@ class TestSelectorDePeriodoEnElTablero:
         inicio = texto.index('class="ph-periodo"')
         return texto[inicio : texto.index("<!-- /ph-periodo -->", inicio)]
 
-    @pytest.mark.parametrize("url", ["/?vista=tablero", "/?vista=tablero&productos=arroz"])
+    @pytest.mark.parametrize("url", ["/precios?vista=tablero", "/precios?vista=tablero&productos=arroz"])
     def test_esta_en_todos_y_en_el_detalle(self, client: TestClient, datos: None, url: str) -> None:
         assert 'class="ph-periodo"' in client.get(url).text
 
     def test_ofrece_los_tres_atajos_en_su_vista(self, client: TestClient, datos: None) -> None:
-        periodo = self._periodo(client.get("/?vista=tablero").text)
+        periodo = self._periodo(client.get("/precios?vista=tablero").text)
         atajos = re.findall(
             r'<a class="ph-periodo-chip[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', periodo
         )
@@ -1000,7 +1002,7 @@ class TestSelectorDePeriodoEnElTablero:
         assert all("vista=tablero" in href and "desde=" in href and "hasta=" in href for href, _ in atajos)
 
     def test_sin_elegir_nada_esta_marcado_el_de_30_dias(self, client: TestClient, datos: None) -> None:
-        periodo = self._periodo(client.get("/?vista=tablero").text)
+        periodo = self._periodo(client.get("/precios?vista=tablero").text)
 
         marcados = re.findall(r'aria-current="true">(\d+ días)</a>', periodo)
 
@@ -1009,7 +1011,7 @@ class TestSelectorDePeriodoEnElTablero:
     def test_un_rango_propio_no_marca_ningun_atajo_y_enciende_las_fechas(
         self, client: TestClient, datos: None
     ) -> None:
-        periodo = self._periodo(client.get("/?vista=tablero&desde=2026-09-01&hasta=2026-09-10").text)
+        periodo = self._periodo(client.get("/precios?vista=tablero&desde=2026-09-01&hasta=2026-09-10").text)
 
         assert 'aria-current="true"' not in periodo
         assert re.search(r'<summary class="ph-periodo-chip is-active"', periodo)
@@ -1020,7 +1022,7 @@ class TestSelectorDePeriodoEnElTablero:
         self, client: TestClient, datos: None
     ) -> None:
         periodo = self._periodo(
-            client.get("/?vista=tablero&productos=arroz&provincia=la-habana").text
+            client.get("/precios?vista=tablero&productos=arroz&provincia=la-habana").text
         )
 
         assert '<input type="hidden" name="vista" value="tablero">' in periodo
@@ -1028,14 +1030,14 @@ class TestSelectorDePeriodoEnElTablero:
         assert '<input type="hidden" name="productos" value="arroz">' in periodo
 
     def test_el_mapa_no_lo_estrena(self, client: TestClient, datos: None) -> None:
-        assert 'class="ph-periodo"' not in client.get("/?vista=mapa").text
+        assert 'class="ph-periodo"' not in client.get("/precios?vista=mapa").text
 
     def test_elegir_un_rango_desde_el_formulario_abre_el_tablero_con_ese_rango(
         self, client: TestClient, datos: None
     ) -> None:
         """Ida y vuelta: lo que manda el formulario (GET con `vista=tablero`) es
         lo que el servidor devuelve en el aviso y en los campos."""
-        texto = client.get("/?vista=tablero&desde=2026-09-01&hasta=2026-09-10").text
+        texto = client.get("/precios?vista=tablero&desde=2026-09-01&hasta=2026-09-10").text
 
         assert "Mediana de los últimos 9 días" in texto
 
@@ -1047,7 +1049,7 @@ class TestSelectorDePeriodoEnExplorar:
     de `#ph-live` y se recalcula con el período, así que un intercambio parcial
     lo dejaría desactualizado."""
 
-    URL = "/?vista=explorar&productos=arroz"
+    URL = "/precios?vista=explorar&productos=arroz"
 
     def _bloques(self, texto: str) -> list[str]:
         salida = []
@@ -1077,7 +1079,7 @@ class TestSelectorDePeriodoEnExplorar:
     def test_sin_producto_abierto_no_hay_donde_ponerlo(self, client: TestClient, datos: None) -> None:
         """Sin pestaña activa no hay cabecera ni hoja de filtros: el estado vacío
         solo invita a elegir un producto."""
-        assert 'class="ph-periodo"' not in client.get("/?vista=explorar").text
+        assert 'class="ph-periodo"' not in client.get("/precios?vista=explorar").text
 
     def test_los_atajos_vuelven_a_la_misma_pestana(self, client: TestClient, datos: None) -> None:
         bloque = self._bloques(client.get(self.URL).text)[0]
@@ -1132,7 +1134,7 @@ class TestElProductoEnFocoViajaAlTablero:
     tablero mostraba la lista completa y el foco se perdía. El mapa, en cambio,
     admite varios productos y conserva todos los abiertos."""
 
-    URL = "/?vista=explorar&productos=arroz,pollo&pestana=pollo"
+    URL = "/precios?vista=explorar&productos=arroz,pollo&pestana=pollo"
 
     def _enlace(self, texto: str, destino: str) -> str:
         m = re.search(rf'<a class="js-vista-link[^"]*" data-vista="{destino}" href="([^"]+)"', texto)

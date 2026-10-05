@@ -35,6 +35,13 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+{# `body` es un bloque desde el 2026-10-05 para la landing
+   (`public_landing.html`): su maqueta va de borde a borde, con su propia
+   cabecera y su propio pie, y no usa ninguno de los dos scripts de abajo.
+   Reusa de este shell el `<head>` —título, metadatos para compartir y la hoja
+   con las fuentes vendorizadas—. Quien no lo sobreescriba recibe lo de
+   siempre. #}
+{% block body %}
 <div class="m3-public">
 
   <header class="m3-public-top">
@@ -83,5 +90,6 @@
 {% include "_theme_toggle_script.html" %}
 {% include "_vista_cookie_script.html" %}
 {% block scripts %}{% endblock %}
+{% endblock body %}
 </body>
 </html>

@@ -158,6 +158,16 @@ class Settings(BaseSettings):
     # lo ya guardado). Una llamada cuesta del orden de 0,00002 a 0,00007 USD.
     llm_jev_max_cost: float = _JEV_DEFAULTS["llm_jev_max_cost"]
 
+    # Contacto y redes del pie de la landing (`GET /`, 2026-10-05). Los cuatro
+    # son opcionales y se dibuja solo el que esté puesto; sin ninguno, el pie
+    # no muestra esa columna. Los tres enlaces tienen que empezar con
+    # `http://` o `https://` (`web/landing_view.build_footer_links` ignora lo
+    # demás). Son del proyecto, nunca de un anunciante.
+    link_facebook: str | None = None
+    link_whatsapp: str | None = None
+    link_telegram: str | None = None
+    contact_email: str | None = None
+
     # Procedencia del `price_basis` retro-completado por inferencia en las
     # filas anteriores al campo (docs/decisions.md, 2026-09-02). Mismo lugar y
     # mismo motivo que `llm_assist_log_path`: ata ids de la base de producción,

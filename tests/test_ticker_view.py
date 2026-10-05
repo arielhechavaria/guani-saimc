@@ -59,7 +59,7 @@ ANTERIOR = [
 
 def _cintillo(actual=ACTUAL, anterior=ANTERIOR):
     slopes = build_month_vs_month(actual, anterior, window_days=30, hoy=HOY)
-    return build_ticker(PILOTO, slopes, href=lambda slug: f"/?productos={slug}")
+    return build_ticker(PILOTO, slopes, href=lambda slug: f"/precios?productos={slug}")
 
 
 def _item(cintillo, nombre: str):
@@ -108,7 +108,7 @@ class TestCintillo:
         assert _item(_cintillo(actual=con_mas_pollo), "Pollo").slot == 1
 
     def test_el_enlace_lo_arma_quien_llama_con_el_slug(self) -> None:
-        assert _item(_cintillo(), "Arroz").href == "/?productos=arroz"
+        assert _item(_cintillo(), "Arroz").href == "/precios?productos=arroz"
 
     def test_sin_datos_en_ningun_producto_el_cintillo_queda_vacio(self) -> None:
         assert _cintillo(actual=[], anterior=[]) == ()
