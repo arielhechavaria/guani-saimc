@@ -496,23 +496,16 @@ def propose_ad(
     glossary: Sequence[GlossaryEntry] = (),
     trim: bool = False,
 ) -> AdProposal:
-    """Una llamada por anuncio: todas las filas del foco y el veredicto.
+    from saimc.llm.provider import build_client, resolve_config
 
-    Nunca levanta (ver el docstring de módulo). `client` es el seam de test.
-    Sin clave o con texto vacío no hay invocación y no se registra: el
-    registro cuenta intentos reales — tampoco se aplica el glosario, porque
-    no hubo llamada que lo use.
+    try:
+        cfg = resolve_config()
+    except ValueError as error:
+        return AdProposal(degraded=True, failure=classify_failure(error))
 
-    `trim` (slice 3c, apagado por defecto): si está prendido, lo que ve el
-    modelo pasa por `trim_text_for_model` antes de armar el prompt. Apagado
-    en los tres llamadores de producción (`/curation`, `prefill`, y el
-    backtest por defecto) hasta que un backtest aparte con `trim=True`
-    confirme que no pierde filas contra el oro. La evidencia se sigue
-    verificando contra el texto SIN recortar (`redacted`, más abajo), nunca
-    contra el recortado.
-    """
-    if not api_key:
-        return AdProposal(degraded=True, failure="no_key")
+    api_key = api_key or cfg.api_key
+    model = model if model is not None else cfg.model
+    timeout = timeout if timeout is not None else cfg.timeout
 
     from saimc.privacy import redact_personal_data
 
@@ -553,13 +546,13 @@ def propose_ad(
 
     if client is None:
         try:
-            import anthropic
-
-            client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+            client = build_client(cfg)
         except Exception as error:
             return _registrar(
                 AdProposal(
-                    degraded=True, failure=classify_failure(error), prompt_version=version
+                    degraded=True,
+                    failure=classify_failure(error),
+                    prompt_version=version,
                 )
             )
 
@@ -703,7 +696,7 @@ def record_operator_run(
     result: AdProposal,
     *,
     ingestion_id: str,
-    model: str,
+    model: model,
     log_path: Path,
     source: str,
 ) -> None:
