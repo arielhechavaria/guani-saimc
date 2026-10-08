@@ -487,10 +487,10 @@ def propose_ad(
     products: Sequence[Product],
     provinces: Sequence[Province],
     *,
-    api_key: str | None,
+    api_key: str | None = None,
     client: Any | None = None,
-    model: str = "claude-sonnet-5",
-    timeout: float = 120.0,
+    model: str | None = None,
+    timeout: float | None = None,
     ingestion_id: str = "",
     log_path: Path | None = None,
     glossary: Sequence[GlossaryEntry] = (),
@@ -503,20 +503,47 @@ def propose_ad(
     registro cuenta intentos reales — tampoco se aplica el glosario, porque
     no hubo llamada que lo use.
 
+    La config del proveedor (clave, modelo, base URL, timeout) sale de
+    `saimc.llm.provider.resolve_config()`; los argumentos explícitos de esta
+    función ganan sobre ella. Si el entorno no está configurado pero el
+    caller pasa `api_key`, se asume Anthropic directo con los defaults.
+
     `trim` (slice 3c, apagado por defecto): si está prendido, lo que ve el
     modelo pasa por `trim_text_for_model` antes de armar el prompt. Apagado
     en los tres llamadores de producción (`/curation`, `prefill`, y el
     backtest por defecto) hasta que un backtest aparte con `trim=True`
     confirme que no pierde filas contra el oro. La evidencia se sigue
-    verificando contra el texto SIN recortar (`redacted`, más abajo), nunca
-    contra el recortado.
+    verificando contra el texto SIN recortar (`redacted`), nunca contra el
+    recortado.
     """
-    if not api_key:
-        return AdProposal(degraded=True, failure="no_key")
+    from saimc.llm.provider import LLMConfig, build_client, resolve_config
 
+    # 1) Config del proveedor. Si el entorno no está configurado pero el
+    #    caller pasa `api_key` explícita, asumimos Anthropic directo para
+    #    que `cfg` nunca quede en None y `build_client` tenga qué construir.
+    cfg: LLMConfig | None = None
+    try:
+        cfg = resolve_config()
+    except ValueError as error:
+        if api_key is None:
+            return AdProposal(degraded=True, failure=classify_failure(error))
+        cfg = LLMConfig(
+            provider="anthropic",
+            api_key=api_key,
+            base_url=None,
+            model=model or "claude-sonnet-5",
+            timeout=timeout or 120.0,
+        )
+
+    # 2) Los argumentos explícitos ganan sobre la config resuelta.
+    api_key = api_key or cfg.api_key
+    model = model if model is not None else cfg.model
+    timeout = timeout if timeout is not None else cfg.timeout
+
+    # 3) Redacción en el borde de la llamada. Nunca sale un teléfono del
+    #    anuncio hacia el cliente del modelo.
     from saimc.privacy import redact_personal_data
 
-    # La redacción va acá, en el borde de la llamada.
     redacted = redact_personal_data(text) or ""
     if not redacted.strip():
         return AdProposal(degraded=True, failure="empty_text")
@@ -553,13 +580,120 @@ def propose_ad(
 
     if client is None:
         try:
-            import anthropic
-
-            client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+            client = build_client(cfg)
         except Exception as error:
             return _registrar(
                 AdProposal(
-                    degraded=True, failure=classify_failure(error), prompt_version=version
+                    degraded=True,
+                    failure=classify_failure(error),
+                    prompt_version=version,
+                )
+            )
+
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=MAX_TOKENS,
+            system=_SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": build_prompt_blocks(
+                        texto_para_modelo, products, provinces, glossary
+                    ),
+                }
+            ],
+            output_config={"format": {"type": "json_schema", "schema": response_schema()}},
+            # Sonnet 5 corre *adaptive thinking* por defecto si no se lo pide
+            # explícitamente desactivado, y ese razonamiento se factura como
+            # output_tokens sin aparecer en `raw_response` (que solo guarda
+            # el primer bloque `type: text`). Medido contra anuncios reales
+            # (tarea 7 del backlog): con el default, la extracción de un
+            # anuncio con varias filas agotaba `max_tokens` (4096) antes de
+            # terminar el JSON y degradaba (docs/decisions.md, hallazgo del
+            # 2026-09-26 sobre `62cd0e01`); desactivado, el mismo anuncio usó
+            # 7-8x menos tokens de salida y el JSON salió completo. La tarea
+            # es extracción con esquema cerrado, no razonamiento abierto: no
+            # hay nada que "pensar" que el esquema no fuerce ya.
+            thinking={"type": "disabled"},
+        )
+    except Exception as error:
+        return _registrar(
+            AdProposal(degraded=True, failure=classify_failure(error), prompt_version=version)
+        )
+
+    entrada, salida, leidos, escritos = _usage_with_cache(response)
+    raw = _response_text(response)
+    body: object = None
+    if raw:
+        try:
+            body = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            body = None
+
+    parsed = parse_response(body, products, provinces)
+    if parsed is None:
+        return _registrar(
+            AdProposal(
+                degraded=True,
+                failure="other",
+                input_tokens=entrada,
+                output_tokens=salida,
+                cache_read_tokens=leidos,
+                cache_write_tokens=escritos,
+                raw_response=raw or None,
+                prompt_version=version,
+            )
+        )
+    return _registrar(
+        AdProposal(
+            rows=parsed.rows,
+            # Se verifica contra el texto que vio el modelo (ya redactado).
+            row_meta=verify_evidence(redacted, parsed.rows, parsed.row_meta),
+            discard=parsed.discard,
+            discard_reason=parsed.discard_reason,
+            input_tokens=entrada,
+            output_tokens=salida,
+            cache_read_tokens=leidos,
+            cache_write_tokens=escritos,
+            dropped=parsed.dropped,
+            raw_response=raw or None,
+            prompt_version=version,
+        )
+    )
+
+    def _registrar(result: AdProposal) -> AdProposal:
+        """Todo camino de salida con invocación pasa por acá."""
+        if log_path is not None:
+            append_assist_run(
+                {
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "ingestion_id": ingestion_id,
+                    "model": model,
+                    "prompt_version": result.prompt_version,
+                    "rows": len(result.rows),
+                    "discard": result.discard,
+                    "dropped": result.dropped,
+                    "degraded": result.degraded,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "cache_read_tokens": result.cache_read_tokens,
+                    "cache_write_tokens": result.cache_write_tokens,
+                    "failure": result.failure,
+                },
+                log_path,
+            )
+        return result
+
+    if client is None:
+        try:
+            client = build_client(cfg)
+        except Exception as error:
+            return _registrar(
+                AdProposal(
+                    degraded=True,
+                    failure=classify_failure(error),
+                    prompt_version=version,
                 )
             )
 
@@ -703,7 +837,7 @@ def record_operator_run(
     result: AdProposal,
     *,
     ingestion_id: str,
-    model: str,
+    model: model,
     log_path: Path,
     source: str,
 ) -> None:
