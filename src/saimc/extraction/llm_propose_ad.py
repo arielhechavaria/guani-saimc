@@ -662,114 +662,6 @@ def propose_ad(
         )
     )
 
-    def _registrar(result: AdProposal) -> AdProposal:
-        """Todo camino de salida con invocación pasa por acá."""
-        if log_path is not None:
-            append_assist_run(
-                {
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "ingestion_id": ingestion_id,
-                    "model": model,
-                    "prompt_version": result.prompt_version,
-                    "rows": len(result.rows),
-                    "discard": result.discard,
-                    "dropped": result.dropped,
-                    "degraded": result.degraded,
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
-                    "cache_read_tokens": result.cache_read_tokens,
-                    "cache_write_tokens": result.cache_write_tokens,
-                    "failure": result.failure,
-                },
-                log_path,
-            )
-        return result
-
-    if client is None:
-        try:
-            client = build_client(cfg)
-        except Exception as error:
-            return _registrar(
-                AdProposal(
-                    degraded=True,
-                    failure=classify_failure(error),
-                    prompt_version=version,
-                )
-            )
-
-    try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=MAX_TOKENS,
-            system=_SYSTEM_PROMPT,
-            messages=[
-                {
-                    "role": "user",
-                    "content": build_prompt_blocks(
-                        texto_para_modelo, products, provinces, glossary
-                    ),
-                }
-            ],
-            output_config={"format": {"type": "json_schema", "schema": response_schema()}},
-            # Sonnet 5 corre *adaptive thinking* por defecto si no se lo pide
-            # explícitamente desactivado, y ese razonamiento se factura como
-            # output_tokens sin aparecer en `raw_response` (que solo guarda
-            # el primer bloque `type: text`). Medido contra anuncios reales
-            # (tarea 7 del backlog): con el default, la extracción de un
-            # anuncio con varias filas agotaba `max_tokens` (4096) antes de
-            # terminar el JSON y degradaba (docs/decisions.md, hallazgo del
-            # 2026-09-26 sobre `62cd0e01`); desactivado, el mismo anuncio usó
-            # 7-8x menos tokens de salida y el JSON salió completo. La tarea
-            # es extracción con esquema cerrado, no razonamiento abierto: no
-            # hay nada que "pensar" que el esquema no fuerce ya.
-            thinking={"type": "disabled"},
-        )
-    except Exception as error:
-        return _registrar(
-            AdProposal(degraded=True, failure=classify_failure(error), prompt_version=version)
-        )
-
-    entrada, salida, leidos, escritos = _usage_with_cache(response)
-    raw = _response_text(response)
-    body: object = None
-    if raw:
-        try:
-            body = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            body = None
-
-    parsed = parse_response(body, products, provinces)
-    if parsed is None:
-        return _registrar(
-            AdProposal(
-                degraded=True,
-                failure="other",
-                input_tokens=entrada,
-                output_tokens=salida,
-                cache_read_tokens=leidos,
-                cache_write_tokens=escritos,
-                raw_response=raw or None,
-                prompt_version=version,
-            )
-        )
-    return _registrar(
-        AdProposal(
-            rows=parsed.rows,
-            # Se verifica contra el texto que vio el modelo (ya redactado).
-            row_meta=verify_evidence(redacted, parsed.rows, parsed.row_meta),
-            discard=parsed.discard,
-            discard_reason=parsed.discard_reason,
-            input_tokens=entrada,
-            output_tokens=salida,
-            cache_read_tokens=leidos,
-            cache_write_tokens=escritos,
-            dropped=parsed.dropped,
-            raw_response=raw or None,
-            prompt_version=version,
-        )
-    )
-
-
 # --- compartido por «Completar con IA» y el pre-cálculo (slice 3b) ----------
 #
 # Vivían en `web/routers/curation.py`. El pre-cálculo tiene que mandar
@@ -837,7 +729,7 @@ def record_operator_run(
     result: AdProposal,
     *,
     ingestion_id: str,
-    model: model,
+    model: str,
     log_path: Path,
     source: str,
 ) -> None:
