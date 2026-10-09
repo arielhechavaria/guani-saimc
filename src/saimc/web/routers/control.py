@@ -72,7 +72,7 @@ from saimc.progress import (
     pilot_product_names,
 )
 from saimc.requisitos_status import read_module_status
-from saimc.validation import ValidationStatus, jev_signal, lane0, persist
+from saimc.validation import ValidationStatus, jev_signal, lane0, lane1, persist
 from saimc.validation.control_cells import compute_cell_controls
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
@@ -408,6 +408,12 @@ def control_panel(
             # por tipo. La cota de falsos descartes NO va acá: `/control` es
             # público y la cota queda en `/curation/auditoria`, que pide operador.
             "lane0_week": lane0.week_counts(db),
+            # Carril 1 (B2b-3b): filas por procedencia, error auditado con su
+            # cota y el freno. `/control` hoy pide operador, así que la cota sí
+            # va acá; lo público está en `/metodologia`.
+            "lane1": lane1.summary(db, settings),
+            "lane1_target": lane1.ERROR_TARGET,
+            "lane1_n0": lane1.AUDIT_N0,
             # Validación (B1): cuántas filas hay en cada estado del motor.
             "validation": _validation_summary(db),
             # Jev en sombra (A6b): estado, conteos y gasto de la señal.

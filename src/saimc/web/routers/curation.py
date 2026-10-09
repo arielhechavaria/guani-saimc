@@ -1913,7 +1913,7 @@ def _lane1_audit(db: Session) -> dict[str, object]:
     state = lane1.audit_state(db, settings)
     return {
         "enabled": lane1.enabled(settings),
-        "pending": lane1.accepted(db, only_unaudited=True),
+        "pending": lane1.audit_queue(db, settings),
         "state": state,
         "brake": lane1.brake_for(
             audited=state.audited, errors=state.errors, unaudited=state.unaudited

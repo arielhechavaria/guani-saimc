@@ -890,3 +890,150 @@ def test_la_pantalla_avisa_cuando_el_freno_esta_puesto(
     html = client.get("/curation/auditoria").text
 
     assert "Freno puesto" in html
+
+
+# =============================================================================
+# B2b-3b: lo público, /control y la muestra semanal (docs/spec-slice-B2b.md)
+# =============================================================================
+
+_SIN_REVISION_PREVIA = "Ningún precio llega al sitio sin esa revisión"
+
+
+def _visible(html: str) -> str:
+    return " ".join(html.split())
+
+
+def test_la_metodologia_no_cambia_mientras_el_carril_1_no_acepto_nada(
+    session: Session, mundo: SimpleNamespace, client: TestClient
+) -> None:
+    texto = _visible(client.get("/metodologia").text)
+
+    assert _SIN_REVISION_PREVIA in texto
+    assert "sin que una persona" not in texto
+
+
+def test_la_metodologia_dice_que_hay_precios_sin_revision_previa(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    bien, _otro = _aceptar(session, tmp_path, mundo.canal, n=2)
+    lane1.mark_ok(session, bien.id)
+    session.commit()
+
+    texto = _visible(client.get("/metodologia").text)
+
+    # Deja de afirmar lo que ya no es cierto, y dice lo que pasa.
+    assert _SIN_REVISION_PREVIA not in texto
+    assert "sin que una persona lo revise antes" in texto
+    # Los conteos por procedencia: 0 a mano, 1 automática sin auditar, 1 auditada.
+    assert "1 entró sola y todavía no se auditó" in texto
+    assert "1 entró sola y ya se auditó" in texto
+    # El error auditado va con su n y su cota (0 errores en 1: cota 95,0 %).
+    assert "0 errores en 1" in texto
+    assert "95,0 %" in texto
+
+
+def test_control_muestra_el_carril_1_con_su_procedencia_y_su_error(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    bien, mal, _queda = _aceptar(session, tmp_path, mundo.canal, n=3)
+    lane1.mark_ok(session, bien.id)
+    lane1.mark_invalid(session, mal.id, "no_data")
+    session.commit()
+
+    texto = _visible(client.get("/control").text)
+
+    assert "Carril 1" in texto
+    assert "Automáticas sin auditar: 1" in texto
+    assert "Auditadas: 1" in texto
+    assert "1 errores en 2 auditados" in texto
+    assert "Freno puesto" not in texto
+
+
+def test_control_marca_el_freno_con_su_motivo(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    _aceptar(session, tmp_path, mundo.canal, n=30)
+
+    texto = _visible(client.get("/control").text)
+
+    assert "Freno puesto" in texto
+    assert "30 aceptados sin auditar" in texto
+
+
+# --- la muestra semanal, desde que termina el arranque ------------------------------
+
+
+def _semana_siguiente() -> date:
+    return date.today() + timedelta(days=8)
+
+
+def _arranque_terminado(session: Session, tmp_path: Path, mundo: SimpleNamespace) -> None:
+    """Un anuncio de un tercer canal, aceptado y auditado: con `AUDIT_N0` en 1
+    eso termina el arranque. Va después de aceptar los demás: con un solo
+    auditado la cota superior ya pasa la meta y el freno no dejaría entrar nada."""
+    tercero = Channel(
+        name="Tercer Mercado", platform=Platform.WHATSAPP_GROUP, province_id=mundo.lh.id
+    )
+    session.add(tercero)
+    session.commit()
+    (primero,) = _aceptar(session, tmp_path, tercero)
+    lane1.mark_ok(session, primero.id)
+    session.commit()
+
+
+def test_en_el_arranque_la_cola_de_auditoria_trae_todo(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingestas = _aceptar(session, tmp_path, mundo.canal, n=3)
+
+    cola = lane1.audit_queue(session, _ajustes(tmp_path))
+
+    assert [a.ingestion.id for a in cola] == [i.id for i in ingestas]
+
+
+def test_despues_del_arranque_la_cola_es_una_muestra_por_canal_de_la_semana_cerrada(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(lane1, "AUDIT_N0", 1)
+    monkeypatch.setattr(lane1, "MAX_UNAUDITED", 100)
+    # Tres canales: 6, 2 y 1 anuncios. En ronda, de a uno por canal, cinco
+    # lugares son 2 + 2 + 1; el del tercer canal ya está auditado.
+    monkeypatch.setattr(lane1, "WEEKLY_SAMPLE", 5)
+    del_canal = _aceptar(session, tmp_path, mundo.canal, n=6)
+    del_otro = _aceptar(session, tmp_path, mundo.otro, n=2)
+    _arranque_terminado(session, tmp_path, mundo)
+    ajustes = _ajustes(tmp_path)
+
+    # La semana en curso nunca se muestrea.
+    assert lane1.audit_queue(session, ajustes) == []
+
+    cola = lane1.audit_queue(session, ajustes, today=_semana_siguiente())
+    ids = {a.ingestion.id for a in cola}
+
+    assert len(cola) == 4
+    # Estratificada: el canal chico no queda afuera aunque el grande tenga más.
+    assert len(ids & {i.id for i in del_otro}) == 2
+    assert len(ids & {i.id for i in del_canal}) == 2
+    # Reproducible: la misma semana da la misma muestra.
+    otra = lane1.audit_queue(session, ajustes, today=_semana_siguiente())
+    assert [a.ingestion.id for a in otra] == [a.ingestion.id for a in cola]
+
+
+def test_lo_auditado_fuera_de_la_muestra_no_entra_en_la_cota(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(lane1, "AUDIT_N0", 1)
+    monkeypatch.setattr(lane1, "MAX_UNAUDITED", 100)
+    # Dos canales, dos lugares: el auditado del tercer canal y uno de estos tres.
+    monkeypatch.setattr(lane1, "WEEKLY_SAMPLE", 2)
+    resto = _aceptar(session, tmp_path, mundo.canal, n=3)
+    _arranque_terminado(session, tmp_path, mundo)
+    ajustes = _ajustes(tmp_path)
+    (en_muestra,) = lane1.audit_queue(session, ajustes, today=_semana_siguiente())
+    fuera = next(i for i in resto if i.id != en_muestra.ingestion.id)
+
+    lane1.mark_invalid(session, fuera.id, "no_data")
+    session.commit()
+
+    estado = lane1.audit_state(session, ajustes, today=_semana_siguiente())
+    assert (estado.audited, estado.errors, estado.outside) == (1, 0, 1)

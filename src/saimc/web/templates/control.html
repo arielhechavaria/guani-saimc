@@ -831,6 +831,31 @@
       El estado describe la fila contra los precios que ya estaban cargados cuando se validó.
       No decide nada: ninguna fila se acepta ni se descarta por su estado.
     </p>
+    {# B2b-3b: el carril 1. Las filas por procedencia y el error auditado. #}
+    <h3 class="m3-h3 m3-mt" id="carril-1">Carril 1</h3>
+    {% if lane1.brake.on %}
+    <p class="m3-sm" role="alert" style="color:var(--m3-error)">
+      <strong>Freno puesto.</strong> El carril 1 no acepta nada: {{ lane1.brake.reason }}.
+    </p>
+    {% endif %}
+    <p class="m3-sm">
+      {% if lane1.enabled %}Interruptor encendido.{% else %}Interruptor sin encender.{% endif %}
+      Filas a mano: {{ lane1.rows.get('human', 0) }}.
+      Automáticas sin auditar: {{ lane1.rows.get('auto', 0) }}.
+      Auditadas: {{ lane1.rows.get('audited', 0) }}.
+    </p>
+    <p class="m3-sm">
+      {% if lane1.state.upper is none %}
+      Error auditado: todavía no se auditó ningún anuncio aceptado solo.
+      {% else %}
+      Error auditado: {{ lane1.state.errors }} errores en {{ lane1.state.audited }} auditados
+      (cota superior al 95 %: {{ "%.1f"|format(lane1.state.upper * 100) }} %; meta
+      {{ "%.0f"|format(lane1_target * 100) }} %).
+      {% endif %}
+      {% if lane1.state.starting %}Arranque: se audita todo hasta llegar a {{ lane1_n0 }}.{% endif %}
+      {% if lane1.state.outside %}Auditados fuera de la muestra, que no cuentan: {{ lane1.state.outside }}.{% endif %}
+      {% if lane1.state.unaudited %}<a href="/curation/auditoria#aceptados">{{ lane1.state.unaudited }} esperan auditoría</a>.{% endif %}
+    </p>
     <div class="m3-card m3-table-scroll">
       <table class="m3-table">
         <thead>

@@ -48,7 +48,17 @@
 <p>De dos tipos de fuente: grupos y canales de WhatsApp donde se anuncian productos, y anuncios que una persona del proyecto captura a mano (el texto copiado o una captura de pantalla). No hay otra fuente.</p>
 
 <h2>Cómo se revisa cada anuncio</h2>
-<p>De cada anuncio se saca el producto, el precio, la moneda, la cantidad con su unidad y la provincia. Un programa propone esos datos y aparta los mensajes que no son anuncios de precios; una persona revisa y corrige cada anuncio antes de que cuente. Ningún precio llega al sitio sin esa revisión.</p>
+<p>De cada anuncio se saca el producto, el precio, la moneda, la cantidad con su unidad y la provincia. Un programa propone esos datos y aparta los mensajes que no son anuncios de precios; {% if not lane1.active %}una persona revisa y corrige cada anuncio antes de que cuente. Ningún precio llega al sitio sin esa revisión.</p>
+{% else %}una persona revisa y corrige la mayoría de los anuncios antes de que cuenten.</p>
+<p><strong>Una parte entra sin que una persona lo revise antes.</strong> Solo pasa con anuncios de texto que traen {% if lane1_max_rows == 1 %}una sola oferta{% else %}hasta {{ lane1_max_rows }} ofertas{% endif %}, cuando dos lecturas independientes del anuncio coinciden en el producto, el precio, la moneda y la provincia, el precio no se sale de lo que ya se conoce de ese producto y el grupo de donde viene no tiene un historial de lecturas corregidas. Las fotos nunca entran solas. Esos precios se revisan después: una persona los audita ya publicados y corrige o retira lo que esté mal. Si el error que encuentra la auditoría supera el {{ "%.0f"|format(lane1_target * 100) }} %, la entrada automática se detiene sola.</p>
+<p>Hoy, de los precios cargados,
+{{ lane1.rows.get('human', 0) }} {% if lane1.rows.get('human', 0) == 1 %}lo cargó{% else %}los cargó{% endif %} una persona,
+{{ lane1.rows.get('auto', 0) }} {% if lane1.rows.get('auto', 0) == 1 %}entró sola y todavía no se auditó{% else %}entraron solos y todavía no se auditaron{% endif %} y
+{{ lane1.rows.get('audited', 0) }} {% if lane1.rows.get('audited', 0) == 1 %}entró sola y ya se auditó{% else %}entraron solos y ya se auditaron{% endif %}.
+{% if lane1.state.upper is none %}Todavía no se auditó ningún anuncio de los que entraron solos, así que no hay un error medido que publicar.
+{% else %}La auditoría encontró {{ lane1.state.errors }} {% if lane1.state.errors == 1 %}error{% else %}errores{% endif %} en {{ lane1.state.audited }} {% if lane1.state.audited == 1 %}anuncio auditado{% else %}anuncios auditados{% endif %}; con esa muestra, el error real no pasa de {{ ("%.1f"|format(lane1.state.upper * 100)).replace(".", ",") }} % con una confianza del 95 %.
+{% endif %}</p>
+{% endif %}
 
 <h2>Qué precio se compara</h2>
 <ul>

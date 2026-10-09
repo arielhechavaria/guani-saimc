@@ -36,6 +36,7 @@ from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.config import get_settings
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
 from saimc.progress import pilot_product_names
+from saimc.validation import lane1
 from saimc.validation.fence import FENCE_IQR, FENCE_MIN_FACTOR
 from saimc.web.card_view import (
     attach_trends,
@@ -995,18 +996,32 @@ _PAGE_FACTS = {
 }
 
 
-def _render_site_page(request: Request, template: str) -> HTMLResponse:
-    """Una página de texto (`public_page.html`). No consulta la base: lo único
-    que varía es el pie, que depende de la configuración."""
+def _render_site_page(
+    request: Request, template: str, extra: dict[str, object] | None = None
+) -> HTMLResponse:
+    """Una página de texto (`public_page.html`). Lo único que varía es el pie,
+    que depende de la configuración, y lo que la página pida en `extra`."""
     return cast(
         HTMLResponse,
         request.app.state.templates.TemplateResponse(
-            request, template, {"footer": _site_footer(), "facts": _PAGE_FACTS}
+            request, template, {"footer": _site_footer(), "facts": _PAGE_FACTS, **(extra or {})}
         ),
     )
 
 
-def _site_page_endpoint(page: SitePage) -> Callable[[Request], HTMLResponse]:
+def _lane1_public(db: Session) -> dict[str, object]:
+    """Lo que la metodología publica del carril 1 (`spec.md` §6.4.1, B2b-3b):
+    cuántos precios entraron sin revisión previa y el error que dio la
+    auditoría, con su n y su cota. Solo conteos: ningún canal ni anuncio."""
+    resumen = lane1.summary(db, get_settings())
+    return {
+        "lane1": resumen,
+        "lane1_target": lane1.ERROR_TARGET,
+        "lane1_max_rows": lane1.CONFIG.lane1_max_rows,
+    }
+
+
+def _site_page_endpoint(page: SitePage) -> Callable[..., HTMLResponse]:
     """El endpoint de una página de `SITE_PAGES`. Es una fábrica y no una
     lambda dentro del bucle para que cada endpoint se quede con *su* página:
     una función definida en un bucle ve la variable del bucle, no su valor en
@@ -1015,7 +1030,12 @@ def _site_page_endpoint(page: SitePage) -> Callable[[Request], HTMLResponse]:
     def endpoint(request: Request) -> HTMLResponse:
         return _render_site_page(request, page.template)
 
-    return endpoint
+    def methodology(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+        # La única página de texto que consulta la base: publica cuántos
+        # precios entraron solos y con qué error (B2b-3b).
+        return _render_site_page(request, page.template, _lane1_public(db))
+
+    return methodology if page.path == "/metodologia" else endpoint
 
 
 # Una ruta por página de texto (quiénes somos, metodología, preguntas,

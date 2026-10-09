@@ -4,7 +4,13 @@ Parte del plan `docs/plan-factor-humano.md` (B2b y B2c se entregan juntas). Toca
 motor de validación: esta especificación se aprueba antes de programar.
 
 **Estado: APROBADA por el operador el 2026-10-09, con las ocho respuestas por
-defecto.** Se entrega en tres slices (ver «Orden de entrega»).
+defecto, e IMPLEMENTADA** en cuatro slices: B2b-1 (motor), B2b-2 (aplicar),
+B2b-3a (auditoría y freno) y B2b-3b (lo público y la muestra semanal). Lo que
+se apartó de este texto al implementar está en `docs/decisions.md`, en las
+entradas del 2026-10-09 de cada slice: el guardado compartido es de tres piezas
+y no del endpoint entero; el tope de 30 sin auditar es un máximo; el freno por
+celda divergente mira producto y provincia; y `/control` pide operador, así que
+lo público va en `/metodologia`.
 
 Sale de G1b, que el operador decidió el 2026-10-09 por el camino «Adelantar G1b»
 del plan: el carril 1 se enciende antes de llegar al n de la especificación, y el

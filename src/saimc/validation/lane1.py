@@ -24,7 +24,7 @@ Lo que no tiene una persona detrás:
 - si una fila en divisa no se puede convertir, el anuncio queda pendiente: no
   se publica una fila sin `price_cup`.
 
-- **Auditar** (`accepted`, `mark_ok`, `after_edit`, `mark_invalid`,
+- **Auditar** (`audit_queue`, `mark_ok`, `after_edit`, `mark_invalid`,
   `audit_state`; slice B2b-3): el operador revisa lo aceptado solo, después de
   publicado. «Está bien» deja las filas `audited`; corregirlas en la edición
   o marcarlo como no válido cuenta como error. Cada respuesta escribe un
@@ -40,14 +40,15 @@ Lo que no tiene una persona detrás:
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 import uuid
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc import curation_rows
@@ -77,8 +78,9 @@ from saimc.models import (
     ReviewOutcome,
 )
 from saimc.models.base import utc_now
+from saimc.progress import _week_start
 from saimc.units import canonical_unit
-from saimc.validation import context, persist
+from saimc.validation import context, lane0, persist
 from saimc.validation.engine import validate_ad
 from saimc.validation.stats import clopper_pearson_lower, clopper_pearson_upper
 from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, ValidationConfig
@@ -111,6 +113,9 @@ AUDIT_N0 = 60
 #: Cuántos aceptados sin auditar se toleran durante el arranque. Es lo que
 #: hace cumplir la auditoría total: el carril espera al operador.
 MAX_UNAUDITED = 30
+#: Terminado el arranque, cuántos anuncios por semana cerrada entran en la
+#: muestra de auditoría, repartidos entre los canales.
+WEEKLY_SAMPLE = 30
 
 #: Las tres respuestas de la auditoría.
 OK = "ok"
@@ -371,27 +376,6 @@ def _rows(session: Session, ingestion_id: uuid.UUID) -> list[PriceHistory]:
     )
 
 
-def accepted(session: Session, *, only_unaudited: bool = False) -> list[AcceptedAd]:
-    """Lo que el carril 1 aceptó solo, del más viejo al más nuevo."""
-    events = _auto_events(session)
-    verdicts = _verdicts(session, events)
-    ads: list[AcceptedAd] = []
-    for ingestion, event in events.values():
-        verdict, audited_at = verdicts.get(ingestion.id, (None, None))
-        if only_unaudited and verdict is not None:
-            continue
-        ads.append(
-            AcceptedAd(
-                ingestion=ingestion,
-                event=event,
-                verdict=verdict,
-                audited_at=audited_at,
-                rows=tuple(_describe(session, row) for row in _rows(session, ingestion.id)),
-            )
-        )
-    return ads
-
-
 def _pending_audit(
     session: Session, ingestion_id: uuid.UUID
 ) -> tuple[RawIngestion, CurationEvent] | None:
@@ -546,6 +530,8 @@ class AuditState:
     unaudited: int
     #: Desde qué día cuenta lo auditado (`SAIMC_LANE1_AUDIT_SINCE`), o `None`.
     since: date | None = None
+    #: Auditados fuera de la muestra, después del arranque: no entran en la cota.
+    outside: int = 0
 
     @property
     def lower(self) -> float | None:
@@ -561,26 +547,145 @@ class AuditState:
         return self.audited < AUDIT_N0
 
 
-def audit_state(session: Session, settings: Settings) -> AuditState:
+def _weekly_samples(
+    events: Mapping[uuid.UUID, tuple[RawIngestion, CurationEvent]], today: date | None
+) -> set[uuid.UUID]:
+    """Los anuncios que caen en la muestra de su semana, para toda semana ya
+    cerrada (lunes a domingo, la del panel de A2d y de la auditoría del carril 0).
+
+    Estratificada por canal: dentro de cada canal el orden sale al azar con la
+    semilla de la semana, y se toma de a uno por canal, en ronda, hasta
+    `WEEKLY_SAMPLE`. Así un canal chico no queda afuera porque otro publica
+    mucho. La misma semana da siempre la misma muestra.
+    """
+    weeks: dict[date, dict[str, list[uuid.UUID]]] = {}
+    for ingestion, event in events.values():
+        week = _week_start(event.decided_at.date())
+        if not lane0.is_closed(week, today):
+            continue
+        channel = ingestion.source_reference or ""
+        weeks.setdefault(week, {}).setdefault(channel, []).append(ingestion.id)
+    sampled: set[uuid.UUID] = set()
+    for week, by_channel in weeks.items():
+        # No es criptografía: es que el sorteo se pueda repetir.
+        rng = random.Random(f"lane1-audit-{lane0.week_label(week)}")  # noqa: S311
+        queues = []
+        for channel in sorted(by_channel):
+            ids = sorted(by_channel[channel], key=str)
+            rng.shuffle(ids)
+            queues.append(ids)
+        taken = 0
+        while taken < WEEKLY_SAMPLE and any(queues):
+            for ids in queues:
+                if ids and taken < WEEKLY_SAMPLE:
+                    sampled.add(ids.pop())
+                    taken += 1
+    return sampled
+
+
+def _audit(
+    session: Session, settings: Settings, today: date | None
+) -> tuple[AuditState, list[tuple[RawIngestion, CurationEvent]]]:
+    """El estado de la auditoría y lo que toca auditar ahora.
+
+    Arranque: cuenta todo lo auditado y toca auditar todo. Después de
+    `AUDIT_N0` respuestas, solo cuenta (y solo toca) lo que cae en la muestra
+    de su semana; lo demás que el operador audite queda aparte (`outside`),
+    porque no es al azar.
+    """
     since = settings.lane1_audit_since
     events = _auto_events(session)
     verdicts = _verdicts(session, events)
+    answered = sorted(
+        ((at, ingestion_id, verdict) for ingestion_id, (verdict, at) in verdicts.items()),
+        key=lambda item: (item[0], str(item[1])),
+    )
+    answered = [item for item in answered if since is None or item[0].date() >= since]
+    sampled = _weekly_samples(events, today)
     counted = [
         verdict
-        for verdict, at in verdicts.values()
-        if since is None or at.date() >= since
+        for position, (_, ingestion_id, verdict) in enumerate(answered)
+        if position < AUDIT_N0 or ingestion_id in sampled
     ]
-    unaudited = sum(
-        1
-        for ingestion, _ in events.values()
+    starting = len(counted) < AUDIT_N0
+    waiting = [
+        (ingestion, event)
+        for ingestion, event in events.values()
         if ingestion.id not in verdicts
         and ingestion.processing_status == ProcessingStatus.CURATED
-    )
-    return AuditState(
+        and (starting or ingestion.id in sampled)
+    ]
+    state = AuditState(
         audited=len(counted),
         errors=sum(1 for verdict in counted if verdict in _ERROR_VERDICTS),
-        unaudited=unaudited,
+        unaudited=len(waiting),
         since=since,
+        outside=len(answered) - len(counted),
+    )
+    return state, waiting
+
+
+def audit_state(
+    session: Session, settings: Settings, *, today: date | None = None
+) -> AuditState:
+    return _audit(session, settings, today)[0]
+
+
+def audit_queue(
+    session: Session, settings: Settings, *, today: date | None = None
+) -> list[AcceptedAd]:
+    """Lo que toca auditar, del más viejo al más nuevo: todo durante el
+    arranque; después, la muestra de cada semana cerrada."""
+    return [
+        AcceptedAd(
+            ingestion=ingestion,
+            event=event,
+            rows=tuple(_describe(session, row) for row in _rows(session, ingestion.id)),
+        )
+        for ingestion, event in _audit(session, settings, today)[1]
+    ]
+
+
+def provenance_counts(session: Session) -> dict[str, int]:
+    """Cuántas filas de `prices_history` hay por procedencia: a mano (`human`),
+    automáticas sin auditar (`auto`) y auditadas (`audited`)."""
+    counts = dict.fromkeys((p.value for p in Provenance), 0)
+    stmt = select(PriceHistory.provenance, func.count()).group_by(PriceHistory.provenance)
+    for provenance, count in session.execute(stmt):
+        counts[str(provenance)] = count
+    return counts
+
+
+@dataclass(frozen=True)
+class Summary:
+    """El carril 1 en números, para `/control` y para la metodología pública."""
+
+    enabled: bool
+    #: Procedencia -> filas (`human`, `auto`, `audited`).
+    rows: Mapping[str, int]
+    state: AuditState
+    brake: Brake
+
+    @property
+    def automatic_rows(self) -> int:
+        """Filas que entraron sin revisión previa, auditadas o no."""
+        return self.rows.get(Provenance.AUTO.value, 0) + self.rows.get(
+            Provenance.AUDITED.value, 0
+        )
+
+    @property
+    def active(self) -> bool:
+        """Hay algo que contar: el carril está encendido o ya dejó filas."""
+        return self.enabled or self.automatic_rows > 0
+
+
+def summary(session: Session, settings: Settings) -> Summary:
+    state = audit_state(session, settings)
+    return Summary(
+        enabled=enabled(settings),
+        rows=provenance_counts(session),
+        state=state,
+        brake=brake_for(audited=state.audited, errors=state.errors, unaudited=state.unaudited),
     )
 
 
