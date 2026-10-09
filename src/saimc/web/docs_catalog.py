@@ -203,6 +203,18 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="plan-mvp-inversores",
+        title="Plan — MVP listo para mostrar a inversores",
+        summary=(
+            "Hasta dónde llega hoy la automatización de ingesta, extracción y "
+            "aceptación, por qué el carril 1 acepta solo una parte chica de la "
+            "cola, y las tareas que la suben, en orden. Incluye lo que el "
+            "operador tiene que definir: el criterio de «listo» y la home pública."
+        ),
+        relative_path="docs/plan-mvp-inversores.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="plan-marca",
         title="Leira Studio — plan de marca y compendio de contactos",
         summary=(
