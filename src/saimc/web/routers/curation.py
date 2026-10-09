@@ -85,6 +85,7 @@ from saimc.glossary import active_glossary_entries, validate_rule
 from saimc.ingestion import origin
 from saimc.ingestion.channel_gaps import GapReport, load_channel_gap_report
 from saimc.ingestion.inbox import ingest_inbox
+from saimc.llm.provider import LLMConfig, try_resolve_config
 from saimc.models import (
     ContentType,
     CurationAction,
@@ -1217,6 +1218,9 @@ def _curation_view(
     del modelo es tiempo del operador frente al anuncio (A2a).
     """
     settings = get_settings()
+    # `None` = sin asistente configurado (proveedor sin clave): la cola
+    # funciona igual, a mano, y el botón no se ofrece.
+    llm = try_resolve_config(settings)
     ingest_inbox(db, settings.inbox_dir, settings.raw_store_dir)
 
     # El catálogo del foco se lee antes que la cola: `_pending_in_focus` lo
@@ -1295,7 +1299,7 @@ def _curation_view(
         and ingestion is not None
         and ingestion.id == assist_ingestion_id
         and text_for_hints
-        and settings.anthropic_api_key
+        and llm is not None
     ):
         assist_result = _run_assist(
             text_for_hints,
@@ -1304,13 +1308,15 @@ def _curation_view(
             glossary=_active_glossary(db),
             ingestion_id=str(ingestion.id),
             settings=settings,
+            llm=llm,
         )
-        # Se guarda también si degradó: registra la falla.
+        # Se guarda también si degradó: registra la falla. El modelo es el
+        # canónico (sin prefijo de proveedor): con él se tarifa.
         saved = llm_store.save_proposal(
             db,
             ingestion_id=ingestion.id,
             result=assist_result,
-            model=settings.llm_assist_model,
+            model=llm.model,
         )
         db.commit()
         if saved is not None and not assist_result.degraded:
@@ -1413,7 +1419,7 @@ def _curation_view(
         gap_report=load_channel_gap_report(db),
         # El botón se ofrece con clave configurada y texto que mandar. Ya no
         # depende de que las reglas dejen huecos: el modelo propone todo.
-        assist_available=bool(settings.anthropic_api_key and text_for_hints),
+        assist_available=bool(llm is not None and text_for_hints),
         assisted_map={str(i): campos for i, campos in assisted_by_row.items()},
         assist_error=(
             _assist_failure_label(assist_result.failure)
@@ -1590,8 +1596,12 @@ def _run_assist(
     glossary: Sequence[GlossaryEntry],
     ingestion_id: str,
     settings,
+    llm: LLMConfig,
 ) -> AdProposal:
     """Una llamada al modelo por anuncio y su registro.
+
+    `llm` es la configuración del proveedor ya resuelta: la clave, la URL, el
+    timeout y el modelo salen de ahí (`saimc.llm.provider`).
 
     `propose_ad` nunca levanta: si degrada, el resultado lo dice y quien llama
     deja el formulario como lo armaron las reglas. El registro de llamadas
@@ -1603,9 +1613,7 @@ def _run_assist(
         text,
         products,
         provinces,
-        api_key=settings.anthropic_api_key,
-        model=settings.llm_assist_model,
-        timeout=settings.llm_assist_timeout,
+        llm=llm,
         ingestion_id=ingestion_id,
         log_path=None,
         glossary=glossary,
@@ -1613,7 +1621,7 @@ def _run_assist(
     record_operator_run(
         resultado,
         ingestion_id=ingestion_id,
-        model=settings.llm_assist_model,
+        model=llm.model,
         log_path=settings.llm_assist_log_path,
         source="curation",
     )

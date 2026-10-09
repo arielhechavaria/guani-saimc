@@ -193,6 +193,33 @@ está el ahorro y conviene medirlo antes de cambiar de modelo por costo.
 
 ---
 
+## El asistente por Vercel AI Gateway (2026-10-09)
+
+El asistente puede llamar a Claude por Vercel AI Gateway en vez de por la API
+de Anthropic directo (`SAIMC_LLM_PROVIDER=vercel`; cómo cambiar, en
+[comandos.md](comandos.md#proveedor-del-asistente)). Es el mismo modelo y la
+misma API; cambian la URL, la clave y a quién se le paga.
+
+- **El modelo se registra y se tarifa con su nombre canónico**
+  (`claude-sonnet-5`), vaya por donde vaya. El prefijo `anthropic/` que pide el
+  gateway viaja solo en la llamada. Por eso el historial de `llm_proposals` y
+  de «Consumo del asistente» no se parte en dos nombres, y el tope de gasto del
+  pre-cálculo sigue frenando.
+- **No está verificado que el gateway cobre lo mismo que Anthropic directo.**
+  Todo gasto estimado de este documento y de `/control` se calcula con las
+  tarifas de Anthropic de la tabla de arriba, también para las llamadas que
+  salieron por el gateway. Si el gateway cobra distinto, el estimado y el tope
+  del pre-cálculo quedan corridos en esa proporción: lo que vale es la factura
+  de Vercel. A comparar contra ella después de las primeras corridas.
+- El saldo que se gasta es el del gateway. Con la misma clave que Jev
+  (`SAIMC_LLM_JEV_API_KEY`) es **el mismo saldo de Jev**: los topes son aparte
+  (`SAIMC_PREFILL_MAX_COST` y `SAIMC_LLM_JEV_MAX_COST`), el saldo no.
+- El aviso «sin saldo» de `/control` reconoce el saldo agotado del gateway por
+  el status 402. Tampoco está verificado contra un error real: si el gateway
+  responde otra cosa, la falla sale como genérica.
+
+---
+
 ## Jev, la señal en sombra (A6b)
 
 Segundo proveedor, aparte de Claude: Jev (TypeSafe AI, vía Vercel AI Gateway).

@@ -878,6 +878,12 @@ class TestConsumoYFallas:
                 ),
                 "other",
             ),
+            # Saldo agotado en Vercel AI Gateway (2026-10-09): el texto del
+            # error no está documentado, así que no se puede esperar ninguna
+            # de las frases de Anthropic. Lo que sí es estándar es el 402
+            # (Payment Required), y con eso tiene que alcanzar.
+            (_error_con_status("Payment Required", 402), "credit"),
+            (_error_con_status("", 402), "credit"),
         ],
     )
     def test_clasifica_el_tipo_de_falla(

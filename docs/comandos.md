@@ -22,6 +22,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
 | [`saimc.extraction.prefill` en seco](#pre-cálculo-en-seco) | Estimar el costo del pre-cálculo | no | no |
+| [`saimc.llm.provider`](#proveedor-del-asistente) | Ver por dónde llama el asistente (Anthropic o Vercel) y con qué modelo | no | no |
 | [`scripts/lint_drift.py --no-autofix`](#lint-drift) | Hallazgos nuevos de ruff y mypy | no | no |
 | [Huecos por canal (SQL)](#huecos-por-canal) | Cuánto calla cada canal | no | no |
 | [Verificaciones de B5 y K3 (SQL)](#verificaciones-de-b5-y-k3) | Comprobar hash de emisor y OCR | no | no |
@@ -232,6 +233,55 @@ sudo systemctl restart saimc.service
 - **Cuándo**: antes de una corrida grande, para saber el costo.
 - **Cambia algo**: no (por defecto es `--dry-run`). **Gasta**: no.
 - Más: [runbook-asistente-llm.md](runbook-asistente-llm.md), sección del pre-cálculo.
+
+### Proveedor del asistente
+
+```
+.venv/bin/python -m saimc.llm.provider
+```
+
+- **Para qué**: muestra la configuración efectiva del asistente («Completar con IA», pre-cálculo y
+  backtest): proveedor, modelo con que se registra y se tarifa, modelo que se manda, base URL,
+  timeout, y de la clave solo si está y de qué variable salió. Nunca imprime la clave.
+- **Cuándo**: después de tocar las variables del asistente en `.env`, antes de reiniciar; y cuando
+  `/control` muestre el asistente «apagado» o el pre-cálculo falle por la clave.
+- **Cambia algo**: no. **Gasta**: no: no hace ninguna llamada, así que no prueba que la clave
+  sirva ni que haya saldo. Eso se ve en la primera llamada real.
+- **Cómo leer la salida**: sale con código 1 y el motivo si no hay configuración válida (proveedor
+  desconocido, o falta la clave: dice qué variables mira). Lee el `.env` del directorio desde el que
+  se corre: desde la raíz del repo.
+
+Las variables, en `.env` (los valores vacíos cuentan como no puestos):
+
+| Variable | Por defecto | Qué gobierna |
+|---|---|---|
+| `SAIMC_LLM_PROVIDER` | `anthropic` | `anthropic` (directo) o `vercel` (Vercel AI Gateway) |
+| `SAIMC_LLM_API_KEY` | sin valor | clave unificada; vacía, se usa `SAIMC_ANTHROPIC_API_KEY` con `anthropic` y `SAIMC_LLM_JEV_API_KEY` con `vercel` |
+| `SAIMC_LLM_BASE_URL` | sin valor | vacía, la del proveedor (`https://ai-gateway.vercel.sh` con `vercel`) |
+| `SAIMC_LLM_MODEL` | `claude-sonnet-5` | el modelo, **sin** prefijo `anthropic/`: lo agrega el código al llamar por el gateway |
+| `SAIMC_LLM_TIMEOUT` | `30` | segundos por llamada desde la cola; el pre-cálculo y el backtest usan su `--timeout` |
+
+`SAIMC_LLM_ASSIST_MODEL` y `SAIMC_LLM_ASSIST_TIMEOUT` son los nombres anteriores de las dos últimas
+y siguen valiendo cuando las nuevas no están.
+
+Para pasar el asistente a Vercel AI Gateway:
+
+1. En `.env`: `SAIMC_LLM_PROVIDER=vercel`. La clave del gateway ya está si Jev está configurado
+   (`SAIMC_LLM_JEV_API_KEY`); si no, ponela ahí o en `SAIMC_LLM_API_KEY`. No hace falta que Jev
+   esté encendido. El modelo va sin prefijo.
+2. Correr el comando de arriba: tiene que decir `vercel`, `anthropic/claude-sonnet-5` como modelo
+   que se manda y de qué variable sale la clave.
+3. `sudo systemctl restart saimc.service`: la aplicación lee el `.env` una sola vez, al arrancar.
+4. El pre-cálculo no necesita nada: cada corrida es un proceso nuevo que lee el `.env`, así que la
+   siguiente del temporizador ya va por el gateway. Para no esperar,
+   [`sudo systemctl start saimc-prefill.service`](#pre-cálculo-ahora-a-mano) (gasta).
+
+Para volver: `SAIMC_LLM_PROVIDER=anthropic` y reiniciar.
+
+- **Sin verificar** (al 2026-10-09): nadie hizo todavía una llamada real por el gateway desde este
+  código; si el gateway cobra lo mismo que Anthropic directo (el gasto de `/control` se estima con
+  las tarifas de Anthropic); y qué error devuelve el gateway sin saldo (se reconoce el 402).
+- Más: [costos.md](costos.md), «El asistente por Vercel AI Gateway»; `docs/decisions.md`, 2026-10-09.
 
 ### Lint drift
 
@@ -620,7 +670,7 @@ sudo systemctl daemon-reload
 - **Para qué**: compara lo que propondría el asistente contra lo que curaste a mano, sobre un oro
   de anuncios. Sin flags solo estima el costo.
 - **Cuándo**: al evaluar un modelo o un prompt nuevo. `--execute` hace la corrida real
-  (**gasta plata y exige `SAIMC_ANTHROPIC_API_KEY`**); `--limit N` para un piloto; `--report-only`
+  (**gasta plata y exige la clave del [proveedor del asistente](#proveedor-del-asistente)**); `--limit N` para un piloto; `--report-only`
   regenera el reporte sin llamar a nada.
 - **Cambia algo**: en seco, no; con `--execute` escribe archivos de resultados y registro de llamadas.
   **Gasta**: solo con `--execute`.

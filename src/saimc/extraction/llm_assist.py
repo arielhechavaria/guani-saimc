@@ -387,6 +387,15 @@ def usage_cost_usd(input_tokens: int, output_tokens: int, model: str) -> float |
 # sin afirmar por qué.
 _CREDIT_SIGNALS = ("credit balance", "insufficient", "quota", "billing")
 
+# Con el asistente por Vercel AI Gateway (docs/decisions.md, 2026-10-09) el
+# texto del error de saldo es otro y no está documentado: la documentación del
+# gateway lista 400, 401, 403, 404, 429 y 500, y no dice cuál devuelve sin
+# saldo. Se suma el 402 (Payment Required), que es el status estándar para
+# «falta pagar». **Misma advertencia que arriba: calibración razonada, no
+# verificada contra un error real del gateway.** Si el gateway responde otra
+# cosa, la falla cae en "other" hasta que se ajuste con el primer caso real.
+_CREDIT_STATUS = 402
+
 
 def classify_failure(error: BaseException) -> str:
     """Por qué falló la llamada: credit / timeout / network / auth / other.
@@ -398,7 +407,7 @@ def classify_failure(error: BaseException) -> str:
     mensaje = str(error).lower()
     status = getattr(error, "status_code", None)
 
-    if any(signal in mensaje for signal in _CREDIT_SIGNALS):
+    if status == _CREDIT_STATUS or any(signal in mensaje for signal in _CREDIT_SIGNALS):
         return "credit"
     if isinstance(error, TimeoutError) or "timeout" in mensaje or "timed out" in mensaje:
         return "timeout"

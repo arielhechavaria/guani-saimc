@@ -59,6 +59,7 @@ from saimc.extraction import llm_assist, llm_checks, llm_propose_ad, measure, oc
 from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.glossary import active_glossary_entries
 from saimc.ingestion import origin
+from saimc.llm.provider import LLMConfig, resolve_config
 from saimc.models import (
     ContentType,
     Currency,
@@ -402,13 +403,14 @@ def run_backtest(
     *,
     results_path: Path,
     calls_log_path: Path,
-    api_key: str | None,
+    api_key: str | None = None,
     client: Any | None,
-    model: str,
-    timeout: float,
+    model: str = "claude-sonnet-5",
+    timeout: float = 120.0,
     transcribe: measure.Transcriber = ocr.transcribe,
     out: Callable[[str], None] = print,
     trim: bool = False,
+    llm: LLMConfig | None = None,
 ) -> dict[str, Any]:
     """Una llamada por anuncio, en serie, anexando un resultado por línea.
 
@@ -418,7 +420,13 @@ def run_backtest(
 
     `trim` (slice 3c): pasa igual a `propose_ad`. El texto que ve `propose_all`
     (las reglas, la comparación) nunca se recorta — solo lo que ve el modelo.
+
+    `llm` es la configuración del proveedor (`saimc.llm.provider`), lo que pasa
+    `execute`: si viene, manda sobre `api_key`, `model` y `timeout`, y el
+    modelo que se anota y se tarifa es `llm.model`, el canónico.
     """
+    if llm is not None:
+        model = llm.model
     from saimc.privacy import redact_personal_data
 
     products = measure._focus_products(session)
@@ -466,6 +474,7 @@ def run_backtest(
             log_path=calls_log_path,
             glossary=glossary,
             trim=trim,
+            llm=llm,
         )
         # El canal manda también sobre lo que propuso el modelo (ver módulo).
         rows = [
@@ -1056,7 +1065,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Descartados por tipo (por defecto, tantos como anuncios de oro del tipo).",
     )
     parser.add_argument("--seed", type=int, default=42, help="Semilla del muestreo.")
-    parser.add_argument("--model", default=None, help="Por defecto, SAIMC_LLM_ASSIST_MODEL.")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Sin prefijo de proveedor. Por defecto, SAIMC_LLM_MODEL (o SAIMC_LLM_ASSIST_MODEL).",
+    )
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS)
     parser.add_argument("--calls-log", type=Path, default=DEFAULT_CALLS_LOG)
@@ -1131,14 +1144,17 @@ def execute(
         out("Para la corrida real: agregá --execute (usa la clave de la configuración).")
         return 0
 
-    api_key = settings.anthropic_api_key
-    if not api_key:
-        out(
-            "No hay clave de API: la corrida real necesita SAIMC_ANTHROPIC_API_KEY. "
-            "Sin clave no se llama a nada."
-        )
+    try:
+        llm = resolve_config(settings)
+    except ValueError as error:
+        # El mensaje nombra la variable que falta según el proveedor elegido.
+        out(f"No hay clave de API para la corrida real. {error}. Sin clave no se llama a nada.")
         return 2
-    model = args.model or settings.llm_assist_model
+    # `--model` y `--timeout` pisan lo de la configuración; el modelo que se
+    # manda (con prefijo en Vercel) se recalcula ahí. `llm.model` es el
+    # canónico: el que tiene tarifa.
+    llm = llm.with_overrides(model=args.model, timeout=args.timeout)
+    model = llm.model
     print_estimate(est, out)
     if model not in llm_assist._RATES_USD_PER_MTOK:
         out(f"AVISO: {model} no tiene tarifa en llm_assist.py; el costo acumulado no se estima.")
@@ -1147,10 +1163,8 @@ def execute(
         items,
         results_path=args.results,
         calls_log_path=args.calls_log,
-        api_key=api_key,
         client=client,
-        model=model,
-        timeout=args.timeout,
+        llm=llm,
         out=out,
         trim=args.trim,
     )

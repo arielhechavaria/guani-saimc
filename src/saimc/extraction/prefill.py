@@ -59,6 +59,7 @@ from saimc.db import session_scope
 from saimc.extraction import llm_assist, llm_propose_ad, llm_store, ocr_store, prefill_status
 from saimc.extraction.engine import mentions_any_product
 from saimc.glossary import active_glossary_entries
+from saimc.llm.provider import LLMConfig, canonical_model, effective_model, resolve_config
 from saimc.models import (
     ContentType,
     LlmProposal,
@@ -230,9 +231,9 @@ def run_prefill(
     session: Session,
     candidates: Sequence[RawIngestion],
     *,
-    api_key: str,
-    model: str,
-    timeout: float,
+    api_key: str | None = None,
+    model: str = "claude-sonnet-5",
+    timeout: float = 120.0,
     raw_store_dir: Path,
     log_path: Path,
     client: Any | None = None,
@@ -241,8 +242,14 @@ def run_prefill(
     expected_per_ad: float | None = None,
     lane0_types: frozenset[str] = frozenset(),
     out: Callable[[str], None] = print,
+    llm: LLMConfig | None = None,
 ) -> RunResult:
     """Un anuncio a la vez: texto, llamada, alta de la propuesta y commit.
+
+    `llm` es la configuración del proveedor (`saimc.llm.provider`); es lo que
+    pasa `execute`. Si viene, manda sobre `api_key`, `model` y `timeout`, igual
+    que en `propose_ad`, y lo que se guarda y se tarifa es `llm.model`, el
+    nombre canónico. Sin `llm`, los tres sueltos contra Anthropic directo.
 
     `lane0_types` son los tipos con el carril 0 encendido
     (`validation.lane0.enabled_types`); vacío, ningún anuncio se descarta solo.
@@ -251,6 +258,8 @@ def run_prefill(
     se espera que cueste la siguiente lo pasaría. «Lo que se espera» es el
     promedio real de esta corrida, o `expected_per_ad` antes de la primera.
     """
+    if llm is not None:
+        model = llm.model
     products = pilot_products(session)
     provinces = list(session.execute(select(Province).order_by(Province.name)).scalars())
     glossary = active_glossary_entries(session)
@@ -287,6 +296,7 @@ def run_prefill(
             ingestion_id=str(ingestion.id),
             log_path=None,
             glossary=glossary,
+            llm=llm,
         )
         stored = llm_store.save_proposal(
             session, ingestion_id=ingestion.id, result=proposal, model=model
@@ -374,7 +384,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Tope en USD: frena antes de pasarlo (según el gasto real de la corrida).",
     )
-    parser.add_argument("--model", default=None, help="Por defecto, SAIMC_LLM_ASSIST_MODEL.")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Sin prefijo de proveedor. Por defecto, SAIMC_LLM_MODEL (o SAIMC_LLM_ASSIST_MODEL).",
+    )
     parser.add_argument(
         "--timeout",
         type=float,
@@ -404,7 +418,9 @@ def execute(
     # el carril 0 encendido descarta), sin depender de su clave y sin tocar el
     # código de salida.
     jev = _jev_pass(args, session, settings, client=jev_http, sleep=jev_sleep, out=out)
-    model = args.model or settings.llm_assist_model
+    # Canónico (sin prefijo de proveedor): con él se estima y se tarifa. No
+    # necesita clave, así que el dry-run sigue andando sin ninguna.
+    model = canonical_model(args.model) if args.model else effective_model(settings)
     products = pilot_products(session)
     lane0_types = lane0.enabled_types(settings)
     candidates = select_candidates(
@@ -418,23 +434,23 @@ def execute(
         out("Para la corrida real: agregá --execute (usa la clave de la configuración).")
         return 0
 
-    api_key = settings.anthropic_api_key
-    if not api_key:
-        out(
-            "No hay clave de API: la corrida real necesita SAIMC_ANTHROPIC_API_KEY. "
-            "Sin clave no se llama a nada."
-        )
+    try:
+        llm = resolve_config(settings)
+    except ValueError as error:
+        # El mensaje nombra la variable que falta según el proveedor elegido.
+        out(f"No hay clave de API para la corrida real. {error}. Sin clave no se llama a nada.")
         _record_run(settings, 2, RunResult(), jev)
         return 2
+    # `--model` y `--timeout` pisan lo de la configuración; el modelo que se
+    # manda (con prefijo en Vercel) se recalcula ahí.
+    llm = llm.with_overrides(model=args.model, timeout=args.timeout)
     print_estimate(est, out)
     if est.per_ad_usd is None:
         out(f"AVISO: {model} no tiene tarifa en llm_assist.py; el costo acumulado no se estima.")
     result = run_prefill(
         session,
         candidates,
-        api_key=api_key,
-        model=model,
-        timeout=args.timeout,
+        llm=llm,
         raw_store_dir=settings.raw_store_dir,
         log_path=settings.llm_assist_log_path,
         client=client,

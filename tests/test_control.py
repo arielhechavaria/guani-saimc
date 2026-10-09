@@ -1477,6 +1477,36 @@ class TestConsumoDelAsistente:
 
         assert "Consumo del asistente" not in client.get("/control").text
 
+    _SIN_CLAVE = "Sin clave configurada. La curaduría funciona igual, a mano."
+
+    def _sin_asistente(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        """Ninguna clave del asistente: ni la del `.env` del checkout."""
+        monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(tmp_path / "vacio.jsonl"))
+        monkeypatch.setenv("SAIMC_LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("SAIMC_LLM_API_KEY", "")
+        monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "")
+        get_settings.cache_clear()
+
+    def test_sin_ninguna_clave_la_franja_dice_que_el_asistente_esta_apagado(
+        self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._sin_asistente(monkeypatch, tmp_path)
+
+        assert self._SIN_CLAVE in client.get("/control").text
+
+    def test_con_vercel_y_sin_clave_de_anthropic_la_franja_no_lo_da_por_apagado(
+        self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fábrica del proveedor (2026-10-09): la franja miraba solo la clave
+        de Anthropic y con el asistente por el gateway lo mostraba apagado."""
+        self._sin_asistente(monkeypatch, tmp_path)
+        monkeypatch.setenv("SAIMC_LLM_PROVIDER", "vercel")
+        monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "vck-de-prueba")
+        get_settings.cache_clear()
+
+        assert self._SIN_CLAVE not in client.get("/control").text
+
     def test_muestra_llamadas_y_gasto_estimado(
         self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

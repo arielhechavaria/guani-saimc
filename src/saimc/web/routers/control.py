@@ -54,6 +54,7 @@ from saimc.extraction.measure import read_h0_runs
 from saimc.extraction.prefill_status import PrefillRun, read_run_status
 from saimc.ingestion.channel_gaps import load_channel_gap_report
 from saimc.ingestion.whatsapp_health import session_health
+from saimc.llm.provider import try_resolve_config
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
@@ -290,7 +291,8 @@ def control_panel(
         health=intake,
         rate_statuses=rate_statuses,
         assist=assist,
-        assist_configured=bool(settings.anthropic_api_key),
+        # Con cualquiera de los proveedores, no solo con la clave de Anthropic.
+        assist_configured=try_resolve_config(settings) is not None,
         prefill_run=prefill_run,
         channel_gaps=load_channel_gap_report(db),
         jev_active=jev_signal.is_active(settings),

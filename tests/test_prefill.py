@@ -418,6 +418,109 @@ def test_la_clave_no_se_imprime(session: Session, catalogo, tmp_path: Path) -> N
     assert "sk-secreta-123" not in salida
 
 
+# --- proveedor del modelo (fábrica, 2026-10-09) ------------------------------
+
+
+def _ajustes_vercel(tmp_path: Path, **kw: Any) -> Settings:
+    """Vercel AI Gateway con la clave de Jev y SIN clave de Anthropic."""
+    base: dict[str, Any] = {
+        "anthropic_api_key": "",
+        "llm_provider": "vercel",
+        "llm_jev_api_key": "vck-de-prueba",
+    }
+    base.update(kw)
+    return _ajustes(tmp_path, **base)
+
+
+def test_con_vercel_la_llamada_lleva_prefijo_y_lo_guardado_y_tarifado_no(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    """Con el prefijo en `llm_proposals.model`, la tabla de tarifas no lo
+    encuentra: el costo daría 0 y el tope de la corrida dejaría de frenar."""
+    _ingesta(session)
+    cliente = ClienteFalso()
+
+    codigo, salida = _correr(
+        session, tmp_path, ["--execute"], cliente=cliente, ajustes=_ajustes_vercel(tmp_path)
+    )
+
+    assert codigo == 0
+    assert cliente.llamadas[0]["model"] == "anthropic/claude-sonnet-5"
+    (propuesta,) = _propuestas(session)
+    assert propuesta.model == "claude-sonnet-5"
+    assert _lineas_del_registro(tmp_path)[0]["model"] == "claude-sonnet-5"
+    # 1000 de entrada a USD 2 y 200 de salida a USD 10, por millón.
+    assert "costo real $0.0040" in salida
+    assert "no tiene tarifa" not in salida
+
+
+def test_con_vercel_el_model_de_la_linea_de_comandos_pisa_y_se_prefija(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session)
+    cliente = ClienteFalso()
+
+    _correr(
+        session,
+        tmp_path,
+        ["--execute", "--model", "claude-haiku-4-5"],
+        cliente=cliente,
+        ajustes=_ajustes_vercel(tmp_path),
+    )
+
+    assert cliente.llamadas[0]["model"] == "anthropic/claude-haiku-4-5"
+    assert _propuestas(session)[0].model == "claude-haiku-4-5"
+
+
+def test_llm_model_de_la_configuracion_rige_la_estimacion_y_la_corrida(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    """`SAIMC_LLM_MODEL` se ignoraba en silencio: solo se leía el nombre
+    anterior (`SAIMC_LLM_ASSIST_MODEL`)."""
+    _ingesta(session)
+    cliente = ClienteFalso()
+    ajustes = _ajustes(tmp_path, llm_model="claude-haiku-4-5", llm_assist_model="claude-opus-5")
+
+    _, seco = _correr(session, tmp_path, [], cliente=cliente, ajustes=ajustes)
+    _correr(session, tmp_path, ["--execute"], cliente=cliente, ajustes=ajustes)
+
+    assert "claude-haiku-4-5" in seco
+    assert cliente.llamadas[0]["model"] == "claude-haiku-4-5"
+
+
+def test_con_vercel_y_sin_ninguna_clave_se_niega_y_nombra_la_variable(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session)
+    cliente = ClienteFalso()
+
+    codigo, salida = _correr(
+        session,
+        tmp_path,
+        ["--execute"],
+        cliente=cliente,
+        ajustes=_ajustes_vercel(tmp_path, llm_jev_api_key=""),
+    )
+
+    assert codigo == 2
+    assert "SAIMC_LLM_JEV_API_KEY" in salida
+    assert cliente.llamadas == []
+
+
+def test_la_clave_del_gateway_no_se_imprime(session: Session, catalogo, tmp_path: Path) -> None:
+    _ingesta(session)
+
+    _, salida = _correr(
+        session,
+        tmp_path,
+        ["--execute"],
+        cliente=ClienteFalso(),
+        ajustes=_ajustes_vercel(tmp_path, llm_jev_api_key="vck-secreta-123"),
+    )
+
+    assert "vck-secreta-123" not in salida
+
+
 def test_max_cost_frena_antes_de_pasarse(
     session: Session, catalogo, tmp_path: Path
 ) -> None:

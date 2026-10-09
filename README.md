@@ -61,7 +61,10 @@ según qué vayas a usar:
   `/webhooks/whatsapp` rechaza todo.
 - `SAIMC_ANTHROPIC_API_KEY` — opcional. Habilita el botón de asistente de
   extracción por LLM en `/curation` (ver «Rutina de curaduría» abajo). Sin
-  ella el botón no aparece y la cola funciona igual que hoy.
+  ella el botón no aparece y la cola funciona igual que hoy. El asistente
+  también puede ir por Vercel AI Gateway: `SAIMC_LLM_PROVIDER=vercel` y la
+  clave del gateway (`SAIMC_LLM_JEV_API_KEY` o `SAIMC_LLM_API_KEY`); ver
+  «Proveedor del asistente» en `docs/comandos.md`.
 
 ### Tests
 
@@ -150,7 +153,7 @@ entorno». Sin contraseña quedan solo las páginas públicas.
    cantidad y provincia: confirmá o corregí cada campo. Si es imagen, no hay
    propuesta — no hay OCR en este slice — y se completa todo a mano mirando
    la evidencia.
-3. Si quedaron campos sin resolver y `SAIMC_ANTHROPIC_API_KEY` está puesta,
+3. Si quedaron campos sin resolver y la clave del asistente está puesta,
    aparece un botón para pedirle al asistente que proponga solo esos huecos
    (`docs/decisions.md`, 2026-09-01). Nunca corre solo — lo dispara el
    operador — y cada campo que llena queda marcado visualmente para que se

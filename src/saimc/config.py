@@ -98,9 +98,11 @@ class Settings(BaseSettings):
     # openspec/changes/llm-extraction-assist). Solo llena los campos que las
     # reglas dejaron sin resolver, y solo cuando el operador lo pide.
     #
-    # Sin `anthropic_api_key` el asistente degrada a "sin propuesta" y la cola
-    # funciona exactamente como hoy — mismo criterio que `waha_api_key`, y por
-    # eso la ausencia es un estado soportado y no un error de configuración.
+    # Sin clave del proveedor elegido (ver `llm_provider`, más abajo) el
+    # asistente degrada a "sin propuesta" y la cola funciona exactamente como
+    # hoy — mismo criterio que `waha_api_key`, y por eso la ausencia es un
+    # estado soportado y no un error de configuración. `anthropic_api_key` es
+    # la clave del proveedor por defecto.
     #
     # **El costo es adicional al plan Pro del operador**: la API se factura
     # aparte, por token (docs/costos.md).
@@ -113,6 +115,35 @@ class Settings(BaseSettings):
     # Mismo criterio que `el_toque_timeout` y `waha_timeout`: la llamada vive
     # dentro de una request del operador, así que expira en vez de colgarla.
     llm_assist_timeout: float = 30.0
+
+    # Por dónde se llama al modelo del asistente (`saimc.llm.provider`,
+    # docs/decisions.md 2026-10-09). Este objeto es la ÚNICA fuente: la fábrica
+    # no lee `os.environ`, porque pydantic-settings carga el `.env` acá y no lo
+    # exporta al entorno del proceso.
+    #
+    # - `anthropic` (por defecto): la API de Anthropic, directo.
+    # - `vercel`: Vercel AI Gateway, que expone la misma API de Messages en
+    #   otra URL y con otra clave.
+    #
+    # Cualquier otro valor deja al asistente sin configurar, igual que si
+    # faltara la clave. `python -m saimc.llm.provider` dice cómo quedó.
+    llm_provider: str = "anthropic"
+    # Clave unificada. Vacía —que es como va escrita en `env.example`— se usa
+    # la específica del proveedor: `anthropic_api_key` para `anthropic`,
+    # `llm_jev_api_key` para `vercel` (la misma clave del gateway que usa Jev).
+    llm_api_key: str | None = None
+    # Vacía = la del proveedor (ninguna para `anthropic`, la del gateway para
+    # `vercel`).
+    llm_base_url: str | None = None
+    # Nombre canónico del modelo, SIN prefijo de proveedor: es el que se
+    # registra y con el que se tarifa. El prefijo `anthropic/` que pide el
+    # gateway lo agrega la fábrica solo en la llamada. Si está, gana sobre
+    # `llm_assist_model`, que queda como nombre anterior y sigue valiendo.
+    llm_model: str | None = None
+    # Segundos por llamada desde la cola. Si está, gana sobre
+    # `llm_assist_timeout` (nombre anterior). El pre-cálculo y el backtest no
+    # lo usan: tienen su `--timeout`, más holgado porque nadie espera.
+    llm_timeout: float | None = None
     # Registro de solo-anexado de cada invocación del asistente. Vive bajo
     # `data/` —que `.gitignore` excluye— y no en `docs/` como
     # `h0-runs.jsonl`: son ~600 líneas al mes atadas a ids de la base de
@@ -199,6 +230,29 @@ class Settings(BaseSettings):
             "config.valor_invalido SAIMC_%s no es un número válido; se usa %s", name.upper(), default
         )
         return default
+
+    # Mismo motivo que el validador de arriba, con otra salida: acá no hay un
+    # valor por defecto que reponer sino un nombre anterior al que caer
+    # (`llm_assist_timeout`), así que lo inválido se vuelve `None`. Vacío no es
+    # un error —`SAIMC_LLM_TIMEOUT=` es «no lo definí»— y no se avisa; un texto
+    # que no es un número positivo sí.
+    @field_validator("llm_timeout", mode="before")
+    @classmethod
+    def _llm_timeout_or_none(cls, value: object) -> object:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        try:
+            number = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            number = math.nan
+        if math.isfinite(number) and number > 0:
+            return number
+        # Tampoco acá se registra el valor recibido.
+        logger.warning(
+            "config.valor_invalido SAIMC_LLM_TIMEOUT no es un número positivo; "
+            "se usa SAIMC_LLM_ASSIST_TIMEOUT o su valor por defecto"
+        )
+        return None
 
 
 @lru_cache

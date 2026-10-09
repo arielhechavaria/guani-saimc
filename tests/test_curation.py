@@ -4793,11 +4793,24 @@ class TestAsistenteLLM:
         """
         monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(tmp_path / "assist-log.jsonl"))
         monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "")
+        # Desde la fábrica del proveedor (2026-10-09) «sin clave» depende
+        # también de estas: un `.env` con `vercel` y la clave del gateway
+        # dejaría el asistente disponible en los tests de «sin clave».
+        monkeypatch.setenv("SAIMC_LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("SAIMC_LLM_API_KEY", "")
+        monkeypatch.setenv("SAIMC_LLM_MODEL", "")
         get_settings.cache_clear()
 
     @pytest.fixture
     def con_clave(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "clave-de-prueba")
+        get_settings.cache_clear()
+
+    @pytest.fixture
+    def con_vercel(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Vercel AI Gateway con la clave de Jev y SIN clave de Anthropic."""
+        monkeypatch.setenv("SAIMC_LLM_PROVIDER", "vercel")
+        monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "vck-de-prueba")
         get_settings.cache_clear()
 
     def _pendiente(self, session: Session, texto: str | None = None) -> RawIngestion:
@@ -4956,7 +4969,68 @@ class TestAsistenteLLM:
         assert len(llamadas) == 1
         assert llamadas[0]["text"] == self.TEXTO
         assert llamadas[0]["ingestion_id"] == str(ingestion.id)
-        assert llamadas[0]["api_key"] == "clave-de-prueba"
+        # La clave viaja dentro de la configuración del proveedor (`llm`), no
+        # suelta: así no puede armarse el cliente con una y registrarse otra.
+        assert llamadas[0]["llm"].api_key == "clave-de-prueba"
+        assert llamadas[0]["llm"].provider == "anthropic"
+
+    def test_con_vercel_y_sin_clave_de_anthropic_el_boton_se_ofrece(
+        self, client: TestClient, session: Session, con_vercel: None
+    ) -> None:
+        """La disponibilidad se decidía mirando solo la clave de Anthropic:
+        con el asistente por el gateway la cola decía que no había asistente."""
+        self._pendiente(session)
+
+        html = client.get("/curation").text
+
+        assert "/assist" in html
+        assert "Completar con IA" in html
+
+    def test_con_vercel_el_endpoint_llama_por_el_gateway_y_guarda_el_modelo_canonico(
+        self,
+        client: TestClient,
+        session: Session,
+        con_vercel: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        ingestion = self._pendiente(session)
+        llamadas = self._modelo(monkeypatch, session, filas=[{"price": Decimal("500")}])
+
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        assert len(llamadas) == 1
+        llm = llamadas[0]["llm"]
+        assert llm.provider == "vercel"
+        assert llm.api_key == "vck-de-prueba"
+        assert llm.base_url == "https://ai-gateway.vercel.sh"
+        assert llm.request_model == "anthropic/claude-sonnet-5"
+        # Lo guardado y lo registrado llevan el nombre con el que se tarifa.
+        (propuesta,) = self._propuestas(session, ingestion)
+        assert propuesta.model == "claude-sonnet-5"
+        registro = (tmp_path / "assist-log.jsonl").read_text(encoding="utf-8").splitlines()
+        assert json.loads(registro[0])["model"] == "claude-sonnet-5"
+
+    def test_con_vercel_y_sin_la_clave_del_gateway_no_se_ofrece_ni_se_llama(
+        self,
+        client: TestClient,
+        session: Session,
+        con_clave: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Al revés: la clave de Anthropic no habilita un asistente que va por
+        el gateway."""
+        monkeypatch.setenv("SAIMC_LLM_PROVIDER", "vercel")
+        monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "")
+        get_settings.cache_clear()
+        ingestion = self._pendiente(session)
+        llamadas = self._modelo(monkeypatch, session)
+
+        html = client.get("/curation").text
+        client.post(f"/curation/{ingestion.id}/assist")
+
+        assert "/assist" not in html
+        assert llamadas == []
 
     def test_completar_con_ia_no_aplica_el_carril_0(
         self,

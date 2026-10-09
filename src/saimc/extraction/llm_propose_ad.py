@@ -17,7 +17,8 @@ Mismo contrato que `propose_missing`:
   resuelva contra el catálogo cerrado se descarta (la fila entera si es el
   producto; solo el campo en los demás casos). Se cuenta en `dropped`: es la
   señal de que el modelo está inventando.
-- `import anthropic` perezoso y `client` como seam de test.
+- `import anthropic` perezoso (lo hace `saimc.llm.provider.build_client`, el
+  único punto que conoce al proveedor) y `client` como seam de test.
 
 El registro de invocaciones es un archivo APARTE del del asistente del
 operador: `assisted_ingestion_ids` saca anuncios de la medición de H0 y el
@@ -58,6 +59,7 @@ from saimc.extraction.llm_assist import (
 )
 from saimc.extraction.llm_checks import RowMeta, verify_evidence
 from saimc.glossary import effective_prompt_version, glossary_prompt_section
+from saimc.llm.provider import LLMConfig, build_client
 from saimc.models import (
     ContentType,
     Currency,
@@ -489,12 +491,13 @@ def propose_ad(
     *,
     api_key: str | None = None,
     client: Any | None = None,
-    model: str | None = None,
-    timeout: float | None = None,
+    model: str = "claude-sonnet-5",
+    timeout: float = 120.0,
     ingestion_id: str = "",
     log_path: Path | None = None,
     glossary: Sequence[GlossaryEntry] = (),
     trim: bool = False,
+    llm: LLMConfig | None = None,
 ) -> AdProposal:
     """Una llamada por anuncio: todas las filas del foco y el veredicto.
 
@@ -503,47 +506,40 @@ def propose_ad(
     registro cuenta intentos reales — tampoco se aplica el glosario, porque
     no hubo llamada que lo use.
 
-    La config del proveedor (clave, modelo, base URL, timeout) sale de
-    `saimc.llm.provider.resolve_config()`; los argumentos explícitos de esta
-    función ganan sobre ella. Si el entorno no está configurado pero el
-    caller pasa `api_key`, se asume Anthropic directo con los defaults.
+    `llm` es la configuración del proveedor ya resuelta
+    (`saimc.llm.provider.resolve_config`, que corre quien llama: esta función
+    no va a buscarla). Si viene, manda: clave, URL, timeout y los dos nombres
+    de modelo salen de ahí, y `api_key`, `model` y `timeout` se ignoran. A la
+    llamada va `llm.request_model` (con prefijo en Vercel); a todo lo que se
+    registra, `llm.model`, el canónico con el que se tarifa. Sin `llm` rigen
+    los tres argumentos sueltos contra Anthropic directo, como antes de la
+    fábrica (docs/decisions.md, 2026-10-09).
 
     `trim` (slice 3c, apagado por defecto): si está prendido, lo que ve el
     modelo pasa por `trim_text_for_model` antes de armar el prompt. Apagado
     en los tres llamadores de producción (`/curation`, `prefill`, y el
     backtest por defecto) hasta que un backtest aparte con `trim=True`
     confirme que no pierde filas contra el oro. La evidencia se sigue
-    verificando contra el texto SIN recortar (`redacted`), nunca contra el
-    recortado.
+    verificando contra el texto SIN recortar (`redacted`, más abajo), nunca
+    contra el recortado.
     """
-    from saimc.llm.provider import LLMConfig, build_client, resolve_config
-
-    # 1) Config del proveedor. Si el entorno no está configurado pero el
-    #    caller pasa `api_key` explícita, asumimos Anthropic directo para
-    #    que `cfg` nunca quede en None y `build_client` tenga qué construir.
-    cfg: LLMConfig | None = None
-    try:
-        cfg = resolve_config()
-    except ValueError as error:
-        if api_key is None:
-            return AdProposal(degraded=True, failure=classify_failure(error))
-        cfg = LLMConfig(
+    if llm is None:
+        if not api_key:
+            return AdProposal(degraded=True, failure="no_key")
+        llm = LLMConfig(
             provider="anthropic",
             api_key=api_key,
             base_url=None,
-            model=model or "claude-sonnet-5",
-            timeout=timeout or 120.0,
+            model=model,
+            request_model=model,
+            timeout=timeout,
         )
+    # De acá en más `model` es el canónico: el que anota `_registrar`.
+    model = llm.model
 
-    # 2) Los argumentos explícitos ganan sobre la config resuelta.
-    api_key = api_key or cfg.api_key
-    model = model if model is not None else cfg.model
-    timeout = timeout if timeout is not None else cfg.timeout
-
-    # 3) Redacción en el borde de la llamada. Nunca sale un teléfono del
-    #    anuncio hacia el cliente del modelo.
     from saimc.privacy import redact_personal_data
 
+    # La redacción va acá, en el borde de la llamada.
     redacted = redact_personal_data(text) or ""
     if not redacted.strip():
         return AdProposal(degraded=True, failure="empty_text")
@@ -580,19 +576,17 @@ def propose_ad(
 
     if client is None:
         try:
-            client = build_client(cfg)
+            client = build_client(llm)
         except Exception as error:
             return _registrar(
                 AdProposal(
-                    degraded=True,
-                    failure=classify_failure(error),
-                    prompt_version=version,
+                    degraded=True, failure=classify_failure(error), prompt_version=version
                 )
             )
 
     try:
         response = client.messages.create(
-            model=model,
+            model=llm.request_model,
             max_tokens=MAX_TOKENS,
             system=_SYSTEM_PROMPT,
             messages=[
@@ -661,6 +655,7 @@ def propose_ad(
             prompt_version=version,
         )
     )
+
 
 # --- compartido por «Completar con IA» y el pre-cálculo (slice 3b) ----------
 #

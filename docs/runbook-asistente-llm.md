@@ -82,12 +82,23 @@ SAIMC_ANTHROPIC_API_KEY=sk-ant-...
 Opcionales, con sus valores por defecto:
 
 ```
-SAIMC_LLM_ASSIST_MODEL=claude-sonnet-5
-SAIMC_LLM_ASSIST_TIMEOUT=30.0
+SAIMC_LLM_MODEL=claude-sonnet-5
+SAIMC_LLM_TIMEOUT=30.0
 SAIMC_LLM_ASSIST_LOG_PATH=data/llm-assist-log.jsonl
 ```
 
+`SAIMC_LLM_ASSIST_MODEL` y `SAIMC_LLM_ASSIST_TIMEOUT` son los nombres
+anteriores de las dos primeras: siguen valiendo cuando las nuevas no están.
+
 Reiniciá el server.
+
+**Por Vercel AI Gateway en vez de Anthropic directo** (desde el 2026-10-09): en
+lugar de la clave de arriba, `SAIMC_LLM_PROVIDER=vercel` y la clave del gateway
+en `SAIMC_LLM_JEV_API_KEY` (la misma de Jev) o en `SAIMC_LLM_API_KEY`. El paso
+a paso y el comando que muestra cómo quedó están en
+[comandos.md](comandos.md#proveedor-del-asistente). En el resto de este
+documento, donde dice «exige `SAIMC_ANTHROPIC_API_KEY`» leé «exige la clave del
+proveedor elegido».
 
 **Verificación:** abrí `/curation` en un anuncio que tenga campos vacíos. Tiene
 que aparecer el botón **«Completar huecos con IA»**. Si el anuncio está
@@ -159,7 +170,10 @@ vez de decirlo, avisá: se ajusta con el mensaje real en la mano.
 
 ## Cómo apagarlo
 
-Sacá `SAIMC_ANTHROPIC_API_KEY` del `.env` y reiniciá. El botón desaparece y la
+Sacá `SAIMC_ANTHROPIC_API_KEY` del `.env` y reiniciá. Con el asistente por
+Vercel, en cambio, dejá `SAIMC_LLM_PROVIDER=anthropic` con
+`SAIMC_ANTHROPIC_API_KEY` y `SAIMC_LLM_API_KEY` vacías: así Jev conserva su
+clave. El botón desaparece y la
 cola vuelve a comportarse como antes. No hace falta desinstalar nada ni tocar
 código.
 

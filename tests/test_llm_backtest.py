@@ -489,6 +489,34 @@ def test_la_clave_no_se_imprime(
     assert "sk-secreta-123" not in capsys.readouterr().out
 
 
+def test_execute_con_vercel_manda_el_prefijo_y_registra_el_canonico(
+    session: Session, catalogo, tmp_path: Path, capsys
+) -> None:
+    """Fábrica del proveedor (2026-10-09): sin clave de Anthropic, por el
+    gateway. El prefijo viaja en la llamada y no llega al registro."""
+    _ingesta(session, filas=[_confirmada(catalogo.arroz, "1", "CUP", "1", "lb", catalogo.lh)])
+    args = llm_backtest.parse_args(
+        ["--execute", "--results", str(tmp_path / "r.jsonl"),
+         "--calls-log", str(tmp_path / "c.jsonl")]
+    )
+    cliente = ClienteFalso({"discard": True, "discard_reason": "no_data", "rows": []})
+
+    codigo = llm_backtest.execute(
+        args,
+        session,
+        _ajustes(llm_provider="vercel", llm_jev_api_key="vck-secreta-123", anthropic_api_key=""),
+        client=cliente,
+    )
+
+    salida = capsys.readouterr().out
+    assert codigo == 0
+    assert cliente.llamadas[0]["model"] == "anthropic/claude-sonnet-5"
+    llamada = json.loads((tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert llamada["model"] == "claude-sonnet-5"
+    assert "no tiene tarifa" not in salida
+    assert "vck-secreta-123" not in salida
+
+
 def test_run_escribe_un_registro_por_anuncio_con_ocr_redactado(
     session: Session, catalogo, tmp_path: Path
 ) -> None:

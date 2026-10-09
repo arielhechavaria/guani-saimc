@@ -269,7 +269,8 @@ def prefill_indicator(run: PrefillRun | None, *, now: datetime) -> Indicator:
     if run.exit_code != 0:
         causa = {
             "credit": "Se frenó por falta de saldo en la API: cargá créditos.",
-            "auth": "La API rechazó la clave: revisá SAIMC_ANTHROPIC_API_KEY.",
+            # Qué variable es depende del proveedor: lo dice el comando.
+            "auth": "La API rechazó la clave: `python -m saimc.llm.provider` dice de qué variable sale.",
         }.get(run.aborted_failure, "")
         return Indicator(
             key="prefill",
