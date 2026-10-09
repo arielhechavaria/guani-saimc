@@ -3,7 +3,8 @@
 Parte del plan `docs/plan-factor-humano.md` (B2b y B2c se entregan juntas). Toca el
 motor de validación: esta especificación se aprueba antes de programar.
 
-**Estado: PROPUESTA, sin aprobar.** Nada de lo que sigue está programado.
+**Estado: APROBADA por el operador el 2026-10-09, con las ocho respuestas por
+defecto.** Se entrega en tres slices (ver «Orden de entrega»).
 
 Sale de G1b, que el operador decidió el 2026-10-09 por el camino «Adelantar G1b»
 del plan: el carril 1 se enciende antes de llegar al n de la especificación, y el
@@ -240,8 +241,9 @@ Con el filtro y los parámetros de arriba:
   entrarían hoy, 49 son de dos canales (MYP Mayoristas Y Minoristas Alimentos
   Habana, 31; Mipyme Realjo SRL, 18) de los que no se sabe nada. Un canal malo
   publica errores hasta que se junten 3 auditorías suyas.
-- Varios canales nuevos son mayoristas. El motor no mira si el anuncio es
-  mayorista puro: depende de que el modelo lo descarte por fuera de foco.
+- Los canales mayoristas entran igual que cualquier otro: el modelo no descarta
+  por mayorista (solo por producto fuera del catálogo) y cada fila lleva su
+  formato de venta, que es parte de la celda. El carril 1 no los trata aparte.
 - A los otros 374 con filas los sigue frenando sobre todo el desacuerdo entre
   reglas y modelo (precio 302, moneda 278, producto 152). Ese freno no se toca
   acá: sin él, sobre el oro, el operador tocó 79 de 151 anuncios.
@@ -283,9 +285,9 @@ tres estén en producción.
 | B2b-2 | Aplicar: guardado compartido, pre-cálculo y comando (casos 11–15) | Opus |
 | B2b-3 | Auditoría, freno, `/control` y `/metodologia` (casos 16–24) | Sonnet; Opus para el freno |
 
-## Preguntas al operador
+## Preguntas al operador — resueltas el 2026-10-09
 
-Cada una con su respuesta por defecto. Aprobar la especificación es aprobarlas.
+El operador aprobó la especificación con las ocho respuestas por defecto.
 
 1. **Tope de filas: 1.** ¿O 2, que suma 20 anuncios hoy con más riesgo?
 2. **Meta de error: 10 % por anuncio.**
