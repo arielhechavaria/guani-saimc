@@ -602,3 +602,15 @@ def test_el_comando_mira_por_defecto_el_env_que_carga_settings(
     assert "SAIMC_LLM_API_KEY ya no se usa" in salida
     assert "SAIMC_LLM_BASE_URL ya no se usa" in salida
     assert _RELLENO not in salida
+
+
+@pytest.mark.parametrize("modelo", ["anthropic/", "  ", " anthropic/ "])
+def test_with_overrides_rechaza_un_modelo_que_queda_vacio(modelo: str) -> None:
+    """Un `--model` que es solo el prefijo no pisa nada: no se corre con modelo vacío."""
+    cfg = provider.resolve_config(_ajustes(llm_provider="vercel", llm_jev_api_key="k"))
+    assert cfg.with_overrides(model=modelo) == cfg
+
+
+def test_effective_model_con_solo_el_prefijo_cae_al_nombre_anterior() -> None:
+    ajustes = _ajustes(llm_model="anthropic/", llm_assist_model="claude-haiku-4-5")
+    assert provider.effective_model(ajustes) == "claude-haiku-4-5"
