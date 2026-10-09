@@ -212,7 +212,7 @@ misma API; cambian la URL, la clave y a quién se le paga.
   del pre-cálculo quedan corridos en esa proporción: lo que vale es la factura
   de Vercel. A comparar contra ella después de las primeras corridas.
 - El saldo que se gasta es el del gateway. Con la misma clave que Jev
-  (`SAIMC_LLM_JEV_API_KEY`) es **el mismo saldo de Jev**: los topes son aparte
+  (`SAIMC_VERCEL_API_KEY`) es **el mismo saldo de Jev**: los topes son aparte
   (`SAIMC_PREFILL_MAX_COST` y `SAIMC_LLM_JEV_MAX_COST`), el saldo no.
 - El aviso «sin saldo» de `/control` reconoce el saldo agotado del gateway por
   el status 402. Tampoco está verificado contra un error real: si el gateway

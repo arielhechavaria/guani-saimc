@@ -147,6 +147,43 @@ def test_activo_es_interruptor_encendido_y_clave_no_vacia(
     assert jev_signal.is_active(ajustes) is activo
 
 
+# La clave es la de Vercel AI Gateway: `SAIMC_VERCEL_API_KEY`, o
+# `SAIMC_LLM_JEV_API_KEY`, su nombre anterior, que sigue valiendo.
+_CLAVES_DEL_GATEWAY = pytest.mark.parametrize(
+    ("claves", "esperada"),
+    [
+        ({"vercel_api_key": "vck-nueva", "llm_jev_api_key": None}, "vck-nueva"),
+        ({"vercel_api_key": None, "llm_jev_api_key": "vck-vieja"}, "vck-vieja"),
+        ({"vercel_api_key": "vck-nueva", "llm_jev_api_key": "vck-vieja"}, "vck-nueva"),
+        ({"vercel_api_key": "  ", "llm_jev_api_key": "vck-vieja"}, "vck-vieja"),
+    ],
+    ids=["solo la nueva", "solo la anterior", "las dos", "la nueva vacía"],
+)
+
+
+@_CLAVES_DEL_GATEWAY
+def test_jev_esta_activo_con_cualquiera_de_los_dos_nombres_de_la_clave(
+    claves: dict[str, Any], esperada: str
+) -> None:
+    assert jev_signal.is_active(_ajustes(**claves)) is True
+
+
+@_CLAVES_DEL_GATEWAY
+def test_la_pasada_manda_la_clave_del_gateway_y_la_nueva_gana(
+    session: Session, mundo: SimpleNamespace, claves: dict[str, Any], esperada: str
+) -> None:
+    _ingesta(session)
+    api = Api()
+
+    _pasada(session, api, ajustes=_ajustes(**claves))
+
+    assert api.requests[0].headers["authorization"] == f"Bearer {esperada}"
+
+
+def test_sin_ninguna_de_las_dos_claves_jev_no_esta_activo() -> None:
+    assert jev_signal.is_active(_ajustes(vercel_api_key="", llm_jev_api_key="")) is False
+
+
 @pytest.mark.parametrize("valor", ["abc", "-1", "0", "nan"])
 def test_un_tiempo_limite_mal_escrito_cae_en_el_valor_por_defecto_y_avisa(
     valor: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -231,7 +268,7 @@ def test_caso_1_inactivo_no_hace_ninguna_llamada(
 def test_encendido_y_sin_clave_avisa_en_la_salida(session: Session, mundo: SimpleNamespace) -> None:
     _, _, salida = _pasada(session, Api(), ajustes=_ajustes(llm_jev_api_key=None))
 
-    assert "SAIMC_LLM_JEV_API_KEY" in salida
+    assert "SAIMC_VERCEL_API_KEY" in salida
 
 
 def test_apagado_no_dice_nada(session: Session, mundo: SimpleNamespace) -> None:
@@ -905,7 +942,7 @@ def test_al_arrancar_avisa_si_esta_encendido_y_sin_clave(caplog: pytest.LogCaptu
         jev_signal.warn_if_enabled_without_key(_ajustes(llm_jev_api_key=None))
 
     assert "jev.sin_clave" in caplog.text
-    assert "SAIMC_LLM_JEV_API_KEY" in caplog.text
+    assert "SAIMC_VERCEL_API_KEY" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -1171,7 +1208,7 @@ def test_el_relleno_con_execute_no_corre_si_jev_no_esta_activo_y_lo_dice(
     assert api.requests == []
     assert len(_senales(session)) == 1
     assert "No se puede correr" in salida
-    assert "SAIMC_LLM_JEV_ENABLED" in salida or "SAIMC_LLM_JEV_API_KEY" in salida
+    assert "SAIMC_LLM_JEV_ENABLED" in salida or "SAIMC_VERCEL_API_KEY" in salida
 
 
 def test_el_relleno_en_seco_no_necesita_la_clave_pero_avisa(
@@ -1184,7 +1221,7 @@ def test_el_relleno_en_seco_no_necesita_la_clave_pero_avisa(
     assert codigo == 0
     assert api.requests == []
     assert "2 textos" in salida
-    assert "SAIMC_LLM_JEV_API_KEY" in salida
+    assert "SAIMC_VERCEL_API_KEY" in salida
 
 
 def test_un_fallo_del_relleno_no_registra_el_texto_y_deja_el_anuncio_para_despues(

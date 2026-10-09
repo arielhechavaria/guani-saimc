@@ -503,7 +503,7 @@ def test_con_vercel_y_sin_ninguna_clave_se_niega_y_nombra_la_variable(
     )
 
     assert codigo == 2
-    assert "SAIMC_LLM_JEV_API_KEY" in salida
+    assert "SAIMC_VERCEL_API_KEY" in salida
     assert cliente.llamadas == []
 
 

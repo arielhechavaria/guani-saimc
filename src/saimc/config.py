@@ -128,13 +128,20 @@ class Settings(BaseSettings):
     # Cualquier otro valor deja al asistente sin configurar, igual que si
     # faltara la clave. `python -m saimc.llm.provider` dice cómo quedó.
     llm_provider: str = "anthropic"
-    # Clave unificada. Vacía —que es como va escrita en `env.example`— se usa
-    # la específica del proveedor: `anthropic_api_key` para `anthropic`,
-    # `llm_jev_api_key` para `vercel` (la misma clave del gateway que usa Jev).
-    llm_api_key: str | None = None
-    # Vacía = la del proveedor (ninguna para `anthropic`, la del gateway para
-    # `vercel`).
-    llm_base_url: str | None = None
+    #
+    # Un interruptor y, según el proveedor, su clave: `anthropic_api_key` para
+    # `anthropic`, la del gateway para `vercel` (`gateway_api_key`, más
+    # abajo). La de uno nunca sirve para el otro. No hay clave unificada ni
+    # URL configurable: `SAIMC_LLM_API_KEY` y `SAIMC_LLM_BASE_URL` existieron
+    # un día y se retiraron porque permitían mezclas inválidas
+    # (docs/decisions.md, 2026-10-09). Si siguen en el `.env` se ignoran
+    # (`extra="ignore"`), y `python -m saimc.llm.provider` lo avisa.
+    #
+    # La clave de Vercel AI Gateway, para todo lo que pase por el gateway: el
+    # asistente con `llm_provider=vercel` y Jev. Antes se llamaba
+    # `llm_jev_api_key` (nació con Jev); ese nombre sigue valiendo y se lee
+    # solo por `gateway_api_key` (docs/decisions.md, 2026-10-09).
+    vercel_api_key: str | None = None
     # Nombre canónico del modelo, SIN prefijo de proveedor: es el que se
     # registra y con el que se tarifa. El prefijo `anthropic/` que pide el
     # gateway lo agrega la fábrica solo en la llamada. Si está, gana sobre
@@ -179,6 +186,8 @@ class Settings(BaseSettings):
     # `validation/jev_client.py`, porque cambiarlos cambia la huella de las
     # preguntas y pide medir de nuevo.
     llm_jev_enabled: bool = False
+    # Nombre anterior de `vercel_api_key`. Sigue valiendo: rige si la nueva
+    # está vacía. No se lee directo, sino por `gateway_api_key`.
     llm_jev_api_key: str | None = None
     # Segundos por llamada. Nadie espera esta respuesta (corre en el
     # pre-cálculo, no en una request), pero una llamada colgada no puede
@@ -211,6 +220,24 @@ class Settings(BaseSettings):
     # es el único lugar donde un «abc» todavía se puede atajar. Sin esto, un
     # `.env` mal escrito levanta al instanciar `Settings` y tumba la aplicación
     # entera por una señal que solo anota.
+    def gateway_api_key(self) -> tuple[str | None, str]:
+        """La clave efectiva de Vercel AI Gateway y la variable de la que salió.
+
+        Único lugar que decide entre los dos nombres: `SAIMC_VERCEL_API_KEY`
+        gana; vacía o ausente (vacío es ausente, igual que en
+        `saimc.llm.provider`), rige `SAIMC_LLM_JEV_API_KEY`, el nombre
+        anterior. Sin ninguna devuelve `None` y el nombre de la nueva, que es
+        la que hay que definir. La usan la fábrica del asistente y Jev.
+
+        Devuelve una tupla, que quien llama desarma en dos variables:
+        `clave, variable = settings.gateway_api_key()`.
+        """
+        for field_name in ("vercel_api_key", "llm_jev_api_key"):
+            value = (getattr(self, field_name) or "").strip()
+            if value:
+                return value, f"SAIMC_{field_name.upper()}"
+        return None, "SAIMC_VERCEL_API_KEY"
+
     @field_validator("llm_jev_timeout", "llm_jev_max_cost", mode="before")
     @classmethod
     def _jev_number_or_default(cls, value: object, info: ValidationInfo) -> object:

@@ -120,10 +120,13 @@ from saimc.validation.jev_client import (
 )
 from saimc.validation.stats import Rate, pct
 
-#: Variable de la clave. El script la lee por su cuenta, del entorno o del
-#: `.env`, sin pasar por `saimc.config.Settings`: corre en desarrollo y no
-#: depende del interruptor del sistema.
-ENV_KEY = "SAIMC_LLM_JEV_API_KEY"
+#: Variable de la clave de Vercel AI Gateway. El script la lee por su cuenta,
+#: del entorno o del `.env`, sin pasar por `saimc.config.Settings`: corre en
+#: desarrollo y no depende del interruptor del sistema.
+ENV_KEY = "SAIMC_VERCEL_API_KEY"
+#: El nombre anterior de la misma clave, que sigue valiendo. Mismo orden que
+#: `Settings.gateway_api_key`: la nueva gana.
+LEGACY_ENV_KEY = "SAIMC_LLM_JEV_API_KEY"
 
 DEFAULT_MAX_COST = 0.20
 
@@ -242,11 +245,16 @@ def _request_tokens(payload: Mapping[str, Any]) -> int:
 
 
 def load_api_key(env: Mapping[str, str], env_file: Path) -> str | None:
-    """La clave: primero el entorno, después el `.env`. `None` si no está."""
-    value = env.get(ENV_KEY)
-    if not value and env_file.is_file():
-        value = dotenv_values(env_file).get(ENV_KEY)
-    return value or None
+    """La clave: primero el entorno, después el `.env`. `None` si no está.
+
+    Se busca con el nombre nuevo y, si no aparece, con el anterior.
+    """
+    from_file = dotenv_values(env_file) if env_file.is_file() else {}
+    for name in (ENV_KEY, LEGACY_ENV_KEY):
+        value = env.get(name) or from_file.get(name)
+        if value:
+            return value
+    return None
 
 
 # --- Caché --------------------------------------------------------------------

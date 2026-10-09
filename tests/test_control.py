@@ -1483,8 +1483,9 @@ class TestConsumoDelAsistente:
         """Ninguna clave del asistente: ni la del `.env` del checkout."""
         monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(tmp_path / "vacio.jsonl"))
         monkeypatch.setenv("SAIMC_LLM_PROVIDER", "anthropic")
-        monkeypatch.setenv("SAIMC_LLM_API_KEY", "")
         monkeypatch.setenv("SAIMC_ANTHROPIC_API_KEY", "")
+        # La clave del gateway, con sus dos nombres (el nuevo y el anterior).
+        monkeypatch.setenv("SAIMC_VERCEL_API_KEY", "")
         monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "")
         get_settings.cache_clear()
 
@@ -2251,6 +2252,7 @@ class TestJevEnSombra:
     def test_encendido_y_sin_clave_dice_sin_clave(
         self, client: TestClient, entorno: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.setenv("SAIMC_VERCEL_API_KEY", "")
         monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "")
         get_settings.cache_clear()
 

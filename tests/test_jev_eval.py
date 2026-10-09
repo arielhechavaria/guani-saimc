@@ -640,6 +640,21 @@ class TestKeySecrecy:
         assert jev_eval.load_api_key({"SAIMC_LLM_JEV_API_KEY": "del-entorno"}, env_file) == ("del-entorno")
         assert jev_eval.load_api_key({}, env_file) == "del-archivo"
 
+    def test_la_clave_con_el_nombre_nuevo_gana_a_la_del_nombre_anterior(self, tmp_path: Path) -> None:
+        """`SAIMC_VERCEL_API_KEY` es la clave del gateway; `SAIMC_LLM_JEV_API_KEY`
+        es su nombre anterior y sigue valiendo. Vacía es ausente."""
+        nueva = {"SAIMC_VERCEL_API_KEY": "nueva"}
+        vieja = {"SAIMC_LLM_JEV_API_KEY": "vieja"}
+        sin_archivo = tmp_path / "no-existe.env"
+        assert jev_eval.load_api_key(nueva, sin_archivo) == "nueva"
+        assert jev_eval.load_api_key(nueva | vieja, sin_archivo) == "nueva"
+        assert jev_eval.load_api_key({"SAIMC_VERCEL_API_KEY": ""} | vieja, sin_archivo) == "vieja"
+        env_file = tmp_path / ".env"
+        env_file.write_text("SAIMC_VERCEL_API_KEY=nueva-del-archivo\n", encoding="utf-8")
+        # El nombre gana antes que el origen: la nueva del archivo le gana a
+        # la anterior del entorno.
+        assert jev_eval.load_api_key(vieja, env_file) == "nueva-del-archivo"
+
     def test_sin_clave_devuelve_none(self, tmp_path: Path) -> None:
         assert jev_eval.load_api_key({}, tmp_path / "no-existe.env") is None
         vacio = tmp_path / ".env"

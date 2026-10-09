@@ -4797,7 +4797,6 @@ class TestAsistenteLLM:
         # también de estas: un `.env` con `vercel` y la clave del gateway
         # dejaría el asistente disponible en los tests de «sin clave».
         monkeypatch.setenv("SAIMC_LLM_PROVIDER", "anthropic")
-        monkeypatch.setenv("SAIMC_LLM_API_KEY", "")
         monkeypatch.setenv("SAIMC_LLM_MODEL", "")
         get_settings.cache_clear()
 
@@ -5021,6 +5020,7 @@ class TestAsistenteLLM:
         """Al revés: la clave de Anthropic no habilita un asistente que va por
         el gateway."""
         monkeypatch.setenv("SAIMC_LLM_PROVIDER", "vercel")
+        monkeypatch.setenv("SAIMC_VERCEL_API_KEY", "")
         monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "")
         get_settings.cache_clear()
         ingestion = self._pendiente(session)

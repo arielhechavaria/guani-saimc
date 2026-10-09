@@ -56,14 +56,13 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     """Entorno limpio: `Settings(_env_file=None)` igual lee el del proceso."""
     for name in (
         "SAIMC_LLM_PROVIDER",
-        "SAIMC_LLM_API_KEY",
-        "SAIMC_LLM_BASE_URL",
         "SAIMC_LLM_MODEL",
         "SAIMC_LLM_TIMEOUT",
         "SAIMC_LLM_ASSIST_MODEL",
         "SAIMC_LLM_ASSIST_TIMEOUT",
         "SAIMC_ANTHROPIC_API_KEY",
         "SAIMC_LLM_JEV_API_KEY",
+        "SAIMC_VERCEL_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch

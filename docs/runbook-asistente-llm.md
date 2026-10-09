@@ -94,7 +94,7 @@ Reiniciá el server.
 
 **Por Vercel AI Gateway en vez de Anthropic directo** (desde el 2026-10-09): en
 lugar de la clave de arriba, `SAIMC_LLM_PROVIDER=vercel` y la clave del gateway
-en `SAIMC_LLM_JEV_API_KEY` (la misma de Jev) o en `SAIMC_LLM_API_KEY`. El paso
+en `SAIMC_VERCEL_API_KEY` (la misma de Jev). El paso
 a paso y el comando que muestra cómo quedó están en
 [comandos.md](comandos.md#proveedor-del-asistente). En el resto de este
 documento, donde dice «exige `SAIMC_ANTHROPIC_API_KEY`» leé «exige la clave del
@@ -172,7 +172,7 @@ vez de decirlo, avisá: se ajusta con el mensaje real en la mano.
 
 Sacá `SAIMC_ANTHROPIC_API_KEY` del `.env` y reiniciá. Con el asistente por
 Vercel, en cambio, dejá `SAIMC_LLM_PROVIDER=anthropic` con
-`SAIMC_ANTHROPIC_API_KEY` y `SAIMC_LLM_API_KEY` vacías: así Jev conserva su
+`SAIMC_ANTHROPIC_API_KEY` vacía: así Jev conserva su
 clave. El botón desaparece y la
 cola vuelve a comportarse como antes. No hace falta desinstalar nada ni tocar
 código.

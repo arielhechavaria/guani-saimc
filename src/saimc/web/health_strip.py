@@ -309,7 +309,7 @@ def prefill_indicator(run: PrefillRun | None, *, now: datetime) -> Indicator:
 # tope de gasto y los fallos de red no están: se resuelven solos en la corrida
 # siguiente.
 _JEV_STOP_HINTS = {
-    "auth": "El gateway rechazó la clave: revisá SAIMC_LLM_JEV_API_KEY.",
+    "auth": "El gateway rechazó la clave: revisá SAIMC_VERCEL_API_KEY.",
     "forbidden": (
         "La clave autentica pero el gateway denegó el acceso (plan o modelo). "
         "El motivo está en journalctl -u saimc-prefill.service."

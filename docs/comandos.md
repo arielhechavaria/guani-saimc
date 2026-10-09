@@ -92,7 +92,7 @@ sudo systemctl start saimc-prefill.service
   `.env`, descarta solo lo que el carril 0 decide). **Gasta**: sí, **tope de 0,15 USD por corrida**
   (`SAIMC_PREFILL_MAX_COST` en la unidad).
 - Se queda esperando hasta que termina. En otra terminal: `journalctl -fu saimc-prefill.service`.
-- **Jev (A6b)**: con `SAIMC_LLM_JEV_ENABLED=true` y `SAIMC_LLM_JEV_API_KEY` en el `.env`, la corrida
+- **Jev (A6b)**: con `SAIMC_LLM_JEV_ENABLED=true` y `SAIMC_VERCEL_API_KEY` en el `.env`, la corrida
   empieza con una pasada que le hace tres preguntas a cada texto pendiente y guarda la respuesta en
   `jev_signals`. Tiene su propio tope, **`SAIMC_LLM_JEV_MAX_COST` (0,01 USD por corrida)**, aparte
   del de arriba. Un fallo de Jev no frena el resto ni pone en rojo la tarjeta «Pre-cálculo»: queda
@@ -248,26 +248,30 @@ sudo systemctl restart saimc.service
 - **Cambia algo**: no. **Gasta**: no: no hace ninguna llamada, así que no prueba que la clave
   sirva ni que haya saldo. Eso se ve en la primera llamada real.
 - **Cómo leer la salida**: sale con código 1 y el motivo si no hay configuración válida (proveedor
-  desconocido, o falta la clave: dice qué variables mira). Lee el `.env` del directorio desde el que
+  desconocido, o falta la clave: dice qué variable hay que definir). Si en el `.env` o en el entorno
+  siguen escritas `SAIMC_LLM_API_KEY` o `SAIMC_LLM_BASE_URL`, que se retiraron el 2026-10-09 y ya no
+  hacen nada, lo avisa (sin mostrar su valor) para que las borres; el aviso no cambia el código. Lee el `.env` del directorio desde el que
   se corre: desde la raíz del repo.
 
 Las variables, en `.env` (los valores vacíos cuentan como no puestos):
 
 | Variable | Por defecto | Qué gobierna |
 |---|---|---|
-| `SAIMC_LLM_PROVIDER` | `anthropic` | `anthropic` (directo) o `vercel` (Vercel AI Gateway) |
-| `SAIMC_LLM_API_KEY` | sin valor | clave unificada; vacía, se usa `SAIMC_ANTHROPIC_API_KEY` con `anthropic` y `SAIMC_LLM_JEV_API_KEY` con `vercel` |
-| `SAIMC_LLM_BASE_URL` | sin valor | vacía, la del proveedor (`https://ai-gateway.vercel.sh` con `vercel`) |
+| `SAIMC_LLM_PROVIDER` | `anthropic` | el interruptor: `anthropic` (directo) o `vercel` (Vercel AI Gateway). Fija también la URL y de qué variable sale la clave |
+| `SAIMC_ANTHROPIC_API_KEY` | sin valor | la clave, si el proveedor es `anthropic`. Con `vercel` no se usa |
+| `SAIMC_VERCEL_API_KEY` | sin valor | la clave, si el proveedor es `vercel`. Con `anthropic` el asistente no la usa (Jev sí, siempre) |
 | `SAIMC_LLM_MODEL` | `claude-sonnet-5` | el modelo, **sin** prefijo `anthropic/`: lo agrega el código al llamar por el gateway |
 | `SAIMC_LLM_TIMEOUT` | `30` | segundos por llamada desde la cola; el pre-cálculo y el backtest usan su `--timeout` |
 
 `SAIMC_LLM_ASSIST_MODEL` y `SAIMC_LLM_ASSIST_TIMEOUT` son los nombres anteriores de las dos últimas
-y siguen valiendo cuando las nuevas no están.
+y siguen valiendo cuando las nuevas no están. Lo mismo `SAIMC_LLM_JEV_API_KEY`, el nombre anterior
+de `SAIMC_VERCEL_API_KEY` (la clave del gateway, que usan el asistente y Jev): si están las dos,
+gana la nueva.
 
 Para pasar el asistente a Vercel AI Gateway:
 
 1. En `.env`: `SAIMC_LLM_PROVIDER=vercel`. La clave del gateway ya está si Jev está configurado
-   (`SAIMC_LLM_JEV_API_KEY`); si no, ponela ahí o en `SAIMC_LLM_API_KEY`. No hace falta que Jev
+   (`SAIMC_VERCEL_API_KEY`); si no, ponela ahí. No hace falta que Jev
    esté encendido. El modelo va sin prefijo.
 2. Correr el comando de arriba: tiene que decir `vercel`, `anthropic/claude-sonnet-5` como modelo
    que se manda y de qué variable sale la clave.
@@ -300,7 +304,7 @@ Para volver: `SAIMC_LLM_PROVIDER=anthropic` y reiniciar.
 
 Slice A6: mide si la probabilidad que devuelve Jev (TypeSafe AI, vía Vercel AI Gateway) está
 calibrada sobre anuncios cubanos, por pregunta, contra lo que ya decidiste en la cola. Se corre en
-**desarrollo**, contra la base local. `--check` y `--execute` necesitan `SAIMC_LLM_JEV_API_KEY` en
+**desarrollo**, contra la base local. `--check` y `--execute` necesitan `SAIMC_VERCEL_API_KEY` en
 el `.env`; en seco no hace falta.
 
 ```
@@ -361,7 +365,7 @@ al curar; para los textos que se decidieron antes está el [relleno](#relleno-de
 | Variable | Por defecto | Qué gobierna |
 |---|---|---|
 | `SAIMC_LLM_JEV_ENABLED` | `false` | el interruptor |
-| `SAIMC_LLM_JEV_API_KEY` | sin valor | la clave de Vercel AI Gateway; sin ella Jev queda inactivo aunque el interruptor esté encendido |
+| `SAIMC_VERCEL_API_KEY` | sin valor | la clave de Vercel AI Gateway; sin ella Jev queda inactivo aunque el interruptor esté encendido. `SAIMC_LLM_JEV_API_KEY`, su nombre anterior, sigue valiendo |
 | `SAIMC_LLM_JEV_TIMEOUT` | `10` | segundos por llamada |
 | `SAIMC_LLM_JEV_MAX_COST` | `0.01` | USD por corrida del pre-cálculo; en `0` no se llama |
 

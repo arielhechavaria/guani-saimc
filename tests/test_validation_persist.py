@@ -731,7 +731,10 @@ def _poner_jev(monkeypatch: pytest.MonkeyPatch, *, encendido: bool, clave: str) 
     # Las variables de entorno le ganan al `.env`: el test no depende de lo que
     # el operador tenga configurado en su checkout.
     monkeypatch.setenv("SAIMC_LLM_JEV_ENABLED", "true" if encendido else "false")
-    monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", clave)
+    # La clave del gateway tiene dos nombres: se fija la nueva y se vacía la
+    # anterior, para que «sin clave» sea sin ninguna de las dos.
+    monkeypatch.setenv("SAIMC_VERCEL_API_KEY", clave)
+    monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "")
     get_settings.cache_clear()
 
 

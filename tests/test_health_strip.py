@@ -312,7 +312,7 @@ class TestJev:
 
         assert ind is not None
         assert (ind.key, ind.level, ind.anchor) == ("jev", "warn", "#jev")
-        assert "SAIMC_LLM_JEV_API_KEY" in ind.hint
+        assert "SAIMC_VERCEL_API_KEY" in ind.hint
 
     def test_acceso_denegado_y_limite_de_pedidos_tambien_avisan(self) -> None:
         for corte in ("forbidden", "rate_limit"):

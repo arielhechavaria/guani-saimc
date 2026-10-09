@@ -63,7 +63,7 @@ según qué vayas a usar:
   extracción por LLM en `/curation` (ver «Rutina de curaduría» abajo). Sin
   ella el botón no aparece y la cola funciona igual que hoy. El asistente
   también puede ir por Vercel AI Gateway: `SAIMC_LLM_PROVIDER=vercel` y la
-  clave del gateway (`SAIMC_LLM_JEV_API_KEY` o `SAIMC_LLM_API_KEY`); ver
+  clave del gateway (`SAIMC_VERCEL_API_KEY`); ver
   «Proveedor del asistente» en `docs/comandos.md`.
 
 ### Tests

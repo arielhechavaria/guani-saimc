@@ -7,12 +7,15 @@ modelo por dos caminos que hablan la misma API de Messages de Anthropic:
 - `vercel`: Vercel AI Gateway. Cambian la URL, la clave y el nombre con que se
   pide el modelo (`anthropic/<id>`); el SDK es el mismo.
 
+El proveedor es el único interruptor: fija la URL y de qué variable sale la
+clave. No hay clave unificada ni URL configurable.
+
 Tres reglas, cada una por un defecto que ya ocurrió (docs/decisions.md,
 2026-10-09):
 
-- **`Settings` es la única fuente.** Acá no se lee `os.environ`: pydantic-settings
-  carga el `.env` en el objeto `Settings` y no lo exporta al entorno, así que
-  lo escrito en `.env` nunca llegaría.
+- **`Settings` es la única fuente.** La configuración no se lee de
+  `os.environ`: pydantic-settings carga el `.env` en el objeto `Settings` y no
+  lo exporta al entorno, así que lo escrito en `.env` nunca llegaría.
 - **Dos nombres de modelo.** `model` es el canónico (`claude-sonnet-5`): el que
   se guarda en `llm_proposals` y en el registro, y con el que se busca la
   tarifa. `request_model` es el que viaja en la llamada. Con el prefijo en el
@@ -27,9 +30,11 @@ ninguna llamada (docs/comandos.md).
 from __future__ import annotations
 
 import dataclasses
+import os
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 # `TYPE_CHECKING` vale False al ejecutar y True solo para mypy: el import sirve
@@ -43,7 +48,7 @@ Provider = Literal["anthropic", "vercel"]
 # El gateway nombra los modelos `<creador>/<id>`. Solo se usan los de Anthropic.
 _MODEL_PREFIX = "anthropic/"
 
-# Por proveedor: base URL por defecto y prefijo que exige el modelo.
+# Por proveedor: base URL (`None` = la del SDK) y prefijo que exige el modelo.
 _DEFAULTS: dict[str, dict[str, str | None]] = {
     "anthropic": {"base_url": None, "model_prefix": ""},
     "vercel": {
@@ -52,26 +57,11 @@ _DEFAULTS: dict[str, dict[str, str | None]] = {
     },
 }
 
-# Campo de `Settings` con la clave específica de cada proveedor, a la que se
-# cae si `llm_api_key` está vacía. La de `vercel` es la misma clave del gateway
-# que ya usa Jev. La de Anthropic NO sirve de respaldo para `vercel`: sería un
-# rechazo seguro y mandarle a un tercero una clave que no es suya.
-_API_KEY_FIELD: dict[str, str] = {
-    "anthropic": "anthropic_api_key",
-    "vercel": "llm_jev_api_key",
-}
-
-
-def _env_name(field_name: str) -> str:
-    """El nombre de la variable de `.env` de un campo de `Settings`."""
-    return f"SAIMC_{field_name.upper()}"
-
-
 def _clean(value: object) -> str | None:
     """Texto sin espacios alrededor, o `None` si no hay nada.
 
-    Vacío es «ausente»: en `env.example` y en producción `SAIMC_LLM_API_KEY=`
-    y `SAIMC_LLM_BASE_URL=` van escritas así, sin valor.
+    Vacío es «ausente»: en `env.example` la clave del proveedor que no se
+    usa va escrita así, sin valor.
     """
     if not isinstance(value, str):
         return None
@@ -142,6 +132,19 @@ def effective_model(settings: Settings) -> str:
     return canonical_model(_clean(settings.llm_model) or settings.llm_assist_model)
 
 
+def _provider_api_key(settings: Settings, provider: str) -> tuple[str | None, str]:
+    """La clave del proveedor y su variable de `.env`. No hay otra fuente.
+
+    La de `vercel` es la del gateway, la misma que usa Jev: entre su nombre
+    nuevo y el anterior decide `Settings.gateway_api_key`. La de un proveedor
+    nunca sirve de respaldo para el otro: sería un rechazo seguro y mandarle a
+    un tercero una clave que no es suya.
+    """
+    if provider == "vercel":
+        return settings.gateway_api_key()
+    return _clean(settings.anthropic_api_key), "SAIMC_ANTHROPIC_API_KEY"
+
+
 def resolve_config(settings: Settings) -> LLMConfig:
     """La config efectiva del asistente, a partir de `Settings`.
 
@@ -156,29 +159,21 @@ def resolve_config(settings: Settings) -> LLMConfig:
             f"{' o '.join(sorted(_DEFAULTS))})"
         )
 
-    specific = _API_KEY_FIELD[provider]
-    api_key = _clean(settings.llm_api_key)
-    source = "llm_api_key"
+    api_key, source = _provider_api_key(settings, provider)
     if not api_key:
-        # `getattr(obj, "nombre")` es `obj.nombre` con el nombre en una variable.
-        api_key = _clean(getattr(settings, specific))
-        source = specific
-    if not api_key:
-        raise ValueError(
-            f"Sin API key para proveedor {provider!r}: definí "
-            f"SAIMC_LLM_API_KEY o {_env_name(specific)}"
-        )
+        # Acá `source` es la variable que habría que definir.
+        raise ValueError(f"Sin API key para proveedor {provider!r}: definí {source}")
 
     model = effective_model(settings)
     return LLMConfig(
         provider=provider,  # type: ignore[arg-type]
         api_key=api_key,
-        base_url=_clean(settings.llm_base_url) or _DEFAULTS[provider]["base_url"],
+        base_url=_DEFAULTS[provider]["base_url"],
         model=model,
         request_model=request_model(provider, model),
         # `Settings` ya dejó en `None` un `llm_timeout` vacío o inválido.
         timeout=settings.llm_timeout or settings.llm_assist_timeout,
-        api_key_source=_env_name(source),
+        api_key_source=source,
     )
 
 
@@ -216,24 +211,86 @@ def build_client(cfg: LLMConfig) -> Any:
 
 # --- comando de comprobación -------------------------------------------------
 
+# Variables que existieron y se retiraron (docs/decisions.md, 2026-10-09).
+# `Settings` las ignora sin decir nada; el comando avisa si siguen escritas.
+_RETIRED_VARS = ("SAIMC_LLM_API_KEY", "SAIMC_LLM_BASE_URL")
+
+
+def _env_file_names(path: Path) -> set[str]:
+    """Los NOMBRES de las variables de un `.env`. Los valores no se guardan.
+
+    Un archivo que no existe o no se puede leer no tiene ninguna: esto es un
+    aviso de cortesía, no puede hacer fallar el comando.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return set()
+    names: set[str] = set()
+    for line in lines:
+        line = line.strip()
+        if "=" not in line or line.startswith("#"):
+            continue
+        # `partition` corta en el primer `=`: lo de la izquierda es el nombre.
+        name = line.partition("=")[0].strip()
+        names.add(name.removeprefix("export ").strip())
+    return names
+
+
+def retired_vars_present(env_files: Iterable[Path], environ: Mapping[str, str]) -> list[str]:
+    """Las variables retiradas que siguen escritas, en un `.env` o en el entorno.
+
+    Mira solo nombres. Es la única lectura del entorno de este módulo, y no
+    configura nada: sirve para avisar.
+    """
+    present = set(environ)
+    for path in env_files:
+        present |= _env_file_names(path)
+    return [name for name in _RETIRED_VARS if name in present]
+
+
+def _settings_env_files(settings: Settings) -> list[Path]:
+    """Los `.env` que `Settings` carga, según su `model_config`."""
+    env_file = settings.model_config.get("env_file")
+    if env_file is None:
+        return []
+    # pydantic-settings admite una ruta o una lista de rutas.
+    if isinstance(env_file, str | os.PathLike):
+        return [Path(env_file)]
+    return [Path(item) for item in env_file]
+
 
 def main(
     argv: Sequence[str] | None = None,
     *,
     settings: Settings | None = None,
     out: Callable[[str], None] = print,
+    env_files: Iterable[Path] | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> int:
     """Imprime la configuración efectiva del asistente. No llama a nada.
 
     De la clave dice solo si está y de qué variable salió: nunca la clave ni un
     fragmento. Devuelve 1, con el motivo, si no hay configuración válida.
+    Con o sin configuración, avisa de las variables retiradas que sigan
+    escritas; el aviso no cambia el código de salida.
+
     `argv` no se usa (no hay opciones); está por simetría con los otros
-    comandos. `settings` y `out` son para los tests.
+    comandos. `settings`, `out`, `env_files` y `environ` son para los tests.
     """
     if settings is None:
         from saimc.config import get_settings
 
         settings = get_settings()
+    if env_files is None:
+        env_files = _settings_env_files(settings)
+    code = _show_config(settings, out)
+    for name in retired_vars_present(env_files, os.environ if environ is None else environ):
+        out(f"Aviso: {name} ya no se usa: borrala del .env.")
+    return code
+
+
+def _show_config(settings: Settings, out: Callable[[str], None]) -> int:
     try:
         cfg = resolve_config(settings)
     except ValueError as error:

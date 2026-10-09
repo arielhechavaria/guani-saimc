@@ -117,9 +117,11 @@ def is_active(settings: Settings) -> bool:
     """El único predicado de «Jev activo»: interruptor encendido Y clave no vacía.
 
     Gobierna las llamadas y la anotación. Apagado, o encendido sin clave, el
-    sistema se comporta exactamente como antes de A6b.
+    sistema se comporta exactamente como antes de A6b. La clave es la de Vercel
+    AI Gateway, con cualquiera de sus dos nombres (`Settings.gateway_api_key`).
     """
-    return bool(settings.llm_jev_enabled and (settings.llm_jev_api_key or "").strip())
+    api_key, _ = settings.gateway_api_key()
+    return bool(settings.llm_jev_enabled and api_key)
 
 
 def warn_if_enabled_without_key(settings: Settings) -> None:
@@ -131,7 +133,7 @@ def warn_if_enabled_without_key(settings: Settings) -> None:
     if settings.llm_jev_enabled and not is_active(settings):
         logger.warning(
             "jev.sin_clave SAIMC_LLM_JEV_ENABLED está encendido y falta "
-            "SAIMC_LLM_JEV_API_KEY: no se llama a Jev ni se anota nada"
+            "SAIMC_VERCEL_API_KEY: no se llama a Jev ni se anota nada"
         )
 
 
@@ -654,7 +656,7 @@ def prefill_pass(
         return None
     if not is_active(settings):
         out(
-            "Jev: el interruptor está encendido pero falta SAIMC_LLM_JEV_API_KEY. "
+            "Jev: el interruptor está encendido pero falta SAIMC_VERCEL_API_KEY. "
             "No se llama ni se anota nada."
         )
         return None
@@ -711,7 +713,7 @@ def _ask_all(
             candidates,
             options,
             client=http,
-            api_key=settings.llm_jev_api_key or "",
+            api_key=settings.gateway_api_key()[0] or "",
             timeout=settings.llm_jev_timeout,
             max_cost=max_cost,
             source=source,
@@ -863,7 +865,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def _inactive_reason(settings: Settings) -> str:
     if not settings.llm_jev_enabled:
         return "SAIMC_LLM_JEV_ENABLED está apagado"
-    return "el interruptor está encendido pero falta SAIMC_LLM_JEV_API_KEY"
+    return "el interruptor está encendido pero falta SAIMC_VERCEL_API_KEY"
 
 
 def run(

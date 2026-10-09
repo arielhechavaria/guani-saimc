@@ -73,7 +73,7 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     - una `SAIMC_SENDER_HASH_KEY` demasiado corta se trata como ausente
       (`docs/spec-slice-B5.md`), y sin este aviso el operador creería que el
       emisor de los grupos se está guardando;
-    - `SAIMC_LLM_JEV_ENABLED` encendido sin `SAIMC_LLM_JEV_API_KEY`
+    - `SAIMC_LLM_JEV_ENABLED` encendido sin `SAIMC_VERCEL_API_KEY`
       (`docs/spec-slice-A6b.md`): Jev queda inactivo, que es un estado
       soportado, pero el operador creería que la señal se está juntando.
     """
