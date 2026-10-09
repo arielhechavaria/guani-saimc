@@ -997,9 +997,10 @@ class TestAsiTrabajoEnLaPagina:
         assert "autoplay" not in videos[0]
         assert 'poster="/static/landing/flujo-5.webp?v=' in videos[0]
         assert 'src="/static/landing/guani-flujo.mp4?v=' in videos[0]
+        # 735472e quitó a propósito el título y la nota de peso: el video va solo.
         visible = " ".join(_visible(texto).split())
-        assert "Mira el recorrido completo" in visible
-        assert "3,4 MB, solo se descarga si lo abres." in visible
+        assert "Mira el recorrido completo" not in visible
+        assert "solo se descarga si lo abres" not in visible
 
     def test_el_video_no_depende_del_pase(self, client: TestClient, directorio: Path) -> None:
         """Faltando una captura vuelven las tarjetas, pero el video que existe
@@ -1011,4 +1012,3 @@ class TestAsiTrabajoEnLaPagina:
 
         assert 'class="lp-steps"' in texto
         assert len(re.findall(r"<video\b", texto)) == 1
-        assert "1,0 MB" in _visible(texto)
