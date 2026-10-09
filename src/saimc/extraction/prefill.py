@@ -60,6 +60,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
+from saimc.exchange_rate import Fetcher
 from saimc.extraction import (
     llm_assist,
     llm_propose_ad,
@@ -82,7 +83,7 @@ from saimc.models import (
 )
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
-from saimc.validation import jev_signal, lane0
+from saimc.validation import jev_signal, lane0, lane1
 from saimc.validation.context import Catalog
 
 logger = logging.getLogger(__name__)
@@ -236,6 +237,8 @@ class RunResult:
     auto_discarded: dict[str, int] = field(
         default_factory=lambda: dict.fromkeys(_TYPE_LABELS, 0)
     )
+    #: Textos que el carril 1 aceptó solos en esta corrida (B2b-2).
+    auto_accepted: int = 0
 
 
 def run_prefill(
@@ -252,6 +255,7 @@ def run_prefill(
     max_cost: float | None = None,
     expected_per_ad: float | None = None,
     lane0_types: frozenset[str] = frozenset(),
+    lane1_fetcher: Fetcher | None = None,
     out: Callable[[str], None] = print,
     llm: LLMConfig | None = None,
 ) -> RunResult:
@@ -264,6 +268,10 @@ def run_prefill(
 
     `lane0_types` son los tipos con el carril 0 encendido
     (`validation.lane0.enabled_types`); vacío, ningún anuncio se descarta solo.
+
+    `lane1_fetcher` enciende el carril 1 (`validation.lane1`): es de dónde sale
+    la tasa de cambio de una fila en divisa. `None`, ningún anuncio se acepta
+    solo. Va después del carril 0 y solo si este no descartó.
 
     Con `max_cost`, antes de cada llamada se frena si el acumulado más lo que
     se espera que cueste la siguiente lo pasaría. «Lo que se espera» es el
@@ -335,6 +343,20 @@ def run_prefill(
                 catalog=catalog,
             )
         )
+        auto_accepted = (
+            stored is not None
+            and not auto_discarded
+            and lane1_fetcher is not None
+            and lane1.apply_lane_1(
+                session,
+                ingestion,
+                stored,
+                proposal,
+                text=text,
+                catalog=catalog,
+                fetcher=lane1_fetcher,
+            )
+        )
         session.commit()
         llm_propose_ad.record_operator_run(
             proposal,
@@ -349,6 +371,7 @@ def run_prefill(
         if auto_discarded:
             tipo = str(ingestion.content_type)
             result.auto_discarded[tipo] = result.auto_discarded.get(tipo, 0) + 1
+        result.auto_accepted += auto_accepted
         result.cost_usd += _cost(proposal.input_tokens, proposal.output_tokens, model) or 0.0
         estado = (
             f"DEGRADADO ({proposal.failure})"
@@ -356,6 +379,7 @@ def run_prefill(
             else f"ok, {len(proposal.rows)} filas"
             + (" (sugiere descartar)" if proposal.discard else "")
             + (" — DESCARTADO SOLO (carril 0)" if auto_discarded else "")
+            + (" — ACEPTADO SOLO (carril 1)" if auto_accepted else "")
         )
         out(
             f"[{n}/{total}] {short_id} {ingestion.content_type}: {estado} — "
@@ -422,12 +446,14 @@ def execute(
     transcribe: ocr_store.Transcriber | None = None,
     jev_http: httpx.Client | None = None,
     jev_sleep: Callable[[float], None] = time.sleep,
+    rate_fetcher: Fetcher | None = None,
     out: Callable[[str], None] = print,
 ) -> int:
     """Corre el modo pedido. Devuelve el código de salida.
 
     `jev_http` y `jev_sleep` son para los tests de la pasada de Jev: en la
-    corrida real quedan en su valor por defecto.
+    corrida real quedan en su valor por defecto. `rate_fetcher` es la tasa de
+    cambio para el carril 1; por defecto, elTOQUE con la configuración.
 
     La corrida real va entera bajo el candado, pasada de Jev incluida: también
     gasta. Si otra corrida lo tiene, se sale con 0 —no es una falla, y con otro
@@ -437,7 +463,8 @@ def execute(
     if not args.execute:
         return _run_mode(
             args, session, settings,
-            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep, out=out,
+            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep,
+            rate_fetcher=rate_fetcher, out=out,
         )
     with prefill_lock.run_lock(settings.prefill_lock_path) as tomado:
         if not tomado:
@@ -449,7 +476,8 @@ def execute(
             return 0
         return _run_mode(
             args, session, settings,
-            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep, out=out,
+            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep,
+            rate_fetcher=rate_fetcher, out=out,
         )
 
 
@@ -462,6 +490,7 @@ def _run_mode(
     transcribe: ocr_store.Transcriber | None,
     jev_http: httpx.Client | None,
     jev_sleep: Callable[[float], None],
+    rate_fetcher: Fetcher | None,
     out: Callable[[str], None],
 ) -> int:
     """El modo pedido, ya con el candado tomado si es la corrida real."""
@@ -509,6 +538,9 @@ def _run_mode(
         max_cost=args.max_cost,
         expected_per_ad=est.per_ad_usd,
         lane0_types=lane0_types,
+        lane1_fetcher=(
+            (rate_fetcher or lane1.rate_fetcher(settings)) if lane1.enabled(settings) else None
+        ),
         out=out,
     )
     out(
@@ -522,6 +554,10 @@ def _run_mode(
             for tipo, etiqueta in _TYPE_LABELS.items()
         )
         + ("" if lane0_types else " (interruptores apagados)")
+    )
+    out(
+        f"Aceptados solos (carril 1): {result.auto_accepted}"
+        + ("" if lane1.enabled(settings) else " (interruptor apagado)")
     )
     code = 1 if result.aborted_failure else 0
     _record_run(settings, code, result, jev)

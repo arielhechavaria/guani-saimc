@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
 from saimc.cells import resolve_row
+from saimc import curation_rows
 from saimc.config import get_settings
 from saimc.curation_events import (
     CatalogNames,
@@ -60,7 +61,6 @@ from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, app
 from saimc.extraction import llm_store
 from saimc.extraction.engine import (
     ExtractionProposal,
-    guess_published_date,
     guess_source_reference,
     mentions_any_product,
     probable_discard_reasons,
@@ -80,7 +80,7 @@ from saimc.extraction.llm_propose_ad import (
     propose_ad,
     record_operator_run,
 )
-from saimc.formats import format_label, format_quantity, get_or_create_format
+from saimc.formats import format_label, format_quantity
 from saimc.glossary import active_glossary_entries, validate_rule
 from saimc.ingestion import origin
 from saimc.ingestion.channel_gaps import GapReport, load_channel_gap_report
@@ -106,7 +106,6 @@ from saimc.models import (
     RawIngestion,
     ReviewOutcome,
     SaleFormat,
-    SourceType,
 )
 from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
@@ -136,18 +135,13 @@ def _resolve_format_id(
     se guarda con `format_id = NULL`, mismo criterio que `sale_format` en
     blanco. Nunca fabrica un formato a partir de datos parciales.
     """
-    envase = canonical_packaging(row["packaging"])
-    unidad = canonical_unit(row["unit"])
-    cantidad = _parse_decimal(row["quantity"])
-    if envase is None or unidad is None or cantidad is None:
-        return None
-    return get_or_create_format(
+    return curation_rows.resolve_format_id(
         db,
-        product_id=product_id,
-        packaging=envase,
-        quantity=cantidad,
-        unit=unidad,
-    ).id
+        product_id,
+        packaging=row["packaging"],
+        quantity=_parse_decimal(row["quantity"]),
+        unit=row["unit"],
+    )
 
 
 def _resolve_variant_id(
@@ -1175,26 +1169,9 @@ def curation_queue(
 
 
 def _guess_published_date(ingestion: RawIngestion, text: str) -> date | None:
-    """Fecha de publicación que se le prellena al operador.
-
-    Para un mensaje de WhatsApp automatizado, `captured_at` YA es la fecha de
-    publicación real — el timestamp que WAHA reporta del envío, no la hora en
-    que alguien lo capturó a mano días después (la ambigüedad por la que
-    `published_date` es un campo separado, 2026-08-10). Vale igual para la foto
-    que para el texto (A7). La heurística de texto (`guess_published_date`,
-    patrón "Nombre - fecha") sigue siendo lo mejor que hay para el resto de
-    las fuentes: ahí `captured_at` es el mtime del archivo, no una fecha
-    confiable.
-
-    En una imagen, si el OCR trae una fecha explícita manda esa sobre
-    `captured_at`: es la del anuncio, no la del reenvío.
-    """
-    if ingestion.source_type != SourceType.WHATSAPP_CHANNEL:
-        return guess_published_date(text, ingestion.captured_at) if text else None
-    if ingestion.content_type == ContentType.IMAGE and text:
-        # El OCR puede traer la fecha del anuncio; si no, vale la del mensaje.
-        return guess_published_date(text, ingestion.captured_at) or ingestion.captured_at.date()
-    return ingestion.captured_at.date()
+    """Fecha de publicación que se le prellena al operador: la misma que usa
+    el carril 1 (`curation_rows.default_published_date`)."""
+    return curation_rows.default_published_date(ingestion, text)
 
 
 def _curation_view(
@@ -2351,15 +2328,8 @@ async def submit_curation(
     # Resolución de tasa DESPUÉS de la rama todo-o-nada (design.md D4): un
     # submit que va a fallar no debe gastar llamadas HTTP ni escribir filas
     # de cache dentro de una transacción que se está por descartar.
-    resolver = RateResolver(db, rate_fetcher)
-    unconverted = 0
-    for entry in entries_to_create:
-        if entry.currency == Currency.CUP.value:
-            continue  # moneda nacional: nunca lleva tasa (CHECK de esquema)
-        anchor = anchor_date(entry.published_date, ingestion.captured_at)
-        apply_resolution(entry, resolver.resolve(entry.currency, anchor))
-        if entry.exchange_rate is None:
-            unconverted += 1
+    # Compartido con el carril 1 (`curation_rows`, B2b-2): misma ancla y tasa.
+    unconverted = curation_rows.resolve_rates(db, entries_to_create, ingestion, rate_fetcher)
 
     for entry in entries_to_create:
         db.add(entry)

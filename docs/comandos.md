@@ -20,6 +20,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra la cola | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
+| [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
 | [`saimc.extraction.prefill` en seco](#pre-cálculo-en-seco) | Estimar el costo del pre-cálculo | no | no |
 | [`saimc.llm.provider`](#proveedor-del-asistente) | Ver por dónde llama el asistente (Anthropic o Vercel) y con qué modelo | no | no |
@@ -212,6 +213,23 @@ sudo systemctl restart saimc.service
   la línea de `docs/shadow-runs.jsonl` suma la clave `jev`.
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Una vez por semana»; el bloque
   «Jev», en [spec-slice-A6b.md](spec-slice-A6b.md), punto 8.
+
+### Carril 1 en seco
+
+Qué textos pendientes, de los que ya tienen propuesta, aceptaría solo el carril 1 con los
+valores que aprobó el operador (`docs/spec-slice-B2b.md`: tope de 1 fila, canal sucio con 3
+decisiones y más de la mitad de las filas tocadas, celda de 5).
+
+```
+.venv/bin/python -m saimc.validation.lane1
+```
+
+- **Cambia algo**: no. **Gasta**: no (usa las propuestas guardadas).
+- Lista cada anuncio con su canal y cierra con «Entrarían al carril 1: N de M». `--limit N`
+  corta cuántos mira.
+- En seco no se resuelve la tasa de cambio: una fila en divisa sin tasa no entra al aceptar.
+- Un anuncio capturado entre las 00:00 y las 04:00 UTC no entra: su fecha por defecto cae un
+  día después del día de La Habana, y el formulario tampoco la aceptaría.
 
 ### Revalidar en seco
 
@@ -603,6 +621,21 @@ sudo systemctl daemon-reload
   filas de anuncios que tienen señal guardada si Jev está activo, y la quita si está apagado. No
   llama a Jev.
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md); contrato en [spec-slice-B1.md](spec-slice-B1.md).
+
+### Carril 1 escribiendo
+
+Acepta de verdad lo que lista el comando en seco: guarda las filas con procedencia `auto`,
+deja el anuncio curado y las filas salen en el tablero.
+
+```
+.venv/bin/python -m saimc.validation.lane1 --execute
+```
+
+- **Cambia algo**: sí, crea filas en `prices_history`. **Gasta**: no.
+- Exige `SAIMC_LANE1_ENABLED=true` en el `.env`; apagado, avisa y sale con código 2 sin
+  escribir.
+- **No encender hasta que la auditoría y el freno (B2b-3) estén en producción.**
+- Con el interruptor encendido, el pre-cálculo hace lo mismo solo con cada propuesta nueva.
 
 ### Backfill de base de precio
 

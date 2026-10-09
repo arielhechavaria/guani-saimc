@@ -177,6 +177,13 @@ class Settings(BaseSettings):
     lane0_text_enabled: bool = False
     lane0_image_enabled: bool = False
 
+    # Carril 1 encendido (slice B2b, `docs/spec-slice-B2b.md`): el pre-cálculo
+    # guarda solo, con `provenance = auto`, las filas de los textos que el
+    # motor manda al carril 1, y salen en el tablero sin esperar a nadie.
+    # Apagado, el pre-cálculo es el de siempre. NO se enciende hasta que la
+    # auditoría y el freno (B2b-3) estén en producción.
+    lane1_enabled: bool = False
+
     # Jev como señal en sombra (slice A6b, `docs/spec-slice-A6b.md`): el
     # pre-cálculo le hace tres preguntas cerradas a cada texto pendiente y la
     # respuesta se anota en `validation_detail` al curar. Solo anota: no cambia
