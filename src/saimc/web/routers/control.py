@@ -247,6 +247,7 @@ def control_panel(
     db: Session = Depends(get_db),
     days: int = _DEFAULT_RETAIL_RANGE_DAYS,
     province: str | None = None,
+    inactivos: bool = False,
 ) -> HTMLResponse:
     pilot_products = pilot_product_names(db)
     pilot_filter = frozenset(pilot_products)
@@ -266,6 +267,8 @@ def control_panel(
     # parámetro desconocido: cae en la primera provincia del catálogo.
     matrix = build_matrix(cells)
     selected = resolve_column(matrix, province)
+
+    channel_intake = compute_channel_intake(db)
 
     settings = get_settings()
     # Estado de WAHA. Es la única señal de la franja que sale de la red: WAHA
@@ -380,7 +383,22 @@ def control_panel(
             # ordenado por gravedad (`web/health_strip.py`).
             "strip": strip,
             "strip_level": worst_level(strip),
-            "channel_intake": compute_channel_intake(db),
+            # «Descarte por canal» lista solo los canales que siguen ingiriendo
+            # (y la captura manual, `is_active is None`). Los inactivos se
+            # piden con `?inactivos=1`. Es solo vista: las tarjetas de «Salud
+            # de la ingesta» siguen sumando todos los canales.
+            "channel_intake": [
+                c for c in channel_intake if inactivos or c.is_active is not False
+            ],
+            "inactive_channels": sum(1 for c in channel_intake if c.is_active is False),
+            "show_inactive": inactivos,
+            "inactive_toggle_url": str(
+                (
+                    request.url.remove_query_params("inactivos")
+                    if inactivos
+                    else request.url.include_query_params(inactivos=1)
+                ).replace(fragment="canales")
+            ),
             # Horas y automatización (A2d): la serie semanal sale de la
             # bitácora, de `prices_history` y de `llm_proposals`; el pendiente
             # más viejo es el estado de la cola hoy, fuera de la serie.

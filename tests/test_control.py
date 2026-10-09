@@ -1258,6 +1258,81 @@ class TestPanelDeProgreso:
         assert "Ofertas Habana" in response.text
         assert "100%" in response.text
 
+    def _canal_con_descarte(self, session: Session, name: str, *, is_active: bool) -> None:
+        from saimc.models import Channel
+        from saimc.models.channel import Platform
+
+        canal = Channel(name=name, platform=Platform.WHATSAPP_CHANNEL, is_active=is_active)
+        session.add(canal)
+        session.flush()
+        session.add(
+            RawIngestion(
+                source_type=SourceType.INBOX_TEXT,
+                file_path=f"raw/{name}.txt",
+                content_hash=f"hash-{name}",
+                content_type=ContentType.TEXT,
+                processing_status=ProcessingStatus.DISCARDED,
+                channel_id=canal.id,
+                captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+            )
+        )
+
+    def test_la_tabla_de_canales_oculta_los_inactivos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Un canal que ya no ingiere no ocupa fila: distrae del triage. Queda
+        el enlace para pedirlo, con cuántos son."""
+        self._canal_con_descarte(session, "Prendido", is_active=True)
+        self._canal_con_descarte(session, "Apagado", is_active=False)
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "Prendido" in response.text
+        assert "Apagado" not in response.text
+        assert "(inactivo)" not in response.text
+        assert "Mostrar inactivos (1)" in response.text
+        assert "inactivos=1#canales" in response.text
+
+    def test_los_inactivos_se_muestran_a_pedido(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._canal_con_descarte(session, "Prendido", is_active=True)
+        self._canal_con_descarte(session, "Apagado", is_active=False)
+        session.commit()
+
+        response = client.get("/control?inactivos=1&days=30")
+
+        assert "Apagado" in response.text
+        assert "(inactivo)" in response.text
+        assert "Ocultar inactivos" in response.text
+        # El enlace de vuelta conserva el resto de los parámetros.
+        assert "days=30#canales" in response.text
+
+    def test_ocultar_inactivos_no_cambia_las_tarjetas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Es solo vista: «Salud de la ingesta» sigue sumando todos los
+        canales, y con solo inactivos el enlace igual aparece."""
+        self._canal_con_descarte(session, "Apagado", is_active=False)
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "Apagado" not in response.text
+        assert "Mostrar inactivos (1)" in response.text
+        assert "100%" in response.text
+
+    def test_sin_inactivos_no_ofrece_mostrarlos(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._canal_con_descarte(session, "Prendido", is_active=True)
+        session.commit()
+
+        response = client.get("/control")
+
+        assert "inactivos" not in response.text.lower()
+
     def test_agrupa_la_captura_manual_sin_canal(
         self, client: TestClient, session: Session
     ) -> None:

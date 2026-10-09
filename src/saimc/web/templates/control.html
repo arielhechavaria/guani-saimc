@@ -615,8 +615,8 @@
     </div>
     {% endif %}
 
-    {% if channel_intake %}
-    <h3 class="m3-h3 m3-mt">Descarte por canal</h3>
+    {% if channel_intake or inactive_channels %}
+    <h3 class="m3-h3 m3-mt" id="canales">Descarte por canal</h3>
     <p class="m3-sm m3-muted">
       Ordenado por descartes absolutos, no por tasa: 5 descartes sobre 10 cuestan más hora de
       curaduría que 2 sobre 2, aunque la tasa de estos últimos sea peor.
@@ -630,6 +630,18 @@
       resueltos. Los <strong>minutos</strong> y las <strong>filas por hora</strong> salen de la
       bitácora y solo cuentan decisiones de menos de 15 minutos por anuncio; sin bitácora aparece «—».
     </p>
+    {% if inactive_channels %}
+    <p class="m3-sm m3-muted">
+      {% if show_inactive %}
+      Incluye {{ inactive_channels }} {{ "canal inactivo" if inactive_channels == 1 else "canales inactivos" }}.
+      <a href="{{ inactive_toggle_url }}">Ocultar inactivos</a>
+      {% else %}
+      Solo canales activos; las tarjetas de arriba suman también a los inactivos.
+      <a href="{{ inactive_toggle_url }}">Mostrar inactivos ({{ inactive_channels }})</a>
+      {% endif %}
+    </p>
+    {% endif %}
+    {% if channel_intake %}
     <div class="m3-card m3-table-scroll">
       <table class="m3-table">
         <thead>
@@ -691,6 +703,7 @@
         </tbody>
       </table>
     </div>
+    {% endif %}
     {% endif %}
   </section>
 
