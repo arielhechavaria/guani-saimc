@@ -425,6 +425,10 @@ def run_backtest(
     `execute`: si viene, manda sobre `api_key`, `model` y `timeout`, y el
     modelo que se anota y se tarifa es `llm.model`, el canónico.
     """
+    if llm is None and not api_key:
+        # Sin config ni clave `propose_ad` degradaría cada anuncio a `no_key`
+        # sin avisar; mejor fallar acá, antes de gastar nada.
+        raise ValueError("run_backtest necesita `llm` o `api_key`")
     if llm is not None:
         model = llm.model
     from saimc.privacy import redact_personal_data

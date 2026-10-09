@@ -1145,3 +1145,14 @@ def test_a6b_un_registro_anterior_a_jev_se_sigue_leyendo(tmp_path: Path) -> None
         0.0,
         "",
     )
+
+
+def test_run_prefill_sin_llm_ni_clave_falla_antes_de_llamar(tmp_path: Path) -> None:
+    """Sin config ni clave cada anuncio saldría `no_key` en silencio."""
+    with pytest.raises(ValueError, match="llm.*api_key"):
+        prefill.run_prefill(
+            None,  # type: ignore[arg-type]
+            [],
+            raw_store_dir=tmp_path,
+            log_path=tmp_path / "log.jsonl",
+        )

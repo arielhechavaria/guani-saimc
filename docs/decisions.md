@@ -12419,3 +12419,9 @@ Contexto: la tabla «Descarte por canal» de `/control` listaba también los can
 Decisión: es un cambio solo de vista. La tabla muestra los canales activos y la captura manual; un enlace «Mostrar inactivos (N)» (`/control?inactivos=1`) trae el resto, con la marca «(inactivo)». El filtro vive en el router; `compute_channel_intake` y `compute_intake_health` no cambian, y las tarjetas siguen sumando todos los canales. Una línea bajo la explicación de la tabla lo dice.
 Descartado: (a) restar los inactivos de las tarjetas: la tasa de §12.5 es sobre todo lo decidido, y cambiarla sería cambiar la métrica; (b) una fila única «Inactivos» al final para que la tabla cuadre con las tarjetas: el operador prefirió no verlos salvo a pedido.
 Consecuencia: con los inactivos ocultos, las filas de la tabla no suman a las tarjetas. Los anuncios pendientes de un canal inactivo siguen en la cola de curaduría aunque el canal no aparezca en la tabla.
+
+## 2026-10-09 — Sugerencias de la revisión de la fábrica de proveedor
+Contexto: la revisión de 0131b84 aprobó y dejó 4 sugerencias; 4e04827 retiró `SAIMC_LLM_API_KEY` y `SAIMC_LLM_BASE_URL`, así que la parte de `BASE_URL` del aislamiento de tests quedó sin objeto.
+Decisión: `run_prefill` y `run_backtest` levantan `ValueError` si no reciben ni `llm` ni `api_key`; un modelo que canonicaliza a vacío (`anthropic/`) no pisa la config y `SAIMC_LLM_MODEL` solo-prefijo cae a `llm_assist_model`; el aviso de clave rechazada pierde los backticks (la plantilla imprime texto plano); los tests de proveedor limpian `SAIMC_LLM_ASSIST_MODEL` y `SAIMC_LLM_TIMEOUT`.
+Descartado: dejar la degradación silenciosa a `no_key` por ser inalcanzable hoy desde `execute`: el día que alguien llame a `run_*` a mano, gastaría una corrida entera sin propuestas.
+Consecuencia: quien llame a `run_prefill`/`run_backtest` sin `llm` debe pasar `api_key`.

@@ -112,7 +112,9 @@ class LLMConfig:
         modelo y se llamaría a otro.
         """
         cfg = self
-        if model:
+        # Se canonicaliza antes de preguntar: «anthropic/» o « » no son un
+        # modelo, y una corrida con modelo vacío fallaría en cada llamada.
+        if model and canonical_model(model):
             cfg = dataclasses.replace(
                 cfg,
                 model=canonical_model(model),
@@ -129,7 +131,11 @@ def effective_model(settings: Settings) -> str:
     `llm_model` gana; sin él rige `llm_assist_model`, el nombre anterior. Lo
     usa también el dry-run del pre-cálculo, que estima el costo sin clave.
     """
-    return canonical_model(_clean(settings.llm_model) or settings.llm_assist_model)
+    # Un `llm_model` que es solo el prefijo canonicaliza a vacío: cae al
+    # nombre anterior igual que si estuviera vacío.
+    return canonical_model(_clean(settings.llm_model) or "") or canonical_model(
+        settings.llm_assist_model
+    )
 
 
 def _provider_api_key(settings: Settings, provider: str) -> tuple[str | None, str]:

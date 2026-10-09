@@ -209,6 +209,16 @@ class TestPrefill:
         assert "saldo" in ind.hint.lower()
         assert "journalctl -u saimc-prefill.service" in ind.hint
 
+    def test_una_corrida_frenada_por_la_clave_manda_al_comando_de_comprobacion(self) -> None:
+        ind = health_strip.prefill_indicator(
+            _corrida(exit_code=1, aborted_failure="auth"), now=AHORA
+        )
+
+        assert "rechazó la clave" in ind.hint
+        assert "python -m saimc.llm.provider" in ind.hint
+        # La plantilla imprime texto plano: un backtick se vería literal.
+        assert "`" not in ind.hint
+
     def test_la_falla_manda_aunque_la_corrida_sea_vieja(self) -> None:
         ind = health_strip.prefill_indicator(
             _corrida(exit_code=2, finished_at=AHORA - timedelta(hours=30)), now=AHORA

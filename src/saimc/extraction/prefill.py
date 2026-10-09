@@ -269,6 +269,10 @@ def run_prefill(
     se espera que cueste la siguiente lo pasaría. «Lo que se espera» es el
     promedio real de esta corrida, o `expected_per_ad` antes de la primera.
     """
+    if llm is None and not api_key:
+        # Sin config ni clave `propose_ad` degradaría cada anuncio a `no_key`
+        # sin avisar; mejor fallar acá, antes de gastar nada.
+        raise ValueError("run_prefill necesita `llm` o `api_key`")
     if llm is not None:
         model = llm.model
     products = pilot_products(session)

@@ -4798,6 +4798,9 @@ class TestAsistenteLLM:
         # dejaría el asistente disponible en los tests de «sin clave».
         monkeypatch.setenv("SAIMC_LLM_PROVIDER", "anthropic")
         monkeypatch.setenv("SAIMC_LLM_MODEL", "")
+        # Los tests del proveedor afirman el modelo y el timeout por defecto.
+        monkeypatch.delenv("SAIMC_LLM_ASSIST_MODEL", raising=False)
+        monkeypatch.delenv("SAIMC_LLM_TIMEOUT", raising=False)
         get_settings.cache_clear()
 
     @pytest.fixture

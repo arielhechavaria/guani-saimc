@@ -490,10 +490,13 @@ def test_la_clave_no_se_imprime(
 
 
 def test_execute_con_vercel_manda_el_prefijo_y_registra_el_canonico(
-    session: Session, catalogo, tmp_path: Path, capsys
+    session: Session, catalogo, tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Fábrica del proveedor (2026-10-09): sin clave de Anthropic, por el
     gateway. El prefijo viaja en la llamada y no llega al registro."""
+    # Afirma el modelo por defecto: que no lo pise el entorno del operador.
+    for nombre in ("SAIMC_LLM_MODEL", "SAIMC_LLM_ASSIST_MODEL"):
+        monkeypatch.delenv(nombre, raising=False)
     _ingesta(session, filas=[_confirmada(catalogo.arroz, "1", "CUP", "1", "lb", catalogo.lh)])
     args = llm_backtest.parse_args(
         ["--execute", "--results", str(tmp_path / "r.jsonl"),
@@ -1121,3 +1124,14 @@ def test_3d_run_registra_los_tres_campos_y_lo_que_se_pregunto(
     assert (releida.sale_format, releida.price_basis, releida.packaging) == (
         "retail", "total", "caja",
     )
+
+
+def test_run_backtest_sin_llm_ni_clave_falla_antes_de_llamar(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="llm.*api_key"):
+        llm_backtest.run_backtest(
+            None,  # type: ignore[arg-type]
+            [],
+            results_path=tmp_path / "r.jsonl",
+            calls_log_path=tmp_path / "c.jsonl",
+            client=None,
+        )
