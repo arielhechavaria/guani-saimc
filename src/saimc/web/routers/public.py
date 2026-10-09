@@ -75,6 +75,7 @@ from saimc.web.price_charts import (
 )
 from saimc.web.product_nav import (
     DEFAULT_WINDOW_DAYS,
+    DOWNLOAD_WINDOW_DAYS,
     HOME_PATH,
     HOME_QUERY_PARAMS,
     WINDOW_CHOICES,
@@ -83,7 +84,9 @@ from saimc.web.product_nav import (
     build_province_nav,
     build_view_menu,
     build_window_nav,
+    clamp_download_window,
     download_href,
+    download_is_trimmed,
     effective_layer,
     product_slug,
     products_query,
@@ -187,7 +190,9 @@ def _visible_observations(
     activos.
 
     Una sola definición para que la página (tarjetas y gráfico) y la descarga
-    CSV no puedan divergir: lo que se baja es exactamente lo que se ve.
+    CSV no puedan divergir: lo que se baja sale del mismo universo que lo que
+    se ve. Desde el 2026-10-05 el CSV recorta el período a
+    `DOWNLOAD_WINDOW_DAYS` (`public_data_csv`); los demás filtros son iguales.
     `unconverted` queda afuera igual que en `build_cards` / `build_series`.
     `products` vacío o `None` no filtra: se muestran todos los piloto.
 
@@ -208,6 +213,13 @@ def _visible_observations(
     if province is not None:
         obs = [o for o in obs if o.province_name == province]
     return obs
+
+
+def _csv_trimmed_days(desde: date, hasta: date) -> int | None:
+    """Cuántos días trae el CSV cuando son menos que los que la vista muestra,
+    o `None` si la descarga trae el período entero. Las plantillas lo usan para
+    avisar junto al botón solo cuando hace falta."""
+    return DOWNLOAD_WINDOW_DAYS if download_is_trimmed(desde, hasta) else None
 
 
 def _build_focused_product_panel(
@@ -668,6 +680,7 @@ def _render_home(
             "selected_desde": ventana_desde,
             "selected_hasta": ventana_hasta,
             "csv_href": csv_href,
+            "csv_trimmed_days": _csv_trimmed_days(ventana_desde, ventana_hasta),
             "data_freshness_day": latest_day,
             "data_freshness_days_ago": freshness_days_ago,
             "product_chips": build_product_chips(
@@ -889,6 +902,7 @@ def _render_explore(
             "selected_desde": desde,
             "selected_hasta": hasta,
             "csv_href": csv_href,
+            "csv_trimmed_days": _csv_trimmed_days(desde, hasta),
             "mapa_href": vista_link("mapa"),
             "tablero_href": vista_link("tablero"),
             "explorar_href": vista_link("explorar"),
@@ -905,7 +919,7 @@ _LANDING_VIEW_TILES: tuple[tuple[str, str, str, str], ...] = (
     (f"{HOME_PATH}?vista=tablero", "sell", "Precios de hoy", "El tablero completo."),
     (f"{HOME_PATH}?vista=mapa", "map", "Mapa", "Provincia por provincia."),
     (f"{HOME_PATH}?vista=explorar", "show_chart", "Explorar", "Cómo se movió cada precio."),
-    ("/datos.csv", "download", "Datos (CSV)", "Abiertos para descargar."),
+    ("/datos.csv", "download", "Datos (CSV)", f"Los últimos {DOWNLOAD_WINDOW_DAYS} días."),
 )
 
 
@@ -974,6 +988,7 @@ def _site_footer() -> SiteFooter:
 #: §6.4.1) y, si la constante cambia, el texto cambia con ella.
 _PAGE_FACTS = {
     "default_window_days": DEFAULT_WINDOW_DAYS,
+    "download_window_days": DOWNLOAD_WINDOW_DAYS,
     "window_choices": WINDOW_CHOICES,
     "fence_iqr": FENCE_IQR,
     "fence_min_factor": FENCE_MIN_FACTOR,
@@ -1206,6 +1221,14 @@ def public_data_csv(
     dato es el diferencial del proyecto (§6.5) y esto **no expone nada nuevo**:
     es el mismo universo de `_visible_observations` que alimenta la página, en
     otro formato. Sin `require_operator`, sin dato personal.
+
+    **Tope de 30 días** (`docs/decisions.md`, 2026-10-05, «Uso de los datos»):
+    el período pedido se recorta a `DOWNLOAD_WINDOW_DAYS` con
+    `clamp_download_window`. Un pedido más largo o más viejo no es un error:
+    devuelve lo que caiga en la ventana, o solo el encabezado si no cae nada.
+    El histórico completo se entrega bajo acuerdo. Las columnas no cambian y el
+    archivo no lleva líneas de comentario (romperían a quien lo abre en una
+    hoja de cálculo): la regla de uso vive en `/uso-de-datos`.
     """
     pilot_names = pilot_product_names(db)
     pilot = frozenset(pilot_names)
@@ -1215,18 +1238,22 @@ def public_data_csv(
         if one is not None:
             active = [one]
     selected_province = resolve_province(_all_province_names(db), provincia)
-    ventana_desde, ventana_hasta = resolve_window(desde, hasta, dias)
+    ventana = clamp_download_window(*resolve_window(desde, hasta, dias))
 
-    rows = sorted(
-        _visible_observations(
-            db,
-            pilot=pilot,
-            products=frozenset(active) or None,
-            province=selected_province,
-            desde=ventana_desde,
-            hasta=ventana_hasta,
-        ),
-        key=lambda o: (o.product_name, o.province_name or "", o.day),
+    rows = (
+        sorted(
+            _visible_observations(
+                db,
+                pilot=pilot,
+                products=frozenset(active) or None,
+                province=selected_province,
+                desde=ventana[0],
+                hasta=ventana[1],
+            ),
+            key=lambda o: (o.product_name, o.province_name or "", o.day),
+        )
+        if ventana is not None
+        else []
     )
 
     buffer = io.StringIO()

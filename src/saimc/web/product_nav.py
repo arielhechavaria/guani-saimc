@@ -183,6 +183,43 @@ def default_window(hoy: date | None = None) -> tuple[date, date]:
     return hoy - timedelta(days=DEFAULT_WINDOW_DAYS), hoy
 
 
+#: Tope de la descarga pública (`GET /datos.csv`), en días: el archivo trae como
+#: mucho lo mismo que la ventana por defecto del sitio. Es una decisión del
+#: operador (`docs/decisions.md`, 2026-10-05, «Uso de los datos»): el histórico
+#: completo se entrega bajo acuerdo. Tiene nombre propio —y no se usa
+#: `DEFAULT_WINDOW_DAYS` suelto— porque son dos decisiones que hoy coinciden:
+#: quien cambie la ventana por defecto tiene que ver que también mueve este tope.
+#: Solo recorta el archivo; las vistas siguen mostrando 90 días o un rango.
+DOWNLOAD_WINDOW_DAYS = DEFAULT_WINDOW_DAYS
+
+
+def clamp_download_window(
+    desde: date, hasta: date, *, hoy: date | None = None
+) -> tuple[date, date] | None:
+    """El rango pedido, recortado a lo que la descarga pública entrega.
+
+    «Últimos 30 días» se cuenta igual que `default_window`: el piso es
+    `hoy - DOWNLOAD_WINDOW_DAYS` y es **inclusivo** (el anuncio de hace
+    exactamente 30 días entra, el de hace 31 no), porque
+    `compute_retail_observations` corta con `>= cutoff`.
+
+    Un rango más largo o más viejo se recorta, no es un error. Si queda
+    enteramente antes del piso devuelve `None`: no hay nada que entregar.
+    `hasta` no se toca.
+    """
+    hoy = hoy or date.today()
+    piso = hoy - timedelta(days=DOWNLOAD_WINDOW_DAYS)
+    if hasta < piso:
+        return None
+    return max(desde, piso), hasta
+
+
+def download_is_trimmed(desde: date, hasta: date, *, hoy: date | None = None) -> bool:
+    """Si el archivo va a traer menos que lo que la vista muestra, para avisarlo
+    junto al botón de descarga."""
+    return clamp_download_window(desde, hasta, hoy=hoy) != (desde, hasta)
+
+
 def resolve_window(
     desde_raw: str | None,
     hasta_raw: str | None,
@@ -310,8 +347,11 @@ def download_href(
     desde: date,
     hasta: date,
 ) -> str:
-    """URL de `/datos.csv` con los mismos filtros que la vista, para que la
-    descarga traiga exactamente lo que se está viendo."""
+    """URL de `/datos.csv` con los mismos filtros que la vista.
+
+    El enlace lleva el rango de la vista tal cual; el recorte a
+    `DOWNLOAD_WINDOW_DAYS` lo hace el endpoint (`clamp_download_window`), que es
+    el único lugar donde no se puede saltear escribiendo la URL a mano."""
     return _query(
         producto=producto,
         productos=productos,

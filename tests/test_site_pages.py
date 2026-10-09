@@ -180,7 +180,7 @@ class TestElPieEnLaLanding:
         pie = _pie(client.get("/").text)
 
         assert f"© {date.today().year} Guani" in pie
-        assert "Los datos se pueden usar citando la fuente." in pie
+        assert "Uso personal y con cita; uso comercial, con acuerdo." in pie
         assert ("TRMI de elTOQUE", "https://eltoque.com/") in _enlaces(pie)
 
     def test_la_landing_no_conserva_el_pie_viejo(self, client: TestClient) -> None:

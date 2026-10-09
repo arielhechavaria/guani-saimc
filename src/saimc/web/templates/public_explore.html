@@ -83,6 +83,7 @@
   .ph-ex-lfoot { flex: none; padding: 10px 16px; border-top: 1px solid var(--m3-divider); font-size: 12.5px; }
   .ph-ex-lfoot a { display: inline-flex; align-items: center; gap: 6px; color: var(--ph-accent); font-weight: 500; }
   .ph-ex-lfoot .m3-icon { font-size: 18px; }
+  .ph-ex-lfoot-nota { margin: 4px 0 0; color: var(--m3-on-surface-variant); }
 
   /* ── Centro: pestañas por producto ───────────────────────────────────── */
   .ph-ex-tabs { display: flex; align-items: flex-end; gap: 3px; padding: 10px 16px 0; flex: none; position: relative;
@@ -411,7 +412,8 @@
       </section>
     </div>
 
-    <div class="ph-ex-lfoot"><a href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span>Descargar CSV</a></div>
+    <div class="ph-ex-lfoot"><a href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span>Descargar CSV</a>
+      {% if csv_trimmed_days %}<p class="ph-ex-lfoot-nota">El archivo trae solo los últimos {{ csv_trimmed_days }} días.</p>{% endif %}</div>
   </aside>
 
   {# ── Centro: una pestaña por producto abierto ────────────────────────── #}

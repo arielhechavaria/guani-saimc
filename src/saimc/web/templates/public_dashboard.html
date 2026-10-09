@@ -465,6 +465,8 @@
   .ph-datos-lista strong { color: var(--m3-on-surface); }
   .ph-dash-action-wide { align-self: flex-start; padding: 0; gap: 6px; border-radius: 0; color: var(--m3-primary); }
   .ph-dash-action-wide .m3-icon { color: var(--m3-primary); }
+  .ph-datos-nota { margin: -4px 0 0; font-size: 12.5px; color: var(--m3-on-surface-variant); }
+  .ph-datos-nota a { color: var(--m3-primary); }
 </style>
 {% endblock %}
 
@@ -832,6 +834,12 @@
     <li>Los precios en moneda extranjera se convierten a CUP con la <a href="https://eltoque.com/">Tasa Representativa del Mercado Informal (TRMI) de elTOQUE</a>.</li>
   </ul>
   <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="{{ csv_href }}"><span class="m3-icon" aria-hidden="true">download</span><span>Descargar los datos (CSV)</span></a>
+  {# La vista puede mostrar 90 días o un rango; el archivo, no (tope de
+     `product_nav.DOWNLOAD_WINDOW_DAYS`, `docs/decisions.md` 2026-10-05). Se
+     avisa solo cuando el archivo trae menos que lo que se está viendo. #}
+  {% if csv_trimmed_days %}
+  <p class="ph-datos-nota">El archivo trae solo los últimos {{ csv_trimmed_days }} días. <a href="/uso-de-datos">Uso de los datos</a></p>
+  {% endif %}
   <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="/"><span class="m3-icon" aria-hidden="true">info</span><span>Qué es Guani</span></a>
 </section>
 
