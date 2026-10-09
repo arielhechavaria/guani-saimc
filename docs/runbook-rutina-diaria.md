@@ -58,9 +58,9 @@ cambia: recalculalo.
 
 **Correrlo ahora.** `sudo systemctl start saimc-prefill.service` (se queda
 esperando hasta que termina; `journalctl -fu saimc-prefill.service` en otra
-terminal para verlo avanzar). Usá esto y no `python -m ...` a mano mientras el
-temporizador esté activo: systemd no arranca el servicio dos veces a la vez, y
-dos corridas juntas gastarían el doble.
+terminal para verlo avanzar). Dos corridas reales no se solapan, se lancen por
+systemd o con `python -m ...`: la segunda encuentra el candado
+`data/prefill.lock`, avisa y sale sin gastar, con código 0.
 
 **Frenarlo.** `sudo systemctl disable --now saimc-prefill.timer`. Para volver:
 `sudo systemctl enable --now saimc-prefill.timer`.

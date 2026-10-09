@@ -163,6 +163,11 @@ class Settings(BaseSettings):
     # por el mismo motivo que `llm_assist_log_path`.
     prefill_status_path: Path = Path("data/prefill-status.json")
 
+    # Candado entre corridas reales del pre-cálculo (`extraction/prefill_lock.py`):
+    # con otra `--execute` viva, la nueva sale sin gastar. El archivo queda
+    # siempre en disco, vacío; lo que cuenta es quién lo tiene abierto.
+    prefill_lock_path: Path = Path("data/prefill.lock")
+
     # Carril 0 encendido (slice B2a, `docs/spec-slice-B2a.md`): el pre-cálculo
     # descarta solo lo que el motor manda al carril 0, y la auditoría semanal
     # (`/curation/auditoria`) lo controla. Uno por tipo porque G1a fijó una

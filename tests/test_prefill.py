@@ -7,6 +7,9 @@ salida son $0,002 + $0,002 = $0,004 por anuncio.
 """
 
 import json
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.config import Settings
-from saimc.extraction import llm_assist, llm_propose_ad, prefill, prefill_status
+from saimc.extraction import llm_assist, llm_propose_ad, prefill, prefill_lock, prefill_status
 from saimc.models import (
     ContentType,
     JevSignal,
@@ -607,6 +610,210 @@ def test_las_lineas_viejas_sin_source_siguen_contando_como_asistidas(
 
     assert llm_assist.assisted_ingestion_ids(log) == {"viejo", "boton"}
     assert llm_assist.consumption_summary(log).calls == 3
+
+
+# --- bloqueo entre corridas (2026-10-09) --------------------------------------
+#
+# Los casos se escribieron antes que el bloqueo. «Otra corrida» se simula
+# tomando el candado desde el propio test: `flock` va por archivo abierto, no
+# por proceso, así que dos aperturas del mismo proceso también se excluyen.
+
+
+def _ajustes_con_candado(tmp_path: Path, **kw: Any) -> Settings:
+    base: dict[str, Any] = {
+        "prefill_lock_path": tmp_path / "estado" / "prefill.lock",
+        "prefill_status_path": tmp_path / "prefill-status.json",
+    }
+    base.update(kw)
+    return _ajustes(tmp_path, **base)
+
+
+def test_con_otra_corrida_viva_execute_sale_enseguida_sin_gastar(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    ajustes = _ajustes_con_candado(tmp_path)
+    cliente = ClienteFalso()
+
+    with prefill_lock.run_lock(ajustes.prefill_lock_path) as tomado:
+        assert tomado
+        codigo, salida = _correr(
+            session, tmp_path, ["--execute"], cliente=cliente, ajustes=ajustes
+        )
+
+    # No es un error: systemd no debe dejar la unidad en «failed».
+    assert codigo == 0
+    assert cliente.llamadas == []
+    assert _propuestas(session) == []
+    assert "otra corrida" in salida.lower()
+
+
+def test_con_otra_corrida_viva_tampoco_se_le_pregunta_a_jev(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    api = ApiJev()
+    ajustes = _ajustes_jev(tmp_path, prefill_lock_path=tmp_path / "prefill.lock")
+
+    with prefill_lock.run_lock(ajustes.prefill_lock_path):
+        codigo, _ = _correr_con_jev(
+            session, tmp_path, ["--execute"], api, cliente=ClienteFalso(), ajustes=ajustes
+        )
+
+    assert codigo == 0
+    assert api.requests == []
+    assert _senales(session) == []
+
+
+def test_la_salida_por_bloqueo_no_pisa_el_registro_de_control(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    ajustes = _ajustes_con_candado(tmp_path)
+    anterior = prefill_status.PrefillRun(
+        finished_at=datetime(2026, 10, 9, 12, 0, tzinfo=UTC),
+        exit_code=0,
+        done=7,
+        degraded=0,
+        skipped_no_text=0,
+        cost_usd=0.05,
+        stopped_by_max_cost=False,
+        aborted_failure="",
+    )
+    prefill_status.write_run_status(ajustes.prefill_status_path, anterior)
+
+    with prefill_lock.run_lock(ajustes.prefill_lock_path):
+        _correr(session, tmp_path, ["--execute"], cliente=ClienteFalso(), ajustes=ajustes)
+
+    assert prefill_status.read_run_status(ajustes.prefill_status_path) == anterior
+
+
+def test_sin_registro_previo_la_salida_por_bloqueo_no_crea_ninguno(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    ajustes = _ajustes_con_candado(tmp_path)
+
+    with prefill_lock.run_lock(ajustes.prefill_lock_path):
+        _correr(session, tmp_path, ["--execute"], cliente=ClienteFalso(), ajustes=ajustes)
+
+    assert not ajustes.prefill_status_path.exists()
+
+
+def test_el_modo_en_seco_no_se_bloquea_con_otra_corrida_viva(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    ajustes = _ajustes_con_candado(tmp_path)
+
+    with prefill_lock.run_lock(ajustes.prefill_lock_path):
+        codigo, salida = _correr(session, tmp_path, [], ajustes=ajustes)
+
+    assert codigo == 0
+    assert "MODO DRY-RUN" in salida
+    assert "total: 1" in salida
+
+
+def test_el_modo_en_seco_no_toma_el_candado(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    """Mientras corre en seco, una corrida real tiene que poder arrancar."""
+    _ingesta(session, texto="arroz uno")
+    ajustes = _ajustes_con_candado(tmp_path)
+    libre: list[bool] = []
+
+    def out(_linea: str) -> None:
+        with prefill_lock.run_lock(ajustes.prefill_lock_path) as tomado:
+            libre.append(tomado)
+
+    prefill.execute(prefill.parse_args([]), session, ajustes, out=out)
+
+    assert libre and all(libre)
+
+
+def test_una_corrida_real_tiene_el_candado_mientras_corre_y_lo_suelta_al_terminar(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    ajustes = _ajustes_con_candado(tmp_path)
+    libre: list[bool] = []
+
+    def out(_linea: str) -> None:
+        with prefill_lock.run_lock(ajustes.prefill_lock_path) as tomado:
+            libre.append(tomado)
+
+    codigo = prefill.execute(
+        prefill.parse_args(["--execute"]),
+        session,
+        ajustes,
+        client=ClienteFalso(),
+        transcribe=lambda path: "",
+        out=out,
+    )
+
+    assert codigo == 0
+    assert libre and not any(libre)
+    with prefill_lock.run_lock(ajustes.prefill_lock_path) as tomado:
+        assert tomado
+
+
+def test_el_candado_se_suelta_aunque_la_corrida_reviente(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz uno")
+    ajustes = _ajustes_con_candado(tmp_path)
+
+    def revienta(_linea: str) -> None:
+        raise RuntimeError("se cayó la corrida")
+
+    with pytest.raises(RuntimeError):
+        prefill.execute(
+            prefill.parse_args(["--execute"]),
+            session,
+            ajustes,
+            client=ClienteFalso(),
+            transcribe=lambda path: "",
+            out=revienta,
+        )
+
+    with prefill_lock.run_lock(ajustes.prefill_lock_path) as tomado:
+        assert tomado
+
+
+def test_si_el_proceso_que_tenia_el_candado_muere_el_candado_queda_libre(
+    tmp_path: Path,
+) -> None:
+    """Muerte sin limpieza (SIGKILL): el núcleo suelta el `flock` al cerrar el archivo."""
+    ruta = tmp_path / "prefill.lock"
+    codigo = (
+        "import sys, time\n"
+        "from pathlib import Path\n"
+        "from saimc.extraction import prefill_lock\n"
+        "with prefill_lock.run_lock(Path(sys.argv[1])) as tomado:\n"
+        "    print('tomado' if tomado else 'ocupado', flush=True)\n"
+        "    time.sleep(60)\n"
+    )
+    # `src/` de este checkout, igual que `conftest.py`: el hijo no lo hereda.
+    entorno = {**os.environ, "PYTHONPATH": str(Path(prefill_lock.__file__).parents[2])}
+    proceso = subprocess.Popen(  # noqa: S603 — intérprete y código fijos del propio test
+        [sys.executable, "-c", codigo, str(ruta)],
+        stdout=subprocess.PIPE,
+        text=True,
+        env=entorno,
+    )
+    try:
+        assert proceso.stdout is not None
+        assert proceso.stdout.readline().strip() == "tomado"
+        with prefill_lock.run_lock(ruta) as tomado:
+            assert not tomado
+        proceso.kill()
+        proceso.wait(timeout=10)
+        with prefill_lock.run_lock(ruta) as tomado:
+            assert tomado
+    finally:
+        proceso.kill()
+        proceso.wait(timeout=10)
+        if proceso.stdout is not None:
+            proceso.stdout.close()
 
 
 # --- registro de la corrida (C1: aviso en /control) ---------------------------

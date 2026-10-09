@@ -13,6 +13,10 @@ abrir el anuncio en `/curation` la propuesta ya está y no se paga otra llamada
   paralelismo. Tampoco cola de trabajos (decisión cerrada 3): lo corre el
   temporizador de systemd cada 3 h (`systemd/saimc-prefill.timer`, slice C1) o
   el operador a mano antes de una sesión de curaduría.
+- **Una corrida real a la vez.** `--execute` toma un candado
+  (`prefill_lock`, `data/prefill.lock`); si otra corrida lo tiene, esta sale
+  enseguida con código 0, sin llamar a nada y sin tocar el registro de
+  `/control`. El modo en seco ni lo toma ni lo mira.
 - **Reanudable.** Commit después de cada anuncio; volver a correrlo saltea lo
   que ya tiene propuesta `ok` (de cualquier versión de prompt). Una propuesta
   degradada no cuenta como hecha: se reintenta.
@@ -56,7 +60,14 @@ from sqlalchemy.orm import Session
 
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
-from saimc.extraction import llm_assist, llm_propose_ad, llm_store, ocr_store, prefill_status
+from saimc.extraction import (
+    llm_assist,
+    llm_propose_ad,
+    llm_store,
+    ocr_store,
+    prefill_lock,
+    prefill_status,
+)
 from saimc.extraction.engine import mentions_any_product
 from saimc.glossary import active_glossary_entries
 from saimc.llm.provider import LLMConfig, canonical_model, effective_model, resolve_config
@@ -413,7 +424,43 @@ def execute(
 
     `jev_http` y `jev_sleep` son para los tests de la pasada de Jev: en la
     corrida real quedan en su valor por defecto.
+
+    La corrida real va entera bajo el candado, pasada de Jev incluida: también
+    gasta. Si otra corrida lo tiene, se sale con 0 —no es una falla, y con otro
+    código systemd dejaría la unidad en «failed»— y sin `_record_run`, para que
+    `/control` siga mostrando la última corrida que sí corrió.
     """
+    if not args.execute:
+        return _run_mode(
+            args, session, settings,
+            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep, out=out,
+        )
+    with prefill_lock.run_lock(settings.prefill_lock_path) as tomado:
+        if not tomado:
+            out(
+                "Ya hay otra corrida del pre-cálculo en marcha "
+                f"(candado {settings.prefill_lock_path}): esta no arranca y no gasta nada. "
+                "No es un error: lo que quede pendiente lo toma la próxima corrida."
+            )
+            return 0
+        return _run_mode(
+            args, session, settings,
+            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep, out=out,
+        )
+
+
+def _run_mode(
+    args: argparse.Namespace,
+    session: Session,
+    settings: Settings,
+    *,
+    client: Any | None,
+    transcribe: ocr_store.Transcriber | None,
+    jev_http: httpx.Client | None,
+    jev_sleep: Callable[[float], None],
+    out: Callable[[str], None],
+) -> int:
+    """El modo pedido, ya con el candado tomado si es la corrida real."""
     # La pasada de Jev va primero y aparte: antes del bucle de Claude (que con
     # el carril 0 encendido descarta), sin depender de su clave y sin tocar el
     # código de salida.

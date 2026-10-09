@@ -42,11 +42,9 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 > **Atención.** Gastan plata o reescriben datos: `prefill --execute`, `llm_backtest --execute`,
 > `scripts/jev_eval.py --execute` (y su `--check`, una sola llamada),
 > `saimc.validation.jev_signal --execute`, `revalidate --execute`, `alembic upgrade head`, y todo lo que lleva `--apply`. Hacé backup antes
-> de cualquiera que escriba en la base. Una corrida manual del pre-cálculo **no** va por
-> `python -m …`: va por `sudo systemctl start saimc-prefill.service`, porque systemd no arranca el
-> servicio dos veces a la vez y dos corridas juntas gastan el doble (ver
-> [`systemd/saimc-prefill.service`](../systemd/saimc-prefill.service) y
-> [el runbook de la rutina diaria](runbook-rutina-diaria.md)).
+> de cualquiera que escriba en la base. Dos corridas reales del pre-cálculo no pueden solaparse,
+> se lancen como se lancen: la segunda encuentra el candado `data/prefill.lock`, avisa y sale sin
+> gastar (ver [«Pre-cálculo escribiendo, fuera de systemd»](#pre-cálculo-escribiendo-fuera-de-systemd)).
 
 ---
 
@@ -686,11 +684,16 @@ sudo systemctl daemon-reload
 .venv/bin/python -m saimc.extraction.prefill --execute --max-cost 1
 ```
 
-- **Para qué**: la corrida manual del pre-cálculo fuera de systemd. Es el **fallback**, para cuando
-  el temporizador no está instalado.
-- **Cuándo**: casi nunca. Con el temporizador activo, usá
-  [`sudo systemctl start saimc-prefill.service`](#pre-cálculo-ahora-a-mano): esta forma no comparte
-  su candado y dos corridas juntas gastarían el doble.
+- **Para qué**: la corrida manual del pre-cálculo fuera de systemd: cuando el temporizador no está
+  instalado, o para una corrida larga con un tope mayor que el de la unidad (en `tmux`).
+- **Cuándo**: para lo de todos los días alcanza
+  [`sudo systemctl start saimc-prefill.service`](#pre-cálculo-ahora-a-mano).
+- **Candado**: una corrida real toma `data/prefill.lock` y lo suelta al terminar, también si muere
+  (`kill -9`, corte de luz): no hay nada que limpiar y el archivo no se borra. Si otra corrida real
+  está viva —esta o la del temporizador— la nueva dice «Ya hay otra corrida del pre-cálculo en
+  marcha», no gasta y sale con código 0: en `systemctl status` queda como terminada bien y
+  `/control` sigue mostrando la última que sí corrió. El modo en seco no toma el candado ni lo mira.
+  Ya no hace falta detener el temporizador antes de una corrida larga.
 - **Cambia algo**: sí, propuestas. **Gasta**: sí, hasta el tope de `--max-cost` (en USD).
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Fallback: a mano».
 

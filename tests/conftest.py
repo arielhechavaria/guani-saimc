@@ -31,6 +31,16 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 from saimc.models import Base  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _prefill_lock_aislado(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """El candado del pre-cálculo de cada test, lejos de `data/prefill.lock`.
+
+    Sin esto, correr la suite en el checkout de producción con un pre-cálculo
+    real en marcha haría fallar todo test que llame a `prefill --execute`.
+    """
+    monkeypatch.setenv("SAIMC_PREFILL_LOCK_PATH", str(tmp_path / "prefill.lock"))
+
+
 @pytest.fixture
 def session() -> Iterator[Session]:
     engine = create_engine(

@@ -4,10 +4,11 @@ After=postgresql.service network-online.target
 
 [Service]
 # oneshot: systemd no vuelve a arrancar el servicio mientras sigue activo, asi
-# que el temporizador nunca solapa dos corridas (doble gasto de API). Una
-# corrida a mano tambien debe pasar por aca (`sudo systemctl start
-# saimc-prefill.service`) y no por `python -m ...`, que no comparte ese
-# candado. Se prefirio esto a `flock`: cero archivos de bloqueo que mantener.
+# que el temporizador nunca solapa dos corridas suyas. Contra una corrida
+# lanzada a mano con `python -m ...` eso no alcanza: de ahi el candado del
+# propio comando (`data/prefill.lock`, saimc/extraction/prefill_lock.py). Con
+# otra corrida viva, esta sale enseguida con codigo 0 y sin gastar: la unidad
+# no queda en «failed» y no hace falta SuccessExitStatus=.
 Type=oneshot
 User=ariel
 WorkingDirectory=/home/ariel/guani/guani-saimc
