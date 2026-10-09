@@ -44,8 +44,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
-from saimc.cells import resolve_row
 from saimc import curation_rows
+from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.curation_events import (
     CatalogNames,
@@ -111,7 +111,7 @@ from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
-from saimc.validation import lane0, persist
+from saimc.validation import lane0, lane1, persist
 from saimc.variants import get_or_create_variant, variant_key
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
@@ -1900,9 +1900,54 @@ def curation_audit(
             "reason_labels": _IMAGE_REASON_LABELS,
             "type_labels": {lane0.TEXT: "Textos", lane0.IMAGE: "Imágenes"},
             "week_end": week + timedelta(days=6),
+            "lane1": _lane1_audit(db),
         },
     )
     return response
+
+
+def _lane1_audit(db: Session) -> dict[str, object]:
+    """Lo que la pantalla muestra del carril 1 (B2b-3): lo aceptado solo que
+    falta auditar, la cota contra la meta y si el freno está puesto."""
+    settings = get_settings()
+    state = lane1.audit_state(db, settings)
+    return {
+        "enabled": lane1.enabled(settings),
+        "pending": lane1.accepted(db, only_unaudited=True),
+        "state": state,
+        "brake": lane1.brake_for(
+            audited=state.audited, errors=state.errors, unaudited=state.unaudited
+        ),
+        "target": lane1.ERROR_TARGET,
+        "n0": lane1.AUDIT_N0,
+        "max_unaudited": lane1.MAX_UNAUDITED,
+    }
+
+
+def _lane1_audit_url() -> str:
+    return "/curation/auditoria#aceptados"
+
+
+@router.post("/curation/auditoria/{ingestion_id}/aceptado-bien")
+def confirm_auto_accept(ingestion_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
+    """«Está bien»: las filas que aceptó el carril 1 pasan a `audited`
+    (`lane1.mark_ok`). Si no había nada que auditar, no cambia nada."""
+    if lane1.mark_ok(db, ingestion_id):
+        db.commit()
+    return RedirectResponse(url=_lane1_audit_url(), status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/curation/auditoria/{ingestion_id}/aceptado-invalido")
+def reject_auto_accept(
+    ingestion_id: uuid.UUID,
+    discard_reason: str = Form(DiscardReason.NO_DATA.value),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """«No era un anuncio válido»: borra las filas que aceptó el carril 1 y
+    descarta el anuncio (`lane1.mark_invalid`). Cuenta como error."""
+    if lane1.mark_invalid(db, ingestion_id, discard_reason):
+        db.commit()
+    return RedirectResponse(url=_lane1_audit_url(), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/curation/auditoria/{ingestion_id}/rescatar")
@@ -3194,6 +3239,10 @@ async def submit_edit(
         shown_at=parse_shown_at(shown_at_raw),
         detail=detail,
     )
+    # B2b-3: si el anuncio lo había aceptado el carril 1 y nadie lo auditó,
+    # esta edición es su auditoría (con cambios, un error; sin cambios, «está
+    # bien»). En cualquier otro anuncio no hace nada.
+    lane1.after_edit(db, ingestion, changed=bool(detail["rows"]))
     db.commit()
 
     redirect_url = (

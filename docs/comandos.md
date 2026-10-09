@@ -634,8 +634,12 @@ deja el anuncio curado y las filas salen en el tablero.
 - **Cambia algo**: sí, crea filas en `prices_history`. **Gasta**: no.
 - Exige `SAIMC_LANE1_ENABLED=true` en el `.env`; apagado, avisa y sale con código 2 sin
   escribir.
-- **No encender hasta que la auditoría y el freno (B2b-3) estén en producción.**
 - Con el interruptor encendido, el pre-cálculo hace lo mismo solo con cada propuesta nueva.
+- **El freno.** Si está puesto, el comando lo dice («Carril 1 con el freno puesto: …») y no
+  acepta nada. Se pone solo cuando hay 30 aceptados sin auditar y todavía no se llegó a 60
+  auditados, o cuando el error auditado supera la meta de 10 %. Lo primero se levanta
+  auditando en `/curation/auditoria`. Lo segundo solo lo levanta el operador, fijando
+  `SAIMC_LANE1_AUDIT_SINCE=AAAA-MM-DD` en el `.env`: la cota vuelve a contar desde ese día.
 
 ### Backfill de base de precio
 

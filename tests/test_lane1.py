@@ -589,3 +589,304 @@ def test_el_limite_corta_cuantos_se_miran(
 
     assert "de 1" in salida
 
+
+
+# =============================================================================
+# B2b-3a: auditoría y freno (docs/spec-slice-B2b.md, casos 16 a 23)
+# =============================================================================
+#
+# Las cotas esperadas salen de la especificación (Clopper-Pearson unilateral al
+# 95 %): 4 errores en 10 dan una cota inferior de 15,0 %; 2 en 10, de 3,7 %;
+# 2 en 60 dan una cota superior de 10,1 %; 1 en 60, de 7,7 %. La meta es 10 %.
+
+
+def _aceptar(session: Session, tmp_path: Path, canal: Channel, n: int = 1) -> list[RawIngestion]:
+    """`n` anuncios del canal, pasados por el pre-cálculo con el carril encendido."""
+    global _n
+    base = _n
+    ingestas = [_anuncio(session, canal, minutos=base + i) for i in range(n)]
+    _precalcular(session, tmp_path, ClienteFalso(_propone(_fila())), lane1_enabled=True)
+    for ingesta in ingestas:
+        session.refresh(ingesta)
+    return ingestas
+
+
+def _editar(client: TestClient, ingesta: RawIngestion, fila: PriceHistory, **cambios: str) -> None:
+    datos = {
+        "source_reference": ingesta.source_reference or "",
+        "published_date": "2026-09-01",
+        "row_count": "1",
+        "price_id_0": str(fila.id),
+        "product_id_0": str(fila.product_id),
+        "province_id_0": str(fila.province_id),
+        "price_0": str(fila.price),
+        "currency_0": fila.currency,
+        "quantity_0": str(fila.quantity),
+        "unit_0": fila.unit or "",
+        "sale_format_0": fila.sale_format or "",
+        "packaging_0": "",
+        "price_basis_0": fila.price_basis or "",
+    }
+    datos.update({f"{campo}_0": valor for campo, valor in cambios.items()})
+    respuesta = client.post(f"/curation/{ingesta.id}/edit", data=datos, follow_redirects=False)
+    assert respuesta.status_code == 303, respuesta.text
+
+
+def test_las_metas_de_la_auditoria_son_las_que_aprobo_el_operador() -> None:
+    assert lane1.ERROR_TARGET == 0.10
+    assert lane1.AUDIT_N0 == 60
+    assert lane1.MAX_UNAUDITED == 30
+
+
+def test_caso_16_esta_bien_deja_las_filas_auditadas_y_no_suma_error(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+    ajustes = _ajustes(tmp_path)
+    antes = lane1.audit_state(session, ajustes)
+    assert (antes.audited, antes.errors, antes.unaudited) == (0, 0, 1)
+
+    assert lane1.mark_ok(session, ingesta.id) is True
+    session.commit()
+
+    (fila,) = _filas(session, ingesta)
+    assert fila.provenance == "audited"
+    despues = lane1.audit_state(session, ajustes)
+    assert (despues.audited, despues.errors, despues.unaudited) == (1, 0, 0)
+    # Una segunda respuesta no cambia nada.
+    assert lane1.mark_ok(session, ingesta.id) is False
+
+
+def test_caso_14_despues_de_auditado_si_suma_al_historial_del_canal(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+
+    lane1.mark_ok(session, ingesta.id)
+    session.commit()
+
+    historial = context.channel_history(session, mundo.canal)
+    assert (historial.decisions, historial.proposed_rows, historial.changed_rows) == (1, 1, 0)
+
+
+def test_caso_17_corregir_un_precio_suma_un_error_y_ensucia_el_canal(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+    (fila,) = _filas(session, ingesta)
+
+    _editar(client, ingesta, fila, price="330")
+
+    session.expire_all()
+    (corregida,) = _filas(session, ingesta)
+    assert corregida.price == Decimal("330")
+    assert corregida.provenance == "audited"
+    estado = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (estado.audited, estado.errors, estado.unaudited) == (1, 1, 0)
+    historial = context.channel_history(session, mundo.canal)
+    assert (historial.decisions, historial.proposed_rows, historial.changed_rows) == (1, 1, 1)
+
+
+def test_abrir_la_edicion_y_guardar_sin_cambios_cuenta_como_esta_bien(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+    (fila,) = _filas(session, ingesta)
+
+    _editar(client, ingesta, fila)
+
+    estado = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (estado.audited, estado.errors) == (1, 0)
+
+
+def test_caso_18_no_era_valido_borra_las_filas_descarta_y_suma_un_error(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+
+    assert lane1.mark_invalid(session, ingesta.id, "no_data") is True
+    session.commit()
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    assert ingesta.discard_reason == "no_data"
+    assert _filas(session, ingesta) == []
+    estado = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (estado.audited, estado.errors, estado.unaudited) == (1, 1, 0)
+
+
+def test_editar_un_anuncio_curado_a_mano_no_es_una_auditoria(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _anuncio(session, mundo.canal)
+
+    assert lane1.mark_ok(session, ingesta.id) is False
+    assert lane1.mark_invalid(session, ingesta.id, "no_data") is False
+    assert lane1.audit_state(session, _ajustes(tmp_path)).audited == 0
+
+
+# --- el freno ----------------------------------------------------------------------
+
+
+def test_caso_19_con_30_sin_auditar_el_siguiente_queda_pendiente(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingestas = _aceptar(session, tmp_path, mundo.canal, n=31)
+
+    estados = [i.processing_status for i in ingestas]
+    assert estados.count(ProcessingStatus.CURATED) == 30
+    assert estados.count(ProcessingStatus.PENDING) == 1
+    freno = lane1.brake(session, _ajustes(tmp_path))
+    assert freno.on is True
+    assert "30" in freno.reason and "sin auditar" in freno.reason
+
+
+def test_auditar_levanta_el_freno_de_los_sin_auditar(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingestas = _aceptar(session, tmp_path, mundo.canal, n=30)
+    assert lane1.brake(session, _ajustes(tmp_path)).on is True
+
+    lane1.mark_ok(session, ingestas[0].id)
+    session.commit()
+
+    assert lane1.brake(session, _ajustes(tmp_path)).on is False
+
+
+@pytest.mark.parametrize(
+    ("auditados", "errores", "puesto"),
+    [
+        (10, 4, True),  # cota inferior 15,0 % > 10 %
+        (10, 2, False),  # cota inferior 3,7 %
+        (0, 0, False),
+        (59, 5, False),  # antes de n0 solo frena la evidencia: cota inferior 3,4 %
+        (60, 2, True),  # cota superior 10,1 % > 10 %
+        (60, 1, False),  # cota superior 7,7 %
+        (150, 3, False),  # cota superior 5,1 %
+    ],
+)
+def test_casos_20_y_21_el_freno_por_error_auditado(
+    auditados: int, errores: int, puesto: bool
+) -> None:
+    freno = lane1.brake_for(audited=auditados, errors=errores, unaudited=0)
+
+    assert freno.on is puesto
+    assert bool(freno.reason) is puesto
+
+
+def test_caso_22_audit_since_deja_fuera_los_errores_anteriores(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingestas = _aceptar(session, tmp_path, mundo.canal, n=2)
+    for ingesta in ingestas:
+        lane1.mark_invalid(session, ingesta.id, "no_data")
+    session.commit()
+    todo = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (todo.audited, todo.errors) == (2, 2)
+
+    manana = date.today() + timedelta(days=1)
+    desde = lane1.audit_state(session, _ajustes(tmp_path, lane1_audit_since=manana))
+
+    assert (desde.audited, desde.errors) == (0, 0)
+
+
+def test_caso_23_una_celda_divergente_deja_pendiente_solo_a_ese_anuncio(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    aceite = Product(name="Aceite", category="aceites", unit="l", aliases=[], is_pilot=True)
+    session.add(aceite)
+    session.commit()
+    monkeypatch.setattr(
+        lane1, "diverging_cells", lambda session, settings: frozenset({("Arroz", "La Habana")})
+    )
+    de_arroz = _anuncio(session, mundo.canal)
+    de_aceite = _anuncio(session, mundo.canal, "Aceite a 900 el litro", minutos=1)
+    cliente = ClienteFalso(
+        _propone(_fila()),
+        por_texto={
+            "Aceite a 900 el litro": _propone(
+                _fila(product="Aceite", price=900, unit="l", evidence="Aceite a 900 el litro")
+            )
+        },
+    )
+
+    _precalcular(session, tmp_path, cliente, lane1_enabled=True)
+
+    _sigue_pendiente_sin_filas(session, de_arroz)
+    session.refresh(de_aceite)
+    assert de_aceite.processing_status == ProcessingStatus.CURATED
+
+
+def test_el_precalculo_dice_por_que_esta_puesto_el_freno(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _aceptar(session, tmp_path, mundo.canal, n=30)
+    _anuncio(session, mundo.otro, minutos=999)
+
+    salida = _precalcular(session, tmp_path, ClienteFalso(_propone(_fila())), lane1_enabled=True)
+
+    assert "Aceptados solos (carril 1): 0" in salida
+    assert "freno puesto" in salida and "sin auditar" in salida
+
+
+def test_el_comando_con_execute_respeta_el_freno(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _aceptar(session, tmp_path, mundo.canal, n=30)
+    pendiente = _con_propuesta(session, tmp_path, mundo.otro)
+
+    codigo, salida = _comando(session, tmp_path, "--execute", lane1_enabled=True)
+
+    assert codigo == 0
+    assert "freno puesto" in salida
+    _sigue_pendiente_sin_filas(session, pendiente)
+
+
+# --- la pantalla ---------------------------------------------------------------------
+
+
+def test_la_auditoria_lista_los_aceptados_solos_con_sus_tres_acciones(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+
+    html = client.get("/curation/auditoria").text
+
+    assert "Aceptados solos" in html
+    assert "Arroz a 320 la libra" in html
+    assert f"/curation/auditoria/{ingesta.id}/aceptado-bien" in html
+    assert f"/curation/{ingesta.id}/edit" in html
+    assert f"/curation/auditoria/{ingesta.id}/aceptado-invalido" in html
+    assert "0 de 60" in html  # cuánto falta para dejar la auditoría total
+
+
+def test_los_botones_de_la_auditoria_escriben_la_respuesta(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    bien, mal = _aceptar(session, tmp_path, mundo.canal, n=2)
+
+    r1 = client.post(f"/curation/auditoria/{bien.id}/aceptado-bien", follow_redirects=False)
+    r2 = client.post(
+        f"/curation/auditoria/{mal.id}/aceptado-invalido",
+        data={"discard_reason": "off_focus"},
+        follow_redirects=False,
+    )
+
+    assert (r1.status_code, r2.status_code) == (303, 303)
+    session.expire_all()
+    estado = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (estado.audited, estado.errors, estado.unaudited) == (2, 1, 0)
+    session.refresh(mal)
+    assert mal.discard_reason == "off_focus"
+    html = client.get("/curation/auditoria").text
+    assert f"/curation/auditoria/{bien.id}/aceptado-bien" not in html
+
+
+def test_la_pantalla_avisa_cuando_el_freno_esta_puesto(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    _aceptar(session, tmp_path, mundo.canal, n=30)
+
+    html = client.get("/curation/auditoria").text
+
+    assert "Freno puesto" in html

@@ -256,6 +256,7 @@ def run_prefill(
     expected_per_ad: float | None = None,
     lane0_types: frozenset[str] = frozenset(),
     lane1_fetcher: Fetcher | None = None,
+    lane1_gate: lane1.Gate | None = None,
     out: Callable[[str], None] = print,
     llm: LLMConfig | None = None,
 ) -> RunResult:
@@ -271,7 +272,8 @@ def run_prefill(
 
     `lane1_fetcher` enciende el carril 1 (`validation.lane1`): es de dónde sale
     la tasa de cambio de una fila en divisa. `None`, ningún anuncio se acepta
-    solo. Va después del carril 0 y solo si este no descartó.
+    solo. Va después del carril 0 y solo si este no descartó. `lane1_gate` es
+    su freno (`validation.lane1.Gate`): con él puesto, nada se acepta.
 
     Con `max_cost`, antes de cada llamada se frena si el acumulado más lo que
     se espera que cueste la siguiente lo pasaría. «Lo que se espera» es el
@@ -355,6 +357,7 @@ def run_prefill(
                 text=text,
                 catalog=catalog,
                 fetcher=lane1_fetcher,
+                gate=lane1_gate,
             )
         )
         session.commit()
@@ -525,6 +528,9 @@ def _run_mode(
     # manda (con prefijo en Vercel) se recalcula ahí.
     llm = llm.with_overrides(model=args.model, timeout=args.timeout)
     print_estimate(est, out)
+    # El freno del carril 1 se lee una vez, antes de gastar: si está puesto,
+    # la corrida igual guarda propuestas, pero no acepta nada.
+    lane1_gate = lane1.Gate(session, settings) if lane1.enabled(settings) else None
     if est.per_ad_usd is None:
         out(f"AVISO: {model} no tiene tarifa en llm_assist.py; el costo acumulado no se estima.")
     result = run_prefill(
@@ -541,6 +547,7 @@ def _run_mode(
         lane1_fetcher=(
             (rate_fetcher or lane1.rate_fetcher(settings)) if lane1.enabled(settings) else None
         ),
+        lane1_gate=lane1_gate,
         out=out,
     )
     out(
@@ -558,6 +565,11 @@ def _run_mode(
     out(
         f"Aceptados solos (carril 1): {result.auto_accepted}"
         + ("" if lane1.enabled(settings) else " (interruptor apagado)")
+        + (
+            f" — freno puesto: {lane1_gate.brake.reason}"
+            if lane1_gate is not None and lane1_gate.brake.on
+            else ""
+        )
     )
     code = 1 if result.aborted_failure else 0
     _record_run(settings, code, result, jev)

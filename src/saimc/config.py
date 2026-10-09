@@ -9,6 +9,7 @@ llamadas siguientes reciben el mismo. En los tests se limpia con
 
 import logging
 import math
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -180,9 +181,14 @@ class Settings(BaseSettings):
     # Carril 1 encendido (slice B2b, `docs/spec-slice-B2b.md`): el pre-cálculo
     # guarda solo, con `provenance = auto`, las filas de los textos que el
     # motor manda al carril 1, y salen en el tablero sin esperar a nadie.
-    # Apagado, el pre-cálculo es el de siempre. NO se enciende hasta que la
-    # auditoría y el freno (B2b-3) estén en producción.
+    # Apagado, el pre-cálculo es el de siempre. Lo aceptado se audita en
+    # `/curation/auditoria` y el freno se pone solo (`validation.lane1`).
     lane1_enabled: bool = False
+    # Desde qué día cuenta lo auditado para la cota del carril 1 (B2b-3). Es
+    # la forma de volver a encenderlo después de que el freno lo apagó por
+    # error auditado: el operador fija la fecha y la cota arranca de nuevo.
+    # Sin fecha, cuenta todo.
+    lane1_audit_since: date | None = None
 
     # Jev como señal en sombra (slice A6b, `docs/spec-slice-A6b.md`): el
     # pre-cálculo le hace tres preguntas cerradas a cada texto pendiente y la

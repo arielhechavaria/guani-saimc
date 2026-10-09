@@ -103,6 +103,75 @@
 {% block content %}
 <div class="m3-stack" style="gap:16px">
 
+  {# --- Carril 1 (B2b-3): lo que se aceptó solo y ya está publicado -------- #}
+  {% set s = lane1.state %}
+  <section aria-labelledby="aceptados" id="aceptados-seccion">
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="aceptados">Aceptados solos</h2>
+      <p class="m3-muted">
+        Anuncios que el carril 1 guardó sin que nadie los mirara. Ya están en el tablero.
+        {% if not lane1.enabled %}El carril 1 está apagado.{% endif %}
+      </p>
+    </div>
+    {% if lane1.brake.on %}
+    <div class="m3-card m3-card-outlined m3-card-pad b2-bound is-over-target" role="alert">
+      <strong>Freno puesto</strong>
+      <span>El carril 1 no acepta nada: {{ lane1.brake.reason }}.</span>
+    </div>
+    {% endif %}
+    <div class="b2-bounds">
+      <div class="m3-card m3-card-outlined m3-card-pad b2-bound">
+        <span class="m3-muted">Auditados</span>
+        <span class="b2-bound-value">{{ s.audited }} de {{ lane1.n0 }}</span>
+        <span class="m3-muted">
+          {% if s.starting %}Hasta llegar a {{ lane1.n0 }} se audita todo; con {{ lane1.max_unaudited }} sin auditar el carril espera.
+          {% else %}Arranque terminado.{% endif %}
+          {% if s.since %}Cuenta desde el {{ s.since }}.{% endif %}
+        </span>
+      </div>
+      <div class="m3-card m3-card-outlined m3-card-pad b2-bound">
+        <span class="m3-muted">Error auditado (meta {{ "%.0f"|format(lane1.target * 100) }} %)</span>
+        {% if s.upper is none %}
+        <span class="b2-bound-value">—</span>
+        <span class="m3-muted">Todavía no se auditó ninguno.</span>
+        {% else %}
+        <span class="b2-bound-value">{{ s.errors }} de {{ s.audited }}</span>
+        <span class="m3-muted">Cota superior al 95 %: {{ "%.1f"|format(s.upper * 100) }} %. Inferior: {{ "%.1f"|format(s.lower * 100) }} %.</span>
+        {% endif %}
+      </div>
+    </div>
+    {% if not lane1.pending %}
+    <p class="m3-muted">No hay nada aceptado solo esperando auditoría.</p>
+    {% else %}
+    <p class="m3-muted">{{ lane1.pending|length }} sin auditar, del más viejo al más nuevo.</p>
+    <div class="b2-texts">
+      {% for ad in lane1.pending %}
+      <article class="m3-card m3-card-outlined a1-card" id="a{{ ad.ingestion.id }}">
+        <div class="b2-text">{{ ad.ingestion.original_text or "" }}</div>
+        <div class="a1-body">
+          {% for fila in ad.rows %}
+          <span class="m3-chip m3-chip-sm m3-chip-neutral" style="align-self:flex-start">{{ fila }}</span>
+          {% endfor %}
+          <div class="a1-meta">
+            <span>{{ ad.ingestion.source_reference or "—" }}</span>
+            <span class="m3-nowrap">{{ ad.event.decided_at | havana }}</span>
+          </div>
+        </div>
+        <div class="b2-actions b2-actions-3">
+          <form method="post" action="/curation/auditoria/{{ ad.ingestion.id }}/aceptado-bien">
+            <button type="submit" class="m3-btn">Está bien</button>
+          </form>
+          <a class="m3-btn m3-btn-tonal" href="/curation/{{ ad.ingestion.id }}/edit">Corregir</a>
+          <form method="post" action="/curation/auditoria/{{ ad.ingestion.id }}/aceptado-invalido">
+            <button type="submit" class="m3-btn m3-btn-tonal" style="grid-column:1 / -1">No era un anuncio válido</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
   <section aria-labelledby="cota">
     <div class="m3-section-head">
       <h2 class="m3-h2" id="cota">Falsos descartes</h2>

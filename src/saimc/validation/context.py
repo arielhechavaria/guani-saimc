@@ -179,6 +179,8 @@ class BatchDecisions:
     (B2a) parte la historia del anuncio en tramos: el descarte automático
     queda antes del rescate, y lo que el operador decida después de rescatarlo
     es una decisión nueva, individual (caso 13 de `docs/spec-slice-B2a.md`).
+    Lo mismo una auditoría del carril 1 (B2b-3): la aceptación automática queda
+    antes, y la revisión que escribe la auditoría cuenta como individual.
     Sin el tramo, ese descarte de a uno heredaba el `auto` del primero y no
     contaba ni en el historial del canal ni en el modo sombra.
     """
@@ -222,7 +224,9 @@ def batch_decisions(
     events = session.execute(stmt).all()
     rescues: dict[uuid.UUID, list[datetime]] = {}
     for ingestion_id, action, _, decided_at in events:
-        if action == CurationAction.RESCUED:
+        # Un rescate (B2a) y una auditoría (B2a, B2b-3) parten la historia: lo
+        # que el operador decida después es suyo, no del carril automático.
+        if action in (CurationAction.RESCUED, CurationAction.AUDITED):
             rescues.setdefault(ingestion_id, []).append(as_utc(decided_at))
     ordered = {key: tuple(sorted(times)) for key, times in rescues.items()}
     result = BatchDecisions(batch=frozenset(), rescues=ordered)
