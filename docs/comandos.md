@@ -187,7 +187,12 @@ sudo systemctl restart saimc.service
   .venv/bin/python -m saimc.validation.shadow --gold data/llm-backtest-results-v7.jsonl --grid --lane1-max-rows 1
   ```
 
-  El valor no está fijado: lo elige G1b.
+  G1b lo fijó en 1 (2026-10-09). Para ver el carril 1 con los valores que aprobó el
+  operador (`docs/spec-slice-B2b.md`):
+
+  ```
+  .venv/bin/python -m saimc.validation.shadow --gold data/llm-backtest-results-v7.jsonl --min-cell-n 5 --channel-min-history 3 --channel-max-edit-rate 0.5 --lane1-max-rows 1
+  ```
 - **Cómo leer la salida**: mirá la cota al 95%, no el porcentaje: un 0% sobre un n chico no dice
   nada.
 - **El bloque «Jev»** (A6b-2) cierra cada conjunto. Abre con `n = … de … textos`: cuántos textos

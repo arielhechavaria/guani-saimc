@@ -110,9 +110,24 @@ _RULE_REASONS: dict[str, dict[Outcome, str]] = {
     },
 }
 
-#: El único motivo de una fila que no saca al anuncio del carril 1: un repost no
-#: es un error de extracción. La fila igual queda en `possible_duplicate`.
+#: Un repost no es un error de extracción. La fila igual queda en
+#: `possible_duplicate`.
 _DUPLICATE_REASON = _RULE_REASONS["duplicate"][Outcome.FAIL]
+
+#: Los motivos de una fila que no sacan al anuncio del carril 1. Además del
+#: duplicado (G1b), los tres «todavía no sé» que no hablan del anuncio (B2b,
+#: `docs/spec-slice-B2b.md`): un canal que nadie curó y una celda sin
+#: referencias con que comparar. La fila conserva el motivo y su estado
+#: (`unverified`); lo que cambia es solo el carril. Un canal SUCIO y un precio
+#: FUERA de su celda siguen frenando: esos sí son evidencia.
+_NON_BLOCKING_REASONS = frozenset(
+    {
+        _DUPLICATE_REASON,
+        _RULE_REASONS["trust"][Outcome.UNKNOWN],
+        _RULE_REASONS["price"][Outcome.UNKNOWN],
+        _RULE_REASONS["quantity_price"][Outcome.UNKNOWN],
+    }
+)
 
 
 def _verification_reasons(
@@ -379,7 +394,9 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
         reasons.append(f"la propuesta trae más filas que el tope del carril 1 ({max_rows})")
     for index, row in enumerate(rows, start=1):
         reasons += [
-            f"fila {index}: {reason}" for reason in row.reasons if reason != _DUPLICATE_REASON
+            f"fila {index}: {reason}"
+            for reason in row.reasons
+            if reason not in _NON_BLOCKING_REASONS
         ]
     if config is not None:
         reasons += _signal_reasons(ctx, config)
@@ -389,8 +406,8 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
     return AdValidation(
         LANE_ACCEPT,
         (
-            "anuncio de texto con todas sus filas verificadas y las reglas en pass "
-            "(un posible duplicado no frena)",
+            "anuncio de texto con todas sus filas verificadas y ninguna regla fallada "
+            "(canal sin historial, celda sin referencias y posible duplicado no frenan)",
         ),
         rows,
     )

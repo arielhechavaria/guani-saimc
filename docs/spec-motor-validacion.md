@@ -160,16 +160,19 @@ El motor es el único que decide el carril. Un anuncio sin propuesta del modelo
    moneda alcanza con que los dos den la misma, la diga el texto o no
    (`currency_explicit` no se mira). Si las reglas no dan moneda no hay acuerdo;
 3. ninguna abstención en cantidad, unidad ni `price_basis`;
-4. las reglas 1, 2, 3, 4 y 6 en `pass`. La regla 5 no frena el carril: si
-   falla, la fila queda en `possible_duplicate` y el anuncio sigue en el
+4. las reglas 1 y 3 en `pass`, y las reglas 2, 4 y 6 sin fallar: en estas
+   tres un `unknown` (canal sin historial suficiente, celda sin referencias)
+   no frena el carril, y la fila queda `unverified`. La regla 5 tampoco frena:
+   si falla, la fila queda en `possible_duplicate` y el anuncio sigue en el
    carril 1.
 
 Una sola fila que no cumple manda el anuncio entero al carril 2. Sin
 configuración de parámetros no hay carril 0 ni carril 1.
 
 Las condiciones 2 y 4 y el tope de filas son de G1b (2026-10-05) y reemplazan a
-las de A5: ver «Precisiones de G1b». El estado `approved` de una fila no cambió:
-sigue pidiendo las seis reglas en `pass`.
+las de A5: ver «Precisiones de G1b». Los `unknown` de la condición 4 son de B2b
+(2026-10-09): ver «Precisiones de B2b». El estado `approved` de una fila no
+cambió: sigue pidiendo las seis reglas en `pass`.
 
 **Carril 2 — revisión humana.** Todo lo demás.
 
@@ -393,6 +396,48 @@ de 22,3 %); sin el tope, 45 y 15 (25 %).
   las corridas de `docs/shadow-runs.jsonl` sigan siendo comparables.
 
 Detalle en `docs/decisions.md` (2026-10-05, «G1b: el filtro del carril 1»).
+
+## Precisiones de B2b (2026-10-09)
+
+G1b se abrió adelantada (`docs/decisions.md`, 2026-10-09). El carril 1 sigue
+apagado hasta que estén la aplicación, la auditoría y el freno: contrato en
+`docs/spec-slice-B2b.md`. Acá cambió solo la decisión del carril.
+
+**El criterio.** Un anuncio válido no se frena por algo que el sistema todavía
+no sabe; se frena cuando hay una señal de que la lectura del modelo puede estar
+mal.
+
+**Qué cambió.** Tres motivos de fila dejan de sacar al anuncio del carril 1,
+como ya pasaba con el posible duplicado (`_NON_BLOCKING_REASONS` en
+`engine.py`):
+
+- regla 4 en `unknown`: el canal no tiene historial suficiente;
+- regla 2 en `unknown`: no se pudo comparar el precio con su celda;
+- regla 6 en `unknown`: no se pudo contrastar la base del precio con su celda.
+
+La fila conserva el motivo y sale `unverified`. Reemplaza, en «Precisiones de
+G1b», el punto «Canal sin historial y celda sin referencias: siguen frenando».
+
+**De dónde sale.** Oro v7, 3 / 1 / 1,00: a los anuncios que solo frenaba el
+canal sin historial el operador no les tocó nada (0 errores en 17). Los 14
+errores de los 40 del carril 1 son de un solo canal con historial, Groupej
+Morales Surl (19 de sus 27 filas tocadas). Lo que separa es el canal sucio, no
+el canal desconocido.
+
+**Qué no cambió.**
+
+- La regla 4 **fallada** (canal sucio) y las reglas 2 y 6 **falladas** (precio
+  fuera de la banda, o más cerca leído con la otra base) siguen frenando.
+- La regla 3 en `unknown` sigue frenando: sin canal, o con un canal sin
+  provincia, el anuncio va al carril 2.
+- Las seis reglas, el estado de cada fila, `validate_stored_row` y
+  `ENGINE_VERSION`: ninguna fila guardada cambia de estado.
+
+**Parámetros que fijó G1b** (los aplica B2b-2, no el motor): tope de 1 fila,
+canal con 3 decisiones y más de la mitad de las filas tocadas para salir sucio,
+celda de 5. Con eso, sobre el oro v7 entran 18 textos al carril 1 con 0 errores
+(cota superior al 95 % de 15,3 %); el tope de 0,50 se eligió después de ver los
+errores de Groupej, así que el número que vale es el de la auditoría.
 
 ## Registro
 
