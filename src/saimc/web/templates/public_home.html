@@ -1700,10 +1700,12 @@
               a una misma unidad y a pesos cubanos para que se puedan comparar.
             </p>
 
-            {# El CSV baja exactamente las observaciones de esta vista (§6.5). #}
+            {# El CSV baja las observaciones de esta vista (§6.5), con el
+               período recortado a `product_nav.DOWNLOAD_WINDOW_DAYS`
+               (`docs/decisions.md`, 2026-10-05): se avisa cuando trae menos. #}
             <p class="ph-download">
               <a href="{{ csv_href }}">Descargar estos datos (CSV)</a> — un anuncio por fila,
-              con el enlace a cada uno.
+              con el enlace a cada uno.{% if csv_trimmed_days %} El archivo trae solo los últimos {{ csv_trimmed_days }} días.{% endif %}
             </p>
             {% else %}
             <p class="ph-empty">No hay anuncios{% if selected_product %} de {{ selected_product }}{% endif %}{% if selected_province %} en {{ selected_province }}{% endif %} en los últimos {{ window_days }} días.</p>

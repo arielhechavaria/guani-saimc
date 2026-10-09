@@ -1,27 +1,56 @@
 {#
-  `/uso-de-datos`. Cómo citar y reutilizar el CSV — BORRADOR pendiente de
-  revisión del operador (`docs/decisions.md`, 2026-10-05).
+  `/uso-de-datos`. Qué se puede hacer con los datos y qué necesita un acuerdo
+  (`docs/decisions.md`, 2026-10-05, «Uso de los datos: gratis con cita,
+  comercial con acuerdo»).
 
   Fuentes: `routers/public.public_data_csv` y `_CSV_COLUMNS` (qué trae el
-  archivo y con qué filtros), `spec.md` §6.3 E (toda serie derivada de la TRMI
-  la atribuye) y el pie aprobado («Los datos se pueden usar citando la
-  fuente»).
+  archivo y con qué filtros), `product_nav.DOWNLOAD_WINDOW_DAYS` (el tope de
+  la descarga, que llega acá como `facts.download_window_days`) y `spec.md`
+  §6.3 E (toda serie derivada de la TRMI la atribuye).
 
-  `spec.md` no fija ninguna licencia de datos (se buscó en el mapa y en el
-  documento): por eso esta página dice «citando la fuente» y NO nombra una
-  licencia. Elegirla es una decisión del operador.
+  La regla está escrita en palabras llanas a propósito: NO nombra una licencia
+  ni una jurisdicción, y Leira Studio aparece como marca, nunca como entidad
+  legal. El canal para pedir un acuerdo es `/contacto`, que solo existe si hay
+  a dónde escribir (`footer.has_contact`).
 #}
 {% extends "public_page.html" %}
 
 {% block title %}Uso de los datos{% endblock %}
-{% block og_description %}Cómo descargar, citar y reutilizar los datos de precios de Guani: qué trae el archivo CSV, qué significa cada columna y cómo dar el crédito.{% endblock %}
-{% block lead %}Los datos de Guani están abiertos: se pueden descargar y reutilizar citando la fuente.{% endblock %}
+{% block og_description %}Qué puedes hacer gratis con los datos de precios de Guani, qué uso necesita un acuerdo, cómo citarlos y qué trae el archivo CSV.{% endblock %}
+{% block lead %}Consultar los datos de Guani es gratis. Usarlos con fines comerciales necesita un acuerdo.{% endblock %}
 
 {% block content %}
-<h2>Cómo descargarlos</h2>
-<p><a href="/datos.csv">Descarga el archivo CSV</a>. Trae los mismos anuncios que alimentan las cifras del sitio, uno por fila. Si lo descargas desde el botón del tablero, respeta el producto, la provincia y el período que tengas elegidos.</p>
+<h2>Qué puedes hacer gratis</h2>
+<ul>
+  <li>Consultar el sitio y <a href="/datos.csv">descargar el archivo CSV</a> con los anuncios de los últimos {{ facts.download_window_days }} días.</li>
+  <li>Usar esos datos para uso personal, periodístico o académico, citando la fuente.</li>
+  <li>Citar cifras de Guani en un artículo, un trabajo o una publicación en redes, con el crédito.</li>
+</ul>
 
-<h2>Qué trae cada columna</h2>
+<h2>Qué necesita un acuerdo</h2>
+<p>El uso comercial de los datos necesita un acuerdo previo con Leira Studio. Eso incluye:</p>
+<ul>
+  <li>Revender los datos o entregarlos a terceros como parte de un producto.</li>
+  <li>Usarlos dentro de un producto o servicio de pago.</li>
+  <li>Volver a publicarlos en bloque, en otro sitio o en otro archivo.</li>
+  <li>Hacer una descarga automatizada o masiva del sitio.</li>
+  <li>Recibir el histórico completo, más allá de los últimos {{ facts.download_window_days }} días.</li>
+</ul>
+
+<h2>Cómo pedir un acuerdo</h2>
+{% if footer.has_contact %}
+<p>Escríbenos desde la página de <a href="/contacto">Contacto</a> y cuenta qué datos necesitas y para qué los vas a usar.</p>
+{% else %}
+<p>El canal de contacto se publicará en este sitio. Hasta entonces no hay forma de pedir un acuerdo, y el uso comercial no está permitido.</p>
+{% endif %}
+
+<h2>Cómo citarlos</h2>
+<p>Guani es un producto de Leira Studio. Para citar basta con nombrar a Guani, decir la fecha en que descargaste los datos y, si publicas en internet, enlazar al sitio. Por ejemplo:</p>
+<p class="pg-note">Fuente: Guani, precios del mercado informal cubano. Datos descargados el (fecha de la descarga).</p>
+<p>Si muestras precios que estaban en otra moneda y fueron convertidos a pesos cubanos, da también el crédito de la tasa: <a href="https://eltoque.com/">TRMI de elTOQUE</a>.</p>
+
+<h2>Qué trae el archivo</h2>
+<p>El archivo trae un anuncio por fila, de los mismos que alimentan las cifras del sitio, y como mucho los últimos {{ facts.download_window_days }} días. Si lo descargas desde el botón del tablero, respeta el producto y la provincia que tengas elegidos; si el período que estás viendo es más largo, el archivo trae solo su parte más reciente.</p>
 <ul>
   <li><code>producto</code>: el nombre del producto.</li>
   <li><code>provincia</code>: la provincia del anuncio.</li>
@@ -32,11 +61,6 @@
   <li><code>anuncio</code>: un identificador del anuncio de origen. No dice quién lo publicó.</li>
 </ul>
 <p>El archivo no trae teléfonos, nombres ni el grupo o canal del que salió cada anuncio.</p>
-
-<h2>Cómo citarlos</h2>
-<p>Puedes usar los datos en un trabajo, un artículo, una aplicación o una publicación en redes citando la fuente. Guani es un producto de Leira Studio; para citar basta con nombrar a Guani, decir la fecha en que los descargaste y, si publicas en internet, enlazar al sitio. Por ejemplo:</p>
-<p class="pg-note">Fuente: Guani, precios del mercado informal cubano. Datos descargados el (fecha de la descarga).</p>
-<p>Si muestras precios que estaban en otra moneda y fueron convertidos a pesos cubanos, da también el crédito de la tasa: <a href="https://eltoque.com/">TRMI de elTOQUE</a>.</p>
 
 <h2>Qué tener en cuenta al usarlos</h2>
 <ul>
