@@ -41,6 +41,18 @@ def _prefill_lock_aislado(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("SAIMC_PREFILL_LOCK_PATH", str(tmp_path / "prefill.lock"))
 
 
+@pytest.fixture(autouse=True)
+def _prefill_status_aislado(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """El registro de la última corrida del pre-cálculo, lejos de
+    `data/prefill-status.json`.
+
+    Sin esto, los tests de `prefill --execute` lo escriben y los de `/control`
+    lo leen en el checkout donde corre pytest: el resultado dependía de si ese
+    checkout tuvo una corrida real, y la suite podía pisar el estado real.
+    """
+    monkeypatch.setenv("SAIMC_PREFILL_STATUS_PATH", str(tmp_path / "prefill-status.json"))
+
+
 @pytest.fixture
 def session() -> Iterator[Session]:
     engine = create_engine(

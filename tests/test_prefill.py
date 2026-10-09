@@ -1156,3 +1156,38 @@ def test_run_prefill_sin_llm_ni_clave_falla_antes_de_llamar(tmp_path: Path) -> N
             raw_store_dir=tmp_path,
             log_path=tmp_path / "log.jsonl",
         )
+
+
+# --- aislamiento del registro de la corrida (2026-10-09) ----------------------
+#
+# `Settings().prefill_status_path` vale `data/prefill-status.json`, relativo al
+# directorio donde corra pytest. El fixture autouse de `conftest.py` lo manda a
+# `tmp_path`; estos casos fallan si alguien lo quita.
+
+_ESTADO_REAL = Path("data/prefill-status.json")
+
+
+def _huella_estado_real() -> tuple[int, bytes] | None:
+    if not _ESTADO_REAL.exists():
+        return None
+    return _ESTADO_REAL.stat().st_mtime_ns, _ESTADO_REAL.read_bytes()
+
+
+def test_la_ruta_por_defecto_del_estado_sale_de_tmp_path(tmp_path: Path) -> None:
+    ajustes = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert ajustes.prefill_status_path == tmp_path / "prefill-status.json"
+
+
+def test_una_corrida_real_con_ajustes_por_defecto_no_toca_el_estado_del_checkout(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz 100")
+    antes = _huella_estado_real()
+
+    # `_ajustes` no fija `prefill_status_path`: usa el valor por defecto.
+    codigo, _ = _correr(session, tmp_path, ["--execute"], cliente=ClienteFalso())
+
+    assert codigo == 0
+    assert _huella_estado_real() == antes  # mtime y contenido iguales
+    assert prefill_status.read_run_status(tmp_path / "prefill-status.json") is not None
