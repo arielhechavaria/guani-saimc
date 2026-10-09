@@ -215,6 +215,17 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="prompts-mvp-inversores",
+        title="Prompts del plan del MVP para inversores",
+        summary=(
+            "Un prompt por tarea del plan del MVP, listo para pegar en una "
+            "sesión nueva, con el orden en que conviene abrirlas y el modelo "
+            "sugerido para cada una."
+        ),
+        relative_path="docs/prompts-mvp-inversores.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="plan-marca",
         title="Leira Studio — plan de marca y compendio de contactos",
         summary=(

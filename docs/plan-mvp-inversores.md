@@ -8,6 +8,8 @@ de un anuncio, y qué falta para mostrarlo a un inversor? Ordena pendientes que 
 existen en `docs/plan-factor-humano.md` y en `docs/pendientes-engine.md`; no los
 reemplaza. El detalle de cada slice sigue en esos dos documentos.
 
+Los prompts para abrir cada tarea están en `docs/prompts-mvp-inversores.md`.
+
 Las cifras salen de `docs/decisions.md` (entradas del 2026-10-09). Son una foto de
 ese día: la cola cambia cada tres horas con el pre-cálculo. Al escribir esto no se
 consultó la base de producción.
