@@ -1012,6 +1012,19 @@ def _block_header(lines: Sequence[str]) -> str | None:
     return None
 
 
+def _names_own_product(line: str) -> bool:
+    """La línea con precio trae su propia frase de producto, no un envase.
+
+    «Detergente Ariel 1kg 350» sí; «La caja 28,5 usd» no: la frase es el
+    envase («caja», «saco»...) y el producto lo pone el encabezado del bloque.
+    """
+    phrase = _guess_product_phrase(line)
+    if phrase is None:
+        return False
+    words = [w for w in phrase.lower().split() if w not in {"la", "el", "los", "las"}]
+    return bool(words) and words[0] not in _LOT_WORDS
+
+
 def _tier_minimum(
     count: Decimal, word: str | None, lot_quantity: Decimal | None, lot_unit: str | None
 ) -> Decimal | None:
@@ -1121,6 +1134,22 @@ def _tiered_proposals(
             line for line in con_precio if _match_product(line, products) is product
         ]
         if len(propias) > 1:
+            return None
+
+    # La misma guarda cuando NINGÚN producto matcheó el catálogo (P1 de
+    # pendientes-engine.md). Sin match no hay `_match_product` que cuente las
+    # líneas que nombran el producto, así que se cuentan las que traen una
+    # frase de producto propia antes del precio. «La caja 28,5 usd» no cuenta:
+    # su frase es un envase, y esa línea hereda el producto del encabezado.
+    # Dos o más líneas con producto propio son un catálogo, no un bloque: sin
+    # esto el bloque colapsaba el anuncio a dos filas a nombre del encabezado.
+    if product is None:
+        con_nombre = [
+            line
+            for line in con_precio
+            if _names_own_product(line)
+        ]
+        if len(con_nombre) > 1:
             return None
 
     base_line = con_precio[0] if con_precio else None

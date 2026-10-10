@@ -26,8 +26,9 @@ Los casos de «Reproducción» sirven de base.
 
 | Prioridad | Pendiente | Criticidad |
 |---|---|---|
-| 1 | Bloque escalonado sin match de catálogo | Alta |
 | 2 | Mínimo de lote sin unidad | Media-alta |
+| 2 | Línea «Más de N» leída como producto en un catálogo | Media |
+| 3 | `u` no es unidad reconocida en el lote | Baja |
 | 2 | División por cero con cantidad 0 | Media |
 | 3 | Alias vacíos o nulos del lado del LLM | Media |
 | 3 | Unidad sin canonizar en `_declared_price_basis` | Media |
@@ -37,31 +38,6 @@ Los casos de «Reproducción» sirven de base.
 | — | ¿Proponer líneas con número suelto y sin producto? | Decisión |
 
 ---
-
-## P1 · Bloque escalonado sin match de catálogo (bug 4) — Alta
-
-**Dónde:** `_tiered_proposals`.
-
-**Qué pasa:** la guarda que impide leer un catálogo de tienda como un único bloque de
-precios por volumen solo corre cuando algún producto matcheó el catálogo. Sin match,
-un anuncio con varios productos colapsa en dos filas a nombre del encabezado, y se
-pierden los productos y precios intermedios.
-
-**Reproducción** (revisión, no la corrí yo):
-
-```
-Tienda Los Primos
-Detergente Ariel 1kg 350
-Jabon Marsella 12u 500
-Mas de 10 cajas 28
-```
-
-Da 2 filas con `product_name_guess="Tienda Los Primos"`, a 350 y a 28. Jabón Marsella
-y su 500 desaparecen.
-
-**Por qué es la prioridad 1:** es la misma clase de bug que arregló el commit
-`2a466e4` para productos de catálogo, y ese camino explicaba el 60% de los precios
-equivocados medidos el 2026-09-10 (`TestCatalogoNoEsBloqueEscalonado`).
 
 ## P2 · Mínimo de lote sin unidad (bug 5) — Media-alta
 
@@ -84,6 +60,26 @@ Más de 500 lb 480
 Da una fila con `min_purchase_quantity=500` y `unit=None`.
 
 **Riesgo:** si el operador no lo ve, se guarda un mínimo de compra sin unidad.
+
+## P2 · Línea «Más de N» leída como producto en un catálogo — Media
+
+**Dónde:** lectura línea por línea de `propose_all` (hallazgo al cerrar P1).
+
+**Qué pasa:** cuando un catálogo de tienda trae una línea de escalón y el anuncio no
+es un bloque, esa línea sale como una fila más con nombre «Mas de» y el precio
+corrido. El operador la ve y la descarta, pero es una fila basura por anuncio.
+
+**Reproducción:** `"Tienda Los Primos\nDetergente Ariel 1kg 350\nJabon Marsella 2kg 500\nMas de 10 cajas 28"`
+da, además de las dos filas correctas, una con `product_name_guess="Mas de"`,
+precio 28 y cantidad 10 cajas.
+
+## P3 · `u` no se reconoce como unidad del lote — Baja
+
+**Dónde:** `_lot_size` / `_QUANTITY_RE`.
+
+**Qué pasa:** «Jabon Marsella 12u 500» y «CAJA DE 12 u» no dan cantidad ni unidad;
+la línea del jabón no se propone y el bloque pierde el mínimo del escalón. Con «lb»
+o «kg» anda. Puede ser intencional (unidad no canónica): hay que decidirlo.
 
 ## P2 · División por cero con cantidad 0 (bug 8) — Media
 
