@@ -4,11 +4,11 @@ Parte del plan `docs/plan-factor-humano.md` (B3) y tarea T6 de
 `docs/plan-mvp-inversores.md`. Toca el esquema de datos: esta especificación se
 aprueba antes de programar.
 
-**Estado: PROPUESTA, sin aprobar.** Nada de lo que sigue está decidido. Las
-preguntas del final las contesta el operador; cada una trae una recomendación.
-No se programó ni se migró nada, y los apartamientos de la sección
-«Apartamientos propuestos» no están escritos en `docs/spec-map.md` ni en
-`docs/decisions.md`.
+**Estado: APROBADA por el operador el 2026-10-10, con las once respuestas
+recomendadas** (la pregunta 10 queda sin meta, como se recomendaba). Sin
+implementar: no se programó ni se migró nada. Los apartamientos de la sección
+«Apartamientos propuestos» se escriben en `docs/spec-map.md` y en
+`docs/decisions.md` en el commit del slice que los vuelve ciertos.
 
 ## La idea que lo ordena
 
@@ -507,7 +507,9 @@ posibles sobre él.
 Después de B3-1 hay un paso que es del operador y no es desarrollo: correr el
 congelado en seco en el servidor, mirar los conteos y ejecutarlo.
 
-## Preguntas al operador
+## Preguntas al operador — resueltas el 2026-10-10
+
+El operador aprobó la especificación con la recomendación de cada pregunta.
 
 1. **¿Se guardan los valores congelados, además del hash?**
    Recomendación: sí. Sin los valores, una edición deja el conjunto sin su
