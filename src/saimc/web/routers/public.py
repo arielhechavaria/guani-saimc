@@ -32,6 +32,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from saimc.automation import automation_summary
 from saimc.cells import compute_retail_observations, compute_retail_ranges
 from saimc.config import get_settings
 from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
@@ -1021,6 +1022,24 @@ def _lane1_public(db: Session) -> dict[str, object]:
     }
 
 
+def _phase0_public(db: Session) -> dict[str, object]:
+    """Los dos números de la métrica de la Fase 0 con su error auditado
+    (`docs/spec-slice-B3.md`, sección 5). Solo conteos: ningún canal, emisor ni
+    anuncio. Cada número va rotulado provisional mientras el error de lo que
+    cuenta no tenga nada auditado; no se agrega ninguna meta nueva."""
+    resumen = automation_summary(db, get_settings())
+    return {
+        "f0": {
+            "total": resumen.total.both,
+            "since": resumen.auto_since,
+            "lane0": resumen.lane0,
+            "lane1": resumen.lane1,
+            "n1_provisional": any(b.n == 0 for b in resumen.lane0.values()),
+            "n2_provisional": resumen.lane1.audited == 0,
+        }
+    }
+
+
 def _site_page_endpoint(page: SitePage) -> Callable[..., HTMLResponse]:
     """El endpoint de una página de `SITE_PAGES`. Es una fábrica y no una
     lambda dentro del bucle para que cada endpoint se quede con *su* página:
@@ -1033,7 +1052,9 @@ def _site_page_endpoint(page: SitePage) -> Callable[..., HTMLResponse]:
     def methodology(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         # La única página de texto que consulta la base: publica cuántos
         # precios entraron solos y con qué error (B2b-3b).
-        return _render_site_page(request, page.template, _lane1_public(db))
+        return _render_site_page(
+            request, page.template, {**_lane1_public(db), **_phase0_public(db)}
+        )
 
     return methodology if page.path == "/metodologia" else endpoint
 

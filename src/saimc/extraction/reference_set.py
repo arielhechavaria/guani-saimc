@@ -296,6 +296,22 @@ def members_of(session: Session, version: int) -> list[ReferenceSetMember]:
     )
 
 
+def frozen_version_of(session: Session, ingestion_id: uuid.UUID) -> int | None:
+    """La versión vigente del conjunto si el anuncio es miembro de ella, o
+    `None`. Una versión vieja que lo tuvo no cuenta: la referencia que mide H0
+    hoy es la vigente (el aviso de `/edit`, B3-4)."""
+    version = current_version(session)
+    if version is None:
+        return None
+    member = session.execute(
+        select(ReferenceSetMember.id).where(
+            ReferenceSetMember.set_version == version,
+            ReferenceSetMember.ingestion_id == ingestion_id,
+        )
+    ).first()
+    return version if member else None
+
+
 def version_hash(session: Session, version: int) -> str:
     """La huella de una versión ya congelada."""
     return set_hash((str(m.ingestion_id), m.values_hash) for m in members_of(session, version))

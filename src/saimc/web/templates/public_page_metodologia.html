@@ -43,6 +43,30 @@
 {% block og_description %}De dónde salen los anuncios, cómo se revisan y con qué cuenta se llega a cada cifra de Guani: mediana, rango, número de anuncios y conversión a CUP.{% endblock %}
 {% block lead %}Todo lo que hay entre un anuncio y la cifra que ves: de dónde sale, quién lo revisa y con qué cuenta se resume.{% endblock %}
 
+{% block head %}
+{{ super() }}
+<style>
+  /* Los dos números de la Fase 0 (B3-4). A 390 px, una tarjeta debajo de la
+     otra; desde 720 px, lado a lado. */
+  .pg-f0 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+  .pg-f0-card { padding: 18px 16px; border-radius: 16px; background: var(--m3-surface);
+                border: 1px solid var(--m3-outline-variant); }
+  .pg-body .pg-f0-label { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .08em;
+                          text-transform: uppercase; line-height: 1.4; color: var(--ph-accent-2-line); }
+  .pg-f0-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 100px;
+               border: 1px solid var(--m3-outline-variant); font-size: 12px; letter-spacing: .04em;
+               text-transform: none; color: var(--m3-on-surface-variant); }
+  .pg-body .pg-f0-value { margin: 6px 0 0; font: 400 clamp(34px, 11vw, 44px)/1.1 var(--ph-font-heading); }
+  .pg-f0-dim { color: var(--m3-on-surface-variant); }
+  .pg-body .pg-f0-hint { margin: 8px 0 0; font-size: 15px; line-height: 1.5; color: var(--m3-on-surface-variant); }
+  .pg-f0-err { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--m3-outline-variant); }
+  .pg-body .pg-f0-err-title { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.4; }
+  .pg-body .pg-f0-err ul { margin: 6px 0 0; padding: 0; list-style: none; }
+  .pg-body .pg-f0-err li { margin-top: 6px; font-size: 15px; line-height: 1.5; }
+  @media (min-width: 720px) { .pg-f0 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+{% endblock %}
+
 {% block content %}
 <h2>De dónde salen los anuncios</h2>
 <p>De dos tipos de fuente: grupos y canales de WhatsApp donde se anuncian productos, y anuncios que una persona del proyecto captura a mano (el texto copiado o una captura de pantalla). No hay otra fuente.</p>
@@ -58,6 +82,58 @@
 {% if lane1.state.upper is none %}Todavía no se auditó ningún anuncio de los que entraron solos, así que no hay un error medido que publicar.
 {% else %}La auditoría encontró {{ lane1.state.errors }} {% if lane1.state.errors == 1 %}error{% else %}errores{% endif %} en {{ lane1.state.audited }} {% if lane1.state.audited == 1 %}anuncio auditado{% else %}anuncios auditados{% endif %}; con esa muestra, el error real no pasa de {{ ("%.1f"|format(lane1.state.upper * 100)).replace(".", ",") }} % con una confianza del 95 %.
 {% endif %}</p>
+{% endif %}
+
+{# B3-4 (docs/spec-slice-B3.md, sección 5): los dos números de la métrica de
+   la Fase 0, cada uno con su error auditado y su n en la misma tarjeta. Sin
+   metas nuevas (10 % y 20 % del descarte, 10 % de lo publicado: las ya
+   decididas), sin número compuesto y sin llamarlos «tasa de automatización». #}
+{%- macro pct(value) -%}{{ ("%.1f"|format(value * 100)).replace(".", ",") }}&nbsp;%{%- endmacro -%}
+{%- macro plural(n, uno, varios) -%}{{ n }} {{ uno if n == 1 else varios }}{%- endmacro -%}
+<h2 id="sin-el-operador">Qué parte se resuelve sin una persona</h2>
+{% set total = f0.total %}
+<p>Cada anuncio que entra termina en un solo lugar: publicado a mano, publicado por el sistema, descartado a mano, descartado por el sistema, o todavía pendiente. De ahí salen dos números distintos. Ninguno se publica sin el error que se midió en lo que cuenta.</p>
+<div class="pg-f0">
+  <section class="pg-f0-card" aria-labelledby="f0-n1">
+    <h3 class="pg-f0-label" id="f0-n1">Resuelto sin el operador{% if f0.n1_provisional %} <span class="pg-f0-tag">provisional</span>{% endif %}</h3>
+    <p class="pg-f0-value">{% if total.n1 is none %}<span class="pg-f0-dim">sin datos</span>{% else %}{{ pct(total.n1) }}{% endif %}</p>
+    <p class="pg-f0-hint">{% if total.total %}{{ total.a + total.d0 }} de {{ total.total }} anuncios{% if f0.since %}, desde la semana del {{ f0.since.strftime("%d/%m/%Y") }}{% endif %}, se resolvieron por el sistema, sin una persona de por medio.{% else %}Todavía no hay anuncios que contar.{% endif %}</p>
+    <div class="pg-f0-err">
+      <h4 class="pg-f0-err-title">Error auditado: descartes que no debían serlo</h4>
+      <ul>
+        {% for tipo, nombre in (("text", "Texto"), ("image", "Imagen")) %}
+        {% set b = f0.lane0[tipo] %}
+        <li><strong>{{ nombre }}:</strong>
+          {%- if b.n == 0 %} sin auditar todavía
+          {%- else %} {{ plural(b.k, "rescatado", "rescatados") }} de {{ plural(b.n, "auditado", "auditados") }}; el error real no pasa de {{ pct(b.upper) }} con una confianza del 95&nbsp;% (meta del {{ "%.0f"|format(b.target * 100) }}&nbsp;%).
+          {%- endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="pg-f0-card" aria-labelledby="f0-n2">
+    <h3 class="pg-f0-label" id="f0-n2">Publicado sin el operador{% if f0.n2_provisional %} <span class="pg-f0-tag">provisional</span>{% endif %}</h3>
+    <p class="pg-f0-value">
+      {%- if total.n2_min is none %}<span class="pg-f0-dim">sin datos</span>
+      {%- elif total.n2_max is none %}al menos {{ pct(total.n2_min) }}
+      {%- elif total.n2_min == total.n2_max %}{{ pct(total.n2_min) }}
+      {%- else %}{{ ("%.1f"|format(total.n2_min * 100)).replace(".", ",") }}–{{ pct(total.n2_max) }}{% endif -%}
+    </p>
+    <p class="pg-f0-hint">De los anuncios que eran precios válidos, la parte que entró al sitio por el sistema, sin una persona de por medio. Mientras haya anuncios pendientes no se sabe cuántos son válidos: el número menor los cuenta todos como válidos y el mayor, ninguno.</p>
+    <div class="pg-f0-err">
+      <h4 class="pg-f0-err-title">Error auditado: precios publicados con error</h4>
+      <ul>
+        <li>
+          {%- if f0.lane1.audited == 0 %}Sin auditar todavía.
+          {%- else %}{{ f0.lane1.errors }} con error de {{ plural(f0.lane1.audited, "auditado", "auditados") }}; el error real no pasa de {{ pct(f0.lane1.upper) }} con una confianza del 95&nbsp;% (meta del {{ "%.0f"|format(lane1_target * 100) }}&nbsp;%).
+          {%- endif %}</li>
+      </ul>
+    </div>
+  </section>
+</div>
+{% if f0.n1_provisional or f0.n2_provisional %}
+<p class="pg-note">Provisional quiere decir que el error de lo que cuenta ese número todavía no tiene nada auditado, o no lo tiene en todos los tipos: el número es solo lo que se vio, sin medir cuánto se equivocó.</p>
 {% endif %}
 
 <h2>Qué precio se compara</h2>

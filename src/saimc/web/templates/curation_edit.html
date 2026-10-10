@@ -18,6 +18,14 @@
 </div>
 {% endif %}
 
+{% if frozen_version %}
+{# No bloquea ni pide confirmación (docs/spec-slice-B3.md, sección 2). #}
+<div class="m3-banner" role="status" style="margin-bottom:20px">
+  <span class="m3-icon">info</span>
+  <span>Este anuncio está en el conjunto de referencia (versión {{ frozen_version }}): la corrección cambia lo publicado, no la referencia.</span>
+</div>
+{% endif %}
+
 <div class="m3-row" style="margin-bottom:16px">
   <a class="m3-sm" href="/curation/history">← Volver al historial</a>
   <a class="m3-sm" href="/curation">Cola de curaduría →</a>

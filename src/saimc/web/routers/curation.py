@@ -80,6 +80,7 @@ from saimc.extraction.llm_propose_ad import (
     propose_ad,
     record_operator_run,
 )
+from saimc.extraction.reference_set import frozen_version_of
 from saimc.formats import format_label, format_quantity
 from saimc.glossary import active_glossary_entries, validate_rule
 from saimc.ingestion import origin
@@ -2860,6 +2861,9 @@ def edit_curated(
             "rows": rows,
             "blank_row": _edit_blank_row(db, ingestion),
             "edit_mode": True,
+            # B3-4: aviso, no bloqueo. Editar cambia lo publicado y no la copia
+            # congelada contra la que mide H0.
+            "frozen_version": frozen_version_of(db, ingestion_id),
             "values": {
                 "source_reference": ingestion.source_reference or "",
                 # Una sola fecha de publicación por anuncio: todas sus filas
