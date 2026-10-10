@@ -76,10 +76,31 @@ sobre una regla del extractor.
 
 En la salida, mirá en este orden:
 
-> **Pendiente (B3-3).** La especificación manda mirar primero la métrica de la
-> Fase 0 —cuánto se resuelve y cuánto se publica sin el operador, cada número
-> con su error auditado— y recién después H0. Esa sección todavía no sale en el
-> reporte: llega con el slice B3-3. Hasta entonces el reporte es solo H0.
+**Primero, «Métrica de la Fase 0».** Es lo que sale impreso antes que H0:
+
+- **Los cinco casilleros** — cada anuncio que entró cae en uno solo, por su
+  estado de hoy: A publicado solo (carril 1), H publicado por el operador, D0
+  descartado solo (carril 0), Dh descartado por el operador (un lote cuenta acá)
+  y P pendiente. Suman todo lo que entró. Es el total desde la semana del primer
+  evento automático.
+- **Resuelto sin el operador (N1)** — (A + D0) sobre todo lo que entró. Es alto
+  porque la mayor parte de lo que llega no es un anuncio piloto.
+- **Publicado sin el operador (N2)** — dos extremos: *al menos* A / (A + H + P)
+  y *a lo sumo* A / (A + H). Mientras haya pendientes no se sabe cuántos son
+  válidos, y no se estima. Con la cola vacía los dos coinciden. «Sin datos» si
+  no hay ningún válido ni pendiente.
+- **Error auditado** — cada número va con el error de lo que cuenta: los falsos
+  descartes del carril 0 (rescatados sobre auditados, por tipo, con la cota
+  superior al 95 %) y el error por anuncio del carril 1. Si de algo no hay nada
+  auditado dice «sin auditar todavía» y el bloque se rotula **PROVISIONAL**. Un
+  número sin error auditado es una promesa, no una medición.
+
+No hay ningún número compuesto («publicado solo y correcto») ni una meta nueva:
+las que se muestran son las ya decididas (10 % y 20 % de falsos descartes, 10 %
+de error por anuncio). La serie por semana de ingreso, abierta en texto e
+imagen, está en `/control`, sección «Métrica de la Fase 0».
+
+**Después, H0.**
 
 - **Versión y hash del conjunto** — contra qué se midió. Dos corridas solo se
   comparan si coinciden.
@@ -129,6 +150,11 @@ Sin la flag, además de imprimir el reporte, appendea **una línea JSON** a
 | `reference_set_hash` | Huella del conjunto: la misma que imprime `reference_set status`. |
 | `reference_set_drifted` | Miembros con deriva el día de la corrida. |
 | `assisted_ads_count`, `assisted_rows_count` | Siempre 0 desde que se mide contra el conjunto congelado: quién queda afuera por asistencia ya lo decidió el congelado. Se siguen escribiendo para no romper a quien lee el archivo. |
+| `phase0_a`, `phase0_h`, `phase0_d0`, `phase0_dh`, `phase0_p` | Los cinco casilleros de la métrica de la Fase 0, en total desde la semana del primer evento automático. |
+| `phase0_n1` | Resuelto sin el operador. Nulo sin anuncios. |
+| `phase0_n2_min`, `phase0_n2_max` | Los dos extremos de «Publicado sin el operador». Nulos cuando no se pueden calcular (sin válidos ni pendientes; el techo, también sin ningún válido resuelto). |
+| `phase0_lane0_text_*`, `phase0_lane0_image_*` | Por tipo, del carril 0: `audited` (auditados), `errors` (rescatados) y `upper` (cota superior al 95 %). |
+| `phase0_lane1_audited`, `phase0_lane1_errors`, `phase0_lane1_upper` | Lo mismo para el error por anuncio del carril 1. |
 | `is_official` | `true` solo con 300+ anuncios evaluados. |
 | Las métricas del reporte | Aplanadas, tal cual se imprimieron. |
 
@@ -140,6 +166,11 @@ y no se tocan. **No son comparables con las nuevas**: la diferencia entre la
 muestra el conjunto de cada corrida debajo de la fecha («oro vivo» o
 «conjunto vN») y solo pone la diferencia en puntos entre dos corridas del
 mismo conjunto.
+
+Una línea sin ninguna clave `phase0_*` es anterior a la métrica de la Fase 0:
+no tiene partición, y no hay que leer su ausencia como ceros. Las claves nuevas
+son una foto del día de la corrida; la partición se mueve cuando la cola se
+drena o la auditoría rescata, y una línea vieja no se recalcula.
 
 **Tarda varios minutos.** Re-corre el OCR sobre todas las imágenes del
 conjunto. Es normal, no lo interrumpas.

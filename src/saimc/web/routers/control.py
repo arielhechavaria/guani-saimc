@@ -41,6 +41,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from saimc.automation import automation_summary
 from saimc.cells import (
     compute_availability,
     compute_cells,
@@ -403,6 +404,9 @@ def control_panel(
             # bitácora, de `prices_history` y de `llm_proposals`; el pendiente
             # más viejo es el estado de la cola hoy, fuera de la serie.
             "weekly_automation": compute_weekly_automation(db),
+            # Métrica de la Fase 0 (B3-3): la partición por cohorte de ingreso,
+            # con el error auditado de lo que cuenta cada número.
+            "phase0": automation_summary(db, settings),
             "oldest_pending_days": oldest_pending_age_days(db),
             # Carril 0 (B2a): descartes automáticos y rescatados de la semana,
             # por tipo. La cota de falsos descartes NO va acá: `/control` es

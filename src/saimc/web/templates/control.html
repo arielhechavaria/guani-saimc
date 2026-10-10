@@ -817,6 +817,149 @@
     </div>
   </section>
 
+  <!-- ---------- 6b-bis. Métrica de la Fase 0 (B3-3) ---------- -->
+  {# Una partición de lo que entró (docs/spec-slice-B3.md, sección 4) y dos
+     números con nombre propio. Ninguno se muestra sin el error auditado de lo
+     que cuenta. Es distinto de la «Automatización» de arriba (A2d): aquella
+     cuenta lo resuelto sin formulario individual, esta lo resuelto sin el
+     operador. #}
+  {% macro f0_pct(value) -%}
+    {%- if value is none %}<span class="m3-dim">sin datos</span>
+    {%- else %}{{ "%.1f"|format(value * 100) }}%{% endif -%}
+  {%- endmacro %}
+  {% macro f0_n2(p) -%}
+    {%- if p.n2_min is none %}<span class="m3-dim">sin datos</span>
+    {%- elif p.n2_max is none %}≥ {{ "%.1f"|format(p.n2_min * 100) }}%
+    {%- elif p.n2_min == p.n2_max %}{{ "%.1f"|format(p.n2_min * 100) }}%
+    {%- else %}{{ "%.1f"|format(p.n2_min * 100) }}–{{ "%.1f"|format(p.n2_max * 100) }}%{% endif -%}
+  {%- endmacro %}
+  {% macro f0_celdas(p) -%}
+    <td class="is-num">{{ p.total }}</td>
+    <td class="is-num">{{ p.a }}</td>
+    <td class="is-num">{{ p.h }}</td>
+    <td class="is-num">{{ p.d0 }}</td>
+    <td class="is-num">{{ p.dh }}</td>
+    <td class="is-num">{{ p.p }}</td>
+    <td class="is-num">{{ f0_pct(p.n1) }}</td>
+    <td class="is-num">{{ f0_n2(p) }}</td>
+  {%- endmacro %}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="metrica-fase-0">Métrica de la Fase 0</h2>
+      <span class="m3-sm m3-muted">
+        qué parte de lo que entra se resuelve sin el operador, con su error auditado
+      </span>
+    </div>
+
+    {% set f0_total = phase0.total.both %}
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(170px, 1fr))">
+      <div class="m3-metric">
+        <div class="m3-metric-label">Resuelto sin el operador</div>
+        <div class="m3-metric-value-sm">{{ f0_pct(f0_total.n1) }}</div>
+        <div class="m3-metric-hint">
+          (A + D0) / todo lo que entró · {{ f0_total.a + f0_total.d0 }} de {{ f0_total.total }}
+        </div>
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Publicado sin el operador</div>
+        <div class="m3-metric-value-sm">{{ f0_n2(f0_total) }}</div>
+        <div class="m3-metric-hint">
+          de los anuncios válidos; el piso cuenta todo pendiente como válido y el techo,
+          como no válido
+        </div>
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Error del descarte solo (D0)</div>
+        {% for tipo, nombre in (("text", "Texto"), ("image", "Imagen")) %}
+        {% set f0_b = phase0.lane0[tipo] %}
+        <div class="m3-sm">
+          {{ nombre }}:
+          {% if f0_b.n == 0 %}<span class="m3-dim">sin auditar todavía</span>
+          {%- else %}{{ f0_b.k }} rescatados de {{ f0_b.n }} auditados · cota al 95 %
+            {{ "%.1f"|format(f0_b.upper * 100) }}% (meta {{ "%.0f"|format(f0_b.target * 100) }}%)
+          {%- endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Error de lo publicado solo (A)</div>
+        {% set f0_e = phase0.lane1 %}
+        <div class="m3-sm">
+          {% if f0_e.audited == 0 %}<span class="m3-dim">sin auditar todavía</span>
+          {%- else %}{{ f0_e.errors }} con error de {{ f0_e.audited }} auditados · cota al 95 %
+            {{ "%.1f"|format(f0_e.upper * 100) }}% (meta {{ "%.0f"|format(lane1_target * 100) }}%)
+          {%- endif %}
+        </div>
+      </div>
+    </div>
+    {% if phase0.provisional %}
+    <p class="m3-sm m3-muted m3-mt">
+      <strong>Provisional:</strong> algún error todavía no tiene nada auditado, así que el
+      número que lo cuenta es una promesa sin medir.
+    </p>
+    {% endif %}
+
+    <p class="m3-sm m3-muted m3-mt">
+      Cada anuncio cae en un solo casillero, por su estado de hoy: <strong>A</strong> publicado
+      solo (carril 1), <strong>H</strong> publicado por el operador, <strong>D0</strong>
+      descartado solo (carril 0), <strong>Dh</strong> descartado por el operador (un lote
+      también cuenta acá) y <strong>P</strong> pendiente. La cohorte es la semana de ingreso del
+      anuncio, no la de su decisión: una semana sin curaduría no da 100 %.
+    </p>
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Semana del</th>
+            <th scope="col" style="text-align:right">Entraron</th>
+            <th scope="col" style="text-align:right">A</th>
+            <th scope="col" style="text-align:right">H</th>
+            <th scope="col" style="text-align:right">D0</th>
+            <th scope="col" style="text-align:right">Dh</th>
+            <th scope="col" style="text-align:right">P</th>
+            <th scope="col" style="text-align:right">Resuelto sin el operador</th>
+            <th scope="col" style="text-align:right">Publicado sin el operador</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in phase0.cohorts | reverse %}
+          <tr>
+            <td class="m3-cell-strong">
+              {{ fila.week_start.strftime("%Y-%m-%d") }}
+              {%- if fila.partial %} <span class="m3-sm m3-dim">(en curso, parcial)</span>{% endif %}
+            </td>
+            {{ f0_celdas(fila.both) }}
+          </tr>
+          <tr>
+            <td class="m3-sm m3-dim">· texto</td>
+            {{ f0_celdas(fila.text) }}
+          </tr>
+          <tr>
+            <td class="m3-sm m3-dim">· imagen</td>
+            {{ f0_celdas(fila.image) }}
+          </tr>
+          {% endfor %}
+          <tr>
+            <td class="m3-cell-strong">
+              Total
+              {%- if phase0.auto_since %} desde {{ phase0.auto_since.strftime("%Y-%m-%d") }}
+              {%- else %} <span class="m3-sm m3-dim">(sin eventos automáticos todavía)</span>{% endif %}
+            </td>
+            {{ f0_celdas(phase0.total.both) }}
+          </tr>
+          <tr>
+            <td class="m3-sm m3-dim">· texto</td>
+            {{ f0_celdas(phase0.total.text) }}
+          </tr>
+          <tr>
+            <td class="m3-sm m3-dim">· imagen</td>
+            {{ f0_celdas(phase0.total.image) }}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <!-- ---------- 6c. Validación (B1) ---------- -->
   {# Solo conteos por estado: esta vista es pública, así que acá no va ningún
      canal, emisor ni detalle por fila. #}

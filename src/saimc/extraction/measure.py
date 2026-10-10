@@ -51,7 +51,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import pytesseract
 from sqlalchemy import select
@@ -75,6 +75,10 @@ from saimc.models import (
 )
 from saimc.progress import pilot_products
 from saimc.units import canonical_unit
+
+if TYPE_CHECKING:
+    from saimc.automation import AutomationSummary
+
 
 # El OCR se inyecta para que la suite no dependa del binario de Tesseract y
 # para poder fijar transcripciones conocidas en los tests.
@@ -747,6 +751,60 @@ def _format_pct(value: float | None) -> str:
     return "sin datos" if value is None else f"{value:.1%}"
 
 
+def _lane0_line(summary: AutomationSummary, content_type: str, label: str) -> str:
+    bound = summary.lane0[content_type]
+    if bound.n == 0:
+        return f"  {label}: sin auditar todavía"
+    return (
+        f"  {label}: {bound.k} rescatados de {bound.n} auditados "
+        f"({_format_pct(bound.rate)}), cota superior al 95 % {_format_pct(bound.upper)} "
+        f"(meta {bound.target:.0%})"
+    )
+
+
+def _print_phase0_metric(
+    summary: AutomationSummary, out: Callable[[str], None] = print
+) -> None:
+    """«Métrica de la Fase 0» (spec-slice-B3, sección 5): la partición total, los
+    dos números con su nombre y el error auditado de lo que cada uno cuenta."""
+    p = summary.total.both
+    since = summary.auto_since.isoformat() if summary.auto_since else "sin eventos auto"
+    from saimc.validation import lane1  # diferido: validation importa este módulo
+
+    out("=== Métrica de la Fase 0 (docs/spec-slice-B3.md, sección 4) ===")
+    out(f"Desde la semana del primer evento automático: {since}")
+    out(f"Anuncios que entraron:       {p.total}")
+    out(f"  A  publicado solo:         {p.a}")
+    out(f"  H  publicado por operador: {p.h}")
+    out(f"  D0 descartado solo:        {p.d0}")
+    out(f"  Dh descartado por operador:{p.dh:>3}")
+    out(f"  P  pendiente:              {p.p}")
+    out("")
+    out(f"Resuelto sin el operador (N1):  {_format_pct(p.n1)}")
+    if p.n2_min is None:
+        out("Publicado sin el operador (N2): sin datos")
+    else:
+        techo = "sin techo (ningún válido resuelto)" if p.n2_max is None else _format_pct(p.n2_max)
+        out(f"Publicado sin el operador (N2): al menos {_format_pct(p.n2_min)}, a lo sumo {techo}")
+    out("")
+    suffix = " — PROVISIONAL" if summary.provisional else ""
+    out(f"Error auditado{suffix}")
+    out("Falsos descartes del carril 0 (D0):")
+    out(_lane0_line(summary, "text", "texto"))
+    out(_lane0_line(summary, "image", "imagen"))
+    state = summary.lane1
+    if state.audited == 0:
+        out("Error por anuncio del carril 1 (A): sin auditar todavía")
+    else:
+        out(
+            f"Error por anuncio del carril 1 (A): {state.errors} con error de "
+            f"{state.audited} auditados ({_format_pct(state.errors / state.audited)}), "
+            f"cota superior al 95 % {_format_pct(state.upper)} "
+            f"(meta {lane1.ERROR_TARGET:.0%})"
+        )
+    out("")
+
+
 def _print_report(report: H0Report, out: Callable[[str], None] = print) -> None:
     out(
         "=== H0 — extractor sobre el conjunto congelado, "
@@ -872,6 +930,7 @@ def h0_run_record(
     dirty: bool,
     branch: str,
     tesseract_version: str | None,
+    summary: AutomationSummary | None = None,
 ) -> dict[str, object]:
     """Un registro de corrida, aplanado y serializable a una línea JSON.
 
@@ -890,7 +949,33 @@ def h0_run_record(
         "tesseract_version": tesseract_version,
         "is_official": report.evaluated_ads_count >= _H0_MINIMUM_ADS,
         **asdict(report),
+        **(_phase0_fields(summary) if summary is not None else {}),
     }
+
+
+def _phase0_fields(summary: AutomationSummary) -> dict[str, object]:
+    """La foto de la métrica de la Fase 0 (claves `phase0_*`): los cinco
+    conteos, N1, los dos extremos de N2 y, por carril, auditados, errores y
+    cota. Una línea anterior a B3-3 no las trae: se lee como «sin partición»."""
+    p = summary.total.both
+    fields: dict[str, object] = {
+        "phase0_a": p.a,
+        "phase0_h": p.h,
+        "phase0_d0": p.d0,
+        "phase0_dh": p.dh,
+        "phase0_p": p.p,
+        "phase0_n1": p.n1,
+        "phase0_n2_min": p.n2_min,
+        "phase0_n2_max": p.n2_max,
+        "phase0_lane1_audited": summary.lane1.audited,
+        "phase0_lane1_errors": summary.lane1.errors,
+        "phase0_lane1_upper": summary.lane1.upper,
+    }
+    for content_type, bound in summary.lane0.items():
+        fields[f"phase0_lane0_{content_type}_audited"] = bound.n
+        fields[f"phase0_lane0_{content_type}_errors"] = bound.k
+        fields[f"phase0_lane0_{content_type}_upper"] = bound.upper
+    return fields
 
 
 def append_h0_run(record: dict[str, object], path: Path) -> None:
@@ -1078,6 +1163,10 @@ def run(
         )
         out(f"No se midió nada y no se escribió en {runs_path}.")
         return 1
+    from saimc.automation import automation_summary  # diferido: ciclo con validation
+
+    summary = automation_summary(session, get_settings())
+    _print_phase0_metric(summary, out)
     _print_report(report, out)
 
     if args.no_record:
@@ -1091,6 +1180,7 @@ def run(
         dirty=dirty,
         branch=branch,
         tesseract_version=_tesseract_version(),
+        summary=summary,
     )
     append_h0_run(record, runs_path)
 

@@ -2450,3 +2450,39 @@ class TestJevEnSombra:
 
         assert 'href="#jev"' not in html
         assert "Todavía no hay ninguna corrida registrada" in self._seccion(html)
+
+
+class TestMetricaFase0:
+    """El bloque de B3-3: los dos números con su nombre y el error auditado."""
+
+    @staticmethod
+    def _seccion(html: str) -> str:
+        inicio = html.index('id="metrica-fase-0"')
+        return html[inicio : html.index("Validación</h2>", inicio)]
+
+    def test_los_dos_numeros_van_con_su_nombre_y_sin_error_auditado_se_rotulan(
+        self, client: TestClient, session: Session
+    ) -> None:
+        for n, tipo in enumerate((ContentType.TEXT, ContentType.IMAGE)):
+            session.add(
+                RawIngestion(
+                    source_type=SourceType.INBOX_TEXT,
+                    file_path=f"raw/f0-{n}.txt",
+                    content_hash=f"hash-f0-{n}",
+                    content_type=tipo,
+                    processing_status=ProcessingStatus.PENDING,
+                    captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+                )
+            )
+        session.commit()
+
+        seccion = self._seccion(client.get("/control").text)
+
+        assert "Resuelto sin el operador" in seccion
+        assert "Publicado sin el operador" in seccion
+        assert "tasa de automatización" not in seccion.lower()
+        assert "sin auditar todavía" in seccion
+        assert "Provisional" in seccion
+        # La serie abre texto e imagen.
+        assert "· texto" in seccion
+        assert "· imagen" in seccion
