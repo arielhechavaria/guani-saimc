@@ -81,7 +81,7 @@ misma sesión. El candidato más probable es A1b.
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | CERRADO (2026-10-02) |
 | A5c | Informe del modo sombra | M | A5b | Opus | CERRADO (2026-10-02) |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | CERRADO (2026-10-03) |
-| A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE (postergada 2026-10-03) |
+| A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público) |
 | A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | CERRADO (2026-10-04) |
 | A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | CERRADO (A6b-1 2026-10-04, A6b-2 2026-10-05) |
 | K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
@@ -95,13 +95,13 @@ misma sesión. El candidato más probable es A1b.
 | B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | CERRADO (2026-10-03) |
 | B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | CERRADO (2026-10-09, en cuatro slices: B2b-1, 2, 3a y 3b) |
 | B2c | Freno automático del carril 1 | M | B2b | Opus | CERRADO (2026-10-09, dentro de B2b-3a) |
-| B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
+| B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | CERRADO (2026-10-10, B3-1 a B3-4) |
 | B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | CERRADO |
 | C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | Sonnet | CERRADO (2026-10-03) |
-| C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | PENDIENTE |
+| C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público) |
 | C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | CERRADO (2026-10-03) |
-| C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | PENDIENTE |
-| C5 | (a futuro) Mapa de grupos por provincia exportable y varias fuentes de ingesta | sin estimar | C4 | Opus | PENDIENTE |
+| C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público) |
+| C5 | (a futuro) Mapa de grupos por provincia exportable y varias fuentes de ingesta | sin estimar | C4 | Opus | DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público) |
 
 ### Próximos pasos, en orden
 
@@ -916,7 +916,7 @@ en `/catalog`.
 
 ---
 
-### A1c — (opcional) Lote de textos en foco que el modelo descarta — PENDIENTE
+### A1c — (opcional) Lote de textos en foco que el modelo descarta — DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público)
 
 **Objetivo.** Lo mismo que A1b, para los textos donde las reglas ven un producto
 piloto pero el modelo dice que hay que descartar (agotado, sin precio). Es alrededor
@@ -1303,7 +1303,7 @@ control (C3). Se levanta con `SAIMC_LANE1_AUDIT_SINCE`.
 
 **Tests primero.** Una secuencia de auditorías con errores apaga el carril.
 
-### B3 — Conjunto de referencia congelado y métrica de Fase 0 redefinida — PENDIENTE
+### B3 — Conjunto de referencia congelado y métrica de Fase 0 redefinida — CERRADO (2026-10-10, B3-1 a B3-4), ver `docs/spec-slice-B3.md`
 
 **Hechos.**
 - La marca de conjunto de referencia que pide §6.1 no existe.
@@ -1345,7 +1345,7 @@ control (C3). Se levanta con `SAIMC_LANE1_AUDIT_SINCE`.
   horario y el tope son una propuesta que el operador confirma: se cambian en
   `systemd/` (y `PREFILL_INTERVAL_HOURS` en `web/health_strip.py` si cambia el
   horario).
-- **C2 — Imágenes con modelo de visión.** Tres pasos:
+- **C2 — Imágenes con modelo de visión — DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público).** Tres pasos:
   - C2a: cajas del OCR (K3) y máscara de teléfonos y nombres, con tests sobre
     imágenes sintéticas;
   - C2b: backtest de imágenes, visión contra OCR más texto, sobre el oro (hoy 55,6%);
@@ -1362,10 +1362,10 @@ control (C3). Se levanta con `SAIMC_LANE1_AUDIT_SINCE`.
   de la mediana frente al tamaño de muestra. Lo que **no** hizo: no fija ningún
   umbral; frenar el carril 1 cuando una celda diverge es de B2c; el N se decide en
   G1b con la salida de `measure_n`.
-- **C4 — Expansión.** Provincias (§9.0: tiene que ser configuración, no desarrollo),
+- **C4 — Expansión — DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público).** Provincias (§9.0: tiene que ser configuración, no desarrollo),
   productos y canales, de a una tanda por vez y mirando las horas por 1.000 anuncios
   y el error auditado.
-- **C5 — Mapa de grupos por provincia y varias fuentes (a futuro).** Idea del
+- **C5 — Mapa de grupos por provincia y varias fuentes (a futuro) — DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público).** Idea del
   operador (2026-10-02). Dos cosas: poder exportar el mapa de grupos de WhatsApp
   por provincia que se está armando, y que más de una fuente (otro número de
   teléfono, otra instancia de WAHA) envíe al sistema. Es una dirección, no un
