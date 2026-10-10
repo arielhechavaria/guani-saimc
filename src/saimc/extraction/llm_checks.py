@@ -215,7 +215,7 @@ def match_rule_rows(
         for row in model_rows
     ]
     pairs = measure._match_rows_to_candidates(
-        stand_ins,  # type: ignore[arg-type]  # duck typing sobre PriceHistory
+        stand_ins,
         list(rule_proposals),
     )
     real = {id(r) for r in rule_proposals}

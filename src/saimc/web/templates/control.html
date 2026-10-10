@@ -376,7 +376,19 @@
         <tbody>
           {% for run in h0_runs | reverse %}
           <tr>
-            <td class="m3-nowrap m3-sm">{{ run.date }}</td>
+            <td class="m3-nowrap m3-sm">
+              {{ run.date }}
+              {# Contra qué se midió, debajo de la fecha: a 390 px es la
+                 única columna que se ve sin desplazar la tabla. Una corrida
+                 sin versión es anterior al conjunto congelado. #}
+              <div class="m3-dim">
+                {% if run.reference_set_version is not none %}
+                conjunto v{{ run.reference_set_version }}
+                {% else %}
+                oro vivo
+                {% endif %}
+              </div>
+            </td>
             <td class="m3-sm">
               <code>{{ run.git_commit }}</code>
               {% if run.git_dirty %}
@@ -425,7 +437,10 @@
       «Completa» es el número de H0. Una corrida no es la medición oficial por
       debajo de 300 anuncios evaluados (<code>spec.md</code> §3); la columna
       «Anuncios» lo marca. «Árbol sucio» = el número no es atribuible a un
-      commit limpio.
+      commit limpio. Debajo de la fecha va el conjunto de referencia contra el
+      que se midió: «oro vivo» son las corridas anteriores al conjunto
+      congelado. La diferencia en puntos solo aparece entre dos corridas del
+      mismo conjunto.
     </p>
     {% endif %}
   </section>

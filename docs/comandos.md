@@ -18,7 +18,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`systemctl start saimc-prefill`](#pre-cálculo-ahora-a-mano) | Pre-calcular propuestas ya (y preguntarle a Jev, si está encendido) | sí: propuestas y señales de Jev | sí, tope 0,15 USD (más 0,01 de Jev) |
 | [Después de un deploy](#después-de-un-deploy-la-secuencia) | Backup, pull, migrar, reiniciar | sí | no |
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
-| [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra la cola | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
+| [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra el conjunto de referencia congelado | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
 | [`saimc.extraction.reference_set`](#conjunto-de-referencia-en-seco-y-estado) | Qué anuncios entrarían al conjunto de referencia de H0; con `status`, la versión vigente y su deriva | no (en seco y `status`) | no |
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
@@ -162,10 +162,17 @@ sudo systemctl restart saimc.service
 .venv/bin/python -m saimc.extraction.measure --no-record
 ```
 
-- **Para qué**: calcula el porcentaje de extracción completa correcta contra la cola de curaduría
-  real. Con `--no-record` solo lo mirás.
+- **Para qué**: calcula el porcentaje de extracción completa correcta del extractor por reglas
+  contra el conjunto de referencia congelado (la versión vigente de `reference_set_members`), no
+  contra las filas vivas. Con `--no-record` solo lo mirás.
 - **Cuándo**: para ver el número sin ensuciar el histórico. Para dejar la corrida registrada, el
   mismo comando **sin** `--no-record`, siguiendo el runbook.
+- **Necesita**: un conjunto congelado. Si no hay ninguno termina con error (código 1), nombra el
+  comando de congelado y no escribe nada. Se congela una vez, con
+  [`reference_set --execute`](#congelar-el-conjunto-de-referencia).
+- **Cómo leer la salida**: arriba la versión y el hash del conjunto y los miembros con deriva
+  (anuncios editados después del congelado: no cambian el número). Los conteos de «Corpus» y la
+  tasa de descarte salen de la base de hoy.
 - **Cambia algo**: con `--no-record`, no. Sin él, agrega una línea a `docs/h0-runs.jsonl` (commiteala).
   **Gasta**: no.
 - Más: [runbook-medir-h0.md](runbook-medir-h0.md).

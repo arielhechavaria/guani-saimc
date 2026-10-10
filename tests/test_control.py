@@ -1445,6 +1445,7 @@ class TestHistorialDeH0:
             quantity_unit_accuracy=0.7,
             discard_rate=0.678,
             complete_delta=None,
+            reference_set_version=None,
         )
         base.update(overrides)
         return H0RunSummary(**base)  # type: ignore[arg-type]
@@ -1503,6 +1504,27 @@ class TestHistorialDeH0:
         monkeypatch.setattr(control, "read_h0_runs", lambda: [self._run()])
 
         assert "asistidos fuera" not in client.get("/control").text
+
+    def test_cada_fila_dice_contra_que_conjunto_se_midio(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B3-2 (`docs/spec-slice-B3.md`, sección 3): la versión del conjunto
+        va en cada fila. Una corrida sin versión midió contra el oro vivo."""
+        runs = [
+            self._run(git_commit="vieja", reference_set_version=None),
+            self._run(git_commit="nueva", reference_set_version=2, date="2026-10-11"),
+        ]
+        monkeypatch.setattr(control, "read_h0_runs", lambda: runs)
+
+        texto = client.get("/control").text
+        historial = texto.split("Historial de H0</h2>")[1].split("</table>")[0]
+        # La más reciente va arriba.
+        fila_nueva, fila_vieja = historial.split("<tbody>")[1].split("</tr>")[:2]
+
+        assert "nueva" in fila_nueva and "conjunto v2" in fila_nueva
+        assert "oro vivo" not in fila_nueva
+        assert "vieja" in fila_vieja and "oro vivo" in fila_vieja
+        assert "conjunto v" not in fila_vieja
 
     def test_marca_la_corrida_no_oficial_y_el_arbol_sucio(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
