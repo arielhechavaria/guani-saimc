@@ -5,7 +5,7 @@ una sesión nueva. Un prompt por sesión: un slice se cierra antes de abrir el s
 
 ## Orden
 
-1. T0 primero. Su resultado ordena T3 y T4.
+1. T0 está hecha: falta que el operador la corra en el VPS; su salida ordena T3 y T4.
 2. T2, T4, T5a, T6, el aviso de corte y la definición de la home no dependen de nada:
    van en cualquier orden.
 3. T3 espera dos cosas del operador: 60 auditados (T1) y la salida de T0.
@@ -13,41 +13,6 @@ una sesión nueva. Un prompt por sesión: un slice se cierra antes de abrir el s
    `/curation/auditoria`, y T7 necesita que elija la tanda.
 
 Cuando una tarea se cierra, su prompt se borra de acá.
-
-## T0 · Desglose de los frenos del carril 1
-
-**Lista para abrir · Sonnet · Sesión corta.** Dice por qué 374 textos con filas quedan fuera. Solo lectura.
-
-```text
-Tarea T0 de docs/plan-mvp-inversores.md: desglose de los frenos del carril 1.
-
-Contexto
-- El carril 1 (aceptación automática) acepta 73 de 599 textos pendientes con propuesta. De los 497 con filas propuestas, a 374 los frena alguna señal de mala lectura del modelo, y no existe el desglose por motivo. Sin ese dato no se puede ordenar el resto del plan.
-- Leé primero: docs/plan-mvp-inversores.md (secciones «Por qué son 73» y «T0»), docs/spec-slice-B2b.md, y src/saimc/validation/lane1.py (`decide`, `pending_with_proposal`, `run`, `parse_args`).
-- Hoy `python -m saimc.validation.lane1` en seco lista los anuncios que entrarían y cierra con «Entrarían al carril 1: N de M». No dice por qué se queda afuera el resto.
-
-Qué hay que hacer
-- Que el modo en seco informe, además, cuántos pendientes quedan afuera por cada motivo de freno, con una opción nueva (por ejemplo `--reasons`) o como parte de la salida de siempre: elegí lo más simple y decime cuál.
-- Los motivos salen de lo que el motor ya devuelve: no inventes categorías ni recalcules nada por fuera de `validate_ad`.
-- Un anuncio puede tener más de un freno. Mostrá las dos cuentas: anuncios por motivo (suman más que el total) y anuncios a los que frena un único motivo, que es lo que dice cuánto se gana quitando ese freno.
-- Incluí como motivos propios el tope de filas, el freno de auditoría, la celda que diverge de sus filas de control, la fecha por defecto posterior al día de La Habana y la fila en divisa sin tasa.
-- Partí la cuenta por canal solo si sale sin complicar; si no, dejalo anotado como pendiente.
-
-Límites
-- Solo lectura: no escribe en la base, no llama a la API, no gasta.
-- No se toca el motor (`validate_ad`, `ValidationConfig`, `lane1.CONFIG`) ni cambia qué anuncios entran. Si para contar los motivos hace falta tocar el motor, pará y avisá.
-- `--execute` tiene que comportarse igual que hoy.
-- No corras el comando contra producción: lo corro yo.
-
-Cómo se cierra
-- Worktree propio: `git worktree add .claude/worktrees/lane1-frenos -b worktree-lane1-frenos`.
-- Tests primero, con el resultado esperado definido a mano: un conjunto chico de pendientes sintéticos donde se sabe de antemano qué motivo frena a cada uno, incluido uno con dos motivos y uno que entra.
-- Actualizá la sección «Carril 1 en seco» de docs/comandos.md en el mismo commit.
-- Entrada en docs/decisions.md solo si tomaste una decisión no obvia.
-- Marcá T0 como hecha en docs/plan-mvp-inversores.md, sin llenar las cifras: las pongo yo después de correrlo.
-- Commit convencional, local, sin push.
-- Entregame el comando exacto para correr en el VPS y cómo leer la salida para decidir entre T3 (tope de filas), T4 (bugs del extractor por reglas) y esperar volumen por celda.
-```
 
 ## T2 · Fecha por defecto en hora de La Habana
 

@@ -43,6 +43,7 @@ import argparse
 import random
 import sys
 import uuid
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -82,6 +83,7 @@ from saimc.progress import _week_start
 from saimc.units import canonical_unit
 from saimc.validation import context, lane0, persist
 from saimc.validation.engine import validate_ad
+from saimc.validation.shadow import split_reasons
 from saimc.validation.stats import clopper_pearson_lower, clopper_pearson_upper
 from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, ValidationConfig
 
@@ -814,6 +816,72 @@ def pending_with_proposal(
     return pairs
 
 
+#: Motivos que el motor no conoce: los pone este módulo, igual que
+#: `apply_lane_1`, con los mismos controles y en el mismo orden.
+DATE_REASON = "la fecha por defecto cae después del día de La Habana"
+CELL_REASON = "la celda diverge de sus filas de control"
+
+
+def left_out_reasons(
+    session: Session,
+    ingestion: RawIngestion,
+    result: AdProposal,
+    *,
+    catalog: context.Catalog,
+    gate: Gate,
+) -> frozenset[str]:
+    """Por qué el anuncio no entraría al carril 1. Vacío si entra.
+
+    Son los mismos controles que `apply_lane_1` (salvo el freno, que es del
+    carril y no del anuncio, y la tasa, que en seco no se resuelve). Los
+    motivos del motor salen de `AdValidation.reasons` sin recalcular nada,
+    normalizados como los cuenta el informe de sombra (`shadow.split_reasons`).
+    """
+    ctx, validation = decide(session, ingestion, result, text=None, catalog=catalog)
+    reasons: set[str] = set()
+    if validation.lane != LANE_ACCEPT:
+        reasons |= split_reasons(validation.reasons)
+    if gate.blocks(ctx):
+        reasons.add(CELL_REASON)
+    if _published_date(ingestion, ctx.text) is None:
+        reasons.add(DATE_REASON)
+    return frozenset(reasons)
+
+
+def count_reasons(left_out: Sequence[frozenset[str]]) -> list[tuple[str, int, int]]:
+    """`(motivo, anuncios con ese motivo, anuncios que frena solo ese motivo)`,
+    del más frecuente al menos.
+
+    La primera cuenta suma más que el total de anuncios, porque uno puede tener
+    varios motivos. La segunda dice cuánto se gana quitando ese freno: lo que
+    entraría y hoy no.
+    """
+    with_reason: Counter[str] = Counter()
+    alone: Counter[str] = Counter()
+    for reasons in left_out:
+        with_reason.update(reasons)
+        if len(reasons) == 1:
+            alone.update(reasons)
+    return sorted(
+        ((reason, n, alone[reason]) for reason, n in with_reason.items()),
+        key=lambda item: (-item[1], item[0]),
+    )
+
+
+def _reason_lines(left_out: Sequence[frozenset[str]], total: int) -> list[str]:
+    """El desglose para el modo en seco."""
+    held = [reasons for reasons in left_out if reasons]
+    lines = [f"Quedan afuera: {len(held)} de {total}."]
+    if not held:
+        return lines
+    lines.append("Motivos (un anuncio puede tener varios; «solo» = frenado únicamente por ese):")
+    lines.append(f"  {'anuncios':>8} {'solo':>5}  motivo")
+    lines += [
+        f"  {n:>8} {alone:>5}  {reason}" for reason, n, alone in count_reasons(held)
+    ]
+    return lines
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m saimc.validation.lane1",
@@ -855,6 +923,7 @@ def run(
     if gate.brake.on:
         out(f"Carril 1 con el freno puesto: {gate.brake.reason}.")
     accepted: list[RawIngestion] = []
+    left_out: list[frozenset[str]] = []
     for ingestion, proposal in pairs:
         result = context.stored_proposal(session, proposal, catalog)
         if args.execute:
@@ -871,18 +940,19 @@ def run(
             # Un anuncio por transacción, como el pre-cálculo.
             session.commit()
         else:
-            ctx, validation = decide(session, ingestion, result, text=None, catalog=catalog)
-            ok = (
-                validation.lane == LANE_ACCEPT
-                and not gate.blocks(ctx)
-                and _published_date(ingestion, ctx.text) is not None
-            )
+            reasons = left_out_reasons(session, ingestion, result, catalog=catalog, gate=gate)
+            left_out.append(reasons)
+            ok = not reasons
         if ok:
             accepted.append(ingestion)
             out(f"  {str(ingestion.id)[:8]}  {ingestion.source_reference or '(sin canal)'}")
     label = "Aceptados solos (carril 1)" if args.execute else "Entrarían al carril 1"
     out(f"{label}: {len(accepted)} de {len(pairs)} textos pendientes con propuesta.")
     if not args.execute:
+        for line in _reason_lines(left_out, len(pairs)):
+            out(line)
+        if gate.brake.on:
+            out("Con el freno puesto, --execute no aceptaría ninguno, sea cual sea su motivo.")
         out("En seco no se resuelve la tasa de cambio: una fila en divisa sin tasa no entra.")
     return 0
 

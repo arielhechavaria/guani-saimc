@@ -1037,3 +1037,119 @@ def test_lo_auditado_fuera_de_la_muestra_no_entra_en_la_cota(
 
     estado = lane1.audit_state(session, ajustes, today=_semana_siguiente())
     assert (estado.audited, estado.errors, estado.outside) == (1, 0, 1)
+
+
+# --- T0: por qué se queda afuera el resto (modo en seco) -----------------------------
+#
+# Los esperados están escritos a mano. Cinco anuncios, y se sabe de antemano qué
+# frena a cada uno:
+#   entra   — «Arroz a 320 la libra», una fila con su cita.
+#   tope    — dos filas: solo el tope de filas.
+#   cita    — una fila con una cita que el texto no trae: solo la cita.
+#   ambos   — dos filas y una cita que el texto no trae: tope y cita.
+#   fecha   — entra por el motor, pero capturado a las 02:00 UTC (22:00 en La Habana).
+
+_TOPE = "la propuesta trae más filas que el tope del carril 1 (1)"
+_CITA = "la cita del modelo no está verificada en el texto"
+_FECHA = "la fecha por defecto cae después del día de La Habana"
+_CELDA = "la celda diverge de sus filas de control"
+
+
+def _cinco_anuncios(session: Session, tmp_path: Path, canal: Channel) -> dict[str, RawIngestion]:
+    textos = {
+        "entra": "Arroz a 320 la libra",
+        "tope": "Arroz a 330 la libra\nArroz a 300 la libra por saco",
+        "cita": "Arroz a 340 la libra",
+        "ambos": "Arroz a 350 la libra\nArroz a 360 la libra por saco",
+        "fecha": "Arroz a 370 la libra",
+    }
+    anuncios = {
+        nombre: _anuncio(session, canal, texto, minutos=14 * 60 if nombre == "fecha" else 0)
+        for nombre, texto in textos.items()
+    }
+    por_texto = {
+        textos["entra"]: _propone(_fila()),
+        # El doble busca el texto serializado: la clave es la primera línea.
+        textos["tope"].split("\n")[0]: _propone(
+            _fila(price=330, evidence="Arroz a 330 la libra"),
+            _fila(price=300, evidence="Arroz a 300 la libra por saco"),
+        ),
+        textos["cita"]: _propone(_fila(price=340, evidence="no está en el texto")),
+        textos["ambos"].split("\n")[0]: _propone(
+            _fila(price=350, evidence="Arroz a 350 la libra"),
+            _fila(price=360, evidence="no está en el texto"),
+        ),
+        textos["fecha"]: _propone(_fila(price=370, evidence="Arroz a 370 la libra")),
+    }
+    _precalcular(session, tmp_path, ClienteFalso(_propone(_fila()), por_texto))
+    return anuncios
+
+
+def test_contar_motivos_separa_cada_motivo_del_que_frena_solo() -> None:
+    conjuntos = [
+        frozenset(),
+        frozenset({"a"}),
+        frozenset({"a", "b"}),
+        frozenset({"b"}),
+        frozenset({"b"}),
+    ]
+
+    assert lane1.count_reasons(conjuntos) == [("b", 3, 2), ("a", 2, 1)]
+
+
+def test_el_comando_en_seco_desglosa_por_que_se_queda_afuera_cada_anuncio(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _cinco_anuncios(session, tmp_path, mundo.canal)
+
+    codigo, salida = _comando(session, tmp_path)
+
+    assert codigo == 0
+    assert "Entrarían al carril 1: 1 de 5" in salida
+    assert "Quedan afuera: 4 de 5" in salida
+    # (motivo, anuncios con ese motivo, anuncios que frena solo ese motivo)
+    esperados = [(_TOPE, 2, 1), (_CITA, 2, 1), (_FECHA, 1, 1)]
+    for motivo, con_motivo, solo in esperados:
+        linea = next(linea for linea in salida.splitlines() if motivo in linea)
+        assert linea.split()[:2] == [str(con_motivo), str(solo)], linea
+
+
+def test_el_desglose_cuenta_la_celda_divergente_como_motivo_propio(
+    session: Session,
+    mundo: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _con_propuesta(session, tmp_path, mundo.canal)
+    monkeypatch.setattr(
+        lane1, "diverging_cells", lambda session, settings: frozenset({("Arroz", "La Habana")})
+    )
+
+    codigo, salida = _comando(session, tmp_path)
+
+    assert codigo == 0
+    assert "Entrarían al carril 1: 0 de 1" in salida
+    linea = next(linea for linea in salida.splitlines() if _CELDA in linea)
+    assert linea.split()[:2] == ["1", "1"]
+
+
+def test_con_todo_aceptado_el_desglose_no_inventa_motivos(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _con_propuesta(session, tmp_path, mundo.canal)
+
+    _, salida = _comando(session, tmp_path)
+
+    assert "Quedan afuera: 0 de 1" in salida
+    assert "Motivos" not in salida
+
+
+def test_execute_no_imprime_el_desglose(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _cinco_anuncios(session, tmp_path, mundo.canal)
+
+    _, salida = _comando(session, tmp_path, "--execute", lane1_enabled=True)
+
+    assert "Quedan afuera" not in salida
+    assert "Aceptados solos (carril 1): 1 de 5" in salida

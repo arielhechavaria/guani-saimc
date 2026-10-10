@@ -227,6 +227,15 @@ decisiones y más de la mitad de las filas tocadas, celda de 5).
 - **Cambia algo**: no. **Gasta**: no (usa las propuestas guardadas).
 - Lista cada anuncio con su canal y cierra con «Entrarían al carril 1: N de M». `--limit N`
   corta cuántos mira.
+- Después dice por qué se queda afuera el resto («Quedan afuera: N de M») con una tabla por
+  motivo y dos columnas: **anuncios** (cuántos tienen ese motivo; un anuncio puede tener varios,
+  así que la columna suma más que el total) y **solo** (cuántos frena únicamente ese motivo:
+  es lo que entraría quitando ese freno). Los motivos son los que devuelve el motor
+  (`validate_ad`), más la celda que diverge de sus filas de control y la fecha por defecto
+  posterior al día de La Habana. Con `--execute` no se imprime.
+- El freno de auditoría no es un motivo del anuncio: si está puesto, un aviso lo dice y
+  `--execute` no aceptaría ninguno. La fila en divisa sin tasa no aparece, porque en seco no se
+  resuelve la tasa.
 - En seco no se resuelve la tasa de cambio: una fila en divisa sin tasa no entra al aceptar.
 - Un anuncio capturado entre las 00:00 y las 04:00 UTC no entra: su fecha por defecto cae un
   día después del día de La Habana, y el formulario tampoco la aceptaría.

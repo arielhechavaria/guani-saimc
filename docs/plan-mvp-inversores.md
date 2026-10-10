@@ -93,7 +93,7 @@ sesión, con el criterio de `docs/plan-factor-humano.md`.
 
 | # | Tarea | Qué mueve | Tamaño | Modelo | Viene de |
 | --- | --- | --- | --- | --- | --- |
-| T0 | Desglose de los frenos del carril 1 | Nada por sí sola: dice cuál de las siguientes vale la pena | S | Sonnet | nueva |
+| T0 | Desglose de los frenos del carril 1 | Nada por sí sola: dice cuál de las siguientes vale la pena | S | Sonnet | **hecha** (cifras: pendientes de correrla en el VPS) |
 | T1 | Auditar los primeros 60 aceptados solos | Da el número del nivel 1 y habilita decidir el tope | trabajo del operador | — | B2b-3a |
 | T2 | Fecha por defecto en hora de La Habana | +7 de 599 hoy; todo lo capturado entre las 00:00 y las 04:00 UTC | S | Sonnet | consecuencia de B2b-2 |
 | T3 | Subir el tope de filas del carril 1 | +20 con tope 2, +43 sin tope | S | Opus | G1b |
@@ -102,7 +102,11 @@ sesión, con el criterio de `docs/plan-factor-humano.md`.
 | T6 | Métrica de la Fase 0 redefinida (B3) | No sube volumen: es el número que se muestra | M | Opus | plan de factor humano, B3 |
 | T7 | Expansión de canales, productos y provincias (C4) | Más entrada | por tanda | Sonnet | plan de factor humano, C4 |
 
-### T0 — Desglose de los frenos del carril 1
+### T0 — Desglose de los frenos del carril 1 (hecha; falta correrla)
+
+Implementada: el modo en seco imprime «Quedan afuera» con una tabla por motivo (anuncios con
+el motivo y anuncios frenados solo por él). Cifras sin llenar: las pone el operador tras correr
+`python -m saimc.validation.lane1` en el VPS. Pendiente anotado: partir la cuenta por canal.
 
 `python -m saimc.validation.lane1` en seco dice cuántos entrarían y cuáles. No dice
 por qué se queda afuera el resto. Falta que cuente los pendientes por motivo de
