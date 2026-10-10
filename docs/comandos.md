@@ -19,6 +19,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [Después de un deploy](#después-de-un-deploy-la-secuencia) | Backup, pull, migrar, reiniciar | sí | no |
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra la cola | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
+| [`saimc.extraction.reference_set`](#conjunto-de-referencia-en-seco-y-estado) | Qué anuncios entrarían al conjunto de referencia de H0; con `status`, la versión vigente y su deriva | no (en seco y `status`) | no |
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
@@ -32,6 +33,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`systemctl` / `journalctl`](#temporizadores-y-servicios) | Estado, logs, frenar temporizadores | solo si frenás | no |
 | [`saimc.validation.revalidate --execute`](#revalidar-escribiendo) | Re-guardar estado de las filas | sí: `prices_history` | no |
 | [`saimc.validation.jev_signal --decided --execute`](#relleno-de-jev) | Preguntarle a Jev por los textos ya decididos | sí: `jev_signals` | sí, tope `SAIMC_LLM_JEV_MAX_COST` o `--max-cost` |
+| [`saimc.extraction.reference_set --execute`](#congelar-el-conjunto-de-referencia) | Congelar una versión nueva del conjunto de referencia | sí: `reference_set_members` | no |
 | [`saimc.basis_backfill --apply`](#backfill-de-base-de-precio) | Completar `price_basis` viejo | sí | no |
 | [`saimc.exchange_rate.backfill --apply`](#backfill-de-tasas-de-cambio) | Completar tasas pendientes | sí | no; consulta la API de elTOQUE |
 | [`scripts/redact_existing.py --apply`](#redactar-teléfonos-ya-guardados) | Quitar teléfonos del texto guardado | sí: `original_text` | no |
@@ -42,7 +44,8 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 
 > **Atención.** Gastan plata o reescriben datos: `prefill --execute`, `llm_backtest --execute`,
 > `scripts/jev_eval.py --execute` (y su `--check`, una sola llamada),
-> `saimc.validation.jev_signal --execute`, `revalidate --execute`, `alembic upgrade head`, y todo lo que lleva `--apply`. Hacé backup antes
+> `saimc.validation.jev_signal --execute`, `revalidate --execute`,
+> `saimc.extraction.reference_set --execute`, `alembic upgrade head`, y todo lo que lleva `--apply`. Hacé backup antes
 > de cualquiera que escriba en la base. Dos corridas reales del pre-cálculo no pueden solaparse,
 > se lancen como se lancen: la segunda encuentra el candado `data/prefill.lock`, avisa y sale sin
 > gastar (ver [«Pre-cálculo escribiendo, fuera de systemd»](#pre-cálculo-escribiendo-fuera-de-systemd)).
@@ -166,6 +169,37 @@ sudo systemctl restart saimc.service
 - **Cambia algo**: con `--no-record`, no. Sin él, agrega una línea a `docs/h0-runs.jsonl` (commiteala).
   **Gasta**: no.
 - Más: [runbook-medir-h0.md](runbook-medir-h0.md).
+
+### Conjunto de referencia, en seco y estado
+
+Qué anuncios entrarían al conjunto de referencia congelado de H0 (`docs/spec-slice-B3.md`,
+sección 1): los curados con filas, sin asistencia y que no se excluyan a mano.
+
+```
+.venv/bin/python -m saimc.extraction.reference_set
+```
+
+```
+.venv/bin/python -m saimc.extraction.reference_set --exclude ab9bb650 --exclude 0944e4dd
+```
+
+```
+.venv/bin/python -m saimc.extraction.reference_set status
+```
+
+- **Cambia algo**: no. **Gasta**: no.
+- En seco dice cuántos anuncios y filas entrarían, en total y por tipo (texto, imagen), cuántos
+  curados quedan afuera por cada motivo (asistidos, sin filas, excluidos a mano) y el hash que
+  tendría el conjunto. Cada curado cuenta en un solo motivo, en ese orden: «excluidos a mano»
+  son los que habrían entrado.
+- `--exclude` se repite, uno por anuncio. Acepta el id completo o su prefijo de 8 caracteres.
+  Si el prefijo es de más de un anuncio, o de ninguno, corta con código 2 y no escribe. Si el
+  anuncio ya quedaba afuera por otro motivo, lo avisa y no lo cuenta como excluido a mano.
+- `status` dice la versión vigente (la mayor), su n por tipo, su hash y los miembros con deriva:
+  los anuncios cuyas filas vivas ya no son las congeladas, porque se editaron o se borraron. La
+  deriva no cambia la referencia y no se arregla congelando de nuevo. Sin ninguna versión
+  congelada sale con código 1.
+- Para escribir: [«Congelar el conjunto de referencia»](#congelar-el-conjunto-de-referencia).
 
 ### Informe del modo sombra
 
@@ -649,6 +683,30 @@ deja el anuncio curado y las filas salen en el tablero.
   auditados, o cuando el error auditado supera la meta de 10 %. Lo primero se levanta
   auditando en `/curation/auditoria`. Lo segundo solo lo levanta el operador, fijando
   `SAIMC_LANE1_AUDIT_SINCE=AAAA-MM-DD` en el `.env`: la cota vuelve a contar desde ese día.
+
+### Congelar el conjunto de referencia
+
+Escribe una versión nueva del conjunto de referencia de H0 con lo que lista el comando en seco.
+
+```
+.venv/bin/python -m saimc.extraction.reference_set --execute --exclude ab9bb650 --exclude 0944e4dd --exclude 8442a0dd --exclude e08f6cc2
+```
+
+- **Para qué**: guarda, por cada anuncio que entra, sus filas confirmadas de hoy y su hash en
+  `reference_set_members`. Imprime la versión, el n por tipo y el hash del conjunto.
+- **Cuándo**: una vez, después de migrar a `0031`. Una versión nueva solo ante un error de
+  etiquetado confirmado o anuncios nuevos etiquetados sin asistencia: rompe la comparación con
+  las corridas de H0 anteriores. No se congela de nuevo para mover un número.
+- **Cambia algo**: sí, agrega filas a `reference_set_members`. Nunca modifica ni borra una
+  versión anterior. **Gasta**: no.
+- Antes: backup y el [en seco](#conjunto-de-referencia-en-seco-y-estado) con los mismos
+  `--exclude`. Los conteos y el hash del `--execute` tienen que ser los del seco.
+- Los cuatro `--exclude` del ejemplo son los de la versión 1: los anuncios con las 7 filas
+  insertadas el 2026-10-05.
+- Después: anotá en `docs/decisions.md` la versión, el n por tipo, el hash del conjunto y los
+  excluidos con su motivo.
+- Sin ningún anuncio que entre, no escribe y sale con código 1.
+- Más: [spec-slice-B3.md](spec-slice-B3.md), secciones 1 y 2.
 
 ### Backfill de base de precio
 

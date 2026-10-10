@@ -26,6 +26,7 @@ from saimc.models.raw_ingestion import (
     RawIngestion,
     SourceType,
 )
+from saimc.models.reference_set_member import ReferenceSetMember
 
 __all__ = [
     "PACKAGING_MAX_LENGTH",
@@ -53,6 +54,7 @@ __all__ = [
     "Provenance",
     "Province",
     "RawIngestion",
+    "ReferenceSetMember",
     "ReviewOutcome",
     "SaleFormat",
     "SourceType",
