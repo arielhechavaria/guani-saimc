@@ -24,20 +24,25 @@ Más la tasa de descarte, sobre el total de anuncios procesados (curados +
 descartados), sin distinguir texto de imagen.
 """
 
+import itertools
 import json
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.orm import Session
 
 from saimc.extraction import reference_set
+from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.measure import (
+    FrozenRow,
     H0Report,
     NoReferenceSetError,
     Transcriber,
+    _match_rows_to_candidates,
     append_h0_run,
     compute_h0_report,
     h0_run_record,
@@ -704,14 +709,12 @@ class TestH0ProvinciaDelCanal:
         )
         session.add(ingestion)
         session.flush()
-        # Los ids van fijos y en el orden de carga: las filas congeladas se
-        # ordenan por id, y con un solo candidato para dos filas del mismo
-        # producto el emparejado se lo da a la primera. Con ids al azar, cuál
-        # es «la primera» cambiaría de una corrida a otra.
-        for n, (price, quantity) in enumerate((("500", "40"), ("14", "1")), start=1):
+        # Los ids son al azar, como en producción: las filas congeladas se
+        # ordenan por id, y el candidato tiene que ir a la fila de 500 por
+        # 40 lb —la que ajusta— quede primera o segunda.
+        for price, quantity in (("500", "40"), ("14", "1")):
             session.add(
                 PriceHistory(
-                    id=uuid.UUID(int=n),
                     provenance="human",
                     product_id=pollo.id,
                     province_id=habana.id,
@@ -729,7 +732,7 @@ class TestH0ProvinciaDelCanal:
         assert report.evaluated_rows_count == 2
         # Las dos filas tienen la provincia del canal, igual que en el formulario.
         assert report.province_accuracy == 1.0
-        # La segunda fila no tuvo candidato: su producto y su precio son fallo.
+        # La fila de 14 no tuvo candidato: su producto y su precio son fallo.
         assert report.product_accuracy == 0.5
         assert report.price_accuracy == 0.5
 
@@ -1230,6 +1233,194 @@ class TestH0EmparejadoMismoProductoVariasFilas:
         # Una de las dos filas: la que el extractor sí sacó.
         assert report.price_accuracy == pytest.approx(1 / 2)
         assert report.complete_accuracy == pytest.approx(1 / 2)
+
+
+class TestH0EmparejadoSinOrden:
+    """El emparejado no depende del orden en que llegan las filas confirmadas.
+
+    Hallazgo de B3-2 (`docs/decisions.md`, 2026-10-10): las filas congeladas
+    vienen ordenadas por `price_history_id`, un UUID al azar. Con más filas que
+    candidatos de un producto, el emparejado les daba los candidatos a «las
+    primeras» sin elegir cuáles, y una fila que el extractor había leído bien
+    podía contar como fallo.
+
+    Cada caso define a mano qué fila se lleva qué candidato, y exige ese mismo
+    reparto en TODOS los órdenes de llegada. Se prueba el emparejado directo,
+    sin base: lo que se fija es a quién le toca cada candidato.
+    """
+
+    ARROZ = Product(id=uuid.UUID(int=1), name="Arroz", category="granos", unit="lb")
+    FRIJOL = Product(id=uuid.UUID(int=2), name="Frijol", category="granos", unit="lb")
+    HABANA = Province(id=uuid.UUID(int=10), name="La Habana")
+
+    def _fila(self, price: str, quantity: str = "1", unit: str = "lb") -> FrozenRow:
+        return FrozenRow(
+            product_id=self.ARROZ.id,
+            province_id=self.HABANA.id,
+            price=Decimal(price),
+            currency=Currency.CUP.value,
+            quantity=Decimal(quantity),
+            unit=unit,
+        )
+
+    def _candidato(
+        self, price: str, quantity: str = "1", unit: str = "lb", product: Product | None = ARROZ
+    ) -> ExtractionProposal:
+        return ExtractionProposal(
+            product=product,
+            price=Decimal(price),
+            currency=Currency.CUP.value,
+            quantity=Decimal(quantity),
+            unit=unit,
+            province=self.HABANA,
+        )
+
+    def _reparto(
+        self, filas: list[FrozenRow], candidatos: list[ExtractionProposal]
+    ) -> dict[Decimal, ExtractionProposal]:
+        """Precio de la fila confirmada -> lo que le tocó. Los precios de las
+        filas de cada caso son distintos, así que identifican a la fila."""
+        pares = _match_rows_to_candidates(filas, candidatos, self.HABANA)
+        # El resultado sale en el orden en que llegaron las filas.
+        assert [fila for fila, _ in pares] == filas
+        return {fila.price: propuesta for fila, propuesta in pares}
+
+    def test_con_un_candidato_para_dos_filas_se_lo_lleva_la_que_ajusta(self) -> None:
+        """Dos filas de Arroz (menudeo y saco), el extractor sacó solo el saco.
+        El candidato es de la fila del saco, llegue primera o segunda; la de
+        menudeo se queda sin línea y conserva solo la provincia del canal."""
+        menudeo = self._fila("700", "1", "kg")
+        saco = self._fila("30000", "100", "lb")
+        candidato = self._candidato("30000", "100", "lb")
+
+        for filas in itertools.permutations([menudeo, saco]):
+            reparto = self._reparto(list(filas), [candidato])
+
+            assert reparto[Decimal("30000")] is candidato
+            sin_linea = reparto[Decimal("700")]
+            assert sin_linea.product is None and sin_linea.price is None
+            assert sin_linea.province is self.HABANA
+
+    def test_tres_filas_y_dos_candidatos_en_los_seis_ordenes(self) -> None:
+        """Tres filas, el extractor sacó dos. Cada candidato va con la fila de
+        su mismo precio y cantidad; la de 30000 se queda sin línea."""
+        filas = [
+            self._fila("700", "1", "kg"),
+            self._fila("30000", "100", "lb"),
+            self._fila("15000", "50", "lb"),
+        ]
+        c_medio = self._candidato("15000", "50", "lb")
+        c_menudeo = self._candidato("700", "1", "kg")
+
+        for orden in itertools.permutations(filas):
+            reparto = self._reparto(list(orden), [c_medio, c_menudeo])
+
+            assert reparto[Decimal("700")] is c_menudeo
+            assert reparto[Decimal("15000")] is c_medio
+            assert reparto[Decimal("30000")].price is None
+
+    def test_el_empate_lo_gana_la_fila_de_menor_precio(self) -> None:
+        """Ninguna de las dos filas coincide con el candidato en precio y las
+        dos coinciden en lo demás: mismo costo. El desempate es por los valores
+        de la fila (precio, moneda, cantidad, unidad, provincia), de menor a
+        mayor: se lo lleva la de 700, llegue en el orden que llegue."""
+        barata = self._fila("700")
+        cara = self._fila("800")
+        candidato = self._candidato("900")
+
+        for filas in itertools.permutations([barata, cara]):
+            reparto = self._reparto(list(filas), [candidato])
+
+            assert reparto[Decimal("700")] is candidato
+            assert reparto[Decimal("800")].price is None
+
+    def test_camino_de_mas_de_seis_filas(self) -> None:
+        """Siete filas (el camino greedy) y dos candidatos: se los llevan las
+        filas de 600 y de 300, que son las que ajustan, no las dos primeras."""
+        filas = [self._fila(str(n * 100)) for n in range(1, 8)]
+        c600 = self._candidato("600")
+        c300 = self._candidato("300")
+
+        # Las siete rotaciones, al derecho y al revés: cada fila pasa por cada
+        # posición, incluidas las dos primeras.
+        ordenes = []
+        for base in (filas, filas[::-1]):
+            ordenes.extend(base[n:] + base[:n] for n in range(len(base)))
+
+        for orden in ordenes:
+            reparto = self._reparto(orden, [c600, c300])
+
+            assert reparto[Decimal("600")] is c600
+            assert reparto[Decimal("300")] is c300
+            for precio in ("100", "200", "400", "500", "700"):
+                assert reparto[Decimal(precio)].price is None
+
+    def test_no_se_toma_prestado_un_candidato_de_otro_producto(self) -> None:
+        """Dos filas de Arroz y un solo candidato de Arroz, con el precio mal
+        leído (999). Sobran dos líneas de Frijol con EXACTAMENTE los valores de
+        las filas de Arroz. Ninguna fila de Arroz puede llevárselas: el
+        candidato de Arroz va con la fila de 700 (coincide en cantidad y
+        unidad, la otra no) y la de 30000 queda ambigua entre dos líneas
+        libres: conserva la provincia compartida y nada más."""
+        menudeo = self._fila("700", "1", "kg")
+        saco = self._fila("30000", "100", "lb")
+        arroz_mal_leido = self._candidato("999", "1", "kg")
+        frijol_a = self._candidato("30000", "100", "lb", product=self.FRIJOL)
+        frijol_b = self._candidato("700", "1", "kg", product=self.FRIJOL)
+
+        for filas in itertools.permutations([menudeo, saco]):
+            reparto = self._reparto(list(filas), [frijol_a, arroz_mal_leido, frijol_b])
+
+            assert reparto[Decimal("700")] is arroz_mal_leido
+            ambigua = reparto[Decimal("30000")]
+            assert ambigua.product is None and ambigua.price is None
+            assert ambigua.province is self.HABANA
+
+    def test_una_linea_libre_para_dos_filas_sin_candidato(self) -> None:
+        """Dos filas de Arroz, ningún candidato de Arroz y una sola línea libre
+        (sin producto reconocido). La línea no se elige por ajuste —sería
+        regalarle a una fila el precio de una línea que no se sabe si es la
+        suya—: va a la primera fila por valores, la de 700. La de 800 queda
+        sin línea, aunque el precio de la línea libre sea justo 800."""
+        barata = self._fila("700")
+        cara = self._fila("800")
+        libre = self._candidato("800", product=None)
+
+        for filas in itertools.permutations([barata, cara]):
+            reparto = self._reparto(list(filas), [libre])
+
+            assert reparto[Decimal("700")] is libre
+            assert reparto[Decimal("800")].price is None
+
+    def test_filas_sin_producto_ni_precio_no_rompen_el_orden(self) -> None:
+        """`llm_checks` usa este emparejado con las filas del modelo como
+        «confirmadas», y ahí producto, precio y provincia pueden venir vacíos.
+        Ordenar por valores no puede fallar al comparar un vacío con un número."""
+        vacia = SimpleNamespace(
+            product_id=None,
+            province_id=None,
+            price=None,
+            currency=Currency.CUP.value,
+            quantity=None,
+            unit=None,
+        )
+        con_precio = SimpleNamespace(
+            product_id=None,
+            province_id=None,
+            price=Decimal("700"),
+            currency=Currency.CUP.value,
+            quantity=Decimal("1"),
+            unit="lb",
+        )
+        libre = self._candidato("700", product=None)
+
+        for filas in itertools.permutations([vacia, con_precio]):
+            pares = _match_rows_to_candidates(list(filas), [libre], None)
+            reparto = {id(fila): propuesta for fila, propuesta in pares}
+
+            # Los vacíos van al final: la línea libre es de la fila con precio.
+            assert reparto[id(con_precio)] is libre
+            assert reparto[id(vacia)].price is None
 
 
 # --- N-05: registro longitudinal de cada corrida ----------------------------

@@ -182,11 +182,10 @@ def frozen_rows(member: ReferenceSetMember) -> list[FrozenRow]:
     """Las filas confirmadas de un miembro, en el orden en que se congelaron.
 
     Ese orden es por `price_history_id`, un UUID al azar: no es el orden en que
-    el operador cargó las filas. Importa en un solo caso del emparejado: cuando
-    un producto tiene más filas confirmadas que candidatos,
-    `_assign_within_product` les da los candidatos a las primeras filas, sin
-    elegir cuáles. Para una versión dada el orden es fijo, así que el número es
-    reproducible (`docs/decisions.md`, 2026-10-10, B3-2).
+    el operador cargó las filas. No cambia el número: el emparejado
+    (`_match_rows_to_candidates`) reparte los candidatos por los valores de las
+    filas y no por su posición (`docs/decisions.md`, 2026-10-10, «El emparejado
+    de H0 deja de depender del orden…»).
     """
     return [
         FrozenRow(
@@ -277,30 +276,84 @@ def _pair_cost(row: ConfirmedValues, candidate: ExtractionProposal) -> float:
     return cost
 
 
+def _row_order_key(row: ConfirmedValues) -> tuple[tuple[bool, object], ...]:
+    """Orden de las filas confirmadas por sus VALORES, no por cómo llegaron.
+
+    Precio, moneda, cantidad, unidad, provincia y, al final, producto, de menor
+    a mayor. Es el desempate de todo el emparejado: dos filas con la misma
+    clave tienen los mismos seis valores, así que da igual cuál queda primera.
+
+    Cada campo va como `(está vacío, valor)`: un vacío queda al final y nunca
+    se compara contra un número. `PriceHistory` y `FrozenRow` siempre traen
+    producto y precio, pero `llm_checks` usa este emparejado con las filas del
+    modelo como «confirmadas», y ahí pueden faltar.
+    """
+    values: tuple[object, ...] = (
+        row.price,
+        row.currency,
+        row.quantity,
+        row.unit,
+        str(row.province_id) if row.province_id is not None else None,
+        str(row.product_id) if row.product_id is not None else None,
+    )
+    return tuple((value is None, value if value is not None else 0) for value in values)
+
+
 def _assign_within_product[RowT: ConfirmedValues](
     rows: list[RowT], candidates: list[ExtractionProposal]
 ) -> list[tuple[RowT, ExtractionProposal]]:
     """Empareja filas y candidatos de un MISMO producto por mejor ajuste.
 
+    Se forman `min(filas, candidatos)` pares; cada candidato y cada fila se usan
+    una sola vez. Cuando hay más filas que candidatos también se elige **qué
+    filas** reciben candidato, con el mismo `_pair_cost`: las que no aparecen
+    en el resultado son las que quedaron sin candidato, estén donde estén.
+
+    El resultado no depende del orden en que llegan las filas: se ordenan
+    primero por sus valores (`_row_order_key`). Si dos repartos cuestan lo
+    mismo, el desempate sale de esa clave y del orden en que el extractor
+    propuso los candidatos, que tampoco depende de las filas: con más filas
+    que candidatos gana el reparto que le da el primer candidato a la fila de
+    menor clave (y si sigue el empate, el segundo, y así); si no, el que le da
+    a la fila de menor clave el candidato propuesto antes.
+
     Con `permutations` cuando los dos conjuntos son chicos —el caso real: 2 o 3
     filas de Arroz por anuncio— para dar el óptimo global; greedy por si algún
-    anuncio raro trae muchos de los dos lados. En los dos casos cada candidato
-    se usa una sola vez.
+    anuncio raro trae muchos de los dos lados: toma de a un par, siempre el de
+    menor costo entre los que quedan, con el mismo desempate.
     """
-    k = min(len(rows), len(candidates))
-    if len(rows) <= 6 and len(candidates) <= 6:
-        best_perm = min(
-            itertools.permutations(candidates, k),
-            key=lambda perm: sum(_pair_cost(rows[i], perm[i]) for i in range(k)),
-        )
-        return [(rows[i], best_perm[i]) for i in range(k)]
+    ordered = sorted(rows, key=_row_order_key)
+    k = min(len(ordered), len(candidates))
 
-    pool = list(candidates)
+    if len(ordered) <= 6 and len(candidates) <= 6:
+        # `permutations` recorre en orden lexicográfico y `min` se queda con el
+        # primer mínimo: ese es el desempate, sin código aparte.
+        if len(ordered) <= len(candidates):
+            best_candidates = min(
+                itertools.permutations(candidates, k),
+                key=lambda perm: sum(_pair_cost(ordered[i], perm[i]) for i in range(k)),
+            )
+            return list(zip(ordered, best_candidates, strict=True))
+        best_rows = min(
+            itertools.permutations(ordered, k),
+            key=lambda perm: sum(_pair_cost(perm[i], candidates[i]) for i in range(k)),
+        )
+        return list(zip(best_rows, candidates, strict=True))
+
+    by_cost = sorted(
+        (_pair_cost(row, candidate), candidate_index, row_index)
+        for row_index, row in enumerate(ordered)
+        for candidate_index, candidate in enumerate(candidates)
+    )
+    used_rows: set[int] = set()
+    used_candidates: set[int] = set()
     pairs = []
-    for row in rows[:k]:
-        chosen = min(pool, key=lambda c: _pair_cost(row, c))
-        pool.remove(chosen)
-        pairs.append((row, chosen))
+    for _, candidate_index, row_index in by_cost:
+        if row_index in used_rows or candidate_index in used_candidates:
+            continue
+        used_rows.add(row_index)
+        used_candidates.add(candidate_index)
+        pairs.append((ordered[row_index], candidates[candidate_index]))
     return pairs
 
 
@@ -323,13 +376,33 @@ def _match_rows_to_candidates[RowT: ConfirmedValues](
     prestado de otro producto, así que alinear no puede inflar la métrica —
     solo deja de perder aciertos reales por el orden.
 
+    Lo mismo cuando un producto tiene **más filas confirmadas que candidatos**
+    —el operador cargó menudeo y saco, el extractor sacó una sola línea—: qué
+    filas reciben candidato se elige por mejor ajuste, no por posición. Antes
+    lo recibían «las primeras», y desde que las filas congeladas vienen
+    ordenadas por un UUID al azar (B3-2) eso era un sorteo: la fila que el
+    extractor había leído bien podía quedar sin candidato y contar como fallo
+    mientras su candidato se comparaba contra la otra. Tampoco acá se toma
+    nada prestado: los candidatos que se reparten son solo los de ese
+    producto, y son menos que las filas, así que cada fila que queda sin
+    candidato sigue fallando producto y precio como antes. Elegir bien no
+    agrega candidatos, solo deja de gastar uno correcto en la fila equivocada
+    (`docs/decisions.md`, 2026-10-10).
+
+    **El resultado no depende del orden en que llegan las filas confirmadas.**
+    Todo desempate sale de los valores de las filas (`_row_order_key`), nunca
+    de su posición; dos filas con los seis valores iguales son intercambiables.
+
     Lo que no matchea por `product_id` se reparte según cuántas líneas hayan
     quedado libres, porque no es lo mismo no tener elección que tener que
     adivinar:
 
     - **Una sola línea libre**: se empareja con ella. No hubo elección, y
       precio, cantidad y provincia igual pudieron extraerse bien aunque el
-      producto no se reconociera.
+      producto no se reconociera. Si son varias las filas sin candidato, se la
+      lleva la primera por valores (`_row_order_key`) y no la que mejor
+      ajusta: la línea no es de su producto, y elegirle fila por parecido sería
+      regalar un precio por coincidencia.
     - **Varias líneas libres**: el reparto por orden sería una adivinanza. El
       orden de las filas confirmadas no tiene por qué seguir el de las líneas
       del anuncio, así que regalarle a la fila el precio de una línea ajena
@@ -351,6 +424,9 @@ def _match_rows_to_candidates[RowT: ConfirmedValues](
 
     Ninguna línea se consume en el caso ambiguo: no se usó, así que sigue
     disponible para la fila siguiente.
+
+    Lo usan también el backtest del modelo (`llm_backtest.py`) y
+    `llm_checks.match_rule_rows`.
     """
     remaining = list(candidates)
     matched: dict[int, ExtractionProposal] = {}
@@ -372,10 +448,12 @@ def _match_rows_to_candidates[RowT: ConfirmedValues](
         for row, candidate in _assign_within_product(rows, product_candidates):
             matched[id(row)] = candidate
             remaining.remove(candidate)
-        for row in rows[len(product_candidates):]:
-            unmatched_rows.append(row)
+        # Sin candidato quedan las filas no elegidas, no las últimas.
+        unmatched_rows.extend(row for row in rows if id(row) not in matched)
 
-    for row in unmatched_rows:
+    # Por valores y no por llegada: con una sola línea libre para varias filas,
+    # quién se la lleva no puede depender del orden.
+    for row in sorted(unmatched_rows, key=_row_order_key):
         if not remaining:
             matched[id(row)] = ExtractionProposal(province=channel_province)
         elif len(remaining) == 1:
