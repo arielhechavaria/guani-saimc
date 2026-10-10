@@ -45,6 +45,7 @@ from saimc.web.card_view import format_price
 from saimc.web.cuba_svg import build_cuba_map
 from saimc.web.price_charts import AdRow, _short_day, observation_format_label, split_outliers
 from saimc.web.product_nav import product_slug, products_query
+from saimc.web.trust_view import CellTrust, sum_trust, trust_of
 from saimc.web.watchlist_view import _alfabeto
 from saimc.web.weekly import WEEKS, Sparkline, sparkline_from_values
 from saimc.web.weekly import weekly_medians as _weekly
@@ -108,6 +109,8 @@ class ExploreNode:
     #: Solo las provincias; `None` en los formatos.
     tint: float | None = None
     children: tuple[ExploreNode, ...] = ()
+    #: De qué está hecho el n (B4). Solo la provincia: el formato no lo lleva.
+    trust: CellTrust | None = None
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,17 @@ class ExploreProduct:
     @property
     def province_count(self) -> int:
         return len(self.nodes)
+
+    @property
+    def trust(self) -> CellTrust | None:
+        """De qué están hechos los `count` anuncios del producto (B4)."""
+        return sum_trust([n.trust for n in self.nodes])
+
+    @property
+    def trust_items(self) -> tuple[tuple[str, CellTrust], ...]:
+        """`(provincia, desglose)` de las provincias con dato, para el panel
+        «Por qué confiamos en estas cifras»."""
+        return tuple((n.name, n.trust) for n in self.nodes if n.trust)
 
 
 @dataclass(frozen=True)
@@ -204,6 +218,7 @@ class _Raw:
     weekly: tuple[Decimal | None, ...]
     ads: tuple[AdRow, ...]
     children: tuple[_Raw, ...]
+    trust: CellTrust | None = None
 
 
 def _by(rows: Sequence[RetailObservation]) -> dict[str, list[RetailObservation]]:
@@ -285,6 +300,7 @@ def _finish(
         spark=sparkline_from_values(raw.weekly, width=SPARK_W, height=SPARK_H),
         ads=raw.ads,
         tint=tint,
+        trust=raw.trust,
         children=tuple(
             _finish(
                 c,
@@ -372,6 +388,7 @@ def _build_product(
                 weekly=_weekly(hor_prov[provincia], hoy),
                 ads=(),
                 children=tuple(hijos),
+                trust=trust_of(filas),
             )
         )
     crudos.sort(key=lambda c: (-c.stats.median, _alfabeto(c.name)))

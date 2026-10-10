@@ -635,7 +635,9 @@ def _render_home(
             pilot=pilot,
             products=None,
             province=None,
-            desde=ventana_hasta - timedelta(days=WEEKS * 7),
+            # Lo más largo de las dos: la tendencia (13 semanas) y la ventana
+            # entera, de donde sale el desglose de cada celda (B4).
+            desde=min(ventana_desde, ventana_hasta - timedelta(days=WEEKS * 7)),
             hasta=ventana_hasta,
         )
         if selected_vista == "tablero"

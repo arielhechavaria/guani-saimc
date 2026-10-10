@@ -96,7 +96,7 @@ misma sesión. El candidato más probable es A1b.
 | B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | CERRADO (2026-10-09, en cuatro slices: B2b-1, 2, 3a y 3b) |
 | B2c | Freno automático del carril 1 | M | B2b | Opus | CERRADO (2026-10-09, dentro de B2b-3a) |
 | B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
-| B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | PENDIENTE |
+| B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | CERRADO |
 | C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | Sonnet | CERRADO (2026-10-03) |
 | C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | PENDIENTE |
 | C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | CERRADO (2026-10-03) |
@@ -1318,7 +1318,7 @@ control (C3). Se levanta con `SAIMC_LANE1_AUDIT_SINCE`.
 - **Registro:** el apartamiento de §12.5 y §3 queda en `spec-map.md` y
   `decisions.md`.
 
-### B4 — Capa pública: por qué confiamos en cada dato (§6.5) — PENDIENTE
+### B4 — Capa pública: por qué confiamos en cada dato (§6.5) — CERRADO (2026-10-10, ver `docs/spec-slice-B4.md`)
 
 **Qué entra.**
 - En el tablero y en Explorar, por celda: el n, la proporción humano, automático y

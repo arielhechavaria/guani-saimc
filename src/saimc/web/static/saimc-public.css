@@ -738,3 +738,23 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
   min-height: 44px; border: 0; border-radius: 22px; background: var(--m3-primary); color: var(--m3-on-primary);
   font: 500 14px var(--m3-font); cursor: pointer;
 }
+
+/* ── Por qué confiamos en cada dato (B4) ───────────────────────────────────
+   Enlace a la metodología junto a la frase de procedencia, y el desglose por
+   provincia. Solo tokens; el único corte responsive es el de 720 px. */
+.ph-metodo-link { white-space: nowrap; color: var(--m3-primary); text-decoration: none; font-weight: 500; }
+.ph-metodo-link:hover { text-decoration: underline; }
+.ph-confianza {
+  margin: var(--m3-space-3) 0; padding: var(--m3-space-1) var(--m3-space-3);
+  border: 1px solid var(--m3-outline-variant); border-radius: 16px; background: var(--m3-surface);
+}
+.ph-confianza summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; list-style: none; }
+.ph-confianza summary::-webkit-details-marker { display: none; }
+.ph-confianza-titulo { display: flex; flex-direction: column; gap: 2px; }
+.ph-confianza-titulo b { font: 400 17px var(--ph-font-heading, var(--m3-font)); color: var(--m3-on-surface); }
+.ph-confianza-titulo span { font-size: 12px; color: var(--m3-outline); }
+.ph-confianza-lista { list-style: none; margin: 0; padding: var(--m3-space-1) 0 var(--m3-space-2); display: grid; gap: var(--m3-space-3); }
+.ph-confianza-prov { margin: 0; font-size: 14px; font-weight: 500; color: var(--m3-on-surface); }
+.ph-confianza-prov small { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--m3-outline); }
+.ph-conf-linea { margin: 2px 0 0; display: flex; flex-wrap: wrap; gap: 0 var(--m3-space-3); font-size: 13px; line-height: 1.5;
+                 color: var(--m3-on-surface-variant); }

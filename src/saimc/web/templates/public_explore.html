@@ -1,4 +1,5 @@
 {% extends "_public_shell.html" %}
+{% from "_confianza.html" import enlace_metodologia, panel as panel_confianza %}
 
 {# Vista «Explorar» (2026-09-21): el prototipo C aprobado por el operador —una
    tabla densa con filtros y árbol, en tres columnas—, servida por el servidor
@@ -113,6 +114,11 @@
   .ph-ex-periodo .ph-periodo { flex-direction: row; align-items: center; column-gap: 12px; }
   .ph-ex-periodo .ph-periodo-chip, .ph-ex-periodo .ph-periodo-custom > summary { min-height: 32px; font-size: 13px; }
   .ph-ex-crumb { margin: 0; font-size: 12px; color: var(--m3-outline); }
+  /* B4: de qué está hecho el n, bajo el nombre de la provincia, y la frase de
+     procedencia con su enlace bajo el título. */
+  .ph-ex-conf { margin-top: 2px; font-size: 11px; line-height: 1.3; font-weight: 400; color: var(--m3-outline);
+                 white-space: normal; max-width: 168px; }
+  .ph-ex-sobre { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--m3-on-surface-variant); }
   .ph-ex-h2 { margin: 2px 0 0; font-family: var(--ph-font-heading); font-weight: 400; font-size: 24px; line-height: 1.15; }
   .ph-ex-search { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 8px; flex: none;
                   border: 1px solid var(--m3-outline-variant); background: var(--m3-surface); color: var(--m3-outline); }
@@ -458,6 +464,9 @@
         <div>
           <p class="ph-ex-crumb">{{ activo.name }} · {{ activo.currency }} por {{ activo.unit_noun }} · últimos {{ window_days }} días</p>
           <h2 class="ph-ex-h2">{{ activo.province_count }} provincia{{ "s" if activo.province_count != 1 }} · {{ activo.count }} anuncio{{ "s" if activo.count != 1 }}</h2>
+          {# De qué están hechos esos anuncios, y la puerta a la metodología a la
+             vista: Explorar no tiene pie (B4). #}
+          <p class="ph-ex-sobre">{% if activo.trust %}{{ activo.trust.summary }}{% else %}{{ activo.count }} anuncios{% endif %}. {{ enlace_metodologia() }}</p>
         </div>
         <label class="ph-ex-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" class="ph-ex-q" placeholder="Buscar" aria-label="Buscar provincia o formato"></label>
       </div>
@@ -514,7 +523,7 @@
           {% set elegida = n.key == ex_selected_key %}
           <tbody class="ph-ex-grp" data-key="{{ n.key }}" data-name="{{ n.name }}" data-med="{{ '%.10g' | format(n.median) }}" data-chg="{{ n.change if n.change is not none }}" data-n="{{ n.count }}" data-last="{{ n.last_days }}">
             <tr class="ph-ex-row lv0{% if elegida %} is-sel{% endif %}">
-              <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 10px"><button type="button" class="ph-ex-chev" aria-expanded="{{ 'true' if elegida else 'false' }}" aria-label="Abrir o cerrar {{ n.name }}"></button><a class="ph-ex-nmt" href="{{ province_link(n.key) }}" hx-get="{{ province_link(n.key) }}">{{ n.name }}</a>{% if n.children | length > 1 %}<span class="ph-ex-sub">{{ n.children | length }} formatos</span>{% endif %}</div></th>
+              <th scope="row" class="c-nm"><div class="ph-ex-nmw" style="padding-left: 10px"><button type="button" class="ph-ex-chev" aria-expanded="{{ 'true' if elegida else 'false' }}" aria-label="Abrir o cerrar {{ n.name }}"></button><a class="ph-ex-nmt" href="{{ province_link(n.key) }}" hx-get="{{ province_link(n.key) }}">{{ n.name }}</a>{% if n.children | length > 1 %}<span class="ph-ex-sub">{{ n.children | length }} formatos</span>{% endif %}</div>{% if n.trust %}<div class="ph-ex-conf" style="padding-left: 10px">{{ n.trust.line }}</div>{% endif %}</th>
               {{ metricas(n) }}
             </tr>
             {% for h in n.children %}
@@ -543,7 +552,8 @@
         {% if activo.sin_datos %}<p class="ph-ex-sin">Sin anuncios en la ventana: {{ activo.sin_datos | join(", ") }}.</p>{% endif %}
         <p class="ph-ex-nomatch" id="ph-ex-nomatch" hidden>Ninguna provincia cumple los filtros. <button type="button" class="ph-ex-more" data-clear-all>Limpiar filtros</button></p>
       </div>
-      <div class="ph-ex-foot">Mediana de los anuncios verificados de los últimos {{ window_days }} días. El cambio es contra los {{ window_days }} días anteriores y va sin flecha ni color: una baja es buena noticia para quien compra y mala para quien vende.</div>
+      {{ panel_confianza(activo.trust_items) }}
+      <div class="ph-ex-foot">Mediana de los anuncios de los últimos {{ window_days }} días. El cambio es contra los {{ window_days }} días anteriores y va sin flecha ni color: una baja es buena noticia para quien compra y mala para quien vende.</div>
       {% else %}
       <div class="ph-ex-empty">
         <h2>Ningún anuncio de {{ activo.name }}</h2>

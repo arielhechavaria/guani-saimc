@@ -29,6 +29,7 @@
     eso lo dice la viñeta «N de 16 provincias tienen datos».
 #}
 {% extends "_public_shell.html" %}
+{% from "_confianza.html" import enlace_metodologia, panel as panel_confianza %}
 
 {% block title %}Precios del mercado informal cubano{% endblock %}
 {% block heading %}{% endblock %}
@@ -505,7 +506,7 @@
   {% if cell -%}
   <div class="ph-fig">{{ cell.median_text }}{% if unidad %} <span class="ph-fig-unit">{{ unidad }}</span>{% endif %}</div>
   <div class="ph-col-change">{% if cell.change_text %}{{ cell.change_text }} (base {{ cell.previous_count }}){% else %}sin mes anterior{% endif %}</div>
-  <div class="ph-col-n">{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}</div>
+  <div class="ph-col-n">{% if cell.trust %}{{ cell.trust.line }}{% else %}{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}{% endif %}</div>
   {%- else -%}
   <div class="ph-col-none">sin datos todavía</div>
   {%- endif %}
@@ -541,7 +542,7 @@
      para el lector de pantalla (la cifra y su cambio ya lo dicen). El punto marca
      «hoy» y es lo único que se ve cuando hay una sola semana con dato. #}
   {% if cell.spark %}<svg class="ph-cel-spark" viewBox="0 0 96 26" aria-hidden="true" focusable="false"><path d="{{ cell.spark.line }}" pathLength="1"/><circle cx="{{ cell.spark.end[0] }}" cy="{{ cell.spark.end[1] }}" r="2.4"/></svg>{% endif %}
-  <span class="ph-cel-meta"><span class="ph-cel-cambio">{% if cell.change_text %}{{ cell.change_text }} (base {{ cell.previous_count }}){% else %}sin mes anterior{% endif %}</span><span class="ph-cel-n">{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}</span></span>
+  <span class="ph-cel-meta"><span class="ph-cel-cambio">{% if cell.change_text %}{{ cell.change_text }} (base {{ cell.previous_count }}){% else %}sin mes anterior{% endif %}</span><span class="ph-cel-n">{% if cell.trust %}{{ cell.trust.line }}{% else %}{{ cell.count }} anuncio{{ "s" if cell.count != 1 }}{% endif %}</span></span>
   {%- else -%}
   <span class="ph-cel-nada">sin datos todavía</span>
   {%- endif %}
@@ -592,7 +593,11 @@
   <div class="ph-intro">
     <span class="ph-eyebrow">TABLERO</span>
     <h1 class="ph-h1">Qué cuesta hoy</h1>
-    <p class="ph-sub">Mediana de los últimos {{ window_days }} días, sobre {{ watchlist.total_ads }} anuncio{{ "s" if watchlist.total_ads != 1 }} verificados a mano.</p>
+    {# Antes decía «verificados a mano»: deja de ser cierto cuando el carril 1
+       publica solo (B4). La frase sale de los conteos, y sin filas del sistema
+       no nombra al sistema. El enlace va acá y no solo en el panel de abajo
+       porque a 390 px nadie baja hasta el final para saber cómo se calcula. #}
+    <p class="ph-sub">Mediana de los últimos {{ window_days }} días, sobre {% if watchlist.trust %}{{ watchlist.trust.summary }}{% else %}{{ watchlist.total_ads }} anuncio{{ "s" if watchlist.total_ads != 1 }}{% endif %}. {{ enlace_metodologia() }}</p>
   </div>
 
   {# «Mi provincia» (S8): el único selector de provincia de la página. Sigue a
@@ -687,6 +692,10 @@
     <p class="ph-resumen-frase"><strong>{{ fila.barata.province_name }}</strong> es la más barata: {{ fila.barata.median_text }} contra {% for c in fila.contra %}{{ c.median_text }} en {{ c.province_name }}{% if not loop.last %}{{ " y " if loop.revindex == 2 else ", " }}{% endif %}{% endfor %}.</p>
     {% endif %}
   </section>
+
+  {# El desglose de cada celda (B4): a mano / por el sistema y estado de
+     validación. Cerrado por defecto: la línea de la celda ya dice lo esencial. #}
+  {{ panel_confianza(fila.confianza) }}
 
   {% set comp = province_comparisons | selectattr("product_name", "equalto", selected_product) | first %}
   {% set block = evolution_blocks | selectattr("product_name", "equalto", selected_product) | first %}
@@ -816,7 +825,7 @@
 <section class="ph-panel ph-datos" aria-labelledby="datos-titulo">
   <h2 class="ph-panel-title" id="datos-titulo">Sobre los datos</h2>
   <ul class="ph-datos-lista">
-    <li><strong>{{ watchlist.total_ads }} anuncio{{ "s" if watchlist.total_ads != 1 }}</strong> de los últimos {{ window_days }} días, verificados a mano uno por uno.</li>
+    <li>De los últimos {{ window_days }} días: <strong>{% if watchlist.trust %}{{ watchlist.trust.summary }}{% else %}{{ watchlist.total_ads }} anuncio{{ "s" if watchlist.total_ads != 1 }}{% endif %}</strong>.</li>
     {% if data_freshness_day and data_freshness_days_ago and data_freshness_days_ago > 0 %}
     <li>Datos hasta el <strong>{{ data_freshness_day.strftime('%d/%m') }}</strong>: hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }} no entran anuncios nuevos.</li>
     {% endif %}
@@ -840,6 +849,7 @@
   {% if csv_trimmed_days %}
   <p class="ph-datos-nota">El archivo trae solo los últimos {{ csv_trimmed_days }} días. <a href="/uso-de-datos">Uso de los datos</a></p>
   {% endif %}
+  <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="/metodologia"><span class="m3-icon" aria-hidden="true">help</span><span>Cómo calculamos los precios</span></a>
   <a class="ph-dash-action ph-dash-action-wide ph-tap-44" href="/"><span class="m3-icon" aria-hidden="true">info</span><span>Qué es Guani</span></a>
 </section>
 

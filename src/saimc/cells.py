@@ -872,8 +872,12 @@ class RetailObservation:
     variant_origin: str | None = None
     #: Quién hizo la fila (`prices_history.provenance`). Lo leen los controles
     #: de §10.7 (`validation.control_cells`, slice C3) para separar las filas
-    #: que verificó una persona; ninguna vista pública lo usa.
+    #: que verificó una persona, y, desde B4, `web.trust_view`, que cuenta por
+    #: celda cuántas son a mano y cuántas del sistema (solo conteos).
     provenance: str | None = None
+    #: Estado de validación de la fila (`prices_history.validation_status`).
+    #: Solo lo cuenta `web.trust_view`; `None` en filas sin evaluar.
+    validation_status: str | None = None
 
 
 #: Identidad de una celda minorista: la clave por la que `compute_retail_ranges`
@@ -979,6 +983,7 @@ def compute_retail_observations(
             ProductVariant.brand,
             ProductVariant.origin,
             PriceHistory.provenance,
+            PriceHistory.validation_status,
         )
         .join(Product, Product.id == PriceHistory.product_id)
         .outerjoin(Province, Province.id == PriceHistory.province_id)
@@ -1018,6 +1023,7 @@ def compute_retail_observations(
         variant_brand,
         variant_origin,
         provenance,
+        validation_status,
     ) in session.execute(stmt):
         if quantity == 0:
             continue
@@ -1089,6 +1095,7 @@ def compute_retail_observations(
                 variant_brand=variant_brand,
                 variant_origin=variant_origin,
                 provenance=provenance,
+                validation_status=validation_status,
             )
         )
 
