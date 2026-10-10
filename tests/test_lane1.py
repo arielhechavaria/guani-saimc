@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from saimc import curation_rows
 from saimc.config import Settings, get_settings
 from saimc.extraction import prefill
 from saimc.models import (
@@ -474,13 +475,30 @@ def test_fila_en_usd_con_tasa_se_guarda_convertida(
     assert guardada.exchange_rate == Decimal("400")
 
 
-def test_un_anuncio_cuya_fecha_por_defecto_el_formulario_rechazaria_sigue_pendiente(
+def test_un_anuncio_capturado_de_madrugada_en_utc_se_fecha_en_el_dia_de_la_habana(
     session: Session, mundo: SimpleNamespace, tmp_path: Path
 ) -> None:
-    # 02:00 UTC del día 2 son las 22:00 del día 1 en La Habana: la fecha por
-    # defecto (día 2, en UTC) es posterior al día de la captura, y el
-    # formulario le habría pedido al operador que la corrigiera.
+    # 02:00 UTC del día 2 son las 22:00 del día 1 en La Habana (T2): la fecha
+    # por defecto es el día 1, la que el formulario acepta. Antes salía el día
+    # 2 (UTC), posterior a la captura, y el anuncio se quedaba pendiente.
     ingesta = _anuncio(session, mundo.canal, minutos=14 * 60)
+
+    _precalcular(session, tmp_path, ClienteFalso(_propone(_fila())), lane1_enabled=True)
+
+    (fila,) = _filas(session, ingesta)
+    assert fila.published_date == date(2026, 9, 1)
+
+
+def test_una_fecha_por_defecto_que_el_formulario_rechazaria_sigue_pendiente(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # La guarda sigue en pie aunque la fecha por defecto ya no pueda salir
+    # posterior al día de La Habana: si algún día vuelve a pasar, el carril no
+    # guarda una fecha que el formulario le haría corregir al operador.
+    ingesta = _anuncio(session, mundo.canal)
+    monkeypatch.setattr(
+        curation_rows, "default_published_date", lambda ingestion, text: date(2026, 9, 2)
+    )
 
     _precalcular(session, tmp_path, ClienteFalso(_propone(_fila())), lane1_enabled=True)
 
@@ -1047,7 +1065,7 @@ def test_lo_auditado_fuera_de_la_muestra_no_entra_en_la_cota(
 #   tope    — dos filas: solo el tope de filas.
 #   cita    — una fila con una cita que el texto no trae: solo la cita.
 #   ambos   — dos filas y una cita que el texto no trae: tope y cita.
-#   fecha   — entra por el motor, pero capturado a las 02:00 UTC (22:00 en La Habana).
+#   fecha   — entra por el motor, pero su fecha por defecto cae un día después de la captura.
 
 _TOPE = "la propuesta trae más filas que el tope del carril 1 (1)"
 _CITA = "la cita del modelo no está verificada en el texto"
@@ -1063,10 +1081,7 @@ def _cinco_anuncios(session: Session, tmp_path: Path, canal: Channel) -> dict[st
         "ambos": "Arroz a 350 la libra\nArroz a 360 la libra por saco",
         "fecha": "Arroz a 370 la libra",
     }
-    anuncios = {
-        nombre: _anuncio(session, canal, texto, minutos=14 * 60 if nombre == "fecha" else 0)
-        for nombre, texto in textos.items()
-    }
+    anuncios = {nombre: _anuncio(session, canal, texto) for nombre, texto in textos.items()}
     por_texto = {
         textos["entra"]: _propone(_fila()),
         # El doble busca el texto serializado: la clave es la primera línea.
@@ -1085,6 +1100,20 @@ def _cinco_anuncios(session: Session, tmp_path: Path, canal: Channel) -> dict[st
     return anuncios
 
 
+def _fecha_posterior_al_anuncio_fecha(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Desde T2 la fecha por defecto no puede salir posterior a la captura. Al
+    anuncio «fecha» se la ponemos un día después a propósito, para ejercer la
+    guarda del carril."""
+    fecha_normal = curation_rows.default_published_date
+    monkeypatch.setattr(
+        curation_rows,
+        "default_published_date",
+        lambda ingestion, text: date(2026, 9, 2)
+        if text == "Arroz a 370 la libra"
+        else fecha_normal(ingestion, text),
+    )
+
+
 def test_contar_motivos_separa_cada_motivo_del_que_frena_solo() -> None:
     conjuntos = [
         frozenset(),
@@ -1098,9 +1127,10 @@ def test_contar_motivos_separa_cada_motivo_del_que_frena_solo() -> None:
 
 
 def test_el_comando_en_seco_desglosa_por_que_se_queda_afuera_cada_anuncio(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _cinco_anuncios(session, tmp_path, mundo.canal)
+    _fecha_posterior_al_anuncio_fecha(monkeypatch)
 
     codigo, salida = _comando(session, tmp_path)
 
@@ -1145,9 +1175,10 @@ def test_con_todo_aceptado_el_desglose_no_inventa_motivos(
 
 
 def test_execute_no_imprime_el_desglose(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _cinco_anuncios(session, tmp_path, mundo.canal)
+    _fecha_posterior_al_anuncio_fecha(monkeypatch)
 
     _, salida = _comando(session, tmp_path, "--execute", lane1_enabled=True)
 

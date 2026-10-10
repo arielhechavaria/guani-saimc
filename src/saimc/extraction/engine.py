@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
+from saimc.exchange_rate.service import anchor_date
 from saimc.models import Currency, Product, Province
 from saimc.units import PACKAGING, canonical_unit
 
@@ -468,16 +469,16 @@ def guess_published_date(text: str, captured_at: datetime) -> date | None:
     Heurística de sugerencia, no un valor confirmado — la cola de curaduría
     la prellena y el operador la revisa o corrige, igual que
     `guess_source_reference`/`product_name_guess`. Nunca devuelve una fecha
-    posterior a `captured_at.date()`: un token relativo ("ayer", "D de mes")
-    solo tiene sentido mirando hacia el pasado desde el momento de la
-    captura.
+    posterior al día de la captura en La Habana (`anchor_date`, no el día en
+    UTC): un token relativo ("ayer", "D de mes") solo tiene sentido mirando
+    hacia el pasado desde el momento de la captura.
     """
     match = _match_source_line(text)
     if match is None:
         return None
 
     when = match.group("when").lower()
-    captured_date = captured_at.date()
+    captured_date = anchor_date(None, captured_at)
 
     if when == "hoy":
         return captured_date

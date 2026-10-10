@@ -64,15 +64,22 @@ def default_published_date(ingestion: RawIngestion, text: str) -> date | None:
     las fuentes: ahí `captured_at` es el mtime del archivo, no una fecha
     confiable.
 
+    Los días se cuentan en calendario de La Habana (`anchor_date`), también los
+    relativos de la heurística de texto («hoy», «ayer»).
+
     En una imagen, si el OCR trae una fecha explícita manda esa sobre
     `captured_at`: es la del anuncio, no la del reenvío.
     """
     if ingestion.source_type != SourceType.WHATSAPP_CHANNEL:
         return guess_published_date(text, ingestion.captured_at) if text else None
+    # El día de La Habana, no el de UTC: una captura entre las 00:00 y las 04:00
+    # UTC es todavía el día anterior en Cuba, y el formulario rechaza una fecha
+    # posterior a ese día (T2, `docs/decisions.md` 2026-10-10).
+    captured_day = anchor_date(None, ingestion.captured_at)
     if ingestion.content_type == ContentType.IMAGE and text:
         # El OCR puede traer la fecha del anuncio; si no, vale la del mensaje.
-        return guess_published_date(text, ingestion.captured_at) or ingestion.captured_at.date()
-    return ingestion.captured_at.date()
+        return guess_published_date(text, ingestion.captured_at) or captured_day
+    return captured_day
 
 
 def resolve_rates(
