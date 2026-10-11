@@ -54,7 +54,10 @@ _FORBIDDEN = (
     ("un id de anuncio", re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")),
     # Móvil cubano de ocho dígitos (empieza en 5), con o sin +53, o cualquier
     # número internacional con «+». Una fecha o un precio no encajan.
-    ("un teléfono", re.compile(r"(?<![\d.,-])(?:\+\s?53[\s-]?)?5\d{3}[\s-]?\d{4}(?![\d.,])|\+\d[\d\s-]{8,}\d")),
+    (
+        "un teléfono",
+        re.compile(r"(?<![\d.,-])(?:\+\s?53[\s-]?)?5\d{3}[\s-]?\d{4}(?![\d.,])|\+\d[\d\s-]{8,}\d"),
+    ),
     ("un identificador de WhatsApp", re.compile(r"@(?:c|g|s)\.us|@newsletter|wa\.me/", re.I)),
     ("un enlace de invitación", re.compile(r"chat\.whatsapp\.com|t\.me/", re.I)),
 )
@@ -156,14 +159,34 @@ def _ffmpeg() -> str:
 
 def _to_mp4(webm: Path, start: float, out: Path) -> None:
     """Recorta, reduce y comprime. Mudo, sin metadatos, con `faststart`."""
-    subprocess.run(
+    subprocess.run(  # noqa: S603 — argumentos fijos, ffmpeg propio
         [
-            _ffmpeg(), "-y", "-loglevel", "error",
-            "-ss", f"{start:.2f}", "-t", f"{CLIP_SECONDS}", "-i", str(webm),
-            "-vf", f"fps={CLIP_FPS},scale={CLIP_WIDTH}:-2:flags=lanczos",
-            "-c:v", "libx264", "-preset", "veryslow", "-crf", str(CLIP_CRF),
-            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-            "-an", "-map_metadata", "-1", str(out),
+            _ffmpeg(),
+            "-y",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{start:.2f}",
+            "-t",
+            f"{CLIP_SECONDS}",
+            "-i",
+            str(webm),
+            "-vf",
+            f"fps={CLIP_FPS},scale={CLIP_WIDTH}:-2:flags=lanczos",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryslow",
+            "-crf",
+            str(CLIP_CRF),
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-an",
+            "-map_metadata",
+            "-1",
+            str(out),
         ],
         check=True,
     )

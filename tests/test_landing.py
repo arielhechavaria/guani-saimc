@@ -47,6 +47,7 @@ from saimc.web.deps import get_db
 from saimc.web.landing_view import (
     build_footer_links,
     build_landing_coverage,
+    build_landing_entries,
     build_landing_flow,
     build_landing_price,
 )
@@ -968,8 +969,14 @@ class TestAsiTrabajoEnLaPagina:
         assert "<video" not in texto
         assert "Mira el recorrido completo" not in texto
 
-    def test_sigue_sin_javascript(self, client: TestClient) -> None:
-        assert "<script" not in client.get("/").text.split('<main class="lp-main">')[1]
+    def test_el_pase_sigue_sin_javascript(self, client: TestClient) -> None:
+        """«Así trabajo» no lleva guion. Desde landing-entradas la página tiene
+        uno solo, el de los clips de «Entra por donde quieras», y va después."""
+        html = client.get("/").text
+        principal = html.split('<main class="lp-main">')[1]
+
+        assert "<script" not in principal.split('id="entradas"')[0]
+        assert principal.count("<script") == 1
 
     def test_si_falta_una_captura_vuelven_las_tarjetas(self, client: TestClient, directorio: Path) -> None:
         (directorio / "flujo-4.webp").unlink()
@@ -1012,3 +1019,173 @@ class TestAsiTrabajoEnLaPagina:
 
         assert 'class="lp-steps"' in texto
         assert len(re.findall(r"<video\b", texto)) == 1
+
+
+# ── «Entra por donde quieras»: tarjetas con el sistema real (landing-entradas) ─
+#
+# Los valores esperados salen del prototipo aprobado
+# (`docs/prototipos/landing-entradas.html`) y de los archivos, escritos antes
+# que `build_landing_entries`.
+
+TARJETAS = (
+    ("/precios?vista=tablero", "Precios de hoy", "tablero"),
+    ("/precios?vista=mapa", "Mapa", "mapa"),
+    ("/precios?vista=explorar", "Explorar", "explorar"),
+    ("/datos.csv", "Datos (CSV)", None),
+)
+VISTAS_CON_CLIP = ("tablero", "mapa", "explorar")
+#: Tope por clip: la conexión del visitante es lenta. Los cuatro medios juntos
+#: (clips) tienen que caber en 600 KB.
+TOPE_CLIP = 150_000
+TOPE_CAPTURA = 60_000
+
+
+def _copiar_entradas(destino: Path, *, salvo: str | None = None) -> None:
+    for vista in VISTAS_CON_CLIP:
+        for ext in ("mp4", "webp"):
+            nombre = f"entradas-{vista}.{ext}"
+            if nombre != salvo:
+                shutil.copy(landing_view.LANDING_STATIC_DIR / nombre, destino / nombre)
+
+
+class TestLasEntradasArmadas:
+    def test_son_cuatro_en_el_orden_del_prototipo(self) -> None:
+        entradas = build_landing_entries()
+
+        assert [(e.href, e.title) for e in entradas] == [(h, t) for h, t, _ in TARJETAS]
+
+    def test_el_tablero_el_mapa_y_explorar_traen_captura_y_clip(self) -> None:
+        for entrada, (_, _, vista) in zip(build_landing_entries(), TARJETAS, strict=True):
+            if vista is None:
+                continue
+            assert entrada.poster is not None
+            assert entrada.poster.startswith(f"/static/landing/entradas-{vista}.webp?v=")
+            assert entrada.clip is not None
+            assert entrada.clip.startswith(f"/static/landing/entradas-{vista}.mp4?v=")
+
+    def test_el_csv_no_tiene_pantalla_y_se_queda_con_el_icono(self) -> None:
+        csv = build_landing_entries()[3]
+
+        assert (csv.clip, csv.poster, csv.alt) == (None, None, None)
+        assert csv.icon == "download"
+
+    def test_cada_medio_trae_su_texto_alternativo(self) -> None:
+        for entrada in build_landing_entries()[:3]:
+            assert entrada.alt is not None
+            assert len(entrada.alt) > 40
+
+    def test_los_archivos_del_repo_existen_y_pesan_poco(self) -> None:
+        """Un tope por clip y por captura: si se vuelve a grabar más pesado,
+        este caso obliga a decidirlo a propósito."""
+        carpeta = landing_view.LANDING_STATIC_DIR
+        for vista in VISTAS_CON_CLIP:
+            clip = carpeta / f"entradas-{vista}.mp4"
+            captura = carpeta / f"entradas-{vista}.webp"
+            assert 0 < clip.stat().st_size < TOPE_CLIP, clip.name
+            assert 0 < captura.stat().st_size < TOPE_CAPTURA, captura.name
+
+    def test_los_clips_no_llevan_metadatos_ni_audio(self) -> None:
+        """Mudos y sin etiquetas: ninguna cadena de texto del encoder más allá
+        de la que escribe el propio códec. Se mira que no haya pista de audio
+        (`soun`) ni títulos, autores o rutas."""
+        for vista in VISTAS_CON_CLIP:
+            datos = (landing_view.LANDING_STATIC_DIR / f"entradas-{vista}.mp4").read_bytes()
+            assert b"soun" not in datos
+            assert b"/home/" not in datos
+            assert b"\xa9nam" not in datos and b"\xa9ART" not in datos
+
+    def test_las_capturas_no_llevan_metadatos_de_la_camara_ni_del_sistema(self) -> None:
+        for vista in VISTAS_CON_CLIP:
+            datos = (landing_view.LANDING_STATIC_DIR / f"entradas-{vista}.webp").read_bytes()
+            assert b"EXIF" not in datos
+            assert b"/home/" not in datos
+
+    def test_sin_el_clip_no_hay_medio_y_la_tarjeta_vuelve_al_icono(self, tmp_path: Path) -> None:
+        _copiar_entradas(tmp_path, salvo="entradas-mapa.mp4")
+
+        mapa = build_landing_entries(tmp_path)[1]
+
+        assert (mapa.clip, mapa.poster) == (None, None)
+        assert mapa.icon == "map"
+
+    def test_sin_la_captura_tampoco(self, tmp_path: Path) -> None:
+        _copiar_entradas(tmp_path, salvo="entradas-explorar.webp")
+
+        assert build_landing_entries(tmp_path)[2].poster is None
+
+    def test_un_archivo_vacio_cuenta_como_faltante(self, tmp_path: Path) -> None:
+        _copiar_entradas(tmp_path, salvo="entradas-tablero.mp4")
+        (tmp_path / "entradas-tablero.mp4").write_bytes(b"")
+
+        assert build_landing_entries(tmp_path)[0].clip is None
+
+
+class TestLaSeccionRenderizada:
+    def _seccion(self, client: TestClient) -> str:
+        html = client.get("/").text
+        return html.split('id="entradas"')[1].split("</section>")[0]
+
+    def test_cada_tarjeta_sigue_siendo_un_enlace_a_su_vista(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        for href, titulo, _ in TARJETAS:
+            assert re.search(rf'<a class="lp-tile[^"]*" href="{re.escape(href)}"', seccion)
+            assert titulo in seccion
+
+    def test_tres_tarjetas_traen_poster_y_clip_sin_bajarlo(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+        videos = re.findall(r"<video\b[^>]*>", seccion)
+
+        assert len(videos) == 3
+        for video, vista in zip(videos, VISTAS_CON_CLIP, strict=True):
+            assert f'poster="/static/landing/entradas-{vista}.webp?v=' in video
+            assert f'data-clip="/static/landing/entradas-{vista}.mp4?v=' in video
+            assert 'preload="none"' in video
+            assert " muted" in video and " loop" in video and " playsinline" in video
+            # Sin JS no se baja nada: el clip va en `data-clip`, no en `src`.
+            assert " src=" not in video
+            assert "autoplay" not in video
+
+    def test_el_clip_no_es_el_unico_portador_de_informacion(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        assert seccion.count('role="img"') == 3
+        assert seccion.count('aria-hidden="true"') >= 3  # los tres videos, más el ícono
+        for texto in ("El tablero completo.", "Provincia por provincia.", "Cómo se movió cada precio."):
+            assert texto in seccion
+
+    def test_el_csv_lleva_el_icono_y_ninguna_captura(self, client: TestClient) -> None:
+        csv = self._seccion(client).split('href="/datos.csv"')[1].split("</a>")[0]
+
+        assert "download" in csv
+        assert "<video" not in csv and "<img" not in csv
+
+    def test_el_script_respeta_movimiento_reducido_ahorro_y_2g(self, client: TestClient) -> None:
+        html = client.get("/").text
+        guion = html.split("<script>")[-1].split("</script>")[0]
+
+        assert 'matchMedia("(prefers-reduced-motion: reduce)")' in guion
+        assert "saveData" in guion and "2g" in guion
+        assert "IntersectionObserver" in guion
+
+    def test_sin_los_archivos_la_seccion_vuelve_a_las_tarjetas_de_icono(
+        self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(landing_view, "LANDING_STATIC_DIR", tmp_path)
+
+        seccion = self._seccion(client)
+
+        assert "<video" not in seccion
+        assert seccion.count('class="m3-icon"') == 4
+
+    def test_ni_la_seccion_ni_los_textos_traen_ids_ni_emisores(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", seccion)
+        assert "wa.me" not in seccion and "@c.us" not in seccion
+
+    def test_tuteo_nunca_voseo(self, client: TestClient) -> None:
+        texto = _visible(self._seccion(client)).lower()
+
+        for voseo in ("mirá", "elegí", "tocá", "entrá", "podés", "tenés"):
+            assert voseo not in texto

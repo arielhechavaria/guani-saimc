@@ -56,6 +56,7 @@ from saimc.web.explore_view import (
 )
 from saimc.web.landing_view import (
     build_landing_coverage,
+    build_landing_entries,
     build_landing_flow,
     build_landing_price,
 )
@@ -916,17 +917,6 @@ def _render_explore(
     return respuesta
 
 
-#: Tiles de «Entra por donde quieras»: una por vista de `/precios`, más la
-#: descarga. `vista` va explícita para que la cookie no decida por el visitante
-#: (mismo motivo que en `product_nav._query`).
-_LANDING_VIEW_TILES: tuple[tuple[str, str, str, str], ...] = (
-    (f"{HOME_PATH}?vista=tablero", "sell", "Precios de hoy", "El tablero completo."),
-    (f"{HOME_PATH}?vista=mapa", "map", "Mapa", "Provincia por provincia."),
-    (f"{HOME_PATH}?vista=explorar", "show_chart", "Explorar", "Cómo se movió cada precio."),
-    ("/datos.csv", "download", "Datos (CSV)", f"Los últimos {DOWNLOAD_WINDOW_DAYS} días."),
-)
-
-
 @router.get("/", response_class=HTMLResponse)
 def public_landing(request: Request, db: Session = Depends(get_db)) -> Response:
     """Landing: qué es Guani, antes de cualquier cifra (2026-10-05,
@@ -972,7 +962,7 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> Response:
                 "coverage": build_landing_coverage(observations),
                 "flow": build_landing_flow(),
                 "products": products,
-                "view_tiles": _LANDING_VIEW_TILES,
+                "entries": build_landing_entries(),
                 "window_days": (hasta - desde).days,
                 "footer": _site_footer(),
             },

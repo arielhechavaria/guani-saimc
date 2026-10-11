@@ -38,6 +38,7 @@ from saimc.cells import RetailObservation
 from saimc.config import Settings
 from saimc.web.card_view import SAMPLE_FORMING, format_price
 from saimc.web.price_charts import split_outliers
+from saimc.web.product_nav import DOWNLOAD_WINDOW_DAYS, HOME_PATH
 
 #: Dónde empieza y cuánto mide la barra del rango dentro de su pista, en
 #: porcentaje. Deja aire a los dos lados para que el punto del mínimo y el del
@@ -143,9 +144,7 @@ def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPri
     for (product, currency, unit, _province), rows in cells.items():
         per_product[(product, currency, unit)] += len(rows)
 
-    inside = {
-        key: sorted(o.unit_price for o in split_outliers(rows)[0]) for key, rows in cells.items()
-    }
+    inside = {key: sorted(o.unit_price for o in split_outliers(rows)[0]) for key, rows in cells.items()}
     with_range = [key for key, prices in inside.items() if prices and prices[0] < prices[-1]]
     if not with_range:
         return None
@@ -413,3 +412,94 @@ def build_landing_flow(directory: Path | None = None) -> LandingFlow:
             size_text=_megabytes(size),
         )
     return LandingFlow(steps=steps, shots=shots, video=video)
+
+
+# ── «Entra por donde quieras» ────────────────────────────────────────────────
+#
+# Cuatro puntos de entrada, cada uno con su propia pantalla del sistema real:
+# una captura (`poster`, siempre carga) y un clip corto que solo se baja si la
+# tarjeta entra en pantalla (el guion está en la plantilla). Se graban con
+# `tools/grabar_entradas.py` contra el sitio con datos reales.
+
+#: Una por vista de `/precios`, más la descarga. `vista` va explícita en el
+#: enlace para que la cookie no decida por el visitante (mismo motivo que en
+#: `product_nav._query`).
+#:
+#: (vista del recorrido, enlace, ícono de respaldo, título, frase, texto
+#: alternativo de lo que se ve). La vista nombra los archivos
+#: `entradas-<vista>.mp4|webp`; `None` es una entrada sin pantalla.
+_ENTRIES: tuple[tuple[str | None, str, str, str, str, str | None], ...] = (
+    (
+        "tablero",
+        f"{HOME_PATH}?vista=tablero",
+        "sell",
+        "Precios de hoy",
+        "El tablero completo.",
+        "El tablero en un teléfono: cada precio con la cuenta de cuántos anuncios son "
+        "revisados a mano y cuántos aceptados por el sistema, y el desglose de por qué "
+        "confiamos en esas cifras.",
+    ),
+    (
+        "mapa",
+        f"{HOME_PATH}?vista=mapa",
+        "map",
+        "Mapa",
+        "Provincia por provincia.",
+        "El mapa de Cuba: al tocar una provincia aparece cuántas observaciones tiene.",
+    ),
+    (
+        "explorar",
+        f"{HOME_PATH}?vista=explorar",
+        "show_chart",
+        "Explorar",
+        "Cómo se movió cada precio.",
+        "Explorar: la tabla de un producto por provincia, con la mediana y el cambio, y "
+        "una fila de provincia que se abre para mostrar sus formatos.",
+    ),
+    (
+        None,
+        "/datos.csv",
+        "download",
+        "Datos (CSV)",
+        f"Los últimos {DOWNLOAD_WINDOW_DAYS} días.",
+        None,
+    ),
+)
+
+
+@dataclass(frozen=True)
+class EntryTile:
+    """Una tarjeta de «Entra por donde quieras»."""
+
+    href: str
+    icon: str
+    title: str
+    text: str
+    #: `None` en las tres cosas si falta algún archivo o la entrada no tiene
+    #: pantalla: la tarjeta vuelve al ícono antes que dibujar un video roto.
+    poster: str | None = None
+    clip: str | None = None
+    alt: str | None = None
+
+
+def build_landing_entries(directory: Path | None = None) -> tuple[EntryTile, ...]:
+    """Las cuatro tarjetas, con su captura y su clip si están los dos archivos.
+
+    Mismo criterio que `build_landing_flow`: se mira el disco en cada pedido
+    (un `stat` por archivo), sin caché, y un archivo de cero bytes cuenta como
+    ausente. Con la captura sin el clip (o al revés) no se dibuja medio a
+    medias: la tarjeta es de ícono.
+    """
+    directory = LANDING_STATIC_DIR if directory is None else directory
+    tiles: list[EntryTile] = []
+    for view, href, icon, title, text, alt in _ENTRIES:
+        poster = clip = None
+        if view is not None:
+            poster = _versioned_url(directory, f"entradas-{view}.webp")
+            clip = _versioned_url(directory, f"entradas-{view}.mp4")
+        if poster is None or clip is None:
+            poster = clip = alt = None
+        tiles.append(
+            EntryTile(href=href, icon=icon, title=title, text=text, poster=poster, clip=clip, alt=alt)
+        )
+    return tuple(tiles)

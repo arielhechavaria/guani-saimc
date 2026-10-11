@@ -274,15 +274,23 @@
   /* ── Entradas ───────────────────────────────────────────────────────── */
   .lp-entries { padding-bottom: 36px; }
   .lp-tiles { margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .lp-tile { display: flex; flex-direction: column; gap: 10px; min-height: 124px; padding: 18px 16px; border-radius: 24px;
+  .lp-tile { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 16px; border-radius: 24px;
              background: var(--lp-surface); color: var(--lp-ink); border: 1px solid var(--lp-line); text-decoration: none; }
   .lp-tile:hover { color: var(--lp-ink); }
-  .lp-tile .m3-icon { font-size: 32px; color: var(--lp-blue); }
-  .lp-tile-title { font-size: 18px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
-  .lp-tile-text { font-size: 14px; line-height: 1.35; color: var(--lp-ink-soft); }
   .lp-tile-main { background: var(--lp-blue); border-color: var(--lp-blue); color: var(--lp-on-blue); }
   .lp-tile-main:hover { color: var(--lp-on-blue); }
-  .lp-tile-main .m3-icon, .lp-tile-main .lp-tile-text { color: var(--lp-on-blue); }
+  /* El medio: la misma proporción en las cuatro, vean lo que vean. Se corta lo
+     que sobra por abajo (`object-position: top`): la barra de arriba es lo que
+     identifica la vista. La tarjeta sin pantalla (Datos) usa el mismo hueco
+     con su ícono. */
+  .lp-tile-media { position: relative; display: block; aspect-ratio: 9 / 14; overflow: hidden; border-radius: 16px;
+                   background: var(--lp-tint); }
+  .lp-tile-media video { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+  .lp-tile-media .m3-icon { position: absolute; inset: 0; display: grid; place-items: center; font-size: 56px;
+                            color: var(--lp-blue); }
+  .lp-tile-title { padding-inline: 6px; font-size: 18px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+  .lp-tile-text { padding-inline: 6px; font-size: 14px; line-height: 1.35; color: var(--lp-ink-soft); }
+  .lp-tile-main .lp-tile-text { color: var(--lp-on-blue); }
   .lp-chips-label { margin-top: 24px; }
   .lp-chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
   .lp-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px;
@@ -566,8 +574,15 @@
 <section class="lp-wrap lp-section lp-entries" id="entradas" aria-labelledby="lp-entries-title">
   <h2 class="lp-h2" id="lp-entries-title">Entra por donde quieras</h2>
   <div class="lp-tiles">
-    {% for href, icon, title, text in view_tiles %}
-    <a class="lp-tile lp-lift{% if loop.first %} lp-tile-main{% endif %}" href="{{ href }}"><span class="m3-icon" aria-hidden="true">{{ icon }}</span><span class="lp-tile-title">{{ title }}</span><span class="lp-tile-text">{{ text }}</span></a>
+    {% for e in entries %}
+    <a class="lp-tile lp-lift{% if loop.first %} lp-tile-main{% endif %}" href="{{ e.href }}">
+      {%- if e.clip %}
+      <span class="lp-tile-media" role="img" aria-label="{{ e.alt }}"><video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" data-clip="{{ e.clip }}" poster="{{ e.poster }}"></video></span>
+      {%- else %}
+      <span class="lp-tile-media"><span class="m3-icon" aria-hidden="true">{{ e.icon }}</span></span>
+      {%- endif %}
+      <span class="lp-tile-title">{{ e.title }}</span><span class="lp-tile-text">{{ e.text }}</span>
+    </a>
     {% endfor %}
   </div>
   {% if products %}
@@ -585,4 +600,26 @@
 {% include "_public_footer.html" %}
 
 </div>
+
+<script>
+  /* Los clips de «Entra por donde quieras» se bajan cuando su tarjeta entra en
+     pantalla, no antes. Quien pidió menos movimiento, tiene ahorro de datos o
+     una conexión 2G se queda con la captura. Sin este guion, también. */
+  (function () {
+    var conn = navigator.connection || {};
+    var slow = conn.saveData || /(^|-)2g$/.test(conn.effectiveType || "");
+    var calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (slow || calm || !("IntersectionObserver" in window)) return;
+    var seen = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        var v = e.target;
+        if (e.isIntersecting) {
+          if (!v.src) v.src = v.dataset.clip;
+          v.play().catch(function () {});
+        } else { v.pause(); }
+      });
+    }, { threshold: 0.5 });
+    document.querySelectorAll("video[data-clip]").forEach(function (v) { seen.observe(v); });
+  })();
+</script>
 {% endblock %}
