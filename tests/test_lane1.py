@@ -958,7 +958,7 @@ def test_control_muestra_el_carril_1_con_su_procedencia_y_su_error(
     lane1.mark_invalid(session, mal.id, "no_data")
     session.commit()
 
-    texto = _visible(client.get("/control").text)
+    texto = _visible(client.get("/control/calidad").text)
 
     assert "Carril 1" in texto
     assert "Automáticas sin auditar: 1" in texto
@@ -972,7 +972,7 @@ def test_control_marca_el_freno_con_su_motivo(
 ) -> None:
     _aceptar(session, tmp_path, mundo.canal, n=30)
 
-    texto = _visible(client.get("/control").text)
+    texto = _visible(client.get("/control/calidad").text)
 
     assert "Freno puesto" in texto
     assert "30 aceptados sin auditar" in texto

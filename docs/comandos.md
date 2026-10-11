@@ -99,7 +99,7 @@ sudo systemctl start saimc-prefill.service
   empieza con una pasada que le hace tres preguntas a cada texto pendiente y guarda la respuesta en
   `jev_signals`. Tiene su propio tope, **`SAIMC_LLM_JEV_MAX_COST` (0,01 USD por corrida)**, aparte
   del de arriba. Un fallo de Jev no frena el resto ni pone en rojo la tarjeta «Pre-cálculo»: queda
-  en `journalctl` (líneas `jev.fallo`) y en `/control#jev`. Ver [Señal de Jev](#señal-de-jev).
+  en `journalctl` (líneas `jev.fallo`) y en `/control/calidad#jev`. Ver [Señal de Jev](#señal-de-jev).
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Paso 1».
 
 ---
@@ -454,7 +454,7 @@ SELECT validation_status, provenance, validation_detail->'jev' FROM prices_histo
 ```
 
 - **Para qué**: comprobar que la pasada de Jev guardó respuestas y que al curar se anotan.
-- **Cuándo**: al encender Jev, y cuando `/control#jev` muestre algo raro.
+- **Cuándo**: al encender Jev, y cuando `/control/calidad#jev` muestre algo raro.
 - **Cambia algo**: no. **Gasta**: no (las consultas; la pasada sí, con su tope).
 - **Cómo leer la salida**: la primera da una fila por origen (`prefill`, y `backfill` para lo que
   preguntó el [relleno](#relleno-de-jev) con `--decided`) con cuántas señales hay y cuánto costaron. La segunda trae `null` en la tercera columna cuando la fila no tiene señal: el

@@ -837,6 +837,61 @@ code, .m3-num { font-family: var(--m3-mono); }
   background: var(--m3-surface-container); border-radius: var(--m3-radius-md);
 }
 
+/* ── Control: menú de subpáginas + cuerpo ─────────────────────────────
+   `/control` se partió en cinco vistas (`web/control_nav.py`). Escritorio:
+   menú fijo a la izquierda; teléfono (≤720px): barra horizontal pegada bajo
+   la barra superior, con scroll propio si no entra. Solo se usan tokens
+   existentes: el menú se ve igual en claro y en oscuro sin reglas aparte.
+   La cabecera de página deja de ser sticky en estas vistas: apilada con el
+   menú fijo se comía el alto de pantalla (mismo problema que ya resolvió
+   el bloque responsive para el teléfono). */
+.m3-main:has(.m3-ctl) .m3-topbar { position: static; }
+.m3-ctl {
+  display: grid; grid-template-columns: 188px minmax(0, 1fr);
+  gap: var(--m3-space-8); align-items: start;
+}
+.m3-ctl-nav {
+  position: sticky; top: 72px;
+  display: flex; flex-direction: column; gap: var(--m3-space-1);
+}
+.m3-ctl-link {
+  display: flex; align-items: center; gap: var(--m3-space-3);
+  padding: 10px var(--m3-space-4);
+  border-radius: var(--m3-radius-md);
+  color: var(--m3-on-surface-variant);
+  font: 500 14px var(--m3-font); letter-spacing: .1px;
+  text-decoration: none;
+  transition: background .15s ease;
+}
+.m3-ctl-link:hover { text-decoration: none; background: var(--m3-surface-container-high); }
+.m3-ctl-link.is-active { background: var(--m3-primary-container); color: var(--m3-on-primary-container); }
+.m3-ctl-label { flex: 1; }
+.m3-ctl-body { min-width: 0; }
+
+/* Insignia: cuántas cosas piden atención. El color repite la gravedad de la
+   franja (`down` rojo, `warn` ámbar) y el número va escrito: no depende del color. */
+.m3-ctl-badge {
+  min-width: 20px; padding: 1px 6px; border-radius: 10px;
+  font: 600 12px var(--m3-font); text-align: center; line-height: 18px;
+}
+.m3-ctl-badge.is-warn { background: var(--m3-warn-container); color: var(--m3-on-warn-container); }
+.m3-ctl-badge.is-down { background: var(--m3-error-container); color: var(--m3-on-error-container); }
+
+/* Tarjetas de «Hoy» hacia las demás vistas. */
+.m3-ctl-cards {
+  display: grid; gap: var(--m3-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.m3-ctl-card {
+  padding: var(--m3-space-4); border-radius: var(--m3-radius-md);
+  border: 1px solid var(--m3-outline-variant); background: var(--m3-surface);
+}
+.m3-ctl-card-head { display: flex; align-items: center; gap: var(--m3-space-2); }
+.m3-ctl-card-title { flex: 1; font: 600 16px var(--m3-font); color: var(--m3-on-surface); text-decoration: none; }
+.m3-ctl-card-title:hover { color: var(--m3-primary); }
+.m3-ctl-card-links { margin: var(--m3-space-2) 0 0; padding: 0; list-style: none; font-size: 14px; }
+.m3-ctl-card-links li { padding: 3px 0; }
+
 /* ── Responsive ─────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .m3-content, .m3-topbar, .m3-topnav { padding-left: var(--m3-space-4); padding-right: var(--m3-space-4); }
@@ -850,6 +905,17 @@ code, .m3-num { font-family: var(--m3-mono); }
      superior (e25aaec). */
   .m3-topbar { position: static; }
   .m3-title { font-size: 22px; line-height: 28px; }
+
+  /* Menú de Control: columna → barra horizontal pegada bajo la topnav (56px). */
+  .m3-ctl { grid-template-columns: minmax(0, 1fr); gap: var(--m3-space-4); }
+  .m3-ctl-nav {
+    top: 56px; z-index: 15; flex-direction: row; overflow-x: auto;
+    margin: 0 calc(var(--m3-space-4) * -1); padding: var(--m3-space-2) var(--m3-space-4);
+    background: var(--m3-bg); scrollbar-width: none;
+  }
+  .m3-ctl-link { flex: 1 0 auto; padding: var(--m3-space-2); gap: var(--m3-space-1); font-size: 13px; justify-content: center; }
+  .m3-ctl-label { flex: none; }
+  .m3-ctl-link .m3-icon { display: none; }
 
   /* El `top: 236px` de la evidencia sticky da por hecho que la topbar
      también es sticky. Acá dejó de serlo, así que la evidencia fluye aunque

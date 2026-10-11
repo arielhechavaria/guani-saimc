@@ -655,7 +655,7 @@ def test_caso_18_la_consulta_de_control_solo_trae_conteos(session: Session, vali
 def test_caso_18_control_muestra_el_conteo_por_estado_y_las_filas_sin_validar(
     client: TestClient, session: Session, validadas: None
 ) -> None:
-    respuesta = client.get("/control")
+    respuesta = client.get("/control/calidad")
 
     assert respuesta.status_code == 200
     seccion = _seccion_validacion(respuesta.text)
@@ -683,7 +683,7 @@ def test_caso_18_control_muestra_el_conteo_por_estado_y_las_filas_sin_validar(
 def test_caso_18_control_no_muestra_canales_emisores_ni_detalle_por_fila(
     client: TestClient, session: Session, mundo: SimpleNamespace, validadas: None
 ) -> None:
-    seccion = _seccion_validacion(client.get("/control").text)
+    seccion = _seccion_validacion(client.get("/control/calidad").text)
 
     assert mundo.canal.name not in seccion
     assert "motivo-que-no-se-publica" not in seccion
@@ -693,7 +693,7 @@ def test_caso_18_control_no_muestra_canales_emisores_ni_detalle_por_fila(
 
 
 def test_control_sin_filas_muestra_la_seccion_en_cero(client: TestClient) -> None:
-    seccion = _seccion_validacion(client.get("/control").text)
+    seccion = _seccion_validacion(client.get("/control/calidad").text)
 
     assert _conteo(seccion, "unverified") == 0
     assert _sin_validar(seccion) == 0

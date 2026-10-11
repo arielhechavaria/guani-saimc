@@ -1,0 +1,421 @@
+{# Fase 0 — meta, métrica, historial de H0, cobertura y consumo del asistente.
+   Parcial del layout `control_base.html`; el menú lateral vive allá. #}
+{% extends "control_base.html" %}
+
+{% block body %}
+  <!-- ---------- 1. Progreso hacia la meta de Fase 0 (spec.md §9) ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="meta">Meta de Fase 0</h2>
+      <span class="m3-sm m3-muted">
+        {{ progress.target_rows }} registros · {{ phase0_products_min }}–{{ phase0_products_max }} productos ·
+        {{ phase0_provinces|length }} provincias — números de <code>spec.md</code> §9, no fijados acá
+      </span>
+    </div>
+
+    <div class="m3-grid">
+      {# La única superficie de color de la vista: es el número que importa. #}
+      <div class="m3-metric is-hero">
+        <div class="m3-metric-label">Registros validados</div>
+        <div class="m3-metric-value">{{ progress.rows }} <small style="color:inherit; opacity:.75">/ {{ progress.target_rows }}</small></div>
+        <div class="m3-progress"><span style="width: {{ "%.1f"|format(progress.rows_pct) }}%;"></span></div>
+        <div class="m3-metric-hint">
+          {% if progress.rows_remaining %}Faltan {{ progress.rows_remaining }}{% else %}Meta alcanzada{% endif %}
+          · {{ "%.0f"|format(progress.rows_pct) }}%
+          {% if pace.days_to_target is none %}
+            · sin filas en la ventana, no se puede estimar
+          {% elif pace.days_to_target == 0 %}
+            · meta alcanzada
+          {% else %}
+            · a {{ "%.1f"|format(pace.per_day) }} filas/día son <strong>{{ pace.days_to_target }} días</strong>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="m3-metric">
+        <div class="m3-metric-label">Productos bandera con dato</div>
+        <div class="m3-metric-value">
+          {{ progress.products_with_data|length }} <small>/ {{ pilot_products|length }}</small>
+        </div>
+        <div class="m3-row" style="gap:6px; margin-top:14px">
+          {% for nombre in progress.products_with_data %}
+          <span class="m3-chip m3-chip-ok m3-chip-sm">{{ nombre }}</span>
+          {% endfor %}
+          {% for nombre in progress.products_missing %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">{{ nombre }} · sin dato</span>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="m3-metric">
+        <div class="m3-metric-label">Provincias objetivo</div>
+        <div class="m3-metric-value">
+          {{ progress.provinces_with_data|length }} <small>/ {{ phase0_provinces|length }}</small>
+        </div>
+        <div class="m3-row" style="gap:6px; margin-top:14px">
+          {% for nombre in progress.provinces_with_data %}
+          <span class="m3-chip m3-chip-ok m3-chip-sm">{{ nombre }}</span>
+          {% endfor %}
+          {% for nombre in progress.provinces_missing %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">{{ nombre }} · sin dato</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 6b-bis. Métrica de la Fase 0 (B3-3) ---------- -->
+  {# Una partición de lo que entró (docs/spec-slice-B3.md, sección 4) y dos
+     números con nombre propio. Ninguno se muestra sin el error auditado de lo
+     que cuenta. Es distinto de la «Automatización» de arriba (A2d): aquella
+     cuenta lo resuelto sin formulario individual, esta lo resuelto sin el
+     operador. #}
+  {% macro f0_pct(value) -%}
+    {%- if value is none %}<span class="m3-dim">sin datos</span>
+    {%- else %}{{ "%.1f"|format(value * 100) }}%{% endif -%}
+  {%- endmacro %}
+  {% macro f0_n2(p) -%}
+    {%- if p.n2_min is none %}<span class="m3-dim">sin datos</span>
+    {%- elif p.n2_max is none %}≥ {{ "%.1f"|format(p.n2_min * 100) }}%
+    {%- elif p.n2_min == p.n2_max %}{{ "%.1f"|format(p.n2_min * 100) }}%
+    {%- else %}{{ "%.1f"|format(p.n2_min * 100) }}–{{ "%.1f"|format(p.n2_max * 100) }}%{% endif -%}
+  {%- endmacro %}
+  {% macro f0_celdas(p) -%}
+    <td class="is-num">{{ p.total }}</td>
+    <td class="is-num">{{ p.a }}</td>
+    <td class="is-num">{{ p.h }}</td>
+    <td class="is-num">{{ p.d0 }}</td>
+    <td class="is-num">{{ p.dh }}</td>
+    <td class="is-num">{{ p.p }}</td>
+    <td class="is-num">{{ f0_pct(p.n1) }}</td>
+    <td class="is-num">{{ f0_n2(p) }}</td>
+  {%- endmacro %}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="metrica-fase-0">Métrica de la Fase 0</h2>
+      <span class="m3-sm m3-muted">
+        qué parte de lo que entra se resuelve sin el operador, con su error auditado
+      </span>
+    </div>
+
+    {% set f0_total = phase0.total.both %}
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(170px, 1fr))">
+      <div class="m3-metric">
+        <div class="m3-metric-label">Resuelto sin el operador</div>
+        <div class="m3-metric-value-sm">{{ f0_pct(f0_total.n1) }}</div>
+        <div class="m3-metric-hint">
+          (A + D0) / todo lo que entró · {{ f0_total.a + f0_total.d0 }} de {{ f0_total.total }}
+        </div>
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Publicado sin el operador</div>
+        <div class="m3-metric-value-sm">{{ f0_n2(f0_total) }}</div>
+        <div class="m3-metric-hint">
+          de los anuncios válidos; el piso cuenta todo pendiente como válido y el techo,
+          como no válido
+        </div>
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Error del descarte solo (D0)</div>
+        {% for tipo, nombre in (("text", "Texto"), ("image", "Imagen")) %}
+        {% set f0_b = phase0.lane0[tipo] %}
+        <div class="m3-sm">
+          {{ nombre }}:
+          {% if f0_b.n == 0 %}<span class="m3-dim">sin auditar todavía</span>
+          {%- else %}{{ f0_b.k }} rescatados de {{ f0_b.n }} auditados · cota al 95 %
+            {{ "%.1f"|format(f0_b.upper * 100) }}% (meta {{ "%.0f"|format(f0_b.target * 100) }}%)
+          {%- endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Error de lo publicado solo (A)</div>
+        {% set f0_e = phase0.lane1 %}
+        <div class="m3-sm">
+          {% if f0_e.audited == 0 %}<span class="m3-dim">sin auditar todavía</span>
+          {%- else %}{{ f0_e.errors }} con error de {{ f0_e.audited }} auditados · cota al 95 %
+            {{ "%.1f"|format(f0_e.upper * 100) }}% (meta {{ "%.0f"|format(lane1_target * 100) }}%)
+          {%- endif %}
+        </div>
+      </div>
+    </div>
+    {% if phase0.provisional %}
+    <p class="m3-sm m3-muted m3-mt">
+      <strong>Provisional:</strong> algún error todavía no tiene nada auditado, así que el
+      número que lo cuenta es una promesa sin medir.
+    </p>
+    {% endif %}
+
+    <p class="m3-sm m3-muted m3-mt">
+      Cada anuncio cae en un solo casillero, por su estado de hoy: <strong>A</strong> publicado
+      solo (carril 1), <strong>H</strong> publicado por el operador, <strong>D0</strong>
+      descartado solo (carril 0), <strong>Dh</strong> descartado por el operador (un lote
+      también cuenta acá) y <strong>P</strong> pendiente. La cohorte es la semana de ingreso del
+      anuncio, no la de su decisión: una semana sin curaduría no da 100 %.
+    </p>
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Semana del</th>
+            <th scope="col" style="text-align:right">Entraron</th>
+            <th scope="col" style="text-align:right">A</th>
+            <th scope="col" style="text-align:right">H</th>
+            <th scope="col" style="text-align:right">D0</th>
+            <th scope="col" style="text-align:right">Dh</th>
+            <th scope="col" style="text-align:right">P</th>
+            <th scope="col" style="text-align:right">Resuelto sin el operador</th>
+            <th scope="col" style="text-align:right">Publicado sin el operador</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in phase0.cohorts | reverse %}
+          <tr>
+            <td class="m3-cell-strong">
+              {{ fila.week_start.strftime("%Y-%m-%d") }}
+              {%- if fila.partial %} <span class="m3-sm m3-dim">(en curso, parcial)</span>{% endif %}
+            </td>
+            {{ f0_celdas(fila.both) }}
+          </tr>
+          <tr>
+            <td class="m3-sm m3-dim">· texto</td>
+            {{ f0_celdas(fila.text) }}
+          </tr>
+          <tr>
+            <td class="m3-sm m3-dim">· imagen</td>
+            {{ f0_celdas(fila.image) }}
+          </tr>
+          {% endfor %}
+          <tr>
+            <td class="m3-cell-strong">
+              Total
+              {%- if phase0.auto_since %} desde {{ phase0.auto_since.strftime("%Y-%m-%d") }}
+              {%- else %} <span class="m3-sm m3-dim">(sin eventos automáticos todavía)</span>{% endif %}
+            </td>
+            {{ f0_celdas(phase0.total.both) }}
+          </tr>
+          <tr>
+            <td class="m3-sm m3-dim">· texto</td>
+            {{ f0_celdas(phase0.total.text) }}
+          </tr>
+          <tr>
+            <td class="m3-sm m3-dim">· imagen</td>
+            {{ f0_celdas(phase0.total.image) }}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ---------- 2. Historial de H0 (spec.md §12.5) ---------- -->
+  {% macro h0pct(value) %}{% if value is not none %}{{ "%.1f"|format(value * 100) }}%{% else %}—{% endif %}{% endmacro %}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="historial-h0">Historial de H0</h2>
+      <span class="m3-sm m3-muted">
+        cada corrida de <code>measure.py</code>, más reciente arriba — mide cuánto
+        trabajo manual cuesta el volumen, no dictamina nada
+        (<code>spec.md</code> §12.5 y §12.6)
+      </span>
+    </div>
+
+    {% if not h0_runs %}
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span>
+      <span>
+        Sin corridas registradas todavía. Se llena al correr
+        <code>python -m saimc.extraction.measure</code> —
+        <a href="/docs/runbook-h0">ver el runbook</a>.
+      </span>
+    </div>
+    {% else %}
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Versión</th>
+            <th scope="col" style="text-align:right">Completa</th>
+            <th scope="col" style="text-align:right">Producto</th>
+            <th scope="col" style="text-align:right">Precio</th>
+            <th scope="col" style="text-align:right">Provincia</th>
+            <th scope="col" style="text-align:right">Cant./unidad</th>
+            <th scope="col" style="text-align:right">Descarte</th>
+            <th scope="col" style="text-align:right">Anuncios</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in h0_runs | reverse %}
+          <tr>
+            <td class="m3-nowrap m3-sm">
+              {{ run.date }}
+              {# Contra qué se midió, debajo de la fecha: a 390 px es la
+                 única columna que se ve sin desplazar la tabla. Una corrida
+                 sin versión es anterior al conjunto congelado. #}
+              <div class="m3-dim">
+                {% if run.reference_set_version is not none %}
+                conjunto v{{ run.reference_set_version }}
+                {% else %}
+                oro vivo
+                {% endif %}
+              </div>
+            </td>
+            <td class="m3-sm">
+              <code>{{ run.git_commit }}</code>
+              {% if run.git_dirty %}
+              <span class="m3-chip m3-chip-warn m3-chip-sm">árbol sucio</span>
+              {% endif %}
+              {% if run.git_branch not in ("master", "unknown") %}
+              <span class="m3-dim">· {{ run.git_branch }}</span>
+              {% endif %}
+              {% if run.tesseract_version %}
+              <span class="m3-dim">· tesseract {{ run.tesseract_version }}</span>
+              {% endif %}
+              {% if run.assisted_ads_count %}
+              {# El número de al lado mide SOLO lo no asistido: estos anuncios
+                 quedaron afuera porque su verdad pudo absorber un valor del
+                 modelo. Mostrarlo es lo que hace visible la divergencia. #}
+              <span class="m3-chip m3-chip-sm" title="Anuncios excluidos de la medición por haber pasado por el asistente de LLM">
+                {{ run.assisted_ads_count }} asistidos fuera
+              </span>
+              {% endif %}
+            </td>
+            <td class="is-num">
+              {% if run.complete_accuracy is not none %}
+              <strong>{{ "%.1f"|format(run.complete_accuracy * 100) }}%</strong>
+              {% if run.complete_delta is not none and run.complete_delta != 0 %}
+              <span class="m3-dim">{{ "%+.1f"|format(run.complete_delta * 100) }} pts</span>
+              {% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="is-num">{{ h0pct(run.product_accuracy) }}</td>
+            <td class="is-num">{{ h0pct(run.price_accuracy) }}</td>
+            <td class="is-num">{{ h0pct(run.province_accuracy) }}</td>
+            <td class="is-num">{{ h0pct(run.quantity_unit_accuracy) }}</td>
+            <td class="is-num">{{ h0pct(run.discard_rate) }}</td>
+            <td class="is-num">
+              {{ run.evaluated_ads_count }}
+              {% if not run.is_official %}
+              <span class="m3-dim">/ 300</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="m3-sm m3-muted" style="margin:10px 0 0">
+      «Completa» es el número de H0. Una corrida no es la medición oficial por
+      debajo de 300 anuncios evaluados (<code>spec.md</code> §3); la columna
+      «Anuncios» lo marca. «Árbol sucio» = el número no es atribuible a un
+      commit limpio. Debajo de la fecha va el conjunto de referencia contra el
+      que se midió: «oro vivo» son las corridas anteriores al conjunto
+      congelado. La diferencia en puntos solo aparece entre dos corridas del
+      mismo conjunto.
+    </p>
+    {% endif %}
+  </section>
+
+  <!-- ---------- 5. Cobertura producto × provincia ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="cobertura">Cobertura de la meta</h2>
+      <span class="m3-sm m3-muted">producto × provincia</span>
+    </div>
+    <p class="m3-note">
+      Los {{ pilot_products|length }} productos bandera contra las {{ phase0_provinces|length }}
+      provincias que nombra §9. <strong>El cero es el dato</strong>: dice exactamente qué falta
+      salir a capturar. No hay marca de «suficiente» porque el mínimo de observaciones por celda
+      es justo el parámetro que §12.6 manda calibrar con datos reales, no fijar de antemano.
+    </p>
+
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Producto</th>
+            {% for nombre in phase0_provinces %}
+            <th scope="col" style="text-align:right">{{ nombre }}</th>
+            {% endfor %}
+            <th scope="col" style="text-align:right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for product_name, celdas in coverage|groupby("product_name") %}
+          {% set celdas = celdas | list %}
+          <tr>
+            <td class="m3-cell-strong">{{ product_name }}</td>
+            {% for celda in celdas %}
+            <td class="is-num">
+              {% if celda.rows %}
+              <a href="/curation/history?product={{ celda.product_name | urlencode }}&province={{ celda.province_name | urlencode }}"
+                 title="Ver los anuncios detrás de este número">{{ celda.rows }}</a>
+              {% else %}
+              <span class="is-zero">—</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+            <td class="is-num m3-strong">{{ celdas | sum(attribute='rows') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {% if assist.calls %}
+  <!-- ---------- 2bis. Consumo del asistente ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="asistente">Consumo del asistente</h2>
+      <span class="m3-sm m3-muted">
+        gasto de SAIMC medido sobre lo que la API reportó consumir — no el
+        total de la cuenta. Tarifas y supuestos en el documento de costos.
+      </span>
+    </div>
+
+    {% if assist.out_of_credit %}
+    {# La última llamada falló por saldo. Sin este aviso el operador no tiene
+       cómo enterarse: la cola sigue funcionando igual, que es justo lo que lo
+       vuelve invisible. #}
+    <p class="m3-chip m3-chip-warn">
+      La última llamada falló por <strong>saldo insuficiente</strong>. Cargá
+      créditos; mientras tanto el botón no propone nada y la curaduría sigue a
+      mano, como siempre.
+    </p>
+    {% endif %}
+
+    <div class="m3-stats">
+      <div class="m3-stat">
+        <div class="m3-stat-label">Invocaciones</div>
+        <div class="m3-stat-value">{{ assist.calls }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Gasto estimado</div>
+        <div class="m3-stat-value">${{ "%.2f"|format(assist.estimated_usd) }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Tokens de entrada</div>
+        <div class="m3-stat-value">{{ assist.input_tokens }}</div>
+      </div>
+      <div class="m3-stat">
+        <div class="m3-stat-label">Tokens de salida</div>
+        <div class="m3-stat-value">{{ assist.output_tokens }}</div>
+      </div>
+    </div>
+
+    {% if assist.failures %}
+    <p class="m3-sm m3-muted">
+      Fallas: {% for tipo, n in assist.failures.items() %}{{ n }} {{ tipo }}{{ ", " if not loop.last }}{% endfor %}
+    </p>
+    {% endif %}
+
+    {% if assist.untariffed_calls %}
+    <p class="m3-sm m3-muted">
+      {{ assist.untariffed_calls }} llamada{{ "s" if assist.untariffed_calls != 1 }}
+      con un modelo sin tarifa cargada: no entran en el gasto estimado.
+    </p>
+    {% endif %}
+  </section>
+  {% endif %}
+{% endblock %}

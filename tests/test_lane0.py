@@ -699,7 +699,7 @@ def test_caso_15_control_muestra_los_automaticos_pero_no_la_cota(
         _auto_descartado(session, cuando=cuando)
     _auto_descartado(session, tipo=ContentType.IMAGE, cuando=cuando)
 
-    html = client.get("/control").text
+    html = client.get("/control/ingesta").text
 
     assert "Descartes automáticos" in html
     assert "cota" not in html.lower()
