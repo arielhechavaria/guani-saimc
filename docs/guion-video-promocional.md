@@ -76,5 +76,5 @@ No se usan las capturas 2 a 4 del pase actual (`flujo-2..4`): muestran la herram
 ## Decisiones abiertas para el operador
 
 1. **Peso frente a duración. DECIDIDO:** 720×1280 y tope de ~1 MB (el operador subió el tope de los ~750 KB del video actual).
-2. **Ejemplo de punta a punta.** ¿Las escenas 2 a 5 siguen con el anuncio de pollo recreado, o se elige un anuncio de texto real con página pública limpia y se recrea el chat a partir de él?
+2. **Ejemplo de punta a punta. DECIDIDO:** un anuncio de texto real con página pública limpia (sin teléfono, id ni enlace a la vista); el chat de la escena 2 se recrea a partir de él. El anuncio concreto se elige al capturar y se te muestra antes de producir.
 3. **Apertura.** ¿Pregunta («¿Cuánto cuesta algo hoy en tu provincia?») o titular de la landing dicho en voz («Precios reales del mercado informal cubano»)?
