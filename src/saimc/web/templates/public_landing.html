@@ -125,21 +125,16 @@
   .lp-cta:hover { color: var(--ph-dusk-tinta); }
   .lp-cta .lp-svg-icon { font-size: 22px; }
   .lp-stage { position: relative; height: 430px; margin-top: 8px; }
-  .lp-sun { position: absolute; left: 50%; top: 20px; width: 340px; height: 340px; margin-left: -170px; border-radius: 50%;
+  .lp-sun { position: absolute; left: 50%; top: 50px; width: 340px; height: 340px; margin-left: -170px; border-radius: 50%;
             background: radial-gradient(circle, var(--ph-dusk-guayaba) 0 58%, var(--ph-dusk-guayaba-halo) 64%,
                                         var(--ph-dusk-guayaba-borde) 72%);
             animation: lp-sunrise 1.8s ease-out both; }
   @keyframes lp-sunrise { from { transform: translateY(110px); opacity: .2; } to { transform: none; opacity: 1; } }
-  .lp-hero-phone { position: absolute; left: 50%; bottom: -70px; width: 232px; margin-left: -116px; box-sizing: border-box;
-                   padding: 8px; border-radius: 36px; background: var(--ph-dusk-sil-cerca); box-shadow: 0 18px 50px var(--ph-dusk-sombra); }
-  .lp-hero-phone img { display: block; width: 100%; height: auto; border-radius: 28px; }
-  .lp-hero-phone::before { content: ""; position: absolute; z-index: 1; top: 14px; left: 50%; width: 64px; height: 18px;
-                           margin-left: -32px; border-radius: 12px; background: var(--ph-dusk-sil-cerca); }
-  /* Guani, pegado a la esquina del teléfono como una foto de perfil. Parpadea
-     de vez en cuando (el avatar ya trae `guani-eye`); con movimiento reducido
-     la regla general de más abajo lo apaga. */
-  .lp-hero-avatar { position: absolute; z-index: 2; left: calc(50% + 78px); top: 0; width: 76px; height: 76px;
-                    filter: drop-shadow(0 6px 14px var(--ph-dusk-sombra)); }
+  /* Guani, grande, sobre el sol. Parpadea de vez en cuando (el avatar ya trae
+     `guani-eye`); con movimiento reducido la regla general de más abajo lo
+     apaga. */
+  .lp-hero-avatar { position: absolute; z-index: 1; left: 50%; top: 110px; width: 210px; height: 210px; margin-left: -105px;
+                    filter: drop-shadow(0 10px 24px var(--ph-dusk-sombra)); }
   .lp-hero-avatar .ph-brand-avatar { display: block; width: 100%; height: 100%; }
   .lp-hero-avatar .guani-eye { transform-box: fill-box; transform-origin: center; animation: lp-blink 5s infinite; }
   @keyframes lp-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
@@ -158,12 +153,11 @@
     .lp-hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
     .lp-hero-text { padding-top: 56px; padding-bottom: 150px; }
     .lp-stage { height: 560px; }
-    .lp-hero-phone { width: 270px; margin-left: -135px; }
-    .lp-sun { top: 40px; width: 420px; height: 420px; margin-left: -210px; }
+    .lp-sun { top: 60px; width: 420px; height: 420px; margin-left: -210px; }
     .lp-city-back { height: 260px; }
     .lp-wall { height: 74px; }
     .lp-globe-3 { left: -40px; top: 196px; }
-    .lp-hero-avatar { left: calc(50% + 91px); width: 88px; height: 88px; }
+    .lp-hero-avatar { top: 130px; width: 280px; height: 280px; margin-left: -140px; }
     .lp-palm { width: 170px; bottom: 50px; } .lp-palm-l { left: 43%; } .lp-palm-r { right: 1%; }
   }
 
@@ -474,9 +468,6 @@
 
       <div class="lp-stage">
         <div class="lp-sun" aria-hidden="true"></div>
-        {%- if hero_phone %}
-        <div class="lp-hero-phone"><img src="{{ hero_phone.src }}" alt="{{ hero_phone.alt }}" width="{{ hero_phone.width }}" height="{{ hero_phone.height }}"></div>
-        {%- endif %}
         {%- with avatar_clip_id="guani-avatar-clip-portada" %}
         <div class="lp-hero-avatar" aria-hidden="true">{% include "_guani_avatar.html" %}</div>
         {%- endwith %}

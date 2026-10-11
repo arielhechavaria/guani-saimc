@@ -55,7 +55,6 @@ from saimc.web.explore_view import (
     build_explore_products,
 )
 from saimc.web.landing_view import (
-    build_hero_phone,
     build_landing_coverage,
     build_landing_entries,
     build_landing_flow,
@@ -964,7 +963,6 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> Response:
                 "flow": build_landing_flow(),
                 "products": products,
                 "entries": build_landing_entries(),
-                "hero_phone": build_hero_phone(),
                 "window_days": (hasta - desde).days,
                 "footer": _site_footer(),
             },
