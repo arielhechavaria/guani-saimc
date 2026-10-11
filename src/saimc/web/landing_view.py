@@ -275,6 +275,11 @@ LANDING_STATIC_URL = "/static/landing"
 SHOT_WIDTH = 460
 SHOT_HEIGHT = 958
 
+#: El video está retirado de la página (landing-narrativa): su voz cuenta que una
+#: persona revisa todo, y ya no es cierto. El archivo queda en el repo; para
+#: volver a enseñarlo hay que regrabarlo con el recorrido nuevo y encender esto.
+FLOW_VIDEO_ENABLED = False
+
 VIDEO_NAME = "guani-flujo.mp4"
 VIDEO_POSTER_NAME = "guani-flujo-poster.webp"
 
@@ -301,7 +306,7 @@ _FLOW: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "flujo-4.webp",
-        "Una persona lo revisa y lo corrige si hace falta.",
+        "Si hay dudas lo revisa una persona; si es claro, el sistema lo acepta y una persona lo audita después.",
         "Las preguntas que responde la persona que verifica el anuncio, con el botón «Guardar corrección».",
     ),
     (
@@ -403,7 +408,7 @@ def build_landing_flow(directory: Path | None = None) -> LandingFlow:
         )
 
     video: FlowVideo | None = None
-    found = _file_size(directory, VIDEO_NAME)
+    found = _file_size(directory, VIDEO_NAME) if FLOW_VIDEO_ENABLED else None
     if found is not None:
         size, mtime = found
         video = FlowVideo(

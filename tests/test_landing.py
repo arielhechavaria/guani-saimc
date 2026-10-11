@@ -368,7 +368,7 @@ class TestLaLandingEnLaRaiz:
         respuesta = client.get("/")
 
         assert respuesta.status_code == 200
-        assert "Hola, soy Guani." in respuesta.text
+        assert "Precios reales del mercado informal cubano." in respuesta.text
         assert 'href="/precios"' in respuesta.text
 
     def test_no_es_el_tablero(self, client: TestClient, datos: None) -> None:
@@ -395,7 +395,7 @@ class TestLaLandingEnLaRaiz:
         respuesta = client.get("/", follow_redirects=False)
 
         assert respuesta.status_code == 200
-        assert "Hola, soy Guani." in respuesta.text
+        assert "Precios reales del mercado informal cubano." in respuesta.text
 
     def test_la_tarjeta_de_precio_muestra_el_rango_real_con_su_muestra(
         self, client: TestClient, datos: None
@@ -498,7 +498,7 @@ class TestPorQueFiarte:
         "Cada cifra enseña sus anuncios",
         "Provincia por provincia",
         "Compara lo comparable",
-        "Una persona revisa cada precio",
+        "Sabes quién la revisó",
         "Un precio disparatado no manda",
         "Todo en pesos cubanos",
     )
@@ -650,7 +650,7 @@ class TestLaLandingSinDatos:
         respuesta = client.get("/")
 
         assert respuesta.status_code == 200
-        assert "Hola, soy Guani." in respuesta.text
+        assert "Precios reales del mercado informal cubano." in respuesta.text
         for marcador in MARCADORES:
             assert marcador not in _visible(respuesta.text)
 
@@ -725,7 +725,7 @@ class TestElTableroEnPrecios:
 
         assert respuesta.status_code == 200
         assert "Qué cuesta hoy" in respuesta.text
-        assert "Hola, soy Guani." not in respuesta.text
+        assert "Precios reales del mercado informal cubano." not in respuesta.text
 
     def test_los_parametros_de_siempre_siguen_andando(self, client: TestClient, datos: None) -> None:
         mapa = client.get("/precios?vista=mapa")
@@ -792,7 +792,7 @@ class TestLosEnlacesYaCompartidos:
         respuesta = client.get("/?fbclid=abc123", follow_redirects=False)
 
         assert respuesta.status_code == 200
-        assert "Hola, soy Guani." in respuesta.text
+        assert "Precios reales del mercado informal cubano." in respuesta.text
 
 
 # ── «Así trabajo»: pase de capturas y tarjeta de video (2026-10-06) ──────────
@@ -804,7 +804,7 @@ PASOS = (
     "Un emprendedor publica su oferta en un grupo o canal.",
     "El anuncio llega a Guani tal cual se escribió.",
     "Saco el producto, el precio y la provincia.",
-    "Una persona lo revisa y lo corrige si hace falta.",
+    "Si hay dudas lo revisa una persona; si es claro, el sistema lo acepta y una persona lo audita después.",
     "Lo ves en el tablero como rango, mediana y número de anuncios.",
 )
 CAPTURAS = tuple(f"flujo-{n}.webp" for n in range(1, 6))
@@ -818,6 +818,14 @@ def _copiar_capturas(destino: Path, *, salvo: str | None = None) -> None:
     for nombre in CAPTURAS:
         if nombre != salvo:
             shutil.copy(landing_view.LANDING_STATIC_DIR / nombre, destino / nombre)
+
+
+@pytest.fixture(autouse=True)
+def _video_del_recorrido_encendido(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El video está retirado de la página (`FLOW_VIDEO_ENABLED = False`); estas
+    pruebas siguen cubriendo cómo se arma y se dibuja cuando se vuelva a
+    encender. `TestElVideoDelRecorridoEstaRetirado` prueba el valor real."""
+    monkeypatch.setattr(landing_view, "FLOW_VIDEO_ENABLED", True, raising=False)
 
 
 @pytest.fixture
@@ -986,7 +994,7 @@ class TestAsiTrabajoEnLaPagina:
         assert _imagenes_del_pase(texto) == []
         assert "<ol" not in texto
         assert 'class="lp-steps"' in texto
-        for titulo in ("Leo los anuncios", "Los reviso uno por uno", "Te lo enseño en claro"):
+        for titulo in ("Leo los anuncios", "Lo reviso y lo filtro", "Te lo enseño en claro"):
             assert titulo in texto
 
     def test_con_el_mp4_hay_video_con_boton_y_sin_autoplay(
@@ -1189,3 +1197,93 @@ class TestLaSeccionRenderizada:
 
         for voseo in ("mirá", "elegí", "tocá", "entrá", "podés", "tenés"):
             assert voseo not in texto
+
+
+# ── Narrativa (landing-narrativa, `docs/propuesta-narrativa-landing.md`) ──────
+#
+# El texto esperado es el de la propuesta aprobada, escrito antes que la
+# plantilla. Lo que se prueba es doble: que diga lo nuevo y que ya no diga lo
+# que dejó de ser cierto (el carril 0 descarta solo y el carril 1 acepta solo).
+
+PAGINAS_PUBLICAS = (
+    "/",
+    "/preguntas",
+    "/terminos",
+    "/privacidad",
+    "/metodologia",
+    "/precios",
+    "/precios?vista=mapa",
+    "/precios?vista=explorar",
+)
+LO_QUE_YA_NO_ES_CIERTO = (
+    "uno por uno",
+    "Ninguna cifra de esta página es una estimación",
+    "ninguno cuenta hasta que una persona lo revisa",
+    "Una persona revisa cada precio",
+)
+
+
+class TestLaNarrativaEsCierta:
+    def test_la_promesa_dice_que_es_una_herramienta_asistida(self, client: TestClient) -> None:
+        texto = _visible(client.get("/").text)
+
+        assert "Precios reales del mercado informal cubano." in texto
+        assert (
+            "Guani lee los anuncios donde ya se vende, los pasa a una misma unidad y te los "
+            "enseña con su cuenta. Una máquina lee; una persona supervisa."
+        ) in texto
+        assert "Hola, soy Guani" not in texto
+
+    @pytest.mark.parametrize("ruta", PAGINAS_PUBLICAS)
+    def test_ninguna_pagina_publica_dice_lo_que_dejo_de_ser_cierto(
+        self, client: TestClient, ruta: str
+    ) -> None:
+        respuesta = client.get(ruta)
+        assert respuesta.status_code == 200, ruta
+        texto = " ".join(_visible(respuesta.text).split())
+
+        for frase in LO_QUE_YA_NO_ES_CIERTO:
+            assert frase not in texto, f"{ruta}: «{frase}»"
+
+    def test_la_tarjeta_de_confianza_dice_quien_reviso(self, client: TestClient) -> None:
+        seccion = client.get("/").text.split('id="lp-why"')[1].split("</section>")[0]
+
+        assert (
+            "Al lado de cada cifra va cuántos anuncios revisó una persona y cuántos aceptó el "
+            "sistema solo. Y una persona audita lo que el sistema aceptó."
+        ) in " ".join(_visible(seccion).split())
+
+    def test_el_pie_dice_de_cuantos_anuncios_sale_cada_cifra(self, client: TestClient) -> None:
+        for ruta in ("/precios?vista=mapa",):  # el tablero y Explorar apagan este pie
+            texto = " ".join(_visible(client.get(ruta).text).split())
+
+            assert (
+                "Cada cifra dice de cuántos anuncios sale y cuántos revisó una persona. "
+                "Es una muestra en formación, no un censo."
+            ) in texto, ruta
+
+    def test_las_preguntas_y_los_terminos_dicen_lo_mismo_que_la_metodologia(self, client: TestClient) -> None:
+        preguntas = " ".join(_visible(client.get("/preguntas").text).split())
+        terminos = " ".join(_visible(client.get("/terminos").text).split())
+
+        assert "cuando una persona lo revisa o el sistema lo acepta con auditoría" in preguntas
+        assert 'href="/metodologia"' in client.get("/preguntas").text
+        assert (
+            "Los anuncios los revisa una persona o los acepta el sistema con auditoría, "
+            "pero aun así puede haber errores"
+        ) in terminos
+
+
+class TestElVideoDelRecorridoEstaRetirado:
+    """La voz de `guani-flujo.mp4` cuenta el recorrido viejo (una persona revisa
+    todo). El archivo queda en el repo; la página no lo enseña hasta regrabarlo."""
+
+    def test_por_defecto_la_pagina_no_lo_muestra(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.undo()  # la fixture de módulo lo enciende para probar el resto
+
+        assert landing_view.FLOW_VIDEO_ENABLED is False
+        assert build_landing_flow().video is None
+        assert "<video" not in client.get("/").text.split('id="entradas"')[0]
+        assert (landing_view.LANDING_STATIC_DIR / "guani-flujo.mp4").is_file()
