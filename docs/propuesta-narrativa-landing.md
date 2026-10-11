@@ -66,7 +66,7 @@ persona; si es claro, el sistema lo acepta y una persona lo audita después»).
 
 - **Si compras o vendes:** ¿cuánto cuesta esto hoy en mi provincia?
 - **Si revendes o decides:** qué se mueve y dónde.
-- **Si investigas o informas:** los datos abiertos en CSV, con su metodología.
+- **Si investigas o informas:** los datos en CSV, con su metodología.
 
 Cada línea enlaza a su vista (tablero, mapa y Explorar, descarga).
 

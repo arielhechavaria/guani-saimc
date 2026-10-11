@@ -23,9 +23,10 @@
   - Los colores son los tokens de `design_tokens.css`, no los hex del
     prototipo (que son esos mismos tokens en claro): `test_static_assets`
     prohíbe un color a mano en el CSS de una plantilla. De regalo la página
-    sigue el modo oscuro, aunque no trae el botón para cambiarlo. Por eso las
-    ilustraciones se pintan con clases `lp-f-*` y no con `fill="#…"`.
-  - Sin JavaScript: todas las animaciones son CSS, y respetan
+    sigue el modo oscuro, aunque no trae el botón para cambiarlo. Por eso nada
+    de aquí lleva un color a mano (`fill="#…"`).
+  - Sin JavaScript salvo el guion de los clips de «Entra por donde quieras»
+    (al final): todas las animaciones son CSS, y respetan
     `prefers-reduced-motion`.
   - «Así trabajo» (2026-10-06, `docs/decisions.md`) es un pase de cinco
     capturas del sistema y, si existe el archivo, una tarjeta de video. Qué hay
@@ -96,18 +97,9 @@
   @keyframes lp-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
   @keyframes lp-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
   @keyframes lp-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-  @keyframes lp-grow-y { from { transform: scaleY(.2); } to { transform: scaleY(1); } }
-  @keyframes lp-pop { 0%, 10% { transform: scale(0); opacity: 0; } 25%, 85% { transform: scale(1); opacity: 1; }
-                      100% { transform: scale(1); opacity: 0; } }
-  @keyframes lp-draw { from { stroke-dashoffset: 60; } to { stroke-dashoffset: 0; } }
   .lp-in { animation: lp-rise .7s ease-out both; }
-  .lp-pop { transform-box: fill-box; transform-origin: left bottom; animation: lp-pop 4.5s ease-in-out infinite; }
-  .lp-grow-bar { transform-box: fill-box; transform-origin: bottom; animation: lp-grow-y 2.4s ease-in-out infinite alternate; }
-  .lp-draw { stroke-dasharray: 60; animation: lp-draw 2.4s ease-out infinite alternate; }
   .lp-lift { transition: transform .18s ease, box-shadow .18s ease; }
   .lp-lift:hover { transform: translateY(-4px); box-shadow: var(--m3-elev-3); }
-  .lp-delay-3 { animation-delay: .3s; } .lp-delay-6 { animation-delay: .6s; } .lp-delay-7 { animation-delay: .7s; }
-  .lp-delay-9 { animation-delay: .9s; } .lp-delay-12 { animation-delay: 1.2s; } .lp-delay-14 { animation-delay: 1.4s; }
   @supports (animation-timeline: view()) {
     .lp-reveal { animation: lp-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 45%; }
     .lp-fill { transform-origin: left; animation: lp-grow linear both; animation-timeline: view();
@@ -152,16 +144,8 @@
   .lp-cta .lp-svg-icon { font-size: 22px; }
   .lp-wave { display: block; width: 100%; height: 44px; color: var(--lp-bg); }
 
-  /* ── Así trabajo ──────────────────────────────────────────────────────
-     Las ilustraciones se pintan por clase para que salgan de los tokens. */
-  .lp-f-surface { fill: var(--lp-surface); } .lp-f-line { fill: var(--lp-line); }
-  .lp-f-blue { fill: var(--lp-blue); } .lp-f-teal { fill: var(--lp-teal); }
-  .lp-f-chip { fill: var(--lp-chip); } .lp-f-on-blue { fill: var(--lp-on-blue); }
-  .lp-s-on-blue { stroke: var(--lp-on-blue); }
-  .lp-steps { margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; }
+  /* ── Así trabajo ─────────────────────────────────────────────────────── */
   .lp-card { background: var(--lp-surface); border-radius: 24px; padding: 16px; }
-  .lp-art { border-radius: 16px; background: var(--lp-tint); padding: 12px; }
-  .lp-art svg { display: block; width: 100%; height: auto; }
   .lp-step-head { margin-top: 14px; display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
   .lp-step-num { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px;
                  border-radius: 50%; background: var(--lp-blue); color: var(--lp-on-blue); font-size: 15px; font-weight: 700; }
@@ -270,6 +254,28 @@
   .lp-faq-link:hover { color: var(--lp-blue); text-decoration: underline; }
   .lp-nots li { display: flex; gap: 10px; }
   .lp-nots .m3-icon { flex: none; font-size: 22px; color: var(--lp-blue); }
+
+  /* ── Así trabajo: los cuatro pasos y «Para quién es» (prototipo
+     `docs/prototipos/landing-narrativa.html`). Una columna a 390 px, dos
+     (o tres) desde 720 px. ───────────────────────────────────────────── */
+  .lp-steps4 { margin: 16px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .lp-steps4 .lp-card { padding: 18px 16px; }
+  .lp-steps4 .lp-step-head { margin-top: 0; }
+  .lp-flow-example { margin-top: 28px; }
+  .lp-who { margin: 16px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .lp-who-link { box-sizing: border-box; height: 100%; display: flex; align-items: flex-start; gap: 14px; min-height: 44px;
+                 padding: 18px 16px; border-radius: 24px; background: var(--lp-surface); color: var(--lp-ink);
+                 border: 1px solid var(--lp-line); text-decoration: none; }
+  .lp-who-link:hover { color: var(--lp-ink); }
+  .lp-who-icon { display: flex; flex: none; align-items: center; justify-content: center; width: 48px; height: 48px;
+                 border-radius: 50%; background: var(--lp-chip); color: var(--lp-chip-ink); }
+  .lp-who-icon .m3-icon { font-size: 26px; }
+  .lp-who-title { margin: 2px 0 0; font-size: 18px; font-weight: 700; line-height: 1.25; }
+  .lp-who-text { margin: 6px 0 0; font-size: 16px; line-height: 1.45; color: var(--lp-ink-soft); }
+  @media (min-width: 720px) {
+    .lp-steps4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .lp-who { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
 
   /* ── Entradas ───────────────────────────────────────────────────────── */
   .lp-entries { padding-bottom: 36px; }
@@ -384,80 +390,6 @@
 
 <main class="lp-main">
 
-<section class="lp-wrap lp-section" aria-labelledby="lp-work-title">
-  <h2 class="lp-h2" id="lp-work-title">Así trabajo</h2>
-  {% if flow.shots %}
-  <p class="lp-flow-lead">Así pasó con un anuncio real, desde que alguien lo publica hasta que lo ves como precio.</p>
-  <div class="lp-flow">
-    <div class="lp-flow-phone">
-      <div class="lp-phone lp-reveal">
-        {# La primera captura carga normal; las otras cuatro, perezosas: están
-           apiladas en el mismo rectángulo, así que el navegador las pide
-           juntas cuando el marco se acerca a la pantalla. #}
-        <div class="lp-phone-screen">
-          {%- for shot in flow.shots %}
-          <img class="lp-shot" src="{{ shot.src }}" alt="{{ shot.alt }}" width="{{ shot.width }}" height="{{ shot.height }}" decoding="async"{% if not loop.first %} loading="lazy"{% endif %}>
-          {%- endfor %}
-        </div>
-      </div>
-    </div>
-    <div class="lp-flow-text">
-      {{ flow_steps() }}
-      {{ video_card() }}
-    </div>
-  </div>
-  {% else %}
-  {# Respaldo: falta alguna de las cinco capturas en disco. #}
-  <div class="lp-steps">
-
-    <div class="lp-card lp-reveal">
-      <div class="lp-art">
-        <svg viewBox="0 0 240 110" aria-hidden="true">
-          <g class="lp-pop"><rect class="lp-f-surface" x="14" y="10" width="120" height="26" rx="13"/><rect class="lp-f-line" x="26" y="20" width="70" height="6" rx="3"/><rect class="lp-f-blue" x="102" y="20" width="20" height="6" rx="3"/></g>
-          <g class="lp-pop lp-delay-7"><rect class="lp-f-blue" x="92" y="44" width="134" height="26" rx="13"/><rect class="lp-f-chip" x="104" y="54" width="60" height="6" rx="3"/><rect class="lp-f-on-blue" x="170" y="54" width="44" height="6" rx="3"/></g>
-          <g class="lp-pop lp-delay-14"><rect class="lp-f-surface" x="14" y="78" width="104" height="26" rx="13"/><rect class="lp-f-line" x="26" y="88" width="50" height="6" rx="3"/><rect class="lp-f-blue" x="82" y="88" width="24" height="6" rx="3"/></g>
-        </svg>
-      </div>
-      <div class="lp-step-head"><span class="lp-step-num">1</span><span>Leo los anuncios</span></div>
-      <p class="lp-step-text">Lo que los emprendedores publican en grupos y canales de WhatsApp, tal cual.</p>
-    </div>
-
-    <div class="lp-card lp-reveal">
-      <div class="lp-art">
-        <svg viewBox="0 0 240 110" aria-hidden="true">
-          <rect class="lp-f-surface" x="40" y="12" width="130" height="86" rx="12"/>
-          <rect class="lp-f-blue" x="54" y="28" width="60" height="7" rx="3.5"/>
-          <rect class="lp-f-line" x="54" y="46" width="100" height="6" rx="3"/>
-          <rect class="lp-f-line" x="54" y="60" width="84" height="6" rx="3"/>
-          <rect class="lp-f-chip" x="54" y="74" width="48" height="12" rx="6"/>
-          <circle class="lp-f-blue" cx="176" cy="74" r="26"/>
-          <path class="lp-draw lp-s-on-blue" d="M163,75 L172,84 L190,64" fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <div class="lp-step-head"><span class="lp-step-num">2</span><span>Lo reviso y lo filtro</span></div>
-      <p class="lp-step-text">De cada anuncio saco producto, precio y provincia. Lo difícil lo decide una persona; lo claro, el sistema lo acepta y una persona lo audita después.</p>
-    </div>
-
-    <div class="lp-card lp-reveal">
-      <div class="lp-art">
-        <svg viewBox="0 0 240 110" aria-hidden="true">
-          <rect class="lp-f-line" x="20" y="96" width="200" height="3" rx="1.5"/>
-          <rect class="lp-f-teal lp-grow-bar" x="34" y="56" width="26" height="40" rx="6"/>
-          <rect class="lp-f-blue lp-grow-bar lp-delay-3" x="72" y="34" width="26" height="62" rx="6"/>
-          <rect class="lp-f-blue lp-grow-bar lp-delay-6" x="110" y="18" width="26" height="78" rx="6"/>
-          <rect class="lp-f-blue lp-grow-bar lp-delay-9" x="148" y="42" width="26" height="54" rx="6"/>
-          <rect class="lp-f-teal lp-grow-bar lp-delay-12" x="186" y="66" width="26" height="30" rx="6"/>
-        </svg>
-      </div>
-      <div class="lp-step-head"><span class="lp-step-num">3</span><span>Te lo enseño en claro</span></div>
-      <p class="lp-step-text">Rango, mediana y cuántos anuncios hay detrás de cada cifra.</p>
-    </div>
-
-  </div>
-  {{ video_card() }}
-  {% endif %}
-</section>
-
 <section class="lp-wrap lp-section" id="lp-price" aria-labelledby="lp-price-title">
   <div class="lp-price lp-reveal">
     <div class="lp-price-top">
@@ -494,6 +426,44 @@
       {% endif %}
     </div>
   </div>
+</section>
+
+<section class="lp-wrap lp-section" id="lp-work" aria-labelledby="lp-work-title">
+  <h2 class="lp-h2" id="lp-work-title">Así trabajo</h2>
+  <p class="lp-flow-lead">Una máquina lee los anuncios y una persona supervisa. Estos son los cuatro pasos.</p>
+  <ol class="lp-steps4">
+    <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">1</span><span>Escucha</span></div>
+      <p class="lp-step-text">Lee los grupos y canales donde ya se vende. Nadie tiene que escribirle nada.</p></li>
+    <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">2</span><span>Entiende</span></div>
+      <p class="lp-step-text">Un asistente saca producto, precio, cantidad y provincia, y lo lleva todo a la misma unidad y moneda.</p></li>
+    <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">3</span><span>Filtra</span></div>
+      <p class="lp-step-text">Aparta lo que no es un anuncio de precio y frena lo dudoso. Lo difícil lo decide una persona; lo claro, el sistema lo acepta y una persona lo audita después.</p></li>
+    <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">4</span><span>Te lo enseña con su cuenta</span></div>
+      <p class="lp-step-text">Rango, mediana y cuántos anuncios hay detrás, separando los revisados a mano de los aceptados por el sistema.</p></li>
+  </ol>
+  {% if flow.shots %}
+  <p class="lp-flow-lead lp-flow-example">Así pasó con un anuncio real, desde que alguien lo publica hasta que lo ves como precio.</p>
+  <div class="lp-flow">
+    <div class="lp-flow-phone">
+      <div class="lp-phone lp-reveal">
+        {# La primera captura carga normal; las otras cuatro, perezosas: están
+           apiladas en el mismo rectángulo, así que el navegador las pide
+           juntas cuando el marco se acerca a la pantalla. #}
+        <div class="lp-phone-screen">
+          {%- for shot in flow.shots %}
+          <img class="lp-shot" src="{{ shot.src }}" alt="{{ shot.alt }}" width="{{ shot.width }}" height="{{ shot.height }}" decoding="async"{% if not loop.first %} loading="lazy"{% endif %}>
+          {%- endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="lp-flow-text">
+      {{ flow_steps() }}
+      {{ video_card() }}
+    </div>
+  </div>
+  {% else %}
+  {{ video_card() }}
+  {% endif %}
 </section>
 
 <section class="lp-wrap lp-section" id="lp-why" aria-labelledby="lp-why-title">
@@ -544,6 +514,24 @@
     </li>
   </ul>
   <a class="lp-faq-link" href="/metodologia">Cómo calculamos los precios{{ svg_icon("arrow") }}</a>
+</section>
+
+<section class="lp-wrap lp-section" id="lp-who" aria-labelledby="lp-who-title">
+  <h2 class="lp-h2" id="lp-who-title">Para quién es</h2>
+  <ul class="lp-who">
+    <li><a class="lp-who-link lp-lift" href="/precios?vista=tablero">
+      <span class="lp-who-icon"><span class="m3-icon" aria-hidden="true">sell</span></span>
+      <div><p class="lp-who-title">Si compras o vendes</p>
+      <p class="lp-who-text">¿Cuánto cuesta esto hoy en mi provincia?</p></div></a></li>
+    <li><a class="lp-who-link lp-lift" href="/precios?vista=explorar">
+      <span class="lp-who-icon"><span class="m3-icon" aria-hidden="true">show_chart</span></span>
+      <div><p class="lp-who-title">Si revendes o decides</p>
+      <p class="lp-who-text">Qué se mueve y dónde.</p></div></a></li>
+    <li><a class="lp-who-link lp-lift" href="/datos.csv">
+      <span class="lp-who-icon"><span class="m3-icon" aria-hidden="true">download</span></span>
+      <div><p class="lp-who-title">Si investigas o informas</p>
+      <p class="lp-who-text">Los datos en CSV, con su metodología.</p></div></a></li>
+  </ul>
 </section>
 
 <section class="lp-wrap lp-section" aria-label="Preguntas frecuentes">

@@ -986,16 +986,17 @@ class TestAsiTrabajoEnLaPagina:
         assert "<script" not in principal.split('id="entradas"')[0]
         assert principal.count("<script") == 1
 
-    def test_si_falta_una_captura_vuelven_las_tarjetas(self, client: TestClient, directorio: Path) -> None:
+    def test_si_falta_una_captura_no_hay_pase_pero_siguen_los_cuatro_pasos(
+        self, client: TestClient, directorio: Path
+    ) -> None:
         (directorio / "flujo-4.webp").unlink()
 
         texto = client.get("/").text
 
         assert _imagenes_del_pase(texto) == []
-        assert "<ol" not in texto
-        assert 'class="lp-steps"' in texto
-        for titulo in ("Leo los anuncios", "Lo reviso y lo filtro", "Te lo enseño en claro"):
-            assert titulo in texto
+        assert 'class="lp-flow-steps"' not in texto
+        assert 'class="lp-steps"' not in texto  # las tarjetas ilustradas de respaldo ya no existen
+        assert len(re.findall(r'<li class="lp-card">', texto)) == 4
 
     def test_con_el_mp4_hay_video_con_boton_y_sin_autoplay(
         self, client: TestClient, directorio: Path
@@ -1025,7 +1026,7 @@ class TestAsiTrabajoEnLaPagina:
 
         texto = client.get("/").text
 
-        assert 'class="lp-steps"' in texto
+        assert _imagenes_del_pase(texto) == []
         assert len(re.findall(r"<video\b", texto)) == 1
 
 
@@ -1287,3 +1288,101 @@ class TestElVideoDelRecorridoEstaRetirado:
         assert build_landing_flow().video is None
         assert "<video" not in client.get("/").text.split('id="entradas"')[0]
         assert (landing_view.LANDING_STATIC_DIR / "guani-flujo.mp4").is_file()
+
+
+# ── Cuatro pasos y «Para quién es» (prototipo aprobado, landing-narrativa) ────
+#
+# Los textos son los de `docs/propuesta-narrativa-landing.md` y el prototipo
+# `docs/prototipos/landing-narrativa.html`, escritos antes que la plantilla.
+
+CUATRO_PASOS = (
+    ("Escucha", "Lee los grupos y canales donde ya se vende. Nadie tiene que escribirle nada."),
+    (
+        "Entiende",
+        "Un asistente saca producto, precio, cantidad y provincia, y lo lleva todo a la misma "
+        "unidad y moneda.",
+    ),
+    (
+        "Filtra",
+        "Aparta lo que no es un anuncio de precio y frena lo dudoso. Lo difícil lo decide una "
+        "persona; lo claro, el sistema lo acepta y una persona lo audita después.",
+    ),
+    (
+        "Te lo enseña con su cuenta",
+        "Rango, mediana y cuántos anuncios hay detrás, separando los revisados a mano de los "
+        "aceptados por el sistema.",
+    ),
+)
+PARA_QUIEN = (
+    ("/precios?vista=tablero", "Si compras o vendes", "¿Cuánto cuesta esto hoy en mi provincia?"),
+    ("/precios?vista=explorar", "Si revendes o decides", "Qué se mueve y dónde."),
+    ("/datos.csv", "Si investigas o informas", "Los datos en CSV, con su metodología."),
+)
+
+
+def _items(html: str, clase: str) -> list[str]:
+    lista = re.search(rf'<(?:ol|ul) class="{clase}"[^>]*>.*?</(?:ol|ul)>', html, flags=re.S)
+    assert lista is not None, clase
+    return [" ".join(_visible(li).split()) for li in re.findall(r"<li\b.*?</li>", lista.group(0), flags=re.S)]
+
+
+class TestLosCuatroPasos:
+    def test_son_cuatro_en_orden_con_el_texto_aprobado(self, client: TestClient) -> None:
+        assert _items(client.get("/").text, "lp-steps4") == [
+            f"{n} {titulo} {texto}" for n, (titulo, texto) in enumerate(CUATRO_PASOS, start=1)
+        ]
+
+    def test_la_seccion_abre_diciendo_quien_hace_que(self, client: TestClient) -> None:
+        seccion = client.get("/").text.split('id="lp-work"')[1].split("</section>")[0]
+
+        assert "Una máquina lee los anuncios y una persona supervisa." in " ".join(_visible(seccion).split())
+
+    def test_el_pase_de_capturas_se_rotula_como_un_ejemplo(self, client: TestClient) -> None:
+        seccion = client.get("/").text.split('id="lp-work"')[1].split("</section>")[0]
+
+        assert "Así pasó con un anuncio real" in _visible(seccion)
+        assert seccion.index('class="lp-steps4"') < seccion.index('class="lp-flow"')
+
+    def test_sin_las_capturas_no_se_rotula_ningun_ejemplo(self, client: TestClient, directorio: Path) -> None:
+        (directorio / "flujo-2.webp").unlink()
+
+        assert "Así pasó con un anuncio real" not in _visible(client.get("/").text)
+
+
+class TestParaQuienEs:
+    def _seccion(self, client: TestClient) -> str:
+        return client.get("/").text.split('id="lp-who"')[1].split("</section>")[0]
+
+    def test_son_tres_enlaces_con_su_titulo_y_su_pregunta(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        assert "Para quién es" in _visible(seccion)
+        sin_iconos = re.sub(r'<span class="m3-icon"[^>]*>[^<]*</span>', "", seccion)
+        assert _items(sin_iconos, "lp-who") == [f"{titulo} {texto}" for _, titulo, texto in PARA_QUIEN]
+        enlaces = re.findall(r'<a class="lp-who-link[^"]*" href="([^"]+)"', seccion)
+        assert enlaces == [href for href, _, _ in PARA_QUIEN]
+
+    def test_cada_enlace_lleva_a_una_ruta_que_existe(self, client: TestClient) -> None:
+        for href, _, _ in PARA_QUIEN:
+            assert client.get(href).status_code == 200, href
+
+    def test_los_iconos_son_decorativos(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        assert seccion.count('class="m3-icon" aria-hidden="true"') == 3
+
+
+class TestElOrdenDeLaPagina:
+    def test_promesa_precio_recorrido_confianza_para_quien_y_entradas(self, client: TestClient) -> None:
+        html = client.get("/").text
+        orden = [
+            '<h1 class="lp-h1">',
+            'id="lp-price"',
+            'id="lp-work"',
+            'id="lp-why"',
+            'id="lp-who"',
+            'id="entradas"',
+        ]
+        posiciones = [html.index(marca) for marca in orden]
+
+        assert posiciones == sorted(posiciones)
