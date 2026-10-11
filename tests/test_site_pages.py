@@ -189,12 +189,11 @@ class TestElPieEnLaLanding:
         assert texto.count("<footer") == 1
         assert "lp-foot" not in texto
 
-    def test_el_avatar_del_pie_es_el_unico_y_su_id_no_se_repite(self, client: TestClient) -> None:
-        """Desde landing-estetica el héroe ya no lleva el avatar (es un atardecer
-        con el teléfono del tablero): queda el del pie, con un solo recorte."""
+    def test_el_avatar_del_pie_no_repite_el_id_del_de_la_portada(self, client: TestClient) -> None:
         ids = re.findall(r'<clipPath id="([^"]+)"', client.get("/").text)
 
-        assert len(ids) == 1
+        assert len(ids) == 2
+        assert len(set(ids)) == 2
 
     def test_la_landing_enlaza_a_la_metodologia(self, client: TestClient) -> None:
         cuerpo = client.get("/").text.split("<footer")[0]
@@ -486,7 +485,9 @@ class TestContacto:
     def test_con_solo_una_red_existe_y_no_inventa_un_correo(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(public, "get_settings", lambda: _settings(link_whatsapp="https://whatsapp.com/channel/abc"))
+        monkeypatch.setattr(
+            public, "get_settings", lambda: _settings(link_whatsapp="https://whatsapp.com/channel/abc")
+        )
 
         respuesta = client.get("/contacto")
 

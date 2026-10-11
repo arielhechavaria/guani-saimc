@@ -1468,11 +1468,33 @@ class TestElHeroeEsUnAtardecer:
         assert "Precios reales del mercado informal cubano." in heroe
         assert 'class="lp-sun' in heroe
 
-    def test_el_avatar_ya_no_esta_en_el_heroe_pero_si_en_el_pie(self, client: TestClient) -> None:
+    def test_guani_esta_en_el_heroe_y_tambien_en_el_pie(self, client: TestClient) -> None:
+        """El avatar de Guani se había ido del héroe con el atardecer; vuelve,
+        como una insignia pegada a la esquina del teléfono."""
         html = client.get("/").text
+        heroe = _heroe(html)
 
-        assert "ph-brand-avatar" not in _heroe(html)
+        assert 'class="lp-hero-avatar" aria-hidden="true"' in heroe
+        assert heroe.count("ph-brand-avatar") == 1
         assert "ph-brand-avatar" in html.split("</main>")[1]
+
+    def test_los_dos_avatares_no_repiten_el_id_del_recorte(self, client: TestClient) -> None:
+        ids = re.findall(r'<clipPath id="([^"]+)"', client.get("/").text)
+
+        assert len(ids) == 2
+        assert len(set(ids)) == 2
+
+    def test_el_avatar_del_heroe_va_junto_al_telefono(self, client: TestClient) -> None:
+        escenario = _heroe(client.get("/").text).split('class="lp-stage"')[1]
+
+        assert escenario.index("lp-hero-phone") < escenario.index("lp-hero-avatar")
+
+    def test_sin_la_captura_el_avatar_sigue_en_el_heroe(
+        self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(landing_view, "LANDING_STATIC_DIR", tmp_path)
+
+        assert "lp-hero-avatar" in _heroe(client.get("/").text)
 
     def test_las_burbujas_siguen_diciendo_el_rango_la_provincia_y_la_muestra(
         self, client: TestClient, datos: None

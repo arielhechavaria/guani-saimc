@@ -135,6 +135,14 @@
   .lp-hero-phone img { display: block; width: 100%; height: auto; border-radius: 28px; }
   .lp-hero-phone::before { content: ""; position: absolute; z-index: 1; top: 14px; left: 50%; width: 64px; height: 18px;
                            margin-left: -32px; border-radius: 12px; background: var(--ph-dusk-sil-cerca); }
+  /* Guani, pegado a la esquina del teléfono como una foto de perfil. Parpadea
+     de vez en cuando (el avatar ya trae `guani-eye`); con movimiento reducido
+     la regla general de más abajo lo apaga. */
+  .lp-hero-avatar { position: absolute; z-index: 2; left: calc(50% + 78px); top: 0; width: 76px; height: 76px;
+                    filter: drop-shadow(0 6px 14px var(--ph-dusk-sombra)); }
+  .lp-hero-avatar .ph-brand-avatar { display: block; width: 100%; height: 100%; }
+  .lp-hero-avatar .guani-eye { transform-box: fill-box; transform-origin: center; animation: lp-blink 5s infinite; }
+  @keyframes lp-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
   .lp-globe { position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
               padding: 8px 14px 8px 10px; border-radius: 100px; background: var(--ph-dusk-vidrio-oscuro);
               border: 1px solid var(--ph-dusk-vidrio-borde); backdrop-filter: blur(8px); color: var(--ph-dusk-texto);
@@ -155,6 +163,7 @@
     .lp-city-back { height: 260px; }
     .lp-wall { height: 74px; }
     .lp-globe-3 { left: -40px; top: 196px; }
+    .lp-hero-avatar { left: calc(50% + 91px); width: 88px; height: 88px; }
     .lp-palm { width: 170px; bottom: 50px; } .lp-palm-l { left: 43%; } .lp-palm-r { right: 1%; }
   }
 
@@ -468,6 +477,9 @@
         {%- if hero_phone %}
         <div class="lp-hero-phone"><img src="{{ hero_phone.src }}" alt="{{ hero_phone.alt }}" width="{{ hero_phone.width }}" height="{{ hero_phone.height }}"></div>
         {%- endif %}
+        {%- with avatar_clip_id="guani-avatar-clip-portada" %}
+        <div class="lp-hero-avatar" aria-hidden="true">{% include "_guani_avatar.html" %}</div>
+        {%- endwith %}
         {# Los globos dicen solo lo que hay: con una celda de ejemplo, su rango,
            su provincia y su muestra; sin ella, nombres de producto y nada más. #}
         {% if price %}
