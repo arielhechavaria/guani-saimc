@@ -1,0 +1,236 @@
+<!doctype html>
+<!--
+  Prototipo «El atardecer cubano» (slice landing-estetica). Se decide a 390 px
+  primero; desde 720 px (el corte de `design_tokens.css`) el héroe pasa a dos
+  columnas.
+
+  Idea: la landing es un día. El héroe es el atardecer (la hora en que se
+  hacen las cuentas del día); el recorrido «Así trabajo» es la noche (la
+  máquina lee mientras todos duermen); el resto es de día y no cambia.
+  Lo memorable es una sola cosa: el teléfono con el tablero real saliendo de
+  la silueta de la ciudad, con el sol detrás como halo. Todo lo demás se
+  queda quieto.
+
+  Tokens nuevos (en la plantilla real irían a `design_tokens.css`, con su
+  valor para el modo oscuro: `test_static_assets` prohíbe un color a mano en
+  el CSS de una plantilla). Los nombres son de fruta porque el cielo es de
+  fruta: noche, índigo, mamey, flama, guayaba.
+
+  Datos de muestra en las tres burbujas; en la plantilla salen de la celda
+  real, como hoy. La captura del teléfono es la real (`entradas-tablero.webp`).
+  Pesa cero: el cielo es un degradé de CSS y la ciudad, un SVG de unos 3 KB.
+  Sin imágenes nuevas, sin JavaScript. La única animación es el sol que sube
+  una vez al cargar; con movimiento reducido ya está arriba.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo — el atardecer cubano</title>
+<link href="../../src/saimc/web/static/saimc-public.css" rel="stylesheet">
+<style>
+  :root {
+    --dusk-noche: #0b2c43;   /* arriba: el azul petróleo de la marca, más hondo */
+    --dusk-indigo: #2f3a80;
+    --dusk-mamey: #c8507a;
+    --dusk-flama: #f08a3c;
+    --dusk-guayaba: #ffd072; /* el sol y el botón */
+    --dusk-sil-lejos: #3b3f86;  /* siluetas, de lejos a cerca */
+    --dusk-sil-medio: #1b3159;
+    --dusk-sil-cerca: #0a2233;
+    --dusk-tinta: #08202f;   /* texto sobre guayaba */
+    --dusk-vidrio: rgba(255, 255, 255, .14);
+    --dusk-vidrio-oscuro: rgba(8, 32, 47, .62); /* burbujas sobre el teléfono: legibles */
+    --dusk-vidrio-borde: rgba(255, 255, 255, .3);
+  }
+  body { margin: 0; }
+  .lp {
+    --lp-blue: var(--ph-accent); --lp-on-blue: var(--ph-on-accent);
+    --lp-bg: var(--m3-bg); --lp-surface: var(--m3-surface);
+    --lp-ink: var(--m3-on-surface); --lp-ink-soft: var(--m3-on-surface-variant);
+    --lp-line: var(--m3-outline-variant); --lp-tint: var(--ph-price-low);
+    --lp-heading: var(--ph-font-heading);
+    background: var(--lp-bg); color: var(--lp-ink); font: 400 16px/1.45 var(--m3-font);
+    min-height: 100vh; overflow-x: clip;
+  }
+  .lp a { color: inherit; text-decoration: none; }
+  .lp .m3-icon { vertical-align: 0; }
+  .lp-wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding-inline: 20px; box-sizing: border-box; }
+
+  /* ── El atardecer (héroe) ───────────────────────────────────────────── */
+  .lp-hero {
+    position: relative; color: #fff; overflow: hidden;
+    background: linear-gradient(180deg, var(--dusk-noche) 0%, var(--dusk-indigo) 34%, var(--dusk-mamey) 66%,
+                                var(--dusk-flama) 86%, var(--dusk-guayaba) 100%);
+  }
+  .lp-bar { display: flex; align-items: center; gap: 12px; padding-top: 16px; }
+  .lp-wordmark { flex-grow: 1; font: 400 26px/1.2 var(--lp-heading); }
+  .lp-bar-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px;
+                 border: 1px solid var(--dusk-vidrio-borde); background: var(--dusk-vidrio);
+                 font-size: 15px; font-weight: 500; backdrop-filter: blur(6px); }
+  .lp-hero-text { padding-top: 28px; }
+  .lp-h1 { margin: 0; max-width: 11em; font: 400 clamp(38px, 11vw, 56px)/1.04 var(--lp-heading); letter-spacing: -.012em;
+           text-wrap: balance; }
+  .lp-lead { margin: 16px 0 0; max-width: 30em; font-size: 17px; line-height: 1.5; color: rgba(255, 255, 255, .9); }
+  .lp-cta { margin-top: 22px; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 24px;
+            border-radius: 100px; background: var(--dusk-guayaba); color: var(--dusk-tinta); font-size: 17px; font-weight: 700; }
+  .lp-cta svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* El escenario: el sol, el teléfono y las burbujas. La ciudad va en tres
+     planos: lejos y medio detrás del teléfono, el muro del malecón y las
+     palmas delante, para que el teléfono parezca apoyado en el muro. */
+  .lp-hero .lp-wrap { position: relative; z-index: 1; }
+  .lp-stage { position: relative; height: 430px; margin-top: 8px; }
+  .lp-sun { position: absolute; left: 50%; top: 20px; width: 340px; height: 340px; margin-left: -170px; border-radius: 50%;
+            background: radial-gradient(circle, var(--dusk-guayaba) 0 58%, rgba(255, 208, 114, .35) 64%, rgba(255, 208, 114, 0) 72%);
+            animation: lp-sunrise 1.8s ease-out both; }
+  @keyframes lp-sunrise { from { transform: translateY(110px); opacity: .2; } to { transform: none; opacity: 1; } }
+  .lp-phone { position: absolute; left: 50%; bottom: -70px; width: 232px; margin-left: -116px; box-sizing: border-box;
+              padding: 8px; border-radius: 36px; background: var(--dusk-sil-cerca); box-shadow: 0 18px 50px rgba(0, 0, 0, .35); }
+  .lp-phone img { display: block; width: 100%; height: auto; border-radius: 28px; }
+  .lp-phone::before { content: ""; position: absolute; z-index: 1; top: 14px; left: 50%; width: 64px; height: 18px;
+                      margin-left: -32px; border-radius: 12px; background: var(--dusk-sil-cerca); }
+  .lp-globe { position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px 8px 10px;
+              border-radius: 100px; background: var(--dusk-vidrio-oscuro); border: 1px solid var(--dusk-vidrio-borde);
+              backdrop-filter: blur(8px); font-size: 14px; font-weight: 500; white-space: nowrap; }
+  .lp-globe .m3-icon, .lp-globe svg { font-size: 18px; width: 18px; height: 18px; }
+  .lp-globe svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .lp-globe-1 { left: -6px; top: 36px; } .lp-globe-2 { right: -6px; top: 104px; } .lp-globe-3 { left: -2px; top: 168px; }
+  .lp-city-back { position: absolute; z-index: 0; left: 0; bottom: 0; width: 100%; height: 210px; display: block; }
+  .lp-wall { position: absolute; z-index: 2; left: 0; bottom: 0; width: 100%; height: 62px; display: block; }
+  .lp-palm { position: absolute; z-index: 2; bottom: 40px; width: 150px; height: auto; display: block; color: var(--dusk-sil-cerca); }
+  .lp-palm-l { left: -46px; } .lp-palm-r { right: -52px; transform: scale(-1, 1); }
+
+  /* ── La noche (recorrido) ───────────────────────────────────────────── */
+  .lp-night { position: relative; margin-top: 36px; padding: 44px 0 52px; color: #fff; border-radius: 36px 36px 0 0;
+              background: linear-gradient(180deg, var(--dusk-noche) 0%, var(--dusk-sil-medio) 100%); overflow: hidden; }
+  .lp-night::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .8;
+    background:
+      radial-gradient(1.5px 1.5px at 12% 14%, #fff, transparent), radial-gradient(1px 1px at 28% 30%, #fff, transparent),
+      radial-gradient(1.5px 1.5px at 47% 10%, #fff, transparent), radial-gradient(1px 1px at 63% 26%, #fff, transparent),
+      radial-gradient(1.5px 1.5px at 82% 12%, #fff, transparent), radial-gradient(1px 1px at 91% 34%, #fff, transparent),
+      radial-gradient(1px 1px at 8% 46%, #fff, transparent), radial-gradient(1.5px 1.5px at 74% 48%, #fff, transparent); }
+  .lp-night .lp-wrap { position: relative; }
+  .lp-h2 { margin: 0; font: 400 32px/1.1 var(--lp-heading); letter-spacing: -.01em; }
+  .lp-night-lead { margin: 10px 0 0; max-width: 34em; font-size: 17px; line-height: 1.5; color: rgba(255, 255, 255, .86); }
+  .lp-steps4 { margin: 22px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .lp-card { padding: 18px 16px; border-radius: 24px; background: var(--dusk-vidrio); border: 1px solid var(--dusk-vidrio-borde);
+             backdrop-filter: blur(8px); }
+  .lp-step-head { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
+  .lp-step-num { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px;
+                 border-radius: 50%; background: var(--dusk-guayaba); color: var(--dusk-tinta); font-size: 15px; font-weight: 700; }
+  .lp-step-text { margin: 6px 0 0; font-size: 16px; line-height: 1.5; color: rgba(255, 255, 255, .88); }
+
+  /* ── El día: lo que sigue (sin cambio; una muestra para ver el empalme) ─ */
+  .lp-day { padding: 36px 0 44px; }
+  .lp-day p { margin: 10px 0 0; max-width: 34em; font-size: 17px; line-height: 1.5; color: var(--lp-ink-soft); }
+  .lp-day .lp-h2 { color: var(--lp-ink); }
+
+  @media (min-width: 720px) {
+    .lp-hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
+    .lp-hero-text { padding-top: 56px; padding-bottom: 150px; }
+    .lp-stage { height: 560px; }
+    .lp-phone { width: 270px; margin-left: -135px; }
+    .lp-sun { top: 40px; width: 420px; height: 420px; margin-left: -210px; }
+    .lp-city-back { height: 260px; }
+    .lp-wall { height: 74px; }
+    .lp-globe-3 { left: -40px; top: 196px; }
+    .lp-palm { width: 170px; bottom: 50px; } .lp-palm-l { left: 43%; } .lp-palm-r { right: 1%; }
+    .lp-steps4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce) { .lp-sun { animation: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- Una fronda apuntando a la derecha; las palmas la giran y la espejan. -->
+    <path id="fronda" d="M0 0 C 14 -18 44 -22 74 -2 C 50 -8 24 -7 0 0 Z"/>
+    <g id="palma">
+      <path d="M0 0 C -3 -34 5 -70 0 -112" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+      <g transform="translate(0 -112)">
+        <use href="#fronda" transform="rotate(-8)"/><use href="#fronda" transform="rotate(32)"/>
+        <use href="#fronda" transform="rotate(68)"/><use href="#fronda" transform="rotate(-48)"/>
+        <use href="#fronda" transform="scale(-1 1) rotate(-8)"/><use href="#fronda" transform="scale(-1 1) rotate(32)"/>
+        <use href="#fronda" transform="scale(-1 1) rotate(68)"/><use href="#fronda" transform="scale(-1 1) rotate(-48)"/>
+      </g>
+    </g>
+  </defs>
+</svg>
+
+<div class="lp">
+
+<header class="lp-hero">
+  <div class="lp-wrap">
+    <div class="lp-bar">
+      <div class="lp-wordmark">Guani</div>
+      <a class="lp-bar-link" href="/precios">Ver precios</a>
+    </div>
+    <div class="lp-hero-grid">
+      <div class="lp-hero-text">
+        <h1 class="lp-h1">Precios reales del mercado informal cubano.</h1>
+        <p class="lp-lead">Guani lee los anuncios donde ya se vende, los pasa a una misma unidad y te los enseña con su cuenta. Una máquina lee; una persona supervisa.</p>
+        <a class="lp-cta" href="/precios">Ver los precios de hoy
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      </div>
+
+      <div class="lp-stage">
+        <div class="lp-sun" aria-hidden="true"></div>
+        <div class="lp-phone"><img src="../../src/saimc/web/static/landing/entradas-tablero.webp" width="480" height="999" alt="El tablero de Guani en un teléfono: el precio del arroz por provincia, con la cuenta de anuncios detrás."></div>
+        <div class="lp-globe lp-globe-1"><span class="m3-icon" aria-hidden="true">sell</span><span>Arroz · 210–381 CUP/lb</span></div>
+        <div class="lp-globe lp-globe-2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span>La Habana</span></div>
+        <div class="lp-globe lp-globe-3"><span class="m3-icon" aria-hidden="true">forum</span><span>9 anuncios</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- La ciudad, detrás: lejos (índigo) y medio. Con la cúpula de un capitolio, un campanario, una torre y un tinaco. -->
+  <svg class="lp-city-back" viewBox="0 0 1200 210" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <path fill="var(--dusk-sil-lejos)" d="M0 210V140H36V112H64V140H96V98H126V130H160V118H196V92H224V124H262V108H300V136H338V100H372V126H410V88H438V120H470V104H508V132H548V96H580V122H620V110H660V90H690V128H730V102H768V124H806V94H836V130H876V108H914V136H952V100H986V122H1024V112H1060V138H1100V104H1136V128H1200V210Z"/>
+    <g fill="var(--dusk-sil-medio)">
+      <path d="M0 210V168H58V150H112V166H176V152H240V170H318V154H388V168H448V156H820V170H890V152H960V166H1030V150H1096V168H1200V210Z"/>
+      <path d="M500 156V138H700V156Z"/><!-- el cuerpo del capitolio -->
+      <path d="M560 138V124Q560 92 600 92Q640 92 640 124V138Z"/><!-- la cúpula -->
+      <rect x="596" y="68" width="8" height="26"/><path d="M592 70L600 56L608 70Z"/><!-- el farol -->
+      <rect x="208" y="84" width="24" height="86"/><path d="M204 86L220 56L236 86Z"/><!-- el campanario -->
+      <rect x="878" y="36" width="52" height="134"/><rect x="886" y="28" width="36" height="10"/><!-- la torre -->
+      <rect x="346" y="124" width="34" height="32" rx="3"/><rect x="352" y="114" width="22" height="11"/><!-- el tinaco -->
+      <rect x="1010" y="104" width="3" height="48"/><!-- la antena -->
+    </g>
+  </svg>
+
+  <!-- Delante: palmas y el muro del malecón, donde se apoya el teléfono. -->
+  <svg class="lp-palm lp-palm-l" viewBox="-110 -230 220 240" aria-hidden="true"><use href="#palma" transform="scale(1.45)" fill="currentColor"/></svg>
+  <svg class="lp-palm lp-palm-r" viewBox="-110 -230 220 240" aria-hidden="true"><use href="#palma" transform="scale(1.2) rotate(-3)" fill="currentColor"/></svg>
+  <svg class="lp-wall" viewBox="0 0 100 62" preserveAspectRatio="none" aria-hidden="true">
+    <path fill="var(--dusk-sil-cerca)" d="M0 62V16H100V62Z"/><rect fill="var(--dusk-sil-cerca)" y="8" width="100" height="10"/><rect fill="var(--dusk-sil-medio)" y="17" width="100" height="1.4"/>
+  </svg>
+</header>
+
+<section class="lp-night" aria-labelledby="lp-work-title">
+  <div class="lp-wrap">
+    <h2 class="lp-h2" id="lp-work-title">Así trabajo</h2>
+    <p class="lp-night-lead">Una máquina lee los anuncios y una persona supervisa. Estos son los cuatro pasos.</p>
+    <ol class="lp-steps4">
+      <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">1</span><span>Escucha</span></div>
+        <p class="lp-step-text">Lee los grupos y canales donde ya se vende. Nadie tiene que escribirle nada.</p></li>
+      <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">2</span><span>Entiende</span></div>
+        <p class="lp-step-text">Un asistente saca producto, precio, cantidad y provincia, y lo lleva todo a la misma unidad y moneda.</p></li>
+      <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">3</span><span>Filtra</span></div>
+        <p class="lp-step-text">Aparta lo que no es un anuncio de precio y frena lo dudoso. Lo difícil lo decide una persona; lo claro, el sistema lo acepta y una persona lo audita después.</p></li>
+      <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">4</span><span>Te lo enseña con su cuenta</span></div>
+        <p class="lp-step-text">Rango, mediana y cuántos anuncios hay detrás, separando los revisados a mano de los aceptados por el sistema.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="lp-day">
+  <div class="lp-wrap">
+    <h2 class="lp-h2">Por qué puedes fiarte de estas cifras</h2>
+    <p>De día, el resto de la página no cambia: las mismas tarjetas claras de hoy.</p>
+  </div>
+</section>
+
+</div>
+</body>
+</html>
