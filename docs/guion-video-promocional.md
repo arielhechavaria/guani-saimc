@@ -1,6 +1,6 @@
 # Guion del video promocional de Guani
 
-Estado: **propuesta, sin aprobar**. Escrito por un subagente Opus; verificado contra el código por él, no por el operador.
+Estado: **propuesta, sin aprobar** (decisión 1 resuelta: 720×1280, ~1 MB). Escrito por un subagente Opus; verificado contra el código por él, no por el operador.
 
 Reemplaza a `guani-flujo.mp4` (retirado con `FLOW_VIDEO_ENABLED = False`, entrada de `docs/decisions.md` del 2026-10-11 «La landing cuenta el recorrido real»). Solo guion: ni audio, ni video, ni código.
 
@@ -17,7 +17,7 @@ Manda `docs/plan-marca-leira-studio.md`: firma «Guani, por Leira Studio», ning
 
 ## Formato
 
-- Vertical 9:16. Se mira en una columna de 390 px; se monta a 540×960 (ver decisión abierta 1).
+- Vertical 9:16. Se mira en una columna de 390 px; se monta a 720×1280 con un tope de ~1 MB (decidido por el operador).
 - Sin autoplay, `preload="none"`, poster aparte. Ningún JavaScript nuevo.
 - Subtítulo quemado: la banda inferior repite la locución de la escena, porque se mira sin sonido por defecto. El «texto en pantalla» es el rótulo grande de la escena.
 - Misma plantilla visual del kit, con la paleta del atardecer de la landing (tokens `--ph-dusk-*`) en la apertura y el cierre.
@@ -75,6 +75,6 @@ No se usan las capturas 2 a 4 del pase actual (`flujo-2..4`): muestran la herram
 
 ## Decisiones abiertas para el operador
 
-1. **Peso frente a duración.** 74 s en ~750 KB dejan unos 50 kbps para la imagen. Alcanza para cuadros fijos a 540×960 con CRF ~30 y audio a 32 kbps, pero no a 720×1280. ¿Se acepta 540×960, se permite subir a ~1 MB, o se recorta a 60 s quitando las escenas 9 y 11?
+1. **Peso frente a duración. DECIDIDO:** 720×1280 y tope de ~1 MB (el operador subió el tope de los ~750 KB del video actual).
 2. **Ejemplo de punta a punta.** ¿Las escenas 2 a 5 siguen con el anuncio de pollo recreado, o se elige un anuncio de texto real con página pública limpia y se recrea el chat a partir de él?
 3. **Apertura.** ¿Pregunta («¿Cuánto cuesta algo hoy en tu provincia?») o titular de la landing dicho en voz («Precios reales del mercado informal cubano»)?
