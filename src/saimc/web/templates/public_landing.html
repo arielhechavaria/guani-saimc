@@ -89,13 +89,10 @@
 
   /* ── Animaciones (las del prototipo, con prefijo) ───────────────────── */
   @keyframes lp-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
-  @keyframes lp-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   .lp-lift { transition: transform .18s ease, box-shadow .18s ease; }
   .lp-lift:hover { transform: translateY(-4px); box-shadow: var(--m3-elev-3); }
   @supports (animation-timeline: view()) {
     .lp-reveal { animation: lp-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 45%; }
-    .lp-fill { transform-origin: left; animation: lp-grow linear both; animation-timeline: view();
-               animation-range: entry 20% cover 40%; }
   }
 
   /* ── Portada: el atardecer cubano ───────────────────────────────────────
@@ -213,35 +210,6 @@
   .lp-video-title { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.3; }
   .lp-video-note { margin: 4px 0 0; font-size: 14px; line-height: 1.45; color: var(--lp-ink-soft); }
 
-  /* ── Así se lee un precio ───────────────────────────────────────────── */
-  .lp-price { background: var(--lp-surface); border: 1px solid var(--lp-line); border-radius: 24px; padding: 22px 20px; }
-  .lp-price-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-  .lp-badge { padding: 2px 8px; border: 1px dashed var(--lp-muted); border-radius: 6px; font-size: 12px; color: var(--lp-ink-soft); }
-  .lp-price-body { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 32px; }
-  .lp-price-col { flex: 1 1 240px; min-width: 0; }
-  .lp-price-where { font-size: 16px; font-weight: 500; }
-  .lp-price-range { margin-top: 4px; font: 400 clamp(34px, 10vw, 44px)/1.05 var(--lp-heading); }
-  .lp-price-unit { font-size: 20px; white-space: nowrap; }
-  .lp-points { position: relative; height: 26px; }
-  .lp-dot { position: absolute; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--lp-teal);
-            animation: lp-rise .7s ease-out both; animation-delay: .8s; }
-  .lp-dot:nth-child(1) { animation-delay: .1s; } .lp-dot:nth-child(2) { animation-delay: .2s; }
-  .lp-dot:nth-child(3) { animation-delay: .3s; } .lp-dot:nth-child(4) { animation-delay: .4s; }
-  .lp-dot:nth-child(5) { animation-delay: .5s; } .lp-dot:nth-child(6) { animation-delay: .6s; }
-  .lp-dot:nth-child(7) { animation-delay: .7s; }
-  .lp-row-0 { top: 8px; } .lp-row-1 { top: 0; } .lp-row-2 { top: 10px; } .lp-row-3 { top: 2px; }
-  .lp-track { position: relative; height: 14px; border-radius: 100px; background: var(--lp-tint); }
-  .lp-range { position: absolute; top: 0; height: 14px; border-radius: 100px; background: var(--lp-blue); }
-  .lp-median { position: absolute; top: -4px; width: 14px; height: 14px; margin-left: -11px; box-sizing: content-box;
-               border-radius: 50%; background: var(--lp-surface); border: 4px solid var(--lp-blue); }
-  .lp-legend { margin: 12px 0 0; font-size: 15px; line-height: 1.45; color: var(--lp-ink-soft); }
-  .lp-legend strong { color: var(--lp-ink); }
-  /* Sin dato: la ilustración del prototipo, que no afirma ninguna cifra. */
-  .lp-demo-1 { left: 24%; } .lp-demo-2 { left: 31%; } .lp-demo-3 { left: 38%; } .lp-demo-4 { left: 43%; }
-  .lp-demo-5 { left: 47%; } .lp-demo-6 { left: 53%; } .lp-demo-7 { left: 60%; } .lp-demo-8 { left: 66%; }
-  .lp-range-demo { left: 22%; width: 48%; }
-  .lp-median-demo { left: 44%; }
-
   /* ── Por qué puedes fiarte ──────────────────────────────────────────
      Mismo lenguaje que las tarjetas de preguntas: superficie, radio 24 y el
      icono en su círculo (`lp-faq-icon`). Una columna a 390 px; dos o tres
@@ -299,8 +267,8 @@
      estrellas (puntos de `radial-gradient`) y los pasos en tarjetas de vidrio.
      Lo de adentro que era claro (la frase del ejemplo, el pase de capturas)
      se reescribe para fondo oscuro. */
-  .lp-night { position: relative; padding: 12px 0 52px; color: var(--ph-dusk-texto);
-              background: linear-gradient(180deg, var(--ph-dusk-noche) 0%, var(--ph-dusk-sil-medio) 100%); overflow: hidden; }
+  .lp-night { position: relative; padding: 52px 0; color: var(--ph-dusk-texto);
+              background: linear-gradient(180deg, var(--ph-dusk-sil-cerca) 0%, var(--ph-dusk-noche) 14%, var(--ph-dusk-sil-medio) 100%); overflow: hidden; }
   .lp-night::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .8;
     background:
       radial-gradient(1.5px 1.5px at 12% 14%, var(--ph-dusk-texto), transparent), radial-gradient(1px 1px at 28% 30%, var(--ph-dusk-texto), transparent),
@@ -348,11 +316,6 @@
      atardecer (portada) → noche (el precio y el recorrido) → amanecer (por qué
      puedes fiarte) → día (para quién, preguntas y entradas) → ocaso (el pie). */
 
-  /* La orilla: el muro de la portada sigue en una franja de noche, y el precio
-     se lee sobre ella, con su tarjeta clara encendida como una ventana. */
-  .lp .lp-sea { background: linear-gradient(180deg, var(--ph-dusk-sil-cerca) 0%, var(--ph-dusk-noche) 100%); padding: 30px 0 44px; }
-  .lp .lp-sea .lp-section { padding-top: 0; padding-bottom: 0; }
-  .lp .lp-sea .lp-price { border: 0; box-shadow: 0 18px 44px var(--ph-dusk-sombra); }
 
   /* El amanecer */
   .lp .lp-dawn { color: var(--ph-dusk-texto); padding: 8px 0 44px;
@@ -562,47 +525,6 @@
 </header>
 
 <main class="lp-main">
-
-<div class="lp-sea">
-<section class="lp-wrap lp-section" id="lp-price" aria-labelledby="lp-price-title">
-  <div class="lp-price lp-reveal">
-    <div class="lp-price-top">
-      <h2 class="lp-kicker" id="lp-price-title">Así se lee un precio</h2>
-      {% if price %}<div class="lp-badge">Últimos {{ window_days }} días</div>{% endif %}
-    </div>
-    <div class="lp-price-body">
-      {% if price %}
-      <div class="lp-price-col">
-        <div class="lp-price-where">{{ price.product_name }} · {{ price.province_name }}</div>
-        <div class="lp-price-range">{{ price.minimum_text }} – {{ price.maximum_text }} <span class="lp-price-unit">{{ price.currency }}/{{ price.unit }}</span></div>
-      </div>
-      <div class="lp-price-col">
-        <div class="lp-points" aria-hidden="true">
-          {%- for dot in price.dots %}<span class="lp-dot lp-row-{{ dot.row }}" style="left: {{ dot.left }}%"></span>{% endfor -%}
-        </div>
-        <div class="lp-track" aria-hidden="true">
-          <div class="lp-range lp-fill" style="left: {{ price.bar_left }}%; width: {{ price.bar_width }}%"></div>
-          <div class="lp-median" style="left: {{ price.median_left }}%"></div>
-        </div>
-        <p class="lp-legend">Cada punto es un anuncio. La barra es el rango y el círculo, la mediana: <strong>{{ price.median_text }}</strong>. <strong>{{ price.count }}</strong> anuncios{% if price.outliers %} ({{ price.outliers }} fuera de lo común, sin contar en el rango){% endif %} · {{ price.state | capitalize }}</p>
-      </div>
-      {% else %}
-      <div class="lp-price-col">
-        <div class="lp-points" aria-hidden="true">
-          {%- for row in ("0", "1", "2", "3", "0", "1", "2", "3") %}<span class="lp-dot lp-row-{{ row }} lp-demo-{{ loop.index }}"></span>{% endfor -%}
-        </div>
-        <div class="lp-track" aria-hidden="true">
-          <div class="lp-range lp-range-demo lp-fill"></div>
-          <div class="lp-median lp-median-demo"></div>
-        </div>
-        <p class="lp-legend">Cada punto es un anuncio. La barra es el rango y el círculo, la mediana. Al lado va siempre cuántos anuncios hay detrás.</p>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-</section>
-
-</div>
 
 <section class="lp-night" id="lp-work" aria-labelledby="lp-work-title">
 <div class="lp-wrap">

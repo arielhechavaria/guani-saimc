@@ -7,8 +7,8 @@ Lo que estos casos protegen:
 - `/precios` es la home de siempre, con los mismos parámetros.
 - Un enlace ya compartido (`/?vista=…`, `/?producto=…`) sigue llegando a donde
   llegaba: redirige a `/precios` con el query string intacto.
-- La tarjeta «Así se lee un precio» sale de anuncios reales: el titular es el
-  rango, la mediana va adentro y el número de anuncios queda a la vista.
+- Las burbujas del héroe salen de anuncios reales: dicen el rango, la provincia y
+  cuántos anuncios hay detrás.
 - Los enlaces de redes y contacto solo se dibujan si están configurados.
 
 Los valores esperados de `landing_view` están escritos a mano a partir de las
@@ -169,20 +169,6 @@ class TestLaTarjetaDePrecio:
         assert precio.count == 3
         assert (precio.currency, precio.unit) == ("CUP", "lb")
 
-    def test_un_punto_por_anuncio_entre_los_extremos_de_la_barra(self) -> None:
-        obs = [_obs("Arroz", "La Habana", v) for v in ("280", "300", "320")]
-
-        precio = build_landing_price(obs)
-
-        assert precio is not None
-        izquierdas = [p.left for p in precio.dots]
-        assert len(izquierdas) == 3
-        # El más barato cae donde empieza la barra y el más caro donde termina.
-        assert min(izquierdas) == precio.bar_left
-        assert max(izquierdas) == precio.bar_left + precio.bar_width
-        # 300 está justo a mitad de camino entre 280 y 320.
-        assert precio.median_left == precio.bar_left + precio.bar_width / 2
-
     def test_lleva_el_rotulo_de_muestra_en_formacion(self) -> None:
         precio = build_landing_price([_obs("Arroz", "La Habana", v) for v in ("280", "320")])
 
@@ -266,14 +252,14 @@ class TestElPrecioDisparatadoNoMueveElRango:
         assert precio is not None
         assert (precio.count, precio.outliers) == (6, 1)
 
-    def test_los_puntos_son_solo_los_que_caben_en_la_barra(self) -> None:
-        obs = [_obs("Arroz", "La Habana", v) for v in (*self.NORMALES, "178880")]
-
-        precio = build_landing_price(obs)
+    def test_el_precio_ya_no_lleva_datos_solo_de_dibujo(self) -> None:
+        """La sección «Así se lee un precio» se quitó: nadie dibuja ya los
+        puntos, la barra ni la mediana sobre ella."""
+        precio = build_landing_price([_obs("Arroz", "La Habana", v) for v in ("280", "300", "320")])
 
         assert precio is not None
-        assert len(precio.dots) == 5
-        assert all(precio.bar_left <= p.left <= precio.bar_left + precio.bar_width for p in precio.dots)
+        for campo in ("dots", "median_left", "bar_left", "bar_width"):
+            assert not hasattr(precio, campo), campo
 
     def test_sin_precios_disparatados_no_hay_ninguno_fuera(self) -> None:
         precio = build_landing_price([_obs("Arroz", "La Habana", v) for v in self.NORMALES])
@@ -397,26 +383,20 @@ class TestLaLandingEnLaRaiz:
         assert respuesta.status_code == 200
         assert "Precios reales del mercado informal cubano." in respuesta.text
 
-    def test_la_tarjeta_de_precio_muestra_el_rango_real_con_su_muestra(
+    def test_las_burbujas_muestran_el_rango_real_con_su_muestra(
         self, client: TestClient, datos: None
     ) -> None:
-        texto = client.get("/").text
-        tarjeta = texto.split('id="lp-price"')[1].split("</section>")[0]
+        globos = _globos(client.get("/").text)
 
-        assert "Arroz · La Habana" in tarjeta
-        assert re.search(r"280\s*–\s*320", tarjeta)
-        assert "CUP/lb" in tarjeta
-        # La mediana va dentro de la tarjeta del rango, y la muestra a la vista.
-        assert "300" in tarjeta
-        assert re.search(r"<strong[^>]*>3</strong>\s*anuncios", tarjeta)
-        assert "uestra en formación" in tarjeta
-        assert tarjeta.count("lp-dot") == 3
+        assert re.search(r"Arroz · 280–320 CUP/lb", globos)
+        assert "La Habana" in globos
+        assert re.search(r"\b3\s+anuncios", globos)
 
     def test_no_juzga_el_precio(self, client: TestClient, datos: None) -> None:
-        tarjeta = client.get("/").text.split('id="lp-price"')[1].split("</section>")[0]
+        globos = _globos(client.get("/").text)
 
         for palabra in ("barato", "caro", "conviene", "oferta"):
-            assert palabra not in tarjeta.lower()
+            assert palabra not in globos.lower()
 
     def test_los_productos_piloto_enlazan_al_tablero(self, client: TestClient, datos: None) -> None:
         texto = client.get("/").text
@@ -458,8 +438,8 @@ class TestLaLandingEnLaRaiz:
         self, client: TestClient, datos: None, session: Session
     ) -> None:
         """Arroz en La Habana con 280, 290, 300, 305, 310, 320 y una fila a
-        178.880: la tarjeta y el globo siguen en 280–320, y la tarjeta dice
-        que hay siete anuncios y que uno quedó fuera."""
+        178.880: el globo sigue en 280–320 y cuenta siete anuncios; la fila
+        de fuera no entra al rango."""
         arroz = session.query(Product).filter_by(name="Arroz").one()
         habana = session.query(Province).filter_by(name="La Habana").one()
         origen = session.query(RawIngestion).one()
@@ -480,14 +460,11 @@ class TestLaLandingEnLaRaiz:
             )
         session.commit()
 
-        texto = client.get("/").text
-        tarjeta = _visible(texto.split('id="lp-price"')[1].split("</section>")[0])
+        globos = _globos(client.get("/").text)
 
-        assert re.search(r"280\s*–\s*320", tarjeta)
-        assert "178" not in tarjeta
-        assert re.search(r"\b7\s+anuncios", tarjeta)
-        assert re.search(r"1\s+fuera de lo común", tarjeta)
-        assert re.search(r"Arroz · 280–320 CUP/lb", _globos(texto))
+        assert re.search(r"Arroz · 280–320 CUP/lb", globos)
+        assert "178" not in globos
+        assert re.search(r"\b7\s+anuncios", globos)
 
 
 class TestPorQueFiarte:
@@ -516,12 +493,10 @@ class TestPorQueFiarte:
         assert seccion.count("<svg") >= 6
         assert seccion.count('<p class="lp-why-text">') == 6
 
-    def test_va_despues_de_asi_se_lee_un_precio_y_antes_de_las_preguntas(
-        self, client: TestClient, datos: None
-    ) -> None:
+    def test_va_despues_del_recorrido_y_antes_de_las_preguntas(self, client: TestClient, datos: None) -> None:
         texto = client.get("/").text
 
-        assert texto.index('id="lp-price"') < texto.index('id="lp-why"') < texto.index("¿Qué es Guani?")
+        assert texto.index('id="lp-work"') < texto.index('id="lp-why"') < texto.index("¿Qué es Guani?")
 
     def test_no_promete_abrir_los_anuncios_que_son_imagen(self, client: TestClient, datos: None) -> None:
         """`/anuncio/{id}` solo publica anuncios de texto: la tarjeta no puede
@@ -654,12 +629,8 @@ class TestLaLandingSinDatos:
         for marcador in MARCADORES:
             assert marcador not in _visible(respuesta.text)
 
-    def test_con_la_base_vacia_la_tarjeta_no_trae_numeros(self, client: TestClient) -> None:
-        tarjeta = client.get("/").text.split('id="lp-price"')[1].split("</section>")[0]
-        visible = re.sub(r"<[^>]+>", " ", tarjeta)
-
-        assert not re.search(r"\d", visible)
-        assert "Cada punto es un anuncio" in visible
+    def test_con_la_base_vacia_las_burbujas_no_traen_numeros(self, client: TestClient) -> None:
+        assert not re.search(r"\d", _globos(client.get("/").text))
 
     def test_con_la_base_vacia_no_hay_chips_de_producto(self, client: TestClient) -> None:
         assert 'class="lp-chips"' not in client.get("/").text
@@ -1377,7 +1348,6 @@ class TestElOrdenDeLaPagina:
         html = client.get("/").text
         orden = [
             '<h1 class="lp-h1">',
-            'id="lp-price"',
             'id="lp-work"',
             'id="lp-why"',
             'id="lp-who"',
@@ -1490,13 +1460,18 @@ def _envoltorio(html: str, clase: str) -> str:
 
 
 class TestLasHorasDelDia:
-    def test_el_precio_se_lee_en_la_orilla_antes_de_la_noche(self, client: TestClient) -> None:
+    def test_el_recorrido_sigue_al_heroe_sin_ninguna_seccion_en_medio(self, client: TestClient) -> None:
+        """«Así se lee un precio» se quitó (no aportaba): la noche arranca donde
+        termina el muro de la portada."""
         html = client.get("/").text
-        orilla = _envoltorio(html, "lp-sea")
+        entre = html.split("</header>")[1].split('<section class="lp-night"')[0]
 
-        assert 'id="lp-price"' in orilla
-        assert 'id="lp-work"' not in orilla
-        assert html.index('class="lp-sea"') < html.index('id="lp-work"')
+        assert "<section" not in entre
+        assert 'id="lp-price"' not in html
+        assert "Así se lee un precio" not in html
+        assert "lp-sea" not in html
+        for clase in ("lp-dot", "lp-median", "lp-range", "lp-legend"):
+            assert f'class="{clase}' not in html, clase
 
     def test_por_que_puedes_fiarte_es_el_amanecer(self, client: TestClient) -> None:
         html = client.get("/").text
@@ -1535,7 +1510,7 @@ class TestLasHorasDelDia:
     def test_no_hay_ningun_envoltorio_vacio(self, client: TestClient) -> None:
         html = client.get("/").text
 
-        for clase in ("lp-sea", "lp-dawn", "lp-day"):
+        for clase in ("lp-dawn", "lp-day"):
             assert "<section" in _envoltorio(html, clase), clase
 
     def test_los_tokens_nuevos_del_dia_existen(self) -> None:

@@ -1,16 +1,16 @@
 """Lo que la landing (`GET /`, 2026-10-05) muestra y no es texto fijo.
 
-Tres cosas, las tres armadas acá para que la plantilla solo pinte y para poder
+Cuatro cosas, las cuatro armadas acá para que la plantilla solo pinte y para poder
 probarlas sin parsear HTML (mismo reparto que `card_view` y `watchlist_view`):
 
-- **La tarjeta «Así se lee un precio».** Un ejemplo real: el producto piloto
+- **El ejemplo de las burbujas del héroe.** Un ejemplo real: el producto piloto
   con más anuncios en la ventana por defecto, en su provincia con más anuncios.
-  Sigue las reglas de `card_view` (§9.0): el titular es el rango, la mediana va
-  adentro y nunca sola, el número de anuncios queda a la vista y la tarjeta va
-  rotulada «muestra en formación». Si no hay ninguna celda con rango, no hay
-  tarjeta: la plantilla dibuja la ilustración sin cifras, nunca un número de
-  relleno. El rango y la mediana salen de lo que cae dentro del cerco de
-  atípicos (`price_charts.split_outliers`), igual que la cifra del tablero.
+  Dice el rango, la provincia y cuántos anuncios hay detrás. Si no hay ninguna
+  celda con rango, no hay burbujas con cifras: la plantilla pone nombres de
+  producto, nunca un número de relleno. El rango y la mediana salen de lo que
+  cae dentro del cerco de atípicos (`price_charts.split_outliers`), igual que
+  la cifra del tablero. (La sección «Así se lee un precio», que dibujaba esos
+  anuncios como puntos sobre una barra, se quitó el 2026-10-11.)
 - **La cobertura** de «Por qué puedes fiarte de estas cifras»: cuántos
   productos y cuántas provincias tienen anuncios en la ventana. Se cuenta, no
   se escribe.
@@ -40,27 +40,6 @@ from saimc.web.card_view import SAMPLE_FORMING, format_price
 from saimc.web.price_charts import split_outliers
 from saimc.web.product_nav import DOWNLOAD_WINDOW_DAYS, HOME_PATH
 
-#: Dónde empieza y cuánto mide la barra del rango dentro de su pista, en
-#: porcentaje. Deja aire a los dos lados para que el punto del mínimo y el del
-#: máximo no queden cortados contra el borde de la tarjeta.
-BAR_LEFT = 10.0
-BAR_WIDTH = 80.0
-
-#: Filas en las que se reparten los puntos para que dos anuncios de precio
-#: parecido no se tapen del todo. Solo presentación: la posición horizontal es
-#: la que dice el precio.
-DOT_ROWS = 4
-
-
-@dataclass(frozen=True)
-class LandingDot:
-    """Un anuncio: dónde cae entre el mínimo y el máximo."""
-
-    #: Porcentaje desde la izquierda de la pista.
-    left: float
-    #: Fila (0 a `DOT_ROWS - 1`), para separar puntos vecinos.
-    row: int
-
 
 @dataclass(frozen=True)
 class LandingPrice:
@@ -75,15 +54,9 @@ class LandingPrice:
     minimum: Decimal
     median: Decimal
     maximum: Decimal
-    #: Un punto por anuncio dentro del cerco. Los de fuera no tienen dónde
-    #: caer en la barra: se cuentan en `outliers`.
-    dots: tuple[LandingDot, ...]
-    median_left: float
     #: Cuántos anuncios quedaron fuera del cerco. No se esconden: la tarjeta
     #: los cuenta aparte, como la cifra del tablero («fuera de escala»).
     outliers: int = 0
-    bar_left: float = BAR_LEFT
-    bar_width: float = BAR_WIDTH
 
     @property
     def minimum_text(self) -> str:
@@ -101,13 +74,6 @@ class LandingPrice:
     def state(self) -> str:
         """El rótulo de §9.0. Hoy es el mismo para toda celda (`card_view`)."""
         return SAMPLE_FORMING
-
-
-def _position(value: Decimal, minimum: Decimal, maximum: Decimal) -> float:
-    """El precio como porcentaje de la pista. El llamador garantiza
-    `minimum < maximum`."""
-    share = float((value - minimum) / (maximum - minimum))
-    return round(BAR_LEFT + BAR_WIDTH * share, 2)
 
 
 def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPrice | None:
@@ -167,11 +133,6 @@ def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPri
         minimum=minimum,
         median=median,
         maximum=maximum,
-        dots=tuple(
-            LandingDot(left=_position(price, minimum, maximum), row=index % DOT_ROWS)
-            for index, price in enumerate(prices)
-        ),
-        median_left=_position(median, minimum, maximum),
         outliers=total - len(prices),
     )
 
