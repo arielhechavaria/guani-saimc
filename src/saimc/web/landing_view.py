@@ -306,7 +306,8 @@ _FLOW: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "flujo-4.webp",
-        "Si hay dudas lo revisa una persona; si es claro, el sistema lo acepta y una persona lo audita después.",
+        "Si hay dudas lo revisa una persona; si es claro, el sistema lo acepta y una persona "
+        "lo audita después.",
         "Las preguntas que responde la persona que verifica el anuncio, con el botón «Guardar corrección».",
     ),
     (
