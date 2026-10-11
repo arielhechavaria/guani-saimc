@@ -236,10 +236,11 @@ LANDING_STATIC_URL = "/static/landing"
 SHOT_WIDTH = 460
 SHOT_HEIGHT = 958
 
-#: El video está retirado de la página (landing-narrativa): su voz cuenta que una
-#: persona revisa todo, y ya no es cierto. El archivo queda en el repo; para
-#: volver a enseñarlo hay que regrabarlo con el recorrido nuevo y encender esto.
-FLOW_VIDEO_ENABLED = False
+#: El video promocional (del mensaje de WhatsApp al tablero) se muestra en la
+#: página. Se produce con `tools/producir_video.py` siguiendo
+#: `docs/guion-video-promocional.md`. Si el recorrido cambia y su voz deja de ser
+#: cierta, apagar esto hasta volver a producirlo.
+FLOW_VIDEO_ENABLED = True
 
 VIDEO_NAME = "guani-flujo.mp4"
 VIDEO_POSTER_NAME = "guani-flujo-poster.webp"

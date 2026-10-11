@@ -791,14 +791,6 @@ def _copiar_capturas(destino: Path, *, salvo: str | None = None) -> None:
             shutil.copy(landing_view.LANDING_STATIC_DIR / nombre, destino / nombre)
 
 
-@pytest.fixture(autouse=True)
-def _video_del_recorrido_encendido(monkeypatch: pytest.MonkeyPatch) -> None:
-    """El video está retirado de la página (`FLOW_VIDEO_ENABLED = False`); estas
-    pruebas siguen cubriendo cómo se arma y se dibuja cuando se vuelva a
-    encender. `TestElVideoDelRecorridoEstaRetirado` prueba el valor real."""
-    monkeypatch.setattr(landing_view, "FLOW_VIDEO_ENABLED", True, raising=False)
-
-
 @pytest.fixture
 def directorio(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Un directorio de estáticos de mentira, con las cinco capturas reales
@@ -1255,19 +1247,28 @@ class TestLaNarrativaEsCierta:
         ) in terminos
 
 
-class TestElVideoDelRecorridoEstaRetirado:
-    """La voz de `guani-flujo.mp4` cuenta el recorrido viejo (una persona revisa
-    todo). El archivo queda en el repo; la página no lo enseña hasta regrabarlo."""
+class TestElVideoPromocionalEstaEncendido:
+    """`guani-flujo.mp4` es el video promocional (del mensaje de WhatsApp al
+    tablero), rehecho con `tools/producir_video.py`; la landing lo muestra."""
 
-    def test_por_defecto_la_pagina_no_lo_muestra(
-        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.undo()  # la fixture de módulo lo enciende para probar el resto
+    def test_la_pagina_lo_muestra_sin_autoplay_ni_descarga_previa(self, client: TestClient) -> None:
+        assert landing_view.FLOW_VIDEO_ENABLED is True
+        pagina = client.get("/").text
+        video = re.search(r"<video[^>]*>", pagina)
 
-        assert landing_view.FLOW_VIDEO_ENABLED is False
-        assert build_landing_flow().video is None
-        assert "<video" not in client.get("/").text.split('id="entradas"')[0]
-        assert (landing_view.LANDING_STATIC_DIR / "guani-flujo.mp4").is_file()
+        assert video is not None
+        etiqueta = video.group(0)
+        assert 'preload="none"' in etiqueta
+        assert "controls" in etiqueta
+        assert "autoplay" not in etiqueta
+        assert "guani-flujo.mp4" in etiqueta
+        assert "guani-flujo-poster.webp" in etiqueta
+        assert "mensaje de WhatsApp" in etiqueta  # el aria-label dice qué cuenta
+
+    def test_el_archivo_y_su_portada_estan_en_el_repo(self) -> None:
+        directorio = landing_view.LANDING_STATIC_DIR
+        assert (directorio / "guani-flujo.mp4").is_file()
+        assert (directorio / "guani-flujo-poster.webp").is_file()
 
 
 # ── Cuatro pasos y «Para quién es» (prototipo aprobado, landing-narrativa) ────

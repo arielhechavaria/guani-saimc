@@ -1,6 +1,6 @@
 # Guion del video promocional de Guani
 
-Estado: **guion con las tres decisiones resueltas (720×1280 ~1 MB, anuncio real, apertura con la pregunta); falta que el operador apruebe el guion para producir.**
+Estado: **producido** con `tools/producir_video.py` y mostrado en la landing; el operador aprobó el guion y sus tres decisiones (720×1280 ~1 MB, anuncio real, apertura con la pregunta).
 
 Reemplaza a `guani-flujo.mp4` (retirado con `FLOW_VIDEO_ENABLED = False`, entrada de `docs/decisions.md` del 2026-10-11 «La landing cuenta el recorrido real»). Solo guion: ni audio, ni video, ni código.
 
