@@ -1,6 +1,6 @@
 # Guion del video promocional de Guani
 
-Estado: **propuesta, sin aprobar** (decisión 1 resuelta: 720×1280, ~1 MB). Escrito por un subagente Opus; verificado contra el código por él, no por el operador.
+Estado: **guion con las tres decisiones resueltas (720×1280 ~1 MB, anuncio real, apertura con la pregunta); falta que el operador apruebe el guion para producir.**
 
 Reemplaza a `guani-flujo.mp4` (retirado con `FLOW_VIDEO_ENABLED = False`, entrada de `docs/decisions.md` del 2026-10-11 «La landing cuenta el recorrido real»). Solo guion: ni audio, ni video, ni código.
 
@@ -77,4 +77,4 @@ No se usan las capturas 2 a 4 del pase actual (`flujo-2..4`): muestran la herram
 
 1. **Peso frente a duración. DECIDIDO:** 720×1280 y tope de ~1 MB (el operador subió el tope de los ~750 KB del video actual).
 2. **Ejemplo de punta a punta. DECIDIDO:** un anuncio de texto real con página pública limpia (sin teléfono, id ni enlace a la vista); el chat de la escena 2 se recrea a partir de él. El anuncio concreto se elige al capturar y se te muestra antes de producir.
-3. **Apertura.** ¿Pregunta («¿Cuánto cuesta algo hoy en tu provincia?») o titular de la landing dicho en voz («Precios reales del mercado informal cubano»)?
+3. **Apertura. DECIDIDO:** se abre con la pregunta «¿Cuánto cuesta algo hoy en tu provincia?».
