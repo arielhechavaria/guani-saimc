@@ -509,3 +509,44 @@ def build_landing_entries(directory: Path | None = None) -> tuple[EntryTile, ...
             EntryTile(href=href, icon=icon, title=title, text=text, poster=poster, clip=clip, alt=alt)
         )
     return tuple(tiles)
+
+
+# ── El teléfono del héroe ────────────────────────────────────────────────────
+
+#: Medida de `entradas-tablero.webp`, la captura del tablero que se graba para
+#: la tarjeta de «Precios de hoy» y que el héroe reusa dentro del teléfono. Va a
+#: los atributos `width` y `height` para reservar el hueco; un test compara
+#: estos números con el archivo, así que si se vuelve a grabar con otra medida
+#: se cambia acá.
+HERO_PHONE_NAME = "entradas-tablero.webp"
+HERO_PHONE_WIDTH = 480
+HERO_PHONE_HEIGHT = 999
+
+
+@dataclass(frozen=True)
+class HeroPhone:
+    src: str
+    alt: str
+    width: int = HERO_PHONE_WIDTH
+    height: int = HERO_PHONE_HEIGHT
+
+
+def build_hero_phone(directory: Path | None = None) -> HeroPhone | None:
+    """El teléfono del héroe, o `None` si falta la captura.
+
+    Sin ella el héroe se queda con el cielo, el sol y las burbujas: antes un
+    teléfono vacío que una `<img>` rota. Mismo criterio que
+    `build_landing_entries`: se mira el disco en cada pedido, y un archivo de
+    cero bytes cuenta como ausente.
+    """
+    directory = LANDING_STATIC_DIR if directory is None else directory
+    src = _versioned_url(directory, HERO_PHONE_NAME)
+    if src is None:
+        return None
+    return HeroPhone(
+        src=src,
+        alt=(
+            "El tablero de Guani en un teléfono: el precio del arroz por provincia, "
+            "con la cuenta de anuncios detrás."
+        ),
+    )

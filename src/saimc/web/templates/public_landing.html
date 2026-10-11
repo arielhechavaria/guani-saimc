@@ -83,21 +83,13 @@
   .lp-h2 { margin: 0; font: 400 30px/1.1 var(--lp-heading); }
   .lp-kicker { margin: 0; font-size: 13px; font-weight: 700; line-height: 1.45; letter-spacing: .12em;
                color: var(--lp-kicker); text-transform: uppercase; }
-  /* El foco del sitio es del color de acento: sobre la portada (que es de ese
-     color) no se vería. El pie resuelve el suyo. */
-  .lp-hero :focus-visible { outline-color: var(--lp-on-blue); }
   .lp .m3-icon { vertical-align: 0; }
   .lp-svg-icon { flex: none; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2;
                  stroke-linecap: round; stroke-linejoin: round; }
 
   /* ── Animaciones (las del prototipo, con prefijo) ───────────────────── */
-  @keyframes lp-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-  @keyframes lp-drift { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(4px, -10px); } }
-  @keyframes lp-ring { 0% { transform: scale(.7); opacity: .55; } 100% { transform: scale(1.4); opacity: 0; } }
-  @keyframes lp-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
   @keyframes lp-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
   @keyframes lp-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-  .lp-in { animation: lp-rise .7s ease-out both; }
   .lp-lift { transition: transform .18s ease, box-shadow .18s ease; }
   .lp-lift:hover { transform: translateY(-4px); box-shadow: var(--m3-elev-3); }
   @supports (animation-timeline: view()) {
@@ -106,43 +98,65 @@
                animation-range: entry 20% cover 40%; }
   }
 
-  /* ── Portada ────────────────────────────────────────────────────────── */
-  .lp-hero { background: var(--lp-blue); color: var(--lp-on-blue); overflow: hidden; }
-  .lp-hero-inner { padding-top: 16px; padding-bottom: 28px; }
-  .lp-bar { display: flex; align-items: center; gap: 12px; }
+  /* ── Portada: el atardecer cubano ───────────────────────────────────────
+     Prototipo `docs/prototipos/landing-estetica.html`. Los colores son los
+     tokens `--ph-dusk-*` de `design_tokens.css` (el cielo es el mismo con la
+     página clara y con la oscura). Tres planos de ciudad: lejos y medio
+     detrás del teléfono; el muro y las palmas delante, para que el teléfono
+     parezca apoyado en el muro. La única animación es el sol que sube una vez. */
+  .lp-hero { position: relative; overflow: hidden; color: var(--ph-dusk-texto);
+             background: linear-gradient(180deg, var(--ph-dusk-noche) 0%, var(--ph-dusk-indigo) 34%, var(--ph-dusk-mamey) 66%,
+                                         var(--ph-dusk-flama) 86%, var(--ph-dusk-guayaba) 100%); }
+  .lp-hero :focus-visible { outline-color: var(--ph-dusk-guayaba); }
+  .lp-hero .lp-wrap { position: relative; z-index: 1; }
+  .lp-bar { display: flex; align-items: center; gap: 12px; padding-top: 16px; }
   .lp-wordmark { flex-grow: 1; font: 400 26px/1.2 var(--lp-heading); }
   .lp-bar-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px;
-                 border: 1px solid var(--lp-on-blue); color: var(--lp-on-blue); font-size: 15px; font-weight: 500; text-decoration: none; }
-  .lp-bar-link:hover { color: var(--lp-on-blue); }
-  .lp-hero-body { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 48px; }
-  .lp-stage { position: relative; flex: 1 1 300px; max-width: 420px; height: 270px; margin: 0 auto; }
-  .lp-ring, .lp-disc, .lp-avatar { position: absolute; left: 50%; top: 50%; border-radius: 50%; }
-  .lp-ring { width: 170px; height: 170px; margin: -85px 0 0 -85px; border: 2px solid var(--lp-on-blue);
-             animation: lp-ring 3.2s ease-out infinite; }
-  .lp-ring-late { animation-delay: 1.6s; }
-  .lp-disc { width: 190px; height: 190px; margin: -95px 0 0 -95px; background: var(--lp-teal); }
-  .lp-avatar { width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 0; animation: lp-bob 4s ease-in-out infinite; }
-  .lp-avatar .ph-brand-avatar { display: block; width: 150px; height: 150px; }
-  .lp-avatar .guani-eye { transform-box: fill-box; transform-origin: center; animation: lp-blink 5s infinite; }
-  .lp-globe { position: absolute; display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 8px 12px;
-              background: var(--lp-surface); color: var(--lp-ink); font-size: 14px; font-weight: 500; line-height: 1.3;
-              box-shadow: var(--m3-elev-3); animation: lp-drift 5s ease-in-out infinite; }
-  .lp-globe > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lp-globe .m3-icon, .lp-globe .lp-svg-icon { font-size: 18px; color: var(--lp-blue); }
-  .lp-globe-1 { left: 0; top: 18px; border-radius: 16px 16px 16px 4px; }
-  .lp-globe-2 { right: 0; top: 84px; border-radius: 16px 16px 4px 16px; background: var(--lp-chip);
-                color: var(--lp-chip-ink); animation-delay: 1.2s; }
-  .lp-globe-2 .m3-icon, .lp-globe-2 .lp-svg-icon { color: inherit; }
-  .lp-globe-3 { left: 8px; bottom: 14px; border-radius: 16px 4px 16px 16px; animation-delay: 2.3s; }
-  .lp-hero-text { flex: 1 1 300px; min-width: 0; }
-  .lp-h1 { margin: 0; font: 400 clamp(36px, 11vw, 44px)/1.05 var(--lp-heading); }
-  .lp-lead { margin: 14px 0 0; max-width: 560px; font-size: 19px; line-height: 1.45; }
-  .lp-cta { margin-top: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-            min-height: 52px; padding: 0 24px; border-radius: 100px; background: var(--lp-on-blue); color: var(--lp-blue);
-            font-size: 17px; font-weight: 500; text-decoration: none; }
-  .lp-cta:hover { color: var(--lp-blue); }
+                 border: 1px solid var(--ph-dusk-vidrio-borde); background: var(--ph-dusk-vidrio); color: var(--ph-dusk-texto);
+                 font-size: 15px; font-weight: 500; text-decoration: none; backdrop-filter: blur(6px); }
+  .lp-bar-link:hover { color: var(--ph-dusk-texto); }
+  .lp-hero-text { padding-top: 28px; min-width: 0; }
+  .lp-h1 { margin: 0; max-width: 11em; font: 400 clamp(38px, 11vw, 56px)/1.04 var(--lp-heading); letter-spacing: -.012em;
+           text-wrap: balance; }
+  .lp-lead { margin: 16px 0 0; max-width: 30em; font-size: 17px; line-height: 1.5; color: var(--ph-dusk-texto-suave); }
+  .lp-cta { margin-top: 22px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px;
+            padding: 0 24px; border-radius: 100px; background: var(--ph-dusk-guayaba); color: var(--ph-dusk-tinta);
+            font-size: 17px; font-weight: 700; text-decoration: none; }
+  .lp-cta:hover { color: var(--ph-dusk-tinta); }
   .lp-cta .lp-svg-icon { font-size: 22px; }
-  .lp-wave { display: block; width: 100%; height: 44px; color: var(--lp-bg); }
+  .lp-stage { position: relative; height: 430px; margin-top: 8px; }
+  .lp-sun { position: absolute; left: 50%; top: 20px; width: 340px; height: 340px; margin-left: -170px; border-radius: 50%;
+            background: radial-gradient(circle, var(--ph-dusk-guayaba) 0 58%, var(--ph-dusk-guayaba-halo) 64%,
+                                        var(--ph-dusk-guayaba-borde) 72%);
+            animation: lp-sunrise 1.8s ease-out both; }
+  @keyframes lp-sunrise { from { transform: translateY(110px); opacity: .2; } to { transform: none; opacity: 1; } }
+  .lp-hero-phone { position: absolute; left: 50%; bottom: -70px; width: 232px; margin-left: -116px; box-sizing: border-box;
+                   padding: 8px; border-radius: 36px; background: var(--ph-dusk-sil-cerca); box-shadow: 0 18px 50px var(--ph-dusk-sombra); }
+  .lp-hero-phone img { display: block; width: 100%; height: auto; border-radius: 28px; }
+  .lp-hero-phone::before { content: ""; position: absolute; z-index: 1; top: 14px; left: 50%; width: 64px; height: 18px;
+                           margin-left: -32px; border-radius: 12px; background: var(--ph-dusk-sil-cerca); }
+  .lp-globe { position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+              padding: 8px 14px 8px 10px; border-radius: 100px; background: var(--ph-dusk-vidrio-oscuro);
+              border: 1px solid var(--ph-dusk-vidrio-borde); backdrop-filter: blur(8px); color: var(--ph-dusk-texto);
+              font-size: 14px; font-weight: 500; line-height: 1.3; white-space: nowrap; }
+  .lp-globe > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .lp-globe .m3-icon, .lp-globe .lp-svg-icon { font-size: 18px; }
+  .lp-globe-1 { left: -6px; top: 36px; } .lp-globe-2 { right: -6px; top: 104px; } .lp-globe-3 { left: -2px; top: 168px; }
+  .lp-city-back { position: absolute; z-index: 0; left: 0; bottom: 0; width: 100%; height: 210px; display: block; }
+  .lp-wall { position: absolute; z-index: 2; left: 0; bottom: 0; width: 100%; height: 62px; display: block; }
+  .lp-palm { position: absolute; z-index: 2; bottom: 40px; width: 150px; height: auto; display: block; color: var(--ph-dusk-sil-cerca); }
+  .lp-palm-l { left: -46px; } .lp-palm-r { right: -52px; transform: scale(-1, 1); }
+  @media (min-width: 720px) {
+    .lp-hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
+    .lp-hero-text { padding-top: 56px; padding-bottom: 150px; }
+    .lp-stage { height: 560px; }
+    .lp-hero-phone { width: 270px; margin-left: -135px; }
+    .lp-sun { top: 40px; width: 420px; height: 420px; margin-left: -210px; }
+    .lp-city-back { height: 260px; }
+    .lp-wall { height: 74px; }
+    .lp-globe-3 { left: -40px; top: 196px; }
+    .lp-palm { width: 170px; bottom: 50px; } .lp-palm-l { left: 43%; } .lp-palm-r { right: 1%; }
+  }
 
   /* ── Así trabajo ─────────────────────────────────────────────────────── */
   .lp-card { background: var(--lp-surface); border-radius: 24px; padding: 16px; }
@@ -277,6 +291,29 @@
     .lp-who { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
 
+  /* ── Así trabajo: la noche ──────────────────────────────────────────────
+     La máquina lee mientras todos duermen. Banda de cielo nocturno con
+     estrellas (puntos de `radial-gradient`) y los pasos en tarjetas de vidrio.
+     Lo de adentro que era claro (la frase del ejemplo, el pase de capturas)
+     se reescribe para fondo oscuro. */
+  .lp-night { position: relative; margin-top: 36px; padding: 44px 0 52px; color: var(--ph-dusk-texto); border-radius: 36px 36px 0 0;
+              background: linear-gradient(180deg, var(--ph-dusk-noche) 0%, var(--ph-dusk-sil-medio) 100%); overflow: hidden; }
+  .lp-night::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .8;
+    background:
+      radial-gradient(1.5px 1.5px at 12% 14%, var(--ph-dusk-texto), transparent), radial-gradient(1px 1px at 28% 30%, var(--ph-dusk-texto), transparent),
+      radial-gradient(1.5px 1.5px at 47% 10%, var(--ph-dusk-texto), transparent), radial-gradient(1px 1px at 63% 26%, var(--ph-dusk-texto), transparent),
+      radial-gradient(1.5px 1.5px at 82% 12%, var(--ph-dusk-texto), transparent), radial-gradient(1px 1px at 91% 34%, var(--ph-dusk-texto), transparent),
+      radial-gradient(1px 1px at 8% 46%, var(--ph-dusk-texto), transparent), radial-gradient(1.5px 1.5px at 74% 48%, var(--ph-dusk-texto), transparent); }
+  .lp-night .lp-wrap { position: relative; }
+  .lp-night :focus-visible { outline-color: var(--ph-dusk-guayaba); }
+  .lp-night .lp-h2 { letter-spacing: -.01em; }
+  .lp-night .lp-flow-lead { color: var(--ph-dusk-texto-suave); }
+  .lp-night .lp-card { background: var(--ph-dusk-vidrio); border: 1px solid var(--ph-dusk-vidrio-borde); backdrop-filter: blur(8px); }
+  .lp-night .lp-step-text { color: var(--ph-dusk-texto-suave); }
+  .lp-night .lp-step-num { background: var(--ph-dusk-guayaba); color: var(--ph-dusk-tinta); }
+  .lp-night .lp-phone { box-shadow: 0 0 0 1px var(--ph-dusk-vidrio-borde); }
+  .lp-night .lp-flow-step { color: var(--lp-ink); }
+
   /* ── Entradas ───────────────────────────────────────────────────────── */
   .lp-entries { padding-bottom: 36px; }
   .lp-tiles { margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -305,6 +342,7 @@
   @media (min-width: 720px) { .lp-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
   @media (prefers-reduced-motion: reduce) {
+    .lp-sun { animation: none; }
     .lp *, .lp *::before, .lp *::after { animation: none !important; transition: none !important; }
     /* Las capturas 2 a 5 no se van a ver nunca: fuera del árbol, con
        `loading="lazy"`, tampoco se descargan. */
@@ -352,40 +390,77 @@
 {%- endmacro %}
 <div class="lp">
 
+<svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+  <defs>
+    {# Una fronda apuntando a la derecha; las palmas la giran y la espejan. #}
+    <path id="fronda" d="M0 0 C 14 -18 44 -22 74 -2 C 50 -8 24 -7 0 0 Z"/>
+    <g id="palma">
+      <path d="M0 0 C -3 -34 5 -70 0 -112" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+      <g transform="translate(0 -112)">
+        <use href="#fronda" transform="rotate(-8)"/><use href="#fronda" transform="rotate(32)"/>
+        <use href="#fronda" transform="rotate(68)"/><use href="#fronda" transform="rotate(-48)"/>
+        <use href="#fronda" transform="scale(-1 1) rotate(-8)"/><use href="#fronda" transform="scale(-1 1) rotate(32)"/>
+        <use href="#fronda" transform="scale(-1 1) rotate(68)"/><use href="#fronda" transform="scale(-1 1) rotate(-48)"/>
+      </g>
+    </g>
+  </defs>
+</svg>
+
 <header class="lp-hero">
-  <div class="lp-wrap lp-hero-inner">
+  <div class="lp-wrap">
     <div class="lp-bar">
       <div class="lp-wordmark">Guani</div>
       <a class="lp-bar-link" href="{{ home_href }}">Ver precios</a>
     </div>
-    <div class="lp-hero-body">
-
-      <div class="lp-stage" aria-hidden="true">
-        <div class="lp-ring"></div>
-        <div class="lp-ring lp-ring-late"></div>
-        <div class="lp-disc"></div>
-        <div class="lp-avatar">{% include "_guani_avatar.html" %}</div>
-        {# Los globos dicen solo lo que hay: con una celda de ejemplo, su rango,
-           su provincia y su muestra; sin ella, nombres de producto y nada más. #}
-        {% if price %}
-        <div class="lp-globe lp-globe-1"><span class="m3-icon">sell</span><span>{{ price.product_name }} · {{ price.minimum_text }}–{{ price.maximum_text }} {{ price.currency }}/{{ price.unit }}</span></div>
-        <div class="lp-globe lp-globe-2">{{ svg_icon("pin") }}<span>{{ price.province_name }}</span></div>
-        <div class="lp-globe lp-globe-3"><span class="m3-icon">forum</span><span>{{ price.count }} anuncios</span></div>
-        {% else %}
-        {% for name, _href in products[:3] %}
-        <div class="lp-globe lp-globe-{{ loop.index }}"><span class="m3-icon">sell</span><span>{{ name }}</span></div>
-        {% endfor %}
-        {% endif %}
-      </div>
-
-      <div class="lp-hero-text lp-in">
+    <div class="lp-hero-grid">
+      <div class="lp-hero-text">
         <h1 class="lp-h1">Precios reales del mercado informal cubano.</h1>
         <p class="lp-lead">Guani lee los anuncios donde ya se vende, los pasa a una misma unidad y te los enseña con su cuenta. Una máquina lee; una persona supervisa.</p>
         <a class="lp-cta lp-lift" href="{{ home_href }}">Ver los precios de hoy{{ svg_icon("arrow") }}</a>
       </div>
+
+      <div class="lp-stage">
+        <div class="lp-sun" aria-hidden="true"></div>
+        {%- if hero_phone %}
+        <div class="lp-hero-phone"><img src="{{ hero_phone.src }}" alt="{{ hero_phone.alt }}" width="{{ hero_phone.width }}" height="{{ hero_phone.height }}"></div>
+        {%- endif %}
+        {# Los globos dicen solo lo que hay: con una celda de ejemplo, su rango,
+           su provincia y su muestra; sin ella, nombres de producto y nada más. #}
+        {% if price %}
+        <div class="lp-globe lp-globe-1"><span class="m3-icon" aria-hidden="true">sell</span><span>{{ price.product_name }} · {{ price.minimum_text }}–{{ price.maximum_text }} {{ price.currency }}/{{ price.unit }}</span></div>
+        <div class="lp-globe lp-globe-2">{{ svg_icon("pin") }}<span>{{ price.province_name }}</span></div>
+        <div class="lp-globe lp-globe-3"><span class="m3-icon" aria-hidden="true">forum</span><span>{{ price.count }} anuncios</span></div>
+        {% else %}
+        {% for name, _href in products[:3] %}
+        <div class="lp-globe lp-globe-{{ loop.index }}"><span class="m3-icon" aria-hidden="true">sell</span><span>{{ name }}</span></div>
+        {% endfor %}
+        {% endif %}
+      </div>
     </div>
   </div>
-  <svg class="lp-wave" viewBox="0 0 1440 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0,30 C240,70 480,0 720,26 C960,52 1200,8 1440,34 L1440,60 L0,60 Z" fill="currentColor"/></svg>
+
+  {# La ciudad, detrás: lejos (índigo) y medio. Un capitolio con su cúpula y su
+     farol, un campanario, una torre, un tinaco y una antena. #}
+  <svg class="lp-city-back" viewBox="0 0 1200 210" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <path fill="var(--ph-dusk-sil-lejos)" d="M0 210V140H36V112H64V140H96V98H126V130H160V118H196V92H224V124H262V108H300V136H338V100H372V126H410V88H438V120H470V104H508V132H548V96H580V122H620V110H660V90H690V128H730V102H768V124H806V94H836V130H876V108H914V136H952V100H986V122H1024V112H1060V138H1100V104H1136V128H1200V210Z"/>
+    <g fill="var(--ph-dusk-sil-medio)">
+      <path d="M0 210V168H58V150H112V166H176V152H240V170H318V154H388V168H448V156H820V170H890V152H960V166H1030V150H1096V168H1200V210Z"/>
+      <path d="M500 156V138H700V156Z"/>
+      <path d="M560 138V124Q560 92 600 92Q640 92 640 124V138Z"/>
+      <rect x="596" y="68" width="8" height="26"/><path d="M592 70L600 56L608 70Z"/>
+      <rect x="208" y="84" width="24" height="86"/><path d="M204 86L220 56L236 86Z"/>
+      <rect x="878" y="36" width="52" height="134"/><rect x="886" y="28" width="36" height="10"/>
+      <rect x="346" y="124" width="34" height="32" rx="3"/><rect x="352" y="114" width="22" height="11"/>
+      <rect x="1010" y="104" width="3" height="48"/>
+    </g>
+  </svg>
+
+  {# Delante: las palmas y el muro del malecón, donde se apoya el teléfono. #}
+  <svg class="lp-palm lp-palm-l" viewBox="-110 -230 220 240" aria-hidden="true"><use href="#palma" transform="scale(1.45)" fill="currentColor"/></svg>
+  <svg class="lp-palm lp-palm-r" viewBox="-110 -230 220 240" aria-hidden="true"><use href="#palma" transform="scale(1.2) rotate(-3)" fill="currentColor"/></svg>
+  <svg class="lp-wall" viewBox="0 0 100 62" preserveAspectRatio="none" aria-hidden="true">
+    <path fill="var(--ph-dusk-sil-cerca)" d="M0 62V16H100V62Z"/><rect fill="var(--ph-dusk-sil-cerca)" y="8" width="100" height="10"/><rect fill="var(--ph-dusk-sil-medio)" y="17" width="100" height="1.4"/>
+  </svg>
 </header>
 
 <main class="lp-main">
@@ -428,7 +503,8 @@
   </div>
 </section>
 
-<section class="lp-wrap lp-section" id="lp-work" aria-labelledby="lp-work-title">
+<section class="lp-night" id="lp-work" aria-labelledby="lp-work-title">
+<div class="lp-wrap">
   <h2 class="lp-h2" id="lp-work-title">Así trabajo</h2>
   <p class="lp-flow-lead">Una máquina lee los anuncios y una persona supervisa. Estos son los cuatro pasos.</p>
   <ol class="lp-steps4">
@@ -464,6 +540,7 @@
   {% else %}
   {{ video_card() }}
   {% endif %}
+</div>
 </section>
 
 <section class="lp-wrap lp-section" id="lp-why" aria-labelledby="lp-why-title">

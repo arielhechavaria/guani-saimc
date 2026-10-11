@@ -46,6 +46,7 @@ from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.landing_view import (
     build_footer_links,
+    build_hero_phone,
     build_landing_coverage,
     build_landing_entries,
     build_landing_flow,
@@ -1386,3 +1387,112 @@ class TestElOrdenDeLaPagina:
         posiciones = [html.index(marca) for marca in orden]
 
         assert posiciones == sorted(posiciones)
+
+
+# ── «El atardecer cubano» (landing-estetica, prototipo aprobado) ──────────────
+#
+# El héroe es un atardecer con el teléfono del tablero real; «Así trabajo» es la
+# noche. Lo que se prueba es la estructura y lo que no se puede romper: la
+# captura se declara con su medida, lo decorativo no entra al árbol de
+# accesibilidad y el sol no se anima con movimiento reducido. Los colores viven
+# en `design_tokens.css` (`test_static_assets` lo vigila).
+
+
+def _heroe(html: str) -> str:
+    return html.split('<header class="lp-hero">')[1].split("</header>")[0]
+
+
+class TestElTelefonoDelHeroe:
+    def test_se_arma_con_la_captura_del_tablero_y_su_medida(self) -> None:
+        telefono = build_hero_phone()
+
+        assert telefono is not None
+        assert telefono.src.startswith("/static/landing/entradas-tablero.webp?v=")
+        assert (telefono.width, telefono.height) == (480, 999)
+        assert len(telefono.alt) > 40
+
+    def test_la_medida_declarada_es_la_del_archivo(self) -> None:
+        image = pytest.importorskip("PIL.Image")
+        telefono = build_hero_phone()
+
+        assert telefono is not None
+        with image.open(landing_view.LANDING_STATIC_DIR / "entradas-tablero.webp") as archivo:
+            assert archivo.size == (telefono.width, telefono.height)
+
+    def test_sin_el_archivo_no_hay_telefono(self, tmp_path: Path) -> None:
+        assert build_hero_phone(tmp_path) is None
+
+    def test_un_archivo_vacio_cuenta_como_faltante(self, tmp_path: Path) -> None:
+        (tmp_path / "entradas-tablero.webp").write_bytes(b"")
+
+        assert build_hero_phone(tmp_path) is None
+
+
+class TestElHeroeEsUnAtardecer:
+    def test_trae_el_sol_el_telefono_la_ciudad_y_el_muro(self, client: TestClient) -> None:
+        heroe = _heroe(client.get("/").text)
+
+        for clase in ("lp-sun", "lp-hero-phone", "lp-city-back", "lp-wall"):
+            assert f'class="{clase}' in heroe, clase
+        assert heroe.count('class="lp-palm ') == 2
+
+    def test_el_telefono_lleva_la_captura_con_alt_y_medida_y_carga_de_entrada(
+        self, client: TestClient
+    ) -> None:
+        heroe = _heroe(client.get("/").text)
+        imagen = re.search(r"<img\b[^>]*>", heroe.split('class="lp-hero-phone"')[1])
+
+        assert imagen is not None
+        etiqueta = imagen.group(0)
+        assert 'src="/static/landing/entradas-tablero.webp?v=' in etiqueta
+        assert 'width="480"' in etiqueta and 'height="999"' in etiqueta
+        assert re.search(r'alt="[^"]{40,}"', etiqueta)
+        assert 'loading="lazy"' not in etiqueta  # es lo primero que se ve
+
+    def test_la_ciudad_las_palmas_y_el_sol_son_decorativos(self, client: TestClient) -> None:
+        heroe = _heroe(client.get("/").text)
+
+        for clase in ("lp-city-back", "lp-wall", "lp-palm lp-palm-l", "lp-palm lp-palm-r"):
+            assert re.search(rf'<svg class="{clase}"[^>]*aria-hidden="true"', heroe), clase
+        assert re.search(r'<div class="lp-sun"[^>]*aria-hidden="true"', heroe)
+
+    def test_sin_la_captura_el_heroe_sigue_diciendo_lo_mismo_sin_telefono(
+        self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(landing_view, "LANDING_STATIC_DIR", tmp_path)
+
+        heroe = _heroe(client.get("/").text)
+
+        assert "lp-hero-phone" not in heroe
+        assert "<img" not in heroe
+        assert "Precios reales del mercado informal cubano." in heroe
+        assert 'class="lp-sun' in heroe
+
+    def test_el_avatar_ya_no_esta_en_el_heroe_pero_si_en_el_pie(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        assert "ph-brand-avatar" not in _heroe(html)
+        assert "ph-brand-avatar" in html.split("</main>")[1]
+
+    def test_las_burbujas_siguen_diciendo_el_rango_la_provincia_y_la_muestra(
+        self, client: TestClient, datos: None
+    ) -> None:
+        assert len(re.findall(r'<div class="lp-globe', _heroe(client.get("/").text))) == 3
+
+    def test_el_sol_no_se_anima_con_movimiento_reducido(self, client: TestClient) -> None:
+        html = client.get("/").text
+        reducido = html.split("@media (prefers-reduced-motion: reduce)")[1].split("}\n  }")[0]
+
+        assert ".lp-sun" in reducido and "animation: none" in reducido
+
+
+class TestLaNocheDelRecorrido:
+    def test_asi_trabajo_es_la_banda_de_noche(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        assert re.search(r'<section class="[^"]*\blp-night\b[^"]*" id="lp-work"', html)
+
+    def test_los_cuatro_pasos_siguen_siendo_los_mismos(self, client: TestClient) -> None:
+        assert _items(client.get("/").text, "lp-steps4") == [
+            f"{n} {titulo} {texto}" for n, (titulo, texto) in enumerate(CUATRO_PASOS, start=1)
+        ]

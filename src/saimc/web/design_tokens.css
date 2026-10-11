@@ -194,6 +194,31 @@
   /* Barra inferior de vistas del teléfono (2026-09-26): las pantallas
      completas le restan este alto y el Tablero lo reserva al final. */
   --ph-barra-h: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+  /* «El atardecer cubano» (landing, 2026-10-11, `docs/prototipos/landing-estetica.html`):
+     el héroe de `/` es un atardecer y «Así trabajo» es la noche. Es un
+     mundo pintado, no un tema: el cielo es el mismo con la página clara que
+     con la oscura, así que estos tokens NO tienen versión oscura (ver
+     `SIN_VERSION_OSCURA` en `tests/test_static_assets.py`). Los nombres son
+     de fruta porque el cielo es de fruta. `noche` es el azul de la marca,
+     más hondo; el texto de encima es siempre blanco y el de sobre `guayaba`,
+     `tinta`. */
+  --ph-dusk-noche: #0b2c43;
+  --ph-dusk-indigo: #2f3a80;
+  --ph-dusk-mamey: #c8507a;
+  --ph-dusk-flama: #f08a3c;
+  --ph-dusk-guayaba: #ffd072;
+  --ph-dusk-guayaba-halo: rgba(255, 208, 114, .35);
+  --ph-dusk-guayaba-borde: rgba(255, 208, 114, 0);
+  --ph-dusk-sil-lejos: #3b3f86;
+  --ph-dusk-sil-medio: #1b3159;
+  --ph-dusk-sil-cerca: #0a2233;
+  --ph-dusk-tinta: #08202f;
+  --ph-dusk-texto: #ffffff;
+  --ph-dusk-texto-suave: rgba(255, 255, 255, .88);
+  --ph-dusk-vidrio: rgba(255, 255, 255, .14);
+  --ph-dusk-vidrio-borde: rgba(255, 255, 255, .3);
+  --ph-dusk-vidrio-oscuro: rgba(8, 32, 47, .62);
+  --ph-dusk-sombra: rgba(0, 0, 0, .35);
 }
 
 /* ── Modo oscuro ────────────────────────────────────────────────────────
