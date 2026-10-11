@@ -17,6 +17,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.ingestion`](#ingerir-la-bandeja-de-entrada) | Ingerir archivos de la bandeja | sí: filas crudas | no |
 | [`systemctl start saimc-prefill`](#pre-cálculo-ahora-a-mano) | Pre-calcular propuestas ya (y preguntarle a Jev, si está encendido) | sí: propuestas y señales de Jev | sí, tope 0,15 USD (más 0,01 de Jev) |
 | [Después de un deploy](#después-de-un-deploy-la-secuencia) | Backup, pull, migrar, reiniciar | sí | no |
+| [`tools/grabar_entradas.py`](#grabar-los-clips-de-entra-por-donde-quieras) | Grabar los clips y capturas de la landing | sí: archivos en `static/landing/` | no |
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra el conjunto de referencia congelado | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
 | [`saimc.extraction.reference_set`](#conjunto-de-referencia-en-seco-y-estado) | Qué anuncios entrarían al conjunto de referencia de H0; con `status`, la versión vigente y su deriva | no (en seco y `status`) | no |
@@ -762,6 +763,25 @@ Escribe una versión nueva del conjunto de referencia de H0 con lo que lista el 
 - **Cuándo**: una vez, o si se mejora la redacción y hay que repasar lo viejo. Primero sin `--apply`.
 - **Cambia algo**: solo con `--apply`. **Gasta**: no.
 - Más: `docs/decisions.md`, 2026-08-11.
+
+### Grabar los clips de «Entra por donde quieras»
+
+```
+.venv/bin/python tools/grabar_entradas.py
+```
+
+```
+.venv/bin/python tools/grabar_entradas.py mapa --base http://127.0.0.1:8000
+```
+
+- **Para qué**: graba, sobre el sitio real y con datos reales, un clip mudo de unos 6 s y una captura
+  (el `poster`) por vista: tablero, mapa y Explorar. Salen a `src/saimc/web/static/landing/` como
+  `entradas-<vista>.mp4` y `.webp`. Antes de grabar comprueba que la página no muestra ids de
+  anuncio, teléfonos ni enlaces de grupo; si los ve, se detiene sin escribir.
+- **Cuándo**: cuando cambie el tablero, el mapa o Explorar y las tarjetas de la landing se queden
+  atrás. Con el servidor ya corriendo (por defecto `http://127.0.0.1:8773`; `--base` lo cambia).
+- **Cambia algo**: sobrescribe esos seis archivos. Todo lo que pide al sitio son `GET`. **Gasta**: no.
+- Necesita Chromium de Playwright y `imageio-ffmpeg` (`pip install -e '.[marketing]'`).
 
 ### Alias del foco
 
