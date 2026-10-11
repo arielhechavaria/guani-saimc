@@ -131,6 +131,7 @@
   --ph-dusk-sombra: rgba(0, 0, 0, .35);
   --ph-dusk-manana: #fde7bf;
   --ph-dusk-sombra-dia: rgba(11, 44, 67, .14);
+  --ph-dusk-brillo: rgba(255, 255, 255, .55);
 }
 
 :root[data-theme="dark"] {

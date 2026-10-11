@@ -1543,3 +1543,116 @@ class TestLasHorasDelDia:
 
         assert "--ph-dusk-manana:" in fuente
         assert "--ph-dusk-sombra-dia:" in fuente
+
+
+# ── Animaciones (landing-estetica, plan aprobado) ─────────────────────────────
+#
+# Todo es CSS: ningún guion nuevo, y solo se mueven propiedades que no
+# recalculan el diseño. Lo que se prueba es lo que se puede romper sin que se
+# note en pantalla: que cada animación exista, que no toque el diseño, que lo
+# atado al scroll solo corra donde el navegador lo soporta y que el movimiento
+# reducido lo apague todo.
+
+NUEVAS = (
+    "lp-halo",
+    "lp-guani-sube",
+    "lp-burbuja",
+    "lp-foco",
+    "lp-brillo",
+    "lp-brisa",
+    "lp-titileo",
+    "lp-paralaje",
+    "lp-estrellas",
+    "lp-sol-se-pone",
+    "lp-chispa",
+)
+#: Propiedades que se animan sin recalcular el diseño ni repintar el texto
+#: alrededor: el compositor las resuelve solo.
+BARATAS = {"opacity", "transform", "filter", "rotate", "translate", "scale"}
+
+
+def _css_de_la_landing(html: str) -> str:
+    bloques = re.findall(r"<style>(.*?)</style>", html, flags=re.S)
+    return "\n".join(b for b in bloques if "lp-hero" in b)
+
+
+def _cuerpo_de_keyframes(css: str, nombre: str) -> str:
+    inicio = css.index(
+        f"@keyframes {nombre} " if f"@keyframes {nombre} " in css else f"@keyframes {nombre}{{"
+    )
+    profundidad, pos = 0, css.index("{", inicio)
+    fin = pos
+    for i, c in enumerate(css[pos:], start=pos):
+        profundidad += c == "{"
+        profundidad -= c == "}"
+        if profundidad == 0:
+            fin = i
+            break
+    return css[pos : fin + 1]
+
+
+class TestLasAnimaciones:
+    def test_cada_animacion_del_plan_esta_definida_y_se_usa(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        for nombre in NUEVAS:
+            assert f"@keyframes {nombre}" in css, f"falta @keyframes {nombre}"
+            assert re.search(rf"animation:[^;]*\b{nombre}\b", css), f"{nombre} no se usa"
+
+    def test_solo_se_animan_propiedades_baratas(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        for nombre in NUEVAS:
+            cuerpo = _cuerpo_de_keyframes(css, nombre)
+            propiedades = set(re.findall(r"([a-z-]+)\s*:", re.sub(r"\d+%|from|to", "", cuerpo)))
+            assert propiedades <= BARATAS, f"{nombre} anima {sorted(propiedades - BARATAS)}"
+
+    def test_lo_atado_al_scroll_solo_corre_donde_el_navegador_lo_soporta(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        usos = [m.start() for m in re.finditer(r"(?<!\()animation-timeline\s*:", css)]
+        assert usos, "no hay ninguna animación atada al scroll"
+        for pos in usos:
+            antes = css[:pos]
+            ultimo = antes.rindex("@supports")
+            assert antes[ultimo:].startswith("@supports (animation-timeline"), pos
+            # y ese bloque no se cerró antes de llegar acá
+            bloque = css[ultimo:pos]
+            assert bloque.count("{") > bloque.count("}"), pos
+
+    def test_las_palmas_se_mecen_con_rotate_y_no_pisan_el_espejo(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        assert "rotate:" in _cuerpo_de_keyframes(css, "lp-brisa")
+        assert "transform" not in _cuerpo_de_keyframes(css, "lp-brisa")
+        assert ".lp-palm-r { right: -52px; transform: scale(-1, 1); }" in css
+
+    def test_las_burbujas_entran_una_tras_otra(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+        retrasos = [
+            float(re.search(rf"\.lp-globe-{n}\s*\{{[^}}]*animation-delay:\s*([\d.]+)s", css).group(1))  # type: ignore[union-attr]
+            for n in (1, 2, 3)
+        ]
+
+        assert retrasos == sorted(retrasos)
+        assert len(set(retrasos)) == 3
+
+    def test_el_movimiento_reducido_lo_apaga_todo(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+        reducido = css.split("@media (prefers-reduced-motion: reduce)")[-1]
+
+        assert ".lp *, .lp *::before, .lp *::after" in reducido
+        assert "animation: none !important" in reducido
+
+    def test_el_destello_y_el_brillo_usan_un_token_no_un_color_a_mano(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        assert "var(--ph-dusk-brillo)" in css
+        assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", css)
+
+    def test_siguen_siendo_un_solo_guion_y_es_el_de_los_clips(self, client: TestClient) -> None:
+        html = client.get("/").text
+        principal = html.split('<main class="lp-main">')[1]
+
+        assert principal.count("<script") == 1
+        assert "IntersectionObserver" in principal.split("<script>")[1]

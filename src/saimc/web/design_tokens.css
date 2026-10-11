@@ -223,6 +223,8 @@
      sombra suave de las tarjetas claras. Mismo criterio que el resto. */
   --ph-dusk-manana: #fde7bf;
   --ph-dusk-sombra-dia: rgba(11, 44, 67, .14);
+  /* El destello que cruza el botón de la portada una vez. */
+  --ph-dusk-brillo: rgba(255, 255, 255, .55);
 }
 
 /* ── Modo oscuro ────────────────────────────────────────────────────────
