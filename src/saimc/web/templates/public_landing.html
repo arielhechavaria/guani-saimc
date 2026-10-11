@@ -296,7 +296,7 @@
      estrellas (puntos de `radial-gradient`) y los pasos en tarjetas de vidrio.
      Lo de adentro que era claro (la frase del ejemplo, el pase de capturas)
      se reescribe para fondo oscuro. */
-  .lp-night { position: relative; margin-top: 36px; padding: 44px 0 52px; color: var(--ph-dusk-texto); border-radius: 36px 36px 0 0;
+  .lp-night { position: relative; padding: 12px 0 52px; color: var(--ph-dusk-texto);
               background: linear-gradient(180deg, var(--ph-dusk-noche) 0%, var(--ph-dusk-sil-medio) 100%); overflow: hidden; }
   .lp-night::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .8;
     background:
@@ -340,6 +340,50 @@
              background: var(--lp-chip); color: var(--lp-chip-ink); font-size: 16px; font-weight: 500; text-decoration: none; }
   .lp-chip:hover { color: var(--lp-chip-ink); }
   @media (min-width: 720px) { .lp-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+  /* ════ El día completo: cada sección, su hora (prototipo landing-estetica) ════
+     atardecer (portada) → noche (el precio y el recorrido) → amanecer (por qué
+     puedes fiarte) → día (para quién, preguntas y entradas) → ocaso (el pie). */
+
+  /* La orilla: el muro de la portada sigue en una franja de noche, y el precio
+     se lee sobre ella, con su tarjeta clara encendida como una ventana. */
+  .lp .lp-sea { background: linear-gradient(180deg, var(--ph-dusk-sil-cerca) 0%, var(--ph-dusk-noche) 100%); padding: 30px 0 44px; }
+  .lp .lp-sea .lp-section { padding-top: 0; padding-bottom: 0; }
+  .lp .lp-sea .lp-price { border: 0; box-shadow: 0 18px 44px var(--ph-dusk-sombra); }
+
+  /* El amanecer */
+  .lp .lp-dawn { color: var(--ph-dusk-texto); padding: 8px 0 44px;
+                 background: linear-gradient(180deg, var(--ph-dusk-sil-medio) 0%, var(--ph-dusk-indigo) 18%, var(--ph-dusk-mamey) 54%,
+                                             var(--ph-dusk-flama) 84%, var(--ph-dusk-guayaba) 100%); }
+  .lp .lp-dawn .lp-h2 { color: var(--ph-dusk-texto); letter-spacing: -.01em; }
+  .lp .lp-dawn .lp-why-lead { color: var(--ph-dusk-texto-suave); }
+  .lp .lp-dawn .lp-why-card { color: var(--lp-ink); box-shadow: 0 12px 30px var(--ph-dusk-sombra); }
+  .lp .lp-dawn .lp-faq-icon { background: var(--ph-dusk-guayaba); color: var(--ph-dusk-tinta); }
+  .lp .lp-dawn .lp-faq-link { color: var(--ph-dusk-tinta); }
+  .lp .lp-dawn :focus-visible { outline-color: var(--ph-dusk-tinta); }
+
+  /* El día */
+  .lp .lp-day { background: linear-gradient(180deg, var(--ph-dusk-manana) 0, var(--lp-bg) 380px); padding-bottom: 28px; }
+  .lp .lp-day .lp-who-link, .lp .lp-day .lp-faq-card, .lp .lp-day .lp-tile { border-color: transparent; box-shadow: 0 10px 28px var(--ph-dusk-sombra-dia); }
+  .lp .lp-day .lp-who-icon, .lp .lp-day .lp-faq-icon { background: var(--ph-dusk-guayaba); color: var(--ph-dusk-tinta); }
+  .lp .lp-day .lp-tile-main { background: var(--ph-dusk-noche); border-color: var(--ph-dusk-noche); color: var(--ph-dusk-texto); }
+  .lp .lp-day .lp-tile-main .lp-tile-text { color: var(--ph-dusk-texto-suave); }
+  .lp .lp-day .lp-chip { background: var(--ph-dusk-guayaba-halo); color: var(--lp-ink); }
+
+  /* El ocaso: el día se cierra con la misma ciudad de la portada, ahora del
+     color del pie, delante de un sol que se va. */
+  .lp .lp-ocaso { position: relative; height: 230px; overflow: hidden;
+                  background: linear-gradient(180deg, var(--lp-bg) 0%, var(--ph-dusk-mamey) 58%, var(--ph-dusk-flama) 84%, var(--ph-dusk-guayaba) 100%); }
+  .lp .lp-ocaso-sol { position: absolute; left: 62%; bottom: 36px; width: 140px; height: 140px; margin-left: -70px; border-radius: 50%;
+                      background: var(--ph-dusk-guayaba); }
+  .lp .lp-ocaso-city { position: absolute; left: 0; bottom: -1px; width: 100%; height: 190px; display: block; }
+  .lp .lp-ocaso-palm { position: absolute; bottom: 8px; width: 120px; height: auto; display: block; color: var(--m3-on-surface); }
+  .lp .lp-ocaso-palm-l { left: -26px; } .lp .lp-ocaso-palm-r { right: -34px; transform: scale(-1, 1); }
+  @media (min-width: 720px) {
+    .lp .lp-ocaso { height: 300px; }
+    .lp .lp-ocaso-city { height: 250px; }
+    .lp .lp-ocaso-palm { width: 170px; } .lp .lp-ocaso-palm-l { left: 3%; } .lp .lp-ocaso-palm-r { right: 3%; }
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .lp-sun { animation: none; }
@@ -465,6 +509,7 @@
 
 <main class="lp-main">
 
+<div class="lp-sea">
 <section class="lp-wrap lp-section" id="lp-price" aria-labelledby="lp-price-title">
   <div class="lp-price lp-reveal">
     <div class="lp-price-top">
@@ -502,6 +547,8 @@
     </div>
   </div>
 </section>
+
+</div>
 
 <section class="lp-night" id="lp-work" aria-labelledby="lp-work-title">
 <div class="lp-wrap">
@@ -543,6 +590,7 @@
 </div>
 </section>
 
+<div class="lp-dawn">
 <section class="lp-wrap lp-section" id="lp-why" aria-labelledby="lp-why-title">
   <h2 class="lp-h2" id="lp-why-title">Por qué puedes fiarte de estas cifras</h2>
   <p class="lp-why-lead">No te pido que me creas: te enseño de dónde sale cada número y con qué cuenta se saca.</p>
@@ -593,6 +641,9 @@
   <a class="lp-faq-link" href="/metodologia">Cómo calculamos los precios{{ svg_icon("arrow") }}</a>
 </section>
 
+</div>
+
+<div class="lp-day">
 <section class="lp-wrap lp-section" id="lp-who" aria-labelledby="lp-who-title">
   <h2 class="lp-h2" id="lp-who-title">Para quién es</h2>
   <ul class="lp-who">
@@ -658,7 +709,31 @@
   {% endif %}
 </section>
 
+</div>
+
 </main>
+
+{# El ocaso cierra el día con la ciudad de la portada, ahora del color del pie. #}
+<div class="lp-ocaso" aria-hidden="true">
+  <div class="lp-ocaso-sol"></div>
+  <svg class="lp-ocaso-city" viewBox="0 0 1200 210" preserveAspectRatio="xMidYMax slice">
+    <path fill="var(--m3-on-surface)" fill-opacity=".4" d="M0 210V140H36V112H64V140H96V98H126V130H160V118H196V92H224V124H262V108H300V136H338V100H372V126H410V88H438V120H470V104H508V132H548V96H580V122H620V110H660V90H690V128H730V102H768V124H806V94H836V130H876V108H914V136H952V100H986V122H1024V112H1060V138H1100V104H1136V128H1200V210Z"/>
+    <g fill="var(--m3-on-surface)">
+      <path d="M0 210V168H58V150H112V166H176V152H240V170H318V154H388V168H448V156H820V170H890V152H960V166H1030V150H1096V168H1200V210Z"/>
+      <path d="M500 156V138H700V156Z"/>
+      <path d="M560 138V124Q560 92 600 92Q640 92 640 124V138Z"/>
+      <rect x="596" y="68" width="8" height="26"/><path d="M592 70L600 56L608 70Z"/>
+      <rect x="208" y="84" width="24" height="86"/><path d="M204 86L220 56L236 86Z"/>
+      <rect x="878" y="36" width="52" height="134"/><rect x="886" y="28" width="36" height="10"/>
+      <rect x="346" y="124" width="34" height="32" rx="3"/><rect x="352" y="114" width="22" height="11"/>
+      <rect x="1010" y="104" width="3" height="48"/>
+      <path d="M0 210V180H1200V210Z"/>
+    </g>
+  </svg>
+  <svg class="lp-ocaso-palm lp-ocaso-palm-l" viewBox="-110 -230 220 240"><use href="#palma" transform="scale(1.3)" fill="currentColor"/></svg>
+  <svg class="lp-ocaso-palm lp-ocaso-palm-r" viewBox="-110 -230 220 240"><use href="#palma" transform="scale(1.1) rotate(-3)" fill="currentColor"/></svg>
+</div>
+
 
 {# El pie es el compartido con las páginas de texto (`_public_footer.html`,
    `site_pages.SiteFooter`); sus estilos van en el `<head>`. #}

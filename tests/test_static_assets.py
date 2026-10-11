@@ -562,6 +562,8 @@ class TestModoOscuro:
         "--ph-dusk-vidrio-borde",
         "--ph-dusk-vidrio-oscuro",
         "--ph-dusk-sombra",
+        "--ph-dusk-manana",
+        "--ph-dusk-sombra-dia",
         "--ph-radius-lg",
         "--ph-radius-sm",
         "--ph-elev",

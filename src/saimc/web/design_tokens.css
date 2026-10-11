@@ -219,6 +219,10 @@
   --ph-dusk-vidrio-borde: rgba(255, 255, 255, .3);
   --ph-dusk-vidrio-oscuro: rgba(8, 32, 47, .62);
   --ph-dusk-sombra: rgba(0, 0, 0, .35);
+  /* El día, la hora que sigue al amanecer: el durazno donde empieza y la
+     sombra suave de las tarjetas claras. Mismo criterio que el resto. */
+  --ph-dusk-manana: #fde7bf;
+  --ph-dusk-sombra-dia: rgba(11, 44, 67, .14);
 }
 
 /* ── Modo oscuro ────────────────────────────────────────────────────────

@@ -1496,3 +1496,81 @@ class TestLaNocheDelRecorrido:
         assert _items(client.get("/").text, "lp-steps4") == [
             f"{n} {titulo} {texto}" for n, (titulo, texto) in enumerate(CUATRO_PASOS, start=1)
         ]
+
+
+# ── El día completo (landing-estetica, prototipo `landing-dia-completo.html`) ─
+#
+# La página es un día: atardecer (portada), noche (el precio y el recorrido),
+# amanecer (por qué puedes fiarte), día (para quién, preguntas, entradas) y
+# ocaso (justo antes del pie). Cada hora es un envoltorio con su fondo; lo que
+# se prueba es qué contiene cada uno y en qué orden, no el color (los colores
+# son tokens y `test_static_assets` los vigila).
+
+
+def _envoltorio(html: str, clase: str) -> str:
+    """El contenido de `<div class="<clase>">…</div>` hasta su cierre, contando
+    los `<div` anidados."""
+    inicio = html.index(f'<div class="{clase}">')
+    profundidad, pos = 0, inicio
+    for m in re.finditer(r"<div\b|</div>", html[inicio:]):
+        profundidad += 1 if m.group(0) == "<div" else -1
+        pos = inicio + m.end()
+        if profundidad == 0:
+            break
+    return html[inicio:pos]
+
+
+class TestLasHorasDelDia:
+    def test_el_precio_se_lee_en_la_orilla_antes_de_la_noche(self, client: TestClient) -> None:
+        html = client.get("/").text
+        orilla = _envoltorio(html, "lp-sea")
+
+        assert 'id="lp-price"' in orilla
+        assert 'id="lp-work"' not in orilla
+        assert html.index('class="lp-sea"') < html.index('id="lp-work"')
+
+    def test_por_que_puedes_fiarte_es_el_amanecer(self, client: TestClient) -> None:
+        html = client.get("/").text
+        amanecer = _envoltorio(html, "lp-dawn")
+
+        assert 'id="lp-why"' in amanecer
+        assert 'id="lp-who"' not in amanecer
+        assert html.index('id="lp-work"') < html.index('class="lp-dawn"')
+
+    def test_para_quien_las_preguntas_y_las_entradas_son_el_dia(self, client: TestClient) -> None:
+        html = client.get("/").text
+        dia = _envoltorio(html, "lp-day")
+
+        for marca in ('id="lp-who"', 'aria-label="Preguntas frecuentes"', 'id="entradas"'):
+            assert marca in dia, marca
+        assert 'id="lp-why"' not in dia
+        assert html.index('class="lp-dawn"') < html.index('class="lp-day"')
+
+    def test_el_ocaso_cierra_el_dia_justo_antes_del_pie(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        assert html.index('id="entradas"') < html.index('class="lp-ocaso"') < html.index("<footer")
+        assert html.index("</main>") < html.index('class="lp-ocaso"')
+
+    def test_el_ocaso_es_decorativo_y_reusa_las_palmas_de_la_portada(self, client: TestClient) -> None:
+        html = client.get("/").text
+        ocaso = html.split('<div class="lp-ocaso"')[1].split("<footer")[0]
+
+        assert re.match(r'[^>]*aria-hidden="true"', ocaso)
+        assert ocaso.count('class="lp-ocaso-palm ') == 2
+        assert ocaso.count('href="#palma"') == 2
+        assert 'class="lp-ocaso-city"' in ocaso
+        # Las palmas se definen una sola vez, en la portada.
+        assert html.count('id="palma"') == 1
+
+    def test_no_hay_ningun_envoltorio_vacio(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        for clase in ("lp-sea", "lp-dawn", "lp-day"):
+            assert "<section" in _envoltorio(html, clase), clase
+
+    def test_los_tokens_nuevos_del_dia_existen(self) -> None:
+        fuente = (Path(landing_view.__file__).parent / "design_tokens.css").read_text(encoding="utf-8")
+
+        assert "--ph-dusk-manana:" in fuente
+        assert "--ph-dusk-sombra-dia:" in fuente
