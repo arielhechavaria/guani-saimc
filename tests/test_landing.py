@@ -774,7 +774,7 @@ class TestLosEnlacesYaCompartidos:
 PASOS = (
     "Un emprendedor publica su oferta en un grupo o canal.",
     "El anuncio llega a Guani tal cual se escribió.",
-    "Saco el producto, el precio y la provincia.",
+    "Guani saca el producto, el precio y la provincia.",
     "Si hay dudas lo revisa una persona; si es claro, el sistema lo acepta y una persona lo audita después.",
     "Lo ves en el tablero como rango, mediana y número de anuncios.",
 )
@@ -1192,6 +1192,9 @@ LO_QUE_YA_NO_ES_CIERTO = (
     "Ninguna cifra de esta página es una estimación",
     "ninguno cuenta hasta que una persona lo revisa",
     "Una persona revisa cada precio",
+    # Voz en primera persona: la landing habla de Guani en tercera persona.
+    "No te pido que me creas",
+    "Saco el producto",
 )
 
 
@@ -1216,6 +1219,12 @@ class TestLaNarrativaEsCierta:
 
         for frase in LO_QUE_YA_NO_ES_CIERTO:
             assert frase not in texto, f"{ruta}: «{frase}»"
+
+    def test_la_landing_habla_de_guani_en_tercera_persona(self, client: TestClient) -> None:
+        texto = " ".join(_visible(client.get("/").text).split())
+
+        assert ("Guani no te pide fe: te enseña de dónde sale cada número y con qué cuenta se saca.") in texto
+        assert "Guani saca el producto, el precio y la provincia." in texto
 
     def test_la_tarjeta_de_confianza_dice_quien_reviso(self, client: TestClient) -> None:
         seccion = client.get("/").text.split('id="lp-why"')[1].split("</section>")[0]

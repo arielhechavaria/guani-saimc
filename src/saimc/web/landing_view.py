@@ -262,7 +262,7 @@ _FLOW: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "flujo-3.webp",
-        "Saco el producto, el precio y la provincia.",
+        "Guani saca el producto, el precio y la provincia.",
         "Los campos extraídos: producto Pollo, precio 40.00 USD, cantidad 40 lb, provincia La Habana.",
     ),
     (
