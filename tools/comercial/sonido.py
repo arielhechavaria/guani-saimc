@@ -488,7 +488,9 @@ def _measure_sound(timeline: dict, fx: Mix, rng, mark) -> list[float]:
     measure = timeline["measure"]
     # La cámara toma impulso y entra en la fila: el gesto del tirón del principio, más corto.
     pre, (d0, d1) = measure["anticipation"], measure["dive"]
-    fx.add(sweep(d0 - pre + 0.03, 420, 1700, 600, rng) * np.linspace(0, 1, _n(d0 - pre + 0.03)) ** 2.2, pre, 0.11)
+    fx.add(
+        sweep(d0 - pre + 0.03, 420, 1700, 600, rng) * np.linspace(0, 1, _n(d0 - pre + 0.03)) ** 2.2, pre, 0.11
+    )
     shape = ramp(_time(d1 - d0 + 0.2), [(0, 0), (0.06, 1), (0.2, 0.8), (d1 - d0, 0.1), (d1 - d0 + 0.2, 0)])
     fx.add(_pan_move(sweep(d1 - d0 + 0.2, 1900, 240, 480, rng) * shape, -0.3, 0.45), d0, 0.2)
     fx.add(thump(80, 42, 0.42, rng, 0.05), d0, 0.2)
@@ -496,7 +498,9 @@ def _measure_sound(timeline: dict, fx: Mix, rng, mark) -> list[float]:
     # El anuncio se abre: sube y cae como las cápsulas del gancho.
     o0, o1 = measure["open"]
     fx.add(sweep(o1 - o0, 480, 1500, 460, rng) * np.hanning(_n(o1 - o0)), o0, 0.08, 0.1)
-    fx.add(wood([640, 1210, 1930], [0.05, 0.028, 0.016], [1, 0.55, 0.3], 0.5, rng), measure["opened"], 0.24, 0.1)
+    fx.add(
+        wood([640, 1210, 1930], [0.05, 0.028, 0.016], [1, 0.55, 0.3], 0.5, rng), measure["opened"], 0.24, 0.1
+    )
     fx.add(thump(170, 105, 0.11, rng, 0.2), measure["opened"], 0.22)
     mark("anuncio", measure["opened"])
 
@@ -534,7 +538,11 @@ def _measure_sound(timeline: dict, fx: Mix, rng, mark) -> list[float]:
             if at - last < 0.022:
                 continue
             last = at
-            fx.add(wood([950 * 2**part, 2300 * 2**part], [0.007, 0.0035], [1, 0.45], 0.7, rng), at, 0.045 + 0.05 * part)
+            fx.add(
+                wood([950 * 2**part, 2300 * 2**part], [0.007, 0.0035], [1, 0.45], 0.7, rng),
+                at,
+                0.045 + 0.05 * part,
+            )
         fx.add(wood([1900, 4600], [0.007, 0.0035], [1, 0.45], 0.7, rng), b, 0.1)
         fx.add(chime(note), b, 0.085)
         fx.add(tap(196, rng), b, 0.1)
@@ -604,7 +612,9 @@ def _after(timeline: dict, duration: float, fx0: Mix, bed0: Mix, kit: dict, mark
         low = band(brown(duration + 2.0, rng), 60, 520)[SR : SR + len(t)]
         foam = band(rng.standard_normal(len(t) + 2 * SR), 1400, 5200)[SR : SR + len(t)]
         wave_ = _level(low, 1.0) * swells + 0.35 * _level(foam, 1.0) * swells**3
-        level = np.sqrt(np.mean((kit["sea"][calm, ch] / swing[calm]) ** 2) / np.mean((wave_[n:] / swing[n:]) ** 2))
+        level = np.sqrt(
+            np.mean((kit["sea"][calm, ch] / swing[calm]) ** 2) / np.mean((wave_[n:] / swing[n:]) ** 2)
+        )
         bed.data[:, ch] += wave_ * new * level
 
     _review_sound(timeline, fx, rng, mark)
@@ -627,7 +637,9 @@ def _after(timeline: dict, duration: float, fx0: Mix, bed0: Mix, kit: dict, mark
             continue
         waiting = sum(t0 > at for t0 in starts) / len(starts)
         if waiting > 0:
-            fx.add(kit["beat"], at, 0.2 * waiting, -0.4)  # un poco más bajo que en la prueba: ahora hay voz encima
+            fx.add(
+                kit["beat"], at, 0.2 * waiting, -0.4
+            )  # un poco más bajo que en la prueba: ahora hay voz encima
             fx.add(kit["beat"], at + 0.15, 0.08 * waiting, -0.4)
             mark("latido", at)
     return fx, bed
@@ -666,7 +678,7 @@ def build(timeline: dict, work: Path, duration: float, voice: bool = True) -> tu
             report["voz"].append({k: line[k] for k in ("text", "at", "start", "end", "words")})
         # La cama baja mientras alguien habla.
         follow = band(np.abs(talk.data[:, 0]), None, 6)
-        # La referencia es la voz de la prueba: su cama baja lo mismo que entonces, haya o no más líneas después.
+        # La referencia es la voz de la prueba: su cama baja lo mismo que entonces, haya o no más líneas.
         loudest = follow[: _n(head)].max()
         duck = 1 - 0.6 * np.clip(follow / ((loudest if loudest > 1e-6 else follow.max()) + 1e-9) * 2.6, 0, 1)
         mix = mix * duck[:, None]

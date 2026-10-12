@@ -16,7 +16,7 @@ Uso:
     python tools/producir_comercial.py --hasta 6.6 --sin-voz          # hasta ahí, sin red
     python tools/producir_comercial.py --desde 12.5 --prefijo b45-     # un tramo, con su sonido
     python tools/producir_comercial.py --solo-cuadros --cuadros 2.0,5.0
-    python tools/producir_comercial.py --solo-sonido                   # sonido, espectro e informe, sin imagen
+    python tools/producir_comercial.py --solo-sonido                   # sonido, espectro e informe
 
 Deja en la carpeta de trabajo (`--work`) el mp4, `contacto.png` (un cuadro cada
 medio segundo), los cuadros sueltos que se pidan, `sonido.wav`, `espectro.png` y
@@ -154,9 +154,13 @@ def render(args: argparse.Namespace, timeline: dict, work: Path, audio: Path | N
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hasta", type=float, default=tiempos.DURATION, help="segundos a producir")
-    ap.add_argument("--desde", type=float, default=0.0, help="empieza en este segundo (un tramo, con su sonido)")
+    ap.add_argument(
+        "--desde", type=float, default=0.0, help="empieza en este segundo (un tramo, con su sonido)"
+    )
     ap.add_argument("--work", type=Path, default=Path(tempfile.gettempdir()) / "guani-comercial")
-    ap.add_argument("--prefijo", default="", help="prefijo del mp4, los cuadros, la hoja de contacto y el espectro")
+    ap.add_argument(
+        "--prefijo", default="", help="prefijo del mp4, los cuadros, la hoja de contacto y el espectro"
+    )
     ap.add_argument("--out", type=Path, help="el mp4 (por defecto, <work>/<prefijo>comercial.mp4)")
     ap.add_argument(
         "--cuadros", type=lambda s: [float(x) for x in s.split(",")], default=list(STILLS),
