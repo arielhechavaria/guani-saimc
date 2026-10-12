@@ -236,9 +236,9 @@ LANDING_STATIC_URL = "/static/landing"
 SHOT_WIDTH = 460
 SHOT_HEIGHT = 958
 
-#: El video promocional (del mensaje de WhatsApp al tablero) se muestra en la
-#: página. Se produce con `tools/producir_video.py` siguiendo
-#: `docs/guion-video-promocional.md`. Si el recorrido cambia y su voz deja de ser
+#: El comercial «Como se escoge el arroz» se muestra en la página. Se produce
+#: con `tools/producir_comercial.py` siguiendo `docs/concepto-comercial-guani.md`.
+#: Si el recorrido cambia y su voz deja de ser
 #: cierta, apagar esto hasta volver a producirlo.
 FLOW_VIDEO_ENABLED = True
 

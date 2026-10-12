@@ -44,7 +44,7 @@ La locución dice: «Una máquina lee; una persona supervisa. Mira los precios d
 
 ## 5. Qué es real y qué es ilustración
 
-- **Real, leído del sitio al producir** (solo `GET`, con las guardas de `tools/producir_video.py`): las tres líneas de anuncio, las dos celdas de pollo, los dos envases y todas las cuentas de granos (34 en 30 días; 24 a mano y 10 por el sistema, 1 ya auditado; 27 en La Habana y 7 en Santiago de Cuba).
+- **Real, leído del sitio al producir** (solo `GET`, con las guardas de `tools/grabar_entradas.py`): las tres líneas de anuncio, las dos celdas de pollo, los dos envases y todas las cuentas de granos (34 en 30 días; 24 a mano y 10 por el sistema, 1 ya auditado; 27 en La Habana y 7 en Santiago de Cuba).
 - **Del repo:** el avatar (`_guani_avatar.html`), el atardecer de `public_landing.html` con los tokens `--ph-dusk-*`, las fuentes (también la de emojis de los anuncios reales) y `cuba_provincias.geojson`.
 - **Ilustración:** la mesa y el arroz; los granos sin texto y el tamaño del montón (sin cifra: solo se ve que es el mayor, y lo es); la yema; el aspecto de las dos lecturas (que coincidan es una condición para pasar, no la única); los tiempos (la lectura real corre por tandas: no se dice «al momento»). También que la lista de la caja «espere» a la persona: se revisó a mano en septiembre, antes de la entrada automática. Hoy tampoco entraría sola, porque trae muchas ofertas.
 

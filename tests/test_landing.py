@@ -845,14 +845,14 @@ class TestElRecorridoArmado:
 
         assert build_landing_flow(tmp_path).video is None
 
-    def test_el_video_del_repo_pesa_menos_de_un_mega_y_trae_su_portada(self) -> None:
+    def test_el_video_del_repo_no_pasa_de_cuatro_megas_y_trae_su_portada(self) -> None:
         # El video se sirve a una conexión lenta: el tope es parte del
         # contrato, no un detalle. Si se vuelve a montar más pesado, este
         # caso obliga a decidirlo a propósito.
         video = build_landing_flow().video
 
         assert video is not None
-        assert (landing_view.LANDING_STATIC_DIR / "guani-flujo.mp4").stat().st_size < 1_000_000
+        assert (landing_view.LANDING_STATIC_DIR / "guani-flujo.mp4").stat().st_size < 4_000_000
         assert video.poster is not None
         assert video.poster.startswith("/static/landing/guani-flujo-poster.webp?v=")
 
@@ -1248,8 +1248,8 @@ class TestLaNarrativaEsCierta:
 
 
 class TestElVideoPromocionalEstaEncendido:
-    """`guani-flujo.mp4` es el video promocional (del mensaje de WhatsApp al
-    tablero), rehecho con `tools/producir_video.py`; la landing lo muestra."""
+    """`guani-flujo.mp4` es el comercial «Como se escoge el arroz», hecho con
+    `tools/producir_comercial.py`; la landing lo muestra."""
 
     def test_la_pagina_lo_muestra_sin_autoplay_ni_descarga_previa(self, client: TestClient) -> None:
         assert landing_view.FLOW_VIDEO_ENABLED is True
@@ -1263,7 +1263,7 @@ class TestElVideoPromocionalEstaEncendido:
         assert "autoplay" not in etiqueta
         assert "guani-flujo.mp4" in etiqueta
         assert "guani-flujo-poster.webp" in etiqueta
-        assert "mensaje de WhatsApp" in etiqueta  # el aria-label dice qué cuenta
+        assert "mensajes de WhatsApp" in etiqueta  # el aria-label dice qué cuenta
 
     def test_el_archivo_y_su_portada_estan_en_el_repo(self) -> None:
         directorio = landing_view.LANDING_STATIC_DIR

@@ -18,7 +18,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`systemctl start saimc-prefill`](#pre-cálculo-ahora-a-mano) | Pre-calcular propuestas ya (y preguntarle a Jev, si está encendido) | sí: propuestas y señales de Jev | sí, tope 0,15 USD (más 0,01 de Jev) |
 | [Después de un deploy](#después-de-un-deploy-la-secuencia) | Backup, pull, migrar, reiniciar | sí | no |
 | [`tools/grabar_entradas.py`](#grabar-los-clips-de-entra-por-donde-quieras) | Grabar los clips y capturas de la landing | sí: archivos en `static/landing/` | no |
-| [`tools/producir_video.py`](#producir-el-video-promocional) | Producir el video promocional de la landing | sí: `guani-flujo.mp4` y su poster | no (la voz sale del servicio gratuito Edge TTS) |
+| [`tools/producir_comercial.py`](#producir-el-comercial) | Producir el comercial de la landing | sí: `guani-flujo.mp4` y su poster | no (la voz sale del servicio gratuito Edge TTS) |
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra el conjunto de referencia congelado | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
 | [`saimc.extraction.reference_set`](#conjunto-de-referencia-en-seco-y-estado) | Qué anuncios entrarían al conjunto de referencia de H0; con `status`, la versión vigente y su deriva | no (en seco y `status`) | no |
@@ -784,24 +784,24 @@ Escribe una versión nueva del conjunto de referencia de H0 con lo que lista el 
 - **Cambia algo**: sobrescribe esos seis archivos. Todo lo que pide al sitio son `GET`. **Gasta**: no.
 - Necesita Chromium de Playwright y `imageio-ffmpeg` (`pip install -e '.[marketing]'`).
 
-### Producir el video promocional
+### Producir el comercial
 
 ```
-.venv/bin/python tools/producir_video.py --ad <uuid-de-un-anuncio-de-texto>
+.venv/bin/python tools/producir_comercial.py --work /tmp/guani-comercial
 ```
 
-- **Para qué**: arma el video de `docs/guion-video-promocional.md` (12 escenas, 720×1280, voz cubana
-  de Edge TTS y subtítulo quemado). Salen a `src/saimc/web/static/landing/` como `guani-flujo.mp4`
-  y `guani-flujo-poster.webp`. Toma la página pública del anuncio y la celda de Pollo del tablero
-  del sitio real; antes comprueba que no se vea ningún id, teléfono ni enlace de grupo y, si lo ve,
-  se detiene. Falla si el video pesa más de ~1,1 MB.
-- **Cuándo**: cuando el flujo, el tablero o el guion cambien y el video cuente algo que ya no es
-  cierto. `--ad` es un id de `/datos.csv` cuya página `/anuncio/<id>` no muestre teléfono ni enlace.
-  Con el servidor corriendo (`--base`, por defecto `http://127.0.0.1:8000`; `--work` cambia la
-  carpeta de trabajo).
-- **Cambia algo**: sobrescribe esos dos archivos. Todo lo que pide al sitio son `GET`. **Gasta**: no;
-  el texto del guion viaja al servicio de voz de Microsoft (Edge TTS), sin cuenta ni costo.
-- Necesita Chromium de Playwright, `imageio-ffmpeg`, `Pillow` y `edge-tts` (`pip install edge-tts`).
+- **Para qué**: renderiza el comercial «Como se escoge el arroz» (`docs/concepto-comercial-guani.md`):
+  38,6 s, 720×1280, animación cuadro a cuadro con sonido sintetizado y voz de Edge TTS. Deja en
+  `--work` un máster (`master.mp4`), la versión normal (`comercial.mp4`) y la de entrega
+  (`entrega.mp4`, que no pasa de `--peso`), más la hoja de contacto, el espectro y `informe.json`.
+- **Cuándo**: cuando cambie el flujo o las cifras que enseña. Las cifras NO se leen del sitio: son
+  la foto del tablero del 11/09 al 11/10 de 2026 y viven en `tools/comercial/tiempos.py` (`DATA`).
+  Para publicarlo se copia `entrega.mp4` a `src/saimc/web/static/landing/guani-flujo.mp4` y el
+  cuadro de 2,0 s, como WebP, a `guani-flujo-poster.webp`.
+- **Cambia algo**: solo escribe en `--work`. Tarda unos 35 minutos. **Gasta**: no; el texto de la
+  locución viaja al servicio de voz de Microsoft (Edge TTS), sin cuenta ni costo.
+- Necesita Chromium de Playwright, `imageio-ffmpeg`, `Pillow`, `numpy` y `edge-tts`.
+  `--help` lista los tramos sueltos (`--desde`, `--hasta`, `--solo-cuadros`, `--solo-sonido`).
 
 ### Alias del foco
 
