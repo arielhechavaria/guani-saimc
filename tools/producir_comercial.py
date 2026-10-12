@@ -6,9 +6,8 @@ cada instante, un navegador sin ventana los va sacando a 30 por segundo y ffmpeg
 los monta con el sonido, que se sintetiza aparte (`tools/comercial/sonido.py`).
 Los tiempos de imagen y sonido salen de una sola fuente: `tools/comercial/tiempos.py`.
 
-Hoy existen los primeros 25,8 s: gancho, reguero y primera pasada (la prueba
-aprobada, hasta 13 s), el repaso (B4) y la misma medida (B5). Faltan la isla (B6)
-y el cierre (B7).
+Son 38,6 s: gancho, reguero y primera pasada (la prueba aprobada, hasta 13 s),
+el repaso (B4), la misma medida (B5), la isla (B6) y el cierre (B7).
 
 Uso:
 
@@ -18,11 +17,15 @@ Uso:
     python tools/producir_comercial.py --solo-cuadros --cuadros 2.0,5.0
     python tools/producir_comercial.py --solo-sonido                   # sonido, espectro e informe
 
-Deja en la carpeta de trabajo (`--work`) el mp4, `contacto.png` (un cuadro cada
-medio segundo), los cuadros sueltos que se pidan, `sonido.wav`, `espectro.png` y
-`informe.json` (dónde quedó cada golpe y cada línea de locución). Con `--prefijo`
-el mp4, los cuadros, la hoja de contacto y el espectro llevan ese prefijo, para
-no pisar los de otra producción guardada en la misma carpeta.
+Deja en la carpeta de trabajo (`--work`) tres mp4, `contacto.png` (un cuadro
+cada medio segundo), los cuadros sueltos que se pidan, `sonido.wav`,
+`espectro.png` e `informe.json` (dónde quedó cada golpe y cada línea de locución).
+Con `--prefijo` los mp4, los cuadros, la hoja de contacto y el espectro llevan ese
+prefijo, para no pisar los de otra producción guardada en la misma carpeta.
+
+Los cuadros se montan una sola vez, en un máster de alta calidad (`master.mp4`).
+De él salen, sin volver a renderizar, la versión normal (`comercial.mp4`) y la de
+entrega (`entrega.mp4`), que se codifica en dos pasadas para no pasar de `--peso`.
 
 No lee el sitio ni envía nada, salvo el texto de la locución al servicio de voz
 de Edge TTS. Requiere `playwright` (Chromium), `imageio-ffmpeg`, `Pillow`,
@@ -50,9 +53,14 @@ FF = imageio_ffmpeg.get_ffmpeg_exe()
 W, H = 720, 1280
 CRF = 25
 AUDIO_KBPS = 96
+MASTER_CRF = 14
+MASTER_AUDIO_KBPS = 192
+#: La entrega nunca pide más que esto, aunque el tramo sea corto y el peso sobre.
+DELIVERY_MAX_KBPS = 2400
 #: Los cuadros sueltos: los momentos donde algo tiene que estar en su sitio.
 STILLS = (0.5, 1.0, 2.0, 2.5, 2.9, 3.6, 5.0, 6.7, 7.8, 8.8, 10.3, 11.4, 12.8)  # la prueba
-STILLS += (13.4, 14.4, 15.4, 16.4, 17.4, 18.4, 19.2, 20.0, 21.0, 22.0, 23.0, 24.0, 25.6)  # B4 y B5
+STILLS += (13.4, 14.4, 15.4, 16.4, 17.4, 18.4, 19.2, 20.0, 20.6, 21.2, 22.0, 23.0, 24.0, 25.6)  # B4 y B5
+STILLS += (26.4, 27.4, 28.4, 29.4, 30.4, 31.6, 32.8, 33.8, 34.8, 35.8, 36.8, 38.3)  # B6 y B7
 SHEET_EVERY = 0.5
 THUMB = (216, 384)
 
@@ -89,11 +97,51 @@ def contact_sheet(thumbs: list[tuple[float, Image.Image]], path: Path, cols: int
     sheet.save(path)
 
 
+def ffmpeg(*options: str) -> None:
+    """Corre ffmpeg con esas opciones; si falla, se para todo."""
+    done = subprocess.run([FF, "-y", "-hide_banner", "-loglevel", "error", *options], check=False)  # noqa: S603
+    if done.returncode != 0:
+        raise SystemExit("ffmpeg no pudo codificar el video.")
+
+
+def weigh(path: Path, seconds: float) -> dict:
+    size = path.stat().st_size
+    return {"archivo": path.name, "bytes": size, "kbps": round(size * 8 / seconds / 1000)}
+
+
+def from_master(master: Path, out: Path, sound: bool) -> None:
+    """La versión normal: el máster vuelto a codificar a calidad constante."""
+    video = ["-c:v", "libx264", "-preset", "veryslow", "-tune", "animation", "-crf", str(CRF)]
+    audio = ["-c:a", "aac", "-b:a", f"{AUDIO_KBPS}k", "-ac", "2"] if sound else ["-an"]
+    ffmpeg("-i", str(master), *video, "-pix_fmt", "yuv420p", *audio, "-movflags", "+faststart", str(out))
+
+
+def deliver(master: Path, out: Path, seconds: float, megabytes: float, sound: bool, work: Path) -> None:
+    """La entrega: H.264 en dos pasadas, con el caudal justo para no pasar de `megabytes`.
+
+    `aq-mode=3` reparte más bits en lo oscuro, que es donde un degradé hace bandas.
+    """
+    total = megabytes * 8 * 1024 * 1024 * 0.97 / seconds / 1000  # kbps; el 3 % es para el contenedor
+    kbps = max(200, min(DELIVERY_MAX_KBPS, round(total - (AUDIO_KBPS if sound else 0))))
+    log = str(work / f"{out.stem}-pasada")
+    video = ["-c:v", "libx264", "-preset", "veryslow", "-tune", "animation", "-b:v", f"{kbps}k"]
+    video += ["-x264-params", "aq-mode=3", "-pix_fmt", "yuv420p", "-passlogfile", log]
+    audio = ["-c:a", "aac", "-b:a", f"{AUDIO_KBPS}k", "-ac", "2"] if sound else ["-an"]
+    ffmpeg("-i", str(master), *video, "-pass", "1", "-an", "-f", "null", "-")
+    ffmpeg("-i", str(master), *video, "-pass", "2", *audio, "-movflags", "+faststart", str(out))
+    for leftover in work.glob(f"{out.stem}-pasada*"):
+        leftover.unlink()
+
+
 def render(args: argparse.Namespace, timeline: dict, work: Path, audio: Path | None) -> dict:
-    """Saca los cuadros y los monta. Devuelve duración, peso y tiempo de render."""
+    """Saca los cuadros, monta el máster y saca de él las otras dos versiones.
+
+    Devuelve duración, peso de cada versión y tiempo de render.
+    """
     fps = timeline["fps"]
     first, total = round(args.desde * fps), round(args.hasta * fps)
     stills = {round(t * fps): t for t in args.cuadros if args.desde <= t <= args.hasta}
+    master, delivery = work / f"{args.prefijo}master.mp4", work / f"{args.prefijo}entrega.mp4"
 
     def still(t: float) -> Path:
         return work / f"{args.prefijo}cuadro-{t:05.2f}.png"
@@ -116,16 +164,16 @@ def render(args: argparse.Namespace, timeline: dict, work: Path, audio: Path | N
         cmd += ["-framerate", str(fps), "-i", "-"]
         if audio:  # un tramo lleva el trozo de sonido que le toca
             cmd += ["-ss", f"{first / fps:.4f}", "-i", str(audio)]
-        cmd += ["-c:v", "libx264", "-preset", "veryslow", "-tune", "animation", "-crf", str(CRF)]
+        cmd += ["-c:v", "libx264", "-preset", "slow", "-crf", str(MASTER_CRF)]
         cmd += ["-pix_fmt", "yuv420p", "-r", str(fps)]
         if audio:
-            cmd += ["-c:a", "aac", "-b:a", f"{AUDIO_KBPS}k", "-ac", "2", "-shortest"]
-        cmd += ["-movflags", "+faststart", str(args.out)]
-        ffmpeg = subprocess.Popen(cmd, stdin=subprocess.PIPE)  # noqa: S603
-        assert ffmpeg.stdin is not None  # noqa: S101
+            cmd += ["-c:a", "aac", "-b:a", f"{MASTER_AUDIO_KBPS}k", "-ac", "2", "-shortest"]
+        cmd += ["-movflags", "+faststart", str(master)]
+        encoder = subprocess.Popen(cmd, stdin=subprocess.PIPE)  # noqa: S603
+        assert encoder.stdin is not None  # noqa: S101
         for index in range(first, total):
             png = frame_png(page, index / fps, args.subcuadros)
-            ffmpeg.stdin.write(png)
+            encoder.stdin.write(png)
             if index in stills:
                 still(stills[index]).write_bytes(png)
             if index % every == 0:
@@ -136,18 +184,21 @@ def render(args: argparse.Namespace, timeline: dict, work: Path, audio: Path | N
                     f"  {index / fps:4.0f} s de {args.hasta:.1f} · {time.time() - started:5.0f} s de render",
                     flush=True,
                 )
-        ffmpeg.stdin.close()
-        if ffmpeg.wait() != 0:
+        encoder.stdin.close()
+        if encoder.wait() != 0:
             raise SystemExit("ffmpeg no pudo montar el video.")
         browser.close()
 
     contact_sheet(thumbs, work / f"{args.prefijo}contacto.png")
-    size, seconds = args.out.stat().st_size, (total - first) / fps
+    seconds, spent = (total - first) / fps, round(time.time() - started)
+    from_master(master, args.out, bool(audio))
+    deliver(master, delivery, seconds, args.peso, bool(audio), work)
     return {
         "segundos": round(seconds, 2),
-        "bytes": size,
-        "kbps": round(size * 8 / seconds / 1000),
-        "render_s": round(time.time() - started),
+        **weigh(args.out, seconds),
+        "master": weigh(master, seconds),
+        "entrega": weigh(delivery, seconds),
+        "render_s": spent,
     }
 
 
@@ -171,6 +222,7 @@ def main() -> None:
         "--subcuadros", type=int, default=0, help="fuerza los subcuadros por cuadro (0: los de la escena)"
     )
     ap.add_argument("--sin-voz", action="store_true", help="monta sin locución (no usa la red)")
+    ap.add_argument("--peso", type=float, default=4.0, help="peso máximo de la entrega, en MB")
     ap.add_argument("--solo-sonido", action="store_true", help="solo el sonido, su espectro y el informe")
     args = ap.parse_args()
 

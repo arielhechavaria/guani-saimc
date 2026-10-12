@@ -12,7 +12,7 @@ arranca en 0,2 s, para que la primera cápsula tenga de dónde caer.
 from __future__ import annotations
 
 FPS = 30
-DURATION = 25.8
+DURATION = 38.6
 #: Hasta aquí llegaba la prueba aprobada. El empuje lento de la cámara se midió
 #: sobre ese tramo y sigue al mismo paso; su sonido se sintetiza igual que entonces.
 PROOF = 13.0
@@ -24,11 +24,38 @@ CLAVE_PATTERN = (0.0, 0.6, 1.2, 2.0, 2.4)
 
 #: Lo que se lee en pantalla. Va aquí porque el tecleo suena letra a letra.
 QUESTION = ("¿A cómo está", "el pollo?")
-#: Lo que teclea la máquina en B5, por lo mismo: las cuatro etiquetas, la palabra
-#: de la muesca y la última línea de la celda (`{n}` es la cuenta del tablero).
-TAGS = ("producto", "cantidad", "precio", "provincia")
+#: Lo que teclea la máquina en B5, por lo mismo: la palabra de la muesca y la
+#: última línea de la celda (`{n}` es la cuenta del tablero).
 MEDIAN_WORD = "mediana"
 SYSTEM_LINE = "{n} por el sistema"
+#: B6 · El orden en que se trazan las provincias (por su `slug` en el GeoJSON): la
+#: ruta sale de La Habana, baja por la isla hasta el oriente y, al abrirse el plano,
+#: termina por el occidente.
+ROUTE = (
+    "la-habana",
+    "artemisa",
+    "mayabeque",
+    "matanzas",
+    "cienfuegos",
+    "villa-clara",
+    "sancti-spiritus",
+    "ciego-de-avila",
+    "camaguey",
+    "las-tunas",
+    "holguin",
+    "granma",
+    "santiago-de-cuba",
+    "guantanamo",
+    "pinar-del-rio",
+    "isla-de-la-juventud",
+)
+#: Lo que se lee en B6 y en el cierre.
+SAMPLE_TITLE = ("{ads} anuncios", "en {days} días")
+SAMPLE_SPLIT = ("{manual} a mano", "{system} por el sistema")
+SAMPLE_CAPTION = ("Una muestra", "en formación,", "no un censo.")
+CLOSE_TITLE = ("Una máquina lee;", "una persona", "supervisa.")
+CLOSE_BUTTON = "Ver los precios de hoy"
+CLOSE_SIGNATURE = "Guani, por Leira Studio"
 #: Lo que tarda la máquina en teclear una letra de esos rótulos.
 TYPE_STEP = 0.018
 
@@ -37,8 +64,26 @@ TYPE_STEP = 0.018
 #: lee el sitio. Si el tablero cambia, se cambian aquí y se vuelve a producir.
 DATA = {
     "date": "2026-10-11",
+    "date_label": "Tablero del 11 de octubre de 2026",
     "window": ["2026-09-11", "2026-10-11"],
+    "days": 30,
     "ads": 34,  # anuncios en esos 30 días
+    "manual": 24,  # revisados a mano
+    "system": 10,  # aceptados por el sistema
+    # Dónde están: 2 de las 16 provincias tienen datos (el GeoJSON trae las 16).
+    "provinces": 16,
+    "by_province": [
+        {"slug": "la-habana", "name": "La Habana", "ads": 27},
+        {"slug": "santiago-de-cuba", "name": "Santiago de Cuba", "ads": 7},
+    ],
+    # La otra celda de pollo del tablero: un solo anuncio, en Santiago de Cuba.
+    "far": {
+        "product": "Pollo",
+        "province": "Santiago de Cuba",
+        "per_lb": 850,
+        "unit": "CUP/lb",
+        "ads": 1,
+    },
     "clear": 10,  # aceptados por el sistema
     "doubtful": 24,  # los que repasa una persona
     "audited": 1,  # de los aceptados por el sistema, los que después auditó una persona
@@ -142,6 +187,18 @@ VOICE = (
         "anchor": "libra",
         "anchor_at": 22.53,
     },
+    # B6 y B7. Frase a frase, para que cada una caiga en su golpe y quede aire entre
+    # todas: «Poco» cuando el plano empieza a abrirse (29,4) y «Mira» con el botón (36,0).
+    {"text": "Poco y cierto.", "at": 29.15, "rate": "+8%"},
+    {"text": "Es una muestra en formación, no un censo.", "at": 30.26, "rate": "+8%"},
+    {"text": "Una máquina lee; una persona supervisa.", "at": 33.11, "rate": "+8%"},
+    {
+        "text": "Mira los precios de hoy en Guani.",
+        "at": 35.9,
+        "rate": "+8%",
+        "anchor": "mira",
+        "anchor_at": 36.0,
+    },
 )
 VOICE_NAME = "es-CU-ManuelNeural"
 #: Aire mínimo entre dos líneas de locución.
@@ -220,7 +277,7 @@ def _measure() -> dict:
     """B5 · La misma medida: ciclos 6 y 7 de la clave, de 19,4 a 25,8 s.
 
     La cámara entra en la fila de los claros y un grano con marca se abre en el
-    anuncio de 10 lb. Sus palabras vuelan a su etiqueta, ruedan las dos cuentas
+    anuncio de 10 lb. Sus palabras vuelan y quedan grandes, ruedan las dos cuentas
     (750 y 683 CUP/lb) y los tres granos de la celda caen en una recta. Cada cosa
     entra en un golpe de la clave y lo ya leído se retira antes de lo siguiente.
     """
@@ -233,10 +290,8 @@ def _measure() -> dict:
         "opened": beat(6, 1),  # y ya se lee: 20,0
         "slide": [19.95, 20.95],  # la mesa se corre y la fila queda a un lado
         "marks": [20.2, 20.3, 20.4],  # la máquina subraya producto, cantidad y precio
-        "tags": [20.22, 20.3, 20.38, 20.46],  # se teclean las cuatro etiquetas
-        "tag_names": list(TAGS),
         "type_step": TYPE_STEP,
-        # Cada palabra: cuándo despega del anuncio y cuándo cae en su etiqueta.
+        # Cada palabra: cuándo despega del anuncio y cuándo cae, ya grande, en su sitio.
         "words": [[beat(6, 2), 20.9], [20.74, 21.04], [20.88, 21.18]],  # 20,6 …
         "province": [21.08, beat(6, 3)],  # «La Habana» entra por el borde y cae en 21,4
         "pack_out": [21.22, 21.6],  # el anuncio, ya leído, se cierra en su grano
@@ -262,6 +317,82 @@ def _measure() -> dict:
     }
 
 
+def _island() -> dict:
+    """B6 · La isla: ciclos 8 y 9 de la clave, de 25,8 a 32,2 s.
+
+    Lo del cristal se recoge en un punto, que está en La Habana. Las provincias se
+    trazan como una ruta mientras la cámara baja por la isla hasta Santiago de Cuba,
+    y al final el plano se abre: dos provincias con granos y catorce en puntos.
+    """
+    start = beat(8, 0)  # 25,8
+    piles = {p["slug"]: p["ads"] for p in DATA["by_province"]}
+    trace = [26.1, 26.5, 26.68]  # La Habana y sus dos vecinas
+    trace += _spaced(27.0, 27.74, 9)  # de Matanzas a Granma, por delante de la cámara
+    trace += [beat(8, 4) - 0.14, 28.34]  # Santiago de Cuba (queda trazada en 28,5) y Guantánamo
+    trace += [29.7, 29.9]  # el occidente, cuando el plano se abre
+    return {
+        "start": start,
+        "gather": [start, round(start + 0.55, 3)],  # el cristal se recoge
+        "pull": [start, beat(8, 1) + 0.25],  # la cámara se aleja: 25,8 → 26,65
+        "sea": beat(8, 1),  # de la mesa ya no queda nada: 26,4
+        "route": list(ROUTE),
+        "trace": [round(t, 3) for t in trace],
+        "trace_dur": 0.44,
+        "near_label": [beat(8, 1), 27.02],  # «La Habana»: 26,4
+        "near_drops": _spaced(26.62, beat(8, 2) - 0.02, piles["la-habana"], 0.85),  # 27 granos, hasta 27,0
+        "near_full": beat(8, 2),  # 27,0: ya están los 27
+        "anticipation": 26.9,
+        "travel": [beat(8, 2), beat(8, 4)],  # 27,0 → 28,2: baja por la isla
+        "far_label": [27.96, 29.42],  # «Santiago de Cuba»
+        "far_drops": _spaced(28.14, 28.44, piles["santiago-de-cuba"]),  # 7 granos
+        "far_full": 28.44,
+        "pick": [28.5, 28.78],  # uno se aparta: el del pollo
+        "price": [28.56, beat(9, 0)],  # la cifra rueda y queda fija en 29,0
+        "far_out": [29.3, 29.5],
+        "open": [beat(9, 1) - 0.2, beat(9, 2)],  # 29,4 → 30,2: se abre el plano
+        "filled": beat(9, 2),  # 30,2: dos provincias con granos
+        "title": beat(9, 2),  # «34 anuncios en 30 días»
+        "split": 30.6,  # «24 a mano · 10 por el sistema»
+        "caption": [beat(9, 3), beat(9, 4)],  # «Una muestra en formación,» (31,0) «no un censo.» (31,4)
+        "date": beat(9, 4),
+        "title_text": [s.format(**DATA) for s in SAMPLE_TITLE],
+        "split_text": [s.format(**DATA) for s in SAMPLE_SPLIT],
+        "caption_text": list(SAMPLE_CAPTION),
+        "title_out": beat(10, 0),  # 32,2
+        "caption_out": 33.0,  # lo último que se dice de B6 acaba en 33,0
+    }
+
+
+def _close() -> dict:
+    """B7 · El cierre: ciclos 10 y 11 de la clave, de 32,2 a 38,6 s.
+
+    La isla se acuesta y se vuelve horizonte; la cámara sube y entra el atardecer de
+    la portada. La clave calla en el botón (36,0) y el último segundo queda quieto.
+    """
+    start = beat(10, 0)  # 32,2
+    return {
+        "start": start,
+        "lie": [start, beat(10, 1) + 0.1],  # la isla se acuesta: 32,2 → 32,9
+        "rise": [beat(10, 1), 34.3],  # la cámara sube: el horizonte baja
+        "sky": [32.3, 34.0],  # el cielo se enciende desde el horizonte
+        "sun": [beat(10, 2), 34.7],  # el sol sube con rebote desde 33,4
+        "city": [[beat(10, 2), 34.3], [33.62, 34.52]],  # lejos y medio
+        "palms": [beat(10, 3), 35.0],  # 34,2
+        "guani": [beat(10, 4), 35.36],  # 34,6
+        "stars": [32.3, 34.6],  # los granos se elevan
+        "star_time": 1.15,
+        "title": [beat(10, 2), beat(10, 3)],  # «Una máquina lee;» (33,4) «una persona supervisa.» (34,2)
+        "title_text": list(CLOSE_TITLE),
+        "button": [beat(11, 0), beat(11, 1)],  # un grano crece hasta ser el botón: 35,4 → 36,0
+        "button_text": CLOSE_BUTTON,
+        "sheen": [36.2, 36.95],
+        "signature": beat(11, 2),  # 36,6
+        "signature_text": CLOSE_SIGNATURE,
+        "last_clave": beat(11, 1),  # la clave cierra aquí su frase
+        "still": 37.6,  # desde aquí no se mueve nada
+    }
+
+
 def build() -> dict:
     """La línea de tiempo completa, lista para pasar a JSON."""
     whip = (beat(0, 4), beat(1, 0))  # 2,6 → 3,4
@@ -277,7 +408,7 @@ def build() -> dict:
         "duration": DURATION,
         "proof": PROOF,
         "pulse": PULSE,
-        "clave": clave_hits(whip[1], DURATION),
+        "clave": clave_hits(whip[1], _close()["last_clave"]),
         # Gancho
         "fade_in": 0.2,
         "capsules": [beat(0, 0), beat(0, 1), beat(0, 2)],  # 0,2 / 0,8 / 1,4
@@ -309,4 +440,6 @@ def build() -> dict:
         "doubt_label": beat(3, 4),  # 12,2
         "review": review,
         "measure": _measure(),
+        "island": _island(),
+        "close": _close(),
     }

@@ -25,7 +25,12 @@ anterior:
   y al caer cada dato, y un tecleo muy tenue;
 - las dos cuentas: un tictac que sube con los números y una nota cuando la cifra
   queda fija;
-- el cierre con los dos trazos: el roce del aro a mano y el tic de la marca cuadrada.
+- el cierre con los dos trazos: el roce del aro a mano y el tic de la marca cuadrada;
+- la isla (B6): la cámara que se aleja, un tono que sube con cada provincia que se
+  traza, los granos que caen en las dos que tienen datos (una nota cada una, y las
+  dos juntas cuando se abre el plano) y el soplo del viaje por la isla;
+- el cierre (B7): la isla que se acuesta, el sol que sube, las primeras estrellas y
+  el botón, donde la clave cierra su frase. Después solo queda el mar, que se funde.
 
 No hay scipy: los filtros son de fase cero por transformada de Fourier y los
 granos se reparten con una convolución. La voz es de Edge TTS (el texto de la
@@ -504,7 +509,7 @@ def _measure_sound(timeline: dict, fx: Mix, rng, mark) -> list[float]:
     fx.add(thump(170, 105, 0.11, rng, 0.2), measure["opened"], 0.22)
     mark("anuncio", measure["opened"])
 
-    # La máquina subraya tres palabras (tres tics que suben) y teclea las etiquetas, muy tenue.
+    # La máquina subraya tres palabras: tres tics que suben.
     for i, at in enumerate(measure["marks"]):
         fx.add(square_tick((1568, 1760, 1976)[i], 0.03), at, 0.035, 0.1)
     key = wood([2600, 4700], [0.003, 0.0016], [1, 0.5], 1.0, rng)
@@ -514,9 +519,7 @@ def _measure_sound(timeline: dict, fx: Mix, rng, mark) -> list[float]:
             if ch != " ":
                 fx.add(key, at + i * measure["type_step"], 0.011 * rng.uniform(0.7, 1.15), pan)
 
-    for name, at in zip(measure["tag_names"], measure["tags"], strict=True):
-        typed(name, at, -0.2)
-    # Cada palabra vuela a su etiqueta (un soplo) y cae (un tic). «La Habana» viene de fuera, por la derecha.
+    # Cada palabra vuela a su sitio (un soplo) y cae (un tic). «La Habana» viene de fuera, por la derecha.
     flights = [(a, b, 0.15, -0.1) for a, b in measure["words"]] + [(*measure["province"], 0.85, 0.0)]
     for i, (a, b, pan0, pan1) in enumerate(flights):
         air = sweep(b - a, 700, 1500, 380, rng) * np.hanning(_n(b - a))
@@ -586,8 +589,154 @@ def _measure_sound(timeline: dict, fx: Mix, rng, mark) -> list[float]:
     return fixed
 
 
+#: Una escala mayor desde sol: un grado por provincia, dos octavas y un tono.
+_SCALE = (0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24, 26)
+_ROOT = 392.0
+
+
+def pluck(freq: float, seconds: float = 0.5) -> np.ndarray:
+    """Una nota breve y redonda: el tono de cada provincia que se traza."""
+    t = _time(seconds)
+    out = sum(
+        amp * np.sin(2 * np.pi * freq * k * t) * np.exp(-t / tau)
+        for k, amp, tau in ((1, 1.0, seconds * 0.24), (2, 0.32, seconds * 0.14), (3, 0.1, seconds * 0.08))
+    )
+    return out * np.minimum(t / 0.004, 1)
+
+
+def _island_sound(timeline: dict, fx: Mix, rng, mark) -> list[float]:
+    """B6 · La isla. Devuelve los golpes de la clave que llevan acento."""
+    isle = timeline["island"]
+    # La cámara se aleja del cristal: el soplo del tirón, hacia atrás, con su golpe.
+    p0, p1 = isle["pull"]
+    shape = ramp(_time(p1 - p0 + 0.2), [(0, 0), (0.07, 1), (0.25, 0.8), (p1 - p0, 0.1), (p1 - p0 + 0.2, 0)])
+    fx.add(_pan_move(sweep(p1 - p0 + 0.2, 1700, 230, 480, rng) * shape, 0.3, -0.3), p0, 0.2)
+    fx.add(thump(84, 44, 0.42, rng, 0.05), p0, 0.2)
+    fx.add(tap(168, rng), p0, 0.14)
+    mark("se aleja", p0)
+
+    # Un tono que sube con cada provincia trazada; las dos con datos suenan más y llevan el tic de la máquina.
+    with_data = {p["slug"] for p in tiempos.DATA["by_province"]}
+    count = len(isle["route"])
+    for i, (slug, at) in enumerate(zip(isle["route"], isle["trace"], strict=True)):
+        freq, pan = _ROOT * 2 ** (_SCALE[i] / 12), -0.45 + 0.9 * i / (count - 1)
+        solid = slug in with_data
+        fx.add(pluck(freq), at, 0.12 if solid else 0.08, pan)
+        if solid:
+            fx.add(square_tick(1568, 0.03), at, 0.045, pan)
+            line = sweep(isle["trace_dur"], 2600, 5200, 380, rng) * np.hanning(_n(isle["trace_dur"]))
+            fx.add(line, at, 0.035, pan)
+        mark("provincia", at)
+
+    # Los granos caen: arroz sobre la mesa, uno por anuncio. Al quedar llena, cada provincia da su nota.
+    grain = wood([3250, 5900], [0.007, 0.004], [1, 0.4], 0.9, rng)
+    notes = (_ROOT * 2 ** (4 / 12), _ROOT * 2 ** (7 / 12))  # si y re: una tercera y una quinta sobre el sol
+    for drops, full, pan, note in (
+        (isle["near_drops"], isle["near_full"], -0.3, notes[0]),
+        (isle["far_drops"], isle["far_full"], 0.3, notes[1]),
+    ):
+        for k, at in enumerate(drops):
+            fx.add(grain, at, 0.075 * rng.uniform(0.7, 1.2), pan + rng.uniform(-0.25, 0.25))
+            if k % 3 == 0:
+                fx.add(tap(150 + 4 * k, rng), at, 0.06, pan)
+        fx.add(chime(note), full, 0.075, pan)
+        fx.add(tap(196, rng), full, 0.12, pan)
+        mark("llena", full)
+
+    # Baja por la isla en un solo viaje: un soplo largo que cruza el estéreo.
+    v0, v1 = isle["travel"]
+    pre = isle["anticipation"]
+    fx.add(
+        sweep(v0 - pre + 0.03, 420, 1500, 600, rng) * np.linspace(0, 1, _n(v0 - pre + 0.03)) ** 2.2, pre, 0.08
+    )
+    air = sweep(v1 - v0 + 0.15, 520, 1400, 420, rng) * np.hanning(_n(v1 - v0 + 0.15)) ** 0.7
+    fx.add(_pan_move(air, -0.6, 0.6), v0, 0.22)
+    fx.add(thump(86, 46, 0.3, rng, 0.05), v1, 0.14)
+    fx.add(tap(160, rng), v1, 0.12, 0.3)
+    mark("viaje", v0)
+
+    # El anuncio de pollo se aparta y su cifra rueda, como las de B5, hasta quedar fija en la clave.
+    k0, k1 = isle["pick"]
+    fx.add(sweep(k1 - k0, 500, 1400, 420, rng) * np.hanning(_n(k1 - k0)), k0, 0.05, 0.2)
+    a, b = isle["price"]
+    power, steps, last = timeline["measure"]["roll_power"], 12, -1.0
+    for k in range(1, steps):
+        part = k / steps
+        at = a + (b - a) * (1 - (1 - part) ** (1 / power))
+        if at - last < 0.022:
+            continue
+        last = at
+        fx.add(
+            wood([950 * 2**part, 2300 * 2**part], [0.007, 0.0035], [1, 0.45], 0.7, rng),
+            at,
+            0.04 + 0.05 * part,
+        )
+    fx.add(wood([1900, 4600], [0.007, 0.0035], [1, 0.45], 0.7, rng), b, 0.1)
+    fx.add(chime(1760.0), b, 0.08)
+    fx.add(tap(196, rng), b, 0.1)
+    mark("cifra fija", b)
+
+    # Se abre el plano: la cámara toma aire y se aleja; ya abierto, las dos notas suenan juntas.
+    o0, o1 = isle["open"]
+    shape = ramp(_time(o1 - o0 + 0.2), [(0, 0), (0.08, 1), (0.3, 0.75), (o1 - o0, 0.1), (o1 - o0 + 0.2, 0)])
+    fx.add(_pan_move(sweep(o1 - o0 + 0.2, 1500, 240, 460, rng) * shape, 0.4, -0.2), o0, 0.14)
+    for note, pan in zip(notes, (-0.3, 0.3), strict=True):
+        fx.add(chime(note), isle["filled"], 0.07, pan)
+        fx.add(pluck(note / 2, 0.9), isle["filled"], 0.07, pan)
+    mark("dos provincias", isle["filled"])
+    return [b]
+
+
+def _close_sound(timeline: dict, fx: Mix, rng, mark) -> list[float]:
+    """B7 · El cierre. Devuelve el golpe de la clave que lleva acento: el del botón, el último."""
+    close = timeline["close"]
+    # La isla se acuesta: un soplo que baja y un golpe sordo al quedar como horizonte.
+    l0, l1 = close["lie"]
+    fx.add(sweep(l1 - l0, 1300, 320, 420, rng) * np.hanning(_n(l1 - l0)), l0, 0.09)
+    fx.add(thump(92, 54, 0.3, rng, 0.1), l1 - 0.06, 0.16)
+    fx.add(tap(150, rng), l1 - 0.06, 0.12)
+    mark("horizonte", l1)
+    # El sol sube: un acorde cálido que crece (sol, re y si), con su rebote al asentarse.
+    s0, s1 = close["sun"]
+    tt = _time(s1 - s0 + 1.2)
+    swell = ramp(tt, [(0, 0), (0.5 * (s1 - s0), 0.7), (s1 - s0, 1), (s1 - s0 + 1.2, 0)]) ** 1.5
+    chord = sum(
+        amp * np.sin(2 * np.pi * f * tt)
+        for f, amp in ((196, 0.5), (294, 0.8), (392, 1.0), (494, 0.55), (784, 0.2))
+    )
+    fx.add(chord * swell, s0, 0.03)
+    fx.add(tap(196, rng), s0 + 0.62 * (s1 - s0), 0.09)
+    mark("sol", s0)
+    # Las primeras estrellas: unas pocas notas altas, muy tenues, mientras los granos suben.
+    a, b = close["stars"]
+    for at in np.sort(rng.uniform(a + 0.5, b + 0.9, 9)):
+        note = _ROOT * 2 ** (rng.choice((19, 24, 26, 28, 31)) / 12)
+        fx.add(pluck(note, 0.6), float(at), 0.014, rng.uniform(-0.7, 0.7))
+    # Las palmas entran con un roce de hojas, y Guani con un golpe suave, como cuando cayó en la mesa.
+    p0, p1 = close["palms"]
+    leaves = band(rng.standard_normal(_n(p1 - p0)), 2600, 7800) * np.hanning(_n(p1 - p0)) ** 2
+    fx.add(_pan_move(leaves / (np.abs(leaves).max() + 1e-9), -0.7, 0.7), p0, 0.028)
+    g0, g1 = close["guani"]
+    land = g0 + 0.55 * (g1 - g0)
+    fx.add(thump(118, 52, 0.3, rng, 0.2), land, 0.16)
+    fx.add(tap(176, rng), land, 0.14)
+    mark("Guani", land)
+    # Un grano crece hasta ser el botón: toma aire y cae con la madera de las cápsulas del gancho.
+    b0, b1 = close["button"]
+    fx.add(sweep(b1 - b0, 520, 1900, 480, rng) * np.linspace(0, 1, _n(b1 - b0)) ** 1.8, b0, 0.1)
+    fx.add(wood([640, 1210, 1930], [0.05, 0.028, 0.016], [1, 0.55, 0.3], 0.5, rng), b1, 0.3)
+    fx.add(thump(170, 105, 0.11, rng, 0.2), b1, 0.26)
+    for note, gain in ((_ROOT, 0.06), (_ROOT * 2 ** (7 / 12), 0.05), (_ROOT * 2, 0.045)):
+        fx.add(chime(note), b1, gain)
+    mark("botón", b1)
+    h0, h1 = close["sheen"]  # el destello que lo cruza
+    shine = sweep(h1 - h0, 3200, 6400, 380, rng) * np.hanning(_n(h1 - h0))
+    fx.add(_pan_move(shine, -0.5, 0.5), h0, 0.03)
+    return [b1]
+
+
 def _after(timeline: dict, duration: float, fx0: Mix, bed0: Mix, kit: dict, mark) -> tuple[Mix, Mix]:
-    """Lo que sigue a la prueba: el repaso (B4) y la misma medida (B5).
+    """Lo que sigue a la prueba: el repaso (B4), la misma medida (B5), la isla (B6) y el cierre (B7).
 
     Usa otra semilla, para que alargar el comercial no cambie ni una muestra de
     lo ya aprobado. Lo único que se toca de la prueba es su final (de `SEAM[0]`
@@ -605,6 +754,9 @@ def _after(timeline: dict, duration: float, fx0: Mix, bed0: Mix, kit: dict, mark
     bed.data[:n] -= kit["sea"] * (1 - old[:n, None])
     swells = 0.6 + 0.4 * np.sin(2 * np.pi * t / 5.3 + 0.8)
     swing = np.sqrt(swells**2 + 0.35**2 * swells**6)  # cuánto sube y baja el oleaje
+    # Cuando la clave calla en el botón queda el mar: sube mientras el cielo se enciende.
+    c0, c1 = timeline["close"]["rise"][0], timeline["close"]["last_clave"] + 0.6
+    tide = 1 + 1.1 * ramp(t, [(c0, 0), (c1, 1)])
     calm = slice(_n(5.0), _n(SEAM[0]))  # un tramo de la prueba con el mar ya asentado
     for ch in (0, 1):
         # El ruido marrón se filtra «en redondo» y chasquea donde el final se junta con
@@ -615,10 +767,14 @@ def _after(timeline: dict, duration: float, fx0: Mix, bed0: Mix, kit: dict, mark
         level = np.sqrt(
             np.mean((kit["sea"][calm, ch] / swing[calm]) ** 2) / np.mean((wave_[n:] / swing[n:]) ** 2)
         )
-        bed.data[:, ch] += wave_ * new * level
+        bed.data[:, ch] += wave_ * new * level * tide
 
     _review_sound(timeline, fx, rng, mark)
     fixed = _measure_sound(timeline, fx, rng, mark)
+    if duration > timeline["island"]["start"]:
+        fixed += _island_sound(timeline, fx, rng, mark)
+    if duration > timeline["close"]["start"]:
+        fixed += _close_sound(timeline, fx, rng, mark)
 
     # La clave no se detiene. Donde una cifra queda fija, suena más.
     head = n / SR
@@ -667,6 +823,9 @@ def build(timeline: dict, work: Path, duration: float, voice: bool = True) -> tu
     dry = fx.data + bed.data
     wet = np.stack([convolve(dry[:, ch], room[:, ch]) for ch in (0, 1)], axis=1)
     mix = dry + 0.16 * wet
+    if duration >= timeline["duration"]:  # el comercial entero: el mar se funde en el último segundo
+        tail = _n(duration - timeline["close"]["still"])
+        mix[-tail:] *= np.linspace(1, 0.12, tail)[:, None] ** 1.3
 
     report: dict = {"eventos": events, "voz": []}
     if voice:
