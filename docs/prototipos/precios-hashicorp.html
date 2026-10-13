@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo — /precios con piel HashiCorp</title>
+<!--
+  Prototipo ESTÁTICO del detalle de producto (/precios?productos=arroz). Cifras de EJEMPLO.
+  Idea tomada de la referencia: negro de fondo + un color de identidad por «producto».
+  Aquí el «producto» es la PROVINCIA: Habana violeta, Santiago cian, Holguín amarillo.
+  Se respeta spec §12.6: ningún verde/rojo de semáforo; el cambio va en tinta neutra.
+  El fondo (resplandores + rejilla tenue) es una interpretación: NO se vio el sitio real.
+-->
+<style>
+  :root {
+    --canvas: #000; --s1: #15181e; --s2: #1f232b; --line: #3b3d45; --line-soft: #252830;
+    --ink: #fff; --muted: #b2b6bd; --subtle: #656a76;
+    --hab: #7b42bc; --hab-b: #911ced; --stg: #14c6cb; --hol: #ffcf25;
+    --font: Roboto, Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--canvas); }
+  body { margin: 0; font: 500 16px/1.5 var(--font); color: var(--ink); background: transparent; position: relative; overflow-x: hidden; }
+
+  /* ── FONDO: tres resplandores de provincia + rejilla que se desvanece ── */
+  body::before { content: ""; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    background:
+      radial-gradient(60% 45% at 85% -5%, rgba(145,28,237,.32), transparent 70%),
+      radial-gradient(50% 40% at 10% 8%, rgba(20,198,203,.20), transparent 70%),
+      radial-gradient(45% 35% at 60% 100%, rgba(255,207,37,.10), transparent 70%),
+      #000; }
+  body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(70% 60% at 50% 0%, #000 20%, transparent 75%);
+            mask-image: radial-gradient(70% 60% at 50% 0%, #000 20%, transparent 75%); }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+  a { color: inherit; text-decoration: none; }
+
+  .top { height: 64px; border-bottom: 1px solid var(--line-soft); backdrop-filter: blur(10px); background: rgba(0,0,0,.55); position: sticky; top: 0; z-index: 5; }
+  .top .wrap { height: 100%; display: flex; align-items: center; gap: 20px; }
+  .brand { font-weight: 700; font-size: 20px; letter-spacing: -.4px; display: flex; align-items: center; gap: 10px; }
+  .mark { width: 22px; height: 22px; border-radius: 6px; background: conic-gradient(from 200deg, var(--hab-b), var(--stg), var(--hol), var(--hab-b)); }
+  .nav { display: none; gap: 24px; margin-left: 12px; font-size: 14px; color: var(--muted); }
+  .nav a.on { color: var(--ink); }
+  .btn { display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border-radius: 8px; font: 500 14px var(--font); border: 0; cursor: pointer; }
+  .btn-w { background: #fff; color: #000; margin-left: auto; }
+  @media (min-width: 720px) { .nav { display: flex; } }
+
+  /* ── Portada del producto ── */
+  .hero { padding: 72px 0 24px; }
+  .eyebrow { font-size: 12px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; gap: 8px;
+             padding: 4px 12px; border: 1px solid var(--line-soft); border-radius: 9999px; background: var(--s1); }
+  .eyebrow i { width: 6px; height: 6px; border-radius: 50%; background: var(--stg); box-shadow: 0 0 10px var(--stg); }
+  h1 { margin: 20px 0 0; font-size: 56px; line-height: 1.1; font-weight: 700; letter-spacing: -1.6px; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--stg), var(--hab-b) 60%, var(--hol)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { max-width: 56ch; color: var(--muted); font-size: 18px; line-height: 1.69; margin: 16px 0 0; }
+  @media (min-width: 900px) { h1 { font-size: 80px; letter-spacing: -2.5px; } }
+
+  .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 40px; }
+  .kpi { background: rgba(21,24,30,.7); border: 1px solid var(--line-soft); border-radius: 12px; padding: 20px; backdrop-filter: blur(6px); }
+  .kpi .l { font-size: 12px; letter-spacing: .6px; text-transform: uppercase; color: var(--subtle); }
+  .kpi .v { font-size: 28px; line-height: 1.21; letter-spacing: -.6px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .kpi .v small { font-size: 14px; color: var(--muted); font-weight: 500; letter-spacing: 0; }
+  @media (min-width: 720px) { .kpis { grid-template-columns: repeat(4, 1fr); } }
+
+  section { padding-top: 96px; }
+  h2 { margin: 0; font-size: 40px; line-height: 1.19; letter-spacing: -1px; font-weight: 700; }
+  .sub { color: var(--muted); margin: 8px 0 32px; font-size: 16px; }
+
+  /* ── Tarjetas por provincia: degradado cromático, como las de producto ── */
+  .prov { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .prov { grid-template-columns: repeat(3, 1fr); } }
+  .pc { position: relative; border-radius: 12px; padding: 24px; min-height: 260px; overflow: hidden; border: 1px solid rgba(255,255,255,.12);
+        display: flex; flex-direction: column; color: var(--tc, #fff); background: var(--g); }
+  .pc.hab { --g: linear-gradient(155deg, #911ced 0%, #7b42bc 45%, #2a1550 100%); }
+  .pc.stg { --g: linear-gradient(155deg, #14c6cb 0%, #12b6bb 40%, #08494c 100%); --tc: #000; }
+  .pc.hol { --g: linear-gradient(155deg, #ffcf25 0%, #e0a700 50%, #5a4300 100%); --tc: #000; }
+  .pc .tag { font-size: 12px; letter-spacing: .6px; text-transform: uppercase; opacity: .85; display: flex; justify-content: space-between; }
+  .pc .badge { padding: 2px 10px; border-radius: 9999px; background: rgba(0,0,0,.28); color: #fff; text-transform: none; letter-spacing: 0; }
+  .pc .nm { font-size: 22px; letter-spacing: -.4px; font-weight: 700; margin-top: 12px; }
+  .pc .fig { font-size: 56px; line-height: 1.1; letter-spacing: -1.6px; font-weight: 700; margin-top: auto; font-variant-numeric: tabular-nums; }
+  .pc .fig small { font-size: 14px; letter-spacing: 0; font-weight: 500; opacity: .8; }
+  .pc .row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 14px; opacity: .9; }
+  .pc svg { position: absolute; right: -4px; top: 56px; width: 62%; height: 70px; opacity: .55; }
+
+  /* ── Gráfico con resplandor ── */
+  .panel { background: rgba(21,24,30,.75); border: 1px solid var(--line-soft); border-radius: 16px; padding: 24px; backdrop-filter: blur(6px); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; padding: 0; list-style: none; }
+  .legend li { font-size: 13px; color: var(--muted); padding: 4px 10px; border-radius: 9999px; background: var(--s1); border: 1px solid var(--line-soft); }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--c); }
+  svg.chart { width: 100%; height: auto; display: block; }
+  .gl { stroke: #252830; } .ax { fill: #656a76; font-size: 11px; }
+  .ln { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+
+  /* ── Tabla de comparación ── */
+  .cmp { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .cmp th { text-align: left; font-size: 12px; letter-spacing: .6px; text-transform: uppercase; color: var(--subtle); font-weight: 500; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .cmp td { padding: 18px 0; color: var(--muted); border-bottom: 1px solid var(--line-soft); }
+  .cmp td:first-child { color: var(--ink); } .cmp .num { text-align: right; } .cmp th.num { text-align: right; }
+  .cmp tr:hover td { background: rgba(255,255,255,.03); }
+
+  .cta { margin-top: 96px; background: var(--s1); border: 1px solid var(--line-soft); border-radius: 24px; padding: 48px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between; }
+  .cta h3 { margin: 0; font-size: 28px; letter-spacing: -.6px; line-height: 1.21; max-width: 22ch; }
+  .cta p { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+  footer { padding: 64px 0 48px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header class="top"><div class="wrap">
+  <a class="brand" href="#"><span class="mark"></span>Guani</a>
+  <nav class="nav"><a class="on" href="#">Tablero</a><a href="#">Mapa</a><a href="#">Explorar</a><a href="#">Metodología</a></nav>
+  <a class="btn btn-w" href="#">Descargar CSV</a>
+</div></header>
+
+<main class="wrap">
+  <div class="hero">
+    <span class="eyebrow"><i></i>Datos verificados hasta hoy · 13 oct</span>
+    <h1>Arroz,<br><em>345 pesos</em> la libra</h1>
+    <p class="lead">Mediana nacional de los últimos 30 días, sobre 128 anuncios curados uno por uno en tres provincias.</p>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Cambio</div><div class="v">▲ 4,2 %</div></div>
+      <div class="kpi"><div class="l">Rango central</div><div class="v">320–380 <small>CUP</small></div></div>
+      <div class="kpi"><div class="l">Anuncios</div><div class="v">128</div></div>
+      <div class="kpi"><div class="l">Provincias</div><div class="v">3 <small>/ 16</small></div></div>
+    </div>
+  </div>
+
+  <section>
+    <h2>Una provincia, un color</h2>
+    <p class="sub">Mediana de 30 días por provincia. La más barata lleva la etiqueta.</p>
+    <div class="prov">
+      <article class="pc stg">
+        <div class="tag"><span>Oriente</span><span class="badge">más barata</span></div>
+        <div class="nm">Santiago de Cuba</div>
+        <svg viewBox="0 0 120 40" preserveAspectRatio="none"><polyline fill="none" stroke="#000" stroke-width="2.5" points="0,30 20,28 40,29 60,20 80,22 100,12 120,10"/></svg>
+        <div class="fig">320 <small>CUP/lb</small></div>
+        <div class="row"><span>▲ 2,1 %</span><span>34 anuncios</span></div>
+      </article>
+      <article class="pc hab">
+        <div class="tag"><span>Occidente</span></div>
+        <div class="nm">La Habana</div>
+        <svg viewBox="0 0 120 40" preserveAspectRatio="none"><polyline fill="none" stroke="#fff" stroke-width="2.5" points="0,32 20,26 40,28 60,18 80,16 100,17 120,8"/></svg>
+        <div class="fig">350 <small>CUP/lb</small></div>
+        <div class="row"><span>▲ 5,0 %</span><span>71 anuncios</span></div>
+      </article>
+      <article class="pc hol">
+        <div class="tag"><span>Oriente</span></div>
+        <div class="nm">Holguín</div>
+        <svg viewBox="0 0 120 40" preserveAspectRatio="none"><polyline fill="none" stroke="#000" stroke-width="2.5" points="0,22 20,24 40,20 60,21 80,14 100,16 120,12"/></svg>
+        <div class="fig">360 <small>CUP/lb</small></div>
+        <div class="row"><span>▲ 3,4 %</span><span>23 anuncios</span></div>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cómo se movió</h2>
+    <p class="sub">Mediana semanal, CUP por libra. La línea se corta donde no hay datos.</p>
+    <div class="panel">
+      <ul class="legend">
+        <li style="--c:var(--stg)"><i></i>Santiago</li><li style="--c:var(--hab-b)"><i></i>La Habana</li><li style="--c:var(--hol)"><i></i>Holguín</li>
+      </ul>
+      <svg class="chart" viewBox="0 0 640 230" role="img" aria-label="Mediana semanal por provincia">
+        <defs><filter id="g" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="4"/></filter></defs>
+        <g class="gl"><line x1="40" x2="640" y1="20" y2="20"/><line x1="40" x2="640" y1="80" y2="80"/><line x1="40" x2="640" y1="140" y2="140"/><line x1="40" x2="640" y1="200" y2="200"/></g>
+        <g class="ax"><text x="0" y="24">380</text><text x="0" y="84">360</text><text x="0" y="144">340</text><text x="0" y="204">320</text>
+          <text x="40" y="224">15 sep</text><text x="240" y="224">29 sep</text><text x="440" y="224">6 oct</text><text x="590" y="224">13 oct</text></g>
+        <g filter="url(#g)" opacity=".7">
+          <polyline class="ln" stroke="#14c6cb" points="40,170 190,160 340,150 490,120 620,110"/>
+          <polyline class="ln" stroke="#911ced" points="40,140 190,120 340,100 490,78 620,60"/>
+          <polyline class="ln" stroke="#ffcf25" points="40,100 190,104 340,84 490,70 620,48"/>
+        </g>
+        <polyline class="ln" stroke="#14c6cb" points="40,170 190,160 340,150 490,120 620,110"/>
+        <polyline class="ln" stroke="#b25cff" points="40,140 190,120 340,100 490,78 620,60"/>
+        <polyline class="ln" stroke="#ffcf25" points="40,100 190,104 340,84 490,70 620,48"/>
+        <circle cx="620" cy="48" r="5" fill="#000" stroke="#ffcf25" stroke-width="2.5"/>
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>Por envase</h2>
+    <p class="sub">Lo que se paga por el envase, en CUP.</p>
+    <table class="cmp">
+      <thead><tr><th>Envase</th><th class="num">Precio</th><th class="num">CUP / lb</th><th class="num">Anuncios</th></tr></thead>
+      <tbody>
+        <tr><td>Saco de 25 lb</td><td class="num">8 400</td><td class="num">336</td><td class="num">41</td></tr>
+        <tr><td>Bolsa de 5 lb</td><td class="num">1 800</td><td class="num">360</td><td class="num">52</td></tr>
+        <tr><td>Libra suelta</td><td class="num">350</td><td class="num">350</td><td class="num">35</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="cta">
+    <div><h3>Lleva los datos a tu propia hoja</h3><p>CSV de los últimos 30 días, gratis con cita.</p></div>
+    <a class="btn btn-w" style="margin-left:0" href="#">Descargar CSV</a>
+  </div>
+</main>
+<footer><div class="wrap">Guani, por Leira Studio · Cifras de ejemplo del prototipo.</div></footer>
+</body>
+</html>
