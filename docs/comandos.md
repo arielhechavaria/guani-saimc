@@ -674,6 +674,15 @@ sudo systemctl daemon-reload
   llama a Jev.
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md); contrato en [spec-slice-B1.md](spec-slice-B1.md).
 
+Para mirar de a muestras un bloque que se queda afuera (solo lectura, no gasta):
+
+```
+.venv/bin/python -m saimc.validation.lane1 --muestra "las reglas ven un producto piloto" --n 10
+```
+
+Imprime, de los anuncios cuyo motivo contiene ese texto, una muestra reproducible con canal, lo que
+dijo el modelo (descarte y motivo) y el comienzo del texto.
+
 ### Carril 1 escribiendo
 
 Acepta de verdad lo que lista el comando en seco: guarda las filas con procedencia `auto`,

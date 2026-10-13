@@ -901,7 +901,46 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Acepta de verdad. Exige SAIMC_LANE1_ENABLED encendido.",
     )
     parser.add_argument("--limit", type=int, default=None, help="Cuántos anuncios mirar.")
+    parser.add_argument(
+        "--muestra",
+        metavar="TEXTO",
+        default=None,
+        help=(
+            "Solo lectura: imprime una muestra de los anuncios que se quedan afuera "
+            "por un motivo que contenga TEXTO (p. ej. «las reglas ven un producto»)."
+        ),
+    )
+    parser.add_argument("--n", type=int, default=10, help="Tamaño de la muestra (--muestra).")
     return parser.parse_args(argv)
+
+
+def _muestra(
+    session: Session,
+    pairs: Sequence[tuple[RawIngestion, LlmProposal]],
+    catalog: context.Catalog,
+    gate: Gate,
+    fragment: str,
+    n: int,
+    out: Callable[[str], None],
+) -> int:
+    """Solo lectura: una muestra reproducible de los anuncios que un motivo deja
+    afuera, con lo que dijo el modelo y el comienzo del texto. Sirve para decidir
+    con datos qué hacer con un bloque grande antes de encender el carril."""
+    hits: list[tuple[RawIngestion, AdProposal]] = []
+    for ingestion, proposal in pairs:
+        result = context.stored_proposal(session, proposal, catalog)
+        reasons = left_out_reasons(session, ingestion, result, catalog=catalog, gate=gate)
+        if any(fragment in reason for reason in reasons):
+            hits.append((ingestion, result))
+    out(f"Muestra de {min(n, len(hits))} de {len(hits)} anuncios con «{fragment}»:")
+    for ingestion, result in random.Random(0).sample(hits, min(n, len(hits))):  # noqa: S311 - muestra reproducible, no cripto
+        texto = " ".join((ingestion.original_text or "").split())[:280]
+        out(
+            f"\n  {str(ingestion.id)[:8]}  {ingestion.source_reference or '(sin canal)'}"
+            f"\n  el modelo: discard={result.discard} motivo={result.discard_reason}"
+            f"\n  texto: {texto}"
+        )
+    return 0
 
 
 def run(
@@ -927,6 +966,9 @@ def run(
         out("EN SECO: no se escribe nada (con --execute se aceptan).")
     if gate.brake.on:
         out(f"Carril 1 con el freno puesto: {gate.brake.reason}.")
+    muestra = getattr(args, "muestra", None)
+    if muestra is not None:
+        return _muestra(session, pairs, catalog, gate, muestra, getattr(args, "n", 10), out)
     accepted: list[RawIngestion] = []
     left_out: list[frozenset[str]] = []
     for ingestion, proposal in pairs:

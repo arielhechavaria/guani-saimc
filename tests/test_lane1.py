@@ -1246,3 +1246,32 @@ def test_con_el_tope_vigente_dos_filas_entran_y_cinco_no(
     session.refresh(dos)
     assert dos.processing_status == ProcessingStatus.CURATED
     _sigue_pendiente_sin_filas(session, cinco)
+
+
+def test_muestra_imprime_texto_y_canal_de_los_anuncios_de_un_motivo(
+    session: Session,
+    mundo: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tope_de_una_fila: None,
+) -> None:
+    _cinco_anuncios(session, tmp_path, mundo.canal)
+    _fecha_posterior_al_anuncio_fecha(monkeypatch)
+
+    codigo, salida = _comando(session, tmp_path, "--muestra", "no está verificada", "--n", "5")
+
+    assert codigo == 0
+    assert "Muestra" in salida
+    assert "Arroz a 340 la libra" in salida
+    # Un anuncio que no tiene ese motivo no aparece.
+    assert "Arroz a 320 la libra" not in salida
+
+
+def test_muestra_no_cambia_nada(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, tope_de_una_fila: None
+) -> None:
+    ingesta = _con_propuesta(session, tmp_path, mundo.canal)
+
+    _comando(session, tmp_path, "--muestra", "lo que sea", lane1_enabled=True)
+
+    _sigue_pendiente_sin_filas(session, ingesta)
