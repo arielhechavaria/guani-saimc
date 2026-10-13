@@ -187,7 +187,7 @@ def test_caso_2_texto_sin_piloto_entra_en_candidatos_solo_con_el_interruptor(
     encendido = prefill.select_candidates(session, productos, include_off_focus=True)
 
     assert [i.id for i in apagado] == [en_foco.id]
-    assert [i.id for i in encendido] == [en_foco.id, sin_foco.id]
+    assert [i.id for i in encendido] == [sin_foco.id, en_foco.id]  # más nuevo primero
 
 
 # --- caso 3: el carril 0 descarta un texto --------------------------------------

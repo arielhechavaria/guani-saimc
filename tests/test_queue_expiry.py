@@ -20,7 +20,6 @@ from saimc.models import (
     SourceType,
 )
 from saimc.queue_expiry import EXPIRED_DETAIL_KEY, expire_stale
-from saimc.web.health_strip import oldest_pending_indicator
 
 AHORA = datetime(2026, 10, 13, 12, 0, tzinfo=UTC)
 
@@ -105,33 +104,3 @@ def test_justo_en_siete_dias_todavia_no_vence(session: Session) -> None:
     _anuncio(session, dias=7)
 
     assert expire_stale(session, now=AHORA, max_age_days=7) == 0
-
-
-# --- el aviso de la franja -------------------------------------------------------
-
-
-def test_sin_pendientes_el_indicador_esta_ok() -> None:
-    assert oldest_pending_indicator(None, max_age_days=7).level == "ok"
-
-
-def test_hasta_tres_dias_esta_ok() -> None:
-    assert oldest_pending_indicator(3, max_age_days=7).level == "ok"
-
-
-def test_mas_de_tres_dias_pasa_a_ambar_y_dice_cuando_vence() -> None:
-    ind = oldest_pending_indicator(5, max_age_days=7)
-
-    assert ind.level == "warn"
-    assert "5" in ind.value
-    assert "7" in ind.hint
-
-
-def test_con_el_tope_apagado_pasa_a_ambar_igual_pero_sin_hablar_de_vencimiento() -> None:
-    ind = oldest_pending_indicator(5, max_age_days=0)
-
-    assert ind.level == "warn"
-    assert "vence" not in ind.hint
-
-
-def test_pasado_el_tope_es_rojo() -> None:
-    assert oldest_pending_indicator(8, max_age_days=7).level == "down"

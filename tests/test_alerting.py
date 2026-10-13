@@ -91,3 +91,32 @@ def test_send_telegram_devuelve_false_si_no_hay_red() -> None:
 
     cliente = httpx.Client(transport=httpx.MockTransport(handler))
     assert send_telegram("123:ABC", "42", "hola", client=cliente) is False
+
+
+# --- el parte diario con las últimas 24 h --------------------------------------------
+
+
+def test_el_parte_dice_cuanto_entro_cuanto_se_resolvio_y_cuanto_falta() -> None:
+    from saimc.alerting import daily_summary
+    from saimc.progress import Last24h
+
+    ultimas = Last24h(entered=133, curated=13, discarded=95, pending=25, oldest_pending_hours=9)
+
+    texto = daily_summary(ultimas, pending_total=600, brake="andando")
+
+    assert "133" in texto and "entraron" in texto
+    assert "108" in texto  # resueltos: 13 + 95
+    assert "25" in texto and "9 h" in texto
+    assert "600" in texto  # el histórico, aparte
+    assert "andando" in texto
+
+
+def test_el_parte_sin_pendientes_en_las_24_horas_dice_que_esta_lista() -> None:
+    from saimc.alerting import daily_summary
+    from saimc.progress import Last24h
+
+    ultimas = Last24h(entered=40, curated=10, discarded=30, pending=0, oldest_pending_hours=None)
+
+    texto = daily_summary(ultimas, pending_total=500, brake="andando")
+
+    assert "lista para publicar" in texto

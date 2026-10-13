@@ -28,7 +28,7 @@ from saimc.extraction.llm_assist import ConsumptionSummary
 from saimc.extraction.prefill_status import PrefillRun
 from saimc.ingestion.channel_gaps import GapReport
 from saimc.ingestion.whatsapp_health import SessionHealth
-from saimc.progress import IntakeHealth
+from saimc.progress import IntakeHealth, Last24h
 
 # Cuántos días sin que entre nada empiezan a ser sospechosos. No es un umbral
 # de los que §12.6 prohíbe —no decide si un dato es válido ni si se publica—:
@@ -184,36 +184,35 @@ def queue_indicator(health: IntakeHealth) -> Indicator:
     )
 
 
-# Desde cuántos días de espera el pendiente más viejo pasa a ámbar. Elige
-# cuándo llamarle la atención al operador, no decide ningún dato. El rojo es
-# el tope de edad de la cola (`queue_max_age_days`): ahí el sistema ya lo vence.
-_OLDEST_PENDING_WARN_DAYS = 3
+# A partir de cuántas horas esperando un pendiente de la última jornada pasa a
+# ámbar: da margen hasta las 24 h para resolverlo antes de publicar. Elige
+# cuándo llamarle la atención al operador, no decide ningún dato.
+_LAST_24H_WARN_HOURS = 12
 
 
-def oldest_pending_indicator(age_days: int | None, *, max_age_days: int) -> Indicator:
-    """Cuánto lleva esperando el pendiente más viejo: la cola tiene que fluir."""
-    if age_days is None:
-        return Indicator(key="oldest_pending", label="Pendiente más viejo", value="ninguno", level="ok")
-    topado = max_age_days > 0
-    if topado and age_days > max_age_days:
-        level = "down"
-    elif age_days > _OLDEST_PENDING_WARN_DAYS:
-        level = "warn"
-    else:
-        level = "ok"
-    hint = ""
-    if level != "ok":
-        hint = (
-            f"Cura o deja que venza: a los {max_age_days} días sale de la cola solo."
-            if topado
-            else "Curá los más viejos: la cola dejó de ser un flujo."
+def last_24h_indicator(
+    *, entered: int, pending: int, oldest_pending_hours: int | None
+) -> Indicator:
+    """Si la última jornada está lista para publicar en redes."""
+    if pending == 0:
+        return Indicator(
+            key="last_24h",
+            label="Últimas 24 h",
+            value=f"{entered} entraron, todo resuelto",
+            level="ok",
+            anchor="#ingesta",
         )
+    atrasado = oldest_pending_hours is not None and oldest_pending_hours >= _LAST_24H_WARN_HOURS
     return Indicator(
-        key="oldest_pending",
-        label="Pendiente más viejo",
-        value=f"{age_days} d",
-        level=level,
-        hint=hint,
+        key="last_24h",
+        label="Últimas 24 h",
+        value=f"{pending} sin procesar de {entered}",
+        level="warn" if atrasado else "ok",
+        hint=(
+            f"El más viejo espera {oldest_pending_hours} h: resolvelos antes de publicar."
+            if atrasado
+            else ""
+        ),
         anchor="#ingesta",
     )
 
@@ -388,9 +387,7 @@ def build_strip(
     now: datetime | None = None,
     channel_gaps: GapReport | None = None,
     jev_active: bool = False,
-    oldest_pending_days: int | None = None,
-    queue_max_age_days: int = 0,
-    show_oldest_pending: bool = False,
+    last_24h_summary: Last24h | None = None,
 ) -> list[Indicator]:
     """La franja completa, con lo más urgente primero.
 
@@ -407,9 +404,13 @@ def build_strip(
         assist_indicator(assist, configured=assist_configured),
         prefill_indicator(prefill_run, now=ahora),
     ]
-    if show_oldest_pending:
+    if last_24h_summary is not None:
         indicadores.append(
-            oldest_pending_indicator(oldest_pending_days, max_age_days=queue_max_age_days)
+            last_24h_indicator(
+                entered=last_24h_summary.entered,
+                pending=last_24h_summary.pending,
+                oldest_pending_hours=last_24h_summary.oldest_pending_hours,
+            )
         )
     jev = jev_indicator(prefill_run, active=jev_active)
     if jev is not None:

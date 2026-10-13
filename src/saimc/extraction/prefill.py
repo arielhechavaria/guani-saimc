@@ -112,10 +112,12 @@ def select_candidates(
     *,
     include_off_focus: bool = False,
 ) -> list[RawIngestion]:
-    """Pendientes sin propuesta `ok` guardada, más viejo primero, EN FOCO.
+    """Pendientes sin propuesta `ok` guardada, más nuevo primero, EN FOCO.
 
-    Mismo orden que la cola (`captured_at` ascendente, `_pending_all` en
-    `curation.py`) y el mismo criterio de foco que `_pending_in_focus`: un
+    Mismo orden que la cola (`captured_at` descendente, `_pending_all` en
+    `curation.py`): el operador publica con lo de las últimas 24 h, así que con
+    el tope de gasto por corrida lo de hoy no puede esperar detrás del
+    histórico (2026-10-13). Y el mismo criterio de foco que `_pending_in_focus`: un
     texto que no menciona ningún producto del foco se descarta en lote
     (`discard_out_of_focus`) sin pasar nunca por curaduría, así que pagarle
     una propuesta acá es tirar la plata (docs/plan-asistente-llm-cola-
@@ -140,7 +142,7 @@ def select_candidates(
     stmt = (
         select(RawIngestion)
         .where(RawIngestion.processing_status == ProcessingStatus.PENDING, ~has_ok)
-        .order_by(RawIngestion.captured_at.asc())
+        .order_by(RawIngestion.captured_at.desc())
     )
     pending = list(session.execute(stmt).scalars().all())
     en_foco = [
@@ -514,7 +516,8 @@ def _run_mode(
             session, now=utc_now(), max_age_days=settings.queue_max_age_days
         )
         session.commit()
-        out(f"Vencidos por edad (más de {settings.queue_max_age_days} días): {vencidos}")
+        if settings.queue_max_age_days > 0:
+            out(f"Vencidos por edad (más de {settings.queue_max_age_days} días): {vencidos}")
     products = pilot_products(session)
     lane0_types = lane0.enabled_types(settings)
     candidates = select_candidates(

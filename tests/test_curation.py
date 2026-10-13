@@ -263,7 +263,7 @@ class TestCurationQueueGet:
         assert _contador(response.text, "Por curar") == "2"
         assert _contador(response.text, "Descartados") == "0"
 
-    def test_muestra_el_pendiente_mas_antiguo(
+    def test_muestra_el_pendiente_mas_nuevo(
         self, client: TestClient, session: Session
     ) -> None:
         mas_nuevo = _crear_raw_ingestion(
@@ -280,8 +280,10 @@ class TestCurationQueueGet:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert str(mas_viejo.id) in response.text
-        assert str(mas_nuevo.id) not in response.text
+        # Lo de hoy va primero: el operador publica con las últimas 24 h
+        # (2026-10-13).
+        assert str(mas_nuevo.id) in response.text
+        assert str(mas_viejo.id) not in response.text
 
     def test_prellena_propuesta_para_texto(
         self, client: TestClient, session: Session
@@ -4240,19 +4242,19 @@ class TestOrdenDeLaColaPorFoco:
         assert response.status_code == 200
         assert f'action="/curation/{del_foco.id}"' in response.text
 
-    def test_entre_dos_del_foco_sigue_ganando_el_mas_viejo(
+    def test_entre_dos_del_foco_gana_el_mas_nuevo(
         self, client: TestClient, session: Session
     ) -> None:
-        """El foco reordena entre grupos, no dentro: la cola sigue siendo
-        FIFO para todo lo que aporta lo mismo."""
+        """El foco reordena entre grupos, no dentro: lo que aporta lo mismo se
+        ordena del más nuevo al más viejo (2026-10-13)."""
         _crear_producto(session, name="Arroz", aliases=["arroz blanco"])
-        viejo = _crear_raw_ingestion(
+        _crear_raw_ingestion(
             session,
             hash_="hash-orden-foco-viejo",
             original_text="arroz a 30000",
             captured_at=datetime(2026, 8, 10, tzinfo=UTC),
         )
-        _crear_raw_ingestion(
+        nuevo = _crear_raw_ingestion(
             session,
             hash_="hash-orden-foco-nuevo",
             original_text="arroz a 31000",
@@ -4262,7 +4264,7 @@ class TestOrdenDeLaColaPorFoco:
         response = client.get("/curation")
 
         assert response.status_code == 200
-        assert f'action="/curation/{viejo.id}"' in response.text
+        assert f'action="/curation/{nuevo.id}"' in response.text
 
     def test_sin_nada_del_foco_la_cola_se_muestra_vacia(
         self, client: TestClient, session: Session
@@ -6870,13 +6872,13 @@ class TestVistaCola:
             session,
             hash_="pos-0",
             original_text="Cemento gris a 25 usd",
-            captured_at=base,
+            captured_at=base + timedelta(hours=1),
         )
         _crear_raw_ingestion(
             session,
             hash_="pos-1",
             original_text="Pollo a 1200 la lb",
-            captured_at=base + timedelta(hours=1),
+            captured_at=base,
         )
 
         html = client.get("/curation/cola?foco=si").text
@@ -6898,13 +6900,13 @@ class TestVistaCola:
             session,
             hash_="salto-primero",
             original_text="Pollo a 1200 la lb",
-            captured_at=base,
+            captured_at=base + timedelta(hours=1),
         )
         segundo = _crear_raw_ingestion(
             session,
             hash_="salto-segundo",
             original_text="Pollo ahumado a 9999 la lb",
-            captured_at=base + timedelta(hours=1),
+            captured_at=base,
         )
 
         sin_id = client.get("/curation").text

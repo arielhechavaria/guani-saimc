@@ -23,7 +23,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra el conjunto de referencia congelado | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
 | [`saimc.extraction.reference_set`](#conjunto-de-referencia-en-seco-y-estado) | Qué anuncios entrarían al conjunto de referencia de H0; con `status`, la versión vigente y su deriva | no (en seco y `status`) | no |
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
-| [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de 7 días | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
+| [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de N días (apagado por defecto) | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
 | [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
@@ -261,7 +261,9 @@ sección 1): los curados con filas, sin asistencia y que no se excluyan a mano.
 
 ### Tope de edad de la cola
 
-Un pendiente que lleva más de `SAIMC_QUEUE_MAX_AGE_DAYS` días (7 por defecto) sale de la cola solo:
+**Apagado por defecto** (`SAIMC_QUEUE_MAX_AGE_DAYS=0`): un anuncio viejo es histórico y no se descarta
+solo (decisión del 2026-10-13). Con un valor mayor que 0, un pendiente que lleva más de ese número de
+días sale de la cola solo:
 queda descartado con motivo `off_focus` y un evento automático con `expired_after_days`. No borra el
 crudo ni crea filas de precio. Corre solo al principio de cada pasada real del pre-cálculo (cada 3 h);
 a mano:
@@ -271,9 +273,8 @@ a mano:
 .venv/bin/python -m saimc.queue_expiry --execute  # descarta de verdad
 ```
 
-- **Cambia algo**: solo con `--execute`. **Gasta**: no. `SAIMC_QUEUE_MAX_AGE_DAYS=0` lo apaga.
-- Antes del primer deploy, mirá en seco cuántos vencerían: la primera pasada vence todo lo que ya
-  pase de 7 días.
+- **Cambia algo**: solo con `--execute`. **Gasta**: no.
+- Para devolver a la cola lo que ya venció: ver la entrada del 2026-10-13 de `docs/decisions.md`.
 
 ### Avisos al celular (Telegram)
 

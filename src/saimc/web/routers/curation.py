@@ -389,7 +389,10 @@ def _requested_pending(db: Session, focus_id: uuid.UUID | None) -> RawIngestion 
 
 
 def _pending_all(db: Session) -> list[RawIngestion]:
-    """Todos los pendientes, más viejo primero. Sin filtro de foco.
+    """Todos los pendientes, más nuevo primero. Sin filtro de foco.
+
+    El operador publica con lo de las últimas 24 h: lo de hoy va arriba y el
+    histórico espera abajo (2026-10-13).
 
     `_pending_in_focus` esconde lo que no menciona un piloto, que es correcto
     para curar de a uno pero deja al operador sin forma de ver qué hay en la
@@ -399,7 +402,7 @@ def _pending_all(db: Session) -> list[RawIngestion]:
     stmt = (
         select(RawIngestion)
         .where(RawIngestion.processing_status == ProcessingStatus.PENDING)
-        .order_by(RawIngestion.captured_at.asc())
+        .order_by(RawIngestion.captured_at.desc())
     )
     return list(db.execute(stmt).scalars().all())
 
@@ -482,7 +485,7 @@ def _pending_in_focus(db: Session, products: Sequence[Product]) -> list[RawInges
     stmt = (
         select(RawIngestion)
         .where(RawIngestion.processing_status == ProcessingStatus.PENDING)
-        .order_by(RawIngestion.captured_at.asc())
+        .order_by(RawIngestion.captured_at.desc())
     )
     pending = list(db.execute(stmt).scalars().all())
     # Sin foco definido no hay relevancia que medir: filtrar contra un catálogo

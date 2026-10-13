@@ -27,8 +27,8 @@ import httpx
 
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
+from saimc.progress import Last24h, last_24h
 from saimc.validation import lane1
-from saimc.web.health_strip import worst_level
 from saimc.web.strip_loader import load_strip
 
 REMIND_AFTER = timedelta(hours=24)
@@ -104,6 +104,28 @@ def send_telegram(token: str, chat_id: str, text: str, *, client: httpx.Client |
             http.close()
 
 
+def daily_summary(ultimas: Last24h, *, pending_total: int, brake: str) -> str:
+    """El parte del día: la última jornada primero, el histórico aparte.
+
+    El operador publica en redes con lo de las últimas 24 h; el total de la cola
+    incluye histórico viejo y no dice si esa jornada está lista.
+    """
+    resueltos = ultimas.curated + ultimas.discarded
+    if ultimas.pending == 0:
+        jornada = "Última jornada lista para publicar: todo está resuelto."
+    else:
+        jornada = (
+            f"Te quedan {ultimas.pending} sin procesar de la última jornada "
+            f"(el más viejo espera {ultimas.oldest_pending_hours} h)."
+        )
+    return (
+        f"Últimas 24 h: entraron {ultimas.entered}, resueltos {resueltos} "
+        f"({ultimas.curated} aceptados, {ultimas.discarded} descartados).\n"
+        f"{jornada}\n"
+        f"Cola total (con histórico): {pending_total} · carril 1: {brake}"
+    )
+
+
 def collect(session, settings: Settings) -> tuple[list[Alert], str]:
     """Lo que está mal ahora y una línea de resumen para el parte diario."""
     snapshot = load_strip(session, settings)
@@ -120,9 +142,8 @@ def collect(session, settings: Settings) -> tuple[list[Alert], str]:
             alertas.append(Alert("lane1_brake", "down", f"Carril 1 frenado: {freno.reason}"))
         else:
             freno_txt = "andando"
-    resumen = (
-        f"Pendientes por curar: {snapshot.intake.pending} · "
-        f"estado general: {worst_level(snapshot.strip)} · carril 1: {freno_txt}"
+    resumen = daily_summary(
+        last_24h(session), pending_total=snapshot.intake.pending, brake=freno_txt
     )
     return alertas, resumen
 

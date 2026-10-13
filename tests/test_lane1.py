@@ -1043,7 +1043,9 @@ def test_en_el_arranque_la_cola_de_auditoria_trae_todo(
 
     cola = lane1.audit_queue(session, _ajustes(tmp_path))
 
-    assert [a.ingestion.id for a in cola] == [i.id for i in ingestas]
+    # El orden de la cola es el de aceptación; el pre-cálculo acepta primero lo
+    # más nuevo, así que acá solo importa que estén todos.
+    assert {a.ingestion.id for a in cola} == {i.id for i in ingestas}
 
 
 def test_despues_del_arranque_la_cola_es_una_muestra_por_canal_de_la_semana_cerrada(

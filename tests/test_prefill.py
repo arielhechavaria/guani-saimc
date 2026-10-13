@@ -331,7 +331,7 @@ def test_no_procesa_pendientes_fuera_de_foco(
     assert len(_propuestas(session)) == 1
 
 
-def test_limit_toma_los_mas_viejos_primero(
+def test_limit_toma_los_mas_nuevos_primero(
     session: Session, catalogo, tmp_path: Path
 ) -> None:
     _ingesta(session, texto="arroz tercero", minutos=30)
@@ -343,7 +343,8 @@ def test_limit_toma_los_mas_viejos_primero(
 
     textos = cliente.textos()
     assert len(textos) == 2
-    assert "arroz primero" in textos[0]
+    # Lo de hoy no espera detrás del histórico (2026-10-13).
+    assert "arroz tercero" in textos[0]
     assert "arroz segundo" in textos[1]
 
 
@@ -1168,7 +1169,13 @@ def test_execute_vence_el_pendiente_viejo_antes_de_pre_calcular(
     viejo.created_at = datetime.now(UTC) - timedelta(days=9)
     session.commit()
 
-    codigo, salida = _correr(session, tmp_path, ["--execute"], cliente=ClienteFalso())
+    codigo, salida = _correr(
+        session,
+        tmp_path,
+        ["--execute"],
+        cliente=ClienteFalso(),
+        ajustes=_ajustes(tmp_path, queue_max_age_days=7),
+    )
 
     assert codigo == 0
     session.refresh(viejo)
@@ -1183,7 +1190,49 @@ def test_dry_run_no_vence_nada(session: Session, catalogo, tmp_path: Path) -> No
     viejo.created_at = datetime.now(UTC) - timedelta(days=9)
     session.commit()
 
-    _correr(session, tmp_path, [])
+    _correr(session, tmp_path, [], ajustes=_ajustes(tmp_path, queue_max_age_days=7))
 
     session.refresh(viejo)
     assert viejo.processing_status == ProcessingStatus.PENDING
+
+
+def test_por_defecto_el_tope_de_edad_esta_apagado_y_no_vence_nada(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    viejo = _ingesta(session, texto="arroz 100")
+    viejo.created_at = datetime.now(UTC) - timedelta(days=60)
+    session.commit()
+
+    _, salida = _correr(session, tmp_path, ["--execute"], cliente=ClienteFalso())
+
+    session.refresh(viejo)
+    assert viejo.processing_status != ProcessingStatus.DISCARDED
+    assert "Vencidos por edad" not in salida
+
+
+# --- lo más nuevo primero (2026-10-13) ----------------------------------------------
+
+
+def test_los_candidatos_salen_del_mas_nuevo_al_mas_viejo(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    """El operador publica con lo de las últimas 24 h: con un tope de gasto por
+    corrida, lo de hoy no puede esperar detrás del histórico."""
+    viejo = _ingesta(session, texto="arroz 100", minutos=0)
+    medio = _ingesta(session, texto="arroz 200", minutos=10)
+    nuevo = _ingesta(session, texto="arroz 300", minutos=20)
+
+    candidatos = prefill.select_candidates(session, [catalogo.arroz])
+
+    assert [c.id for c in candidatos] == [nuevo.id, medio.id, viejo.id]
+
+
+def test_con_limite_se_procesa_primero_lo_mas_nuevo(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz 100", minutos=0)
+    nuevo = _ingesta(session, texto="arroz 300", minutos=20)
+
+    (primero,) = prefill.select_candidates(session, [catalogo.arroz], 1)
+
+    assert primero.id == nuevo.id

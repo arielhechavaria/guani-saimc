@@ -189,8 +189,9 @@ class Settings(BaseSettings):
     # Un bot solo SALE hacia Telegram; no recibe ni captura nada (decisión
     # cerrada 2). El estado guarda qué ya se avisó para no repetirlo.
     # Días que un anuncio puede esperar en la cola antes de vencer solo
-    # (`saimc.queue_expiry`). 0 = sin tope. Lo fijó el operador (2026-10-13).
-    queue_max_age_days: int = 7
+    # (`saimc.queue_expiry`). 0 = sin tope, que es el valor por defecto: un anuncio
+    # viejo es histórico y no se descarta solo (2026-10-13, ver `docs/decisions.md`).
+    queue_max_age_days: int = 0
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     alerts_state_path: Path = Path("data/alerts-state.json")
