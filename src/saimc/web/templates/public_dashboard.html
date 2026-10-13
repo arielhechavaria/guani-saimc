@@ -468,6 +468,48 @@
   .ph-dash-action-wide .m3-icon { color: var(--m3-primary); }
   .ph-datos-nota { margin: -4px 0 0; font-size: 12.5px; color: var(--m3-on-surface-variant); }
   .ph-datos-nota a { color: var(--m3-primary); }
+
+  /* ── PRUEBA DE ESTILO «HashiCorp» (2026-10-13, solo /precios en vista tablero) ─
+     Solo repinta: ni el HTML ni la disposición cambian. Ignora el toggle de tema
+     (fuerza oscuro). Para quitarla, borrar este bloque entero hasta el cierre del
+     `</style>`. Referencia: negro #000, carbón #15181e/#1f232b, bordes #3b3d45,
+     identidad de color por provincia (violeta, cian, amarillo). Sin verde/rojo. */
+  :root, :root[data-theme="light"], :root[data-theme="dark"] {
+    --m3-bg: #000; --m3-surface: #15181e; --m3-surface-container: #1f232b; --m3-surface-container-high: #252830;
+    --m3-surface-hover: #1f232b; --m3-surface-variant: #252830; --m3-divider: #252830;
+    --m3-on-surface: #fff; --m3-on-surface-variant: #b2b6bd; --m3-outline: #929aa5; --m3-outline-variant: #3b3d45;
+    --m3-primary: #14c6cb; --m3-primary-hover: #12b6bb; --m3-on-primary: #000;
+    --m3-primary-container: #08494c; --m3-on-primary-container: #d6f7f8;
+    --ph-accent: #14c6cb; --ph-on-accent: #000; --ph-accent-wash: rgba(20, 198, 203, .14);
+    --ph-accent-2: #14c6cb; --ph-accent-2-line: #12b6bb; --ph-median: #ffcf25;
+    --ph-price-low: #12303a; --ph-price-high: #14c6cb;
+    --m3-prov-0: #b25cff; --m3-prov-0-soft: #2a1550; --m3-prov-0-wash: #1a1030;
+    --m3-prov-1: #14c6cb; --m3-prov-1-soft: #08494c; --m3-prov-1-wash: #0a2a2c;
+    --m3-prov-2: #ffcf25; --m3-prov-2-soft: #4a3b00; --m3-prov-2-wash: #261f08;
+    --m3-prov-9: #929aa5; --m3-prov-9-soft: #252830; --m3-prov-9-wash: #1a1d23;
+    --ph-font-heading: Roboto, "Helvetica Neue", Arial, sans-serif;
+    --ph-elev: none;
+  }
+  html, body { background: #000; }
+  body::before { content: ""; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    background: radial-gradient(60% 45% at 85% -5%, rgba(145, 28, 237, .32), transparent 70%),
+                radial-gradient(50% 40% at 10% 8%, rgba(20, 198, 203, .2), transparent 70%),
+                radial-gradient(45% 35% at 60% 100%, rgba(255, 207, 37, .1), transparent 70%), #000; }
+  body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background-image: linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(70% 60% at 50% 0%, #000 20%, transparent 75%);
+            mask-image: radial-gradient(70% 60% at 50% 0%, #000 20%, transparent 75%); }
+  .ph-top { background: rgba(0, 0, 0, .55); backdrop-filter: blur(10px); border-bottom-color: #252830; }
+  .ph-panel { background: rgba(21, 24, 30, .75); backdrop-filter: blur(6px); border-color: #252830; border-radius: 12px; }
+  .ph-fresh { background: rgba(21, 24, 30, .75); border-color: #252830; }
+  .ph-h1 { font-weight: 700; letter-spacing: -1.6px; line-height: 1.1; }
+  .ph-panel-title { font-weight: 700; letter-spacing: -.4px; font-size: 22px; }
+  .ph-eyebrow { letter-spacing: .6px; }
+  .ph-vista-toggle a.is-selected { background: #fff; color: #000; box-shadow: none; }
+  .ph-top-csv { color: #fff; }
+  .ph-wordmark { font-weight: 700; letter-spacing: -.4px; }
 </style>
 {% endblock %}
 
