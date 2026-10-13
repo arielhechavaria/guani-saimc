@@ -1,0 +1,16 @@
+[Unit]
+Description=Avisos de SAIMC al celular por Telegram
+After=postgresql.service network-online.target
+
+[Service]
+# oneshot: lee el estado, manda lo que haga falta y termina. Sin cola ni
+# servicio permanente (decision cerrada 3).
+Type=oneshot
+User=ariel
+WorkingDirectory=/home/ariel/guani/guani-saimc
+
+# El .env (token del bot, chat, interruptores) lo lee la aplicacion desde
+# WorkingDirectory. Codigo 2 = faltan SAIMC_TELEGRAM_BOT_TOKEN/CHAT_ID;
+# codigo 1 = Telegram no acepto el mensaje (se reintenta en la proxima).
+ExecStart=/home/ariel/guani/guani-saimc/.venv/bin/python -m saimc.alerting --execute
+TimeoutStartSec=2min

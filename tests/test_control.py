@@ -32,6 +32,7 @@ from saimc.models import (
     SaleFormat,
 )
 from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
+from saimc.web import strip_loader
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
@@ -1692,7 +1693,7 @@ class TestFranjaDeEstado:
         se veía solo al correr la suite desde el checkout.
         """
         monkeypatch.setattr(
-            control,
+            strip_loader,
             "session_health",
             lambda **kw: SessionHealth(configured=False, status="unknown"),
         )
@@ -1705,7 +1706,7 @@ class TestFranjaDeEstado:
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            control,
+            strip_loader,
             "session_health",
             lambda **kw: SessionHealth(configured=True, status="failed"),
         )
@@ -1718,7 +1719,7 @@ class TestFranjaDeEstado:
     def test_la_franja_enlaza_al_detalle(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         """Un semáforo sin salida obliga a buscar la sección a mano."""
         monkeypatch.setattr(
-            control,
+            strip_loader,
             "session_health",
             lambda **kw: SessionHealth(configured=True, status="working"),
         )
@@ -1735,7 +1736,7 @@ class TestFranjaDeEstado:
         """WAHA apagado es el caso normal, no un error: la vista tiene que
         cargar igual y decirlo."""
         monkeypatch.setattr(
-            control,
+            strip_loader,
             "session_health",
             lambda **kw: SessionHealth(configured=True, status="unreachable"),
         )
@@ -2194,7 +2195,7 @@ class TestJevEnSombra:
         monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "clave-falsa-de-jev-123")
         monkeypatch.setenv("SAIMC_PREFILL_STATUS_PATH", str(ruta))
         monkeypatch.setattr(
-            control, "session_health", lambda **kw: SessionHealth(configured=False, status="unknown")
+            strip_loader, "session_health", lambda **kw: SessionHealth(configured=False, status="unknown")
         )
         get_settings.cache_clear()
         yield ruta

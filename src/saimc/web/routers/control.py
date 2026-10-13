@@ -50,13 +50,9 @@ from saimc.cells import (
     detect_basis_suspects,
 )
 from saimc.config import Settings, get_settings
-from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
-from saimc.extraction.llm_assist import consumption_summary
+from saimc.exchange_rate.status import compute_applied_rates
 from saimc.extraction.measure import read_h0_runs
-from saimc.extraction.prefill_status import PrefillRun, read_run_status
-from saimc.ingestion.channel_gaps import load_channel_gap_report
-from saimc.ingestion.whatsapp_health import session_health
-from saimc.llm.provider import try_resolve_config
+from saimc.extraction.prefill_status import PrefillRun
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
@@ -65,7 +61,6 @@ from saimc.progress import (
     compute_channel_intake,
     compute_coverage,
     compute_daily_activity,
-    compute_intake_health,
     compute_open_gaps,
     compute_pace,
     compute_phase0_progress,
@@ -79,10 +74,11 @@ from saimc.validation.control_cells import compute_cell_controls
 from saimc.web import control_nav
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
-from saimc.web.health_strip import build_strip, worst_level
+from saimc.web.health_strip import worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
 from saimc.web.product_nav import DEFAULT_WINDOW_DAYS
 from saimc.web.rubber_stamp_metrics import rubber_stamp_alert
+from saimc.web.strip_loader import load_strip
 
 router = APIRouter(dependencies=[Depends(require_operator)])
 
@@ -252,32 +248,13 @@ def _shell_context(request: Request, db: Session, page_key: str) -> dict[str, ob
     mismo VPS y el timeout es corto. Si no contesta, eso ES el dato (hueco N-02).
     """
     settings = get_settings()
-    waha = session_health(
-        base_url=settings.waha_base_url,
-        api_key=settings.waha_api_key,
-        session=settings.waha_session,
-    )
-    ultima_captura = db.execute(select(func.max(RawIngestion.captured_at))).scalar_one()
-
-    intake = compute_intake_health(db)
-    rate_statuses = compute_rate_status(db)
-    assist = consumption_summary(settings.llm_assist_log_path)
+    snapshot = load_strip(db, settings)
+    intake, strip = snapshot.intake, snapshot.strip
+    rate_statuses, prefill_run = snapshot.rate_statuses, snapshot.prefill_run
+    assist = snapshot.assist
     # Vigilancia del rubber-stamping (slice 5): semana actual vs. anterior de
     # `llm_reviews`. Puramente aditivo sobre la base — no golpea la API.
     rubber_stamp = rubber_stamp_alert(db)
-    prefill_run = read_run_status(settings.prefill_status_path)
-    strip = build_strip(
-        waha=waha,
-        last_capture=ultima_captura,
-        health=intake,
-        rate_statuses=rate_statuses,
-        assist=assist,
-        # Con cualquiera de los proveedores, no solo con la clave de Anthropic.
-        assist_configured=try_resolve_config(settings) is not None,
-        prefill_run=prefill_run,
-        channel_gaps=load_channel_gap_report(db),
-        jev_active=jev_signal.is_active(settings),
-    )
 
     curated = db.execute(
         select(func.count())

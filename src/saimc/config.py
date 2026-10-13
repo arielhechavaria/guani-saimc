@@ -184,6 +184,13 @@ class Settings(BaseSettings):
     # Apagado, el pre-cálculo es el de siempre. Lo aceptado se audita en
     # `/curation/auditoria` y el freno se pone solo (`validation.lane1`).
     lane1_enabled: bool = False
+    # Avisos al celular (`saimc.alerting`). Sin las dos primeras el comando
+    # avisa por consola y sale: no es una falla, es una capacidad sin usar.
+    # Un bot solo SALE hacia Telegram; no recibe ni captura nada (decisión
+    # cerrada 2). El estado guarda qué ya se avisó para no repetirlo.
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+    alerts_state_path: Path = Path("data/alerts-state.json")
     # Desde qué día cuenta lo auditado para la cota del carril 1 (B2b-3). Es
     # la forma de volver a encenderlo después de que el freno lo apagó por
     # error auditado: el operador fija la fecha y la cota arranca de nuevo.

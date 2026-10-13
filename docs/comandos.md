@@ -23,6 +23,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra el conjunto de referencia congelado | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
 | [`saimc.extraction.reference_set`](#conjunto-de-referencia-en-seco-y-estado) | Qué anuncios entrarían al conjunto de referencia de H0; con `status`, la versión vigente y su deriva | no (en seco y `status`) | no |
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
+| [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
 | [`saimc.extraction.prefill` en seco](#pre-cálculo-en-seco) | Estimar el costo del pre-cálculo | no | no |
@@ -256,6 +257,27 @@ sección 1): los curados con filas, sin asistencia y que no se excluyan a mano.
   la línea de `docs/shadow-runs.jsonl` suma la clave `jev`.
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Una vez por semana»; el bloque
   «Jev», en [spec-slice-A6b.md](spec-slice-A6b.md), punto 8.
+
+### Avisos al celular (Telegram)
+
+El sistema le escribe al operador cuando algo lo necesita: una tarjeta de la franja de `/control`
+en ámbar o rojo (WAHA caído, ingesta parada, tasa vieja, pre-cálculo sin correr), o el carril 1
+frenado. Una vez al día (~09:00 de La Habana) manda un parte: si no llega, lo roto es el aviso.
+Un problema se avisa una vez, se recuerda a las 24 h, avisa si empeora y avisa cuando se resuelve.
+
+```
+.venv/bin/python -m saimc.alerting            # en seco: muestra qué mandaría
+.venv/bin/python -m saimc.alerting --execute  # manda y guarda el estado
+```
+
+- **Cambia algo**: solo con `--execute` (escribe `data/alerts-state.json`). **Gasta**: no.
+- **Puesta en marcha (una vez):** 1) en Telegram, hablar con `@BotFather`, `/newbot`, copiar el
+  token; 2) escribirle cualquier mensaje al bot nuevo; 3) abrir
+  `https://api.telegram.org/bot<TOKEN>/getUpdates` y copiar `chat.id`; 4) en el `.env`:
+  `SAIMC_TELEGRAM_BOT_TOKEN=...` y `SAIMC_TELEGRAM_CHAT_ID=...`; 5) probar con `--execute`;
+  6) `sudo cp systemd/saimc-alerts.* /etc/systemd/system/ && sudo systemctl daemon-reload &&
+  sudo systemctl enable --now saimc-alerts.timer`.
+- Sin token o chat, `--execute` avisa por consola y sale con código 2.
 
 ### Carril 1 en seco
 

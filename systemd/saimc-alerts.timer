@@ -1,0 +1,10 @@
+[Unit]
+Description=Revisa cada 15 minutos si SAIMC necesita avisarle al operador
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
