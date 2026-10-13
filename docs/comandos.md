@@ -688,10 +688,10 @@ deja el anuncio curado y las filas salen en el tablero.
   escribir.
 - Con el interruptor encendido, el pre-cálculo hace lo mismo solo con cada propuesta nueva.
 - **El freno.** Si está puesto, el comando lo dice («Carril 1 con el freno puesto: …») y no
-  acepta nada. Se pone solo cuando hay 30 aceptados sin auditar y todavía no se llegó a 60
-  auditados, o cuando el error auditado supera la meta de 10 %. Lo primero se levanta
-  auditando en `/curation/auditoria`. Lo segundo solo lo levanta el operador, fijando
+  acepta nada. Desde el 2026-10-13 se pone solo cuando el error auditado supera la meta de 10 %
+  (ya no hay tope de aceptados sin auditar). Solo lo levanta el operador, fijando
   `SAIMC_LANE1_AUDIT_SINCE=AAAA-MM-DD` en el `.env`: la cota vuelve a contar desde ese día.
+  Sin auditar nada el freno nunca salta: el error solo se mide si se audita, aunque sea una muestra.
 
 ### Congelar el conjunto de referencia
 

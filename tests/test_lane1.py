@@ -10,6 +10,7 @@ El modelo y la tasa de cambio son dobles: ningún test toca la red.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
@@ -104,6 +105,23 @@ def _tasa_400(key: str, day: date) -> Decimal | None:
 
 
 @pytest.fixture
+def tope_de_una_fila(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El tope de filas como lo fijó B2b (1), para probar el mecanismo del tope.
+
+    El valor vigente es 4 (2026-10-13); estos tests ejercen que un tope puesto
+    se respete, sea cual sea el número.
+    """
+    monkeypatch.setattr(lane1, "CONFIG", dataclasses.replace(lane1.CONFIG, lane1_max_rows=1))
+
+
+@pytest.fixture
+def tope_de_30_sin_auditar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El tope de aceptados sin auditar como lo fijó G1b (30). Hoy no hay tope
+    (`None`); el mecanismo sigue en el código y estos tests lo ejercen."""
+    monkeypatch.setattr(lane1, "MAX_UNAUDITED", 30)
+
+
+@pytest.fixture
 def mundo(session: Session) -> SimpleNamespace:
     arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
     lh = Province(code="LH", name="La Habana")
@@ -179,18 +197,12 @@ def _precalcular(
 
 
 def _filas(session: Session, ingesta: RawIngestion) -> list[PriceHistory]:
-    return list(
-        session.execute(
-            select(PriceHistory).where(PriceHistory.source_id == ingesta.id)
-        ).scalars()
-    )
+    return list(session.execute(select(PriceHistory).where(PriceHistory.source_id == ingesta.id)).scalars())
 
 
 def _eventos(session: Session, ingesta: RawIngestion) -> list[CurationEvent]:
     return list(
-        session.execute(
-            select(CurationEvent).where(CurationEvent.ingestion_id == ingesta.id)
-        ).scalars()
+        session.execute(select(CurationEvent).where(CurationEvent.ingestion_id == ingesta.id)).scalars()
     )
 
 
@@ -205,7 +217,7 @@ def _sigue_pendiente_sin_filas(session: Session, ingesta: RawIngestion) -> None:
 
 
 def test_los_parametros_son_los_que_aprobo_el_operador() -> None:
-    assert lane1.CONFIG.lane1_max_rows == 1
+    assert lane1.CONFIG.lane1_max_rows == 4
     assert lane1.CONFIG.channel_min_history == 3
     assert lane1.CONFIG.channel_max_edit_rate == 0.5
     assert lane1.CONFIG.min_cell_n == 5
@@ -235,9 +247,7 @@ def test_un_anuncio_del_carril_1_queda_curado_con_su_fila_automatica(
 ) -> None:
     ingesta = _anuncio(session, mundo.canal)
 
-    salida = _precalcular(
-        session, tmp_path, ClienteFalso(_propone(_fila())), lane1_enabled=True
-    )
+    salida = _precalcular(session, tmp_path, ClienteFalso(_propone(_fila())), lane1_enabled=True)
 
     session.refresh(ingesta)
     assert ingesta.processing_status == ProcessingStatus.CURATED
@@ -270,13 +280,11 @@ def test_un_anuncio_del_carril_1_queda_curado_con_su_fila_automatica(
 
 
 def test_dos_filas_superan_el_tope_y_el_anuncio_sigue_pendiente(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path
+    tope_de_una_fila: None, session: Session, mundo: SimpleNamespace, tmp_path: Path
 ) -> None:
     texto = "Arroz a 320 la libra\nArroz a 300 la libra por saco"
     ingesta = _anuncio(session, mundo.canal, texto)
-    cuerpo = _propone(
-        _fila(), _fila(price=300, evidence="Arroz a 300 la libra por saco")
-    )
+    cuerpo = _propone(_fila(), _fila(price=300, evidence="Arroz a 300 la libra por saco"))
 
     _precalcular(session, tmp_path, ClienteFalso(cuerpo), lane1_enabled=True)
 
@@ -371,18 +379,37 @@ def client(session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
         (
             "Arroz a 320 la libra",
             _fila(),
-            {"price_0": "320", "currency_0": "CUP", "quantity_0": "1", "unit_0": "lb",
-             "price_basis_0": "unit", "sale_format_0": "retail", "packaging_0": ""},
+            {
+                "price_0": "320",
+                "currency_0": "CUP",
+                "quantity_0": "1",
+                "unit_0": "lb",
+                "price_basis_0": "unit",
+                "sale_format_0": "retail",
+                "packaging_0": "",
+            },
         ),
         (
             "Arroz 25 USD el saco de 50 lb",
             _fila(
-                price=25, currency="USD", quantity=50, unit="lb", price_basis="total",
-                packaging="saco", evidence="Arroz 25 USD el saco de 50 lb",
+                price=25,
+                currency="USD",
+                quantity=50,
+                unit="lb",
+                price_basis="total",
+                packaging="saco",
+                evidence="Arroz 25 USD el saco de 50 lb",
                 currency_explicit=True,
             ),
-            {"price_0": "25", "currency_0": "USD", "quantity_0": "50", "unit_0": "lb",
-             "price_basis_0": "total", "sale_format_0": "retail", "packaging_0": "saco"},
+            {
+                "price_0": "25",
+                "currency_0": "USD",
+                "quantity_0": "50",
+                "unit_0": "lb",
+                "price_basis_0": "total",
+                "sale_format_0": "retail",
+                "packaging_0": "saco",
+            },
         ),
     ],
     ids=["cup_por_libra", "usd_saco_con_formato"],
@@ -443,13 +470,17 @@ def test_caso_13_fila_en_usd_sin_tasa_resoluble_deja_el_anuncio_pendiente(
     texto = "Arroz 25 USD el saco de 50 lb"
     ingesta = _anuncio(session, mundo.canal, texto)
     fila = _fila(
-        price=25, currency="USD", quantity=50, unit="lb", price_basis="total",
-        packaging="saco", evidence=texto, currency_explicit=True,
+        price=25,
+        currency="USD",
+        quantity=50,
+        unit="lb",
+        price_basis="total",
+        packaging="saco",
+        evidence=texto,
+        currency_explicit=True,
     )
 
-    salida = _precalcular(
-        session, tmp_path, ClienteFalso(_propone(fila)), tasa=_sin_tasa, lane1_enabled=True
-    )
+    salida = _precalcular(session, tmp_path, ClienteFalso(_propone(fila)), tasa=_sin_tasa, lane1_enabled=True)
 
     _sigue_pendiente_sin_filas(session, ingesta)
     assert session.execute(select(LlmReview)).scalars().all() == []
@@ -462,13 +493,17 @@ def test_fila_en_usd_con_tasa_se_guarda_convertida(
     texto = "Arroz 25 USD el saco de 50 lb"
     ingesta = _anuncio(session, mundo.canal, texto)
     fila = _fila(
-        price=25, currency="USD", quantity=50, unit="lb", price_basis="total",
-        packaging="saco", evidence=texto, currency_explicit=True,
+        price=25,
+        currency="USD",
+        quantity=50,
+        unit="lb",
+        price_basis="total",
+        packaging="saco",
+        evidence=texto,
+        currency_explicit=True,
     )
 
-    _precalcular(
-        session, tmp_path, ClienteFalso(_propone(fila)), tasa=_tasa_400, lane1_enabled=True
-    )
+    _precalcular(session, tmp_path, ClienteFalso(_propone(fila)), tasa=_tasa_400, lane1_enabled=True)
 
     (guardada,) = _filas(session, ingesta)
     assert guardada.price_cup == Decimal("10000.00")  # 25 USD a 400
@@ -496,9 +531,7 @@ def test_una_fecha_por_defecto_que_el_formulario_rechazaria_sigue_pendiente(
     # posterior al día de La Habana: si algún día vuelve a pasar, el carril no
     # guarda una fecha que el formulario le haría corregir al operador.
     ingesta = _anuncio(session, mundo.canal)
-    monkeypatch.setattr(
-        curation_rows, "default_published_date", lambda ingestion, text: date(2026, 9, 2)
-    )
+    monkeypatch.setattr(curation_rows, "default_published_date", lambda ingestion, text: date(2026, 9, 2))
 
     _precalcular(session, tmp_path, ClienteFalso(_propone(_fila())), lane1_enabled=True)
 
@@ -596,9 +629,7 @@ def test_el_comando_no_toca_imagenes_ni_anuncios_sin_propuesta(
     _sigue_pendiente_sin_filas(session, sin_propuesta)
 
 
-def test_el_limite_corta_cuantos_se_miran(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path
-) -> None:
+def test_el_limite_corta_cuantos_se_miran(session: Session, mundo: SimpleNamespace, tmp_path: Path) -> None:
     _anuncio(session, mundo.canal)
     _anuncio(session, mundo.otro, minutos=1)
     _precalcular(session, tmp_path, ClienteFalso(_propone(_fila())))
@@ -606,7 +637,6 @@ def test_el_limite_corta_cuantos_se_miran(
     _, salida = _comando(session, tmp_path, "--limit", "1")
 
     assert "de 1" in salida
-
 
 
 # =============================================================================
@@ -653,7 +683,18 @@ def _editar(client: TestClient, ingesta: RawIngestion, fila: PriceHistory, **cam
 def test_las_metas_de_la_auditoria_son_las_que_aprobo_el_operador() -> None:
     assert lane1.ERROR_TARGET == 0.10
     assert lane1.AUDIT_N0 == 60
-    assert lane1.MAX_UNAUDITED == 30
+    # Sin tope de aceptados sin auditar (2026-10-13): el carril no espera al
+    # operador; el único freno es el error medido.
+    assert lane1.MAX_UNAUDITED is None
+
+
+def test_muchos_aceptados_sin_auditar_no_frenan_el_carril() -> None:
+    assert not lane1.brake_for(audited=0, errors=0, unaudited=5000).on
+
+
+def test_el_error_sigue_frenando_aunque_no_haya_tope_de_sin_auditar() -> None:
+    # 8 errores en 10 auditados: la cota inferior supera la meta de 10 %.
+    assert lane1.brake_for(audited=10, errors=8, unaudited=500).on
 
 
 def test_caso_16_esta_bien_deja_las_filas_auditadas_y_no_suma_error(
@@ -747,7 +788,7 @@ def test_editar_un_anuncio_curado_a_mano_no_es_una_auditoria(
 
 
 def test_caso_19_con_30_sin_auditar_el_siguiente_queda_pendiente(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path
+    tope_de_30_sin_auditar: None, session: Session, mundo: SimpleNamespace, tmp_path: Path
 ) -> None:
     ingestas = _aceptar(session, tmp_path, mundo.canal, n=31)
 
@@ -760,7 +801,7 @@ def test_caso_19_con_30_sin_auditar_el_siguiente_queda_pendiente(
 
 
 def test_auditar_levanta_el_freno_de_los_sin_auditar(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path
+    tope_de_30_sin_auditar: None, session: Session, mundo: SimpleNamespace, tmp_path: Path
 ) -> None:
     ingestas = _aceptar(session, tmp_path, mundo.canal, n=30)
     assert lane1.brake(session, _ajustes(tmp_path)).on is True
@@ -783,9 +824,7 @@ def test_auditar_levanta_el_freno_de_los_sin_auditar(
         (150, 3, False),  # cota superior 5,1 %
     ],
 )
-def test_casos_20_y_21_el_freno_por_error_auditado(
-    auditados: int, errores: int, puesto: bool
-) -> None:
+def test_casos_20_y_21_el_freno_por_error_auditado(auditados: int, errores: int, puesto: bool) -> None:
     freno = lane1.brake_for(audited=auditados, errors=errores, unaudited=0)
 
     assert freno.on is puesto
@@ -836,7 +875,7 @@ def test_caso_23_una_celda_divergente_deja_pendiente_solo_a_ese_anuncio(
 
 
 def test_el_precalculo_dice_por_que_esta_puesto_el_freno(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path
+    tope_de_30_sin_auditar: None, session: Session, mundo: SimpleNamespace, tmp_path: Path
 ) -> None:
     _aceptar(session, tmp_path, mundo.canal, n=30)
     _anuncio(session, mundo.otro, minutos=999)
@@ -848,7 +887,7 @@ def test_el_precalculo_dice_por_que_esta_puesto_el_freno(
 
 
 def test_el_comando_con_execute_respeta_el_freno(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path
+    tope_de_30_sin_auditar: None, session: Session, mundo: SimpleNamespace, tmp_path: Path
 ) -> None:
     _aceptar(session, tmp_path, mundo.canal, n=30)
     pendiente = _con_propuesta(session, tmp_path, mundo.otro)
@@ -901,7 +940,7 @@ def test_los_botones_de_la_auditoria_escriben_la_respuesta(
 
 
 def test_la_pantalla_avisa_cuando_el_freno_esta_puesto(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+    tope_de_30_sin_auditar: None, session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
 ) -> None:
     _aceptar(session, tmp_path, mundo.canal, n=30)
 
@@ -968,7 +1007,7 @@ def test_control_muestra_el_carril_1_con_su_procedencia_y_su_error(
 
 
 def test_control_marca_el_freno_con_su_motivo(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+    tope_de_30_sin_auditar: None, session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
 ) -> None:
     _aceptar(session, tmp_path, mundo.canal, n=30)
 
@@ -989,9 +1028,7 @@ def _arranque_terminado(session: Session, tmp_path: Path, mundo: SimpleNamespace
     """Un anuncio de un tercer canal, aceptado y auditado: con `AUDIT_N0` en 1
     eso termina el arranque. Va después de aceptar los demás: con un solo
     auditado la cota superior ya pasa la meta y el freno no dejaría entrar nada."""
-    tercero = Channel(
-        name="Tercer Mercado", platform=Platform.WHATSAPP_GROUP, province_id=mundo.lh.id
-    )
+    tercero = Channel(name="Tercer Mercado", platform=Platform.WHATSAPP_GROUP, province_id=mundo.lh.id)
     session.add(tercero)
     session.commit()
     (primero,) = _aceptar(session, tmp_path, tercero)
@@ -1108,9 +1145,9 @@ def _fecha_posterior_al_anuncio_fecha(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         curation_rows,
         "default_published_date",
-        lambda ingestion, text: date(2026, 9, 2)
-        if text == "Arroz a 370 la libra"
-        else fecha_normal(ingestion, text),
+        lambda ingestion, text: (
+            date(2026, 9, 2) if text == "Arroz a 370 la libra" else fecha_normal(ingestion, text)
+        ),
     )
 
 
@@ -1127,7 +1164,11 @@ def test_contar_motivos_separa_cada_motivo_del_que_frena_solo() -> None:
 
 
 def test_el_comando_en_seco_desglosa_por_que_se_queda_afuera_cada_anuncio(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tope_de_una_fila: None,
+    session: Session,
+    mundo: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _cinco_anuncios(session, tmp_path, mundo.canal)
     _fecha_posterior_al_anuncio_fecha(monkeypatch)
@@ -1175,7 +1216,11 @@ def test_con_todo_aceptado_el_desglose_no_inventa_motivos(
 
 
 def test_execute_no_imprime_el_desglose(
-    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tope_de_una_fila: None,
+    session: Session,
+    mundo: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _cinco_anuncios(session, tmp_path, mundo.canal)
     _fecha_posterior_al_anuncio_fecha(monkeypatch)
@@ -1184,3 +1229,20 @@ def test_execute_no_imprime_el_desglose(
 
     assert "Quedan afuera" not in salida
     assert "Aceptados solos (carril 1): 1 de 5" in salida
+
+
+def test_con_el_tope_vigente_dos_filas_entran_y_cinco_no(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    dos = _anuncio(session, mundo.canal, "Arroz a 320 la libra\nArroz a 300 la libra por saco")
+    cinco = _anuncio(session, mundo.canal, "Pollo a 1 la libra\nPollo a 2\nPollo a 3\nPollo a 4\nPollo a 5")
+    por_texto = {
+        "Arroz a 320 la libra": _propone(_fila(), _fila(price=300, evidence="Arroz a 300 la libra por saco")),
+        "Pollo a 1 la libra": _propone(*(_fila(price=100 + n, evidence=f"Pollo a {n}") for n in range(1, 6))),
+    }
+
+    _precalcular(session, tmp_path, ClienteFalso(_propone(_fila()), por_texto), lane1_enabled=True)
+
+    session.refresh(dos)
+    assert dos.processing_status == ProcessingStatus.CURATED
+    _sigue_pendiente_sin_filas(session, cinco)

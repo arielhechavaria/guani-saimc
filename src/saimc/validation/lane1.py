@@ -94,14 +94,15 @@ from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, Validat
 #: - celda de 5 referencias, la misma con que se persiste la validación (B1);
 #: - un canal puede salir «sucio» desde 3 decisiones individuales, y lo es si
 #:   el operador tocó más de la mitad de las filas propuestas;
-#: - tope de 1 fila por anuncio;
+#: - tope de 4 filas por anuncio (era 1; subió el 2026-10-13, ver
+#:   `docs/decisions.md`);
 #: - las señales externas no entran (Jev no separa): sin umbral.
 CONFIG = ValidationConfig(
     min_cell_n=persist.MIN_CELL_N,
     channel_min_history=3,
     channel_max_edit_rate=0.5,
     signal_high_probability=None,
-    lane1_max_rows=1,
+    lane1_max_rows=4,
 )
 
 TEXT = ContentType.TEXT.value
@@ -112,9 +113,11 @@ ERROR_TARGET = 0.10
 #: Anuncios auditados para dejar el arranque. Hasta ahí se audita todo y el
 #: freno solo salta con evidencia (cota inferior); desde ahí rige la superior.
 AUDIT_N0 = 60
-#: Cuántos aceptados sin auditar se toleran durante el arranque. Es lo que
-#: hace cumplir la auditoría total: el carril espera al operador.
-MAX_UNAUDITED = 30
+#: Cuántos aceptados sin auditar se toleran durante el arranque. `None` = sin
+#: tope: el carril no espera al operador, y el único freno es el error medido.
+#: Era 30 (hacía cumplir la auditoría total); se quitó el 2026-10-13 por
+#: decisión del operador para que el flujo corra solo (ver `docs/decisions.md`).
+MAX_UNAUDITED: int | None = None
 #: Terminado el arranque, cuántos anuncios por semana cerrada entran en la
 #: muestra de auditoría, repartidos entre los canales.
 WEEKLY_SAMPLE = 30
@@ -711,7 +714,7 @@ def brake_for(*, audited: int, errors: int, unaudited: int) -> Brake:
     3. Desde `AUDIT_N0`, además, la cota SUPERIOR supera la meta.
     """
     state = AuditState(audited=audited, errors=errors, unaudited=unaudited)
-    if state.starting and unaudited >= MAX_UNAUDITED:
+    if state.starting and MAX_UNAUDITED is not None and unaudited >= MAX_UNAUDITED:
         return Brake(
             True,
             f"hay {unaudited} aceptados sin auditar (tope {MAX_UNAUDITED}) y todavía "
