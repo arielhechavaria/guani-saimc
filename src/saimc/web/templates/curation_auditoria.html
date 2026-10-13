@@ -124,7 +124,7 @@
         <span class="m3-muted">Auditados</span>
         <span class="b2-bound-value">{{ s.audited }} de {{ lane1.n0 }}</span>
         <span class="m3-muted">
-          {% if s.starting %}Hasta llegar a {{ lane1.n0 }} se audita todo; con {{ lane1.max_unaudited }} sin auditar el carril espera.
+          {% if s.starting %}Hasta llegar a {{ lane1.n0 }} se audita todo.{% if lane1.max_unaudited %} Con {{ lane1.max_unaudited }} sin auditar el carril espera.{% endif %}
           {% else %}Arranque terminado.{% endif %}
           {% if s.since %}Cuenta desde el {{ s.since }}.{% endif %}
         </span>
