@@ -171,6 +171,11 @@ _DUAL_PRICE_TWO_CURRENCIES_RE = re.compile(
 _UNIT_WORDS = (
     "lb",
     "kg",
+    "gramos",
+    "gramo",
+    "grs",
+    "gr",
+    "g",
     "cajas",
     "caja",
     "docena",
@@ -181,12 +186,12 @@ _UNIT_WORDS = (
     "unidad",
 )
 
-# Magnitudes que el mercado escribe pero `units.UNITS` no almacena ("500 g",
-# "12 u", "250 cc"). NO entran en `_QUANTITY_RE` por el motivo de arriba, pero
+# Magnitudes que el mercado escribe pero `units.UNITS` no almacena ("12 u",
+# "250 cc"). El gramo dejó de estar acá el 2026-10-13: es canónico. NO entran en `_QUANTITY_RE` por el motivo de arriba, pero
 # sí tienen que impedir que su número se lea como precio: ése es el otro rol
 # que la tupla única cumplía sin decirlo, y confundirlos es lo que hacía que
 # "Vinagre 500 ml ➔ 220" propusiera 500.
-_NON_CANONICAL_MAGNITUDE_WORDS = ("gr", "g", "oz", "cc", "lt", "unidades", "uds", "u")
+_NON_CANONICAL_MAGNITUDE_WORDS = ("oz", "cc", "lt", "unidades", "uds", "u")
 
 
 def _alternation(words: Sequence[str]) -> str:

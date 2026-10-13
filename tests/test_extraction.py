@@ -25,6 +25,7 @@ from saimc.extraction.engine import (
     propose_all,
 )
 from saimc.models import Product, Province
+from saimc.units import canonical_unit
 
 
 @pytest.fixture
@@ -436,6 +437,36 @@ class TestMonedaPegadaAlNumero:
         assert propuesta.currency == "USD"
 
 
+class TestCantidadEnGramos:
+    """El extractor devuelve la palabra tal como el anuncio la escribe; la
+    unidad canónica la resuelve `canonical_unit()` en la curaduría."""
+
+    @pytest.mark.parametrize("palabra", ["gr", "grs", "gramo", "gramos"])
+    def test_las_formas_largas_canonizan_a_gramo(
+        self, palabra: str, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose(f"Pasta para fregar 500 {palabra} a 1760", products, provinces)
+
+        assert propuesta.quantity == Decimal("500")
+        assert canonical_unit(propuesta.unit) == "g"
+
+    def test_mermelada_de_3160_g_propone_la_cantidad_y_el_precio_correcto(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("Mermelada de mango 3160 g ➔ 350", products, provinces)
+
+        assert propuesta.price == Decimal("350")
+        assert propuesta.quantity == Decimal("3160")
+        assert propuesta.unit == "g"
+
+    def test_el_precio_no_se_confunde_con_la_cantidad_en_gramos(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("Pasta para fregar 500 g 1760", products, provinces)
+
+        assert propuesta.price == Decimal("1760")
+
+
 class TestCantidad:
     @pytest.mark.parametrize(
         ("texto", "cantidad", "unidad"),
@@ -448,6 +479,9 @@ class TestCantidad:
             # acepta tal cual.
             ("Aceite de 900 ml a 3400", Decimal("900"), "ml"),
             ("Aceite de 900ml a 3400", Decimal("900"), "ml"),
+            # Masa en gramos: `g` es canónica desde 2026-10-13.
+            ("Pasta para fregar 500 g a 1760", Decimal("500"), "g"),
+            ("Pasta para fregar 500g a 1760", Decimal("500"), "g"),
             ("Refresco Ciego Montero 1.5 L a 250", Decimal("1.5"), "l"),
         ],
     )
@@ -511,11 +545,11 @@ class TestCantidad:
     @pytest.mark.parametrize(
         ("texto", "precio"),
         [
-            # `g`, `oz`, `cc` y `u` NO están en el vocabulario canónico de
+            # `oz`, `cc` y `u` NO están en el vocabulario canónico de
             # `units.UNITS`: reconocerlas como cantidad dejaría una magnitud
             # huérfana que `canonical_unit()` tira a `None` después. Se
-            # protegen de leerse como precio, y nada más.
-            ("Mermelada de mango 3160 g ➔ 350", Decimal("350")),
+            # protegen de leerse como precio, y nada más. (`g` salió de esta
+            # lista el 2026-10-13: es canónica y sí se propone como cantidad.)
             ("Perfume de 100 oz a 4500", Decimal("4500")),
             ("Motor de 250 cc a 90000", Decimal("90000")),
             ("Caja x 12 u a 40800", Decimal("40800")),
