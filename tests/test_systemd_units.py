@@ -61,3 +61,41 @@ def test_el_temporizador_corre_cada_3_horas_y_se_pone_al_dia(temporizador) -> No
     assert unidad["OnCalendar"] == "*-*-* 00/3:00:00"
     assert unidad["Persistent"] == "true"
     assert temporizador["Install"]["WantedBy"] == "timers.target"
+
+
+# --- saimc-instagram: el lote de la cuenta de Instagram (docs/spec-slice-instagram.md)
+
+
+@pytest.fixture
+def servicio_instagram() -> configparser.ConfigParser:
+    return _leer("saimc-instagram.service")
+
+
+@pytest.fixture
+def temporizador_instagram() -> configparser.ConfigParser:
+    return _leer("saimc-instagram.timer")
+
+
+def test_instagram_es_oneshot_y_escribe_de_verdad(servicio_instagram) -> None:
+    unidad = servicio_instagram["Service"]
+    comando = unidad["ExecStart"]
+
+    assert unidad["Type"] == "oneshot"
+    assert "-m saimc.instagram.sync" in comando
+    assert "--execute" in comando
+    assert unidad["TimeoutStartSec"] == "10min"
+
+
+def test_instagram_usa_el_mismo_usuario_y_directorio_que_el_backup(servicio_instagram) -> None:
+    backup = _leer("saimc-backup.service")["Service"]
+
+    assert servicio_instagram["Service"]["User"] == backup["User"]
+    assert servicio_instagram["Service"]["WorkingDirectory"] == backup["WorkingDirectory"]
+
+
+def test_instagram_corre_cada_3_horas_y_se_pone_al_dia(temporizador_instagram) -> None:
+    unidad = temporizador_instagram["Timer"]
+
+    assert unidad["OnCalendar"] == "*-*-* 00/3:30:00"
+    assert unidad["Persistent"] == "true"
+    assert temporizador_instagram["Install"]["WantedBy"] == "timers.target"

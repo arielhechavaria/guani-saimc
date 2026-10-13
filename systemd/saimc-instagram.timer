@@ -1,0 +1,13 @@
+[Unit]
+Description=Lee la cuenta de Instagram de Guani cada 3 horas
+
+[Timer]
+# Cada 3 h (00, 03, ..., 21 UTC), a los 30 minutos para no coincidir con el
+# pre-calculo. Las stories viven 24 h: asi se capturan varias veces.
+OnCalendar=*-*-* 00/3:30:00
+# Si el VPS estuvo apagado a la hora, corre al volver (igual que el backup).
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

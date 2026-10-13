@@ -201,6 +201,25 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     alerts_state_path: Path = Path("data/alerts-state.json")
+
+    # Seguimiento de la cuenta de Instagram de Guani (`saimc.instagram.sync`,
+    # `docs/spec-slice-instagram.md`). Solo lee la cuenta propia.
+    #
+    # `instagram_access_token` es el token de larga duración del alta: solo
+    # siembra `instagram_credentials` la primera vez. Desde ahí el lote lo
+    # renueva y guarda el nuevo en la base, porque un `.env` no se reescribe
+    # solo; cambiarlo acá después no tiene efecto. Sin token, el lote avisa y
+    # sale sin fallar: es una capacidad sin usar, no un error.
+    #
+    # El id y el secreto de la app son los del alta manual (cambiar el token
+    # corto por el largo); el lote no los usa. Viven acá para que el `.env`
+    # sea el único lugar donde se anotan.
+    instagram_app_id: str | None = None
+    instagram_app_secret: str | None = None
+    instagram_access_token: str | None = None
+    # Segundos por llamada a la API. Nadie espera esta respuesta (corre en el
+    # temporizador), pero una llamada colgada no puede frenar la corrida.
+    instagram_timeout: float = 15.0
     # Desde qué día cuenta lo auditado para la cota del carril 1 (B2b-3). Es
     # la forma de volver a encenderlo después de que el freno lo apagó por
     # error auditado: el operador fija la fecha y la cota arranca de nuevo.
