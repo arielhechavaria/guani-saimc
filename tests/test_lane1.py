@@ -1275,3 +1275,45 @@ def test_muestra_no_cambia_nada(
     _comando(session, tmp_path, "--muestra", "lo que sea", lane1_enabled=True)
 
     _sigue_pendiente_sin_filas(session, ingesta)
+
+
+# --- la compra mínima no es un error de lectura (2026-10-13) -------------------------
+
+
+def test_completar_solo_la_compra_minima_no_cuenta_como_error(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+    (fila,) = _filas(session, ingesta)
+
+    _editar(client, ingesta, fila, min_purchase="30")
+
+    session.expire_all()
+    (completada,) = _filas(session, ingesta)
+    assert completada.min_purchase_quantity == Decimal("30")
+    estado = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (estado.audited, estado.errors, estado.unaudited) == (1, 0, 0)
+
+
+def test_compra_minima_y_precio_juntos_siguen_siendo_un_error(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+    (fila,) = _filas(session, ingesta)
+
+    _editar(client, ingesta, fila, min_purchase="30", price="330")
+
+    estado = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (estado.audited, estado.errors) == (1, 1)
+
+
+def test_cambiar_otro_campo_que_no_es_la_compra_minima_sigue_siendo_un_error(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+    (fila,) = _filas(session, ingesta)
+
+    _editar(client, ingesta, fila, currency="USD")
+
+    estado = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (estado.audited, estado.errors) == (1, 1)

@@ -48,6 +48,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -129,6 +130,31 @@ OK = "ok"
 CORRECTED = "corrected"
 INVALID = "invalid"
 _ERROR_VERDICTS = frozenset({CORRECTED, INVALID})
+#: Una corrección que solo completó la compra mínima. El modelo nunca la propone
+#: (la toma de las reglas) y no cambia el precio publicado: cuenta como auditado
+#: sin error. Se decide al leer la bitácora, así que vale también para lo ya
+#: auditado (2026-10-13, `docs/decisions.md`).
+COMPLETED = "completed"
+_MINIMUM_FIELD = "min_purchase_quantity"
+
+
+def _only_completes_minimum(detail: dict[str, Any] | None) -> bool:
+    """¿La edición solo tocó la compra mínima de filas que ya existían?
+
+    Una fila agregada o borrada, o un cambio de canal, es un cambio real.
+    """
+    if not detail or "source_reference" in detail:
+        return False
+    rows = detail.get("rows")
+    if not isinstance(rows, list) or not rows:
+        return False
+    return all(
+        isinstance(entry, dict)
+        and entry.get("op") == "updated"
+        and isinstance(entry.get("after"), dict)
+        and set(entry["after"]) == {_MINIMUM_FIELD}
+        for entry in rows
+    )
 
 
 def enabled(settings: Settings) -> bool:
@@ -354,7 +380,36 @@ def _verdicts(
         detail = event.detail or {}
         if detail.get("lane") == 1 and isinstance(detail.get("verdict"), str):
             verdicts[event.ingestion_id] = (detail["verdict"], context.as_utc(event.decided_at))
+    _reclassify_minimum_only(session, verdicts)
     return verdicts
+
+
+def _reclassify_minimum_only(
+    session: Session, verdicts: dict[uuid.UUID, tuple[str, datetime]]
+) -> None:
+    """Las «correcciones» que solo completaron la compra mínima pasan a `completed`.
+
+    La edición que fue la auditoría es el último evento `edited` anterior a la
+    respuesta; su `detail` dice qué campos tocó.
+    """
+    corrected = {i: at for i, (verdict, at) in verdicts.items() if verdict == CORRECTED}
+    if not corrected:
+        return
+    stmt = (
+        select(CurationEvent)
+        .where(
+            CurationEvent.ingestion_id.in_(list(corrected)),
+            CurationEvent.action == CurationAction.EDITED,
+        )
+        .order_by(CurationEvent.decided_at)
+    )
+    last_edit: dict[uuid.UUID, CurationEvent] = {}
+    for event in session.execute(stmt).scalars():
+        if context.as_utc(event.decided_at) <= corrected[event.ingestion_id]:
+            last_edit[event.ingestion_id] = event
+    for ingestion_id, event in last_edit.items():
+        if _only_completes_minimum(event.detail):
+            verdicts[ingestion_id] = (COMPLETED, corrected[ingestion_id])
 
 
 def _describe(session: Session, row: PriceHistory) -> str:
