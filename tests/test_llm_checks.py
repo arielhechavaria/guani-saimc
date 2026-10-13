@@ -81,6 +81,52 @@ def test_un_numero_distinto_no_cuenta_como_el_precio() -> None:
     assert meta.price_in_evidence is False
 
 
+def test_la_cita_sin_el_emoji_ni_el_salto_de_linea_se_encuentra() -> None:
+    # Caso real (2026-10-13): el modelo copia dos líneas y se salta el emoji
+    # que las separa. El texto es honesto; la comparación era demasiado estricta.
+    texto = "AZUCAR BLANCA MAGDALENA 25KG‼️\n\n▪️$34.50USD\n\n▪️Mínimo 5 sacos"
+    meta = _verificar(texto, "AZUCAR BLANCA MAGDALENA 25KG ▪️$34.50USD", "34.50")
+
+    assert meta.evidence_found is True
+    assert meta.price_in_evidence is True
+
+
+def test_la_cita_con_trozos_unidos_por_puntos_suspensivos_se_encuentra() -> None:
+    texto = "ACEITE DE SOYA 900 ml 📦 Caja x 20 unidades 💰 $3.60 c/u 🔥 Más de 10 cajas"
+    meta = _verificar(texto, "ACEITE DE SOYA 900 ml ... $3.60 c/u", "3.60")
+
+    assert meta.evidence_found is True
+    assert meta.price_in_evidence is True
+
+
+def test_un_trozo_que_no_esta_en_el_texto_sigue_sin_encontrarse() -> None:
+    texto = "ACEITE DE SOYA 900 ml 💰 $3.60 c/u"
+    meta = _verificar(texto, "ACEITE DE SOYA 900 ml ... $4.10 c/u", "3.60")
+
+    assert meta.evidence_found is False
+
+
+def test_la_cita_no_se_encuentra_si_solo_coinciden_letras_sueltas() -> None:
+    # Ignorar signos no vuelve válida una cita que reordena o inventa palabras.
+    meta = _verificar("Arroz 25 lb a 30885 cup", "30885 a lb 25 Arroz", "30885")
+
+    assert meta.evidence_found is False
+
+
+@pytest.mark.parametrize("escrito", ["8mil", "8 mil", "$8mil", "8Mil"])
+def test_el_precio_en_miles_escrito_se_reconoce(escrito: str) -> None:
+    cita = f"Pollo paquete de 10lb a {escrito}"
+    meta = _verificar(cita, cita, "8000")
+
+    assert meta.price_in_evidence is True
+
+
+def test_mil_no_inventa_un_precio_que_el_texto_no_dice() -> None:
+    meta = _verificar("Pollo 10lb a 8mil", "Pollo 10lb a 8mil", "800")
+
+    assert meta.price_in_evidence is False
+
+
 def test_sin_evidencia_o_sin_precio() -> None:
     sin_evidencia = _verificar("Arroz 100", None, "100")
     assert sin_evidencia.evidence_found is False
