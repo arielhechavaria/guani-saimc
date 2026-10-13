@@ -25,6 +25,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
 | [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de N días (apagado por defecto) | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
 | [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
+| [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
 | [`saimc.extraction.prefill` en seco](#pre-cálculo-en-seco) | Estimar el costo del pre-cálculo | no | no |
@@ -296,6 +297,20 @@ Un problema se avisa una vez, se recuerda a las 24 h, avisa si empeora y avisa c
   6) `sudo cp systemd/saimc-alerts.* /etc/systemd/system/ && sudo systemctl daemon-reload &&
   sudo systemctl enable --now saimc-alerts.timer`.
 - Sin token o chat, `--execute` avisa por consola y sale con código 2.
+
+### Carril 0 sobre lo pendiente
+
+El carril 0 descarta solo cuando se genera una propuesta nueva. Si cambia la regla (p. ej. la de «sin
+ningún dígito», 2026-10-13), lo que ya estaba pendiente no se vuelve a mirar: este comando lo hace.
+
+```
+.venv/bin/python -m saimc.validation.lane0            # en seco: cuántos descartaría
+.venv/bin/python -m saimc.validation.lane0 --execute  # descarta con evento automático
+```
+
+- **Cambia algo**: solo con `--execute`. **Gasta**: no (usa las propuestas guardadas).
+- Respeta los interruptores `SAIMC_LANE0_TEXT_ENABLED` / `SAIMC_LANE0_IMAGE_ENABLED`; apagados, avisa y
+  sale con código 2. Descartar con la auditoría del carril 0 queda sujeto a la muestra semanal.
 
 ### Carril 1 en seco
 

@@ -193,13 +193,42 @@ def test_caso_03_no_data_sin_piloto_va_al_carril_0() -> None:
     assert resultado.rows == ()
 
 
-def test_caso_04_descarte_con_piloto_en_el_texto_va_a_revision() -> None:
-    ctx = _ctx("Arroz importado, escribir al privado", modelo=_descarte("no_data"))
+def test_caso_04_descarte_con_piloto_y_un_numero_en_el_texto_va_a_revision() -> None:
+    # Con un número en el texto puede haber un precio: lo mira una persona.
+    ctx = _ctx("Arroz importado 450 USD, escribir al privado", modelo=_descarte("no_data"))
 
     resultado = validate_ad(ctx, CONFIG)
 
     assert resultado.lane == 2
     assert resultado.rows == ()
+
+
+def test_caso_04b_descarte_con_piloto_pero_sin_ningun_digito_va_al_carril_0() -> None:
+    # Sin un solo dígito no hay precio: que el texto nombre un producto
+    # («pollo agotado») no lo convierte en un anuncio con dato (2026-10-13).
+    ctx = _ctx("Arroz importado, escribir al privado", modelo=_descarte("no_data"))
+
+    resultado = validate_ad(ctx, CONFIG)
+
+    assert resultado.lane == 0
+    assert resultado.rows == ()
+
+
+def test_caso_04c_la_regla_sin_digitos_tambien_vale_para_off_focus_y_para_imagenes() -> None:
+    from saimc.validation import decide_lane_0
+
+    for motivo in ("off_focus", "no_data"):
+        for tipo in ("text", "image"):
+            ctx = _ctx("Pollo agotado hoy", modelo=_descarte(motivo), tipo=tipo)
+            assert decide_lane_0(ctx).lane == 0
+
+
+def test_caso_04d_un_numero_en_palabras_no_cuenta_y_un_digito_suelto_si() -> None:
+    # Se mira el dígito, no el significado: un «2» suelto (hora, cantidad) ya
+    # manda el anuncio a revisión. Es la lectura conservadora.
+    ctx = _ctx("Pollo agotado, vuelve a las 2", modelo=_descarte("no_data"))
+
+    assert validate_ad(ctx, CONFIG).lane == 2
 
 
 def test_caso_05_precio_fuera_de_la_banda_es_anomaly() -> None:

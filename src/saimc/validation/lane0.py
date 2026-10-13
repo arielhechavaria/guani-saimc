@@ -24,17 +24,20 @@ por la fecha de `decided_at` tal como está guardada (UTC).
 
 from __future__ import annotations
 
+import argparse
 import random
+import sys
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.config import Settings
+from saimc.config import Settings, get_settings
 from saimc.curation_events import record_curation_event
+from saimc.db import session_scope
 from saimc.extraction import llm_store
 from saimc.extraction.llm_propose_ad import AdProposal
 from saimc.models import (
@@ -134,6 +137,80 @@ def apply_lane_0(
         decided_at=utc_now(),
     )
     return True
+
+
+# --- lo que ya está pendiente ------------------------------------------------------
+
+
+def run_pending(
+    session: Session,
+    settings: Settings,
+    *,
+    execute: bool,
+    out: Callable[[str], None] = print,
+) -> int:
+    """Aplica el carril 0 a los pendientes que YA tienen propuesta del modelo.
+
+    El pre-cálculo solo aplica el carril 0 al generar una propuesta; cuando el
+    motor cambia (p. ej. la regla de «sin ningún dígito», 2026-10-13), lo que
+    ya estaba pendiente no se vuelve a mirar. Esto lo hace. Respeta el
+    interruptor de cada tipo y, sin `execute`, no escribe nada ni gasta API.
+    """
+    types = enabled_types(settings)
+    if not types:
+        out(
+            "El carril 0 está apagado (SAIMC_LANE0_TEXT_ENABLED / SAIMC_LANE0_IMAGE_ENABLED): "
+            "no se descarta nada."
+        )
+        return 2
+    catalog = context.load_catalog(session)
+    stmt = (
+        select(RawIngestion)
+        .where(
+            RawIngestion.processing_status == ProcessingStatus.PENDING,
+            RawIngestion.content_type.in_(types),
+        )
+        .order_by(RawIngestion.captured_at.desc(), RawIngestion.id)
+    )
+    would = 0
+    for ingestion in list(session.execute(stmt).scalars()):
+        if ingestion.original_text is None:
+            continue  # una imagen sin transcribir: su texto no se conoce
+        proposal = llm_store.latest_ok_proposal(session, ingestion.id)
+        if proposal is None:
+            continue
+        result = context.stored_proposal(session, proposal, catalog)
+        text = ingestion.original_text
+        if execute:
+            if apply_lane_0(session, ingestion, proposal, result, text=text, catalog=catalog):
+                would += 1
+            session.commit()
+        else:
+            ctx = context.build_ad_context(
+                session, ingestion, model=result, catalog=catalog, text=text
+            )
+            if decide_lane_0(ctx).lane == LANE_DISCARD:
+                would += 1
+    out(f"{'Descartados' if execute else 'Descartaría'}: {would}")
+    if not execute:
+        out("EN SECO: no se escribió nada. Con --execute se descartan.")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="python -m saimc.validation.lane0",
+        description="Aplica el carril 0 a los pendientes que ya tienen propuesta. En seco por defecto.",
+    )
+    parser.add_argument("--execute", action="store_true", help="Descarta de verdad.")
+    args = parser.parse_args(argv)
+    with session_scope() as session:
+        code = run_pending(session, get_settings(), execute=args.execute)
+    sys.exit(code)
+
+
+if __name__ == "__main__":
+    main()
 
 
 # --- semanas -------------------------------------------------------------------

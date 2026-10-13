@@ -447,12 +447,20 @@ def decide_lane_0(ctx: AdContext) -> AdValidation:
     return _lane_0_verdict(ctx, model, _lane_0_reasons(ctx, model))
 
 
+def _has_digit(text: str) -> bool:
+    return any(char.isdigit() for char in text)
+
+
 def _lane_0_reasons(ctx: AdContext, model: AdProposal) -> list[str]:
     """Por qué un descarte del modelo NO va al carril 0. Vacío si va."""
     reasons: list[str] = []
     if model.discard_reason not in _LANE_0_REASONS:
         reasons.append("el modelo descarta, pero no por fuera de foco ni por falta de datos")
-    if mentions_any_product(ctx.text, ctx.pilot_products):
+    # Sin un solo dígito no puede haber precio: que el texto nombre un producto
+    # («pollo agotado») no lo vuelve un anuncio con dato (2026-10-13). Se mira el
+    # dígito y no el significado: un «2» suelto ya basta para que lo mire una
+    # persona, que es la lectura conservadora.
+    if _has_digit(ctx.text) and mentions_any_product(ctx.text, ctx.pilot_products):
         reasons.append("el modelo descarta, pero las reglas ven un producto piloto en el texto")
     return reasons
 
