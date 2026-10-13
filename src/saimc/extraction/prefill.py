@@ -71,7 +71,7 @@ from saimc.extraction import (
     prefill_status,
 )
 from saimc.extraction.engine import mentions_any_product
-from saimc.glossary import active_glossary_entries
+from saimc.glossary import active_glossary_entries, effective_prompt_version
 from saimc.llm.provider import LLMConfig, canonical_model, effective_model, resolve_config
 from saimc.models import (
     ContentType,
@@ -155,6 +155,47 @@ def select_candidates(
     return en_foco if limit is None else en_foco[:limit]
 
 
+def select_stale_candidates(
+    session: Session,
+    products: Sequence[Product],
+    current_version: str,
+    limit: int | None = None,
+    *,
+    include_off_focus: bool = False,
+) -> list[RawIngestion]:
+    """Pendientes cuya última propuesta buena se hizo con otro prompt, EN FOCO.
+
+    `current_version` es la versión efectiva de hoy (`PROMPT_VERSION` más el hash
+    del glosario activo). Los que no tienen propuesta no entran: son de
+    `select_candidates`. Solo textos. Mismo orden (más nuevo primero) y mismo
+    criterio de foco. Sirve para rehacer lo que se propuso antes de que el glosario o el
+    vocabulario existieran: ahí nacen las abstenciones que frenan el carril 1
+    (`docs/analisis-carril1-frenos.md`, §3).
+    """
+    stmt = (
+        select(RawIngestion)
+        .where(
+            RawIngestion.processing_status == ProcessingStatus.PENDING,
+            # Solo textos: una imagen no entra al carril 1 y rehacerla suma OCR.
+            RawIngestion.content_type == ContentType.TEXT,
+        )
+        .order_by(RawIngestion.captured_at.desc())
+    )
+    stale: list[RawIngestion] = []
+    for ingestion in session.execute(stmt).scalars().all():
+        latest = llm_store.latest_ok_proposal(session, ingestion.id)
+        if latest is None or latest.prompt_version == current_version:
+            continue
+        if not (
+            include_off_focus
+            or ingestion.original_text is None
+            or mentions_any_product(ingestion.original_text, products)
+        ):
+            continue
+        stale.append(ingestion)
+    return stale if limit is None else stale[:limit]
+
+
 # --- estimación (dry-run) ---------------------------------------------------
 
 
@@ -211,8 +252,13 @@ def estimate(session: Session, candidates: Sequence[RawIngestion], model: str) -
     return Estimate(ads=ads, model=model, per_ad_usd=per_ad, basis=basis)
 
 
-def print_estimate(est: Estimate, out: Callable[[str], None] = print) -> None:
-    out("Pendientes sin propuesta guardada:")
+def print_estimate(
+    est: Estimate,
+    out: Callable[[str], None] = print,
+    *,
+    title: str = "Pendientes sin propuesta guardada:",
+) -> None:
+    out(title)
     for tipo, etiqueta in _TYPE_LABELS.items():
         out(f"  {etiqueta}: {est.ads.get(tipo, 0)}")
     out(f"  total: {est.total_ads}")
@@ -425,6 +471,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=None, help="Tope de anuncios.")
     parser.add_argument(
+        "--stale",
+        action="store_true",
+        help=(
+            "En vez de los pendientes sin propuesta, rehace los que ya tienen una hecha con "
+            "otro prompt (antes del glosario o del vocabulario actual). Con --execute gasta."
+        ),
+    )
+    parser.add_argument(
         "--max-cost",
         type=float,
         default=None,
@@ -520,14 +574,23 @@ def _run_mode(
             out(f"Vencidos por edad (más de {settings.queue_max_age_days} días): {vencidos}")
     products = pilot_products(session)
     lane0_types = lane0.enabled_types(settings)
-    candidates = select_candidates(
-        session, products, args.limit, include_off_focus=ContentType.TEXT.value in lane0_types
-    )
+    off_focus = ContentType.TEXT.value in lane0_types
+    if args.stale:
+        version = effective_prompt_version(
+            llm_propose_ad.PROMPT_VERSION, active_glossary_entries(session)
+        )
+        candidates = select_stale_candidates(
+            session, products, version, args.limit, include_off_focus=off_focus
+        )
+        title = f"Pendientes con propuesta de prompt viejo (la de hoy es {version}):"
+    else:
+        candidates = select_candidates(session, products, args.limit, include_off_focus=off_focus)
+        title = "Pendientes sin propuesta guardada:"
     est = estimate(session, candidates, model)
 
     if not args.execute:
         out("MODO DRY-RUN: no se llama a ninguna API ni se necesita clave.")
-        print_estimate(est, out)
+        print_estimate(est, out, title=title)
         out("Para la corrida real: agregá --execute (usa la clave de la configuración).")
         return 0
 
@@ -541,7 +604,7 @@ def _run_mode(
     # `--model` y `--timeout` pisan lo de la configuración; el modelo que se
     # manda (con prefijo en Vercel) se recalcula ahí.
     llm = llm.with_overrides(model=args.model, timeout=args.timeout)
-    print_estimate(est, out)
+    print_estimate(est, out, title=title)
     # El freno del carril 1 se lee una vez, antes de gastar: si está puesto,
     # la corrida igual guarda propuestas, pero no acepta nada.
     lane1_gate = lane1.Gate(session, settings) if lane1.enabled(settings) else None

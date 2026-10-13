@@ -21,7 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.config import Settings
-from saimc.extraction import llm_assist, llm_propose_ad, prefill, prefill_lock, prefill_status
+from saimc.extraction import (
+    llm_assist,
+    llm_propose_ad,
+    llm_store,
+    prefill,
+    prefill_lock,
+    prefill_status,
+)
 from saimc.models import (
     ContentType,
     JevSignal,
@@ -1236,3 +1243,107 @@ def test_con_limite_se_procesa_primero_lo_mas_nuevo(
     (primero,) = prefill.select_candidates(session, [catalogo.arroz], 1)
 
     assert primero.id == nuevo.id
+
+
+# --- re-proponer los de prompt viejo (--stale, 2026-10-13) --------------------------
+
+
+def _con_propuesta(
+    session: Session, ingesta: RawIngestion, version: str, estado: str = "ok"
+) -> LlmProposal:
+    propuesta = LlmProposal(
+        ingestion_id=ingesta.id,
+        model="claude-sonnet-5",
+        prompt_version=version,
+        status=estado,
+        rows=[],
+        input_tokens=0,
+        output_tokens=0,
+    )
+    session.add(propuesta)
+    session.commit()
+    return propuesta
+
+
+def test_stale_elige_los_pendientes_cuya_ultima_propuesta_es_de_otra_version(
+    session: Session, catalogo
+) -> None:
+    actual = llm_propose_ad.PROMPT_VERSION
+    vieja = _ingesta(session, texto="arroz 100", minutos=0)
+    _con_propuesta(session, vieja, "2026-09-25.3")
+    al_dia = _ingesta(session, texto="arroz 200", minutos=1)
+    _con_propuesta(session, al_dia, actual)
+    sin_propuesta = _ingesta(session, texto="arroz 300", minutos=2)
+    curada = _ingesta(session, texto="arroz 400", minutos=3, estado=ProcessingStatus.CURATED)
+    _con_propuesta(session, curada, "2026-09-25.3")
+    fuera_de_foco = _ingesta(session, texto="hola buenas", minutos=4)
+    _con_propuesta(session, fuera_de_foco, "2026-09-25.3")
+    imagen = _ingesta(session, texto="arroz 500", minutos=5, tipo=ContentType.IMAGE)
+    _con_propuesta(session, imagen, "2026-09-25.3")
+
+    candidatos = prefill.select_stale_candidates(session, [catalogo.arroz], actual)
+
+    assert [c.id for c in candidatos] == [vieja.id]
+    assert sin_propuesta.id not in [c.id for c in candidatos]
+    assert imagen.id not in [c.id for c in candidatos]
+
+
+def test_stale_mira_la_ultima_propuesta_buena_no_la_primera(session: Session, catalogo) -> None:
+    actual = llm_propose_ad.PROMPT_VERSION
+    ingesta = _ingesta(session, texto="arroz 100")
+    _con_propuesta(session, ingesta, "2026-09-25.3")
+    _con_propuesta(session, ingesta, actual)
+    # Una degradada posterior no cuenta: la última que anduvo ya es la actual.
+    _con_propuesta(session, ingesta, "otra", estado="degraded")
+
+    assert prefill.select_stale_candidates(session, [catalogo.arroz], actual) == []
+
+
+def test_stale_ordena_del_mas_nuevo_al_mas_viejo_y_respeta_el_limite(
+    session: Session, catalogo
+) -> None:
+    actual = llm_propose_ad.PROMPT_VERSION
+    ids = []
+    for minutos in (0, 10, 20):
+        ingesta = _ingesta(session, texto=f"arroz {minutos}", minutos=minutos)
+        _con_propuesta(session, ingesta, "2026-09-25.3")
+        ids.append(ingesta.id)
+
+    todos = prefill.select_stale_candidates(session, [catalogo.arroz], actual)
+    uno = prefill.select_stale_candidates(session, [catalogo.arroz], actual, 1)
+
+    assert [c.id for c in todos] == list(reversed(ids))
+    assert [c.id for c in uno] == [ids[2]]
+
+
+def test_stale_en_seco_cuenta_y_no_llama(session: Session, catalogo, tmp_path: Path) -> None:
+    vieja = _ingesta(session, texto="arroz 100")
+    _con_propuesta(session, vieja, "2026-09-25.3")
+    _ingesta(session, texto="arroz 200", minutos=1)  # sin propuesta: no es de --stale
+    cliente = ClienteFalso()
+
+    codigo, salida = _correr(session, tmp_path, ["--stale"], cliente=cliente)
+
+    assert codigo == 0
+    assert cliente.llamadas == []
+    assert "prompt viejo" in salida
+    assert "total: 1" in salida
+
+
+def test_stale_execute_vuelve_a_proponer_y_deja_la_nueva_como_la_ultima(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    vieja = _ingesta(session, texto="arroz 100")
+    _con_propuesta(session, vieja, "2026-09-25.3")
+    cliente = ClienteFalso()
+
+    _correr(session, tmp_path, ["--stale", "--execute"], cliente=cliente)
+
+    assert len(cliente.llamadas) == 1
+    ultima = llm_store.latest_ok_proposal(session, vieja.id)
+    assert ultima is not None
+    assert ultima.prompt_version == llm_propose_ad.PROMPT_VERSION
+    # Idempotente: una segunda corrida ya no tiene nada viejo que rehacer.
+    segundo = ClienteFalso()
+    _correr(session, tmp_path, ["--stale", "--execute"], cliente=segundo)
+    assert segundo.llamadas == []

@@ -380,6 +380,25 @@ decisiones y más de la mitad de las filas tocadas, celda de 5).
 - **Cambia algo**: no (por defecto es `--dry-run`). **Gasta**: no.
 - Más: [runbook-asistente-llm.md](runbook-asistente-llm.md), sección del pre-cálculo.
 
+### Rehacer las propuestas de prompt viejo
+
+```
+.venv/bin/python -m saimc.extraction.prefill --stale            # en seco: cuenta y estima
+.venv/bin/python -m saimc.extraction.prefill --stale --execute  # rehace de verdad
+```
+
+- **Para qué**: los textos pendientes cuya última propuesta se hizo con otro prompt (antes del
+  glosario o del vocabulario de hoy) vuelven a pasar por el modelo. De ahí salen la mayoría de las
+  abstenciones en cantidad, unidad y base que frenan el carril 1. Después de proponer, el carril 0
+  y el carril 1 se aplican igual que en una corrida normal.
+- **Cuándo**: después de cambiar el glosario o el prompt, con el en seco primero. Se puede acotar con
+  `--limit N` y `--max-cost USD`.
+- **Cambia algo**: con `--execute`, sí: guarda una propuesta nueva por anuncio (la vieja queda) y puede
+  descartar o aceptar solo, según los interruptores. **Gasta**: con `--execute`, sí (el 2026-10-13,
+  72 textos ≈ 0,14 USD). Solo textos.
+- **Cómo leer la salida**: la misma del pre-cálculo; la línea de arriba dice con qué versión de prompt
+  se compara. Es idempotente: una segunda corrida no encuentra nada viejo.
+
 ### Proveedor del asistente
 
 ```
