@@ -446,7 +446,7 @@
                 <span class="m3-num m3-strong" style="min-width:38px">{{ observations }}</span>
                 <span class="m3-progress m3-progress-thin" style="flex:1; margin:0">
                   <span style="width: {{ (observations * 100 / obs_max) | round(1) if obs_max else 0 }}%;
-                               {% if not product.is_pilot %}background: #bec8c9;{% endif %}"></span>
+                               {% if not product.is_pilot %}background: var(--m3-outline-variant);{% endif %}"></span>
                 </span>
               </div>
             </td>
