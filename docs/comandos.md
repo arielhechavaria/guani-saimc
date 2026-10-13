@@ -276,6 +276,24 @@ a mano:
 - **Cambia algo**: solo con `--execute`. **Gasta**: no.
 - Para devolver a la cola lo que ya venció: ver la entrada del 2026-10-13 de `docs/decisions.md`.
 
+### Acceso al sitio público (formulario de entrada)
+
+Con `SAIMC_SITE_GATE_ENABLED=true` en el `.env`, quien abra la capa pública (`/`, `/precios`, producto,
+anuncio, `/datos.csv` y las páginas de texto) ve un formulario de usuario y contraseña en `/acceso`.
+Entrando, una cookie firmada deja pasar `SAIMC_SITE_ACCESS_DAYS` días (30 por defecto). Apagado por
+defecto: nada cambia hasta que lo enciendas.
+
+- **Las credenciales son las de `/control`** (`SAIMC_CURATION_USERNAME` y `SAIMC_CURATION_PASSWORD`).
+  **Ojo:** quien las tenga también puede abrir `/curation`, `/control` y `/catalog`. Para dar acceso solo
+  al sitio, pon otra contraseña en `SAIMC_SITE_PASSWORD`: vale únicamente en el formulario (con el mismo
+  usuario) y no abre la herramienta del operador. La del operador sigue valiendo en el formulario.
+- **Cambia algo**: no escribe en la base. Cambiar cualquiera de las dos contraseñas cierra todas las
+  sesiones abiertas.
+- **No toca** las rutas del operador (siguen con su HTTP Basic), el webhook de WAHA ni `/static`.
+- 5 intentos fallidos por origen en 10 minutos bloquean el formulario unos minutos.
+- Para encenderlo: agrega `SAIMC_SITE_GATE_ENABLED=true` (y, si quieres, `SAIMC_SITE_PASSWORD=...`) al
+  `.env` y reinicia `saimc.service`. Para apagarlo, quita la línea o ponla en `false`.
+
 ### Avisos al celular (Telegram)
 
 El sistema le escribe al operador cuando algo lo necesita: una tarjeta de la franja de `/control`

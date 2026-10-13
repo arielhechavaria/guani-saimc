@@ -21,6 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from saimc.config import get_settings
 from saimc.ingestion.sender import warn_if_key_too_short
 from saimc.validation.jev_signal import warn_if_enabled_without_key
+from saimc.web import access
 from saimc.web.analytics import registrar_visitas_publicas
 from saimc.web.routers import (
     catalog,
@@ -116,6 +117,10 @@ app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 # usuarios activos diarios») — ver el docstring de `analytics.py`. Sin esto
 # no hay ninguna forma de saber si esa meta se cumplió o no.
 app.add_middleware(BaseHTTPMiddleware, dispatch=registrar_visitas_publicas)
+
+# Acceso al sitio público (`web/access.py`). Va después del registro de visitas
+# a propósito: queda más afuera, y una visita rechazada no se cuenta.
+app.add_middleware(BaseHTTPMiddleware, dispatch=access.require_access)
 
 # Resuelto con `Path(__file__)` y no relativo al cwd: así funciona sin
 # importar desde dónde se lance uvicorn. Vive en `app.state` (y no como
@@ -254,6 +259,7 @@ app.mount(
     "/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static"
 )
 
+app.include_router(access.router)
 app.include_router(public.router)
 app.include_router(curation.router)
 app.include_router(control.router)

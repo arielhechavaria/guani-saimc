@@ -38,6 +38,10 @@ PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/terminos"),
         ("GET", "/privacidad"),
         ("GET", "/uso-de-datos"),
+        # El formulario de acceso al sitio (2026-10-13): tiene que verse sin
+        # credenciales. No muestra nada del sitio; el POST limita los intentos.
+        ("GET", "/acceso"),
+        ("POST", "/acceso"),
     }
 )
 
@@ -145,8 +149,13 @@ class TestInventario:
         assert montajes == PUBLIC_MOUNTS
 
     def test_lo_publico_es_solo_lectura(self) -> None:
-        """Nada de la capa pública muta: toda escritura es del operador."""
-        assert {method for method, _ in PUBLIC_ROUTES} <= {"GET"}
+        """Nada de la capa pública muta: toda escritura es del operador.
+
+        Única excepción: el POST del formulario de acceso (2026-10-13), que
+        comprueba una contraseña y pone una cookie; no escribe ningún dato.
+        """
+        mutan = {method for method, ruta in PUBLIC_ROUTES if (method, ruta) != ("POST", "/acceso")}
+        assert mutan <= {"GET"}
 
     @pytest.mark.parametrize(("method", "path"), OPERATOR_ROUTES)
     def test_ruta_no_publica_responde_401_sin_credenciales(
