@@ -1,6 +1,6 @@
 # Slice — Seguimiento de la cuenta de Instagram de Guani
 
-Estado: **PROPUESTA, sin aprobar.** Nada programado. Fuera del alcance de la Fase 0
+Estado: **aprobada por el operador (2026-10-13), token en la base.** Fuera del alcance de la Fase 0
 (no toca el pipeline de precios): se abre por pedido explícito del operador
 (2026-10-13).
 
@@ -50,8 +50,7 @@ temporal, solo se agrega, no se modifica).
 **`instagram_account_snapshots`** — una fila por lectura de la cuenta.
 `id` uuid PK · `captured_at` · `followers_count` · `media_count`.
 
-**`instagram_credentials`** — fila única con el token vigente (ver pregunta
-abierta).
+**`instagram_credentials`** — fila única con el token vigente (ver «Decisión»).
 `id` · `access_token` · `expires_at` · `refreshed_at`.
 
 Ninguna tabla guarda datos de terceros: ni comentarios, ni usuarios que
@@ -92,11 +91,9 @@ Renovación de token y degradación sin token, con casos propios. La sección de
 Publicar, responder comentarios o mensajes, leer cuentas ajenas, gráficos
 elaborados, alertas. Se puede abrir como slices aparte.
 
-## Pregunta abierta
+## Decisión: el token vive en la base (opción A, 2026-10-13)
 
-¿Dónde vive el token? La renovación produce un token nuevo cada vez, y un `.env`
-no se reescribe solo.
-- **A (recomendada):** tabla `instagram_credentials`; el lote renueva y guarda ahí.
-  El `.env` solo trae el token inicial para el alta.
-- **B:** archivo `chmod 600` fuera del repo. Sin tabla, pero un archivo más que
-  respaldar y proteger.
+La renovación produce un token nuevo cada vez y un `.env` no se reescribe solo.
+Se usa la tabla `instagram_credentials`: el lote renueva y guarda ahí. El `.env`
+solo trae el token inicial para el alta. *Descartado:* un archivo `chmod 600`
+fuera del repo, que sería un archivo más que respaldar y proteger.
