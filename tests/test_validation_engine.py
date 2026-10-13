@@ -1008,3 +1008,41 @@ def test_validate_ad_sigue_sin_carril_0_sin_configuracion() -> None:
 
     assert validate_ad(ctx, None).lane == 2
     assert validate_ad(ctx, CONFIG).lane == 0
+
+
+# --- 2026-10-13: el modelo manda sobre las reglas en el carril 1 -------------------
+
+CONFIG_MODELO_MANDA = replace(CONFIG_B2B, lane1_max_rows=4, lane1_model_over_rules=True)
+
+
+def test_modelo_manda_desacuerdo_en_el_precio_ya_no_frena_y_la_fila_conserva_el_motivo() -> None:
+    ctx = _caso_1(reglas=(_fila(precio="330"),), canal=SIN_HISTORIAL, celdas=(CELDA_VACIA,))
+
+    resultado = validate_ad(ctx, CONFIG_MODELO_MANDA)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["unverified"]
+    assert "reglas y modelo no coinciden en precio" in resultado.rows[0].reasons
+
+
+def test_modelo_manda_no_acepta_una_cita_que_no_esta_en_el_texto() -> None:
+    ctx = _caso_1(
+        reglas=(_fila(precio="330"),),
+        modelo=_modelo(_fila(), metas=(replace(META_OK, evidence_found=False),)),
+        canal=SIN_HISTORIAL,
+        celdas=(CELDA_VACIA,),
+    )
+
+    resultado = validate_ad(ctx, CONFIG_MODELO_MANDA)
+
+    assert resultado.lane == 2
+    assert "fila 1: la cita del modelo no está verificada en el texto" in resultado.reasons
+
+
+def test_modelo_manda_sigue_frenando_el_canal_sucio() -> None:
+    ctx = _caso_1(reglas=(_fila(precio="330"),), canal=_canal(3, 3, 2))
+
+    resultado = validate_ad(ctx, CONFIG_MODELO_MANDA)
+
+    assert resultado.lane == 2
+    assert "fila 1: el canal tiene un historial sucio" in resultado.reasons
