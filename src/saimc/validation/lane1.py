@@ -96,13 +96,15 @@ from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, Validat
 #:   el operador tocó más de la mitad de las filas propuestas;
 #: - tope de 4 filas por anuncio (era 1; subió el 2026-10-13, ver
 #:   `docs/decisions.md`);
-#: - las señales externas no entran (Jev no separa): sin umbral.
+#: - las señales externas no entran (Jev no separa): sin umbral;
+#: - el desacuerdo entre reglas y modelo no frena: manda el modelo (2026-10-13).
 CONFIG = ValidationConfig(
     min_cell_n=persist.MIN_CELL_N,
     channel_min_history=3,
     channel_max_edit_rate=0.5,
     signal_high_probability=None,
     lane1_max_rows=4,
+    lane1_model_over_rules=True,
 )
 
 TEXT = ContentType.TEXT.value

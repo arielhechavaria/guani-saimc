@@ -130,6 +130,20 @@ _NON_BLOCKING_REASONS = frozenset(
 )
 
 
+#: Prefijo del motivo de desacuerdo entre reglas y modelo; el resto del texto
+#: lista los campos y varía, por eso no puede ir en `_NON_BLOCKING_REASONS`.
+_DISAGREEMENT_PREFIX = "reglas y modelo no coinciden en "
+
+
+def _blocks_lane1(reason: str, config: ValidationConfig | None) -> bool:
+    """¿Este motivo de fila saca al anuncio del carril 1?"""
+    if reason in _NON_BLOCKING_REASONS:
+        return False
+    if reason.startswith(_DISAGREEMENT_PREFIX):
+        return config is None or not config.lane1_model_over_rules
+    return True
+
+
 def _verification_reasons(
     row: ExtractionProposal, meta: RowMeta, agreement: RowAgreement
 ) -> list[str]:
@@ -396,7 +410,7 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
         reasons += [
             f"fila {index}: {reason}"
             for reason in row.reasons
-            if reason not in _NON_BLOCKING_REASONS
+            if _blocks_lane1(reason, config)
         ]
     if config is not None:
         reasons += _signal_reasons(ctx, config)
