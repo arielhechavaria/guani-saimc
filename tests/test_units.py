@@ -30,7 +30,7 @@ class TestVocabulario:
         fallar para ningún contenido de `UNITS`: sacar una unidad pasaría
         inadvertido. `ml` en particular entró por decisión explícita de este
         cambio, aunque el extractor todavía no lo reconozca."""
-        assert UNITS == ("lb", "kg", "l", "ml", "unidad", "docena", "caja")
+        assert UNITS == ("lb", "kg", "g", "l", "ml", "unidad", "docena", "caja")
 
 
 class TestCanonicalUnitFormasCanonicas:
@@ -236,6 +236,7 @@ class TestUnitNoun:
         assert {u: unit_noun(u) for u in UNITS} == {
             "lb": "libra",
             "kg": "kilo",
+            "g": "gramo",
             "l": "litro",
             "ml": "mililitro",
             "unidad": "unidad",
@@ -252,3 +253,27 @@ class TestUnitNoun:
         assert unit_noun("") is None
         assert unit_noun(None) is None
 
+
+
+class TestGramo:
+    """`g` entra al vocabulario por pedido del operador (2026-10-13): hay
+    productos que se venden por gramos y no había cómo cargarlos."""
+
+    @pytest.mark.parametrize("raw", ["g", "G", "gr", "grs", "gramo", "Gramos"])
+    def test_las_formas_habituales_normalizan_a_g(self, raw: str) -> None:
+        assert canonical_unit(raw) == "g"
+
+    def test_el_gramo_se_nombra_en_una_frase(self) -> None:
+        assert unit_noun("g") == "gramo"
+
+    def test_mil_gramos_cuestan_lo_que_un_kilo(self) -> None:
+        # Un precio por kilo de 1000 es 1 por gramo: el gramo es 1000 veces menos producto.
+        assert convert_price_per_unit(Decimal("1000"), frm="kg", to="g") == Decimal("1")
+        assert convert_price_per_unit(Decimal("1"), frm="g", to="kg") == Decimal("1000")
+
+    def test_el_gramo_y_la_libra_se_convierten_entre_si(self) -> None:
+        assert convert_quantity(Decimal("453.59237"), frm="g", to="lb") == Decimal("1")
+
+    def test_el_gramo_no_se_convierte_a_volumen(self) -> None:
+        assert convert_price_per_unit(Decimal("1"), frm="g", to="ml") is None
+        assert convert_quantity(Decimal("1"), frm="g", to="l") is None

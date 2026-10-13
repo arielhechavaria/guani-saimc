@@ -14,7 +14,7 @@ que esta nota anticipaba). La regla que ordena las dos listas es este
 módulo: `engine._UNIT_WORDS` sólo admite formas que `canonical_unit()`
 resuelva, porque reconocer una que no resuelva dejaría una cantidad con
 `unit=None` después de canonizar. Las magnitudes que el mercado escribe y
-`UNITS` no almacena (`g`, `oz`, `cc`, `u`) viven en
+`UNITS` no almacena (`oz`, `cc`, `u`) viven en
 `engine._NON_CANONICAL_MAGNITUDE_WORDS` y sólo sirven para que su número no
 se lea como precio (docs/decisions.md, 2026-09-07).
 
@@ -24,7 +24,7 @@ acá, en código de aplicación, así que ampliarlo nunca exige una migración.
 
 from decimal import Decimal
 
-UNITS: tuple[str, ...] = ("lb", "kg", "l", "ml", "unidad", "docena", "caja")
+UNITS: tuple[str, ...] = ("lb", "kg", "g", "l", "ml", "unidad", "docena", "caja")
 
 #: El nombre con el que cada unidad se escribe DENTRO de una frase («no por
 #: libra»). `UNITS` es corto y canónico porque nombra lo que se almacena;
@@ -32,6 +32,7 @@ UNITS: tuple[str, ...] = ("lb", "kg", "l", "ml", "unidad", "docena", "caja")
 UNIT_NOUNS: dict[str, str] = {
     "lb": "libra",
     "kg": "kilo",
+    "g": "gramo",
     "l": "litro",
     "ml": "mililitro",
     "unidad": "unidad",
@@ -40,7 +41,15 @@ UNIT_NOUNS: dict[str, str] = {
 }
 
 # Formas que produce el extractor u operadores y no son canónicas.
-_ALIASES = {"litro": "l", "litros": "l", "cajas": "caja"}
+_ALIASES = {
+    "litro": "l",
+    "litros": "l",
+    "cajas": "caja",
+    "gr": "g",
+    "grs": "g",
+    "gramo": "g",
+    "gramos": "g",
+}
 
 
 def unit_noun(unit: str | None) -> str | None:
@@ -103,6 +112,7 @@ def canonical_packaging(raw: str | None) -> str | None:
 _MAGNITUDES: dict[str, tuple[str, Decimal]] = {
     "lb": ("mass", Decimal("453.59237")),
     "kg": ("mass", Decimal("1000")),
+    "g": ("mass", Decimal("1")),
     "ml": ("volume", Decimal("1")),
     "l": ("volume", Decimal("1000")),
 }
