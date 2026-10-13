@@ -192,6 +192,12 @@ class Settings(BaseSettings):
     # (`saimc.queue_expiry`). 0 = sin tope, que es el valor por defecto: un anuncio
     # viejo es histórico y no se descarta solo (2026-10-13, ver `docs/decisions.md`).
     queue_max_age_days: int = 0
+    # Acceso al sitio público (`web/access.py`, 2026-10-13). Apagado por defecto.
+    # Entra con las credenciales del operador; `site_password` fija otra
+    # contraseña que vale solo para el sitio, sin abrir la herramienta.
+    site_gate_enabled: bool = False
+    site_password: str | None = None
+    site_access_days: int = 30
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     alerts_state_path: Path = Path("data/alerts-state.json")
