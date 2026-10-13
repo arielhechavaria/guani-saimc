@@ -58,6 +58,7 @@ import httpx
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
+from saimc import queue_expiry
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
 from saimc.exchange_rate import Fetcher
@@ -81,6 +82,7 @@ from saimc.models import (
     Province,
     RawIngestion,
 )
+from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.validation import jev_signal, lane0, lane1
@@ -504,6 +506,15 @@ def _run_mode(
     # Canónico (sin prefijo de proveedor): con él se estima y se tarifa. No
     # necesita clave, así que el dry-run sigue andando sin ninguna.
     model = canonical_model(args.model) if args.model else effective_model(settings)
+    # El tope de edad de la cola corre primero en cada pasada real, antes de
+    # elegir candidatos: no se gasta API en un anuncio que ya vence, y un
+    # pendiente viejo no espera a que haya trabajo ni clave.
+    if args.execute:
+        vencidos = queue_expiry.expire_stale(
+            session, now=utc_now(), max_age_days=settings.queue_max_age_days
+        )
+        session.commit()
+        out(f"Vencidos por edad (más de {settings.queue_max_age_days} días): {vencidos}")
     products = pilot_products(session)
     lane0_types = lane0.enabled_types(settings)
     candidates = select_candidates(

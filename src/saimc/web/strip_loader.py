@@ -20,7 +20,7 @@ from saimc.ingestion.channel_gaps import load_channel_gap_report
 from saimc.ingestion.whatsapp_health import session_health
 from saimc.llm.provider import try_resolve_config
 from saimc.models import RawIngestion
-from saimc.progress import IntakeHealth, compute_intake_health
+from saimc.progress import IntakeHealth, compute_intake_health, oldest_pending_age_days
 from saimc.validation import jev_signal
 from saimc.web.health_strip import Indicator, build_strip
 
@@ -63,5 +63,8 @@ def load_strip(db: Session, settings: Settings) -> StripSnapshot:
         prefill_run=prefill_run,
         channel_gaps=load_channel_gap_report(db),
         jev_active=jev_signal.is_active(settings),
+        oldest_pending_days=oldest_pending_age_days(db),
+        queue_max_age_days=settings.queue_max_age_days,
+        show_oldest_pending=True,
     )
     return StripSnapshot(strip, intake, rate_statuses, prefill_run, assist)

@@ -1156,3 +1156,34 @@ def test_run_prefill_sin_llm_ni_clave_falla_antes_de_llamar(tmp_path: Path) -> N
             raw_store_dir=tmp_path,
             log_path=tmp_path / "log.jsonl",
         )
+
+
+# --- tope de edad de la cola (2026-10-13) ------------------------------------------
+
+
+def test_execute_vence_el_pendiente_viejo_antes_de_pre_calcular(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    viejo = _ingesta(session, texto="arroz 100")
+    viejo.created_at = datetime.now(UTC) - timedelta(days=9)
+    session.commit()
+
+    codigo, salida = _correr(session, tmp_path, ["--execute"], cliente=ClienteFalso())
+
+    assert codigo == 0
+    session.refresh(viejo)
+    assert viejo.processing_status == ProcessingStatus.DISCARDED
+    assert "Vencidos por edad (más de 7 días): 1" in salida
+    # No se gastó una llamada al modelo en un anuncio que ya vencía.
+    assert _propuestas(session) == []
+
+
+def test_dry_run_no_vence_nada(session: Session, catalogo, tmp_path: Path) -> None:
+    viejo = _ingesta(session, texto="arroz 100")
+    viejo.created_at = datetime.now(UTC) - timedelta(days=9)
+    session.commit()
+
+    _correr(session, tmp_path, [])
+
+    session.refresh(viejo)
+    assert viejo.processing_status == ProcessingStatus.PENDING

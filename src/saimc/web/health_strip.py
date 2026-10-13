@@ -184,6 +184,40 @@ def queue_indicator(health: IntakeHealth) -> Indicator:
     )
 
 
+# Desde cuántos días de espera el pendiente más viejo pasa a ámbar. Elige
+# cuándo llamarle la atención al operador, no decide ningún dato. El rojo es
+# el tope de edad de la cola (`queue_max_age_days`): ahí el sistema ya lo vence.
+_OLDEST_PENDING_WARN_DAYS = 3
+
+
+def oldest_pending_indicator(age_days: int | None, *, max_age_days: int) -> Indicator:
+    """Cuánto lleva esperando el pendiente más viejo: la cola tiene que fluir."""
+    if age_days is None:
+        return Indicator(key="oldest_pending", label="Pendiente más viejo", value="ninguno", level="ok")
+    topado = max_age_days > 0
+    if topado and age_days > max_age_days:
+        level = "down"
+    elif age_days > _OLDEST_PENDING_WARN_DAYS:
+        level = "warn"
+    else:
+        level = "ok"
+    hint = ""
+    if level != "ok":
+        hint = (
+            f"Cura o deja que venza: a los {max_age_days} días sale de la cola solo."
+            if topado
+            else "Curá los más viejos: la cola dejó de ser un flujo."
+        )
+    return Indicator(
+        key="oldest_pending",
+        label="Pendiente más viejo",
+        value=f"{age_days} d",
+        level=level,
+        hint=hint,
+        anchor="#ingesta",
+    )
+
+
 def rate_indicator(statuses: list[RateStatus], *, now: datetime) -> Indicator:
     """La tasa más vieja de las que hay, que es la que manda."""
     con_fecha = [s for s in statuses if s.age_days is not None]
@@ -354,6 +388,9 @@ def build_strip(
     now: datetime | None = None,
     channel_gaps: GapReport | None = None,
     jev_active: bool = False,
+    oldest_pending_days: int | None = None,
+    queue_max_age_days: int = 0,
+    show_oldest_pending: bool = False,
 ) -> list[Indicator]:
     """La franja completa, con lo más urgente primero.
 
@@ -370,6 +407,10 @@ def build_strip(
         assist_indicator(assist, configured=assist_configured),
         prefill_indicator(prefill_run, now=ahora),
     ]
+    if show_oldest_pending:
+        indicadores.append(
+            oldest_pending_indicator(oldest_pending_days, max_age_days=queue_max_age_days)
+        )
     jev = jev_indicator(prefill_run, active=jev_active)
     if jev is not None:
         indicadores.append(jev)
