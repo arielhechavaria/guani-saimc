@@ -3,64 +3,50 @@
 <head>
 <meta charset="utf-8">
 <title>De dónde sale este precio — {{ card.product_name }}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Alice&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
-<style>
-body{margin:0;font-family:'Roboto',sans-serif}
-.ms{font-family:'Material Symbols Rounded';font-weight:400;font-style:normal;line-height:1;display:inline-block;letter-spacing:normal;text-transform:none;white-space:nowrap;-webkit-font-feature-settings:'liga';font-feature-settings:'liga'}
-</style>
+{% include "_marketing_glass.html" %}
 </head>
 <body>
 {#
   Adaptado de marketing-design/project/CarruselAnuncios.dc.html
-  («3b · Carrusel: de dónde sale este precio»). El enlace de cada fila queda
-  siempre en «captura» — no se arma un link real al anuncio, ver
-  docs/decisions.md (slice de marketing, cards.build_de_donde_sale).
+  («3b · Carrusel: de dónde sale este precio»). Estilo glass compartido en
+  _marketing_glass.html. El enlace de cada fila queda siempre en «captura» —
+  no se arma un link real al anuncio, ver docs/decisions.md (slice de
+  marketing, cards.build_de_donde_sale).
 #}
-<div style="width: 1080px; height: 1350px; box-sizing: border-box; padding: 72px; background: #f2f6f6; color: #191c1c; display: flex; flex-direction: column; font-family: 'Roboto', sans-serif">
-  <div style="font-size: 27px; font-weight: 700; letter-spacing: 0.12em; color: #015a63">EL RECORRIDO HACIA ATRÁS</div>
-  <div style="margin-top: 24px; font-family: 'Alice', Georgia, serif; font-size: 100px; line-height: 1.06">De dónde sale este precio.</div>
-  <div style="margin-top: 44px; background: #ffffff; border-radius: 40px; padding: 36px 40px 32px; box-sizing: border-box; box-shadow: 0 2px 4px rgba(5, 32, 48, 0.08), 0 8px 28px rgba(5, 32, 48, 0.06)">
-    <div style="display: flex; align-items: center; gap: 14px">
-      <div style="width: 22px; height: 22px; border-radius: 50%; background: #3f5fd6"></div>
-      <div style="flex-grow: 1; font-size: 32px; font-weight: 700">{{ card.product_name }} · {{ card.province_name }}</div>
+<div class="gl-bg" style="width: 1080px; height: 1350px">
+  <div class="gl-orb gl-orb-a"></div><div class="gl-orb gl-orb-b"></div><div class="gl-orb gl-orb-c"></div><div class="gl-grain"></div>
+  <div class="gl-content" style="padding: 72px">
+    <div class="gl-kicker" style="font-size: 27px">EL RECORRIDO HACIA ATRÁS</div>
+    <div class="gl-title" style="margin-top: 24px; font-size: 100px; line-height: 1.06">De dónde sale este precio.</div>
+    <div class="gl-panel" style="margin-top: 44px; padding: 36px 40px 32px">
+      <div style="display: flex; align-items: center; gap: 14px">
+        <div class="gl-dot" style="width: 22px; height: 22px; background: #3f5fd6"></div>
+        <div style="flex-grow: 1; font-size: 32px; font-weight: 700">{{ card.product_name }} · {{ card.province_name }}</div>
+      </div>
+      <div style="margin-top: 8px; display: flex; align-items: baseline; gap: 14px">
+        <div class="gl-title" style="font-size: 84px; line-height: 1.05">{{ card.range_text }}</div>
+        <div class="gl-muted" style="font-size: 26px">{{ card.currency }}/{{ card.unit }}</div>
+      </div>
+      <div class="gl-rule" style="margin-top: 20px"></div>
+      <div style="margin-top: 20px; display: flex; align-items: center; gap: 10px; font-size: 30px; font-weight: 500"><span class="ms" style="font-size: 38px; color: #5eead4">expand_more</span>{{ card.count }} anuncio{{ "s" if card.count != 1 }} detrás de esta cifra</div>
+      <div style="margin-top: 14px; display: grid; grid-template-columns: 1fr 1.5fr 1.1fr; gap: 0 20px; font-size: 28px">
+        <div class="gl-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.35)">Día</div>
+        <div class="gl-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.35)">Precio</div>
+        <div class="gl-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.35)">Enlace</div>
+        {% for fila in card.rows %}
+        <div style="padding: 14px 0; {{ 'border-bottom: 1px solid rgba(255,255,255,.16);' if not loop.last }}">{{ fila.day_text }}</div>
+        <div style="padding: 14px 0; {{ 'border-bottom: 1px solid rgba(255,255,255,.16);' if not loop.last }}">{{ fila.price_text }} {{ card.currency }}/{{ card.unit }}</div>
+        <div class="gl-muted" style="padding: 14px 0; {{ 'border-bottom: 1px solid rgba(255,255,255,.16);' if not loop.last }}">captura</div>
+        {% endfor %}
+      </div>
     </div>
-    <div style="margin-top: 8px; display: flex; align-items: baseline; gap: 14px">
-      <div style="font-family: 'Alice', Georgia, serif; font-size: 84px; line-height: 1.05">{{ card.range_text }}</div>
-      <div style="font-size: 26px; color: #3f4949">{{ card.currency }}/{{ card.unit }}</div>
+    <div class="gl-muted" style="margin-top: 32px; font-size: 30px; line-height: 1.4">La imagen original de cada anuncio no se publica: <b style="color: #ffffff">captura</b> es una referencia interna, no un enlace.</div>
+    <div style="flex-grow: 1"></div>
+    <div style="display: flex; align-items: center; gap: 16px">
+      {% with logo_size = 64 %}{% include "_marketing_glass_logo.html" %}{% endwith %}
+      <div class="gl-brand" style="flex-grow: 1; font-size: 40px">Guani</div>
+      <div class="gl-chip gl-chip-teal" style="padding: 10px 24px; font-size: 26px; letter-spacing: 0">3 / 4</div>
     </div>
-    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #eef2f2; display: flex; align-items: center; gap: 10px; font-size: 30px; font-weight: 500"><span class="ms" style="font-size: 38px; color: #05668d">expand_more</span>{{ card.count }} anuncio{{ "s" if card.count != 1 }} detrás de esta cifra</div>
-    <div style="margin-top: 14px; display: grid; grid-template-columns: 1fr 1.5fr 1.1fr; gap: 0 20px; font-size: 28px">
-      <div style="padding: 12px 0; color: #3f4949; font-weight: 500; border-bottom: 2px solid #c4cfcf">Día</div>
-      <div style="padding: 12px 0; color: #3f4949; font-weight: 500; border-bottom: 2px solid #c4cfcf">Precio</div>
-      <div style="padding: 12px 0; color: #3f4949; font-weight: 500; border-bottom: 2px solid #c4cfcf">Enlace</div>
-      {% for fila in card.rows %}
-      <div style="padding: 14px 0; {{ 'border-bottom: 2px solid #eef2f2;' if not loop.last }}">{{ fila.day_text }}</div>
-      <div style="padding: 14px 0; {{ 'border-bottom: 2px solid #eef2f2;' if not loop.last }}">{{ fila.price_text }} {{ card.currency }}/{{ card.unit }}</div>
-      <div style="padding: 14px 0; {{ 'border-bottom: 2px solid #eef2f2;' if not loop.last }} color: #3f4949">captura</div>
-      {% endfor %}
-    </div>
-  </div>
-  <div style="margin-top: 32px; font-size: 30px; line-height: 1.4; color: #3f4949">La imagen original de cada anuncio no se publica: <b style="color: #191c1c">captura</b> es una referencia interna, no un enlace.</div>
-  <div style="flex-grow: 1"></div>
-  <div style="display: flex; align-items: center; gap: 16px">
-    <svg viewBox="0 0 80 80" width="64" height="64" role="img" aria-label="Guani">
-      <circle cx="40" cy="40" r="39" fill="#ffffff" stroke="#c4cfcf" stroke-width="2"/>
-      <clipPath id="gc"><circle cx="40" cy="40" r="37"/></clipPath>
-      <g clip-path="url(#gc)" transform="translate(40,40) scale(.8) translate(-40,-40)">
-        <ellipse cx="40" cy="30" rx="34" ry="34" fill="#191c1c"/>
-        <circle cx="40" cy="34" r="27" fill="#6f7979"/>
-        <rect x="13" y="20" width="54" height="8" rx="4" fill="#191c1c"/>
-        <path d="M52,22 L57,3 L62,22 Z" fill="#c4cfcf"/>
-        <ellipse cx="33" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
-        <ellipse cx="47" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
-        <path d="M33,48 Q40,52 47,48" stroke="#ffffff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-        <ellipse cx="40" cy="72" rx="40" ry="20" fill="#8a9494"/>
-      </g>
-    </svg>
-    <div style="flex-grow: 1; font-family: 'Alice', Georgia, serif; font-size: 40px">Guani</div>
-    <div style="padding: 10px 24px; border: 2px solid #05668d; border-radius: 100px; font-size: 26px; color: #05668d; font-weight: 700">3 / 4</div>
   </div>
 </div>
 </body>
