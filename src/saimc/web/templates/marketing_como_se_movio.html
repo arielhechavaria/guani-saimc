@@ -3,68 +3,66 @@
 <head>
 <meta charset="utf-8">
 <title>Cómo se movió — {{ card.product_name }}</title>
-{% include "_marketing_glass.html" %}
+{% include "_marketing_card.html" %}
 </head>
 <body>
 {#
   Adaptado de marketing-design/project/Subio.dc.html («2 · Cómo se movió»).
-  Estilo glass compartido en _marketing_glass.html. Cifras de
+  Estilo del sistema compartido en _marketing_card.html. Cifras de
   saimc.marketing.cards.build_como_se_movio, que reusa
   price_charts.build_month_vs_month (el mismo "¿subió o bajó?" del tablero
   público). Coordenadas Y del gráfico ya calculadas por esa función, propias
   de esta tarjeta (no las del panel flotante, más chico).
 #}
-<div class="gl-bg" style="width: 1080px; height: 1350px">
-  <div class="gl-orb gl-orb-a"></div><div class="gl-orb gl-orb-b"></div><div class="gl-orb gl-orb-c"></div><div class="gl-grain"></div>
-  <div class="gl-content" style="padding: 64px 72px">
+<div class="mc" style="width: 1080px; height: 1350px">
+  <div class="mc-orbs"></div>
+  <div class="mc-content" style="padding: 64px 72px">
     <div style="display: flex; align-items: center; gap: 20px">
-      {% with logo_size = 80 %}{% include "_marketing_glass_logo.html" %}{% endwith %}
-      <div class="gl-brand" style="font-size: 48px">Guani</div>
+      <div class="mc-brand" style="--mc-logo: 80px">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}<span class="mc-wordmark">Guani</span></div>
       <div style="flex-grow: 1"></div>
-      <div class="gl-chip gl-chip-teal"><span class="ms" style="font-size: 32px">show_chart</span>CÓMO SE MOVIÓ</div>
+      <div class="mc-chip mc-chip-ink">Cómo se movió</div>
     </div>
 
-    <div class="gl-kicker" style="margin-top: 36px">PERÍODO ACTUAL FRENTE AL ANTERIOR</div>
+    <div class="mc-kicker" style="margin-top: 40px">Período actual frente al anterior</div>
     {# El nombre se achica según su largo para que un producto con nombre largo no empuje el resto fuera del lienzo. #}
     {% set n = card.product_name | length %}
-    <div class="gl-title" style="margin-top: 4px; font-size: {{ 150 if n <= 10 else 110 if n <= 18 else 80 if n <= 30 else 60 }}px; line-height: 1.05">{{ card.product_name }}</div>
+    <div class="mc-title" style="margin-top: 8px; font-size: {{ 150 if n <= 10 else 110 if n <= 18 else 80 if n <= 30 else 60 }}px; line-height: 1.05">{{ card.product_name }}</div>
 
-    <div class="gl-panel" style="margin-top: 20px; padding: 36px 40px 32px">
+    <div class="mc-panel" style="margin-top: 28px; padding: 36px 40px 32px">
       <svg viewBox="0 0 872 380" width="872" height="380" role="img" aria-label="Precio mediano por provincia, período anterior frente al actual">
-        <text x="150" y="34" text-anchor="middle" font-family="Roboto, sans-serif" font-size="26" fill="#c3d9d6">{{ card.before_label }}</text>
-        <text x="722" y="34" text-anchor="middle" font-family="Roboto, sans-serif" font-size="26" fill="#c3d9d6">{{ card.now_label }}</text>
-        <line x1="150" y1="60" x2="150" y2="350" stroke="rgba(255,255,255,.3)" stroke-width="2"/>
-        <line x1="722" y1="60" x2="722" y2="350" stroke="rgba(255,255,255,.3)" stroke-width="2"/>
+        <text x="150" y="34" text-anchor="middle" font-family="Inter, sans-serif" font-size="26" fill="#4e4e4e">{{ card.before_label }}</text>
+        <text x="722" y="34" text-anchor="middle" font-family="Inter, sans-serif" font-size="26" fill="#4e4e4e">{{ card.now_label }}</text>
+        <line x1="150" y1="60" x2="150" y2="350" stroke="#d6d3d1" stroke-width="2"/>
+        <line x1="722" y1="60" x2="722" y2="350" stroke="#d6d3d1" stroke-width="2"/>
         {% for row in card.rows if row.has_line %}
-        <line x1="150" y1="{{ row.y_before }}" x2="722" y2="{{ row.y_now }}" stroke="rgba(255,255,255,.55)" stroke-width="13" stroke-linecap="round"/>
         <line x1="150" y1="{{ row.y_before }}" x2="722" y2="{{ row.y_now }}" stroke="{{ row.color }}" stroke-width="8" stroke-linecap="round"/>
-        <circle cx="150" cy="{{ row.y_before }}" r="14" fill="{{ row.color }}" stroke="#ffffff" stroke-width="3"/>
-        <circle cx="722" cy="{{ row.y_now }}" r="14" fill="{{ row.color }}" stroke="#ffffff" stroke-width="3"/>
-        <text x="120" y="{{ row.y_before + 8 }}" text-anchor="end" font-family="Alice, Georgia, serif" font-size="36" fill="#ffffff">{{ row.before_text }}</text>
-        <text x="752" y="{{ row.y_now + 8 }}" font-family="Alice, Georgia, serif" font-size="36" fill="#ffffff">{{ row.now_text }}</text>
+        <circle cx="150" cy="{{ row.y_before }}" r="14" fill="{{ row.color }}" stroke="#ffffff" stroke-width="4"/>
+        <circle cx="722" cy="{{ row.y_now }}" r="14" fill="{{ row.color }}" stroke="#ffffff" stroke-width="4"/>
+        <text x="120" y="{{ row.y_before + 8 }}" text-anchor="end" font-family="Inter, sans-serif" font-weight="300" font-size="36" fill="#292524">{{ row.before_text }}</text>
+        <text x="752" y="{{ row.y_now + 8 }}" font-family="Inter, sans-serif" font-weight="300" font-size="36" fill="#292524">{{ row.now_text }}</text>
         {% endfor %}
       </svg>
     </div>
 
-    <div style="margin-top: 20px; display: flex; gap: 20px">
+    <div style="margin-top: 24px; display: flex; gap: 24px">
       {% for row in card.rows %}
-      <div class="gl-panel gl-panel-sm" style="flex: 1 1 0; min-width: 0; padding: 24px 28px">
-        <div style="display: flex; align-items: center; gap: 12px"><div class="gl-dot" style="width: 20px; height: 20px; background: {{ row.color }}"></div><div style="font-size: 30px; font-weight: 700">{{ row.name }}</div></div>
+      <div class="mc-panel" style="flex: 1 1 0; min-width: 0; padding: 24px 28px">
+        <div style="display: flex; align-items: center; gap: 12px"><div class="mc-dot" style="width: 20px; height: 20px; background: {{ row.color }}"></div><div style="font-size: 30px; line-height: 36px; font-weight: 600">{{ row.name }}</div></div>
         {% if row.has_line %}
-        <div class="gl-title" style="margin-top: 8px; font-size: 72px; line-height: 1.05">{{ row.change_text }}</div>
-        <div class="gl-muted" style="margin-top: 4px; font-size: 24px">{{ row.now_count }} anuncio{{ "s" if row.now_count != 1 }} · antes {{ row.before_text }}</div>
+        <div class="mc-title" style="margin-top: 8px; font-size: 72px; line-height: 1.05">{{ row.change_text }}</div>
+        <div class="mc-muted" style="margin-top: 4px; font-size: 24px; line-height: 32px">{{ row.now_count }} anuncio{{ "s" if row.now_count != 1 }} · antes {{ row.before_text }}</div>
         {% else %}
-        <div class="gl-muted" style="margin-top: 8px; font-size: 28px">Sin comparación esta semana</div>
+        <div class="mc-muted" style="margin-top: 8px; font-size: 28px; line-height: 36px">Sin comparación esta semana</div>
         {% endif %}
       </div>
       {% endfor %}
     </div>
 
-    <div class="gl-chip gl-chip-gold" style="margin-top: 24px; align-self: flex-start"><span class="ms" style="font-size: 32px">info</span>Muestra en formación</div>
+    <div class="mc-chip mc-chip-soft" style="margin-top: 24px; align-self: flex-start">Muestra en formación</div>
     <div style="flex-grow: 1"></div>
-    <div style="display: flex; align-items: flex-end; gap: 32px">
-      <div class="gl-muted" style="flex-grow: 1; font-size: 24px; line-height: 1.35">Fuente: canales de WhatsApp de emprendedores cubanos. Mediana de cada período, precio por {{ card.unit_noun }}.</div>
-      <div class="gl-url">{{ site_url }}</div>
+    <div style="margin-top: 24px; display: flex; align-items: flex-end; gap: 32px">
+      <div class="mc-muted" style="flex-grow: 1; font-size: 24px; line-height: 32px">Fuente: canales de WhatsApp de emprendedores cubanos. Mediana de cada período, precio por {{ card.unit_noun }}.</div>
+      <div class="mc-url">{{ site_url }}</div>
     </div>
   </div>
 </div>

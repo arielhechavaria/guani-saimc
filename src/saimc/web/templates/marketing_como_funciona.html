@@ -3,51 +3,50 @@
 <head>
 <meta charset="utf-8">
 <title>De los grupos a la cifra</title>
-{% include "_marketing_glass.html" %}
+{% include "_marketing_card.html" %}
 </head>
 <body>
-{# Adaptado de marketing-design/project/ComoFunciona.dc.html («8 · De los grupos a la cifra»). Estilo glass compartido en _marketing_glass.html. Explica el PIPELINE en general, con un ejemplo ilustrativo — no un anuncio real. #}
-<div class="gl-bg" style="width: 1080px; height: 1350px">
-  <div class="gl-orb gl-orb-a"></div><div class="gl-orb gl-orb-b"></div><div class="gl-orb gl-orb-c"></div><div class="gl-grain"></div>
-  <div class="gl-content" style="padding: 60px 72px">
+{# Adaptado de marketing-design/project/ComoFunciona.dc.html («8 · De los grupos a la cifra»). Estilo del sistema compartido en _marketing_card.html. Explica el PIPELINE en general, con un ejemplo ilustrativo — no un anuncio real. #}
+<div class="mc" style="width: 1080px; height: 1350px">
+  <div class="mc-orbs"></div>
+  <div class="mc-content" style="padding: 60px 72px">
     <div style="display: flex; align-items: center; gap: 20px">
-      {% with logo_size = 76 %}{% include "_marketing_glass_logo.html" %}{% endwith %}
-      <div class="gl-brand" style="font-size: 46px">Guani</div>
+      <div class="mc-brand" style="--mc-logo: 76px">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}<span class="mc-wordmark" style="font-size: 48px">Guani</span></div>
       <div style="flex-grow: 1"></div>
-      <div class="gl-note">EJEMPLO ILUSTRATIVO</div>
+      <div class="mc-note">EJEMPLO ILUSTRATIVO</div>
     </div>
-    <div class="gl-title" style="margin-top: 32px; font-size: 82px; line-height: 1.05">De los grupos de WhatsApp a la cifra.</div>
-    <div style="margin-top: 32px; display: flex; flex-direction: column; gap: 14px">
-      <div class="gl-panel gl-panel-sm" style="display: flex; align-items: center; gap: 24px; padding: 20px 28px">
-        <div class="gl-chip gl-chip-teal" style="width: 64px; height: 64px; flex: none; padding: 0; justify-content: center"><span class="ms" style="font-size: 36px">forum</span></div>
-        <div><div style="font-size: 32px; font-weight: 700">Mensajes en grupos y canales</div><div class="gl-muted" style="margin-top: 2px; font-size: 24px">Lo que los emprendedores ofrecen, tal cual.</div></div>
+    <div class="mc-title" style="margin-top: 28px; font-size: 76px; line-height: 1.05">De los grupos de WhatsApp a la cifra.</div>
+    <div style="margin-top: 32px; display: flex; flex-direction: column; gap: 16px">
+      <div class="mc-panel" style="display: flex; align-items: center; gap: 24px; padding: 16px 28px">
+        <div class="mc-step">1</div>
+        <div><div style="font-size: 32px; line-height: 40px; font-weight: 600">Mensajes en grupos y canales</div><div class="mc-muted" style="margin-top: 4px; font-size: 24px; line-height: 32px">Lo que los emprendedores ofrecen, tal cual.</div></div>
       </div>
-      <div class="gl-panel gl-panel-sm" style="display: flex; align-items: center; gap: 24px; padding: 20px 28px">
-        <div class="gl-chip gl-chip-teal" style="width: 64px; height: 64px; flex: none; padding: 0; justify-content: center"><span class="ms" style="font-size: 36px">layers</span></div>
-        <div><div style="font-size: 32px; font-weight: 700">Los juntamos</div><div class="gl-muted" style="margin-top: 2px; font-size: 24px">Todo en un solo lugar, por producto y por provincia.</div></div>
+      <div class="mc-panel" style="display: flex; align-items: center; gap: 24px; padding: 16px 28px">
+        <div class="mc-step">2</div>
+        <div><div style="font-size: 32px; line-height: 40px; font-weight: 600">Los juntamos</div><div class="mc-muted" style="margin-top: 4px; font-size: 24px; line-height: 32px">Todo en un solo lugar, por producto y por provincia.</div></div>
       </div>
-      <div class="gl-panel gl-panel-sm" style="display: flex; align-items: center; gap: 24px; padding: 20px 28px">
-        <div class="gl-chip gl-chip-teal" style="width: 64px; height: 64px; flex: none; padding: 0; justify-content: center"><span class="ms" style="font-size: 36px">tune</span></div>
-        <div><div style="font-size: 32px; font-weight: 700">Los procesamos</div><div class="gl-muted" style="margin-top: 2px; font-size: 24px">De cada anuncio sacamos producto, precio y provincia.</div></div>
+      <div class="mc-panel" style="display: flex; align-items: center; gap: 24px; padding: 16px 28px">
+        <div class="mc-step">3</div>
+        <div><div style="font-size: 32px; line-height: 40px; font-weight: 600">Los procesamos</div><div class="mc-muted" style="margin-top: 4px; font-size: 24px; line-height: 32px">De cada anuncio sacamos producto, precio y provincia.</div></div>
       </div>
-      <div class="gl-panel gl-panel-sm" style="display: flex; align-items: center; gap: 24px; padding: 20px 28px">
-        <div class="gl-chip gl-chip-teal" style="width: 64px; height: 64px; flex: none; padding: 0; justify-content: center"><span class="ms" style="font-size: 36px">bar_chart</span></div>
-        <div><div style="font-size: 32px; font-weight: 700">Te los mostramos como estadística</div><div class="gl-muted" style="margin-top: 2px; font-size: 24px">Rango, mediana y número de anuncios.</div></div>
+      <div class="mc-panel" style="display: flex; align-items: center; gap: 24px; padding: 16px 28px">
+        <div class="mc-step">4</div>
+        <div><div style="font-size: 32px; line-height: 40px; font-weight: 600">Te los mostramos como estadística</div><div class="mc-muted" style="margin-top: 4px; font-size: 24px; line-height: 32px">Rango, mediana y número de anuncios.</div></div>
       </div>
     </div>
-    <div class="gl-panel gl-panel-strong" style="margin-top: 24px; padding: 32px 36px">
-      <div class="gl-title" style="font-size: 50px; line-height: 1.1">Cada precio, con sus anuncios detrás.</div>
-      <div style="margin-top: 20px; background: rgba(2,16,28,.38); border: 1px solid rgba(255,255,255,.16); border-radius: 24px; padding: 18px 28px; box-sizing: border-box">
-        <div style="display: flex; align-items: center; gap: 10px; font-size: 26px; font-weight: 500"><span class="ms" style="font-size: 32px; color: #5eead4">expand_more</span>00 anuncios detrás de esta cifra</div>
-        <div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 6px 16px; font-size: 24px">
-          <div class="gl-muted" style="font-weight: 500">Día</div><div class="gl-muted" style="font-weight: 500">Precio</div><div class="gl-muted" style="font-weight: 500">Enlace</div>
-          <div>00 sep</div><div>000 CUP/lb</div><div style="color: #5eead4; text-decoration: underline">ver anuncio</div>
-          <div>00 sep</div><div>000 CUP/lb</div><div class="gl-muted">captura</div>
+    <div class="mc-panel" style="margin-top: 24px; padding: 32px 36px">
+      <div class="mc-title" style="font-size: 50px; line-height: 1.1">Cada precio, con sus anuncios detrás.</div>
+      <div class="mc-inset" style="margin-top: 20px; padding: 16px 28px">
+        <div style="font-size: 26px; line-height: 32px; font-weight: 500">00 anuncios detrás de esta cifra</div>
+        <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 8px 16px; font-size: 24px; line-height: 32px">
+          <div class="mc-muted" style="font-weight: 500">Día</div><div class="mc-muted" style="font-weight: 500">Precio</div><div class="mc-muted" style="font-weight: 500">Enlace</div>
+          <div>00 sep</div><div>000 CUP/lb</div><div style="text-decoration: underline">ver anuncio</div>
+          <div>00 sep</div><div>000 CUP/lb</div><div class="mc-muted">captura</div>
         </div>
       </div>
     </div>
     <div style="flex-grow: 1"></div>
-    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 24px"><span class="gl-muted">Datos de canales de WhatsApp de emprendedores cubanos.</span><span class="gl-url">{{ site_url }}</span></div>
+    <div style="margin-top: 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; font-size: 24px; line-height: 32px"><span class="mc-muted">Datos de canales de WhatsApp de emprendedores cubanos.</span><span class="mc-url">{{ site_url }}</span></div>
   </div>
 </div>
 </body>

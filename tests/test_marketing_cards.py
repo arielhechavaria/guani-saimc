@@ -5,15 +5,19 @@ mano, los mismos tipos que producen `card_view.py`/`price_charts.py`/
 `cells.py` sobre datos reales.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from saimc.cells import RetailObservation
 from saimc.marketing.cards import (
+    _PROVINCE_COLORS,
     build_como_se_movio,
     build_dato_del_dia,
     build_de_donde_sale,
 )
+from saimc.marketing.fonts import font_face_css
 from saimc.web.card_view import ProductCard
 from saimc.web.price_charts import SlopeChart, SlopeLine
 
@@ -316,7 +320,7 @@ def test_de_donde_sale_no_mezcla_otra_provincia_ni_otro_producto() -> None:
     assert tarjeta.range_text == "300"
 
 
-# --- Estilo glass: humo de las nueve plantillas ------------------------------
+# --- Estilo del sistema: humo de las nueve plantillas ------------------------------
 
 
 def _entorno_plantillas():
@@ -340,8 +344,8 @@ def _contextos_minimos() -> dict[str, dict]:
     return {"marketing_dato_del_dia.html": {"card": dato}}
 
 
-def test_las_plantillas_incluyen_el_parcial_glass_y_no_filtran_etiquetas() -> None:
-    """Cada plantilla carga `_marketing_glass.html` (el motor lo resuelve igual
+def test_las_plantillas_incluyen_el_parcial_de_tarjeta_y_no_filtran_etiquetas() -> None:
+    """Cada plantilla carga `_marketing_card.html` (el motor lo resuelve igual
     que `request.app.state.templates`) y ninguna deja una etiqueta Jinja o un
     comentario sin interpretar en el HTML que va a Playwright."""
     entorno = _entorno_plantillas()
@@ -357,9 +361,92 @@ def test_las_plantillas_incluyen_el_parcial_glass_y_no_filtran_etiquetas() -> No
     contextos.update(estaticas)
 
     for plantilla, contexto in contextos.items():
-        html = entorno.get_template(plantilla).render(site_url="guani.test", **contexto)
-        assert "gl-bg" in html and "backdrop-filter" in html, plantilla
+        html = entorno.get_template(plantilla).render(
+            site_url="guani.test", font_css=font_face_css(), **contexto
+        )
+        assert 'class="mc"' in html and "--mc-ink:#292524" in html, plantilla
+        assert "@font-face" in html and "data:font/woff2;base64," in html, plantilla
         assert "{%" not in html and "{#" not in html, plantilla
+        assert "fonts.googleapis.com" not in html, plantilla
+        assert "backdrop-filter" not in html, plantilla
+
+
+# --- Los literales de las tarjetas siguen a design_tokens.css ----------------
+
+_TOKENS_CSS = Path(__file__).resolve().parent.parent / "src/saimc/web/design_tokens.css"
+_PARCIAL = Path(__file__).resolve().parent.parent / "src/saimc/web/templates/_marketing_card.html"
+
+#: Variable local del parcial -> token del sitio del que sale (modo claro).
+_VARIABLES_A_TOKENS = {
+    "--mc-bg": "--m3-bg",
+    "--mc-surface": "--m3-surface",
+    "--mc-ink": "--m3-primary",
+    "--mc-muted": "--m3-on-surface-variant",
+    "--mc-line": "--m3-divider",
+    "--mc-line-2": "--m3-outline-variant",
+    "--mc-track": "--m3-surface-container-high",
+    "--mc-chip": "--m3-surface-container",
+    "--mc-on-ink": "--m3-on-primary",
+}
+
+
+def _tokens_claros() -> dict[str, str]:
+    """Los tokens del primer bloque `:root` (el claro) de `design_tokens.css`."""
+    css = _TOKENS_CSS.read_text()
+    bloque = css.split(":root {", 1)[1].split("\n}\n", 1)[0]
+    return dict(re.findall(r"(--[a-z0-9-]+):\s*([^;]+);", bloque))
+
+
+def test_los_colores_del_parcial_coinciden_con_los_tokens_del_sitio() -> None:
+    tokens = _tokens_claros()
+    parcial = _PARCIAL.read_text()
+    for variable, token in _VARIABLES_A_TOKENS.items():
+        literal = re.search(rf"{variable}:(#[0-9a-f]{{6}});", parcial)
+        assert literal, variable
+        assert literal.group(1) == tokens[token].strip(), (variable, token)
+
+
+def test_los_orbes_y_los_colores_de_provincia_siguen_a_los_tokens() -> None:
+    tokens = _tokens_claros()
+    parcial = _PARCIAL.read_text()
+    for nombre in ("mint", "peach", "lavender", "sky", "rose"):
+        assert tokens[f"--ph-orb-{nombre}"] in parcial, nombre
+    assert "opacity:.55" in parcial and tokens["--ph-orb-opacity"] == ".55"
+    for slot, color in _PROVINCE_COLORS.items():
+        assert tokens[f"--m3-prov-{slot}"] == color, slot
+
+
+def _luminancia(hex_color: str) -> float:
+    canales = [int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    lineal = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in canales]
+    return 0.2126 * lineal[0] + 0.7152 * lineal[1] + 0.0722 * lineal[2]
+
+
+def _contraste(a: str, b: str) -> float:
+    la, lb = sorted((_luminancia(a), _luminancia(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def test_contraste_de_los_pares_texto_fondo_de_las_tarjetas() -> None:
+    """WCAG: texto >= 4,5:1, y las marcas de dato (barra, línea) >= 3:1 contra
+    su superficie. Los pares salen de los literales del parcial."""
+    t = _tokens_claros()
+    pares_texto = [
+        ("--m3-primary", "--m3-bg"),
+        ("--m3-primary", "--m3-surface"),
+        ("--m3-on-surface-variant", "--m3-bg"),
+        ("--m3-on-surface-variant", "--m3-surface"),
+        ("--m3-on-surface-variant", "--m3-surface-container"),
+        ("--m3-primary", "--m3-surface-container"),
+        ("--m3-on-primary", "--m3-primary"),
+    ]
+    for texto, fondo in pares_texto:
+        assert _contraste(t[texto], t[fondo]) >= 4.5, (texto, fondo)
+    for color in _PROVINCE_COLORS.values():
+        assert _contraste(color, t["--m3-surface"]) >= 3.0, color
+    # La barra se lee contra su pista.
+    for color in _PROVINCE_COLORS.values():
+        assert _contraste(color, t["--m3-surface-container-high"]) >= 3.0, color
 
 
 def test_dato_del_dia_con_nombre_largo_achica_el_titulo_y_marca_la_provincia_sin_datos() -> None:

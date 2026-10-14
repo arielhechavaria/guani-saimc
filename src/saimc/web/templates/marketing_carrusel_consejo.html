@@ -3,34 +3,33 @@
 <head>
 <meta charset="utf-8">
 <title>Carrusel: cómo leer los precios</title>
-{% include "_marketing_glass.html" %}
+{% include "_marketing_card.html" %}
 </head>
 <body>
-{# Adaptado de marketing-design/project/CarruselConsejo.dc.html («4 · Carrusel: cómo leer los precios»). Estilo glass compartido en _marketing_glass.html. Explica el CONCEPTO de rango/mediana, a propósito con cifras de ejemplo — no un producto real. #}
-<div class="gl-bg" style="width: 1080px; height: 1350px">
-  <div class="gl-orb gl-orb-a"></div><div class="gl-orb gl-orb-b"></div><div class="gl-orb gl-orb-c"></div><div class="gl-grain"></div>
-  <div class="gl-content" style="padding: 72px">
-    <div class="gl-kicker" style="font-size: 27px">CÓMO LEER LOS PRECIOS · 1 DE 3</div>
-    <div class="gl-title" style="margin-top: 28px; font-size: 100px; line-height: 1.06">Guani muestra un rango, no un precio único.</div>
-    <div class="gl-panel" style="margin-top: 48px; padding: 48px 40px 36px">
-      <div class="gl-track" style="height: 40px">
-        <div class="gl-bar" style="left: 14%; width: 62%; background-color: #1fb5c4"></div>
-        <div class="gl-knob" style="top: -7px; left: 44%; width: 52px; height: 52px; margin-left: -26px; border: 10px solid #1fb5c4"></div>
+{# Adaptado de marketing-design/project/CarruselConsejo.dc.html («4 · Carrusel: cómo leer los precios»). Estilo del sistema compartido en _marketing_card.html. Explica el CONCEPTO de rango/mediana, a propósito con cifras de ejemplo — no un producto real. #}
+<div class="mc" style="width: 1080px; height: 1350px">
+  <div class="mc-orbs"></div>
+  <div class="mc-content" style="padding: 72px">
+    <div class="mc-kicker">Cómo leer los precios · 1 de 3</div>
+    <div class="mc-title" style="margin-top: 24px; font-size: 100px; line-height: 1.06">Guani muestra un rango, no un precio único.</div>
+    <div class="mc-panel" style="margin-top: 48px; padding: 56px 44px 36px">
+      <div class="mc-track" style="height: 32px">
+        <div class="mc-bar" style="left: 14%; width: 62%; background: #3f5fd6"></div>
+        <div class="mc-knob" style="top: -8px; left: 44%; width: 48px; height: 48px; margin-left: -24px"></div>
       </div>
-      <div style="position: relative; height: 96px; margin-top: 28px">
-        <div style="position: absolute; left: 14%; font-size: 28px; font-weight: 500; transform: translateX(-30%)">mínimo<br><span class="gl-title" style="font-size: 44px">000</span></div>
-        <div style="position: absolute; left: 44%; font-size: 28px; font-weight: 500; transform: translateX(-50%); text-align: center">mediana<br><span class="gl-title" style="font-size: 44px">000</span></div>
-        <div style="position: absolute; left: 76%; font-size: 28px; font-weight: 500; transform: translateX(-70%); text-align: right">máximo<br><span class="gl-title" style="font-size: 44px">000</span></div>
+      <div style="position: relative; height: 112px; margin-top: 32px">
+        <div style="position: absolute; left: 14%; font-size: 28px; line-height: 36px; font-weight: 500; transform: translateX(-30%)">mínimo<br><span class="mc-title" style="display: inline-block; margin-top: 8px; font-size: 48px; line-height: 52px">000</span></div>
+        <div style="position: absolute; left: 44%; font-size: 28px; line-height: 36px; font-weight: 500; transform: translateX(-50%); text-align: center">mediana<br><span class="mc-title" style="display: inline-block; margin-top: 8px; font-size: 48px; line-height: 52px">000</span></div>
+        <div style="position: absolute; left: 76%; font-size: 28px; line-height: 36px; font-weight: 500; transform: translateX(-70%); text-align: right">máximo<br><span class="mc-title" style="display: inline-block; margin-top: 8px; font-size: 48px; line-height: 52px">000</span></div>
       </div>
     </div>
-    <div class="gl-muted" style="margin-top: 40px; font-size: 34px; line-height: 1.4">Un solo anuncio puede ser un caso raro. El rango muestra lo que se ve en el mercado, y la mediana marca el punto medio de lo observado.</div>
+    <div class="mc-muted" style="margin-top: 40px; font-size: 34px; line-height: 48px">Un solo anuncio puede ser un caso raro. El rango muestra lo que se ve en el mercado, y la mediana marca el punto medio de lo observado.</div>
     <div style="flex-grow: 1"></div>
     <div style="display: flex; align-items: center; gap: 16px">
-      {% with logo_size = 64 %}{% include "_marketing_glass_logo.html" %}{% endwith %}
-      <div class="gl-brand" style="flex-grow: 1; font-size: 40px">Guani</div>
-      <div class="gl-chip gl-chip-teal" style="letter-spacing: 0">2 / 4</div>
+      <div class="mc-brand" style="--mc-logo: 64px; flex-grow: 1">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}<span class="mc-wordmark" style="font-size: 44px">Guani</span></div>
+      <div class="mc-chip">2 / 4</div>
     </div>
-    <div class="gl-note" style="margin-top: 20px; align-self: flex-start">EJEMPLO ILUSTRATIVO</div>
+    <div class="mc-note" style="margin-top: 24px; align-self: flex-start">EJEMPLO ILUSTRATIVO</div>
   </div>
 </div>
 </body>

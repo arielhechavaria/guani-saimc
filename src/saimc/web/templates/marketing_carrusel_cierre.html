@@ -3,26 +3,21 @@
 <head>
 <meta charset="utf-8">
 <title>Carrusel: cierre</title>
-{% include "_marketing_glass.html" %}
+{% include "_marketing_card.html" %}
 </head>
 <body>
-{# Adaptado de marketing-design/project/CarruselCierre.dc.html («9 · Carrusel: cierre»). Estilo glass compartido en _marketing_glass.html. Sin datos: cierre fijo de la campaña. #}
-<div class="gl-bg gl-v2" style="width: 1080px; height: 1350px">
-  <div class="gl-orb gl-orb-a"></div><div class="gl-orb gl-orb-b"></div><div class="gl-orb gl-orb-c"></div><div class="gl-grain"></div>
-  <div class="gl-content" style="padding: 72px">
-    <div style="display: flex; align-items: center; gap: 20px">
-      {% with logo_size = 84 %}{% include "_marketing_glass_logo.html" %}{% endwith %}
-      <div class="gl-brand" style="font-size: 48px">Guani</div>
-    </div>
+{# Adaptado de marketing-design/project/CarruselCierre.dc.html («9 · Carrusel: cierre»). Estilo del sistema compartido en _marketing_card.html. Sin datos: cierre fijo de la campaña. #}
+<div class="mc" style="width: 1080px; height: 1350px">
+  <div class="mc-orbs mc-orbs-center"></div>
+  <div class="mc-content" style="padding: 72px">
+    <div class="mc-brand" style="--mc-logo: 84px">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}<span class="mc-wordmark">Guani</span></div>
     <div style="flex-grow: 1"></div>
-    <div class="gl-panel" style="padding: 56px 56px 52px">
-      <div class="gl-title" style="font-size: 130px; line-height: 1.04">Cada precio, con sus anuncios detrás.</div>
-      <div style="margin-top: 40px; font-size: 44px; line-height: 1.3; color: #f3c969">Síguenos: el sitio abre pronto.</div>
-    </div>
+    <div class="mc-title" style="font-size: 136px; line-height: 1.04">Cada precio, con sus anuncios detrás.</div>
+    <div style="margin-top: 40px"><span class="mc-chip mc-chip-ink" style="font-size: 40px; line-height: 48px; padding: 20px 40px">Síguenos: el sitio abre pronto.</span></div>
     <div style="flex-grow: 1"></div>
-    <div style="display: flex; align-items: center; gap: 24px; font-size: 32px; font-weight: 500">
-      <div style="flex-grow: 1">Precios por provincia, de canales de WhatsApp de emprendedores cubanos.</div>
-      <div class="gl-chip" style="flex: none">4 / 4</div>
+    <div style="display: flex; align-items: center; gap: 24px; font-size: 32px; line-height: 40px; font-weight: 500">
+      <div class="mc-muted" style="flex-grow: 1">Precios por provincia, de canales de WhatsApp de emprendedores cubanos.</div>
+      <div class="mc-chip">4 / 4</div>
     </div>
   </div>
 </div>

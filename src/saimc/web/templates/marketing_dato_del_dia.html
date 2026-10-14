@@ -3,66 +3,65 @@
 <head>
 <meta charset="utf-8">
 <title>Dato del día — {{ card.product_name }}</title>
-{% include "_marketing_glass.html" %}
+{% include "_marketing_card.html" %}
 </head>
 <body>
 {#
   Adaptado de marketing-design/project/Main.dc.html («1 · Dato del día»,
-  campaña de marketing 2026-09-26). Estilo glass compartido en
-  _marketing_glass.html. Las cifras salen de
+  campaña de marketing 2026-09-26). Estilo del sistema compartido en
+  _marketing_card.html. Las cifras salen de
   saimc.marketing.cards.build_dato_del_dia, que a su vez reusa
   card_view.build_cards (el mismo cómputo del tablero público) — no hay
   ningún promedio nuevo calculado acá.
 #}
-<div class="gl-bg" style="width: 1080px; height: 1350px">
-  <div class="gl-orb gl-orb-a"></div><div class="gl-orb gl-orb-b"></div><div class="gl-orb gl-orb-c"></div><div class="gl-grain"></div>
-  <div class="gl-content" style="padding: 64px 72px">
+<div class="mc" style="width: 1080px; height: 1350px">
+  <div class="mc-orbs"></div>
+  <div class="mc-content" style="padding: 64px 72px">
     <div style="display: flex; align-items: center; gap: 20px">
-      {% with logo_size = 80 %}{% include "_marketing_glass_logo.html" %}{% endwith %}
-      <div class="gl-brand" style="font-size: 48px">Guani</div>
+      <div class="mc-brand" style="--mc-logo: 80px">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}<span class="mc-wordmark">Guani</span></div>
       <div style="flex-grow: 1"></div>
-      <div class="gl-chip gl-chip-teal"><span class="ms" style="font-size: 32px">sell</span>DATO DEL DÍA</div>
+      <div class="mc-chip mc-chip-ink">Dato del día</div>
     </div>
 
-    <div class="gl-kicker" style="margin-top: 36px">
-      PRECIO POR {{ card.unit_noun | upper }} · SEMANA DEL {{ card.week_from }} AL {{ card.week_to }}
+    <div class="mc-kicker" style="margin-top: 40px">
+      Precio por {{ card.unit_noun }} · semana del {{ card.week_from }} al {{ card.week_to }}
     </div>
     {# El nombre se achica según su largo para que un producto con nombre largo no empuje el resto fuera del lienzo. #}
     {% set n = card.product_name | length %}
-    <div class="gl-title" style="margin-top: 4px; font-size: {{ 150 if n <= 10 else 110 if n <= 18 else 80 if n <= 30 else 60 }}px; line-height: 1.05">{{ card.product_name }}</div>
+    <div class="mc-title" style="margin-top: 8px; font-size: {{ 150 if n <= 10 else 110 if n <= 18 else 80 if n <= 30 else 60 }}px; line-height: 1.05">{{ card.product_name }}</div>
 
-    <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 24px">
+    <div style="margin-top: 28px; display: flex; flex-direction: column; gap: 24px">
       {% for row in card.rows %}
-      <div class="gl-panel" style="padding: 32px 40px">
-        <div style="display: flex; align-items: center; gap: 14px">
-          <div class="gl-dot" style="width: 24px; height: 24px; background: {{ row.color }}"></div>
-          <div style="flex-grow: 1; font-size: 36px; font-weight: 700">{{ row.name }}</div>
+      <div class="mc-panel" style="padding: 32px 40px">
+        <div style="display: flex; align-items: center; gap: 16px">
+          <div class="mc-dot" style="width: 24px; height: 24px; background: {{ row.color }}"></div>
+          <div style="flex-grow: 1; font-size: 36px; line-height: 44px; font-weight: 600">{{ row.name }}</div>
           {% if row.is_cheapest %}
-          <div class="gl-chip gl-chip-gold" style="padding: 6px 18px; font-size: 24px">más barata</div>
+          <div class="mc-chip mc-chip-soft" style="padding: 4px 20px; font-size: 24px">más barata</div>
           {% endif %}
         </div>
         {% if row.has_data %}
         <div style="margin-top: 12px; display: flex; align-items: baseline; gap: 16px">
-          <div class="gl-title" style="font-size: 100px; line-height: 1.05">{{ row.range_text }}</div>
-          <div class="gl-muted" style="font-size: 28px">{{ card.currency }}/{{ card.unit }}</div>
+          <div class="mc-title" style="font-size: 100px; line-height: 1.05">{{ row.range_text }}</div>
+          <div class="mc-muted" style="font-size: 28px">{{ card.currency }}/{{ card.unit }}</div>
         </div>
-        <div class="gl-track" style="margin-top: 20px; height: 40px">
-          <div class="gl-bar" style="left: {{ row.bar_left_pct }}%; width: {{ row.bar_width_pct }}%; background-color: {{ row.color }}"></div>
-          <div class="gl-knob" style="top: -7px; left: {{ row.median_pct }}%; width: 52px; height: 52px; margin-left: -26px; border: 10px solid {{ row.color }}"></div>
+        <div class="mc-track" style="margin-top: 24px; height: 32px">
+          <div class="mc-bar" style="left: {{ row.bar_left_pct }}%; width: {{ row.bar_width_pct }}%; background: {{ row.color }}"></div>
+          <div class="mc-knob" style="top: -8px; left: {{ row.median_pct }}%; width: 48px; height: 48px; margin-left: -24px"></div>
         </div>
-        <div class="gl-muted" style="margin-top: 20px; font-size: 28px">mediana {{ row.median_text }} · <b style="color: #ffffff">{{ row.count }} anuncio{{ "s" if row.count != 1 }}</b></div>
+        <div class="mc-muted" style="margin-top: 24px; font-size: 28px; line-height: 36px">mediana {{ row.median_text }} · <b style="color: #292524; font-weight: 600">{{ row.count }} anuncio{{ "s" if row.count != 1 }}</b></div>
         {% else %}
-        <div class="gl-muted" style="margin-top: 12px; font-size: 32px">Sin datos esta semana</div>
+        <div class="mc-muted" style="margin-top: 12px; font-size: 32px">Sin datos esta semana</div>
         {% endif %}
       </div>
       {% endfor %}
     </div>
 
-    <div class="gl-chip gl-chip-gold" style="margin-top: 24px; align-self: flex-start"><span class="ms" style="font-size: 32px">info</span>Muestra en formación</div>
+    <div class="mc-chip mc-chip-soft" style="margin-top: 24px; align-self: flex-start">Muestra en formación</div>
     <div style="flex-grow: 1"></div>
-    <div style="display: flex; align-items: flex-end; gap: 32px">
-      <div class="gl-muted" style="flex-grow: 1; font-size: 24px; line-height: 1.35">Fuente: canales de WhatsApp de emprendedores cubanos. Barra: rango de lo observado; círculo: mediana.</div>
-      <div class="gl-url">{{ site_url }}</div>
+    <div style="margin-top: 24px; display: flex; align-items: flex-end; gap: 32px">
+      <div class="mc-muted" style="flex-grow: 1; font-size: 24px; line-height: 32px">Fuente: canales de WhatsApp de emprendedores cubanos. Barra: rango de lo observado; círculo: mediana.</div>
+      <div class="mc-url">{{ site_url }}</div>
     </div>
   </div>
 </div>

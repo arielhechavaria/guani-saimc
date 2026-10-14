@@ -3,49 +3,48 @@
 <head>
 <meta charset="utf-8">
 <title>De dónde sale este precio — {{ card.product_name }}</title>
-{% include "_marketing_glass.html" %}
+{% include "_marketing_card.html" %}
 </head>
 <body>
 {#
   Adaptado de marketing-design/project/CarruselAnuncios.dc.html
-  («3b · Carrusel: de dónde sale este precio»). Estilo glass compartido en
-  _marketing_glass.html. El enlace de cada fila queda siempre en «captura» —
-  no se arma un link real al anuncio, ver docs/decisions.md (slice de
-  marketing, cards.build_de_donde_sale).
+  («3b · Carrusel: de dónde sale este precio»). Estilo del sistema
+  compartido en _marketing_card.html. El enlace de cada fila queda siempre
+  en «captura» — no se arma un link real al anuncio, ver docs/decisions.md
+  (slice de marketing, cards.build_de_donde_sale).
 #}
-<div class="gl-bg" style="width: 1080px; height: 1350px">
-  <div class="gl-orb gl-orb-a"></div><div class="gl-orb gl-orb-b"></div><div class="gl-orb gl-orb-c"></div><div class="gl-grain"></div>
-  <div class="gl-content" style="padding: 72px">
-    <div class="gl-kicker" style="font-size: 27px">EL RECORRIDO HACIA ATRÁS</div>
-    <div class="gl-title" style="margin-top: 24px; font-size: 100px; line-height: 1.06">De dónde sale este precio.</div>
-    <div class="gl-panel" style="margin-top: 44px; padding: 36px 40px 32px">
-      <div style="display: flex; align-items: center; gap: 14px">
-        <div class="gl-dot" style="width: 22px; height: 22px; background: #3f5fd6"></div>
-        <div style="flex-grow: 1; font-size: 32px; font-weight: 700">{{ card.product_name }} · {{ card.province_name }}</div>
+<div class="mc" style="width: 1080px; height: 1350px">
+  <div class="mc-orbs"></div>
+  <div class="mc-content" style="padding: 72px">
+    <div class="mc-kicker">El recorrido hacia atrás</div>
+    <div class="mc-title" style="margin-top: 16px; font-size: 100px; line-height: 1.06">De dónde sale este precio.</div>
+    <div class="mc-panel" style="margin-top: 44px; padding: 40px 44px 36px">
+      <div style="display: flex; align-items: center; gap: 16px">
+        <div class="mc-dot" style="width: 24px; height: 24px; background: #3f5fd6"></div>
+        <div style="flex-grow: 1; font-size: 32px; line-height: 40px; font-weight: 600">{{ card.product_name }} · {{ card.province_name }}</div>
       </div>
-      <div style="margin-top: 8px; display: flex; align-items: baseline; gap: 14px">
-        <div class="gl-title" style="font-size: 84px; line-height: 1.05">{{ card.range_text }}</div>
-        <div class="gl-muted" style="font-size: 26px">{{ card.currency }}/{{ card.unit }}</div>
+      <div style="margin-top: 8px; display: flex; align-items: baseline; gap: 16px">
+        <div class="mc-title" style="font-size: 84px; line-height: 1.05">{{ card.range_text }}</div>
+        <div class="mc-muted" style="font-size: 26px">{{ card.currency }}/{{ card.unit }}</div>
       </div>
-      <div class="gl-rule" style="margin-top: 20px"></div>
-      <div style="margin-top: 20px; display: flex; align-items: center; gap: 10px; font-size: 30px; font-weight: 500"><span class="ms" style="font-size: 38px; color: #5eead4">expand_more</span>{{ card.count }} anuncio{{ "s" if card.count != 1 }} detrás de esta cifra</div>
-      <div style="margin-top: 14px; display: grid; grid-template-columns: 1fr 1.5fr 1.1fr; gap: 0 20px; font-size: 28px">
-        <div class="gl-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.35)">Día</div>
-        <div class="gl-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.35)">Precio</div>
-        <div class="gl-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.35)">Enlace</div>
+      <div class="mc-rule" style="margin-top: 24px"></div>
+      <div style="margin-top: 24px; font-size: 30px; line-height: 40px; font-weight: 500">{{ card.count }} anuncio{{ "s" if card.count != 1 }} detrás de esta cifra</div>
+      <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1.5fr 1.1fr; gap: 0 20px; font-size: 28px; line-height: 36px">
+        <div class="mc-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid #d6d3d1">Día</div>
+        <div class="mc-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid #d6d3d1">Precio</div>
+        <div class="mc-muted" style="padding: 12px 0; font-weight: 500; border-bottom: 1px solid #d6d3d1">Enlace</div>
         {% for fila in card.rows %}
-        <div style="padding: 14px 0; {{ 'border-bottom: 1px solid rgba(255,255,255,.16);' if not loop.last }}">{{ fila.day_text }}</div>
-        <div style="padding: 14px 0; {{ 'border-bottom: 1px solid rgba(255,255,255,.16);' if not loop.last }}">{{ fila.price_text }} {{ card.currency }}/{{ card.unit }}</div>
-        <div class="gl-muted" style="padding: 14px 0; {{ 'border-bottom: 1px solid rgba(255,255,255,.16);' if not loop.last }}">captura</div>
+        <div style="padding: 16px 0; {{ 'border-bottom: 1px solid #e7e5e4;' if not loop.last }}">{{ fila.day_text }}</div>
+        <div style="padding: 16px 0; {{ 'border-bottom: 1px solid #e7e5e4;' if not loop.last }}">{{ fila.price_text }} {{ card.currency }}/{{ card.unit }}</div>
+        <div class="mc-muted" style="padding: 16px 0; {{ 'border-bottom: 1px solid #e7e5e4;' if not loop.last }}">captura</div>
         {% endfor %}
       </div>
     </div>
-    <div class="gl-muted" style="margin-top: 32px; font-size: 30px; line-height: 1.4">La imagen original de cada anuncio no se publica: <b style="color: #ffffff">captura</b> es una referencia interna, no un enlace.</div>
+    <div class="mc-muted" style="margin-top: 32px; font-size: 30px; line-height: 40px">La imagen original de cada anuncio no se publica: <b style="color: #292524; font-weight: 600">captura</b> es una referencia interna, no un enlace.</div>
     <div style="flex-grow: 1"></div>
     <div style="display: flex; align-items: center; gap: 16px">
-      {% with logo_size = 64 %}{% include "_marketing_glass_logo.html" %}{% endwith %}
-      <div class="gl-brand" style="flex-grow: 1; font-size: 40px">Guani</div>
-      <div class="gl-chip gl-chip-teal" style="padding: 10px 24px; font-size: 26px; letter-spacing: 0">3 / 4</div>
+      <div class="mc-brand" style="--mc-logo: 64px; flex-grow: 1">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}<span class="mc-wordmark" style="font-size: 44px">Guani</span></div>
+      <div class="mc-chip">3 / 4</div>
     </div>
   </div>
 </div>

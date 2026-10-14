@@ -36,6 +36,7 @@ from saimc.marketing.cards import (
     build_dato_del_dia,
     build_de_donde_sale,
 )
+from saimc.marketing.fonts import font_face_css
 from saimc.marketing.render import RendererUnavailable, render_png
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 from saimc.web.auth import require_operator
@@ -178,7 +179,8 @@ def _build_context(
 
 def _render_html(request: Request, kind: CardType, context: dict) -> str:
     template = request.app.state.templates.get_template(kind.template)
-    return template.render(site_url=SITE_URL_PLACEHOLDER, **context)
+    # Las fuentes viajan dentro del HTML: Playwright rasteriza sin acceso a /static.
+    return template.render(site_url=SITE_URL_PLACEHOLDER, font_css=font_face_css(), **context)
 
 
 @router.get("/marketing", response_class=HTMLResponse)
