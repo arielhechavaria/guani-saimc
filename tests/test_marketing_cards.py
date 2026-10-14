@@ -314,3 +314,60 @@ def test_de_donde_sale_no_mezcla_otra_provincia_ni_otro_producto() -> None:
     assert tarjeta is not None
     assert tarjeta.count == 1
     assert tarjeta.range_text == "300"
+
+
+# --- Estilo glass: humo de las nueve plantillas ------------------------------
+
+
+def _entorno_plantillas():
+    from pathlib import Path
+
+    import jinja2
+
+    import saimc.web
+
+    carpeta = Path(saimc.web.__file__).parent / "templates"
+    return jinja2.Environment(loader=jinja2.FileSystemLoader(carpeta), autoescape=True)
+
+
+def _contextos_minimos() -> dict[str, dict]:
+    nombre = "Aceite de girasol refinado en botella de un litro"
+    cards = [_card("La Habana", minimum=300, median=320, maximum=350, count=20, product=nombre)]
+    dato = build_dato_del_dia(
+        cards, product_name=nombre, province_names=PROVINCES,
+        week_from=SEMANA[0], week_to=SEMANA[1],
+    )  # Santiago sin dato: la plantilla tiene que mostrar «Sin datos».
+    return {"marketing_dato_del_dia.html": {"card": dato}}
+
+
+def test_las_plantillas_incluyen_el_parcial_glass_y_no_filtran_etiquetas() -> None:
+    """Cada plantilla carga `_marketing_glass.html` (el motor lo resuelve igual
+    que `request.app.state.templates`) y ninguna deja una etiqueta Jinja o un
+    comentario sin interpretar en el HTML que va a Playwright."""
+    entorno = _entorno_plantillas()
+    contextos = _contextos_minimos()
+    estaticas = {
+        "marketing_carrusel_portada.html": {},
+        "marketing_carrusel_consejo.html": {},
+        "marketing_carrusel_cierre.html": {},
+        "marketing_como_funciona.html": {},
+        "marketing_story.html": {"products": ["Arroz", "Frijoles"]},
+        "marketing_portada_facebook.html": {"products": ["Arroz", "Frijoles"]},
+    }
+    contextos.update(estaticas)
+
+    for plantilla, contexto in contextos.items():
+        html = entorno.get_template(plantilla).render(site_url="guani.test", **contexto)
+        assert "gl-bg" in html and "backdrop-filter" in html, plantilla
+        assert "{%" not in html and "{#" not in html, plantilla
+
+
+def test_dato_del_dia_con_nombre_largo_achica_el_titulo_y_marca_la_provincia_sin_datos() -> None:
+    entorno = _entorno_plantillas()
+    contexto = _contextos_minimos()["marketing_dato_del_dia.html"]
+
+    html = entorno.get_template("marketing_dato_del_dia.html").render(site_url="x", **contexto)
+
+    assert "Sin datos esta semana" in html
+    assert "font-size: 150px; line-height: 1.05" not in html  # no entra a 150 px
+    assert "font-size: 60px; line-height: 1.05" in html  # más de 30 caracteres
