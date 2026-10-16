@@ -106,9 +106,15 @@ Siguen pendientes:
 
 | # | Decisión | Para qué tarea | Propuesta de partida |
 |---|---|---|---|
-| 1 | **Cuándo se apaga la puerta del sitio** (la decisión del lanzamiento público; el MVP con redes sociales no funciona con ella encendida) | T8, T10, T15, T16 | Apagarla antes de publicar el primer enlace en Instagram, y no antes de que se verifique T1 (tasas saneadas), porque el tablero público muestra esos precios |
+| 1 | ~~Cuándo se apaga la puerta del sitio~~ **Decidido (2026-10-16):** la puerta está encendida a propósito para que nadie vea el sitio hasta que esté listo; **se apaga cuando termine este bloque** | T8, T10, T15, T16 | — (ver nota abajo) |
 | 2 | Qué muestra la vista de desacuerdo como «lectura de las reglas» | T11a | El operador lo decide al abrir T11a |
 | 3 | Si el precio del envase se muestra solo en Explorar o también en el tablero | T5 | El operador lo decide al abrir T5 |
+
+Nota sobre la puerta: el bloque incluye tareas opcionales y de cierre (T8b,
+T12, T14, ola 6). Antes de apagarla conviene haber cerrado al menos T1 (tasas
+saneadas, porque el tablero público muestra esos precios), T0 y T6/T7 (filtros).
+Apagarla es cambiar `SAIMC_SITE_GATE_ENABLED` a `false` en el `.env` del VPS y
+reiniciar; no necesita código.
 
 Acciones del operador que no son decisiones: restituir `SAIMC_EL_TOQUE_API` en
 el `.env` del VPS (T1), hacer push de las 6 ramas sin integrar (reporte §3) y,
