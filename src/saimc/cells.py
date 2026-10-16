@@ -129,6 +129,24 @@ from saimc.models import (
 )
 from saimc.units import canonical_unit, convert_price_per_unit, convert_quantity
 
+#: **Precio de referencia = minorista.** Es la única definición del sistema
+#: (decisión del 2026-10-16): todo gráfico, reporte o cifra pública parte del
+#: precio minorista, que es el que paga el hogar (spec.md §8.1, Nivel 0). Por
+#: eso `compute_retail_observations` y `compute_retail_ranges` lo traen por
+#: defecto y ninguna vista tiene que pedirlo.
+#:
+#: El mayorista no es otra serie en pie de igualdad: es una **capa opcional**
+#: sobre esta referencia (`WHOLESALE_LAYER`, `compute_wholesale_observations`,
+#: `compute_wholesale_ranges`), que sale de exactamente la misma normalización
+#: —moneda, `price_basis`, unidad canónica, compra mínima— y agrupa con la
+#: misma clave de celda. «Mayorista» es escala de contenedor y lo decide el
+#: operador fila por fila; mezclar las dos escalas en una mediana es el bug
+#: del 2026-08-12, así que nunca se funden: se ponen una al lado de la otra.
+REFERENCE_SALE_FORMAT = SaleFormat.RETAIL
+
+#: La capa secundaria que se puede superponer a la referencia.
+WHOLESALE_LAYER = SaleFormat.WHOLESALE
+
 
 class _FormatPriced:
     """Precio del formato para un agregado ya resumido por unidad canónica.
@@ -716,7 +734,12 @@ class RetailRangeReport:
 
 
 def compute_retail_ranges(
-    session: Session, *, days: int = 7, hoy: date | None = None, hasta: date | None = None
+    session: Session,
+    *,
+    days: int = 7,
+    hoy: date | None = None,
+    hasta: date | None = None,
+    sale_format: SaleFormat = REFERENCE_SALE_FORMAT,
 ) -> RetailRangeReport:
     """Rango de precio minorista por producto, últimos `days` días.
 
@@ -770,8 +793,15 @@ def compute_retail_ranges(
     usa `guess_published_date` en otras partes del sistema. Ambas quedan en
     huso UTC sin ajustar a hora de Cuba: al ritmo de curaduría de la Fase 0
     (~1h diaria) un corrimiento de horas no cambia a qué día cae la fila.
+
+    `sale_format` (2026-10-16) elige la capa: por defecto la referencia
+    minorista (`REFERENCE_SALE_FORMAT`); `WHOLESALE_LAYER` da la capa
+    mayorista con los mismos filtros y la misma clave. Para eso está
+    `compute_wholesale_ranges`, que se lee mejor en el llamador.
     """
-    report = compute_retail_observations(session, days=days, hoy=hoy, hasta=hasta)
+    report = compute_retail_observations(
+        session, days=days, hoy=hoy, hasta=hasta, sale_format=sale_format
+    )
 
     # La clave de la celda vive en `retail_cell_key`, con su motivo.
     grouped: dict[RetailCellKey, list[Decimal]] = {}
@@ -878,6 +908,10 @@ class RetailObservation:
     #: Estado de validación de la fila (`prices_history.validation_status`).
     #: Solo lo cuenta `web.trust_view`; `None` en filas sin evaluar.
     validation_status: str | None = None
+    #: La capa de la que salió la fila (2026-10-16): la referencia minorista
+    #: salvo que se haya pedido la capa mayorista. Viaja en la observación
+    #: para que nadie pueda mezclar las dos sin darse cuenta.
+    sale_format: str = REFERENCE_SALE_FORMAT.value
 
 
 #: Identidad de una celda minorista: la clave por la que `compute_retail_ranges`
@@ -939,7 +973,12 @@ class RetailObservationReport:
 
 
 def compute_retail_observations(
-    session: Session, *, days: int = 7, hoy: date | None = None, hasta: date | None = None
+    session: Session,
+    *,
+    days: int = 7,
+    hoy: date | None = None,
+    hasta: date | None = None,
+    sale_format: SaleFormat = REFERENCE_SALE_FORMAT,
 ) -> RetailObservationReport:
     """Normaliza fila por fila el universo minorista, sin agrupar.
 
@@ -955,6 +994,12 @@ def compute_retail_observations(
     que sea `>= cutoff` entra, comportamiento sin cambios para cada caller
     que no lo pase (`/control`, `compute_availability`, todo lo de antes).
     Puesto, acota el otro lado: `[cutoff, hasta]` en vez de `[cutoff, ∞)`.
+
+    `sale_format` (2026-10-16): qué capa se normaliza. El default es la
+    referencia minorista y ningún llamador anterior lo pasa; la capa mayorista
+    (`compute_wholesale_observations`) recorre exactamente este mismo cuerpo,
+    con los mismos filtros y conteos de exclusión. El nulo no es de ninguna
+    capa: sigue siendo cola de trabajo y solo se ve en `compute_cells`.
     """
     cutoff = (hoy or date.today()) - timedelta(days=days)
 
@@ -990,7 +1035,7 @@ def compute_retail_observations(
         .join(RawIngestion, RawIngestion.id == PriceHistory.source_id)
         .outerjoin(ProductFormat, ProductFormat.id == PriceHistory.format_id)
         .outerjoin(ProductVariant, ProductVariant.id == PriceHistory.variant_id)
-        .where(PriceHistory.sale_format == SaleFormat.RETAIL.value)
+        .where(PriceHistory.sale_format == SaleFormat(sale_format).value)
         .where(PriceHistory.unit.is_not(None))
         .where(PriceHistory.quantity.is_not(None))
     )
@@ -1096,6 +1141,7 @@ def compute_retail_observations(
                 variant_origin=variant_origin,
                 provenance=provenance,
                 validation_status=validation_status,
+                sale_format=SaleFormat(sale_format).value,
             )
         )
 
@@ -1104,6 +1150,31 @@ def compute_retail_observations(
         excluded_by_minimum=excluded_by_minimum,
         excluded_by_basis=excluded_by_basis,
         excluded_by_unit=excluded_by_unit,
+    )
+
+
+def compute_wholesale_observations(
+    session: Session, *, days: int = 7, hoy: date | None = None, hasta: date | None = None
+) -> RetailObservationReport:
+    """La capa mayorista, fila por fila: `compute_retail_observations` con
+    `sale_format=WHOLESALE_LAYER`. Nada propio — ver `REFERENCE_SALE_FORMAT`.
+
+    Las observaciones conservan el tipo `RetailObservation` a propósito: es el
+    grano normalizado de cualquier capa, y así los mismos constructores de
+    gráficos (cerco incluido) las leen sin una segunda implementación.
+    """
+    return compute_retail_observations(
+        session, days=days, hoy=hoy, hasta=hasta, sale_format=WHOLESALE_LAYER
+    )
+
+
+def compute_wholesale_ranges(
+    session: Session, *, days: int = 7, hoy: date | None = None, hasta: date | None = None
+) -> RetailRangeReport:
+    """La capa mayorista agrupada por `retail_cell_key`: `compute_retail_ranges`
+    con `sale_format=WHOLESALE_LAYER`. Misma clave, mismos filtros."""
+    return compute_retail_ranges(
+        session, days=days, hoy=hoy, hasta=hasta, sale_format=WHOLESALE_LAYER
     )
 
 
