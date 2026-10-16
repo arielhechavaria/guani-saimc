@@ -16,12 +16,14 @@ La complejidad es esfuerzo estimado: **S** (≤ medio día), **M** (1–2 días)
 
 | Ola | Tarea | Qué | Cmplj. | Modelo | Por qué en este lugar |
 |---|---|---|---|---|---|
-| 0 | T2 | Entorno de desarrollo local (Docker) | M | sonnet | Hoy el `.env` apunta a producción: T1 y todo lo demás se prueba sobre datos reales. Va primero. |
-| 0 | T13 | Versión de gentle-ai en el VPS y «ODD» | S | sonnet | Investigación de solo lectura; condiciona cómo se desarrolla el resto. |
-| 0 | — | Resolver `D .venv` (commit de baja o restaurar) | S | haiku | Deja el repo limpio para abrir slices. |
+| 0 | — | **Acción del operador:** restituir `SAIMC_EL_TOQUE_API` en el `.env` del VPS y reiniciar | S | — | Corta la hemorragia: mientras falte, cada fila nueva se convierte con una tasa de relleno. |
+| 0 | — | Resolver `D .venv` (commit de baja) | S | haiku | Aprobado por el operador. Deja el repo limpio para abrir slices. |
+| 0 | T1 | Saneamiento de filas con tasa de relleno | M | opus | **Subió a primera.** La tasa del USD es volátil: el período afectado está mal. Ensayo sobre un volcado restaurado en una base temporal, sin esperar a T2. |
+| 0 | T0 | Definir «fila validada» y medir cuántas hay | M | opus | Antes de decidir la transición de fase y la corrida oficial de H0. Toca el motor: flujo completo. |
+| 1 | T3 | Jev deja el modo sombra | M | opus | Decidido por el operador; el análisis y el alcance están en `docs/analisis-jev-decisor.md`. Toca el motor: flujo completo. |
+| 1 | T2 | Entorno de desarrollo local (Docker) | M | sonnet | Restricción levantada (`decisions.md`, 2026-10-16). |
 | 1 | T9 | Revisión de auditorías | M | sonnet | La muestra semanal es el lunes 19/10; el freno depende de ella. |
-| 1 | T1 | Saneamiento de 264 filas con tasa de relleno | M | opus | Toca datos persistidos; requiere T2 y respaldo. |
-| 1 | T3 | ¿Qué hace Jev? | S | — | **Ya respondida** (reporte §4). Queda una decisión: ¿promoverlo o apagarlo? |
+| 1 | T13 | Versión de gentle-ai en el VPS y «ODD» | S | sonnet | Investigación de solo lectura; condiciona cómo se desarrolla el resto. |
 | 2 | T5 | Explorar: precio real del formato | S | sonnet | Cambio acotado de presentación. |
 | 2 | T6 | Filtros globales + bug de provincia | M | sonnet | Cimiento para T7 y T16. |
 | 2 | T7 | Rangos 3 / 7 / 90 días | S | sonnet | Depende de T6. |
@@ -34,11 +36,13 @@ La complejidad es esfuerzo estimado: **S** (≤ medio día), **M** (1–2 días)
 | 5 | T8a | Tarjetas diarias a disco, 6:00 hora de Cuba | M | sonnet | Genera material sin depender de Meta. |
 | 5 | T16 | Tour de primera visita | M | sonnet | Último de la cadena de interfaz: los pasos se anclan a filtros ya estables. |
 | 5 | T15 | Guía de crecimiento en `docs/` | S | opus | Documento de estrategia; puede ir en paralelo. |
-| 6 | T8b | Publicación automática en Instagram | L | opus | Requiere revertir una decisión y regenerar el token. Opcional para el MVP. |
-| 6 | T14 | Análisis de fase y transición | M | opus | Parte ya está en el reporte; falta decidir criterios. |
+| 6 | T8b | Publicación automática en Instagram (API) | L | opus | Decidido por el operador; el descarte del 2026-09-28 quedó revocado. Primero se verifica lo que exige Meta, luego se construye. |
+| 6 | T14 | Análisis de fase y transición | M | opus | Depende de T0 y T1. Solo si hay capacidad de validar filas se corre H0. |
 | 6 | T12 | ¿Paper del sistema? | S | opus | Después de tener cifras de H0 y de auditoría estables. |
 
-Tres decisiones del operador desbloquean olas completas (sección 3).
+Decisiones del operador del 2026-10-16 incorporadas (sección 3). La
+transición de fase se decide cuando exista la capacidad de validar una fila
+(T0) y, solo entonces, con la corrida de H0 (T14).
 
 ## 2. Prefijo común de los prompts
 
@@ -58,25 +62,64 @@ Pegar al inicio de cada prompt:
 
 ## 3. Decisiones que necesito del operador
 
-1. **¿Se registra Docker para desarrollo como excepción?** (T2) La decisión
-   cerrada 4 habla de producción; el mismo motivo («infraestructura que se
-   paga cuando hay algo que operar») sugiere dejarlo asentado.
-2. **¿Se revierte el descarte del 2026-09-28 de publicar directo?** (T8b)
-   Sin eso, T8b no empieza. T8a no lo necesita.
-3. **¿Qué estado de fila cuenta como «validado» y se acepta la corrida
-   oficial de H0 de hoy?** (T14) Define si el sistema pasa de fase.
+Respuestas del operador del 2026-10-16 y su estado:
+
+| # | Decisión | Estado |
+|---|---|---|
+| 1 | Docker permitido para desarrollo (T2) | **Registrada** en `decisions.md` (2026-10-16). Se anotó también en `CLAUDE.md`, decisión cerrada 4. |
+| 2 | Publicar en Instagram por API (T8b) | **Registrada** en `decisions.md` (2026-10-16), con lo que implica. Reemplaza el punto (1) del «Descartado» del 2026-09-28. |
+| 3 | Jev deja el modo sombra (T3) | Argumentada en `docs/analisis-jev-decisor.md`. **No registrada todavía**: falta confirmar el alcance (ver ese documento). |
+| 4 | Qué es una fila «validada» (T0) | **Sin decidir.** Hay un mecanismo (`approved`) pero los datos sugieren que ninguna fila lo alcanza. T0 lo mide y propone la definición. |
+| 5 | Transición de fase y corrida de H0 (T14) | **Criterio fijado por el operador:** se decide cuando haya capacidad de validar filas; si las condiciones son correctas, entonces se corre H0. |
+| 6 | `D .venv` | **Aprobado** resolverlo (tarea corta de la ola 0). |
 
 ## 4. Las tareas
+
+### T0 — Definir «fila validada» y medir cuántas hay · M · opus
+
+**Hallazgo (corrige al reporte §1):** sí existe un mecanismo. El motor asigna
+siete estados (`validation/types.py:33-43`) y **`approved` es el único que
+significa «validado»**: las seis reglas en `pass` **y** la fila verificada
+(`validation/engine.py:64-84`; `spec-motor-validacion.md:122-131`). Pero
+«verificada» es `provenance == human` y nada más (`persist.py:87`), de modo
+que una fila del carril 1 (`auto`) nunca llega a `approved`, ni siquiera
+después de auditada (`audited`) (inferido del código; no ejecutado). Los
+conteos del reporte suman 1101 sin ninguna fila `approved`: **no verificado**
+(hay que confirmarlo con un SELECT). Si es así, hay 461 filas humanas que
+deberían poder ser `approved` y no lo son: o falla alguna de las seis
+reglas, o hay un defecto. Eso se investiga primero.
+**Jev no resuelve esto:** una señal de Jev no cambia `provenance` ni crea
+`approved` (el motor no la lee). Ver `docs/analisis-jev-decisor.md`.
+**Alcance:** (1) medir con SELECT cuántas filas hay por `validation_status` y
+`provenance`, y por qué las humanas no son `approved`; (2) proponer la
+definición de «validada» (propuesta de partida, a discutir: `approved` con
+`provenance` en `human` o `audited`; una fila `auto` sin auditar queda
+`unverified`); (3) con la aprobación del operador, flujo completo
+(explorar → especificar → diseñar) porque toca el motor.
+
+> **Prompt.** [prefijo] Slice `definir-validada`, solo lectura primero. Con
+> SELECT sobre `prices_history`, contá filas por `validation_status` y
+> `provenance`, y explicá por qué las filas humanas no llegan a `approved`
+> (`validation/engine.py` `_status`, `persist.py` `verified`). Leé
+> `spec-motor-validacion.md` y `spec.md` §6.2. Proponé una definición de
+> «fila validada» y cómo debe validarse (incluyendo filas `auto` auditadas),
+> con el efecto en `trust_view.py` y en los números públicos. No cambies el
+> motor sin aprobación; si se cambia, flujo de especificación completo y
+> entrada en `decisions.md`.
+
 
 ### T2 — Entorno de desarrollo local con Docker · M · sonnet
 
 **Estado:** no hay Dockerfile ni compose; el Postgres local es nativo; el
 `.env` apunta a producción (`backfill.py:5-11`).
-**Alcance:** un `docker-compose.dev.yml` con **solo PostgreSQL** (la app sigue
-corriendo con su venv: la decisión 4 no se toca), un `env.dev.example` que
-apunta a esa base, y un comando que levanta la base, aplica `alembic upgrade
-head` y carga una copia **sin datos personales** de producción (o datos
-sintéticos). Fuera de alcance: containerizar la app.
+**Decisión previa:** la restricción de Docker quedó levantada el 2026-10-16
+(`decisions.md`). Esto no obliga a containerizar la app en producción.
+**Alcance:** un `docker-compose.dev.yml` con PostgreSQL como mínimo (si
+conviene, también la app con su venv montado: elegir lo más simple que
+funcione), un `env.dev.example` que apunta a esa base, y un comando que
+levanta la base, aplica `alembic upgrade head` y carga una copia **sin datos
+personales** de producción (o datos sintéticos). Fuera de alcance: cambiar
+cómo corre la app en el VPS.
 **Verificación:** `docker compose -f docker-compose.dev.yml up -d`, correr la
 suite, abrir `127.0.0.1:8000`, y comprobar que `SELECT current_database()`
 no es la de producción.
@@ -86,11 +129,12 @@ no es la de producción.
 > que producción: verificala en el VPS o en `docs/`), con volumen persistente
 > y puerto distinto del nativo. Agregá `env.dev.example`, un script que haga
 > `alembic upgrade head` y siembre datos, y la sección correspondiente del
-> README y de `docs/comandos.md`. La app NO se containeriza (decisión cerrada
-> 4); registrá el compose de desarrollo como excepción en `docs/decisions.md`
-> solo si el operador lo aprueba. El `.env` de desarrollo nunca debe apuntar a
-> producción: agregá una guarda en el arranque que se niegue a correr
-> comandos destructivos si la URL de la base es la de producción.
+> README y de `docs/comandos.md`. La restricción de Docker quedó levantada
+> (`docs/decisions.md`, 2026-10-16): no hace falta otra entrada, pero cualquier
+> cambio en cómo corre la app en producción sí necesita la suya. El `.env` de
+> desarrollo nunca debe apuntar a producción: agregá una guarda en el
+> arranque que se niegue a correr comandos destructivos si la URL de la base
+> es la de producción.
 
 ### T13 — gentle-ai en el VPS y «ODD» · S · sonnet
 
@@ -148,9 +192,19 @@ en un slice aparte.
 
 **Estado (reporte §5):** sin `SAIMC_EL_TOQUE_API` el sistema usó
 `cache.latest()`. Las 264 filas son **no verificado**.
-**Orden:** (1) el operador restituye la variable en el `.env` del VPS;
-(2) respaldo (`saimc-backup`); (3) con T2 hecho, ensayo en la base de
-desarrollo; (4) dry-run en producción; (5) `--apply`.
+**Por qué es lo primero:** el dólar es volátil. Una fila convertida con la
+tasa de otro día tiene un `price_cup` equivocado, y todo lo que se calcula
+encima (celdas, rangos, tablero público, H0) arrastra ese error durante el
+período afectado. Hasta sanearlo, los números de ese período no son
+confiables.
+**Orden:** (1) el operador restituye la variable en el `.env` del VPS y
+reinicia, para que no entren filas nuevas con relleno; (2) respaldo
+(`saimc-backup` o un `pg_dump` manual); (3) **ensayo sobre ese volcado
+restaurado en una base temporal** (no hace falta esperar a T2); (4) dry-run en
+producción; (5) `--apply`.
+**Duda a resolver en el dry-run:** si la tasa de un día no existe en elTOQUE,
+la fila queda sin sanear. Hay que decidir con el operador qué hacer con ellas
+(dejarlas marcadas, o excluirlas de los agregados públicos).
 **Alcance:** ampliar el backfill (`exchange_rate/backfill.py:68-71`) para
 incluir `exchange_rate_source = 'elTOQUE (cache)'`, consultar la tasa de la
 fecha ancla de cada fila y reescribir con `apply_resolution`
@@ -178,18 +232,28 @@ salvo las sin dato; los dos CHECK de `prices_history` se cumplen;
 > CHECKs de la tabla) antes de escribir el código. Documentá el comando en
 > `docs/comandos.md`.
 
-### T3 — ¿Qué está haciendo Jev? · S · (respondida)
+### T3 — Jev deja el modo sombra · M · opus
 
-Reporte §4: corre solo cada 3 h vía `saimc-prefill.timer`, hay 4257 señales,
-**no decide nada** (modo sombra). Queda una decisión del operador: promover
-a señal del motor o apagar para ahorrar costo. Si se quiere decidir con
-datos, un prompt de **sonnet**:
+**Decidido por el operador** (2026-10-16). Pros, contras y la recomendación de
+alcance están en `docs/analisis-jev-decisor.md`. Resumen: los datos respaldan
+a Jev para **descartar**, no para **aceptar**; y como decisor no crea filas
+«validadas» (eso es T0). **Falta confirmar el alcance** antes de registrar
+la decisión y programar. Toca el motor de validación: flujo completo.
+**Antes de programar, medir** (solo lectura): cuántas huellas
+(`questions_hash`) distintas hay entre las señales guardadas y cuántas son
+vigentes; el costo mensual real (`SUM(cost_usd)`); y el acuerdo con la
+curaduría humana sobre las señales actuales (`saimc.validation.shadow`).
 
-> **Prompt.** [prefijo] Slice `evaluar-jev`, solo lectura. Con `jev_signals`,
-> `docs/shadow-runs.jsonl` y `validation/shadow.py`, calculá cuántos anuncios
-> habría cambiado de carril Jev si decidiera, con qué acierto frente a la
-> curaduría humana, y cuánto cuesta por mes (`SAIMC_LLM_JEV_MAX_COST`).
-> Recomendá promoverlo, mantenerlo en sombra o apagarlo, con cifras.
+> **Prompt.** [prefijo] Slice `jev-decisor`, flujo de especificación completo
+> (toca el motor). Leé `docs/analisis-jev-decisor.md` y confirmá con el
+> operador el alcance antes de seguir. Primero, solo lectura: con SELECT
+> sobre `jev_signals` agrupá por `questions_hash`, `model` y `source`;
+> sumá `cost_usd`; y corré `saimc.validation.shadow` contra la base real para
+> medir el acuerdo de Jev con la curaduría humana. Solo después especificá
+> cómo entra Jev al motor (`validation/engine.py` `ExternalSignal`,
+> `lane1.CONFIG.signal_high_probability`, carril 0), con tests escritos antes
+> con casos a mano, y la entrada de `docs/decisions.md` que reemplaza lo
+> dicho en 2026-10-05 («Jev no entra»).
 
 ### T5 — Explorar: precio real del formato · S · sonnet
 
@@ -420,7 +484,12 @@ PNG en disco con las cifras del 15; el timer figura en `systemctl list-timers`.
 
 ### T8b — Publicación automática en Instagram · L · opus
 
-**Estado:** hoy descartada por `decisions.md` (2026-09-28). **Lo que se sabe**
+**Decisión del operador (2026-10-16):** publicar por API. El descarte del
+2026-09-28 quedó revocado en `decisions.md`, donde también está lo que implica
+para el sistema (permisos, URL pública de los medios, tabla de estado, kill
+switch). Lo que sigue se mantiene como investigación previa: **nada se
+construye hasta verificar contra la documentación vigente de Meta** qué
+exige publicar con una cuenta propia. **Lo que se sabe**
 (conocimiento general, vigencia **no verificada**): la API de Instagram con
 Instagram Login permite publicar imagen, carrusel (hasta 10), Reels y
 Stories con una cuenta profesional y sin página de Facebook; requiere el
@@ -432,10 +501,12 @@ motivó el descarte. Facebook Pages exige página y revisión de app.
 **Metricool (comparativa):** programa y publica en varias redes, con
 analítica y calendario; evita tokens y revisión de Meta, pero suma un
 tercero, una subida de archivos y un costo mensual (planes de pago, **precio
-no verificado**). **Mi recomendación:** empezar con T8a y publicar con
-Business Suite o Metricool (híbrido, sin riesgo de Meta); pasar a la API
-propia solo cuando haya volumen que lo justifique. Antes de decidir,
-investigar y probar con una publicación de prueba.
+no verificado**). **Orden que propongo:** T8a primero (tarjetas a disco);
+mientras se verifica Meta, se suben a mano desde Business Suite o con
+Metricool; la API propia entra cuando la investigación confirme el acceso, y
+las primeras semanas con **aprobación del operador antes de cada
+publicación** (una publicación errónea es pública e irreversible en la
+práctica).
 **Falta construir:** cliente de publicación (`/media` y `/media_publish`),
 tabla de estado (migración nueva), URL pública del medio, y regenerar el
 token. Video: no hay generador diario (solo
@@ -449,7 +520,8 @@ token. Video: no hay generador diario (solo
 > Pages. Compará con Metricool (funciones, API, precios actuales). Entregá
 > `docs/investigacion-publicacion.md` con recomendación y el texto de la
 > entrada de `decisions.md` que reemplazaría a la del 2026-09-28. No
-> implementes.
+> implementes. (La revocación ya está registrada el 2026-10-16: si la
+> verificación contradice sus supuestos, proponé una entrada que la corrija.)
 
 ### T16 — Tour de primera visita · M · sonnet
 
@@ -494,8 +566,11 @@ como no verificadas.
 ### T14 — Análisis de fase y transición · M · opus
 
 **Estado:** reporte §1. Alcance cumplido, H0 medido pero no oficial,
-criterio reemplazado. Falta decidir los tres puntos de la sección 3 de este
-plan. **Entregable:** `docs/analisis-fase.md` con medición completa contra
+criterio reemplazado. **Criterio del operador (2026-10-16):** la transición
+se decide cuando exista la capacidad de validar una fila (T0) y, si las
+condiciones son correctas, entonces se corre la H0 oficial. No antes. También
+depende de T1: con tasas de relleno, las cifras de precio de H0 no son
+confiables. **Entregable:** `docs/analisis-fase.md` con medición completa contra
 `spec.md` §9 y §12.5 (métricas), la propuesta de criterio de transición, y la
 entrada de `decisions.md` correspondiente.
 
@@ -530,7 +605,10 @@ conviene hacerlo **antes** de tener cifras estables: la precisión completa es
 
 ## 6. Riesgos del plan
 
-- **T1 sobre producción:** sin T2 no hay ensayo. Orden fijo: T2 → T1.
+- **T1 sobre producción:** el ensayo se hace sobre un volcado restaurado en una
+  base temporal, con respaldo previo. Sin ensayo no se aplica.
+- **Jev decisor (T3):** si decide sin haber medido el acuerdo de las señales
+  vigentes, un error pasa a ser un descarte automático.
 - **6 ramas sin push** (reporte §3): hacerlo antes de abrir más trabajo.
 - **Disco al 85 %** (T8a): definir retención antes de generar PNG diarios.
 - **T8b** puede quedar bloqueada por Meta; por eso es opcional.

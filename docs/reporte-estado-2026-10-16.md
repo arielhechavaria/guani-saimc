@@ -20,10 +20,15 @@ superó.** La decisión de darla por cerrada es del operador.
 | «H0 respondida con un número» (criterio de salida) | Medido, pero la última corrida **no es oficial** | `docs/h0-runs.jsonl`, 2026-10-10, `is_official: false` |
 | Conjunto de referencia de 300+ | 436 miembros | `reference_set_members` |
 
-- **No hay estado «validado» limpio.** 808 filas están `unverified`; además
-  hay 242 `possible_duplicate`, 28 `inconsistent`, 13 `anomaly` y 10
-  `incomplete`. «500 validados» no se puede afirmar sin definir qué estado
-  cuenta como validado.
+- **Corrección (2026-10-16, tras leer el motor):** sí existe un estado de
+  «validado»: `approved`, que exige las seis reglas en `pass` y la fila
+  verificada (`validation/engine.py:64-84`). «Verificada» significa solo
+  `provenance == human` (`persist.py:87`). Los conteos de abajo suman 1101
+  **sin ninguna fila `approved`**, lo que sugiere que ninguna fila lo
+  alcanza (**no verificado**: falta el SELECT). Es la tarea T0 del plan.
+- Conteo por estado: 808 `unverified`, 242 `possible_duplicate`, 28
+  `inconsistent`, 13 `anomaly`, 10 `incomplete`. «500 validados» no se puede
+  afirmar mientras no se aclare por qué ninguna llega a `approved`.
 - **Procedencia:** human 461, auto 338, audited 302.
 - **Provincias:** La Habana 830, Santiago de Cuba 271.
 - **Productos:** Arroz 361, Azúcar blanca 226, Pollo 208, Aceite 162,
@@ -95,8 +100,9 @@ Dos hallazgos del working tree de `master`:
   `/control`.
 - **Calidad medida (A6):** triage 95,6 %, producto 96,8 %, moneda 94,3 %.
 - **Lectura:** corre y cuesta (tope `SAIMC_LLM_JEV_MAX_COST`), pero hoy no
-  cambia ningún resultado. Es una decisión pendiente: promoverlo a señal o
-  apagarlo.
+  cambia ningún resultado. **Actualización 2026-10-16:** el operador decidió
+  sacarlo del modo sombra; el análisis y el alcance propuesto están en
+  `docs/analisis-jev-decisor.md`.
 
 ## 5. Tasa de cambio (tarea T1)
 
