@@ -555,11 +555,12 @@
             <details class="m3-matrix-layer">
               <summary>
                 <span class="m3-icon m3-muted">expand_more</span>
-                Al por mayor (escala de contenedor)
-                <span class="m3-muted">· n = {{ fila.wholesale_count }}</span>
-                {%- for w in fila.wholesale if w.retail_ratio %}
-                <span class="m3-muted">· minorista ×{{ "%.2f"|format(w.retail_ratio) }}</span>
-                {%- endfor %}
+                <span>Al por mayor (escala de contenedor)</span>
+                {# Un solo bloque para la muestra y el ratio: si el renglón se
+                   parte en un teléfono, se parte entero y no deja un «·» suelto
+                   al principio de la línea. #}
+                <span class="m3-muted">n = {{ fila.wholesale_count }}
+                  {%- for w in fila.wholesale if w.retail_ratio %} · minorista ×{{ "%.2f"|format(w.retail_ratio) }}{% endfor %}</span>
               </summary>
               {% for w in fila.wholesale %}{{ serie(w) }}{% endfor %}
             </details>
