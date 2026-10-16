@@ -68,10 +68,32 @@ Respuestas del operador del 2026-10-16 y su estado:
 |---|---|---|
 | 1 | Docker permitido para desarrollo (T2) | **Registrada** en `decisions.md` (2026-10-16). Se anotó también en `CLAUDE.md`, decisión cerrada 4. |
 | 2 | Publicar en Instagram por API (T8b) | **Registrada** en `decisions.md` (2026-10-16), con lo que implica. Reemplaza el punto (1) del «Descartado» del 2026-09-28. |
-| 3 | Jev deja el modo sombra (T3) | Argumentada en `docs/analisis-jev-decisor.md`. **No registrada todavía**: falta confirmar el alcance (ver ese documento). |
+| 3 | Jev deja el modo sombra (T3) | Argumentada en `docs/analisis-jev-decisor.md`. Confirmado: sale de la sombra, confirma pero no acepta solo, y la provincia entra a la medición. **Se registra en `decisions.md` al cerrar la medición de T3**, con flujo completo. |
 | 4 | Qué es una fila «validada» (T0) | **Sin decidir.** Hay un mecanismo (`approved`) pero los datos sugieren que ninguna fila lo alcanza. T0 lo mide y propone la definición. |
 | 5 | Transición de fase y corrida de H0 (T14) | **Criterio fijado por el operador:** se decide cuando haya capacidad de validar filas; si las condiciones son correctas, entonces se corre H0. |
 | 6 | `D .venv` | **Aprobado** resolverlo (tarea corta de la ola 0). |
+
+### Lo que sigue pendiente de decidir por el operador
+
+Ordenado por cuándo estorba. Ninguna de estas bloquea la ola 0.
+
+| # | Decisión | Para qué tarea | Propuesta de partida |
+|---|---|---|---|
+| 1 | Qué hacer con filas cuya fecha no tiene tasa en elTOQUE: dejarlas marcadas o excluirlas de los agregados públicos | T1 | Dejarlas marcadas y excluirlas del público hasta tener tasa |
+| 2 | Definición de «fila validada» | T0 | `approved` con procedencia `human` o `audited`; una fila `auto` sin auditar queda `unverified` |
+| 3 | Umbral de descarte de Jev: P(sí) < 0,1 o < 0,2 | T3 | 0,1 (0 falsos en 109) |
+| 4 | ¿Jev descarta por su cuenta cuando el asistente no pudo proponer? | T3 | Sí, con el mismo umbral |
+| 5 | Nuevo rango por defecto al pasar a 3 / 7 / 90 días | T7 | 7 días |
+| 6 | Cuál fecha es la correcta para `SAIMC_LANE1_AUDIT_SINCE`: 10-14 (decisión) o 10-15 (`.env`) | T9 | Confirmar y alinear |
+| 7 | Qué muestra la vista de desacuerdo como «lectura de las reglas»: las reglas solo detectan el producto, no proponen filas | T11a | Mostrar producto y precio detectados |
+| 8 | Si el precio del envase se muestra solo en Explorar o también en el tablero | T5 | Solo en Explorar |
+| 9 | Comprobar en producción: valor de `SAIMC_SITE_GATE_ENABLED` y qué hay delante de uvicorn (Caddy) | T10 | — (dato, no decisión) |
+| 10 | Qué es «ODD» (¿lo mismo que RDD?) | T13 | — (dato que aporta el operador) |
+| 11 | Confirmar el orden de olas de la sección 1 | todas | Es una propuesta: no hubo respuesta explícita |
+
+Acciones del operador que no son decisiones: restituir `SAIMC_EL_TOQUE_API` en
+el `.env` del VPS (T1), hacer push de las 6 ramas sin integrar (reporte §3) y,
+en el VPS, `git pull` y reinicio para ver esta página.
 
 ## 4. Las tareas
 
@@ -236,20 +258,29 @@ salvo las sin dato; los dos CHECK de `prices_history` se cumplen;
 
 **Decidido por el operador** (2026-10-16). Pros, contras y la recomendación de
 alcance están en `docs/analisis-jev-decisor.md`. Resumen: los datos respaldan
-a Jev para **descartar**, no para **aceptar**; y como decisor no crea filas
-«validadas» (eso es T0). **Falta confirmar el alcance** antes de registrar
-la decisión y programar. Toca el motor de validación: flujo completo.
+a Jev para **descartar**; para aceptar solo sirve como **condición adicional**
+(coincidir con el asistente en producto, moneda y provincia), nunca como quien
+acepta, porque no opina sobre precio, cantidad ni unidad. Como decisor no crea
+filas «validadas» (eso es T0). **Pendiente del operador:** el umbral del
+descarte (0,1 o 0,2) y si Jev descarta solo cuando el asistente no pudo
+proponer. Toca el motor de validación: flujo completo.
 **Antes de programar, medir** (solo lectura): cuántas huellas
 (`questions_hash`) distintas hay entre las señales guardadas y cuántas son
-vigentes; el costo mensual real (`SUM(cost_usd)`); y el acuerdo con la
-curaduría humana sobre las señales actuales (`saimc.validation.shadow`).
+vigentes; el costo mensual real (`SUM(cost_usd)`); el acuerdo con la
+curaduría humana sobre las señales actuales (`saimc.validation.shadow`); y,
+**incluyendo la provincia** como pregunta nueva, cuántos errores del carril 1
+habría frenado Jev como condición y cuántas filas buenas habría frenado de más.
 
 > **Prompt.** [prefijo] Slice `jev-decisor`, flujo de especificación completo
 > (toca el motor). Leé `docs/analisis-jev-decisor.md` y confirmá con el
 > operador el alcance antes de seguir. Primero, solo lectura: con SELECT
 > sobre `jev_signals` agrupá por `questions_hash`, `model` y `source`;
 > sumá `cost_usd`; y corré `saimc.validation.shadow` contra la base real para
-> medir el acuerdo de Jev con la curaduría humana. Solo después especificá
+> medir el acuerdo de Jev con la curaduría humana. Agregá la pregunta de
+> provincia (catálogo cerrado; cambia `questions_hash`) y medí si Jev como
+> condición de aceptación (coincidir con el asistente en producto, moneda y
+> provincia) habría frenado errores reales del carril 1 y a cuántas filas
+> buenas. No lo enciendas si la medición no lo respalda. Solo después especificá
 > cómo entra Jev al motor (`validation/engine.py` `ExternalSignal`,
 > `lane1.CONFIG.signal_high_probability`, carril 0), con tests escritos antes
 > con casos a mano, y la entrada de `docs/decisions.md` que reemplaza lo

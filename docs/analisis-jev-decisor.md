@@ -87,9 +87,22 @@ respaldan:**
    anuncios que el asistente no pudo proponer (por ejemplo, el asistente
    falló o está degradado). Ahí sí agrega cobertura. *Decisión del
    operador: ¿se quiere este rol?*
-3. **Rol 3 — aceptar: no.** Hasta tener una medición propia y calibrada
-   sobre las señales vigentes, Jev no acepta ni sube la confianza de una
-   fila. Sigue anotado en `validation_detail`.
+3. **Rol 3 — confirmar, no aceptar solo** (ajustado el 2026-10-16 a pedido
+   del operador). Jev puede ser una **condición adicional** para que una fila
+   entre al carril 1: el asistente y Jev deben coincidir en producto, moneda
+   y provincia. Nunca acepta por sí solo, y **solo se enciende si la
+   medición lo respalda** (condición 4). Por qué no acepta solo: Jev no
+   opina sobre precio, cantidad, unidad ni formato, que son números abiertos
+   y donde se equivoca el carril 1 (3 de los 4 errores del oro v7 fueron de
+   precio); y del lado del «sí» está sobreconfiado (78,5 % de acierto en el
+   tramo 0,9–1,0). Hasta que la medición lo respalde, queda anotado en
+   `validation_detail` y no sube la confianza de ninguna fila.
+   - **Provincia se agrega a la medición.** Hoy Jev no la pregunta
+     (`spec-slice-A6b.md:138`; fuera de alcance en `:405`). Se puede
+     preguntar: las provincias son un catálogo cerrado como los productos.
+     Cambiar las preguntas cambia `questions_hash`, así que las señales
+     existentes no incluyen provincia y habrá que volver a preguntar a los
+     anuncios sobre los que se mida.
 4. **Condiciones previas** (T3): contar huellas distintas, medir el costo real
    y el acuerdo con la curaduría humana sobre las señales vigentes; usar
    solo la señal de la huella vigente; **no reinterpretar con efecto
@@ -107,7 +120,14 @@ actuales; hoy el dato dice lo contrario.
 
 ## 6. Qué hay que decidir
 
-1. ¿Se confirma el alcance de la sección 5 (descarte sí, aceptación no por
-   ahora)? Si es otro, hay que decirlo antes de especificar.
-2. ¿Se acepta el umbral de partida P(sí) < 0,1, o se prefiere 0,2? (0,1: 0 falsos
-   en 109; 0,2: 1 en 139, más cobertura).
+Confirmado por el operador el 2026-10-16: Jev sale de la sombra; el Rol 3 es
+«confirmar, no aceptar solo»; la provincia entra a la medición. **Pendiente**
+del operador:
+
+1. **Umbral del descarte:** ¿P(sí) < 0,1 (0 falsos en 109, menos cobertura) o
+   < 0,2 (1 falso en 139, más cobertura)? Propuesta de partida: 0,1.
+2. **Rol 2:** ¿Jev descarta por su cuenta cuando el asistente no pudo
+   proponer? (Agrega cobertura; es el único caso donde decide solo.)
+
+La decisión se registra en `docs/decisions.md` al cerrar la medición de T3,
+con el flujo de especificación completo (toca el motor), no antes.
