@@ -102,6 +102,7 @@
   --ph-accent-2: #6f9bc4;
   --ph-accent-2-line: #3f6a93;
   --ph-median: #a7e5d3;
+  --ph-wholesale: #8a5a12;
   --ph-price-low: #dbe7f3;
   --ph-price-high: #292524;
   --ph-elev: 0 1px 2px rgba(12, 10, 9, .05), 0 4px 14px rgba(12, 10, 9, .05);
@@ -191,6 +192,7 @@
   --ph-accent-2: #8fb6dc;
   --ph-accent-2-line: #cfe3f5;
   --ph-median: #a7e5d3;
+  --ph-wholesale: #e0b15c;
   --ph-price-low: #1f2a35;
   --ph-price-high: #cfe0f1;
   --ph-orb-mint: #2f8f78;
