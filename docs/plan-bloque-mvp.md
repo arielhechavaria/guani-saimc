@@ -18,12 +18,10 @@ La complejidad es esfuerzo estimado: **S** (≤ medio día), **M** (1–2 días)
 |---|---|---|---|---|---|
 | 0 | — | **Acción del operador:** restituir `SAIMC_EL_TOQUE_API` en el `.env` del VPS y reiniciar | S | — | Corta la hemorragia: mientras falte, cada fila nueva se convierte con una tasa de relleno. |
 | 0 | — | Resolver `D .venv` (commit de baja) | S | haiku | Aprobado por el operador. Deja el repo limpio para abrir slices. |
-| 0 | T1 | Saneamiento de filas con tasa de relleno | M | opus | **Subió a primera.** La tasa del USD es volátil: el período afectado está mal. Ensayo sobre un volcado restaurado en una base temporal, sin esperar a T2. |
+| 0 | T1 | Saneamiento de filas con tasa de relleno | M | opus | La tasa del USD es volátil: el período afectado está mal. Ensayo sobre un volcado restaurado en una base temporal; no depende de T2. |
 | 0 | T0 | Definir «fila validada» y medir cuántas hay | M | opus | Antes de decidir la transición de fase y la corrida oficial de H0. Toca el motor: flujo completo. |
 | 1 | T3 | Jev deja el modo sombra | M | opus | Decidido por el operador; el análisis y el alcance están en `docs/analisis-jev-decisor.md`. Toca el motor: flujo completo. |
-| 1 | T2 | Entorno de desarrollo local (Docker) | M | sonnet | Restricción levantada (`decisions.md`, 2026-10-16). |
 | 1 | T9 | Revisión de auditorías | M | sonnet | La muestra semanal es el lunes 19/10; el freno depende de ella. |
-| 1 | T13 | Versión de gentle-ai en el VPS y «ODD» | S | sonnet | Investigación de solo lectura; condiciona cómo se desarrolla el resto. |
 | 2 | T5 | Explorar: precio real del formato | S | sonnet | Cambio acotado de presentación. |
 | 2 | T6 | Filtros globales + bug de provincia | M | sonnet | Cimiento para T7 y T16. |
 | 2 | T7 | Rangos 3 / 7 / 30 días | S | sonnet | Depende de T6. |
@@ -31,14 +29,21 @@ La complejidad es esfuerzo estimado: **S** (≤ medio día), **M** (1–2 días)
 | 3 | T11b | Tope de filas por anuncio, medido | M | opus | Parámetro de riesgo del motor de validación. |
 | 3 | T11c | Canal sucio: pasa si modelo y reglas coinciden | S | opus | Una línea, pero cambia una decisión de G1b. |
 | 3 | T11d | Regla de «otra base» | L | opus | Análisis antes de cambiar nada; mejor tras T11a. |
-| 4 | T4 | Rediseño visual de `/control` | L | opus (prototipo) + sonnet (build) | Dos pasos con aprobación del operador en medio. |
-| 5 | T10 | SEO puntual + analítica | M | sonnet | Antes de publicar en redes: el tráfico necesita llegar a algo indexable. |
-| 5 | T8a | Tarjetas diarias a disco, 6:00 hora de Cuba | M | sonnet | Genera material sin depender de Meta. |
-| 5 | T16 | Tour de primera visita | M | sonnet | Último de la cadena de interfaz: los pasos se anclan a filtros ya estables. |
-| 5 | T15 | Guía de crecimiento en `docs/` | S | opus | Documento de estrategia; puede ir en paralelo. |
-| 6 | T8b | Publicación automática en Instagram (API) | L | opus | Decidido por el operador; el descarte del 2026-09-28 quedó revocado. Primero se verifica lo que exige Meta, luego se construye. |
-| 6 | T14 | Análisis de fase y transición | M | opus | Depende de T0 y T1. Solo si hay capacidad de validar filas se corre H0. |
-| 6 | T12 | ¿Paper del sistema? | S | opus | Después de tener cifras de H0 y de auditoría estables. |
+| 4 | T10 | SEO puntual + analítica | M | sonnet | Antes de publicar en redes: el tráfico necesita llegar a algo indexable. |
+| 4 | T8a | Tarjetas diarias a disco, 6:00 hora de Cuba | M | sonnet | Genera material sin depender de Meta. |
+| 4 | T16 | Tour de primera visita | M | sonnet | Los pasos se anclan a filtros ya estables (T6, T7). |
+| 4 | T15 | Guía de crecimiento en `docs/` | S | opus | Documento de estrategia; puede ir en paralelo. |
+| 5 | T8b | Publicación automática en Instagram (API) | L | opus | Decidido por el operador; el descarte del 2026-09-28 quedó revocado. Primero se verifica lo que exige Meta, luego se construye. |
+| 5 | T14 | Análisis de fase y transición | M | opus | Depende de T0 y T1. Solo si hay capacidad de validar filas se corre H0. |
+| 5 | T12 | ¿Paper del sistema? | S | opus | Después de tener cifras de H0 y de auditoría estables. |
+| 6 | T2 | Entorno de desarrollo local (Docker) | M | sonnet | **Movida al final** (2026-10-16): desarrollo interno que no tributa directamente a Guani. Restricción levantada en `decisions.md`. |
+| 6 | T13 | Versión de gentle-ai en el VPS y «ODD» | S | sonnet | **Movida al final:** investigación de herramienta interna; no bloquea nada de arriba. |
+| 6 | T4 | Rediseño visual de `/control` | L | opus (prototipo) + sonnet (build) | **Movida al final:** herramienta del operador, no del público. Dos pasos con aprobación del operador en medio. |
+
+**Criterio del orden (operador, 2026-10-16):** el desarrollo interno que no
+tributa directamente al sistema Guani va al final (ola 6), para priorizar lo
+que sí lo hace por si se llega al límite de la cuota de la semana. Dentro de
+cada ola el orden es de arriba hacia abajo.
 
 Decisiones del operador del 2026-10-16 incorporadas (sección 3). La
 transición de fase se decide cuando exista la capacidad de validar una fila
@@ -111,10 +116,14 @@ Siguen pendientes:
 | 3 | Si el precio del envase se muestra solo en Explorar o también en el tablero | T5 | El operador lo decide al abrir T5 |
 
 Nota sobre la puerta: el bloque incluye tareas opcionales y de cierre (T8b,
-T12, T14, ola 6). Antes de apagarla conviene haber cerrado al menos T1 (tasas
+T12, T14, ola 5). Antes de apagarla conviene haber cerrado al menos T1 (tasas
 saneadas, porque el tablero público muestra esos precios), T0 y T6/T7 (filtros).
 Apagarla es cambiar `SAIMC_SITE_GATE_ENABLED` a `false` en el `.env` del VPS y
 reiniciar; no necesita código.
+
+**Propuesta (a confirmar):** como T2, T13 y T4 pasaron al final y no afectan
+al público, apagar la puerta al cerrar la ola 4 (SEO, tarjetas, tour, guía),
+no al cerrar la ola 6; así el lanzamiento no espera a las tareas internas.
 
 Acciones del operador que no son decisiones: restituir `SAIMC_EL_TOQUE_API` en
 el `.env` del VPS (T1), hacer push de las 6 ramas sin integrar (reporte §3) y,
