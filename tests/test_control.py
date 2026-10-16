@@ -2419,3 +2419,71 @@ class TestMetricaFase0:
         # La serie abre texto e imagen.
         assert "· texto" in seccion
         assert "· imagen" in seccion
+
+
+class TestMatrizConCapaMayorista:
+    """La matriz lee el minorista como cifra principal y el mayorista del
+    mismo par como capa cerrada por defecto (2026-10-16). Lo sin volumen
+    declarado sigue visible, marcado como pendiente."""
+
+    def _cargar(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/capa.txt",
+            content_hash="hash-capa",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        # Minorista 300/lb, mayorista 250/lb (saco de 100 lb a 25000 total):
+        # ratio 300 / 250 = 1,20. Sin volumen declarado: 320/lb.
+        for precio, cantidad, base, formato in (
+            ("300", "1", None, SaleFormat.RETAIL.value),
+            ("25000", "100", "total", SaleFormat.WHOLESALE.value),
+            ("320", "1", None, None),
+        ):
+            session.add(
+                PriceHistory(
+                    provenance="human",
+                    product_id=arroz.id,
+                    province_id=scu.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    unit="lb",
+                    quantity=Decimal(cantidad),
+                    price_basis=base,
+                    sale_format=formato,
+                    source_id=origen.id,
+                )
+            )
+        session.commit()
+
+    def test_el_mayorista_va_en_una_capa_cerrada_despues_del_minorista(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._cargar(session)
+
+        matriz = client.get("/control/calidad").text.split("<!-- ---------- 10.")[1]
+
+        assert '<details class="m3-matrix-layer">' in matriz
+        assert '<details class="m3-matrix-layer" open' not in matriz
+        assert "Al por mayor (escala de contenedor)" in matriz
+        assert "minorista ×1.20" in matriz
+        assert matriz.index("300.00 CUP/lb") < matriz.index("m3-matrix-layer")
+        assert matriz.index("m3-matrix-layer") < matriz.index("250.00 CUP/lb")
+
+    def test_lo_sin_volumen_declarado_queda_visible_como_pendiente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._cargar(session)
+
+        matriz = client.get("/control/calidad").text.split("<!-- ---------- 10.")[1]
+
+        assert "pendiente: falta declarar minorista o mayorista" in matriz
+        assert "320.00 CUP/lb" in matriz

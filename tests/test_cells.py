@@ -2159,3 +2159,105 @@ class TestVariantesEnRangoMinorista:
             ("girasol", "Vitalín", "importado"),
             ("girasol", "Magdalena", "importado"),
         }
+
+
+class TestCapaMayorista:
+    """La capa mayorista sale de la misma normalización que la minorista
+    (2026-10-16): mismas conversiones, mismos filtros, misma clave de celda.
+    Lo único que cambia es qué `sale_format` se pide. El precio de referencia
+    del sistema sigue siendo el minorista, y es el default de todo.
+
+    Valores esperados calculados a mano: producto canónico en kg; un saco de
+    25 kg a 2500 total da 100/kg; un lote de 5000 g a 500 total da 0,10/g,
+    que llevado a kg (× 1000) es 100/kg exacto. (Un precio con más de dos
+    decimales no sirve de caso: `price` es `Numeric(12, 2)` y se redondea.)
+    """
+
+    def _cargar(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        fuente = _ingestion(session, "hash-capa-mayorista")
+        dia = date(2026, 8, 9)
+        comunes = {"product": arroz, "province": scu, "source": fuente, "published_date": dia}
+        # Minorista: el kilo suelto a 250.
+        _precio(session, price="250", unit="kg", quantity="1",
+                sale_format=SaleFormat.RETAIL.value, **comunes)
+        # Mayorista, dos filas que entran: 100/kg cada una.
+        _precio(session, price="2500", unit="kg", quantity="25", price_basis="total",
+                sale_format=SaleFormat.WHOLESALE.value, **comunes)
+        _precio(session, price="500", unit="g", quantity="5000", price_basis="total",
+                sale_format=SaleFormat.WHOLESALE.value, **comunes)
+        # Mayorista con mínimo de compra mayor a lo que cotiza: ENTRA. El
+        # filtro de compra mínima protege al lector minorista; en la capa
+        # mayorista el mínimo es justamente lo que la hace mayorista.
+        _precio(session, price="90", unit="kg", quantity="1", min_purchase_quantity="10",
+                sale_format=SaleFormat.WHOLESALE.value, **comunes)
+        # Mayorista con basis sin resolver: afuera, contada.
+        _precio(session, price="5000", unit="kg", quantity="50",
+                sale_format=SaleFormat.WHOLESALE.value, **comunes)
+        # Sin responder: no es de ninguna de las dos capas.
+        _precio(session, price="300", unit="kg", quantity="1", **comunes)
+        session.commit()
+
+    def test_la_referencia_es_el_minorista(self) -> None:
+        from saimc.cells import REFERENCE_SALE_FORMAT
+
+        assert REFERENCE_SALE_FORMAT == SaleFormat.RETAIL
+
+    def test_observaciones_mayoristas_con_las_mismas_reglas(self, session: Session) -> None:
+        from saimc.cells import compute_wholesale_observations
+
+        self._cargar(session)
+        reporte = compute_wholesale_observations(session, hoy=date(2026, 8, 10))
+
+        assert sorted(o.unit_price for o in reporte.observations) == [
+            Decimal("90"), Decimal("100"), Decimal("100"),
+        ]
+        assert {o.unit for o in reporte.observations} == {"kg"}
+        assert {o.sale_format for o in reporte.observations} == {"wholesale"}
+        assert reporte.excluded_by_minimum == 0
+        assert reporte.excluded_by_basis == 1
+        assert reporte.excluded_by_unit == 0
+
+    def test_el_default_sigue_siendo_minorista(self, session: Session) -> None:
+        self._cargar(session)
+        reporte = compute_retail_observations(session, hoy=date(2026, 8, 10))
+
+        assert [o.unit_price for o in reporte.observations] == [Decimal("250")]
+        assert reporte.observations[0].sale_format == "retail"
+        assert reporte.excluded_by_minimum == 0
+        assert reporte.excluded_by_basis == 0
+
+    def test_rangos_mayoristas_con_la_misma_clave(self, session: Session) -> None:
+        from saimc.cells import compute_wholesale_ranges
+
+        self._cargar(session)
+        mayor = compute_wholesale_ranges(session, hoy=date(2026, 8, 10))
+        menor = compute_retail_ranges(session, hoy=date(2026, 8, 10))
+
+        # Mediana de 90, 100, 100 = 100.
+        assert [(r.count, r.median, r.unit) for r in mayor.ranges] == [(3, Decimal("100"), "kg")]
+        assert [(r.count, r.median) for r in menor.ranges] == [(1, Decimal("250"))]
+        assert mayor.excluded_by_minimum == 0
+        assert mayor.excluded_by_basis == 1
+
+    def test_el_minimo_de_compra_sigue_excluyendo_en_la_referencia(
+        self, session: Session
+    ) -> None:
+        """La misma fila con mínimo 10 > cantidad 1, cargada como minorista,
+        queda afuera y contada: en la referencia el filtro no cambia."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        fuente = _ingestion(session, "hash-minimo-referencia")
+        _precio(session, product=arroz, province=None, price="90", unit="kg", quantity="1",
+                min_purchase_quantity="10", sale_format=SaleFormat.RETAIL.value,
+                source=fuente, published_date=date(2026, 8, 9))
+        session.commit()
+
+        reporte = compute_retail_observations(session, hoy=date(2026, 8, 10))
+
+        assert reporte.observations == []
+        assert reporte.excluded_by_minimum == 1

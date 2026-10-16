@@ -33,9 +33,21 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from saimc.automation import automation_summary
-from saimc.cells import compute_retail_observations, compute_retail_ranges
+from saimc.cells import (
+    REFERENCE_SALE_FORMAT,
+    WHOLESALE_LAYER,
+    compute_retail_observations,
+    compute_retail_ranges,
+)
 from saimc.config import get_settings
-from saimc.models import ContentType, PriceHistory, ProcessingStatus, Province, RawIngestion
+from saimc.models import (
+    ContentType,
+    PriceHistory,
+    ProcessingStatus,
+    Province,
+    RawIngestion,
+    SaleFormat,
+)
 from saimc.progress import pilot_product_names
 from saimc.validation import lane1
 from saimc.validation.fence import FENCE_IQR, FENCE_MIN_FACTOR
@@ -91,6 +103,7 @@ from saimc.web.product_nav import (
     download_href,
     download_is_trimmed,
     effective_layer,
+    light_product_query,
     product_slug,
     products_query,
     resolve_layer,
@@ -113,6 +126,14 @@ from saimc.web.site_pages import (
 )
 from saimc.web.ticker_view import build_ticker
 from saimc.web.watchlist_view import build_watchlist
+from saimc.web.wholesale_layer import (
+    LAYER_LABEL,
+    LAYER_PARAM,
+    build_overlays,
+    headline_key,
+    unpaired_wholesale,
+    wants_wholesale,
+)
 
 router = APIRouter()
 
@@ -187,10 +208,16 @@ def _visible_observations(
     province: str | None,
     desde: date,
     hasta: date,
+    sale_format: SaleFormat = REFERENCE_SALE_FORMAT,
 ) -> list:
     """Las observaciones minoristas que la vista pública muestra: piloto,
     convertidas a CUP, dentro del rango de calendario y de los filtros
     activos.
+
+    `sale_format` (2026-10-16): la referencia minorista por defecto, que es
+    lo único que ve toda vista que no lo pase. `WHOLESALE_LAYER` trae la capa
+    mayorista de `/producto/<slug>?capa=mayorista` con exactamente esta misma
+    regla de publicación —piloto, convertida, mismos filtros—.
 
     Una sola definición para que la página (tarjetas y gráfico) y la descarga
     CSV no puedan divergir: lo que se baja sale del mismo universo que lo que
@@ -204,7 +231,7 @@ def _visible_observations(
     `days=(hasta-desde).days, hoy=hasta` reproduce exactamente ese corte.
     """
     report = compute_retail_observations(
-        session, days=(hasta - desde).days, hoy=hasta, hasta=hasta
+        session, days=(hasta - desde).days, hoy=hasta, hasta=hasta, sale_format=sale_format
     )
     obs = [
         o
@@ -1144,6 +1171,7 @@ def public_product(
     desde: str | None = None,
     hasta: str | None = None,
     dias: str | None = None,
+    capa: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """URL dedicada por producto — la que queda en la barra de direcciones
@@ -1159,9 +1187,12 @@ def public_product(
     candidato sin implementar).
 
     `?provincia=` y `?desde=`/`?hasta=` (o `?dias=`, alias de compatibilidad)
-    siguen aceptándose para acotar el panel; `?ver=` y `?capa=` ya no
-    significan nada acá —no hay ventanas ni capas de mapa en esta vista— y
-    un enlace viejo con esos parámetros los ignora en vez de romperse.
+    siguen aceptándose para acotar el panel; `?ver=` ya no significa nada acá
+    —no hay ventanas en esta vista— y un enlace viejo lo ignora en vez de
+    romperse. `?capa=` tampoco nombra capas de mapa acá: desde el 2026-10-16
+    su único valor con efecto es `mayorista` (`wholesale_layer`), que
+    superpone la capa mayorista a cada cifra minorista. Cualquier otro valor
+    —los de la capa del mapa de `/precios`— se ignora como antes.
 
     Un slug desconocido da 404, a diferencia de `?producto=` raro que muestra
     todo: en una ruta con nombre de recurso, «no existe» es la respuesta
@@ -1190,6 +1221,38 @@ def public_product(
     latest_day = _latest_price_day(db, pilot)
     freshness_days_ago = (date.today() - latest_day).days if latest_day else None
 
+    slug_limpio = product_slug(product_name)
+    prov_slug = product_slug(selected_province) if selected_province else ""
+    sin_capa_href = light_product_query(
+        slug_limpio, provincia=prov_slug, desde=ventana_desde, hasta=ventana_hasta
+    )
+    layer_on = wants_wholesale(capa)
+    # La capa mayorista (2026-10-16) se calcula solo si se pidió: sin el
+    # parámetro la página no consulta ni una fila mayorista, así que sale
+    # idéntica a la de antes. Mismas observaciones visibles, mismo `_group`,
+    # mismo cerco (`build_headlines`); sin período anterior, porque la capa
+    # no publica cambio.
+    overlays: list = []
+    unpaired: list = []
+    if layer_on:
+        wholesale_obs = _visible_observations(
+            db,
+            pilot=pilot,
+            products=frozenset([product_name]),
+            province=selected_province,
+            desde=ventana_desde,
+            hasta=ventana_hasta,
+            sale_format=WHOLESALE_LAYER,
+        )
+        wholesale_headlines = build_headlines(wholesale_obs, [])
+        wholesale_ads = build_cell_ads(wholesale_obs)
+        retail_headlines = [b.headline for b in panel.blocks]
+        overlays = build_overlays(retail_headlines, wholesale_headlines, wholesale_ads)
+        unpaired = [
+            (h, tuple(wholesale_ads.get(headline_key(h), ())))
+            for h in unpaired_wholesale(retail_headlines, wholesale_headlines)
+        ]
+
     # `cast` y no dejar que mypy infiera `Any`: es la ÚNICA ruta pública que
     # arma su propio `TemplateResponse` en vez de delegar en `_render_home`
     # (que ya suma esta misma imprecisión de tipos a la deuda aceptada del
@@ -1208,7 +1271,18 @@ def public_product(
                 "data_freshness_day": latest_day,
                 "data_freshness_days_ago": freshness_days_ago,
                 "selected_province": selected_province,
-                "selected_province_slug": product_slug(selected_province) if selected_province else "",
+                "selected_province_slug": prov_slug,
+                # Capa mayorista opcional (2026-10-16): el interruptor es un
+                # enlace (sin JavaScript) que conserva provincia y período.
+                "layer": {
+                    "on": layer_on,
+                    "param": LAYER_PARAM,
+                    "label": LAYER_LABEL,
+                    "on_href": f"{sin_capa_href}&capa={LAYER_PARAM}",
+                    "off_href": sin_capa_href,
+                    "overlays": overlays,
+                    "unpaired": unpaired,
+                },
                 "map_href": products_query(
                     [slug],
                     provincia=product_slug(selected_province) if selected_province else "",

@@ -105,6 +105,7 @@
   --ph-accent-2: #6f9bc4;
   --ph-accent-2-line: #3f6a93;
   --ph-median: #a7e5d3;
+  --ph-wholesale: #8a5a12;
   --ph-price-low: #dbe7f3;
   --ph-price-high: #292524;
   --ph-elev: 0 1px 2px rgba(12, 10, 9, .05), 0 4px 14px rgba(12, 10, 9, .05);
@@ -194,6 +195,7 @@
   --ph-accent-2: #8fb6dc;
   --ph-accent-2-line: #cfe3f5;
   --ph-median: #a7e5d3;
+  --ph-wholesale: #e0b15c;
   --ph-price-low: #1f2a35;
   --ph-price-high: #cfe0f1;
   --ph-orb-mint: #2f8f78;
@@ -788,6 +790,22 @@ code, .m3-num { font-family: var(--m3-mono); }
 .m3-range-track { flex: 1; height: 10px; background: var(--m3-surface); border-radius: 5px; }
 .m3-range-fill { display: block; position: relative; height: 100%; background: var(--prov-soft, var(--m3-primary-container)); border-radius: 5px; }
 .m3-range-median { position: absolute; top: -3px; width: 3px; height: 16px; background: var(--prov, var(--m3-primary)); border-radius: 2px; transform: translateX(-50%); }
+/* Fila de lectura de la matriz (2026-10-16): el minorista es la cifra
+   principal y el mayorista del mismo par va como capa cerrada por defecto
+   (DESIGN.md regla 2). Lo que no tiene volumen declarado es cola de trabajo:
+   se marca con el ámbar de «pendiente», que no es rojo ni verde. */
+.m3-matrix-row { border-bottom: 1px dashed var(--m3-outline-variant); }
+.m3-matrix-row:last-child { border-bottom: none; }
+.m3-matrix-row .m3-serie { border-bottom: none; }
+.m3-matrix-row.is-pending { background: var(--m3-warn-wash); border-left: 3px solid var(--m3-warn-strong); padding: var(--m3-space-2) 0 0 var(--m3-space-3); }
+.m3-matrix-pending { display: inline-block; margin-top: var(--m3-space-1); }
+.m3-matrix-noretail { margin: 14px 0 var(--m3-space-2); }
+.m3-matrix-layer { margin: 0 0 var(--m3-space-3); padding-left: var(--m3-space-3); border-left: 2px solid var(--m3-outline-variant); }
+.m3-matrix-layer > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; list-style: none; font-size: 13px; color: var(--m3-on-surface-variant); }
+.m3-matrix-layer > summary::-webkit-details-marker { display: none; }
+.m3-matrix-layer > summary > .m3-icon:first-child { transition: transform .15s ease; }
+.m3-matrix-layer[open] > summary > .m3-icon:first-child { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .m3-matrix-layer > summary > .m3-icon:first-child { transition: none; } }
 
 /* Ranuras de provincia — asignadas por catálogo, no por los datos */
 .m3-slot-0 { --prov: var(--m3-prov-0); --prov-soft: var(--m3-prov-0-soft); --prov-wash: var(--m3-prov-0-wash); }

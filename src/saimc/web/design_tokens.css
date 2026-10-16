@@ -159,6 +159,13 @@
   --ph-accent-2: #6f9bc4;
   --ph-accent-2-line: #3f6a93;
   --ph-median: #a7e5d3;
+  /* Capa mayorista opcional de `/producto/<slug>` (2026-10-16): la banda
+     «al por mayor» junto a la minorista, que va en `--ph-accent`. Ocre: fuera
+     del eje rojo/verde (DESIGN.md regla 3) y lejos de los colores de
+     provincia (índigo, violeta, cian, gris) y de la tinta del acento. Es rol
+     de dato, no marca. Contraste medido: 5,9:1 sobre `--m3-surface` y 5,4:1
+     sobre `--m3-bg`, así que sirve también para el rótulo. */
+  --ph-wholesale: #8a5a12;
   /* Escala de precio de la tira del tablero (2026-09-17). Dos extremos de un
      solo tono; los pasos intermedios los interpola `color-mix` en la
      plantilla, así que es continua y NO tiene bandas — que es justo lo que
@@ -315,6 +322,8 @@
   --ph-accent-2: #8fb6dc;
   --ph-accent-2-line: #cfe3f5;
   --ph-median: #a7e5d3;
+  /* Mismo ocre, aclarado: 8,8:1 sobre `--m3-surface` oscura. */
+  --ph-wholesale: #e0b15c;
   /* En oscuro la escala se invierte en luminancia: «más caro» sigue siendo
      «más tinta», y sobre fondo oscuro eso es más claro, no más oscuro. */
   --ph-price-low: #1f2a35;
