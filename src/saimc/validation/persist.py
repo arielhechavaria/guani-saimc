@@ -50,9 +50,16 @@ logger = logging.getLogger(__name__)
 #: «B1»). Cada fila guarda el valor con el que se validó, así que cambiarlo no
 #: deja filas sin explicación: se corre `revalidate`.
 #:
-#: Los dos parámetros de la regla 4 siguen SIN fijar (los decide G1b): la regla
-#: da `unknown` en toda fila y ninguna sale `approved`.
 MIN_CELL_N = 5
+
+#: Los dos parámetros de la regla 4, fijados por el operador en G1b
+#: (`docs/decisions.md`, 2026-10-09): un canal puede salir «sucio» desde 3
+#: decisiones individuales, y lo es si el operador tocó más de la mitad de las
+#: filas propuestas. Son los mismos del carril 1 (`lane1.CONFIG` los lee de acá).
+#: Sin ellos la regla daba `unknown` en toda fila guardada y ninguna salía
+#: `approved`; ver `docs/decisions.md`, 2026-10-16, «Definir fila validada».
+CHANNEL_MIN_HISTORY = 3
+CHANNEL_MAX_EDIT_RATE = 0.5
 
 
 def validate_rows(
@@ -86,6 +93,8 @@ def validate_rows(
             recent_channel_rows=ctx.recent_channel_rows,
             verified=row.provenance == Provenance.HUMAN,
             min_cell_n=MIN_CELL_N,
+            channel_min_history=CHANNEL_MIN_HISTORY,
+            channel_max_edit_rate=CHANNEL_MAX_EDIT_RATE,
         )
         for row, stored in zip(rows, ctx.rows, strict=True)
     ]
@@ -141,7 +150,11 @@ def validation_detail(
         "rules": validation.detail()["rules"],
         "reasons": list(validation.reasons),
         "engine_version": ENGINE_VERSION,
-        "config": {"min_cell_n": MIN_CELL_N},
+        "config": {
+            "min_cell_n": MIN_CELL_N,
+            "channel_min_history": CHANNEL_MIN_HISTORY,
+            "channel_max_edit_rate": CHANNEL_MAX_EDIT_RATE,
+        },
         "validated_at": validated_at.isoformat(),
     }
     if jev is not None:

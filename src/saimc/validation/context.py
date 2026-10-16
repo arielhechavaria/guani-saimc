@@ -674,6 +674,9 @@ def build_stored_rows_context(
     - **Precio en CUP:** el `price_cup` que quedó en la fila, no una segunda
       consulta a la tasa: el motor mira el mismo número que se publica.
     - **Catálogo:** el de hoy.
+    - **Historial del canal (regla 4):** todo lo decidido hasta hoy en decisiones
+      individuales, sin el propio anuncio (`docs/spec-slice-definir-validada.md`).
+      Depende de la base y no del orden de recorrido ni del estado de otras filas.
     """
     published_at = as_utc(ingestion.captured_at)
     channel = origin.resolve_origin(session, ingestion)
@@ -715,9 +718,7 @@ def build_stored_rows_context(
         channel=(
             None
             if channel is None
-            else ChannelContext(
-                province_id=channel.province_id, decisions=0, proposed_rows=0, changed_rows=0
-            )
+            else channel_history(session, channel, exclude_ingestion_id=ingestion.id)
         ),
         recent_channel_rows=(
             () if channel is None else _recent_channel_rows(session, ingestion, channel, published_at)

@@ -101,8 +101,8 @@ from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, Validat
 #: - el desacuerdo entre reglas y modelo no frena: manda el modelo (2026-10-13).
 CONFIG = ValidationConfig(
     min_cell_n=persist.MIN_CELL_N,
-    channel_min_history=3,
-    channel_max_edit_rate=0.5,
+    channel_min_history=persist.CHANNEL_MIN_HISTORY,
+    channel_max_edit_rate=persist.CHANNEL_MAX_EDIT_RATE,
     signal_high_probability=None,
     lane1_max_rows=4,
     lane1_model_over_rules=True,

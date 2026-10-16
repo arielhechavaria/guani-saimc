@@ -444,3 +444,16 @@ errores de Groupej, así que el número que vale es el de la auditoría.
 Entrada en `docs/decisions.md` (2026-10-02, «A5a»): los cinco apartamientos de
 «Contraste», el carril por predicados y no por puntaje, y la evidencia de G1a
 acotada al oro.
+
+## Precisiones de definir-validada (2026-10-16)
+
+- **Fila validada = `approved`**: las seis reglas en `pass` y la fila hecha por
+  una persona (`provenance = human`). Las `auto` y las `audited` no llegan.
+- **Regla 4 sobre una fila guardada**: usa los parámetros de G1b
+  (`persist.CHANNEL_MIN_HISTORY = 3`, `persist.CHANNEL_MAX_EDIT_RATE = 0,5`, los
+  mismos que `lane1.CONFIG`) y el historial completo del canal hasta hoy, sin el
+  propio anuncio. Reemplaza la nota de B1 («Historial del canal: no se calcula
+  mientras la regla 4 no tenga parámetros»).
+- Reglas, estados, puntaje y `ENGINE_VERSION` no cambian. Detalle:
+  `docs/spec-slice-definir-validada.md`; entrada en `docs/decisions.md`
+  (2026-10-16, «Fila validada = `approved`»).

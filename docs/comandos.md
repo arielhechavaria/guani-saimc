@@ -804,8 +804,10 @@ sudo systemctl daemon-reload
 
 - **Para qué**: guarda en cada fila de `prices_history` el estado, el puntaje y el detalle que le da
   el motor de hoy. No toca nada más (ni la procedencia).
-- **Cuándo**: después de un backfill de tasas o de base de precio, al cambiar `min_cell_n` o la
-  versión del motor, y una vez al desplegar B1. Antes, el [en seco](#revalidar-en-seco).
+- **Cuándo**: después de un backfill de tasas o de base de precio, al cambiar `min_cell_n`, los
+  parámetros de la regla 4 (`CHANNEL_MIN_HISTORY`, `CHANNEL_MAX_EDIT_RATE`) o la versión del motor,
+  y una vez al desplegar B1 y al desplegar `definir-validada` (para que las filas humanas de
+  canales limpios pasen a `approved`). Antes, el [en seco](#revalidar-en-seco).
 - **Cambia algo**: sí, `prices_history`. **Gasta**: no.
 - Reescribe el detalle entero, así que también pone al día la clave `jev` (A6b): la anota en las
   filas de anuncios que tienen señal guardada si Jev está activo, y la quita si está apagado. No

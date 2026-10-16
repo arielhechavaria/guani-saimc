@@ -33,6 +33,7 @@ from saimc.models import (
     ContentType,
     JevSignal,
     LlmProposal,
+    LlmReview,
     PriceHistory,
     ProcessingStatus,
     Product,
@@ -52,6 +53,9 @@ AD_AT = datetime(2026, 9, 10, 16, 0, tzinfo=UTC)
 AD_DAY = date(2026, 9, 9)
 
 SEIS_REGLAS = {"structure", "price", "location", "trust", "duplicate", "quantity_price"}
+
+#: Lo que `validation_detail.config` guarda: los tres parámetros con que se validó.
+CONFIG_PERSISTIDA = {"min_cell_n": 5, "channel_min_history": 3, "channel_max_edit_rate": 0.5}
 
 _n = 0
 
@@ -130,6 +134,50 @@ def _referencias(session: Session, mundo: SimpleNamespace, *precios: str) -> lis
         origen = _ingesta(session, mundo.otro_canal, cuando=cuando, estado=ProcessingStatus.CURATED)
         filas.append(_fila(session, mundo, origen, precio, dia))
     return filas
+
+
+def _decisiones_previas(session: Session, canal: Channel, cuantas: int, *, tocadas: int = 0) -> None:
+    """`cuantas` decisiones individuales previas del canal, cada una con una fila
+    propuesta; en `tocadas` el operador cambió el precio. Es el historial que
+    lee la regla 4 (`context.channel_history`)."""
+    for i in range(cuantas):
+        cuando = datetime(2026, 9, 1, 16, 0, tzinfo=UTC) + timedelta(hours=i)
+        origen = _ingesta(session, canal, cuando=cuando, estado=ProcessingStatus.CURATED)
+        _revision(session, origen, cuando, tocada=i < tocadas)
+    session.commit()
+
+
+def _revision(session: Session, origen: RawIngestion, cuando: datetime, *, tocada: bool) -> None:
+    """La decisión individual del operador sobre `origen`: una fila propuesta a
+    320 que quedó igual o con el precio cambiado."""
+    propuesta = LlmProposal(
+        ingestion_id=origen.id,
+        model="modelo-de-prueba",
+        prompt_version="prueba",
+        status="ok",
+        discard=False,
+        rows=[],
+        input_tokens=0,
+        output_tokens=0,
+    )
+    session.add(propuesta)
+    session.flush()
+    canal = session.get(Channel, origen.channel_id)
+    assert canal is not None
+    # La provincia del canal va en las dos puntas: el formulario la impone, así
+    # que no cuenta como edición del operador (`context.diff_review`).
+    provincia = {"province_id": str(canal.province_id)}
+    proposed = {"price": "320", **provincia}
+    final = {"price": "999" if tocada else "320", **provincia}
+    session.add(
+        LlmReview(
+            ingestion_id=origen.id,
+            proposal_id=propuesta.id,
+            outcome="curated",
+            rows=[{"proposal_index": 0, "proposed": proposed, "final": final}],
+            created_at=cuando,
+        )
+    )
 
 
 CINCO = ("300", "310", "320", "330", "340")
@@ -244,10 +292,107 @@ def test_caso_9_al_curar_cada_fila_queda_validada_y_con_procedencia_humana(
     }
     assert detalle["reasons"] == ["el canal no tiene historial suficiente"]
     assert detalle["engine_version"] == "2026-10-03.1" == ENGINE_VERSION
-    assert detalle["config"] == {"min_cell_n": 5}
+    assert detalle["config"] == {
+        "min_cell_n": 5,
+        "channel_min_history": 3,
+        "channel_max_edit_rate": 0.5,
+    }
     validada = datetime.fromisoformat(detalle["validated_at"])
     assert validada.tzinfo is not None
     assert abs(datetime.now(UTC) - validada) < timedelta(minutes=5)
+
+
+def test_una_fila_humana_de_un_canal_limpio_con_celda_completa_queda_approved(
+    client: TestClient, session: Session, mundo: SimpleNamespace
+) -> None:
+    # Tres decisiones sin tocar (`channel_min_history = 3`, `channel_max_edit_rate
+    # = 0,5`) y cinco referencias: las seis reglas en `pass` y la fila a mano.
+    _referencias(session, mundo, *CINCO)
+    _decisiones_previas(session, mundo.canal, 3)
+    anuncio = _ingesta(session, mundo.canal)
+
+    _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    assert fila.validation_status == "approved"
+    assert set(_detalle(fila)["rules"].values()) == {"pass"}
+
+
+def test_una_fila_humana_de_un_canal_sucio_no_queda_approved(
+    client: TestClient, session: Session, mundo: SimpleNamespace
+) -> None:
+    # Dos de tres decisiones tocadas: 2 > 0,5 × 3, el canal es sucio (regla 4 en `fail`).
+    _referencias(session, mundo, *CINCO)
+    _decisiones_previas(session, mundo.canal, 3, tocadas=2)
+    anuncio = _ingesta(session, mundo.canal)
+
+    _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    assert fila.validation_status == "untrusted_source"
+    assert _detalle(fila)["rules"]["trust"] == "fail"
+
+
+def test_un_canal_con_menos_de_tres_decisiones_deja_la_regla_4_en_unknown(
+    client: TestClient, session: Session, mundo: SimpleNamespace
+) -> None:
+    _referencias(session, mundo, *CINCO)
+    _decisiones_previas(session, mundo.canal, 2)
+    anuncio = _ingesta(session, mundo.canal)
+
+    _curar(client, mundo, anuncio, "320")
+
+    (fila,) = _filas_de(session, anuncio)
+    assert fila.validation_status == "unverified"
+    assert _detalle(fila)["rules"]["trust"] == "unknown"
+
+
+def test_la_decision_del_propio_anuncio_no_cuenta_en_el_historial_del_canal(
+    session: Session, mundo: SimpleNamespace
+) -> None:
+    # Dos decisiones previas y la del propio anuncio: son 3 con ella, 2 sin ella.
+    _referencias(session, mundo, *CINCO)
+    _decisiones_previas(session, mundo.canal, 2)
+    anuncio = _ingesta(session, mundo.canal, estado=ProcessingStatus.CURATED)
+    fila = _fila(session, mundo, anuncio, "320", AD_DAY)
+    _revision(session, anuncio, AD_AT, tocada=False)
+    session.commit()
+
+    (validacion,) = persist.validate_rows(session, anuncio, [fila])
+
+    assert validacion.detail()["rules"]["trust"] == "unknown"
+    assert validacion.status.value == "unverified"
+
+
+def test_revalidate_pasa_a_approved_la_fila_humana_de_un_canal_limpio_y_no_la_automatica(
+    session: Session, mundo: SimpleNamespace
+) -> None:
+    _referencias(session, mundo, *CINCO)
+    _decisiones_previas(session, mundo.canal, 3)
+    humana = _fila(session, mundo, _ingesta(session, mundo.canal), "320", AD_DAY)
+    # Otro día, para que no sea duplicado de la humana (regla 5, 24 h).
+    tarde = _ingesta(session, mundo.canal, cuando=AD_AT + timedelta(days=3))
+    automatica = _fila(session, mundo, tarde, "320", AD_DAY, procedencia="auto")
+
+    revalidate.execute(revalidate.parse_args(["--execute"]), session, out=lambda _: None)
+    session.commit()
+    primera = _estados(session)
+    revalidate.execute(revalidate.parse_args(["--execute"]), session, out=lambda _: None)
+    session.commit()
+
+    assert primera[humana.id][0] == "approved"
+    assert primera[automatica.id][0] == "unverified"
+    assert _detalle(_releer(session, automatica))["reasons"] == ["la fila no está verificada"]
+    assert _estados(session) == primera
+    assert _releer(session, humana).provenance == "human"
+    assert _releer(session, automatica).provenance == "auto"
+
+
+def test_el_carril_1_y_el_guardado_usan_los_mismos_parametros_de_la_regla_4() -> None:
+    from saimc.validation import lane1
+
+    assert lane1.CONFIG.channel_min_history == persist.CHANNEL_MIN_HISTORY == 3
+    assert lane1.CONFIG.channel_max_edit_rate == persist.CHANNEL_MAX_EDIT_RATE == 0.5
 
 
 def test_caso_9_un_precio_fuera_de_la_banda_queda_como_anomalia_al_curar(
@@ -528,7 +673,7 @@ def test_caso_16_revalidate_con_execute_llena_las_filas_y_no_toca_la_procedencia
         assert estados[referencia.id][0] == "unverified"
     filas = list(session.execute(select(PriceHistory)).scalars())
     assert all(_detalle(fila)["engine_version"] == ENGINE_VERSION for fila in filas)
-    assert all(_detalle(fila)["config"] == {"min_cell_n": 5} for fila in filas)
+    assert all(_detalle(fila)["config"] == CONFIG_PERSISTIDA for fila in filas)
     # Ni la procedencia ni ninguna otra columna.
     assert _releer(session, historico.absurdo).provenance == "auto"
     assert _releer(session, historico.normal).provenance == "human"
@@ -798,7 +943,7 @@ def _es_la_fila_f(fila: PriceHistory) -> None:
     }
     assert detalle["reasons"] == ["el canal no tiene historial suficiente"]
     assert detalle["engine_version"] == ENGINE_VERSION
-    assert detalle["config"] == {"min_cell_n": 5}
+    assert detalle["config"] == CONFIG_PERSISTIDA
 
 
 @pytest.mark.parametrize(

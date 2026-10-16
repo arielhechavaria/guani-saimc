@@ -7,7 +7,8 @@ vuelve a calcular el estado, el puntaje y el detalle, con la versión del motor
 y los parámetros vigentes (`validation.persist`). Sirve para tres cosas:
 
 - validar las filas anteriores a B1, que quedaron con estado nulo;
-- reaplicar un cambio de `MIN_CELL_N` o de `ENGINE_VERSION`;
+- reaplicar un cambio de `MIN_CELL_N`, de los parámetros de la regla 4
+  (`CHANNEL_MIN_HISTORY`, `CHANNEL_MAX_EDIT_RATE`) o de `ENGINE_VERSION`;
 - refrescar después de un backfill de tasas o de base de precio, que cambian
   el número que el motor compara.
 
