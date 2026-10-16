@@ -543,6 +543,28 @@ class TestModoOscuro:
         "--m3-radius-lg",
         "--m3-radius-full",
         "--ph-font-heading",
+        # El atardecer de la landing es un mundo pintado: el mismo cielo con la
+        # página clara y con la oscura (ver el comentario en design_tokens.css).
+        "--ph-dusk-noche",
+        "--ph-dusk-indigo",
+        "--ph-dusk-mamey",
+        "--ph-dusk-flama",
+        "--ph-dusk-guayaba",
+        "--ph-dusk-guayaba-halo",
+        "--ph-dusk-guayaba-borde",
+        "--ph-dusk-sil-lejos",
+        "--ph-dusk-sil-medio",
+        "--ph-dusk-sil-cerca",
+        "--ph-dusk-tinta",
+        "--ph-dusk-texto",
+        "--ph-dusk-texto-suave",
+        "--ph-dusk-vidrio",
+        "--ph-dusk-vidrio-borde",
+        "--ph-dusk-vidrio-oscuro",
+        "--ph-dusk-sombra",
+        "--ph-dusk-manana",
+        "--ph-dusk-sombra-dia",
+        "--ph-dusk-brillo",
         "--ph-radius-lg",
         "--ph-radius-sm",
         "--ph-elev",
@@ -828,6 +850,11 @@ class TestNingunColorFijoEnLasPlantillas:
 
         encontrados: list[str] = []
         for tpl in sorted(raiz.glob("*.html")):
+            # Las tarjetas de marketing se rasterizan como HTML suelto, sin
+            # acceso a las variables del sitio: llevan literales a propósito.
+            # `test_marketing_cards.py` verifica que sigan a `design_tokens.css`.
+            if tpl.name == "_marketing_card.html":
+                continue
             texto = tpl.read_text(encoding="utf-8")
             if "<style>" not in texto:
                 continue

@@ -141,6 +141,9 @@ class CellGroup:
     # `unconverted`/`unquantified` (§12.6): se ve la fractura, no se adivina
     # ni se esconde.
     has_undeclared_variants: bool = False
+    #: Las mismas series de `cells`, leídas como filas: minorista principal y
+    #: mayorista en capa (`build_series_rows`, 2026-10-16).
+    rows: tuple[SeriesRow, ...] = ()
 
 
 # Orden de los formatos dentro de una unidad: el minorista arriba porque es el
@@ -261,6 +264,88 @@ def _pair_formats(celdas: list[CellWithBar]) -> list[CellWithBar]:
     )
 
 
+@dataclass(frozen=True)
+class SeriesRow:
+    """Una fila de lectura de la matriz: la referencia minorista con el
+    mayorista de su mismo par como capa secundaria (2026-10-16).
+
+    El precio de referencia del sistema es el minorista
+    (`cells.REFERENCE_SALE_FORMAT`), así que la fila lo trae como cifra
+    principal y el mayorista del mismo (variante, formato, unidad) va adentro,
+    como contexto que se abre a pedido. **No funde nada**: cada serie sigue
+    siendo su propia celda de `compute_cells`, con su mediana y su `n`; la
+    fila solo decide cuál se lee primero.
+
+    - `primary` es la serie principal: el minorista, una serie con flag o
+      una sin `sale_format` declarado (pendiente). `None` cuando el par solo
+      tiene mayorista: el mayorista nunca sube a cifra principal, porque no es
+      la referencia.
+    - `wholesale` son las series mayoristas del par, con su `retail_ratio`
+      cuando el minorista limpio existe (`_pair_formats`).
+    """
+
+    primary: CellWithBar | None
+    wholesale: tuple[CellWithBar, ...] = ()
+
+    @property
+    def pending(self) -> bool:
+        """`sale_format` sin responder: cola de trabajo, no una tercera escala."""
+        return self.primary is not None and self.primary.cell.sale_format is None
+
+    @property
+    def wholesale_count(self) -> int:
+        return sum(c.cell.count for c in self.wholesale)
+
+
+def _pair_key(c: CellWithBar) -> _PairKey:
+    return (c.cell.variant_id, c.cell.format_id, c.cell.unit)
+
+
+def build_series_rows(celdas: list[CellWithBar]) -> list[SeriesRow]:
+    """Arma las filas de lectura sobre las series ya emparejadas y ordenadas
+    por `_pair_formats`, sin reordenar nada.
+
+    El ancla de cada par es su minorista limpio —el que define el ratio—; si
+    no hay, el primer minorista del par. Un mayorista sin ancla abre su propia
+    fila sin cifra principal, y los demás mayoristas del mismo par se suman a
+    esa misma fila. Lo demás (minoristas con flag, sin `sale_format`) es una
+    fila por serie, como hasta ahora.
+    """
+    anclas: dict[_PairKey, CellWithBar] = {}
+    for c in celdas:
+        if c.cell.sale_format != "retail":
+            continue
+        clave = _pair_key(c)
+        actual = anclas.get(clave)
+        if actual is None or (_cell_is_clean(c.cell) and not _cell_is_clean(actual.cell)):
+            anclas[clave] = c
+
+    primarias: list[CellWithBar | None] = []
+    capas: list[list[CellWithBar]] = []
+    fila_de: dict[_PairKey, int] = {}
+    for c in celdas:
+        clave = _pair_key(c)
+        if c.cell.sale_format == "wholesale":
+            if clave not in fila_de:
+                # Sin ancla minorista que la reciba: fila propia, sin cifra
+                # principal. Si el ancla todavía no salió, se reserva su
+                # lugar y la recibe cuando llegue.
+                fila_de[clave] = len(primarias)
+                primarias.append(None)
+                capas.append([])
+            capas[fila_de[clave]].append(c)
+            continue
+        if anclas.get(clave) is c and clave in fila_de:
+            primarias[fila_de[clave]] = c
+            continue
+        if anclas.get(clave) is c:
+            fila_de[clave] = len(primarias)
+        primarias.append(c)
+        capas.append([])
+
+    return [SeriesRow(primary=p, wholesale=tuple(w)) for p, w in zip(primarias, capas, strict=True)]
+
+
 def group_cells(cells: list[Cell]) -> list[CellGroup]:
     """Agrupa por producto × provincia, con los grupos de mayor muestra primero.
 
@@ -298,19 +383,22 @@ def group_cells(cells: list[Cell]) -> list[CellGroup]:
             )
         )
 
-    grupos = [
-        CellGroup(
-            product_name=product_name,
-            province_name=province_name,
-            cells=_pair_formats(celdas),
-            total=sum(c.cell.count for c in celdas),
-            has_undeclared_variants=(
-                any(c.cell.variant_id is not None for c in celdas)
-                and any(c.cell.variant_id is None for c in celdas)
-            ),
+    grupos = []
+    for (product_name, province_name), celdas in grouped.items():
+        emparejadas = _pair_formats(celdas)
+        grupos.append(
+            CellGroup(
+                product_name=product_name,
+                province_name=province_name,
+                cells=emparejadas,
+                total=sum(c.cell.count for c in celdas),
+                has_undeclared_variants=(
+                    any(c.cell.variant_id is not None for c in celdas)
+                    and any(c.cell.variant_id is None for c in celdas)
+                ),
+                rows=tuple(build_series_rows(emparejadas)),
+            )
         )
-        for (product_name, province_name), celdas in grouped.items()
-    ]
 
     # Mismo criterio que `compute_cells`: lo que tiene muestra primero, con
     # desempates explícitos para que el orden no lo decida el hash del dict.
@@ -347,6 +435,8 @@ class MatrixCell:
     # pivote no puede perder este hecho de grupo, es lo único de donde
     # `control.html` puede leerlo para el encabezado del cruce.
     has_undeclared_variants: bool = False
+    #: Propagado desde `CellGroup.rows`: las filas de lectura del cruce.
+    rows: tuple[SeriesRow, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -443,6 +533,7 @@ def build_matrix(cells: list[Cell]) -> Matrix:
             cells=grupo.cells,
             total=grupo.total,
             has_undeclared_variants=grupo.has_undeclared_variants,
+            rows=grupo.rows,
         )
 
     filas = []

@@ -226,7 +226,8 @@ class TestLasVistasSiguenMostrandoElPeriodoPedido:
     ) -> None:
         texto = _visible(client.get("/precios?vista=tablero&dias=90").text)
 
-        assert "5 anuncios de los últimos 90 días" in texto
+        # B4: la frase dice de qué están hechos (antes, «verificados a mano»).
+        assert "De los últimos 90 días: 5 anuncios revisados a mano" in texto
 
     @pytest.mark.parametrize("vista", ("tablero", "mapa", "explorar"))
     def test_con_90_dias_avisa_junto_a_la_descarga(

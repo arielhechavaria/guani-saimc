@@ -28,7 +28,7 @@ from saimc.extraction.llm_assist import ConsumptionSummary
 from saimc.extraction.prefill_status import PrefillRun
 from saimc.ingestion.channel_gaps import GapReport
 from saimc.ingestion.whatsapp_health import SessionHealth
-from saimc.progress import IntakeHealth
+from saimc.progress import IntakeHealth, Last24h
 
 # Cuántos días sin que entre nada empiezan a ser sospechosos. No es un umbral
 # de los que §12.6 prohíbe —no decide si un dato es válido ni si se publica—:
@@ -180,6 +180,39 @@ def queue_indicator(health: IntakeHealth) -> Indicator:
         label="Por curar",
         value=str(health.pending),
         level="ok",
+        anchor="#ingesta",
+    )
+
+
+# A partir de cuántas horas esperando un pendiente de la última jornada pasa a
+# ámbar: da margen hasta las 24 h para resolverlo antes de publicar. Elige
+# cuándo llamarle la atención al operador, no decide ningún dato.
+_LAST_24H_WARN_HOURS = 12
+
+
+def last_24h_indicator(
+    *, entered: int, pending: int, oldest_pending_hours: int | None
+) -> Indicator:
+    """Si la última jornada está lista para publicar en redes."""
+    if pending == 0:
+        return Indicator(
+            key="last_24h",
+            label="Últimas 24 h",
+            value=f"{entered} entraron, todo resuelto",
+            level="ok",
+            anchor="#ingesta",
+        )
+    atrasado = oldest_pending_hours is not None and oldest_pending_hours >= _LAST_24H_WARN_HOURS
+    return Indicator(
+        key="last_24h",
+        label="Últimas 24 h",
+        value=f"{pending} sin procesar de {entered}",
+        level="warn" if atrasado else "ok",
+        hint=(
+            f"El más viejo espera {oldest_pending_hours} h: resolvelos antes de publicar."
+            if atrasado
+            else ""
+        ),
         anchor="#ingesta",
     )
 
@@ -354,6 +387,7 @@ def build_strip(
     now: datetime | None = None,
     channel_gaps: GapReport | None = None,
     jev_active: bool = False,
+    last_24h_summary: Last24h | None = None,
 ) -> list[Indicator]:
     """La franja completa, con lo más urgente primero.
 
@@ -370,6 +404,14 @@ def build_strip(
         assist_indicator(assist, configured=assist_configured),
         prefill_indicator(prefill_run, now=ahora),
     ]
+    if last_24h_summary is not None:
+        indicadores.append(
+            last_24h_indicator(
+                entered=last_24h_summary.entered,
+                pending=last_24h_summary.pending,
+                oldest_pending_hours=last_24h_summary.oldest_pending_hours,
+            )
+        )
     jev = jev_indicator(prefill_run, active=jev_active)
     if jev is not None:
         indicadores.append(jev)

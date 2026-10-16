@@ -14,23 +14,29 @@ detrás de `require_operator`, la misma contraseña de `/curation`
 criterio que `/control`», y ese criterio cayó junto con el de `/control`. Lo
 que muestra es dato ya público, pero es una herramienta del operador y cada
 PNG levanta un Chromium en el servidor.
+
+Debajo de las tarjetas, la sección «Instagram» muestra cómo rinden las
+publicaciones de la cuenta propia (`docs/spec-slice-instagram.md`), con lo que
+guarda el lote `saimc.instagram.sync`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from saimc.cells import RetailObservation, compute_retail_observations, compute_retail_ranges
+from saimc.instagram.panel import load_panel
 from saimc.marketing.cards import (
     build_como_se_movio,
     build_dato_del_dia,
     build_de_donde_sale,
 )
+from saimc.marketing.fonts import font_face_css
 from saimc.marketing.render import RendererUnavailable, render_png
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 from saimc.web.auth import require_operator
@@ -173,7 +179,8 @@ def _build_context(
 
 def _render_html(request: Request, kind: CardType, context: dict) -> str:
     template = request.app.state.templates.get_template(kind.template)
-    return template.render(site_url=SITE_URL_PLACEHOLDER, **context)
+    # Las fuentes viajan dentro del HTML: Playwright rasteriza sin acceso a /static.
+    return template.render(site_url=SITE_URL_PLACEHOLDER, font_css=font_face_css(), **context)
 
 
 @router.get("/marketing", response_class=HTMLResponse)
@@ -199,6 +206,8 @@ def marketing(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
             "selected_product": product,
             "selected_province": province,
             "ready": ready,
+            # Lo que dejó el lote de Instagram; la página nunca llama a Meta.
+            "instagram": load_panel(db, now=datetime.now(UTC)),
         },
     )
 

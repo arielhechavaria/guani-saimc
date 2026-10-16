@@ -24,19 +24,25 @@ Más la tasa de descarte, sobre el total de anuncios procesados (curados +
 descartados), sin distinguir texto de imagen.
 """
 
+import itertools
 import json
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.extraction import llm_assist
+from saimc.extraction import reference_set
+from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.measure import (
+    FrozenRow,
     H0Report,
+    NoReferenceSetError,
+    Transcriber,
+    _match_rows_to_candidates,
     append_h0_run,
     compute_h0_report,
     h0_run_record,
@@ -46,8 +52,6 @@ from saimc.models import (
     Channel,
     ContentType,
     Currency,
-    LlmProposal,
-    LlmReview,
     Platform,
     PriceHistory,
     ProcessingStatus,
@@ -67,6 +71,19 @@ _OCR_FALSO: dict[str, str] = {
 
 def _transcribe_falso(path: Path) -> str:
     return _OCR_FALSO.get(path.name, "")
+
+
+def _medir(session: Session, *, transcribe: Transcriber) -> H0Report:
+    """Congela lo curado hasta acá y mide contra eso.
+
+    Desde B3-2 H0 se mide solo contra un conjunto congelado
+    (`docs/spec-slice-B3.md`, sección 3). Estos casos fijan `row_correctness` y
+    el emparejado, que no cambiaron: el congelado es el paso previo que ahora
+    hace falta, con las mismas filas que cada caso cargó.
+    """
+    reference_set.freeze(session, reference_set.select_members(session, assist_log_path=None))
+    session.commit()
+    return compute_h0_report(session, transcribe=transcribe)
 
 
 @pytest.fixture
@@ -277,7 +294,7 @@ class TestH0Report:
     def test_texto_e_imagen_entran_ambos_en_el_denominador(
         self, session: Session, dataset: None
     ) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         assert report.text_curated_count == 5
         assert report.image_curated_count == 1
         # Las 5 de texto + la imagen: ninguna queda fuera de la medición.
@@ -285,46 +302,41 @@ class TestH0Report:
         assert report.image_ocr_empty_count == 0
 
     def test_totales_de_procesamiento(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         assert report.total_curated == 6
         assert report.total_discarded == 1
         assert report.total_processed == 7
         assert report.discard_rate == pytest.approx(1 / 7)
 
     def test_precision_de_producto(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         # Correcto en 1,3,4,5,6 (5/6); incorrecto en 2 (el texto no nombra el producto).
         assert report.product_accuracy == pytest.approx(5 / 6)
 
     def test_precision_de_precio(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         # Correcto en 1,2,4,5,6 (5/6); incorrecto en 3 (moneda propuesta USD vs CUP confirmado).
         assert report.price_accuracy == pytest.approx(5 / 6)
 
     def test_precision_de_provincia(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         # Los seis casos coinciden (incluye None == None en 4 y 5).
         assert report.province_accuracy == pytest.approx(6 / 6)
 
     def test_precision_de_cantidad_unidad(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         # Correcto en 1,2,3,4,6 (5/6); incorrecto en 5 (cantidad propuesta None vs 5 confirmado).
         assert report.quantity_unit_accuracy == pytest.approx(5 / 6)
 
     def test_extraccion_completa_correcta(self, session: Session, dataset: None) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         # Los cuatro campos a la vez: solo 1, 4 y 6 los tienen todos correctos (3/6).
         assert report.complete_accuracy == pytest.approx(3 / 6)
 
-    def test_sin_datos_no_rompe(self, session: Session) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
-        assert report.total_processed == 0
-        assert report.text_curated_count == 0
-        assert report.evaluated_rows_count == 0
-        assert report.image_ocr_empty_count == 0
-        assert report.discard_rate is None
-        assert report.product_accuracy is None
-        assert report.complete_accuracy is None
+    def test_sin_datos_no_hay_conjunto_y_no_se_mide(self, session: Session) -> None:
+        """Con la base vacía no hay nada congelado: no se mide contra nada."""
+        with pytest.raises(NoReferenceSetError):
+            compute_h0_report(session, transcribe=_transcribe_falso)
 
     def test_evaluated_rows_count_suma_texto_mas_imagen_sin_multiproducto(
         self, session: Session, dataset: None
@@ -332,7 +344,7 @@ class TestH0Report:
         """En este dataset cada ingesta tiene una sola fila: las filas evaluadas
         son la suma de anuncios de texto e imagen, no solo los de texto.
         """
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         assert report.evaluated_rows_count == (
             report.text_curated_count + report.image_curated_count
         )
@@ -395,7 +407,7 @@ class TestH0UmbralEnAnuncios:
             )
         session.commit()
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 3
         assert report.evaluated_ads_count == 1
@@ -430,15 +442,10 @@ class TestH0UmbralEnAnuncios:
         )
         session.commit()
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.total_curated == 2
         assert report.evaluated_ads_count == 1
-
-    def test_sin_datos_el_conjunto_es_cero(self, session: Session) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
-        assert report.evaluated_ads_count == 0
-
 
 class TestH0ReportImagenes:
     """Las imágenes son la mayoría del corpus real (27 de 29 anuncios curados al
@@ -465,7 +472,7 @@ class TestH0ReportImagenes:
         )
         # Pero el OCR real sobre la imagen no devuelve nada aprovechable
         # (no está en `_OCR_FALSO`): la medición honesta es 0.
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 1
         assert report.product_accuracy == pytest.approx(0.0)
@@ -487,7 +494,7 @@ class TestH0ReportImagenes:
             quantity="40",
             unit="lb",
         )
-        report = compute_h0_report(session, transcribe=lambda path: "")
+        report = _medir(session, transcribe=lambda path: "")
 
         assert report.image_curated_count == 1
         assert report.image_ocr_empty_count == 1
@@ -578,21 +585,21 @@ class TestH0ReportMultiProducto:
     def test_cuenta_ingestas_y_filas_por_separado(
         self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
     ) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         assert report.text_curated_count == 1
         assert report.evaluated_rows_count == 3
 
     def test_precision_de_producto_por_fila(
         self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
     ) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         # Filas 1 y 2 matchean por producto (2/3); fila 3 no matchea ninguna línea.
         assert report.product_accuracy == pytest.approx(2 / 3)
 
     def test_precision_de_precio_por_fila(
         self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
     ) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         # Solo la fila 1 tiene precio correcto (1/3); fila 2 tiene producto
         # correcto pero precio distinto, fila 3 no matchea nada.
         assert report.price_accuracy == pytest.approx(1 / 3)
@@ -600,7 +607,7 @@ class TestH0ReportMultiProducto:
     def test_extraccion_completa_correcta_por_fila(
         self, session: Session, dataset_multiproducto: tuple[RawIngestion, Product]
     ) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         assert report.complete_accuracy == pytest.approx(1 / 3)
 
 
@@ -657,7 +664,7 @@ class TestH0ProvinciaDelCanal:
         )
         session.commit()
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 1
         assert report.province_accuracy == 1.0
@@ -702,6 +709,9 @@ class TestH0ProvinciaDelCanal:
         )
         session.add(ingestion)
         session.flush()
+        # Los ids son al azar, como en producción: las filas congeladas se
+        # ordenan por id, y el candidato tiene que ir a la fila de 500 por
+        # 40 lb —la que ajusta— quede primera o segunda.
         for price, quantity in (("500", "40"), ("14", "1")):
             session.add(
                 PriceHistory(
@@ -717,12 +727,12 @@ class TestH0ProvinciaDelCanal:
             )
         session.commit()
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 2
         # Las dos filas tienen la provincia del canal, igual que en el formulario.
         assert report.province_accuracy == 1.0
-        # La segunda fila no tuvo candidato: su producto y su precio son fallo.
+        # La fila de 14 no tuvo candidato: su producto y su precio son fallo.
         assert report.product_accuracy == 0.5
         assert report.price_accuracy == 0.5
 
@@ -743,7 +753,7 @@ class TestH0ProvinciaDelCanal:
             unit="lb",
         )
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 1
         assert report.province_accuracy == 0.0
@@ -797,7 +807,7 @@ class TestH0CatalogoDelFoco:
             unit="lb",
         )
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         # La cola real solo ofrece "Arroz": es lo que el operador vio y
         # confirmó, y es lo que la medición tiene que acreditar.
@@ -839,7 +849,7 @@ class TestH0CatalogoDelFoco:
             unit="lb",
         )
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 1
         assert report.product_accuracy == 0.0
@@ -886,7 +896,7 @@ class TestH0UnidadConfirmadaEnLaFila:
             unit="kg",
         )
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 1
         assert report.quantity_unit_accuracy == 1.0
@@ -908,7 +918,7 @@ class TestH0UnidadConfirmadaEnLaFila:
             unit="lb",
         )
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.quantity_unit_accuracy == 0.0
 
@@ -933,7 +943,7 @@ class TestH0UnidadConfirmadaEnLaFila:
             unit="l",
         )
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.quantity_unit_accuracy == 1.0
 
@@ -955,7 +965,7 @@ class TestH0UnidadConfirmadaEnLaFila:
             unit=None,
         )
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.quantity_unit_accuracy == 0.0
 
@@ -1045,7 +1055,7 @@ class TestH0EmparejadoAmbiguo:
     def test_el_precio_de_una_linea_ajena_no_cuenta_como_acertado(
         self, session: Session, anuncio_multilinea: Product
     ) -> None:
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         assert report.evaluated_rows_count == 2
         # Solo la fila de pollo tiene el precio realmente extraído.
         assert report.price_accuracy == pytest.approx(1 / 2)
@@ -1055,7 +1065,7 @@ class TestH0EmparejadoAmbiguo:
     ) -> None:
         """No depende de qué línea se elija: la comparten todos los candidatos
         del anuncio."""
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
         assert report.province_accuracy == pytest.approx(2 / 2)
 
     def test_con_una_sola_linea_sobrante_el_emparejado_se_conserva(
@@ -1090,7 +1100,7 @@ class TestH0EmparejadoAmbiguo:
         )
         session.commit()
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 1
         # El texto no nombra "pollo", así que el producto falla...
@@ -1164,7 +1174,7 @@ class TestH0EmparejadoMismoProductoVariasFilas:
         )
         session.commit()
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 2
         assert report.price_accuracy == 1.0
@@ -1217,12 +1227,200 @@ class TestH0EmparejadoMismoProductoVariasFilas:
         )
         session.commit()
 
-        report = compute_h0_report(session, transcribe=_transcribe_falso)
+        report = _medir(session, transcribe=_transcribe_falso)
 
         assert report.evaluated_rows_count == 2
         # Una de las dos filas: la que el extractor sí sacó.
         assert report.price_accuracy == pytest.approx(1 / 2)
         assert report.complete_accuracy == pytest.approx(1 / 2)
+
+
+class TestH0EmparejadoSinOrden:
+    """El emparejado no depende del orden en que llegan las filas confirmadas.
+
+    Hallazgo de B3-2 (`docs/decisions.md`, 2026-10-10): las filas congeladas
+    vienen ordenadas por `price_history_id`, un UUID al azar. Con más filas que
+    candidatos de un producto, el emparejado les daba los candidatos a «las
+    primeras» sin elegir cuáles, y una fila que el extractor había leído bien
+    podía contar como fallo.
+
+    Cada caso define a mano qué fila se lleva qué candidato, y exige ese mismo
+    reparto en TODOS los órdenes de llegada. Se prueba el emparejado directo,
+    sin base: lo que se fija es a quién le toca cada candidato.
+    """
+
+    ARROZ = Product(id=uuid.UUID(int=1), name="Arroz", category="granos", unit="lb")
+    FRIJOL = Product(id=uuid.UUID(int=2), name="Frijol", category="granos", unit="lb")
+    HABANA = Province(id=uuid.UUID(int=10), name="La Habana")
+
+    def _fila(self, price: str, quantity: str = "1", unit: str = "lb") -> FrozenRow:
+        return FrozenRow(
+            product_id=self.ARROZ.id,
+            province_id=self.HABANA.id,
+            price=Decimal(price),
+            currency=Currency.CUP.value,
+            quantity=Decimal(quantity),
+            unit=unit,
+        )
+
+    def _candidato(
+        self, price: str, quantity: str = "1", unit: str = "lb", product: Product | None = ARROZ
+    ) -> ExtractionProposal:
+        return ExtractionProposal(
+            product=product,
+            price=Decimal(price),
+            currency=Currency.CUP.value,
+            quantity=Decimal(quantity),
+            unit=unit,
+            province=self.HABANA,
+        )
+
+    def _reparto(
+        self, filas: list[FrozenRow], candidatos: list[ExtractionProposal]
+    ) -> dict[Decimal, ExtractionProposal]:
+        """Precio de la fila confirmada -> lo que le tocó. Los precios de las
+        filas de cada caso son distintos, así que identifican a la fila."""
+        pares = _match_rows_to_candidates(filas, candidatos, self.HABANA)
+        # El resultado sale en el orden en que llegaron las filas.
+        assert [fila for fila, _ in pares] == filas
+        return {fila.price: propuesta for fila, propuesta in pares}
+
+    def test_con_un_candidato_para_dos_filas_se_lo_lleva_la_que_ajusta(self) -> None:
+        """Dos filas de Arroz (menudeo y saco), el extractor sacó solo el saco.
+        El candidato es de la fila del saco, llegue primera o segunda; la de
+        menudeo se queda sin línea y conserva solo la provincia del canal."""
+        menudeo = self._fila("700", "1", "kg")
+        saco = self._fila("30000", "100", "lb")
+        candidato = self._candidato("30000", "100", "lb")
+
+        for filas in itertools.permutations([menudeo, saco]):
+            reparto = self._reparto(list(filas), [candidato])
+
+            assert reparto[Decimal("30000")] is candidato
+            sin_linea = reparto[Decimal("700")]
+            assert sin_linea.product is None and sin_linea.price is None
+            assert sin_linea.province is self.HABANA
+
+    def test_tres_filas_y_dos_candidatos_en_los_seis_ordenes(self) -> None:
+        """Tres filas, el extractor sacó dos. Cada candidato va con la fila de
+        su mismo precio y cantidad; la de 30000 se queda sin línea."""
+        filas = [
+            self._fila("700", "1", "kg"),
+            self._fila("30000", "100", "lb"),
+            self._fila("15000", "50", "lb"),
+        ]
+        c_medio = self._candidato("15000", "50", "lb")
+        c_menudeo = self._candidato("700", "1", "kg")
+
+        for orden in itertools.permutations(filas):
+            reparto = self._reparto(list(orden), [c_medio, c_menudeo])
+
+            assert reparto[Decimal("700")] is c_menudeo
+            assert reparto[Decimal("15000")] is c_medio
+            assert reparto[Decimal("30000")].price is None
+
+    def test_el_empate_lo_gana_la_fila_de_menor_precio(self) -> None:
+        """Ninguna de las dos filas coincide con el candidato en precio y las
+        dos coinciden en lo demás: mismo costo. El desempate es por los valores
+        de la fila (precio, moneda, cantidad, unidad, provincia), de menor a
+        mayor: se lo lleva la de 700, llegue en el orden que llegue."""
+        barata = self._fila("700")
+        cara = self._fila("800")
+        candidato = self._candidato("900")
+
+        for filas in itertools.permutations([barata, cara]):
+            reparto = self._reparto(list(filas), [candidato])
+
+            assert reparto[Decimal("700")] is candidato
+            assert reparto[Decimal("800")].price is None
+
+    def test_camino_de_mas_de_seis_filas(self) -> None:
+        """Siete filas (el camino greedy) y dos candidatos: se los llevan las
+        filas de 600 y de 300, que son las que ajustan, no las dos primeras."""
+        filas = [self._fila(str(n * 100)) for n in range(1, 8)]
+        c600 = self._candidato("600")
+        c300 = self._candidato("300")
+
+        # Las siete rotaciones, al derecho y al revés: cada fila pasa por cada
+        # posición, incluidas las dos primeras.
+        ordenes = []
+        for base in (filas, filas[::-1]):
+            ordenes.extend(base[n:] + base[:n] for n in range(len(base)))
+
+        for orden in ordenes:
+            reparto = self._reparto(orden, [c600, c300])
+
+            assert reparto[Decimal("600")] is c600
+            assert reparto[Decimal("300")] is c300
+            for precio in ("100", "200", "400", "500", "700"):
+                assert reparto[Decimal(precio)].price is None
+
+    def test_no_se_toma_prestado_un_candidato_de_otro_producto(self) -> None:
+        """Dos filas de Arroz y un solo candidato de Arroz, con el precio mal
+        leído (999). Sobran dos líneas de Frijol con EXACTAMENTE los valores de
+        las filas de Arroz. Ninguna fila de Arroz puede llevárselas: el
+        candidato de Arroz va con la fila de 700 (coincide en cantidad y
+        unidad, la otra no) y la de 30000 queda ambigua entre dos líneas
+        libres: conserva la provincia compartida y nada más."""
+        menudeo = self._fila("700", "1", "kg")
+        saco = self._fila("30000", "100", "lb")
+        arroz_mal_leido = self._candidato("999", "1", "kg")
+        frijol_a = self._candidato("30000", "100", "lb", product=self.FRIJOL)
+        frijol_b = self._candidato("700", "1", "kg", product=self.FRIJOL)
+
+        for filas in itertools.permutations([menudeo, saco]):
+            reparto = self._reparto(list(filas), [frijol_a, arroz_mal_leido, frijol_b])
+
+            assert reparto[Decimal("700")] is arroz_mal_leido
+            ambigua = reparto[Decimal("30000")]
+            assert ambigua.product is None and ambigua.price is None
+            assert ambigua.province is self.HABANA
+
+    def test_una_linea_libre_para_dos_filas_sin_candidato(self) -> None:
+        """Dos filas de Arroz, ningún candidato de Arroz y una sola línea libre
+        (sin producto reconocido). La línea no se elige por ajuste —sería
+        regalarle a una fila el precio de una línea que no se sabe si es la
+        suya—: va a la primera fila por valores, la de 700. La de 800 queda
+        sin línea, aunque el precio de la línea libre sea justo 800."""
+        barata = self._fila("700")
+        cara = self._fila("800")
+        libre = self._candidato("800", product=None)
+
+        for filas in itertools.permutations([barata, cara]):
+            reparto = self._reparto(list(filas), [libre])
+
+            assert reparto[Decimal("700")] is libre
+            assert reparto[Decimal("800")].price is None
+
+    def test_filas_sin_producto_ni_precio_no_rompen_el_orden(self) -> None:
+        """`llm_checks` usa este emparejado con las filas del modelo como
+        «confirmadas», y ahí producto, precio y provincia pueden venir vacíos.
+        Ordenar por valores no puede fallar al comparar un vacío con un número."""
+        vacia = SimpleNamespace(
+            product_id=None,
+            province_id=None,
+            price=None,
+            currency=Currency.CUP.value,
+            quantity=None,
+            unit=None,
+        )
+        con_precio = SimpleNamespace(
+            product_id=None,
+            province_id=None,
+            price=Decimal("700"),
+            currency=Currency.CUP.value,
+            quantity=Decimal("1"),
+            unit="lb",
+        )
+        libre = self._candidato("700", product=None)
+
+        for filas in itertools.permutations([vacia, con_precio]):
+            pares = _match_rows_to_candidates(list(filas), [libre], None)
+            reparto = {id(fila): propuesta for fila, propuesta in pares}
+
+            # Los vacíos van al final: la línea libre es de la fila con precio.
+            assert reparto[id(con_precio)] is libre
+            assert reparto[id(vacia)].price is None
 
 
 # --- N-05: registro longitudinal de cada corrida ----------------------------
@@ -1253,6 +1451,9 @@ class TestH0RunRecord:
             province_accuracy=0.8,
             quantity_unit_accuracy=0.7,
             complete_accuracy=0.435,
+            reference_set_version=1,
+            reference_set_hash="h",
+            reference_set_drifted=0,
         )
         base.update(overrides)
         return H0Report(**base)  # type: ignore[arg-type]
@@ -1272,7 +1473,7 @@ class TestH0RunRecord:
         assert record["git_dirty"] is False
         assert record["git_branch"] == "master"
         assert record["tesseract_version"] == "5.5.0"
-        # Las 15 métricas del H0Report viajan aplanadas dentro del registro.
+        # Los campos del H0Report viajan aplanados dentro del registro.
         assert record["complete_accuracy"] == 0.435
         assert record["evaluated_ads_count"] == 10
         assert record["price_accuracy"] == 0.5
@@ -1488,171 +1689,3 @@ class TestReadH0Runs:
         # La tercera compara contra la primera con número (0.40), no contra el
         # hueco del medio.
         assert runs[2].complete_delta == pytest.approx(0.04)
-
-
-class TestH0CorteAsistido:
-    """H0 sigue midiendo las REGLAS contra una verdad no contaminada.
-
-    Una fila confirmada con ayuda del modelo corre el riesgo de que la verdad
-    absorba un valor que escribió el modelo — y entonces H0 mediría las reglas
-    contra algo que el modelo produjo. Es la misma trampa que `CLAUDE.md`
-    prohíbe para los tests. El corte lo evita (`design.md`, D6).
-    """
-
-    def _id_de(self, session: Session, hash_: str) -> str:
-        ingestion = session.execute(
-            select(RawIngestion).where(RawIngestion.content_hash == hash_)
-        ).scalar_one()
-        return str(ingestion.id)
-
-    def _log(self, tmp_path, session: Session, *hashes: str):
-        ruta = tmp_path / "assist.jsonl"
-        for hash_ in hashes:
-            llm_assist.append_assist_run(
-                {
-                    "timestamp": "2026-09-01T00:00:00+00:00",
-                    "ingestion_id": self._id_de(session, hash_),
-                    "model": "m",
-                    "requested": ["quantity"],
-                    "answered": ["quantity"],
-                    "dropped": [],
-                    "degraded": False,
-                },
-                ruta,
-            )
-        return ruta
-
-    def test_sin_registro_los_numeros_son_los_de_siempre(
-        self, session: Session, dataset: None, tmp_path
-    ) -> None:
-        """La introducción del corte no mueve nada por sí sola: sin
-        asistencia, el conjunto no asistido ES el conjunto entero."""
-        sin_corte = compute_h0_report(session, transcribe=_transcribe_falso)
-        con_log_vacio = compute_h0_report(
-            session,
-            transcribe=_transcribe_falso,
-            assist_log_path=tmp_path / "no-existe.jsonl",
-        )
-
-        assert con_log_vacio.evaluated_rows_count == sin_corte.evaluated_rows_count
-        assert con_log_vacio.complete_accuracy == sin_corte.complete_accuracy
-        assert con_log_vacio.assisted_ads_count == 0
-        assert con_log_vacio.assisted_rows_count == 0
-
-    def test_un_anuncio_asistido_sale_del_conjunto_medido(
-        self, session: Session, dataset: None, tmp_path
-    ) -> None:
-        ruta = self._log(tmp_path, session, "caso-1")
-
-        report = compute_h0_report(
-            session, transcribe=_transcribe_falso, assist_log_path=ruta
-        )
-
-        assert report.evaluated_ads_count == 5
-        assert report.evaluated_rows_count == 5
-        assert report.assisted_ads_count == 1
-        assert report.assisted_rows_count == 1
-
-    def test_lo_asistido_no_altera_los_totales_de_curaduria(
-        self, session: Session, dataset: None, tmp_path
-    ) -> None:
-        """Sale de la MEDICIÓN, no de la cola: sigue siendo un anuncio curado."""
-        ruta = self._log(tmp_path, session, "caso-1")
-
-        report = compute_h0_report(
-            session, transcribe=_transcribe_falso, assist_log_path=ruta
-        )
-
-        assert report.total_curated == 6
-        assert report.discard_rate == pytest.approx(1 / 7)
-
-    def test_la_precision_se_calcula_sin_lo_asistido(
-        self, session: Session, dataset: None, tmp_path
-    ) -> None:
-        """`caso-1` es uno de los correctos: sacarlo BAJA la precisión de
-        producto. Que el número se mueva es exactamente el punto — mide otro
-        conjunto, y decirlo es más honesto que promediar los dos."""
-        entero = compute_h0_report(session, transcribe=_transcribe_falso)
-        ruta = self._log(tmp_path, session, "caso-1")
-        recortado = compute_h0_report(
-            session, transcribe=_transcribe_falso, assist_log_path=ruta
-        )
-
-        assert entero.product_accuracy == pytest.approx(5 / 6)
-        assert recortado.product_accuracy == pytest.approx(4 / 5)
-
-    def test_todo_asistido_deja_la_medicion_sin_datos(
-        self, session: Session, dataset: None, tmp_path
-    ) -> None:
-        """El borde: si se asistió todo, no queda nada limpio que medir y las
-        precisiones son `None`, no cero. Cero afirmaría que las reglas
-        fallaron; `None` dice que no hay evidencia."""
-        ruta = self._log(
-            tmp_path,
-            session,
-            "caso-1",
-            "caso-2",
-            "caso-3",
-            "caso-4",
-            "caso-5",
-            "caso-6",
-        )
-
-        report = compute_h0_report(
-            session, transcribe=_transcribe_falso, assist_log_path=ruta
-        )
-
-        assert report.evaluated_rows_count == 0
-        assert report.complete_accuracy is None
-        assert report.assisted_ads_count == 6
-
-    def test_una_revision_con_propuesta_excluye_aunque_no_este_en_el_registro(
-        self, session: Session, dataset: None, tmp_path
-    ) -> None:
-        """Slice 3a: la tabla `llm_reviews` también marca un anuncio como
-        asistido. En 3b la propuesta se precalcula sin pasar por el registro
-        del operador, así que el registro solo deja de alcanzar."""
-        ingestion_id = uuid.UUID(self._id_de(session, "caso-1"))
-        propuesta = LlmProposal(
-            ingestion_id=ingestion_id,
-            model="m",
-            prompt_version="v",
-            status="ok",
-            rows=[],
-            input_tokens=0,
-            output_tokens=0,
-        )
-        session.add(propuesta)
-        session.flush()
-        session.add(
-            LlmReview(
-                ingestion_id=ingestion_id,
-                proposal_id=propuesta.id,
-                outcome="curated",
-                rows=[],
-            )
-        )
-        session.commit()
-
-        report = compute_h0_report(
-            session,
-            transcribe=_transcribe_falso,
-            assist_log_path=tmp_path / "no-existe.jsonl",
-        )
-        sin_registro = compute_h0_report(session, transcribe=_transcribe_falso)
-
-        assert report.evaluated_ads_count == 5
-        assert report.assisted_ads_count == 1
-        assert sin_registro.assisted_ads_count == 1
-
-    def test_una_ingesta_asistida_dos_veces_cuenta_una(
-        self, session: Session, dataset: None, tmp_path
-    ) -> None:
-        ruta = self._log(tmp_path, session, "caso-1", "caso-1")
-
-        report = compute_h0_report(
-            session, transcribe=_transcribe_falso, assist_log_path=ruta
-        )
-
-        assert report.assisted_ads_count == 1
-        assert report.evaluated_ads_count == 5

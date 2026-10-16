@@ -44,6 +44,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
+from saimc import curation_rows
 from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.curation_events import (
@@ -60,7 +61,6 @@ from saimc.exchange_rate import NO_RATE, Fetcher, RateResolver, anchor_date, app
 from saimc.extraction import llm_store
 from saimc.extraction.engine import (
     ExtractionProposal,
-    guess_published_date,
     guess_source_reference,
     mentions_any_product,
     probable_discard_reasons,
@@ -80,7 +80,8 @@ from saimc.extraction.llm_propose_ad import (
     propose_ad,
     record_operator_run,
 )
-from saimc.formats import format_label, format_quantity, get_or_create_format
+from saimc.extraction.reference_set import frozen_version_of
+from saimc.formats import format_label, format_quantity
 from saimc.glossary import active_glossary_entries, validate_rule
 from saimc.ingestion import origin
 from saimc.ingestion.channel_gaps import GapReport, load_channel_gap_report
@@ -106,13 +107,12 @@ from saimc.models import (
     RawIngestion,
     ReviewOutcome,
     SaleFormat,
-    SourceType,
 )
 from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
-from saimc.validation import lane0, persist
+from saimc.validation import lane0, lane1, persist
 from saimc.variants import get_or_create_variant, variant_key
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
@@ -136,18 +136,13 @@ def _resolve_format_id(
     se guarda con `format_id = NULL`, mismo criterio que `sale_format` en
     blanco. Nunca fabrica un formato a partir de datos parciales.
     """
-    envase = canonical_packaging(row["packaging"])
-    unidad = canonical_unit(row["unit"])
-    cantidad = _parse_decimal(row["quantity"])
-    if envase is None or unidad is None or cantidad is None:
-        return None
-    return get_or_create_format(
+    return curation_rows.resolve_format_id(
         db,
-        product_id=product_id,
-        packaging=envase,
-        quantity=cantidad,
-        unit=unidad,
-    ).id
+        product_id,
+        packaging=row["packaging"],
+        quantity=_parse_decimal(row["quantity"]),
+        unit=row["unit"],
+    )
 
 
 def _resolve_variant_id(
@@ -394,7 +389,10 @@ def _requested_pending(db: Session, focus_id: uuid.UUID | None) -> RawIngestion 
 
 
 def _pending_all(db: Session) -> list[RawIngestion]:
-    """Todos los pendientes, más viejo primero. Sin filtro de foco.
+    """Todos los pendientes, más nuevo primero. Sin filtro de foco.
+
+    El operador publica con lo de las últimas 24 h: lo de hoy va arriba y el
+    histórico espera abajo (2026-10-13).
 
     `_pending_in_focus` esconde lo que no menciona un piloto, que es correcto
     para curar de a uno pero deja al operador sin forma de ver qué hay en la
@@ -404,7 +402,7 @@ def _pending_all(db: Session) -> list[RawIngestion]:
     stmt = (
         select(RawIngestion)
         .where(RawIngestion.processing_status == ProcessingStatus.PENDING)
-        .order_by(RawIngestion.captured_at.asc())
+        .order_by(RawIngestion.captured_at.desc())
     )
     return list(db.execute(stmt).scalars().all())
 
@@ -487,7 +485,7 @@ def _pending_in_focus(db: Session, products: Sequence[Product]) -> list[RawInges
     stmt = (
         select(RawIngestion)
         .where(RawIngestion.processing_status == ProcessingStatus.PENDING)
-        .order_by(RawIngestion.captured_at.asc())
+        .order_by(RawIngestion.captured_at.desc())
     )
     pending = list(db.execute(stmt).scalars().all())
     # Sin foco definido no hay relevancia que medir: filtrar contra un catálogo
@@ -1175,26 +1173,9 @@ def curation_queue(
 
 
 def _guess_published_date(ingestion: RawIngestion, text: str) -> date | None:
-    """Fecha de publicación que se le prellena al operador.
-
-    Para un mensaje de WhatsApp automatizado, `captured_at` YA es la fecha de
-    publicación real — el timestamp que WAHA reporta del envío, no la hora en
-    que alguien lo capturó a mano días después (la ambigüedad por la que
-    `published_date` es un campo separado, 2026-08-10). Vale igual para la foto
-    que para el texto (A7). La heurística de texto (`guess_published_date`,
-    patrón "Nombre - fecha") sigue siendo lo mejor que hay para el resto de
-    las fuentes: ahí `captured_at` es el mtime del archivo, no una fecha
-    confiable.
-
-    En una imagen, si el OCR trae una fecha explícita manda esa sobre
-    `captured_at`: es la del anuncio, no la del reenvío.
-    """
-    if ingestion.source_type != SourceType.WHATSAPP_CHANNEL:
-        return guess_published_date(text, ingestion.captured_at) if text else None
-    if ingestion.content_type == ContentType.IMAGE and text:
-        # El OCR puede traer la fecha del anuncio; si no, vale la del mensaje.
-        return guess_published_date(text, ingestion.captured_at) or ingestion.captured_at.date()
-    return ingestion.captured_at.date()
+    """Fecha de publicación que se le prellena al operador: la misma que usa
+    el carril 1 (`curation_rows.default_published_date`)."""
+    return curation_rows.default_published_date(ingestion, text)
 
 
 def _curation_view(
@@ -1923,9 +1904,54 @@ def curation_audit(
             "reason_labels": _IMAGE_REASON_LABELS,
             "type_labels": {lane0.TEXT: "Textos", lane0.IMAGE: "Imágenes"},
             "week_end": week + timedelta(days=6),
+            "lane1": _lane1_audit(db),
         },
     )
     return response
+
+
+def _lane1_audit(db: Session) -> dict[str, object]:
+    """Lo que la pantalla muestra del carril 1 (B2b-3): lo aceptado solo que
+    falta auditar, la cota contra la meta y si el freno está puesto."""
+    settings = get_settings()
+    state = lane1.audit_state(db, settings)
+    return {
+        "enabled": lane1.enabled(settings),
+        "pending": lane1.audit_queue(db, settings),
+        "state": state,
+        "brake": lane1.brake_for(
+            audited=state.audited, errors=state.errors, unaudited=state.unaudited
+        ),
+        "target": lane1.ERROR_TARGET,
+        "n0": lane1.AUDIT_N0,
+        "max_unaudited": lane1.MAX_UNAUDITED,
+    }
+
+
+def _lane1_audit_url() -> str:
+    return "/curation/auditoria#aceptados"
+
+
+@router.post("/curation/auditoria/{ingestion_id}/aceptado-bien")
+def confirm_auto_accept(ingestion_id: uuid.UUID, db: Session = Depends(get_db)) -> RedirectResponse:
+    """«Está bien»: las filas que aceptó el carril 1 pasan a `audited`
+    (`lane1.mark_ok`). Si no había nada que auditar, no cambia nada."""
+    if lane1.mark_ok(db, ingestion_id):
+        db.commit()
+    return RedirectResponse(url=_lane1_audit_url(), status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/curation/auditoria/{ingestion_id}/aceptado-invalido")
+def reject_auto_accept(
+    ingestion_id: uuid.UUID,
+    discard_reason: str = Form(DiscardReason.NO_DATA.value),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """«No era un anuncio válido»: borra las filas que aceptó el carril 1 y
+    descarta el anuncio (`lane1.mark_invalid`). Cuenta como error."""
+    if lane1.mark_invalid(db, ingestion_id, discard_reason):
+        db.commit()
+    return RedirectResponse(url=_lane1_audit_url(), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/curation/auditoria/{ingestion_id}/rescatar")
@@ -2351,15 +2377,8 @@ async def submit_curation(
     # Resolución de tasa DESPUÉS de la rama todo-o-nada (design.md D4): un
     # submit que va a fallar no debe gastar llamadas HTTP ni escribir filas
     # de cache dentro de una transacción que se está por descartar.
-    resolver = RateResolver(db, rate_fetcher)
-    unconverted = 0
-    for entry in entries_to_create:
-        if entry.currency == Currency.CUP.value:
-            continue  # moneda nacional: nunca lleva tasa (CHECK de esquema)
-        anchor = anchor_date(entry.published_date, ingestion.captured_at)
-        apply_resolution(entry, resolver.resolve(entry.currency, anchor))
-        if entry.exchange_rate is None:
-            unconverted += 1
+    # Compartido con el carril 1 (`curation_rows`, B2b-2): misma ancla y tasa.
+    unconverted = curation_rows.resolve_rates(db, entries_to_create, ingestion, rate_fetcher)
 
     for entry in entries_to_create:
         db.add(entry)
@@ -2845,6 +2864,9 @@ def edit_curated(
             "rows": rows,
             "blank_row": _edit_blank_row(db, ingestion),
             "edit_mode": True,
+            # B3-4: aviso, no bloqueo. Editar cambia lo publicado y no la copia
+            # congelada contra la que mide H0.
+            "frozen_version": frozen_version_of(db, ingestion_id),
             "values": {
                 "source_reference": ingestion.source_reference or "",
                 # Una sola fecha de publicación por anuncio: todas sus filas
@@ -3224,6 +3246,10 @@ async def submit_edit(
         shown_at=parse_shown_at(shown_at_raw),
         detail=detail,
     )
+    # B2b-3: si el anuncio lo había aceptado el carril 1 y nadie lo auditó,
+    # esta edición es su auditoría (con cambios, un error; sin cambios, «está
+    # bien»). En cualquier otro anuncio no hace nada.
+    lane1.after_edit(db, ingestion, changed=bool(detail["rows"]))
     db.commit()
 
     redirect_url = (

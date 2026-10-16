@@ -485,7 +485,9 @@ class TestContacto:
     def test_con_solo_una_red_existe_y_no_inventa_un_correo(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(public, "get_settings", lambda: _settings(link_whatsapp="https://whatsapp.com/channel/abc"))
+        monkeypatch.setattr(
+            public, "get_settings", lambda: _settings(link_whatsapp="https://whatsapp.com/channel/abc")
+        )
 
         respuesta = client.get("/contacto")
 

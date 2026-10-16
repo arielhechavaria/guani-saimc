@@ -1,0 +1,788 @@
+
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  <title>Guani — Precios del mercado informal cubano, con los anuncios detrás</title>
+  
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Guani" />
+  <meta property="og:url" content="http://127.0.0.1:8777/" />
+  <meta property="og:title" content="Guani — Precios del mercado informal cubano, con los anuncios detrás" />
+  <meta property="og:description" content="Guani te dice cuánto cuestan las cosas en la calle en Cuba: rango de precios por producto y por provincia, sacado de anuncios reales y verificado a mano." />
+  <meta name="description" content="Guani te dice cuánto cuestan las cosas en la calle en Cuba: rango de precios por producto y por provincia, sacado de anuncios reales y verificado a mano." />
+  
+  <meta name="author" content="Leira Studio" />
+  
+
+  <link href="/static/saimc-public.css?v=1791703061" rel="stylesheet" />
+  
+<style>
+  .lp {
+    /* Alias locales de los tokens: un solo lugar donde se ve qué papel
+       cumple cada uno en esta página. `--ph-price-low` es el azul muy claro
+       del prototipo (fondo de las ilustraciones y de la pista del rango). */
+    --lp-blue: var(--ph-accent); --lp-on-blue: var(--ph-on-accent); --lp-teal: var(--ph-accent-2);
+    --lp-bg: var(--m3-bg); --lp-surface: var(--m3-surface);
+    --lp-ink: var(--m3-on-surface); --lp-ink-soft: var(--m3-on-surface-variant);
+    --lp-line: var(--m3-outline-variant); --lp-muted: var(--m3-outline);
+    --lp-tint: var(--ph-price-low); --lp-chip: var(--m3-primary-container);
+    --lp-chip-ink: var(--m3-on-primary-container); --lp-kicker: var(--ph-accent-2-line);
+    --lp-heading: var(--ph-font-heading); --lp-frame: var(--m3-on-surface);
+    display: flex; flex-direction: column; width: 100%; min-height: 100vh;
+    background: var(--lp-bg); color: var(--lp-ink);
+    font: 400 16px/1.45 var(--m3-font);
+    overflow-x: clip;
+  }
+  .lp a:hover { text-decoration: none; }
+  .lp-wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding-inline: 20px; }
+  .lp-main { display: flex; flex-direction: column; }
+  .lp-section { padding-top: 28px; padding-bottom: 8px; }
+  .lp-h2 { margin: 0; font: 400 30px/1.1 var(--lp-heading); }
+  .lp-kicker { margin: 0; font-size: 13px; font-weight: 700; line-height: 1.45; letter-spacing: .12em;
+               color: var(--lp-kicker); text-transform: uppercase; }
+  .lp .m3-icon { vertical-align: 0; }
+  .lp-svg-icon { flex: none; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2;
+                 stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ── Animaciones (las del prototipo, con prefijo) ───────────────────── */
+  @keyframes lp-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+  @keyframes lp-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .lp-lift { transition: transform .18s ease, box-shadow .18s ease; }
+  .lp-lift:hover { transform: translateY(-4px); box-shadow: var(--m3-elev-3); }
+  @supports (animation-timeline: view()) {
+    .lp-reveal { animation: lp-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 45%; }
+    .lp-fill { transform-origin: left; animation: lp-grow linear both; animation-timeline: view();
+               animation-range: entry 20% cover 40%; }
+  }
+
+  /* ── Portada: el atardecer cubano ───────────────────────────────────────
+     Prototipo `docs/prototipos/landing-estetica.html`. Los colores son los
+     tokens `--ph-dusk-*` de `design_tokens.css` (el cielo es el mismo con la
+     página clara y con la oscura). Tres planos de ciudad: lejos y medio
+     detrás del teléfono; el muro y las palmas delante, para que el teléfono
+     parezca apoyado en el muro. La única animación es el sol que sube una vez. */
+  .lp-hero { position: relative; overflow: hidden; color: var(--ph-dusk-texto);
+             background: linear-gradient(180deg, var(--ph-dusk-noche) 0%, var(--ph-dusk-indigo) 34%, var(--ph-dusk-mamey) 66%,
+                                         var(--ph-dusk-flama) 86%, var(--ph-dusk-guayaba) 100%); }
+  .lp-hero :focus-visible { outline-color: var(--ph-dusk-guayaba); }
+  .lp-hero .lp-wrap { position: relative; z-index: 1; }
+  .lp-bar { display: flex; align-items: center; gap: 12px; padding-top: 16px; }
+  .lp-wordmark { flex-grow: 1; font: 400 26px/1.2 var(--lp-heading); }
+  .lp-bar-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px;
+                 border: 1px solid var(--ph-dusk-vidrio-borde); background: var(--ph-dusk-vidrio); color: var(--ph-dusk-texto);
+                 font-size: 15px; font-weight: 500; text-decoration: none; backdrop-filter: blur(6px); }
+  .lp-bar-link:hover { color: var(--ph-dusk-texto); }
+  .lp-hero-text { padding-top: 28px; min-width: 0; }
+  .lp-h1 { margin: 0; max-width: 11em; font: 400 clamp(38px, 11vw, 56px)/1.04 var(--lp-heading); letter-spacing: -.012em;
+           text-wrap: balance; }
+  .lp-lead { margin: 16px 0 0; max-width: 30em; font-size: 17px; line-height: 1.5; color: var(--ph-dusk-texto-suave); }
+  .lp-cta { margin-top: 22px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px;
+            padding: 0 24px; border-radius: 100px; background: var(--ph-dusk-guayaba); color: var(--ph-dusk-tinta);
+            font-size: 17px; font-weight: 700; text-decoration: none; }
+  .lp-cta:hover { color: var(--ph-dusk-tinta); }
+  .lp-cta .lp-svg-icon { font-size: 22px; }
+  .lp-stage { position: relative; height: 430px; margin-top: 8px; }
+  .lp-sun { position: absolute; left: 50%; top: 20px; width: 340px; height: 340px; margin-left: -170px; border-radius: 50%;
+            background: radial-gradient(circle, var(--ph-dusk-guayaba) 0 58%, var(--ph-dusk-guayaba-halo) 64%,
+                                        var(--ph-dusk-guayaba-borde) 72%);
+            animation: lp-sunrise 1.8s ease-out both; }
+  @keyframes lp-sunrise { from { transform: translateY(110px); opacity: .2; } to { transform: none; opacity: 1; } }
+  .lp-hero-phone { position: absolute; left: 50%; bottom: -70px; width: 232px; margin-left: -116px; box-sizing: border-box;
+                   padding: 8px; border-radius: 36px; background: var(--ph-dusk-sil-cerca); box-shadow: 0 18px 50px var(--ph-dusk-sombra); }
+  .lp-hero-phone img { display: block; width: 100%; height: auto; border-radius: 28px; }
+  .lp-hero-phone::before { content: ""; position: absolute; z-index: 1; top: 14px; left: 50%; width: 64px; height: 18px;
+                           margin-left: -32px; border-radius: 12px; background: var(--ph-dusk-sil-cerca); }
+  .lp-globe { position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+              padding: 8px 14px 8px 10px; border-radius: 100px; background: var(--ph-dusk-vidrio-oscuro);
+              border: 1px solid var(--ph-dusk-vidrio-borde); backdrop-filter: blur(8px); color: var(--ph-dusk-texto);
+              font-size: 14px; font-weight: 500; line-height: 1.3; white-space: nowrap; }
+  .lp-globe > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .lp-globe .m3-icon, .lp-globe .lp-svg-icon { font-size: 18px; }
+  .lp-globe-1 { left: -6px; top: 36px; } .lp-globe-2 { right: -6px; top: 104px; } .lp-globe-3 { left: -2px; top: 168px; }
+  .lp-city-back { position: absolute; z-index: 0; left: 0; bottom: 0; width: 100%; height: 210px; display: block; }
+  .lp-wall { position: absolute; z-index: 2; left: 0; bottom: 0; width: 100%; height: 62px; display: block; }
+  .lp-palm { position: absolute; z-index: 2; bottom: 40px; width: 150px; height: auto; display: block; color: var(--ph-dusk-sil-cerca); }
+  .lp-palm-l { left: -46px; } .lp-palm-r { right: -52px; transform: scale(-1, 1); }
+  @media (min-width: 720px) {
+    .lp-hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
+    .lp-hero-text { padding-top: 56px; padding-bottom: 150px; }
+    .lp-stage { height: 560px; }
+    .lp-hero-phone { width: 270px; margin-left: -135px; }
+    .lp-sun { top: 40px; width: 420px; height: 420px; margin-left: -210px; }
+    .lp-city-back { height: 260px; }
+    .lp-wall { height: 74px; }
+    .lp-globe-3 { left: -40px; top: 196px; }
+    .lp-palm { width: 170px; bottom: 50px; } .lp-palm-l { left: 43%; } .lp-palm-r { right: 1%; }
+  }
+
+  /* ── Así trabajo ─────────────────────────────────────────────────────── */
+  .lp-card { background: var(--lp-surface); border-radius: 24px; padding: 16px; }
+  .lp-step-head { margin-top: 14px; display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
+  .lp-step-num { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px;
+                 border-radius: 50%; background: var(--lp-blue); color: var(--lp-on-blue); font-size: 15px; font-weight: 700; }
+  .lp-step-text { margin: 6px 0 0; font-size: 16px; line-height: 1.45; color: var(--lp-ink-soft); }
+
+  /* ── Así trabajo: el pase de capturas ─────────────────────────────────
+     Cinco imágenes apiladas en el marco, 4 s cada una, ciclo de 20 s, y la
+     lista de pasos que resalta el que se está viendo. Todo CSS.
+
+     `lp-shot` se aparta un poco del `shot` del prototipo (que apagaba la
+     captura saliente mientras prendía la entrante): acá la saliente aguanta
+     entera hasta que la entrante terminó de aparecer, y recién ahí se apaga.
+     Así nunca se ve el fondo del marco entre dos capturas, que en modo oscuro
+     era un parpadeo. `lp-step` es el del prototipo tal cual.
+
+     Sin animación (movimiento reducido) queda lo que dicen las reglas base:
+     la primera captura a la vista y ningún paso resaltado. */
+  @keyframes lp-shot { 0% { opacity: 0; } 3%, 23% { opacity: 1; } 26%, 100% { opacity: 0; } }
+  @keyframes lp-step { 0%, 23%, 100% { border-color: var(--lp-line); background: var(--lp-surface); }
+                       3%, 20% { border-color: var(--lp-blue); background: var(--lp-tint); } }
+  .lp-flow-lead { margin: 10px 0 0; max-width: 620px; font-size: 17px; line-height: 1.5; color: var(--lp-ink-soft); }
+  .lp-flow { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 28px 56px; }
+  .lp-flow-phone { flex: 1 1 260px; min-width: 0; display: flex; justify-content: center; }
+  /* Las capturas son en claro: el marco y su borde las separan del fondo
+     también en modo oscuro. */
+  .lp-phone { flex: none; width: 250px; height: 500px; padding: 10px; border-radius: 36px;
+              background: var(--lp-frame); border: 1px solid var(--lp-line); box-shadow: var(--m3-elev-3); }
+  .lp-phone-screen { position: relative; width: 100%; height: 100%; border-radius: 27px; overflow: hidden;
+                     background: var(--lp-tint); }
+  .lp-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top;
+             opacity: 0; animation: lp-shot 20s linear infinite; }
+  .lp-shot:first-child { opacity: 1; }
+  .lp-flow-text { flex: 1 1 320px; min-width: 0; }
+  .lp-flow-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .lp-flow-step { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px;
+                  border: 1px solid var(--lp-line); background: var(--lp-surface); font-size: 16px; line-height: 1.4;
+                  animation: lp-step 20s linear infinite; }
+  .lp-shot:nth-child(2), .lp-flow-step:nth-child(2) { animation-delay: 4s; }
+  .lp-shot:nth-child(3), .lp-flow-step:nth-child(3) { animation-delay: 8s; }
+  .lp-shot:nth-child(4), .lp-flow-step:nth-child(4) { animation-delay: 12s; }
+  .lp-shot:nth-child(5), .lp-flow-step:nth-child(5) { animation-delay: 16s; }
+  /* El video: solo existe si existe el archivo. Nada se descarga hasta que
+     el visitante le da a reproducir (`preload="none"`, sin `autoplay`). */
+  .lp-video-card { margin-top: 20px; max-width: 320px; border-radius: 24px; overflow: hidden;
+                   background: var(--lp-surface); border: 1px solid var(--lp-line); }
+  .lp-video { display: block; width: 100%; height: auto; aspect-ratio: 9 / 16; background: var(--lp-frame); }
+  .lp-video-body { padding: 14px 16px; }
+  .lp-video-title { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .lp-video-note { margin: 4px 0 0; font-size: 14px; line-height: 1.45; color: var(--lp-ink-soft); }
+
+  /* ── Así se lee un precio ───────────────────────────────────────────── */
+  .lp-price { background: var(--lp-surface); border: 1px solid var(--lp-line); border-radius: 24px; padding: 22px 20px; }
+  .lp-price-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .lp-badge { padding: 2px 8px; border: 1px dashed var(--lp-muted); border-radius: 6px; font-size: 12px; color: var(--lp-ink-soft); }
+  .lp-price-body { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 32px; }
+  .lp-price-col { flex: 1 1 240px; min-width: 0; }
+  .lp-price-where { font-size: 16px; font-weight: 500; }
+  .lp-price-range { margin-top: 4px; font: 400 clamp(34px, 10vw, 44px)/1.05 var(--lp-heading); }
+  .lp-price-unit { font-size: 20px; white-space: nowrap; }
+  .lp-points { position: relative; height: 26px; }
+  .lp-dot { position: absolute; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--lp-teal);
+            animation: lp-rise .7s ease-out both; animation-delay: .8s; }
+  .lp-dot:nth-child(1) { animation-delay: .1s; } .lp-dot:nth-child(2) { animation-delay: .2s; }
+  .lp-dot:nth-child(3) { animation-delay: .3s; } .lp-dot:nth-child(4) { animation-delay: .4s; }
+  .lp-dot:nth-child(5) { animation-delay: .5s; } .lp-dot:nth-child(6) { animation-delay: .6s; }
+  .lp-dot:nth-child(7) { animation-delay: .7s; }
+  .lp-row-0 { top: 8px; } .lp-row-1 { top: 0; } .lp-row-2 { top: 10px; } .lp-row-3 { top: 2px; }
+  .lp-track { position: relative; height: 14px; border-radius: 100px; background: var(--lp-tint); }
+  .lp-range { position: absolute; top: 0; height: 14px; border-radius: 100px; background: var(--lp-blue); }
+  .lp-median { position: absolute; top: -4px; width: 14px; height: 14px; margin-left: -11px; box-sizing: content-box;
+               border-radius: 50%; background: var(--lp-surface); border: 4px solid var(--lp-blue); }
+  .lp-legend { margin: 12px 0 0; font-size: 15px; line-height: 1.45; color: var(--lp-ink-soft); }
+  .lp-legend strong { color: var(--lp-ink); }
+  /* Sin dato: la ilustración del prototipo, que no afirma ninguna cifra. */
+  .lp-demo-1 { left: 24%; } .lp-demo-2 { left: 31%; } .lp-demo-3 { left: 38%; } .lp-demo-4 { left: 43%; }
+  .lp-demo-5 { left: 47%; } .lp-demo-6 { left: 53%; } .lp-demo-7 { left: 60%; } .lp-demo-8 { left: 66%; }
+  .lp-range-demo { left: 22%; width: 48%; }
+  .lp-median-demo { left: 44%; }
+
+  /* ── Por qué puedes fiarte ──────────────────────────────────────────
+     Mismo lenguaje que las tarjetas de preguntas: superficie, radio 24 y el
+     icono en su círculo (`lp-faq-icon`). Una columna a 390 px; dos o tres
+     con ancho de sobra. */
+  .lp-why-lead { margin: 10px 0 0; max-width: 620px; font-size: 17px; line-height: 1.5; color: var(--lp-ink-soft); }
+  .lp-why { margin: 16px 0 0; padding: 0; list-style: none; display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; }
+  .lp-why-card { display: flex; align-items: flex-start; gap: 14px; min-width: 0; padding: 18px 16px;
+                 border-radius: 24px; background: var(--lp-surface); }
+  .lp-why-card .lp-faq-icon { flex: none; }
+  .lp-why-body { min-width: 0; }
+  .lp-why-title { margin: 2px 0 0; font-size: 18px; font-weight: 700; line-height: 1.25; }
+  .lp-why-text { margin: 6px 0 0; font-size: 16px; line-height: 1.45; color: var(--lp-ink-soft); overflow-wrap: break-word; }
+
+  /* ── Preguntas ──────────────────────────────────────────────────────── */
+  .lp-faq { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; }
+  .lp-faq-card { background: var(--lp-surface); border-radius: 24px; padding: 22px 20px; }
+  .lp-faq-icon { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%;
+                 background: var(--ph-accent-wash); color: var(--lp-blue); font-size: 26px; }
+  .lp-faq-icon .m3-icon { font-size: 26px; }
+  .lp-faq-title { margin: 14px 0 0; font: 400 28px/1.1 var(--lp-heading); }
+  .lp-faq-text { margin: 12px 0 0; font-size: 17px; line-height: 1.5; color: var(--lp-ink-soft); }
+  .lp-nots { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px;
+             font-size: 17px; line-height: 1.4; color: var(--lp-ink-soft); }
+  .lp-faq-link { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+                 font-size: 16px; font-weight: 500; color: var(--lp-blue); text-decoration: underline; }
+  .lp-faq-link:hover { color: var(--lp-blue); text-decoration: underline; }
+  .lp-nots li { display: flex; gap: 10px; }
+  .lp-nots .m3-icon { flex: none; font-size: 22px; color: var(--lp-blue); }
+
+  /* ── Así trabajo: los cuatro pasos y «Para quién es» (prototipo
+     `docs/prototipos/landing-narrativa.html`). Una columna a 390 px, dos
+     (o tres) desde 720 px. ───────────────────────────────────────────── */
+  .lp-steps4 { margin: 16px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .lp-steps4 .lp-card { padding: 18px 16px; }
+  .lp-steps4 .lp-step-head { margin-top: 0; }
+  .lp-flow-example { margin-top: 28px; }
+  .lp-who { margin: 16px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .lp-who-link { box-sizing: border-box; height: 100%; display: flex; align-items: flex-start; gap: 14px; min-height: 44px;
+                 padding: 18px 16px; border-radius: 24px; background: var(--lp-surface); color: var(--lp-ink);
+                 border: 1px solid var(--lp-line); text-decoration: none; }
+  .lp-who-link:hover { color: var(--lp-ink); }
+  .lp-who-icon { display: flex; flex: none; align-items: center; justify-content: center; width: 48px; height: 48px;
+                 border-radius: 50%; background: var(--lp-chip); color: var(--lp-chip-ink); }
+  .lp-who-icon .m3-icon { font-size: 26px; }
+  .lp-who-title { margin: 2px 0 0; font-size: 18px; font-weight: 700; line-height: 1.25; }
+  .lp-who-text { margin: 6px 0 0; font-size: 16px; line-height: 1.45; color: var(--lp-ink-soft); }
+  @media (min-width: 720px) {
+    .lp-steps4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .lp-who { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  /* ── Así trabajo: la noche ──────────────────────────────────────────────
+     La máquina lee mientras todos duermen. Banda de cielo nocturno con
+     estrellas (puntos de `radial-gradient`) y los pasos en tarjetas de vidrio.
+     Lo de adentro que era claro (la frase del ejemplo, el pase de capturas)
+     se reescribe para fondo oscuro. */
+  .lp-night { position: relative; margin-top: 36px; padding: 44px 0 52px; color: var(--ph-dusk-texto); border-radius: 36px 36px 0 0;
+              background: linear-gradient(180deg, var(--ph-dusk-noche) 0%, var(--ph-dusk-sil-medio) 100%); overflow: hidden; }
+  .lp-night::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .8;
+    background:
+      radial-gradient(1.5px 1.5px at 12% 14%, var(--ph-dusk-texto), transparent), radial-gradient(1px 1px at 28% 30%, var(--ph-dusk-texto), transparent),
+      radial-gradient(1.5px 1.5px at 47% 10%, var(--ph-dusk-texto), transparent), radial-gradient(1px 1px at 63% 26%, var(--ph-dusk-texto), transparent),
+      radial-gradient(1.5px 1.5px at 82% 12%, var(--ph-dusk-texto), transparent), radial-gradient(1px 1px at 91% 34%, var(--ph-dusk-texto), transparent),
+      radial-gradient(1px 1px at 8% 46%, var(--ph-dusk-texto), transparent), radial-gradient(1.5px 1.5px at 74% 48%, var(--ph-dusk-texto), transparent); }
+  .lp-night .lp-wrap { position: relative; }
+  .lp-night :focus-visible { outline-color: var(--ph-dusk-guayaba); }
+  .lp-night .lp-h2 { letter-spacing: -.01em; }
+  .lp-night .lp-flow-lead { color: var(--ph-dusk-texto-suave); }
+  .lp-night .lp-card { background: var(--ph-dusk-vidrio); border: 1px solid var(--ph-dusk-vidrio-borde); backdrop-filter: blur(8px); }
+  .lp-night .lp-step-text { color: var(--ph-dusk-texto-suave); }
+  .lp-night .lp-step-num { background: var(--ph-dusk-guayaba); color: var(--ph-dusk-tinta); }
+  .lp-night .lp-phone { box-shadow: 0 0 0 1px var(--ph-dusk-vidrio-borde); }
+  .lp-night .lp-flow-step { color: var(--lp-ink); }
+
+  /* ── Entradas ───────────────────────────────────────────────────────── */
+  .lp-entries { padding-bottom: 36px; }
+  .lp-tiles { margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .lp-tile { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 16px; border-radius: 24px;
+             background: var(--lp-surface); color: var(--lp-ink); border: 1px solid var(--lp-line); text-decoration: none; }
+  .lp-tile:hover { color: var(--lp-ink); }
+  .lp-tile-main { background: var(--lp-blue); border-color: var(--lp-blue); color: var(--lp-on-blue); }
+  .lp-tile-main:hover { color: var(--lp-on-blue); }
+  /* El medio: la misma proporción en las cuatro, vean lo que vean. Se corta lo
+     que sobra por abajo (`object-position: top`): la barra de arriba es lo que
+     identifica la vista. La tarjeta sin pantalla (Datos) usa el mismo hueco
+     con su ícono. */
+  .lp-tile-media { position: relative; display: block; aspect-ratio: 9 / 14; overflow: hidden; border-radius: 16px;
+                   background: var(--lp-tint); }
+  .lp-tile-media video { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+  .lp-tile-media .m3-icon { position: absolute; inset: 0; display: grid; place-items: center; font-size: 56px;
+                            color: var(--lp-blue); }
+  .lp-tile-title { padding-inline: 6px; font-size: 18px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+  .lp-tile-text { padding-inline: 6px; font-size: 14px; line-height: 1.35; color: var(--lp-ink-soft); }
+  .lp-tile-main .lp-tile-text { color: var(--lp-on-blue); }
+  .lp-chips-label { margin-top: 24px; }
+  .lp-chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .lp-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 100px;
+             background: var(--lp-chip); color: var(--lp-chip-ink); font-size: 16px; font-weight: 500; text-decoration: none; }
+  .lp-chip:hover { color: var(--lp-chip-ink); }
+  @media (min-width: 720px) { .lp-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lp-sun { animation: none; }
+    .lp *, .lp *::before, .lp *::after { animation: none !important; transition: none !important; }
+    /* Las capturas 2 a 5 no se van a ver nunca: fuera del árbol, con
+       `loading="lazy"`, tampoco se descargan. */
+    .lp-shot + .lp-shot { display: none; }
+  }
+</style>
+
+<style>
+  .pf { margin-top: auto; background: var(--m3-on-surface); color: var(--m3-surface);
+        font: 400 16px/1.45 var(--m3-font); }
+  /* El foco del sitio es del color de acento: sobre el pie invertido no se vería. */
+  .pf :focus-visible { outline-color: var(--m3-surface); }
+  .pf-inner { width: 100%; max-width: 1080px; margin: 0 auto; padding: 36px 20px 20px; box-sizing: border-box; }
+  .pf-top { display: flex; flex-wrap: wrap; gap: 28px 56px; }
+  .pf-about { flex: 1 1 260px; min-width: 0; max-width: 360px; }
+  .pf-brand { display: flex; align-items: center; gap: 12px; }
+  .pf-brand .ph-brand-avatar { flex: none; width: 48px; height: 48px; }
+  .pf-wordmark { font: 400 30px/1.2 var(--ph-font-heading); }
+  /* La firma: quién hace Guani, más chica y debajo de la marca. */
+  .pf-names { min-width: 0; }
+  .pf-by { font-size: 14px; line-height: 1.3; color: var(--m3-outline-variant); }
+  .pf-tag { margin: 14px 0 0; font-size: 15px; line-height: 1.5; color: var(--m3-outline-variant); }
+  .pf-cta { margin-top: 18px; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 20px;
+            border-radius: 100px; background: var(--m3-surface); color: var(--ph-accent); font-size: 16px; font-weight: 500;
+            text-decoration: none; }
+  .pf a.pf-cta:hover { color: var(--ph-accent); text-decoration: none; }
+  .pf-icon { flex: none; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2;
+             stroke-linecap: round; stroke-linejoin: round; }
+  .pf-cta .pf-icon { font-size: 20px; }
+  /* A 390 px entran dos columnas de 150 px; con ancho de sobra, las cuatro en fila. */
+  .pf-cols { flex: 999 1 320px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+             gap: 24px 20px; }
+  .pf-col { display: flex; flex-direction: column; min-width: 0; }
+  .pf-col-title { margin: 0 0 4px; font-size: 13px; font-weight: 700; line-height: 1.45; letter-spacing: .12em;
+                  text-transform: uppercase; color: var(--m3-primary-container); }
+  /* 44 px de alto por enlace: el dedo no tiene que apuntar. */
+  .pf-link { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 16px; color: var(--m3-surface);
+             text-decoration: none; overflow-wrap: anywhere; }
+  /* `.pf a.…`: la landing apaga el subrayado de sus enlaces al pasar el cursor
+     (`.lp a:hover`) y el pie vive dentro de ella; acá tiene que ganar el del pie. */
+  .pf a.pf-link:hover { color: var(--m3-surface); text-decoration: underline; }
+  .pf-link .pf-icon { font-size: 22px; color: var(--m3-primary-container); }
+  .pf-bar { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--m3-on-surface-variant); display: flex;
+            flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 24px; font-size: 14px;
+            line-height: 1.5; color: var(--m3-outline-variant); }
+  /* `inline-block` con relleno: el crédito es un enlace dentro de una frase y
+     aun así tiene que dar 44 px de alto al dedo. */
+  .pf-bar a { display: inline-block; padding-block: 12px; color: var(--m3-surface); text-decoration: underline; }
+  .pf-bar a:hover { color: var(--m3-surface); text-decoration: underline; }
+</style>
+
+<style>
+  /* ════ El día completo: cada sección, su hora (prototipo landing-estetica) ════
+     atardecer (portada) → noche (el precio y el recorrido) → amanecer (por qué
+     puedes fiarte) → día (para quién, preguntas y entradas) → ocaso (el pie). */
+  :root { --ph-dusk-manana: #fde7bf; --ph-dusk-sombra-dia: rgba(11, 44, 67, .14); }
+
+  /* La orilla: el muro de la portada sigue en una franja de noche, y el precio
+     se lee sobre ella, con su tarjeta clara encendida como una ventana. */
+  .lp .lp-sea { background: linear-gradient(180deg, var(--ph-dusk-sil-cerca) 0%, var(--ph-dusk-noche) 100%); padding: 30px 0 44px; }
+  .lp .lp-sea .lp-section { padding-top: 0; padding-bottom: 0; }
+  .lp .lp-sea .lp-price { border: 0; box-shadow: 0 18px 44px var(--ph-dusk-sombra); }
+  .lp .lp-night { margin-top: 0; border-radius: 0; padding-top: 12px; }
+
+  /* El amanecer */
+  .lp .lp-dawn { color: var(--ph-dusk-texto); padding: 8px 0 44px;
+                 background: linear-gradient(180deg, var(--ph-dusk-sil-medio) 0%, var(--ph-dusk-indigo) 18%, var(--ph-dusk-mamey) 54%,
+                                             var(--ph-dusk-flama) 84%, var(--ph-dusk-guayaba) 100%); }
+  .lp .lp-dawn .lp-h2 { color: var(--ph-dusk-texto); letter-spacing: -.01em; }
+  .lp .lp-dawn .lp-why-lead { color: var(--ph-dusk-texto-suave); }
+  .lp .lp-dawn .lp-why-card { color: var(--lp-ink); box-shadow: 0 12px 30px var(--ph-dusk-sombra); }
+  .lp .lp-dawn .lp-faq-icon { background: var(--ph-dusk-guayaba); color: var(--ph-dusk-tinta); }
+  .lp .lp-dawn .lp-faq-link { color: var(--ph-dusk-tinta); }
+  .lp .lp-dawn :focus-visible { outline-color: var(--ph-dusk-tinta); }
+
+  /* El día */
+  .lp .lp-day { background: linear-gradient(180deg, var(--ph-dusk-manana) 0, var(--lp-bg) 380px); padding-bottom: 28px; }
+  .lp .lp-day .lp-who-link, .lp .lp-day .lp-faq-card, .lp .lp-day .lp-tile { border-color: transparent; box-shadow: 0 10px 28px var(--ph-dusk-sombra-dia); }
+  .lp .lp-day .lp-who-icon, .lp .lp-day .lp-faq-icon { background: var(--ph-dusk-guayaba); color: var(--ph-dusk-tinta); }
+  .lp .lp-day .lp-tile-main { background: var(--ph-dusk-noche); border-color: var(--ph-dusk-noche); color: var(--ph-dusk-texto); }
+  .lp .lp-day .lp-tile-main .lp-tile-text { color: var(--ph-dusk-texto-suave); }
+  .lp .lp-day .lp-chip { background: var(--ph-dusk-guayaba-halo); color: var(--lp-ink); }
+
+  /* El ocaso: el día se cierra con la misma ciudad de la portada, ahora del
+     color del pie, delante de un sol que se va. */
+  .lp .lp-ocaso { position: relative; height: 230px; overflow: hidden;
+                  background: linear-gradient(180deg, var(--lp-bg) 0%, var(--ph-dusk-mamey) 58%, var(--ph-dusk-flama) 84%, var(--ph-dusk-guayaba) 100%); }
+  .lp .lp-ocaso-sol { position: absolute; left: 62%; bottom: 36px; width: 140px; height: 140px; margin-left: -70px; border-radius: 50%;
+                      background: var(--ph-dusk-guayaba); }
+  .lp .lp-ocaso-city { position: absolute; left: 0; bottom: -1px; width: 100%; height: 190px; display: block; }
+  .lp .lp-ocaso-palm { position: absolute; bottom: 8px; width: 120px; height: auto; display: block; color: var(--m3-on-surface); }
+  .lp .lp-ocaso-palm-l { left: -26px; } .lp .lp-ocaso-palm-r { right: -34px; transform: scale(-1, 1); }
+  @media (min-width: 720px) {
+    .lp .lp-ocaso { height: 300px; }
+    .lp .lp-ocaso-city { height: 250px; }
+    .lp .lp-ocaso-palm { width: 170px; } .lp .lp-ocaso-palm-l { left: 3%; } .lp .lp-ocaso-palm-r { right: 3%; }
+  }
+
+</style>
+</head>
+<body>
+
+
+
+
+
+<div class="lp">
+
+<svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+  <defs>
+    
+    <path id="fronda" d="M0 0 C 14 -18 44 -22 74 -2 C 50 -8 24 -7 0 0 Z"/>
+    <g id="palma">
+      <path d="M0 0 C -3 -34 5 -70 0 -112" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+      <g transform="translate(0 -112)">
+        <use href="#fronda" transform="rotate(-8)"/><use href="#fronda" transform="rotate(32)"/>
+        <use href="#fronda" transform="rotate(68)"/><use href="#fronda" transform="rotate(-48)"/>
+        <use href="#fronda" transform="scale(-1 1) rotate(-8)"/><use href="#fronda" transform="scale(-1 1) rotate(32)"/>
+        <use href="#fronda" transform="scale(-1 1) rotate(68)"/><use href="#fronda" transform="scale(-1 1) rotate(-48)"/>
+      </g>
+    </g>
+  </defs>
+</svg>
+
+<header class="lp-hero">
+  <div class="lp-wrap">
+    <div class="lp-bar">
+      <div class="lp-wordmark">Guani</div>
+      <a class="lp-bar-link" href="/precios">Ver precios</a>
+    </div>
+    <div class="lp-hero-grid">
+      <div class="lp-hero-text">
+        <h1 class="lp-h1">Precios reales del mercado informal cubano.</h1>
+        <p class="lp-lead">Guani lee los anuncios donde ya se vende, los pasa a una misma unidad y te los enseña con su cuenta. Una máquina lee; una persona supervisa.</p>
+        <a class="lp-cta lp-lift" href="/precios">Ver los precios de hoy<svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      </div>
+
+      <div class="lp-stage">
+        <div class="lp-sun" aria-hidden="true"></div>
+        <div class="lp-hero-phone"><img src="/static/landing/entradas-tablero.webp?v=1791702665" alt="El tablero de Guani en un teléfono: el precio del arroz por provincia, con la cuenta de anuncios detrás." width="480" height="999"></div>
+        
+        
+        <div class="lp-globe lp-globe-1"><span class="m3-icon" aria-hidden="true">sell</span><span>Arroz · 210–381 CUP/lb</span></div>
+        <div class="lp-globe lp-globe-2"><svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.7-6.5-10.6a6.5 6.5 0 0 1 13 0C18.5 15.3 12 21 12 21z"/><circle cx="12" cy="10.4" r="2.2"/></svg><span>La Habana</span></div>
+        <div class="lp-globe lp-globe-3"><span class="m3-icon" aria-hidden="true">forum</span><span>9 anuncios</span></div>
+        
+      </div>
+    </div>
+  </div>
+
+  
+  <svg class="lp-city-back" viewBox="0 0 1200 210" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <path fill="var(--ph-dusk-sil-lejos)" d="M0 210V140H36V112H64V140H96V98H126V130H160V118H196V92H224V124H262V108H300V136H338V100H372V126H410V88H438V120H470V104H508V132H548V96H580V122H620V110H660V90H690V128H730V102H768V124H806V94H836V130H876V108H914V136H952V100H986V122H1024V112H1060V138H1100V104H1136V128H1200V210Z"/>
+    <g fill="var(--ph-dusk-sil-medio)">
+      <path d="M0 210V168H58V150H112V166H176V152H240V170H318V154H388V168H448V156H820V170H890V152H960V166H1030V150H1096V168H1200V210Z"/>
+      <path d="M500 156V138H700V156Z"/>
+      <path d="M560 138V124Q560 92 600 92Q640 92 640 124V138Z"/>
+      <rect x="596" y="68" width="8" height="26"/><path d="M592 70L600 56L608 70Z"/>
+      <rect x="208" y="84" width="24" height="86"/><path d="M204 86L220 56L236 86Z"/>
+      <rect x="878" y="36" width="52" height="134"/><rect x="886" y="28" width="36" height="10"/>
+      <rect x="346" y="124" width="34" height="32" rx="3"/><rect x="352" y="114" width="22" height="11"/>
+      <rect x="1010" y="104" width="3" height="48"/>
+    </g>
+  </svg>
+
+  
+  <svg class="lp-palm lp-palm-l" viewBox="-110 -230 220 240" aria-hidden="true"><use href="#palma" transform="scale(1.45)" fill="currentColor"/></svg>
+  <svg class="lp-palm lp-palm-r" viewBox="-110 -230 220 240" aria-hidden="true"><use href="#palma" transform="scale(1.2) rotate(-3)" fill="currentColor"/></svg>
+  <svg class="lp-wall" viewBox="0 0 100 62" preserveAspectRatio="none" aria-hidden="true">
+    <path fill="var(--ph-dusk-sil-cerca)" d="M0 62V16H100V62Z"/><rect fill="var(--ph-dusk-sil-cerca)" y="8" width="100" height="10"/><rect fill="var(--ph-dusk-sil-medio)" y="17" width="100" height="1.4"/>
+  </svg>
+</header>
+
+<main class="lp-main">
+
+<div class="lp-sea">
+<section class="lp-wrap lp-section" id="lp-price" aria-labelledby="lp-price-title">
+  <div class="lp-price lp-reveal">
+    <div class="lp-price-top">
+      <h2 class="lp-kicker" id="lp-price-title">Así se lee un precio</h2>
+      <div class="lp-badge">Últimos 30 días</div>
+    </div>
+    <div class="lp-price-body">
+      
+      <div class="lp-price-col">
+        <div class="lp-price-where">Arroz · La Habana</div>
+        <div class="lp-price-range">210 – 381 <span class="lp-price-unit">CUP/lb</span></div>
+      </div>
+      <div class="lp-price-col">
+        <div class="lp-points" aria-hidden="true"><span class="lp-dot lp-row-0" style="left: 10.0%"></span><span class="lp-dot lp-row-1" style="left: 33.39%"></span><span class="lp-dot lp-row-2" style="left: 33.39%"></span><span class="lp-dot lp-row-3" style="left: 33.39%"></span><span class="lp-dot lp-row-0" style="left: 33.39%"></span><span class="lp-dot lp-row-1" style="left: 51.38%"></span><span class="lp-dot lp-row-2" style="left: 58.17%"></span><span class="lp-dot lp-row-3" style="left: 90.0%"></span><span class="lp-dot lp-row-0" style="left: 90.0%"></span></div>
+        <div class="lp-track" aria-hidden="true">
+          <div class="lp-range lp-fill" style="left: 10.0%; width: 80.0%"></div>
+          <div class="lp-median" style="left: 33.39%"></div>
+        </div>
+        <p class="lp-legend">Cada punto es un anuncio. La barra es el rango y el círculo, la mediana: <strong>260</strong>. <strong>9</strong> anuncios · Muestra en formación</p>
+      </div>
+      
+    </div>
+  </div>
+</section>
+
+</div>
+<section class="lp-night" id="lp-work" aria-labelledby="lp-work-title">
+<div class="lp-wrap">
+  <h2 class="lp-h2" id="lp-work-title">Así trabajo</h2>
+  <p class="lp-flow-lead">Una máquina lee los anuncios y una persona supervisa. Estos son los cuatro pasos.</p>
+  <ol class="lp-steps4">
+    <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">1</span><span>Escucha</span></div>
+      <p class="lp-step-text">Lee los grupos y canales donde ya se vende. Nadie tiene que escribirle nada.</p></li>
+    <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">2</span><span>Entiende</span></div>
+      <p class="lp-step-text">Un asistente saca producto, precio, cantidad y provincia, y lo lleva todo a la misma unidad y moneda.</p></li>
+    <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">3</span><span>Filtra</span></div>
+      <p class="lp-step-text">Aparta lo que no es un anuncio de precio y frena lo dudoso. Lo difícil lo decide una persona; lo claro, el sistema lo acepta y una persona lo audita después.</p></li>
+    <li class="lp-card"><div class="lp-step-head"><span class="lp-step-num">4</span><span>Te lo enseña con su cuenta</span></div>
+      <p class="lp-step-text">Rango, mediana y cuántos anuncios hay detrás, separando los revisados a mano de los aceptados por el sistema.</p></li>
+  </ol>
+  
+  <p class="lp-flow-lead lp-flow-example">Así pasó con un anuncio real, desde que alguien lo publica hasta que lo ves como precio.</p>
+  <div class="lp-flow">
+    <div class="lp-flow-phone">
+      <div class="lp-phone lp-reveal">
+        
+        <div class="lp-phone-screen">
+          <img class="lp-shot" src="/static/landing/flujo-1.webp?v=1791702665" alt="Recreación de un anuncio real en un grupo de ventas: un globo de chat con el texto de la oferta." width="460" height="958" decoding="async">
+          <img class="lp-shot" src="/static/landing/flujo-2.webp?v=1791702665" alt="El mismo anuncio en la herramienta de Guani, en la tarjeta «Evidencia», con su texto intacto." width="460" height="958" decoding="async" loading="lazy">
+          <img class="lp-shot" src="/static/landing/flujo-3.webp?v=1791702665" alt="Los campos extraídos: producto Pollo, precio 40.00 USD, cantidad 40 lb, provincia La Habana." width="460" height="958" decoding="async" loading="lazy">
+          <img class="lp-shot" src="/static/landing/flujo-4.webp?v=1791702665" alt="Las preguntas que responde la persona que verifica el anuncio, con el botón «Guardar corrección»." width="460" height="958" decoding="async" loading="lazy">
+          <img class="lp-shot" src="/static/landing/flujo-5.webp?v=1791702665" alt="El tablero público de precios de Guani, donde el anuncio ya cuenta dentro de un rango." width="460" height="958" decoding="async" loading="lazy">
+        </div>
+      </div>
+    </div>
+    <div class="lp-flow-text">
+      <ol class="lp-flow-steps" role="list">
+  <li class="lp-flow-step"><span class="lp-step-num">1</span><span>Un emprendedor publica su oferta en un grupo o canal.</span></li>
+  <li class="lp-flow-step"><span class="lp-step-num">2</span><span>El anuncio llega a Guani tal cual se escribió.</span></li>
+  <li class="lp-flow-step"><span class="lp-step-num">3</span><span>Saco el producto, el precio y la provincia.</span></li>
+  <li class="lp-flow-step"><span class="lp-step-num">4</span><span>Si hay dudas lo revisa una persona; si es claro, el sistema lo acepta y una persona lo audita después.</span></li>
+  <li class="lp-flow-step"><span class="lp-step-num">5</span><span>Lo ves en el tablero como rango, mediana y número de anuncios.</span></li>
+</ol>
+      
+    </div>
+  </div>
+  
+</div>
+</section>
+
+<div class="lp-dawn">
+<section class="lp-wrap lp-section" id="lp-why" aria-labelledby="lp-why-title">
+  <h2 class="lp-h2" id="lp-why-title">Por qué puedes fiarte de estas cifras</h2>
+  <p class="lp-why-lead">No te pido que me creas: te enseño de dónde sale cada número y con qué cuenta se saca.</p>
+  <ul class="lp-why" role="list">
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon"><svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4M10 12.5h5M10 16.5h5"/></svg></div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Cada cifra enseña sus anuncios</h3>
+        <p class="lp-why-text">Al lado de cada precio va cuántos anuncios tiene detrás, y los que son de texto los puedes abrir y leer.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon"><svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.7-6.5-10.6a6.5 6.5 0 0 1 13 0C18.5 15.3 12 21 12 21z"/><circle cx="12" cy="10.4" r="2.2"/></svg></div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Provincia por provincia</h3>
+        <p class="lp-why-text">Cada producto se mide en su provincia, no como un promedio del país. En los últimos 30 días hay anuncios de 5 productos en 2 provincias.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon"><svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M8 20h8M5 7h14"/><path d="M5 7l-2.6 6.2a2.6 2.6 0 0 0 5.2 0zM19 7l-2.6 6.2a2.6 2.6 0 0 0 5.2 0z"/></svg></div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Compara lo comparable</h3>
+        <p class="lp-why-text">El litro y los 900 ml, la libra y el kilo: cada precio se lleva a la misma unidad antes de sacar la cuenta.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon"><svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9.5" cy="8" r="3.5"/><path d="M3 20c0-3.6 2.9-6 6.5-6 1.3 0 2.5.3 3.5.8"/><path d="m14.8 17.6 2.3 2.3 4.1-4.6"/></svg></div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Sabes quién la revisó</h3>
+        <p class="lp-why-text">Al lado de cada cifra va cuántos anuncios revisó una persona y cuántos aceptó el sistema solo. Y una persona audita lo que el sistema aceptó.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon"><svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.4-3 7.8-7 9.5-4-1.7-7-5.1-7-9.5V6z"/><path d="m8.8 12 2.3 2.3 4.2-4.6"/></svg></div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Un precio disparatado no manda</h3>
+        <p class="lp-why-text">Se resume con la mediana, que casi no se mueve por un anuncio fuera de lo común, y la regla que señala esos precios está publicada.</p>
+      </div>
+    </li>
+    <li class="lp-why-card lp-reveal">
+      <div class="lp-faq-icon"><svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.4c-.5-1-1.5-1.6-2.8-1.6-1.7 0-2.9.9-2.9 2.1 0 3 5.9 1.5 5.9 4.5 0 1.3-1.3 2.2-3 2.2-1.4 0-2.5-.6-3-1.7M12 6v1.800M12 16.6V18"/></svg></div>
+      <div class="lp-why-body">
+        <h3 class="lp-why-title">Todo en pesos cubanos</h3>
+        <p class="lp-why-text">Lo anunciado en USD, EUR o MLC se pasa a CUP con la tasa informal de elTOQUE; lo que no se pudo convertir no se muestra.</p>
+      </div>
+    </li>
+  </ul>
+  <a class="lp-faq-link" href="/metodologia">Cómo calculamos los precios<svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+</section>
+
+</div>
+<div class="lp-day">
+<section class="lp-wrap lp-section" id="lp-who" aria-labelledby="lp-who-title">
+  <h2 class="lp-h2" id="lp-who-title">Para quién es</h2>
+  <ul class="lp-who">
+    <li><a class="lp-who-link lp-lift" href="/precios?vista=tablero">
+      <span class="lp-who-icon"><span class="m3-icon" aria-hidden="true">sell</span></span>
+      <div><p class="lp-who-title">Si compras o vendes</p>
+      <p class="lp-who-text">¿Cuánto cuesta esto hoy en mi provincia?</p></div></a></li>
+    <li><a class="lp-who-link lp-lift" href="/precios?vista=explorar">
+      <span class="lp-who-icon"><span class="m3-icon" aria-hidden="true">show_chart</span></span>
+      <div><p class="lp-who-title">Si revendes o decides</p>
+      <p class="lp-who-text">Qué se mueve y dónde.</p></div></a></li>
+    <li><a class="lp-who-link lp-lift" href="/datos.csv">
+      <span class="lp-who-icon"><span class="m3-icon" aria-hidden="true">download</span></span>
+      <div><p class="lp-who-title">Si investigas o informas</p>
+      <p class="lp-who-text">Los datos en CSV, con su metodología.</p></div></a></li>
+  </ul>
+</section>
+
+<section class="lp-wrap lp-section" aria-label="Preguntas frecuentes">
+  <div class="lp-faq">
+    <div class="lp-faq-card lp-reveal">
+      <div class="lp-faq-icon"><svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10l1.6-5h12.8L20 10M5.5 12.4V19h13v-6.6M10 19v-4.5h4V19"/><path d="M4 10a2.67 2.67 0 0 0 5.33 0 2.67 2.67 0 0 0 5.34 0A2.67 2.67 0 0 0 20 10"/></svg></div>
+      <h2 class="lp-faq-title">¿Qué es Guani?</h2>
+      <p class="lp-faq-text">Un sitio gratis y de acceso libre que muestra los precios del mercado informal cubano, producto por producto y provincia por provincia.</p>
+    </div>
+    <div class="lp-faq-card lp-reveal">
+      <div class="lp-faq-icon"><span class="m3-icon" aria-hidden="true">forum</span></div>
+      <h2 class="lp-faq-title">¿De dónde salen los precios?</h2>
+      <p class="lp-faq-text">De lo que los emprendedores publican en grupos y canales de WhatsApp. Cada cifra dice cuántos anuncios tiene detrás.</p>
+      <a class="lp-faq-link" href="/metodologia">Cómo calculamos los precios<svg class="lp-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </div>
+    <div class="lp-faq-card lp-reveal">
+      <div class="lp-faq-icon"><span class="m3-icon" aria-hidden="true">block</span></div>
+      <h2 class="lp-faq-title">¿Qué no vas a encontrar?</h2>
+      <ul class="lp-nots">
+        <li><span class="m3-icon" aria-hidden="true">close</span>Consejos de compra ni juicios de «caro» o «barato».</li>
+        <li><span class="m3-icon" aria-hidden="true">close</span>Teléfonos ni datos de contacto de los vendedores.</li>
+        <li><span class="m3-icon" aria-hidden="true">close</span>Cifras sin decir cuántos anuncios hay detrás.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="lp-wrap lp-section lp-entries" id="entradas" aria-labelledby="lp-entries-title">
+  <h2 class="lp-h2" id="lp-entries-title">Entra por donde quieras</h2>
+  <div class="lp-tiles">
+    
+    <a class="lp-tile lp-lift lp-tile-main" href="/precios?vista=tablero">
+      <span class="lp-tile-media" role="img" aria-label="El tablero en un teléfono: cada precio con la cuenta de cuántos anuncios son revisados a mano y cuántos aceptados por el sistema, y el desglose de por qué confiamos en esas cifras."><video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" data-clip="/static/landing/entradas-tablero.mp4?v=1791702665" poster="/static/landing/entradas-tablero.webp?v=1791702665"></video></span>
+      <span class="lp-tile-title">Precios de hoy</span><span class="lp-tile-text">El tablero completo.</span>
+    </a>
+    
+    <a class="lp-tile lp-lift" href="/precios?vista=mapa">
+      <span class="lp-tile-media" role="img" aria-label="El mapa de Cuba: al tocar una provincia aparece cuántas observaciones tiene."><video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" data-clip="/static/landing/entradas-mapa.mp4?v=1791702665" poster="/static/landing/entradas-mapa.webp?v=1791702665"></video></span>
+      <span class="lp-tile-title">Mapa</span><span class="lp-tile-text">Provincia por provincia.</span>
+    </a>
+    
+    <a class="lp-tile lp-lift" href="/precios?vista=explorar">
+      <span class="lp-tile-media" role="img" aria-label="Explorar: la tabla de un producto por provincia, con la mediana y el cambio, y una fila de provincia que se abre para mostrar sus formatos."><video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" data-clip="/static/landing/entradas-explorar.mp4?v=1791702665" poster="/static/landing/entradas-explorar.webp?v=1791702665"></video></span>
+      <span class="lp-tile-title">Explorar</span><span class="lp-tile-text">Cómo se movió cada precio.</span>
+    </a>
+    
+    <a class="lp-tile lp-lift" href="/datos.csv">
+      <span class="lp-tile-media"><span class="m3-icon" aria-hidden="true">download</span></span>
+      <span class="lp-tile-title">Datos (CSV)</span><span class="lp-tile-text">Los últimos 30 días.</span>
+    </a>
+    
+  </div>
+  
+  <div class="lp-kicker lp-chips-label">O ve directo a un producto</div>
+  <div class="lp-chips"><a class="lp-chip lp-lift" href="/precios?productos=aceite&amp;desde=2026-09-11&amp;hasta=2026-10-11&amp;vista=tablero">Aceite</a><a class="lp-chip lp-lift" href="/precios?productos=arroz&amp;desde=2026-09-11&amp;hasta=2026-10-11&amp;vista=tablero">Arroz</a><a class="lp-chip lp-lift" href="/precios?productos=azucar-blanca&amp;desde=2026-09-11&amp;hasta=2026-10-11&amp;vista=tablero">Azúcar blanca</a><a class="lp-chip lp-lift" href="/precios?productos=picadillo&amp;desde=2026-09-11&amp;hasta=2026-10-11&amp;vista=tablero">Picadillo</a><a class="lp-chip lp-lift" href="/precios?productos=pollo&amp;desde=2026-09-11&amp;hasta=2026-10-11&amp;vista=tablero">Pollo</a></div>
+  
+</section>
+
+</div>
+</main>
+<div class="lp-ocaso" aria-hidden="true">
+  <div class="lp-ocaso-sol"></div>
+  <svg class="lp-ocaso-city" viewBox="0 0 1200 210" preserveAspectRatio="xMidYMax slice">
+    <path fill="var(--m3-on-surface)" fill-opacity=".4" d="M0 210V140H36V112H64V140H96V98H126V130H160V118H196V92H224V124H262V108H300V136H338V100H372V126H410V88H438V120H470V104H508V132H548V96H580V122H620V110H660V90H690V128H730V102H768V124H806V94H836V130H876V108H914V136H952V100H986V122H1024V112H1060V138H1100V104H1136V128H1200V210Z"/>
+    <g fill="var(--m3-on-surface)">
+      <path d="M0 210V168H58V150H112V166H176V152H240V170H318V154H388V168H448V156H820V170H890V152H960V166H1030V150H1096V168H1200V210Z"/>
+      <path d="M500 156V138H700V156Z"/>
+      <path d="M560 138V124Q560 92 600 92Q640 92 640 124V138Z"/>
+      <rect x="596" y="68" width="8" height="26"/><path d="M592 70L600 56L608 70Z"/>
+      <rect x="208" y="84" width="24" height="86"/><path d="M204 86L220 56L236 86Z"/>
+      <rect x="878" y="36" width="52" height="134"/><rect x="886" y="28" width="36" height="10"/>
+      <rect x="346" y="124" width="34" height="32" rx="3"/><rect x="352" y="114" width="22" height="11"/>
+      <rect x="1010" y="104" width="3" height="48"/>
+      <path d="M0 210V180H1200V210Z"/>
+    </g>
+  </svg>
+  <svg class="lp-ocaso-palm lp-ocaso-palm-l" viewBox="-110 -230 220 240"><use href="#palma" transform="scale(1.3)" fill="currentColor"/></svg>
+  <svg class="lp-ocaso-palm lp-ocaso-palm-r" viewBox="-110 -230 220 240"><use href="#palma" transform="scale(1.1) rotate(-3)" fill="currentColor"/></svg>
+</div>
+
+
+
+
+
+<footer class="pf">
+  <div class="pf-inner">
+    <div class="pf-top">
+      <div class="pf-about">
+        <div class="pf-brand">
+          
+
+<svg class="ph-brand-avatar" viewBox="0 0 80 80" role="img" aria-label="Guani">
+  <circle cx="40" cy="40" r="39" fill="#ffffff" stroke="#c4cfcf" stroke-width="2"/>
+  <clipPath id="guani-avatar-clip-pie"><circle cx="40" cy="40" r="37"/></clipPath>
+  <g clip-path="url(#guani-avatar-clip-pie)" transform="translate(40,40) scale(.8) translate(-40,-40)">
+    <ellipse cx="40" cy="30" rx="34" ry="34" fill="#191c1c"/>
+    <circle cx="40" cy="34" r="27" fill="#6f7979"/>
+    <rect x="13" y="20" width="54" height="8" rx="4" fill="#191c1c"/>
+    <path d="M52,22 L57,3 L62,22 Z" fill="#c4cfcf"/>
+    
+    <ellipse class="guani-eye" cx="33" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
+    <ellipse class="guani-eye" cx="47" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
+    <path d="M33,48 Q40,52 47,48" stroke="#ffffff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <ellipse cx="40" cy="72" rx="40" ry="20" fill="#8a9494"/>
+  </g>
+</svg>
+          <div class="pf-names">
+            <div class="pf-wordmark">Guani</div>
+            <div class="pf-by">por Leira Studio</div>
+          </div>
+        </div>
+        <p class="pf-tag">Precios del mercado informal cubano, con los anuncios detrás. De acceso libre y gratis.</p>
+        <a class="pf-cta" href="/precios">Ver los precios de hoy<svg class="pf-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      </div>
+      <div class="pf-cols">
+        
+        <nav class="pf-col" aria-label="Precios">
+          <h2 class="pf-col-title">Precios</h2>
+          
+          <a class="pf-link" href="/precios?vista=tablero">Tablero de hoy</a>
+          
+          <a class="pf-link" href="/precios?vista=mapa">Mapa por provincia</a>
+          
+          <a class="pf-link" href="/precios?vista=explorar">Explorar y comparar</a>
+          
+          <a class="pf-link" href="/datos.csv">Descargar datos (CSV)</a>
+          
+        </nav>
+        
+        <nav class="pf-col" aria-label="Guani">
+          <h2 class="pf-col-title">Guani</h2>
+          
+          <a class="pf-link" href="/quienes-somos">Quiénes somos</a>
+          
+          <a class="pf-link" href="/metodologia">Cómo calculamos los precios</a>
+          
+          <a class="pf-link" href="/preguntas">Preguntas frecuentes</a>
+          
+        </nav>
+        
+        <nav class="pf-col" aria-label="Legal">
+          <h2 class="pf-col-title">Legal</h2>
+          
+          <a class="pf-link" href="/terminos">Términos y condiciones</a>
+          
+          <a class="pf-link" href="/privacidad">Política de privacidad</a>
+          
+          <a class="pf-link" href="/uso-de-datos">Uso de los datos</a>
+          
+        </nav>
+        
+        
+      </div>
+    </div>
+    <div class="pf-bar">
+      <span>© 2026 Guani. Un producto de Leira Studio. <a href="/uso-de-datos">Uso personal y con cita; uso comercial, con acuerdo.</a></span>
+      <span>Tasa de cambio: <a href="https://eltoque.com/">TRMI de elTOQUE</a>.</span>
+    </div>
+  </div>
+</footer>
+
+</div>
+
+
+
+</body>
+</html>

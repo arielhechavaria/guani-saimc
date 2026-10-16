@@ -25,6 +25,7 @@ from saimc.extraction.engine import (
     propose_all,
 )
 from saimc.models import Product, Province
+from saimc.units import canonical_unit
 
 
 @pytest.fixture
@@ -436,6 +437,36 @@ class TestMonedaPegadaAlNumero:
         assert propuesta.currency == "USD"
 
 
+class TestCantidadEnGramos:
+    """El extractor devuelve la palabra tal como el anuncio la escribe; la
+    unidad canónica la resuelve `canonical_unit()` en la curaduría."""
+
+    @pytest.mark.parametrize("palabra", ["gr", "grs", "gramo", "gramos"])
+    def test_las_formas_largas_canonizan_a_gramo(
+        self, palabra: str, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose(f"Pasta para fregar 500 {palabra} a 1760", products, provinces)
+
+        assert propuesta.quantity == Decimal("500")
+        assert canonical_unit(propuesta.unit) == "g"
+
+    def test_mermelada_de_3160_g_propone_la_cantidad_y_el_precio_correcto(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("Mermelada de mango 3160 g ➔ 350", products, provinces)
+
+        assert propuesta.price == Decimal("350")
+        assert propuesta.quantity == Decimal("3160")
+        assert propuesta.unit == "g"
+
+    def test_el_precio_no_se_confunde_con_la_cantidad_en_gramos(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        propuesta = propose("Pasta para fregar 500 g 1760", products, provinces)
+
+        assert propuesta.price == Decimal("1760")
+
+
 class TestCantidad:
     @pytest.mark.parametrize(
         ("texto", "cantidad", "unidad"),
@@ -448,6 +479,9 @@ class TestCantidad:
             # acepta tal cual.
             ("Aceite de 900 ml a 3400", Decimal("900"), "ml"),
             ("Aceite de 900ml a 3400", Decimal("900"), "ml"),
+            # Masa en gramos: `g` es canónica desde 2026-10-13.
+            ("Pasta para fregar 500 g a 1760", Decimal("500"), "g"),
+            ("Pasta para fregar 500g a 1760", Decimal("500"), "g"),
             ("Refresco Ciego Montero 1.5 L a 250", Decimal("1.5"), "l"),
         ],
     )
@@ -511,11 +545,11 @@ class TestCantidad:
     @pytest.mark.parametrize(
         ("texto", "precio"),
         [
-            # `g`, `oz`, `cc` y `u` NO están en el vocabulario canónico de
+            # `oz`, `cc` y `u` NO están en el vocabulario canónico de
             # `units.UNITS`: reconocerlas como cantidad dejaría una magnitud
             # huérfana que `canonical_unit()` tira a `None` después. Se
-            # protegen de leerse como precio, y nada más.
-            ("Mermelada de mango 3160 g ➔ 350", Decimal("350")),
+            # protegen de leerse como precio, y nada más. (`g` salió de esta
+            # lista el 2026-10-13: es canónica y sí se propone como cantidad.)
             ("Perfume de 100 oz a 4500", Decimal("4500")),
             ("Motor de 250 cc a 90000", Decimal("90000")),
             ("Caja x 12 u a 40800", Decimal("40800")),
@@ -1145,6 +1179,85 @@ class TestCatalogoNoEsBloqueEscalonado:
         assert len(propuestas) == 2
         assert propuestas[0].price == Decimal("25650")
         assert propuestas[1].price == Decimal("25000")
+
+
+class TestCatalogoSinMatchNoEsBloqueEscalonado:
+    """Mismo bug que `TestCatalogoNoEsBloqueEscalonado`, pero cuando NINGÚN
+    producto del anuncio está en el catálogo (pendientes-engine.md, P1).
+
+    Sin match, la guarda de catálogo no corría y el bloque heredaba el
+    encabezado como producto: un anuncio con varios productos colapsaba a dos
+    filas a nombre del encabezado y se perdían los productos y precios
+    intermedios. Las respuestas correctas están definidas a mano.
+    """
+
+    def test_catalogo_de_tienda_lee_cada_producto(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = (
+            "Tienda Los Primos\n"
+            "Detergente Ariel 1kg 350\n"
+            "Jabon Marsella 2kg 500\n"
+            "Mas de 10 cajas 28\n"
+        )
+
+        propuestas = propose_all(texto, products, provinces)
+
+        por_nombre = {p.product_name_guess: p for p in propuestas}
+        assert por_nombre["Detergente Ariel"].price == Decimal("350")
+        assert por_nombre["Detergente Ariel"].quantity == Decimal("1")
+        assert por_nombre["Detergente Ariel"].unit == "kg"
+        assert por_nombre["Jabon Marsella"].price == Decimal("500")
+        assert por_nombre["Jabon Marsella"].quantity == Decimal("2")
+        assert por_nombre["Jabon Marsella"].unit == "kg"
+        assert all(p.product_name_guess != "Tienda Los Primos" for p in propuestas)
+        # La línea «Mas de 10 cajas 28» la lee mal la lectura por línea (sale
+        # como producto «Mas de»): otro bug, anotado en pendientes-engine.md.
+        assert len(propuestas) >= 2
+
+    def test_tres_productos_sin_escalon_dan_tres_filas(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        texto = (
+            "Tienda X\n"
+            "Detergente Ariel 350 cup\n"
+            "Jabon Marsella 500 cup\n"
+            "Cloro Clorox 200 cup\n"
+        )
+
+        propuestas = propose_all(texto, products, provinces)
+
+        assert [p.price for p in propuestas] == [
+            Decimal("350"),
+            Decimal("500"),
+            Decimal("200"),
+        ]
+        assert [p.product_name_guess for p in propuestas] == [
+            "Detergente Ariel",
+            "Jabon Marsella",
+            "Cloro Clorox",
+        ]
+
+    def test_bloque_legitimo_sin_alta_sigue_igual(
+        self, products: list[Product], provinces: list[Province]
+    ) -> None:
+        """Contrapeso: un producto fuera del catálogo cuya línea de precio es
+        «La caja ...» (envase, no producto) sigue siendo un bloque."""
+        texto = (
+            "Detergente Ariel\n"
+            "CAJA DE 12 lb\n"
+            "La caja 400\n"
+            "Más de 10 cajas 380\n"
+        )
+
+        propuestas = propose_all(texto, products, provinces)
+
+        assert len(propuestas) == 2
+        assert all(p.product is None for p in propuestas)
+        assert all(p.product_name_guess == "Detergente Ariel" for p in propuestas)
+        assert propuestas[0].price == Decimal("400")
+        assert propuestas[1].price == Decimal("380")
+        assert propuestas[1].min_purchase_quantity == Decimal("120")
 
 
 class TestProposeAllPreciosEscalonados:

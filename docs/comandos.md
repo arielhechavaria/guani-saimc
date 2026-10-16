@@ -17,9 +17,17 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.ingestion`](#ingerir-la-bandeja-de-entrada) | Ingerir archivos de la bandeja | sí: filas crudas | no |
 | [`systemctl start saimc-prefill`](#pre-cálculo-ahora-a-mano) | Pre-calcular propuestas ya (y preguntarle a Jev, si está encendido) | sí: propuestas y señales de Jev | sí, tope 0,15 USD (más 0,01 de Jev) |
 | [Después de un deploy](#después-de-un-deploy-la-secuencia) | Backup, pull, migrar, reiniciar | sí | no |
+| [`tools/grabar_entradas.py`](#grabar-los-clips-de-entra-por-donde-quieras) | Grabar los clips y capturas de la landing | sí: archivos en `static/landing/` | no |
+| [`tools/producir_comercial.py`](#producir-el-comercial) | Producir el comercial de la landing | sí: `guani-flujo.mp4` y su poster | no (la voz sale del servicio gratuito Edge TTS) |
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
-| [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra la cola | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
+| [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra el conjunto de referencia congelado | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
+| [`saimc.extraction.reference_set`](#conjunto-de-referencia-en-seco-y-estado) | Qué anuncios entrarían al conjunto de referencia de H0; con `status`, la versión vigente y su deriva | no (en seco y `status`) | no |
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
+| [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de N días (apagado por defecto) | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
+| [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
+| [`saimc.instagram.sync`](#seguimiento-de-instagram) | Leer la cuenta de Instagram de Guani y guardar sus métricas (lo hace solo el temporizador cada 3 h) | en seco no; `--execute` escribe las tablas `instagram_*` y renueva el token si toca | no |
+| [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
+| [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
 | [`saimc.extraction.prefill` en seco](#pre-cálculo-en-seco) | Estimar el costo del pre-cálculo | no | no |
 | [`saimc.llm.provider`](#proveedor-del-asistente) | Ver por dónde llama el asistente (Anthropic o Vercel) y con qué modelo | no | no |
@@ -31,6 +39,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`systemctl` / `journalctl`](#temporizadores-y-servicios) | Estado, logs, frenar temporizadores | solo si frenás | no |
 | [`saimc.validation.revalidate --execute`](#revalidar-escribiendo) | Re-guardar estado de las filas | sí: `prices_history` | no |
 | [`saimc.validation.jev_signal --decided --execute`](#relleno-de-jev) | Preguntarle a Jev por los textos ya decididos | sí: `jev_signals` | sí, tope `SAIMC_LLM_JEV_MAX_COST` o `--max-cost` |
+| [`saimc.extraction.reference_set --execute`](#congelar-el-conjunto-de-referencia) | Congelar una versión nueva del conjunto de referencia | sí: `reference_set_members` | no |
 | [`saimc.basis_backfill --apply`](#backfill-de-base-de-precio) | Completar `price_basis` viejo | sí | no |
 | [`saimc.exchange_rate.backfill --apply`](#backfill-de-tasas-de-cambio) | Completar tasas pendientes | sí | no; consulta la API de elTOQUE |
 | [`scripts/redact_existing.py --apply`](#redactar-teléfonos-ya-guardados) | Quitar teléfonos del texto guardado | sí: `original_text` | no |
@@ -41,7 +50,8 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 
 > **Atención.** Gastan plata o reescriben datos: `prefill --execute`, `llm_backtest --execute`,
 > `scripts/jev_eval.py --execute` (y su `--check`, una sola llamada),
-> `saimc.validation.jev_signal --execute`, `revalidate --execute`, `alembic upgrade head`, y todo lo que lleva `--apply`. Hacé backup antes
+> `saimc.validation.jev_signal --execute`, `revalidate --execute`,
+> `saimc.extraction.reference_set --execute`, `alembic upgrade head`, y todo lo que lleva `--apply`. Hacé backup antes
 > de cualquiera que escriba en la base. Dos corridas reales del pre-cálculo no pueden solaparse,
 > se lancen como se lancen: la segunda encuentra el candado `data/prefill.lock`, avisa y sale sin
 > gastar (ver [«Pre-cálculo escribiendo, fuera de systemd»](#pre-cálculo-escribiendo-fuera-de-systemd)).
@@ -94,7 +104,7 @@ sudo systemctl start saimc-prefill.service
   empieza con una pasada que le hace tres preguntas a cada texto pendiente y guarda la respuesta en
   `jev_signals`. Tiene su propio tope, **`SAIMC_LLM_JEV_MAX_COST` (0,01 USD por corrida)**, aparte
   del de arriba. Un fallo de Jev no frena el resto ni pone en rojo la tarjeta «Pre-cálculo»: queda
-  en `journalctl` (líneas `jev.fallo`) y en `/control#jev`. Ver [Señal de Jev](#señal-de-jev).
+  en `journalctl` (líneas `jev.fallo`) y en `/control/calidad#jev`. Ver [Señal de Jev](#señal-de-jev).
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Paso 1».
 
 ---
@@ -158,13 +168,51 @@ sudo systemctl restart saimc.service
 .venv/bin/python -m saimc.extraction.measure --no-record
 ```
 
-- **Para qué**: calcula el porcentaje de extracción completa correcta contra la cola de curaduría
-  real. Con `--no-record` solo lo mirás.
+- **Para qué**: calcula el porcentaje de extracción completa correcta del extractor por reglas
+  contra el conjunto de referencia congelado (la versión vigente de `reference_set_members`), no
+  contra las filas vivas. Con `--no-record` solo lo mirás.
 - **Cuándo**: para ver el número sin ensuciar el histórico. Para dejar la corrida registrada, el
   mismo comando **sin** `--no-record`, siguiendo el runbook.
+- **Necesita**: un conjunto congelado. Si no hay ninguno termina con error (código 1), nombra el
+  comando de congelado y no escribe nada. Se congela una vez, con
+  [`reference_set --execute`](#congelar-el-conjunto-de-referencia).
+- **Cómo leer la salida**: arriba la versión y el hash del conjunto y los miembros con deriva
+  (anuncios editados después del congelado: no cambian el número). Los conteos de «Corpus» y la
+  tasa de descarte salen de la base de hoy.
 - **Cambia algo**: con `--no-record`, no. Sin él, agrega una línea a `docs/h0-runs.jsonl` (commiteala).
   **Gasta**: no.
 - Más: [runbook-medir-h0.md](runbook-medir-h0.md).
+
+### Conjunto de referencia, en seco y estado
+
+Qué anuncios entrarían al conjunto de referencia congelado de H0 (`docs/spec-slice-B3.md`,
+sección 1): los curados con filas, sin asistencia y que no se excluyan a mano.
+
+```
+.venv/bin/python -m saimc.extraction.reference_set
+```
+
+```
+.venv/bin/python -m saimc.extraction.reference_set --exclude ab9bb650 --exclude 0944e4dd
+```
+
+```
+.venv/bin/python -m saimc.extraction.reference_set status
+```
+
+- **Cambia algo**: no. **Gasta**: no.
+- En seco dice cuántos anuncios y filas entrarían, en total y por tipo (texto, imagen), cuántos
+  curados quedan afuera por cada motivo (asistidos, sin filas, excluidos a mano) y el hash que
+  tendría el conjunto. Cada curado cuenta en un solo motivo, en ese orden: «excluidos a mano»
+  son los que habrían entrado.
+- `--exclude` se repite, uno por anuncio. Acepta el id completo o su prefijo de 8 caracteres.
+  Si el prefijo es de más de un anuncio, o de ninguno, corta con código 2 y no escribe. Si el
+  anuncio ya quedaba afuera por otro motivo, lo avisa y no lo cuenta como excluido a mano.
+- `status` dice la versión vigente (la mayor), su n por tipo, su hash y los miembros con deriva:
+  los anuncios cuyas filas vivas ya no son las congeladas, porque se editaron o se borraron. La
+  deriva no cambia la referencia y no se arregla congelando de nuevo. Sin ninguna versión
+  congelada sale con código 1.
+- Para escribir: [«Congelar el conjunto de referencia»](#congelar-el-conjunto-de-referencia).
 
 ### Informe del modo sombra
 
@@ -187,7 +235,12 @@ sudo systemctl restart saimc.service
   .venv/bin/python -m saimc.validation.shadow --gold data/llm-backtest-results-v7.jsonl --grid --lane1-max-rows 1
   ```
 
-  El valor no está fijado: lo elige G1b.
+  G1b lo fijó en 1 (2026-10-09). Para ver el carril 1 con los valores que aprobó el
+  operador (`docs/spec-slice-B2b.md`):
+
+  ```
+  .venv/bin/python -m saimc.validation.shadow --gold data/llm-backtest-results-v7.jsonl --min-cell-n 5 --channel-min-history 3 --channel-max-edit-rate 0.5 --lane1-max-rows 1
+  ```
 - **Cómo leer la salida**: mirá la cota al 95%, no el porcentaje: un 0% sobre un n chico no dice
   nada.
 - **El bloque «Jev»** (A6b-2) cierra cada conjunto. Abre con `n = … de … textos`: cuántos textos
@@ -207,6 +260,143 @@ sudo systemctl restart saimc.service
   la línea de `docs/shadow-runs.jsonl` suma la clave `jev`.
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Una vez por semana»; el bloque
   «Jev», en [spec-slice-A6b.md](spec-slice-A6b.md), punto 8.
+
+### Tope de edad de la cola
+
+**Apagado por defecto** (`SAIMC_QUEUE_MAX_AGE_DAYS=0`): un anuncio viejo es histórico y no se descarta
+solo (decisión del 2026-10-13). Con un valor mayor que 0, un pendiente que lleva más de ese número de
+días sale de la cola solo:
+queda descartado con motivo `off_focus` y un evento automático con `expired_after_days`. No borra el
+crudo ni crea filas de precio. Corre solo al principio de cada pasada real del pre-cálculo (cada 3 h);
+a mano:
+
+```
+.venv/bin/python -m saimc.queue_expiry            # en seco: cuántos vencerían
+.venv/bin/python -m saimc.queue_expiry --execute  # descarta de verdad
+```
+
+- **Cambia algo**: solo con `--execute`. **Gasta**: no.
+- Para devolver a la cola lo que ya venció: ver la entrada del 2026-10-13 de `docs/decisions.md`.
+
+### Acceso al sitio público (formulario de entrada)
+
+Con `SAIMC_SITE_GATE_ENABLED=true` en el `.env`, quien abra la capa pública (`/`, `/precios`, producto,
+anuncio, `/datos.csv` y las páginas de texto) ve un formulario de usuario y contraseña en `/acceso`.
+Entrando, una cookie firmada deja pasar `SAIMC_SITE_ACCESS_DAYS` días (30 por defecto). Apagado por
+defecto: nada cambia hasta que lo enciendas.
+
+- **Las credenciales son las de `/control`** (`SAIMC_CURATION_USERNAME` y `SAIMC_CURATION_PASSWORD`).
+  **Ojo:** quien las tenga también puede abrir `/curation`, `/control` y `/catalog`. Para dar acceso solo
+  al sitio, pon otra contraseña en `SAIMC_SITE_PASSWORD`: vale únicamente en el formulario (con el mismo
+  usuario) y no abre la herramienta del operador. La del operador sigue valiendo en el formulario.
+- **Cambia algo**: no escribe en la base. Cambiar cualquiera de las dos contraseñas cierra todas las
+  sesiones abiertas.
+- **No toca** las rutas del operador (siguen con su HTTP Basic), el webhook de WAHA ni `/static`.
+- 5 intentos fallidos por origen en 10 minutos bloquean el formulario unos minutos.
+- Para encenderlo: agrega `SAIMC_SITE_GATE_ENABLED=true` (y, si quieres, `SAIMC_SITE_PASSWORD=...`) al
+  `.env` y reinicia `saimc.service`. Para apagarlo, quita la línea o ponla en `false`.
+
+### Avisos al celular (Telegram)
+
+El sistema le escribe al operador cuando algo lo necesita: una tarjeta de la franja de `/control`
+en ámbar o rojo (WAHA caído, ingesta parada, tasa vieja, pre-cálculo sin correr), o el carril 1
+frenado. Una vez al día (~09:00 de La Habana) manda un parte: si no llega, lo roto es el aviso.
+Un problema se avisa una vez, se recuerda a las 24 h, avisa si empeora y avisa cuando se resuelve.
+
+```
+.venv/bin/python -m saimc.alerting            # en seco: muestra qué mandaría
+.venv/bin/python -m saimc.alerting --execute  # manda y guarda el estado
+```
+
+- **Cambia algo**: solo con `--execute` (escribe `data/alerts-state.json`). **Gasta**: no.
+- **Puesta en marcha (una vez):** 1) en Telegram, hablar con `@BotFather`, `/newbot`, copiar el
+  token; 2) escribirle cualquier mensaje al bot nuevo; 3) abrir
+  `https://api.telegram.org/bot<TOKEN>/getUpdates` y copiar `chat.id`; 4) en el `.env`:
+  `SAIMC_TELEGRAM_BOT_TOKEN=...` y `SAIMC_TELEGRAM_CHAT_ID=...`; 5) probar con `--execute`;
+  6) `sudo cp systemd/saimc-alerts.* /etc/systemd/system/ && sudo systemctl daemon-reload &&
+  sudo systemctl enable --now saimc-alerts.timer`.
+- Sin token o chat, `--execute` avisa por consola y sale con código 2.
+
+### Seguimiento de Instagram
+
+Lee la cuenta propia de Guani por la API oficial (nunca publica ni lee cuentas ajenas) y guarda
+seguidores, publicaciones y sus métricas. Se ve en `/marketing`, sección «Instagram». Normalmente
+lo corre solo `saimc-instagram.timer` cada 3 h; esto es para probarlo o adelantarlo.
+
+```
+.venv/bin/python -m saimc.instagram.sync            # en seco: lee y cuenta, no escribe
+.venv/bin/python -m saimc.instagram.sync --execute  # escribe y renueva el token si toca
+```
+
+- **Cambia algo**: solo con `--execute` (tablas `instagram_*`). En seco tampoco renueva el token.
+  **Gasta**: no.
+- **Alta (una vez, a mano):** 1) la cuenta de Instagram tiene que ser profesional (Business o
+  Creator); 2) en Meta for Developers, crear una app con el producto *Instagram* (*API with
+  Instagram Login*), permisos `instagram_business_basic` e `instagram_business_manage_insights`, y
+  agregar la cuenta como tester; 3) generar el token de larga duración y ponerlo en el `.env` como
+  `SAIMC_INSTAGRAM_ACCESS_TOKEN=...` (y el id y secreto de la app en `SAIMC_INSTAGRAM_APP_ID` y
+  `SAIMC_INSTAGRAM_APP_SECRET`), **nunca por chat**; 4) migrar (`alembic upgrade head`); 5) probar
+  en seco y después con `--execute`; 6) instalar el temporizador:
+  `sudo cp systemd/saimc-instagram.service systemd/saimc-instagram.timer /etc/systemd/system/ &&
+  sudo systemctl daemon-reload && sudo systemctl enable --now saimc-instagram.timer`.
+- **El token vive en la base.** La primera corrida con `--execute` copia el del `.env` a la tabla
+  `instagram_credentials` y supone que vence a los 60 días. Desde ahí el lote lo renueva solo cuando
+  le quedan menos de 15 días, y cambiar el `.env` ya no tiene efecto.
+- **Si el token venció o fue revocado** el comando sale con código 1 y lo dice (`systemctl --failed`,
+  `journalctl -u saimc-instagram.service`). Un token vencido no se renueva: hay que repetir el paso
+  3 del alta, vaciar la tabla para que la próxima corrida siembre el nuevo y correr con `--execute`:
+
+```
+psql "$(grep -E '^SAIMC_DATABASE_URL=' .env | cut -d= -f2- | sed 's/postgresql+psycopg:/postgresql:/')" -P pager=off -c 'DELETE FROM instagram_credentials;'
+```
+
+```
+.venv/bin/python -m saimc.instagram.sync --execute
+```
+
+- Sin token en la base ni en el `.env`, avisa y sale con código 0: es una capacidad sin usar.
+- Una publicación suelta sin métricas (Meta puede tardar hasta 48 h) sale como «aviso» y no frena
+  el resto. Los carruseles no tienen métricas en la API; las stories, solo durante sus 24 h.
+
+### Carril 0 sobre lo pendiente
+
+El carril 0 descarta solo cuando se genera una propuesta nueva. Si cambia la regla (p. ej. la de «sin
+ningún dígito», 2026-10-13), lo que ya estaba pendiente no se vuelve a mirar: este comando lo hace.
+
+```
+.venv/bin/python -m saimc.validation.lane0            # en seco: cuántos descartaría
+.venv/bin/python -m saimc.validation.lane0 --execute  # descarta con evento automático
+```
+
+- **Cambia algo**: solo con `--execute`. **Gasta**: no (usa las propuestas guardadas).
+- Respeta los interruptores `SAIMC_LANE0_TEXT_ENABLED` / `SAIMC_LANE0_IMAGE_ENABLED`; apagados, avisa y
+  sale con código 2. Descartar con la auditoría del carril 0 queda sujeto a la muestra semanal.
+
+### Carril 1 en seco
+
+Qué textos pendientes, de los que ya tienen propuesta, aceptaría solo el carril 1 con los
+valores que aprobó el operador (`docs/spec-slice-B2b.md`: tope de 1 fila, canal sucio con 3
+decisiones y más de la mitad de las filas tocadas, celda de 5).
+
+```
+.venv/bin/python -m saimc.validation.lane1
+```
+
+- **Cambia algo**: no. **Gasta**: no (usa las propuestas guardadas).
+- Lista cada anuncio con su canal y cierra con «Entrarían al carril 1: N de M». `--limit N`
+  corta cuántos mira.
+- Después dice por qué se queda afuera el resto («Quedan afuera: N de M») con una tabla por
+  motivo y dos columnas: **anuncios** (cuántos tienen ese motivo; un anuncio puede tener varios,
+  así que la columna suma más que el total) y **solo** (cuántos frena únicamente ese motivo:
+  es lo que entraría quitando ese freno). Los motivos son los que devuelve el motor
+  (`validate_ad`), más la celda que diverge de sus filas de control y la fecha por defecto
+  posterior al día de La Habana. Con `--execute` no se imprime.
+- El freno de auditoría no es un motivo del anuncio: si está puesto, un aviso lo dice y
+  `--execute` no aceptaría ninguno. La fila en divisa sin tasa no aparece, porque en seco no se
+  resuelve la tasa.
+- En seco no se resuelve la tasa de cambio: una fila en divisa sin tasa no entra al aceptar.
+- Un anuncio capturado entre las 00:00 y las 04:00 UTC no entra: su fecha por defecto cae un
+  día después del día de La Habana, y el formulario tampoco la aceptaría.
 
 ### Revalidar en seco
 
@@ -231,6 +421,25 @@ sudo systemctl restart saimc.service
 - **Cuándo**: antes de una corrida grande, para saber el costo.
 - **Cambia algo**: no (por defecto es `--dry-run`). **Gasta**: no.
 - Más: [runbook-asistente-llm.md](runbook-asistente-llm.md), sección del pre-cálculo.
+
+### Rehacer las propuestas de prompt viejo
+
+```
+.venv/bin/python -m saimc.extraction.prefill --stale            # en seco: cuenta y estima
+.venv/bin/python -m saimc.extraction.prefill --stale --execute  # rehace de verdad
+```
+
+- **Para qué**: los textos pendientes cuya última propuesta se hizo con otro prompt (antes del
+  glosario o del vocabulario de hoy) vuelven a pasar por el modelo. De ahí salen la mayoría de las
+  abstenciones en cantidad, unidad y base que frenan el carril 1. Después de proponer, el carril 0
+  y el carril 1 se aplican igual que en una corrida normal.
+- **Cuándo**: después de cambiar el glosario o el prompt, con el en seco primero. Se puede acotar con
+  `--limit N` y `--max-cost USD`.
+- **Cambia algo**: con `--execute`, sí: guarda una propuesta nueva por anuncio (la vieja queda) y puede
+  descartar o aceptar solo, según los interruptores. **Gasta**: con `--execute`, sí (el 2026-10-13,
+  72 textos ≈ 0,14 USD). Solo textos.
+- **Cómo leer la salida**: la misma del pre-cálculo; la línea de arriba dice con qué versión de prompt
+  se compara. Es idempotente: una segunda corrida no encuentra nada viejo.
 
 ### Proveedor del asistente
 
@@ -380,7 +589,7 @@ SELECT validation_status, provenance, validation_detail->'jev' FROM prices_histo
 ```
 
 - **Para qué**: comprobar que la pasada de Jev guardó respuestas y que al curar se anotan.
-- **Cuándo**: al encender Jev, y cuando `/control#jev` muestre algo raro.
+- **Cuándo**: al encender Jev, y cuando `/control/calidad#jev` muestre algo raro.
 - **Cambia algo**: no. **Gasta**: no (las consultas; la pasada sí, con su tope).
 - **Cómo leer la salida**: la primera da una fila por origen (`prefill`, y `backfill` para lo que
   preguntó el [relleno](#relleno-de-jev) con `--decided`) con cuántas señales hay y cuánto costaron. La segunda trae `null` en la tercera columna cuando la fila no tiene señal: el
@@ -505,6 +714,10 @@ psql "$(grep -E '^SAIMC_DATABASE_URL=' .env | cut -d= -f2- | sed 's/postgresql+p
 Hay tres unidades: `saimc.service` (la aplicación, **sin archivo en `systemd/`**),
 `saimc-backup.service` + `.timer` (respaldo diario 03:00) y `saimc-prefill.service` + `.timer`
 (pre-cálculo cada 3 h). Las dos últimas están en [`systemd/`](../systemd/saimc-prefill.service).
+También están ahí `saimc-alerts` (avisos, cada 15 min) y `saimc-instagram` (cuenta de Instagram,
+cada 3 h a y media; instalación en [Seguimiento de Instagram](#seguimiento-de-instagram)). Sus
+comandos son los mismos de abajo cambiando el nombre de la unidad, p. ej.
+`journalctl -u saimc-instagram.service -n 50`.
 
 **Estado y cuándo toca**
 
@@ -599,6 +812,58 @@ sudo systemctl daemon-reload
   llama a Jev.
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md); contrato en [spec-slice-B1.md](spec-slice-B1.md).
 
+Para mirar de a muestras un bloque que se queda afuera (solo lectura, no gasta):
+
+```
+.venv/bin/python -m saimc.validation.lane1 --muestra "las reglas ven un producto piloto" --n 10
+```
+
+Imprime, de los anuncios cuyo motivo contiene ese texto, una muestra reproducible con canal, lo que
+dijo el modelo (descarte y motivo) y el comienzo del texto.
+
+### Carril 1 escribiendo
+
+Acepta de verdad lo que lista el comando en seco: guarda las filas con procedencia `auto`,
+deja el anuncio curado y las filas salen en el tablero.
+
+```
+.venv/bin/python -m saimc.validation.lane1 --execute
+```
+
+- **Cambia algo**: sí, crea filas en `prices_history`. **Gasta**: no.
+- Exige `SAIMC_LANE1_ENABLED=true` en el `.env`; apagado, avisa y sale con código 2 sin
+  escribir.
+- Con el interruptor encendido, el pre-cálculo hace lo mismo solo con cada propuesta nueva.
+- **El freno.** Si está puesto, el comando lo dice («Carril 1 con el freno puesto: …») y no
+  acepta nada. Desde el 2026-10-13 se pone solo cuando el error auditado supera la meta de 10 %
+  (ya no hay tope de aceptados sin auditar). Solo lo levanta el operador, fijando
+  `SAIMC_LANE1_AUDIT_SINCE=AAAA-MM-DD` en el `.env`: la cota vuelve a contar desde ese día.
+  Sin auditar nada el freno nunca salta: el error solo se mide si se audita, aunque sea una muestra.
+
+### Congelar el conjunto de referencia
+
+Escribe una versión nueva del conjunto de referencia de H0 con lo que lista el comando en seco.
+
+```
+.venv/bin/python -m saimc.extraction.reference_set --execute --exclude ab9bb650 --exclude 0944e4dd --exclude 8442a0dd --exclude e08f6cc2
+```
+
+- **Para qué**: guarda, por cada anuncio que entra, sus filas confirmadas de hoy y su hash en
+  `reference_set_members`. Imprime la versión, el n por tipo y el hash del conjunto.
+- **Cuándo**: una vez, después de migrar a `0031`. Una versión nueva solo ante un error de
+  etiquetado confirmado o anuncios nuevos etiquetados sin asistencia: rompe la comparación con
+  las corridas de H0 anteriores. No se congela de nuevo para mover un número.
+- **Cambia algo**: sí, agrega filas a `reference_set_members`. Nunca modifica ni borra una
+  versión anterior. **Gasta**: no.
+- Antes: backup y el [en seco](#conjunto-de-referencia-en-seco-y-estado) con los mismos
+  `--exclude`. Los conteos y el hash del `--execute` tienen que ser los del seco.
+- Los cuatro `--exclude` del ejemplo son los de la versión 1: los anuncios con las 7 filas
+  insertadas el 2026-10-05.
+- Después: anotá en `docs/decisions.md` la versión, el n por tipo, el hash del conjunto y los
+  excluidos con su motivo.
+- Sin ningún anuncio que entre, no escribe y sale con código 1.
+- Más: [spec-slice-B3.md](spec-slice-B3.md), secciones 1 y 2.
+
 ### Backfill de base de precio
 
 ```
@@ -646,6 +911,44 @@ sudo systemctl daemon-reload
 - **Cuándo**: una vez, o si se mejora la redacción y hay que repasar lo viejo. Primero sin `--apply`.
 - **Cambia algo**: solo con `--apply`. **Gasta**: no.
 - Más: `docs/decisions.md`, 2026-08-11.
+
+### Grabar los clips de «Entra por donde quieras»
+
+```
+.venv/bin/python tools/grabar_entradas.py
+```
+
+```
+.venv/bin/python tools/grabar_entradas.py mapa --base http://127.0.0.1:8000
+```
+
+- **Para qué**: graba, sobre el sitio real y con datos reales, un clip mudo de unos 6 s y una captura
+  (el `poster`) por vista: tablero, mapa y Explorar. Salen a `src/saimc/web/static/landing/` como
+  `entradas-<vista>.mp4` y `.webp`. Antes de grabar comprueba que la página no muestra ids de
+  anuncio, teléfonos ni enlaces de grupo; si los ve, se detiene sin escribir.
+- **Cuándo**: cuando cambie el tablero, el mapa o Explorar y las tarjetas de la landing se queden
+  atrás. Con el servidor ya corriendo (por defecto `http://127.0.0.1:8773`; `--base` lo cambia).
+- **Cambia algo**: sobrescribe esos seis archivos. Todo lo que pide al sitio son `GET`. **Gasta**: no.
+- Necesita Chromium de Playwright y `imageio-ffmpeg` (`pip install -e '.[marketing]'`).
+
+### Producir el comercial
+
+```
+.venv/bin/python tools/producir_comercial.py --work /tmp/guani-comercial
+```
+
+- **Para qué**: renderiza el comercial «Como se escoge el arroz» (`docs/concepto-comercial-guani.md`):
+  38,6 s, 720×1280, animación cuadro a cuadro con sonido sintetizado y voz de Edge TTS. Deja en
+  `--work` un máster (`master.mp4`), la versión normal (`comercial.mp4`) y la de entrega
+  (`entrega.mp4`, que no pasa de `--peso`), más la hoja de contacto, el espectro y `informe.json`.
+- **Cuándo**: cuando cambie el flujo o las cifras que enseña. Las cifras NO se leen del sitio: son
+  la foto del tablero del 11/09 al 11/10 de 2026 y viven en `tools/comercial/tiempos.py` (`DATA`).
+  Para publicarlo se copia `entrega.mp4` a `src/saimc/web/static/landing/guani-flujo.mp4` y el
+  cuadro de 2,0 s, como WebP, a `guani-flujo-poster.webp`.
+- **Cambia algo**: solo escribe en `--work`. Tarda unos 35 minutos. **Gasta**: no; el texto de la
+  locución viaja al servicio de voz de Microsoft (Edge TTS), sin cuenta ni costo.
+- Necesita Chromium de Playwright, `imageio-ffmpeg`, `Pillow`, `numpy` y `edge-tts`.
+  `--help` lista los tramos sueltos (`--desde`, `--hasta`, `--solo-cuadros`, `--solo-sonido`).
 
 ### Alias del foco
 

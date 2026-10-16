@@ -1,0 +1,315 @@
+{# Ingesta — salud de la ingesta, descarte por canal, horas y automatización, disponibilidad.
+   Parcial del layout `control_base.html`; el menú lateral vive allá. #}
+{% extends "control_base.html" %}
+
+{% block body %}
+  <!-- ---------- 6. Salud de la ingesta ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="ingesta">Salud de la ingesta</h2>
+      <span class="m3-sm m3-muted">
+        la tasa de descarte se mide sobre lo <em>decidido</em> (curado + descartado), y solo
+        cuenta lo descartado <em>sin dato útil</em> — §12.5. Lo que se tira por no ser piloto
+        o ser mayorista puro va aparte, en «fuera de foco»
+      </span>
+    </div>
+
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(170px, 1fr))">
+      <div class="m3-metric">
+        <div class="m3-metric-label">En cola</div>
+        <div class="m3-metric-value-sm">
+          {% if health.pending %}<a href="/curation">{{ health.pending }}</a>
+          {%- else %}<span class="m3-dim">0</span>{% endif %}
+        </div>
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Curados</div>
+        <div class="m3-metric-value-sm">{{ health.curated }}</div>
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Descartados</div>
+        <div class="m3-metric-value-sm">{{ health.discarded }}</div>
+        {% if health.discarded_off_focus %}
+        <div class="m3-metric-hint">
+          {{ health.discarded_off_focus }} fuera de foco
+          {%- if health.off_focus_rate is not none %} ({{ "%.0f"|format(health.off_focus_rate * 100) }}% de lo decidido){% endif %}
+          — anuncios con dato, no de piloto. No cuentan en la tasa.
+        </div>
+        {% endif %}
+      </div>
+      <div class="m3-metric">
+        <div class="m3-metric-label">Tasa de descarte</div>
+        <div class="m3-row" style="gap:8px">
+          <span class="m3-metric-value-sm">
+            {% if health.discard_rate is none %}<span class="m3-dim">—</span>
+            {%- else %}{{ "%.0f"|format(health.discard_rate * 100) }}%{% endif %}
+          </span>
+          {% if health.discard_rate is not none %}
+          <span class="m3-chip m3-chip-sm {{ 'm3-chip-warn' if health.above_objective else 'm3-chip-ok' }}">
+            <span class="m3-icon m3-icon-sm">{{ 'warning' if health.above_objective else 'check_circle' }}</span>
+            {{ 'sobre el 30%' if health.above_objective else 'bajo el 30%' }}
+          </span>
+          {% endif %}
+        </div>
+        <div class="m3-metric-hint">
+          {% if health.discard_rate is none %}
+            Nada decidido todavía (sin contar lo fuera de foco)
+          {% else %}
+            Solo «sin dato útil». Objetivo de §12.5 — el único umbral con veredicto de esta vista
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if health.above_objective %}
+    <div class="m3-banner m3-banner-warn m3-mt" role="alert">
+      <span class="m3-icon">warning</span>
+      <span>
+        Se descarta más de lo que §12.5 pone como objetivo. La especificación lo define como
+        «anuncios sin información económica extraíble», así que una tasa alta describe
+        <strong>qué se está capturando</strong>, no un error de curaduría: si el material que
+        entra a la bandeja no trae precio, el descarte es la respuesta correcta. Vale mirar de
+        qué canales viene lo que se descarta antes de tocar nada.
+      </span>
+    </div>
+    {% endif %}
+
+    {% if channel_intake or inactive_channels %}
+    <h3 class="m3-h3 m3-mt" id="canales">Descarte por canal</h3>
+    <p class="m3-sm m3-muted">
+      Ordenado por descartes absolutos, no por tasa: 5 descartes sobre 10 cuestan más hora de
+      curaduría que 2 sobre 2, aunque la tasa de estos últimos sea peor.
+      <strong>Captura manual</strong> agrupa los anuncios sin canal — la otra mitad del trabajo
+      del operador.
+    </p>
+    <p class="m3-sm m3-muted">
+      La <strong>tasa</strong> es la de §12.5 (<code>&lt;30%</code>): descartes sin dato sobre lo
+      decidido, <em>sin contar los fuera de foco</em>, que sí traían precio. <strong>Filas por
+      anuncio</strong> es lo que el canal rinde de verdad: filas de precio sobre anuncios
+      resueltos. Los <strong>minutos</strong> y las <strong>filas por hora</strong> salen de la
+      bitácora y solo cuentan decisiones de menos de 15 minutos por anuncio; sin bitácora aparece «—».
+    </p>
+    {% if inactive_channels %}
+    <p class="m3-sm m3-muted">
+      {% if show_inactive %}
+      Incluye {{ inactive_channels }} {{ "canal inactivo" if inactive_channels == 1 else "canales inactivos" }}.
+      <a href="{{ inactive_toggle_url }}">Ocultar inactivos</a>
+      {% else %}
+      Solo canales activos; las tarjetas de arriba suman también a los inactivos.
+      <a href="{{ inactive_toggle_url }}">Mostrar inactivos ({{ inactive_channels }})</a>
+      {% endif %}
+    </p>
+    {% endif %}
+    {% if channel_intake %}
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Canal</th>
+            <th scope="col" style="text-align:right">En cola (texto / imagen)</th>
+            <th scope="col" style="text-align:right">Curados</th>
+            <th scope="col" style="text-align:right">Descartados</th>
+            <th scope="col" style="text-align:right">Tasa</th>
+            <th scope="col" style="text-align:right">Filas por anuncio</th>
+            <th scope="col" style="text-align:right">Minutos</th>
+            <th scope="col" style="text-align:right">Filas por hora</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for canal in channel_intake %}
+          <tr>
+            <td class="m3-cell-strong">
+              {{ canal.channel_name or "Captura manual" }}
+              {% if canal.is_active == false %}<span class="m3-dim">(inactivo)</span>{% endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.pending %}<span class="m3-dim">{{ canal.text.pending }} / {{ canal.image.pending }}</span>
+              {%- else %}<span class="is-zero">—</span>{% endif %}
+            </td>
+            <td class="is-num">{{ canal.curated }}</td>
+            <td class="is-num">
+              {{ canal.discarded }}
+              {% if canal.discarded %}
+              <div class="m3-sm m3-dim">
+                {{ canal.discarded_off_focus }} fuera de foco ·
+                {{ canal.discarded_no_data }} sin dato ·
+                {{ canal.discarded_unrecorded }} sin motivo
+              </div>
+              {% endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.discard_rate is none %}<span class="m3-dim">—</span>
+              {%- else %}
+              <span class="m3-chip m3-chip-sm {{ 'm3-chip-warn' if canal.above_objective else 'm3-chip-ok' }}">
+                {{ "%.0f"|format(canal.discard_rate * 100) }}%
+              </span>
+              {%- endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.rows_per_decided is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.2f"|format(canal.rows_per_decided) }}{% endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.human_minutes is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.1f"|format(canal.human_minutes) }}{% endif %}
+            </td>
+            <td class="is-num">
+              {% if canal.rows_per_hour is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.0f"|format(canal.rows_per_hour) }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  <!-- ---------- 6b. Horas y automatización (A2d) ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="horas">Horas y automatización</h2>
+      <span class="m3-sm m3-muted">
+        semana a semana (de lunes a domingo), más reciente arriba — medición cruda, sin veredicto
+      </span>
+    </div>
+
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(170px, 1fr))">
+      <div class="m3-metric">
+        <div class="m3-metric-label">Pendiente más viejo</div>
+        <div class="m3-metric-value-sm">
+          {% if oldest_pending_days is none %}<span class="m3-dim">—</span>
+          {%- else %}{{ oldest_pending_days }} {{ "día" if oldest_pending_days == 1 else "días" }}{% endif %}
+        </div>
+        <div class="m3-metric-hint">
+          {% if oldest_pending_days is none %}No hay nada en cola
+          {%- else %}Desde que entró al sistema el anuncio más antiguo de la cola{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <p class="m3-sm m3-muted m3-mt">
+      Las <strong>horas</strong> excluyen las pausas de más de 15 minutos por anuncio y solo cuentan
+      decisiones con hora de vista: al lado va cuántos de los resueltos se pudieron medir. La
+      bitácora existe desde el 2026-10-02, así que las semanas anteriores no tienen horas ni
+      automatización. <strong>Automatización</strong> es lo resuelto sin tocarlo uno por uno
+      (lotes). <strong>Frescura</strong> es la mediana de días entre la publicación y el alta
+      de la fila. El <strong>costo</strong> es el del modelo por anuncio con propuesta; el OCR
+      es local y no cuenta.
+    </p>
+    {# B2a: el carril 0. Solo conteos: la cota de falsos descartes queda en la
+       auditoría, que pide operador, porque esta vista es pública. #}
+    <p class="m3-sm m3-mt">
+      <strong>Descartes automáticos</strong> (carril 0) esta semana:
+      texto {{ lane0_week.auto.get('text', 0) }}, imagen {{ lane0_week.auto.get('image', 0) }}.
+      Rescatados en la auditoría:
+      texto {{ lane0_week.rescued.get('text', 0) }}, imagen {{ lane0_week.rescued.get('image', 0) }}.
+    </p>
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Semana del</th>
+            <th scope="col" style="text-align:right">Resueltos</th>
+            <th scope="col" style="text-align:right">Horas por 1.000</th>
+            <th scope="col" style="text-align:right">Automatización</th>
+            <th scope="col" style="text-align:right">Frescura (días)</th>
+            <th scope="col" style="text-align:right">Costo por anuncio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for semana in weekly_automation | reverse %}
+          <tr>
+            <td class="m3-cell-strong">{{ semana.week_start.strftime("%Y-%m-%d") }}</td>
+            <td class="is-num">
+              {% if semana.resolved %}{{ semana.resolved }}
+              {%- else %}<span class="is-zero">0</span>{% endif %}
+            </td>
+            <td class="is-num">
+              {% if semana.hours_per_thousand is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.1f"|format(semana.hours_per_thousand) }}{% endif %}
+              {% if semana.resolved %}
+              <div class="m3-sm m3-dim">
+                {{ "%.2f"|format(semana.human_hours) }} h ·
+                {{ semana.timed_resolved }} de {{ semana.resolved }} medidos
+              </div>
+              {% endif %}
+            </td>
+            <td class="is-num">
+              {% if semana.automation_rate is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.0f"|format(semana.automation_rate * 100) }}%{% endif %}
+            </td>
+            <td class="is-num">
+              {% if semana.freshness_days is none %}<span class="m3-dim">—</span>
+              {%- else %}{{ "%.1f"|format(semana.freshness_days) }}{% endif %}
+            </td>
+            <td class="is-num">
+              {% if semana.cost_per_ad is none %}<span class="m3-dim">—</span>
+              {%- else %}${{ "%.4f"|format(semana.cost_per_ad) }}{% endif %}
+              {% if semana.proposal_ads %}
+              <div class="m3-sm m3-dim">
+                {{ semana.proposal_ads }} {{ "anuncio" if semana.proposal_ads == 1 else "anuncios" }}
+                {%- if semana.unpriced_proposals %} · {{ semana.unpriced_proposals }} sin tarifa{% endif %}
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ---------- 9. Disponibilidad ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="disponibilidad">Disponibilidad</h2>
+      <span class="m3-sm m3-muted">anuncios esta ventana ({{ retail_range_days }} días) contra la anterior, mismo ancho</span>
+    </div>
+    <div class="m3-notes-grid">
+      <div>
+        <strong>Sin score ni umbral</strong> (§7.3, §12.6): la especificación define
+        <code>availability_index</code> con un score 0-100 pero nunca dice cómo calcularlo, y su
+        ejemplo ("32/100 → Escasez") es un umbral sobre una escala que no existe. Lo que se
+        muestra acá es el conteo crudo, dos ventanas iguales una al lado de la otra.
+      </div>
+      <div>
+        <strong>Un producto en cero esta semana no desaparece</strong> de la tabla si tenía
+        anuncios la semana anterior: es justo la fila que conviene mirar primero.
+      </div>
+    </div>
+
+    {% if not availability %}
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span>
+      <span>Ninguna celda tiene anuncios en esta ventana ni en la anterior todavía.</span>
+    </div>
+    {% else %}
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Producto</th>
+            <th scope="col">Provincia</th>
+            <th scope="col" style="text-align:right">Esta ventana</th>
+            <th scope="col" style="text-align:right">Anterior</th>
+            <th scope="col" style="text-align:right">Diferencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in availability %}
+          <tr>
+            <td class="m3-cell-strong">{{ fila.product_name }}</td>
+            <td class="m3-sm">{{ fila.province_name or "— sin provincia —" }}</td>
+            <td class="is-num">{{ fila.current_count }}</td>
+            <td class="is-num m3-dim">{{ fila.previous_count }}</td>
+            <td class="is-num">{{ "%+d"|format(fila.delta) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+{% endblock %}

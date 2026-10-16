@@ -58,8 +58,10 @@ import httpx
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
+from saimc import queue_expiry
 from saimc.config import Settings, get_settings
 from saimc.db import session_scope
+from saimc.exchange_rate import Fetcher
 from saimc.extraction import (
     llm_assist,
     llm_propose_ad,
@@ -69,7 +71,7 @@ from saimc.extraction import (
     prefill_status,
 )
 from saimc.extraction.engine import mentions_any_product
-from saimc.glossary import active_glossary_entries
+from saimc.glossary import active_glossary_entries, effective_prompt_version
 from saimc.llm.provider import LLMConfig, canonical_model, effective_model, resolve_config
 from saimc.models import (
     ContentType,
@@ -80,9 +82,10 @@ from saimc.models import (
     Province,
     RawIngestion,
 )
+from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
-from saimc.validation import jev_signal, lane0
+from saimc.validation import jev_signal, lane0, lane1
 from saimc.validation.context import Catalog
 
 logger = logging.getLogger(__name__)
@@ -109,10 +112,12 @@ def select_candidates(
     *,
     include_off_focus: bool = False,
 ) -> list[RawIngestion]:
-    """Pendientes sin propuesta `ok` guardada, más viejo primero, EN FOCO.
+    """Pendientes sin propuesta `ok` guardada, más nuevo primero, EN FOCO.
 
-    Mismo orden que la cola (`captured_at` ascendente, `_pending_all` en
-    `curation.py`) y el mismo criterio de foco que `_pending_in_focus`: un
+    Mismo orden que la cola (`captured_at` descendente, `_pending_all` en
+    `curation.py`): el operador publica con lo de las últimas 24 h, así que con
+    el tope de gasto por corrida lo de hoy no puede esperar detrás del
+    histórico (2026-10-13). Y el mismo criterio de foco que `_pending_in_focus`: un
     texto que no menciona ningún producto del foco se descarta en lote
     (`discard_out_of_focus`) sin pasar nunca por curaduría, así que pagarle
     una propuesta acá es tirar la plata (docs/plan-asistente-llm-cola-
@@ -137,7 +142,7 @@ def select_candidates(
     stmt = (
         select(RawIngestion)
         .where(RawIngestion.processing_status == ProcessingStatus.PENDING, ~has_ok)
-        .order_by(RawIngestion.captured_at.asc())
+        .order_by(RawIngestion.captured_at.desc())
     )
     pending = list(session.execute(stmt).scalars().all())
     en_foco = [
@@ -148,6 +153,47 @@ def select_candidates(
         or mentions_any_product(ingestion.original_text, products)
     ]
     return en_foco if limit is None else en_foco[:limit]
+
+
+def select_stale_candidates(
+    session: Session,
+    products: Sequence[Product],
+    current_version: str,
+    limit: int | None = None,
+    *,
+    include_off_focus: bool = False,
+) -> list[RawIngestion]:
+    """Pendientes cuya última propuesta buena se hizo con otro prompt, EN FOCO.
+
+    `current_version` es la versión efectiva de hoy (`PROMPT_VERSION` más el hash
+    del glosario activo). Los que no tienen propuesta no entran: son de
+    `select_candidates`. Solo textos. Mismo orden (más nuevo primero) y mismo
+    criterio de foco. Sirve para rehacer lo que se propuso antes de que el glosario o el
+    vocabulario existieran: ahí nacen las abstenciones que frenan el carril 1
+    (`docs/analisis-carril1-frenos.md`, §3).
+    """
+    stmt = (
+        select(RawIngestion)
+        .where(
+            RawIngestion.processing_status == ProcessingStatus.PENDING,
+            # Solo textos: una imagen no entra al carril 1 y rehacerla suma OCR.
+            RawIngestion.content_type == ContentType.TEXT,
+        )
+        .order_by(RawIngestion.captured_at.desc())
+    )
+    stale: list[RawIngestion] = []
+    for ingestion in session.execute(stmt).scalars().all():
+        latest = llm_store.latest_ok_proposal(session, ingestion.id)
+        if latest is None or latest.prompt_version == current_version:
+            continue
+        if not (
+            include_off_focus
+            or ingestion.original_text is None
+            or mentions_any_product(ingestion.original_text, products)
+        ):
+            continue
+        stale.append(ingestion)
+    return stale if limit is None else stale[:limit]
 
 
 # --- estimación (dry-run) ---------------------------------------------------
@@ -206,8 +252,13 @@ def estimate(session: Session, candidates: Sequence[RawIngestion], model: str) -
     return Estimate(ads=ads, model=model, per_ad_usd=per_ad, basis=basis)
 
 
-def print_estimate(est: Estimate, out: Callable[[str], None] = print) -> None:
-    out("Pendientes sin propuesta guardada:")
+def print_estimate(
+    est: Estimate,
+    out: Callable[[str], None] = print,
+    *,
+    title: str = "Pendientes sin propuesta guardada:",
+) -> None:
+    out(title)
     for tipo, etiqueta in _TYPE_LABELS.items():
         out(f"  {etiqueta}: {est.ads.get(tipo, 0)}")
     out(f"  total: {est.total_ads}")
@@ -236,6 +287,8 @@ class RunResult:
     auto_discarded: dict[str, int] = field(
         default_factory=lambda: dict.fromkeys(_TYPE_LABELS, 0)
     )
+    #: Textos que el carril 1 aceptó solos en esta corrida (B2b-2).
+    auto_accepted: int = 0
 
 
 def run_prefill(
@@ -252,6 +305,8 @@ def run_prefill(
     max_cost: float | None = None,
     expected_per_ad: float | None = None,
     lane0_types: frozenset[str] = frozenset(),
+    lane1_fetcher: Fetcher | None = None,
+    lane1_gate: lane1.Gate | None = None,
     out: Callable[[str], None] = print,
     llm: LLMConfig | None = None,
 ) -> RunResult:
@@ -264,6 +319,11 @@ def run_prefill(
 
     `lane0_types` son los tipos con el carril 0 encendido
     (`validation.lane0.enabled_types`); vacío, ningún anuncio se descarta solo.
+
+    `lane1_fetcher` enciende el carril 1 (`validation.lane1`): es de dónde sale
+    la tasa de cambio de una fila en divisa. `None`, ningún anuncio se acepta
+    solo. Va después del carril 0 y solo si este no descartó. `lane1_gate` es
+    su freno (`validation.lane1.Gate`): con él puesto, nada se acepta.
 
     Con `max_cost`, antes de cada llamada se frena si el acumulado más lo que
     se espera que cueste la siguiente lo pasaría. «Lo que se espera» es el
@@ -335,6 +395,21 @@ def run_prefill(
                 catalog=catalog,
             )
         )
+        auto_accepted = (
+            stored is not None
+            and not auto_discarded
+            and lane1_fetcher is not None
+            and lane1.apply_lane_1(
+                session,
+                ingestion,
+                stored,
+                proposal,
+                text=text,
+                catalog=catalog,
+                fetcher=lane1_fetcher,
+                gate=lane1_gate,
+            )
+        )
         session.commit()
         llm_propose_ad.record_operator_run(
             proposal,
@@ -349,6 +424,7 @@ def run_prefill(
         if auto_discarded:
             tipo = str(ingestion.content_type)
             result.auto_discarded[tipo] = result.auto_discarded.get(tipo, 0) + 1
+        result.auto_accepted += auto_accepted
         result.cost_usd += _cost(proposal.input_tokens, proposal.output_tokens, model) or 0.0
         estado = (
             f"DEGRADADO ({proposal.failure})"
@@ -356,6 +432,7 @@ def run_prefill(
             else f"ok, {len(proposal.rows)} filas"
             + (" (sugiere descartar)" if proposal.discard else "")
             + (" — DESCARTADO SOLO (carril 0)" if auto_discarded else "")
+            + (" — ACEPTADO SOLO (carril 1)" if auto_accepted else "")
         )
         out(
             f"[{n}/{total}] {short_id} {ingestion.content_type}: {estado} — "
@@ -394,6 +471,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=None, help="Tope de anuncios.")
     parser.add_argument(
+        "--stale",
+        action="store_true",
+        help=(
+            "En vez de los pendientes sin propuesta, rehace los que ya tienen una hecha con "
+            "otro prompt (antes del glosario o del vocabulario actual). Con --execute gasta."
+        ),
+    )
+    parser.add_argument(
         "--max-cost",
         type=float,
         default=None,
@@ -422,12 +507,14 @@ def execute(
     transcribe: ocr_store.Transcriber | None = None,
     jev_http: httpx.Client | None = None,
     jev_sleep: Callable[[float], None] = time.sleep,
+    rate_fetcher: Fetcher | None = None,
     out: Callable[[str], None] = print,
 ) -> int:
     """Corre el modo pedido. Devuelve el código de salida.
 
     `jev_http` y `jev_sleep` son para los tests de la pasada de Jev: en la
-    corrida real quedan en su valor por defecto.
+    corrida real quedan en su valor por defecto. `rate_fetcher` es la tasa de
+    cambio para el carril 1; por defecto, elTOQUE con la configuración.
 
     La corrida real va entera bajo el candado, pasada de Jev incluida: también
     gasta. Si otra corrida lo tiene, se sale con 0 —no es una falla, y con otro
@@ -437,7 +524,8 @@ def execute(
     if not args.execute:
         return _run_mode(
             args, session, settings,
-            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep, out=out,
+            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep,
+            rate_fetcher=rate_fetcher, out=out,
         )
     with prefill_lock.run_lock(settings.prefill_lock_path) as tomado:
         if not tomado:
@@ -449,7 +537,8 @@ def execute(
             return 0
         return _run_mode(
             args, session, settings,
-            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep, out=out,
+            client=client, transcribe=transcribe, jev_http=jev_http, jev_sleep=jev_sleep,
+            rate_fetcher=rate_fetcher, out=out,
         )
 
 
@@ -462,6 +551,7 @@ def _run_mode(
     transcribe: ocr_store.Transcriber | None,
     jev_http: httpx.Client | None,
     jev_sleep: Callable[[float], None],
+    rate_fetcher: Fetcher | None,
     out: Callable[[str], None],
 ) -> int:
     """El modo pedido, ya con el candado tomado si es la corrida real."""
@@ -472,16 +562,35 @@ def _run_mode(
     # Canónico (sin prefijo de proveedor): con él se estima y se tarifa. No
     # necesita clave, así que el dry-run sigue andando sin ninguna.
     model = canonical_model(args.model) if args.model else effective_model(settings)
+    # El tope de edad de la cola corre primero en cada pasada real, antes de
+    # elegir candidatos: no se gasta API en un anuncio que ya vence, y un
+    # pendiente viejo no espera a que haya trabajo ni clave.
+    if args.execute:
+        vencidos = queue_expiry.expire_stale(
+            session, now=utc_now(), max_age_days=settings.queue_max_age_days
+        )
+        session.commit()
+        if settings.queue_max_age_days > 0:
+            out(f"Vencidos por edad (más de {settings.queue_max_age_days} días): {vencidos}")
     products = pilot_products(session)
     lane0_types = lane0.enabled_types(settings)
-    candidates = select_candidates(
-        session, products, args.limit, include_off_focus=ContentType.TEXT.value in lane0_types
-    )
+    off_focus = ContentType.TEXT.value in lane0_types
+    if args.stale:
+        version = effective_prompt_version(
+            llm_propose_ad.PROMPT_VERSION, active_glossary_entries(session)
+        )
+        candidates = select_stale_candidates(
+            session, products, version, args.limit, include_off_focus=off_focus
+        )
+        title = f"Pendientes con propuesta de prompt viejo (la de hoy es {version}):"
+    else:
+        candidates = select_candidates(session, products, args.limit, include_off_focus=off_focus)
+        title = "Pendientes sin propuesta guardada:"
     est = estimate(session, candidates, model)
 
     if not args.execute:
         out("MODO DRY-RUN: no se llama a ninguna API ni se necesita clave.")
-        print_estimate(est, out)
+        print_estimate(est, out, title=title)
         out("Para la corrida real: agregá --execute (usa la clave de la configuración).")
         return 0
 
@@ -495,7 +604,10 @@ def _run_mode(
     # `--model` y `--timeout` pisan lo de la configuración; el modelo que se
     # manda (con prefijo en Vercel) se recalcula ahí.
     llm = llm.with_overrides(model=args.model, timeout=args.timeout)
-    print_estimate(est, out)
+    print_estimate(est, out, title=title)
+    # El freno del carril 1 se lee una vez, antes de gastar: si está puesto,
+    # la corrida igual guarda propuestas, pero no acepta nada.
+    lane1_gate = lane1.Gate(session, settings) if lane1.enabled(settings) else None
     if est.per_ad_usd is None:
         out(f"AVISO: {model} no tiene tarifa en llm_assist.py; el costo acumulado no se estima.")
     result = run_prefill(
@@ -509,6 +621,10 @@ def _run_mode(
         max_cost=args.max_cost,
         expected_per_ad=est.per_ad_usd,
         lane0_types=lane0_types,
+        lane1_fetcher=(
+            (rate_fetcher or lane1.rate_fetcher(settings)) if lane1.enabled(settings) else None
+        ),
+        lane1_gate=lane1_gate,
         out=out,
     )
     out(
@@ -522,6 +638,15 @@ def _run_mode(
             for tipo, etiqueta in _TYPE_LABELS.items()
         )
         + ("" if lane0_types else " (interruptores apagados)")
+    )
+    out(
+        f"Aceptados solos (carril 1): {result.auto_accepted}"
+        + ("" if lane1.enabled(settings) else " (interruptor apagado)")
+        + (
+            f" — freno puesto: {lane1_gate.brake.reason}"
+            if lane1_gate is not None and lane1_gate.brake.on
+            else ""
+        )
     )
     code = 1 if result.aborted_failure else 0
     _record_run(settings, code, result, jev)

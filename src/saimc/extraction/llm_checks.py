@@ -64,18 +64,64 @@ _SPACED_NUMBER_RE = re.compile(r"\d{1,3}(?: \d{3})+(?:[.,]\d+)?")
 _PLAIN_NUMBER_RE = re.compile(r"\d[\d.,]*")
 
 
+# «8mil», «8 mil», «$8mil»: el vendedor escribe los miles con la palabra. Sin el
+# `\b` final, «8 miles» o «8 milímetros» se leerían como 8000.
+_MIL_NUMBER_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*mil\b", re.IGNORECASE)
+
+
 def _price_in_fragment(fragment: str, price: Decimal) -> bool:
     """¿Algún número del fragmento vale exactamente `price`?
 
     Se reusa `engine._normalize_number`, que ya entiende los formatos del
     mercado (punto o coma de miles, coma decimal): así «30.885», «30 885» y
-    «30885» son el mismo precio y «885» no lo es.
+    «30885» son el mismo precio y «885» no lo es. «8mil» vale 8000.
     """
     for regex in (_SPACED_NUMBER_RE, _PLAIN_NUMBER_RE):
         for match in regex.finditer(fragment):
             if _normalize_number(match.group(0)) == price:
                 return True
+    for match in _MIL_NUMBER_RE.finditer(fragment):
+        base = _normalize_number(match.group(1))
+        if base is not None and base * 1000 == price:
+            return True
     return False
+
+
+# Los trozos de una cita: el modelo une fragmentos reales con «...» o con saltos
+# de línea cuando el anuncio los trae separados.
+_CITE_SPLIT_RE = re.compile(r"\.{2,}|…|\n")
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]")
+# Un trozo más corto que esto casi siempre aparece por azar: no prueba nada.
+_MIN_PIECE_LENGTH = 3
+
+
+def _alnum(value: str) -> str:
+    """Solo letras y números, sin tildes ni mayúsculas: ignora emoji, signos y
+    blancos, que el modelo omite al copiar sin que el anuncio sea otro."""
+    return _NON_ALNUM_RE.sub("", _normalize(value))
+
+
+def _cited_in(evidence: str, haystack: str, loose_haystack: str) -> bool:
+    """¿La cita sale del texto? Literal, o por trozos en orden sin contar signos.
+
+    Primero la comparación estricta de siempre. Si falla, cada trozo (separado
+    por «...» o saltos de línea) tiene que aparecer, solo con letras y números,
+    en el texto y en el mismo orden. Una cita con palabras reordenadas o un
+    trozo que el texto no dice sigue sin encontrarse.
+    """
+    if _squash(evidence) in haystack:
+        return True
+    pieces = [_alnum(piece) for piece in _CITE_SPLIT_RE.split(evidence)]
+    pieces = [piece for piece in pieces if piece]
+    if not pieces or max(len(piece) for piece in pieces) < _MIN_PIECE_LENGTH:
+        return False
+    position = 0
+    for piece in pieces:
+        at = loose_haystack.find(piece, position)
+        if at < 0:
+            return False
+        position = at + len(piece)
+    return True
 
 
 def verify_evidence(
@@ -86,14 +132,16 @@ def verify_evidence(
     """Comprueba cada fragmento citado contra el texto del anuncio.
 
     `text` es el que vio el modelo (ya redactado). El fragmento cuenta como
-    hallado si, normalizado, es subcadena del texto normalizado. `rows` aporta
+    hallado si, normalizado, es subcadena del texto normalizado, o si cada uno
+    de sus trozos lo es sin contar emoji ni signos (`_cited_in`). `rows` aporta
     el precio de cada fila (`rows_meta` va en paralelo, mismo índice).
     """
     haystack = _squash(text)
+    loose_haystack = _alnum(text)
     verified: list[RowMeta] = []
     for row, meta in zip(rows, rows_meta, strict=True):
         fragment = _squash(meta.evidence) if meta.evidence else ""
-        found = bool(fragment) and fragment in haystack
+        found = bool(fragment) and _cited_in(meta.evidence or "", haystack, loose_haystack)
         price_in = None if row.price is None else _price_in_fragment(fragment, row.price)
         verified.append(replace(meta, evidence_found=found, price_in_evidence=price_in))
     return verified
@@ -215,7 +263,7 @@ def match_rule_rows(
         for row in model_rows
     ]
     pairs = measure._match_rows_to_candidates(
-        stand_ins,  # type: ignore[arg-type]  # duck typing sobre PriceHistory
+        stand_ins,
         list(rule_proposals),
     )
     real = {id(r) for r in rule_proposals}

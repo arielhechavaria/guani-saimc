@@ -76,5 +76,101 @@
     <p class="m3-xs m3-muted" style="margin:0 24px 24px">«{{ selected_product }}» no está en el foco todavía.</p>
     {% endif %}
   </section>
+
+  {#- Instagram (docs/spec-slice-instagram.md). Decidido a 390 px: la tabla de
+      publicaciones lleva solo dos cifras en columna (vistas y alcance); el resto
+      va en una línea bajo cada publicación, que entra a cualquier ancho. -#}
+  <section class="m3-card" id="instagram">
+    <div class="m3-card-head">
+      <div class="m3-topbar-main">
+        <h2 class="m3-h2">Instagram</h2>
+        <p class="m3-note" style="margin-bottom:0">
+          {% if instagram.last_sync %}
+          {{ instagram.current_followers }} seguidores · última lectura
+          {{ instagram.last_sync.strftime("%d/%m %H:%M") }} UTC. Meta puede tardar hasta 48 h en
+          completar las cifras.
+          {% else %}
+          Todavía no hay lecturas de Instagram. Las guarda el lote
+          <code>saimc.instagram.sync</code> cada 3 h, una vez hecha el alta del token
+          (docs/comandos.md, «Seguimiento de Instagram»).
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    {% if instagram.posts %}
+    <div class="m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Publicación</th>
+            <th scope="col" style="text-align:right">Vistas</th>
+            <th scope="col" style="text-align:right">Alcance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for post in instagram.posts %}
+          {% set m = post.metrics %}
+          <tr>
+            <td>
+              <span class="m3-cell-strong">{{ post.type_label }}</span>
+              {% if post.posted_at %}<span class="m3-dim">· {{ post.posted_at.strftime("%d/%m") }}</span>{% endif %}
+              {#- El margen negativo agranda el área táctil a 44 px sin mover la fila. -#}
+              {% if post.permalink %}· <a href="{{ post.permalink }}" target="_blank" rel="noopener" style="display:inline-block; padding:12px 4px; margin:-12px -4px">ver</a>{% endif %}
+              {% if post.caption_short %}<div class="m3-cell-sub">{{ post.caption_short }}</div>{% endif %}
+              <div class="m3-cell-sub">
+                {% if m %}
+                {%- set partes = [] -%}
+                {%- if m.total_interactions is not none %}{% set _ = partes.append(m.total_interactions ~ " interacciones") %}{% endif -%}
+                {%- if m.likes is not none %}{% set _ = partes.append(m.likes ~ " me gusta") %}{% endif -%}
+                {%- if m.comments is not none %}{% set _ = partes.append(m.comments ~ " comentarios") %}{% endif -%}
+                {%- if m.saved is not none %}{% set _ = partes.append(m.saved ~ " guardados") %}{% endif -%}
+                {%- if m.shares is not none %}{% set _ = partes.append(m.shares ~ " compartidos") %}{% endif -%}
+                {%- if post.avg_watch_seconds is not none %}{% set _ = partes.append(("%.1f"|format(post.avg_watch_seconds))|replace(".", ",") ~ " s de reproducción media") %}{% endif -%}
+                {{ partes | join(" · ") }}
+                {% else %}
+                Sin cifras: un carrusel (Meta no las da) o todavía sin datos.
+                {% endif %}
+              </div>
+            </td>
+            <td class="is-num">{% if m and m.views is not none %}{{ m.views }}{% else %}<span class="is-zero">—</span>{% endif %}</td>
+            <td class="is-num">{% if m and m.reach is not none %}{{ m.reach }}{% else %}<span class="is-zero">—</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if instagram.followers %}
+    <div class="m3-card-head" style="padding-bottom:8px">
+      <h3 class="m3-h3">Seguidores en el tiempo</h3>
+    </div>
+    <div class="m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Día (UTC)</th>
+            <th scope="col" style="text-align:right">Seguidores</th>
+            <th scope="col" style="text-align:right">Cambio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in instagram.followers %}
+          <tr>
+            <td>{{ d.day.strftime("%d/%m/%Y") }}</td>
+            <td class="is-num">{{ d.followers }}</td>
+            <td class="is-num">
+              {% if d.change is none %}<span class="is-zero">—</span>
+              {%- elif d.change > 0 %}+{{ d.change }}
+              {%- else %}{{ d.change }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}

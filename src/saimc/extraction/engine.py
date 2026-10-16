@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
+from saimc.exchange_rate.service import anchor_date
 from saimc.models import Currency, Product, Province
 from saimc.units import PACKAGING, canonical_unit
 
@@ -170,6 +171,11 @@ _DUAL_PRICE_TWO_CURRENCIES_RE = re.compile(
 _UNIT_WORDS = (
     "lb",
     "kg",
+    "gramos",
+    "gramo",
+    "grs",
+    "gr",
+    "g",
     "cajas",
     "caja",
     "docena",
@@ -180,12 +186,12 @@ _UNIT_WORDS = (
     "unidad",
 )
 
-# Magnitudes que el mercado escribe pero `units.UNITS` no almacena ("500 g",
-# "12 u", "250 cc"). NO entran en `_QUANTITY_RE` por el motivo de arriba, pero
+# Magnitudes que el mercado escribe pero `units.UNITS` no almacena ("12 u",
+# "250 cc"). El gramo dejó de estar acá el 2026-10-13: es canónico. NO entran en `_QUANTITY_RE` por el motivo de arriba, pero
 # sí tienen que impedir que su número se lea como precio: ése es el otro rol
 # que la tupla única cumplía sin decirlo, y confundirlos es lo que hacía que
 # "Vinagre 500 ml ➔ 220" propusiera 500.
-_NON_CANONICAL_MAGNITUDE_WORDS = ("gr", "g", "oz", "cc", "lt", "unidades", "uds", "u")
+_NON_CANONICAL_MAGNITUDE_WORDS = ("oz", "cc", "lt", "unidades", "uds", "u")
 
 
 def _alternation(words: Sequence[str]) -> str:
@@ -468,16 +474,16 @@ def guess_published_date(text: str, captured_at: datetime) -> date | None:
     Heurística de sugerencia, no un valor confirmado — la cola de curaduría
     la prellena y el operador la revisa o corrige, igual que
     `guess_source_reference`/`product_name_guess`. Nunca devuelve una fecha
-    posterior a `captured_at.date()`: un token relativo ("ayer", "D de mes")
-    solo tiene sentido mirando hacia el pasado desde el momento de la
-    captura.
+    posterior al día de la captura en La Habana (`anchor_date`, no el día en
+    UTC): un token relativo ("ayer", "D de mes") solo tiene sentido mirando
+    hacia el pasado desde el momento de la captura.
     """
     match = _match_source_line(text)
     if match is None:
         return None
 
     when = match.group("when").lower()
-    captured_date = captured_at.date()
+    captured_date = anchor_date(None, captured_at)
 
     if when == "hoy":
         return captured_date
@@ -1012,6 +1018,19 @@ def _block_header(lines: Sequence[str]) -> str | None:
     return None
 
 
+def _names_own_product(line: str) -> bool:
+    """La línea con precio trae su propia frase de producto, no un envase.
+
+    «Detergente Ariel 1kg 350» sí; «La caja 28,5 usd» no: la frase es el
+    envase («caja», «saco»...) y el producto lo pone el encabezado del bloque.
+    """
+    phrase = _guess_product_phrase(line)
+    if phrase is None:
+        return False
+    words = [w for w in phrase.lower().split() if w not in {"la", "el", "los", "las"}]
+    return bool(words) and words[0] not in _LOT_WORDS
+
+
 def _tier_minimum(
     count: Decimal, word: str | None, lot_quantity: Decimal | None, lot_unit: str | None
 ) -> Decimal | None:
@@ -1121,6 +1140,22 @@ def _tiered_proposals(
             line for line in con_precio if _match_product(line, products) is product
         ]
         if len(propias) > 1:
+            return None
+
+    # La misma guarda cuando NINGÚN producto matcheó el catálogo (P1 de
+    # pendientes-engine.md). Sin match no hay `_match_product` que cuente las
+    # líneas que nombran el producto, así que se cuentan las que traen una
+    # frase de producto propia antes del precio. «La caja 28,5 usd» no cuenta:
+    # su frase es un envase, y esa línea hereda el producto del encabezado.
+    # Dos o más líneas con producto propio son un catálogo, no un bloque: sin
+    # esto el bloque colapsaba el anuncio a dos filas a nombre del encabezado.
+    if product is None:
+        con_nombre = [
+            line
+            for line in con_precio
+            if _names_own_product(line)
+        ]
+        if len(con_nombre) > 1:
             return None
 
     base_line = con_precio[0] if con_precio else None

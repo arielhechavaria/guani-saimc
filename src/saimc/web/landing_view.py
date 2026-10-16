@@ -1,16 +1,16 @@
 """Lo que la landing (`GET /`, 2026-10-05) muestra y no es texto fijo.
 
-Tres cosas, las tres armadas acá para que la plantilla solo pinte y para poder
+Cuatro cosas, las cuatro armadas acá para que la plantilla solo pinte y para poder
 probarlas sin parsear HTML (mismo reparto que `card_view` y `watchlist_view`):
 
-- **La tarjeta «Así se lee un precio».** Un ejemplo real: el producto piloto
+- **El ejemplo de las burbujas del héroe.** Un ejemplo real: el producto piloto
   con más anuncios en la ventana por defecto, en su provincia con más anuncios.
-  Sigue las reglas de `card_view` (§9.0): el titular es el rango, la mediana va
-  adentro y nunca sola, el número de anuncios queda a la vista y la tarjeta va
-  rotulada «muestra en formación». Si no hay ninguna celda con rango, no hay
-  tarjeta: la plantilla dibuja la ilustración sin cifras, nunca un número de
-  relleno. El rango y la mediana salen de lo que cae dentro del cerco de
-  atípicos (`price_charts.split_outliers`), igual que la cifra del tablero.
+  Dice el rango, la provincia y cuántos anuncios hay detrás. Si no hay ninguna
+  celda con rango, no hay burbujas con cifras: la plantilla pone nombres de
+  producto, nunca un número de relleno. El rango y la mediana salen de lo que
+  cae dentro del cerco de atípicos (`price_charts.split_outliers`), igual que
+  la cifra del tablero. (La sección «Así se lee un precio», que dibujaba esos
+  anuncios como puntos sobre una barra, se quitó el 2026-10-11.)
 - **La cobertura** de «Por qué puedes fiarte de estas cifras»: cuántos
   productos y cuántas provincias tienen anuncios en la ventana. Se cuenta, no
   se escribe.
@@ -38,27 +38,7 @@ from saimc.cells import RetailObservation
 from saimc.config import Settings
 from saimc.web.card_view import SAMPLE_FORMING, format_price
 from saimc.web.price_charts import split_outliers
-
-#: Dónde empieza y cuánto mide la barra del rango dentro de su pista, en
-#: porcentaje. Deja aire a los dos lados para que el punto del mínimo y el del
-#: máximo no queden cortados contra el borde de la tarjeta.
-BAR_LEFT = 10.0
-BAR_WIDTH = 80.0
-
-#: Filas en las que se reparten los puntos para que dos anuncios de precio
-#: parecido no se tapen del todo. Solo presentación: la posición horizontal es
-#: la que dice el precio.
-DOT_ROWS = 4
-
-
-@dataclass(frozen=True)
-class LandingDot:
-    """Un anuncio: dónde cae entre el mínimo y el máximo."""
-
-    #: Porcentaje desde la izquierda de la pista.
-    left: float
-    #: Fila (0 a `DOT_ROWS - 1`), para separar puntos vecinos.
-    row: int
+from saimc.web.product_nav import DOWNLOAD_WINDOW_DAYS, HOME_PATH
 
 
 @dataclass(frozen=True)
@@ -74,15 +54,9 @@ class LandingPrice:
     minimum: Decimal
     median: Decimal
     maximum: Decimal
-    #: Un punto por anuncio dentro del cerco. Los de fuera no tienen dónde
-    #: caer en la barra: se cuentan en `outliers`.
-    dots: tuple[LandingDot, ...]
-    median_left: float
     #: Cuántos anuncios quedaron fuera del cerco. No se esconden: la tarjeta
     #: los cuenta aparte, como la cifra del tablero («fuera de escala»).
     outliers: int = 0
-    bar_left: float = BAR_LEFT
-    bar_width: float = BAR_WIDTH
 
     @property
     def minimum_text(self) -> str:
@@ -100,13 +74,6 @@ class LandingPrice:
     def state(self) -> str:
         """El rótulo de §9.0. Hoy es el mismo para toda celda (`card_view`)."""
         return SAMPLE_FORMING
-
-
-def _position(value: Decimal, minimum: Decimal, maximum: Decimal) -> float:
-    """El precio como porcentaje de la pista. El llamador garantiza
-    `minimum < maximum`."""
-    share = float((value - minimum) / (maximum - minimum))
-    return round(BAR_LEFT + BAR_WIDTH * share, 2)
 
 
 def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPrice | None:
@@ -143,9 +110,7 @@ def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPri
     for (product, currency, unit, _province), rows in cells.items():
         per_product[(product, currency, unit)] += len(rows)
 
-    inside = {
-        key: sorted(o.unit_price for o in split_outliers(rows)[0]) for key, rows in cells.items()
-    }
+    inside = {key: sorted(o.unit_price for o in split_outliers(rows)[0]) for key, rows in cells.items()}
     with_range = [key for key, prices in inside.items() if prices and prices[0] < prices[-1]]
     if not with_range:
         return None
@@ -168,11 +133,6 @@ def build_landing_price(observations: Sequence[RetailObservation]) -> LandingPri
         minimum=minimum,
         median=median,
         maximum=maximum,
-        dots=tuple(
-            LandingDot(left=_position(price, minimum, maximum), row=index % DOT_ROWS)
-            for index, price in enumerate(prices)
-        ),
-        median_left=_position(median, minimum, maximum),
         outliers=total - len(prices),
     )
 
@@ -276,6 +236,12 @@ LANDING_STATIC_URL = "/static/landing"
 SHOT_WIDTH = 460
 SHOT_HEIGHT = 958
 
+#: El comercial «Como se escoge el arroz» se muestra en la página. Se produce
+#: con `tools/producir_comercial.py` siguiendo `docs/concepto-comercial-guani.md`.
+#: Si el recorrido cambia y su voz deja de ser
+#: cierta, apagar esto hasta volver a producirlo.
+FLOW_VIDEO_ENABLED = True
+
 VIDEO_NAME = "guani-flujo.mp4"
 VIDEO_POSTER_NAME = "guani-flujo-poster.webp"
 
@@ -297,12 +263,13 @@ _FLOW: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "flujo-3.webp",
-        "Saco el producto, el precio y la provincia.",
+        "Guani saca el producto, el precio y la provincia.",
         "Los campos extraídos: producto Pollo, precio 40.00 USD, cantidad 40 lb, provincia La Habana.",
     ),
     (
         "flujo-4.webp",
-        "Una persona lo revisa y lo corrige si hace falta.",
+        "Si hay dudas lo revisa una persona; si es claro, el sistema lo acepta y una persona "
+        "lo audita después.",
         "Las preguntas que responde la persona que verifica el anuncio, con el botón «Guardar corrección».",
     ),
     (
@@ -404,7 +371,7 @@ def build_landing_flow(directory: Path | None = None) -> LandingFlow:
         )
 
     video: FlowVideo | None = None
-    found = _file_size(directory, VIDEO_NAME)
+    found = _file_size(directory, VIDEO_NAME) if FLOW_VIDEO_ENABLED else None
     if found is not None:
         size, mtime = found
         video = FlowVideo(
@@ -413,3 +380,94 @@ def build_landing_flow(directory: Path | None = None) -> LandingFlow:
             size_text=_megabytes(size),
         )
     return LandingFlow(steps=steps, shots=shots, video=video)
+
+
+# ── «Entra por donde quieras» ────────────────────────────────────────────────
+#
+# Cuatro puntos de entrada, cada uno con su propia pantalla del sistema real:
+# una captura (`poster`, siempre carga) y un clip corto que solo se baja si la
+# tarjeta entra en pantalla (el guion está en la plantilla). Se graban con
+# `tools/grabar_entradas.py` contra el sitio con datos reales.
+
+#: Una por vista de `/precios`, más la descarga. `vista` va explícita en el
+#: enlace para que la cookie no decida por el visitante (mismo motivo que en
+#: `product_nav._query`).
+#:
+#: (vista del recorrido, enlace, ícono de respaldo, título, frase, texto
+#: alternativo de lo que se ve). La vista nombra los archivos
+#: `entradas-<vista>.mp4|webp`; `None` es una entrada sin pantalla.
+_ENTRIES: tuple[tuple[str | None, str, str, str, str, str | None], ...] = (
+    (
+        "tablero",
+        f"{HOME_PATH}?vista=tablero",
+        "sell",
+        "Precios de hoy",
+        "El tablero completo.",
+        "El tablero en un teléfono: cada precio con la cuenta de cuántos anuncios son "
+        "revisados a mano y cuántos aceptados por el sistema, y el desglose de por qué "
+        "confiamos en esas cifras.",
+    ),
+    (
+        "mapa",
+        f"{HOME_PATH}?vista=mapa",
+        "map",
+        "Mapa",
+        "Provincia por provincia.",
+        "El mapa de Cuba: al tocar una provincia aparece cuántas observaciones tiene.",
+    ),
+    (
+        "explorar",
+        f"{HOME_PATH}?vista=explorar",
+        "show_chart",
+        "Explorar",
+        "Cómo se movió cada precio.",
+        "Explorar: la tabla de un producto por provincia, con la mediana y el cambio, y "
+        "una fila de provincia que se abre para mostrar sus formatos.",
+    ),
+    (
+        None,
+        "/datos.csv",
+        "download",
+        "Datos (CSV)",
+        f"Los últimos {DOWNLOAD_WINDOW_DAYS} días.",
+        None,
+    ),
+)
+
+
+@dataclass(frozen=True)
+class EntryTile:
+    """Una tarjeta de «Entra por donde quieras»."""
+
+    href: str
+    icon: str
+    title: str
+    text: str
+    #: `None` en las tres cosas si falta algún archivo o la entrada no tiene
+    #: pantalla: la tarjeta vuelve al ícono antes que dibujar un video roto.
+    poster: str | None = None
+    clip: str | None = None
+    alt: str | None = None
+
+
+def build_landing_entries(directory: Path | None = None) -> tuple[EntryTile, ...]:
+    """Las cuatro tarjetas, con su captura y su clip si están los dos archivos.
+
+    Mismo criterio que `build_landing_flow`: se mira el disco en cada pedido
+    (un `stat` por archivo), sin caché, y un archivo de cero bytes cuenta como
+    ausente. Con la captura sin el clip (o al revés) no se dibuja medio a
+    medias: la tarjeta es de ícono.
+    """
+    directory = LANDING_STATIC_DIR if directory is None else directory
+    tiles: list[EntryTile] = []
+    for view, href, icon, title, text, alt in _ENTRIES:
+        poster = clip = None
+        if view is not None:
+            poster = _versioned_url(directory, f"entradas-{view}.webp")
+            clip = _versioned_url(directory, f"entradas-{view}.mp4")
+        if poster is None or clip is None:
+            poster = clip = alt = None
+        tiles.append(
+            EntryTile(href=href, icon=icon, title=title, text=text, poster=poster, clip=clip, alt=alt)
+        )
+    return tuple(tiles)

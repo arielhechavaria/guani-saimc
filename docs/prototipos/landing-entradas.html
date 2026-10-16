@@ -1,0 +1,127 @@
+<!doctype html>
+<!--
+  Prototipo de «Entra por donde quieras» (landing, slice landing-entradas).
+  Se decide a 390 px primero: dos tarjetas por fila; desde 720 px, cuatro.
+
+  Los medios son los reales: salen de `tools/grabar_entradas.py` contra el
+  sitio con datos reales y solo lectura, y viven donde los va a servir la
+  landing (`static/landing/entradas-*.{mp4,webp}`).
+
+  Reglas que muestra:
+  - Cada tarjeta sigue siendo un enlace a su vista, con zona táctil completa.
+  - La captura (`poster`) siempre carga; el clip no se baja hasta que la
+    tarjeta entra en pantalla, y no se baja nunca con movimiento reducido,
+    con ahorro de datos o en una conexión 2G.
+  - El clip no es el único portador de información: cada tarjeta tiene su
+    título, su frase y un texto alternativo que describe lo que se ve.
+  - Datos (CSV) no tiene pantalla: queda con el ícono, sobre el mismo fondo
+    y la misma proporción que los clips. Su archivo trae una columna con el
+    id de cada anuncio, así que una captura de la tabla o lo muestra o lo
+    recorta, y recortarlo sería enseñar un archivo que no es el que se baja.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo — Entra por donde quieras</title>
+<link href="../../src/saimc/web/static/saimc-public.css" rel="stylesheet">
+<style>
+  body { margin: 0; }
+  .lp {
+    --lp-blue: var(--ph-accent); --lp-on-blue: var(--ph-on-accent);
+    --lp-bg: var(--m3-bg); --lp-surface: var(--m3-surface);
+    --lp-ink: var(--m3-on-surface); --lp-ink-soft: var(--m3-on-surface-variant);
+    --lp-line: var(--m3-outline-variant); --lp-tint: var(--ph-price-low);
+    --lp-heading: var(--ph-font-heading);
+    background: var(--lp-bg); color: var(--lp-ink); font: 400 16px/1.45 var(--m3-font);
+    min-height: 100vh;
+  }
+  .lp-wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 28px 20px 36px; box-sizing: border-box; }
+  .lp-h2 { margin: 0; font: 400 30px/1.1 var(--lp-heading); }
+  .lp .m3-icon { vertical-align: 0; }
+
+  .lp-tiles { margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .lp-tile { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 16px; border-radius: 24px;
+             background: var(--lp-surface); color: var(--lp-ink); border: 1px solid var(--lp-line); text-decoration: none; }
+  .lp-tile:hover { color: var(--lp-ink); }
+  .lp-tile-main { background: var(--lp-blue); border-color: var(--lp-blue); color: var(--lp-on-blue); }
+  .lp-tile-main:hover { color: var(--lp-on-blue); }
+
+  /* El medio: la misma proporción en las cuatro, vean lo que vean. Arriba de
+     la captura se corta lo que sobra (`object-position: top`): la barra de
+     arriba es lo que identifica la vista. */
+  .lp-tile-media { position: relative; display: block; aspect-ratio: 9 / 14; overflow: hidden; border-radius: 16px;
+                   background: var(--lp-tint); }
+  .lp-tile-media video { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+  .lp-tile-media .m3-icon { position: absolute; inset: 0; display: grid; place-items: center; font-size: 56px;
+                            color: var(--lp-blue); }
+  .lp-tile-title { padding-inline: 6px; font-size: 18px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+  .lp-tile-text { padding-inline: 6px; font-size: 14px; line-height: 1.35; color: var(--lp-ink-soft); }
+  .lp-tile-main .lp-tile-text { color: var(--lp-on-blue); }
+  @media (min-width: 720px) { .lp-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (prefers-reduced-motion: reduce) { .lp-tile-media video { display: block; } }
+</style>
+</head>
+<body>
+<div class="lp">
+<section class="lp-wrap" aria-labelledby="lp-entries-title">
+  <h2 class="lp-h2" id="lp-entries-title">Entra por donde quieras</h2>
+  <div class="lp-tiles">
+
+    <a class="lp-tile lp-tile-main" href="/precios?vista=tablero">
+      <span class="lp-tile-media" role="img" aria-label="El tablero en un teléfono: cada precio con la cuenta de cuántos anuncios son revisados a mano y cuántos aceptados por el sistema, y el desglose de por qué confiamos en esas cifras.">
+        <video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" data-clip="../../src/saimc/web/static/landing/entradas-tablero.mp4" poster="../../src/saimc/web/static/landing/entradas-tablero.webp"></video>
+      </span>
+      <span class="lp-tile-title">Precios de hoy</span>
+      <span class="lp-tile-text">El tablero completo.</span>
+    </a>
+
+    <a class="lp-tile" href="/precios?vista=mapa">
+      <span class="lp-tile-media" role="img" aria-label="El mapa de Cuba: al tocar una provincia aparece cuántas observaciones tiene.">
+        <video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" data-clip="../../src/saimc/web/static/landing/entradas-mapa.mp4" poster="../../src/saimc/web/static/landing/entradas-mapa.webp"></video>
+      </span>
+      <span class="lp-tile-title">Mapa</span>
+      <span class="lp-tile-text">Provincia por provincia.</span>
+    </a>
+
+    <a class="lp-tile" href="/precios?vista=explorar">
+      <span class="lp-tile-media" role="img" aria-label="Explorar: la tabla de un producto por provincia, con la mediana y el cambio, y una fila de provincia que se abre para mostrar sus formatos.">
+        <video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" data-clip="../../src/saimc/web/static/landing/entradas-explorar.mp4" poster="../../src/saimc/web/static/landing/entradas-explorar.webp"></video>
+      </span>
+      <span class="lp-tile-title">Explorar</span>
+      <span class="lp-tile-text">Cómo se movió cada precio.</span>
+    </a>
+
+    <a class="lp-tile" href="/datos.csv">
+      <span class="lp-tile-media"><span class="m3-icon" aria-hidden="true">download</span></span>
+      <span class="lp-tile-title">Datos (CSV)</span>
+      <span class="lp-tile-text">Los últimos 30 días.</span>
+    </a>
+
+  </div>
+</section>
+</div>
+
+<script>
+  /* Los clips se bajan cuando su tarjeta entra en pantalla, no antes. Quien
+     pidió menos movimiento, ahorro de datos o tiene una conexión 2G se queda
+     con la captura. Sin este script, también. */
+  (function () {
+    var conn = navigator.connection || {};
+    var slow = conn.saveData || /(^|-)2g$/.test(conn.effectiveType || "");
+    var calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (slow || calm || !("IntersectionObserver" in window)) return;
+    var seen = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        var v = e.target;
+        if (e.isIntersecting) {
+          if (!v.src) v.src = v.dataset.clip;
+          v.play().catch(function () {});
+        } else { v.pause(); }
+      });
+    }, { threshold: 0.5 });
+    document.querySelectorAll("video[data-clip]").forEach(function (v) { seen.observe(v); });
+  })();
+</script>
+</body>
+</html>

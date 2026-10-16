@@ -27,7 +27,9 @@ esac
 
 BASE=master
 # El primer worktree que lista git es siempre el checkout principal.
-MAIN=$(git worktree list --porcelain | awk '/^worktree /{print substr($0, 10); exit}')
+# Sin `exit` en awk: con muchos worktrees, cortar la lectura antes de tiempo
+# mata a git por SIGPIPE y `pipefail` aborta el script en silencio (141).
+MAIN=$(git worktree list --porcelain | awk 'NR==1{print substr($0, 10)}')
 HERE=$(git rev-parse --show-toplevel)
 
 if [ "$(git -C "$MAIN" symbolic-ref --short HEAD)" != "$BASE" ]; then

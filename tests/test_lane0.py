@@ -187,7 +187,7 @@ def test_caso_2_texto_sin_piloto_entra_en_candidatos_solo_con_el_interruptor(
     encendido = prefill.select_candidates(session, productos, include_off_focus=True)
 
     assert [i.id for i in apagado] == [en_foco.id]
-    assert [i.id for i in encendido] == [en_foco.id, sin_foco.id]
+    assert [i.id for i in encendido] == [sin_foco.id, en_foco.id]  # más nuevo primero
 
 
 # --- caso 3: el carril 0 descarta un texto --------------------------------------
@@ -699,7 +699,7 @@ def test_caso_15_control_muestra_los_automaticos_pero_no_la_cota(
         _auto_descartado(session, cuando=cuando)
     _auto_descartado(session, tipo=ContentType.IMAGE, cuando=cuando)
 
-    html = client.get("/control").text
+    html = client.get("/control/ingesta").text
 
     assert "Descartes automáticos" in html
     assert "cota" not in html.lower()
@@ -814,3 +814,73 @@ def test_curar_ahora_abre_el_formulario_de_un_texto_sin_piloto(
 
     assert response.status_code == 200
     assert f'action="/curation/{rescatado.id}"' in response.text
+
+
+# --- aplicar el carril 0 a lo que ya está pendiente (2026-10-13) --------------------
+
+
+def _con_propuesta_sin_aplicar(session: Session, tmp_path: Path, texto: str) -> RawIngestion:
+    """Un pendiente con propuesta del modelo que lo descarta, sin que el carril 0
+    haya actuado (interruptores apagados al generarla)."""
+    ingesta = _ingesta(session, texto=texto)
+    _correr(session, tmp_path, ClienteFalso(_DESCARTA_SIN_DATOS))
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.PENDING
+    return ingesta
+
+
+def test_el_comando_en_seco_cuenta_lo_que_descartaria_y_no_toca_nada(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _con_propuesta_sin_aplicar(session, tmp_path, "arroz agotado hoy")
+    salida: list[str] = []
+
+    lane0.run_pending(
+        session, _ajustes(tmp_path, lane0_text_enabled=True), execute=False, out=salida.append
+    )
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.PENDING
+    assert any("Descartaría: 1" in linea for linea in salida)
+
+
+def test_el_comando_con_execute_descarta_con_evento_auto(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _con_propuesta_sin_aplicar(session, tmp_path, "arroz agotado hoy")
+
+    lane0.run_pending(
+        session, _ajustes(tmp_path, lane0_text_enabled=True), execute=True, out=lambda _: None
+    )
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    assert ingesta.discard_reason == "no_data"
+    (evento,) = [e for e in _eventos(session, ingesta) if e.mode == "auto"]
+    assert evento.action == "discarded"
+
+
+def test_el_comando_no_descarta_un_texto_con_numero(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _con_propuesta_sin_aplicar(session, tmp_path, "arroz agotado, vuelve a las 2")
+
+    lane0.run_pending(
+        session, _ajustes(tmp_path, lane0_text_enabled=True), execute=True, out=lambda _: None
+    )
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.PENDING
+
+
+def test_el_comando_respeta_el_interruptor_apagado(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _con_propuesta_sin_aplicar(session, tmp_path, "arroz agotado hoy")
+    salida: list[str] = []
+
+    lane0.run_pending(session, _ajustes(tmp_path), execute=True, out=salida.append)
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.PENDING
+    assert any("apagado" in linea for linea in salida)

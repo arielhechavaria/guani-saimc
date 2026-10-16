@@ -50,6 +50,8 @@ llm = [
 # de sistema del navegador (`playwright install-deps chromium`, con sudo).
 marketing = [
     "playwright>=1.40",
+    # ffmpeg empaquetado: `tools/grabar_entradas.py` recomprime los clips con él.
+    "imageio-ffmpeg>=0.5",
 ]
 
 [tool.setuptools.packages.find]

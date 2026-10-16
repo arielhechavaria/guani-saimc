@@ -3374,7 +3374,10 @@ class TestSobreLosDatosEnElTablero:
         assert "<strong>1 de 1 provincia</strong> tiene datos." in bloque
         assert "<strong>mediana</strong>" in bloque
         assert "«(base N)»" in bloque
-        assert "verificados a mano uno por uno" in bloque
+        # B4: la frase dice de qué están hechos los anuncios, no «uno por uno».
+        assert "1 anuncio revisado a mano" in bloque
+        assert "verificados a mano uno por uno" not in bloque
+        assert 'href="/metodologia"' in bloque
         assert re.search(r'href="/datos\.csv\?desde=[^"]+"', bloque)
 
     def test_la_descarga_esta_en_la_cabecera_y_en_el_bloque(
@@ -4026,7 +4029,8 @@ class TestListaAbsorbeLaTira:
 
         fila = self._fila(session, client)
 
-        assert fila.count('<span class="ph-cel-n">2 anuncios</span>') == 2
+        # B4: junto al n, de qué está hecho (las filas sembradas son a mano).
+        assert fila.count('<span class="ph-cel-n">2 anuncios · todos a mano</span>') == 2
 
     def test_el_cambio_muestra_la_base_contra_la_que_se_compara(
         self, client: TestClient, session: Session

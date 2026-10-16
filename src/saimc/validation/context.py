@@ -41,7 +41,7 @@ from saimc.cells import resolve_row
 from saimc.config import get_settings
 from saimc.exchange_rate import cache as rate_cache
 from saimc.exchange_rate.service import anchor_date
-from saimc.extraction import llm_propose_ad, llm_store, ocr_store
+from saimc.extraction import llm_checks, llm_propose_ad, llm_store, ocr_store
 from saimc.extraction.engine import ExtractionProposal, propose_all
 from saimc.extraction.llm_propose_ad import AdProposal
 from saimc.ingestion import origin
@@ -179,6 +179,8 @@ class BatchDecisions:
     (B2a) parte la historia del anuncio en tramos: el descarte automático
     queda antes del rescate, y lo que el operador decida después de rescatarlo
     es una decisión nueva, individual (caso 13 de `docs/spec-slice-B2a.md`).
+    Lo mismo una auditoría del carril 1 (B2b-3): la aceptación automática queda
+    antes, y la revisión que escribe la auditoría cuenta como individual.
     Sin el tramo, ese descarte de a uno heredaba el `auto` del primero y no
     contaba ni en el historial del canal ni en el modo sombra.
     """
@@ -222,7 +224,9 @@ def batch_decisions(
     events = session.execute(stmt).all()
     rescues: dict[uuid.UUID, list[datetime]] = {}
     for ingestion_id, action, _, decided_at in events:
-        if action == CurationAction.RESCUED:
+        # Un rescate (B2a) y una auditoría (B2a, B2b-3) parten la historia: lo
+        # que el operador decida después es suyo, no del carril automático.
+        if action in (CurationAction.RESCUED, CurationAction.AUDITED):
             rescues.setdefault(ingestion_id, []).append(as_utc(decided_at))
     ordered = {key: tuple(sorted(times)) for key, times in rescues.items()}
     result = BatchDecisions(batch=frozenset(), rescues=ordered)
@@ -264,6 +268,35 @@ def _dropped_in_response(raw_response: str | None, catalog: Catalog) -> int:
     return 0 if parsed is None else parsed.dropped
 
 
+def _reverified(session: Session, proposal: LlmProposal, result: AdProposal) -> AdProposal:
+    """La cita de cada fila, verificada otra vez contra el texto del anuncio.
+
+    Las banderas se guardan al proponer, con la verificación de ese momento. Una
+    propuesta vieja puede traer `evidence_found = False` por emoji o «...» que
+    hoy la verificación sí entiende (2026-10-13). Solo sube: una bandera ya
+    verdadera nunca se degrada. Solo texto: en una imagen el modelo vio la
+    transcripción, no `original_text`.
+    """
+    ingestion = session.get(RawIngestion, proposal.ingestion_id)
+    if (
+        ingestion is None
+        or ingestion.content_type != ContentType.TEXT
+        or not ingestion.original_text
+        or not result.rows
+    ):
+        return result
+    fresh = llm_checks.verify_evidence(ingestion.original_text, result.rows, result.row_meta)
+    metas = [
+        dataclasses.replace(
+            old,
+            evidence_found=old.evidence_found or new.evidence_found,
+            price_in_evidence=True if old.price_in_evidence else new.price_in_evidence,
+        )
+        for old, new in zip(result.row_meta, fresh, strict=True)
+    ]
+    return dataclasses.replace(result, row_meta=metas)
+
+
 def stored_proposal(
     session: Session, proposal: LlmProposal, catalog: Catalog | None = None
 ) -> AdProposal:
@@ -274,6 +307,7 @@ def stored_proposal(
     """
     catalog = catalog or load_catalog(session)
     result, _ = llm_store.to_ad_proposal(session, proposal)
+    result = _reverified(session, proposal, result)
     skipped = len(proposal.rows) - len(result.rows)  # producto que ya no existe
     return dataclasses.replace(
         result,

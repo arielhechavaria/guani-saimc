@@ -1,0 +1,23 @@
+[Unit]
+Description=Lee la cuenta de Instagram de Guani y guarda sus metricas
+After=postgresql.service network-online.target
+
+[Service]
+# oneshot: lee, escribe y termina. Sin cola ni servicio permanente (decision
+# cerrada 3), igual que saimc-prefill. systemd no vuelve a arrancarlo mientras
+# sigue activo, asi que el temporizador nunca solapa dos corridas suyas.
+Type=oneshot
+User=ariel
+WorkingDirectory=/home/ariel/guani/guani-saimc
+
+# El .env (token inicial SAIMC_INSTAGRAM_ACCESS_TOKEN) lo lee la aplicacion
+# desde WorkingDirectory. Despues de la primera corrida el token vive en la
+# tabla instagram_credentials y el lote lo renueva solo.
+# Codigo 0 = corrio (o no hay token: capacidad sin usar). Codigo 1 = el token
+# vencio o fue revocado (hay que repetir el alta a mano) o no se pudo leer la
+# cuenta: la unidad queda en «failed» y se ve en `systemctl --failed`.
+# No gasta: la API de Instagram no se cobra.
+ExecStart=/home/ariel/guani/guani-saimc/.venv/bin/python -m saimc.instagram.sync --execute
+
+# Unas 50 publicaciones con una llamada cada una: un par de minutos de sobra.
+TimeoutStartSec=10min

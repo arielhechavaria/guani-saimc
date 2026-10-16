@@ -1,0 +1,85 @@
+{#
+  `/acceso`: el formulario con el que se entra al sitio público (2026-10-13).
+
+  Misma familia que las páginas de texto (`public_page.html`): fondo, tipografía
+  y acento salen de los tokens, la marca arriba y una sola columna centrada. No
+  lleva el pie compartido ni enlaces a nada del sitio: quien llega acá todavía
+  no tiene permiso para ver el resto. Sin JavaScript, sin pedir nada a una red
+  ajena. Prefijo de clases `ac-`. Mobile first: a 390 px la tarjeta llena el
+  ancho con 20 px de margen y todo objetivo táctil mide 44 px o más.
+
+  Se pide el usuario y la contraseña del operador (`web/access.py`). Los
+  atributos `autocomplete` dejan que el gestor de contraseñas del teléfono los
+  rellene. El texto va de tú, como el resto de la capa pública.
+#}
+{% extends "_public_shell.html" %}
+
+{% block page_title %}Acceso — Guani{% endblock %}
+{% block og_description %}Acceso privado a Guani.{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex, nofollow" />
+<style>
+  .ac { display: flex; flex-direction: column; align-items: center; width: 100%; min-height: 100vh;
+        box-sizing: border-box; padding: 32px 20px 48px; background: var(--m3-bg);
+        color: var(--m3-on-surface); font: 400 17px/1.6 var(--m3-font); }
+  .ac-brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; margin-bottom: 24px;
+              color: var(--m3-on-surface); }
+  .ac-brand .ph-brand-avatar { flex: none; width: 36px; height: 36px; }
+  .ac-wordmark { font: 400 28px/1.2 var(--ph-font-heading); }
+  .ac-card { width: 100%; max-width: 420px; box-sizing: border-box; padding: 24px 20px 28px;
+             background: var(--m3-surface); border: 1px solid var(--m3-outline-variant);
+             border-radius: 24px; }
+  .ac-h1 { margin: 0; font: 400 clamp(30px, 8vw, 36px)/1.15 var(--ph-font-heading); }
+  .ac-lead { margin: 12px 0 0; color: var(--m3-on-surface-variant); font-size: 17px; line-height: 1.5; }
+  .ac-error { margin: 20px 0 0; padding: 12px 14px; border-radius: 12px;
+              background: var(--m3-surface-container); border: 1px solid var(--m3-outline);
+              font-size: 16px; line-height: 1.4; }
+  .ac-form { margin: 20px 0 0; display: flex; flex-direction: column; gap: 16px; }
+  .ac-field { display: flex; flex-direction: column; gap: 6px; }
+  .ac-label { font-size: 15px; font-weight: 500; }
+  .ac-input { width: 100%; box-sizing: border-box; min-height: 48px; padding: 0 16px;
+              font: 400 17px var(--m3-font); color: var(--m3-on-surface); background: var(--m3-bg);
+              border: 1px solid var(--m3-outline); border-radius: var(--m3-radius-xs); }
+  .ac-input:hover { border-color: var(--m3-on-surface); }
+  .ac-input:focus { outline: 2px solid var(--ph-accent); outline-offset: 1px; border-color: var(--ph-accent); }
+  .ac-submit { min-height: 48px; margin-top: 4px; padding: 0 24px; border: 0; border-radius: 100px;
+               background: var(--ph-accent); color: var(--ph-on-accent); font: 500 17px var(--m3-font);
+               cursor: pointer; }
+  .ac-submit:hover { filter: brightness(1.08); }
+  .ac-submit:focus-visible { outline: 2px solid var(--ph-accent); outline-offset: 3px; }
+  .ac-note { margin: 20px 0 0; font-size: 15px; line-height: 1.5; color: var(--m3-on-surface-variant); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="ac">
+  <div class="ac-brand">{% include "_guani_avatar.html" %}<span class="ac-wordmark">Guani</span></div>
+
+  <main class="ac-card">
+    <h1 class="ac-h1">Acceso privado</h1>
+    <p class="ac-lead">Esta página es solo para quien tiene permiso. Escribe tu usuario y tu contraseña para entrar.</p>
+
+    {% if error %}
+    <p class="ac-error" role="alert">{{ error }}</p>
+    {% endif %}
+
+    <form class="ac-form" method="post" action="/acceso">
+      <input type="hidden" name="next" value="{{ next_path }}" />
+      <div class="ac-field">
+        <label class="ac-label" for="ac-user">Usuario</label>
+        <input class="ac-input" id="ac-user" name="username" type="text" autocomplete="username"
+               autocapitalize="none" autocorrect="off" spellcheck="false" required />
+      </div>
+      <div class="ac-field">
+        <label class="ac-label" for="ac-pass">Contraseña</label>
+        <input class="ac-input" id="ac-pass" name="password" type="password"
+               autocomplete="current-password" required />
+      </div>
+      <button class="ac-submit" type="submit">Entrar</button>
+    </form>
+
+    <p class="ac-note">¿No tienes acceso? Pídeselo a quien te pasó el enlace.</p>
+  </main>
+</div>
+{% endblock %}

@@ -1,10 +1,14 @@
-"""Medición de H0 (spec.md §3 y §12.5) contra la cola de curaduría real.
+"""Medición de H0 (spec.md §3 y §12.5) contra el conjunto de referencia congelado.
 
-Re-corre `propose_all()` sobre cada anuncio ya curado y compara la propuesta
-contra lo que el operador confirmó en `prices_history`. La propuesta nunca
-influyó lo que quedó guardado (la cola de curaduría solo la usa para prellenar
-el formulario, spec.md §6.1): por eso la comparación mide extracción real y
-no un eco de sí misma.
+Re-corre `propose_all()` sobre cada miembro de la versión vigente del conjunto
+(`reference_set_members`, `docs/spec-slice-B3.md` sección 3) y compara la
+propuesta contra las filas que se congelaron con él. No lee `prices_history`:
+editar o borrar un anuncio congelado cambia lo publicado, no la referencia. Sin
+conjunto congelado no se mide (`NoReferenceSetError`): no hay camino de vuelta
+al oro vivo, que se rearmaba en cada corrida y se movía con cada edición.
+
+Lo que sí sale de la base viva es la composición del corpus: curados,
+descartados y la tasa de descarte describen lo que entró, no la referencia.
 
 De dónde sale el texto evaluado, según el tipo de evidencia:
 
@@ -39,12 +43,15 @@ import argparse
 import itertools
 import json
 import subprocess
+import sys
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import ModuleType
+from typing import TYPE_CHECKING, Protocol
 
 import pytesseract
 from sqlalchemy import select
@@ -64,9 +71,14 @@ from saimc.models import (
     Product,
     Province,
     RawIngestion,
+    ReferenceSetMember,
 )
 from saimc.progress import pilot_products
 from saimc.units import canonical_unit
+
+if TYPE_CHECKING:
+    from saimc.automation import AutomationSummary
+
 
 # El OCR se inyecta para que la suite no dependa del binario de Tesseract y
 # para poder fijar transcripciones conocidas en los tests.
@@ -107,11 +119,10 @@ class H0Report:
     # fila: la pregunta «¿cuántas extracciones salieron bien?» se responde por
     # extracción, la pregunta «¿alcanza la muestra?» se responde por evidencia.
     evaluated_ads_count: int
-    # Anuncios y filas que pasaron por el asistente de LLM y por eso NO entran
-    # en las cinco precisiones de abajo. Se reportan aparte, no se esconden:
-    # la divergencia entre este conjunto y el medido es justamente la señal de
-    # que una respuesta del modelo se está confirmando de apuro
-    # (openspec/changes/llm-extraction-assist/design.md, D6).
+    # Eran los anuncios y filas que la corrida dejaba fuera por haber pasado
+    # por el asistente de LLM. Desde B3-2 la pertenencia la fija el congelado,
+    # que ya los deja afuera: van siempre en 0, y se siguen escribiendo para no
+    # romper a quien lee `docs/h0-runs.jsonl`.
     assisted_ads_count: int
     assisted_rows_count: int
     product_accuracy: float | None
@@ -119,6 +130,78 @@ class H0Report:
     province_accuracy: float | None
     quantity_unit_accuracy: float | None
     complete_accuracy: float | None
+    # Contra qué se midió. Dos corridas solo son comparables si coinciden la
+    # versión y la huella (`reference_set.version_hash`).
+    reference_set_version: int
+    reference_set_hash: str
+    # Miembros cuyas filas vivas ya no son las congeladas el día de la corrida.
+    # No salen del conjunto ni cortan la corrida: es un aviso.
+    reference_set_drifted: int
+
+
+class NoReferenceSetError(RuntimeError):
+    """No hay ningún conjunto de referencia congelado contra el que medir."""
+
+
+class ConfirmedValues(Protocol):
+    """Los seis campos de una fila confirmada contra los que se compara.
+
+    `PriceHistory` lo cumple (lo usa el backtest del modelo) y `FrozenRow`
+    también. Un `Protocol` es tipado estructural: alcanza con tener estos
+    atributos, sin heredar de nada.
+    """
+
+    @property
+    def product_id(self) -> uuid.UUID: ...
+    @property
+    def province_id(self) -> uuid.UUID | None: ...
+    @property
+    def price(self) -> Decimal: ...
+    @property
+    def currency(self) -> str: ...
+    @property
+    def quantity(self) -> Decimal | None: ...
+    @property
+    def unit(self) -> str | None: ...
+
+
+@dataclass(frozen=True)
+class FrozenRow:
+    """Una fila congelada, en los tipos que espera `row_correctness`.
+
+    `reference_set_members.rows` guarda todo como texto o nulo para que el hash
+    no dependa del motor de base. Acá vuelve a `UUID` y `Decimal`: un `"340"`
+    de texto no es igual al `Decimal("340")` que propone el extractor.
+    """
+
+    product_id: uuid.UUID
+    province_id: uuid.UUID | None
+    price: Decimal
+    currency: str
+    quantity: Decimal | None
+    unit: str | None
+
+
+def frozen_rows(member: ReferenceSetMember) -> list[FrozenRow]:
+    """Las filas confirmadas de un miembro, en el orden en que se congelaron.
+
+    Ese orden es por `price_history_id`, un UUID al azar: no es el orden en que
+    el operador cargó las filas. No cambia el número: el emparejado
+    (`_match_rows_to_candidates`) reparte los candidatos por los valores de las
+    filas y no por su posición (`docs/decisions.md`, 2026-10-10, «El emparejado
+    de H0 deja de depender del orden…»).
+    """
+    return [
+        FrozenRow(
+            product_id=uuid.UUID(row["product_id"]),
+            province_id=uuid.UUID(row["province_id"]) if row["province_id"] else None,
+            price=Decimal(row["price"]),
+            currency=row["currency"],
+            quantity=Decimal(row["quantity"]) if row["quantity"] is not None else None,
+            unit=row["unit"],
+        )
+        for row in member.rows
+    ]
 
 
 def _focus_products(session: Session) -> list[Product]:
@@ -179,7 +262,7 @@ _QUANTITY_UNIT_MISMATCH_COST = 0.5
 _PROVINCE_MISMATCH_COST = 0.25
 
 
-def _pair_cost(row: PriceHistory, candidate: ExtractionProposal) -> float:
+def _pair_cost(row: ConfirmedValues, candidate: ExtractionProposal) -> float:
     """Cuánto «no se parecen» una fila confirmada y un candidato. 0 = idénticos
     en los tres campos que este emparejado mira."""
     cost = 0.0
@@ -197,38 +280,92 @@ def _pair_cost(row: PriceHistory, candidate: ExtractionProposal) -> float:
     return cost
 
 
-def _assign_within_product(
-    rows: list[PriceHistory], candidates: list[ExtractionProposal]
-) -> list[tuple[PriceHistory, ExtractionProposal]]:
+def _row_order_key(row: ConfirmedValues) -> tuple[tuple[bool, object], ...]:
+    """Orden de las filas confirmadas por sus VALORES, no por cómo llegaron.
+
+    Precio, moneda, cantidad, unidad, provincia y, al final, producto, de menor
+    a mayor. Es el desempate de todo el emparejado: dos filas con la misma
+    clave tienen los mismos seis valores, así que da igual cuál queda primera.
+
+    Cada campo va como `(está vacío, valor)`: un vacío queda al final y nunca
+    se compara contra un número. `PriceHistory` y `FrozenRow` siempre traen
+    producto y precio, pero `llm_checks` usa este emparejado con las filas del
+    modelo como «confirmadas», y ahí pueden faltar.
+    """
+    values: tuple[object, ...] = (
+        row.price,
+        row.currency,
+        row.quantity,
+        row.unit,
+        str(row.province_id) if row.province_id is not None else None,
+        str(row.product_id) if row.product_id is not None else None,
+    )
+    return tuple((value is None, value if value is not None else 0) for value in values)
+
+
+def _assign_within_product[RowT: ConfirmedValues](
+    rows: list[RowT], candidates: list[ExtractionProposal]
+) -> list[tuple[RowT, ExtractionProposal]]:
     """Empareja filas y candidatos de un MISMO producto por mejor ajuste.
+
+    Se forman `min(filas, candidatos)` pares; cada candidato y cada fila se usan
+    una sola vez. Cuando hay más filas que candidatos también se elige **qué
+    filas** reciben candidato, con el mismo `_pair_cost`: las que no aparecen
+    en el resultado son las que quedaron sin candidato, estén donde estén.
+
+    El resultado no depende del orden en que llegan las filas: se ordenan
+    primero por sus valores (`_row_order_key`). Si dos repartos cuestan lo
+    mismo, el desempate sale de esa clave y del orden en que el extractor
+    propuso los candidatos, que tampoco depende de las filas: con más filas
+    que candidatos gana el reparto que le da el primer candidato a la fila de
+    menor clave (y si sigue el empate, el segundo, y así); si no, el que le da
+    a la fila de menor clave el candidato propuesto antes.
 
     Con `permutations` cuando los dos conjuntos son chicos —el caso real: 2 o 3
     filas de Arroz por anuncio— para dar el óptimo global; greedy por si algún
-    anuncio raro trae muchos de los dos lados. En los dos casos cada candidato
-    se usa una sola vez.
+    anuncio raro trae muchos de los dos lados: toma de a un par, siempre el de
+    menor costo entre los que quedan, con el mismo desempate.
     """
-    k = min(len(rows), len(candidates))
-    if len(rows) <= 6 and len(candidates) <= 6:
-        best_perm = min(
-            itertools.permutations(candidates, k),
-            key=lambda perm: sum(_pair_cost(rows[i], perm[i]) for i in range(k)),
-        )
-        return [(rows[i], best_perm[i]) for i in range(k)]
+    ordered = sorted(rows, key=_row_order_key)
+    k = min(len(ordered), len(candidates))
 
-    pool = list(candidates)
+    if len(ordered) <= 6 and len(candidates) <= 6:
+        # `permutations` recorre en orden lexicográfico y `min` se queda con el
+        # primer mínimo: ese es el desempate, sin código aparte.
+        if len(ordered) <= len(candidates):
+            best_candidates = min(
+                itertools.permutations(candidates, k),
+                key=lambda perm: sum(_pair_cost(ordered[i], perm[i]) for i in range(k)),
+            )
+            return list(zip(ordered, best_candidates, strict=True))
+        best_rows = min(
+            itertools.permutations(ordered, k),
+            key=lambda perm: sum(_pair_cost(perm[i], candidates[i]) for i in range(k)),
+        )
+        return list(zip(best_rows, candidates, strict=True))
+
+    by_cost = sorted(
+        (_pair_cost(row, candidate), candidate_index, row_index)
+        for row_index, row in enumerate(ordered)
+        for candidate_index, candidate in enumerate(candidates)
+    )
+    used_rows: set[int] = set()
+    used_candidates: set[int] = set()
     pairs = []
-    for row in rows[:k]:
-        chosen = min(pool, key=lambda c: _pair_cost(row, c))
-        pool.remove(chosen)
-        pairs.append((row, chosen))
+    for _, candidate_index, row_index in by_cost:
+        if row_index in used_rows or candidate_index in used_candidates:
+            continue
+        used_rows.add(row_index)
+        used_candidates.add(candidate_index)
+        pairs.append((ordered[row_index], candidates[candidate_index]))
     return pairs
 
 
-def _match_rows_to_candidates(
-    confirmed_rows: list[PriceHistory],
+def _match_rows_to_candidates[RowT: ConfirmedValues](
+    confirmed_rows: list[RowT],
     candidates: list[ExtractionProposal],
     channel_province: Province | None = None,
-) -> list[tuple[PriceHistory, ExtractionProposal]]:
+) -> list[tuple[RowT, ExtractionProposal]]:
     """Empareja cada fila confirmada con el candidato de `propose_all` que le
     corresponde.
 
@@ -243,13 +380,33 @@ def _match_rows_to_candidates(
     prestado de otro producto, así que alinear no puede inflar la métrica —
     solo deja de perder aciertos reales por el orden.
 
+    Lo mismo cuando un producto tiene **más filas confirmadas que candidatos**
+    —el operador cargó menudeo y saco, el extractor sacó una sola línea—: qué
+    filas reciben candidato se elige por mejor ajuste, no por posición. Antes
+    lo recibían «las primeras», y desde que las filas congeladas vienen
+    ordenadas por un UUID al azar (B3-2) eso era un sorteo: la fila que el
+    extractor había leído bien podía quedar sin candidato y contar como fallo
+    mientras su candidato se comparaba contra la otra. Tampoco acá se toma
+    nada prestado: los candidatos que se reparten son solo los de ese
+    producto, y son menos que las filas, así que cada fila que queda sin
+    candidato sigue fallando producto y precio como antes. Elegir bien no
+    agrega candidatos, solo deja de gastar uno correcto en la fila equivocada
+    (`docs/decisions.md`, 2026-10-10).
+
+    **El resultado no depende del orden en que llegan las filas confirmadas.**
+    Todo desempate sale de los valores de las filas (`_row_order_key`), nunca
+    de su posición; dos filas con los seis valores iguales son intercambiables.
+
     Lo que no matchea por `product_id` se reparte según cuántas líneas hayan
     quedado libres, porque no es lo mismo no tener elección que tener que
     adivinar:
 
     - **Una sola línea libre**: se empareja con ella. No hubo elección, y
       precio, cantidad y provincia igual pudieron extraerse bien aunque el
-      producto no se reconociera.
+      producto no se reconociera. Si son varias las filas sin candidato, se la
+      lleva la primera por valores (`_row_order_key`) y no la que mejor
+      ajusta: la línea no es de su producto, y elegirle fila por parecido sería
+      regalar un precio por coincidencia.
     - **Varias líneas libres**: el reparto por orden sería una adivinanza. El
       orden de las filas confirmadas no tiene por qué seguir el de las líneas
       del anuncio, así que regalarle a la fila el precio de una línea ajena
@@ -271,14 +428,17 @@ def _match_rows_to_candidates(
 
     Ninguna línea se consume en el caso ambiguo: no se usó, así que sigue
     disponible para la fila siguiente.
+
+    Lo usan también el backtest del modelo (`llm_backtest.py`) y
+    `llm_checks.match_rule_rows`.
     """
     remaining = list(candidates)
     matched: dict[int, ExtractionProposal] = {}
-    unmatched_rows: list[PriceHistory] = []
+    unmatched_rows: list[RowT] = []
 
     # Agrupado por producto, en el orden en que cada producto aparece por
     # primera vez en las filas confirmadas.
-    rows_by_product: dict[object, list[PriceHistory]] = {}
+    rows_by_product: dict[object, list[RowT]] = {}
     for row in confirmed_rows:
         rows_by_product.setdefault(row.product_id, []).append(row)
 
@@ -292,10 +452,12 @@ def _match_rows_to_candidates(
         for row, candidate in _assign_within_product(rows, product_candidates):
             matched[id(row)] = candidate
             remaining.remove(candidate)
-        for row in rows[len(product_candidates):]:
-            unmatched_rows.append(row)
+        # Sin candidato quedan las filas no elegidas, no las últimas.
+        unmatched_rows.extend(row for row in rows if id(row) not in matched)
 
-    for row in unmatched_rows:
+    # Por valores y no por llegada: con una sola línea libre para varias filas,
+    # quién se la lleva no puede depender del orden.
+    for row in sorted(unmatched_rows, key=_row_order_key):
         if not remaining:
             matched[id(row)] = ExtractionProposal(province=channel_province)
         elif len(remaining) == 1:
@@ -374,7 +536,7 @@ class RowCorrectness:
 
 
 def row_correctness(
-    confirmed: PriceHistory, proposal: ExtractionProposal
+    confirmed: ConfirmedValues, proposal: ExtractionProposal
 ) -> RowCorrectness:
     """Compara una propuesta contra la fila que el operador confirmó."""
     proposed_province_id = proposal.province.id if proposal.province is not None else None
@@ -392,11 +554,12 @@ def row_correctness(
 
 
 def assisted_ingestion_ids(session: Session, assist_log_path: Path | None) -> set[str]:
-    """Las ingestas que H0 deja fuera: las del registro del operador o las que
+    """Las ingestas que no son oro: las del registro del operador o las que
     tienen una revisión capturada en `llm_reviews` (slice 3a).
 
-    La usan `compute_h0_report` y el backtest (`llm_backtest.assisted_ids`)
-    para que los dos excluyan exactamente el mismo conjunto.
+    La usan el congelado del conjunto de referencia
+    (`reference_set.select_members`) y el backtest (`llm_backtest.assisted_ids`)
+    para que los dos excluyan exactamente lo mismo.
     """
     del_registro = (
         llm_assist.assisted_ingestion_ids(assist_log_path)
@@ -410,17 +573,40 @@ def assisted_ingestion_ids(session: Session, assist_log_path: Path | None) -> se
     return del_registro | revisados
 
 
+def _reference_set() -> ModuleType:
+    """`saimc.extraction.reference_set`, importado recién al usarlo.
+
+    Ese módulo importa `assisted_ingestion_ids` de acá: importarlo arriba
+    cerraría el ciclo y rompería el arranque de los dos.
+    """
+    from saimc.extraction import reference_set
+
+    return reference_set
+
+
+def _ratio(correct: int, total: int) -> float | None:
+    return correct / total if total else None
+
+
 def compute_h0_report(
     session: Session,
     transcribe: Transcriber = ocr.transcribe,
-    assist_log_path: Path | None = None,
 ) -> H0Report:
-    """Calcula el reporte de H0 re-corriendo `propose_all()` sobre lo ya curado.
+    """Calcula el reporte de H0 re-corriendo `propose_all()` sobre los miembros
+    de la versión vigente del conjunto de referencia.
 
-    Evalúa por FILA de `prices_history`, no por ingesta: un anuncio
-    multi-producto (`docs/decisions.md`) tiene varias filas con el mismo
-    `source_id`, cada una es un dato de H0 aparte.
+    Evalúa por FILA congelada, no por anuncio: un anuncio multi-producto
+    (`docs/decisions.md`) tiene varias filas, cada una es un dato de H0 aparte.
+
+    Levanta `NoReferenceSetError` si nunca se congeló un conjunto.
     """
+    reference_set = _reference_set()
+    version = reference_set.current_version(session)
+    if version is None:
+        raise NoReferenceSetError("No hay ningún conjunto de referencia congelado.")
+    members: list[ReferenceSetMember] = reference_set.members_of(session, version)
+
+    # Composición del corpus: sale de la base viva, no del conjunto.
     total_curated = session.execute(
         select(RawIngestion).where(RawIngestion.processing_status == ProcessingStatus.CURATED)
     ).scalars().all()
@@ -451,12 +637,21 @@ def compute_h0_report(
     )
     text_curated_count = total_curated_count - image_curated_count
 
-    ingestions = _curated_ingestions(session)
+    # El anuncio de cada miembro existe siempre (FK con RESTRICT), cualquiera
+    # sea su estado de hoy: uno descartado después del congelado se sigue
+    # evaluando.
+    ingestions = {
+        ingestion.id: ingestion
+        for ingestion in session.execute(
+            select(RawIngestion).where(
+                RawIngestion.id.in_([member.ingestion_id for member in members])
+            )
+        ).scalars()
+    }
     image_ocr_empty_count = 0
 
     products = _focus_products(session)
     provinces = _all_provinces(session)
-    history_by_source = _price_history_by_source(session)
 
     product_correct = 0
     price_correct = 0
@@ -465,33 +660,12 @@ def compute_h0_report(
     complete_correct = 0
     evaluated_rows_count = 0
     evaluated_ads_count = 0
-    assisted_ads_count = 0
-    assisted_rows_count = 0
 
-    # Qué ingestas pasaron por el asistente de LLM. Salen de la MEDICIÓN, no de
-    # la cola: siguen siendo anuncios curados y siguen contando en la tasa de
-    # descarte. Lo que no pueden es alimentar las precisiones, porque su verdad
-    # pudo absorber un valor que escribió el modelo y entonces H0 mediría las
-    # reglas contra algo que el modelo produjo (design.md del cambio, D6).
-    #
-    # Con el registro vacío —o ausente— este conjunto es vacío y los números
-    # son exactamente los de siempre: introducir el corte no mueve nada por sí
-    # solo.
-    #
-    # Desde el slice 3a también cuenta como asistido lo que tiene una fila en
-    # `llm_reviews` (el operador lo curó con la propuesta a la vista). En 3b la
-    # propuesta se precalcula sin pasar por el registro, así que el registro
-    # solo deja de alcanzar (`docs/spec-slice-3a.md`).
-    assisted_ids = assisted_ingestion_ids(session, assist_log_path)
-
-    for ingestion in ingestions:
-        confirmed_rows = history_by_source.get(ingestion.id, [])
+    for member in members:
+        confirmed_rows = frozen_rows(member)
         if not confirmed_rows:
             continue
-        if str(ingestion.id) in assisted_ids:
-            assisted_ads_count += 1
-            assisted_rows_count += len(confirmed_rows)
-            continue
+        ingestion = ingestions[member.ingestion_id]
         evaluated_ads_count += 1
         text = _evaluation_text(ingestion, transcribe)
         if ingestion.content_type == ContentType.IMAGE and not text.strip():
@@ -519,42 +693,16 @@ def compute_h0_report(
             evaluated_rows_count += 1
 
             ok = row_correctness(confirmed, proposal)
-            is_product_ok = ok.product
-            is_price_ok = ok.price
-            is_province_ok = ok.province
-            is_quantity_unit_ok = ok.quantity_unit
-
-            if is_product_ok:
+            if ok.product:
                 product_correct += 1
-            if is_price_ok:
+            if ok.price:
                 price_correct += 1
-            if is_province_ok:
+            if ok.province:
                 province_correct += 1
-            if is_quantity_unit_ok:
+            if ok.quantity_unit:
                 quantity_unit_correct += 1
-            if is_product_ok and is_price_ok and is_province_ok and is_quantity_unit_ok:
+            if ok.complete:
                 complete_correct += 1
-
-    if evaluated_rows_count == 0:
-        return H0Report(
-            total_curated=total_curated_count,
-            total_discarded=total_discarded_count,
-            total_processed=total_processed,
-            discarded_off_focus=discarded_off_focus,
-            discard_rate=discard_rate,
-            text_curated_count=text_curated_count,
-            image_curated_count=image_curated_count,
-            image_ocr_empty_count=image_ocr_empty_count,
-            evaluated_rows_count=0,
-            evaluated_ads_count=0,
-            assisted_ads_count=assisted_ads_count,
-            assisted_rows_count=assisted_rows_count,
-            product_accuracy=None,
-            price_accuracy=None,
-            province_accuracy=None,
-            quantity_unit_accuracy=None,
-            complete_accuracy=None,
-        )
 
     return H0Report(
         total_curated=total_curated_count,
@@ -567,13 +715,16 @@ def compute_h0_report(
         image_ocr_empty_count=image_ocr_empty_count,
         evaluated_rows_count=evaluated_rows_count,
         evaluated_ads_count=evaluated_ads_count,
-        assisted_ads_count=assisted_ads_count,
-        assisted_rows_count=assisted_rows_count,
-        product_accuracy=product_correct / evaluated_rows_count,
-        price_accuracy=price_correct / evaluated_rows_count,
-        province_accuracy=province_correct / evaluated_rows_count,
-        quantity_unit_accuracy=quantity_unit_correct / evaluated_rows_count,
-        complete_accuracy=complete_correct / evaluated_rows_count,
+        assisted_ads_count=0,
+        assisted_rows_count=0,
+        product_accuracy=_ratio(product_correct, evaluated_rows_count),
+        price_accuracy=_ratio(price_correct, evaluated_rows_count),
+        province_accuracy=_ratio(province_correct, evaluated_rows_count),
+        quantity_unit_accuracy=_ratio(quantity_unit_correct, evaluated_rows_count),
+        complete_accuracy=_ratio(complete_correct, evaluated_rows_count),
+        reference_set_version=version,
+        reference_set_hash=reference_set.version_hash(session, version),
+        reference_set_drifted=len(reference_set.drift_report(session, version)),
     )
 
 
@@ -600,47 +751,100 @@ def _format_pct(value: float | None) -> str:
     return "sin datos" if value is None else f"{value:.1%}"
 
 
-def _print_report(report: H0Report) -> None:
-    print("=== Medición de H0 (spec.md §12.5) ===")
-    print(f"Procesados totales:      {report.total_processed}")
-    print(f"  Curados:               {report.total_curated}")
-    print(f"  Descartados:           {report.total_discarded}")
+def _lane0_line(summary: AutomationSummary, content_type: str, label: str) -> str:
+    bound = summary.lane0[content_type]
+    if bound.n == 0:
+        return f"  {label}: sin auditar todavía"
+    return (
+        f"  {label}: {bound.k} rescatados de {bound.n} auditados "
+        f"({_format_pct(bound.rate)}), cota superior al 95 % {_format_pct(bound.upper)} "
+        f"(meta {bound.target:.0%})"
+    )
+
+
+def _print_phase0_metric(
+    summary: AutomationSummary, out: Callable[[str], None] = print
+) -> None:
+    """«Métrica de la Fase 0» (spec-slice-B3, sección 5): la partición total, los
+    dos números con su nombre y el error auditado de lo que cada uno cuenta."""
+    p = summary.total.both
+    since = summary.auto_since.isoformat() if summary.auto_since else "sin eventos auto"
+    from saimc.validation import lane1  # diferido: validation importa este módulo
+
+    out("=== Métrica de la Fase 0 (docs/spec-slice-B3.md, sección 4) ===")
+    out(f"Desde la semana del primer evento automático: {since}")
+    out(f"Anuncios que entraron:       {p.total}")
+    out(f"  A  publicado solo:         {p.a}")
+    out(f"  H  publicado por operador: {p.h}")
+    out(f"  D0 descartado solo:        {p.d0}")
+    out(f"  Dh descartado por operador:{p.dh:>3}")
+    out(f"  P  pendiente:              {p.p}")
+    out("")
+    out(f"Resuelto sin el operador (N1):  {_format_pct(p.n1)}")
+    if p.n2_min is None:
+        out("Publicado sin el operador (N2): sin datos")
+    else:
+        techo = "sin techo (ningún válido resuelto)" if p.n2_max is None else _format_pct(p.n2_max)
+        out(f"Publicado sin el operador (N2): al menos {_format_pct(p.n2_min)}, a lo sumo {techo}")
+    out("")
+    suffix = " — PROVISIONAL" if summary.provisional else ""
+    out(f"Error auditado{suffix}")
+    out("Falsos descartes del carril 0 (D0):")
+    out(_lane0_line(summary, "text", "texto"))
+    out(_lane0_line(summary, "image", "imagen"))
+    state = summary.lane1
+    if state.audited == 0:
+        out("Error por anuncio del carril 1 (A): sin auditar todavía")
+    else:
+        out(
+            f"Error por anuncio del carril 1 (A): {state.errors} con error de "
+            f"{state.audited} auditados ({_format_pct(state.errors / state.audited)}), "
+            f"cota superior al 95 % {_format_pct(state.upper)} "
+            f"(meta {lane1.ERROR_TARGET:.0%})"
+        )
+    out("")
+
+
+def _print_report(report: H0Report, out: Callable[[str], None] = print) -> None:
+    out(
+        "=== H0 — extractor sobre el conjunto congelado, "
+        f"versión {report.reference_set_version} (spec.md §12.5) ==="
+    )
+    out(f"Hash del conjunto:       {report.reference_set_hash}")
+    out(f"Miembros con deriva:     {report.reference_set_drifted}")
+    if report.reference_set_drifted:
+        out("  Sus filas vivas ya no son las congeladas. H0 mide contra las congeladas.")
+    out("")
+    out("Corpus (de la base viva, no del conjunto):")
+    out(f"Procesados totales:      {report.total_processed}")
+    out(f"  Curados:               {report.total_curated}")
+    out(f"    de texto:            {report.text_curated_count}")
+    out(f"    de imagen:           {report.image_curated_count}")
+    out(f"  Descartados:           {report.total_discarded}")
     if report.discarded_off_focus:
-        print(
+        out(
             f"    fuera de foco:       {report.discarded_off_focus} "
             "(con dato, no piloto/mayorista — no cuentan en la tasa)"
         )
-    print(
+    out(
         f"  Tasa de descarte:      {_format_pct(report.discard_rate)}  "
         "(sin dato útil, §12.5)"
     )
-    print()
-    print(f"Curados de texto:        {report.text_curated_count} anuncios")
-    print(f"Curados de imagen:       {report.image_curated_count} anuncios (OCR re-corrido)")
-    print(f"  Sin texto del OCR:     {report.image_ocr_empty_count}")
-    print(f"Anuncios evaluados:      {report.evaluated_ads_count} (el conjunto de referencia)")
-    if report.assisted_ads_count:
-        print(
-            f"  Excluidos por asistencia: {report.assisted_ads_count} anuncios "
-            f"({report.assisted_rows_count} filas)"
-        )
-        print(
-            "    Pasaron por el asistente de LLM, así que su verdad pudo "
-            "absorber un valor del modelo."
-        )
-        print("    Las precisiones de abajo miden SOLO lo no asistido.")
-    print(f"Filas evaluadas:         {report.evaluated_rows_count} (un anuncio puede tener varias)")
-    print()
-    print(f"Precisión de producto:        {_format_pct(report.product_accuracy)}")
-    print(f"Precisión de precio:          {_format_pct(report.price_accuracy)}")
-    print(f"Precisión de provincia:       {_format_pct(report.province_accuracy)}")
-    print(f"Precisión de cantidad/unidad: {_format_pct(report.quantity_unit_accuracy)}")
-    print(f"Extracción completa correcta: {_format_pct(report.complete_accuracy)}")
+    out("")
+    out(f"Anuncios evaluados:      {report.evaluated_ads_count} (el conjunto de referencia)")
+    out(f"  Sin texto del OCR:     {report.image_ocr_empty_count} (imágenes, OCR re-corrido)")
+    out(f"Filas evaluadas:         {report.evaluated_rows_count} (un anuncio puede tener varias)")
+    out("")
+    out(f"Precisión de producto:        {_format_pct(report.product_accuracy)}")
+    out(f"Precisión de precio:          {_format_pct(report.price_accuracy)}")
+    out(f"Precisión de provincia:       {_format_pct(report.province_accuracy)}")
+    out(f"Precisión de cantidad/unidad: {_format_pct(report.quantity_unit_accuracy)}")
+    out(f"Extracción completa correcta: {_format_pct(report.complete_accuracy)}")
 
     if report.evaluated_ads_count < _H0_MINIMUM_ADS:
         faltan = _H0_MINIMUM_ADS - report.evaluated_ads_count
-        print()
-        print(
+        out("")
+        out(
             f"AVISO: el conjunto de referencia tiene {report.evaluated_ads_count} anuncios "
             f"(umbral H0: {_H0_MINIMUM_ADS}, spec.md §3). Faltan {faltan}. "
             "Este número todavía NO es la medición oficial de H0."
@@ -726,12 +930,15 @@ def h0_run_record(
     dirty: bool,
     branch: str,
     tesseract_version: str | None,
+    summary: AutomationSummary | None = None,
 ) -> dict[str, object]:
     """Un registro de corrida, aplanado y serializable a una línea JSON.
 
-    Las 15 métricas del `H0Report` viajan tal cual (`asdict`), más el
-    contexto que las hace comparables entre versiones: cuándo, qué commit,
-    si el árbol estaba limpio, qué rama y qué Tesseract. `is_official` usa el
+    Los campos del `H0Report` viajan tal cual (`asdict`): las métricas y
+    contra qué conjunto se midieron (`reference_set_version`,
+    `reference_set_hash`, `reference_set_drifted`). Más el contexto que las
+    hace comparables entre versiones del código: cuándo, qué commit, si el
+    árbol estaba limpio, qué rama y qué Tesseract. `is_official` usa el
     mismo umbral que el aviso de `_print_report` (`_H0_MINIMUM_ADS`).
     """
     return {
@@ -742,7 +949,33 @@ def h0_run_record(
         "tesseract_version": tesseract_version,
         "is_official": report.evaluated_ads_count >= _H0_MINIMUM_ADS,
         **asdict(report),
+        **(_phase0_fields(summary) if summary is not None else {}),
     }
+
+
+def _phase0_fields(summary: AutomationSummary) -> dict[str, object]:
+    """La foto de la métrica de la Fase 0 (claves `phase0_*`): los cinco
+    conteos, N1, los dos extremos de N2 y, por carril, auditados, errores y
+    cota. Una línea anterior a B3-3 no las trae: se lee como «sin partición»."""
+    p = summary.total.both
+    fields: dict[str, object] = {
+        "phase0_a": p.a,
+        "phase0_h": p.h,
+        "phase0_d0": p.d0,
+        "phase0_dh": p.dh,
+        "phase0_p": p.p,
+        "phase0_n1": p.n1,
+        "phase0_n2_min": p.n2_min,
+        "phase0_n2_max": p.n2_max,
+        "phase0_lane1_audited": summary.lane1.audited,
+        "phase0_lane1_errors": summary.lane1.errors,
+        "phase0_lane1_upper": summary.lane1.upper,
+    }
+    for content_type, bound in summary.lane0.items():
+        fields[f"phase0_lane0_{content_type}_audited"] = bound.n
+        fields[f"phase0_lane0_{content_type}_errors"] = bound.k
+        fields[f"phase0_lane0_{content_type}_upper"] = bound.upper
+    return fields
 
 
 def append_h0_run(record: dict[str, object], path: Path) -> None:
@@ -762,7 +995,7 @@ def append_h0_run(record: dict[str, object], path: Path) -> None:
 class H0RunSummary:
     """Una corrida registrada, con lo que `/control` muestra de ella.
 
-    Subconjunto de las 21 claves del registro completo: la vista del operador
+    Subconjunto de las claves del registro completo: la vista del operador
     necesita la fecha, la versión y las métricas que se comparan, no los
     conteos de composición del corpus. El archivo en disco sigue siendo la
     fuente entera.
@@ -788,10 +1021,15 @@ class H0RunSummary:
     quantity_unit_accuracy: float | None
     discard_rate: float | None
     # Diferencia de extracción completa contra la última corrida anterior que
-    # haya registrado un número. `None` si es la primera con número, o si esta
-    # corrida no lo tiene. Una corrida "sin datos" en el medio no corta la
-    # comparación entre las que sí lo tienen.
+    # haya registrado un número. `None` si es la primera con número, si esta
+    # corrida no lo tiene, o si las dos no midieron contra el mismo conjunto de
+    # referencia: esa diferencia no es atribuible al extractor. Una corrida
+    # "sin datos" en el medio no corta la comparación entre las que sí lo
+    # tienen.
     complete_delta: float | None
+    # Versión del conjunto congelado contra el que se midió. `None` en las
+    # corridas anteriores a B3-2, que midieron contra el oro vivo de su día.
+    reference_set_version: int | None
 
 
 def _as_float(value: object) -> float | None:
@@ -803,6 +1041,19 @@ def _as_float(value: object) -> float | None:
 
 def _as_int(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _reference_set_key(record: dict[str, object]) -> tuple[int, str] | None:
+    """Contra qué conjunto midió una corrida: versión y huella.
+
+    `None` para una línea vieja, sin versión. Dos líneas viejas se siguen
+    comparando entre sí, como hasta ahora; una vieja y una nueva, nunca. La
+    huella entra porque otra base (la de desarrollo) también tiene versión 1.
+    """
+    version = record.get("reference_set_version")
+    if not isinstance(version, int) or isinstance(version, bool):
+        return None
+    return version, str(record.get("reference_set_hash", ""))
 
 
 def read_h0_runs(path: Path | None = None) -> list[H0RunSummary]:
@@ -821,6 +1072,7 @@ def read_h0_runs(path: Path | None = None) -> list[H0RunSummary]:
 
     summaries: list[H0RunSummary] = []
     previous_complete: float | None = None
+    previous_set: tuple[int, str] | None = None
     for line in raw.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -833,9 +1085,12 @@ def read_h0_runs(path: Path | None = None) -> list[H0RunSummary]:
             continue
 
         complete = _as_float(record.get("complete_accuracy"))
+        reference_set_key = _reference_set_key(record)
         delta = (
             complete - previous_complete
-            if complete is not None and previous_complete is not None
+            if complete is not None
+            and previous_complete is not None
+            and reference_set_key == previous_set
             else None
         )
         timestamp = str(record.get("timestamp", ""))
@@ -860,38 +1115,62 @@ def read_h0_runs(path: Path | None = None) -> list[H0RunSummary]:
                 quantity_unit_accuracy=_as_float(record.get("quantity_unit_accuracy")),
                 discard_rate=_as_float(record.get("discard_rate")),
                 complete_delta=delta,
+                reference_set_version=reference_set_key[0] if reference_set_key else None,
             )
         )
         if complete is not None:
             previous_complete = complete
+            previous_set = reference_set_key
 
     return summaries
 
 
-def main() -> None:
-    """Punto de entrada: `python -m saimc.extraction.measure`.
-
-    Registra la corrida en `docs/h0-runs.jsonl` salvo `--no-record`.
-    """
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m saimc.extraction.measure",
-        description="Mide H0 (spec.md §12.5) contra la cola de curaduría real.",
+        description=(
+            "Mide H0 (spec.md §12.5): el extractor por reglas contra el conjunto "
+            "de referencia congelado."
+        ),
     )
     parser.add_argument(
         "--no-record",
         action="store_true",
         help=f"No persistir la corrida en docs/{_H0_RUNS_FILENAME} (N-05).",
     )
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
-    with session_scope() as session:
-        report = compute_h0_report(
-            session, assist_log_path=get_settings().llm_assist_log_path
+
+def run(
+    args: argparse.Namespace,
+    session: Session,
+    *,
+    runs_path: Path,
+    transcribe: Transcriber = ocr.transcribe,
+    out: Callable[[str], None] = print,
+) -> int:
+    """Mide y, salvo `--no-record`, registra. Devuelve el código de salida.
+
+    Sin conjunto congelado no mide ni escribe: devuelve 1.
+    """
+    try:
+        report = compute_h0_report(session, transcribe=transcribe)
+    except NoReferenceSetError as error:
+        out(
+            f"{error} H0 se mide solo contra un conjunto congelado. "
+            f"Se congela con: {_reference_set().COMMAND} --execute "
+            "(docs/runbook-medir-h0.md, «Congelar el conjunto»)."
         )
-    _print_report(report)
+        out(f"No se midió nada y no se escribió en {runs_path}.")
+        return 1
+    from saimc.automation import automation_summary  # diferido: ciclo con validation
+
+    summary = automation_summary(session, get_settings())
+    _print_phase0_metric(summary, out)
+    _print_report(report, out)
 
     if args.no_record:
-        return
+        return 0
 
     commit, dirty, branch = _git_revision()
     record = h0_run_record(
@@ -901,17 +1180,29 @@ def main() -> None:
         dirty=dirty,
         branch=branch,
         tesseract_version=_tesseract_version(),
+        summary=summary,
     )
-    path = _h0_runs_path()
-    append_h0_run(record, path)
+    append_h0_run(record, runs_path)
 
-    print()
+    out("")
     if dirty:
-        print(
+        out(
             "AVISO: árbol de trabajo sucio — este número no es atribuible a un "
             "commit limpio. Quedó registrado igual, con git_dirty=true."
         )
-    print(f"Corrida registrada en {path} (commit {commit}).")
+    out(f"Corrida registrada en {runs_path} (commit {commit}).")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Punto de entrada: `python -m saimc.extraction.measure`.
+
+    Registra la corrida en `docs/h0-runs.jsonl` salvo `--no-record`.
+    """
+    args = parse_args(argv)
+    with session_scope() as session:
+        code = run(args, session, runs_path=_h0_runs_path())
+    sys.exit(code)
 
 
 if __name__ == "__main__":

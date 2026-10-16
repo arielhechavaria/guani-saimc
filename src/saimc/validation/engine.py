@@ -110,9 +110,38 @@ _RULE_REASONS: dict[str, dict[Outcome, str]] = {
     },
 }
 
-#: El único motivo de una fila que no saca al anuncio del carril 1: un repost no
-#: es un error de extracción. La fila igual queda en `possible_duplicate`.
+#: Un repost no es un error de extracción. La fila igual queda en
+#: `possible_duplicate`.
 _DUPLICATE_REASON = _RULE_REASONS["duplicate"][Outcome.FAIL]
+
+#: Los motivos de una fila que no sacan al anuncio del carril 1. Además del
+#: duplicado (G1b), los tres «todavía no sé» que no hablan del anuncio (B2b,
+#: `docs/spec-slice-B2b.md`): un canal que nadie curó y una celda sin
+#: referencias con que comparar. La fila conserva el motivo y su estado
+#: (`unverified`); lo que cambia es solo el carril. Un canal SUCIO y un precio
+#: FUERA de su celda siguen frenando: esos sí son evidencia.
+_NON_BLOCKING_REASONS = frozenset(
+    {
+        _DUPLICATE_REASON,
+        _RULE_REASONS["trust"][Outcome.UNKNOWN],
+        _RULE_REASONS["price"][Outcome.UNKNOWN],
+        _RULE_REASONS["quantity_price"][Outcome.UNKNOWN],
+    }
+)
+
+
+#: Prefijo del motivo de desacuerdo entre reglas y modelo; el resto del texto
+#: lista los campos y varía, por eso no puede ir en `_NON_BLOCKING_REASONS`.
+_DISAGREEMENT_PREFIX = "reglas y modelo no coinciden en "
+
+
+def _blocks_lane1(reason: str, config: ValidationConfig | None) -> bool:
+    """¿Este motivo de fila saca al anuncio del carril 1?"""
+    if reason in _NON_BLOCKING_REASONS:
+        return False
+    if reason.startswith(_DISAGREEMENT_PREFIX):
+        return config is None or not config.lane1_model_over_rules
+    return True
 
 
 def _verification_reasons(
@@ -379,7 +408,9 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
         reasons.append(f"la propuesta trae más filas que el tope del carril 1 ({max_rows})")
     for index, row in enumerate(rows, start=1):
         reasons += [
-            f"fila {index}: {reason}" for reason in row.reasons if reason != _DUPLICATE_REASON
+            f"fila {index}: {reason}"
+            for reason in row.reasons
+            if _blocks_lane1(reason, config)
         ]
     if config is not None:
         reasons += _signal_reasons(ctx, config)
@@ -389,8 +420,8 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
     return AdValidation(
         LANE_ACCEPT,
         (
-            "anuncio de texto con todas sus filas verificadas y las reglas en pass "
-            "(un posible duplicado no frena)",
+            "anuncio de texto con todas sus filas verificadas y ninguna regla fallada "
+            "(canal sin historial, celda sin referencias y posible duplicado no frenan)",
         ),
         rows,
     )
@@ -416,12 +447,20 @@ def decide_lane_0(ctx: AdContext) -> AdValidation:
     return _lane_0_verdict(ctx, model, _lane_0_reasons(ctx, model))
 
 
+def _has_digit(text: str) -> bool:
+    return any(char.isdigit() for char in text)
+
+
 def _lane_0_reasons(ctx: AdContext, model: AdProposal) -> list[str]:
     """Por qué un descarte del modelo NO va al carril 0. Vacío si va."""
     reasons: list[str] = []
     if model.discard_reason not in _LANE_0_REASONS:
         reasons.append("el modelo descarta, pero no por fuera de foco ni por falta de datos")
-    if mentions_any_product(ctx.text, ctx.pilot_products):
+    # Sin un solo dígito no puede haber precio: que el texto nombre un producto
+    # («pollo agotado») no lo vuelve un anuncio con dato (2026-10-13). Se mira el
+    # dígito y no el significado: un «2» suelto ya basta para que lo mire una
+    # persona, que es la lectura conservadora.
+    if _has_digit(ctx.text) and mentions_any_product(ctx.text, ctx.pilot_products):
         reasons.append("el modelo descarta, pero las reglas ven un producto piloto en el texto")
     return reasons
 

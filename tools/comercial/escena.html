@@ -1,0 +1,3033 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guani · comercial «Como se escoge el arroz»</title>
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="lienzo" width="720" height="1280"></canvas>
+<script>
+"use strict";
+/*
+ * La escena del comercial, dibujada cuadro a cuadro en un lienzo de 720×1280.
+ *
+ * `window.init({timeline, data})` carga las fuentes y arma la mesa; después
+ * `window.seek(t)` dibuja el cuadro del instante `t`. Todo sale de `t` y de una
+ * semilla fija: no hay reloj ni azar suelto, así que el mismo `t` da siempre el
+ * mismo cuadro. Los tiempos no viven aquí: los pasa `tools/comercial/tiempos.py`,
+ * que es la misma fuente que usa el sonido.
+ *
+ * Es un solo plano. Hay una mesa (el «mundo», en unidades propias) y una cámara
+ * cenital con posición, zoom y giro. Un objeto a cierta altura sobre la mesa se
+ * ve más grande y más desenfocado cuanto más cerca pasa de la lente: de ahí
+ * salen la caída de las cápsulas, el paralaje y la profundidad de campo.
+ */
+
+const W = 720, H = 1280;
+const STAGE_Z = 0.2;      // zoom del plano general: 1 px de «escenario» = 5 unidades de mundo
+const FOCAL = 900;        // altura de la cámara sobre la mesa = FOCAL / zoom
+const SEED = 20261011;
+const FONTS = "../../src/saimc/web/static/fonts";
+const COLD = [204, 232, 233];      // el celeste claro del sitio: lo de la máquina, recto y frío
+const GUAYABA = [255, 208, 114];   // --ph-dusk-guayaba: lo dudoso, lo que mirará la persona
+const INK = "#08202f";             // --ph-dusk-tinta
+// Hacia dónde está la luz: arriba a la izquierda.
+const LIGHT = (() => { const x = -0.56, y = -0.83, n = Math.hypot(x, y); return [x / n, y / n]; })();
+
+let T = null;             // línea de tiempo
+let D = null;             // datos
+let grains = [];
+let ordered = [];         // los granos en el orden en que cayeron
+let layout = null;        // textos ya medidos
+let texture = null, shadowSprite = null, discShadow = null;
+
+const view = document.getElementById("lienzo");
+const out = view.getContext("2d");
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const sceneCanvas = mk(W, H), sc = sceneCanvas.getContext("2d");
+const accCanvas = mk(W, H), ac = accCanvas.getContext("2d");
+const bloomCanvas = mk(W / 4, H / 4), bc = bloomCanvas.getContext("2d");
+const pencilCanvas = mk(W, H), pc = pencilCanvas.getContext("2d");   // el trazo a mano se pinta aparte
+const backCanvas = mk(W, H), bk = backCanvas.getContext("2d");       // la mesa, cuando queda fuera de foco
+const measure = mk(8, 8).getContext("2d");
+
+// ── Utilidades ──────────────────────────────────────────────────────────────
+
+const TAU = Math.PI * 2;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = (x) => clamp(x, 0, 1);
+const lerp = (a, b, u) => a + (b - a) * u;
+const smooth = (a, b, x) => { const u = clamp01((x - a) / (b - a)); return u * u * (3 - 2 * u); };
+const easeOutCubic = (u) => 1 - Math.pow(1 - clamp01(u), 3);
+const easeInCubic = (u) => Math.pow(clamp01(u), 3);
+const easeInOutCubic = (u) => { u = clamp01(u); return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; };
+const easeOutQuint = (u) => 1 - Math.pow(1 - clamp01(u), 5);
+const easeOutBack = (u, s = 1.7) => { u = clamp01(u); return 1 + (s + 1) * Math.pow(u - 1, 3) + s * Math.pow(u - 1, 2); };
+const mix3 = (a, b, u) => [lerp(a[0], b[0], u), lerp(a[1], b[1], u), lerp(a[2], b[2], u)];
+const rgb = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+const rot = (v, a) => { const c = Math.cos(a), s = Math.sin(a); return [v[0] * c - v[1] * s, v[0] * s + v[1] * c]; };
+// El giro más corto que deja un grano horizontal (un grano es igual al derecho que al revés).
+const toHorizontal = (a) => { let r = a % Math.PI; if (r > Math.PI / 2) r -= Math.PI; if (r < -Math.PI / 2) r += Math.PI; return -r; };
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Una ondulación suave y repetible entre -1 y 1: el pulso de una mano, la presión de un lápiz.
+function wobbler(rnd, n = 32) {
+  const v = Array.from({ length: n }, () => rnd() * 2 - 1);
+  return (x) => {
+    const i = Math.floor(x), f = x - i, s = f * f * (3 - 2 * f);
+    const a = v[((i % n) + n) % n], b = v[(((i + 1) % n) + n) % n];
+    return a + (b - a) * s;
+  };
+}
+
+// 27300 → «27.300», como se escribe en Cuba.
+const fmtInt = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+// Escenario (px del plano general) → mundo.
+const wx = (sx) => (sx - W / 2) / STAGE_Z;
+const wy = (sy) => (sy - H / 2) / STAGE_Z;
+const wu = (px) => px / STAGE_Z;
+
+// ── Composición del plano general (en px de escenario) ──────────────────────
+
+const GUANI = { sx: 360, sy: 198, d: 204 };
+const EYES = [[GUANI.sx - 14.3, GUANI.sy - 8.2], [GUANI.sx + 14.3, GUANI.sy - 8.2]];
+const TITLE_BOX = [110, 318, 610, 410];          // «Guani lee.»
+const FIELD = [415, 968];                         // la franja de la mesa donde queda lo escogido
+const CLEAR = { sx: 566, sy0: 552, step: 37, mark: 500 };
+const DOUBT = { sx: 190, sy: 716, rx: 128, ry: 168 };
+const MOUND = { top: 1038, bottom: 1310, sag: 44 };
+
+// ── Cámara ──────────────────────────────────────────────────────────────────
+
+function camera(t) {
+  const [w0, w1] = T.whip;
+  const pre = T.anticipation;
+  let z, roll;
+  if (t < pre) {
+    z = 1 + 0.035 * clamp01(t / pre);
+    roll = 0.004 * Math.sin(t * 1.1);
+  } else if (t < w0) {
+    const u = easeInCubic((t - pre) / (w0 - pre));
+    z = lerp(1.035, 1.11, u);            // toma impulso antes del tirón
+    roll = lerp(0.004 * Math.sin(pre * 1.1), -0.035, u);
+  } else if (t < w1) {
+    const u = (t - w0) / (w1 - w0);
+    const e = easeOutQuint(u);
+    z = 1.11 * Math.pow((STAGE_Z * 0.97) / 1.11, e);   // se aleja de un tirón y frena suave
+    roll = lerp(-0.035, 0.012, e) + 0.05 * Math.sin(Math.PI * Math.min(1, u * 1.6)) * (1 - u);
+  } else {
+    const s = t - w1;
+    const push = 1 + 0.032 * (s / (T.proof - w1));            // empuje lento: el paso de la prueba, que no se detiene
+    z = STAGE_Z * (1 - 0.03 * Math.exp(-s * 4.5)) * push;
+    roll = 0.012 * Math.exp(-s * 2.2) + 0.006 * Math.sin(s * 0.42);
+    if (t > T.review.open[0]) z *= 1 + 0.028 * boxFocus(t);   // se asoma mientras el grano está abierto
+  }
+  // Deriva lenta: la cámara nunca está del todo quieta.
+  let cx = 6 * Math.sin(t * 0.61 + 1.3), cy = 8 * Math.sin(t * 0.47);
+  if (t >= w0) {
+    const k = smooth(w0, w1, t);
+    cx = lerp(cx, 34 * Math.sin((t - w1) * 0.23 + 0.4), k);
+    cy = lerp(cy, 26 * Math.sin((t - w1) * 0.31), k);
+  }
+  const M = T.measure;
+  if (t > M.anticipation) {                            // B5: toma impulso y entra en la fila de los claros
+    const pre = smooth(M.anticipation, M.dive[0], t) * (1 - smooth(M.dive[0], M.dive[0] + 0.14, t));
+    const u = clamp01((t - M.dive[0]) / (M.dive[1] - M.dive[0]));
+    const e = easeOutBack(1 - Math.pow(1 - Math.pow(u, 1.4), 2.2), 0.7);   // acelera en dos cuadros, frena largo y se pasa un pelo
+    const side = easeInOutCubic(clamp01((t - M.slide[0]) / (M.slide[1] - M.slide[0])));   // luego la fila se va a un lado
+    const tx = wx(lerp(grains[0].tx, VIEW.sx, side)), ty = wy(lerp(grains[0].ty, VIEW.sy, side));
+    const zt = VIEW.z * (1 + 0.006 * Math.max(0, t - M.dive[1]));   // y sigue acercándose, muy despacio
+    z = z * Math.pow(zt / z, e) * (1 - 0.03 * pre);
+    cx = lerp(cx, tx + 0.4 * cx, e); cy = lerp(cy, ty + 0.4 * cy, e);
+    roll += -0.012 * pre + 0.035 * Math.sin(Math.PI * Math.min(1, u * 1.25)) * (1 - u);
+  }
+  const I = T.island;
+  if (t > I.start) {                                   // B6: se aleja del cristal; la mesa queda muy abajo
+    const u = clamp01((t - I.pull[0]) / (I.pull[1] - I.pull[0]));
+    z *= Math.pow(0.2, easeInOutCubic(Math.pow(u, 0.8)));
+    roll += 0.03 * Math.sin(Math.PI * u) * (1 - u);
+  }
+  // Sacudidas: cada cápsula que cae y, sobre todo, Guani.
+  let sx = 0, sy = 0;
+  const shake = (at, amp, freq, decay, ph) => {
+    const a = t - at;
+    if (a < 0 || a > 0.7) return;
+    const e = amp * Math.exp(-a * decay);
+    sx += e * Math.sin(a * freq + ph) * 0.45;
+    sy += e * Math.cos(a * freq * 1.13 + ph);
+  };
+  T.capsules.forEach((at, i) => shake(at, 7, 62, 13, i * 2.1));
+  shake(T.guani, 20, 46, 8.5, 0.4);
+  if (t >= T.guani) z *= 1 + 0.018 * Math.exp(-(t - T.guani) * 9) * Math.cos((t - T.guani) * 30);
+  return { cx, cy, z, roll, sx, sy };
+}
+
+// Dónde cae en pantalla un punto del mundo a cierta altura sobre la mesa.
+function project(cam, x, y, hz) {
+  const k = 1 / Math.max(0.02, 1 - (hz * cam.z) / FOCAL);   // 1 en la mesa; crece hacia la lente
+  const s = cam.z * k;
+  const dx = (x - cam.cx) * s, dy = (y - cam.cy) * s;
+  const c = Math.cos(cam.roll), sn = Math.sin(cam.roll);
+  return { x: W / 2 + cam.sx + dx * c - dy * sn, y: H / 2 + cam.sy + dx * sn + dy * c, s, k };
+}
+
+// Deja el lienzo dibujando en coordenadas de la mesa.
+function onTable(c, cam) {
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(W / 2 + cam.sx, H / 2 + cam.sy);
+  c.rotate(cam.roll);
+  c.scale(cam.z, cam.z);
+  c.translate(-cam.cx, -cam.cy);
+}
+
+// ── Texto ───────────────────────────────────────────────────────────────────
+
+function fitText(text, family, weight, size, maxWidth) {
+  measure.font = `${weight} ${size}px ${family}`;
+  const w = measure.measureText(text).width;
+  const fitted = w > maxWidth ? size * maxWidth / w : size;
+  measure.font = `${weight} ${fitted}px ${family}`;
+  const chars = [];
+  for (let i = 0; i < text.length; i++) {
+    const a = measure.measureText(text.slice(0, i)).width;
+    const b = measure.measureText(text.slice(0, i + 1)).width;
+    chars.push({ ch: text[i], x: a, w: b - a });
+  }
+  return { text, family, weight, size: fitted, width: measure.measureText(text).width, chars };
+}
+
+// ── La mesa: el reguero ─────────────────────────────────────────────────────
+
+const inBox = (b, sx, sy, pad = 0) => sx > b[0] - pad && sx < b[2] + pad && sy > b[1] - pad && sy < b[3] + pad;
+
+// Cuánto arroz cae en cada sitio: un derrame de bordes irregulares (varias
+// manchas que se suman), ralo hacia fuera, y con dos claros donde van los textos.
+const LOBES = [
+  [352, 690, 196, 176, 1.0], [196, 842, 128, 104, 0.74], [540, 584, 118, 100, 0.66],
+  [520, 866, 96, 88, 0.5], [176, 560, 92, 84, 0.52], [452, 1218, 150, 46, 0.34],
+  [72, 720, 46, 80, 0.26], [662, 742, 44, 74, 0.26],
+];
+const CLEARINGS = [[360, 266, 262, 152], [360, 1090, 252, 84]];
+function density(sx, sy) {
+  let d = 0.03;
+  for (const [cx, cy, rx, ry, w] of LOBES) d += w * Math.exp(-0.5 * (((sx - cx) / rx) ** 2 + ((sy - cy) / ry) ** 2));
+  d = Math.min(1, d);
+  for (const [cx, cy, rx, ry] of CLEARINGS) {
+    // el borde del claro no es una elipse limpia: ondula
+    const ang = Math.atan2(sy - cy, sx - cx);
+    const wob = 1 + 0.1 * Math.sin(ang * 3 + 1.1) + 0.06 * Math.sin(ang * 7 + 0.3);
+    d *= smooth(0.84, 1.24, Math.hypot((sx - cx) / rx, (sy - cy) / ry) / wob);
+  }
+  return d;
+}
+
+function build() {
+  const rnd = mulberry32(SEED);
+  const R = (a, b) => a + (b - a) * rnd();
+  const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(TAU * rnd());
+  const fragments = D.fragments;
+  grains = [];
+
+  const add = (o) => {
+    const g = Object.assign({
+      kind: "field", cls: "none", text: null,
+      L: R(246, 316), Wd: R(74, 92), n: R(2.45, 3.1),
+      tone: R(-1, 1), a0: R(0, Math.PI), g: 16000,
+      vx: R(-260, 260), vy: R(-260, 260), spin: R(-5, 5), bounce: R(10, 26),
+      ti: Infinity, pdx: 0, pdy: 0, pda: 0, phop: 0,
+      seen: Infinity, passed: Infinity, lifts: [],    // cuándo lo toca la persona, cuándo queda con su aro y cuándo anda fuera de la mesa
+    }, o);
+    g.id = grains.length;
+    grains.push(g);
+    return g;
+  };
+
+  // 1) Las tres cápsulas del gancho. De cerca son píldoras con su texto.
+  const heroPose = [[-94, 8, -0.105], [76, 226, 0.072], [-50, 442, -0.05]];
+  D.heroes.forEach((text, i) => {
+    measure.font = "500 60px Roboto";
+    const big = measure.measureText(text).width + 124;
+    add({
+      kind: "hero", hero: i, text, x0: heroPose[i][0], y0: heroPose[i][1], a0: heroPose[i][2],
+      Lh: big, Wdh: 136, L: 300, Wd: 88, n: 2.8, tone: 0.5,
+      tl: T.capsules[i], vx: 0, vy: 0, spin: i % 2 ? 0.5 : -0.5, bounce: 26,
+    });
+  });
+
+  // 2) El chorro: un montón en el centro, donde cae lo primero.
+  const heap = Math.round(D.grains * 0.24);
+  for (let i = 0; i < heap; i++) {
+    const sx = 360 + gauss() * 66, sy = 640 + gauss() * 86;
+    const near = Math.hypot(sx - 360, sy - 640) < 150;
+    add({
+      kind: "heap", x0: wx(sx), y0: wy(sy),
+      tl: T.avalanche + 0.08 + 0.66 * Math.pow(rnd(), 0.8),
+      text: near && rnd() < 0.75 ? fragments[(i * 7) % fragments.length] : null,   // salteados: sin vecinos repetidos
+    });
+  }
+
+  // 3) Lo regado por la mesa. Cae después y cada vez más lejos, con la cámara.
+  const pts = [];
+  const want = D.grains - heap - 3 - T.stragglers.length;
+  let guard = 0;
+  while (pts.length < want && guard++ < 60000) {
+    const sx = R(-60, 780), sy = R(30, 1340);
+    if (rnd() > density(sx, sy)) continue;
+    let ok = true;
+    for (const p of pts) if (Math.hypot(p[0] - sx, p[1] - sy) < 27) { ok = false; break; }
+    if (ok) pts.push([sx, sy]);
+  }
+  for (const [sx, sy] of pts) {
+    const far = clamp01(Math.hypot(sx - 360, (sy - 640) * 0.72) / 520);
+    add({ x0: wx(sx), y0: wy(sy), tl: T.whip[0] - 0.12 + 0.94 * Math.pow(far, 0.85) + R(-0.05, 0.09) });
+  }
+
+  // 4) Los rezagados: caen durante el reguero y cruzan por delante, desenfocados.
+  const late = [[150, 560], [575, 905], [300, 470], [520, 590], [180, 880], [430, 760]];
+  T.stragglers.forEach((tl, i) => {
+    const side = i % 2 ? -1 : 1;
+    add({
+      kind: "straggler", x0: wx(late[i % late.length][0]), y0: wy(late[i % late.length][1]),
+      tl, g: 6200, vx: side * R(700, 1250), vy: R(-650, 650), spin: R(-4, 4), bounce: 34,
+    });
+  });
+
+  // 5) El golpe de Guani: los granos cercanos saltan y le hacen sitio.
+  const RI = 430, PUSH = 152;
+  for (const g of grains) {
+    let sx = g.x0 * STAGE_Z + W / 2, sy = g.y0 * STAGE_Z + H / 2;
+    const dx = sx - GUANI.sx, dy = sy - GUANI.sy, r = Math.hypot(dx, dy);
+    if (r < RI) {
+      const grow = PUSH * Math.pow(1 - r / RI, 2);
+      const ux = r > 1 ? dx / r : 0, uy = r > 1 ? dy / r : 1;
+      let nx = sx + ux * grow, ny = sy + uy * grow;
+      if (inBox(TITLE_BOX, nx, ny, 6)) ny = TITLE_BOX[3] + 8 + R(0, 26);
+      g.pdx = wu(nx - sx); g.pdy = wu(ny - sy);
+      g.pda = R(-1, 1) * Math.min(1.2, grow / 55);
+      g.phop = wu(10 + grow * 0.55);
+      g.ti = T.guani + Math.max(0, r - 105) / 1250;
+      sx = nx; sy = ny;
+    }
+    g.fx = sx; g.fy = sy;                 // dónde queda, en escenario, tras el golpe
+    g.a1 = g.a0 + g.pda;
+
+    // 6) Las dos lecturas: cuándo le pasa por encima cada línea de luz.
+    const ang = (e) => clamp(Math.atan2(sy - e[1], sx - e[0]) * 180 / Math.PI, 2, 178);
+    const fa = ang(EYES[0]), fb = ang(EYES[1]);
+    g.ta = lerp(T.scan_a[0], T.scan_a[1], (178 - (sy < EYES[0][1] ? (sx < 360 ? 178 : 2) : fa)) / 176);
+    g.tb = lerp(T.scan_b[0], T.scan_b[1], ((sy < EYES[1][1] ? (sx < 360 ? 178 : 2) : fb) - 2) / 176);
+    g.align = toHorizontal(g.a1);
+  }
+
+  // 7) El reparto. De los tres anuncios de pollo, dos entraron por el sistema
+  //    y el de la caja lo revisó una persona: así quedan aquí.
+  const free = (g) => g.cls === "none" && g.kind !== "straggler" && g.kind !== "hero"
+    && g.fx > 24 && g.fx < 696 && g.fy > FIELD[0] + 6 && g.fy < FIELD[1] - 6;
+  const nearest = (sx, sy) => {
+    let best = null, bd = Infinity;
+    for (const g of grains) {
+      if (!free(g)) continue;
+      const d = Math.hypot(g.fx - sx, g.fy - sy);
+      if (d < bd) { bd = d; best = g; }
+    }
+    return best;
+  };
+  const heroSlot = { 0: 3, 2: 6 };
+  for (let k = 0; k < D.clear; k++) {
+    const sx = CLEAR.sx, sy = CLEAR.sy0 + CLEAR.step * k;
+    const hero = Object.keys(heroSlot).find((h) => heroSlot[h] === k);
+    const g = hero !== undefined ? grains[+hero] : nearest(sx, sy);
+    g.cls = "clear"; g.slot = k; g.tx = sx; g.ty = sy; g.tc = T.clear_times[k];
+  }
+  const cluster = [];
+  guard = 0;
+  while (cluster.length < D.doubtful && guard++ < 20000) {
+    const a = R(0, TAU), q = Math.sqrt(rnd());
+    const sx = DOUBT.sx + Math.cos(a) * q * DOUBT.rx, sy = DOUBT.sy + Math.sin(a) * q * DOUBT.ry;
+    if (cluster.every((p) => Math.hypot(p[0] - sx, (p[1] - sy) * 1.9) > 58)) cluster.push([sx, sy]);
+  }
+  cluster.sort((p, q) => p[1] - q[1]);
+  cluster.forEach((p, i) => {
+    const g = i === 9 ? grains[1] : nearest(p[0], p[1]);
+    g.cls = "doubt"; g.tx = p[0]; g.ty = p[1];
+    g.tilt = R(-0.2, 0.2); g.td = T.doubt + R(0, 0.2); g.wob = R(0, TAU);
+  });
+
+  // 8) Lo apartado resbala a un montón, abajo.
+  const rest = grains.filter((g) => g.cls === "none");
+  const slots = rest.map(() => {
+    const side = rnd() < 0.5 ? -1 : 1;
+    const sx = 360 + side * 356 * Math.pow(rnd(), 0.8);
+    const top = MOUND.top + MOUND.sag * Math.pow((sx - 360) / 356, 2);
+    return [sx, top + (MOUND.bottom - top) * Math.pow(rnd(), 0.92)];
+  });
+  rest.sort((a, b) => a.fx - b.fx);
+  slots.sort((a, b) => a[0] - b[0]);
+  for (let i = slots.length - 1; i > 0; i--) {           // un poco de desorden: los caminos se cruzan
+    const j = Math.max(0, i - Math.floor(rnd() * 7));
+    [slots[i], slots[j]] = [slots[j], slots[i]];
+  }
+  rest.forEach((g, i) => {
+    g.tx = slots[i][0]; g.ty = slots[i][1]; g.ma = R(0, Math.PI) + Math.PI * Math.round(R(-1, 1));
+    const dist = Math.hypot(g.tx - g.fx, g.ty - g.fy);
+    g.ts = T.discard[0] + 0.4 * clamp01((g.fy - 380) / 640) + R(0, 0.07);
+    g.dur = 0.4 + 0.36 * clamp01(dist / 700);
+    if (g.ts + g.dur > T.discard[1] + 0.06) g.ts = T.discard[1] + 0.06 - g.dur;
+    g.bend = R(-1, 1) * wu(40);
+  });
+
+  ordered = grains.slice().sort((a, b) => a.tl - b.tl);
+}
+
+// ── Dónde está y cómo se ve cada grano en un instante ───────────────────────
+
+const hop2 = (u) => (u <= 0 || u >= 1 ? 0 : Math.abs(Math.sin(u * TAU)) * Math.pow(1 - u, 2));
+
+function pose(g, t) {
+  const p = {
+    x: g.x0, y: g.y0, hz: 0, a: g.a0, L: g.L, Wd: g.Wd, sqx: 1, sqy: 1,
+    dim: 0, clear: 0, doubt: 0, flash: 0, glow: 0, top: 0,
+  };
+  if (g.kind === "hero") {                         // de píldora a grano, en el tirón de cámara
+    const m = smooth(T.whip[0], T.whip[0] + 0.5, t);
+    p.L = lerp(g.Lh, g.L, m); p.Wd = lerp(g.Wdh, g.Wd, m);
+  }
+  const tau = g.tl - t;
+  if (tau > 0) {                                   // todavía en el aire
+    p.hz = 0.5 * g.g * tau * tau;
+    p.x += g.vx * tau; p.y += g.vy * tau; p.a += g.spin * tau;
+    return p;
+  }
+  const since = -tau;
+  p.hz = g.bounce * hop2(since / 0.3);            // rebote al tocar la mesa
+  const settle = Math.exp(-since * 15);
+  p.a += g.spin * 0.012 * settle * Math.cos(since * 30);
+  if (g.kind === "hero") {
+    const e = Math.exp(-since * 15) * Math.cos(since * 36);
+    p.sqx = 1 + 0.06 * e; p.sqy = 1 - 0.1 * e;     // se aplasta y recupera
+  }
+
+  if (t > g.ti) {                                  // el golpe de Guani
+    const u = clamp01((t - g.ti) / 0.44), e = easeOutCubic(u);
+    p.x += g.pdx * e; p.y += g.pdy * e; p.a += g.pda * e;
+    if (u < 1) p.hz += g.phop * Math.sin(Math.PI * u) * (1 - u * 0.4);
+  }
+
+  // Las dos lecturas. Con la primera el grano se alinea; la segunda lo confirma.
+  const s1 = t - Math.min(g.ta, g.tb), s2 = t - Math.max(g.ta, g.tb);
+  if (s1 > 0) {
+    p.flash = Math.exp(-s1 * 7);
+    if (s1 < 0.22) p.hz += 56 * Math.sin(Math.PI * s1 / 0.22);
+    p.a += g.align * clamp(1 - Math.exp(-s1 * 12) * Math.cos(s1 * 20), 0, 1.3);
+  }
+  if (s2 > 0) {
+    p.flash = Math.max(p.flash, 0.8 * Math.exp(-s2 * 8));
+    if (s2 < 0.16) p.hz += 30 * Math.sin(Math.PI * s2 / 0.16);
+    p.a += 0.085 * Math.exp(-s2 * 13) * Math.sin(s2 * 40);
+  }
+
+  if (g.cls === "none") {                          // se apaga y resbala al montón
+    const u = clamp01((t - g.ts) / g.dur);
+    if (t > g.ts - 0.08) p.dim = smooth(g.ts - 0.08, g.ts + 0.2, t);
+    if (u > 0) {
+      const e = Math.pow(u, 1.9), fx = wx(g.fx), fy = wy(g.fy), tx = wx(g.tx), ty = wy(g.ty);
+      p.x = lerp(fx, tx, e) + g.bend * Math.sin(Math.PI * u);
+      p.y = lerp(fy, ty, e);
+      p.a = lerp(g.a1 + g.align, g.ma, e);
+      const s = t - (g.ts + g.dur);
+      if (s > 0 && s < 0.22) p.hz += 30 * hop2(s / 0.22);
+    }
+    if (t > g.seen) p.dim *= 1 - 0.34 * smooth(g.seen, g.seen + 0.3, t);   // de la muestra: alguien lo miró
+  } else if (g.cls === "clear") {                  // se enciende y forma fila
+    const s = t - g.tc;
+    if (s > 0) {
+      p.clear = smooth(0, 0.1, s);
+      p.glow = 0.55 + 0.75 * Math.exp(-s * 6);
+      if (t > g.seen) p.glow += 0.7 * Math.exp(-(t - g.seen) * 6);         // el auditado: lo toca la yema
+      p.top = 1;
+      const e = easeOutBack((s - 0.03) / 0.36, 1.35);
+      p.x = lerp(wx(g.fx), wx(g.tx), e); p.y = lerp(wy(g.fy), wy(g.ty), e);
+      p.a = lerp(g.a1 + g.align, 0, clamp01(s / 0.2));
+      if (s < 0.4) p.hz += 150 * Math.sin(Math.PI * clamp01(s / 0.4));
+    }
+  } else {                                         // late en guayaba
+    const s = t - g.td;
+    if (s > 0) {
+      p.doubt = smooth(0, 0.25, s);
+      p.top = 1;
+      let beat = 0;                                // late hasta que la persona lo repasa
+      for (const b of T.doubt_pulses) if (t >= b && b < g.seen) beat = Math.max(beat, Math.exp(-(t - b) * 5.5));
+      p.glow = (0.38 + 0.62 * beat) * p.doubt;
+      const e = easeInOutCubic(s / 0.55);
+      const calm = t > g.seen ? smooth(g.seen, g.seen + 0.3, t) : 0;
+      p.x = lerp(wx(g.fx), wx(g.tx), e); p.y = lerp(wy(g.fy), wy(g.ty), e);
+      p.a = g.a1 + g.align + g.tilt * e + 0.05 * Math.sin(t * 5.2 + g.wob) * p.doubt * (1 - calm);
+      if (s < 0.55) p.hz += 70 * Math.sin(Math.PI * s / 0.55);
+      p.hz += 22 * beat * p.doubt;
+      if (t > g.seen) {                            // la yema lo toca: un destello, y se asienta
+        const q = t - g.seen, pass = smooth(g.passed, g.passed + 0.4, t);
+        p.doubt *= 1 - 0.94 * pass;                // con su aro ya no es dudoso: vuelve a ser arroz
+        p.glow = p.glow * (1 - 0.8 * pass) + 0.8 * Math.exp(-q * 7);
+        p.sqy = 1 - 0.16 * Math.exp(-q * 12) * Math.cos(q * 32);
+      }
+    }
+  }
+  for (const [a, b] of g.lifts) if (t >= a && t < b) p.lifted = true;   // fuera de la mesa: lo dibuja quien lo levantó
+  return p;
+}
+
+// ── Dibujo de un grano ──────────────────────────────────────────────────────
+
+const shapeCache = new Map();
+function shape(n) {
+  const key = Math.round(n * 10);
+  if (!shapeCache.has(key)) {
+    const pts = [], e = 2 / (key / 10), N = 120;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * TAU, c = Math.cos(a), s = Math.sin(a);
+      pts.push([Math.sign(c) * Math.pow(Math.abs(c), e), Math.sign(s) * Math.pow(Math.abs(s), e)]);
+    }
+    shapeCache.set(key, pts);
+  }
+  return shapeCache.get(key);
+}
+
+// La forma del grano: la misma de la cápsula, solo que de lejos. `detail` baja
+// los puntos cuando el grano mide pocos píxeles.
+function tracePath(c, L, Wd, n, detail = 1) {
+  const pts = shape(n), hl = L / 2, hw = Wd / 2, step = detail;
+  c.beginPath();
+  c.moveTo(pts[0][0] * hl, pts[0][1] * hw);
+  for (let i = step; i < pts.length; i += step) c.lineTo(pts[i][0] * hl, pts[i][1] * hw);
+  c.closePath();
+}
+
+const HI = [255, 253, 247], MID = [251, 245, 232], LO = [226, 213, 188];
+const DIM_HI = [92, 121, 144], DIM_MID = [68, 96, 120], DIM_LO = [42, 64, 84];
+const CLR_HI = [255, 255, 255], CLR_MID = [240, 252, 255], CLR_LO = [176, 216, 226];
+const DBT_HI = [255, 240, 190], DBT_MID = [255, 212, 124], DBT_LO = [208, 142, 58];
+
+// Pinta el cuerpo del grano en su sitio: el lienzo ya está centrado, girado y a escala.
+function paintBody(c, g, p, n, px, alpha, textAlpha) {
+  let hi = HI, mid = MID, lo = LO;
+  const tone = 1 + 0.045 * g.tone;
+  if (p.dim > 0) { hi = mix3(hi, DIM_HI, p.dim); mid = mix3(mid, DIM_MID, p.dim); lo = mix3(lo, DIM_LO, p.dim); }
+  if (p.clear > 0) { hi = mix3(hi, CLR_HI, p.clear); mid = mix3(mid, CLR_MID, p.clear); lo = mix3(lo, CLR_LO, p.clear); }
+  if (p.doubt > 0) { hi = mix3(hi, DBT_HI, p.doubt); mid = mix3(mid, DBT_MID, p.doubt); lo = mix3(lo, DBT_LO, p.doubt); }
+  const shade = (col) => [Math.min(255, col[0] * tone), Math.min(255, col[1] * tone), Math.min(255, col[2] * tone * 0.985)];
+  const l = rot(LIGHT, -p.a), reach = 0.62 * p.Wd;
+  const grad = c.createLinearGradient(l[0] * reach, l[1] * reach, -l[0] * reach, -l[1] * reach);
+  grad.addColorStop(0, rgb(shade(hi)));
+  grad.addColorStop(0.55, rgb(shade(mid)));
+  grad.addColorStop(1, rgb(shade(lo)));
+  c.globalAlpha = alpha;
+  tracePath(c, p.L, p.Wd, n, px > 90 ? 1 : px > 30 ? 3 : 5);
+  c.fillStyle = grad; c.fill();
+  c.shadowColor = "transparent";
+  if (px > 26) {                                           // el brillo, del lado de la luz
+    c.globalAlpha = alpha * (0.42 - 0.26 * p.dim);
+    c.beginPath();
+    c.ellipse(l[0] * 0.08 * p.L, l[1] * 0.21 * p.Wd, 0.36 * p.L, 0.12 * p.Wd, 0, 0, TAU);
+    c.fillStyle = "#ffffff"; c.fill();
+  }
+  if (g.text && textAlpha > 0.01) {                        // el texto: solo se lee de cerca
+    const size = Math.min(0.44 * p.Wd, (p.L - 0.8 * p.Wd) / (g.text.length * 0.555));
+    c.globalAlpha = alpha * textAlpha;
+    c.font = `500 ${size}px Roboto`;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = INK;
+    if (Math.cos(p.a) < 0) c.rotate(Math.PI);              // nunca cabeza abajo
+    c.fillText(g.text, 0, size * 0.05);
+  }
+}
+
+// Lo desenfocado se pinta pequeño en un lienzo aparte, se difumina ahí y se
+// amplía: un filtro sobre el lienzo entero por cada grano sale carísimo.
+const SOFT = [[96, 64], [192, 112], [384, 224], [760, 480]].map(([w, h]) => {
+  const a = mk(w, h), b = mk(w, h);
+  return { w, h, a, sa: a.getContext("2d"), b, sb: b.getContext("2d") };
+});
+
+function softDraw(c, x, y, angle, lenPx, widPx, blur, alpha, paint) {
+  const big = SOFT[SOFT.length - 1];
+  // Nunca por debajo de 1/7: ampliado más que eso, el borde se ve a facetas.
+  const f = Math.min(1, Math.max(0.15, 2.2 / blur), (big.w - 6) / (lenPx + 6 * blur), (big.h - 6) / (widPx + 6 * blur));
+  const b = blur * f;
+  const w = Math.ceil(lenPx * f + 6 * b + 4), h = Math.ceil(widPx * f + 6 * b + 4);
+  const S = SOFT.find((q) => q.w >= w && q.h >= h) || big;     // el más pequeño donde quepa
+  S.sa.setTransform(1, 0, 0, 1, 0, 0);
+  S.sa.globalAlpha = 1; S.sa.clearRect(0, 0, S.w, S.h);
+  S.sa.translate(w / 2, h / 2);
+  paint(S.sa, f);
+  S.sb.setTransform(1, 0, 0, 1, 0, 0);
+  S.sb.clearRect(0, 0, S.w, S.h);
+  S.sb.filter = `blur(${b.toFixed(2)}px)`;
+  S.sb.drawImage(S.a, 0, 0);
+  S.sb.filter = "none";
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(x, y); c.rotate(angle);
+  c.globalAlpha = alpha;
+  c.imageSmoothingQuality = "high";
+  c.drawImage(S.b, 0, 0, w, h, -w / (2 * f), -h / (2 * f), w / f, h / f);
+  c.restore();
+}
+
+function drawGrain(c, cam, g, p) {
+  const pr = project(cam, p.x, p.y, p.hz);
+  const lenPx = p.L * pr.s, widPx = p.Wd * pr.s;
+  if (pr.x < -lenPx || pr.x > W + lenPx || pr.y < -lenPx || pr.y > H + lenPx) return;
+  const fade = 1 - smooth(2.9, 4.5, pr.k);                 // muy cerca de la lente se desvanece
+  if (fade <= 0.004) return;
+  const blur = clamp((pr.k - 1) * 9.5, 0, 36);             // profundidad de campo
+  const air = p.hz > 70;
+  const n = g.kind === "hero" ? lerp(2.8, 3.7, smooth(60, 240, lenPx)) : g.n;
+  const textAlpha = g.text ? smooth(0.34, 0.6, pr.s) * (1 - smooth(5, 11, blur)) * (lenPx > 70 ? 1 : 0) : 0;
+
+  // La sombra sobre la mesa de lo que aún vuela: lejos y blanda arriba, cerrada al caer.
+  if (air) {
+    const off = 0.14 * p.Wd + 0.42 * p.hz;
+    const sp = project(cam, p.x - LIGHT[0] * off, p.y - LIGHT[1] * off, 0);
+    const shBlur = clamp((0.2 * p.Wd + 0.3 * p.hz) * cam.z, 1, 60);
+    const shAlpha = 0.6 * Math.exp(-p.hz / 1100) * fade;
+    if (shAlpha > 0.02) {
+      softDraw(c, sp.x, sp.y, cam.roll + p.a, p.L * cam.z, p.Wd * cam.z, shBlur, shAlpha, (k, f) => {
+        k.scale(cam.z * f, cam.z * f);
+        tracePath(k, p.L, p.Wd, n, 3);
+        k.fillStyle = "#020b14"; k.fill();
+      });
+    }
+  }
+
+  if (blur > 1.4) {
+    softDraw(c, pr.x, pr.y, cam.roll + p.a, lenPx, widPx, blur, fade, (k, f) => {
+      k.scale(pr.s * f * p.sqx, pr.s * f * p.sqy);
+      paintBody(k, g, p, n, lenPx * f, 1, textAlpha);
+    });
+    return;
+  }
+  const small = lenPx < 120;
+  if (!air) {                                              // sombra de contacto
+    const o = (0.17 * p.Wd + 0.5 * p.hz) * pr.s;
+    const ls = rot(LIGHT, cam.roll);
+    const dark = 0.7 * (1 - 0.3 * p.dim) * fade;
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    if (small) {                                           // de lejos: una sombra ya difuminada, barata
+      c.translate(pr.x - ls[0] * o, pr.y - ls[1] * o); c.rotate(cam.roll + p.a);
+      c.globalAlpha = dark;
+      const kx = lenPx / 76, ky = widPx / 23;
+      c.drawImage(shadowSprite, -64 * kx, -32 * ky, 128 * kx, 64 * ky);
+      c.restore();
+    } else {
+      c.restore();
+      c.shadowColor = `rgba(1,8,15,${dark.toFixed(3)})`;
+      c.shadowBlur = Math.max(1.4, (0.26 * p.Wd + 0.45 * p.hz) * pr.s);
+      c.shadowOffsetX = -ls[0] * o; c.shadowOffsetY = -ls[1] * o;
+    }
+  }
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(pr.x, pr.y); c.rotate(cam.roll + p.a); c.scale(pr.s * p.sqx, pr.s * p.sqy);
+  paintBody(c, g, p, n, lenPx, fade, textAlpha);
+  c.restore();
+  c.shadowColor = "transparent";
+}
+
+// Resplandor aditivo de lo que se enciende.
+const glowCache = new Map();
+function glowSprite(col) {
+  const key = col.join(",");
+  if (!glowCache.has(key)) {
+    const s = mk(128, 128), k = s.getContext("2d"), g = k.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, rgb(col, 0.55)); g.addColorStop(0.4, rgb(col, 0.2)); g.addColorStop(1, rgb(col, 0));
+    k.fillStyle = g; k.fillRect(0, 0, 128, 128);
+    glowCache.set(key, s);
+  }
+  return glowCache.get(key);
+}
+
+function drawGlow(c, cam, p, col, amount) {
+  if (amount <= 0.02) return;
+  const pr = project(cam, p.x, p.y, p.hz);
+  const r = p.L * pr.s * 1.05;
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "lighter";
+  c.globalAlpha = Math.min(1, amount);
+  c.translate(pr.x, pr.y); c.rotate(cam.roll + p.a);
+  c.drawImage(glowSprite(col), -r, -r * 0.5, r * 2, r);
+  c.restore();
+}
+
+// ── La mesa ─────────────────────────────────────────────────────────────────
+
+// La mesa se pinta una sola vez, entera, y cada cuadro la mira con su cámara:
+// azul noche, con un charco de luz cálida arriba a la izquierda y un moteado suave
+// y FIJO (pegado a la mesa: no cambia por cuadro, así que no parpadea). No lleva
+// grano fino ni tramado de pantalla: medido, es lo que más encarece el video.
+const TABLE = { x0: -5200, y0: -8400, upp: 5, w: 2080, h: 3360 };   // 5 unidades de mundo por píxel
+
+function makeTextures() {
+  const rnd = mulberry32(SEED + 7);
+  texture = mk(TABLE.w, TABLE.h);
+  const c = texture.getContext("2d");
+  c.save();
+  c.scale(1 / TABLE.upp, 1 / TABLE.upp); c.translate(-TABLE.x0, -TABLE.y0);
+  const all = [TABLE.x0, TABLE.y0, TABLE.w * TABLE.upp, TABLE.h * TABLE.upp];
+  let g = c.createRadialGradient(-460, -820, 120, -460, -820, 7400);
+  g.addColorStop(0, "#1a5a7e"); g.addColorStop(0.11, "#124665"); g.addColorStop(0.26, "#0b2e47");
+  g.addColorStop(0.5, "#071e30"); g.addColorStop(1, "#030d17");
+  c.fillStyle = g; c.fillRect(...all);
+  c.globalCompositeOperation = "lighter";
+  g = c.createRadialGradient(-330, -640, 40, -330, -640, 2300);
+  g.addColorStop(0, "rgba(255,186,116,0.2)"); g.addColorStop(0.4, "rgba(255,160,100,0.07)"); g.addColorStop(1, "rgba(255,150,90,0)");
+  c.fillStyle = g; c.fillRect(...all);
+  g = c.createRadialGradient(-260, -500, 20, -260, -500, 760);
+  g.addColorStop(0, "rgba(255,206,150,0.09)"); g.addColorStop(1, "rgba(255,190,130,0)");
+  c.fillStyle = g; c.fillRect(...all);
+  c.restore();
+  // la trama: grano fino por píxel y un moteado más ancho encima
+  const n = 256, tile = mk(n, n), tc = tile.getContext("2d");
+  const img = tc.createImageData(n, n);
+  for (let i = 0; i < n * n; i++) {
+    const v = 128 + (rnd() - 0.5) * 120;
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+  }
+  tc.putImageData(img, 0, 0);
+  const soft = mk(n, n), so = soft.getContext("2d");
+  so.filter = "blur(2.2px)";
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) so.drawImage(tile, dx * n, dy * n);   // sin costura
+  c.globalCompositeOperation = "overlay";
+  c.fillStyle = c.createPattern(soft, "repeat");
+  for (const [k, a] of [[5, 0.16], [17, 0.2]]) {              // moteado suave, a dos escalas
+    c.save(); c.scale(k, k); c.globalAlpha = a; c.imageSmoothingQuality = "high";
+    c.fillRect(0, 0, TABLE.w / k, TABLE.h / k);
+    c.restore();
+  }
+  c.globalCompositeOperation = "source-over"; c.globalAlpha = 1;
+  // La sombra de Guani: un disco oscuro de borde blando.
+  discShadow = mk(128, 128);
+  const ds = discShadow.getContext("2d"), dg = ds.createRadialGradient(64, 64, 30, 64, 64, 64);
+  dg.addColorStop(0, "rgba(1,8,15,1)"); dg.addColorStop(0.55, "rgba(1,8,15,0.8)"); dg.addColorStop(1, "rgba(1,8,15,0)");
+  ds.fillStyle = dg; ds.fillRect(0, 0, 128, 128);
+  // La sombra de contacto de un grano visto de lejos, ya difuminada.
+  shadowSprite = mk(128, 64);
+  const ss = shadowSprite.getContext("2d");
+  ss.filter = "blur(4.6px)";
+  ss.translate(64, 32);
+  tracePath(ss, 76, 23, 2.8);
+  ss.fillStyle = "#01080f"; ss.fill();
+}
+
+function drawTable(c, cam) {
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = "#04121e"; c.fillRect(0, 0, W, H);
+  onTable(c, cam);
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "low";
+  c.drawImage(texture, TABLE.x0, TABLE.y0, TABLE.w * TABLE.upp, TABLE.h * TABLE.upp);
+}
+
+// ── El gancho: la pregunta, escrita sobre la mesa ───────────────────────────
+
+function drawQuestion(c, cam, t) {
+  const gone = smooth(T.whip[0] - 0.02, T.whip[0] + 0.3, t);
+  if (gone >= 1 || t < T.typing[0] - 0.01) return;
+  onTable(c, cam);
+  c.textBaseline = "alphabetic"; c.textAlign = "left";
+  c.fillStyle = "#ffffff";
+  const typingEnd = T.typing[T.typing.length - 1];
+  const settled = t > typingEnd + 0.2;
+  let k = 0, caret = null;
+  layout.question.forEach((line, row) => {
+    const x0 = -line.width / 2, y = layout.questionY[row];
+    c.font = `${line.weight} ${line.size}px ${line.family}`;
+    c.shadowColor = "rgba(1,9,17,0.6)"; c.shadowBlur = 26 * cam.z; c.shadowOffsetX = 5 * cam.z; c.shadowOffsetY = 9 * cam.z;
+    if (settled) {                                  // ya escrita: la línea entera, de una vez
+      c.globalAlpha = 1 - gone;
+      c.fillText(line.text, x0, y);
+      k += line.chars.length;
+      const last = line.chars[line.chars.length - 1];
+      caret = [x0 + last.x + last.w + line.size * 0.1, y, line.size];
+    } else {
+      line.chars.forEach((ch) => {
+        const at = T.typing[k++];
+        if (t < at) return;
+        const pop = Math.exp(-(t - at) * 26);       // cada letra entra con un pequeño golpe
+        c.save();
+        c.translate(x0 + ch.x + ch.w / 2, y - line.size * 0.3);
+        c.scale(1 + 0.16 * pop, 1 + 0.16 * pop);
+        c.globalAlpha = 1 - 0.6 * pop;
+        c.fillText(ch.ch, -ch.w / 2, line.size * 0.3);
+        c.restore();
+        caret = [x0 + ch.x + ch.w + line.size * 0.1, y, line.size];
+      });
+    }
+    k++;                                            // el salto de línea cuenta como una pausa
+  });
+  c.shadowColor = "transparent";
+  if (caret) {
+    const blink = t < typingEnd + 0.15 ? 1 : (Math.floor((t - typingEnd) * 2.5) % 2 === 0 ? 1 : 0.15);
+    c.globalAlpha = (1 - gone) * blink * 0.9;
+    c.fillStyle = rgb(COLD);
+    c.fillRect(caret[0], caret[1] - caret[2] * 0.72, caret[2] * 0.06, caret[2] * 0.84);
+    c.globalAlpha = 1;
+  }
+}
+
+// Cuando una cápsula toca la mesa levanta un soplo de polvo, sin contorno.
+function drawDust(c, cam, t) {
+  onTable(c, cam);
+  c.globalCompositeOperation = "lighter";
+  grains.forEach((g) => {
+    if (g.kind !== "hero") return;
+    const s = t - g.tl;
+    if (s < 0 || s > 0.5) return;
+    const u = s / 0.5, e = easeOutCubic(u), R0 = g.Lh * (0.56 + 0.5 * e);
+    c.save();
+    c.translate(g.x0, g.y0); c.rotate(g.a0); c.scale(1, 0.5 + 0.12 * e);
+    const puff = c.createRadialGradient(0, 0, R0 * 0.55, 0, 0, R0);
+    const a = 0.11 * (1 - u) * (1 - u);
+    puff.addColorStop(0, "rgba(255,226,190,0)");
+    puff.addColorStop(0.72, `rgba(255,226,190,${a})`);
+    puff.addColorStop(1, "rgba(255,226,190,0)");
+    c.fillStyle = puff;
+    c.beginPath(); c.arc(0, 0, R0, 0, TAU); c.fill();
+    c.restore();
+    const rnd = mulberry32(SEED + 31 * (g.id + 1));
+    for (let i = 0; i < 18; i++) {
+      const ang = rnd() * TAU, d = (0.55 + 0.45 * rnd()) * (g.Lh * 0.46 + 210 * e), r = 1.6 + 3.6 * rnd();
+      c.fillStyle = `rgba(255,232,198,${0.42 * (1 - u) * (1 - u)})`;
+      c.beginPath(); c.arc(g.x0 + Math.cos(ang) * d, g.y0 + Math.sin(ang) * d * 0.62, r * (1 - 0.5 * u), 0, TAU); c.fill();
+    }
+  });
+  c.globalCompositeOperation = "source-over";
+}
+
+// ── Rótulos que viven en la escena ──────────────────────────────────────────
+
+// Titular en Alice: las letras suben y se encienden una tras otra.
+// La sombra blanda de un titular, pintada una vez (en px de escenario).
+function captionShadow(lines, bases, sx) {
+  const pad = 36, wide = Math.max(...lines.map((l) => l.width)) * STAGE_Z;
+  const top = bases[0] - lines[0].size * STAGE_Z;
+  const tall = bases[bases.length - 1] - top + lines[0].size * STAGE_Z * 0.4;
+  const s = mk(Math.ceil(wide + pad * 2), Math.ceil(tall + pad * 2));
+  const k = s.getContext("2d");
+  k.filter = "blur(7px)"; k.fillStyle = "#01080f"; k.textBaseline = "alphabetic"; k.textAlign = "left";
+  lines.forEach((line, row) => {
+    k.font = `${line.weight} ${line.size * STAGE_Z}px ${line.family}`;
+    k.fillText(line.text, pad + (wide - line.width * STAGE_Z) / 2 + 2, bases[row] - top + pad + 4);
+  });
+  return { s, sx: sx - wide / 2 - pad, sy: top - pad };
+}
+
+function drawCaption(c, cam, cap, t0, tOut, t) {
+  if (t < t0 || t > tOut + 0.45) return;
+  const { lines, bases, sx, shadow } = cap;
+  const leave = smooth(tOut, tOut + 0.4, t);
+  onTable(c, cam);
+  c.globalAlpha = 0.85 * smooth(t0, t0 + 0.5, t) * (1 - leave);
+  c.drawImage(shadow.s, wx(shadow.sx), wy(shadow.sy), wu(shadow.s.width), wu(shadow.s.height));
+  c.textBaseline = "alphabetic"; c.textAlign = "left";
+  c.fillStyle = "#ffffff";
+  let k = 0;
+  lines.forEach((line, row) => {
+    c.font = `${line.weight} ${line.size}px ${line.family}`;
+    const x0 = wx(sx) - line.width / 2, y = wy(bases[row]);
+    line.chars.forEach((ch) => {
+      const u = clamp01((t - t0 - k * 0.024) / 0.3);
+      k++;
+      if (u <= 0) return;
+      const e = easeOutCubic(u);
+      c.globalAlpha = e * (1 - leave);
+      c.fillText(ch.ch, x0 + ch.x, y + (1 - e) * wu(22) - leave * wu(10));
+    });
+    k += 2;
+  });
+  c.globalAlpha = 1;
+}
+
+// La sombra de estos rótulos cae 1,15 px a la derecha. Antes no se fijaba aquí: el
+// lienzo arrastraba el último valor que dejó la pregunta del gancho (5 × zoom en su
+// último subcuadro) y así salió la prueba aprobada. Es ese mismo número, ya explícito,
+// para que un cuadro suelto dé lo mismo que el render completo.
+const LABEL_SHADOW_X = 1.146187663078308;
+
+// Rótulo de máquina: se teclea de izquierda a derecha, con un cursor cuadrado.
+function drawLabel(c, cam, L, t) {
+  if (t < L.t0) return;
+  const gone = L.t1 === undefined ? -1 : t - L.t1;           // al retirarse, la máquina borra lo que tecleó
+  if (gone > 0.4) return;
+  onTable(c, cam);
+  let shown = Math.min(L.fit.text.length, Math.floor((t - L.t0) / 0.02) + 1);
+  if (gone > 0) shown = Math.max(0, L.fit.text.length - 1 - Math.floor(gone / 0.011));
+  const x0 = wx(L.sx) - (L.align === "right" ? L.fit.width : L.align === "center" ? L.fit.width / 2 : 0);
+  const y = wy(L.sy);
+  c.font = `${L.fit.weight} ${L.fit.size}px ${L.fit.family}`;
+  c.textBaseline = "alphabetic"; c.textAlign = "left";
+  c.shadowColor = "rgba(2,12,22,0.75)"; c.shadowBlur = 5; c.shadowOffsetX = LABEL_SHADOW_X; c.shadowOffsetY = 1.5;
+  c.fillStyle = rgb(L.color);
+  c.fillText(L.fit.text.slice(0, shown), x0, y);
+  c.shadowColor = "transparent";
+  const end = shown < L.fit.text.length ? L.fit.chars[shown].x : L.fit.width;
+  const typed = (t - L.t0) / 0.02 - L.fit.text.length;
+  if (typed < 14 || (gone > 0 && shown > 0)) {               // el cursor cuadrado
+    c.globalAlpha = gone > 0 ? 1 : typed < 0 ? 1 : 1 - typed / 14;
+    c.fillRect(x0 + end + L.fit.size * 0.12, y - L.fit.size * 0.62, L.fit.size * 0.5, L.fit.size * 0.62);
+    c.globalAlpha = 1;
+  }
+  if (L.rule && !(gone >= 0.3)) {                            // línea guía, recta, con remate cuadrado
+    const u = easeOutCubic((t - L.t0) / 0.32) * (gone > 0 ? 1 - easeInOutCubic(gone / 0.3) : 1);
+    const a = wx(L.rule[0]), b = wx(L.rule[1]), ry = wy(L.rule[2]);
+    const from = L.align === "right" ? b : a, to = L.align === "right" ? lerp(b, a, u) : lerp(a, b, u);
+    c.strokeStyle = rgb(L.color, 0.85); c.lineWidth = wu(2.2);
+    c.beginPath(); c.moveTo(from, ry); c.lineTo(to, ry); c.stroke();
+    const q = wu(8);
+    c.fillRect(to - q / 2, ry - q / 2, q, q);
+  }
+}
+
+// ── Guani ───────────────────────────────────────────────────────────────────
+
+// El avatar real (`_guani_avatar.html`), en su caja de 80 unidades.
+function guaniBadge(c, eyes) {
+  c.save();
+  c.translate(-40, -40);
+  c.beginPath(); c.arc(40, 40, 39, 0, TAU);
+  c.fillStyle = "#ffffff"; c.fill();
+  c.lineWidth = 2; c.strokeStyle = "#c4cfcf"; c.stroke();
+  c.save();
+  c.beginPath(); c.arc(40, 40, 37, 0, TAU); c.clip();
+  c.translate(40, 40); c.scale(0.8, 0.8); c.translate(-40, -40);
+  c.fillStyle = "#191c1c"; c.beginPath(); c.ellipse(40, 30, 34, 34, 0, 0, TAU); c.fill();
+  c.fillStyle = "#6f7979"; c.beginPath(); c.arc(40, 34, 27, 0, TAU); c.fill();
+  c.fillStyle = "#191c1c"; c.beginPath(); c.roundRect(13, 20, 54, 8, 4); c.fill();
+  c.fillStyle = "#c4cfcf"; c.beginPath(); c.moveTo(52, 22); c.lineTo(57, 3); c.lineTo(62, 22); c.closePath(); c.fill();
+  c.fillStyle = eyes > 0 ? rgb(mix3([255, 255, 255], [214, 250, 255], eyes)) : "#ffffff";
+  for (const ex of [33, 47]) { c.beginPath(); c.ellipse(ex, 36, 3, 2.3, 0, 0, TAU); c.fill(); }
+  c.strokeStyle = "#ffffff"; c.lineWidth = 2.4; c.lineCap = "round";
+  c.beginPath(); c.moveTo(33, 48); c.quadraticCurveTo(40, 52, 47, 48); c.stroke();
+  c.fillStyle = "#8a9494"; c.beginPath(); c.ellipse(40, 72, 40, 20, 0, 0, TAU); c.fill();
+  c.restore();
+  // la misma luz que el arroz: un brillo arriba a la izquierda y sombra al otro lado
+  const lit = c.createRadialGradient(40 + LIGHT[0] * 22, 40 + LIGHT[1] * 22, 4, 40, 40, 44);
+  lit.addColorStop(0, "rgba(255,255,255,0.2)"); lit.addColorStop(0.55, "rgba(255,255,255,0)"); lit.addColorStop(1, "rgba(4,20,34,0.24)");
+  c.beginPath(); c.arc(40, 40, 39, 0, TAU); c.fillStyle = lit; c.fill();
+  c.restore();
+}
+
+function guaniPose(t) {
+  const tau = T.guani - t;
+  const p = { hz: 0, sc: 1, a: 0, landed: tau <= 0 };
+  if (tau > 0) { p.hz = 0.5 * 42000 * tau * tau; p.a = -0.5 * tau; return p; }
+  const s = -tau;
+  p.sc = 1 - 0.15 * Math.exp(-s * 8.5) * Math.cos(s * 23);         // resorte
+  p.hz = 190 * hop2(s / 0.46);
+  p.a = 0.05 * Math.exp(-s * 6) * Math.sin(s * 17);
+  return p;
+}
+
+function drawGuani(c, cam, t) {
+  if (t < T.guani - 0.55) return;
+  const p = guaniPose(t), x = wx(GUANI.sx), y = wy(GUANI.sy), dia = wu(GUANI.d);
+  const pr = project(cam, x, y, p.hz);
+  const fade = 1 - smooth(2.6, 3.7, pr.k);
+  if (fade <= 0.004) return;
+  // la sombra en la mesa
+  const off = 0.035 * dia + 0.42 * p.hz;
+  const sp = project(cam, x - LIGHT[0] * off, y - LIGHT[1] * off, 0);
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = 0.66 * Math.exp(-p.hz / 1500) * fade;
+  const soft = clamp((0.03 * dia + 0.3 * p.hz) * cam.z, 2, 60);         // cuánto se abre la sombra
+  const sr = dia / 2 * cam.z * p.sc + soft * 1.6;
+  c.drawImage(discShadow, sp.x - sr, sp.y - sr, sr * 2, sr * 2);
+  c.restore();
+  // el aro frío de cuando empieza a leer
+  const reading = smooth(T.scan_a[0] - 0.18, T.scan_a[0], t) * (1 - smooth(T.scan_b[1], T.scan_b[1] + 0.4, t));
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  const blur = clamp((pr.k - 1) * 9.5, 0, 30);
+  if (blur > 0.45) c.filter = `blur(${blur.toFixed(2)}px)`;
+  c.globalAlpha = fade;
+  c.translate(pr.x, pr.y); c.rotate(cam.roll + p.a);
+  const s = pr.s * dia / 80 * p.sc;
+  c.scale(s, s);
+  guaniBadge(c, reading);
+  c.restore();
+  if (reading > 0.01) {
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = "lighter";
+    for (const e of EYES) {
+      const ep = project(cam, wx(e[0]), wy(e[1]), 0);
+      const g = c.createRadialGradient(ep.x, ep.y, 0, ep.x, ep.y, 30);
+      g.addColorStop(0, `rgba(210,250,255,${0.85 * reading})`);
+      g.addColorStop(0.35, `rgba(150,225,240,${0.3 * reading})`);
+      g.addColorStop(1, "rgba(120,210,235,0)");
+      c.fillStyle = g; c.beginPath(); c.arc(ep.x, ep.y, 30, 0, TAU); c.fill();
+    }
+    c.restore();
+  }
+}
+
+// La onda del golpe sobre la mesa.
+function drawImpact(c, cam, t) {
+  const s = t - T.guani;
+  if (s < 0 || s > 0.6) return;
+  onTable(c, cam);
+  const u = s / 0.6, r = wu(110 + 420 * easeOutCubic(u)), x = wx(GUANI.sx), y = wy(GUANI.sy);
+  const a = 0.3 * (1 - u) * (1 - u);
+  const ring = c.createRadialGradient(x, y, r * 0.62, x, y, r);     // un anillo blando, sin trazo
+  ring.addColorStop(0, "rgba(206,236,244,0)");
+  ring.addColorStop(0.8, `rgba(206,236,244,${a})`);
+  ring.addColorStop(1, "rgba(206,236,244,0)");
+  c.globalCompositeOperation = "lighter";
+  c.fillStyle = ring;
+  c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  c.globalCompositeOperation = "source-over";
+}
+
+// Las dos lecturas: dos líneas rectas de luz que salen de los ojos y barren la mesa.
+function drawRays(c, cam, t) {
+  const rays = [
+    { eye: EYES[0], span: T.scan_a, from: 178, to: 2 },
+    { eye: EYES[1], span: T.scan_b, from: 2, to: 178 },
+  ];
+  onTable(c, cam);
+  c.globalCompositeOperation = "lighter";
+  c.lineCap = "butt";
+  for (const r of rays) {
+    const [a, b] = r.span;
+    if (t < a - 0.02 || t > b + 0.22) continue;
+    const u = clamp01((t - a) / (b - a));
+    const vis = smooth(a - 0.02, a + 0.08, t) * (1 - smooth(b, b + 0.2, t));
+    const ang = lerp(r.from, r.to, u) * Math.PI / 180;
+    const back = (r.from > r.to ? 1 : -1) * 26 * Math.PI / 180 * smooth(0, 0.16, u);
+    const ox = wx(r.eye[0]), oy = wy(r.eye[1]), far = 9000;
+    // la estela: lo recién leído sigue un instante encendido, como el barrido de un radar
+    if (Math.abs(back) > 0.01) {
+      const lo = Math.min(ang, ang + back), span = Math.abs(back) / TAU;
+      const cone = c.createConicGradient(lo, ox, oy);
+      for (let j = 0; j <= 6; j++) {
+        const q = j / 6, a = 0.17 * vis * Math.pow(back > 0 ? 1 - q : q, 1.8);
+        cone.addColorStop(q * span, `rgba(120,214,236,${a.toFixed(4)})`);
+      }
+      cone.addColorStop(Math.min(1, span + 0.0005), "rgba(120,214,236,0)");
+      c.fillStyle = cone;
+      c.beginPath(); c.moveTo(ox, oy);
+      c.lineTo(ox + Math.cos(ang) * far, oy + Math.sin(ang) * far);
+      c.lineTo(ox + Math.cos(ang + back / 2) * far * 1.2, oy + Math.sin(ang + back / 2) * far * 1.2);
+      c.lineTo(ox + Math.cos(ang + back) * far, oy + Math.sin(ang + back) * far);
+      c.closePath(); c.fill();
+    }
+    const ex = ox + Math.cos(ang) * far, ey = oy + Math.sin(ang) * far;
+    for (const [w, al] of [[34, 0.05], [12, 0.15], [3, 0.95]]) {
+      c.strokeStyle = `rgba(214,248,255,${al * vis})`; c.lineWidth = wu(w);
+      c.beginPath(); c.moveTo(ox, oy); c.lineTo(ex, ey); c.stroke();
+    }
+  }
+  c.globalCompositeOperation = "source-over";
+}
+
+// La marca cuadrada de lo que la máquina dio por claro.
+function drawMarks(c, cam, t) {
+  onTable(c, cam);
+  for (const g of grains) {
+    if (g.cls !== "clear") continue;
+    const s = t - g.tc - T.clear_mark;
+    if (s <= 0) continue;
+    const pop = Math.exp(-s * 16);
+    const x = wx(CLEAR.mark), y = wy(g.ty), q = wu(19) * (1 + 0.7 * pop);
+    c.globalAlpha = clamp01(s / 0.05);
+    c.strokeStyle = rgb(COLD); c.lineWidth = wu(2.6);
+    c.strokeRect(x - q / 2, y - q / 2, q, q);
+    c.fillStyle = rgb([236, 252, 255]);
+    c.fillRect(x - q * 0.24, y - q * 0.24, q * 0.48, q * 0.48);
+    if (pop > 0.03) {
+      c.globalCompositeOperation = "lighter";
+      c.fillStyle = `rgba(190,240,250,${0.5 * pop})`;
+      c.fillRect(x - q, y - q, q * 2, q * 2);
+      c.globalCompositeOperation = "source-over";
+    }
+  }
+  c.globalAlpha = 1;
+}
+
+// ── El trazo a mano ─────────────────────────────────────────────────────────
+//
+// La persona nunca sale: es una yema de luz guayaba que deja trazo de lápiz. Lo
+// suyo es irregular y cálido (aros que no cierran, subrayados que suben), para
+// que se distinga a simple vista de lo de la máquina, que es recto, frío y cuadrado.
+
+const PENCIL = rgb(GUAYABA);
+const PENCIL_HOT = [255, 247, 224];           // recién trazado, todavía con la luz de la yema
+const PENCIL_ON_LIGHT = "rgb(224,126,22)";    // el mismo lápiz sobre el crema de una cápsula
+// Cada fibra del trazo: cuánto se aparta del centro, su ancho y la presión que necesita para marcar.
+const FIBRES = [[0, 0.52, 0], [-0.3, 0.38, 0.22], [0.3, 0.38, 0.3], [-0.52, 0.27, 0.52], [0.54, 0.27, 0.6]];
+let tooth = null, yemaSprite = null, yemaTint = null;
+
+// El diente del papel: huecos pequeños y fijos, que se le quitan al trazo.
+function makeTooth() {
+  const rnd = mulberry32(SEED + 19), n = 128, tile = mk(n, n), k = tile.getContext("2d");
+  const img = k.createImageData(n, n);
+  for (let i = 0; i < n * n; i++) img.data[i * 4 + 3] = rnd() < 0.2 ? 110 + 145 * rnd() : 0;
+  k.putImageData(img, 0, 0);
+  tooth = pc.createPattern(tile, "repeat");
+  // La yema: un núcleo casi blanco y un halo guayaba. Se suma a lo que haya debajo.
+  const disc = (stops) => {
+    const s = mk(128, 128), y = s.getContext("2d"), g = y.createRadialGradient(64, 64, 0, 64, 64, 64);
+    for (const [at, col] of stops) g.addColorStop(at, col);
+    y.fillStyle = g; y.fillRect(0, 0, 128, 128);
+    return s;
+  };
+  yemaSprite = disc([[0, "rgba(255,253,244,1)"], [0.2, "rgba(255,250,230,1)"], [0.3, "rgba(255,236,178,0.9)"],
+    [0.42, "rgba(255,214,128,0.5)"], [0.7, "rgba(255,208,114,0.13)"], [1, "rgba(255,196,96,0)"]]);
+  // Sobre una cápsula clara la luz no se nota: ahí la yema tiñe de ámbar, como un dedo sobre papel.
+  yemaTint = disc([[0, "rgba(255,150,40,1)"], [0.4, "rgba(255,160,52,0.9)"], [0.66, "rgba(255,188,96,0.4)"], [1, "rgba(255,210,130,0)"]]);
+}
+
+// Un trazo a mano: una línea de puntos, cada uno con su presión. Las unidades
+// son las del lienzo donde se dibuje (la mesa, una cápsula, el cristal).
+function makeStroke(pts, press, rnd) {
+  const n = pts.length, len = [0];
+  for (let i = 1; i < n; i++) len.push(len[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = len[n - 1];
+  const nor = pts.map((_, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    const dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy) || 1;
+    return [-dy / d, dx / d];
+  });
+  return {
+    pts, nor, len, total, pr: len.map((l) => press(l / total)),
+    fibres: FIBRES.map(([off, wide, need]) => ({ off, wide, need, wob: wobbler(rnd), gap: wobbler(rnd) })),
+  };
+}
+
+// El punto del trazo a la fracción `u` de su largo.
+function strokePoint(s, u) {
+  const d = clamp01(u) * s.total, n = s.pts.length;
+  let i = 1;
+  while (i < n - 1 && s.len[i] < d) i++;
+  const f = clamp01((d - s.len[i - 1]) / ((s.len[i] - s.len[i - 1]) || 1));
+  const a = s.pts[i - 1], b = s.pts[i], na = s.nor[i - 1], nb = s.nor[i];
+  return { x: lerp(a[0], b[0], f), y: lerp(a[1], b[1], f), nx: lerp(na[0], nb[0], f), ny: lerp(na[1], nb[1], f), p: lerp(s.pr[i - 1], s.pr[i], f), d };
+}
+
+// Dibuja el trazo de `u0` a `u1` de su largo. Va a un lienzo aparte y opaco: la
+// transparencia se pone al componer, así las fibras no se suman donde se pisan.
+function drawStroke(c, s, u0, u1, width, color) {
+  u0 = clamp01(u0); u1 = clamp01(u1);
+  if (u1 <= u0) return;
+  const d0 = u0 * s.total, d1 = u1 * s.total, a = strokePoint(s, u0), b = strokePoint(s, u1);
+  const run = [a];
+  for (let i = 0; i < s.pts.length; i++) {
+    if (s.len[i] > d0 && s.len[i] < d1) run.push({ x: s.pts[i][0], y: s.pts[i][1], nx: s.nor[i][0], ny: s.nor[i][1], p: s.pr[i], d: s.len[i] });
+  }
+  run.push(b);
+  c.lineCap = "round"; c.lineJoin = "round"; c.strokeStyle = color; c.fillStyle = color;
+  for (const fib of s.fibres) {
+    let count = 0, sum = 0, lx = 0, ly = 0, lp = 0;
+    const flush = () => {                              // cada tramo corto lleva el ancho de su presión
+      if (count > 1) { c.lineWidth = width * fib.wide * (0.6 + 0.66 * sum / count); c.stroke(); }
+      count = 0; sum = 0;
+    };
+    for (const q of run) {
+      const along = q.d / (width * 7);
+      if (q.p + 0.24 * fib.gap(along * 1.9) < fib.need) { flush(); continue; }   // aquí esta fibra no marca
+      const o = (fib.off * (0.5 + 0.62 * q.p) + 0.08 * fib.wob(along)) * width;
+      const fx = q.x + q.nx * o, fy = q.y + q.ny * o;
+      if (count === 0) { c.beginPath(); c.moveTo(fx, fy); } else c.lineTo(fx, fy);
+      count++; sum += q.p; lx = fx; ly = fy; lp = q.p;
+      if (count >= 5) { flush(); c.beginPath(); c.moveTo(lx, ly); count = 1; sum = lp; }
+    }
+    flush();
+  }
+  // El peso al posar y al levantar el lápiz: un punto en cada extremo ya trazado.
+  const dot = (q) => { c.beginPath(); c.arc(q.x, q.y, width * 0.3 * (0.6 + 0.7 * q.p), 0, TAU); c.fill(); };
+  if (u0 <= 0) dot(a);
+  if (u1 >= 1) dot(b);
+}
+
+// Un aro a mano de semiejes `ax` y `ay`: una elipse que no cierra, hecha de una
+// vez y con el pulso de quien la traza.
+function makeRing(ax, ay, rnd) {
+  const R = (a, b) => a + (b - a) * rnd();
+  const dir = rnd() < 0.85 ? -1 : 1;                                // casi siempre contra el reloj: mano diestra
+  const a0 = -Math.PI / 2 - dir * R(0.1, 0.7);                      // empieza arriba, un poco pasado
+  const turn = TAU + R(0.25, 0.8);                                  // y se pasa del cierre
+  const drift = R(0.06, 0.14) * (rnd() < 0.5 ? -1 : 1);             // en espiral: el final no cae sobre el principio
+  const h2 = R(0, 0.045), p2 = R(0, TAU), h3 = R(0.008, 0.04), p3 = R(0, TAU);
+  const tilt = R(-0.11, 0.11), ox = R(-0.06, 0.06) * ax, oy = R(-0.08, 0.08) * ay;
+  const trem = wobbler(rnd), pv = wobbler(rnd);
+  const N = 56, pts = [], ct = Math.cos(tilt), st = Math.sin(tilt);
+  for (let i = 0; i <= N; i++) {
+    const s = i / N, th = a0 + dir * turn * s;
+    const r = 1 + drift * (s - 0.5) + h2 * Math.cos(2 * th + p2) + h3 * Math.cos(3 * th + p3) + 0.02 * trem(s * 11);
+    const x = Math.cos(th) * ax * r, y = Math.sin(th) * ay * r;
+    pts.push([ox + x * ct - y * st, oy + x * st + y * ct]);
+  }
+  const press = (s) => clamp(0.6 + 0.5 * Math.exp(-s / 0.05) + 0.32 * smooth(0.9, 1, s) + 0.2 * pv(s * 5.3) - 0.1 * Math.sin(Math.PI * s), 0.22, 1.2);
+  return makeStroke(pts, press, rnd);
+}
+
+// Un subrayado a mano: se comba y tiembla un poco; entra con peso y sale ligero.
+function makeLine(x0, y0, x1, y1, rnd, sag = 0.02) {
+  const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy), nx = -dy / d, ny = dx / d;
+  const trem = wobbler(rnd), pv = wobbler(rnd), bow = sag * d * (rnd() < 0.5 ? -1 : 1) * (0.6 + 0.8 * rnd());
+  const N = 22, pts = [];
+  for (let i = 0; i <= N; i++) {
+    const s = i / N, o = bow * Math.sin(Math.PI * s) + 0.012 * d * trem(s * 4.3);
+    pts.push([x0 + dx * s + nx * o, y0 + dy * s + ny * o]);
+  }
+  const press = (s) => clamp(0.74 + 0.4 * Math.exp(-s / 0.07) - 0.4 * smooth(0.72, 1, s) + 0.16 * pv(s * 4.1), 0.2, 1.2);
+  return makeStroke(pts, press, rnd);
+}
+
+// La mano arranca y frena, pero no se detiene: así avanza un trazo en el tiempo.
+const pen = (u) => 0.25 * u + 0.75 * u * u * (3 - 2 * u);
+
+function pencilBegin() {
+  pc.setTransform(1, 0, 0, 1, 0, 0);
+  pc.globalCompositeOperation = "source-over"; pc.globalAlpha = 1;
+  pc.clearRect(0, 0, W, H);
+}
+
+// Le pone el diente a lo trazado y lo pasa al cuadro. `matrix` ancla el diente a la
+// superficie (la mesa o una cápsula): si no, el trazo «nadaría» al moverse la cámara.
+function pencilEnd(c, matrix, alpha = 1, glow = 0.3) {
+  pc.setTransform(1, 0, 0, 1, 0, 0);
+  tooth.setTransform(matrix);
+  pc.globalCompositeOperation = "destination-out"; pc.globalAlpha = 0.5;
+  pc.fillStyle = tooth; pc.fillRect(0, 0, W, H);
+  pc.globalCompositeOperation = "source-over"; pc.globalAlpha = 1;
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "source-over"; c.globalAlpha = alpha;
+  c.drawImage(pencilCanvas, 0, 0);
+  if (glow > 0) {                                    // lo de la persona es cálido: el trazo deja un poco de luz
+    c.globalCompositeOperation = "lighter"; c.globalAlpha = glow * alpha; c.filter = "blur(4px)";
+    c.drawImage(pencilCanvas, 0, 0);
+    c.filter = "none";
+  }
+  c.restore();
+}
+
+const tableMatrix = (cam, k) => new DOMMatrix()
+  .translateSelf(W / 2 + cam.sx, H / 2 + cam.sy).rotateSelf(cam.roll * 180 / Math.PI)
+  .scaleSelf(cam.z * k).translateSelf(-cam.cx / k, -cam.cy / k);
+
+// ── El cristal: lo que queda en foco por delante de la mesa ─────────────────
+//
+// Cuando un grano se abre sube hacia la lente y el foco se va con él: la mesa
+// queda atrás, blanda y en penumbra. Lo que se lee entonces vive en un plano
+// propio, el «cristal», en px de pantalla y con una deriva muy leve.
+
+function glassAt(t) {
+  return { x: 5 * Math.sin(t * 0.53 + 1.1), y: 4 * Math.sin(t * 0.41 + 0.2), r: 0.0035 * Math.sin(t * 0.37 + 2) };
+}
+
+function glassPoint(x, y, t) {
+  const g = glassAt(t), dx = x - W / 2, dy = y - H / 2, cs = Math.cos(g.r), sn = Math.sin(g.r);
+  return [W / 2 + g.x + dx * cs - dy * sn, H / 2 + g.y + dx * sn + dy * cs];
+}
+
+// Cuánto del foco se ha ido al grano de la caja (0: la mesa nítida).
+function boxFocus(t) {
+  const R = T.review;
+  return smooth(R.open[0], R.open[1] + 0.06, t) * (1 - smooth(R.close[0], R.close[1], t));
+}
+
+const deepFocus = (t) => (t > T.measure.open[0] ? packFocus(t) : 0);    // B5: el foco ya no vuelve a la mesa
+const focusAt = (t) => Math.max(boxFocus(t), deepFocus(t));
+
+// El cuerpo de una cápsula abierta, con su sombra sobre la mesa que quedó atrás.
+const PILL = { tone: 0.5, text: null };
+function drawPill(c, x, y, ang, len, wid, n, tint, depth) {
+  const p = { L: len, Wd: wid, a: ang, dim: 0, clear: tint.clear || 0, doubt: tint.doubt || 0 };
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(x, y); c.rotate(ang);
+  c.shadowColor = `rgba(1,8,15,${(0.6 * depth).toFixed(3)})`; c.shadowBlur = (0.34 * wid + 6) * depth + 1.5;
+  c.shadowOffsetX = 0.1 * wid * depth; c.shadowOffsetY = 0.17 * wid * depth;
+  paintBody(c, PILL, p, n, len, 1, 0);
+  c.restore();
+}
+
+function glowAt(c, x, y, ang, len, wid, col, amount) {
+  if (amount <= 0.02) return;
+  const pad = 0.9 * wid + 14;
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "lighter"; c.globalAlpha = Math.min(1, amount);
+  c.translate(x, y); c.rotate(ang);
+  c.drawImage(glowSprite(col), -len / 2 - pad, -wid / 2 - pad, len + 2 * pad, wid + 2 * pad);
+  c.restore();
+}
+
+// ── B4 · El repaso ──────────────────────────────────────────────────────────
+
+const BOX = { x: 360, y: 648, a: -0.03, size: 35, wide: 98 };       // dónde se abre la línea de la caja, en el cristal
+const AUDIT_SLOT = 0;                                               // cuál de los diez claros es el ya auditado
+const SAMPLE = [[236, 1090], [300, 1068], [368, 1092], [434, 1066], [500, 1088]];   // el puñado del montón
+let review = null;
+
+function buildReview() {
+  const R = T.review, rnd = mulberry32(SEED + 404), hero = grains[1];
+  // El orden del repaso: de vecino en vecino, desde la esquina por donde entra la
+  // yema hasta el difícil, que queda para el final. Después se deshacen los cruces.
+  const dist = (a, b) => Math.hypot(a.tx - b.tx, a.ty - b.ty);
+  const rest = grains.filter((g) => g.cls === "doubt" && g !== hero)
+    .sort((a, b) => Math.hypot(a.tx - 30, a.ty - 930) - Math.hypot(b.tx - 30, b.ty - 930));
+  const tour = [rest.shift()];
+  while (rest.length) {
+    const last = tour[tour.length - 1];
+    let near = 0;
+    for (let i = 1; i < rest.length; i++) if (dist(last, rest[i]) < dist(last, rest[near])) near = i;
+    tour.push(rest.splice(near, 1)[0]);
+  }
+  tour.push(hero);
+  for (let better = true; better;) {
+    better = false;
+    for (let i = 1; i < tour.length - 2; i++) {
+      for (let j = i + 1; j < tour.length - 1; j++) {
+        const now = dist(tour[i - 1], tour[i]) + dist(tour[j], tour[j + 1]);
+        if (dist(tour[i - 1], tour[j]) + dist(tour[i], tour[j + 1]) < now - 1e-6) {
+          tour.splice(i, j - i + 1, ...tour.slice(i, j + 1).reverse());
+          better = true;
+        }
+      }
+    }
+  }
+  const ringOf = (g, angle, span, real) => {
+    g.seen = span[0]; g.passed = real ? span[1] - 0.06 : span[0] + 0.08;
+    const ax = g.L / 2 + 24 + 26 * rnd(), ay = g.Wd / 2 + 21 + 19 * rnd();       // ceñido al grano, unos más que otros
+    return { g, x: wx(g.tx), y: wy(g.ty), a: angle, stroke: makeRing(ax, ay, rnd), t0: span[0], t1: span[1], real, w: wu(3.5) };
+  };
+  const rings = tour.map((g, i) => ringOf(g, g.tilt, R.rings[i], i === 0 || g === hero));
+  hero.lifts.push([R.open[0], R.close[1]]);
+  // El claro ya auditado, y el puñado que se saca del montón de lo apartado.
+  const audit = ringOf(grains.find((g) => g.cls === "clear" && g.slot === AUDIT_SLOT), 0, R.audit_ring, true);
+  const taken = new Set();
+  const samples = SAMPLE.map(([sx, sy], i) => {
+    let best = null, bd = Infinity;
+    for (const g of grains) {
+      if (g.cls !== "none" || taken.has(g)) continue;
+      const d = Math.hypot(g.tx - sx, g.ty - sy);
+      if (d < bd) { bd = d; best = g; }
+    }
+    taken.add(best);
+    return ringOf(best, best.ma, R.sample_rings[i], false);
+  });
+
+  // La línea real de la caja y la lectura de la persona, ya medidas.
+  const lineOf = (text, key, size, pad) => {
+    const font = `500 ${size}px Roboto, "Noto Color Emoji"`, at = text.indexOf(key);
+    measure.font = font;
+    const w = measure.measureText(text).width;
+    return {
+      text, font, w, L: w + pad, base: size * 0.36,
+      k0: measure.measureText(text.slice(0, at)).width - w / 2,
+      k1: measure.measureText(text.slice(0, at + key.length)).width - w / 2,
+    };
+  };
+  const raw = lineOf(D.box.line, D.box.key, BOX.size, 88);
+  const res = lineOf(`Caja de ${D.box.pounds} lb · ${fmtInt(D.box.price)} CUP`, `${D.box.pounds} lb`, 40, 100);
+  const yu = raw.base + BOX.size * 0.27;
+  const box = {
+    raw, res,
+    under: [makeLine(raw.k0 - 5, yu + 1.5, raw.k1 + 9, yu - 3, rnd, 0.03), makeLine(raw.k0 + 6, yu + 9.5, raw.k1 + 1, yu + 6, rnd, 0.025)],
+    // con la lectura, el subrayado se va bajo «40 lb»
+    from: (raw.k0 + raw.k1) / 2, to: (res.k0 + res.k1) / 2, grow: (res.k1 - res.k0) / (raw.k1 - raw.k0), drop: res.base + 40 * 0.27 - yu,
+  };
+
+  // Los rótulos de la persona.
+  const note = (texts, px, sx, bases, align, span, pencil) => {
+    const lines = texts.map((s) => fitText(s, "Roboto", 500, wu(px), wu(660)));
+    const last = lines[lines.length - 1], yb = wy(bases[bases.length - 1]) + wu(12);
+    const x0 = wx(sx) - (align === "right" ? last.width : align === "center" ? last.width / 2 : 0);
+    return {
+      lines, sx, bases, align, span, pencil, w: wu(3.3),         // `pencil`: cuándo la persona lo subraya
+      under: makeLine(x0 - wu(4), yb + wu(2), x0 + last.width + wu(6), yb - wu(2.5), rnd, 0.012),
+    };
+  };
+  review = {
+    hero, rings, audit, samples, box,
+    notes: [
+      note(["si falla de más,", "se frena sola"], 36, 656, [452, 496], "right", R.audit_label, R.audit_underline),
+      note(["una muestra cada semana"], 36, 360, [1000], "center", R.sample_label, R.sample_underline),
+    ],
+  };
+  yemaVisits.length = 0;
+  yemaVisits.push({ fade: [R.yema_in, R.yema_in + 0.12, R.yema_out[0] + 0.25, R.yema_out[1]], segs: buildYema() });
+}
+
+// La cápsula de la caja en un instante: dónde está, cuánto se ha abierto y qué enseña.
+function boxPose(cam, t) {
+  const R = T.review, g = review.hero, B = review.box;
+  const up = clamp01((t - R.open[0]) / (R.open[1] - R.open[0]));
+  const down = clamp01((t - R.close[0]) / (R.close[1] - R.close[0]));
+  const mm = clamp01((t - R.morph[0]) / (R.morph[1] - R.morph[0])), me = easeOutBack(mm, 1.5);
+  const kp = easeInOutCubic(up) * (1 - easeInOutCubic(down));          // por dónde va: de la mesa al cristal
+  const ks = easeOutBack(up, 0.9) * (1 - easeInCubic(down));           // cuánto se ha abierto
+  const Lo = lerp(B.raw.L, B.res.L, me), Wo = lerp(BOX.wide, BOX.wide + 6, me);
+  const pr = project(cam, wx(g.tx), wy(g.ty), 0), gp = glassPoint(BOX.x, BOX.y, t);
+  const lt = g.L * cam.z, wt = g.Wd * cam.z;
+  const len = lt * Math.pow(Lo / lt, ks), hop = Math.sin(Math.PI * kp);
+  return {
+    x: lerp(pr.x, gp[0], kp), y: lerp(pr.y, gp[1], kp) - 30 * hop,
+    a: lerp(cam.roll + g.tilt, BOX.a + glassAt(t).r, kp) + 0.06 * hop * (down > 0 ? -1 : 1),
+    len, wid: wt * Math.pow(Wo / wt, ks), s: len / Lo, ks, kp, mm, me,
+    sq: 1 - 0.15 * Math.sin(Math.PI * mm),                               // se aprieta un instante al cambiar de texto
+  };
+}
+
+function drawBox(c, cam, t) {
+  const R = T.review;
+  if (t < R.open[0] || t >= R.close[1]) return;
+  const P = boxPose(cam, t), B = review.box;
+  const tint = t >= R.close[0] ? 0 : 1 - smooth(0.04, 0.5, P.ks);      // sale guayaba y vuelve ya repasado, como arroz
+  glowAt(c, P.x, P.y, P.a, P.len, P.wid, GUAYABA, 0.5 + 0.3 * tint);
+  drawPill(c, P.x, P.y, P.a, P.len, P.wid * P.sq, lerp(2.8, 5, smooth(0.1, 0.6, P.ks)), { doubt: tint }, smooth(0.05, 0.7, P.kp));
+  const ink = smooth(0.62, 0.96, P.ks);
+  if (ink <= 0.01) return;
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(P.x, P.y); c.rotate(P.a); c.scale(P.s, P.s * P.sq);
+  c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillStyle = INK;
+  const out = smooth(0, 0.42, P.mm), into = smooth(0.42, 1, P.mm);
+  if (out < 1) {
+    c.globalAlpha = ink * (1 - out); c.font = B.raw.font;
+    c.fillText(B.raw.text, -B.raw.w / 2, B.raw.base - 16 * out);
+  }
+  if (into > 0) {
+    c.globalAlpha = ink * into; c.font = B.res.font;
+    c.fillText(B.res.text, -B.res.w / 2, B.res.base + 18 * (1 - easeOutBack(into, 1.6)));
+  }
+  c.restore();
+  // el subrayado de la persona, que viaja con la cápsula
+  if (t < R.underline[0][0]) return;
+  const e = easeInOutCubic(P.mm);
+  pencilBegin();
+  pc.translate(P.x, P.y); pc.rotate(P.a); pc.scale(P.s, P.s * P.sq);
+  const anchor = pc.getTransform().scaleSelf(1.25);
+  pc.translate(lerp(B.from, B.to, e), B.drop * e); pc.scale(lerp(1, B.grow, e), 1); pc.translate(-B.from, 0);
+  R.underline.forEach(([a, b], i) => drawStroke(pc, B.under[i], 0, pen(clamp01((t - a) / (b - a))), 5.2, PENCIL_ON_LIGHT));
+  pencilEnd(c, anchor, ink, 0);
+}
+
+// ── La yema ─────────────────────────────────────────────────────────────────
+//
+// Su camino es una lista de tramos. Cada punto se pide ya en pantalla y en el
+// instante que toca, así la yema queda clavada a lo que está tocando aunque la
+// cámara derive: un grano de la mesa, la cápsula abierta o un punto del cristal.
+
+const yemaVisits = [];        // cada vez que la persona entra: sus tramos y cuándo asoma y se apaga (`fade`)
+const ptGlass = (x, y) => (t) => glassPoint(x, y, t);
+const ptTable = (x, y) => (t, cam) => { const p = project(cam, x, y, 0); return [p.x, p.y]; };
+const ptRing = (ring, u) => (t, cam) => {
+  const q = strokePoint(ring.stroke, u), v = rot([q.x, q.y], ring.a), p = project(cam, ring.x + v[0], ring.y + v[1], 0);
+  return [p.x, p.y];
+};
+const ptBox = (lx, ly) => (t, cam) => {
+  const P = boxPose(cam, t), v = rot([lx * P.s, ly * P.s * P.sq], P.a);
+  return [P.x + v[0], P.y + v[1]];
+};
+
+// Va de un punto a otro por el aire: en arco (`bow`) y levantándose (`lift`).
+function segMove(t0, t1, A, B, o = {}) {
+  const ease = o.ease || easeInOutCubic;
+  return {
+    t0, t1,
+    h: (u) => lerp(o.h0 || 0, o.h1 || 0, u) + (o.lift || 0) * Math.sin(Math.PI * u),
+    at: (t, cam, u) => {
+      const e = ease(u), a = A(t, cam), b = B(t, cam), dx = b[0] - a[0], dy = b[1] - a[1], bow = (o.bow || 0) * Math.sin(Math.PI * e);
+      return [a[0] + dx * e - dy * bow, a[1] + dy * e + dx * bow];
+    },
+  };
+}
+
+// Traza: va sobre el trazo, un poco por delante de lo que ya está dibujado.
+function segTrace(t0, t1, point, lead = 0.035) {
+  return { t0, t1, h: () => 0, at: (t, cam, u) => point(Math.min(1, pen(u) + lead * Math.sin(Math.PI * u)))(t, cam) };
+}
+
+// De corrido: pasa por cada punto a su hora, sin detenerse.
+function segTour(times, points, h) {
+  const n = times.length;
+  return {
+    t0: times[0], t1: times[n - 1], h: () => h,
+    at: (t, cam) => {
+      let i = 0;
+      while (i < n - 2 && t > times[i + 1]) i++;
+      const u = clamp01((t - times[i]) / (times[i + 1] - times[i]));
+      const P = [points[Math.max(0, i - 1)], points[i], points[i + 1], points[Math.min(n - 1, i + 2)]].map((f) => f(t, cam));
+      const cr = (k) => 0.5 * (2 * P[1][k] + (P[2][k] - P[0][k]) * u + (2 * P[0][k] - 5 * P[1][k] + 4 * P[2][k] - P[3][k]) * u * u
+        + (3 * P[1][k] - P[0][k] - 3 * P[2][k] + P[3][k]) * u * u * u);
+      return [cr(0), cr(1)];
+    },
+  };
+}
+
+function buildYema() {
+  const R = T.review, B = review.box, rings = review.rings, audit = review.audit, samples = review.samples;
+  const first = rings[0], hard = rings[rings.length - 1], mid = rings.slice(1, -1), segs = [];
+  const onStroke = (s, u) => { const q = strokePoint(s, u); return ptBox(q.x, q.y); };
+  // entra por abajo a la izquierda, del lado de quien mira, y traza despacio el primer aro
+  segs.push(segMove(R.yema_in, first.t0, ptTable(wx(-70), wy(1230)), ptRing(first, 0), { h0: 1.5, bow: 0.16, ease: easeOutCubic }));
+  segs.push(segTrace(first.t0, first.t1, (u) => ptRing(first, u)));
+  // de corrido por los demás, hasta el difícil
+  segs.push(segTour(
+    [first.t1, ...mid.map((r) => r.t0), hard.t0],
+    [ptRing(first, 1), ...mid.map((r) => ptTable(r.x, r.y)), ptRing(hard, 0)], 0.12));
+  segs.push(segTrace(hard.t0, hard.t1, (u) => ptRing(hard, u)));
+  // sube con el grano que se abre y subraya «4x10», dos veces
+  const [u1, u2] = B.under, [ta, tb] = R.underline;
+  const wait = ptBox(u1.pts[0][0] - 28, u1.pts[0][1] + 34);
+  segs.push(segMove(hard.t1, R.open[1], ptRing(hard, 1), wait, { h1: 0.55, lift: 0.5, bow: -0.2 }));
+  segs.push(segMove(R.open[1], ta[0], wait, onStroke(u1, 0), { h0: 0.55, bow: 0.3 }));
+  segs.push(segTrace(ta[0], ta[1], (u) => onStroke(u1, u), 0.07));
+  segs.push(segMove(ta[1], tb[0], onStroke(u1, 1), onStroke(u2, 0), { lift: 0.4, bow: 0.35 }));
+  segs.push(segTrace(tb[0], tb[1], (u) => onStroke(u2, u), 0.07));
+  // se aparta mientras se lee
+  const aside = ptBox(46, 104), leave = R.close[0] - 0.04;
+  segs.push(segMove(tb[1], R.morph[0], onStroke(u2, 1), aside, { h1: 0.6, bow: -0.25 }));
+  segs.push(segMove(R.morph[0], leave, aside, aside, { h0: 0.6, h1: 0.6 }));
+  // cruza a la fila de la máquina y le pone su aro a uno
+  segs.push(segMove(leave, audit.t0, aside, ptRing(audit, 0), { h0: 0.6, lift: 0.7, bow: -0.22 }));
+  segs.push(segTrace(audit.t0, audit.t1, (u) => ptRing(audit, u)));
+  // baja al montón de lo apartado y repasa un puñado
+  const s0 = samples[0], s9 = samples[samples.length - 1], off = ptTable(s9.x + wu(104), s9.y - wu(6));
+  segs.push(segMove(audit.t1, s0.t0, ptRing(audit, 1), ptTable(s0.x, s0.y), { lift: 0.9, bow: 0.14 }));
+  segs.push(segTour(samples.map((r) => r.t0), samples.map((r) => ptTable(r.x, r.y)), 0.1));
+  // y se va, hacia la fila de los claros
+  segs.push(segMove(s9.t0, R.yema_out[0], ptTable(s9.x, s9.y), off, { h1: 0.3 }));
+  segs.push(segMove(R.yema_out[0], R.yema_out[1], off, ptTable(wx(650), wy(700)), { h0: 0.3, h1: 2.2, bow: 0.2, ease: easeInCubic }));
+  return segs;
+}
+
+function yemaAt(t, cam) {
+  for (const { segs, fade } of yemaVisits) {
+    if (t < segs[0].t0 || t > segs[segs.length - 1].t1) continue;
+    const s = segs.find((q) => t <= q.t1), u = clamp01((t - s.t0) / ((s.t1 - s.t0) || 1)), p = s.at(t, cam, u);
+    return { x: p[0], y: p[1], h: s.h(u), alpha: smooth(fade[0], fade[1], t) * (1 - smooth(fade[2], fade[3], t)) };
+  }
+  return null;
+}
+
+function drawYema(c, cam, t) {
+  const now = yemaAt(t, cam);
+  if (!now) return;
+  const alpha = now.alpha, halo = glowSprite(GUAYABA);
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "lighter";
+  for (let i = 9; i >= 1; i--) {                     // la estela
+    const q = yemaAt(t - i * 0.009, cam);
+    if (!q) continue;
+    const r = (11 + 10 * q.h) * (1 - i / 12);
+    c.globalAlpha = alpha * 0.22 * (1 - i / 10);
+    c.drawImage(halo, q.x - r, q.y - r, r * 2, r * 2);
+  }
+  const x = now.x, y = now.y + 2.5 * now.h * Math.sin(t * 2.6), k = 1 + 0.75 * now.h;
+  c.globalAlpha = alpha * (0.3 - 0.08 * Math.min(1, now.h));          // la luz que deja en la mesa
+  c.drawImage(halo, x - 84 * k, y - 84 * k, 168 * k, 168 * k);
+  c.globalCompositeOperation = "multiply";
+  c.globalAlpha = alpha / (1 + 0.6 * now.h);
+  c.drawImage(yemaTint, x - 21 * k, y - 21 * k, 42 * k, 42 * k);
+  c.globalCompositeOperation = "lighter";
+  c.globalAlpha = alpha / (1 + 0.5 * now.h);
+  c.drawImage(yemaSprite, x - 24 * k, y - 24 * k, 48 * k, 48 * k);
+  c.restore();
+}
+
+// Los aros y subrayados que quedan en la mesa.
+function drawTableStrokes(c, cam, t) {
+  const hold = [];
+  for (const r of [...review.rings, review.audit, ...review.samples]) if (t > r.t0 && !(t >= r.gone)) hold.push(r);   // `gone`: se fue con su grano
+  const notes = review.notes.filter((N) => t > N.pencil[0] && t < N.span[1] + 0.3);
+  if (!hold.length && !notes.length) return;
+  pencilBegin();
+  onTable(pc, cam);
+  for (const r of hold) {
+    const u = pen(clamp01((t - r.t0) / (r.t1 - r.t0)));
+    pc.save();
+    pc.translate(r.x, r.y); pc.rotate(r.a);
+    drawStroke(pc, r.stroke, 0, u, r.w, PENCIL);
+    const hot = 1 - smooth(r.t1, r.t1 + 0.35, t);                     // recién trazado: aún con la luz de la yema
+    if (hot > 0.01) drawStroke(pc, r.stroke, u - 0.3, u, r.w * 0.6, rgb(mix3(GUAYABA, PENCIL_HOT, hot)));
+    pc.restore();
+  }
+  for (const N of notes) {                             // al irse el rótulo, su subrayado se borra por donde empezó
+    drawStroke(pc, N.under, smooth(N.span[1], N.span[1] + 0.25, t), pen(clamp01((t - N.pencil[0]) / (N.pencil[1] - N.pencil[0]))), N.w, PENCIL);
+  }
+  pencilEnd(c, tableMatrix(cam, 5.2), 0.96);
+}
+
+// Rótulo de la persona: las letras asoman una tras otra, sin cursor, y lo subraya a mano.
+function drawNote(c, cam, N, t) {
+  const [t0, t1] = N.span;
+  if (t < t0 || t > t1 + 0.32) return;
+  const leave = smooth(t1, t1 + 0.3, t);
+  onTable(c, cam);
+  c.textBaseline = "alphabetic"; c.textAlign = "left";
+  c.shadowColor = "rgba(2,12,22,0.75)"; c.shadowBlur = 5; c.shadowOffsetX = 0; c.shadowOffsetY = 1.5;
+  c.fillStyle = "rgb(255,242,214)";
+  let k = 0;
+  N.lines.forEach((fit, row) => {
+    c.font = `${fit.weight} ${fit.size}px ${fit.family}`;
+    const x0 = wx(N.sx) - (N.align === "right" ? fit.width : N.align === "center" ? fit.width / 2 : 0), y = wy(N.bases[row]);
+    for (const ch of fit.chars) {
+      const u = clamp01((t - t0 - k++ * 0.016) / 0.16);
+      if (u <= 0) continue;
+      c.globalAlpha = u * (1 - leave);
+      c.fillText(ch.ch, x0 + ch.x, y + (1 - easeOutCubic(u)) * wu(7));
+    }
+  });
+  c.shadowColor = "transparent"; c.globalAlpha = 1;
+}
+
+// Lo que va por delante de la mesa: el foco, lo que se abre y la yema.
+function drawFront(c, cam, t) {
+  const f = focusAt(t);
+  if (f > 0.004) {                                     // el foco se va con el grano: la mesa queda atrás, blanda y en penumbra
+    const deep = deepFocus(t), blur = 7 * f + 5 * deep, pad = 2.2 * blur;
+    bk.setTransform(1, 0, 0, 1, 0, 0);
+    bk.globalAlpha = 1; bk.globalCompositeOperation = "copy";
+    bk.drawImage(sceneCanvas, 0, 0);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+    c.filter = `blur(${blur.toFixed(2)}px) brightness(${(1 - 0.4 * f - 0.04 * deep).toFixed(3)})`;
+    c.drawImage(backCanvas, -pad, -pad, W + 2 * pad, H + 2 * pad);
+    c.filter = "none";
+    if (deep > 0.01) {
+      const shade = c.createRadialGradient(W / 2, H * 0.5, 250, W / 2, H * 0.5, 760);
+      shade.addColorStop(0, "rgba(2,10,18,0)"); shade.addColorStop(1, `rgba(2,10,18,${(0.62 * deep).toFixed(3)})`);
+      c.fillStyle = shade; c.fillRect(0, 0, W, H);
+    }
+  }
+  const I = T.island;
+  if (t >= I.start) drawSea(c, mapCam(t), smooth(I.start + 0.12, I.sea, t));   // la mesa se pierde en el mar
+  drawBox(c, cam, t);
+  drawTally(c, cam, t);
+  if (t >= I.start) drawIsland(c, t, 0);
+  drawYema(c, cam, t);
+}
+
+// ── B5 · La misma medida ────────────────────────────────────────────────────
+//
+// Todo lo que se lee aquí vive en el cristal (px de pantalla): el anuncio abierto,
+// las etiquetas, la cuenta y la recta. La mesa queda detrás, desenfocada, con la
+// fila de la máquina a un lado y los granos repasados al otro.
+
+const VIEW = { z: 0.7, sx: 418, sy: 700 };                          // dónde se queda la cámara (px de escenario)
+const PACK = { x: 360, y: 350, a: 0.02, size: 36, lead: 52, wide: 168 };   // dónde se abre el anuncio de 10 lb
+const TOKEN = 0.4;                                                   // un grano en el cristal: px por unidad de mundo
+const PIECE = { x: 132, bases: [622, 730, 838, 946], size: 92 };    // dónde queda, grande, cada palabra que sale del anuncio
+const UNIT = 0.6;                                                    // «CUP/lb», respecto de la cifra a la que acompaña
+const HEAD = { name: 292, figure: 392, size: 86 };                   // la cabecera de la celda
+const SUM = { x: 264, base: 540, size: 46, icon: 166, big: 680, bigSize: 120, park: [566, 462] };   // la cuenta
+const RULER = { x0: 96, x1: 624, y: 730, lo: 650, hi: 765, labels: 806 };
+const LAST = { icon: 172, x: 222, bases: [916, 990, 1064], size: 50 };
+const INK_RGB = [8, 32, 47];
+const MACHINE_ON_LIGHT = "rgb(22,100,130)";                          // el trazo recto de la máquina sobre el crema de una cápsula
+const COLD_GLOW = [170, 232, 245];
+let tally = null;
+
+const measureWidth = (c, text, font) => { c.font = font; return c.measureText(text).width; };
+const rulerX = (v) => RULER.x0 + (v - RULER.lo) / (RULER.hi - RULER.lo) * (RULER.x1 - RULER.x0);
+const packFocus = (t) => smooth(T.measure.open[0], T.measure.open[1] + 0.05, t);
+// La cuenta rueda rápido al principio y se va asentando: la misma curva mueve el tictac.
+const rolled = (target, span, t) => target * (1 - Math.pow(1 - clamp01((t - span[0]) / (span[1] - span[0])), T.measure.roll_power));
+
+function onGlass(c, t) {
+  const g = glassAt(t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(W / 2 + g.x, H / 2 + g.y); c.rotate(g.r); c.translate(-W / 2, -H / 2);
+}
+
+// Texto del cristal: nítido, con una sombra blanda que lo despega de la mesa.
+function glassText(c, text, x, y, font, color, alpha = 1, align = "left") {
+  if (alpha <= 0.004) return;
+  c.font = font; c.textAlign = align; c.textBaseline = "alphabetic";
+  c.shadowColor = `rgba(1,8,15,${(0.72 * alpha).toFixed(3)})`; c.shadowBlur = 9; c.shadowOffsetX = 0; c.shadowOffsetY = 3;
+  c.globalAlpha = alpha; c.fillStyle = color;
+  c.fillText(text, x, y);
+  c.shadowColor = "transparent"; c.globalAlpha = 1;
+}
+
+// Texto de la máquina: se teclea de izquierda a derecha, con su cursor cuadrado.
+function typedText(c, text, x, base, size, weight, color, t0, t, align = "left", alpha = 1) {
+  if (t < t0 || alpha <= 0.004) return;
+  const font = `${weight} ${size}px Roboto`, step = T.measure.type_step;
+  c.font = font;
+  const full = c.measureText(text).width, n = Math.min(text.length, Math.floor((t - t0) / step) + 1);
+  const x0 = align === "right" ? x - full : align === "center" ? x - full / 2 : x;
+  glassText(c, text.slice(0, n), x0, base, font, color, alpha);
+  const typed = (t - t0) / step - text.length;
+  if (typed < 12) {
+    c.font = font;
+    c.globalAlpha = alpha * (typed < 0 ? 1 : 1 - typed / 12); c.fillStyle = color;
+    c.fillRect(x0 + c.measureText(text.slice(0, n)).width + size * 0.12, base - size * 0.62, size * 0.5, size * 0.62);
+    c.globalAlpha = 1;
+  }
+}
+
+// La marca cuadrada de la máquina, en el cristal. `pop` (1 → 0) es el golpe con que se estampa.
+function squareMark(c, x, y, q, alpha, pop = 0) {
+  if (alpha <= 0.004) return;
+  const s = q * (1 + 0.7 * pop);
+  c.globalAlpha = alpha; c.strokeStyle = rgb(COLD); c.lineWidth = 2.6; c.lineJoin = "miter";
+  c.shadowColor = "rgba(1,8,15,0.6)"; c.shadowBlur = 7; c.shadowOffsetX = 0; c.shadowOffsetY = 2;
+  c.strokeRect(x - s / 2, y - s / 2, s, s);
+  c.shadowColor = "transparent";
+  c.fillStyle = rgb([236, 252, 255]);
+  c.fillRect(x - s * 0.24, y - s * 0.24, s * 0.48, s * 0.48);
+  if (pop > 0.03) {
+    c.globalCompositeOperation = "lighter";
+    c.fillStyle = `rgba(190,240,250,${(0.5 * pop * alpha).toFixed(3)})`;
+    c.fillRect(x - s, y - s, s * 2, s * 2);
+    c.globalCompositeOperation = "source-over";
+  }
+  c.globalAlpha = 1;
+}
+
+function buildTally() {
+  const M = T.measure, P = D.pack, C = D.cell, rnd = mulberry32(SEED + 505);
+  const hero = grains[0], boxed = grains[1];
+  // El otro anuncio de 683: el vecino más cercano de la caja (son dos versiones de la misma lista).
+  const gap = (g) => Math.hypot(g.tx - boxed.tx, g.ty - boxed.ty);
+  const mate = grains.filter((g) => g.cls === "doubt" && g !== boxed).reduce((a, b) => (gap(a) <= gap(b) ? a : b));
+  hero.lifts.push([M.open[0], Infinity]);
+  for (const g of [boxed, mate]) g.lifts.push([M.pair_in[0], Infinity]);
+  for (const r of review.rings) if (r.g === boxed || r.g === mate) r.gone = M.pair_in[0];
+  const ringOf = (g) => review.rings.find((r) => r.g === g);
+
+  // El anuncio, en dos renglones, y dónde está cada palabra que la máquina saca de él.
+  const font = `500 ${PACK.size}px Roboto, "Noto Color Emoji"`;
+  measure.font = font;
+  const cut = P.text.indexOf(" ("), rows = cut > 0 ? [P.text.slice(0, cut), P.text.slice(cut + 1)] : [P.text];
+  const wide = Math.max(...rows.map((r) => measure.measureText(r).width));
+  const bases = rows.map((_, i) => (i - (rows.length - 1) / 2) * PACK.lead + PACK.size * 0.36);
+  const width = (text, f) => { measure.font = f; return measure.measureText(text).width; };
+  const find = (word) => {
+    const row = rows.findIndex((r) => r.includes(word)), at = rows[row].indexOf(word);
+    const x0 = width(rows[row].slice(0, at), font) - wide / 2;
+    return { text: word, row, at, x0, x1: x0 + width(word, font), base: bases[row] };
+  };
+
+  // La cabecera de la celda y la cuenta, ya medidas, para que cada pieza llegue a su sitio exacto.
+  const nameFont = "400 64px Alice", figFont = `700 ${HEAD.size}px Roboto`, unitFont = `500 ${HEAD.size * UNIT}px Roboto`;
+  const sumFont = `500 ${SUM.size}px Roboto`, bigFont = `700 ${SUM.bigSize}px Roboto`;
+  const name = `${C.product} · ${C.province}`, nameX = W / 2 - width(name, nameFont) / 2;
+  const wLow = width(String(C.low), figFont), wDash = width("–", figFont), wHigh = width(String(C.high), figFont);
+  const wUnit = width(C.unit, unitFont), figGap = 14, figX = W / 2 - (wLow + wDash + wHigh + figGap + wUnit) / 2;
+  const price = `${fmtInt(P.price)} CUP`, pounds = `${P.pounds} lb`, sumA = `${price} ÷ ${pounds}`;
+  const digit = width("0", bigFont), bigUnit = SUM.bigSize * UNIT;
+  const bigW = 3 * digit + SUM.bigSize * 0.16 + width(C.unit, `500 ${bigUnit}px Roboto`);
+  const medFont = "400 44px Roboto", tickFont = "500 52px Roboto", wMed = width(`${M.median_word} `, medFont), wTick = width(String(C.median), tickFont);
+  tally = {
+    hero, pair: [boxed, mate], rings: [ringOf(boxed), ringOf(mate)],
+    rows, bases, wide, font, L: wide + 96, words: [find(P.product), find(P.quantity), find(P.amount)],
+    // lo que queda de cada palabra: el dato ya normalizado
+    values: [P.product, pounds, price, P.province], raws: [P.product, P.quantity, P.amount, P.province],
+    name, nameFont, nameX, nameProv: nameX + width(`${C.product} · `, nameFont),
+    figFont, unitFont, figLow: figX, figDash: figX + wLow, figHigh: figX + wLow + wDash,
+    figAlone: W / 2 - (wHigh + figGap + wUnit) / 2,
+    sumFont, sumA, sumB: `${fmtInt(D.box.price)} CUP ÷ ${D.box.pounds} lb`, sumQty: SUM.x + width(`${price} ÷ `, sumFont),
+    bigX: W / 2 - bigW / 2,
+    x: [rulerX(C.values[0]), rulerX(C.values[1]), rulerX(C.values[2])],
+    medFont, tickFont, wMed, wTick,
+    icon: makeRing(29, 17, rnd),                           // el aro que firma «2 a mano»
+    spots: [[SUM.icon, SUM.base + 14], [SUM.icon, SUM.base - 44]],   // dónde esperan los dos granos de la caja (el que cae primero, abajo)
+  };
+
+  // La persona vuelve un momento, a firmar su parte de la cuenta.
+  const [h0, h1] = M.hand, at = [LAST.icon, LAST.bases[1] - 17];
+  const onIcon = (u) => { const q = strokePoint(tally.icon, u); return ptGlass(at[0] + q.x, at[1] + q.y); };
+  const away = ptGlass(-70, at[1] - 50);                  // se va por donde vino, sin cruzar lo escrito
+  yemaVisits.push({
+    fade: [M.yema[0], M.yema[0] + 0.14, M.yema[1] - 0.3, M.yema[1]],
+    segs: [
+      segMove(M.yema[0], h0, ptGlass(-60, at[1] + 150), onIcon(0), { h0: 1.4, bow: 0.2, ease: easeOutCubic }),
+      segTrace(h0, h1, onIcon, 0.05),
+      segMove(h1, M.yema[1], onIcon(1), away, { h1: 1.2, bow: 0.3, ease: easeInCubic }),
+    ],
+  });
+}
+
+// El anuncio de 10 lb en un instante: sale de la fila, se abre en el cristal y, ya leído, se cierra en su grano.
+function packPose(cam, t) {
+  const M = T.measure, g = tally.hero;
+  const up = clamp01((t - M.open[0]) / (M.open[1] - M.open[0]));
+  const down = clamp01((t - M.pack_out[0]) / (M.pack_out[1] - M.pack_out[0]));
+  const kp = easeInOutCubic(up), ks = easeOutBack(up, 0.9), kd = easeInOutCubic(down), hop = Math.sin(Math.PI * kp);
+  const pr = project(cam, wx(g.tx), wy(g.ty), 0), gp = glassPoint(PACK.x, PACK.y, t), spot = glassPoint(SUM.icon, SUM.base - 14, t);
+  const lt = g.L * cam.z, wt = g.Wd * cam.z;
+  const open = lt * Math.pow(tally.L / lt, ks), tall = wt * Math.pow(PACK.wide / wt, ks);
+  const len = open * Math.pow(g.L * TOKEN / open, kd);
+  return {
+    x: lerp(lerp(pr.x, gp[0], kp), spot[0], kd) - 46 * Math.sin(Math.PI * kd),
+    y: lerp(lerp(pr.y, gp[1], kp) - 30 * hop, spot[1], kd),
+    a: lerp(lerp(cam.roll, PACK.a + glassAt(t).r, kp) + 0.05 * hop, glassAt(t).r, kd),
+    len, wid: tall * Math.pow(g.Wd * TOKEN / tall, kd), s: len / tally.L, ks, kp, kd,
+    n: lerp(lerp(lerp(2.8, 3.7, smooth(60, 240, lt)), 5, smooth(0.1, 0.6, ks)), 2.9, kd),
+  };
+}
+
+function drawPack(c, cam, t) {
+  const M = T.measure;
+  if (t < M.open[0] || t >= M.pack_out[1]) return;
+  const P = packPose(cam, t);
+  const cold = Math.max(1 - smooth(0.04, 0.5, P.ks), smooth(0.3, 1, P.kd));       // claro en la fila, crema al abrirse
+  glowAt(c, P.x, P.y, P.a, P.len, P.wid, COLD_GLOW, 0.5);
+  drawPill(c, P.x, P.y, P.a, P.len, P.wid, P.n, { clear: cold }, smooth(0.05, 0.7, P.kp));
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(P.x, P.y); c.rotate(P.a);
+  squareMark(c, -P.len / 2 - 24, 0, 24, P.kd);                                   // al cerrarse recupera su marca
+  const ink = smooth(0.62, 0.96, P.ks) * (1 - smooth(0, 0.4, P.kd));
+  if (ink > 0.01) {
+    c.scale(P.s, P.s);
+    c.font = tally.font; c.textAlign = "left"; c.textBaseline = "alphabetic";
+    tally.rows.forEach((row, r) => {
+      // el renglón por tramos: las palabras que ya despegaron dejan su hueco
+      const gone = tally.words.map((w, i) => ({ w, i })).filter(({ w, i }) => w.row === r && t >= M.words[i][0]);
+      let from = 0;
+      const piece = (a, b) => {
+        if (b <= a) return;
+        c.font = tally.font;
+        c.fillText(row.slice(a, b), c.measureText(row.slice(0, a)).width - tally.wide / 2, tally.bases[r]);
+      };
+      c.fillStyle = INK; c.globalAlpha = ink;
+      for (const { w } of gone.sort((p, q) => p.w.at - q.w.at)) { piece(from, w.at); from = w.at + w.text.length; }
+      piece(from, row.length);
+    });
+    // la máquina subraya lo que va a sacar: recto, fino y con remate cuadrado
+    c.fillStyle = MACHINE_ON_LIGHT;
+    tally.words.forEach((w, i) => {
+      const u = easeOutCubic((t - M.marks[i]) / 0.16);
+      if (u <= 0) return;
+      const x = lerp(w.x0, w.x1, u), y = w.base + 9;
+      c.globalAlpha = ink;
+      c.fillRect(w.x0, y - 1.4, x - w.x0, 2.8);
+      c.fillRect(x - 3, y - 3, 6, 6);
+    });
+  }
+  c.restore();
+}
+
+// Una palabra en vuelo: va en arco de un punto a otro, cambia de tamaño y de la tinta al blanco.
+function flyText(c, text, from, to, e, sizes, bow, light) {
+  const dx = to[0] - from[0], dy = to[1] - from[1], arc = bow * Math.sin(Math.PI * e);
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(from[0] + dx * e - dy * arc, from[1] + dy * e + dx * arc);
+  c.rotate(-0.6 * bow * Math.sin(Math.PI * e));
+  glassText(c, text, 0, 0, `500 ${lerp(sizes[0], sizes[1], e).toFixed(2)}px Roboto`, rgb(mix3(INK_RGB, [255, 255, 255], light)), 1);
+  c.restore();
+}
+
+function drawFlights(c, cam, t) {
+  const M = T.measure;
+  tally.words.forEach((w, i) => {
+    const [t0, t1] = M.words[i];
+    if (t < t0 || t >= t1) return;
+    const e = easeInOutCubic((t - t0) / (t1 - t0)), P = packPose(cam, t), v = rot([w.x0 * P.s, w.base * P.s], P.a);
+    flyText(c, w.text, [P.x + v[0], P.y + v[1]], glassPoint(PIECE.x, PIECE.bases[i], t), e, [PACK.size * P.s, PIECE.size],
+      i % 2 ? 0.2 : -0.22, smooth(0.04, 0.4, e));
+  });
+  // «La Habana» no está en el texto: la pone el grupo de origen, y por eso entra desde fuera del cuadro.
+  const [p0, p1] = M.province;
+  if (t >= p0 && t < p1) {
+    const e = easeOutCubic((t - p0) / (p1 - p0));
+    flyText(c, tally.values[3], glassPoint(W + 70, PIECE.bases[3] - 190, t), glassPoint(PIECE.x, PIECE.bases[3], t), e, [PIECE.size, PIECE.size], 0.3, 1);
+  }
+}
+
+// Lo que la máquina saca del anuncio: cuatro palabras que quedan grandes, una debajo de otra. Cada una
+// cae con su golpe y se enciende; la anterior da un paso atrás, para que solo haya una cosa que mirar.
+function drawFields(c, t) {
+  const M = T.measure, lands = [M.words[0][1], M.words[1][1], M.words[2][1], M.province[1]];
+  const [g0, g1] = M.regroup, move = easeInOutCubic(clamp01((t - g0) / (g1 - g0)));
+  // a dónde va cada dato cuando se arma la cuenta: producto y provincia, a la cabecera; precio y cantidad, a la división
+  const goal = [[tally.nameX, HEAD.name, 64], [tally.sumQty, SUM.base, SUM.size], [SUM.x, SUM.base, SUM.size], [tally.nameProv, HEAD.name, 64]];
+  tally.values.forEach((value, i) => {
+    const q = t - lands[i];
+    if (q < 0 || t >= g1) return;
+    const settle = -11 * Math.exp(-q * 10) * Math.cos(q * 30);               // cae y se asienta
+    const x = lerp(PIECE.x, goal[i][0], move) - 60 * Math.sin(Math.PI * move) * (i % 2 ? 1 : -1) * 0.5;
+    const y = lerp(PIECE.bases[i], goal[i][1], move) + settle;
+    const size = lerp(PIECE.size, goal[i][2], move);
+    const back = i < 3 ? smooth(lands[i + 1] - 0.1, lands[i + 1] + 0.12, t) * (1 - move) : 0;
+    const alpha = 1 - 0.42 * back, roboto = `500 ${size.toFixed(2)}px Roboto`;
+    if ((i === 0 || i === 3) && move > 0) {                                  // en vuelo pasa de dato a titular
+      glassText(c, value, x, y, roboto, "#ffffff", alpha * (1 - smooth(0.3, 0.7, move)));
+      glassText(c, value, x, y, `400 ${size.toFixed(2)}px Alice`, "#ffffff", smooth(0.3, 0.7, move));
+      return;
+    }
+    // el texto llega como venía («10lb», «7500cup») y al caer queda a la misma medida («10 lb», «7.500 CUP»)
+    const flip = clamp01(q / 0.16), raw = tally.raws[i], mid = y - size * 0.34;
+    c.save();
+    c.translate(x, mid); c.scale(1, raw === value ? 1 : Math.abs(Math.cos(Math.PI * flip)) * 0.9 + 0.1); c.translate(-x, -mid);
+    glassText(c, flip < 0.5 ? raw : value, x, y, roboto, "#ffffff", alpha);
+    if (q < 0.45) {                                                          // recién caída: un destello frío, de máquina
+      c.globalCompositeOperation = "lighter";
+      glassText(c, flip < 0.5 ? raw : value, x, y, roboto, rgb(COLD_GLOW), 0.75 * Math.exp(-q * 9));
+      c.globalCompositeOperation = "source-over";
+    }
+    c.restore();
+  });
+}
+
+// La cabecera de la celda: «Pollo · La Habana» y, cuando ya están las dos cuentas, «683–750 CUP/lb».
+function drawHead(c, t) {
+  const M = T.measure;
+  if (t >= M.regroup[1]) glassText(c, tally.name, tally.nameX, HEAD.name, tally.nameFont, "#ffffff", 1);
+  glassText(c, "–", tally.figDash, HEAD.figure, tally.figFont, "#ffffff", smooth(M.rise_b[1] - 0.12, M.rise_b[1] + 0.04, t));
+}
+
+// Un contador de tambores: cada cifra rueda hacia arriba y, al pasar del 9 al 0, arrastra a la de su izquierda.
+// Se pinta aparte, a tamaño fijo, para que los tambores asomen por una ventana de bordes blandos.
+const DRUM = { w: 264, h: 176, size: 120, x: 30, base: 132 };
+const drumCanvas = mk(DRUM.w, DRUM.h), dc = drumCanvas.getContext("2d");
+function drawCounter(c, x, base, size, value, alpha, speed) {
+  dc.setTransform(1, 0, 0, 1, 0, 0);
+  dc.globalCompositeOperation = "source-over"; dc.clearRect(0, 0, DRUM.w, DRUM.h);
+  dc.font = `700 ${DRUM.size}px Roboto`; dc.textAlign = "center"; dc.textBaseline = "alphabetic"; dc.fillStyle = "#ffffff";
+  const wd = dc.measureText("0").width, tall = DRUM.size * 0.94;
+  for (let k = 0; k < 3; k++) {                                              // k = 0: las unidades
+    const unit = Math.pow(10, k), turn = k === 0 ? value % 1 : Math.max(0, (value % unit) - (unit - 1));
+    const d = Math.floor(value / unit) % 10, col = DRUM.x + (2.5 - k) * wd;
+    const lit = k === 0 ? 1 : 0.2 + 0.8 * smooth(unit * 0.8, unit, value);   // los ceros de la izquierda, apagados
+    dc.globalAlpha = lit * lerp(1, 0.5, smooth(5, 26, speed / unit));        // lo que gira deprisa pesa menos
+    dc.fillText(String(d), col, DRUM.base - turn * tall);
+    if (turn > 0.001) dc.fillText(String((d + 1) % 10), col, DRUM.base + (1 - turn) * tall);
+  }
+  const top = DRUM.base - DRUM.size * 0.86, mask = dc.createLinearGradient(0, top, 0, top + DRUM.size * 1.02);
+  mask.addColorStop(0, "rgba(0,0,0,0)"); mask.addColorStop(0.16, "rgba(0,0,0,1)");
+  mask.addColorStop(0.84, "rgba(0,0,0,1)"); mask.addColorStop(1, "rgba(0,0,0,0)");
+  dc.globalCompositeOperation = "destination-in"; dc.globalAlpha = 1;
+  dc.fillStyle = mask; dc.fillRect(0, 0, DRUM.w, DRUM.h);
+  const k = size / DRUM.size;
+  c.globalAlpha = alpha;
+  c.shadowColor = `rgba(1,8,15,${(0.72 * alpha).toFixed(3)})`; c.shadowBlur = 9; c.shadowOffsetX = 0; c.shadowOffsetY = 3;
+  c.drawImage(drumCanvas, x - DRUM.x * k, base - DRUM.base * k, DRUM.w * k, DRUM.h * k);
+  c.shadowColor = "transparent"; c.globalAlpha = 1;
+  return wd * 3 * k;
+}
+
+// Las dos cuentas: 7.500 ÷ 10 lb → 750 y, más breve, 27.300 ÷ 40 lb → 683. Cada resultado sube a la cabecera.
+function drawSums(c, t) {
+  const M = T.measure, C = D.cell;
+  if (t < M.regroup[1] - 0.12) return;
+  // los renglones de la división
+  const outA = smooth(M.pair_in[0], M.pair_in[0] + 0.18, t);
+  if (t >= M.regroup[1]) glassText(c, tally.sumA, SUM.x - 18 * outA, SUM.base, tally.sumFont, "#ffffff", 1 - outA);
+  else glassText(c, "÷", tally.sumQty - measureWidth(c, "÷ ", tally.sumFont), SUM.base, tally.sumFont, "#ffffff", smooth(M.regroup[1] - 0.1, M.regroup[1], t));
+  const inB = smooth(M.roll_b[0] - 0.12, M.roll_b[0] + 0.02, t), outB = smooth(M.rise_b[0] - 0.08, M.rise_b[0] + 0.12, t);
+  glassText(c, tally.sumB, SUM.x + 16 * (1 - inB), SUM.base, tally.sumFont, "#ffffff", inB * (1 - outB));
+
+  const figure = (target, roll, rise, restX, k) => {
+    const start = roll[0] - 0.06;
+    if (t < start) return;
+    const up = easeInOutCubic(clamp01((t - rise[0]) / (rise[1] - rise[0])));
+    const size = lerp(SUM.bigSize, HEAD.size, up), q = t - roll[1];
+    const pop = q > 0 ? 1 + 0.08 * Math.exp(-q * 13) * Math.cos(q * 24) : 1;             // al quedar fija, un golpe
+    const x = lerp(tally.bigX, restX, up), base = lerp(SUM.big, HEAD.figure, up) - 36 * Math.sin(Math.PI * up) * k;
+    c.save();
+    c.translate(x + size * 0.84, base); c.scale(pop, pop); c.translate(-x - size * 0.84, -base);
+    const left = 1 - clamp01((t - roll[0]) / (roll[1] - roll[0]));                        // lo que le falta por rodar
+    const speed = target * M.roll_power * Math.pow(left, M.roll_power - 1) / (roll[1] - roll[0]);
+    const wide = drawCounter(c, x, base, size, rolled(target, roll, t), smooth(start, roll[0], t), speed);
+    if (q > 0 && q < 0.5) {                                                              // y se enciende un instante
+      c.globalCompositeOperation = "lighter";
+      glassText(c, String(target), x, base, `700 ${size.toFixed(2)}px Roboto`, rgb(COLD_GLOW), 0.7 * Math.exp(-q * 8));
+      c.globalCompositeOperation = "source-over";
+    }
+    c.restore();
+    return { x: x + wide + size * 0.16, base, size: size * UNIT, up };
+  };
+  // el 750 se corre para dejarle el sitio al 683 cuando llega
+  const shift = easeInOutCubic(clamp01((t - M.rise_b[0]) / (M.rise_b[1] - M.rise_b[0])));
+  const a = figure(C.high, M.roll_a, M.rise_a, lerp(tally.figAlone, tally.figHigh, shift), 1);
+  if (a) glassText(c, C.unit, a.x, a.base, `500 ${a.size.toFixed(2)}px Roboto`, rgb(COLD), smooth(M.roll_a[0] - 0.1, M.roll_a[0], t));
+  const b = figure(C.low, M.roll_b, M.rise_b, tally.figLow, -1);
+  if (b) glassText(c, C.unit, b.x, b.base, `500 ${b.size.toFixed(2)}px Roboto`, rgb(COLD), smooth(M.roll_b[0] - 0.1, M.roll_b[0], t) * (1 - b.up));
+}
+
+// La recta: una regla que se dibuja sola, con una raya cada 5 CUP/lb, las dos medidas y la muesca de la mediana.
+function drawRuler(c, t) {
+  const M = T.measure, C = D.cell;
+  if (t < M.line[0]) return;
+  const u = easeInOutCubic(clamp01((t - M.line[0]) / (M.line[1] - M.line[0]))), xe = lerp(RULER.x0, RULER.x1, u);
+  c.fillStyle = rgb(COLD);
+  c.shadowColor = "rgba(1,8,15,0.6)"; c.shadowBlur = 7; c.shadowOffsetX = 0; c.shadowOffsetY = 2;
+  c.globalAlpha = 1;
+  c.fillRect(RULER.x0, RULER.y - 1.3, xe - RULER.x0, 2.6);
+  c.shadowColor = "transparent";
+  c.fillRect(RULER.x0 - 4, RULER.y - 4, 8, 8); c.fillRect(xe - 4, RULER.y - 4, 8, 8);     // remates cuadrados
+  for (let v = Math.ceil(RULER.lo / 5) * 5 + 5; v < RULER.hi; v += 5) {
+    const x = rulerX(v);
+    if (x > xe) break;
+    c.globalAlpha = 0.55;
+    c.fillRect(x - 1, RULER.y, 2, v % 10 === 0 ? 11 : 6);
+  }
+  c.globalAlpha = 1;
+  const shown = [];
+  for (const v of [C.low, C.high]) {                                         // las dos medidas, más largas
+    const x = rulerX(v);
+    if (x > xe) continue;
+    c.fillRect(x - 1.6, RULER.y - 4, 3.2, 21);
+    shown.push(v);
+  }
+  // sus cifras; a la del 683 se le antepone «mediana» cuando cae la muesca
+  const at = M.line[1] - 0.08, med = t - M.median, slide = easeOutCubic(med / 0.14);
+  for (const v of shown) {
+    const mid = rulerX(v), isMed = v === C.median, total = tally.wMed + tally.wTick;
+    const x = isMed ? lerp(mid - tally.wTick / 2, mid - total / 2 + tally.wMed, slide) : mid - measureWidth(c, String(v), tally.tickFont) / 2;
+    const rise = smooth(at, at + 0.2, t);
+    glassText(c, String(v), x, RULER.labels + 10 * (1 - rise), tally.tickFont, "#ffffff", rise);
+    if (isMed) typedText(c, M.median_word, mid - total / 2, RULER.labels, 44, 400, rgb(COLD), M.median_typed, t);
+  }
+  if (med > 0) {                                                             // la muesca: un triángulo bajo la recta
+    const pop = Math.exp(-med * 14), x = rulerX(C.median), s = 9 * (1 + 0.8 * pop), y = RULER.y + 19;
+    c.fillStyle = rgb([236, 252, 255]); c.globalAlpha = clamp01(med / 0.05);
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x - s, y + s * 1.25); c.lineTo(x + s, y + s * 1.25); c.closePath(); c.fill();
+    if (pop > 0.03) {
+      c.globalCompositeOperation = "lighter"; c.fillStyle = `rgba(190,240,250,${(0.5 * pop).toFixed(3)})`;
+      c.fillRect(x - 26, y - 12, 52, 44);
+      c.globalCompositeOperation = "source-over";
+    }
+    c.globalAlpha = 1;
+  }
+}
+
+// Dónde está cada uno de los tres granos de la celda en el cristal (0 y 1: los de la caja; 2: el de 10 lb).
+function tokenAt(i, t) {
+  const M = T.measure, land = M.drops[i], rest = [tally.x[i], RULER.y - 36 - (i === 1 ? 66 : 0)];
+  let from, x, y, a = 0;
+  if (i === 2) {                                           // espera junto a su cuenta y se aparta cuando llega la caja
+    const e = easeInOutCubic(clamp01((t - M.pair_in[0]) / (M.pair_in[1] - M.pair_in[0])));
+    from = SUM.park;
+    x = lerp(SUM.icon, from[0], e); y = lerp(SUM.base - 14, from[1], e) - 40 * Math.sin(Math.PI * e); a = 0.1 * Math.sin(Math.PI * e);
+  } else {                                                 // los dos de la caja entran por el borde, del lado de lo repasado
+    const u = clamp01((t - M.pair_in[0] - 0.05 * i) / (M.pair_in[1] - M.pair_in[0])), e = easeOutBack(u, 1.1);
+    from = tally.spots[i];
+    x = lerp(-120, from[0], e); y = lerp(from[1] - 60, from[1], easeOutCubic(u)); a = -0.3 * (1 - easeOutCubic(u));
+  }
+  const fall = clamp01((t - (land - 0.34)) / 0.34), q = t - land;
+  let sq = 1;
+  if (fall > 0) {                                          // baja a la recta: cae con peso y rebota
+    x = lerp(from[0], rest[0], easeInOutCubic(fall));
+    y = lerp(from[1], rest[1], fall * fall);
+    a = 0.14 * Math.sin(Math.PI * fall) * (i === 2 ? -1 : 1);
+    if (q > 0) { y -= 15 * hop2(q / 0.34); sq = 1 - 0.18 * Math.exp(-q * 13) * Math.cos(q * 34); a = 0.05 * Math.exp(-q * 9) * Math.sin(q * 30); }
+  }
+  return { x, y, a, sq };
+}
+
+function drawTokens(c, t) {
+  const M = T.measure, items = [];
+  if (t >= M.pair_in[0]) tally.pair.forEach((g, i) => items.push({ g, i, ...tokenAt(i, t) }));
+  if (t >= M.pack_out[1]) items.push({ g: tally.hero, i: 2, ...tokenAt(2, t) });
+  for (const k of items) {
+    const p = glassPoint(k.x, k.y, t), len = k.g.L * TOKEN, wid = k.g.Wd * TOKEN, ang = k.a + glassAt(t).r;
+    if (k.i === 2) glowAt(c, p[0], p[1], ang, len, wid, COLD_GLOW, 0.4);
+    drawPill(c, p[0], p[1], ang, len, wid * k.sq, 2.9, k.i === 2 ? { clear: 1 } : { doubt: 0.06 }, 0.8);
+    if (k.i === 2) {
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0); c.translate(p[0], p[1]); c.rotate(ang);
+      squareMark(c, -len / 2 - 24, 0, 24, 1);
+      c.restore();
+    }
+  }
+  return items;
+}
+
+// El cierre: «3 anuncios · 2 a mano · 1 por el sistema», dibujado con los dos trazos.
+function drawLast(c, t) {
+  const M = T.measure, C = D.cell, font = `500 ${LAST.size}px Roboto`;
+  const soft = (text, base, t0, color) => {                // letra a letra, sin cursor: así escribe la persona
+    if (t < t0) return;
+    c.font = font;
+    let x = LAST.x;
+    for (let i = 0; i < text.length; i++) {
+      const u = clamp01((t - t0 - i * 0.016) / 0.16);
+      if (u > 0) glassText(c, text[i], x, base + (1 - easeOutCubic(u)) * 7, font, color, u);
+      c.font = font;
+      x = LAST.x + c.measureText(text.slice(0, i + 1)).width;
+    }
+  };
+  soft(`${C.ads} anuncios`, LAST.bases[0], M.count, "#ffffff");
+  soft(`${C.manual} a mano`, LAST.bases[1], M.by_hand, "rgb(255,242,214)");
+  typedText(c, M.system_line, LAST.x, LAST.bases[2], LAST.size, 500, rgb([226, 244, 246]), M.by_system, t);
+  const q = t - M.stamp;
+  if (q > 0) squareMark(c, LAST.icon, LAST.bases[2] - 17, 30, clamp01(q / 0.05), Math.exp(-q * 14));
+}
+
+// Todo B5, en orden: lo que se abre, lo que se lee y, al final, los dos trazos.
+function drawTally(c, cam, t) {
+  if (t < T.measure.open[0]) return;
+  if (t >= T.island.start) drawGather(c, cam, t);      // B6: lo del cristal se recoge
+  else drawTallyLive(c, cam, t);
+}
+
+function drawTallyLive(c, cam, t) {
+  const M = T.measure;
+  drawPack(c, cam, t);
+  const tokens = drawTokens(c, t);
+  onGlass(c, t);
+  drawFields(c, t);
+  drawHead(c, t);
+  drawSums(c, t);
+  drawRuler(c, t);
+  drawLast(c, t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  drawFlights(c, cam, t);
+  // los trazos a mano: los aros de los dos granos de la caja y el que firma «2 a mano»
+  const rings = tokens.filter((k) => k.i < 2);
+  if (!rings.length && t < M.hand[0]) return;
+  pencilBegin();
+  for (const k of rings) {
+    const r = tally.rings[k.i];
+    onGlass(pc, t);
+    pc.translate(k.x, k.y); pc.rotate(k.a); pc.scale(TOKEN, TOKEN * k.sq);
+    drawStroke(pc, r.stroke, 0, 1, 10.5, PENCIL);
+  }
+  if (t >= M.hand[0]) {
+    const u = pen(clamp01((t - M.hand[0]) / (M.hand[1] - M.hand[0]))), hot = 1 - smooth(M.hand[1], M.hand[1] + 0.35, t);
+    onGlass(pc, t);
+    pc.translate(LAST.icon, LAST.bases[1] - 17);
+    drawStroke(pc, tally.icon, 0, u, 4.2, PENCIL);
+    if (hot > 0.01) drawStroke(pc, tally.icon, u - 0.3, u, 2.5, rgb(mix3(GUAYABA, PENCIL_HOT, hot)));
+  }
+  onGlass(pc, t);
+  pencilEnd(c, pc.getTransform().scaleSelf(1.1), 1, 0.3);
+}
+
+// ── B6 · La isla ────────────────────────────────────────────────────────────
+//
+// Lo del cristal se recoge en un punto y la cámara se aleja: el punto está en La
+// Habana. Desde aquí hay otra cámara, la del mapa (en km sobre la isla, que va
+// inclinada para caber en vertical), y la mesa queda atrás, ya a oscuras. Las
+// provincias se trazan como una ruta: línea continua las dos que tienen datos,
+// línea de puntos las otras catorce. Los granos se miden en pantalla, no en km:
+// son fichas sobre el mapa.
+
+const GEO = "../../src/saimc/web/static/cuba_provincias.geojson";
+const MAP = { lon0: -79.5, lat0: 21.6, rot: 50 * Math.PI / 180, flat: -9.7 * Math.PI / 180 };
+const ZOOM = { glass: 120, near: 9.6, far: 3.5, wide: 0.79 };       // px por km en cada parada
+const SPOT = { glass: [360, 730], near: [360, 668], far: [360, 600], wide: [436, 772] };   // dónde queda en pantalla lo que se mira
+const PICK = { x: 150, y: 934, len: 104 };                          // a dónde se aparta el grano del pollo
+const SOFT_WHITE = "rgb(226,244,246)";
+let isle = null, seaCanvas = null, seaPattern = null, gatherLayer = null;
+
+function loadJson(url) {
+  return new Promise((done, fail) => {
+    const req = new XMLHttpRequest();
+    req.open("GET", url);
+    req.onload = () => done(JSON.parse(req.responseText));
+    req.onerror = () => fail(new Error(`no se pudo leer ${url}`));
+    req.send();
+  });
+}
+
+function buildIsle(geo) {
+  const I = T.island, rnd = mulberry32(SEED + 606), R = (a, b) => a + (b - a) * rnd();
+  const kx = 111.32 * Math.cos(MAP.lat0 * Math.PI / 180), ky = 110.57;
+  const provinces = geo.features.map((f) => {
+    const rings = f.geometry.coordinates.map((poly) => {
+      const pts = poly[0].map(([lon, lat]) => [(lon - MAP.lon0) * kx, -(lat - MAP.lat0) * ky]);
+      const len = [0];
+      for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      return { pts, len, total: len[len.length - 1] };
+    }).sort((a, b) => b.total - a.total);
+    let area = 0, cx = 0, cy = 0;                          // el centro de la provincia: el de su trozo mayor
+    const P = rings[0].pts;
+    for (let i = 0; i < P.length - 1; i++) {
+      const k = P[i][0] * P[i + 1][1] - P[i + 1][0] * P[i][1];
+      area += k; cx += (P[i][0] + P[i + 1][0]) * k; cy += (P[i][1] + P[i + 1][1]) * k;
+    }
+    const slug = f.properties.slug, order = I.route.indexOf(slug);
+    const found = D.by_province.find((p) => p.slug === slug);
+    return { slug, name: f.properties.name, rings, x: cx / (3 * area), y: cy / (3 * area), order, t0: I.trace[order], ads: found ? found.ads : 0 };
+  }).sort((a, b) => a.order - b.order);
+  const by = Object.fromEntries(provinces.map((p) => [p.slug, p]));
+
+  // El plano general: la isla entera, ya inclinada.
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of provinces) for (const ring of p.rings) for (const q of ring.pts) {
+    const v = rot(q, MAP.rot);
+    x0 = Math.min(x0, v[0]); x1 = Math.max(x1, v[0]); y0 = Math.min(y0, v[1]); y1 = Math.max(y1, v[1]);
+  }
+  const centre = rot([(x0 + x1) / 2, (y0 + y1) / 2], -MAP.rot);
+
+  // Los granos de cada provincia con datos: un puñado, del centro hacia fuera.
+  const pile = (p, lands) => {
+    const rad = 0.62 * Math.sqrt(p.ads), spots = [];
+    for (let guard = 0; spots.length < p.ads && guard < 20000; guard++) {
+      const a = R(0, TAU), q = Math.sqrt(rnd()) * rad, s = [Math.cos(a) * q, Math.sin(a) * q * 0.78];
+      if (spots.every((o) => Math.hypot(o[0] - s[0], (o[1] - s[1]) * 1.7) > 0.74)) spots.push(s);
+    }
+    spots.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
+    return spots.map((s, i) => ({
+      p, ox: s[0], oy: s[1], a: R(-0.55, 0.55), land: lands[i], L: R(0.9, 1.08), n: R(2.5, 3.0), tone: R(-1, 1),
+      from: [R(-1, 1), R(-1, 1)], spin: R(-3, 3),
+    }));
+  };
+  const near = pile(by["la-habana"], I.near_drops), far = pile(by["santiago-de-cuba"], I.far_drops);
+  far[far.length - 1].picked = true;                        // el del pollo: el último en caer, a un lado del puñado
+  // Por dónde baja la cámara: el eje de la isla.
+  const spine = ["la-habana", "matanzas", "sancti-spiritus", "camaguey", "las-tunas", "santiago-de-cuba"].map((s) => [by[s].x, by[s].y]);
+  isle = { provinces, by, centre, near, far, grains: [...near, ...far], spine };
+
+  // El mar: azul noche con una luz arriba a la izquierda, como la mesa, y con una trama FIJA
+  // (el mismo ruido en todos los cuadros) para que el degradé no haga bandas.
+  seaCanvas = mk(W, H);
+  const sk = seaCanvas.getContext("2d"), img = sk.createImageData(W, H), nr = mulberry32(SEED + 707);
+  const A = [22, 78, 112], B = [9, 38, 60], Cc = [4, 17, 29];
+  for (let y = 0, i = 0; y < H; y++) {
+    for (let x = 0; x < W; x++, i += 4) {
+      const d = Math.hypot(x - 250, (y - 420) * 0.82) / 900, u = clamp01(d);
+      const col = u < 0.45 ? mix3(A, B, u / 0.45) : mix3(B, Cc, (u - 0.45) / 0.55);
+      const n = nr() + nr() - 1;
+      img.data[i] = col[0] + n; img.data[i + 1] = col[1] + n; img.data[i + 2] = col[2] + n; img.data[i + 3] = 255;
+    }
+  }
+  sk.putImageData(img, 0, 0);
+  // Y un moteado ancho que sí viaja con la cámara: sin él no se notaría que baja por la isla.
+  const n = 256, tile = mk(n, n), tc = tile.getContext("2d"), noise = tc.createImageData(n, n);
+  for (let i = 0; i < n * n; i++) {
+    const v = 128 + (nr() - 0.5) * 150;
+    noise.data[i * 4] = noise.data[i * 4 + 1] = noise.data[i * 4 + 2] = v; noise.data[i * 4 + 3] = 255;
+  }
+  tc.putImageData(noise, 0, 0);
+  const softTile = mk(n, n), so = softTile.getContext("2d");
+  so.filter = "blur(5px)";
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) so.drawImage(tile, dx * n, dy * n);
+  seaPattern = sc.createPattern(softTile, "repeat");
+}
+
+// Catmull-Rom por los puntos del eje, con `u` de 0 a 1.
+function spineAt(u) {
+  const P = isle.spine, n = P.length - 1, s = clamp01(u) * n, i = Math.min(n - 1, Math.floor(s)), f = s - i;
+  const p = [P[Math.max(0, i - 1)], P[i], P[i + 1], P[Math.min(n, i + 2)]];
+  const cr = (k) => 0.5 * (2 * p[1][k] + (p[2][k] - p[0][k]) * f + (2 * p[0][k] - 5 * p[1][k] + 4 * p[2][k] - p[3][k]) * f * f
+    + (3 * p[1][k] - p[0][k] - 3 * p[2][k] + p[3][k]) * f * f * f);
+  return [cr(0), cr(1)];
+}
+
+// La cámara del mapa: qué punto mira (`fx`, `fy`, en km), a cuánto (`z`, px por km), dónde
+// lo deja en pantalla (`ox`, `oy`), el giro de la isla y cuánto se ha acostado (`sy`).
+function mapCam(t) {
+  const I = T.island, hab = isle.by["la-habana"], stg = isle.by["santiago-de-cuba"];
+  const zl = (a, b, e) => a * Math.pow(b / a, e);
+  // 1) Se aleja del cristal, con peso: arranca despacio, frena largo y se pasa un pelo.
+  let u = clamp01((t - I.pull[0]) / (I.pull[1] - I.pull[0]));
+  let e = easeOutBack(Math.pow(u, 1.3), 0.5);
+  let fx = hab.x, fy = hab.y, z = zl(ZOOM.glass, ZOOM.near, e), o = [lerp(SPOT.glass[0], SPOT.near[0], easeInOutCubic(u)), lerp(SPOT.glass[1], SPOT.near[1], easeInOutCubic(u))];
+  let turn = MAP.rot;
+  z *= 1 + 0.01 * clamp(t - I.pull[1], 0, 2);
+  // 2) Baja por la isla en un solo viaje: toma impulso, se abre para ver pasar las provincias y vuelve a cerrar.
+  const [v0, v1] = I.travel;
+  if (t > I.anticipation) {
+    const pre = smooth(I.anticipation, v0, t) * (1 - smooth(v0, v0 + 0.16, t));
+    u = clamp01((t - v0) / (v1 - v0)); e = u * u * (3 - 2 * u);            // sin tirones: a esa escala un arranque brusco lo emborrona todo
+    const go = clamp01((u - 0.12) / 0.78), f = spineAt(go * go * (3 - 2 * go)), dip = Math.pow(Math.sin(Math.PI * u), 0.85), s = t - v1;   // primero sube, luego corre
+    fx = f[0]; fy = f[1];
+    z = zl(z, ZOOM.far, e) * (1 - 0.7 * dip) * (1 + 0.035 * pre);
+    o = [lerp(o[0], SPOT.far[0], e), lerp(o[1], SPOT.far[1], e) - 14 * pre];
+    turn += 0.085 * Math.sin(Math.PI * u) * (1 - u) * 2;
+    if (s > 0) z *= (1 + 0.022 * Math.exp(-s * 6) * Math.cos(s * 17)) * (1 + 0.008 * Math.min(s, 1.4));   // llega, rebota y sigue acercándose
+  }
+  // 3) Se abre el plano: la isla entera.
+  const [o0, o1] = I.open;
+  if (t > o0 - 0.12) {
+    const pre = smooth(o0 - 0.12, o0, t) * (1 - smooth(o0, o0 + 0.14, t));
+    u = clamp01((t - o0) / (o1 - o0)); e = easeOutBack(1 - Math.pow(1 - Math.pow(u, 1.5), 2.1), 0.45);
+    const s = Math.max(0, t - o1);
+    fx = lerp(stg.x, isle.centre[0], e); fy = lerp(stg.y, isle.centre[1], e);
+    z = zl(z, ZOOM.wide, e) * (1 + 0.04 * pre) * (1 - 0.006 * s);
+    o = [lerp(o[0], SPOT.wide[0], e), lerp(o[1], SPOT.wide[1], e)];
+    turn += 0.05 * Math.sin(Math.PI * u) * (1 - u) * 2;
+  }
+  // 4) B7: la isla se acuesta y queda como horizonte.
+  const C = T.close;
+  let sy = 1, lie = 0;
+  if (t > C.start) {
+    lie = clamp01((t - C.lie[0]) / (C.lie[1] - C.lie[0]));
+    const l = easeInOutCubic(lie), settle = easeOutBack(lie, 1.1);
+    turn = lerp(turn, MAP.flat, settle);
+    sy = Math.pow(0.06, l) * (1 - 0.92 * smooth(C.rise[0], C.rise[1], t));   // y, al subir la cámara, se queda en una línea
+    z = zl(z, 0.72, l);
+    o = [lerp(o[0], W / 2, l), horizonAt(t)];
+    fx = lerp(fx, isle.centre[0], l); fy = lerp(fy, isle.centre[1] + 40, l);
+  }
+  // deriva lenta, como siempre
+  const calm = 1 - smooth(C.start, C.lie[1], t);
+  o = [o[0] + 4 * Math.sin(t * 0.53 + 1.1) * calm, o[1] + 3 * Math.sin(t * 0.41 + 0.2) * calm];
+  return { fx, fy, z, ox: o[0], oy: o[1], rot: turn + 0.004 * Math.sin(t * 0.37 + 2) * calm, sy, lie };
+}
+
+function mapPt(cam, x, y) {
+  const v = rot([(x - cam.fx) * cam.z, (y - cam.fy) * cam.z], cam.rot);
+  return [cam.ox + v[0], cam.oy + v[1] * cam.sy];
+}
+
+function onMap(c, cam) {
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(cam.ox, cam.oy); c.scale(1, cam.sy); c.rotate(cam.rot); c.scale(cam.z, cam.z); c.translate(-cam.fx, -cam.fy);
+}
+
+function drawSea(c, cam, alpha = 1) {
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = alpha; c.globalCompositeOperation = "source-over";
+  c.drawImage(seaCanvas, 0, 0);
+  // el moteado va a media distancia: se mueve con la cámara, pero menos que la isla (paralaje)
+  const k = 1.6 * Math.pow(cam.z, 0.42);
+  c.translate(cam.ox, cam.oy); c.rotate(cam.rot); c.scale(k, k); c.translate(-cam.fx * 0.9, -cam.fy * 0.9);
+  c.globalCompositeOperation = "overlay"; c.globalAlpha = 0.17 * alpha;
+  c.fillStyle = seaPattern;
+  const r = 1100 / k;
+  c.fillRect(cam.fx * 0.9 - r, cam.fy * 0.9 - r, 2 * r, 2 * r);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "source-over"; c.globalAlpha = 1;
+}
+
+// El tramo ya trazado de un contorno: de su principio a la fracción `e` de su largo.
+function tracePart(c, ring, e) {
+  const d = e * ring.total, P = ring.pts;
+  c.moveTo(P[0][0], P[0][1]);
+  for (let i = 1; i < P.length; i++) {
+    if (ring.len[i] <= d) { c.lineTo(P[i][0], P[i][1]); continue; }
+    const f = (d - ring.len[i - 1]) / ((ring.len[i] - ring.len[i - 1]) || 1);
+    const end = [lerp(P[i - 1][0], P[i][0], f), lerp(P[i - 1][1], P[i][1], f)];
+    c.lineTo(end[0], end[1]);
+    return end;
+  }
+  return P[P.length - 1];
+}
+
+function drawProvinces(c, cam, t) {
+  const I = T.island, px = 1 / cam.z, heads = [], l = easeInOutCubic(cam.lie);
+  const filled = t - I.filled;
+  onMap(c, cam);
+  c.lineJoin = "round"; c.lineCap = "round";
+  if (l > 0) {                                             // al acostarse, la isla se llena: ya es tierra a contraluz
+    c.fillStyle = rgb(SIL_NEAR, l);
+    for (const p of isle.provinces) { c.beginPath(); for (const ring of p.rings) tracePart(c, ring, 1); c.fill(); }
+  }
+  for (const pass of [0, 1]) {                             // primero las de puntos; las dos con datos, encima
+    for (const p of isle.provinces) {
+      if ((p.ads > 0 ? 1 : 0) !== pass) continue;
+      const u = clamp01((t - p.t0) / I.trace_dur);
+      if (u <= 0) continue;
+      const e = easeInOutCubic(u), done = t - p.t0 - I.trace_dur;
+      c.beginPath();
+      let head = null;
+      p.rings.forEach((ring, k) => { const end = tracePart(c, ring, e); if (k === 0) head = end; });
+      if (pass) {
+        if (done > 0) {                                    // con datos: se llena de luz fría al cerrarse el trazo
+          const pulse = filled > 0 ? 0.3 * Math.exp(-filled * 4) : 0;
+          c.fillStyle = rgb(COLD, (0.15 * smooth(0, 0.3, done) + 0.3 * Math.exp(-done * 5) + pulse) * (1 - l)); c.fill();
+        }
+        c.setLineDash([]);
+        c.strokeStyle = rgb([236, 250, 252], 1 - 0.8 * l); c.lineWidth = 3.6 * px;
+      } else {
+        c.setLineDash([0.01 * px, 10 * px]);
+        c.strokeStyle = rgb(COLD, (0.86 + 0.14 * Math.exp(-Math.max(0, done) * 3.5)) * (1 - l)); c.lineWidth = 4.2 * px;
+      }
+      c.stroke();
+      if (u < 1) heads.push([head, pass]);
+    }
+  }
+  c.setLineDash([]);
+  // la punta de cada trazo: por ahí va la ruta
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "lighter";
+  for (const [head, pass] of heads) {
+    const q = mapPt(cam, head[0], head[1]), r = pass ? 30 : 20;
+    c.globalAlpha = pass ? 1 : 0.8;
+    c.drawImage(glowSprite(COLD_GLOW), q[0] - r, q[1] - r, r * 2, r * 2);
+  }
+  c.globalCompositeOperation = "source-over"; c.globalAlpha = 1;
+}
+
+// Un grano del mapa mide lo mismo en pantalla esté donde esté la cámara: más cuando se mira de cerca.
+const FALL = 0.36;                                                 // lo que tarda un grano en caer desde la lente
+const grainLen = (z) => 31 + 35 * smooth(0.9, 4.6, z);
+
+function grainSpot(cam, g) {
+  const m = mapPt(cam, g.p.x, g.p.y), k = grainLen(cam.z);
+  return [m[0] + g.ox * k, m[1] + g.oy * k * lerp(1, 0.2, cam.lie), k * g.L];
+}
+
+function drawMapGrain(c, x, y, ang, len, n, tone, depth, sq = 1) {
+  PILL.tone = tone;
+  drawPill(c, x, y, ang, len, len * 0.3 * sq, n, {}, depth);
+  PILL.tone = 0.5;
+}
+
+function drawPiles(c, cam, t) {
+  const I = T.island;
+  for (const g of isle.grains) {
+    const tau = g.land - t;
+    if (tau > FALL || starAt(g, t)) continue;              // aún no ha salido, o ya va camino del cielo
+    let [x, y, len] = grainSpot(cam, g), ang = g.a;
+    if (tau > 0) {                                         // cae desde la lente: grande y desenfocado, como las cápsulas del gancho
+      const h = Math.pow(tau / FALL, 1.7), k = 1 + 2.3 * h;
+      x += (x - W / 2) * 0.9 * h + g.from[0] * 150 * h; y += (y - H / 2) * 0.9 * h + g.from[1] * 150 * h;
+      const L = len * k, blur = 1.2 + 17 * h, p = { L, Wd: L * 0.3, a: ang + g.spin * tau, dim: 0, clear: 0, doubt: 0 };
+      softDraw(c, x, y, p.a, L, L * 0.3, blur, 1 - smooth(0.6, 1, tau / FALL), (q, f) => { q.scale(f, f); paintBody(q, PILL, p, g.n, L * f, 1, 0); });
+      continue;
+    }
+    const q = -tau;
+    let sq = 1 - 0.2 * Math.exp(-q * 13) * Math.cos(q * 34);
+    y -= 9 * hop2(q / 0.3);
+    if (g.picked) {                                        // el del pollo se aparta y, al abrirse el plano, vuelve
+      const out = easeInOutCubic(clamp01((t - I.pick[0]) / (I.pick[1] - I.pick[0]))) * (1 - easeInOutCubic(clamp01((t - I.far_out[0]) / (I.far_out[1] - I.far_out[0]))));
+      if (out > 0) {
+        const to = glassPoint(PICK.x, PICK.y, t), hop = Math.sin(Math.PI * out);
+        glowAt(c, lerp(x, to[0], out), lerp(y, to[1], out) - 40 * hop, ang * (1 - out), lerp(len, PICK.len, out), lerp(len, PICK.len, out) * 0.3, GUAYABA, 0.45 * out);
+        x = lerp(x, to[0], out); y = lerp(y, to[1], out) - 40 * hop; ang = ang * (1 - out) + 0.2 * hop; len = lerp(len, PICK.len, out); sq = 1;
+      }
+    }
+    drawMapGrain(c, x, y, ang + cam.rot - MAP.rot, len, g.n, g.tone, 0.55 * (1 - cam.lie), sq);
+  }
+}
+
+// Un titular del cristal: las letras suben y se encienden una tras otra, y se van como llegaron.
+function riseText(c, text, font, x, base, t0, t1, t, o = {}) {
+  if (t < t0 || t > t1 + 0.4) return;
+  const leave = smooth(t1, t1 + 0.34, t), size = parseFloat(font.split("px")[0].split(" ").pop());
+  c.font = font;
+  const full = c.measureText(text).width, x0 = o.align === "left" ? x : o.align === "right" ? x - full : x - full / 2;
+  for (let i = 0; i < text.length; i++) {
+    const u = clamp01((t - t0 - i * (o.step || 0.022)) / 0.3);
+    if (u <= 0) break;
+    const e = easeOutCubic(u);
+    c.font = font;
+    const dx = c.measureText(text.slice(0, i)).width;
+    glassText(c, text[i], x0 + dx, base + (1 - e) * size * 0.3 - leave * size * 0.16, font, o.color || "#ffffff", e * (1 - leave) * (o.alpha === undefined ? 1 : o.alpha));
+  }
+}
+
+// Lo que se lee en la isla. Todo va en el cristal, una cosa cada vez.
+function drawIsleText(c, cam, t) {
+  const I = T.island, F = D.far;
+  onGlass(c, t);
+  // La Habana y su cuenta, que sube con cada grano que cae
+  const [n0, n1] = I.near_label;
+  if (t >= n0 && t < n1 + 0.4) {
+    const leave = smooth(n1, n1 + 0.3, t), landed = isle.near.filter((g) => g.land <= t).length;
+    riseText(c, D.by_province[0].name, "400 92px Alice", W / 2, 268, n0, n1, t);
+    if (landed > 0) {
+      const font = "500 50px Roboto", word = " anuncios", wn = measureWidth(c, "00", font), ww = measureWidth(c, word, font), x = W / 2 - (wn + ww) / 2;
+      const q = t - I.near_full, pop = q > 0 ? 1 + 0.1 * Math.exp(-q * 12) * Math.cos(q * 24) : 1;
+      c.save();
+      c.translate(W / 2, 330); c.scale(pop, pop); c.translate(-W / 2, -330);
+      glassText(c, String(landed), x + wn, 346 - 14 * leave, font, "#ffffff", 1 - leave, "right");
+      glassText(c, word, x + wn, 346 - 14 * leave, font, rgb(COLD), 1 - leave);
+      c.restore();
+    }
+  }
+  // Santiago de Cuba y la otra celda de pollo del tablero
+  const [f0, f1] = I.far_label;
+  riseText(c, F.province, "400 78px Alice", W / 2, 252, f0, f1, t);
+  if (t >= I.pick[0] && t < I.far_out[1]) {
+    const leave = smooth(I.far_out[0], I.far_out[1], t), x = PICK.x + 76;
+    riseText(c, F.product, "400 72px Alice", x, PICK.y + 24, I.pick[0] + 0.06, I.far_out[0] - 0.06, t, { align: "left" });
+    const [r0, r1] = I.price, q = t - r1, big = 124, base = PICK.y + 150;
+    if (t >= r0 - 0.06) {
+      const left = 1 - clamp01((t - r0) / (r1 - r0)), speed = F.per_lb * T.measure.roll_power * Math.pow(left, T.measure.roll_power - 1) / (r1 - r0);
+      const pop = q > 0 ? 1 + 0.08 * Math.exp(-q * 13) * Math.cos(q * 24) : 1;
+      c.save();
+      c.translate(x + 100, base); c.scale(pop, pop); c.translate(-x - 100, -base);
+      const wide = drawCounter(c, x, base - 10 * leave, big, rolled(F.per_lb, I.price, t), smooth(r0 - 0.06, r0, t) * (1 - leave), speed);
+      if (q > 0 && q < 0.5) {
+        c.globalCompositeOperation = "lighter";
+        glassText(c, String(F.per_lb), x, base, `700 ${big}px Roboto`, rgb(COLD_GLOW), 0.7 * Math.exp(-q * 8));
+        c.globalCompositeOperation = "source-over";
+      }
+      glassText(c, F.unit, x + wide + 18, base - 10 * leave, `500 ${big * 0.5}px Roboto`, rgb(COLD), smooth(r0 - 0.06, r0, t) * (1 - leave));
+      c.restore();
+    }
+    riseText(c, `${F.ads} anuncio`, "500 50px Roboto", x, base + 74, r1 + 0.04, I.far_out[0] - 0.06, t, { align: "left", color: SOFT_WHITE });
+  }
+  // El plano general: la cuenta entera, quién la hizo y lo que es
+  const out = I.title_out;
+  riseText(c, I.title_text[0], "400 104px Alice", W / 2, 158, I.title, out, t);
+  riseText(c, I.title_text[1], "400 68px Alice", W / 2, 240, I.title + 0.14, out, t);
+  if (t >= I.split && t < out + 0.4) {
+    const font = "500 42px Roboto", dot = "  ·  ", [a, b] = I.split_text, leave = smooth(out, out + 0.3, t);
+    const wa = measureWidth(c, a, font), wd = measureWidth(c, dot, font), wb = measureWidth(c, b, font), x = W / 2 - (wa + wd + wb) / 2;
+    const ia = smooth(I.split, I.split + 0.2, t) * (1 - leave), ib = smooth(I.split + 0.16, I.split + 0.36, t) * (1 - leave);
+    glassText(c, a, x, 312 + 8 * (1 - ia), font, "rgb(255,236,196)", ia);
+    glassText(c, dot, x + wa, 312, font, "#ffffff", ib * 0.7);
+    glassText(c, b, x + wa + wd, 312 + 8 * (1 - ib), font, rgb(COLD), ib);
+  }
+  const cap = I.caption_text, cx = 46, bases = [846, 924, 1002];
+  riseText(c, cap[0], "400 70px Alice", cx, bases[0], I.caption[0], I.caption_out, t, { align: "left" });
+  riseText(c, cap[1], "400 70px Alice", cx, bases[1], I.caption[0] + 0.14, I.caption_out, t, { align: "left" });
+  riseText(c, cap[2], "400 70px Alice", cx, bases[2], I.caption[1], I.caption_out, t, { align: "left", color: "rgb(255,226,160)" });
+  riseText(c, D.date_label, "400 28px Roboto", cx + 2, 1060, I.date, out, t, { align: "left", color: rgb(COLD), step: 0.008, alpha: 0.9 });
+  c.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// El cristal se recoge: todo lo de B5 se aleja hacia un punto, y de la recta queda eso, un punto.
+function drawGather(c, cam, t) {
+  const I = T.island, [g0, g1] = I.gather;
+  const mc = mapCam(t), far = mc.z / ZOOM.glass;             // lo que la cámara ya se alejó (1 → 0,08)
+  if (!gatherLayer) {                                        // lo del cristal ya no cambia: se pinta una vez
+    gatherLayer = mk(W, H);
+    drawTallyLive(gatherLayer.getContext("2d"), cam, I.start - 1e-4);
+  }
+  const u = clamp01((t - g0) / (g1 - g0)), s = Math.max(0.02, Math.pow(far, 1.15)), alpha = 1 - smooth(0.25, 0.9, u);
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  if (alpha > 0.004) {
+    c.translate(mc.ox, mc.oy); c.scale(s, s); c.translate(-SPOT.glass[0], -SPOT.glass[1]);
+    c.globalAlpha = alpha; c.imageSmoothingQuality = "high";
+    c.drawImage(gatherLayer, 0, 0);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  // la recta se encoge con todo lo demás, pero no se apaga: queda el punto
+  const half = (RULER.x1 - RULER.x0) / 2 * s, gone = smooth(I.near_drops[0], I.near_drops[0] + 0.3, t);
+  c.globalAlpha = 1 - gone; c.fillStyle = rgb([236, 252, 255]);
+  if (half > 7) c.fillRect(mc.ox - half, mc.oy - 1.6, 2 * half, 3.2);
+  const r = 7 + 5 * Math.exp(-Math.max(0, t - g0 - 0.3) * 9) * (half <= 7 ? 1 : 0);
+  c.beginPath(); c.arc(mc.ox, mc.oy, Math.min(r, Math.max(4, half)), 0, TAU); c.fill();
+  c.globalCompositeOperation = "lighter"; c.globalAlpha = (0.5 + 0.5 * smooth(0.2, 0.7, u)) * (1 - gone);
+  c.drawImage(glowSprite(COLD_GLOW), mc.ox - 46, mc.oy - 46, 92, 92);
+  c.restore();
+}
+
+// La isla, por capas: el mar, las provincias, los granos y lo que se lee.
+function drawIsland(c, t, backdrop) {
+  const mc = mapCam(t);
+  if (backdrop > 0) drawSea(c, mc, backdrop);
+  drawProvinces(c, mc, t);
+  drawPiles(c, mc, t);
+  drawIsleText(c, mc, t);
+}
+
+// ── B7 · El cierre ──────────────────────────────────────────────────────────
+//
+// El atardecer de la portada de la landing (`public_landing.html`), con sus mismos
+// colores (`--ph-dusk-*`) y sus mismas siluetas: el cielo en degradé, el sol, la
+// ciudad en dos planos, el muro del malecón, las palmas y Guani sobre el sol.
+
+const SKY = [[0, [11, 44, 67]], [0.34, [47, 58, 128]], [0.66, [200, 80, 122]], [0.86, [240, 138, 60]], [1, [255, 208, 114]]];
+const SIL_FAR = [59, 63, 134], SIL_MID = [27, 49, 89], SIL_NEAR = [10, 34, 51];
+const HORIZON = 1181;                                                // el borde del muro, ya en su sitio
+const CITY = { k: 1.846, mid: 600, tall: 210 };                      // la ciudad de la portada, a la escala de un móvil
+const SUN = { x: 360, y: 792, r: 314 };
+const BADGE = { x: 360, y: 790, d: 300 };
+const BUTTON = { x: 360, y: 438, h: 104, size: 40 };
+const TITLE = { bases: [150, 234, 318], size: 76 };
+const CITY_FAR = "M0 210V140H36V112H64V140H96V98H126V130H160V118H196V92H224V124H262V108H300V136H338V100H372V126H410V88H438V120H470V104H508V132H548V96H580V122H620V110H660V90H690V128H730V102H768V124H806V94H836V130H876V108H914V136H952V100H986V122H1024V112H1060V138H1100V104H1136V128H1200V210Z";
+const CITY_MID = [
+  "M0 210V168H58V150H112V166H176V152H240V170H318V154H388V168H448V156H820V170H890V152H960V166H1030V150H1096V168H1200V210Z",
+  "M500 156V138H700V156Z", "M560 138V124Q560 92 600 92Q640 92 640 124V138Z",
+  "M596 68H604V94H596Z", "M592 70L600 56L608 70Z",
+  "M208 84H232V170H208Z", "M204 86L220 56L236 86Z",
+  "M878 36H930V170H878Z", "M886 28H922V38H886Z",
+  "M349 124H377Q380 124 380 127V153Q380 156 377 156H349Q346 156 346 153V127Q346 124 349 124Z", "M352 114H374V125H352Z",
+  "M1010 104H1013V152H1010Z",
+];
+const FROND = "M0 0 C 14 -18 44 -22 74 -2 C 50 -8 24 -7 0 0 Z", TRUNK = "M0 0 C -3 -34 5 -70 0 -112";
+let close = null;
+
+const skyCanvas = mk(W, H), sky = skyCanvas.getContext("2d");
+let skyImage = null, skyNoise = null, skyKey = "", skyGlow = SKY[0][1];   // `skyGlow`: el color del cielo justo sobre el horizonte
+
+function buildClose() {
+  const C = T.close, rnd = mulberry32(SEED + 808), R = (a, b) => a + (b - a) * rnd();
+  skyImage = sky.createImageData(W, H);
+  skyNoise = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) { skyNoise[i] = rnd() + rnd() - 1; skyImage.data[i * 4 + 3] = 255; }
+  // El botón, ya medido.
+  const font = `700 ${BUTTON.size}px Roboto`, text = C.button_text, tw = measureWidth(measure, text, font), arrow = 40, gap = 16;
+  const button = { font, text, tw, arrow, gap, w: tw + gap + arrow + 2 * 50 };
+  // Las estrellas: un sitio en el cielo para cada grano, lejos del titular, del botón y del sol.
+  const free = (x, y) => !(y > 60 && y < 348 && x > 40 && x < 680) && !(Math.abs(y - BUTTON.y) < 96 && Math.abs(x - BUTTON.x) < button.w / 2 + 36)
+    && Math.hypot(x - SUN.x, y - SUN.y) > 262;
+  const spots = [];
+  for (let guard = 0; spots.length < isle.grains.length - 1 && guard < 40000; guard++) {
+    const x = R(26, W - 26), y = R(30, 700);
+    if (free(x, y) && spots.every((s) => Math.hypot(s[0] - x, s[1] - y) > 62)) spots.push([x, y]);
+  }
+  const rest = isle.grains.filter((g) => !g.picked), span = C.stars[1] - C.stars[0] - C.star_time;
+  const order = rest.map((g, i) => [rnd(), i]).sort((a, b) => a[0] - b[0]).map((q) => q[1]);
+  order.forEach((gi, k) => {
+    const g = rest[gi];
+    g.star = { x: spots[k][0], y: spots[k][1], r: R(2.3, 3.9), t0: C.stars[0] + span * k / (order.length - 1), bow: R(-0.25, 0.25), w: R(1.2, 2.6), ph: R(0, TAU), lum: R(0.62, 1) };
+  });
+  const hero = isle.grains.find((g) => g.picked);          // el del pollo: sube el primero y espera, más encendido, donde irá el botón
+  hero.star = { x: BUTTON.x, y: BUTTON.y, r: 5.2, t0: C.stars[0], bow: -0.2, w: 1.7, ph: 0.4, lum: 1, hero: true };
+  close = { button, far: new Path2D(CITY_FAR), mid: CITY_MID.map((d) => new Path2D(d)), frond: new Path2D(FROND), trunk: new Path2D(TRUNK), hero };
+}
+
+// Dónde está el horizonte: la isla se acuesta a media altura y, al subir la cámara, baja hasta el muro.
+function horizonAt(t) {
+  const C = T.close;
+  const l = easeInOutCubic(clamp01((t - C.lie[0]) / (C.lie[1] - C.lie[0])));
+  const r = easeInOutCubic(clamp01((t - C.rise[0]) / (C.rise[1] - C.rise[0])));
+  return lerp(lerp(SPOT.wide[1], 742, l), HORIZON, r);
+}
+
+// El cielo. Se calcula por píxel, en coma flotante, y se le suma SIEMPRE el mismo ruido antes de
+// redondear (una trama fija, pegada a la pantalla): así el degradé no hace bandas ni hierve al moverse.
+function drawSky(c, t, alpha) {
+  const C = T.close, warm = smooth(C.sky[0], C.sky[1], t), end = horizonAt(t) + (H - HORIZON);
+  const key = `${warm.toFixed(5)}|${end.toFixed(3)}`;
+  if (key !== skyKey) {
+    skyKey = key;
+    const data = skyImage.data, w = Math.pow(warm, 0.8);
+    // los colores salen del horizonte y suben: con `warm` en 0 todo el cielo es azul noche
+    const stops = SKY.map(([at, col], i) => [i ? 1 - (1 - at) * warm : 0, mix3(SKY[0][1], col, w)]);
+    for (let y = 0, i = 0, n = 0; y < H; y++) {
+      const f = Math.min(1, y / end);
+      let k = 1;
+      while (k < stops.length - 1 && f > stops[k][0]) k++;
+      const a = stops[k - 1], b = stops[k], u = clamp01((f - a[0]) / ((b[0] - a[0]) || 1));
+      const r = lerp(a[1][0], b[1][0], u), g = lerp(a[1][1], b[1][1], u), bl = lerp(a[1][2], b[1][2], u);
+      if (y === Math.min(H - 1, Math.round(end - (H - HORIZON)) - 2)) skyGlow = [r, g, bl];
+      for (let x = 0; x < W; x++, i += 4, n++) {
+        const d = skyNoise[n];
+        data[i] = r + d; data[i + 1] = g + d; data[i + 2] = bl + d;
+      }
+    }
+    sky.putImageData(skyImage, 0, 0);
+  }
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = alpha; c.globalCompositeOperation = "source-over";
+  c.drawImage(skyCanvas, 0, 0);
+  c.globalAlpha = 1;
+}
+
+// Cuánto le falta a la cámara para quedarse quieta: de ahí sale el paralaje lateral de los planos.
+const closeDrift = (t) => 1 - easeInOutCubic(clamp01((t - T.close.rise[0]) / (T.close.still - 0.3 - T.close.rise[0])));
+
+function drawSun(c, t) {
+  const C = T.close, [s0, s1] = C.sun;
+  if (t < s0) return;
+  const u = clamp01((t - s0) / (s1 - s0)), e = easeOutBack(1 - Math.pow(1 - u, 1.6), 1.5);   // sube y se pasa: el rebote
+  const q = Math.max(0, t - s1), breath = 1 + 0.012 * Math.sin(q * 1.3) * smooth(0, 1, q);
+  const x = SUN.x + 5 * closeDrift(t), y = horizonAt(t) + lerp(300, SUN.y - HORIZON, e), r = SUN.r * breath;
+  const g = c.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, rgb(GUAYABA)); g.addColorStop(0.58, rgb(GUAYABA)); g.addColorStop(0.64, rgb(GUAYABA, 0.35)); g.addColorStop(0.72, rgb(GUAYABA, 0));
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = 1;
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  c.globalAlpha = 1;
+}
+
+function drawCity(c, t) {
+  const C = T.close, yh = horizonAt(t), drift = closeDrift(t), top = yh - (HORIZON - (H - CITY.tall * CITY.k));
+  const plane = (span, amp, paint) => {
+    const u = clamp01((t - span[0]) / (span[1] - span[0]));
+    if (u <= 0) return;
+    const e = easeOutBack(u, 1.15);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.translate(W / 2 - CITY.mid * CITY.k + amp * drift, top + (1 - e) * 250);
+    c.scale(CITY.k, CITY.k);
+    paint();
+  };
+  plane(C.city[0], 16, () => { c.fillStyle = rgb(SIL_FAR); c.fill(close.far); });
+  plane(C.city[1], 34, () => { c.fillStyle = rgb(SIL_MID); for (const p of close.mid) c.fill(p); });
+  c.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function drawBadge(c, t) {
+  const C = T.close, [g0, g1] = C.guani;
+  if (t < g0) return;
+  const u = clamp01((t - g0) / (g1 - g0)), e = easeOutBack(u, 2.1), q = Math.max(0, t - g1);
+  const s = BADGE.d / 80 * Math.max(0.001, e) * (1 + 0.012 * Math.exp(-q * 5) * Math.cos(q * 14));
+  const x = BADGE.x + 5 * closeDrift(t), y = horizonAt(t) + (BADGE.y - HORIZON) + 70 * (1 - easeOutCubic(u));
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = smooth(0, 0.25, u);
+  c.shadowColor = "rgba(0,0,0,0.35)"; c.shadowBlur = 44 * e; c.shadowOffsetX = 0; c.shadowOffsetY = 18 * e;
+  c.beginPath(); c.arc(x, y, 39 * s, 0, TAU); c.fillStyle = "#ffffff"; c.fill();     // la sombra, de una vez
+  c.shadowColor = "transparent";
+  c.translate(x, y); c.rotate(0.05 * Math.exp(-u * 4) * Math.sin(u * 12)); c.scale(s, s);
+  guaniBadge(c, 0);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = 1;
+}
+
+// El muro del malecón: lo que la isla, ya acostada, termina siendo.
+function drawWall(c, cam, t) {
+  const yh = horizonAt(t), C = T.close, up = smooth(C.rise[0], C.rise[1], t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = rgb(SIL_NEAR); c.globalAlpha = smooth(0.5, 1, cam.lie);
+  c.fillRect(0, yh, W, H - yh);
+  if (up < 1) {                                            // mientras la cámara sube, abajo aún se ve el mar: recoge la luz del cielo
+    const glow = c.createLinearGradient(0, yh, 0, yh + 330), a = 0.6 * (1 - up) * smooth(0.5, 1, cam.lie);
+    glow.addColorStop(0, rgb(skyGlow, a)); glow.addColorStop(0.25, rgb(skyGlow, a * 0.42)); glow.addColorStop(1, rgb(skyGlow, 0));
+    c.globalAlpha = 1; c.fillStyle = glow; c.fillRect(0, yh, W, 330);
+  }
+  c.globalAlpha = up; c.fillStyle = rgb(SIL_MID);
+  c.fillRect(0, yh + 16.6, W, 2.6);                         // el filo del muro
+  c.globalAlpha = 1;
+}
+
+function drawPalms(c, t) {
+  const C = T.close, [p0, p1] = C.palms;
+  if (t < p0) return;
+  const yh = horizonAt(t), drift = closeDrift(t), tt = Math.min(t, C.still);
+  const palm = (x, s, mirror, lean, delay, period, ph) => {
+    const u = clamp01((t - p0 - delay) / (p1 - p0));
+    if (u <= 0) return;
+    const q = t - p0 - delay, grow = easeOutBack(u, 1.3);
+    const calm = 1 - smooth(C.still - 1.2, C.still, tt);
+    const sway = (0.022 * Math.sin(tt * TAU / period + ph) * calm + 0.2 * Math.exp(-q * 3.2) * Math.cos(q * 8.5)) * mirror;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.translate(x + 62 * drift, yh + 12); c.rotate(sway + lean); c.scale(s * mirror * grow, s * grow);
+    c.fillStyle = c.strokeStyle = rgb(SIL_NEAR);
+    c.lineWidth = 5; c.lineCap = "round"; c.stroke(close.trunk);
+    c.translate(0, -112);
+    for (const side of [1, -1]) for (const a of [-8, 32, 68, -48]) {
+      c.save(); c.scale(side, 1); c.rotate((a + 5 * Math.sin(tt * 1.1 + a) * calm * 0.4) * Math.PI / 180); c.fill(close.frond); c.restore();
+    }
+  };
+  palm(53, 1.826, 1, 0, 0, 7, 0.3);
+  palm(678, 1.511, -1, -0.052, 0.14, 8.5, 2.1);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// Un grano que ya va camino del cielo (o ya es estrella): dónde está, cuánto mide y cuánto brilla.
+function starAt(g, t) {
+  const C = T.close;
+  if (!g.star || t < g.star.t0) return null;
+  const S = g.star, u = clamp01((t - S.t0) / C.star_time), e = easeInOutCubic(u), tt = Math.min(t, C.still);
+  const calm = 1 - smooth(C.still - 0.8, C.still, tt);
+  const twinkle = 1 - 0.3 * calm * (0.5 + 0.5 * Math.sin(tt * S.w * 2.2 + S.ph));
+  return { S, u, e, lum: S.lum * twinkle };
+}
+
+function drawStars(c, cam, t) {
+  const C = T.close, [b0, b1] = C.button;
+  for (const g of isle.grains) {
+    const now = starAt(g, t);
+    if (!now) continue;
+    const { S, u, e } = now;
+    if (S.hero && t >= b0) continue;                        // ya es el botón
+    const from = grainSpot(cam, g), dx = S.x - from[0], dy = S.y - from[1], bow = S.bow * Math.sin(Math.PI * e);
+    const x = from[0] + dx * e - dy * bow, y = from[1] + dy * e + dx * bow;
+    const len = lerp(from[2], 2 * S.r, easeOutCubic(u)), wid = lerp(from[2] * 0.3, 2 * S.r, easeOutCubic(u));
+    const glow = smooth(0.25, 1, u) * now.lum, heat = S.hero ? 1 + 0.5 * smooth(b0 - 0.5, b0, t) : 1;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = "lighter"; c.globalAlpha = Math.min(1, 0.85 * glow * heat);
+    const r = (S.r * 5.5 + 4) * heat;
+    c.drawImage(glowSprite(S.hero ? GUAYABA : [255, 236, 200]), x - r, y - r, 2 * r, 2 * r);
+    c.globalCompositeOperation = "source-over";
+    c.globalAlpha = lerp(1, 0.55 + 0.45 * now.lum, u);
+    c.translate(x, y); c.rotate((g.a + cam.rot - MAP.rot) * (1 - e) + 2.5 * S.bow * Math.sin(Math.PI * u));
+    c.fillStyle = rgb(mix3([251, 245, 232], S.hero ? [255, 226, 150] : [255, 246, 226], u));
+    c.beginPath(); c.roundRect(-len / 2, -wid / 2, len, wid, wid / 2); c.fill();
+  }
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1;
+}
+
+// La estrella del pollo crece hasta ser el botón de la portada; al quedar en su sitio lo cruza un destello.
+function drawButton(c, t) {
+  const C = T.close, [b0, b1] = C.button, B = close.button;
+  if (t < b0) return;
+  const u = clamp01((t - b0) / (b1 - b0)), e = easeOutBack(Math.pow(u, 1.5), 1.25), q = t - b1;
+  const pop = q > 0 ? 1 + 0.05 * Math.exp(-q * 10) * Math.cos(q * 22) : 1;
+  const h = lerp(11, BUTTON.h, Math.min(1.06, easeOutBack(Math.pow(u, 1.2), 1.4))) * (q > 0 ? 2 - pop : 1);
+  const w = lerp(11, B.w, e) * pop, x = BUTTON.x, y = BUTTON.y;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "lighter";                    // el resplandor del golpe
+  const flash = (0.5 * (1 - u) + (q > 0 ? 0.6 * Math.exp(-q * 5) : 0.25 * u)), gr = w * 0.62 + 80;
+  c.globalAlpha = Math.min(1, flash);
+  c.drawImage(glowSprite(GUAYABA), x - gr, y - gr * 0.5, gr * 2, gr);
+  c.globalCompositeOperation = "source-over"; c.globalAlpha = 1;
+  c.shadowColor = "rgba(4,16,30,0.42)"; c.shadowBlur = 26 * u; c.shadowOffsetX = 0; c.shadowOffsetY = 12 * u;
+  c.fillStyle = rgb(mix3([255, 226, 150], GUAYABA, u));
+  c.beginPath(); c.roundRect(x - w / 2, y - h / 2, w, h, h / 2); c.fill();
+  c.shadowColor = "transparent";
+  const ink = smooth(0.62, 1, u);
+  if (ink > 0.01) {                                          // «Ver los precios de hoy →», en tinta
+    const k = w / B.w, left = x - (B.tw + B.gap + B.arrow) / 2 * k;
+    c.save();
+    c.beginPath(); c.roundRect(x - w / 2, y - h / 2, w, h, h / 2); c.clip();
+    c.globalAlpha = ink; c.fillStyle = INK; c.strokeStyle = INK;
+    c.font = `700 ${(BUTTON.size * k).toFixed(2)}px Roboto`; c.textAlign = "left"; c.textBaseline = "alphabetic";
+    c.fillText(B.text, left, y + BUTTON.size * 0.355 * k);
+    const ax = left + (B.tw + B.gap) * k, aw = B.arrow * k * 0.82, ah = 11 * k;
+    c.lineWidth = 4.6 * k; c.lineCap = "round"; c.lineJoin = "round";
+    c.beginPath(); c.moveTo(ax, y); c.lineTo(ax + aw, y); c.moveTo(ax + aw - ah, y - ah); c.lineTo(ax + aw, y); c.lineTo(ax + aw - ah, y + ah); c.stroke();
+    // el destello: una banda de luz inclinada que lo cruza una vez
+    const [s0, s1] = C.sheen, su = (t - s0) / (s1 - s0);
+    if (su > 0 && su < 1) {
+      const sx = lerp(x - w / 2 - 190, x + w / 2 + 190, easeInOutCubic(su));
+      const band = c.createLinearGradient(sx - 110, y + 20, sx + 110, y - 20);
+      band.addColorStop(0, "rgba(255,255,255,0)"); band.addColorStop(0.5, "rgba(255,255,255,0.7)"); band.addColorStop(1, "rgba(255,255,255,0)");
+      c.globalAlpha = 1; c.fillStyle = band; c.fillRect(x - w / 2, y - h / 2, w, h);
+    }
+    c.restore();
+  }
+  c.globalAlpha = 1;
+}
+
+function drawCloseText(c, t) {
+  const C = T.close, font = `400 ${TITLE.size}px Alice`;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  C.title_text.forEach((line, i) => riseText(c, line, font, W / 2, TITLE.bases[i], C.title[i ? 1 : 0] + (i === 2 ? 0.16 : 0), 1e9, t));
+  const s = smooth(C.signature, C.signature + 0.5, t);
+  glassText(c, C.signature_text, W / 2, 1246 + 10 * (1 - easeOutCubic(clamp01((t - C.signature) / 0.5))), "500 38px Roboto", "#ffffff", 0.94 * s, "center");
+  c.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// El cierre, por capas, en el orden de la portada: cielo, sol, ciudad, Guani, muro y palmas.
+function drawClose(c, t) {
+  const C = T.close, mc = mapCam(t), into = smooth(C.start, C.start + 0.7, t);
+  if (into < 1) drawSea(c, mc, 1);
+  drawSky(c, t, into);
+  drawSun(c, t);
+  drawCity(c, t);
+  drawBadge(c, t);
+  drawWall(c, mc, t);
+  if (mc.lie < 1 || t < C.rise[1]) {                         // la isla: se acuesta y se funde con el muro
+    c.globalAlpha = 1;
+    drawProvinces(c, mc, t);
+  }
+  drawPalms(c, t);
+  drawPiles(c, mc, t);
+  drawStars(c, mc, t);
+  drawIsleText(c, mc, t);
+  drawButton(c, t);
+  drawCloseText(c, t);
+}
+
+// ── El cuadro ───────────────────────────────────────────────────────────────
+
+function drawScene(c, t) {
+  t = Math.min(t, T.close.still);                      // el último segundo queda quieto
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = 1; c.globalCompositeOperation = "source-over"; c.filter = "none";
+  c.shadowColor = "transparent";
+  if (t >= T.island.sea) {                             // de la mesa ya no queda nada a la vista: la isla y el cierre
+    if (t < T.close.start) drawIsland(c, t, 1);
+    else drawClose(c, t);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalAlpha = 1; c.globalCompositeOperation = "source-over"; c.filter = "none";
+    return;
+  }
+  const cam = camera(t);
+  drawTable(c, cam);
+  drawQuestion(c, cam, t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+
+  const all = ordered.map((g) => [g, pose(g, t)]);
+  // Lo apartado va debajo; lo que se enciende, encima. Lo que anda fuera de la mesa no se pinta aquí.
+  const poses = all.filter(([, p]) => !p.lifted);
+  const flying = poses.filter(([, p]) => p.hz > 70).sort((a, b) => a[1].hz - b[1].hz);
+  const resting = poses.filter(([, p]) => p.hz <= 70);
+  for (const [g, p] of resting) if (p.dim > 0.5 && !p.top) drawGrain(c, cam, g, p);
+  for (const [g, p] of resting) if (p.dim <= 0.5 && !p.top) drawGrain(c, cam, g, p);
+  drawDust(c, cam, t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  for (const [, p] of resting) if (p.flash > 0.03 && !p.top) drawGlow(c, cam, p, [170, 232, 245], 0.3 * p.flash);
+
+  drawImpact(c, cam, t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  const guaniLanded = t >= T.guani;
+  if (guaniLanded) drawGuani(c, cam, t);
+  drawRays(c, cam, t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+
+  for (const [g, p] of resting) {
+    if (!p.top) continue;
+    drawGlow(c, cam, p, g.cls === "clear" ? [170, 232, 245] : GUAYABA, p.glow);
+    drawGrain(c, cam, g, p);
+  }
+  drawMarks(c, cam, t);
+  const person = t > T.review.yema_in;                 // desde que entra la persona
+  if (person) drawTableStrokes(c, cam, t);
+
+  drawCaption(c, cam, layout.captions[0], T.captions[0], T.captions_out[0], t);
+  drawCaption(c, cam, layout.captions[1], T.captions[1], T.captions_out[1], t);
+  drawCaption(c, cam, layout.title, T.guani + 0.14, T.title_out, t);
+  drawCaption(c, cam, layout.reviewTitle, T.review.title[0], T.review.title[1], t);
+  for (const L of layout.labels) drawLabel(c, cam, L, t);
+  if (person) for (const N of review.notes) drawNote(c, cam, N, t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+
+  // Lo que vuela pasa por delante de todo, desenfocado.
+  for (const [g, p] of flying) {
+    if (p.top) drawGlow(c, cam, p, g.cls === "clear" ? [170, 232, 245] : GUAYABA, p.glow);
+    drawGrain(c, cam, g, p);
+  }
+  if (!guaniLanded) drawGuani(c, cam, t);
+  if (person) drawFront(c, cam, t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = 1; c.globalCompositeOperation = "source-over"; c.filter = "none";
+}
+
+// Cuántos subcuadros mezcla cada cuadro: más donde algo va rápido.
+function samplesAt(t) {
+  const [w0, w1] = T.whip;
+  if (t >= w0 - 0.04 && t < w0 + 0.32) return 40;
+  if (t >= w0 + 0.32 && t < w0 + 0.5) return 20;
+  if (t >= w0 + 0.5 && t < w1 + 0.2) return 10;
+  if (t >= T.avalanche - 0.25 && t < w0) return 8;
+  for (const at of T.capsules) if (t > at - 0.36 && t < at + 0.16) return 10;
+  if (t > T.guani - 0.5 && t < T.guani + 0.45) return 12;
+  if (t >= T.discard[0] - 0.05 && t < T.discard[1] + 0.2) return 8;
+  if (t >= T.clear - 0.05 && t < T.clear + 1.0) return 6;
+  if (t >= w1 && t < T.guani) return 6;
+  const I = T.island, C = T.close;
+  if (t >= C.start) {                                  // el cierre: más mientras la isla se acuesta y el botón crece
+    if (t >= C.still) return 1;
+    if (t < C.lie[1]) return 10;
+    if (t < C.guani[1]) return 6;
+    if (t >= C.button[0] && t < C.button[1] + 0.15) return 8;
+    return 4;
+  }
+  if (t >= I.start) {                                  // la isla: más mientras la cámara se aleja, baja o abre el plano
+    if (t < I.pull[1]) return 12;
+    if (t < I.anticipation) return 8;
+    if (t < I.travel[1] + 0.06) return 24;
+    if (t < I.price[1]) return 8;
+    if (t >= I.open[0] - 0.12 && t < I.open[1] + 0.1) return 12;
+    return 4;
+  }
+  const M = T.measure;
+  if (t >= M.anticipation) {                           // la misma medida: más donde la cámara entra o algo vuela o rueda
+    if (t < M.dive[1]) return t < M.dive[0] + 0.42 ? 14 : 8;
+    if (t >= M.words[0][0] && t < M.province[1] + 0.05) return 12;
+    if (t >= M.pack_out[0] && t < M.regroup[0]) return 8;
+    if (t >= M.regroup[0] && t < M.regroup[1] + 0.02) return 16;
+    if (t >= M.roll_a[0] && t < M.roll_a[1]) return 10;
+    if (t >= M.roll_a[1] && t < M.rise_b[1] + 0.02) return 14;
+    if (t >= M.rise_b[1] && t < M.drops[2] + 0.3) return 8;
+    if (t >= M.yema[0] && t < M.hand[1] + 0.1) return 6;
+    return 4;
+  }
+  const R = T.review;
+  if (t >= R.yema_in) {                                // el repaso: más donde la yema corre o algo se abre
+    if (t < R.rings[1][0]) return 6;
+    if (t < R.open[1] + 0.06) return 10;
+    if (t >= R.morph[0] - 0.03 && t < R.morph[1] + 0.1) return 8;
+    if (t >= R.close[0] - 0.06 && t < R.audit_ring[0]) return 10;
+    if (t >= R.audit_ring[1] && t < R.sample_rings[4][1]) return 6;
+    if (t >= R.yema_out[0] && t < R.yema_out[1]) return 6;
+    return 4;
+  }
+  if (t >= T.doubt) return 4;
+  return 3;
+}
+
+function post(c, t) {
+  // Halo de lo más claro.
+  bc.setTransform(1, 0, 0, 1, 0, 0);
+  bc.globalCompositeOperation = "source-over";
+  bc.filter = "contrast(2.4) brightness(0.82) blur(3.5px)";
+  bc.drawImage(accCanvas, 0, 0, W / 4, H / 4);
+  bc.filter = "none";
+  c.globalCompositeOperation = "lighter"; c.globalAlpha = 0.1;
+  c.drawImage(bloomCanvas, 0, 0, W, H);
+  c.globalCompositeOperation = "source-over"; c.globalAlpha = 1;
+  // Viñeta.
+  const v = c.createRadialGradient(W / 2, H * 0.46, 420, W / 2, H * 0.46, 920);
+  v.addColorStop(0, "rgba(1,8,15,0)"); v.addColorStop(0.6, "rgba(1,8,15,0.2)"); v.addColorStop(1, "rgba(1,8,15,0.62)");
+  c.fillStyle = v; c.fillRect(0, 0, W, H);
+  const dark = 1 - smooth(0, T.fade_in, t);
+  if (dark > 0) { c.fillStyle = `rgba(0,0,0,${dark})`; c.fillRect(0, 0, W, H); }
+}
+
+// Dibuja el cuadro del instante `t`. Con `samples` se fuerza cuántos subcuadros mezclar.
+function seek(t, samples) {
+  const n = samples || samplesAt(t);
+  const shutter = (t >= T.whip[0] - 0.04 && t < T.whip[1] ? 0.8 : 0.62) / T.fps;
+  ac.setTransform(1, 0, 0, 1, 0, 0);
+  ac.globalCompositeOperation = "source-over";
+  for (let k = 0; k < n; k++) {
+    const ts = Math.max(0, t + (n === 1 ? 0 : ((k + 0.5) / n - 0.5) * shutter));
+    drawScene(sc, ts);
+    ac.globalAlpha = 1 / (k + 1);
+    ac.drawImage(sceneCanvas, 0, 0);
+  }
+  ac.globalAlpha = 1;
+  out.setTransform(1, 0, 0, 1, 0, 0);
+  out.globalCompositeOperation = "source-over"; out.globalAlpha = 1;
+  out.drawImage(accCanvas, 0, 0);
+  post(out, t);
+  return n;
+}
+
+async function init(config) {
+  T = config.timeline; D = config.data;
+  const faces = [
+    new FontFace("Alice", `url(${FONTS}/alice.woff2)`),
+    new FontFace("Roboto", `url(${FONTS}/roboto.woff2)`, { weight: "100 900" }),
+    new FontFace("Noto Color Emoji", `url(${FONTS}/noto-color-emoji.woff2)`),   // los emojis de los anuncios reales
+  ];
+  for (const f of faces) { await f.load(); document.fonts.add(f); }
+  await document.fonts.ready;
+
+  const alice = (text, px, max) => fitText(text, "Alice", 400, wu(px), wu(max));
+  const roboto = (text, px, weight) => fitText(text, "Roboto", weight, wu(px), wu(660));
+  const caption = (texts, px, bases) => {
+    const lines = texts.map((s) => alice(s, px, 620));
+    return { lines, bases, sx: 360, shadow: captionShadow(lines, bases, 360) };
+  };
+  layout = {
+    question: T.question.map((line) => fitText(line, "Alice", 400, 112, 628)),
+    questionY: [-398, -276],
+    captions: [
+      caption(["Miles de", "mensajes."], 98, [212, 314]),
+      caption(["Cada uno", "a su manera."], 68, [1056, 1128]),
+    ],
+    title: caption(["Guani lee."], 86, [388]),
+    reviewTitle: caption(["Una persona", "supervisa."], 80, [384, 468]),
+    // `t1`: cuándo se retira cada rótulo de la máquina, para dejarle el sitio a los de la persona.
+    labels: [
+      { fit: roboto("no es un precio", 38, 500), sx: 360, sy: 1000, align: "center", color: COLD, t0: T.discard_label, t1: T.review.discard_label_out, rule: [196, 524, 1016] },
+      { fit: roboto("claro", 42, 700), sx: 688, sy: 452, align: "right", color: [255, 255, 255], t0: T.clear_label, t1: T.review.labels_out[0] },
+      { fit: roboto("dos lecturas coinciden", 34, 400), sx: 688, sy: 494, align: "right", color: COLD, t0: T.clear_label + 0.12, t1: T.review.labels_out[0], rule: [356, 688, 512] },
+      { fit: roboto("dudoso", 42, 700), sx: 38, sy: 494, align: "left", color: GUAYABA, t0: T.doubt_label, t1: T.review.labels_out[1], rule: [38, 268, 512] },
+    ],
+  };
+  makeTextures();
+  makeTooth();
+  build();
+  buildReview();
+  buildTally();
+  buildIsle(await loadJson(GEO));
+  buildClose();
+  return info();
+}
+
+function info() {
+  const count = (cls) => grains.filter((g) => g.cls === cls).length;
+  return { grains: grains.length, clear: count("clear"), doubtful: count("doubt"), discarded: count("none") };
+}
+
+window.init = init;
+window.seek = seek;
+window.info = info;
+window.capture = (t, samples) => { seek(t, samples); return view.toDataURL("image/png"); };
+// Cuánto tarda un subcuadro, en ms: para saber dónde se va el tiempo de render.
+window.profile = (t) => { const a = performance.now(); drawScene(sc, t); return performance.now() - a; };
+</script>
+</body>
+</html>

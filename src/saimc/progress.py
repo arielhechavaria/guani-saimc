@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from statistics import median
 from typing import Protocol
 
@@ -670,6 +670,49 @@ def oldest_pending_age_days(session: Session, *, hoy: date | None = None) -> int
     if oldest is None:
         return None
     return ((hoy or date.today()) - oldest.date()).days
+
+
+@dataclass(frozen=True)
+class Last24h:
+    """Lo que entró en las últimas 24 h y cuánto de eso ya está resuelto.
+
+    El operador publica en redes con lo de la última jornada: esto responde si
+    esa jornada está lista, sin que el histórico viejo de la cola lo tape.
+    """
+
+    entered: int
+    curated: int
+    discarded: int
+    pending: int
+    #: Horas que lleva esperando el pendiente más viejo DE LA VENTANA; `None`
+    #: si no hay ninguno.
+    oldest_pending_hours: int | None
+
+
+def last_24h(session: Session, *, now: datetime | None = None) -> Last24h:
+    ahora = now or datetime.now(UTC)
+    desde = ahora - timedelta(hours=24)
+    rows = session.execute(
+        select(RawIngestion.processing_status, func.count(), func.min(RawIngestion.created_at))
+        .where(RawIngestion.created_at > desde)
+        .group_by(RawIngestion.processing_status)
+    ).all()
+    counts = {status: (n, oldest) for status, n, oldest in rows}
+    pending, oldest = counts.get(ProcessingStatus.PENDING, (0, None))
+    oldest_hours = None
+    if oldest is not None:
+        oldest_hours = int((ahora - _as_utc(oldest)).total_seconds() // 3600)
+    return Last24h(
+        entered=sum(n for n, _ in counts.values()),
+        curated=counts.get(ProcessingStatus.CURATED, (0, None))[0],
+        discarded=counts.get(ProcessingStatus.DISCARDED, (0, None))[0],
+        pending=pending,
+        oldest_pending_hours=oldest_hours,
+    )
+
+
+def _as_utc(moment: datetime) -> datetime:
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
 
 
 # --- Ritmo ---------------------------------------------------------------------

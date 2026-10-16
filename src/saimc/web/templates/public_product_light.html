@@ -96,8 +96,78 @@ Sin anuncios en los últimos {{ window_days }} días.
     padding: .4rem .95rem; border-radius: var(--m3-radius-full);
     border: 1px solid var(--ph-accent); background: var(--ph-accent); color: var(--ph-on-accent);
   }
+
+  /* Capa mayorista opcional (2026-10-16). El interruptor es un enlace con
+     forma de pastilla, 44 px de alto (objetivo táctil): sin JavaScript, el
+     estado vive en la URL (`?capa=mayorista`). La muestra de color le dice al
+     visitante qué color va a ver antes de prenderla. */
+  .ph-lite-capa-toggle { margin: var(--m3-space-3) 0 0; }
+  .ph-lite-capa-pill {
+    display: inline-flex; align-items: center; gap: .5rem; min-height: 44px;
+    padding: 0 1rem; border-radius: var(--m3-radius-full);
+    border: 1px solid var(--m3-outline-variant); background: var(--m3-surface);
+    color: var(--m3-on-surface); font-size: .8125rem; font-weight: 500; text-decoration: none;
+  }
+  .ph-lite-capa-pill.is-on { border-color: var(--ph-wholesale); }
+  .ph-lite-capa-swatch { width: 14px; height: 6px; border-radius: 3px; background: var(--ph-wholesale); }
+  .ph-lite-capa-nota { margin: var(--m3-space-2) 0 0; font-size: .8125rem; color: var(--m3-on-surface-variant); max-width: 60ch; }
+  .ph-lite-capa { margin-top: .8rem; padding-top: .7rem; border-top: 1px dashed var(--m3-outline-variant); }
+  .ph-lite-capa-fila { display: grid; gap: .3rem; margin-top: .45rem; }
+  .ph-lite-capa-rotulo { font-size: .75rem; font-weight: 600; color: var(--m3-on-surface-variant); }
+  .ph-lite-capa-rotulo.is-mayorista { color: var(--ph-wholesale); }
+  /* Eje común a las dos bandas: misma escala, así que la distancia entre
+     ellas ES la brecha de precio. Mínimo a máximo dentro del cerco, con la
+     mediana como muesca del color de la superficie. */
+  .ph-lite-pista { position: relative; display: block; height: 10px; border-radius: 5px; background: var(--m3-outline-variant); }
+  .ph-lite-banda { position: absolute; top: 0; bottom: 0; min-width: 10px; border-radius: 5px; }
+  .ph-lite-banda.is-minorista { background: var(--ph-accent); }
+  .ph-lite-banda.is-mayorista { background: var(--ph-wholesale); }
+  .ph-lite-banda.is-punto { width: 10px; }
+  .ph-lite-muesca { position: absolute; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: var(--m3-surface); }
+  .ph-lite-capa-cifra { margin: .55rem 0 0; font-size: .8125rem; color: var(--m3-on-surface-variant); }
+  .ph-lite-capa-cifra b { color: var(--ph-wholesale); font-variant-numeric: tabular-nums; }
+  .ph-lite-capa-vacia { margin: 0; font-size: .8125rem; color: var(--m3-on-surface-variant); }
+  .ph-lite-capa-aparte { margin-top: var(--m3-space-6); }
+  .ph-lite-capa-titulo { margin: 0; font-family: var(--ph-font-heading); font-size: 1.15rem; font-weight: 400; }
+  .ph-lite-precio.is-mayorista { color: var(--ph-wholesale); }
 </style>
 {% endblock %}
+
+{# Banda mínimo–máximo con la muesca de la mediana. Las marcas se corren
+   hacia adentro en proporción a su posición (`translateX(-p%)`): en 0 % no
+   asoman por la izquierda, en 100 % no se salen por la derecha. Un valor
+   suelto es un punto sin muesca: ahí mínimo, mediana y máximo son lo mismo. #}
+{% macro banda(b, capa_clase) -%}
+<span class="ph-lite-pista">
+  {%- if b.width_pct > 0 %}
+  <span class="ph-lite-banda {{ capa_clase }}" style="left: {{ "%.1f"|format(b.left_pct) }}%; width: {{ "%.1f"|format(b.width_pct) }}%;"></span>
+  <span class="ph-lite-muesca" style="left: {{ "%.1f"|format(b.median_pct) }}%; transform: translateX(-{{ "%.1f"|format(b.median_pct) }}%);"></span>
+  {%- else %}
+  <span class="ph-lite-banda {{ capa_clase }} is-punto" style="left: {{ "%.1f"|format(b.left_pct) }}%; transform: translateX(-{{ "%.1f"|format(b.left_pct) }}%);"></span>
+  {%- endif %}
+</span>
+{%- endmacro %}
+
+{% macro tabla_anuncios(ads) %}
+<table class="ph-lite-tabla">
+  <thead>
+    <tr>
+      <th scope="col">Día</th>
+      <th scope="col" class="num">Precio</th>
+      <th scope="col">Enlace</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ad in ads %}
+    <tr>
+      <td class="num">{{ ad.day_text }}</td>
+      <td class="num">{{ ad.price_text }} {{ ad.currency }}/{{ ad.unit }}</td>
+      <td>{% if ad.evidence_is_public %}<a href="/anuncio/{{ ad.evidence_id }}">ver anuncio</a>{% else %}<span title="Captura: la imagen no se publica">captura</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
 
 {% block content %}
 {% if data_freshness_day %}
@@ -116,8 +186,25 @@ Sin anuncios en los últimos {{ window_days }} días.
     <span class="ph-lite-window-label-text">Hasta</span>
     <input type="date" name="hasta" value="{{ selected_hasta.isoformat() }}">
   </label>
+  {% if layer.on %}<input type="hidden" name="capa" value="{{ layer.param }}">{% endif %}
   <button type="submit" class="ph-lite-window-submit">Ver</button>
 </form>
+
+<p class="ph-lite-capa-toggle">
+  {% if layer.on %}
+  <a class="ph-lite-capa-pill is-on" href="{{ layer.off_href }}"><span class="ph-lite-capa-swatch" aria-hidden="true"></span>Ocultar al por mayor</a>
+  {% else %}
+  <a class="ph-lite-capa-pill" href="{{ layer.on_href }}"><span class="ph-lite-capa-swatch" aria-hidden="true"></span>Ver también al por mayor</a>
+  {% endif %}
+</p>
+{% if layer.on %}
+<p class="ph-lite-capa-nota">
+  <b>{{ layer.label }}</b>: ventas por contenedor o lote grande, que un hogar no compra.
+  La cifra grande de cada tarjeta sigue siendo el precio al por menor, que es la
+  referencia; el mayorista va debajo con su propio número de anuncios y nunca entra
+  en la misma mediana.
+</p>
+{% endif %}
 
 {% if panel.blocks %}
 <ul class="ph-lite-blocks">
@@ -159,11 +246,70 @@ Sin anuncios en los últimos {{ window_days }} días.
       </table>
     </details>
     {% endif %}
+    {% if layer.on %}
+    {% set capa = layer.overlays[loop.index0] %}
+    <div class="ph-lite-capa">
+      {% if capa.has_data %}
+      {% set w = capa.wholesale %}
+      <div class="ph-lite-capa-fila">
+        <span class="ph-lite-capa-rotulo">Al por menor</span>
+        {{ banda(capa.retail_band, "is-minorista") }}
+      </div>
+      <div class="ph-lite-capa-fila">
+        <span class="ph-lite-capa-rotulo is-mayorista">{{ layer.label }}</span>
+        {{ banda(capa.wholesale_band, "is-mayorista") }}
+      </div>
+      <p class="ph-lite-capa-cifra">
+        Al por mayor: <b>{{ w.median_text }}</b> {{ w.currency }}/{{ w.unit }}{% if not w.is_single_value %} · rango {{ w.minimum_text }}–{{ w.maximum_text }}{% endif %}
+        · {{ w.count }} anuncio{{ "s" if w.count != 1 }} al por mayor{% if w.outliers %} ({{ w.outliers }} fuera de escala){% endif %}
+        {%- if capa.ratio_text %} · al por menor sale {{ capa.ratio_text }} frente al por mayor{% endif %}
+      </p>
+      {% if capa.ads %}
+      <details class="ph-lite-anuncios">
+        <summary>{{ capa.ads | length }} anuncio{{ "s" if capa.ads | length != 1 }} al por mayor detrás de esta cifra</summary>
+        {{ tabla_anuncios(capa.ads) }}
+      </details>
+      {% endif %}
+      {% else %}
+      <p class="ph-lite-capa-vacia">Sin datos al por mayor para este formato en {{ cifra.province_name }}.</p>
+      {% endif %}
+    </div>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>
 {% else %}
 <p class="ph-lite-vacio">Ningún anuncio de {{ panel.name }} en los últimos {{ window_days }} días.</p>
+{% endif %}
+
+{% if layer.on and layer.unpaired %}
+{# Mayorista sin minorista del mismo formato en su provincia: no hay
+   referencia contra la cual compararlo, así que va aparte y sin ratio. #}
+<section class="ph-lite-capa-aparte" aria-labelledby="ph-lite-capa-aparte">
+  <h2 class="ph-lite-capa-titulo" id="ph-lite-capa-aparte">Al por mayor, en formatos sin precio al por menor</h2>
+  <p class="ph-lite-capa-nota">No hay precio al por menor del mismo formato y provincia para comparar, así que van sin relación con la referencia.</p>
+  <ul class="ph-lite-blocks">
+    {% for w, ads in layer.unpaired %}
+    <li class="ph-lite-card">
+      <div class="ph-lite-top">
+        <span class="ph-lite-provincia">{{ w.province_name }}{% if w.format_label_display %}<span class="ph-lite-chip">{{ w.format_label_display }}</span>{% endif %}</span>
+        <span class="ph-lite-precio is-mayorista">{{ w.median_text }} <small>{{ w.currency }}/{{ w.unit }}</small></span>
+      </div>
+      <ul class="ph-lite-datos">
+        {% if not w.is_single_value %}<li>rango <b>{{ w.minimum_text }}–{{ w.maximum_text }}</b></li>{% endif %}
+        <li><b>{{ w.count }}</b> anuncio{{ "s" if w.count != 1 }} al por mayor{% if w.outliers %} ({{ w.outliers }} fuera de escala){% endif %}</li>
+        <li>el último, del {{ w.last_day_text }}</li>
+      </ul>
+      {% if ads %}
+      <details class="ph-lite-anuncios">
+        <summary>{{ ads | length }} anuncio{{ "s" if ads | length != 1 }} detrás de esta cifra</summary>
+        {{ tabla_anuncios(ads) }}
+      </details>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
 {% endif %}
 
 <p class="ph-lite-mapa"><a href="{{ map_href }}">Ver {{ panel.name }} en el mapa interactivo</a></p>

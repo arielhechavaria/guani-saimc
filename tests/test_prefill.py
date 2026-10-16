@@ -21,7 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.config import Settings
-from saimc.extraction import llm_assist, llm_propose_ad, prefill, prefill_lock, prefill_status
+from saimc.extraction import (
+    llm_assist,
+    llm_propose_ad,
+    llm_store,
+    prefill,
+    prefill_lock,
+    prefill_status,
+)
 from saimc.models import (
     ContentType,
     JevSignal,
@@ -331,7 +338,7 @@ def test_no_procesa_pendientes_fuera_de_foco(
     assert len(_propuestas(session)) == 1
 
 
-def test_limit_toma_los_mas_viejos_primero(
+def test_limit_toma_los_mas_nuevos_primero(
     session: Session, catalogo, tmp_path: Path
 ) -> None:
     _ingesta(session, texto="arroz tercero", minutos=30)
@@ -343,7 +350,8 @@ def test_limit_toma_los_mas_viejos_primero(
 
     textos = cliente.textos()
     assert len(textos) == 2
-    assert "arroz primero" in textos[0]
+    # Lo de hoy no espera detrás del histórico (2026-10-13).
+    assert "arroz tercero" in textos[0]
     assert "arroz segundo" in textos[1]
 
 
@@ -1191,3 +1199,186 @@ def test_una_corrida_real_con_ajustes_por_defecto_no_toca_el_estado_del_checkout
     assert codigo == 0
     assert _huella_estado_real() == antes  # mtime y contenido iguales
     assert prefill_status.read_run_status(tmp_path / "prefill-status.json") is not None
+
+
+# --- tope de edad de la cola (2026-10-13) ------------------------------------------
+
+
+def test_execute_vence_el_pendiente_viejo_antes_de_pre_calcular(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    viejo = _ingesta(session, texto="arroz 100")
+    viejo.created_at = datetime.now(UTC) - timedelta(days=9)
+    session.commit()
+
+    codigo, salida = _correr(
+        session,
+        tmp_path,
+        ["--execute"],
+        cliente=ClienteFalso(),
+        ajustes=_ajustes(tmp_path, queue_max_age_days=7),
+    )
+
+    assert codigo == 0
+    session.refresh(viejo)
+    assert viejo.processing_status == ProcessingStatus.DISCARDED
+    assert "Vencidos por edad (más de 7 días): 1" in salida
+    # No se gastó una llamada al modelo en un anuncio que ya vencía.
+    assert _propuestas(session) == []
+
+
+def test_dry_run_no_vence_nada(session: Session, catalogo, tmp_path: Path) -> None:
+    viejo = _ingesta(session, texto="arroz 100")
+    viejo.created_at = datetime.now(UTC) - timedelta(days=9)
+    session.commit()
+
+    _correr(session, tmp_path, [], ajustes=_ajustes(tmp_path, queue_max_age_days=7))
+
+    session.refresh(viejo)
+    assert viejo.processing_status == ProcessingStatus.PENDING
+
+
+def test_por_defecto_el_tope_de_edad_esta_apagado_y_no_vence_nada(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    viejo = _ingesta(session, texto="arroz 100")
+    viejo.created_at = datetime.now(UTC) - timedelta(days=60)
+    session.commit()
+
+    _, salida = _correr(session, tmp_path, ["--execute"], cliente=ClienteFalso())
+
+    session.refresh(viejo)
+    assert viejo.processing_status != ProcessingStatus.DISCARDED
+    assert "Vencidos por edad" not in salida
+
+
+# --- lo más nuevo primero (2026-10-13) ----------------------------------------------
+
+
+def test_los_candidatos_salen_del_mas_nuevo_al_mas_viejo(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    """El operador publica con lo de las últimas 24 h: con un tope de gasto por
+    corrida, lo de hoy no puede esperar detrás del histórico."""
+    viejo = _ingesta(session, texto="arroz 100", minutos=0)
+    medio = _ingesta(session, texto="arroz 200", minutos=10)
+    nuevo = _ingesta(session, texto="arroz 300", minutos=20)
+
+    candidatos = prefill.select_candidates(session, [catalogo.arroz])
+
+    assert [c.id for c in candidatos] == [nuevo.id, medio.id, viejo.id]
+
+
+def test_con_limite_se_procesa_primero_lo_mas_nuevo(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    _ingesta(session, texto="arroz 100", minutos=0)
+    nuevo = _ingesta(session, texto="arroz 300", minutos=20)
+
+    (primero,) = prefill.select_candidates(session, [catalogo.arroz], 1)
+
+    assert primero.id == nuevo.id
+
+
+# --- re-proponer los de prompt viejo (--stale, 2026-10-13) --------------------------
+
+
+def _con_propuesta(
+    session: Session, ingesta: RawIngestion, version: str, estado: str = "ok"
+) -> LlmProposal:
+    propuesta = LlmProposal(
+        ingestion_id=ingesta.id,
+        model="claude-sonnet-5",
+        prompt_version=version,
+        status=estado,
+        rows=[],
+        input_tokens=0,
+        output_tokens=0,
+    )
+    session.add(propuesta)
+    session.commit()
+    return propuesta
+
+
+def test_stale_elige_los_pendientes_cuya_ultima_propuesta_es_de_otra_version(
+    session: Session, catalogo
+) -> None:
+    actual = llm_propose_ad.PROMPT_VERSION
+    vieja = _ingesta(session, texto="arroz 100", minutos=0)
+    _con_propuesta(session, vieja, "2026-09-25.3")
+    al_dia = _ingesta(session, texto="arroz 200", minutos=1)
+    _con_propuesta(session, al_dia, actual)
+    sin_propuesta = _ingesta(session, texto="arroz 300", minutos=2)
+    curada = _ingesta(session, texto="arroz 400", minutos=3, estado=ProcessingStatus.CURATED)
+    _con_propuesta(session, curada, "2026-09-25.3")
+    fuera_de_foco = _ingesta(session, texto="hola buenas", minutos=4)
+    _con_propuesta(session, fuera_de_foco, "2026-09-25.3")
+    imagen = _ingesta(session, texto="arroz 500", minutos=5, tipo=ContentType.IMAGE)
+    _con_propuesta(session, imagen, "2026-09-25.3")
+
+    candidatos = prefill.select_stale_candidates(session, [catalogo.arroz], actual)
+
+    assert [c.id for c in candidatos] == [vieja.id]
+    assert sin_propuesta.id not in [c.id for c in candidatos]
+    assert imagen.id not in [c.id for c in candidatos]
+
+
+def test_stale_mira_la_ultima_propuesta_buena_no_la_primera(session: Session, catalogo) -> None:
+    actual = llm_propose_ad.PROMPT_VERSION
+    ingesta = _ingesta(session, texto="arroz 100")
+    _con_propuesta(session, ingesta, "2026-09-25.3")
+    _con_propuesta(session, ingesta, actual)
+    # Una degradada posterior no cuenta: la última que anduvo ya es la actual.
+    _con_propuesta(session, ingesta, "otra", estado="degraded")
+
+    assert prefill.select_stale_candidates(session, [catalogo.arroz], actual) == []
+
+
+def test_stale_ordena_del_mas_nuevo_al_mas_viejo_y_respeta_el_limite(
+    session: Session, catalogo
+) -> None:
+    actual = llm_propose_ad.PROMPT_VERSION
+    ids = []
+    for minutos in (0, 10, 20):
+        ingesta = _ingesta(session, texto=f"arroz {minutos}", minutos=minutos)
+        _con_propuesta(session, ingesta, "2026-09-25.3")
+        ids.append(ingesta.id)
+
+    todos = prefill.select_stale_candidates(session, [catalogo.arroz], actual)
+    uno = prefill.select_stale_candidates(session, [catalogo.arroz], actual, 1)
+
+    assert [c.id for c in todos] == list(reversed(ids))
+    assert [c.id for c in uno] == [ids[2]]
+
+
+def test_stale_en_seco_cuenta_y_no_llama(session: Session, catalogo, tmp_path: Path) -> None:
+    vieja = _ingesta(session, texto="arroz 100")
+    _con_propuesta(session, vieja, "2026-09-25.3")
+    _ingesta(session, texto="arroz 200", minutos=1)  # sin propuesta: no es de --stale
+    cliente = ClienteFalso()
+
+    codigo, salida = _correr(session, tmp_path, ["--stale"], cliente=cliente)
+
+    assert codigo == 0
+    assert cliente.llamadas == []
+    assert "prompt viejo" in salida
+    assert "total: 1" in salida
+
+
+def test_stale_execute_vuelve_a_proponer_y_deja_la_nueva_como_la_ultima(
+    session: Session, catalogo, tmp_path: Path
+) -> None:
+    vieja = _ingesta(session, texto="arroz 100")
+    _con_propuesta(session, vieja, "2026-09-25.3")
+    cliente = ClienteFalso()
+
+    _correr(session, tmp_path, ["--stale", "--execute"], cliente=cliente)
+
+    assert len(cliente.llamadas) == 1
+    ultima = llm_store.latest_ok_proposal(session, vieja.id)
+    assert ultima is not None
+    assert ultima.prompt_version == llm_propose_ad.PROMPT_VERSION
+    # Idempotente: una segunda corrida ya no tiene nada viejo que rehacer.
+    segundo = ClienteFalso()
+    _correr(session, tmp_path, ["--stale", "--execute"], cliente=segundo)
+    assert segundo.llamadas == []

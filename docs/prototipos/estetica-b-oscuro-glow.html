@@ -1,0 +1,290 @@
+<!doctype html>
+<!--
+  Dirección B · Oscuro + bordes con brillo + bento
+  - Mezcla: oscuro por defecto con bordes de brillo sutil (gradiente de 1 px solo en el borde, nunca en el texto) al estilo Linear/Vercel, sobre una grilla bento.
+  - Por qué: el mapa de precios en azul gana presencia sobre fondo oscuro y el brillo marca jerarquía sin sombras pesadas; encaja con el tema oscuro ya tokenizado.
+  - Glass solo en la barra flotante sobre el mapa y en la hoja inferior móvil, con fondo sólido de respaldo si no hay backdrop-filter.
+  Prototipo estático y autocontenido (sin CDN, sin fuentes externas). Datos de ejemplo.
+  Tokens copiados de src/saimc/web/design_tokens.css (--ph-*, --m3-*), claro y oscuro.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Guani · Dirección B · Oscuro + bordes con brillo + bento</title>
+<style>
+:root{--bg:#0e1414;--surface:#141b1b;--container:#1a2222;--container-hi:#222d2d;--ink:#e1e3e3;--ink2:#bdc7c7;--outline:#8a9494;--line:#3f4949;
+--accent:#7ec8ea;--on-accent:#00344a;--accent-wash:rgba(126,200,234,.14);--accent2:#4fb8c7;--median:#c3d4a8;--price-low:#16303c;--price-high:#7ec8ea;
+--scrim:rgba(5,32,48,.35);--ph-elev:0 1px 2px rgba(5,32,48,.08),0 4px 14px rgba(5,32,48,.06);--sheet-shadow:0 -8px 30px rgba(5,32,48,.18);color-scheme:dark}
+@media (prefers-color-scheme:light){:root{--bg:#f2f6f6;--surface:#ffffff;--container:#eef4f4;--container-hi:#e3e9ea;--ink:#191c1c;--ink2:#3f4949;--outline:#6f7979;--line:#c4cfcf;
+--accent:#05668d;--on-accent:#ffffff;--accent-wash:rgba(5,102,141,.1);--accent2:#028090;--median:#aec092;--price-low:#e8f1f6;--price-high:#05668d;
+--scrim:rgba(5,32,48,.35);--ph-elev:0 1px 2px rgba(5,32,48,.08),0 4px 14px rgba(5,32,48,.06);--sheet-shadow:0 -8px 30px rgba(5,32,48,.18);color-scheme:light}}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:auto}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/24px Roboto,"Helvetica Neue",Arial,system-ui,sans-serif;overflow-x:hidden}
+a{color:inherit}
+.h-serif{font-family:"Alice",Georgia,serif;font-weight:400;margin:0;letter-spacing:0}
+.muted{color:var(--ink2);font-size:14px;line-height:20px;margin:0}
+.sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+/* etiqueta de la dirección estética */
+.dir-tag{position:relative;z-index:30;height:32px;display:flex;align-items:center;padding:0 16px;font-size:12px;line-height:16px;background:var(--container-hi);color:var(--ink)}
+.dir-tag summary{cursor:pointer;list-style:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;min-height:32px;display:flex;align-items:center}
+.dir-tag summary::-webkit-details-marker{display:none}
+.dir-tag b{font-weight:700}
+.dir-tag .pop{position:absolute;left:8px;right:8px;top:36px;background:var(--surface);color:var(--ink);padding:12px 16px;border:1px solid var(--line);border-radius:12px;box-shadow:var(--ph-elev);font-size:14px;line-height:20px}
+.dir-tag ul{margin:0;padding-left:20px}
+/* barra superior y pestañas de pantalla */
+.topbar{position:sticky;top:0;z-index:20;height:56px;display:flex;align-items:center;gap:8px;padding:0 12px 0 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font-family:"Alice",Georgia,serif;font-size:22px;text-decoration:none;margin-right:auto}
+.brand i{width:16px;height:16px;border-radius:50%;background:var(--accent);display:block}
+.tabs{display:flex;gap:4px}
+.tabs a{min-height:44px;display:inline-flex;align-items:center;padding:0 16px;border-radius:100px;text-decoration:none;font-weight:500;font-size:14px}
+#precios{display:block}
+.screen{display:none;scroll-margin-top:88px}
+#tablero:target{display:block}
+body:has(#tablero:target) #precios{display:none}
+body:not(:has(#tablero:target)) .tabs a[href="#precios"],body:has(#tablero:target) .tabs a[href="#tablero"]{background:var(--accent);color:var(--on-accent)}
+/* chips: objetivo táctil de 44 px */
+.chip{min-height:44px;display:inline-flex;align-items:center;padding:0 16px;border-radius:100px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);text-decoration:none;font-size:14px;font-weight:500;white-space:nowrap}
+.chip[aria-current="true"],.chip[aria-selected="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.chip.period{background:transparent;border-style:dashed;cursor:default}
+.chip.sm{padding:0 16px}
+/* pantalla 1: mapa + hoja inferior (móvil) / panel lateral (escritorio) */
+.map-screen{position:relative;height:calc(100svh - 88px);min-height:560px;overflow:hidden}
+.stage{position:absolute;inset:0 0 56% 0;display:flex;flex-direction:column;justify-content:flex-end;padding:0 16px 8px}
+.controls{position:absolute;top:12px;left:12px;right:12px;z-index:5;display:flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:28px}
+.map-wrap{width:100%;margin:auto 0}
+.cuba{display:block;width:100%;height:auto;overflow:visible}
+.cuba path{stroke:var(--map-stroke);stroke-width:1.4;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.cuba path.nodata{fill:var(--container);stroke-dasharray:3 3}
+.cuba path.sel{stroke:var(--ink);stroke-width:3}
+.legend{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border-radius:12px;position:relative;z-index:2}
+.lg-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--price-low),var(--price-high));border:1px solid var(--outline)}
+.lg-lab{font-size:12px;line-height:16px;font-weight:500;font-variant-numeric:tabular-nums}
+.lg-note{grid-column:1/-1;font-size:12px;line-height:16px;color:var(--ink2);display:flex;align-items:center;gap:8px}
+.nd{width:12px;height:12px;border:1.5px dashed var(--outline);border-radius:3px;display:inline-block;background:var(--container)}
+.sample{position:absolute;top:76px;right:20px;margin:0;font-size:12px;line-height:16px;padding:4px 8px;border-radius:100px;background:var(--surface);border:1px solid var(--line);color:var(--ink2);z-index:3}
+.sample.inline{position:static;display:inline-block;align-self:flex-start;justify-self:start}
+.sheet{position:absolute;left:0;right:0;bottom:0;height:56%;overflow:auto;overscroll-behavior:contain;border-radius:24px 24px 0 0;padding:0 16px 24px;background:var(--surface);box-shadow:var(--sheet-shadow);z-index:6;transition:height .25s ease}
+.map-screen:has(#sheet-x:checked) .sheet{height:86%}
+.grab{display:flex;justify-content:center;align-items:center;min-height:44px;cursor:pointer;position:sticky;top:0;z-index:1}
+.grab span{width:40px;height:4px;border-radius:2px;background:var(--outline)}
+#sheet-x:focus-visible ~ .sheet .grab span{outline:3px solid var(--accent);outline-offset:4px}
+.sheet-head{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.sheet-head h2{font-size:22px;line-height:28px}
+.range{margin:0;font-size:14px;line-height:20px}
+.range b{font-family:"Alice",Georgia,serif;font-weight:400;font-size:18px}
+.range span{color:var(--ink2);display:block;font-size:12px;line-height:16px}
+.ptabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px}
+.unit{margin:4px 0 8px}
+.ptable{width:100%;border-collapse:collapse;font-size:14px;line-height:20px}
+.ptable th,.ptable td{padding:12px 4px;text-align:left;border-top:1px solid var(--line);min-height:44px}
+.ptable thead th{font-size:12px;line-height:16px;color:var(--ink2);font-weight:500;border-top:0;padding-top:4px;padding-bottom:8px}
+.ptable .num{text-align:right;font-variant-numeric:tabular-nums}
+.ptable td.num:first-of-type{font-family:"Alice",Georgia,serif;font-size:18px}
+.ptable th[scope=row]{font-weight:500}
+.ptable tr[aria-current] th,.ptable tr[aria-current] td{background:var(--accent-wash)}
+.ptable .spk,.ptable .n{display:none}
+.spark{width:100%;max-width:112px;height:26px;display:block}
+.spark path{fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.spark circle{fill:var(--accent)}
+.pend{margin-top:12px}
+/* pantalla 2: tablero bento */
+.dash{max-width:1160px;margin:0 auto;padding:16px}
+.intro{padding:20px;display:flex;flex-direction:column;gap:12px;margin-bottom:12px}
+.intro h1{font-size:36px;line-height:44px}
+.eyebrow{justify-self:start;font-size:12px;line-height:16px;letter-spacing:.12em;font-weight:700;color:var(--accent)}
+.fresh{display:flex;gap:8px;align-items:center;font-size:14px;line-height:20px;padding:8px 12px;border-radius:12px;background:var(--accent-wash)}
+.ctl-row{display:flex;flex-direction:column;gap:4px}
+.lab{font-size:12px;line-height:16px;font-weight:700;color:var(--ink2)}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.bento{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.card{background:var(--surface);border-radius:16px;padding:20px;min-width:0}
+.bento>*{grid-column:span 2}
+.bento>.kpi{grid-column:span 1}
+.hero .k,.kpi .k{margin:0;font-size:14px;line-height:20px;font-weight:500}
+.big{font-size:56px;line-height:64px;margin:0}
+.kpi .big{font-size:44px;line-height:52px}
+.kpi small{font-size:18px;font-family:Roboto,Arial,sans-serif}
+.hero .u{margin:0 0 12px;font-size:14px;line-height:20px}
+.hero .spark{max-width:none;height:56px}
+.h-sm{font-size:22px;line-height:28px}
+.track{position:relative;height:12px;margin:24px 8px 12px;border-radius:6px;background:var(--container-hi)}
+.track i{position:absolute;top:-4px;width:20px;height:20px;margin-left:-10px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-sizing:border-box}
+.track i.mid{background:var(--median);border-color:var(--ink)}
+.track-lab{display:flex;justify-content:space-between;gap:8px;font-size:12px;line-height:16px;color:var(--ink2);flex-wrap:wrap}
+.track-lab b{color:var(--ink)}
+.rows{margin-top:8px}
+.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 8px;padding:12px 0;border-top:1px solid var(--line);text-decoration:none;min-height:44px}
+.row .name{grid-column:1/-1;font-weight:700;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.row .name small,.cell small{font-size:12px;line-height:16px;font-weight:400;color:var(--ink2)}
+.cell{display:flex;flex-direction:column}
+.cell em{font-style:normal;font-size:12px;line-height:16px;color:var(--ink2)}
+.cell b{font-family:"Alice",Georgia,serif;font-weight:400;font-size:20px;line-height:28px}
+.mosaic{list-style:none;margin:16px 0 8px;padding:0;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-auto-rows:40px;gap:4px}
+.tile{display:flex;align-items:center;justify-content:center;font-size:11px;line-height:16px;font-weight:700;border-radius:8px;letter-spacing:.02em}
+.tile[data-state=have]{background:var(--accent);color:var(--on-accent)}
+.tile[data-state=none]{border:1.5px dashed var(--outline);color:var(--ink2);background:transparent}
+.more{display:inline-flex;align-items:center;min-height:44px;font-weight:500;color:var(--accent)}
+.b-cov .more{margin-top:4px}
+/* animación barata y opcional */
+@media (prefers-reduced-motion:no-preference){
+ .bento>*,.intro{animation:rise .4s ease both}
+ .bento>*:nth-child(2){animation-delay:.04s}.bento>*:nth-child(3){animation-delay:.08s}.bento>*:nth-child(n+4){animation-delay:.12s}
+}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+/* escritorio */
+@media (min-width:900px){
+ .map-screen{display:grid;grid-template-columns:minmax(0,1fr) 30rem;height:calc(100svh - 88px);min-height:640px}
+ .stage{position:relative;inset:auto;padding:0 32px 24px}
+ .sheet{position:static;height:auto;border-radius:0;transition:none;padding:0 24px 24px}
+ .map-screen:has(#sheet-x:checked) .sheet{height:auto}
+ .grab{display:none}
+ .sheet-head{padding-top:24px}
+ .controls{top:24px;left:24px;right:auto}
+ .sample{top:36px;right:32px}
+ .legend{max-width:420px}
+ .ptable .spk,.ptable .n{display:table-cell}
+ .dash{padding:24px}
+ .intro{padding:24px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;column-gap:32px}
+ .intro>*{grid-column:1}.intro>.ctl-row{grid-column:2}.intro>.ctl-row:nth-of-type(1){grid-row:1/3}
+ .bento{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+ .bento>*{grid-column:span 2}
+ .bento>.kpi{grid-column:span 1}
+ .bento>.b-hero{grid-row:span 2}
+ .bento>.b-data{grid-column:span 4}
+ .big{font-size:72px;line-height:80px}
+ .row{grid-template-columns:1.3fr repeat(3,minmax(0,1fr));align-items:center}
+ .row .name{grid-column:auto;flex-direction:column;gap:0}
+ .cell em{display:none}
+ .mosaic{grid-auto-rows:48px;gap:6px}
+}
+@media (min-width:900px) and (min-height:900px){}
+@media (max-width:359px){.tabs a{padding:0 12px}}
+
+:root{--map-stroke:rgba(225,227,227,.45);--glow:linear-gradient(135deg,rgba(126,200,234,.65),rgba(255,255,255,.07) 38%,rgba(126,200,234,.2) 100%)}
+.card,.legend,.sample,.dir-tag .pop{border:1px solid transparent;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--glow) border-box}
+.card{border-radius:16px}
+.topbar{background:var(--bg);border-bottom:1px solid var(--line)}
+.dir-tag{background:var(--container)}
+.stage{background:radial-gradient(60% 70% at 50% 45%,rgba(126,200,234,.10),transparent 70%),var(--bg)}
+.hero{box-shadow:0 0 48px rgba(126,200,234,.12)}
+.hero .big{color:var(--ink)}
+.hero .u span{color:var(--accent);font-weight:700}
+.kpi .big{color:var(--ink)}
+.chip{background:var(--container);border-color:var(--line)}
+.chip[aria-current="true"],.chip[aria-selected="true"]{box-shadow:0 0 0 1px var(--accent),0 0 16px rgba(126,200,234,.3)}
+/* glass solo: barra flotante y hoja móvil; respaldo sólido primero */
+.controls{background:var(--container);border:1px solid var(--line)}
+.sheet{background:var(--container);border-top:1px solid var(--outline)}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+ .controls{background:rgba(20,27,27,.62);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);border-color:rgba(255,255,255,.14)}
+ .sheet{background:rgba(20,27,27,.78);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+}
+.cuba path.sel{stroke:#fff;stroke-width:2.5}
+.tile[data-state=have]{box-shadow:0 0 12px rgba(126,200,234,.28)}
+.track i{border-color:var(--surface)}
+.ptable tr[aria-current] th,.ptable tr[aria-current] td{background:var(--accent-wash)}
+.spark path{filter:none}
+.eyebrow{color:var(--accent)}
+@media (min-width:900px){.sheet{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none;border-top:0;border-left:1px solid var(--line)}}
+@media (prefers-color-scheme:light){
+ :root{--map-stroke:rgba(25,28,28,.5);--glow:linear-gradient(135deg,rgba(5,102,141,.55),rgba(5,102,141,.08) 40%,rgba(5,102,141,.25))}
+ .stage{background:radial-gradient(60% 70% at 50% 45%,rgba(5,102,141,.08),transparent 70%),var(--bg)}
+ .hero{box-shadow:0 0 40px rgba(5,102,141,.12)}
+ .cuba path.sel{stroke:#191c1c}
+ .chip{background:var(--surface)}
+ @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .controls{background:rgba(255,255,255,.7);border-color:rgba(5,32,48,.15)}
+  .sheet{background:rgba(255,255,255,.82)}
+ }
+ .controls{background:var(--surface)}
+ .sheet{background:var(--surface)}
+ @media (min-width:900px){.sheet{background:var(--surface)}}
+}
+</style>
+</head>
+<body>
+<details class="dir-tag"><summary><b>Dirección B · Oscuro + bordes con brillo + bento</b>&nbsp;· prototipo, datos de ejemplo (toca para ver la mezcla)</summary><div class="pop"><ul><li>Mezcla: oscuro por defecto con bordes de brillo sutil (gradiente de 1 px solo en el borde, nunca en el texto) al estilo Linear/Vercel, sobre una grilla bento.</li><li>Por qué: el mapa de precios en azul gana presencia sobre fondo oscuro y el brillo marca jerarquía sin sombras pesadas; encaja con el tema oscuro ya tokenizado.</li><li>Glass solo en la barra flotante sobre el mapa y en la hoja inferior móvil, con fondo sólido de respaldo si no hay backdrop-filter.</li></ul></div></details>
+<header class="topbar">
+ <a class="brand" href="#precios"><i aria-hidden="true"></i>Guani</a>
+ <nav class="tabs" aria-label="Vistas"><a href="#precios">Mapa</a><a href="#tablero">Tablero</a></nav>
+</header>
+<main>
+<section class="screen" id="precios" aria-label="Pantalla 1: precios por provincia">
+ <div class="map-screen">
+  <input type="checkbox" id="sheet-x" class="sr" aria-label="Ampliar el panel">
+  <div class="stage">
+   <div class="controls glass" role="group" aria-label="Controles del mapa">
+    <a class="chip" href="#precios" aria-current="true">Huevos</a><a class="chip" href="#precios">Pollo</a><a class="chip" href="#precios">Arroz</a><span class="chip period">30 días</span>
+   </div>
+   <div class="map-wrap"><svg class="cuba" viewBox="0 0 1000 352" role="img" aria-label="Mapa de Cuba por provincia, coloreado por el precio mediano de los huevos (datos de ejemplo)"><path d="M190.2,35.4L192.7,30.8L211.3,30.6L223.8,28.7L227.2,26.8L229.1,28.1L232.0,27.2L233.1,29.3L230.4,32.2L235.5,34.7L236.5,38.1L234.5,53.3L238.2,59.7L240.6,61.1L240.5,64.4L218.6,65.2L207.0,62.7L204.2,65.3L203.3,70.9L201.1,72.1L194.2,60.5L187.2,52.8L190.7,52.0L192.8,49.6L190.2,41.9L190.2,35.4ZM229.4,70.6L230.0,74.1L228.6,77.1L228.1,69.2L229.4,70.6Z" style="fill:color-mix(in srgb,var(--price-high) 26%,var(--price-low))"><title>Artemisa · 3.420 CUP</title></path><path d="M609.8,273.1L610.5,275.0L609.3,276.7L598.0,268.4L600.7,267.7L605.2,272.4L606.7,273.1L607.8,271.3L609.8,273.1ZM600.4,256.4L593.6,259.8L590.5,258.5L596.1,255.8L600.4,256.4ZM673.4,126.5L674.3,128.9L672.1,134.6L673.4,137.1L669.0,139.1L669.4,137.3L667.9,136.8L667.1,140.5L662.7,135.1L659.5,135.3L656.3,133.4L656.8,128.7L654.0,127.7L654.0,131.1L653.4,129.1L651.9,130.5L649.1,130.3L644.9,124.6L644.7,121.7L651.8,124.4L657.6,122.0L661.3,125.1L664.0,123.7L669.0,126.5L671.8,124.9L673.4,126.5ZM654.0,106.3L654.7,105.0L651.0,101.6L653.2,101.2L655.2,102.8L657.8,109.4L662.2,114.3L660.0,114.4L654.0,106.3ZM640.4,117.4L636.0,112.3L639.4,108.9L639.8,103.8L638.5,101.0L642.4,102.5L641.3,108.6L645.4,109.0L648.5,111.7L647.3,111.0L649.0,109.0L650.6,110.8L652.2,109.6L652.9,111.3L649.0,113.0L656.0,116.3L652.6,122.1L649.7,121.7L648.1,117.8L644.6,117.9L645.4,120.3L640.4,117.4ZM622.2,99.6L624.2,98.4L621.5,95.8L618.5,98.9L617.9,96.6L619.2,94.5L615.6,91.7L613.5,93.0L611.7,92.2L612.9,90.7L624.7,89.2L631.9,94.2L634.0,101.4L636.0,103.6L639.1,104.2L637.6,105.8L622.2,99.6ZM632.7,123.7L635.1,124.2L640.7,133.8L647.8,140.2L650.3,144.5L651.9,143.4L652.9,135.1L657.8,135.1L653.4,137.5L653.9,140.5L656.3,143.5L660.3,144.5L662.7,150.9L670.6,153.2L677.8,152.5L683.4,155.8L684.1,153.8L686.5,153.2L688.0,154.7L689.0,154.6L688.4,153.2L689.7,153.6L692.7,156.6L689.9,156.1L689.6,157.8L692.0,165.2L698.7,167.3L700.5,166.0L699.9,164.3L695.7,160.7L694.1,155.6L690.9,153.5L690.3,151.1L687.8,151.2L686.5,149.8L685.2,151.0L677.1,142.6L675.2,143.1L679.1,138.5L683.7,141.4L684.9,145.2L694.6,152.3L701.1,154.6L714.7,164.6L718.9,164.6L718.2,166.4L720.2,169.3L719.9,171.3L717.1,175.3L714.3,172.7L706.9,169.5L704.4,170.6L700.8,168.6L698.0,169.7L702.7,173.3L707.9,174.1L707.7,177.3L705.9,178.9L707.6,183.0L712.2,183.0L711.4,184.7L716.4,182.6L720.6,171.5L723.1,170.3L736.1,184.8L730.0,188.9L722.0,188.8L719.1,196.4L720.4,198.9L724.6,199.3L719.3,204.5L719.2,212.6L714.1,219.9L708.5,221.9L704.6,230.0L700.8,228.6L698.7,231.5L697.5,229.8L698.0,227.6L693.7,226.8L691.3,222.1L688.5,224.3L687.5,229.2L683.2,229.5L682.7,231.3L678.6,232.5L677.7,235.6L672.2,233.0L671.2,239.6L661.4,241.7L656.7,248.4L655.5,256.4L649.3,256.2L645.4,259.1L636.4,258.5L635.4,256.4L634.2,257.8L631.2,254.2L627.0,252.2L622.8,246.4L620.9,245.3L618.5,245.9L615.4,239.2L609.0,234.5L603.4,233.7L601.0,229.6L595.7,225.8L594.2,215.2L591.2,206.9L591.7,204.1L593.6,205.2L594.8,203.2L590.5,200.5L586.2,184.4L581.7,177.4L594.9,169.4L598.3,170.3L601.1,164.1L608.1,163.9L607.3,162.0L610.6,158.2L609.8,152.8L612.9,149.6L614.3,149.4L618.2,155.0L623.5,154.3L623.1,151.6L625.9,149.6L617.2,139.0L618.3,136.2L624.5,134.7L633.0,128.5L632.7,123.7Z" style="fill:color-mix(in srgb,var(--price-high) 0%,var(--price-low))" class=sel><title>Camagüey · 3.100 CUP</title></path><path d="M564.9,253.7L566.7,253.3L571.8,256.4L570.2,257.7L564.9,253.7ZM555.9,248.4L560.4,248.2L563.1,251.7L554.5,249.8L552.4,247.7L555.3,245.3L555.9,248.4ZM546.8,240.6L551.8,241.9L550.2,245.3L541.9,239.6L546.8,240.6ZM542.4,237.6L540.6,237.6L541.2,239.6L538.6,238.3L533.7,233.0L535.3,232.9L538.7,236.3L535.5,231.8L531.2,229.6L531.9,231.6L530.9,231.3L528.7,229.0L532.6,228.8L542.4,237.6ZM513.8,217.5L516.6,217.1L522.5,222.2L516.9,221.5L519.4,221.5L519.0,220.5L513.8,217.5ZM601.4,86.5L597.1,87.6L590.9,86.9L582.0,83.7L580.4,82.6L581.8,81.5L580.4,79.9L577.0,82.1L576.8,78.8L578.0,79.5L579.1,77.3L588.0,79.9L595.5,80.1L602.0,76.8L606.2,77.6L614.5,87.0L614.5,88.9L612.3,88.2L601.0,90.8L603.6,87.3L602.6,85.9L601.4,86.5ZM555.8,92.8L569.0,93.6L571.2,100.2L572.4,99.6L573.3,100.8L575.5,97.0L573.0,93.6L575.7,93.9L578.6,96.9L588.6,100.4L596.1,106.3L605.4,107.6L605.4,110.3L606.7,109.6L608.8,113.3L612.7,115.7L624.4,117.7L626.0,121.1L629.1,121.2L629.4,122.6L632.7,123.7L633.0,128.5L624.5,134.7L618.3,136.2L617.2,139.0L625.9,149.6L623.1,151.6L623.5,154.3L618.2,155.0L614.3,149.4L612.9,149.6L609.8,152.8L610.6,158.2L607.3,162.0L608.1,163.9L601.1,164.1L598.3,170.3L594.9,169.4L581.7,177.4L578.2,175.1L572.2,174.0L572.4,171.9L577.4,172.2L575.2,169.1L571.0,166.9L560.2,169.3L558.4,171.3L552.8,170.9L551.8,162.1L547.6,159.6L545.2,164.5L540.0,165.6L540.2,160.1L538.0,156.2L541.6,146.5L545.5,137.7L549.3,137.4L552.7,131.5L552.3,127.5L544.9,122.3L544.8,120.3L546.0,114.5L555.1,97.1L555.8,92.8Z" class="nodata"><title>Ciego de Ávila · en recolección</title></path><path d="M449.0,148.9L433.6,142.8L420.2,127.7L417.4,126.8L417.1,125.1L422.8,123.7L420.9,124.3L422.1,121.1L416.6,119.0L417.8,116.3L414.1,113.0L412.3,114.3L409.7,113.6L409.2,115.7L415.3,123.1L415.3,127.7L411.4,126.3L404.2,126.5L401.3,119.7L390.4,120.3L382.4,116.4L376.5,111.1L376.5,107.4L373.7,106.8L375.2,97.5L372.3,97.1L374.9,92.0L373.7,90.8L382.7,84.5L400.8,86.9L405.7,85.4L409.0,80.0L416.8,74.4L420.2,76.4L423.2,76.1L423.5,81.3L428.7,79.8L430.5,76.2L434.7,75.2L433.6,81.1L436.6,85.0L436.5,88.1L438.1,89.9L436.1,94.1L440.3,98.8L445.1,99.2L447.1,105.2L450.5,107.7L448.8,112.3L449.1,119.7L450.5,124.9L453.3,128.2L454.1,134.8L456.0,136.4L449.3,144.3L449.0,148.9Z" class="nodata"><title>Cienfuegos · en recolección</title></path><path d="M728.0,338.3L710.4,336.1L708.9,337.5L701.6,337.1L700.2,338.8L702.7,339.5L698.5,340.6L669.9,344.1L666.9,344.0L664.0,341.5L666.0,335.5L669.1,334.2L674.7,325.4L679.0,321.4L677.8,318.7L681.0,319.6L683.6,318.1L685.9,314.7L694.6,308.0L706.9,302.6L709.6,297.9L710.8,297.9L710.8,299.6L713.3,299.3L716.4,294.3L720.8,291.3L721.1,286.6L723.6,281.9L717.5,274.8L713.3,273.4L713.3,275.1L709.3,272.3L709.2,269.5L713.3,265.1L708.3,262.6L707.6,264.4L700.5,257.3L702.8,255.9L705.2,250.9L706.4,252.3L710.0,250.7L712.7,252.4L721.6,252.7L726.9,255.1L733.8,253.7L746.0,254.7L750.9,259.8L756.4,256.7L765.0,260.6L770.2,259.2L771.2,264.9L786.1,271.0L788.0,270.5L788.2,274.0L799.1,277.1L805.8,284.6L802.1,288.8L800.0,283.3L797.9,282.3L795.4,291.1L789.8,290.9L788.5,292.5L786.7,302.1L783.9,304.8L785.0,317.1L781.4,321.4L776.8,323.7L771.4,323.2L770.9,327.0L767.1,325.9L766.3,327.1L761.2,327.4L756.6,324.7L752.7,326.2L749.3,323.6L745.4,326.5L737.9,327.0L733.5,332.3L726.8,333.3L728.0,338.3Z" class="nodata"><title>Granma · en recolección</title></path><path d="M904.5,337.4L904.5,330.1L900.6,330.1L904.9,326.0L904.7,321.4L902.8,321.7L900.7,325.3L897.7,324.9L897.3,328.0L899.2,327.4L899.7,328.9L892.3,333.5L891.9,337.1L878.3,338.8L869.1,326.4L868.5,321.3L874.1,317.2L872.3,315.3L869.3,305.1L871.1,298.5L869.5,294.1L873.3,291.4L875.0,287.5L877.3,287.8L881.7,284.5L886.6,287.8L889.4,287.0L891.2,288.6L893.8,282.4L903.0,280.0L908.7,284.9L914.1,286.9L915.1,286.1L913.1,284.4L912.8,281.9L915.9,281.2L927.8,287.6L929.1,285.4L932.8,283.9L932.2,279.3L933.8,275.9L939.0,273.0L942.8,274.5L949.0,279.9L959.1,292.6L965.6,295.3L968.3,299.3L970.2,298.0L975.8,298.6L982.6,295.9L989.6,300.6L992.0,307.3L991.2,309.5L983.6,314.1L982.6,318.1L979.8,320.7L968.3,319.4L951.3,322.7L939.2,322.3L930.1,323.7L923.3,328.9L917.9,329.7L915.1,334.9L908.9,336.4L907.8,334.9L907.1,336.7L904.5,337.4Z" class="nodata"><title>Guantánamo · en recolección</title></path><path d="M866.1,249.7L869.2,255.2L862.9,254.1L860.5,252.1L860.5,250.4L866.1,249.7ZM793.6,204.9L809.6,213.2L811.5,220.6L815.5,218.5L818.4,220.1L818.7,222.2L820.0,220.9L821.4,222.7L821.8,220.2L826.2,220.2L828.9,218.2L833.6,220.9L833.6,219.6L838.3,216.2L840.9,217.9L849.0,217.9L851.6,222.9L855.2,222.1L857.3,223.4L860.5,228.3L855.3,238.1L851.1,240.3L849.7,236.9L847.3,237.1L846.2,237.6L848.0,239.0L845.4,239.2L845.5,240.4L847.4,243.7L851.4,241.5L856.1,241.6L863.0,247.0L862.2,249.3L861.0,249.3L855.7,244.9L849.0,246.3L843.0,245.6L841.8,254.4L847.2,259.3L848.6,259.8L855.5,251.0L857.8,253.7L857.4,257.1L860.6,257.1L860.0,259.1L863.0,260.4L862.4,258.3L867.8,259.5L869.2,257.8L872.3,259.8L873.0,257.8L869.8,257.1L873.1,254.9L877.2,255.1L880.7,257.0L881.3,258.1L879.2,258.5L880.4,261.1L881.6,259.8L882.4,261.9L884.6,262.3L889.8,261.8L882.9,258.5L886.3,256.6L895.4,257.4L896.9,258.7L895.4,259.8L902.6,260.2L903.4,262.5L904.1,260.4L907.2,261.1L905.9,259.8L913.3,258.8L918.5,262.0L922.2,261.8L926.7,265.3L937.2,267.8L935.9,268.4L939.0,273.0L933.8,275.9L932.2,279.3L932.8,283.9L929.1,285.4L927.8,287.6L915.9,281.2L912.8,281.9L913.1,284.4L915.1,286.1L914.1,286.9L908.7,284.9L903.0,280.0L893.8,282.4L891.2,288.6L889.4,287.0L886.6,287.8L882.4,284.3L878.9,286.0L874.5,280.4L877.2,277.6L877.4,273.8L870.6,275.2L866.9,273.4L860.5,278.4L857.5,277.4L857.1,281.4L853.2,284.2L845.4,284.2L838.1,287.5L835.2,287.3L832.7,283.9L827.8,281.1L828.2,278.4L824.2,277.9L823.4,275.1L817.9,271.3L818.2,275.6L813.3,278.9L814.4,284.1L812.0,288.2L812.4,285.3L805.8,284.6L799.9,277.5L788.2,274.0L788.0,270.5L786.1,271.0L771.2,264.9L770.2,259.2L765.0,260.6L756.4,256.7L758.5,255.3L756.5,250.7L759.5,244.1L760.7,232.5L764.2,234.3L774.7,231.7L778.1,225.4L791.3,216.5L793.6,204.9Z" style="fill:color-mix(in srgb,var(--price-high) 29%,var(--price-low))"><title>Holguín · 3.450 CUP</title></path><path d="M333.3,160.6L322.0,169.1L316.1,170.6L317.0,168.2L319.5,168.6L322.3,165.3L325.8,165.8L329.2,161.4L332.8,159.3L333.3,160.6ZM224.5,167.3L224.6,169.7L227.0,171.3L222.1,176.6L200.1,186.1L193.7,186.8L191.8,185.5L178.0,183.7L170.4,175.8L167.7,167.9L177.7,175.6L183.0,175.9L188.3,171.0L188.9,174.6L190.5,171.6L186.3,169.0L178.5,155.2L177.4,151.3L178.3,147.1L183.5,141.8L188.9,139.1L184.8,137.9L186.1,136.8L198.0,138.3L212.1,142.2L213.9,144.9L213.2,149.0L218.6,153.9L220.7,154.3L222.3,157.5L220.1,161.2L220.1,164.6L224.5,167.3ZM277.9,166.2L278.6,168.7L269.4,173.6L265.8,173.8L276.5,168.3L277.9,166.2ZM289.6,164.7L290.9,164.9L285.1,169.4L282.3,168.1L282.0,166.8L284.8,167.9L289.6,164.7ZM217.5,136.2L222.4,138.9L216.3,138.4L215.4,136.7L217.5,136.2Z" class="nodata"><title>Isla de la Juventud · en recolección</title></path><path d="M227.2,26.8L239.1,19.6L256.2,15.0L262.5,16.5L267.1,15.6L269.2,20.3L267.7,21.1L266.1,27.4L261.5,22.8L259.0,26.2L257.0,24.8L257.8,31.2L253.4,36.7L243.8,36.3L240.8,39.1L238.7,37.3L236.5,38.1L235.5,34.7L230.7,32.6L233.1,29.3L232.0,27.2L229.1,28.1L227.2,26.8Z" style="fill:color-mix(in srgb,var(--price-high) 72%,var(--price-low))"><title>La Habana · 3.980 CUP</title></path><path d="M736.1,184.8L745.8,188.4L747.0,189.3L746.4,190.7L748.2,190.7L747.0,193.7L740.5,195.7L741.4,199.5L746.0,197.0L745.8,199.5L746.6,198.8L748.8,191.4L761.0,194.8L764.2,198.1L756.9,201.4L757.3,200.0L755.6,199.1L755.3,201.6L766.3,205.4L763.7,203.7L762.6,200.8L766.0,200.0L771.3,203.5L772.5,201.4L771.2,206.6L766.3,207.5L768.2,207.5L766.9,208.2L767.7,209.4L770.7,208.8L773.2,211.5L780.6,207.5L774.0,204.9L774.3,202.0L776.0,201.4L786.8,201.8L793.6,204.9L791.3,216.5L778.1,225.4L774.7,231.7L764.2,234.3L760.7,232.5L759.5,244.1L756.6,249.4L758.2,255.8L750.9,259.8L746.0,254.7L733.8,253.7L726.9,255.1L721.6,252.7L712.7,252.4L709.4,250.7L706.7,252.3L705.2,250.9L702.8,255.9L700.5,257.3L686.2,261.1L679.0,259.1L674.7,261.1L672.0,259.6L660.3,258.8L655.5,256.4L656.7,248.4L661.4,241.7L671.2,239.6L672.2,233.0L677.7,235.6L678.6,232.5L682.7,231.3L683.2,229.5L687.5,229.2L688.5,224.3L691.3,222.1L693.7,226.8L698.0,227.6L697.5,229.8L698.7,231.5L700.8,228.6L704.6,230.0L708.5,221.9L714.1,219.9L719.2,212.6L719.3,204.5L724.6,199.3L720.4,198.9L719.1,196.4L722.0,188.8L730.0,188.9L736.1,184.8Z" class="nodata"><title>Las Tunas · en recolección</title></path><path d="M382.8,16.5L384.9,19.0L382.6,20.7L376.5,20.1L369.7,23.1L376.3,18.4L381.6,18.5L380.4,16.5L382.8,17.8L382.8,16.5ZM413.4,15.1L415.3,15.5L413.1,17.5L405.3,16.5L407.2,13.9L413.4,15.1ZM304.9,18.6L314.3,18.5L318.4,21.3L316.9,28.7L319.0,29.4L321.4,28.6L323.4,24.2L342.5,19.3L353.6,13.2L355.3,13.9L354.0,15.0L347.3,17.1L341.1,21.8L345.1,22.9L350.3,28.9L355.4,30.6L360.1,23.8L368.3,23.6L369.2,27.7L370.9,28.2L389.1,24.5L397.8,25.2L401.4,22.9L401.9,21.1L400.2,19.2L404.7,19.2L401.5,25.2L404.2,27.3L402.2,30.3L401.9,35.2L399.9,36.8L392.1,36.8L391.8,43.8L390.1,45.7L397.4,53.9L403.1,51.5L404.9,52.2L408.1,59.3L406.0,61.8L407.4,64.2L407.0,70.4L410.9,78.8L405.7,85.4L401.4,86.8L382.0,84.6L373.7,90.8L374.9,92.0L372.3,97.1L375.2,97.5L374.1,107.4L376.5,107.4L376.5,111.1L382.4,116.4L390.4,120.3L394.0,119.3L401.9,119.9L404.2,126.5L367.9,126.5L359.1,123.4L354.2,115.0L354.8,109.3L352.0,105.3L349.5,104.2L347.9,105.6L349.2,122.8L348.5,125.9L346.6,125.7L347.9,123.6L347.6,120.5L345.4,117.0L342.3,118.3L341.7,121.7L338.6,121.1L336.4,123.1L333.1,121.6L331.1,115.1L319.5,111.7L315.2,114.3L309.0,111.0L306.5,112.4L300.6,111.7L299.7,113.2L298.0,113.0L298.7,114.3L293.4,113.8L287.1,106.3L268.1,98.3L266.6,95.6L262.1,94.6L261.8,91.4L265.4,89.5L290.6,89.6L305.0,86.4L307.9,84.1L308.0,75.5L312.0,69.9L312.7,62.8L307.8,59.4L308.3,53.9L303.9,48.6L305.2,40.8L299.2,35.3L303.5,30.6L302.2,28.8L303.0,27.4L305.2,27.7L303.9,20.6L304.9,18.6ZM387.6,13.8L393.3,14.4L390.7,16.0L379.8,12.4L387.6,13.8ZM378.2,9.5L378.2,11.3L372.4,8.8L375.1,8.0L378.2,9.5Z" style="fill:color-mix(in srgb,var(--price-high) 49%,var(--price-low))"><title>Matanzas · 3.700 CUP</title></path><path d="M267.1,15.6L273.2,14.4L277.5,17.2L288.7,19.2L304.9,18.6L303.9,20.6L305.2,27.7L303.0,27.4L302.2,28.8L303.5,30.6L299.2,35.3L305.2,40.8L303.9,48.6L308.3,53.9L307.8,59.4L312.7,62.8L312.0,69.9L308.0,75.5L306.0,75.3L298.6,69.4L287.3,65.3L267.2,67.7L258.1,64.7L240.5,64.4L240.6,61.1L238.2,59.7L234.5,53.3L236.5,38.1L238.7,37.3L240.8,39.1L243.8,36.3L253.4,36.7L257.8,31.2L256.9,24.9L259.0,26.2L261.2,23.0L266.1,27.4L267.7,21.1L269.2,20.3L267.1,15.6Z" style="fill:color-mix(in srgb,var(--price-high) 41%,var(--price-low))"><title>Mayabeque · 3.600 CUP</title></path><path d="M201.1,72.1L192.3,78.1L179.8,83.9L170.0,98.6L161.5,98.3L161.4,100.3L159.2,100.2L159.0,102.2L154.6,105.6L153.0,109.7L151.0,111.5L148.9,110.3L147.4,113.6L138.1,113.4L134.1,111.7L134.6,109.9L132.8,107.6L129.3,112.6L124.1,115.0L124.7,113.6L114.1,115.0L113.5,113.0L110.1,115.0L101.0,115.0L97.2,118.7L96.7,125.7L95.6,124.9L94.0,126.1L94.8,129.0L97.9,128.3L97.4,130.5L94.3,132.8L94.4,137.5L91.5,139.6L83.2,137.1L76.1,140.5L72.3,140.5L66.4,143.1L51.8,154.2L47.9,154.6L46.8,152.6L51.1,141.1L49.0,138.2L45.4,137.6L34.1,140.4L21.4,148.2L17.8,149.1L10.0,147.8L8.0,145.4L9.5,140.1L14.3,142.5L17.0,140.7L15.5,138.4L17.1,137.6L19.3,138.5L19.3,140.5L41.1,131.0L46.8,127.1L49.1,127.1L52.1,129.6L58.9,127.1L64.1,131.3L67.9,129.7L69.2,124.3L66.1,128.2L64.1,122.6L62.3,121.7L63.6,119.0L58.4,117.2L55.1,112.0L53.6,111.7L56.4,107.6L58.6,97.3L67.9,86.2L66.1,85.5L73.2,82.5L75.5,78.8L74.8,74.7L76.7,75.5L79.2,74.3L81.0,76.1L82.3,71.5L86.1,70.4L87.1,66.6L90.4,67.4L92.3,65.4L87.9,63.5L89.8,61.5L95.6,64.6L102.3,60.1L103.5,61.3L105.8,58.3L111.2,57.8L120.7,53.5L125.9,53.8L127.9,52.7L125.9,52.0L127.9,50.8L134.4,50.0L136.5,46.0L140.3,46.0L139.7,47.3L141.4,47.6L145.4,43.4L149.4,46.0L155.2,38.8L164.6,33.8L169.0,35.3L168.0,39.1L169.8,40.8L172.1,38.6L170.5,37.2L171.9,34.8L180.2,31.9L183.3,33.2L185.0,32.1L186.4,33.6L184.9,34.0L184.9,35.6L187.0,34.6L186.8,36.5L188.4,36.6L190.2,35.4L190.2,41.9L192.9,48.7L190.7,52.0L187.2,52.8L194.2,60.5L201.1,72.1Z" style="fill:color-mix(in srgb,var(--price-high) 20%,var(--price-low))"><title>Pinar del Río · 3.350 CUP</title></path><path d="M550.6,69.4L548.7,67.5L541.2,66.1L551.3,66.4L552.7,68.3L550.6,69.4ZM511.2,85.6L518.0,91.4L523.1,92.2L527.4,95.0L529.1,93.8L535.6,94.8L538.2,93.0L541.5,94.2L548.7,92.2L555.8,92.8L555.1,97.1L546.0,114.5L544.8,120.3L544.9,122.3L552.3,127.5L552.7,131.5L549.3,137.4L545.5,137.7L538.0,156.2L540.2,160.1L540.0,165.6L545.2,164.5L547.6,159.6L551.8,162.1L552.8,170.9L542.3,172.2L533.7,175.6L526.4,175.6L519.2,173.5L516.0,171.0L506.2,170.7L502.3,166.1L500.0,168.7L493.3,165.9L489.8,161.9L474.9,160.0L473.3,163.3L467.7,161.2L469.5,159.8L468.1,158.9L467.7,155.2L464.5,156.9L457.0,155.8L459.0,157.8L457.9,159.1L454.6,156.5L452.0,149.7L449.0,148.9L450.2,143.2L456.0,137.8L463.3,134.5L465.0,131.3L477.2,133.5L479.4,131.6L483.3,122.6L480.9,121.5L478.8,117.2L478.2,114.5L479.4,112.9L482.4,113.0L486.1,116.2L490.1,114.8L499.8,117.0L502.9,115.7L505.4,110.3L508.1,108.1L510.8,107.4L516.3,109.2L517.0,102.7L509.5,91.0L511.2,85.6Z" class="nodata"><title>Sancti Spíritus · en recolección</title></path><path d="M878.3,338.8L872.7,337.5L868.6,339.2L858.1,337.9L847.4,331.5L831.8,330.1L823.9,332.0L803.7,328.1L774.4,332.8L762.8,332.1L749.2,334.1L743.3,333.4L734.9,338.0L728.0,338.3L726.8,333.3L733.5,332.3L737.4,327.2L745.4,326.5L749.3,323.6L752.7,326.2L756.6,324.7L762.5,327.4L767.1,325.9L771.6,326.8L771.4,323.2L776.1,323.8L780.0,322.4L785.0,317.1L783.9,304.8L786.7,302.1L789.1,291.5L795.4,291.1L797.9,282.3L800.0,283.3L801.4,288.9L805.8,284.6L812.4,285.3L812.0,288.2L814.4,284.1L813.3,278.9L818.2,275.6L817.9,271.3L823.4,275.1L824.2,277.9L828.2,278.4L827.5,280.7L832.7,283.9L833.7,286.4L838.1,287.5L845.4,284.2L853.2,284.2L857.1,281.4L857.5,277.4L860.5,278.4L866.5,273.5L870.6,275.2L877.4,273.8L877.2,277.6L874.5,280.4L878.9,286.0L877.3,287.8L875.0,287.5L873.3,291.4L869.5,294.1L871.1,298.5L869.3,305.1L872.3,315.3L874.1,317.2L868.5,321.3L869.1,326.4L878.3,338.8Z" style="fill:color-mix(in srgb,var(--price-high) 100%,var(--price-low))"><title>Santiago de Cuba · 4.320 CUP</title></path><path d="M516.6,69.4L509.3,63.5L506.0,63.9L501.8,61.3L497.1,54.7L491.5,55.1L491.3,53.3L497.3,53.1L504.0,60.1L515.3,65.6L519.4,71.5L516.6,69.4ZM467.7,38.0L467.4,40.2L465.4,38.9L462.7,41.0L462.0,38.6L464.8,37.3L467.7,38.0ZM429.0,35.3L435.4,32.9L437.1,34.0L435.3,35.3L437.1,38.0L427.9,36.4L426.5,35.3L429.0,35.3ZM440.2,21.8L443.0,24.9L446.2,25.5L443.4,27.4L437.7,25.2L440.2,21.8ZM404.2,27.3L409.4,34.6L415.9,35.9L418.9,38.9L425.7,39.3L432.7,42.6L443.9,40.0L443.3,37.6L444.8,37.6L451.8,40.6L453.6,40.3L453.9,38.0L456.7,40.0L459.3,45.3L465.7,48.7L470.6,45.3L477.0,44.0L474.4,46.6L471.3,46.4L470.2,50.0L472.6,52.7L478.9,53.9L484.9,58.5L489.8,57.6L492.1,67.5L496.6,70.4L502.6,79.5L507.6,80.1L511.2,85.6L509.5,91.0L517.0,102.7L516.3,109.2L510.8,107.4L508.1,108.1L505.4,110.3L502.9,115.7L499.8,117.0L490.1,114.8L486.1,116.2L482.4,113.0L479.4,112.9L478.2,114.5L480.9,121.5L483.3,122.6L479.4,131.6L477.2,133.5L465.9,130.9L463.3,134.5L456.0,137.8L453.7,134.0L453.3,128.2L450.5,124.9L449.1,119.7L448.8,112.3L450.5,107.7L447.1,105.2L445.1,99.2L440.3,98.8L436.1,94.1L438.1,89.9L436.5,88.1L436.6,85.0L433.6,81.1L434.7,75.2L430.5,76.2L429.0,79.6L424.0,81.3L422.9,80.7L423.2,76.1L420.2,76.4L417.5,74.4L410.9,78.8L407.0,70.4L407.4,64.2L406.0,61.8L408.1,59.3L404.9,52.2L403.1,51.5L397.4,53.9L390.1,45.7L391.8,43.8L392.1,36.8L400.8,36.5L404.2,27.3ZM487.3,47.7L489.0,49.1L486.8,50.2L481.8,46.1L482.9,43.4L483.8,45.7L487.3,47.7ZM474.0,37.4L474.8,39.1L472.5,40.6L473.9,41.9L472.1,42.7L470.5,41.2L471.5,39.7L469.9,39.1L470.8,37.6L474.0,37.4ZM435.9,23.5L435.4,25.7L430.3,20.8L433.4,20.3L435.9,23.5Z" style="fill:color-mix(in srgb,var(--price-high) 12%,var(--price-low))"><title>Villa Clara · 3.250 CUP</title></path></svg></div>
+   <div class="legend" aria-label="Escala de precio">
+    <span class="lg-lab">3.100</span><span class="lg-bar" aria-hidden="true"></span><span class="lg-lab">4.320</span>
+    <span class="lg-note">CUP por cartón · <i class="nd"></i> en recolección</span>
+   </div>
+   <p class="sample">Datos de ejemplo</p>
+  </div>
+  <aside class="sheet" aria-label="Precios por provincia">
+   <label for="sheet-x" class="grab" aria-label="Ampliar o reducir el panel"><span></span></label>
+   <header class="sheet-head">
+    <div><h2 class="h-serif">Precios por provincia</h2><p class="muted">últimos 30 días · mediana</p></div>
+    <p class="range">de <b>3.100</b> a <b>4.320</b><span>412 anuncios · 9 provincias</span></p>
+   </header>
+   <div class="ptabs" role="tablist"><a class="chip sm" role="tab" aria-selected="true" href="#precios">Huevos</a><a class="chip sm" role="tab" aria-selected="false" href="#precios">Pollo</a><a class="chip sm" role="tab" aria-selected="false" href="#precios">Arroz</a></div>
+   <p class="muted unit">CUP por cartón de 30 · mediana de cada semana</p>
+   <table class="ptable"><thead><tr><th scope="col">Provincia</th><th scope="col" class="num">Mediana</th><th scope="col" class="num">Cambio</th><th scope="col" class="spk">Tendencia</th><th scope="col" class="num n">Anuncios</th></tr></thead><tbody><tr><th scope="row">Santiago de Cuba</th><td class="num">4.320</td><td class="num chg">▲ 2 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,23.0L20.7,17.1L38.3,19.5L56.0,11.2L73.7,8.9L91.3,5.4L109.0,3.0"/><circle cx="109.0" cy="3.0" r="2.6"/></svg></td><td class="num n">80</td></tr><tr><th scope="row">La Habana</th><td class="num">3.980</td><td class="num chg">▲ 4 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,23.0L20.7,18.7L38.3,14.4L56.0,15.9L73.7,8.7L91.3,5.9L109.0,3.0"/><circle cx="109.0" cy="3.0" r="2.6"/></svg></td><td class="num n">96</td></tr><tr><th scope="row">Matanzas</th><td class="num">3.700</td><td class="num chg">▲ 3 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,23.0L20.7,16.3L38.3,19.0L56.0,11.0L73.7,8.3L91.3,4.3L109.0,3.0"/><circle cx="109.0" cy="3.0" r="2.6"/></svg></td><td class="num n">38</td></tr><tr><th scope="row">Mayabeque</th><td class="num">3.600</td><td class="num chg">= 0 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,16.3L20.7,3.0L38.3,9.7L56.0,23.0L73.7,3.0L91.3,9.7L109.0,9.7"/><circle cx="109.0" cy="9.7" r="2.6"/></svg></td><td class="num n">19</td></tr><tr><th scope="row">Holguín</th><td class="num">3.450</td><td class="num chg">▲ 2 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,23.0L20.7,17.0L38.3,15.0L56.0,13.0L73.7,9.0L91.3,7.0L109.0,3.0"/><circle cx="109.0" cy="3.0" r="2.6"/></svg></td><td class="num n">47</td></tr><tr><th scope="row">Artemisa</th><td class="num">3.420</td><td class="num chg">▲ 1 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,16.3L20.7,23.0L38.3,9.7L56.0,13.0L73.7,6.3L91.3,9.7L109.0,3.0"/><circle cx="109.0" cy="3.0" r="2.6"/></svg></td><td class="num n">24</td></tr><tr><th scope="row">Pinar del Río</th><td class="num">3.350</td><td class="num chg">▲ 2 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,23.0L20.7,16.3L38.3,19.0L56.0,9.7L73.7,11.0L91.3,4.3L109.0,3.0"/><circle cx="109.0" cy="3.0" r="2.6"/></svg></td><td class="num n">31</td></tr><tr><th scope="row">Villa Clara</th><td class="num">3.250</td><td class="num chg">▼ 2 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,3.0L20.7,8.0L38.3,10.5L56.0,13.0L73.7,18.0L91.3,20.5L109.0,23.0"/><circle cx="109.0" cy="23.0" r="2.6"/></svg></td><td class="num n">42</td></tr><tr aria-current="true"><th scope="row">Camagüey</th><td class="num">3.100</td><td class="num chg">▼ 1 %</td><td class="spk"><svg class="spark" viewBox="0 0 112 26" aria-hidden="true" focusable="false"><path d="M3.0,3.0L20.7,7.0L38.3,11.0L56.0,15.0L73.7,19.0L91.3,15.0L109.0,23.0"/><circle cx="109.0" cy="23.0" r="2.6"/></svg></td><td class="num n">35</td></tr></tbody></table>
+   <p class="muted pend">En recolección: Ciego de Ávila, Cienfuegos, Granma, Guantánamo, Isla de la Juventud, Las Tunas, Sancti Spíritus.</p>
+  </aside>
+ </div>
+</section>
+<section class="screen" id="tablero" aria-label="Pantalla 2: tablero">
+ <div class="dash">
+  <div class="intro card">
+   <span class="eyebrow">TABLERO</span>
+   <h1 class="h-serif">Qué cuesta hoy</h1>
+   <p class="muted">Mediana de los últimos 30 días, sobre 412 anuncios revisados a mano y por el sistema. <a href="#tablero">Cómo se calcula</a></p>
+   <p class="sample inline">Datos de ejemplo</p>
+   <div class="fresh"><span aria-hidden="true">ⓘ</span><span>Datos verificados hasta el <b>12/10</b> · hace 1 día</span></div>
+   <div class="ctl-row"><span class="lab">¿En qué provincia estás?</span><div class="chips"><a class="chip" href="#tablero" aria-current="true">Todas</a><a class="chip" href="#tablero">La Habana</a><a class="chip" href="#tablero">Santiago</a><a class="chip" href="#tablero">Camagüey</a></div></div>
+   <div class="ctl-row"><span class="lab">Período</span><div class="chips"><a class="chip" href="#tablero">7 días</a><a class="chip" href="#tablero" aria-current="true">30 días</a><a class="chip" href="#tablero">90 días</a></div></div>
+  </div>
+  <div class="bento">
+   <article class="card hero b-hero" aria-label="Huevos">
+    <p class="k">Huevos · mediana nacional</p>
+    <p class="big h-serif">3.640</p>
+    <p class="u">CUP por cartón de 30 · <span>▲ 3 % vs los 30 días anteriores</span></p>
+    <svg class="spark" viewBox="0 0 240 56" aria-hidden="true" focusable="false"><path d="M4.0,52.0L42.7,41.7L81.3,31.4L120.0,34.9L158.7,17.7L197.3,10.9L236.0,4.0"/><circle cx="236.0" cy="4.0" r="2.6"/></svg>
+   </article>
+   <article class="card kpi b-k1"><p class="big h-serif">412</p><p class="k">anuncios en 30 días</p></article>
+   <article class="card kpi alt b-k2"><p class="big h-serif">9<small> de 16</small></p><p class="k">provincias con datos</p></article>
+   <article class="card b-range">
+    <h2 class="h-serif h-sm">Huevos: de más barato a más caro</h2>
+    <div class="track" aria-hidden="true"><i style="left:0"></i><i class="mid" style="left:44%"></i><i style="left:100%"></i></div>
+    <div class="track-lab"><span><b>Camagüey</b> 3.100</span><span class="mid">mediana 3.640</span><span><b>Santiago</b> 4.320</span></div>
+   </article>
+   <section class="card b-list" aria-labelledby="lt">
+    <h2 class="h-serif h-sm" id="lt">Productos</h2>
+    <p class="muted">Mediana de 30 días · cambio contra el período anterior</p>
+    <div class="rows"><a class="row" href="#tablero"><span class="name">Huevos<small>CUP/cartón de 30</small></span><span class="cell"><em>La Habana</em><b>3.980</b><small>▲ 4 %</small></span><span class="cell"><em>Santiago</em><b>4.320</b><small>▲ 2 %</small></span><span class="cell"><em>Camagüey</em><b>3.100</b><small>▼ 1 %</small></span></a><a class="row" href="#tablero"><span class="name">Pollo<small>CUP/lb</small></span><span class="cell"><em>La Habana</em><b>780</b><small>▲ 6 %</small></span><span class="cell"><em>Santiago</em><b>830</b><small>▲ 3 %</small></span><span class="cell"><em>Camagüey</em><b>690</b><small>= 0 %</small></span></a><a class="row" href="#tablero"><span class="name">Arroz<small>CUP/lb</small></span><span class="cell"><em>La Habana</em><b>240</b><small>▼ 2 %</small></span><span class="cell"><em>Santiago</em><b>260</b><small>▲ 1 %</small></span><span class="cell"><em>Camagüey</em><b>225</b><small>▲ 1 %</small></span></a><a class="row" href="#tablero"><span class="name">Aceite<small>USD/litro</small></span><span class="cell"><em>La Habana</em><b>2,6</b><small>= 0 %</small></span><span class="cell"><em>Santiago</em><b>2,8</b><small>▲ 4 %</small></span><span class="cell"><em>Camagüey</em><b>2,5</b><small>▼ 3 %</small></span></a><a class="row" href="#tablero"><span class="name">Leche en polvo<small>CUP/kg</small></span><span class="cell"><em>La Habana</em><b>1.900</b><small>▲ 5 %</small></span><span class="cell"><em>Santiago</em><b>2.050</b><small>= 0 %</small></span><span class="cell"><em>Camagüey</em><b>1.750</b><small>▲ 2 %</small></span></a></div>
+   </section>
+   <section class="card b-cov" aria-labelledby="ct">
+    <h2 class="h-serif h-sm" id="ct">Cobertura</h2>
+    <p class="muted">Cada casilla es una provincia: llena si ya tiene datos, punteada si sigue en recolección.</p>
+    <ol class="mosaic"><li class="tile" data-state="have" style="grid-column:1;grid-row:1" title="Pinar del Río"><span aria-hidden="true">PRI</span><span class="sr">Pinar del Río</span></li><li class="tile" data-state="have" style="grid-column:2;grid-row:1" title="Artemisa"><span aria-hidden="true">ART</span><span class="sr">Artemisa</span></li><li class="tile" data-state="have" style="grid-column:3;grid-row:1" title="La Habana"><span aria-hidden="true">HAB</span><span class="sr">La Habana</span></li><li class="tile" data-state="have" style="grid-column:4;grid-row:1" title="Mayabeque"><span aria-hidden="true">MAY</span><span class="sr">Mayabeque</span></li><li class="tile" data-state="have" style="grid-column:5;grid-row:1" title="Matanzas"><span aria-hidden="true">MTZ</span><span class="sr">Matanzas</span></li><li class="tile" data-state="have" style="grid-column:6;grid-row:1" title="Villa Clara"><span aria-hidden="true">VCL</span><span class="sr">Villa Clara</span></li><li class="tile" data-state="none" style="grid-column:7;grid-row:1" title="Cienfuegos"><span aria-hidden="true">CFG</span><span class="sr">Cienfuegos, en recolección</span></li><li class="tile" data-state="none" style="grid-column:8;grid-row:1" title="Sancti Spíritus"><span aria-hidden="true">SSP</span><span class="sr">Sancti Spíritus, en recolección</span></li><li class="tile" data-state="none" style="grid-column:1;grid-row:2" title="Isla de la Juventud"><span aria-hidden="true">IJV</span><span class="sr">Isla de la Juventud, en recolección</span></li><li class="tile" data-state="none" style="grid-column:4;grid-row:2" title="Ciego de Ávila"><span aria-hidden="true">CAV</span><span class="sr">Ciego de Ávila, en recolección</span></li><li class="tile" data-state="have" style="grid-column:5;grid-row:2" title="Camagüey"><span aria-hidden="true">CMG</span><span class="sr">Camagüey</span></li><li class="tile" data-state="none" style="grid-column:6;grid-row:2" title="Las Tunas"><span aria-hidden="true">LTU</span><span class="sr">Las Tunas, en recolección</span></li><li class="tile" data-state="have" style="grid-column:7;grid-row:2" title="Holguín"><span aria-hidden="true">HOL</span><span class="sr">Holguín</span></li><li class="tile" data-state="none" style="grid-column:8;grid-row:2" title="Granma"><span aria-hidden="true">GRM</span><span class="sr">Granma, en recolección</span></li><li class="tile" data-state="have" style="grid-column:7;grid-row:3" title="Santiago de Cuba"><span aria-hidden="true">SCU</span><span class="sr">Santiago de Cuba</span></li><li class="tile" data-state="none" style="grid-column:8;grid-row:3" title="Guantánamo"><span aria-hidden="true">GTM</span><span class="sr">Guantánamo, en recolección</span></li></ol>
+    <a class="more" href="#precios">Ver en el mapa ›</a>
+   </section>
+   <section class="card b-data" aria-labelledby="dt">
+    <h2 class="h-serif h-sm" id="dt">Sobre los datos</h2>
+    <p class="muted">Precios de anuncios reales del mercado informal, estructurados y validados. Nada de esto es un veredicto: ubica cada precio entre lo observado. Los datos de esta página son de ejemplo.</p>
+   </section>
+  </div>
+ </div>
+</section>
+</main>
+</body>
+</html>

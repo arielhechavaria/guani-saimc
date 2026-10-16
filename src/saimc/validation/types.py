@@ -74,6 +74,13 @@ class ValidationConfig:
     #: G1b con el informe de sombra; `None` = sin tope. Solo decide el carril:
     #: no cambia el estado de ninguna fila.
     lane1_max_rows: int | None
+    #: Si el desacuerdo entre reglas y modelo (producto, precio, moneda,
+    #: provincia) deja de sacar al anuncio del carril 1: gana la lectura del
+    #: modelo. La fila conserva el motivo y su estado. Es el único parámetro con
+    #: valor por defecto: apagado, para que el informe de sombra y las demás
+    #: configuraciones sigan midiendo lo de antes. Decisión del operador del
+    #: 2026-10-13 (`docs/decisions.md`), no una medición.
+    lane1_model_over_rules: bool = False
 
 
 @dataclass(frozen=True)

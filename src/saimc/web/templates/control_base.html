@@ -1,0 +1,57 @@
+{#
+  Layout de `/control`: menú de las cinco subpáginas + el cuerpo de cada una.
+
+  `/control` era una sola página con ~20 secciones apiladas y sin índice. Ahora
+  son cinco vistas reales (`web/control_nav.py` es la fuente de cuáles son y qué
+  secciones tiene cada una) y cada parcial (`control_hoy.html`,
+  `control_ingesta.html`, ...) solo rellena `body`. El menú lleva insignias con
+  lo que pide atención, sacadas de la franja de estado que el router ya calcula.
+
+  En el teléfono el menú pasa a una barra horizontal pegada arriba del cuerpo
+  (ver `.m3-ctl-*` en `saimc-material.css`).
+#}
+{% extends "_shell.html" %}
+
+{% block title %}{{ page.heading }}{% endblock %}
+{% block heading %}{{ page.heading }}{% endblock %}
+{% block subtitle %}{{ page.description }}{% endblock %}
+
+{% block stats %}
+  <div class="m3-stat">
+    <div class="m3-stat-label">En cola</div>
+    <div class="m3-stat-value is-accent">{{ health.pending }}</div>
+  </div>
+  <div class="m3-stat">
+    <div class="m3-stat-label">Anuncios curados</div>
+    <div class="m3-stat-value">{{ curated }}</div>
+  </div>
+  <div class="m3-stat">
+    <div class="m3-stat-label">Filas de precio</div>
+    <div class="m3-stat-value">{{ rows }}</div>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="m3-ctl">
+  <nav class="m3-ctl-nav" aria-label="Vistas de Control">
+    {% for p in control_pages %}
+    {% set badge = badges.get(p.key) %}
+    <a class="m3-ctl-link{% if p.key == page.key %} is-active{% endif %}" href="{{ p.url }}"
+       {% if p.key == page.key %}aria-current="page"{% endif %}>
+      <span class="m3-icon">{{ p.icon }}</span>
+      <span class="m3-ctl-label">{{ p.title }}</span>
+      {% if badge %}<span class="m3-ctl-badge is-{{ badge.level }}" title="{{ badge.count }} para mirar">{{ badge.count }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </nav>
+
+  <div class="m3-ctl-body m3-stack-lg">
+    {% block body %}{% endblock %}
+
+    <p class="m3-sm">
+      <a href="/curation">← Volver a la cola de curaduría</a> ·
+      <a href="/curation/history">Corregir un anuncio curado →</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

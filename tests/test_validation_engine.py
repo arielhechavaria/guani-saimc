@@ -67,6 +67,10 @@ MERCADO_HABANA = ChannelContext(
 )
 
 
+# Canal del que el operador todavía no decidió nada.
+SIN_HISTORIAL = ChannelContext(province_id=HABANA.id, decisions=0, proposed_rows=0, changed_rows=0)
+
+
 def _precios(*valores: str) -> tuple[Decimal, ...]:
     return tuple(Decimal(v) for v in valores)
 
@@ -189,13 +193,42 @@ def test_caso_03_no_data_sin_piloto_va_al_carril_0() -> None:
     assert resultado.rows == ()
 
 
-def test_caso_04_descarte_con_piloto_en_el_texto_va_a_revision() -> None:
-    ctx = _ctx("Arroz importado, escribir al privado", modelo=_descarte("no_data"))
+def test_caso_04_descarte_con_piloto_y_un_numero_en_el_texto_va_a_revision() -> None:
+    # Con un número en el texto puede haber un precio: lo mira una persona.
+    ctx = _ctx("Arroz importado 450 USD, escribir al privado", modelo=_descarte("no_data"))
 
     resultado = validate_ad(ctx, CONFIG)
 
     assert resultado.lane == 2
     assert resultado.rows == ()
+
+
+def test_caso_04b_descarte_con_piloto_pero_sin_ningun_digito_va_al_carril_0() -> None:
+    # Sin un solo dígito no hay precio: que el texto nombre un producto
+    # («pollo agotado») no lo convierte en un anuncio con dato (2026-10-13).
+    ctx = _ctx("Arroz importado, escribir al privado", modelo=_descarte("no_data"))
+
+    resultado = validate_ad(ctx, CONFIG)
+
+    assert resultado.lane == 0
+    assert resultado.rows == ()
+
+
+def test_caso_04c_la_regla_sin_digitos_tambien_vale_para_off_focus_y_para_imagenes() -> None:
+    from saimc.validation import decide_lane_0
+
+    for motivo in ("off_focus", "no_data"):
+        for tipo in ("text", "image"):
+            ctx = _ctx("Pollo agotado hoy", modelo=_descarte(motivo), tipo=tipo)
+            assert decide_lane_0(ctx).lane == 0
+
+
+def test_caso_04d_un_numero_en_palabras_no_cuenta_y_un_digito_suelto_si() -> None:
+    # Se mira el dígito, no el significado: un «2» suelto (hora, cantidad) ya
+    # manda el anuncio a revisión. Es la lectura conservadora.
+    ctx = _ctx("Pollo agotado, vuelve a las 2", modelo=_descarte("no_data"))
+
+    assert validate_ad(ctx, CONFIG).lane == 2
 
 
 def test_caso_05_precio_fuera_de_la_banda_es_anomaly() -> None:
@@ -264,15 +297,14 @@ def test_caso_08_una_fila_sin_cita_verificada_manda_todo_a_revision() -> None:
     assert _estados(resultado) == ["approved", "unverified"]
 
 
-def test_caso_09_canal_sin_historial_queda_unverified() -> None:
-    sin_historial = ChannelContext(
-        province_id=HABANA.id, decisions=0, proposed_rows=0, changed_rows=0
-    )
-    ctx = _caso_1(texto="Arroz 320 CUP lb", canal=sin_historial)
+def test_caso_09_canal_sin_historial_queda_unverified_y_no_frena() -> None:
+    # B2b: «todavía no sé nada del canal» no habla del anuncio. La fila sigue
+    # sin poder salir `approved`, pero el anuncio entra al carril 1.
+    ctx = _caso_1(texto="Arroz 320 CUP lb", canal=SIN_HISTORIAL)
 
     resultado = validate_ad(ctx, CONFIG)
 
-    assert resultado.lane == 2
+    assert resultado.lane == 1
     assert _estados(resultado) == ["unverified"]
     assert resultado.rows[0].trust == Outcome.UNKNOWN
 
@@ -361,7 +393,7 @@ def test_caso_15_saco_con_base_total_va_al_carril_1() -> None:
     assert _estados(resultado) == ["approved"]
 
 
-def test_caso_16_celda_con_menos_de_min_cell_n_queda_unverified() -> None:
+def test_caso_16_celda_con_menos_de_min_cell_n_queda_unverified_y_no_frena() -> None:
     pocas = _precios("880", "910")
     ctx = _ctx(
         "Aceite 900 CUP el litro",
@@ -372,7 +404,8 @@ def test_caso_16_celda_con_menos_de_min_cell_n_queda_unverified() -> None:
 
     resultado = validate_ad(ctx, CONFIG)
 
-    assert resultado.lane == 2
+    # B2b: una celda sin referencias suficientes no frena el carril.
+    assert resultado.lane == 1
     assert _estados(resultado) == ["unverified"]
     assert resultado.rows[0].price == Outcome.UNKNOWN
     assert resultado.rows[0].quantity_price == Outcome.UNKNOWN
@@ -494,18 +527,135 @@ def test_caso_27_sin_tope_fijado_el_largo_no_frena() -> None:
     assert _estados(resultado) == ["approved", "approved"]
 
 
-def test_caso_28_duplicado_en_canal_sin_historial_va_a_revision() -> None:
-    sin_historial = ChannelContext(
-        province_id=HABANA.id, decisions=0, proposed_rows=0, changed_rows=0
-    )
-    ctx = _caso_1(texto="Arroz 320 CUP lb", canal=sin_historial, recientes=(_repetido(3),))
+def test_caso_28_duplicado_en_canal_sin_historial_va_al_carril_1() -> None:
+    # Hasta B2b lo frenaba el canal; ahora ninguna de las dos cosas frena.
+    ctx = _caso_1(texto="Arroz 320 CUP lb", canal=SIN_HISTORIAL, recientes=(_repetido(3),))
 
     resultado = validate_ad(ctx, CONFIG)
 
-    assert resultado.lane == 2
+    assert resultado.lane == 1
     assert _estados(resultado) == ["possible_duplicate"]
-    # Frena el canal, no el duplicado.
-    assert resultado.reasons == ("fila 1: el canal no tiene historial suficiente",)
+
+
+# --- B2b: qué frena el carril 1 y qué no (docs/spec-slice-B2b.md) ---------------
+
+# Los valores que fijó G1b: canal sucio con 3 decisiones y más de la mitad de
+# las filas tocadas; tope de 1 fila.
+CONFIG_B2B = ValidationConfig(
+    min_cell_n=5,
+    channel_min_history=3,
+    channel_max_edit_rate=0.5,
+    signal_high_probability=None,
+    lane1_max_rows=1,
+)
+CELDA_VACIA = CellReference(own_province=(), all_provinces=())
+
+
+def _canal(decisiones: int, propuestas: int, tocadas: int) -> ChannelContext:
+    return ChannelContext(
+        province_id=HABANA.id,
+        decisions=decisiones,
+        proposed_rows=propuestas,
+        changed_rows=tocadas,
+    )
+
+
+def test_caso_29_canal_sin_historial_y_celda_sin_referencias_va_al_carril_1() -> None:
+    ctx = _caso_1(texto="Arroz 320 CUP lb", canal=SIN_HISTORIAL, celdas=(CELDA_VACIA,))
+
+    resultado = validate_ad(ctx, CONFIG_B2B)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["unverified"]
+    # El motivo no se pierde: queda en la fila, aunque no frene.
+    assert "el canal no tiene historial suficiente" in resultado.rows[0].reasons
+    assert "no se pudo comparar el precio con su celda" in resultado.rows[0].reasons
+
+
+def test_caso_30_canal_con_tres_decisiones_y_dos_de_tres_filas_tocadas_frena() -> None:
+    resultado = validate_ad(_caso_1(canal=_canal(3, 3, 2)), CONFIG_B2B)
+
+    assert resultado.lane == 2
+    assert _estados(resultado) == ["untrusted_source"]
+    assert resultado.reasons == ("fila 1: el canal tiene un historial sucio",)
+
+
+def test_caso_31_canal_con_tres_decisiones_y_una_de_tres_filas_tocadas_entra() -> None:
+    resultado = validate_ad(_caso_1(canal=_canal(3, 3, 1)), CONFIG_B2B)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["approved"]
+
+
+def test_caso_32_canal_bajo_el_minimo_no_puede_salir_sucio() -> None:
+    # 2 decisiones y las 2 filas tocadas: no llega a las 3 para opinar.
+    resultado = validate_ad(_caso_1(canal=_canal(2, 2, 2)), CONFIG_B2B)
+
+    assert resultado.lane == 1
+    assert resultado.rows[0].trust == Outcome.UNKNOWN
+
+
+def test_caso_33_precio_fuera_de_la_banda_frena_aunque_el_canal_sea_nuevo() -> None:
+    ctx = _caso_1(
+        texto="Arroz 3200 CUP la libra, Habana",
+        modelo=_modelo(_fila(precio="3200", base="unit")),
+        reglas=(_fila(precio="3200"),),
+        canal=SIN_HISTORIAL,
+    )
+
+    resultado = validate_ad(ctx, CONFIG_B2B)
+
+    assert resultado.lane == 2
+    assert _estados(resultado) == ["anomaly"]
+
+
+def test_caso_34_desacuerdo_en_el_precio_frena_aunque_el_canal_sea_nuevo() -> None:
+    ctx = _caso_1(reglas=(_fila(precio="330"),), canal=SIN_HISTORIAL, celdas=(CELDA_VACIA,))
+
+    resultado = validate_ad(ctx, CONFIG_B2B)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("fila 1: reglas y modelo no coinciden en precio",)
+
+
+def test_caso_35_dos_filas_con_tope_uno_frena_en_canal_nuevo() -> None:
+    resultado = validate_ad(_dos_filas(canal=SIN_HISTORIAL), CONFIG_B2B)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("la propuesta trae más filas que el tope del carril 1 (1)",)
+
+
+def test_caso_36_imagen_en_canal_nuevo_no_entra_al_carril_1() -> None:
+    ctx = _caso_1(tipo="image", canal=SIN_HISTORIAL, celdas=(CELDA_VACIA,))
+
+    resultado = validate_ad(ctx, CONFIG_B2B)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("el anuncio es una imagen: las imágenes no entran al carril 1",)
+
+
+def test_caso_37_canal_sin_provincia_sigue_frenando() -> None:
+    # La regla 3 en `unknown` no es de las que dejan de frenar.
+    canal = replace(SIN_HISTORIAL, province_id=None)
+
+    resultado = validate_ad(_caso_1(canal=canal), CONFIG_B2B)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("fila 1: la provincia no se pudo contrastar con la del canal",)
+
+
+def test_caso_38_sin_canal_resuelto_frena_por_la_provincia() -> None:
+    resultado = validate_ad(_caso_1(canal=None), CONFIG_B2B)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("fila 1: la provincia no se pudo contrastar con la del canal",)
+
+
+def test_el_carril_1_dice_que_no_frena() -> None:
+    motivo = validate_ad(_caso_1(canal=SIN_HISTORIAL), CONFIG_B2B).reasons[0]
+
+    assert "canal sin historial" in motivo
+    assert "celda sin referencias" in motivo
 
 
 # --- Lo que la tabla no cubre -------------------------------------------------
@@ -629,7 +779,7 @@ def test_banda_con_celda_vacia_es_unknown() -> None:
 
     assert resultado.rows[0].price == Outcome.UNKNOWN
     assert resultado.rows[0].quantity_price == Outcome.UNKNOWN
-    assert resultado.lane == 2
+    assert resultado.lane == 1  # B2b: la celda sin referencias no frena
 
 
 def test_la_celda_se_repliega_a_todas_las_provincias() -> None:
@@ -702,12 +852,11 @@ def test_el_duplicado_de_una_fila_no_tapa_lo_que_frena_en_otra() -> None:
 
 
 def test_el_tope_de_filas_no_abre_el_carril_a_lo_que_otra_cosa_frena() -> None:
-    """Una fila, dentro del tope, en un canal sin historial: sigue en revisión."""
-    sin_historial = ChannelContext(
-        province_id=HABANA.id, decisions=0, proposed_rows=0, changed_rows=0
-    )
+    """Una fila, dentro del tope, en un canal sucio: sigue en revisión. (Hasta
+    B2b el ejemplo era un canal sin historial, que ya no frena.)"""
+    sucio = ChannelContext(province_id=HABANA.id, decisions=40, proposed_rows=50, changed_rows=30)
 
-    resultado = validate_ad(_caso_1(canal=sin_historial), replace(CONFIG, lane1_max_rows=1))
+    resultado = validate_ad(_caso_1(canal=sucio), replace(CONFIG, lane1_max_rows=1))
 
     assert resultado.lane == 2
 
@@ -888,3 +1037,41 @@ def test_validate_ad_sigue_sin_carril_0_sin_configuracion() -> None:
 
     assert validate_ad(ctx, None).lane == 2
     assert validate_ad(ctx, CONFIG).lane == 0
+
+
+# --- 2026-10-13: el modelo manda sobre las reglas en el carril 1 -------------------
+
+CONFIG_MODELO_MANDA = replace(CONFIG_B2B, lane1_max_rows=4, lane1_model_over_rules=True)
+
+
+def test_modelo_manda_desacuerdo_en_el_precio_ya_no_frena_y_la_fila_conserva_el_motivo() -> None:
+    ctx = _caso_1(reglas=(_fila(precio="330"),), canal=SIN_HISTORIAL, celdas=(CELDA_VACIA,))
+
+    resultado = validate_ad(ctx, CONFIG_MODELO_MANDA)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["unverified"]
+    assert "reglas y modelo no coinciden en precio" in resultado.rows[0].reasons
+
+
+def test_modelo_manda_no_acepta_una_cita_que_no_esta_en_el_texto() -> None:
+    ctx = _caso_1(
+        reglas=(_fila(precio="330"),),
+        modelo=_modelo(_fila(), metas=(replace(META_OK, evidence_found=False),)),
+        canal=SIN_HISTORIAL,
+        celdas=(CELDA_VACIA,),
+    )
+
+    resultado = validate_ad(ctx, CONFIG_MODELO_MANDA)
+
+    assert resultado.lane == 2
+    assert "fila 1: la cita del modelo no está verificada en el texto" in resultado.reasons
+
+
+def test_modelo_manda_sigue_frenando_el_canal_sucio() -> None:
+    ctx = _caso_1(reglas=(_fila(precio="330"),), canal=_canal(3, 3, 2))
+
+    resultado = validate_ad(ctx, CONFIG_MODELO_MANDA)
+
+    assert resultado.lane == 2
+    assert "fila 1: el canal tiene un historial sucio" in resultado.reasons

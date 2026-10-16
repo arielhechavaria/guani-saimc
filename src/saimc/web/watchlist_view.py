@@ -25,6 +25,7 @@ from saimc.cells import RetailObservation
 from saimc.units import unit_noun
 from saimc.web.price_charts import SlopeChart, SlopeLine
 from saimc.web.product_nav import product_icon, product_slug, products_query
+from saimc.web.trust_view import CellTrust, sum_trust, trust_of
 from saimc.web.weekly import Sparkline, sparkline_from_values, weekly_medians
 
 #: Lienzo de la sparkline de la celda, en unidades del `viewBox`.
@@ -51,6 +52,9 @@ class WatchCell:
     #: no pasó observaciones semanales o la celda no tiene ninguna en ese
     #: horizonte: la cifra manda, el trazo solo acompaña.
     spark: Sparkline | None = None
+    #: De qué está hecho `count` (B4): a mano / por el sistema. `None` si el
+    #: llamador no pasó observaciones.
+    trust: CellTrust | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,9 @@ class WatchRow:
     #: con qué comparar (menos de dos provincias con dato, o empate).
     barata: WatchCell | None = None
     contra: tuple[WatchCell, ...] = ()
+    #: `(provincia, desglose)` de cada celda con dato, en el orden de
+    #: `todas`: el panel «Por qué confiamos en estas cifras» (B4).
+    confianza: tuple[tuple[str, CellTrust], ...] = ()
 
     @property
     def unit_noun(self) -> str:
@@ -108,6 +115,8 @@ class Watchlist:
     #: de todas las celdas de todos los productos. Es lo que dice la página
     #: en «sobre N anuncios verificados a mano».
     total_ads: int = 0
+    #: De qué están hechos esos `total_ads` (B4); `None` sin observaciones.
+    trust: CellTrust | None = None
 
     @property
     def medida(self) -> str:
@@ -245,6 +254,9 @@ def build_watchlist(
                     change_text=line.change_text,
                     previous_count=line.before_count,
                     is_cheapest=line.province_name == barata,
+                    trust=trust_of(
+                        [o for o in propias if desde <= o.day <= hasta]
+                    ),
                     spark=(
                         sparkline_from_values(
                             weekly_medians(propias, hasta), width=SPARK_W, height=SPARK_H
@@ -273,6 +285,9 @@ def build_watchlist(
                 todas=todas,
                 barata=mas_barata,
                 contra=tuple(c for c in todas if c and c is not mas_barata) if mas_barata else (),
+                confianza=tuple(
+                    (p, c.trust) for p, c in zip(provinces, todas, strict=True) if c and c.trust
+                ),
             )
         )
     rows.sort(key=lambda r: (-sum(c.count for c in r.todas if c), _alfabeto(r.product_name)))
@@ -283,4 +298,7 @@ def build_watchlist(
         all_is_active=not activos,
         all_provinces=tuple(provinces),
         total_ads=total_ads,
+        trust=sum_trust(
+            [c.trust for r in rows for c in r.todas if c is not None]
+        ),
     )

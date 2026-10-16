@@ -1,0 +1,202 @@
+{# Hoy — el centro de /control: lo que exige acción y las tarjetas a las demás vistas.
+   Parcial del layout `control_base.html`; el menú lateral vive allá. #}
+{% extends "control_base.html" %}
+
+{% block body %}
+  {#
+    ---------- 0. Franja de estado ----------
+    Lo que exige acción HOY, antes que cualquier informe. `/control` creció
+    hasta once secciones con el mismo peso visual, y eso lo volvió un informe
+    largo en vez de un panel: para saber si algo se rompió había que leerlo
+    entero. Acá arriba lo roto sube solo (`health_strip.build_strip` ordena por
+    gravedad) y cada tarjeta dice qué hacer, no solo que algo pasa.
+  #}
+  <section class="m3-health" id="estado" aria-label="Estado del sistema">
+    {% if strip_level == "down" %}
+    <p class="m3-health-banner is-down">
+      <span class="m3-icon">error</span>
+      Hay algo roto. Lo de abajo a la izquierda es lo que exige acción.
+    </p>
+    {% elif strip_level == "warn" %}
+    <p class="m3-health-banner is-warn">
+      <span class="m3-icon">warning</span>
+      Nada roto, pero hay algo que conviene mirar.
+    </p>
+    {% endif %}
+
+    <div class="m3-health-grid">
+      {% for ind in strip %}
+      <div class="m3-health-card is-{{ ind.level }}">
+        <div class="m3-health-top">
+          <span class="m3-health-dot"></span>
+          <span class="m3-health-label">{{ ind.label }}</span>
+        </div>
+        <div class="m3-health-value">{{ ind.value }}</div>
+        {% if ind.hint %}<div class="m3-health-hint">{{ ind.hint }}</div>{% endif %}
+        {% if ind.anchor %}<a class="m3-health-link" href="{{ anchor_urls.get(ind.anchor, ind.anchor) }}">ver detalle →</a>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {#
+    ---------- Tarjetas a las demás vistas ----------
+    «Hoy» es el centro: cada tarjeta resume una subpágina, lleva su insignia
+    (lo que pide atención, sacado de la misma franja de arriba) y enlaza a
+    cada una de sus secciones.
+  #}
+  <section aria-label="Otras vistas de Control">
+    <div class="m3-ctl-cards">
+      {% for p in control_pages if p.key != page.key %}
+      {% set badge = badges.get(p.key) %}
+      <div class="m3-ctl-card">
+        <div class="m3-ctl-card-head">
+          <span class="m3-icon">{{ p.icon }}</span>
+          <a class="m3-ctl-card-title" href="{{ p.url }}">{{ p.title }}</a>
+          {% if badge %}<span class="m3-ctl-badge is-{{ badge.level }}" title="{{ badge.count }} para mirar">{{ badge.count }}</span>{% endif %}
+        </div>
+        <p class="m3-sm m3-muted">{{ p.description }}</p>
+        <ul class="m3-ctl-card-links">
+          {% for s in p.sections %}
+          <li><a href="{{ p.url }}#{{ s.anchor }}">{{ s.label }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ---------- 0.5. Hoy ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="hoy">Hoy</h2>
+      <span class="m3-sm m3-muted">
+        una hora de curaduría, el resto del día en diseño o implementación
+      </span>
+    </div>
+
+    <div class="m3-grid">
+      <div class="m3-metric">
+        <div class="m3-metric-label">Curaduría (~1 hora)</div>
+        <div class="m3-metric-value-sm">
+          {% if health.pending %}<a href="/curation">{{ health.pending }}</a>
+          {%- else %}<span class="m3-dim">0</span>{% endif %}
+        </div>
+        <div class="m3-metric-hint">en cola</div>
+      </div>
+
+      <div class="m3-metric">
+        <div class="m3-metric-label">Diseño / implementación (el resto del día)</div>
+        {% set accionables = module_status | selectattr("is_actionable", "equalto", true) | list %}
+        {% if not module_status %}
+        <p class="m3-sm m3-dim" style="margin:14px 0 0">Sin datos de <code>docs/requisitos.md</code>.</p>
+        {% elif not accionables %}
+        <p class="m3-sm m3-dim" style="margin:14px 0 0">Ningún módulo ni terminado ni bloqueado hoy.</p>
+        {% else %}
+        <div class="m3-row" style="gap:6px; margin-top:14px">
+          {% for modulo in accionables %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">{{ modulo.number }} · {{ modulo.name }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div class="m3-metric-hint" style="margin-top:10px">
+          <a href="/docs/requisitos">ver los 16 módulos →</a>
+        </div>
+      </div>
+
+      <div class="m3-metric">
+        <div class="m3-metric-label">Deuda de lint</div>
+        <div class="m3-metric-hint" style="margin-top:4px">
+          ruff + mypy contra <code>docs/lint-baseline.json</code> — arregla
+          lo mecánico solo, nunca lo que necesita criterio
+          (<a href="/docs/checklist-pr">checklist-pr</a>).
+        </div>
+        <form method="post" action="/control/lint-drift" style="margin-top:14px">
+          <button type="submit" class="m3-btn m3-btn-outlined">Correr ruff + mypy</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 4. Huecos por responder ---------- -->
+  <section>
+    {% set gap_icons = {
+      'Sin provincia': 'place',
+      'Sin cantidad': 'straighten',
+      'Sin formato de venta': 'sell',
+      'Sin convertir a CUP': 'currency_exchange'
+    } %}
+    <div class="m3-section-head"><h2 class="m3-h2" id="falta">Lo que falta responder</h2></div>
+    <p class="m3-note">
+      Ningún campo bloquea el guardado por diseño (design.md D2/D4): la fila entra igual y el
+      operador sigue curando. Por eso hace falta verlos acumulados acá. Cada número abre el
+      historial ya filtrado por ese hueco.
+    </p>
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr))">
+      {% for gap in gaps %}
+      <div class="m3-gap{% if not gap.count %} is-clear{% endif %}">
+        <div class="m3-row" style="gap:8px">
+          <span class="m3-icon m3-icon-sm">{{ gap_icons.get(gap.label, 'help') }}</span>
+          <span class="m3-metric-label">{{ gap.label }}</span>
+        </div>
+        <div class="m3-metric-value-sm">
+          {% if gap.count %}
+          <a href="/curation/history?{{ gap.query }}">{{ gap.count }}</a>
+          {% else %}0{% endif %}
+        </div>
+        <div class="m3-metric-hint">{{ gap.hint }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ---------- 3. Ritmo y actividad ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="ritmo">Ritmo de carga</h2>
+      <span class="m3-sm m3-muted">
+        últimos {{ activity_days }} días · se cuenta por <code>created_at</code>: cuándo se
+        cargó la fila, no la fecha del anuncio. Lo que se mide es el trabajo, no el mercado.
+      </span>
+    </div>
+
+    <div class="m3-card m3-card-pad" style="display:grid; grid-template-columns:minmax(150px, 1fr) 3fr; gap:28px; align-items:end">
+      <div>
+        <div class="m3-metric-label">Promedio diario</div>
+        <div class="m3-metric-value">{{ "%.1f"|format(pace.per_day) }}</div>
+        <div class="m3-sm m3-muted">{{ pace.rows_in_window }} filas en {{ pace.window_days }} días</div>
+      </div>
+      <div>
+        {# Barras con CSS, sin librería ni CDN. #}
+        <div class="m3-activity">
+          {% for dia in activity %}
+          <div title="{{ dia.day }} — {{ dia.rows }} fila(s)">
+            <span class="m3-activity-bar{% if not dia.rows %} is-empty{% endif %}"
+                  style="height: {{ (dia.rows * 100 / activity_peak)|round(1) if activity_peak else 0 }}%;"></span>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="m3-activity-axis">
+          {% for dia in activity %}
+          <div>{{ dia.day.day }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+{# Los marcadores viejos eran `/control#tasa`, `/control#ingesta`, ...: el
+   `#ancla` no llega al servidor, así que acá se resuelve. Si el ancla no está
+   en esta página y pertenece a otra subpágina, se va para allá. #}
+<script>
+(function () {
+  var destinos = {{ anchor_urls | tojson }};
+  var ancla = window.location.hash;
+  if (ancla && destinos[ancla] && !document.getElementById(ancla.slice(1))) {
+    window.location.replace(destinos[ancla]);
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,42 @@
+{# Por qué confiamos en cada dato (B4, `docs/spec-slice-B4.md`): el desglose de
+   una celda y el enlace a la metodología. Solo conteos: ningún canal, emisor
+   ni anuncio entra acá. #}
+
+{# El enlace corto que va junto a la frase de procedencia, fuera de cualquier
+   panel: se tiene que ver a 390 px sin abrir nada. #}
+{% macro enlace_metodologia() -%}
+<a class="ph-metodo-link" href="/metodologia">Cómo calculamos los precios →</a>
+{%- endmacro %}
+
+{# Procedencia y validación de una celda, escritas con sus palabras. Un grupo
+   en cero no se nombra. #}
+{% macro desglose(trust) -%}
+<p class="ph-conf-linea">
+  {%- if trust.human %}<span>{{ trust.human }} revisado{{ "s" if trust.human != 1 }} a mano</span>{% endif -%}
+  {%- if trust.auto %}<span>{{ trust.auto }} aceptado{{ "s" if trust.auto != 1 }} por el sistema</span>{% endif -%}
+  {%- if trust.audited %}<span>{{ trust.audited }} aceptado{{ "s" if trust.audited != 1 }} por el sistema y revisado{{ "s" if trust.audited != 1 }} después por una persona</span>{% endif -%}
+</p>
+<p class="ph-conf-linea">
+  {%- if trust.approved %}<span>{{ trust.approved }} {{ "pasó" if trust.approved == 1 else "pasaron" }} las seis reglas</span>{% endif -%}
+  {%- if trust.flagged %}<span>{{ trust.flagged }} con una señal que mirar</span>{% endif -%}
+  {%- if trust.unevaluated %}<span>{{ trust.unevaluated }} sin evaluar</span>{% endif -%}
+</p>
+{%- endmacro %}
+
+{# Un `<details>` con una fila por provincia. `items` = [(nombre, trust)]. #}
+{% macro panel(items) -%}
+{% if items %}
+<details class="ph-confianza">
+  <summary><span class="ph-confianza-titulo"><b>Por qué confiamos en estas cifras</b><span>De qué está hecho el número de anuncios de cada provincia</span></span></summary>
+  <ul class="ph-confianza-lista">
+    {% for nombre, trust in items %}
+    <li>
+      <h3 class="ph-confianza-prov">{{ nombre }} <small>{{ trust.n }} anuncio{{ "s" if trust.n != 1 }}</small></h3>
+      {{ desglose(trust) }}
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="ph-datos-nota">{{ enlace_metodologia() }}</p>
+</details>
+{% endif %}
+{%- endmacro %}

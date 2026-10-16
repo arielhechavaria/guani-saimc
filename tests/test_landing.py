@@ -7,8 +7,8 @@ Lo que estos casos protegen:
 - `/precios` es la home de siempre, con los mismos parámetros.
 - Un enlace ya compartido (`/?vista=…`, `/?producto=…`) sigue llegando a donde
   llegaba: redirige a `/precios` con el query string intacto.
-- La tarjeta «Así se lee un precio» sale de anuncios reales: el titular es el
-  rango, la mediana va adentro y el número de anuncios queda a la vista.
+- Las burbujas del héroe salen de anuncios reales: dicen el rango, la provincia y
+  cuántos anuncios hay detrás.
 - Los enlaces de redes y contacto solo se dibujan si están configurados.
 
 Los valores esperados de `landing_view` están escritos a mano a partir de las
@@ -47,6 +47,7 @@ from saimc.web.deps import get_db
 from saimc.web.landing_view import (
     build_footer_links,
     build_landing_coverage,
+    build_landing_entries,
     build_landing_flow,
     build_landing_price,
 )
@@ -168,20 +169,6 @@ class TestLaTarjetaDePrecio:
         assert precio.count == 3
         assert (precio.currency, precio.unit) == ("CUP", "lb")
 
-    def test_un_punto_por_anuncio_entre_los_extremos_de_la_barra(self) -> None:
-        obs = [_obs("Arroz", "La Habana", v) for v in ("280", "300", "320")]
-
-        precio = build_landing_price(obs)
-
-        assert precio is not None
-        izquierdas = [p.left for p in precio.dots]
-        assert len(izquierdas) == 3
-        # El más barato cae donde empieza la barra y el más caro donde termina.
-        assert min(izquierdas) == precio.bar_left
-        assert max(izquierdas) == precio.bar_left + precio.bar_width
-        # 300 está justo a mitad de camino entre 280 y 320.
-        assert precio.median_left == precio.bar_left + precio.bar_width / 2
-
     def test_lleva_el_rotulo_de_muestra_en_formacion(self) -> None:
         precio = build_landing_price([_obs("Arroz", "La Habana", v) for v in ("280", "320")])
 
@@ -265,14 +252,14 @@ class TestElPrecioDisparatadoNoMueveElRango:
         assert precio is not None
         assert (precio.count, precio.outliers) == (6, 1)
 
-    def test_los_puntos_son_solo_los_que_caben_en_la_barra(self) -> None:
-        obs = [_obs("Arroz", "La Habana", v) for v in (*self.NORMALES, "178880")]
-
-        precio = build_landing_price(obs)
+    def test_el_precio_ya_no_lleva_datos_solo_de_dibujo(self) -> None:
+        """La sección «Así se lee un precio» se quitó: nadie dibuja ya los
+        puntos, la barra ni la mediana sobre ella."""
+        precio = build_landing_price([_obs("Arroz", "La Habana", v) for v in ("280", "300", "320")])
 
         assert precio is not None
-        assert len(precio.dots) == 5
-        assert all(precio.bar_left <= p.left <= precio.bar_left + precio.bar_width for p in precio.dots)
+        for campo in ("dots", "median_left", "bar_left", "bar_width"):
+            assert not hasattr(precio, campo), campo
 
     def test_sin_precios_disparatados_no_hay_ninguno_fuera(self) -> None:
         precio = build_landing_price([_obs("Arroz", "La Habana", v) for v in self.NORMALES])
@@ -367,7 +354,7 @@ class TestLaLandingEnLaRaiz:
         respuesta = client.get("/")
 
         assert respuesta.status_code == 200
-        assert "Hola, soy Guani." in respuesta.text
+        assert "Precios reales del mercado informal cubano." in respuesta.text
         assert 'href="/precios"' in respuesta.text
 
     def test_no_es_el_tablero(self, client: TestClient, datos: None) -> None:
@@ -394,28 +381,22 @@ class TestLaLandingEnLaRaiz:
         respuesta = client.get("/", follow_redirects=False)
 
         assert respuesta.status_code == 200
-        assert "Hola, soy Guani." in respuesta.text
+        assert "Precios reales del mercado informal cubano." in respuesta.text
 
-    def test_la_tarjeta_de_precio_muestra_el_rango_real_con_su_muestra(
+    def test_las_burbujas_muestran_el_rango_real_con_su_muestra(
         self, client: TestClient, datos: None
     ) -> None:
-        texto = client.get("/").text
-        tarjeta = texto.split('id="lp-price"')[1].split("</section>")[0]
+        globos = _globos(client.get("/").text)
 
-        assert "Arroz · La Habana" in tarjeta
-        assert re.search(r"280\s*–\s*320", tarjeta)
-        assert "CUP/lb" in tarjeta
-        # La mediana va dentro de la tarjeta del rango, y la muestra a la vista.
-        assert "300" in tarjeta
-        assert re.search(r"<strong[^>]*>3</strong>\s*anuncios", tarjeta)
-        assert "uestra en formación" in tarjeta
-        assert tarjeta.count("lp-dot") == 3
+        assert re.search(r"Arroz · 280–320 CUP/lb", globos)
+        assert "La Habana" in globos
+        assert re.search(r"\b3\s+anuncios", globos)
 
     def test_no_juzga_el_precio(self, client: TestClient, datos: None) -> None:
-        tarjeta = client.get("/").text.split('id="lp-price"')[1].split("</section>")[0]
+        globos = _globos(client.get("/").text)
 
         for palabra in ("barato", "caro", "conviene", "oferta"):
-            assert palabra not in tarjeta.lower()
+            assert palabra not in globos.lower()
 
     def test_los_productos_piloto_enlazan_al_tablero(self, client: TestClient, datos: None) -> None:
         texto = client.get("/").text
@@ -457,8 +438,8 @@ class TestLaLandingEnLaRaiz:
         self, client: TestClient, datos: None, session: Session
     ) -> None:
         """Arroz en La Habana con 280, 290, 300, 305, 310, 320 y una fila a
-        178.880: la tarjeta y el globo siguen en 280–320, y la tarjeta dice
-        que hay siete anuncios y que uno quedó fuera."""
+        178.880: el globo sigue en 280–320 y cuenta siete anuncios; la fila
+        de fuera no entra al rango."""
         arroz = session.query(Product).filter_by(name="Arroz").one()
         habana = session.query(Province).filter_by(name="La Habana").one()
         origen = session.query(RawIngestion).one()
@@ -479,14 +460,11 @@ class TestLaLandingEnLaRaiz:
             )
         session.commit()
 
-        texto = client.get("/").text
-        tarjeta = _visible(texto.split('id="lp-price"')[1].split("</section>")[0])
+        globos = _globos(client.get("/").text)
 
-        assert re.search(r"280\s*–\s*320", tarjeta)
-        assert "178" not in tarjeta
-        assert re.search(r"\b7\s+anuncios", tarjeta)
-        assert re.search(r"1\s+fuera de lo común", tarjeta)
-        assert re.search(r"Arroz · 280–320 CUP/lb", _globos(texto))
+        assert re.search(r"Arroz · 280–320 CUP/lb", globos)
+        assert "178" not in globos
+        assert re.search(r"\b7\s+anuncios", globos)
 
 
 class TestPorQueFiarte:
@@ -497,7 +475,7 @@ class TestPorQueFiarte:
         "Cada cifra enseña sus anuncios",
         "Provincia por provincia",
         "Compara lo comparable",
-        "Una persona revisa cada precio",
+        "Sabes quién la revisó",
         "Un precio disparatado no manda",
         "Todo en pesos cubanos",
     )
@@ -515,12 +493,10 @@ class TestPorQueFiarte:
         assert seccion.count("<svg") >= 6
         assert seccion.count('<p class="lp-why-text">') == 6
 
-    def test_va_despues_de_asi_se_lee_un_precio_y_antes_de_las_preguntas(
-        self, client: TestClient, datos: None
-    ) -> None:
+    def test_va_despues_del_recorrido_y_antes_de_las_preguntas(self, client: TestClient, datos: None) -> None:
         texto = client.get("/").text
 
-        assert texto.index('id="lp-price"') < texto.index('id="lp-why"') < texto.index("¿Qué es Guani?")
+        assert texto.index('id="lp-work"') < texto.index('id="lp-why"') < texto.index("¿Qué es Guani?")
 
     def test_no_promete_abrir_los_anuncios_que_son_imagen(self, client: TestClient, datos: None) -> None:
         """`/anuncio/{id}` solo publica anuncios de texto: la tarjeta no puede
@@ -649,16 +625,12 @@ class TestLaLandingSinDatos:
         respuesta = client.get("/")
 
         assert respuesta.status_code == 200
-        assert "Hola, soy Guani." in respuesta.text
+        assert "Precios reales del mercado informal cubano." in respuesta.text
         for marcador in MARCADORES:
             assert marcador not in _visible(respuesta.text)
 
-    def test_con_la_base_vacia_la_tarjeta_no_trae_numeros(self, client: TestClient) -> None:
-        tarjeta = client.get("/").text.split('id="lp-price"')[1].split("</section>")[0]
-        visible = re.sub(r"<[^>]+>", " ", tarjeta)
-
-        assert not re.search(r"\d", visible)
-        assert "Cada punto es un anuncio" in visible
+    def test_con_la_base_vacia_las_burbujas_no_traen_numeros(self, client: TestClient) -> None:
+        assert not re.search(r"\d", _globos(client.get("/").text))
 
     def test_con_la_base_vacia_no_hay_chips_de_producto(self, client: TestClient) -> None:
         assert 'class="lp-chips"' not in client.get("/").text
@@ -724,7 +696,7 @@ class TestElTableroEnPrecios:
 
         assert respuesta.status_code == 200
         assert "Qué cuesta hoy" in respuesta.text
-        assert "Hola, soy Guani." not in respuesta.text
+        assert "Precios reales del mercado informal cubano." not in respuesta.text
 
     def test_los_parametros_de_siempre_siguen_andando(self, client: TestClient, datos: None) -> None:
         mapa = client.get("/precios?vista=mapa")
@@ -791,7 +763,7 @@ class TestLosEnlacesYaCompartidos:
         respuesta = client.get("/?fbclid=abc123", follow_redirects=False)
 
         assert respuesta.status_code == 200
-        assert "Hola, soy Guani." in respuesta.text
+        assert "Precios reales del mercado informal cubano." in respuesta.text
 
 
 # ── «Así trabajo»: pase de capturas y tarjeta de video (2026-10-06) ──────────
@@ -802,8 +774,8 @@ class TestLosEnlacesYaCompartidos:
 PASOS = (
     "Un emprendedor publica su oferta en un grupo o canal.",
     "El anuncio llega a Guani tal cual se escribió.",
-    "Saco el producto, el precio y la provincia.",
-    "Una persona lo revisa y lo corrige si hace falta.",
+    "Guani saca el producto, el precio y la provincia.",
+    "Si hay dudas lo revisa una persona; si es claro, el sistema lo acepta y una persona lo audita después.",
     "Lo ves en el tablero como rango, mediana y número de anuncios.",
 )
 CAPTURAS = tuple(f"flujo-{n}.webp" for n in range(1, 6))
@@ -873,14 +845,14 @@ class TestElRecorridoArmado:
 
         assert build_landing_flow(tmp_path).video is None
 
-    def test_el_video_del_repo_pesa_menos_de_un_mega_y_trae_su_portada(self) -> None:
+    def test_el_video_del_repo_no_pasa_de_cuatro_megas_y_trae_su_portada(self) -> None:
         # El video se sirve a una conexión lenta: el tope es parte del
         # contrato, no un detalle. Si se vuelve a montar más pesado, este
         # caso obliga a decidirlo a propósito.
         video = build_landing_flow().video
 
         assert video is not None
-        assert (landing_view.LANDING_STATIC_DIR / "guani-flujo.mp4").stat().st_size < 1_000_000
+        assert (landing_view.LANDING_STATIC_DIR / "guani-flujo.mp4").stat().st_size < 4_000_000
         assert video.poster is not None
         assert video.poster.startswith("/static/landing/guani-flujo-poster.webp?v=")
 
@@ -968,19 +940,26 @@ class TestAsiTrabajoEnLaPagina:
         assert "<video" not in texto
         assert "Mira el recorrido completo" not in texto
 
-    def test_sigue_sin_javascript(self, client: TestClient) -> None:
-        assert "<script" not in client.get("/").text.split('<main class="lp-main">')[1]
+    def test_el_pase_sigue_sin_javascript(self, client: TestClient) -> None:
+        """«Así trabajo» no lleva guion. Desde landing-entradas la página tiene
+        uno solo, el de los clips de «Entra por donde quieras», y va después."""
+        html = client.get("/").text
+        principal = html.split('<main class="lp-main">')[1]
 
-    def test_si_falta_una_captura_vuelven_las_tarjetas(self, client: TestClient, directorio: Path) -> None:
+        assert "<script" not in principal.split('id="entradas"')[0]
+        assert principal.count("<script") == 1
+
+    def test_si_falta_una_captura_no_hay_pase_pero_siguen_los_cuatro_pasos(
+        self, client: TestClient, directorio: Path
+    ) -> None:
         (directorio / "flujo-4.webp").unlink()
 
         texto = client.get("/").text
 
         assert _imagenes_del_pase(texto) == []
-        assert "<ol" not in texto
-        assert 'class="lp-steps"' in texto
-        for titulo in ("Leo los anuncios", "Los reviso uno por uno", "Te lo enseño en claro"):
-            assert titulo in texto
+        assert 'class="lp-flow-steps"' not in texto
+        assert 'class="lp-steps"' not in texto  # las tarjetas ilustradas de respaldo ya no existen
+        assert len(re.findall(r'<li class="lp-card">', texto)) == 4
 
     def test_con_el_mp4_hay_video_con_boton_y_sin_autoplay(
         self, client: TestClient, directorio: Path
@@ -1010,5 +989,655 @@ class TestAsiTrabajoEnLaPagina:
 
         texto = client.get("/").text
 
-        assert 'class="lp-steps"' in texto
+        assert _imagenes_del_pase(texto) == []
         assert len(re.findall(r"<video\b", texto)) == 1
+
+
+# ── «Entra por donde quieras»: tarjetas con el sistema real (landing-entradas) ─
+#
+# Los valores esperados salen del prototipo aprobado
+# (`docs/prototipos/landing-entradas.html`) y de los archivos, escritos antes
+# que `build_landing_entries`.
+
+TARJETAS = (
+    ("/precios?vista=tablero", "Precios de hoy", "tablero"),
+    ("/precios?vista=mapa", "Mapa", "mapa"),
+    ("/precios?vista=explorar", "Explorar", "explorar"),
+    ("/datos.csv", "Datos (CSV)", None),
+)
+VISTAS_CON_CLIP = ("tablero", "mapa", "explorar")
+#: Tope por clip: la conexión del visitante es lenta. Los cuatro medios juntos
+#: (clips) tienen que caber en 600 KB.
+TOPE_CLIP = 150_000
+TOPE_CAPTURA = 60_000
+
+
+def _copiar_entradas(destino: Path, *, salvo: str | None = None) -> None:
+    for vista in VISTAS_CON_CLIP:
+        for ext in ("mp4", "webp"):
+            nombre = f"entradas-{vista}.{ext}"
+            if nombre != salvo:
+                shutil.copy(landing_view.LANDING_STATIC_DIR / nombre, destino / nombre)
+
+
+class TestLasEntradasArmadas:
+    def test_son_cuatro_en_el_orden_del_prototipo(self) -> None:
+        entradas = build_landing_entries()
+
+        assert [(e.href, e.title) for e in entradas] == [(h, t) for h, t, _ in TARJETAS]
+
+    def test_el_tablero_el_mapa_y_explorar_traen_captura_y_clip(self) -> None:
+        for entrada, (_, _, vista) in zip(build_landing_entries(), TARJETAS, strict=True):
+            if vista is None:
+                continue
+            assert entrada.poster is not None
+            assert entrada.poster.startswith(f"/static/landing/entradas-{vista}.webp?v=")
+            assert entrada.clip is not None
+            assert entrada.clip.startswith(f"/static/landing/entradas-{vista}.mp4?v=")
+
+    def test_el_csv_no_tiene_pantalla_y_se_queda_con_el_icono(self) -> None:
+        csv = build_landing_entries()[3]
+
+        assert (csv.clip, csv.poster, csv.alt) == (None, None, None)
+        assert csv.icon == "download"
+
+    def test_cada_medio_trae_su_texto_alternativo(self) -> None:
+        for entrada in build_landing_entries()[:3]:
+            assert entrada.alt is not None
+            assert len(entrada.alt) > 40
+
+    def test_los_archivos_del_repo_existen_y_pesan_poco(self) -> None:
+        """Un tope por clip y por captura: si se vuelve a grabar más pesado,
+        este caso obliga a decidirlo a propósito."""
+        carpeta = landing_view.LANDING_STATIC_DIR
+        for vista in VISTAS_CON_CLIP:
+            clip = carpeta / f"entradas-{vista}.mp4"
+            captura = carpeta / f"entradas-{vista}.webp"
+            assert 0 < clip.stat().st_size < TOPE_CLIP, clip.name
+            assert 0 < captura.stat().st_size < TOPE_CAPTURA, captura.name
+
+    def test_los_clips_no_llevan_metadatos_ni_audio(self) -> None:
+        """Mudos y sin etiquetas: ninguna cadena de texto del encoder más allá
+        de la que escribe el propio códec. Se mira que no haya pista de audio
+        (`soun`) ni títulos, autores o rutas."""
+        for vista in VISTAS_CON_CLIP:
+            datos = (landing_view.LANDING_STATIC_DIR / f"entradas-{vista}.mp4").read_bytes()
+            assert b"soun" not in datos
+            assert b"/home/" not in datos
+            assert b"\xa9nam" not in datos and b"\xa9ART" not in datos
+
+    def test_las_capturas_no_llevan_metadatos_de_la_camara_ni_del_sistema(self) -> None:
+        for vista in VISTAS_CON_CLIP:
+            datos = (landing_view.LANDING_STATIC_DIR / f"entradas-{vista}.webp").read_bytes()
+            assert b"EXIF" not in datos
+            assert b"/home/" not in datos
+
+    def test_sin_el_clip_no_hay_medio_y_la_tarjeta_vuelve_al_icono(self, tmp_path: Path) -> None:
+        _copiar_entradas(tmp_path, salvo="entradas-mapa.mp4")
+
+        mapa = build_landing_entries(tmp_path)[1]
+
+        assert (mapa.clip, mapa.poster) == (None, None)
+        assert mapa.icon == "map"
+
+    def test_sin_la_captura_tampoco(self, tmp_path: Path) -> None:
+        _copiar_entradas(tmp_path, salvo="entradas-explorar.webp")
+
+        assert build_landing_entries(tmp_path)[2].poster is None
+
+    def test_un_archivo_vacio_cuenta_como_faltante(self, tmp_path: Path) -> None:
+        _copiar_entradas(tmp_path, salvo="entradas-tablero.mp4")
+        (tmp_path / "entradas-tablero.mp4").write_bytes(b"")
+
+        assert build_landing_entries(tmp_path)[0].clip is None
+
+
+class TestLaSeccionRenderizada:
+    def _seccion(self, client: TestClient) -> str:
+        html = client.get("/").text
+        return html.split('id="entradas"')[1].split("</section>")[0]
+
+    def test_cada_tarjeta_sigue_siendo_un_enlace_a_su_vista(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        for href, titulo, _ in TARJETAS:
+            assert re.search(rf'<a class="lp-tile[^"]*" href="{re.escape(href)}"', seccion)
+            assert titulo in seccion
+
+    def test_tres_tarjetas_traen_poster_y_clip_sin_bajarlo(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+        videos = re.findall(r"<video\b[^>]*>", seccion)
+
+        assert len(videos) == 3
+        for video, vista in zip(videos, VISTAS_CON_CLIP, strict=True):
+            assert f'poster="/static/landing/entradas-{vista}.webp?v=' in video
+            assert f'data-clip="/static/landing/entradas-{vista}.mp4?v=' in video
+            assert 'preload="none"' in video
+            assert " muted" in video and " loop" in video and " playsinline" in video
+            # Sin JS no se baja nada: el clip va en `data-clip`, no en `src`.
+            assert " src=" not in video
+            assert "autoplay" not in video
+
+    def test_el_clip_no_es_el_unico_portador_de_informacion(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        assert seccion.count('role="img"') == 3
+        assert seccion.count('aria-hidden="true"') >= 3  # los tres videos, más el ícono
+        for texto in ("El tablero completo.", "Provincia por provincia.", "Cómo se movió cada precio."):
+            assert texto in seccion
+
+    def test_el_csv_lleva_el_icono_y_ninguna_captura(self, client: TestClient) -> None:
+        csv = self._seccion(client).split('href="/datos.csv"')[1].split("</a>")[0]
+
+        assert "download" in csv
+        assert "<video" not in csv and "<img" not in csv
+
+    def test_el_script_respeta_movimiento_reducido_ahorro_y_2g(self, client: TestClient) -> None:
+        html = client.get("/").text
+        guion = html.split("<script>")[-1].split("</script>")[0]
+
+        assert 'matchMedia("(prefers-reduced-motion: reduce)")' in guion
+        assert "saveData" in guion and "2g" in guion
+        assert "IntersectionObserver" in guion
+
+    def test_sin_los_archivos_la_seccion_vuelve_a_las_tarjetas_de_icono(
+        self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(landing_view, "LANDING_STATIC_DIR", tmp_path)
+
+        seccion = self._seccion(client)
+
+        assert "<video" not in seccion
+        assert seccion.count('class="m3-icon"') == 4
+
+    def test_ni_la_seccion_ni_los_textos_traen_ids_ni_emisores(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", seccion)
+        assert "wa.me" not in seccion and "@c.us" not in seccion
+
+    def test_tuteo_nunca_voseo(self, client: TestClient) -> None:
+        texto = _visible(self._seccion(client)).lower()
+
+        for voseo in ("mirá", "elegí", "tocá", "entrá", "podés", "tenés"):
+            assert voseo not in texto
+
+
+# ── Narrativa (landing-narrativa, `docs/propuesta-narrativa-landing.md`) ──────
+#
+# El texto esperado es el de la propuesta aprobada, escrito antes que la
+# plantilla. Lo que se prueba es doble: que diga lo nuevo y que ya no diga lo
+# que dejó de ser cierto (el carril 0 descarta solo y el carril 1 acepta solo).
+
+PAGINAS_PUBLICAS = (
+    "/",
+    "/preguntas",
+    "/terminos",
+    "/privacidad",
+    "/metodologia",
+    "/precios",
+    "/precios?vista=mapa",
+    "/precios?vista=explorar",
+)
+LO_QUE_YA_NO_ES_CIERTO = (
+    "uno por uno",
+    "Ninguna cifra de esta página es una estimación",
+    "ninguno cuenta hasta que una persona lo revisa",
+    "Una persona revisa cada precio",
+    # Voz en primera persona: la landing habla de Guani en tercera persona.
+    "No te pido que me creas",
+    "Saco el producto",
+)
+
+
+class TestLaNarrativaEsCierta:
+    def test_la_promesa_dice_que_es_una_herramienta_asistida(self, client: TestClient) -> None:
+        texto = _visible(client.get("/").text)
+
+        assert "Precios reales del mercado informal cubano." in texto
+        assert (
+            "Guani lee los anuncios donde ya se vende, los pasa a una misma unidad y te los "
+            "enseña con su cuenta. Una máquina lee; una persona supervisa."
+        ) in texto
+        assert "Hola, soy Guani" not in texto
+
+    @pytest.mark.parametrize("ruta", PAGINAS_PUBLICAS)
+    def test_ninguna_pagina_publica_dice_lo_que_dejo_de_ser_cierto(
+        self, client: TestClient, ruta: str
+    ) -> None:
+        respuesta = client.get(ruta)
+        assert respuesta.status_code == 200, ruta
+        texto = " ".join(_visible(respuesta.text).split())
+
+        for frase in LO_QUE_YA_NO_ES_CIERTO:
+            assert frase not in texto, f"{ruta}: «{frase}»"
+
+    def test_la_landing_habla_de_guani_en_tercera_persona(self, client: TestClient) -> None:
+        texto = " ".join(_visible(client.get("/").text).split())
+
+        assert ("Guani no te pide fe: te enseña de dónde sale cada número y con qué cuenta se saca.") in texto
+        assert "Guani saca el producto, el precio y la provincia." in texto
+
+    def test_la_tarjeta_de_confianza_dice_quien_reviso(self, client: TestClient) -> None:
+        seccion = client.get("/").text.split('id="lp-why"')[1].split("</section>")[0]
+
+        assert (
+            "Al lado de cada cifra va cuántos anuncios revisó una persona y cuántos aceptó el "
+            "sistema solo. Y una persona audita lo que el sistema aceptó."
+        ) in " ".join(_visible(seccion).split())
+
+    def test_el_pie_dice_de_cuantos_anuncios_sale_cada_cifra(self, client: TestClient) -> None:
+        for ruta in ("/precios?vista=mapa",):  # el tablero y Explorar apagan este pie
+            texto = " ".join(_visible(client.get(ruta).text).split())
+
+            assert (
+                "Cada cifra dice de cuántos anuncios sale y cuántos revisó una persona. "
+                "Es una muestra en formación, no un censo."
+            ) in texto, ruta
+
+    def test_las_preguntas_y_los_terminos_dicen_lo_mismo_que_la_metodologia(self, client: TestClient) -> None:
+        preguntas = " ".join(_visible(client.get("/preguntas").text).split())
+        terminos = " ".join(_visible(client.get("/terminos").text).split())
+
+        assert "cuando una persona lo revisa o el sistema lo acepta con auditoría" in preguntas
+        assert 'href="/metodologia"' in client.get("/preguntas").text
+        assert (
+            "Los anuncios los revisa una persona o los acepta el sistema con auditoría, "
+            "pero aun así puede haber errores"
+        ) in terminos
+
+
+class TestElVideoPromocionalEstaEncendido:
+    """`guani-flujo.mp4` es el comercial «Como se escoge el arroz», hecho con
+    `tools/producir_comercial.py`; la landing lo muestra."""
+
+    def test_la_pagina_lo_muestra_sin_autoplay_ni_descarga_previa(self, client: TestClient) -> None:
+        assert landing_view.FLOW_VIDEO_ENABLED is True
+        pagina = client.get("/").text
+        video = re.search(r"<video[^>]*>", pagina)
+
+        assert video is not None
+        etiqueta = video.group(0)
+        assert 'preload="none"' in etiqueta
+        assert "controls" in etiqueta
+        assert "autoplay" not in etiqueta
+        assert "guani-flujo.mp4" in etiqueta
+        assert "guani-flujo-poster.webp" in etiqueta
+        assert "mensajes de WhatsApp" in etiqueta  # el aria-label dice qué cuenta
+
+    def test_el_archivo_y_su_portada_estan_en_el_repo(self) -> None:
+        directorio = landing_view.LANDING_STATIC_DIR
+        assert (directorio / "guani-flujo.mp4").is_file()
+        assert (directorio / "guani-flujo-poster.webp").is_file()
+
+
+# ── Cuatro pasos y «Para quién es» (prototipo aprobado, landing-narrativa) ────
+#
+# Los textos son los de `docs/propuesta-narrativa-landing.md` y el prototipo
+# `docs/prototipos/landing-narrativa.html`, escritos antes que la plantilla.
+
+CUATRO_PASOS = (
+    ("Escucha", "Lee los grupos y canales donde ya se vende. Nadie tiene que escribirle nada."),
+    (
+        "Entiende",
+        "Un asistente saca producto, precio, cantidad y provincia, y lo lleva todo a la misma "
+        "unidad y moneda.",
+    ),
+    (
+        "Filtra",
+        "Aparta lo que no es un anuncio de precio y frena lo dudoso. Lo difícil lo decide una "
+        "persona; lo claro, el sistema lo acepta y una persona lo audita después.",
+    ),
+    (
+        "Te lo enseña con su cuenta",
+        "Rango, mediana y cuántos anuncios hay detrás, separando los revisados a mano de los "
+        "aceptados por el sistema.",
+    ),
+)
+PARA_QUIEN = (
+    ("/precios?vista=tablero", "Si compras o vendes", "¿Cuánto cuesta esto hoy en mi provincia?"),
+    ("/precios?vista=explorar", "Si revendes o decides", "Qué se mueve y dónde."),
+    ("/datos.csv", "Si investigas o informas", "Los datos en CSV, con su metodología."),
+)
+
+
+def _items(html: str, clase: str) -> list[str]:
+    lista = re.search(rf'<(?:ol|ul) class="{clase}"[^>]*>.*?</(?:ol|ul)>', html, flags=re.S)
+    assert lista is not None, clase
+    return [" ".join(_visible(li).split()) for li in re.findall(r"<li\b.*?</li>", lista.group(0), flags=re.S)]
+
+
+class TestLosCuatroPasos:
+    def test_son_cuatro_en_orden_con_el_texto_aprobado(self, client: TestClient) -> None:
+        assert _items(client.get("/").text, "lp-steps4") == [
+            f"{n} {titulo} {texto}" for n, (titulo, texto) in enumerate(CUATRO_PASOS, start=1)
+        ]
+
+    def test_la_seccion_abre_diciendo_quien_hace_que(self, client: TestClient) -> None:
+        seccion = client.get("/").text.split('id="lp-work"')[1].split("</section>")[0]
+
+        assert "Una máquina lee los anuncios y una persona supervisa." in " ".join(_visible(seccion).split())
+
+    def test_el_pase_de_capturas_se_rotula_como_un_ejemplo(self, client: TestClient) -> None:
+        seccion = client.get("/").text.split('id="lp-work"')[1].split("</section>")[0]
+
+        assert "Así pasó con un anuncio real" in _visible(seccion)
+        assert seccion.index('class="lp-steps4"') < seccion.index('class="lp-flow"')
+
+    def test_sin_las_capturas_no_se_rotula_ningun_ejemplo(self, client: TestClient, directorio: Path) -> None:
+        (directorio / "flujo-2.webp").unlink()
+
+        assert "Así pasó con un anuncio real" not in _visible(client.get("/").text)
+
+
+class TestParaQuienEs:
+    def _seccion(self, client: TestClient) -> str:
+        return client.get("/").text.split('id="lp-who"')[1].split("</section>")[0]
+
+    def test_son_tres_enlaces_con_su_titulo_y_su_pregunta(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        assert "Para quién es" in _visible(seccion)
+        sin_iconos = re.sub(r'<span class="m3-icon"[^>]*>[^<]*</span>', "", seccion)
+        assert _items(sin_iconos, "lp-who") == [f"{titulo} {texto}" for _, titulo, texto in PARA_QUIEN]
+        enlaces = re.findall(r'<a class="lp-who-link[^"]*" href="([^"]+)"', seccion)
+        assert enlaces == [href for href, _, _ in PARA_QUIEN]
+
+    def test_cada_enlace_lleva_a_una_ruta_que_existe(self, client: TestClient) -> None:
+        for href, _, _ in PARA_QUIEN:
+            assert client.get(href).status_code == 200, href
+
+    def test_los_iconos_son_decorativos(self, client: TestClient) -> None:
+        seccion = self._seccion(client)
+
+        assert seccion.count('class="m3-icon" aria-hidden="true"') == 3
+
+
+class TestElOrdenDeLaPagina:
+    def test_promesa_precio_recorrido_confianza_para_quien_y_entradas(self, client: TestClient) -> None:
+        html = client.get("/").text
+        orden = [
+            '<h1 class="lp-h1">',
+            'id="lp-work"',
+            'id="lp-why"',
+            'id="lp-who"',
+            'id="entradas"',
+        ]
+        posiciones = [html.index(marca) for marca in orden]
+
+        assert posiciones == sorted(posiciones)
+
+
+# ── «El atardecer cubano» (landing-estetica, prototipo aprobado) ──────────────
+#
+# El héroe es un atardecer con el teléfono del tablero real; «Así trabajo» es la
+# noche. Lo que se prueba es la estructura y lo que no se puede romper: la
+# captura se declara con su medida, lo decorativo no entra al árbol de
+# accesibilidad y el sol no se anima con movimiento reducido. Los colores viven
+# en `design_tokens.css` (`test_static_assets` lo vigila).
+
+
+def _heroe(html: str) -> str:
+    return html.split('<header class="lp-hero">')[1].split("</header>")[0]
+
+
+class TestElHeroeEsUnAtardecer:
+    def test_trae_el_sol_a_guani_la_ciudad_y_el_muro(self, client: TestClient) -> None:
+        heroe = _heroe(client.get("/").text)
+
+        for clase in ("lp-sun", "lp-hero-avatar", "lp-city-back", "lp-wall"):
+            assert f'class="{clase}' in heroe, clase
+        assert heroe.count('class="lp-palm ') == 2
+
+    def test_guani_va_grande_sobre_el_sol_y_ya_no_hay_telefono(self, client: TestClient) -> None:
+        """El teléfono con el tablero salió del héroe: el protagonista es Guani,
+        sobre el sol. El héroe ya no lleva ninguna imagen."""
+        heroe = _heroe(client.get("/").text)
+        escenario = heroe.split('class="lp-stage"')[1]
+
+        assert escenario.index('class="lp-sun"') < escenario.index('class="lp-hero-avatar"')
+        assert "lp-hero-phone" not in heroe
+        assert "<img" not in heroe
+        assert "entradas-tablero" not in heroe
+
+    def test_la_ciudad_las_palmas_el_sol_y_guani_son_decorativos(self, client: TestClient) -> None:
+        heroe = _heroe(client.get("/").text)
+
+        for clase in ("lp-city-back", "lp-wall", "lp-palm lp-palm-l", "lp-palm lp-palm-r"):
+            assert re.search(rf'<svg class="{clase}"[^>]*aria-hidden="true"', heroe), clase
+        assert re.search(r'<div class="lp-sun"[^>]*aria-hidden="true"', heroe)
+        assert 'class="lp-hero-avatar" aria-hidden="true"' in heroe
+
+    def test_guani_esta_en_el_heroe_y_tambien_en_el_pie(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        assert _heroe(html).count("ph-brand-avatar") == 1
+        assert "ph-brand-avatar" in html.split("</main>")[1]
+
+    def test_los_dos_avatares_no_repiten_el_id_del_recorte(self, client: TestClient) -> None:
+        ids = re.findall(r'<clipPath id="([^"]+)"', client.get("/").text)
+
+        assert len(ids) == 2
+        assert len(set(ids)) == 2
+
+    def test_las_burbujas_siguen_diciendo_el_rango_la_provincia_y_la_muestra(
+        self, client: TestClient, datos: None
+    ) -> None:
+        assert len(re.findall(r'<div class="lp-globe', _heroe(client.get("/").text))) == 3
+
+    def test_el_sol_no_se_anima_con_movimiento_reducido(self, client: TestClient) -> None:
+        html = client.get("/").text
+        reducido = html.split("@media (prefers-reduced-motion: reduce)")[1].split("}\n  }")[0]
+
+        assert ".lp-sun" in reducido and "animation: none" in reducido
+
+    def test_ya_no_existe_el_armado_del_telefono(self) -> None:
+        assert not hasattr(landing_view, "build_hero_phone")
+
+
+class TestLaNocheDelRecorrido:
+    def test_asi_trabajo_es_la_banda_de_noche(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        assert re.search(r'<section class="[^"]*\blp-night\b[^"]*" id="lp-work"', html)
+
+    def test_los_cuatro_pasos_siguen_siendo_los_mismos(self, client: TestClient) -> None:
+        assert _items(client.get("/").text, "lp-steps4") == [
+            f"{n} {titulo} {texto}" for n, (titulo, texto) in enumerate(CUATRO_PASOS, start=1)
+        ]
+
+
+# ── El día completo (landing-estetica, prototipo `landing-dia-completo.html`) ─
+#
+# La página es un día: atardecer (portada), noche (el precio y el recorrido),
+# amanecer (por qué puedes fiarte), día (para quién, preguntas, entradas) y
+# ocaso (justo antes del pie). Cada hora es un envoltorio con su fondo; lo que
+# se prueba es qué contiene cada uno y en qué orden, no el color (los colores
+# son tokens y `test_static_assets` los vigila).
+
+
+def _envoltorio(html: str, clase: str) -> str:
+    """El contenido de `<div class="<clase>">…</div>` hasta su cierre, contando
+    los `<div` anidados."""
+    inicio = html.index(f'<div class="{clase}">')
+    profundidad, pos = 0, inicio
+    for m in re.finditer(r"<div\b|</div>", html[inicio:]):
+        profundidad += 1 if m.group(0) == "<div" else -1
+        pos = inicio + m.end()
+        if profundidad == 0:
+            break
+    return html[inicio:pos]
+
+
+class TestLasHorasDelDia:
+    def test_el_recorrido_sigue_al_heroe_sin_ninguna_seccion_en_medio(self, client: TestClient) -> None:
+        """«Así se lee un precio» se quitó (no aportaba): la noche arranca donde
+        termina el muro de la portada."""
+        html = client.get("/").text
+        entre = html.split("</header>")[1].split('<section class="lp-night"')[0]
+
+        assert "<section" not in entre
+        assert 'id="lp-price"' not in html
+        assert "Así se lee un precio" not in html
+        assert "lp-sea" not in html
+        for clase in ("lp-dot", "lp-median", "lp-range", "lp-legend"):
+            assert f'class="{clase}' not in html, clase
+
+    def test_por_que_puedes_fiarte_es_el_amanecer(self, client: TestClient) -> None:
+        html = client.get("/").text
+        amanecer = _envoltorio(html, "lp-dawn")
+
+        assert 'id="lp-why"' in amanecer
+        assert 'id="lp-who"' not in amanecer
+        assert html.index('id="lp-work"') < html.index('class="lp-dawn"')
+
+    def test_para_quien_las_preguntas_y_las_entradas_son_el_dia(self, client: TestClient) -> None:
+        html = client.get("/").text
+        dia = _envoltorio(html, "lp-day")
+
+        for marca in ('id="lp-who"', 'aria-label="Preguntas frecuentes"', 'id="entradas"'):
+            assert marca in dia, marca
+        assert 'id="lp-why"' not in dia
+        assert html.index('class="lp-dawn"') < html.index('class="lp-day"')
+
+    def test_el_ocaso_cierra_el_dia_justo_antes_del_pie(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        assert html.index('id="entradas"') < html.index('class="lp-ocaso"') < html.index("<footer")
+        assert html.index("</main>") < html.index('class="lp-ocaso"')
+
+    def test_el_ocaso_es_decorativo_y_reusa_las_palmas_de_la_portada(self, client: TestClient) -> None:
+        html = client.get("/").text
+        ocaso = html.split('<div class="lp-ocaso"')[1].split("<footer")[0]
+
+        assert re.match(r'[^>]*aria-hidden="true"', ocaso)
+        assert ocaso.count('class="lp-ocaso-palm ') == 2
+        assert ocaso.count('href="#palma"') == 2
+        assert 'class="lp-ocaso-city"' in ocaso
+        # Las palmas se definen una sola vez, en la portada.
+        assert html.count('id="palma"') == 1
+
+    def test_no_hay_ningun_envoltorio_vacio(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        for clase in ("lp-dawn", "lp-day"):
+            assert "<section" in _envoltorio(html, clase), clase
+
+    def test_los_tokens_nuevos_del_dia_existen(self) -> None:
+        fuente = (Path(landing_view.__file__).parent / "design_tokens.css").read_text(encoding="utf-8")
+
+        assert "--ph-dusk-manana:" in fuente
+        assert "--ph-dusk-sombra-dia:" in fuente
+
+
+# ── Animaciones (landing-estetica, plan aprobado) ─────────────────────────────
+#
+# Todo es CSS: ningún guion nuevo, y solo se mueven propiedades que no
+# recalculan el diseño. Lo que se prueba es lo que se puede romper sin que se
+# note en pantalla: que cada animación exista, que no toque el diseño, que lo
+# atado al scroll solo corra donde el navegador lo soporta y que el movimiento
+# reducido lo apague todo.
+
+NUEVAS = (
+    "lp-halo",
+    "lp-guani-sube",
+    "lp-burbuja",
+    "lp-foco",
+    "lp-brillo",
+    "lp-brisa",
+    "lp-titileo",
+    "lp-paralaje",
+    "lp-estrellas",
+    "lp-sol-se-pone",
+    "lp-chispa",
+)
+#: Propiedades que se animan sin recalcular el diseño ni repintar el texto
+#: alrededor: el compositor las resuelve solo.
+BARATAS = {"opacity", "transform", "filter", "rotate", "translate", "scale"}
+
+
+def _css_de_la_landing(html: str) -> str:
+    bloques = re.findall(r"<style>(.*?)</style>", html, flags=re.S)
+    return "\n".join(b for b in bloques if "lp-hero" in b)
+
+
+def _cuerpo_de_keyframes(css: str, nombre: str) -> str:
+    inicio = css.index(
+        f"@keyframes {nombre} " if f"@keyframes {nombre} " in css else f"@keyframes {nombre}{{"
+    )
+    profundidad, pos = 0, css.index("{", inicio)
+    fin = pos
+    for i, c in enumerate(css[pos:], start=pos):
+        profundidad += c == "{"
+        profundidad -= c == "}"
+        if profundidad == 0:
+            fin = i
+            break
+    return css[pos : fin + 1]
+
+
+class TestLasAnimaciones:
+    def test_cada_animacion_del_plan_esta_definida_y_se_usa(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        for nombre in NUEVAS:
+            assert f"@keyframes {nombre}" in css, f"falta @keyframes {nombre}"
+            assert re.search(rf"animation:[^;]*\b{nombre}\b", css), f"{nombre} no se usa"
+
+    def test_solo_se_animan_propiedades_baratas(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        for nombre in NUEVAS:
+            cuerpo = _cuerpo_de_keyframes(css, nombre)
+            propiedades = set(re.findall(r"([a-z-]+)\s*:", re.sub(r"\d+%|from|to", "", cuerpo)))
+            assert propiedades <= BARATAS, f"{nombre} anima {sorted(propiedades - BARATAS)}"
+
+    def test_lo_atado_al_scroll_solo_corre_donde_el_navegador_lo_soporta(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        usos = [m.start() for m in re.finditer(r"(?<!\()animation-timeline\s*:", css)]
+        assert usos, "no hay ninguna animación atada al scroll"
+        for pos in usos:
+            antes = css[:pos]
+            ultimo = antes.rindex("@supports")
+            assert antes[ultimo:].startswith("@supports (animation-timeline"), pos
+            # y ese bloque no se cerró antes de llegar acá
+            bloque = css[ultimo:pos]
+            assert bloque.count("{") > bloque.count("}"), pos
+
+    def test_las_palmas_se_mecen_con_rotate_y_no_pisan_el_espejo(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        assert "rotate:" in _cuerpo_de_keyframes(css, "lp-brisa")
+        assert "transform" not in _cuerpo_de_keyframes(css, "lp-brisa")
+        assert ".lp-palm-r { right: -52px; transform: scale(-1, 1); }" in css
+
+    def test_las_burbujas_entran_una_tras_otra(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+        retrasos = [
+            float(re.search(rf"\.lp-globe-{n}\s*\{{[^}}]*animation-delay:\s*([\d.]+)s", css).group(1))  # type: ignore[union-attr]
+            for n in (1, 2, 3)
+        ]
+
+        assert retrasos == sorted(retrasos)
+        assert len(set(retrasos)) == 3
+
+    def test_el_movimiento_reducido_lo_apaga_todo(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+        reducido = css.split("@media (prefers-reduced-motion: reduce)")[-1]
+
+        assert ".lp *, .lp *::before, .lp *::after" in reducido
+        assert "animation: none !important" in reducido
+
+    def test_el_destello_y_el_brillo_usan_un_token_no_un_color_a_mano(self, client: TestClient) -> None:
+        css = _css_de_la_landing(client.get("/").text)
+
+        assert "var(--ph-dusk-brillo)" in css
+        assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", css)
+
+    def test_siguen_siendo_un_solo_guion_y_es_el_de_los_clips(self, client: TestClient) -> None:
+        html = client.get("/").text
+        principal = html.split('<main class="lp-main">')[1]
+
+        assert principal.count("<script") == 1
+        assert "IntersectionObserver" in principal.split("<script>")[1]

@@ -32,6 +32,7 @@ from saimc.models import (
     SaleFormat,
 )
 from saimc.models.raw_ingestion import ContentType, ProcessingStatus, SourceType
+from saimc.web import strip_loader
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
@@ -83,66 +84,56 @@ def _cargar(session: Session, *, precios: list[str]) -> None:
 
 class TestControlPanel:
     def test_sin_datos_no_rompe(self, client: TestClient) -> None:
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert response.status_code == 200
         assert "no hay filas de precio" in response.text.lower()
 
-    def test_muestra_la_celda_con_su_muestra_y_mediana(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_la_celda_con_su_muestra_y_mediana(self, client: TestClient, session: Session) -> None:
         _cargar(session, precios=["420", "440", "23500"])
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert response.status_code == 200
         assert "Azúcar blanca" in response.text
         assert "Santiago de Cuba" in response.text
         assert "440.00 CUP" in response.text  # mediana de 420, 440, 23500
 
-    def test_la_amplitud_expone_la_celda_mezclada(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_la_amplitud_expone_la_celda_mezclada(self, client: TestClient, session: Session) -> None:
         """Caso real: minorista por libra (420) y saco mayorista (23500) en la
         misma celda. La amplitud lo hace visible sin emitir ningún juicio.
         """
         _cargar(session, precios=["420", "440", "23500"])
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert "56.0×" in response.text  # 23500 / 420
 
-    def test_no_emite_veredictos_sobre_la_muestra(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_no_emite_veredictos_sobre_la_muestra(self, client: TestClient, session: Session) -> None:
         """Whitepaper §12.6: ningún umbral se inventa. La vista informa, no
         califica — nada de "insuficiente", "alta" o "baja".
         """
         _cargar(session, precios=["420"])
 
-        texto = client.get("/control").text.lower()
+        texto = client.get("/control/calidad").text.lower()
 
         for veredicto in ("insuficiente", "dispersión alta", "muestra baja"):
             assert veredicto not in texto
 
-    def test_cuenta_las_celdas_de_una_sola_observacion(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_cuenta_las_celdas_de_una_sola_observacion(self, client: TestClient, session: Session) -> None:
         _cargar(session, precios=["420"])
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert "1 de 1 celdas tienen una sola" in response.text
 
-    def test_la_matriz_muestra_una_provincia_por_pestana(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_la_matriz_muestra_una_provincia_por_pestana(self, client: TestClient, session: Session) -> None:
         """Cada pestaña dibuja una sola provincia. La otra sigue nombrada en la
         barra de pestañas con su muestra, para saber qué hay del otro lado sin
         abrirla."""
         self._cargar_dos_provincias(session)
 
-        texto = client.get("/control").text
+        texto = client.get("/control/calidad").text
 
         # Un solo cruce por tarjeta: la provincia de la pestaña activa.
         assert texto.count('class="m3-matrix-body m3-slot-') == 2
@@ -153,14 +144,12 @@ class TestControlPanel:
         assert 'class="m3-tab m3-slot-1"' in texto
         assert 'href="?days=7&amp;province=Santiago%20de%20Cuba"' in texto
 
-    def test_la_pestana_se_elige_por_query_string(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_la_pestana_se_elige_por_query_string(self, client: TestClient, session: Session) -> None:
         """El estado vive en la URL: la pestaña se puede compartir y sobrevive
         a recargar, sin JavaScript de por medio."""
         self._cargar_dos_provincias(session)
 
-        texto = client.get("/control?province=Santiago de Cuba").text
+        texto = client.get("/control/calidad?province=Santiago de Cuba").text
         tarjetas = texto.split('<details class="m3-card m3-matrix-card"')[1:]
         paneles = [t.split("</summary>")[1] for t in tarjetas]
 
@@ -168,14 +157,12 @@ class TestControlPanel:
         assert all("Santiago de Cuba" in p for p in paneles)
         assert not any('m3-col-name">La Habana' in p for p in paneles)
 
-    def test_una_provincia_desconocida_no_rompe_la_pagina(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_una_provincia_desconocida_no_rompe_la_pagina(self, client: TestClient, session: Session) -> None:
         """Una URL vieja o tipeada a mano cae en la primera provincia, no en un
         500."""
         self._cargar_dos_provincias(session)
 
-        response = client.get("/control?province=Camagüey")
+        response = client.get("/control/calidad?province=Camagüey")
 
         assert response.status_code == 200
         assert "La Habana" in response.text
@@ -188,7 +175,7 @@ class TestControlPanel:
         poder ver qué falta cargar."""
         self._cargar_dos_provincias(session)
 
-        texto = client.get("/control?province=Santiago de Cuba").text
+        texto = client.get("/control/calidad?province=Santiago de Cuba").text
         tarjetas = texto.split('<details class="m3-card m3-matrix-card"')[1:]
 
         assert "sin series cargadas" in tarjetas[-1]
@@ -236,7 +223,7 @@ class TestControlPanel:
         colapso no haría nada."""
         self._cargar_dos_productos(session)
 
-        texto = client.get("/control").text
+        texto = client.get("/control/calidad").text
 
         assert texto.count('<details class="m3-card m3-matrix-card"') == 2
         assert texto.count('<details class="m3-card m3-matrix-card" open>') == 1
@@ -251,7 +238,7 @@ class TestControlPanel:
         tarjeta escondería justamente lo que la vista existe para mostrar."""
         self._cargar_dos_productos(session)
 
-        texto = client.get("/control").text
+        texto = client.get("/control/calidad").text
         # Acotado a las tarjetas de la matriz: «Pollo» también aparece antes,
         # en la sección de cobertura.
         tarjetas = texto.split('<details class="m3-card m3-matrix-card"')[1:]
@@ -262,9 +249,7 @@ class TestControlPanel:
         assert "La Habana 2" in cabecera_pollo
         assert "Santiago de Cuba 0" in cabecera_pollo
 
-    def test_el_colapso_no_trae_javascript(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_el_colapso_no_trae_javascript(self, client: TestClient, session: Session) -> None:
         """`<details>` nativo: el colapso no necesita nada propio.
 
         Hasta el modo oscuro (2026-09-16) `/control` no traía NINGÚN
@@ -277,7 +262,7 @@ class TestControlPanel:
         """
         self._cargar_dos_productos(session)
 
-        texto = client.get("/control").text
+        texto = client.get("/control/calidad").text
 
         scripts = re.findall(r"<script[^>]*>(.*?)</script>", texto, re.DOTALL)
         assert scripts, "el shell siempre trae el script del tema"
@@ -325,11 +310,10 @@ class TestControlPanel:
         veredicto. Rojo o verde afirmarían un umbral que nadie fijó."""
         _cargar(session, precios=["420", "440"])
 
-        texto = client.get("/control").text
+        texto = client.get("/control/calidad").text
 
         for semaforo in ("#dc3545", "#198754", "text-danger", "text-success"):
-            assert semaforo not in texto.split("<!-- ---------- 8.")[1]
-
+            assert semaforo not in texto.split("<!-- ---------- 10.")[1]
 
 
 class TestLaBarraDeRangoHablaLaUnidadDelTitular:
@@ -344,15 +328,11 @@ class TestLaBarraDeRangoHablaLaUnidadDelTitular:
     def _celda_con_formato(self, session: Session, *, precios: list[str]) -> None:
         """Azúcar canónica en lb, vendida en paquete de 1 kg. Los precios son
         por paquete, que es lo que dice el anuncio."""
-        azucar = Product(
-            name="Azúcar blanca", category="granos", unit="lb", aliases=[], is_pilot=True
-        )
+        azucar = Product(name="Azúcar blanca", category="granos", unit="lb", aliases=[], is_pilot=True)
         scu = Province(code="scu", name="Santiago de Cuba")
         session.add_all([azucar, scu])
         session.commit()
-        paquete = ProductFormat(
-            product_id=azucar.id, packaging="paquete", quantity=Decimal("1"), unit="kg"
-        )
+        paquete = ProductFormat(product_id=azucar.id, packaging="paquete", quantity=Decimal("1"), unit="kg")
         origen = RawIngestion(
             source_type=SourceType.INBOX_TEXT,
             file_path="raw/barra.txt",
@@ -388,7 +368,7 @@ class TestLaBarraDeRangoHablaLaUnidadDelTitular:
         y no su equivalente por libra (273,52 y 385,55), que no dijo nadie."""
         self._celda_con_formato(session, precios=["603", "700", "850"])
 
-        matriz = client.get("/control").text.split("<!-- ---------- 10.")[1]
+        matriz = client.get("/control/calidad").text.split("<!-- ---------- 10.")[1]
 
         assert "603.00" in matriz
         assert "850.00" in matriz
@@ -403,7 +383,7 @@ class TestLaBarraDeRangoHablaLaUnidadDelTitular:
         no 317,51 la libra."""
         self._celda_con_formato(session, precios=["603", "700", "850"])
 
-        matriz = client.get("/control").text.split("<!-- ---------- 10.")[1]
+        matriz = client.get("/control/calidad").text.split("<!-- ---------- 10.")[1]
 
         assert 'title="Mediana 700.00"' in matriz
 
@@ -416,22 +396,21 @@ class TestLaBarraDeRangoHablaLaUnidadDelTitular:
         como comparador entre formatos —ahí sí corresponde—."""
         self._celda_con_formato(session, precios=["603"])
 
-        matriz = client.get("/control").text.split("<!-- ---------- 10.")[1]
+        matriz = client.get("/control/calidad").text.split("<!-- ---------- 10.")[1]
 
         assert "Una sola observación: 603.00" in matriz
         assert "273.52/lb para comparar" in matriz
 
-    def test_sin_formato_la_barra_sigue_en_la_unidad_base(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_sin_formato_la_barra_sigue_en_la_unidad_base(self, client: TestClient, session: Session) -> None:
         """Sin formato declarado no hay precio de formato que derivar: el
         titular ya es el precio por unidad y la barra lo acompaña."""
         _cargar(session, precios=["420", "440"])
 
-        matriz = client.get("/control").text.split("<!-- ---------- 10.")[1]
+        matriz = client.get("/control/calidad").text.split("<!-- ---------- 10.")[1]
 
         assert "420.00" in matriz
         assert "440.00" in matriz
+
 
 class TestRangoMinorista:
     """`GET /control` también resume el precio minorista por producto,
@@ -470,34 +449,28 @@ class TestRangoMinorista:
             )
         session.commit()
 
-    def test_sin_filas_minoristas_normalizables_muestra_aviso(
-        self, client: TestClient
-    ) -> None:
-        response = client.get("/control")
+    def test_sin_filas_minoristas_normalizables_muestra_aviso(self, client: TestClient) -> None:
+        response = client.get("/control/mercado")
 
         assert response.status_code == 200
         assert "ninguna fila entra todavía en este rango" in response.text.lower()
 
-    def test_muestra_la_mediana_normalizada_por_producto(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_la_mediana_normalizada_por_producto(self, client: TestClient, session: Session) -> None:
         self._cargar_retail(session)
 
-        response = client.get("/control")
+        response = client.get("/control/mercado")
 
         assert response.status_code == 200
         assert "750.00 CUP/lb" in response.text  # mediana de 700 y 800
 
-    def test_dias_es_configurable_por_query_string(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_dias_es_configurable_por_query_string(self, client: TestClient, session: Session) -> None:
         """La ventana real (qué fecha queda adentro o afuera) ya la cubre
         `test_ventana_de_dias_excluye_lo_viejo` en test_cells.py con una fecha
         fija — acá solo se verifica que `?days=` llega hasta la plantilla.
         """
         self._cargar_retail(session)
 
-        response = client.get("/control?days=1")
+        response = client.get("/control/mercado?days=1")
 
         assert "últimos 1 días" in response.text
         assert "750.00 CUP/lb" in response.text
@@ -509,14 +482,12 @@ class TestDisponibilidad:
     """
 
     def test_sin_anuncios_muestra_aviso(self, client: TestClient) -> None:
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert response.status_code == 200
         assert "ninguna celda tiene anuncios en esta ventana" in response.text.lower()
 
-    def test_muestra_conteo_actual_anterior_y_diferencia(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_conteo_actual_anterior_y_diferencia(self, client: TestClient, session: Session) -> None:
         arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         scu = Province(code="scu", name="Santiago de Cuba")
         session.add_all([arroz, scu])
@@ -535,15 +506,19 @@ class TestDisponibilidad:
             session.add(
                 PriceHistory(
                     provenance="human",
-                    product_id=arroz.id, province_id=scu.id, price=Decimal(precio),
-                    currency=Currency.CUP.value, unit="lb",
-                    sale_format=SaleFormat.RETAIL.value, quantity=Decimal("1"),
+                    product_id=arroz.id,
+                    province_id=scu.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    unit="lb",
+                    sale_format=SaleFormat.RETAIL.value,
+                    quantity=Decimal("1"),
                     source_id=origen.id,
                 )
             )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert response.status_code == 200
         assert "Disponibilidad" in response.text
@@ -570,15 +545,18 @@ class TestDisponibilidad:
         session.add(
             PriceHistory(
                 provenance="human",
-                product_id=no_piloto.id, price=Decimal("100"),
-                currency=Currency.CUP.value, unit="lb",
-                sale_format=SaleFormat.RETAIL.value, quantity=Decimal("1"),
+                product_id=no_piloto.id,
+                price=Decimal("100"),
+                currency=Currency.CUP.value,
+                unit="lb",
+                sale_format=SaleFormat.RETAIL.value,
+                quantity=Decimal("1"),
                 source_id=origen.id,
             )
         )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert response.status_code == 200
         assert "Producto no piloto" not in response.text
@@ -591,9 +569,7 @@ class TestExclusionPorBasisSinResolver:
     public-price-range spec).
     """
 
-    def test_muestra_el_conteo_separado_del_de_minimo(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_el_conteo_separado_del_de_minimo(self, client: TestClient, session: Session) -> None:
         arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[], is_pilot=True)
         session.add(arroz)
         session.commit()
@@ -636,7 +612,7 @@ class TestExclusionPorBasisSinResolver:
         )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/mercado")
 
         assert response.status_code == 200
         # Conteo de basis sin resolver, en su propio banner — no fusionado
@@ -670,9 +646,7 @@ class TestFiltroDePilotos:
         is_pilot: bool = True,
     ) -> None:
         item = Product(name=producto, category="x", unit="lb", aliases=[], is_pilot=is_pilot)
-        scu = session.execute(
-            select(Province).where(Province.name == provincia)
-        ).scalar_one_or_none()
+        scu = session.execute(select(Province).where(Province.name == provincia)).scalar_one_or_none()
         if scu is None:
             scu = Province(code="scu", name=provincia)
             session.add(scu)
@@ -700,24 +674,20 @@ class TestFiltroDePilotos:
         )
         session.commit()
 
-    def test_oculta_productos_fuera_de_los_cuatro_pilotos(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_oculta_productos_fuera_de_los_cuatro_pilotos(self, client: TestClient, session: Session) -> None:
         self._cargar(session, producto="Arroz")
         self._cargar(session, producto="Sazon Dubai", is_pilot=False)
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert "Arroz" in response.text
         assert "Sazon Dubai" not in response.text
 
-    def test_los_cuatro_pilotos_pasan_el_filtro(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_los_cuatro_pilotos_pasan_el_filtro(self, client: TestClient, session: Session) -> None:
         for producto in ("Arroz", "Pollo", "Azúcar blanca", "Aceite"):
             self._cargar(session, producto=producto)
 
-        texto = client.get("/control").text
+        texto = client.get("/control/calidad").text
 
         for producto in ("Arroz", "Pollo", "Azúcar blanca", "Aceite"):
             assert producto in texto
@@ -735,7 +705,7 @@ class TestFiltroDePilotos:
         for faltante in ("Aceite", "Azúcar blanca", "Pollo"):
             self._declarar_piloto(session, faltante)
 
-        response = client.get("/control")
+        response = client.get("/control/fase-0")
 
         assert '<span class="m3-chip m3-chip-ok m3-chip-sm">Arroz</span>' in response.text
         assert "Sazon Dubai" not in response.text
@@ -749,9 +719,7 @@ class TestColumnaNEnlazaAlHistorial:
     número» sin consultar la base a mano.
     """
 
-    def test_el_link_de_una_celda_fundida_no_manda_moneda(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_el_link_de_una_celda_fundida_no_manda_moneda(self, client: TestClient, session: Session) -> None:
         """Desde que `compute_cells` funde por `price_cup` (2026-08-13), una
         celda con `currency == "CUP"` puede mezclar filas que originalmente
         eran de otra moneda — mandar `&currency=CUP` al historial escondería
@@ -785,7 +753,7 @@ class TestColumnaNEnlazaAlHistorial:
         )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert (
             "/curation/history?product=Arroz&province=Santiago%20de%20Cuba"
@@ -828,7 +796,7 @@ class TestColumnaNEnlazaAlHistorial:
         )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert (
             "/curation/history?product=Arroz&province=Santiago%20de%20Cuba"
@@ -846,9 +814,7 @@ class TestLaMatrizMuestraLaComposicionDeLaMuestra:
     """
 
     def _arroz_en_santiago(self, session: Session) -> tuple[Product, Province]:
-        arroz = Product(
-            name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True
-        )
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         scu = Province(code="scu", name="Santiago de Cuba")
         session.add_all([arroz, scu])
         session.commit()
@@ -889,9 +855,7 @@ class TestLaMatrizMuestraLaComposicionDeLaMuestra:
             )
         )
 
-    def test_un_solo_emisor_reposteando_se_ve_como_tal(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_un_solo_emisor_reposteando_se_ve_como_tal(self, client: TestClient, session: Session) -> None:
         """El caso real de «Tienda: ⚜️ The Boss»: 4 mensajes, 1 emisor."""
         arroz, scu = self._arroz_en_santiago(session)
         canal = Channel(name="Tienda: The Boss", platform=Platform.WHATSAPP_CHANNEL)
@@ -901,14 +865,12 @@ class TestLaMatrizMuestraLaComposicionDeLaMuestra:
             self._cargar(session, arroz, scu, hash_=f"h-boss-{dia}", canal=canal, dia=dia)
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert "n = 4" in response.text
         assert "1 emisor · 4 días" in response.text
 
-    def test_varios_emisores_se_distinguen_de_uno_solo(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_varios_emisores_se_distinguen_de_uno_solo(self, client: TestClient, session: Session) -> None:
         arroz, scu = self._arroz_en_santiago(session)
         a = Channel(name="Canal A", platform=Platform.WHATSAPP_CHANNEL)
         b = Channel(name="Canal B", platform=Platform.WHATSAPP_CHANNEL)
@@ -918,13 +880,11 @@ class TestLaMatrizMuestraLaComposicionDeLaMuestra:
         self._cargar(session, arroz, scu, hash_="h-b1", canal=b, dia=1)
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert "2 emisores · 1 día" in response.text
 
-    def test_sin_canal_declarado_no_afirma_un_emisor(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_sin_canal_declarado_no_afirma_un_emisor(self, client: TestClient, session: Session) -> None:
         """Es el caso de las capturas del inbox, 106 de 336 filas en
         producción al 2026-09-18: no dicen de quién vienen."""
         arroz, scu = self._arroz_en_santiago(session)
@@ -932,7 +892,7 @@ class TestLaMatrizMuestraLaComposicionDeLaMuestra:
         self._cargar(session, arroz, scu, hash_="h-s2", canal=None, dia=1)
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert "2 sin emisor identificado · 1 día" in response.text
         assert "0 emisores" not in response.text
@@ -1000,9 +960,7 @@ class TestDrillDownAislaLaCeldaExacta:
 
     @staticmethod
     def _href(response_text: str, *, contains: str) -> str:
-        matches = re.findall(
-            r'href="(/curation/history\?product=Pollo[^"]*)"', response_text
-        )
+        matches = re.findall(r'href="(/curation/history\?product=Pollo[^"]*)"', response_text)
         for href in matches:
             if contains in href:
                 return href.replace("&amp;", "&")
@@ -1020,16 +978,27 @@ class TestDrillDownAislaLaCeldaExacta:
         session.add_all([pollo, habana])
         session.commit()
         self._curado(
-            session, product=pollo, province=habana, ref="resuelta",
-            price="585.56", unit="lb", sale_format=SaleFormat.WHOLESALE.value,
+            session,
+            product=pollo,
+            province=habana,
+            ref="resuelta",
+            price="585.56",
+            unit="lb",
+            sale_format=SaleFormat.WHOLESALE.value,
         )
         self._curado(
-            session, product=pollo, province=habana, ref="sin-basis",
-            price="7810.00", unit="kg", quantity=Decimal("5"), price_basis=None,
+            session,
+            product=pollo,
+            province=habana,
+            ref="sin-basis",
+            price="7810.00",
+            unit="kg",
+            quantity=Decimal("5"),
+            price_basis=None,
             sale_format=SaleFormat.WHOLESALE.value,
         )
 
-        control_html = client.get("/control").text
+        control_html = client.get("/control/calidad").text
         href = self._href(control_html, contains="unresolved_basis=0")
 
         historial = client.get(href).text
@@ -1045,16 +1014,27 @@ class TestDrillDownAislaLaCeldaExacta:
         session.add_all([pollo, habana])
         session.commit()
         self._curado(
-            session, product=pollo, province=habana, ref="resuelta",
-            price="585.56", unit="lb", sale_format=SaleFormat.WHOLESALE.value,
+            session,
+            product=pollo,
+            province=habana,
+            ref="resuelta",
+            price="585.56",
+            unit="lb",
+            sale_format=SaleFormat.WHOLESALE.value,
         )
         self._curado(
-            session, product=pollo, province=habana, ref="sin-basis",
-            price="7810.00", unit="kg", quantity=Decimal("5"), price_basis=None,
+            session,
+            product=pollo,
+            province=habana,
+            ref="sin-basis",
+            price="7810.00",
+            unit="kg",
+            quantity=Decimal("5"),
+            price_basis=None,
             sale_format=SaleFormat.WHOLESALE.value,
         )
 
-        control_html = client.get("/control").text
+        control_html = client.get("/control/calidad").text
         href = self._href(control_html, contains="unresolved_basis=1")
 
         historial = client.get(href).text
@@ -1070,16 +1050,26 @@ class TestDrillDownAislaLaCeldaExacta:
         session.add_all([pollo, habana])
         session.commit()
         self._curado(
-            session, product=pollo, province=habana, ref="con-cantidad",
-            price="703.50", unit="lb", sale_format=SaleFormat.RETAIL.value,
+            session,
+            product=pollo,
+            province=habana,
+            ref="con-cantidad",
+            price="703.50",
+            unit="lb",
+            sale_format=SaleFormat.RETAIL.value,
         )
         self._curado(
-            session, product=pollo, province=habana, ref="sin-cantidad",
-            price="8500.00", unit="lb", quantity=None,
+            session,
+            product=pollo,
+            province=habana,
+            ref="sin-cantidad",
+            price="8500.00",
+            unit="lb",
+            quantity=None,
             sale_format=SaleFormat.RETAIL.value,
         )
 
-        control_html = client.get("/control").text
+        control_html = client.get("/control/calidad").text
 
         solo_sin_cantidad = client.get(self._href(control_html, contains="unquantified=1")).text
         assert "8500.00" in solo_sin_cantidad
@@ -1103,21 +1093,29 @@ class TestDrillDownAislaLaCeldaExacta:
         session.add_all([pollo, habana])
         session.commit()
         self._curado(
-            session, product=pollo, province=habana, ref="en-libras",
-            price="700.00", unit="lb", sale_format=SaleFormat.RETAIL.value,
+            session,
+            product=pollo,
+            province=habana,
+            ref="en-libras",
+            price="700.00",
+            unit="lb",
+            sale_format=SaleFormat.RETAIL.value,
         )
         self._curado(
-            session, product=pollo, province=habana, ref="en-kilos",
-            price="1543.21", unit="kg", sale_format=SaleFormat.RETAIL.value,
+            session,
+            product=pollo,
+            province=habana,
+            ref="en-kilos",
+            price="1543.21",
+            unit="kg",
+            sale_format=SaleFormat.RETAIL.value,
         )
 
-        control_html = client.get("/control").text
+        control_html = client.get("/control/calidad").text
         # Una sola celda fundida: n = 2, unidad efectiva lb.
         # `format_id=` (vacío = sin formato) va entre `sale_format` y los flags
         # desde que el formato entra a la identidad de la celda.
-        href = self._href(
-            control_html, contains="unit=lb&sale_format=retail&format_id=&unquantified=0"
-        )
+        href = self._href(control_html, contains="unit=lb&sale_format=retail&format_id=&unquantified=0")
 
         historial = client.get(href).text
         assert "700.00" in historial
@@ -1133,31 +1131,25 @@ class TestPanelDeProgreso:
     <30% (§12.5). Ver `saimc.progress`.
     """
 
-    def test_muestra_la_meta_de_500_registros(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_la_meta_de_500_registros(self, client: TestClient, session: Session) -> None:
         _cargar(session, precios=["420", "440"])
 
-        response = client.get("/control")
+        response = client.get("/control/fase-0")
 
         assert "/ 500" in response.text
         assert "Faltan 498" in response.text
 
-    def test_nombra_la_provincia_de_la_meta_que_falta(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_nombra_la_provincia_de_la_meta_que_falta(self, client: TestClient, session: Session) -> None:
         """§9 nombra dos provincias. Con datos solo en Santiago, La Habana
         tiene que aparecer marcada como pendiente, no simplemente ausente."""
         _cargar(session, precios=["420"])
 
-        response = client.get("/control")
+        response = client.get("/control/fase-0")
 
         assert "La Habana · sin dato" in response.text
         assert '<span class="m3-chip m3-chip-ok m3-chip-sm">Santiago de Cuba</span>' in response.text
 
-    def test_los_huecos_enlazan_al_historial_filtrado(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_los_huecos_enlazan_al_historial_filtrado(self, client: TestClient, session: Session) -> None:
         """Un hueco sirve si se puede ir a arreglarlo. `_cargar` no completa
         `unit` ni `sale_format`, así que ambos huecos tienen que estar."""
         _cargar(session, precios=["420", "440"])
@@ -1167,24 +1159,18 @@ class TestPanelDeProgreso:
         assert "/curation/history?unit=" in response.text
         assert "/curation/history?sale_format=" in response.text
 
-    def test_la_cobertura_muestra_el_cero_de_lo_que_falta(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_la_cobertura_muestra_el_cero_de_lo_que_falta(self, client: TestClient, session: Session) -> None:
         """La grilla producto × provincia se dibuja completa: el cero es
         justamente lo que dice qué salir a capturar."""
         _cargar(session, precios=["420"])
         # El conjunto piloto vive en la base desde el 2026-08-15: los que
         # `_cargar` no crea hay que declararlos para que la grilla los dibuje.
         for faltante in ("Aceite", "Arroz", "Pollo"):
-            if session.execute(
-                select(Product).where(Product.name == faltante)
-            ).scalar_one_or_none() is None:
-                session.add(
-                    Product(name=faltante, category="x", unit="lb", aliases=[], is_pilot=True)
-                )
+            if session.execute(select(Product).where(Product.name == faltante)).scalar_one_or_none() is None:
+                session.add(Product(name=faltante, category="x", unit="lb", aliases=[], is_pilot=True))
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/fase-0")
 
         assert "Cobertura de la meta" in response.text
         # Los cuatro pilotos aparecen como fila aunque no tengan una sola fila
@@ -1211,24 +1197,20 @@ class TestPanelDeProgreso:
             )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert "67%" in response.text
         # El chip resume; el banner explica. El aviso son las dos cosas.
         assert "sobre el 30%" in response.text
         assert "Se descarta más de lo que §12.5 pone como objetivo" in response.text
 
-    def test_sin_nada_decidido_no_inventa_una_tasa_de_descarte(
-        self, client: TestClient
-    ) -> None:
+    def test_sin_nada_decidido_no_inventa_una_tasa_de_descarte(self, client: TestClient) -> None:
         """Cero decididos no es «0% de descarte»: es que no hay qué medir."""
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert "Nada decidido todavía" in response.text
 
-    def test_muestra_el_descarte_por_canal(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_el_descarte_por_canal(self, client: TestClient, session: Session) -> None:
         """`/control` recomendaba «mirar de qué canales viene lo que se
         descarta» sin dar ese desglose. Ahora la tabla lo trae."""
         from saimc.models import Channel
@@ -1252,7 +1234,7 @@ class TestPanelDeProgreso:
             )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert "Descarte por canal" in response.text
         assert "Ofertas Habana" in response.text
@@ -1277,16 +1259,14 @@ class TestPanelDeProgreso:
             )
         )
 
-    def test_la_tabla_de_canales_oculta_los_inactivos(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_la_tabla_de_canales_oculta_los_inactivos(self, client: TestClient, session: Session) -> None:
         """Un canal que ya no ingiere no ocupa fila: distrae del triage. Queda
         el enlace para pedirlo, con cuántos son."""
         self._canal_con_descarte(session, "Prendido", is_active=True)
         self._canal_con_descarte(session, "Apagado", is_active=False)
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert "Prendido" in response.text
         assert "Apagado" not in response.text
@@ -1294,14 +1274,12 @@ class TestPanelDeProgreso:
         assert "Mostrar inactivos (1)" in response.text
         assert "inactivos=1#canales" in response.text
 
-    def test_los_inactivos_se_muestran_a_pedido(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_los_inactivos_se_muestran_a_pedido(self, client: TestClient, session: Session) -> None:
         self._canal_con_descarte(session, "Prendido", is_active=True)
         self._canal_con_descarte(session, "Apagado", is_active=False)
         session.commit()
 
-        response = client.get("/control?inactivos=1&days=30")
+        response = client.get("/control/ingesta?inactivos=1&days=30")
 
         assert "Apagado" in response.text
         assert "(inactivo)" in response.text
@@ -1309,33 +1287,27 @@ class TestPanelDeProgreso:
         # El enlace de vuelta conserva el resto de los parámetros.
         assert "days=30#canales" in response.text
 
-    def test_ocultar_inactivos_no_cambia_las_tarjetas(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_ocultar_inactivos_no_cambia_las_tarjetas(self, client: TestClient, session: Session) -> None:
         """Es solo vista: «Salud de la ingesta» sigue sumando todos los
         canales, y con solo inactivos el enlace igual aparece."""
         self._canal_con_descarte(session, "Apagado", is_active=False)
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert "Apagado" not in response.text
         assert "Mostrar inactivos (1)" in response.text
         assert "100%" in response.text
 
-    def test_sin_inactivos_no_ofrece_mostrarlos(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_sin_inactivos_no_ofrece_mostrarlos(self, client: TestClient, session: Session) -> None:
         self._canal_con_descarte(session, "Prendido", is_active=True)
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/fase-0")
 
         assert "inactivos" not in response.text.lower()
 
-    def test_agrupa_la_captura_manual_sin_canal(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_agrupa_la_captura_manual_sin_canal(self, client: TestClient, session: Session) -> None:
         """La mitad del trabajo del operador es sin canal (`channel_id` nulo);
         el desglose no puede dejarla fuera."""
         session.add(
@@ -1350,15 +1322,13 @@ class TestPanelDeProgreso:
         )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert "Captura manual" in response.text
 
-    def test_sin_ninguna_ingesta_no_muestra_la_tabla_de_canales(
-        self, client: TestClient
-    ) -> None:
+    def test_sin_ninguna_ingesta_no_muestra_la_tabla_de_canales(self, client: TestClient) -> None:
         """Nada cargado todavía: la tabla no tiene sentido de mostrar vacía."""
-        response = client.get("/control")
+        response = client.get("/control/fase-0")
 
         assert "Descarte por canal" not in response.text
 
@@ -1366,9 +1336,7 @@ class TestPanelDeProgreso:
 class TestPanelDeTasaDeCambio:
     """Visibilidad de la tasa: qué hay disponible y qué quedó aplicado."""
 
-    def test_muestra_la_tasa_cacheada_con_su_antiguedad(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_la_tasa_cacheada_con_su_antiguedad(self, client: TestClient, session: Session) -> None:
         from datetime import date
 
         from saimc.models import ExchangeRateCache
@@ -1384,7 +1352,7 @@ class TestPanelDeTasaDeCambio:
         )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/mercado")
 
         assert "670.00" in response.text
         assert "tasa de hoy" in response.text
@@ -1392,14 +1360,12 @@ class TestPanelDeTasaDeCambio:
     def test_una_moneda_sin_cache_se_muestra_igual(self, client: TestClient) -> None:
         """El hueco es el dato: sin tasa cacheada, un anuncio en esa moneda se
         guarda sin convertir si elTOQUE no responde."""
-        response = client.get("/control")
+        response = client.get("/control/mercado")
 
         assert "EUR → CUP" in response.text
         assert "Nunca se cacheó una tasa" in response.text
 
-    def test_no_inventa_una_ventana_de_validez(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_no_inventa_una_ventana_de_validez(self, client: TestClient, session: Session) -> None:
         """spec.md §12.6 lista la ventana de validez como parámetro pendiente
         de calibración. La vista informa antigüedad, nunca vigencia."""
         from datetime import date, timedelta
@@ -1417,7 +1383,7 @@ class TestPanelDeTasaDeCambio:
         )
         session.commit()
 
-        texto = client.get("/control").text.lower()
+        texto = client.get("/control/mercado").text.lower()
 
         assert "hace 40 días" in texto
         for veredicto in ("vencida", "expirada", "caducada", "obsoleta"):
@@ -1445,6 +1411,7 @@ class TestHistorialDeH0:
             quantity_unit_accuracy=0.7,
             discard_rate=0.678,
             complete_delta=None,
+            reference_set_version=None,
         )
         base.update(overrides)
         return H0RunSummary(**base)  # type: ignore[arg-type]
@@ -1454,7 +1421,7 @@ class TestHistorialDeH0:
     ) -> None:
         monkeypatch.setattr(control, "read_h0_runs", lambda: [])
 
-        texto = client.get("/control").text
+        texto = client.get("/control/fase-0").text
 
         assert "Historial de H0" in texto
         assert "Sin corridas registradas" in texto
@@ -1474,7 +1441,7 @@ class TestHistorialDeH0:
         ]
         monkeypatch.setattr(control, "read_h0_runs", lambda: runs)
 
-        texto = client.get("/control").text
+        texto = client.get("/control/fase-0").text
 
         assert "45.0%" in texto and "40.0%" in texto
         assert "c1" in texto and "c2" in texto
@@ -1489,11 +1456,9 @@ class TestHistorialDeH0:
         """El número de al lado mide SOLO lo no asistido. Si no se ve cuántos
         quedaron afuera, la divergencia entre asistido y no asistido queda
         enterrada en un archivo (design.md del asistente, D6)."""
-        monkeypatch.setattr(
-            control, "read_h0_runs", lambda: [self._run(assisted_ads_count=7)]
-        )
+        monkeypatch.setattr(control, "read_h0_runs", lambda: [self._run(assisted_ads_count=7)])
 
-        texto = client.get("/control").text
+        texto = client.get("/control/fase-0").text
 
         assert "7 asistidos fuera" in texto
 
@@ -1502,7 +1467,28 @@ class TestHistorialDeH0:
     ) -> None:
         monkeypatch.setattr(control, "read_h0_runs", lambda: [self._run()])
 
-        assert "asistidos fuera" not in client.get("/control").text
+        assert "asistidos fuera" not in client.get("/control/fase-0").text
+
+    def test_cada_fila_dice_contra_que_conjunto_se_midio(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B3-2 (`docs/spec-slice-B3.md`, sección 3): la versión del conjunto
+        va en cada fila. Una corrida sin versión midió contra el oro vivo."""
+        runs = [
+            self._run(git_commit="vieja", reference_set_version=None),
+            self._run(git_commit="nueva", reference_set_version=2, date="2026-10-11"),
+        ]
+        monkeypatch.setattr(control, "read_h0_runs", lambda: runs)
+
+        texto = client.get("/control/fase-0").text
+        historial = texto.split("Historial de H0</h2>")[1].split("</table>")[0]
+        # La más reciente va arriba.
+        fila_nueva, fila_vieja = historial.split("<tbody>")[1].split("</tr>")[:2]
+
+        assert "nueva" in fila_nueva and "conjunto v2" in fila_nueva
+        assert "oro vivo" not in fila_nueva
+        assert "vieja" in fila_vieja and "oro vivo" in fila_vieja
+        assert "conjunto v" not in fila_vieja
 
     def test_marca_la_corrida_no_oficial_y_el_arbol_sucio(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
@@ -1513,7 +1499,7 @@ class TestHistorialDeH0:
             lambda: [self._run(is_official=False, git_dirty=True)],
         )
 
-        texto = client.get("/control").text
+        texto = client.get("/control/fase-0").text
 
         assert "/ 300" in texto
         assert "árbol sucio" in texto
@@ -1550,7 +1536,7 @@ class TestConsumoDelAsistente:
         monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(tmp_path / "vacio.jsonl"))
         get_settings.cache_clear()
 
-        assert "Consumo del asistente" not in client.get("/control").text
+        assert "Consumo del asistente" not in client.get("/control/fase-0").text
 
     _SIN_CLAVE = "Sin clave configurada. La curaduría funciona igual, a mano."
 
@@ -1581,7 +1567,7 @@ class TestConsumoDelAsistente:
         monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "vck-de-prueba")
         get_settings.cache_clear()
 
-        assert self._SIN_CLAVE not in client.get("/control").text
+        assert self._SIN_CLAVE not in client.get("/control/fase-0").text
 
     def test_muestra_llamadas_y_gasto_estimado(
         self, client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
@@ -1590,7 +1576,7 @@ class TestConsumoDelAsistente:
         monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(ruta))
         get_settings.cache_clear()
 
-        texto = client.get("/control").text
+        texto = client.get("/control/fase-0").text
 
         assert "Consumo del asistente" in texto
         assert "3" in texto
@@ -1602,7 +1588,7 @@ class TestConsumoDelAsistente:
         monkeypatch.setenv("SAIMC_LLM_ASSIST_LOG_PATH", str(ruta))
         get_settings.cache_clear()
 
-        texto = client.get("/control").text
+        texto = client.get("/control/fase-0").text
 
         assert "falló por <strong>saldo insuficiente" in texto
 
@@ -1616,7 +1602,7 @@ class TestConsumoDelAsistente:
         # Específico a propósito: un substring suelto matchea contra
         # comentarios del HTML y del CSS, y ya pasó tres veces en este
         # proyecto. Se busca el aviso real, no la palabra.
-        assert "falló por <strong>saldo insuficiente" not in client.get("/control").text
+        assert "falló por <strong>saldo insuficiente" not in client.get("/control/fase-0").text
 
 
 class TestFranjaUsaComponentesCompartidos:
@@ -1634,26 +1620,17 @@ class TestFranjaUsaComponentesCompartidos:
 
     def _hoja(self) -> str:
         return (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "saimc"
-            / "web"
-            / "static"
-            / "saimc-material.css"
+            Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "static" / "saimc-material.css"
         ).read_text(encoding="utf-8")
 
     def test_la_plantilla_ya_no_trae_css_propio(self) -> None:
-        plantilla = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "saimc"
-            / "web"
-            / "templates"
-            / "control.html"
-        ).read_text(encoding="utf-8")
+        plantillas = Path(__file__).resolve().parents[1] / "src" / "saimc" / "web" / "templates"
+        plantilla = "".join(
+            ruta.read_text(encoding="utf-8") for ruta in sorted(plantillas.glob("control_*.html"))
+        )
 
         assert "<style>" not in plantilla, (
-            "volvió CSS al `<style>` de control.html — el componente es "
+            "volvió CSS al `<style>` de las plantillas de control — el componente es "
             "`.m3-health-*` y vive en saimc-material.css"
         )
         assert "hs-" not in plantilla
@@ -1716,7 +1693,7 @@ class TestFranjaDeEstado:
         se veía solo al correr la suite desde el checkout.
         """
         monkeypatch.setattr(
-            control,
+            strip_loader,
             "session_health",
             lambda **kw: SessionHealth(configured=False, status="unknown"),
         )
@@ -1729,7 +1706,7 @@ class TestFranjaDeEstado:
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            control,
+            strip_loader,
             "session_health",
             lambda **kw: SessionHealth(configured=True, status="failed"),
         )
@@ -1739,20 +1716,19 @@ class TestFranjaDeEstado:
         assert "m3-health-banner is-down" in texto
         assert "Reiniciala en WAHA" in texto
 
-    def test_la_franja_enlaza_al_detalle(
-        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_la_franja_enlaza_al_detalle(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         """Un semáforo sin salida obliga a buscar la sección a mano."""
         monkeypatch.setattr(
-            control,
+            strip_loader,
             "session_health",
             lambda **kw: SessionHealth(configured=True, status="working"),
         )
 
         texto = client.get("/control").text
 
-        assert 'href="#ingesta"' in texto
-        assert 'id="ingesta"' in texto
+        # El enlace de la franja apunta a la subpágina que tiene el detalle.
+        assert 'href="/control/ingesta#ingesta"' in texto
+        assert 'id="ingesta"' in client.get("/control/ingesta").text
 
     def test_cargar_control_no_rompe_si_waha_no_contesta(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
@@ -1760,7 +1736,7 @@ class TestFranjaDeEstado:
         """WAHA apagado es el caso normal, no un error: la vista tiene que
         cargar igual y decirlo."""
         monkeypatch.setattr(
-            control,
+            strip_loader,
             "session_health",
             lambda **kw: SessionHealth(configured=True, status="unreachable"),
         )
@@ -1777,14 +1753,10 @@ class TestLaTablaDeSospechososDeclaraDeDondeSaleLaReferencia:
     una diferencia regional real, y esta tabla existe justamente para que él
     juzgue con los números a la vista."""
 
-    def _pollo(
-        self, session: Session, *, con_referencia_propia: bool
-    ) -> None:
+    def _pollo(self, session: Session, *, con_referencia_propia: bool) -> None:
         """La caja de 40 lb a 24.800 marcada «por libra», sola en Santiago.
         La Habana aporta la referencia (600, 620, 640 -> mediana 620)."""
-        pollo = Product(
-            name="Pollo", category="cárnicos", unit="lb", aliases=[], is_pilot=True
-        )
+        pollo = Product(name="Pollo", category="cárnicos", unit="lb", aliases=[], is_pilot=True)
         santiago = Province(code="scu", name="Santiago de Cuba")
         habana = Province(code="hab", name="La Habana")
         session.add_all([pollo, santiago, habana])
@@ -1829,7 +1801,7 @@ class TestLaTablaDeSospechososDeclaraDeDondeSaleLaReferencia:
     ) -> None:
         self._pollo(session, con_referencia_propia=False)
 
-        texto = client.get("/control").text
+        texto = client.get("/control/mercado").text
 
         assert "todas las provincias" in texto
 
@@ -1840,7 +1812,7 @@ class TestLaTablaDeSospechososDeclaraDeDondeSaleLaReferencia:
         la suya y no hay nada que aclarar."""
         self._pollo(session, con_referencia_propia=True)
 
-        texto = client.get("/control").text
+        texto = client.get("/control/mercado").text
 
         assert "todas las provincias" not in texto
 
@@ -1894,9 +1866,7 @@ class TestLintDrift:
     ) -> None:
         capturado: dict[str, object] = {}
 
-        def _fake_run(
-            args: list[str], **kwargs: object
-        ) -> subprocess.CompletedProcess[str]:
+        def _fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             capturado["args"] = args
             return subprocess.CompletedProcess(
                 args, returncode=0, stdout=_reporte_json(has_new=False, committed=True), stderr=""
@@ -1920,9 +1890,7 @@ class TestLintDrift:
     ) -> None:
         nuevo = [{"file": "src/saimc/cells.py", "code": "E501", "message": "Line too long", "count": 1}]
 
-        def _fake_run(
-            args: list[str], **kwargs: object
-        ) -> subprocess.CompletedProcess[str]:
+        def _fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
                 args, returncode=1, stdout=_reporte_json(has_new=True, nuevos=nuevo), stderr=""
             )
@@ -1947,9 +1915,7 @@ class TestLintDrift:
             {"file": "src/saimc/web/price_charts.py", "code": "E741", "message": "Ambiguous name", "count": 4}
         ]
 
-        def _fake_run(
-            args: list[str], **kwargs: object
-        ) -> subprocess.CompletedProcess[str]:
+        def _fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
                 args, returncode=0, stdout=_reporte_json(has_new=False, conocidos=conocido), stderr=""
             )
@@ -1969,9 +1935,7 @@ class TestLintDrift:
         """Si el script no devuelve JSON válido (crash, formato viejo), la
         vista no revienta: muestra la salida cruda en vez de un 500."""
 
-        def _fake_run(
-            args: list[str], **kwargs: object
-        ) -> subprocess.CompletedProcess[str]:
+        def _fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
                 args, returncode=1, stdout="", stderr="Traceback: algo explotó\n"
             )
@@ -2031,13 +1995,11 @@ class TestVigilanciaDelRubberStamping:
         session.commit()
 
     def test_sin_llm_reviews_no_rompe(self, client: TestClient) -> None:
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert response.status_code == 200
 
-    def test_con_datos_muestra_la_tasa_agregada(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_con_datos_muestra_la_tasa_agregada(self, client: TestClient, session: Session) -> None:
         fila = {
             "proposal_index": 0,
             "price_history_id": "x",
@@ -2047,7 +2009,7 @@ class TestVigilanciaDelRubberStamping:
         }
         self._review(session, rows=[fila], sufijo="ok")
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert response.status_code == 200
         assert "Aceptación sin revisar" in response.text
@@ -2058,17 +2020,23 @@ class TestVigilanciaDelRubberStamping:
     ) -> None:
         propuesta = {"product_id": "p", "price": "100"}
         aceptada = {
-            "proposal_index": 0, "price_history_id": "x", "proposed": propuesta,
-            "final": {"product_id": "p", "price": "100"}, "edited": [],
+            "proposal_index": 0,
+            "price_history_id": "x",
+            "proposed": propuesta,
+            "final": {"product_id": "p", "price": "100"},
+            "edited": [],
         }
         borrada = {
-            "proposal_index": 0, "price_history_id": None, "proposed": propuesta,
-            "final": None, "edited": [],
+            "proposal_index": 0,
+            "price_history_id": None,
+            "proposed": propuesta,
+            "final": None,
+            "edited": [],
         }
         self._review(session, rows=[aceptada], sufijo="a")
         self._review(session, rows=[borrada], sufijo="b")
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         # 2 de 4 celdas sin cambios: 50 %, no 100 %.
         assert "50%" in response.text
@@ -2080,10 +2048,8 @@ class TestVigilanciaDelRubberStamping:
 class TestHorasYAutomatizacion:
     """La sección de A2d: métricas semana a semana desde la bitácora."""
 
-    def test_muestra_la_seccion_aunque_no_haya_bitacora(
-        self, client: TestClient, session: Session
-    ) -> None:
-        response = client.get("/control")
+    def test_muestra_la_seccion_aunque_no_haya_bitacora(self, client: TestClient, session: Session) -> None:
+        response = client.get("/control/ingesta")
 
         assert response.status_code == 200
         assert 'id="horas"' in response.text
@@ -2091,9 +2057,7 @@ class TestHorasYAutomatizacion:
         assert "Pendiente más viejo" in response.text
         assert "pausas de más de 15 minutos" in response.text
 
-    def test_muestra_los_numeros_de_la_semana_en_curso(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_los_numeros_de_la_semana_en_curso(self, client: TestClient, session: Session) -> None:
         from datetime import timedelta
 
         from saimc.models import CurationEvent
@@ -2114,7 +2078,7 @@ class TestHorasYAutomatizacion:
             )
         session.commit()
 
-        response = client.get("/control")
+        response = client.get("/control/ingesta")
 
         assert response.status_code == 200
         # 36 s por anuncio = 10 h por mil; 1 de 2 resueltos fue por lote.
@@ -2140,9 +2104,7 @@ class TestControlesDeManipulacion:
     ) -> None:
         arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
         scu = Province(code="scu", name="Santiago de Cuba")
-        grupo = Channel(
-            name="Ventas Santiago", platform=Platform.WHATSAPP_GROUP, external_id=self.JID
-        )
+        grupo = Channel(name="Ventas Santiago", platform=Platform.WHATSAPP_GROUP, external_id=self.JID)
         session.add_all([arroz, scu, grupo])
         session.flush()
         filas = [(p, "human") for p in humanas] + [(p, "auto") for p in automaticas or []]
@@ -2177,19 +2139,17 @@ class TestControlesDeManipulacion:
         session.commit()
 
     def test_sin_datos_la_seccion_aparece_igual(self, client: TestClient) -> None:
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert response.status_code == 200
         assert "Controles de manipulación (§10.7)" in response.text
         assert "0 celdas divergen" in response.text
 
-    def test_muestra_la_seccion_sin_ningun_emisor(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_muestra_la_seccion_sin_ningun_emisor(self, client: TestClient, session: Session) -> None:
         # 4 filas humanas: menos que MIN_CELL_N (5), la celda queda sin ancla.
         self._cargar(session, humanas=["100", "100", "100", "100"])
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert response.status_code == 200
         assert "Controles de manipulación (§10.7)" in response.text
@@ -2203,15 +2163,13 @@ class TestControlesDeManipulacion:
         assert self.HASH_B not in response.text
         assert self.JID not in response.text
 
-    def test_una_celda_que_diverge_va_arriba_y_se_cuenta(
-        self, client: TestClient, session: Session
-    ) -> None:
+    def test_una_celda_que_diverge_va_arriba_y_se_cuenta(self, client: TestClient, session: Session) -> None:
         # 5 humanas en 100 y 6 automáticas en 300: la mediana principal (la
         # sexta de 11) es 300, y el cerco de cinco valores iguales a 100 va de
         # 50 a 200 (sin ancho de caja manda el piso ×2). Diverge.
         self._cargar(session, humanas=["100"] * 5, automaticas=["300"] * 6)
 
-        response = client.get("/control")
+        response = client.get("/control/calidad")
 
         assert "1 celda diverge" in response.text
         assert "0 sin ancla" in response.text
@@ -2237,7 +2195,7 @@ class TestJevEnSombra:
         monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "clave-falsa-de-jev-123")
         monkeypatch.setenv("SAIMC_PREFILL_STATUS_PATH", str(ruta))
         monkeypatch.setattr(
-            control, "session_health", lambda **kw: SessionHealth(configured=False, status="unknown")
+            strip_loader, "session_health", lambda **kw: SessionHealth(configured=False, status="unknown")
         )
         get_settings.cache_clear()
         yield ruta
@@ -2254,7 +2212,7 @@ class TestJevEnSombra:
     ) -> None:
         """Mobile first: a 390 px las fichas `m3-stats` se acomodan solas; una
         tabla o las tarjetas grandes obligarían a desplazar de costado."""
-        seccion = self._seccion(client.get("/control").text)
+        seccion = self._seccion(client.get("/control/calidad").text)
 
         assert 'class="m3-stats"' in seccion
         assert "<table" not in seccion
@@ -2319,7 +2277,7 @@ class TestJevEnSombra:
         monkeypatch.setenv("SAIMC_LLM_JEV_ENABLED", "false")
         get_settings.cache_clear()
 
-        seccion = self._seccion(client.get("/control").text)
+        seccion = self._seccion(client.get("/control/calidad").text)
 
         assert "Jev (señal en sombra)" in seccion
         assert self._metrica(seccion, "Estado") == "apagada"
@@ -2331,7 +2289,7 @@ class TestJevEnSombra:
         monkeypatch.setenv("SAIMC_LLM_JEV_API_KEY", "")
         get_settings.cache_clear()
 
-        seccion = self._seccion(client.get("/control").text)
+        seccion = self._seccion(client.get("/control/calidad").text)
 
         assert self._metrica(seccion, "Estado") == "sin clave"
         assert "falta la clave" in seccion
@@ -2341,7 +2299,7 @@ class TestJevEnSombra:
     ) -> None:
         self._senales(session, 3)
 
-        seccion = self._seccion(client.get("/control").text)
+        seccion = self._seccion(client.get("/control/calidad").text)
 
         assert self._metrica(seccion, "Estado") == "encendida"
         assert self._metrica(seccion, "Textos con señal") == "3"
@@ -2354,7 +2312,7 @@ class TestJevEnSombra:
     ) -> None:
         anuncios = self._senales(session, 3)
 
-        seccion = self._seccion(client.get("/control").text)
+        seccion = self._seccion(client.get("/control/calidad").text)
 
         assert self.TEXTO not in seccion
         assert "Arroz particular" not in seccion
@@ -2370,7 +2328,7 @@ class TestJevEnSombra:
         self._senales(session, 3)
         self._senales(session, 1, huella="huella-vieja-000")
 
-        seccion = self._seccion(client.get("/control").text)
+        seccion = self._seccion(client.get("/control/calidad").text)
 
         assert self._metrica(seccion, "Textos con señal") == "3"
         assert "4 filas en la tabla" in seccion
@@ -2384,13 +2342,11 @@ class TestJevEnSombra:
         filas[1].validation_detail = {"rules": {}}
         session.commit()
 
-        seccion = self._seccion(client.get("/control").text)
+        seccion = self._seccion(client.get("/control/calidad").text)
 
         assert self._metrica(seccion, "Filas anotadas") == "1"
 
-    def test_muestra_la_ultima_corrida_y_por_que_corto(
-        self, client: TestClient, entorno: Path
-    ) -> None:
+    def test_muestra_la_ultima_corrida_y_por_que_corto(self, client: TestClient, entorno: Path) -> None:
         from saimc.extraction import prefill_status
 
         prefill_status.write_run_status(
@@ -2411,20 +2367,123 @@ class TestJevEnSombra:
             ),
         )
 
-        html = client.get("/control").text
+        html = client.get("/control/calidad").text
         seccion = self._seccion(html)
 
         assert "5 preguntados" in seccion
         assert "1 fallo" in seccion
         assert "la clave fue rechazada" in seccion
         # En la franja, un indicador ámbar que lleva a la sección. No rojo.
-        assert 'href="#jev"' in html
-        assert "m3-health-banner is-down" not in html
+        hoy = client.get("/control").text
+        assert 'href="/control/calidad#jev"' in hoy
+        assert "m3-health-banner is-down" not in hoy
 
-    def test_sin_corte_no_hay_indicador_en_la_franja(
-        self, client: TestClient, entorno: Path
-    ) -> None:
-        html = client.get("/control").text
+    def test_sin_corte_no_hay_indicador_en_la_franja(self, client: TestClient, entorno: Path) -> None:
+        html = client.get("/control/calidad").text
 
         assert 'href="#jev"' not in html
         assert "Todavía no hay ninguna corrida registrada" in self._seccion(html)
+
+
+class TestMetricaFase0:
+    """El bloque de B3-3: los dos números con su nombre y el error auditado."""
+
+    @staticmethod
+    def _seccion(html: str) -> str:
+        inicio = html.index('id="metrica-fase-0"')
+        return html[inicio : html.index("Historial de H0</h2>", inicio)]
+
+    def test_los_dos_numeros_van_con_su_nombre_y_sin_error_auditado_se_rotulan(
+        self, client: TestClient, session: Session
+    ) -> None:
+        for n, tipo in enumerate((ContentType.TEXT, ContentType.IMAGE)):
+            session.add(
+                RawIngestion(
+                    source_type=SourceType.INBOX_TEXT,
+                    file_path=f"raw/f0-{n}.txt",
+                    content_hash=f"hash-f0-{n}",
+                    content_type=tipo,
+                    processing_status=ProcessingStatus.PENDING,
+                    captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+                )
+            )
+        session.commit()
+
+        seccion = self._seccion(client.get("/control/fase-0").text)
+
+        assert "Resuelto sin el operador" in seccion
+        assert "Publicado sin el operador" in seccion
+        assert "tasa de automatización" not in seccion.lower()
+        assert "sin auditar todavía" in seccion
+        assert "Provisional" in seccion
+        # La serie abre texto e imagen.
+        assert "· texto" in seccion
+        assert "· imagen" in seccion
+
+
+class TestMatrizConCapaMayorista:
+    """La matriz lee el minorista como cifra principal y el mayorista del
+    mismo par como capa cerrada por defecto (2026-10-16). Lo sin volumen
+    declarado sigue visible, marcado como pendiente."""
+
+    def _cargar(self, session: Session) -> None:
+        arroz = Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True)
+        scu = Province(code="scu", name="Santiago de Cuba")
+        session.add_all([arroz, scu])
+        session.commit()
+        origen = RawIngestion(
+            source_type=SourceType.INBOX_TEXT,
+            file_path="raw/capa.txt",
+            content_hash="hash-capa",
+            content_type=ContentType.TEXT,
+            processing_status=ProcessingStatus.CURATED,
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        session.add(origen)
+        session.flush()
+        # Minorista 300/lb, mayorista 250/lb (saco de 100 lb a 25000 total):
+        # ratio 300 / 250 = 1,20. Sin volumen declarado: 320/lb.
+        for precio, cantidad, base, formato in (
+            ("300", "1", None, SaleFormat.RETAIL.value),
+            ("25000", "100", "total", SaleFormat.WHOLESALE.value),
+            ("320", "1", None, None),
+        ):
+            session.add(
+                PriceHistory(
+                    provenance="human",
+                    product_id=arroz.id,
+                    province_id=scu.id,
+                    price=Decimal(precio),
+                    currency=Currency.CUP.value,
+                    unit="lb",
+                    quantity=Decimal(cantidad),
+                    price_basis=base,
+                    sale_format=formato,
+                    source_id=origen.id,
+                )
+            )
+        session.commit()
+
+    def test_el_mayorista_va_en_una_capa_cerrada_despues_del_minorista(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._cargar(session)
+
+        matriz = client.get("/control/calidad").text.split("<!-- ---------- 10.")[1]
+
+        assert '<details class="m3-matrix-layer">' in matriz
+        assert '<details class="m3-matrix-layer" open' not in matriz
+        assert "Al por mayor (escala de contenedor)" in matriz
+        assert "minorista ×1.20" in matriz
+        assert matriz.index("300.00 CUP/lb") < matriz.index("m3-matrix-layer")
+        assert matriz.index("m3-matrix-layer") < matriz.index("250.00 CUP/lb")
+
+    def test_lo_sin_volumen_declarado_queda_visible_como_pendiente(
+        self, client: TestClient, session: Session
+    ) -> None:
+        self._cargar(session)
+
+        matriz = client.get("/control/calidad").text.split("<!-- ---------- 10.")[1]
+
+        assert "pendiente: falta declarar minorista o mayorista" in matriz
+        assert "320.00 CUP/lb" in matriz

@@ -1,0 +1,261 @@
+{# Mercado — tasa de cambio y rango minorista por producto.
+   Parcial del layout `control_base.html`; el menú lateral vive allá. #}
+{% extends "control_base.html" %}
+
+{% block body %}
+  <!-- ---------- 7. Tasa de cambio ---------- -->
+  <section>
+    <div class="m3-section-head"><h2 class="m3-h2" id="tasa">Tasa de cambio</h2></div>
+    <p class="m3-note">
+      Todo esto sale de la base: <strong>cargar esta página no consulta a elTOQUE</strong>.
+      Quien sale a la red es la curaduría, que es cuando la tasa se necesita. Al curar,
+      <code>RateResolver</code> intenta en este orden: tasa del día en cache → consulta fresca
+      → última tasa conocida (marcada <em>cache</em>) → sin convertir.
+      <strong>No hay ventana de validez fijada</strong> (§12.6): acá se muestra la antigüedad
+      en días y nada más — ninguna tasa se marca como fuera de plazo.
+    </p>
+
+    <div class="m3-grid" style="grid-template-columns:repeat(auto-fit, minmax(240px, 1fr))">
+      {% for tasa in rate_status %}
+      <div class="m3-metric">
+        <div class="m3-row" style="justify-content:space-between">
+          <span class="m3-metric-label">{{ tasa.currency }} → CUP</span>
+          {% if tasa.rate is none %}
+          <span class="m3-chip m3-chip-neutral m3-chip-sm">nunca cacheada</span>
+          {% elif tasa.has_today %}
+          <span class="m3-chip m3-chip-ok m3-chip-sm">tasa de hoy</span>
+          {% elif tasa.age_days == 1 %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">de hace 1 día</span>
+          {% else %}
+          <span class="m3-chip m3-chip-warn m3-chip-sm">de hace {{ tasa.age_days }} días</span>
+          {% endif %}
+        </div>
+        {% if tasa.rate is none %}
+        <div class="m3-metric-value-sm m3-dim">—</div>
+        <div class="m3-metric-hint">
+          Nunca se cacheó una tasa. Un anuncio en {{ tasa.currency }} sale a consultar elTOQUE;
+          si no responde, se guarda sin convertir.
+        </div>
+        {% else %}
+        <div class="m3-metric-value-sm">{{ "%.2f"|format(tasa.rate) }}</div>
+        <div class="m3-metric-hint">
+          Del {{ tasa.rate_date.strftime("%d/%m/%Y") }} · fuente {{ tasa.source }}
+          {%- if tasa.fetched_at %} · leída {{ tasa.fetched_at.strftime("%d/%m %H:%M") }} UTC{% endif %}.
+          {% if tasa.has_today %}Curar no consulta la red.
+          {% else %}El próximo anuncio en {{ tasa.currency }} consulta elTOQUE.{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <h3 class="m3-h3" style="margin-top:24px">Qué tasa quedó aplicada en lo cargado</h3>
+    <p class="m3-note">
+      Lo de arriba dice qué va a pasar de acá en adelante; esto dice qué pasó. Son las columnas
+      de conversión ya escritas en <code>prices_history</code>, que no cambian porque el cache
+      se actualice. Una fuente <em>elTOQUE (cache)</em> significa que esa fila se convirtió con
+      la última tasa conocida porque elTOQUE no respondió ese día.
+    </p>
+
+    {% if not applied_rates %}
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span>
+      <span>
+        Ninguna fila tiene tasa aplicada todavía: o está todo en CUP, o lo que hay en otra
+        moneda no se pudo convertir. El hueco «Sin convertir a CUP» de arriba lo cuenta.
+      </span>
+    </div>
+    {% else %}
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Tasa</th>
+            <th scope="col">Fecha de la tasa</th>
+            <th scope="col">Fuente</th>
+            <th scope="col" style="text-align:right">Filas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for aplicada in applied_rates %}
+          <tr>
+            <td class="m3-num">{{ "%.4f"|format(aplicada.rate) }}</td>
+            <td>{% if aplicada.rate_date %}{{ aplicada.rate_date.strftime("%d/%m/%Y") }}{% else %}<span class="m3-dim">—</span>{% endif %}</td>
+            <td class="m3-sm m3-muted">{{ aplicada.source or "—" }}</td>
+            <td class="is-num">{{ aplicada.rows }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ---------- 8. Rango minorista ---------- -->
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="rango">Rango minorista por producto</h2>
+      <span class="m3-sm m3-muted">últimos {{ retail_range_days }} días</span>
+    </div>
+    <div class="m3-notes-grid">
+      <div>
+        <strong>El envase deja de importar acá</strong>: se normaliza por cantidad
+        (precio ÷ <code>quantity</code>) y se queda solo con lo minorista — un saco no es
+        comparable con lo que compra un hogar.
+      </div>
+      <div>
+        <strong>Solo entran filas</strong> con <code>unit</code> igual a la unidad del producto
+        y con <code>quantity</code> cargada. Sin tabla de conversión entre unidades (§12.6, no
+        inventar), lo demás se ve en la matriz de abajo.
+      </div>
+      <div>
+        <strong>Cuarto filtro</strong> (2026-08-14): una fila cuya compra mínima supera su
+        propia cantidad no entra — cotiza un precio por una cantidad que no se puede comprar.
+      </div>
+      <div>
+        <strong>No es un umbral de plata</strong>: el saco entero con mínimo de un saco sigue
+        adentro. El arreglo es cargar el lote como lote (<code>quantity=30</code>,
+        <code>price=21900</code>) y vuelve a entrar al mismo precio por kilo.
+      </div>
+    </div>
+
+    {% if excluded_by_minimum %}
+    <div class="m3-banner m3-banner-warn" style="margin-bottom:16px" role="alert">
+      <span class="m3-icon">warning</span>
+      <span>
+        <strong>{{ excluded_by_minimum }}</strong>
+        fila{{ "s" if excluded_by_minimum != 1 }} quedó fuera de este rango por compra mínima
+        mayor que la cantidad cotizada.
+        Sigue{{ "n" if excluded_by_minimum != 1 }} visible{{ "s" if excluded_by_minimum != 1 }}
+        en la matriz de abajo. El conteo abarca todos los productos, no solo los pilotos.
+      </span>
+    </div>
+    {% endif %}
+
+    {# Conteo separado del de arriba a propósito (2026-08-21,
+       public-price-range spec): son motivos distintos —acá no se sabe si
+       dividir, arriba la fila no es comprable al volumen que cotiza— y
+       fusionarlos en un solo número le escondería al operador cuál cola de
+       curaduría atacar primero. #}
+    {% if excluded_by_basis %}
+    <div class="m3-banner m3-banner-warn" style="margin-bottom:16px" role="alert">
+      <span class="m3-icon">warning</span>
+      <span>
+        <strong>{{ excluded_by_basis }}</strong>
+        fila{{ "s" if excluded_by_basis != 1 }} quedó fuera de este rango por no declarar si el
+        precio es por unidad o por el lote entero (cantidad distinta de uno, sin
+        <code>price_basis</code>). Sigue{{ "n" if excluded_by_basis != 1 }}
+        visible{{ "s" if excluded_by_basis != 1 }} en la matriz de abajo, esperando que se
+        resuelva desde <a href="/curation/history">el historial de curaduría</a>. El conteo
+        abarca todos los productos, no solo los pilotos.
+      </span>
+    </div>
+    {% endif %}
+
+    {# Distinto del banner de arriba, y a propósito: ese cuenta filas que NO
+       entran al rango; esta tabla lista filas que SÍ entran y lo envenenan. Una
+       sola marcada mal como «por unidad» arrastra el máximo de su celda, y el
+       máximo es lo que §6.7 manda publicar. Va con los dos números al lado
+       porque el detector no corrige: señala, y decide el operador. #}
+    {% if basis_suspects %}
+    <div class="m3-banner m3-banner-warn" style="margin-bottom:16px" role="alert">
+      <span class="m3-icon">rule</span>
+      <span>
+        <strong>{{ basis_suspects | length }}</strong>
+        fila{{ "s" if basis_suspects | length != 1 }} dice{{ "n" if basis_suspects | length != 1 }}
+        «precio por unidad» pero leída{{ "s" if basis_suspects | length != 1 }} como total
+        encaja{{ "n" if basis_suspects | length != 1 }} mucho mejor con el resto de su celda.
+        No están descartadas: entran al rango de arriba y le corren el máximo.
+      </span>
+    </div>
+    <table class="m3-table" style="margin-bottom:24px">
+      <caption class="m3-caption">
+        Ordenadas por cuánto se aparta la lectura declarada. Se compara contra la
+        mediana de las filas no ambiguas de la misma celda —cantidad uno, o
+        <code>price_basis</code> ya resuelto como total—, nunca contra un corte
+        de precio fijo. Si la provincia de la fila no tiene ninguna, la referencia
+        se repliega a todas juntas y la fila lo dice; un producto sin filas no
+        ambiguas en ninguna provincia no aparece acá, porque no hay contra qué
+        contrastarlo.
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Producto</th>
+          <th scope="col">Provincia</th>
+          <th scope="col" class="num">Fila</th>
+          <th scope="col" class="num">Dice</th>
+          <th scope="col" class="num">Sería, como total</th>
+          <th scope="col" class="num">Celda</th>
+          <th scope="col" class="num">Se aparta</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in basis_suspects %}
+        <tr>
+          <td>{{ s.product_name }}</td>
+          <td>{{ s.province_name or "—" }}</td>
+          <td class="num">{{ s.price }} × {{ s.quantity | round(3) }} {{ s.row_unit }}</td>
+          <td class="num">{{ s.as_unit | round(2) }}/{{ s.unit }}</td>
+          <td class="num"><strong>{{ s.as_total | round(2) }}</strong>/{{ s.unit }}</td>
+          {# La referencia replegada se marca en la fila y no solo en la caption:
+             el operador tiene que poder descartar una diferencia regional real
+             sin ir a buscar de dónde salió el número (2026-09-05). #}
+          <td class="num">
+            {{ s.reference | round(2) }}/{{ s.unit }}
+            {%- if s.reference_from_all_provinces %}
+            <br /><span class="m3-sm m3-dim">todas las provincias</span>
+            {%- endif %}
+          </td>
+          <td class="num">×{{ s.ratio_to_reference | round(1) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if not retail_ranges %}
+    <div class="m3-banner m3-banner-warn" role="alert">
+      <span class="m3-icon">info</span>
+      <span>
+        Ninguna fila entra todavía en este rango: falta <code>sale_format=retail</code>,
+        <code>unit</code> igual a la unidad del producto, o <code>quantity</code>.
+      </span>
+    </div>
+    {% else %}
+    <div class="m3-card m3-table-scroll">
+      <table class="m3-table">
+        <thead>
+          <tr>
+            <th scope="col">Producto</th>
+            <th scope="col">Provincia</th>
+            <th scope="col">Unidad</th>
+            <th scope="col" style="text-align:right">n</th>
+            <th scope="col" style="text-align:right">Mediana</th>
+            <th scope="col" style="text-align:right">Mínimo</th>
+            <th scope="col" style="text-align:right">Máximo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rango in retail_ranges %}
+          <tr>
+            <td class="m3-cell-strong">{{ rango.product_name }}</td>
+            <td class="m3-sm">{{ rango.province_name or "— sin provincia —" }}</td>
+            <td class="m3-sm m3-muted">{{ rango.unit }}</td>
+            <td class="is-num">
+              <a href="/curation/history?product={{ rango.product_name | urlencode }}&province={{ (rango.province_name or '') | urlencode }}{% if rango.unconverted %}&currency={{ rango.currency | urlencode }}{% endif %}&unit={{ rango.unit | urlencode }}&sale_format=retail"
+                 title="Ver los anuncios detrás de este número"><strong>{{ rango.count }}</strong></a>
+            </td>
+            <td class="is-num">
+              {{ "%.2f"|format(rango.median) }} {{ rango.currency }}/{{ rango.unit }}
+              {%- if rango.unconverted %} <span class="m3-dim m3-xs">sin convertir</span>{% endif %}
+            </td>
+            <td class="is-num m3-dim">{{ "%.2f"|format(rango.minimum) }}</td>
+            <td class="is-num m3-dim">{{ "%.2f"|format(rango.maximum) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+{% endblock %}

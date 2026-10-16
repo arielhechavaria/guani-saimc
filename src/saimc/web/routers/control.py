@@ -35,12 +35,14 @@ import subprocess
 import sys
 from datetime import timedelta
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from saimc.automation import automation_summary
 from saimc.cells import (
     compute_availability,
     compute_cells,
@@ -48,13 +50,9 @@ from saimc.cells import (
     detect_basis_suspects,
 )
 from saimc.config import Settings, get_settings
-from saimc.exchange_rate.status import compute_applied_rates, compute_rate_status
-from saimc.extraction.llm_assist import consumption_summary
+from saimc.exchange_rate.status import compute_applied_rates
 from saimc.extraction.measure import read_h0_runs
-from saimc.extraction.prefill_status import PrefillRun, read_run_status
-from saimc.ingestion.channel_gaps import load_channel_gap_report
-from saimc.ingestion.whatsapp_health import session_health
-from saimc.llm.provider import try_resolve_config
+from saimc.extraction.prefill_status import PrefillRun
 from saimc.models import PriceHistory, ProcessingStatus, RawIngestion
 from saimc.progress import (
     PHASE0_PRODUCTS_MAX,
@@ -63,7 +61,6 @@ from saimc.progress import (
     compute_channel_intake,
     compute_coverage,
     compute_daily_activity,
-    compute_intake_health,
     compute_open_gaps,
     compute_pace,
     compute_phase0_progress,
@@ -72,14 +69,16 @@ from saimc.progress import (
     pilot_product_names,
 )
 from saimc.requisitos_status import read_module_status
-from saimc.validation import ValidationStatus, jev_signal, lane0, persist
+from saimc.validation import ValidationStatus, jev_signal, lane0, lane1, persist
 from saimc.validation.control_cells import compute_cell_controls
+from saimc.web import control_nav
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
-from saimc.web.health_strip import build_strip, worst_level
+from saimc.web.health_strip import worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
 from saimc.web.product_nav import DEFAULT_WINDOW_DAYS
 from saimc.web.rubber_stamp_metrics import rubber_stamp_alert
+from saimc.web.strip_loader import load_strip
 
 router = APIRouter(dependencies=[Depends(require_operator)])
 
@@ -200,8 +199,7 @@ def _jev_summary(db: Session, settings: Settings, run: PrefillRun | None) -> dic
     )
     state_hint = {
         jev_signal.STATE_ON: (
-            "El pre-cálculo le hace tres preguntas a cada texto pendiente y la respuesta "
-            "se anota al curar."
+            "El pre-cálculo le hace tres preguntas a cada texto pendiente y la respuesta se anota al curar."
         ),
         jev_signal.STATE_NO_KEY: (
             "El interruptor está encendido pero falta la clave: no se pregunta ni se anota nada."
@@ -241,65 +239,22 @@ def _manipulation_controls(db: Session, *, burst_window_minutes: int) -> dict[st
     }
 
 
-@router.get("/control", response_class=HTMLResponse)
-def control_panel(
-    request: Request,
-    db: Session = Depends(get_db),
-    days: int = _DEFAULT_RETAIL_RANGE_DAYS,
-    province: str | None = None,
-    inactivos: bool = False,
-) -> HTMLResponse:
-    pilot_products = pilot_product_names(db)
-    pilot_filter = frozenset(pilot_products)
+def _shell_context(request: Request, db: Session, page_key: str) -> dict[str, object]:
+    """Lo que toda subpágina necesita: encabezado, menú con insignias y la franja.
 
-    cells = [c for c in compute_cells(db) if c.product_name in pilot_filter]
-    retail_report = compute_retail_ranges(db, days=days)
-    retail_ranges = [r for r in retail_report.ranges if r.product_name in pilot_filter]
-    availability = [
-        a for a in compute_availability(db, days=days) if a.product_name in pilot_filter
-    ]
-
-    progress = compute_phase0_progress(db)
-    activity = compute_daily_activity(db, days=_ACTIVITY_DAYS)
-    pace = compute_pace(activity, rows_remaining=progress.rows_remaining)
-
-    # La provincia de la pestaña activa. `resolve_column` no rompe con un
-    # parámetro desconocido: cae en la primera provincia del catálogo.
-    matrix = build_matrix(cells)
-    selected = resolve_column(matrix, province)
-
-    channel_intake = compute_channel_intake(db)
-
+    La franja se calcula en todas las vistas porque de ella salen las
+    insignias del menú; es la misma que antes abría `/control`, sin consultas
+    nuevas. El estado de WAHA es la única señal que sale de la red: corre en el
+    mismo VPS y el timeout es corto. Si no contesta, eso ES el dato (hueco N-02).
+    """
     settings = get_settings()
-    # Estado de WAHA. Es la única señal de la franja que sale de la red: WAHA
-    # corre en el mismo VPS y el timeout es corto, así que no demora el panel.
-    # Si no contesta, eso ES el dato (hueco N-02).
-    waha = session_health(
-        base_url=settings.waha_base_url,
-        api_key=settings.waha_api_key,
-        session=settings.waha_session,
-    )
-    ultima_captura = db.execute(select(func.max(RawIngestion.captured_at))).scalar_one()
-
-    intake = compute_intake_health(db)
-    rate_statuses = compute_rate_status(db)
-    assist = consumption_summary(settings.llm_assist_log_path)
+    snapshot = load_strip(db, settings)
+    intake, strip = snapshot.intake, snapshot.strip
+    rate_statuses, prefill_run = snapshot.rate_statuses, snapshot.prefill_run
+    assist = snapshot.assist
     # Vigilancia del rubber-stamping (slice 5): semana actual vs. anterior de
     # `llm_reviews`. Puramente aditivo sobre la base — no golpea la API.
     rubber_stamp = rubber_stamp_alert(db)
-    prefill_run = read_run_status(settings.prefill_status_path)
-    strip = build_strip(
-        waha=waha,
-        last_capture=ultima_captura,
-        health=intake,
-        rate_statuses=rate_statuses,
-        assist=assist,
-        # Con cualquiera de los proveedores, no solo con la clave de Anthropic.
-        assist_configured=try_resolve_config(settings) is not None,
-        prefill_run=prefill_run,
-        channel_gaps=load_channel_gap_report(db),
-        jev_active=jev_signal.is_active(settings),
-    )
 
     curated = db.execute(
         select(func.count())
@@ -308,88 +263,101 @@ def control_panel(
     ).scalar_one()
     rows = db.execute(select(func.count()).select_from(PriceHistory)).scalar_one()
 
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "control.html",
+    return {
+        "page": control_nav.PAGE_BY_KEY[page_key],
+        "control_pages": control_nav.PAGES,
+        "badges": control_nav.compute_badges(strip, rubber_stamp_alert=bool(rubber_stamp["alert"])),
+        "anchor_urls": control_nav.anchor_urls(),
+        "curated": curated,
+        "rows": rows,
+        "health": intake,
+        # La franja de estado: lo que exige acción hoy, ordenado por gravedad
+        # (`web/health_strip.py`).
+        "strip": strip,
+        "strip_level": worst_level(strip),
+        "assist": assist,
+        "rubber_stamp": rubber_stamp,
+        "rate_status": rate_statuses,
+        "prefill_run": prefill_run,
+        "settings": settings,
+    }
+
+
+def _render(request: Request, template: str, context: dict[str, object]) -> HTMLResponse:
+    return cast(HTMLResponse, request.app.state.templates.TemplateResponse(request, template, context))
+
+
+@router.get("/control", response_class=HTMLResponse, response_model=None)
+def control_panel(
+    request: Request,
+    db: Session = Depends(get_db),
+    province: str | None = None,
+    inactivos: bool = False,
+    days: int | None = None,
+) -> HTMLResponse | RedirectResponse:
+    """«Hoy»: la franja de estado, lo que toca hacer y las tarjetas a las demás vistas."""
+    # Los enlaces viejos cargaban todo en `/control?...`. Con las secciones en
+    # subpáginas, cada parámetro tiene ahora un solo dueño; se conserva la
+    # query entera. (El `#ancla` no llega al servidor: lo resuelve el script de
+    # la plantilla.)
+    destino = (
+        "/control/calidad"
+        if province is not None
+        else "/control/ingesta"
+        if inactivos
+        else "/control/mercado"
+        if days is not None
+        else None
+    )
+    if destino is not None:
+        consulta = request.url.query
+        return RedirectResponse(f"{destino}?{consulta}" if consulta else destino)
+
+    context = _shell_context(request, db, "hoy")
+    progress = compute_phase0_progress(db)
+    activity = compute_daily_activity(db, days=_ACTIVITY_DAYS)
+    context.update(
         {
-            "cells": cells,
-            # La matriz entera alimenta la barra de pestañas: los totales por
-            # provincia que van en cada pestaña salen de acá, así que la
-            # pestaña que no estás mirando igual te dice cuánto tiene.
-            "matrix": matrix,
-            # Y el panel muestra una sola provincia (`?province=`, mismo
-            # lenguaje que los enlaces al historial). Recortar es presentación:
-            # las barras no se reescalan, así que la misma serie mide igual en
-            # todas las pestañas.
-            "matrix_tab": select_province(matrix, selected) if selected else None,
-            "selected_province": selected,
-            "retail_ranges": retail_ranges,
-            "retail_range_days": days,
-            "availability": availability,
-            # Sin filtrar por piloto, a diferencia de `retail_ranges`: el
-            # filtro de compra mínima corre dentro de `compute_retail_ranges`,
-            # antes de que acá se sepa de qué producto era cada fila. Preferí
-            # un número que abarca de más y es honesto sobre eso, a rehacer la
-            # consulta para recortarlo.
-            "excluded_by_minimum": retail_report.excluded_by_minimum,
-            # Mismo criterio de honestidad que el de arriba: cuenta sobre
-            # todos los productos, no solo los pilotos, porque el filtro de
-            # `compute_retail_ranges` corre antes de saber de qué producto
-            # era cada fila (2026-08-21).
-            "excluded_by_basis": retail_report.excluded_by_basis,
-            # Las filas que la propia celda desmiente. Van en la vista del
-            # operador y no en la pública porque son trabajo de curaduría: cada
-            # una es una corrección concreta con su evidencia al lado, no una
-            # estadística. Ventana propia y más larga que la del rango
-            # minorista: una fila mal marcada envenena su celda mientras exista,
-            # no solo mientras esté fresca.
-            "basis_suspects": detect_basis_suspects(db, days=30),
-            "curated": curated,
-            "rows": rows,
-            # Se cuenta sobre las celdas ya filtradas, no con un agregado
-            # aparte, para que el número describa exactamente la tabla de
-            # abajo. Los contadores de productos y provincias que vivían acá
-            # los reemplazaron las tarjetas de «Meta de Fase 0», que además
-            # nombran cuáles faltan.
-            "single_observation": sum(1 for cell in cells if cell.count == 1),
-            # Progreso de Fase 0 (spec.md §9) y su contexto.
-            "progress": progress,
-            # Historial de H0: cada corrida registrada de `measure.py`, en
-            # orden cronológico. Lee `docs/h0-runs.jsonl` en cada carga (es un
-            # archivo chico); degrada a lista vacía si todavía no existe.
-            "h0_runs": read_h0_runs(),
             # Estado de los 16 módulos (docs/requisitos.md), para la sección
             # «Hoy»: qué atacar en diseño/implementación además de la hora de
-            # curaduría. Fail-soft igual que `h0_runs`: tabla movida o archivo
-            # ausente degradan a lista vacía, no a error.
+            # curaduría. Fail-soft: tabla movida o archivo ausente degradan a
+            # lista vacía, no a error.
             "module_status": read_module_status(),
-            # Consumo del asistente. Sale del registro de invocaciones, no de
-            # una API de facturación: es el gasto de SAIMC medido sobre lo que
-            # la propia API reportó consumir, no el total de la cuenta.
-            "assist": assist,
-            "rubber_stamp": rubber_stamp,
             "activity": activity,
             "activity_days": _ACTIVITY_DAYS,
             # El máximo de la ventana escala las barras del gráfico. Va acá y
             # no en la plantilla porque Jinja no tiene `max` sobre atributos
             # sin un filtro extra, y el 1 evita dividir por cero.
             "activity_peak": max([day.rows for day in activity] or [0]) or 1,
-            "pace": pace,
+            "pace": compute_pace(activity, rows_remaining=progress.rows_remaining),
             "gaps": compute_open_gaps(db),
-            "coverage": compute_coverage(db),
-            "health": intake,
-            "waha": waha,
-            # La franja de estado que abre la vista: lo que exige acción hoy,
-            # ordenado por gravedad (`web/health_strip.py`).
-            "strip": strip,
-            "strip_level": worst_level(strip),
+        }
+    )
+    return _render(request, "control_hoy.html", context)
+
+
+@router.get("/control/ingesta", response_class=HTMLResponse)
+def control_ingesta(
+    request: Request,
+    db: Session = Depends(get_db),
+    days: int = _DEFAULT_RETAIL_RANGE_DAYS,
+    inactivos: bool = False,
+) -> HTMLResponse:
+    """Ingesta: salud, descarte por canal, horas y automatización, disponibilidad."""
+    pilot_filter = frozenset(pilot_product_names(db))
+    channel_intake = compute_channel_intake(db)
+    context = _shell_context(request, db, "ingesta")
+    context.update(
+        {
+            "retail_range_days": days,
+            "availability": [
+                a for a in compute_availability(db, days=days) if a.product_name in pilot_filter
+            ],
             # «Descarte por canal» lista solo los canales que siguen ingiriendo
             # (y la captura manual, `is_active is None`). Los inactivos se
             # piden con `?inactivos=1`. Es solo vista: las tarjetas de «Salud
             # de la ingesta» siguen sumando todos los canales.
-            "channel_intake": [
-                c for c in channel_intake if inactivos or c.is_active is not False
-            ],
+            "channel_intake": [c for c in channel_intake if inactivos or c.is_active is not False],
             "inactive_channels": sum(1 for c in channel_intake if c.is_active is False),
             "show_inactive": inactivos,
             "inactive_toggle_url": str(
@@ -405,28 +373,137 @@ def control_panel(
             "weekly_automation": compute_weekly_automation(db),
             "oldest_pending_days": oldest_pending_age_days(db),
             # Carril 0 (B2a): descartes automáticos y rescatados de la semana,
-            # por tipo. La cota de falsos descartes NO va acá: `/control` es
-            # público y la cota queda en `/curation/auditoria`, que pide operador.
+            # por tipo. La cota de falsos descartes NO va acá: la cota queda en
+            # `/curation/auditoria`, que pide operador.
             "lane0_week": lane0.week_counts(db),
+        }
+    )
+    return _render(request, "control_ingesta.html", context)
+
+
+@router.get("/control/calidad", response_class=HTMLResponse)
+def control_calidad(
+    request: Request,
+    db: Session = Depends(get_db),
+    days: int = _DEFAULT_RETAIL_RANGE_DAYS,
+    province: str | None = None,
+) -> HTMLResponse:
+    """Calidad: validación, carril 1, aceptación sin revisar, Jev, controles y matriz."""
+    pilot_products = pilot_product_names(db)
+    pilot_filter = frozenset(pilot_products)
+    cells = [c for c in compute_cells(db) if c.product_name in pilot_filter]
+
+    # La provincia de la pestaña activa. `resolve_column` no rompe con un
+    # parámetro desconocido: cae en la primera provincia del catálogo.
+    matrix = build_matrix(cells)
+    selected = resolve_column(matrix, province)
+
+    context = _shell_context(request, db, "calidad")
+    settings = cast(Settings, context["settings"])
+    prefill_run = cast(PrefillRun | None, context["prefill_run"])
+    context.update(
+        {
+            "cells": cells,
+            # La matriz entera alimenta la barra de pestañas: los totales por
+            # provincia que van en cada pestaña salen de acá, así que la
+            # pestaña que no estás mirando igual te dice cuánto tiene.
+            "matrix": matrix,
+            # Y el panel muestra una sola provincia (`?province=`, mismo
+            # lenguaje que los enlaces al historial). Recortar es presentación:
+            # las barras no se reescalan, así que la misma serie mide igual en
+            # todas las pestañas.
+            "matrix_tab": select_province(matrix, selected) if selected else None,
+            "selected_province": selected,
+            "retail_range_days": days,
+            "pilot_products": pilot_products,
+            # Se cuenta sobre las celdas ya filtradas, para que el número
+            # describa exactamente la tabla de abajo.
+            "single_observation": sum(1 for cell in cells if cell.count == 1),
+            # Carril 1 (B2b-3b): filas por procedencia, error auditado con su
+            # cota y el freno. Pide operador, así que la cota sí va acá; lo
+            # público está en `/metodologia`.
+            "lane1": lane1.summary(db, settings),
+            "lane1_target": lane1.ERROR_TARGET,
+            "lane1_n0": lane1.AUDIT_N0,
             # Validación (B1): cuántas filas hay en cada estado del motor.
             "validation": _validation_summary(db),
             # Jev en sombra (A6b): estado, conteos y gasto de la señal.
             "jev": _jev_summary(db, settings, prefill_run),
             # Controles de §10.7 (C3): índice de control y señales de
             # coordinación por celda pública. Se calcula al pedirlo, no se guarda.
-            "controls": _manipulation_controls(
-                db, burst_window_minutes=settings.burst_window_minutes
-            ),
-            # Estado de la tasa de cambio. Ambas salen de la base: cargar
-            # `/control` no golpea la API de elTOQUE (ver status.py).
-            "rate_status": rate_statuses,
-            "applied_rates": compute_applied_rates(db),
+            "controls": _manipulation_controls(db, burst_window_minutes=settings.burst_window_minutes),
+        }
+    )
+    return _render(request, "control_calidad.html", context)
+
+
+@router.get("/control/fase-0", response_class=HTMLResponse)
+def control_fase_0(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    """Fase 0: meta, métrica, historial de H0, cobertura y consumo del asistente."""
+    pilot_products = pilot_product_names(db)
+    progress = compute_phase0_progress(db)
+    activity = compute_daily_activity(db, days=_ACTIVITY_DAYS)
+    context = _shell_context(request, db, "fase0")
+    settings = cast(Settings, context["settings"])
+    context.update(
+        {
+            # Progreso de Fase 0 (spec.md §9) y su contexto.
+            "progress": progress,
+            "pace": compute_pace(activity, rows_remaining=progress.rows_remaining),
+            # Historial de H0: cada corrida registrada de `measure.py`, en
+            # orden cronológico. Lee `docs/h0-runs.jsonl` en cada carga (es un
+            # archivo chico); degrada a lista vacía si todavía no existe.
+            "h0_runs": read_h0_runs(),
+            "coverage": compute_coverage(db),
+            # Métrica de la Fase 0 (B3-3): la partición por cohorte de ingreso,
+            # con el error auditado de lo que cuenta cada número.
+            "phase0": automation_summary(db, settings),
+            "lane1_target": lane1.ERROR_TARGET,
             "phase0_products_min": PHASE0_PRODUCTS_MIN,
             "phase0_products_max": PHASE0_PRODUCTS_MAX,
             "phase0_provinces": PHASE0_PROVINCES,
             "pilot_products": pilot_products,
-        },
+        }
     )
+    return _render(request, "control_fase0.html", context)
+
+
+@router.get("/control/mercado", response_class=HTMLResponse)
+def control_mercado(
+    request: Request,
+    db: Session = Depends(get_db),
+    days: int = _DEFAULT_RETAIL_RANGE_DAYS,
+) -> HTMLResponse:
+    """Mercado: tasa de cambio y rango minorista por producto."""
+    pilot_filter = frozenset(pilot_product_names(db))
+    retail_report = compute_retail_ranges(db, days=days)
+    context = _shell_context(request, db, "mercado")
+    context.update(
+        {
+            "retail_ranges": [r for r in retail_report.ranges if r.product_name in pilot_filter],
+            "retail_range_days": days,
+            # Sin filtrar por piloto, a diferencia de `retail_ranges`: el
+            # filtro de compra mínima corre dentro de `compute_retail_ranges`,
+            # antes de que acá se sepa de qué producto era cada fila. Preferí
+            # un número que abarca de más y es honesto sobre eso, a rehacer la
+            # consulta para recortarlo.
+            "excluded_by_minimum": retail_report.excluded_by_minimum,
+            # Mismo criterio de honestidad que el de arriba: cuenta sobre
+            # todos los productos, no solo los pilotos (2026-08-21).
+            "excluded_by_basis": retail_report.excluded_by_basis,
+            # Las filas que la propia celda desmiente. Van en la vista del
+            # operador y no en la pública porque son trabajo de curaduría: cada
+            # una es una corrección concreta con su evidencia al lado, no una
+            # estadística. Ventana propia y más larga que la del rango
+            # minorista: una fila mal marcada envenena su celda mientras exista,
+            # no solo mientras esté fresca.
+            "basis_suspects": detect_basis_suspects(db, days=30),
+            # Ambas salen de la base: cargar `/control/mercado` no golpea la
+            # API de elTOQUE (ver status.py).
+            "applied_rates": compute_applied_rates(db),
+        }
+    )
+    return _render(request, "control_mercado.html", context)
 
 
 @router.post("/control/lint-drift", response_class=HTMLResponse)
@@ -466,6 +543,4 @@ def run_lint_drift(request: Request) -> HTMLResponse:
             lint_autofix=reporte["autofix"],
             lint_drift=reporte["drift"],
         )
-    return request.app.state.templates.TemplateResponse(
-        request, "control_lint_drift.html", contexto
-    )
+    return request.app.state.templates.TemplateResponse(request, "control_lint_drift.html", contexto)

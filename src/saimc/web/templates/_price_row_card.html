@@ -16,13 +16,13 @@
    abajo y para el `data-basis-label` que lee `_price_row_scripts.html`. Vive
    acá y no en `saimc.units` (D8): ese módulo es dueño del vocabulario de
    ALMACENAMIENTO, no de la copia de UI en español. #}
-{% set unit_words = {"lb": "libra", "kg": "kilo", "l": "litro", "ml": "mililitro",
+{% set unit_words = {"lb": "libra", "kg": "kilo", "g": "gramo", "l": "litro", "ml": "mililitro",
                      "unidad": "unidad", "docena": "docena", "caja": "caja"} %}
 {# El plural va como diccionario propio y no como regla: «unidad» pluraliza en
    «unidades» y cualquier regla que la contemple es más larga que la tabla. Lo
    lee la opción «total» de `price_basis` y el relabel en vivo de
    `_price_row_scripts.html`, vía `data-basis-label-plural`. #}
-{% set unit_words_plural = {"lb": "libras", "kg": "kilos", "l": "litros", "ml": "mililitros",
+{% set unit_words_plural = {"lb": "libras", "kg": "kilos", "g": "gramos", "l": "litros", "ml": "mililitros",
                             "unidad": "unidades", "docena": "docenas", "caja": "cajas"} %}
 <div class="m3-card m3-card-pad m3-row-card{% if not row.product_id %} is-review{% endif %}" style="margin-bottom:16px">
 

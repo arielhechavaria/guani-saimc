@@ -1,0 +1,80 @@
+<!doctype html>
+<!--
+  Prototipo del bloque «Qué parte se resuelve sin una persona» de /metodologia
+  (B3-4, docs/spec-slice-B3.md sección 5). Se decide a 390 px primero: una
+  tarjeta debajo de la otra; desde 720 px, lado a lado.
+
+  Datos de muestra, no reales. Muestra el caso con el error de imagen todavía
+  sin auditar, que es el que obliga al rótulo «provisional». El mismo bloque
+  con todo auditado no lleva rótulo ni la nota final.
+
+  Reglas del bloque: los dos números llevan su nombre exacto («Resuelto sin el
+  operador», «Publicado sin el operador»), cada uno con su error auditado y su
+  n en la misma tarjeta; ninguna meta nueva, ningún número compuesto y nunca
+  «tasa de automatización».
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo B3-4 — métrica de la Fase 0</title>
+<link href="../../src/saimc/web/static/saimc-public.css" rel="stylesheet">
+<style>
+  body { margin: 0; background: var(--m3-bg); color: var(--m3-on-surface); font: 400 17px/1.6 var(--m3-font); }
+  main { max-width: 720px; margin: 0 auto; padding: 28px 20px 48px; box-sizing: border-box; }
+  h2 { margin: 32px 0 0; font: 400 26px/1.2 var(--ph-font-heading); }
+  h3, h4 { margin: 0; }
+  p { margin: 12px 0 0; }
+  ul { margin: 6px 0 0; padding: 0; list-style: none; }
+  .pg-note { margin: 28px 0 0; padding: 14px 16px; border-radius: 16px; background: var(--m3-surface);
+             border: 1px solid var(--m3-outline-variant); font-size: 15px; line-height: 1.5;
+             color: var(--m3-on-surface-variant); }
+  .pg-f0 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+  .pg-f0-card { padding: 18px 16px; border-radius: 16px; background: var(--m3-surface);
+                border: 1px solid var(--m3-outline-variant); }
+  .pg-f0-label { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .08em;
+                 text-transform: uppercase; line-height: 1.4; color: var(--ph-accent-2-line); }
+  .pg-f0-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 100px;
+               border: 1px solid var(--m3-outline-variant); font-size: 12px; letter-spacing: .04em;
+               text-transform: none; color: var(--m3-on-surface-variant); }
+  .pg-f0-value { margin: 6px 0 0; font: 400 clamp(34px, 11vw, 44px)/1.1 var(--ph-font-heading); }
+  .pg-f0-hint { margin: 8px 0 0; font-size: 15px; line-height: 1.5; color: var(--m3-on-surface-variant); }
+  .pg-f0-err { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--m3-outline-variant); }
+  .pg-f0-err-title { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.4; }
+  .pg-f0-err li { margin-top: 6px; font-size: 15px; line-height: 1.5; }
+  @media (min-width: 720px) { .pg-f0 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<main>
+<h2>Qué parte se resuelve sin una persona</h2>
+<p>Cada anuncio que entra termina en un solo lugar: publicado a mano, publicado por el sistema, descartado a mano, descartado por el sistema, o todavía pendiente. De ahí salen dos números distintos. Ninguno se publica sin el error que se midió en lo que cuenta.</p>
+<div class="pg-f0">
+  <section class="pg-f0-card">
+    <h3 class="pg-f0-label">Resuelto sin el operador <span class="pg-f0-tag">provisional</span></h3>
+    <p class="pg-f0-value">62,5 %</p>
+    <p class="pg-f0-hint">500 de 800 anuncios, desde la semana del 05/10/2026, se resolvieron por el sistema, sin una persona de por medio.</p>
+    <div class="pg-f0-err">
+      <h4 class="pg-f0-err-title">Error auditado: descartes que no debían serlo</h4>
+      <ul>
+        <li><strong>Texto:</strong> 2 rescatados de 90 auditados; el error real no pasa de 6,8&nbsp;% con una confianza del 95&nbsp;% (meta del 10&nbsp;%).</li>
+        <li><strong>Imagen:</strong> sin auditar todavía</li>
+      </ul>
+    </div>
+  </section>
+  <section class="pg-f0-card">
+    <h3 class="pg-f0-label">Publicado sin el operador</h3>
+    <p class="pg-f0-value">68,8–76,7 %</p>
+    <p class="pg-f0-hint">De los anuncios que eran precios válidos, la parte que entró al sitio por el sistema, sin una persona de por medio. Mientras haya anuncios pendientes no se sabe cuántos son válidos: el número menor los cuenta todos como válidos y el mayor, ninguno.</p>
+    <div class="pg-f0-err">
+      <h4 class="pg-f0-err-title">Error auditado: precios publicados con error</h4>
+      <ul>
+        <li>3 con error de 60 auditados; el error real no pasa de 12,4&nbsp;% con una confianza del 95&nbsp;% (meta del 10&nbsp;%).</li>
+      </ul>
+    </div>
+  </section>
+</div>
+<p class="pg-note">Provisional quiere decir que el error de lo que cuenta ese número todavía no tiene nada auditado, o no lo tiene en todos los tipos: el número es solo lo que se vio, sin medir cuánto se equivocó.</p>
+</main>
+</body>
+</html>

@@ -203,6 +203,62 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="plan-mvp-inversores",
+        title="Plan — MVP listo para mostrar a inversores",
+        summary=(
+            "Hasta dónde llega hoy la automatización de ingesta, extracción y "
+            "aceptación, por qué el carril 1 acepta solo una parte chica de la "
+            "cola, y las tareas que la suben, en orden. Incluye lo que el "
+            "operador tiene que definir: el criterio de «listo» y la home pública."
+        ),
+        relative_path="docs/plan-mvp-inversores.md",
+        standing="interno",
+    ),
+    DocEntry(
+        slug="prompts-mvp-inversores",
+        title="Prompts del plan del MVP para inversores",
+        summary=(
+            "Un prompt por tarea del plan del MVP, listo para pegar en una "
+            "sesión nueva, con el orden en que conviene abrirlas y el modelo "
+            "sugerido para cada una."
+        ),
+        relative_path="docs/prompts-mvp-inversores.md",
+        standing="interno",
+    ),
+    DocEntry(
+        slug="plan-bloque-mvp",
+        title="Plan — último bloque antes del lanzamiento del MVP",
+        summary=(
+            "Las tareas T0–T16 ordenadas por ola, con complejidad, modelo y un "
+            "prompt por tarea, más las decisiones del operador y lo que sigue "
+            "pendiente. Es la guía de trabajo del último bloque de desarrollo."
+        ),
+        relative_path="docs/plan-bloque-mvp.md",
+        standing="interno",
+    ),
+    DocEntry(
+        slug="reporte-estado",
+        title="Reporte de estado del sistema (2026-10-16)",
+        summary=(
+            "Foto del sistema que sustenta el plan del último bloque: fase, "
+            "datos, Jev, tasa de cambio, auditorías, carril 1, marketing, SEO y "
+            "riesgos. Cada cifra trae su fuente y lo no comprobado va marcado."
+        ),
+        relative_path="docs/reporte-estado-2026-10-16.md",
+        standing="interno",
+    ),
+    DocEntry(
+        slug="analisis-jev-decisor",
+        title="Jev como decisor — pros y contras",
+        summary=(
+            "Qué dicen los datos sobre sacar a Jev del modo sombra, qué roles "
+            "respaldan y cuáles no (descartar sí; aceptar por sí solo no), y "
+            "qué hay que medir antes de encenderlo."
+        ),
+        relative_path="docs/analisis-jev-decisor.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="plan-marca",
         title="Leira Studio — plan de marca y compendio de contactos",
         summary=(

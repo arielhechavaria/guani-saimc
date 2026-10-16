@@ -19,7 +19,7 @@ construcción sin repetir la lógica de redondeo/overflow en cada llamador.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -64,12 +64,20 @@ def anchor_date(published: date | None, captured_at: datetime) -> date:
     (que es UTC) convertido al calendario de La Habana — una captura de
     21:00 hora de Cuba es 01:00 UTC del día siguiente, y un `.date()`
     ingenuo sobre ese instante UTC pediría la tasa del día equivocado.
-    Si el sistema no tiene la base de datos de zonas horarias instalada,
-    degrada a la fecha UTC en vez de romper (mismo criterio de "nunca
-    bloquear" que el resto del módulo).
+    Un `captured_at` sin zona (SQLite, los tests) se lee como UTC, que es lo
+    que se guarda: sin eso `astimezone` lo interpretaría en la hora local de
+    la máquina. Si el sistema no tiene la base de datos de zonas horarias
+    instalada, degrada a la fecha UTC en vez de romper (mismo criterio de
+    "nunca bloquear" que el resto del módulo).
+
+    Es también el día de La Habana contra el que se fecha un anuncio sin fecha
+    propia (`curation_rows.default_published_date`, T2): hay un solo lugar que
+    sabe qué día es en Cuba.
     """
     if published is not None:
         return published
+    if captured_at.tzinfo is None:
+        captured_at = captured_at.replace(tzinfo=UTC)
     try:
         habana = ZoneInfo(_HAVANA)
     except ZoneInfoNotFoundError:

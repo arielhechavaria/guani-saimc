@@ -1,6 +1,6 @@
 # Plan — Sacar al operador del camino de cada registro
 
-Fecha del plan: 2026-09-29. Última actualización: 2026-10-03 (catálogo de comandos del operador en `docs/comandos.md`; K4 cerrada: aviso por canal con piso de 24 h y 2 × p95; vía rápida al MVP con
+Fecha del plan: 2026-09-29. Última actualización: 2026-10-09 (catálogo de comandos del operador en `docs/comandos.md`; K4 cerrada: aviso por canal con piso de 24 h y 2 × p95; vía rápida al MVP con
 la compuerta partida en G1a y G1b; A2d cerrada; revisión: C3 antes del carril 1,
 sesgo del lote en la evidencia de G1a, I1 sin línea de base; C5 agregada como
 tarea a futuro; A5b y A5c cerradas; A5c antes de G1a y B1 solo para el carril 1;
@@ -16,7 +16,12 @@ A6 cerrada el 2026-10-04: Jev medido, favorable en triage, producto y moneda;
 A6b-1 cerrada el 2026-10-04: la señal de Jev entra en sombra por el pre-cálculo y se
 anota al guardar, apagada por defecto; A6b-2 cerrada el 2026-10-05: adaptador a
 `ExternalSignal`, bloque «Jev» en el informe de sombra y relleno sobre los textos ya
-decididos; A1c postergada).
+decididos; A1c postergada; G1b, B2b y B2c cerradas el 2026-10-09: el carril 1 acepta
+solo los textos de una fila, con auditoría y freno).
+
+**Lo que falta para mostrar el MVP a inversores, y en qué orden, está en
+`docs/plan-mvp-inversores.md`** (2026-10-09). Ese documento ordena los pendientes de
+este plan que suben la automatización; este sigue siendo el registro de cada slice.
 
 El **qué** y el **por qué** están en `docs/estudio-factor-humano.md`. Este plan dice
 en qué orden se hace y cómo se cierra cada paso. Cuando aparece «estudio §4»,
@@ -76,7 +81,7 @@ misma sesión. El candidato más probable es A1b.
 | A5b | Motor de validación en código puro, sin esquema | L | A5a | Opus | CERRADO (2026-10-02) |
 | A5c | Informe del modo sombra | M | A5b | Opus | CERRADO (2026-10-02) |
 | A3c | «Guardar como regla» desde la cola | M | A3b | Sonnet | CERRADO (2026-10-03) |
-| A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | PENDIENTE (postergada 2026-10-03) |
+| A1c | (opcional) Lote de textos en foco que el modelo descarta | M | A1b | Sonnet | DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público) |
 | A6 | Prueba de Jev fuera de línea: triage y campos cerrados | M | — | Opus | CERRADO (2026-10-04) |
 | A6b | Jev como señal desconectable del motor, en modo sombra | M–L | A6 favorable, A5b, B1 | Opus | CERRADO (A6b-1 2026-10-04, A6b-2 2026-10-05) |
 | K1 | `/edit` con historial | M | A2b | Sonnet | CERRADO (2026-10-03) |
@@ -86,17 +91,17 @@ misma sesión. El candidato más probable es A1b.
 | B1 | Persistir la validación: estado, puntaje y procedencia | L | A5b | Opus | CERRADO (2026-10-03) |
 | B5 | Emisor de grupo como hash con clave | M | — | Opus | CERRADO (2026-10-03) |
 | **G1a** | **Compuerta del carril 0: ¿se descarta solo?** | S | A5c | Opus | CERRADO (2026-10-03) |
-| **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | PENDIENTE |
+| **G1b** | **Compuerta del carril 1: ¿se acepta solo?** | S | A2d, A5c con n suficiente (A6 y A6b, si hubo) | Opus | CERRADO (2026-10-09, abierta adelantada por el operador) |
 | B2a | Carril 0 encendido: descarte automático con auditoría | M | G1a | Opus | CERRADO (2026-10-03) |
-| B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | PENDIENTE |
-| B2c | Freno automático del carril 1 | M | B2b | Opus | PENDIENTE |
-| B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | PENDIENTE |
-| B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | PENDIENTE |
+| B2b | Carril 1 encendido: aceptación automática con auditoría | L | G1b, B1, K1, C3; se entrega junto con B2c | Opus | CERRADO (2026-10-09, en cuatro slices: B2b-1, 2, 3a y 3b) |
+| B2c | Freno automático del carril 1 | M | B2b | Opus | CERRADO (2026-10-09, dentro de B2b-3a) |
+| B3 | Conjunto de referencia congelado y métrica de Fase 0 redefinida | M | G1b | Opus | CERRADO (2026-10-10, B3-1 a B3-4) |
+| B4 | Capa pública: por qué confiamos en cada dato (§6.5) | M–L | B1, B2b | Sonnet | CERRADO |
 | C1 | Temporizador del pre-cálculo, y lotes de la API cuando convenga | M | B2a | Sonnet | CERRADO (2026-10-03) |
-| C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | PENDIENTE |
+| C2 | Imágenes con modelo de visión y redacción previa | L | K3, G1b | Opus | DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público) |
 | C3 | Controles de §10.7 (C1–C4) antes de sumar fuentes | L | B5 | Opus | CERRADO (2026-10-03) |
-| C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | PENDIENTE |
-| C5 | (a futuro) Mapa de grupos por provincia exportable y varias fuentes de ingesta | sin estimar | C4 | Opus | PENDIENTE |
+| C4 | Expansión: provincias, productos y canales | por tanda | C3 | Sonnet | DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público) |
+| C5 | (a futuro) Mapa de grupos por provincia exportable y varias fuentes de ingesta | sin estimar | C4 | Opus | DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público) |
 
 ### Próximos pasos, en orden
 
@@ -911,7 +916,7 @@ en `/catalog`.
 
 ---
 
-### A1c — (opcional) Lote de textos en foco que el modelo descarta — PENDIENTE
+### A1c — (opcional) Lote de textos en foco que el modelo descarta — DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público)
 
 **Objetivo.** Lo mismo que A1b, para los textos donde las reglas ven un producto
 piloto pero el modelo dice que hay que descartar (agotado, sin precio). Es alrededor
@@ -1193,7 +1198,17 @@ semanal: 30 textos y 15 imágenes, o todos si hay menos. Escrito en `decisions.m
 decisión 2 en `CLAUDE.md`. Ojo: la cota de imagen queda a 0,7 puntos de su meta, y un
 solo falso descarte auditado la cruza.
 
-### G1b — Compuerta del carril 1: ¿se acepta solo? — PENDIENTE
+### G1b — Compuerta del carril 1: ¿se acepta solo? — CERRADO (2026-10-09)
+
+**Cierre.** El operador la abrió adelantada, por el camino «Adelantar G1b» de este
+plan: no se llegó al n de la especificación y el error se mide andando, con la
+auditoría. Principio: todo anuncio válido (producto y precio) entra; solo frena lo
+que señala una mala lectura del modelo. Valores aprobados: tope de 1 fila, meta de
+error de 10 % por anuncio, auditoría total hasta 60 auditados y no más de 30 sin
+auditar, canal sucio con 3 decisiones y más de la mitad de las filas tocadas, celda
+de 5. Motivo y cifras en `docs/decisions.md` (2026-10-09, «G1b se abre adelantada» y
+«B2b aprobada») y en `docs/spec-slice-B2b.md`. Lo que sigue de esta sección es el
+planteo original y queda como registro.
 
 Era G1. La decisión del carril 0 pasó a G1a.
 
@@ -1247,7 +1262,18 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
 2. `/control` muestra cuántos se descartaron solos.
 3. `/curation/auditoria` muestra la muestra.
 
-### B2b — Carril 1 encendido: aceptación automática con auditoría — PENDIENTE
+### B2b — Carril 1 encendido: aceptación automática con auditoría — CERRADO (2026-10-09)
+
+**Cierre.** Especificación en `docs/spec-slice-B2b.md`, entregada en cuatro slices:
+B2b-1 (el canal sin historial y la celda sin referencias dejan de frenar), B2b-2
+(`validation/lane1.py` guarda las filas desde el pre-cálculo, con
+`SAIMC_LANE1_ENABLED` apagado por defecto), B2b-3a (auditoría en
+`/curation/auditoria` y freno) y B2b-3b (`/metodologia` y `/control` publican las
+filas por procedencia y el error auditado; muestra semanal desde los 60 auditados).
+Lo que **no** hizo: las imágenes y los anuncios de más de una fila siguen en el
+carril 2. En seco, sobre la cola del 2026-10-09, entran 73 de 599 textos pendientes
+con propuesta; qué hace falta para subir ese número está en
+`docs/plan-mvp-inversores.md`.
 
 **Qué entra.**
 - Con su propio flag, el pre-cálculo guarda las filas de los anuncios del carril 1
@@ -1262,7 +1288,13 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
   lo curara el operador.
 - Con el flag apagado no pasa nada.
 
-### B2c — Freno automático del carril 1 — PENDIENTE
+### B2c — Freno automático del carril 1 — CERRADO (2026-10-09)
+
+**Cierre.** Entregado dentro de B2b-3a. El freno se calcula de la base y no se
+guarda: 30 aceptados sin auditar antes de llegar a 60 auditados, la cota inferior
+del error sobre 10 % en el arranque, y la cota superior sobre 10 % desde los 60.
+Tampoco se acepta solo un anuncio cuya celda pública diverge de sus filas de
+control (C3). Se levanta con `SAIMC_LANE1_AUDIT_SINCE`.
 
 **Qué entra.**
 - Si la cota superior del error auditado supera la meta, el carril 1 se apaga solo.
@@ -1271,7 +1303,7 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
 
 **Tests primero.** Una secuencia de auditorías con errores apaga el carril.
 
-### B3 — Conjunto de referencia congelado y métrica de Fase 0 redefinida — PENDIENTE
+### B3 — Conjunto de referencia congelado y métrica de Fase 0 redefinida — CERRADO (2026-10-10, B3-1 a B3-4), ver `docs/spec-slice-B3.md`
 
 **Hechos.**
 - La marca de conjunto de referencia que pide §6.1 no existe.
@@ -1286,7 +1318,7 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
 - **Registro:** el apartamiento de §12.5 y §3 queda en `spec-map.md` y
   `decisions.md`.
 
-### B4 — Capa pública: por qué confiamos en cada dato (§6.5) — PENDIENTE
+### B4 — Capa pública: por qué confiamos en cada dato (§6.5) — CERRADO (2026-10-10, ver `docs/spec-slice-B4.md`)
 
 **Qué entra.**
 - En el tablero y en Explorar, por celda: el n, la proporción humano, automático y
@@ -1313,7 +1345,7 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
   horario y el tope son una propuesta que el operador confirma: se cambian en
   `systemd/` (y `PREFILL_INTERVAL_HOURS` en `web/health_strip.py` si cambia el
   horario).
-- **C2 — Imágenes con modelo de visión.** Tres pasos:
+- **C2 — Imágenes con modelo de visión — DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público).** Tres pasos:
   - C2a: cajas del OCR (K3) y máscara de teléfonos y nombres, con tests sobre
     imágenes sintéticas;
   - C2b: backtest de imágenes, visión contra OCR más texto, sobre el oro (hoy 55,6%);
@@ -1330,10 +1362,10 @@ Especificación: `docs/spec-slice-B2a.md` (toca esquema, se aprueba antes de pro
   de la mediana frente al tamaño de muestra. Lo que **no** hizo: no fija ningún
   umbral; frenar el carril 1 cuando una celda diverge es de B2c; el N se decide en
   G1b con la salida de `measure_n`.
-- **C4 — Expansión.** Provincias (§9.0: tiene que ser configuración, no desarrollo),
+- **C4 — Expansión — DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público).** Provincias (§9.0: tiene que ser configuración, no desarrollo),
   productos y canales, de a una tanda por vez y mirando las horas por 1.000 anuncios
   y el error auditado.
-- **C5 — Mapa de grupos por provincia y varias fuentes (a futuro).** Idea del
+- **C5 — Mapa de grupos por provincia y varias fuentes (a futuro) — DESCARTADO (fuera del MVP, 2026-10-10: sin validar con el mercado ni público).** Idea del
   operador (2026-10-02). Dos cosas: poder exportar el mapa de grupos de WhatsApp
   por provincia que se está armando, y que más de una fuente (otro número de
   teléfono, otra instancia de WAHA) envíe al sistema. Es una dirección, no un
