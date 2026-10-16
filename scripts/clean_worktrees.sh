@@ -4,6 +4,10 @@
 # Uso (desde cualquier carpeta del repo):
 #   scripts/clean_worktrees.sh            # simulacro: lista qué borraría, no toca nada
 #   scripts/clean_worktrees.sh --apply    # borra de verdad
+#   scripts/clean_worktrees.sh --apply --huerfanas
+#                                         # además borra TODAS las ramas huérfanas
+#                                         # (sin worktree), incluso sin mergear.
+#                                         # Destructivo: sin --apply solo lista.
 #
 # Qué borra: un worktree y su rama solo si la punta de la rama es ancestro de
 # master (`git merge-base --is-ancestor`), o sea, si no hay nada que perder.
@@ -19,11 +23,14 @@
 set -euo pipefail
 
 APPLY=0
-case "${1:-}" in
-  "") ;;
-  --apply) APPLY=1 ;;
-  *) echo "Uso: $0 [--apply]" >&2; exit 2 ;;
-esac
+ALL_ORPHANS=0
+for arg in "$@"; do
+  case "$arg" in
+    --apply) APPLY=1 ;;
+    --huerfanas) ALL_ORPHANS=1 ;;
+    *) echo "Uso: $0 [--apply] [--huerfanas]" >&2; exit 2 ;;
+  esac
+done
 
 BASE=master
 # El primer worktree que lista git es siempre el checkout principal.
@@ -84,21 +91,29 @@ while IFS= read -r line; do
 done < <(git worktree list --porcelain; echo)
 process
 
-# Ramas mergeadas que ya no tienen worktree (quedaron de uno retirado a mano).
+# Ramas que ya no tienen worktree (quedaron de uno retirado a mano). Las
+# mergeadas se borran siempre; las sin mergear solo con --huerfanas.
 echo "Ramas locales huérfanas:"
 orphans=0
 while IFS= read -r b; do
   [ "$b" = "$BASE" ] && continue
   # Si tiene worktree, ya se trató arriba.
   git -C "$MAIN" worktree list --porcelain | grep -qx "branch refs/heads/$b" && continue
+  if git -C "$MAIN" merge-base --is-ancestor "$b" "$BASE"; then
+    flag=-d; note=""
+  elif [ "$ALL_ORPHANS" -eq 1 ]; then
+    flag=-D; note=" (SIN MERGEAR)"
+  else
+    say "conserva" "$b (sin mergear; usá --huerfanas para borrarla)"; continue
+  fi
   orphans=$((orphans + 1))
   if [ "$APPLY" -eq 1 ]; then
-    git -C "$MAIN" branch -d "$b" >/dev/null
-    say "borrada" "$b"
+    git -C "$MAIN" branch "$flag" "$b" >/dev/null
+    say "borrada" "$b$note"
   else
-    say "borraría" "$b"
+    say "borraría" "$b$note"
   fi
-done < <(git -C "$MAIN" for-each-ref --merged "$BASE" --format='%(refname:short)' refs/heads/)
+done < <(git -C "$MAIN" for-each-ref --format='%(refname:short)' refs/heads/)
 [ "$orphans" -eq 0 ] && echo "  (ninguna)"
 
 [ "$APPLY" -eq 1 ] && git -C "$MAIN" worktree prune

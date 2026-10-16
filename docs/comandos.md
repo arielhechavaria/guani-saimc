@@ -1037,6 +1037,8 @@ Estos se corren en tu máquina, no en el VPS.
   real a la API): no lo corras por costumbre.
 - Limpiar worktrees ya mergeados: `scripts/clean_worktrees.sh` (simulacro) y
   `scripts/clean_worktrees.sh --apply` (borra worktrees y ramas locales ya integradas en master).
+  Con `--huerfanas` (`scripts/clean_worktrees.sh --apply --huerfanas`) borra además todas las
+  ramas sin worktree, incluso las sin mergear. Sin `--apply` solo lista.
 
 ---
 
