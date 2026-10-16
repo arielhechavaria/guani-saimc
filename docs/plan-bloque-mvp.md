@@ -88,13 +88,27 @@ Respondidas por el operador:
 | 7 | Orden de olas | todas | **Como está en la propuesta** (sección 1). |
 | 8 | Qué es «ODD» | T13 | Según el operador, la documentación de gentle-ai (`github.com/Gentleman-Programming/gentle-ai`) describe un cambio de paradigma de RDD a ODD. **No verificado por mí**: T13 lo comprueba contra la fuente. |
 
+Dato confirmado por el operador (2026-10-16): **`SAIMC_SITE_GATE_ENABLED` está
+en `true` en producción.** Alcance de la puerta (`web/access.py`,
+`decisions.md` 2026-10-13): protege toda la capa pública (`/`, `/precios`,
+`/producto/*`, `/anuncio/*`, `/datos.csv`, las páginas de texto y
+`/contacto`). Consecuencias para este bloque:
+
+- **T10 (SEO) no tiene efecto mientras la puerta esté encendida:** los
+  buscadores no ven nada. Se puede construir y probar con la puerta apagada
+  en el entorno local, y su efecto real empieza el día que se apague.
+- **T8 y T15 (redes):** un enlace de Instagram a `guani.duckdns.org` lleva a
+  un formulario de acceso a cualquiera que no tenga la contraseña.
+- **T16 (tour) y el contador de visitas:** el tour solo lo ve quien ya entró, y
+  `analytics.py` cuenta solo páginas vistas con acceso.
+
 Siguen pendientes:
 
 | # | Decisión | Para qué tarea | Propuesta de partida |
 |---|---|---|---|
-| 1 | Qué muestra la vista de desacuerdo como «lectura de las reglas»: las reglas solo detectan el producto, no proponen filas | T11a | Mostrar producto y precio detectados |
-| 2 | Si el precio del envase se muestra solo en Explorar o también en el tablero | T5 | Solo en Explorar |
-| 3 | Comprobar en producción: valor de `SAIMC_SITE_GATE_ENABLED` y qué hay delante de uvicorn (Caddy) | T10 | — (dato, no decisión) |
+| 1 | **Cuándo se apaga la puerta del sitio** (la decisión del lanzamiento público; el MVP con redes sociales no funciona con ella encendida) | T8, T10, T15, T16 | Apagarla antes de publicar el primer enlace en Instagram, y no antes de que se verifique T1 (tasas saneadas), porque el tablero público muestra esos precios |
+| 2 | Qué muestra la vista de desacuerdo como «lectura de las reglas» | T11a | El operador lo decide al abrir T11a |
+| 3 | Si el precio del envase se muestra solo en Explorar o también en el tablero | T5 | El operador lo decide al abrir T5 |
 
 Acciones del operador que no son decisiones: restituir `SAIMC_EL_TOQUE_API` en
 el `.env` del VPS (T1), hacer push de las 6 ramas sin integrar (reporte §3) y,
@@ -489,9 +503,11 @@ mantener `analytics.py` y agregar un script de resumen diario o GoAccess
 sobre los logs; Umami (sin cookies, usa el Postgres existente) queda para
 cuando se quiera un panel. *Estos requisitos y tamaños son de conocimiento
 general, no se midieron en el VPS.*
-**Antes de empezar, comprobar en producción:** el valor de
-`SAIMC_SITE_GATE_ENABLED` (si está activo, no hay SEO posible) y qué está
-delante de uvicorn (según Engram, Caddy con HTTPS; no consta en el repo).
+**Dato confirmado (2026-10-16):** `SAIMC_SITE_GATE_ENABLED` está en `true`:
+mientras esté así, ningún buscador ve el sitio y esta tarea no rinde. Se
+construye y se prueba con la puerta apagada en local; su efecto empieza el día
+que se apague (decisión pendiente, sección 3). **Todavía por comprobar:** qué
+está delante de uvicorn (según Engram, Caddy con HTTPS; no consta en el repo).
 **Verificación:** `/robots.txt` y `/sitemap.xml` responden; cada página tiene
 canonical y og:image; el validador de datos estructurados no da errores;
 Lighthouse SEO ≥ 90 en `/` y en un producto.
