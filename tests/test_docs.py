@@ -288,6 +288,29 @@ class TestLectura:
         assert response.status_code == 200
         assert "Runbook — Medir H0" in response.text
 
+    @pytest.mark.parametrize(
+        ("slug", "titulo"),
+        [
+            ("plan-bloque-mvp", "Plan de trabajo — último bloque antes del lanzamiento del MVP"),
+            ("reporte-estado", "Reporte de estado del sistema — 2026-10-16"),
+            ("analisis-jev-decisor", "Jev como decisor — análisis de pros y contras (2026-10-16)"),
+        ],
+    )
+    def test_el_plan_del_ultimo_bloque_y_sus_insumos_se_leen_en_docs(
+        self, client: TestClient, slug: str, titulo: str
+    ) -> None:
+        """El operador se guía por el plan desde el navegador: el plan, el
+        reporte que lo sustenta y el análisis de Jev tienen que estar en el
+        catálogo y abrir, con el título del archivo real."""
+        assert slug in docs_catalog.BY_SLUG
+        # Es material de trabajo, no gobierna qué se construye: no «rige».
+        assert docs_catalog.BY_SLUG[slug].standing == "interno"
+
+        assert client.get(f"/docs/{slug}").status_code == 200
+        crudo = client.get(f"/docs/{slug}/raw")
+        assert crudo.status_code == 200
+        assert titulo in crudo.text
+
     def test_el_404_es_una_pagina_con_menu_no_un_json(self, client: TestClient) -> None:
         """Un slug errado no puede dejar al operador en un callejón: la vista
         conserva la navegación y ofrece la lista de lo que sí existe."""

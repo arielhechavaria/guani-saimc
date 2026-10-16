@@ -850,6 +850,11 @@ class TestNingunColorFijoEnLasPlantillas:
 
         encontrados: list[str] = []
         for tpl in sorted(raiz.glob("*.html")):
+            # Las tarjetas de marketing se rasterizan como HTML suelto, sin
+            # acceso a las variables del sitio: llevan literales a propósito.
+            # `test_marketing_cards.py` verifica que sigan a `design_tokens.css`.
+            if tpl.name == "_marketing_card.html":
+                continue
             texto = tpl.read_text(encoding="utf-8")
             if "<style>" not in texto:
                 continue

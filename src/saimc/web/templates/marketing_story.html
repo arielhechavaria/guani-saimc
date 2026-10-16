@@ -3,36 +3,24 @@
 <head>
 <meta charset="utf-8">
 <title>Story de precalentamiento</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Alice&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-<style>body{margin:0;font-family:'Roboto',sans-serif}</style>
+{% include "_marketing_card.html" %}
 </head>
 <body>
-{# Adaptado de marketing-design/project/Story.dc.html («5 · Story de precalentamiento», 9:16). Lista de productos = pilot_product_names real, no hardcodeada. #}
-<div style="width: 1080px; height: 1920px; box-sizing: border-box; padding: 250px 80px 340px; background: #05668d; color: #ffffff; display: flex; flex-direction: column; align-items: center; font-family: 'Roboto', sans-serif">
-  <svg viewBox="0 0 80 80" width="220" height="220" role="img" aria-label="Guani">
-    <circle cx="40" cy="40" r="39" fill="#ffffff" stroke="#c4cfcf" stroke-width="2"/>
-    <clipPath id="gc"><circle cx="40" cy="40" r="37"/></clipPath>
-    <g clip-path="url(#gc)" transform="translate(40,40) scale(.8) translate(-40,-40)">
-      <ellipse cx="40" cy="30" rx="34" ry="34" fill="#191c1c"/>
-      <circle cx="40" cy="34" r="27" fill="#6f7979"/>
-      <rect x="13" y="20" width="54" height="8" rx="4" fill="#191c1c"/>
-      <path d="M52,22 L57,3 L62,22 Z" fill="#c4cfcf"/>
-      <ellipse cx="33" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
-      <ellipse cx="47" cy="36" rx="3" ry="2.3" fill="#ffffff"/>
-      <path d="M33,48 Q40,52 47,48" stroke="#ffffff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-      <ellipse cx="40" cy="72" rx="40" ry="20" fill="#8a9494"/>
-    </g>
-  </svg>
-  <div style="margin-top: 48px; font-family: 'Alice', Georgia, serif; font-size: 150px; line-height: 1; text-align: center">Próximamente</div>
-  <div style="margin-top: 32px; font-size: 48px; line-height: 1.3; text-align: center; max-width: 820px">Lo que se vende hoy en Cuba, con precio y provincia.</div>
-  <div style="flex-grow: 1"></div>
-  <div style="width: 100%; box-sizing: border-box; background: #ffffff; color: #191c1c; border-radius: 40px; padding: 44px 48px">
-    <div style="font-size: 44px; font-weight: 700; text-align: center">¿Qué precio quieres ver primero?</div>
-    <div style="margin-top: 32px; display: flex; flex-direction: column; gap: 16px">
-      {% for producto in products %}
-      <div style="padding: 20px 32px; border-radius: 100px; background: #e8f1f6; font-size: 38px; font-weight: 500">{{ producto }}</div>
-      {% endfor %}
+{# Adaptado de marketing-design/project/Story.dc.html («5 · Story de precalentamiento», 9:16). Estilo del sistema compartido en _marketing_card.html. Lista de productos = pilot_product_names real, no hardcodeada. #}
+<div class="mc" style="width: 1080px; height: 1920px">
+  <div class="mc-orbs mc-orbs-center"></div>
+  <div class="mc-content" style="padding: 250px 80px 340px; align-items: center">
+    <div class="mc-brand" style="--mc-logo: 220px">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}</div>
+    <div class="mc-title" style="margin-top: 48px; font-size: 150px; line-height: 1; text-align: center">Próximamente</div>
+    <div class="mc-muted" style="margin-top: 32px; font-size: 48px; line-height: 64px; text-align: center; max-width: 820px">Lo que se vende hoy en Cuba, con precio y provincia.</div>
+    <div style="flex-grow: 1"></div>
+    <div class="mc-panel" style="width: 100%; padding: 44px 48px">
+      <div style="font-size: 44px; line-height: 56px; font-weight: 600; text-align: center">¿Qué precio quieres ver primero?</div>
+      <div style="margin-top: 32px; display: flex; flex-direction: column; gap: 16px">
+        {% for producto in products %}
+        <div class="mc-chip mc-chip-soft" style="padding: 20px 32px; font-size: 38px; line-height: 48px">{{ producto }}</div>
+        {% endfor %}
+      </div>
     </div>
   </div>
 </div>

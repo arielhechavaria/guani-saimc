@@ -25,6 +25,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
 | [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de N días (apagado por defecto) | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
 | [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
+| [`saimc.instagram.sync`](#seguimiento-de-instagram) | Leer la cuenta de Instagram de Guani y guardar sus métricas (lo hace solo el temporizador cada 3 h) | en seco no; `--execute` escribe las tablas `instagram_*` y renueva el token si toca | no |
 | [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
@@ -315,6 +316,47 @@ Un problema se avisa una vez, se recuerda a las 24 h, avisa si empeora y avisa c
   6) `sudo cp systemd/saimc-alerts.* /etc/systemd/system/ && sudo systemctl daemon-reload &&
   sudo systemctl enable --now saimc-alerts.timer`.
 - Sin token o chat, `--execute` avisa por consola y sale con código 2.
+
+### Seguimiento de Instagram
+
+Lee la cuenta propia de Guani por la API oficial (nunca publica ni lee cuentas ajenas) y guarda
+seguidores, publicaciones y sus métricas. Se ve en `/marketing`, sección «Instagram». Normalmente
+lo corre solo `saimc-instagram.timer` cada 3 h; esto es para probarlo o adelantarlo.
+
+```
+.venv/bin/python -m saimc.instagram.sync            # en seco: lee y cuenta, no escribe
+.venv/bin/python -m saimc.instagram.sync --execute  # escribe y renueva el token si toca
+```
+
+- **Cambia algo**: solo con `--execute` (tablas `instagram_*`). En seco tampoco renueva el token.
+  **Gasta**: no.
+- **Alta (una vez, a mano):** 1) la cuenta de Instagram tiene que ser profesional (Business o
+  Creator); 2) en Meta for Developers, crear una app con el producto *Instagram* (*API with
+  Instagram Login*), permisos `instagram_business_basic` e `instagram_business_manage_insights`, y
+  agregar la cuenta como tester; 3) generar el token de larga duración y ponerlo en el `.env` como
+  `SAIMC_INSTAGRAM_ACCESS_TOKEN=...` (y el id y secreto de la app en `SAIMC_INSTAGRAM_APP_ID` y
+  `SAIMC_INSTAGRAM_APP_SECRET`), **nunca por chat**; 4) migrar (`alembic upgrade head`); 5) probar
+  en seco y después con `--execute`; 6) instalar el temporizador:
+  `sudo cp systemd/saimc-instagram.service systemd/saimc-instagram.timer /etc/systemd/system/ &&
+  sudo systemctl daemon-reload && sudo systemctl enable --now saimc-instagram.timer`.
+- **El token vive en la base.** La primera corrida con `--execute` copia el del `.env` a la tabla
+  `instagram_credentials` y supone que vence a los 60 días. Desde ahí el lote lo renueva solo cuando
+  le quedan menos de 15 días, y cambiar el `.env` ya no tiene efecto.
+- **Si el token venció o fue revocado** el comando sale con código 1 y lo dice (`systemctl --failed`,
+  `journalctl -u saimc-instagram.service`). Un token vencido no se renueva: hay que repetir el paso
+  3 del alta, vaciar la tabla para que la próxima corrida siembre el nuevo y correr con `--execute`:
+
+```
+psql "$(grep -E '^SAIMC_DATABASE_URL=' .env | cut -d= -f2- | sed 's/postgresql+psycopg:/postgresql:/')" -P pager=off -c 'DELETE FROM instagram_credentials;'
+```
+
+```
+.venv/bin/python -m saimc.instagram.sync --execute
+```
+
+- Sin token en la base ni en el `.env`, avisa y sale con código 0: es una capacidad sin usar.
+- Una publicación suelta sin métricas (Meta puede tardar hasta 48 h) sale como «aviso» y no frena
+  el resto. Los carruseles no tienen métricas en la API; las stories, solo durante sus 24 h.
 
 ### Carril 0 sobre lo pendiente
 
@@ -672,6 +714,10 @@ psql "$(grep -E '^SAIMC_DATABASE_URL=' .env | cut -d= -f2- | sed 's/postgresql+p
 Hay tres unidades: `saimc.service` (la aplicación, **sin archivo en `systemd/`**),
 `saimc-backup.service` + `.timer` (respaldo diario 03:00) y `saimc-prefill.service` + `.timer`
 (pre-cálculo cada 3 h). Las dos últimas están en [`systemd/`](../systemd/saimc-prefill.service).
+También están ahí `saimc-alerts` (avisos, cada 15 min) y `saimc-instagram` (cuenta de Instagram,
+cada 3 h a y media; instalación en [Seguimiento de Instagram](#seguimiento-de-instagram)). Sus
+comandos son los mismos de abajo cambiando el nombre de la unidad, p. ej.
+`journalctl -u saimc-instagram.service -n 50`.
 
 **Estado y cuándo toca**
 

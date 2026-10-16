@@ -25,32 +25,32 @@
    dijera. Los comentarios de cada token se quedan en la fuente y no viajan. */
 /* >>> BEGIN tokens generados — los edita tools/build_css_tokens.py, no vos */
 :root {
-  --m3-primary: #00696e;
-  --m3-primary-hover: #00565b;
+  --m3-primary: #292524;
+  --m3-primary-hover: #0c0a09;
   --m3-on-primary: #ffffff;
-  --m3-primary-container: #cce8e9;
-  --m3-on-primary-container: #041f21;
-  --m3-primary-fixed-dim: #b8ecef;
+  --m3-primary-container: #f0efed;
+  --m3-on-primary-container: #292524;
+  --m3-primary-fixed-dim: #e7e5e4;
 
   --m3-tertiary: #4b607c;
 
-  --m3-bg: #f2f6f6;
+  --m3-bg: #f5f5f5;
   --m3-surface: #ffffff;
-  --m3-surface-container: #eef4f4;
-  --m3-surface-container-high: #e3e9ea;
-  --m3-surface-hover: #f7fafa;
-  --m3-surface-variant: #dbe5e5;
+  --m3-surface-container: #f0efed;
+  --m3-surface-container-high: #e7e5e4;
+  --m3-surface-hover: #fafafa;
+  --m3-surface-variant: #f0efed;
 
-  --m3-on-surface: #191c1c;
-  --m3-on-surface-variant: #3f4949;
-  --m3-outline: #6f7979;
-  --m3-outline-variant: #c4cfcf;
-  --m3-divider: #eef2f2;
-  --m3-disabled: #8a9494;
+  --m3-on-surface: #0c0a09;
+  --m3-on-surface-variant: #4e4e4e;
+  --m3-outline: #6f6962;
+  --m3-outline-variant: #d6d3d1;
+  --m3-divider: #e7e5e4;
+  --m3-disabled: #a8a29e;
 
-  --m3-error: #ba1a1a;
-  --m3-error-container: #ffdad6;
-  --m3-on-error-container: #410002;
+  --m3-error: #dc2626;
+  --m3-error-container: #fee2e2;
+  --m3-on-error-container: #7f1d1d;
   --m3-success-container: #c3ecc9;
   --m3-on-success-container: #05210d;
   --m3-warn-container: #ffe6a8;
@@ -59,7 +59,7 @@
   --m3-success: #1b6b4f;
   --m3-warn-strong: #8a6212;
   --m3-warn-wash: #fdf8ec;
-  --m3-error-wash: #fdeced;
+  --m3-error-wash: #fef2f2;
 
   --m3-prov-0: #3f5fd6;  --m3-prov-0-soft: #dbe4ff;  --m3-prov-0-wash: #f6f8ff;
   --m3-prov-1: #7048e8;  --m3-prov-1-soft: #e5dbff;  --m3-prov-1-wash: #f9f6ff;
@@ -88,25 +88,26 @@
   --m3-radius-lg: 16px;
   --m3-radius-full: 100px;
 
-  --m3-elev-1: 0 1px 3px rgba(0, 0, 0, .08);
-  --m3-elev-2: 0 1px 2px rgba(0, 0, 0, .2);
-  --m3-elev-3: 0 4px 12px rgba(0, 0, 0, .18);
+  --m3-elev-1: 0 1px 2px rgba(12, 10, 9, .06);
+  --m3-elev-2: 0 1px 2px rgba(12, 10, 9, .12);
+  --m3-elev-3: 0 8px 24px rgba(12, 10, 9, .12);
 
-  --m3-font: Roboto, "Noto Color Emoji", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --m3-font: Inter, "Noto Color Emoji", system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --m3-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --ph-font-heading: "Alice", Georgia, serif;
-  --ph-accent: #05668d;
+  --ph-font-heading: "Guani Display", Inter, system-ui, sans-serif;
+  --ph-accent: #292524;
   --ph-on-accent: #ffffff;
-  --ph-accent-wash: rgba(5, 102, 141, .1);
-  --ph-accent-2: #028090;
-  --ph-accent-2-line: #015a63;
-  --ph-median: #aec092;
-  --ph-price-low: #e8f1f6;
-  --ph-price-high: #05668d;
-  --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
-  --ph-scrim: rgba(5, 32, 48, .35);
-  --ph-sheet-shadow: 0 -8px 30px rgba(5, 32, 48, .18);
+  --ph-accent-wash: rgba(41, 37, 36, .06);
+  --ph-accent-2: #6f9bc4;
+  --ph-accent-2-line: #3f6a93;
+  --ph-median: #a7e5d3;
+  --ph-wholesale: #8a5a12;
+  --ph-price-low: #dbe7f3;
+  --ph-price-high: #292524;
+  --ph-elev: 0 1px 2px rgba(12, 10, 9, .05), 0 4px 14px rgba(12, 10, 9, .05);
+  --ph-scrim: rgba(12, 10, 9, .35);
+  --ph-sheet-shadow: 0 -8px 30px rgba(12, 10, 9, .16);
   --ph-radius-lg: 24px;
   --ph-radius-sm: 14px;
   --ph-side-w: clamp(30rem, 32vw, 36rem);
@@ -132,31 +133,37 @@
   --ph-dusk-manana: #fde7bf;
   --ph-dusk-sombra-dia: rgba(11, 44, 67, .14);
   --ph-dusk-brillo: rgba(255, 255, 255, .55);
+  --ph-orb-mint: #a7e5d3;
+  --ph-orb-peach: #f4c5a8;
+  --ph-orb-lavender: #c8b8e0;
+  --ph-orb-sky: #a8c8e8;
+  --ph-orb-rose: #e8b8c4;
+  --ph-orb-opacity: .55;
 }
 
 :root[data-theme="dark"] {
-  --m3-primary: #6cd4d9;
-  --m3-primary-hover: #58c1c6;
-  --m3-on-primary: #003337;
-  --m3-primary-container: #004f54;
-  --m3-on-primary-container: #b8ecef;
+  --m3-primary: #f5f5f5;
+  --m3-primary-hover: #ffffff;
+  --m3-on-primary: #0c0a09;
+  --m3-primary-container: #292524;
+  --m3-on-primary-container: #f5f5f5;
   --m3-tertiary: #b7c8e4;
 
-  --m3-bg: #0e1414;
-  --m3-surface: #141b1b;
-  --m3-surface-container: #1a2222;
-  --m3-surface-container-high: #222d2d;
-  --m3-surface-hover: #1e2727;
-  --m3-surface-variant: #2a3535;
+  --m3-bg: #0c0a09;
+  --m3-surface: #1c1917;
+  --m3-surface-container: #231f1d;
+  --m3-surface-container-high: #2e2926;
+  --m3-surface-hover: #262220;
+  --m3-surface-variant: #2e2926;
 
-  --m3-on-surface: #e1e3e3;
-  --m3-on-surface-variant: #bdc7c7;
-  --m3-outline: #8a9494;
-  --m3-outline-variant: #3f4949;
-  --m3-divider: #2a3535;
-  --m3-disabled: #6b7575;
+  --m3-on-surface: #f5f5f5;
+  --m3-on-surface-variant: #a8a29e;
+  --m3-outline: #8b857f;
+  --m3-outline-variant: #3a3532;
+  --m3-divider: #292524;
+  --m3-disabled: #6b6560;
 
-  --m3-error: #ffb4ab;
+  --m3-error: #f87171;
   --m3-error-container: #5c1a1a;
   --m3-on-error-container: #ffdad6;
   --m3-success-container: #1f4d2c;
@@ -179,6 +186,89 @@
   --m3-acento-2: #d97a63;
   --m3-acento-3: #b97e88;
 
+  --ph-accent: #f5f5f5;
+  --ph-on-accent: #0c0a09;
+  --ph-accent-wash: rgba(245, 245, 245, .08);
+  --ph-accent-2: #8fb6dc;
+  --ph-accent-2-line: #cfe3f5;
+  --ph-median: #a7e5d3;
+  --ph-wholesale: #e0b15c;
+  --ph-price-low: #1f2a35;
+  --ph-price-high: #cfe0f1;
+  --ph-orb-mint: #2f8f78;
+  --ph-orb-peach: #b8754d;
+  --ph-orb-lavender: #6f5aa8;
+  --ph-orb-sky: #3b74ac;
+  --ph-orb-rose: #a85a73;
+  --ph-orb-opacity: .3;
+}
+/* <<< END tokens generados */
+
+/* Landing congelado (2026-10-13). El resto del sistema pasó al estilo
+   ElevenLabs (docs/decisions.md, 2026-10-13); el landing queda fuera por
+   pedido del operador, así que acá se fijan los valores anteriores de los
+   tokens que cambiaron, solo dentro de `.lp`. Vive en la hoja y no en la
+   plantilla porque el test de la landing prohíbe colores a mano en su
+   `<style>`. Cuando se lo lleve al estilo nuevo, se borra este bloque. */
+.lp {
+  --m3-primary: #00696e;
+  --m3-primary-hover: #00565b;
+  --m3-on-primary: #ffffff;
+  --m3-primary-container: #cce8e9;
+  --m3-on-primary-container: #041f21;
+  --m3-primary-fixed-dim: #b8ecef;
+  --m3-bg: #f2f6f6;
+  --m3-surface: #ffffff;
+  --m3-surface-container: #eef4f4;
+  --m3-surface-container-high: #e3e9ea;
+  --m3-surface-hover: #f7fafa;
+  --m3-surface-variant: #dbe5e5;
+  --m3-on-surface: #191c1c;
+  --m3-on-surface-variant: #3f4949;
+  --m3-outline: #6f7979;
+  --m3-outline-variant: #c4cfcf;
+  --m3-divider: #eef2f2;
+  --m3-disabled: #8a9494;
+  --m3-error: #ba1a1a;
+  --m3-error-container: #ffdad6;
+  --m3-on-error-container: #410002;
+  --m3-error-wash: #fdeced;
+  --m3-elev-1: 0 1px 3px rgba(0, 0, 0, .08);
+  --m3-elev-2: 0 1px 2px rgba(0, 0, 0, .2);
+  --m3-elev-3: 0 4px 12px rgba(0, 0, 0, .18);
+  --m3-font: Roboto, "Noto Color Emoji", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ph-font-heading: "Alice", Georgia, serif;
+  --ph-accent: #05668d;
+  --ph-on-accent: #ffffff;
+  --ph-accent-wash: rgba(5, 102, 141, .1);
+  --ph-accent-2: #028090;
+  --ph-accent-2-line: #015a63;
+  --ph-median: #aec092;
+  --ph-price-low: #e8f1f6;
+  --ph-price-high: #05668d;
+  --ph-elev: 0 1px 2px rgba(5, 32, 48, .08), 0 4px 14px rgba(5, 32, 48, .06);
+  --ph-scrim: rgba(5, 32, 48, .35);
+  --ph-sheet-shadow: 0 -8px 30px rgba(5, 32, 48, .18);
+}
+:root[data-theme="dark"] .lp {
+  --m3-primary: #6cd4d9;
+  --m3-primary-hover: #58c1c6;
+  --m3-on-primary: #003337;
+  --m3-primary-container: #004f54;
+  --m3-on-primary-container: #b8ecef;
+  --m3-bg: #0e1414;
+  --m3-surface: #141b1b;
+  --m3-surface-container: #1a2222;
+  --m3-surface-container-high: #222d2d;
+  --m3-surface-hover: #1e2727;
+  --m3-surface-variant: #2a3535;
+  --m3-on-surface: #e1e3e3;
+  --m3-on-surface-variant: #bdc7c7;
+  --m3-outline: #8a9494;
+  --m3-outline-variant: #3f4949;
+  --m3-divider: #2a3535;
+  --m3-disabled: #6b7575;
+  --m3-error: #ffb4ab;
   --ph-accent: #7ec8ea;
   --ph-on-accent: #00344a;
   --ph-accent-wash: rgba(126, 200, 234, .14);
@@ -188,7 +278,6 @@
   --ph-price-low: #16303c;
   --ph-price-high: #7ec8ea;
 }
-/* <<< END tokens generados */
 
 * { box-sizing: border-box; }
 
@@ -255,6 +344,24 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
   src: url("/static/fonts/roboto-mono.woff2") format("woff2");
 }
 
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/static/fonts/inter.woff2?v=1") format("woff2");
+}
+/* Mismo archivo que Inter, declarado en peso 300 fijo: el navegador acota el
+   eje variable al rango declarado, así que todo lo que pida
+   `--ph-font-heading` sale en Light (la firma editorial del estilo) sin
+   tocar cada regla que dice `font-weight: 400`. No suma una descarga. */
+@font-face {
+  font-family: "Guani Display";
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("/static/fonts/inter.woff2?v=1") format("woff2");
+}
 @font-face {
   font-family: "Alice";
   font-style: normal;
@@ -498,9 +605,42 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
      titular de `/anuncio/<id>` («El anuncio detrás de este precio») envuelve
      a tres líneas en 360px. */
   font-size: clamp(1.625rem, 1.1rem + 2.2vw, 2.375rem);
-  line-height: 1.15; letter-spacing: -.01em;
+  line-height: 1.1; letter-spacing: -.02em;
   color: var(--m3-on-surface);
   max-width: 34ch; text-wrap: balance;
+}
+
+/* Orbes de atmósfera (estilo ElevenLabs, 2026-10-13): el único «color» de la
+   cabecera son manchas pastel difusas detrás del titular. Decoran; el texto
+   se lee sobre el lienzo (la opacidad baja en oscuro, ver `--ph-orb-opacity`). */
+.m3-public-top { position: relative; isolation: isolate; }
+.m3-public-top::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  inset: -30% -12% -20% 30%;
+  background:
+    radial-gradient(40% 55% at 30% 40%, var(--ph-orb-mint), transparent 70%),
+    radial-gradient(35% 50% at 62% 30%, var(--ph-orb-peach), transparent 70%),
+    radial-gradient(38% 55% at 80% 62%, var(--ph-orb-lavender), transparent 70%),
+    radial-gradient(34% 50% at 48% 78%, var(--ph-orb-sky), transparent 70%);
+  filter: blur(28px); opacity: var(--ph-orb-opacity);
+}
+
+/* La misma atmósfera para el tablero (`.ph-layout`, y `.ph-atmosfera` para
+   quien la quiera suelta).
+   Queda dentro del ancho del contenedor (nada de márgenes negativos: un
+   elemento difuminado que desborda abre scroll horizontal en el teléfono). */
+.ph-atmosfera, .ph-layout { position: relative; isolation: isolate; }
+.ph-atmosfera::before, .ph-layout::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  inset: -8px 0 auto 0; height: 360px;
+  background:
+    radial-gradient(28% 58% at 68% 22%, var(--ph-orb-peach), transparent 70%),
+    radial-gradient(24% 55% at 82% 50%, var(--ph-orb-lavender), transparent 70%),
+    radial-gradient(34% 60% at 58% 8%, var(--ph-orb-mint), transparent 70%),
+    radial-gradient(30% 55% at 30% 5%, var(--ph-orb-sky), transparent 70%);
+  filter: blur(36px); opacity: var(--ph-orb-opacity);
+  -webkit-mask-image: linear-gradient(#000 40%, transparent);
+  mask-image: linear-gradient(#000 40%, transparent);
 }
 
 .m3-public-main { flex: 1; min-width: 0; }
@@ -630,7 +770,7 @@ a:hover { color: var(--ph-accent); text-decoration: underline; }
 .ph-cintillo {
   box-sizing: border-box; display: flex; align-items: stretch; height: 2.75rem; overflow: hidden;
   background: var(--m3-surface-container);
-  border-top: 3px solid var(--m3-primary); border-bottom: 1px solid var(--m3-divider);
+  border-top: 1px solid var(--m3-divider); border-bottom: 1px solid var(--m3-divider);
   font-family: var(--m3-font); color: var(--m3-on-surface);
 }
 .ph-cintillo-rotulo {

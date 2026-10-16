@@ -5,6 +5,10 @@ from saimc.models.channel import Channel, Platform
 from saimc.models.curation_event import CurationAction, CurationEvent, CurationMode
 from saimc.models.exchange_rate_cache import ExchangeRateCache
 from saimc.models.glossary import GlossaryEntry
+from saimc.models.instagram_account_snapshot import InstagramAccountSnapshot
+from saimc.models.instagram_credentials import InstagramCredentials
+from saimc.models.instagram_media import InstagramMedia, InstagramMediaType
+from saimc.models.instagram_media_metrics import InstagramMediaMetrics
 from saimc.models.jev_signal import JevSignal
 from saimc.models.llm_review import LlmProposal, LlmReview, ProposalStatus, ReviewOutcome
 from saimc.models.ocr_transcription import OcrTranscription
@@ -40,6 +44,11 @@ __all__ = [
     "DiscardReason",
     "ExchangeRateCache",
     "GlossaryEntry",
+    "InstagramAccountSnapshot",
+    "InstagramCredentials",
+    "InstagramMedia",
+    "InstagramMediaMetrics",
+    "InstagramMediaType",
     "JevSignal",
     "LlmProposal",
     "LlmReview",
