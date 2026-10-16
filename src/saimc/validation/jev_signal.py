@@ -20,11 +20,17 @@ el que une a Jev con el sistema:
   sobre los pendientes o sobre los textos ya decididos (`--decided`), para que
   el informe tenga n desde el primer día.
 
-**Es sombra: solo anota.** Nada de acá cambia `validation_status`, el carril
-ni `provenance`, y el motor (`engine`, `rules`, `types`, `fence`) no importa
-este módulo. Al guardar no se llama a nadie: un anuncio que el operador decide
+**En el carril 1 es sombra: solo anota.** Nada de acá cambia
+`validation_status` ni `provenance`, y el motor (`engine`, `rules`, `types`,
+`fence`) no importa este módulo. **En el carril 0 decide** desde el slice
+jev-decisor (`docs/spec-slice-jev-decisor.md`), solo con
+`SAIMC_LANE0_JEV_ENABLED`: `validation.lane0` lee el triage de la señal
+vigente y se lo pasa al motor como `AdContext.triage_probability`.
+
+Al guardar no se llama a nadie: un anuncio que el operador decide
 antes de que pase el temporizador queda «sin señal», que es un estado
-soportado. Ningún umbral se fija acá; eso es de G1.
+soportado. Ningún umbral se fija acá: el de descarte vive en
+`validation.lane0.JEV_DISCARD_BELOW`.
 
 **Un fallo de Jev nunca le cuesta nada al resto.** La pasada lo anota en el
 registro y sigue o corta, y el pre-cálculo termina con el código de salida de

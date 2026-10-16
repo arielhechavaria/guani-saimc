@@ -427,7 +427,9 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
     )
 
 
-def decide_lane_0(ctx: AdContext) -> AdValidation:
+def decide_lane_0(
+    ctx: AdContext, *, external_discard_below: float | None = None
+) -> AdValidation:
     """Decide SOLO el carril 0, sin configuración de parámetros (slice B2a).
 
     El carril 0 no usa ningún parámetro de `ValidationConfig`, pero
@@ -436,18 +438,78 @@ def decide_lane_0(ctx: AdContext) -> AdValidation:
     descarta por `off_focus` o `no_data`, las reglas no ven ningún piloto) y
     nada más: devuelve carril 0 o carril 2, nunca el 1. Quien la llama hace de
     configuración con su interruptor por tipo (`SAIMC_LANE0_*_ENABLED`).
+
+    `external_discard_below` suma un segundo juez, el triage externo de
+    `ctx.triage_probability` (slice jev-decisor, `docs/spec-slice-jev-decisor.md`
+    §2.1). Con `None` todo es como antes. Con un umbral:
+
+    - si el modelo descarta, hace falta además que P(sí) sea MENOR que el
+      umbral; si no hay señal, decide como antes (un juez caído no endurece);
+    - si el modelo no propuso (sin propuesta, degradada o con falla), el
+      triage externo puede descartar solo, con la misma regla del piloto en
+      el texto;
+    - si el modelo propone filas, el triage no cambia nada.
     """
     model = ctx.model
-    if model is None:
-        return AdValidation(LANE_REVIEW, ("el anuncio no tiene propuesta del modelo",))
-    if model.degraded or model.failure:
+    p = None if external_discard_below is None else _triage(ctx.triage_probability)
+    if model is None or model.degraded or model.failure:
+        if p is not None and external_discard_below is not None and p < external_discard_below:
+            return _external_discard(ctx, p)
+        if model is None:
+            return AdValidation(LANE_REVIEW, ("el anuncio no tiene propuesta del modelo",))
         return AdValidation(LANE_REVIEW, ("la propuesta del modelo está degradada",))
     if model.discard is not True:
         return AdValidation(LANE_REVIEW, ("el modelo no descarta el anuncio",))
-    return _lane_0_verdict(ctx, model, _lane_0_reasons(ctx, model))
+    reasons = _lane_0_reasons(ctx, model)
+    if p is not None and external_discard_below is not None and p >= external_discard_below:
+        reasons.append(f"el modelo descarta, pero Jev no (P(sí) = {p:.2f})")
+    verdict = _lane_0_verdict(ctx, model, reasons)
+    if verdict.lane == LANE_DISCARD and p is not None:
+        return AdValidation(LANE_DISCARD, (*verdict.reasons, f"Jev también descarta (P(sí) = {p:.2f})"))
+    return verdict
 
 
-def _has_digit(text: str) -> bool:
+def _triage(value: object) -> float | None:
+    """La P(sí) del triage externo, o `None` si no es un número finito entre 0
+    y 1. `bool` queda afuera a propósito: en Python `True` es un `int`."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    if not math.isfinite(value) or not 0 <= value <= 1:
+        return None
+    return float(value)
+
+
+def _external_discard(ctx: AdContext, p: float) -> AdValidation:
+    """Rol 2: el modelo no propuso y el triage externo descarta. La regla del
+    piloto en el texto vale igual que para un descarte del modelo."""
+    if _pilot_in_text(ctx):
+        return AdValidation(
+            LANE_REVIEW,
+            (
+                f"el asistente no propuso y Jev descarta (P(sí) = {p:.2f}), "
+                "pero las reglas ven un producto piloto en el texto",
+            ),
+        )
+    return AdValidation(
+        LANE_DISCARD,
+        (
+            f"el asistente no propuso y Jev descarta (P(sí) = {p:.2f}); "
+            "las reglas no ven ningún producto piloto",
+        ),
+    )
+
+
+def _pilot_in_text(ctx: AdContext) -> bool:
+    # Sin un solo dígito no puede haber precio: que el texto nombre un producto
+    # («pollo agotado») no lo vuelve un anuncio con dato (2026-10-13). Se mira el
+    # dígito y no el significado: un «2» suelto ya basta para que lo mire una
+    # persona, que es la lectura conservadora.
+    return has_digit(ctx.text) and mentions_any_product(ctx.text, ctx.pilot_products)
+
+
+def has_digit(text: str) -> bool:
+    """¿Hay algún dígito? Sin uno no puede haber precio. Lo usa también el
+    carril 0 para el motivo de un descarte de Jev (slice jev-decisor)."""
     return any(char.isdigit() for char in text)
 
 
@@ -456,11 +518,7 @@ def _lane_0_reasons(ctx: AdContext, model: AdProposal) -> list[str]:
     reasons: list[str] = []
     if model.discard_reason not in _LANE_0_REASONS:
         reasons.append("el modelo descarta, pero no por fuera de foco ni por falta de datos")
-    # Sin un solo dígito no puede haber precio: que el texto nombre un producto
-    # («pollo agotado») no lo vuelve un anuncio con dato (2026-10-13). Se mira el
-    # dígito y no el significado: un «2» suelto ya basta para que lo mire una
-    # persona, que es la lectura conservadora.
-    if _has_digit(ctx.text) and mentions_any_product(ctx.text, ctx.pilot_products):
+    if _pilot_in_text(ctx):
         reasons.append("el modelo descarta, pero las reglas ven un producto piloto en el texto")
     return reasons
 

@@ -1075,3 +1075,117 @@ def test_modelo_manda_sigue_frenando_el_canal_sucio() -> None:
 
     assert resultado.lane == 2
     assert "fila 1: el canal tiene un historial sucio" in resultado.reasons
+
+
+# --- jev-decisor: Jev como segundo juez del carril 0 (docs/spec-slice-jev-decisor.md) ---
+# Casos escritos a mano antes del código. «iPhone» no es piloto y trae dígitos:
+# el modelo lo descarta y las reglas no ven ningún piloto.
+
+UMBRAL_JEV = 0.2
+FUERA_DE_FOCO = "Vendo iPhone 13, 450 USD"
+
+
+def _con_jev(ctx: AdContext, p: object) -> AdContext:
+    return replace(ctx, triage_probability=p)
+
+
+def _carril_jev(ctx: AdContext, p: object, umbral: float | None = UMBRAL_JEV) -> AdValidation:
+    from saimc.validation import decide_lane_0
+
+    return decide_lane_0(_con_jev(ctx, p), external_discard_below=umbral)
+
+
+def test_jev_caso_01_sin_umbral_el_carril_0_es_el_de_hoy() -> None:
+    from saimc.validation import decide_lane_0
+
+    descarta = _ctx(FUERA_DE_FOCO, modelo=_descarte("off_focus"))
+    assert _carril_jev(descarta, 0.05, umbral=None) == decide_lane_0(descarta)
+    assert _carril_jev(descarta, 0.9, umbral=None).lane == 0  # sin umbral Jev no frena
+    assert _carril_jev(_ctx(FUERA_DE_FOCO, modelo=None), 0.01, umbral=None).lane == 2
+
+
+def test_jev_caso_02_los_dos_jueces_descartan() -> None:
+    resultado = _carril_jev(_ctx(FUERA_DE_FOCO, modelo=_descarte("off_focus")), 0.05)
+
+    assert resultado.lane == 0
+
+
+def test_jev_caso_03_el_modelo_descarta_y_jev_no_va_a_revision() -> None:
+    resultado = _carril_jev(_ctx(FUERA_DE_FOCO, modelo=_descarte("off_focus")), 0.35)
+
+    assert resultado.lane == 2
+    assert any("Jev" in motivo for motivo in resultado.reasons)
+
+
+def test_jev_caso_04_el_limite_es_estricto() -> None:
+    assert _carril_jev(_ctx(FUERA_DE_FOCO, modelo=_descarte("no_data")), 0.2).lane == 2
+
+
+def test_jev_caso_05_sin_senal_el_descarte_del_modelo_sigue_como_hoy() -> None:
+    assert _carril_jev(_ctx(FUERA_DE_FOCO, modelo=_descarte("off_focus")), None).lane == 0
+
+
+def test_jev_caso_06_jev_no_salta_la_regla_del_piloto_en_el_texto() -> None:
+    resultado = _carril_jev(_ctx("Arroz 320 la libra", modelo=_descarte("off_focus")), 0.05)
+
+    assert resultado.lane == 2
+
+
+def test_jev_caso_07_rol_2_jev_descarta_cuando_el_asistente_no_propuso() -> None:
+    for modelo in (None, AdProposal(degraded=True, failure="timeout")):
+        resultado = _carril_jev(_ctx(FUERA_DE_FOCO, modelo=modelo), 0.1)
+        assert resultado.lane == 0
+        assert any("Jev" in motivo for motivo in resultado.reasons)
+
+
+def test_jev_caso_07b_rol_2_tambien_con_una_falla_sin_marca_de_degradada() -> None:
+    modelo = AdProposal(discard=True, discard_reason="off_focus", degraded=True)
+
+    assert _carril_jev(_ctx(FUERA_DE_FOCO, modelo=modelo), 0.1).lane == 0
+
+
+def test_jev_caso_08_rol_2_no_descarta_si_las_reglas_ven_un_piloto() -> None:
+    modelo = AdProposal(degraded=True, failure="timeout")
+
+    assert _carril_jev(_ctx("Arroz 320 la libra", modelo=modelo), 0.1).lane == 2
+
+
+def test_jev_caso_09_rol_2_sin_senal_o_con_p_alta_va_a_revision() -> None:
+    modelo = AdProposal(degraded=True, failure="timeout")
+    for p in (0.5, None):
+        resultado = _carril_jev(_ctx(FUERA_DE_FOCO, modelo=modelo), p)
+        assert resultado.lane == 2
+        assert resultado.reasons
+
+
+def test_jev_caso_10_jev_nunca_descarta_si_el_asistente_propone_filas() -> None:
+    ctx = _ctx(FUERA_DE_FOCO, modelo=_modelo(_fila()))
+
+    assert _carril_jev(ctx, 0.01).lane == 2
+
+
+def test_jev_caso_10b_un_descarte_sin_motivo_valido_sigue_en_revision() -> None:
+    ctx = _ctx(FUERA_DE_FOCO, modelo=AdProposal(discard=True, discard_reason=None))
+
+    assert _carril_jev(ctx, 0.01).lane == 2
+
+
+@pytest.mark.parametrize("p", [1.5, -0.1, float("nan"), float("inf"), True, "0.1"])
+def test_jev_caso_11_una_probabilidad_mal_formada_es_sin_senal(p: object) -> None:
+    # Rol 1 cae a lo de hoy (descarta); Rol 2 no tiene con qué (revisión).
+    assert _carril_jev(_ctx(FUERA_DE_FOCO, modelo=_descarte("off_focus")), p).lane == 0
+    degradada = AdProposal(degraded=True, failure="timeout")
+    assert _carril_jev(_ctx(FUERA_DE_FOCO, modelo=degradada), p).lane == 2
+
+
+def test_jev_caso_12_una_imagen_sin_senal_se_descarta_como_hoy() -> None:
+    ctx = _ctx(FUERA_DE_FOCO, modelo=_descarte("off_focus"), tipo="image")
+
+    assert _carril_jev(ctx, None).lane == 0
+
+
+def test_jev_validate_ad_no_lee_el_triage() -> None:
+    # Rol 3 queda apagado: el carril 1 y validate_ad no cambian con la señal.
+    ctx = _caso_1(canal=MERCADO_HABANA, celdas=(CELDA_ARROZ,))
+
+    assert validate_ad(_con_jev(ctx, 0.01), CONFIG) == validate_ad(ctx, CONFIG)

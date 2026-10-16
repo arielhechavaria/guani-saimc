@@ -105,6 +105,11 @@ sudo systemctl start saimc-prefill.service
   `jev_signals`. Tiene su propio tope, **`SAIMC_LLM_JEV_MAX_COST` (0,01 USD por corrida)**, aparte
   del de arriba. Un fallo de Jev no frena el resto ni pone en rojo la tarjeta «Pre-cálculo»: queda
   en `journalctl` (líneas `jev.fallo`) y en `/control/calidad#jev`. Ver [Señal de Jev](#señal-de-jev).
+- **Jev en el carril 0 (jev-decisor)**: con `SAIMC_LANE0_TEXT_ENABLED=true` y además
+  `SAIMC_LANE0_JEV_ENABLED=true`, la señal de esa pasada decide: un texto que el modelo descarta se
+  descarta solo si Jev también lo hace (P(sí) < 0,2; sin señal, como antes), y un texto cuya
+  propuesta degradó lo puede descartar Jev solo. Apagado, Jev sigue en sombra. Para volver atrás
+  basta con poner `false` en el `.env`; no hace falta desplegar.
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Paso 1».
 
 ---
@@ -371,6 +376,9 @@ ningún dígito», 2026-10-13), lo que ya estaba pendiente no se vuelve a mirar:
 - **Cambia algo**: solo con `--execute`. **Gasta**: no (usa las propuestas guardadas).
 - Respeta los interruptores `SAIMC_LANE0_TEXT_ENABLED` / `SAIMC_LANE0_IMAGE_ENABLED`; apagados, avisa y
   sale con código 2. Descartar con la auditoría del carril 0 queda sujeto a la muestra semanal.
+- Con `SAIMC_LANE0_JEV_ENABLED=true` (slice jev-decisor) usa la señal vigente de Jev: un descarte del
+  modelo pide además P(sí) < 0,2, y un pendiente cuya única propuesta degradó lo puede descartar Jev
+  solo. Esos tienen su propia cota en `/curation/auditoria` («Descartados solo por Jev»).
 
 ### Carril 1 en seco
 

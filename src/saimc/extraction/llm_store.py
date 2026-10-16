@@ -118,6 +118,22 @@ def latest_ok_proposal(db: Session, ingestion_id: uuid.UUID) -> LlmProposal | No
     return db.execute(stmt).scalars().first()
 
 
+def latest_proposal(db: Session, ingestion_id: uuid.UUID) -> LlmProposal | None:
+    """La última propuesta de este anuncio, haya andado o degradado, o `None`.
+
+    La usa el carril 0 cuando Jev decide (slice jev-decisor): un anuncio cuyo
+    asistente degradó también puede descartarse, y la revisión necesita una
+    propuesta contra la cual guardarse.
+    """
+    stmt = (
+        select(LlmProposal)
+        .where(LlmProposal.ingestion_id == ingestion_id)
+        .order_by(LlmProposal.created_at.desc())
+        .limit(1)
+    )
+    return db.execute(stmt).scalars().first()
+
+
 def _as_uuid(raw: object) -> uuid.UUID | None:
     try:
         return uuid.UUID(str(raw))

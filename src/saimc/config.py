@@ -177,6 +177,12 @@ class Settings(BaseSettings):
     # siempre. Nada los apaga automáticamente: lo hace el operador.
     lane0_text_enabled: bool = False
     lane0_image_enabled: bool = False
+    # Jev como segundo juez del carril 0 (slice jev-decisor,
+    # `docs/spec-slice-jev-decisor.md`): con el carril 0 de texto encendido,
+    # un descarte del modelo pide además que Jev dé P(sí) < 0,2, y Jev puede
+    # descartar solo cuando el asistente no propuso. Apagado, Jev sigue en
+    # sombra. Se apaga cambiando el `.env`, sin desplegar.
+    lane0_jev_enabled: bool = False
 
     # Carril 1 encendido (slice B2b, `docs/spec-slice-B2b.md`): el pre-cálculo
     # guarda solo, con `provenance = auto`, las filas de los textos que el

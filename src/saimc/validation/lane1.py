@@ -97,7 +97,11 @@ from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, Validat
 #:   el operador tocó más de la mitad de las filas propuestas;
 #: - tope de 4 filas por anuncio (era 1; subió el 2026-10-13, ver
 #:   `docs/decisions.md`);
-#: - las señales externas no entran (Jev no separa): sin umbral;
+#: - las señales externas no entran (Jev no separa): sin umbral. Medido otra
+#:   vez el 2026-10-16 con producto, moneda y provincia: exigir el acuerdo de
+#:   Jev saca 3 errores y 26 anuncios buenos de 204, porque los errores del
+#:   carril son de envase y precio, donde Jev no opina
+#:   (`docs/spec-slice-jev-decisor.md` §1.4). Jev decide solo en el carril 0;
 #: - el desacuerdo entre reglas y modelo no frena: manda el modelo (2026-10-13).
 CONFIG = ValidationConfig(
     min_cell_n=persist.MIN_CELL_N,

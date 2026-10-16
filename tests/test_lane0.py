@@ -15,6 +15,7 @@ import json
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -31,6 +32,7 @@ from saimc.models import (
     CurationAction,
     CurationEvent,
     CurationMode,
+    JevSignal,
     LlmProposal,
     LlmReview,
     ProcessingStatus,
@@ -40,10 +42,11 @@ from saimc.models import (
     ReviewOutcome,
     SourceType,
 )
-from saimc.validation import lane0
+from saimc.validation import jev_signal, lane0
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
+from tests import jev_fakes
 
 # --- el modelo falso ---------------------------------------------------------
 
@@ -884,3 +887,241 @@ def test_el_comando_respeta_el_interruptor_apagado(
     session.refresh(ingesta)
     assert ingesta.processing_status == ProcessingStatus.PENDING
     assert any("apagado" in linea for linea in salida)
+
+
+# --- jev-decisor: Jev como segundo juez del carril 0 (docs/spec-slice-jev-decisor.md) ---
+# Casos a mano, antes del código. La señal se da de alta directo en la tabla:
+# ningún test llama a Jev. «iPhone» no es piloto y trae dígitos (off_focus);
+# «Buenos días grupo» no trae ninguno (no_data).
+
+FUERA_DE_FOCO = "Vendo iPhone 13, 450 USD"
+
+
+def _senal(session: Session, ingesta: RawIngestion, p: float, *, huella: str | None = None) -> None:
+    """La señal de Jev del anuncio, con P(sí) = `p`, de la huella vigente salvo
+    que se pida otra."""
+    session.add(
+        JevSignal(
+            ingestion_id=ingesta.id,
+            model="typesafe-ai/jev",
+            questions_hash=huella or jev_signal.load_options(session).questions_hash,
+            answers={
+                "triage": jev_fakes.noul(p),
+                "product": jev_fakes.choice("other", 0.9, 0.9),
+                "currency": jev_fakes.choice("CUP", 0.9, 0.9),
+            },
+            product_keys={"arroz": "x"},
+            input_tokens=100,
+            output_tokens=0,
+            cost_usd=Decimal("0.00003"),
+            source="prefill",
+        )
+    )
+    session.commit()
+
+
+def _degradada() -> ClienteFalso:
+    return ClienteFalso(_DESCARTA_FUERA_DE_FOCO, errores=[RuntimeError("boom")])
+
+
+def test_jev_el_umbral_es_el_que_decidio_el_operador() -> None:
+    assert lane0.JEV_DISCARD_BELOW == 0.2
+
+
+def test_jev_con_su_interruptor_apagado_no_se_lee(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    degradada = _ingesta(session, texto=FUERA_DE_FOCO)
+    _senal(session, degradada, 0.1)
+
+    _correr(session, tmp_path, _degradada(), lane0_text_enabled=True)
+
+    _sigue_pendiente_sin_evento(session, degradada)
+
+
+def test_jev_apagado_un_descarte_del_modelo_sigue_como_hoy_aunque_jev_diga_que_no(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=FUERA_DE_FOCO)
+    _senal(session, ingesta, 0.9)
+
+    _correr(session, tmp_path, ClienteFalso(_DESCARTA_FUERA_DE_FOCO), lane0_text_enabled=True)
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+
+
+def test_jev_rol_1_el_modelo_descarta_y_jev_no_sigue_pendiente(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=FUERA_DE_FOCO)
+    _senal(session, ingesta, 0.4)
+
+    _correr(
+        session, tmp_path, ClienteFalso(_DESCARTA_FUERA_DE_FOCO),
+        lane0_text_enabled=True, lane0_jev_enabled=True,
+    )
+
+    _sigue_pendiente_sin_evento(session, ingesta)
+
+
+def test_jev_rol_1_los_dos_descartan_y_el_evento_guarda_la_p(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=FUERA_DE_FOCO)
+    _senal(session, ingesta, 0.05)
+
+    _correr(
+        session, tmp_path, ClienteFalso(_DESCARTA_FUERA_DE_FOCO),
+        lane0_text_enabled=True, lane0_jev_enabled=True,
+    )
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    assert ingesta.discard_reason == "off_focus"
+    (evento,) = _eventos(session, ingesta)
+    assert evento.detail == {"jev_p": 0.05}
+
+
+def test_jev_rol_1_sin_senal_descarta_como_hoy_y_sin_detalle(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=FUERA_DE_FOCO)
+
+    _correr(
+        session, tmp_path, ClienteFalso(_DESCARTA_FUERA_DE_FOCO),
+        lane0_text_enabled=True, lane0_jev_enabled=True,
+    )
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    (evento,) = _eventos(session, ingesta)
+    assert evento.detail is None
+
+
+@pytest.mark.parametrize(
+    ("texto", "motivo"),
+    [(FUERA_DE_FOCO, "off_focus"), ("Buenos días grupo, feliz domingo", "no_data")],
+)
+def test_jev_rol_2_descarta_solo_si_el_asistente_degrado(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path, texto: str, motivo: str
+) -> None:
+    ingesta = _ingesta(session, texto=texto)
+    _senal(session, ingesta, 0.1)
+
+    _correr(session, tmp_path, _degradada(), lane0_text_enabled=True, lane0_jev_enabled=True)
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    assert ingesta.discard_reason == motivo
+    propuesta = session.execute(select(LlmProposal)).scalars().one()
+    assert propuesta.status == "degraded"
+    revision = session.execute(select(LlmReview)).scalars().one()
+    assert revision.proposal_id == propuesta.id
+    assert revision.outcome == ReviewOutcome.DISCARDED
+    assert revision.discard_reason == motivo
+    (evento,) = _eventos(session, ingesta)
+    assert (evento.action, evento.mode, evento.discard_reason) == ("discarded", "auto", motivo)
+    assert evento.detail == {"jev_p": 0.1, "decider": "jev"}
+
+
+def test_jev_rol_2_con_p_alta_sigue_pendiente(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=FUERA_DE_FOCO)
+    _senal(session, ingesta, 0.5)
+
+    _correr(session, tmp_path, _degradada(), lane0_text_enabled=True, lane0_jev_enabled=True)
+
+    _sigue_pendiente_sin_evento(session, ingesta)
+
+
+def test_jev_una_senal_de_otra_huella_no_cuenta(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=FUERA_DE_FOCO)
+    _senal(session, ingesta, 0.1, huella="huella-vieja-000")
+
+    _correr(session, tmp_path, _degradada(), lane0_text_enabled=True, lane0_jev_enabled=True)
+
+    _sigue_pendiente_sin_evento(session, ingesta)
+
+
+def test_jev_rol_2_el_comando_toma_la_propuesta_degradada(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=FUERA_DE_FOCO)
+    # Jev apagado al generarla: la propuesta degradada deja el anuncio pendiente.
+    _correr(session, tmp_path, _degradada(), lane0_text_enabled=True)
+    _senal(session, ingesta, 0.1)
+
+    lane0.run_pending(
+        session,
+        _ajustes(tmp_path, lane0_text_enabled=True, lane0_jev_enabled=True),
+        execute=True,
+        out=lambda _: None,
+    )
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    (evento,) = [e for e in _eventos(session, ingesta) if e.mode == "auto"]
+    assert evento.detail == {"jev_p": 0.1, "decider": "jev"}
+
+
+def test_jev_el_comando_sin_interruptor_de_jev_no_toca_una_degradada(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=FUERA_DE_FOCO)
+    _correr(session, tmp_path, _degradada(), lane0_text_enabled=True)
+    _senal(session, ingesta, 0.1)
+
+    lane0.run_pending(
+        session, _ajustes(tmp_path, lane0_text_enabled=True), execute=True, out=lambda _: None
+    )
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.PENDING
+
+
+def _descartado_por_jev(session: Session) -> RawIngestion:
+    ingesta = _auto_descartado(session)
+    evento = _eventos(session, ingesta)[0]
+    evento.detail = {"jev_p": 0.1, "decider": "jev"}
+    session.commit()
+    return ingesta
+
+
+def test_jev_la_cota_propia_cuenta_solo_lo_que_descarto_jev_solo(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    de_jev = [_descartado_por_jev(session) for _ in range(3)]
+    del_modelo = [_auto_descartado(session) for _ in range(2)]
+    assert lane0.rescue(session, de_jev[0].id, SEMANA, today=HOY)
+    for ingesta in [*de_jev[1:], *del_modelo]:
+        assert lane0.mark_audited(session, ingesta.id, SEMANA, today=HOY)
+    session.commit()
+
+    jev = lane0.jev_bound(session, today=HOY)
+    texto = lane0.audit_bounds(session, today=HOY)["text"]
+
+    assert (jev.k, jev.n) == (1, 3)
+    assert (texto.k, texto.n) == (1, 5)
+
+
+def test_jev_la_pantalla_muestra_su_cota_y_su_interruptor(
+    client: TestClient, session: Session, catalogo: SimpleNamespace
+) -> None:
+    semana = _ultima_semana_cerrada()
+    cuando = datetime.combine(semana + timedelta(days=2), datetime.min.time(), UTC) + timedelta(
+        hours=15
+    )
+    ingesta = _auto_descartado(session, cuando=cuando)
+    _eventos(session, ingesta)[0].detail = {"jev_p": 0.1, "decider": "jev"}
+    session.commit()
+    assert lane0.mark_audited(session, ingesta.id, semana, today=semana + timedelta(days=10))
+    session.commit()
+
+    html = client.get("/curation/auditoria").text
+
+    assert "SAIMC_LANE0_JEV_ENABLED" in html
+    assert "Descartados solo por Jev" in html

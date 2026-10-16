@@ -184,6 +184,11 @@ class AdContext:
     #: Filas ya guardadas del mismo canal. El motor aplica la ventana de 24 h.
     recent_channel_rows: Sequence[RecentRow] = ()
     signals: Sequence[ExternalSignal] = ()
+    #: P(sí) de un juez externo del anuncio entero: «ofrece un piloto con
+    #: precio». `None` = sin señal. Solo lo lee `decide_lane_0` con umbral
+    #: (slice jev-decisor); el motor no sabe de dónde sale. Un valor que no sea
+    #: un número finito entre 0 y 1 vale «sin señal».
+    triage_probability: float | None = None
 
 
 @dataclass(frozen=True)

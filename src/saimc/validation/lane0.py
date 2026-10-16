@@ -11,6 +11,12 @@ Dos mitades:
   transacción. Solo si el interruptor del tipo está encendido
   (`enabled_types`). «Completar con IA» no pasa por acá: el operador ya está
   mirando el anuncio.
+- **Jev como segundo juez** (slice jev-decisor,
+  `docs/spec-slice-jev-decisor.md`), solo con `SAIMC_LANE0_JEV_ENABLED`: un
+  texto que el modelo descarta se descarta solo si además Jev da P(sí) <
+  `JEV_DISCARD_BELOW` (sin señal, como antes); y un texto cuyo asistente
+  degradó lo puede descartar Jev solo. Esos llevan `decider = jev` en el
+  evento y tienen su propia cota (`jev_bound`).
 - **Auditar** (`week_sample`, `rescue`, `mark_audited`, `audit_bounds`): cada
   semana cerrada se saca al azar una muestra de los descartes automáticos; el
   operador dice si estaban bien o los rescata, y con lo auditado de todas las
@@ -25,12 +31,14 @@ por la fecha de `decided_at` tal como está guardada (UTC).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import random
 import sys
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -45,6 +53,7 @@ from saimc.models import (
     CurationAction,
     CurationEvent,
     CurationMode,
+    DiscardReason,
     LlmProposal,
     ProcessingStatus,
     RawIngestion,
@@ -52,8 +61,8 @@ from saimc.models import (
 )
 from saimc.models.base import utc_now
 from saimc.progress import _week_start
-from saimc.validation import context
-from saimc.validation.engine import decide_lane_0
+from saimc.validation import context, jev_signal
+from saimc.validation.engine import decide_lane_0, has_digit
 from saimc.validation.stats import clopper_pearson_upper
 from saimc.validation.types import LANE_DISCARD
 
@@ -79,6 +88,18 @@ SWITCHES: Mapping[str, str] = {
 
 _VERDICTS = (CurationAction.RESCUED.value, CurationAction.AUDITED.value)
 
+#: Umbral de Jev en el carril 0: descarta con P(sí) MENOR que esto. Lo decidió
+#: el operador el 2026-10-16 (`docs/analisis-jev-decisor.md` §6), medido en el
+#: oro v7: 1 falso descarte en 139 (cota 3,4 %). Es decisión, no configuración
+#: del despliegue, igual que `TARGETS`.
+JEV_DISCARD_BELOW = 0.2
+
+#: `detail["decider"]` de un descarte que hizo Jev solo (Rol 2): el asistente
+#: no propuso. Con eso la auditoría le saca una cota propia (`jev_bound`).
+JEV_DECIDER = "jev"
+#: La variable de entorno que devuelve a Jev a la sombra.
+JEV_SWITCH = "SAIMC_LANE0_JEV_ENABLED"
+
 
 # --- aplicar el carril 0 ------------------------------------------------------
 
@@ -93,6 +114,34 @@ def enabled_types(settings: Settings) -> frozenset[str]:
     return frozenset(enabled)
 
 
+def jev_questions_hash(session: Session, settings: Settings) -> str | None:
+    """La huella vigente de Jev si Jev decide en el carril 0, o `None` (sombra).
+
+    `None` también si el catálogo no da una huella (dos pilotos con la misma
+    clave): sin huella no hay señal vigente y el carril 0 es el de siempre.
+    """
+    if not settings.lane0_jev_enabled:
+        return None
+    try:
+        return jev_signal.load_options(session).questions_hash
+    except ValueError:
+        return None
+
+
+def _triage_probability(
+    session: Session, ingestion: RawIngestion, jev_hash: str | None
+) -> float | None:
+    """P(sí) del triage de la señal vigente del anuncio. Solo textos: Jev no
+    ve imágenes (C2). Una señal de otra huella o un triage ilegible es `None`."""
+    if jev_hash is None or ingestion.content_type != ContentType.TEXT:
+        return None
+    signal = jev_signal.current_signal(session, ingestion.id, jev_hash)
+    if signal is None:
+        return None
+    triage = jev_signal.read_signal(signal).triage
+    return None if triage.invalid else triage.p
+
+
 def apply_lane_0(
     session: Session,
     ingestion: RawIngestion,
@@ -101,6 +150,7 @@ def apply_lane_0(
     *,
     text: str,
     catalog: context.Catalog,
+    jev_hash: str | None = None,
 ) -> bool:
     """Descarta el anuncio si el motor lo manda al carril 0. `True` si lo hizo.
 
@@ -112,11 +162,30 @@ def apply_lane_0(
     (`discard_images_batch`), con `mode = auto`: el estado y el motivo del
     modelo en `raw_ingestions`, la revisión en `llm_reviews` (para que quede
     fuera de H0 como todo lo asistido) y el evento de bitácora.
+
+    `jev_hash` (de `jev_questions_hash`) enciende a Jev como segundo juez
+    (slice jev-decisor): el motor recibe la P(sí) de la señal vigente con
+    `JEV_DISCARD_BELOW`. Si descarta un anuncio cuyo asistente no propuso
+    (Rol 2), el motivo lo pone una regla, porque Jev no distingue: con algún
+    dígito en el texto, `off_focus`; sin ninguno, `no_data` (sin dígito no hay
+    precio). El evento guarda la P(sí) usada y, en el Rol 2, quién decidió.
     """
+    p = _triage_probability(session, ingestion, jev_hash)
     ctx = context.build_ad_context(session, ingestion, model=result, catalog=catalog, text=text)
-    if decide_lane_0(ctx).lane != LANE_DISCARD:
+    ctx = dataclasses.replace(ctx, triage_probability=p)
+    below = None if jev_hash is None else JEV_DISCARD_BELOW
+    if decide_lane_0(ctx, external_discard_below=below).lane != LANE_DISCARD:
         return False
+    detail: dict[str, Any] | None = None
     reason = result.discard_reason
+    if p is not None:
+        detail = {"jev_p": p}
+        if result.degraded or result.failure:
+            # Rol 2: el asistente no propuso y el motor descartó por Jev.
+            detail["decider"] = JEV_DECIDER
+            reason = (
+                DiscardReason.OFF_FOCUS.value if has_digit(ctx.text) else DiscardReason.NO_DATA.value
+            )
     ingestion.processing_status = ProcessingStatus.DISCARDED
     ingestion.discard_reason = reason
     llm_store.save_review(
@@ -135,6 +204,7 @@ def apply_lane_0(
         proposal_id=proposal.id,
         shown_at=None,
         decided_at=utc_now(),
+        detail=detail,
     )
     return True
 
@@ -164,6 +234,7 @@ def run_pending(
         )
         return 2
     catalog = context.load_catalog(session)
+    jev_hash = jev_questions_hash(session, settings)
     stmt = (
         select(RawIngestion)
         .where(
@@ -177,19 +248,28 @@ def run_pending(
         if ingestion.original_text is None:
             continue  # una imagen sin transcribir: su texto no se conoce
         proposal = llm_store.latest_ok_proposal(session, ingestion.id)
+        if proposal is None and jev_hash is not None:
+            # Con Jev decidiendo, una propuesta degradada también sirve (Rol 2).
+            proposal = llm_store.latest_proposal(session, ingestion.id)
         if proposal is None:
             continue
         result = context.stored_proposal(session, proposal, catalog)
         text = ingestion.original_text
         if execute:
-            if apply_lane_0(session, ingestion, proposal, result, text=text, catalog=catalog):
+            if apply_lane_0(
+                session, ingestion, proposal, result, text=text, catalog=catalog, jev_hash=jev_hash
+            ):
                 would += 1
             session.commit()
         else:
             ctx = context.build_ad_context(
                 session, ingestion, model=result, catalog=catalog, text=text
             )
-            if decide_lane_0(ctx).lane == LANE_DISCARD:
+            ctx = dataclasses.replace(
+                ctx, triage_probability=_triage_probability(session, ingestion, jev_hash)
+            )
+            below = None if jev_hash is None else JEV_DISCARD_BELOW
+            if decide_lane_0(ctx, external_discard_below=below).lane == LANE_DISCARD:
                 would += 1
     out(f"{'Descartados' if execute else 'Descartaría'}: {would}")
     if not execute:
@@ -486,6 +566,9 @@ class Bound:
     #: Rescatados fuera de cualquier muestra: se muestran aparte y no entran en
     #: la cota, porque no salieron al azar.
     rescued_outside: int = 0
+    #: `JEV_DECIDER` si la cota es solo de lo que descartó Jev solo
+    #: (`jev_bound`); `None` para la de todo el tipo.
+    decider: str | None = None
 
     @property
     def target(self) -> float:
@@ -493,7 +576,8 @@ class Bound:
 
     @property
     def switch(self) -> str:
-        return SWITCHES[self.content_type]
+        """La variable que apaga lo que mide esta cota."""
+        return JEV_SWITCH if self.decider == JEV_DECIDER else SWITCHES[self.content_type]
 
     @property
     def rate(self) -> float | None:
@@ -539,6 +623,37 @@ def audit_bounds(session: Session, *, today: date | None = None) -> dict[str, Bo
         if verdict == CurationAction.RESCUED and ingestion_id not in sampled:
             outside[content_type] = outside.get(content_type, 0) + 1
     return {t: Bound(t, k[t], n[t], outside[t]) for t in TYPES}
+
+
+def jev_bound(session: Session, *, today: date | None = None) -> Bound:
+    """La cota de lo que Jev descartó solo (Rol 2, slice jev-decisor): lo
+    mismo que `audit_bounds` para texto, pero solo con los auditados cuyo
+    evento dice `decider = jev`. Rol 1 no necesita cota propia: Jev ahí solo
+    puede quitar descartes, nunca agregar uno. Su meta es la del texto."""
+    population = _population(session)
+    k = n = outside = 0
+    sampled: set[uuid.UUID] = set()
+    for week in population:
+        for item in _sample(session, week, population, today).by_type(TEXT):
+            sampled.add(item.ingestion.id)
+            if item.verdict is None or not _decided_by_jev(item.event):
+                continue
+            n += 1
+            k += item.verdict == CurationAction.RESCUED
+    by_jev = {
+        ingestion.id
+        for by_type in population.values()
+        for ingestion, event in by_type.get(TEXT, [])
+        if _decided_by_jev(event)
+    }
+    for ingestion_id, verdict in _verdicts(session, by_jev).items():
+        outside += verdict == CurationAction.RESCUED and ingestion_id not in sampled
+    return Bound(TEXT, k, n, outside, decider=JEV_DECIDER)
+
+
+def _decided_by_jev(event: CurationEvent) -> bool:
+    detail = event.detail
+    return isinstance(detail, dict) and detail.get("decider") == JEV_DECIDER
 
 
 # --- /control ------------------------------------------------------------------

@@ -305,6 +305,7 @@ def run_prefill(
     max_cost: float | None = None,
     expected_per_ad: float | None = None,
     lane0_types: frozenset[str] = frozenset(),
+    lane0_jev_hash: str | None = None,
     lane1_fetcher: Fetcher | None = None,
     lane1_gate: lane1.Gate | None = None,
     out: Callable[[str], None] = print,
@@ -319,6 +320,8 @@ def run_prefill(
 
     `lane0_types` son los tipos con el carril 0 encendido
     (`validation.lane0.enabled_types`); vacío, ningún anuncio se descarta solo.
+    `lane0_jev_hash` es la huella vigente de Jev si Jev decide en el carril 0
+    (`validation.lane0.jev_questions_hash`); `None`, Jev queda en sombra.
 
     `lane1_fetcher` enciende el carril 1 (`validation.lane1`): es de dónde sale
     la tasa de cambio de una fila en divisa. `None`, ningún anuncio se acepta
@@ -393,6 +396,7 @@ def run_prefill(
                     else redact_personal_data(text) or ""
                 ),
                 catalog=catalog,
+                jev_hash=lane0_jev_hash,
             )
         )
         auto_accepted = (
@@ -621,6 +625,7 @@ def _run_mode(
         max_cost=args.max_cost,
         expected_per_ad=est.per_ad_usd,
         lane0_types=lane0_types,
+        lane0_jev_hash=lane0.jev_questions_hash(session, settings),
         lane1_fetcher=(
             (rate_fetcher or lane1.rate_fetcher(settings)) if lane1.enabled(settings) else None
         ),

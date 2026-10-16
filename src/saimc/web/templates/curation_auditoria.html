@@ -178,10 +178,16 @@
       <span class="m3-sm m3-muted">lo auditado de todas las semanas, por tipo</span>
     </div>
     <div class="b2-bounds">
-      {% for tipo in ['text', 'image'] %}
-      {% set b = bounds[tipo] %}
+      {# La tercera tarjeta es lo que Jev descartó solo (slice jev-decisor): ya
+         cuenta dentro de «Textos», y va aparte para poder apagar solo a Jev. #}
+      {% set tarjetas = [
+           (type_labels['text'], bounds['text']),
+           (type_labels['image'], bounds['image']),
+           ('Descartados solo por Jev', jev_bound),
+         ] %}
+      {% for etiqueta, b in tarjetas %}
       <div class="m3-card m3-card-outlined m3-card-pad b2-bound{% if b.exceeded %} is-over-target{% endif %}">
-        <div class="m3-sm m3-muted">{{ type_labels[tipo] }} · meta {{ "%.0f"|format(b.target * 100) }} %</div>
+        <div class="m3-sm m3-muted">{{ etiqueta }} · meta {{ "%.0f"|format(b.target * 100) }} %</div>
         {% if b.upper is none %}
         <div class="b2-bound-value m3-dim">—</div>
         <div class="m3-sm">Nada auditado todavía.</div>
@@ -201,6 +207,12 @@
         {% if b.rescued_outside %}
         <div class="m3-sm m3-muted">
           Rescatados fuera de la muestra: {{ b.rescued_outside }}. No entran en la cota: no salieron al azar.
+        </div>
+        {% endif %}
+        {% if b.decider %}
+        <div class="m3-sm m3-muted">
+          Textos que el asistente no propuso y Jev descartó con P(sí) &lt; 0,2. Ya cuentan en «Textos».
+          Se devuelve a Jev a la sombra con <code>{{ b.switch }}=false</code>.
         </div>
         {% endif %}
       </div>

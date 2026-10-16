@@ -1900,6 +1900,7 @@ def curation_audit(
             "sample": sample,
             "weeks": [lane0.week_label(w) for w in lane0.audited_weeks(db)],
             "bounds": lane0.audit_bounds(db),
+            "jev_bound": lane0.jev_bound(db),
             "sample_sizes": lane0.SAMPLE_SIZES,
             "reason_labels": _IMAGE_REASON_LABELS,
             "type_labels": {lane0.TEXT: "Textos", lane0.IMAGE: "Imágenes"},
