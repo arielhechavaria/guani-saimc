@@ -2189,7 +2189,9 @@ class TestCapaMayorista:
                 sale_format=SaleFormat.WHOLESALE.value, **comunes)
         _precio(session, price="500", unit="g", quantity="5000", price_basis="total",
                 sale_format=SaleFormat.WHOLESALE.value, **comunes)
-        # Mayorista con mínimo de compra mayor a lo que cotiza: afuera, contada.
+        # Mayorista con mínimo de compra mayor a lo que cotiza: ENTRA. El
+        # filtro de compra mínima protege al lector minorista; en la capa
+        # mayorista el mínimo es justamente lo que la hace mayorista.
         _precio(session, price="90", unit="kg", quantity="1", min_purchase_quantity="10",
                 sale_format=SaleFormat.WHOLESALE.value, **comunes)
         # Mayorista con basis sin resolver: afuera, contada.
@@ -2210,10 +2212,12 @@ class TestCapaMayorista:
         self._cargar(session)
         reporte = compute_wholesale_observations(session, hoy=date(2026, 8, 10))
 
-        assert [o.unit_price for o in reporte.observations] == [Decimal("100"), Decimal("100")]
+        assert sorted(o.unit_price for o in reporte.observations) == [
+            Decimal("90"), Decimal("100"), Decimal("100"),
+        ]
         assert {o.unit for o in reporte.observations} == {"kg"}
         assert {o.sale_format for o in reporte.observations} == {"wholesale"}
-        assert reporte.excluded_by_minimum == 1
+        assert reporte.excluded_by_minimum == 0
         assert reporte.excluded_by_basis == 1
         assert reporte.excluded_by_unit == 0
 
@@ -2233,7 +2237,27 @@ class TestCapaMayorista:
         mayor = compute_wholesale_ranges(session, hoy=date(2026, 8, 10))
         menor = compute_retail_ranges(session, hoy=date(2026, 8, 10))
 
-        assert [(r.count, r.median, r.unit) for r in mayor.ranges] == [(2, Decimal("100"), "kg")]
+        # Mediana de 90, 100, 100 = 100.
+        assert [(r.count, r.median, r.unit) for r in mayor.ranges] == [(3, Decimal("100"), "kg")]
         assert [(r.count, r.median) for r in menor.ranges] == [(1, Decimal("250"))]
-        assert mayor.excluded_by_minimum == 1
+        assert mayor.excluded_by_minimum == 0
         assert mayor.excluded_by_basis == 1
+
+    def test_el_minimo_de_compra_sigue_excluyendo_en_la_referencia(
+        self, session: Session
+    ) -> None:
+        """La misma fila con mínimo 10 > cantidad 1, cargada como minorista,
+        queda afuera y contada: en la referencia el filtro no cambia."""
+        arroz = Product(name="Arroz", category="granos", unit="kg", aliases=[])
+        session.add(arroz)
+        session.commit()
+        fuente = _ingestion(session, "hash-minimo-referencia")
+        _precio(session, product=arroz, province=None, price="90", unit="kg", quantity="1",
+                min_purchase_quantity="10", sale_format=SaleFormat.RETAIL.value,
+                source=fuente, published_date=date(2026, 8, 9))
+        session.commit()
+
+        reporte = compute_retail_observations(session, hoy=date(2026, 8, 10))
+
+        assert reporte.observations == []
+        assert reporte.excluded_by_minimum == 1

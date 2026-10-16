@@ -138,10 +138,14 @@ from saimc.units import canonical_unit, convert_price_per_unit, convert_quantity
 #: El mayorista no es otra serie en pie de igualdad: es una **capa opcional**
 #: sobre esta referencia (`WHOLESALE_LAYER`, `compute_wholesale_observations`,
 #: `compute_wholesale_ranges`), que sale de exactamente la misma normalización
-#: —moneda, `price_basis`, unidad canónica, compra mínima— y agrupa con la
-#: misma clave de celda. «Mayorista» es escala de contenedor y lo decide el
-#: operador fila por fila; mezclar las dos escalas en una mediana es el bug
-#: del 2026-08-12, así que nunca se funden: se ponen una al lado de la otra.
+#: —moneda, `price_basis`, unidad canónica— y agrupa con la misma clave de
+#: celda. La única regla que no comparte es el filtro de compra mínima: existe
+#: para proteger al lector minorista (ver `compute_retail_ranges`), y en la
+#: capa mayorista el mínimo de compra es justamente lo que la hace mayorista
+#: («mínimo de venta 30.000 bolsas», `decisions.md` 2026-08-23).
+#: «Mayorista» es escala de contenedor y lo decide el operador fila por fila;
+#: mezclar las dos escalas en una mediana es el bug del 2026-08-12, así que
+#: nunca se funden: se ponen una al lado de la otra.
 REFERENCE_SALE_FORMAT = SaleFormat.RETAIL
 
 #: La capa secundaria que se puede superponer a la referencia.
@@ -998,10 +1002,13 @@ def compute_retail_observations(
     `sale_format` (2026-10-16): qué capa se normaliza. El default es la
     referencia minorista y ningún llamador anterior lo pasa; la capa mayorista
     (`compute_wholesale_observations`) recorre exactamente este mismo cuerpo,
-    con los mismos filtros y conteos de exclusión. El nulo no es de ninguna
+    con los mismos filtros y conteos de exclusión salvo el de compra mínima,
+    que solo vale para la referencia (ver `REFERENCE_SALE_FORMAT`): en la capa
+    mayorista `excluded_by_minimum` es siempre 0. El nulo no es de ninguna
     capa: sigue siendo cola de trabajo y solo se ve en `compute_cells`.
     """
     cutoff = (hoy or date.today()) - timedelta(days=days)
+    is_reference = SaleFormat(sale_format) == REFERENCE_SALE_FORMAT
 
     stmt = (
         select(
@@ -1080,8 +1087,13 @@ def compute_retail_observations(
             continue
 
         # Después de los otros filtros a propósito: el conteo cuenta filas que
-        # habrían entrado, no todo lo que la consulta trajo.
-        if min_purchase_quantity is not None and min_purchase_quantity > quantity:
+        # habrían entrado, no todo lo que la consulta trajo. Solo en la
+        # referencia minorista: en la capa mayorista el mínimo es el dato.
+        if (
+            is_reference
+            and min_purchase_quantity is not None
+            and min_purchase_quantity > quantity
+        ):
             excluded_by_minimum += 1
             continue
 
@@ -1157,7 +1169,8 @@ def compute_wholesale_observations(
     session: Session, *, days: int = 7, hoy: date | None = None, hasta: date | None = None
 ) -> RetailObservationReport:
     """La capa mayorista, fila por fila: `compute_retail_observations` con
-    `sale_format=WHOLESALE_LAYER`. Nada propio — ver `REFERENCE_SALE_FORMAT`.
+    `sale_format=WHOLESALE_LAYER`. Nada propio — ver `REFERENCE_SALE_FORMAT`,
+    que también explica por qué acá no corre el filtro de compra mínima.
 
     Las observaciones conservan el tipo `RetailObservation` a propósito: es el
     grano normalizado de cualquier capa, y así los mismos constructores de
@@ -1172,7 +1185,8 @@ def compute_wholesale_ranges(
     session: Session, *, days: int = 7, hoy: date | None = None, hasta: date | None = None
 ) -> RetailRangeReport:
     """La capa mayorista agrupada por `retail_cell_key`: `compute_retail_ranges`
-    con `sale_format=WHOLESALE_LAYER`. Misma clave, mismos filtros."""
+    con `sale_format=WHOLESALE_LAYER`. Misma clave, mismos filtros salvo el
+    de compra mínima."""
     return compute_retail_ranges(
         session, days=days, hoy=hoy, hasta=hasta, sale_format=WHOLESALE_LAYER
     )
