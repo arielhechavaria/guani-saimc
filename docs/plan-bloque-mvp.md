@@ -26,7 +26,7 @@ La complejidad es esfuerzo estimado: **S** (≤ medio día), **M** (1–2 días)
 | 1 | T13 | Versión de gentle-ai en el VPS y «ODD» | S | sonnet | Investigación de solo lectura; condiciona cómo se desarrolla el resto. |
 | 2 | T5 | Explorar: precio real del formato | S | sonnet | Cambio acotado de presentación. |
 | 2 | T6 | Filtros globales + bug de provincia | M | sonnet | Cimiento para T7 y T16. |
-| 2 | T7 | Rangos 3 / 7 / 90 días | S | sonnet | Depende de T6. |
+| 2 | T7 | Rangos 3 / 7 / 30 días | S | sonnet | Depende de T6. |
 | 3 | T11a | Vista de desacuerdo modelo/reglas | M | sonnet | El freno más grande (79 anuncios) y no toca el motor. |
 | 3 | T11b | Tope de filas por anuncio, medido | M | opus | Parámetro de riesgo del motor de validación. |
 | 3 | T11c | Canal sucio: pasa si modelo y reglas coinciden | S | opus | Una línea, pero cambia una decisión de G1b. |
@@ -73,23 +73,28 @@ Respuestas del operador del 2026-10-16 y su estado:
 | 5 | Transición de fase y corrida de H0 (T14) | **Criterio fijado por el operador:** se decide cuando haya capacidad de validar filas; si las condiciones son correctas, entonces se corre H0. |
 | 6 | `D .venv` | **Aprobado** resolverlo (tarea corta de la ola 0). |
 
-### Lo que sigue pendiente de decidir por el operador
+### Decisiones de la segunda ronda (2026-10-16) y lo que sigue pendiente
 
-Ordenado por cuándo estorba. Ninguna de estas bloquea la ola 0.
+Respondidas por el operador:
+
+| # | Decisión | Tarea | Qué queda establecido |
+|---|---|---|---|
+| 1 | Umbral de descarte de Jev | T3 | **P(sí) < 0,2** (1 falso descarte en 139, 0,7 %, cota 3,4 %, bajo la meta del 10 %). |
+| 2 | ¿Jev descarta solo cuando el asistente no pudo proponer? | T3 | **Sí.** |
+| 3 | Qué es una fila «validada» | T0 | **`approved`**, tal como lo define el motor. Queda abierta una pregunta dentro de T0: hoy `approved` exige procedencia humana, así que una fila `auto` auditada no llega; T0 explica por qué ninguna fila figura `approved` y si eso es un defecto. |
+| 4 | Filas sin tasa del día en elTOQUE | T1 | **Toda fila en divisa debe llevar una tasa real de elTOQUE.** Si el día no tiene dato, se consulta la API de elTOQUE para ese día y no se rellena con una tasa guardada. Regla propuesta para un día sin dato, a confirmar en el dry-run: usar el día anterior más cercano **que la API sí responda**, guardando su fecha real y un origen distinguible. |
+| 5 | Rangos del selector | T7 | **3 / 7 / 30 días** más «Fechas». Contradice el pedido original (3 / 7 / 90): se toma lo más reciente; si querías 90, avísalo. Con 30 como preset, `DEFAULT_WINDOW_DAYS = 30` sigue siendo válido y no hace falta elegir otro. |
+| 6 | `SAIMC_LANE1_AUDIT_SINCE` | T9 | **Decide el `.env` (2026-10-15)**; la entrada del 10-14 de `decisions.md` queda corregida por una entrada nueva. |
+| 7 | Orden de olas | todas | **Como está en la propuesta** (sección 1). |
+| 8 | Qué es «ODD» | T13 | Según el operador, la documentación de gentle-ai (`github.com/Gentleman-Programming/gentle-ai`) describe un cambio de paradigma de RDD a ODD. **No verificado por mí**: T13 lo comprueba contra la fuente. |
+
+Siguen pendientes:
 
 | # | Decisión | Para qué tarea | Propuesta de partida |
 |---|---|---|---|
-| 1 | Qué hacer con filas cuya fecha no tiene tasa en elTOQUE: dejarlas marcadas o excluirlas de los agregados públicos | T1 | Dejarlas marcadas y excluirlas del público hasta tener tasa |
-| 2 | Definición de «fila validada» | T0 | `approved` con procedencia `human` o `audited`; una fila `auto` sin auditar queda `unverified` |
-| 3 | Umbral de descarte de Jev: P(sí) < 0,1 o < 0,2 | T3 | 0,1 (0 falsos en 109) |
-| 4 | ¿Jev descarta por su cuenta cuando el asistente no pudo proponer? | T3 | Sí, con el mismo umbral |
-| 5 | Nuevo rango por defecto al pasar a 3 / 7 / 90 días | T7 | 7 días |
-| 6 | Cuál fecha es la correcta para `SAIMC_LANE1_AUDIT_SINCE`: 10-14 (decisión) o 10-15 (`.env`) | T9 | Confirmar y alinear |
-| 7 | Qué muestra la vista de desacuerdo como «lectura de las reglas»: las reglas solo detectan el producto, no proponen filas | T11a | Mostrar producto y precio detectados |
-| 8 | Si el precio del envase se muestra solo en Explorar o también en el tablero | T5 | Solo en Explorar |
-| 9 | Comprobar en producción: valor de `SAIMC_SITE_GATE_ENABLED` y qué hay delante de uvicorn (Caddy) | T10 | — (dato, no decisión) |
-| 10 | Qué es «ODD» (¿lo mismo que RDD?) | T13 | — (dato que aporta el operador) |
-| 11 | Confirmar el orden de olas de la sección 1 | todas | Es una propuesta: no hubo respuesta explícita |
+| 1 | Qué muestra la vista de desacuerdo como «lectura de las reglas»: las reglas solo detectan el producto, no proponen filas | T11a | Mostrar producto y precio detectados |
+| 2 | Si el precio del envase se muestra solo en Explorar o también en el tablero | T5 | Solo en Explorar |
+| 3 | Comprobar en producción: valor de `SAIMC_SITE_GATE_ENABLED` y qué hay delante de uvicorn (Caddy) | T10 | — (dato, no decisión) |
 
 Acciones del operador que no son decisiones: restituir `SAIMC_EL_TOQUE_API` en
 el `.env` del VPS (T1), hacer push de las 6 ramas sin integrar (reporte §3) y,
@@ -112,19 +117,22 @@ deberían poder ser `approved` y no lo son: o falla alguna de las seis
 reglas, o hay un defecto. Eso se investiga primero.
 **Jev no resuelve esto:** una señal de Jev no cambia `provenance` ni crea
 `approved` (el motor no la lee). Ver `docs/analisis-jev-decisor.md`.
+**Decidido (2026-10-16):** «validada» = **`approved`**, como lo define el
+motor.
 **Alcance:** (1) medir con SELECT cuántas filas hay por `validation_status` y
-`provenance`, y por qué las humanas no son `approved`; (2) proponer la
-definición de «validada» (propuesta de partida, a discutir: `approved` con
-`provenance` en `human` o `audited`; una fila `auto` sin auditar queda
-`unverified`); (3) con la aprobación del operador, flujo completo
-(explorar → especificar → diseñar) porque toca el motor.
+`provenance`, y por qué las humanas no son `approved`; (2) resolver la
+pregunta que deja la decisión: con la definición actual una fila `auto`, aun
+auditada, nunca llega a `approved`; decidir con el operador si eso es lo
+buscado o un defecto; (3) con la aprobación del operador, flujo completo
+(explorar → especificar → diseñar) si hay que tocar el motor.
 
 > **Prompt.** [prefijo] Slice `definir-validada`, solo lectura primero. Con
 > SELECT sobre `prices_history`, contá filas por `validation_status` y
 > `provenance`, y explicá por qué las filas humanas no llegan a `approved`
 > (`validation/engine.py` `_status`, `persist.py` `verified`). Leé
 > `spec-motor-validacion.md` y `spec.md` §6.2. Proponé una definición de
-> «fila validada» y cómo debe validarse (incluyendo filas `auto` auditadas),
+> «fila validada» (el operador fijó: `approved`) y cómo debe validarse
+> (incluyendo si una fila `auto` auditada debe poder llegar a `approved`),
 > con el efecto en `trust_view.py` y en los números públicos. No cambies el
 > motor sin aprobación; si se cambia, flujo de especificación completo y
 > entrada en `decisions.md`.
@@ -224,9 +232,20 @@ reinicia, para que no entren filas nuevas con relleno; (2) respaldo
 (`saimc-backup` o un `pg_dump` manual); (3) **ensayo sobre ese volcado
 restaurado en una base temporal** (no hace falta esperar a T2); (4) dry-run en
 producción; (5) `--apply`.
-**Duda a resolver en el dry-run:** si la tasa de un día no existe en elTOQUE,
-la fila queda sin sanear. Hay que decidir con el operador qué hacer con ellas
-(dejarlas marcadas, o excluirlas de los agregados públicos).
+**Decidido (2026-10-16):** toda fila en divisa debe llevar una tasa real de
+elTOQUE, por la razón que haya sido que no la tenga; no se rellena con una
+tasa guardada. La fecha de la consulta es la fecha ancla de la fila
+(`anchor_date`: la de publicación o, si falta, la de captura en hora de La
+Habana); el operador habló de «la fecha en que se insertó la fila», que
+coincide cuando no hay fecha de publicación.
+**Día sin dato en elTOQUE** (la API responde 200 con `tasas: {}`): regla
+propuesta, a confirmar en el dry-run: usar el día anterior más cercano que la
+API sí responda, guardando su fecha real en `exchange_rate_date` y un origen
+distinguible (no `'elTOQUE (cache)'`). Una fila para la que la API no dé
+ninguna tasa utilizable no se toca y se reporta.
+**Efecto a futuro:** el relleno con `cache.latest()` deja de ser aceptable; el
+resolutor debe fallar cerrado (la fila queda sin convertir y se reintenta)
+en vez de inventar una tasa. Se hace en el mismo slice o en uno inmediato.
 **Alcance:** ampliar el backfill (`exchange_rate/backfill.py:68-71`) para
 incluir `exchange_rate_source = 'elTOQUE (cache)'`, consultar la tasa de la
 fecha ancla de cada fila y reescribir con `apply_resolution`
@@ -261,8 +280,8 @@ alcance están en `docs/analisis-jev-decisor.md`. Resumen: los datos respaldan
 a Jev para **descartar**; para aceptar solo sirve como **condición adicional**
 (coincidir con el asistente en producto, moneda y provincia), nunca como quien
 acepta, porque no opina sobre precio, cantidad ni unidad. Como decisor no crea
-filas «validadas» (eso es T0). **Pendiente del operador:** el umbral del
-descarte (0,1 o 0,2) y si Jev descarta solo cuando el asistente no pudo
+filas «validadas» (eso es T0). **Decidido (2026-10-16):** umbral de descarte
+P(sí) < 0,2, y Jev puede descartar por su cuenta cuando el asistente no pudo
 proponer. Toca el motor de validación: flujo completo.
 **Antes de programar, medir** (solo lectura): cuántas huellas
 (`questions_hash`) distintas hay entre las señales guardadas y cuántas son
@@ -281,7 +300,8 @@ habría frenado Jev como condición y cuántas filas buenas habría frenado de m
 > condición de aceptación (coincidir con el asistente en producto, moneda y
 > provincia) habría frenado errores reales del carril 1 y a cuántas filas
 > buenas. No lo enciendas si la medición no lo respalda. Solo después especificá
-> cómo entra Jev al motor (`validation/engine.py` `ExternalSignal`,
+> cómo entra Jev al motor, con umbral de descarte P(sí) < 0,2 y descarte
+> propio cuando el asistente no propone (`validation/engine.py` `ExternalSignal`,
 > `lane1.CONFIG.signal_high_probability`, carril 0), con tests escritos antes
 > con casos a mano, y la entrada de `docs/decisions.md` que reemplaza lo
 > dicho en 2026-10-05 («Jev no entra»).
@@ -330,22 +350,26 @@ no pierde pestaña ni capa.
 > `period_hidden`, `map_href`, `_product_link`). El filtro de provincia y el
 > de fecha deben llegar a `/producto/<slug>` y volver. Tests primero.
 
-### T7 — Rangos 3 / 7 / 90 días · S · sonnet
+### T7 — Rangos 3 / 7 / 30 días · S · sonnet
 
+**Decidido (2026-10-16):** 3 / 7 / 30 días más «Fechas». El pedido original
+decía 3 / 7 / 90; se toma la respuesta más reciente. 90 días sigue disponible
+con «Fechas».
 **Estado:** `WINDOW_CHOICES = (7, 30, 90)` y `DEFAULT_WINDOW_DAYS = 30`
-(`product_nav.py:25,30`); el valor por defecto alimenta descargas, `/control`
-y la landing, así que **hay que elegir un nuevo valor por defecto** (propongo
-7 días; decide el operador). Un `?dias=30` guardado en enlaces viejos caería
-al valor por defecto: aceptable, pero verificarlo.
-**Verificación:** el selector muestra 3 / 7 / 90 y «Fechas»; un rango
-distinto enciende «Fechas»; la landing y `/control` siguen mostrando datos.
+(`product_nav.py:25,30`). Con 30 como preset, el valor por defecto sigue
+siendo válido y alimenta sin cambios descargas, `/control` y la landing. Un
+`?dias=90` guardado en enlaces viejos caería al valor por defecto o a
+«Fechas»: verificarlo.
+**Verificación:** el selector muestra 3 / 7 / 30 y «Fechas»; un rango
+distinto (por ejemplo 90 días) enciende «Fechas»; la landing y `/control`
+siguen mostrando datos.
 
-> **Prompt.** [prefijo] Slice `rangos-3-7-90`, después de `filtros-globales`.
-> Cambiá `WINDOW_CHOICES` a `(3, 7, 90)` y elegí con el operador el nuevo
-> `DEFAULT_WINDOW_DAYS`. Revisá todos sus usos (`_product_link`,
-> `DOWNLOAD_WINDOW_DAYS`, `routers/control.py`, landing, textos fijos
-> «7 / 30 / 90» en plantillas, metodología). Actualizá los tests que fijan
-> 7/30/90.
+> **Prompt.** [prefijo] Slice `rangos-3-7-30`, después de `filtros-globales`.
+> Cambiá `WINDOW_CHOICES` a `(3, 7, 30)`; `DEFAULT_WINDOW_DAYS` sigue en 30.
+> Revisá todos sus usos (`_product_link`, `DOWNLOAD_WINDOW_DAYS`,
+> `routers/control.py`, landing, textos fijos «7 / 30 / 90» en plantillas,
+> metodología). Un rango de 90 días debe resolverse por «Fechas». Actualizá
+> los tests que fijan 7/30/90.
 
 ### T11a — Vista de desacuerdo modelo/reglas · M · sonnet
 

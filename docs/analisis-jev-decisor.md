@@ -74,19 +74,18 @@ A6b-1); el oro v7 es chico (n = 9 en el carril 1) y no está en
    no entra» y `lane1.py` lo fija. Requiere entrada nueva y flujo completo
    (toca el motor).
 
-## 5. Recomendación de alcance (a confirmar por el operador)
+## 5. Alcance (confirmado por el operador; ver sección 6)
 
 **Sí a sacarlo de la sombra, pero con un rol acotado por lo que los datos
 respaldan:**
 
 1. **Rol 1 — segundo juez de descarte (carril 0):** un anuncio se descarta
    automáticamente solo si el asistente propone `discard` **y** Jev da
-   P(sí) < 0,1 (umbral del 0/109) **y** las reglas no ven producto piloto.
+   P(sí) < 0,2 **y** las reglas no ven producto piloto.
    Hoy basta el asistente más las reglas; sumar a Jev solo endurece.
-2. **Rol 2 — Jev solo puede descartar por su cuenta con P(sí) < 0,1** los
-   anuncios que el asistente no pudo proponer (por ejemplo, el asistente
-   falló o está degradado). Ahí sí agrega cobertura. *Decisión del
-   operador: ¿se quiere este rol?*
+2. **Rol 2 — Jev puede descartar por su cuenta** los anuncios que el
+   asistente no pudo proponer (por ejemplo, el asistente falló o está
+   degradado), con el umbral elegido (P(sí) < 0,2). Ahí sí agrega cobertura.
 3. **Rol 3 — confirmar, no aceptar solo** (ajustado el 2026-10-16 a pedido
    del operador). Jev puede ser una **condición adicional** para que una fila
    entre al carril 1: el asistente y Jev deben coincidir en producto, moneda
@@ -118,16 +117,19 @@ respaldan:**
 1) hace falta primero medir su calibración del lado alto con las señales
 actuales; hoy el dato dice lo contrario.
 
-## 6. Qué hay que decidir
+## 6. Qué se decidió
 
-Confirmado por el operador el 2026-10-16: Jev sale de la sombra; el Rol 3 es
-«confirmar, no aceptar solo»; la provincia entra a la medición. **Pendiente**
-del operador:
+Confirmado por el operador el 2026-10-16:
 
-1. **Umbral del descarte:** ¿P(sí) < 0,1 (0 falsos en 109, menos cobertura) o
-   < 0,2 (1 falso en 139, más cobertura)? Propuesta de partida: 0,1.
-2. **Rol 2:** ¿Jev descarta por su cuenta cuando el asistente no pudo
-   proponer? (Agrega cobertura; es el único caso donde decide solo.)
+1. Jev sale de la sombra.
+2. **Umbral de descarte: P(sí) < 0,2.** Medido en el oro v7: 1 falso
+   descarte en 139 (0,7 %; cota 3,4 %), bajo la meta del 10 % de G1a. Más
+   cobertura que 0,1 a cambio de ese falso descarte; la auditoría del carril
+   0 lo vigila.
+3. **Rol 2 confirmado:** Jev puede descartar por su cuenta cuando el asistente
+   no pudo proponer, con ese mismo umbral.
+4. Rol 3: confirmar, no aceptar solo, con la provincia en la medición.
 
-La decisión se registra en `docs/decisions.md` al cerrar la medición de T3,
-con el flujo de especificación completo (toca el motor), no antes.
+No queda nada pendiente del operador sobre Jev. La decisión se registra en
+`docs/decisions.md` al cerrar la medición de T3, con el flujo de
+especificación completo (toca el motor), no antes.
