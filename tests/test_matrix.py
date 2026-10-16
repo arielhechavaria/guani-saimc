@@ -16,6 +16,7 @@ from decimal import Decimal
 from saimc.cells import Cell
 from saimc.web.matrix import (
     UNKNOWN_PROVINCE_SLOT,
+    SeriesRow,
     build_matrix,
     build_range_bar,
     group_cells,
@@ -652,3 +653,98 @@ class TestSelectProvince:
         vista = select_province(matriz, habana)
 
         assert round(vista.rows[0].columns[0].cells[0].bar.width_pct, 1) == 50.0
+
+
+class TestFilasConCapaMayorista:
+    """Una fila por (variante, formato, unidad): el minorista es la cifra
+    principal y el mayorista del mismo par es una capa secundaria dentro de
+    esa misma fila (2026-10-16). Las series no se funden — la identidad de la
+    celda no cambia—: cambia cómo se leen. Lo que no tiene `sale_format`
+    declarado es cola de trabajo y queda como fila propia, marcada pendiente.
+    """
+
+    def _filas(self, celdas: list[Cell]) -> tuple[SeriesRow, ...]:
+        (grupo,) = group_cells(celdas)
+        return grupo.rows
+
+    def test_el_mayorista_del_par_va_como_capa_de_la_fila_minorista(self) -> None:
+        """Minorista 300 y mayorista 250 en lb: una sola fila, la capa trae
+        el ratio 300 / 250 = 1,2, calculado a mano."""
+        filas = self._filas([
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(unit="lb", sale_format="wholesale", count=3, median="250"),
+        ])
+
+        assert len(filas) == 1
+        assert filas[0].primary.cell.sale_format == "retail"
+        assert [c.cell.sale_format for c in filas[0].wholesale] == ["wholesale"]
+        assert filas[0].wholesale[0].retail_ratio == Decimal("1.2")
+        assert filas[0].wholesale_count == 3
+        assert filas[0].pending is False
+
+    def test_un_mayorista_sin_minorista_del_par_es_fila_propia_sin_cifra_principal(self) -> None:
+        """Minorista en lb, mayorista en kg: no hay par. El mayorista no
+        sube a cifra principal —no es la referencia—: su fila no tiene
+        minorista y lo lleva en la capa."""
+        filas = self._filas([
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(unit="kg", sale_format="wholesale", count=3, median="550"),
+        ])
+
+        assert [(f.primary.cell.unit if f.primary else None) for f in filas] == ["lb", None]
+        assert filas[0].wholesale == ()
+        assert [c.cell.unit for c in filas[1].wholesale] == ["kg"]
+        assert filas[1].wholesale[0].retail_ratio is None
+
+    def test_sin_formato_declarado_queda_visible_como_pendiente(self) -> None:
+        filas = self._filas([
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(unit="lb", sale_format=None, count=2, median="320"),
+        ])
+
+        assert len(filas) == 2
+        pendiente = filas[1]
+        assert pendiente.primary.cell.sale_format is None
+        assert pendiente.pending is True
+        assert pendiente.wholesale == ()
+
+    def test_un_minorista_con_flag_no_se_queda_con_la_capa(self) -> None:
+        """El minorista limpio es la referencia del par: el mayorista va con
+        él aunque el minorista con flag tenga más muestra y salga antes."""
+        filas = self._filas([
+            _celda(unit="lb", sale_format="retail", count=20, median="900", unresolved_basis=True),
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(unit="lb", sale_format="wholesale", count=3, median="250"),
+        ])
+
+        con_capa = [f for f in filas if f.wholesale]
+        assert len(filas) == 2
+        assert len(con_capa) == 1
+        assert con_capa[0].primary.cell.unresolved_basis is False
+
+    def test_todas_las_series_siguen_en_la_lista_plana(self) -> None:
+        """`cells` no pierde ninguna: la fila es presentación encima."""
+        celdas = [
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(unit="lb", sale_format="wholesale", count=3, median="250"),
+            _celda(unit="kg", sale_format="wholesale", count=1, median="500"),
+            _celda(unit="lb", sale_format=None, count=2, median="320"),
+        ]
+        (grupo,) = group_cells(celdas)
+
+        en_filas = sum(
+            (1 if f.primary else 0) + len(f.wholesale) for f in grupo.rows
+        )
+        assert len(grupo.cells) == 4
+        assert en_filas == 4
+
+    def test_la_matriz_y_la_pestana_conservan_las_filas(self) -> None:
+        celdas = [
+            _celda(unit="lb", sale_format="retail", count=10, median="300"),
+            _celda(unit="lb", sale_format="wholesale", count=3, median="250"),
+        ]
+        matriz = build_matrix(celdas)
+        pestana = select_province(matriz, matriz.columns[0])
+
+        assert len(matriz.rows[0].columns[0].rows) == 1
+        assert len(pestana.rows[0].columns[0].rows[0].wholesale) == 1

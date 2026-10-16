@@ -3,6 +3,111 @@
 {% extends "control_base.html" %}
 
 {% block body %}
+{# Una serie de la matriz: titular, `n`, cifra y barra. Macro porque se
+   dibuja igual como cifra principal (minorista, pendiente) y adentro de la
+   capa mayorista (2026-10-16). #}
+{% macro serie(item) %}
+{% set cell = item.cell %}
+          <div class="m3-serie">
+            <div class="m3-row-baseline">
+              {# El titular es el formato: lo que la persona compra. La unidad
+                 queda como dato de la normalización, no como identidad de la
+                 serie. `sale_format` es el escalón de volumen sobre ESE
+                 formato, un eje perpendicular (design.md D3/proposal). #}
+              <span class="m3-strong" style="font-size:14px">
+                {% if cell.format_label %}{{ cell.format_label }}
+                {%- elif cell.unit %}<span class="m3-muted">sin formato</span> · {{ cell.unit }}
+                {%- else %}<span class="m3-muted">sin formato ni unidad</span>{% endif %}
+                ·
+                {% if cell.sale_format == "retail" %}minorista
+                {%- elif cell.sale_format == "wholesale" %}mayorista
+                {%- else %}<span class="m3-muted">sin volumen declarado</span>{% endif %}
+                ·
+                {# Segundo eje, libre y cruzable con el formato
+                   (product-variants). `None` = «sin variante declarada»,
+                   nunca se esconde — mismo criterio que «sin formato». #}
+                {% if cell.variant_label %}{{ cell.variant_label }}
+                {%- else %}<span class="m3-muted">sin variante declarada</span>{% endif %}
+              </span>
+              <span class="m3-sm m3-muted">
+                {# `unit` es la unidad efectiva de la celda (canónica si se
+                   fundió, cruda si no), y `/curation/history` la matchea
+                   recomputando `resolve_row` fila por fila — así una celda
+                   fundida no esconde las filas convertidas ni arrastra las de
+                   otra unidad. Los tres flags separan la celda resuelta de las
+                   pendientes: sin ellos el link de una celda de una sola
+                   observación caía sobre todo el bloque. `currency` sigue yendo
+                   solo cuando la celda no se convirtió (ver 2026-08-13). #}
+                <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}&format_id={{ (cell.format_id or '') | urlencode }}&unquantified={{ 1 if cell.unquantified else 0 }}&unresolved_basis={{ 1 if cell.unresolved_basis else 0 }}&unconverted_unit={{ 1 if cell.unconverted_unit else 0 }}"
+                   title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
+                {# `n` cuenta MENSAJES, y solo se lee como si contara
+                   observaciones independientes. El caso real medido el
+                   2026-09-18: Arroz/Santiago tenía 27 mensajes de 2 emisores
+                   en 15 días, con el 85% de un solo canal. No son duplicados
+                   —`content_hash` es único, ver decisions.md 2026-08-23— pero
+                   la densidad que sugiere `n = 27` no existe. §10.7 C1 pide
+                   para la Fase 0 exactamente esto: tamaño de muestra visible.
+                   Es medición, no veredicto: acá no hay umbral de cuántos
+                   emisores son pocos (§12.6), lo decide quien mira. #}
+                {%- if cell.sample_label %}
+                <span class="m3-dim" title="De cuántos emisores distintos y en cuántos días viene esta muestra">· {{ cell.sample_label }}</span>
+                {%- endif %}
+                {# Titular en la cosa que se compra; el precio por unidad base
+                   baja a comparador entre formatos (design.md D8). Sin formato
+                   declarado no hay nada que multiplicar y queda el de siempre. #}
+                {%- if cell.format_median is not none %}
+                · <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(cell.format_median) }} {{ cell.currency }}</strong>
+                {# «por caja» y no «la caja»: el artículo obligaría a conocer el
+                   género de cada envase («la paquete» salía mal), y «a granel»
+                   ya es una locución que no admite ninguno de los dos. #}
+                <span class="m3-dim">{% if cell.format_packaging == "a granel" %}a granel{% else %}por {{ cell.format_packaging }}{% endif %}</span>
+                · <span class="m3-dim">{{ "%.2f"|format(cell.median) }}/{{ cell.unit }} para comparar</span>
+                {%- else %}
+                · mediana <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and not cell.unresolved_basis and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
+                {%- endif %}
+                {%- if cell.unquantified %} <span class="m3-dim">precio total, sin cantidad</span>{% endif %}
+                {%- if cell.unresolved_basis %} <span class="m3-dim">precio sin dividir, falta declarar la base</span>{% endif %}
+                {%- if cell.unconverted %} <span class="m3-dim">sin convertir</span>{% endif %}
+                {%- if cell.unconverted_unit %} <span class="m3-dim">unidad sin equivalencia con la del catálogo</span>{% endif %}
+                {%- if item.retail_ratio %} · <span class="m3-dim">el minorista sale ×{{ "%.2f"|format(item.retail_ratio) }} sobre esta serie</span>{% endif %}
+                {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
+              </span>
+            </div>
+
+            {# La barra habla la escala del titular (2026-09-05). Cuando la celda
+               tiene formato el titular es el precio del formato, y unos extremos
+               por unidad base ponían dos escalas en la misma línea: el operador
+               leía 688,70 por paquete sobre una barra de 273,52–385,55 y buscaba
+               esos números en sus anuncios, donde no estaban. Los tres campos de
+               formato son `None` a la vez —los tres salen del mismo factor—, así
+               que una sola condición los cubre. La geometría no se toca: el
+               factor es un multiplicador constante y la amplitud es una razón. #}
+            {% set en_formato = cell.format_median is not none %}
+            {% set minimo = cell.format_minimum if en_formato else cell.minimum %}
+            {% set maximo = cell.format_maximum if en_formato else cell.maximum %}
+            {% set mediana = cell.format_median if en_formato else cell.median %}
+            {% if item.bar.has_range %}
+            <div class="m3-range">
+              <span>{{ "%.2f"|format(minimo) }}</span>
+              <span class="m3-range-track">
+                <span class="m3-range-fill" style="width: {{ "%.1f"|format(item.bar.width_pct) }}%;">
+                  <span class="m3-range-median" style="left: {{ "%.1f"|format(item.bar.median_pct) }}%;"
+                        title="Mediana {{ "%.2f"|format(mediana) }}"></span>
+                </span>
+              </span>
+              <span>{{ "%.2f"|format(maximo) }}</span>
+            </div>
+            {% else %}
+            <div class="m3-range">
+              <span class="m3-sm m3-muted">
+                {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(mediana) }}
+                {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(mediana) }}{% endif %}
+              </span>
+            </div>
+            {% endif %}
+          </div>
+{% endmacro %}
+
   <!-- ---------- 6c. Validación (B1) ---------- -->
   {# Solo conteos por estado: esta vista es pública, así que acá no va ningún
      canal, emisor ni detalle por fila. #}
@@ -341,7 +446,9 @@
         <strong>El precio es por unidad</strong>: cada fila se divide por su cantidad y se
         lleva a la unidad canónica del producto, así que kg y lb del mismo producto son una
         sola serie. El <strong>formato</strong> sí la parte —minorista y mayorista no son
-        comparables— y quedan emparejados, con el ratio entre los dos. Una fila sin cantidad,
+        comparables—: el minorista es la cifra principal de la fila y el mayorista del mismo
+        formato va debajo, como capa que se abre, con el ratio entre los dos. Una fila sin
+        volumen declarado queda marcada como pendiente. Una fila sin cantidad,
         sin base declarada o con una unidad sin equivalencia queda aparte, marcada.
       </div>
       <div>
@@ -428,104 +535,34 @@
           <p class="m3-sm m3-dim" style="margin:0 0 12px">— sin series cargadas —</p>
           {% endif %}
 
-          {% for item in columna.cells %}
-          {% set cell = item.cell %}
-          <div class="m3-serie">
-            <div class="m3-row-baseline">
-              {# El titular es el formato: lo que la persona compra. La unidad
-                 queda como dato de la normalización, no como identidad de la
-                 serie. `sale_format` es el escalón de volumen sobre ESE
-                 formato, un eje perpendicular (design.md D3/proposal). #}
-              <span class="m3-strong" style="font-size:14px">
-                {% if cell.format_label %}{{ cell.format_label }}
-                {%- elif cell.unit %}<span class="m3-muted">sin formato</span> · {{ cell.unit }}
-                {%- else %}<span class="m3-muted">sin formato ni unidad</span>{% endif %}
-                ·
-                {% if cell.sale_format == "retail" %}minorista
-                {%- elif cell.sale_format == "wholesale" %}mayorista
-                {%- else %}<span class="m3-muted">sin volumen declarado</span>{% endif %}
-                ·
-                {# Segundo eje, libre y cruzable con el formato
-                   (product-variants). `None` = «sin variante declarada»,
-                   nunca se esconde — mismo criterio que «sin formato». #}
-                {% if cell.variant_label %}{{ cell.variant_label }}
-                {%- else %}<span class="m3-muted">sin variante declarada</span>{% endif %}
-              </span>
-              <span class="m3-sm m3-muted">
-                {# `unit` es la unidad efectiva de la celda (canónica si se
-                   fundió, cruda si no), y `/curation/history` la matchea
-                   recomputando `resolve_row` fila por fila — así una celda
-                   fundida no esconde las filas convertidas ni arrastra las de
-                   otra unidad. Los tres flags separan la celda resuelta de las
-                   pendientes: sin ellos el link de una celda de una sola
-                   observación caía sobre todo el bloque. `currency` sigue yendo
-                   solo cuando la celda no se convirtió (ver 2026-08-13). #}
-                <a href="/curation/history?product={{ cell.product_name | urlencode }}&province={{ (cell.province_name or '') | urlencode }}{% if cell.unconverted %}&currency={{ cell.currency | urlencode }}{% endif %}&unit={{ (cell.unit or '') | urlencode }}&sale_format={{ (cell.sale_format or '') | urlencode }}&format_id={{ (cell.format_id or '') | urlencode }}&unquantified={{ 1 if cell.unquantified else 0 }}&unresolved_basis={{ 1 if cell.unresolved_basis else 0 }}&unconverted_unit={{ 1 if cell.unconverted_unit else 0 }}"
-                   title="Ver los anuncios detrás de este número">n = {{ cell.count }}</a>
-                {# `n` cuenta MENSAJES, y solo se lee como si contara
-                   observaciones independientes. El caso real medido el
-                   2026-09-18: Arroz/Santiago tenía 27 mensajes de 2 emisores
-                   en 15 días, con el 85% de un solo canal. No son duplicados
-                   —`content_hash` es único, ver decisions.md 2026-08-23— pero
-                   la densidad que sugiere `n = 27` no existe. §10.7 C1 pide
-                   para la Fase 0 exactamente esto: tamaño de muestra visible.
-                   Es medición, no veredicto: acá no hay umbral de cuántos
-                   emisores son pocos (§12.6), lo decide quien mira. #}
-                {%- if cell.sample_label %}
-                <span class="m3-dim" title="De cuántos emisores distintos y en cuántos días viene esta muestra">· {{ cell.sample_label }}</span>
-                {%- endif %}
-                {# Titular en la cosa que se compra; el precio por unidad base
-                   baja a comparador entre formatos (design.md D8). Sin formato
-                   declarado no hay nada que multiplicar y queda el de siempre. #}
-                {%- if cell.format_median is not none %}
-                · <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(cell.format_median) }} {{ cell.currency }}</strong>
-                {# «por caja» y no «la caja»: el artículo obligaría a conocer el
-                   género de cada envase («la paquete» salía mal), y «a granel»
-                   ya es una locución que no admite ninguno de los dos. #}
-                <span class="m3-dim">{% if cell.format_packaging == "a granel" %}a granel{% else %}por {{ cell.format_packaging }}{% endif %}</span>
-                · <span class="m3-dim">{{ "%.2f"|format(cell.median) }}/{{ cell.unit }} para comparar</span>
-                {%- else %}
-                · mediana <strong class="m3-num" style="color:var(--m3-on-surface)">{{ "%.2f"|format(cell.median) }} {{ cell.currency }}{% if not cell.unquantified and not cell.unresolved_basis and cell.unit %}/{{ cell.unit }}{% endif %}</strong>
-                {%- endif %}
-                {%- if cell.unquantified %} <span class="m3-dim">precio total, sin cantidad</span>{% endif %}
-                {%- if cell.unresolved_basis %} <span class="m3-dim">precio sin dividir, falta declarar la base</span>{% endif %}
-                {%- if cell.unconverted %} <span class="m3-dim">sin convertir</span>{% endif %}
-                {%- if cell.unconverted_unit %} <span class="m3-dim">unidad sin equivalencia con la del catálogo</span>{% endif %}
-                {%- if item.retail_ratio %} · <span class="m3-dim">el minorista sale ×{{ "%.2f"|format(item.retail_ratio) }} sobre esta serie</span>{% endif %}
-                {% if cell.spread is not none %}· amplitud {{ "%.1f"|format(cell.spread) }}×{% endif %}
-              </span>
-            </div>
-
-            {# La barra habla la escala del titular (2026-09-05). Cuando la celda
-               tiene formato el titular es el precio del formato, y unos extremos
-               por unidad base ponían dos escalas en la misma línea: el operador
-               leía 688,70 por paquete sobre una barra de 273,52–385,55 y buscaba
-               esos números en sus anuncios, donde no estaban. Los tres campos de
-               formato son `None` a la vez —los tres salen del mismo factor—, así
-               que una sola condición los cubre. La geometría no se toca: el
-               factor es un multiplicador constante y la amplitud es una razón. #}
-            {% set en_formato = cell.format_median is not none %}
-            {% set minimo = cell.format_minimum if en_formato else cell.minimum %}
-            {% set maximo = cell.format_maximum if en_formato else cell.maximum %}
-            {% set mediana = cell.format_median if en_formato else cell.median %}
-            {% if item.bar.has_range %}
-            <div class="m3-range">
-              <span>{{ "%.2f"|format(minimo) }}</span>
-              <span class="m3-range-track">
-                <span class="m3-range-fill" style="width: {{ "%.1f"|format(item.bar.width_pct) }}%;">
-                  <span class="m3-range-median" style="left: {{ "%.1f"|format(item.bar.median_pct) }}%;"
-                        title="Mediana {{ "%.2f"|format(mediana) }}"></span>
-                </span>
-              </span>
-              <span>{{ "%.2f"|format(maximo) }}</span>
-            </div>
+          {# Una fila por par (variante, formato, unidad): el minorista es la
+             cifra principal —el precio de referencia, `cells.REFERENCE_SALE_FORMAT`—
+             y el mayorista del par va como capa, cerrada por defecto
+             (DESIGN.md regla 2). Ninguna serie se funde: cada una conserva su
+             mediana y su `n`. Lo que no tiene volumen declarado es cola de
+             trabajo y queda a la vista, marcado (2026-10-16). #}
+          {% for fila in columna.rows %}
+          <div class="m3-matrix-row{% if fila.pending %} is-pending{% endif %}">
+            {% if fila.pending %}
+            <span class="m3-badge m3-badge-warn m3-matrix-pending">pendiente: falta declarar minorista o mayorista</span>
+            {% endif %}
+            {% if fila.primary %}
+            {{ serie(fila.primary) }}
             {% else %}
-            <div class="m3-range">
-              <span class="m3-sm m3-muted">
-                {% if cell.count == 1 %}Una sola observación: {{ "%.2f"|format(mediana) }}
-                {%- else %}Sin rango: las {{ cell.count }} observaciones valen {{ "%.2f"|format(mediana) }}{% endif %}
-              </span>
-            </div>
+            <p class="m3-sm m3-muted m3-matrix-noretail">Sin minorista en este formato: solo hay datos al por mayor.</p>
+            {% endif %}
+            {% if fila.wholesale %}
+            <details class="m3-matrix-layer">
+              <summary>
+                <span class="m3-icon m3-muted">expand_more</span>
+                Al por mayor (escala de contenedor)
+                <span class="m3-muted">· n = {{ fila.wholesale_count }}</span>
+                {%- for w in fila.wholesale if w.retail_ratio %}
+                <span class="m3-muted">· minorista ×{{ "%.2f"|format(w.retail_ratio) }}</span>
+                {%- endfor %}
+              </summary>
+              {% for w in fila.wholesale %}{{ serie(w) }}{% endfor %}
+            </details>
             {% endif %}
           </div>
           {% endfor %}
