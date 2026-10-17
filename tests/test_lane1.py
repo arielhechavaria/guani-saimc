@@ -939,6 +939,54 @@ def test_los_botones_de_la_auditoria_escriben_la_respuesta(
     assert f"/curation/auditoria/{bien.id}/aceptado-bien" not in html
 
 
+# --- anuncios curados sin filas (2026-10-17) ------------------------------------------
+
+
+def _borrar_las_filas(session: Session, ingesta: RawIngestion) -> None:
+    for fila in _filas(session, ingesta):
+        session.delete(fila)
+    session.commit()
+
+
+def test_esta_bien_no_acepta_un_anuncio_sin_filas(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+    _borrar_las_filas(session, ingesta)
+
+    assert lane1.mark_ok(session, ingesta.id) is False
+
+    estado = lane1.audit_state(session, _ajustes(tmp_path))
+    assert (estado.audited, estado.errors) == (0, 0)
+
+
+def test_cuenta_los_curados_sin_filas(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    con_filas, sin_filas = _aceptar(session, tmp_path, mundo.canal, n=2)
+    assert lane1.curated_without_rows(session) == 0
+
+    _borrar_las_filas(session, sin_filas)
+
+    assert lane1.curated_without_rows(session) == 1
+    assert con_filas.processing_status == "curated"
+
+
+def test_la_pantalla_avisa_de_los_curados_sin_filas_y_quita_esta_bien(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    (ingesta,) = _aceptar(session, tmp_path, mundo.canal)
+    html = client.get("/curation/auditoria").text
+    assert "sin filas" not in html
+
+    _borrar_las_filas(session, ingesta)
+    html = client.get("/curation/auditoria").text
+
+    assert "1 anuncio curado sin filas" in html
+    assert f"/curation/auditoria/{ingesta.id}/aceptado-bien" not in html
+    assert f"/curation/auditoria/{ingesta.id}/aceptado-invalido" in html
+
+
 def test_la_pantalla_avisa_cuando_el_freno_esta_puesto(
     tope_de_30_sin_auditar: None, session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
 ) -> None:

@@ -539,9 +539,25 @@ def mark_ok(session: Session, ingestion_id: uuid.UUID) -> bool:
         return False
     ingestion, event = found
     rows = _rows(session, ingestion.id)
+    if not rows:
+        # Un «está bien» sobre un anuncio vacío contaría como acierto sin que
+        # haya nada que confirmar (2026-10-17).
+        return False
     _mark_rows_audited(rows)
     _record(session, ingestion, event, OK, outcome=ReviewOutcome.CURATED, rows=rows)
     return True
+
+
+def curated_without_rows(session: Session) -> int:
+    """Anuncios `curated` que no tienen ninguna fila de precio: un estado que
+    ningún camino de la app produce y que alguien tiene que mirar."""
+    has_rows = select(PriceHistory.id).where(PriceHistory.source_id == RawIngestion.id).exists()
+    stmt = (
+        select(func.count())
+        .select_from(RawIngestion)
+        .where(RawIngestion.processing_status == ProcessingStatus.CURATED, ~has_rows)
+    )
+    return int(session.execute(stmt).scalar_one())
 
 
 def after_edit(session: Session, ingestion: RawIngestion, *, changed: bool) -> bool:
