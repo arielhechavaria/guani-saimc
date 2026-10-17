@@ -40,6 +40,7 @@ Lo que no tiene una persona detrás:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import random
 import sys
 import uuid
@@ -125,6 +126,8 @@ AUDIT_N0 = 60
 #: Era 30 (hacía cumplir la auditoría total); se quitó el 2026-10-13 por
 #: decisión del operador para que el flujo corra solo (ver `docs/decisions.md`).
 MAX_UNAUDITED: int | None = None
+#: Semilla del orden de la cola durante el arranque (`_start_order`).
+START_SEED = "lane1-arranque"
 #: Terminado el arranque, cuántos anuncios por semana cerrada entran en la
 #: muestra de auditoría, repartidos entre los canales.
 WEEKLY_SAMPLE = 30
@@ -700,16 +703,27 @@ def audit_state(
 def audit_queue(
     session: Session, settings: Settings, *, today: date | None = None
 ) -> list[AcceptedAd]:
-    """Lo que toca auditar, del más viejo al más nuevo: todo durante el
-    arranque; después, la muestra de cada semana cerrada."""
+    """Lo que toca auditar: todo durante el arranque, en un orden al azar pero
+    fijo (así los primeros `AUDIT_N0` auditados son una muestra al azar y no
+    los más viejos); después, la muestra de cada semana cerrada, del más viejo
+    al más nuevo."""
+    state, waiting = _audit(session, settings, today)
+    if state.starting:
+        waiting = sorted(waiting, key=lambda pair: _start_order(pair[0].id))
     return [
         AcceptedAd(
             ingestion=ingestion,
             event=event,
             rows=tuple(_describe(session, row) for row in _rows(session, ingestion.id)),
         )
-        for ingestion, event in _audit(session, settings, today)[1]
+        for ingestion, event in waiting
     ]
+
+
+def _start_order(ingestion_id: uuid.UUID) -> str:
+    """La posición de un anuncio en la cola de arranque: un hash con semilla fija.
+    Depende solo del anuncio, así que auditar uno no mueve a los demás."""
+    return hashlib.sha256(f"{START_SEED}:{ingestion_id}".encode()).hexdigest()
 
 
 def provenance_counts(session: Session) -> dict[str, int]:
