@@ -134,16 +134,35 @@ OK = "ok"
 CORRECTED = "corrected"
 INVALID = "invalid"
 _ERROR_VERDICTS = frozenset({CORRECTED, INVALID})
-#: Una corrección que solo completó la compra mínima. El modelo nunca la propone
-#: (la toma de las reglas) y no cambia el precio publicado: cuenta como auditado
-#: sin error. Se decide al leer la bitácora, así que vale también para lo ya
-#: auditado (2026-10-13, `docs/decisions.md`).
+#: Una corrección que solo llenó huecos: la compra mínima (el modelo nunca la
+#: propone) o un `format_id` que estaba vacío. No cambia ningún precio ya
+#: publicado: cuenta como auditado sin error. Se decide al leer la bitácora, así
+#: que vale también para lo ya auditado (2026-10-13 y 2026-10-17,
+#: `docs/decisions.md`).
 COMPLETED = "completed"
 _MINIMUM_FIELD = "min_purchase_quantity"
+_FORMAT_FIELD = "format_id"
 
 
-def _only_completes_minimum(detail: dict[str, Any] | None) -> bool:
-    """¿La edición solo tocó la compra mínima de filas que ya existían?
+def _fills_gap(entry: dict[str, Any]) -> bool:
+    """¿La fila editada solo llenó huecos: la compra mínima, o un formato que
+    estaba vacío? Cambiar un formato por otro, o quitarlo, es un cambio real."""
+    after, before = entry.get("after"), entry.get("before")
+    if entry.get("op") != "updated" or not isinstance(after, dict) or not after:
+        return False
+    if not set(after) <= {_MINIMUM_FIELD, _FORMAT_FIELD}:
+        return False
+    if _FORMAT_FIELD in after:
+        return (
+            isinstance(before, dict)
+            and before.get(_FORMAT_FIELD) is None
+            and after[_FORMAT_FIELD] is not None
+        )
+    return True
+
+
+def _only_completes_gaps(detail: dict[str, Any] | None) -> bool:
+    """¿La edición solo llenó huecos de filas que ya existían?
 
     Una fila agregada o borrada, o un cambio de canal, es un cambio real.
     """
@@ -152,13 +171,7 @@ def _only_completes_minimum(detail: dict[str, Any] | None) -> bool:
     rows = detail.get("rows")
     if not isinstance(rows, list) or not rows:
         return False
-    return all(
-        isinstance(entry, dict)
-        and entry.get("op") == "updated"
-        and isinstance(entry.get("after"), dict)
-        and set(entry["after"]) == {_MINIMUM_FIELD}
-        for entry in rows
-    )
+    return all(isinstance(entry, dict) and _fills_gap(entry) for entry in rows)
 
 
 def enabled(settings: Settings) -> bool:
@@ -412,7 +425,7 @@ def _reclassify_minimum_only(
         if context.as_utc(event.decided_at) <= corrected[event.ingestion_id]:
             last_edit[event.ingestion_id] = event
     for ingestion_id, event in last_edit.items():
-        if _only_completes_minimum(event.detail):
+        if _only_completes_gaps(event.detail):
             verdicts[ingestion_id] = (COMPLETED, corrected[ingestion_id])
 
 
