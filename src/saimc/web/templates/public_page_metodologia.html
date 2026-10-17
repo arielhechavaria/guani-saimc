@@ -132,6 +132,15 @@
     </div>
   </section>
 </div>
+{# Cómo se cuenta el error de lo publicado (decisions.md, 2026-10-13, 2026-10-17
+   y la revisión de auditorías): se dice desde cuándo, qué es un error y que los
+   primeros auditados no fueron al azar. Revisar este texto en el próximo
+   reinicio de la medición: la tercera frase describe el de 2026-10-15. #}
+{% if f0.lane1.audited > 0 %}
+<h3 id="como-se-cuenta-el-error">Cómo se cuenta el error de lo publicado</h3>
+<p>{% if f0.lane1.since %}La medición empezó el {{ f0.lane1.since.strftime("%d/%m/%Y") }}: se reinició después de ajustar cómo se cuenta un error, y los errores anteriores no entran en esta cuenta. {% endif %}Un anuncio auditado cuenta como error si se lo corrige o si se lo descarta por no ser un anuncio válido. No cuenta como error completar la compra mínima ni un formato de envase que estaba vacío, porque no cambian ningún precio ya publicado.</p>
+<p>Además, los primeros {{ lane1_n0 }} auditados no fueron una muestra al azar: se auditó lo que había en cola, empezando por lo más antiguo. Desde ahí rige una muestra semanal.</p>
+{% endif %}
 {% if f0.n1_provisional or f0.n2_provisional %}
 <p class="pg-note">Provisional quiere decir que el error de lo que cuenta ese número todavía no tiene nada auditado, o no lo tiene en todos los tipos: el número es solo lo que se vio, sin medir cuánto se equivocó.</p>
 {% endif %}

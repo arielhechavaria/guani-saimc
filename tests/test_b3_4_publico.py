@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html as html_lib
 import re
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -137,6 +138,51 @@ def test_con_todo_auditado_no_hay_rotulo_provisional(
     monkeypatch.setattr(public, "automation_summary", lambda *a, **k: resumen)
 
     assert "provisional" not in _metodologia(client).lower()
+
+
+def test_con_algo_auditado_la_nota_dice_desde_cuando_cuenta_y_que_es_un_error(
+    session: Session, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resumen = _resumen_falso(
+        texto=lane0.Bound("text", k=0, n=30),
+        imagen=lane0.Bound("image", k=0, n=15),
+        carril1=lane1.AuditState(audited=60, errors=1, unaudited=0, since=date(2026, 10, 15)),
+    )
+    monkeypatch.setattr(public, "automation_summary", lambda *a, **k: resumen)
+
+    texto = _metodologia(client)
+
+    assert "Cómo se cuenta el error de lo publicado" in texto
+    # Desde cuándo y qué pasó con lo anterior (decisions.md, 2026-10-13).
+    assert "La medición empezó el 15/10/2026" in texto
+    assert "los errores anteriores no entran en esta cuenta" in texto
+    # Qué cuenta como error y qué no (decisions.md, 2026-10-13 y 2026-10-17).
+    assert "completar la compra mínima" in texto
+    assert "un formato de envase que estaba vacío" in texto
+    # Los primeros auditados no fueron una muestra al azar.
+    assert "los primeros 60 auditados no fueron una muestra al azar" in texto
+
+
+def test_la_nota_sin_fecha_de_reinicio_no_inventa_una(
+    session: Session, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resumen = _resumen_falso(
+        texto=lane0.Bound("text", k=0, n=30),
+        imagen=lane0.Bound("image", k=0, n=15),
+        carril1=lane1.AuditState(audited=60, errors=0, unaudited=0),
+    )
+    monkeypatch.setattr(public, "automation_summary", lambda *a, **k: resumen)
+
+    texto = _metodologia(client)
+
+    assert "Cómo se cuenta el error de lo publicado" in texto
+    assert "La medición empezó el" not in texto
+
+
+def test_sin_nada_auditado_no_hay_nota_de_como_se_cuenta(
+    session: Session, client: TestClient
+) -> None:
+    assert "Cómo se cuenta el error de lo publicado" not in _metodologia(client)
 
 
 def test_no_inventa_nombres_ni_numeros_compuestos(session: Session, client: TestClient) -> None:

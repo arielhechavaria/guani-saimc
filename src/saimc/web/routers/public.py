@@ -1037,6 +1037,7 @@ def _lane1_public(db: Session) -> dict[str, object]:
     return {
         "lane1": resumen,
         "lane1_target": lane1.ERROR_TARGET,
+        "lane1_n0": lane1.AUDIT_N0,
         "lane1_max_rows": lane1.CONFIG.lane1_max_rows,
     }
 
