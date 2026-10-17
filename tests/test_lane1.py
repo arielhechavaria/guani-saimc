@@ -1526,3 +1526,59 @@ def test_completar_formato_y_borrar_una_fila_sigue_siendo_un_error() -> None:
     }
 
     assert not lane1._only_completes_gaps(detail)
+
+
+# --- el tope de filas, medido (docs/spec-slice-tope-filas.md, casos 1 a 4) -----------
+#
+# Los esperados salen de la definición de error del carril (`corrected` e
+# `invalid` cuentan; `ok` y `completed`, no) y de la cuenta a mano de la parte
+# tolerada: (meta − cota) / (1 − cota).
+
+
+def _respuestas_caso_1() -> list[tuple[int | None, str]]:
+    return (
+        [(1, lane1.OK)] * 9
+        + [(1, lane1.INVALID)]
+        + [(2, lane1.OK)] * 4
+        + [(2, lane1.CORRECTED)]
+        + [(3, lane1.COMPLETED)]
+    )
+
+
+def test_caso_1_los_estratos_cuentan_auditados_y_errores_por_filas() -> None:
+    estratos = lane1.strata_by_rows(_respuestas_caso_1())
+
+    assert [(e.rows, e.audited, e.errors) for e in estratos] == [(1, 10, 1), (2, 5, 1), (3, 1, 0)]
+
+
+def test_caso_2_el_acumulado_suma_hasta_el_tope() -> None:
+    estratos = lane1.strata_by_rows(_respuestas_caso_1())
+
+    assert lane1.cumulative(estratos, 1) == (10, 1)
+    assert lane1.cumulative(estratos, 2) == (15, 2)
+    assert lane1.cumulative(estratos, 3) == (16, 2)
+
+
+@pytest.mark.parametrize(
+    ("cota", "parte"),
+    [(0.077, 0.023 / 0.923), (0.12, 0.0), (0.10, 0.0)],
+)
+def test_caso_3_la_parte_tolerada_de_anuncios_sin_auditar(cota: float, parte: float) -> None:
+    assert lane1.admissible_share(cota) == pytest.approx(parte)
+
+
+def test_caso_4_por_filas_mide_lo_auditado_y_no_escribe(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    bien, invalido, sin_auditar = _aceptar(session, tmp_path, mundo.canal, n=3)
+    assert lane1.mark_ok(session, bien.id) is True
+    assert lane1.mark_invalid(session, invalido.id, "no_data") is True
+    session.commit()
+
+    codigo, salida = _comando(session, tmp_path, "--por-filas")
+
+    assert codigo == 0
+    assert "1 fila: 1 en 2 auditados" in salida
+    session.refresh(sin_auditar)
+    assert sin_auditar.processing_status == ProcessingStatus.CURATED
+    assert [e.action for e in _eventos(session, sin_auditar)] == [CurationAction.CURATED]

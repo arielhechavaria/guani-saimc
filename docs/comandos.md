@@ -831,6 +831,21 @@ Para mirar de a muestras un bloque que se queda afuera (solo lectura, no gasta):
 Imprime, de los anuncios cuyo motivo contiene ese texto, una muestra reproducible con canal, lo que
 dijo el modelo (descarte y motivo) y el comienzo del texto.
 
+Para re-medir el tope de filas con la auditoría (solo lectura, no gasta):
+
+```
+.venv/bin/python -m saimc.validation.lane1 --por-filas
+```
+
+- **Cambia algo**: no. **Gasta**: no.
+- Dos bloques: todo lo auditado, y lo auditado desde `SAIMC_LANE1_AUDIT_SINCE` (lo que mira el
+  freno). En cada uno, por número de filas aceptadas: errores en auditados y cota superior; y por
+  cada tope posible, el acumulado con su cota y cuánto **tolera**: la parte de los aceptados que
+  podría tener más filas que ese tope sin que la cota pase la meta de 10 %, suponiendo que un largo
+  nunca auditado falla siempre.
+- Un largo que no aparece no se auditó nunca: su cota es 100 %. Cómo leerlo y por qué el tope
+  sigue en 4: [spec-slice-tope-filas.md](spec-slice-tope-filas.md).
+
 ### Carril 1 escribiendo
 
 Acepta de verdad lo que lista el comando en seco: guarda las filas con procedencia `auto`,

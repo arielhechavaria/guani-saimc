@@ -96,8 +96,8 @@ from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, Validat
 #: - celda de 5 referencias, la misma con que se persiste la validación (B1);
 #: - un canal puede salir «sucio» desde 3 decisiones individuales, y lo es si
 #:   el operador tocó más de la mitad de las filas propuestas;
-#: - tope de 4 filas por anuncio (era 1; subió el 2026-10-13, ver
-#:   `docs/decisions.md`);
+#: - tope de 4 filas por anuncio (era 1; subió el 2026-10-13, y el 2026-10-17
+#:   se midió con la auditoría: `docs/spec-slice-tope-filas.md`, `--por-filas`);
 #: - las señales externas no entran (Jev no separa): sin umbral. Medido otra
 #:   vez el 2026-10-16 con producto, moneda y provincia: exigir el acuerdo de
 #:   Jev saca 3 errores y 26 anuncios buenos de 204, porque los errores del
@@ -937,6 +937,117 @@ class Gate:
         self._unaudited += 1
 
 
+# --- el tope de filas, medido (docs/spec-slice-tope-filas.md) -------------------
+
+
+@dataclass(frozen=True)
+class RowsStratum:
+    """Lo auditado de los anuncios que el carril aceptó con `rows` filas."""
+
+    #: Filas aceptadas (`row_count` del evento), o `None` si el evento no lo dice.
+    rows: int | None
+    audited: int
+    errors: int
+
+    @property
+    def upper(self) -> float | None:
+        return clopper_pearson_upper(self.errors, self.audited)
+
+
+def strata_by_rows(answers: Iterable[tuple[int | None, str]]) -> list[RowsStratum]:
+    """`(filas, respuesta)` -> un estrato por número de filas, de menos a más.
+
+    Error es lo mismo que en el freno: `corrected` o `invalid`.
+    """
+    audited: Counter[int | None] = Counter()
+    errors: Counter[int | None] = Counter()
+    for rows, verdict in answers:
+        audited[rows] += 1
+        errors[rows] += verdict in _ERROR_VERDICTS
+    return [
+        RowsStratum(rows, audited[rows], errors[rows])
+        for rows in sorted(audited, key=lambda k: (k is None, k or 0))
+    ]
+
+
+def cumulative(strata: Iterable[RowsStratum], cap: int) -> tuple[int, int]:
+    """`(auditados, errores)` de los anuncios de hasta `cap` filas."""
+    within = [s for s in strata if s.rows is not None and s.rows <= cap]
+    return sum(s.audited for s in within), sum(s.errors for s in within)
+
+
+def admissible_share(upper: float, target: float = ERROR_TARGET) -> float:
+    """Qué parte de los aceptados puede ser de un largo nunca auditado sin que
+    la cota del conjunto pase la meta, si lo nunca auditado fallara siempre.
+
+    Peor caso: el conjunto queda en `upper + s·(1 − upper)`; despejando `s`.
+    """
+    if upper >= target:
+        return 0.0
+    return (target - upper) / (1 - upper)
+
+
+def audited_by_rows(session: Session, *, since: date | None = None) -> list[RowsStratum]:
+    """Lo auditado del carril 1 por número de filas. Con `since`, solo lo
+    respondido desde ese día, como el freno con `SAIMC_LANE1_AUDIT_SINCE`.
+
+    Cuenta todo lo auditado, también lo que queda fuera de la muestra
+    semanal: es para decidir el tope, no para el freno.
+    """
+    events = _auto_events(session)
+    answers: list[tuple[int | None, str]] = []
+    for ingestion_id, (verdict, at) in _verdicts(session, events).items():
+        if since is not None and at.date() < since:
+            continue
+        _, event = events[ingestion_id]
+        answers.append(((event.detail or {}).get("row_count"), verdict))
+    return strata_by_rows(answers)
+
+
+def _rows_lines(strata: Sequence[RowsStratum]) -> list[str]:
+    lines = []
+    for stratum in strata:
+        label = "?" if stratum.rows is None else str(stratum.rows)
+        noun = "fila" if stratum.rows == 1 else "filas"
+        upper = stratum.upper
+        lines.append(
+            f"  {label} {noun}: {stratum.errors} en {stratum.audited} auditados, "
+            f"cota superior {'-' if upper is None else _percent(upper)}"
+        )
+    caps = sorted(s.rows for s in strata if s.rows is not None)
+    for cap in caps:
+        audited, errors = cumulative(strata, cap)
+        upper = clopper_pearson_upper(errors, audited)
+        if upper is None:
+            continue
+        lines.append(
+            f"  hasta {cap}: {errors} en {audited}, cota superior {_percent(upper)}; "
+            f"tolera {_percent(admissible_share(upper))} de anuncios más largos"
+        )
+    return lines
+
+
+def _por_filas(session: Session, settings: Settings, out: Callable[[str], None]) -> int:
+    """Solo lectura: el error auditado por número de filas, para decidir el tope."""
+    out(
+        f"Error del carril 1 por filas aceptadas (tope vigente: {CONFIG.lane1_max_rows}; "
+        f"meta {_percent(ERROR_TARGET)}). Solo lectura."
+    )
+    out("Todo lo auditado:")
+    for line in _rows_lines(audited_by_rows(session)):
+        out(line)
+    since = settings.lane1_audit_since
+    if since is not None:
+        out(f"Desde {since.isoformat()} (SAIMC_LANE1_AUDIT_SINCE):")
+        for line in _rows_lines(audited_by_rows(session, since=since)):
+            out(line)
+    out(
+        "«Tolera» supone que un largo nunca auditado falla siempre: es la parte de "
+        "los aceptados que puede tener más filas que el tope sin que la cota pase la meta."
+    )
+    return 0
+
+
 # --- el comando: lo que ya está pendiente --------------------------------------
 
 
@@ -1054,6 +1165,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--n", type=int, default=10, help="Tamaño de la muestra (--muestra).")
+    parser.add_argument(
+        "--por-filas",
+        action="store_true",
+        help=(
+            "Solo lectura: el error auditado por número de filas aceptadas y el "
+            "acumulado hasta cada tope (docs/spec-slice-tope-filas.md)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1101,6 +1220,8 @@ def run(
             "SAIMC_LANE1_ENABLED=true en el entorno (ver docs/spec-slice-B2b.md)."
         )
         return 2
+    if getattr(args, "por_filas", False):
+        return _por_filas(session, settings, out)
 
     catalog = context.load_catalog(session)
     pairs = pending_with_proposal(session, args.limit)
