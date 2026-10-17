@@ -216,28 +216,26 @@ class TestMiProvincia:
         assert celda.province_name == "Santiago de Cuba"
         assert celda.median_text == "400"
 
-    def test_las_demas_provincias_pasan_a_otras(self) -> None:
-        (otra,) = _fila(_lista([], "santiago-de-cuba"), "Arroz").otras
-
-        assert otra.province_name == "La Habana"
-        assert otra.median_text == "310"
-
     def test_una_provincia_sin_dato_del_producto_deja_vacia_su_celda(self) -> None:
-        """Pollo solo tiene La Habana: elegida Santiago, la celda principal
-        queda vacía y La Habana se ve en `otras`. No se esconde el dato."""
+        """Pollo solo tiene La Habana: elegida Santiago, la celda queda vacía
+        y La Habana no aparece en ningún lado (filtro global, 2026-10-17)."""
         pollo = _fila(_lista([], "santiago-de-cuba"), "Pollo")
 
         assert pollo.cells == (None,)
-        assert [c.province_name for c in pollo.otras] == ["La Habana"]
+        assert pollo.todas == (None,)
+        assert pollo.barata is None and pollo.contra == ()
 
-    def test_la_mas_barata_se_decide_entre_todas_no_solo_la_elegida(self) -> None:
+    def test_con_una_sola_provincia_no_hay_mas_barata(self) -> None:
         arroz = _fila(_lista([], "santiago-de-cuba"), "Arroz")
 
         assert arroz.cells[0] is not None and arroz.cells[0].is_cheapest is False
-        assert arroz.otras[0].is_cheapest is True
+        assert arroz.barata is None and arroz.contra == ()
 
-    def test_sin_provincia_elegida_no_hay_otras(self) -> None:
-        assert all(r.otras == () for r in _lista([]).rows)
+    def test_con_provincia_elegida_el_orden_sigue_la_muestra_del_producto_entero(self) -> None:
+        """Arroz (3 anuncios en total) antes que Pollo (1) y Aceite (sin datos),
+        aunque en Santiago Pollo no tenga ninguno."""
+        nombres = [r.product_name for r in _lista([], "santiago-de-cuba").rows]
+        assert nombres == ["Arroz", "Pollo", "Aceite"]
 
     def test_una_provincia_que_no_es_columna_deja_la_lista_completa(self) -> None:
         """Un slug válido pero sin dato piloto (o basura, o una cookie
@@ -245,7 +243,6 @@ class TestMiProvincia:
         lista = _lista([], "camaguey")
 
         assert lista.provinces == ("La Habana", "Santiago de Cuba")
-        assert all(r.otras == () for r in lista.rows)
 
 
 class TestParaElDetalleYElResumen:
@@ -260,16 +257,16 @@ class TestParaElDetalleYElResumen:
     def test_el_total_de_anuncios_suma_todas_las_celdas_de_la_ventana(self) -> None:
         assert _lista([]).total_ads == 4
 
-    def test_el_total_no_cambia_con_una_provincia_elegida(self) -> None:
-        assert _lista([], "santiago-de-cuba").total_ads == 4
+    def test_el_total_cuenta_solo_la_provincia_elegida(self) -> None:
+        assert _lista([], "santiago-de-cuba").total_ads == 1
 
-    def test_todas_trae_la_fila_completa_aunque_haya_foco(self) -> None:
+    def test_todas_trae_solo_la_provincia_del_foco(self) -> None:
         arroz = _fila(_lista([], "santiago-de-cuba"), "Arroz")
 
-        assert [c.province_name for c in arroz.todas if c] == ["La Habana", "Santiago de Cuba"]
+        assert [c.province_name for c in arroz.todas if c] == ["Santiago de Cuba"]
 
-    def test_las_provincias_de_todas_no_dependen_del_foco(self) -> None:
-        assert _lista([], "santiago-de-cuba").all_provinces == ("La Habana", "Santiago de Cuba")
+    def test_all_provinces_es_la_provincia_del_foco(self) -> None:
+        assert _lista([], "santiago-de-cuba").all_provinces == ("Santiago de Cuba",)
 
     def test_la_mas_barata_y_contra_quien_se_compara(self) -> None:
         arroz = _fila(_lista([]), "Arroz")
