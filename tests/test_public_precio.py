@@ -362,22 +362,21 @@ class TestTablaExpandible:
         assert 'aria-expanded="true"' not in ventana.split("<tbody>")[1]
         assert 'class="ph-dt-more is-open' not in ventana
 
-    def test_la_provincia_elegida_llega_expandida_y_las_demas_no(
+    def test_la_provincia_elegida_llega_expandida_y_es_la_unica(
         self, client: TestClient, datos: None
     ) -> None:
         ventana = _ventana(client.get("/precios?productos=arroz&provincia=la-habana").text)
 
         assert 'class="ph-dt-more is-open" id="ph-mas-arroz-la-habana"' in ventana
-        assert 'class="ph-dt-more" id="ph-mas-arroz-santiago-de-cuba"' in ventana
+        assert "ph-mas-arroz-santiago-de-cuba" not in ventana
 
-    def test_con_provincia_elegida_las_demas_filas_siguen_teniendo_detalle(
+    def test_con_provincia_elegida_no_hay_detalle_de_las_demas(
         self, client: TestClient, datos: None
     ) -> None:
-        """Elegir una provincia enfoca el mapa, no vacía la tabla: el detalle
-        de Santiago sigue ahí para abrirlo."""
+        """Filtro global (2026-10-17): elegir una provincia deja solo esa."""
         ventana = _ventana(client.get("/precios?productos=arroz&provincia=la-habana").text)
 
-        assert 'aria-label="Arroz en Santiago de Cuba"' in ventana
+        assert 'aria-label="Arroz en Santiago de Cuba"' not in ventana
 
     def test_sin_javascript_todo_se_ve_expandido(self, client: TestClient, datos: None) -> None:
         """Mejora progresiva: el cierre lo pone el script (`.ph-js`), no el

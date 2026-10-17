@@ -292,12 +292,6 @@
     .ph-cel-nada { grid-column: 1 / -1; font-style: italic; }
   }
 
-  /* Cuántas cifras trae cada provincia cuando hay una elegida: las otras van
-     en una línea al pie de la fila, como en el prototipo. */
-  .ph-otras { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-top: 6px; font-size: 12px;
-              color: var(--m3-on-surface-variant); }
-  .ph-otras strong { font-family: var(--m3-mono); font-weight: 500; color: var(--m3-on-surface); }
-  .ph-fila .ph-otras { grid-column: 1 / -1; }
 
   /* Buscador: sólo se ve si hay script que lo haga andar (ver el bloque
      `scripts`). 16 px de letra para que iOS no haga zoom al enfocarlo. */
@@ -513,17 +507,6 @@
 </div>
 {%- endmacro %}
 
-{# Las otras provincias, en chico, bajo una tarjeta enfocada en la elegida. #}
-{% macro otras(cells) -%}
-{% if cells -%}
-<div class="ph-otras">
-  {%- for c in cells %}
-  <span class="ph-prov-{{ province_slots.get(c.province_name, 9) }}"><span class="ph-dot"></span> {{ c.province_name }}: <strong>{{ c.median_text }}</strong> · {{ c.count }} anuncio{{ "s" if c.count != 1 }}</span>{% if c.is_cheapest %}<span class="ph-pill">más barata</span>{% endif %}
-  {%- endfor %}
-</div>
-{%- endif %}
-{%- endmacro %}
-
 {# Una provincia dentro de una fila de la lista compacta: la cifra, si es la
    más barata, el cambio con su base y cuántos anuncios la respaldan. El nombre
    de la provincia va en la cabecera de la lista; para quien lee con lector de
@@ -646,7 +629,6 @@
         <span class="ph-fila-titulo"><span class="ph-fila-nombre">{{ row.product_name }}</span>{% if unidad %}<span class="ph-fila-unidad">{{ unidad }}</span>{% endif %}</span>
         {% for cell in row.cells %}{{ celda(watchlist.provinces[loop.index0], cell) }}{% endfor %}
         {{ chev("ph-fila-chev") }}
-        {{ otras(row.otras) }}
       </a>
       {% endfor %}
     </div>

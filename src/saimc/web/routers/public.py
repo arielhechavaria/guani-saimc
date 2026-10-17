@@ -385,10 +385,10 @@ def _render_home(
             hasta=ventana_hasta,
             pestana=pestana,
         )
-    # En el tablero (prototipo E, 2026-09-19) la provincia elegida enfoca solo
-    # la lista de «Todos»; el detalle de un producto compara todas las
-    # provincias, que es para lo que sirve. El mapa sí filtra por ella.
-    scope_province = None if selected_vista == "tablero" else selected_province
+    # El filtro de provincia es global (2026-10-17): vale igual en el mapa y en
+    # el tablero, detalle incluido. Antes el tablero la ignoraba en el detalle
+    # de un producto (S8, 2026-09-19) y mostraba otras provincias.
+    scope_province = selected_province
 
     report = compute_retail_ranges(db, days=window, hoy=hoy, hasta=ventana_hasta)
     pilot_ranges = [r for r in report.ranges if r.product_name in pilot]
@@ -552,8 +552,16 @@ def _render_home(
     if scope_province is None:
         detail_headlines, detail_ranges, detail_ads = panel_headlines, panel_ranges, panel_ads
     else:
-        detail_obs = [o for o in all_provinces_obs if o.product_name in active_set]
-        detail_previous = [o for o in all_provinces_previous if o.product_name in active_set]
+        detail_obs = [
+            o
+            for o in all_provinces_obs
+            if o.product_name in active_set and o.province_name == scope_province
+        ]
+        detail_previous = [
+            o
+            for o in all_provinces_previous
+            if o.product_name in active_set and o.province_name == scope_province
+        ]
         detail_headlines = build_headlines(detail_obs, detail_previous)
         detail_ranges = build_range_series(detail_obs, window_days=window, hoy=hoy)
         detail_ads = build_cell_ads(detail_obs)
@@ -739,7 +747,11 @@ def _render_home(
             "layer_nav": build_layer_nav(map_layer, state),
             "selected_layer": map_layer,
             "product_grids": product_grids,
-            "province_comparisons": build_province_comparison(all_provinces_obs),
+            # En el mapa «Precios» resalta la elegida contra las demás; en el
+            # tablero el filtro es global y solo queda la elegida.
+            "province_comparisons": build_province_comparison(
+                evolution_obs if selected_vista == "tablero" else all_provinces_obs
+            ),
             "evolution_blocks": build_evolution_blocks(
                 evolution_obs, evolution_previous, window_days=window, hoy=hoy
             ),

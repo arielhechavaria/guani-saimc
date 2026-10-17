@@ -1898,10 +1898,9 @@ class TestFiltroPorProvinciaEnLaRuta:
 
         texto = client.get("/precios?provincia=la-habana&producto=arroz").text
         ventana = texto.split('class="ph-side ph-tabbed"')[1].split("</aside>")[0]
-        # La tabla compara todas las provincias (es para lo que sirve) y la
-        # elegida llega expandida; las demás se pueden abrir.
+        # El filtro de provincia es global (2026-10-17): solo la elegida.
         assert 'class="ph-dt-more is-open" id="ph-mas-arroz-la-habana"' in ventana
-        assert 'class="ph-dt-more" id="ph-mas-arroz-santiago-de-cuba"' in ventana
+        assert "ph-mas-arroz-santiago-de-cuba" not in ventana
         assert 'aria-label="Arroz en La Habana"' in ventana
         assert 'class="ph-fpanel-illustration"' in ventana
         assert "ph-fpanel-icon" not in ventana
@@ -2881,9 +2880,9 @@ class TestVistaTableroEnLaRuta:
     def test_el_detalle_no_se_vacia_por_una_provincia_elegida(
         self, client: TestClient, session: Session
     ) -> None:
-        """La provincia enfoca solo la lista de «Todos»: el detalle compara todas
-        las provincias. Aceite no tiene dato en Santiago y el detalle sigue ahí,
-        con Santiago en «sin datos todavía» y La Habana con su cifra."""
+        """Filtro global (2026-10-17). Aceite no tiene dato en Santiago y el
+        detalle sigue ahí, con Santiago en «sin datos todavía» y sin la cifra
+        de La Habana."""
         self._seed(session)
 
         texto = client.get("/precios?vista=tablero&productos=aceite&provincia=santiago-de-cuba").text
@@ -2892,7 +2891,8 @@ class TestVistaTableroEnLaRuta:
 
         assert "Sin anuncios verificados" not in texto
         assert "sin datos todavía" in resumen
-        assert '<div class="ph-fig">' in resumen
+        assert '<div class="ph-fig">' not in resumen
+        assert "La Habana" not in resumen
 
     def test_el_selector_de_provincia_marca_la_activa(
         self, client: TestClient, session: Session
@@ -3080,7 +3080,7 @@ class TestMiProvinciaEnElTablero:
         assert 'aria-label="Provincia"' not in texto
         assert texto.count('data-provincia="santiago-de-cuba"') == 1
 
-    def test_con_provincia_la_lista_se_enfoca_y_las_otras_van_en_chico(
+    def test_con_provincia_la_lista_se_enfoca_y_no_trae_las_otras(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
@@ -3090,7 +3090,7 @@ class TestMiProvinciaEnElTablero:
         assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]  # Aceite, Arroz
         assert self._cabecera(lista) == ["Santiago de Cuba"]  # la cabecera sigue a la elegida
         assert "is-foco" not in lista  # el foco se ve en las columnas, no en una clase sin regla
-        assert re.search(r'class="ph-otras">[\s\S]*?La Habana:', lista)
+        assert "ph-otras" not in lista
 
     def test_sin_provincia_no_hay_lineas_de_otras(
         self, client: TestClient, session: Session
@@ -3112,7 +3112,7 @@ class TestMiProvinciaEnElTablero:
         lista = self._lista(client.get("/precios?vista=tablero").text)
 
         assert self._columnas(lista) == ["Santiago de Cuba", "Santiago de Cuba"]
-        assert "ph-otras" in lista
+        assert "ph-otras" not in lista
 
     def test_la_cookie_de_provincia_vale_en_la_portada_sin_vista(
         self, client: TestClient, session: Session
@@ -3731,7 +3731,7 @@ class TestDetalleDeProductoEnElTablero:
         assert 'class="ph-panel ph-resumen"' not in texto
         assert '<h1 class="ph-h1">Qué cuesta hoy</h1>' in texto
 
-    def test_el_detalle_compara_todas_las_provincias_aunque_haya_una_elegida(
+    def test_el_detalle_se_acota_a_la_provincia_elegida(
         self, client: TestClient, session: Session
     ) -> None:
         self._seed(session)
@@ -3740,11 +3740,9 @@ class TestDetalleDeProductoEnElTablero:
             client.get("/precios?vista=tablero&productos=arroz&provincia=santiago-de-cuba").text
         )
 
-        assert "<strong>La Habana</strong> es la más barata" in detalle
-        assert detalle.count('class="ph-envases-prov-name"') == 2
-        # «Cómo se movió» y «Cuánto varía» traen la leyenda de las dos
-        # provincias: con el detalle filtrado a una sola no habría leyenda.
-        assert detalle.count('class="ph-leyenda"') == 2
+        # Filtro global (2026-10-17): solo Santiago, ninguna otra provincia.
+        assert "La Habana" not in detalle
+        assert detalle.count('class="ph-envases-prov-name"') == 1
 
     def test_la_navegacion_de_productos_solo_esta_en_el_detalle(
         self, client: TestClient, session: Session
@@ -4179,19 +4177,19 @@ class TestPorEnvaseEnElDetalle:
         # saco: una sola observación → un precio y «—» de mediana.
         assert re.search(r"Saco de 1 lb[\s\S]*?>400<[\s\S]*?>—<[\s\S]*?>1<", habana)
 
-    def test_la_provincia_elegida_no_recorta_los_envases(
+    def test_la_provincia_elegida_acota_los_envases(
         self, client: TestClient, session: Session
     ) -> None:
-        """La provincia elegida enfoca solo la lista de «Todos»: el detalle
-        compara todas, así que «Por envase» trae los dos grupos."""
+        """Filtro global (2026-10-17): «Por envase» trae solo la provincia
+        elegida."""
         self._seed(session)
 
         texto = client.get("/precios?vista=tablero&productos=arroz&provincia=santiago-de-cuba").text
         panel = texto[texto.index('class="ph-panel ph-envases"') :]
         panel = panel[: panel.index("</section>")]
 
-        assert panel.count('class="ph-envases-prov-name"') == 2
-        assert "Santiago de Cuba" in panel and "La Habana" in panel
+        assert panel.count('class="ph-envases-prov-name"') == 1
+        assert "Santiago de Cuba" in panel and "La Habana" not in panel
 
     def test_con_mas_de_cuatro_envases_el_resto_va_en_un_desplegable(
         self, client: TestClient, session: Session

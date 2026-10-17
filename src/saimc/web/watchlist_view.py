@@ -71,13 +71,8 @@ class WatchRow:
     cells: tuple[WatchCell | None, ...]
     query: str
     is_active: bool
-    #: Con una provincia elegida (S8), las celdas de las demás provincias que
-    #: sí tienen dato, para verlas en chico junto a la principal. Vacío sin
-    #: provincia elegida: ahí todas son columnas.
-    otras: tuple[WatchCell, ...] = ()
-    #: Una por cada provincia de `Watchlist.all_provinces`, con o sin foco: el
-    #: detalle de un producto compara todas las provincias aunque la lista
-    #: esté enfocada en una. `None` donde no hay anuncios.
+    #: Una por cada provincia de `Watchlist.all_provinces` (solo la elegida si
+    #: hay foco, filtro global). `None` donde no hay anuncios.
     todas: tuple[WatchCell | None, ...] = ()
     #: La provincia de mediana más baja y las demás con dato, para la frase
     #: «X es la más barata: 298 contra 318 en Y». `None` y `()` si no hay
@@ -108,8 +103,7 @@ class Watchlist:
     rows: tuple[WatchRow, ...]
     all_query: str
     all_is_active: bool
-    #: Todas las provincias con dato, sin importar el foco (`provinces` queda
-    #: en la elegida cuando hay foco).
+    #: Las provincias del detalle: igual que `provinces`.
     all_provinces: tuple[str, ...] = ()
     #: Anuncios en la ventana que respaldan las medianas de la lista: la suma
     #: de todas las celdas de todos los productos. Es lo que dice la página
@@ -210,9 +204,9 @@ def build_watchlist(
 
     `selected_province` es el slug de la provincia elegida (o vacío): las
     queries la preservan, igual que el rango de calendario. Si coincide con
-    una de `provinces`, la lista se enfoca en ella (S8): una sola columna, y
-    las demás pasan a `WatchRow.otras`; «más barata» se sigue decidiendo entre
-    todas. Si no coincide (una provincia sin dato piloto, una cookie vieja),
+    una de `provinces`, la lista se enfoca en ella (S8): una sola columna y
+    nada más de las otras provincias (filtro global, 2026-10-17; sin contra
+    qué comparar tampoco hay «más barata»). Si no coincide (una provincia sin dato piloto, una cookie vieja),
     no hay foco y se ven todas las columnas. Una URL heredada
     con varios productos (`?productos=arroz,pollo`) marca todos los activos;
     la lista en sí nunca arma una multi-selección nueva."""
@@ -233,12 +227,14 @@ def build_watchlist(
 
     rows = []
     total_ads = 0
+    muestras: dict[str, int] = {}
     for name in pilot_names:
         chart = _chart_for(name, slopes)
         por_provincia = {}
         if chart is not None:
             con_dato = [line for line in chart.lines if line.now_median is not None]
-            barata = _mas_barata(con_dato)
+            # Con una sola columna no hay contra qué ser «la más barata».
+            barata = _mas_barata([l for l in con_dato if l.province_name in columnas]) if len(columnas) > 1 else None
             for line in con_dato:
                 # Solo las observaciones de la moneda y unidad del gráfico: la
                 # forma no puede mezclar dos unidades del mismo producto.
@@ -265,9 +261,13 @@ def build_watchlist(
                         else None
                     ),
                 )
-        total_ads += sum(c.count for c in por_provincia.values())
+        # Filtro global (2026-10-17): con provincia elegida, todo lo que se
+        # muestra —cifras, confianza, total— sale solo de ella. Solo el orden
+        # de la lista usa la muestra del producto entero (`muestra`).
+        muestras[name] = sum(c.count for c in por_provincia.values())
+        total_ads += sum(c.count for p, c in por_provincia.items() if p in columnas)
         mas_barata = next((c for c in por_provincia.values() if c.is_cheapest), None)
-        todas = tuple(por_provincia.get(p) for p in provinces)
+        todas = tuple(por_provincia.get(p) for p in columnas)
         slug = product_slug(name)
         rows.append(
             WatchRow(
@@ -279,24 +279,21 @@ def build_watchlist(
                 cells=tuple(por_provincia.get(p) for p in columnas),
                 query=query([slug]),
                 is_active=name in activos,
-                otras=tuple(
-                    por_provincia[p] for p in provinces if foco and p != foco and p in por_provincia
-                ),
                 todas=todas,
                 barata=mas_barata,
                 contra=tuple(c for c in todas if c and c is not mas_barata) if mas_barata else (),
                 confianza=tuple(
-                    (p, c.trust) for p, c in zip(provinces, todas, strict=True) if c and c.trust
+                    (p, c.trust) for p, c in zip(columnas, todas, strict=True) if c and c.trust
                 ),
             )
         )
-    rows.sort(key=lambda r: (-sum(c.count for c in r.todas if c), _alfabeto(r.product_name)))
+    rows.sort(key=lambda r: (-muestras[r.product_name], _alfabeto(r.product_name)))
     return Watchlist(
         provinces=columnas,
         rows=tuple(rows),
         all_query=query([]),
         all_is_active=not activos,
-        all_provinces=tuple(provinces),
+        all_provinces=columnas,
         total_ads=total_ads,
         trust=sum_trust(
             [c.trust for r in rows for c in r.todas if c is not None]

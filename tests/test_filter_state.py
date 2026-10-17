@@ -344,7 +344,7 @@ class TestTableroConProvinciaEnfocada:
         assert [nombre for nombre, _ in filas] == ["Arroz", "Pollo"]
         pollo = dict(filas)["Pollo"]
         assert "sin datos todavía" in pollo
-        assert "La Habana" in pollo  # el dato de las otras provincias no se esconde
+        assert "La Habana" not in pollo  # filtro global: nada de otras provincias
 
 
 class TestViajeAProducto:
