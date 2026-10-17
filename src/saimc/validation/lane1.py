@@ -46,7 +46,7 @@ import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -695,6 +695,47 @@ def audit_state(
     session: Session, settings: Settings, *, today: date | None = None
 ) -> AuditState:
     return _audit(session, settings, today)[0]
+
+
+@dataclass(frozen=True)
+class AuditPending:
+    """Lo que falta auditar, para avisar (franja de `/control`, Telegram)."""
+
+    #: Todos los aceptados solos que nadie respondió, toquen o no auditarse ahora.
+    #: `AuditState.unaudited` cuenta solo los que tocan, y pasado el arranque
+    #: eso es la muestra de semanas cerradas: muy menos que este total.
+    total: int
+    #: Los que tocan auditar ahora.
+    due: int
+    starting: bool
+    #: Horas que lleva esperando lo que toca: en el arranque, desde que se aceptó
+    #: el más viejo; después, desde que cerró la semana más vieja con muestra
+    #: pendiente. `None` si no toca nada.
+    waiting_hours: int | None
+
+
+def audit_pending(
+    session: Session, settings: Settings, *, now: datetime | None = None
+) -> AuditPending:
+    moment = now or utc_now()
+    state, waiting = _audit(session, settings, moment.date())
+    events = _auto_events(session)
+    answered = _verdicts(session, events)
+    total = sum(
+        1
+        for ingestion, _ in events.values()
+        if ingestion.id not in answered and ingestion.processing_status == ProcessingStatus.CURATED
+    )
+    since: datetime | None = None
+    if waiting and state.starting:
+        since = min(context.as_utc(event.decided_at) for _, event in waiting)
+    elif waiting:
+        closed = min(_week_start(event.decided_at.date()) for _, event in waiting) + timedelta(
+            weeks=1
+        )
+        since = datetime(closed.year, closed.month, closed.day, tzinfo=UTC)
+    hours = None if since is None else max(0, int((moment - since).total_seconds() // 3600))
+    return AuditPending(total=total, due=len(waiting), starting=state.starting, waiting_hours=hours)
 
 
 def audit_queue(

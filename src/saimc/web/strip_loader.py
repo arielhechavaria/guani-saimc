@@ -21,7 +21,7 @@ from saimc.ingestion.whatsapp_health import session_health
 from saimc.llm.provider import try_resolve_config
 from saimc.models import RawIngestion
 from saimc.progress import IntakeHealth, compute_intake_health, last_24h
-from saimc.validation import jev_signal
+from saimc.validation import jev_signal, lane1
 from saimc.web.health_strip import Indicator, build_strip
 
 
@@ -52,6 +52,11 @@ def load_strip(db: Session, settings: Settings) -> StripSnapshot:
     rate_statuses = compute_rate_status(db)
     prefill_run = read_run_status(settings.prefill_status_path)
     assist = consumption_summary(settings.llm_assist_log_path)
+    # Solo si el carril 1 está encendido o ya dejó filas: apagado y vacío no hay
+    # nada que auditar y la tarjeta sobra.
+    lane1_active = lane1.enabled(settings) or any(
+        count for provenance, count in lane1.provenance_counts(db).items() if provenance != "human"
+    )
     strip = build_strip(
         waha=waha,
         last_capture=ultima_captura,
@@ -64,5 +69,6 @@ def load_strip(db: Session, settings: Settings) -> StripSnapshot:
         channel_gaps=load_channel_gap_report(db),
         jev_active=jev_signal.is_active(settings),
         last_24h_summary=last_24h(db),
+        lane1_audit=lane1.audit_pending(db, settings) if lane1_active else None,
     )
     return StripSnapshot(strip, intake, rate_statuses, prefill_run, assist)

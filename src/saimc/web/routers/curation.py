@@ -1916,7 +1916,9 @@ def _lane1_audit(db: Session) -> dict[str, object]:
     falta auditar, la cota contra la meta y si el freno está puesto."""
     settings = get_settings()
     state = lane1.audit_state(db, settings)
+    pending = lane1.audit_pending(db, settings)
     return {
+        "total_unaudited": pending.total,
         "enabled": lane1.enabled(settings),
         "pending": lane1.audit_queue(db, settings),
         "state": state,
