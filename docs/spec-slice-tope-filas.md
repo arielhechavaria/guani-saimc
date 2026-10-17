@@ -1,6 +1,6 @@
 # Slice tope-filas-carril1 — el tope de filas del carril 1, medido
 
-Estado: **propuesta, espera la aprobación del operador** (2026-10-17).
+Estado: **aprobada por el operador el 2026-10-17**: el tope se mantiene en 4.
 Toca el motor de validación: flujo completo (`CLAUDE.md`, «Proceso»).
 
 ## 1. La pregunta
