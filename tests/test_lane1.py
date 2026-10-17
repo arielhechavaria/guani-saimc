@@ -1096,6 +1096,40 @@ def test_en_el_arranque_la_cola_de_auditoria_trae_todo(
     assert {a.ingestion.id for a in cola} == {i.id for i in ingestas}
 
 
+def test_en_el_arranque_la_cola_va_en_orden_al_azar_y_estable(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingestas = _aceptar(session, tmp_path, mundo.canal, n=12)
+    ajustes = _ajustes(tmp_path)
+
+    cola = [a.ingestion.id for a in lane1.audit_queue(session, ajustes)]
+    otra = [a.ingestion.id for a in lane1.audit_queue(session, ajustes)]
+
+    assert cola == otra  # estable entre cargas de la pantalla
+    por_antiguedad = [
+        a.ingestion.id
+        for a in sorted(lane1.audit_queue(session, ajustes), key=lambda a: a.event.decided_at)
+    ]
+    assert cola != por_antiguedad  # 1 posibilidad en 12! de coincidir por azar
+    # Al auditar uno, los demás conservan su lugar relativo.
+    lane1.mark_ok(session, cola[0])
+    session.commit()
+    despues = [a.ingestion.id for a in lane1.audit_queue(session, ajustes)]
+    assert despues == cola[1:]
+    assert {i.id for i in ingestas} == set(cola)
+
+
+def test_la_pantalla_dice_que_el_arranque_se_audita_al_azar(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    _aceptar(session, tmp_path, mundo.canal)
+
+    html = client.get("/curation/auditoria").text
+
+    assert "en orden al azar" in html
+    assert "del más viejo al más nuevo" not in html
+
+
 def test_despues_del_arranque_la_cola_es_una_muestra_por_canal_de_la_semana_cerrada(
     session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
