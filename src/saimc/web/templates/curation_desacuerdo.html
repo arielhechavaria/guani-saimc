@@ -1,0 +1,142 @@
+{#
+  Anuncios en desacuerdo: el modelo los descarta y las reglas ven un producto
+  piloto con algún dígito. Cada tarjeta muestra el texto y las dos lecturas, y
+  deja resolver con un toque: aceptar modelo, aceptar reglas o descartar.
+  Mobile first (390 px): las lecturas van apiladas y pasan a dos columnas en el
+  único corte del proyecto (720 px). El camino largo —el formulario completo—
+  queda en un enlace secundario (docs/DESIGN.md, regla 2).
+#}
+{% extends "_shell.html" %}
+
+{% block title %}Desacuerdo{% endblock %}
+{% block heading %}Desacuerdo entre modelo y reglas{% endblock %}
+{% block subtitle %}El modelo descarta; las reglas ven un producto piloto. Elegí la lectura correcta.{% endblock %}
+
+{% block stats %}
+  <div class="m3-stat">
+    <div class="m3-stat-label">En desacuerdo</div>
+    <div class="m3-stat-value is-accent">{{ items|length }}</div>
+  </div>
+{% endblock %}
+
+{% block tabs %}{% include "_curation_tabs.html" %}{% endblock %}
+
+{% block head %}
+  <style>
+    .dz-list { display: flex; flex-direction: column; gap: var(--m3-space-4); }
+    .dz-card { padding: var(--m3-space-4); display: flex; flex-direction: column; gap: var(--m3-space-3); }
+    .dz-meta { display: flex; flex-direction: column; gap: 2px; color: var(--m3-on-surface-variant); font-size: 12px; line-height: 1.35; }
+    .dz-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.45; }
+
+    /* Las dos lecturas: apiladas en el teléfono, lado a lado desde 720 px. */
+    .dz-reads { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--m3-space-3); }
+    @media (min-width: 720px) { .dz-reads { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .dz-read { padding: var(--m3-space-3); border-radius: var(--m3-radius-md); background: var(--m3-surface-container-high); display: flex; flex-direction: column; gap: var(--m3-space-2); }
+    .dz-read-title { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--m3-on-surface-variant); }
+    .dz-read-value { margin: 0; font-size: 15px; font-weight: 500; }
+    .dz-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--m3-space-2); }
+    .dz-rows li { display: flex; flex-wrap: wrap; gap: var(--m3-space-2); align-items: baseline; font-size: 14px; }
+    .dz-rows li.is-partial { color: var(--m3-on-surface-variant); }
+
+    /* Acciones: una columna a 390 px, objetivo táctil de 48 px. */
+    .dz-actions { display: flex; flex-direction: column; gap: var(--m3-space-2); }
+    .dz-actions .m3-btn { min-height: 48px; justify-content: center; width: 100%; }
+    @media (min-width: 720px) {
+      .dz-actions { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+      .dz-actions > * { flex: 1 1 200px; }
+    }
+    .dz-discard summary { list-style: none; cursor: pointer; }
+    .dz-discard summary::-webkit-details-marker { display: none; }
+    .dz-discard[open] .dz-discard-options { margin-top: var(--m3-space-2); display: flex; flex-direction: column; gap: var(--m3-space-2); }
+    .dz-why { margin: 0; font-size: 13px; color: var(--m3-on-surface-variant); }
+    .dz-open { font-size: 13px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="m3-stack" style="gap:16px">
+
+  {% if not items %}
+  <div class="m3-card">
+    <div class="m3-empty">
+      <span class="m3-icon">check_circle</span>
+      <p style="margin:12px 0 0">No hay anuncios en desacuerdo.</p>
+      <p class="m3-sm m3-muted" style="margin:4px 0 0">Cuando el modelo descarte algo que las reglas leen como piloto, aparece acá.</p>
+    </div>
+  </div>
+  {% else %}
+
+  <div class="dz-list">
+    {% for item in items %}
+    {% set ing = item.ingestion %}
+    <article class="m3-card m3-card-outlined dz-card" id="d{{ ing.id }}">
+      <div class="dz-meta">
+        <span>{{ ing.source_reference or "—" }}</span>
+        <span class="m3-num">{{ ing.captured_at | havana }}</span>
+      </div>
+
+      <p class="dz-text">{{ ing.original_text }}</p>
+
+      <div class="dz-reads">
+        <section class="dz-read" aria-label="Lectura del modelo">
+          <h2 class="dz-read-title">Modelo</h2>
+          <p class="dz-read-value">Descarta · {{ reason_labels[item.model_reason] }}</p>
+        </section>
+
+        <section class="dz-read" aria-label="Lectura de las reglas">
+          <h2 class="dz-read-title">Reglas</h2>
+          <ul class="dz-rows">
+            {% for row in item.rule_rows %}
+            {% set ok = row in item.savable_rows %}
+            <li{% if not ok %} class="is-partial"{% endif %}>
+              <strong>{{ row.product.name if row.product else (row.product_name_guess or "sin producto") }}</strong>
+              {% if row.price is not none %}
+                <span class="m3-num">{{ row.price | string | replace(".00", "") }} {{ row.currency }}</span>
+              {% else %}
+                <span>sin precio</span>
+              {% endif %}
+              {% if row.quantity is not none %}
+                <span class="m3-num">{{ row.quantity | string | replace(".00", "") }}{% if row.unit %} {{ row.unit }}{% endif %}</span>
+              {% endif %}
+              {% if row.province %}<span>{{ row.province.name }}</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </section>
+      </div>
+
+      <form method="post" class="dz-actions">
+        <input type="hidden" name="shown_at" value="{{ shown_at }}" />
+        <button type="submit" class="m3-btn m3-btn-tonal"
+                formaction="/curation/desacuerdo/{{ ing.id }}/modelo">
+          <span class="m3-icon">auto_awesome</span>Aceptar modelo
+        </button>
+        <button type="submit" class="m3-btn m3-btn-tonal"
+                formaction="/curation/desacuerdo/{{ ing.id }}/reglas"
+                {% if not item.can_accept_rules %}disabled{% endif %}>
+          <span class="m3-icon">rule</span>Aceptar reglas
+        </button>
+        <details class="dz-discard">
+          <summary class="m3-btn m3-btn-outlined"><span class="m3-icon">block</span>Descartar</summary>
+          <div class="dz-discard-options">
+            <button type="submit" class="m3-btn m3-btn-danger" name="reason" value="no_data"
+                    formaction="/curation/desacuerdo/{{ ing.id }}/descartar">Sin dato útil</button>
+            <button type="submit" class="m3-btn m3-btn-danger" name="reason" value="off_focus"
+                    formaction="/curation/desacuerdo/{{ ing.id }}/descartar">Fuera de foco</button>
+          </div>
+        </details>
+      </form>
+
+      {% if not item.can_accept_rules %}
+      <p class="dz-why">
+        {% if item.published_date is none %}Sin fecha de publicación confiable.{% else %}Las reglas no completan precio, producto o base del precio.{% endif %}
+        Para aceptar reglas, <a class="dz-open" href="/curation?id={{ ing.id }}">abrilo en la cola</a>.
+      </p>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

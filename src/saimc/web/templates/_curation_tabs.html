@@ -21,6 +21,10 @@
   {% set sin_foco = cur.startswith('/curation/sin-foco') %}
   <a class="m3-tab{% if sin_foco %} is-active{% endif %}"
      href="/curation/sin-foco"{% if sin_foco %} aria-current="page"{% endif %}>Sin foco</a>
+  {# Los anuncios que el modelo descarta y las reglas leen como piloto. #}
+  {% set desacuerdo = cur.startswith('/curation/desacuerdo') %}
+  <a class="m3-tab{% if desacuerdo %} is-active{% endif %}"
+     href="/curation/desacuerdo"{% if desacuerdo %} aria-current="page"{% endif %}>Desacuerdo</a>
   {# B2a: la auditoría semanal de lo que el carril 0 descartó solo. #}
   {% set auditoria = cur.startswith('/curation/auditoria') %}
   <a class="m3-tab{% if auditoria %} is-active{% endif %}"

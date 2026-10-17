@@ -27,6 +27,7 @@ from saimc.web.routers import (
     catalog,
     control,
     curation,
+    curation_desacuerdo,
     docs,
     marketing,
     public,
@@ -262,6 +263,7 @@ app.mount(
 app.include_router(access.router)
 app.include_router(public.router)
 app.include_router(curation.router)
+app.include_router(curation_desacuerdo.router)
 app.include_router(control.router)
 app.include_router(catalog.router)
 app.include_router(marketing.router)
