@@ -24,10 +24,16 @@ from datetime import date, timedelta
 #: período que la tarjeta declara describir, y lo dice en pantalla.
 DEFAULT_WINDOW_DAYS = 30
 
-#: Las tres ventanas que ofrece la barra. No son umbrales de los de §12.6 —no
-#: deciden qué se publica— son tres cortes de lectura: la semana, el mes y el
-#: trimestre.
-WINDOW_CHOICES: tuple[int, ...] = (7, 30, 90)
+#: Las tres ventanas que ofrece la barra (2026-10-17: 3 / 7 / 30). No son
+#: umbrales de los de §12.6 —no deciden qué se publica— son tres cortes de
+#: lectura: los últimos días, la semana y el mes. Un rango más largo (por
+#: ejemplo 90 días) se pide con «Fechas».
+WINDOW_CHOICES: tuple[int, ...] = (3, 7, 30)
+
+#: Valores de `?dias=` que se siguen aceptando aunque ya no sean atajos: los
+#: enlaces viejos con `dias=90` conservan su rango de 90 días (que en pantalla
+#: enciende «Fechas») en vez de caer en silencio a 30.
+_LEGACY_WINDOW_DAYS: tuple[int, ...] = (90,)
 
 #: Capas del mapa (2026-09-11): «publicación» es la de siempre (§9.0,
 #: vinculante); «densidad» es puramente presentacional —sombrea por
@@ -135,7 +141,7 @@ def resolve_days(raw: str | int | None) -> int:
         value = int(raw)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return DEFAULT_WINDOW_DAYS
-    return value if value in WINDOW_CHOICES else DEFAULT_WINDOW_DAYS
+    return value if value in (*WINDOW_CHOICES, *_LEGACY_WINDOW_DAYS) else DEFAULT_WINDOW_DAYS
 
 
 def resolve_layer(raw: str | None) -> str:
@@ -189,7 +195,7 @@ def default_window(hoy: date | None = None) -> tuple[date, date]:
 #: completo se entrega bajo acuerdo. Tiene nombre propio —y no se usa
 #: `DEFAULT_WINDOW_DAYS` suelto— porque son dos decisiones que hoy coinciden:
 #: quien cambie la ventana por defecto tiene que ver que también mueve este tope.
-#: Solo recorta el archivo; las vistas siguen mostrando 90 días o un rango.
+#: Solo recorta el archivo; las vistas siguen mostrando el período que se pida.
 DOWNLOAD_WINDOW_DAYS = DEFAULT_WINDOW_DAYS
 
 
@@ -700,8 +706,8 @@ def build_window_nav(
     *,
     hoy: date | None = None,
 ) -> list[WindowChoice]:
-    """Atajos rápidos del date picker (2026-09-14): «7/30/90 días» siguen
-    siendo los mismos tres cortes de lectura de siempre, ahora expresados
+    """Atajos rápidos del date picker (2026-09-14): «3/7/30 días» son
+    los tres cortes de lectura, ahora expresados
     como el rango de calendario que representan (`hoy - N días` a `hoy`) en
     vez de un `?dias=N` aparte. Marca el activo solo si el rango de `state`
     coincide EXACTO con uno de los tres —un rango personalizado no marca

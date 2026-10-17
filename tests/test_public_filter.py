@@ -613,7 +613,7 @@ class TestDatePickerSiempreVisible:
     def test_los_atajos_de_siempre_siguen_ahi_junto_al_picker(
         self, client: TestClient, session: Session
     ) -> None:
-        """7/30/90 días no desaparecen: quedan como acceso rápido junto al
+        """3/7/30 días no desaparecen: quedan como acceso rápido junto al
         picker, no reemplazados por él."""
         _seed_dos_productos(session)
 
@@ -1394,7 +1394,8 @@ class TestResolveDays:
     def test_acepta_las_tres_ventanas(self) -> None:
         assert resolve_days("7") == 7
         assert resolve_days("30") == 30
-        assert resolve_days("90") == 90
+        assert resolve_days("90") == 90  # enlace viejo: sigue siendo 90, no cae a 30
+        assert resolve_days("3") == 3
         assert resolve_days(7) == 7
 
     def test_cae_al_default_ante_basura(self) -> None:
@@ -1491,7 +1492,7 @@ class TestBuildLayerNav:
 
 
 class TestBuildWindowNav:
-    """Atajos rápidos del date picker (2026-09-14): 7/30/90 días, expresados
+    """Atajos rápidos del date picker (2026-09-14; 3/7/30 desde 2026-10-17), expresados
     como el rango de calendario que representan (`hoy - N` a `hoy`)."""
 
     HOY = date(2026, 9, 14)
@@ -1501,9 +1502,16 @@ class TestBuildWindowNav:
         nav = build_window_nav(FilterState(desde=desde_7, hasta=self.HOY), hoy=self.HOY)
         por_dias = {c.days: c for c in nav}
 
-        assert set(por_dias) == {7, 30, 90}
+        assert set(por_dias) == {3, 7, 30}
         assert por_dias[7].is_selected
         assert not por_dias[30].is_selected
+
+    def test_un_rango_de_90_dias_no_marca_ningun_atajo(self) -> None:
+        """90 días se pide con «Fechas»: ningún atajo queda marcado."""
+        desde_90 = self.HOY - timedelta(days=90)
+        nav = build_window_nav(FilterState(desde=desde_90, hasta=self.HOY), hoy=self.HOY)
+
+        assert not any(c.is_selected for c in nav)
 
     def test_preserva_la_pestana_de_explorar(self) -> None:
         """Explorar (2026-09-26) tiene un selector de período: cada atajo tiene
@@ -1729,8 +1737,11 @@ class TestVentanaEnLaRuta:
 
         texto = client.get("/precios?dias=90&producto=arroz").text
 
+        # 90 ya no es un atajo (2026-10-17): el enlace viejo conserva el rango
+        # y ningún atajo queda marcado, que es la señal de «Fechas».
         assert "Ventana de 90 días" in texto
-        assert 'aria-current="true">90 días<' in texto
+        assert 'aria-current="true">90 días<' not in texto
+        assert '>90 días</a>' not in texto
         assert 'aria-pressed="true"><span class="m3-icon ph-chip-icon" aria-hidden="true">rice_bowl</span><span class="ph-chip-name">Arroz</span></a>' in texto
 
 

@@ -991,8 +991,8 @@ class TestCoberturaEnElTablero:
 
 
 class TestSelectorDePeriodoEnElTablero:
-    """Selector de período del tablero (2026-09-26): el Mapa deja elegir 7 / 30 /
-    90 días o un rango de fechas, y el tablero no. Mismos atajos y mismo rango
+    """Selector de período del tablero (2026-09-26): el Mapa deja elegir 3 / 7 /
+    30 días o un rango de fechas, y el tablero no. Mismos atajos y mismo rango
     de calendario, con `vista=tablero` en cada enlace. Está en «Todos» y en el
     detalle; el mapa conserva el suyo."""
 
@@ -1010,7 +1010,7 @@ class TestSelectorDePeriodoEnElTablero:
             r'<a class="ph-periodo-chip[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', periodo
         )
 
-        assert [dias for _, dias in atajos] == ["7 días", "30 días", "90 días"]
+        assert [dias for _, dias in atajos] == ["3 días", "7 días", "30 días"]
         assert all("vista=tablero" in href and "desde=" in href and "hasta=" in href for href, _ in atajos)
 
     def test_sin_elegir_nada_esta_marcado_el_de_30_dias(self, client: TestClient, datos: None) -> None:
@@ -1099,7 +1099,7 @@ class TestSelectorDePeriodoEnExplorar:
             r'<a class="ph-periodo-chip[^"]*" href="([^"]+)"[^>]*>(\d+ días)</a>', bloque
         )
 
-        assert [dias for _, dias in atajos] == ["7 días", "30 días", "90 días"]
+        assert [dias for _, dias in atajos] == ["3 días", "7 días", "30 días"]
         for href, _ in atajos:
             href = href.replace("&amp;", "&")
             assert "vista=explorar" in href and "pestana=arroz" in href and "productos=arroz" in href

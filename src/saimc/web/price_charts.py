@@ -65,7 +65,7 @@ def split_outliers(
 
 
 def bin_days(window_days: int) -> int:
-    """Tamaño del período del rango: semanas para 30 y 90 días, días para 7.
+    """Tamaño del período del rango: semanas para 28 días o más, días para ventanas cortas (3 y 7).
 
     Con una ventana de 7 días, una sola barra semanal no mostraría ningún
     movimiento. No es un umbral: es el grano de lectura de cada ventana.

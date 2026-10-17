@@ -138,7 +138,7 @@ from saimc.web.wholesale_layer import (
 router = APIRouter()
 
 # La ventana de tarjetas y series la elige el visitante con `?dias=` entre
-# 7/30/90 (`product_nav.WINDOW_CHOICES`); el default y su motivo viven en
+# 3/7/30 (`product_nav.WINDOW_CHOICES`); el default y su motivo viven en
 # `product_nav.DEFAULT_WINDOW_DAYS`.
 
 
