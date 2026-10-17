@@ -12,7 +12,8 @@ en `prices_history`, sin propuesta del modelo y sin decidir carril.
 Contrato: `docs/spec-motor-validacion.md`. Las precisiones que obligó la
 implementación están en `docs/decisions.md` (2026-10-02, «A5b»), y el filtro del
 carril 1 (tope de filas, moneda no escrita, posible duplicado) en la entrada del
-2026-10-05, «G1b».
+2026-10-05, «G1b». El canal sucio que deja pasar cuando reglas y modelo
+coinciden: `docs/spec-slice-canal-sucio.md` (2026-10-17).
 
 Dos cosas que conviene tener presentes al leerlo:
 
@@ -119,7 +120,8 @@ _DUPLICATE_REASON = _RULE_REASONS["duplicate"][Outcome.FAIL]
 #: `docs/spec-slice-B2b.md`): un canal que nadie curó y una celda sin
 #: referencias con que comparar. La fila conserva el motivo y su estado
 #: (`unverified`); lo que cambia es solo el carril. Un canal SUCIO y un precio
-#: FUERA de su celda siguen frenando: esos sí son evidencia.
+#: FUERA de su celda siguen frenando: esos sí son evidencia. El canal sucio
+#: tiene una salida propia, `_dirty_channel_yields` (2026-10-17).
 _NON_BLOCKING_REASONS = frozenset(
     {
         _DUPLICATE_REASON,
@@ -135,6 +137,11 @@ _NON_BLOCKING_REASONS = frozenset(
 _DISAGREEMENT_PREFIX = "reglas y modelo no coinciden en "
 
 
+#: El canal sucio: frena, salvo que sea lo único y reglas y modelo coincidan
+#: (`_dirty_channel_yields`).
+_DIRTY_CHANNEL_REASON = _RULE_REASONS["trust"][Outcome.FAIL]
+
+
 def _blocks_lane1(reason: str, config: ValidationConfig | None) -> bool:
     """¿Este motivo de fila saca al anuncio del carril 1?"""
     if reason in _NON_BLOCKING_REASONS:
@@ -142,6 +149,30 @@ def _blocks_lane1(reason: str, config: ValidationConfig | None) -> bool:
     if reason.startswith(_DISAGREEMENT_PREFIX):
         return config is None or not config.lane1_model_over_rules
     return True
+
+
+def _dirty_channel_yields(
+    other_reasons: Sequence[str],
+    row_blocks: Sequence[tuple[int, str]],
+    rows: Sequence[RowValidation],
+    config: ValidationConfig | None,
+) -> bool:
+    """¿El canal sucio deja pasar al anuncio? Solo si es su ÚNICO freno y
+    reglas y modelo coinciden en todas las filas (2026-10-17,
+    `docs/spec-slice-canal-sucio.md`). Las dos lecturas que dicen lo mismo
+    hacen de verificación; el canal sucio solo dice que ahí el modelo suele
+    equivocarse."""
+    if config is None or not config.lane1_dirty_channel_if_agree:
+        return False
+    if other_reasons or not row_blocks:
+        return False
+    if any(reason != _DIRTY_CHANNEL_REASON for _, reason in row_blocks):
+        return False
+    # El desacuerdo está en los motivos de la fila aunque no frene
+    # (`lane1_model_over_rules`): por eso se mira acá y no en `row_blocks`.
+    return not any(
+        reason.startswith(_DISAGREEMENT_PREFIX) for row in rows for reason in row.reasons
+    )
 
 
 def _verification_reasons(
@@ -406,14 +437,24 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
         # Sin la cantidad de filas: el informe de sombra cuenta anuncios por
         # motivo, y con ella cada largo sería un motivo distinto.
         reasons.append(f"la propuesta trae más filas que el tope del carril 1 ({max_rows})")
-    for index, row in enumerate(rows, start=1):
-        reasons += [
-            f"fila {index}: {reason}"
-            for reason in row.reasons
-            if _blocks_lane1(reason, config)
-        ]
-    if config is not None:
-        reasons += _signal_reasons(ctx, config)
+    row_blocks = [
+        (index, reason)
+        for index, row in enumerate(rows, start=1)
+        for reason in row.reasons
+        if _blocks_lane1(reason, config)
+    ]
+    signal_reasons = [] if config is None else _signal_reasons(ctx, config)
+    if _dirty_channel_yields(reasons + signal_reasons, row_blocks, rows, config):
+        return AdValidation(
+            LANE_ACCEPT,
+            (
+                "anuncio de texto en un canal con historial sucio: es su único freno, "
+                "y reglas y modelo coinciden en todas sus filas",
+            ),
+            rows,
+        )
+    reasons += [f"fila {index}: {reason}" for index, reason in row_blocks]
+    reasons += signal_reasons
 
     if reasons:
         return AdValidation(LANE_REVIEW, tuple(reasons), rows)

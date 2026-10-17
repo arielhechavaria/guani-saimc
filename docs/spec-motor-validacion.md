@@ -457,3 +457,17 @@ acotada al oro.
 - Reglas, estados, puntaje y `ENGINE_VERSION` no cambian. Detalle:
   `docs/spec-slice-definir-validada.md`; entrada en `docs/decisions.md`
   (2026-10-16, «Fila validada = `approved`»).
+
+## Precisiones de canal-sucio-no-frena (2026-10-17)
+
+- Con `lane1_dirty_channel_if_agree` (apagado por defecto; `lane1.CONFIG` lo
+  enciende), la regla 4 **fallada** deja de sacar al anuncio del carril 1 si es
+  su **único** freno y reglas y modelo coinciden en producto, precio, moneda y
+  provincia en **todas** sus filas. Una fila sin fila de las reglas no
+  coincide.
+- Reemplaza, en «Precisiones de B2b», el punto «la regla 4 fallada (canal
+  sucio) sigue frenando», que ahora vale solo si hay desacuerdo u otro motivo.
+- La fila conserva el motivo y su estado (`untrusted_source`). Reglas, estados,
+  puntaje y `ENGINE_VERSION` no cambian. Casos S1 a S8 y detalle:
+  `docs/spec-slice-canal-sucio.md`; entrada en `docs/decisions.md`
+  (2026-10-17, «El canal sucio deja de frenar…»).

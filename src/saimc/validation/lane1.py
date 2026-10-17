@@ -103,7 +103,9 @@ from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, Validat
 #:   Jev saca 3 errores y 26 anuncios buenos de 204, porque los errores del
 #:   carril son de envase y precio, donde Jev no opina
 #:   (`docs/spec-slice-jev-decisor.md` §1.4). Jev decide solo en el carril 0;
-#: - el desacuerdo entre reglas y modelo no frena: manda el modelo (2026-10-13).
+#: - el desacuerdo entre reglas y modelo no frena: manda el modelo (2026-10-13);
+#: - el canal sucio no frena si es lo único y reglas y modelo coinciden en todas
+#:   las filas (2026-10-17, `docs/spec-slice-canal-sucio.md`).
 CONFIG = ValidationConfig(
     min_cell_n=persist.MIN_CELL_N,
     channel_min_history=persist.CHANNEL_MIN_HISTORY,
@@ -111,6 +113,7 @@ CONFIG = ValidationConfig(
     signal_high_probability=None,
     lane1_max_rows=4,
     lane1_model_over_rules=True,
+    lane1_dirty_channel_if_agree=True,
 )
 
 TEXT = ContentType.TEXT.value

@@ -864,6 +864,7 @@ def test_con_execute_agrega_exactamente_una_linea(
         "signal_high_probability": None,
         "lane1_max_rows": None,
         "lane1_model_over_rules": False,
+        "lane1_dirty_channel_if_agree": False,
     }
     calibracion = unica["sets"]["calibration"]
     assert calibracion["n"] == 2

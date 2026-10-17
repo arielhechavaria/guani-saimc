@@ -1077,6 +1077,107 @@ def test_modelo_manda_sigue_frenando_el_canal_sucio() -> None:
     assert "fila 1: el canal tiene un historial sucio" in resultado.reasons
 
 
+# --- canal-sucio-no-frena: el canal sucio solo, con reglas y modelo de acuerdo ------
+# Casos S1 a S8 de `docs/spec-slice-canal-sucio.md`, escritos antes del código.
+
+CONFIG_CANAL_SUCIO = replace(CONFIG_MODELO_MANDA, lane1_dirty_channel_if_agree=True)
+CANAL_SUCIO = _canal(3, 3, 2)
+SUCIO = "el canal tiene un historial sucio"
+DOS_FILAS = "Arroz 320 CUP la libra, pollo 430 CUP la libra, Habana"
+
+
+def _dos_filas_sucio(**cambios: Any) -> AdContext:
+    """Arroz y pollo, modelo y reglas de acuerdo, en un canal sucio."""
+    argumentos: dict[str, Any] = {
+        "modelo": _modelo(_fila(base="unit"), _fila(POLLO, "430", base="unit")),
+        "reglas": (_fila(), _fila(POLLO, "430")),
+        "celdas": (CELDA_ARROZ, CELDA_POLLO),
+        "canal": CANAL_SUCIO,
+    }
+    argumentos.update(cambios)
+    return _ctx(DOS_FILAS, **argumentos)
+
+
+def test_canal_sucio_s1_solo_el_canal_y_reglas_y_modelo_coinciden_entra() -> None:
+    resultado = validate_ad(_caso_1(canal=CANAL_SUCIO), CONFIG_CANAL_SUCIO)
+
+    assert resultado.lane == 1
+    # La fila no cambia: conserva el motivo y su estado.
+    assert _estados(resultado) == ["untrusted_source"]
+    assert SUCIO in resultado.rows[0].reasons
+    assert any("historial sucio" in motivo for motivo in resultado.reasons)
+
+
+def test_canal_sucio_s2_con_otro_motivo_de_fila_sigue_en_revision() -> None:
+    ctx = _caso_1(modelo=_modelo(_fila(unidad=None, base="unit")), canal=CANAL_SUCIO)
+
+    resultado = validate_ad(ctx, CONFIG_CANAL_SUCIO)
+
+    assert resultado.lane == 2
+    assert "fila 1: el modelo se abstuvo en unidad" in resultado.reasons
+    assert f"fila 1: {SUCIO}" in resultado.reasons
+
+
+def test_canal_sucio_s3_con_otro_motivo_del_anuncio_sigue_en_revision() -> None:
+    resultado = validate_ad(_dos_filas_sucio(), replace(CONFIG_CANAL_SUCIO, lane1_max_rows=1))
+
+    assert resultado.lane == 2
+    assert "la propuesta trae más filas que el tope del carril 1 (1)" in resultado.reasons
+    assert f"fila 1: {SUCIO}" in resultado.reasons
+
+
+def test_canal_sucio_s4_si_reglas_y_modelo_no_coinciden_sigue_en_revision() -> None:
+    ctx = _caso_1(reglas=(_fila(precio="330"),), canal=CANAL_SUCIO)
+
+    resultado = validate_ad(ctx, CONFIG_CANAL_SUCIO)
+
+    assert resultado.lane == 2
+    # Con el modelo mandando, el desacuerdo solo no frena: frena el canal.
+    assert resultado.reasons == (f"fila 1: {SUCIO}",)
+    assert "reglas y modelo no coinciden en precio" in resultado.rows[0].reasons
+
+
+def test_canal_sucio_s5_sin_fila_de_las_reglas_no_hay_acuerdo() -> None:
+    resultado = validate_ad(_caso_1(reglas=(), canal=CANAL_SUCIO), CONFIG_CANAL_SUCIO)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == (f"fila 1: {SUCIO}",)
+
+
+def test_canal_sucio_s6_basta_una_fila_en_desacuerdo_para_frenar() -> None:
+    ctx = _dos_filas_sucio(reglas=(_fila(), _fila(POLLO, "450")))
+
+    resultado = validate_ad(ctx, CONFIG_CANAL_SUCIO)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == (f"fila 1: {SUCIO}", f"fila 2: {SUCIO}")
+
+
+def test_canal_sucio_s6b_dos_filas_de_acuerdo_entran() -> None:
+    resultado = validate_ad(_dos_filas_sucio(), CONFIG_CANAL_SUCIO)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["untrusted_source", "untrusted_source"]
+
+
+def test_canal_sucio_s7_con_el_interruptor_apagado_sigue_frenando() -> None:
+    resultado = validate_ad(_caso_1(canal=CANAL_SUCIO), CONFIG_MODELO_MANDA)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == (f"fila 1: {SUCIO}",)
+
+
+def test_canal_sucio_s8_una_senal_externa_que_discrepa_es_otro_motivo() -> None:
+    senal = ExternalSignal(row_index=0, field="product", value=POLLO.id, probability=0.95)
+    ctx = _caso_1(canal=CANAL_SUCIO, senales=(senal,))
+
+    resultado = validate_ad(ctx, CONFIG_CANAL_SUCIO)
+
+    assert resultado.lane == 2
+    assert f"fila 1: {SUCIO}" in resultado.reasons
+    assert any("señal externa" in motivo for motivo in resultado.reasons)
+
+
 # --- jev-decisor: Jev como segundo juez del carril 0 (docs/spec-slice-jev-decisor.md) ---
 # Casos escritos a mano antes del código. «iPhone» no es piloto y trae dígitos:
 # el modelo lo descarta y las reglas no ven ningún piloto.

@@ -81,6 +81,12 @@ class ValidationConfig:
     #: configuraciones sigan midiendo lo de antes. Decisión del operador del
     #: 2026-10-13 (`docs/decisions.md`), no una medición.
     lane1_model_over_rules: bool = False
+    #: Si el canal sucio (regla 4 fallada) deja de sacar al anuncio del carril 1
+    #: cuando es su ÚNICO freno y reglas y modelo coinciden en todas sus filas.
+    #: La fila conserva el motivo y su estado. Apagado por defecto, por lo mismo
+    #: que el anterior. Decisión del operador del 2026-10-17
+    #: (`docs/spec-slice-canal-sucio.md`).
+    lane1_dirty_channel_if_agree: bool = False
 
 
 @dataclass(frozen=True)
