@@ -94,6 +94,7 @@ from saimc.web.product_nav import (
     HOME_PATH,
     HOME_QUERY_PARAMS,
     WINDOW_CHOICES,
+    FilterState,
     build_layer_nav,
     build_product_chips,
     build_province_nav,
@@ -103,7 +104,6 @@ from saimc.web.product_nav import (
     download_href,
     download_is_trimmed,
     effective_layer,
-    light_product_query,
     product_slug,
     products_query,
     resolve_layer,
@@ -432,6 +432,18 @@ def _render_home(
     # la vez. Todos los enlaces de la página las preservan: prender un chip,
     # elegir una provincia o cambiar la ventana de días no cierra ninguna.
     open_views = resolve_views(ver)
+    # El estado de filtros de la petición, una sola vez: cada barra lo recibe
+    # entero y cambia solo su eje (`FilterState`).
+    state = FilterState.from_names(
+        ventana_desde,
+        ventana_hasta,
+        products=active_products,
+        product=selected,
+        province=selected_province,
+        ver=open_views,
+        capa=selected_layer,
+        vista=selected_vista,
+    )
     view_menu = build_view_menu(
         open_views,
         active_products=active_products,
@@ -454,14 +466,7 @@ def _render_home(
         """Enlace de una provincia del mapa a la vista filtrada por ella,
         preservando los chips activos, el rango de calendario, las ventanas
         flotantes abiertas y la capa del mapa."""
-        return products_query(
-            active_slugs,
-            provincia=slug,
-            desde=ventana_desde,
-            hasta=ventana_hasta,
-            ver=open_views,
-            capa=selected_layer,
-        )
+        return state.with_(provincia=slug, producto="", vista="mapa").url()
 
     def vista_link(destino: str) -> str:
         """Enlace al mapa o al tablero, preservando producto(s), provincia y
@@ -729,36 +734,9 @@ def _render_home(
                 toggle=selected_vista == "tablero",
             ),
             "product_panels": product_panels,
-            "province_nav": build_province_nav(
-                province_names,
-                selected_province,
-                selected_product=selected or "",
-                selected_desde=ventana_desde,
-                selected_hasta=ventana_hasta,
-                active_products=active_products,
-                ver=open_views,
-                capa=selected_layer,
-                vista=selected_vista,
-            ),
-            "window_nav": build_window_nav(
-                ventana_desde,
-                ventana_hasta,
-                selected,
-                selected_province=prov,
-                active_products=active_products,
-                ver=open_views,
-                capa=selected_layer,
-                vista=selected_vista,
-                hoy=hoy,
-            ),
-            "layer_nav": build_layer_nav(
-                map_layer,
-                active_products=active_products,
-                selected_province=prov,
-                selected_desde=ventana_desde,
-                selected_hasta=ventana_hasta,
-                ver=open_views,
-            ),
+            "province_nav": build_province_nav(province_names, selected_province, state),
+            "window_nav": build_window_nav(state, hoy=hoy),
+            "layer_nav": build_layer_nav(map_layer, state),
             "selected_layer": map_layer,
             "product_grids": product_grids,
             "province_comparisons": build_province_comparison(all_provinces_obs),
@@ -777,11 +755,7 @@ def _render_home(
             "ticker": ticker,
             # Lo que el formulario de fechas (`_selector_periodo.html`) tiene que
             # conservar al enviar: la vista, los productos y la provincia.
-            "period_hidden": [
-                ("vista", selected_vista),
-                ("productos", ",".join(product_slug(n) for n in active_products)),
-                ("provincia", prov_slug),
-            ],
+            "period_hidden": state.hidden_fields(),
             "coverage": build_coverage(map_view.provinces, province_slots),
             "cards_by_province": cards_by_province,
             "province_slots": province_slots,
@@ -848,6 +822,14 @@ def _render_explore(
     active_slug = product_slug(activo_nombre) if activo_nombre else ""
     prov_slug = product_slug(selected_province) if selected_province else ""
     active_slugs = [product_slug(name) for name in active_products]
+    state = FilterState.from_names(
+        desde,
+        hasta,
+        products=active_products,
+        province=selected_province,
+        pestana=active_slug,
+        vista="explorar",
+    )
 
     elegido = None
     if activo is not None and activo.nodes:
@@ -875,9 +857,7 @@ def _render_explore(
         )
 
     def province_link(slug: str) -> str:
-        return products_query(
-            active_slugs, pestana=active_slug, provincia=slug, desde=desde, hasta=hasta, vista="explorar"
-        )
+        return state.with_(provincia=slug).url()
 
     csv_href = download_href(
         producto=active_slugs[0] if len(active_slugs) == 1 else "",
@@ -907,22 +887,8 @@ def _render_explore(
             # Selector de período (2026-09-26): mismos atajos que el mapa, cada
             # uno de vuelta a la misma pestaña; el formulario conserva vista,
             # productos, pestaña y provincia.
-            "window_nav": build_window_nav(
-                desde,
-                hasta,
-                None,
-                selected_province=selected_province or "",
-                active_products=active_products,
-                vista="explorar",
-                pestana=active_slug,
-                hoy=date.today(),
-            ),
-            "period_hidden": [
-                ("vista", "explorar"),
-                ("productos", ",".join(active_slugs)),
-                ("pestana", active_slug),
-                ("provincia", prov_slug),
-            ],
+            "window_nav": build_window_nav(state, hoy=date.today()),
+            "period_hidden": state.hidden_fields(),
             "ex_nav": build_explore_nav(
                 productos, active_products, active_slug, provincia=prov_slug, desde=desde, hasta=hasta
             ),
@@ -1224,9 +1190,8 @@ def public_product(
 
     slug_limpio = product_slug(product_name)
     prov_slug = product_slug(selected_province) if selected_province else ""
-    sin_capa_href = light_product_query(
-        slug_limpio, provincia=prov_slug, desde=ventana_desde, hasta=ventana_hasta
-    )
+    state = FilterState(desde=ventana_desde, hasta=ventana_hasta, provincia=prov_slug)
+    sin_capa_href = state.light_url(slug_limpio)
     layer_on = wants_wholesale(capa)
     # La capa mayorista (2026-10-16) se calcula solo si se pidió: sin el
     # parámetro la página no consulta ni una fila mayorista, así que sale
@@ -1284,12 +1249,7 @@ def public_product(
                     "overlays": overlays,
                     "unpaired": unpaired,
                 },
-                "map_href": products_query(
-                    [slug],
-                    provincia=product_slug(selected_province) if selected_province else "",
-                    desde=ventana_desde,
-                    hasta=ventana_hasta,
-                ),
+                "map_href": state.map_url(slug_limpio),
             },
         ),
     )

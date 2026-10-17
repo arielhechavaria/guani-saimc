@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 #: Ventana por defecto de tarjetas y series (días). 30 y no los 7 de `/control`:
@@ -362,7 +362,104 @@ def download_href(
     )
 
 
-def _product_link(slug: str, *, provincia: str, desde: date, hasta: date, hoy: date | None = None) -> str:
+@dataclass(frozen=True, kw_only=True)
+class FilterState:
+    """El estado de filtros de la capa pública, en slugs y fechas ya resueltos.
+
+    Antes cada constructor de URL recibía por su cuenta producto, provincia,
+    fechas, ventanas, capa y vista, y componía el query a mano; cada uno
+    olvidaba algo distinto. Ahora el router arma UN estado por petición y cada
+    barra lo recibe entero y cambia solo su eje con `with_`. La serialización
+    sigue siendo `_query` (orden fijo, fechas siempre explícitas).
+
+    `producto` es el alias histórico de un solo slug (`?producto=`); `productos`
+    es la multi-selección y gana cuando trae algo. `pestana` es la de
+    «Explorar»; `ver` y `capa` son estado del mapa; `vista` vacía significa
+    «sin vista» (CSV, vista liviana).
+    """
+
+    desde: date
+    hasta: date
+    producto: str = ""
+    productos: tuple[str, ...] = ()
+    pestana: str = ""
+    provincia: str = ""
+    ver: tuple[str, ...] = ()
+    capa: str = DEFAULT_LAYER
+    vista: str = ""
+
+    @classmethod
+    def from_names(
+        cls,
+        desde: date,
+        hasta: date,
+        *,
+        products: Sequence[str] = (),
+        product: str | None = None,
+        province: str | None = None,
+        pestana: str = "",
+        ver: Sequence[str] = (),
+        capa: str = DEFAULT_LAYER,
+        vista: str = "",
+    ) -> FilterState:
+        """Desde los nombres que resuelve el router: la única conversión
+        nombre → slug de los filtros."""
+        return cls(
+            desde=desde,
+            hasta=hasta,
+            producto=product_slug(product) if product else "",
+            productos=tuple(product_slug(n) for n in products),
+            pestana=pestana,
+            provincia=product_slug(province) if province else "",
+            ver=tuple(ver),
+            capa=capa,
+            vista=vista,
+        )
+
+    def with_(self, **cambios: object) -> FilterState:
+        """Una copia con esos ejes cambiados; el original no se toca."""
+        return replace(self, **cambios)  # type: ignore[arg-type]
+
+    def url(self, path: str = HOME_PATH) -> str:
+        return _query(
+            producto=self.producto,
+            productos=self.productos,
+            pestana=self.pestana,
+            provincia=self.provincia,
+            desde=self.desde,
+            hasta=self.hasta,
+            ver=self.ver,
+            capa=self.capa,
+            vista=self.vista,
+            path=path,
+        )
+
+    def light_url(self, slug: str) -> str:
+        """`/producto/<slug>` con provincia y fechas; `ver`, `capa` y `vista`
+        no significan nada ahí (ver `light_product_query`)."""
+        return light_product_query(
+            slug, provincia=self.provincia, desde=self.desde, hasta=self.hasta
+        )
+
+    def map_url(self, slug: str) -> str:
+        """La vuelta de la vista liviana: el mapa de ese producto con la misma
+        provincia y las mismas fechas."""
+        return products_query(
+            [slug], provincia=self.provincia, desde=self.desde, hasta=self.hasta
+        )
+
+    def hidden_fields(self) -> list[tuple[str, str]]:
+        """Lo que el formulario de fechas (`_selector_periodo.html`) reenvía
+        al enviarse; la plantilla omite los vacíos."""
+        return [
+            ("vista", self.vista),
+            ("productos", ",".join(self.productos)),
+            ("pestana", self.pestana),
+            ("provincia", self.provincia),
+        ]
+
+
+def _product_link(slug: str, state: FilterState, *, hoy: date | None = None) -> str:
     """Enlace de un chip de producto: la URL limpia `/producto/<slug>` cuando no
     hay otro filtro activo, y el query string en cuanto lo hay.
 
@@ -370,9 +467,11 @@ def _product_link(slug: str, *, provincia: str, desde: date, hasta: date, hoy: d
     query. Mantener las dos formas —y no forzar un redirect— es lo que pide el
     ítem del board: `/producto/arroz` para compartir, `?producto=` como alias.
     """
-    if not provincia and (desde, hasta) == default_window(hoy):
+    if not state.provincia and (state.desde, state.hasta) == default_window(hoy):
         return f"/producto/{slug}"
-    return _query(producto=slug, provincia=provincia, desde=desde, hasta=hasta)
+    return _query(
+        producto=slug, provincia=state.provincia, desde=state.desde, hasta=state.hasta
+    )
 
 
 @dataclass(frozen=True)
@@ -400,24 +499,20 @@ class WindowChoice:
 def build_product_nav(
     pilot_names: Iterable[str],
     selected_name: str | None,
-    selected_desde: date,
-    selected_hasta: date,
-    *,
-    selected_province: str = "",
+    state: FilterState,
 ) -> list[NavChoice]:
     """«Todos» + un ítem por producto piloto, marcando el activo.
 
-    Cada enlace preserva `selected_province` y el rango de calendario:
+    Cada enlace preserva la provincia y el rango de calendario de `state`:
     cambiar de producto no debería resetear la provincia ni la ventana que
     se venía mirando.
     """
-    prov_slug = product_slug(selected_province) if selected_province else ""
     choices = [
         NavChoice(
             label="Todos",
             slug="",
             is_selected=selected_name is None,
-            query=_query(producto="", provincia=prov_slug, desde=selected_desde, hasta=selected_hasta),
+            query=_query(provincia=state.provincia, desde=state.desde, hasta=state.hasta),
         )
     ]
     for name in pilot_names:
@@ -427,9 +522,7 @@ def build_product_nav(
                 label=name,
                 slug=slug,
                 is_selected=name == selected_name,
-                query=_product_link(
-                    slug, provincia=prov_slug, desde=selected_desde, hasta=selected_hasta
-                ),
+                query=_product_link(slug, state),
             )
         )
     return choices
@@ -438,41 +531,23 @@ def build_product_nav(
 def build_province_nav(
     province_names: Iterable[str],
     selected_name: str | None,
-    *,
-    selected_product: str = "",
-    selected_desde: date,
-    selected_hasta: date,
-    active_products: Sequence[str] = (),
-    ver: Sequence[str] = (),
-    capa: str = DEFAULT_LAYER,
-    vista: str = "mapa",
+    state: FilterState,
 ) -> list[NavChoice]:
     """«Todas» + un ítem por provincia con dato piloto, marcando la activa.
 
-    Simétrica a `build_product_nav`; cada enlace preserva el producto (o el
-    conjunto `active_products` de los chips), el rango de calendario, las
-    ventanas flotantes abiertas (`ver`), la capa del mapa (`capa`) y la vista
-    (`vista`, mapa/tablero): la barra vive dentro de la ventana «Precios» y
-    de los chips del tablero, y cambiar de provincia no puede cerrarla,
-    resetear la capa, ni devolver al mapa a quien eligió el tablero.
+    Simétrica a `build_product_nav`; cada enlace cambia solo la provincia de
+    `state` y preserva todo lo demás: producto(s), rango de calendario,
+    ventanas flotantes abiertas (`ver`), capa del mapa y vista
+    (mapa/tablero): la barra vive dentro de la ventana «Precios» y de los
+    chips del tablero, y cambiar de provincia no puede cerrarla, resetear la
+    capa, ni devolver al mapa a quien eligió el tablero.
     """
-    prod_slug = product_slug(selected_product) if selected_product else ""
-    active_slugs = [product_slug(n) for n in active_products]
     choices = [
         NavChoice(
             label="Todas",
             slug="",
             is_selected=selected_name is None,
-            query=_query(
-                producto=prod_slug,
-                productos=active_slugs,
-                provincia="",
-                desde=selected_desde,
-                hasta=selected_hasta,
-                ver=ver,
-                capa=capa,
-                vista=vista,
-            ),
+            query=state.with_(provincia="", pestana="").url(),
         )
     ]
     for name in province_names:
@@ -482,16 +557,7 @@ def build_province_nav(
                 label=name,
                 slug=slug,
                 is_selected=name == selected_name,
-                query=_query(
-                    producto=prod_slug,
-                    productos=active_slugs,
-                    provincia=slug,
-                    desde=selected_desde,
-                    hasta=selected_hasta,
-                    ver=ver,
-                    capa=capa,
-                    vista=vista,
-                ),
+                query=state.with_(provincia=slug, pestana="").url(),
             )
         )
     return choices
@@ -630,47 +696,26 @@ def build_product_chips(
 
 
 def build_window_nav(
-    selected_desde: date,
-    selected_hasta: date,
-    selected_name: str | None = None,
+    state: FilterState,
     *,
-    selected_province: str = "",
-    active_products: Sequence[str] = (),
-    ver: Sequence[str] = (),
-    capa: str = DEFAULT_LAYER,
-    vista: str = "mapa",
-    pestana: str = "",
     hoy: date | None = None,
 ) -> list[WindowChoice]:
     """Atajos rápidos del date picker (2026-09-14): «7/30/90 días» siguen
     siendo los mismos tres cortes de lectura de siempre, ahora expresados
     como el rango de calendario que representan (`hoy - N días` a `hoy`) en
-    vez de un `?dias=N` aparte. Marca el activo solo si el rango elegido
+    vez de un `?dias=N` aparte. Marca el activo solo si el rango de `state`
     coincide EXACTO con uno de los tres —un rango personalizado no marca
     ninguno, que es la señal correcta: no es ninguno de los presets—.
-    Preserva producto (o el conjunto de chips), provincia, ventanas
-    flotantes abiertas, capa y vista.
+    Cambia solo las fechas: preserva producto(s), pestaña, provincia,
+    ventanas flotantes abiertas, capa y vista.
     """
     hoy = hoy or date.today()
-    prod_slug = product_slug(selected_name) if selected_name else ""
-    prov_slug = product_slug(selected_province) if selected_province else ""
-    active_slugs = [product_slug(n) for n in active_products]
     return [
         WindowChoice(
             label=f"{days} días",
             days=days,
-            is_selected=(selected_desde, selected_hasta) == (hoy - timedelta(days=days), hoy),
-            query=_query(
-                producto=prod_slug,
-                productos=active_slugs,
-                pestana=pestana,
-                provincia=prov_slug,
-                desde=hoy - timedelta(days=days),
-                hasta=hoy,
-                ver=ver,
-                capa=capa,
-                vista=vista,
-            ),
+            is_selected=(state.desde, state.hasta) == (hoy - timedelta(days=days), hoy),
+            query=state.with_(desde=hoy - timedelta(days=days), hasta=hoy).url(),
         )
         for days in WINDOW_CHOICES
     ]
@@ -772,22 +817,16 @@ def build_view_menu(
 
 def build_layer_nav(
     selected_layer: str,
-    *,
-    active_products: Sequence[str] = (),
-    selected_province: str = "",
-    selected_desde: date,
-    selected_hasta: date,
-    ver: Sequence[str] = (),
+    state: FilterState,
 ) -> list[NavChoice]:
     """Las capas del mapa, marcando la activa y preservando todo lo demás.
 
     `selected_layer` es la que el mapa dibuja (`effective_layer`). «Precio» solo
-    se ofrece con algún producto activo: sin uno no hay de qué pintar.
-    `NavChoice.slug` es la clave de `?capa=`; la capa por defecto no la lleva
-    en la URL, mismo criterio que «Todos»/«Todas» en los otros ejes.
+    se ofrece con algún producto activo en `state`: sin uno no hay de qué
+    pintar. `NavChoice.slug` es la clave de `?capa=`; la capa por defecto no la
+    lleva en la URL, mismo criterio que «Todos»/«Todas» en los otros ejes. Las
+    capas son del mapa, así que el enlace es siempre de la vista mapa.
     """
-    active_slugs = [product_slug(n) for n in active_products]
-    prov_slug = product_slug(selected_province) if selected_province else ""
     etiquetas = {
         "publicacion": "Publicación",
         "densidad": "Densidad de anuncios",
@@ -798,15 +837,8 @@ def build_layer_nav(
             label=etiquetas[layer],
             slug=layer,
             is_selected=layer == selected_layer,
-            query=products_query(
-                active_slugs,
-                provincia=prov_slug,
-                desde=selected_desde,
-                hasta=selected_hasta,
-                ver=ver,
-                capa=layer,
-            ),
+            query=state.with_(capa=layer, vista="mapa", producto="", pestana="").url(),
         )
         for layer in LAYER_CHOICES
-        if layer != "precio" or active_products
+        if layer != "precio" or state.productos
     ]

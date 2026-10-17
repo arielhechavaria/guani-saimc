@@ -43,6 +43,7 @@ from saimc.web.product_nav import (
     DEFAULT_LAYER,
     DEFAULT_VISTA,
     DEFAULT_WINDOW_DAYS,
+    FilterState,
     build_layer_nav,
     build_product_chips,
     build_product_nav,
@@ -227,7 +228,7 @@ class TestBuildProductNav:
     DESDE, HASTA = date(2026, 8, 15), date(2026, 8, 25)
 
     def test_todos_va_primero_y_activo_sin_seleccion(self) -> None:
-        nav = build_product_nav(("Arroz", "Aceite"), None, self.DESDE, self.HASTA)
+        nav = build_product_nav(("Arroz", "Aceite"), None, FilterState(desde=self.DESDE, hasta=self.HASTA))
 
         assert nav[0].label == "Todos"
         assert nav[0].slug == ""
@@ -236,7 +237,9 @@ class TestBuildProductNav:
         assert all(not c.is_selected for c in nav[1:])
 
     def test_marca_el_producto_elegido(self) -> None:
-        nav = build_product_nav(("Arroz", "Aceite"), "Aceite", self.DESDE, self.HASTA)
+        nav = build_product_nav(
+            ("Arroz", "Aceite"), "Aceite", FilterState(desde=self.DESDE, hasta=self.HASTA)
+        )
         por_label = {c.label: c for c in nav}
 
         assert not por_label["Todos"].is_selected
@@ -252,7 +255,7 @@ class TestBuildProductNav:
         `/precios?producto=<slug>`: más limpio para compartir. Fecha relativa a
         hoy y no absoluta, mismo motivo que `_hace`."""
         desde, hasta = _ventana_default()
-        nav = build_product_nav(("Arroz", "Aceite"), None, desde, hasta)
+        nav = build_product_nav(("Arroz", "Aceite"), None, FilterState(desde=desde, hasta=hasta))
         por_label = {c.label: c for c in nav}
 
         assert por_label["Arroz"].query == "/producto/arroz"
@@ -261,7 +264,9 @@ class TestBuildProductNav:
 
     def test_con_provincia_el_chip_vuelve_al_query_string(self) -> None:
         con_provincia = build_product_nav(
-            ("Arroz",), None, self.DESDE, self.HASTA, selected_province="La Habana"
+            ("Arroz",),
+            None,
+            FilterState(desde=self.DESDE, hasta=self.HASTA, provincia="la-habana"),
         )
 
         assert con_provincia[1].query == (
@@ -270,7 +275,7 @@ class TestBuildProductNav:
         )
 
     def test_la_ventana_no_default_viaja_en_el_query_del_producto(self) -> None:
-        nav = build_product_nav(("Arroz",), "Arroz", self.DESDE, self.HASTA)
+        nav = build_product_nav(("Arroz",), "Arroz", FilterState(desde=self.DESDE, hasta=self.HASTA))
         por_label = {c.label: c for c in nav}
 
         assert por_label["Todos"].query == (
@@ -1358,7 +1363,9 @@ class TestBuildProvinceNav:
 
     def test_todas_va_primero_y_activo_sin_seleccion(self) -> None:
         nav = build_province_nav(
-            ("La Habana", "Santiago de Cuba"), None, selected_desde=self.DESDE, selected_hasta=self.HASTA
+            ("La Habana", "Santiago de Cuba"),
+            None,
+            FilterState(desde=self.DESDE, hasta=self.HASTA, vista="mapa"),
         )
 
         assert nav[0].label == "Todas"
@@ -1370,9 +1377,7 @@ class TestBuildProvinceNav:
         nav = build_province_nav(
             ("La Habana",),
             "La Habana",
-            selected_product="Arroz",
-            selected_desde=self.DESDE,
-            selected_hasta=self.HASTA,
+            FilterState(desde=self.DESDE, hasta=self.HASTA, producto="arroz", vista="mapa"),
         )
         por_label = {c.label: c for c in nav}
 
@@ -1445,9 +1450,7 @@ class TestBuildLayerNav:
     def test_con_productos_hay_tres_capas_marcando_la_activa(self) -> None:
         elegidas = build_layer_nav(
             "densidad",
-            active_products=["Arroz"],
-            selected_desde=self.DESDE,
-            selected_hasta=self.HASTA,
+            FilterState(desde=self.DESDE, hasta=self.HASTA, productos=("arroz",)),
         )
         por_slug = {c.slug: c for c in elegidas}
 
@@ -1457,18 +1460,20 @@ class TestBuildLayerNav:
 
     def test_sin_productos_no_se_ofrece_precio(self) -> None:
         """Sin un producto abierto no hay de qué pintar el precio."""
-        elegidas = build_layer_nav("publicacion", selected_desde=self.DESDE, selected_hasta=self.HASTA)
+        elegidas = build_layer_nav("publicacion", FilterState(desde=self.DESDE, hasta=self.HASTA))
 
         assert [c.slug for c in elegidas] == ["publicacion", "densidad"]
 
     def test_el_enlace_preserva_productos_provincia_rango_y_ventanas(self) -> None:
         elegidas = build_layer_nav(
             "publicacion",
-            active_products=["Arroz"],
-            selected_province="La Habana",
-            selected_desde=self.DESDE,
-            selected_hasta=self.HASTA,
-            ver=["cobertura"],
+            FilterState(
+                desde=self.DESDE,
+                hasta=self.HASTA,
+                productos=("arroz",),
+                provincia="la-habana",
+                ver=("cobertura",),
+            ),
         )
         por_slug = {c.slug: c for c in elegidas}
         base = (
@@ -1493,7 +1498,7 @@ class TestBuildWindowNav:
 
     def test_tres_opciones_con_la_activa_marcada(self) -> None:
         desde_7 = self.HOY - timedelta(days=7)
-        nav = build_window_nav(desde_7, self.HOY, hoy=self.HOY)
+        nav = build_window_nav(FilterState(desde=desde_7, hasta=self.HOY), hoy=self.HOY)
         por_dias = {c.days: c for c in nav}
 
         assert set(por_dias) == {7, 30, 90}
@@ -1504,11 +1509,13 @@ class TestBuildWindowNav:
         """Explorar (2026-09-26) tiene un selector de período: cada atajo tiene
         que volver a la misma pestaña de producto, no a la primera."""
         nav = build_window_nav(
-            self.HOY - timedelta(days=30),
-            self.HOY,
-            active_products=["Arroz", "Pollo"],
-            vista="explorar",
-            pestana="pollo",
+            FilterState(
+                desde=self.HOY - timedelta(days=30),
+                hasta=self.HOY,
+                productos=("arroz", "pollo"),
+                vista="explorar",
+                pestana="pollo",
+            ),
             hoy=self.HOY,
         )
 
@@ -1516,7 +1523,9 @@ class TestBuildWindowNav:
         assert all("productos=arroz,pollo" in c.query for c in nav)
 
     def test_sin_pestana_los_enlaces_no_la_llevan(self) -> None:
-        nav = build_window_nav(self.HOY - timedelta(days=30), self.HOY, hoy=self.HOY)
+        nav = build_window_nav(
+            FilterState(desde=self.HOY - timedelta(days=30), hasta=self.HOY), hoy=self.HOY
+        )
 
         assert not any("pestana" in c.query for c in nav)
 
@@ -1524,13 +1533,15 @@ class TestBuildWindowNav:
         """Un rango que no coincide EXACTO con ninguno de los tres presets
         —ni en largo ni en que `hasta` sea hoy— no marca ninguno: es la
         señal correcta, no es ninguno de los atajos."""
-        nav = build_window_nav(date(2026, 8, 1), date(2026, 8, 10), hoy=self.HOY)
+        nav = build_window_nav(FilterState(desde=date(2026, 8, 1), hasta=date(2026, 8, 10)), hoy=self.HOY)
 
         assert not any(c.is_selected for c in nav)
 
     def test_preserva_el_producto_elegido_en_el_query(self) -> None:
         desde_30 = self.HOY - timedelta(days=30)
-        nav = build_window_nav(desde_30, self.HOY, selected_name="Arroz", hoy=self.HOY)
+        nav = build_window_nav(
+            FilterState(desde=desde_30, hasta=self.HOY, producto="arroz", vista="mapa"), hoy=self.HOY
+        )
         por_dias = {c.days: c for c in nav}
 
         assert por_dias[30].query == (
@@ -1545,7 +1556,9 @@ class TestBuildWindowNav:
         """Cambiar la ventana de días en el tablero no puede devolver al
         mapa (2026-09-16)."""
         desde_30 = self.HOY - timedelta(days=30)
-        nav = build_window_nav(desde_30, self.HOY, vista="tablero", hoy=self.HOY)
+        nav = build_window_nav(
+            FilterState(desde=desde_30, hasta=self.HOY, vista="tablero"), hoy=self.HOY
+        )
 
         assert all("vista=tablero" in c.query for c in nav)
 
