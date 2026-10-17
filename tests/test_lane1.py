@@ -1319,3 +1319,65 @@ def test_cambiar_otro_campo_que_no_es_la_compra_minima_sigue_siendo_un_error(
 
     estado = lane1.audit_state(session, _ajustes(tmp_path))
     assert (estado.audited, estado.errors) == (1, 1)
+
+
+# --- completar un formato vacío tampoco es un error (2026-10-17, criterio A) ---------
+
+_FORMATO = "6ea43467-c549-4e68-b4df-9efabed0bbbf"
+_OTRO_FORMATO = "f7847fc2-638b-44d1-a89d-69e893f89f52"
+
+
+def _fila_editada(before: dict[str, object], after: dict[str, object]) -> dict[str, object]:
+    return {"price_history_id": "x", "op": "updated", "before": before, "after": after}
+
+
+def test_completar_un_formato_vacio_no_es_un_error() -> None:
+    detail = {"rows": [_fila_editada({"format_id": None}, {"format_id": _FORMATO})]}
+
+    assert lane1._only_completes_gaps(detail)
+
+
+def test_completar_formato_y_compra_minima_juntos_no_es_un_error() -> None:
+    detail = {
+        "rows": [
+            _fila_editada({"format_id": None}, {"format_id": _FORMATO}),
+            _fila_editada({"min_purchase_quantity": None}, {"min_purchase_quantity": "50"}),
+        ]
+    }
+
+    assert lane1._only_completes_gaps(detail)
+
+
+def test_cambiar_un_formato_por_otro_sigue_siendo_un_error() -> None:
+    detail = {"rows": [_fila_editada({"format_id": _OTRO_FORMATO}, {"format_id": _FORMATO})]}
+
+    assert not lane1._only_completes_gaps(detail)
+
+
+def test_quitar_un_formato_sigue_siendo_un_error() -> None:
+    detail = {"rows": [_fila_editada({"format_id": _FORMATO}, {"format_id": None})]}
+
+    assert not lane1._only_completes_gaps(detail)
+
+
+def test_completar_formato_junto_con_otro_campo_sigue_siendo_un_error() -> None:
+    detail = {
+        "rows": [
+            _fila_editada(
+                {"format_id": None, "price": "10.70"}, {"format_id": _FORMATO, "price": "1.07"}
+            )
+        ]
+    }
+
+    assert not lane1._only_completes_gaps(detail)
+
+
+def test_completar_formato_y_borrar_una_fila_sigue_siendo_un_error() -> None:
+    detail = {
+        "rows": [
+            _fila_editada({"format_id": None}, {"format_id": _FORMATO}),
+            {"price_history_id": "y", "op": "deleted", "before": {"price": "1"}},
+        ]
+    }
+
+    assert not lane1._only_completes_gaps(detail)
