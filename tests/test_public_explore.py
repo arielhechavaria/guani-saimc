@@ -540,6 +540,18 @@ class TestArbol:
         assert 'class="ph-ex-nmt fmt">Saco de 100 lb<' in habana
         assert 'class="ph-ex-nmt fmt">Libra<' in habana
 
+    def test_el_formato_con_envase_enseña_el_precio_del_envase_y_la_libra_debajo(
+        self, client: TestClient, arbol: None
+    ) -> None:
+        habana = _grupo(_centro(_html(client, "&productos=arroz")), "la-habana")
+        filas = {f: f.split("</tr>")[0] for f in habana.split('<tr class="ph-ex-row lv1')[1:]}
+        saco = next(f for f in filas.values() if 'data-fname="Saco de 100 lb"' in f)
+        libra = next(f for f in filas.values() if 'data-fname="Libra"' in f)
+
+        assert 'class="ph-ex-perunit">' in saco
+        assert "/lb</span>" in saco
+        assert "ph-ex-perunit" not in libra
+
     def test_solo_las_cabeceras_que_ordenan_son_botones(self, client: TestClient, datos: None) -> None:
         cabecera = _bloque(_centro(_html(client, "&productos=arroz")), "<thead", "</thead>")
 

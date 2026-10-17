@@ -552,3 +552,62 @@ class TestNavegacion:
     def test_el_mas_ofrece_solo_los_que_faltan(self) -> None:
         assert [p.name for p in self._nav(["Arroz", "Pollo"], "arroz").add] == ["Aceite"]
         assert self._nav(["Arroz", "Pollo", "Aceite"], "arroz").add == ()
+
+
+class TestPrecioDelEnvase:
+    """El desglose por formato muestra el precio del envase y deja el precio por
+    libra como dato secundario (slice explorar-precio-formato).
+
+    Valores a mano, escritos antes del código. El producto está en lb.
+    - Caja de 40 lb a 7,5 CUP/lb de mediana (anuncios 7 y 8) → 7,5 × 40 = 300.
+    - Bolsa de 1 kg a 40 CUP/lb → 1 kg = 1000 / 453,59237 = 2,2046226 lb
+      → 40 × 2,2046226 = 88,1849 → «88,18».
+    - Sin formato: no hay envase; solo el precio por libra y nada derivado.
+    """
+
+    CAJA = ("caja", "40", "lb")
+    BOLSA_KG = ("bolsa", "1", "kg")
+
+    def _hijos(self, *obs: RetailObservation):
+        producto = _productos(["Arroz"], list(obs), ["La Habana"])[0]
+        return _nodo(producto, "La Habana").children
+
+    def test_caja_de_40_lb_muestra_la_mediana_por_la_cantidad(self) -> None:
+        (caja,) = self._hijos(
+            _obs("Arroz", "La Habana", 8, 27, "7", self.CAJA),
+            _obs("Arroz", "La Habana", 8, 26, "8", self.CAJA),
+        )
+
+        assert caja.median_text == "7,50"  # el dato por libra no cambia
+        assert caja.format_median_text == "300"
+
+    def test_la_conversion_de_kg_a_lb_usa_la_cantidad_del_formato(self) -> None:
+        (bolsa,) = self._hijos(_obs("Arroz", "La Habana", 8, 27, "40", self.BOLSA_KG))
+
+        assert bolsa.format_median_text == "88,18"
+        assert bolsa.median_text == "40,00"
+
+    def test_sin_formato_no_hay_precio_de_envase(self) -> None:
+        (libra,) = self._hijos(_obs("Arroz", "La Habana", 8, 27, "300"))
+
+        assert libra.format_median_text == ""
+        assert libra.median_text == "300"
+
+    def test_formato_en_caja_sin_magnitud_no_inventa_precio(self) -> None:
+        (hijo,) = self._hijos(_obs("Arroz", "La Habana", 8, 27, "300", ("caja", "1", "caja")))
+
+        assert hijo.format_median_text == ""
+
+    def test_la_fila_de_provincia_no_lleva_precio_de_envase(self) -> None:
+        obs = [_obs("Arroz", "La Habana", 8, 27, "7", self.CAJA)]
+        producto = _productos(["Arroz"], obs, ["La Habana"])[0]
+
+        assert _nodo(producto, "La Habana").format_median_text == ""
+
+    def test_el_rango_del_envase_tambien_se_escala(self) -> None:
+        (caja,) = self._hijos(
+            _obs("Arroz", "La Habana", 8, 27, "7", self.CAJA),
+            _obs("Arroz", "La Habana", 8, 26, "8", self.CAJA),
+        )
+
+        assert (caja.format_minimum_text, caja.format_maximum_text) == ("280", "320")

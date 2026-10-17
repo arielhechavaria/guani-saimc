@@ -159,6 +159,7 @@
   .ph-ex-nmt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ph-ex-nmt.fmt { background: var(--m3-surface-container-high); border-radius: 999px; padding: 1px 9px; font-size: 11.5px;
                    font-weight: 500; color: var(--m3-on-surface-variant); }
+  .ph-ex-perunit { display: block; font-size: 11px; font-weight: 400; color: var(--m3-outline); white-space: nowrap; }
   .ph-ex-sub { font-size: 11px; color: var(--m3-outline); white-space: nowrap; font-weight: 400; }
   .ph-ex-chev { width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
                 flex: none; color: var(--m3-outline); cursor: pointer; }
@@ -494,9 +495,11 @@
       </div>
       <div class="ph-ex-scroll">
 {% macro metricas(n) -%}
-            <td class="num c-med"><b>{{ n.median_text }}</b></td>
+            {# Fila de formato con envase: el precio del envase es la cifra y el
+               precio por unidad queda debajo, chico (el comparador entre formatos). #}
+            <td class="num c-med">{% if n.format_median_text %}<b>{{ n.format_median_text }}</b><span class="ph-ex-perunit">{{ n.median_text }}/{{ activo.unit }}</span>{% else %}<b>{{ n.median_text }}</b>{% endif %}</td>
             <td class="num c-chg">{{ n.change_text }}</td>
-            <td class="c-rango"><div class="ph-ex-rng" title="{{ n.minimum_text }}–{{ n.maximum_text }} {{ activo.currency }}/{{ activo.unit_noun }}"><i style="left: {{ '%.1f' | format(n.range_bar.left) }}%; width: {{ '%.1f' | format(n.range_bar.width) }}%"></i><b style="left: {{ '%.1f' | format(n.range_bar.tick) }}%"></b></div></td>
+            <td class="c-rango"><div class="ph-ex-rng" title="{% if n.format_median_text %}{{ n.format_minimum_text }}–{{ n.format_maximum_text }} {{ activo.currency }}/envase ({{ n.minimum_text }}–{{ n.maximum_text }} {{ activo.currency }}/{{ activo.unit }}){% else %}{{ n.minimum_text }}–{{ n.maximum_text }} {{ activo.currency }}/{{ activo.unit_noun }}{% endif %}"><i style="left: {{ '%.1f' | format(n.range_bar.left) }}%; width: {{ '%.1f' | format(n.range_bar.width) }}%"></i><b style="left: {{ '%.1f' | format(n.range_bar.tick) }}%"></b></div></td>
             <td class="c-tend">{% if n.spark %}<svg class="ph-ex-spark" viewBox="0 0 92 24" aria-hidden="true" focusable="false"><path class="a" d="{{ n.spark.area }}"/><path class="l" d="{{ n.spark.line }}"/><circle cx="{{ n.spark.end[0] }}" cy="{{ n.spark.end[1] }}" r="2.4"/></svg>{% endif %}</td>
             <td class="c-sem"><div class="ph-ex-weeks">{% for w in n.weeks %}<span class="ph-ex-wk"{% if w.tint is not none %} style="--t: {{ '%.2f' | format(w.tint) }}"{% endif %}>{{ w.text }}</span>{% endfor %}</div></td>
             <td class="num c-n">{{ n.count }}</td>

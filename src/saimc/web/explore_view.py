@@ -40,7 +40,7 @@ from decimal import Decimal
 from typing import Literal
 
 from saimc.cells import RetailObservation
-from saimc.units import unit_noun
+from saimc.units import convert_quantity, unit_noun
 from saimc.web.card_view import format_price
 from saimc.web.cuba_svg import build_cuba_map
 from saimc.web.price_charts import AdRow, _short_day, observation_format_label, split_outliers
@@ -111,6 +111,12 @@ class ExploreNode:
     children: tuple[ExploreNode, ...] = ()
     #: De qué está hecho el n (B4). Solo la provincia: el formato no lo lleva.
     trust: CellTrust | None = None
+    #: Precio del envase (precio por unidad × cantidad del formato). Solo el
+    #: formato con cantidad convertible a la unidad del producto; `""` si no
+    #: hay envase («Libra») o no se puede convertir (`caja`): nunca se inventa.
+    format_median_text: str = ""
+    format_minimum_text: str = ""
+    format_maximum_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -219,6 +225,22 @@ class _Raw:
     ads: tuple[AdRow, ...]
     children: tuple[_Raw, ...]
     trust: CellTrust | None = None
+    #: Unidades del producto que trae el envase (10 kg → 22,05 lb); `None` sin
+    #: formato o si la cantidad no se convierte.
+    format_factor: Decimal | None = None
+
+
+def _format_factor(rows: Sequence[RetailObservation], unit: str) -> Decimal | None:
+    """Cuántas `unit` trae el envase del grupo. Todas las filas de un grupo
+    comparten etiqueta, así que basta la primera con cantidad."""
+    for r in rows:
+        if r.format_quantity is not None:
+            return convert_quantity(r.format_quantity, frm=r.format_unit, to=unit)
+    return None
+
+
+def _in_format(value: Decimal, factor: Decimal | None) -> str:
+    return "" if factor is None else format_price(value * factor)
 
 
 def _by(rows: Sequence[RetailObservation]) -> dict[str, list[RetailObservation]]:
@@ -301,6 +323,9 @@ def _finish(
         ads=raw.ads,
         tint=tint,
         trust=raw.trust,
+        format_median_text=_in_format(st.median, raw.format_factor),
+        format_minimum_text=_in_format(st.minimum, raw.format_factor),
+        format_maximum_text=_in_format(st.maximum, raw.format_factor),
         children=tuple(
             _finish(
                 c,
@@ -375,6 +400,7 @@ def _build_product(
                     weekly=_weekly(hor_f[formato], hoy),
                     ads=_ads(filas_f),
                     children=(),
+                    format_factor=_format_factor(filas_f, unidad) if formato is not None else None,
                 )
             )
         hijos.sort(key=lambda h: (-h.stats.count, h.name))
