@@ -987,6 +987,69 @@ def test_la_pantalla_avisa_de_los_curados_sin_filas_y_quita_esta_bien(
     assert f"/curation/auditoria/{ingesta.id}/aceptado-invalido" in html
 
 
+# --- el total sin auditar y lo que espera (2026-10-17) ---------------------------------
+
+
+def test_en_el_arranque_todo_lo_sin_auditar_toca_y_se_mide_desde_el_mas_viejo(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _aceptar(session, tmp_path, mundo.canal, n=3)
+
+    pendiente = lane1.audit_pending(
+        session, _ajustes(tmp_path), now=datetime.now(UTC) + timedelta(days=4)
+    )
+
+    assert (pendiente.total, pendiente.due, pendiente.starting) == (3, 3, True)
+    assert pendiente.waiting_hours is not None and 95 <= pendiente.waiting_hours <= 97
+
+
+def test_pasado_el_arranque_el_total_incluye_lo_que_no_toca_auditar(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(lane1, "AUDIT_N0", 1)
+    monkeypatch.setattr(lane1, "MAX_UNAUDITED", 100)
+    monkeypatch.setattr(lane1, "WEEKLY_SAMPLE", 2)
+    _aceptar(session, tmp_path, mundo.canal, n=6)
+    _arranque_terminado(session, tmp_path, mundo)
+    ajustes = _ajustes(tmp_path)
+
+    abierta = lane1.audit_pending(session, ajustes, now=datetime.now(UTC))
+    cerrada = lane1.audit_pending(session, ajustes, now=datetime.now(UTC) + timedelta(days=8))
+
+    # Con la semana abierta no toca nada; el total sigue siendo 6 (el 7.º está auditado).
+    assert (abierta.total, abierta.due, abierta.starting, abierta.waiting_hours) == (6, 0, False, None)
+    # Cerrada, la muestra de 2 se reparte en ronda entre canales: un lugar es del
+    # tercer canal (ya auditado), así que toca 1. Espera desde que cerró la semana.
+    assert (cerrada.total, cerrada.due, cerrada.starting) == (6, 1, False)
+    assert cerrada.waiting_hours is not None and 0 < cerrada.waiting_hours <= 8 * 24
+
+
+def test_la_pantalla_de_auditoria_muestra_el_total_aparte(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(lane1, "AUDIT_N0", 1)
+    monkeypatch.setattr(lane1, "MAX_UNAUDITED", 100)
+    _aceptar(session, tmp_path, mundo.canal, n=3)
+    _arranque_terminado(session, tmp_path, mundo)
+
+    html = client.get("/curation/auditoria").text
+
+    assert "Sin auditar en total: 3" in html
+    assert "por auditar ahora: 0" in html
+
+
+def test_control_muestra_la_tarjeta_de_auditoria_cuando_el_carril_tiene_filas(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
+) -> None:
+    _aceptar(session, tmp_path, mundo.canal, n=2)
+
+    html = client.get("/control").text
+
+    assert "Auditoría del carril 1" in html
+    assert "2 aceptados sin auditar" in html
+
+
 def test_la_pantalla_avisa_cuando_el_freno_esta_puesto(
     tope_de_30_sin_auditar: None, session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
 ) -> None:

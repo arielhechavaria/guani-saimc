@@ -29,6 +29,7 @@ from saimc.extraction.prefill_status import PrefillRun
 from saimc.ingestion.channel_gaps import GapReport
 from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.progress import IntakeHealth, Last24h
+from saimc.validation import lane1
 
 # Cuántos días sin que entre nada empiezan a ser sospechosos. No es un umbral
 # de los que §12.6 prohíbe —no decide si un dato es válido ni si se publica—:
@@ -217,6 +218,44 @@ def last_24h_indicator(
     )
 
 
+# Cuántas horas puede esperar lo que toca auditar antes de pasar a ámbar. En el
+# arranque cuenta desde que se aceptó el más viejo; después, desde que cerró la
+# semana de la muestra (el lunes). Solo eligen cuándo llamar la atención: no
+# deciden si el carril anda.
+_LANE1_AUDIT_START_WARN_HOURS = 72
+_LANE1_AUDIT_SAMPLE_WARN_HOURS = 48
+
+
+def lane1_audit_indicator(pending: lane1.AuditPending) -> Indicator:
+    """Si la medición del carril 1 se está quedando sin datos.
+
+    Sin auditar el freno nunca salta (decisions.md, 2026-10-13). El total sin
+    auditar se muestra pero no alarma: con un histórico de cientos sería ámbar
+    para siempre. Alarma lo que TOCA auditar y espera de más. Ámbar y nunca
+    rojo: no se rompió nada, falta una persona.
+    """
+    value = f"{pending.total} aceptados sin auditar"
+    if pending.due:
+        value += f", {pending.due} por auditar ahora"
+    limit = (
+        _LANE1_AUDIT_START_WARN_HOURS if pending.starting else _LANE1_AUDIT_SAMPLE_WARN_HOURS
+    )
+    atrasado = pending.waiting_hours is not None and pending.waiting_hours >= limit
+    return Indicator(
+        key="lane1_audit",
+        label="Auditoría del carril 1",
+        value=value,
+        level="warn" if atrasado else "ok",
+        hint=(
+            f"Lo que toca auditar espera hace {pending.waiting_hours} h: "
+            "auditalo en /curation/auditoria para que el error siga medido."
+            if atrasado
+            else ""
+        ),
+        anchor="#carril-1",
+    )
+
+
 def rate_indicator(statuses: list[RateStatus], *, now: datetime) -> Indicator:
     """La tasa más vieja de las que hay, que es la que manda."""
     con_fecha = [s for s in statuses if s.age_days is not None]
@@ -388,6 +427,7 @@ def build_strip(
     channel_gaps: GapReport | None = None,
     jev_active: bool = False,
     last_24h_summary: Last24h | None = None,
+    lane1_audit: lane1.AuditPending | None = None,
 ) -> list[Indicator]:
     """La franja completa, con lo más urgente primero.
 
@@ -412,6 +452,8 @@ def build_strip(
                 oldest_pending_hours=last_24h_summary.oldest_pending_hours,
             )
         )
+    if lane1_audit is not None:
+        indicadores.append(lane1_audit_indicator(lane1_audit))
     jev = jev_indicator(prefill_run, active=jev_active)
     if jev is not None:
         indicadores.append(jev)

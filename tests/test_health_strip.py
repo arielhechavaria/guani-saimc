@@ -12,6 +12,7 @@ from saimc.extraction.llm_assist import ConsumptionSummary
 from saimc.extraction.prefill_status import PrefillRun
 from saimc.ingestion.whatsapp_health import SessionHealth
 from saimc.progress import IntakeHealth
+from saimc.validation import lane1
 from saimc.web import health_strip
 
 AHORA = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
@@ -359,3 +360,60 @@ class TestJev:
         assert "jev" not in {i.key for i in sana}
         assert "jev" in {i.key for i in cortada}
         assert health_strip.worst_level(cortada) == "warn"
+
+
+class TestAuditoriaDelCarril1:
+    """Avisa cuando la medición se queda sin datos (decisions.md 2026-10-13: sin
+    auditar, el freno nunca salta). El total sin auditar se muestra pero no
+    alarma: es permanente. Alarma lo que TOCA auditar y espera."""
+
+    def test_el_total_se_muestra_aparte_y_sin_nada_por_auditar_esta_ok(self) -> None:
+        ind = health_strip.lane1_audit_indicator(
+            lane1.AuditPending(total=225, due=0, starting=False, waiting_hours=None)
+        )
+
+        assert (ind.key, ind.level) == ("lane1_audit", "ok")
+        assert "225 aceptados sin auditar" in ind.value
+
+    def test_en_el_arranque_avisa_con_el_mas_viejo_sin_auditar_a_las_72_horas(self) -> None:
+        def nivel(horas: int) -> str:
+            return health_strip.lane1_audit_indicator(
+                lane1.AuditPending(total=40, due=40, starting=True, waiting_hours=horas)
+            ).level
+
+        assert (nivel(71), nivel(72)) == ("ok", "warn")
+
+    def test_despues_del_arranque_avisa_con_la_muestra_pendiente_a_las_48_horas(self) -> None:
+        def nivel(horas: int) -> str:
+            return health_strip.lane1_audit_indicator(
+                lane1.AuditPending(total=225, due=30, starting=False, waiting_hours=horas)
+            ).level
+
+        assert (nivel(47), nivel(48)) == ("ok", "warn")
+
+    def test_el_aviso_dice_donde_auditar_y_nunca_es_rojo(self) -> None:
+        ind = health_strip.lane1_audit_indicator(
+            lane1.AuditPending(total=225, due=30, starting=False, waiting_hours=500)
+        )
+
+        assert ind.level == "warn"
+        assert "/curation/auditoria" in ind.hint
+
+    def test_la_franja_lo_suma_solo_si_el_carril_tiene_algo_que_contar(self) -> None:
+        base: dict = {
+            "waha": SessionHealth(configured=True, status="working"),
+            "last_capture": AHORA,
+            "health": _health(),
+            "rate_statuses": [RateStatus("USD", None, None, None, None, 0, True)],
+            "assist": _assist(),
+            "assist_configured": True,
+            "prefill_run": _corrida(),
+            "now": AHORA,
+        }
+        pendiente = lane1.AuditPending(total=5, due=5, starting=True, waiting_hours=100)
+
+        sin = health_strip.build_strip(**base)
+        con = health_strip.build_strip(**base, lane1_audit=pendiente)
+
+        assert "lane1_audit" not in {i.key for i in sin}
+        assert "lane1_audit" in {i.key for i in con}

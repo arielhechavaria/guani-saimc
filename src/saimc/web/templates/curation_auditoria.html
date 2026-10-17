@@ -143,6 +143,7 @@
     {% if lane1.without_rows %}
     <p class="m3-muted">⚠ {{ lane1.without_rows }} anuncio{{ "s" if lane1.without_rows != 1 }} curado{{ "s" if lane1.without_rows != 1 }} sin filas: no hay nada que confirmar en {{ "ellos" if lane1.without_rows != 1 else "él" }}.</p>
     {% endif %}
+    <p class="m3-muted">Sin auditar en total: {{ lane1.total_unaudited }} · por auditar ahora: {{ lane1.pending|length }}</p>
     {% if not lane1.pending %}
     <p class="m3-muted">No hay nada aceptado solo esperando auditoría.</p>
     {% else %}
