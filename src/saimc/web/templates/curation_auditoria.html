@@ -140,6 +140,9 @@
         {% endif %}
       </div>
     </div>
+    {% if lane1.without_rows %}
+    <p class="m3-muted">⚠ {{ lane1.without_rows }} anuncio{{ "s" if lane1.without_rows != 1 }} curado{{ "s" if lane1.without_rows != 1 }} sin filas: no hay nada que confirmar en {{ "ellos" if lane1.without_rows != 1 else "él" }}.</p>
+    {% endif %}
     {% if not lane1.pending %}
     <p class="m3-muted">No hay nada aceptado solo esperando auditoría.</p>
     {% else %}
@@ -158,9 +161,13 @@
           </div>
         </div>
         <div class="b2-actions b2-actions-3">
+          {% if ad.rows %}
           <form method="post" action="/curation/auditoria/{{ ad.ingestion.id }}/aceptado-bien">
             <button type="submit" class="m3-btn">Está bien</button>
           </form>
+          {% else %}
+          <span class="m3-chip m3-chip-sm m3-chip-neutral">Sin filas guardadas</span>
+          {% endif %}
           <a class="m3-btn m3-btn-tonal" href="/curation/{{ ad.ingestion.id }}/edit">Corregir</a>
           <form method="post" action="/curation/auditoria/{{ ad.ingestion.id }}/aceptado-invalido">
             <button type="submit" class="m3-btn m3-btn-tonal" style="grid-column:1 / -1">No era un anuncio válido</button>
