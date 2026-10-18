@@ -7,7 +7,7 @@ def main() -> None:
     try:
         from saimc.tui.app import GuaniTUI
     except ModuleNotFoundError as error:
-        if error.name != "textual":
+        if error.name not in ("textual", "textual_image"):
             raise
         sys.exit("Falta Textual. Instalalo con: .venv/bin/pip install -e '.[tui]'")
     GuaniTUI().run()

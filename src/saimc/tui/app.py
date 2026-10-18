@@ -2,7 +2,9 @@
 
 La forma sigue a la de gentle-ai (marco doble, cursor `▸`, `j`/`k`, «Salir» al
 final del menú); los colores son los tokens `--m3-` oscuros de
-`design_tokens.css` (`saimc.tui.theme`) y el avatar es el de la web.
+`design_tokens.css` (`saimc.tui.theme`) y el avatar es la imagen de la web,
+mostrada con `textual-image` (Sixel o Kitty si la terminal los soporta; si no,
+medios bloques).
 """
 
 from pathlib import Path
@@ -16,6 +18,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static, Tree
 from textual.widgets.tree import TreeNode
+from textual_image.widget import Image
 
 from saimc.tui import avatar, registry, theme
 from saimc.tui.registry import Command, LogSource
@@ -36,6 +39,7 @@ ERROR = _P["m3-error"]
 SUCCESS = _P["m3-success"]
 
 QUIT = "__quit__"
+# En celdas: 24 de ancho y 12 de alto se ven cuadradas (la celda es el doble de alta).
 AVATAR_SIZE = 24
 # Con menos filas la cabecera se esconde para que el menú no se quede sin lugar.
 MIN_HEIGHT_FOR_HEADER = 36
@@ -101,7 +105,7 @@ class GuaniTUI(App[None]):
     }}
     #frame {{ border: double {FRAME}; padding: 0 1; height: 1fr; }}
     #header {{ height: auto; border-bottom: solid {DIVIDER}; }}
-    #avatar {{ width: {AVATAR_SIZE + 2}; height: {AVATAR_SIZE // 2}; }}
+    #avatar {{ width: {AVATAR_SIZE}; height: {AVATAR_SIZE // 2}; margin-right: 2; }}
     #title {{ height: auto; padding: 1 0 0 1; }}
     #body {{ height: 1fr; }}
     #menu {{
@@ -154,7 +158,7 @@ class GuaniTUI(App[None]):
         title.append("Sistema Abierto de Inteligencia de Mercado", style=MUTED)
         with Vertical(id="frame"):
             with Horizontal(id="header"):
-                yield Static(avatar.render(AVATAR_SIZE), id="avatar")
+                yield Image(avatar.load(BG), id="avatar")
                 yield Static(title, id="title")
             with Horizontal(id="body"):
                 yield Menu("Guani", id="menu")
