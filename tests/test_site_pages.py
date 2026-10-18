@@ -359,7 +359,9 @@ class TestLasPaginasDeTexto:
 
     @pytest.mark.parametrize("ruta", RUTAS)
     def test_no_pide_nada_a_una_red_ajena(self, client: TestClient, ruta: str) -> None:
-        texto = client.get(ruta).text
+        # `<link rel="canonical">` es una pista para buscadores y es absoluto a
+        # propósito: el navegador no pide nada a esa URL (`web/seo.py`).
+        texto = re.sub(r'<link rel="canonical"[^>]*>', "", client.get(ruta).text)
 
         assert not re.search(r'<(link|script|img)[^>]+(href|src)="https?://', texto)
 

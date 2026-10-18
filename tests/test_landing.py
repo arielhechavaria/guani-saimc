@@ -368,7 +368,9 @@ class TestLaLandingEnLaRaiz:
 
     def test_no_pide_nada_a_una_red_ajena(self, client: TestClient, datos: None) -> None:
         """Ni fuentes ni iconos por CDN: lo único externo son enlaces `<a>`."""
-        texto = client.get("/").text
+        # `<link rel="canonical">` es una pista para buscadores y es absoluto a
+        # propósito: el navegador no pide nada a esa URL (`web/seo.py`).
+        texto = re.sub(r'<link rel="canonical"[^>]*>', "", client.get("/").text)
 
         assert "fonts.googleapis.com" not in texto
         assert "fonts.gstatic.com" not in texto

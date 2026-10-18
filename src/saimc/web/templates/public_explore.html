@@ -14,6 +14,8 @@
 {% block subtitle %}{% endblock %}
 {% block footer %}{% endblock %}
 
+{% block seo_jsonld %}{{ seo_dataset_json_ld(request) }}{% endblock %}
+
 {% block head %}
 <style>
   /* Colores, tipografías y radios salen de los tokens de `design_tokens.css`

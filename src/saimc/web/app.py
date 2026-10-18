@@ -14,14 +14,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from saimc.config import get_settings
 from saimc.ingestion.sender import warn_if_key_too_short
 from saimc.validation.jev_signal import warn_if_enabled_without_key
-from saimc.web import access
+from saimc.web import access, seo
 from saimc.web.analytics import registrar_visitas_publicas
 from saimc.web.routers import (
     catalog,
@@ -33,6 +32,8 @@ from saimc.web.routers import (
     public,
     whatsapp_webhook,
 )
+from saimc.web.routers import seo as seo_router
+from saimc.web.static_cache import CachedStaticFiles
 
 # El despliegue lanza `uvicorn saimc.web.app:app` sin `--log-config`, y uvicorn
 # configura solo sus propios loggers: el raíz queda sin handler. Sin esto, un
@@ -171,6 +172,19 @@ app.state.templates.env.globals["css_version"] = _css_version
 app.state.templates.env.globals["public_css_version"] = _public_css_version
 app.state.templates.env.globals["geojson_version"] = _geojson_version
 
+# SEO de la capa pública (`web/seo.py`, `_seo_head.html`). Funciones y no
+# valores fijos: dependen de la petición (el origen, si no hay `SAIMC_SITE_URL`).
+_seo_globals = app.state.templates.env.globals
+_seo_globals["seo_canonical_url"] = seo.canonical_url
+_seo_globals["seo_absolute_url"] = seo.absolute_url
+_seo_globals["seo_image_path"] = seo.OG_IMAGE_PATH
+_seo_globals["seo_image_width"] = seo.OG_IMAGE_WIDTH
+_seo_globals["seo_image_height"] = seo.OG_IMAGE_HEIGHT
+_seo_globals["seo_image_alt"] = seo.OG_IMAGE_ALT
+_seo_globals["seo_site_json_ld"] = seo.site_json_ld
+_seo_globals["seo_dataset_json_ld"] = seo.dataset_json_ld
+_seo_globals["seo_breadcrumb_json_ld"] = seo.breadcrumb_json_ld
+
 # htmx vendorizado (ADR 001, `docs/decisions/001-stack-python-unico.md`). No se
 # carga en ninguna plantilla todavía: el dashboard es quien lo va a usar, y la
 # curaduría se queda deliberadamente sin él. Ver el comentario de
@@ -257,9 +271,12 @@ app.state.templates.env.filters["havana"] = _havana
 # Bootstrap CSS vendorizado (no CDN): conexión lenta e intermitente
 # (CLAUDE.md), y esta es una herramienta de uso diario, no una carga puntual.
 app.mount(
-    "/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static"
+    "/static",
+    CachedStaticFiles(directory=str(Path(__file__).parent / "static")),
+    name="static",
 )
 
+app.include_router(seo_router.router)
 app.include_router(access.router)
 app.include_router(public.router)
 app.include_router(curation.router)

@@ -31,6 +31,10 @@ PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/producto/{slug}"),
         ("GET", "/anuncio/{ingestion_id}"),
         ("GET", "/datos.csv"),
+        # Para buscadores (slice `seo-basico`): sin credenciales y sin puerta.
+        # Solo listan rutas de la capa pública; nunca `/anuncio/<id>`.
+        ("GET", "/robots.txt"),
+        ("GET", "/sitemap.xml"),
         ("GET", "/metodologia"),
         ("GET", "/preguntas"),
         ("GET", "/quienes-somos"),

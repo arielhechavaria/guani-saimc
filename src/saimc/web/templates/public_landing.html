@@ -58,6 +58,8 @@
 {% block title %}Precios del mercado informal cubano, con los anuncios detrás{% endblock %}
 {% block og_description %}Guani te dice cuánto cuestan las cosas en la calle en Cuba: rango de precios por producto y por provincia, sacado de anuncios reales y verificado a mano.{% endblock %}
 
+{% block seo_jsonld %}{{ seo_site_json_ld(request) }}{% endblock %}
+
 {% block head %}
 <style>
   /* Los tokens del landing están congelados en `saimc-public.css` («Landing

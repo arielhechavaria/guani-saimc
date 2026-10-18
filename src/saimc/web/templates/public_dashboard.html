@@ -35,6 +35,8 @@
 {% block heading %}{% endblock %}
 {% block subtitle %}{% endblock %}
 
+{% block seo_jsonld %}{{ seo_dataset_json_ld(request) }}{% endblock %}
+
 {% block head %}
 <style>
   .m3-public-top { display: none; }

@@ -103,6 +103,10 @@ CARD_TYPES: tuple[CardType, ...] = (
     CardType(
         "carrusel-cierre", "Carrusel · cierre", "marketing_carrusel_cierre.html", 1080, 1350
     ),
+    # No es para publicar: es la imagen que ven WhatsApp, Telegram y X al
+    # pegar un enlace del sitio (`og:image`). Se rasteriza una vez con
+    # `tools/build_seo_assets.py` y se sirve desde `/static/seo/og-guani.png`.
+    CardType("og-compartir", "Vista previa al compartir", "marketing_og_compartir.html", 1200, 630),
 )
 
 _BY_SLUG: dict[str, CardType] = {t.slug: t for t in CARD_TYPES}

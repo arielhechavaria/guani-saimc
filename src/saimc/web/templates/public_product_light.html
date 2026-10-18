@@ -35,6 +35,8 @@ Sin anuncios en los últimos {{ window_days }} días.
 
 {% block og_description %}Precios de {{ panel.name }}{% if selected_province %} en {{ selected_province }}{% endif %} en el mercado informal cubano, verificados anuncio por anuncio.{% endblock %}
 
+{% block seo_jsonld %}{{ seo_breadcrumb_json_ld(request, panel.name) }}{% endblock %}
+
 {% block head %}
 <style>
   .ph-lite-fresh { margin-top: var(--m3-space-2); }

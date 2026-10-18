@@ -1,0 +1,35 @@
+{#
+  Etiquetas de SEO y de vista previa al compartir (slice `seo-basico`).
+  Lo incluye `_public_shell.html` dentro del `<head>`, y recibe de él
+  `seo_title` y `seo_description` (un `include` no ve `self`).
+
+  - `canonical` y `og:url` son el origen + la ruta, sin query: el tablero se
+    abre con decenas de combinaciones de filtros y todas son la misma página
+    (`web/seo.py`).
+  - `og:image` es la tarjeta de marketing «og-compartir» ya rasterizada
+    (`tools/build_seo_assets.py`), absoluta: WhatsApp, Telegram y X no
+    resuelven rutas relativas. Todas las páginas comparten la misma imagen.
+  - Los íconos viven en `/static/seo/`. El SVG es el avatar de Guani; el PNG
+    de 32 px es para quien no entiende SVG, y el de 180 px para iOS.
+#}
+{% set seo_canonical = seo_canonical_url(request) %}
+{% set seo_image = seo_absolute_url(request, seo_image_path) %}
+<link rel="canonical" href="{{ seo_canonical }}" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Guani" />
+<meta property="og:url" content="{{ seo_canonical }}" />
+<meta property="og:title" content="{{ seo_title }}" />
+<meta property="og:description" content="{{ seo_description }}" />
+<meta property="og:image" content="{{ seo_image }}" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="{{ seo_image_width }}" />
+<meta property="og:image:height" content="{{ seo_image_height }}" />
+<meta property="og:image:alt" content="{{ seo_image_alt }}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="{{ seo_title }}" />
+<meta name="twitter:description" content="{{ seo_description }}" />
+<meta name="twitter:image" content="{{ seo_image }}" />
+<meta name="twitter:image:alt" content="{{ seo_image_alt }}" />
+<link rel="icon" href="/static/seo/favicon.svg" type="image/svg+xml" sizes="any" />
+<link rel="icon" href="/static/seo/favicon-32.png" type="image/png" sizes="32x32" />
+<link rel="apple-touch-icon" href="/static/seo/apple-touch-icon.png" sizes="180x180" />

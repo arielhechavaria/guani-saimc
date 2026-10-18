@@ -24,15 +24,15 @@
      Quien no lo toque sigue con «Guani — …». #}
   <title>{% block page_title %}Guani — {% block title %}{% endblock %}{% endblock %}</title>
   {# Vista previa al compartir (WhatsApp/Telegram, el canal por el que se
-     mueve este mercado): sin esto un link pegado no muestra nada. Sin
-     og:image — no hay ningún asset de marca en el repo todavía; agregarlo
-     es una decisión de diseño aparte, no de este slice. #}
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Guani" />
-  <meta property="og:url" content="{{ request.url }}" />
-  <meta property="og:title" content="{{ self.page_title() }}" />
-  <meta property="og:description" content="{% block og_description %}Precios del mercado informal cubano, verificados anuncio por anuncio, provincia por provincia.{% endblock %}" />
-  <meta name="description" content="{{ self.og_description() }}" />
+     mueve este mercado), canonical, Twitter Cards e íconos: todo en
+     `_seo_head.html` (slice `seo-basico`). El parcial no ve `self`, así que
+     el título y la descripción de cada página se le pasan acá. #}
+  {% set seo_description = self.og_description() %}
+  {% set seo_title = self.page_title() %}
+  {% include "_seo_head.html" %}
+  <meta name="description" content="{% block og_description %}Precios del mercado informal cubano, verificados anuncio por anuncio, provincia por provincia.{% endblock %}" />
+  {# JSON-LD (`web/seo.py`): cada página elige el suyo. #}
+  {% block seo_jsonld %}{% endblock %}
   {# Quien firma la capa pública es la marca (2026-10-05, `docs/decisions.md`):
      «Guani, por Leira Studio». Nunca el nombre de una persona. #}
   <meta name="author" content="Leira Studio" />

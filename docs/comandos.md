@@ -19,6 +19,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [Después de un deploy](#después-de-un-deploy-la-secuencia) | Backup, pull, migrar, reiniciar | sí | no |
 | [`tools/grabar_entradas.py`](#grabar-los-clips-de-entra-por-donde-quieras) | Grabar los clips y capturas de la landing | sí: archivos en `static/landing/` | no |
 | [`tools/producir_comercial.py`](#producir-el-comercial) | Producir el comercial de la landing | sí: `guani-flujo.mp4` y su poster | no (la voz sale del servicio gratuito Edge TTS) |
+| [`tools/build_seo_assets.py`](#íconos-y-tarjeta-de-compartir-seo) | Regenerar la tarjeta de compartir y los íconos del sitio | sí: archivos en `static/seo/` | no |
 | [`saimc.validation.measure_n`](#measure_n) | Estabilidad de la mediana por N | no | no |
 | [`saimc.extraction.measure`](#measure-h0) | Medir H0 contra el conjunto de referencia congelado | `--no-record` no; sin él, anexa a `h0-runs.jsonl` | no |
 | [`saimc.extraction.reference_set`](#conjunto-de-referencia-en-seco-y-estado) | Qué anuncios entrarían al conjunto de referencia de H0; con `status`, la versión vigente y su deriva | no (en seco y `status`) | no |
@@ -300,6 +301,24 @@ defecto: nada cambia hasta que lo enciendas.
 - 5 intentos fallidos por origen en 10 minutos bloquean el formulario unos minutos.
 - Para encenderlo: agrega `SAIMC_SITE_GATE_ENABLED=true` (y, si quieres, `SAIMC_SITE_PASSWORD=...`) al
   `.env` y reinicia `saimc.service`. Para apagarlo, quita la línea o ponla en `false`.
+
+### Íconos y tarjeta de compartir (SEO)
+
+Sirve para regenerar `og-guani.png` (la imagen que ven WhatsApp, Telegram y X al pegar un enlace),
+`favicon.svg`, `favicon-32.png` y `apple-touch-icon.png`, en `src/saimc/web/static/seo/`. Se corre
+**en desarrollo**, solo cuando cambia el avatar o la plantilla `marketing_og_compartir.html`; los archivos
+generados se commitean y el VPS no necesita Chromium para servirlos.
+
+```
+.venv/bin/python tools/build_seo_assets.py
+```
+
+- Necesita el extra `marketing` (Playwright + Chromium). Sin red.
+- **Una vez en el VPS:** pon `SAIMC_SITE_URL=https://guani.duckdns.org` en el `.env` y reinicia
+  `saimc.service`. Sin eso, `canonical`, `og:*` y el sitemap usan el host que ve uvicorn
+  (`http://127.0.0.1:8000` detrás de Caddy) y salen mal.
+- Mientras `SAIMC_SITE_GATE_ENABLED=true`, `/robots.txt` y `/sitemap.xml` responden pero las páginas que
+  listan redirigen al formulario: el SEO no rinde hasta apagar la puerta.
 
 ### Avisos al celular (Telegram)
 

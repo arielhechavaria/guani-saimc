@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Vista previa al compartir</title>
+{% include "_marketing_card.html" %}
+</head>
+<body>
+{# Imagen `og:image` del sitio (1200×630, la proporción que WhatsApp, Telegram y X muestran sin recortar). Mismo sistema que las demás tarjetas (_marketing_card.html); sin datos, presentación fija: la comparten todas las páginas, así que no puede afirmar ninguna cifra. #}
+<div class="mc" style="width: 1200px; height: 630px">
+  <div class="mc-orbs mc-orbs-wide"></div>
+  <div class="mc-content" style="padding: 64px 80px">
+    <div class="mc-brand" style="--mc-logo: 72px">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}<span class="mc-wordmark">Guani</span></div>
+    <div style="flex-grow: 1"></div>
+    <div class="mc-title" style="font-size: 92px; line-height: 1.04; text-wrap: balance">El mercado cubano, a la vista.</div>
+    <div class="mc-muted" style="margin-top: 28px; font-size: 34px; line-height: 46px; max-width: 900px">Precios por provincia, verificados anuncio por anuncio.</div>
+    <div style="flex-grow: 1"></div>
+  </div>
+</div>
+</body>
+</html>

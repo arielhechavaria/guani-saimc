@@ -12,6 +12,8 @@
 {% block heading %}{% endblock %}
 {% block subtitle %}{% endblock %}
 
+{% block seo_jsonld %}{{ seo_dataset_json_ld(request) }}{% endblock %}
+
 {% block head %}
 {# Leaflet vendorizado (docs/decisions.md, 2026-09-12 — mapa interactivo,
    apartamiento consciente de la decisión cerrada 1). Hoja aparte y no

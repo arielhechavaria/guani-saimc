@@ -258,6 +258,12 @@ class Settings(BaseSettings):
     # lo ya guardado). Una llamada cuesta del orden de 0,00002 a 0,00007 USD.
     llm_jev_max_cost: float = _JEV_DEFAULTS["llm_jev_max_cost"]
 
+    # Origen público del sitio, sin barra final (`https://guani.duckdns.org`).
+    # Lo usan `canonical`, `og:*` y el sitemap, que necesitan URL absolutas
+    # (`web/seo.py`). Sin él se usa el host de la petición, que detrás de un
+    # proxy es el interno: en producción hay que ponerlo.
+    site_url: str | None = None
+
     # Contacto y redes del pie de la landing (`GET /`, 2026-10-05). Los cuatro
     # son opcionales y se dibuja solo el que esté puesto; sin ninguno, el pie
     # no muestra esa columna. Los tres enlaces tienen que empezar con
