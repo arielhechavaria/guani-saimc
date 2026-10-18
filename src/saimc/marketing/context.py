@@ -98,7 +98,7 @@ CARD_TYPES: tuple[CardType, ...] = (
             Block("rango", "Rango y cantidad de anuncios", toggleable=False),
             Block("anuncios", "Tabla de anuncios"),
             Block("nota", "Nota sobre la imagen original"),
-            Block("posicion", "Número de diapositiva (3 / 4)"),
+            Block("posicion", "Número de diapositiva (solo en un carrusel)"),
         ),
     ),
     CardType(

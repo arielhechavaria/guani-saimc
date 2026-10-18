@@ -66,7 +66,7 @@
       <div class="mk-thumb" aria-hidden="true"></div>
       {% endif %}
       <div class="mk-post-main">
-        <h3>{{ c.kind.label }}</h3>
+        <h3>{{ c.title }}</h3>
         <p class="m3-xs m3-muted">{% if c.detail %}{{ c.detail }} · {% endif %}<span class="m3-chip">{{ c.label }}</span></p>
         {% if post.status == "draft" %}
         <a class="m3-btn m3-btn-filled" href="/marketing/post/{{ post.id }}">Revisar y aprobar</a>
@@ -91,6 +91,7 @@
         <span class="m3-field-label">Tarjeta</span>
         <select name="kind" class="m3-select">
           {% for t in postable %}<option value="{{ t.slug }}">{{ t.label }}</option>{% endfor %}
+          <option value="{{ carousel_slot }}">{{ carousel_label }} (portada, cómo leer, dato, cierre)</option>
         </select>
       </label>
       <button type="submit" class="m3-btn m3-btn-tonal">Crear borrador</button>

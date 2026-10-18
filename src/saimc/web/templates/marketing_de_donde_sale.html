@@ -64,8 +64,8 @@
     {% endif %}
     <div style="display: flex; align-items: center; gap: 16px">
       <div class="mc-brand" style="--mc-logo: 64px; flex-grow: 1">{% with avatar_clip_id = "mc-clip" %}{% include "_guani_avatar.html" %}{% endwith %}<span class="mc-wordmark" style="font-size: 44px">Guani</span></div>
-      {% if on.posicion is not false %}
-      <div data-block="posicion" class="mc-chip">3 / 4</div>
+      {% if slide_counter and on.posicion is not false %}
+      <div data-block="posicion" class="mc-chip">{{ slide_counter }}</div>
       {% endif %}
     </div>
   </div>

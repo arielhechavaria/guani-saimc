@@ -1,7 +1,7 @@
 {% extends "_shell.html" %}
 
-{% block title %}Marketing · {{ kind.label }}{% endblock %}
-{% block heading %}{{ kind.label }}{% endblock %}
+{% block title %}Marketing · {{ post_label }}{% endblock %}
+{% block heading %}{{ post_label }}{% endblock %}
 {% block subtitle %}Para el {{ post.planned_for.strftime("%d/%m/%Y") }} · {{ status_label }}. Las cifras salen del sitio, nunca se escriben a mano.{% endblock %}
 
 {% block head %}
@@ -19,6 +19,19 @@
   .mk-count.is-over{color:var(--m3-error)}
   .mk-error{color:var(--m3-error); margin:0 0 16px}
   .mk-body{margin:0 24px 24px}
+  .mk-slides{list-style:none; margin:0; padding:0}
+  .mk-slide{display:flex; align-items:center; gap:4px; border-top:1px solid var(--m3-outline-variant)}
+  .mk-slide:first-child{border-top:0}
+  .mk-slide.is-current{background:var(--m3-surface-container); border-radius:8px}
+  .mk-slide-main{flex:1; min-width:0; display:flex; align-items:center; gap:12px; min-height:56px; padding:4px 8px; color:inherit; text-decoration:none}
+  .mk-slide-thumb{flex:none; width:40px; aspect-ratio:4/5; object-fit:cover; border-radius:4px}
+  .mk-slide-n{flex:none; width:24px; text-align:center; font-weight:500}
+  .mk-slide-text{min-width:0; overflow-wrap:anywhere}
+  .mk-slide-btns{display:flex; flex:none}
+  .mk-slide-btns form{margin:0}
+  .mk-slide-btns .m3-btn, .mk-slide-gap{min-width:44px; min-height:44px; padding:0; justify-content:center; display:inline-flex}
+  .mk-add{display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin:12px 0 0}
+  .mk-add .m3-btn{min-height:44px}
 </style>
 {% endblock %}
 
@@ -28,7 +41,7 @@
   <section class="m3-card">
     <div class="m3-card-head">
       <div class="m3-topbar-main">
-        <h2 class="m3-h2">{{ kind.label }} <span class="m3-chip">{{ status_label }}</span></h2>
+        <h2 class="m3-h2">{{ post_label }} <span class="m3-chip">{{ status_label }}</span></h2>
         <p class="m3-note" style="margin-bottom:0">
           {% if editable %}
           Se ve con los datos de hoy hasta la fecha de corte. Al aprobar se congelan:
@@ -44,8 +57,71 @@
     <div class="mk-body">
     {% if error %}<p class="mk-error" role="alert">{{ error }}</p>{% endif %}
 
+    {#- Carrusel (F3): la lista manda; cada fila abre su diapositiva en el editor
+        de abajo. Orden con ↑ ↓ (sin arrastrar, regla 5 del plan). En una
+        publicación suelta, convertirla en carrusel es el caso raro: va plegado
+        (docs/DESIGN.md, regla 2). -#}
+    {% macro add_form() %}
+    <form class="mk-add" method="post" action="/marketing/post/{{ post.id }}/diapositivas">
+      <label class="m3-field m3-field-on-container">
+        <span class="m3-field-label">Plantilla</span>
+        <select name="kind" class="m3-select">
+          {% for t in slide_kinds %}<option value="{{ t.slug }}">{{ t.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="m3-btn m3-btn-tonal">+ Agregar diapositiva</button>
+    </form>
+    {% endmacro %}
+
+    {% if is_carousel %}
+    <section class="mk-slides-box" aria-label="Diapositivas">
+      <h3 class="m3-h3" style="margin:0 0 8px">Diapositivas · {{ slides | length }}{% if editable %} de {{ max_slides }}{% endif %}</h3>
+      <ol class="mk-slides">
+        {% for r in slides %}
+        {% set actual = r.position == slide.position %}
+        <li class="mk-slide{% if actual %} is-current{% endif %}">
+          <a class="mk-slide-main" href="/marketing/post/{{ post.id }}?d={{ r.position }}"{% if actual %} aria-current="true"{% endif %}>
+            {% if r.jpg_url %}<img class="mk-slide-thumb" src="{{ r.jpg_url }}" alt="" loading="lazy">{% endif %}
+            <span class="mk-slide-n" aria-hidden="true">{{ r.position }}</span>
+            <span class="mk-slide-text"><strong>{{ r.kind.label }}</strong>{% if r.detail %}<br><span class="m3-xs m3-muted">{{ r.detail }}</span>{% endif %}</span>
+          </a>
+          {% if editable %}
+          <div class="mk-slide-btns">
+            {% if not loop.first %}
+            <form method="post" action="/marketing/post/{{ post.id }}/diapositiva/{{ r.position }}/subir">
+              <button type="submit" class="m3-btn m3-btn-text" aria-label="Subir la diapositiva {{ r.position }}">↑</button>
+            </form>
+            {% else %}<span class="mk-slide-gap"></span>{% endif %}
+            {% if not loop.last %}
+            <form method="post" action="/marketing/post/{{ post.id }}/diapositiva/{{ r.position }}/bajar">
+              <button type="submit" class="m3-btn m3-btn-text" aria-label="Bajar la diapositiva {{ r.position }}">↓</button>
+            </form>
+            {% else %}<span class="mk-slide-gap"></span>{% endif %}
+            <form method="post" action="/marketing/post/{{ post.id }}/diapositiva/{{ r.position }}/quitar"
+                  onsubmit="return confirm('¿Quitar la diapositiva {{ r.position }}?')">
+              <button type="submit" class="m3-btn m3-btn-text" aria-label="Quitar la diapositiva {{ r.position }}">×</button>
+            </form>
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% if can_add %}{{ add_form() }}{% elif editable %}
+      <p class="m3-xs m3-muted" style="margin:8px 0 0">Instagram admite hasta {{ max_slides }} diapositivas por carrusel.</p>
+      {% endif %}
+    </section>
+    <h3 class="m3-h3" style="margin:24px 0 12px">Diapositiva {{ slide.position }} de {{ slides | length }} · {{ kind.label }}</h3>
+    {% elif can_add %}
+    <details class="mk-opts" style="margin-bottom:16px">
+      <summary>Convertir en carrusel</summary>
+      <p class="m3-xs m3-muted" style="margin:0 0 8px">Agrega una diapositiva al final; todas tienen el mismo tamaño.</p>
+      {{ add_form() }}
+    </details>
+    {% endif %}
+
     {% if editable %}
     <form id="editor" method="post" action="/marketing/post/{{ post.id }}" style="margin:0">
+      <input type="hidden" name="position" value="{{ slide.position }}">
       <div class="m3-row" style="gap:12px; flex-wrap:wrap; align-items:end">
         {% if kind.needs_product %}
         <label class="m3-field m3-field-on-container">

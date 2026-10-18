@@ -46,6 +46,7 @@ from saimc.models.raw_ingestion import ProcessingStatus
 
 #: Un lunes. El martes siguiente es el 20, el jueves el 22.
 LUNES = date(2026, 10, 19)
+MIERCOLES = date(2026, 10, 21)
 JUEVES = date(2026, 10, 22)
 
 
@@ -61,7 +62,7 @@ def _kind(slug: str):
     [
         (date(2026, 10, 19), ("dato-del-dia", "como-se-movio")),  # lunes
         (date(2026, 10, 20), ("dato-del-dia",)),  # martes
-        (date(2026, 10, 21), ("dato-del-dia",)),  # miércoles
+        (date(2026, 10, 21), ("dato-del-dia", "carrusel")),  # miércoles
         (date(2026, 10, 22), ("dato-del-dia", "de-donde-sale")),  # jueves
         (date(2026, 10, 23), ("dato-del-dia",)),  # viernes
         (date(2026, 10, 24), ("dato-del-dia",)),  # sábado
@@ -226,6 +227,50 @@ def test_un_jueves_crea_de_donde_sale_con_una_provincia_con_anuncios(
 
     donde = next(p for p in _posts(session) if p.batch_slot == "de-donde-sale")
     assert donde.slides[0].params["province"] in ("La Habana", "Santiago de Cuba")
+
+
+def test_un_miercoles_crea_un_solo_borrador_de_carrusel_con_cuatro_diapositivas(
+    session: Session, datos: None, tmp_path: Path
+) -> None:
+    """La semana tipo de la guía: portada → cómo leer → datos → cierre."""
+    reporte = run_daily(session, MIERCOLES, tmp_path, execute=True)
+
+    carrusel = next(p for p in _posts(session) if p.batch_slot == "carrusel")
+    assert carrusel.format == "carousel"
+    assert carrusel.status == PostStatus.DRAFT
+    assert carrusel.origin == PostOrigin.BATCH
+    assert [(s.position, s.card_slug) for s in carrusel.slides] == [
+        (1, "carrusel-portada"),
+        (2, "carrusel-consejo"),
+        (3, "dato-del-dia"),
+        (4, "carrusel-cierre"),
+    ]
+    assert carrusel.slides[2].params == {
+        "product": "Arroz", "province": None, "data_through": "2026-10-20"
+    }
+    assert ("carrusel", "creada") in [(c.slug, c.estado) for c in reporte.cards]
+    assert len(_posts(session)) == 2  # el carrusel y el «Dato del día»
+
+
+def test_el_carrusel_del_miercoles_no_se_duplica(
+    session: Session, datos: None, tmp_path: Path
+) -> None:
+    run_daily(session, MIERCOLES, tmp_path, execute=True)
+    reporte = run_daily(session, MIERCOLES, tmp_path, execute=True)
+
+    assert [p.batch_slot for p in _posts(session)].count("carrusel") == 1
+    assert ("carrusel", "ya existía") in [(c.slug, c.estado) for c in reporte.cards]
+
+
+def test_sin_datos_el_carrusel_tampoco_se_crea(session: Session, tmp_path: Path) -> None:
+    """Sin una cifra que mostrar, el carrusel sería solo branding: no se crea."""
+    session.add(Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True))
+    session.commit()
+
+    reporte = run_daily(session, MIERCOLES, tmp_path, execute=True)
+
+    assert ("carrusel", "sin datos") in [(c.slug, c.estado) for c in reporte.cards]
+    assert _posts(session) == []
 
 
 def test_correr_dos_veces_el_mismo_dia_no_duplica(

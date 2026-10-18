@@ -1,5 +1,6 @@
 /* Editor de /marketing: escala la vista previa, cuenta el texto del post y
-   lleva la imagen y el texto al teléfono (copiar, compartir o descargar).
+   lleva las imágenes y el texto al teléfono (copiar, compartir o descargar;
+   en un carrusel, todas las diapositivas de una vez).
    Sin librerías. Los botones viven dentro de lo que HTMX reemplaza, así que
    los clics se atienden por delegación en `document`. */
 (function () {
@@ -65,41 +66,84 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
   }
 
-  function share(button) {
-    var label = button.querySelector("[data-mk-label]");
-    var original = label.textContent;
-    var name = button.getAttribute("data-mk-name");
-    button.disabled = true;
-    label.textContent = "Preparando…";
-    say("");
-    fetch(button.getAttribute("data-mk-url"), { credentials: "same-origin" })
-      .then(function (res) {
+  function filesOf(button) {
+    try { return JSON.parse(button.getAttribute("data-mk-files") || "[]"); } catch (e) { return []; }
+  }
+
+  /* Baja los JPEG en orden y devuelve los `File` listos para compartir. */
+  function fetchFiles(list) {
+    return Promise.all(list.map(function (item) {
+      return fetch(item.url, { credentials: "same-origin" }).then(function (res) {
         if (!res.ok) return res.text().then(function (t) { throw new Error(t || res.statusText); });
         return res.blob();
-      })
-      .then(function (blob) {
-        var file = new File([blob], name, { type: "image/jpeg" });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          return navigator.share({ files: [file] });
-        }
-        download(blob, name);
-        say("Este navegador no puede compartir archivos: se descargó el JPEG.");
-      })
-      .catch(function (err) {
-        if (err && err.name === "AbortError") return; // cerró el menú sin elegir
-        say("No se pudo preparar la imagen: " + (err && err.message ? err.message : "error"));
-      })
-      .then(function () {
-        button.disabled = false;
-        label.textContent = original;
+      }).then(function (blob) {
+        return new File([blob], item.name, { type: "image/jpeg" });
       });
+    }));
+  }
+
+  /* Varias descargas seguidas: con una pausa entre una y otra, porque algunos
+     navegadores cortan las que llegan juntas. */
+  function downloadAll(files) {
+    files.forEach(function (file, i) {
+      setTimeout(function () { download(file, file.name); }, i * 400);
+    });
+  }
+
+  function busy(button, text) {
+    var label = button.querySelector("[data-mk-label]");
+    var original = label.textContent;
+    button.disabled = true;
+    label.textContent = text;
+    say("");
+    return function () {
+      button.disabled = false;
+      label.textContent = original;
+    };
+  }
+
+  function fail(err) {
+    if (err && err.name === "AbortError") return; // cerró el menú sin elegir
+    say("No se pudo preparar la imagen: " + (err && err.message ? err.message : "error"));
+  }
+
+  /* Todas las imágenes en un solo `navigator.share`. Si el navegador no puede
+     compartir esos archivos, se descargan. */
+  function share(button) {
+    var list = filesOf(button);
+    var done = busy(button, "Preparando…");
+    fetchFiles(list)
+      .then(function (files) {
+        if (navigator.canShare && navigator.canShare({ files: files })) {
+          return navigator.share({ files: files });
+        }
+        downloadAll(files);
+        say(files.length > 1
+          ? "Este navegador no puede compartir varias imágenes: se descargaron las " + files.length + "."
+          : "Este navegador no puede compartir archivos: se descargó el JPEG.");
+      })
+      .catch(fail)
+      .then(done);
+  }
+
+  function saveAll(button) {
+    var done = busy(button, "Bajando…");
+    fetchFiles(filesOf(button))
+      .then(function (files) {
+        downloadAll(files);
+        say("Se descargaron " + files.length + " imágenes, en el orden del carrusel.");
+      })
+      .catch(fail)
+      .then(done);
   }
 
   document.addEventListener("click", function (event) {
     var copy = event.target.closest("[data-mk-copy]");
     if (copy) return copyText(copy);
     var shareBtn = event.target.closest("[data-mk-share]");
-    if (shareBtn) share(shareBtn);
+    if (shareBtn) return share(shareBtn);
+    var saveBtn = event.target.closest("[data-mk-save-all]");
+    if (saveBtn) saveAll(saveBtn);
   });
   document.addEventListener("input", function (event) {
     if (event.target.id === "caption") updateCount();

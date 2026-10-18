@@ -18,7 +18,7 @@
     <div style="flex-grow: 1"></div>
     <div style="display: flex; align-items: center; gap: 24px; font-size: 34px; font-weight: 500">
       <div style="flex-grow: 1">Desliza: cómo leer los precios →</div>
-      <div class="mc-chip">1 / 4</div>
+      {% if slide_counter %}<div class="mc-chip">{{ slide_counter }}</div>{% endif %}
     </div>
   </div>
 </div>

@@ -23,6 +23,10 @@ llaman a `saimc.marketing.posts`. Lo que se comparte es siempre el JPEG
 congelado al aprobar. Las rutas sin estado `/marketing/preview/{slug}` y
 `/marketing/card/{slug}.{png,jpg}` quedan para las piezas fijas. La sección
 «Instagram» se sacó de la página (`docs/decisions.md`, 2026-10-18).
+
+**Carruseles (F3).** El editor elige qué diapositiva se edita con `?d=<n>`;
+agregar, subir, bajar y quitar son POST con botones (sin arrastrar: regla 5 del
+plan). Compartir manda todos los JPEG aprobados en un solo `navigator.share`.
 """
 
 from __future__ import annotations
@@ -48,28 +52,46 @@ from saimc.marketing.context import (
     CardType,
     build_context,
 )
-from saimc.marketing.daily import cards_for_day, havana_today, to_havana
+from saimc.marketing.daily import (
+    CAROUSEL_SLIDES,
+    CAROUSEL_SLOT,
+    cards_for_day,
+    havana_today,
+    slot_label,
+    to_havana,
+)
 from saimc.marketing.html import card_html
 from saimc.marketing.options import CTA_MAX, SUBTITLE_MAX, parse_options
 from saimc.marketing.posts import (
     FIXED_PIECES,
+    MAX_SLIDES,
     POSTABLE,
     InvalidParams,
+    InvalidSlide,
     InvalidTransition,
     InvalidUrl,
     NoData,
+    add_slide,
     approve,
+    create_carousel_draft,
     create_draft,
     discard,
     duplicate,
     effective_caption,
     mark_published,
+    move_slide,
+    remove_slide,
     save_draft,
     slide_html,
     slide_options,
 )
 from saimc.marketing.render import RendererUnavailable, render_jpeg, render_png
-from saimc.models.marketing_post import MarketingPost, MarketingPostSlide, PostStatus
+from saimc.models.marketing_post import (
+    MarketingPost,
+    MarketingPostSlide,
+    PostFormat,
+    PostStatus,
+)
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
@@ -196,17 +218,31 @@ def marketing_card_jpg(
 # --- Hoy ---------------------------------------------------------------------
 
 
+def _is_carousel(post: MarketingPost) -> bool:
+    return post.format == PostFormat.CAROUSEL
+
+
+def _slot(post: MarketingPost) -> str:
+    """El turno del calendario que cubre la publicación: el del lote si lo
+    tiene; si la armó el operador, el carrusel o la tarjeta de la primera."""
+    if post.batch_slot:
+        return post.batch_slot
+    return CAROUSEL_SLOT if _is_carousel(post) else post.slides[0].card_slug
+
+
 def _post_card(post: MarketingPost) -> dict[str, Any]:
     slide = post.slides[0]
     kind = BY_SLUG[slide.card_slug]
-    detalle = " · ".join(
-        x for x in (slide.params.get("product"), slide.params.get("province")) if x
-    )
+    datos = next((s for s in post.slides if s.params.get("product")), slide)
+    partes = [datos.params.get("product"), datos.params.get("province")]
+    if _is_carousel(post):
+        partes.insert(0, f"{len(post.slides)} diapositivas")
     return {
         "post": post,
         "kind": kind,
+        "title": slot_label(CAROUSEL_SLOT) if _is_carousel(post) else kind.label,
         "label": STATUS_LABELS.get(post.status, post.status),
-        "detail": detalle,
+        "detail": " · ".join(x for x in partes if x),
         "frozen": slide.image_path is not None,
     }
 
@@ -226,8 +262,12 @@ def marketing_hoy(
         )
         if p.slides
     ]
-    presentes = {p.slides[0].card_slug for p in posts if p.status != PostStatus.DISCARDED}
-    faltan = [BY_SLUG[slug] for slug in cards_for_day(today) if slug not in presentes]
+    presentes = {_slot(p) for p in posts if p.status != PostStatus.DISCARDED}
+    faltan = [
+        {"slug": slot, "label": slot_label(slot)}
+        for slot in cards_for_day(today)
+        if slot not in presentes
+    ]
     respuesta: HTMLResponse = request.app.state.templates.TemplateResponse(
         request,
         "marketing.html",
@@ -236,6 +276,8 @@ def marketing_hoy(
             "cards": [_post_card(p) for p in posts],
             "missing": faltan,
             "postable": POSTABLE,
+            "carousel_slot": CAROUSEL_SLOT,
+            "carousel_label": slot_label(CAROUSEL_SLOT),
             "fixed": [t for t in CARD_TYPES if t.slug in FIXED_PIECES],
         },
     )
@@ -247,20 +289,26 @@ async def marketing_post_create(
     request: Request, db: Session = Depends(get_db), today: date = Depends(get_today)
 ) -> RedirectResponse:
     """Un borrador del operador para hoy, con el primer producto y la primera
-    provincia del foco; se ajustan en el editor."""
+    provincia del foco; se ajustan en el editor. `kind=carrusel` arma el
+    carrusel de la semana tipo con sus cuatro diapositivas."""
     form = await request.form()
-    kind = BY_SLUG.get(str(form.get("kind") or ""))
-    if kind is None or kind.slug in FIXED_PIECES:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tarjeta desconocida.")
+    pedido = str(form.get("kind") or "")
     productos = pilot_product_names(db)
-    post = create_draft(
-        db,
-        card_slug=kind.slug,
-        planned_for=today,
-        product=productos[0] if productos else None,
-        province=PHASE0_PROVINCES[0] if PHASE0_PROVINCES else None,
-        data_through=today,
-    )
+    producto = productos[0] if productos else None
+    provincia = PHASE0_PROVINCES[0] if PHASE0_PROVINCES else None
+    if pedido == CAROUSEL_SLOT:
+        post = create_carousel_draft(
+            db, card_slugs=CAROUSEL_SLIDES, planned_for=today, product=producto,
+            province=provincia, data_through=today,
+        )
+    else:
+        kind = BY_SLUG.get(pedido)
+        if kind is None or kind.slug in FIXED_PIECES:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Tarjeta desconocida.")
+        post = create_draft(
+            db, card_slug=kind.slug, planned_for=today, product=producto, province=provincia,
+            data_through=today,
+        )
     db.commit()
     return RedirectResponse(f"/marketing/post/{post.id}", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -284,13 +332,58 @@ def _revision(slide: MarketingPostSlide) -> str:
     return hashlib.blake2s(json.dumps(estado, sort_keys=True).encode(), digest_size=5).hexdigest()
 
 
-def _editor_state(db: Session, post: MarketingPost, today: date) -> dict[str, Any]:
-    slide = post.slides[0]
+def _selected(post: MarketingPost, position: int | None) -> MarketingPostSlide:
+    """La diapositiva que se edita; una posición que no existe cae en la primera."""
+    return _slide(post, position or 1) or post.slides[0]
+
+
+def _jpg_name(post: MarketingPost, slide: MarketingPostSlide) -> str:
+    fecha = post.planned_for.isoformat()
+    if _is_carousel(post):
+        return f"guani-carrusel-{fecha}-{slide.position}.jpg"
+    return f"guani-{slide.card_slug}-{fecha}.jpg"
+
+
+def _jpg_url(post: MarketingPost, slide: MarketingPostSlide) -> str:
+    return f"/marketing/post/{post.id}/slide/{slide.position}.jpg"
+
+
+def _slide_rows(post: MarketingPost) -> list[dict[str, Any]]:
+    return [
+        {
+            "position": s.position,
+            "kind": BY_SLUG[s.card_slug],
+            "detail": " · ".join(
+                x for x in (s.params.get("product"), s.params.get("province")) if x
+            ),
+            "jpg_url": _jpg_url(post, s) if s.image_path else None,
+        }
+        for s in post.slides
+    ]
+
+
+def _editor_state(
+    db: Session, post: MarketingPost, today: date, position: int | None = None
+) -> dict[str, Any]:
+    slide = _selected(post, position)
     kind = BY_SLUG[slide.card_slug]
+    primera = BY_SLUG[post.slides[0].card_slug]
+    aprobadas = [s for s in post.slides if s.image_path]
     return {
         "post": post,
         "slide": slide,
         "kind": kind,
+        "is_carousel": _is_carousel(post),
+        "post_label": slot_label(CAROUSEL_SLOT) if _is_carousel(post) else kind.label,
+        "slides": _slide_rows(post),
+        "max_slides": MAX_SLIDES,
+        "can_add": post.status == PostStatus.DRAFT
+        and post.format != PostFormat.STORY
+        and len(post.slides) < MAX_SLIDES,
+        # Mismo tamaño que la primera: un carrusel no mezcla medidas.
+        "slide_kinds": [
+            t for t in POSTABLE if (t.width, t.height) == (primera.width, primera.height)
+        ],
         "status_label": STATUS_LABELS.get(post.status, post.status),
         "editable": post.status == PostStatus.DRAFT,
         "ready": slide_html(db, slide) is not None,
@@ -308,10 +401,10 @@ def _editor_state(db: Session, post: MarketingPost, today: date) -> dict[str, An
         # `v` cambia con lo guardado: el iframe que HTMX vuelve a insertar no
         # puede salir del caché con la versión anterior.
         "preview_url": f"/marketing/post/{post.id}/preview/{slide.position}?v={_revision(slide)}",
-        "jpg_url": (
-            f"/marketing/post/{post.id}/slide/{slide.position}.jpg" if slide.image_path else None
-        ),
-        "jpg_name": f"guani-{kind.slug}-{post.planned_for.isoformat()}.jpg",
+        "jpg_url": _jpg_url(post, slide) if slide.image_path else None,
+        "jpg_name": _jpg_name(post, slide),
+        # Todo lo que se comparte de una vez, en el orden del carrusel.
+        "share_files": [{"url": _jpg_url(post, s), "name": _jpg_name(post, s)} for s in aprobadas],
         # La base guarda UTC; el operador lee la hora de Cuba.
         "approved_local": _local(post.approved_at),
         "published_local": _local(post.published_at),
@@ -330,11 +423,12 @@ def _editor(
     *,
     error: str | None = None,
     status_code: int = 200,
+    position: int | None = None,
 ) -> HTMLResponse:
     respuesta: HTMLResponse = request.app.state.templates.TemplateResponse(
         request,
         "marketing_post.html",
-        {**_editor_state(db, post, today), "error": error},
+        {**_editor_state(db, post, today, position), "error": error},
         status_code=status_code,
     )
     return respuesta
@@ -346,8 +440,9 @@ def marketing_post_editor(
     request: Request,
     db: Session = Depends(get_db),
     today: date = Depends(get_today),
+    d: int | None = None,
 ) -> HTMLResponse:
-    return _editor(request, db, _load(db, post_id), today)
+    return _editor(request, db, _load(db, post_id), today, position=d)
 
 
 def _parse_through(raw: object, today: date) -> date:
@@ -359,12 +454,20 @@ def _parse_through(raw: object, today: date) -> date:
     return min(elegido, today)
 
 
+def _form_position(form: Any) -> int:
+    try:
+        return int(str(form.get("position") or "1"))
+    except ValueError:
+        return 1
+
+
 def _save_from_form(db: Session, post: MarketingPost, form: Any, today: date) -> None:
-    slide = post.slides[0]
+    slide = _selected(post, _form_position(form))
     kind = BY_SLUG[slide.card_slug]
     save_draft(
         db,
         post,
+        position=slide.position,
         product=str(form.get("product") or "") or slide.params.get("product"),
         province=str(form.get("province") or "") or slide.params.get("province"),
         data_through=_parse_through(
@@ -393,14 +496,17 @@ async def marketing_post_save(
         return HTMLResponse(str(error), status_code=status.HTTP_409_CONFLICT)
     except InvalidParams as error:
         db.rollback()
-        return _editor(request, db, post, today, error=str(error), status_code=422)
+        return _editor(
+            request, db, post, today, error=str(error), status_code=422,
+            position=_form_position(form),
+        )
     db.commit()
     if request.headers.get("HX-Request"):
         vista: HTMLResponse = request.app.state.templates.TemplateResponse(
-            request, "_marketing_vista.html", _editor_state(db, post, today)
+            request, "_marketing_vista.html", _editor_state(db, post, today, _form_position(form))
         )
         return vista
-    return _back(post)
+    return _back(post, _form_position(form))
 
 
 def _slide(post: MarketingPost, position: int) -> MarketingPostSlide | None:
@@ -443,8 +549,83 @@ def marketing_post_jpg(
 # --- Transiciones ------------------------------------------------------------
 
 
-def _back(post: MarketingPost) -> RedirectResponse:
-    return RedirectResponse(f"/marketing/post/{post.id}", status_code=status.HTTP_303_SEE_OTHER)
+def _back(post: MarketingPost, position: int | None = None) -> RedirectResponse:
+    destino = f"/marketing/post/{post.id}"
+    if position and position > 1:
+        destino += f"?d={position}"
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+
+
+# --- Diapositivas (carrusel) -------------------------------------------------
+
+
+@router.post("/marketing/post/{post_id}/diapositivas", response_model=None)
+async def marketing_slide_add(
+    post_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    today: date = Depends(get_today),
+) -> Response:
+    """Agrega al final una diapositiva de la plantilla elegida y la abre."""
+    post = _load(db, post_id)
+    form = await request.form()
+    try:
+        nueva = add_slide(db, post, str(form.get("kind") or ""))
+    except InvalidTransition as error:
+        db.rollback()
+        return HTMLResponse(str(error), status_code=status.HTTP_409_CONFLICT)
+    except InvalidSlide as error:
+        db.rollback()
+        return _editor(request, db, post, today, error=str(error), status_code=422)
+    db.commit()
+    return _back(post, nueva.position)
+
+
+def _move(db: Session, post_id: str, position: int, delta: int) -> Response:
+    post = _load(db, post_id)
+    try:
+        nueva = move_slide(db, post, position, delta)
+    except InvalidTransition as error:
+        db.rollback()
+        return HTMLResponse(str(error), status_code=status.HTTP_409_CONFLICT)
+    except InvalidSlide as error:
+        db.rollback()
+        return HTMLResponse(str(error), status_code=status.HTTP_404_NOT_FOUND)
+    db.commit()
+    return _back(post, nueva)
+
+
+@router.post("/marketing/post/{post_id}/diapositiva/{position}/subir", response_model=None)
+def marketing_slide_up(post_id: str, position: int, db: Session = Depends(get_db)) -> Response:
+    return _move(db, post_id, position, -1)
+
+
+@router.post("/marketing/post/{post_id}/diapositiva/{position}/bajar", response_model=None)
+def marketing_slide_down(post_id: str, position: int, db: Session = Depends(get_db)) -> Response:
+    return _move(db, post_id, position, +1)
+
+
+@router.post("/marketing/post/{post_id}/diapositiva/{position}/quitar", response_model=None)
+def marketing_slide_remove(
+    post_id: str,
+    position: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    today: date = Depends(get_today),
+) -> Response:
+    """Quita la diapositiva y abre la que quedó en su lugar (o la anterior,
+    si era la última)."""
+    post = _load(db, post_id)
+    try:
+        remove_slide(db, post, position)
+    except InvalidTransition as error:
+        db.rollback()
+        return HTMLResponse(str(error), status_code=status.HTTP_409_CONFLICT)
+    except InvalidSlide as error:
+        db.rollback()
+        return _editor(request, db, post, today, error=str(error), status_code=422)
+    db.commit()
+    return _back(post, min(position, len(post.slides)))
 
 
 @router.post("/marketing/post/{post_id}/aprobar", response_model=None)
@@ -469,7 +650,10 @@ async def marketing_post_approve(
         return HTMLResponse(str(error), status_code=status.HTTP_409_CONFLICT)
     except (NoData, InvalidParams) as error:
         db.rollback()
-        return _editor(request, db, post, today, error=str(error), status_code=422)
+        return _editor(
+            request, db, post, today, error=str(error), status_code=422,
+            position=_form_position(form),
+        )
     except RendererUnavailable as error:
         db.rollback()
         return HTMLResponse(str(error), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)

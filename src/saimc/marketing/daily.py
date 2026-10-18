@@ -12,8 +12,10 @@ rasteriza: deja borradores en `/marketing` («Hoy») para que el operador los
 revise, apruebe y publique desde el teléfono.
 
 Qué tarjetas toca cada día (`cards_for_day`): «Dato del día» todos los días; los
-lunes, además, «Cómo se movió» (el ritmo semanal); los jueves, «De dónde sale
-este precio» (el método). Las demás piezas son branding fijo.
+lunes, además, «Cómo se movió» (el ritmo semanal); los miércoles, el carrusel
+(portada → cómo leer → «Dato del día» → cierre, un solo borrador con cuatro
+diapositivas, F3); los jueves, «De dónde sale este precio» (el método). Las
+demás piezas son branding fijo.
 
 **Idempotente por día y tipo**: si ya hay un borrador del lote para ese día y
 ese tipo —en el estado que sea, descartado incluido— no se crea otro. Lo
@@ -54,16 +56,34 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.db import session_scope
 from saimc.marketing.context import BY_SLUG, CardType, build_context
-from saimc.marketing.posts import RETENTION_DAYS, context_has_data, create_draft, purge_expired
+from saimc.marketing.posts import (
+    RETENTION_DAYS,
+    context_has_data,
+    create_carousel_draft,
+    create_draft,
+    purge_expired,
+)
 from saimc.models.marketing_post import MarketingPost, PostOrigin
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 
 #: La que sale todos los días.
 DAILY_CARDS: tuple[str, ...] = ("dato-del-dia",)
 
+#: El carrusel del miércoles (`docs/guia-crecimiento.md`, «La semana tipo»):
+#: un turno del calendario que arma una sola publicación con estas diapositivas.
+CAROUSEL_SLOT = "carrusel"
+CAROUSEL_LABEL = "Carrusel"
+CAROUSEL_SLIDES: tuple[str, ...] = (
+    "carrusel-portada",
+    "carrusel-consejo",
+    "dato-del-dia",
+    "carrusel-cierre",
+)
+
 #: Las que suman ciertos días. Clave: `date.weekday()` (0 = lunes).
 WEEKLY_CARDS: dict[int, tuple[str, ...]] = {
     0: ("como-se-movio",),
+    2: (CAROUSEL_SLOT,),
     3: ("de-donde-sale",),
 }
 
@@ -73,6 +93,16 @@ _HAVANA = "America/Havana"
 def cards_for_day(day: date) -> tuple[str, ...]:
     """Los slugs que toca generar el `day` (el día en que corre el lote)."""
     return DAILY_CARDS + WEEKLY_CARDS.get(day.weekday(), ())
+
+
+def slot_label(slot: str) -> str:
+    """Cómo se nombra un turno del calendario en «Hoy»."""
+    return CAROUSEL_LABEL if slot == CAROUSEL_SLOT else BY_SLUG[slot].label
+
+
+def slot_slides(slot: str) -> tuple[str, ...]:
+    """Las diapositivas que lleva el borrador de un turno."""
+    return CAROUSEL_SLIDES if slot == CAROUSEL_SLOT else (slot,)
 
 
 def candidate_order[T](items: Sequence[T], day: date) -> list[T]:
@@ -167,6 +197,15 @@ def _pick(kind: CardType, db: Session, day: date) -> tuple[str | None, str | Non
     return None
 
 
+def _pick_slot(db: Session, day: date, slot: str) -> tuple[str | None, str | None] | None:
+    """Producto y provincia del turno. En el carrusel los elige la diapositiva
+    con datos; si no tiene con qué, no se crea: sería puro branding."""
+    con_datos = [BY_SLUG[s] for s in slot_slides(slot) if BY_SLUG[s].needs_product]
+    if not con_datos:
+        return None, None
+    return _pick(con_datos[0], db, day)
+
+
 def _exists(db: Session, day: date, slot: str) -> bool:
     return (
         db.scalar(
@@ -189,8 +228,7 @@ def run_daily(
         if _exists(db, day, slug):
             report.cards.append(CardResult(slug, "ya existía"))
             continue
-        kind = BY_SLUG[slug]
-        elegida = _pick(kind, db, day)
+        elegida = _pick_slot(db, day, slug)
         if elegida is None:
             report.cards.append(CardResult(slug, "sin datos"))
             continue
@@ -203,10 +241,18 @@ def run_daily(
             # consulta y el alta, la restricción única salta acá y solo se
             # deshace este.
             with db.begin_nested():
-                create_draft(
-                    db, card_slug=slug, planned_for=day, product=producto, province=provincia,
-                    data_through=report.data_through, origin=PostOrigin.BATCH, batch_slot=slug,
-                )
+                if slug == CAROUSEL_SLOT:
+                    create_carousel_draft(
+                        db, card_slugs=CAROUSEL_SLIDES, planned_for=day, product=producto,
+                        province=provincia, data_through=report.data_through,
+                        origin=PostOrigin.BATCH, batch_slot=slug,
+                    )
+                else:
+                    create_draft(
+                        db, card_slug=slug, planned_for=day, product=producto,
+                        province=provincia, data_through=report.data_through,
+                        origin=PostOrigin.BATCH, batch_slot=slug,
+                    )
         except IntegrityError:
             # Solo la carrera con otra corrida es «ya existía»; cualquier otra
             # restricción que salte es un error de verdad y no se tapa.

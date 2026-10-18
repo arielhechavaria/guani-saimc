@@ -179,9 +179,9 @@ sitio.
 | 1 | **Dato del día** | 1080×1350 (4:5) | Descubrir | Casi todos los días | Lote diario, todos los días |
 | 2 | **Cómo se movió** | 1080×1350 | Volver | Lunes | Lote diario, los lunes |
 | 3 | **De dónde sale este precio** | 1080×1350 | Visitar / confianza | Jueves | Lote diario, los jueves |
-| 4 | **Carrusel · portada** | 1080×1350 | Descubrir | Miércoles, 1.ª lámina | `/marketing`, a mano |
-| 5 | **Carrusel · cómo leer los precios** | 1080×1350 | Volver (se guarda) | Miércoles, 2.ª lámina | `/marketing`, a mano |
-| 6 | **Carrusel · cierre** | 1080×1350 | Visitar | Miércoles, última lámina | `/marketing`, a mano |
+| 4 | **Carrusel · portada** | 1080×1350 | Descubrir | Miércoles, 1.ª lámina | Lote diario, los miércoles (carrusel) |
+| 5 | **Carrusel · cómo leer los precios** | 1080×1350 | Volver (se guarda) | Miércoles, 2.ª lámina | Lote diario, los miércoles (carrusel) |
+| 6 | **Carrusel · cierre** | 1080×1350 | Visitar | Miércoles, última lámina | Lote diario, los miércoles (carrusel) |
 | 7 | **De los grupos a la cifra** | 1080×1350 | Confianza | Una vez, fijada arriba del perfil | `/marketing`, a mano |
 | 8 | **Story de precalentamiento** | 1080×1920 (9:16) | Volver | La víspera de algo nuevo | `/marketing`, a mano |
 | 9 | **Portada de Facebook** | 1640×624 | — | Cuando se abra la página de Facebook | `/marketing`, a mano |
@@ -219,8 +219,10 @@ Notas por pieza:
 
 ### La semana tipo
 
-El lote ya arma las piezas 1, 2 y 3 con este ritmo (`WEEKLY_CARDS` en
-`src/saimc/marketing/daily.py`). El resto es a mano.
+El lote ya deja como borrador las piezas 1, 2 y 3 y, los miércoles, el
+carrusel entero (piezas 4, 5, un «Dato del día» y 6, en ese orden) con este
+ritmo (`WEEKLY_CARDS` en `src/saimc/marketing/daily.py`). Para un segundo
+«Dato del día» en el carrusel, agregalo desde el editor. El resto es a mano.
 
 | Día | Feed | Stories | Tiempo |
 |---|---|---|---|

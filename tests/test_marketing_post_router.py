@@ -212,7 +212,10 @@ class TestEditor:
 
         assert 'name="b_barra"' not in html
         assert "readonly" in html
-        assert f'data-mk-url="/marketing/post/{post.id}/slide/1.jpg"' in html
+        assert f'data-mk-files=\'[{{"name": "guani-dato-del-dia-{HOY.isoformat()}.jpg", ' \
+            f'"url": "/marketing/post/{post.id}/slide/1.jpg"}}]\'' in html
+        # Una suelta no ofrece «Guardar todas»: eso es del carrusel.
+        assert "data-mk-save-all" not in html
         assert "Marcar publicada" in html and "Descartar" in html and "Duplicar" in html
         assert (
             client.post(f"/marketing/post/{post.id}", data={"caption": "x"}).status_code == 409
