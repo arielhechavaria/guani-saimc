@@ -48,6 +48,74 @@ async def _select(app: GuaniTUI, pilot, command_id: str) -> None:
     raise AssertionError(command_id)
 
 
+def test_j_and_k_move_the_cursor(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str | None, str | None]:
+        app = _app(tmp_path)
+        async with app.run_test() as pilot:
+            tree = app.query_one(Tree)
+            await pilot.press("j", "j")
+            down = tree.cursor_node.data if tree.cursor_node else None
+            await pilot.press("k")
+            up = tree.cursor_node.data if tree.cursor_node else None
+            return down, up
+
+    down, up = asyncio.run(scenario())
+    # Arranca en el encabezado del grupo: j, j cae en el segundo comando; k vuelve al primero.
+    assert down == "escribir"
+    assert up == "leer"
+
+
+def test_enter_on_a_command_runs_it(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        app = _app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "leer")
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return _log_text(app)
+
+    assert "salida-leer" in asyncio.run(scenario())
+
+
+def test_enter_on_a_group_folds_it_instead_of_running(tmp_path: Path) -> None:
+    async def scenario() -> tuple[bool, str]:
+        app = _app(tmp_path)
+        async with app.run_test() as pilot:
+            tree = app.query_one(Tree)
+            group = tree.root.children[0]
+            tree.move_cursor(group)
+            await pilot.pause()
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return group.is_expanded, _log_text(app)
+
+    expanded, text = asyncio.run(scenario())
+    assert not expanded
+    assert text == ""
+
+
+def test_the_selected_command_carries_the_arrow_marker(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str, str]:
+        app = _app(tmp_path)
+        async with app.run_test() as pilot:
+            tree = app.query_one(Tree)
+            await _select(app, pilot, "leer")
+            leaf = tree.cursor_node
+            other = next(n for n in tree.root.children[0].children if n is not leaf)
+            assert leaf is not None
+            style = tree.get_component_rich_style("tree--label")
+            return (
+                tree.render_label(leaf, style, style).plain,
+                tree.render_label(other, style, style).plain,
+            )
+
+    selected, other = asyncio.run(scenario())
+    assert selected.startswith("▸ ")
+    assert not other.startswith("▸")
+
+
 def test_selecting_a_command_shows_its_exact_line(tmp_path: Path) -> None:
     async def scenario() -> str:
         app = _app(tmp_path)
