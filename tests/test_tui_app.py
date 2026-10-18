@@ -116,6 +116,25 @@ def test_the_selected_command_carries_the_arrow_marker(tmp_path: Path) -> None:
     assert not other.startswith("▸")
 
 
+def test_the_menu_ends_with_quit_and_enter_on_it_exits(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str, list[bool]]:
+        app = _app(tmp_path)
+        exits: list[bool] = []
+        async with app.run_test() as pilot:
+            tree = app.query_one(Tree)
+            last = tree.root.children[-1]
+            tree.move_cursor(last)
+            await pilot.pause()
+            app.exit = lambda *args, **kwargs: exits.append(True)  # type: ignore[method-assign]
+            await pilot.press("enter")
+            await pilot.pause()
+            return str(last.label), exits
+
+    label, exits = asyncio.run(scenario())
+    assert label.endswith("Salir")
+    assert exits == [True]
+
+
 def test_selecting_a_command_shows_its_exact_line(tmp_path: Path) -> None:
     async def scenario() -> str:
         app = _app(tmp_path)

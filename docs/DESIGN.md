@@ -11,6 +11,9 @@ las reglas de uso y las decisiones que el CSS no dice.
   tres archivos juntos. El bloque se copia dentro de `static/saimc-material.css`
   y `static/saimc-public.css`; `tests/test_static_assets.py` falla si se
   desincronizan.
+- La terminal del operador (`saimc.tui`) también sale de ahí: lee los tokens
+  `--m3-` del bloque oscuro al arrancar (`saimc/tui/theme.py`) y falla si falta
+  uno. Su avatar copia los hex de `_guani_avatar.html`, vigilado por test.
 - Nunca se declara un color con valor suelto en una plantilla ni se escribe
   `var(--m3-x, #fallback)` con un fallback inventado: ya pasó, y el fallback
   ganaba siempre con un color de otro esquema.
