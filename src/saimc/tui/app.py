@@ -1,7 +1,8 @@
 """App Textual: árbol de comandos y logs a la izquierda, salida a la derecha.
 
-El aspecto sigue al de gentle-ai (paleta Rose Pine, marco doble, cursor `▸`,
-`j`/`k`) para que las dos terminales del operador se sientan iguales.
+La forma sigue a la de gentle-ai (marco doble, cursor `▸`, `j`/`k`, «Salir» al
+final del menú); los colores son los tokens `--m3-` oscuros de
+`design_tokens.css` (`saimc.tui.theme`) y el avatar es el de la web.
 """
 
 from pathlib import Path
@@ -16,26 +17,34 @@ from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static, Tree
 from textual.widgets.tree import TreeNode
 
-from saimc.tui import registry
+from saimc.tui import avatar, registry, theme
 from saimc.tui.registry import Command, LogSource
 from saimc.tui.runner import Finished, stream
 
-# Rose Pine, la misma paleta que usa gentle-ai.
-BASE = "#191724"
-SURFACE = "#1f1d2e"
-OVERLAY = "#26233a"
-TEXT = "#e0def4"
-MUTED = "#908caa"
-IRIS = "#c3a7e7"
-ROSE = "#ebbcba"
-GOLD = "#f6c177"
-LOVE = "#eb6f92"
+_P = theme.load()
+BG = _P["m3-bg"]
+SURFACE = _P["m3-surface"]
+TEXT = _P["m3-on-surface"]
+MUTED = _P["m3-on-surface-variant"]
+FRAME = _P["m3-outline"]
+DIVIDER = _P["m3-outline-variant"]
+PRIMARY = _P["m3-primary"]
+SELECTED = _P["m3-primary-container"]
+GROUP = _P["m3-tertiary"]
+WARN = _P["m3-warn"]
+ERROR = _P["m3-error"]
+SUCCESS = _P["m3-success"]
+
+QUIT = "__quit__"
+AVATAR_SIZE = 24
+# Con menos filas la cabecera se esconde para que el menú no se quede sin lugar.
+MIN_HEIGHT_FOR_HEADER = 36
 
 HELP = "j/k: mover • enter: correr/plegar • x: cortar • c: limpiar • q: salir"
 
 
 class Menu(Tree[str]):
-    """Árbol con las marcas de gentle-ai: `▸` en el comando elegido y grupos en rosa."""
+    """Árbol con las marcas de gentle-ai: `▸` en el comando elegido y grupos resaltados."""
 
     ICON_NODE = "▸ "
     ICON_NODE_EXPANDED = "▾ "
@@ -43,7 +52,7 @@ class Menu(Tree[str]):
     def render_label(self, node: TreeNode[str], base_style: Style, style: Style) -> Text:
         label = super().render_label(node, base_style, style)
         if node.allow_expand:
-            label.stylize(f"bold {ROSE}")
+            label.stylize(f"bold {GROUP}")
             return label
         marker = "▸ " if node is self.cursor_node else "  "
         return Text(marker) + label
@@ -68,13 +77,13 @@ class ConfirmScreen(ModalScreen[bool]):
         if self._command.spends:
             what.append("gasta plata en una API")
         body = Text()
-        body.append(f"{self._command.title}\n", style=f"bold {ROSE}")
+        body.append(f"{self._command.title}\n", style=f"bold {PRIMARY}")
         body.append(f"$ {self._command.display}\n\n", style=MUTED)
-        body.append(f"Este comando {' y '.join(what)}.\n", style=GOLD)
+        body.append(f"Este comando {' y '.join(what)}.\n", style=WARN)
         body.append("¿Correrlo? ", style=TEXT)
-        body.append("y", style=f"bold {IRIS}")
+        body.append("y", style=f"bold {PRIMARY}")
         body.append("/", style=MUTED)
-        body.append("n", style=f"bold {IRIS}")
+        body.append("n", style=f"bold {PRIMARY}")
         yield Static(body, id="confirm")
 
     def action_answer(self, accepted: bool) -> None:
@@ -84,30 +93,37 @@ class ConfirmScreen(ModalScreen[bool]):
 class GuaniTUI(App[None]):
     TITLE = "Guani"
     CSS = f"""
-    Screen {{ background: {BASE}; color: {TEXT}; }}
-    #frame {{ border: double {IRIS}; padding: 0 1; height: 1fr; }}
-    #title {{ color: {MUTED}; height: 1; }}
+    Screen {{ background: {BG}; color: {TEXT}; }}
+    #menu, #output {{
+        scrollbar-background: {BG}; scrollbar-background-hover: {BG};
+        scrollbar-background-active: {BG}; scrollbar-color: {DIVIDER};
+        scrollbar-color-hover: {FRAME}; scrollbar-color-active: {MUTED};
+    }}
+    #frame {{ border: double {FRAME}; padding: 0 1; height: 1fr; }}
+    #header {{ height: auto; border-bottom: solid {DIVIDER}; }}
+    #avatar {{ width: {AVATAR_SIZE + 2}; height: {AVATAR_SIZE // 2}; }}
+    #title {{ height: auto; padding: 1 0 0 1; }}
     #body {{ height: 1fr; }}
     #menu {{
-        width: 46; background: {BASE}; scrollbar-size-vertical: 1;
-        border-right: solid {OVERLAY};
+        width: 46; background: {BG}; scrollbar-size-vertical: 1;
+        border-right: solid {DIVIDER};
     }}
     #menu:focus {{ background-tint: transparent; }}
-    #menu > .tree--guides,#menu > .tree--guides-hover, #menu > .tree--guides-selected {{
-        color: {BASE};
+    #menu > .tree--guides, #menu > .tree--guides-hover, #menu > .tree--guides-selected {{
+        color: {BG};
     }}
     #menu > .tree--cursor, #menu:focus > .tree--cursor {{
-        background: {BASE}; color: {IRIS}; text-style: bold;
+        background: {SELECTED}; color: {PRIMARY}; text-style: bold;
     }}
-    #menu > .tree--highlight, #menu > .tree--highlight-line {{ background: {BASE}; }}
+    #menu > .tree--highlight, #menu > .tree--highlight-line {{ background: {BG}; }}
     #menu > .tree--label {{ color: {TEXT}; }}
     #right {{ padding: 0 1; }}
-    #detail {{ height: auto; max-height: 8; border-bottom: solid {OVERLAY}; }}
-    #output {{ background: {BASE}; color: {TEXT}; scrollbar-size-vertical: 1; }}
+    #detail {{ height: auto; max-height: 8; border-bottom: solid {DIVIDER}; }}
+    #output {{ background: {BG}; color: {TEXT}; scrollbar-size-vertical: 1; }}
     #help {{ color: {MUTED}; height: 1; }}
-    ConfirmScreen {{ align: center middle; background: {BASE} 80%; }}
+    ConfirmScreen {{ align: center middle; background: {BG} 80%; }}
     #confirm {{
-        width: 70; height: auto; border: double {GOLD}; padding: 1 2; background: {SURFACE};
+        width: 70; height: auto; border: double {WARN}; padding: 1 2; background: {SURFACE};
     }}
     """
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -132,8 +148,14 @@ class GuaniTUI(App[None]):
         self._cwd = cwd
 
     def compose(self) -> ComposeResult:
+        title = Text()
+        title.append("Guani\n", style=f"bold {PRIMARY}")
+        title.append("Terminal del operador\n\n", style=TEXT)
+        title.append("Sistema Abierto de Inteligencia de Mercado", style=MUTED)
         with Vertical(id="frame"):
-            yield Static("Guani — Sistema Abierto de Inteligencia de Mercado", id="title")
+            with Horizontal(id="header"):
+                yield Static(avatar.render(AVATAR_SIZE), id="avatar")
+                yield Static(title, id="title")
             with Horizontal(id="body"):
                 yield Menu("Guani", id="menu")
                 with Vertical(id="right"):
@@ -154,7 +176,11 @@ class GuaniTUI(App[None]):
         logs = tree.root.add("Logs en vivo", expand=True)
         for log in self._logs.values():
             logs.add_leaf(log.title, data=log.id)
+        tree.root.add_leaf("Salir", data=QUIT)
         tree.focus()
+
+    def on_resize(self) -> None:
+        self.query_one("#header").display = self.size.height >= MIN_HEIGHT_FOR_HEADER
 
     def _lookup(self, key: str | None) -> Command | LogSource | None:
         if key is None:
@@ -166,18 +192,20 @@ class GuaniTUI(App[None]):
         detail = self.query_one("#detail", Static)
         text = Text()
         if isinstance(item, Command):
-            text.append(item.title, style=f"bold {ROSE}")
+            text.append(item.title, style=f"bold {PRIMARY}")
             for name, on in (("escribe", item.writes), ("gasta", item.spends)):
                 if on:
-                    text.append(f"  [{name}]", style=f"bold {GOLD}")
+                    text.append(f"  [{name}]", style=f"bold {WARN}")
             text.append(f"\n{item.about}\n", style=TEXT)
             text.append(f"$ {item.display}", style=MUTED)
             detail.update(text)
         elif isinstance(item, LogSource):
-            text.append(f"Log en vivo: {item.title}\n", style=f"bold {ROSE}")
+            text.append(f"Log en vivo: {item.title}\n", style=f"bold {PRIMARY}")
             text.append(f"$ {item.display}\n", style=MUTED)
             text.append("x para cortar", style=MUTED)
             detail.update(text)
+        elif event.node.data == QUIT:
+            detail.update(Text("Cerrar la terminal (también con q).", style=MUTED))
 
     def on_tree_node_selected(self, event: Tree.NodeSelected[str]) -> None:
         # Enter sobre un grupo lo pliega (lo hace el árbol); sobre un comando, lo corre.
@@ -192,6 +220,9 @@ class GuaniTUI(App[None]):
 
     def action_run(self) -> None:
         node = self.query_one(Menu).cursor_node
+        if node is not None and node.data == QUIT:
+            self.exit()
+            return
         item = self._lookup(node.data if node else None)
         if isinstance(item, Command) and item.needs_confirm:
             self.push_screen(ConfirmScreen(item), lambda ok: self._run(item) if ok else None)
@@ -200,21 +231,21 @@ class GuaniTUI(App[None]):
 
     def _run(self, item: Command | LogSource) -> None:
         self.workers.cancel_group(self, "run")
-        self.query_one(RichLog).write(Text(f"$ {item.display}", style=f"bold {IRIS}"))
+        self.query_one(RichLog).write(Text(f"$ {item.display}", style=f"bold {PRIMARY}"))
         self.run_worker(self._execute(item.argv), group="run", exclusive=True)
 
     async def _execute(self, argv: tuple[str, ...]) -> None:
         log = self.query_one(RichLog)
         async for item in stream(argv, self._cwd):
             if isinstance(item, Finished):
-                color = MUTED if item.returncode == 0 else LOVE
+                color = SUCCESS if item.returncode == 0 else ERROR
                 log.write(Text(f"[salió con código {item.returncode}]", style=color))
             else:
                 log.write(item)
 
     def action_stop(self) -> None:
         self.workers.cancel_group(self, "run")
-        self.query_one(RichLog).write(Text("[cortado]", style=GOLD))
+        self.query_one(RichLog).write(Text("[cortado]", style=WARN))
 
     def action_clear(self) -> None:
         self.query_one(RichLog).clear()

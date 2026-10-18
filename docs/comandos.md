@@ -78,8 +78,10 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 
 - **Para qué**: un menú con los comandos de este catálogo que no piden `sudo` y los logs de cada
   unidad (`journalctl -f`). Muestra la línea exacta antes de correr.
-- **Teclas**: flechas para moverte, `r` o Enter corre, `x` corta (también los logs en vivo), `c`
-  limpia la salida, `q` sale. Los marcados con ⚠ escriben o gastan y piden `y`/`n`.
+- **Teclas**: `j`/`k` o flechas para moverte, Enter corre (sobre un grupo, lo pliega), `x` corta
+  (también los logs en vivo), `c` limpia la salida, `q` o «Salir» al final del menú sale. Los
+  marcados con ⚠ escriben o gastan y piden `y`/`n`. Con menos de 36 filas se esconde la cabecera
+  con el avatar.
 - **Cuándo**: cuando no te acordás cuál era el comando o querés ver un log. El primer `pip install`
   se hace una sola vez. Los comandos con `sudo` (reiniciar, arrancar un servicio) siguen a mano.
 - **Cambia algo**: solo los marcados con ⚠, y solo si confirmás. **Gasta**: solo `Pre-cálculo escribiendo`.
