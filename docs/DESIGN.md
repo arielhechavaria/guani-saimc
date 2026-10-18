@@ -53,7 +53,8 @@ Alice); el resto, en Roboto (`--m3-font`) y Roboto Mono para código.
    se regenera con `tools/build_icon_font.py`). Fuentes y activos se sirven
    desde `/static`, nunca desde un CDN.
 7. **Animación solo CSS y solo lo barato**, con `prefers-reduced-motion`
-   respetado. Sin JavaScript nuevo para decorar.
+   respetado. Sin JavaScript nuevo para decorar. (El tour de primera visita del
+   mapa es JS funcional, no decoración: ver `docs/decisions.md`, 2026-10-18.)
 
 ## Landing: la página es un día
 

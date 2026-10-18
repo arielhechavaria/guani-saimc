@@ -1181,6 +1181,77 @@
        bandeja con el dedo. */
     .ph-js [data-win-handle] { cursor: auto; touch-action: auto; }
   }
+
+  /* ── Tour de primera visita (slice tour-primera-visita, 2026-10-18) ─────
+     Cuatro pasos sobre la página real: qué es Guani, provincia y rango, leer
+     una tarjeta de precio, entrar a un producto. Vive fuera de `#ph-live`
+     (htmx lo reemplaza en cada swap) y lo maneja el último `<script>` del
+     pie. Solo tokens `--ph-*`/`--m3-*`: el modo oscuro sale de ellos, y el
+     test del slice falla si aparece un color suelto acá. El foco se ve en
+     el anillo del elemento apuntado (`.ph-tour-spot`): una sombra enorme
+     oscurece todo lo demás en vez de dibujar un recorte con máscara. */
+  .ph-tour { position: fixed; inset: 0; z-index: 2000; }
+  .ph-tour-spot {
+    position: fixed; pointer-events: none;
+    border-radius: var(--ph-radius-sm);
+    box-shadow: 0 0 0 100vmax var(--ph-scrim);
+    outline: 3px solid var(--ph-accent-2); outline-offset: 3px;
+    transition: top .22s ease, left .22s ease, width .22s ease, height .22s ease;
+  }
+  /* Paso sin elemento (el de bienvenida, o uno cuyo objetivo no está en
+     pantalla): solo velo, sin anillo. */
+  .ph-tour-spot.is-none {
+    inset: 0; width: auto; height: auto; border-radius: 0; outline: none;
+    box-shadow: none; background: var(--ph-scrim);
+  }
+  .ph-tour-card {
+    position: fixed; box-sizing: border-box; width: min(24rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto;
+    padding: 1.25rem 1.25rem 1rem; border-radius: var(--ph-radius-lg);
+    background: var(--m3-surface); color: var(--m3-on-surface);
+    border: 1px solid var(--m3-divider); box-shadow: var(--ph-elev);
+  }
+  .ph-tour-card:focus { outline: none; }
+  .ph-tour-count { margin: 0 0 .25rem; font-size: .75rem; color: var(--m3-on-surface-variant); }
+  .ph-tour-title { margin: 0 0 .5rem; font-family: var(--ph-font-heading); font-weight: 400; font-size: 1.4rem; line-height: 1.2; }
+  .ph-tour-text { margin: 0 0 1rem; font-size: .9375rem; line-height: 1.5; }
+  .ph-tour-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; }
+  .ph-tour-btn {
+    appearance: none; -webkit-appearance: none; font: inherit; cursor: pointer;
+    min-height: 44px; padding: 0 1.1rem; border-radius: 999px;
+    border: 1px solid var(--m3-divider); background: var(--m3-surface); color: var(--m3-on-surface);
+    font-size: .875rem; font-weight: 600;
+  }
+  .ph-tour-btn:hover { border-color: var(--ph-accent); }
+  .ph-tour-btn:focus-visible { outline: 2px solid var(--ph-accent-2-line); outline-offset: 2px; }
+  .ph-tour-btn.is-primary { background: var(--ph-accent); border-color: var(--ph-accent); color: var(--ph-on-accent); }
+  .ph-tour-btn.is-quiet { margin-right: auto; border-color: transparent; background: transparent; color: var(--m3-on-surface-variant); }
+  .ph-tour-btn[hidden] { display: none; }
+  /* «Ver el recorrido», dentro del bloque de título que abre el avatar. Ese
+     bloque se oculta solo con `opacity` y sigue recibiendo toques: sin
+     `visibility` y `pointer-events` acá, un toque suelto sobre el mapa
+     arrancaría el tour. Se muestra igual que el dock (`.is-active` o foco). */
+  .ph-tour-link {
+    appearance: none; -webkit-appearance: none; font: inherit; cursor: pointer;
+    justify-self: start; display: inline-flex; align-items: center; gap: .3rem;
+    min-height: 44px; padding: 0 .5rem 0 0; border: 0; background: none;
+    color: var(--ph-accent); font-size: .8125rem; font-weight: 600;
+    visibility: hidden; pointer-events: none;
+  }
+  .ph-tour-link .m3-icon { font-size: 1.125rem; }
+  .ph-compass-nav:focus-within .ph-tour-link,
+  .ph-compass-nav.is-active .ph-tour-link { visibility: visible; pointer-events: auto; }
+  .ph-tour-link:focus-visible { outline: 2px solid var(--ph-accent-2-line); outline-offset: 2px; border-radius: var(--ph-radius-sm); }
+  /* Escritorio con el panel de precios a la derecha y el compás a la izquierda:
+     la tarjeta del tour se posiciona por script junto al elemento; en angosto
+     ocupa el ancho y se pega arriba o abajo (script), sobre la barra inferior. */
+  @media (max-width: 720px) {
+    .ph-tour-card { width: auto; left: 1rem; right: 1rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ph-tour-spot { transition: none; }
+  }
+  /* ── /Tour */
 </style>
 {% endblock %}
 
@@ -1241,6 +1312,12 @@
         Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
       </p>
       {% endif %}
+      {# Repetir el tour (slice tour-primera-visita): siempre disponible, haya
+         o no storage. Vive acá y no en el dock porque en el teléfono los
+         chips tapan el final del dock, y este bloque sí queda a la vista
+         cuando el avatar lo abre. Lo atiende el último `<script>` del pie
+         por delegación: `#ph-live` se reemplaza con cada swap de htmx. #}
+      <button type="button" class="ph-tour-link" id="ph-tour-reopen" data-tour-open aria-label="Ver el recorrido de nuevo"><span class="m3-icon" aria-hidden="true">help</span>Ver el recorrido</button>
     </div>
 
     {# Dock del compás: cada ítem abre o cierra su ventana flotante. Varias
@@ -2081,6 +2158,49 @@
 
 {# Barra inferior de vistas: solo en el teléfono (`saimc-public.css`). #}
 {% include "_barra_vistas.html" %}
+
+{# Tour de primera visita (slice tour-primera-visita). Fuera de `#ph-live` a
+   propósito: htmx lo reemplaza entero en cada swap y el tour se reiniciaría.
+   El texto de los pasos vive acá, en el marcado, y el script solo lo lee:
+   `data-target` es el selector del elemento a señalar y `data-fallback` el
+   de respaldo; sin ninguno (o si no se ven en pantalla) el paso sale
+   centrado. El orden y los selectores los cubre `tests/test_public_tour.py`. #}
+<div class="ph-tour" id="ph-tour" hidden role="dialog" aria-modal="true" aria-labelledby="ph-tour-title" aria-describedby="ph-tour-text">
+  <div class="ph-tour-spot is-none" aria-hidden="true"></div>
+  <section class="ph-tour-card" tabindex="-1">
+    <p class="ph-tour-count" aria-live="polite"></p>
+    <h2 class="ph-tour-title" id="ph-tour-title"></h2>
+    <p class="ph-tour-text" id="ph-tour-text"></p>
+    <div class="ph-tour-actions">
+      <button type="button" class="ph-tour-btn is-quiet" data-tour-skip>Saltar</button>
+      <button type="button" class="ph-tour-btn" data-tour-prev>Atrás</button>
+      <button type="button" class="ph-tour-btn is-primary" data-tour-next>Siguiente</button>
+    </div>
+  </section>
+</div>
+<template id="ph-tour-steps">
+  <ol>
+    <li data-tour-step="que-es" data-target="">
+      <h3>Esto es Guani</h3>
+      <p>Cuánto cuestan las cosas en el mercado informal de Cuba, provincia por provincia. Cada cifra sale de anuncios reales y dice de cuántos sale. Una máquina los lee y una persona supervisa.</p>
+    </li>
+    <li data-tour-step="filtros" data-target=".ph-compass-filters">
+      <h3>Elige provincia y rango</h3>
+      <p>Con el selector cambias de provincia. Los atajos 3, 7 y 30 son los últimos días que se cuentan, y el calendario abre un rango a tu medida.</p>
+    </li>
+    {# `data-prepare`: sin ningún producto elegido (la primera visita) no hay
+       panel de precios; este paso abre el primer producto, como si lo
+       tocaras, para que haya algo real que leer. #}
+    <li data-tour-step="tarjeta" data-prepare="open-first-product" data-target=".ph-pane:not([hidden]) .ph-pane-head" data-fallback=".ph-side">
+      <h3>Lee un precio</h3>
+      <p>Al tocar un producto se abre su panel. Arriba va el rango —«de tanto a tanto»— y cuántos anuncios lo respaldan: más anuncios, más firme la cifra. Un precio no es «bueno» ni «malo», solo se ubica entre lo observado.</p>
+    </li>
+    <li data-tour-step="producto" data-target=".ph-pane:not([hidden]) a.ph-fpanel-detail[href^='/producto/']" data-fallback=".ph-chip-rail">
+      <h3>Entra a un producto</h3>
+      <p>«Vista simple para compartir» abre la página de ese producto, liviana y lista para mandar por WhatsApp. Los botones de producto de arriba sirven para ver solo los que te interesan.</p>
+    </li>
+  </ol>
+</template>
 {% endblock %}
 
 {% block scripts %}
@@ -2790,7 +2910,10 @@
     var YA_VISTO = "guani:compas-visto";
     var visto = true;
     try {
-      visto = !!localStorage.getItem(YA_VISTO);
+      // Con el tour de primera visita pendiente (`guani_tour`, script del
+      // final) la pista espera: dos ayudas a la vez en la primera visita se
+      // pisan. Sale en la siguiente, cuando el tour ya se vio.
+      visto = !!localStorage.getItem(YA_VISTO) || !localStorage.getItem("guani_tour");
     } catch (e) {
       visto = true; // sin storage (privado/bloqueado): no se muestra la pista
     }
@@ -3078,6 +3201,259 @@
   pintarTodas();
   iniciarPestanas();
   inicializarMapa();
+})();
+</script>
+
+{# Tour de primera visita (slice tour-primera-visita). Script propio y
+   autocontenido, sin librerías: lee los pasos de `<template id="ph-tour-steps">`
+   y los muestra sobre la página real. Va aparte del script de arriba para no
+   tocar nada del mapa ni de las ventanas. Todo lo que cuelga de `#ph-live`
+   (el botón de repetir) se atiende por delegación en `document`, porque htmx
+   reemplaza ese bloque en cada swap. Clases que asigna: `is-none` (sin
+   elemento apuntado), definida en el `<style>` de arriba. #}
+<script>
+(function () {
+  "use strict";
+  var KEY = "guani_tour";
+  var root = document.getElementById("ph-tour");
+  var tpl = document.getElementById("ph-tour-steps");
+  if (!root || !tpl || !tpl.content) return;
+
+  var spot = root.querySelector(".ph-tour-spot");
+  var card = root.querySelector(".ph-tour-card");
+  var counter = root.querySelector(".ph-tour-count");
+  var title = root.querySelector(".ph-tour-title");
+  var body = root.querySelector(".ph-tour-text");
+  var prev = root.querySelector("[data-tour-prev]");
+  var next = root.querySelector("[data-tour-next]");
+  var skip = root.querySelector("[data-tour-skip]");
+  var narrow = window.matchMedia("(max-width: 720px)");
+  var GAP = 12;
+  var MARGIN = 16;
+
+  var steps = Array.prototype.map.call(tpl.content.querySelectorAll("[data-tour-step]"), function (li) {
+    return {
+      target: li.getAttribute("data-target") || "",
+      fallback: li.getAttribute("data-fallback") || "",
+      prepare: li.getAttribute("data-prepare") || "",
+      title: li.querySelector("h3").textContent,
+      text: li.querySelector("p").textContent
+    };
+  });
+  if (!steps.length) return;
+
+  var active = false;
+  var index = 0;
+  var opener = null;
+
+  // Sin storage legible (modo privado, datos bloqueados) el tour NO arranca
+  // solo: no habría cómo recordar que ya se vio y saldría en cada visita.
+  // El botón de repetir sigue andando.
+  function shouldAutoStart() {
+    try {
+      return !localStorage.getItem(KEY);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Se anota al EMPEZAR, no al terminar: quien cierra la pestaña a la mitad
+  // no vuelve a ver el tour entero en la próxima visita.
+  function remember() {
+    try {
+      localStorage.setItem(KEY, "1");
+    } catch (e) {
+      /* sin storage: el tour automático ya no habría arrancado (shouldAutoStart) */
+    }
+  }
+
+  function isShown(el) {
+    if (!el) return false;
+    var r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+
+  function findTarget(step) {
+    var selectors = [step.target, step.fallback];
+    for (var i = 0; i < selectors.length; i++) {
+      if (!selectors[i]) continue;
+      var el = document.querySelector(selectors[i]);
+      if (isShown(el)) return el;
+    }
+    return null;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(value, max));
+  }
+
+  // La tarjeta se pega al elemento apuntado sin taparlo. En angosto ocupa el
+  // ancho y va arriba o abajo, según en qué mitad de la pantalla quede el
+  // elemento; en ancho prueba, en orden, debajo, arriba y a los lados.
+  function place() {
+    if (!active) return;
+    var step = steps[index];
+    var el = findTarget(step);
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var cw = card.offsetWidth;
+    var ch = card.offsetHeight;
+    var top;
+    var left;
+
+    if (el) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    var r = el ? el.getBoundingClientRect() : null;
+
+    if (r) {
+      spot.classList.remove("is-none");
+      spot.style.top = r.top + "px";
+      spot.style.left = r.left + "px";
+      spot.style.width = r.width + "px";
+      spot.style.height = r.height + "px";
+    } else {
+      spot.classList.add("is-none");
+      ["top", "left", "width", "height"].forEach(function (p) { spot.style[p] = ""; });
+    }
+
+    if (narrow.matches) {
+      // El CSS le da el ancho (`left`/`right` de 1rem): solo se elige arriba,
+      // abajo o centrada.
+      top = !r ? (vh - ch) / 2 : r.top + r.height / 2 > vh / 2 ? MARGIN : vh - ch - MARGIN;
+      left = null;
+    } else if (!r) {
+      top = (vh - ch) / 2;
+      left = (vw - cw) / 2;
+    } else {
+      var below = r.bottom + GAP + ch + MARGIN <= vh;
+      var above = r.top - GAP - ch >= MARGIN;
+      var leftRoom = r.left - GAP - cw >= MARGIN;
+      var rightRoom = r.right + GAP + cw + MARGIN <= vw;
+      var order = r.left + r.width / 2 > vw * 0.6
+        ? ["left", "below", "above", "right"]
+        : ["below", "above", "right", "left"];
+      var side = null;
+      for (var i = 0; i < order.length && !side; i++) {
+        if (order[i] === "below" && below) side = "below";
+        else if (order[i] === "above" && above) side = "above";
+        else if (order[i] === "left" && leftRoom) side = "left";
+        else if (order[i] === "right" && rightRoom) side = "right";
+      }
+      if (side === "below") { top = r.bottom + GAP; left = r.left; }
+      else if (side === "above") { top = r.top - GAP - ch; left = r.left; }
+      else if (side === "left") { top = r.top; left = r.left - GAP - cw; }
+      else if (side === "right") { top = r.top; left = r.right + GAP; }
+      else { top = (vh - ch) / 2; left = (vw - cw) / 2; }
+    }
+
+    card.style.top = clamp(top, MARGIN, Math.max(MARGIN, vh - ch - MARGIN)) + "px";
+    if (left === null) {
+      card.style.left = "";
+      card.style.right = "";
+    } else {
+      card.style.left = clamp(left, MARGIN, Math.max(MARGIN, vw - cw - MARGIN)) + "px";
+      card.style.right = "auto";
+    }
+  }
+
+  // Sin ningún producto elegido (la primera visita) no hay panel de precios.
+  // El chip se toca como lo haría el visitante: htmx hace el swap y
+  // `htmx:afterSettle` recoloca el anillo sobre el panel recién pintado. Sin
+  // htmx cargado, tocar el chip navegaría y sacaría al visitante del tour: en
+  // ese caso no se toca y el paso sale centrado.
+  function prepare(step) {
+    if (step.prepare !== "open-first-product") return;
+    if (document.querySelector(".ph-pane") || !window.htmx) return;
+    var chip = document.querySelector(".ph-chip-rail .ph-chip-toggle");
+    if (chip) chip.click();
+  }
+
+  function render() {
+    var step = steps[index];
+    var last = index === steps.length - 1;
+    prepare(step);
+    counter.textContent = "Paso " + (index + 1) + " de " + steps.length;
+    title.textContent = step.title;
+    body.textContent = step.text;
+    prev.hidden = index === 0;
+    skip.hidden = last;
+    next.textContent = last ? "Listo" : "Siguiente";
+    place();
+    card.focus();
+  }
+
+  function finish() {
+    if (!active) return;
+    active = false;
+    root.hidden = true;
+    document.removeEventListener("keydown", onKey, true);
+    if (opener && document.contains(opener) && opener.focus) opener.focus();
+    opener = null;
+  }
+
+  function start(auto) {
+    if (active) return;
+    // El dock del compás abierto taparía el elemento apuntado.
+    var dock = document.querySelector(".ph-compass-nav");
+    if (dock) dock.classList.remove("is-active");
+    if (auto) remember();
+    active = true;
+    index = 0;
+    opener = document.activeElement;
+    root.hidden = false;
+    document.addEventListener("keydown", onKey, true);
+    render();
+  }
+
+  function go(delta) {
+    var to = index + delta;
+    if (to < 0) return;
+    if (to >= steps.length) { finish(); return; }
+    index = to;
+    render();
+  }
+
+  // Mientras el tour está abierto el foco no sale de la tarjeta (modal) y
+  // Escape lo cierra.
+  function onKey(ev) {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      finish();
+      return;
+    }
+    if (ev.key !== "Tab") return;
+    var items = Array.prototype.filter.call(card.querySelectorAll("button"), function (b) { return !b.hidden; });
+    if (!items.length) return;
+    var first = items[0];
+    var last = items[items.length - 1];
+    var current = document.activeElement;
+    if (ev.shiftKey && (current === first || current === card)) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && current === last) { ev.preventDefault(); first.focus(); }
+    else if (!card.contains(current)) { ev.preventDefault(); first.focus(); }
+  }
+
+  next.addEventListener("click", function () { go(1); });
+  prev.addEventListener("click", function () { go(-1); });
+  skip.addEventListener("click", finish);
+
+  document.addEventListener("click", function (ev) {
+    if (ev.target.closest && ev.target.closest("[data-tour-open]")) start(false);
+  });
+  window.addEventListener("resize", place);
+  // Un swap de htmx (el que abre el primer producto, un cambio de provincia o
+  // de rango) re-renderiza el panel y mueve lo apuntado: se recoloca sin
+  // reiniciar. Dos veces: el panel recién pintado termina de acomodarse (la
+  // altura de las pestañas, el mapa que se reencuadra) un instante después.
+  function placeAfterSwap() {
+    place();
+    setTimeout(place, 450);
+  }
+  document.addEventListener("htmx:afterSettle", placeAfterSwap);
+
+  // Con el mapa y el panel ya pintados; antes, el anillo caería sobre un
+  // panel todavía sin medidas.
+  window.addEventListener("load", function () {
+    if (shouldAutoStart()) setTimeout(function () { start(true); }, 600);
+  });
 })();
 </script>
 {% endblock %}

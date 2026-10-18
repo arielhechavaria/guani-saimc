@@ -25,8 +25,10 @@
       `/anuncio/…`.
     - Cookies `vista` y `provincia`: las escribe `_vista_cookie_script.html`,
       un año, `samesite=lax`.
-    - `localStorage`: `guani:theme` (`_theme_toggle_script.html`) y
-      `guani:compas-visto` (`public_home.html`).
+    - `localStorage`: `guani:theme` (`_theme_toggle_script.html`),
+      `guani:compas-visto` y `guani_tour` (ambas en `public_home.html`;
+      `guani_tour` guarda «1» cuando el recorrido de primera visita ya salió
+      una vez, y se escribe al empezar, no al terminar).
     - El mapa pide sus teselas a `tile.openstreetmap.org` (`public_home.html`).
 
   Lo que NO se afirma porque no se puede leer en el repositorio: qué registra
@@ -53,6 +55,7 @@
   <li>La cookie <code>vista</code>: la última vista de precios que abriste (tablero, mapa o explorar). Dura un año.</li>
   <li>La cookie <code>provincia</code>: la provincia que elegiste, si elegiste alguna. Dura un año y se borra cuando quitas la provincia.</li>
   <li>En el almacenamiento local del navegador, <code>guani:theme</code> (modo claro u oscuro) y <code>guani:compas-visto</code> (para no repetirte una ayuda del mapa).</li>
+  <li>En el mismo almacenamiento, <code>guani_tour</code>: una marca que dice que ya viste el recorrido de la primera visita al mapa, para que no se repita solo. Si tu navegador no deja guardarla, el recorrido no arranca por su cuenta. Puedes repetirlo cuando quieras con «Ver el recorrido», en el menú del mapa; eso no guarda nada.</li>
 </ul>
 <p>Ninguna te identifica ni se usa para seguirte por otros sitios. Puedes borrarlas desde tu navegador cuando quieras; el sitio sigue funcionando.</p>
 
