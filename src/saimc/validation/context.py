@@ -61,7 +61,7 @@ from saimc.models import (
     RawIngestion,
 )
 from saimc.progress import pilot_products
-from saimc.validation.rules import DUPLICATE_WINDOW
+from saimc.validation.rules import DUPLICATE_WINDOW, BasisCorrection, basis_correction
 from saimc.validation.types import (
     AdContext,
     CellReference,
@@ -540,6 +540,34 @@ def _row_contexts(
             )
         )
     return tuple(contexts)
+
+
+def basis_corrections(
+    session: Session,
+    ingestion: RawIngestion,
+    rows: Sequence[ExtractionProposal],
+    *,
+    min_cell_n: int,
+) -> list[BasisCorrection | None]:
+    """Por fila de la propuesta, la otra base si la regla 6 desmiente la
+    declarada (`rules.basis_correction`), o `None`.
+
+    Arma las celdas igual que `build_ad_context`: referencias anteriores al día
+    del anuncio y la provincia del canal mandando sobre la del modelo. Es lo
+    que usa el formulario de la cola para preseleccionar la base
+    (`docs/analisis-otra-base.md`).
+    """
+    channel_province = origin.channel_province(session, ingestion)
+    if channel_province is not None:
+        rows = [dataclasses.replace(row, province=channel_province) for row in rows]
+    day = anchor_date(None, as_utc(ingestion.captured_at))
+    contexts = _row_contexts(session, ingestion, rows, day)
+    return [
+        basis_correction(
+            row, price_cup=ctx.price_cup, cell=ctx.cell, min_cell_n=min_cell_n
+        )
+        for row, ctx in zip(rows, contexts, strict=True)
+    ]
 
 
 # --- el contexto -------------------------------------------------------------

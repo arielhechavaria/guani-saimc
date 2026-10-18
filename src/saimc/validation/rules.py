@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from saimc.cells import ResolvedRow, cell_sample, evaluate_basis, resolve_row
+from saimc.cells import BasisReading, ResolvedRow, cell_sample, evaluate_basis, resolve_row
 from saimc.extraction.engine import ExtractionProposal
 from saimc.models import Currency
 from saimc.validation.fence import robust_fence
@@ -62,6 +63,83 @@ def _resolve(
     return resolved
 
 
+@dataclass(frozen=True)
+class BasisCorrection:
+    """La otra base de una fila que la regla 6 desmiente, con sus números.
+
+    Es lo que el formulario de la cola muestra al operador: las dos lecturas
+    del mismo precio, en CUP por unidad base, y la mediana de la celda contra
+    la que se compararon.
+    """
+
+    #: La base que la celda prefiere (`unit` o `total`): la contraria a la declarada.
+    flipped_basis: str
+    #: Precio por `unit` leído como la fila declara.
+    declared: Decimal
+    #: Precio por `unit` leído con `flipped_basis`.
+    other: Decimal
+    reference: Decimal
+    unit: str
+    #: `True` si la mediana salió de todas las provincias y no de la propia.
+    from_all_provinces: bool
+
+
+def _basis_reading(
+    row: ExtractionProposal,
+    *,
+    price_cup: Decimal | None,
+    cell: CellReference,
+    min_cell_n: int | None,
+) -> tuple[ResolvedRow, ResolvedRow, BasisReading, str] | None:
+    """Las dos lecturas del precio de la fila contra su celda, o `None` si no
+    hay veredicto. Lo comparten la regla 6 y la corrección de base."""
+    if min_cell_n is None:
+        return None
+    declared = _resolve(row, price_cup=price_cup, price_basis=row.price_basis)
+    if declared is None:
+        return None
+    # Con cantidad 1 las dos lecturas son el mismo número y `price_basis` puede
+    # faltar; para la «otra» lectura alcanza con cualquiera de las dos.
+    flipped = "unit" if row.price_basis == "total" else "total"
+    other = _resolve(row, price_cup=price_cup, price_basis=flipped)
+    if other is None:
+        return None
+    reading = evaluate_basis(
+        declared=declared.effective_price,
+        other=other.effective_price,
+        own_province=cell.own_province,
+        all_provinces=cell.all_provinces,
+        min_references=min_cell_n,
+    )
+    if reading is None:
+        return None
+    return declared, other, reading, flipped
+
+
+def basis_correction(
+    row: ExtractionProposal,
+    *,
+    price_cup: Decimal | None,
+    cell: CellReference,
+    min_cell_n: int | None,
+) -> BasisCorrection | None:
+    """La corrección de base de una fila, o `None` si no hay veredicto o la
+    declarada es la que mejor encaja. Existe exactamente cuando la regla 6
+    (`check_quantity_price`) sale `fail`: comparten el cálculo."""
+    result = _basis_reading(row, price_cup=price_cup, cell=cell, min_cell_n=min_cell_n)
+    if result is None or not result[2].other_fits_better:
+        return None
+    declared, other, reading, flipped = result
+    return BasisCorrection(
+        flipped_basis=flipped,
+        declared=declared.effective_price,
+        other=other.effective_price,
+        reference=reading.reference,
+        unit=declared.unit,
+        from_all_provinces=reading.reference_from_all_provinces,
+    )
+
+
 def check_quantity_price(
     row: ExtractionProposal,
     *,
@@ -75,27 +153,10 @@ def check_quantity_price(
     lote) y `cells.evaluate_basis` dice cuál queda más cerca de la mediana de
     la celda: el mismo cálculo que `/control` usa para las bases sospechosas.
     """
-    if min_cell_n is None:
+    result = _basis_reading(row, price_cup=price_cup, cell=cell, min_cell_n=min_cell_n)
+    if result is None:
         return Outcome.UNKNOWN
-    declared = _resolve(row, price_cup=price_cup, price_basis=row.price_basis)
-    if declared is None:
-        return Outcome.UNKNOWN
-    # Con cantidad 1 las dos lecturas son el mismo número y `price_basis` puede
-    # faltar; para la «otra» lectura alcanza con cualquiera de las dos.
-    flipped = "unit" if row.price_basis == "total" else "total"
-    other = _resolve(row, price_cup=price_cup, price_basis=flipped)
-    if other is None:
-        return Outcome.UNKNOWN
-    reading = evaluate_basis(
-        declared=declared.effective_price,
-        other=other.effective_price,
-        own_province=cell.own_province,
-        all_provinces=cell.all_provinces,
-        min_references=min_cell_n,
-    )
-    if reading is None:
-        return Outcome.UNKNOWN
-    return Outcome.FAIL if reading.other_fits_better else Outcome.PASS
+    return Outcome.FAIL if result[2].other_fits_better else Outcome.PASS
 
 
 def check_price(

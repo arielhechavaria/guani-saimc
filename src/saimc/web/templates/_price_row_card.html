@@ -243,6 +243,7 @@
         fuera del rango público hasta que se resuelva.
       </span>
       {% if row.hint_price_basis %}<span class="m3-rules-hint" data-differs-for="price_basis_{{ index0 }}">Reglas: {{ row.hint_price_basis }}</span>{% endif %}
+      {% if row.basis_fix %}<span class="m3-rules-hint" data-basis-correction="price_basis_{{ index0 }}">{{ row.basis_fix }}</span>{% endif %}
     </label>
   </div>
 

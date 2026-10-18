@@ -9202,3 +9202,95 @@ class TestTranscripcionGuardada:
         assert session.get(RawIngestion, imagen.id).processing_status == ProcessingStatus.DISCARDED  # type: ignore[union-attr]
         (fila,) = self._filas(session)
         assert fila.text == "buenos días a todos"
+
+
+class TestOtraBasePreseleccionada:
+    """`docs/analisis-otra-base.md`: cuando la regla 6 desmiente la base que
+    declaró el modelo, el formulario llega con la otra base elegida y las dos
+    lecturas a la vista. El caso: un saco de 100 lb a 32000 marcado `unit`
+    contra una celda de arroz a ~320 por libra."""
+
+    def _celda_de_arroz(self, session: Session, producto: Product) -> None:
+        for i, precio in enumerate(("300", "310", "320", "325", "330", "340")):
+            referencia = _crear_raw_ingestion(
+                session,
+                hash_=f"otra-base-ref-{i}",
+                original_text=f"Arroz {precio}",
+                captured_at=datetime(2026, 9, 1, tzinfo=UTC),
+            )
+            _crear_precio_curado(
+                session,
+                ingestion=referencia,
+                product=producto,
+                price=precio,
+                unit="lb",
+                quantity=Decimal("1"),
+            )
+
+    def _anuncio_con_propuesta(
+        self, session: Session, producto: Product, *, base: str, hash_: str
+    ) -> RawIngestion:
+        anuncio = _crear_raw_ingestion(
+            session,
+            hash_=hash_,
+            original_text="Saco de arroz 100 lb, 32000 CUP",
+            captured_at=datetime(2026, 9, 20, tzinfo=UTC),
+        )
+        fila = ExtractionProposal(
+            product=producto,
+            price=Decimal("32000"),
+            currency="CUP",
+            quantity=Decimal("100"),
+            unit="lb",
+            price_basis=base,
+        )
+        llm_store.save_proposal(
+            session,
+            ingestion_id=anuncio.id,
+            result=AdProposal(
+                rows=[fila],
+                row_meta=[RowMeta(evidence="32000", evidence_found=True)],
+                discard=False,
+            ),
+            model="test",
+        )
+        session.commit()
+        return anuncio
+
+    def test_base_unit_desmentida_llega_con_total_elegido_y_las_dos_lecturas(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Arroz", aliases=[])
+        self._celda_de_arroz(session, producto)
+        self._anuncio_con_propuesta(session, producto, base="unit", hash_="otra-base-a")
+
+        html = client.get("/curation").text
+
+        assert re.search(r'<option value="total"\s+selected', html)
+        assert not re.search(r'<option value="unit"\s+selected', html)
+        assert "32.000" in html or "32000" in html  # lectura declarada
+        assert "320" in html  # mediana de la celda
+        assert "data-basis-correction" in html
+
+    def test_base_total_correcta_no_se_toca_ni_muestra_aviso(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Arroz", aliases=[])
+        self._celda_de_arroz(session, producto)
+        self._anuncio_con_propuesta(session, producto, base="total", hash_="otra-base-b")
+
+        html = client.get("/curation").text
+
+        assert re.search(r'<option value="total"\s+selected', html)
+        assert "data-basis-correction" not in html
+
+    def test_celda_sin_referencias_deja_la_base_del_modelo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        producto = _crear_producto(session, name="Arroz", aliases=[])
+        self._anuncio_con_propuesta(session, producto, base="unit", hash_="otra-base-c")
+
+        html = client.get("/curation").text
+
+        assert re.search(r'<option value="unit"\s+selected', html)
+        assert "data-basis-correction" not in html

@@ -112,7 +112,8 @@ from saimc.models.base import utc_now
 from saimc.privacy import redact_personal_data
 from saimc.progress import pilot_products
 from saimc.units import PACKAGING, UNITS, canonical_packaging, canonical_unit
-from saimc.validation import lane0, lane1, persist
+from saimc.validation import context, lane0, lane1, persist
+from saimc.validation.rules import BasisCorrection
 from saimc.variants import get_or_create_variant, variant_key
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db, get_rate_fetcher
@@ -1326,7 +1327,16 @@ def _curation_view(
     # las reglas quedan de segunda opinión y de fuente de lo que él no propone.
     assisted_by_row: dict[int, list[str]] = {}
     if assist_good is not None:
-        rows, assisted_by_row = _rows_from_model(assist_good, proposals, proposal_indices)
+        corrections = (
+            context.basis_corrections(
+                db, ingestion, assist_good.rows, min_cell_n=persist.MIN_CELL_N
+            )
+            if ingestion is not None
+            else None
+        )
+        rows, assisted_by_row = _rows_from_model(
+            assist_good, proposals, proposal_indices, corrections
+        )
     else:
         rows = [_values_from_proposal(p) for p in proposals if p.product is not None]
     rows.extend(_values_from_proposal(None) for _ in range(_EXTRA_BLANK_ROWS))
@@ -1478,10 +1488,29 @@ def _rules_value_text(field: str, rule: ExtractionProposal) -> str:
     return canonical_unit(rule.unit) or ""
 
 
+def _grouped(value: Decimal) -> str:
+    """Un precio en CUP con puntos de millar y sin decimales: 2300000 -> «2.300.000»."""
+    return f"{round(value):,}".replace(",", ".")
+
+
+def _basis_fix_text(fix: BasisCorrection) -> str:
+    """El aviso bajo la base del precio cuando la celda desmiente la del modelo."""
+    declared = "total del lote" if fix.flipped_basis == "unit" else "por unidad"
+    other = _PRICE_BASIS_LABELS[fix.flipped_basis]
+    where = "todas las provincias" if fix.from_all_provinces else "su provincia"
+    return (
+        f"Elegí «{other}» porque la base del modelo ({declared}) daría "
+        f"{_grouped(fix.declared)} CUP/{fix.unit} y con «{other}» da "
+        f"{_grouped(fix.other)} CUP/{fix.unit}; la mediana de {where} es "
+        f"{_grouped(fix.reference)} CUP/{fix.unit}. Cambiala si el anuncio dice otra cosa."
+    )
+
+
 def _rows_from_model(
     result: AdProposal,
     rules: list[ExtractionProposal],
     indices: list[int] | None = None,
+    corrections: Sequence[BasisCorrection | None] | None = None,
 ) -> tuple[list[dict[str, str]], dict[int, list[str]]]:
     """Las filas del formulario a partir de las del modelo.
 
@@ -1493,6 +1522,10 @@ def _rows_from_model(
     dato, y ahí no se marca diferencia. Donde modelo y reglas difieren, la fila
     lleva `hint_<campo>` con lo que decían las reglas y la plantilla lo muestra. Devuelve también,
     por índice de fila, los campos que llenó el modelo (la marca de contorno).
+
+    Si la regla 6 desmiente la base del modelo (`corrections`, una por fila),
+    la tarjeta llega con la otra base elegida y un aviso con las dos lecturas
+    (`docs/analisis-otra-base.md`). El operador sigue decidiendo.
 
     Cada fila lleva `proposal_row`: su índice en la propuesta guardada (el de
     `indices` si la propuesta se reconstruyó omitiendo alguna fila). Es el
@@ -1524,6 +1557,10 @@ def _rows_from_model(
         for campo, estado in acuerdo.fields().items():
             if estado == DIFIERE and regla is not None and campo not in abstenidos:
                 valores[f"hint_{campo}"] = _rules_value_text(campo, regla)
+        fix = None if corrections is None else corrections[i]
+        if fix is not None:
+            valores["price_basis"] = fix.flipped_basis
+            valores["basis_fix"] = _basis_fix_text(fix)
         valores["evidence"] = meta.evidence or ""
         valores["proposal_row"] = str(indices[i] if indices is not None else i)
         filas.append(valores)
