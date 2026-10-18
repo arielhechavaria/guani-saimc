@@ -293,6 +293,17 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="presentacion-instituciones",
+        title="Presentación de Guani para instituciones (2026-10-18)",
+        summary=(
+            "Guion de diez slides para mandar por correo a instituciones, listo "
+            "para pegar en Gamma, con lo que hay que revisar antes del envío y "
+            "el correo que lo acompaña."
+        ),
+        relative_path="docs/presentacion-instituciones.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="plan-marca",
         title="Leira Studio — plan de marca y compendio de contactos",
         summary=(

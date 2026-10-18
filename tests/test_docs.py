@@ -297,6 +297,7 @@ class TestLectura:
             ("analisis-fase", "Análisis de fase — criterios de salida de la Fase 0 (2026-10-18)"),
             ("plan-fabrica-marketing", "Plan de trabajo — la fábrica de publicaciones de `/marketing`"),
             ("narrativa-guani", "Guani — narrativa, enfoques y eslóganes"),
+            ("presentacion-instituciones", "Presentación de Guani para instituciones"),
         ],
     )
     def test_el_plan_del_ultimo_bloque_y_sus_insumos_se_leen_en_docs(
