@@ -152,7 +152,7 @@ def test_una_tarjeta_sin_datos_lleva_un_texto_fijo_y_los_hashtags() -> None:
     texto = build_caption(BY_SLUG["carrusel-cierre"], {})
 
     assert texto.endswith(ETIQUETAS)
-    assert texto.startswith("Guani: ")
+    assert texto.startswith("Parece un relajo, pero tiene su orden.")
 
 
 def test_un_texto_larguisimo_se_recorta_sin_perder_los_hashtags() -> None:

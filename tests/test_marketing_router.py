@@ -178,7 +178,7 @@ class TestTarjetasEstaticas:
             ("carrusel-portada", "Guani"),
             ("carrusel-consejo", "Guani"),
             ("story-precalentamiento", "Próximamente"),
-            ("portada-facebook", "Cada precio, con sus anuncios detrás"),
+            ("portada-facebook", "Medimos el mercado con la misma vara"),
             ("como-funciona", "De los grupos de WhatsApp a la cifra"),
             ("carrusel-cierre", "Guani"),
         ],
