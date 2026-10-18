@@ -72,6 +72,16 @@ class TestHoy:
         assert f"/marketing/post/{ayer.id}" not in html
         assert "Borrador" in html
 
+    def test_la_narrativa_de_la_marca_queda_a_mano(
+        self, client: TestClient, datos: None, fabrica: Path  # noqa: F811
+    ) -> None:
+        """Cada pieza sale con la voz de Guani: «Hoy» enlaza al documento de
+        narrativa y repite su idea madre, sin tener que ir a buscarlo a `/docs`."""
+        html = client.get("/marketing").text
+
+        assert 'href="/docs/narrativa-guani"' in html
+        assert "el orden que ya existe" in html
+
     def test_avisa_lo_que_falta_del_calendario(
         self, client: TestClient, datos: None, fabrica: Path  # noqa: F811
     ) -> None:

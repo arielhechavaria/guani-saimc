@@ -31,11 +31,23 @@
   .mk-fixed ul{list-style:none; margin:0; padding:0 24px 16px}
   .mk-fixed li{padding:8px 0; border-top:1px solid var(--m3-outline-variant)}
   .mk-fixed li a{display:inline-flex; min-height:44px; align-items:center; margin-right:16px}
+  .mk-voz{display:flex; gap:12px; align-items:center; justify-content:space-between; padding:16px 24px; flex-wrap:wrap}
+  .mk-voz p{margin:0; flex:1 1 220px}
+  .mk-voz .m3-btn{min-height:44px}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="m3-stack">
+  {#- La voz de cada pieza (docs/narrativa-guani.md): la idea madre a la vista,
+      el documento completo a un toque. -#}
+  <section class="m3-card" aria-label="Narrativa de Guani">
+    <div class="mk-voz">
+      <p><strong>La idea madre:</strong> el mercado parece caótico, pero tiene orden. Guani no lo pone: enseña el orden que ya existe.</p>
+      <a class="m3-btn m3-btn-text" href="/docs/narrativa-guani">Ver la narrativa</a>
+    </div>
+  </section>
+
   {% if missing %}
   <section class="m3-card mk-faltan" aria-label="Lo que falta hoy">
     {% for k in missing %}

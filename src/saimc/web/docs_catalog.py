@@ -282,6 +282,17 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="narrativa-guani",
+        title="Guani — narrativa, enfoques y eslóganes (2026-10-18)",
+        summary=(
+            "La voz de todo lo que sale de `/marketing`: la idea madre (el "
+            "orden que ya existe), seis enfoques, el banco de eslóganes, qué se "
+            "puede prometer y piezas listas para copiar."
+        ),
+        relative_path="docs/narrativa-guani.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="plan-marca",
         title="Leira Studio — plan de marca y compendio de contactos",
         summary=(
