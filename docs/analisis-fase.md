@@ -227,15 +227,8 @@ compartida).
 de abrir. Sería la lectura literal de §9, pero mezcla un objetivo de volumen
 con el criterio de salida, que la especificación separa.
 
-## 6. Entrada sugerida para `docs/decisions.md`
+## 6. Decisión del operador
 
-No se anexa en este slice: la decisión es del operador. Texto para pegar si
-acepta 5.2 y 5.3 tal cual:
-
-```
-## YYYY-MM-DD — Criterio de cierre de la Fase 0
-Contexto: H0 da 38,8 % (n = 220, conjunto congelado, B3-2) y no puede ser oficial; hay 226 filas `approved` de 500; las tres cotas de error auditado de la métrica B3 están bajo su meta; 266 filas en USD llevan tasa de relleno (`docs/analisis-fase.md`).
-Decisión: la Fase 0 se cierra con H0 registrada sobre el conjunto congelado, la métrica B3 dentro de metas, T1 aplicado y `revalidate --execute` corrido. Los 500 validados se informan como avance, no como condición. La Fase 1 empieza al apagar la puerta del sitio.
-Descartado: exigir los 500 `approved` antes de abrir (mezcla un objetivo de volumen con el criterio de salida de §9); etiquetar 80 anuncios a ciegas para una corrida `is_official`.
-Consecuencia: la corrida de H0 del día de la transición queda registrada en `docs/h0-runs.jsonl`; el contador de visitantes únicos pasa a ser la línea de base de los 100 DAU.
-```
+El operador aceptó 5.2 y 5.3 tal cual el 2026-10-18. Quedó registrado en
+`docs/decisions.md`, entrada «Criterio de cierre de la Fase 0 y de inicio de
+la Fase 1». La 5.1 (filas `audited` como verificadas) sigue sin decidir.
