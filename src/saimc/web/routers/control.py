@@ -71,10 +71,10 @@ from saimc.progress import (
 from saimc.requisitos_status import read_module_status
 from saimc.validation import ValidationStatus, jev_signal, lane0, lane1, persist
 from saimc.validation.control_cells import compute_cell_controls
-from saimc.web import control_nav
+from saimc.web import control_flow, control_nav
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
-from saimc.web.health_strip import worst_level
+from saimc.web.health_strip import Indicator, worst_level
 from saimc.web.matrix import build_matrix, resolve_column, select_province
 from saimc.web.product_nav import DEFAULT_WINDOW_DAYS
 from saimc.web.rubber_stamp_metrics import rubber_stamp_alert
@@ -334,6 +334,21 @@ def control_panel(
         }
     )
     return _render(request, "control_hoy.html", context)
+
+
+@router.get("/control/flujo", response_class=HTMLResponse)
+def control_flujo(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    """Flujo: el lienzo de siete nodos con el caudal de 24 h y la salud de cada etapa."""
+    context = _shell_context(request, db, "flujo")
+    context["flow"] = control_flow.build_view(
+        control_flow.load_inputs(
+            db,
+            cast(Settings, context["settings"]),
+            strip=cast("list[Indicator]", context["strip"]),
+            prefill_run=cast(PrefillRun | None, context["prefill_run"]),
+        )
+    )
+    return _render(request, "control_flujo.html", context)
 
 
 @router.get("/control/ingesta", response_class=HTMLResponse)

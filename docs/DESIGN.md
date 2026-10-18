@@ -84,3 +84,5 @@ ni imágenes raster nuevas. Los tokens del cielo son `--ph-dusk-*`.
 - Prototipos vigentes de la landing: `landing-dia-completo.html`,
   `landing-estetica.html`, `landing-entradas.html`, `landing-narrativa.html`.
   Las piezas de marca para redes están en `marketing-design/project/`.
+- Prototipo vigente de la vista de flujo de `/control`:
+  `control-flujo-a-lienzo.html` (B y C quedan como descartados).

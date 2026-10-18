@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="es">
+<!--
+  Control · Flujo — Prototipo C «Río» (slice control-visual-prototipo).
+  Estático, sin backend: datos inventados. Hoja real + tokens `--m3-*`.
+  Idea: un sankey. El ancho de cada cinta es la cantidad de anuncios de las
+  últimas 24 h, así que el embudo se lee sin cifras: cuánto entra, cuánto
+  tira el carril 0, cuánto llega a la cola, cuánto se publica. Lo que se atasca
+  (sin pre-calcular, esperando en la cola) sale en su color de alerta.
+  Cada etapa lleva un solo indicador junto a su barra.
+  Escritorio (≥ 900 px): río horizontal, rótulos dentro del SVG.
+  Teléfono (390 px): río vertical a la izquierda y rótulos alineados a la derecha.
+  Geometría generada con un script (cintas proporcionales, 1,5 px por anuncio
+  en escritorio y 0,7 px en teléfono); no hace falta mantenerlo: es un prototipo.
+  Rojo/verde acá es salud operativa, nunca precio (DESIGN.md, regla 3).
+-->
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — Control · Flujo (prototipo C: río)</title>
+  <link href="../../src/saimc/web/static/saimc-material.css" rel="stylesheet" />
+  <style>
+    /* La hoja declara las fuentes con /static/…; por file:// no resuelven. */
+    @font-face { font-family: "Inter"; src: url("../../src/saimc/web/static/fonts/inter.woff2") format("woff2"); font-weight: 100 900; }
+    @font-face { font-family: "Material Symbols Rounded"; src: url("../../src/saimc/web/static/fonts/material-symbols-rounded.woff2") format("woff2"); }
+  </style>
+  <style>
+    .rv-card {
+      background: var(--m3-surface); border: 1px solid var(--m3-outline-variant);
+      border-radius: var(--m3-radius-lg); padding: var(--m3-space-4);
+    }
+    .r      { fill: var(--m3-on-surface); fill-opacity: .16; }
+    .r-mute { fill: var(--m3-outline); fill-opacity: .14; }
+    .r-err  { fill: var(--m3-error); fill-opacity: .4; }
+    .r-warn { fill: var(--m3-warn); fill-opacity: .45; }
+    .r-off  { fill: none; stroke: var(--m3-outline); stroke-width: 2; stroke-dasharray: 2 5; }
+    .r-dash { fill: none; stroke: var(--m3-on-surface); stroke-width: 2; stroke-dasharray: 6 4; }
+    .n      { fill: var(--m3-on-surface); }
+    .n-mute { fill: var(--m3-outline); }
+    .n-err  { fill: var(--m3-error); }
+    .n-warn { fill: var(--m3-warn); }
+    .n-off  { fill: var(--m3-surface); stroke: var(--m3-outline); stroke-dasharray: 3 3; }
+    .t-k { font: 600 11px var(--m3-font); letter-spacing: .06em; fill: var(--m3-on-surface-variant); text-transform: uppercase; }
+    .t-b { font: 700 26px var(--m3-font); fill: var(--m3-on-surface); }
+    .t-s { font: 500 12px var(--m3-font); fill: var(--m3-on-surface-variant); }
+    .t-err { fill: var(--m3-error); }
+    .t-warn { fill: var(--m3-warn-strong); }
+    .g-track { fill: none; stroke: var(--m3-surface-container-high); }
+    .g-cell { fill: var(--m3-surface-container-high); }
+    .g-ok { fill: var(--m3-success); stroke: var(--m3-success); }
+    .g-warn { fill: var(--m3-warn); }
+    .g-err { fill: var(--m3-error); }
+    .g-bar { fill: var(--m3-outline); }
+    .g-meta { stroke: var(--m3-on-surface); stroke-width: 2; }
+
+    /* teléfono */
+    .rv-h { display: none; }
+    .rv-v { position: relative; height: 780px; }
+    .rv-v svg { position: absolute; left: 0; top: 0; }
+    .rv-lab { position: absolute; left: 148px; right: 0; display: flex; flex-direction: column; gap: var(--m3-space-2); }
+    .rv-it { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 0 var(--m3-space-2); }
+    .rv-it b { font-size: 22px; font-variant-numeric: tabular-nums; }
+    .rv-it .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--m3-on-surface-variant); grid-column: 1 / -1; }
+    .rv-it .s { font-size: 12px; color: var(--m3-on-surface-variant); display: inline-flex; align-items: center; gap: 4px; }
+    .rv-it .s .m3-icon { font-size: 15px; }
+    .rv-it.is-err .s, .rv-it.is-err b { color: var(--m3-error); }
+    .rv-it.is-warn .s { color: var(--m3-warn-strong); }
+    .rv-it.is-mute b { color: var(--m3-on-surface-variant); }
+
+    @media (min-width: 900px) {
+      .rv-v { display: none; }
+      .rv-h { display: block; width: 100%; height: auto; }
+    }
+  </style>
+</head>
+<body>
+<div class="m3-shell">
+
+  <nav class="m3-topnav" aria-label="Secciones">
+    <span class="m3-topnav-brand">SA</span>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">inventory_2</span><span>Catálogo</span></a>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">fact_check</span><span>Curaduría</span></a>
+    <a class="m3-topnav-item is-active" href="#" aria-current="page"><span class="m3-icon">monitoring</span><span>Control</span></a>
+  </nav>
+
+  <main class="m3-main">
+    <header class="m3-topbar">
+      <div class="m3-topbar-row">
+        <div class="m3-topbar-main">
+          <div class="m3-kicker">SAIMC · Control · últimas 24 h</div>
+          <h1 class="m3-title">Flujo</h1>
+        </div>
+      </div>
+    </header>
+
+    <div class="m3-content">
+      <div class="rv-card">
+
+        <!-- ===== escritorio ===== -->
+        <svg class="rv-h" viewBox="0 0 1080 420" role="img"
+             aria-label="148 anuncios entran; 135 pre-calculados y 13 atascados; 98 descartados por el carril 0, 37 a la cola; 22 publicados, 9 descartados a mano, 6 esperan">
+<path class="r" d="M54 100.0 C152.0 100.0 152.0 100.0 250 100.0 L250 302.5 C152.0 302.5 152.0 302.5 54 302.5 Z"/>
+<path class="r-err" d="M54 302.5 C152.0 302.5 152.0 328.5 250 328.5 L250 348.0 C152.0 348.0 152.0 322.0 54 322.0 Z"/>
+<path class="r-mute" d="M264 100.0 C367.0 100.0 367.0 70.0 470 70.0 L470 217.0 C367.0 217.0 367.0 247.0 264 247.0 Z"/>
+<path class="r-off" d="M264 248.0 C367.0 248.0 367.0 258.0 470 258.0"/>
+<path class="r" d="M264 249.0 C367.0 249.0 367.0 300.0 470 300.0 L470 355.5 C367.0 355.5 367.0 304.5 264 304.5 Z"/>
+<path class="r" d="M484 300.0 C587.0 300.0 587.0 270.0 690 270.0 L690 303.0 C587.0 303.0 587.0 333.0 484 333.0 Z"/>
+<path class="r-mute" d="M484 333.0 C587.0 333.0 587.0 325.0 690 325.0 L690 338.5 C587.0 338.5 587.0 346.5 484 346.5 Z"/>
+<path class="r-warn" d="M484 346.5 C587.0 346.5 587.0 360.5 690 360.5 L690 369.5 C587.0 369.5 587.0 355.5 484 355.5 Z"/>
+<path class="r-dash" d="M704 272.25 C802.0 272.25 802.0 272.25 900 272.25"/>
+<rect class="n" x="40" y="100" width="14" height="222.0" rx="3"/>
+<rect class="n" x="250" y="100" width="14" height="202.5" rx="3"/>
+<rect class="n-err" x="250" y="328.5" width="14" height="19.5" rx="3"/>
+<rect class="n-mute" x="470" y="70" width="14" height="147.0" rx="3"/>
+<rect class="n-off" x="470" y="257.0" width="14" height="3" rx="3"/>
+<rect class="n" x="470" y="300.0" width="14" height="55.5" rx="3"/>
+<rect class="n" x="690" y="270" width="14" height="33.0" rx="3"/>
+<rect class="n-mute" x="690" y="325.0" width="14" height="13.5" rx="3"/>
+<rect class="n-warn" x="690" y="360.5" width="14" height="9.0" rx="3"/>
+<rect class="n" x="900" y="270" width="14" height="4.5" rx="3"/>
+          <!-- Ingesta -->
+          <text class="t-k" x="40" y="58">Ingesta</text>
+          <text class="t-b" x="40" y="88">148</text>
+          <g transform="translate(100 70)">
+            <rect class="g-bar" x="0" y="12" width="3" height="6"/><rect class="g-bar" x="4" y="14" width="3" height="4"/>
+            <rect class="g-bar" x="8" y="8" width="3" height="10"/><rect class="g-bar" x="12" y="2" width="3" height="16"/>
+            <rect class="g-bar" x="16" y="0" width="3" height="18"/><rect class="g-bar" x="20" y="6" width="3" height="12"/>
+            <rect class="g-bar" x="24" y="4" width="3" height="14"/><rect class="g-bar" x="28" y="8" width="3" height="10"/>
+            <rect class="g-bar" x="32" y="10" width="3" height="8"/><rect class="g-bar" x="36" y="6" width="3" height="12"/>
+          </g>
+          <text class="t-s" x="150" y="86">4 min</text>
+
+          <!-- Pre-cálculo -->
+          <text class="t-k" x="250" y="58">Pre-cálculo</text>
+          <g transform="translate(262 78)">
+            <circle class="g-track" r="10" stroke-width="4"/>
+            <circle r="10" fill="none" stroke-width="4" class="g-ok" style="fill:none" stroke-dasharray="46 63" transform="rotate(-90)"/>
+          </g>
+          <text class="t-s" x="280" y="83">2 h 10 / 3 h</text>
+          <text class="t-b t-err" x="272" y="350" style="font-size:20px">13</text>
+          <text class="t-s t-err" x="302" y="349">más viejo 23 h</text>
+
+          <!-- Carril 0 -->
+          <text class="t-k" x="494" y="92">Carril 0</text>
+          <text class="t-b" x="494" y="122">98</text>
+          <g transform="translate(494 134)">
+            <rect class="g-cell" width="120" height="8" rx="2"/><rect class="g-ok" width="18" height="8" rx="2"/>
+            <line class="g-meta" x1="30" y1="-3" x2="30" y2="11"/>
+            <rect class="g-cell" y="14" width="120" height="8" rx="2"/><rect class="g-ok" y="14" width="42" height="8" rx="2"/>
+            <line class="g-meta" x1="60" y1="11" x2="60" y2="25"/>
+          </g>
+          <text class="t-s" x="622" y="142">Aa</text>
+          <text class="t-s" x="622" y="156">img</text>
+
+          <!-- Carril 1 -->
+          <text class="t-k" x="494" y="262">Carril 1 · sombra 41/200</text>
+
+          <!-- Cola -->
+          <text class="t-k" x="470" y="384">Cola</text>
+          <text class="t-b" x="470" y="412">37</text>
+          <text class="t-s t-warn" x="510" y="410">más viejo 2 d 4 h</text>
+
+          <!-- Tablero -->
+          <text class="t-k" x="690" y="236">Tablero</text>
+          <text class="t-b" x="690" y="262" style="font-size:20px">226</text>
+          <text class="t-s" x="736" y="261">filas · hace 3 h</text>
+          <text class="t-s" x="712" y="336">9 a mano</text>
+          <text class="t-s t-warn" x="712" y="368">6 esperan</text>
+
+          <!-- Marketing -->
+          <text class="t-k" x="900" y="236">Marketing</text>
+          <text class="t-b" x="900" y="262" style="font-size:20px">3 · 1 · 0</text>
+          <text class="t-s" x="922" y="290">06:00 · hoy</text>
+        </svg>
+
+        <!-- ===== teléfono ===== -->
+        <div class="rv-v">
+          <svg width="136" height="760" viewBox="0 0 136 760" aria-hidden="true">
+<path class="r" d="M 12.0 34 C 12.0 117.0 12.0 117.0 12.0 200 L 106.5 200 C 106.5 117.0 106.5 117.0 106.5 34 Z"/>
+<path class="r-err" d="M 106.5 34 C 106.5 117.0 120.5 117.0 120.5 200 L 129.6 200 C 129.6 117.0 115.6 117.0 115.6 34 Z"/>
+<path class="r-mute" d="M 12.0 214 C 12.0 297.0 4.0 297.0 4.0 380 L 72.6 380 C 72.6 297.0 80.6 297.0 80.6 214 Z"/>
+<path class="r-off" d="M 81.6 214 C 81.6 297.0 87.6 297.0 87.6 380"/>
+<path class="r" d="M 82.6 214 C 82.6 297.0 103.6 297.0 103.6 380 L 129.5 380 C 129.5 297.0 108.5 297.0 108.5 214 Z"/>
+<path class="r" d="M 103.6 394 C 103.6 477.0 70.0 477.0 70.0 560 L 85.4 560 C 85.4 477.0 119.0 477.0 119.0 394 Z"/>
+<path class="r-mute" d="M 119.0 394 C 119.0 477.0 97.4 477.0 97.4 560 L 103.7 560 C 103.7 477.0 125.3 477.0 125.3 394 Z"/>
+<path class="r-warn" d="M 125.3 394 C 125.3 477.0 115.7 477.0 115.7 560 L 119.9 560 C 119.9 477.0 129.5 477.0 129.5 394 Z"/>
+<path class="r-dash" d="M 71.05 574 C 71.05 657.0 71.05 657.0 71.05 740"/>
+<rect class="n" x="12" y="20" width="103.6" height="14" rx="3"/>
+<rect class="n" x="12" y="200" width="94.5" height="14" rx="3"/>
+<rect class="n-err" x="120.5" y="200" width="9.1" height="14" rx="3"/>
+<rect class="n-mute" x="4" y="380" width="68.6" height="14" rx="3"/>
+<rect class="n-off" x="86.6" y="380" width="3" height="14" rx="3"/>
+<rect class="n" x="103.6" y="380" width="25.9" height="14" rx="3"/>
+<rect class="n" x="70" y="560" width="15.399999999999999" height="14" rx="3"/>
+<rect class="n-mute" x="97.4" y="560" width="6.3" height="14" rx="3"/>
+<rect class="n-warn" x="115.7" y="560" width="4.199999999999999" height="14" rx="3"/>
+<rect class="n" x="70" y="740" width="3" height="14" rx="3"/>
+          </svg>
+
+          <div class="rv-lab" style="top:8px">
+            <div class="rv-it"><span class="k">Ingesta</span><b>148</b><span class="s"><span class="m3-icon">schedule</span>4 min</span></div>
+            <div class="rv-it"><span class="s"><span class="m3-icon">forum</span>136 &nbsp;<span class="m3-icon">inbox</span>12</span></div>
+          </div>
+
+          <div class="rv-lab" style="top:188px">
+            <div class="rv-it"><span class="k">Pre-cálculo</span><b>135</b><span class="s"><span class="m3-icon">history</span>2 h 10</span></div>
+            <div class="rv-it is-err"><b>13</b><span class="s"><span class="m3-icon">error</span>23 h</span></div>
+          </div>
+
+          <div class="rv-lab" style="top:368px">
+            <div class="rv-it is-mute"><span class="k">Carril 0</span><b>98</b><span class="s"><span class="m3-icon">rule</span>6 % · 14 %</span></div>
+            <div class="rv-it is-mute"><span class="k">Carril 1</span><b>0</b><span class="s"><span class="m3-icon">toggle_off</span>41/200</span></div>
+            <div class="rv-it is-warn"><span class="k">Cola</span><b>37</b><span class="s"><span class="m3-icon">warning</span>2 d 4 h</span></div>
+          </div>
+
+          <div class="rv-lab" style="top:548px">
+            <div class="rv-it"><span class="k">Tablero</span><b>22</b><span class="s"><span class="m3-icon">show_chart</span>226 · 3 h</span></div>
+            <div class="rv-it is-mute"><b>9</b><span class="s">a mano</span></div>
+            <div class="rv-it is-warn"><b>6</b><span class="s">esperan</span></div>
+          </div>
+
+          <div class="rv-lab" style="top:712px">
+            <div class="rv-it"><span class="k">Marketing</span><b>3 · 1 · 0</b><span class="s"><span class="m3-icon">schedule</span>06:00</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

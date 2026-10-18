@@ -1,0 +1,98 @@
+{# Flujo — el lienzo de siete nodos (`docs/prototipos/control-flujo-a-lienzo.html`).
+   Parcial del layout `control_base.html`. La plantilla solo pinta: las cifras,
+   la salud y las coordenadas de cada gráfico las arma `web/control_flow.py`.
+   Sin JavaScript. Rojo y verde son salud operativa, nunca precio. #}
+{% extends "control_base.html" %}
+
+{% macro chart(c) %}
+{% if c %}
+<svg{% if c.fluid %} class="m3-flow-fluid"{% else %} width="{{ c.width }}" height="{{ c.height }}"{% endif %} viewBox="{{ c.view_box }}" role="img" aria-label="{{ c.label }}">
+  {% for s in c.shapes %}<{{ s.tag }}{% if s.cls %} class="{{ s.cls }}"{% endif %}{% for k, v in s.attrs.items() %} {{ k }}="{{ v }}"{% endfor %}>{{ s.text }}</{{ s.tag }}>
+  {% endfor %}
+</svg>
+{% endif %}
+{% endmacro %}
+
+{% macro node(n) %}
+<article class="m3-flow-node is-{{ n.health }}" data-n="{{ n.key }}">
+  <div class="m3-flow-head">
+    <span class="m3-icon">{{ n.icon }}</span>
+    <span class="m3-flow-name">{{ n.name }}</span>
+    <span class="m3-flow-dot" title="{{ n.health_label }}" role="img" aria-label="{{ n.health_label }}"></span>
+  </div>
+  {% if n.big is not none or n.chart or n.steps %}
+  <div class="m3-flow-body{% if n.key == 'c0' %} is-stacked{% endif %}">
+    {% if n.steps %}
+    <div class="m3-flow-steps" role="img"
+         aria-label="{% for s in n.steps %}{{ s.count }} {{ s.title }}{% if not loop.last %}, {% endif %}{% endfor %}">
+      {% for s in n.steps %}
+      <span class="m3-flow-step{% if s.on %} is-on{% endif %}" title="{{ s.title }}">{{ s.count }}</span>{% if not loop.last %}<span class="m3-flow-arrow">›</span>{% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+      {# Anillos (reloj y n del carril 1) a la izquierda de la cifra; el resto, a la derecha. #}
+      {% if n.key in ('pre', 'c1') %}{{ chart(n.chart) }}{% endif %}
+      {% if n.big is not none %}
+      <div>
+        <div class="m3-flow-big">{{ n.big }}</div>
+        {% if n.unit %}<div class="m3-flow-unit">{{ n.unit }}</div>{% endif %}
+      </div>
+      {% endif %}
+      {% if n.key not in ('pre', 'c1') %}{{ chart(n.chart) }}{% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if n.chips %}
+  <div class="m3-flow-chips">
+    {% for c in n.chips %}<span class="m3-flow-chip" title="{{ c.title }}"><span class="m3-icon">{{ c.icon }}</span>{{ c.text }}</span>{% endfor %}
+  </div>
+  {% endif %}
+  <div class="m3-flow-foot{% if n.foot_level %} is-{{ n.foot_level }}{% endif %}">
+    <span class="m3-icon">{{ n.foot_icon }}</span>{{ n.foot_text }}
+  </div>
+</article>
+{% endmacro %}
+
+{% block body %}
+  <section>
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="lienzo">Flujo</h2>
+      <span class="m3-sm m3-muted">cada cable lleva lo que entró en las últimas 24 h</span>
+    </div>
+
+    {% set by_key = {} %}
+    {% for n in flow.nodes %}{% if by_key.update({n.key: n}) %}{% endif %}{% endfor %}
+
+    <div class="m3-flow-stage"><div class="m3-flow-canvas">
+      {# Cables (solo escritorio). Lienzo de 1000 × 560: x = % del ancho × 10, y en px. #}
+      <svg class="m3-flow-wires" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
+        {% for w in flow.wires %}<path class="m3-flow-wire {{ 'is-flow' if w.flow else 'is-off' }}" d="{{ w.d }}" />
+        {% endfor %}
+      </svg>
+      {# El caudal sobre cada cable va en HTML para que el texto no se estire. #}
+      {% for p in flow.pills %}
+      <span class="m3-flow-pill{% if p.off %} is-off{% endif %}" style="--x:{{ p.x }}%;--y:{{ p.y }}px">{{ p.label }}</span>
+      {% endfor %}
+      <span class="m3-flow-sink" style="--x:65.5%;--y:104px" title="Descartado sin cola"><span class="m3-icon">delete</span></span>
+
+      <div class="m3-flow-nodes">
+        {{ node(by_key['in']) }}
+        {{ node(by_key['pre']) }}
+        <div class="m3-flow-branch">
+          {{ node(by_key['c0']) }}
+          {{ node(by_key['c1']) }}
+          {{ node(by_key['c2']) }}
+        </div>
+        {{ node(by_key['pub']) }}
+        {{ node(by_key['mkt']) }}
+      </div>
+    </div></div>
+
+    <div class="m3-flow-legend">
+      <span><i class="is-ok"></i>al día</span>
+      <span><i class="is-warn"></i>mirar</span>
+      <span><i class="is-err"></i>atrasado</span>
+      <span><i class="is-off"></i>apagado</span>
+    </div>
+  </section>
+{% endblock %}

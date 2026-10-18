@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="es">
+<!--
+  Control · Flujo — Prototipo A «Lienzo» (slice control-visual-prototipo).
+  Estático, sin backend: datos inventados. Usa la hoja real (`saimc-material.css`)
+  y solo tokens `--m3-*`; nada de colores sueltos.
+  Idea: un lienzo tipo n8n. Cada etapa es un nodo con UN gráfico propio y un
+  punto de salud; los cables llevan el caudal de las últimas 24 h.
+  Escritorio (≥ 1100 px): nodos en el lienzo, cables en SVG.
+  Teléfono (390 px): los mismos nodos en columna; la bifurcación del
+  pre-cálculo se ve como un ramal con sangría.
+  Rojo/verde acá es salud operativa, nunca precio (DESIGN.md, regla 3).
+-->
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAIMC — Control · Flujo (prototipo A: lienzo)</title>
+  <link href="../../src/saimc/web/static/saimc-material.css" rel="stylesheet" />
+  <style>
+    /* La hoja declara las fuentes con /static/…; por file:// no resuelven. */
+    @font-face { font-family: "Inter"; src: url("../../src/saimc/web/static/fonts/inter.woff2") format("woff2"); font-weight: 100 900; }
+    @font-face { font-family: "Material Symbols Rounded"; src: url("../../src/saimc/web/static/fonts/material-symbols-rounded.woff2") format("woff2"); }
+  </style>
+  <style>
+    /* ---------- lienzo ---------- */
+    .fx-canvas {
+      position: relative;
+      background-color: var(--m3-surface-container);
+      background-image: radial-gradient(var(--m3-outline-variant) 1px, transparent 1px);
+      background-size: 16px 16px;
+      border-radius: var(--m3-radius-lg);
+      padding: var(--m3-space-4);
+    }
+    .fx-wires, .fx-pill, .fx-sink { display: none; }
+    .fx-nodes { display: flex; flex-direction: column; gap: var(--m3-space-6); }
+
+    /* ---------- nodo ---------- */
+    .fx-node {
+      position: relative;
+      background: var(--m3-surface);
+      border: 1px solid var(--m3-outline-variant);
+      border-radius: var(--m3-radius-md);
+      box-shadow: var(--m3-elev-1);
+      padding: var(--m3-space-3);
+      min-height: 44px;
+    }
+    .fx-node.is-off { border-style: dashed; box-shadow: none; }
+    .fx-node.is-err { border-color: var(--m3-error); }
+    .fx-node.is-warn { border-color: var(--m3-warn); }
+    /* conector vertical en teléfono */
+    .fx-node::after {
+      content: ""; position: absolute; left: 50%; bottom: calc(-1 * var(--m3-space-6));
+      width: 2px; height: var(--m3-space-6); background: var(--m3-outline);
+    }
+    .fx-node:last-child::after, .fx-branch .fx-node::after { display: none; }
+    .fx-head { display: flex; align-items: center; gap: var(--m3-space-2); }
+    .fx-head .m3-icon {
+      width: 32px; height: 32px; border-radius: var(--m3-radius-sm);
+      display: grid; place-items: center; font-size: 20px;
+      background: var(--m3-primary-container); color: var(--m3-on-primary-container);
+    }
+    .fx-name { font-weight: 600; font-size: 14px; flex: 1; }
+    .fx-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--m3-success); }
+    .is-warn .fx-dot { background: var(--m3-warn); }
+    .is-err .fx-dot { background: var(--m3-error); }
+    .is-off .fx-dot { background: transparent; border: 2px solid var(--m3-outline); }
+    .fx-body { display: flex; align-items: center; gap: var(--m3-space-3); margin-top: var(--m3-space-3); }
+    .fx-big { font-size: 32px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+    .fx-unit { font-size: 12px; color: var(--m3-on-surface-variant); }
+    .fx-foot {
+      display: flex; align-items: center; gap: var(--m3-space-1); margin-top: var(--m3-space-2);
+      font-size: 12px; color: var(--m3-on-surface-variant);
+    }
+    .fx-foot .m3-icon { font-size: 16px; }
+    .fx-foot.is-warn { color: var(--m3-warn-strong); }
+    .fx-foot.is-err { color: var(--m3-error); }
+
+    /* ramal (carril 0 / 1 / 2) */
+    .fx-branch {
+      display: flex; flex-direction: column; gap: var(--m3-space-3);
+      margin-left: var(--m3-space-6); padding-left: var(--m3-space-4);
+      border-left: 2px solid var(--m3-outline); position: relative;
+    }
+    .fx-branch::after {
+      content: ""; position: absolute; left: 50%; bottom: calc(-1 * var(--m3-space-6));
+      width: 2px; height: var(--m3-space-6); background: var(--m3-outline);
+    }
+
+    /* ---------- mini gráficos (SVG con clases, colores por token) ---------- */
+    .g-ink { fill: var(--m3-on-surface); }
+    .g-track { fill: none; stroke: var(--m3-surface-container-high); }
+    .g-bar { fill: var(--m3-outline); }
+    .g-bar.is-now { fill: var(--m3-on-surface); }
+    .g-ok { fill: var(--m3-success); stroke: var(--m3-success); }
+    .g-warn { fill: var(--m3-warn); stroke: var(--m3-warn); }
+    .g-err { fill: var(--m3-error); stroke: var(--m3-error); }
+    .g-meta { stroke: var(--m3-on-surface); stroke-width: 2; }
+    .g-ring { fill: none; stroke-linecap: round; }
+    .g-cell { fill: var(--m3-surface-container-high); }
+    .g-cell.is-on { fill: var(--m3-on-surface); }
+    .g-label { font: 600 11px var(--m3-font); fill: var(--m3-on-surface-variant); }
+    .g-center { font: 700 14px var(--m3-font); fill: var(--m3-on-surface); }
+
+    .fx-chips { display: flex; gap: var(--m3-space-1); flex-wrap: wrap; }
+    .fx-chip {
+      display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px;
+      border-radius: var(--m3-radius-full); background: var(--m3-surface-container);
+      font-size: 12px; font-variant-numeric: tabular-nums;
+    }
+    .fx-chip .m3-icon { font-size: 14px; }
+    .fx-steps { display: flex; align-items: center; gap: 2px; }
+    .fx-step {
+      min-width: 32px; height: 32px; border-radius: var(--m3-radius-sm);
+      display: grid; place-items: center; font-weight: 700; font-size: 14px;
+      background: var(--m3-surface-container);
+    }
+    .fx-step.is-on { background: var(--m3-on-surface); color: var(--m3-surface); }
+    .fx-arrow { color: var(--m3-outline); font-size: 12px; }
+
+    .fx-legend { display: flex; gap: var(--m3-space-4); flex-wrap: wrap; font-size: 12px; color: var(--m3-on-surface-variant); margin-top: var(--m3-space-3); }
+    .fx-legend span { display: inline-flex; align-items: center; gap: var(--m3-space-1); }
+    .fx-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+    /* ---------- escritorio: lienzo con posiciones ---------- */
+    @media (min-width: 1100px) {
+      .fx-canvas { height: 560px; padding: 0; overflow: hidden; }
+      .fx-wires { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+      .fx-nodes, .fx-branch { display: contents; }
+      .fx-branch::after, .fx-node::after { display: none; }
+      .fx-node { position: absolute; width: 16%; min-height: 160px; }
+      .fx-node[data-n="in"]   { left: 1%;  top: 200px; }
+      .fx-node[data-n="pre"]  { left: 21%; top: 200px; }
+      .fx-node[data-n="c0"]   { left: 43%; top: 12px; }
+      .fx-node[data-n="c1"]   { left: 43%; top: 200px; }
+      .fx-node[data-n="c2"]   { left: 43%; top: 376px; }
+      .fx-node[data-n="pub"]  { left: 64%; top: 288px; }
+      .fx-node[data-n="mkt"]  { left: 83%; top: 288px; }
+      .fx-pill, .fx-sink {
+        display: grid; place-items: center; position: absolute; z-index: 1;
+        left: var(--x); top: var(--y); transform: translate(-50%, -50%);
+      }
+      .fx-pill {
+        min-width: 36px; height: 24px; padding: 0 8px; border-radius: var(--m3-radius-full);
+        background: var(--m3-surface); border: 1px solid var(--m3-outline);
+        font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums;
+      }
+      .fx-pill.is-off { border-style: dashed; color: var(--m3-on-surface-variant); }
+      .fx-sink {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: var(--m3-surface); border: 1px dashed var(--m3-outline);
+        color: var(--m3-on-surface-variant);
+      }
+      .w-line { fill: none; stroke: var(--m3-outline); stroke-width: 2; vector-effect: non-scaling-stroke; }
+      .w-line.is-flow { stroke-dasharray: 6 6; animation: fx-flow 1.2s linear infinite; }
+      .w-line.is-off { stroke-dasharray: 2 6; }
+      .w-pill rect { fill: var(--m3-surface); stroke: var(--m3-outline); }
+      .w-pill text { font: 700 12px var(--m3-font); fill: var(--m3-on-surface); text-anchor: middle; dominant-baseline: central; }
+    }
+    @keyframes fx-flow { to { stroke-dashoffset: -12; } }
+    @media (prefers-reduced-motion: reduce) { .w-line.is-flow { animation: none; } }
+  </style>
+</head>
+<body>
+<div class="m3-shell">
+
+  <nav class="m3-topnav" aria-label="Secciones">
+    <span class="m3-topnav-brand">SA</span>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">inventory_2</span><span>Catálogo</span></a>
+    <a class="m3-topnav-item" href="#"><span class="m3-icon">fact_check</span><span>Curaduría</span></a>
+    <a class="m3-topnav-item is-active" href="#" aria-current="page"><span class="m3-icon">monitoring</span><span>Control</span></a>
+  </nav>
+
+  <main class="m3-main">
+    <header class="m3-topbar">
+      <div class="m3-topbar-row">
+        <div class="m3-topbar-main">
+          <div class="m3-kicker">SAIMC · Control</div>
+          <h1 class="m3-title">Flujo</h1>
+        </div>
+      </div>
+    </header>
+
+    <div class="m3-content">
+      <div class="fx-canvas">
+
+        <!-- Cables (solo escritorio). Lienzo de 1000 × 560: x = % del ancho × 10,
+             y en px. Los nodos miden 16 % × 160 px; el cable sale a media altura. -->
+        <svg class="fx-wires" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
+          <path class="w-line is-flow" d="M170 280 C190 280 190 280 210 280" />
+          <path class="w-line is-flow" d="M370 280 C400 280 400 104 430 104" />
+          <path class="w-line is-off"  d="M370 280 H430" />
+          <path class="w-line is-flow" d="M370 280 C400 280 400 456 430 456" />
+          <path class="w-line is-flow" d="M590 104 H640" />
+          <path class="w-line is-off"  d="M590 280 C615 280 615 368 640 368" />
+          <path class="w-line is-flow" d="M590 456 C615 456 615 368 640 368" />
+          <path class="w-line is-flow" d="M800 368 H830" />
+        </svg>
+        <!-- Caudal de 24 h sobre cada cable (HTML para que el texto no se estire). -->
+        <span class="fx-pill" style="--x:19%;--y:280px">148</span>
+        <span class="fx-pill" style="--x:40%;--y:180px">98</span>
+        <span class="fx-pill is-off" style="--x:40%;--y:280px">0</span>
+        <span class="fx-pill" style="--x:40%;--y:380px">37</span>
+        <span class="fx-pill" style="--x:61.5%;--y:420px">22</span>
+        <span class="fx-sink" style="--x:65.5%;--y:104px" title="Descartado sin cola"><span class="m3-icon">delete</span></span>
+
+        <div class="fx-nodes">
+
+          <!-- 1. Ingesta -->
+          <article class="fx-node" data-n="in">
+            <div class="fx-head"><span class="m3-icon">forum</span><span class="fx-name">Ingesta</span><span class="fx-dot" title="Al día"></span></div>
+            <div class="fx-body">
+              <div><div class="fx-big">148</div><div class="fx-unit">24 h</div></div>
+              <!-- 24 barras, una por hora -->
+              <svg width="96" height="40" viewBox="0 0 96 40" aria-label="Mensajes por hora, últimas 24 h">
+                <rect class="g-bar" x="0"  y="30" width="3" height="10"/><rect class="g-bar" x="4"  y="34" width="3" height="6"/>
+                <rect class="g-bar" x="8"  y="36" width="3" height="4"/><rect class="g-bar" x="12" y="37" width="3" height="3"/>
+                <rect class="g-bar" x="16" y="37" width="3" height="3"/><rect class="g-bar" x="20" y="35" width="3" height="5"/>
+                <rect class="g-bar" x="24" y="28" width="3" height="12"/><rect class="g-bar" x="28" y="18" width="3" height="22"/>
+                <rect class="g-bar" x="32" y="10" width="3" height="30"/><rect class="g-bar" x="36" y="6"  width="3" height="34"/>
+                <rect class="g-bar" x="40" y="12" width="3" height="28"/><rect class="g-bar" x="44" y="16" width="3" height="24"/>
+                <rect class="g-bar" x="48" y="20" width="3" height="20"/><rect class="g-bar" x="52" y="14" width="3" height="26"/>
+                <rect class="g-bar" x="56" y="18" width="3" height="22"/><rect class="g-bar" x="60" y="22" width="3" height="18"/>
+                <rect class="g-bar" x="64" y="16" width="3" height="24"/><rect class="g-bar" x="68" y="12" width="3" height="28"/>
+                <rect class="g-bar" x="72" y="20" width="3" height="20"/><rect class="g-bar" x="76" y="24" width="3" height="16"/>
+                <rect class="g-bar" x="80" y="26" width="3" height="14"/><rect class="g-bar" x="84" y="22" width="3" height="18"/>
+                <rect class="g-bar" x="88" y="28" width="3" height="12"/><rect class="g-bar is-now" x="92" y="24" width="3" height="16"/>
+              </svg>
+            </div>
+            <div class="fx-chips" style="margin-top:8px">
+              <span class="fx-chip"><span class="m3-icon">forum</span>136</span>
+              <span class="fx-chip"><span class="m3-icon">inbox</span>12</span>
+            </div>
+            <div class="fx-foot"><span class="m3-icon">schedule</span>hace 4 min</div>
+          </article>
+
+          <!-- 2. Pre-cálculo -->
+          <article class="fx-node is-err" data-n="pre">
+            <div class="fx-head"><span class="m3-icon">schedule</span><span class="fx-name">Pre-cálculo</span><span class="fx-dot" title="Atrasado"></span></div>
+            <div class="fx-body">
+              <!-- reloj: tiempo desde el último disparo sobre el período de 3 h -->
+              <svg width="56" height="56" viewBox="0 0 56 56" aria-label="Último disparo hace 2 h 10 min de 3 h">
+                <circle class="g-track" cx="28" cy="28" r="22" stroke-width="6"/>
+                <circle class="g-ring g-ok" cx="28" cy="28" r="22" stroke-width="6" fill="none"
+                        stroke-dasharray="100 138" transform="rotate(-90 28 28)"/>
+                <text class="g-center" x="28" y="33" text-anchor="middle">2 h</text>
+              </svg>
+              <div><div class="fx-big">13</div><div class="fx-unit">sin procesar</div></div>
+            </div>
+            <div class="fx-foot is-err"><span class="m3-icon">error</span>más viejo 23 h</div>
+          </article>
+
+          <div class="fx-branch">
+            <!-- 3. Carril 0 -->
+            <article class="fx-node" data-n="c0">
+              <div class="fx-head"><span class="m3-icon">filter_alt_off</span><span class="fx-name">Carril 0</span><span class="fx-dot" title="Bajo meta"></span></div>
+              <div class="fx-body" style="display:block">
+                <div class="fx-big">98 <span class="fx-unit">descartes</span></div>
+                <!-- bala: error auditado vs. meta -->
+                <svg width="100%" height="36" viewBox="0 0 170 36" preserveAspectRatio="none" aria-label="Error auditado: texto 6 % (meta 10 %), imagen 14 % (meta 20 %)">
+                  <text class="g-label" x="0" y="11">Aa</text>
+                  <rect class="g-cell" x="22" y="3" width="148" height="10" rx="2"/>
+                  <rect class="g-ok" x="22" y="3" width="22" height="10" rx="2"/>
+                  <line class="g-meta" x1="59" y1="0" x2="59" y2="16"/>
+                  <text class="g-label" x="0" y="31">▣</text>
+                  <rect class="g-cell" x="22" y="23" width="148" height="10" rx="2"/>
+                  <rect class="g-ok" x="22" y="23" width="52" height="10" rx="2"/>
+                  <line class="g-meta" x1="96" y1="20" x2="96" y2="36"/>
+                </svg>
+              </div>
+              <div class="fx-foot"><span class="m3-icon">rule</span>audit 22/30 · 9/15</div>
+            </article>
+
+            <!-- 4. Carril 1 -->
+            <article class="fx-node is-off" data-n="c1">
+              <div class="fx-head"><span class="m3-icon">bolt</span><span class="fx-name">Carril 1</span><span class="fx-dot" title="Apagado: modo sombra"></span></div>
+              <div class="fx-body">
+                <svg width="56" height="56" viewBox="0 0 56 56" aria-label="Modo sombra: n 41 de 200">
+                  <circle class="g-track" cx="28" cy="28" r="22" stroke-width="6"/>
+                  <circle class="g-ring" cx="28" cy="28" r="22" stroke-width="6" fill="none"
+                          style="stroke:var(--m3-on-surface)" stroke-dasharray="28 138" transform="rotate(-90 28 28)"/>
+                  <text class="g-center" x="28" y="33" text-anchor="middle">41</text>
+                </svg>
+                <div><div class="fx-big">88<span class="fx-unit">%</span></div><div class="fx-unit">acuerdo</div></div>
+              </div>
+              <div class="fx-foot"><span class="m3-icon">toggle_off</span>sombra · n 41/200</div>
+            </article>
+
+            <!-- 5. Cola (carril 2) -->
+            <article class="fx-node is-warn" data-n="c2">
+              <div class="fx-head"><span class="m3-icon">fact_check</span><span class="fx-name">Cola</span><span class="fx-dot" title="Hay viejos"></span></div>
+              <div class="fx-body">
+                <div class="fx-big">37</div>
+                <!-- edades: <6 h, 6–24 h, 1–2 d, 2–7 d, >7 d -->
+                <svg width="110" height="44" viewBox="0 0 110 44" aria-label="Edad de la cola: 14, 12, 7, 4, 0">
+                  <rect class="g-bar" x="0"  y="4"  width="18" height="28"/>
+                  <rect class="g-bar" x="22" y="8"  width="18" height="24"/>
+                  <rect class="g-warn" x="44" y="18" width="18" height="14"/>
+                  <rect class="g-err" x="66" y="24" width="18" height="8"/>
+                  <rect class="g-cell" x="88" y="31" width="18" height="1"/>
+                  <text class="g-label" x="9" y="43" text-anchor="middle">6h</text>
+                  <text class="g-label" x="31" y="43" text-anchor="middle">1d</text>
+                  <text class="g-label" x="53" y="43" text-anchor="middle">2d</text>
+                  <text class="g-label" x="75" y="43" text-anchor="middle">7d</text>
+                  <text class="g-label" x="97" y="43" text-anchor="middle">+</text>
+                </svg>
+              </div>
+              <div class="fx-foot is-warn"><span class="m3-icon">warning</span>más viejo 2 d 4 h</div>
+            </article>
+          </div>
+
+          <!-- 6. Tablero público -->
+          <article class="fx-node" data-n="pub">
+            <div class="fx-head"><span class="m3-icon">show_chart</span><span class="fx-name">Tablero</span><span class="fx-dot" title="Publicado"></span></div>
+            <div class="fx-body">
+              <div><div class="fx-big">226</div><div class="fx-unit">filas</div></div>
+              <!-- celdas producto × provincia con dato -->
+              <svg width="78" height="34" viewBox="0 0 78 34" aria-label="9 de 10 celdas con dato">
+                <rect class="g-cell is-on" x="0"  y="0"  width="14" height="14" rx="2"/><rect class="g-cell is-on" x="16" y="0"  width="14" height="14" rx="2"/>
+                <rect class="g-cell is-on" x="32" y="0"  width="14" height="14" rx="2"/><rect class="g-cell is-on" x="48" y="0"  width="14" height="14" rx="2"/>
+                <rect class="g-cell is-on" x="64" y="0"  width="14" height="14" rx="2"/>
+                <rect class="g-cell is-on" x="0"  y="18" width="14" height="14" rx="2"/><rect class="g-cell is-on" x="16" y="18" width="14" height="14" rx="2"/>
+                <rect class="g-cell is-on" x="32" y="18" width="14" height="14" rx="2"/><rect class="g-cell is-on" x="48" y="18" width="14" height="14" rx="2"/>
+                <rect class="g-cell" x="64" y="18" width="14" height="14" rx="2"/>
+              </svg>
+            </div>
+            <div class="fx-foot"><span class="m3-icon">schedule</span>hace 3 h</div>
+          </article>
+
+          <!-- 7. Marketing -->
+          <article class="fx-node" data-n="mkt">
+            <div class="fx-head"><span class="m3-icon">campaign</span><span class="fx-name">Marketing</span><span class="fx-dot" title="Lote de hoy listo"></span></div>
+            <div class="fx-body">
+              <div class="fx-steps" aria-label="3 borradores, 1 aprobada, 0 publicadas">
+                <span class="fx-step is-on">3</span><span class="fx-arrow">›</span>
+                <span class="fx-step is-on">1</span><span class="fx-arrow">›</span>
+                <span class="fx-step">0</span>
+              </div>
+            </div>
+            <div class="fx-foot"><span class="m3-icon">edit_note</span>›<span class="m3-icon">check</span>›<span class="m3-icon">campaign</span></div>
+            <div class="fx-foot"><span class="m3-icon">schedule</span>06:00 · hoy</div>
+          </article>
+
+        </div>
+      </div>
+
+      <div class="fx-legend">
+        <span><i style="background:var(--m3-success)"></i>al día</span>
+        <span><i style="background:var(--m3-warn)"></i>mirar</span>
+        <span><i style="background:var(--m3-error)"></i>atrasado</span>
+        <span><i style="border:2px solid var(--m3-outline)"></i>apagado</span>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>
