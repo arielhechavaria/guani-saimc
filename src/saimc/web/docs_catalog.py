@@ -271,6 +271,17 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="plan-fabrica-marketing",
+        title="Plan de la fábrica de publicaciones (2026-10-18)",
+        summary=(
+            "Cómo `/marketing` pasa a armar, aprobar y llevar al teléfono las "
+            "publicaciones de Instagram sin la API de Meta, que no está "
+            "disponible desde Cuba. Cinco tareas con su prompt y su modelo."
+        ),
+        relative_path="docs/plan-fabrica-marketing.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="plan-marca",
         title="Leira Studio — plan de marca y compendio de contactos",
         summary=(

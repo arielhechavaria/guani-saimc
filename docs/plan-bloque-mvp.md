@@ -570,6 +570,10 @@ PNG en disco con las cifras del 15; el timer figura en `systemctl list-timers`.
 
 ### T8b — Publicación automática en Instagram · L · opus
 
+**Reemplazada (2026-10-18):** Meta for Developers no está disponible desde
+Cuba, así que no hay API propia. La sigue `docs/plan-fabrica-marketing.md`
+(`/docs/plan-fabrica-marketing`). Lo de abajo queda como registro.
+
 **Decisión del operador (2026-10-16):** publicar por API. El descarte del
 2026-09-28 quedó revocado en `decisions.md`, donde también está lo que implica
 para el sistema (permisos, URL pública de los medios, tabla de estado, kill
