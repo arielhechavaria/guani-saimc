@@ -13,6 +13,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 
 | Comando | Para qué | Cambia algo | Gasta |
 |---|---|---|---|
+| [`saimc.tui`](#terminal-del-operador-tui) | Menú de comandos y logs en vivo, por SSH | solo si confirmás un comando que escribe | solo si confirmás uno que gasta |
 | [`psql` con la URL del `.env`](#abrir-psql) | Entrar a la base | no (solo lee) | no |
 | [`saimc.ingestion`](#ingerir-la-bandeja-de-entrada) | Ingerir archivos de la bandeja | sí: filas crudas | no |
 | [`systemctl start saimc-prefill`](#pre-cálculo-ahora-a-mano) | Pre-calcular propuestas ya (y preguntarle a Jev, si está encendido) | sí: propuestas y señales de Jev | sí, tope 0,15 USD (más 0,01 de Jev) |
@@ -49,6 +50,8 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`scripts/add_focus_aliases.py --apply`](#alias-del-foco) | Agregar alias al catálogo del foco | sí: productos | no |
 | [`saimc.extraction.llm_backtest`](#backtest-del-asistente) | Backtest del asistente contra lo curado | `--execute` escribe archivos | `--execute` sí |
 | [`scripts/jev_eval.py`](#prueba-de-jev) | Medir la calibración de Jev contra lo ya decidido (A6) | en seco no; `--execute` escribe en `data/jev_eval/` | `--execute` sí, tope 0,20 USD |
+| [`scripts/jev_envase_eval.py`](#jev-unidad-y-cantidad) | Medir si Jev acierta unidad y cantidad de una fila curada | en seco no; `--execute` escribe en `data/jev_envase_eval/` | `--execute` sí, tope 0,50 USD (~0,02 real) |
+| [`scripts/jev_arbitro_eval.py`](#jev-como-arbitro) | Medir si Jev podría arbitrar cuando el modelo descarta y las reglas ven un piloto | no | no |
 | [`pytest`, `ruff`, `mypy`, `alembic revision`](#desarrollo-local) | Suite, estilo, tipos, migración nueva | no (revision crea un archivo) | no |
 
 > **Atención.** Gastan plata o reescriben datos: `prefill --execute`, `llm_backtest --execute`,
@@ -62,6 +65,25 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 ---
 
 ## Rutina diaria
+
+### Terminal del operador (TUI)
+
+```
+.venv/bin/pip install -e '.[tui]'
+```
+
+```
+.venv/bin/python -m saimc.tui
+```
+
+- **Para qué**: un menú con los comandos de este catálogo que no piden `sudo` y los logs de cada
+  unidad (`journalctl -f`). Muestra la línea exacta antes de correr.
+- **Teclas**: flechas para moverte, `r` o Enter corre, `x` corta (también los logs en vivo), `c`
+  limpia la salida, `q` sale. Los marcados con ⚠ escriben o gastan y piden `y`/`n`.
+- **Cuándo**: cuando no te acordás cuál era el comando o querés ver un log. El primer `pip install`
+  se hace una sola vez. Los comandos con `sudo` (reiniciar, arrancar un servicio) siguen a mano.
+- **Cambia algo**: solo los marcados con ⚠, y solo si confirmás. **Gasta**: solo `Pre-cálculo escribiendo`.
+- **Dónde vive la lista**: `src/saimc/tui/registry.py`. Si agregás un comando a este catálogo, sumalo ahí también.
 
 ### Abrir psql
 
@@ -1161,6 +1183,32 @@ Estos se corren en tu máquina, no en el VPS.
   `scripts/clean_worktrees.sh --apply` (borra worktrees y ramas locales ya integradas en master).
   Con `--huerfanas` (`scripts/clean_worktrees.sh --apply --huerfanas`) borra además todas las
   ramas sin worktree, incluso las sin mergear. Sin `--apply` solo lista.
+
+### Jev: unidad y cantidad
+
+Mide, por fila curada a mano, si Jev acierta la unidad (elección entre las 8 canónicas) y la
+cantidad (sí/no sobre un candidato, con señuelos), y lo compara con la propuesta guardada del
+modelo. Solo lee la base; no cambia producción ni decide nada. Necesita `SAIMC_VERCEL_API_KEY` en
+el `.env` para `--execute`.
+
+```
+.venv/bin/python scripts/jev_envase_eval.py
+```
+
+```
+.venv/bin/python scripts/jev_envase_eval.py --execute
+```
+
+### Jev como árbitro
+
+Mide, solo sobre los textos donde el modelo descarta y las reglas ven un producto piloto, qué haría
+el triage de Jev (ya guardado) contra lo que decidió el operador, y cuántos pendientes de hoy
+caerían bajo cada umbral. No llama a Jev, no gasta y no escribe nada. Sin decisiones humanas en ese
+desacuerdo imprime «sin muestra»: resolvé esos pendientes en la cola y volvé a correrlo.
+
+```
+.venv/bin/python scripts/jev_arbitro_eval.py --gold data/llm-backtest-results-v7.jsonl
+```
 
 ---
 
