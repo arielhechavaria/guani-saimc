@@ -39,6 +39,19 @@ LOOKBACK_WINDOW_DAYS = 30
 
 
 @dataclass(frozen=True)
+class Block:
+    """Una parte de la tarjeta que el editor puede mostrar u ocultar.
+
+    Los bloques sin interruptor (`toggleable=False`) son los que hacen que la
+    pieza diga algo —título, rango, fecha—: la URL no los apaga."""
+
+    slug: str
+    label: str
+    default: bool = True
+    toggleable: bool = True
+
+
+@dataclass(frozen=True)
 class CardType:
     slug: str
     label: str
@@ -47,20 +60,46 @@ class CardType:
     height: int
     needs_product: bool = False
     needs_province: bool = False
+    #: Bloques de la plantilla (`data-block="<slug>"`). Vacía en las tarjetas
+    #: de puro branding, que no tienen nada que apagar.
+    blocks: tuple[Block, ...] = ()
 
 
 CARD_TYPES: tuple[CardType, ...] = (
     CardType(
         "dato-del-dia", "Dato del día", "marketing_dato_del_dia.html",
         1080, 1350, needs_product=True,
+        blocks=(
+            Block("titulo", "Título y fecha de corte", toggleable=False),
+            Block("rango", "Rango de precios", toggleable=False),
+            Block("barra", "Barra de rango y mediana"),
+            Block("mediana", "Mediana y cantidad de anuncios"),
+            Block("comparacion", "Comparación entre provincias"),
+            Block("muestra", "Aviso «muestra en formación»"),
+            Block("fuente", "Nota de la fuente"),
+        ),
     ),
     CardType(
         "como-se-movio", "Cómo se movió", "marketing_como_se_movio.html",
         1080, 1350, needs_product=True,
+        blocks=(
+            Block("titulo", "Título", toggleable=False),
+            Block("cambio", "Cambio por provincia", toggleable=False),
+            Block("grafico", "Gráfico de líneas"),
+            Block("muestra", "Aviso «muestra en formación»"),
+            Block("fuente", "Nota de la fuente"),
+        ),
     ),
     CardType(
         "de-donde-sale", "De dónde sale este precio", "marketing_de_donde_sale.html",
         1080, 1350, needs_product=True, needs_province=True,
+        blocks=(
+            Block("titulo", "Título", toggleable=False),
+            Block("rango", "Rango y cantidad de anuncios", toggleable=False),
+            Block("anuncios", "Tabla de anuncios"),
+            Block("nota", "Nota sobre la imagen original"),
+            Block("posicion", "Número de diapositiva (3 / 4)"),
+        ),
     ),
     CardType(
         "carrusel-portada", "Carrusel · portada", "marketing_carrusel_portada.html", 1080, 1350

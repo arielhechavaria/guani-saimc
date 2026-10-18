@@ -13,7 +13,16 @@
   saimc.marketing.cards.build_dato_del_dia, que a su vez reusa
   card_view.build_cards (el mismo cómputo del tablero público) — no hay
   ningún promedio nuevo calculado acá.
+
+  Bloques (`data-block`): cada uno se puede apagar desde el editor
+  (`show`, ver saimc.marketing.options); los que no tienen interruptor
+  —título y rango— se pintan siempre. El lienzo no deja huecos: las filas
+  reparten el alto que sobra. `subtitle` y `cta` son texto libre del
+  operador, nunca una cifra.
 #}
+{% set on = show if show is defined else {} %}
+{#- Con subtítulo o llamada la pieza ya no entra a tamaño completo: las filas se compactan. -#}
+{% set c = (subtitle or cta) %}
 <div class="mc" style="width: 1080px; height: 1350px">
   <div class="mc-orbs"></div>
   <div class="mc-content" style="padding: 64px 72px">
@@ -23,33 +32,42 @@
       <div class="mc-chip mc-chip-ink">Dato del día</div>
     </div>
 
+    <div data-block="titulo">
     <div class="mc-kicker" style="margin-top: 40px">
       Precio por {{ card.unit_noun }} · semana del {{ card.week_from }} al {{ card.week_to }}
     </div>
     {# El nombre se achica según su largo para que un producto con nombre largo no empuje el resto fuera del lienzo. #}
     {% set n = card.product_name | length %}
     <div class="mc-title" style="margin-top: 8px; font-size: {{ 150 if n <= 10 else 110 if n <= 18 else 80 if n <= 30 else 60 }}px; line-height: 1.05">{{ card.product_name }}</div>
+    </div>
+    {% if subtitle %}
+    <div data-block="subtitulo" class="mc-muted" style="margin-top: 16px; font-size: 32px; line-height: 40px">{{ subtitle }}</div>
+    {% endif %}
 
-    <div style="margin-top: 28px; display: flex; flex-direction: column; gap: 24px">
+    <div style="margin-top: 28px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: {{ 16 if c else 24 }}px">
       {% for row in card.rows %}
-      <div class="mc-panel" style="padding: 32px 40px">
+      <div class="mc-panel" style="padding: {{ 20 if c else 32 }}px 40px">
         <div style="display: flex; align-items: center; gap: 16px">
           <div class="mc-dot" style="width: 24px; height: 24px; background: {{ row.color }}"></div>
           <div style="flex-grow: 1; font-size: 36px; line-height: 44px; font-weight: 600">{{ row.name }}</div>
-          {% if row.is_cheapest %}
-          <div class="mc-chip mc-chip-soft" style="padding: 4px 20px; font-size: 24px">más barata</div>
+          {% if row.is_cheapest and on.comparacion is not false %}
+          <div data-block="comparacion" class="mc-chip mc-chip-soft" style="padding: 4px 20px; font-size: 24px">más barata</div>
           {% endif %}
         </div>
         {% if row.has_data %}
-        <div style="margin-top: 12px; display: flex; align-items: baseline; gap: 16px">
-          <div class="mc-title" style="font-size: 100px; line-height: 1.05">{{ row.range_text }}</div>
+        <div data-block="rango" style="margin-top: 12px; display: flex; align-items: baseline; gap: 16px">
+          <div class="mc-title" style="font-size: {{ 84 if c else 100 }}px; line-height: 1.05">{{ row.range_text }}</div>
           <div class="mc-muted" style="font-size: 28px">{{ card.currency }}/{{ card.unit }}</div>
         </div>
-        <div class="mc-track" style="margin-top: 24px; height: 32px">
+        {% if on.barra is not false %}
+        <div data-block="barra" class="mc-track" style="margin-top: {{ 16 if c else 24 }}px; height: 32px">
           <div class="mc-bar" style="left: {{ row.bar_left_pct }}%; width: {{ row.bar_width_pct }}%; background: {{ row.color }}"></div>
           <div class="mc-knob" style="top: -8px; left: {{ row.median_pct }}%; width: 48px; height: 48px; margin-left: -24px"></div>
         </div>
-        <div class="mc-muted" style="margin-top: 24px; font-size: 28px; line-height: 36px">mediana {{ row.median_text }} · <b style="color: #292524; font-weight: 600">{{ row.count }} anuncio{{ "s" if row.count != 1 }}</b></div>
+        {% endif %}
+        {% if on.mediana is not false %}
+        <div data-block="mediana" class="mc-muted" style="margin-top: {{ 16 if c else 24 }}px; font-size: 28px; line-height: 36px">mediana {{ row.median_text }} · <b style="color: #292524; font-weight: 600">{{ row.count }} anuncio{{ "s" if row.count != 1 }}</b></div>
+        {% endif %}
         {% else %}
         <div class="mc-muted" style="margin-top: 12px; font-size: 32px">Sin datos esta semana</div>
         {% endif %}
@@ -57,10 +75,18 @@
       {% endfor %}
     </div>
 
-    <div class="mc-chip mc-chip-soft" style="margin-top: 24px; align-self: flex-start">Muestra en formación</div>
-    <div style="flex-grow: 1"></div>
+    {% if on.muestra is not false %}
+    <div data-block="muestra" class="mc-chip mc-chip-soft" style="margin-top: 24px; align-self: flex-start">Muestra en formación</div>
+    {% endif %}
+    {% if cta %}
+    <div data-block="cta" class="mc-chip mc-chip-ink" style="margin-top: 24px; align-self: flex-start; max-width: 100%">{{ cta }}</div>
+    {% endif %}
     <div style="margin-top: 24px; display: flex; align-items: flex-end; gap: 32px">
-      <div class="mc-muted" style="flex-grow: 1; font-size: 24px; line-height: 32px">Fuente: canales de WhatsApp de emprendedores cubanos. Barra: rango de lo observado; círculo: mediana.</div>
+      {% if on.fuente is not false %}
+      <div data-block="fuente" class="mc-muted" style="flex-grow: 1; font-size: 24px; line-height: 32px">Fuente: canales de WhatsApp de emprendedores cubanos.{% if on.barra is not false %} Barra: rango de lo observado; círculo: mediana.{% endif %}</div>
+      {% else %}
+      <div style="flex-grow: 1"></div>
+      {% endif %}
       <div class="mc-url">{{ site_url }}</div>
     </div>
   </div>

@@ -1,0 +1,38 @@
+{#-
+  La vista previa del editor de /marketing y los botones que actúan sobre ella.
+  Es lo único que HTMX reemplaza al tocar un interruptor o escribir un texto
+  (`/marketing/vista`); el texto del post queda fuera a propósito, para que
+  un cambio de bloques no pise lo que el operador editó a mano.
+
+  Decidido a 390 px: la tarjeta ocupa el ancho de la pantalla y el iframe se
+  escala con `marketing-editor.js` (sin JS queda a un tercio, que sigue
+  siendo legible). Botones de 44 px de alto.
+-#}
+{% if ready %}
+<div class="mk-frame" style="aspect-ratio: {{ kind.width }}/{{ kind.height }}">
+  <iframe
+    src="/marketing/preview/{{ kind.slug }}?{{ qs }}"
+    width="{{ kind.width }}" height="{{ kind.height }}"
+    data-mk-w="{{ kind.width }}"
+    style="width:{{ kind.width }}px; height:{{ kind.height }}px; transform:scale(.3)"
+    title="Vista previa de la tarjeta"
+  ></iframe>
+</div>
+<div class="mk-actions">
+  <button type="button" class="m3-btn m3-btn-tonal" data-mk-copy>
+    <span data-mk-label>Copiar texto</span>
+  </button>
+  <button type="button" class="m3-btn m3-btn-filled" data-mk-share
+          data-mk-url="/marketing/card/{{ kind.slug }}.jpg?{{ qs }}"
+          data-mk-name="guani-{{ kind.slug }}.jpg">
+    <span data-mk-label>Compartir</span>
+  </button>
+</div>
+<p class="m3-xs m3-muted" data-mk-status role="status" aria-live="polite" style="margin:8px 0 0"></p>
+<p class="m3-xs" style="margin:8px 0 0">
+  <a href="/marketing/card/{{ kind.slug }}.jpg?{{ qs }}">Descargar JPEG</a> ·
+  <a href="/marketing/card/{{ kind.slug }}.png?{{ qs }}">PNG</a>
+</p>
+{% else %}
+<p class="m3-xs m3-muted" style="margin:0">«{{ selected_product }}» no está en el foco todavía.</p>
+{% endif %}

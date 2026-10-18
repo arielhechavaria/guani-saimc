@@ -134,22 +134,14 @@ def client(session: Session) -> Iterator[TestClient]:
 
 
 class TestSeccionEnMarketing:
-    def test_sin_lecturas_explica_como_empezar(self, client: TestClient) -> None:
-        respuesta = client.get("/marketing")
+    """La sección se sacó de `/marketing` (`docs/decisions.md`, 2026-10-18):
+    sin app de Meta no hay token. El panel y sus tablas quedan dormidos."""
 
-        assert respuesta.status_code == 200
-        assert 'id="instagram"' in respuesta.text
-        assert "Todavía no hay lecturas de Instagram" in respuesta.text
-
-    def test_con_lecturas_muestra_publicaciones_y_seguidores(
+    def test_la_pagina_ya_no_la_muestra_ni_con_lecturas(
         self, client: TestClient, datos: None
     ) -> None:
         respuesta = client.get("/marketing")
 
         assert respuesta.status_code == 200
-        assert "https://www.instagram.com/reel/BBB222/" in respuesta.text
-        assert "1520" in respuesta.text
-        assert "Reel" in respuesta.text
-        assert "312" in respuesta.text
-        assert "+7" in respuesta.text
-        assert "Todavía no hay lecturas de Instagram" not in respuesta.text
+        assert 'id="instagram"' not in respuesta.text
+        assert "https://www.instagram.com/reel/BBB222/" not in respuesta.text

@@ -2,7 +2,22 @@
 
 {% block title %}Marketing{% endblock %}
 {% block heading %}Tarjetas para redes{% endblock %}
-{% block subtitle %}Las 9 piezas del calendario de campaña, con las cifras reales del sitio — nada que copiar a mano.{% endblock %}
+{% block subtitle %}Las cifras salen del sitio, nunca se escriben a mano. Se arma, se copia el texto y se comparte desde el teléfono.{% endblock %}
+
+{% block head %}
+<style>
+  /* Decidido a 390 px: una columna, el lienzo a todo el ancho. */
+  .mk-frame{position:relative; width:100%; max-width:540px; overflow:hidden; border-radius:16px; box-shadow:var(--m3-elev-2)}
+  .mk-frame iframe{position:absolute; top:0; left:0; border:0; transform-origin:top left}
+  .mk-actions{display:flex; gap:12px; margin-top:16px; flex-wrap:wrap}
+  .mk-actions .m3-btn{flex:1 1 150px; min-height:44px; justify-content:center}
+  .mk-opts summary{min-height:44px; display:flex; align-items:center; cursor:pointer; font-weight:500}
+  .mk-toggle{display:flex; align-items:center; gap:12px; min-height:44px}
+  .mk-toggle input{width:20px; height:20px; flex:none}
+  .mk-count{margin:4px 0 0; text-align:right}
+  .mk-count.is-over{color:var(--m3-error)}
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="m3-stack">
@@ -17,160 +32,87 @@
       </div>
     </div>
 
-    <form method="get" action="/marketing" class="m3-row" style="gap:12px; margin:0 24px 24px; flex-wrap:wrap; align-items:end">
-      <label class="m3-field m3-field-on-container">
-        <span class="m3-field-label" for="kind">Tarjeta</span>
-        <select name="kind" id="kind" class="m3-select" onchange="this.form.submit()">
-          {% for t in card_types %}
-          <option value="{{ t.slug }}"{% if t.slug == kind.slug %} selected{% endif %}>{{ t.label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      {% if kind.needs_product %}
-      <label class="m3-field m3-field-on-container">
-        <span class="m3-field-label" for="product">Producto</span>
-        <select name="product" id="product" class="m3-select" onchange="this.form.submit()">
-          {% for p in products %}
-          <option value="{{ p }}"{% if p == selected_product %} selected{% endif %}>{{ p }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      {% endif %}
-      {% if kind.needs_province %}
-      <label class="m3-field m3-field-on-container">
-        <span class="m3-field-label" for="province">Provincia</span>
-        <select name="province" id="province" class="m3-select" onchange="this.form.submit()">
-          {% for prov in provinces %}
-          <option value="{{ prov }}"{% if prov == selected_province %} selected{% endif %}>{{ prov }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      {% endif %}
-      <noscript><button type="submit" class="m3-btn m3-btn-tonal">Ver</button></noscript>
-    </form>
+    <form id="editor" method="get" action="/marketing" style="margin:0 24px 24px">
+      <div class="m3-row" style="gap:12px; flex-wrap:wrap; align-items:end">
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label">Tarjeta</span>
+          <select name="kind" id="kind" class="m3-select" onchange="this.form.submit()">
+            {% for t in card_types %}
+            <option value="{{ t.slug }}"{% if t.slug == kind.slug %} selected{% endif %}>{{ t.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% if kind.needs_product %}
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label">Producto</span>
+          <select name="product" id="product" class="m3-select" onchange="this.form.submit()">
+            {% for p in products %}
+            <option value="{{ p }}"{% if p == selected_product %} selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        {% if kind.needs_province %}
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label">Provincia</span>
+          <select name="province" id="province" class="m3-select" onchange="this.form.submit()">
+            {% for prov in provinces %}
+            <option value="{{ prov }}"{% if prov == selected_province %} selected{% endif %}>{{ prov }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <noscript><button type="submit" class="m3-btn m3-btn-tonal">Ver</button></noscript>
+      </div>
 
-    {% if ready %}
-    {% set qs = "kind=" ~ (kind.slug | urlencode) %}
-    {% if kind.needs_product %}{% set qs = qs ~ "&product=" ~ (selected_product | urlencode) %}{% endif %}
-    {% if kind.needs_province %}{% set qs = qs ~ "&province=" ~ (selected_province | urlencode) %}{% endif %}
-    <div style="padding:0 24px 24px">
-      <div style="width:100%; max-width:{{ 540 if kind.width <= kind.height else 720 }}px; aspect-ratio:{{ kind.width }}/{{ kind.height }}; border-radius:16px; overflow:hidden; box-shadow:0 2px 8px rgba(5,32,48,0.15)">
-        <iframe
-          src="/marketing/preview/{{ kind.slug }}?{{ qs }}"
-          style="width:{{ kind.width }}px; height:{{ kind.height }}px; border:0; transform:scale({{ '0.5' if kind.width <= kind.height else '0.44' }}); transform-origin:top left"
-          title="Vista previa de la tarjeta"
-        ></iframe>
-      </div>
-      <div class="m3-row" style="margin-top:16px; gap:12px">
-        <a class="m3-btn m3-btn-filled" href="/marketing/card/{{ kind.slug }}.png?{{ qs }}">
-          <span class="m3-icon">download</span>Descargar PNG
-        </a>
-      </div>
-      <p class="m3-xs m3-muted" style="margin-top:12px">
-        Si el PNG no se genera, es porque falta instalar Chromium para Playwright en el
-        servidor (`docs/decisions.md`, slice de marketing) — la vista previa de arriba
-        sigue andando igual.
+
+      <div id="vista" style="margin-top:24px">{% include "_marketing_vista.html" %}</div>
+      {#- Un atajo oculta al formulario largo (docs/DESIGN.md, regla 2): compartir la
+          tarjeta tal cual sale es el caso común; ajustar bloques y textos, el excepcional. -#}
+      {% if has_texts and ready %}
+      <details class="mk-opts" style="margin-top:16px"{% if customized %} open{% endif %}>
+        <summary>Ajustar bloques y textos</summary>
+        <div hx-get="/marketing/vista" hx-trigger="change, input delay:300ms" hx-target="#vista"
+             hx-include="closest form" hx-swap="innerHTML">
+          {% for b in toggles %}
+          <label class="mk-toggle">
+            <input type="hidden" name="b_{{ b.slug }}" value="0">
+            <input type="checkbox" name="b_{{ b.slug }}" value="1"{% if options.show[b.slug] %} checked{% endif %}>
+            <span>{{ b.label }}</span>
+          </label>
+          {% endfor %}
+          <p class="m3-xs m3-muted" style="margin:8px 0 0">El título y la cifra principal siempre se ven; las cifras no se editan.</p>
+          <label class="m3-field m3-field-on-container" style="margin-top:16px">
+            <span class="m3-field-label">Subtítulo (hasta {{ subtitle_max }} caracteres)</span>
+            <input class="m3-input" type="text" name="subtitle" maxlength="{{ subtitle_max }}" value="{{ options.subtitle }}">
+          </label>
+          <label class="m3-field m3-field-on-container" style="margin-top:12px">
+            <span class="m3-field-label">Llamada a la acción (hasta {{ cta_max }} caracteres)</span>
+            <input class="m3-input" type="text" name="cta" maxlength="{{ cta_max }}" value="{{ options.cta }}">
+          </label>
+        </div>
+      </details>
+      {% endif %}
+
+      {% if ready %}
+      <label class="m3-field m3-field-on-container" style="margin-top:24px">
+        <span class="m3-field-label">Texto del post</span>
+        <textarea id="caption" class="m3-textarea" rows="12" spellcheck="true">{{ caption }}</textarea>
+      </label>
+      <p class="m3-xs m3-muted mk-count" id="caption-count" data-max="{{ caption_max }}" data-max-tags="30">
+        {{ caption | length }} / {{ caption_max }} caracteres · {{ caption.count("#") }} / 30 hashtags
       </p>
-    </div>
-    {% else %}
-    <p class="m3-xs m3-muted" style="margin:0 24px 24px">«{{ selected_product }}» no está en el foco todavía.</p>
-    {% endif %}
-  </section>
-
-  {#- Instagram (docs/spec-slice-instagram.md). Decidido a 390 px: la tabla de
-      publicaciones lleva solo dos cifras en columna (vistas y alcance); el resto
-      va en una línea bajo cada publicación, que entra a cualquier ancho. -#}
-  <section class="m3-card" id="instagram">
-    <div class="m3-card-head">
-      <div class="m3-topbar-main">
-        <h2 class="m3-h2">Instagram</h2>
-        <p class="m3-note" style="margin-bottom:0">
-          {% if instagram.last_sync %}
-          {{ instagram.current_followers }} seguidores · última lectura
-          {{ instagram.last_sync.strftime("%d/%m %H:%M") }} UTC. Meta puede tardar hasta 48 h en
-          completar las cifras.
-          {% else %}
-          Todavía no hay lecturas de Instagram. Las guarda el lote
-          <code>saimc.instagram.sync</code> cada 3 h, una vez hecha el alta del token
-          (docs/comandos.md, «Seguimiento de Instagram»).
-          {% endif %}
-        </p>
-      </div>
-    </div>
-
-    {% if instagram.posts %}
-    <div class="m3-table-scroll">
-      <table class="m3-table">
-        <thead>
-          <tr>
-            <th scope="col">Publicación</th>
-            <th scope="col" style="text-align:right">Vistas</th>
-            <th scope="col" style="text-align:right">Alcance</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for post in instagram.posts %}
-          {% set m = post.metrics %}
-          <tr>
-            <td>
-              <span class="m3-cell-strong">{{ post.type_label }}</span>
-              {% if post.posted_at %}<span class="m3-dim">· {{ post.posted_at.strftime("%d/%m") }}</span>{% endif %}
-              {#- El margen negativo agranda el área táctil a 44 px sin mover la fila. -#}
-              {% if post.permalink %}· <a href="{{ post.permalink }}" target="_blank" rel="noopener" style="display:inline-block; padding:12px 4px; margin:-12px -4px">ver</a>{% endif %}
-              {% if post.caption_short %}<div class="m3-cell-sub">{{ post.caption_short }}</div>{% endif %}
-              <div class="m3-cell-sub">
-                {% if m %}
-                {%- set partes = [] -%}
-                {%- if m.total_interactions is not none %}{% set _ = partes.append(m.total_interactions ~ " interacciones") %}{% endif -%}
-                {%- if m.likes is not none %}{% set _ = partes.append(m.likes ~ " me gusta") %}{% endif -%}
-                {%- if m.comments is not none %}{% set _ = partes.append(m.comments ~ " comentarios") %}{% endif -%}
-                {%- if m.saved is not none %}{% set _ = partes.append(m.saved ~ " guardados") %}{% endif -%}
-                {%- if m.shares is not none %}{% set _ = partes.append(m.shares ~ " compartidos") %}{% endif -%}
-                {%- if post.avg_watch_seconds is not none %}{% set _ = partes.append(("%.1f"|format(post.avg_watch_seconds))|replace(".", ",") ~ " s de reproducción media") %}{% endif -%}
-                {{ partes | join(" · ") }}
-                {% else %}
-                Sin cifras: un carrusel (Meta no las da) o todavía sin datos.
-                {% endif %}
-              </div>
-            </td>
-            <td class="is-num">{% if m and m.views is not none %}{{ m.views }}{% else %}<span class="is-zero">—</span>{% endif %}</td>
-            <td class="is-num">{% if m and m.reach is not none %}{{ m.reach }}{% else %}<span class="is-zero">—</span>{% endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
-
-    {% if instagram.followers %}
-    <div class="m3-card-head" style="padding-bottom:8px">
-      <h3 class="m3-h3">Seguidores en el tiempo</h3>
-    </div>
-    <div class="m3-table-scroll">
-      <table class="m3-table">
-        <thead>
-          <tr>
-            <th scope="col">Día (UTC)</th>
-            <th scope="col" style="text-align:right">Seguidores</th>
-            <th scope="col" style="text-align:right">Cambio</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for d in instagram.followers %}
-          <tr>
-            <td>{{ d.day.strftime("%d/%m/%Y") }}</td>
-            <td class="is-num">{{ d.followers }}</td>
-            <td class="is-num">
-              {% if d.change is none %}<span class="is-zero">—</span>
-              {%- elif d.change > 0 %}+{{ d.change }}
-              {%- else %}{{ d.change }}{% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
+      <p class="m3-xs m3-muted" style="margin-top:12px">
+        Si la imagen no se genera, falta instalar Chromium para Playwright en el servidor
+        (<code>docs/decisions.md</code>, slice de marketing); la vista previa sigue andando.
+      </p>
+      {% endif %}
+    </form>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
+<script src="/static/marketing-editor.js" defer></script>
 {% endblock %}

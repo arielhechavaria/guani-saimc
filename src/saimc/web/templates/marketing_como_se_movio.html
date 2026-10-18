@@ -13,7 +13,13 @@
   price_charts.build_month_vs_month (el mismo "¿subió o bajó?" del tablero
   público). Coordenadas Y del gráfico ya calculadas por esa función, propias
   de esta tarjeta (no las del panel flotante, más chico).
+
+  Bloques (`data-block`): ver marketing_dato_del_dia.html. Título y cambio
+  por provincia se pintan siempre; sin el gráfico, los paneles de cambio
+  se apilan y reparten el alto.
 #}
+{% set on = show if show is defined else {} %}
+{% set c = (subtitle or cta) %}
 <div class="mc" style="width: 1080px; height: 1350px">
   <div class="mc-orbs"></div>
   <div class="mc-content" style="padding: 64px 72px">
@@ -23,13 +29,20 @@
       <div class="mc-chip mc-chip-ink">Cómo se movió</div>
     </div>
 
+    <div data-block="titulo">
     <div class="mc-kicker" style="margin-top: 40px">Período actual frente al anterior</div>
     {# El nombre se achica según su largo para que un producto con nombre largo no empuje el resto fuera del lienzo. #}
     {% set n = card.product_name | length %}
     <div class="mc-title" style="margin-top: 8px; font-size: {{ 150 if n <= 10 else 110 if n <= 18 else 80 if n <= 30 else 60 }}px; line-height: 1.05">{{ card.product_name }}</div>
+    </div>
+    {% if subtitle %}
+    <div data-block="subtitulo" class="mc-muted" style="margin-top: 16px; font-size: 32px; line-height: 40px">{{ subtitle }}</div>
+    {% endif %}
 
-    <div class="mc-panel" style="margin-top: 28px; padding: 36px 40px 32px">
-      <svg viewBox="0 0 872 380" width="872" height="380" role="img" aria-label="Precio mediano por provincia, período anterior frente al actual">
+    <div style="margin-top: 28px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 24px">
+    {% if on.grafico is not false %}
+    <div data-block="grafico" class="mc-panel" style="padding: {{ '24px 40px 16px' if c else '36px 40px 32px' }}">
+      <svg viewBox="0 0 872 380" width="{{ 740 if c else 872 }}" height="{{ 322 if c else 380 }}" role="img" aria-label="Precio mediano por provincia, período anterior frente al actual">
         <text x="150" y="34" text-anchor="middle" font-family="Inter, sans-serif" font-size="26" fill="#4e4e4e">{{ card.before_label }}</text>
         <text x="722" y="34" text-anchor="middle" font-family="Inter, sans-serif" font-size="26" fill="#4e4e4e">{{ card.now_label }}</text>
         <line x1="150" y1="60" x2="150" y2="350" stroke="#d6d3d1" stroke-width="2"/>
@@ -43,10 +56,11 @@
         {% endfor %}
       </svg>
     </div>
+    {% endif %}
 
-    <div style="margin-top: 24px; display: flex; gap: 24px">
+    <div data-block="cambio" style="{{ 'flex: 0 0 auto' if on.grafico is not false else 'flex: 1 1 0' }}; display: flex; flex-direction: {{ 'row' if on.grafico is not false else 'column' }}; gap: 24px">
       {% for row in card.rows %}
-      <div class="mc-panel" style="flex: 1 1 0; min-width: 0; padding: 24px 28px">
+      <div class="mc-panel" style="flex: 1 1 0; min-width: 0; padding: {{ 16 if c else 24 }}px 28px; display: flex; flex-direction: column; justify-content: center">
         <div style="display: flex; align-items: center; gap: 12px"><div class="mc-dot" style="width: 20px; height: 20px; background: {{ row.color }}"></div><div style="font-size: 30px; line-height: 36px; font-weight: 600">{{ row.name }}</div></div>
         {% if row.has_line %}
         <div class="mc-title" style="margin-top: 8px; font-size: 72px; line-height: 1.05">{{ row.change_text }}</div>
@@ -57,11 +71,20 @@
       </div>
       {% endfor %}
     </div>
+    </div>
 
-    <div class="mc-chip mc-chip-soft" style="margin-top: 24px; align-self: flex-start">Muestra en formación</div>
-    <div style="flex-grow: 1"></div>
+    {% if on.muestra is not false %}
+    <div data-block="muestra" class="mc-chip mc-chip-soft" style="margin-top: 24px; align-self: flex-start">Muestra en formación</div>
+    {% endif %}
+    {% if cta %}
+    <div data-block="cta" class="mc-chip mc-chip-ink" style="margin-top: 24px; align-self: flex-start; max-width: 100%">{{ cta }}</div>
+    {% endif %}
     <div style="margin-top: 24px; display: flex; align-items: flex-end; gap: 32px">
-      <div class="mc-muted" style="flex-grow: 1; font-size: 24px; line-height: 32px">Fuente: canales de WhatsApp de emprendedores cubanos. Mediana de cada período, precio por {{ card.unit_noun }}.</div>
+      {% if on.fuente is not false %}
+      <div data-block="fuente" class="mc-muted" style="flex-grow: 1; font-size: 24px; line-height: 32px">Fuente: canales de WhatsApp de emprendedores cubanos. Mediana de cada período, precio por {{ card.unit_noun }}.</div>
+      {% else %}
+      <div style="flex-grow: 1"></div>
+      {% endif %}
       <div class="mc-url">{{ site_url }}</div>
     </div>
   </div>
