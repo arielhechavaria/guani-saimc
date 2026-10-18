@@ -1,0 +1,122 @@
+{% extends "_shell.html" %}
+
+{#-
+  Semana e historial de la fábrica (F4, docs/plan-fabrica-marketing.md).
+  Solo lectura. Decidido a 390 px: una columna; cada día es una tarjeta con sus
+  turnos en filas de 56 px, los botones de semana a 44 px y el historial con
+  los datos congelados plegados (docs/DESIGN.md, regla 2).
+-#}
+
+{% block title %}Marketing · Semana{% endblock %}
+{% block heading %}Semana{% endblock %}
+{% block subtitle %}Del {{ week.days[0].day.strftime("%d/%m") }} al {{ week.days[6].day.strftime("%d/%m/%Y") }}. Lo que pide el calendario y cómo va cada pieza.{% endblock %}
+
+{% block head %}
+<style>
+  .mk-nav{display:flex; gap:8px; align-items:center; justify-content:space-between}
+  .mk-nav .m3-btn{min-height:44px; display:inline-flex; align-items:center; justify-content:center}
+  .mk-nav-mid{flex:1; text-align:center}
+  .mk-day{padding:12px 0}
+  .mk-day-head{display:flex; gap:8px; align-items:baseline; padding:0 24px 8px; margin:0}
+  .mk-day-head h3{margin:0; font-size:1rem}
+  .mk-slot{display:flex; gap:12px; align-items:center; justify-content:space-between; min-height:56px; padding:4px 24px; border-top:1px solid var(--m3-outline-variant)}
+  .mk-slot a{display:inline-flex; align-items:center; min-height:44px}
+  .mk-slot-name{min-width:0; overflow-wrap:anywhere}
+  .mk-slot.is-missing .mk-slot-name{font-weight:500}
+  .mk-day-note{margin:0; padding:8px 24px 0}
+  .mk-hist{display:flex; gap:16px; align-items:flex-start; padding:16px 24px; border-top:1px solid var(--m3-outline-variant)}
+  .mk-hist:first-of-type{border-top:0}
+  .mk-hist-thumb{flex:none; width:72px; aspect-ratio:4/5; border-radius:8px; object-fit:cover; background:var(--m3-surface-container)}
+  .mk-hist-main{flex:1; min-width:0}
+  .mk-hist-main h3{margin:0 0 4px; font-size:1rem}
+  .mk-hist-main p{margin:0}
+  .mk-hist-links{display:flex; gap:16px; flex-wrap:wrap}
+  .mk-hist-links a{display:inline-flex; align-items:center; min-height:44px}
+  .mk-frozen summary{min-height:44px; display:flex; align-items:center; cursor:pointer}
+  .mk-frozen ul{list-style:none; margin:0; padding:0 0 8px}
+  .mk-frozen li{padding:8px 0; border-top:1px solid var(--m3-outline-variant)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="m3-stack">
+  <p class="m3-xs" style="margin:0"><a href="/marketing">← Hoy</a></p>
+
+  <nav class="mk-nav" aria-label="Semanas">
+    <a class="m3-btn m3-btn-tonal" href="/marketing/semana?desde={{ week.previous.isoformat() }}">← Anterior</a>
+    <span class="mk-nav-mid m3-xs">
+      {% if week.is_current %}Esta semana{% else %}<a href="/marketing/semana">Ir a esta semana</a>{% endif %}
+    </span>
+    <a class="m3-btn m3-btn-tonal" href="/marketing/semana?desde={{ week.next.isoformat() }}">Siguiente →</a>
+  </nav>
+
+  {% if week.missing %}
+  <p class="m3-note" style="margin:0">
+    {% if week.missing == 1 %}Falta 1 pieza{% else %}Faltan {{ week.missing }} piezas{% endif %} de esta semana.
+  </p>
+  {% endif %}
+
+  {% for d in week.days %}
+  <section class="m3-card mk-day" aria-label="{{ d.name }} {{ d.day.day }}">
+    <div class="mk-day-head">
+      <h3>{{ d.name }} {{ d.day.day }}</h3>
+      {% if d.is_today %}<span class="m3-chip">Hoy</span>{% endif %}
+    </div>
+    {% for s in d.slots %}
+    <div class="mk-slot{% if s.state == 'missing' %} is-missing{% endif %}">
+      <span class="mk-slot-name">
+        {% if s.state == "missing" %}Falta «{{ s.label }}»
+        {% elif s.state == "pending" %}{{ s.label }}
+        {% else %}{{ s.label }}{% endif %}
+      </span>
+      {% if s.post %}
+      <a href="/marketing/post/{{ s.post.id }}">
+        <span class="m3-chip">{{ status_labels.get(s.state, s.state) }}{% if s.overdue %} · sin publicar{% endif %}</span>
+      </a>
+      {% elif s.state == "missing" %}
+      <span class="m3-chip">Falta</span>
+      {% elif s.state == "pending" %}
+      <span class="m3-xs m3-muted">Pendiente</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if d.stories %}
+    <p class="m3-xs m3-muted mk-day-note">Stories (a mano): {{ d.stories }}</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <section class="m3-card" aria-label="Historial de publicadas">
+    <div class="m3-card-head"><h2 class="m3-h2">Publicadas</h2></div>
+    {% for h in history %}
+    <div class="mk-hist">
+      <img class="mk-hist-thumb" src="/marketing/post/{{ h.post.id }}/slide/1.jpg" alt="{{ h.title }}" loading="lazy">
+      <div class="mk-hist-main">
+        <h3>{{ h.title }}</h3>
+        <p class="m3-xs m3-muted">Publicada el {{ local(h.published_at) }}</p>
+        <div class="mk-hist-links">
+          <a href="{{ h.url }}" target="_blank" rel="noopener noreferrer">Abrir en Instagram</a>
+          <a href="/marketing/post/{{ h.post.id }}">Ver publicación</a>
+        </div>
+        <details class="mk-frozen">
+          <summary>Datos congelados</summary>
+          <ul>
+            {% for sl in h.slides %}
+            <li>
+              <strong>{% if h.slides|length > 1 %}{{ sl.position }}. {% endif %}{{ sl.label }}</strong><br>
+              <span class="m3-xs m3-muted">
+                {% if sl.product or sl.province %}{{ [sl.product, sl.province]|select|join(" · ") }} · {% endif %}Cifras hasta el {{ sl.data_through.strftime("%d/%m/%Y") }}
+              </span>
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="m3-xs m3-muted" style="margin:0">Congeladas el {{ local(h.approved_at) }}</p>
+        </details>
+      </div>
+    </div>
+    {% else %}
+    <p class="m3-note" style="margin:16px 24px">Todavía no hay publicaciones publicadas.</p>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

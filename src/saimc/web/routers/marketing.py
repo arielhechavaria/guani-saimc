@@ -27,6 +27,10 @@ congelado al aprobar. Las rutas sin estado `/marketing/preview/{slug}` y
 **Carruseles (F3).** El editor elige qué diapositiva se edita con `?d=<n>`;
 agregar, subir, bajar y quitar son POST con botones (sin arrastrar: regla 5 del
 plan). Compartir manda todos los JPEG aprobados en un solo `navigator.share`.
+
+**Semana (F4).** `/marketing/semana` es de solo lectura: lunes a domingo con lo
+que pide el calendario y su estado, y el historial de publicadas con lo
+congelado (`saimc.marketing.week`).
 """
 
 from __future__ import annotations
@@ -86,6 +90,7 @@ from saimc.marketing.posts import (
     slide_options,
 )
 from saimc.marketing.render import RendererUnavailable, render_jpeg, render_png
+from saimc.marketing.week import build_week, post_slot, published_history, week_monday
 from saimc.models.marketing_post import (
     MarketingPost,
     MarketingPostSlide,
@@ -222,14 +227,6 @@ def _is_carousel(post: MarketingPost) -> bool:
     return post.format == PostFormat.CAROUSEL
 
 
-def _slot(post: MarketingPost) -> str:
-    """El turno del calendario que cubre la publicación: el del lote si lo
-    tiene; si la armó el operador, el carrusel o la tarjeta de la primera."""
-    if post.batch_slot:
-        return post.batch_slot
-    return CAROUSEL_SLOT if _is_carousel(post) else post.slides[0].card_slug
-
-
 def _post_card(post: MarketingPost) -> dict[str, Any]:
     slide = post.slides[0]
     kind = BY_SLUG[slide.card_slug]
@@ -262,7 +259,7 @@ def marketing_hoy(
         )
         if p.slides
     ]
-    presentes = {_slot(p) for p in posts if p.status != PostStatus.DISCARDED}
+    presentes = {post_slot(p) for p in posts if p.status != PostStatus.DISCARDED}
     faltan = [
         {"slug": slot, "label": slot_label(slot)}
         for slot in cards_for_day(today)
@@ -279,6 +276,35 @@ def marketing_hoy(
             "carousel_slot": CAROUSEL_SLOT,
             "carousel_label": slot_label(CAROUSEL_SLOT),
             "fixed": [t for t in CARD_TYPES if t.slug in FIXED_PIECES],
+        },
+    )
+    return respuesta
+
+
+@router.get("/marketing/semana", response_class=HTMLResponse)
+def marketing_semana(
+    request: Request,
+    desde: str | None = None,
+    db: Session = Depends(get_db),
+    today: date = Depends(get_today),
+) -> HTMLResponse:
+    """Lunes a domingo con lo que pide el calendario y el estado de lo que
+    existe, y el historial de publicadas. Solo lectura. `?desde=AAAA-MM-DD`
+    mueve de semana (cualquier día cae en su lunes); un valor que no es fecha
+    deja la semana actual."""
+    try:
+        base = date.fromisoformat(desde) if desde else today
+    except ValueError:
+        base = today
+    respuesta: HTMLResponse = request.app.state.templates.TemplateResponse(
+        request,
+        "marketing_semana.html",
+        {
+            "week": build_week(db, week_monday(base), today=today),
+            "history": published_history(db),
+            "today": today,
+            "local": _local,
+            "status_labels": STATUS_LABELS,
         },
     )
     return respuesta
