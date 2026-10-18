@@ -304,6 +304,17 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="guia-crecimiento",
+        title="Guía de crecimiento en Instagram (2026-10-18)",
+        summary=(
+            "Las tres reglas para no perderse entre consejos, cómo se publica "
+            "desde la fábrica de `/marketing`, la semana tipo, qué mirar en la "
+            "app de Instagram, cómo cuidar la comunidad y el plan de 30 días."
+        ),
+        relative_path="docs/guia-crecimiento.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="plan-marca",
         title="Leira Studio — plan de marca y compendio de contactos",
         summary=(

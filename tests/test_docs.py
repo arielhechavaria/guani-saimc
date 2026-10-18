@@ -298,6 +298,7 @@ class TestLectura:
             ("plan-fabrica-marketing", "Plan de trabajo — la fábrica de publicaciones de `/marketing`"),
             ("narrativa-guani", "Guani — narrativa, enfoques y eslóganes"),
             ("presentacion-instituciones", "Presentación de Guani para instituciones"),
+            ("guia-crecimiento", "Guía de crecimiento en redes para Guani"),
         ],
     )
     def test_el_plan_del_ultimo_bloque_y_sus_insumos_se_leen_en_docs(
