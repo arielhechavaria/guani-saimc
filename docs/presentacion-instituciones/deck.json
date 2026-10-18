@@ -1,0 +1,16 @@
+{
+  "v": 4,
+  "createdOnFiles": {"v": 1, "at": "2026-10-18T18:30:00Z"},
+  "lists": "css",
+  "title": "Guani para instituciones",
+  "order": ["cover", "orden", "pregunta", "quienvende", "quees", "flujo", "embudo", "vara", "respuesta", "cuentas", "hoy", "noopina", "publico", "viene", "miralo", "cierre"],
+  "sections": {
+    "s1": {"description": "La idea: el mercado tiene un orden que nadie ve completo, y Guani lo hace visible con los anuncios de quienes venden.", "start": "cover"},
+    "s2": {"description": "Cómo funciona: de un mensaje de WhatsApp a una cifra que se puede comprobar.", "start": "flujo"},
+    "s3": {"description": "Dónde está, a quién le habla, qué viene y cómo verlo.", "start": "hoy"}
+  },
+  "faces": {
+    "inter": {"family": "Inter", "href": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap"}
+  },
+  "designSystems": []
+}

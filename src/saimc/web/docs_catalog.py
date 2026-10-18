@@ -296,9 +296,9 @@ CATALOG: tuple[DocEntry, ...] = (
         slug="presentacion-instituciones",
         title="Presentación de Guani para instituciones (2026-10-18)",
         summary=(
-            "Guion de diez slides para mandar por correo a instituciones, listo "
-            "para pegar en Gamma, con lo que hay que revisar antes del envío y "
-            "el correo que lo acompaña."
+            "Dieciséis slides para mandar por correo a instituciones de La "
+            "Habana: lo que hay que revisar antes del envío, de dónde sale cada "
+            "cifra, la fuente de la presentación y el correo que la acompaña."
         ),
         relative_path="docs/presentacion-instituciones.md",
         standing="interno",
