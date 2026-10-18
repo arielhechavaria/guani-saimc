@@ -63,6 +63,45 @@ def test_el_temporizador_corre_cada_3_horas_y_se_pone_al_dia(temporizador) -> No
     assert temporizador["Install"]["WantedBy"] == "timers.target"
 
 
+# --- saimc-marketing: las tarjetas del día (docs/decisions.md, 2026-10-18)
+
+
+@pytest.fixture
+def servicio_marketing() -> configparser.ConfigParser:
+    return _leer("saimc-marketing.service")
+
+
+@pytest.fixture
+def temporizador_marketing() -> configparser.ConfigParser:
+    return _leer("saimc-marketing.timer")
+
+
+def test_marketing_es_oneshot_y_escribe_de_verdad(servicio_marketing) -> None:
+    unidad = servicio_marketing["Service"]
+    comando = unidad["ExecStart"]
+
+    assert unidad["Type"] == "oneshot"
+    assert "-m saimc.marketing.daily" in comando
+    assert "--execute" in comando
+    assert unidad["TimeoutStartSec"] == "10min"
+
+
+def test_marketing_usa_el_mismo_usuario_y_directorio_que_el_backup(servicio_marketing) -> None:
+    backup = _leer("saimc-backup.service")["Service"]
+
+    assert servicio_marketing["Service"]["User"] == backup["User"]
+    assert servicio_marketing["Service"]["WorkingDirectory"] == backup["WorkingDirectory"]
+
+
+def test_marketing_corre_a_las_6_de_la_manana_de_la_habana(temporizador_marketing) -> None:
+    unidad = temporizador_marketing["Timer"]
+
+    # El huso va escrito en la unidad: a las 06:00 de Cuba, no del VPS (UTC).
+    assert unidad["OnCalendar"] == "*-*-* 06:00:00 America/Havana"
+    assert unidad["Persistent"] == "true"
+    assert temporizador_marketing["Install"]["WantedBy"] == "timers.target"
+
+
 # --- saimc-instagram: el lote de la cuenta de Instagram (docs/spec-slice-instagram.md)
 
 

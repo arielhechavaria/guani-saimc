@@ -27,6 +27,7 @@ uv.lock
 # Ver riesgo 10.6 del whitepaper.
 inbox/
 data/
+var/
 
 # Backups de la base (scripts/backup_db.sh). Mismo motivo que inbox/data:
 # volcado completo de la base, con lo que eso implica.

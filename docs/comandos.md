@@ -26,6 +26,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
 | [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de N días (apagado por defecto) | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
 | [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
+| [`saimc.marketing.daily`](#tarjetas-de-marketing-del-dia) | Armar los PNG de marketing del día en `var/marketing/AAAA-MM-DD/` (lo hace solo el temporizador a las 06:00 de La Habana); no publica | en seco no; `--execute` escribe los PNG y borra carpetas de más de 30 días | no |
 | [`saimc.instagram.sync`](#seguimiento-de-instagram) | Leer la cuenta de Instagram de Guani y guardar sus métricas (lo hace solo el temporizador cada 3 h) | en seco no; `--execute` escribe las tablas `instagram_*` y renueva el token si toca | no |
 | [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
@@ -340,6 +341,33 @@ Un problema se avisa una vez, se recuerda a las 24 h, avisa si empeora y avisa c
   6) `sudo cp systemd/saimc-alerts.* /etc/systemd/system/ && sudo systemctl daemon-reload &&
   sudo systemctl enable --now saimc-alerts.timer`.
 - Sin token o chat, `--execute` avisa por consola y sale con código 2.
+
+### Tarjetas de marketing del día
+
+Arma las tarjetas que tocan hoy con las cifras del **día anterior** y las deja como PNG en
+`var/marketing/AAAA-MM-DD/`. **No publica nada**: el operador las toma de ahí. Normalmente las
+genera solo `saimc-marketing.timer` a las 06:00 de La Habana; esto es para probarlo o adelantarlo.
+
+```
+.venv/bin/python -m saimc.marketing.daily                         # en seco: dice qué armaría
+.venv/bin/python -m saimc.marketing.daily --execute               # rasteriza, guarda y purga
+.venv/bin/python -m saimc.marketing.daily --day 2026-10-19 --execute   # un día puntual
+```
+
+- **Qué toca**: «Dato del día» todos los días; los lunes suma «Cómo se movió» y los jueves «De dónde
+  sale este precio». Producto y provincia rotan con el calendario; si el que toca no tiene datos
+  se prueba el siguiente, y si ninguno tiene, la tarjeta se salta y la salida dice «sin datos».
+- **Cambia algo**: solo con `--execute` (archivos en `var/marketing/`, carpetas de más de 30 días
+  borradas). No toca la base. **Gasta**: no.
+- **Necesita Chromium** (el mismo que `/marketing/card/*.png`: `.venv/bin/pip install -e ".[marketing]"`,
+  `.venv/bin/playwright install chromium`). Sin él sale con código 1 y lo dice.
+- **Código de salida 1** también si ninguna tarjeta tenía datos: la unidad queda en «failed»
+  (`systemctl --failed`, `journalctl -u saimc-marketing.service`).
+- **Instalar el temporizador (una vez):**
+  `sudo cp systemd/saimc-marketing.service systemd/saimc-marketing.timer /etc/systemd/system/ &&
+  sudo systemctl daemon-reload && sudo systemctl enable --now saimc-marketing.timer`.
+  Verificar el huso: `systemctl list-timers saimc-marketing.timer` debe mostrar las 06:00 de Cuba
+  (10:00 UTC en horario de verano, 11:00 UTC en invierno).
 
 ### Seguimiento de Instagram
 
