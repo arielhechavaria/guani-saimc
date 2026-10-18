@@ -1,118 +1,122 @@
 {% extends "_shell.html" %}
 
-{% block title %}Marketing{% endblock %}
-{% block heading %}Tarjetas para redes{% endblock %}
-{% block subtitle %}Las cifras salen del sitio, nunca se escriben a mano. Se arma, se copia el texto y se comparte desde el teléfono.{% endblock %}
+{#-
+  «Hoy» de la fábrica de publicaciones (F2, docs/spec-slice-fabrica-publicaciones.md §1.5).
+  Lo que toca hoy en La Habana, con su estado y la acción principal; lo que el
+  calendario pide y todavía no existe; y, plegadas abajo, las piezas fijas que
+  se bajan tal cual. Decidido a 390 px: una columna, miniaturas a 96 px.
+-#}
+
+{% block title %}Marketing · Hoy{% endblock %}
+{% block heading %}Hoy{% endblock %}
+{% block subtitle %}{{ today.strftime("%d/%m/%Y") }}. El lote de las 06:00 deja los borradores; se revisan, se aprueban y se publican desde el teléfono.{% endblock %}
 
 {% block head %}
 <style>
-  /* Decidido a 390 px: una columna, el lienzo a todo el ancho. */
-  .mk-frame{position:relative; width:100%; max-width:540px; overflow:hidden; border-radius:16px; box-shadow:var(--m3-elev-2)}
-  .mk-frame iframe{position:absolute; top:0; left:0; border:0; transform-origin:top left}
-  .mk-actions{display:flex; gap:12px; margin-top:16px; flex-wrap:wrap}
-  .mk-actions .m3-btn{flex:1 1 150px; min-height:44px; justify-content:center}
-  .mk-opts summary{min-height:44px; display:flex; align-items:center; cursor:pointer; font-weight:500}
-  .mk-toggle{display:flex; align-items:center; gap:12px; min-height:44px}
-  .mk-toggle input{width:20px; height:20px; flex:none}
-  .mk-count{margin:4px 0 0; text-align:right}
-  .mk-count.is-over{color:var(--m3-error)}
+  .mk-post{display:flex; gap:16px; align-items:center; padding:16px 24px; border-top:1px solid var(--m3-outline-variant)}
+  .mk-post:first-of-type{border-top:0}
+  .mk-thumb{flex:none; width:96px; aspect-ratio:4/5; border-radius:8px; overflow:hidden; background:var(--m3-surface-container)}
+  .mk-thumb.is-story{aspect-ratio:9/16}
+  .mk-thumb img{width:100%; height:100%; object-fit:cover; display:block}
+  .mk-thumb.mk-frame{position:relative}
+  .mk-thumb.mk-frame iframe{position:absolute; top:0; left:0; border:0; transform-origin:top left; pointer-events:none}
+  .mk-post-main{flex:1; min-width:0}
+  .mk-post-main h3{margin:0 0 4px; font-size:1rem}
+  .mk-post-main p{margin:0}
+  .mk-post a.m3-btn{min-height:44px; margin-top:8px}
+  .mk-missing{display:flex; gap:12px; align-items:center; justify-content:space-between; padding:12px 24px; flex-wrap:wrap}
+  .mk-missing .m3-btn, .mk-new .m3-btn{min-height:44px}
+  .mk-new{display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin:0 24px 24px}
+  .mk-fixed summary{min-height:44px; display:flex; align-items:center; cursor:pointer; font-weight:500; padding:0 24px}
+  .mk-fixed ul{list-style:none; margin:0; padding:0 24px 16px}
+  .mk-fixed li{padding:8px 0; border-top:1px solid var(--m3-outline-variant)}
+  .mk-fixed li a{display:inline-flex; min-height:44px; align-items:center; margin-right:16px}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="m3-stack">
-  <section class="m3-card">
-    <div class="m3-card-head">
-      <div class="m3-topbar-main">
-        <h2 class="m3-h2">{{ kind.label }}</h2>
-        <p class="m3-note" style="margin-bottom:0">
-          El mismo cómputo que usa el tablero público, no un promedio nuevo. Solo se
-          arman con productos y provincias del foco.
-        </p>
+  {% if missing %}
+  <section class="m3-card mk-faltan" aria-label="Lo que falta hoy">
+    {% for k in missing %}
+    <form class="mk-missing" method="post" action="/marketing/post" style="margin:0">
+      <span>Falta «{{ k.label }}»</span>
+      <input type="hidden" name="kind" value="{{ k.slug }}">
+      <button type="submit" class="m3-btn m3-btn-tonal">Crear</button>
+    </form>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <section class="m3-card" aria-label="Publicaciones de hoy">
+    {% for c in cards %}
+    {% set post = c.post %}
+    <div class="mk-post">
+      {% if c.frozen %}
+      <div class="mk-thumb{% if c.kind.height > c.kind.width * 1.5 %} is-story{% endif %}">
+        <img src="/marketing/post/{{ post.id }}/slide/1.jpg" alt="{{ c.kind.label }}" loading="lazy">
+      </div>
+      {% elif post.status == "draft" %}
+      <div class="mk-thumb mk-frame{% if c.kind.height > c.kind.width * 1.5 %} is-story{% endif %}">
+        <iframe src="/marketing/post/{{ post.id }}/preview/1" width="{{ c.kind.width }}" height="{{ c.kind.height }}"
+                data-mk-w="{{ c.kind.width }}" loading="lazy" tabindex="-1" aria-hidden="true"
+                style="width:{{ c.kind.width }}px; height:{{ c.kind.height }}px; transform:scale(.09)"></iframe>
+      </div>
+      {% else %}
+      <div class="mk-thumb" aria-hidden="true"></div>
+      {% endif %}
+      <div class="mk-post-main">
+        <h3>{{ c.kind.label }}</h3>
+        <p class="m3-xs m3-muted">{% if c.detail %}{{ c.detail }} · {% endif %}<span class="m3-chip">{{ c.label }}</span></p>
+        {% if post.status == "draft" %}
+        <a class="m3-btn m3-btn-filled" href="/marketing/post/{{ post.id }}">Revisar y aprobar</a>
+        {% elif post.status == "approved" %}
+        <a class="m3-btn m3-btn-filled" href="/marketing/post/{{ post.id }}">Publicar</a>
+        {% elif post.status == "published" %}
+        <a class="m3-btn m3-btn-tonal" href="/marketing/post/{{ post.id }}">Ver</a>
+        {% else %}
+        <a class="m3-btn m3-btn-text" href="/marketing/post/{{ post.id }}">Ver</a>
+        {% endif %}
       </div>
     </div>
+    {% else %}
+    <p class="m3-note" style="margin:16px 24px">Todavía no hay publicaciones para hoy.</p>
+    {% endfor %}
+  </section>
 
-    <form id="editor" method="get" action="/marketing" style="margin:0 24px 24px">
-      <div class="m3-row" style="gap:12px; flex-wrap:wrap; align-items:end">
-        <label class="m3-field m3-field-on-container">
-          <span class="m3-field-label">Tarjeta</span>
-          <select name="kind" id="kind" class="m3-select" onchange="this.form.submit()">
-            {% for t in card_types %}
-            <option value="{{ t.slug }}"{% if t.slug == kind.slug %} selected{% endif %}>{{ t.label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        {% if kind.needs_product %}
-        <label class="m3-field m3-field-on-container">
-          <span class="m3-field-label">Producto</span>
-          <select name="product" id="product" class="m3-select" onchange="this.form.submit()">
-            {% for p in products %}
-            <option value="{{ p }}"{% if p == selected_product %} selected{% endif %}>{{ p }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        {% endif %}
-        {% if kind.needs_province %}
-        <label class="m3-field m3-field-on-container">
-          <span class="m3-field-label">Provincia</span>
-          <select name="province" id="province" class="m3-select" onchange="this.form.submit()">
-            {% for prov in provinces %}
-            <option value="{{ prov }}"{% if prov == selected_province %} selected{% endif %}>{{ prov }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        {% endif %}
-        <noscript><button type="submit" class="m3-btn m3-btn-tonal">Ver</button></noscript>
-      </div>
-
-
-      <div id="vista" style="margin-top:24px">{% include "_marketing_vista.html" %}</div>
-      {#- Un atajo oculta al formulario largo (docs/DESIGN.md, regla 2): compartir la
-          tarjeta tal cual sale es el caso común; ajustar bloques y textos, el excepcional. -#}
-      {% if has_texts and ready %}
-      <details class="mk-opts" style="margin-top:16px"{% if customized %} open{% endif %}>
-        <summary>Ajustar bloques y textos</summary>
-        <div hx-get="/marketing/vista" hx-trigger="change, input delay:300ms" hx-target="#vista"
-             hx-include="closest form" hx-swap="innerHTML">
-          {% for b in toggles %}
-          <label class="mk-toggle">
-            <input type="hidden" name="b_{{ b.slug }}" value="0">
-            <input type="checkbox" name="b_{{ b.slug }}" value="1"{% if options.show[b.slug] %} checked{% endif %}>
-            <span>{{ b.label }}</span>
-          </label>
-          {% endfor %}
-          <p class="m3-xs m3-muted" style="margin:8px 0 0">El título y la cifra principal siempre se ven; las cifras no se editan.</p>
-          <label class="m3-field m3-field-on-container" style="margin-top:16px">
-            <span class="m3-field-label">Subtítulo (hasta {{ subtitle_max }} caracteres)</span>
-            <input class="m3-input" type="text" name="subtitle" maxlength="{{ subtitle_max }}" value="{{ options.subtitle }}">
-          </label>
-          <label class="m3-field m3-field-on-container" style="margin-top:12px">
-            <span class="m3-field-label">Llamada a la acción (hasta {{ cta_max }} caracteres)</span>
-            <input class="m3-input" type="text" name="cta" maxlength="{{ cta_max }}" value="{{ options.cta }}">
-          </label>
-        </div>
-      </details>
-      {% endif %}
-
-      {% if ready %}
-      <label class="m3-field m3-field-on-container" style="margin-top:24px">
-        <span class="m3-field-label">Texto del post</span>
-        <textarea id="caption" class="m3-textarea" rows="12" spellcheck="true">{{ caption }}</textarea>
+  <section class="m3-card" aria-label="Nueva publicación">
+    <div class="m3-card-head"><h2 class="m3-h2">Nueva</h2></div>
+    <form class="mk-new" method="post" action="/marketing/post">
+      <label class="m3-field m3-field-on-container">
+        <span class="m3-field-label">Tarjeta</span>
+        <select name="kind" class="m3-select">
+          {% for t in postable %}<option value="{{ t.slug }}">{{ t.label }}</option>{% endfor %}
+        </select>
       </label>
-      <p class="m3-xs m3-muted mk-count" id="caption-count" data-max="{{ caption_max }}" data-max-tags="30">
-        {{ caption | length }} / {{ caption_max }} caracteres · {{ caption.count("#") }} / 30 hashtags
-      </p>
-      <p class="m3-xs m3-muted" style="margin-top:12px">
-        Si la imagen no se genera, falta instalar Chromium para Playwright en el servidor
-        (<code>docs/decisions.md</code>, slice de marketing); la vista previa sigue andando.
-      </p>
-      {% endif %}
+      <button type="submit" class="m3-btn m3-btn-tonal">Crear borrador</button>
     </form>
+  </section>
+
+  {#- Un atajo oculta al formulario largo (docs/DESIGN.md, regla 2): las piezas
+      fijas se bajan de vez en cuando; lo diario es lo de arriba. -#}
+  <section class="m3-card">
+    <details class="mk-fixed">
+      <summary>Piezas fijas</summary>
+      <ul>
+        {% for t in fixed %}
+        <li>
+          <strong>{{ t.label }}</strong><br>
+          <a href="/marketing/card/{{ t.slug }}.jpg">JPEG</a>
+          <a href="/marketing/card/{{ t.slug }}.png">PNG</a>
+          <a href="/marketing/preview/{{ t.slug }}" target="_blank" rel="noopener">Vista previa</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
   </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
 <script src="/static/marketing-editor.js" defer></script>
 {% endblock %}

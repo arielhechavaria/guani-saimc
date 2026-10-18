@@ -1,29 +1,38 @@
-"""Lote diario de tarjetas de marketing.
+"""Lote diario de marketing: crea los borradores del día en la fábrica.
 
-    python -m saimc.marketing.daily                    # en seco: dice qué armaría
-    python -m saimc.marketing.daily --execute          # rasteriza y guarda los PNG
+    python -m saimc.marketing.daily                    # en seco: dice qué crearía
+    python -m saimc.marketing.daily --execute          # crea los borradores y purga lo vencido
     python -m saimc.marketing.daily --day 2026-10-19   # un día puntual (default: hoy en La Habana)
 
 Un temporizador de systemd lo corre a las 06:00 de La Habana
 (`systemd/saimc-marketing.timer`): lee, escribe y termina, igual que el
-pre-cálculo y el lote de Instagram. Sin cola ni proceso permanente (decisión
-cerrada 3). **No publica nada**: deja los PNG en `var/marketing/AAAA-MM-DD/`
-para que el operador los tome, y borra las carpetas de más de 30 días.
+pre-cálculo. Sin cola ni proceso permanente (decisión cerrada 3). **No publica
+nada** y, desde F2 (`docs/spec-slice-fabrica-publicaciones.md`), tampoco
+rasteriza: deja borradores en `/marketing` («Hoy») para que el operador los
+revise, apruebe y publique desde el teléfono.
 
 Qué tarjetas toca cada día (`cards_for_day`): «Dato del día» todos los días; los
 lunes, además, «Cómo se movió» (el ritmo semanal); los jueves, «De dónde sale
-este precio» (el método). Las demás piezas del canvas son branding fijo y no
-cambian con los datos: no tiene sentido regenerarlas cada mañana.
+este precio» (el método). Las demás piezas son branding fijo.
 
-Las cifras son siempre las del **día anterior** hacia atrás
-(`build_context(hoy=día − 1)`), con tope: a las 06:00 la curaduría del día
-todavía no empezó y lo que se cargue después no entra en la tarjeta. El producto
-y la provincia rotan con el calendario (`candidate_order`); si el que toca no
-tiene datos, se prueba el siguiente, y si ninguno tiene, la tarjeta se salta y
-la salida lo dice. Nunca se publica una tarjeta vacía.
+**Idempotente por día y tipo**: si ya hay un borrador del lote para ese día y
+ese tipo —en el estado que sea, descartado incluido— no se crea otro. Lo
+garantiza `UNIQUE (planned_for, batch_slot)` en la base, también si dos
+corridas se pisan.
 
-Códigos de salida: 0 si salió al menos una tarjeta (o, en seco, si hay al menos
-una que armar); 1 si no hay Chromium o si ninguna tarjeta tenía datos.
+Las cifras son siempre las del **día anterior** hacia atrás: el borrador lleva
+`data_through = día − 1`, y la vista previa y la aprobación ponen ahí el tope.
+El producto y la provincia rotan con el calendario (`candidate_order`); si el
+que toca no tiene datos, se prueba el siguiente, y si ninguno tiene, el tipo se
+salta y la salida lo dice. Nunca se crea un borrador vacío.
+
+Con `--execute` corre además la retención: borradores y descartadas de más de
+30 días se borran con su imagen; las publicadas se guardan siempre. Las
+carpetas `var/marketing/AAAA-MM-DD/` del lote anterior se purgan con la regla de
+siempre.
+
+Códigos de salida: 0 si al menos un tipo quedó creado, previsto o ya existía; 1
+si ninguno tenía datos.
 """
 
 from __future__ import annotations
@@ -31,28 +40,23 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
-from collections.abc import Callable, Sequence
+import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import jinja2
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-import saimc.web
+from saimc.config import get_settings
 from saimc.db import session_scope
-from saimc.marketing.context import BY_SLUG, SITE_URL_PLACEHOLDER, CardType, build_context
-from saimc.marketing.fonts import font_face_css
-from saimc.marketing.render import RendererUnavailable, render_png
+from saimc.marketing.context import BY_SLUG, CardType, build_context
+from saimc.marketing.posts import RETENTION_DAYS, context_has_data, create_draft, purge_expired
+from saimc.models.marketing_post import MarketingPost, PostOrigin
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
-from saimc.web.product_nav import product_slug
-
-#: Días que se conservan las carpetas diarias. Una carpeta de exactamente
-#: este tiempo todavía se queda; la de un día más, se va.
-RETENTION_DAYS = 30
-
-DEFAULT_OUT_DIR = Path("var/marketing")
 
 #: La que sale todos los días.
 DAILY_CARDS: tuple[str, ...] = ("dato-del-dia",)
@@ -62,8 +66,6 @@ WEEKLY_CARDS: dict[int, tuple[str, ...]] = {
     0: ("como-se-movio",),
     3: ("de-donde-sale",),
 }
-
-_TEMPLATES = Path(saimc.web.__file__).parent / "templates"
 
 _HAVANA = "America/Havana"
 
@@ -109,11 +111,10 @@ def purge_old(out_root: Path, today: date, keep_days: int = RETENTION_DAYS) -> l
 @dataclass(frozen=True)
 class CardResult:
     slug: str
-    #: «escrita», «prevista» (en seco) o «sin datos».
+    #: «creada», «prevista» (en seco), «ya existía» o «sin datos».
     estado: str
     product: str | None = None
     province: str | None = None
-    path: Path | None = None
 
 
 @dataclass
@@ -121,38 +122,39 @@ class DailyReport:
     day: date
     data_through: date
     cards: list[CardResult] = field(default_factory=list)
+    #: Carpetas `AAAA-MM-DD` del lote anterior que se borraron.
     purgados: list[Path] = field(default_factory=list)
-    renderer_error: str | None = None
+    #: Publicaciones vencidas que se borraron (`posts.purge_expired`).
+    posts_purgados: list[uuid.UUID] = field(default_factory=list)
 
     @property
     def exit_code(self) -> int:
-        if self.renderer_error is not None:
-            return 1
         return 0 if any(c.estado != "sin datos" for c in self.cards) else 1
 
 
-def havana_today(now: datetime | None = None) -> date:
-    """El día en Cuba. Sin base de husos instalada, cae al día UTC (mismo
+def to_havana(moment: datetime) -> datetime:
+    """`moment` en la hora de Cuba (uno sin huso se toma como UTC, que es lo
+    que guarda la base). Sin base de husos instalada, queda en UTC (mismo
     criterio de «nunca bloquear» que `exchange_rate.service`)."""
-    ahora = now or datetime.now(UTC)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
     try:
-        return ahora.astimezone(ZoneInfo(_HAVANA)).date()
+        return moment.astimezone(ZoneInfo(_HAVANA))
     except ZoneInfoNotFoundError:
-        return ahora.date()
+        return moment
 
 
-def _has_data(slug: str, context: dict) -> bool:
-    # «Dato del día» arma siempre la tarjeta, con una fila «sin datos» por
-    # provincia; las otras devuelven `None` cuando no hay con qué armarla.
-    if slug == "dato-del-dia":
-        return any(row.has_data for row in context["card"].rows)
-    return True
+def havana_today(now: datetime | None = None) -> date:
+    """El día en Cuba."""
+    return to_havana(now or datetime.now(UTC)).date()
 
 
-def _pick(
-    kind: CardType, db: Session, day: date
-) -> tuple[str | None, str | None, dict] | None:
-    """Producto, provincia y contexto de la primera combinación con datos."""
+def default_marketing_dir() -> Path:
+    return get_settings().marketing_dir
+
+
+def _pick(kind: CardType, db: Session, day: date) -> tuple[str | None, str | None] | None:
+    """Producto y provincia de la primera combinación con datos."""
     productos = candidate_order(pilot_product_names(db), day) if kind.needs_product else [None]
     provincias = candidate_order(PHASE0_PROVINCES, day) if kind.needs_province else [None]
     for producto in productos:
@@ -160,97 +162,94 @@ def _pick(
             contexto = build_context(
                 kind, db, product=producto, province=provincia, hoy=day - timedelta(days=1)
             )
-            if contexto is not None and _has_data(kind.slug, contexto):
-                return producto, provincia, contexto
+            if context_has_data(kind.slug, contexto):
+                return producto, provincia
     return None
 
 
-def _html(kind: CardType, context: dict) -> str:
-    # Entorno propio y no `app.state.templates`: este lote no levanta la app web.
-    # Mismo cargador y mismo autoescape que Starlette, así que la plantilla sale igual.
-    entorno = jinja2.Environment(loader=jinja2.FileSystemLoader(_TEMPLATES), autoescape=True)
-    plantilla = entorno.get_template(kind.template)
-    return plantilla.render(site_url=SITE_URL_PLACEHOLDER, font_css=font_face_css(), **context)
-
-
-def _file_name(kind: CardType, product: str | None, province: str | None) -> str:
-    partes = [kind.slug]
-    if product:
-        partes.append(product_slug(product))
-    if province:
-        partes.append(product_slug(province))
-    return "-".join(partes) + ".png"
+def _exists(db: Session, day: date, slot: str) -> bool:
+    return (
+        db.scalar(
+            select(MarketingPost.id).where(
+                MarketingPost.planned_for == day, MarketingPost.batch_slot == slot
+            )
+        )
+        is not None
+    )
 
 
 def run_daily(
-    db: Session,
-    day: date,
-    out_root: Path,
-    *,
-    render: Callable[..., bytes] = render_png,
-    execute: bool = False,
+    db: Session, day: date, marketing_dir: Path, *, execute: bool = False
 ) -> DailyReport:
-    """Arma las tarjetas que tocan el `day`. Sin `execute` no escribe, no
-    levanta Chromium ni purga: solo dice qué haría."""
+    """Crea los borradores que tocan el `day`. Sin `execute` no escribe ni
+    purga: solo dice qué haría. Con `execute` deja todo commiteado."""
     report = DailyReport(day=day, data_through=day - timedelta(days=1))
-    carpeta = out_root / day.isoformat()
 
     for slug in cards_for_day(day):
+        if _exists(db, day, slug):
+            report.cards.append(CardResult(slug, "ya existía"))
+            continue
         kind = BY_SLUG[slug]
         elegida = _pick(kind, db, day)
         if elegida is None:
             report.cards.append(CardResult(slug, "sin datos"))
             continue
-        producto, provincia, contexto = elegida
-        destino = carpeta / _file_name(kind, producto, provincia)
+        producto, provincia = elegida
         if not execute:
-            report.cards.append(CardResult(slug, "prevista", producto, provincia, destino))
+            report.cards.append(CardResult(slug, "prevista", producto, provincia))
             continue
         try:
-            png = render(_html(kind, contexto), width=kind.width, height=kind.height)
-        except RendererUnavailable as error:
-            report.renderer_error = str(error)
-            break
-        carpeta.mkdir(parents=True, exist_ok=True)
-        destino.write_bytes(png)
-        report.cards.append(CardResult(slug, "escrita", producto, provincia, destino))
+            # Un savepoint por borrador: si otra corrida lo creó entre la
+            # consulta y el alta, la restricción única salta acá y solo se
+            # deshace este.
+            with db.begin_nested():
+                create_draft(
+                    db, card_slug=slug, planned_for=day, product=producto, province=provincia,
+                    data_through=report.data_through, origin=PostOrigin.BATCH, batch_slot=slug,
+                )
+        except IntegrityError:
+            # Solo la carrera con otra corrida es «ya existía»; cualquier otra
+            # restricción que salte es un error de verdad y no se tapa.
+            if not _exists(db, day, slug):
+                raise
+            report.cards.append(CardResult(slug, "ya existía"))
+            continue
+        report.cards.append(CardResult(slug, "creada", producto, provincia))
 
-    if execute and report.renderer_error is None:
-        report.purgados = purge_old(out_root, day)
+    if execute:
+        report.posts_purgados = purge_expired(db, marketing_dir / "posts", day)
+        report.purgados = purge_old(marketing_dir, day)
+        db.commit()
     return report
 
 
 def format_report(report: DailyReport, *, execute: bool) -> str:
     lineas = [
-        f"{'EJECUTADO' if execute else 'EN SECO'} — tarjetas del {report.day.isoformat()} "
+        f"{'EJECUTADO' if execute else 'EN SECO'} — borradores del {report.day.isoformat()} "
         f"(cifras hasta el {report.data_through.isoformat()})"
     ]
     for c in report.cards:
         detalle = " · ".join(x for x in (c.product, c.province) if x)
-        destino = f" → {c.path}" if c.path else ""
-        lineas.append(f"  {c.slug}: {c.estado}{f' ({detalle})' if detalle else ''}{destino}")
+        lineas.append(f"  {c.slug}: {c.estado}{f' ({detalle})' if detalle else ''}")
+    if report.posts_purgados:
+        lineas.append(f"  publicaciones vencidas borradas: {len(report.posts_purgados)}")
     if report.purgados:
         lineas.append(f"  carpetas purgadas: {', '.join(p.name for p in report.purgados)}")
-    if report.renderer_error:
-        lineas.append(f"  SIN RENDER: {report.renderer_error}")
     return "\n".join(lineas)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Genera las tarjetas de marketing del día. En seco por defecto; no publica."
+        description="Crea los borradores de marketing del día. En seco por defecto; no publica."
     )
     parser.add_argument(
-        "--execute", action="store_true", help="rasteriza y guarda los PNG, y purga lo viejo"
+        "--execute", action="store_true", help="crea los borradores y purga lo vencido"
     )
     parser.add_argument(
         "--day",
         type=date.fromisoformat,
         default=None,
         help="AAAA-MM-DD; default: hoy en La Habana",
-    )
-    parser.add_argument(
-        "--out-dir", type=Path, default=DEFAULT_OUT_DIR, help=f"default: {DEFAULT_OUT_DIR}"
     )
     return parser.parse_args(argv)
 
@@ -259,11 +258,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     day = args.day or havana_today()
     with session_scope() as session:
-        report = run_daily(session, day, args.out_dir, execute=args.execute)
+        report = run_daily(session, day, default_marketing_dir(), execute=args.execute)
     print(format_report(report, execute=args.execute))
-    if report.renderer_error:
-        # También a stderr, para que `journalctl -p err` lo encuentre.
-        print(report.renderer_error, file=sys.stderr)
     return report.exit_code
 
 

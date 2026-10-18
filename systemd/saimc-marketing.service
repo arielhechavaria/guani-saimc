@@ -1,21 +1,23 @@
 [Unit]
-Description=Genera las tarjetas de marketing del dia de Guani (no publica nada)
+Description=Crea los borradores de marketing del dia de Guani (no publica nada)
 After=postgresql.service
 
 [Service]
-# oneshot: lee, rasteriza y termina. Sin cola ni servicio permanente (decision
+# oneshot: lee, escribe y termina. Sin cola ni servicio permanente (decision
 # cerrada 3), igual que saimc-prefill y saimc-instagram.
 Type=oneshot
 User=ariel
 WorkingDirectory=/home/ariel/guani/guani-saimc
 
-# Deja los PNG en var/marketing/AAAA-MM-DD/ (relativo a WorkingDirectory) y
-# borra las carpetas de mas de 30 dias. Usa las cifras del dia anterior.
-# Codigo 0 = salio al menos una tarjeta. Codigo 1 = no hay Chromium
-# (playwright install chromium) o ninguna tarjeta tenia datos: la unidad queda
-# en «failed» y se ve en `systemctl --failed`.
+# Crea los borradores del dia en «Hoy» (/marketing), a lo sumo uno por dia y
+# tipo, con las cifras del dia anterior; ya no rasteriza (lo hace Aprobar, en
+# la web). Borra borradores y descartadas de mas de 30 dias con su imagen
+# (var/marketing/posts/, relativo a WorkingDirectory). Ver
+# docs/spec-slice-fabrica-publicaciones.md.
+# Codigo 0 = al menos un tipo creado o ya existente. Codigo 1 = ningun tipo
+# tenia datos: la unidad queda en «failed» y se ve en `systemctl --failed`.
 # No gasta: no llama a ninguna API de pago ni publica en ninguna red.
 ExecStart=/home/ariel/guani/guani-saimc/.venv/bin/python -m saimc.marketing.daily --execute
 
-# Hasta tres tarjetas, un Chromium sin cabeza por tarjeta: de sobra.
+# Unas pocas consultas a la base: de sobra.
 TimeoutStartSec=10min

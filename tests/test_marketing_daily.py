@@ -2,8 +2,8 @@
 
 Los casos esperados están escritos a mano, antes que el código: qué toca cada
 día de la semana, que se usen los datos del día anterior y no los del día que
-corre, cuántos días se conservan. El render a PNG se reemplaza por una función
-falsa que anota lo que le pidieron: acá no se levanta Chromium.
+corre, cuántos días se conservan, que dos corridas del mismo día no dupliquen
+(`docs/spec-slice-fabrica-publicaciones.md` §1.7). El lote ya no rasteriza.
 """
 
 from __future__ import annotations
@@ -13,21 +13,27 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+import saimc.marketing.daily as daily_module
 from saimc.marketing.context import CARD_TYPES, build_context
 from saimc.marketing.daily import (
     RETENTION_DAYS,
     candidate_order,
     cards_for_day,
+    havana_today,
     main,
     purge_old,
     run_daily,
+    to_havana,
 )
-from saimc.marketing.render import RendererUnavailable
+from saimc.marketing.posts import create_draft, discard
 from saimc.models import (
     ContentType,
     Currency,
+    MarketingPost,
     PriceHistory,
     Product,
     Province,
@@ -35,23 +41,12 @@ from saimc.models import (
     SaleFormat,
     SourceType,
 )
+from saimc.models.marketing_post import PostOrigin, PostStatus
 from saimc.models.raw_ingestion import ProcessingStatus
 
 #: Un lunes. El martes siguiente es el 20, el jueves el 22.
 LUNES = date(2026, 10, 19)
 JUEVES = date(2026, 10, 22)
-
-
-class RenderFalso:
-    """Reemplaza a `render_png`: anota (ancho, alto, ¿trae el producto?) y
-    devuelve bytes reconocibles en vez de un PNG."""
-
-    def __init__(self) -> None:
-        self.llamadas: list[tuple[int, int, str]] = []
-
-    def __call__(self, html: str, *, width: int, height: int) -> bytes:
-        self.llamadas.append((width, height, html))
-        return f"PNG {width}x{height}".encode()
 
 
 def _kind(slug: str):
@@ -196,110 +191,178 @@ def test_sin_hoy_el_contexto_sigue_siendo_el_de_hoy(session: Session, datos: Non
     assert contexto == {}
 
 
-# --- La corrida --------------------------------------------------------------
+# --- La corrida: crea los borradores del día ----------------------------------
 
 
-def test_un_lunes_genera_dato_del_dia_y_como_se_movio_de_arroz(
+def _posts(session: Session) -> list[MarketingPost]:
+    return list(session.scalars(select(MarketingPost).order_by(MarketingPost.batch_slot)))
+
+
+def test_un_lunes_crea_los_borradores_de_dato_del_dia_y_como_se_movio(
     session: Session, datos: None, tmp_path: Path
 ) -> None:
-    render = RenderFalso()
-
     # Frijol no tiene anuncios: cualquiera sea el día en que la rotación
-    # arranque por él, la tarjeta sale de Arroz, que sí tiene datos.
-    reporte = run_daily(session, LUNES, tmp_path, render=render, execute=True)
+    # arranque por él, el borrador sale de Arroz, que sí tiene datos.
+    reporte = run_daily(session, LUNES, tmp_path, execute=True)
 
-    carpeta = tmp_path / "2026-10-19"
-    assert sorted(p.name for p in carpeta.iterdir()) == [
-        "como-se-movio-arroz.png",
-        "dato-del-dia-arroz.png",
+    posts = _posts(session)
+    assert [(p.batch_slot, p.status, p.origin, p.planned_for) for p in posts] == [
+        ("como-se-movio", PostStatus.DRAFT, PostOrigin.BATCH, LUNES),
+        ("dato-del-dia", PostStatus.DRAFT, PostOrigin.BATCH, LUNES),
     ]
-    assert (carpeta / "dato-del-dia-arroz.png").read_bytes() == b"PNG 1080x1350"
-    assert [c.estado for c in reporte.cards] == ["escrita", "escrita"]
-    # El HTML que llegó al render trae el producto elegido.
-    assert all("Arroz" in html for _, _, html in render.llamadas)
+    assert all(p.slides[0].card_slug == p.batch_slot for p in posts)
+    # Las cifras con tope en el día anterior, como antes.
+    assert {p.slides[0].params["data_through"] for p in posts} == {"2026-10-18"}
+    assert {p.slides[0].params["product"] for p in posts} == {"Arroz"}
+    assert [c.estado for c in reporte.cards] == ["creada", "creada"]
+    # Ya no rasteriza: ni PNG ni JPEG en disco.
+    assert not any(tmp_path.rglob("*.png")) and not any(tmp_path.rglob("*.jpg"))
 
 
-def test_un_jueves_genera_de_donde_sale_con_una_provincia_con_anuncios(
+def test_un_jueves_crea_de_donde_sale_con_una_provincia_con_anuncios(
     session: Session, datos: None, tmp_path: Path
 ) -> None:
-    reporte = run_daily(session, JUEVES, tmp_path, render=RenderFalso(), execute=True)
+    run_daily(session, JUEVES, tmp_path, execute=True)
 
-    nombres = sorted(p.name for p in (tmp_path / "2026-10-22").iterdir())
-    assert nombres[0] == "dato-del-dia-arroz.png"
-    assert len(nombres) == 2
-    assert nombres[1].startswith("de-donde-sale-arroz-")
-    # Las dos provincias del foco tienen anuncios en los últimos 30 días; la
-    # que toque ese día es una de ellas.
-    assert nombres[1] in (
-        "de-donde-sale-arroz-la-habana.png",
-        "de-donde-sale-arroz-santiago-de-cuba.png",
+    donde = next(p for p in _posts(session) if p.batch_slot == "de-donde-sale")
+    assert donde.slides[0].params["province"] in ("La Habana", "Santiago de Cuba")
+
+
+def test_correr_dos_veces_el_mismo_dia_no_duplica(
+    session: Session, datos: None, tmp_path: Path
+) -> None:
+    run_daily(session, LUNES, tmp_path, execute=True)
+    reporte = run_daily(session, LUNES, tmp_path, execute=True)
+
+    assert len(_posts(session)) == 2
+    assert [c.estado for c in reporte.cards] == ["ya existía", "ya existía"]
+    assert reporte.exit_code == 0
+
+
+def test_un_borrador_descartado_no_se_vuelve_a_crear(
+    session: Session, datos: None, tmp_path: Path
+) -> None:
+    run_daily(session, LUNES, tmp_path, execute=True)
+    dato = next(p for p in _posts(session) if p.batch_slot == "dato-del-dia")
+    discard(dato, images_dir=tmp_path)
+    session.commit()
+
+    reporte = run_daily(session, LUNES, tmp_path, execute=True)
+
+    assert len(_posts(session)) == 2
+    assert reporte.cards[0].estado == "ya existía"
+
+
+def test_la_base_no_admite_dos_borradores_del_lote_del_mismo_dia_y_tipo(
+    session: Session, datos: None
+) -> None:
+    for _ in range(2):
+        create_draft(
+            session, card_slug="dato-del-dia", planned_for=LUNES, product="Arroz",
+            province=None, data_through=LUNES - timedelta(days=1),
+            origin=PostOrigin.BATCH, batch_slot="dato-del-dia",
+        )
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_si_otra_corrida_lo_crea_en_el_medio_dice_ya_existia(
+    session: Session, datos: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La carrera: la consulta previa no lo ve, pero la base sí lo tiene."""
+    create_draft(
+        session, card_slug="dato-del-dia", planned_for=LUNES, product="Arroz", province=None,
+        data_through=LUNES - timedelta(days=1), origin=PostOrigin.BATCH, batch_slot="dato-del-dia",
     )
-    assert [c.estado for c in reporte.cards] == ["escrita", "escrita"]
+    session.commit()
+    real = daily_module._exists
+    llamadas: list[str] = []
+
+    def _ciega_la_primera_vez(db: Session, day: date, slot: str) -> bool:
+        llamadas.append(slot)
+        if slot == "dato-del-dia" and llamadas.count(slot) == 1:
+            return False
+        return real(db, day, slot)
+
+    monkeypatch.setattr(daily_module, "_exists", _ciega_la_primera_vez)
+
+    reporte = run_daily(session, LUNES, tmp_path, execute=True)
+
+    assert reporte.cards[0].estado == "ya existía"
+    # La segunda consulta es la del `except`: la carrera sí pasó por el savepoint.
+    assert llamadas.count("dato-del-dia") == 2
+    assert len([p for p in _posts(session) if p.batch_slot == "dato-del-dia"]) == 1
+    # El otro tipo del lunes se creó igual: el savepoint deshizo solo el repetido.
+    assert reporte.cards[1].estado == "creada"
 
 
-def test_en_seco_no_escribe_nada_ni_purga_ni_levanta_chromium(
+def test_otra_restriccion_que_salta_no_se_tapa_como_ya_existia(
+    session: Session, datos: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _rota(db: Session, **kwargs: object) -> None:
+        raise IntegrityError("INSERT", {}, Exception("ck_marketing_posts_status"))
+
+    monkeypatch.setattr(daily_module, "create_draft", _rota)
+
+    with pytest.raises(IntegrityError):
+        run_daily(session, LUNES, tmp_path, execute=True)
+
+
+def test_otro_dia_si_crea_los_suyos(session: Session, datos: None, tmp_path: Path) -> None:
+    run_daily(session, LUNES, tmp_path, execute=True)
+    run_daily(session, LUNES + timedelta(days=1), tmp_path, execute=True)
+
+    assert len(_posts(session)) == 3
+
+
+def test_en_seco_no_crea_nada_ni_purga(
     session: Session, datos: None, tmp_path: Path
 ) -> None:
     viejo = tmp_path / "2026-01-01"
     viejo.mkdir()
-    render = RenderFalso()
 
-    reporte = run_daily(session, LUNES, tmp_path, render=render, execute=False)
+    reporte = run_daily(session, LUNES, tmp_path, execute=False)
 
-    assert render.llamadas == []
     assert [c.estado for c in reporte.cards] == ["prevista", "prevista"]
+    assert _posts(session) == []
     assert viejo.exists()
-    assert not (tmp_path / "2026-10-19").exists()
 
 
-def test_con_execute_purga_lo_viejo_despues_de_escribir(
+def test_con_execute_purga_las_carpetas_viejas_y_las_publicaciones_vencidas(
     session: Session, datos: None, tmp_path: Path
 ) -> None:
     (tmp_path / "2026-01-01").mkdir()
+    vencido = create_draft(
+        session, card_slug="carrusel-cierre", planned_for=date(2026, 9, 1), product=None,
+        province=None, data_through=date(2026, 9, 1),
+        now=datetime(2026, 9, 1, 12, tzinfo=UTC),
+    )
+    session.commit()
 
-    reporte = run_daily(session, LUNES, tmp_path, render=RenderFalso(), execute=True)
+    reporte = run_daily(session, LUNES, tmp_path, execute=True)
 
     assert not (tmp_path / "2026-01-01").exists()
     assert [p.name for p in reporte.purgados] == ["2026-01-01"]
+    assert reporte.posts_purgados == [vencido.id]
+    assert vencido.id not in {p.id for p in _posts(session)}
 
 
-def test_sin_ningun_anuncio_la_tarjeta_se_salta_y_dice_por_que(
+def test_sin_ningun_anuncio_no_crea_borrador_y_dice_por_que(
     session: Session, tmp_path: Path
 ) -> None:
-    """Producto piloto sin una sola fila: no se publica una tarjeta vacía."""
+    """Producto piloto sin una sola fila: no se crea un borrador vacío."""
     session.add(Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True))
     session.commit()
 
-    reporte = run_daily(session, LUNES, tmp_path, render=RenderFalso(), execute=True)
+    reporte = run_daily(session, LUNES, tmp_path, execute=True)
 
     assert [(c.slug, c.estado) for c in reporte.cards] == [
         ("dato-del-dia", "sin datos"),
         ("como-se-movio", "sin datos"),
     ]
-    assert not tmp_path.joinpath("2026-10-19").exists() or not list(
-        tmp_path.joinpath("2026-10-19").iterdir()
-    )
-
-
-def test_sin_chromium_avisa_y_no_deja_archivos_a_medias(
-    session: Session, datos: None, tmp_path: Path
-) -> None:
-    def sin_chromium(html: str, *, width: int, height: int) -> bytes:
-        raise RendererUnavailable("Chromium no arrancó.")
-
-    reporte = run_daily(session, LUNES, tmp_path, render=sin_chromium, execute=True)
-
-    assert reporte.renderer_error == "Chromium no arrancó."
-    assert not any(tmp_path.rglob("*.png"))
-
-
-def test_volver_a_correr_el_mismo_dia_pisa_los_archivos(
-    session: Session, datos: None, tmp_path: Path
-) -> None:
-    run_daily(session, LUNES, tmp_path, render=RenderFalso(), execute=True)
-    run_daily(session, LUNES, tmp_path, render=RenderFalso(), execute=True)
-
-    assert len(list((tmp_path / "2026-10-19").iterdir())) == 2
+    assert _posts(session) == []
+    assert reporte.exit_code == 1
 
 
 # --- CLI ---------------------------------------------------------------------
@@ -318,8 +381,22 @@ def test_el_codigo_de_salida_es_1_si_no_salio_ninguna_tarjeta(
         yield session
 
     monkeypatch.setattr("saimc.marketing.daily.session_scope", _scope)
+    monkeypatch.setattr("saimc.marketing.daily.default_marketing_dir", lambda: tmp_path)
 
-    codigo = main(["--day", "2026-10-19", "--out-dir", str(tmp_path), "--execute"])
+    codigo = main(["--day", "2026-10-19", "--execute"])
 
     assert codigo == 1
     assert "sin datos" in capsys.readouterr().out
+
+
+def test_la_hora_que_ve_el_operador_es_la_de_cuba() -> None:
+    # El 19 de octubre Cuba está en horario de verano: UTC − 4.
+    assert to_havana(datetime(2026, 10, 19, 15, 0, tzinfo=UTC)).hour == 11
+    # Lo que viene sin huso (SQLite) se toma como UTC, que es lo que se guarda.
+    assert to_havana(datetime(2026, 10, 19, 15, 0)).hour == 11
+    assert havana_today(datetime(2026, 10, 20, 2, 0, tzinfo=UTC)) == date(2026, 10, 19)
+
+
+def test_ya_no_acepta_out_dir() -> None:
+    with pytest.raises(SystemExit):
+        main(["--out-dir", "var/marketing"])

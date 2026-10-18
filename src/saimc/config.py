@@ -164,6 +164,11 @@ class Settings(BaseSettings):
     # por el mismo motivo que `llm_assist_log_path`.
     prefill_status_path: Path = Path("data/prefill-status.json")
 
+    # La fábrica de `/marketing` (F2, `docs/spec-slice-fabrica-publicaciones.md`):
+    # los JPEG aprobados van a `<marketing_dir>/posts/<id>/`. Bajo `var/`, que
+    # está en `.gitignore`, igual que las carpetas diarias del lote anterior.
+    marketing_dir: Path = Path("var/marketing")
+
     # Candado entre corridas reales del pre-cálculo (`extraction/prefill_lock.py`):
     # con otra `--execute` viva, la nueva sale sin gastar. El archivo queda
     # siempre en disco, vacío; lo que cuenta es quién lo tiene abierto.

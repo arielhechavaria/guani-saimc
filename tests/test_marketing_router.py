@@ -96,42 +96,6 @@ def datos(session: Session) -> None:
     session.commit()
 
 
-class TestPaginaMarketing:
-    def test_lista_solo_productos_del_foco(
-        self, client: TestClient, datos: None
-    ) -> None:
-        respuesta = client.get("/marketing")
-
-        assert respuesta.status_code == 200
-        assert "Arroz" in respuesta.text
-        assert "Pollo" not in respuesta.text
-
-    def test_con_producto_elegido_muestra_la_vista_previa_y_el_boton_de_descarga(
-        self, client: TestClient, datos: None
-    ) -> None:
-        respuesta = client.get("/marketing", params={"kind": "dato-del-dia", "product": "Arroz"})
-
-        assert respuesta.status_code == 200
-        assert "/marketing/preview/dato-del-dia?" in respuesta.text
-        assert "/marketing/card/dato-del-dia.png?" in respuesta.text
-
-    def test_producto_fuera_de_foco_no_arma_tarjeta(
-        self, client: TestClient, datos: None
-    ) -> None:
-        respuesta = client.get("/marketing", params={"kind": "dato-del-dia", "product": "Pollo"})
-
-        assert respuesta.status_code == 200
-        assert "no está en el foco" in respuesta.text
-
-    def test_una_tarjeta_sin_producto_no_pide_seleccion_de_producto(
-        self, client: TestClient, datos: None
-    ) -> None:
-        respuesta = client.get("/marketing", params={"kind": "carrusel-cierre"})
-
-        assert respuesta.status_code == 200
-        assert "/marketing/preview/carrusel-cierre?" in respuesta.text
-
-
 class TestVistaPreviaDatoDelDia:
     def test_trae_las_cifras_reales_de_las_dos_provincias(
         self, client: TestClient, datos: None

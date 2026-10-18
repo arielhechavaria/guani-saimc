@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from saimc.marketing.context import CardType
 
@@ -60,3 +61,20 @@ def parse_options(kind: CardType, params: Mapping[str, str]) -> CardOptions:
         subtitle=_clean(params.get("subtitle"), SUBTITLE_MAX),
         cta=_clean(params.get("cta"), CTA_MAX),
     )
+
+
+def options_to_dict(options: CardOptions) -> dict[str, Any]:
+    """Lo que se guarda en `marketing_post_slides.options`."""
+    return {"show": dict(options.show), "subtitle": options.subtitle, "cta": options.cta}
+
+
+def options_from_dict(kind: CardType, data: Mapping[str, Any] | None) -> CardOptions:
+    """Lee lo guardado pasando otra vez por `parse_options`: si el JSON dice
+    que un bloque sin interruptor está apagado, igual se ve."""
+    data = data or {}
+    params: dict[str, str] = {
+        f"b_{slug}": "1" if on else "0" for slug, on in (data.get("show") or {}).items()
+    }
+    params["subtitle"] = str(data.get("subtitle") or "")
+    params["cta"] = str(data.get("cta") or "")
+    return parse_options(kind, params)

@@ -1,5 +1,6 @@
-"""Editor de `/marketing`: bloques, textos, vista parcial y JPEG (F1 de
-`docs/plan-fabrica-marketing.md`).
+"""Opciones de F1 sobre las rutas sin estado (`/marketing/preview`,
+`/marketing/card`): bloques, textos y JPEG. La página del editor y su vista
+parcial pasaron a `/marketing/post/<id>` (F2, `test_marketing_post_router.py`).
 
 Reusa los fixtures de `test_marketing_router.py` (arroz en La Habana y
 Santiago, pollo fuera del foco).
@@ -101,79 +102,6 @@ class TestOpcionesEnLaVistaPrevia:
 
         assert f'data-block="{apagado}"' not in html
         assert 'data-block="titulo"' in html
-
-
-class TestPaginaEditor:
-    def test_ya_no_tiene_la_seccion_de_instagram(
-        self, client: TestClient, datos: None  # noqa: F811
-    ) -> None:
-        html = client.get("/marketing", params={"kind": "dato-del-dia", "product": "Arroz"}).text
-
-        assert 'id="instagram"' not in html
-        assert "Seguidores en el tiempo" not in html
-
-    def test_un_interruptor_por_bloque_con_interruptor_y_ninguno_por_los_fijos(
-        self, client: TestClient, datos: None  # noqa: F811
-    ) -> None:
-        html = client.get("/marketing", params={"kind": "dato-del-dia", "product": "Arroz"}).text
-
-        assert 'name="b_barra"' in html and 'name="b_comparacion"' in html
-        assert 'name="b_titulo"' not in html and 'name="b_rango"' not in html
-        assert 'name="subtitle"' in html and 'name="cta"' in html
-
-    def test_el_formulario_refresca_la_vista_con_htmx(
-        self, client: TestClient, datos: None  # noqa: F811
-    ) -> None:
-        html = client.get("/marketing", params={"kind": "dato-del-dia", "product": "Arroz"}).text
-
-        assert 'hx-get="/marketing/vista"' in html
-        assert "/static/htmx.min.js" in html
-
-    def test_trae_el_texto_del_post_con_los_botones(
-        self, client: TestClient, datos: None  # noqa: F811
-    ) -> None:
-        html = client.get("/marketing", params={"kind": "dato-del-dia", "product": "Arroz"}).text
-
-        assert "<textarea" in html and "#guani" in html
-        assert "Copiar texto" in html and "Compartir" in html
-        assert "/marketing/card/dato-del-dia.jpg?" in html
-
-    def test_las_opciones_viajan_a_la_vista_previa_y_a_la_imagen(
-        self, client: TestClient, datos: None  # noqa: F811
-    ) -> None:
-        html = client.get(
-            "/marketing",
-            params={"kind": "dato-del-dia", "product": "Arroz", "b_barra": "0", "cta": "Entrá"},
-        ).text
-
-        assert "b_barra=0" in html and "cta=Entr" in html
-
-
-class TestVistaParcial:
-    def test_devuelve_solo_la_vista_y_actualiza_la_url_de_la_pagina(
-        self, client: TestClient, datos: None  # noqa: F811
-    ) -> None:
-        respuesta = client.get(
-            "/marketing/vista",
-            params={"kind": "dato-del-dia", "product": "Arroz", "b_barra": "0"},
-        )
-
-        assert respuesta.status_code == 200
-        assert "<html" not in respuesta.text
-        assert "/marketing/preview/dato-del-dia?" in respuesta.text
-        assert "b_barra=0" in respuesta.text
-        assert respuesta.headers["HX-Replace-Url"].startswith("/marketing?")
-        assert "b_barra=0" in respuesta.headers["HX-Replace-Url"]
-
-    def test_producto_fuera_del_foco_avisa_en_vez_de_armar_la_tarjeta(
-        self, client: TestClient, datos: None  # noqa: F811
-    ) -> None:
-        respuesta = client.get(
-            "/marketing/vista", params={"kind": "dato-del-dia", "product": "Pollo"}
-        )
-
-        assert respuesta.status_code == 200
-        assert "no está en el foco" in respuesta.text
 
 
 class TestDescargaJPEG:

@@ -11,6 +11,7 @@ from saimc.models.instagram_media import InstagramMedia, InstagramMediaType
 from saimc.models.instagram_media_metrics import InstagramMediaMetrics
 from saimc.models.jev_signal import JevSignal
 from saimc.models.llm_review import LlmProposal, LlmReview, ProposalStatus, ReviewOutcome
+from saimc.models.marketing_post import MarketingPost, MarketingPostSlide
 from saimc.models.ocr_transcription import OcrTranscription
 from saimc.models.price_history import (
     PACKAGING_MAX_LENGTH,
@@ -52,6 +53,8 @@ __all__ = [
     "JevSignal",
     "LlmProposal",
     "LlmReview",
+    "MarketingPost",
+    "MarketingPostSlide",
     "OcrTranscription",
     "Platform",
     "PriceHistory",

@@ -1,0 +1,180 @@
+{% extends "_shell.html" %}
+
+{% block title %}Marketing · {{ kind.label }}{% endblock %}
+{% block heading %}{{ kind.label }}{% endblock %}
+{% block subtitle %}Para el {{ post.planned_for.strftime("%d/%m/%Y") }} · {{ status_label }}. Las cifras salen del sitio, nunca se escriben a mano.{% endblock %}
+
+{% block head %}
+<style>
+  /* Decidido a 390 px: una columna, el lienzo a todo el ancho. */
+  .mk-frame{position:relative; width:100%; max-width:540px; overflow:hidden; border-radius:16px; box-shadow:var(--m3-elev-2)}
+  .mk-frame iframe{position:absolute; top:0; left:0; border:0; transform-origin:top left}
+  .mk-actions{display:flex; gap:12px; margin-top:16px; flex-wrap:wrap}
+  .mk-actions .m3-btn, .mk-actions form{flex:1 1 150px}
+  .mk-actions .m3-btn{min-height:44px; justify-content:center; width:100%}
+  .mk-opts summary{min-height:44px; display:flex; align-items:center; cursor:pointer; font-weight:500}
+  .mk-toggle{display:flex; align-items:center; gap:12px; min-height:44px}
+  .mk-toggle input{width:20px; height:20px; flex:none}
+  .mk-count{margin:4px 0 0; text-align:right}
+  .mk-count.is-over{color:var(--m3-error)}
+  .mk-error{color:var(--m3-error); margin:0 0 16px}
+  .mk-body{margin:0 24px 24px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="m3-stack">
+  <p class="m3-xs" style="margin:0"><a href="/marketing">← Hoy</a></p>
+  <section class="m3-card">
+    <div class="m3-card-head">
+      <div class="m3-topbar-main">
+        <h2 class="m3-h2">{{ kind.label }} <span class="m3-chip">{{ status_label }}</span></h2>
+        <p class="m3-note" style="margin-bottom:0">
+          {% if editable %}
+          Se ve con los datos de hoy hasta la fecha de corte. Al aprobar se congelan:
+          si después se corrige un precio, esta publicación no cambia.
+          {% else %}
+          Cifras congeladas el {{ approved_local }}
+          con datos hasta el {{ params.data_through }}.
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    <div class="mk-body">
+    {% if error %}<p class="mk-error" role="alert">{{ error }}</p>{% endif %}
+
+    {% if editable %}
+    <form id="editor" method="post" action="/marketing/post/{{ post.id }}" style="margin:0">
+      <div class="m3-row" style="gap:12px; flex-wrap:wrap; align-items:end">
+        {% if kind.needs_product %}
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label">Producto</span>
+          <select name="product" class="m3-select" onchange="this.form.submit()">
+            {% for p in products %}
+            <option value="{{ p }}"{% if p == params.product %} selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        {% if kind.needs_province %}
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label">Provincia</span>
+          <select name="province" class="m3-select" onchange="this.form.submit()">
+            {% for prov in provinces %}
+            <option value="{{ prov }}"{% if prov == params.province %} selected{% endif %}>{{ prov }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <label class="m3-field m3-field-on-container">
+          <span class="m3-field-label">Datos hasta</span>
+          <input class="m3-input" type="date" name="data_through" value="{{ params.data_through }}"
+                 max="{{ today.isoformat() }}" onchange="this.form.submit()">
+        </label>
+      </div>
+
+      <div id="vista" style="margin-top:24px">{% include "_marketing_vista.html" %}</div>
+
+      {#- Un atajo oculta al formulario largo (docs/DESIGN.md, regla 2): aprobar la
+          tarjeta tal cual sale es el caso común; ajustar bloques y textos, el excepcional. -#}
+      {% if has_texts and ready %}
+      <details class="mk-opts" style="margin-top:16px">
+        <summary>Ajustar bloques y textos</summary>
+        <div hx-post="/marketing/post/{{ post.id }}" hx-trigger="change, input delay:300ms"
+             hx-target="#vista" hx-include="closest form" hx-swap="innerHTML">
+          {% for b in toggles %}
+          <label class="mk-toggle">
+            <input type="hidden" name="b_{{ b.slug }}" value="0">
+            <input type="checkbox" name="b_{{ b.slug }}" value="1"{% if options.show[b.slug] %} checked{% endif %}>
+            <span>{{ b.label }}</span>
+          </label>
+          {% endfor %}
+          <p class="m3-xs m3-muted" style="margin:8px 0 0">El título y la cifra principal siempre se ven; las cifras no se editan.</p>
+          <label class="m3-field m3-field-on-container" style="margin-top:16px">
+            <span class="m3-field-label">Subtítulo (hasta {{ subtitle_max }} caracteres)</span>
+            <input class="m3-input" type="text" name="subtitle" maxlength="{{ subtitle_max }}" value="{{ options.subtitle }}">
+          </label>
+          <label class="m3-field m3-field-on-container" style="margin-top:12px">
+            <span class="m3-field-label">Llamada a la acción (hasta {{ cta_max }} caracteres)</span>
+            <input class="m3-input" type="text" name="cta" maxlength="{{ cta_max }}" value="{{ options.cta }}">
+          </label>
+        </div>
+      </details>
+      {% else %}
+      {% for b in toggles %}<input type="hidden" name="b_{{ b.slug }}" value="{{ '1' if options.show[b.slug] else '0' }}">{% endfor %}
+      {% endif %}
+
+      {% if ready %}
+      <label class="m3-field m3-field-on-container" style="margin-top:24px">
+        <span class="m3-field-label">Texto del post</span>
+        <textarea id="caption" name="caption" class="m3-textarea" rows="12" spellcheck="true"
+                  hx-post="/marketing/post/{{ post.id }}" hx-trigger="input delay:800ms"
+                  hx-include="closest form" hx-swap="none">{{ caption }}</textarea>
+      </label>
+      <p class="m3-xs m3-muted mk-count" id="caption-count" data-max="{{ caption_max }}" data-max-tags="30">
+        {{ caption | length }} / {{ caption_max }} caracteres · {{ caption.count("#") }} / 30 hashtags
+      </p>
+      {% endif %}
+
+      <div class="mk-actions">
+        {% if ready %}
+        <button type="submit" class="m3-btn m3-btn-filled" formaction="/marketing/post/{{ post.id }}/aprobar">Aprobar</button>
+        {% endif %}
+        <button type="submit" class="m3-btn m3-btn-tonal">Guardar</button>
+        <button type="submit" class="m3-btn m3-btn-text" formaction="/marketing/post/{{ post.id }}/descartar"
+                onclick="return confirm('¿Descartar este borrador?')">Descartar</button>
+      </div>
+      <p class="m3-xs m3-muted" style="margin-top:12px">
+        Aprobar hace el JPEG en el servidor. Si falla, falta instalar Chromium para Playwright
+        (<code>docs/comandos.md</code>); el borrador queda como estaba.
+      </p>
+    </form>
+
+    {% else %}
+    <div id="vista">{% include "_marketing_vista.html" %}</div>
+
+    <label class="m3-field m3-field-on-container" style="margin-top:24px">
+      <span class="m3-field-label">Texto del post</span>
+      <textarea id="caption" class="m3-textarea" rows="12" readonly>{{ caption }}</textarea>
+    </label>
+
+    {% if post.status == "approved" %}
+    <form method="post" action="/marketing/post/{{ post.id }}/publicada" style="margin-top:24px">
+      <label class="m3-field m3-field-on-container">
+        <span class="m3-field-label">Enlace del post publicado</span>
+        <input class="m3-input" type="url" name="url" required inputmode="url"
+               placeholder="https://www.instagram.com/p/…">
+      </label>
+      <div class="mk-actions">
+        <button type="submit" class="m3-btn m3-btn-filled">Marcar publicada</button>
+      </div>
+    </form>
+    {% elif post.status == "published" %}
+    <p style="margin-top:24px">
+      Publicada el {{ published_local }}:
+      <a href="{{ post.published_url }}" rel="noopener" target="_blank">{{ post.published_url }}</a>
+    </p>
+    {% endif %}
+
+    <div class="mk-actions">
+      <form method="post" action="/marketing/post/{{ post.id }}/duplicar" style="margin:0">
+        <button type="submit" class="m3-btn m3-btn-tonal">Duplicar</button>
+      </form>
+      {% if post.status == "approved" %}
+      <form method="post" action="/marketing/post/{{ post.id }}/descartar" style="margin:0"
+            onsubmit="return confirm('¿Descartar? Se borra la imagen aprobada.')">
+        <button type="submit" class="m3-btn m3-btn-text">Descartar</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/htmx.min.js?v={{ htmx_version() }}" defer></script>
+<script src="/static/marketing-editor.js" defer></script>
+{% endblock %}
