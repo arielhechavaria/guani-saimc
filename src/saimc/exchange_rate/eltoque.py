@@ -74,6 +74,44 @@ def parse_rate(body: str, key: str) -> Decimal | None:
     return tasa
 
 
+class ElToqueUnavailable(Exception):
+    """La API no respondió con un 200: límite de peticiones (429), otro
+    status o falla de red. No dice nada sobre si el día tiene dato."""
+
+
+def fetch_rate_strict(
+    key: str,
+    day: date,
+    *,
+    api_key: str,
+    timeout: float,
+    transport: httpx.BaseTransport | None = None,
+) -> Decimal | None:
+    """Como `fetch_rate`, pero separa las dos ausencias: `None` es un 200 sin
+    tasa para `key` (el día no tiene dato), y `ElToqueUnavailable` es que la
+    API no respondió. El backfill necesita la diferencia: medido el
+    2026-10-18, elTOQUE corta con 429 tras una ráfaga y leerlo como día sin
+    dato dejaba filas sin sanear por una razón falsa.
+    """
+    date_from = f"{day} 00:00:00"
+    date_to = f"{day} 23:59:59"
+
+    try:
+        with httpx.Client(transport=transport, timeout=timeout) as client:
+            response = client.get(
+                _TRMI_URL,
+                params={"date_from": date_from, "date_to": date_to},
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+    except httpx.HTTPError as exc:
+        raise ElToqueUnavailable(type(exc).__name__) from exc
+
+    if response.status_code != 200:
+        raise ElToqueUnavailable(f"HTTP {response.status_code}")
+
+    return parse_rate(response.text, key)
+
+
 def fetch_rate(
     key: str,
     day: date,
@@ -94,20 +132,9 @@ def fetch_rate(
     if not api_key:
         return None
 
-    date_from = f"{day} 00:00:00"
-    date_to = f"{day} 23:59:59"
-
     try:
-        with httpx.Client(transport=transport, timeout=timeout) as client:
-            response = client.get(
-                _TRMI_URL,
-                params={"date_from": date_from, "date_to": date_to},
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-    except httpx.HTTPError:
+        return fetch_rate_strict(
+            key, day, api_key=api_key, timeout=timeout, transport=transport
+        )
+    except ElToqueUnavailable:
         return None
-
-    if response.status_code != 200:
-        return None
-
-    return parse_rate(response.text, key)

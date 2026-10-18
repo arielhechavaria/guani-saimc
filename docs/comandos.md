@@ -44,7 +44,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.validation.jev_signal --decided --execute`](#relleno-de-jev) | Preguntarle a Jev por los textos ya decididos | sí: `jev_signals` | sí, tope `SAIMC_LLM_JEV_MAX_COST` o `--max-cost` |
 | [`saimc.extraction.reference_set --execute`](#congelar-el-conjunto-de-referencia) | Congelar una versión nueva del conjunto de referencia | sí: `reference_set_members` | no |
 | [`saimc.basis_backfill --apply`](#backfill-de-base-de-precio) | Completar `price_basis` viejo | sí | no |
-| [`saimc.exchange_rate.backfill --apply`](#backfill-de-tasas-de-cambio) | Completar tasas pendientes | sí | no; consulta la API de elTOQUE |
+| [`saimc.exchange_rate.backfill --apply`](#backfill-de-tasas-de-cambio) | Completar tasas pendientes y sanear las de relleno | sí: `prices_history`, respaldo CSV antes | no; consulta la API de elTOQUE |
 | [`scripts/redact_existing.py --apply`](#redactar-teléfonos-ya-guardados) | Quitar teléfonos del texto guardado | sí: `original_text` | no |
 | [`scripts/add_focus_aliases.py --apply`](#alias-del-foco) | Agregar alias al catálogo del foco | sí: productos | no |
 | [`saimc.extraction.llm_backtest`](#backtest-del-asistente) | Backtest del asistente contra lo curado | `--execute` escribe archivos | `--execute` sí |
@@ -986,11 +986,27 @@ Escribe una versión nueva del conjunto de referencia de H0 con lo que lista el 
 .venv/bin/python -m saimc.exchange_rate.backfill --apply
 ```
 
-- **Para qué**: completa las tasas de cambio pendientes. Es idempotente.
-- **Cuándo**: cuando haya filas sin tasa. Sin `--apply` solo imprime lo que haría; `--limit N`
-  acota cuántas filas procesa. Después, [revalidar](#revalidar-escribiendo).
+- **Para qué**: completa las tasas de cambio pendientes (filas en divisa sin tasa) y sanea las
+  de relleno (`exchange_rate_source = 'elTOQUE (cache)'`, convertidas con la última tasa
+  guardada de otro día). A cada fila le pide a elTOQUE la tasa de su fecha ancla (la de
+  publicación o, si falta, la de captura en hora de La Habana) y reescribe `price_cup`,
+  `exchange_rate`, `exchange_rate_date` y `exchange_rate_source`. Es idempotente.
+- **Cuándo**: cuando haya filas sin tasa o de relleno. Sin `--apply` solo imprime lo que haría,
+  fila por fila, con la tasa vieja y la nueva; `--limit N` acota cuántas filas procesa.
+- **Antes de `--apply`**: respaldo completo con `scripts/backup_db.sh`. Además, `--apply` escribe
+  primero un CSV con los valores originales de cada fila objetivo en
+  `backups/exchange_rate_backfill_<fecha UTC>.csv` (otro camino con `--backup RUTA`).
+- **Después**: [revalidar](#revalidar-escribiendo), porque las reglas 2 y 6 leen `price_cup`.
+- **Cómo leer la salida**: `resolvería` / `Resueltas` son las filas con tasa del día. `sin tasa`
+  es un día para el que elTOQUE responde sin dato: la fila **no se toca** (nunca se rellena con
+  otra fecha) y vuelve a aparecer en la próxima corrida. `Cortada` es otra cosa: elTOQUE dejó de
+  responder (429, otro status, red) tras ocho reintentos de 60 s; la corrida para en esa fila sin
+  tocarla y sale con código 2. Un `elTOQUE no respondió (HTTP 429); reintento en 60 s` suelto es
+  normal: tras unas 30 consultas elTOQUE corta unos 5 minutos y la corrida espera sola. Volver a correr más tarde retoma donde quedó.
 - **Cambia algo**: solo con `--apply`. **Gasta**: no cuesta plata, pero consulta la API de
-  elTOQUE (una llamada por tasa y día que falte), con el token `SAIMC_EL_TOQUE_API` del `.env`.
+  elTOQUE (una llamada por moneda y día que no esté en `exchange_rate_cache`, con pausa de 1 s),
+  con el token `SAIMC_EL_TOQUE_API` del `.env`; sin el token no corre. El dry-run no guarda en la
+  cache, así que repetirlo vuelve a consultar.
 
 ### Redactar teléfonos ya guardados
 

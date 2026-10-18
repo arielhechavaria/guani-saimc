@@ -7,15 +7,24 @@ socket real (`fetch_rate`) se prueba con `httpx.MockTransport`, nunca con un
 host verdadero.
 """
 
+import csv
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import httpx
+import pytest
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from saimc.exchange_rate.backfill import run_backfill
 from saimc.exchange_rate.cache import get_for_date, latest, store
-from saimc.exchange_rate.eltoque import fetch_rate, parse_rate
+from saimc.exchange_rate.eltoque import (
+    ElToqueUnavailable,
+    fetch_rate,
+    fetch_rate_strict,
+    parse_rate,
+)
 from saimc.exchange_rate.service import (
     NO_RATE,
     RateResolution,
@@ -165,6 +174,67 @@ class TestFetchRateTimeout:
         assert resultado == Decimal("671.56")
         assert capturado["date_from"] == "2026-08-13 00:00:00"
         assert capturado["date_to"] == "2026-08-13 23:59:59"
+
+
+class TestFetchRateStrict:
+    """El backfill necesita separar «el día no tiene dato» (200 con `tasas`
+    vacío → `None`) de «la API no respondió» (429, otro status, red → levanta).
+    Medido el 2026-10-18: elTOQUE corta con 429 tras una ráfaga y `fetch_rate`
+    lo leía como día sin dato."""
+
+    def _fetch(self, handler) -> Decimal | None:
+        return fetch_rate_strict(
+            "USD",
+            date(2026, 10, 3),
+            api_key="token-de-prueba",
+            timeout=1.0,
+            transport=httpx.MockTransport(handler),
+        )
+
+    def test_429_levanta(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429, text='{"error":"Has superado el límite de peticiones"}'
+            )
+
+        with pytest.raises(ElToqueUnavailable):
+            self._fetch(handler)
+
+    def test_error_de_red_levanta(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("sin red", request=request)
+
+        with pytest.raises(ElToqueUnavailable):
+            self._fetch(handler)
+
+    def test_dia_sin_dato_devuelve_none(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text='{"tasas":{}}')
+
+        assert self._fetch(handler) is None
+
+    def test_dia_con_dato_devuelve_la_tasa(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=_BODY_CON_TASAS)
+
+        assert self._fetch(handler) == Decimal("671.56")
+
+    def test_fetch_rate_sigue_degradando_el_429_a_none(self) -> None:
+        """El curado no cambia: `fetch_rate` nunca levanta."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(429, text="")
+
+        assert (
+            fetch_rate(
+                "USD",
+                date(2026, 10, 3),
+                api_key="token-de-prueba",
+                timeout=1.0,
+                transport=httpx.MockTransport(handler),
+            )
+            is None
+        )
 
 
 class TestCacheRepository:
@@ -636,3 +706,332 @@ class TestBackfill:
 
         assert fetcher.calls == []
         assert pausas == []
+
+
+# ---------------------------------------------------------------------------
+# Saneamiento de filas con tasa de relleno (`elTOQUE (cache)`): T1 de
+# `docs/plan-bloque-mvp.md`, decisión del 2026-10-16. Los valores esperados
+# se fijan a mano antes del código: precio 10 USD, relleno de 690 del
+# 2026-09-13 (6900 CUP), ancla 2026-10-05, tasa real del día 760 (7600 CUP).
+# ---------------------------------------------------------------------------
+
+_RELLENO = "elTOQUE (cache)"
+_ANCLA_RELLENO = date(2026, 10, 5)
+_FECHA_RELLENO = date(2026, 9, 13)
+
+
+def _crear_precio_relleno(
+    session,
+    producto: Product,
+    ingestion: RawIngestion,
+    *,
+    currency: str = Currency.USD,
+    published_date: date | None = _ANCLA_RELLENO,
+) -> PriceHistory:
+    """Una fila como las 266 de producción: convertida con la última tasa
+    guardada (otro día) y marcada `elTOQUE (cache)`."""
+    precio = PriceHistory(
+        provenance="human",
+        product_id=producto.id,
+        price=Decimal("10.00"),
+        currency=currency,
+        source_id=ingestion.id,
+        published_date=published_date,
+        exchange_rate=Decimal("690.0000"),
+        exchange_rate_date=_FECHA_RELLENO,
+        exchange_rate_source=_RELLENO,
+        price_cup=Decimal("6900.00"),
+    )
+    session.add(precio)
+    session.flush()
+    return precio
+
+
+class TestResolverSinRelleno:
+    def test_sin_tasa_del_dia_no_cae_a_la_ultima_cacheada(self, session) -> None:
+        store(session, "USD", _FECHA_RELLENO, Decimal("690"), "elTOQUE")
+        resolver = RateResolver(session, _BackfillFetcher(), stale_fallback=False)
+
+        assert resolver.resolve(Currency.USD, _ANCLA_RELLENO) == NO_RATE
+
+    def test_por_defecto_sigue_cayendo_a_la_ultima_cacheada(self, session) -> None:
+        """El curado no cambia en este slice: la falla cerrada del resolutor
+        es otro cambio, con sus propios tests (decisión del 2026-10-16)."""
+        store(session, "USD", _FECHA_RELLENO, Decimal("690"), "elTOQUE")
+        resolver = RateResolver(session, _BackfillFetcher())
+
+        assert resolver.resolve(Currency.USD, _ANCLA_RELLENO) == RateResolution(
+            Decimal("690"), _FECHA_RELLENO, _RELLENO
+        )
+
+
+class TestBackfillRelleno:
+    def test_con_tasa_del_dia_reescribe_las_cuatro_columnas(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-1")
+        fila = _crear_precio_relleno(session, producto, ingestion)
+        fetcher = _BackfillFetcher({("USD", _ANCLA_RELLENO): Decimal("760")})
+
+        reporte = run_backfill(session, fetcher, apply=True, sleep=lambda _: None)
+
+        session.expire_all()
+        recuperada = session.get(PriceHistory, fila.id)
+        assert recuperada.exchange_rate == Decimal("760")
+        assert recuperada.exchange_rate_date == _ANCLA_RELLENO
+        assert recuperada.exchange_rate_source == "elTOQUE"
+        assert recuperada.price_cup == Decimal("7600.00")
+        assert fetcher.calls == [("USD", _ANCLA_RELLENO)]
+        assert (reporte.examined, reporte.resolved, reporte.unresolved) == (1, 1, 0)
+
+    def test_ancla_sin_fecha_de_publicacion_es_la_captura_en_la_habana(
+        self, session
+    ) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-2")
+        # 2026-08-10 12:00 UTC = 08:00 en La Habana, mismo día.
+        _crear_precio_relleno(session, producto, ingestion, published_date=None)
+        fetcher = _BackfillFetcher()
+
+        run_backfill(session, fetcher, apply=False, sleep=lambda _: None)
+
+        assert fetcher.calls == [("USD", date(2026, 8, 10))]
+
+    def test_sin_tasa_del_dia_no_se_toca_y_se_reporta(self, session) -> None:
+        """Sin dato para el ancla no se rellena con otro día, ni siquiera con
+        uno que la cache sí tiene: la fila queda como está y va al reporte."""
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-3")
+        fila = _crear_precio_relleno(session, producto, ingestion)
+        store(session, "USD", date(2026, 10, 4), Decimal("758"), "elTOQUE")
+        fetcher = _BackfillFetcher()  # elTOQUE sin dato para el ancla
+
+        reporte = run_backfill(session, fetcher, apply=True, sleep=lambda _: None)
+
+        session.expire_all()
+        recuperada = session.get(PriceHistory, fila.id)
+        assert recuperada.exchange_rate == Decimal("690.0000")
+        assert recuperada.exchange_rate_date == _FECHA_RELLENO
+        assert recuperada.exchange_rate_source == _RELLENO
+        assert recuperada.price_cup == Decimal("6900.00")
+        assert (reporte.examined, reporte.resolved, reporte.unresolved) == (1, 0, 1)
+        assert reporte.unresolved_rows == [(fila.id, "USD", _ANCLA_RELLENO)]
+
+    def test_acierto_de_cache_del_dia_exacto_se_usa_sin_consultar(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-4")
+        fila = _crear_precio_relleno(session, producto, ingestion)
+        store(session, "USD", _ANCLA_RELLENO, Decimal("760"), "elTOQUE")
+        fetcher = _BackfillFetcher()
+
+        run_backfill(session, fetcher, apply=True, sleep=lambda _: None)
+
+        session.expire_all()
+        assert session.get(PriceHistory, fila.id).price_cup == Decimal("7600.00")
+        assert fetcher.calls == []
+
+    def test_dry_run_no_toca_la_fila_ni_la_cache(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-5")
+        fila = _crear_precio_relleno(session, producto, ingestion)
+        fetcher = _BackfillFetcher({("USD", _ANCLA_RELLENO): Decimal("760")})
+
+        reporte = run_backfill(session, fetcher, apply=False, sleep=lambda _: None)
+        session.commit()  # lo que hace `session_scope` al salir
+
+        session.expire_all()
+        recuperada = session.get(PriceHistory, fila.id)
+        assert recuperada.exchange_rate_source == _RELLENO
+        assert recuperada.price_cup == Decimal("6900.00")
+        assert get_for_date(session, "USD", _ANCLA_RELLENO) is None
+        assert reporte.resolved == 1
+
+    def test_fila_saneada_no_vuelve_a_examinarse(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-6")
+        _crear_precio_relleno(session, producto, ingestion)
+        fetcher = _BackfillFetcher({("USD", _ANCLA_RELLENO): Decimal("760")})
+        run_backfill(session, fetcher, apply=True, sleep=lambda _: None)
+
+        segundo = _BackfillFetcher({("USD", _ANCLA_RELLENO): Decimal("999")})
+        reporte = run_backfill(session, segundo, apply=True, sleep=lambda _: None)
+
+        assert reporte.examined == 0
+        assert segundo.calls == []
+
+    def test_cup_queda_fuera_aunque_traiga_la_marca_de_relleno(self, session) -> None:
+        """Los CHECK admiten una fila CUP con `exchange_rate` nulo y fuente
+        `elTOQUE (cache)`; igual nunca se le pide tasa a la moneda nacional."""
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-7")
+        fila = PriceHistory(
+            provenance="human",
+            product_id=producto.id,
+            price=Decimal("10.00"),
+            currency=Currency.CUP,
+            source_id=ingestion.id,
+            exchange_rate_source=_RELLENO,
+        )
+        session.add(fila)
+        session.flush()
+        fetcher = _BackfillFetcher()
+
+        reporte = run_backfill(session, fetcher, apply=True, sleep=lambda _: None)
+
+        assert reporte.examined == 0
+        assert fetcher.calls == []
+
+    def test_pendiente_sin_tasa_del_dia_ya_no_se_rellena(self, session) -> None:
+        """Cambio de comportamiento del backfill: una fila sin tasa tampoco
+        recibe la última tasa guardada; sigue sin convertir y se reintenta."""
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-8")
+        fila = _crear_precio_pendiente(session, producto, ingestion, currency=Currency.USD)
+        store(session, "USD", _FECHA_RELLENO, Decimal("690"), "elTOQUE")
+
+        reporte = run_backfill(session, _BackfillFetcher(), apply=True, sleep=lambda _: None)
+
+        session.expire_all()
+        recuperada = session.get(PriceHistory, fila.id)
+        assert recuperada.exchange_rate is None
+        assert recuperada.exchange_rate_source is None
+        assert recuperada.price_cup is None
+        assert reporte.unresolved == 1
+
+    def test_lo_reescrito_cumple_los_check_de_la_tabla(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-9")
+        _crear_precio_relleno(session, producto, ingestion)
+        _crear_precio_relleno(session, producto, ingestion, currency=Currency.EUR)
+        _crear_precio_relleno(
+            session, producto, ingestion, published_date=date(2026, 10, 6)
+        )
+        fetcher = _BackfillFetcher(
+            {
+                ("USD", _ANCLA_RELLENO): Decimal("760"),
+                ("ECU", _ANCLA_RELLENO): Decimal("850"),
+            }
+        )
+
+        run_backfill(session, fetcher, apply=True, sleep=lambda _: None)
+
+        # El commit pasó por los CHECK; además se verifican fila por fila.
+        session.expire_all()
+        for fila in session.scalars(select(PriceHistory)):
+            assert fila.currency != Currency.CUP or fila.exchange_rate is None
+            assert fila.exchange_rate is None or (
+                fila.exchange_rate_date is not None
+                and fila.exchange_rate_source is not None
+            )
+        # Y los CHECK están activos en la base de prueba: no es un test vacío.
+        with pytest.raises(IntegrityError):
+            session.add(
+                PriceHistory(
+                    provenance="human",
+                    product_id=producto.id,
+                    price=Decimal("1"),
+                    currency=Currency.USD,
+                    source_id=ingestion.id,
+                    exchange_rate=Decimal("760"),
+                )
+            )
+            session.flush()
+        session.rollback()
+
+    def test_apply_respalda_los_valores_originales_antes_de_escribir(
+        self, session, tmp_path
+    ) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-10")
+        fila = _crear_precio_relleno(session, producto, ingestion)
+        fetcher = _BackfillFetcher({("USD", _ANCLA_RELLENO): Decimal("760")})
+        respaldo = tmp_path / "respaldo.csv"
+
+        run_backfill(
+            session, fetcher, apply=True, backup_path=respaldo, sleep=lambda _: None
+        )
+
+        with respaldo.open(encoding="utf-8") as archivo:
+            filas = list(csv.DictReader(archivo))
+        assert filas == [
+            {
+                "id": str(fila.id),
+                "currency": "USD",
+                "price": "10.00",
+                "price_cup": "6900.00",
+                "exchange_rate": "690.0000",
+                "exchange_rate_date": "2026-09-13",
+                "exchange_rate_source": _RELLENO,
+            }
+        ]
+
+    def test_api_caida_reintenta_con_espera_y_resuelve(self, session) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-12")
+        fila = _crear_precio_relleno(session, producto, ingestion)
+        respuestas: list[Decimal | Exception] = [
+            ElToqueUnavailable("429"),
+            Decimal("760"),
+        ]
+
+        def fetcher(key: str, day: date) -> Decimal | None:
+            respuesta = respuestas.pop(0)
+            if isinstance(respuesta, Exception):
+                raise respuesta
+            return respuesta
+
+        pausas: list[float] = []
+        reporte = run_backfill(
+            session, fetcher, apply=True, sleep=pausas.append, retry_wait=90.0
+        )
+
+        session.expire_all()
+        assert session.get(PriceHistory, fila.id).price_cup == Decimal("7600.00")
+        assert reporte.resolved == 1
+        assert reporte.aborted is None
+        assert 90.0 in pausas
+
+    def test_api_caida_sin_recuperarse_corta_la_corrida_sin_tocar_nada(
+        self, session
+    ) -> None:
+        """Un 429 persistente no es «día sin dato»: la fila queda intacta, no
+        entra al reporte de sin tasa y no se examinan las siguientes."""
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-13")
+        fila = _crear_precio_relleno(session, producto, ingestion)
+        _crear_precio_relleno(
+            session, producto, ingestion, published_date=date(2026, 10, 6)
+        )
+        llamadas: list[tuple[str, date]] = []
+
+        def fetcher(key: str, day: date) -> Decimal | None:
+            llamadas.append((key, day))
+            raise ElToqueUnavailable("429")
+
+        reporte = run_backfill(
+            session, fetcher, apply=True, sleep=lambda _: None, retries=2
+        )
+
+        session.expire_all()
+        recuperada = session.get(PriceHistory, fila.id)
+        assert recuperada.exchange_rate_source == _RELLENO
+        assert recuperada.price_cup == Decimal("6900.00")
+        assert reporte.aborted is not None
+        assert reporte.unresolved_rows == []
+        assert (reporte.examined, reporte.resolved, reporte.unresolved) == (1, 0, 0)
+        assert llamadas == [("USD", _ANCLA_RELLENO)] * 3  # el intento y dos más
+
+    def test_dry_run_no_escribe_respaldo(self, session, tmp_path) -> None:
+        producto = _crear_producto_backfill(session)
+        ingestion = _crear_ingestion_backfill(session, hash_="rel-11")
+        _crear_precio_relleno(session, producto, ingestion)
+        respaldo = tmp_path / "respaldo.csv"
+
+        run_backfill(
+            session,
+            _BackfillFetcher(),
+            apply=False,
+            backup_path=respaldo,
+            sleep=lambda _: None,
+        )
+
+        assert not respaldo.exists()

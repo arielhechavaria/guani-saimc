@@ -113,12 +113,25 @@ class RateResolver:
     colapsan a lo sumo una llamada HTTP — y si esa llamada falla, el fallo
     también se memoiza, para que una elTOQUE caída cueste un timeout por
     request, no uno por fila.
+
+    `stale_fallback=False` corta la cadena en el paso 2: sin tasa del día,
+    `NO_RATE` en vez de la última cacheada. Lo usa el backfill, que no debe
+    volver a rellenar (decisión del 2026-10-16); el curado sigue con el
+    default hasta que el resolutor falle cerrado en su propio cambio.
     """
 
-    def __init__(self, db: Session, fetcher: Fetcher, *, write_through: bool = True) -> None:
+    def __init__(
+        self,
+        db: Session,
+        fetcher: Fetcher,
+        *,
+        write_through: bool = True,
+        stale_fallback: bool = True,
+    ) -> None:
         self._db = db
         self._fetcher = fetcher
         self._write_through = write_through
+        self._stale_fallback = stale_fallback
         self._memo: dict[tuple[str, date], RateResolution] = {}
 
     def resolve(self, currency: str, anchor: date) -> RateResolution:
@@ -149,6 +162,9 @@ class RateResolver:
             if self._write_through:
                 cache.store(self._db, currency, anchor, fetched, _ELTOQUE_SOURCE)
             return RateResolution(fetched, anchor, _ELTOQUE_SOURCE)
+
+        if not self._stale_fallback:
+            return NO_RATE
 
         # Paso 3: última tasa cacheada, explícitamente fuera de ventana
         # (nunca se inventa una ventana de validez, spec.md §12.6).
