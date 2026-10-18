@@ -259,6 +259,18 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="analisis-fase",
+        title="Análisis de fase — salida de la Fase 0 (2026-10-18)",
+        summary=(
+            "Cada criterio de salida de la Fase 0 y los contenidos de la Fase 1 "
+            "medidos contra la base: filas validadas, H0, métrica de "
+            "automatización y visitas. Propone la definición de «validado», "
+            "qué hacer con la corrida de H0 y el criterio de transición."
+        ),
+        relative_path="docs/analisis-fase.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="plan-marca",
         title="Leira Studio — plan de marca y compendio de contactos",
         summary=(
