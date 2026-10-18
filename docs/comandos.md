@@ -51,6 +51,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.extraction.llm_backtest`](#backtest-del-asistente) | Backtest del asistente contra lo curado | `--execute` escribe archivos | `--execute` sí |
 | [`scripts/jev_eval.py`](#prueba-de-jev) | Medir la calibración de Jev contra lo ya decidido (A6) | en seco no; `--execute` escribe en `data/jev_eval/` | `--execute` sí, tope 0,20 USD |
 | [`scripts/jev_envase_eval.py`](#jev-unidad-y-cantidad) | Medir si Jev acierta unidad y cantidad de una fila curada | en seco no; `--execute` escribe en `data/jev_envase_eval/` | `--execute` sí, tope 0,50 USD (~0,02 real) |
+| [`scripts/jev_arbitro_eval.py`](#jev-como-arbitro) | Medir si Jev podría arbitrar cuando el modelo descarta y las reglas ven un piloto | no | no |
 | [`pytest`, `ruff`, `mypy`, `alembic revision`](#desarrollo-local) | Suite, estilo, tipos, migración nueva | no (revision crea un archivo) | no |
 
 > **Atención.** Gastan plata o reescriben datos: `prefill --execute`, `llm_backtest --execute`,
@@ -1196,6 +1197,17 @@ el `.env` para `--execute`.
 
 ```
 .venv/bin/python scripts/jev_envase_eval.py --execute
+```
+
+### Jev como árbitro
+
+Mide, solo sobre los textos donde el modelo descarta y las reglas ven un producto piloto, qué haría
+el triage de Jev (ya guardado) contra lo que decidió el operador, y cuántos pendientes de hoy
+caerían bajo cada umbral. No llama a Jev, no gasta y no escribe nada. Sin decisiones humanas en ese
+desacuerdo imprime «sin muestra»: resolvé esos pendientes en la cola y volvé a correrlo.
+
+```
+.venv/bin/python scripts/jev_arbitro_eval.py --gold data/llm-backtest-results-v7.jsonl
 ```
 
 ---
