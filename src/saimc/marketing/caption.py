@@ -20,7 +20,10 @@ HASHTAGS_MAX = 30
 HASHTAGS: tuple[str, ...] = ("#guani", "#preciosencuba", "#cuba", "#mercadocubano")
 
 _FUENTE = "Fuente: canales de WhatsApp de emprendedores cubanos. Muestra en formación."
-_GENERICO = "Guani: precios reales del mercado cubano, con los anuncios detrás de cada cifra."
+_GENERICO = (
+    "Parece un relajo, pero tiene su orden. Lo que se anuncia en Cuba, provincia por provincia, "
+    "con los anuncios detrás de cada cifra. Guani enseña el precio. Tú decides qué hacer con él."
+)
 
 
 def _anuncios(n: int) -> str:
