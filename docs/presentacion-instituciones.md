@@ -17,18 +17,36 @@ Escrito el 2026-10-18.
 
 ## Antes de enviarla
 
-- [ ] **La puerta del sitio.** Con `SAIMC_SITE_GATE_ENABLED` encendida, quien
-      abra el enlace cae en `/acceso` y no ve nada, y la slide 15 entera vive
-      de esos enlaces. Apagarla antes del envío o darle acceso a cada
-      institución; sin eso, la presentación no se manda.
-- [ ] **Las cifras del día.** Las de las slides 7, 9 y 11 son del 2026-10-18.
-      Se actualizan con lo que muestra el sitio el día del envío; nunca se
-      dicen de memoria.
+**Bloqueante: no se manda antes de la Fase 1.** La presentación invita a ver el
+sitio sin contraseña, y la puerta solo se apaga después del cierre de la
+Fase 0 (`docs/decisions.md`, «2026-10-18 — Criterio de cierre de la Fase 0 y
+de inicio de la Fase 1»). Antes de eso, abrirlo publicaría precios convertidos
+con una tasa equivocada (las 266 filas en USD con `elTOQUE (cache)`).
+
+- [ ] **T1 aplicado** y `revalidate --execute` corrido después.
+- [ ] **La puerta apagada** (`SAIMC_SITE_GATE_ENABLED=false`). Dar acceso por
+      contraseña a una institución sirve solo para un adelanto, y entonces
+      «gratis, sin registrarse» no es cierto.
+- [ ] **Las cifras, otra vez desde la base.** Las de las slides 7, 9 y 11 son
+      del 2026-10-18 y anteriores a T1: la mediana del pollo y los 604
+      precios pueden moverse. Nunca se dicen de memoria.
+- [ ] **La slide 9 dice cuántos de esos anuncios revisó una persona.** El
+      2026-10-12 la celda del pollo no tenía ninguno revisado a mano
+      (`docs/decisions.md`, entradas del video del 2026-10-09/10): si sigue
+      así, cambiar de ejemplo o decirlo.
+- [ ] **Los destinatarios, por nivel de exposición** (`docs/plan-marca-leira-studio.md`,
+      «Orden de envío»): primero los de exposición baja, esperar una o dos
+      semanas, después los de media. Los de alta, y cualquier organismo, solo
+      después de la consulta con el abogado. Los medios de «Fuera de la lista»
+      no reciben nada.
+- [ ] **Qué se responde si piden un nombre o una llamada**
+      (`docs/plan-marca-leira-studio.md`, «Riesgos»).
 - [ ] **El correo de la marca.** Se envía desde el correo de Leira Studio, no
       desde el personal, y el remitente visible dice «Leira Studio». Reemplazar
       `[correo de la marca]` en la slide 16.
-- [ ] **El enlace.** Confirmar que `guani.duckdns.org` es el dominio público
-      vigente.
+- [ ] **Los enlaces.** Abrir los tres de la slide 15 por `https://` desde fuera
+      de la red propia (lo que está delante de uvicorn sigue sin constar en el
+      repo, `docs/plan-bloque-mvp.md`, T10).
 - [ ] **Lo que hizo Gamma.** Que no haya reescrito el texto ni cambiado una
       cifra, y que el bloque de instrucciones no haya quedado como tarjeta.
 - [ ] **El peso del PDF.** Menos de 5 MB, para que llegue con una conexión
@@ -41,9 +59,20 @@ Escrito el 2026-10-18.
   «mercado negro». «Relajo» no, con una institución va la versión neutra.
 - **El orden es del mercado, nunca de Guani:** no se dice «poner orden»,
   «ordenar el mercado» ni «ordenamiento».
-- **No se dice:** «fiable», «en tiempo real», un porcentaje de precisión (H0
-  todavía no está medido), «lo que se paga» (un anuncio dice lo que se pide),
-  comparaciones con precios oficiales, predicciones ni ofertas para empresas.
+- **No se dice:** «fiable», «en tiempo real», «lo que se paga» (un anuncio dice
+  lo que se pide), «datos abiertos» (el CSV trae 30 días y el uso comercial
+  pide acuerdo), comparaciones con precios oficiales, predicciones ni ofertas
+  para empresas.
+- **Precisión:** H0 ya está medida (38,8 %, n = 220, no oficial; `docs/analisis-fase.md`
+  §3.2), pero no gobierna nada desde el 2026-08-12 y no se publica. A un
+  tercero se le da el error auditado, nunca uno estimado
+  (`docs/plan-mvp-inversores.md`, «Qué quiere decir listo para inversores»).
+  `docs/narrativa-guani.md` todavía dice «no hay número»: está desactualizada
+  en eso.
+- **Lo que no está construido** va como horizonte sin fecha, no como plan
+  (`docs/plan-marca-leira-studio.md`, paso 3). Ni Instagram ni el resumen
+  para administradores de grupos se nombran: el perfil no existe y el resumen
+  no tiene tarea.
 - **Revisión:** no se dice «una persona revisa cada precio». Lo difícil lo
   decide una persona; lo claro lo acepta el sistema y una persona lo audita
   después (`/metodologia`).
@@ -103,9 +132,9 @@ Guani, por Leira Studio · guani.duckdns.org
 
 ---
 
-# ¿Cuánto cuesta hoy una libra de pollo en Santiago de Cuba?
+# ¿Cuánto se pide hoy por una libra de pollo en Santiago de Cuba?
 
-Hasta ahora, nadie podía responderlo con una cifra que diga de dónde sale.
+No había una referencia pública que mostrara los anuncios detrás de cada cifra.
 
 - Quien compra pregunta en varios grupos antes de saber si un precio es lo normal.
 - Quien vende pone precio a ojo, mirando a la competencia uno por uno.
@@ -137,8 +166,8 @@ Guani lo responde con los anuncios a la vista. La respuesta está más adelante.
 1. **Llega.** Los mensajes de 48 canales y grupos de venta entran solos, sin que nadie tenga que escribirle a Guani. Se suman las capturas que se guardan al usar las redes.
 2. **Se guarda tal cual.** El mensaje original se guarda una vez y no se modifica ni se borra. Toda cifra conserva el enlace a él.
 3. **Se lee.** Cada pocas horas, un asistente lee lo nuevo, texto e imágenes, y saca producto, precio, cantidad, moneda y provincia.
-4. **Se aparta lo que no es un anuncio.** Saludos, avisos y ofertas sin precio quedan fuera y no generan ninguna cifra.
-5. **Se acepta lo claro.** Un anuncio sin dudas entra solo, y una persona audita después lo que el sistema aceptó.
+4. **Se aparta lo que no sirve.** Saludos, avisos y anuncios de productos que todavía no se miden quedan fuera y no generan ninguna cifra.
+5. **Se acepta lo claro.** Un texto entra solo cuando dos lecturas independientes coinciden y el precio no se sale de lo conocido. Una persona audita después lo que el sistema aceptó, y si el error pasa su meta, la entrada automática se frena sola. Las fotos nunca entran solas.
 6. **Una persona decide lo dudoso.** En la cola de revisión, anuncio por anuncio, y corrige antes de guardar.
 7. **Se publica con su cuenta.** Rango, mediana y cuántos anuncios hay detrás.
 
@@ -147,7 +176,7 @@ Guani lo responde con los anuncios a la vista. La respuesta está más adelante.
 # La mayor parte de lo que llega es ruido, y por eso el filtro importa
 
 - **6.899 mensajes** recibidos.
-- **8 de cada 10** no eran un anuncio de precio y se apartaron.
+- **8 de cada 10** no eran un anuncio de los productos que se miden y se apartaron.
 - **722 anuncios** aceptados, que dan **992 precios** publicados.
 - **540** esperan revisión.
 - 2 de cada 3 mensajes son texto; 1 de cada 3, imagen.
@@ -159,16 +188,16 @@ Cifras al 18 de octubre de 2026.
 # La vara: las mismas reglas para todos los precios
 
 - **La misma unidad.** El litro y los 900 ml, la libra y el kilo: todo se lleva a la misma unidad antes de sacar la cuenta.
-- **La misma moneda.** Lo anunciado en USD, EUR o MLC se pasa a CUP con la tasa informal de elTOQUE. Lo que no se puede convertir no se muestra.
+- **La misma moneda.** Cada precio en USD, EUR o MLC se pasa a CUP con la tasa informal de elTOQUE del día del anuncio.
 - **El precio del medio.** Se resume con la mediana, que casi no se mueve por un anuncio fuera de lo común. La regla que señala esos precios está publicada.
-- **Poco y cierto.** Con pocos anuncios, la cifra se rotula «muestra en formación». Una provincia se publica cuando acumula anuncios suficientes y sostenidos, no por calendario.
+- **Poco y cierto.** Son precios que se piden, no que se pagan, y es una muestra, no un censo. Con pocos anuncios, la cifra se rotula «muestra en formación». Una provincia se publica cuando acumula anuncios suficientes y sostenidos, no por calendario.
 
 ---
 
 # La respuesta: así se ve el orden del pollo en Santiago de Cuba
 
 - **34 anuncios** en los últimos 30 días.
-- **De 705 a 850 CUP la libra.**
+- **Se pide de 705 a 850 CUP la libra.**
 - **Mediana: 810 CUP la libra.**
 - Ese rango no lo puso Guani: es el que el mercado ya tenía.
 
@@ -180,8 +209,8 @@ Cifras al 18 de octubre de 2026.
 
 - Cada cifra dice cuántos anuncios tiene detrás, y los de texto se pueden abrir y leer.
 - Dice cuántos revisó una persona y cuántos aceptó el sistema.
-- La metodología es pública: guani.duckdns.org/metodologia
-- Los datos se descargan en CSV, un anuncio por fila.
+- El error de lo que el sistema acepta o aparta solo se audita y se publica con su muestra: guani.duckdns.org/metodologia
+- Los últimos 30 días se descargan en CSV, un anuncio por fila. Uso personal, periodístico o académico, citando la fuente; el uso comercial, con acuerdo.
 - El anuncio original no se modifica nunca.
 
 ---
@@ -190,7 +219,7 @@ Cifras al 18 de octubre de 2026.
 
 - **604 precios** en los últimos 30 días; **992** desde el inicio.
 - **5 productos:** arroz, azúcar blanca, pollo, aceite y picadillo.
-- **2 provincias:** La Habana y Santiago de Cuba.
+- **2 provincias:** La Habana y Santiago de Cuba. La cobertura de Santiago todavía es menor que la de La Habana.
 
 Cifras al 18 de octubre de 2026.
 
@@ -212,15 +241,15 @@ Cifras al 18 de octubre de 2026.
 - **Quien revende o abastece un negocio:** ¿qué se mueve y dónde?
 - **Quien investiga o informa:** ¿de dónde sale este número?
 
-Llega por un sitio gratis, por tarjetas para redes con el precio del día y cómo se movió en la semana, y por datos abiertos en CSV.
+Llega por un sitio gratis, por tarjetas para compartir en redes y WhatsApp con el precio del día y cómo se movió en la semana, y por los datos en CSV.
 
 ---
 
 # Lo que viene
 
-- **Medir qué tan bien lee la máquina sin ayuda**, contra 300 anuncios revisados a mano. Esa cifra dice cuánto puede crecer Guani sin crecer el trabajo manual.
-- **Más productos, más provincias** e historial semana a semana.
-- **Devolverle algo a los grupos:** un resumen semanal de cómo se movieron sus precios, para quien administra un grupo de ventas.
+- **Que el sistema resuelva más solo, con el error medido.** Cuánto acepta y aparta sin ayuda, y con qué error, se audita cada semana y se publica. Esa cifra dice cuánto puede crecer Guani sin crecer el trabajo manual.
+- **Sumar productos y provincias** a medida que haya anuncios suficientes y sostenidos, sin fecha.
+- **Historial semana a semana**, para seguir cómo se mueve cada precio.
 
 ---
 
@@ -238,11 +267,11 @@ Gratis, sin registrarse.
 
 # Guani enseña el precio. Tú decides qué hacer con él.
 
-Formas de colaborar: difundirlo, sugerir grupos y canales de anuncios, o una alianza para investigación.
+Formas de colaborar: difundirlo, sugerir grupos y canales de anuncios, o conversar sobre un uso en investigación.
 
 [correo de la marca] · guani.duckdns.org
 
-Guani, por Leira Studio
+Guani, por Leira Studio. Leira Studio es un estudio de desarrollo de software; Guani es su sistema de precios.
 ```
 
 ## Imágenes por slide (opcional)
@@ -266,7 +295,8 @@ lo que hace cada una.
 >
 > Estimados [nombre de la institución]:
 >
-> Les escribimos desde Leira Studio para presentarles Guani, un sitio gratuito
+> Les escribimos desde Leira Studio, un estudio de desarrollo de software,
+> para presentarles Guani, un sitio gratuito
 > que convierte los anuncios de emprendedores, TCP y negocios privados en una
 > referencia de precios por producto y por provincia. Cada cifra dice cuántos
 > anuncios tiene detrás, y la metodología es pública.
