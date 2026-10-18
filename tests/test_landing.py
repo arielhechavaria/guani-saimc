@@ -354,7 +354,7 @@ class TestLaLandingEnLaRaiz:
         respuesta = client.get("/")
 
         assert respuesta.status_code == 200
-        assert "Precios reales del mercado informal cubano." in respuesta.text
+        assert "Parece un relajo, pero tiene su orden." in respuesta.text
         assert 'href="/precios"' in respuesta.text
 
     def test_no_es_el_tablero(self, client: TestClient, datos: None) -> None:
@@ -383,7 +383,7 @@ class TestLaLandingEnLaRaiz:
         respuesta = client.get("/", follow_redirects=False)
 
         assert respuesta.status_code == 200
-        assert "Precios reales del mercado informal cubano." in respuesta.text
+        assert "Parece un relajo, pero tiene su orden." in respuesta.text
 
     def test_las_burbujas_muestran_el_rango_real_con_su_muestra(
         self, client: TestClient, datos: None
@@ -488,7 +488,7 @@ class TestPorQueFiarte:
     def test_trae_el_titulo_y_las_seis_tarjetas(self, client: TestClient, datos: None) -> None:
         seccion = self._seccion(client)
 
-        assert "Por qué puedes fiarte de estas cifras" in _visible(seccion)
+        assert "Cada precio con su cuenta" in _visible(seccion)
         assert re.findall(r'<h3 class="lp-why-title">([^<]+)</h3>', seccion) == list(self.TITULOS)
         assert seccion.count('class="lp-why-card') == 6
         # Un icono y una oración por tarjeta.
@@ -627,7 +627,7 @@ class TestLaLandingSinDatos:
         respuesta = client.get("/")
 
         assert respuesta.status_code == 200
-        assert "Precios reales del mercado informal cubano." in respuesta.text
+        assert "Parece un relajo, pero tiene su orden." in respuesta.text
         for marcador in MARCADORES:
             assert marcador not in _visible(respuesta.text)
 
@@ -698,7 +698,7 @@ class TestElTableroEnPrecios:
 
         assert respuesta.status_code == 200
         assert "Qué cuesta hoy" in respuesta.text
-        assert "Precios reales del mercado informal cubano." not in respuesta.text
+        assert "Parece un relajo, pero tiene su orden." not in respuesta.text
 
     def test_los_parametros_de_siempre_siguen_andando(self, client: TestClient, datos: None) -> None:
         mapa = client.get("/precios?vista=mapa")
@@ -765,7 +765,7 @@ class TestLosEnlacesYaCompartidos:
         respuesta = client.get("/?fbclid=abc123", follow_redirects=False)
 
         assert respuesta.status_code == 200
-        assert "Precios reales del mercado informal cubano." in respuesta.text
+        assert "Parece un relajo, pero tiene su orden." in respuesta.text
 
 
 # ── «Así trabajo»: pase de capturas y tarjeta de video (2026-10-06) ──────────
@@ -1196,10 +1196,10 @@ class TestLaNarrativaEsCierta:
     def test_la_promesa_dice_que_es_una_herramienta_asistida(self, client: TestClient) -> None:
         texto = _visible(client.get("/").text)
 
-        assert "Precios reales del mercado informal cubano." in texto
+        assert "Parece un relajo, pero tiene su orden." in texto
         assert (
-            "Guani lee los anuncios donde ya se vende, los pasa a una misma unidad y te los "
-            "enseña con su cuenta. Una máquina lee; una persona supervisa."
+            "Guani lee lo que se anuncia en Cuba y te enseña cuánto se pide, provincia por "
+            "provincia. Cada precio con sus anuncios. Tú decides qué hacer con él."
         ) in texto
         assert "Hola, soy Guani" not in texto
 
@@ -1247,6 +1247,56 @@ class TestLaNarrativaEsCierta:
             "Los anuncios los revisa una persona o los acepta el sistema con auditoría, "
             "pero aun así puede haber errores"
         ) in terminos
+
+
+# ── La voz de `docs/narrativa-guani.md` (idea madre en la portada, 2026-10-18) ─
+
+LO_QUE_LA_NARRATIVA_EVITA = (
+    # En Cuba suena a control y decomiso: el orden es del mercado, no de Guani.
+    "poner orden",
+    "ordenar el mercado",
+    "ordenamiento",
+    # Promesas que no se demuestran o que dejaron de ser ciertas.
+    "verificado a mano",
+    "fiable",
+    "en tiempo real",
+    "mercado negro",
+)
+
+
+class TestLaLandingHablaConLaNarrativa:
+    def test_las_preguntas_usan_el_vocabulario_de_la_narrativa(self, client: TestClient) -> None:
+        texto = " ".join(_visible(client.get("/").text).split())
+
+        assert (
+            "Un sitio gratis y de acceso libre que enseña cuánto se pide en el mercado cubano, "
+            "producto por producto y provincia por provincia."
+        ) in texto
+        assert (
+            "De lo que anuncian emprendedores, TCP y negocios privados en grupos y canales de WhatsApp. "
+            "Los precios los ponen ellos; Guani solo los junta y dice cuántos anuncios tiene "
+            "detrás cada cifra."
+        ) in texto
+        assert "Teléfonos, nombres ni datos de contacto de quien vende." in texto
+
+    def test_la_vista_previa_del_enlace_dice_la_idea_madre(self, client: TestClient) -> None:
+        html = client.get("/").text
+
+        assert (
+            '<meta property="og:description" content="Parece un relajo, pero tiene su orden. '
+            "Guani enseña cuánto se pide en Cuba, producto por producto y provincia por "
+            'provincia, con los anuncios detrás." />'
+        ) in html
+
+    def test_no_dice_lo_que_la_narrativa_manda_evitar(self, client: TestClient) -> None:
+        html = client.get("/").text
+        texto = " ".join(_visible(html).split()).lower()
+        og = re.search(r'<meta property="og:description" content="([^"]*)"', html)
+        assert og is not None
+
+        for frase in LO_QUE_LA_NARRATIVA_EVITA:
+            assert frase not in texto, frase
+            assert frase not in og.group(1).lower(), frase
 
 
 class TestElVideoPromocionalEstaEncendido:
@@ -1339,7 +1389,7 @@ class TestParaQuienEs:
     def test_son_tres_enlaces_con_su_titulo_y_su_pregunta(self, client: TestClient) -> None:
         seccion = self._seccion(client)
 
-        assert "Para quién es" in _visible(seccion)
+        assert "Cada quien lo usa a su manera" in _visible(seccion)
         sin_iconos = re.sub(r'<span class="m3-icon"[^>]*>[^<]*</span>', "", seccion)
         assert _items(sin_iconos, "lp-who") == [f"{titulo} {texto}" for _, titulo, texto in PARA_QUIEN]
         enlaces = re.findall(r'<a class="lp-who-link[^"]*" href="([^"]+)"', seccion)

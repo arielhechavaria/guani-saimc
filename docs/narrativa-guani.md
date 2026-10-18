@@ -403,11 +403,11 @@ encendida, no se pone el enlace en la biografía.
 
 ### Portada del sitio (título y bajada)
 
-La actual es: «Precios reales del mercado informal cubano.» + «Guani lee los
-anuncios donde ya se vende, los pasa a una misma unidad y te los enseña con su
-cuenta. Una máquina lee; una persona supervisa.» Es buena y ya tiene el enfoque
-de cuentas claras. Alternativas, si cambia el enfoque principal (cambiar la
-portada es un slice propio, con prototipo):
+**Decidido (2026-10-18):** la portada usa la idea madre (primera fila de la
+tabla). La anterior era «Precios reales del mercado informal cubano.» + «Guani
+lee los anuncios donde ya se vende, los pasa a una misma unidad y te los enseña
+con su cuenta. Una máquina lee; una persona supervisa.» Las otras filas quedan
+como alternativas:
 
 | Enfoque | Título | Bajada |
 | --- | --- | --- |
@@ -475,6 +475,6 @@ semana, como dice la guía de crecimiento.
 - [x] Decidir a quién le habla Guani: a todo el pueblo cubano, sin decidir el uso
 - [ ] Elegir el eslogan principal: *Parece un relajo, pero tiene su orden* o *Medimos el mercado con la misma vara*
 - [ ] Buscar en el sitio un producto con muchos anuncios y rango estrecho para la tarjeta del orden
-- [ ] Decidir si la portada pasa a hablar del orden que ya existe (slice propio, con prototipo)
+- [x] Decidir si la portada pasa a hablar del orden que ya existe: sí, con «Parece un relajo, pero tiene su orden.» (2026-10-18)
 - [ ] Probar los dos eslóganes en el pie de las tarjetas, una semana cada uno
 - [ ] Anotar los compartidos de cada semana en la planilla semanal
