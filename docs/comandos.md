@@ -28,6 +28,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
 | [`saimc.marketing.daily`](#tarjetas-de-marketing-del-dia) | Armar los PNG de marketing del día en `var/marketing/AAAA-MM-DD/` (lo hace solo el temporizador a las 06:00 de La Habana); no publica | en seco no; `--execute` escribe los PNG y borra carpetas de más de 30 días | no |
 | [`saimc.instagram.sync`](#seguimiento-de-instagram) | Leer la cuenta de Instagram de Guani y guardar sus métricas (lo hace solo el temporizador cada 3 h) | en seco no; `--execute` escribe las tablas `instagram_*` y renueva el token si toca | no |
+| [Visitantes únicos del sitio](#visitantes-únicos-del-sitio) | Cuántas personas distintas abrieron el sitio público un día | no | no |
 | [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
@@ -409,6 +410,29 @@ psql "$(grep -E '^SAIMC_DATABASE_URL=' .env | cut -d= -f2- | sed 's/postgresql+p
 - Sin token en la base ni en el `.env`, avisa y sale con código 0: es una capacidad sin usar.
 - Una publicación suelta sin métricas (Meta puede tardar hasta 48 h) sale como «aviso» y no frena
   el resto. Los carruseles no tienen métricas en la API; las stories, solo durante sus 24 h.
+
+### Visitantes únicos del sitio
+
+Cuenta los visitantes distintos de un día en las vistas públicas (`/`, `/precios`, `/producto/*`,
+`/anuncio/*`), a partir de la línea `public.pageview` que deja `src/saimc/web/analytics.py`. Es lo
+más cercano a los «usuarios activos diarios» de `spec.md` §9. Se usa en la planilla semanal de
+`docs/guia-crecimiento.md`. Sin verificar contra el log del VPS (la tubería se probó con líneas de
+ejemplo).
+
+```
+journalctl -u saimc.service --since today | grep 'public.pageview' | grep -oP 'visitor=\K\S+' | sort -u | wc -l
+```
+
+```
+journalctl -u saimc.service --since 2026-10-20 --until 2026-10-21 | grep 'public.pageview' | grep -oP 'visitor=\K\S+' | sort -u | wc -l
+```
+
+- **Cambia algo**: no. **Gasta**: no.
+- **Solo días sueltos.** El identificador es un hash de IP + día: cambia cada día a propósito. Sumar
+  días cuenta dos veces a quien volvió, y no hay forma de saber quién vuelve.
+- **Es un piso.** Varias personas detrás de una misma IP cuentan como una.
+- **No dice de dónde vino** la visita (no se guarda el origen ni hay UTM).
+- Con la puerta del sitio encendida solo cuenta a quien ya pasó la contraseña.
 
 ### Carril 0 sobre lo pendiente
 
