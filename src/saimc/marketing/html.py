@@ -28,9 +28,16 @@ def _environment() -> jinja2.Environment:
     return jinja2.Environment(loader=jinja2.FileSystemLoader(_TEMPLATES), autoescape=True)
 
 
-def card_html(kind: CardType, context: dict[str, Any], options: CardOptions | None = None) -> str:
+def card_html(
+    kind: CardType,
+    context: dict[str, Any],
+    options: CardOptions | None = None,
+    slide_counter: str | None = None,
+) -> str:
     """La tarjeta `kind` pintada con `context`. Las opciones solo deciden qué
-    bloques y textos se ven; ninguna llega a una cifra."""
+    bloques y textos se ven; ninguna llega a una cifra. `slide_counter`
+    («2 / 5») es el lugar de la diapositiva en su carrusel: sin él, las
+    plantillas no muestran contador."""
     opciones = options or parse_options(kind, {})
     plantilla = _environment().get_template(kind.template)
     # Las fuentes viajan dentro del HTML: Playwright rasteriza sin acceso a /static.
@@ -40,5 +47,6 @@ def card_html(kind: CardType, context: dict[str, Any], options: CardOptions | No
         show=opciones.show,
         subtitle=opciones.subtitle,
         cta=opciones.cta,
+        slide_counter=slide_counter,
         **context,
     )

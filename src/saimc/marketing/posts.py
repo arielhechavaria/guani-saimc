@@ -7,6 +7,9 @@
         └──── descartar ◀────┘   (descartar una aprobada borra su imagen)
 
 Toda otra transición lanza `InvalidTransition`. Solo un borrador se edita.
+Un carrusel (F3) es la misma publicación con varias diapositivas: se agregan,
+se quitan y se reordenan con botones mientras es borrador, hasta
+`MAX_SLIDES` y todas del mismo tamaño.
 Aprobar congela el contexto en `snapshot` y rasteriza el JPEG **desde el
 snapshot**, nunca desde la base viva: si después se corrige un precio, lo
 aprobado no cambia (regla 2 del plan).
@@ -20,7 +23,7 @@ from __future__ import annotations
 
 import shutil
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -61,6 +64,9 @@ POSTABLE: tuple[CardType, ...] = tuple(t for t in CARD_TYPES if t.slug not in FI
 
 _URL_MAX = 2000
 
+#: Lo que admite Instagram en un carrusel.
+MAX_SLIDES = 10
+
 Renderer = Callable[..., bytes]
 
 
@@ -78,6 +84,10 @@ class InvalidUrl(ValueError):
 
 class InvalidParams(ValueError):
     """Producto o provincia fuera del foco."""
+
+
+class InvalidSlide(ValueError):
+    """La diapositiva pedida no entra: tope, tamaño, plantilla o posición."""
 
 
 _STATUS_LABELS = {
@@ -146,16 +156,29 @@ def slide_options(slide: MarketingPostSlide) -> CardOptions:
     return options_from_dict(_kind(slide), fuente)
 
 
+def slide_counter(slide: MarketingPostSlide) -> str | None:
+    """«2 / 5» si la diapositiva es parte de un carrusel; `None` si va sola.
+    No se congela en el snapshot: aprobada, ni la posición ni el total cambian."""
+    total = len(slide.post.slides)
+    return f"{slide.position} / {total}" if total > 1 else None
+
+
 def slide_html(db: Session, slide: MarketingPostSlide) -> str | None:
     """La diapositiva pintada, o `None` si un borrador no tiene datos."""
     contexto = slide_context(db, slide)
     if contexto is None:
         return None
-    return card_html(_kind(slide), contexto, slide_options(slide))
+    return card_html(_kind(slide), contexto, slide_options(slide), slide_counter(slide))
+
+
+def caption_slide(post: MarketingPost) -> MarketingPostSlide:
+    """De qué diapositiva sale el texto automático: la primera con datos. En
+    un carrusel la portada no dice nada; la de «Dato del día», sí."""
+    return next((s for s in post.slides if _kind(s).needs_product), post.slides[0])
 
 
 def _generated_caption(db: Session, post: MarketingPost) -> str:
-    slide = post.slides[0]
+    slide = caption_slide(post)
     return build_caption(_kind(slide), slide_context(db, slide) or {})
 
 
@@ -210,6 +233,153 @@ def create_draft(
     return post
 
 
+def _postable_kind(card_slug: str) -> CardType:
+    kind = BY_SLUG.get(card_slug)
+    if kind is None or kind.slug in FIXED_PIECES:
+        raise InvalidSlide(f"«{card_slug}» no es una tarjeta que se pueda publicar.")
+    return kind
+
+
+def create_carousel_draft(
+    db: Session,
+    *,
+    card_slugs: Sequence[str],
+    planned_for: date,
+    product: str | None,
+    province: str | None,
+    data_through: date,
+    origin: PostOrigin = PostOrigin.OPERATOR,
+    batch_slot: str | None = None,
+    now: datetime | None = None,
+) -> MarketingPost:
+    """Un borrador de carrusel con `card_slugs` en ese orden. Producto y
+    provincia van a las diapositivas que los usan; las de branding no llevan.
+    Como `create_draft`, no hace `flush`."""
+    if not 1 <= len(card_slugs) <= MAX_SLIDES:
+        raise InvalidSlide(f"Un carrusel lleva de 1 a {MAX_SLIDES} diapositivas.")
+    kinds = [_postable_kind(slug) for slug in card_slugs]
+    if len({(k.width, k.height) for k in kinds}) > 1:
+        raise InvalidSlide("Todas las diapositivas de un carrusel tienen el mismo tamaño.")
+    post = MarketingPost(
+        format=PostFormat.CAROUSEL,
+        status=PostStatus.DRAFT,
+        planned_for=planned_for,
+        origin=origin,
+        batch_slot=batch_slot,
+        created_at=now or utc_now(),
+    )
+    for posicion, kind in enumerate(kinds, start=1):
+        post.slides.append(
+            MarketingPostSlide(
+                position=posicion,
+                card_slug=kind.slug,
+                params=_params(kind, product, province, data_through),
+                options=options_to_dict(parse_options(kind, {})),
+            )
+        )
+    db.add(post)
+    return post
+
+
+# --- Diapositivas de un carrusel ---------------------------------------------
+
+
+def find_slide(post: MarketingPost, position: int) -> MarketingPostSlide:
+    slide = next((s for s in post.slides if s.position == position), None)
+    if slide is None:
+        raise InvalidSlide(f"La publicación no tiene diapositiva {position}.")
+    return slide
+
+
+def _renumber(db: Session, post: MarketingPost, orden: list[MarketingPostSlide]) -> None:
+    """Deja `orden` en las posiciones 1..n. `UNIQUE (post_id, position)` no es
+    diferible: primero se corren todas fuera del rango y después se asientan,
+    con un `flush` entre medio, para que ningún UPDATE choque con otra fila."""
+    for i, slide in enumerate(orden, start=1):
+        slide.position = 1000 + i
+    db.flush()
+    for i, slide in enumerate(orden, start=1):
+        slide.position = i
+    db.flush()
+    post.slides.sort(key=lambda s: s.position)
+
+
+def _sync_format(post: MarketingPost) -> None:
+    if post.format != PostFormat.STORY:
+        post.format = PostFormat.CAROUSEL if len(post.slides) > 1 else PostFormat.SINGLE
+
+
+def _inherited(post: MarketingPost, campo: str) -> str | None:
+    valor: str | None = next((s.params[campo] for s in post.slides if s.params.get(campo)), None)
+    return valor
+
+
+def add_slide(db: Session, post: MarketingPost, card_slug: str) -> MarketingPostSlide:
+    """Agrega al final una diapositiva de la plantilla `card_slug`. Hereda
+    producto, provincia y fecha de corte de las que ya hay: se ajustan en el
+    editor como cualquier otra."""
+    _require(post, {PostStatus.DRAFT}, "cambiar de diapositivas")
+    if post.format == PostFormat.STORY:
+        raise InvalidSlide("Una story no se convierte en carrusel.")
+    if len(post.slides) >= MAX_SLIDES:
+        raise InvalidSlide(f"Un carrusel lleva hasta {MAX_SLIDES} diapositivas.")
+    kind = _postable_kind(card_slug)
+    primera = _kind(post.slides[0])
+    if (kind.width, kind.height) != (primera.width, primera.height):
+        raise InvalidSlide(
+            f"«{kind.label}» es de {kind.width}×{kind.height}: todas las diapositivas tienen "
+            f"el tamaño de la primera ({primera.width}×{primera.height})."
+        )
+
+    producto = _inherited(post, "product")
+    if producto is None and kind.needs_product:
+        productos = pilot_product_names(db)
+        producto = productos[0] if productos else None
+    provincia = _inherited(post, "province")
+    if provincia is None and kind.needs_province:
+        provincia = PHASE0_PROVINCES[0] if PHASE0_PROVINCES else None
+
+    slide = MarketingPostSlide(
+        position=max(s.position for s in post.slides) + 1,
+        card_slug=kind.slug,
+        params=_params(kind, producto, provincia, _data_through(post.slides[0])),
+        options=options_to_dict(parse_options(kind, {})),
+    )
+    post.slides.append(slide)
+    _sync_format(post)
+    db.flush()
+    return slide
+
+
+def move_slide(db: Session, post: MarketingPost, position: int, delta: int) -> int:
+    """Sube (`delta=-1`) o baja (`+1`) una diapositiva un lugar. Devuelve su
+    posición nueva; en el borde se queda donde está."""
+    _require(post, {PostStatus.DRAFT}, "cambiar de diapositivas")
+    slide = find_slide(post, position)
+    orden = list(post.slides)
+    i = orden.index(slide)
+    j = i + (1 if delta > 0 else -1)
+    if not 0 <= j < len(orden):
+        return position
+    orden[i], orden[j] = orden[j], orden[i]
+    _renumber(db, post, orden)
+    return slide.position
+
+
+def remove_slide(db: Session, post: MarketingPost, position: int) -> None:
+    """Quita una diapositiva y corre las de atrás. La última no se quita: una
+    publicación sin diapositivas se descarta."""
+    _require(post, {PostStatus.DRAFT}, "cambiar de diapositivas")
+    slide = find_slide(post, position)
+    if len(post.slides) == 1:
+        raise InvalidSlide("Es la única diapositiva: para sacarla, descartá la publicación.")
+    post.slides.remove(slide)
+    db.delete(slide)
+    db.flush()
+    _renumber(db, post, list(post.slides))
+    _sync_format(post)
+
+
 def _normalize_caption(raw: str | None) -> str | None:
     if raw is None:
         return None
@@ -226,12 +396,14 @@ def save_draft(
     data_through: date,
     options: CardOptions,
     caption: str | None,
+    position: int = 1,
 ) -> None:
-    """Guarda lo que se elige en el editor. Si el texto enviado es el que se
-    habría generado con los parámetros **anteriores**, queda automático: así
-    cambiar de producto no deja pegado el texto del producto viejo."""
+    """Guarda lo que se elige en el editor para la diapositiva `position`. Si
+    el texto enviado es el que se habría generado con los parámetros
+    **anteriores**, queda automático: así cambiar de producto no deja pegado
+    el texto del producto viejo."""
     _require(post, {PostStatus.DRAFT}, "editar")
-    slide = post.slides[0]
+    slide = find_slide(post, position)
     kind = _kind(slide)
     if kind.needs_product and product not in pilot_product_names(db):
         raise InvalidParams(f"«{product}» no está en el foco.")
@@ -282,14 +454,18 @@ def approve(
         # Lo que se rasteriza es el snapshot reconstruido, no `contexto`: si
         # algo no sobrevive a la ida y vuelta, se ve en la imagen aprobada.
         html = card_html(
-            kind, thaw_context(snapshot["context"]), options_from_dict(kind, snapshot["options"])
+            kind,
+            thaw_context(snapshot["context"]),
+            options_from_dict(kind, snapshot["options"]),
+            slide_counter(slide),
         )
         listas.append((slide, snapshot, render(html, width=kind.width, height=kind.height)))
 
-    primera, snapshot_primera, _ = listas[0]
+    origen = caption_slide(post)
+    snapshot_origen = next(snap for slide, snap, _ in listas if slide is origen)
     caption = post.caption
     if caption is None:
-        caption = build_caption(_kind(primera), thaw_context(snapshot_primera["context"]))
+        caption = build_caption(_kind(origen), thaw_context(snapshot_origen["context"]))
 
     carpeta = _post_dir(images_dir, post)
     carpeta.mkdir(parents=True, exist_ok=True)
@@ -337,29 +513,37 @@ def mark_published(post: MarketingPost, url: str, *, now: datetime | None = None
 def duplicate(
     db: Session, post: MarketingPost, *, today: date, now: datetime | None = None
 ) -> MarketingPost:
-    """Un borrador nuevo para `today` con los mismos parámetros y opciones.
-    El texto se copia solo si se había escrito a mano."""
+    """Un borrador nuevo para `today` con las mismas diapositivas, parámetros
+    y opciones. El texto se copia solo si se había escrito a mano."""
     _require(
         post, {PostStatus.APPROVED, PostStatus.PUBLISHED, PostStatus.DISCARDED}, "duplicar"
     )
-    slide = post.slides[0]
-    kind = _kind(slide)
+    origen = caption_slide(post)
     caption = post.caption
-    if caption is not None and slide.snapshot is not None:
-        generado = build_caption(kind, thaw_context(slide.snapshot["context"]))
+    if caption is not None and origen.snapshot is not None:
+        generado = build_caption(_kind(origen), thaw_context(origen.snapshot["context"]))
         if caption == generado:
             caption = None
-    return create_draft(
-        db,
-        card_slug=kind.slug,
+    copia = MarketingPost(
+        format=post.format,
+        status=PostStatus.DRAFT,
         planned_for=today,
-        product=slide.params.get("product"),
-        province=slide.params.get("province"),
-        data_through=_data_through(slide),
-        options=options_from_dict(kind, slide.options),
         caption=caption,
-        now=now,
+        origin=PostOrigin.OPERATOR,
+        created_at=now or utc_now(),
     )
+    for slide in post.slides:
+        kind = _kind(slide)
+        copia.slides.append(
+            MarketingPostSlide(
+                position=slide.position,
+                card_slug=kind.slug,
+                params=dict(slide.params),
+                options=options_to_dict(options_from_dict(kind, slide.options)),
+            )
+        )
+    db.add(copia)
+    return copia
 
 
 # --- Retención ---------------------------------------------------------------

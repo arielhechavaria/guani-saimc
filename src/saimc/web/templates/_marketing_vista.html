@@ -27,13 +27,22 @@
   <button type="button" class="m3-btn m3-btn-tonal" data-mk-copy>
     <span data-mk-label>Copiar texto</span>
   </button>
+  {#- Todas las imágenes en un solo `navigator.share`, en el orden del carrusel. -#}
   <button type="button" class="m3-btn m3-btn-filled" data-mk-share
-          data-mk-url="{{ jpg_url }}" data-mk-name="{{ jpg_name }}">
+          data-mk-files='{{ share_files | tojson }}'>
     <span data-mk-label>Compartir</span>
   </button>
+  {% if share_files | length > 1 %}
+  {#- Por si Instagram recibe una sola del menú del sistema: se bajan todas y el
+      carrusel se arma desde la app. -#}
+  <button type="button" class="m3-btn m3-btn-tonal" data-mk-save-all
+          data-mk-files='{{ share_files | tojson }}'>
+    <span data-mk-label>Guardar todas</span>
+  </button>
+  {% endif %}
 </div>
 <p class="m3-xs m3-muted" data-mk-status role="status" aria-live="polite" style="margin:8px 0 0"></p>
-<p class="m3-xs" style="margin:8px 0 0"><a href="{{ jpg_url }}" download="{{ jpg_name }}">Descargar JPEG</a></p>
+<p class="m3-xs" style="margin:8px 0 0"><a href="{{ jpg_url }}" download="{{ jpg_name }}">Descargar JPEG{% if share_files | length > 1 %} de esta diapositiva{% endif %}</a></p>
 {% elif editable %}
 <p class="m3-xs m3-muted" style="margin:8px 0 0">
   Para compartirla, aprobala: se congelan las cifras y se hace el JPEG.
