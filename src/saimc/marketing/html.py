@@ -47,6 +47,7 @@ def card_html(
         show=opciones.show,
         subtitle=opciones.subtitle,
         cta=opciones.cta,
+        free=opciones.free,
         slide_counter=slide_counter,
         **context,
     )

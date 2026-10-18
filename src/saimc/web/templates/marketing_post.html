@@ -32,6 +32,12 @@
   .mk-slide-btns .m3-btn, .mk-slide-gap{min-width:44px; min-height:44px; padding:0; justify-content:center; display:inline-flex}
   .mk-add{display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin:12px 0 0}
   .mk-add .m3-btn{min-height:44px}
+  .mk-free-row{display:flex; align-items:flex-start; gap:4px; padding:8px 0; border-top:1px solid var(--m3-outline-variant)}
+  .mk-free-row:first-child{border-top:0}
+  .mk-free-field{flex:1; min-width:0}
+  .mk-free-add{display:flex; gap:8px; flex-wrap:wrap}
+  .mk-free-add .m3-btn{min-height:44px}
+  .mk-free .mk-slide-btns .m3-btn, .mk-free .mk-slide-gap{min-width:44px; min-height:44px; padding:0; justify-content:center; display:inline-flex}
 </style>
 {% endblock %}
 
@@ -151,6 +157,49 @@
       </div>
 
       <div id="vista" style="margin-top:24px">{% include "_marketing_vista.html" %}</div>
+
+      {#- Tarjeta «Libre»: los bloques los arma el operador. El orden se cambia con
+          ↑ ↓ (sin arrastrar, regla 5 del plan); cada botón manda `free_op` y el
+          guardado lo aplica (`options._apply_free_op`). Sin cifras: texto narrativo. -#}
+      {% if kind.free %}
+      <section class="mk-free" aria-label="Bloques" style="margin-top:24px">
+        <h3 class="m3-h3" style="margin:0 0 8px">Bloques · {{ options.free | length }} de {{ free_max }}</h3>
+        <div hx-post="/marketing/post/{{ post.id }}" hx-trigger="change, input delay:300ms"
+             hx-target="#vista" hx-include="closest form" hx-swap="innerHTML">
+          {% for b in options.free %}
+          {% set t = free_types[b.type] %}
+          <div class="mk-free-row">
+            <input type="hidden" name="free_type" value="{{ b.type }}">
+            <label class="m3-field m3-field-on-container mk-free-field">
+              <span class="m3-field-label">{{ loop.index }}. {{ t.label }}{% if t.limit %} (hasta {{ t.limit }} caracteres){% endif %}</span>
+              {% if b.type == "texto" %}
+              <textarea class="m3-textarea" name="free_text" rows="3" maxlength="{{ t.limit }}">{{ b.text }}</textarea>
+              {% elif t.limit %}
+              <input class="m3-input" type="text" name="free_text" maxlength="{{ t.limit }}" value="{{ b.text }}">
+              {% else %}
+              <input type="hidden" name="free_text" value="">
+              <span class="m3-xs m3-muted">Una línea que separa.</span>
+              {% endif %}
+            </label>
+            <div class="mk-slide-btns">
+              {% if not loop.first %}<button type="submit" name="free_op" value="up:{{ loop.index0 }}" class="m3-btn m3-btn-text" aria-label="Subir el bloque {{ loop.index }}">↑</button>{% else %}<span class="mk-slide-gap"></span>{% endif %}
+              {% if not loop.last %}<button type="submit" name="free_op" value="down:{{ loop.index0 }}" class="m3-btn m3-btn-text" aria-label="Bajar el bloque {{ loop.index }}">↓</button>{% else %}<span class="mk-slide-gap"></span>{% endif %}
+              <button type="submit" name="free_op" value="del:{{ loop.index0 }}" class="m3-btn m3-btn-text" aria-label="Quitar el bloque {{ loop.index }}">×</button>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% if options.free | length < free_max %}
+        <p class="m3-xs m3-muted" style="margin:12px 0 4px">Agregar bloque</p>
+        <div class="mk-free-add">
+          {% for slug, t in free_types.items() %}
+          <button type="submit" name="free_op" value="add:{{ slug }}" class="m3-btn m3-btn-tonal">+ {{ t.label }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <p class="m3-xs m3-muted" style="margin:8px 0 0">Es texto libre: las cifras de precios salen solo de las tarjetas con datos.</p>
+      </section>
+      {% endif %}
 
       {#- Un atajo oculta al formulario largo (docs/DESIGN.md, regla 2): aprobar la
           tarjeta tal cual sale es el caso común; ajustar bloques y textos, el excepcional. -#}

@@ -65,7 +65,13 @@ from saimc.marketing.daily import (
     to_havana,
 )
 from saimc.marketing.html import card_html
-from saimc.marketing.options import CTA_MAX, SUBTITLE_MAX, parse_options
+from saimc.marketing.options import (
+    CTA_MAX,
+    FREE_MAX_BLOCKS,
+    FREE_TYPES,
+    SUBTITLE_MAX,
+    parse_options,
+)
 from saimc.marketing.posts import (
     FIXED_PIECES,
     MAX_SLIDES,
@@ -420,6 +426,11 @@ def _editor_state(
         "options": slide_options(slide),
         "toggles": [b for b in kind.blocks if b.toggleable],
         "has_texts": bool(kind.blocks),
+        "free_types": {
+            slug: {"label": label, "limit": limit}
+            for slug, (label, limit, _single) in FREE_TYPES.items()
+        },
+        "free_max": FREE_MAX_BLOCKS,
         "subtitle_max": SUBTITLE_MAX,
         "cta_max": CTA_MAX,
         "caption": effective_caption(db, post),
