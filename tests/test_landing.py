@@ -354,7 +354,7 @@ class TestLaLandingEnLaRaiz:
         respuesta = client.get("/")
 
         assert respuesta.status_code == 200
-        assert "Parece un relajo, pero tiene su orden." in respuesta.text
+        assert "Medimos el mercado con la misma vara." in respuesta.text
         assert 'href="/precios"' in respuesta.text
 
     def test_no_es_el_tablero(self, client: TestClient, datos: None) -> None:
@@ -383,7 +383,7 @@ class TestLaLandingEnLaRaiz:
         respuesta = client.get("/", follow_redirects=False)
 
         assert respuesta.status_code == 200
-        assert "Parece un relajo, pero tiene su orden." in respuesta.text
+        assert "Medimos el mercado con la misma vara." in respuesta.text
 
     def test_las_burbujas_muestran_el_rango_real_con_su_muestra(
         self, client: TestClient, datos: None
@@ -627,7 +627,7 @@ class TestLaLandingSinDatos:
         respuesta = client.get("/")
 
         assert respuesta.status_code == 200
-        assert "Parece un relajo, pero tiene su orden." in respuesta.text
+        assert "Medimos el mercado con la misma vara." in respuesta.text
         for marcador in MARCADORES:
             assert marcador not in _visible(respuesta.text)
 
@@ -698,7 +698,7 @@ class TestElTableroEnPrecios:
 
         assert respuesta.status_code == 200
         assert "Qué cuesta hoy" in respuesta.text
-        assert "Parece un relajo, pero tiene su orden." not in respuesta.text
+        assert "Medimos el mercado con la misma vara." not in respuesta.text
 
     def test_los_parametros_de_siempre_siguen_andando(self, client: TestClient, datos: None) -> None:
         mapa = client.get("/precios?vista=mapa")
@@ -765,7 +765,7 @@ class TestLosEnlacesYaCompartidos:
         respuesta = client.get("/?fbclid=abc123", follow_redirects=False)
 
         assert respuesta.status_code == 200
-        assert "Parece un relajo, pero tiene su orden." in respuesta.text
+        assert "Medimos el mercado con la misma vara." in respuesta.text
 
 
 # ── «Así trabajo»: pase de capturas y tarjeta de video (2026-10-06) ──────────
@@ -1196,10 +1196,10 @@ class TestLaNarrativaEsCierta:
     def test_la_promesa_dice_que_es_una_herramienta_asistida(self, client: TestClient) -> None:
         texto = _visible(client.get("/").text)
 
-        assert "Parece un relajo, pero tiene su orden." in texto
+        assert "Medimos el mercado con la misma vara." in texto
         assert (
-            "Guani lee lo que se anuncia en Cuba y te enseña cuánto se pide, provincia por "
-            "provincia. Cada precio con sus anuncios. Tú decides qué hacer con él."
+            "Guani lee lo que anuncian emprendedores, TCP y negocios privados y te enseña "
+            "cuánto se pide, provincia por provincia. Cada precio con sus anuncios."
         ) in texto
         assert "Hola, soy Guani" not in texto
 
@@ -1249,7 +1249,7 @@ class TestLaNarrativaEsCierta:
         ) in terminos
 
 
-# ── La voz de `docs/narrativa-guani.md` (idea madre en la portada, 2026-10-18) ─
+# ── La voz de `docs/narrativa-guani.md` (la vara en la portada, 2026-10-18) ──
 
 LO_QUE_LA_NARRATIVA_EVITA = (
     # En Cuba suena a control y decomiso: el orden es del mercado, no de Guani.
@@ -1279,11 +1279,11 @@ class TestLaLandingHablaConLaNarrativa:
         ) in texto
         assert "Teléfonos, nombres ni datos de contacto de quien vende." in texto
 
-    def test_la_vista_previa_del_enlace_dice_la_idea_madre(self, client: TestClient) -> None:
+    def test_la_vista_previa_del_enlace_dice_el_eslogan(self, client: TestClient) -> None:
         html = client.get("/").text
 
         assert (
-            '<meta property="og:description" content="Parece un relajo, pero tiene su orden. '
+            '<meta property="og:description" content="Medimos el mercado con la misma vara. '
             "Guani enseña cuánto se pide en Cuba, producto por producto y provincia por "
             'provincia, con los anuncios detrás." />'
         ) in html
