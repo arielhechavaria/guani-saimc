@@ -54,6 +54,13 @@ marketing = [
     "imageio-ffmpeg>=0.5",
 ]
 
+# Terminal del operador (`saimc.tui`), para usar por SSH en el VPS. Opcional:
+# la aplicación web no lo importa y sin el paquete `python -m saimc.tui` avisa
+# cómo instalarlo.
+tui = [
+    "textual>=1.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

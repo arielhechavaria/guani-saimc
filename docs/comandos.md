@@ -13,6 +13,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 
 | Comando | Para qué | Cambia algo | Gasta |
 |---|---|---|---|
+| [`saimc.tui`](#terminal-del-operador-tui) | Menú de comandos y logs en vivo, por SSH | solo si confirmás un comando que escribe | solo si confirmás uno que gasta |
 | [`psql` con la URL del `.env`](#abrir-psql) | Entrar a la base | no (solo lee) | no |
 | [`saimc.ingestion`](#ingerir-la-bandeja-de-entrada) | Ingerir archivos de la bandeja | sí: filas crudas | no |
 | [`systemctl start saimc-prefill`](#pre-cálculo-ahora-a-mano) | Pre-calcular propuestas ya (y preguntarle a Jev, si está encendido) | sí: propuestas y señales de Jev | sí, tope 0,15 USD (más 0,01 de Jev) |
@@ -62,6 +63,25 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 ---
 
 ## Rutina diaria
+
+### Terminal del operador (TUI)
+
+```
+.venv/bin/pip install -e '.[tui]'
+```
+
+```
+.venv/bin/python -m saimc.tui
+```
+
+- **Para qué**: un menú con los comandos de este catálogo que no piden `sudo` y los logs de cada
+  unidad (`journalctl -f`). Muestra la línea exacta antes de correr.
+- **Teclas**: flechas para moverte, `r` o Enter corre, `x` corta (también los logs en vivo), `c`
+  limpia la salida, `q` sale. Los marcados con ⚠ escriben o gastan y piden `y`/`n`.
+- **Cuándo**: cuando no te acordás cuál era el comando o querés ver un log. El primer `pip install`
+  se hace una sola vez. Los comandos con `sudo` (reiniciar, arrancar un servicio) siguen a mano.
+- **Cambia algo**: solo los marcados con ⚠, y solo si confirmás. **Gasta**: solo `Pre-cálculo escribiendo`.
+- **Dónde vive la lista**: `src/saimc/tui/registry.py`. Si agregás un comando a este catálogo, sumalo ahí también.
 
 ### Abrir psql
 
