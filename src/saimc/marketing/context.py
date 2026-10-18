@@ -63,6 +63,9 @@ class CardType:
     #: Bloques de la plantilla (`data-block="<slug>"`). Vacía en las tarjetas
     #: de puro branding, que no tienen nada que apagar.
     blocks: tuple[Block, ...] = ()
+    #: Tarjeta «Libre»: en lugar de bloques fijos, el operador arma los suyos
+    #: (`options.FREE_TYPES`).
+    free: bool = False
 
 
 CARD_TYPES: tuple[CardType, ...] = (
@@ -101,6 +104,7 @@ CARD_TYPES: tuple[CardType, ...] = (
             Block("posicion", "Número de diapositiva (solo en un carrusel)"),
         ),
     ),
+    CardType("libre", "Libre", "marketing_libre.html", 1080, 1350, free=True),
     CardType(
         "carrusel-portada", "Carrusel · portada", "marketing_carrusel_portada.html", 1080, 1350
     ),

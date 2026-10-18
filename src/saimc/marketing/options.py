@@ -20,6 +20,23 @@ from saimc.marketing.context import CardType
 SUBTITLE_MAX = 80
 CTA_MAX = 60
 
+#: Tarjeta «Libre»: tipo de bloque → (etiqueta, tope de caracteres, una sola
+#: línea). El separador no lleva texto. Es texto narrativo: las cifras de
+#: precios salen solo de las tarjetas con datos (regla 1 del plan).
+FREE_TYPES: dict[str, tuple[str, int, bool]] = {
+    "titulo": ("Título", 80, True),
+    "texto": ("Texto", 240, False),
+    "chip": ("Llamada", CTA_MAX, True),
+    "separador": ("Separador", 0, True),
+}
+FREE_MAX_BLOCKS = 8
+
+
+@dataclass(frozen=True)
+class FreeBlock:
+    type: str
+    text: str = ""
+
 
 @dataclass(frozen=True)
 class CardOptions:
@@ -27,6 +44,8 @@ class CardOptions:
     show: dict[str, bool]
     subtitle: str = ""
     cta: str = ""
+    #: Solo la tarjeta «Libre»: sus bloques, en orden.
+    free: tuple[FreeBlock, ...] = ()
 
     def query_items(self) -> list[tuple[str, str]]:
         """Los pares de URL que reconstruyen estas opciones (los bloques con
@@ -44,12 +63,65 @@ def _clean(raw: str | None, limit: int) -> str:
     return " ".join((raw or "").split())[:limit].rstrip()
 
 
+def _free_text(kind: str, raw: str | None) -> str:
+    _, limit, single = FREE_TYPES[kind]
+    if limit == 0:
+        return ""
+    if single:
+        return _clean(raw, limit)
+    # Párrafo: conserva los saltos de línea, sin espacios de más.
+    lineas = [" ".join(linea.split()) for linea in (raw or "").splitlines()]
+    return "\n".join(lineas).strip()[:limit].rstrip()
+
+
+def _free_blocks(pairs: list[tuple[str, str]]) -> tuple[FreeBlock, ...]:
+    bloques = [
+        FreeBlock(tipo, _free_text(tipo, texto)) for tipo, texto in pairs if tipo in FREE_TYPES
+    ]
+    return tuple(bloques[:FREE_MAX_BLOCKS])
+
+
+def _apply_free_op(blocks: tuple[FreeBlock, ...], op: str | None) -> tuple[FreeBlock, ...]:
+    """`add:<tipo>`, `up:<i>`, `down:<i>` o `del:<i>` (i desde 0). Una
+    operación inválida o fuera de rango no cambia nada."""
+    accion, _, arg = (op or "").partition(":")
+    lista = list(blocks)
+    if accion == "add":
+        if arg in FREE_TYPES and len(lista) < FREE_MAX_BLOCKS:
+            lista.append(FreeBlock(arg))
+        return tuple(lista)
+    try:
+        i = int(arg)
+    except ValueError:
+        return blocks
+    if not 0 <= i < len(lista):
+        return blocks
+    if accion == "del":
+        del lista[i]
+    elif accion == "up" and i > 0:
+        lista[i - 1], lista[i] = lista[i], lista[i - 1]
+    elif accion == "down" and i < len(lista) - 1:
+        lista[i + 1], lista[i] = lista[i], lista[i + 1]
+    return tuple(lista)
+
+
+def _free_from_params(params: Mapping[str, str]) -> tuple[FreeBlock, ...]:
+    getlist = getattr(params, "getlist", None)
+    if getlist is None:
+        return ()
+    tipos, textos = getlist("free_type"), getlist("free_text")
+    pares = [(t, textos[i] if i < len(textos) else "") for i, t in enumerate(tipos)]
+    return _apply_free_op(_free_blocks(pares), params.get("free_op"))
+
+
 def parse_options(kind: CardType, params: Mapping[str, str]) -> CardOptions:
     """Lee las opciones de `params` (los parámetros de la URL).
 
     Solo cuenta `b_<slug>=0` para apagar y `=1` para prender un bloque con
     interruptor; cualquier otro valor deja el por defecto. Una tarjeta sin
     bloques tampoco tiene textos: no hay dónde pintarlos."""
+    if kind.free:
+        return CardOptions(show={}, free=_free_from_params(params))
     show: dict[str, bool] = {}
     for block in kind.blocks:
         value = params.get(f"b_{block.slug}") if block.toggleable else None
@@ -65,13 +137,21 @@ def parse_options(kind: CardType, params: Mapping[str, str]) -> CardOptions:
 
 def options_to_dict(options: CardOptions) -> dict[str, Any]:
     """Lo que se guarda en `marketing_post_slides.options`."""
-    return {"show": dict(options.show), "subtitle": options.subtitle, "cta": options.cta}
+    datos: dict[str, Any] = {
+        "show": dict(options.show), "subtitle": options.subtitle, "cta": options.cta
+    }
+    if options.free:
+        datos["free"] = [{"type": b.type, "text": b.text} for b in options.free]
+    return datos
 
 
 def options_from_dict(kind: CardType, data: Mapping[str, Any] | None) -> CardOptions:
     """Lee lo guardado pasando otra vez por `parse_options`: si el JSON dice
     que un bloque sin interruptor está apagado, igual se ve."""
     data = data or {}
+    if kind.free:
+        pares = [(str(b.get("type")), str(b.get("text") or "")) for b in data.get("free") or []]
+        return CardOptions(show={}, free=_free_blocks(pares))
     params: dict[str, str] = {
         f"b_{slug}": "1" if on else "0" for slug, on in (data.get("show") or {}).items()
     }
