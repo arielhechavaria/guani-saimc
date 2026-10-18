@@ -50,6 +50,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`scripts/add_focus_aliases.py --apply`](#alias-del-foco) | Agregar alias al catálogo del foco | sí: productos | no |
 | [`saimc.extraction.llm_backtest`](#backtest-del-asistente) | Backtest del asistente contra lo curado | `--execute` escribe archivos | `--execute` sí |
 | [`scripts/jev_eval.py`](#prueba-de-jev) | Medir la calibración de Jev contra lo ya decidido (A6) | en seco no; `--execute` escribe en `data/jev_eval/` | `--execute` sí, tope 0,20 USD |
+| [`scripts/jev_envase_eval.py`](#jev-unidad-y-cantidad) | Medir si Jev acierta unidad y cantidad de una fila curada | en seco no; `--execute` escribe en `data/jev_envase_eval/` | `--execute` sí, tope 0,50 USD (~0,02 real) |
 | [`pytest`, `ruff`, `mypy`, `alembic revision`](#desarrollo-local) | Suite, estilo, tipos, migración nueva | no (revision crea un archivo) | no |
 
 > **Atención.** Gastan plata o reescriben datos: `prefill --execute`, `llm_backtest --execute`,
@@ -1181,6 +1182,21 @@ Estos se corren en tu máquina, no en el VPS.
   `scripts/clean_worktrees.sh --apply` (borra worktrees y ramas locales ya integradas en master).
   Con `--huerfanas` (`scripts/clean_worktrees.sh --apply --huerfanas`) borra además todas las
   ramas sin worktree, incluso las sin mergear. Sin `--apply` solo lista.
+
+### Jev: unidad y cantidad
+
+Mide, por fila curada a mano, si Jev acierta la unidad (elección entre las 8 canónicas) y la
+cantidad (sí/no sobre un candidato, con señuelos), y lo compara con la propuesta guardada del
+modelo. Solo lee la base; no cambia producción ni decide nada. Necesita `SAIMC_VERCEL_API_KEY` en
+el `.env` para `--execute`.
+
+```
+.venv/bin/python scripts/jev_envase_eval.py
+```
+
+```
+.venv/bin/python scripts/jev_envase_eval.py --execute
+```
 
 ---
 
