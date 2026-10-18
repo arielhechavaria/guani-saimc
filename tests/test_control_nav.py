@@ -95,7 +95,7 @@ class TestSubpaginas:
         assert 'aria-current="page"' in respuesta.text
 
     @pytest.mark.parametrize("pagina", control_nav.PAGES, ids=lambda p: p.key)
-    def test_el_menu_enlaza_a_las_cinco_vistas(
+    def test_el_menu_enlaza_a_todas_las_vistas(
         self, client: TestClient, pagina: control_nav.ControlPage
     ) -> None:
         texto = client.get(pagina.url).text
@@ -116,11 +116,17 @@ class TestSubpaginas:
                 continue
             assert f'id="{seccion.anchor}"' in texto, seccion.anchor
 
-    def test_hoy_tiene_tarjetas_a_las_otras_cuatro_vistas(self, client: TestClient) -> None:
+    def test_hoy_tiene_tarjetas_a_las_otras_vistas(self, client: TestClient) -> None:
         texto = client.get("/control").text
 
         tarjetas = re.findall(r'class="m3-ctl-card-title" href="([^"]+)"', texto)
-        assert tarjetas == ["/control/ingesta", "/control/calidad", "/control/fase-0", "/control/mercado"]
+        assert tarjetas == [
+            "/control/flujo",
+            "/control/ingesta",
+            "/control/calidad",
+            "/control/fase-0",
+            "/control/mercado",
+        ]
 
     def test_la_franja_enlaza_a_la_subpagina_del_detalle(self, client: TestClient) -> None:
         texto = client.get("/control").text

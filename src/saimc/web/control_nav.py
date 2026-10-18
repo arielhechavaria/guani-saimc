@@ -1,7 +1,7 @@
-"""Navegación de `/control`: las cinco subpáginas, sus secciones y las insignias.
+"""Navegación de `/control`: las subpáginas, sus secciones y las insignias.
 
 `/control` era una sola página con ~20 secciones apiladas y sin índice. Se
-partió en cinco vistas reales (`/control`, `/control/ingesta`, ...) y este
+partió en vistas reales (`/control`, `/control/ingesta`, ...) y este
 módulo es la única fuente de qué hay en cada una: el menú lateral, las
 tarjetas de «Hoy», la traducción de los enlaces viejos con ancla
 (`/control#tasa` → `/control/mercado#tasa`) y las insignias salen de acá.
@@ -60,6 +60,15 @@ PAGES: tuple[ControlPage, ...] = (
             NavSection("Lo que falta responder", "falta"),
             NavSection("Ritmo de carga", "ritmo"),
         ),
+    ),
+    ControlPage(
+        key="flujo",
+        url="/control/flujo",
+        title="Flujo",
+        heading="Control · Flujo",
+        description="Por dónde pasa un anuncio y dónde se atasca, de un vistazo.",
+        icon="dashboard",
+        sections=(NavSection("Lienzo", "lienzo"),),
     ),
     ControlPage(
         key="ingesta",
