@@ -13,7 +13,8 @@ las reglas de uso y las decisiones que el CSS no dice.
   desincronizan.
 - La terminal del operador (`saimc.tui`) también sale de ahí: lee los tokens
   `--m3-` del bloque oscuro al arrancar (`saimc/tui/theme.py`) y falla si falta
-  uno. Su avatar copia los hex de `_guani_avatar.html`, vigilado por test.
+  uno. Su avatar es `static/seo/apple-touch-icon.png` (sale del mismo SVG por
+  `tools/build_seo_assets.py`), mostrado con `textual-image`.
 - Nunca se declara un color con valor suelto en una plantilla ni se escribe
   `var(--m3-x, #fallback)` con un fallback inventado: ya pasó, y el fallback
   ganaba siempre con un color de otro esquema.

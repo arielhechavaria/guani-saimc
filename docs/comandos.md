@@ -80,6 +80,9 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
   (también los logs en vivo), `c` limpia la salida, `q` o «Salir» al final del menú sale. Los
   marcados con ⚠ escriben o gastan y piden `y`/`n`. Con menos de 36 filas se esconde la cabecera
   con el avatar.
+- **Avatar**: si la terminal habla Sixel (Windows Terminal 1.22 o posterior, WezTerm) o el protocolo
+  de Kitty, se ve la imagen real; si no, en medios bloques. Dentro de tmux o Zellij suele caer en
+  medios bloques. Si actualizaste desde una versión sin avatar, repetí el `pip install` de arriba.
 - **Cuándo**: cuando no te acordás cuál era el comando o querés ver un log. El primer `pip install`
   se hace una sola vez. Los comandos con `sudo` (reiniciar, arrancar un servicio) siguen a mano.
 - **Cambia algo**: solo los marcados con ⚠, y solo si confirmás. **Gasta**: solo `Pre-cálculo escribiendo`.

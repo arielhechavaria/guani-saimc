@@ -59,6 +59,8 @@ marketing = [
 # cómo instalarlo.
 tui = [
     "textual>=1.0",
+    # Muestra el avatar como imagen real (Sixel o Kitty), o en medios bloques si la terminal no puede.
+    "textual-image>=0.8",
 ]
 
 [tool.setuptools.packages.find]

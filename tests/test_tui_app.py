@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 
 from textual.widgets import RichLog, Static, Tree
+from textual_image.widget import Image
 
 from saimc.tui.app import GuaniTUI
 from saimc.tui.registry import Command, LogSource
@@ -114,6 +115,15 @@ def test_the_selected_command_carries_the_arrow_marker(tmp_path: Path) -> None:
     selected, other = asyncio.run(scenario())
     assert selected.startswith("▸ ")
     assert not other.startswith("▸")
+
+
+def test_the_header_shows_the_avatar_as_an_image(tmp_path: Path) -> None:
+    async def scenario() -> bool:
+        app = _app(tmp_path)
+        async with app.run_test(size=(110, 48)):
+            return isinstance(app.query_one("#avatar"), Image)
+
+    assert asyncio.run(scenario())
 
 
 def test_the_menu_ends_with_quit_and_enter_on_it_exits(tmp_path: Path) -> None:
