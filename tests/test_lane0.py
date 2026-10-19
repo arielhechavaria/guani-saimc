@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from saimc.config import Settings, get_settings
-from saimc.extraction import prefill
+from saimc.extraction import llm_store, prefill
 from saimc.models import (
     ContentType,
     CurationAction,
@@ -35,6 +35,7 @@ from saimc.models import (
     JevSignal,
     LlmProposal,
     LlmReview,
+    PriceHistory,
     ProcessingStatus,
     Product,
     Province,
@@ -42,7 +43,7 @@ from saimc.models import (
     ReviewOutcome,
     SourceType,
 )
-from saimc.validation import jev_signal, lane0
+from saimc.validation import context, jev_signal, lane0
 from saimc.web.app import app
 from saimc.web.auth import require_operator
 from saimc.web.deps import get_db
@@ -1124,4 +1125,267 @@ def test_jev_la_pantalla_muestra_su_cota_y_su_interruptor(
     html = client.get("/curation/auditoria").text
 
     assert "SAIMC_LANE0_JEV_ENABLED" in html
+    assert "Descartados solo por Jev" in html
+
+
+# --- jev-desacuerdo: Jev arbitra el desacuerdo (docs/spec-slice-jev-desacuerdo.md) ---
+# Casos a mano, antes del código. «Arroz» es el piloto del catálogo de prueba y
+# el texto trae un dígito: el modelo lo descarta (no_data), las reglas ven un
+# piloto. El dígito no es un teléfono porque la ingesta real ya los redacta.
+
+DESACUERDO = "Arroz agotado, vuelve el día 20"
+ARBITRO = "SAIMC_LANE0_JEV_ARBITER_ENABLED"
+
+
+def _todo_encendido(tmp_path: Path, **kw: Any) -> Settings:
+    base: dict[str, Any] = {
+        "lane0_text_enabled": True,
+        "lane0_jev_enabled": True,
+        "lane0_jev_arbiter_enabled": True,
+    }
+    base.update(kw)
+    return _ajustes(tmp_path, **base)
+
+
+def _aplicar(session: Session, ingesta: RawIngestion, ajustes: Settings) -> bool:
+    """`apply_lane_0` sobre la propuesta guardada, como lo llama el comando."""
+    catalog = context.load_catalog(session)
+    propuesta = llm_store.latest_ok_proposal(session, ingesta.id)
+    assert propuesta is not None
+    resultado = context.stored_proposal(session, propuesta, catalog)
+    hecho = lane0.apply_lane_0(
+        session,
+        ingesta,
+        propuesta,
+        resultado,
+        text=ingesta.original_text or "",
+        catalog=catalog,
+        jev_hash=lane0.jev_questions_hash(session, ajustes),
+        arbiter=ajustes.lane0_jev_arbiter_enabled,
+    )
+    session.commit()
+    return hecho
+
+
+def test_arbitro_el_umbral_el_decisor_y_el_interruptor_son_los_de_la_spec(tmp_path: Path) -> None:
+    assert lane0.JEV_ARBITER_BELOW == 0.2
+    assert lane0.JEV_ARBITER_DECIDER == "jev_arbiter"
+    assert lane0.JEV_ARBITER_SWITCH == ARBITRO
+    assert _ajustes(tmp_path).lane0_jev_arbiter_enabled is False
+
+
+def test_arbitro_j12_descarta_con_el_motivo_del_modelo_y_el_decisor(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _con_propuesta_sin_aplicar(session, tmp_path, DESACUERDO)
+    _senal(session, ingesta, 0.05)
+
+    assert _aplicar(session, ingesta, _todo_encendido(tmp_path)) is True
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    assert ingesta.discard_reason == "no_data"
+    (revision,) = session.execute(select(LlmReview)).scalars().all()
+    assert (revision.outcome, revision.discard_reason) == (ReviewOutcome.DISCARDED, "no_data")
+    (evento,) = _eventos(session, ingesta)
+    assert (evento.action, evento.mode, evento.discard_reason) == ("discarded", "auto", "no_data")
+    assert evento.detail == {"jev_p": 0.05, "decider": "jev_arbiter"}
+    assert session.execute(select(PriceHistory)).scalars().all() == []
+
+
+@pytest.mark.parametrize(
+    "apagado",
+    [{"lane0_jev_arbiter_enabled": False}, {"lane0_jev_enabled": False}],
+)
+def test_arbitro_j13_con_un_interruptor_apagado_no_escribe_nada(
+    session: Session,
+    catalogo: SimpleNamespace,
+    tmp_path: Path,
+    apagado: dict[str, bool],
+) -> None:
+    ingesta = _con_propuesta_sin_aplicar(session, tmp_path, DESACUERDO)
+    _senal(session, ingesta, 0.05)
+
+    assert _aplicar(session, ingesta, _todo_encendido(tmp_path, **apagado)) is False
+
+    _sigue_pendiente_sin_evento(session, ingesta)
+    assert session.execute(select(LlmReview)).scalars().all() == []
+
+
+def test_arbitro_el_precalculo_lo_aplica_con_el_interruptor(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=DESACUERDO)
+    _senal(session, ingesta, 0.05)
+
+    _correr(
+        session, tmp_path, ClienteFalso(_DESCARTA_SIN_DATOS),
+        lane0_text_enabled=True, lane0_jev_enabled=True, lane0_jev_arbiter_enabled=True,
+    )
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    (evento,) = _eventos(session, ingesta)
+    assert evento.detail == {"jev_p": 0.05, "decider": "jev_arbiter"}
+
+
+def test_arbitro_el_precalculo_sin_su_interruptor_no_lo_aplica(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto=DESACUERDO)
+    _senal(session, ingesta, 0.05)
+
+    _correr(
+        session, tmp_path, ClienteFalso(_DESCARTA_SIN_DATOS),
+        lane0_text_enabled=True, lane0_jev_enabled=True,
+    )
+
+    _sigue_pendiente_sin_evento(session, ingesta)
+
+
+def test_arbitro_el_comando_en_seco_dice_cuantos_son_del_arbitro(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    desacuerdo = _con_propuesta_sin_aplicar(session, tmp_path, DESACUERDO)
+    _senal(session, desacuerdo, 0.05)
+    _con_propuesta_sin_aplicar(session, tmp_path, "arroz agotado hoy")  # sin dígito
+    salida: list[str] = []
+
+    lane0.run_pending(session, _todo_encendido(tmp_path), execute=False, out=salida.append)
+
+    assert "Descartaría: 2" in salida
+    assert "De ellos, por Jev como árbitro: 1" in salida
+    session.refresh(desacuerdo)
+    assert desacuerdo.processing_status == ProcessingStatus.PENDING
+
+
+def test_arbitro_el_comando_en_seco_con_el_arbitro_apagado_dice_cuantos_sumaria(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    desacuerdo = _con_propuesta_sin_aplicar(session, tmp_path, DESACUERDO)
+    _senal(session, desacuerdo, 0.05)
+    _con_propuesta_sin_aplicar(session, tmp_path, "arroz agotado hoy")
+    salida: list[str] = []
+
+    lane0.run_pending(
+        session,
+        _todo_encendido(tmp_path, lane0_jev_arbiter_enabled=False),
+        execute=False,
+        out=salida.append,
+    )
+
+    assert "Descartaría: 1" in salida
+    assert f"Con {ARBITRO}=true descartaría además: 1" in salida
+
+
+def test_arbitro_el_comando_con_execute_descarta_con_el_decisor(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _con_propuesta_sin_aplicar(session, tmp_path, DESACUERDO)
+    _senal(session, ingesta, 0.05)
+    salida: list[str] = []
+
+    lane0.run_pending(session, _todo_encendido(tmp_path), execute=True, out=salida.append)
+
+    assert "Descartados: 1" in salida
+    assert "De ellos, por Jev como árbitro: 1" in salida
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    (evento,) = [e for e in _eventos(session, ingesta) if e.mode == "auto"]
+    assert evento.detail == {"jev_p": 0.05, "decider": "jev_arbiter"}
+
+
+def _descartado_por(
+    session: Session, decisor: str, cuando: datetime | None = None
+) -> RawIngestion:
+    ingesta = _auto_descartado(session, cuando=cuando)
+    evento = _eventos(session, ingesta)[0]
+    evento.detail = {"jev_p": 0.1, "decider": decisor}
+    session.commit()
+    return ingesta
+
+
+def test_arbitro_la_cota_propia_cuenta_solo_lo_que_arbitro_jev(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    del_arbitro = [_descartado_por(session, "jev_arbiter") for _ in range(3)]
+    de_jev = _descartado_por(session, "jev")
+    del_modelo = _auto_descartado(session)
+    assert lane0.rescue(session, del_arbitro[0].id, SEMANA, today=HOY)
+    for ingesta in [*del_arbitro[1:], de_jev, del_modelo]:
+        assert lane0.mark_audited(session, ingesta.id, SEMANA, today=HOY)
+    session.commit()
+
+    arbitro = lane0.arbiter_bound(session, today=HOY)
+    jev = lane0.jev_bound(session, today=HOY)
+    texto = lane0.audit_bounds(session, today=HOY)["text"]
+
+    assert (arbitro.k, arbitro.n) == (1, 3)
+    assert (jev.k, jev.n) == (0, 1)
+    assert (texto.k, texto.n) == (1, 5)
+    assert arbitro.switch == ARBITRO
+    assert arbitro.target == 0.10
+
+
+def test_arbitro_el_primer_tramo_se_audita_completo(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    # 40 del modelo y 10 del árbitro: la muestra al azar es de 30 y además
+    # entran los 10 del árbitro que no salieron en ella.
+    del_modelo = [_auto_descartado(session) for _ in range(40)]
+    del_arbitro = [_descartado_por(session, "jev_arbiter") for _ in range(10)]
+
+    muestra = lane0.week_sample(session, SEMANA, today=HOY)
+
+    ids = set(_ids(muestra.texts))
+    assert {i.id for i in del_arbitro} <= ids
+    assert len([i for i in muestra.texts if not i.census]) == 30
+    assert len(ids) == len(muestra.texts)  # sin repetidos
+    assert ids <= {i.id for i in [*del_modelo, *del_arbitro]}
+
+    for item in muestra.texts:
+        assert lane0.mark_audited(session, item.ingestion.id, SEMANA, today=HOY)
+    session.commit()
+
+    # Los de la muestra completa no salieron al azar: no entran en la cota de
+    # todo el texto, sí en la del árbitro.
+    assert lane0.audit_bounds(session, today=HOY)["text"].n == 30
+    assert lane0.arbiter_bound(session, today=HOY).n == 10
+
+
+def test_arbitro_con_30_descartes_previos_del_arbitro_vuelve_la_muestra_al_azar(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    for _ in range(30):
+        _descartado_por(session, "jev_arbiter")
+    siguiente = SEMANA + timedelta(weeks=1)
+    cuando = datetime(2026, 9, 29, 15, 0, tzinfo=UTC)
+    for _ in range(35):
+        _auto_descartado(session, cuando=cuando)
+    for _ in range(5):
+        _descartado_por(session, "jev_arbiter", cuando=cuando)
+
+    primera = lane0.week_sample(session, SEMANA, today=HOY + timedelta(weeks=1))
+    segunda = lane0.week_sample(session, siguiente, today=HOY + timedelta(weeks=1))
+
+    assert len(primera.texts) == 30
+    assert len(segunda.texts) == 30
+    assert not any(i.census for i in segunda.texts)
+
+
+def test_arbitro_la_pantalla_muestra_su_cota_y_su_interruptor(
+    client: TestClient, session: Session, catalogo: SimpleNamespace
+) -> None:
+    semana = _ultima_semana_cerrada()
+    cuando = datetime.combine(semana + timedelta(days=2), datetime.min.time(), UTC) + timedelta(
+        hours=15
+    )
+    ingesta = _descartado_por(session, "jev_arbiter", cuando=cuando)
+    assert lane0.mark_audited(session, ingesta.id, semana, today=semana + timedelta(days=10))
+    session.commit()
+
+    html = client.get("/curation/auditoria").text
+
+    assert ARBITRO in html
+    assert "Descartados por Jev como árbitro" in html
     assert "Descartados solo por Jev" in html

@@ -469,7 +469,10 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
 
 
 def decide_lane_0(
-    ctx: AdContext, *, external_discard_below: float | None = None
+    ctx: AdContext,
+    *,
+    external_discard_below: float | None = None,
+    arbiter_below: float | None = None,
 ) -> AdValidation:
     """Decide SOLO el carril 0, sin configuración de parámetros (slice B2a).
 
@@ -490,9 +493,16 @@ def decide_lane_0(
       triage externo puede descartar solo, con la misma regla del piloto en
       el texto;
     - si el modelo propone filas, el triage no cambia nada.
+
+    `arbiter_below` hace de Jev el árbitro del desacuerdo (slice
+    jev-desacuerdo, `docs/spec-slice-jev-desacuerdo.md`): si el modelo
+    descarta por `off_focus` o `no_data` y lo ÚNICO que lo frena es el piloto
+    en el texto, P(sí) MENOR que el umbral lo descarta igual. Solo textos (Jev
+    no ve imágenes); sin señal válida, sigue a la cola. Con `None`, lo de antes.
     """
     model = ctx.model
-    p = None if external_discard_below is None else _triage(ctx.triage_probability)
+    judged = external_discard_below is not None or arbiter_below is not None
+    p = _triage(ctx.triage_probability) if judged else None
     if model is None or model.degraded or model.failure:
         if p is not None and external_discard_below is not None and p < external_discard_below:
             return _external_discard(ctx, p)
@@ -504,6 +514,20 @@ def decide_lane_0(
     reasons = _lane_0_reasons(ctx, model)
     if p is not None and external_discard_below is not None and p >= external_discard_below:
         reasons.append(f"el modelo descarta, pero Jev no (P(sí) = {p:.2f})")
+    if (
+        arbiter_below is not None
+        and p is not None
+        and p < arbiter_below
+        and ctx.content_type == ContentType.TEXT.value
+        and reasons == [_PILOT_REASON]
+    ):
+        return AdValidation(
+            LANE_DISCARD,
+            (
+                f"el modelo descarta ({model.discard_reason}) y las reglas ven un producto "
+                f"piloto en el texto: Jev arbitra y descarta (P(sí) = {p:.2f})",
+            ),
+        )
     verdict = _lane_0_verdict(ctx, model, reasons)
     if verdict.lane == LANE_DISCARD and p is not None:
         return AdValidation(LANE_DISCARD, (*verdict.reasons, f"Jev también descarta (P(sí) = {p:.2f})"))
@@ -523,7 +547,7 @@ def _triage(value: object) -> float | None:
 def _external_discard(ctx: AdContext, p: float) -> AdValidation:
     """Rol 2: el modelo no propuso y el triage externo descarta. La regla del
     piloto en el texto vale igual que para un descarte del modelo."""
-    if _pilot_in_text(ctx):
+    if pilot_in_text(ctx):
         return AdValidation(
             LANE_REVIEW,
             (
@@ -540,7 +564,9 @@ def _external_discard(ctx: AdContext, p: float) -> AdValidation:
     )
 
 
-def _pilot_in_text(ctx: AdContext) -> bool:
+def pilot_in_text(ctx: AdContext) -> bool:
+    """¿Las reglas ven un producto piloto en un texto con algún dígito? Lo usa
+    también el carril 0 para saber si un descarte lo arbitró Jev."""
     # Sin un solo dígito no puede haber precio: que el texto nombre un producto
     # («pollo agotado») no lo vuelve un anuncio con dato (2026-10-13). Se mira el
     # dígito y no el significado: un «2» suelto ya basta para que lo mire una
@@ -554,13 +580,17 @@ def has_digit(text: str) -> bool:
     return any(char.isdigit() for char in text)
 
 
+#: El freno del piloto en el texto: el único que Jev puede arbitrar.
+_PILOT_REASON = "el modelo descarta, pero las reglas ven un producto piloto en el texto"
+
+
 def _lane_0_reasons(ctx: AdContext, model: AdProposal) -> list[str]:
     """Por qué un descarte del modelo NO va al carril 0. Vacío si va."""
     reasons: list[str] = []
     if model.discard_reason not in _LANE_0_REASONS:
         reasons.append("el modelo descarta, pero no por fuera de foco ni por falta de datos")
-    if _pilot_in_text(ctx):
-        reasons.append("el modelo descarta, pero las reglas ven un producto piloto en el texto")
+    if pilot_in_text(ctx):
+        reasons.append(_PILOT_REASON)
     return reasons
 
 

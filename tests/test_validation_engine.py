@@ -1290,3 +1290,114 @@ def test_jev_validate_ad_no_lee_el_triage() -> None:
     ctx = _caso_1(canal=MERCADO_HABANA, celdas=(CELDA_ARROZ,))
 
     assert validate_ad(_con_jev(ctx, 0.01), CONFIG) == validate_ad(ctx, CONFIG)
+
+
+# --- jev-desacuerdo: Jev arbitra el desacuerdo (docs/spec-slice-jev-desacuerdo.md) ---
+# Casos J1–J11 de la spec, escritos a mano antes del código. «Pollo» es piloto y
+# el texto trae dígitos: el modelo lo descarta, pero las reglas ven un piloto.
+
+UMBRAL_ARBITRO = 0.2
+DESACUERDO = "Pollo agotado, escribe al 5555 1234"
+MOTIVO_PILOTO = "el modelo descarta, pero las reglas ven un producto piloto en el texto"
+
+
+def _arbitro(
+    ctx: AdContext, p: object, *, arbitro: float | None = UMBRAL_ARBITRO
+) -> AdValidation:
+    from saimc.validation import decide_lane_0
+
+    return decide_lane_0(
+        _con_jev(ctx, p), external_discard_below=UMBRAL_JEV, arbiter_below=arbitro
+    )
+
+
+def _desacuerdo(texto: str = DESACUERDO, **cambios: Any) -> AdContext:
+    argumentos: dict[str, Any] = {"modelo": _descarte("no_data")}
+    argumentos.update(cambios)
+    return _ctx(texto, **argumentos)
+
+
+def test_arbitro_j1_jev_arbitra_y_descarta() -> None:
+    resultado = _arbitro(_desacuerdo(), 0.05)
+
+    assert resultado.lane == 0
+    assert any("Jev arbitra" in m and "0.05" in m for m in resultado.reasons)
+
+
+def test_arbitro_j2_el_limite_es_estricto() -> None:
+    resultado = _arbitro(_desacuerdo(), 0.20)
+
+    assert resultado.lane == 2
+    assert MOTIVO_PILOTO in resultado.reasons
+    assert any("Jev no" in m for m in resultado.reasons)
+
+
+def test_arbitro_j3_justo_bajo_el_umbral_descarta() -> None:
+    assert _arbitro(_desacuerdo(), 0.19).lane == 0
+
+
+def test_arbitro_j4_sin_senal_queda_el_piloto() -> None:
+    resultado = _arbitro(_desacuerdo(), None)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == (MOTIVO_PILOTO,)
+
+
+def test_arbitro_j5_un_descarte_sin_motivo_valido_no_se_arbitra() -> None:
+    resultado = _arbitro(_desacuerdo(modelo=AdProposal(discard=True, discard_reason=None)), 0.01)
+
+    assert resultado.lane == 2
+    assert "el modelo descarta, pero no por fuera de foco ni por falta de datos" in resultado.reasons
+
+
+def test_arbitro_j6_si_el_modelo_propone_filas_no_hay_nada_que_arbitrar() -> None:
+    resultado = _arbitro(_desacuerdo(modelo=_modelo(_fila())), 0.01)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("el modelo no descarta el anuncio",)
+
+
+def test_arbitro_j7_sin_piloto_jev_sigue_frenando_como_hoy() -> None:
+    resultado = _arbitro(_ctx(FUERA_DE_FOCO, modelo=_descarte("off_focus")), 0.50)
+
+    assert resultado.lane == 2
+    assert any("el modelo descarta, pero Jev no" in m for m in resultado.reasons)
+
+
+def test_arbitro_j8_sin_umbral_del_arbitro_es_lo_de_hoy() -> None:
+    from saimc.validation import decide_lane_0
+
+    resultado = _arbitro(_desacuerdo(), 0.05, arbitro=None)
+
+    assert resultado.lane == 2
+    assert MOTIVO_PILOTO in resultado.reasons
+    assert resultado == decide_lane_0(_con_jev(_desacuerdo(), 0.05), external_discard_below=UMBRAL_JEV)
+
+
+def test_arbitro_j9_una_propuesta_degradada_sigue_frenada_por_el_piloto() -> None:
+    resultado = _arbitro(_desacuerdo(modelo=AdProposal(degraded=True, failure="timeout")), 0.01)
+
+    assert resultado.lane == 2
+    assert any("piloto" in m for m in resultado.reasons)
+
+
+@pytest.mark.parametrize("p", [float("nan"), 1.5, -0.1, True])
+def test_arbitro_j10_sin_senal_valida_no_descarta(p: object) -> None:
+    resultado = _arbitro(_desacuerdo(), p)
+
+    assert resultado.lane == 2
+    assert MOTIVO_PILOTO in resultado.reasons
+
+
+def test_arbitro_j11_sin_ningun_digito_no_hay_desacuerdo() -> None:
+    resultado = _arbitro(_desacuerdo("Pollo agotado hoy"), 0.05)
+
+    assert resultado.lane == 0
+    assert not any("arbitra" in m for m in resultado.reasons)
+
+
+def test_arbitro_solo_textos_jev_no_ve_imagenes() -> None:
+    resultado = _arbitro(_desacuerdo(tipo="image"), 0.05)
+
+    assert resultado.lane == 2
+    assert MOTIVO_PILOTO in resultado.reasons

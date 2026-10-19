@@ -187,11 +187,14 @@
     </div>
     <div class="b2-bounds">
       {# La tercera tarjeta es lo que Jev descartó solo (slice jev-decisor): ya
-         cuenta dentro de «Textos», y va aparte para poder apagar solo a Jev. #}
+         cuenta dentro de «Textos», y va aparte para poder apagar solo a Jev.
+         La cuarta, lo que Jev arbitró (slice jev-desacuerdo), con su propio
+         interruptor. #}
       {% set tarjetas = [
            (type_labels['text'], bounds['text']),
            (type_labels['image'], bounds['image']),
            ('Descartados solo por Jev', jev_bound),
+           ('Descartados por Jev como árbitro', arbiter_bound),
          ] %}
       {% for etiqueta, b in tarjetas %}
       <div class="m3-card m3-card-outlined m3-card-pad b2-bound{% if b.exceeded %} is-over-target{% endif %}">
@@ -217,10 +220,16 @@
           Rescatados fuera de la muestra: {{ b.rescued_outside }}. No entran en la cota: no salieron al azar.
         </div>
         {% endif %}
-        {% if b.decider %}
+        {% if b.decider == 'jev' %}
         <div class="m3-sm m3-muted">
           Textos que el asistente no propuso y Jev descartó con P(sí) &lt; 0,2. Ya cuentan en «Textos».
           Se devuelve a Jev a la sombra con <code>{{ b.switch }}=false</code>.
+        </div>
+        {% elif b.decider %}
+        <div class="m3-sm m3-muted">
+          Textos que el modelo descartó con un producto piloto en el texto y Jev arbitró con P(sí) &lt; 0,2.
+          Los que salen al azar cuentan en «Textos»; el primer tramo se audita completo.
+          Se apaga solo el árbitro con <code>{{ b.switch }}=false</code>.
         </div>
         {% endif %}
       </div>
@@ -261,7 +270,7 @@
       <h2 class="m3-h2" id="h-{{ tipo }}">{{ type_labels[tipo] }}</h2>
       <span class="m3-sm m3-muted">
         {{ items|length }} de {{ sample.population.get(tipo, 0) }} descartados solos
-        (muestra de hasta {{ sample_sizes[tipo] }})
+        (muestra de hasta {{ sample_sizes[tipo] }}{% if tipo == 'text' and sample.census_count %}, más {{ sample.census_count }} del árbitro de Jev, que se auditan completos{% endif %})
       </span>
     </div>
     {% if not items %}
