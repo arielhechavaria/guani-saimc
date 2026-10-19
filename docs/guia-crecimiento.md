@@ -240,6 +240,7 @@ cuando alguien pega un enlace del sitio.
 | 7 | **Story de precalentamiento** | 1080×1920 (9:16) | Volver | La víspera de algo nuevo | `/marketing`, a mano |
 | 8 | **Libre** | 1080×1350 | Según la pieza | Cuando haga falta | `/marketing`, a mano |
 | 9 | **Portada de Facebook** | 1640×624 | — | Cuando se abra la página de Facebook | `/marketing`, a mano |
+| 10 | **Educativo** (carrusel de 4–5 diapositivas) | 1080×1350 | Confianza | Todos los días, segundo turno del lote | Lote, todos los días (`saimc.marketing.lessons`) |
 
 Notas por pieza:
 
@@ -273,16 +274,21 @@ Notas por pieza:
   un análisis de Buffer citado por terceros, los Reels llegan a más gente y los
   carruseles generan más interacción (no verificado en la fuente original).
   Queda como experimento para después del primer mes.
+- **Educativo.** Una lección corta que rota por día (de los grupos a la cifra,
+  rango y mediana, muestra en formación, cada precio con sus anuncios). Es
+  texto fijo, sin cifras: no depende de datos y siempre sale en el lote. El
+  texto del post ya viene escrito; revísalo igual antes de aprobar.
 - **Story de precalentamiento.** Para anunciar algo («Mañana, cómo se movió el
   pollo esta semana»). Las Stories duran 24 h.
 
 ### La semana tipo
 
 El lote crea los borradores con este ritmo (`WEEKLY_CARDS` en
-`src/saimc/marketing/daily.py`): «Dato del día» todos los días, más «Cómo se
-movió» los lunes, el carrusel los miércoles y «De dónde sale este precio» los
+`src/saimc/marketing/daily.py`): «Dato del día» y «Educativo» todos los días,
+más «Cómo se movió» los lunes, el carrusel los miércoles y «De dónde sale este precio» los
 jueves. No hace falta publicar todo lo que el lote crea: la semana tipo es
-esta, y lo que sobra se descarta.
+esta, y lo que sobra se descarta (el «Educativo» diario no figura en la
+tabla: se publica los días que haya tiempo).
 
 | Día | Feed | Stories | Tiempo |
 |---|---|---|---|

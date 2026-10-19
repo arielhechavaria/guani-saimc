@@ -59,12 +59,14 @@ from saimc.marketing.context import (
 from saimc.marketing.daily import (
     CAROUSEL_SLIDES,
     CAROUSEL_SLOT,
+    EDU_SLOT,
     cards_for_day,
     havana_today,
     slot_label,
     to_havana,
 )
 from saimc.marketing.html import card_html
+from saimc.marketing.lessons import lesson_for_day
 from saimc.marketing.options import (
     CTA_MAX,
     FREE_MAX_BLOCKS,
@@ -85,6 +87,7 @@ from saimc.marketing.posts import (
     approve,
     create_carousel_draft,
     create_draft,
+    create_lesson_draft,
     discard,
     duplicate,
     effective_caption,
@@ -233,6 +236,14 @@ def _is_carousel(post: MarketingPost) -> bool:
     return post.format == PostFormat.CAROUSEL
 
 
+def _post_title(post: MarketingPost, kind: CardType) -> str:
+    """«Educativo» para la lección, «Carrusel» para el resto de carruseles,
+    o el nombre de la tarjeta si va sola."""
+    if post_slot(post) == EDU_SLOT:
+        return slot_label(EDU_SLOT)
+    return slot_label(CAROUSEL_SLOT) if _is_carousel(post) else kind.label
+
+
 def _post_card(post: MarketingPost) -> dict[str, Any]:
     slide = post.slides[0]
     kind = BY_SLUG[slide.card_slug]
@@ -243,7 +254,7 @@ def _post_card(post: MarketingPost) -> dict[str, Any]:
     return {
         "post": post,
         "kind": kind,
-        "title": slot_label(CAROUSEL_SLOT) if _is_carousel(post) else kind.label,
+        "title": _post_title(post, kind),
         "label": STATUS_LABELS.get(post.status, post.status),
         "detail": " · ".join(x for x in partes if x),
         "frozen": slide.image_path is not None,
@@ -328,7 +339,9 @@ async def marketing_post_create(
     productos = pilot_product_names(db)
     producto = productos[0] if productos else None
     provincia = PHASE0_PROVINCES[0] if PHASE0_PROVINCES else None
-    if pedido == CAROUSEL_SLOT:
+    if pedido == EDU_SLOT:
+        post = create_lesson_draft(db, lesson=lesson_for_day(today), planned_for=today)
+    elif pedido == CAROUSEL_SLOT:
         post = create_carousel_draft(
             db, card_slugs=CAROUSEL_SLIDES, planned_for=today, product=producto,
             province=provincia, data_through=today,
@@ -406,7 +419,7 @@ def _editor_state(
         "slide": slide,
         "kind": kind,
         "is_carousel": _is_carousel(post),
-        "post_label": slot_label(CAROUSEL_SLOT) if _is_carousel(post) else kind.label,
+        "post_label": _post_title(post, kind),
         "slides": _slide_rows(post),
         "max_slides": MAX_SLIDES,
         "can_add": post.status == PostStatus.DRAFT

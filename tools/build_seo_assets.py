@@ -33,7 +33,7 @@ import jinja2
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from saimc.marketing.fonts import font_face_css  # noqa: E402
+from saimc.marketing.fonts import avatar_data_uri, font_face_css  # noqa: E402
 from saimc.marketing.render import render_png  # noqa: E402
 
 TEMPLATES = ROOT / "src" / "saimc" / "web" / "templates"
@@ -68,7 +68,9 @@ def icon_png(svg: str, size: int) -> bytes:
 
 
 def og_png(env: jinja2.Environment) -> bytes:
-    html = env.get_template("marketing_og_compartir.html").render(site_url="", font_css=font_face_css())
+    html = env.get_template("marketing_og_compartir.html").render(
+        site_url="", font_css=font_face_css(), avatar_uri=avatar_data_uri()
+    )
     return render_png(html, width=1200, height=630)
 
 

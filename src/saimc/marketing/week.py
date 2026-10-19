@@ -21,7 +21,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from saimc.marketing.context import BY_SLUG
-from saimc.marketing.daily import CAROUSEL_SLOT, cards_for_day, slot_label
+from saimc.marketing.daily import CAROUSEL_SLOT, EDU_SLOT, cards_for_day, slot_label
+from saimc.marketing.lessons import LESSON_CARD
 from saimc.models.marketing_post import MarketingPost, PostFormat, PostStatus
 
 DAY_NAMES: tuple[str, ...] = (
@@ -48,9 +49,12 @@ def week_monday(day: date) -> date:
 
 def post_slot(post: MarketingPost) -> str:
     """El turno del calendario que cubre la publicación: el del lote si lo
-    tiene; si la armó el operador, el carrusel o la tarjeta de la primera."""
+    tiene; si la armó el operador, el educativo (si abre con una diapositiva
+    de lección), el carrusel o la tarjeta de la primera."""
     if post.batch_slot:
         return post.batch_slot
+    if post.slides[0].card_slug == LESSON_CARD:
+        return EDU_SLOT
     return CAROUSEL_SLOT if post.format == PostFormat.CAROUSEL else post.slides[0].card_slug
 
 
@@ -199,8 +203,8 @@ def published_history(db: Session, limit: int = HISTORY_LIMIT) -> list[HistoryEn
                 published_at=post.published_at,
                 approved_at=post.approved_at or post.published_at,
                 title=(
-                    slot_label(CAROUSEL_SLOT)
-                    if post.format == PostFormat.CAROUSEL
+                    slot_label(post_slot(post))
+                    if post_slot(post) in (CAROUSEL_SLOT, EDU_SLOT)
                     else diapositivas[0].label
                 ),
                 slides=diapositivas,

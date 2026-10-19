@@ -32,10 +32,16 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.marketing.caption import CAPTION_MAX, build_caption
+from saimc.marketing.caption import CAPTION_MAX, build_caption, with_hashtags
 from saimc.marketing.context import BY_SLUG, CARD_TYPES, CardType, build_context
 from saimc.marketing.html import card_html
-from saimc.marketing.options import CardOptions, options_from_dict, options_to_dict, parse_options
+from saimc.marketing.lessons import LESSON_CARD, Lesson
+from saimc.marketing.options import (
+    CardOptions,
+    options_from_dict,
+    options_to_dict,
+    parse_options,
+)
 from saimc.marketing.render import render_jpeg
 from saimc.marketing.snapshot import freeze_context, thaw_context
 from saimc.models.base import utc_now
@@ -275,6 +281,44 @@ def create_carousel_draft(
                 card_slug=kind.slug,
                 params=_params(kind, product, province, data_through),
                 options=options_to_dict(parse_options(kind, {})),
+            )
+        )
+    db.add(post)
+    return post
+
+
+def create_lesson_draft(
+    db: Session,
+    *,
+    lesson: Lesson,
+    planned_for: date,
+    origin: PostOrigin = PostOrigin.OPERATOR,
+    batch_slot: str | None = None,
+    now: datetime | None = None,
+) -> MarketingPost:
+    """Un borrador de carrusel educativo: una diapositiva `leccion` por cada
+    una de la lección, con sus bloques libres ya cargados. No lleva producto ni
+    provincia (texto fijo, sin cifras), así que no depende de ningún dato. El
+    texto del post queda guardado: la lección lo trae hecho. Sin `flush`."""
+    if not 1 <= len(lesson.slides) <= MAX_SLIDES:
+        raise InvalidSlide(f"Un carrusel lleva de 1 a {MAX_SLIDES} diapositivas.")
+    kind = BY_SLUG[LESSON_CARD]
+    post = MarketingPost(
+        format=PostFormat.CAROUSEL if len(lesson.slides) > 1 else PostFormat.SINGLE,
+        status=PostStatus.DRAFT,
+        planned_for=planned_for,
+        caption=_normalize_caption(with_hashtags(lesson.summary)),
+        origin=origin,
+        batch_slot=batch_slot,
+        created_at=now or utc_now(),
+    )
+    for posicion, bloques in enumerate(lesson.slides, start=1):
+        post.slides.append(
+            MarketingPostSlide(
+                position=posicion,
+                card_slug=kind.slug,
+                params=_params(kind, None, None, planned_for),
+                options=options_to_dict(CardOptions(show={}, free=bloques)),
             )
         )
     db.add(post)

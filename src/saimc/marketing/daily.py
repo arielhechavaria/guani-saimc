@@ -11,7 +11,9 @@ nada** y, desde F2 (`docs/spec-slice-fabrica-publicaciones.md`), tampoco
 rasteriza: deja borradores en `/marketing` («Hoy») para que el operador los
 revise, apruebe y publique desde el teléfono.
 
-Qué tarjetas toca cada día (`cards_for_day`): «Dato del día» todos los días; los
+Qué tarjetas toca cada día (`cards_for_day`): «Dato del día» y el carrusel
+«Educativo» (una lección corta de `saimc.marketing.lessons`, texto fijo, no
+depende de datos) todos los días; los
 lunes, además, «Cómo se movió» (el ritmo semanal); los miércoles, el carrusel
 (portada → cómo leer → «Dato del día» → cierre, un solo borrador con cuatro
 diapositivas, F3); los jueves, «De dónde sale este precio» (el método). Las
@@ -56,18 +58,25 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.db import session_scope
 from saimc.marketing.context import BY_SLUG, CardType, build_context
+from saimc.marketing.lessons import LESSON_CARD, lesson_for_day
 from saimc.marketing.posts import (
     RETENTION_DAYS,
     context_has_data,
     create_carousel_draft,
     create_draft,
+    create_lesson_draft,
     purge_expired,
 )
 from saimc.models.marketing_post import MarketingPost, PostOrigin
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 
-#: La que sale todos los días.
-DAILY_CARDS: tuple[str, ...] = ("dato-del-dia",)
+#: El turno educativo diario: un carrusel con la lección del día
+#: (`lessons.lesson_for_day`). Sin producto ni provincia: siempre se crea.
+EDU_SLOT = "educativo"
+EDU_LABEL = "Educativo"
+
+#: Las que salen todos los días.
+DAILY_CARDS: tuple[str, ...] = ("dato-del-dia", EDU_SLOT)
 
 #: El carrusel del miércoles (`docs/guia-crecimiento.md`, «La semana tipo»):
 #: un turno del calendario que arma una sola publicación con estas diapositivas.
@@ -97,11 +106,16 @@ def cards_for_day(day: date) -> tuple[str, ...]:
 
 def slot_label(slot: str) -> str:
     """Cómo se nombra un turno del calendario en «Hoy»."""
+    if slot == EDU_SLOT:
+        return EDU_LABEL
     return CAROUSEL_LABEL if slot == CAROUSEL_SLOT else BY_SLUG[slot].label
 
 
 def slot_slides(slot: str) -> tuple[str, ...]:
-    """Las diapositivas que lleva el borrador de un turno."""
+    """Las tarjetas que lleva el borrador de un turno (en el educativo, el tipo
+    de tarjeta: cuántas diapositivas son lo decide la lección del día)."""
+    if slot == EDU_SLOT:
+        return (LESSON_CARD,)
     return CAROUSEL_SLIDES if slot == CAROUSEL_SLOT else (slot,)
 
 
@@ -159,7 +173,10 @@ class DailyReport:
 
     @property
     def exit_code(self) -> int:
-        return 0 if any(c.estado != "sin datos" for c in self.cards) else 1
+        # El educativo no depende de datos: siempre sale, así que no cuenta
+        # (si no, el 1 de «ninguna tarjeta con datos» nunca saltaría).
+        con_datos = (c for c in self.cards if c.slug != EDU_SLOT)
+        return 0 if any(c.estado != "sin datos" for c in con_datos) else 1
 
 
 def to_havana(moment: datetime) -> datetime:
@@ -241,7 +258,12 @@ def run_daily(
             # consulta y el alta, la restricción única salta acá y solo se
             # deshace este.
             with db.begin_nested():
-                if slug == CAROUSEL_SLOT:
+                if slug == EDU_SLOT:
+                    create_lesson_draft(
+                        db, lesson=lesson_for_day(day), planned_for=day,
+                        origin=PostOrigin.BATCH, batch_slot=slug,
+                    )
+                elif slug == CAROUSEL_SLOT:
                     create_carousel_draft(
                         db, card_slugs=CAROUSEL_SLIDES, planned_for=day, product=producto,
                         province=provincia, data_through=report.data_through,

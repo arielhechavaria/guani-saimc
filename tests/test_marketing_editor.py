@@ -15,8 +15,10 @@ from tests.test_marketing_router import client, datos, sin_chromium  # noqa: F40
 
 
 def _sin_estilos(html: str) -> str:
-    """La fuente viaja en base64 dentro de `<style>`: ahí «77» o «999» aparecen por azar."""
-    return re.sub(r"<style>.*?</style>", "", html, flags=re.S)
+    """La fuente viaja en base64 dentro de `<style>` y el avatar como data URI en
+    el `<img>`: ahí «77» o «999» aparecen por azar."""
+    html = re.sub(r"<style>.*?</style>", "", html, flags=re.S)
+    return re.sub(r"data:image/[a-z]+;base64,[A-Za-z0-9+/=]+", "", html)
 
 
 class TestOpcionesEnLaVistaPrevia:

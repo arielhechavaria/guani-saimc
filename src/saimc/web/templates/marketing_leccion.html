@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Educativo</title>
+{% include "_marketing_card.html" %}
+</head>
+<body>
+{# Diapositiva educativa: como «Libre», con el kicker «Aprende con Guani» arriba. Los bloques salen de saimc.marketing.lessons (options.free). Sin cifras: es texto narrativo. Autoescape siempre; un bloque sin texto no se pinta. #}
+<div class="mc" style="width: 1080px; height: 1350px">
+  <div class="mc-orbs mc-orbs-center"></div>
+  <div class="mc-content" style="padding: 72px">
+    <div class="mc-brand" style="--mc-logo: 84px">{% include "_marketing_avatar.html" %}<span class="mc-wordmark">Guani</span></div>
+    <div class="mc-kicker" style="margin-top: 56px">Aprende con Guani</div>
+    <div style="flex-grow: 1"></div>
+    <div style="display: flex; flex-direction: column; gap: 40px; align-items: flex-start">
+      {% for b in free %}
+      {% if b.type == "separador" %}
+      <div data-free="separador" style="width: 160px; height: 8px; border-radius: 4px; background: var(--mc-ink)"></div>
+      {% elif b.text %}
+      {% if b.type == "titulo" %}
+      <div data-free="titulo" class="mc-title" style="font-size: 104px; line-height: 1.06">{{ b.text }}</div>
+      {% elif b.type == "texto" %}
+      <div data-free="texto" style="font-size: 44px; line-height: 60px; font-weight: 500; white-space: pre-line">{{ b.text }}</div>
+      {% elif b.type == "chip" %}
+      <div data-free="chip"><span class="mc-chip mc-chip-ink" style="font-size: 40px; line-height: 48px; padding: 20px 40px">{{ b.text }}</span></div>
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+    </div>
+    <div style="flex-grow: 1"></div>
+    <div style="display: flex; align-items: center; gap: 24px; font-size: 32px; line-height: 40px; font-weight: 500">
+      <div class="mc-muted" style="flex-grow: 1">Lo que se anuncia en Cuba, provincia por provincia.</div>
+      {% if slide_counter %}<div class="mc-chip">{{ slide_counter }}</div>{% endif %}
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -29,3 +29,14 @@ def font_face_css() -> str:
         '@font-face{font-family:"Inter";font-style:normal;font-weight:100 900;'
         f'src:url("data:font/woff2;base64,{datos}") format("woff2")}}'
     )
+
+
+_AVATAR = Path(saimc.web.__file__).parent / "static" / "brand" / "guani-avatar.webp"
+
+
+@lru_cache(maxsize=1)
+def avatar_data_uri() -> str:
+    """El avatar a color de las tarjetas (círculo con alpha) como data URI, por
+    la misma razón que la tipografía: Playwright rasteriza sin acceso a /static."""
+    datos = base64.b64encode(_AVATAR.read_bytes()).decode("ascii")
+    return f"data:image/webp;base64,{datos}"

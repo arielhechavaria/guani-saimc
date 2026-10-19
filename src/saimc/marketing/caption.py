@@ -93,7 +93,12 @@ def build_caption(kind: CardType, context: dict) -> str:
         cuerpo = _de_donde_sale(card)
     else:
         cuerpo = _GENERICO
+    return with_hashtags(cuerpo)
 
+
+def with_hashtags(cuerpo: str) -> str:
+    """`cuerpo` terminado en los hashtags fijos, dentro de los límites del pie.
+    También lo usa la sección educativa (`lessons`), cuyo texto es fijo."""
     cola = "\n\n" + " ".join(HASHTAGS[:HASHTAGS_MAX])
     lugar = CAPTION_MAX - len(cola)
     if len(cuerpo) > lugar:

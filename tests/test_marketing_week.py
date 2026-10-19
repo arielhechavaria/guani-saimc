@@ -17,11 +17,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from saimc.marketing.daily import CAROUSEL_SLIDES, CAROUSEL_SLOT, cards_for_day
+from saimc.marketing.daily import CAROUSEL_SLIDES, CAROUSEL_SLOT, EDU_SLOT, cards_for_day
+from saimc.marketing.lessons import lesson_for_day
 from saimc.marketing.posts import (
     approve,
     create_carousel_draft,
     create_draft,
+    create_lesson_draft,
     discard,
     mark_published,
 )
@@ -48,7 +50,12 @@ def _lote(
         "planned_for": day, "product": "Arroz", "province": "La Habana",
         "data_through": through or day, "origin": PostOrigin.BATCH, "batch_slot": slot,
     }
-    if slot == CAROUSEL_SLOT:
+    if slot == EDU_SLOT:
+        post = create_lesson_draft(
+            session, lesson=lesson_for_day(day), planned_for=day, origin=PostOrigin.BATCH,
+            batch_slot=slot,
+        )
+    elif slot == CAROUSEL_SLOT:
         post = create_carousel_draft(session, card_slugs=CAROUSEL_SLIDES, **comun)  # type: ignore[arg-type]
     else:
         post = create_draft(session, card_slug=slot, **comun)  # type: ignore[arg-type]
@@ -96,11 +103,15 @@ class TestBuildWeek:
     ) -> None:
         semana = build_week(session, LUNES, today=MIERCOLES)
 
-        assert _estados(semana, LUNES) == {"dato-del-dia": "missing", "como-se-movio": "missing"}
-        assert _estados(semana, MIERCOLES) == {"dato-del-dia": "missing", CAROUSEL_SLOT: "missing"}
-        assert _estados(semana, DOMINGO) == {"dato-del-dia": "pending"}
-        # Lunes (2) + martes (1) + miércoles (2).
-        assert semana.missing == 5
+        assert _estados(semana, LUNES) == {
+            "dato-del-dia": "missing", EDU_SLOT: "missing", "como-se-movio": "missing"
+        }
+        assert _estados(semana, MIERCOLES) == {
+            "dato-del-dia": "missing", EDU_SLOT: "missing", CAROUSEL_SLOT: "missing"
+        }
+        assert _estados(semana, DOMINGO) == {"dato-del-dia": "pending", EDU_SLOT: "pending"}
+        # Lunes (3) + martes (2) + miércoles (3).
+        assert semana.missing == 8
 
     def test_semana_completa_no_falta_nada(self, session: Session, tmp_path: Path) -> None:
         for dia in (LUNES + timedelta(days=i) for i in range(7)):
@@ -117,10 +128,14 @@ class TestBuildWeek:
         _lote(session, LUNES, "como-se-movio")
         _lote(session, MIERCOLES - timedelta(days=1), "dato-del-dia")
         _lote(session, MIERCOLES, "dato-del-dia")  # el carrusel del miércoles falta
+        for dia in (LUNES, MIERCOLES - timedelta(days=1), MIERCOLES):
+            _lote(session, dia, EDU_SLOT)
 
         semana = build_week(session, LUNES, today=MIERCOLES)
 
-        assert _estados(semana, MIERCOLES) == {"dato-del-dia": "draft", CAROUSEL_SLOT: "missing"}
+        assert _estados(semana, MIERCOLES) == {
+            "dato-del-dia": "draft", EDU_SLOT: "draft", CAROUSEL_SLOT: "missing"
+        }
         assert semana.missing == 1
 
     def test_un_borrador_o_aprobada_de_un_dia_pasado_queda_marcado_sin_publicar(
@@ -139,9 +154,9 @@ class TestBuildWeek:
         assert (como.state, como.overdue) == ("draft", True)
         dato = next(s for s in next(d for d in semana.days if d.day == martes).slots)
         assert (dato.state, dato.overdue) == ("approved", True)
-        # Lo que existe sin publicar no es «falta»: solo el dato del lunes y
-        # el de hoy, y el carrusel de hoy.
-        assert semana.missing == 3
+        # Lo que existe sin publicar no es «falta»: el dato y el educativo del
+        # lunes, el educativo del martes, y los tres de hoy.
+        assert semana.missing == 6
 
     def test_una_publicada_no_queda_marcada_como_vencida(
         self, session: Session, datos: None, tmp_path: Path  # noqa: F811
@@ -174,11 +189,16 @@ class TestBuildWeek:
             session, card_slugs=CAROUSEL_SLIDES, planned_for=MIERCOLES, product="Arroz",
             province=None, data_through=MIERCOLES,
         )
+        create_lesson_draft(
+            session, lesson=lesson_for_day(MIERCOLES), planned_for=MIERCOLES
+        )
         session.commit()
 
         semana = build_week(session, LUNES, today=MIERCOLES)
 
-        assert _estados(semana, MIERCOLES) == {"dato-del-dia": "draft", CAROUSEL_SLOT: "draft"}
+        assert _estados(semana, MIERCOLES) == {
+            "dato-del-dia": "draft", EDU_SLOT: "draft", CAROUSEL_SLOT: "draft"
+        }
 
     def test_semana_futura_es_toda_pendiente_y_no_es_la_actual(self, session: Session) -> None:
         semana = build_week(session, LUNES + timedelta(days=7), today=MIERCOLES)

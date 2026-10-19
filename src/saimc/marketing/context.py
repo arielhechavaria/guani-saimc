@@ -105,6 +105,9 @@ CARD_TYPES: tuple[CardType, ...] = (
         ),
     ),
     CardType("libre", "Libre", "marketing_libre.html", 1080, 1350, free=True),
+    # Diapositiva de la sección educativa (`saimc.marketing.lessons`): bloques
+    # libres con el kicker «Aprende con Guani». Texto narrativo, sin cifras.
+    CardType("leccion", "Educativo", "marketing_leccion.html", 1080, 1350, free=True),
     CardType(
         "carrusel-portada", "Carrusel · portada", "marketing_carrusel_portada.html", 1080, 1350
     ),
