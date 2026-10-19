@@ -9,26 +9,33 @@ Qué escribe, en `src/saimc/web/static/seo/`
 -------------------------------------------
 - `og-guani.png`          1200×630, la tarjeta de marketing «og-compartir»
                           (`og:image` y `twitter:image` de todas las páginas).
-- `favicon.svg`           el avatar de Guani (`_guani_avatar.html`) como SVG.
-- `favicon-32.png`        el mismo avatar a 32×32, para quien no entiende SVG.
-- `apple-touch-icon.png`  180×180, el ícono de iOS; también el `logo` del
-                          JSON-LD de `Organization`.
+- `favicon-32.png`,
+  `favicon-48.png`        la foto del avatar (`static/brand/guani-avatar.webp`)
+                          a 32 y 48 px, con alfa fuera del círculo.
+- `apple-touch-icon.png`  180×180, el ícono de iOS (iOS pinta de negro el alfa,
+                          así que va sobre un fondo oscuro opaco); también el
+                          `logo` del JSON-LD de `Organization` y la fuente del
+                          avatar de la terminal (`saimc.tui.avatar`).
+
+Ya no hay `favicon.svg`: el avatar es una foto (docs/decisions.md, 2026-10-19).
 
 Uso
 ---
     python tools/build_seo_assets.py
 
-Necesita el extra `marketing` (Playwright + Chromium, ver `pyproject.toml`). Sin
-red. Es idempotente en el contenido, aunque el PNG puede variar unos bytes.
+Los íconos salen de PIL; solo la imagen og necesita el extra `marketing`
+(Playwright + Chromium, ver `pyproject.toml`). Sin red.
+Es idempotente en el contenido, aunque el PNG puede variar unos bytes.
 """
 
 from __future__ import annotations
 
-import re
+import io
 import sys
 from pathlib import Path
 
 import jinja2
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -39,32 +46,37 @@ from saimc.marketing.render import render_png  # noqa: E402
 TEMPLATES = ROOT / "src" / "saimc" / "web" / "templates"
 OUT = ROOT / "src" / "saimc" / "web" / "static" / "seo"
 
-#: Fondo del lienzo de los PNG chicos: el del avatar (`#ffffff`), para que la
-#: esquina no quede transparente en un fondo oscuro de pestaña.
-ICON_BACKGROUND = "#ffffff"
+AVATAR = ROOT / "src" / "saimc" / "web" / "static" / "brand" / "guani-avatar.webp"
+
+#: Fondo opaco del ícono de iOS (el borde de la foto es oscuro).
+APPLE_BACKGROUND = (11, 11, 16)
 
 
 def _environment() -> jinja2.Environment:
     return jinja2.Environment(loader=jinja2.FileSystemLoader(TEMPLATES), autoescape=True)
 
 
-def favicon_svg(env: jinja2.Environment) -> str:
-    """El avatar como SVG suelto: con `xmlns` y sin las marcas de la página."""
-    raw = env.get_template("_guani_avatar.html").render(avatar_clip_id="guani-favicon-clip")
-    svg = raw.strip()
-    svg = svg.replace(' class="ph-brand-avatar"', "")
-    svg = re.sub(r'\s+(role|aria-label)="[^"]*"', "", svg)
-    return svg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1) + "\n"
+def paleta(png: bytes) -> bytes:
+    """Reduce un PNG a 256 colores: pesa 3 veces menos y en un ícono o una
+    tarjeta ilustrada no se nota (conexión lenta del lector, ver CLAUDE.md)."""
+    with Image.open(io.BytesIO(png)) as src:
+        q = src.convert("RGB").quantize(256, dither=Image.Dither.FLOYDSTEINBERG)
+    buf = io.BytesIO()
+    q.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
 
 
-def icon_png(svg: str, size: int) -> bytes:
-    html = (
-        f'<!doctype html><body style="margin:0;background:{ICON_BACKGROUND}">'
-        f'<div style="width:{size}px;height:{size}px">'
-        f"{svg.replace('<svg ', f'<svg width="{size}" height="{size}" ', 1)}"
-        "</div></body>"
-    )
-    return render_png(html, width=size, height=size)
+def icon_png(size: int, *, background: tuple[int, int, int] | None = None) -> bytes:
+    """La foto a `size` px; con `background` va opaca sobre ese color."""
+    with Image.open(AVATAR) as src:
+        foto = src.convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+    if background is not None:
+        lienzo = Image.new("RGBA", (size, size), (*background, 255))
+        lienzo.alpha_composite(foto)
+        foto = lienzo.convert("RGB")
+    buf = io.BytesIO()
+    foto.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
 
 
 def og_png(env: jinja2.Environment) -> bytes:
@@ -77,12 +89,11 @@ def og_png(env: jinja2.Environment) -> bytes:
 def main() -> int:
     env = _environment()
     OUT.mkdir(parents=True, exist_ok=True)
-    svg = favicon_svg(env)
     escritos = {
-        "favicon.svg": svg.encode("utf-8"),
-        "favicon-32.png": icon_png(svg, 32),
-        "apple-touch-icon.png": icon_png(svg, 180),
-        "og-guani.png": og_png(env),
+        "favicon-32.png": icon_png(32),
+        "favicon-48.png": icon_png(48),
+        "apple-touch-icon.png": paleta(icon_png(180, background=APPLE_BACKGROUND)),
+        "og-guani.png": paleta(og_png(env)),
     }
     for nombre, contenido in escritos.items():
         (OUT / nombre).write_bytes(contenido)
