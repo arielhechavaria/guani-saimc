@@ -89,6 +89,7 @@ from saimc.validation.shadow import split_reasons
 from saimc.validation.stats import clopper_pearson_lower, clopper_pearson_upper
 from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, ValidationConfig
 
+
 #: Los parámetros del carril 1. Los fijó el operador en G1b
 #: (`docs/decisions.md`, 2026-10-09, «G1b se abre adelantada» y «B2b
 #: aprobada»): son decisiones suyas, no configuración del despliegue.
@@ -96,8 +97,10 @@ from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, Validat
 #: - celda de 5 referencias, la misma con que se persiste la validación (B1);
 #: - un canal puede salir «sucio» desde 3 decisiones individuales, y lo es si
 #:   el operador tocó más de la mitad de las filas propuestas;
-#: - tope de 4 filas por anuncio (era 1; subió el 2026-10-13, y el 2026-10-17
-#:   se midió con la auditoría: `docs/spec-slice-tope-filas.md`, `--por-filas`);
+#: - sin tope de filas por anuncio salvo que `SAIMC_LANE1_MAX_ROWS` lo ponga
+#:   (`build_config`). Era 1, subió a 4 el 2026-10-13 y se quitó el 2026-10-19
+#:   para las listas largas de los almacenes (`docs/spec-slice-lane1-sin-tope.md`);
+#:   el error por número de filas se mira con `--por-filas`;
 #: - las señales externas no entran (Jev no separa): sin umbral. Medido otra
 #:   vez el 2026-10-16 con producto, moneda y provincia: exigir el acuerdo de
 #:   Jev saca 3 errores y 26 anuncios buenos de 204, porque los errores del
@@ -106,15 +109,23 @@ from saimc.validation.types import LANE_ACCEPT, AdContext, AdValidation, Validat
 #: - el desacuerdo entre reglas y modelo no frena: manda el modelo (2026-10-13);
 #: - el canal sucio no frena si es lo único y reglas y modelo coinciden en todas
 #:   las filas (2026-10-17, `docs/spec-slice-canal-sucio.md`).
-CONFIG = ValidationConfig(
-    min_cell_n=persist.MIN_CELL_N,
-    channel_min_history=persist.CHANNEL_MIN_HISTORY,
-    channel_max_edit_rate=persist.CHANNEL_MAX_EDIT_RATE,
-    signal_high_probability=None,
-    lane1_max_rows=4,
-    lane1_model_over_rules=True,
-    lane1_dirty_channel_if_agree=True,
-)
+def build_config(settings: Settings) -> ValidationConfig:
+    """Los parámetros del carril 1. Lo único que sale del ajuste es el tope de
+    filas: `SAIMC_LANE1_MAX_ROWS` en 0 (o sin definir) es sin tope (`None`)."""
+    return ValidationConfig(
+        min_cell_n=persist.MIN_CELL_N,
+        channel_min_history=persist.CHANNEL_MIN_HISTORY,
+        channel_max_edit_rate=persist.CHANNEL_MAX_EDIT_RATE,
+        signal_high_probability=None,
+        lane1_max_rows=settings.lane1_max_rows or None,
+        lane1_model_over_rules=True,
+        lane1_dirty_channel_if_agree=True,
+    )
+
+
+#: Se arma una vez, al importar, con el ajuste del proceso: cambiar el tope
+#: pide reiniciar, como cualquier otra variable del `.env`.
+CONFIG = build_config(get_settings())
 
 TEXT = ContentType.TEXT.value
 
@@ -1032,8 +1043,10 @@ def _rows_lines(strata: Sequence[RowsStratum]) -> list[str]:
 
 def _por_filas(session: Session, settings: Settings, out: Callable[[str], None]) -> int:
     """Solo lectura: el error auditado por número de filas, para decidir el tope."""
+    cap = CONFIG.lane1_max_rows
+    cap_label = "sin tope" if cap is None else f"tope vigente: {cap}"
     out(
-        f"Error del carril 1 por filas aceptadas (tope vigente: {CONFIG.lane1_max_rows}; "
+        f"Error del carril 1 por filas aceptadas ({cap_label}; "
         f"meta {_percent(ERROR_TARGET)}). Solo lectura."
     )
     out("Todo lo auditado:")

@@ -1401,3 +1401,122 @@ def test_arbitro_solo_textos_jev_no_ve_imagenes() -> None:
 
     assert resultado.lane == 2
     assert MOTIVO_PILOTO in resultado.reasons
+
+
+# --- lane1-sin-tope: el tope de filas configurable y quitado ------------------------
+# Casos T1 a T9 de `docs/spec-slice-lane1-sin-tope.md`, escritos antes del código.
+# La configuración es la del carril 1 de hoy (`CONFIG_CANAL_SUCIO`, los mismos
+# valores que `lane1.CONFIG` con tope 4); cada caso cambia solo el tope.
+
+CONFIG_CARRIL_1 = CONFIG_CANAL_SUCIO
+SIN_TOPE = replace(CONFIG_CARRIL_1, lane1_max_rows=None)
+TOPE_6 = replace(CONFIG_CARRIL_1, lane1_max_rows=6)
+MOTIVO_TOPE_4 = "la propuesta trae más filas que el tope del carril 1 (4)"
+MOTIVO_TOPE_6 = "la propuesta trae más filas que el tope del carril 1 (6)"
+
+# Precios dentro de la banda de cada celda: un anuncio limpio de lista larga
+# alterna arroz y pollo, cada fila con un precio de su celda.
+_PRECIOS_ARROZ = ("300", "310", "320", "325", "330", "340")
+_PRECIOS_POLLO = ("400", "420", "430", "440", "450", "460")
+
+
+def _lista(
+    n: int,
+    *,
+    tipo: str = "text",
+    precio_fila: dict[int, str] | None = None,
+    sin_unidad: frozenset[int] = frozenset(),
+) -> AdContext:
+    """Un anuncio de `n` filas, todas verificadas, con reglas y modelo de
+    acuerdo. `precio_fila` y `sin_unidad` cuentan las filas desde 1."""
+    precio_fila = precio_fila or {}
+    modelo: list[ExtractionProposal] = []
+    reglas: list[ExtractionProposal] = []
+    celdas: list[CellReference] = []
+    lineas: list[str] = []
+    for numero in range(1, n + 1):
+        par = numero % 2 == 0
+        producto = POLLO if par else ARROZ
+        precios = _PRECIOS_POLLO if par else _PRECIOS_ARROZ
+        precio = precio_fila.get(numero, precios[(numero // 2) % len(precios)])
+        unidad = None if numero in sin_unidad else "lb"
+        modelo.append(_fila(producto, precio, unidad=unidad, base="unit"))
+        reglas.append(_fila(producto, precio))
+        celdas.append(CELDA_POLLO if par else CELDA_ARROZ)
+        lineas.append(f"{producto.name} {precio} CUP lb")
+    return _ctx(
+        "\n".join(lineas) + "\nHabana",
+        modelo=_modelo(*modelo),
+        reglas=tuple(reglas),
+        celdas=tuple(celdas),
+        tipo=tipo,
+    )
+
+
+def _motivos_de_tope(resultado: AdValidation) -> list[str]:
+    return [m for m in resultado.reasons if "tope del carril 1" in m]
+
+
+def test_sin_tope_t1_cuatro_filas_con_tope_4_entran() -> None:
+    resultado = validate_ad(_lista(4), CONFIG_CARRIL_1)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["approved"] * 4
+
+
+def test_sin_tope_t2_cinco_filas_con_tope_4_van_a_revision() -> None:
+    resultado = validate_ad(_lista(5), CONFIG_CARRIL_1)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == (MOTIVO_TOPE_4,)
+
+
+def test_sin_tope_t3_cinco_filas_sin_tope_entran() -> None:
+    resultado = validate_ad(_lista(5), SIN_TOPE)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["approved"] * 5
+
+
+def test_sin_tope_t4_doce_filas_sin_tope_entran() -> None:
+    resultado = validate_ad(_lista(12), SIN_TOPE)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["approved"] * 12
+
+
+def test_sin_tope_t5_una_regla_fallada_en_la_fila_7_frena_sola() -> None:
+    resultado = validate_ad(_lista(12, precio_fila={7: "3200"}), SIN_TOPE)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("fila 7: el precio cae fuera de la banda de su celda",)
+    assert _motivos_de_tope(resultado) == []
+
+
+def test_sin_tope_t6_el_modelo_se_abstuvo_en_la_unidad_de_la_fila_3() -> None:
+    resultado = validate_ad(_lista(8, sin_unidad=frozenset({3})), SIN_TOPE)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("fila 3: el modelo se abstuvo en unidad",)
+
+
+def test_sin_tope_t7_una_imagen_de_seis_filas_no_entra() -> None:
+    resultado = validate_ad(_lista(6, tipo="image"), SIN_TOPE)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == ("el anuncio es una imagen: las imágenes no entran al carril 1",)
+    assert _motivos_de_tope(resultado) == []
+
+
+def test_sin_tope_t8_cinco_filas_con_tope_6_entran() -> None:
+    resultado = validate_ad(_lista(5), TOPE_6)
+
+    assert resultado.lane == 1
+    assert _estados(resultado) == ["approved"] * 5
+
+
+def test_sin_tope_t9_siete_filas_con_tope_6_van_a_revision() -> None:
+    resultado = validate_ad(_lista(7), TOPE_6)
+
+    assert resultado.lane == 2
+    assert resultado.reasons == (MOTIVO_TOPE_6,)
