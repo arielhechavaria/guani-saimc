@@ -2436,7 +2436,7 @@ class TestRutaProductoLimpia:
         enfocado = client.get("/producto/arroz").text
         home = client.get("/precios").text
 
-        assert "<title>Guani — Arroz — precios</title>" in enfocado
+        assert "<title>Precio de Arroz en Cuba hoy, por provincia | Guani</title>" in enfocado
         assert "<title>Guani — Precios y cobertura</title>" in home
 
     def test_el_kicker_muestra_guani_y_saimc_juntos(
@@ -2497,11 +2497,35 @@ class TestOpenGraph:
 
         texto = client.get("/producto/arroz").text
 
-        assert 'property="og:title" content="Guani — Arroz — precios"' in texto
         assert (
-            'property="og:description" content="Precios de Arroz en el mercado '
-            'informal cubano, verificados anuncio por anuncio."' in texto
+            'property="og:title" content="Precio de Arroz en Cuba hoy, por provincia | Guani"'
+            in texto
         )
+        # Con datos, la descripción lleva el rango y el conteo (lo que la gente
+        # busca), no una frase genérica.
+        assert re.search(
+            r'property="og:description" content="Precio de Arroz en Cuba: [^"]*anuncio', texto
+        )
+
+    def test_producto_enfocado_trae_un_resumen_visible_con_la_fecha(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """Google rankea texto: el rango y la fecha tienen que estar escritos,
+        no solo dibujados en las tarjetas."""
+        TestRutaProductoLimpia()._seed(session)
+
+        texto = client.get("/producto/arroz").text
+
+        assert re.search(r'<p class="ph-lite-resumen">[^<]*Arroz[^<]*anuncio[^<]*</p>', texto)
+
+    def test_producto_en_una_provincia_la_nombra_en_el_titulo(
+        self, client: TestClient, session: Session
+    ) -> None:
+        TestRutaProductoLimpia()._seed(session)
+
+        texto = client.get("/producto/arroz?provincia=la-habana").text
+
+        assert "<title>Precio de Arroz en La Habana, Cuba | Guani</title>" in texto
 
 
 class TestAtribucionTRMI:

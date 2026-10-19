@@ -420,6 +420,13 @@ class TestLaLandingEnLaRaiz:
         assert f"© {date.today().year} Guani" in texto
         assert 'href="https://eltoque.com/"' in texto
 
+    def test_el_titulo_lleva_las_palabras_que_la_gente_busca(
+        self, client: TestClient, datos: None
+    ) -> None:
+        texto = client.get("/").text
+
+        assert "<title>Guani — Precios en Cuba hoy, por producto y provincia</title>" in texto
+
     def test_lleva_los_metadatos_para_compartir(self, client: TestClient, datos: None) -> None:
         texto = client.get("/").text
 
