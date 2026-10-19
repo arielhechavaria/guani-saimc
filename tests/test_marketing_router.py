@@ -177,7 +177,7 @@ class TestTarjetasEstaticas:
         [
             ("carrusel-portada", "Guani"),
             ("carrusel-consejo", "Guani"),
-            ("story-precalentamiento", "Próximamente"),
+            ("story-precalentamiento", "Guani ya está"),
             ("portada-facebook", "Medimos el mercado con la misma vara"),
             ("como-funciona", "De los grupos de WhatsApp a la cifra"),
             ("carrusel-cierre", "Guani"),
@@ -190,6 +190,23 @@ class TestTarjetasEstaticas:
 
         assert respuesta.status_code == 200
         assert marca in respuesta.text
+
+    @pytest.mark.parametrize(
+        "slug",
+        [
+            "carrusel-portada", "carrusel-consejo", "carrusel-cierre",
+            "story-precalentamiento", "portada-facebook", "como-funciona",
+        ],
+    )
+    def test_ninguna_tarjeta_dice_que_el_sitio_abre_pronto(
+        self, client: TestClient, datos: None, slug: str
+    ) -> None:
+        """El sitio ya está en línea (2026-10-19): ninguna pieza fija anuncia
+        una apertura futura."""
+        texto = client.get(f"/marketing/preview/{slug}").text.lower()
+
+        for frase in ("abre pronto", "próximamente", "muy pronto", "estará disponible"):
+            assert frase not in texto
 
     def test_story_y_portada_facebook_listan_los_productos_del_foco(
         self, client: TestClient, datos: None

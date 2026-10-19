@@ -25,7 +25,7 @@ de inicio de la Fase 1»). Antes de eso, abrirlo publicaría precios convertidos
 con una tasa equivocada (las 266 filas en USD con `elTOQUE (cache)`).
 
 - [ ] **T1 aplicado** y `revalidate --execute` corrido después.
-- [ ] **La puerta apagada** (`SAIMC_SITE_GATE_ENABLED=false`). Dar acceso por
+- [x] **La puerta apagada** (`SAIMC_SITE_GATE_ENABLED=false`; hecho el 2026-10-19). Dar acceso por
       contraseña a una institución sirve solo para un adelanto, y entonces
       «gratis, sin registrarse» no es cierto.
 - [ ] **Las cifras, otra vez desde la base.** Las de las slides 7, 9 y 11 son

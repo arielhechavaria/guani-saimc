@@ -15,14 +15,12 @@ Esta guía es la única referencia: si un consejo de afuera choca con las tres
 reglas de abajo, se ignora. Si parece bueno, se prueba como **el** cambio de
 una semana y se mide (§7).
 
-> **Antes de nada: la puerta del sitio.** La puerta está encendida a propósito
-> y se apaga al empezar la Fase 1, que llega con el cierre de la Fase 0: T1
-> aplicado y `revalidate --execute` corrido después (`docs/decisions.md`,
-> «2026-10-18 — Criterio de cierre de la Fase 0 y de inicio de la Fase 1»).
-> Mientras siga encendida, un enlace desde Instagram lleva a un formulario de
-> contraseña. **No pongas el enlace en la biografía ni escribas «enlace en la
-> biografía» hasta que la puerta esté apagada.** El plan de 30 días funciona
-> igual: las tarjetas dan la respuesta sin enlace.
+> **El sitio ya está en línea.** La puerta se apagó el 2026-10-19, con el
+> cierre de la Fase 0 (`docs/decisions.md`, «2026-10-18 — Criterio de cierre de
+> la Fase 0 y de inicio de la Fase 1»): `guani.app` abre sin contraseña. Ya se
+> puede poner el enlace en la biografía y escribir «enlace en la biografía».
+> Ninguna pieza debe decir que el sitio «abre pronto». Si la puerta se vuelve a
+> encender, quita el enlace de la biografía hasta apagarla.
 
 ## Las tres reglas
 
@@ -170,7 +168,7 @@ justo». Cuando aparece la tasa de cambio, se atribuye a elTOQUE.
 |---|---|---|---|
 | **Instagram** (feed, Reels y Stories) | Descubrir y volver | Medio | **Canal principal.** Se publica siempre a mano, desde el teléfono, con lo que arma la fábrica de `/marketing`. La API de Meta se descartó el 2026-10-18: Meta for Developers no está disponible desde Cuba (`docs/decisions.md`, «Se descarta la API de Meta»). |
 | **Reenvío por WhatsApp y Telegram** | Descubrir | Bajo | Lo hace el público, no tú. Es donde vive el mercado. Cada pieza se diseña para que valga la pena reenviarla. |
-| **Sitio** (`/precios`, `/producto/<slug>`) | Visitar | — | Ya existe. Depende de apagar la puerta. |
+| **Sitio** (`/precios`, `/producto/<slug>`) | Visitar | — | Ya está en línea (la puerta se apagó el 2026-10-19). |
 | **Facebook** | — | — | **Fuera del MVP** (decisión del 2026-10-16). La tarjeta «Portada de Facebook» queda para el día que se abra la página. |
 | **Pago (anuncios)** | — | — | **No se planifica.** Pasa por Meta y por un pago con tarjeta internacional. |
 | **Prensa e instituciones** | Descubrir | Alto | Es otro plan: `docs/plan-marca-leira-studio.md` y `docs/presentacion-instituciones.md`. |
@@ -269,8 +267,8 @@ Notas por pieza:
 - **El video.** Cuenta el sistema como es hoy: una máquina lee, lo claro pasa
   y lo dudoso lo decide una persona, que también audita a la máquina. Sus
   cifras son las del día en que se produjo: si el texto del post las menciona,
-  lleva esa fecha. Termina diciendo «Mira los precios de hoy en Guani»: con la
-  puerta encendida, el texto no promete el enlace.
+  lleva esa fecha. Termina diciendo «Mira los precios de hoy en Guani» con el enlace
+  `guani.app`.
 - **Otros Reels.** Fuera del video de la landing no hay formato de video. Según
   un análisis de Buffer citado por terceros, los Reels llegan a más gente y los
   carruseles generan más interacción (no verificado en la fuente original).
@@ -323,7 +321,7 @@ termina a las 06:00) y prueba la noche como el cambio de alguna semana.
 |---|---|---|
 | Perfil de Instagram: nombre «Guani», avatar de la marca, **cuenta profesional** | Que se entienda qué es en 3 segundos y ver las estadísticas | Imprescindible |
 | Biografía (150 caracteres como máximo): «Medimos el mercado con la misma vara. Lo que se anuncia en Cuba, provincia por provincia. Cada precio con su cuenta.» | La vara, de `docs/narrativa-guani.md` | Imprescindible |
-| Enlace en la biografía a `/precios` | Paso «visitar» | **Solo cuando se apague la puerta** |
+| Enlace en la biografía a `/precios` | Paso «visitar» | Imprescindible (el sitio ya está en línea) |
 | El video de la landing y «De los grupos a la cifra», fijados arriba del perfil | Explicar a quien llega | Imprescindible |
 | Tres respuestas guardadas en el teléfono | Contestar rápido: «¿de dónde sacan el precio?», «¿por qué no está mi provincia?», «el precio está mal» | Recomendable |
 | Campo de Instagram en el pie del sitio | Hoy el pie enlaza Facebook, WhatsApp y Telegram desde configuración; **no tiene Instagram**. | Recomendable, **fuera de alcance de esta guía** (es un slice de código) |
@@ -376,8 +374,7 @@ journalctl -u saimc.service --since today | grep 'public.pageview' | grep -oP 'v
 
 Está en `docs/comandos.md`, «Visitantes únicos del sitio», con la variante
 para un día puntual. Ese número es lo más cercano a los «usuarios activos
-diarios» de `spec.md` §9. Con la puerta encendida solo cuenta a quien tiene
-la contraseña: la línea de base empieza el día que se apague.
+diarios» de `spec.md` §9. La puerta se apagó el 2026-10-19: la línea de base empieza ese día.
 
 ### Lo que no se mide
 
@@ -470,11 +467,9 @@ de la planilla.
 
 ### Semana 3 — Abrir la puerta al sitio
 
-- **Si la puerta del sitio ya se apagó:** pon `/precios` en la biografía y
-  suma «enlace en la biografía» al cierre del carrusel y de «De dónde sale».
-  Cuenta los visitantes únicos cada día de esta semana.
-- **Si sigue encendida:** sigue sin enlace. El plan no se frena; el paso
-  «visitar» espera.
+- Pon `/precios` en la biografía y suma «enlace en la biografía» al cierre del
+  carrusel y de «De dónde sale». Cuenta los visitantes únicos cada día de esta
+  semana.
 - Publica el «Cómo se movió» del producto que ganó la encuesta.
 
 ### Semana 4 — Mirar y decidir
@@ -493,7 +488,7 @@ de la planilla.
 - [ ] ¿Cuántas publicaciones hiciste? (meta del proceso: unas 20)
 - [ ] ¿Qué pieza tiene mejor compartidos ÷ alcance?
 - [ ] ¿Los seguidores subieron, bajaron o quedaron igual, semana a semana?
-- [ ] Si la puerta se apagó: ¿cuál es la media de visitantes únicos por día, y
+- [ ] ¿Cuál es la media de visitantes únicos por día, y
   qué tan lejos está de 100 (`spec.md` §9)?
 - [ ] ¿Cuántas personas escribieron o comentaron, y qué preguntaron?
 
@@ -515,7 +510,7 @@ descartaron el 2026-10-18 junto con la API.
 
 | Riesgo | Señal | Qué hacer |
 |---|---|---|
-| **La puerta del sitio sigue encendida** | Nadie puede entrar desde Instagram | No poner el enlace; las tarjetas dan la respuesta solas. |
+| **La puerta del sitio se vuelve a encender** | Quien entra desde Instagram ve un formulario de contraseña | Quitar el enlace de la biografía hasta apagarla; las tarjetas dan la respuesta solas. |
 | **Un dato sale con datos personales** | Un teléfono o un nombre en «De dónde sale» | No publicar. Borrar si ya salió, avisar en Story sin repetir el dato y corregir el código. |
 | **Un precio publicado estaba mal** | Un comentario lo señala | Agradecer, corregir y contarlo. Nunca borrar en silencio. |
 | **No hay datos para la tarjeta** | El lote no crea esa pieza en «Hoy» | Publicar otra pieza de la semana; nunca una tarjeta vacía ni con cifras de ejemplo sin rótulo. |
@@ -531,8 +526,8 @@ descartaron el 2026-10-18 junto con la API.
    la vara, y fijar el video de la landing.
 2. **Operador:** confirmar que `saimc-marketing.timer` está corriendo en el
    VPS (`systemctl list-timers saimc-marketing.timer`).
-3. **Operador:** apagar la puerta del sitio al cerrar la Fase 0 (T1 y
-   `revalidate --execute`). Este plan asume que pasa durante el mes.
+3. **Operador:** la puerta del sitio ya está apagada (2026-10-19); poner el
+   enlace de `guani.app` en la biografía.
 4. **Slices posibles, fuera de esta guía:** campo de Instagram en el pie del
    sitio; métricas cargadas a mano (F5); medir el origen de las visitas.
 

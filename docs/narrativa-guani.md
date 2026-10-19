@@ -392,8 +392,8 @@ técnicos, nunca en Instagram ni en la portada.
 ## Piezas listas para usar
 
 Estas piezas están listas para copiar; cada una dice de qué enfoque sale.
-Recordatorio de `docs/guia-crecimiento.md`: mientras la puerta del sitio siga
-encendida, no se pone el enlace en la biografía.
+Recordatorio de `docs/guia-crecimiento.md`: el sitio ya está en línea
+(`guani.app`), así que el enlace va en la biografía.
 
 ### Biografía de Instagram (máximo 150 caracteres)
 
