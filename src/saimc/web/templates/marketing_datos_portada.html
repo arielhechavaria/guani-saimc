@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Datos del día: portada</title>
+{% include "_marketing_card.html" %}
+</head>
+<body>
+{# Portada del carrusel de datos diario. Mismo estilo que marketing_carrusel_portada.html. Las dos cifras (fecha de corte y cantidad de productos) salen de `portada`, que arma context.build_context con los datos reales: nunca van escritas acá. #}
+<div class="mc" style="width: 1080px; height: 1350px">
+  <div class="mc-orbs mc-orbs-center"></div>
+  <div class="mc-content" style="padding: 72px">
+    <div class="mc-brand" style="--mc-logo: 84px">{% include "_marketing_avatar.html" %}<span class="mc-wordmark">Guani</span></div>
+    <div style="flex-grow: 1"></div>
+    <div class="mc-kicker">Precios por provincia · datos hasta el {{ portada.through }}</div>
+    <div class="mc-title" style="margin-top: 24px; font-size: 112px; line-height: 1.04">Los datos del día.</div>
+    <div class="mc-muted" style="margin-top: 40px; font-size: 44px; line-height: 56px; max-width: 900px">{{ portada.products }} producto{{ "s" if portada.products != 1 }} con su rango y su mediana, provincia por provincia.</div>
+    <div style="flex-grow: 1"></div>
+    <div style="display: flex; align-items: center; gap: 24px; font-size: 34px; font-weight: 500">
+      <div style="flex-grow: 1">Desliza: producto por producto →</div>
+      {% if slide_counter %}<div class="mc-chip">{{ slide_counter }}</div>{% endif %}
+    </div>
+  </div>
+</div>
+</body>
+</html>

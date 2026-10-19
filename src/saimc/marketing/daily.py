@@ -11,13 +11,12 @@ nada** y, desde F2 (`docs/spec-slice-fabrica-publicaciones.md`), tampoco
 rasteriza: deja borradores en `/marketing` («Hoy») para que el operador los
 revise, apruebe y publique desde el teléfono.
 
-Qué tarjetas toca cada día (`cards_for_day`): «Dato del día» y el carrusel
-«Educativo» (una lección corta de `saimc.marketing.lessons`, texto fijo, no
-depende de datos) todos los días; los
-lunes, además, «Cómo se movió» (el ritmo semanal); los miércoles, el carrusel
-(portada → cómo leer → «Dato del día» → cierre, un solo borrador con cuatro
-diapositivas, F3); los jueves, «De dónde sale este precio» (el método). Las
-demás piezas son branding fijo.
+Qué toca cada día (`cards_for_day`): el carrusel «Datos del día» (portada →
+una «Dato del día» por producto con datos, hasta cuatro → cierre, un solo
+borrador) y el carrusel «Educativo» (una lección corta de
+`saimc.marketing.lessons`, texto fijo, no depende de datos) todos los días; los
+lunes, además, «Cómo se movió» (el ritmo semanal); los jueves, «De dónde sale
+este precio» (el método). Las demás piezas son branding fijo.
 
 **Idempotente por día y tipo**: si ya hay un borrador del lote para ese día y
 ese tipo —en el estado que sea, descartado incluido— no se crea otro. Lo
@@ -28,7 +27,7 @@ Las cifras son siempre las del **día anterior** hacia atrás: el borrador lleva
 `data_through = día − 1`, y la vista previa y la aprobación ponen ahí el tope.
 El producto y la provincia rotan con el calendario (`candidate_order`); si el
 que toca no tiene datos, se prueba el siguiente, y si ninguno tiene, el tipo se
-salta y la salida lo dice. Nunca se crea un borrador vacío.
+salta y la salida lo dice. Nunca se crea un borrador vacío (ni una portada sola).
 
 Con `--execute` corre además la retención: borradores y descartadas de más de
 30 días se borran con su imagen; las publicadas se guardan siempre. Las
@@ -57,8 +56,8 @@ from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.db import session_scope
-from saimc.marketing.context import BY_SLUG, CardType, build_context
-from saimc.marketing.lessons import LESSON_CARD, lesson_for_day
+from saimc.marketing.context import BY_SLUG, DATOS_MAX_PRODUCTS, CardType, build_context
+from saimc.marketing.lessons import lesson_for_day
 from saimc.marketing.posts import (
     RETENTION_DAYS,
     context_has_data,
@@ -75,11 +74,26 @@ from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 EDU_SLOT = "educativo"
 EDU_LABEL = "Educativo"
 
-#: Las que salen todos los días.
-DAILY_CARDS: tuple[str, ...] = ("dato-del-dia", EDU_SLOT)
+#: El turno de datos diario: un carrusel con la portada del día, una
+#: «Dato del día» por producto con datos (`DATOS_MAX_PRODUCTS` como mucho) y el
+#: cierre. Reemplaza, desde el 2026-10-19, a la tarjeta suelta «dato-del-dia»
+#: y al carrusel de los miércoles.
+DATOS_SLOT = "datos"
+DATOS_LABEL = "Datos del día"
+DATOS_COVER = "datos-portada"
+DATOS_CLOSING = "carrusel-cierre"
 
-#: El carrusel del miércoles (`docs/guia-crecimiento.md`, «La semana tipo»):
-#: un turno del calendario que arma una sola publicación con estas diapositivas.
+#: Turnos viejos del lote que cubren el de datos: si el de este día ya existe
+#: (la corrida de las 06:00 anterior al cambio), el lote no crea «datos» encima.
+#: Y siguen mostrándose en «Hoy», la semana y el historial.
+LEGACY_DATOS_SLOTS: tuple[str, ...] = ("dato-del-dia", "carrusel")
+
+#: Las que salen todos los días.
+DAILY_CARDS: tuple[str, ...] = (DATOS_SLOT, EDU_SLOT)
+
+#: El carrusel «Carrusel» (portada fija → cómo leer → dato → cierre): ya no es
+#: un turno del lote, pero el editor lo sigue ofreciendo a mano y las
+#: publicaciones viejas del lote lo llevan como `batch_slot`.
 CAROUSEL_SLOT = "carrusel"
 CAROUSEL_LABEL = "Carrusel"
 CAROUSEL_SLIDES: tuple[str, ...] = (
@@ -92,7 +106,6 @@ CAROUSEL_SLIDES: tuple[str, ...] = (
 #: Las que suman ciertos días. Clave: `date.weekday()` (0 = lunes).
 WEEKLY_CARDS: dict[int, tuple[str, ...]] = {
     0: ("como-se-movio",),
-    2: (CAROUSEL_SLOT,),
     3: ("de-donde-sale",),
 }
 
@@ -108,15 +121,9 @@ def slot_label(slot: str) -> str:
     """Cómo se nombra un turno del calendario en «Hoy»."""
     if slot == EDU_SLOT:
         return EDU_LABEL
+    if slot == DATOS_SLOT:
+        return DATOS_LABEL
     return CAROUSEL_LABEL if slot == CAROUSEL_SLOT else BY_SLUG[slot].label
-
-
-def slot_slides(slot: str) -> tuple[str, ...]:
-    """Las tarjetas que lleva el borrador de un turno (en el educativo, el tipo
-    de tarjeta: cuántas diapositivas son lo decide la lección del día)."""
-    if slot == EDU_SLOT:
-        return (LESSON_CARD,)
-    return CAROUSEL_SLIDES if slot == CAROUSEL_SLOT else (slot,)
 
 
 def candidate_order[T](items: Sequence[T], day: date) -> list[T]:
@@ -129,6 +136,42 @@ def candidate_order[T](items: Sequence[T], day: date) -> list[T]:
         return []
     inicio = day.toordinal() % len(items)
     return list(items[inicio:]) + list(items[:inicio])
+
+
+def datos_products(db: Session, day: date) -> list[str]:
+    """Los productos del piloto con datos hasta el día anterior a `day`, a
+    partir del que toca por la rotación, hasta `DATOS_MAX_PRODUCTS`. Los que no
+    tienen datos se saltan."""
+    kind = BY_SLUG["dato-del-dia"]
+    elegidos: list[str] = []
+    for producto in candidate_order(pilot_product_names(db), day):
+        contexto = build_context(
+            kind, db, product=producto, province=None, hoy=day - timedelta(days=1)
+        )
+        if context_has_data(kind.slug, contexto):
+            elegidos.append(producto)
+            if len(elegidos) == DATOS_MAX_PRODUCTS:
+                break
+    return elegidos
+
+
+def create_datos_draft(
+    db: Session,
+    day: date,
+    products: Sequence[str],
+    *,
+    data_through: date,
+    origin: PostOrigin = PostOrigin.OPERATOR,
+    batch_slot: str | None = None,
+) -> MarketingPost:
+    """El carrusel de datos: portada → una «Dato del día» por producto de
+    `products` → cierre. Sin `flush`, como `create_carousel_draft`."""
+    slugs = (DATOS_COVER, *["dato-del-dia"] * len(products), DATOS_CLOSING)
+    return create_carousel_draft(
+        db, card_slugs=slugs, planned_for=day, product=None, province=None,
+        products=(None, *products, None), data_through=data_through,
+        origin=origin, batch_slot=batch_slot,
+    )
 
 
 def purge_old(out_root: Path, today: date, keep_days: int = RETENTION_DAYS) -> list[Path]:
@@ -214,20 +257,12 @@ def _pick(kind: CardType, db: Session, day: date) -> tuple[str | None, str | Non
     return None
 
 
-def _pick_slot(db: Session, day: date, slot: str) -> tuple[str | None, str | None] | None:
-    """Producto y provincia del turno. En el carrusel los elige la diapositiva
-    con datos; si no tiene con qué, no se crea: sería puro branding."""
-    con_datos = [BY_SLUG[s] for s in slot_slides(slot) if BY_SLUG[s].needs_product]
-    if not con_datos:
-        return None, None
-    return _pick(con_datos[0], db, day)
-
-
 def _exists(db: Session, day: date, slot: str) -> bool:
+    slots = (slot, *LEGACY_DATOS_SLOTS) if slot == DATOS_SLOT else (slot,)
     return (
         db.scalar(
             select(MarketingPost.id).where(
-                MarketingPost.planned_for == day, MarketingPost.batch_slot == slot
+                MarketingPost.planned_for == day, MarketingPost.batch_slot.in_(slots)
             )
         )
         is not None
@@ -245,7 +280,14 @@ def run_daily(
         if _exists(db, day, slug):
             report.cards.append(CardResult(slug, "ya existía"))
             continue
-        elegida = _pick_slot(db, day, slug)
+        elegida: tuple[str | None, str | None] | None
+        if slug == DATOS_SLOT:
+            productos = datos_products(db, day)
+            elegida = (", ".join(productos), None) if productos else None
+        elif slug == EDU_SLOT:
+            elegida = (None, None)
+        else:
+            elegida = _pick(BY_SLUG[slug], db, day)
         if elegida is None:
             report.cards.append(CardResult(slug, "sin datos"))
             continue
@@ -263,10 +305,9 @@ def run_daily(
                         db, lesson=lesson_for_day(day), planned_for=day,
                         origin=PostOrigin.BATCH, batch_slot=slug,
                     )
-                elif slug == CAROUSEL_SLOT:
-                    create_carousel_draft(
-                        db, card_slugs=CAROUSEL_SLIDES, planned_for=day, product=producto,
-                        province=provincia, data_through=report.data_through,
+                elif slug == DATOS_SLOT:
+                    create_datos_draft(
+                        db, day, productos, data_through=report.data_through,
                         origin=PostOrigin.BATCH, batch_slot=slug,
                     )
                 else:

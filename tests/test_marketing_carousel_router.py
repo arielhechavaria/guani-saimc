@@ -242,7 +242,7 @@ class TestEditorDeCarrusel:
 
 
 class TestHoyConCarrusel:
-    def test_el_miercoles_avisa_que_falta_el_carrusel(
+    def test_el_miercoles_avisa_que_faltan_los_datos_y_no_el_carrusel_viejo(
         self,
         client: TestClient,
         datos: None,
@@ -252,7 +252,8 @@ class TestHoyConCarrusel:
 
         html = client.get("/marketing").text
 
-        assert "Falta «Carrusel»" in html
+        assert "Falta «Datos del día»" in html
+        assert "Falta «Carrusel»" not in html
 
     def test_con_el_carrusel_creado_ya_no_falta_y_dice_cuantas_tiene(
         self,

@@ -32,7 +32,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.marketing.caption import CAPTION_MAX, build_caption, with_hashtags
+from saimc.marketing.caption import CAPTION_MAX, build_caption, datos_caption, with_hashtags
 from saimc.marketing.context import BY_SLUG, CARD_TYPES, CardType, build_context
 from saimc.marketing.html import card_html
 from saimc.marketing.lessons import LESSON_CARD, Lesson
@@ -183,7 +183,19 @@ def caption_slide(post: MarketingPost) -> MarketingPostSlide:
     return next((s for s in post.slides if _kind(s).needs_product), post.slides[0])
 
 
+def _datos_caption(post: MarketingPost) -> str | None:
+    """El texto del carrusel de datos (abre con `datos-portada`): sale de los
+    nombres de producto de sus diapositivas, que `params` ya fija. `None` si
+    la publicación es otra cosa."""
+    if post.slides[0].card_slug != "datos-portada":
+        return None
+    return datos_caption([s.params["product"] for s in post.slides if s.params.get("product")])
+
+
 def _generated_caption(db: Session, post: MarketingPost) -> str:
+    datos = _datos_caption(post)
+    if datos is not None:
+        return datos
     slide = caption_slide(post)
     return build_caption(_kind(slide), slide_context(db, slide) or {})
 
@@ -254,15 +266,20 @@ def create_carousel_draft(
     product: str | None,
     province: str | None,
     data_through: date,
+    products: Sequence[str | None] | None = None,
     origin: PostOrigin = PostOrigin.OPERATOR,
     batch_slot: str | None = None,
     now: datetime | None = None,
 ) -> MarketingPost:
     """Un borrador de carrusel con `card_slugs` en ese orden. Producto y
     provincia van a las diapositivas que los usan; las de branding no llevan.
-    Como `create_draft`, no hace `flush`."""
+    `products`, si se pasa, da un producto por diapositiva (mismo largo que
+    `card_slugs`) en lugar de `product` para todas. Como `create_draft`, no
+    hace `flush`."""
     if not 1 <= len(card_slugs) <= MAX_SLIDES:
         raise InvalidSlide(f"Un carrusel lleva de 1 a {MAX_SLIDES} diapositivas.")
+    if products is not None and len(products) != len(card_slugs):
+        raise InvalidSlide("Hace falta un producto por diapositiva.")
     kinds = [_postable_kind(slug) for slug in card_slugs]
     if len({(k.width, k.height) for k in kinds}) > 1:
         raise InvalidSlide("Todas las diapositivas de un carrusel tienen el mismo tamaño.")
@@ -275,11 +292,12 @@ def create_carousel_draft(
         created_at=now or utc_now(),
     )
     for posicion, kind in enumerate(kinds, start=1):
+        producto = product if products is None else products[posicion - 1]
         post.slides.append(
             MarketingPostSlide(
                 position=posicion,
                 card_slug=kind.slug,
-                params=_params(kind, product, province, data_through),
+                params=_params(kind, producto, province, data_through),
                 options=options_to_dict(parse_options(kind, {})),
             )
         )
@@ -509,7 +527,9 @@ def approve(
     snapshot_origen = next(snap for slide, snap, _ in listas if slide is origen)
     caption = post.caption
     if caption is None:
-        caption = build_caption(_kind(origen), thaw_context(snapshot_origen["context"]))
+        caption = _datos_caption(post) or build_caption(
+            _kind(origen), thaw_context(snapshot_origen["context"])
+        )
 
     carpeta = _post_dir(images_dir, post)
     carpeta.mkdir(parents=True, exist_ok=True)
@@ -565,7 +585,9 @@ def duplicate(
     origen = caption_slide(post)
     caption = post.caption
     if caption is not None and origen.snapshot is not None:
-        generado = build_caption(_kind(origen), thaw_context(origen.snapshot["context"]))
+        generado = _datos_caption(post) or build_caption(
+            _kind(origen), thaw_context(origen.snapshot["context"])
+        )
         if caption == generado:
             caption = None
     copia = MarketingPost(

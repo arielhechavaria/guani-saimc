@@ -37,6 +37,10 @@ DEFAULT_WINDOW_DAYS = 7
 #: hay ni 4 anuncios que listar.
 LOOKBACK_WINDOW_DAYS = 30
 
+#: Tope de productos de un carrusel de datos (`daily.DATOS_SLOT`): con la
+#: portada y el cierre son seis diapositivas, lejos del tope de 10 de Instagram.
+DATOS_MAX_PRODUCTS = 4
+
 
 @dataclass(frozen=True)
 class Block:
@@ -107,6 +111,11 @@ CARD_TYPES: tuple[CardType, ...] = (
             Block("posicion", "Número de diapositiva (solo en un carrusel)"),
         ),
     ),
+    # Portada del carrusel de datos diario (`daily.DATOS_SLOT`): lleva la fecha
+    # de corte y cuántos productos traen datos; sin producto ni provincia.
+    CardType(
+        "datos-portada", "Datos del día · portada", "marketing_datos_portada.html", 1080, 1350
+    ),
     CardType("libre", "Libre", "marketing_libre.html", 1080, 1350, free=True),
     # Diapositiva de la sección educativa (`saimc.marketing.lessons`): bloques
     # libres con el kicker «Aprende con Guani». Texto narrativo, sin cifras.
@@ -164,9 +173,7 @@ def build_context(
     tope = hoy
     hoy = hoy or date.today()
 
-    if kind.slug == "dato-del-dia":
-        if product is None:
-            return None
+    if kind.slug in ("dato-del-dia", "datos-portada"):
         desde = hoy - timedelta(days=DEFAULT_WINDOW_DAYS - 1)
         report = compute_retail_ranges(db, days=DEFAULT_WINDOW_DAYS, hoy=hoy, hasta=tope)
         ranges = [
@@ -174,6 +181,20 @@ def build_context(
             if r.province_name in PHASE0_PROVINCES and not r.unconverted
         ]
         cards = build_cards(ranges)
+        if kind.slug == "datos-portada":
+            # Cuántos productos del foco traen datos (los que salen en el
+            # carrusel, con tope): la misma regla que `context_has_data`.
+            con_datos = {c.product_name for c in cards} & set(products)
+            if not con_datos:
+                return None
+            return {
+                "portada": {
+                    "products": min(len(con_datos), DATOS_MAX_PRODUCTS),
+                    "through": f"{hoy.day:02d}/{hoy.month:02d}",
+                }
+            }
+        if product is None:
+            return None
         dato = build_dato_del_dia(
             cards, product_name=product, province_names=PHASE0_PROVINCES,
             week_from=desde, week_to=hoy,
