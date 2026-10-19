@@ -153,6 +153,10 @@ sudo systemctl start saimc-prefill.service
   descarta solo si Jev también lo hace (P(sí) < 0,2; sin señal, como antes), y un texto cuya
   propuesta degradó lo puede descartar Jev solo. Apagado, Jev sigue en sombra. Para volver atrás
   basta con poner `false` en el `.env`; no hace falta desplegar.
+- **Jev como árbitro (jev-desacuerdo)**: con lo anterior y además
+  `SAIMC_LANE0_JEV_ARBITER_ENABLED=true`, un texto que el modelo descarta pero en el que las reglas
+  ven un producto piloto se descarta igual si Jev da P(sí) < 0,2. Nace apagado; cómo encenderlo, en
+  [Carril 0 sobre lo pendiente](#carril-0-sobre-lo-pendiente).
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Paso 1».
 
 ---
@@ -500,6 +504,20 @@ ningún dígito», 2026-10-13), lo que ya estaba pendiente no se vuelve a mirar:
 - Con `SAIMC_LANE0_JEV_ENABLED=true` (slice jev-decisor) usa la señal vigente de Jev: un descarte del
   modelo pide además P(sí) < 0,2, y un pendiente cuya única propuesta degradó lo puede descartar Jev
   solo. Esos tienen su propia cota en `/curation/auditoria` («Descartados solo por Jev»).
+- Con `SAIMC_LANE0_JEV_ARBITER_ENABLED=true` además (slice jev-desacuerdo), Jev arbitra el
+  desacuerdo: un descarte del modelo en el que las reglas ven un piloto se descarta si P(sí) < 0,2.
+  Su cota propia es «Descartados por Jev como árbitro». En seco, el comando dice cuántos de los que
+  descartaría son del árbitro; con el árbitro apagado, cuántos sumaría encendido.
+- **Encender el árbitro** (una vez, `docs/spec-slice-jev-desacuerdo.md`, «Despliegue»):
+  1. En seco, con `SAIMC_LANE0_TEXT_ENABLED` y `SAIMC_LANE0_JEV_ENABLED` en `true`:
+     `.venv/bin/python -m saimc.validation.lane0`. Mirá la línea
+     «Con SAIMC_LANE0_JEV_ARBITER_ENABLED=true descartaría además: N» (el 2026-10-19 eran unos 44).
+  2. Poné `SAIMC_LANE0_JEV_ARBITER_ENABLED=true` en el `.env`.
+  3. `.venv/bin/python -m saimc.validation.lane0 --execute`.
+  4. Cuando cierre la semana (el lunes), auditá en `/curation/auditoria` **todos** los descartes del
+     árbitro, no solo la muestra de 30: mientras las semanas anteriores sumen menos de 30 descartes
+     del árbitro, la muestra los trae completos. Si rescatás alguno, se baja el umbral a 0,1 en vez
+     de apagarlo; si la cota pasa la meta, `SAIMC_LANE0_JEV_ARBITER_ENABLED=false` lo apaga solo a él.
 
 ### Carril 1 en seco
 

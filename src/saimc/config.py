@@ -188,6 +188,12 @@ class Settings(BaseSettings):
     # descartar solo cuando el asistente no propuso. Apagado, Jev sigue en
     # sombra. Se apaga cambiando el `.env`, sin desplegar.
     lane0_jev_enabled: bool = False
+    # Jev como árbitro del desacuerdo (slice jev-desacuerdo,
+    # `docs/spec-slice-jev-desacuerdo.md`): un texto que el modelo descarta y
+    # en el que las reglas ven un piloto se descarta igual si Jev da P(sí) <
+    # 0,2. Solo cuenta con `lane0_jev_enabled` también encendido. Nace apagado
+    # porque no hay muestra humana del desacuerdo; tiene su propia cota.
+    lane0_jev_arbiter_enabled: bool = False
 
     # Carril 1 encendido (slice B2b, `docs/spec-slice-B2b.md`): el pre-cálculo
     # guarda solo, con `provenance = auto`, las filas de los textos que el
