@@ -17,12 +17,17 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from saimc.marketing.daily import DATOS_SLOT, EDU_SLOT, cards_for_day, create_datos_draft
-from saimc.marketing.lessons import lesson_for_day
+from saimc.marketing.daily import (
+    DATOS_SLOT,
+    EDU_SLOT,
+    cards_for_day,
+    create_datos_draft,
+    create_deck_draft,
+)
+from saimc.marketing.deck import section_for_day
 from saimc.marketing.posts import (
     approve,
     create_draft,
-    create_lesson_draft,
     discard,
     mark_published,
 )
@@ -50,9 +55,8 @@ def _lote(
         "data_through": through or day, "origin": PostOrigin.BATCH, "batch_slot": slot,
     }
     if slot == EDU_SLOT:
-        post = create_lesson_draft(
-            session, lesson=lesson_for_day(day), planned_for=day, origin=PostOrigin.BATCH,
-            batch_slot=slot,
+        post = create_deck_draft(
+            session, day, section_for_day(day), origin=PostOrigin.BATCH, batch_slot=slot
         )
     elif slot == DATOS_SLOT:
         post = create_datos_draft(
@@ -180,14 +184,26 @@ class TestBuildWeek:
         self, session: Session
     ) -> None:
         create_datos_draft(session, MIERCOLES, ["Arroz"], data_through=MIERCOLES)
-        create_lesson_draft(
-            session, lesson=lesson_for_day(MIERCOLES), planned_for=MIERCOLES
-        )
+        create_deck_draft(session, MIERCOLES, section_for_day(MIERCOLES))
         session.commit()
 
         semana = build_week(session, LUNES, today=MIERCOLES)
 
         assert _estados(semana, MIERCOLES) == {DATOS_SLOT: "draft", EDU_SLOT: "draft"}
+
+    def test_una_leccion_vieja_del_operador_sigue_cubriendo_el_turno_educativo(
+        self, session: Session
+    ) -> None:
+        # Las lecciones de texto ya no se crean, pero hay publicaciones con esa tarjeta.
+        create_draft(
+            session, card_slug="leccion", planned_for=MIERCOLES, product=None, province=None,
+            data_through=MIERCOLES,
+        )
+        session.commit()
+
+        semana = build_week(session, LUNES, today=MIERCOLES)
+
+        assert _estados(semana, MIERCOLES)[EDU_SLOT] == "draft"
 
     def test_semana_futura_es_toda_pendiente_y_no_es_la_actual(self, session: Session) -> None:
         semana = build_week(session, LUNES + timedelta(days=7), today=MIERCOLES)

@@ -27,10 +27,11 @@ from saimc.marketing.daily import (
     DATOS_SLOT,
     EDU_SLOT,
     LEGACY_DATOS_SLOTS,
+    LEGACY_LESSON_CARD,
     cards_for_day,
     slot_label,
 )
-from saimc.marketing.lessons import LESSON_CARD
+from saimc.marketing.deck import DECK_CARD
 from saimc.models.marketing_post import MarketingPost, PostFormat, PostStatus
 
 DAY_NAMES: tuple[str, ...] = (
@@ -63,7 +64,7 @@ def post_slot(post: MarketingPost) -> str:
     «carrusel», anteriores al carrusel de datos) cuentan como el de datos."""
     if post.batch_slot:
         return DATOS_SLOT if post.batch_slot in LEGACY_DATOS_SLOTS else post.batch_slot
-    if post.slides[0].card_slug == LESSON_CARD:
+    if post.slides[0].card_slug in (DECK_CARD, LEGACY_LESSON_CARD):
         return EDU_SLOT
     if post.slides[0].card_slug == DATOS_COVER:
         return DATOS_SLOT

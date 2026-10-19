@@ -20,6 +20,7 @@ from saimc.marketing.cards import (
     build_dato_del_dia,
     build_de_donde_sale,
 )
+from saimc.marketing.deck import DECK_CARD, render_slide
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 from saimc.web.card_view import build_cards
 from saimc.web.price_charts import build_month_vs_month
@@ -116,9 +117,12 @@ CARD_TYPES: tuple[CardType, ...] = (
     CardType(
         "datos-portada", "Datos del día · portada", "marketing_datos_portada.html", 1080, 1350
     ),
+    # Lámina de la presentación para instituciones (`saimc.marketing.deck`): el
+    # turno educativo diario. Su id viaja en `params["deck_slide"]`.
+    CardType(DECK_CARD, "Presentación", "marketing_deck_slide.html", 1920, 1080),
     CardType("libre", "Libre", "marketing_libre.html", 1080, 1350, free=True),
-    # Diapositiva de la sección educativa (`saimc.marketing.lessons`): bloques
-    # libres con el kicker «Aprende con Guani». Texto narrativo, sin cifras.
+    # Diapositiva de las lecciones de texto, que ya no se crean (el turno educativo
+    # es `deck-slide`). Se conserva para leer las publicaciones ya creadas.
     CardType("leccion", "Educativo", "marketing_leccion.html", 1080, 1350, free=True),
     CardType(
         "carrusel-portada", "Carrusel · portada", "marketing_carrusel_portada.html", 1080, 1350
@@ -155,6 +159,7 @@ def build_context(
     product: str | None,
     province: str | None,
     hoy: date | None = None,
+    deck_slide: str | None = None,
 ) -> dict | None:
     """El contexto para la plantilla de `kind`, o `None` si el pedido no se
     puede armar (producto fuera del foco, o sin ese dato todavía).
@@ -166,6 +171,10 @@ def build_context(
     ventanas terminan hoy y no tienen tope superior, como siempre. Con él (el
     lote diario pasa el día anterior) las ventanas terminan ahí y se les pone
     tope: lo que se cargó después no entra en la cifra."""
+    if kind.slug == DECK_CARD:
+        html = render_slide(deck_slide) if deck_slide else None
+        return None if html is None else {"deck": {"id": deck_slide, "html": html}}
+
     products = pilot_product_names(db)
     if kind.needs_product and product not in products:
         return None

@@ -34,8 +34,8 @@ from sqlalchemy.orm import Session
 
 from saimc.marketing.caption import CAPTION_MAX, build_caption, datos_caption, with_hashtags
 from saimc.marketing.context import BY_SLUG, CARD_TYPES, CardType, build_context
+from saimc.marketing.deck import DECK_CARD, section_of
 from saimc.marketing.html import card_html
-from saimc.marketing.lessons import LESSON_CARD, Lesson
 from saimc.marketing.options import (
     CardOptions,
     options_from_dict,
@@ -66,7 +66,11 @@ FIXED_PIECES: frozenset[str] = frozenset(
 )
 
 #: Lo que el operador puede crear como publicación.
-POSTABLE: tuple[CardType, ...] = tuple(t for t in CARD_TYPES if t.slug not in FIXED_PIECES)
+#: Las láminas de la presentación no: necesitan el id de la lámina, que solo pone
+#: el turno educativo (`daily.create_deck_draft`).
+POSTABLE: tuple[CardType, ...] = tuple(
+    t for t in CARD_TYPES if t.slug not in FIXED_PIECES and t.slug != DECK_CARD
+)
 
 _URL_MAX = 2000
 
@@ -129,12 +133,21 @@ def context_has_data(slug: str, context: dict | None) -> bool:
     return True
 
 
-def _params(kind: CardType, product: str | None, province: str | None, through: date) -> dict:
-    return {
+def _params(
+    kind: CardType,
+    product: str | None,
+    province: str | None,
+    through: date,
+    deck_slide: str | None = None,
+) -> dict:
+    params = {
         "product": product if kind.needs_product else None,
         "province": province if kind.needs_province else None,
         "data_through": through.isoformat(),
     }
+    if kind.slug == DECK_CARD and deck_slide:
+        params["deck_slide"] = deck_slide
+    return params
 
 
 # --- Lectura -----------------------------------------------------------------
@@ -145,7 +158,7 @@ def live_context(db: Session, slide: MarketingPostSlide) -> dict | None:
     kind = _kind(slide)
     contexto = build_context(
         kind, db, product=slide.params.get("product"), province=slide.params.get("province"),
-        hoy=_data_through(slide),
+        hoy=_data_through(slide), deck_slide=slide.params.get("deck_slide"),
     )
     return contexto if context_has_data(kind.slug, contexto) else None
 
@@ -183,17 +196,22 @@ def caption_slide(post: MarketingPost) -> MarketingPostSlide:
     return next((s for s in post.slides if _kind(s).needs_product), post.slides[0])
 
 
-def _datos_caption(post: MarketingPost) -> str | None:
-    """El texto del carrusel de datos (abre con `datos-portada`): sale de los
-    nombres de producto de sus diapositivas, que `params` ya fija. `None` si
-    la publicación es otra cosa."""
-    if post.slides[0].card_slug != "datos-portada":
+def _fixed_caption(post: MarketingPost) -> str | None:
+    """El texto de las publicaciones de texto fijo: el carrusel de datos (abre
+    con `datos-portada`; sale de los nombres de producto de sus diapositivas,
+    que `params` ya fija) y la sección de la presentación (abre con la lámina
+    que la identifica). `None` si la publicación es otra cosa."""
+    primera = post.slides[0]
+    if primera.card_slug == DECK_CARD:
+        seccion = section_of(primera.params.get("deck_slide", ""))
+        return None if seccion is None else with_hashtags(seccion.summary)
+    if primera.card_slug != "datos-portada":
         return None
     return datos_caption([s.params["product"] for s in post.slides if s.params.get("product")])
 
 
 def _generated_caption(db: Session, post: MarketingPost) -> str:
-    datos = _datos_caption(post)
+    datos = _fixed_caption(post)
     if datos is not None:
         return datos
     slide = caption_slide(post)
@@ -267,6 +285,7 @@ def create_carousel_draft(
     province: str | None,
     data_through: date,
     products: Sequence[str | None] | None = None,
+    deck_slides: Sequence[str | None] | None = None,
     origin: PostOrigin = PostOrigin.OPERATOR,
     batch_slot: str | None = None,
     now: datetime | None = None,
@@ -274,12 +293,15 @@ def create_carousel_draft(
     """Un borrador de carrusel con `card_slugs` en ese orden. Producto y
     provincia van a las diapositivas que los usan; las de branding no llevan.
     `products`, si se pasa, da un producto por diapositiva (mismo largo que
-    `card_slugs`) en lugar de `product` para todas. Como `create_draft`, no
-    hace `flush`."""
+    `card_slugs`) en lugar de `product` para todas; `deck_slides` hace lo mismo
+    con el id de lámina de las `deck-slide`. Como `create_draft`, no hace
+    `flush`."""
     if not 1 <= len(card_slugs) <= MAX_SLIDES:
         raise InvalidSlide(f"Un carrusel lleva de 1 a {MAX_SLIDES} diapositivas.")
     if products is not None and len(products) != len(card_slugs):
         raise InvalidSlide("Hace falta un producto por diapositiva.")
+    if deck_slides is not None and len(deck_slides) != len(card_slugs):
+        raise InvalidSlide("Hace falta una lámina por diapositiva.")
     kinds = [_postable_kind(slug) for slug in card_slugs]
     if len({(k.width, k.height) for k in kinds}) > 1:
         raise InvalidSlide("Todas las diapositivas de un carrusel tienen el mismo tamaño.")
@@ -297,46 +319,11 @@ def create_carousel_draft(
             MarketingPostSlide(
                 position=posicion,
                 card_slug=kind.slug,
-                params=_params(kind, producto, province, data_through),
+                params=_params(
+                    kind, producto, province, data_through,
+                    None if deck_slides is None else deck_slides[posicion - 1],
+                ),
                 options=options_to_dict(parse_options(kind, {})),
-            )
-        )
-    db.add(post)
-    return post
-
-
-def create_lesson_draft(
-    db: Session,
-    *,
-    lesson: Lesson,
-    planned_for: date,
-    origin: PostOrigin = PostOrigin.OPERATOR,
-    batch_slot: str | None = None,
-    now: datetime | None = None,
-) -> MarketingPost:
-    """Un borrador de carrusel educativo: una diapositiva `leccion` por cada
-    una de la lección, con sus bloques libres ya cargados. No lleva producto ni
-    provincia (texto fijo, sin cifras), así que no depende de ningún dato. El
-    texto del post queda guardado: la lección lo trae hecho. Sin `flush`."""
-    if not 1 <= len(lesson.slides) <= MAX_SLIDES:
-        raise InvalidSlide(f"Un carrusel lleva de 1 a {MAX_SLIDES} diapositivas.")
-    kind = BY_SLUG[LESSON_CARD]
-    post = MarketingPost(
-        format=PostFormat.CAROUSEL if len(lesson.slides) > 1 else PostFormat.SINGLE,
-        status=PostStatus.DRAFT,
-        planned_for=planned_for,
-        caption=_normalize_caption(with_hashtags(lesson.summary)),
-        origin=origin,
-        batch_slot=batch_slot,
-        created_at=now or utc_now(),
-    )
-    for posicion, bloques in enumerate(lesson.slides, start=1):
-        post.slides.append(
-            MarketingPostSlide(
-                position=posicion,
-                card_slug=kind.slug,
-                params=_params(kind, None, None, planned_for),
-                options=options_to_dict(CardOptions(show={}, free=bloques)),
             )
         )
     db.add(post)
@@ -475,7 +462,7 @@ def save_draft(
     generado = _normalize_caption(_generated_caption(db, post))
     texto = _normalize_caption(caption)
     post.caption = None if texto in (None, generado) else texto
-    slide.params = _params(kind, product, province, data_through)
+    slide.params = _params(kind, product, province, data_through, slide.params.get("deck_slide"))
     slide.options = options_to_dict(options)
 
 
@@ -527,7 +514,7 @@ def approve(
     snapshot_origen = next(snap for slide, snap, _ in listas if slide is origen)
     caption = post.caption
     if caption is None:
-        caption = _datos_caption(post) or build_caption(
+        caption = _fixed_caption(post) or build_caption(
             _kind(origen), thaw_context(snapshot_origen["context"])
         )
 
@@ -585,7 +572,7 @@ def duplicate(
     origen = caption_slide(post)
     caption = post.caption
     if caption is not None and origen.snapshot is not None:
-        generado = _datos_caption(post) or build_caption(
+        generado = _fixed_caption(post) or build_caption(
             _kind(origen), thaw_context(origen.snapshot["context"])
         )
         if caption == generado:

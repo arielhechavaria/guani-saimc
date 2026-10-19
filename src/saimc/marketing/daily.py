@@ -13,8 +13,8 @@ revise, apruebe y publique desde el teléfono.
 
 Qué toca cada día (`cards_for_day`): el carrusel «Datos del día» (portada →
 una «Dato del día» por producto con datos, hasta cuatro → cierre, un solo
-borrador) y el carrusel «Educativo» (una lección corta de
-`saimc.marketing.lessons`, texto fijo, no depende de datos) todos los días; los
+borrador) y el carrusel «Educativo» (una sección de la presentación para
+instituciones, `saimc.marketing.deck`, fija: no depende de datos) todos los días; los
 lunes, además, «Cómo se movió» (el ritmo semanal); los jueves, «De dónde sale
 este precio» (el método). Las demás piezas son branding fijo.
 
@@ -57,22 +57,25 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.db import session_scope
 from saimc.marketing.context import BY_SLUG, DATOS_MAX_PRODUCTS, CardType, build_context
-from saimc.marketing.lessons import lesson_for_day
+from saimc.marketing.deck import DECK_CARD, DeckSection, section_for_day
 from saimc.marketing.posts import (
     RETENTION_DAYS,
     context_has_data,
     create_carousel_draft,
     create_draft,
-    create_lesson_draft,
     purge_expired,
 )
 from saimc.models.marketing_post import MarketingPost, PostOrigin
 from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 
-#: El turno educativo diario: un carrusel con la lección del día
-#: (`lessons.lesson_for_day`). Sin producto ni provincia: siempre se crea.
+#: El turno educativo diario: un carrusel con la sección de la presentación
+#: del día (`deck.section_for_day`). Sin producto ni provincia: siempre se crea.
+#: Hasta el 2026-10-19 eran lecciones de texto (`leccion`); esas publicaciones
+#: viejas siguen contando como este turno (`week.post_slot`).
 EDU_SLOT = "educativo"
 EDU_LABEL = "Educativo"
+#: La tarjeta de las lecciones de texto anteriores; ya no se crea, pero hay publicaciones con ella.
+LEGACY_LESSON_CARD = "leccion"
 
 #: El turno de datos diario: un carrusel con la portada del día, una
 #: «Dato del día» por producto con datos (`DATOS_MAX_PRODUCTS` como mucho) y el
@@ -170,6 +173,24 @@ def create_datos_draft(
     return create_carousel_draft(
         db, card_slugs=slugs, planned_for=day, product=None, province=None,
         products=(None, *products, None), data_through=data_through,
+        origin=origin, batch_slot=batch_slot,
+    )
+
+
+def create_deck_draft(
+    db: Session,
+    day: date,
+    section: DeckSection,
+    *,
+    origin: PostOrigin = PostOrigin.OPERATOR,
+    batch_slot: str | None = None,
+) -> MarketingPost:
+    """El carrusel educativo: una `deck-slide` por lámina de `section`, en su
+    orden. El texto del post sale de la sección (`posts._fixed_caption`). Las
+    láminas no usan fecha de corte: se le pone el día. Sin `flush`."""
+    return create_carousel_draft(
+        db, card_slugs=[DECK_CARD] * len(section.slides), planned_for=day, product=None,
+        province=None, deck_slides=section.slides, data_through=day,
         origin=origin, batch_slot=batch_slot,
     )
 
@@ -285,7 +306,7 @@ def run_daily(
             productos = datos_products(db, day)
             elegida = (", ".join(productos), None) if productos else None
         elif slug == EDU_SLOT:
-            elegida = (None, None)
+            elegida = (section_for_day(day).slug, None)
         else:
             elegida = _pick(BY_SLUG[slug], db, day)
         if elegida is None:
@@ -301,9 +322,8 @@ def run_daily(
             # deshace este.
             with db.begin_nested():
                 if slug == EDU_SLOT:
-                    create_lesson_draft(
-                        db, lesson=lesson_for_day(day), planned_for=day,
-                        origin=PostOrigin.BATCH, batch_slot=slug,
+                    create_deck_draft(
+                        db, day, section_for_day(day), origin=PostOrigin.BATCH, batch_slot=slug
                     )
                 elif slug == DATOS_SLOT:
                     create_datos_draft(
