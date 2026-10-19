@@ -19,7 +19,10 @@
 #}
 {% extends "_public_shell.html" %}
 
+{# SEO: el título lleva lo que la gente escribe en el buscador («precio de arroz
+   en Cuba»), con la marca al final. `page_title` pisa el «Guani — …» del casco. #}
 {% block title %}{{ panel.name }} — precios{% endblock %}
+{% block page_title %}Precio de {{ panel.name }} en {% if selected_province %}{{ selected_province }}, Cuba{% else %}Cuba hoy, por provincia{% endif %} | Guani{% endblock %}
 {% block heading %}{{ panel.name }}{% endblock %}
 {% block subtitle %}
 {%- if panel.has_data -%}
@@ -33,13 +36,20 @@ Sin anuncios en los últimos {{ window_days }} días.
 {%- endif -%}
 {% endblock %}
 
-{% block og_description %}Precios de {{ panel.name }}{% if selected_province %} en {{ selected_province }}{% endif %} en el mercado informal cubano, verificados anuncio por anuncio.{% endblock %}
+{% block og_description %}
+{%- if panel.has_data -%}
+Precio de {{ panel.name }} en {{ selected_province or "Cuba" }}: {% if panel.is_single_value %}{{ panel.minimum_text }}{% else %}de {{ panel.minimum_text }} a {{ panel.maximum_text }}{% endif %} {{ panel.currency }}/{{ panel.unit }}, según {{ panel.count }} anuncio{{ "s" if panel.count != 1 }} verificado{{ "s" if panel.count != 1 }} del mercado informal.
+{%- else -%}
+Precios de {{ panel.name }}{% if selected_province %} en {{ selected_province }}{% endif %} en el mercado informal cubano, verificados anuncio por anuncio.
+{%- endif -%}
+{% endblock %}
 
 {% block seo_jsonld %}{{ seo_breadcrumb_json_ld(request, panel.name) }}{% endblock %}
 
 {% block head %}
 <style>
   .ph-lite-fresh { margin-top: var(--m3-space-2); }
+  .ph-lite-resumen { margin: 0 0 var(--m3-space-3); font-size: 1rem; line-height: 1.5; }
   .ph-lite-blocks { display: grid; gap: var(--m3-space-4); margin-top: var(--m3-space-5); padding: 0; list-style: none; }
   .ph-lite-card {
     border-radius: var(--ph-radius-sm); background: var(--m3-surface);
@@ -172,6 +182,11 @@ Sin anuncios en los últimos {{ window_days }} días.
 {% endmacro %}
 
 {% block content %}
+{% if panel.has_data %}
+<p class="ph-lite-resumen">
+  {{ panel.name }}: {% if panel.is_single_value %}hoy se pide {{ panel.minimum_text }}{% else %}hoy se pide entre {{ panel.minimum_text }} y {{ panel.maximum_text }}{% endif %} {{ panel.currency }}/{{ panel.unit }}{% if selected_province %} en {{ selected_province }}{% else %} en Cuba{% endif %}, según {{ panel.count }} anuncio{{ "s" if panel.count != 1 }}{% if not selected_province %} de {{ panel.provinces }} provincia{{ "s" if panel.provinces != 1 }}{% endif %}{% if data_freshness_day %}, con datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% endif %}.
+</p>
+{% endif %}
 {% if data_freshness_day %}
 <p class="m3-subtitle ph-lite-fresh">
   Datos verificados hasta el {{ data_freshness_day.strftime('%d/%m/%Y') }}{% if data_freshness_days_ago and data_freshness_days_ago > 0 %} (hace {{ data_freshness_days_ago }} día{{ "s" if data_freshness_days_ago != 1 }}){% endif %}.
