@@ -1450,13 +1450,13 @@ class TestElHeroeEsUnAtardecer:
 
     def test_guani_va_grande_sobre_el_sol_y_ya_no_hay_telefono(self, client: TestClient) -> None:
         """El teléfono con el tablero salió del héroe: el protagonista es Guani,
-        sobre el sol. El héroe ya no lleva ninguna imagen."""
+        sobre el sol. La única imagen del héroe es la foto de Guani."""
         heroe = _heroe(client.get("/").text)
         escenario = heroe.split('class="lp-stage"')[1]
 
         assert escenario.index('class="lp-sun"') < escenario.index('class="lp-hero-avatar"')
         assert "lp-hero-phone" not in heroe
-        assert "<img" not in heroe
+        assert heroe.count("<img") == 1
         assert "entradas-tablero" not in heroe
 
     def test_la_ciudad_las_palmas_el_sol_y_guani_son_decorativos(self, client: TestClient) -> None:
@@ -1473,11 +1473,14 @@ class TestElHeroeEsUnAtardecer:
         assert _heroe(html).count("ph-brand-avatar") == 1
         assert "ph-brand-avatar" in html.split("</main>")[1]
 
-    def test_los_dos_avatares_no_repiten_el_id_del_recorte(self, client: TestClient) -> None:
-        ids = re.findall(r'<clipPath id="([^"]+)"', client.get("/").text)
+    def test_los_avatares_son_la_foto_a_color_y_no_el_svg(self, client: TestClient) -> None:
+        html = client.get("/").text
+        src = "/static/brand/guani-avatar.webp"
 
-        assert len(ids) == 2
-        assert len(set(ids)) == 2
+        assert html.count(f'class="ph-brand-avatar" src="{src}"') == 2
+        assert (landing_view.LANDING_STATIC_DIR.parent / "brand" / "guani-avatar.webp").is_file()
+        assert "<clipPath" not in html
+        assert "guani-eye" not in html
 
     def test_las_burbujas_siguen_diciendo_el_rango_la_provincia_y_la_muestra(
         self, client: TestClient, datos: None

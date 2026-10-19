@@ -189,12 +189,6 @@ class TestElPieEnLaLanding:
         assert texto.count("<footer") == 1
         assert "lp-foot" not in texto
 
-    def test_el_avatar_del_pie_no_repite_el_id_del_de_la_portada(self, client: TestClient) -> None:
-        ids = re.findall(r'<clipPath id="([^"]+)"', client.get("/").text)
-
-        assert len(ids) == 2
-        assert len(set(ids)) == 2
-
     def test_la_landing_enlaza_a_la_metodologia(self, client: TestClient) -> None:
         cuerpo = client.get("/").text.split("<footer")[0]
 
@@ -213,7 +207,7 @@ class TestLaFirmaDeMarca:
     @pytest.mark.parametrize("ruta", ("/", *RUTAS))
     def test_el_pie_dice_guani_por_leira_studio(self, client: TestClient, ruta: str) -> None:
         pie = _pie(client.get(ruta).text)
-        marca = re.search(r'<div class="pf-brand">.*?</svg>(.*?)<p class="pf-tag"', pie, flags=re.S)
+        marca = re.search(r'<div class="pf-brand">.*?<img [^>]*>(.*?)<p class="pf-tag"', pie, flags=re.S)
         assert marca is not None
 
         assert _plano(marca.group(1)) == "Guani por Leira Studio"
