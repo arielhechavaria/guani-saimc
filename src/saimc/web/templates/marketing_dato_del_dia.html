@@ -15,12 +15,14 @@
   ningún promedio nuevo calculado acá.
 
   Bloques (`data-block`): cada uno se puede apagar desde el editor
-  (`show`, ver saimc.marketing.options); los que no tienen interruptor
+  (`show`, ver saimc.marketing.options); `hidden_provinces` saca filas enteras
+  sin tocar la cifra de las demás; los que no tienen interruptor
   —título y rango— se pintan siempre. El lienzo no deja huecos: las filas
   reparten el alto que sobra. `subtitle` y `cta` son texto libre del
   operador, nunca una cifra.
 #}
 {% set on = show if show is defined else {} %}
+{% set hidden = hidden_provinces if hidden_provinces is defined else () %}
 {#- Con subtítulo o llamada la pieza ya no entra a tamaño completo: las filas se compactan. -#}
 {% set c = (subtitle or cta) %}
 <div class="mc" style="width: 1080px; height: 1350px">
@@ -45,7 +47,7 @@
     {% endif %}
 
     <div style="margin-top: 28px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: {{ 16 if c else 24 }}px">
-      {% for row in card.rows %}
+      {% for row in card.rows if row.name not in hidden %}
       <div class="mc-panel" style="padding: {{ 20 if c else 32 }}px 40px">
         <div style="display: flex; align-items: center; gap: 16px">
           <div class="mc-dot" style="width: 24px; height: 24px; background: {{ row.color }}"></div>

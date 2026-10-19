@@ -9,11 +9,12 @@ nunca se apaga, lo pida quien lo pida.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import Any
 
 from saimc.marketing.context import CardType
+from saimc.progress import PHASE0_PROVINCES
 
 #: Topes en caracteres. El subtítulo cabe en dos renglones del lienzo de
 #: 1080 px; la llamada, en uno dentro de su chip.
@@ -46,6 +47,9 @@ class CardOptions:
     cta: str = ""
     #: Solo la tarjeta «Libre»: sus bloques, en orden.
     free: tuple[FreeBlock, ...] = ()
+    #: Provincias que la tarjeta no pinta (`CardType.rows_by_province`). Es
+    #: presentación: las cifras de las demás no se recalculan.
+    hidden_provinces: tuple[str, ...] = ()
 
     def query_items(self) -> list[tuple[str, str]]:
         """Los pares de URL que reconstruyen estas opciones (los bloques con
@@ -55,6 +59,7 @@ class CardOptions:
             items.append(("subtitle", self.subtitle))
         if self.cta:
             items.append(("cta", self.cta))
+        items += [("hide", nombre) for nombre in self.hidden_provinces]
         return items
 
 
@@ -105,6 +110,16 @@ def _apply_free_op(blocks: tuple[FreeBlock, ...], op: str | None) -> tuple[FreeB
     return tuple(lista)
 
 
+def _clean_hidden(kind: CardType, nombres: Sequence[str]) -> tuple[str, ...]:
+    """Las provincias a ocultar: solo las que la tarjeta tiene, sin repetir y
+    en el orden de la tarjeta. Si no quedaría ninguna visible, no se oculta
+    ninguna: una tarjeta sin filas no dice nada."""
+    if not kind.rows_by_province:
+        return ()
+    pedidas = [p for p in PHASE0_PROVINCES if p in set(nombres)]
+    return tuple(pedidas) if len(pedidas) < len(PHASE0_PROVINCES) else ()
+
+
 def _free_from_params(params: Mapping[str, str]) -> tuple[FreeBlock, ...]:
     getlist = getattr(params, "getlist", None)
     if getlist is None:
@@ -128,10 +143,12 @@ def parse_options(kind: CardType, params: Mapping[str, str]) -> CardOptions:
         show[block.slug] = (value == "1") if value in ("0", "1") else block.default
     if not kind.blocks:
         return CardOptions(show=show)
+    getlist = getattr(params, "getlist", None)
     return CardOptions(
         show=show,
         subtitle=_clean(params.get("subtitle"), SUBTITLE_MAX),
         cta=_clean(params.get("cta"), CTA_MAX),
+        hidden_provinces=_clean_hidden(kind, getlist("hide") if getlist else []),
     )
 
 
@@ -140,6 +157,8 @@ def options_to_dict(options: CardOptions) -> dict[str, Any]:
     datos: dict[str, Any] = {
         "show": dict(options.show), "subtitle": options.subtitle, "cta": options.cta
     }
+    if options.hidden_provinces:
+        datos["hide"] = list(options.hidden_provinces)
     if options.free:
         datos["free"] = [{"type": b.type, "text": b.text} for b in options.free]
     return datos
@@ -157,4 +176,6 @@ def options_from_dict(kind: CardType, data: Mapping[str, Any] | None) -> CardOpt
     }
     params["subtitle"] = str(data.get("subtitle") or "")
     params["cta"] = str(data.get("cta") or "")
-    return parse_options(kind, params)
+    opciones = parse_options(kind, params)
+    hide = [str(x) for x in data.get("hide") or []]
+    return replace(opciones, hidden_provinces=_clean_hidden(kind, hide))

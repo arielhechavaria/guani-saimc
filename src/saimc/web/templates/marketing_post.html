@@ -215,6 +215,16 @@
             <span>{{ b.label }}</span>
           </label>
           {% endfor %}
+          {% if kind.rows_by_province %}
+          <h4 class="m3-h3" style="margin:16px 0 0">Provincias</h4>
+          {% for prov in provinces %}
+          <label class="mk-toggle">
+            <input type="checkbox" name="hide" value="{{ prov }}"{% if prov in options.hidden_provinces %} checked{% endif %}>
+            <span>Ocultar {{ prov }}</span>
+          </label>
+          {% endfor %}
+          <p class="m3-xs m3-muted" style="margin:4px 0 0">Solo cambia lo que se ve: las cifras de las demás no se recalculan. Siempre queda al menos una provincia.</p>
+          {% endif %}
           <p class="m3-xs m3-muted" style="margin:8px 0 0">El título y la cifra principal siempre se ven; las cifras no se editan.</p>
           <label class="m3-field m3-field-on-container" style="margin-top:16px">
             <span class="m3-field-label">Subtítulo (hasta {{ subtitle_max }} caracteres)</span>
@@ -228,6 +238,7 @@
       </details>
       {% else %}
       {% for b in toggles %}<input type="hidden" name="b_{{ b.slug }}" value="{{ '1' if options.show[b.slug] else '0' }}">{% endfor %}
+      {% for prov in options.hidden_provinces %}<input type="hidden" name="hide" value="{{ prov }}">{% endfor %}
       {% endif %}
 
       {% if ready %}
