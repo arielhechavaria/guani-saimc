@@ -109,3 +109,34 @@ capa pública), no crea un precio erróneo. La cota se mide con la auditoría de
 primer descarte. Sin muestra humana previa, el 0,2 es el umbral que ya usa el carril
 0 para Jev y no está calibrado para este caso: si la auditoría rescata alguno, se
 baja a 0,1 (18 anuncios hoy) en lugar de apagar el árbitro.
+
+## Enmienda 2026-10-19 — la semana en curso muestra los descartes del árbitro
+
+Problema hallado al activar el árbitro: `/curation/auditoria` solo abre semanas
+cerradas (`_sample` devuelve vacío si `not is_closed`), así que los descartes del
+árbitro de hoy no se podían auditar hasta el lunes siguiente. El «primer tramo se
+audita completo» de «Despliegue» no se podía cumplir antes de dejarlo prendido.
+
+Regla: en una semana **en curso**, `_sample` devuelve (con `closed = False`) solo los
+descartes del árbitro de esa semana, como censo, si las semanas anteriores suman
+menos de `ARBITER_FULL_AUDIT`. No hay sorteo al azar de textos ni de imágenes: el
+sorteo sigue esperando a que la semana cierre (la semilla y la muestra no cambian
+por mirar antes). Cuando la semana cierra, la muestra es el sorteo más el censo de
+siempre, y lo ya auditado o rescatado conserva su respuesta (un anuncio se audita
+una sola vez).
+
+| # | Situación | Resultado |
+|---|-----------|-----------|
+| A1 | semana en curso, 3 descartes del árbitro, semanas anteriores con menos de 30 | `closed = False`, `texts` = esos 3 con `census = True`, `images` vacío |
+| A2 | igual, pero las semanas anteriores suman 30 o más | `texts` vacío (como hoy) |
+| A3 | semana en curso con descartes automáticos que no son del árbitro | `texts` vacío |
+| A4 | auditar uno de A1 | `True` y evento `audited`; repetirlo da `False` |
+| A5 | rescatar uno de A1 | `True`, vuelve a `pending` con evento `rescued`; repetirlo da `False` |
+| A6 | `arbiter_bound` con 2 auditados y 1 rescatado de la semana en curso | los cuenta: n = 3, rescatados = 1 |
+| A7 | `audited_weeks` | incluye la semana en curso solo si tiene descartes del árbitro por auditar o ya respondidos |
+| A8 | la misma semana, ya cerrada | el sorteo más el censo; los de A4 y A5 mantienen su respuesta y no se pueden volver a responder |
+| A9 | `GET /curation/auditoria?semana=<semana en curso>` | lista los descartes del árbitro con sus botones y un aviso de que la semana sigue abierta y solo muestra esos; sin ellos, el aviso de hoy |
+| A10 | las cuentas de población de la semana en curso | no cambian |
+
+Qué no cambia: el sorteo y su semilla, la cota de todo el texto (los del censo siguen
+fuera de ella), la meta del 10 % y la regla de «un anuncio se audita una sola vez».

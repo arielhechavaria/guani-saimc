@@ -1389,3 +1389,222 @@ def test_arbitro_la_pantalla_muestra_su_cota_y_su_interruptor(
     assert ARBITRO in html
     assert "Descartados por Jev como árbitro" in html
     assert "Descartados solo por Jev" in html
+
+
+# --- enmienda 2026-10-19: la semana en curso muestra los descartes del árbitro ---
+# Los esperados salen de la tabla A1–A10 de la enmienda, contando el fixture a
+# ojo. HOY (jueves 2026-10-01) está en la semana del lunes 2026-09-28.
+
+EN_CURSO = date(2026, 9, 28)
+EN_CURSO_CUANDO = datetime(2026, 9, 29, 15, 0, tzinfo=UTC)
+
+
+def _arbitro_en_curso(session: Session, cuantos: int = 3) -> list[RawIngestion]:
+    return [
+        _descartado_por(session, "jev_arbiter", cuando=EN_CURSO_CUANDO) for _ in range(cuantos)
+    ]
+
+
+def test_a1_la_semana_en_curso_trae_solo_los_del_arbitro_como_censo(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    # 29 del árbitro en semanas anteriores: todavía menos de 30.
+    for _ in range(29):
+        _descartado_por(session, "jev_arbiter")
+    del_arbitro = _arbitro_en_curso(session)
+    for _ in range(2):
+        _auto_descartado(session, cuando=EN_CURSO_CUANDO)
+    _auto_descartado(session, tipo=ContentType.IMAGE, cuando=EN_CURSO_CUANDO)
+
+    muestra = lane0.week_sample(session, EN_CURSO, today=HOY)
+
+    assert muestra.closed is False
+    assert set(_ids(muestra.texts)) == {i.id for i in del_arbitro}
+    assert len(muestra.texts) == 3
+    assert all(item.census for item in muestra.texts)
+    assert muestra.images == []
+    # A10: la población de la semana en curso no cambia: 3 + 2 textos, 1 imagen.
+    assert dict(muestra.population) == {"text": 5, "image": 1}
+
+
+def test_a2_con_30_previos_del_arbitro_la_semana_en_curso_sigue_vacia(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    for _ in range(30):
+        _descartado_por(session, "jev_arbiter")
+    _arbitro_en_curso(session)
+
+    muestra = lane0.week_sample(session, EN_CURSO, today=HOY)
+
+    assert muestra.closed is False
+    assert muestra.texts == []
+    assert muestra.images == []
+
+
+def test_a3_la_semana_en_curso_sin_descartes_del_arbitro_sigue_vacia(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    _auto_descartado(session, cuando=EN_CURSO_CUANDO)
+    de_jev = _descartado_por(session, "jev", cuando=EN_CURSO_CUANDO)
+    _auto_descartado(session, tipo=ContentType.IMAGE, cuando=EN_CURSO_CUANDO)
+
+    muestra = lane0.week_sample(session, EN_CURSO, today=HOY)
+
+    assert muestra.texts == []
+    assert muestra.images == []
+    assert lane0.mark_audited(session, de_jev.id, EN_CURSO, today=HOY) is False
+
+
+def test_a4_auditar_uno_de_la_semana_en_curso_y_no_dos_veces(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    ingesta = _arbitro_en_curso(session)[0]
+
+    assert lane0.mark_audited(session, ingesta.id, EN_CURSO, today=HOY) is True
+    session.commit()
+    assert lane0.mark_audited(session, ingesta.id, EN_CURSO, today=HOY) is False
+    session.commit()
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    assert [e.action for e in _eventos(session, ingesta)].count("audited") == 1
+
+
+def test_a5_rescatar_uno_de_la_semana_en_curso_y_no_dos_veces(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    ingesta = _arbitro_en_curso(session)[0]
+
+    assert lane0.rescue(session, ingesta.id, EN_CURSO, today=HOY) is True
+    session.commit()
+    assert lane0.rescue(session, ingesta.id, EN_CURSO, today=HOY) is False
+    assert lane0.mark_audited(session, ingesta.id, EN_CURSO, today=HOY) is False
+    session.commit()
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.PENDING
+    assert ingesta.discard_reason is None
+    rescates = [e for e in _eventos(session, ingesta) if e.action == "rescued"]
+    assert len(rescates) == 1
+    assert rescates[0].mode == CurationMode.INDIVIDUAL
+
+
+def test_a6_la_cota_del_arbitro_cuenta_lo_auditado_en_la_semana_en_curso(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    uno, dos, tres = _arbitro_en_curso(session)
+    assert lane0.mark_audited(session, uno.id, EN_CURSO, today=HOY)
+    assert lane0.mark_audited(session, dos.id, EN_CURSO, today=HOY)
+    assert lane0.rescue(session, tres.id, EN_CURSO, today=HOY)
+    session.commit()
+
+    arbitro = lane0.arbiter_bound(session, today=HOY)
+    texto = lane0.audit_bounds(session, today=HOY)["text"]
+
+    assert (arbitro.k, arbitro.n) == (1, 3)
+    # El censo sigue fuera de la cota de todo el texto.
+    assert (texto.k, texto.n) == (0, 0)
+
+
+def test_a7_el_selector_llega_a_la_semana_en_curso_solo_con_descartes_del_arbitro(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    _auto_descartado(session, cuando=EN_CURSO_CUANDO)
+    assert EN_CURSO not in lane0.audited_weeks(session, today=HOY)
+
+    del_arbitro = _arbitro_en_curso(session)
+    assert EN_CURSO in lane0.audited_weeks(session, today=HOY)
+
+    # Ya respondidos todos, la semana sigue en el selector.
+    for ingesta in del_arbitro:
+        assert lane0.mark_audited(session, ingesta.id, EN_CURSO, today=HOY)
+    session.commit()
+    semanas = lane0.audited_weeks(session, today=HOY)
+    assert semanas[0] == EN_CURSO  # la más nueva primero
+    assert SEMANA in semanas  # la última cerrada, como siempre
+
+
+def test_a7_con_30_previos_del_arbitro_la_semana_en_curso_no_entra_al_selector(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    for _ in range(30):
+        _descartado_por(session, "jev_arbiter")
+    _arbitro_en_curso(session)
+
+    assert EN_CURSO not in lane0.audited_weeks(session, today=HOY)
+
+
+def test_a8_al_cerrar_la_semana_conserva_las_respuestas_de_cuando_estaba_abierta(
+    session: Session, catalogo: SimpleNamespace
+) -> None:
+    auditado, rescatado, sin_responder = _arbitro_en_curso(session)
+    del_modelo = [_auto_descartado(session, cuando=EN_CURSO_CUANDO) for _ in range(4)]
+    assert lane0.mark_audited(session, auditado.id, EN_CURSO, today=HOY)
+    assert lane0.rescue(session, rescatado.id, EN_CURSO, today=HOY)
+    session.commit()
+
+    despues = HOY + timedelta(weeks=1)
+    muestra = lane0.week_sample(session, EN_CURSO, today=despues)
+
+    # 7 textos, menos que 30: el sorteo los trae a todos.
+    assert muestra.closed is True
+    assert set(_ids(muestra.texts)) == {
+        i.id for i in [auditado, rescatado, sin_responder, *del_modelo]
+    }
+    respuestas = {item.ingestion.id: item.verdict for item in muestra.texts}
+    assert respuestas[auditado.id] == "audited"
+    assert respuestas[rescatado.id] == "rescued"
+    assert respuestas[sin_responder.id] is None
+    # «Un anuncio se audita una sola vez», la regla de siempre: auditar de nuevo
+    # no se puede, y lo rescatado no se rescata ni se audita otra vez.
+    assert lane0.mark_audited(session, auditado.id, EN_CURSO, today=despues) is False
+    assert lane0.mark_audited(session, rescatado.id, EN_CURSO, today=despues) is False
+    assert lane0.rescue(session, rescatado.id, EN_CURSO, today=despues) is False
+    assert lane0.mark_audited(session, sin_responder.id, EN_CURSO, today=despues) is True
+
+
+def _semana_en_curso_real() -> date:
+    hoy = date.today()
+    return hoy - timedelta(days=hoy.weekday())
+
+
+def test_a9_la_pantalla_lista_los_del_arbitro_de_la_semana_en_curso(
+    client: TestClient, session: Session, catalogo: SimpleNamespace
+) -> None:
+    semana = _semana_en_curso_real()
+    cuando = datetime.combine(semana, datetime.min.time(), UTC) + timedelta(hours=1)
+    del_arbitro = _descartado_por(session, "jev_arbiter", cuando=cuando)
+    del_modelo = _auto_descartado(session, cuando=cuando)
+    etiqueta = lane0.week_label(semana)
+
+    html = client.get(f"/curation/auditoria?semana={etiqueta}").text
+
+    assert "sigue abierta" in html
+    assert "todavía no terminó" not in html
+    assert f"/curation/auditoria/{del_arbitro.id}/rescatar" in html
+    assert f"/curation/auditoria/{del_arbitro.id}/bien" in html
+    assert f"/curation/auditoria/{del_modelo.id}/rescatar" not in html
+    # A7 en pantalla: la semana en curso está en el selector por defecto.
+    assert f'<option value="{etiqueta}"' in client.get("/curation/auditoria").text
+
+    response = client.post(
+        f"/curation/auditoria/{del_arbitro.id}/bien",
+        data={"semana": etiqueta},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert [e.action for e in _eventos(session, del_arbitro)].count("audited") == 1
+
+
+def test_a9_la_semana_en_curso_sin_descartes_del_arbitro_dice_lo_de_hoy(
+    client: TestClient, session: Session, catalogo: SimpleNamespace
+) -> None:
+    semana = _semana_en_curso_real()
+    cuando = datetime.combine(semana, datetime.min.time(), UTC) + timedelta(hours=1)
+    del_modelo = _auto_descartado(session, cuando=cuando)
+
+    html = client.get(f"/curation/auditoria?semana={lane0.week_label(semana)}").text
+
+    assert "todavía no terminó" in html
+    assert "sigue abierta" not in html
+    assert f"/curation/auditoria/{del_modelo.id}/rescatar" not in html

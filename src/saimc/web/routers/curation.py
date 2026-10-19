@@ -1924,7 +1924,8 @@ def curation_audit(
     """Auditoría semanal de los descartes automáticos (B2a).
 
     Por defecto, la última semana cerrada; `?semana=2026-W39` abre otra. La
-    semana en curso nunca se muestrea. La cota de falsos descartes se acumula
+    semana en curso no tiene sorteo: solo muestra los descartes del árbitro
+    de Jev en su primer tramo, si los hay. La cota de falsos descartes se acumula
     entre semanas y solo se muestra acá, que pide operador: `/control` es
     público.
     """

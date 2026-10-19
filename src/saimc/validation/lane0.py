@@ -22,7 +22,8 @@ Dos mitades:
   `SAIMC_LANE0_JEV_ARBITER_ENABLED` además: un texto que el modelo descarta y
   en el que las reglas ven un piloto se descarta si Jev da P(sí) <
   `JEV_ARBITER_BELOW`. Llevan `decider = jev_arbiter`, su propia cota
-  (`arbiter_bound`) y, en el primer tramo, se auditan completos.
+  (`arbiter_bound`) y, en el primer tramo, se auditan completos, aun en la
+  semana en curso (enmienda 2026-10-19).
 - **Auditar** (`week_sample`, `rescue`, `mark_audited`, `audit_bounds`): cada
   semana cerrada se saca al azar una muestra de los descartes automáticos; el
   operador dice si estaban bien o los rescata, y con lo auditado de todas las
@@ -414,7 +415,8 @@ def last_closed_week(today: date | None = None) -> date:
 
 
 def is_closed(week_start: date, today: date | None = None) -> bool:
-    """¿Ya terminó? La semana en curso nunca se muestrea."""
+    """¿Ya terminó? La semana en curso no tiene sorteo: solo el censo del
+    árbitro (enmienda 2026-10-19 de `docs/spec-slice-jev-desacuerdo.md`)."""
     return week_start < current_week(today)
 
 
@@ -574,9 +576,11 @@ def _sample(
 ) -> WeekSample:
     by_type = population.get(week_start, {})
     counts = {t: len(by_type.get(t, [])) for t in TYPES}
-    if not is_closed(week_start, today):
-        return WeekSample(week_start=week_start, closed=False, population=counts)
-    drawn = _draw(week_start, by_type)
+    closed = is_closed(week_start, today)
+    # Abierta, no hay sorteo (espera a que cierre: la semilla y la muestra no
+    # cambian por mirar antes), pero el censo del árbitro sí se ve: el primer
+    # tramo se puede auditar el mismo día (enmienda 2026-10-19).
+    drawn = _draw(week_start, by_type) if closed else {t: [] for t in TYPES}
     census = _census(week_start, population, drawn[TEXT])
     verdicts = _verdicts(
         session,
@@ -592,7 +596,7 @@ def _sample(
     texts.sort(key=lambda item: (item.event.decided_at, str(item.ingestion.id)))
     return WeekSample(
         week_start=week_start,
-        closed=True,
+        closed=closed,
         population=counts,
         texts=texts,
         images=items(drawn[IMAGE]),
@@ -601,15 +605,21 @@ def _sample(
 
 def week_sample(session: Session, week_start: date, *, today: date | None = None) -> WeekSample:
     """La muestra de una semana: hasta 30 textos y 15 imágenes, al azar con la
-    semilla de la semana. Vacía si la semana no terminó."""
+    semilla de la semana, más el censo del árbitro en su primer tramo. Si la
+    semana no terminó, solo ese censo (vacío fuera del primer tramo)."""
     return _sample(session, week_start, _population(session), today)
 
 
 def audited_weeks(session: Session, *, today: date | None = None) -> list[date]:
     """Las semanas cerradas con descartes automáticos, más nueva primero, y
-    siempre la última cerrada aunque no tenga ninguno (la del selector)."""
-    weeks = {w for w in _population(session) if is_closed(w, today)}
+    siempre la última cerrada aunque no tenga ninguno (la del selector). La
+    semana en curso entra solo si trae descartes del árbitro para auditar."""
+    population = _population(session)
+    weeks = {w for w in population if is_closed(w, today)}
     weeks.add(last_closed_week(today))
+    current = current_week(today)
+    if _sample(session, current, population, today).texts:
+        weeks.add(current)
     return sorted(weeks, reverse=True)
 
 
