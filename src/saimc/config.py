@@ -13,7 +13,7 @@ from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,11 @@ class Settings(BaseSettings):
     # Apagado, el pre-cálculo es el de siempre. Lo aceptado se audita en
     # `/curation/auditoria` y el freno se pone solo (`validation.lane1`).
     lane1_enabled: bool = False
+    # Tope de filas por anuncio del carril 1 (`validation.lane1.build_config`).
+    # 0 = sin tope, el valor por defecto desde el 2026-10-19 (listas largas de
+    # los almacenes, `docs/spec-slice-lane1-sin-tope.md`). Un N positivo
+    # reinstala el tope en N sin tocar código; un negativo no arranca.
+    lane1_max_rows: int = Field(default=0, ge=0)
     # Avisos al celular (`saimc.alerting`). Sin las dos primeras el comando
     # avisa por consola y sale: no es una falla, es una capacidad sin usar.
     # Un bot solo SALE hacia Telegram; no recibe ni captura nada (decisión

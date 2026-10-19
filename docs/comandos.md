@@ -982,8 +982,13 @@ Para re-medir el tope de filas con la auditoría (solo lectura, no gasta):
   cada tope posible, el acumulado con su cota y cuánto **tolera**: la parte de los aceptados que
   podría tener más filas que ese tope sin que la cota pase la meta de 10 %, suponiendo que un largo
   nunca auditado falla siempre.
-- Un largo que no aparece no se auditó nunca: su cota es 100 %. Cómo leerlo y por qué el tope
-  sigue en 4: [spec-slice-tope-filas.md](spec-slice-tope-filas.md).
+- Un largo que no aparece no se auditó nunca: su cota es 100 %. Cómo leerlo:
+  [spec-slice-tope-filas.md](spec-slice-tope-filas.md).
+- La primera línea dice el tope vigente, o «sin tope». Desde el 2026-10-19 no hay tope salvo que
+  `SAIMC_LANE1_MAX_ROWS=N` lo ponga en el `.env` (0 o sin definir = sin tope; un negativo no
+  arranca). Para volver a lo de antes: `SAIMC_LANE1_MAX_ROWS=4` y reiniciar la aplicación y el
+  temporizador del pre-cálculo. Lo ya aceptado con más filas sigue aceptado y se ve acá
+  ([spec-slice-lane1-sin-tope.md](spec-slice-lane1-sin-tope.md)).
 
 ### Carril 1 escribiendo
 

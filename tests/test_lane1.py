@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -108,8 +109,8 @@ def _tasa_400(key: str, day: date) -> Decimal | None:
 def tope_de_una_fila(monkeypatch: pytest.MonkeyPatch) -> None:
     """El tope de filas como lo fijó B2b (1), para probar el mecanismo del tope.
 
-    El valor vigente es 4 (2026-10-13); estos tests ejercen que un tope puesto
-    se respete, sea cual sea el número.
+    Hoy no hay tope salvo que `SAIMC_LANE1_MAX_ROWS` lo ponga (2026-10-19);
+    estos tests ejercen que un tope puesto se respete, sea cual sea el número.
     """
     monkeypatch.setattr(lane1, "CONFIG", dataclasses.replace(lane1.CONFIG, lane1_max_rows=1))
 
@@ -217,7 +218,8 @@ def _sigue_pendiente_sin_filas(session: Session, ingesta: RawIngestion) -> None:
 
 
 def test_los_parametros_son_los_que_aprobo_el_operador() -> None:
-    assert lane1.CONFIG.lane1_max_rows == 4
+    # El tope sale del ajuste (lane1-sin-tope); sin definir, no hay tope.
+    assert lane1.build_config(Settings(_env_file=None)).lane1_max_rows is None  # type: ignore[call-arg]
     assert lane1.CONFIG.channel_min_history == 3
     assert lane1.CONFIG.channel_max_edit_rate == 0.5
     assert lane1.CONFIG.min_cell_n == 5
@@ -1100,6 +1102,34 @@ def test_la_metodologia_dice_que_hay_precios_sin_revision_previa(
     assert "95,0 %" in texto
 
 
+@pytest.mark.parametrize(
+    ("tope", "esperado"),
+    [
+        (None, "Solo pasa con anuncios de texto, cuando dos lecturas"),
+        (1, "Solo pasa con anuncios de texto que traen una sola oferta, cuando"),
+        (4, "Solo pasa con anuncios de texto que traen hasta 4 ofertas, cuando"),
+    ],
+)
+def test_la_metodologia_nombra_el_tope_solo_si_lo_hay(
+    tope: int | None,
+    esperado: str,
+    monkeypatch: pytest.MonkeyPatch,
+    session: Session,
+    mundo: SimpleNamespace,
+    tmp_path: Path,
+    client: TestClient,
+) -> None:
+    bien, _otro = _aceptar(session, tmp_path, mundo.canal, n=2)
+    lane1.mark_ok(session, bien.id)
+    session.commit()
+    monkeypatch.setattr(lane1, "CONFIG", dataclasses.replace(lane1.CONFIG, lane1_max_rows=tope))
+
+    texto = _visible(client.get("/metodologia").text)
+
+    assert esperado in texto
+    assert "None" not in texto
+
+
 def test_control_muestra_el_carril_1_con_su_procedencia_y_su_error(
     session: Session, mundo: SimpleNamespace, tmp_path: Path, client: TestClient
 ) -> None:
@@ -1582,3 +1612,85 @@ def test_caso_4_por_filas_mide_lo_auditado_y_no_escribe(
     session.refresh(sin_auditar)
     assert sin_auditar.processing_status == ProcessingStatus.CURATED
     assert [e.action for e in _eventos(session, sin_auditar)] == [CurationAction.CURATED]
+
+
+# --- lane1-sin-tope: el tope sale del ajuste (docs/spec-slice-lane1-sin-tope.md) -----
+#
+# Casos C1 a C4, escritos antes del código: sin definir o en 0 no hay tope; un
+# positivo lo reinstala; un negativo es un error de configuración.
+
+
+def _ajuste_tope(monkeypatch: pytest.MonkeyPatch, valor: str | None) -> Settings:
+    if valor is None:
+        monkeypatch.delenv("SAIMC_LANE1_MAX_ROWS", raising=False)
+    else:
+        monkeypatch.setenv("SAIMC_LANE1_MAX_ROWS", valor)
+    return Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_sin_tope_c1_sin_definir_no_hay_tope(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert lane1.build_config(_ajuste_tope(monkeypatch, None)).lane1_max_rows is None
+
+
+def test_sin_tope_c2_en_cero_no_hay_tope(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert lane1.build_config(_ajuste_tope(monkeypatch, "0")).lane1_max_rows is None
+
+
+def test_sin_tope_c3_un_positivo_reinstala_el_tope(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert lane1.build_config(_ajuste_tope(monkeypatch, "4")).lane1_max_rows == 4
+
+
+def test_sin_tope_c4_un_negativo_es_un_error_de_configuracion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValidationError):
+        _ajuste_tope(monkeypatch, "-1")
+
+
+def test_sin_tope_el_ajuste_solo_cambia_el_tope(monkeypatch: pytest.MonkeyPatch) -> None:
+    armada = lane1.build_config(_ajuste_tope(monkeypatch, "4"))
+
+    assert dataclasses.replace(armada, lane1_max_rows=lane1.CONFIG.lane1_max_rows) == lane1.CONFIG
+
+
+def test_sin_tope_con_c1_el_carril_acepta_t3(monkeypatch: pytest.MonkeyPatch) -> None:
+    from saimc.validation import validate_ad
+    from tests.test_validation_engine import _lista
+
+    config = lane1.build_config(_ajuste_tope(monkeypatch, None))
+
+    assert validate_ad(_lista(5), config).lane == 1
+
+
+def test_sin_tope_por_filas_dice_sin_tope(
+    monkeypatch: pytest.MonkeyPatch, session: Session, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(lane1, "CONFIG", dataclasses.replace(lane1.CONFIG, lane1_max_rows=None))
+
+    codigo, salida = _comando(session, tmp_path, "--por-filas")
+
+    assert codigo == 0
+    assert "sin tope" in salida
+    assert "None" not in salida
+
+
+def test_sin_tope_por_filas_con_tope_lo_nombra(
+    monkeypatch: pytest.MonkeyPatch, session: Session, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(lane1, "CONFIG", dataclasses.replace(lane1.CONFIG, lane1_max_rows=4))
+
+    _, salida = _comando(session, tmp_path, "--por-filas")
+
+    assert "tope vigente: 4" in salida
+
+
+def test_sin_tope_por_filas_muestra_los_estratos_de_5_o_mas_filas() -> None:
+    estratos = lane1.strata_by_rows(
+        [(1, lane1.OK), (5, lane1.OK), (7, lane1.OK), (7, lane1.INVALID), (12, lane1.CORRECTED)]
+    )
+
+    lineas = "\n".join(lane1._rows_lines(estratos))
+
+    assert "5 filas: 0 en 1 auditados" in lineas
+    assert "7 filas: 1 en 2 auditados" in lineas
+    assert "12 filas: 1 en 1 auditados" in lineas
