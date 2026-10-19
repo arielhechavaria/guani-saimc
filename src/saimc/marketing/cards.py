@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
 
 from saimc.cells import RetailObservation
 from saimc.units import unit_noun
@@ -52,9 +53,29 @@ class DatoDelDiaCard:
     rows: list[ProvinceRow]
 
 
+def format_price_whole(value: Decimal) -> str:
+    """El precio de una tarjeta de marketing: entero (mitad hacia arriba) y con
+    punto de miles, sin decimales («2.529»).
+
+    Guarda: un precio positivo que redondea a 0 (p. ej. 0,4) nunca se muestra
+    «0»: cae en `format_price`, con dos decimales. Es solo presentación: no
+    cambia ninguna medición, y el sitio público sigue con `format_price`."""
+    entero = value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    if value > 0 and entero == 0:
+        return format_price(value)
+    return f"{int(entero):,}".replace(",", ".")
+
+
+def _range_text(minimo: Decimal, maximo: Decimal) -> str:
+    """El rango en enteros; una sola cifra si ambos extremos redondean igual."""
+    lo, hi = format_price_whole(minimo), format_price_whole(maximo)
+    return lo if lo == hi else f"{lo} – {hi}"
+
+
 def _format_range(card: ProductCard) -> str:
-    lo, hi = card.minimum_text, card.maximum_text
-    return lo if card.is_single_observation or lo == hi else f"{lo} – {hi}"
+    if card.is_single_observation:
+        return format_price_whole(card.minimum)
+    return _range_text(card.minimum, card.maximum)
 
 
 def build_dato_del_dia(
@@ -91,7 +112,7 @@ def build_dato_del_dia(
             color=_PROVINCE_COLORS.get(slots.get(name, 9), _OTHER_COLOR),
             has_data=name in por_provincia,
             range_text=_format_range(por_provincia[name]) if name in por_provincia else "",
-            median_text=por_provincia[name].median_text if name in por_provincia else "",
+            median_text=format_price_whole(por_provincia[name].median) if name in por_provincia else "",
             count=por_provincia[name].count if name in por_provincia else 0,
         )
         for name in province_names
@@ -235,8 +256,8 @@ def build_como_se_movio(
                 color=color,
                 has_line=True,
                 change_text=line.change_text,
-                before_text=line.before_text,
-                now_text=line.now_text,
+                before_text=format_price_whole(line.before_median),
+                now_text=format_price_whole(line.now_median),
                 before_count=line.before_count,
                 now_count=line.now_count,
                 y_before=_chart_y(float(line.before_median), lo, hi),
@@ -303,11 +324,7 @@ def build_de_donde_sale(
 
     precios = [o.unit_price for o in filtradas]
     minimo, maximo = min(precios), max(precios)
-    range_text = (
-        format_price(minimo)
-        if minimo == maximo
-        else f"{format_price(minimo)} – {format_price(maximo)}"
-    )
+    range_text = _range_text(minimo, maximo)
     recientes = sorted(filtradas, key=lambda o: o.day, reverse=True)[:max_rows]
 
     return DeDondeSaleCard(
@@ -318,7 +335,10 @@ def build_de_donde_sale(
         range_text=range_text,
         count=len(filtradas),
         rows=[
-            AnuncioRow(day_text=f"{o.day.day:02d}/{o.day.month:02d}", price_text=format_price(o.unit_price))
+            AnuncioRow(
+                day_text=f"{o.day.day:02d}/{o.day.month:02d}",
+                price_text=format_price_whole(o.unit_price),
+            )
             for o in recientes
         ],
     )
