@@ -5,7 +5,8 @@
   Arriba, la cota de falsos descartes por tipo, acumulada entre semanas, contra
   la meta de G1a. Si la pasa, se marca en rojo y se nombra el interruptor que
   hay que apagar: la pantalla no apaga nada. Abajo, la muestra de una semana
-  cerrada, cada anuncio con «Bien descartado» y «Rescatar». La cota vive solo
+  cerrada, cada anuncio con «Bien descartado» y «Rescatar»; la semana en curso
+  muestra solo el censo del árbitro de Jev, si lo hay. La cota vive solo
   acá, no en /control (decidido cuando /control era público; hoy pide operador).
 #}
 {% extends "_shell.html" %}
@@ -253,7 +254,7 @@
     </span>
   </form>
 
-  {% if not sample.closed %}
+  {% if not sample.closed and not sample.items() %}
   <div class="m3-card">
     <div class="m3-empty">
       <span class="m3-icon">schedule</span>
@@ -263,14 +264,29 @@
   </div>
   {% else %}
 
-  {% for tipo in ['text', 'image'] %}
+  {# Semana en curso con descartes del árbitro en su primer tramo (enmienda
+     2026-10-19 de docs/spec-slice-jev-desacuerdo.md): solo esos, sin sorteo. #}
+  {% if not sample.closed %}
+  <div class="m3-card m3-card-outlined m3-card-pad" role="status">
+    <p class="m3-sm" style="margin:0">
+      La semana {{ sample.label }} sigue abierta: solo muestra los descartes del árbitro de Jev,
+      que se auditan completos. La muestra al azar sale cuando cierra, el lunes.
+    </p>
+  </div>
+  {% endif %}
+
+  {% for tipo in (['text', 'image'] if sample.closed else ['text']) %}
   {% set items = sample.by_type(tipo) %}
   <section aria-labelledby="h-{{ tipo }}">
     <div class="m3-section-head">
       <h2 class="m3-h2" id="h-{{ tipo }}">{{ type_labels[tipo] }}</h2>
       <span class="m3-sm m3-muted">
+        {% if sample.closed %}
         {{ items|length }} de {{ sample.population.get(tipo, 0) }} descartados solos
         (muestra de hasta {{ sample_sizes[tipo] }}{% if tipo == 'text' and sample.census_count %}, más {{ sample.census_count }} del árbitro de Jev, que se auditan completos{% endif %})
+        {% else %}
+        {{ items|length }} del árbitro de Jev, de {{ sample.population.get(tipo, 0) }} descartados solos hasta ahora
+        {% endif %}
       </span>
     </div>
     {% if not items %}
