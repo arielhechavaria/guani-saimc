@@ -126,24 +126,11 @@
       .then(done);
   }
 
-  function saveAll(button) {
-    var done = busy(button, "Bajando…");
-    fetchFiles(filesOf(button))
-      .then(function (files) {
-        downloadAll(files);
-        say("Se descargaron " + files.length + " imágenes, en el orden del carrusel.");
-      })
-      .catch(fail)
-      .then(done);
-  }
-
   document.addEventListener("click", function (event) {
     var copy = event.target.closest("[data-mk-copy]");
     if (copy) return copyText(copy);
     var shareBtn = event.target.closest("[data-mk-share]");
-    if (shareBtn) return share(shareBtn);
-    var saveBtn = event.target.closest("[data-mk-save-all]");
-    if (saveBtn) saveAll(saveBtn);
+    if (shareBtn) share(shareBtn);
   });
   document.addEventListener("input", function (event) {
     if (event.target.id === "caption") updateCount();

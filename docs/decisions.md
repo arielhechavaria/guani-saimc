@@ -12999,3 +12999,9 @@ Contexto: `format_price` da dos decimales por debajo de 100 («45,50») y el ope
 Decisión: `marketing.cards.format_price_whole` redondea a entero (mitad hacia arriba) con punto de miles y la usan «Dato del día» (rango y mediana), «De dónde sale este precio» (rango y cada anuncio), «Cómo se movió» (precios de cada línea; los porcentajes vienen de `price_charts` y no se tocan) y el texto del post, que lee esas mismas filas. Dos extremos que redondean igual se muestran como una sola cifra («45», no «45 – 45»). Guarda: un precio positivo que redondea a 0 (0,4) conserva dos decimales («0,40»). Es solo presentación.
 Descartado: cambiar `format_price` para todo el sitio: el público conserva decimales en precios chicos, y series, gráficos y ticker lo comparten.
 Consecuencia: en una tarjeta, una mediana de 45,50 y un mínimo de 45,40 se leen «46» y «45»: la cifra mostrada puede diferir hasta 0,5 de la medida. El detalle exacto sigue en el sitio público.
+
+## 2026-10-19 — Descarga de imágenes y ZIP en la fábrica
+Contexto: el operador no encontraba cómo bajar las imágenes aprobadas: solo había un enlace chico y «Guardar todas», que disparaba varias descargas seguidas desde JS.
+Decisión: botón visible «Descargar imagen» (enlace `download` al JPEG congelado) y, en carruseles, «Descargar esta diapositiva» + «Descargar todo (.zip)» con `GET /marketing/post/{id}/imagenes.zip` (stdlib `zipfile`, `ZIP_STORED`, en memoria, nombres con prefijo `NN-`). Solo con la publicación aprobada; un borrador sigue sin descarga.
+Descartado: seguir con descargas múltiples simultáneas, que los navegadores de escritorio bloquean o piden permiso.
+Consecuencia: reemplaza «Guardar todas» (`plan-fabrica-marketing.md` y la entrada sobre el carrusel lo mencionan como histórico); bajar borradores queda pendiente de decisión del operador.

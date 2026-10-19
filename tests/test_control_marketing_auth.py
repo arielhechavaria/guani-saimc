@@ -97,3 +97,12 @@ def test_sin_credenciales_control_no_nombra_ningun_canal(client: TestClient) -> 
     response = client.get("/control")
 
     assert "Descarte por canal" not in response.text
+
+
+def test_el_zip_de_imagenes_pide_credenciales(client: TestClient) -> None:
+    falso = "00000000-0000-0000-0000-000000000000"
+
+    response = client.get(f"/marketing/post/{falso}/imagenes.zip")
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Basic"

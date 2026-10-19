@@ -32,20 +32,18 @@
           data-mk-files='{{ share_files | tojson }}'>
     <span data-mk-label>Compartir</span>
   </button>
+  {#- Un enlace normal con `download`: funciona sin JS y sin permisos del navegador. -#}
+  <a class="m3-btn m3-btn-tonal" href="{{ jpg_url }}" download="{{ jpg_name }}">
+    {% if share_files | length > 1 %}Descargar esta diapositiva{% else %}Descargar imagen{% endif %}
+  </a>
   {% if share_files | length > 1 %}
-  {#- Por si Instagram recibe una sola del menú del sistema: se bajan todas y el
-      carrusel se arma desde la app. -#}
-  <button type="button" class="m3-btn m3-btn-tonal" data-mk-save-all
-          data-mk-files='{{ share_files | tojson }}'>
-    <span data-mk-label>Guardar todas</span>
-  </button>
+  <a class="m3-btn m3-btn-tonal" href="{{ zip_url }}" download>Descargar todo (.zip)</a>
   {% endif %}
 </div>
 <p class="m3-xs m3-muted" data-mk-status role="status" aria-live="polite" style="margin:8px 0 0"></p>
-<p class="m3-xs" style="margin:8px 0 0"><a href="{{ jpg_url }}" download="{{ jpg_name }}">Descargar JPEG{% if share_files | length > 1 %} de esta diapositiva{% endif %}</a></p>
 {% elif editable %}
 <p class="m3-xs m3-muted" style="margin:8px 0 0">
-  Para compartirla, aprobala: se congelan las cifras y se hace el JPEG.
+  Para compartirla o bajarla, aprobala: se congelan las cifras y se hace el JPEG.
 </p>
 {% endif %}
 {% else %}
