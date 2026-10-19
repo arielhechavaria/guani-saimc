@@ -35,6 +35,8 @@ PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # Solo listan rutas de la capa pública; nunca `/anuncio/<id>`.
         ("GET", "/robots.txt"),
         ("GET", "/sitemap.xml"),
+        # Verificación de propiedad de Google Search Console: contenido fijo.
+        ("GET", "/google06eec30faab9a5d5.html"),
         ("GET", "/metodologia"),
         ("GET", "/preguntas"),
         ("GET", "/quienes-somos"),

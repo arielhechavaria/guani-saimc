@@ -116,6 +116,14 @@ def _dimensiones_png(ruta: Path) -> tuple[int, int]:
     return struct.unpack(">II", datos[16:24])  # type: ignore[return-value]
 
 
+class TestVerificacionGoogle:
+    def test_sirve_el_archivo_exacto_que_pide_search_console(self, client: TestClient) -> None:
+        respuesta = client.get("/google06eec30faab9a5d5.html")
+        assert respuesta.status_code == 200
+        assert respuesta.headers["content-type"].startswith("text/html")
+        assert respuesta.text == "google-site-verification: google06eec30faab9a5d5.html"
+
+
 class TestRobots:
     def test_responde_texto_plano(self, client: TestClient) -> None:
         respuesta = client.get("/robots.txt")

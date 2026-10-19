@@ -28,3 +28,17 @@ def robots(request: Request) -> Response:
 def sitemap(request: Request, db: Session = Depends(get_db)) -> Response:
     xml = seo.sitemap_xml(request, pilot_product_names(db))
     return Response(xml, media_type="application/xml; charset=utf-8")
+
+
+# Search Console verifica la propiedad pidiendo este archivo en la raíz y
+# comparando el contenido exacto. Es un dato fijo que entrega Google, no un
+# secreto: quitarlo desverifica la propiedad.
+GOOGLE_VERIFICATION_FILE = "google06eec30faab9a5d5.html"
+
+
+@router.get(f"/{GOOGLE_VERIFICATION_FILE}", include_in_schema=False)
+def google_verification() -> Response:
+    return Response(
+        f"google-site-verification: {GOOGLE_VERIFICATION_FILE}",
+        media_type="text/html; charset=utf-8",
+    )
