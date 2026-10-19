@@ -8,9 +8,11 @@ inyectados) y los datos de `test_marketing_router.py`.
 
 from __future__ import annotations
 
+import io
 import json
 import re
 import uuid
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -236,9 +238,60 @@ class TestEditorDeCarrusel:
             f"/marketing/post/{post.id}/slide/{n}.jpg" for n in (1, 2, 3, 4)
         ]
         assert [a["name"][-6:] for a in archivos] == ["-1.jpg", "-2.jpg", "-3.jpg", "-4.jpg"]
-        assert "Guardar todas" in html
+        assert "Descargar esta diapositiva" in html
+        assert f'href="/marketing/post/{post.id}/imagenes.zip"' in html
+        assert "Guardar todas" not in html
         for n in (1, 2, 3, 4):
             assert client.get(f"/marketing/post/{post.id}/slide/{n}.jpg").status_code == 200
+
+    def test_el_zip_trae_las_cuatro_en_orden_y_con_el_contenido_del_disco(
+        self,
+        client: TestClient,
+        datos: None,
+        fabrica: Path,
+        session: Session,  # noqa: F811
+    ) -> None:
+        post = _carrusel(session)
+        approve(session, post, images_dir=fabrica / "posts", render=_jpeg_falso)
+        session.commit()
+
+        respuesta = client.get(f"/marketing/post/{post.id}/imagenes.zip")
+
+        assert respuesta.status_code == 200
+        assert respuesta.headers["content-type"] == "application/zip"
+        assert respuesta.headers["content-disposition"].startswith('attachment; filename="guani-')
+        with zipfile.ZipFile(io.BytesIO(respuesta.content)) as z:
+            assert z.namelist() == [
+                f"0{n}-guani-carrusel-{HOY.isoformat()}-{n}.jpg" for n in (1, 2, 3, 4)
+            ]
+            for slide in post.slides:
+                en_disco = (fabrica / "posts" / str(slide.image_path)).read_bytes()
+                assert z.read(z.namelist()[slide.position - 1]) == en_disco
+
+    def test_el_zip_de_un_borrador_da_404(
+        self,
+        client: TestClient,
+        datos: None,
+        fabrica: Path,  # noqa: F811
+        session: Session,  # noqa: F811
+    ) -> None:
+        post = _carrusel(session)
+
+        assert client.get(f"/marketing/post/{post.id}/imagenes.zip").status_code == 404
+
+    def test_el_zip_con_un_archivo_faltante_da_404(
+        self,
+        client: TestClient,
+        datos: None,
+        fabrica: Path,
+        session: Session,  # noqa: F811
+    ) -> None:
+        post = _carrusel(session)
+        approve(session, post, images_dir=fabrica / "posts", render=_jpeg_falso)
+        session.commit()
+        (fabrica / "posts" / str(post.slides[2].image_path)).unlink()
+
+        assert client.get(f"/marketing/post/{post.id}/imagenes.zip").status_code == 404
 
 
 class TestHoyConCarrusel:

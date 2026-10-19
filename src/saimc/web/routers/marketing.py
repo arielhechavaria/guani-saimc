@@ -36,8 +36,10 @@ congelado (`saimc.marketing.week`).
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import uuid
+import zipfile
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
@@ -454,6 +456,7 @@ def _editor_state(
         "preview_url": f"/marketing/post/{post.id}/preview/{slide.position}?v={_revision(slide)}",
         "jpg_url": _jpg_url(post, slide) if slide.image_path else None,
         "jpg_name": _jpg_name(post, slide),
+        "zip_url": f"/marketing/post/{post.id}/imagenes.zip" if aprobadas else None,
         # Todo lo que se comparte de una vez, en el orden del carrusel.
         "share_files": [{"url": _jpg_url(post, s), "name": _jpg_name(post, s)} for s in aprobadas],
         # La base guarda UTC; el operador lee la hora de Cuba.
@@ -595,6 +598,37 @@ def marketing_post_jpg(
     if not archivo.is_file():
         return HTMLResponse("La imagen no está en el disco.", status_code=404)
     return FileResponse(archivo, media_type="image/jpeg")
+
+
+
+@router.get("/marketing/post/{post_id}/imagenes.zip", response_model=None)
+def marketing_post_zip(
+    post_id: str,
+    db: Session = Depends(get_db),
+    marketing_dir: Path = Depends(get_marketing_dir),
+) -> Response:
+    """Todos los JPEG congelados en un solo archivo, en el orden del carrusel.
+
+    Una sola descarga en vez de varias seguidas, que los navegadores de
+    escritorio bloquean o piden permiso. Un JPEG ya viene comprimido: se
+    guarda sin recomprimir (`ZIP_STORED`)."""
+    post = _load(db, post_id)
+    if not post.slides or any(s.image_path is None for s in post.slides):
+        return HTMLResponse("Esta publicación todavía no tiene imagen aprobada.", status_code=404)
+    carpeta = _images_dir(marketing_dir)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archivo_zip:
+        for slide in sorted(post.slides, key=lambda s: s.position):
+            archivo = carpeta / str(slide.image_path)
+            if not archivo.is_file():
+                return HTMLResponse("Falta una imagen en el disco.", status_code=404)
+            archivo_zip.writestr(f"{slide.position:02d}-{_jpg_name(post, slide)}", archivo.read_bytes())
+    nombre = f"guani-{post.planned_for.isoformat()}-{str(post.id)[:8]}.zip"
+    return Response(
+        buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
 
 
 # --- Transiciones ------------------------------------------------------------

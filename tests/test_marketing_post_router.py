@@ -224,8 +224,13 @@ class TestEditor:
         assert "readonly" in html
         assert f'data-mk-files=\'[{{"name": "guani-dato-del-dia-{HOY.isoformat()}.jpg", ' \
             f'"url": "/marketing/post/{post.id}/slide/1.jpg"}}]\'' in html
-        # Una suelta no ofrece «Guardar todas»: eso es del carrusel.
-        assert "data-mk-save-all" not in html
+        # Una suelta baja su JPEG con un enlace; el .zip es del carrusel.
+        assert "Descargar imagen" in html
+        assert (
+            f'href="/marketing/post/{post.id}/slide/1.jpg" '
+            f'download="guani-dato-del-dia-{HOY.isoformat()}.jpg"'
+        ) in html
+        assert "imagenes.zip" not in html
         assert "Marcar publicada" in html and "Descartar" in html and "Duplicar" in html
         assert (
             client.post(f"/marketing/post/{post.id}", data={"caption": "x"}).status_code == 409
