@@ -144,7 +144,7 @@ lo que hace cada una.
 > precios, información al público.]
 >
 > Adjuntamos una presentación breve. Hoy cubre [5] productos en [2]
-> provincias, y pueden consultarlo en guani.duckdns.org. Con gusto les
+> provincias, y pueden consultarlo en guani.app. Con gusto les
 > contamos más o respondemos cualquier pregunta.
 >
 > Saludos,

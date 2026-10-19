@@ -103,7 +103,7 @@ admiten etiquetas de compras ni filtros.
 |---|---|---|
 | Tamaño | Feed 1080×1350 (4:5, en el borde del rango) y story 1080×1920 | Nada |
 | Formato | `render_png` produce PNG | Convertir a JPEG en sRGB, a menos de 8 MB |
-| URL pública | `var/marketing/AAAA-MM-DD/` no se sirve | Servir el día corriente por HTTPS desde guani.duckdns.org (Caddy), con nombres ASCII |
+| URL pública | `var/marketing/AAAA-MM-DD/` no se sirve | Servir el día corriente por HTTPS desde guani.app (Caddy), con nombres ASCII |
 | Token | Se renueva | Volver a generarlo con el permiso de publicación |
 | Idempotencia | No existe | Guardar el `creation_id` y el id publicado antes de reintentar (sigue en pie el punto 4 de la entrada del 2026-10-16) |
 

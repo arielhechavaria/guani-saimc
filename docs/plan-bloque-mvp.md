@@ -102,7 +102,7 @@ en `true` en producción.** Alcance de la puerta (`web/access.py`,
 - **T10 (SEO) no tiene efecto mientras la puerta esté encendida:** los
   buscadores no ven nada. Se puede construir y probar con la puerta apagada
   en el entorno local, y su efecto real empieza el día que se apague.
-- **T8 y T15 (redes):** un enlace de Instagram a `guani.duckdns.org` lleva a
+- **T8 y T15 (redes):** un enlace de Instagram a `guani.app` lleva a
   un formulario de acceso a cualquiera que no tenga la contraseña.
 - **T16 (tour) y el contador de visitas:** el tour solo lo ve quien ya entró, y
   `analytics.py` cuenta solo páginas vistas con acceso.

@@ -360,7 +360,7 @@ generados se commitean y el VPS no necesita Chromium para servirlos.
 ```
 
 - Necesita el extra `marketing` (Playwright + Chromium). Sin red.
-- **Una vez en el VPS:** pon `SAIMC_SITE_URL=https://guani.duckdns.org` en el `.env` y reinicia
+- **Una vez en el VPS:** pon `SAIMC_SITE_URL=https://guani.app` en el `.env` y reinicia
   `saimc.service`. Sin eso, `canonical`, `og:*` y el sitemap usan el host que ve uvicorn
   (`http://127.0.0.1:8000` detrás de Caddy) y salen mal.
 - Mientras `SAIMC_SITE_GATE_ENABLED=true`, `/robots.txt` y `/sitemap.xml` responden pero las páginas que
