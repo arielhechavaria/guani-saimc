@@ -234,13 +234,13 @@ cuando alguien pega un enlace del sitio.
 | 1 | **Datos del día** (carrusel: portada → un «Dato del día» por producto con datos, hasta 4 → cierre) | 1080×1350 (4:5) | Descubrir | Todos los días | Lote, todos los días, en un solo borrador |
 | 2 | **Cómo se movió** | 1080×1350 | Volver | Lunes | Lote, los lunes |
 | 3 | **De dónde sale este precio** | 1080×1350 | Visitar / confianza | Jueves | Lote, los jueves |
-| 4 | **Carrusel** (portada → cómo leer → dato → cierre) | 1080×1350 | Descubrir y volver | A mano | `/marketing`, a mano (ya no sale del lote desde el 2026-10-19: «cómo leer rango y mediana» lo cubre la lección educativa) |
+| 4 | **Carrusel** (portada → cómo leer → dato → cierre) | 1080×1350 | Descubrir y volver | A mano | `/marketing`, a mano (ya no sale del lote desde el 2026-10-19: «cómo leer rango y mediana» lo cubren las láminas educativas) |
 | 5 | **De los grupos a la cifra** | 1080×1350 | Confianza | Una vez, fijada arriba del perfil | `/marketing`, a mano |
 | 6 | **El video de la landing** (comercial «Cómo se escoge el arroz») | Vertical | Descubrir y confianza | Una vez, como Reel fijado | `static/landing/guani-flujo.mp4` (`docs/concepto-comercial-guani.md`) |
 | 7 | **Story de precalentamiento** | 1080×1920 (9:16) | Volver | La víspera de algo nuevo | `/marketing`, a mano |
 | 8 | **Libre** | 1080×1350 | Según la pieza | Cuando haga falta | `/marketing`, a mano |
 | 9 | **Portada de Facebook** | 1640×624 | — | Cuando se abra la página de Facebook | `/marketing`, a mano |
-| 10 | **Educativo** (carrusel de 4–5 diapositivas) | 1080×1350 | Confianza | Todos los días, segundo turno del lote | Lote, todos los días (`saimc.marketing.lessons`) |
+| 10 | **Educativo** (carrusel de 4–5 láminas de la presentación) | 1920×1080 | Confianza | Todos los días, segundo turno del lote | Lote, todos los días (`saimc.marketing.deck`) |
 
 Notas por pieza:
 
@@ -275,10 +275,12 @@ Notas por pieza:
   un análisis de Buffer citado por terceros, los Reels llegan a más gente y los
   carruseles generan más interacción (no verificado en la fuente original).
   Queda como experimento para después del primer mes.
-- **Educativo.** Una lección corta que rota por día (de los grupos a la cifra,
-  rango y mediana, muestra en formación, cada precio con sus anuncios). Es
-  texto fijo, sin cifras: no depende de datos y siempre sale en el lote. El
-  texto del post ya viene escrito; revísalo igual antes de aprobar.
+- **Educativo.** Una sección de la presentación «Guani para instituciones»,
+  con sus láminas tal cual (apaisadas, 1920×1080), que rota por día: la idea,
+  cómo funciona, a quién le habla. No depende de datos y siempre sale en el
+  lote. El texto del post ya viene escrito; revísalo igual antes de aprobar.
+  Ojo: dos láminas de «cómo funciona» (`embudo` y `respuesta`) llevan cifras
+  del corte del 18 de octubre, rotuladas con esa fecha.
 - **Story de precalentamiento.** Para anunciar algo («Mañana, cómo se movió el
   pollo esta semana»). Las Stories duran 24 h.
 

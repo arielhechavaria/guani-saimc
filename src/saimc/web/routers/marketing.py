@@ -64,13 +64,14 @@ from saimc.marketing.daily import (
     EDU_SLOT,
     cards_for_day,
     create_datos_draft,
+    create_deck_draft,
     datos_products,
     havana_today,
     slot_label,
     to_havana,
 )
+from saimc.marketing.deck import section_for_day
 from saimc.marketing.html import card_html
-from saimc.marketing.lessons import lesson_for_day
 from saimc.marketing.options import (
     CTA_MAX,
     FREE_MAX_BLOCKS,
@@ -91,7 +92,6 @@ from saimc.marketing.posts import (
     approve,
     create_carousel_draft,
     create_draft,
-    create_lesson_draft,
     discard,
     duplicate,
     effective_caption,
@@ -350,7 +350,7 @@ async def marketing_post_create(
     producto = productos[0] if productos else None
     provincia = PHASE0_PROVINCES[0] if PHASE0_PROVINCES else None
     if pedido == EDU_SLOT:
-        post = create_lesson_draft(db, lesson=lesson_for_day(today), planned_for=today)
+        post = create_deck_draft(db, today, section_for_day(today))
     elif pedido == DATOS_SLOT:
         productos_datos = datos_products(db, today)
         if not productos_datos:
@@ -431,6 +431,11 @@ def _editor_state(
     kind = BY_SLUG[slide.card_slug]
     primera = BY_SLUG[post.slides[0].card_slug]
     aprobadas = [s for s in post.slides if s.image_path]
+    # Mismo tamaño que la primera: un carrusel no mezcla medidas. Con las
+    # láminas de la presentación (1920×1080) no queda ninguna plantilla.
+    slide_kinds = [
+        t for t in POSTABLE if (t.width, t.height) == (primera.width, primera.height)
+    ]
     return {
         "post": post,
         "slide": slide,
@@ -441,11 +446,9 @@ def _editor_state(
         "max_slides": MAX_SLIDES,
         "can_add": post.status == PostStatus.DRAFT
         and post.format != PostFormat.STORY
-        and len(post.slides) < MAX_SLIDES,
-        # Mismo tamaño que la primera: un carrusel no mezcla medidas.
-        "slide_kinds": [
-            t for t in POSTABLE if (t.width, t.height) == (primera.width, primera.height)
-        ],
+        and len(post.slides) < MAX_SLIDES
+        and bool(slide_kinds),
+        "slide_kinds": slide_kinds,
         "status_label": STATUS_LABELS.get(post.status, post.status),
         "editable": post.status == PostStatus.DRAFT,
         "ready": slide_html(db, slide) is not None,

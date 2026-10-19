@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Presentación</title>
+<style>
+{{ font_css | default('') | safe }}
+html,body{margin:0}
+{# Lámina de la presentación para instituciones, tal cual (saimc.marketing.deck): su HTML ya trae todos los estilos en línea; acá solo el lienzo de 1920×1080 que la contiene y un reinicio mínimo de márgenes, como el visor de la presentación. #}
+.deck{position:relative;overflow:hidden;width:1920px;height:1080px}
+.deck *{margin:0;box-sizing:border-box}
+.deck section{position:relative;width:1920px;height:1080px;overflow:hidden}
+.deck a{color:inherit;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="deck">{{ deck.html | safe }}</div>
+</body>
+</html>

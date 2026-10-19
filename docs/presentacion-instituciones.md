@@ -100,6 +100,14 @@ con una tasa equivocada (las 266 filas en USD con `elTOQUE (cache)`).
 - **Su fuente:** `docs/presentacion-instituciones/` (`deck.json`, una slide por
   archivo en `slides/` y las tres imágenes). Si cambia el texto, se cambia ahí
   y se vuelve a publicar.
+- **También se publica en Instagram:** el turno «Educativo» diario muestra 14
+  de estas láminas, tal cual y sin su contador de página, en tres secciones que
+  rotan por día (`saimc.marketing.deck`): idea (`cover`, `orden`, `pregunta`,
+  `quienvende`, `quees`), cómo funciona (`flujo`, `embudo`, `vara`,
+  `respuesta`, `cuentas`) y a quién le habla (`noopina`, `publico`, `viene`,
+  `miralo`). No se publican `hoy` (cifras fijas del 18 de octubre) ni `cierre`
+  (marcador «[correo de la marca]» sin rellenar). Cambiar una lámina aquí
+  cambia lo que se publica mañana, no lo ya aprobado.
 - **Imágenes:** `anuncio.png` es la recreación de un anuncio de
   `static/landing/flujo-1.webp`; `arroz-habana.png` es una captura de las
   tarjetas de `/producto/arroz?provincia=la-habana` sin la cabecera (su rango
