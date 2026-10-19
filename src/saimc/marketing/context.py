@@ -24,10 +24,10 @@ from saimc.progress import PHASE0_PROVINCES, pilot_product_names
 from saimc.web.card_view import build_cards
 from saimc.web.price_charts import build_month_vs_month
 
-#: Placeholder mientras el dominio final no está decidido (pendiente en el
-#: doc de campaña, 2026-09-26: «¿cuál será la dirección del sitio para poner
-#: en las piezas?»). Cambiarlo es editar esta constante, no tocar cada plantilla.
-SITE_URL_PLACEHOLDER = "guani.cuba · próximamente"
+#: La dirección que se imprime en las piezas. El sitio pasó a `guani.app`
+#: (`docs/decisions.md`, 2026-10-19). Cambiarla es editar esta constante, no
+#: cada plantilla.
+SITE_URL = "guani.app"
 
 #: Una semana, igual que el pilar «Dato del día»/«Cómo se movió» del calendario.
 DEFAULT_WINDOW_DAYS = 7
@@ -66,12 +66,15 @@ class CardType:
     #: Tarjeta «Libre»: en lugar de bloques fijos, el operador arma los suyos
     #: (`options.FREE_TYPES`).
     free: bool = False
+    #: La tarjeta pinta una fila por provincia (`card.rows`): el editor puede
+    #: ocultar algunas (`CardOptions.hidden_provinces`).
+    rows_by_province: bool = False
 
 
 CARD_TYPES: tuple[CardType, ...] = (
     CardType(
         "dato-del-dia", "Dato del día", "marketing_dato_del_dia.html",
-        1080, 1350, needs_product=True,
+        1080, 1350, needs_product=True, rows_by_province=True,
         blocks=(
             Block("titulo", "Título y fecha de corte", toggleable=False),
             Block("rango", "Rango de precios", toggleable=False),
@@ -84,7 +87,7 @@ CARD_TYPES: tuple[CardType, ...] = (
     ),
     CardType(
         "como-se-movio", "Cómo se movió", "marketing_como_se_movio.html",
-        1080, 1350, needs_product=True,
+        1080, 1350, needs_product=True, rows_by_province=True,
         blocks=(
             Block("titulo", "Título", toggleable=False),
             Block("cambio", "Cambio por provincia", toggleable=False),

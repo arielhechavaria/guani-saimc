@@ -16,7 +16,7 @@ from typing import Any
 import jinja2
 
 import saimc.web
-from saimc.marketing.context import SITE_URL_PLACEHOLDER, CardType
+from saimc.marketing.context import SITE_URL, CardType
 from saimc.marketing.fonts import avatar_data_uri, font_face_css
 from saimc.marketing.options import CardOptions, parse_options
 
@@ -42,10 +42,11 @@ def card_html(
     plantilla = _environment().get_template(kind.template)
     # Las fuentes y el avatar viajan dentro del HTML: Playwright rasteriza sin acceso a /static.
     return plantilla.render(
-        site_url=SITE_URL_PLACEHOLDER,
+        site_url=SITE_URL,
         font_css=font_face_css(),
         avatar_uri=avatar_data_uri(),
         show=opciones.show,
+        hidden_provinces=opciones.hidden_provinces,
         subtitle=opciones.subtitle,
         cta=opciones.cta,
         free=opciones.free,

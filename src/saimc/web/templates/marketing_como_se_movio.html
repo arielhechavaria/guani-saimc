@@ -19,6 +19,7 @@
   se apilan y reparten el alto.
 #}
 {% set on = show if show is defined else {} %}
+{% set hidden = hidden_provinces if hidden_provinces is defined else () %}
 {% set c = (subtitle or cta) %}
 <div class="mc" style="width: 1080px; height: 1350px">
   <div class="mc-orbs"></div>
@@ -47,7 +48,7 @@
         <text x="722" y="34" text-anchor="middle" font-family="Inter, sans-serif" font-size="26" fill="#4e4e4e">{{ card.now_label }}</text>
         <line x1="150" y1="60" x2="150" y2="350" stroke="#d6d3d1" stroke-width="2"/>
         <line x1="722" y1="60" x2="722" y2="350" stroke="#d6d3d1" stroke-width="2"/>
-        {% for row in card.rows if row.has_line %}
+        {% for row in card.rows if row.has_line and row.name not in hidden %}
         <line x1="150" y1="{{ row.y_before }}" x2="722" y2="{{ row.y_now }}" stroke="{{ row.color }}" stroke-width="8" stroke-linecap="round"/>
         <circle cx="150" cy="{{ row.y_before }}" r="14" fill="{{ row.color }}" stroke="#ffffff" stroke-width="4"/>
         <circle cx="722" cy="{{ row.y_now }}" r="14" fill="{{ row.color }}" stroke="#ffffff" stroke-width="4"/>
@@ -59,7 +60,7 @@
     {% endif %}
 
     <div data-block="cambio" style="{{ 'flex: 0 0 auto' if on.grafico is not false else 'flex: 1 1 0' }}; display: flex; flex-direction: {{ 'row' if on.grafico is not false else 'column' }}; gap: 24px">
-      {% for row in card.rows %}
+      {% for row in card.rows if row.name not in hidden %}
       <div class="mc-panel" style="flex: 1 1 0; min-width: 0; padding: {{ 16 if c else 24 }}px 28px; display: flex; flex-direction: column; justify-content: center">
         <div style="display: flex; align-items: center; gap: 12px"><div class="mc-dot" style="width: 20px; height: 20px; background: {{ row.color }}"></div><div style="font-size: 30px; line-height: 36px; font-weight: 600">{{ row.name }}</div></div>
         {% if row.has_line %}

@@ -299,6 +299,29 @@ class TestTransiciones:
         session.refresh(post)
         assert post.status == PostStatus.DRAFT
 
+    def test_aprobar_no_rasteriza_dentro_del_event_loop(
+        self, client: TestClient, datos: None, fabrica: Path, session: Session  # noqa: F811
+    ) -> None:
+        """Playwright sync falla si hay un event loop corriendo en el hilo: el
+        render tiene que correr en un hilo aparte (regresión del 500 en producción)."""
+        import asyncio
+
+        def _como_playwright(html: str, *, width: int, height: int) -> bytes:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return b"JPEG falso"
+            raise RuntimeError("Playwright Sync API dentro del asyncio loop")
+
+        app.dependency_overrides[get_jpeg_renderer] = lambda: _como_playwright
+        post = _borrador(session)
+
+        respuesta = client.post(f"/marketing/post/{post.id}/aprobar", follow_redirects=False)
+
+        assert respuesta.status_code == 303
+        session.refresh(post)
+        assert post.status == PostStatus.APPROVED
+
     def test_publicar_un_borrador_da_409(
         self, client: TestClient, datos: None, fabrica: Path, session: Session  # noqa: F811
     ) -> None:

@@ -47,6 +47,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from saimc.config import get_settings
 from saimc.marketing.caption import CAPTION_MAX
@@ -691,10 +692,16 @@ async def marketing_post_approve(
     guarda primero lo que haya: así no se pierde un texto recién escrito."""
     post = _load(db, post_id)
     form = await request.form()
-    try:
+
+    def _guardar_y_aprobar() -> None:
         if "data_through" in form:
             _save_from_form(db, post, form, today)
         approve(db, post, images_dir=_images_dir(marketing_dir), render=render)
+
+    try:
+        # Playwright (API sync) no corre dentro del event loop: se aprueba en
+        # un hilo del pool. Es el único endpoint que rasteriza.
+        await run_in_threadpool(_guardar_y_aprobar)
     except InvalidTransition as error:
         db.rollback()
         return HTMLResponse(str(error), status_code=status.HTTP_409_CONFLICT)
