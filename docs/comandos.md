@@ -78,10 +78,15 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 
 - **Para qué**: un menú con los comandos de este catálogo que no piden `sudo` y los logs de cada
   unidad (`journalctl -f`). Muestra la línea exacta antes de correr.
-- **Teclas**: `j`/`k` o flechas para moverte, Enter corre (sobre un grupo, lo pliega), `Tab` pasa del menú
-  a la lista de corridas, `x` corta la corrida elegida, `c` quita las corridas ya terminadas, `u` actualiza el estado, `q` o «Salir»
-  al final del menú sale. Los marcados con ⚠ escriben o gastan y piden `y`/`n`. Con menos de 36 filas se
-  esconde la cabecera con el avatar.
+- **Teclas**: `j`/`k` o flechas para moverte, Enter corre (sobre un grupo, lo pliega), `e` corre la
+  versión que escribe de los marcados `⚠e`, `Tab` pasa de un panel a otro (menú, corridas, salida), `x`
+  corta la corrida elegida, `c` quita las corridas ya terminadas, `u` actualiza el estado, `/` busca un
+  comando (Enter elige, Esc limpia), `m` oculta o muestra el menú, `?` abre la ayuda y `q` o «Salir» al
+  final del menú sale. Los marcados con ⚠ escriben o gastan y piden `y`/`n`. Con menos de 36 filas se
+  esconde la cabecera con el avatar y queda una línea con cuántas etapas están al día, por mirar o atrasadas.
+- **Seco y real**: los comandos que cuentan sin tocar nada y los que lo hacen de verdad comparten entrada
+  (`Carril 0 en seco ⚠e`). Enter corre el seco; `e` corre el que escribe, pide `y`/`n` y te muestra antes
+  lo que dio el último seco de esta sesión, o te avisa si todavía no lo corriste.
 - **Estado**: los grupos del menú son las etapas del flujo (Ingesta, Pre-cálculo, Carril 0, Carril 1,
   Cola, Tablero, Marketing). Al lado de cada una aparece un `●` con su salud (verde al día, ámbar mirar,
   rojo atrasado, gris apagado) y su cifra; al pararte sobre una etapa el panel de arriba da el detalle.

@@ -84,3 +84,14 @@ def test_load_returns_the_reason_instead_of_raising(monkeypatch: pytest.MonkeyPa
     snapshot = status.load()
     assert snapshot.stages == ()
     assert "base caída" in snapshot.error
+
+
+def test_counts_groups_the_stages_by_health_and_skips_empty_levels() -> None:
+    def stage(group: str, health: str) -> status.Stage:
+        return status.Stage(group, health, "", "", (), "")
+
+    snapshot = status.Snapshot(
+        stages=(stage("A", "ok"), stage("B", "warn"), stage("C", "ok"), stage("D", "err"))
+    )
+    assert snapshot.counts() == {"err": 1, "warn": 1, "ok": 2}
+    assert status.Snapshot().counts() == {}

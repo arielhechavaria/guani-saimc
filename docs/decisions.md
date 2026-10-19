@@ -12928,3 +12928,9 @@ Decisión: los grupos del registro pasan a ser las siete etapas de `/control/flu
 Descartado: una pantalla de inicio aparte (obliga a salir de ella para correr algo) y calcular un estado propio del TUI (podría discrepar de `/control/flujo`).
 Consecuencia: agregar una etapa al flujo pide sumarla a `status.STAGE_GROUPS` y a `registry.GROUPS`; `test_tui_status` falla si un grupo de etapa no tiene comandos. Los comandos sin etapa (H0, jev, lint, backup…) siguen en sus grupos de siempre.
 
+## 2026-10-19 — TUI: el seco y el real comparten entrada, con búsqueda, ayuda y terminal baja
+Contexto: el seco y el comando que escribe de una misma etapa eran dos entradas del menú, siempre usadas una detrás de la otra; la confirmación no mostraba qué había dado el seco; no había búsqueda ni ayuda; y con 24 filas la cabecera desaparecía sin dejar ningún resumen del estado.
+Decisión: `Command.real` une un seco con su versión que escribe (`prefill`, `lane0`, `revalidate`, `marketing`). El menú muestra solo el seco, marcado `⚠e`: Enter lo corre y `e` corre el real, que pide confirmar y antepone lo que dio el último seco de la sesión (o avisa que todavía no se corrió). `/` filtra por título, descripción y grupo, sin mirar tildes ni mayúsculas, y también encuentra un seco a través de su real. `?` abre la ayuda con teclas y marcas, el pie pasó a ser el `Footer` de Textual y `m` oculta el menú. Con menos de 36 filas la cabecera con el avatar cede su lugar a una línea con el conteo de etapas por salud.
+Descartado: dejar los dos comandos como entradas separadas (obliga a buscarlos en dos sitios y a recordar cuál es cuál) y exigir un seco reciente para habilitar el real (es una guía, no un candado: el operador puede saltarla y el aviso lo deja a la vista).
+Consecuencia: un comando nuevo con versión que escribe se registra con `real=` y comparte módulo con su seco (lo verifica `test_tui_registry`); el real ya no aparece como entrada propia ni en la búsqueda.
+

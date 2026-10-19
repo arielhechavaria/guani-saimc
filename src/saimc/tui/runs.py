@@ -112,6 +112,10 @@ class RunBook:
     def running(self, key: str) -> Run | None:
         return next((r for r in self._runs if r.running and r.key == key), None)
 
+    def last_finished(self, key: str) -> Run | None:
+        """La corrida terminada más reciente de `key`, si la hay."""
+        return next((r for r in reversed(self._runs) if not r.running and r.key == key), None)
+
     def writing(self) -> Run | None:
         """Una corrida en curso que escribe, si hay."""
         return next((r for r in self._runs if r.running and r.writes), None)

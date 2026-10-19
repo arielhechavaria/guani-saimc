@@ -7,7 +7,7 @@ from pathlib import Path
 from textual.widgets import RichLog, Static, Tree
 from textual_image.widget import Image
 
-from saimc.tui.app import GuaniTUI
+from saimc.tui.app import GuaniTUI, HelpScreen
 from saimc.tui.registry import Command, LogSource
 from saimc.tui.status import Snapshot, Stage
 
@@ -535,3 +535,268 @@ def test_without_a_status_loader_the_menu_keeps_plain_group_names(tmp_path: Path
             return _group_node(app).label.plain
 
     assert asyncio.run(scenario()) == "Grupo"
+
+
+# --- pares seco → real, búsqueda, ayuda y terminal baja ---------------------------
+
+_PAIR_COMMANDS = (
+    Command(
+        id="par-seco",
+        group="Grupo",
+        title="Par en seco",
+        argv=("echo", "salida-seco"),
+        about="Cuenta lo que haría.",
+        real="par-real",
+    ),
+    Command(
+        id="par-real",
+        group="Grupo",
+        title="Par escribiendo",
+        argv=("echo", "salida-real"),
+        about="Crea borradores.",
+        writes=True,
+    ),
+    *_COMMANDS,
+)
+
+
+def _pair_app(tmp_path: Path, loader=None) -> GuaniTUI:
+    return GuaniTUI(commands=_PAIR_COMMANDS, logs=_LOGS, cwd=tmp_path, status_loader=loader)
+
+
+def _leaf_ids(app: GuaniTUI) -> list[str]:
+    return [leaf.data for node in app.query_one(Tree).root.children for leaf in node.children]
+
+
+def test_a_pair_shares_one_menu_entry_and_the_real_one_is_not_listed(tmp_path: Path) -> None:
+    async def scenario() -> tuple[list[str], str]:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            leaf = next(
+                n for g in app.query_one(Tree).root.children for n in g.children if n.data == "par-seco"
+            )
+            return _leaf_ids(app), leaf.label.plain
+
+    ids, label = asyncio.run(scenario())
+    assert "par-seco" in ids
+    assert "par-real" not in ids
+    assert label.endswith("⚠e")
+
+
+def test_enter_on_a_pair_runs_the_dry_version_without_asking(tmp_path: Path) -> None:
+    async def scenario() -> list[str]:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "par-seco")
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return [r.key for r in app.book.runs]
+
+    assert asyncio.run(scenario()) == ["par-seco"]
+
+
+def test_e_runs_the_real_version_after_confirming(tmp_path: Path) -> None:
+    async def scenario() -> tuple[list[str], list[str]]:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "par-seco")
+            await pilot.press("e")
+            await pilot.pause()
+            assert app.screen.query("#confirm")
+            await pilot.press("y")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return [r.key for r in app.book.runs], list(app.book.runs[0].lines)
+
+    keys, lines = asyncio.run(scenario())
+    assert keys == ["par-real"]
+    assert lines == ["salida-real"]
+
+
+def test_the_confirmation_warns_when_the_dry_run_was_never_done(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "par-seco")
+            await pilot.press("e")
+            await pilot.pause()
+            body = str(app.screen.query_one("#confirm", Static).render())
+            await pilot.press("n")
+            return body
+
+    assert "Todavía no corriste «Par en seco»" in asyncio.run(scenario())
+
+
+def test_the_confirmation_shows_what_the_last_dry_run_said(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "par-seco")
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("e")
+            await pilot.pause()
+            body = str(app.screen.query_one("#confirm", Static).render())
+            await pilot.press("n")
+            return body
+
+    body = asyncio.run(scenario())
+    assert "Último «Par en seco»" in body
+    assert "salió bien" in body
+    assert "salida-seco" in body
+
+
+def test_e_on_a_command_without_a_real_version_starts_nothing(tmp_path: Path) -> None:
+    async def scenario() -> int:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "leer")
+            await pilot.press("e")
+            await pilot.pause()
+            return len(app.book.runs)
+
+    assert asyncio.run(scenario()) == 0
+
+
+def test_the_detail_of_a_pair_shows_both_lines(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "par-seco")
+            return str(app.query_one("#detail", Static).render())
+
+    text = asyncio.run(scenario())
+    assert "Enter  $ echo salida-seco" in text
+    assert "e      $ echo salida-real" in text
+    assert "[escribe]" in text
+
+
+def test_searching_filters_the_menu_and_escape_restores_it(tmp_path: Path) -> None:
+    async def scenario() -> tuple[list[str], list[str], str]:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("slash")
+            await pilot.press(*"escrib")
+            await pilot.pause()
+            filtered = _leaf_ids(app)
+            await pilot.press("escape")
+            await pilot.pause()
+            return filtered, _leaf_ids(app), app.query_one("#search").value
+
+    filtered, restored, typed = asyncio.run(scenario())
+    # «escrib» está en «Escribir» y en el par, a través de «Par escribiendo».
+    assert sorted(filtered) == ["escribir", "par-seco"]
+    assert "leer" in restored
+    assert typed == ""
+
+
+def test_typing_in_the_search_does_not_trigger_the_key_bindings(tmp_path: Path) -> None:
+    async def scenario() -> tuple[int, str]:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.press("slash")
+            await pilot.press(*"xcjq")
+            await pilot.pause()
+            return len(app.book.runs), app.query_one("#search").value
+
+    runs, typed = asyncio.run(scenario())
+    assert runs == 0
+    assert typed == "xcjq"
+
+
+def test_enter_in_the_search_hands_the_focus_back_to_the_menu_on_the_first_match(tmp_path: Path) -> None:
+    async def scenario() -> tuple[bool, str | None]:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.press("slash")
+            await pilot.press(*"leer")
+            await pilot.press("enter")
+            await pilot.pause()
+            tree = app.query_one(Tree)
+            return app.focused is tree, tree.cursor_node.data if tree.cursor_node else None
+
+    focused, cursor = asyncio.run(scenario())
+    assert focused
+    assert cursor == "leer"
+
+
+def test_a_search_with_no_match_leaves_an_empty_menu(tmp_path: Path) -> None:
+    async def scenario() -> int:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.press("slash")
+            await pilot.press(*"zzzz")
+            await pilot.pause()
+            return len(app.query_one(Tree).root.children)
+
+    assert asyncio.run(scenario()) == 0
+
+
+def test_m_hides_and_shows_the_menu(tmp_path: Path) -> None:
+    async def scenario() -> tuple[bool, bool]:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.press("m")
+            await pilot.pause()
+            hidden = not app.query_one(Tree).display
+            await pilot.press("m")
+            await pilot.pause()
+            return hidden, app.query_one(Tree).display
+
+    assert asyncio.run(scenario()) == (True, True)
+
+
+def test_question_mark_opens_the_help_and_escape_closes_it(tmp_path: Path) -> None:
+    async def scenario() -> tuple[bool, bool]:
+        app = _pair_app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.press("question_mark")
+            await pilot.pause()
+            opened = isinstance(app.screen, HelpScreen)
+            await pilot.press("escape")
+            await pilot.pause()
+            return opened, isinstance(app.screen, HelpScreen)
+
+    assert asyncio.run(scenario()) == (True, False)
+
+
+def test_a_short_terminal_replaces_the_header_with_a_one_line_summary(tmp_path: Path) -> None:
+    stages = (
+        Stage("Grupo", "err", "Atrasado", "5", (), ""),
+        Stage("Otro", "ok", "Al día", "1", (), ""),
+        Stage("Otro2", "ok", "Al día", "1", (), ""),
+    )
+
+    async def scenario() -> tuple[bool, str, bool, bool]:
+        app = _pair_app(tmp_path, loader=lambda: Snapshot(stages=stages))
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            text = str(app.query_one("#brief", Static).render())
+            return (
+                app.query_one("#header").display,
+                text,
+                app.query_one("#brief").display,
+                app.query_one("Footer").display,
+            )
+
+    header, text, brief, footer = asyncio.run(scenario())
+    assert not header
+    assert brief
+    assert "1 atrasado" in text
+    assert "2 al día" in text
+    assert footer
+
+
+def test_a_tall_terminal_keeps_the_header_and_hides_the_summary(tmp_path: Path) -> None:
+    async def scenario() -> tuple[bool, bool]:
+        app = _pair_app(tmp_path)
+        async with app.run_test(size=(120, 48)) as pilot:
+            await pilot.pause()
+            return app.query_one("#header").display, app.query_one("#brief").display
+
+    assert asyncio.run(scenario()) == (True, False)

@@ -50,6 +50,13 @@ class Snapshot:
     def stage(self, group: str) -> Stage | None:
         return next((s for s in self.stages if s.group == group), None)
 
+    def counts(self) -> dict[str, int]:
+        """Cuántas etapas hay en cada nivel de salud, solo los que tienen alguna."""
+        found: dict[str, int] = {}
+        for stage in self.stages:
+            found[stage.health] = found.get(stage.health, 0) + 1
+        return {level: found[level] for level in ("err", "warn", "ok", "off") if level in found}
+
 
 StatusLoader = Callable[[], Snapshot]
 

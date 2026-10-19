@@ -102,3 +102,21 @@ def test_lines_are_capped() -> None:
         run.lines.append(str(n))
     assert len(run.lines) == runs.MAX_LINES
     assert run.lines[0] == "10"
+
+
+def test_last_finished_returns_the_most_recent_finished_run_of_a_key() -> None:
+    book = RunBook()
+    old, new, other = _start(book, "a"), _start(book, "a"), _start(book, "b")
+    old.finish(0, T0)
+    new.finish(1, T0)
+    other.finish(0, T0)
+    assert book.last_finished("a") is new
+    assert book.last_finished("zzz") is None
+
+
+def test_last_finished_skips_a_run_that_is_still_going() -> None:
+    book = RunBook()
+    done = _start(book, "a")
+    done.finish(0, T0)
+    _start(book, "a")
+    assert book.last_finished("a") is done

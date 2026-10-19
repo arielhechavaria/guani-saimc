@@ -18,16 +18,16 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import OptionList, RichLog, Static, Tree
+from textual.widgets import Footer, Input, OptionList, RichLog, Static, Tree
 from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 from textual.worker import Worker
 from textual_image.widget import Image
 
 from saimc.tui import avatar, registry, theme
-from saimc.tui.registry import Command, LogSource
+from saimc.tui.registry import Command, LogSource, matches, matches_text
 from saimc.tui.runner import Finished, stream
-from saimc.tui.runs import CUT, FAILED, OK, RUNNING, Run, RunBook
+from saimc.tui.runs import CUT, FAILED, OK, RUNNING, Run, RunBook, format_duration
 from saimc.tui.status import Snapshot, Stage, StatusLoader
 
 _P = theme.load()
@@ -50,9 +50,8 @@ AVATAR_SIZE = 24
 # Con menos filas la cabecera se esconde para que el menú no se quede sin lugar.
 MIN_HEIGHT_FOR_HEADER = 36
 
-HELP = "j/k: mover • enter: correr • tab: panel • x: cortar • c: limpiar • u: estado • q: salir"
-
 HEALTH_COLOR = {"ok": SUCCESS, "warn": WARN, "err": ERROR, "off": MUTED}
+HEALTH_WORD = {"ok": "al día", "warn": "mirar", "err": "atrasado", "off": "apagado"}
 # Cada cuánto se vuelve a leer el estado sin que nadie lo pida (segundos).
 STATUS_REFRESH = 60
 
@@ -106,6 +105,46 @@ class ConfirmScreen(ModalScreen[bool]):
         self.dismiss(accepted)
 
 
+class HelpScreen(ModalScreen[None]):
+    """Las teclas y qué significa cada marca. Se cierra con Esc, Enter o `?`."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape,enter,question_mark", "close", "Cerrar")]
+
+    KEYS = (
+        ("j / k", "mover (en la salida, desplazar)"),
+        ("Enter", "correr (en seco, si hay versión que escribe)"),
+        ("e", "correr la versión que escribe (pide y/n)"),
+        ("Tab", "cambiar de panel: menú, corridas, salida"),
+        ("x", "cortar la corrida elegida"),
+        ("c", "quitar las corridas terminadas"),
+        ("u", "actualizar el estado de las etapas"),
+        ("/", "buscar un comando (Esc limpia)"),
+        ("m", "mostrar u ocultar el menú"),
+        ("q", "salir"),
+    )
+    MARKS = (
+        ("●", "salud: verde al día, ámbar mirar, rojo atrasado"),
+        ("● ✓ ✗ ■", "corrida: en curso, bien, falló, cortada"),
+        ("⚠e", "tiene versión que escribe o gasta (tecla e)"),
+        ("⚠", "escribe o gasta: pide y/n antes"),
+    )
+
+    def compose(self) -> ComposeResult:
+        body = Text()
+        body.append("Teclas\n", style=f"bold {PRIMARY}")
+        for key, what in self.KEYS:
+            body.append(f"  {key:<10}", style=f"bold {GROUP}")
+            body.append(f"{what}\n", style=TEXT)
+        body.append("\nMarcas\n", style=f"bold {PRIMARY}")
+        for mark, what in self.MARKS:
+            body.append(f"  {mark:<10}", style=f"bold {GROUP}")
+            body.append(f"{what}\n", style=TEXT)
+        yield Static(body, id="helpbox")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class GuaniTUI(App[None]):
     TITLE = "Guani"
     CSS = f"""
@@ -121,7 +160,7 @@ class GuaniTUI(App[None]):
     #title {{ height: auto; padding: 1 0 0 1; }}
     #body {{ height: 1fr; }}
     #menu {{
-        width: 46; background: {BG}; scrollbar-size-vertical: 1;
+        width: 44%; min-width: 40; max-width: 50; background: {BG}; scrollbar-size-vertical: 1;
         border-right: solid {DIVIDER};
     }}
     #menu:focus {{ background-tint: transparent; }}
@@ -134,9 +173,9 @@ class GuaniTUI(App[None]):
     #menu > .tree--highlight, #menu > .tree--highlight-line {{ background: {BG}; }}
     #menu > .tree--label {{ color: {TEXT}; }}
     #right {{ padding: 0 1; }}
-    #detail {{ height: auto; max-height: 8; border-bottom: solid {DIVIDER}; }}
+    #detail {{ height: auto; max-height: 7; border-bottom: solid {DIVIDER}; }}
     #runs {{
-        height: auto; max-height: 8; min-height: 1; border: none; padding: 0;
+        height: auto; max-height: 6; min-height: 1; border: none; padding: 0;
         background: {BG}; border-bottom: solid {DIVIDER}; scrollbar-size-vertical: 1;
         scrollbar-background: {BG}; scrollbar-color: {DIVIDER};
     }}
@@ -148,20 +187,40 @@ class GuaniTUI(App[None]):
     }}
     #runs > .option-list--option-hover {{ background: {BG}; }}
     #output {{ background: {BG}; color: {TEXT}; scrollbar-size-vertical: 1; }}
-    #help {{ color: {MUTED}; height: 1; }}
+    #brief {{ height: 2; padding: 0 1; border-bottom: solid {DIVIDER}; }}
+    #search {{
+        display: none; height: 1; border: none; padding: 0 1; background: {SURFACE};
+        color: {TEXT};
+    }}
+    #search:focus {{ border: none; background-tint: transparent; }}
+    Footer {{ background: {BG}; color: {MUTED}; }}
+    Footer FooterKey {{ background: {BG}; color: {MUTED}; }}
+    Footer FooterKey .footer-key--key {{ background: {BG}; color: {PRIMARY}; text-style: bold; }}
+    Footer FooterKey .footer-key--description {{ background: {BG}; color: {MUTED}; }}
+    HelpScreen {{ align: center middle; background: {BG} 80%; }}
+    #helpbox {{
+        width: 90; max-width: 100%; height: auto; border: double {FRAME}; padding: 1 2;
+        background: {SURFACE};
+    }}
     ConfirmScreen {{ align: center middle; background: {BG} 80%; }}
     #confirm {{
         width: 70; height: auto; border: double {WARN}; padding: 1 2; background: {SURFACE};
     }}
     """
+    ENABLE_COMMAND_PALETTE = False
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("j", "cursor_down", "Abajo", show=False),
         Binding("k", "cursor_up", "Arriba", show=False),
         Binding("r", "run", "Correr", show=False),
-        Binding("x", "stop", "Cortar", show=False),
-        Binding("c", "clear", "Limpiar", show=False),
-        Binding("u", "refresh_status", "Estado", show=False),
-        Binding("q", "quit", "Salir", show=False),
+        Binding("e", "run_real", "Real"),
+        Binding("x", "stop", "Cortar"),
+        Binding("c", "clear", "Limpiar"),
+        Binding("u", "refresh_status", "Estado"),
+        Binding("slash", "search", "Buscar"),
+        Binding("m", "toggle_menu", "Menú"),
+        Binding("question_mark", "help", "Ayuda"),
+        Binding("escape", "close_search", "Cerrar búsqueda", show=False),
+        Binding("q", "quit", "Salir"),
     ]
 
     def __init__(
@@ -175,6 +234,8 @@ class GuaniTUI(App[None]):
         self._commands = {c.id: c for c in commands}
         self._logs = {log.id: log for log in logs}
         self._groups = tuple(dict.fromkeys(c.group for c in commands))
+        # Las versiones que escriben no tienen entrada propia: cuelgan de su seco (tecla `e`).
+        self._reals = {c.real for c in commands if c.real}
         self._cwd = cwd
         self.book = RunBook()
         self._shown: Run | None = None
@@ -193,29 +254,21 @@ class GuaniTUI(App[None]):
             with Horizontal(id="header"):
                 yield Image(avatar.load(BG), id="avatar")
                 yield Static(title, id="title")
+            yield Static(id="brief")
             with Horizontal(id="body"):
                 yield Menu("Guani", id="menu")
                 with Vertical(id="right"):
                     yield Static("Elegí un comando.", id="detail")
                     yield OptionList(id="runs")
                     yield RichLog(id="output", wrap=True, markup=False)
-            yield Static(HELP, id="help")
+            yield Input(id="search", placeholder="Buscar comando… (Enter elige, Esc limpia)")
+        yield Footer(show_command_palette=False)
 
     def on_mount(self) -> None:
         tree = self.query_one(Menu)
         tree.show_root = False
         tree.guide_depth = 2
-        for group in self._groups:
-            node = tree.root.add(self._group_label(group), expand=True)
-            self._group_nodes[group] = node
-            for command in self._commands.values():
-                if command.group == group:
-                    marker = " ⚠" if command.needs_confirm else ""
-                    node.add_leaf(command.title + marker, data=command.id)
-        logs = tree.root.add("Logs en vivo", expand=True)
-        for log in self._logs.values():
-            logs.add_leaf(log.title, data=log.id)
-        tree.root.add_leaf("Salir", data=QUIT)
+        self._build_menu()
         self.query_one("#runs", OptionList).border_title = "Corridas"
         self.set_interval(1, self._tick)
         if self._status_loader is not None:
@@ -223,8 +276,74 @@ class GuaniTUI(App[None]):
             self.action_refresh_status()
         tree.focus()
 
+    def _build_menu(self, query: str = "", *, reset_cursor: bool = False) -> None:
+        """Arma el árbol; con `query`, solo lo que coincide (y siempre desplegado)."""
+        tree = self.query_one(Menu)
+        tree.clear()
+        self._group_nodes = {}
+        for group in self._groups:
+            entries = [
+                c
+                for c in self._commands.values()
+                if c.group == group
+                and c.id not in self._reals
+                and matches(c, query, self._commands.get(c.real) if c.real else None)
+            ]
+            if not entries:
+                continue
+            node = tree.root.add(self._group_label(group), expand=True)
+            self._group_nodes[group] = node
+            for command in entries:
+                node.add_leaf(self._command_label(command), data=command.id)
+        logs = [log for log in self._logs.values() if matches_text(f"log en vivo {log.title}", query)]
+        if logs:
+            node = tree.root.add("Logs en vivo", expand=True)
+            for log in logs:
+                node.add_leaf(log.title, data=log.id)
+        if not query.strip():
+            tree.root.add_leaf("Salir", data=QUIT)
+        if reset_cursor:
+            # El árbol recién armado no tiene líneas hasta el próximo refresco.
+            tree.call_after_refresh(self._cursor_to_first)
+
+    def _cursor_to_first(self) -> None:
+        tree = self.query_one(Menu)
+        if tree.root.children:
+            first = tree.root.children[0]
+            tree.move_cursor(first)
+            # Si la línea no cambió, el árbol no avisa: se describe a mano.
+            self._describe(first)
+
+    @staticmethod
+    def _command_label(command: Command) -> Text:
+        label = Text(command.title)
+        if command.real:
+            label.append(" ⚠e", style=WARN)
+        elif command.needs_confirm:
+            label.append(" ⚠", style=WARN)
+        return label
+
     def on_resize(self) -> None:
         self.query_one("#header").display = self.size.height >= MIN_HEIGHT_FOR_HEADER
+        self._update_brief()
+
+    def _update_brief(self) -> None:
+        """Con la cabecera escondida (terminal baja), una línea con el estado en resumen."""
+        brief = self.query_one("#brief", Static)
+        brief.display = not self.query_one("#header").display
+        text = Text()
+        text.append("Guani", style=f"bold {PRIMARY}")
+        text.append("  Terminal del operador", style=MUTED)
+        if self._status_loader is not None:
+            text.append("   ")
+            if self._snapshot.error:
+                text.append("estado no disponible", style=WARN)
+            elif not self._snapshot.stages:
+                text.append("leyendo el estado…", style=MUTED)
+            for level, count in self._snapshot.counts().items():
+                text.append("● ", style=HEALTH_COLOR[level])
+                text.append(f"{count} {HEALTH_WORD[level]}  ", style=TEXT)
+        brief.update(text)
 
     def _lookup(self, key: str | None) -> Command | LogSource | None:
         if key is None:
@@ -244,7 +363,15 @@ class GuaniTUI(App[None]):
                 if on:
                     text.append(f"  [{name}]", style=f"bold {WARN}")
             text.append(f"\n{item.about}\n", style=TEXT)
-            text.append(f"$ {item.display}", style=MUTED)
+            real = self._commands.get(item.real) if item.real else None
+            if real is None:
+                text.append(f"$ {item.display}", style=MUTED)
+            else:
+                text.append(f"Enter  $ {item.display}\n", style=MUTED)
+                text.append(f"e      $ {real.display}", style=MUTED)
+                for name, on in (("escribe", real.writes), ("gasta", real.spends)):
+                    if on:
+                        text.append(f"  [{name}]", style=f"bold {WARN}")
             detail.update(text)
         elif isinstance(item, LogSource):
             text.append(f"Log en vivo: {item.title}\n", style=f"bold {PRIMARY}")
@@ -268,6 +395,46 @@ class GuaniTUI(App[None]):
         if run is not None and run is not self._shown:
             self._show(run)
 
+    # --- búsqueda, ayuda y menú -------------------------------------------------
+
+    def action_search(self) -> None:
+        box = self.query_one("#search", Input)
+        box.display = True
+        box.focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "search":
+            self._build_menu(event.value, reset_cursor=True)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        # Enter deja el filtro puesto y devuelve el foco al menú, sobre el primer resultado.
+        if event.input.id != "search":
+            return
+        tree = self.query_one(Menu)
+        first = next((n for g in self._group_nodes.values() for n in g.children), None)
+        if first is None:
+            first = next((n for n in tree.root.children if n.data is not None), None)
+        tree.focus()
+        if first is not None:
+            tree.move_cursor(first)
+
+    def action_close_search(self) -> None:
+        box = self.query_one("#search", Input)
+        if not box.display:
+            return
+        box.value = ""
+        box.display = False
+        self._build_menu(reset_cursor=True)
+        self.query_one(Menu).focus()
+
+    def action_help(self) -> None:
+        self.push_screen(HelpScreen())
+
+    def action_toggle_menu(self) -> None:
+        menu = self.query_one(Menu)
+        menu.display = not menu.display
+        (menu if menu.display else self.query_one("#runs", OptionList)).focus()
+
     # --- estado de las etapas ---------------------------------------------------
 
     def action_refresh_status(self) -> None:
@@ -283,6 +450,7 @@ class GuaniTUI(App[None]):
             self.notify(f"No pude leer el estado: {self._snapshot.error}", severity="warning")
         for group, node in self._group_nodes.items():
             node.set_label(self._group_label(group))
+        self._update_brief()
         cursor = self.query_one(Menu).cursor_node
         if cursor is not None:
             self._describe(cursor)
@@ -338,8 +506,34 @@ class GuaniTUI(App[None]):
             self.call_later(self.action_quit)
             return
         item = self._lookup(node.data if node else None)
-        if item is None:
+        if item is not None:
+            self._launch(item)
+
+    def action_run_real(self) -> None:
+        node = self.query_one(Menu).cursor_node
+        item = self._lookup(node.data if node else None)
+        if not isinstance(item, Command) or item.real is None:
+            self.notify("Este comando no tiene una versión que escriba.")
             return
+        self._launch(self._commands[item.real])
+
+    def _dry_note(self, real: Command) -> str | None:
+        """Qué dio el seco de este comando la última vez, para decidir con eso a la vista."""
+        dry = next((c for c in self._commands.values() if c.real == real.id), None)
+        if dry is None:
+            return None
+        last = self.book.last_finished(dry.id)
+        if last is None or last.ended_at is None:
+            return f"Todavía no corriste «{dry.title}» en esta sesión."
+        ago = format_duration((datetime.now() - last.ended_at).total_seconds())
+        result = {OK: "salió bien", FAILED: "falló", CUT: "se cortó"}[last.status]
+        note = f"Último «{dry.title}»: hace {ago}, {result}."
+        tail = next((ln for ln in reversed(last.lines) if ln.strip()), "")
+        if tail:
+            note += f"\n  {Text.from_ansi(tail).plain.strip()[:90]}"
+        return note
+
+    def _launch(self, item: Command | LogSource) -> None:
         live = self.book.running(item.id)
         if live is not None:
             self._show(live)
@@ -354,6 +548,9 @@ class GuaniTUI(App[None]):
             other = self.book.writing()
             if other is not None:
                 notes.append(f"«{other.title}» sigue escribiendo: van a correr a la vez.")
+            dry_note = self._dry_note(item)
+            if dry_note is not None:
+                notes.append(dry_note)
             screen = ConfirmScreen(item.title, item.display, notes, "¿Correrlo?")
             self.push_screen(screen, lambda ok: self._start(item) if ok else None)
         else:

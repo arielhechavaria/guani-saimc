@@ -8,6 +8,7 @@ contraseña, esos se siguen corriendo a mano desde `docs/comandos.md`.
 
 import shlex
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,6 +39,9 @@ class Command:
     about: str
     writes: bool = False  # cambia filas o archivos
     spends: bool = False  # gasta plata en una API
+    # Id del comando que hace de verdad lo que este solo cuenta. Los dos comparten una
+    # entrada del menú: Enter corre el seco y `e` el real.
+    real: str | None = None
 
     @property
     def needs_confirm(self) -> bool:
@@ -65,6 +69,26 @@ class LogSource:
         return shlex.join(self.argv)
 
 
+def _plain(text: str) -> str:
+    """Minúsculas y sin tildes, para que «carril» encuentre «Carríl» y «pre-calculo» «Pre-cálculo»."""
+    decomposed = unicodedata.normalize("NFD", text.casefold())
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def matches(command: Command, query: str, real: Command | None = None) -> bool:
+    """¿Entra `command` (y su versión real, si tiene) en la búsqueda? Cada palabra tiene que estar."""
+    parts = [command.group, command.title, command.about]
+    if real is not None:
+        parts += [real.title, real.about]
+    return matches_text(" ".join(parts), query)
+
+
+def matches_text(text: str, query: str) -> bool:
+    """¿Aparece cada palabra de `query` en `text`, sin mirar mayúsculas ni tildes?"""
+    haystack = _plain(text)
+    return all(word in haystack for word in _plain(query).split())
+
+
 def _py(*args: str) -> tuple[str, ...]:
     return (sys.executable, *args)
 
@@ -84,6 +108,7 @@ COMMANDS = (
         "Pre-cálculo en seco",
         _py("-m", "saimc.extraction.prefill", "--stale"),
         "Cuenta y estima el costo de rehacer propuestas viejas. No escribe.",
+        real="prefill-run",
     ),
     Command(
         "prefill-run",
@@ -100,6 +125,7 @@ COMMANDS = (
         "Carril 0 en seco",
         _py("-m", "saimc.validation.lane0"),
         "Cuántos pendientes descartaría el carril 0. No descarta.",
+        real="lane0-run",
     ),
     Command(
         "lane0-run",
@@ -129,6 +155,7 @@ COMMANDS = (
         "Revalidar en seco",
         _py("-m", "saimc.validation.revalidate"),
         "Cuántas filas cambiarían de estado. No escribe.",
+        real="revalidate-run",
     ),
     Command(
         "revalidate-run",
@@ -144,6 +171,7 @@ COMMANDS = (
         "Tarjetas de marketing en seco",
         _py("-m", "saimc.marketing.daily"),
         "Dice qué borradores crearía hoy. No crea nada.",
+        real="marketing-run",
     ),
     Command(
         "marketing-run",
