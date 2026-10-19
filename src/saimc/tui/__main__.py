@@ -10,7 +10,9 @@ def main() -> None:
         if error.name not in ("textual", "textual_image"):
             raise
         sys.exit("Falta Textual. Instalalo con: .venv/bin/pip install -e '.[tui]'")
-    GuaniTUI().run()
+    from saimc.tui.status import load
+
+    GuaniTUI(status_loader=load).run()
 
 
 if __name__ == "__main__":

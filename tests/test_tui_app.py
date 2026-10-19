@@ -9,6 +9,7 @@ from textual_image.widget import Image
 
 from saimc.tui.app import GuaniTUI
 from saimc.tui.registry import Command, LogSource
+from saimc.tui.status import Snapshot, Stage
 
 _COMMANDS = (
     Command(
@@ -403,3 +404,134 @@ def test_c_removes_finished_runs_and_keeps_the_running_one(tmp_path: Path) -> No
     keys, shown = asyncio.run(scenario())
     assert keys == ["lento"]
     assert "salida-leer" not in shown
+
+
+# --- estado de las etapas ---------------------------------------------------------
+
+_STAGE = Stage(
+    group="Grupo",
+    health="err",
+    health_label="Atrasado",
+    summary="5 · 24 h",
+    details=("Por WhatsApp: 5",),
+    foot="hace 3 h",
+)
+
+
+def _status_app(tmp_path: Path, loader) -> GuaniTUI:
+    return GuaniTUI(commands=_COMMANDS, logs=_LOGS, cwd=tmp_path, status_loader=loader)
+
+
+def _group_node(app: GuaniTUI):
+    return app.query_one(Tree).root.children[0]
+
+
+def test_the_group_label_shows_the_health_and_the_figure(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        app = _status_app(tmp_path, lambda: Snapshot(stages=(_STAGE,)))
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return _group_node(app).label.plain
+
+    assert asyncio.run(scenario()) == "● Grupo  5 · 24 h"
+
+
+def test_highlighting_a_stage_shows_its_health_and_details(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        app = _status_app(tmp_path, lambda: Snapshot(stages=(_STAGE,)))
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one(Tree).move_cursor(_group_node(app))
+            await pilot.pause()
+            return str(app.query_one("#detail", Static).render())
+
+    text = asyncio.run(scenario())
+    assert "Grupo — Atrasado" in text
+    assert "Por WhatsApp: 5" in text
+    assert "hace 3 h" in text
+
+
+def test_when_the_status_cannot_be_read_the_menu_still_works_and_says_why(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str, str, int]:
+        app = _status_app(tmp_path, lambda: Snapshot(error="OperationalError: sin base"))
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one(Tree).move_cursor(_group_node(app))
+            await pilot.pause()
+            detail = str(app.query_one("#detail", Static).render())
+            return _group_node(app).label.plain, detail, len(app._notifications)
+
+    label, detail, notices = asyncio.run(scenario())
+    assert label == "Grupo"
+    assert "sin base" in detail
+    assert notices == 1
+
+
+def test_u_reads_the_status_again(tmp_path: Path) -> None:
+    calls: list[int] = []
+
+    def loader() -> Snapshot:
+        calls.append(1)
+        return Snapshot(stages=(_STAGE,))
+
+    async def scenario() -> None:
+        app = _status_app(tmp_path, loader)
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("u")
+            await app.workers.wait_for_complete()
+
+    asyncio.run(scenario())
+    assert len(calls) == 2
+
+
+def test_the_status_is_read_again_when_a_writing_command_finishes(tmp_path: Path) -> None:
+    calls: list[int] = []
+
+    def loader() -> Snapshot:
+        calls.append(1)
+        return Snapshot(stages=(_STAGE,))
+
+    async def scenario() -> None:
+        app = _status_app(tmp_path, loader)
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await _select(app, pilot, "escribir")
+            await pilot.press("r")
+            await pilot.press("y")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+    asyncio.run(scenario())
+    assert len(calls) == 2
+
+
+def test_a_read_only_command_does_not_reread_the_status(tmp_path: Path) -> None:
+    calls: list[int] = []
+
+    def loader() -> Snapshot:
+        calls.append(1)
+        return Snapshot(stages=(_STAGE,))
+
+    async def scenario() -> None:
+        app = _status_app(tmp_path, loader)
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await _select(app, pilot, "leer")
+            await pilot.press("r")
+            await app.workers.wait_for_complete()
+
+    asyncio.run(scenario())
+    assert len(calls) == 1
+
+
+def test_without_a_status_loader_the_menu_keeps_plain_group_names(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        app = _app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            return _group_node(app).label.plain
+
+    assert asyncio.run(scenario()) == "Grupo"

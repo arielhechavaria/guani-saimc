@@ -12922,3 +12922,9 @@ Decisión: `saimc.tui.runs` (sin Textual) lleva una lista de corridas con estado
 Descartado: bloquear el lanzamiento mientras algo corra (impide mirar un log o un seco mientras escribe un comando) y cortar al lanzar (el comportamiento que se corrige).
 Consecuencia: dos comandos que escriben pueden correr a la vez si el operador confirma; el candado del pre-cálculo (`data/prefill.lock`) sigue siendo la protección real contra su solapamiento. La lista guarda las últimas 30 corridas y 5000 líneas por corrida.
 
+## 2026-10-19 — TUI: el menú se organiza por etapa del flujo y muestra su salud
+Contexto: al abrir el TUI no se veía el estado del sistema y los comandos estaban en grupos por tipo («Rutina diaria», «Mantenimiento») que separaban el seco de su comando real.
+Decisión: los grupos del registro pasan a ser las siete etapas de `/control/flujo` en su orden (Ingesta, Pre-cálculo, Carril 0, Carril 1, Cola, Tablero, Marketing) más «Medir y diagnosticar», «Temporizadores» y «Mantenimiento». `saimc.tui.status` toma el `FlowView` que ya arma `control_flow` (franja de estado incluida) y el menú le pone a cada etapa su salud y su cifra; al elegir una etapa el panel de detalle muestra la salud, los chips y el pie. Se lee en un hilo al abrir, cada 60 s, con `u` y cuando termina un comando que escribe. Si la lectura falla (base caída, `.env` sin configurar) el TUI abre igual, avisa una vez y muestra el motivo en el detalle.
+Descartado: una pantalla de inicio aparte (obliga a salir de ella para correr algo) y calcular un estado propio del TUI (podría discrepar de `/control/flujo`).
+Consecuencia: agregar una etapa al flujo pide sumarla a `status.STAGE_GROUPS` y a `registry.GROUPS`; `test_tui_status` falla si un grupo de etapa no tiene comandos. Los comandos sin etapa (H0, jev, lint, backup…) siguen en sus grupos de siempre.
+

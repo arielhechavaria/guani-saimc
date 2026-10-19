@@ -79,9 +79,14 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 - **Para qué**: un menú con los comandos de este catálogo que no piden `sudo` y los logs de cada
   unidad (`journalctl -f`). Muestra la línea exacta antes de correr.
 - **Teclas**: `j`/`k` o flechas para moverte, Enter corre (sobre un grupo, lo pliega), `Tab` pasa del menú
-  a la lista de corridas, `x` corta la corrida elegida, `c` quita las corridas ya terminadas, `q` o «Salir»
+  a la lista de corridas, `x` corta la corrida elegida, `c` quita las corridas ya terminadas, `u` actualiza el estado, `q` o «Salir»
   al final del menú sale. Los marcados con ⚠ escriben o gastan y piden `y`/`n`. Con menos de 36 filas se
   esconde la cabecera con el avatar.
+- **Estado**: los grupos del menú son las etapas del flujo (Ingesta, Pre-cálculo, Carril 0, Carril 1,
+  Cola, Tablero, Marketing). Al lado de cada una aparece un `●` con su salud (verde al día, ámbar mirar,
+  rojo atrasado, gris apagado) y su cifra; al pararte sobre una etapa el panel de arriba da el detalle.
+  Se actualiza solo cada minuto, con `u`, y cuando termina un comando que escribe. Si no puede leer la
+  base, el menú funciona igual y el panel dice por qué.
 - **Corridas**: cada vez que lanzás algo queda una entrada en «Corridas» (`●` corriendo, `✓` bien, `✗` falló,
   `■` cortada) con su hora y duración. Varias conviven: lanzar un comando no corta un log en vivo ni otro
   comando. Elegí una corrida en la lista para ver su salida. Lo que ya corre no se lanza dos veces.

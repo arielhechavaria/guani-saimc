@@ -28,6 +28,7 @@ from saimc.tui import avatar, registry, theme
 from saimc.tui.registry import Command, LogSource
 from saimc.tui.runner import Finished, stream
 from saimc.tui.runs import CUT, FAILED, OK, RUNNING, Run, RunBook
+from saimc.tui.status import Snapshot, Stage, StatusLoader
 
 _P = theme.load()
 BG = _P["m3-bg"]
@@ -49,7 +50,11 @@ AVATAR_SIZE = 24
 # Con menos filas la cabecera se esconde para que el menú no se quede sin lugar.
 MIN_HEIGHT_FOR_HEADER = 36
 
-HELP = "j/k: mover • enter: correr/plegar • tab: menú/corridas • x: cortar • c: limpiar • q: salir"
+HELP = "j/k: mover • enter: correr • tab: panel • x: cortar • c: limpiar • u: estado • q: salir"
+
+HEALTH_COLOR = {"ok": SUCCESS, "warn": WARN, "err": ERROR, "off": MUTED}
+# Cada cuánto se vuelve a leer el estado sin que nadie lo pida (segundos).
+STATUS_REFRESH = 60
 
 STATUS_COLOR = {RUNNING: PRIMARY, OK: SUCCESS, FAILED: ERROR, CUT: WARN}
 
@@ -63,7 +68,6 @@ class Menu(Tree[str]):
     def render_label(self, node: TreeNode[str], base_style: Style, style: Style) -> Text:
         label = super().render_label(node, base_style, style)
         if node.allow_expand:
-            label.stylize(f"bold {GROUP}")
             return label
         marker = "▸ " if node is self.cursor_node else "  "
         return Text(marker) + label
@@ -156,6 +160,7 @@ class GuaniTUI(App[None]):
         Binding("r", "run", "Correr", show=False),
         Binding("x", "stop", "Cortar", show=False),
         Binding("c", "clear", "Limpiar", show=False),
+        Binding("u", "refresh_status", "Estado", show=False),
         Binding("q", "quit", "Salir", show=False),
     ]
 
@@ -164,6 +169,7 @@ class GuaniTUI(App[None]):
         commands: tuple[Command, ...] = registry.COMMANDS,
         logs: tuple[LogSource, ...] = registry.LOGS,
         cwd: Path = registry.REPO_ROOT,
+        status_loader: StatusLoader | None = None,
     ) -> None:
         super().__init__()
         self._commands = {c.id: c for c in commands}
@@ -173,6 +179,10 @@ class GuaniTUI(App[None]):
         self.book = RunBook()
         self._shown: Run | None = None
         self._run_workers: dict[int, Worker[None]] = {}
+        self._status_loader = status_loader
+        self._snapshot = Snapshot()
+        self._group_nodes: dict[str, TreeNode[str]] = {}
+        self._warned_status_error = False
 
     def compose(self) -> ComposeResult:
         title = Text()
@@ -196,7 +206,8 @@ class GuaniTUI(App[None]):
         tree.show_root = False
         tree.guide_depth = 2
         for group in self._groups:
-            node = tree.root.add(group, expand=True)
+            node = tree.root.add(self._group_label(group), expand=True)
+            self._group_nodes[group] = node
             for command in self._commands.values():
                 if command.group == group:
                     marker = " ⚠" if command.needs_confirm else ""
@@ -207,6 +218,9 @@ class GuaniTUI(App[None]):
         tree.root.add_leaf("Salir", data=QUIT)
         self.query_one("#runs", OptionList).border_title = "Corridas"
         self.set_interval(1, self._tick)
+        if self._status_loader is not None:
+            self.set_interval(STATUS_REFRESH, self.action_refresh_status)
+            self.action_refresh_status()
         tree.focus()
 
     def on_resize(self) -> None:
@@ -218,7 +232,10 @@ class GuaniTUI(App[None]):
         return self._commands.get(key) or self._logs.get(key)
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted[str]) -> None:
-        item = self._lookup(event.node.data)
+        self._describe(event.node)
+
+    def _describe(self, node: TreeNode[str]) -> None:
+        item = self._lookup(node.data)
         detail = self.query_one("#detail", Static)
         text = Text()
         if isinstance(item, Command):
@@ -234,8 +251,12 @@ class GuaniTUI(App[None]):
             text.append(f"$ {item.display}\n", style=MUTED)
             text.append("x para cortar", style=MUTED)
             detail.update(text)
-        elif event.node.data == QUIT:
+        elif node.data == QUIT:
             detail.update(Text("Cerrar la terminal (también con q).", style=MUTED))
+        else:
+            group = next((g for g, n in self._group_nodes.items() if n is node), None)
+            if group is not None and self._status_loader is not None:
+                detail.update(self._stage_detail(group))
 
     def on_tree_node_selected(self, event: Tree.NodeSelected[str]) -> None:
         # Enter sobre un grupo lo pliega (lo hace el árbol); sobre un comando, lo corre.
@@ -246,6 +267,53 @@ class GuaniTUI(App[None]):
         run = self._run_of(event.option_id)
         if run is not None and run is not self._shown:
             self._show(run)
+
+    # --- estado de las etapas ---------------------------------------------------
+
+    def action_refresh_status(self) -> None:
+        if self._status_loader is None:
+            self.notify("Esta terminal se abrió sin lectura del estado.")
+            return
+        self.run_worker(self._load_status(self._status_loader), group="status", exclusive=True)
+
+    async def _load_status(self, loader: StatusLoader) -> None:
+        self._snapshot = await asyncio.to_thread(loader)
+        if self._snapshot.error and not self._warned_status_error:
+            self._warned_status_error = True
+            self.notify(f"No pude leer el estado: {self._snapshot.error}", severity="warning")
+        for group, node in self._group_nodes.items():
+            node.set_label(self._group_label(group))
+        cursor = self.query_one(Menu).cursor_node
+        if cursor is not None:
+            self._describe(cursor)
+
+    def _group_label(self, group: str) -> Text:
+        stage = self._snapshot.stage(group)
+        label = Text()
+        if stage is None:
+            label.append(group, style=f"bold {GROUP}")
+            return label
+        label.append("● ", style=HEALTH_COLOR[stage.health])
+        label.append(group, style=f"bold {GROUP}")
+        if stage.summary:
+            label.append(f"  {stage.summary}", style=MUTED)
+        return label
+
+    def _stage_detail(self, group: str) -> Text:
+        text = Text()
+        stage: Stage | None = self._snapshot.stage(group)
+        if stage is None:
+            reason = self._snapshot.error or "leyendo…"
+            text.append(f"{group}\n", style=f"bold {PRIMARY}")
+            text.append(f"Estado no disponible: {reason}", style=MUTED)
+            return text
+        text.append("● ", style=HEALTH_COLOR[stage.health])
+        text.append(f"{group} — {stage.health_label}\n", style=f"bold {PRIMARY}")
+        for line in (stage.summary, *stage.details, stage.foot):
+            if line:
+                text.append(f"{line}\n", style=TEXT)
+        text.rstrip()
+        return text
 
     # --- movimiento: j/k vale según qué panel tenga el foco ---------------------
 
@@ -315,6 +383,8 @@ class GuaniTUI(App[None]):
                     run.finish(item.returncode, datetime.now())
                     self._refresh(run)
                     self._write(run, self._footer(run))
+                    if run.writes and self._status_loader is not None:
+                        self.action_refresh_status()
                 else:
                     run.lines.append(item)
                     self._write(run, Text.from_ansi(item))
