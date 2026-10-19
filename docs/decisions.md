@@ -13018,3 +13018,9 @@ Contexto: el sitio está en línea desde el 2026-10-19 (puerta apagada, Fase 0 c
 Decisión: el cierre dice «Míralo en guani.app» (la URL sale de `site_url`) y la story «Guani ya está en línea»; un test recorre las tarjetas fijas y falla si aparece «abre pronto», «próximamente», «muy pronto» o «estará disponible». `docs/guia-crecimiento.md` y `docs/narrativa-guani.md` pasan de «el enlace espera a la puerta» a «el enlace va en la biografía»; la presentación para instituciones marca la puerta como apagada.
 Descartado: dejar la story de precalentamiento con su nombre y texto viejos (anuncia algo que ya ocurrió) y borrarla (la encuesta «¿Qué precio quieres ver primero?» sigue siendo útil).
 Consecuencia: si la puerta se vuelve a encender, hay que quitar el enlace de la biografía a mano (la guía lo dice en la tabla de riesgos). Queda sin tocar `public_page_metodologia.html`: «todavía no están publicados aquí las reglas completas…» habla de la metodología, no del sitio.
+
+## 2026-10-19 — El menú «Nueva» crea el educativo de la presentación, no la lección de texto
+Contexto: tras reemplazar las lecciones por las láminas de la presentación, el menú «Nueva» seguía ofreciendo «Educativo» = la tarjeta `leccion` (texto, 1080×1350), y `POST /marketing/post` aceptaba `kind=leccion`. El operador eligió «Educativo» ahí y obtuvo un borrador de puro texto sin relación con el documento; el botón «Falta Educativo» sí armaba el carrusel.
+Decisión: `posts.LEGACY_CARDS` saca `leccion` de `POSTABLE` (menú y creación; el router responde 404 si no está en `POSTABLE`); el menú suma «Educativo (láminas de la presentación para instituciones)» con `kind=educativo`. Leer, editar y aprobar lecciones ya creadas sigue funcionando.
+Descartado: borrar la tarjeta `leccion` del catálogo: rompería las publicaciones viejas.
+Consecuencia: el borrador de texto que ya se creó hoy (card `leccion`) sigue en la base hasta que el operador lo descarte.

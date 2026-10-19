@@ -279,6 +279,25 @@ class TestPantallaHoy:
         assert [s.params["deck_slide"] for s in post.slides] == SECCION_A
         assert "Falta «Educativo»" not in client.get("/marketing").text
 
+    def test_el_menu_de_nueva_ofrece_el_educativo_de_la_presentacion_y_no_la_leccion(
+        self, client: TestClient, fabrica: Path  # noqa: F811
+    ) -> None:
+        app.dependency_overrides[get_today] = lambda: LUNES
+        html = client.get("/marketing").text
+        menu = html.split('aria-label="Nueva publicación"')[1]
+
+        assert f'<option value="{EDU_SLOT}">Educativo' in menu
+        assert 'value="leccion"' not in menu
+
+    def test_crear_una_leccion_de_texto_ya_no_es_posible(
+        self, client: TestClient, fabrica: Path  # noqa: F811
+    ) -> None:
+        app.dependency_overrides[get_today] = lambda: LUNES
+
+        r = client.post("/marketing/post", data={"kind": "leccion"}, follow_redirects=False)
+
+        assert r.status_code == 404
+
     def test_el_editor_escala_el_lienzo_apaisado_y_no_ofrece_agregar_diapositivas(
         self, client: TestClient, fabrica: Path, session: Session  # noqa: F811
     ) -> None:

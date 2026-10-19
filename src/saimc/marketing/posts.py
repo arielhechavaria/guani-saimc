@@ -65,11 +65,17 @@ FIXED_PIECES: frozenset[str] = frozenset(
     {"portada-facebook", "story-precalentamiento", "como-funciona", "og-compartir"}
 )
 
+#: Tarjetas que ya no se crean y se conservan para leer lo ya publicado: la lección
+#: de texto, que reemplazó el carrusel de la presentación (`deck-slide`).
+LEGACY_CARDS: frozenset[str] = frozenset({"leccion"})
+
 #: Lo que el operador puede crear como publicación.
 #: Las láminas de la presentación no: necesitan el id de la lámina, que solo pone
 #: el turno educativo (`daily.create_deck_draft`).
 POSTABLE: tuple[CardType, ...] = tuple(
-    t for t in CARD_TYPES if t.slug not in FIXED_PIECES and t.slug != DECK_CARD
+    t
+    for t in CARD_TYPES
+    if t.slug not in FIXED_PIECES and t.slug != DECK_CARD and t.slug not in LEGACY_CARDS
 )
 
 _URL_MAX = 2000

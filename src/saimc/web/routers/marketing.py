@@ -299,6 +299,8 @@ def marketing_hoy(
             "cards": [_post_card(p) for p in posts],
             "missing": faltan,
             "postable": POSTABLE,
+            "edu_slot": EDU_SLOT,
+            "edu_label": slot_label(EDU_SLOT),
             "datos_slot": DATOS_SLOT,
             "datos_label": slot_label(DATOS_SLOT),
             "carousel_slot": CAROUSEL_SLOT,
@@ -367,7 +369,7 @@ async def marketing_post_create(
         )
     else:
         kind = BY_SLUG.get(pedido)
-        if kind is None or kind.slug in FIXED_PIECES:
+        if kind is None or kind not in POSTABLE:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Tarjeta desconocida.")
         post = create_draft(
             db, card_slug=kind.slug, planned_for=today, product=producto, province=provincia,
