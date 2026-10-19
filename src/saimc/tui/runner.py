@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,8 @@ async def stream(argv: tuple[str, ...], cwd: Path) -> AsyncIterator[str | Finish
         process = await asyncio.create_subprocess_exec(
             *argv,
             cwd=cwd,
+            # Sin terminal los programas apagan sus colores; la app los dibuja desde ANSI.
+            env={**os.environ, "FORCE_COLOR": "1"},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )

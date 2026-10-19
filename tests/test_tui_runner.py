@@ -66,3 +66,9 @@ def test_cancelling_kills_the_process(tmp_path: Path) -> None:
         return seen == ["up"]
 
     assert asyncio.run(scenario())
+
+
+def test_stream_asks_the_program_to_keep_its_colours(tmp_path: Path) -> None:
+    script = "import os; print(os.environ.get('FORCE_COLOR'))"
+    lines, _ = asyncio.run(_collect((sys.executable, "-c", script), tmp_path))
+    assert lines == ["1"]

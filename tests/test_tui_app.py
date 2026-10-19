@@ -1,6 +1,7 @@
 """La app del TUI: navega el registro, corre y pide confirmación si escribe."""
 
 import asyncio
+import sys
 from pathlib import Path
 
 from textual.widgets import RichLog, Static, Tree
@@ -199,3 +200,206 @@ def test_writing_command_runs_after_confirming(tmp_path: Path) -> None:
             return _log_text(app)
 
     assert "salida-escribir" in asyncio.run(scenario())
+
+
+# --- corridas independientes ------------------------------------------------------
+
+_SLOW = "import time; time.sleep(1); print('fin-lento')"
+_SLOW_COMMANDS = (
+    Command(id="lento", group="Grupo", title="Lento", argv=(sys.executable, "-c", _SLOW), about="Tarda."),
+    Command(
+        id="lento-w",
+        group="Grupo",
+        title="Lento escribiendo",
+        argv=(sys.executable, "-c", _SLOW),
+        about="Tarda y escribe.",
+        writes=True,
+    ),
+    Command(
+        id="otro-w",
+        group="Grupo",
+        title="Otro escribiendo",
+        argv=("echo", "otro"),
+        about="Escribe.",
+        writes=True,
+    ),
+    Command(
+        id="color",
+        group="Grupo",
+        title="Con color",
+        argv=("printf", "\\033[31mrojo\\033[0m\\n"),
+        about="Imprime en rojo.",
+    ),
+    *_COMMANDS,
+)
+
+
+def _slow_app(tmp_path: Path) -> GuaniTUI:
+    return GuaniTUI(commands=_SLOW_COMMANDS, logs=_LOGS, cwd=tmp_path)
+
+
+def test_launching_another_command_does_not_cut_the_one_running(tmp_path: Path) -> None:
+    async def scenario() -> list[tuple[str, str, list[str]]]:
+        app = _slow_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "lento")
+            await pilot.press("r")
+            await _select(app, pilot, "leer")
+            await pilot.press("r")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return [(r.key, r.status, list(r.lines)) for r in app.book.runs]
+
+    result = asyncio.run(scenario())
+    assert result == [("lento", "ok", ["fin-lento"]), ("leer", "ok", ["salida-leer"])]
+
+
+def test_launching_what_is_already_running_does_not_start_a_second_run(tmp_path: Path) -> None:
+    async def scenario() -> int:
+        app = _slow_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "lento")
+            await pilot.press("r")
+            await pilot.press("r")
+            await pilot.pause()
+            count = len(app.book.runs)
+            await app.workers.wait_for_complete()
+            return count
+
+    assert asyncio.run(scenario()) == 1
+
+
+def test_x_cuts_the_shown_run_and_kills_its_process(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str, str, list[str]]:
+        app = _slow_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "lento")
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.press("x")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            run = app.book.runs[0]
+            return run.status, _log_text(app), list(run.lines)
+
+    status, text, lines = asyncio.run(scenario())
+    assert status == "cut"
+    assert "[cortado" in text
+    assert lines == []
+
+
+def test_x_with_nothing_running_writes_nothing_to_the_output(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        app = _app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.press("x")
+            await pilot.pause()
+            return _log_text(app)
+
+    assert asyncio.run(scenario()) == ""
+
+
+def test_the_output_keeps_the_colours_of_the_program(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str, str | None]:
+        app = _slow_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "color")
+            await pilot.press("r")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            line = next(s for s in app.query_one(RichLog).lines if s.text.strip() == "rojo")
+            color = next(seg.style.color.name for seg in line if "rojo" in seg.text and seg.style)
+            return line.text.strip(), color
+
+    text, color = asyncio.run(scenario())
+    assert text == "rojo"
+    assert color == "color(1)"  # el rojo de la paleta ANSI
+
+
+def test_choosing_another_run_in_the_list_shows_its_output(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str, str]:
+        app = _slow_app(tmp_path)
+        async with app.run_test() as pilot:
+            for command_id in ("leer", "escribir"):
+                await _select(app, pilot, command_id)
+                await pilot.press("r")
+                if command_id == "escribir":
+                    await pilot.press("y")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            shown_last = _log_text(app)
+            runs = app.query_one("#runs")
+            runs.highlighted = 0
+            await pilot.pause()
+            return shown_last, _log_text(app)
+
+    last, first = asyncio.run(scenario())
+    assert "salida-escribir" in last
+    assert "salida-leer" in first
+    assert "salida-escribir" not in first
+
+
+def test_a_second_writer_warns_that_the_first_is_still_writing(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str, int]:
+        app = _slow_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "lento-w")
+            await pilot.press("r")
+            await pilot.press("y")
+            await _select(app, pilot, "otro-w")
+            await pilot.press("r")
+            await pilot.pause()
+            body = str(app.screen.query_one("#confirm", Static).render())
+            await pilot.press("n")
+            count = len(app.book.runs)
+            await app.workers.wait_for_complete()
+            return body, count
+
+    body, count = asyncio.run(scenario())
+    assert "Lento escribiendo" in body
+    assert "a la vez" in body
+    assert count == 1
+
+
+def test_quitting_while_a_writer_runs_asks_first(tmp_path: Path) -> None:
+    async def scenario() -> tuple[str, list[bool]]:
+        app = _slow_app(tmp_path)
+        exits: list[bool] = []
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "lento-w")
+            await pilot.press("r")
+            await pilot.press("y")
+            app.exit = lambda *args, **kwargs: exits.append(True)  # type: ignore[method-assign]
+            await pilot.press("q")
+            await pilot.pause()
+            body = str(app.screen.query_one("#confirm", Static).render())
+            asked_exits = list(exits)
+            await pilot.press("n")
+            await app.workers.wait_for_complete()
+            return body, asked_exits + exits
+
+    body, exits = asyncio.run(scenario())
+    assert "sigue escribiendo" in body
+    assert exits == []
+
+
+def test_c_removes_finished_runs_and_keeps_the_running_one(tmp_path: Path) -> None:
+    async def scenario() -> tuple[list[str], str]:
+        app = _slow_app(tmp_path)
+        async with app.run_test() as pilot:
+            await _select(app, pilot, "leer")
+            await pilot.press("r")
+            await app.workers.wait_for_complete()
+            await _select(app, pilot, "lento")
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.press("c")
+            await pilot.pause()
+            keys = [r.key for r in app.book.runs]
+            shown = _log_text(app)
+            await app.workers.wait_for_complete()
+            return keys, shown
+
+    keys, shown = asyncio.run(scenario())
+    assert keys == ["lento"]
+    assert "salida-leer" not in shown

@@ -78,10 +78,13 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 
 - **Para qué**: un menú con los comandos de este catálogo que no piden `sudo` y los logs de cada
   unidad (`journalctl -f`). Muestra la línea exacta antes de correr.
-- **Teclas**: `j`/`k` o flechas para moverte, Enter corre (sobre un grupo, lo pliega), `x` corta
-  (también los logs en vivo), `c` limpia la salida, `q` o «Salir» al final del menú sale. Los
-  marcados con ⚠ escriben o gastan y piden `y`/`n`. Con menos de 36 filas se esconde la cabecera
-  con el avatar.
+- **Teclas**: `j`/`k` o flechas para moverte, Enter corre (sobre un grupo, lo pliega), `Tab` pasa del menú
+  a la lista de corridas, `x` corta la corrida elegida, `c` quita las corridas ya terminadas, `q` o «Salir»
+  al final del menú sale. Los marcados con ⚠ escriben o gastan y piden `y`/`n`. Con menos de 36 filas se
+  esconde la cabecera con el avatar.
+- **Corridas**: cada vez que lanzás algo queda una entrada en «Corridas» (`●` corriendo, `✓` bien, `✗` falló,
+  `■` cortada) con su hora y duración. Varias conviven: lanzar un comando no corta un log en vivo ni otro
+  comando. Elegí una corrida en la lista para ver su salida. Lo que ya corre no se lanza dos veces.
 - **Avatar**: si la terminal habla Sixel (Windows Terminal 1.22 o posterior, WezTerm) o el protocolo
   de Kitty, se ve la imagen real; si no, en medios bloques. Dentro de tmux o Zellij suele caer en
   medios bloques. Si actualizaste desde una versión sin avatar, repetí el `pip install` de arriba.
