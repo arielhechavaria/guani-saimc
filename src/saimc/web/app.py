@@ -33,6 +33,7 @@ from saimc.web.routers import (
     whatsapp_webhook,
 )
 from saimc.web.routers import seo as seo_router
+from saimc.web.security_headers import add_security_headers
 from saimc.web.static_cache import CachedStaticFiles
 
 # El despliegue lanza `uvicorn saimc.web.app:app` sin `--log-config`, y uvicorn
@@ -123,6 +124,10 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=registrar_visitas_publicas)
 # Acceso al sitio público (`web/access.py`). Va después del registro de visitas
 # a propósito: queda más afuera, y una visita rechazada no se cuenta.
 app.add_middleware(BaseHTTPMiddleware, dispatch=access.require_access)
+
+# Cabeceras de seguridad (`web/security_headers.py`). Es el middleware más
+# externo para que también las redirecciones de la puerta y los errores las lleven.
+app.add_middleware(BaseHTTPMiddleware, dispatch=add_security_headers)
 
 # Resuelto con `Path(__file__)` y no relativo al cwd: así funciona sin
 # importar desde dónde se lance uvicorn. Vive en `app.state` (y no como

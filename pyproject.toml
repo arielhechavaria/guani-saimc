@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "saimc"
 version = "0.1.0"
 description = "Sistema Abierto de Inteligencia de Mercado para Cuba"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 
 dependencies = [
